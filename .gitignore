@@ -1,0 +1,14 @@
+# Local work tickets and investigation evidence
+/.scratch/
+
+# Private project documentation and automated test data
+/Docs/
+/TestLab/
+
+# Third-party reference material and test inputs
+/参考项目/
+/测试文件/
+
+# Original game package and extracted contents
+/Rusted Warfare.apk
+/Rusted Warfare/
