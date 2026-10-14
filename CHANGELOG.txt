@@ -1,3 +1,18 @@
+v0.1.0 (2026-10-14 23:44)
+  新增: 首个可构建引擎工程基线
+  - Gradle Wrapper 9.3.1 + Kotlin 2.3.20 + AGP 9.1.1 多模块（core/client/pc/android），JDK 25 执行、Java 17 字节码
+  - core 提供无图形 CoreRuntime 启动边界与最小 kotlin.test 冒烟测试
+  - client 用 libGDX 1.13.1 绘制工程状态页，明确尚无移动沙盒
+  - android 注册 MAIN/LAUNCHER，Variant API 生成四 ABI 原生库，附包结构校验脚本与许可说明
+  调整: 忽略规则与模块说明
+  - 忽略 local.properties 与 Engine 构建产物、编译器缓存
+  - Engine 及 core/client/pc/android README 更新为实际工程状态、构建命令与边界
+  技术: 版本与状态
+  - 根 version 与 Android versionName 为 0.1.0，versionCode 1；固定 libGDX 1.13.1，未引入原版核心
+  - 无地图/输入/移动/联网/服务端实现；构建与包校验不证明设备启动、绘制或玩法通过
+
+====
+
 v0.0.0 (2026-10-12 23:43)
   文档: 准备工作
   - 建立独立反编译、模拟测试、引擎重写三线目录与职责说明

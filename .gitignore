@@ -12,3 +12,12 @@
 # Original game package and extracted contents
 /Rusted Warfare.apk
 /Rusted Warfare/
+
+# Machine-local Gradle/SDK path configuration; never commit or publish
+local.properties
+
+# Engine build outputs and compiler caches
+/Engine/.gradle/
+/Engine/build/
+/Engine/*/build/
+/Engine/*/bin/

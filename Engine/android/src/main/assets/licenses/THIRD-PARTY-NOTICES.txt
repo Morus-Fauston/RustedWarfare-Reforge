@@ -1,0 +1,13 @@
+libGDX 1.13.1 (gdx, Android backend, Android native libraries)
+Copyright 2011 See AUTHORS file. libGDX contributors.
+https://github.com/libgdx/libgdx/tree/1.13.1
+
+gdx-jnigen-loader 2.5.2
+https://github.com/libgdx/gdx-jnigen
+
+AndroidX Android backend dependencies
+https://developer.android.com/jetpack/androidx
+
+These components are licensed under the Apache License, Version 2.0.
+The license text is included in Apache-2.0.txt.
+Upstream source code is not modified by this project.
