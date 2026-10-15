@@ -1,5 +1,48 @@
 # Changelog
 
+## v0.1.1 (2026-10-15 21:19)
+
+### 新增
+
+- **有限子集加载**：新增 `ContentLoader.loadUnitVariant(Path)` 与 `loadMap(Path)`，实际读取 INI、TMX 和 TSX 文件链，为后续离线移动切片提供固定内容定义；不实现完整模组解析。
+- **单位定义**：按白名单读取独立无武器单位的标识、图像引用、尺寸和 LAND 移动参数，区分已消费字段与保留未消费字段；拒绝武器段、原版身份覆盖和不支持的必要特性。
+- **地图与阻挡网格**：支持正交地图、20×20 地块、CSV Ground 层、外部及内联 tileset，校验 GID 范围和引用，并按本项目实验规则生成阻挡网格；GID 0 视为不可通行。
+- **图像声明区域**：按 TSX 声明区域计算图集，允许源 PNG 大于声明区域，源图不足时拒绝加载；仅读取 PNG 文件头尺寸，不证明整张图像可渲染。
+- **失败诊断与只读定义**：以 `Success` / `Failure` 返回结果，错误携带文件、段、字段、引用及原因；使用防御性复制和不可修改集合保护定义，拒绝非法输入而不返回部分定义。
+- **加载回归测试**：新增单位、地图及失败路径测试，覆盖参数和布局变化、缺字段、坏引用、不支持特性、失败后重载、定义保护，以及 DOCTYPE 和损坏 XML 拒绝。
+
+### 技术
+
+- **依赖边界**：解析使用 JDK XML API，不新增第三方运行时依赖；XML 配置禁用 DOCTYPE、外部实体及外部 DTD/schema，不将配置或单元测试等同于完整安全验收。
+- **验证记录**：既有 Windows / JDK 25.0.3 / Gradle 9.3.1 批次执行 `:core:test --rerun-tasks --no-daemon`，记录 23 个测试、0 失败、0 错误、0 跳过；本次日志整理核对源码哈希，未重新运行测试。
+- **公开复现限制**：新增测试依赖本机 TestLab 样本及原版图像，相关资料继续排除在公开仓库之外；仅公开克隆不能直接跑通新增测试。
+- **未覆盖范围**：不证明原版内容兼容、移动/寻路/碰撞、客户端绘制、Android XML 实现兼容性、真实网络、性能或安全效果。
+
+### 文档
+
+- **执行授权规则**：明确普通票获得执行授权且必要条件齐备后，不再逐票确认工作时长或工具次数；异常停止、高成本专项授权及其他人工确认关口保持有效。
+
+### 文件变更表
+
+| 文件 | 变更 |
+|:---|:---|
+| [AGENTS.md](<AGENTS.md>) | 调整普通票执行预算规则 |
+| [core/build.gradle.kts](<Engine/core/build.gradle.kts>) | 配置本机测试输入目录属性 |
+| [ContentLoader.kt](<Engine/core/src/main/kotlin/com/rustedwarfare/reforge/core/content/ContentLoader.kt>) | **新增** — 统一单位和地图加载入口 |
+| [ContentResult.kt](<Engine/core/src/main/kotlin/com/rustedwarfare/reforge/core/content/ContentResult.kt>) | **新增** — 成功与失败结果类型 |
+| [ContentError.kt](<Engine/core/src/main/kotlin/com/rustedwarfare/reforge/core/content/ContentError.kt>) | **新增** — 错误码与定位诊断 |
+| [UnitDefinition.kt](<Engine/core/src/main/kotlin/com/rustedwarfare/reforge/core/content/UnitDefinition.kt>) | **新增** — 单位定义与移动参数 |
+| [MapDefinition.kt](<Engine/core/src/main/kotlin/com/rustedwarfare/reforge/core/content/MapDefinition.kt>) | **新增** — 地图、tileset 和只读阻挡网格 |
+| [IniReader.kt](<Engine/core/src/main/kotlin/com/rustedwarfare/reforge/core/content/internal/IniReader.kt>) | **新增** — 单位 INI 白名单解析 |
+| [TmxReader.kt](<Engine/core/src/main/kotlin/com/rustedwarfare/reforge/core/content/internal/TmxReader.kt>) | **新增** — TMX 层、CSV 与 GID 校验 |
+| [TsxReader.kt](<Engine/core/src/main/kotlin/com/rustedwarfare/reforge/core/content/internal/TsxReader.kt>) | **新增** — 图集、图像声明区域及阻挡属性解析 |
+| [XmlReaderSupport.kt](<Engine/core/src/main/kotlin/com/rustedwarfare/reforge/core/content/internal/XmlReaderSupport.kt>) | **新增** — XML、属性及引用校验工具 |
+| [UnitVariantLoadTest.kt](<Engine/core/src/test/kotlin/com/rustedwarfare/reforge/core/content/UnitVariantLoadTest.kt>) | **新增** — 单位加载与参数变化测试 |
+| [MapLoadTest.kt](<Engine/core/src/test/kotlin/com/rustedwarfare/reforge/core/content/MapLoadTest.kt>) | **新增** — 地图布局与定义保护测试 |
+| [LoadFailureTest.kt](<Engine/core/src/test/kotlin/com/rustedwarfare/reforge/core/content/LoadFailureTest.kt>) | **新增** — 失败定位、拒绝与重载回归 |
+
+---
+
 ## v0.1.0 (2026-10-14 23:44)
 
 ### 新增
