@@ -1,5 +1,54 @@
 # Changelog
 
+## v0.1.2 (2026-10-17 14:29)
+
+### 新增
+
+- **无画面模拟核心**：新增 `SimulationContext`，提供场景初始化、指令提交、显式推进、只读观测、关闭与重开接口；模拟不依赖图形后端或墙上时钟。
+- **指令与归属校验**：支持选择、移动、停止及按步调度；校验单位归属与本地控制权，拒绝重复动作、过期步号以及旧世界或其他上下文的句柄，同一步动作按提交顺序处理。
+- **实验移动与静态绕障**：实现转向、速度逼近、推进门限、路径点消费及四邻域 A*；按单位半径检查格心净空和圆形单位与静态障碍的相交。
+  - 新不可达指令取消旧目标与路径，随后减速，不替换为邻近可达点。
+  - 到达事件表示目标指令完成，不等同于立即静止；坐标、时间、转向、捕获与寻路策略保留内部替换边界。
+- **状态隔离与失败保护**：观测集合提供只读快照，关闭后清理指令队列与旧世界状态；移动候选坐标发生非有限溢出时回滚整步，避免发布部分单位已更新的状态。
+- **核心回归与轨迹辅助**：新增 34 项测试，覆盖 M01–M07、调度顺序、权限、重开、几何与数值边界，并提供测试用观测导出；不是正式 TestLab 执行器或协议实现。
+
+### 调整
+
+- **地图测试基线**：按已确认的三格墙缺口与净空规则，将加载回归中的阻挡格断言从 35 改为 33，缺口对应 row 9–11；原单格宽度无法容纳直径 22 的单位，内部地图及相关证据另行维护，不随本次源码提交。
+- **缓存忽略**：新增 Engine Kotlin 缓存目录忽略规则，避免本机构建缓存进入仓库。
+
+### 技术
+
+- **验证记录**：既有 Windows / JDK 25.0.3 / Gradle 9.3.1 环境记录全量 57 项测试通过，包含原有 23 项及新增 34 项；本轮核对源码哈希和既有测试 XML，未重新运行测试。
+- **复现与交付边界**：测试仍依赖未公开的本机样本和原版图像；仅公开克隆不能直接跑通完整测试。本次未接通客户端画面、输入或发布包。
+- **实验规则边界**：通过仅表示核心与已确认实验契约自洽，不证明原版行为或路径等价、跨设备数值一致、动态单位避让、并发调用、真实网络、性能或安全效果。
+
+### 文件变更表
+
+| 文件 | 变更 |
+|---|---|
+| [.gitignore](<.gitignore>) | 忽略 Engine Kotlin 缓存 |
+| [LoadFailureTest.kt](<Engine/core/src/test/kotlin/com/rustedwarfare/reforge/core/content/LoadFailureTest.kt>) | 更新为 33 阻挡格基线 |
+| [MapLoadTest.kt](<Engine/core/src/test/kotlin/com/rustedwarfare/reforge/core/content/MapLoadTest.kt>) | 更新阻挡格计数及三格缺口断言 |
+| [Commands.kt](<Engine/core/src/main/kotlin/com/rustedwarfare/reforge/core/sim/Commands.kt>) | **新增** — 选择、移动、停止指令 |
+| [ExperimentalPolicies.kt](<Engine/core/src/main/kotlin/com/rustedwarfare/reforge/core/sim/ExperimentalPolicies.kt>) | **新增** — 实验策略接口与接线 |
+| [Model.kt](<Engine/core/src/main/kotlin/com/rustedwarfare/reforge/core/sim/Model.kt>) | **新增** — 场景、世界句柄、状态与观测模型 |
+| [Movement.kt](<Engine/core/src/main/kotlin/com/rustedwarfare/reforge/core/sim/Movement.kt>) | **新增** — 推进门限及目标速度策略 |
+| [Pathfinding.kt](<Engine/core/src/main/kotlin/com/rustedwarfare/reforge/core/sim/Pathfinding.kt>) | **新增** — 四邻域 A*、格心净空与静态相交判定 |
+| [SimulationContext.kt](<Engine/core/src/main/kotlin/com/rustedwarfare/reforge/core/sim/SimulationContext.kt>) | **新增** — 模拟生命周期、权限、调度、推进与观测 |
+| [CommandTimelineTest.kt](<Engine/core/src/test/kotlin/com/rustedwarfare/reforge/core/sim/CommandTimelineTest.kt>) | **新增** — 调度顺序、动作身份及世界隔离测试 |
+| [GeometryAndFailureTest.kt](<Engine/core/src/test/kotlin/com/rustedwarfare/reforge/core/sim/GeometryAndFailureTest.kt>) | **新增** — 几何边界、溢出回滚和失败恢复测试 |
+| [MovementContractTest.kt](<Engine/core/src/test/kotlin/com/rustedwarfare/reforge/core/sim/MovementContractTest.kt>) | **新增** — 直线、转向、停止、绕障及不可达集成测试 |
+| [OwnershipTest.kt](<Engine/core/src/test/kotlin/com/rustedwarfare/reforge/core/sim/OwnershipTest.kt>) | **新增** — 越权指令不改变单位状态测试 |
+| [PropulsionPolicyTest.kt](<Engine/core/src/test/kotlin/com/rustedwarfare/reforge/core/sim/PropulsionPolicyTest.kt>) | **新增** — 推进门限与分支顺序测试 |
+| [ReopenTest.kt](<Engine/core/src/test/kotlin/com/rustedwarfare/reforge/core/sim/ReopenTest.kt>) | **新增** — 重开清理与观测只读测试 |
+| [RevisedMovementTest.kt](<Engine/core/src/test/kotlin/com/rustedwarfare/reforge/core/sim/RevisedMovementTest.kt>) | **新增** — 捕获边界、单点消费与不可达减速测试 |
+| [SimulationBoundaryTest.kt](<Engine/core/src/test/kotlin/com/rustedwarfare/reforge/core/sim/SimulationBoundaryTest.kt>) | **新增** — 初始化、步进与只读边界测试 |
+| [TestContentFactory.kt](<Engine/core/src/test/kotlin/com/rustedwarfare/reforge/core/sim/TestContentFactory.kt>) | **新增** — 测试场景辅助构造 |
+| [TraceEvidence.kt](<Engine/core/src/test/kotlin/com/rustedwarfare/reforge/core/sim/TraceEvidence.kt>) | **新增** — 测试用观测导出 |
+
+---
+
 ## v0.1.1 (2026-10-15 21:19)
 
 ### 新增

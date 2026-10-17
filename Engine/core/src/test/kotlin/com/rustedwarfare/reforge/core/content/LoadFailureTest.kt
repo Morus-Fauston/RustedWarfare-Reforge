@@ -37,7 +37,7 @@ class LoadFailureTest {
         }
         for (name in listOf("L02a.tmx", "L03b.tmx", "L03c.tmx")) {
             assertIs<ContentResult.Failure>(ContentLoader.loadMap(negative(name)))
-            assertEquals(35, assertIs<ContentResult.Success<MapDefinition>>(ContentLoader.loadMap(mapPath())).value.blocking.blockedCount)
+            assertEquals(33, assertIs<ContentResult.Success<MapDefinition>>(ContentLoader.loadMap(mapPath())).value.blocking.blockedCount)
         }
     }
 

@@ -17,12 +17,16 @@ class MapLoadTest {
         assertEquals(20, map.tileWidth)
         assertEquals(20, map.tileHeight)
         assertEquals(600, map.groundGids.size)
-        assertEquals(35, map.blocking.blockedCount)
+        // 33 blocking cells: 17 wall cells (col 14, rows outside the 3-cell gap 9-11)
+        // + 16 enclosed-box border cells. Was 35 before the 2026-10-15 gap widening.
+        assertEquals(33, map.blocking.blockedCount)
         assertEquals(listOf(1, 41), map.tileSets.map { it.firstGid })
         assertEquals(setOf(16), map.tileSets[0].blockedTileIds)
         assertEquals(setOf(7, 8, 21, 22, 28, 29), map.tileSets[1].blockedTileIds)
         assertTrue(map.tileSets.all { it.imagePath.isAbsolute && Files.isRegularFile(it.imagePath) })
-        for (row in 0 until 20) assertEquals(row != 9, map.blocking.isBlocked(14, row))
+        // The wall gap is rows 9-11 so that a radius-11 unit (diameter 22 > tile 20)
+        // can pass: see ENG-P001-004 spec review evidence for the geometry.
+        for (row in 0 until 20) assertEquals(row !in 9..11, map.blocking.isBlocked(14, row))
         for (row in 4..6) for (col in 21..23) {
             assertEquals(1, map.groundGids[row * 30 + col])
             assertEquals(false, map.blocking.isBlocked(col, row))

@@ -18,6 +18,7 @@ local.properties
 
 # Engine build outputs and compiler caches
 /Engine/.gradle/
+/Engine/.kotlin/
 /Engine/build/
 /Engine/*/build/
 /Engine/*/bin/
