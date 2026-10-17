@@ -1,5 +1,58 @@
 # Changelog
 
+## v0.1.5 (2026-10-17 19:52)
+
+### 整体回顾
+
+首期（P001）以离线双平台移动沙盒为目标，从仅有目录说明推进到可构建、可操作、可自动验收的闭环：
+
+| 版本 | 主要交付 |
+|---|---|
+| v0.0.0 | 三线目录说明、协作约束与仓库范围 |
+| v0.1.0 | Gradle 多模块工程、核心启动边界、共享状态页、Android 包装 |
+| v0.1.1 | INI/TMX/TSX 有限子集加载与失败诊断 |
+| v0.1.2 | 无画面移动核心、指令权限、静态绕障与回归 |
+| v0.1.3 | Windows 可操作沙盒、PC 诊断、测试执行链、转向修复 |
+| v0.1.4 | Android 触控沙盒、规则比较器、XML 安全加固 |
+| v0.1.5 | 首期验收套件与一期收口 |
+
+一期结论限于**离线、双平台（Windows + MuMu 模拟器）、实验规则**；不包含原版兼容、真机、联网、性能与发布就绪。
+
+### 新增
+
+- **P001 验收套件**：新增独立 `p001Suite` 任务，按冻结清单执行 16 个案例（M01–M07、M04a/b/c、L01–L03c、L04），逐案输出结果、首处分歧与证据引用。
+  - 运行前校验套件审批状态、`pathBase=repo-root`、`originalCompatibility=false`、聚合优先级与必需案例顺序；身份不符即退出 64。
+  - 全部输入（14 个内容身份、场景/契约/关系元数据）在任何核心执行前完成 SHA-256 校验；执行结束后再次回读，防止中途漂移。
+  - 聚合规则：64 输入错误 > 4 执行失败 > 3 证据不足 > 2 断言失败 > 0 通过；案例数不符按证据不足处理。
+- **独立关系断言**：新增 `P001Relations`，按物理量与事件关系独立检查位移、转向限幅、加减速、无目标转向、绕障几何、事件序列与到达语义，不依赖被测实现自身的公式。
+- **生命周期检查**：新增 `P001Lifecycle`，覆盖 M06 越权前后完整 DTO 不变、M07 关闭重开的新世界能力、旧句柄拒绝与干净初态；M05 与连续驱动交叉核对。
+- **加载拒绝与恢复**：L01–L03c 逐项核对错误码、文件、段、字段与引用定位；L04 在同一 JVM 内验证失败后合法重载与最终初始化，不复用失败状态。
+- **归档只读核验**：`--verify-archive` 复核 manifest 完整性、文件清单与 SHA-256，任何缺失、重复或篡改返回 3。
+
+### 技术
+
+- **验证记录**：最终套件 16/16 通过、首差为 null；全量重跑工具 36 + 核心 62 项，0 失败/错误/跳过；39 个交付文件冻结后复算无漂移。
+- **历史纠错保留**：早期 M05 通过批次因漏检前置指令被撤回，最终批次改为真实 `movement-started → movement-cancelled → path-unreachable` 序列；失败批次与撤回记录均未删除。
+- **公开复现限制**：套件清单、场景与内容身份位于被忽略的 `.scratch` 与 `TestLab`，且依赖原版图像；公开克隆只能编译，不能直接运行 `p001Suite`。
+- **未覆盖边界**：原版参考器与行为对拍、全内容/单位兼容、真机与其他 ABI、战斗/视野/AI、真实网络、安全与性能、发布就绪均未验证。
+
+### 文件变更表
+
+| 文件 | 变更 |
+|---|---|
+| [SimulationTest/build.gradle.kts](<SimulationTest/build.gradle.kts>) | 注册 `p001Suite` 任务 |
+| [P001Suite.kt](<SimulationTest/src/main/kotlin/com/rustedwarfare/reforge/testing/p001/P001Suite.kt>) | **新增** — 16 案例编排、身份校验与聚合 |
+| [P001SuiteMain.kt](<SimulationTest/src/main/kotlin/com/rustedwarfare/reforge/testing/p001/P001SuiteMain.kt>) | **新增** — CLI 入口与归档核验 |
+| [P001Evidence.kt](<SimulationTest/src/main/kotlin/com/rustedwarfare/reforge/testing/p001/P001Evidence.kt>) | **新增** — 批次目录、清单与身份校验 |
+| [P001Relations.kt](<SimulationTest/src/main/kotlin/com/rustedwarfare/reforge/testing/p001/P001Relations.kt>) | **新增** — 独立关系断言 |
+| [P001Lifecycle.kt](<SimulationTest/src/main/kotlin/com/rustedwarfare/reforge/testing/p001/P001Lifecycle.kt>) | **新增** — 越权与重开生命周期检查 |
+| [P001SuiteTest.kt](<SimulationTest/src/test/kotlin/com/rustedwarfare/reforge/testing/p001/P001SuiteTest.kt>) | **新增** — 3 项套件策略测试 |
+| [P001RelationsTest.kt](<SimulationTest/src/test/kotlin/com/rustedwarfare/reforge/testing/p001/P001RelationsTest.kt>) | **新增** — 3 项关系断言测试 |
+| [P001LifecycleTest.kt](<SimulationTest/src/test/kotlin/com/rustedwarfare/reforge/testing/p001/P001LifecycleTest.kt>) | **新增** — 2 项生命周期测试 |
+| [P001BranchTest.kt](<SimulationTest/src/test/kotlin/com/rustedwarfare/reforge/testing/p001/P001BranchTest.kt>) | **新增** — 3 项分支与异常测试 |
+
+---
+
 ## v0.1.4 (2026-10-17 18:50)
 
 ### 新增

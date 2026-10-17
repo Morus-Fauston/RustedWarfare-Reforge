@@ -23,3 +23,12 @@ tasks.test {
     useJUnitPlatform()
     systemProperty("repo.root", projectDir.parentFile.absolutePath)
 }
+
+// Separate accepted P001 suite entry; the existing run/compare CLI stays unchanged.
+tasks.register<JavaExec>("p001Suite") {
+    group = "verification"
+    description = "Run the accepted P001 self-behavior suite with explicit repo-root and immutable batches"
+    classpath = sourceSets.main.get().runtimeClasspath
+    mainClass.set("com.rustedwarfare.reforge.testing.p001.P001SuiteMainKt")
+    jvmArgs("-Dfile.encoding=UTF-8", "-Dstdout.encoding=UTF-8", "-Dstderr.encoding=UTF-8")
+}
