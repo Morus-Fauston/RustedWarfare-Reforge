@@ -1,5 +1,81 @@
 # Changelog
 
+## v0.1.3 (2026-10-17 17:41)
+
+### 新增
+
+- **Windows 离线移动沙盒**：共享客户端从工程状态页升级为可实际操作沙盒，真实绘制受控地图与单位，支持左键单选、右键移动、`Stop` 停止、`Exit match` 退出与 `Reopen` 重开；权限与移动结果仍由核心裁决。
+  - 单选、越权、不可达、退出重开均通过公开核心指令路径；无控制者单位可查看，移动与停止返回 `not-owner`。
+  - 展示节奏为实验设定（每秒 60 次、每步 `delta=1 sim-tick`、每帧最多 8 步且保留余量），**不是原版 tick 频率结论**。
+- **客户端边界**：内容加载固定为 P001 受控夹具，不是通用场景解释器；后台单线程加载、取消后旧结果不发布；`MapProjection` 处理核心 y-down 与 UI y-up 转换，GL 资源在渲染线程创建与释放。
+- **PC 启动与诊断**：新增 LWJGL3 Windows 启动入口与 `application` 打包，支持 `--inputs`、`--evidence` 参数；每批输出 `manifest.json` 与 `client-diagnostic.jsonl`，记录依赖/输入哈希、逐步核心观测与完成标记。该格式是专用诊断证据，不是测试线正式轨迹协议。
+- **测试执行记录链**：新增独立 `SimulationTest` 工程，直接依赖 `Engine/core`，按场景读取内容身份、核对初态、提交指令、显式推进并采集两层轨迹与事件，按 TestLab 规则新建批次。
+  - 采集完整时明确返回 `status=evidence-insufficient`、退出码 3，`comparison/result.json` 标注 `not-evaluated`；不因采集成功或空规则冒充契约通过。
+  - 输入/版本错误退出 64，核心执行失败与超时退出 4，取消或采集不足退出 3；支持协作式超时与取消文件。
+- **DEC 归档复核工具**：新增只读脚本核对 DEC 报告迁移身份、底稿哈希、维护块与导航，拒绝改写历史正文；配套合成夹具单元测试，越界路径与正文篡改必须失败。
+
+### 修复
+
+- **核心转向过冲与摆头**：现象为固定方向持续左右修正、接近目标后越过再反向追赶；根因为旧实现只在单步最大转角内降低目标角速，接近目标时仍保留较大角速度。
+  - 修复为提前按角差减速，单步转角越过角差时限定并清零角速，保留普通分支的 0.01 早退，并补零转向加速度的定速分支。
+  - 新增固定目标不越过、镜像与跨 0° 收敛、转向中换目标、零加速度四项回归；用户原始轨迹逐项重放复现旧行为，修复后同序重放通过。
+
+### 调整
+
+- **文档治理**：明确 ENG/TEST 输出报告与 issue 同目录命名、DEC 报告归 `Research-DEC`；补充 DEC 输出完整性要求（输入/工具身份、符号定位、平台差异、失败与未知、只读复核入口）。规则变更自 2026-10-17 生效，不追改历史清单或验收。
+
+### 技术
+
+- **依赖**：客户端新增 JUnit 平台测试入口；`pc` 引入 libGDX LWJGL3 后端与 desktop natives（1.13.1）；`SimulationTest` 固定 kotlinx-serialization-json 1.9.0，沿用既有 Wrapper 与 JDK 25 / Kotlin 2.3.20 / Gradle 9.3.1 工具链，Java 17 字节码。
+- **验证记录**：core 61 项、client 10 项、测试执行器 11 项工具测试与 57 项核心回归，均 0 失败/错误/跳过；36 个玩法批次、真实窗口操作与截图、失败与重跑批次均保留在内部证据目录。
+- **公开复现限制**：客户端、测试执行器与 DEC 复核脚本分别依赖被排除的 `TestLab` 样本、原版图像和 `Docs/` 归档；公开克隆只能编译，不能直接跑通上述验证，也不包含这些资产。
+- **未覆盖边界**：不证明 Android/真机、其他 DPI/JDK、原版运行或行为兼容、动态单位避让、联网、性能与安全效果；`installDist` 不含 JRE 或受控素材。
+
+### 文件变更表
+
+| 文件 | 变更 |
+|---|---|
+| [AGENTS.md](<AGENTS.md>) | 补充输出报告落位与 DEC 完整性规则 |
+| [Decompile/README.md](<Decompile/README.md>) | 登记 DEC 复核工具与运行边界 |
+| [Decompile/tools/verify_dec_evidence.py](<Decompile/tools/verify_dec_evidence.py>) | **新增** — 只读归档身份核验 |
+| [Decompile/tools/test_verify_dec_evidence.py](<Decompile/tools/test_verify_dec_evidence.py>) | **新增** — 合成夹具单元测试 |
+| [BootstrapScreen.kt](<Engine/client/src/main/kotlin/com/rustedwarfare/reforge/client/BootstrapScreen.kt>) | 改写为可操作沙盒画面与 HUD |
+| [SandboxSession.kt](<Engine/client/src/main/kotlin/com/rustedwarfare/reforge/client/SandboxSession.kt>) | **新增** — 选择/移动/停止与核心适配 |
+| [SandboxGraphics.kt](<Engine/client/src/main/kotlin/com/rustedwarfare/reforge/client/SandboxGraphics.kt>) | **新增** — 地图、单位、路径与选择绘制 |
+| [SandboxLoader.kt](<Engine/client/src/main/kotlin/com/rustedwarfare/reforge/client/SandboxLoader.kt>) | **新增** — 后台加载与取消 |
+| [ControlledScenario.kt](<Engine/client/src/main/kotlin/com/rustedwarfare/reforge/client/ControlledScenario.kt>) | **新增** — P001 受控场景装载 |
+| [MapProjection.kt](<Engine/client/src/main/kotlin/com/rustedwarfare/reforge/client/MapProjection.kt>) | **新增** — 世界/UI 坐标换算 |
+| [ClientEvidence.kt](<Engine/client/src/main/kotlin/com/rustedwarfare/reforge/client/ClientEvidence.kt>) | **新增** — 可选诊断回调与观测序列化 |
+| [SandboxSessionTest.kt](<Engine/client/src/test/kotlin/com/rustedwarfare/reforge/client/SandboxSessionTest.kt>) | **新增** — 6 项交互与清理测试 |
+| [LoadingAndProjectionTest.kt](<Engine/client/src/test/kotlin/com/rustedwarfare/reforge/client/LoadingAndProjectionTest.kt>) | **新增** — 4 项加载与投影测试 |
+| [client/build.gradle.kts](<Engine/client/build.gradle.kts>) | 增加测试入口与输入目录属性 |
+| [client/README.md](<Engine/client/README.md>) | 更新客户端边界、验证与平台交接 |
+| [ExperimentalPolicies.kt](<Engine/core/src/main/kotlin/com/rustedwarfare/reforge/core/sim/ExperimentalPolicies.kt>) | 修复普通机身转向过冲 |
+| [SteeringRegressionTest.kt](<Engine/core/src/test/kotlin/com/rustedwarfare/reforge/core/sim/SteeringRegressionTest.kt>) | **新增** — 4 项转向回归 |
+| [WindowsLauncher.kt](<Engine/pc/src/main/kotlin/com/rustedwarfare/reforge/pc/WindowsLauncher.kt>) | **新增** — LWJGL3 启动与参数 |
+| [JsonlEvidence.kt](<Engine/pc/src/main/kotlin/com/rustedwarfare/reforge/pc/JsonlEvidence.kt>) | **新增** — 诊断清单与 JSONL 记录 |
+| [pc/build.gradle.kts](<Engine/pc/build.gradle.kts>) | 增加 application、LWJGL3 与 natives |
+| [pc/README.md](<Engine/pc/README.md>) | 更新构建、启动、操作与边界 |
+| [SimulationTest/build.gradle.kts](<SimulationTest/build.gradle.kts>) | **新增** — 独立工程与 core 源码依赖 |
+| [SimulationTest/settings.gradle.kts](<SimulationTest/settings.gradle.kts>) | **新增** — 工程声明 |
+| [SimulationTest/gradle.properties](<SimulationTest/gradle.properties>) | **新增** — 工程属性 |
+| [SimulationTest/gradlew](<SimulationTest/gradlew>)、[gradlew.bat](<SimulationTest/gradlew.bat>)、[gradle/wrapper/](<SimulationTest/gradle/wrapper/gradle-wrapper.properties>) | **新增** — Wrapper 入口 |
+| [SimulationTest/.gitignore](<SimulationTest/.gitignore>) | **新增** — 构建缓存忽略 |
+| [Runner.kt](<SimulationTest/src/main/kotlin/com/rustedwarfare/reforge/testing/Runner.kt>) | **新增** — 采集、批次与结束状态 |
+| [CoreAdapter.kt](<SimulationTest/src/main/kotlin/com/rustedwarfare/reforge/testing/CoreAdapter.kt>) | **新增** — 实际核心适配 |
+| [ScenarioReader.kt](<SimulationTest/src/main/kotlin/com/rustedwarfare/reforge/testing/ScenarioReader.kt>) | **新增** — 场景/依赖身份校验 |
+| [RunArchive.kt](<SimulationTest/src/main/kotlin/com/rustedwarfare/reforge/testing/RunArchive.kt>) | **新增** — 批次归档 |
+| [JsonIO.kt](<SimulationTest/src/main/kotlin/com/rustedwarfare/reforge/testing/JsonIO.kt>) | **新增** — JSON 构建与摘要 |
+| [Main.kt](<SimulationTest/src/main/kotlin/com/rustedwarfare/reforge/testing/Main.kt>) | **新增** — CLI 与退出码 |
+| [fixtures/record-chain/](<SimulationTest/fixtures/record-chain/scenario.json>) | **新增** — 工具夹具场景与空规则契约 |
+| [RunnerTest.kt](<SimulationTest/src/test/kotlin/com/rustedwarfare/reforge/testing/RunnerTest.kt>) | **新增** — CLI 与采集批次测试 |
+| [CoreAdapterLifecycleTest.kt](<SimulationTest/src/test/kotlin/com/rustedwarfare/reforge/testing/CoreAdapterLifecycleTest.kt>) | **新增** — 核心适配生命周期测试 |
+| [TraceCaptureTest.kt](<SimulationTest/src/test/kotlin/com/rustedwarfare/reforge/testing/TraceCaptureTest.kt>) | **新增** — 轨迹捕获与写回测试 |
+| [tools/verify-cli.ps1](<SimulationTest/tools/verify-cli.ps1>) | **新增** — 端到端 CLI 核验 |
+| [SimulationTest/README.md](<SimulationTest/README.md>) | 更新工程入口、退出码与边界 |
+
+---
+
 ## v0.1.2 (2026-10-17 14:29)
 
 ### 新增

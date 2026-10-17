@@ -1,0 +1,11 @@
+{
+  "schemaVersion": 1,
+  "kind": "behavior-contract",
+  "contractId": "tool.record-chain.v1.contract",
+  "scope": "self-behavior",
+  "scenarioIds": ["tool.record-chain.v1"],
+  "rules": [],
+  "comparison": {"numberMode": "declared-per-field", "tolerances": {}},
+  "exclusions": ["original-compatibility", "formal-regression-suite", "rule-evaluation"],
+  "approval": {"status": "tool-fixture-only", "source": "TEST-P001-002"}
+}

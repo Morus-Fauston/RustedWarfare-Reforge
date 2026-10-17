@@ -49,10 +49,22 @@ internal object AcceleratedSteering : SteeringPolicy {
     override fun turn(unit: MutableUnit, target: Position, delta: Double, coordinates: CoordinatePolicy): Double {
         val movement = unit.definition.movement
         val diff = coordinates.difference(coordinates.desired(unit.position, target), unit.heading)
-        val omegaTarget = if (abs(diff) <= movement.maxTurnSpeed * delta) diff / delta
-            else movement.maxTurnSpeed * if (diff < 0.0) -1.0 else 1.0
-        unit.angularVelocity = approach(unit.angularVelocity, omegaTarget, movement.turnAcceleration * delta)
-        unit.heading = coordinates.normalize(unit.heading + unit.angularVelocity * delta)
+        if (abs(diff) < 0.01) return 0.0
+        val direction = if (diff < 0.0) -1.0 else 1.0
+        val acceleration = movement.turnAcceleration
+        val turn = if (acceleration == 0.0) {
+            direction * minOf(movement.maxTurnSpeed * delta, abs(diff))
+        } else {
+            // Ordinary body-turn branch from the static reference, not its reverse/locked modes.
+            val rate = if (abs(diff) < abs(unit.angularVelocity) / acceleration) acceleration else movement.maxTurnSpeed
+            unit.angularVelocity = approach(unit.angularVelocity, direction * rate, acceleration * delta)
+            val candidate = unit.angularVelocity * delta
+            if (abs(candidate) > abs(diff)) {
+                unit.angularVelocity = 0.0
+                diff
+            } else candidate
+        }
+        unit.heading = coordinates.normalize(unit.heading + turn)
         return diff
     }
 }

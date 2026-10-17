@@ -1,0 +1,36 @@
+{
+  "schemaVersion": 1,
+  "kind": "scenario",
+  "scenarioId": "tool.record-chain.v1",
+  "content": {
+    "map": {"id": "p001.controlled-map", "path": "../../../TestLab/local/P001-移动沙盒输入/maps/p001-controlled.tmx", "sha256": "0c1db64b77dc9faba10f92fc58130faf095af28833b2bae5eaefddacb1bbd202"},
+    "unitVariant": {"id": "p001.weaponless-tank", "path": "../../../TestLab/local/P001-移动沙盒输入/units/weaponless_tank.ini", "sha256": "402415f833735acd6356463d65ea3a198aea4cbcacb44cd6674f931e5c76263e"},
+    "dependencies": [
+      {"id": "p001.ground-tsx", "path": "../../../TestLab/local/P001-移动沙盒输入/tilesets/p001-ground.tsx", "sha256": "afac9ae5ad44a54005fc597323456b72257c8ca84786bc3c6919546f4428d9de"},
+      {"id": "p001.rock-tsx", "path": "../../../TestLab/local/P001-移动沙盒输入/tilesets/p001-rock.tsx", "sha256": "9381a4d6116e4ad4737eb88565492f9e25b0669736537a3c84d32c5dd99b9c35"},
+      {"id": "local.longgrass", "path": "../../../Rusted Warfare/assets/tilesets/bitmaps/longgrass.png", "sha256": "a46eac220e3456305d257fd49d5114065610eca71f38c82f70355a618e32ef4f"},
+      {"id": "local.mountain", "path": "../../../Rusted Warfare/assets/tilesets/bitmaps/mountain.png", "sha256": "6697287c91bc5db0b8c885ceba5cc219aeeb777b1d126ea4ba5e8d98ffbdc535"},
+      {"id": "local.tank-image", "path": "../../../Rusted Warfare/assets/units/tanks/tank.png", "sha256": "ba7a15e3d4c8f406ad4f8257716b2355003c0324e935d5633260e2a29944dca3"}
+    ]
+  },
+  "coordinateModel": {"id": "p001.coordinate.v1", "space": "2d", "xAxis": "x-right", "yAxis": "y-down", "origin": "top-left", "unit": "world-unit", "valueType": "double", "precision": "ieee754-binary64"},
+  "timeModel": {"id": "p001.time.v1", "deltaUnit": "sim-tick", "stepRule": "fixed-explicit-delta", "precision": "ieee754-binary64"},
+  "angleUnit": "degree-clockwise-zero-up",
+  "movementContract": {"pathPointRadius": 16.0, "targetRadius": 4.0},
+  "players": [{"playerId": "p1", "control": "local"}, {"playerId": "p2", "control": "local"}],
+  "units": [{"unitId": "u1", "owner": "p1", "type": "p001.weaponless-tank", "position": {"x": 70, "y": 70}, "heading": 90}],
+  "actions": [
+    {"actionId": "select-1", "atStep": 0, "actor": "p1", "kind": "select", "unitId": "u1"},
+    {"actionId": "move-1", "atStep": 0, "actor": "p1", "kind": "move", "unitId": "u1", "target": {"x": 170, "y": 70}},
+    {"actionId": "foreign-stop", "atStep": 1, "actor": "p2", "kind": "stop", "unitId": "u1"},
+    {"actionId": "stop-1", "atStep": 3, "actor": "p1", "kind": "stop", "unitId": "u1"}
+  ],
+  "termination": {"kind": "explicit-steps", "required": true, "steps": [
+    {"stepIndex": 0, "delta": 1.0, "deltaUnit": "sim-tick"},
+    {"stepIndex": 1, "delta": 1.0, "deltaUnit": "sim-tick"},
+    {"stepIndex": 2, "delta": 1.0, "deltaUnit": "sim-tick"},
+    {"stepIndex": 3, "delta": 1.0, "deltaUnit": "sim-tick"},
+    {"stepIndex": 4, "delta": 1.0, "deltaUnit": "sim-tick"},
+    {"stepIndex": 5, "delta": 1.0, "deltaUnit": "sim-tick"}
+  ]}
+}
