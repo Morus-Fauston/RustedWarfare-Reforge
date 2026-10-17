@@ -22,6 +22,7 @@ import java.util.Locale
 class BootstrapScreen(
     private val initialRoot: Path = Paths.get("TestLab/local/P001-移动沙盒输入"),
     private val evidence: ClientEvidence = ClientEvidence.NONE,
+    private val touchControls: Boolean = false,
 ) : ApplicationAdapter() {
     private lateinit var batch: SpriteBatch
     private lateinit var shapes: ShapeRenderer
@@ -42,12 +43,21 @@ class BootstrapScreen(
     private var accumulator = 0.0
     private var paused = false
     private var loadError: String? = null
+    private var presentationReady = false
+    private var disposed = false
 
     override fun create() {
-        batch = SpriteBatch()
-        shapes = ShapeRenderer()
-        skin = makeSkin()
-        stage = Stage(viewport, batch)
+        createPresentation()
+        requestLoad()
+    }
+
+    private fun createPresentation() {
+        val created = mutableListOf<() -> Unit>()
+        try {
+        batch = SpriteBatch().also { created += { it.dispose() } }
+        shapes = ShapeRenderer().also { created += { it.dispose() } }
+        skin = makeSkin().also { created += { it.dispose() } }
+        stage = Stage(viewport, batch).also { created += { it.dispose() } }
         fun label(text: String, x: Float, y: Float, w: Float, h: Float): Label = Label(text, skin).also {
             it.setBounds(x, y - h, w, h); it.setAlignment(Align.topLeft); it.setWrap(true); stage.addActor(it)
         }
@@ -65,10 +75,18 @@ class BootstrapScreen(
         rootField = TextField(initialRoot.toAbsolutePath().normalize().toString(), skin).also {
             it.setOnlyFontChars(false)
             it.setBounds(650f, 206f, 280f, 34f); stage.addActor(it)
+            it.isDisabled = touchControls
         }
         button("Reopen", 650f, 150f, 280f) { requestLoad() }
         Gdx.input.inputProcessor = InputMultiplexer(stage, object : InputAdapter() {
+            override fun keyDown(keycode: Int): Boolean {
+                if (!touchControls || keycode != Input.Keys.BACK) return false
+                leaveMatch()
+                Gdx.app.exit()
+                return true
+            }
             override fun touchDown(screenX: Int, screenY: Int, pointer: Int, button: Int): Boolean {
+                if (paused) return false
                 if (pointer != 0 || button !in listOf(Input.Buttons.LEFT, Input.Buttons.RIGHT)) return false
                 val current = session ?: return false
                 val map = graphics?.projection ?: return false
@@ -81,13 +99,22 @@ class BootstrapScreen(
                     "screenY" to screenY, "windowWidth" to Gdx.graphics.width, "windowHeight" to Gdx.graphics.height,
                     "uiX" to ui.x, "uiY" to ui.y, "world" to world.fields(), "button" to button))
                 stage.unfocusAll()
-                if (button == Input.Buttons.LEFT) current.select(world) else current.move(world)
+                if (touchControls) current.tap(world)
+                else if (button == Input.Buttons.LEFT) current.select(world) else current.move(world)
                 updateHud()
                 return true
             }
         })
+        if (touchControls) Gdx.input.setCatchKey(Input.Keys.BACK, true)
         resize(Gdx.graphics.width, Gdx.graphics.height)
-        requestLoad()
+        presentationReady = true
+        } catch (failure: Exception) {
+            Gdx.input.inputProcessor = null
+            created.asReversed().forEach { cleanup ->
+                try { cleanup() } catch (error: Exception) { failure.addSuppressed(error) }
+            }
+            throw failure
+        }
     }
 
     private fun makeSkin(): Skin {
@@ -154,7 +181,7 @@ class BootstrapScreen(
                 catch (diagnosticFailure: Exception) { Gdx.app.error("p001-cleanup", "Cannot record cleanup failure", diagnosticFailure) }
             }
         }
-        if (::stage.isInitialized) { stage.unfocusAll(); updateHud() }
+        if (presentationReady) { stage.unfocusAll(); updateHud() }
         evidence.record("match-exit", mapOf("generation" to generation))
     }
 
@@ -167,6 +194,7 @@ class BootstrapScreen(
     }
 
     override fun render() {
+        if (!presentationReady || disposed) return
         if (loading) loader.poll()?.fold(onSuccess = { scenario ->
             var pendingGraphics: SandboxGraphics? = null
             var pendingSession: SandboxSession? = null
@@ -217,6 +245,7 @@ class BootstrapScreen(
     }
 
     private fun updateHud() {
+        if (!presentationReady) return
         val current = session
         val selected = current?.observation?.units?.find { it.unitId == current.selectedId }
         selectedLabel.setText(if (selected == null) "None" else String.format(Locale.ROOT,
@@ -240,14 +269,61 @@ class BootstrapScreen(
         evidence.record("resize", mapOf("width" to width, "height" to height, "screenX" to viewport.screenX,
             "screenY" to viewport.screenY, "screenWidth" to viewport.screenWidth, "screenHeight" to viewport.screenHeight))
     }
-    override fun pause() { paused = true; accumulator = 0.0; evidence.record("pause", emptyMap()) }
-    override fun resume() { paused = false; accumulator = 0.0; evidence.record("resume", emptyMap()) }
+    override fun pause() {
+        if (disposed) return
+        paused = true
+        accumulator = 0.0
+        stage.cancelTouchFocus(); stage.unfocusAll()
+        // Release GL and native buffers on the GL thread before Android suspends it.
+        // A later non-finishing Activity destroy can then close the host without GL calls.
+        if (touchControls) releasePresentation()
+        evidence.record("pause", emptyMap())
+    }
+
+    override fun resume() {
+        if (disposed) return
+        if (touchControls && !presentationReady) {
+            try {
+                createPresentation()
+                graphics = session?.let { SandboxGraphics.load(it.scenario, activeRoot) }
+            } catch (failure: Exception) {
+                leaveMatch()
+                releasePresentation()
+                failLoad(failure)
+                throw failure
+            }
+        }
+        paused = false
+        accumulator = 0.0
+        evidence.record("resume", emptyMap())
+    }
+
+    fun destroyPausedHost() {
+        check(!presentationReady || disposed) { "Release presentation on the GL thread before Android host destruction" }
+        dispose()
+    }
+
+    private fun releasePresentation() {
+        if (!presentationReady) return
+        presentationReady = false
+        Gdx.input.inputProcessor = null
+        val closingGraphics = graphics; graphics = null
+        listOf<() -> Unit>({ closingGraphics?.close() }, { stage.dispose() }, { skin.dispose() },
+            { shapes.dispose() }, { batch.dispose() }).forEach { cleanup ->
+            try { cleanup() } catch (failure: Exception) {
+                Gdx.app.error("p001-presentation", "Cleanup failed", failure)
+                try { evidence.record("cleanup-error", mapOf("message" to failure.toString())) }
+                catch (diagnostic: Exception) { Gdx.app.error("p001-presentation", "Cannot record cleanup failure", diagnostic) }
+            }
+        }
+        evidence.record("presentation-released", emptyMap())
+    }
 
     override fun dispose() {
+        if (disposed) return
+        disposed = true
         Gdx.input.inputProcessor = null
-        listOf<() -> Unit>({ leaveMatch() }, { loader.close() }, { if (::stage.isInitialized) stage.dispose() },
-            { if (::skin.isInitialized) skin.dispose() }, { if (::shapes.isInitialized) shapes.dispose() },
-            { if (::batch.isInitialized) batch.dispose() }).forEach { cleanup ->
+        listOf<() -> Unit>({ leaveMatch() }, { loader.close() }, { releasePresentation() }).forEach { cleanup ->
             try { cleanup() } catch (failure: Exception) { Gdx.app.error("p001-dispose", "Cleanup failed", failure) }
         }
         evidence.record("application-disposed", emptyMap())

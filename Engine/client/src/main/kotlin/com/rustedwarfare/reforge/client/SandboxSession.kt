@@ -37,16 +37,22 @@ class SandboxSession(val scenario: Scenario, private val evidence: ClientEvidenc
     }
 
     fun select(position: Position) {
-        selectedId = observation.units.lastOrNull {
+        selectedId = unitAt(position)
+        selectedId?.let { apply(SelectAction("click-${++actionNumber}", "p1", it, context.world)) }
+        feedback = selectedId?.let { "Selected $it" } ?: "No selection"
+        evidence.record("selection", mapOf("selectedId" to selectedId, "world" to position.fields()))
+    }
+
+    fun tap(position: Position) {
+        if (unitAt(position) != null) select(position) else move(position)
+    }
+
+    private fun unitAt(position: Position): String? = observation.units.lastOrNull {
             val radius = scenario.unitDefinitions.getValue(it.typeId).displayRadius
             val dx = it.position.x - position.x
             val dy = it.position.y - position.y
             dx * dx + dy * dy <= radius * radius
         }?.unitId
-        selectedId?.let { apply(SelectAction("click-${++actionNumber}", "p1", it, context.world)) }
-        feedback = selectedId?.let { "Selected $it" } ?: "No selection"
-        evidence.record("selection", mapOf("selectedId" to selectedId, "world" to position.fields()))
-    }
 
     private fun apply(action: Action): ActionResult {
         capture("before-action")

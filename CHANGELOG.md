@@ -1,5 +1,70 @@
 # Changelog
 
+## v0.1.4 (2026-10-17 18:50)
+
+### 新增
+
+- **Android 离线触控沙盒**：共享客户端新增 `touchControls` 入口，点单位单选、点地面向所选单位移动并保留选择、`Stop` 停止、`Exit match` 退出、`Reopen` 重开；移动与权限仍由核心裁决，无控制者单位返回 `not-owner`。
+  - 与 Windows 共用同一套核心指令、停止与重开逻辑，不新写平台玩法。
+  - 实测环境为 MuMu index 0（Android 15 / SDK 35 / x86_64），**不代表真机、其他 ABI 或性能结论**。
+- **Android 生命周期处理**：后台暂停时在 GL 线程释放局内绘制、UI 与原生缓冲并保留模拟上下文；恢复重建表现、不补算后台时间；销毁（含非 finishing 的 Activity 重建）关闭核心与内容加载器，不保存对局。平台线程不允许释放仍活跃的 GL 资源。
+- **设备侧测试与诊断**：新增 `AndroidEvidence` 写入应用外部私有目录的 JSONL 诊断流（非正式轨迹协议）；新增 `XmlSecurityInstrumentation` 在设备上验证合法 TMX/TSX/INI、UTF-8/UTF-16 DTD 拒绝及 `Activity.recreate()` 关闭旧宿主并建新局。
+- **规则比较器**：`SimulationTest` 新增 `compare` 子命令与 `TraceComparator`/`TraceFiles`，按固定契约求值自身规则并比较两份归档，输出首处分歧（`ruleId`/`path`/`expected`/`actual`）、原始行号与前后状态。
+  - 退出码区分：0 契约通过、2 断言失败、3 证据不足、4 执行失败、64 输入/身份错误；所有结果标记 `originalCompatibility=false`。
+  - 空规则、条件未触发、缺步/缺字段/截断/崩溃均不通过；数值按十进制精确比较，不启用未批准容差。
+  - 支持 `equals`、`absent-or-null`、`contains` 三种断言与 `action-accepted`/`action-rejected` 条件定位。
+
+### 修复
+
+- **Android XML 解析安全加固**：现象为 Android 的 `DocumentBuilderFactory` 缺少 JDK 的 DOCTYPE/外部实体安全特性开关；根因是桌面与 Android 平台 XML 工厂能力不一致。
+  - 改为先用 fail-closed SAX 守卫校验同一字节流（`startDTD`、`resolveEntity` 直接拒绝），再用 DOM 构建；启用 UTF-8/UTF-16 编码一致处理。
+  - 新增桌面 `XmlSecurityTest` 与设备侧检查，覆盖内部实体、外部 DTD 与外部实体三种拒绝路径，并验证合法输入仍可加载。
+
+### 调整
+
+- **客户端边界**：`SandboxSession` 增加 `tap` 与 `unitAt`，触控与鼠标共用选择/移动判定；`BootstrapScreen` 增加表现资源幂等释放、暂停/恢复重建与 `destroyPausedHost` 守卫。
+- **Android 资产**：新增 `StageSandboxAssets` 任务，经 Variant API 把 7 个本机批准文件按原字节与相对路径放入 APK assets；启动时解出到应用私有目录再交给共享加载器。
+
+### 技术
+
+- **验证记录**：Android 票记录 62 核心 + 13 客户端测试、APK 实机操作与 Windows 共用回归；比较器票记录 86 项测试、18 项文件级案例与 16 项 CLI 复验；均 0 失败/错误/跳过。
+- **公开复现限制**：APK 构建依赖本机 `TestLab` 样本与原版图像，公开克隆会明确失败；`SimulationTest` 比较器与夹具同样依赖未公开资产。**APK 含原版素材，不得作为公开包或分发物**。
+- **未覆盖边界**：真机、其他 ABI/Android 版本、长期后台存活、原版兼容、原版参考器、联网、性能与安全效果均未验证；Android 票人工验收仍未完成。
+
+### 文件变更表
+
+| 文件 | 变更 |
+|---|---|
+| [AndroidManifest.xml](<Engine/android/src/main/AndroidManifest.xml>) | 锁定横屏 |
+| [build.gradle.kts](<Engine/android/build.gradle.kts>) | 新增测试素材暂存任务与 instrumentation runner |
+| [AndroidLauncher.kt](<Engine/android/src/main/kotlin/com/rustedwarfare/reforge/android/AndroidLauncher.kt>) | 接入触控沙盒、资产解出与生命周期清理 |
+| [AndroidEvidence.kt](<Engine/android/src/main/kotlin/com/rustedwarfare/reforge/android/AndroidEvidence.kt>) | **新增** — 设备诊断 JSONL |
+| [SandboxAssets.kt](<Engine/android/src/main/kotlin/com/rustedwarfare/reforge/android/SandboxAssets.kt>) | **新增** — assets 解出到私有目录 |
+| [XmlSecurityInstrumentation.kt](<Engine/android/src/androidTest/kotlin/com/rustedwarfare/reforge/android/XmlSecurityInstrumentation.kt>) | **新增** — 设备侧 XML 安全与重建测试 |
+| [android/README.md](<Engine/android/README.md>) | 更新操作、生命周期、资产与证据边界 |
+| [BootstrapScreen.kt](<Engine/client/src/main/kotlin/com/rustedwarfare/reforge/client/BootstrapScreen.kt>) | 触控入口、表现释放与暂停恢复 |
+| [SandboxSession.kt](<Engine/client/src/main/kotlin/com/rustedwarfare/reforge/client/SandboxSession.kt>) | 新增 `tap`/`unitAt` |
+| [TouchSessionTest.kt](<Engine/client/src/test/kotlin/com/rustedwarfare/reforge/client/TouchSessionTest.kt>) | **新增** — 3 项触控测试 |
+| [client/README.md](<Engine/client/README.md>) | 更新触控与生命周期说明 |
+| [XmlReaderSupport.kt](<Engine/core/src/main/kotlin/com/rustedwarfare/reforge/core/content/internal/XmlReaderSupport.kt>) | 改为 SAX 守卫加 DOM 构建 |
+| [XmlSecurityTest.kt](<Engine/core/src/test/kotlin/com/rustedwarfare/reforge/core/content/XmlSecurityTest.kt>) | **新增** — DTD/实体拒绝测试 |
+| [Main.kt](<SimulationTest/src/main/kotlin/com/rustedwarfare/reforge/testing/Main.kt>) | 新增 `compare` 子命令 |
+| [Runner.kt](<SimulationTest/src/main/kotlin/com/rustedwarfare/reforge/testing/Runner.kt>) | 采集后接入真实求值 |
+| [RunArchive.kt](<SimulationTest/src/main/kotlin/com/rustedwarfare/reforge/testing/RunArchive.kt>) | 记录内存副本与标准化抽取 |
+| [ScenarioReader.kt](<SimulationTest/src/main/kotlin/com/rustedwarfare/reforge/testing/ScenarioReader.kt>) | 保留文档副本与声明校验 |
+| [ScenarioDeclaration.kt](<SimulationTest/src/main/kotlin/com/rustedwarfare/reforge/testing/ScenarioDeclaration.kt>) | **新增** — 场景声明校验 |
+| [TraceComparator.kt](<SimulationTest/src/main/kotlin/com/rustedwarfare/reforge/testing/TraceComparator.kt>) | **新增** — 规则求值与首差异 |
+| [TraceFiles.kt](<SimulationTest/src/main/kotlin/com/rustedwarfare/reforge/testing/TraceFiles.kt>) | **新增** — 归档比较入口 |
+| [TraceNormalization.kt](<SimulationTest/src/main/kotlin/com/rustedwarfare/reforge/testing/TraceNormalization.kt>) | **新增** — 轨迹标准化 |
+| [ComparisonTest.kt](<SimulationTest/src/test/kotlin/com/rustedwarfare/reforge/testing/ComparisonTest.kt>) | **新增** — 13 项比较测试 |
+| [ComparisonEvidenceTest.kt](<SimulationTest/src/test/kotlin/com/rustedwarfare/reforge/testing/ComparisonEvidenceTest.kt>) | **新增** — T01–T03 夹具生成 |
+| [RunnerTest.kt](<SimulationTest/src/test/kotlin/com/rustedwarfare/reforge/testing/RunnerTest.kt>) | 更新空规则退出码断言 |
+| [tools/verify-comparison.ps1](<SimulationTest/tools/verify-comparison.ps1>) | **新增** — 比较端到端核验 |
+| [tools/verify-isolated-comparison.ps1](<SimulationTest/tools/verify-isolated-comparison.ps1>) | **新增** — 隔离构建与 CLI 核验 |
+| [SimulationTest/README.md](<SimulationTest/README.md>) | 更新比较器、退出码与边界 |
+
+---
+
 ## v0.1.3 (2026-10-17 17:41)
 
 ### 新增

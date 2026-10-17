@@ -11,22 +11,24 @@ import java.time.format.DateTimeFormatter
 import java.util.UUID
 import kotlin.system.exitProcess
 
-private const val usage = "simulation-test run --scenario <file> --contract <file> --output <topic-directory> --mode self [--timeout-ms <positive-integer>] [--cancel-file <file>]"
+private const val usage = "simulation-test run --scenario <file> --contract <file> --output <topic-directory> --mode self [--timeout-ms <positive-integer>] [--cancel-file <file>]\nsimulation-test compare --scenario <file> --contract <file> --actual <archive> [--expected <archive>] --output <topic-directory> --mode self"
 
 fun main(args: Array<String>) {
     System.setOut(PrintStream(FileOutputStream(FileDescriptor.out), true, Charsets.UTF_8))
     System.setErr(PrintStream(FileOutputStream(FileDescriptor.err), true, Charsets.UTF_8))
     if (args.contentEquals(arrayOf("--help"))) { println(usage); return }
-    if (args.contentEquals(arrayOf("--version"))) { println("simulation-test schemaVersion=1 ticket=TEST-P001-002"); return }
+    if (args.contentEquals(arrayOf("--version"))) { println("simulation-test schemaVersion=1 ticket=TEST-P001-003"); return }
     val options = try {
-        if (args.firstOrNull() != "run" || args.size % 2 != 1) throw InputError("Expected run and option/value pairs")
+        if (args.firstOrNull() !in setOf("run", "compare") || args.size % 2 != 1) throw InputError("Expected run/compare and option/value pairs")
         val entries = args.drop(1).chunked(2)
-        val allowed = setOf("--scenario", "--contract", "--output", "--mode", "--timeout-ms", "--cancel-file")
+        val allowed = setOf("--scenario", "--contract", "--output", "--mode") +
+            if (args[0] == "run") setOf("--timeout-ms", "--cancel-file") else setOf("--actual", "--expected")
         if (entries.any { it[0] !in allowed || it[1].isBlank() } || entries.map { it[0] }.distinct().size != entries.size) {
             throw InputError("Unknown or duplicate option")
         }
         entries.associate { it[0] to it[1] }.also {
             listOf("--scenario", "--contract", "--output", "--mode").forEach { key -> if (key !in it) throw InputError("Missing $key") }
+            if (args[0] == "compare" && "--actual" !in it) throw InputError("Missing --actual")
             if (it["--mode"] != "self") throw InputError("Only --mode self is supported")
         }
     } catch (failure: InputError) { System.err.println("${failure.message}\n$usage"); exitProcess(64) }
@@ -37,6 +39,17 @@ fun main(args: Array<String>) {
     val stamp = DateTimeFormatter.ofPattern("yyyyMMdd'T'HHmmssSSS'Z'").withZone(ZoneOffset.UTC).format(Instant.now())
     try {
         val output = Path.of(options.getValue("--output")).resolve("run-$stamp-${UUID.randomUUID().toString().take(8)}")
+        if (args[0] == "compare") {
+            val result = TraceFiles.compare(Path.of(options.getValue("--scenario")), Path.of(options.getValue("--contract")),
+                Path.of(options.getValue("--actual")), options["--expected"]?.let(Path::of))
+            Files.createDirectories(output.parent)
+            Files.createDirectory(output)
+            Files.createDirectory(output.resolve("comparison"))
+            Files.writeString(output.resolve("comparison/result.json"), result.document.toString(), java.nio.file.StandardOpenOption.CREATE_NEW)
+            Files.writeString(output.resolve("command.json"), record("comparison-command", "argv" to array((listOf("simulation-test") + args).map(::s))).toString(), java.nio.file.StandardOpenOption.CREATE_NEW)
+            println("${result.status}: ${output.toAbsolutePath().normalize()}")
+            exitProcess(result.exitCode)
+        }
         val cancel = options["--cancel-file"]?.let(Path::of)
         val result = Runner.run(RunRequest(Path.of(options.getValue("--scenario")), Path.of(options.getValue("--contract")),
             output, listOf("simulation-test") + args.toList(), timeout,

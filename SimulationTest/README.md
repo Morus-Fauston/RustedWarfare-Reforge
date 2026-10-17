@@ -18,7 +18,25 @@
 
 `--output` 指定主题目录，每次新建 `run-<UTC毫秒时间>-<随机后缀>/`，不覆盖旧批次。CLI 标准输出/错误和归档文件均为 UTF-8。默认在显式边界检查 120000 毫秒协作式超时，可用 `--timeout-ms` 指定正整数；`--cancel-file` 存在时在下一边界取消。超时不改变模拟步长，也不能抢占正在执行的单次核心调用或磁盘 IO。操作系统强杀、断电和磁盘不可写可能留下无结束记录的批次，必须按不完整证据处理，不能据此通过。
 
-本票仅实现**采集链**。采集完整时 `collectionStatus=collected`、`complete=true`，但 `status=evidence-insufficient`、退出码 **3**，`comparison/result.json` 明确 `not-evaluated`；不会因空规则、自身重复一致或采集成功返回契约通过。比较器由 TEST-P001-003 实现。输入/版本/身份错误退出 64；核心/内容加载失败和超时退出 4；取消或采集数据不足退出 3。参数语法错误直接输出诊断，不创建虚假的游戏批次。
+TEST-P001-003 已接入规则求值。采集完整后，`comparison/result.json` 输出真实判定：0 自身契约通过、2 断言失败、3 证据不足、4 执行失败、64 输入/版本/身份错误。`complete=true` 只代表采集完成；空规则和未触发规则仍为 3，现有 `record-chain` 的空规则夹具也仍为 3。参数语法错误直接输出诊断，不创建虚假的游戏批次。所有结果均标记 `originalCompatibility=false`。
+
+## 规则与轨迹比较（TEST-P001-003）
+
+规则支持 `equals`、`absent-or-null`、`contains`（数组元素或事件 kind）；无 `when` 时逐观测检查，可用接口 v1 的 `action-accepted` / `action-rejected` 加可选 `actionKind` 条件定位动作后的观测。`units.<完整单位ID>.<字段>` 可使用标准化 `owner/type/movementState`，含点 ID 按最长完整身份绑定。无法绑定单位/中间路径是证据不足；只有已绑定对象的叶字段适用“缺失或 null”。条件一次也未触发不会通过。
+
+比较仅支持 `scope=self-behavior`，工具夹具的 `approval.status=tool-fixture-only` 或已接收契约的 `accepted`，且必须排除 `original-compatibility`。这些值是本工具支持的实例格式，不自动确认任何契约。`comparison.numberMode=declared-per-field`、`tolerances={}`，可显式声明 `eventOrder=strict-record-and-array-order`；其他规则/策略/非零容差拒绝为 64。数值按十进制精确值比较：`1` 和 `1.0` 等价，微小真实差值不舍入；没有全局默认误差，也未实现任何尚未批准的容差算法。
+
+```powershell
+./build/install/simulation-test/bin/simulation-test.bat compare --scenario <固定场景> --contract <固定契约> --actual <归档目录> --expected <独立参考归档> --output <新比较主题目录> --mode self
+```
+
+`compare` 只读两个归档，输出新的 `run-*` 比较目录（判定和实际命令），不会运行核心或改参考。省略 `--expected` 时只检查自身规则，不声称轨迹等价。库入口为 `TraceFiles.compare(...)`；受控内存夹具入口为 `TraceComparator.evaluate(...)`。未连接原版参考器。
+
+文件比较先检查 manifest 必需信息、内容/场景/契约身份、输入副本、两层轨迹 SHA-256、JSONL 完整性及逐行标准化对应，再检查初态、逐步采样、动作生效边界/文件顺序、只读状态必要字段与事件导出。崩溃/超时为 4；缺步、对象、字段、完成信息、重复采样、截断、不完整或采集端 `evidence-insufficient` 为 3；版本/身份/不支持的输入为 64。后续数据缺失优先于前面的玩法差异，证据不足不伪造首处分歧。
+
+轨迹比较严格保留单位/玩家/世界/采样身份、动作和事件顺序及所有玩法字段，不猜测跨世界映射、不重采样、不排序或舍入。仅 `run-start` 的批次/墙钟信息和单独校验的 `run-end` 完成信息不参与玩法等价比较。首差异给出 `ruleId/path/expected/actual`、原始行号、原始和标准化记录，以及前后观测间的输入/状态/事件；规则期望来自固定契约，轨迹期望来自显式传入的独立归档。
+
+专项验证：`./tools/verify-comparison.ps1 -EvidenceDirectory <全新目录> -ControlledSuite <ComparisonEvidenceTest生成目录>`。纯字面量 T01-T03 归档可由 `ComparisonEvidenceTest` 生成；设置 `SIMULATION_COMPARISON_EVIDENCE=<不存在的目录>` 可留档，否则使用临时目录。它们仅为比较工具夹具，不是正式玩法场景或批准的原版基准。`verify-isolated-comparison.ps1` 将当前测试工具复制到私有 build 子目录并导出固定 HEAD 的 core，执行全量测试及打包 CLI，排除其他会话 Engine 改动；私有样本复制仅供本机测试，不进入分发包。
 
 ## 场景读取与核心边界
 

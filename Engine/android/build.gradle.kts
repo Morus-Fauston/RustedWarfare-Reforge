@@ -37,6 +37,24 @@ abstract class ExtractGdxAndroidNatives : DefaultTask() {
     }
 }
 
+abstract class StageSandboxAssets : DefaultTask() {
+    @get:InputFiles
+    abstract val inputFiles: ConfigurableFileCollection
+    @get:OutputDirectory
+    abstract val outputDirectory: DirectoryProperty
+
+    @TaskAction
+    fun stage() {
+        require(inputFiles.files.size == 7) { "Missing P001 test assets" }
+        val repository = project.rootProject.projectDir.parentFile
+        inputFiles.files.forEach { source ->
+            val target = outputDirectory.file("p001/" + source.relativeTo(repository).invariantSeparatorsPath).get().asFile
+            target.parentFile.mkdirs()
+            source.copyTo(target, overwrite = true)
+        }
+    }
+}
+
 android {
     namespace = "com.rustedwarfare.reforge.android"
     compileSdk = 34
@@ -53,6 +71,7 @@ android {
         targetSdk = 34
         versionCode = 1
         versionName = "0.1.0"
+        testInstrumentationRunner = "com.rustedwarfare.reforge.android.XmlSecurityInstrumentation"
     }
 
 }
@@ -70,8 +89,22 @@ val extractGdxAndroidNatives by tasks.registering(ExtractGdxAndroidNatives::clas
     outputDirectory.set(layout.buildDirectory.dir("gdx-natives"))
 }
 
+// Private P001 test assets only. Keep source bytes and relative references intact.
+val stageSandboxAssets by tasks.registering(StageSandboxAssets::class) {
+    inputFiles.from(fileTree(rootProject.projectDir.parentFile) {
+        include("TestLab/local/P001-移动沙盒输入/maps/p001-controlled.tmx")
+        include("TestLab/local/P001-移动沙盒输入/tilesets/*.tsx")
+        include("TestLab/local/P001-移动沙盒输入/units/weaponless_tank.ini")
+        include("Rusted Warfare/assets/tilesets/bitmaps/longgrass.png")
+        include("Rusted Warfare/assets/tilesets/bitmaps/mountain.png")
+        include("Rusted Warfare/assets/units/tanks/tank.png")
+    })
+    outputDirectory.set(layout.buildDirectory.dir("sandbox-assets"))
+}
+
 androidComponents {
     onVariants(selector().all()) { variant ->
+        variant.sources.assets?.addGeneratedSourceDirectory(stageSandboxAssets, StageSandboxAssets::outputDirectory)
         variant.sources.jniLibs?.addGeneratedSourceDirectory(
             extractGdxAndroidNatives,
             ExtractGdxAndroidNatives::outputDirectory,

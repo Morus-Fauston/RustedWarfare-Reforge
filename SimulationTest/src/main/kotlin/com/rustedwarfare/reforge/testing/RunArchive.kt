@@ -11,6 +11,7 @@ internal class RunArchive(val path: Path) : AutoCloseable {
     private val raw: BufferedWriter
     private val normalized: BufferedWriter
     private var lineNumber = 0
+    val records = mutableListOf<JsonObject>()
     init {
         Files.createDirectories(path.parent)
         Files.createDirectory(path) // Refuse even an existing empty batch.
@@ -20,27 +21,10 @@ internal class RunArchive(val path: Path) : AutoCloseable {
     }
     fun write(record: JsonObject, input: LoadedScenario? = null) {
         raw.write(record.toString()); raw.newLine(); raw.flush()
+        records += record
         lineNumber++
-        val fields = record.toMutableMap()
-        fields["source"] = obj("path" to s("reforge/raw.jsonl"), "line" to n(lineNumber))
-        fields["layer"] = s("normalized-gameplay")
-        if (input != null) {
-            fields["coordinateModel"] = s(input.core.coordinateModel.id)
-            fields["timeModel"] = s(input.core.timeModel.id)
-            fields["angleUnit"] = s("degree-clockwise-zero-up")
-        }
-        val observation = record["observation"] as? JsonObject
-        if (observation != null) {
-            fields["observation"] = JsonObject(observation + ("units" to array(observation.arrayAt("units").map { value ->
-                val unit = value.jsonObject
-                JsonObject(unit + mapOf(
-                    "owner" to unit.required("ownerPlayerId"), "type" to unit.required("typeId"),
-                    "movementState" to s(unit.text("movementState").lowercase()),
-                    "rawMovementState" to unit.required("movementState"),
-                ))
-            })))
-        }
-        normalized.write(JsonObject(fields).toString()); normalized.newLine(); normalized.flush()
+        normalized.write(normalizeRecord(record, lineNumber, input?.core?.coordinateModel?.id, input?.core?.timeModel?.id).toString())
+        normalized.newLine(); normalized.flush()
     }
     fun observation(value: Observation, phase: String, input: LoadedScenario) {
         write(record("observation", "phase" to s(phase), "observation" to value.json()), input)

@@ -14,7 +14,7 @@ class RunnerTest {
     @Test fun `real core records initial state commands steps and both trace layers`() {
         val output = Files.createTempDirectory("simulation-test-").resolve("run")
         val result = Runner.run(RunRequest(fixture, contract, output, listOf("test", "run")))
-        assertEquals(3, result.exitCode) // No rule comparator in this ticket.
+        assertEquals(3, result.exitCode) // The collection-only fixture deliberately has no assertions.
         val manifest = Json.parseToJsonElement(output.resolve("manifest.json").readText()).jsonObject
         assertEquals("collected", manifest["collectionStatus"]?.jsonPrimitive?.content)
         val raw = output.resolve("reforge/raw.jsonl").readLines().map { Json.parseToJsonElement(it).jsonObject }

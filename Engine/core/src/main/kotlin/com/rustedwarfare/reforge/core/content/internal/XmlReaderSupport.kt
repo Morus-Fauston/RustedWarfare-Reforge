@@ -6,33 +6,49 @@ import java.io.IOException
 import java.nio.file.Files
 import java.nio.file.InvalidPathException
 import java.nio.file.Path
-import javax.xml.XMLConstants
 import javax.xml.parsers.DocumentBuilderFactory
+import javax.xml.parsers.SAXParserFactory
 import org.w3c.dom.Element
 import org.w3c.dom.Node
 import org.xml.sax.SAXException
 import org.xml.sax.SAXParseException
-import org.xml.sax.helpers.DefaultHandler
+import org.xml.sax.InputSource
+import org.xml.sax.ext.DefaultHandler2
+import java.io.ByteArrayInputStream
 
 internal fun readXml(path: Path): Element {
-    val factory = DocumentBuilderFactory.newInstance()
-    factory.isNamespaceAware = true
-    factory.setFeature(XMLConstants.FEATURE_SECURE_PROCESSING, true)
-    factory.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true)
-    factory.setFeature("http://xml.org/sax/features/external-general-entities", false)
-    factory.setFeature("http://xml.org/sax/features/external-parameter-entities", false)
-    factory.setFeature("http://apache.org/xml/features/nonvalidating/load-external-dtd", false)
-    factory.setAttribute(XMLConstants.ACCESS_EXTERNAL_DTD, "")
-    factory.setAttribute(XMLConstants.ACCESS_EXTERNAL_SCHEMA, "")
-    factory.isXIncludeAware = false
-    factory.isExpandEntityReferences = false
-    val builder = factory.newDocumentBuilder()
-    builder.setErrorHandler(object : DefaultHandler() {
-        override fun error(exception: SAXParseException) { throw exception }
-        override fun fatalError(exception: SAXParseException) { throw exception }
-    })
     return try {
-        Files.newInputStream(path).use { builder.parse(it).documentElement }
+        val bytes = Files.readAllBytes(path)
+        // Android's DOM factory lacks the JDK security feature flags. Validate the
+        // exact same bytes with a fail-closed SAX DTD guard before building a DOM.
+        val guard = object : DefaultHandler2() {
+            override fun startDTD(name: String?, publicId: String?, systemId: String?) {
+                throw SAXException("DOCTYPE is not supported")
+            }
+            override fun resolveEntity(publicId: String?, systemId: String?): InputSource {
+                throw SAXException("External entities are not supported")
+            }
+            override fun error(exception: SAXParseException) { throw exception }
+            override fun fatalError(exception: SAXParseException) { throw exception }
+        }
+        val reader = SAXParserFactory.newInstance().apply { isNamespaceAware = true; isValidating = false }
+            .newSAXParser().xmlReader
+        reader.setFeature("http://xml.org/sax/features/external-general-entities", false)
+        reader.setFeature("http://xml.org/sax/features/external-parameter-entities", false)
+        reader.setProperty("http://xml.org/sax/properties/lexical-handler", guard)
+        reader.entityResolver = guard
+        reader.errorHandler = guard
+        reader.parse(InputSource(ByteArrayInputStream(bytes)))
+
+        val builder = DocumentBuilderFactory.newInstance().apply {
+            isNamespaceAware = true
+            isValidating = false
+            // XInclude is off by default; Android does not implement its setter.
+            isExpandEntityReferences = false
+        }.newDocumentBuilder()
+        builder.setEntityResolver(guard)
+        builder.setErrorHandler(guard)
+        builder.parse(ByteArrayInputStream(bytes)).documentElement
     } catch (failure: SAXException) {
         reject(ContentErrorCode.MALFORMED_SYNTAX, path, reason = failure.message ?: "Malformed XML")
     } catch (failure: IOException) {

@@ -20,6 +20,8 @@ internal data class LoadedScenario(
     val contractIdentity: InputIdentity,
     val coordinate: JsonObject,
     val time: JsonObject,
+    val scenarioDocument: JsonObject,
+    val contractDocument: JsonObject,
 )
 
 internal object ScenarioReader {
@@ -33,8 +35,11 @@ internal object ScenarioReader {
         val source = scenarioPath.toAbsolutePath().normalize()
         val contractFile = contractPath.toAbsolutePath().normalize()
         if (!Files.isRegularFile(scenarioSnapshot) || !Files.isRegularFile(contractSnapshot)) throw InputError("Missing scenario or contract file")
-        val input = readObject(scenarioSnapshot).also { it.header("scenario") }
-        val contract = readObject(contractSnapshot).also { it.header("behavior-contract") }
+        val scenarioText = Files.readString(scenarioSnapshot)
+        val contractText = Files.readString(contractSnapshot)
+        val input = (json.parseToJsonElement(scenarioText) as? JsonObject ?: throw InputError("Expected scenario object")).also { it.header("scenario") }
+        ScenarioDeclaration.validate(input)
+        val contract = (json.parseToJsonElement(contractText) as? JsonObject ?: throw InputError("Expected contract object")).also { it.header("behavior-contract") }
         val scenarioId = input.id("scenarioId")
         if (contract.text("scope") != "self-behavior" ||
             contract.arrayAt("scenarioIds").none { it is JsonPrimitive && it.isString && it.content == scenarioId }) {
@@ -110,8 +115,9 @@ internal object ScenarioReader {
             }
         }
         return LoadedScenario(core, actions, steps, identities,
-            InputIdentity(scenarioId, source, sha256(scenarioSnapshot)),
-            InputIdentity(contract.id("contractId"), contractFile, sha256(contractSnapshot)), coordinate, time)
+            InputIdentity(scenarioId, source, digest(scenarioText.toByteArray(Charsets.UTF_8))),
+            InputIdentity(contract.id("contractId"), contractFile, digest(contractText.toByteArray(Charsets.UTF_8))), coordinate, time,
+            input, contract)
     }
 
     private fun verifyXmlReferences(path: Path, allowed: Set<Path>, visited: MutableSet<Path>) {

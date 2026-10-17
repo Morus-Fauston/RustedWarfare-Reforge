@@ -28,6 +28,9 @@ object Runner {
         var status = "execution-failed"
         var exitCode = 4
         var error: String? = null
+        var judgment: Judgment? = null
+        var contract: JsonObject? = null
+        var scenario: JsonObject? = null
         val output = request.output.toAbsolutePath().normalize()
         RunArchive(output).use { archive ->
             archive.write(record("run-start", "runId" to s(output.fileName.toString()), "startedAt" to s(started.toString())))
@@ -37,6 +40,9 @@ object Runner {
                 loaded = ScenarioReader.load(request.scenario, request.contract,
                     output.resolve("inputs/scenario.json"), output.resolve("inputs/contract.json"))
                 val input = loaded
+                contract = input.contractDocument
+                scenario = input.scenarioDocument
+                TraceComparator.validateContract(scenario, contract)
                 required = input.steps.size
                 if (sha256(output.resolve("inputs/scenario.json")) != input.scenarioIdentity.sha256 ||
                     sha256(output.resolve("inputs/contract.json")) != input.contractIdentity.sha256) {
@@ -69,10 +75,20 @@ object Runner {
                 }
                 checkExecution()
                 if (input.identities.any { sha256(it.path) != it.sha256 }) throw InputError("Content changed during execution")
+                if (sha256(output.resolve("inputs/scenario.json")) != input.scenarioIdentity.sha256 ||
+                    sha256(output.resolve("inputs/contract.json")) != input.contractIdentity.sha256 ||
+                    sha256(request.scenario) != input.scenarioIdentity.sha256 || sha256(request.contract) != input.contractIdentity.sha256) {
+                    throw InputError("Scenario/contract input identity changed during execution")
+                }
                 collectionStatus = "collected"
-                status = "evidence-insufficient"
-                exitCode = 3
-                error = "Rule evaluator is not implemented in TEST-P001-002; collection alone cannot pass a contract"
+                // Validate the completed capture in memory before writing its final judgment/footer.
+                val completion = record("run-end", "status" to s("completed"), "exitCode" to n(0),
+                    "observedSteps" to n(observed), "requiredSteps" to n(required), "complete" to b(true))
+                judgment = TraceComparator.evaluate(scenario, contract,
+                    archive.records + completion)
+                status = judgment.status
+                exitCode = judgment.exitCode
+                error = (judgment.document["reason"] as? JsonPrimitive)?.content
             } catch (failure: RunCancelled) {
                 Thread.interrupted() // Clear the flag so evidence IO can finish after cooperative cancellation.
                 status = "cancelled"; exitCode = 3; error = "Cancellation requested at an explicit boundary"
@@ -89,11 +105,8 @@ object Runner {
             archive.write(record("run-end", "status" to s(status), "exitCode" to n(exitCode),
                 "observedSteps" to n(observed), "requiredSteps" to n(required), "complete" to b(complete),
                 "collectionStatus" to s(collectionStatus), "error" to error?.let(::s)), loaded)
-            val references = array(listOf(s("reforge/raw.jsonl"), s("reforge/normalized.jsonl")))
-            archive.document("comparison/result.json", record("judgment", "result" to s(status),
-                "firstDivergence" to JsonNull, "ruleId" to JsonNull, "path" to JsonNull,
-                "expected" to JsonNull, "actual" to JsonNull, "comparison" to s("not-evaluated"),
-                "evidenceRefs" to references, "reason" to error?.let(::s)))
+            archive.document("comparison/result.json", (judgment ?: TraceComparator.judgment(exitCode, status,
+                contract, if (exitCode == 64) "input-error" else status, reason = error)).document)
             archive.document("logs/execution.json", record("execution-log", "command" to array(request.command.map(::s)),
                 "workingDirectory" to s(Path.of("").toAbsolutePath().toString()),
                 "exitCode" to n(exitCode), "error" to error?.let(::s)))
@@ -116,7 +129,7 @@ object Runner {
                 }),
                 "commands" to array(listOf(array(request.command.map(::s)))),
                 "coverage" to obj("initialStateChecked" to b(initialStateChecked), "observedSteps" to n(observed),
-                    "requiredSteps" to n(required), "ruleEvaluation" to b(false), "originalCompatibility" to b(false)),
+                    "requiredSteps" to n(required), "ruleEvaluation" to b(judgment != null), "originalCompatibility" to b(false)),
                 "traceFiles" to array(listOf("reforge/raw.jsonl", "reforge/normalized.jsonl").map {
                     obj("path" to s(it), "sha256" to s(sha256(output.resolve(it))))
                 }),
