@@ -14,4 +14,24 @@
 
 当前已建立 Gradle Wrapper 9.3.1、Kotlin 2.3.20、AGP 9.1.1 工程基线，包含 core/client/pc/android 四个模块；server 暂仅说明。JDK 25 执行构建，共享 JVM 模块和 PC 生成 Java 17 字节码，Android 采用 Java 17 编译目标。未引入原版运行时。
 
-从本目录执行 `./gradlew.bat :core:test --rerun-tasks --no-daemon` 核验最小核心启动测试，执行 `./gradlew.bat :android:assembleDebug --no-daemon` 验证 Android 包装。共享客户端已有 libGDX 1.13.1 工程状态页，Android 已注册应用列表启动入口并接入后端和原生库；PC 仍无应用入口，双方都没有移动玩法。设备启动和绘制需另行验收，构建不证明可操作沙盒通过。
+## 当前实现
+
+- `core` 已提供有限 INI/TMX/TSX 加载、无画面移动模拟、指令权限、静态绕障与真实地形碰撞；另有玩家地形知识、记忆／遗忘、所属玩家知识规划、可信宿主投影触发的自动重规划及默认关闭的搜索诊断。
+- `client` 共用 libGDX 1.13.1 表现与输入；Windows 和 Android 已有一期离线移动沙盒入口，支持单选、移动、停止、退出和重开。平台操作及限制分别见 [Windows](<pc/README.md>) 与 [Android](<android/README.md>)，不能用构建成功代替操作验收。
+- Windows 另有已交付的[50单位寻路与迷雾Demo](<pc/DEMO.md>)，运行 `pc/run-demo.cmd`；使用自有地图和资源，圆形无遮挡视野与地形记忆仅为演示规则。该入口不依赖内部一期地图，不代表Android或整期视野规则完成。
+- 二期的自动视野生产、盟友视野合成、完整双平台迷雾呈现仍未完成。原版参考器属于 [Decompile 工具线](<../Decompile/README.md>)，不是核心运行时依赖；现有切片不代表原版兼容、真机、网络、容量或安全验收。
+
+## 构建与测试
+
+以下命令在 `Engine/` 目录执行，要求 JDK 25；配置工程还需要 Android SDK（见 [Android 配置](<android/README.md>)）：
+
+```powershell
+./gradlew.bat :core:compileKotlin :client:compileKotlin :pc:installDist --no-daemon
+./gradlew.bat :core:test :client:test --no-daemon
+./gradlew.bat :pc:run --no-daemon
+./gradlew.bat :android:assembleDebug --no-daemon
+```
+
+`core` 和 `client` 的部分测试、默认一期客户端运行以及 Android 的内部样本打包依赖本机 `TestLab/local/P001-移动沙盒输入` 与原图；这些文件不在公开仓库。公开克隆缺件时不能直接跑完整测试或受控样本，缺件失败不等于测试通过，也不能上传原版素材来补齐公开构建。Windows显式Demo入口使用自有资源。仅源码编译／分发目录生成不证明样本可运行。
+
+本仓库当前以 Windows/JVM 和指定 MuMu 模拟器作为已记录开发环境，未据此验证其他桌面系统、Android 真机或全部 ABI。完整自身行为与性能工具入口见 [SimulationTest](<../SimulationTest/README.md>)。

@@ -34,6 +34,7 @@ public final class GbootBootstrap {
     private static boolean backendPublished;
     private static SharedPreferences platformSettings;
     private static Path platformSettingsDirectory;
+    private static volatile android.content.res.AssetManager packagedAssetIndexManager;
 
     private GbootBootstrap() { }
 
@@ -279,6 +280,66 @@ public final class GbootBootstrap {
     public static String checkPrivateDirectory(String path) {
         LATCH.check();
         return checked(path, PrivatePathPolicy.Access.LIST);
+    }
+
+    public static synchronized void bindPackagedAssetIndex(Context context) {
+        LATCH.check();
+        requireRootsReady();
+        try {
+            if (context == null)
+                throw LATCH.trip("invalid-context", "Index Context is required", null);
+            if (context.getApplicationContext() != application)
+                throw LATCH.trip("context-mismatch", "Index ApplicationContext changed", null);
+            android.content.res.AssetManager candidate = context.getAssets();
+            if (candidate == null)
+                throw LATCH.trip("asset-manager-mismatch", "Index assets are required", null);
+            if (packagedAssetIndexManager != null && packagedAssetIndexManager != candidate)
+                throw LATCH.trip("asset-manager-mismatch", "Index assets changed", null);
+            LATCH.check();
+            packagedAssetIndexManager = candidate;
+        } catch (FatalLatch.Failure error) {
+            throw error;
+        } catch (RuntimeException error) {
+            throw LATCH.trip("io-error", "Cannot bind index assets", error);
+        }
+    }
+
+    public static String[] listPackagedAssets(
+            android.content.res.AssetManager assets, String literalName) {
+        LATCH.check();
+        requireRootsReady();
+        try {
+            android.content.res.AssetManager bound = packagedAssetIndexManager;
+            if (bound == null)
+                throw LATCH.trip("asset-index-not-bound", "Index assets are not bound", null);
+            if (assets == null || assets != bound)
+                throw LATCH.trip("asset-manager-mismatch", "Bound index assets are required", null);
+            checkLiteralPackagedName(literalName, true);
+            String[] names = assets.list(literalName);
+            if (names == null)
+                throw LATCH.trip("io-error", "Asset listing returned null", null);
+            LATCH.check();
+            return names;
+        } catch (IOException | SecurityException error) {
+            throw LATCH.trip("io-error", "Cannot list original packaged assets", error);
+        }
+    }
+
+    private static String checkLiteralPackagedName(String name, boolean allowRoot) {
+        if (name == null || name.indexOf('\0') >= 0 || name.indexOf('\\') >= 0
+                || name.indexOf(':') >= 0 || name.startsWith("/"))
+            throw LATCH.trip("invalid-path", "A literal relative asset name is required", null);
+        if (name.isEmpty()) {
+            if (allowRoot) return name;
+            throw LATCH.trip("invalid-path", "An asset file name is required", null);
+        }
+        if (name.trim().isEmpty())
+            throw LATCH.trip("invalid-path", "Blank asset names are forbidden", null);
+        rejectReadRoute(name);
+        for (String part : name.split("/", -1))
+            if (part.isEmpty() || part.equals(".") || part.equals(".."))
+                throw LATCH.trip("invalid-path", "Ambiguous asset component", null);
+        return name;
     }
 
     public static String checkAssetRead(String name) {

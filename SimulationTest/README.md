@@ -51,6 +51,28 @@ TEST-P001-003 已接入规则求值。采集完整后，`comparison/result.json`
 
 原始层完整保留核心只读 DTO 的位置、角度、速度、路径、目标、枚举、事件及动作结果；标准化层保留身份和值，只添加模型引用、字段别名、枚举映射和原始行号，不舍入或合并样本。事件既在对应观测中保留，也以带采样引用的事件行导出，消费者不可将两种表示重复计数。批次包含场景/契约副本、内容固定引用、实际运行工具/core/JSON库产物哈希、环境、模拟步数、独立墙上耗时、命令和退出状态。
 
+## 寻路性能执行器（有限测量工具）
+
+新增入口为 `com.rustedwarfare.reforge.testing.perf.PathPerfBatchMain`，与原 `run/compare` CLI 分开；没有注册新的 Gradle 运行任务。它调用实际核心和搜索诊断，不加载原版运行时；“原版兼容寻路”标签仅是现有 no-fog 规划适配，不表示已与原版对拍。
+
+在 `SimulationTest/` 执行 `./gradlew.bat installDist --no-daemon` 后，可用安装目录的全部依赖启动（Windows/JVM）：
+
+```powershell
+java -cp "build/install/simulation-test/lib/*" com.rustedwarfare.reforge.testing.perf.PathPerfBatchMain --repo-root "<仓库绝对路径>" --unit "<已批准单位INI绝对路径>" --unit-sha "<该INI的SHA256>" --output "<允许新建测量批次的绝对目录>"
+```
+
+上述占位符必须换成实际绝对路径和事先固定的身份；单位图片等依赖也须原位可读。`--output` 必须是已存在且可写的普通目录，不能位于本仓库的原版输入、TestLab、Docs 或 `.git` 下；执行器在其内 exclusive-create 新批次，不覆盖旧结果。该命令会真正执行 **1/10/50 实体、5 场景、8 轮共120批**，不是帮助或构建命令。运行前确认单独资源窗口、输入／源码身份和输出目录，不能在另一性能任务、Gradle 或模拟器运行时混测；此文档修复没有重新执行该测量。
+
+执行器输出每批原始样本、正确性控制、环境和分位汇总。round0是同一JVM内的首批，不是每批新JVM冷启动；轮1–2预热、3–7纳入实测统计。公开仓库不包含内部测量输入和历史结果，也没有为当前新源码提供已验证性能排名、毫秒/FPS阈值、动态避让或自动重规划成本结论。
+
+无需原图的性能工具专项单元测试可单独过滤运行：
+
+```powershell
+./gradlew.bat :test --tests "com.rustedwarfare.reforge.testing.perf.PathPerfBatchTest" --no-daemon
+```
+
+这条命令只测试工具，不替代实际120批运行。参考器的纯Java／Python检查入口另见 [Decompile](<../Decompile/README.md>)，原版初始化、单步采集与首次真实对拍仍未接通。
+
 ## 验证与交接
 
 ```powershell

@@ -1,6 +1,11 @@
 # Local work tickets and investigation evidence
 /.scratch/
 
+# Machine-local private ticket/evidence maintenance tools (keep local files)
+/Decompile/tools/workspace_layout.py
+/Decompile/tools/test_workspace_layout.py
+/Decompile/tools/hooks/pre-commit
+
 # Private project documentation and automated test data
 /Docs/
 /TestLab/
