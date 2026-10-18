@@ -1,6 +1,8 @@
 package com.rustedwarfare.reforge.core.sim
 
 import com.rustedwarfare.reforge.core.content.MapDefinition
+import com.rustedwarfare.reforge.core.path.PlanningTerrain
+import com.rustedwarfare.reforge.core.knowledge.*
 import java.util.Collections
 
 class SimulationContext private constructor(private val policies: ExperimentalPolicies = ExperimentalPolicies()) {
@@ -19,6 +21,7 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
     private var latestObservation: Observation? = null
     private val scheduledActions = mutableListOf<Action>()
     private val actionIds = mutableSetOf<String>()
+    private var knowledgeStores: Map<String, PlayerTerrainKnowledge>? = null
 
     companion object {
         fun initialize(scenario: Scenario): InitResult = SimulationContext().initializeInternal(scenario)
@@ -28,9 +31,49 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
 
     fun reopen(scenario: Scenario): InitResult = initializeInternal(scenario)
 
+    /** Explicit trusted-host opt-in only; no vision production or simulation scheduling occurs here. */
+    fun enableKnowledge(world: WorldHandle, rules: KnowledgeRules) {
+        checkKnowledgeWorld(world)
+        if (knowledgeStores != null) throw KnowledgeException("already-enabled", "Knowledge is already enabled for this world")
+        val currentScenario = checkNotNull(scenario)
+        val pending = linkedMapOf<String, PlayerTerrainKnowledge>()
+        var committed = false
+        try {
+            for (player in currentScenario.players) {
+                pending[player.playerId] = PlayerTerrainKnowledge.create(world, player.playerId,
+                    currentScenario.map.widthTiles, currentScenario.map.heightTiles, rules)
+            }
+            knowledgeStores = pending
+            committed = true
+        } finally {
+            if (!committed) pending.values.forEach { it.close() }
+        }
+    }
+
+    fun acceptVisibleTerrain(world: WorldHandle, playerId: String, visibleTerrain: List<VisibleTerrainCell>) {
+        checkKnowledgeWorld(world)
+        val stores = knowledgeStores ?: throw KnowledgeException("not-enabled", "Knowledge is not enabled")
+        val store = stores[playerId] ?: throw KnowledgeException("unknown-player", "Player is not declared in the current scenario")
+        store.accept(world, visibleTerrain)
+    }
+
+    fun knowledgeSnapshot(world: WorldHandle, playerId: String): KnowledgeSnapshot {
+        checkKnowledgeWorld(world)
+        val stores = knowledgeStores ?: throw KnowledgeException("not-enabled", "Knowledge is not enabled")
+        val store = stores[playerId] ?: throw KnowledgeException("unknown-player", "Player is not declared in the current scenario")
+        return store.snapshot(world)
+    }
+
+    private fun checkKnowledgeWorld(world: WorldHandle) {
+        if (closed) throw KnowledgeException("closed", "Simulation is closed")
+        if (world !== activeWorld) throw KnowledgeException("stale-world", "Knowledge access belongs to a different world")
+    }
+
     fun close(): CloseResult {
         if (closed) return CloseResult.AlreadyClosed
         closed = true
+        knowledgeStores?.values?.forEach { it.close() }
+        knowledgeStores = null
         activeWorld = null
         this.scenario = null
         units = linkedMapOf()
@@ -88,7 +131,7 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
                 if (!action.target.x.isFinite() || !action.target.y.isFinite()) {
                     return reject(action, "invalid-target", "Target coordinates must be finite")
                 }
-                val path = policies.path.findPath(currentScenario.map, unit.position, action.target, unit.definition.radius)
+                val path = policies.path.findPath(PlanningTerrain.fromNoFog(currentScenario.map), unit.position, action.target, unit.definition.radius)
                 if (path == null) {
                     unit.moveTarget = null
                     unit.pathPoints.clear()

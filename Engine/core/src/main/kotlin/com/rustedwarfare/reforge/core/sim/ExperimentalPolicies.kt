@@ -13,7 +13,7 @@ internal class ExperimentalPolicies(
     val propulsion: PropulsionPolicy = ReferencePropulsion,
     val capture: CapturePolicy = StrictCapture,
     val time: TimePolicy = FixedSimTick,
-    val path: PathPolicy = ClearanceAStarPolicy(CenterClearance(terrain), TileCenters, terrain),
+    val path: PathPolicy = ClearanceAStarPolicy(CenterClearance(PlanningCircleTerrain), TileCenters, PlanningCircleTerrain),
 )
 
 internal interface CoordinatePolicy {

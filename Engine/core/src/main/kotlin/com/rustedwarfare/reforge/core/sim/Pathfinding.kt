@@ -1,20 +1,21 @@
 package com.rustedwarfare.reforge.core.sim
 
 import com.rustedwarfare.reforge.core.content.MapDefinition
+import com.rustedwarfare.reforge.core.path.PlanningTerrain
 import java.util.PriorityQueue
 import kotlin.math.hypot
 
 /** The candidate and waypoint policies are experimental and replaceable for later calibration. */
 internal interface PathPolicy {
-    fun findPath(map: MapDefinition, start: Position, target: Position, radius: Double): List<Position>?
+    fun findPath(map: PlanningTerrain, start: Position, target: Position, radius: Double): List<Position>?
 }
 
 internal class ClearanceAStarPolicy(
     private val candidatePolicy: PathCandidatePolicy,
     private val pointPolicy: PathPointPolicy,
-    private val terrain: TerrainPolicy,
+    private val terrain: PlanningTerrainPolicy,
 ) : PathPolicy {
-    override fun findPath(map: MapDefinition, start: Position, target: Position, radius: Double): List<Position>? {
+    override fun findPath(map: PlanningTerrain, start: Position, target: Position, radius: Double): List<Position>? {
         val startCell = cellOf(map, start) ?: return null
         val goalCell = cellOf(map, target) ?: return null
         if (terrain.intersects(map, target, radius)) return null
@@ -64,7 +65,7 @@ internal class ClearanceAStarPolicy(
         return null
     }
 
-    private fun cellOf(map: MapDefinition, position: Position): Pair<Int, Int>? {
+    private fun cellOf(map: PlanningTerrain, position: Position): Pair<Int, Int>? {
         val col = kotlin.math.floor(position.x / map.tileWidth).toInt()
         val row = kotlin.math.floor(position.y / map.tileHeight).toInt()
         return if (col in 0 until map.widthTiles && row in 0 until map.heightTiles) col to row else null
@@ -81,21 +82,43 @@ internal class ClearanceAStarPolicy(
 }
 
 internal fun interface PathCandidatePolicy {
-    fun allows(map: MapDefinition, col: Int, row: Int, radius: Double): Boolean
+    fun allows(map: PlanningTerrain, col: Int, row: Int, radius: Double): Boolean
 }
 
-internal class CenterClearance(private val terrain: TerrainPolicy) : PathCandidatePolicy {
-    override fun allows(map: MapDefinition, col: Int, row: Int, radius: Double): Boolean =
-        !map.blocking.isBlocked(col, row) && !terrain.intersects(map, TileCenters.point(map, col, row), radius)
+internal class CenterClearance(private val terrain: PlanningTerrainPolicy) : PathCandidatePolicy {
+    override fun allows(map: PlanningTerrain, col: Int, row: Int, radius: Double): Boolean =
+        !map.isBlocked(col, row) && !terrain.intersects(map, TileCenters.point(map, col, row), radius)
 }
 
 internal fun interface PathPointPolicy {
-    fun point(map: MapDefinition, col: Int, row: Int): Position
+    fun point(map: PlanningTerrain, col: Int, row: Int): Position
 }
 
 internal object TileCenters : PathPointPolicy {
-    override fun point(map: MapDefinition, col: Int, row: Int): Position =
+    override fun point(map: PlanningTerrain, col: Int, row: Int): Position =
         Position((col + 0.5) * map.tileWidth, (row + 0.5) * map.tileHeight)
+}
+
+internal fun interface PlanningTerrainPolicy {
+    fun intersects(map: PlanningTerrain, position: Position, radius: Double): Boolean
+}
+
+internal object PlanningCircleTerrain : PlanningTerrainPolicy {
+    override fun intersects(map: PlanningTerrain, position: Position, radius: Double): Boolean {
+        for (row in 0 until map.heightTiles) for (col in 0 until map.widthTiles) {
+            if (!map.isBlocked(col, row)) continue
+            val left = col * map.tileWidth.toDouble()
+            val top = row * map.tileHeight.toDouble()
+            if (circleIntersectsRectangle(position, radius, left, top, left + map.tileWidth, top + map.tileHeight)) return true
+        }
+        return false
+    }
+}
+
+private fun circleIntersectsRectangle(position: Position, radius: Double, left: Double, top: Double, right: Double, bottom: Double): Boolean {
+    val closestX = position.x.coerceIn(left, right)
+    val closestY = position.y.coerceIn(top, bottom)
+    return hypot(position.x - closestX, position.y - closestY) <= radius
 }
 
 internal fun interface TerrainPolicy {
@@ -108,9 +131,7 @@ internal object CircleTerrain : TerrainPolicy {
             if (!map.blocking.isBlocked(col, row)) continue
             val left = col * map.tileWidth.toDouble()
             val top = row * map.tileHeight.toDouble()
-            val closestX = position.x.coerceIn(left, left + map.tileWidth)
-            val closestY = position.y.coerceIn(top, top + map.tileHeight)
-            if (hypot(position.x - closestX, position.y - closestY) <= radius) return true
+            if (circleIntersectsRectangle(position, radius, left, top, left + map.tileWidth, top + map.tileHeight)) return true
         }
         return false
     }
