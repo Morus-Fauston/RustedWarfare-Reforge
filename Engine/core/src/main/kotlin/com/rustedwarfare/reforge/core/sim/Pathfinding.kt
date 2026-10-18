@@ -2,12 +2,14 @@ package com.rustedwarfare.reforge.core.sim
 
 import com.rustedwarfare.reforge.core.content.MapDefinition
 import com.rustedwarfare.reforge.core.path.PlanningTerrain
+import com.rustedwarfare.reforge.core.path.PathSearchCounters
 import java.util.PriorityQueue
 import kotlin.math.hypot
 
 /** The candidate and waypoint policies are experimental and replaceable for later calibration. */
 internal interface PathPolicy {
-    fun findPath(map: PlanningTerrain, start: Position, target: Position, radius: Double): List<Position>?
+    fun findPath(map: PlanningTerrain, start: Position, target: Position, radius: Double,
+                 counters: PathSearchCounters? = null): List<Position>?
 }
 
 internal class ClearanceAStarPolicy(
@@ -15,12 +17,15 @@ internal class ClearanceAStarPolicy(
     private val pointPolicy: PathPointPolicy,
     private val terrain: PlanningTerrainPolicy,
 ) : PathPolicy {
-    override fun findPath(map: PlanningTerrain, start: Position, target: Position, radius: Double): List<Position>? {
+    override fun findPath(map: PlanningTerrain, start: Position, target: Position, radius: Double,
+                          counters: PathSearchCounters?): List<Position>? {
+        if (counters != null) counters.actualSearchCalls++
         val startCell = cellOf(map, start) ?: return null
         val goalCell = cellOf(map, target) ?: return null
         if (terrain.intersects(map, target, radius)) return null
         val candidates = Array(map.heightTiles) { BooleanArray(map.widthTiles) }
         for (row in 0 until map.heightTiles) for (col in 0 until map.widthTiles) {
+            if (counters != null) counters.candidatesChecked++
             candidates[row][col] = candidatePolicy.allows(map, col, row, radius)
         }
         if (!candidates[startCell.second][startCell.first] || !candidates[goalCell.second][goalCell.first]) return null
@@ -30,10 +35,15 @@ internal class ClearanceAStarPolicy(
         val startKey = startCell.first to startCell.second
         val cameFrom = HashMap<Pair<Int, Int>, Pair<Int, Int>>()
         val cost = HashMap<Pair<Int, Int>, Int>().apply { this[startKey] = 0 }
+        if (counters != null) {
+            counters.enqueued++
+            counters.heuristicCalls++
+        }
         open += Node(startCell.first, startCell.second, 0, heuristic(startCell.first, startCell.second, goalCell.first, goalCell.second))
 
         while (open.isNotEmpty()) {
             val current = open.remove()
+            if (counters != null) counters.popped++
             val currentKey = current.col to current.row
             if (cost[currentKey] != current.g) continue
             if (currentKey == goalCell.first to goalCell.second) {
@@ -51,13 +61,19 @@ internal class ClearanceAStarPolicy(
                 if (points.isEmpty()) points += target else points[points.lastIndex] = target
                 return points
             }
+            if (counters != null) counters.expanded++
             for ((nextCol, nextRow) in neighbors(current.col, current.row, map.widthTiles, map.heightTiles)) {
+                if (counters != null) counters.neighborsChecked++
                 if (!candidates[nextRow][nextCol]) continue
                 val nextKey = nextCol to nextRow
                 val nextCost = current.g + 1
                 if (nextCost < (cost[nextKey] ?: Int.MAX_VALUE)) {
                     cost[nextKey] = nextCost
                     cameFrom[nextKey] = currentKey
+                    if (counters != null) {
+                        counters.enqueued++
+                        counters.heuristicCalls++
+                    }
                     open += Node(nextCol, nextRow, nextCost, nextCost + heuristic(nextCol, nextRow, goalCell.first, goalCell.second))
                 }
             }

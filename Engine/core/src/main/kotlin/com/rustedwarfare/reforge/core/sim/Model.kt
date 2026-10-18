@@ -122,7 +122,16 @@ internal data class MutableUnit(
     var moveTarget: Position? = null,
     var pathPoints: MutableList<Position> = mutableListOf(),
     var movementState: MovementState = MovementState.IDLE,
-)
+    var originMoveId: String? = null,
+    var originAtStep: Long? = null,
+    var lastPlannedKnowledgeRevision: Long = -1L,
+) {
+    fun clearMoveOrigin() {
+        originMoveId = null
+        originAtStep = null
+        lastPlannedKnowledgeRevision = -1L
+    }
+}
 
 internal fun <T> immutable(values: Collection<T>): List<T> =
     Collections.unmodifiableList(ArrayList(values))

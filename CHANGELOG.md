@@ -1,5 +1,45 @@
 # Changelog
 
+## v0.1.7 (2026-10-18 14:15)
+
+### 新增
+
+- **知识快照规划路由**：单位 Move 的规划输入由**所属玩家**知识快照决定，与操作者无关；仅 `pathSource=PLAYER_KNOWLEDGE` 时启用。未启用或 `ORIGINAL_COMPATIBILITY` 时继续走既有无迷雾真实地图适配。
+  - 规则与 store 在同一提交边界发布；已启用 `PLAYER_KNOWLEDGE` 下缺失规则视为内部不变量破坏，不回退 truth。
+  - 按玩家记录新发现阻挡格及其 revision，供重规划判定。
+- **自动重规划**：规划路径受新知识影响时在同一 Move 内重规划，原因标记 `KNOWLEDGE_REPLAN`，保留原 Move 身份与来源步。
+  - `MutableUnit` 增 `originMoveId`/`originAtStep`/`lastPlannedKnowledgeRevision` 与 `clearMoveOrigin()`。
+  - 路径-格关联由纯判定 `KnowledgePathImpact` 承担，非移动碰撞或 truth 查询。
+- **路径搜索诊断**：新增 `enablePathDiagnostics`/`drainPathDiagnostics`，按世界能力校验；采样为**宿主 drain 输出**，不进入 `Observation` 或轨迹记录。
+  - 采样含 7 类真实计数与准备/搜索耗时、结果、原因；四错误码 `already-enabled`/`not-enabled`/`closed`/`stale-world`。
+- **性能批 runner**：新增 `PathPerfBatch`/`PathPerfBatchMain` 与 16 项测试，支持有限批次路径搜索测量。
+
+### 技术
+
+- **验证记录**：当前 core **117** 项、tool **42 + 16 = 58** 项，全部 0 失败/错误/跳过；P001 suite exit=0（16 case）。
+- **等价性**：16 case、11 份内容文件、18 份 JSONL 正例 `allEqual`；**4 项负控均被拒绝（返回 false/rejected）**，与正例判定属不同层。
+- **性能测量**：task157 实测 **120 个 raw 批次 / 2440 enabled 样本 / 1525 measured 样本**，exit=0，汇总数字全部重算一致；该测量绑定 **改重规划前 `a004b964`**，当前 `398a52bf` 尚无性能数据。
+- **隔离与冻结**：5 源与当前工作区冻结逐字节一致；43 项输入源与副本未变；非目标 core/tool 源未改。
+- **未完成边界**：真实视野生产化、客户端表现、原版兼容、完整 G 链、原版单步对拍、双平台二期沙盒均未完成；性能结论仅限静态 32×24 单步，不含动态避让/自动重规划/完整行程/FPS。
+
+### 文件变更表
+
+| 文件 | 变更 |
+|:-----|:------|
+| `Engine/core/src/main/kotlin/com/rustedwarfare/reforge/core/sim/Model.kt` | **修改** — 保存 Move 来源与知识 revision 元数据 |
+| `Engine/core/src/main/kotlin/com/rustedwarfare/reforge/core/sim/Pathfinding.kt` | **修改** — 增加可选路径搜索诊断计数 |
+| `Engine/core/src/main/kotlin/com/rustedwarfare/reforge/core/sim/SimulationContext.kt` | **修改** — 接入知识路由、自动重规划和诊断生命周期 |
+| `Engine/core/src/main/kotlin/com/rustedwarfare/reforge/core/path/KnowledgePathImpact.kt` | **新增** — 路径与新阻挡格的纯关联判定 |
+| `Engine/core/src/main/kotlin/com/rustedwarfare/reforge/core/path/PathSearchDiagnostics.kt` | **新增** — 诊断类型与真实搜索样本 |
+| `Engine/core/src/test/kotlin/com/rustedwarfare/reforge/core/knowledge/KnowledgePathRoutingTest.kt` | **新增** — 玩家知识路由测试 |
+| `Engine/core/src/test/kotlin/com/rustedwarfare/reforge/core/knowledge/KnowledgeReplanningTest.kt` | **新增** — RR01–RR10 自动重规划测试 |
+| `Engine/core/src/test/kotlin/com/rustedwarfare/reforge/core/path/PathDiagnosticsTest.kt` | **新增** — 诊断采样测试 |
+| `SimulationTest/src/main/kotlin/com/rustedwarfare/reforge/testing/perf/PathPerfBatch.kt` | **新增** — 有限路径性能批 runner |
+| `SimulationTest/src/main/kotlin/com/rustedwarfare/reforge/testing/perf/PathPerfBatchMain.kt` | **新增** — 性能批 CLI 入口 |
+| `SimulationTest/src/test/kotlin/com/rustedwarfare/reforge/testing/perf/PathPerfBatchTest.kt` | **新增** — 性能批测试 |
+
+---
+
 ## v0.1.6 (2026-10-18 10:41)
 
 ### 新增

@@ -1,3 +1,22 @@
+v0.1.7 (2026-10-18 14:15)
+  新增: 知识快照规划路由与自动重规划
+  - Move 规划输入按所属玩家知识快照决定，与操作者无关
+  - 仅 PLAYER_KNOWLEDGE 启用；未启用与 ORIGINAL_COMPATIBILITY 继续无迷雾真实地图适配
+  - 已启用 PLAYER_KNOWLEDGE 下缺规则即不变量破坏，不回退 truth
+  - 路径受新知识影响时同一 advance 内重规划，保留原 Move 身份与来源步
+  - MutableUnit 增 originMoveId/originAtStep/lastPlannedKnowledgeRevision 与 clearMoveOrigin
+  新增: 路径搜索诊断与性能批 runner
+  - enable/drainPathDiagnostics 按世界能力校验，采样为宿主 drain 输出，不进 Observation
+  - 采样含 7 类真实计数与耗时、结果、原因；四错误码 already-enabled/not-enabled/closed/stale-world
+  - PathPerfBatch/PathPerfBatchMain 与 16 项测试
+  技术: 验证与边界
+  - core 117、tool 42+16=58 全绿；P001 exit=0（16 case）
+  - 16 case/11 内容/18 JSONL 正例 allEqual；4 负控均被拒绝
+  - task157 实测 120 raw 批次/2440 enabled/1525 measured，绑改重规划前 a004b964；当前 398a52bf 无新性能数据
+  - 未完成: 真实视野生产化、客户端表现、原版兼容、完整 G 链、原版对拍、双平台二期
+
+====
+
 v0.1.6 (2026-10-18 10:41)
   新增: 玩家知识状态、规划输入隔离与显式知识生命周期接线
   新增: 私有路径防护、失败锁存、请求账本与严格输入封套

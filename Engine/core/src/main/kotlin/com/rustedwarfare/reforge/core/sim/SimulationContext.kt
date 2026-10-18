@@ -2,6 +2,12 @@ package com.rustedwarfare.reforge.core.sim
 
 import com.rustedwarfare.reforge.core.content.MapDefinition
 import com.rustedwarfare.reforge.core.path.PlanningTerrain
+import com.rustedwarfare.reforge.core.path.PathDiagnosticsException
+import com.rustedwarfare.reforge.core.path.PathSearchSample
+import com.rustedwarfare.reforge.core.path.PathSearchCounters
+import com.rustedwarfare.reforge.core.path.PathSearchOutcome
+import com.rustedwarfare.reforge.core.path.KnowledgePathImpact
+import com.rustedwarfare.reforge.core.path.PathSearchReason
 import com.rustedwarfare.reforge.core.knowledge.*
 import java.util.Collections
 
@@ -22,6 +28,29 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
     private val scheduledActions = mutableListOf<Action>()
     private val actionIds = mutableSetOf<String>()
     private var knowledgeStores: Map<String, PlayerTerrainKnowledge>? = null
+    /** Immutable rules captured on the same successful commit boundary as [knowledgeStores]. */
+    private var knowledgeRules: KnowledgeRules? = null
+    private var pathDiagnostics: MutableList<PathSearchSample>? = null
+    private val pendingKnowledgeDiscoveries = mutableMapOf<String, MutableMap<Pair<Int, Int>, Long>>()
+
+    fun enablePathDiagnostics(world: WorldHandle) {
+        checkPathDiagnosticsWorld(world)
+        if (pathDiagnostics != null) throw PathDiagnosticsException("already-enabled", "Path diagnostics are already enabled")
+        pathDiagnostics = mutableListOf()
+    }
+
+    fun drainPathDiagnostics(world: WorldHandle): List<PathSearchSample> {
+        checkPathDiagnosticsWorld(world)
+        val samples = pathDiagnostics ?: throw PathDiagnosticsException("not-enabled", "Path diagnostics are not enabled")
+        val drained = Collections.unmodifiableList(ArrayList(samples))
+        samples.clear()
+        return drained
+    }
+
+    private fun checkPathDiagnosticsWorld(world: WorldHandle) {
+        if (closed) throw PathDiagnosticsException("closed", "Simulation is closed")
+        if (world !== activeWorld) throw PathDiagnosticsException("stale-world", "Path diagnostics belong to a different world")
+    }
 
     companion object {
         fun initialize(scenario: Scenario): InitResult = SimulationContext().initializeInternal(scenario)
@@ -44,6 +73,7 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
                     currentScenario.map.widthTiles, currentScenario.map.heightTiles, rules)
             }
             knowledgeStores = pending
+            knowledgeRules = rules
             committed = true
         } finally {
             if (!committed) pending.values.forEach { it.close() }
@@ -54,7 +84,18 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
         checkKnowledgeWorld(world)
         val stores = knowledgeStores ?: throw KnowledgeException("not-enabled", "Knowledge is not enabled")
         val store = stores[playerId] ?: throw KnowledgeException("unknown-player", "Player is not declared in the current scenario")
+        if (knowledgeRules?.pathSource != PathInformationSource.PLAYER_KNOWLEDGE) {
+            store.accept(world, visibleTerrain)
+            return
+        }
+        val before = store.snapshot(world)
         store.accept(world, visibleTerrain)
+        val after = store.snapshot(world)
+        for (row in 0 until after.height) for (column in 0 until after.width) {
+            if (!before.planningBlocked(column, row) && after.planningBlocked(column, row)) {
+                pendingKnowledgeDiscoveries.getOrPut(playerId) { linkedMapOf() }[column to row] = after.revision
+            }
+        }
     }
 
     fun knowledgeSnapshot(world: WorldHandle, playerId: String): KnowledgeSnapshot {
@@ -74,6 +115,10 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
         closed = true
         knowledgeStores?.values?.forEach { it.close() }
         knowledgeStores = null
+        knowledgeRules = null
+        pendingKnowledgeDiscoveries.clear()
+        pathDiagnostics?.clear()
+        pathDiagnostics = null
         activeWorld = null
         this.scenario = null
         units = linkedMapOf()
@@ -116,7 +161,101 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
         return applyAction(action)
     }
 
-    private fun applyAction(action: Action): ActionResult {
+    /**
+     * Selects the planning input for one unit's Move.
+     *
+     * Route is decided by the unit's owning player, never by the acting player, and only the
+     * owning player's store may contribute a snapshot. Truth blocking is reached exclusively
+     * through the pre-existing no-fog adapter, and only while knowledge is not enabled; an
+     * enabled PLAYER_KNOWLEDGE context never falls back to truth.
+     */
+    private fun planningTerrainFor(unit: MutableUnit, map: MapDefinition): PlanningTerrain {
+        // Not enabled at all: legacy no-fog behaviour, unchanged.
+        val stores = knowledgeStores ?: return PlanningTerrain.fromNoFog(map)
+        // Enabled: stores and rules are published on the same commit boundary, so a missing rules
+        // value is a broken internal invariant, never a reason to silently fall back to truth.
+        val rules = checkNotNull(knowledgeRules) { "Knowledge rules must be published with knowledge stores" }
+        if (rules.pathSource != PathInformationSource.PLAYER_KNOWLEDGE) return PlanningTerrain.fromNoFog(map)
+        val store = checkNotNull(stores[unit.ownerPlayerId]) {
+            "Knowledge store is missing for owning player '${unit.ownerPlayerId}'"
+        }
+        val snapshot = store.snapshot(checkNotNull(activeWorld))
+        return PlanningTerrain.fromKnowledge(snapshot, map.tileWidth, map.tileHeight)
+    }
+
+    private fun findPathWithDiagnostics(actionId: String, atStep: Long?, target: Position,
+                                        unit: MutableUnit, map: MapDefinition,
+                                        samples: MutableList<PathSearchSample>,
+                                        reason: PathSearchReason = PathSearchReason.USER_MOVE,
+                                        executionStep: Long? = null): List<Position>? {
+        val counters = PathSearchCounters()
+        val usedKnowledge = knowledgeStores != null && knowledgeRules?.pathSource == PathInformationSource.PLAYER_KNOWLEDGE
+        var outcome = PathSearchOutcome.FAILED
+        var pathPointCount = 0
+        var preparationNanos = 0L
+        var searchNanos = 0L
+        val preparationStart = System.nanoTime()
+        var preparationFinished = false
+        var searchStart = 0L
+        var searchEntered = false
+        try {
+            val terrain = planningTerrainFor(unit, map)
+            preparationNanos = (System.nanoTime() - preparationStart).coerceAtLeast(0L)
+            preparationFinished = true
+            searchStart = System.nanoTime()
+            searchEntered = true
+            val path = policies.path.findPath(terrain, unit.position, target, unit.definition.radius, counters)
+            outcome = if (path == null) PathSearchOutcome.UNREACHABLE else PathSearchOutcome.FOUND
+            pathPointCount = path?.size ?: 0
+            return path
+        } catch (error: Throwable) {
+            outcome = PathSearchOutcome.FAILED
+            throw error
+        } finally {
+            if (!preparationFinished) preparationNanos = (System.nanoTime() - preparationStart).coerceAtLeast(0L)
+            if (searchEntered) searchNanos = (System.nanoTime() - searchStart).coerceAtLeast(0L)
+            samples += PathSearchSample(actionId, unit.unitId, atStep, usedKnowledge, outcome,
+                preparationNanos, searchNanos, counters.actualSearchCalls, counters.candidatesChecked, counters.popped,
+                counters.expanded, counters.enqueued, counters.neighborsChecked, counters.heuristicCalls, pathPointCount, reason, executionStep)
+        }
+    }
+
+    private fun plannedKnowledgeRevision(unit: MutableUnit): Long =
+        if (knowledgeRules?.pathSource == PathInformationSource.PLAYER_KNOWLEDGE)
+            checkNotNull(knowledgeStores?.get(unit.ownerPlayerId)).snapshot(checkNotNull(activeWorld)).revision else -1L
+
+    private fun replanForKnowledge(map: MapDefinition, executionStep: Long) {
+        if (pendingKnowledgeDiscoveries.isEmpty()) return
+        for (unit in units.values.sortedBy { it.unitId }) {
+            val target = unit.moveTarget ?: continue
+            val discoveries = pendingKnowledgeDiscoveries[unit.ownerPlayerId] ?: continue
+            val snapshot = checkNotNull(knowledgeStores?.get(unit.ownerPlayerId)).snapshot(checkNotNull(activeWorld))
+            val affected = discoveries.any { (cell, discoveredAt) ->
+                discoveredAt > unit.lastPlannedKnowledgeRevision && snapshot.planningBlocked(cell.first, cell.second) &&
+                    KnowledgePathImpact.affects(unit.position, unit.pathPoints, target, unit.definition.radius,
+                        cell.first, cell.second, map.tileWidth, map.tileHeight)
+            }
+            if (!affected) continue
+            val samples = pathDiagnostics
+            val path = if (samples == null) policies.path.findPath(planningTerrainFor(unit, map), unit.position, target, unit.definition.radius)
+                else findPathWithDiagnostics(checkNotNull(unit.originMoveId), unit.originAtStep, target, unit, map, samples,
+                    PathSearchReason.KNOWLEDGE_REPLAN, executionStep)
+            if (path == null) {
+                unit.moveTarget = null
+                unit.pathPoints.clear()
+                unit.clearMoveOrigin()
+                unit.movementState = if (unit.speed != 0.0 || unit.angularVelocity != 0.0) MovementState.DECELERATING else MovementState.IDLE
+                pendingEvents += Event("movement-cancelled", unit.unitId)
+                pendingEvents += Event("path-unreachable", unit.unitId)
+            } else {
+                unit.pathPoints = path.toMutableList()
+                unit.lastPlannedKnowledgeRevision = snapshot.revision
+                unit.movementState = MovementState.MOVING
+            }
+        }
+    }
+
+    private fun applyAction(action: Action, executionStep: Long? = null): ActionResult {
         val currentScenario = checkNotNull(scenario)
         val unit = units.getValue(action.unitId)
         val result = when (action) {
@@ -124,6 +263,7 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
             is StopAction -> {
                 unit.moveTarget = null
                 unit.pathPoints.clear()
+                unit.clearMoveOrigin()
                 unit.movementState = if (unit.speed != 0.0 || unit.angularVelocity != 0.0) MovementState.DECELERATING else MovementState.IDLE
                 ActionResult.Accepted(action.actionId, listOf(Event("movement-cancelled", unit.unitId)))
             }
@@ -131,10 +271,17 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
                 if (!action.target.x.isFinite() || !action.target.y.isFinite()) {
                     return reject(action, "invalid-target", "Target coordinates must be finite")
                 }
-                val path = policies.path.findPath(PlanningTerrain.fromNoFog(currentScenario.map), unit.position, action.target, unit.definition.radius)
+                val samples = pathDiagnostics
+                val path = if (samples == null) {
+                    policies.path.findPath(planningTerrainFor(unit, currentScenario.map), unit.position, action.target, unit.definition.radius)
+                } else {
+                    findPathWithDiagnostics(action.actionId, action.atStep, action.target, unit, currentScenario.map, samples,
+                        executionStep = executionStep)
+                }
                 if (path == null) {
                     unit.moveTarget = null
                     unit.pathPoints.clear()
+                    unit.clearMoveOrigin()
                     unit.movementState = if (unit.speed != 0.0 || unit.angularVelocity != 0.0) MovementState.DECELERATING else MovementState.IDLE
                     ActionResult.Accepted(
                         action.actionId,
@@ -142,6 +289,9 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
                     )
                 } else {
                     unit.moveTarget = action.target
+                    unit.originMoveId = action.actionId
+                    unit.originAtStep = action.atStep
+                    unit.lastPlannedKnowledgeRevision = plannedKnowledgeRevision(unit)
                     unit.pathPoints = path.toMutableList()
                     unit.movementState = MovementState.MOVING
                     ActionResult.Accepted(action.actionId, listOf(Event("movement-started", unit.unitId)))
@@ -175,7 +325,8 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
         pendingEvents = pendingEvents.toMutableList()
         pendingActionResults = pendingActionResults.toMutableList()
         try {
-            actions.forEach { applyAction(it) }
+            actions.forEach { applyAction(it, step.stepIndex) }
+            replanForKnowledge(currentScenario.map, step.stepIndex)
             for (unit in units.values.sortedBy { it.unitId }) updateUnit(unit, currentScenario.map, step.delta)
         } catch (error: ArithmeticException) {
             units = previousUnits
@@ -185,6 +336,7 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
             latestObservation = previousObservation
             throw error
         }
+        pendingKnowledgeDiscoveries.clear()
         scheduledActions.removeAll(actions.toSet())
         stepIndex = step.stepIndex
         hasAdvanced = true
@@ -307,6 +459,7 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
             } else if (finalPoint && policies.capture.inside(d2, contract.targetRadius)) {
                 unit.moveTarget = null
                 unit.pathPoints.clear()
+                unit.clearMoveOrigin()
                 speedTarget = 0.0
                 pendingEvents += Event("movement-arrived", unit.unitId)
             }
