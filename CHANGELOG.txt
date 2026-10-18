@@ -1,3 +1,18 @@
+v0.1.8 (2026-10-18 15:39)
+  新增: 原版专用输入制备、GBOOT 接线与 INI 私有路径检查
+  - 仅执行批准的 Ground Base64、零 Items 和 canAttack:false 变换，保留原输入
+  - 纳入自有私有后端 Factory、整方法变换工具及对应测试
+  - 增加六个 root-only INI API，检查后的路径由真实读写入口消费
+  修复: PrintWriter 吞写入/刷新/关闭异常后的假成功
+  - 真实 checkError 检查，先释放资源后处理首故障，写入清理保原 primary
+  - 读取保原 parser，按 B 方案保留内部 close 遮盖 primary 的已知风险
+  验证: 派生14项、变换15项；新INI14/旧状态15/旧路由29个JVM场景通过
+  - 一次真实四文件制备，600格逐值对应、零Items及七项原输入保持
+  - 六项合片测试、69方法实际unsigned回读与资源保持检查通过
+  边界: layoutReady/runtimeVerified/installAllowed均false，未证明原版加载或玩法等价
+
+====
+
 v0.1.7 (2026-10-18 14:15)
   新增: 知识快照规划路由与自动重规划
   - Move 规划输入按所属玩家知识快照决定，与操作者无关

@@ -1,5 +1,27 @@
 # Changelog
 
+## v0.1.8 (2026-10-18 15:39)
+
+### 新增
+
+- **原版专用输入制备**：增加受限转换工具与公开 CLI，仅执行批准的 Ground 编码、零 Items 层和 canAttack:false 追加；逐文件校验身份并保留原输入。
+- **参考器宿主接线**：纳入自有 GBOOT、私有后端 Factory 和整方法变换工具，保留私有路径、状态、Provider/SAF 与资产路由的既有检查边界。
+- **INI 私有路径**：增加六个 root-only API，区分合法缺叶与读取失败，并让原 FileReader/PrintWriter 消费检查后的路径。
+
+### 修复
+
+- **写入错误假成功**：PrintWriter 会吞掉写入、刷新和关闭 IOException；通过真实 checkError 检查及先释放后检查首故障，阻止错误被当作保存成功。
+- **清理异常关联**：写入清理保留原 primary 和首次 Failure；INI 读取按已确认 B 方案保留原 parser，内部关闭异常可能遮盖原解析异常的风险不变。
+
+### 验证与边界
+
+- **公开测试**：派生工具 14 项、整方法变换工具 15 项通过；新 INI 14、旧状态 15、旧路由 29 个独立 JVM 场景通过。
+- **真实载体制备**：一次生成四个内容文件；Ground 600 格逐值一致、Items 600 零值、各层 raw 2400 bytes/Base64 3200 字符；七项原输入未变。
+- **静态产物**：六项合片测试及 69 方法实际 unsigned 回读通过；Factory、helper 引用、非目标方法、820 assets、Manifest 和 32 XML 保持检查通过。
+- **未完成边界**：派生内容未复制图片或重排引用，layoutReady=false；未证明原版加载、步进、玩法等价或全 IO 隔离，runtimeVerified=false、installAllowed=false。核心解析器与既有 P001 基准未改。
+
+---
+
 ## v0.1.7 (2026-10-18 14:15)
 
 ### 新增
