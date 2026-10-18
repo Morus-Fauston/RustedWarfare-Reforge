@@ -781,5 +781,63 @@ public final class GbootBootstrap {
         if (second != null) failure.addSuppressed(second);
         throw failure;
     }
+
+// Candidate members of GbootBootstrap, review only. Not a compiled Java source.
+// Uses checkLiteralPackagedName as frozen in spec.md; it never strips assets/.
+public static String joinCheckedReadRoute(String rawBase, String rawFragment) {
+    LATCH.check();
+    requireBackendPublished();
+    checkLiteralPackagedName(rawFragment, false);
+    if (rawBase == null || rawBase.indexOf('\0') >= 0
+            || rawBase.indexOf('\\') >= 0 || rawBase.indexOf(':') >= 0)
+        throw LATCH.trip("invalid-path", "An unambiguous base is required", null);
+    String base = rawBase.endsWith("/")
+            ? rawBase.substring(0, rawBase.length() - 1) : rawBase;
+    if (rawBase.startsWith("/")) {
+        String checkedBase = checkPrivateDirectory(base);
+        return checkPrivateExists(checkedBase + "/" + rawFragment);
+    }
+    checkLiteralPackagedName(base, true);
+    String joined = base.isEmpty() ? rawFragment : base + "/" + rawFragment;
+    checkLiteralPackagedName(joined, false);
+    checkAssetExists(joined);
+    return joined;
+}
+
+public static String joinedContainmentKey(String route) {
+    LATCH.check();
+    requireBackendPublished();
+    if (route != null && route.startsWith("/"))
+        return "private:" + checkPrivateExists(route);
+    return "package:" + checkAssetExists(route);
+}
+
+public static String joinedUnitsContainmentKey(String route) {
+    LATCH.check();
+    requireBackendPublished();
+    if (route != null && route.startsWith("/")) {
+        normalizePrivateRaw(route);
+        return "private:" + checkPrivateDirectory(directories[1].toString());
+    }
+    checkAssetExists(route);
+    return "package:" + checkAssetExists("units");
+}
+
+public static String joinedDirectoryContainmentKey(String rawDirectory) {
+    LATCH.check();
+    requireBackendPublished();
+    if (rawDirectory != null && rawDirectory.startsWith("/"))
+        return "private:" + checkPrivateDirectory(rawDirectory);
+    String directory = rawDirectory != null && rawDirectory.endsWith("/")
+            ? rawDirectory.substring(0, rawDirectory.length() - 1) : rawDirectory;
+    checkLiteralPackagedName(directory, true);
+    // A directory's virtual prefix must be interpreted after appending its
+    // child separator: both assets and assets/ contain route assets/<child>.
+    String literal = directory.equals("assets") ? ""
+            : directory.startsWith("assets/") ? directory.substring(7) : directory;
+    checkLiteralPackagedName(literal, true);
+    return "package:" + literal;
+}
+
 }
 
