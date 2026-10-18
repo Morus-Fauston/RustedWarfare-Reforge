@@ -4,6 +4,7 @@ import com.rustedwarfare.reforge.core.content.MapDefinition
 import com.rustedwarfare.reforge.core.path.PlanningTerrain
 import com.rustedwarfare.reforge.core.path.PathSearchCounters
 import java.util.PriorityQueue
+import kotlin.math.floor
 import kotlin.math.hypot
 
 /** The candidate and waypoint policies are experimental and replaceable for later calibration. */
@@ -120,15 +121,29 @@ internal fun interface PlanningTerrainPolicy {
 }
 
 internal object PlanningCircleTerrain : PlanningTerrainPolicy {
-    override fun intersects(map: PlanningTerrain, position: Position, radius: Double): Boolean {
-        for (row in 0 until map.heightTiles) for (col in 0 until map.widthTiles) {
-            if (!map.isBlocked(col, row)) continue
-            val left = col * map.tileWidth.toDouble()
-            val top = row * map.tileHeight.toDouble()
-            if (circleIntersectsRectangle(position, radius, left, top, left + map.tileWidth, top + map.tileHeight)) return true
-        }
-        return false
+    override fun intersects(map: PlanningTerrain, position: Position, radius: Double): Boolean =
+        circleIntersectsTerrain(map.widthTiles, map.heightTiles, map.tileWidth, map.tileHeight,
+            position, radius, map::isBlocked)
+}
+
+/** Conservative broad phase only: the original closed-circle narrow phase decides contact.
+ * One extra cell on each side retains grid-line tangency and floating-point boundary cases.
+ * Clamp as doubles before converting to Int, including when finite inputs sum to infinity.
+ */
+private inline fun circleIntersectsTerrain(width: Int, height: Int, tileWidth: Int, tileHeight: Int,
+                                         position: Position, radius: Double,
+                                         blocked: (Int, Int) -> Boolean): Boolean {
+    val firstColumn = (floor((position.x - radius) / tileWidth) - 1).coerceIn(0.0, width.toDouble()).toInt()
+    val lastColumn = (floor((position.x + radius) / tileWidth) + 1).coerceIn(-1.0, width - 1.0).toInt()
+    val firstRow = (floor((position.y - radius) / tileHeight) - 1).coerceIn(0.0, height.toDouble()).toInt()
+    val lastRow = (floor((position.y + radius) / tileHeight) + 1).coerceIn(-1.0, height - 1.0).toInt()
+    for (row in firstRow..lastRow) for (col in firstColumn..lastColumn) {
+        if (!blocked(col, row)) continue
+        val left = col * tileWidth.toDouble()
+        val top = row * tileHeight.toDouble()
+        if (circleIntersectsRectangle(position, radius, left, top, left + tileWidth, top + tileHeight)) return true
     }
+    return false
 }
 
 private fun circleIntersectsRectangle(position: Position, radius: Double, left: Double, top: Double, right: Double, bottom: Double): Boolean {
@@ -142,13 +157,7 @@ internal fun interface TerrainPolicy {
 }
 
 internal object CircleTerrain : TerrainPolicy {
-    override fun intersects(map: MapDefinition, position: Position, radius: Double): Boolean {
-        for (row in 0 until map.heightTiles) for (col in 0 until map.widthTiles) {
-            if (!map.blocking.isBlocked(col, row)) continue
-            val left = col * map.tileWidth.toDouble()
-            val top = row * map.tileHeight.toDouble()
-            if (circleIntersectsRectangle(position, radius, left, top, left + map.tileWidth, top + map.tileHeight)) return true
-        }
-        return false
-    }
+    override fun intersects(map: MapDefinition, position: Position, radius: Double): Boolean =
+        circleIntersectsTerrain(map.widthTiles, map.heightTiles, map.tileWidth, map.tileHeight,
+            position, radius, map.blocking::isBlocked)
 }
