@@ -153,6 +153,32 @@ public final class GbootBootstrap {
         }
     }
 
+    /** Denial keeps the original boolean ABI; there is no false/success fallback. */
+    public static boolean denyFileDelete() {
+        LATCH.check();
+        requireBackendPublished();
+        throw LATCH.trip("unsupported-io-operation", "File deletion is forbidden", null);
+    }
+
+    /** Uses only the existing bridge same-parent, destination-missing permit. */
+    public static boolean renamePrivateBridgeFile(File source, File destination) {
+        LATCH.check();
+        requireBackendPublished();
+        if (source == null || destination == null)
+            throw LATCH.trip("invalid-path", "Rename requires two private files", null);
+        try {
+            ReferenceIo.RenamePermit permit = io.prepareRename(
+                    normalizePrivateRaw(source.getPath()), normalizePrivateRaw(destination.getPath()));
+            Files.move(permit.source(), permit.destination());
+            LATCH.check();
+            return true;
+        } catch (FileAlreadyExistsException error) {
+            throw LATCH.trip("destination-exists", "Rename destination appeared", error);
+        } catch (IOException | SecurityException | UnsupportedOperationException error) {
+            throw LATCH.trip("io-error", "Cannot rename private bridge file", error);
+        }
+    }
+
     public static long privateLastModified(String path) {
         LATCH.check();
         String candidate = normalizePrivateRaw(path);
