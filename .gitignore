@@ -26,3 +26,6 @@ local.properties
 # SimulationTest generated mirrors and Python bytecode cache
 /SimulationTest/bin/
 /Decompile/tools/p003/__pycache__/
+
+# Private reference-bridge build outputs, including original-only derived packages
+/Decompile/reference-bridge/build/

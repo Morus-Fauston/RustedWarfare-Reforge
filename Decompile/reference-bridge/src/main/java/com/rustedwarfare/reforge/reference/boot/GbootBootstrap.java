@@ -149,6 +149,12 @@ public final class GbootBootstrap {
         }
     }
 
+    public static long privateLastModified(String path) {
+        LATCH.check();
+        String candidate = normalizePrivateRaw(path);
+        return io.lastModified(candidate);
+    }
+
     private static String checked(String path, PrivatePathPolicy.Access access) {
         LATCH.check();
         String candidate = normalizePrivateRaw(path);

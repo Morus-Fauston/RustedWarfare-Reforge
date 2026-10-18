@@ -59,6 +59,30 @@ public final class ReferenceIo {
           catch(IOException error) {throw latch.trip("io-error","Cannot inspect rename destination",error);}
         throw latch.trip("destination-exists","Rename destination already exists",null);
     }
+    public long lastModified(String path) {
+        latch.check();
+        try {
+            Path checked = privateFile(path, PrivatePathPolicy.Access.EXISTS);
+            BasicFileAttributes attributes = Files.readAttributes(
+                    checked, BasicFileAttributes.class, LinkOption.NOFOLLOW_LINKS);
+            if (attributes.isSymbolicLink())
+                throw latch.trip("symbolic-link", "Links are forbidden in private metadata", null);
+            if (!attributes.isRegularFile() && !attributes.isDirectory())
+                throw latch.trip("wrong-type", "Metadata requires a regular file or directory", null);
+            privateFile(checked.toString().replace('\\', '/'), PrivatePathPolicy.Access.EXISTS);
+            return attributes.lastModifiedTime().toMillis();
+        } catch (NoSuchFileException missing) {
+            try {
+                Path checked = privateFile(path, PrivatePathPolicy.Access.EXISTS);
+                existingDirectory(checked.getParent().toString().replace('\\', '/'));
+                return 0L;
+            } catch (SecurityException error) {
+                throw latch.trip("io-error", "Cannot inspect private modification time", error);
+            }
+        } catch (IOException | SecurityException error) {
+            throw latch.trip("io-error", "Cannot inspect private modification time", error);
+        }
+    }
     public Path existingDirectory(String path){return privateFile(path,PrivatePathPolicy.Access.LIST);}
     public void denyDelete(String path){latch.check();throw latch.trip("unsupported-io-operation","Delete is not allowed",null);}
     private void rejectMarker(String path) {
