@@ -1,6 +1,7 @@
 package com.rustedwarfare.reforge.reference.boot;
 
 import android.content.Context;
+import android.content.SharedPreferences;
 import android.net.Uri;
 import java.util.HashMap;
 import com.rustedwarfare.reforge.reference.io.FatalLatch;
@@ -31,6 +32,8 @@ public final class GbootBootstrap {
     private static Path[] directories;
     private static ReferenceIo io;
     private static boolean backendPublished;
+    private static SharedPreferences platformSettings;
+    private static Path platformSettingsDirectory;
 
     private GbootBootstrap() { }
 
@@ -153,6 +156,100 @@ public final class GbootBootstrap {
         LATCH.check();
         String candidate = normalizePrivateRaw(path);
         return io.lastModified(candidate);
+    }
+
+    public static void requirePlatformSettingsCommitted(boolean committed) {
+        LATCH.check();
+        if (!committed)
+            throw LATCH.trip("settings-commit-failed", "Platform settings commit returned false", null);
+    }
+
+    public static void requirePlatformSettingsContext(Context context) {
+        LATCH.check();
+        requireRootsReady();
+        try {
+            if (context == null || context.getApplicationContext() != application)
+                throw LATCH.trip("context-mismatch", "Settings require the frozen ApplicationContext", null);
+            checkedPlatformSettingsDataRoot();
+        } catch (FatalLatch.Failure error) {
+            throw error;
+        } catch (PrivatePathPolicy.PathViolation error) {
+            throw LATCH.trip(error.code(), error.getMessage(), error);
+        } catch (IOException | SecurityException error) {
+            throw LATCH.trip("io-error", "Cannot inspect platform settings roots", error);
+        } catch (RuntimeException error) {
+            throw LATCH.trip("settings-io-error", "Platform settings context failed", error);
+        }
+    }
+
+    private static Path checkedPlatformSettingsDataRoot() throws IOException {
+        File files = application.getFilesDir();
+        File data = application.getDataDir();
+        if (files == null || !files.isAbsolute() || data == null || !data.isAbsolute())
+            throw new PrivatePathPolicy.PathViolation("invalid-root", "Absolute platform directories are required");
+        Path candidateFiles = files.toPath();
+        Path candidateData = data.toPath();
+        new PrivatePathPolicy(candidateFiles);
+        new PrivatePathPolicy(candidateData);
+        Path realData = candidateData.toRealPath();
+        if (!candidateFiles.toRealPath().equals(filesRoot) || !realData.equals(filesRoot.getParent()))
+            throw new PrivatePathPolicy.PathViolation("invalid-root", "Platform settings roots changed");
+        return realData;
+    }
+
+    private static void checkPlatformSettingsPaths(Path dataRoot, Path directory, boolean requireMissing)
+            throws IOException {
+        PrivatePathPolicy policy = new PrivatePathPolicy(dataRoot);
+        Path expected = dataRoot.resolve("shared_prefs");
+        if (!expected.equals(directory)
+                || !policy.checkFile(directory.toString(), PrivatePathPolicy.Access.LIST).toRealPath().equals(directory))
+            throw new PrivatePathPolicy.PathViolation("invalid-root", "Platform settings directory changed");
+        for (String name : new String[] {"rts_settings.xml", "rts_settings.xml.bak"}) {
+            Path leaf = policy.checkFile(directory.resolve(name).toString(), PrivatePathPolicy.Access.WRITE);
+            BasicFileAttributes attributes;
+            try {
+                attributes = Files.readAttributes(leaf, BasicFileAttributes.class, LinkOption.NOFOLLOW_LINKS);
+            } catch (NoSuchFileException missing) {
+                attributes = null;
+            }
+            if (attributes != null) {
+                if (attributes.isSymbolicLink())
+                    throw new PrivatePathPolicy.PathViolation("symbolic-link", "Settings leaf is a link");
+                if (!attributes.isRegularFile())
+                    throw new PrivatePathPolicy.PathViolation("wrong-type", "Settings leaf is not a regular file");
+                if (requireMissing)
+                    throw LATCH.trip("settings-preexisting", "First settings open requires missing XML and backup", null);
+            }
+        }
+    }
+
+    public static SharedPreferences openPlatformSettings(Context context) {
+        LATCH.check();
+        requirePlatformSettingsContext(context);
+        try {
+            Path dataRoot = checkedPlatformSettingsDataRoot();
+            if (platformSettings != null) {
+                checkPlatformSettingsPaths(dataRoot, platformSettingsDirectory, false);
+                return platformSettings;
+            }
+            Path directory = prepareDirectory(new PrivatePathPolicy(dataRoot), dataRoot.resolve("shared_prefs"));
+            checkPlatformSettingsPaths(dataRoot, directory, true);
+            SharedPreferences candidate = application.getSharedPreferences("rts_settings", Context.MODE_PRIVATE);
+            if (candidate == null)
+                throw LATCH.trip("settings-io-error", "Platform settings object is required", null);
+            checkPlatformSettingsPaths(dataRoot, directory, false);
+            platformSettingsDirectory = directory;
+            platformSettings = candidate;
+            return candidate;
+        } catch (FatalLatch.Failure error) {
+            throw error;
+        } catch (PrivatePathPolicy.PathViolation error) {
+            throw LATCH.trip(error.code(), error.getMessage(), error);
+        } catch (IOException | SecurityException error) {
+            throw LATCH.trip("io-error", "Cannot inspect platform settings paths", error);
+        } catch (RuntimeException error) {
+            throw LATCH.trip("settings-io-error", "Platform settings open failed", error);
+        }
     }
 
     private static String checked(String path, PrivatePathPolicy.Access access) {
