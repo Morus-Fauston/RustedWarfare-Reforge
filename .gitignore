@@ -22,3 +22,7 @@ local.properties
 /Engine/build/
 /Engine/*/build/
 /Engine/*/bin/
+
+# SimulationTest generated mirrors and Python bytecode cache
+/SimulationTest/bin/
+/Decompile/tools/p003/__pycache__/
