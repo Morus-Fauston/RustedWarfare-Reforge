@@ -18,6 +18,9 @@
 | [gboot_transform](<tools/p003/gboot_transform.py>) / [测试](<tools/p003/test_gboot_transform.py>) | 纯函数整方法定点替换，字节身份/结构校验；自编写 smali 夹具公测 | 原版合片或加载可用 |
 | [bf_observer_transform](<tools/p003/bf_observer_transform.py>) / [测试](<tools/p003/test_bf_observer_transform.py>) | 带身份和锚点约束的两点观测插桩；自有合成夹具公测 | 原版运行时回调已经发生 |
 | [original_input_transform](<tools/p003/original_input_transform.py>) / [测试](<tools/p003/test_original_input_transform.py>) | 受限派生输入变换及 `--identity` 校验 CLI；只写新输出目录 | 原版加载、基准等价或完整布局可用 |
+| [original_approved_layout](<tools/p003/original_approved_layout.py>) / [测试](<tools/p003/test_original_approved_layout.py>) | 限定三处路径变换的主机资源布局生成、身份核验及只读审计；自有夹具测试 | APK装入、设备私有seed、原版加载或安装许可 |
+
+受限布局公测从仓库根执行 `python -B -m unittest discover -s Decompile/tools/p003 -p test_original_approved_layout.py -v`；夹具在系统临时目录，真实符号链接负例若被环境拒绝应报告失败，不能记为通过。命令行参数见 `python -B Decompile/tools/p003/original_approved_layout.py --help`。生成需要调用者提供固定源、既有派生根及各自身份清单，目标必须是已存在许可目录下的新子目录；不会随公开源码提供原版输入。输出始终保留 `installAllowed=false`，只读复核调用同模块的 `audit_approved_layout`，需要完整输入与布局清单身份。
 
 TestLab 场景、真实原版输入、采集/合片脚本及旧证据不随公开仓库提供。下方只用自有 toy 夹具，不要求找内部文档补件，不提供原素材示例。原版 runtime 不发布、不进入独立 core；没有解禁修改原版包的签名、安装或设备运行。
 
