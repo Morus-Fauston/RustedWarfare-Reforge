@@ -39,3 +39,30 @@ if ($LASTEXITCODE -ne 0) { throw 'Metadata host checks failed' }
 ```
 
 预期输出 `PASS all: 61 checks`，另保留 `JSON_SUCCESS` 与 `JSON_FAILURE` 合成样本。主机验证覆盖编排与失败路径，不能证明 Android 权限、旧数据保护或正式沙盒运行。
+
+## 自身运行数据读取与备份
+
+测试 APK 的第三个入口为 `com.rustedwarfare.reforge.android.ownruns.OwnRunsProtectionInstrumentation`，保留前两个入口。它先校验与上述诊断相同的实例、进程、两包完整 APK 和 DER 身份，再只读自身外部私有 `files/runs`，每个合法 run 只允许 `client-diagnostic.jsonl`。不接受任意数据路径，不创建或删除设备业务文件。正常框架绑定仍可能维护 profile、cache 或 ART 状态。
+
+请求所有值均为字符串。`inventory` 恰含十键：`schema=e9-ownruns-request-v1`、`mode=inventory`、`manifest=-` 与上述七个身份键。它保留实际 names 顺序、节点属性及完整文件 SHA256，不发送内容。`backup` 使用 `mode=backup`、刚接收 inventory 生成的完整 manifest，并增加第十一键 `manifestSha256`；只有 manifest 中 `copy=1` 的叶子传输原始内容，`copy=0` 仍重新核验。不能复用其它安装身份或旧批次的 manifest。
+
+合法 run 名为 `run-[0-9]+-[0-9a-f]{8}`；逐级检查固定路径及普通目录，叶子以 `O_RDONLY | O_CLOEXEC | O_NOFOLLOW` 打开并前后核对象身份。最多128个 run、每叶16MiB、总64MiB、观测30秒；主机还须设置调用超时。身份、未知 names、链接、读取或对象变化、预算、传输任一失败均保首错和 partial。仅自身 files/runs 缺失可通过成功的定向父查询证明；该查询不传输其它父 names，畸形数组不得接成缺失。
+
+状态使用 `e9-ownruns-frame-v1` 有序 ASCII 分片，内容为原 bytes 的 Base64；主机必须核 sequence/part/last、事件和 summary 摘要、terminal、内容偏移与完整 size/SHA，再以新文件保存原 bytes。ADB exit0 或终态文本不足以证明备份完成。成功也不自动放行安装、证明整个私有树安全或正式产品运行。主机接收与设备运行依赖本机私有执行材料，不随公开仓库提供。
+
+以下主机命令只编译纯 Java seam，自建夹具和 classes 放系统 Temp，不需 Android SDK。从仓库根使用 JDK25：
+
+```powershell
+$ownRunsClasses = Join-Path ([System.IO.Path]::GetTempPath()) ('rw-ownruns-' + [guid]::NewGuid().ToString('N'))
+$null = New-Item -ItemType Directory -Path $ownRunsClasses
+$ownRunsSources = 'Engine/android/src/androidTest/java/com/rustedwarfare/reforge/android'
+$ownRunsTests = 'Engine/android/src/test/java/com/rustedwarfare/reforge/android/ownruns'
+javac --release 8 -encoding UTF-8 -d $ownRunsClasses "$ownRunsSources/metadata/MetadataJson.java" "$ownRunsSources/metadata/MetadataProbe.java" "$ownRunsSources/ownruns/OwnRunsJson.java" "$ownRunsSources/ownruns/OwnRunsProbe.java" "$ownRunsTests/OwnRunsProbeHostTest.java" "$ownRunsTests/OwnRunsProtocolHostTest.java" "$ownRunsTests/OwnRunsFilesystemHostTest.java" "$ownRunsTests/OwnRunsDirectedAbsenceHostTest.java"
+if ($LASTEXITCODE -ne 0) { throw 'OwnRuns host compilation failed' }
+java -cp $ownRunsClasses com.rustedwarfare.reforge.android.ownruns.OwnRunsProbeHostTest backup
+if ($LASTEXITCODE -ne 0) { throw 'OwnRuns inventory/backup checks failed' }
+java -cp $ownRunsClasses com.rustedwarfare.reforge.android.ownruns.OwnRunsDirectedAbsenceHostTest all
+if ($LASTEXITCODE -ne 0) { throw 'OwnRuns directed absence checks failed' }
+```
+
+预期分别为 `PASS 8 ownruns checks` 和 `PASS 59 directed-absence checks`。完整主机套件可另用 `-Downruns.fixtureDir=<系统Temp内新夹具目录>` 执行 `OwnRunsProbeHostTest all`，其中真实 Windows symlink 创建需要本机支持；该套件也不证明 Android descriptor、SELinux 或产品玩法。指定 MuMu0 已完成实际 inventory 和七份旧 run 的原 bytes 备份及非作者接收；此前 run-as 拒绝和失败证据保留。正式 Android 沙盒、原版参考器及整期验收分别验证。
