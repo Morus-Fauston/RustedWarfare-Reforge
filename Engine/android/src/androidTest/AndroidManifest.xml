@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <instrumentation
+        android:name="com.rustedwarfare.reforge.android.XmlSecurityInstrumentation"
+        android:targetPackage="com.rustedwarfare.reforge.android"
+        android:functionalTest="false"
+        android:handleProfiling="false"
+        android:label="Tests for com.rustedwarfare.reforge.android" />
+    <instrumentation
+        android:name="com.rustedwarfare.reforge.android.metadata.StorageMetadataInstrumentation"
+        android:targetPackage="com.rustedwarfare.reforge.android"
+        android:functionalTest="false"
+        android:handleProfiling="false" />
+</manifest>
