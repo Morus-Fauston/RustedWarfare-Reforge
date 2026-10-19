@@ -7,11 +7,13 @@ import java.util.HashMap;
 import com.rustedwarfare.reforge.reference.io.FatalLatch;
 import com.rustedwarfare.reforge.reference.io.PrivatePathPolicy;
 import com.rustedwarfare.reforge.reference.io.ReferenceIo;
+import com.rustedwarfare.reforge.reference.io.ReferenceCache;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.DataOutputStream;
 import java.io.IOException;
+import java.io.InputStream;
 import java.io.PrintWriter;
 import java.nio.file.FileAlreadyExistsException;
 import java.nio.file.Files;
@@ -31,6 +33,8 @@ public final class GbootBootstrap {
     private static Path root;
     private static Path[] directories;
     private static ReferenceIo io;
+    private static ReferenceCache cache;
+    private static Path[] cacheDirectories;
     private static boolean backendPublished;
     private static SharedPreferences platformSettings;
     private static Path platformSettingsDirectory;
@@ -63,11 +67,19 @@ public final class GbootBootstrap {
             for (int index = 0; index < names.length; index++)
                 candidateDirectories[index] = prepareDirectory(rootPolicy, candidateRoot.resolve(names[index]));
             ReferenceIo candidateIo = new ReferenceIo(candidateRoot, candidateDirectories[5], LATCH);
+            String[] cacheTypes = {"mods-info", "mods-dir-search", "mods-dir-music"};
+            Path[] candidateCacheDirectories = new Path[cacheTypes.length];
+            for (int index = 0; index < cacheTypes.length; index++)
+                candidateCacheDirectories[index] = prepareDirectory(rootPolicy,
+                        candidateDirectories[4].resolve(cacheTypes[index] + ".cachedata"));
+            ReferenceCache candidateCache = new ReferenceCache(candidateDirectories[4], LATCH);
             // Publish only after all fixed directories and the frozen PP/RP constructor succeed.
             application = candidateContext;
             filesRoot = candidateFiles;
             root = candidateRoot;
             directories = candidateDirectories;
+            cacheDirectories = candidateCacheDirectories;
+            cache = candidateCache;
             io = candidateIo;
         } catch (PrivatePathPolicy.PathViolation error) {
             throw LATCH.trip(error.code(), error.getMessage(), error);
@@ -102,6 +114,7 @@ public final class GbootBootstrap {
         try {
             io.existingDirectory(root.toString());
             for (Path directory : directories) io.existingDirectory(directory.toString());
+            for (Path directory : cacheDirectories) io.existingDirectory(directory.toString());
         } catch (SecurityException error) {
             throw LATCH.trip("io-error", "Cannot inspect private roots", error);
         }
@@ -151,6 +164,43 @@ public final class GbootBootstrap {
         } catch (InvalidPathException error) {
             throw LATCH.trip("invalid-path", "Platform rejected a private path", error);
         }
+    }
+
+    /** Types are fixed during init; the original create flag cannot create dynamic directories. */
+    public static String privateCachePath(String type, String encodedKey, boolean create) {
+        LATCH.check();
+        requireBackendPublished();
+        return cache.path(type, encodedKey).toString();
+    }
+
+    public static FileInputStream openPrivateCache(String type, String encodedKey) {
+        LATCH.check();
+        requireBackendPublished();
+        return cache.open(type, encodedKey);
+    }
+
+    public static boolean writePrivateCache(String type, String encodedKey, InputStream input) {
+        LATCH.check();
+        requireBackendPublished();
+        return cache.write(type, encodedKey, input);
+    }
+
+    public static void deletePrivateCache(String type, String encodedKey) {
+        LATCH.check();
+        requireBackendPublished();
+        cache.invalidate(type, encodedKey);
+    }
+
+    public static String countPrivateCaches() {
+        LATCH.check();
+        requireBackendPublished();
+        return "Files in cache: " + cache.count();
+    }
+
+    public static String clearPrivateCaches() {
+        LATCH.check();
+        requireBackendPublished();
+        return "Files cleared from cache: " + cache.clear();
     }
 
     /** Denial keeps the original boolean ABI; there is no false/success fallback. */

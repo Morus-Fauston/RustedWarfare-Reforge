@@ -163,3 +163,20 @@ foreach ($case in 'not-ready-root','not-ready-null','prefailed') {
 这6个场景只验证未初始化Context时的失败顺序和首失败对象保持，不证明真实AssetManager绑定或枚举成功。`bindPackagedAssetIndex` 仅接受已核可信启动Context所给的首次精确manager，同Application不意味着不同manager可互换；`listPackagedAssets` 检查绑定身份、字面相对路径并将平台IO错误锁存。
 
 **设备验证尚未完成**：本机指定MuMu的最近资产探针首例在第3次检查失败（根目录夹具成员断言），其余35例未运行、无完成标志；失败前未记录实际目录名，尚不能定位为helper错误或夹具预期错误。绑定和helper/native顺序比对已走到，但不据此宣布整组通过。原始失败保留在私有票据证据域，未改基准、未放宽断言；该接线前置检查点不证明原版初始化、推进、轨迹采集或首次真实对拍。
+
+2026-10-19后续诊断补充：上段保留早期失败时点状态。实际枚举names和包身份现已另存并独审，根目录同时包含应用资产和平台的 `geoid_map`、`images`、`webkit`，因此原精确根集合断言仍失败。原oracle、原失败和完整诊断证据保留；后续自有APP资产试验不能证明原版参考器运行成功。
+
+### Private Cache：主机叶子生命周期与3个早期失败场景
+
+[ReferenceCache](<src/main/java/com/rustedwarfare/reforge/reference/io/ReferenceCache.java>) 仅操作已准备的三个固定缓存子目录（`mods-info.cachedata`、`mods-dir-search.cachedata`、`mods-dir-music.cachedata`）。允许单叶子的临时写入后替换、读取时更新时间、失效删除、计数及预检后的非递归清理；拒绝其他域、目录叶子、链接及跨type别名。每次操作重新核对完整canonical身份，共用首次失败锁存；写入不关闭借入的InputStream。
+
+沿用上面的编译结果和自建 `$fixtures`，可运行下面的 **Windows** 主机测试。`all` 包含19个真实文件系统场景，其中有自建夹具的移动、替换、删除、符号链接和Windows junction；保留夹具便于复核，不对原版或私人目录运行。符号链接创建权限不足会使该场景失败，不会跳过或冒充通过。
+
+```powershell
+Invoke-Checked $java @('-cp',$classes,'com.rustedwarfare.reforge.reference.io.ReferenceCacheTest',$fixtures,'all')
+foreach ($case in 'not-ready','prefailed','all-not-ready') {
+    Invoke-Checked $java @('-cp',$bootCp,($bootPackage+'GbootCacheGateTest'),$case)
+}
+```
+
+预期文件系统组输出 `PASS ReferenceCache all scenarios=19`，三个冷JVM各退出0。Windows/JDK25主机修复已保留实际红绿并经非作者复审，包括原同根跨type junction 漏检反例和原40次并发写入断言。三个Gboot场景只证明缺根/已有失败时的顺序与同一首失败对象；没有初始化Android Context，不证明Android文件系统、原版缓存调用、DEX组合、安装或原版正常推进。输出关闭双故障、touch系统故障等动态路径仍未覆盖。
