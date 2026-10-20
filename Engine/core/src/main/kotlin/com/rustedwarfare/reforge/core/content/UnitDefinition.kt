@@ -13,6 +13,7 @@ class UnitDefinition(
     val imageScale: Double,
     val movement: MovementProfile,
     retainedUnconsumed: Set<String>,
+    val fogOfWarSightRange: Int = 15,
 ) {
     val retainedUnconsumed: Set<String> = Collections.unmodifiableSet(LinkedHashSet(retainedUnconsumed))
 }

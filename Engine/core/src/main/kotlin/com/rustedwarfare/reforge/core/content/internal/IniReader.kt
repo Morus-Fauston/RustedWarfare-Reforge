@@ -6,7 +6,7 @@ import java.nio.file.Path
 
 internal object IniReader {
     private val consumed = mapOf(
-        "core" to setOf("name", "class", "radius", "displayRadius"),
+        "core" to setOf("name", "class", "radius", "displayRadius", "fogOfWarSightRange"),
         "graphics" to setOf("total_frames", "image", "imageScale"),
         "movement" to setOf("movementType", "moveSpeed", "moveAccelerationSpeed", "moveDecelerationSpeed",
             "maxTurnSpeed", "turnAcceleration", "moveSlidingMode", "moveIgnoringBody"),
@@ -71,6 +71,9 @@ internal object IniReader {
         if (frames == null || frames <= 0) reject(ContentErrorCode.MALFORMED_SYNTAX, path, "graphics", "total_frames", reason = "Expected positive frame count")
         val image = resolveReference(path, required("graphics", "image"), "graphics", "image")
         val scale = if (sections["graphics"]?.containsKey("imageScale") == true) number("graphics", "imageScale", true) else 1.0
+        val sight = sections["core"]?.get("fogOfWarSightRange")?.let {
+            it.toIntOrNull() ?: reject(ContentErrorCode.MALFORMED_SYNTAX, path, "core", "fogOfWarSightRange", reason = "Expected integer sight range")
+        } ?: 15
         only("movement", "movementType", "LAND")
         only("movement", "moveSlidingMode", "false")
         only("movement", "moveIgnoringBody", "false")
@@ -78,6 +81,6 @@ internal object IniReader {
             frames, image, scale, MovementProfile(MovementType.LAND, number("movement", "moveSpeed"),
                 number("movement", "moveAccelerationSpeed"), number("movement", "moveDecelerationSpeed"),
                 number("movement", "maxTurnSpeed"), number("movement", "turnAcceleration"), false, false),
-            sections.flatMap { (section, fields) -> fields.keys.filter { it in retained.getValue(section) } }.toSet())
+            sections.flatMap { (section, fields) -> fields.keys.filter { it in retained.getValue(section) } }.toSet(), sight)
     }
 }

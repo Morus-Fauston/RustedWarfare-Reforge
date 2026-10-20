@@ -59,6 +59,28 @@ public final class ReferenceIo {
           catch(IOException error) {throw latch.trip("io-error","Cannot inspect rename destination",error);}
         throw latch.trip("destination-exists","Rename destination already exists",null);
     }
+    /** Validated metadata path only; does not open, list or create its target. */
+    public Path privateMetadataPath(String path) {
+        latch.check();
+        try {
+            Path checked = privateFile(path, PrivatePathPolicy.Access.EXISTS);
+            try {
+                BasicFileAttributes attributes = Files.readAttributes(
+                        checked, BasicFileAttributes.class, LinkOption.NOFOLLOW_LINKS);
+                if (attributes.isSymbolicLink())
+                    throw latch.trip("symbolic-link", "Links are forbidden in private metadata", null);
+                if (!attributes.isRegularFile() && !attributes.isDirectory())
+                    throw latch.trip("wrong-type", "Metadata requires a regular file or directory", null);
+                return privateFile(checked.toString().replace('\\', '/'), PrivatePathPolicy.Access.EXISTS);
+            } catch (NoSuchFileException missing) {
+                checked = privateFile(path, PrivatePathPolicy.Access.EXISTS);
+                existingDirectory(checked.getParent().toString().replace('\\', '/'));
+                return checked;
+            }
+        } catch (IOException | SecurityException error) {
+            throw latch.trip("io-error", "Cannot inspect private metadata path", error);
+        }
+    }
     public long lastModified(String path) {
         latch.check();
         try {
