@@ -28,3 +28,11 @@ internal fun Observation.fields(): Map<String, Any?> = mapOf(
     "events" to events.map { mapOf("kind" to it.kind, "unitId" to it.unitId) },
     "actionResults" to actionResults.map { it.fields() },
 )
+
+internal fun PlayerObservation.fields(): Map<String, Any?> =
+    Observation(sampleId, worldId, scenarioId, stepIndex, simulationTime, units, events, actionResults).fields() + mapOf(
+        "playerId" to playerId,
+        "visionEpoch" to vision?.epoch,
+        "knowledge" to knowledge?.cells?.map { mapOf("visible" to it.visible,
+            "blocked" to it.lastKnownBlocked, "gid" to it.lastKnownGroundGid) },
+    )

@@ -2,12 +2,17 @@ package com.rustedwarfare.reforge.client
 
 import com.rustedwarfare.reforge.core.sim.*
 
-class SandboxSession(val scenario: Scenario, private val evidence: ClientEvidence = ClientEvidence.NONE) : AutoCloseable {
-    private val context = when (val initialized = SimulationContext.initialize(scenario)) {
+class SandboxSession(scenario: Scenario, private val evidence: ClientEvidence = ClientEvidence.NONE,
+                     val options: SandboxOptions = SandboxOptions()) : AutoCloseable {
+    private val scenario: Scenario = scenario.copy(automaticVision = options.knowledgeRules())
+    val renderResources: SandboxRenderResources = SandboxRenderResources.from(this.scenario)
+    private val context = when (val initialized = SimulationContext.initialize(this.scenario)) {
         is InitResult.Accepted -> initialized.context
         is InitResult.Rejected -> error("${initialized.error.code}: ${initialized.error.message}")
     }
-    val observation: Observation get() = context.observe()
+    private var latestFrame: SandboxFrame? = makeFrame()
+    val frame: SandboxFrame get() = checkNotNull(latestFrame) { "Match is closed" }
+    val observation: PlayerObservation get() = frame.observation
     var selectedId: String? = null
         private set
 
@@ -30,9 +35,10 @@ class SandboxSession(val scenario: Scenario, private val evidence: ClientEvidenc
         apply(StopAction("click-${++actionNumber}", "p1", it, context.world))
     }
     fun tick() {
-        val sample = context.advance(Step(nextStep, 1.0, "sim-tick"))
+        context.advance(Step(nextStep, 1.0, "sim-tick"))
         nextStep++
-        sample.events.lastOrNull()?.let { feedback = it.kind }
+        publishFrame()
+        observation.events.lastOrNull()?.let { feedback = it.kind }
         capture("step")
     }
 
@@ -48,7 +54,7 @@ class SandboxSession(val scenario: Scenario, private val evidence: ClientEvidenc
     }
 
     private fun unitAt(position: Position): String? = observation.units.lastOrNull {
-            val radius = scenario.unitDefinitions.getValue(it.typeId).displayRadius
+            val radius = renderResources.units.getValue(it.typeId).displayRadius
             val dx = it.position.x - position.x
             val dy = it.position.y - position.y
             dx * dx + dy * dy <= radius * radius
@@ -57,6 +63,7 @@ class SandboxSession(val scenario: Scenario, private val evidence: ClientEvidenc
     private fun apply(action: Action): ActionResult {
         capture("before-action")
         val result = context.submit(action)
+        publishFrame()
         feedback = when (result) {
             is ActionResult.Rejected -> result.error.code
             is ActionResult.Accepted -> result.events.lastOrNull()?.kind ?: "Accepted"
@@ -70,6 +77,30 @@ class SandboxSession(val scenario: Scenario, private val evidence: ClientEvidenc
 
     private fun capture(phase: String) { evidence.record("observation", mapOf("phase" to phase, "sample" to observation.fields())) }
 
+    private fun makeFrame(): SandboxFrame {
+        val view = context.observePlayer(context.world, "p1")
+        val map = scenario.map
+        val knowledge = view.knowledge
+        // NoFog alone explicitly authorizes the local host's entire ground layout.
+        val ground = if (knowledge == null) map.groundGids else null
+        val terrain = List(map.widthTiles * map.heightTiles) { index ->
+            val column = index % map.widthTiles
+            val row = index / map.widthTiles
+            val cell = knowledge?.cell(column, row)
+            TerrainFrameCell(column, row, if (cell == null) checkNotNull(ground)[index] else cell.lastKnownGroundGid,
+                cell?.visible ?: true)
+        }
+        return SandboxFrame(view, terrain)
+    }
+
+    private fun publishFrame() {
+        latestFrame = makeFrame()
+        if (selectedId != null && observation.units.none { it.unitId == selectedId }) {
+            selectedId = null
+            feedback = "No selection"
+        }
+    }
+
     override fun close() {
         if (!isOpen) return
         try { capture("before-close") }
@@ -77,6 +108,7 @@ class SandboxSession(val scenario: Scenario, private val evidence: ClientEvidenc
             context.close()
             isOpen = false
             selectedId = null
+            latestFrame = null
             feedback = "Match closed"
         }
         evidence.record("closed", emptyMap())

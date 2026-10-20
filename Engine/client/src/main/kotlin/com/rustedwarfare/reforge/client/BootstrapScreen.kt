@@ -37,6 +37,11 @@ class BootstrapScreen(
     private lateinit var statusLabel: Label
     private lateinit var messageLabel: Label
     private lateinit var stopButton: TextButton
+    private lateinit var modeBox: SelectBox<String>
+    private lateinit var shareBox: CheckBox
+    private lateinit var startButton: TextButton
+    private val launch = SandboxLaunchState(SandboxConfiguration(initialRoot.toAbsolutePath().normalize(), SandboxOptions()))
+    private var pendingLoad: SandboxLoad? = null
     private var loading = false
     private var generation = 0L
     private var activeRoot: Path = initialRoot
@@ -48,7 +53,7 @@ class BootstrapScreen(
 
     override fun create() {
         createPresentation()
-        requestLoad()
+        updateHud()
     }
 
     private fun createPresentation() {
@@ -62,7 +67,7 @@ class BootstrapScreen(
             it.setBounds(x, y - h, w, h); it.setAlignment(Align.topLeft); it.setWrap(true); stage.addActor(it)
         }
         label("RustedWarfare-Reforge", 24f, 598f, 600f, 30f).setFontScale(1.5f)
-        label("P001 / Offline", 650f, 592f, 280f, 24f)
+        label("Offline sandbox", 650f, 592f, 280f, 24f)
         label("p1  Local", 24f, 532f, 220f, 22f).color = Color(0.45f, 0.91f, 0.65f, 1f)
         label("p2  No controller", 290f, 532f, 300f, 22f).color = Color(1f, 0.72f, 0.3f, 1f)
         label("Selection", 650f, 532f, 280f, 24f)
@@ -72,12 +77,35 @@ class BootstrapScreen(
         stopButton = button("Stop", 650f, 292f, 130f) { session?.stop(); updateHud() }
         button("Exit match", 800f, 292f, 130f) { leaveMatch() }
         label("Content folder", 650f, 270f, 280f, 24f)
-        rootField = TextField(initialRoot.toAbsolutePath().normalize().toString(), skin).also {
+        rootField = TextField(launch.configuration.root.toString(), skin).also {
             it.setOnlyFontChars(false)
             it.setBounds(650f, 206f, 280f, 34f); stage.addActor(it)
             it.isDisabled = touchControls
         }
-        button("Reopen", 650f, 150f, 280f) { requestLoad() }
+        modeBox = SelectBox<String>(skin).also {
+            it.setItems("NoFog", "Memory", "Hardcore")
+            it.selectedIndex = launch.configuration.options.mode.ordinal
+            it.setBounds(650f, 156f, 280f, 40f)
+            it.addListener(object : ChangeListener() {
+                override fun changed(event: ChangeEvent, actor: Actor) {
+                    if (launch.canEdit) launch.configure(launch.configuration.copy(options =
+                        launch.configuration.options.copy(mode = SandboxMode.entries[modeBox.selectedIndex])))
+                }
+            })
+            stage.addActor(it)
+        }
+        shareBox = CheckBox(" Shared vision", skin).also {
+            it.isChecked = launch.configuration.options.shareAlliedVision
+            it.setBounds(650f, 108f, 280f, 40f)
+            it.addListener(object : ChangeListener() {
+                override fun changed(event: ChangeEvent, actor: Actor) {
+                    if (launch.canEdit) launch.configure(launch.configuration.copy(options =
+                        launch.configuration.options.copy(shareAlliedVision = shareBox.isChecked)))
+                }
+            })
+            stage.addActor(it)
+        }
+        startButton = button("Start", 650f, 60f, 280f) { requestLoad() }
         Gdx.input.inputProcessor = InputMultiplexer(stage, object : InputAdapter() {
             override fun keyDown(keycode: Int): Boolean {
                 if (!touchControls || keycode != Input.Keys.BACK) return false
@@ -144,6 +172,20 @@ class BootstrapScreen(
             cursor = result.newDrawable("white", text).apply { minWidth = 1f }
             selection = result.newDrawable("white", Color(0.3f, 0.5f, 0.38f, 1f))
         })
+        val field = result.newDrawable("white", Color(0.12f, 0.15f, 0.14f, 1f)).apply {
+            leftWidth = 8f; rightWidth = 8f; topHeight = 8f; bottomHeight = 8f
+        }
+        val listStyle = com.badlogic.gdx.scenes.scene2d.ui.List.ListStyle(font, text, text,
+            result.newDrawable("white", Color(0.3f, 0.5f, 0.38f, 1f)))
+        result.add("default", SelectBox.SelectBoxStyle(font, text, field,
+            ScrollPane.ScrollPaneStyle().apply { background = field }, listStyle).apply {
+            backgroundDisabled = result.newDrawable("white", Color(0.16f, 0.19f, 0.18f, 1f))
+            disabledFontColor = Color(0.45f, 0.5f, 0.47f, 1f)
+        })
+        result.add("default", CheckBox.CheckBoxStyle(
+            result.newDrawable("white", Color(0.3f, 0.34f, 0.32f, 1f)).apply { minWidth = 18f; minHeight = 18f },
+            result.newDrawable("white", Color(0.45f, 0.91f, 0.65f, 1f)).apply { minWidth = 18f; minHeight = 18f },
+            font, text).apply { disabledFontColor = Color(0.45f, 0.5f, 0.47f, 1f) })
         return result
     }
 
@@ -155,20 +197,35 @@ class BootstrapScreen(
         }
 
     private fun requestLoad() {
-        leaveMatch()
         try {
-            activeRoot = Paths.get(rootField.text).toAbsolutePath().normalize()
-            generation++
+            val request = if (launch.canEdit) {
+                launch.configure(launch.configuration.copy(root = Paths.get(rootField.text).toAbsolutePath().normalize()))
+                launch.start()
+            } else launch.reopen()
+            closeMatchResources()
+            pendingLoad = request
+            generation = request.generation
+            activeRoot = request.configuration.root
             loading = true
             loadError = null
-            evidence.record("load-request", mapOf("generation" to generation, "root" to activeRoot.toString()))
+            evidence.record("load-request", mapOf("generation" to generation, "root" to activeRoot.toString(),
+                "mode" to request.configuration.options.mode.name,
+                "shareAlliedVision" to request.configuration.options.shareAlliedVision))
             loader.request(activeRoot)
         } catch (failure: Exception) { failLoad(failure) }
         updateHud()
     }
 
     private fun leaveMatch() {
+        closeMatchResources()
+        launch.exit()
+        if (presentationReady) { stage.unfocusAll(); updateHud() }
+        evidence.record("match-exit", mapOf("generation" to generation))
+    }
+
+    private fun closeMatchResources() {
         loader.cancel()
+        pendingLoad = null
         loading = false
         loadError = null
         accumulator = 0.0
@@ -181,11 +238,11 @@ class BootstrapScreen(
                 catch (diagnosticFailure: Exception) { Gdx.app.error("p001-cleanup", "Cannot record cleanup failure", diagnosticFailure) }
             }
         }
-        if (presentationReady) { stage.unfocusAll(); updateHud() }
-        evidence.record("match-exit", mapOf("generation" to generation))
     }
 
     private fun failLoad(failure: Throwable) {
+        pendingLoad?.let { launch.fail(it.generation) }
+        pendingLoad = null
         loading = false
         loadError = failure.message ?: failure.toString()
         evidence.record("load-error", mapOf("generation" to generation, "message" to loadError))
@@ -196,6 +253,7 @@ class BootstrapScreen(
     override fun render() {
         if (!presentationReady || disposed) return
         if (loading) loader.poll()?.fold(onSuccess = { scenario ->
+            val request = pendingLoad ?: return@fold
             var pendingGraphics: SandboxGraphics? = null
             var pendingSession: SandboxSession? = null
             try {
@@ -203,9 +261,11 @@ class BootstrapScreen(
                 val runGeneration = generation
                 pendingSession = SandboxSession(scenario, ClientEvidence { kind, values ->
                     evidence.record(kind, values + ("generation" to runGeneration))
-                })
+                }, request.configuration.options)
                 evidence.record("load-ready", mapOf("generation" to generation, "mapWidth" to scenario.map.widthTiles,
                     "mapHeight" to scenario.map.heightTiles, "blockedCount" to scenario.map.blocking.blockedCount))
+                check(launch.complete(request.generation)) { "Cancelled load generation" }
+                pendingLoad = null
                 graphics = pendingGraphics
                 session = pendingSession
                 loading = false
@@ -236,9 +296,9 @@ class BootstrapScreen(
         shapes.rect(638f, 0f, 322f, 560f)
         shapes.end()
         if (current != null) {
-            batch.begin(); graphics?.draw(batch, current.observation); batch.end()
+            batch.begin(); graphics?.draw(batch, current.frame); batch.end()
             shapes.begin(ShapeRenderer.ShapeType.Line)
-            graphics?.drawOverlay(shapes, current.observation, current.selectedId)
+            graphics?.drawOverlay(shapes, current.frame, current.selectedId)
             shapes.end()
         }
         stage.act(Gdx.graphics.deltaTime); stage.draw()
@@ -254,14 +314,18 @@ class BootstrapScreen(
             if (selected.ownerPlayerId == "p1") "Local control" else "No controller",
             selected.movementState.name.lowercase(), selected.position.x, selected.position.y, selected.heading, selected.speed))
         stopButton.isDisabled = selected == null
+        rootField.isDisabled = touchControls || !launch.canEdit
+        modeBox.isDisabled = !launch.canEdit
+        shareBox.isDisabled = !launch.canEdit
+        startButton.setText(if (launch.canEdit) "Start" else "Reopen")
         statusLabel.setText(when {
             loading -> "Loading"
             loadError != null -> "Load failed"
-            current == null -> "Match closed"
+            current == null -> "Ready"
             else -> "${current.feedback}\nStep ${current.observation.stepIndex}"
         })
         messageLabel.isVisible = current == null
-        messageLabel.setText(if (loading) "Loading" else loadError ?: "Match closed")
+        messageLabel.setText(if (loading) "Loading" else loadError ?: "Ready")
     }
 
     override fun resize(width: Int, height: Int) {
@@ -285,7 +349,8 @@ class BootstrapScreen(
         if (touchControls && !presentationReady) {
             try {
                 createPresentation()
-                graphics = session?.let { SandboxGraphics.load(it.scenario, activeRoot) }
+                graphics = session?.let { SandboxGraphics.load(it.renderResources, activeRoot) }
+                updateHud()
             } catch (failure: Exception) {
                 leaveMatch()
                 releasePresentation()

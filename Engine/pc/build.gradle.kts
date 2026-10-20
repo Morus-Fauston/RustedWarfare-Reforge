@@ -19,6 +19,7 @@ dependencies {
     implementation(project(":client"))
     implementation("com.badlogicgames.gdx:gdx-backend-lwjgl3:1.13.1")
     runtimeOnly("com.badlogicgames.gdx:gdx-platform:1.13.1:natives-desktop")
+    testImplementation(kotlin("test"))
 }
 
 application {
@@ -28,4 +29,8 @@ application {
 
 tasks.named<JavaExec>("run") {
     workingDir = rootProject.projectDir.parentFile
+}
+
+tasks.test {
+    useJUnitPlatform()
 }

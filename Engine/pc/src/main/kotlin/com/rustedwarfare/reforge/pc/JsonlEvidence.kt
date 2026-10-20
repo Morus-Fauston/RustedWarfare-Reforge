@@ -25,7 +25,7 @@ class JsonlEvidence(private val directory: Path, private val runId: String, inpu
         writer = Files.newBufferedWriter(directory.resolve("reforge/client-diagnostic.jsonl"), StandardOpenOption.CREATE_NEW)
         Files.writeString(directory.resolve("manifest.json"), json(mapOf(
             "format" to "p001.windows-diagnostic.v1", "runId" to runId,
-            "phase" to "P001", "topic" to "03-windows-client", "ticket" to "ENG-P001-005",
+            "phase" to "P002", "topic" to "03-windows-client", "ticket" to "ENG-P002-009",
             "startedAt" to Instant.now().toString(), "inputs" to inputs.toString(),
             "javaVersion" to System.getProperty("java.version"), "javaHome" to System.getProperty("java.home"),
             "osName" to System.getProperty("os.name"), "osVersion" to System.getProperty("os.version"),
@@ -41,7 +41,7 @@ class JsonlEvidence(private val directory: Path, private val runId: String, inpu
             "sequence" to sequence++, "wallTime" to Instant.now().toString(), "kind" to kind) + values))
         writer.newLine()
         if (kind != "observation" || values["phase"] != "step") writer.flush()
-        if (kind == "load-request") contentRoot = Path.of(values.getValue("root") as String)
+        if (kind == "load-request") contentRoot = Path.of(values.getValue("root") as String).toAbsolutePath().normalize()
         if (kind == "load-ready") {
             val files = mutableListOf(contentRoot.resolve("maps/p001-controlled.tmx"),
                 contentRoot.resolve("tilesets/p001-ground.tsx"), contentRoot.resolve("tilesets/p001-rock.tsx"),
@@ -49,7 +49,12 @@ class JsonlEvidence(private val directory: Path, private val runId: String, inpu
             val scenario = ControlledScenario.load(contentRoot)
             files += scenario.map.tileSets.map { it.imagePath }
             files += scenario.unitDefinitions.values.map { it.imagePath }
-            record("input-identities", mapOf("generation" to values["generation"], "files" to files.distinct().map(::identity)))
+            val manifestFile = contentRoot.resolve("sandbox.properties")
+            val manifest = manifestFile.takeIf { Files.exists(it) }?.let(::identity)
+            if (manifest != null) files.add(manifestFile)
+            record("input-identities", mapOf("generation" to values["generation"],
+                "root" to contentRoot.toString(), "scenarioId" to scenario.scenarioId,
+                "sandboxManifest" to (manifest ?: identity(manifestFile)), "files" to files.distinct().map(::identity)))
         }
     }
 
