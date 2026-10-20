@@ -54,7 +54,7 @@ object P001Relations {
         return null
     }
 
-    internal fun evaluate(input: com.rustedwarfare.reforge.testing.LoadedScenario, caseId: String, samples: List<Observation>): RelationFailure? {
+    internal fun evaluate(input: com.rustedwarfare.reforge.testing.LoadedScenario, caseId: String, samples: List<Observation>, naturalTurn: Boolean = false): RelationFailure? {
         if(samples.any { it.units.size!=1 || it.units.single().ownerPlayerId!="p1" || it.units.single().unitId!="u1" }) return issue("unit-identity",0,"one owned u1",samples.firstOrNull()?.units)
         val eventKinds=samples.flatMap { it.events }.map { it.kind }
         val expectedEvents=when {
@@ -90,7 +90,10 @@ object P001Relations {
         }
         if(caseId=="M02") {
             val states=samples.drop(1).map(::unit)
-            if(states.first().angularVelocity!=.25 || !near(states.last().heading,54.5) || states.any { it.position!=Position(100.0,100.0) || it.speed!=0.0 }) return issue("turn-prefix-literals",samples.lastIndex,"omega0=.25, heading20=54.5; no displacement",states.last())
+            val omega = if (naturalTurn) -.25 else .25
+            val heading = if (naturalTurn) 305.5 else 54.5
+            if(states.first().angularVelocity!=omega || !near(states.last().heading,heading) || states.any { it.position!=Position(100.0,100.0) || it.speed!=0.0 }) return issue("turn-prefix-literals",samples.lastIndex,"omega0=$omega, heading20=$heading; no displacement",states.last())
+            if(naturalTurn && states.first().pathPoints!=listOf(Position(100.0,140.0))) return issue("natural-direct-target",1,"single exact target",states.first().pathPoints)
             for(i in 1 until samples.size) {
                 val a=unit(samples[i-1]);val z=unit(samples[i])
                 if(abs(z.angularVelocity-a.angularVelocity)>.25+ARITHMETIC_ERROR) return issue("turn-prefix-acceleration",i,"omega difference<=.25 (no overshoot in this prefix)",z.angularVelocity)

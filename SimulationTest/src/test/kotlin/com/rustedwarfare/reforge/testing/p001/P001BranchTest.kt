@@ -7,6 +7,25 @@ import kotlin.test.*
 
 /** Fixed arithmetic examples, never collected from the core under test. */
 class P001BranchTest {
+    @Test fun `natural M02 uses the real direct path and preserves legacy rejection`() {
+        val input = input("M02")
+        val context = assertIs<InitResult.Accepted>(SimulationContext.initialize(input.core)).context
+        val target = Position(100.0, 140.0)
+        try {
+            val samples = mutableListOf(context.observe())
+            context.submit(MoveAction("move", "p1", "u1", target, context.world, 0))
+            (0L..20L).forEach { samples += context.advance(Step(it, 1.0, "sim-tick")) }
+            assertNull(P001Relations.evaluate(input, "M02", samples, naturalTurn = true))
+            assertEquals("turn-prefix-literals", P001Relations.evaluate(input, "M02", samples)?.ruleId)
+            val extra = samples.mapIndexed { index, row -> if (index != 1) row else Observation(row.sampleId, row.worldId, row.scenarioId,
+                row.stepIndex, row.simulationTime, row.units.map { it.copy(pathPoints = listOf(Position(100.0, 130.0), target)) }, row.events, row.actionResults) }
+            assertNotNull(P001Relations.evaluate(input, "M02", extra, naturalTurn = true))
+            val wrongTurn = samples.mapIndexed { index, row -> if (index != 21) row else Observation(row.sampleId, row.worldId, row.scenarioId,
+                row.stepIndex, row.simulationTime, row.units.map { it.copy(heading = 54.5) }, row.events, row.actionResults) }
+            assertNotNull(P001Relations.evaluate(input, "M02", wrongTurn, naturalTurn = true))
+        } finally { context.close() }
+    }
+
     private val root=Path.of(System.getProperty("repo.root"))
     private fun input(label:String)=ScenarioReader.load(root.resolve("TestLab/scenarios/P001-self-behavior/$label.v1.json"),root.resolve("TestLab/contracts/P001-self-behavior/$label.basic.v1.json"))
     private fun frame(step:Int,x:Double,y:Double=110.0,heading:Double=90.0,speed:Double=0.0,omega:Double=0.0,

@@ -25,6 +25,11 @@ class ReplanPerfTest {
         assertEquals(listOf(PathSearchReason.USER_MOVE, PathSearchReason.KNOWLEDGE_REPLAN,
             PathSearchReason.USER_MOVE, PathSearchReason.KNOWLEDGE_REPLAN),
             batch.steps.flatMap { it.samples }.map { it.reason })
+        for (sample in batch.steps.flatMap { it.samples }) {
+            val raw = ReplanPerf.sampleJson(sample)
+            assertEquals(550.0, raw.getValue("searchTarget").jsonObject.getValue("x").jsonPrimitive.double)
+            assertEquals(150.0, raw.getValue("searchTarget").jsonObject.getValue("y").jsonPrimitive.double)
+        }
     }
 
     @Test

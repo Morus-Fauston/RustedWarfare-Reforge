@@ -10,10 +10,21 @@ import kotlin.test.assertTrue
 
 class P002KnowledgeSuiteTest {
     @Test
+    fun `automatic scope runs six real core scenarios including NoFog and reopen`() {
+        val root = Path.of(System.getProperty("repo.root"))
+        val result = P002KnowledgeSuite.run(root, "TestLab/suites/P002-automatic-vision.v1.json",
+            Files.createTempDirectory("p002-automatic-"), listOf("automatic-test"))
+        println("automatic-p002-output=${result.output}")
+        assertEquals(0, result.exitCode, Files.readString(result.output.resolve("verdict.json")))
+        assertEquals(6, result.caseCount)
+        assertEquals(0, P002KnowledgeSuite.verify(result.output).exitCode)
+    }
+
+    @Test
     fun `frozen trusted host suite runs real core and verifies all eleven cases`() {
         val root = Path.of(System.getProperty("repo.root"))
         val output = Files.createTempDirectory("p002-knowledge-suite-")
-        val result = P002KnowledgeSuite.run(root, "TestLab/suites/P002-knowledge-host.v1.json", output, listOf("test"))
+        val result = P002KnowledgeSuite.run(root, "TestLab/suites/P002-knowledge-host.natural.v2.json", output, listOf("test"))
         assertEquals(0, result.exitCode)
         assertEquals(11, result.caseCount)
         assertTrue(Files.isRegularFile(result.output.resolve("K09-collision/raw.jsonl")))
@@ -23,7 +34,7 @@ class P002KnowledgeSuiteTest {
     @Test
     fun `same verifier rejects semantic mutations even after inventory is refreshed`() {
         val root = Path.of(System.getProperty("repo.root"))
-        val source = P002KnowledgeSuite.run(root, "TestLab/suites/P002-knowledge-host.v1.json", Files.createTempDirectory("p002-negative-source-"), listOf("negative-test")).output
+        val source = P002KnowledgeSuite.run(root, "TestLab/suites/P002-knowledge-host.natural.v2.json", Files.createTempDirectory("p002-negative-source-"), listOf("negative-test")).output
         fun copy(): Path {
             val destination = Files.createTempDirectory("p002-negative-")
             Files.walk(source).use { paths -> paths.sorted().forEach { file ->

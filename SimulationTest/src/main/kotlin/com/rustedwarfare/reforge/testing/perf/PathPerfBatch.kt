@@ -26,6 +26,7 @@ import com.rustedwarfare.reforge.core.sim.TimeModel
 import com.rustedwarfare.reforge.core.sim.UnitSpawn
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonNull
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.add
 import kotlinx.serialization.json.buildJsonArray
@@ -33,6 +34,7 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
 import java.lang.management.ManagementFactory
+import java.awt.geom.Line2D
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.StandardOpenOption
@@ -43,7 +45,6 @@ import java.time.format.DateTimeFormatter
 import java.util.UUID
 import kotlin.math.ceil
 import kotlin.math.floor
-import kotlin.math.hypot
 
 /** Public top-level configuration per PR-v0.1. */
 data class PathPerfConfig(
@@ -143,27 +144,22 @@ object PathPerfBatch {
         if (points.isEmpty()) return false
         if (widthTiles <= 0 || heightTiles <= 0 || tileWidth <= 0 || tileHeight <= 0) return false
         if (!radius.isFinite() || radius < 0.0) return false
-        val cells = ArrayList<Pair<Int, Int>>(points.size)
+        val worldWidth = widthTiles.toDouble() * tileWidth
+        val worldHeight = heightTiles.toDouble() * tileHeight
         for (point in points) {
             if (!point.x.isFinite() || !point.y.isFinite()) return false
-            val column = floor(point.x / tileWidth).toInt()
-            val row = floor(point.y / tileHeight).toInt()
-            if (column !in 0 until widthTiles || row !in 0 until heightTiles) return false
-            val centerX = (column + 0.5) * tileWidth
-            val centerY = (row + 0.5) * tileHeight
-            if (point.x != centerX || point.y != centerY) return false
+            if (point.x < radius || point.x > worldWidth - radius ||
+                point.y < radius || point.y > worldHeight - radius) return false
+        }
+        if (blockedCells.any { it.size < 2 || it[0] !in 0 until widthTiles || it[1] !in 0 until heightTiles }) return false
+        for (index in points.indices) {
+            val start = points[maxOf(0, index - 1)]
+            val end = points[index]
             for (blocked in blockedCells) {
-                if (blocked.size < 2) return false
                 val left = blocked[0].toDouble() * tileWidth
                 val top = blocked[1].toDouble() * tileHeight
-                if (!strictlyClear(point, radius, left, top, left + tileWidth, top + tileHeight)) return false
+                if (!segmentClear(start, end, radius, left, top, left + tileWidth, top + tileHeight)) return false
             }
-            cells += column to row
-        }
-        for (index in 1 until cells.size) {
-            val manhattan = kotlin.math.abs(cells[index].first - cells[index - 1].first) +
-                kotlin.math.abs(cells[index].second - cells[index - 1].second)
-            if (manhattan != 1) return false
         }
         return true
     }
@@ -238,7 +234,7 @@ object PathPerfBatch {
                 heapBefore, heapAfter,
             )
             if (diagnosticsEnabled) {
-                validateBatch(scenarioKey, n, batch, scenario.map)
+                validateBatch(scenarioKey, n, batch, scenario.map, unit.id)
             }
             return batch
         } finally {
@@ -247,7 +243,27 @@ object PathPerfBatch {
     }
 
     /** Per-batch correctness validator (IDs/outcome/candidates/step/target/geometry). */
-    fun validateBatch(scenarioKey: String, n: Int, batch: PathPerfBatchResult, map: MapDefinition) {
+    fun validateBatch(scenarioKey: String, n: Int, batch: PathPerfBatchResult, map: MapDefinition,
+                      expectedTypeId: String) {
+        if (scenarioKey !in SCENARIOS || n !in COUNTS || batch.scenarioKey != scenarioKey || batch.n != n ||
+            batch.round !in ROUNDS || !batch.diagnosticsEnabled) {
+            throw PathPerfCorrectnessException("batch identity differs from the fixed scenario/count/round/diagnostics contract")
+        }
+        if (map.widthTiles != WIDTH_TILES || map.heightTiles != HEIGHT_TILES ||
+            map.tileWidth != TILE_WIDTH || map.tileHeight != TILE_HEIGHT ||
+            map.blocking.widthTiles != WIDTH_TILES || map.blocking.heightTiles != HEIGHT_TILES) {
+            throw PathPerfCorrectnessException("map dimensions differ from the fixed fixture")
+        }
+        for (row in 0 until HEIGHT_TILES) for (column in 0 until WIDTH_TILES) {
+            val expectedBlocked = when (scenarioKey) {
+                "OPEN_NOFOG" -> false
+                "MEMORY_UNREACHABLE" -> column == 16
+                else -> column == 16 && row !in 10..14
+            }
+            if (map.blocking.isBlocked(column, row) != expectedBlocked) {
+                throw PathPerfCorrectnessException("truth map differs from the fixed fixture at ($column, $row)")
+            }
+        }
         if (batch.samples.size != n) {
             throw PathPerfDiagnosticsException("expected $n real search samples, got ${batch.samples.size}")
         }
@@ -297,7 +313,7 @@ object PathPerfBatch {
                 }
             }
         }
-        if (batch.requestCount != n || batch.actualSearchCalls != n.toLong() || batch.reuseCount != 0 || batch.replanCount != 0) {
+        if (batch.acceptedMoves != n || batch.requestCount != n || batch.actualSearchCalls != n.toLong() || batch.reuseCount != 0 || batch.replanCount != 0) {
             throw PathPerfCorrectnessException("request/actual/reuse/replan counts do not match the fixed batch")
         }
         if (batch.gcAvailable && (batch.gcCollectionCountDelta < 0L || batch.gcCollectionTimeMillisDelta < 0L)) {
@@ -326,8 +342,14 @@ object PathPerfBatch {
             if (sample.outcome != expectedOutcome) {
                 throw PathPerfCorrectnessException("sample ${sample.actionId} expected $expectedOutcome got ${sample.outcome}")
             }
-            if (sample.candidatesChecked != (WIDTH_TILES * HEIGHT_TILES).toLong()) {
-                throw PathPerfCorrectnessException("sample ${sample.actionId} candidates must be ${WIDTH_TILES * HEIGHT_TILES}")
+            val direct = fixedDirect(scenarioKey, parseIndex(sample.unitId))
+            val expectedCandidates = if (direct) 0L else (WIDTH_TILES * HEIGHT_TILES).toLong()
+            if (sample.candidatesChecked != expectedCandidates) {
+                throw PathPerfCorrectnessException("sample ${sample.actionId} candidates must be $expectedCandidates")
+            }
+            if (direct && listOf(sample.popped, sample.expanded, sample.enqueued,
+                    sample.neighborsChecked, sample.heuristicCalls).any { it != 0L }) {
+                throw PathPerfCorrectnessException("direct sample ${sample.actionId} must have zero A* work")
             }
             if (unreachable && sample.expanded < 1L) {
                 throw PathPerfCorrectnessException("unreachable sample ${sample.actionId} must expand at least one node")
@@ -335,8 +357,18 @@ object PathPerfBatch {
         }
         val authorized = authorizedBlocked(scenarioKey, map)
         for (outcome in batch.units) {
+            if (outcome.ownerPlayerId != "p1" || outcome.typeId != expectedTypeId) {
+                throw PathPerfCorrectnessException("unit ${outcome.unitId} owner/type differs from the fixed input")
+            }
             val index = parseIndex(outcome.unitId)
             val goal = Position(goalX(index), goalY(index))
+            val sample = batch.samples.single { it.unitId == outcome.unitId }
+            if (sample.pathPointCount != outcome.pathPoints.size) {
+                throw PathPerfCorrectnessException("unit ${outcome.unitId} diagnostic path count differs from its fixed step-0 path")
+            }
+            if (outcome.moveTarget != if (unreachable) null else goal) {
+                throw PathPerfCorrectnessException("unit ${outcome.unitId} target differs from its fixed outcome")
+            }
             if (unreachable) {
                 if (outcome.pathPoints.isNotEmpty()) {
                     throw PathPerfCorrectnessException("unit ${outcome.unitId} must have no path when unreachable")
@@ -350,18 +382,14 @@ object PathPerfBatch {
             if (outcome.pathPoints.any { it == start }) {
                 throw PathPerfCorrectnessException("unit ${outcome.unitId} path must not repeat the start cell")
             }
-            val first = outcome.pathPoints.first()
-            val startCell = floor(start.x / TILE_WIDTH).toInt() to floor(start.y / TILE_HEIGHT).toInt()
-            val firstCell = floor(first.x / TILE_WIDTH).toInt() to floor(first.y / TILE_HEIGHT).toInt()
-            val startDistance = kotlin.math.abs(startCell.first - firstCell.first) +
-                kotlin.math.abs(startCell.second - firstCell.second)
-            if (startDistance != 1) {
-                throw PathPerfCorrectnessException("unit ${outcome.unitId} first path point must be a 4-neighbour of the fixed start")
+            if (fixedDirect(scenarioKey, index) && outcome.pathPoints != listOf(goal)) {
+                throw PathPerfCorrectnessException("direct unit ${outcome.unitId} must have only its exact goal")
             }
             if (outcome.pathPoints.last() != goal) {
                 throw PathPerfCorrectnessException("unit ${outcome.unitId} path must end exactly at the goal")
             }
-            if (!independentGeometry(outcome.pathPoints, authorized, WIDTH_TILES, HEIGHT_TILES, TILE_WIDTH, TILE_HEIGHT, UNIT_RADIUS)) {
+            if (!independentGeometry(listOf(start) + outcome.pathPoints, authorized,
+                    WIDTH_TILES, HEIGHT_TILES, TILE_WIDTH, TILE_HEIGHT, UNIT_RADIUS)) {
                 throw PathPerfCorrectnessException("unit ${outcome.unitId} path fails independent geometry on the authorized grid")
             }
         }
@@ -642,6 +670,15 @@ object PathPerfBatch {
     private fun sampleJson(sample: PathSearchSample): JsonObject = buildJsonObject {
         put("actionId", sample.actionId)
         put("unitId", sample.unitId)
+        put("reason", sample.reason.name)
+        put("executionStep", sample.executionStep?.let(::JsonPrimitive) ?: JsonNull)
+        put("preservedPrefixPointCount", sample.preservedPrefixPointCount)
+        put("searchStart", sample.searchStart?.let { start -> buildJsonObject {
+            put("x", start.x); put("y", start.y)
+        } } ?: JsonNull)
+        put("searchTarget", sample.searchTarget?.let { target -> buildJsonObject {
+            put("x", target.x); put("y", target.y)
+        } } ?: JsonNull)
         put("outcome", sample.outcome.name)
         put("usedPlayerKnowledge", sample.usedPlayerKnowledge)
         if (sample.scheduledStep != null) {
@@ -732,7 +769,7 @@ object PathPerfBatch {
             }
         }
 
-    private fun buildEnvironment(unitSha256: String, definition: UnitDefinition, repo: Path): String {
+    internal fun buildEnvironment(unitSha256: String, definition: UnitDefinition, repo: Path): String {
         val gcs = runCatching { ManagementFactory.getGarbageCollectorMXBeans() }.getOrNull()
         val runtime = Runtime.getRuntime()
         val heapUsed = runtime.totalMemory() - runtime.freeMemory()
@@ -763,6 +800,11 @@ object PathPerfBatch {
             put("unitIni", definition.id)
             put("repoRoot", repo.toString())
             put("runnerClass", PathPerfBatch::class.java.name)
+            put("pathAlgorithm", "natural-direct-then-four-neighbour-grid.v1")
+            put("pathValidator", "fixed-fixture-full-segment-jdk-line2d.v3")
+            put("validatorContractSha256", "6d9bb3b98a4dff9ba056ecba0d3589bf7191a9134f7be967dc548cc1dd7b9dd0")
+            put("independentGeometryApi", "java.awt.geom.Line2D")
+            put("javaDesktopModulePresent", ModuleLayer.boot().findModule("java.desktop").isPresent)
             put("round0Note", "round0 is the group's first batch in this JVM, not an independent fresh-JVM cold start")
             put("measurementRounds", "3..7")
             put("warmupRounds", "1..2")
@@ -778,6 +820,16 @@ object PathPerfBatch {
             }
         }
         return cells
+    }
+
+    /** Fixed fixture geometry, independently derived in the reviewed D-076 validator contract.
+     * In MEMORY_GAP, -4 <= 7a-9b <= 20 gives 18 direct and 32 fallback requests for n=50.
+     * This is an expectation from the input coordinates, never inferred from measured counters.
+     */
+    private fun fixedDirect(scenarioKey: String, index: Int): Boolean = when (scenarioKey) {
+        "MEMORY_UNREACHABLE" -> false
+        "MEMORY_GAP" -> 7 * (index % 10) - 9 * (index / 10) in -4..20
+        else -> true
     }
 
     private fun parseIndex(unitId: String): Int =
@@ -911,9 +963,20 @@ object PathPerfBatch {
         runtime.totalMemory() - runtime.freeMemory()
     }.getOrDefault(-1L)
 
-    private fun strictlyClear(position: Position, radius: Double, left: Double, top: Double, right: Double, bottom: Double): Boolean {
-        val closestX = position.x.coerceIn(left, right)
-        val closestY = position.y.coerceIn(top, bottom)
-        return hypot(position.x - closestX, position.y - closestY) > radius
+    /** Independent JVM checker: JDK closed-segment geometry, never a core planning helper. */
+    private fun segmentClear(start: Position, end: Position, radius: Double,
+                             left: Double, top: Double, right: Double, bottom: Double): Boolean {
+        fun inside(point: Position) = point.x in left..right && point.y in top..bottom
+        if (inside(start) || inside(end)) return false
+        val corners = listOf(Position(left, top), Position(right, top), Position(right, bottom), Position(left, bottom))
+        for (index in corners.indices) {
+            val a = corners[index]
+            val b = corners[(index + 1) % corners.size]
+            if (Line2D.linesIntersect(start.x, start.y, end.x, end.y, a.x, a.y, b.x, b.y)) return false
+            if (Line2D.ptSegDist(a.x, a.y, b.x, b.y, start.x, start.y) <= radius ||
+                Line2D.ptSegDist(a.x, a.y, b.x, b.y, end.x, end.y) <= radius ||
+                Line2D.ptSegDist(start.x, start.y, end.x, end.y, a.x, a.y) <= radius) return false
+        }
+        return true
     }
 }

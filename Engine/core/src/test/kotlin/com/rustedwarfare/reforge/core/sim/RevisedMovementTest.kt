@@ -1,5 +1,6 @@
 package com.rustedwarfare.reforge.core.sim
 
+import com.rustedwarfare.reforge.core.content.*
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
@@ -31,14 +32,25 @@ class RevisedMovementTest {
 
     @Test
     fun intermediate_radius_is_strict_and_uses_the_step_start_position() {
-        val context = context(Position(114.0, 110.0), Position(170.0, 110.0))
+        val source = TestContentFactory.openScenario()
+        val tank = source.unitDefinitions.getValue("tank")
+        val unit = TestContentFactory.unitWith(tank, radius = 8.0, movement = tank.movement.copy(
+            moveSpeed = 8.0, moveAccelerationSpeed = 8.0, moveDecelerationSpeed = 8.0))
+        val context = assertIs<InitResult.Accepted>(SimulationContext.initialize(source.copy(
+            map = MapDefinition(7, 5, 20, 20, emptyList(), IntArray(35), BlockingGrid(7, 5, BooleanArray(35) { it == 17 })),
+            unitDefinitions = mapOf("tank" to unit),
+            units = listOf(UnitSpawn("u1", "p1", "tank", Position(50.0, 30.0), 90.0))))).context
+        context.submit(MoveAction("corner", "p1", "u1", Position(130.0, 50.0), context.world))
+        (0L..7L).forEach { context.advance(Step(it, 1.0, "sim-tick")) }
         val before = context.observe().units.single()
-        assertEquals(Position(130.0, 110.0), before.pathPoints.first())
-        val atBoundary = context.advance(Step(0, 1.0, "sim-tick")).units.single()
+        assertEquals(Position(114.0, 30.0), before.position)
+        assertEquals(listOf(Position(130.0, 30.0), Position(130.0, 50.0)), before.pathPoints)
+        val atBoundary = context.advance(Step(8, 1.0, "sim-tick")).units.single()
         assertEquals(before.pathPoints, atBoundary.pathPoints)
-        val inside = context.advance(Step(1, 1.0, "sim-tick")).units.single()
+        val inside = context.advance(Step(9, 1.0, "sim-tick")).units.single()
         assertEquals(before.pathPoints.drop(1), inside.pathPoints)
-        assertEquals(Position(170.0, 110.0), inside.moveTarget)
+        assertEquals(Position(130.0, 50.0), inside.moveTarget)
+        context.close()
     }
 
     @Test
@@ -56,13 +68,28 @@ class RevisedMovementTest {
 
     @Test
     fun only_one_snapshot_waypoint_is_consumed_per_step() {
-        val context = context(Position(115.0, 110.0), Position(141.0, 110.0))
+        val source = TestContentFactory.openScenario()
+        val tank = source.unitDefinitions.getValue("tank")
+        val unit = TestContentFactory.unitWith(tank, radius = 1.0, movement = tank.movement.copy(
+            moveSpeed = 50.0, moveAccelerationSpeed = 50.0, moveDecelerationSpeed = 50.0))
+        val context = assertIs<InitResult.Accepted>(SimulationContext.initialize(source.copy(
+            map = MapDefinition(5, 6, 20, 20, emptyList(), IntArray(30), BlockingGrid(5, 6, BooleanArray(30) { it == 17 })),
+            unitDefinitions = mapOf("tank" to unit), movementContract = MovementContract(100.0, 4.0),
+            units = listOf(UnitSpawn("u1", "p1", "tank", Position(30.0, 70.0), 0.0))))).context
+        context.submit(MoveAction("corner", "p1", "u1", Position(70.0, 70.0), context.world))
+        context.advance(Step(0, 1.0, "sim-tick"))
         val before = context.observe().units.single()
-        assertEquals(2, before.pathPoints.size)
-        val after = context.advance(Step(0, 1.0, "sim-tick"))
+        assertEquals(listOf(Position(30.0, 50.0), Position(70.0, 50.0), Position(70.0, 70.0)), before.pathPoints)
+        assertEquals(Position(30.0, 20.0), before.position)
+        // Both shortcuts are safe: the first stays above y=50; the second's closest
+        // approach to the wall is its top-right corner, at distance 100/sqrt(4100) > r.
+        assertTrue(100.0 / kotlin.math.sqrt(4100.0) > unit.radius)
+        assertTrue(before.pathPoints.all { kotlin.math.hypot(it.x - 30.0, it.y - 20.0) < 100.0 })
+        val after = context.advance(Step(1, 1.0, "sim-tick"))
         assertEquals(before.pathPoints.drop(1), after.units.single().pathPoints)
-        assertEquals(Position(141.0, 110.0), after.units.single().moveTarget)
+        assertEquals(Position(70.0, 70.0), after.units.single().moveTarget)
         assertTrue(after.events.none { it.kind == "movement-arrived" })
+        context.close()
     }
 
     @Test

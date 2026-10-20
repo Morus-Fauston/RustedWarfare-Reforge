@@ -30,7 +30,7 @@ class PathDiagnosticsTest {
             val world = context.world
             context.enablePathDiagnostics(world)
             assertIs<ActionResult.Accepted>(context.submit(MoveAction("pd-move", "p1", "u1", Position(70.0, 50.0), world)))
-            assertEquals(listOf(Position(50.0, 50.0), Position(70.0, 50.0)), context.observe().units.single().pathPoints)
+            assertEquals(listOf(Position(70.0, 50.0)), context.observe().units.single().pathPoints)
             val drained = context.drainPathDiagnostics(world)
             val sample = drained.single()
             assertEquals("pd-move", sample.actionId)
@@ -39,10 +39,13 @@ class PathDiagnosticsTest {
             assertFalse(sample.usedPlayerKnowledge)
             assertEquals(PathSearchOutcome.FOUND, sample.outcome)
             assertEquals(1L, sample.actualSearchCalls)
-            assertEquals(25L, sample.candidatesChecked)
-            assertEquals(2, sample.pathPointCount)
+            assertEquals(0L, sample.candidatesChecked)
+            assertEquals(1, sample.pathPointCount)
             assertEquals(sample.enqueued, sample.heuristicCalls)
-            assertTrue(sample.popped > 0)
+            assertEquals(listOf(0L, 0L, 0L, 0L, 0L, 0L), listOf(
+                sample.candidatesChecked, sample.popped, sample.expanded, sample.enqueued,
+                sample.neighborsChecked, sample.heuristicCalls,
+            ))
             assertTrue(sample.expanded <= sample.popped)
             assertTrue(sample.neighborsChecked >= sample.expanded)
             assertTrue(sample.inputPreparationNanos >= 0)
@@ -127,15 +130,15 @@ class PathDiagnosticsTest {
                 context.enablePathDiagnostics(world)
                 val beforeKnowledge = context.knowledgeSnapshot(world, "p1")
                 context.submit(MoveAction("empty", "p1", "u1", Position(70.0, 50.0), world))
-                assertEquals(listOf(Position(50.0, 50.0), Position(70.0, 50.0)), context.observe().units.single().pathPoints)
+                assertEquals(listOf(Position(70.0, 50.0)), context.observe().units.single().pathPoints)
                 val emptySample = context.drainPathDiagnostics(world).single()
                 assertTrue(emptySample.usedPlayerKnowledge)
-                assertEquals(25L, emptySample.candidatesChecked)
+                assertEquals(0L, emptySample.candidatesChecked)
                 assertEquals(PathSearchOutcome.FOUND, emptySample.outcome)
                 assertEquals(beforeKnowledge.cells, context.knowledgeSnapshot(world, "p1").cells)
                 context.acceptVisibleTerrain(world, "p2", listOf(VisibleTerrainCell(3, 2, true)))
                 context.submit(MoveAction("other-player", "p1", "u1", Position(70.0, 50.0), world))
-                assertEquals(25L, context.drainPathDiagnostics(world).single().candidatesChecked)
+                assertEquals(0L, context.drainPathDiagnostics(world).single().candidatesChecked)
                 context.acceptVisibleTerrain(world, "p1", listOf(VisibleTerrainCell(3, 2, true)))
                 context.submit(MoveAction("known", "p1", "u1", Position(70.0, 50.0), world))
                 val known = context.drainPathDiagnostics(world).single()
@@ -146,7 +149,7 @@ class PathDiagnosticsTest {
                 context.submit(MoveAction("after-empty", "p1", "u1", Position(70.0, 50.0), world))
                 val afterEmpty = context.drainPathDiagnostics(world).single()
                 assertEquals(if (retention == TerrainRetention.MEMORY) PathSearchOutcome.UNREACHABLE else PathSearchOutcome.FOUND, afterEmpty.outcome)
-                assertEquals(if (retention == TerrainRetention.MEMORY) 0L else 25L, afterEmpty.candidatesChecked)
+                assertEquals(0L, afterEmpty.candidatesChecked)
                 assertEquals(1L, emptySample.actualSearchCalls)
             } finally { context.close() }
         }
@@ -178,7 +181,7 @@ class PathDiagnosticsTest {
             val originalPath = measured.observe().units.single().pathPoints.toList()
             val history = measured.drainPathDiagnostics(measured.world)
             assertEquals(1, history.size)
-            assertEquals(listOf(Position(50.0, 50.0), Position(70.0, 50.0)), originalPath)
+            assertEquals(listOf(Position(70.0, 50.0)), originalPath)
             for (index in 0L..2L) {
                 assertSameObservationValues(plain.advance(Step(index, 1.0, "sim-tick")), measured.advance(Step(index, 1.0, "sim-tick")))
             }
@@ -189,8 +192,8 @@ class PathDiagnosticsTest {
             measured.enablePathDiagnostics(measured.world)
             assertTrue(measured.drainPathDiagnostics(measured.world).isEmpty())
             assertEquals("same", history.single().actionId)
-            assertEquals(2, history.single().pathPointCount)
-            assertEquals(listOf(Position(50.0, 50.0), Position(70.0, 50.0)), originalPath)
+            assertEquals(1, history.single().pathPointCount)
+            assertEquals(listOf(Position(70.0, 50.0)), originalPath)
         } finally {
             plain.close()
             measured.close()
@@ -198,7 +201,7 @@ class PathDiagnosticsTest {
     }
 
     @Test
-    fun pd08_actual_search_attempt_survives_later_step_rollback() {
+    fun pd08_invalid_step_preserves_a_scheduled_search_for_a_valid_step() {
         val base = TestContentFactory.openScenario()
         val tank = base.unitDefinitions.getValue("tank")
         val fast = TestContentFactory.unitWith(tank, movement = tank.movement.copy(
@@ -215,12 +218,18 @@ class PathDiagnosticsTest {
             context.submit(MoveAction("u-first", "p1", "u1", Position(250.0, 110.0), context.world))
             val before = context.advance(Step(0, 1.0, "sim-tick"))
             assertEquals(2, context.drainPathDiagnostics(context.world).size)
-            context.submit(MoveAction("attempt-before-rollback", "p1", "a", Position(270.0, 150.0), context.world, atStep = 1))
-            assertFailsWith<ArithmeticException> { context.advance(Step(1, 1.0, "sim-tick")) }
+            context.submit(MoveAction("scheduled-attempt", "p1", "a", Position(270.0, 150.0), context.world, atStep = 1))
+            assertFailsWith<IllegalArgumentException> { context.advance(Step(1, 0.5, "sim-tick")) }
             assertSame(before, context.observe())
+            assertTrue(context.drainPathDiagnostics(context.world).isEmpty())
+            val after = context.advance(Step(1, 1.0, "sim-tick"))
+            assertEquals(Position(270.0, 150.0), after.units.single { it.unitId == "a" }.moveTarget)
+            assertTrue(after.actionResults.any { it.actionId == "scheduled-attempt" })
             val attempt = context.drainPathDiagnostics(context.world).single()
-            assertEquals("attempt-before-rollback", attempt.actionId)
+            assertEquals("scheduled-attempt", attempt.actionId)
             assertEquals(1L, attempt.scheduledStep)
+            assertEquals(1L, attempt.executionStep)
+            assertEquals(PathSearchReason.USER_MOVE, attempt.reason)
             assertEquals(1L, attempt.actualSearchCalls)
             assertEquals(PathSearchOutcome.FOUND, attempt.outcome)
         } finally { context.close() }

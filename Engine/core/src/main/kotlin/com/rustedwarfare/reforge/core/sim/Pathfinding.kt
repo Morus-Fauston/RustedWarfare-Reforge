@@ -3,6 +3,7 @@ package com.rustedwarfare.reforge.core.sim
 import com.rustedwarfare.reforge.core.content.MapDefinition
 import com.rustedwarfare.reforge.core.path.PlanningTerrain
 import com.rustedwarfare.reforge.core.path.PathSearchCounters
+import com.rustedwarfare.reforge.core.path.PlanningSegmentClearance
 import java.util.PriorityQueue
 import kotlin.math.floor
 import kotlin.math.hypot
@@ -21,15 +22,20 @@ internal class ClearanceAStarPolicy(
     override fun findPath(map: PlanningTerrain, start: Position, target: Position, radius: Double,
                           counters: PathSearchCounters?): List<Position>? {
         if (counters != null) counters.actualSearchCalls++
+        if (!MapBounds.contains(map.widthTiles.toDouble() * map.tileWidth,
+                map.heightTiles.toDouble() * map.tileHeight, start, radius) ||
+            !MapBounds.contains(map.widthTiles.toDouble() * map.tileWidth,
+                map.heightTiles.toDouble() * map.tileHeight, target, radius)) return null
         val startCell = cellOf(map, start) ?: return null
         val goalCell = cellOf(map, target) ?: return null
-        if (terrain.intersects(map, target, radius)) return null
+        if (terrain.intersects(map, start, radius) || terrain.intersects(map, target, radius)) return null
+        if (PlanningSegmentClearance.allows(map, start, target, radius)) return listOf(target)
         val candidates = Array(map.heightTiles) { BooleanArray(map.widthTiles) }
         for (row in 0 until map.heightTiles) for (col in 0 until map.widthTiles) {
             if (counters != null) counters.candidatesChecked++
             candidates[row][col] = candidatePolicy.allows(map, col, row, radius)
         }
-        if (!candidates[startCell.second][startCell.first] || !candidates[goalCell.second][goalCell.first]) return null
+        if (!candidates[goalCell.second][goalCell.first]) return null
 
         data class Node(val col: Int, val row: Int, val g: Int, val f: Int)
         val open = PriorityQueue<Node>(compareBy<Node> { it.f }.thenBy { it.row }.thenBy { it.col }.thenBy { it.g })
@@ -59,13 +65,16 @@ internal class ClearanceAStarPolicy(
                 val points = cells.drop(1).map { (col, row) ->
                     pointPolicy.point(map, col, row)
                 }.toMutableList()
-                if (points.isEmpty()) points += target else points[points.lastIndex] = target
-                return points
+                if (points.lastOrNull() != target) points += target
+                return simplify(map, start, points, radius)
             }
             if (counters != null) counters.expanded++
             for ((nextCol, nextRow) in neighbors(current.col, current.row, map.widthTiles, map.heightTiles)) {
                 if (counters != null) counters.neighborsChecked++
                 if (!candidates[nextRow][nextCol]) continue
+                if (currentKey == startKey &&
+                    !PlanningSegmentClearance.allows(map, start, pointPolicy.point(map, nextCol, nextRow), radius)
+                ) continue
                 val nextKey = nextCol to nextRow
                 val nextCost = current.g + 1
                 if (nextCost < (cost[nextKey] ?: Int.MAX_VALUE)) {
@@ -82,9 +91,24 @@ internal class ClearanceAStarPolicy(
         return null
     }
 
+    private fun simplify(map: PlanningTerrain, start: Position, points: List<Position>, radius: Double): List<Position>? {
+        val result = ArrayList<Position>()
+        var anchor = start
+        var next = 0
+        while (next < points.size) {
+            val farthest = (points.lastIndex downTo next).firstOrNull {
+                PlanningSegmentClearance.allows(map, anchor, points[it], radius)
+            } ?: return null
+            anchor = points[farthest]
+            result += anchor
+            next = farthest + 1
+        }
+        return result
+    }
+
     private fun cellOf(map: PlanningTerrain, position: Position): Pair<Int, Int>? {
-        val col = kotlin.math.floor(position.x / map.tileWidth).toInt()
-        val row = kotlin.math.floor(position.y / map.tileHeight).toInt()
+        val col = MapBounds.cell(position.x, map.tileWidth, map.widthTiles)
+        val row = MapBounds.cell(position.y, map.tileHeight, map.heightTiles)
         return if (col in 0 until map.widthTiles && row in 0 until map.heightTiles) col to row else null
     }
 
@@ -122,6 +146,8 @@ internal fun interface PlanningTerrainPolicy {
 
 internal object PlanningCircleTerrain : PlanningTerrainPolicy {
     override fun intersects(map: PlanningTerrain, position: Position, radius: Double): Boolean =
+        !MapBounds.contains(map.widthTiles.toDouble() * map.tileWidth,
+            map.heightTiles.toDouble() * map.tileHeight, position, radius) ||
         circleIntersectsTerrain(map.widthTiles, map.heightTiles, map.tileWidth, map.tileHeight,
             position, radius, map::isBlocked)
 }

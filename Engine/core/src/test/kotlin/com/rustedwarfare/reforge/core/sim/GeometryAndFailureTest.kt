@@ -2,6 +2,7 @@ package com.rustedwarfare.reforge.core.sim
 
 import com.rustedwarfare.reforge.core.content.BlockingGrid
 import com.rustedwarfare.reforge.core.content.MapDefinition
+import com.rustedwarfare.reforge.core.knowledge.*
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
@@ -11,7 +12,7 @@ import kotlin.test.assertTrue
 
 class GeometryAndFailureTest {
     @Test
-    fun overflowing_step_preserves_the_previous_sample_units_and_scheduled_actions() {
+    fun extreme_finite_motion_is_boundary_blocked_without_discarding_other_units_or_queued_actions() {
         val source = TestContentFactory.openScenario()
         val tank = source.unitDefinitions.getValue("tank")
         val fast = TestContentFactory.unitWith(tank, movement = tank.movement.copy(
@@ -27,18 +28,19 @@ class GeometryAndFailureTest {
         context.submit(MoveAction("u-move", "p1", "u1", Position(250.0, 110.0), context.world))
         val before = context.advance(Step(0, 1.0, "sim-tick"))
         assertTrue(before.units.all { it.position.x.isFinite() && it.position.y.isFinite() })
+        val stopped = before.units.single { it.unitId == "u1" }
+        assertEquals(Position(110.0, 110.0), stopped.position)
+        assertEquals(0.0, stopped.speed)
+        assertEquals(null, stopped.moveTarget)
+        assertTrue(before.events.any { it.unitId == "u1" && it.kind == "movement-boundary-blocked" })
+        assertTrue(before.units.single { it.unitId == "a" }.position.x > 110.0)
         context.submit(StopAction("queued-stop", "p1", "a", context.world, atStep = 1))
-
-        val error = assertFailsWith<ArithmeticException> { context.advance(Step(1, 1.0, "sim-tick")) }
-        assertEquals("Non-finite movement candidate for u1", error.message)
-        assertSame(before, context.observe())
-
-        context.submit(StopAction("recovery-stop", "p1", "u1", context.world))
         val recovered = context.advance(Step(1, 1.0, "sim-tick"))
         assertEquals(2.0, recovered.simulationTime)
-        assertEquals(listOf("recovery-stop", "queued-stop"), recovered.actionResults.map { it.actionId })
+        assertEquals(listOf("queued-stop"), recovered.actionResults.map { it.actionId })
         assertTrue(recovered.units.all { it.speed == 0.0 && it.position.x.isFinite() && it.position.y.isFinite() })
         assertEquals(before.units.map { it.position }, recovered.units.map { it.position })
+        context.close()
     }
 
     private fun map(vararg blocked: Pair<Int, Int>): MapDefinition {
@@ -84,19 +86,23 @@ class GeometryAndFailureTest {
         val unit = TestContentFactory.unitWith(definition,
             movement = definition.movement.copy(moveSpeed = 20.0, moveAccelerationSpeed = 20.0))
         val context = assertIs<InitResult.Accepted>(SimulationContext.initialize(source.copy(
-            map = map(5 to 2, 7 to 6), unitDefinitions = mapOf("tank" to unit),
+            map = map(8 to 5), unitDefinitions = mapOf("tank" to unit),
             units = listOf(UnitSpawn("u1", "p1", "tank", Position(110.0, 110.0), 90.0)),
         ))).context
+        context.enableKnowledge(context.world, KnowledgeRules(TerrainRetention.MEMORY,
+            PathInformationSource.PLAYER_KNOWLEDGE, false))
         context.submit(MoveAction("a1", "p1", "u1", Position(250.0, 110.0), context.world))
-        assertEquals(Position(130.0, 110.0), context.observe().units.single().pathPoints.first())
+        assertEquals(listOf(Position(250.0, 110.0)), context.observe().units.single().pathPoints)
         val first = context.advance(Step(0, 1.0, "sim-tick")).units.single()
         assertEquals(Position(130.0, 110.0), first.position)
+        context.submit(MoveAction("turn", "p1", "u1", Position(250.0, 112.0), context.world))
         val blocked = context.advance(Step(1, 1.0, "sim-tick"))
         assertEquals(first.position, blocked.units.single().position)
         assertEquals(0.0, blocked.units.single().speed)
         assertEquals(0.0, blocked.units.single().angularVelocity)
         assertEquals(MovementState.BLOCKED, blocked.units.single().movementState)
-        assertEquals(listOf("movement-blocked"), blocked.events.map { it.kind })
+        assertTrue(blocked.events.any { it.kind == "movement-blocked" })
+        context.close()
     }
 
     @Test

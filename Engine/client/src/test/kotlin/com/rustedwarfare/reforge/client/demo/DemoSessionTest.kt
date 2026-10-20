@@ -2,6 +2,7 @@ package com.rustedwarfare.reforge.client.demo
 
 import com.rustedwarfare.reforge.core.content.*
 import com.rustedwarfare.reforge.core.sim.*
+import java.awt.geom.Rectangle2D
 import java.nio.file.Path
 import kotlin.test.*
 
@@ -49,8 +50,9 @@ class DemoSessionTest {
             assertEquals(50, session.searches)
             assertEquals(0, session.replans)
             // The initial plans cross the unknown band instead of consulting its truth grid.
-            assertTrue(session.observation.units.any { unit -> unit.pathPoints.any {
-                (it.x / 20).toInt() in 24..26 && (it.y / 20).toInt() in 15..24
+            val unknownBand = Rectangle2D.Double(480.0, 300.0, 60.0, 200.0)
+            assertTrue(session.observation.units.any { unit -> (listOf(unit.position) + unit.pathPoints).zipWithNext().any { (a, b) ->
+                unknownBand.intersectsLine(a.x, a.y, b.x, b.y)
             } })
             var discovered = false
             var memory = false

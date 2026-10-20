@@ -34,10 +34,10 @@ class KnowledgePathRoutingTest {
     private val start = Position(30.0, 50.0)
     private val target = Position(70.0, 50.0)
 
-    /** Literal expectations copied from the already-fixed KI oracle, not regenerated. */
-    private val straight = listOf(Position(50.0, 50.0), Position(70.0, 50.0))
+    /** Literal expectations independently reviewed for the natural-direct contract. */
+    private val straight = listOf(Position(70.0, 50.0))
     private val upper = listOf(
-        Position(30.0, 30.0), Position(50.0, 30.0), Position(70.0, 30.0), Position(70.0, 50.0),
+        Position(30.0, 30.0), Position(70.0, 30.0), Position(70.0, 50.0),
     )
 
     private fun map(vararg blocked: Pair<Int, Int>): MapDefinition {

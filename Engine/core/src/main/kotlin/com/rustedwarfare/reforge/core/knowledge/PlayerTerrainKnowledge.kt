@@ -5,8 +5,8 @@ import java.util.Collections
 
 class KnowledgeException(val code: String, message: String) : IllegalArgumentException(message)
 
-data class VisibleTerrainCell(val column: Int, val row: Int, val blocked: Boolean)
-data class CellKnowledge(val visible: Boolean, val lastKnownBlocked: Boolean?)
+data class VisibleTerrainCell(val column: Int, val row: Int, val blocked: Boolean, val groundGid: Int? = null)
+data class CellKnowledge(val visible: Boolean, val lastKnownBlocked: Boolean?, val lastKnownGroundGid: Int? = null)
 
 class KnowledgeSnapshot internal constructor(
     val worldId: String,
@@ -53,8 +53,10 @@ class PlayerTerrainKnowledge private constructor(
             if(cell.column !in 0 until width || cell.row !in 0 until height) throw KnowledgeException("out-of-bounds", "Visible terrain cell is outside the map")
             if(!seen.add(cell.row*width+cell.column)) throw KnowledgeException("duplicate-cell", "Visible terrain projection contains a repeated cell")
         }
-        val next=cells.map { CellKnowledge(false,if(rules.retention==TerrainRetention.MEMORY) it.lastKnownBlocked else null) }.toMutableList()
-        for(cell in projection) next[cell.row*width+cell.column]=CellKnowledge(true,cell.blocked)
+        val next=cells.map { CellKnowledge(false,
+            if(rules.retention==TerrainRetention.MEMORY) it.lastKnownBlocked else null,
+            if(rules.retention==TerrainRetention.MEMORY) it.lastKnownGroundGid else null) }.toMutableList()
+        for(cell in projection) next[cell.row*width+cell.column]=CellKnowledge(true,cell.blocked,cell.groundGid)
         cells=next
         revision++
     }
@@ -62,6 +64,15 @@ class PlayerTerrainKnowledge private constructor(
     fun snapshot(world: WorldHandle): KnowledgeSnapshot {
         checkAccess(world)
         return KnowledgeSnapshot(this.world.id,playerId,width,height,revision,cells)
+    }
+
+    internal fun projected(world: WorldHandle, visibleTerrain: List<VisibleTerrainCell>): PlayerTerrainKnowledge {
+        checkAccess(world)
+        val next = PlayerTerrainKnowledge(this.world, playerId, width, height, rules)
+        next.cells = cells
+        next.revision = revision
+        next.accept(world, visibleTerrain)
+        return next
     }
 
     fun close() {

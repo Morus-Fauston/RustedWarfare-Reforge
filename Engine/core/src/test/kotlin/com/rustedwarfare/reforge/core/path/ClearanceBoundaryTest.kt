@@ -22,9 +22,9 @@ class ClearanceBoundaryTest {
                     kotlin.math.hypot(dx, dy) <= radius
                 }
             }
-            val center = Position((kotlin.math.floor(point.x / tw) + .5) * tw,
-                (kotlin.math.floor(point.y / th) + .5) * th)
-            val expected = if (collides(point) || collides(center)) null else listOf(point)
+            // D-076 uses the actual point; D-083 requires the entire circle inside the map.
+            val edgeDistance = minOf(point.x, point.y, width * tw - point.x, height * th - point.y)
+            val expected = if (collides(point) || edgeDistance < radius) null else listOf(point)
             assertEquals(expected, PathPlanner.findPath(terrain, point, point, radius), "case $it")
         }
     }
@@ -57,6 +57,6 @@ class ClearanceBoundaryTest {
         val origin = Position(10.0, 15.0)
         assertNull(PathPlanner.findPath(terrain, origin, origin, Double.MAX_VALUE))
         val empty = PlanningTerrain(8, 8, 20, 30, BooleanArray(64))
-        assertEquals(listOf(origin), PathPlanner.findPath(empty, origin, origin, Double.MAX_VALUE))
+        assertNull(PathPlanner.findPath(empty, origin, origin, Double.MAX_VALUE))
     }
 }

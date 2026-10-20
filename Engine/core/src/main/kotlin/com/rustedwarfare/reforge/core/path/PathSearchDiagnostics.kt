@@ -1,5 +1,7 @@
 package com.rustedwarfare.reforge.core.path
 
+import com.rustedwarfare.reforge.core.sim.Position
+
 class PathDiagnosticsException(val code: String, message: String) : IllegalStateException(message)
 
 /** One real search attempt; never escapes into an observation or diagnostic sample. */
@@ -14,7 +16,7 @@ internal class PathSearchCounters {
 }
 
 enum class PathSearchOutcome { FOUND, UNREACHABLE, FAILED }
-enum class PathSearchReason { USER_MOVE, KNOWLEDGE_REPLAN }
+enum class PathSearchReason { USER_MOVE, KNOWLEDGE_REPLAN, ROUTE_REPAIR }
 
 data class PathSearchSample(
     val actionId: String,
@@ -34,4 +36,7 @@ data class PathSearchSample(
     val pathPointCount: Int,
     val reason: PathSearchReason = PathSearchReason.USER_MOVE,
     val executionStep: Long? = null,
+    val searchTarget: Position? = null,
+    val searchStart: Position? = null,
+    val preservedPrefixPointCount: Int = 0,
 )

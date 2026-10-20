@@ -28,6 +28,7 @@ object P001Suite {
         try {
             val suitePath=rootPath(root,suiteRelative)
             val suite=readObject(suitePath);suite.header("p001-suite")
+            val naturalTurn = naturalPathContract(suite)
             if(suite.text("pathBase")!="repo-root" || suite.objectAt("approval").text("status")!="accepted" || suite["originalCompatibility"]!=b(false)) throw InputError("Suite scope/approval mismatch")
             if(suite.arrayAt("aggregationPriority")!=array(listOf(64,4,3,2,0).map(::n))) throw InputError("Unsupported aggregation policy")
             val expectedIds=requiredM+requiredL+"L04"
@@ -49,9 +50,10 @@ object P001Suite {
                 val scenario=check(case.objectAt("scenario"));val contract=check(case.objectAt("contract"));val relation=check(case.objectAt("relations"))
                 archive.snapshot("$id.scenario.json",scenario);archive.snapshot("$id.basic.json",contract);archive.snapshot("$id.relations.json",relation)
                 val metadata=readObject(relation);metadata.header("p001-relations")
+                if(id=="M02" && naturalPathContract(metadata)!=naturalTurn) throw InputError("Suite/M02 path contract mismatch")
                 if(metadata.text("caseId")!=id || metadata.objectAt("approval").text("status")!="accepted" || metadata.number("arithmeticError")!=1e-9 || metadata.arrayAt("exactFields")!=array(listOf("geometry","zero","idle-tail","identity","target","path","event-order").map(::s))) throw InputError("Unsupported relation identity/policy: $id")
                 val input=ScenarioReader.load(scenario,contract)
-                validatePlan(id,input,metadata)
+                validatePlan(id,input,metadata,naturalTurn)
                 if(input.identities.map { it.sha256 }.toSet()!=common.map { it.text("sha256") }.toSet()) throw InputError("Scenario content differs from suite common identities")
                 loaded[id]=input;paths[id]=scenario to contract
             }
@@ -86,7 +88,7 @@ object P001Suite {
                         }
                     }
                     code=aggregate(listOf(code,samplingCode(samples,input.steps.size,true)))
-                    if(code==0) failure=failure?:P001Relations.evaluate(input,id,samples)
+                    if(code==0) failure=failure?:P001Relations.evaluate(input,id,samples,naturalTurn)
                     if(failure!=null && code==0) code=2
                     val trace=if(id in listOf("M06","M07")) child.directory.resolve("lifecycle.jsonl") else child.directory.resolve("runner/reforge/raw.jsonl")
                     val result=JsonObject(outcome(id,code,failure)+mapOf("evidenceRefs" to array(listOf(s(trace.toString()))),"path" to s("observations.u1"),"sampleIndexBase" to s("zero-based including initial")))
@@ -120,7 +122,7 @@ object P001Suite {
             value.arrayAt("events").map { e->e.jsonObject.let { Event(it.text("kind"),it["unitId"]?.jsonPrimitive?.contentOrNull) } },emptyList())
     }
 
-    private fun validatePlan(id:String,input:LoadedScenario,metadata:JsonObject) {
+    private fun validatePlan(id:String,input:LoadedScenario,metadata:JsonObject,naturalTurn:Boolean) {
         val counts=mapOf("M01" to 81,"M02" to 21,"M03" to 43,"M04a" to 901,"M04b" to 901,"M04c" to 901,"M05" to 27,"M06" to 27,"M07" to 27)
         if(input.steps.size!=counts.getValue(id) || metadata.integer("requiredSteps")!=input.steps.size.toLong() || metadata.text("scenarioId")!=input.core.scenarioId) throw InputError("Fixed sampling plan differs: $id")
         val start=when(id) { "M02"->Position(100.0,100.0);"M04a"->Position(100.0,190.0);"M04b"->Position(100.0,210.0);"M04c"->Position(100.0,230.0);else->Position(110.0,110.0) }
@@ -138,7 +140,8 @@ object P001Suite {
             if(lifecycle.keys!=setOf("firstGenerationSteps","queuedAtStep","queuedTarget","newGenerationSteps") || lifecycle.integer("firstGenerationSteps")!=1L || lifecycle.integer("queuedAtStep")!=2L || position(lifecycle.objectAt("queuedTarget"))!=Position(150.0,110.0) || lifecycle.integer("newGenerationSteps")!=27L) throw InputError("M07 lifecycle differs from accepted constants")
         } else if(metadata["lifecycle"]!=null) throw InputError("Unexpected lifecycle policy")
         val checks=mapOf("M01" to "arrival","M02" to "turn-prefix","M03" to "stop","M04a" to "arrival","M04b" to "arrival","M04c" to "arrival","M05" to "unreachable","M06" to "ownership","M07" to "reopen")
-        if(metadata.text("check")!=checks.getValue(id)) throw InputError("Unknown P001 relation check")
+        val expectedCheck = if(id=="M02" && naturalTurn) "turn-prefix-natural-v2" else checks.getValue(id)
+        if(metadata.text("check")!=expectedCheck) throw InputError("Unknown P001 relation check")
     }
 
     private fun runLoads(root:Path,metadata:JsonObject,legal:LoadedScenario,archive:P001Evidence):List<JsonObject> {
@@ -191,9 +194,25 @@ object P001Suite {
             if(names.size!=names.toSet().size || names.toSet()!=actual || files.isEmpty() || files.any { ref->
                 val path=directory.resolve(ref.text("path")).normalize()
                 !path.startsWith(directory.normalize()) || !Files.isRegularFile(path) || sha256(path)!=ref.text("sha256")
-            }) 3 else manifest.integer("exitCode").toInt()
+            }) 3 else {
+                val suitePath=directory.resolve("inputs/suite.json")
+                if(Files.exists(suitePath)) {
+                    val suite=readObject(suitePath)
+                    val relation=readObject(directory.resolve("inputs/M02.relations.json"))
+                    if(naturalPathContract(suite)!=naturalPathContract(relation)) throw InputError("Archived suite/M02 path contract mismatch")
+                    val check=if(naturalPathContract(suite)) "turn-prefix-natural-v2" else "turn-prefix"
+                    if(relation.text("check")!=check) throw InputError("Archived relation check mismatch")
+                }
+                manifest.integer("exitCode").toInt()
+            }
         }
-    } catch(_:Exception) { 3 }
+    } catch(_:InputError) { 64 } catch(_:Exception) { 3 }
+
+    private fun naturalPathContract(value:JsonObject):Boolean = when(value["pathContract"]) {
+        null -> false
+        s("natural-direct.v2") -> true
+        else -> throw InputError("Unknown P001 path contract")
+    }
 
     fun aggregate(codes: List<Int>): Int = if(codes.isEmpty()) 3 else listOf(64,4,3,2).firstOrNull { it in codes } ?: 0
     fun samplingCode(samples: List<Observation>, steps: Int, complete: Boolean): Int {

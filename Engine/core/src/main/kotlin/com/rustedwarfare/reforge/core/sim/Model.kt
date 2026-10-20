@@ -3,6 +3,9 @@ package com.rustedwarfare.reforge.core.sim
 import com.rustedwarfare.reforge.core.content.MapDefinition
 import com.rustedwarfare.reforge.core.content.UnitDefinition
 import java.util.Collections
+import com.rustedwarfare.reforge.core.knowledge.KnowledgeRules
+import com.rustedwarfare.reforge.core.knowledge.KnowledgeSnapshot
+import com.rustedwarfare.reforge.core.knowledge.VisionSnapshot
 
 data class Position(val x: Double, val y: Double)
 
@@ -21,7 +24,7 @@ data class TimeModel(val id: String, val deltaUnit: String, val precision: Strin
 
 enum class PlayerControl { LOCAL, NONE }
 
-data class Player(val playerId: String, val control: PlayerControl)
+data class Player(val playerId: String, val control: PlayerControl, val teamId: String? = null)
 
 /** Opaque local capability. Display IDs may repeat across independent runs; identity may not. */
 class WorldHandle internal constructor(val id: String)
@@ -45,6 +48,7 @@ data class Scenario(
     val coordinateModel: CoordinateModel,
     val timeModel: TimeModel,
     val movementContract: MovementContract?,
+    val automaticVision: KnowledgeRules? = null,
 )
 
 data class Step(val stepIndex: Long, val delta: Double, val deltaUnit: String)
@@ -72,6 +76,24 @@ class Observation(
     val scenarioId: String,
     val stepIndex: Long,
     val simulationTime: Double,
+    units: List<UnitObservation>,
+    events: List<Event>,
+    actionResults: List<ActionResult>,
+) {
+    val units: List<UnitObservation> = immutable(units)
+    val events: List<Event> = immutable(events)
+    val actionResults: List<ActionResult> = immutable(actionResults)
+}
+
+class PlayerObservation internal constructor(
+    val sampleId: String,
+    val worldId: String,
+    val scenarioId: String,
+    val playerId: String,
+    val stepIndex: Long,
+    val simulationTime: Double,
+    val vision: VisionSnapshot?,
+    val knowledge: KnowledgeSnapshot?,
     units: List<UnitObservation>,
     events: List<Event>,
     actionResults: List<ActionResult>,

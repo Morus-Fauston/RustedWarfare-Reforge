@@ -35,7 +35,7 @@ class PlanningTerrainTest {
         cells.fill(false)
         assertTrue(terrain.isBlocked(2,2))
         for((c,r) in listOf(-1 to 0,5 to 0,0 to -1,0 to 5)) assertEquals("out-of-bounds",assertFailsWith<PlanningException> { terrain.isBlocked(c,r) }.code)
-        val literal=listOf(Position(30.0,30.0),Position(50.0,30.0),Position(70.0,30.0),Position(70.0,50.0))
+        val literal=listOf(Position(30.0,30.0),Position(70.0,30.0),Position(70.0,50.0))
         val path=assertNotNull(PathPlanner.findPath(terrain,Position(30.0,50.0),Position(70.0,50.0),1.0))
         assertEquals(literal,path)
         assertFailsWith<UnsupportedOperationException> { (path as MutableList<Position>).clear() }
@@ -44,8 +44,8 @@ class PlanningTerrainTest {
     }
 
     @Test fun ki08_knowledge_adapter_projects_memory_and_forgetting_without_live_store_aliases() {
-        val literalUpper=listOf(Position(30.0,30.0),Position(50.0,30.0),Position(70.0,30.0),Position(70.0,50.0))
-        val literalStraight=listOf(Position(50.0,50.0),Position(70.0,50.0))
+        val literalUpper=listOf(Position(30.0,30.0),Position(70.0,30.0),Position(70.0,50.0))
+        val literalStraight=listOf(Position(70.0,50.0))
         for(retention in TerrainRetention.entries) {
             val (world,store)=store(retention)
             store.accept(world,listOf(VisibleTerrainCell(2,2,true)))

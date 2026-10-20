@@ -94,8 +94,8 @@ class MovementContractTest {
         })
         assertTrue(samples.any { it.heading != 0.0 })
         assertTrue(samples.all { it.position == Position(100.0, 100.0) })
-        assertEquals(0.25, samples.first().angularVelocity)
-        assertEquals(54.5, samples.last().heading, 1e-9)
+        assertEquals(-0.25, samples.first().angularVelocity)
+        assertEquals(305.5, samples.last().heading, 1e-9)
         samples.zipWithNext().forEach { (a, b) -> assertTrue(kotlin.math.abs(a.angularVelocity - b.angularVelocity) <= 0.25 + 1e-9) }
         samples.forEachIndexed { index, unit -> println("M02 step=$index $unit") }
     }

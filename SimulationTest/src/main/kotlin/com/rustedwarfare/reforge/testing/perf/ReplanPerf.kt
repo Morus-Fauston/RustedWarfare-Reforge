@@ -171,6 +171,13 @@ object ReplanPerf {
         put("candidatesChecked", sample.candidatesChecked); put("popped", sample.popped); put("expanded", sample.expanded)
         put("enqueued", sample.enqueued); put("neighborsChecked", sample.neighborsChecked); put("heuristicCalls", sample.heuristicCalls)
         put("pathPointCount", sample.pathPointCount)
+        put("preservedPrefixPointCount", sample.preservedPrefixPointCount)
+        put("searchStart", sample.searchStart?.let { start -> buildJsonObject {
+            put("x", start.x); put("y", start.y)
+        } } ?: JsonNull)
+        put("searchTarget", sample.searchTarget?.let { target -> buildJsonObject {
+            put("x", target.x); put("y", target.y)
+        } } ?: JsonNull)
     }
 
     fun batchJson(batch: ReplanBatch) = buildJsonObject {

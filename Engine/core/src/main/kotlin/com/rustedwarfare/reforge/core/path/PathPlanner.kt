@@ -3,7 +3,7 @@ package com.rustedwarfare.reforge.core.path
 import com.rustedwarfare.reforge.core.sim.*
 import java.util.Collections
 
-/** Public host/test seam over the existing experimental A*, not a second algorithm. */
+/** Public planning entry for exact-target clearance paths with deterministic A* fallback. */
 object PathPlanner {
     fun findPath(terrain: PlanningTerrain, start: Position, target: Position, radius: Double): List<Position>? {
         if(!start.x.isFinite() || !start.y.isFinite() || !target.x.isFinite() || !target.y.isFinite()) throw PlanningException("invalid-coordinate", "Planning coordinates must be finite")

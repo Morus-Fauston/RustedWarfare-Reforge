@@ -2,6 +2,7 @@ package com.rustedwarfare.reforge.core.sim
 
 import com.rustedwarfare.reforge.core.content.MapDefinition
 import com.rustedwarfare.reforge.core.path.PlanningTerrain
+import com.rustedwarfare.reforge.core.path.PlanningSegmentClearance
 import com.rustedwarfare.reforge.core.path.PathDiagnosticsException
 import com.rustedwarfare.reforge.core.path.PathSearchSample
 import com.rustedwarfare.reforge.core.path.PathSearchCounters
@@ -10,6 +11,7 @@ import com.rustedwarfare.reforge.core.path.KnowledgePathImpact
 import com.rustedwarfare.reforge.core.path.PathSearchReason
 import com.rustedwarfare.reforge.core.knowledge.*
 import java.util.Collections
+import java.util.IdentityHashMap
 
 class SimulationContext private constructor(private val policies: ExperimentalPolicies = ExperimentalPolicies()) {
     private var activeWorld: WorldHandle? = null
@@ -25,13 +27,73 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
     private var pendingEvents: MutableList<Event> = mutableListOf()
     private var pendingActionResults: MutableList<ActionResult> = mutableListOf()
     private var latestObservation: Observation? = null
+    private var committedObservation: Observation? = null
     private val scheduledActions = mutableListOf<Action>()
     private val actionIds = mutableSetOf<String>()
+    private val actionResultOwners = IdentityHashMap<ActionResult, String>()
+    private val playerActionRevisions = mutableMapOf<String, Long>()
+    private val playerObservations = mutableMapOf<String, CachedPlayerObservation>()
     private var knowledgeStores: Map<String, PlayerTerrainKnowledge>? = null
     /** Immutable rules captured on the same successful commit boundary as [knowledgeStores]. */
     private var knowledgeRules: KnowledgeRules? = null
+    private var automaticVisionSnapshots: Map<String, VisionSnapshot>? = null
     private var pathDiagnostics: MutableList<PathSearchSample>? = null
     private val pendingKnowledgeDiscoveries = mutableMapOf<String, MutableMap<Pair<Int, Int>, Long>>()
+
+    private data class PlayerObservationKey(val step: Long, val time: Double, val epoch: Long?,
+        val knowledgeRevision: Long?, val actionRevision: Long, val units: List<UnitObservation>,
+        val events: List<Event>, val results: List<ActionResult>)
+
+    private data class CachedPlayerObservation(val key: PlayerObservationKey,
+        val observation: PlayerObservation, val revision: Long)
+
+    private data class AutomaticKnowledgeCommit(
+        val stores: Map<String, PlayerTerrainKnowledge>,
+        val views: Map<String, VisionSnapshot>,
+        val discoveries: Map<String, MutableMap<Pair<Int, Int>, Long>>,
+    )
+
+    private fun prepareAutomaticKnowledge(): AutomaticKnowledgeCommit? {
+        val input = checkNotNull(scenario)
+        if (input.automaticVision == null) return null
+        val rules = checkNotNull(knowledgeRules)
+        val oldStores = checkNotNull(knowledgeStores)
+        val groundGids = input.map.groundGids
+        val views = AutomaticVision.compute(world.id, (automaticVisionSnapshots?.values?.firstOrNull()?.epoch ?: -1L) + 1,
+            input.map.widthTiles, input.map.heightTiles, input.map.tileWidth, input.map.tileHeight, input.players,
+            units.values.map { VisionSource(it.ownerPlayerId, it.position, it.definition.fogOfWarSightRange) }, rules.shareAlliedVision)
+        val nextStores = linkedMapOf<String, PlayerTerrainKnowledge>()
+        val discoveries = linkedMapOf<String, MutableMap<Pair<Int, Int>, Long>>()
+        try {
+            for ((player, view) in views) {
+                val old = oldStores.getValue(player)
+                val before = old.snapshot(world)
+                val next = old.projected(world, view.effectiveCells.map {
+                    VisibleTerrainCell(it.column, it.row, input.map.blocking.isBlocked(it.column, it.row),
+                        groundGids[it.row * input.map.widthTiles + it.column])
+                })
+                nextStores[player] = next
+                val after = next.snapshot(world)
+                for (cell in view.effectiveCells) {
+                    if (!before.planningBlocked(cell.column, cell.row) && after.planningBlocked(cell.column, cell.row)) {
+                        discoveries.getOrPut(player) { linkedMapOf() }[cell.column to cell.row] = after.revision
+                    }
+                }
+            }
+            return AutomaticKnowledgeCommit(nextStores, views, discoveries)
+        } catch (failure: Exception) {
+            nextStores.values.forEach { it.close() }
+            throw failure
+        }
+    }
+
+    private fun commitAutomaticKnowledge(next: AutomaticKnowledgeCommit) {
+        knowledgeStores?.values?.forEach { it.close() }
+        knowledgeStores = next.stores
+        automaticVisionSnapshots = next.views
+        pendingKnowledgeDiscoveries.clear()
+        pendingKnowledgeDiscoveries.putAll(next.discoveries)
+    }
 
     fun enablePathDiagnostics(world: WorldHandle) {
         checkPathDiagnosticsWorld(world)
@@ -84,6 +146,7 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
         checkKnowledgeWorld(world)
         val stores = knowledgeStores ?: throw KnowledgeException("not-enabled", "Knowledge is not enabled")
         val store = stores[playerId] ?: throw KnowledgeException("unknown-player", "Player is not declared in the current scenario")
+        if (automaticVisionSnapshots != null) throw KnowledgeException("automatic-vision", "Automatic vision owns terrain projection")
         if (knowledgeRules?.pathSource != PathInformationSource.PLAYER_KNOWLEDGE) {
             store.accept(world, visibleTerrain)
             return
@@ -105,6 +168,12 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
         return store.snapshot(world)
     }
 
+    fun visionSnapshot(world: WorldHandle, playerId: String): VisionSnapshot {
+        checkKnowledgeWorld(world)
+        val snapshots = automaticVisionSnapshots ?: throw KnowledgeException("not-enabled", "Automatic vision is not enabled")
+        return snapshots[playerId] ?: throw KnowledgeException("unknown-player", "Player is not declared in the current scenario")
+    }
+
     private fun checkKnowledgeWorld(world: WorldHandle) {
         if (closed) throw KnowledgeException("closed", "Simulation is closed")
         if (world !== activeWorld) throw KnowledgeException("stale-world", "Knowledge access belongs to a different world")
@@ -116,6 +185,7 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
         knowledgeStores?.values?.forEach { it.close() }
         knowledgeStores = null
         knowledgeRules = null
+        automaticVisionSnapshots = null
         pendingKnowledgeDiscoveries.clear()
         pathDiagnostics?.clear()
         pathDiagnostics = null
@@ -125,8 +195,12 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
         pendingEvents.clear()
         pendingActionResults.clear()
         latestObservation = null
+        committedObservation = null
         scheduledActions.clear()
         actionIds.clear()
+        actionResultOwners.clear()
+        playerActionRevisions.clear()
+        playerObservations.clear()
         return CloseResult.Closed
     }
 
@@ -146,6 +220,9 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
         }
         if (action !is SelectAction && currentScenario.players.single { it.playerId == action.actorPlayerId }.control != PlayerControl.LOCAL) {
             return reject(action, "actor-not-controlled", "Player has no local control")
+        }
+        if (action is SelectAction && !isVisibleTo(action.actorPlayerId, unit.position)) {
+            return reject(action, "not-visible", "Unit is outside the player's current vision")
         }
         if (action is MoveAction && (!action.target.x.isFinite() || !action.target.y.isFinite())) {
             return reject(action, "invalid-target", "Target coordinates must be finite")
@@ -187,7 +264,9 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
                                         unit: MutableUnit, map: MapDefinition,
                                         samples: MutableList<PathSearchSample>,
                                         reason: PathSearchReason = PathSearchReason.USER_MOVE,
-                                        executionStep: Long? = null): List<Position>? {
+                                        executionStep: Long? = null,
+                                        start: Position = unit.position,
+                                        preservedPrefixPointCount: Int = 0): List<Position>? {
         val counters = PathSearchCounters()
         val usedKnowledge = knowledgeStores != null && knowledgeRules?.pathSource == PathInformationSource.PLAYER_KNOWLEDGE
         var outcome = PathSearchOutcome.FAILED
@@ -204,7 +283,7 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
             preparationFinished = true
             searchStart = System.nanoTime()
             searchEntered = true
-            val path = policies.path.findPath(terrain, unit.position, target, unit.definition.radius, counters)
+            val path = policies.path.findPath(terrain, start, target, unit.definition.radius, counters)
             outcome = if (path == null) PathSearchOutcome.UNREACHABLE else PathSearchOutcome.FOUND
             pathPointCount = path?.size ?: 0
             return path
@@ -216,7 +295,9 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
             if (searchEntered) searchNanos = (System.nanoTime() - searchStart).coerceAtLeast(0L)
             samples += PathSearchSample(actionId, unit.unitId, atStep, usedKnowledge, outcome,
                 preparationNanos, searchNanos, counters.actualSearchCalls, counters.candidatesChecked, counters.popped,
-                counters.expanded, counters.enqueued, counters.neighborsChecked, counters.heuristicCalls, pathPointCount, reason, executionStep)
+                counters.expanded, counters.enqueued, counters.neighborsChecked, counters.heuristicCalls, pathPointCount, reason, executionStep,
+                searchTarget = target, searchStart = start,
+                preservedPrefixPointCount = if (outcome == PathSearchOutcome.FOUND) preservedPrefixPointCount else 0)
         }
     }
 
@@ -237,9 +318,24 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
             }
             if (!affected) continue
             val samples = pathDiagnostics
-            val path = if (samples == null) policies.path.findPath(planningTerrainFor(unit, map), unit.position, target, unit.definition.radius)
+            val terrain = planningTerrainFor(unit, map)
+            val oldPath = unit.pathPoints.toList()
+            val prefix = mutableListOf<Position>()
+            var from = unit.position
+            for (point in oldPath) {
+                if (!PlanningSegmentClearance.allows(terrain, from, point, unit.definition.radius)) break
+                prefix += point
+                from = point
+            }
+            fun search(start: Position, preserved: Int = 0): List<Position>? =
+                if (samples == null) policies.path.findPath(terrain, start, target, unit.definition.radius)
                 else findPathWithDiagnostics(checkNotNull(unit.originMoveId), unit.originAtStep, target, unit, map, samples,
-                    PathSearchReason.KNOWLEDGE_REPLAN, executionStep)
+                    PathSearchReason.KNOWLEDGE_REPLAN, executionStep, start, preserved)
+            val path = if (prefix.isNotEmpty() && prefix.size < oldPath.size) {
+                val suffix = search(prefix.last(), prefix.size)
+                if (suffix == null) search(unit.position)
+                else prefix + if (suffix.firstOrNull() == prefix.last()) suffix.drop(1) else suffix
+            } else search(unit.position)
             if (path == null) {
                 unit.moveTarget = null
                 unit.pathPoints.clear()
@@ -255,11 +351,46 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
         }
     }
 
+    private fun repairInvalidConnections(map: MapDefinition, executionStep: Long) {
+        for (unit in units.values.sortedBy { it.unitId }) {
+            val target = unit.moveTarget ?: continue
+            val first = unit.pathPoints.firstOrNull() ?: continue
+            val terrain = planningTerrainFor(unit, map)
+            if (PlanningSegmentClearance.allows(terrain, unit.position, first, unit.definition.radius)) continue
+            val samples = pathDiagnostics
+            fun search(destination: Position): List<Position>? =
+                if (samples == null) policies.path.findPath(terrain, unit.position, destination, unit.definition.radius)
+                else findPathWithDiagnostics(checkNotNull(unit.originMoveId), unit.originAtStep, destination, unit, map, samples,
+                    PathSearchReason.ROUTE_REPAIR, executionStep)
+            val oldPath = unit.pathPoints.toList()
+            val tailIsClear = oldPath.size > 1 && oldPath.zipWithNext().all { (a, b) ->
+                PlanningSegmentClearance.allows(terrain, a, b, unit.definition.radius)
+            }
+            val connector = if (tailIsClear) search(first) else null
+            val path = if (connector != null) connector + oldPath.drop(1) else search(target)
+            if (path == null) {
+                unit.moveTarget = null
+                unit.pathPoints.clear()
+                unit.clearMoveOrigin()
+                unit.movementState = if (unit.speed != 0.0 || unit.angularVelocity != 0.0) MovementState.DECELERATING else MovementState.IDLE
+                pendingEvents += Event("movement-cancelled", unit.unitId)
+                pendingEvents += Event("path-unreachable", unit.unitId)
+            } else {
+                unit.pathPoints = path.toMutableList()
+                unit.lastPlannedKnowledgeRevision = plannedKnowledgeRevision(unit)
+                unit.movementState = MovementState.MOVING
+            }
+        }
+    }
+
     private fun applyAction(action: Action, executionStep: Long? = null): ActionResult {
         val currentScenario = checkNotNull(scenario)
         val unit = units.getValue(action.unitId)
         val result = when (action) {
-            is SelectAction -> ActionResult.Accepted(action.actionId)
+            is SelectAction -> {
+                if (!isVisibleTo(action.actorPlayerId, unit.position)) return reject(action, "not-visible", "Unit is outside the player's current vision")
+                ActionResult.Accepted(action.actionId)
+            }
             is StopAction -> {
                 unit.moveTarget = null
                 unit.pathPoints.clear()
@@ -299,6 +430,7 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
             }
         }
         pendingActionResults += result
+        recordActionOwner(action, result)
         pendingEvents += result.events
         invalidateObservation()
         return result
@@ -320,29 +452,40 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
         val previousResults = pendingActionResults
         val previousRevision = revision
         val previousObservation = latestObservation
+        val previousResultOwners = IdentityHashMap(actionResultOwners)
+        val previousPlayerRevisions = HashMap(playerActionRevisions)
         // Calculate on copies so a numerical failure cannot commit half of a multi-unit step.
         units = units.mapValuesTo(linkedMapOf()) { (_, unit) -> unit.copy(pathPoints = unit.pathPoints.toMutableList()) }
         pendingEvents = pendingEvents.toMutableList()
         pendingActionResults = pendingActionResults.toMutableList()
+        var nextVision: AutomaticKnowledgeCommit? = null
         try {
             actions.forEach { applyAction(it, step.stepIndex) }
             replanForKnowledge(currentScenario.map, step.stepIndex)
+            repairInvalidConnections(currentScenario.map, step.stepIndex)
             for (unit in units.values.sortedBy { it.unitId }) updateUnit(unit, currentScenario.map, step.delta)
-        } catch (error: ArithmeticException) {
+            nextVision = prepareAutomaticKnowledge()
+        } catch (error: Exception) {
             units = previousUnits
             pendingEvents = previousEvents
             pendingActionResults = previousResults
             revision = previousRevision
             latestObservation = previousObservation
+            actionResultOwners.clear()
+            actionResultOwners.putAll(previousResultOwners)
+            playerActionRevisions.clear()
+            playerActionRevisions.putAll(previousPlayerRevisions)
             throw error
         }
         pendingKnowledgeDiscoveries.clear()
+        nextVision?.let { commitAutomaticKnowledge(it) }
         scheduledActions.removeAll(actions.toSet())
         stepIndex = step.stepIndex
         hasAdvanced = true
         simulationTime += step.delta
         invalidateObservation()
         val observation = recordObservation()
+        committedObservation = observation
         pendingEvents.clear()
         pendingActionResults.clear()
         return observation
@@ -351,6 +494,47 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
     fun observe(): Observation {
         check(!closed) { "Simulation is closed" }
         return latestObservation ?: recordObservation()
+    }
+
+    private fun isVisibleTo(playerId: String, position: Position): Boolean {
+        val view = automaticVisionSnapshots?.getValue(playerId) ?: return true
+        val map = checkNotNull(scenario).map
+        if (!MapBounds.contains(map.widthTiles.toDouble() * map.tileWidth,
+                map.heightTiles.toDouble() * map.tileHeight, position, 0.0)) return false
+        val column = MapBounds.cell(position.x, map.tileWidth, map.widthTiles)
+        val row = MapBounds.cell(position.y, map.tileHeight, map.heightTiles)
+        return VisionCell(column, row) in view.effectiveCells
+    }
+
+    fun observePlayer(world: WorldHandle, playerId: String): PlayerObservation {
+        checkKnowledgeWorld(world)
+        val input = checkNotNull(scenario)
+        if (input.players.none { it.playerId == playerId }) throw KnowledgeException("unknown-player", "Player is not declared in the current scenario")
+        val observation = observe()
+        val vision = automaticVisionSnapshots?.getValue(playerId)
+        val knowledge = knowledgeStores?.getValue(playerId)?.snapshot(world)
+        val visible = observation.units.filter { isVisibleTo(playerId, it.position) }.map {
+            if (it.ownerPlayerId == playerId) it else it.copy(moveTarget = null, pathPoints = emptyList())
+        }
+        val ids = visible.map { it.unitId }.toSet()
+        fun visibleEvents(events: List<Event>) = events.filter { it.unitId != null && it.unitId in ids }
+        // Keep the committed step's events when immediate actions replace the host observation.
+        // Hidden actions must neither erase these events nor advance the player's sample identity.
+        val committed = committedObservation?.takeIf { it !== observation }
+        val events = visibleEvents(committed?.events.orEmpty() + observation.events)
+        val results = (committed?.actionResults.orEmpty() + observation.actionResults).filter { actionResultOwners[it] == playerId }.map {
+            if (it is ActionResult.Accepted) ActionResult.Accepted(it.actionId, visibleEvents(it.events), it.queuedForStep) else it
+        }
+        val key = PlayerObservationKey(stepIndex, simulationTime, vision?.epoch, knowledge?.revision,
+            playerActionRevisions[playerId] ?: 0L, visible, events, results)
+        val cached = playerObservations[playerId]
+        if (cached?.key == key) return cached.observation
+        val playerRevision = (cached?.revision ?: -1L) + 1L
+        val result = PlayerObservation("${world.id}:$playerId:${if (hasAdvanced) "step$stepIndex" else "initial"}:${vision?.epoch ?: 0L}:$playerRevision",
+            world.id, input.scenarioId, playerId, stepIndex, simulationTime, vision, knowledge,
+            visible, events, results)
+        playerObservations[playerId] = CachedPlayerObservation(key, result, playerRevision)
+        return result
     }
 
     private fun initializeInternal(nextScenario: Scenario): InitResult {
@@ -385,13 +569,23 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
         latestObservation = null
         scheduledActions.clear()
         actionIds.clear()
+        nextScenario.automaticVision?.let { rules ->
+            try {
+                enableKnowledge(world, rules)
+                commitAutomaticKnowledge(checkNotNull(prepareAutomaticKnowledge()))
+            } catch (failure: Exception) {
+                close()
+                throw failure
+            }
+        }
         return InitResult.Accepted(this)
     }
 
     private fun validate(input: Scenario): SimulationError? {
         val id = Regex("[A-Za-z0-9._:-]+")
         val ids = listOf(input.scenarioId, input.coordinateModel.id, input.timeModel.id) +
-            input.players.map { it.playerId } + input.units.map { it.unitId } + input.unitDefinitions.keys
+            input.players.map { it.playerId } + input.players.mapNotNull { it.teamId } +
+            input.units.map { it.unitId } + input.unitDefinitions.keys
         if (ids.any { !id.matches(it) }) return SimulationError("invalid-id", "Identifiers must be nonempty ASCII IDs")
         if (input.players.map { it.playerId }.toSet().size != input.players.size) return SimulationError("duplicate-id", "Duplicate player id")
         if (input.units.map { it.unitId }.toSet().size != input.units.size) return SimulationError("duplicate-id", "Duplicate unit id")
@@ -399,6 +593,13 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
         if (input.units.any { it.ownerPlayerId !in players }) return SimulationError("bad-reference", "Unit owner is not a declared player")
         if (input.units.any { it.typeId !in input.unitDefinitions }) return SimulationError("bad-reference", "Unit type is not declared")
         if (input.map.widthTiles <= 0 || input.map.heightTiles <= 0) return SimulationError("invalid-map", "Map dimensions must be positive")
+        if (input.automaticVision != null && input.map.widthTiles.toLong() * input.map.heightTiles != input.map.groundGids.size.toLong()) {
+            return SimulationError("invalid-map", "Automatic terrain knowledge requires matching ground dimensions")
+        }
+        if (input.automaticVision?.retention == TerrainRetention.HARDCORE_FORGET &&
+            input.automaticVision.pathSource != PathInformationSource.PLAYER_KNOWLEDGE) {
+            return SimulationError("incompatible-rules", "Hardcore forgetting requires player knowledge path information")
+        }
         if (input.map.tileWidth != 20 || input.map.tileHeight != 20 ||
             input.map.blocking.widthTiles != input.map.widthTiles || input.map.blocking.heightTiles != input.map.heightTiles) {
             return SimulationError("unsupported-map", "Expected matching blocking dimensions and 20-unit square tiles")
@@ -422,10 +623,13 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
         }
         for (spawn in input.units) {
             val p = spawn.position
-            if (!spawn.heading.isFinite() || !p.x.isFinite() || !p.y.isFinite() || p.x < 0 || p.y < 0 ||
-                p.x >= input.map.widthTiles.toDouble() * input.map.tileWidth || p.y >= input.map.heightTiles.toDouble() * input.map.tileHeight ||
-                policies.terrain.intersects(input.map, p, checkNotNull(input.unitDefinitions[spawn.typeId]).radius)) {
-                return SimulationError("invalid-spawn", "Spawn must be finite, within the map and outside blocked terrain")
+            val radius = checkNotNull(input.unitDefinitions[spawn.typeId]).radius
+            if (!MapBounds.contains(input.map.widthTiles.toDouble() * input.map.tileWidth,
+                    input.map.heightTiles.toDouble() * input.map.tileHeight, p, radius)) {
+                return SimulationError("invalid-spawn", "Unit '${spawn.unitId}' collision circle must be finite and entirely within the map")
+            }
+            if (!spawn.heading.isFinite() || policies.terrain.intersects(input.map, p, radius)) {
+                return SimulationError("invalid-spawn", "Unit '${spawn.unitId}' heading must be finite and spawn outside blocked terrain")
             }
         }
         return null
@@ -434,8 +638,14 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
     private fun reject(action: Action, code: String, message: String): ActionResult.Rejected {
         val result = ActionResult.Rejected(action.actionId, SimulationError(code, message))
         pendingActionResults += result
+        recordActionOwner(action, result)
         invalidateObservation()
         return result
+    }
+
+    private fun recordActionOwner(action: Action, result: ActionResult) {
+        actionResultOwners[result] = action.actorPlayerId
+        playerActionRevisions[action.actorPlayerId] = (playerActionRevisions[action.actorPlayerId] ?: 0L) + 1L
     }
 
     private fun invalidateObservation() {
@@ -454,7 +664,9 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
             val d2 = policies.coordinates.distanceSquared(unit.position, steeringTarget)
             val diff = policies.steering.turn(unit, steeringTarget, delta, policies.coordinates)
             speedTarget = policies.propulsion.targetSpeed(movement, unit.speed, d2, diff, finalPoint, contract.targetRadius)
-            if (!finalPoint && policies.capture.inside(d2, contract.pathPointRadius)) {
+            if (!finalPoint && policies.capture.inside(d2, contract.pathPointRadius) &&
+                PlanningSegmentClearance.allows(planningTerrainFor(unit, map), unit.position,
+                    unit.pathPoints[1], unit.definition.radius)) {
                 unit.pathPoints.removeAt(0)
             } else if (finalPoint && policies.capture.inside(d2, contract.targetRadius)) {
                 unit.moveTarget = null
@@ -475,7 +687,24 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
         if (!candidate.x.isFinite() || !candidate.y.isFinite()) {
             throw ArithmeticException("Non-finite movement candidate for ${unit.unitId}")
         }
-        if (policies.terrain.intersects(map, candidate, unit.definition.radius)) {
+        if (!MapBounds.contains(map.widthTiles.toDouble() * map.tileWidth,
+                map.heightTiles.toDouble() * map.tileHeight, candidate, unit.definition.radius)) {
+            unit.speed = 0.0
+            unit.angularVelocity = 0.0
+            unit.moveTarget = null
+            unit.pathPoints.clear()
+            unit.clearMoveOrigin()
+            unit.movementState = MovementState.BLOCKED
+            pendingEvents += Event("movement-boundary-blocked", unit.unitId)
+            return
+        }
+        if (unit.moveTarget != null && unit.pathPoints.isNotEmpty() &&
+            !PlanningSegmentClearance.allows(planningTerrainFor(unit, map), unit.position, candidate, unit.definition.radius)) {
+            unit.speed = 0.0
+            unit.movementState = MovementState.MOVING
+            return
+        }
+        if (!PlanningSegmentClearance.allowsMovement(map, unit.position, candidate, unit.definition.radius)) {
             unit.speed = 0.0
             unit.angularVelocity = 0.0
             unit.movementState = MovementState.BLOCKED

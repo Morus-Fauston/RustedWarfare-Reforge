@@ -7,8 +7,8 @@ import java.nio.file.Path
 import kotlin.test.*
 
 class KnowledgeReplanningTest {
-    private val straight = listOf(Position(50.0, 50.0), Position(70.0, 50.0))
-    private val upper = listOf(Position(30.0, 30.0), Position(50.0, 30.0), Position(70.0, 30.0), Position(70.0, 50.0))
+    private val straight = listOf(Position(70.0, 50.0))
+    private val upper = listOf(Position(30.0, 30.0), Position(70.0, 30.0), Position(70.0, 50.0))
     private fun scenario(vararg blocked: Pair<Int, Int>): Scenario {
         val cells = BooleanArray(25)
         blocked.forEach { (c, r) -> cells[r * 5 + c] = true }
@@ -172,7 +172,7 @@ class KnowledgeReplanningTest {
     }
 
     @Test
-    fun rr08_arithmetic_rollback_preserves_discoveries_and_attempt_samples() {
+    fun rr08_invalid_step_preserves_discoveries_for_a_valid_replanning_step() {
         val base = scenario()
         val tank = base.unitDefinitions.getValue("tank")
         val fast = UnitDefinition("fast", tank.className, 1.0, 1.0, 1, tank.imagePath, 1.0,
@@ -187,13 +187,17 @@ class KnowledgeReplanningTest {
             c.drainPathDiagnostics(c.world)
             c.acceptVisibleTerrain(c.world, "p1", listOf(VisibleTerrainCell(2, 2, true)))
             val previous = c.observe()
-            assertFailsWith<ArithmeticException> { c.advance(Step(1, 1.0, "sim-tick")) }
+            assertFailsWith<IllegalArgumentException> { c.advance(Step(1, 0.5, "sim-tick")) }
             assertSame(previous, c.observe())
             assertEquals(1L, c.knowledgeSnapshot(c.world, "p1").revision)
-            assertEquals(listOf("a"), c.drainPathDiagnostics(c.world).map { it.unitId })
+            assertTrue(c.drainPathDiagnostics(c.world).isEmpty())
             c.submit(StopAction("stop-fast", "p1", "z", c.world))
             c.advance(Step(1, 1.0, "sim-tick"))
-            assertEquals(listOf("a"), c.drainPathDiagnostics(c.world).map { it.unitId })
+            val samples = c.drainPathDiagnostics(c.world)
+            assertEquals(listOf("a"), samples.map { it.unitId })
+            assertEquals(PathSearchReason.KNOWLEDGE_REPLAN, samples.single().reason)
+            assertEquals("normal", samples.single().actionId)
+            assertEquals(1L, samples.single().executionStep)
             assertEquals(Position(70.0, 50.0), c.observe().units.first { it.unitId == "a" }.moveTarget)
         } finally { c.close() }
     }
