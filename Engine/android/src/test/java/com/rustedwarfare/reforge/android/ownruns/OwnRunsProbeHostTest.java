@@ -19,7 +19,7 @@ public final class OwnRunsProbeHostTest {
         m.put("certificateSha256",repeated('c')); m.put("certificateBytes","2"); return m;
     }
     static class Host implements OwnRunsProbe.Access, OwnRunsProbe.Transport {
-        int finishes; boolean valid;
+        int finishes; boolean valid; int mainUid=10053;
         int opens; final java.util.List<String> calls=new java.util.ArrayList<String>();
         final java.util.List<String> frames=new java.util.ArrayList<String>();
         public OwnRunsProbe.Stat lstat(String path) throws Exception {
@@ -41,9 +41,9 @@ public final class OwnRunsProbeHostTest {
             };
         }
         public void observeIdentity(MetadataProbe.Identity i) {
-            i.processUid=valid?10053:2000; i.processPid=5; i.processUser0=true;
+            i.processUid=valid?mainUid:2000; i.processPid=5; i.processUser0=true;
             i.processName=MetadataProbe.MAIN; i.sdkInt=35;
-            fill(i.main,MetadataProbe.MAIN,10053,repeated('a'),12,"/data/app/main/base.apk");
+            fill(i.main,MetadataProbe.MAIN,mainUid,repeated('a'),12,"/data/app/main/base.apk");
             fill(i.test,MetadataProbe.TEST,10052,repeated('b'),13,"/data/app/test/base.apk");
         }
         public long utcMillis() { return 1000; }
@@ -127,6 +127,21 @@ public final class OwnRunsProbeHostTest {
         check(r.successful()&&!joined(h).contains("\"base64\""),"already backed up copy=0 hashes full leaf without duplicate content transfer");
     }
     public static void main(String[] args) {
+        if(args[0].equals("all")||args[0].equals("uid")) {
+            for(int uid:new int[]{10053,10051}) {
+                Host known=new Host();known.mainUid=uid;OwnRunsProbe.Result accepted=run(known);
+                check(accepted.successful()&&!known.calls.isEmpty()&&accepted.identity.processUid==uid,
+                    "Both known process/context/PM UID profiles retain the real reader flow");
+            }
+            for(int[] mixed:new int[][]{{10051,10053,10053},{10053,10051,10051},{10051,10051,10053},
+                    {10051,10053,10051},{10054,10054,10054},{2000,2000,2000},{10052,10052,10052},{0,0,0}}) {
+                Host bad=new Host(){@Override public void observeIdentity(MetadataProbe.Identity i){
+                    super.observeIdentity(i);i.processUid=mixed[0];i.main.contextUid=mixed[1];i.main.uid=mixed[2];
+                }};
+                OwnRunsProbe.Result refused=run(bad);
+                check(!refused.successful()&&bad.calls.isEmpty()&&bad.opens==0,"Mixed/unknown UID refuses before own-parent metadata/content");
+            }
+        }
         Host h=new Host(); OwnRunsProbe.Result r=OwnRunsProbe.run(h,h,request());
         check(r.primaryFailure!=null,"wrong actual identity must reject");
         check(r.identity.processUid==2000,"record actual rejected process UID");

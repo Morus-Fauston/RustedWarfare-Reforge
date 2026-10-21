@@ -20,7 +20,7 @@ AGP 9.1.1、compileSdk/targetSdk 34、minSdk 26、Build Tools 36.0.0、Java 字�
 
 测试 APK 另有 `com.rustedwarfare.reforge.android.metadata.StorageMetadataInstrumentation`，保留原 XML/Activity 测试入口。AGP 9.1.1 会覆盖首个 instrumentation 节点的名称，因此测试 Manifest 显式将旧入口放在第一项，新诊断放在第二项。
 
-这是指定 MuMu0 的开发诊断：要求 API28+、User0、MAIN UID10053、TEST UID10052 和 MAIN 默认进程，身份不符即停止。正常 Application/provider 绑定仍会发生，框架可生成 cache、ART 或 usage 状态；不要把“诊断代码不写业务文件”理解为系统零写。安装前保护必要旧数据，核对主包/测试包完整 APK 与签名；只在已批准的实例与动态 ADB 端点执行。
+这是指定实例的开发诊断：要求 API28+、User0 和 MAIN 默认进程，仅支持已观察安装配对 `(MAIN10053, TEST10052)` 与 `(MAIN10051, TEST10052)`。MAIN 进程、Context 和 PM UID 必须精确相同，不可在两个配对间混用；其它身份不符即停止。数值允许集不证明设备身份，主机调用方仍须精确绑定当次获配实例、实时端点、实际 UID、完整 APK 与签名；#1 的接收器不得接受 #0 的10053。正常 Application/provider 绑定仍会发生，框架可生成 cache、ART 或 usage 状态；不要把“诊断代码不写业务文件”理解为系统零写。安装前保护必要旧数据，只在已批准的实例与动态 ADB 端点执行。
 
 请求恰含七个字符串：`bindingId`、`mainApkSha256`、`mainApkBytes`、`testApkSha256`、`testApkBytes`、`certificateSha256`、`certificateBytes`。长度为正十进制，摘要为完整小写 SHA256；两包完整 DER 必须相同。它不接受数据路径。真实进程、Context/PackageManager、完整 code APK 与完整签名身份匹配后，依次 lstat `/storage`、`/storage/self`、`/storage/self/primary`；仅对后两项中已见的 symlink 各读一次链接文本，不继续读取返回的路径，不枚举或读取业务数据。
 
@@ -38,7 +38,7 @@ java -cp $metadataClasses com.rustedwarfare.reforge.android.metadata.MetadataPro
 if ($LASTEXITCODE -ne 0) { throw 'Metadata host checks failed' }
 ```
 
-预期输出 `PASS all: 61 checks`，另保留 `JSON_SUCCESS` 与 `JSON_FAILURE` 合成样本。主机验证覆盖编排与失败路径，不能证明 Android 权限、旧数据保护或正式沙盒运行。
+预期输出 `PASS all: 81 checks`，另保留 `JSON_SUCCESS` 与 `JSON_FAILURE` 合成样本。含两UID配对、混配/未知/shell/test/root拒绝及新配对的完整身份/APK/DER坏控；主机验证覆盖编排与失败路径，不能证明 Android 权限、旧数据保护或正式沙盒运行。
 
 ## 自身运行数据读取与备份
 
@@ -66,3 +66,17 @@ if ($LASTEXITCODE -ne 0) { throw 'OwnRuns directed absence checks failed' }
 ```
 
 预期分别为 `PASS 8 ownruns checks` 和 `PASS 59 directed-absence checks`。完整主机套件可另用 `-Downruns.fixtureDir=<系统Temp内新夹具目录>` 执行 `OwnRunsProbeHostTest all`，其中真实 Windows symlink 创建需要本机支持；该套件也不证明 Android descriptor、SELinux 或产品玩法。指定 MuMu0 已完成实际 inventory 和七份旧 run 的原 bytes 备份及非作者接收；此前 run-as 拒绝和失败证据保留。正式 Android 沙盒、原版参考器及整期验收分别验证。
+
+## Gradle 主机检查入口
+
+从 `Engine/` 执行 `./gradlew.bat :android:verifySandboxHostChecks --offline --no-daemon`。该入口用JDK25、Java17目标单独编译现有纯JDK harness及其纯TEST seam，再实际执行assets、metadata、OwnRuns完整套件及定向缺失检查。夹具各在新系统Temp，输出在 `android/build/sandbox-host-checks/classes`；真实symlink夹具按旧测试约定保留，不触碰设备数据。非零退出使Gradle任务失败。
+
+这些 `src/test` 文件是main-method harness，默认 `testDebugUnitTest` 没有为它们配置JUnit和TEST seam类路径，不能用JUnit零用例或默认任务结果代替上述入口。该入口不会将TEST probe或host harness打入MAIN；也不代表Kotlin、APK、ART、真实输入或存储权限验证。多会话共享同一checkout时须先取得构建窗口，不并发写共同build目录。#1新增UID支持需单独实测，不继承#0历史运行通过。
+
+## 固定功能仪表入口
+
+`com.rustedwarfare.reforge.android.SandboxFunctionalInstrumentation`仅TEST APK，显式三个字符串参数`mode`、`shared`、`exercise`；主机先绑定当次实例、包/签名和数据基线，不能直接套旧APK命令。`controls`/`explore`支持三模式×共享，`retention`/`visibility`/`recreate`限MEMORY/HARDCORE且不共享，`unreachable`限NO_FOG，`recovery`限MEMORY且不共享；`pause`用实际本应用后台/恢复。跟随本期不新增。
+
+入口通过实际触点、公开诊断全流及有限释放链检查；`visibility`另采本应用原尺寸Surface PNG并分块传回，仍需主机完整重建与独立视觉检查。`recovery`仅暂移经APK bytes核对的派生必需引用，恢复原文件再实际Start，不覆盖仓库输入。TEST将UI回调错误回传仪表线程并保留首错；真实窗口焦点在既有预算内等待，不用固定睡眠冒输入通过。出现HELD或进程残留时保全现场，不自动重跑或读取inventory。
+
+这些入口及主机oracle是开发验证工具；构建/主机绿不表示真实MuMu功能、其它ABI、手机真机或整期验收已通过。原始失败、完整新run和APK身份须随每次运行保留。

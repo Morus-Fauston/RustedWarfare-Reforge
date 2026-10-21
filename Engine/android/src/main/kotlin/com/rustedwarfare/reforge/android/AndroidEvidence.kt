@@ -17,7 +17,8 @@ class AndroidEvidence(parent: File) : ClientEvidence, AutoCloseable {
 
     @Synchronized override fun record(kind: String, values: Map<String, Any?>) {
         check(!closed) { "Evidence is closed" }
-        writer.write(JSONObject(values + mapOf("kind" to kind, "sequence" to sequence++, "timeMillis" to System.currentTimeMillis())).toString())
+        writer.write(JSONObject(AndroidKnowledgeEncoding.record(kind, values) +
+            mapOf("kind" to kind, "sequence" to sequence++, "timeMillis" to System.currentTimeMillis())).toString())
         writer.newLine()
         writer.flush()
     }

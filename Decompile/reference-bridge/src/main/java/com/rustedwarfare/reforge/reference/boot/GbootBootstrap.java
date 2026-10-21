@@ -281,7 +281,7 @@ public final class GbootBootstrap {
         if (!expected.equals(directory)
                 || !policy.checkFile(directory.toString(), PrivatePathPolicy.Access.LIST).toRealPath().equals(directory))
             throw new PrivatePathPolicy.PathViolation("invalid-root", "Platform settings directory changed");
-        for (String name : new String[] {"rts_settings.xml", "rts_settings.xml.bak"}) {
+        for (String name : new String[] {BatchSettings.xmlName(), BatchSettings.backupName()}) {
             Path leaf = policy.checkFile(directory.resolve(name).toString(), PrivatePathPolicy.Access.WRITE);
             BasicFileAttributes attributes;
             try {
@@ -311,7 +311,7 @@ public final class GbootBootstrap {
             }
             Path directory = prepareDirectory(new PrivatePathPolicy(dataRoot), dataRoot.resolve("shared_prefs"));
             checkPlatformSettingsPaths(dataRoot, directory, true);
-            SharedPreferences candidate = application.getSharedPreferences("rts_settings", Context.MODE_PRIVATE);
+            SharedPreferences candidate = application.getSharedPreferences(BatchSettings.name(), Context.MODE_PRIVATE);
             if (candidate == null)
                 throw LATCH.trip("settings-io-error", "Platform settings object is required", null);
             checkPlatformSettingsPaths(dataRoot, directory, false);

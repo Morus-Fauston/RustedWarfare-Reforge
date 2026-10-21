@@ -16,4 +16,9 @@
         android:targetPackage="com.rustedwarfare.reforge.android"
         android:functionalTest="false"
         android:handleProfiling="false" />
+    <instrumentation
+        android:name="com.rustedwarfare.reforge.android.SandboxFunctionalInstrumentation"
+        android:targetPackage="com.rustedwarfare.reforge.android"
+        android:functionalTest="false"
+        android:handleProfiling="false" />
 </manifest>

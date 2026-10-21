@@ -17,6 +17,8 @@ public final class MetadataProbeHostTest {
     private static final class Host implements MetadataProbe.Access, MetadataProbe.Transport {
         final List<String> calls = new ArrayList<String>();
         boolean valid;
+        int mainUid = 10053;
+        int contextUidOverride = -1, pmUidOverride = -1;
         String failPath;
         Throwable injected = new IllegalStateException("permission root cause");
         int nonDirectoryIndex = -1;
@@ -34,11 +36,13 @@ public final class MetadataProbeHostTest {
         final List<String> statuses = new ArrayList<String>();
         public Map<String, String> requestedBindings() { return bindings; }
         public void observeIdentity(MetadataProbe.Identity identity) throws Exception {
-            identity.processUid = valid ? 10053 : 2000;
+            identity.processUid = valid ? mainUid : 2000;
             identity.processPid = 123;
             identity.processName = valid ? "com.rustedwarfare.reforge.android" : "shell";
             identity.processUser0 = true;
-            fill(identity.main, "com.rustedwarfare.reforge.android", 10053, "/data/app/main/base.apk", repeat("a", 64));
+            fill(identity.main, "com.rustedwarfare.reforge.android", mainUid, "/data/app/main/base.apk", repeat("a", 64));
+            if (contextUidOverride >= 0) identity.main.contextUid = contextUidOverride;
+            if (pmUidOverride >= 0) identity.main.uid = pmUidOverride;
             fill(identity.test, "com.rustedwarfare.reforge.android.test", 10052, "/data/app/test/base.apk", repeat("b", 64));
             if ("uid".equals(identityFault)) identity.main.uid = 10052;
             if ("context".equals(identityFault)) identity.main.contextPackage = identity.test.packageName;
@@ -94,6 +98,28 @@ public final class MetadataProbeHostTest {
     }
 
     public static void main(String[] args) {
+        if (args[0].equals("all") || args[0].equals("uid")) {
+            for (int uid : new int[] {10053, 10051}) {
+                Host host = new Host(); host.valid = true; host.mainUid = uid;
+                MetadataProbe.Result result = MetadataProbe.run(host, host);
+                check(result.successful() && result.metadataProbeTargetProcessExecuted && host.calls.size() == 5,
+                        "Known same-process/context/PM UID profile must retain complete identity and fixed path flow: " + uid);
+            }
+            for (int[] mixed : new int[][] {{10051,10053,10053},{10053,10051,10051},{10051,10051,10053},
+                    {10051,10053,10051},{10054,10054,10054},{2000,2000,2000},{10052,10052,10052},{0,0,0}}) {
+                Host host = new Host(); host.valid = true; host.mainUid = mixed[0];
+                host.contextUidOverride = mixed[1]; host.pmUidOverride = mixed[2];
+                MetadataProbe.Result result = MetadataProbe.run(host, host);
+                check(!result.successful() && result.primaryFailure != null && host.calls.isEmpty(),
+                        "Mixed/unknown/shell/test/root UID must issue zero path queries: " + Arrays.toString(mixed));
+            }
+            for (String fault : Arrays.asList("testuid", "process", "user", "split", "source", "apk", "length", "cert", "der", "signers")) {
+                Host host = new Host(); host.valid = true; host.mainUid = 10051; host.identityFault = fault;
+                MetadataProbe.Result result = MetadataProbe.run(host, host);
+                check(!result.successful() && result.primaryFailure != null && host.calls.isEmpty(),
+                        "New profile preserves the old pre-path identity/APK/DER rejection: " + fault);
+            }
+        }
         if (args[0].equals("all") || args[0].equals("identity")) {
             Host host = new Host();
             MetadataProbe.Result result = MetadataProbe.run(host, host);

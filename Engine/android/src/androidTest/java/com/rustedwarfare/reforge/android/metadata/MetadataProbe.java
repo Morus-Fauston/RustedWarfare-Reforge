@@ -12,6 +12,9 @@ public final class MetadataProbe {
     public static final String MAIN = "com.rustedwarfare.reforge.android";
     public static final String TEST = MAIN + ".test";
     private MetadataProbe() { }
+    // Finite observed User0 installs, not a general UID input or a proof of device identity.
+    // The host must still bind its designated instance, exact installed UID pair and APK/certificate.
+    private static boolean knownMainUid(int uid) { return uid == 10053 || uid == 10051; }
 
     public interface Access {
         Map<String, String> requestedBindings() throws Exception;
@@ -37,9 +40,9 @@ public final class MetadataProbe {
         public final PackageIdentity test = new PackageIdentity();
 
         public void requireRuntime() {
-            require(processUid == 10053 && processPid > 0 && MAIN.equals(processName) && processUser0,
+            require(knownMainUid(processUid) && processPid > 0 && MAIN.equals(processName) && processUser0,
                     "Actual target process identity mismatch");
-            main.requireRuntime(MAIN, 10053);
+            main.requireRuntime(MAIN, processUid);
             test.requireRuntime(TEST, 10052);
             require(!main.sourceDir.equals(test.sourceDir), "MAIN and TEST must have distinct code APKs");
         }
@@ -205,9 +208,9 @@ public final class MetadataProbe {
         } finally {
             // An observed target UID/name/Context remains a fact even when later install checks reject.
             Identity observed = result.identity;
-            result.metadataProbeTargetProcessExecuted = observed.processUid == 10053 && observed.processPid > 0 &&
+            result.metadataProbeTargetProcessExecuted = knownMainUid(observed.processUid) && observed.processPid > 0 &&
                     MAIN.equals(observed.processName) && observed.processUser0 && MAIN.equals(observed.main.contextPackage) &&
-                    observed.main.contextUid == 10053;
+                    observed.main.contextUid == observed.processUid;
             try {
                 result.endUtcMillis = access.utcMillis();
                 result.endMonotonicNanos = access.monotonicNanos();

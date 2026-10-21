@@ -15,12 +15,12 @@ class AndroidLauncher : AndroidApplication() {
         val run = AndroidEvidence(File(getExternalFilesDir(null) ?: filesDir, "runs"))
         evidence = run
         try {
-            val content = File(filesDir, "p001")
+            val content = File(filesDir.canonicalFile, "p001")
             SandboxAssets.copy(assets, content)
             run.record("launch", mapOf("package" to packageName, "sdk" to android.os.Build.VERSION.SDK_INT,
                 "abis" to android.os.Build.SUPPORTED_ABIS.toList(), "content" to content.absolutePath,
                 "restoredActivity" to (savedInstanceState != null), "lifecyclePolicy" to "pause-no-catchup-destroy-new-match"))
-            val screen = BootstrapScreen(File(content, "TestLab/local/P001-移动沙盒输入").toPath(), run, touchControls = true)
+            val screen = BootstrapScreen(File(content, "TestLab/local/P002-知识沙盒输入").toPath(), run, touchControls = true)
             sandbox = screen
             initialize(screen,
                 AndroidApplicationConfiguration().apply { disableAudio = true; useImmersiveMode = true })
