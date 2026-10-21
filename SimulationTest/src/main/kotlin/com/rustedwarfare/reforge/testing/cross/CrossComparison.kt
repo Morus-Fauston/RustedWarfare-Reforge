@@ -23,6 +23,9 @@ object CrossComparison {
             val bytes = Files.readAllBytes(contractPath)
             evidence += identity(contractPath, bytes)
             val contract = strictObject(decode(bytes))
+            if (contract["scope"] == s("original-motion-v1")) {
+                return OriginalMotionComparison.compare(contractPath, actualPath, expectedPath)
+            }
             contractId = contract.id("contractId")
             val spec = specification(contract)
             val actual = read(actualPath, "actual", contract, spec, evidence)
@@ -214,7 +217,7 @@ object CrossComparison {
     }
 
     // The JSON tree parser keeps the last duplicate key; reject duplicates before using its tree.
-    private fun strictObject(text: String): JsonObject {
+    internal fun strictObject(text: String): JsonObject {
         val parsed = json.parseToJsonElement(text).jsonObject.also(::validJson)
         data class Frame(val names: MutableSet<String>?, var key: Boolean)
         val stack = mutableListOf<Frame>()

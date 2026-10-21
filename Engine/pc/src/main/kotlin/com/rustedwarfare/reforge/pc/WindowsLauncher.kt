@@ -44,7 +44,7 @@ fun main(args: Array<String>) {
             "output" to output.toString(), "presentationStepsPerSecond" to 60, "coreDelta" to 1.0,
             "deltaUnit" to "sim-tick", "pacingIsOriginalGameFact" to false))
         try {
-            Lwjgl3Application(BootstrapScreen(inputs, evidence), config)
+            Lwjgl3Application(WindowPerfSampling(BootstrapScreen(inputs, evidence), evidence), config)
             evidence.record("process-completed", mapOf("status" to "normal"))
         } catch (failure: Throwable) {
             evidence.record("process-failed", mapOf("message" to failure.toString()))
