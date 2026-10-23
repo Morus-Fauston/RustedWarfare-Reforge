@@ -33,11 +33,13 @@ object P002KnowledgeSuite {
         var failure: String? = null
         var code = 0
         var scope = "invalid-input"
+        var development = false
         val artifacts = artifacts()
         try {
             val suitePath = relative(root, suiteRelative)
-            val suite = readObject(suitePath).also { it.header("p002-knowledge-suite") }
+            val suite = readObject(suitePath)
             validateSuite(suite)
+            development = DevelopmentKnowledgeProtocol.selected(suite)
             scope = suite.text("scope")
             val scenarioPath = checkedInput(root, suite.objectAt("scenario"))
             val contractPath = checkedInput(root, suite.objectAt("contract"))
@@ -46,15 +48,16 @@ object P002KnowledgeSuite {
             Files.copy(contractPath, output.resolve("inputs/contract.json"))
             val scenarios = readObject(scenarioPath)
             val contract = readObject(contractPath)
-            validateInputs(scenarios, contract)
+            validateInputs(scenarios, contract, development)
             if (scenarios.text("scope") != scope) throw InputError("Suite/fixture scope mismatch")
             for (case in scenarios.arrayAt("cases").map { it.jsonObject }) {
                 val id = case.id("caseId")
                 val directory = output.resolve(id)
                 Files.createDirectory(directory)
                 try {
-                    val rows = if (scope == "automatic-vision") AutomaticKnowledgeCases.capture(scenarios.objectAt("model"), case)
+                    val captured = if (scope == "automatic-vision") AutomaticKnowledgeCases.capture(scenarios.objectAt("model"), case)
                         else capture(scenarios.objectAt("model"), case)
+                    val rows = captured.map { DevelopmentKnowledgeProtocol.tag(it,development) }
                     lines(directory.resolve("raw.jsonl"), rows)
                     lines(directory.resolve("normalized.jsonl"), rows.map(::normalize))
                     count++
@@ -69,13 +72,13 @@ object P002KnowledgeSuite {
             require(sha256(suitePath) == sha256(output.resolve("inputs/suite.json"))) { "Suite changed during run" }
         } catch (error: InputError) { code = 64; failure = error.message }
           catch (error: Exception) { code = 4; failure = "${error.javaClass.simpleName}: ${error.message}" }
-        document(output.resolve("execution.json"), record("p002-knowledge-execution", "exitCode" to n(code),
-            "complete" to b(code == 0 && count == requiredCases(scope).size), "caseCount" to n(count), "failure" to failure?.let(::s)))
-        document(output.resolve("manifest.json"), record("p002-knowledge-manifest", "scope" to s(scope),
+        document(output.resolve("execution.json"), DevelopmentKnowledgeProtocol.tag(record("p002-knowledge-execution", "exitCode" to n(code),
+            "complete" to b(code == 0 && count == requiredCases(scope).size), "caseCount" to n(count), "failure" to failure?.let(::s)),development))
+        document(output.resolve("manifest.json"), DevelopmentKnowledgeProtocol.tag(record("p002-knowledge-manifest", "scope" to s(scope),
             "suiteSha256" to shaOrNull(output.resolve("inputs/suite.json")), "command" to array(command.map(::s)),
             "createdAt" to s(Instant.now().toString()), "repoRoot" to s(root.toString()),
             "environment" to obj("os" to s(System.getProperty("os.name")), "java" to s(System.getProperty("java.runtime.version"))),
-            "artifacts" to artifacts, "files" to inventory(output)))
+            "artifacts" to artifacts, "files" to inventory(output)),development))
         val verdict = verify(output)
         document(output.resolve("verdict.json"), obj("exitCode" to n(verdict.exitCode), "reason" to s(verdict.reason)))
         // Verdict is derived; keep it in inventory without making it the oracle.
@@ -104,6 +107,8 @@ object P002KnowledgeSuite {
             if (sha256(suitePath) != manifest.text("suiteSha256")) issue(64, "Suite snapshot identity differs")
             val suite = readObject(suitePath)
             validateSuite(suite)
+            val development = DevelopmentKnowledgeProtocol.selected(suite)
+            DevelopmentKnowledgeProtocol.checkRecord(manifest,development)
             val scope = suite.text("scope")
             if (manifest.text("scope") != scope) throw InputError("Manifest/suite scope mismatch")
             for ((key, name) in listOf("scenario" to "scenarios.json", "contract" to "contract.json")) {
@@ -111,9 +116,11 @@ object P002KnowledgeSuite {
             }
             val scenarios = readObject(root.resolve("inputs/scenarios.json"))
             val contract = readObject(root.resolve("inputs/contract.json"))
-            validateInputs(scenarios, contract)
+            validateInputs(scenarios, contract, development)
             if (scenarios.text("scope") != scope) throw InputError("Suite/fixture scope mismatch")
             val execution = readObject(root.resolve("execution.json"))
+            execution.header("p002-knowledge-execution")
+            DevelopmentKnowledgeProtocol.checkRecord(execution,development)
             if (execution.integer("exitCode") != 0L || execution.required("complete") != b(true)) issue(4, "Execution did not complete successfully")
             if (execution.integer("caseCount") != requiredCases(scope).size.toLong()) issue(3, "Missing case execution")
             val allRows = linkedMapOf<String, List<JsonObject>>()
@@ -121,8 +128,11 @@ object P002KnowledgeSuite {
                 val id = case.id("caseId")
                 try {
                     val raw = readLines(root.resolve("$id/raw.jsonl"))
+                    raw.forEach { DevelopmentKnowledgeProtocol.checkRecord(it,development) }
                     val normalized = readLines(root.resolve("$id/normalized.jsonl"))
                     if (scope == "automatic-vision") AutomaticKnowledgeCases.validateRaw(raw, scenarios.objectAt("model"), case, ::issue)
+                    if (scope == "automatic-vision" && development)
+                        DevelopmentAutomaticKnowledgeOracle.validate(raw,scenarios.objectAt("model"),case).forEach { issue(2,"$id $it") }
                     if (normalized != raw.map(::normalize)) issue(3, "$id raw/normalized correspondence differs")
                     val expected = expectedLabels(case)
                     if (normalized.map { it.text("label") } != expected) issue(3, "$id missing/reordered operation or simulation step")
@@ -150,12 +160,13 @@ object P002KnowledgeSuite {
                                     row.integer("searchCount") != 0L || row.arrayAt("searches").isNotEmpty()) issue(3, "$id invalid closed sample")
                             } else {
                                 if (row.objectAt("observation").number("simulationTime") != nextStep.toDouble()) issue(3, "$id simulation time differs from explicit steps")
-                                if (scope == "trusted-host-projection") validateSample(row, scenarios.objectAt("model"), case, ::issue)
+                                if (scope == "trusted-host-projection") validateSample(row, scenarios.objectAt("model"), case, development, ::issue)
                             }
                             if (row.required("error") != JsonNull) issue(4, "$id unexpected operation failure at $label")
                         } catch (error: Exception) { issue(3, "$id missing or invalid sample field: ${error.message}") }
                     }
                     allRows[id] = normalized
+                    if(development && id=="K09-collision")validateDevelopmentCollision(normalized,::issue)
                     for (assertion in contract.objectAt("assertions").arrayAt(id).map { it.jsonObject }) {
                         val row = normalized.singleOrNull { it.text("label") == assertion.text("label") }
                         if (row == null) issue(3, "$id missing assertion sample ${assertion.text("label")}")
@@ -270,7 +281,7 @@ object P002KnowledgeSuite {
                 PathInformationSource.PLAYER_KNOWLEDGE, fixture.required("sharing").jsonPrimitive.boolean) else null)
     }
 
-    private fun validateSample(row: JsonObject, model: JsonObject, fixture: JsonObject, issue: (Int, String) -> Unit) {
+    private fun validateSample(row: JsonObject, model: JsonObject, fixture: JsonObject, development: Boolean, issue: (Int, String) -> Unit) {
         val id = fixture.text("caseId")
         val observation = row.objectAt("observation")
         val units = observation.arrayAt("units").map { it.jsonObject }
@@ -287,7 +298,16 @@ object P002KnowledgeSuite {
             (position != model.objectAt("start") || unit.number("heading") != model.number("heading") ||
                 unit.number("speed") != 0.0 || unit.number("angularVelocity") != 0.0 || unit.required("moveTarget") != JsonNull ||
                 unit.arrayAt("pathPoints").isNotEmpty() || unit.text("movementState") != "IDLE")) issue(2, "$id initial/reopened state differs from declared fixture")
-        for (cell in fixture.arrayAt("blocked")) {
+        if(development) {
+            val walls=fixture.arrayAt("blocked").map { it.jsonArray.let { xy->intArrayOf(xy[0].jsonPrimitive.int,xy[1].jsonPrimitive.int) } }
+            if(!MotionCenterGeometry.centerPath(listOf(Position(x,y)),walls,model.integer("width").toInt(),model.integer("height").toInt(),
+                model.integer("tileWidth").toInt(),model.integer("tileHeight").toInt(),radius))issue(2,"$id actual center or map containment differs")
+            val expectedState=if(unit.required("moveTarget")!=JsonNull)"MOVING" else if(unit.number("speed")!=0.0)"DECELERATING"else "IDLE"
+            val boundary=observation.arrayAt("events").any { it.jsonObject["kind"]==s("movement-boundary-blocked") }
+            if(unit.text("movementState")=="BLOCKED") {
+                if(!boundary || unit.number("speed")!=0.0 || unit.number("angularVelocity")!=0.0 || unit.required("moveTarget")!=JsonNull || unit.arrayAt("pathPoints").isNotEmpty())issue(2,"$id invalid boundary BLOCKED state")
+            }else if(unit.text("movementState")!=expectedState)issue(2,"$id dynamic movement state differs")
+        }else for (cell in fixture.arrayAt("blocked")) {
             val xy = cell.jsonArray
             val left = xy[0].jsonPrimitive.int * model.integer("tileWidth").toDouble()
             val top = xy[1].jsonPrimitive.int * model.integer("tileHeight").toDouble()
@@ -313,6 +333,28 @@ object P002KnowledgeSuite {
         }
     }
 
+    private fun validateDevelopmentCollision(rows:List<JsonObject>,issue:(Int,String)->Unit) {
+        val blocked=rows.filter { it["operation"]==s("advance") && it.text("label").startsWith("blocked:") }
+        val events=blocked.flatMap { it.objectAt("observation").arrayAt("events") }.map { it.jsonObject }
+        if(events.none { it["kind"]==s("movement-blocked") && it["unitId"]==s("u1") })issue(2,"K09 missing actual collision witness")
+        if(events.any { it.text("kind") in setOf("movement-arrived","movement-cancelled","path-unreachable","movement-boundary-blocked") })issue(2,"K09 false command completion during hidden collision")
+        for(row in blocked) {
+            val u=row.objectAt("observation").arrayAt("units").single().jsonObject
+            if(u.required("moveTarget")!=obj("x" to n(70.0),"y" to n(50.0)) || u.text("movementState")!="MOVING")issue(2,"K09 active request changed during hidden collision")
+        }
+        val resume=rows.single { it["label"]==s("resume:0") }
+        val discover=rows.single { it["label"]==s("discover") }
+        val target=obj("x" to n(70.0),"y" to n(50.0))
+        for(row in listOf(discover,resume))if(row.objectAt("observation").arrayAt("units").single().jsonObject.required("moveTarget")!=target)issue(2,"K09 discovery/resume changed the original target")
+        if((blocked+discover).any { it.arrayAt("searches").isNotEmpty() || it.integer("searchCount")!=0L })issue(2,"K09 searched before advancing discovered knowledge")
+        val searches=resume.arrayAt("searches")
+        val search=searches.singleOrNull()?.jsonObject
+        if(search==null || search["reason"]!=s("KNOWLEDGE_REPLAN") || search["actionId"]!=s("move") || search["unitId"]!=s("u1") ||
+            search["actualSearchCalls"]!=n(1) || search["executionStep"]!=n(200) || search["usedPlayerKnowledge"]!=b(true) ||
+            search["searchTarget"]!=target || search["outcome"]!=s("FOUND") ||
+            search["searchStart"]!=discover.objectAt("observation").arrayAt("units").single().jsonObject.required("position"))issue(2,"K09 discovery did not replan the original request once")
+    }
+
     private fun normalize(row: JsonObject): JsonObject {
         if (row["kind"] != s("p002-sample")) return row
         val observation = row["observation"]?.let { if (it == JsonNull) it else JsonObject(it.jsonObject - setOf("worldId", "sampleId")) } ?: throw InputError("Missing observation")
@@ -321,12 +363,12 @@ object P002KnowledgeSuite {
     }
 
     private fun validateSuite(suite: JsonObject) {
-        suite.header("p002-knowledge-suite")
+        if(!DevelopmentKnowledgeProtocol.selected(suite))suite.header("p002-knowledge-suite")
         if (suite.arrayAt("requiredCases").map { it.jsonPrimitive.content } != requiredCases(suite.text("scope"))) throw InputError("Suite scope/coverage differs")
     }
 
-    private fun validateInputs(scenarios: JsonObject, contract: JsonObject) {
-        scenarios.header("p002-knowledge-fixtures"); contract.header("p002-knowledge-contract")
+    private fun validateInputs(scenarios: JsonObject, contract: JsonObject, development: Boolean) {
+        scenarios.header("p002-knowledge-fixtures"); DevelopmentKnowledgeProtocol.contract(contract,development)
         val required = requiredCases(scenarios.text("scope"))
         if (contract.text("scope") != scenarios.text("scope") ||
             contract.required("originalCompatibility") != b(false) || contract.integer("numericTolerance") != 0L) throw InputError("Fixture scope/contract policy differs")

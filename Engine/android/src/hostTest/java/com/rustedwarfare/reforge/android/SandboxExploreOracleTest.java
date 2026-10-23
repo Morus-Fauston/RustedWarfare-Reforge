@@ -136,6 +136,53 @@ public final class SandboxExploreOracleTest {
         }
         System.out.println("PASS constructed first arrival2499+tail, late2500, missing discovery/reroute and post-arrival goal/speed/path/position/generation/time failures");
     }
+    private static void normalMotionControls(List<JsonValue> actual) {
+        int clear=-1,previous=-1;
+        for(int i=0;i<actual.size();i++)if(actual.get(i).getString("kind").equals("observation")&&actual.get(i).getString("phase").equals("step")) {
+            boolean arrived=false;
+            for(JsonValue e:actual.get(i).get("sample").get("events"))arrived|=e.getString("kind").equals("movement-arrived");
+            if(arrived){clear=i;break;}previous=i;
+        }
+        require(clear>=0&&previous>=0,"Missing normal-motion templates");
+        List<JsonValue> retained=new ArrayList<>();for(JsonValue row:actual)retained.add(copy(row));
+        for(int i=previous;i<retained.size();i++)if(retained.get(i).getString("kind").equals("observation"))
+            SandboxFunctionalOracle.unit(retained.get(i).get("sample"),"u1").get("angularVelocity").set(2.25,null);
+        replay(retained,"MEMORY"); // Constructed nonzero retained state, not a claim of an actual nonzero-cg run.
+        for(String mutation:List.of("heading","clear-steering","tail-steering","old-world-brake","clear-position","duplicate-arrival")) {
+            List<JsonValue> bad=new ArrayList<>();for(JsonValue row:retained)bad.add(copy(row));
+            int at=mutation.equals("tail-steering")?clear+1:clear;
+            JsonValue value=SandboxFunctionalOracle.unit(bad.get(at).get("sample"),"u1");
+            switch(mutation) {
+                case "heading":value.get("heading").set(value.getDouble("heading")+1,null);break;
+                case "clear-steering":case "tail-steering":value.get("angularVelocity").set(0L,null);break;
+                case "old-world-brake":value.get("speed").set(SandboxFunctionalOracle.unit(bad.get(previous).get("sample"),"u1").getDouble("speed")-.17,null);break;
+                case "clear-position":value.get("position").get("x").set(value.get("position").getDouble("x")+.01,null);break;
+                case "duplicate-arrival":bad.get(clear+1).get("sample").get("events").addChild(new JsonReader().parse("{kind:movement-arrived,unitId:u1}"));break;
+            }
+            SandboxExploreOracle check=checker(bad,"MEMORY");
+            rejected(()->{for(JsonValue row:postCommandRows(bad))check.accept(row);});require(!check.ready(),"Normal-motion defect accepted: "+mutation);
+        }
+        // These are local predicate fixtures. The repeated pre-clear states do not claim physical trajectories.
+        for(int[] boundary:new int[][]{{1,7},{240,7},{241,16},{340,16},{341,36}})for(boolean inside:new boolean[]{false,true}) {
+            List<JsonValue> fixture=new ArrayList<>();
+            for(JsonValue row:actual){fixture.add(copy(row));if(row==postCommandRows(actual).get(0)) {fixture.remove(fixture.size()-1);break;}}
+            JsonValue point=new JsonReader().parse("{x:"+(350-boundary[1]+(inside?.001:0))+",y:110}");
+            for(int step=0;step<=boundary[0]+3;step++) {
+                boolean arrived=step==boundary[0],done=step>=boundary[0];
+                JsonValue row=copy(actual.get(done?clear:previous)),sample=row.get("sample"),value=SandboxFunctionalOracle.unit(sample,"u1");
+                row.get("phase").set("step");sample.get("stepIndex").set((long)step,null);sample.get("simulationTime").set((long)step+1,null);
+                value.remove("position");value.addChild("position",copy(point));value.get("speed").set(0L,null);
+                value.get("heading").set(90L,null);value.get("angularVelocity").set(2.25,null);
+                value.get("movementState").set(done?"idle":"moving");
+                if(!arrived){sample.remove("events");sample.addChild("events",new JsonReader().parse("[]"));}
+                fixture.add(row);
+            }
+            for(int i=0;i<fixture.size();i++)fixture.get(i).get("sequence").set((long)i,null);
+            if(inside)replay(fixture,"NO_FOG");
+            else {SandboxExploreOracle check=checker(fixture,"NO_FOG");rejected(()->{for(JsonValue row:postCommandRows(fixture))check.accept(row);});require(!check.ready(),"Strict radius boundary accepted");}
+        }
+        System.out.println("PASS constructed retained cg2.25, six normal-motion defects, strict 7/16/36 and 240/340 preincrement boundaries");
+    }
     public static void main(String[] args) throws Exception {
         if(args.length!=1)throw new IllegalArgumentException("New output directory required");Path out=Path.of(args[0]);
         List<JsonValue> memory=null;
@@ -160,12 +207,19 @@ public final class SandboxExploreOracleTest {
                     session.select(new Position(110,110));session.move(new Position(350,110));
                     current[0]=checker(stream.records,mode.name());cursor[0]=stream.records.size();
                     for(int tick=0;tick<2500&&!arrived[0];tick++)session.tick();
-                    require(arrived[0],"Real scenario did not arrive within2500");for(int tail=0;tail<3;tail++)session.tick();
+                    require(arrived[0],"Real scenario did not arrive within2500");for(int tail=0;tail<24;tail++)session.tick();
                 }
             }
             var oracle=Objects.requireNonNull(current[0]);stream.applicationErrors(failures);
-            require(oracle.ready()&&failures.primary==null&&failures.secondary.isEmpty()&&cursor[0]==stream.records.size(),"Real per-record drain failed");
+            require(oracle.ready()&&failures.primary==null&&failures.secondary.isEmpty()&&cursor[0]==stream.records.size(),
+                "Real per-record drain failed: primary="+failures.primary+", secondary="+failures.secondary+", ready="+oracle.ready());
             stream.checkAwait(true,0);stream.complete();
+            List<JsonValue> finalSteps=stream.records.stream().filter(r->r.getString("kind").equals("observation")&&r.getString("phase").equals("step")).toList();
+            List<JsonValue> stable=finalSteps.subList(finalSteps.size()-19,finalSteps.size());String fixed=null;
+            for(JsonValue row:stable){JsonValue value=SandboxFunctionalOracle.unit(row.get("sample"),"u1");
+                require(value.getDouble("speed")==0&&value.get("moveTarget").isNull()&&value.get("pathPoints").size==0&&value.getString("movementState").equals("idle"),"Actual host tail not idle");
+                String wire=value.toJson(JsonWriter.OutputType.json);if(fixed==null)fixed=wire;else require(fixed.equals(wire),"Actual host full unit DTO drift");}
+            require(stable.get(18).get("sample").getDouble("simulationTime")-stable.get(0).get("sample").getDouble("simulationTime")==18,"Actual host stable tail lacks18q");
             require(Files.size(leaf)==stream.bytes,"Host raw byte count mismatch");
             String hash=HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(Files.readAllBytes(leaf)));
             System.out.println(mode+" shared="+shared+" firstArrival="+oracle.terminal().get("sample").getLong("stepIndex")
@@ -173,5 +227,6 @@ public final class SandboxExploreOracleTest {
             if(mode==SandboxMode.MEMORY&&!shared)memory=stream.records;
         }
         negatives(Objects.requireNonNull(memory));
+        normalMotionControls(memory);
     }
 }

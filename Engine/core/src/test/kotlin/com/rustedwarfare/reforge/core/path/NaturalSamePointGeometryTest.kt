@@ -48,7 +48,13 @@ class NaturalSamePointGeometryTest {
             }
             val outside = minOf(point.x, point.y, width * tileWidth - point.x,
                 height * tileHeight - point.y) < radius
-            val expected = if (collides || outside) null else listOf(point)
+            // Retain the old six circle/center witnesses above as historical
+            // geometry distinctions. The current terrain contract uses center cells.
+            val blockedCenter = blocked.indices.any { cell ->
+                val left = cell % width * tileWidth.toDouble(); val top = cell / width * tileHeight.toDouble()
+                blocked[cell] && point.x >= left && point.x < left + tileWidth && point.y >= top && point.y < top + tileHeight
+            }
+            val expected = if (blockedCenter || outside) null else listOf(point)
             assertEquals(expected, PathPlanner.findPath(
                 PlanningTerrain(width, height, tileWidth, tileHeight, blocked), point, point, radius,
             ), "natural same-point case $case")
@@ -57,7 +63,7 @@ class NaturalSamePointGeometryTest {
     }
 
     @Test
-    fun case83_clear_actual_point_does_not_require_its_tangent_center_but_contacts_still_fail() {
+    fun case83_old_circle_contacts_do_not_change_open_center_cell_planning() {
         val blocked = BooleanArray(56).also { cells ->
             listOf(4, 13, 20, 23, 36, 39, 50, 52).forEach { cells[it] = true }
         }
@@ -68,7 +74,7 @@ class NaturalSamePointGeometryTest {
         assertTrue(intersectsAnyClosedRectangle(center, 10.0, blocked, 8, 20, 30))
         assertTrue(intersectsAnyClosedRectangle(point, 11.0, blocked, 8, 20, 30))
         assertEquals(listOf(point), PathPlanner.findPath(terrain, point, point, 10.0))
-        assertNull(PathPlanner.findPath(terrain, center, center, 10.0))
-        assertNull(PathPlanner.findPath(terrain, point, point, 11.0))
+        assertEquals(listOf(center), PathPlanner.findPath(terrain, center, center, 10.0))
+        assertEquals(listOf(point), PathPlanner.findPath(terrain, point, point, 11.0))
     }
 }

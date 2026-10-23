@@ -77,11 +77,15 @@ class KnowledgeReplanningTest {
             c.drainPathDiagnostics(c.world)
             var blockedStep: Long? = null
             for (step in 0L until 200L) {
-                val u = c.advance(Step(step, 1.0, "sim-tick")).units.single()
-                val dx = u.position.x - u.position.x.coerceIn(40.0, 60.0)
-                val dy = u.position.y - u.position.y.coerceIn(40.0, 60.0)
-                assertTrue(dx * dx + dy * dy > 1.0)
-                if (u.movementState == MovementState.BLOCKED) { blockedStep = step; break }
+                val observation = c.advance(Step(step, 1.0, "sim-tick"))
+                val u = observation.units.single()
+                assertFalse(u.position.x >= 40.0 && u.position.x < 60.0 && u.position.y >= 40.0 && u.position.y < 60.0)
+                if (observation.events.any { it.kind == "movement-blocked" }) {
+                    assertEquals(39.8, u.position.x, 1e-9)
+                    assertTrue(u.speed > 0.0)
+                    assertEquals(MovementState.MOVING, u.movementState)
+                    blockedStep = step; break
+                }
             }
             assertNotNull(blockedStep)
             assertEquals(Position(70.0, 50.0), c.observe().units.single().moveTarget)
@@ -203,7 +207,7 @@ class KnowledgeReplanningTest {
     }
 
     @Test
-    fun rr09_tangent_segment_and_rounded_corner_use_exact_distance() {
+    fun rr09_radius_overlap_does_not_replan_an_open_center_segment() {
         val base = scenario()
         val source = base.unitDefinitions.getValue("tank")
         fun unit(radius: Double) = UnitDefinition("tank", source.className, radius, radius, 1, source.imagePath, 1.0, source.movement, emptySet())
@@ -215,7 +219,7 @@ class KnowledgeReplanningTest {
                 c.drainPathDiagnostics(c.world)
                 c.acceptVisibleTerrain(c.world, "p1", listOf(VisibleTerrainCell(2, 1, true)))
                 c.advance(Step(0, 1.0, "sim-tick"))
-                assertEquals(if (radius == 10.0) 1 else 0, c.drainPathDiagnostics(c.world).size)
+                assertEquals(0, c.drainPathDiagnostics(c.world).size)
             } finally { c.close() }
         }
         // (39,41) is inside the expanded box but sqrt(2) from closed corner(40,40), outside radius1.

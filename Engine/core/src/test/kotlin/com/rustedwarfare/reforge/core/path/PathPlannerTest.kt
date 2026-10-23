@@ -43,21 +43,21 @@ class PathPlannerTest {
         assertNull(PathPlanner.findPath(PlanningTerrain.fromNoFog(map(3 to 2)),start,target,1.0))
     }
     @Test fun ki05_exact_target_tangency_uses_only_planning_obstacles() {
-        val precise=Position(70.0,41.0)
+        val precise=Position(70.0,39.0)
         val literal=listOf(precise)
         assertEquals(literal,PathPlanner.findPath(knowledge(),start,precise,1.0))
         assertNotNull(PathPlanner.findPath(knowledge(VisibleTerrainCell(3,1,true)),start,target,1.0))
+        assertNotNull(PathPlanner.findPath(knowledge(VisibleTerrainCell(3,1,true)),start,Position(70.0,41.0),1.0))
         assertNull(PathPlanner.findPath(knowledge(VisibleTerrainCell(3,1,true)),start,precise,1.0))
         val wronglySuppliedTruth=PathPlanner.findPath(PlanningTerrain.fromNoFog(map(3 to 1)),start,precise,1.0)
         assertNull(wronglySuppliedTruth);assertNotEquals(literal,wronglySuppliedTruth)
     }
     @Test fun ki06_candidate_tangency_uses_only_planning_obstacles() {
         val straight=listOf(Position(70.0,50.0))
-        val lower=listOf(Position(70.0,70.0),Position(70.0,50.0))
         assertEquals(straight,PathPlanner.findPath(knowledge(),start,target,10.0))
-        assertEquals(lower,PathPlanner.findPath(knowledge(VisibleTerrainCell(2,1,true)),start,target,10.0))
+        assertEquals(straight,PathPlanner.findPath(knowledge(VisibleTerrainCell(2,1,true)),start,target,10.0))
         val wronglySuppliedTruth=PathPlanner.findPath(PlanningTerrain.fromNoFog(map(2 to 1)),start,target,10.0)
-        assertEquals(lower,wronglySuppliedTruth);assertNotEquals(straight,wronglySuppliedTruth)
+        assertEquals(straight,wronglySuppliedTruth) // Radius overlap no longer changes center-cell routing.
     }
 
     @Test fun ki07_same_cell_exact_target_and_finite_outside_coordinates() {
@@ -114,12 +114,18 @@ class PathPlannerTest {
                 val expectedSpeed=20.0
                 val angle=Math.toRadians(90.25)
                 val emptyPosition=Position(130.0+kotlin.math.sin(angle)*expectedSpeed,110.0-kotlin.math.cos(angle)*expectedSpeed)
-                assertEquals(if(blocked) Position(130.0,110.0) else emptyPosition,unit.position)
-                assertEquals(if(blocked) 0.0 else expectedSpeed,unit.speed)
-                assertEquals(if(blocked) 0.0 else .25,unit.angularVelocity)
-                if(!blocked) assertEquals(90.25,unit.heading)
-                assertEquals(if(blocked) MovementState.BLOCKED else MovementState.MOVING,unit.movementState)
-                assertEquals(blocked,sample.events.any { it.kind == "movement-blocked" })
+                assertEquals(emptyPosition,unit.position)
+                assertEquals(expectedSpeed,unit.speed)
+                assertEquals(.25,unit.angularVelocity)
+                assertEquals(90.25,unit.heading)
+                assertEquals(MovementState.MOVING,unit.movementState)
+                assertTrue(sample.events.none { it.kind == "movement-blocked" })
+                val next=context.advance(Step(2,1.0,"sim-tick"));val moved=next.units.single()
+                if(blocked) assertEquals(159.8,moved.position.x,1e-9)
+                else assertTrue(moved.position.x>169.0)
+                assertEquals(expectedSpeed,moved.speed)
+                assertEquals(MovementState.MOVING,moved.movementState)
+                assertEquals(blocked,next.events.any { it.kind == "movement-blocked" })
             } finally {context.close()}
         }
         for(radius in listOf(0.0,-0.0)) {

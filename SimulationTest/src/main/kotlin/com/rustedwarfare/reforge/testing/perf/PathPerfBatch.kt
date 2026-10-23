@@ -11,6 +11,7 @@ import com.rustedwarfare.reforge.core.knowledge.TerrainRetention
 import com.rustedwarfare.reforge.core.knowledge.VisibleTerrainCell
 import com.rustedwarfare.reforge.core.path.PathSearchOutcome
 import com.rustedwarfare.reforge.core.path.PathSearchSample
+import com.rustedwarfare.reforge.core.path.PathSearchReason
 import com.rustedwarfare.reforge.core.sim.ActionResult
 import com.rustedwarfare.reforge.core.sim.CoordinateModel
 import com.rustedwarfare.reforge.core.sim.InitResult
@@ -24,10 +25,12 @@ import com.rustedwarfare.reforge.core.sim.SimulationContext
 import com.rustedwarfare.reforge.core.sim.Step
 import com.rustedwarfare.reforge.core.sim.TimeModel
 import com.rustedwarfare.reforge.core.sim.UnitSpawn
+import com.rustedwarfare.reforge.testing.MotionCenterGeometry
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonObjectBuilder
 import kotlinx.serialization.json.add
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
@@ -46,12 +49,13 @@ import java.util.UUID
 import kotlin.math.ceil
 import kotlin.math.floor
 
-/** Public top-level configuration per PR-v0.1. */
+/** Development runner configuration; geometry identity must be explicitly selected before execution. */
 data class PathPerfConfig(
     val repoRoot: Path,
     val unitIni: Path,
     val expectedUnitSha256: String,
     val outputRoot: Path,
+    val geometryVersion: String? = null,
 )
 
 /** Public top-level run result per PR-v0.1. */
@@ -64,11 +68,24 @@ class PathPerfCorrectnessException(message: String) : IllegalStateException(mess
 class PathPerfDiagnosticsException(message: String) : IllegalStateException(message)
 
 /**
- * Path-performance executor (PR-v0.1 vertical slice): pure helpers, real measureBatch over the
- * frozen task144 diagnostics API, a per-batch validator, and a minimal run(config) writing
- * CREATE_NEW raw/summary/environment files. No fake context, no preset counts, no perf claims.
+ * Development path-planning checker over actual diagnostics. Historical disc helpers remain
+ * available for old literal checks; current outputs do not qualify the old PR performance standard.
  */
 object PathPerfBatch {
+    const val DEVELOPMENT_GEOMETRY = "p002.dev.center-motion.v2"
+    const val DEVELOPMENT_CONTRACT_SHA256 = "c082407405daded97125d1587bad3012c300e62d97a1c1ec0b393bfa74b25f29"
+
+    private fun requireDevelopment(version: String) {
+        if (version != DEVELOPMENT_GEOMETRY) throw PathPerfCorrectnessException("Unknown or historical geometry version: $version")
+    }
+    private fun JsonObjectBuilder.developmentIdentity(version: String = DEVELOPMENT_GEOMETRY) {
+        requireDevelopment(version)
+        put("geometryVersion", version)
+        put("developmentOnly", true)
+        put("qualificationScope", "development-path-planning-only")
+        put("fullTerrainWritebackQualified", false)
+        put("validatorContractSha256", DEVELOPMENT_CONTRACT_SHA256)
+    }
     const val WIDTH_TILES = 32
     const val HEIGHT_TILES = 24
     const val TILE_WIDTH = 20
@@ -122,6 +139,7 @@ object PathPerfBatch {
         val gcCollectionTimeMillisDelta: Long,
         val heapUsedBeforeBytes: Long,
         val heapUsedAfterBytes: Long,
+        val geometryVersion: String = DEVELOPMENT_GEOMETRY,
     )
 
     fun nearestRank(values: List<Long>, q: Double): Long {
@@ -174,6 +192,7 @@ object PathPerfBatch {
         round: Int,
         unit: UnitDefinition,
         diagnosticsEnabled: Boolean = true,
+        captureBeforeQualification: ((PathPerfBatchResult) -> Unit)? = null,
     ): PathPerfBatchResult {
         require(scenarioKey in SCENARIOS) { "Unknown scenario '$scenarioKey'" }
         require(n in COUNTS) { "n must be one of $COUNTS" }
@@ -233,6 +252,7 @@ object PathPerfBatch {
                 if (gcAvailable) gcAfter!!.second - gcBefore!!.second else -1L,
                 heapBefore, heapAfter,
             )
+            captureBeforeQualification?.invoke(batch)
             if (diagnosticsEnabled) {
                 validateBatch(scenarioKey, n, batch, scenario.map, unit.id)
             }
@@ -245,6 +265,7 @@ object PathPerfBatch {
     /** Per-batch correctness validator (IDs/outcome/candidates/step/target/geometry). */
     fun validateBatch(scenarioKey: String, n: Int, batch: PathPerfBatchResult, map: MapDefinition,
                       expectedTypeId: String) {
+        requireDevelopment(batch.geometryVersion)
         if (scenarioKey !in SCENARIOS || n !in COUNTS || batch.scenarioKey != scenarioKey || batch.n != n ||
             batch.round !in ROUNDS || !batch.diagnosticsEnabled) {
             throw PathPerfCorrectnessException("batch identity differs from the fixed scenario/count/round/diagnostics contract")
@@ -338,11 +359,17 @@ object PathPerfBatch {
             if (sample.scheduledStep != 0L) {
                 throw PathPerfCorrectnessException("sample ${sample.actionId} must be scheduled for step 0")
             }
+            val index = parseIndex(sample.unitId)
+            if (sample.executionStep != 0L || sample.reason != PathSearchReason.USER_MOVE ||
+                sample.preservedPrefixPointCount != 0 || sample.searchStart != Position(startX(index), startY(index)) ||
+                sample.searchTarget != Position(goalX(index), goalY(index))) {
+                throw PathPerfCorrectnessException("sample ${sample.actionId} initial search provenance differs from the fixed request")
+            }
             val expectedOutcome = if (unreachable) PathSearchOutcome.UNREACHABLE else PathSearchOutcome.FOUND
             if (sample.outcome != expectedOutcome) {
                 throw PathPerfCorrectnessException("sample ${sample.actionId} expected $expectedOutcome got ${sample.outcome}")
             }
-            val direct = fixedDirect(scenarioKey, parseIndex(sample.unitId))
+            val direct = fixedDirectCenter(scenarioKey, parseIndex(sample.unitId))
             val expectedCandidates = if (direct) 0L else (WIDTH_TILES * HEIGHT_TILES).toLong()
             if (sample.candidatesChecked != expectedCandidates) {
                 throw PathPerfCorrectnessException("sample ${sample.actionId} candidates must be $expectedCandidates")
@@ -382,13 +409,13 @@ object PathPerfBatch {
             if (outcome.pathPoints.any { it == start }) {
                 throw PathPerfCorrectnessException("unit ${outcome.unitId} path must not repeat the start cell")
             }
-            if (fixedDirect(scenarioKey, index) && outcome.pathPoints != listOf(goal)) {
+            if (fixedDirectCenter(scenarioKey, index) && outcome.pathPoints != listOf(goal)) {
                 throw PathPerfCorrectnessException("direct unit ${outcome.unitId} must have only its exact goal")
             }
             if (outcome.pathPoints.last() != goal) {
                 throw PathPerfCorrectnessException("unit ${outcome.unitId} path must end exactly at the goal")
             }
-            if (!independentGeometry(listOf(start) + outcome.pathPoints, authorized,
+            if (!MotionCenterGeometry.centerPath(listOf(start) + outcome.pathPoints, authorized,
                     WIDTH_TILES, HEIGHT_TILES, TILE_WIDTH, TILE_HEIGHT, UNIT_RADIUS)) {
                 throw PathPerfCorrectnessException("unit ${outcome.unitId} path fails independent geometry on the authorized grid")
             }
@@ -401,6 +428,7 @@ object PathPerfBatch {
      * environment and manifest. No performance claims; exit 0/2/3/4/64 per PR.
      */
     fun run(config: PathPerfConfig): PathPerfRunResult {
+        if (config.geometryVersion != DEVELOPMENT_GEOMETRY) return PathPerfRunResult(config.outputRoot, 64)
         val repo = config.repoRoot.toAbsolutePath().normalize()
         val unit = config.unitIni.toAbsolutePath().normalize()
         val outputRoot = config.outputRoot.toAbsolutePath().normalize()
@@ -413,6 +441,8 @@ object PathPerfBatch {
         if (!isPlainDirectory(repo) || !isPlainFile(unit) || !isPlainDirectory(outputRoot)) {
             return PathPerfRunResult(outputRoot, 64)
         }
+        val contract = repo.resolve("TestLab/contracts/P002-perf/PR.development.center.v2.json")
+        if (!isPlainFile(contract) || sha256(contract) != DEVELOPMENT_CONTRACT_SHA256) return PathPerfRunResult(outputRoot, 64)
         if (!insideForbidden(repo, outputRoot)) return PathPerfRunResult(outputRoot, 64)
         val before = sha256(unit)
         if (!before.equals(config.expectedUnitSha256, ignoreCase = true)) return PathPerfRunResult(outputRoot, 64)
@@ -455,9 +485,13 @@ object PathPerfBatch {
             if (sha256(unit) != before) {
                 throw PathPerfCorrectnessException("unit INI bytes changed during the run")
             }
+            if (sha256(contract) != DEVELOPMENT_CONTRACT_SHA256) {
+                throw PathPerfCorrectnessException("development geometry contract changed during the run")
+            }
             Files.writeString(
                 output.resolve("manifest.json"),
                 buildJsonObject {
+                    developmentIdentity()
                     put("completed", true)
                     put("unitSha256", before)
                     put("output", output.fileName.toString())
@@ -480,6 +514,7 @@ object PathPerfBatch {
             Files.writeString(
                 output.resolve("manifest.json"),
                 buildJsonObject {
+                    developmentIdentity()
                     put("completed", false)
                     put("exitCode", exitCode)
                     put("errorClass", error.javaClass.name)
@@ -538,8 +573,10 @@ object PathPerfBatch {
      * and correctness can be recomputed from raw files. Callers use this in run(); tests parse it.
      */
     fun serializeBatch(batch: PathPerfBatchResult, correctnessPass: Boolean = true): List<String> {
+        requireDevelopment(batch.geometryVersion)
         val lines = ArrayList<String>(2 + batch.samples.size + batch.units.size)
         lines += buildJsonObject {
+            developmentIdentity(batch.geometryVersion)
             put("kind", "batch")
             put("scenarioKey", batch.scenarioKey)
             put("n", batch.n)
@@ -581,6 +618,7 @@ object PathPerfBatch {
         }.toString()
         for (sample in batch.samples) {
             lines += buildJsonObject {
+                developmentIdentity(batch.geometryVersion)
                 put("kind", "sample")
                 put("scenarioKey", batch.scenarioKey)
                 put("n", batch.n)
@@ -596,6 +634,7 @@ object PathPerfBatch {
 
     private fun unitJson(unit: UnitPathOutcome, batch: PathPerfBatchResult, side: String?): JsonObject =
         buildJsonObject {
+            developmentIdentity(batch.geometryVersion)
             put("kind", "unit")
             if (side != null) put("side", side)
             put("scenarioKey", batch.scenarioKey)
@@ -652,6 +691,7 @@ object PathPerfBatch {
         val file = dir.resolve("$scenarioKey-n$count.jsonl")
         val lines = ArrayList<String>()
         lines += buildJsonObject {
+            developmentIdentity()
             put("kind", "control")
             put("scenarioKey", scenarioKey)
             put("n", count)
@@ -720,6 +760,7 @@ object PathPerfBatch {
      * every scenario+N gets initial/warmup/measured rows; per-search and batch percentiles per phase.
      */
     fun summarize(batches: List<PathPerfBatchResult>): List<SummaryRow> {
+        batches.forEach { requireDevelopment(it.geometryVersion) }
         val rows = ArrayList<SummaryRow>()
         for (scenario in SCENARIOS) {
             for (count in COUNTS) {
@@ -752,6 +793,7 @@ object PathPerfBatch {
         buildJsonArray {
             summarize(batches).forEach { row ->
                 add(buildJsonObject {
+                    developmentIdentity()
                     put("scenarioKey", row.scenarioKey)
                     put("n", row.n)
                     put("phase", row.phase)
@@ -774,6 +816,7 @@ object PathPerfBatch {
         val runtime = Runtime.getRuntime()
         val heapUsed = runtime.totalMemory() - runtime.freeMemory()
         return buildJsonObject {
+            developmentIdentity()
             put("javaVersion", System.getProperty("java.version"))
             put("javaVendor", System.getProperty("java.vendor"))
             put("os", System.getProperty("os.name") + " " + System.getProperty("os.version"))
@@ -801,9 +844,8 @@ object PathPerfBatch {
             put("repoRoot", repo.toString())
             put("runnerClass", PathPerfBatch::class.java.name)
             put("pathAlgorithm", "natural-direct-then-four-neighbour-grid.v1")
-            put("pathValidator", "fixed-fixture-full-segment-jdk-line2d.v3")
-            put("validatorContractSha256", "6d9bb3b98a4dff9ba056ecba0d3589bf7191a9134f7be967dc548cc1dd7b9dd0")
-            put("independentGeometryApi", "java.awt.geom.Line2D")
+            put("pathValidator", "fixed-fixture-half-open-center-rational.v2-development")
+            put("independentGeometryApi", "MotionCenterGeometry.exact-binary64-BigInteger-rational-partition")
             put("javaDesktopModulePresent", ModuleLayer.boot().findModule("java.desktop").isPresent)
             put("round0Note", "round0 is the group's first batch in this JVM, not an independent fresh-JVM cold start")
             put("measurementRounds", "3..7")
@@ -820,6 +862,13 @@ object PathPerfBatch {
             }
         }
         return cells
+    }
+
+    /** Development expectation independently derived from the unchanged fixture coordinates. */
+    private fun fixedDirectCenter(scenarioKey: String, index: Int): Boolean = when (scenarioKey) {
+        "MEMORY_UNREACHABLE" -> false
+        "MEMORY_GAP" -> 7 * (index % 10) - 9 * (index / 10) in -11..27
+        else -> true
     }
 
     /** Fixed fixture geometry, independently derived in the reviewed D-076 validator contract.

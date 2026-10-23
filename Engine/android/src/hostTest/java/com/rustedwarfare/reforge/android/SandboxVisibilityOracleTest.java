@@ -65,7 +65,7 @@ public final class SandboxVisibilityOracleTest {
         for(String late:List.of("none","business-first","application-first")){
             var stream=SandboxFunctionalOracle.Stream.forLongTrace();var errors=new SandboxFunctionalOracle.Failures();
             stream.feed(wire(before),1000,false);var c=new SandboxVisibilityOracle(stream.records.get(0),mode,1,1);
-            int cursor=c.drain(stream,errors,1);require(errors.primary==null&&c.hiddenReady(),"Ordered prefix failed");
+            int cursor=c.drain(stream,errors,1);require(errors.primary==null&&c.hiddenReady(),"Ordered prefix failed: "+errors.primary);
             arm(c,next);stream.feed(wire(List.of(pointer(next))),1000,false);cursor=c.drain(stream,errors,cursor);
             c.confirmProcessedFrame(next+1,10,11);
             List<JsonValue> after=new ArrayList<>();for(JsonValue r:tail)after.add(copy(r));
@@ -83,7 +83,7 @@ public final class SandboxVisibilityOracleTest {
                 require(errors.primary==null&&c.ready()&&stream.terminalSequence()==c.terminal().getLong("sequence"),"Ordered terminal was not actually captured");
             }else{
                 require(!c.ready()&&errors.primary!=null&&!errors.secondary.isEmpty(),"Late combined errors lost fail latch/secondary");
-                require(errors.primary.getMessage().startsWith(late.equals("application-first")?"Visibility: application cleanup-error":"Visibility: tail changed"),"Earlier actual row error was replaced");
+                require(errors.primary.getMessage().startsWith(late.equals("application-first")?"Visibility: application cleanup-error":"Normal completion: goal cleared/replaced"),"Earlier actual row error was replaced");
             }
             System.out.println(mode+" orderedDrain="+late+" rows="+cursor+" terminal="+stream.terminalSequence());
         }
@@ -181,18 +181,36 @@ public final class SandboxVisibilityOracleTest {
         });
     }
     private static JsonValue bridgeArrival(SandboxVisibilityOracle c){
-        // Constructed continuous closing-tail fixture, not a real S03 arrival execution.
+        // Constructed lifecycle fixture only, not a real physical S03 trajectory.
+        // Active bridge positions have bounded displacement. Normal clear and every brake step
+        // use an explicit event and actual literal .187 progression, preserving heading/cg.
         JsonValue last=copy(c.terminal()),u=last.get("sample").get("units").get(0),pos=u.get("position");
-        double x=pos.getDouble("x"),y=pos.getDouble("y"),distance=Math.hypot(x-110,y-290);int count=(int)Math.ceil(distance);
+        double tx=u.get("moveTarget").getDouble("x"),ty=u.get("moveTarget").getDouble("y");
+        double x=pos.getDouble("x"),y=pos.getDouble("y"),distance=Math.hypot(x-tx,y-ty);
+        require(distance>6.99,"Bridge prefix too near goal");int count=(int)Math.ceil(distance-6.99);
+        double dx=(tx-x)/distance,dy=(ty-y)/distance,heading=(Math.toDegrees(Math.atan2(dx,-dy))+360)%360;
         long step=last.get("sample").getLong("stepIndex");double time=last.get("sample").getDouble("simulationTime");
         for(int i=1;i<=count;i++){
             JsonValue r=copy(last),s=r.get("sample"),unit=s.get("units").get(0);double f=(double)i/count;
             r.get("sequence").set(c.nextSequence(),null);s.get("stepIndex").set(step+i,null);s.get("simulationTime").set(time+i,null);
-            unit.get("position").get("x").set(i==count?110d:x+(110-x)*f,null);unit.get("position").get("y").set(i==count?290d:y+(290-y)*f,null);
-            unit.get("speed").set(i==count?0d:1d,null);
-            if(i==count){unit.remove("moveTarget");unit.addChild("moveTarget",json("null"));unit.remove("pathPoints");unit.addChild("pathPoints",json("[]"));}
+            unit.get("position").get("x").set(x+dx*(distance-6.99)*f,null);unit.get("position").get("y").set(y+dy*(distance-6.99)*f,null);
+            unit.get("speed").set(1d,null);unit.get("heading").set(heading,null);unit.get("angularVelocity").set(2.25,null);
+            s.remove("events");s.addChild("events",json("[]"));
             c.accept(r);if(i==count)last=r;
         }
+        double velocity=1;
+        for(int i=0;i<6;i++){
+            JsonValue r=copy(last),s=r.get("sample"),unit=s.get("units").get(0);
+            r.get("sequence").set(c.nextSequence(),null);s.get("stepIndex").set(s.getLong("stepIndex")+1,null);s.get("simulationTime").set(s.getDouble("simulationTime")+1,null);
+            velocity=Math.max(0,velocity-.187);unit.get("speed").set(velocity,null);unit.get("movementState").set(velocity==0?"idle":"decelerating");
+            unit.get("position").get("x").set(unit.get("position").getDouble("x")+dx*velocity,null);
+            unit.get("position").get("y").set(unit.get("position").getDouble("y")+dy*velocity,null);
+            unit.remove("moveTarget");unit.addChild("moveTarget",json("null"));unit.remove("pathPoints");unit.addChild("pathPoints",json("[]"));
+            s.remove("events");s.addChild("events",json(i==0?"[{kind:movement-arrived,unitId:u1}]":"[]"));
+            c.accept(r);last=r;
+        }
+        require(Math.hypot(last.get("sample").get("units").get(0).get("position").getDouble("x")-tx,
+            last.get("sample").get("units").get(0).get("position").getDouble("y")-ty)>4,"Constructed legal stop must exercise replaced4 gate");
         return last;
     }
     private static void reviewTail(List<JsonValue> rows,String mode){
@@ -201,7 +219,7 @@ public final class SandboxVisibilityOracleTest {
             require(c.ready(),"Valid constructed arrival tail failed");
             r.get("sequence").set(c.nextSequence(),null);s.get("stepIndex").set(s.getLong("stepIndex")+1,null);s.get("simulationTime").set(s.getDouble("simulationTime")+1,null);
             if(restored){u.remove("moveTarget");u.addChild("moveTarget",json("{\"x\":110,\"y\":290}"));u.remove("pathPoints");u.addChild("pathPoints",json("[{\"x\":110,\"y\":290}]"));u.get("speed").set(1d,null);}
-            else u.get("position").get("x").set(110.5d,null);
+            else u.get("position").get("x").set(u.get("position").getDouble("x")+.5,null);
             c.accept(r);
         });
     }
@@ -229,10 +247,20 @@ public final class SandboxVisibilityOracleTest {
             good.imageStable(first,true);
             JsonValue baseline=rows.stream().filter(r->r.getString("kind").equals("observation")&&
                 r.get("sample").get("units").size>1&&r.get("sample").get("units").get(0).get("moveTarget").isNull()&&
-                r.get("sample").get("units").get(0).getDouble("speed")==0&&
-                Math.hypot(r.get("sample").get("units").get(0).get("position").getDouble("x")-530,
-                    r.get("sample").get("units").get(0).get("position").getDouble("y")-270)<=4).findFirst().orElseThrow();
+                r.get("sample").get("units").get(0).getDouble("speed")==0&&r.getString("hostPhase","").equals("visible-baseline")).findFirst().orElseThrow();
             good.imageStable(baseline,false);
+            good.imageStable(baseline,false); // Pure image validation must not advance a Move or event timer.
+            for(String defect:List.of("anchor","missing-u3","generation","world","speed"))rejected(mode+" visible-image-"+defect,()->{
+                JsonValue changed=copy(baseline),sample=changed.get("sample"),own=sample.get("units").get(0);
+                switch(defect){
+                    case "anchor":own.get("position").get("x").set(own.get("position").getDouble("x")+.01,null);break;
+                    case "missing-u3":for(JsonValue value=sample.get("units").child;value!=null;value=value.next)if(value.getString("unitId").equals("u3")){value.remove();break;}break;
+                    case "generation":changed.get("generation").set(2L,null);break;
+                    case "world":sample.get("worldId").set("other");break;
+                    case "speed":own.get("speed").set(.1,null);break;
+                }
+                good.imageStable(changed,false);
+            });
             rejected(mode+" visible-image-hidden",()->good.imageStable(first,false));
             rejected(mode+" hidden-image-visible",()->good.imageStable(baseline,true));
             rejected(mode+" image-input",()->good.imageStable(pointer(next),true));

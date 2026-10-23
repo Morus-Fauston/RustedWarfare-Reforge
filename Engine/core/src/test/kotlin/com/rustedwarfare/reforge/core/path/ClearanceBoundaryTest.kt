@@ -17,9 +17,7 @@ class ClearanceBoundaryTest {
                 if (!blocked[index]) false else {
                     val left = (index % width) * tw.toDouble()
                     val top = (index / width) * th.toDouble()
-                    val dx = maxOf(left - p.x, 0.0, p.x - left - tw)
-                    val dy = maxOf(top - p.y, 0.0, p.y - top - th)
-                    kotlin.math.hypot(dx, dy) <= radius
+                    p.x >= left && p.x < left + tw && p.y >= top && p.y < top + th
                 }
             }
             // D-076 uses the actual point; D-083 requires the entire circle inside the map.
@@ -29,7 +27,7 @@ class ClearanceBoundaryTest {
         }
     }
 
-    @Test fun exact_contact_on_each_side_and_corner_is_blocked_on_rectangular_tiles() {
+    @Test fun radius_contact_outside_a_terrain_cell_does_not_block_rectangular_tile_planning() {
         // Cell (2,2) spans x=40..60, y=60..90. A radius-5 circle
         // touches its four sides; 3/4/5 gives an exact corner contact.
         val cells = BooleanArray(64).also { it[2 * 8 + 2] = true }
@@ -42,7 +40,7 @@ class ClearanceBoundaryTest {
             Position(37.0, 56.0) to Position(36.99, 56.0),
         )
         for ((touching, separated) in contacts) {
-            assertNull(PathPlanner.findPath(terrain, touching, touching, 5.0), "$touching")
+            assertEquals(listOf(touching), PathPlanner.findPath(terrain, touching, touching, 5.0), "$touching")
             assertEquals(listOf(separated), PathPlanner.findPath(terrain, separated, separated, 5.0), "$separated")
         }
     }
@@ -51,7 +49,8 @@ class ClearanceBoundaryTest {
         val cells = BooleanArray(64).also { it[2 * 8 + 2] = true }
         val terrain = PlanningTerrain(8, 8, 20, 30, cells)
         val edge = Position(60.0, 75.0)
-        assertNull(PathPlanner.findPath(terrain, edge, edge, 0.0))
+        assertEquals(listOf(edge), PathPlanner.findPath(terrain, edge, edge, 0.0))
+        assertNull(PathPlanner.findPath(terrain, Position(40.0, 75.0), Position(40.0, 75.0), 0.0))
         val beyond = Position(60.01, 75.0)
         assertEquals(listOf(beyond), PathPlanner.findPath(terrain, beyond, beyond, 0.0))
         val origin = Position(10.0, 15.0)

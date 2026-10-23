@@ -25,7 +25,7 @@ class CommandTimelineTest {
         assertEquals(null, context.observe().units.single().moveTarget)
         val first = context.advance(Step(0, 1.0, "sim-tick"))
         assertEquals(listOf("a1"), first.actionResults.map { it.actionId })
-        assertEquals(0.07, first.units.single().speed, 1e-9)
+        assertEquals(0.077, first.units.single().speed, 1e-9)
         val beforeSkip = context.observe()
         assertFailsWith<IllegalArgumentException> { context.advance(Step(3, 1.0, "sim-tick")) }
         assertSame(beforeSkip, context.observe())

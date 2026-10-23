@@ -103,6 +103,8 @@ class AutomaticKnowledgePrefixTest {
             }
             var arrived = false
             var prefixSearches = 0
+            var stoppedTail = 0
+            var stoppedUnit: UnitObservation? = null
             for (step in 0L until 1500L) {
                 val a = plain.advance(Step(step, 1.0, "sim-tick"))
                 val b = measured.advance(Step(step, 1.0, "sim-tick"))
@@ -118,20 +120,41 @@ class AutomaticKnowledgePrefixTest {
                     assertNotNull(sample.searchTarget)
                     if (sample.reason != PathSearchReason.ROUTE_REPAIR) assertEquals(goal, sample.searchTarget)
                     if (sample.preservedPrefixPointCount > 0) prefixSearches++
+                    println("AKP02-search,$step,$sample")
                 }
-                if (a.units.single().moveTarget == null) { arrived = true; break }
+                if (a.events.any { it.kind == "movement-arrived" }) arrived = true
+                val unit = a.units.single()
+                if (arrived && unit.moveTarget == null && unit.speed == 0.0 && unit.movementState == MovementState.IDLE) {
+                    stoppedTail = if (unit == stoppedUnit) stoppedTail + 1 else 1
+                    stoppedUnit = unit
+                    if (stoppedTail >= 18) break
+                } else { stoppedTail = 0; stoppedUnit = null }
             }
             assertTrue(prefixSearches > 0)
-            assertTrue(arrived)
+            assertTrue(arrived, "Final state: ${measured.observe().units}")
+            assertTrue(stoppedTail >= 18, "Missing real stopped tail within the same 1500q budget")
         } finally { plain.close(); measured.close() }
     }
 
     @Test fun akp03_invalid_step_preserves_pending_prefix_query_for_a_valid_retry() {
+        // Discover the pending replan boundary by its semantic event. Speed policy
+        // changes must not turn this transaction test into a fixed travel-time test.
+        val probe = open(failingUnit = true)
+        val replanStep = try {
+            probe.submit(MoveAction("normal", "p1", "u1", goal, probe.world))
+            (0L..500L).first { step ->
+                probe.advance(Step(step, 1.0, "sim-tick"))
+                probe.drainPathDiagnostics(probe.world).any {
+                    it.unitId == "u1" && it.reason == PathSearchReason.KNOWLEDGE_REPLAN && it.preservedPrefixPointCount > 0
+                }
+            }
+        } finally { probe.close() }
+        assertTrue(replanStep > 0)
         val context = open(failingUnit = true)
         try {
             assertIs<ActionResult.Accepted>(context.submit(MoveAction("normal", "p1", "u1", goal, context.world)))
-            for (step in 0L..129L) {
-                if (step == 129L) assertIs<ActionResult.Accepted>(context.submit(
+            for (step in 0L until replanStep) {
+                if (step == replanStep - 1) assertIs<ActionResult.Accepted>(context.submit(
                     MoveAction("fast", "p1", "z", Position(70.0, 10.0), context.world)))
                 context.advance(Step(step, 1.0, "sim-tick"))
                 context.drainPathDiagnostics(context.world)
@@ -143,16 +166,27 @@ class AutomaticKnowledgePrefixTest {
             assertNull(stopped.moveTarget)
             assertTrue(before.events.any { it.unitId == "z" && it.kind == "movement-boundary-blocked" })
             val knowledge = context.knowledgeSnapshot(context.world, "p1")
-            assertFailsWith<IllegalArgumentException> { context.advance(Step(130, 0.5, "sim-tick")) }
+            val knownWalls = knowledge.cells.mapIndexedNotNull { index, cell ->
+                if (cell.lastKnownBlocked == true) index % 30 to index / 30 else null
+            }
+            val oldUnit = before.units.single { it.unitId == "u1" }
+            val safePrefix = mutableListOf<Position>()
+            var anchor = oldUnit.position
+            for (point in oldUnit.pathPoints) {
+                if (!clear(anchor, point, knownWalls)) break
+                safePrefix += point; anchor = point
+            }
+            assertTrue(safePrefix.isNotEmpty() && safePrefix.size < oldUnit.pathPoints.size)
+            assertFailsWith<IllegalArgumentException> { context.advance(Step(replanStep, 0.5, "sim-tick")) }
             assertSame(before, context.observe())
             assertEquals(knowledge.revision, context.knowledgeSnapshot(context.world, "p1").revision)
             assertEquals(knowledge.cells, context.knowledgeSnapshot(context.world, "p1").cells)
             assertTrue(context.drainPathDiagnostics(context.world).isEmpty())
-            val after = context.advance(Step(130, 1.0, "sim-tick"))
+            val after = context.advance(Step(replanStep, 1.0, "sim-tick"))
             val attempt = context.drainPathDiagnostics(context.world).single { it.unitId == "u1" }
             assertEquals(PathSearchReason.KNOWLEDGE_REPLAN, attempt.reason)
-            assertEquals(1, attempt.preservedPrefixPointCount)
-            assertEquals(Position(270.0, 50.0), attempt.searchStart)
+            assertEquals(safePrefix.size, attempt.preservedPrefixPointCount)
+            assertEquals(safePrefix.last(), attempt.searchStart)
             assertEquals(goal, attempt.searchTarget)
             assertEquals("normal", attempt.actionId)
             assertEquals(goal, after.units.single { it.unitId == "u1" }.moveTarget)
@@ -170,6 +204,6 @@ class AutomaticKnowledgePrefixTest {
             val c = corners[index]
             val d = corners[(index + 1) % 4]
             Line2D.linesIntersect(a.x, a.y, b.x, b.y, c.x, c.y, d.x, d.y)
-        } && minOf(distance(a), distance(b), corners.minOf { Line2D.ptSegDist(a.x, a.y, b.x, b.y, it.x, it.y) }) > 11.0
+        } && minOf(distance(a), distance(b), corners.minOf { Line2D.ptSegDist(a.x, a.y, b.x, b.y, it.x, it.y) }) > 0.0
     }
 }

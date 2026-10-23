@@ -273,36 +273,35 @@ class KnowledgePathRoutingTest {
             )
 
             // (3,2) spans x 60..80, y 40..60; radius is 1.0 from the definition built above.
-            val radius = 1.0
             var sawBlocked = false
             var worstDistance = Double.MAX_VALUE
             for (stepIndex in 0L until 200L) {
                 val observation = unknownTruthBlocked.advance(Step(stepIndex, 1.0, "sim-tick"))
                 val unit = observation.units.single()
 
-                // Independent geometric invariant, checked every step: the unit circle must never
-                // intersect the truly blocked rectangle.
+                // Independent center-cell invariant; radius overlap is allowed by the new terrain contract.
                 val closestX = unit.position.x.coerceIn(60.0, 80.0)
                 val closestY = unit.position.y.coerceIn(40.0, 60.0)
                 val distance = hypot(unit.position.x - closestX, unit.position.y - closestY)
                 worstDistance = minOf(worstDistance, distance)
                 assertTrue(
-                    distance >= radius,
-                    "must never intersect truly blocked (3,2) at step $stepIndex: distance=$distance at ${unit.position}",
+                    !(unit.position.x >= 60.0 && unit.position.x < 80.0 && unit.position.y >= 40.0 && unit.position.y < 60.0),
+                    "center entered truly blocked (3,2) at step $stepIndex: distance=$distance at ${unit.position}",
                 )
 
-                if (unit.movementState == MovementState.BLOCKED) {
+                if (observation.events.any { it.kind == "movement-blocked" }) {
                     assertTrue(
                         observation.events.any { it.kind == "movement-blocked" && it.unitId == "u1" },
                         "reaching truly blocked (3,2) must emit movement-blocked",
                     )
-                    assertEquals(0.0, unit.speed, "a blocked unit must lose its speed")
-                    assertEquals(0.0, unit.angularVelocity, "a blocked unit must lose its angular velocity")
+                    assertEquals(59.8, unit.position.x, 1e-9)
+                    assertTrue(unit.speed > 0.0, "Terrain correction must retain propulsion")
+                    assertEquals(MovementState.MOVING, unit.movementState)
                     sawBlocked = true
                     break
                 }
             }
-            assertTrue(sawBlocked, "advancing into truly blocked (3,2) must reach the BLOCKED state (worstDistance=$worstDistance)")
+            assertTrue(sawBlocked, "advancing into truly blocked (3,2) must exercise actual edge correction (worstDistance=$worstDistance)")
         } finally {
             unknownTruthBlocked.close()
             truthOpen.close()

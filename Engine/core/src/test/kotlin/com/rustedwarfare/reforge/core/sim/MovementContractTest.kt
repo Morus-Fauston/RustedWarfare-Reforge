@@ -12,6 +12,7 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertIs
 import kotlin.test.assertTrue
+import kotlin.test.assertNotNull
 
 private fun simInputs(): Path = Path.of(checkNotNull(System.getProperty("p001.inputs.dir")))
 
@@ -67,7 +68,7 @@ class MovementContractTest {
         val arrived = samples.indexOfFirst { sample -> sample.events.any { it.kind == "movement-arrived" } }
         assertTrue(arrived > 0)
         assertTrue(hypot(samples[arrived - 1].units.single().position.x - 110.0,
-            samples[arrived - 1].units.single().position.y - 90.0) < 4.0)
+            samples[arrived - 1].units.single().position.y - 90.0) < 7.0)
         samples.forEach { traceObservation("M01", "step", it) }
         val unit = samples.last().units.single()
 
@@ -117,10 +118,10 @@ class MovementContractTest {
         assertEquals(0.0, stopped.last().speed)
         assertEquals(MovementState.IDLE, stopped.last().movementState)
         assertTrue(stopped.zipWithNext().all { (a, b) -> b.position.x >= a.position.x })
-        listOf(0.93, 0.76, 0.59, 0.42, 0.25, 0.08, 0.0).forEachIndexed { index, speed ->
+        listOf(0.913, 0.726, 0.539, 0.352, 0.165, 0.0).forEachIndexed { index, speed ->
             assertEquals(speed, stopped[index].speed, 1e-9)
         }
-        assertEquals(3.03, stopped.last().position.x - beforeStop.position.x, 1e-9)
+        assertEquals(2.695, stopped.last().position.x - beforeStop.position.x, 1e-9)
         assertTrue(stopped.takeLast(20).all { it == stopped.last() })
     }
 
@@ -139,6 +140,7 @@ class MovementContractTest {
             assertIs<ActionResult.Accepted>(context.submit(MoveAction("a1", "p1", "u1", Position(500.0, row * 20.0 + 10.0), context.world)))
             var observation = context.observe()
             var arrivals = 0
+            var stable = 0
             println("M04 initial row=$row units=${observation.units}")
             for (step in 0L..900L) {
                 val before = observation.units.single()
@@ -147,15 +149,23 @@ class MovementContractTest {
                 val unit = observation.units.single()
                 if (observation.events.any { it.kind == "movement-arrived" }) {
                     arrivals += observation.events.count { it.kind == "movement-arrived" }
-                    assertTrue(hypot(before.position.x - 500.0, before.position.y - (row * 20.0 + 10.0)) < 4.0)
+                    assertEquals(listOf(Position(500.0, row * 20.0 + 10.0)), before.pathPoints)
+                    assertTrue(hypot(before.position.x - 500.0, before.position.y - (row * 20.0 + 10.0)) < 7.0)
                     assertEquals(null, unit.moveTarget)
                 }
                 println("M04 row=$row step=$step time=${observation.simulationTime} x=${unit.position.x} y=${unit.position.y} heading=${unit.heading} speed=${unit.speed} omega=${unit.angularVelocity} waypoint=${unit.pathPoints.firstOrNull()} target=${unit.moveTarget} state=${unit.movementState} events=${observation.events}")
                 assertFalse(intersectsBlocked(actualMap(), unit.position, actualUnit().radius))
-                assertTrue(observation.events.none { it.kind == "movement-blocked" })
-                if (unit.moveTarget == null && unit.movementState == MovementState.IDLE) break
+                if (observation.events.any { it.kind == "movement-blocked" }) {
+                    assertTrue(unit.speed >= maxOf(0.0, before.speed - .187) - 1e-9,
+                        "Terrain correction must not hard-stop propulsion")
+                    if (arrivals == 0) assertNotNull(unit.moveTarget)
+                }
+                stable = if (unit.moveTarget == null && unit.movementState == MovementState.IDLE &&
+                    unit.position == before.position && unit.heading == before.heading) stable + 1 else 0
+                if (stable >= 18) break
             }
             assertEquals(1, arrivals)
+            assertTrue(stable >= 18)
             assertTrue(
                 observation.units.single().movementState == MovementState.IDLE &&
                     hypot(observation.units.single().position.x - 500.0, observation.units.single().position.y - (row * 20.0 + 10.0)) < 7.03,
@@ -186,13 +196,14 @@ class MovementContractTest {
     private fun normalizeAngle(angle: Double): Double = ((angle + 180.0) % 360.0 + 360.0) % 360.0 - 180.0
 
     private fun intersectsBlocked(map: MapDefinition, position: Position, radius: Double): Boolean {
+        if (position.x < radius || position.y < radius || position.x > map.widthTiles * map.tileWidth - radius ||
+            position.y > map.heightTiles * map.tileHeight - radius) return true
         for (row in 0 until map.heightTiles) for (col in 0 until map.widthTiles) {
             if (!map.blocking.isBlocked(col, row)) continue
             val left = col * map.tileWidth.toDouble()
             val top = row * map.tileHeight.toDouble()
-            val closestX = position.x.coerceIn(left, left + map.tileWidth)
-            val closestY = position.y.coerceIn(top, top + map.tileHeight)
-            if (hypot(position.x - closestX, position.y - closestY) <= radius) return true
+            if (position.x >= left && position.x < left + map.tileWidth &&
+                position.y >= top && position.y < top + map.tileHeight) return true
         }
         return false
     }

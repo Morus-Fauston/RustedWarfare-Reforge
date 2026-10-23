@@ -1,9 +1,8 @@
 package com.rustedwarfare.reforge.client
 
 import com.rustedwarfare.reforge.core.sim.*
-import java.awt.geom.Line2D
+import com.rustedwarfare.reforge.client.demo.DemoMoveOracle
 import java.nio.file.Path
-import kotlin.math.hypot
 import kotlin.test.*
 
 class PrivateKnowledgeScenarioIntegrationTest {
@@ -52,7 +51,6 @@ class PrivateKnowledgeScenarioIntegrationTest {
 
     @Test fun sc07_one_move_on_real_loaded_map_discovers_the_wall_and_arrives_by_a_clear_route() {
         val input = scenario()
-        val radius = input.unitDefinitions.getValue("tank").radius
         for (mode in listOf(SandboxMode.MEMORY, SandboxMode.HARDCORE)) {
             SandboxSession(input, options = SandboxOptions(mode)).use { session ->
                 val wall = 5 * 30 + 14
@@ -60,49 +58,29 @@ class PrivateKnowledgeScenarioIntegrationTest {
                 session.select(Position(110.0, 110.0))
                 assertIs<ActionResult.Accepted>(session.move(Position(350.0, 110.0)))
                 assertEquals(listOf(Position(350.0, 110.0)), session.observation.units.single().pathPoints)
+                val movementOracle = DemoMoveOracle(input, Position(350.0, 110.0), listOf(session.observation.units.single { it.unitId == "u1" }))
                 var discovered = false
                 var rerouted = false
                 var arrived = false
-                var previous = session.observation.units.single().position
                 println("P002_TRACE\tmode\tstep\tx\ty\theading\tspeed\tstate\twallVisible\tpath")
                 for (step in 0 until 2500) {
                     session.tick()
-                    val unit = session.observation.units.single()
+                    val unit = session.observation.units.single { it.unitId == "u1" }
+                    movementOracle.accept(listOf(unit), session.observation.events, session.observation.stepIndex)
                     val visible = session.frame.terrain[wall].visible
                     discovered = discovered || visible
                     rerouted = rerouted || unit.pathPoints.any { it.y != 110.0 }
                     println("P002_TRACE\t$mode\t$step\t${unit.position.x}\t${unit.position.y}\t${unit.heading}\t${unit.speed}\t${unit.movementState}\t$visible\t${unit.pathPoints.joinToString(";") { "${it.x}:${it.y}" }}")
-                    for (row in 0 until 20) for (column in 0 until 30) if (input.map.blocking.isBlocked(column, row)) {
-                        assertTrue(segmentRectangleDistance(previous, unit.position, column * 20.0, row * 20.0) > radius,
-                            "$mode step=$step wall=($column,$row)")
-                    }
-                    previous = unit.position
                     if (unit.moveTarget == null) {
-                        assertTrue(session.observation.events.any { it.kind == "movement-arrived" })
-                        assertTrue(hypot(unit.position.x - 350.0, unit.position.y - 110.0) <= 4.0)
                         arrived = true
-                        break
                     }
                 }
                 assertTrue(discovered, "$mode must discover the initially hidden wall")
                 assertTrue(rerouted, "$mode must route away from the initial straight line")
                 assertTrue(arrived, "$mode must arrive within the fixed 2500-step budget")
+                movementOracle.assertComplete()
             }
         }
     }
 
-    private fun segmentRectangleDistance(a: Position, b: Position, left: Double, top: Double): Double {
-        val right = left + 20.0
-        val bottom = top + 20.0
-        fun pointDistance(p: Position) = hypot(maxOf(left - p.x, 0.0, p.x - right), maxOf(top - p.y, 0.0, p.y - bottom))
-        val corners = listOf(Position(left, top), Position(right, top), Position(right, bottom), Position(left, bottom))
-        if (corners.indices.any { index ->
-                val c = corners[index]
-                val d = corners[(index + 1) % 4]
-                Line2D.linesIntersect(a.x, a.y, b.x, b.y, c.x, c.y, d.x, d.y)
-            }) return 0.0
-        return minOf(pointDistance(a), pointDistance(b), corners.minOf {
-            Line2D.ptSegDist(a.x, a.y, b.x, b.y, it.x, it.y)
-        })
-    }
 }

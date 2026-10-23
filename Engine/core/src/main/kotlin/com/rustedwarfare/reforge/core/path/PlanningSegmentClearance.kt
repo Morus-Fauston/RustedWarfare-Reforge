@@ -5,7 +5,7 @@ import com.rustedwarfare.reforge.core.sim.MapBounds
 import com.rustedwarfare.reforge.core.content.MapDefinition
 import kotlin.math.floor
 
-/** Planning-only swept-circle clearance; closed contact with a known blocked tile is rejected. */
+/** Planning-only center line; unit radius restricts the map's outer boundary. */
 internal object PlanningSegmentClearance {
     fun allows(map: PlanningTerrain, start: Position, end: Position, radius: Double): Boolean =
         allows(map.widthTiles, map.heightTiles, map.tileWidth, map.tileHeight, start, end, radius, map::isBlocked)
@@ -30,8 +30,7 @@ internal object PlanningSegmentClearance {
         val lastRow = (floor((maxOf(start.y, end.y) + radius) / tileHeight) + 1)
             .coerceIn(-1.0, heightTiles - 1.0).toInt()
         for (row in firstRow..lastRow) for (column in firstColumn..lastColumn) {
-            if (blocked(column, row) && KnowledgePathImpact.affects(start, listOf(end), end, radius,
-                    column, row, tileWidth, tileHeight)) return false
+            if (blocked(column, row) && CenterLineCells.enters(start, end, column, row, tileWidth, tileHeight)) return false
         }
         return true
     }

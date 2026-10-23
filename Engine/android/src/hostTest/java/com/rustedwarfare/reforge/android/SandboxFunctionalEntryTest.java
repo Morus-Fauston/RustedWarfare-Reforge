@@ -255,7 +255,7 @@ public final class SandboxFunctionalEntryTest {
         return json("{kind:observation,generation:1,sequence:" + seq + ",phase:" + phase
             + ",sample:{worldId:w,scenarioId:p002-knowledge,playerId:p1,stepIndex:" + step + ",simulationTime:" + time
             + ",events:[],units:[{unitId:u1,ownerPlayerId:p1,position:{x:110,y:" + y + "},speed:" + speed
-            + ",angularVelocity:0,moveTarget:" + (moving ? "{x:110,y:290}" : "null")
+            + ",heading:0,angularVelocity:0,moveTarget:" + (moving ? "{x:110,y:290}" : "null")
             + ",pathPoints:" + (moving ? "[{x:110,y:290}]" : "[]") + "}]}}");
     }
     private static JsonValue startedMove() {
@@ -330,7 +330,31 @@ public final class SandboxFunctionalEntryTest {
         var missing = unreachableRow(22, 10, 11, "after-action", 120, 1, false);
         missing.get("sample").get("units").remove(0);
         rejected(() -> unreachableChecker().accept(missing));
+        retainedSteeringAfterCancellation();
         System.out.println("PASS active cancellation, required immediate observation, no restored route, safe stopped position and late failures");
+    }
+    private static JsonValue steering(JsonValue row, double heading, double omega) {
+        var u = row.get("sample").get("units").get(0);
+        u.get("heading").set(heading, null); u.get("angularVelocity").set(omega, null);
+        return row;
+    }
+    private static SandboxFunctionalOracle.Unreachable retainedCancellation() {
+        var before = steering(unreachableRow(20, 10, 11, "before-action", 120, 1, true), 123, 2.25);
+        var check = new SandboxFunctionalOracle.Unreachable(startedMove(), before, cancelledMove());
+        check.accept(steering(unreachableRow(22, 10, 11, "after-action", 120, 1, false), 123, 2.25));
+        return check;
+    }
+    private static void retainedSteeringAfterCancellation() {
+        var check = retainedCancellation();
+        // The state may remain nonzero. It neither turns the body nor prevents stopped readiness.
+        for (int i = 0; i < 3; i++)
+            check.accept(steering(unreachableRow(23 + i, 11 + i, 12 + i, "step", 120.5, 0, false), 123, 2.25));
+        require(check.ready(), "Nonzero retained steering must permit a stable cancellation tail");
+        rejected(() -> check.accept(steering(unreachableRow(26, 14, 15, "step", 120.5, 0, false), 123, 0)));
+        rejected(() -> retainedCancellation().accept(steering(unreachableRow(23, 11, 12, "step", 120.5, .8, false), 123, 2)));
+        rejected(() -> retainedCancellation().accept(steering(unreachableRow(23, 11, 12, "step", 120.5, .8, false), 124, 2.25)));
+        rejected(() -> retainedCancellation().accept(steering(unreachableRow(23, 11, 12, "step", 120.5, .8, false), 123, Double.NaN)));
+        System.out.println("PASS retained nonzero steering, no post-cancel turn/decay/clear/nonfinite state");
     }
     public static void main(String[] args) {
         if (args.length != 1) throw new IllegalArgumentException("One test group required");

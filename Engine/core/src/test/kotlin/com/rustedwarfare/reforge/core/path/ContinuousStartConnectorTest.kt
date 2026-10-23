@@ -20,18 +20,19 @@ class ContinuousStartConnectorTest {
         val path = assertNotNull(PathPlanner.findPath(terrain, start, target, 11.0),
             "A clear continuous start must not be rejected merely because its snapped center is blocked")
         assertEquals(target, path.last())
-        assertTrue((listOf(start) + path).zipWithNext().all { (a, b) -> clear(a, b, 11.0) })
+        assertTrue((listOf(start) + path).zipWithNext().all { (a, b) -> clear(a, b, 0.0) })
     }
 
     @Test fun cs02_actual_contact_and_embedded_starts_remain_rejected() {
-        for (start in listOf(Position(269.0, 115.0), Position(280.0, 115.0), Position(290.0, 110.0))) {
+        assertNotNull(PathPlanner.findPath(terrain, Position(269.0, 115.0), Position(350.0, 110.0), 11.0))
+        for (start in listOf(Position(280.0, 115.0), Position(290.0, 110.0))) {
             assertFalse(clear(start, start, 11.0))
             assertNull(PathPlanner.findPath(terrain, start, Position(350.0, 110.0), 11.0))
         }
         assertNotNull(PathPlanner.findPath(terrain, Position(268.0, 115.0), Position(250.0, 115.0), 11.0))
     }
 
-    @Test fun cs03_unsafe_root_edge_is_rejected_before_enqueue_even_when_both_endpoints_are_clear() {
+    @Test fun cs03_center_clear_root_edge_does_not_search_a_radius_expanded_graph() {
         val start = Position(268.0, 115.0)
         val target = Position(270.0, 90.0)
         assertTrue(clear(start, start, 11.0))
@@ -39,13 +40,13 @@ class ContinuousStartConnectorTest {
         assertFalse(clear(start, target, 11.0))
         // Restrict the graph to the one candidate to distinguish root-edge rejection from simplify's backstop.
         val policy = ClearanceAStarPolicy(PathCandidatePolicy { _, col, row, _ -> col == 13 && row == 4 },
-            TileCenters, PlanningCircleTerrain)
+            TileCenters, PlanningCenterTerrain)
         val counters = PathSearchCounters()
-        assertNull(policy.findPath(terrain, start, target, 11.0, counters))
-        assertEquals(1L, counters.enqueued)
-        assertEquals(1L, counters.popped)
-        assertEquals(1L, counters.expanded)
-        assertEquals(4L, counters.neighborsChecked)
+        assertEquals(listOf(target), policy.findPath(terrain, start, target, 11.0, counters))
+        assertEquals(0L, counters.enqueued)
+        assertEquals(0L, counters.popped)
+        assertEquals(0L, counters.expanded)
+        assertEquals(0L, counters.neighborsChecked)
     }
 
     private fun clear(a: Position, b: Position, radius: Double): Boolean {

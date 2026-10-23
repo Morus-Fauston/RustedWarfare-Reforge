@@ -8,12 +8,12 @@ import kotlin.math.sin
 /** Wiring for experimental rules; these mappings do not assert original behavior compatibility. */
 internal class ExperimentalPolicies(
     val coordinates: CoordinatePolicy = ScreenPlane,
-    val terrain: TerrainPolicy = CircleTerrain,
+    val terrain: TerrainPolicy = CenterTerrain,
     val steering: SteeringPolicy = AcceleratedSteering,
     val propulsion: PropulsionPolicy = ReferencePropulsion,
     val capture: CapturePolicy = StrictCapture,
     val time: TimePolicy = FixedSimTick,
-    val path: PathPolicy = ClearanceAStarPolicy(CenterClearance(PlanningCircleTerrain), TileCenters, PlanningCircleTerrain),
+    val path: PathPolicy = ClearanceAStarPolicy(CenterClearance(PlanningCenterTerrain), TileCenters, PlanningCenterTerrain),
 )
 
 internal interface CoordinatePolicy {

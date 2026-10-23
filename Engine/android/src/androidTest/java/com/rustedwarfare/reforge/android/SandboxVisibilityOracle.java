@@ -15,6 +15,8 @@ public final class SandboxVisibilityOracle {
     private JsonValue latest, terminal;
     private boolean failed, armed, beforeAction, closing, closed, hiddenMoved, frameMoved, leaveArrived;
     private boolean awaitingInitialReady=true;
+    private SandboxNormalCompletionOracle approachCompletion,leaveCompletion;
+    private String stoppedApproachUnit;
     private int windowWidth, windowHeight, screenX, screenY;
     private static final String[] TYPES={"SelectAction","MoveAction","SelectAction","SelectAction","MoveAction","SelectAction"};
     private static final String[] IDS={"u1","u1","u3","u1","u1","u3"};
@@ -43,9 +45,8 @@ public final class SandboxVisibilityOracle {
         return u;
     }
     private boolean visible(){return latest!=null&&unit(latest,"u3")!=null;}
-    private boolean stoppedNear(double targetX,double targetY){
-        JsonValue u=own(latest);return u.get("moveTarget").isNull()&&u.get("pathPoints").size==0&&number(u,"speed")==0
-            &&Math.hypot(number(u.get("position"),"x")-targetX,number(u.get("position"),"y")-targetY)<=4;
+    private boolean stopped(){
+        JsonValue u=own(latest);return u.get("moveTarget").isNull()&&u.get("pathPoints").size==0&&number(u,"speed")==0;
     }
     public SandboxVisibilityOracle(JsonValue initial,String mode,double pixelWidth,double pixelHeight){
         require(List.of("MEMORY","HARDCORE").contains(mode)&&Double.isFinite(pixelWidth)&&Double.isFinite(pixelHeight)
@@ -55,12 +56,12 @@ public final class SandboxVisibilityOracle {
         require(generation>0&&sequence>=0&&string(initial,"kind").equals("observation")&&string(initial,"phase").equals("initial"),"invalid initial identity");
         latest=initial.get("sample");world=string(latest,"worldId");require(!world.isEmpty(),"empty world");
         JsonValue u=own(latest);
-        require(integer(latest,"stepIndex")==0&&number(latest,"simulationTime")==0&&!visible()&&stoppedNear(110,110)
+        require(integer(latest,"stepIndex")==0&&number(latest,"simulationTime")==0&&!visible()&&stopped()
             &&number(u.get("position"),"x")==110&&number(u.get("position"),"y")==110,"not the original clean hidden initial state");
     }
     /** Caller must separately require the fixed false-sharing launch options and real baseline image. */
-    public boolean approachReady(){return !failed&&actions==2&&pendingAction==0&&visible()&&stoppedNear(530,270);}
-    public boolean visibleSelected(){return !failed&&actions==3&&selections==2&&pendingAction==0&&pendingSelection==null&&visible()&&stoppedNear(530,270);}
+    public boolean approachReady(){return !failed&&actions==2&&pendingAction==0&&visible()&&stopped()&&approachCompletion!=null&&approachCompletion.stopped();}
+    public boolean visibleSelected(){return !failed&&actions==3&&selections==2&&pendingAction==0&&pendingSelection==null&&visible()&&stopped()&&approachCompletion!=null&&approachCompletion.stopped();}
     public boolean hiddenReady(){return !failed&&!beforeAction&&!closing&&!closed&&actions==6&&selections==4
         &&firstLoss>=0&&step-firstLoss>=3&&hiddenMoved&&!visible()&&activeLeave();}
     private boolean activeLeave(){
@@ -167,13 +168,24 @@ public final class SandboxVisibilityOracle {
         if(tick)require(nextStep==step+1&&nextTime==time+1&&Math.hypot(nx-x,ny-y)<=1.1+rounding,"step/time/movement discontinuity");
         else require(List.of("before-action","after-action","before-close").contains(phase)&&nextStep==(step<0?0:step)
             &&nextTime==time&&nx==x&&ny==y&&ns==speed,"unexpected phase or advancement without step");
+        boolean newMove=false;
         if(pendingAction!=0){
             if(TYPES[pendingAction-1].equals("MoveAction")){
                 JsonValue goal=u.get("moveTarget");double tx=pendingAction==2?approachX:leaveX,ty=pendingAction==2?approachY:leaveY;
                 require(goal.isObject()&&number(goal,"x")==tx&&number(goal,"y")==ty&&u.get("pathPoints").size>0,"move did not set adjacent goal/path");
+                SandboxNormalCompletionOracle completion=new SandboxNormalCompletionOracle(goal,u);
+                if(pendingAction==2)approachCompletion=completion;else leaveCompletion=completion;
+                newMove=true;
             }else pendingSelection=IDS[pendingAction-1];
             pendingAction=0;
         }else require(!phase.equals("after-action"),"unpaired after-action observation");
+        SandboxNormalCompletionOracle current=leaveCompletion!=null?leaveCompletion:approachCompletion;
+        if(current!=null&&!newMove)current.observe(u,sample.get("events"),tick);
+        if(leaveCompletion==null&&approachCompletion!=null&&approachCompletion.stopped()){
+            String fixed=u.toJson(com.badlogic.gdx.utils.JsonWriter.OutputType.json);
+            if(stoppedApproachUnit==null)stoppedApproachUnit=fixed;
+            else require(stoppedApproachUnit.equals(fixed),"stopped approach full unit drifted");
+        }
         if(phase.equals("before-action")){
             require(!beforeAction&&actions<6&&terminal==null,"unexpected/duplicate action prelude");beforeAction=true;
         }
@@ -193,7 +205,7 @@ public final class SandboxVisibilityOracle {
                 else{
                     JsonValue goal=u.get("moveTarget");
                     require((!leaveArrived&&goal.isObject()&&number(goal,"x")==leaveX&&number(goal,"y")==leaveY&&u.get("pathPoints").size>0)
-                        ||(goal.isNull()&&u.get("pathPoints").size==0&&Math.hypot(nx-110,ny-290)<=4),"tail changed/stopped the original leave intent");
+                        ||(goal.isNull()&&u.get("pathPoints").size==0&&leaveCompletion!=null&&leaveCompletion.normalCleared()),"tail changed/stopped the original leave intent");
                     if(goal.isNull()){
                         require(ns<=speed&&(speed!=0||(ns==0&&nx==x&&ny==y)),"tail accelerated/moved after arrival standstill");
                         leaveArrived=true;
@@ -223,7 +235,8 @@ public final class SandboxVisibilityOracle {
         if(hidden)require(foreign==null&&goal.isObject()&&number(goal,"x")==leaveX&&number(goal,"y")==leaveY
             &&u.get("pathPoints").size>0&&number(u,"speed")>0,"hidden image did not retain hidden active route");
         else require(foreign!=null&&goal.isNull()&&u.get("pathPoints").size==0&&number(u,"speed")==0
-            &&Math.hypot(number(u.get("position"),"x")-530,number(u.get("position"),"y")-270)<=4,
+            &&approachCompletion!=null&&approachCompletion.stopped()&&stoppedApproachUnit!=null
+            &&stoppedApproachUnit.equals(u.toJson(com.badlogic.gdx.utils.JsonWriter.OutputType.json)),
             "visible image baseline was not visible/stopped");
     }
     public long nextSequence(){require(sequence<Long.MAX_VALUE,"sequence overflow");return sequence+1;}

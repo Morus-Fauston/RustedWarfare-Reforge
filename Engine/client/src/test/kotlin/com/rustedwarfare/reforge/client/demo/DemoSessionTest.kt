@@ -49,6 +49,7 @@ class DemoSessionTest {
             session.moveSelected(goal)
             assertEquals(50, session.searches)
             assertEquals(0, session.replans)
+            val movementOracle = DemoMoveOracle(input, goal, session.observation)
             // The initial plans cross the unknown band instead of consulting its truth grid.
             val unknownBand = Rectangle2D.Double(480.0, 300.0, 60.0, 200.0)
             assertTrue(session.observation.units.any { unit -> (listOf(unit.position) + unit.pathPoints).zipWithNext().any { (a, b) ->
@@ -59,6 +60,7 @@ class DemoSessionTest {
             var moved = false
             repeat(2500) {
                 session.tick()
+                movementOracle.accept(session.observation)
                 discovered = discovered || session.knowledge.cells.any { it.lastKnownBlocked == true }
                 memory = memory || session.knowledge.cells.any { !it.visible && it.lastKnownBlocked != null }
                 moved = moved || session.observation.units.any { it.position.x > 1000 }
@@ -71,12 +73,8 @@ class DemoSessionTest {
             assertTrue(session.replans > 0, "must execute actual KR-R searches")
             assertTrue(memory, "must retain terrain after it leaves sight")
             assertTrue(moved, "must move beyond barriers")
-            val radius = input.movementContract!!.targetRadius
-            assertTrue(session.observation.units.all {
-                val dx = it.position.x - goal.x; val dy = it.position.y - goal.y
-                dx * dx + dy * dy <= radius * radius && it.moveTarget == null && it.speed == 0.0
-            },
-                "all fifty must arrive: ${session.observation.units.groupingBy { it.movementState }.eachCount()}")
+            movementOracle.assertComplete()
+            assertEquals(50, movementOracle.normalCompletions)
         }
     }
 

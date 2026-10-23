@@ -10,7 +10,7 @@ import kotlin.test.assertEquals
 class AutomaticKnowledgeArchiveTest {
     @Test fun `automatic semantic corruption is rejected after raw normalized and inventory agree`() {
         val root = Path.of(System.getProperty("repo.root"))
-        val original = P002KnowledgeSuite.run(root, "TestLab/suites/P002-automatic-vision.v1.json",
+        val original = P002KnowledgeSuite.run(root, "TestLab/suites/P002-automatic-vision.development.center.v2.json",
             Files.createTempDirectory("automatic-archive-source-"), listOf("bad-control-source"))
         assertEquals(0, original.exitCode)
         fun refresh(directory: Path) {

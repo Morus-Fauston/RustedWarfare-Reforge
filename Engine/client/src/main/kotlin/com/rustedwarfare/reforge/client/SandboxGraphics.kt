@@ -111,7 +111,7 @@ class SandboxGraphics private constructor(private val resources: SandboxRenderRe
         shapes.color = Color(0.45f, 0.5f, 0.47f, 1f)
         shapes.rect(projection.left.toFloat(), projection.bottom.toFloat(), projection.width.toFloat(), projection.height.toFloat())
         for (unit in frame.observation.units) {
-            shapes.color = if (unit.ownerPlayerId == "p1") Color(0.45f, 0.91f, 0.65f, 1f) else Color(1f, 0.72f, 0.3f, 1f)
+            shapes.color = resources.unitCircleColor(frame.observation.playerId, unit.ownerPlayerId)
             val radius = (resources.units.getValue(unit.typeId).displayRadius * projection.scale).toFloat()
             val x = projection.x(unit.position.x)
             val y = projection.y(unit.position.y)

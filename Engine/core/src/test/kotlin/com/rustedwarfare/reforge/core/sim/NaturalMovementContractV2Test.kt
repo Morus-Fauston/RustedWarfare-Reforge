@@ -21,7 +21,7 @@ class NaturalMovementContractV2Test {
         val cells = BooleanArray(600)
         if (blocked) {
             cells[2 * 30 + 5] = true
-            cells[6 * 30 + 7] = true
+            cells[5 * 30 + 8] = true
         }
         val scenario = source.copy(
             map = MapDefinition(30, 20, 20, 20, emptyList(), IntArray(600), BlockingGrid(30, 20, cells)),
@@ -41,6 +41,8 @@ class NaturalMovementContractV2Test {
         try {
             val hidden = collisionContext(true)
             try {
+                empty.enableMotionDiagnostics(empty.world)
+                hidden.enableMotionDiagnostics(hidden.world)
                 val target = Position(250.0, 110.0)
                 for (context in listOf(empty, hidden)) {
                     val accepted = assertIs<ActionResult.Accepted>(
@@ -57,7 +59,7 @@ class NaturalMovementContractV2Test {
                 assertEquals(listOf("movement-started"), firstEmpty.events.map { it.kind })
                 assertEquals(listOf("movement-started"), firstHidden.events.map { it.kind })
 
-                // Radius 11: the next candidate is 10 from the hidden rectangle's top edge.
+                // The center is still outside the hidden tile; radius overlap is not collision.
                 val secondEmpty = empty.advance(Step(1, 1.0, "sim-tick"))
                 val secondHidden = hidden.advance(Step(1, 1.0, "sim-tick"))
                 val moving = secondEmpty.units.single()
@@ -67,14 +69,34 @@ class NaturalMovementContractV2Test {
                 assertEquals(0.0, moving.angularVelocity)
                 assertEquals(MovementState.MOVING, moving.movementState)
                 assertTrue(secondEmpty.events.isEmpty())
-                assertEquals(Position(130.0, 110.0), stopped.position)
-                assertEquals(0.0, stopped.speed)
+                assertEquals(Position(150.0, 110.0), stopped.position)
+                assertEquals(20.0, stopped.speed)
                 assertEquals(0.0, stopped.angularVelocity)
-                assertEquals(MovementState.BLOCKED, stopped.movementState)
-                assertEquals(listOf("movement-blocked"), secondHidden.events.map { it.kind })
+                assertEquals(MovementState.MOVING, stopped.movementState)
+                assertTrue(secondHidden.events.isEmpty())
                 assertEquals(listOf(target), moving.pathPoints)
                 assertEquals(moving.pathPoints, stopped.pathPoints)
                 assertEquals(target, stopped.moveTarget)
+                val corrected=hidden.advance(Step(2,1.0,"sim-tick"))
+                val free=empty.advance(Step(2,1.0,"sim-tick"))
+                assertEquals(159.8,corrected.units.single().position.x,1e-9)
+                // D-094: V20 uses the global anchor, so at q2 d²=10000 and P=1.
+                assertEquals(20.0,corrected.units.single().speed,1e-9)
+                val hiddenTrace=hidden.drainMotionDiagnostics(hidden.world).last()
+                val freeTrace=empty.drainMotionDiagnostics(empty.world).last()
+                for(trace in listOf(hiddenTrace,freeTrace)) {
+                    assertEquals(Position(250.0,110.0),trace.steeringAim)
+                    assertEquals(Position(150.0,110.0),trace.positionBefore)
+                    assertEquals(0.0,trace.steeringDifference)
+                    assertEquals(1.0,trace.targetFraction)
+                    assertEquals(Position(170.0,110.0),trace.candidate)
+                    assertEquals(20.0,trace.integratedSpeed)
+                }
+                assertEquals(Position(170.0,110.0),free.units.single().position)
+                assertEquals(free.units.single().speed,corrected.units.single().speed)
+                assertEquals(free.units.single().heading,corrected.units.single().heading)
+                assertEquals(target,corrected.units.single().moveTarget)
+                assertEquals(listOf("movement-blocked"),corrected.events.map { it.kind })
             } finally { hidden.close() }
         } finally { empty.close() }
     }

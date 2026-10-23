@@ -25,9 +25,24 @@ class DemoNaturalPathDiagnosticTest {
         Files.newBufferedWriter(directory.resolve("trajectory.tsv")).use { trace ->
             trace.appendLine("kind\tstep\tunit\tx\ty\theading\tspeed\tstate\ttarget\tpath")
             DemoSession(input).use { session ->
+                session.enableMotionDiagnostics()
                 val starts = session.observation.units.associate { it.unitId to it.position }
                 val initiallyUnknown = session.knowledge.cell(25, 20).lastKnownBlocked == null
                 session.moveSelected(goal)
+                val movementOracle = DemoMoveOracle(input, goal, session.observation)
+                Files.newBufferedWriter(directory.resolve("truth-and-starts.tsv")).use { meta ->
+                    meta.appendLine("MAP\t${input.map.widthTiles}\t${input.map.heightTiles}\t${input.map.tileWidth}\t${input.map.tileHeight}")
+                    val runtime = java.nio.file.Path.of(com.rustedwarfare.reforge.core.sim.SimulationContext::class.java.protectionDomain.codeSource.location.toURI())
+                    check(Files.isRegularFile(runtime)) { "Client diagnostic requires an identifiable core JAR" }
+                    val hash = java.security.MessageDigest.getInstance("SHA-256").digest(Files.readAllBytes(runtime)).joinToString("") { "%02x".format(it.toInt() and 255) }
+                    meta.appendLine("RUNTIME\tcore\t$runtime\t$hash")
+                    for ((column, row) in blocked) meta.appendLine("BLOCK\t$column\t$row")
+                    for (unit in session.observation.units) {
+                        val radius = input.unitDefinitions.getValue(unit.typeId).radius
+                        meta.appendLine("UNIT\t${unit.unitId}\t$radius\t${unit.position.x}\t${unit.position.y}\t${unit.heading}")
+                        trace.appendLine("initial\t-1\t${unit.unitId}\t${unit.position.x}\t${unit.position.y}\t${unit.heading}\t${unit.speed}\t${unit.movementState}\t${unit.moveTarget}\t${unit.pathPoints}")
+                    }
+                }
                 var pointBandUnits = 0
                 var segmentBandUnits = 0
                 Files.newBufferedWriter(directory.resolve("initial-paths.tsv")).use { initial ->
@@ -54,10 +69,17 @@ class DemoNaturalPathDiagnosticTest {
                 var previous = starts
                 var knowledge = session.knowledge.cells.map { it.visible to it.lastKnownBlocked }
                 Files.newBufferedWriter(directory.resolve("steps-and-knowledge.tsv")).use { states ->
+                  Files.newBufferedWriter(directory.resolve("motion-inputs.tsv")).use { motion ->
+                    motion.appendLine(MOTION_TSV_HEADER)
                     states.appendLine("step\tsearches\treplans\tvisible\texplored\tevents\tknowledgeChanges")
                     repeat(2500) {
                         session.tick()
                         val observation = session.observation
+                        movementOracle.accept(observation)
+                        val exactInputs = session.drainMotionDiagnostics()
+                        assertEquals(observation.units.map { it.unitId }, exactInputs.map { it.unitId })
+                        assertTrue(exactInputs.all { it.stepIndex == observation.stepIndex })
+                        for (sample in exactInputs) motion.appendLine(sample.tsv())
                         val snapshot = session.knowledge
                         discovered = discovered || snapshot.cells.any { it.lastKnownBlocked == true }
                         memory = memory || snapshot.cells.any { !it.visible && it.lastKnownBlocked != null }
@@ -67,25 +89,24 @@ class DemoNaturalPathDiagnosticTest {
                         knowledge = current
                         for (unit in observation.units) {
                             trace.appendLine("advance\t${observation.stepIndex}\t${unit.unitId}\t${unit.position.x}\t${unit.position.y}\t${unit.heading}\t${unit.speed}\t${unit.movementState}\t${unit.moveTarget}\t${unit.pathPoints.joinToString(";") { "${it.x}:${it.y}" }}")
-                            val radius = input.unitDefinitions.getValue(unit.typeId).radius
                             for ((column, row) in blocked) {
-                                val distance = segmentRectangleDistance(previous.getValue(unit.unitId), unit.position,
-                                    column * 20.0, row * 20.0, (column + 1) * 20.0, (row + 1) * 20.0)
-                                if (distance <= radius) {
+                                if (unit.position.x >= column * 20.0 && unit.position.x < (column + 1) * 20.0 &&
+                                    unit.position.y >= row * 20.0 && unit.position.y < (row + 1) * 20.0) {
                                     violationCount++
-                                    if (violations.size < 16) violations += "${unit.unitId} step=${observation.stepIndex} wall=($column,$row) distance=$distance radius=$radius"
+                                    if (violations.size < 16) violations += "${unit.unitId} step=${observation.stepIndex} wall=($column,$row) center=${unit.position}"
                                 }
                             }
+                            val old = previous.getValue(unit.unitId)
+                            assertTrue(kotlin.math.abs(kotlin.math.floor(unit.position.x / 20.0) - kotlin.math.floor(old.x / 20.0)) <= 1.0)
+                            assertTrue(kotlin.math.abs(kotlin.math.floor(unit.position.y / 20.0) - kotlin.math.floor(old.y / 20.0)) <= 1.0)
                         }
                         previous = observation.units.associate { it.unitId to it.position }
                     }
+                  }
                 }
-                val targetRadius = input.movementContract!!.targetRadius
-                val arrived = session.observation.units.count {
-                    hypot(it.position.x - goal.x, it.position.y - goal.y) <= targetRadius &&
-                        it.moveTarget == null && it.speed == 0.0
-                }
-                val summary = "initiallyUnknown=$initiallyUnknown\nunits=${starts.size}\ninitialSearches=$initialSearches\ninitialReplans=$initialReplans\npointBandUnits=$pointBandUnits\nsegmentBandUnits=$segmentBandUnits\nsteps=2500\ndiscovered=$discovered\nmemory=$memory\nmovedBeyondBarriers=$moved\nsearches=${session.searches}\nreplans=${session.replans}\narrived=$arrived\ntrueWallSweepViolations=$violationCount\nfirstViolations=${violations.joinToString(" | ")}\nfinalStates=${session.observation.units.groupingBy { it.movementState }.eachCount()}\n"
+                movementOracle.assertComplete()
+                val arrived = movementOracle.normalCompletions
+                val summary = "initiallyUnknown=$initiallyUnknown\nunits=${starts.size}\ninitialSearches=$initialSearches\ninitialReplans=$initialReplans\npointBandUnits=$pointBandUnits\nsegmentBandUnits=$segmentBandUnits\nsteps=2500\ndiscovered=$discovered\nmemory=$memory\nmovedBeyondBarriers=$moved\nsearches=${session.searches}\nreplans=${session.replans}\narrived=$arrived\ntrueWallCenterViolations=$violationCount\nfirstViolations=${violations.joinToString(" | ")}\nfinalStates=${session.observation.units.groupingBy { it.movementState }.eachCount()}\n"
                 Files.writeString(directory.resolve("summary.txt"), summary)
                 println(summary)
                 assertTrue(initiallyUnknown)

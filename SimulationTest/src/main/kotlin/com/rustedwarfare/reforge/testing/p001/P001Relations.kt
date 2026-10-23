@@ -1,6 +1,7 @@
 package com.rustedwarfare.reforge.testing.p001
 
 import com.rustedwarfare.reforge.core.sim.*
+import com.rustedwarfare.reforge.testing.MotionCenterGeometry
 import kotlin.math.*
 
 /** First independent relation failure. A null result means this check, not the whole suite, passed. */
@@ -13,7 +14,7 @@ object P001Relations {
     private fun issue(rule: String, index: Int, expected: Any?, actual: Any?) =
         RelationFailure(rule, index, expected.toString(), actual.toString())
 
-    /** Independent circle/AABB distance check; touching is blocked. */
+    /** Historical circle/AABB literal control; current center qualification does not use this helper. */
     fun circleRectangle(p: Position, radius: Double, left: Double, top: Double, right: Double, bottom: Double): RelationFailure? {
         val dx = p.x - p.x.coerceIn(left, right)
         val dy = p.y - p.y.coerceIn(top, bottom)
@@ -29,9 +30,9 @@ object P001Relations {
             val angle = ((z.heading - a.heading + 540.0) % 360.0) - 180.0
             if (abs(angle) > 4.1 + ARITHMETIC_ERROR) return issue("turn-limit", i, "abs(turn)<=4.1", angle)
             if (z.speed < 0 || z.speed > 1.1 + ARITHMETIC_ERROR || abs(z.angularVelocity) > 4.1 + ARITHMETIC_ERROR) return issue("speed-limit", i, "speed[0,1.1], abs(omega)<=4.1", z)
-            if(z.speed-a.speed>.07+ARITHMETIC_ERROR || a.speed-z.speed>.17+ARITHMETIC_ERROR) return issue("acceleration-limit",i,"speed increases<=.07 or decreases<=.17",z.speed-a.speed)
+            if(z.speed-a.speed>.077+ARITHMETIC_ERROR || a.speed-z.speed>.187+ARITHMETIC_ERROR) return issue("acceleration-limit",i,"proportional B/C times 1.1: increases<=.077, decreases<=.187",z.speed-a.speed)
             if(a.moveTarget==null && z.moveTarget==null) {
-                if(z.heading!=a.heading || !near(z.angularVelocity,max(abs(a.angularVelocity)-.25,0.0)*sign(a.angularVelocity))) return issue("no-target-steering",i,"fixed heading, omega approaches zero by .25",z)
+                if(z.heading!=a.heading || z.angularVelocity!=a.angularVelocity) return issue("no-target-steering",i,"fixed heading and retained steering state",z)
             } else if(abs(angle)>ARITHMETIC_ERROR && !near(angle,z.angularVelocity)) {
                 // The only exception is overshoot limiting: turn is exactly old remaining diff and omega=0.
                 val point=a.pathPoints.firstOrNull() ?: continue
@@ -47,8 +48,9 @@ object P001Relations {
         if (fromIndex < 1 || fromIndex >= samples.size) return issue("deceleration", fromIndex, "previous and following boundaries", "missing")
         for (i in fromIndex until samples.size) {
             val previous=unit(samples[i-1]); val current=unit(samples[i])
-            if(current.moveTarget!=null || current.pathPoints.isNotEmpty() || !near(current.speed,max(previous.speed-.17,0.0)) || current.heading!=previous.heading) {
-                return issue("deceleration",i,"no target/path, fixed heading, speed decrement .17",current)
+            if(current.moveTarget!=null || current.pathPoints.isNotEmpty() || !near(current.speed,max(previous.speed-.187,0.0)) ||
+                !previous.heading.isFinite() || current.heading!=previous.heading || !previous.angularVelocity.isFinite() || current.angularVelocity!=previous.angularVelocity) {
+                return issue("deceleration",i,"no target/path, fixed finite heading/retained steering, speed decrement .187",current)
             }
         }
         return null
@@ -66,19 +68,21 @@ object P001Relations {
         }
         if(eventKinds!=expectedEvents) return issue("movement-event-sequence",0,expectedEvents,eventKinds)
         kinematics(samples)?.let { return it }
+        if(input.core.automaticVision!=null)return issue("geometry-knowledge-scope",0,"fixed P001 no-fog map knowledge",input.core.automaticVision)
+        val map=input.core.map
+        val walls=(0 until map.heightTiles).flatMap { row->(0 until map.widthTiles).filter { col->map.blocking.isBlocked(col,row) }.map { col->intArrayOf(col,row) } }
+        fun geometry(points:List<Position>)=MotionCenterGeometry.centerPath(points,walls,map.widthTiles,map.heightTiles,map.tileWidth,map.tileHeight,11.0)
         for((index,sample) in samples.withIndex()) {
             val u=unit(sample)
             if(sample.events.any { it.kind=="movement-blocked" } || u.movementState==MovementState.BLOCKED) return issue("no-blocking",index,"no blocked event/state",u)
-            for(row in 0 until input.core.map.heightTiles) for(col in 0 until input.core.map.widthTiles) {
-                if(input.core.map.blocking.isBlocked(col,row)) circleRectangle(u.position,11.0,col*20.0,row*20.0,(col+1)*20.0,(row+1)*20.0)?.let { return it.copy(sample=index) }
-            }
-            if(u.position.x<=11.0 || u.position.y<=11.0 || u.position.x>=input.core.map.widthTiles*20.0-11.0 || u.position.y>=input.core.map.heightTiles*20.0-11.0) return issue("map-boundary",index,"circle within map",u.position)
+            if(!geometry(listOf(u.position)))return issue("static-geometry",index,"open half-open terrain center and D-083 closed circle bounds",u.position)
             // Without a new command, intermediate consumption removes exactly one old point, never two.
             if(index>1 && input.actions.none { it["atStep"]?.toString()==sample.stepIndex.toString() }) {
                 val before=unit(samples[index-1])
-                if(before.pathPoints.size>1) {
+                if(before.pathPoints.size>1 && u.moveTarget!=null) {
                     val point=before.pathPoints.first(); val inside=hypot(before.position.x-point.x,before.position.y-point.y)<16.0
-                    val expected=if(inside) before.pathPoints.drop(1) else before.pathPoints
+                    val mayCapture=inside && geometry(listOf(before.position,before.pathPoints[1]))
+                    val expected=if(mayCapture) before.pathPoints.drop(1) else before.pathPoints
                     if(u.pathPoints!=expected) return issue("path-point-capture",index,expected,u.pathPoints)
                 }
             }
@@ -111,9 +115,9 @@ object P001Relations {
             val expected=if(caseId=="M03") listOf("movement-cancelled") else listOf("movement-cancelled","path-unreachable")
             if(events!=expected) return issue("cancellation-event-order",start,expected,events)
             if(caseId=="M03") {
-                val literal=listOf(.93,.76,.59,.42,.25,.08,0.0)
+                val literal=listOf(.913,.726,.539,.352,.165,0.0)
                 literal.forEachIndexed { i,v -> if(!near(unit(samples[start+i]).speed,v)) return issue("stop-speed-literal",start+i,v,unit(samples[start+i]).speed) }
-                if(!near(unit(samples.last()).position.x-unit(samples[start-1]).position.x,3.03)) return issue("stop-distance-literal",samples.lastIndex,3.03,unit(samples.last()).position.x-unit(samples[start-1]).position.x)
+                if(!near(unit(samples.last()).position.x-unit(samples[start-1]).position.x,2.695)) return issue("stop-distance-literal",samples.lastIndex,2.695,unit(samples.last()).position.x-unit(samples[start-1]).position.x)
             }
             return idleTail(samples)
         }
@@ -124,7 +128,7 @@ object P001Relations {
         if (samples.size < 20) return issue("idle-tail", samples.lastIndex, "20 idle samples", samples.size)
         val tail = samples.takeLast(20).map(::unit)
         if (tail.any { it != tail.first() || it.movementState != MovementState.IDLE ||
-                it.speed != 0.0 || it.angularVelocity != 0.0 || it.moveTarget != null || it.pathPoints.isNotEmpty() }) {
+                it.speed != 0.0 || it.moveTarget != null || it.pathPoints.isNotEmpty() }) {
             return issue("idle-tail", samples.lastIndex, "20 exactly identical idle unit DTOs", tail)
         }
         return null
@@ -138,16 +142,22 @@ object P001Relations {
         val index = arrivals.single()
         if (index == 0) return issue("arrival-radius", index, "previous boundary", "missing")
         val before = unit(samples[index - 1])
-        if (hypot(before.position.x - target.x, before.position.y - target.y) >= 4.0 ||
-            before.pathPoints.size > 1 || before.moveTarget != target) {
-            return issue("arrival-radius", index, "previous distance strictly <4 and final target", before)
+        val nearTime = (1..index).count { i ->
+            val old = unit(samples[i - 1])
+            (old.moveTarget == target || samples[i].events.any { it.kind == "movement-started" }) &&
+                hypot(old.position.x - target.x, old.position.y - target.y) < 41.0
+        }
+        val capture = if (nearTime > 340) 36.0 else if (nearTime > 240) 16.0 else 7.0
+        if (hypot(before.position.x - target.x, before.position.y - target.y) >= capture || before.moveTarget != target) {
+            return issue("arrival-radius", index, "strict normal capture radius $capture, same target", before)
         }
         for (i in index until samples.size) {
             val current = unit(samples[i])
             val previous = unit(samples[i - 1])
             if (current.moveTarget != null || current.pathPoints.isNotEmpty()) return issue("arrival-clears-target", i, "empty target/path", current)
-            if (!near(current.speed, max(previous.speed - .17, 0.0))) return issue("arrival-deceleration", i, "previous speed minus .17 clamped at 0", current.speed)
-            if (i > index && current.heading != previous.heading) return issue("arrival-heading", i, previous.heading, current.heading)
+            if (!near(current.speed, max(previous.speed - .187, 0.0))) return issue("arrival-deceleration", i, "previous speed minus .187 clamped at 0", current.speed)
+            if (!previous.heading.isFinite() || current.heading != previous.heading) return issue("arrival-heading", i, previous.heading, current.heading)
+            if (!previous.angularVelocity.isFinite() || current.angularVelocity != previous.angularVelocity) return issue("arrival-steering", i, previous.angularVelocity, current.angularVelocity)
         }
         return idleTail(samples)
     }

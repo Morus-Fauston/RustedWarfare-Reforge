@@ -29,6 +29,12 @@ data class Player(val playerId: String, val control: PlayerControl, val teamId: 
 /** Opaque local capability. Display IDs may repeat across independent runs; identity may not. */
 class WorldHandle internal constructor(val id: String)
 
+/**
+ * [pathPointRadius] controls independent planner waypoint consumption.
+ * [targetRadius] is retained as a validated legacy input for old scenario/DTO identities.
+ * Ordinary Move completion now uses the near-target time rule (7/16/36); the final
+ * propulsion waypoint's zero-target gate is independently fixed at squared distance 16.
+ */
 data class MovementContract(val pathPointRadius: Double, val targetRadius: Double)
 
 data class UnitSpawn(
@@ -62,6 +68,7 @@ data class UnitObservation(
     val position: Position,
     val heading: Double,
     val speed: Double,
+    /** Steering-rate state (reference cg), applied only when body steering is invoked. */
     val angularVelocity: Double,
     val moveTarget: Position?,
     val pathPoints: List<Position>,
@@ -140,6 +147,7 @@ internal data class MutableUnit(
     var position: Position,
     var heading: Double,
     var speed: Double = 0.0,
+    /** Retained steering-rate state; an idle unit does not integrate it into heading. */
     var angularVelocity: Double = 0.0,
     var moveTarget: Position? = null,
     var pathPoints: MutableList<Position> = mutableListOf(),
@@ -147,11 +155,25 @@ internal data class MutableUnit(
     var originMoveId: String? = null,
     var originAtStep: Long? = null,
     var lastPlannedKnowledgeRevision: Long = -1L,
+    var nearTargetTime: Double = 0.0,
+    var localMotion: LocalMotionSegment? = null,
+    var localProgressTime: Double = 0.0,
+    var terrainCorrectionTime: Double = 0.0,
+    var terrainClearSteps: Int = 0,
 ) {
+    fun ensureLocalMotion(): LocalMotionSegment {
+        val first = pathPoints.first()
+        return localMotion?.takeIf { it.anchor == first }
+            ?: LocalMotionSegment.create(position, first, definition.movement).also { localMotion = it; localProgressTime = 0.0 }
+    }
+
     fun clearMoveOrigin() {
         originMoveId = null
         originAtStep = null
         lastPlannedKnowledgeRevision = -1L
+        nearTargetTime = 0.0
+        localMotion = null
+        localProgressTime = 0.0
     }
 }
 

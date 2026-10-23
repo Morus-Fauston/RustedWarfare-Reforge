@@ -30,15 +30,15 @@ class CornerCaptureTest {
     }
 
     @Test fun cp01_keeps_unsafe_corner_then_consumes_it_when_the_actual_shortcut_is_clear() {
-        val context = open(3.0, 46.0, 1.1, 0.07, 0.17)
+        val context = open(3.0, 50.0, 1.1, 0.07, 0.17)
         try {
-            val literalPositions = mapOf(0L to 45.93, 1L to 45.79, 12L to 39.63, 13L to 38.65, 14L to 37.60)
-            for (step in 0L..14L) {
+            val literalPositions = mapOf(0L to 49.923, 1L to 49.769, 9L to 45.765, 12L to 42.993, 13L to 41.915)
+            for (step in 0L..13L) {
                 val observation = context.advance(Step(step, 1.0, "sim-tick"))
                 val unit = observation.units.single()
                 assertEquals(30.0, unit.position.x)
                 literalPositions[step]?.let { assertEquals(it, unit.position.y, 1e-9) }
-                assertEquals(if (step < 14L) initialPath else initialPath.drop(1), unit.pathPoints)
+                assertEquals(if (step < 13L) initialPath else initialPath.drop(1), unit.pathPoints)
                 assertEquals(Position(70.0, 50.0), unit.moveTarget)
                 assertTrue(observation.events.none { it.kind in setOf("movement-arrived", "movement-blocked") })
                 assertTrue(context.drainPathDiagnostics(context.world).isEmpty())
@@ -79,7 +79,7 @@ class CornerCaptureTest {
             MovementProfile(MovementType.LAND, 8.0, 8.0, 8.0, 4.1, 0.25, false, false), emptySet())
         val path = listOf(Position(130.0, 30.0), Position(130.0, 50.0))
         val context = assertIs<InitResult.Accepted>(SimulationContext.initialize(Scenario("capture-strict-owned",
-            MapDefinition(7, 5, 20, 20, emptyList(), IntArray(35), BlockingGrid(7, 5, BooleanArray(35) { it == 17 })),
+            MapDefinition(7, 5, 20, 20, emptyList(), IntArray(35), BlockingGrid(7, 5, BooleanArray(35) { it == 19 })),
             mapOf("tank" to tank), listOf(Player("p1", PlayerControl.LOCAL)),
             listOf(UnitSpawn("u1", "p1", "tank", Position(50.0, 30.0), 90.0)),
             CoordinateModel("p001.coordinate.v1", "2d", "x-right", "y-down", "top-left", "world-unit", "double", "ieee754-binary64"),

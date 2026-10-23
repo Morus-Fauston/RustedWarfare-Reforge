@@ -19,12 +19,12 @@ class NaturalPathTest {
             PathPlanner.findPath(terrain, Position(30.0, 50.0), Position(70.0, 50.0), 1.0))
     }
 
-    @Test fun np03_closed_tangency_rejects_the_direct_segment_but_not_the_safe_lower_turn() {
+    @Test fun np03_old_circle_tangency_does_not_reject_a_clear_center_line() {
         val cells = BooleanArray(25).apply { this[1 * 5 + 2] = true }
         val terrain = PlanningTerrain(5, 5, 20, 20, cells)
         // y=50 is exactly ten units below the closed obstacle bottom y=40.
         // The diagonal to (70,70) misses the nearest corner by sqrt(180) > 10.
-        assertEquals(listOf(Position(70.0, 70.0), Position(70.0, 50.0)),
+        assertEquals(listOf(Position(70.0, 50.0)),
             PathPlanner.findPath(terrain, Position(30.0, 50.0), Position(70.0, 50.0), 10.0))
         // (39,41) lies inside the expanded AABB but sqrt(2) away from the actual corner.
         assertEquals(listOf(Position(39.0, 41.0)),

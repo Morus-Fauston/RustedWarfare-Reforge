@@ -152,6 +152,14 @@ internal object PlanningCircleTerrain : PlanningTerrainPolicy {
             position, radius, map::isBlocked)
 }
 
+internal object PlanningCenterTerrain : PlanningTerrainPolicy {
+    override fun intersects(map: PlanningTerrain, position: Position, radius: Double): Boolean =
+        !MapBounds.contains(map.widthTiles.toDouble() * map.tileWidth,
+            map.heightTiles.toDouble() * map.tileHeight, position, radius) ||
+        map.isBlocked(MapBounds.cell(position.x, map.tileWidth, map.widthTiles),
+            MapBounds.cell(position.y, map.tileHeight, map.heightTiles))
+}
+
 /** Conservative broad phase only: the original closed-circle narrow phase decides contact.
  * One extra cell on each side retains grid-line tangency and floating-point boundary cases.
  * Clamp as doubles before converting to Int, including when finite inputs sum to infinity.
@@ -186,4 +194,10 @@ internal object CircleTerrain : TerrainPolicy {
     override fun intersects(map: MapDefinition, position: Position, radius: Double): Boolean =
         circleIntersectsTerrain(map.widthTiles, map.heightTiles, map.tileWidth, map.tileHeight,
             position, radius, map.blocking::isBlocked)
+}
+
+internal object CenterTerrain : TerrainPolicy {
+    override fun intersects(map: MapDefinition, position: Position, radius: Double): Boolean =
+        map.blocking.isBlocked(MapBounds.cell(position.x, map.tileWidth, map.widthTiles),
+            MapBounds.cell(position.y, map.tileHeight, map.heightTiles))
 }

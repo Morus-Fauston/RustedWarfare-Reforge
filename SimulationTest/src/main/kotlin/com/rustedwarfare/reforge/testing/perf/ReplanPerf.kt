@@ -5,6 +5,7 @@ import com.rustedwarfare.reforge.core.knowledge.*
 import com.rustedwarfare.reforge.core.path.*
 import com.rustedwarfare.reforge.core.sim.*
 import com.rustedwarfare.reforge.testing.json
+import com.rustedwarfare.reforge.testing.MotionCenterGeometry
 import kotlinx.serialization.json.*
 import java.lang.management.ManagementFactory
 
@@ -29,9 +30,19 @@ data class ReplanBatch(
     val gcCount: Long,
     val gcMillis: Long,
     val typeId: String,
+    val geometryVersion: String = PathPerfBatch.DEVELOPMENT_GEOMETRY,
 )
 
 object ReplanPerf {
+    const val DEVELOPMENT_CONTRACT_SHA256 = "92d67ebdbec9937e4322d69e2f8c916157ef7f18abab09d727371c2e2d3d1a90"
+    internal fun identityFields(version: String = PathPerfBatch.DEVELOPMENT_GEOMETRY): JsonObject {
+        check(version == PathPerfBatch.DEVELOPMENT_GEOMETRY) { "Unsupported development replanning geometry version" }
+        return buildJsonObject {
+            put("geometryVersion",version);put("developmentOnly",true)
+            put("qualificationScope","development-replanning-only");put("fullTerrainWritebackQualified",false)
+            put("validatorContractSha256",DEVELOPMENT_CONTRACT_SHA256)
+        }
+    }
     fun measure(unit: UnitDefinition, count: Int, retention: TerrainRetention, diagnostics: Boolean): ReplanBatch {
         require(count in listOf(1, 10, 50))
         require(unit.radius == 11.0)
@@ -103,6 +114,7 @@ object ReplanPerf {
     }
 
     fun validate(batch: ReplanBatch) {
+        identityFields(batch.geometryVersion)
         check(batch.count in listOf(1, 10, 50))
         val expectedIds = (0 until batch.count).map { "rp-$it" }.toSet()
         check(batch.steps.map { it.step } == (0..7).toList()) { "Missing RP steps" }
@@ -113,14 +125,33 @@ object ReplanPerf {
                 check(step.samples.map { it.unitId }.distinct().size == expected[index]) { "Duplicate searched units" }
                 if (expected[index] > 0) check(step.samples.map { it.unitId }.toSet() == expectedIds) { "Wrong searched units" }
                 val reason = if (index in listOf(0, 5)) PathSearchReason.USER_MOVE else PathSearchReason.KNOWLEDGE_REPLAN
-                check(step.samples.all { it.actualSearchCalls > 0 && it.reason == reason && it.executionStep == index.toLong() && it.usedPlayerKnowledge }) { "Wrong actual search provenance" }
+                check(step.samples.all { it.actualSearchCalls == 1L && it.reason == reason && it.executionStep == index.toLong() && it.usedPlayerKnowledge }) { "Wrong actual search provenance" }
                 check(step.samples.all { it.outcome == if (index == 6) PathSearchOutcome.UNREACHABLE else PathSearchOutcome.FOUND }) { "Wrong path outcome" }
+                for(sample in step.samples) {
+                    val unitIndex=sample.unitId.removePrefix("rp-").toInt()
+                    val originStep=if(index<5)0 else 5
+                    val start=if(index==0)Position(50.0+20*(unitIndex%3),150.0+20*(unitIndex%8)) else {
+                        val prior=batch.steps[index-1].gameplay.getValue("observation").jsonObject.getValue("units").jsonArray
+                            .single { it.jsonObject.getValue("unitId").jsonPrimitive.content==sample.unitId }.jsonObject.getValue("position").jsonObject
+                        Position(prior.getValue("x").jsonPrimitive.double,prior.getValue("y").jsonPrimitive.double)
+                    }
+                    check(sample.actionId=="rp-$originStep-$unitIndex" && sample.scheduledStep==originStep.toLong() &&
+                        sample.preservedPrefixPointCount==0 && sample.searchStart==start &&
+                        sample.searchTarget==Position(550.0,150.0+20*(unitIndex%8))) { "Wrong actual search input identity" }
+                }
             } else check(step.samples.isEmpty())
             val observation = step.gameplay.getValue("observation").jsonObject
             val units = observation.getValue("units").jsonArray
             check(units.size == batch.count && units.map { it.jsonObject.getValue("unitId").jsonPrimitive.content }.toSet() == expectedIds)
             check(observation.getValue("stepIndex").jsonPrimitive.int == index)
             check(observation.getValue("simulationTime").jsonPrimitive.double == index + 1.0)
+            val ownerCells=step.gameplay.getValue("knowledge").jsonArray.single {
+                it.jsonObject.getValue("player").jsonPrimitive.content=="p1"
+            }.jsonObject.getValue("cells").jsonArray
+            check(ownerCells.size==768) { "Incomplete owner knowledge" }
+            val knownWalls=ownerCells.mapIndexedNotNull { cell,value ->
+                if(value.jsonObject.getValue("blocked").jsonPrimitive.booleanOrNull==true)intArrayOf(cell%32,cell/32)else null
+            }
             for (value in units) {
                 val u = value.jsonObject
                 check(u.getValue("ownerPlayerId").jsonPrimitive.content == "p1" &&
@@ -129,27 +160,38 @@ object ReplanPerf {
                 val x = position.getValue("x").jsonPrimitive.double
                 val y = position.getValue("y").jsonPrimitive.double
                 check(x.isFinite() && y.isFinite() && x >= 11.0 && x <= 629.0 && y >= 11.0 && y <= 469.0) { "Actual position outside map" }
-                for ((column, row) in (0 until 24).map { 15 to it } + (1 to 1)) {
-                    val nearestX = x.coerceIn(column * 20.0, (column + 1) * 20.0)
-                    val nearestY = y.coerceIn(row * 20.0, (row + 1) * 20.0)
-                    check((x - nearestX) * (x - nearestX) + (y - nearestY) * (y - nearestY) > 121.0) { "Hidden truth collision violated" }
-                }
-                check(x < 289.0) { "Actual position crossed the full wall" }
+                val truthWalls=(0 until 24).map { intArrayOf(15,it) }+listOf(intArrayOf(1,1))
+                check(MotionCenterGeometry.centerPath(listOf(Position(x,y)),truthWalls,32,24,20,20,11.0)) { "Hidden truth collision violated" }
+                check(x < 300.0) { "Actual position crossed the full wall" }
                 val points = u.getValue("pathPoints").jsonArray.map { point -> point.jsonObject.let {
                     Position(it.getValue("x").jsonPrimitive.double, it.getValue("y").jsonPrimitive.double)
                 } }
+                step.samples.singleOrNull { it.unitId==u.getValue("unitId").jsonPrimitive.content }?.let {
+                    check(it.pathPointCount==points.size) { "Wrong diagnostic path count" }
+                }
                 if (index >= 6) {
                     check(u.getValue("moveTarget") == JsonNull && points.isEmpty()) { "Unreachable target survived" }
                 } else {
                     check(u.getValue("moveTarget") != JsonNull && points.isNotEmpty()) { "Active request lost" }
-                    val knownWall = if (index in 2..3 || (batch.retention == TerrainRetention.MEMORY && index in 4..5))
-                        (5..18).map { intArrayOf(15, it) } else emptyList()
-                    check(PathPerfBatch.independentGeometry(points, knownWall, 32, 24, 20, 20, 11.0)) { "Illegal known-terrain path at step $index" }
+                    val unitIndex=u.getValue("unitId").jsonPrimitive.content.removePrefix("rp-").toInt()
+                    val goal=Position(550.0,150.0+20*(unitIndex%8))
+                    val target=u.getValue("moveTarget").jsonObject
+                    check(Position(target.getValue("x").jsonPrimitive.double,target.getValue("y").jsonPrimitive.double)==goal && points.last()==goal) { "Wrong active request goal or route tail" }
+                    check(MotionCenterGeometry.centerPath(listOf(Position(x,y))+points,knownWalls,32,24,20,20,11.0)) { "Illegal known-terrain path at step $index" }
                 }
             }
-            val events = observation.getValue("events").jsonArray.map { it.jsonObject.getValue("kind").jsonPrimitive.content }
-            if (index == 6) check(events.count { it == "path-unreachable" } == batch.count)
-            if (index == 7) check(events.isEmpty())
+            fun event(kind:String,id:String)=buildJsonObject { put("kind",kind);put("unitId",id) }
+            val expectedEvents=when(index) {
+                0,5 -> (0 until batch.count).map { event("movement-started","rp-$it") }
+                6 -> expectedIds.sorted().flatMap { listOf(event("movement-cancelled",it),event("path-unreachable",it)) }
+                else -> emptyList()
+            }
+            check(observation.getValue("events").jsonArray==JsonArray(expectedEvents)) { "Wrong per-unit request lifecycle events" }
+            val expectedResults=if(index==0 || index==5)(0 until batch.count).map { i->buildJsonObject {
+                put("actionId","rp-$index-$i");put("status","accepted");put("queuedForStep",JsonNull)
+                put("events",JsonArray(listOf(event("movement-started","rp-$i"))))
+            } }else emptyList()
+            check(observation.getValue("actionResults").jsonArray==JsonArray(expectedResults)) { "Wrong original request outcomes" }
             if (index in 4..5) {
                 val p1 = step.gameplay.getValue("knowledge").jsonArray[0].jsonObject.getValue("cells").jsonArray
                 check(p1[10 * 32 + 15].jsonObject.getValue("blocked") ==
@@ -158,8 +200,10 @@ object ReplanPerf {
         }
     }
 
-    fun sameGameplay(a: ReplanBatch, b: ReplanBatch) =
-        a.count == b.count && a.retention == b.retention && a.steps.map { it.gameplay } == b.steps.map { it.gameplay }
+    fun sameGameplay(a: ReplanBatch, b: ReplanBatch): Boolean {
+        identityFields(a.geometryVersion);identityFields(b.geometryVersion)
+        return a.count == b.count && a.retention == b.retention && a.steps.map { it.gameplay } == b.steps.map { it.gameplay }
+    }
 
     fun sampleJson(sample: PathSearchSample) = buildJsonObject {
         put("actionId", sample.actionId); put("unitId", sample.unitId)
@@ -181,6 +225,7 @@ object ReplanPerf {
     }
 
     fun batchJson(batch: ReplanBatch) = buildJsonObject {
+        identityFields(batch.geometryVersion).forEach { (key,value)->put(key,value) }
         put("count", batch.count); put("retention", batch.retention.name); put("diagnostics", batch.diagnostics)
         put("typeId", batch.typeId)
         put("wallNanos", batch.wallNanos); put("heapBefore", batch.heapBefore); put("heapAfter", batch.heapAfter)

@@ -2,6 +2,7 @@ package com.rustedwarfare.reforge.client
 
 import com.rustedwarfare.reforge.core.content.TileSetDefinition
 import com.rustedwarfare.reforge.core.sim.Scenario
+import com.badlogic.gdx.graphics.Color
 import java.nio.file.Path
 import java.util.Collections
 
@@ -10,13 +11,23 @@ data class UnitAppearance(val displayRadius: Double, val imagePath: Path, val im
 class SandboxRenderResources private constructor(
     val widthTiles: Int, val heightTiles: Int, val tileWidth: Int, val tileHeight: Int,
     val tileSets: List<TileSetDefinition>, val units: Map<String, UnitAppearance>,
+    private val playerTeams: Map<String, String?>,
 ) {
+    fun unitCircleColor(viewerPlayerId: String, ownerPlayerId: String): Color {
+        require(viewerPlayerId in playerTeams && ownerPlayerId in playerTeams)
+        val viewerTeam = playerTeams[viewerPlayerId]
+        return when {
+            ownerPlayerId == viewerPlayerId -> Color(0.45f, 0.91f, 0.65f, 1f)
+            viewerTeam != null && viewerTeam == playerTeams[ownerPlayerId] -> Color(1f, 0.72f, 0.3f, 1f)
+            else -> Color(1f, 0f, 0f, 1f)
+        }
+    }
     companion object {
         fun from(scenario: Scenario): SandboxRenderResources = SandboxRenderResources(
             scenario.map.widthTiles, scenario.map.heightTiles, scenario.map.tileWidth, scenario.map.tileHeight,
             Collections.unmodifiableList(ArrayList(scenario.map.tileSets)),
             Collections.unmodifiableMap(scenario.unitDefinitions.mapValues { (_, unit) ->
                 UnitAppearance(unit.displayRadius, unit.imagePath, unit.imageScale, unit.totalFrames)
-            }))
+            }), Collections.unmodifiableMap(scenario.players.associate { it.playerId to it.teamId }))
     }
 }

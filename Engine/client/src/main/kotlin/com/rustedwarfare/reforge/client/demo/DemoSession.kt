@@ -19,6 +19,8 @@ class DemoSession(val scenario: Scenario) : AutoCloseable {
     private var actionNumber = 0L
     private var nextStep = 0L
     val observation: Observation get() = context.observe()
+    internal fun enableMotionDiagnostics() = context.enableMotionDiagnostics(context.world)
+    internal fun drainMotionDiagnostics(): List<MotionStepSample> = context.drainMotionDiagnostics(context.world)
     val knowledge: KnowledgeSnapshot get() = context.knowledgeSnapshot(context.world, "p1")
     val selectedIds: Set<String> get() = selection.toSet()
     var lastTarget: Position? = null

@@ -6,7 +6,9 @@ import com.rustedwarfare.reforge.core.content.MovementProfile
 import com.rustedwarfare.reforge.core.content.MovementType
 import com.rustedwarfare.reforge.core.content.UnitDefinition
 import com.rustedwarfare.reforge.core.path.PathSearchOutcome
+import com.rustedwarfare.reforge.core.path.PathSearchReason
 import com.rustedwarfare.reforge.core.sim.Position
+import com.rustedwarfare.reforge.testing.MotionCenterGeometry
 import java.nio.file.Files
 import java.nio.file.Path
 import java.awt.geom.Line2D
@@ -21,9 +23,61 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
 import kotlin.test.assertNull
+import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
+import com.rustedwarfare.reforge.testing.perf.PathPerfBatch.PathPerfBatchResult
 
 class PathPerfBatchTest {
+    @Test fun `development initial search provenance cannot be replaced by later steps or different endpoints`() {
+        val batch=PathPerfBatch.measureBatch("OPEN_NOFOG",1,0,testUnit());val s=batch.samples.single()
+        for(changed in listOf(s.copy(executionStep=null),s.copy(executionStep=99),s.copy(searchStart=null),
+            s.copy(searchStart=Position(51.0,50.0)),s.copy(searchTarget=null),s.copy(searchTarget=Position(411.0,330.0)),
+            s.copy(reason=PathSearchReason.ROUTE_REPAIR),s.copy(preservedPrefixPointCount=1))) {
+            val error=assertFailsWith<PathPerfCorrectnessException> { validate(batch.copy(samples=listOf(changed))) }
+            assertTrue(error.message.orEmpty().contains("initial search provenance"))
+        }
+    }
+    @Test fun `development CLI requires the explicit geometry version and refuses legacy or unknown argv`() {
+        val old=arrayOf("--repo-root","/tmp/repo","--unit","/tmp/unit.ini","--unit-sha","a".repeat(64),"--output","/tmp/output")
+        assertNull(PathPerfBatchMain.parse(old))
+        assertNull(PathPerfBatchMain.parse(old+arrayOf("--geometry-version","unknown")))
+        val config=assertNotNull(PathPerfBatchMain.parse(old+arrayOf("--geometry-version",PathPerfBatch.DEVELOPMENT_GEOMETRY)))
+        assertEquals(PathPerfBatch.DEVELOPMENT_GEOMETRY,config.geometryVersion)
+    }
+    @Test fun `development validator and summary refuse absent old unknown or mixed geometry identities`() {
+        val batch=PathPerfBatch.measureBatch("OPEN_NOFOG",1,0,testUnit())
+        for(version in listOf("","legacy-disc.v1","unknown")) {
+            val bad=batch.copy(geometryVersion=version)
+            assertFailsWith<PathPerfCorrectnessException> { validate(bad) }
+            assertFailsWith<PathPerfCorrectnessException> { PathPerfBatch.summarize(listOf(batch,bad)) }
+        }
+    }
+    @Test fun `development raw binds its geometry scope to every record without claiming full writeback`() {
+        val batch=PathPerfBatch.measureBatch("OPEN_NOFOG",1,0,testUnit())
+        for(line in PathPerfBatch.serializeBatch(batch)) {
+            val record=Json.parseToJsonElement(line).jsonObject
+            assertEquals(PathPerfBatch.DEVELOPMENT_GEOMETRY,record["geometryVersion"]?.jsonPrimitive?.content)
+            assertEquals(true,record["developmentOnly"]?.jsonPrimitive?.boolean)
+            assertEquals("development-path-planning-only",record["qualificationScope"]?.jsonPrimitive?.content)
+            assertEquals(false,record["fullTerrainWritebackQualified"]?.jsonPrimitive?.boolean)
+        }
+    }
+    private class RawOnlySignal:RuntimeException("raw captured before qualification")
+    @Test fun `raw callback preserves an actual batch before any qualification and propagates caller failure`() {
+        val directory=java.nio.file.Files.createTempDirectory("eng017-path-before-validation-")
+        println("eng017-path-raw=$directory")
+        var captured:PathPerfBatchResult?=null
+        assertFailsWith<RawOnlySignal> {
+            PathPerfBatch.measureBatch("MEMORY_GAP",50,0,testUnit(),captureBeforeQualification={ batch->
+                captured=batch
+                java.nio.file.Files.write(directory.resolve("pre-validation.jsonl"),PathPerfBatch.serializeBatch(batch,correctnessPass=false),java.nio.file.StandardOpenOption.CREATE_NEW)
+                throw RawOnlySignal()
+            })
+        }
+        assertEquals(50,assertNotNull(captured).units.size)
+        assertEquals(50,captured!!.samples.size)
+        assertTrue(java.nio.file.Files.size(directory.resolve("pre-validation.jsonl"))>0)
+    }
     @Test
     fun `nearest rank uses sorted ceil index`() {
         assertEquals(1L, PathPerfBatch.nearestRank(listOf(1L), 0.5))
@@ -227,20 +281,30 @@ class PathPerfBatchTest {
 
     @Test
     fun `memory gap real batches follow the fixed direct and fallback index table`() {
-        val direct = setOf(0, 1, 2, 11, 12, 13, 14, 22, 23, 24, 25, 34, 35, 36, 45, 46, 47, 48)
+        val direct = setOf(0,1,2,3,10,11,12,13,14,15,21,22,23,24,25,26,33,34,35,36,37,44,45,46,47,48,49)
+        val legacyDirect = setOf(0,1,2,11,12,13,14,22,23,24,25,34,35,36,45,46,47,48)
+        for(index in 0 until 50) {
+            assertEquals(index in legacyDirect,PathPerfBatch.independentGeometry(listOf(start(index),goal(index)),gapBlocks(),32,24,20,20,11.0))
+            assertEquals(index in direct,MotionCenterGeometry.centerPath(listOf(start(index),goal(index)),gapBlocks(),32,24,20,20,11.0))
+        }
         for (n in listOf(1, 10, 50)) {
             val batch = PathPerfBatch.measureBatch("MEMORY_GAP", n, 0, testUnit())
+            if(n==50) {
+                val directory=Files.createTempDirectory("eng017-path-development-center-")
+                Files.write(directory.resolve("qualified-center.jsonl"),PathPerfBatch.serializeBatch(batch),java.nio.file.StandardOpenOption.CREATE_NEW)
+                println("eng017-path-development-center=$directory")
+            }
             val directSamples = batch.samples.filter { it.candidatesChecked == 0L }
             assertEquals(direct.filter { it < n }.map { "perf-u%03d".format(it) }.toSet(),
                 directSamples.map { it.unitId }.toSet())
-            assertEquals(when (n) { 1 -> 1; 10 -> 3; else -> 18 }, directSamples.size)
-            assertEquals(when (n) { 1 -> 0; 10 -> 7; else -> 32 }, batch.samples.count { it.candidatesChecked == 768L })
+            assertEquals(when (n) { 1 -> 1; 10 -> 4; else -> 27 }, directSamples.size)
+            assertEquals(when (n) { 1 -> 0; 10 -> 6; else -> 23 }, batch.samples.count { it.candidatesChecked == 768L })
             for ((index, outcome) in batch.units.withIndex()) {
                 assertEquals(index in direct,
-                    PathPerfBatch.independentGeometry(listOf(start(index), goal(index)), gapBlocks(), 32, 24, 20, 20, 11.0),
+                    MotionCenterGeometry.centerPath(listOf(start(index), goal(index)), gapBlocks(), 32, 24, 20, 20, 11.0),
                     "independent direct index $index")
                 assertTrue(crossesWallBand(listOf(start(index)) + outcome.pathPoints))
-                assertTrue(PathPerfBatch.independentGeometry(listOf(start(index)) + outcome.pathPoints,
+                assertTrue(MotionCenterGeometry.centerPath(listOf(start(index)) + outcome.pathPoints,
                     gapBlocks(), 32, 24, 20, 20, 11.0))
                 assertEquals(PathSearchOutcome.FOUND, batch.samples[index].outcome)
                 assertTrue(batch.samples[index].usedPlayerKnowledge)
@@ -292,7 +356,7 @@ class PathPerfBatchTest {
         )
         val cases = listOf(
             sampleChange(0, batch.samples[0].copy(candidatesChecked = 768)),
-            sampleChange(3, batch.samples[3].copy(candidatesChecked = 0)),
+            sampleChange(4, batch.samples[4].copy(candidatesChecked = 0)),
             sampleChange(0, batch.samples[0].copy(expanded = 1)),
             sampleChange(0, batch.samples[0].copy(actionId = "perf-move001")),
             sampleChange(0, batch.samples[0].copy(unitId = "perf-u001")),
@@ -300,17 +364,17 @@ class PathPerfBatchTest {
             batch.copy(samples = batch.samples.dropLast(1) + batch.samples.first()),
             pathChange(0, listOf(Position(70.0, 50.0), goal(0))),
             // A lone goal is geometrically clear; only including fixed start rejects this first segment.
-            pathChange(3, listOf(goal(3))),
+            pathChange(4, listOf(goal(4))),
             // The first segment stays left of the wall; only the last segment crosses its blocked lower half.
-            pathChange(3, listOf(Position(110.0, 400.0), goal(3))),
+            pathChange(4, listOf(Position(130.0, 400.0), goal(4))),
             // Leave the map with the circle while preserving wall clearance and the fixed goal.
-            pathChange(3, listOf(Position(0.0, start(3).y), Position(start(3).x + 1.0, start(3).y)) + batch.units[3].pathPoints),
+            pathChange(4, listOf(Position(0.0, start(4).y), Position(start(4).x + 1.0, start(4).y)) + batch.units[4].pathPoints),
         )
         for ((index, changed) in cases.withIndex()) {
             val error = assertFailsWith<IllegalStateException>("mutation $index") { validate(changed) }
             if (index >= 8) assertTrue(error.message.orEmpty().contains("independent geometry"), "mutation $index must reach full segment geometry")
         }
-        assertTrue(PathPerfBatch.independentGeometry(listOf(goal(3)), gapBlocks(), 32, 24, 20, 20, 11.0))
+        assertTrue(MotionCenterGeometry.centerPath(listOf(goal(4)), gapBlocks(), 32, 24, 20, 20, 11.0))
     }
 
     @Test
@@ -359,11 +423,13 @@ class PathPerfBatchTest {
     fun `environment records the actual algorithm validator contract and JDK geometry identity`() {
         val environment = Json.parseToJsonElement(PathPerfBatch.buildEnvironment("a".repeat(64), testUnit(), Path.of("."))).jsonObject
         assertEquals("natural-direct-then-four-neighbour-grid.v1", environment["pathAlgorithm"]?.jsonPrimitive?.content)
-        assertEquals("fixed-fixture-full-segment-jdk-line2d.v3", environment["pathValidator"]?.jsonPrimitive?.content)
-        assertEquals("6d9bb3b98a4dff9ba056ecba0d3589bf7191a9134f7be967dc548cc1dd7b9dd0",
+        assertEquals("fixed-fixture-half-open-center-rational.v2-development", environment["pathValidator"]?.jsonPrimitive?.content)
+        assertEquals("c082407405daded97125d1587bad3012c300e62d97a1c1ec0b393bfa74b25f29",
             environment["validatorContractSha256"]?.jsonPrimitive?.content)
         assertEquals(true, environment["javaDesktopModulePresent"]?.jsonPrimitive?.boolean)
-        assertEquals("java.awt.geom.Line2D", environment["independentGeometryApi"]?.jsonPrimitive?.content)
+        assertEquals("MotionCenterGeometry.exact-binary64-BigInteger-rational-partition", environment["independentGeometryApi"]?.jsonPrimitive?.content)
+        assertEquals(PathPerfBatch.DEVELOPMENT_GEOMETRY,environment["geometryVersion"]?.jsonPrimitive?.content)
+        assertEquals(true,environment["developmentOnly"]?.jsonPrimitive?.boolean)
         assertEquals("a".repeat(64), environment["unitSha256"]!!.jsonPrimitive.content)
     }
 
@@ -374,15 +440,15 @@ class PathPerfBatchTest {
         val sha = "0".repeat(64)
         val repo = Path.of("relative-repo")
         // Non-absolute repo root.
-        assertEquals(64, PathPerfBatch.run(PathPerfConfig(repo, unit, sha, output)).exitCode)
+        assertEquals(64, PathPerfBatch.run(PathPerfConfig(repo, unit, sha, output,PathPerfBatch.DEVELOPMENT_GEOMETRY)).exitCode)
         // Bad hash length.
-        assertEquals(64, PathPerfBatch.run(PathPerfConfig(output.toAbsolutePath(), unit, "abc", output)).exitCode)
+        assertEquals(64, PathPerfBatch.run(PathPerfConfig(output.toAbsolutePath(), unit, "abc", output,PathPerfBatch.DEVELOPMENT_GEOMETRY)).exitCode)
         // Missing unit file.
         val missing = output.resolve("missing-unit.ini")
-        assertEquals(64, PathPerfBatch.run(PathPerfConfig(output.toAbsolutePath(), missing, sha, output)).exitCode)
+        assertEquals(64, PathPerfBatch.run(PathPerfConfig(output.toAbsolutePath(), missing, sha, output,PathPerfBatch.DEVELOPMENT_GEOMETRY)).exitCode)
         // Missing output root.
         val missingOutput = output.resolve("missing-output")
-        assertEquals(64, PathPerfBatch.run(PathPerfConfig(output.toAbsolutePath(), unit, sha, missingOutput)).exitCode)
+        assertEquals(64, PathPerfBatch.run(PathPerfConfig(output.toAbsolutePath(), unit, sha, missingOutput,PathPerfBatch.DEVELOPMENT_GEOMETRY)).exitCode)
     }
 
     @Test
@@ -391,6 +457,7 @@ class PathPerfBatchTest {
             arrayOf(
                 "--repo-root", "/tmp/repo", "--unit", "/tmp/unit.ini",
                 "--unit-sha", "a".repeat(64), "--output", "/tmp/output",
+                "--geometry-version", PathPerfBatch.DEVELOPMENT_GEOMETRY,
             ),
         )
         assertEquals(ok?.repoRoot, Path.of("/tmp/repo"))

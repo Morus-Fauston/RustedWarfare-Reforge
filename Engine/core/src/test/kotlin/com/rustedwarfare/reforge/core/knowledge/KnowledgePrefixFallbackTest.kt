@@ -13,8 +13,8 @@ class KnowledgePrefixFallbackTest {
     @Test fun kpf01_unreachable_anchor_falls_back_to_the_actual_position_without_cancelling_the_move() {
         val unit = UnitDefinition("tank", "CustomUnitMetadata", 11.0, 11.0, 1, Path.of("unused.png"), 1.0,
             MovementProfile(MovementType.LAND, 1.1, 0.07, 0.17, 4.1, 0.25, false, false), emptySet())
-        val start = Position(50.0, 50.0)
-        val goal = Position(50.0, 150.0)
+        val start = Position(189.0, 50.0)
+        val goal = Position(50.0, 50.0)
         val input = Scenario("knowledge-prefix-fallback",
             MapDefinition(10, 10, 20, 20, emptyList(), IntArray(100), BlockingGrid(10, 10, BooleanArray(100))),
             mapOf("tank" to unit), listOf(Player("p1", PlayerControl.LOCAL)),
@@ -26,15 +26,15 @@ class KnowledgePrefixFallbackTest {
             context.enableKnowledge(context.world, KnowledgeRules(TerrainRetention.HARDCORE_FORGET,
                 PathInformationSource.PLAYER_KNOWLEDGE, false))
             context.enablePathDiagnostics(context.world)
-            context.acceptVisibleTerrain(context.world, "p1", (0..5).map { VisibleTerrainCell(it, 4, true) })
+            context.acceptVisibleTerrain(context.world, "p1", (0..5).map { VisibleTerrainCell(7, it, true) })
             assertIs<ActionResult.Accepted>(context.submit(MoveAction("one-move", "p1", "u1", goal, context.world)))
             val oldPath = context.observe().units.single().pathPoints
             assertTrue(oldPath.size > 1)
-            assertTrue(oldPath.first().x > 120.0, "The original wall requires a right-side prefix")
+            assertEquals(listOf(Position(170.0, 130.0), Position(130.0, 130.0), goal), oldPath)
             context.drainPathDiagnostics(context.world)
-            // The remembered horizontal wall is forgotten; a narrow opening in the new vertical
-            // wall admits the existing continuous prefix but has no radius-11 grid-centre crossing.
-            val newWalls = (0..9).filter { it !in 2..3 }.map { 4 to it }
+            // The continuous start can use x181.875..186.625 through the right
+            // opening; its grid center x190 violates the retained outer radius11.
+            val newWalls = (0..8).map { it to 3 }
             context.acceptVisibleTerrain(context.world, "p1", newWalls.map { (col, row) -> VisibleTerrainCell(col, row, true) })
             val prefix = mutableListOf<Position>()
             var from = start
@@ -63,8 +63,8 @@ class KnowledgePrefixFallbackTest {
     @Test fun kpf02_both_real_searches_unreachable_cancel_once_and_clear_the_original_goal() {
         val unit = UnitDefinition("tank", "CustomUnitMetadata", 11.0, 11.0, 1, Path.of("unused.png"), 1.0,
             MovementProfile(MovementType.LAND, 1.1, 0.07, 0.17, 4.1, 0.25, false, false), emptySet())
-        val start = Position(50.0, 50.0)
-        val goal = Position(50.0, 150.0)
+        val start = Position(189.0, 50.0)
+        val goal = Position(50.0, 50.0)
         val input = Scenario("knowledge-prefix-both-unreachable",
             MapDefinition(10, 10, 20, 20, emptyList(), IntArray(100), BlockingGrid(10, 10, BooleanArray(100))),
             mapOf("tank" to unit), listOf(Player("p1", PlayerControl.LOCAL)),
@@ -76,11 +76,11 @@ class KnowledgePrefixFallbackTest {
             context.enableKnowledge(context.world, KnowledgeRules(TerrainRetention.HARDCORE_FORGET,
                 PathInformationSource.PLAYER_KNOWLEDGE, false))
             context.enablePathDiagnostics(context.world)
-            context.acceptVisibleTerrain(context.world, "p1", (0..5).map { VisibleTerrainCell(it, 4, true) })
+            context.acceptVisibleTerrain(context.world, "p1", (0..5).map { VisibleTerrainCell(7, it, true) })
             assertIs<ActionResult.Accepted>(context.submit(MoveAction("one-move", "p1", "u1", goal, context.world)))
             val oldPath = context.observe().units.single().pathPoints
             context.drainPathDiagnostics(context.world)
-            val newWalls = (0..9).filter { it !in 2..3 }.map { 4 to it } + (0..3).map { it to 4 }
+            val newWalls = (0..8).map { it to 3 } + (0..2).map { 4 to it }
             val prefix = mutableListOf<Position>()
             var from = start
             for (point in oldPath) {
@@ -115,6 +115,6 @@ class KnowledgePrefixFallbackTest {
             val c = corners[index]
             val d = corners[(index + 1) % 4]
             Line2D.linesIntersect(a.x, a.y, b.x, b.y, c.x, c.y, d.x, d.y)
-        } && minOf(distance(a), distance(b), corners.minOf { Line2D.ptSegDist(a.x, a.y, b.x, b.y, it.x, it.y) }) > 11.0
+        } && minOf(distance(a), distance(b), corners.minOf { Line2D.ptSegDist(a.x, a.y, b.x, b.y, it.x, it.y) }) > 0.0
     }
 }

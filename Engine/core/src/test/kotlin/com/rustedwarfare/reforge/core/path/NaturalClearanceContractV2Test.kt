@@ -27,9 +27,7 @@ class NaturalClearanceContractV2Test {
                 if (!blocked[cell]) false else {
                     val left = (cell % width) * tileWidth.toDouble()
                     val top = (cell / width) * tileHeight.toDouble()
-                    val dx = maxOf(left - point.x, 0.0, point.x - left - tileWidth)
-                    val dy = maxOf(top - point.y, 0.0, point.y - top - tileHeight)
-                    hypot(dx, dy) <= radius
+                    point.x >= left && point.x < left + tileWidth && point.y >= top && point.y < top + tileHeight
                 }
             }
             if (index == 83) {

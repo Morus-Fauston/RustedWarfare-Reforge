@@ -38,6 +38,7 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
     private var knowledgeRules: KnowledgeRules? = null
     private var automaticVisionSnapshots: Map<String, VisionSnapshot>? = null
     private var pathDiagnostics: MutableList<PathSearchSample>? = null
+    private var motionDiagnostics: MutableList<MotionStepSample>? = null
     private val pendingKnowledgeDiscoveries = mutableMapOf<String, MutableMap<Pair<Int, Int>, Long>>()
 
     private data class PlayerObservationKey(val step: Long, val time: Double, val epoch: Long?,
@@ -112,6 +113,35 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
     private fun checkPathDiagnosticsWorld(world: WorldHandle) {
         if (closed) throw PathDiagnosticsException("closed", "Simulation is closed")
         if (world !== activeWorld) throw PathDiagnosticsException("stale-world", "Path diagnostics belong to a different world")
+    }
+
+    internal fun localMotionSnapshots(world: WorldHandle): Map<String, LocalMotionSnapshot> {
+        checkPathDiagnosticsWorld(world)
+        val snapshots = linkedMapOf<String, LocalMotionSnapshot>()
+        for (unit in units.values) unit.localMotion?.let {
+            snapshots[unit.unitId] = it.snapshot(unit.originMoveId, unit.localProgressTime, unit.terrainCorrectionTime)
+        }
+        return Collections.unmodifiableMap(snapshots)
+    }
+
+    /** Explicit trusted-host opt-in, separate from both host and player observation DTOs. */
+    fun enableMotionDiagnostics(world: WorldHandle) {
+        checkMotionDiagnosticsWorld(world)
+        if (motionDiagnostics != null) throw MotionDiagnosticsException("already-enabled", "Motion diagnostics are already enabled")
+        motionDiagnostics = mutableListOf()
+    }
+
+    fun drainMotionDiagnostics(world: WorldHandle): List<MotionStepSample> {
+        checkMotionDiagnosticsWorld(world)
+        val samples = motionDiagnostics ?: throw MotionDiagnosticsException("not-enabled", "Motion diagnostics are not enabled")
+        val result = immutable(samples)
+        samples.clear()
+        return result
+    }
+
+    private fun checkMotionDiagnosticsWorld(world: WorldHandle) {
+        if (closed) throw MotionDiagnosticsException("closed", "Simulation is closed")
+        if (world !== activeWorld) throw MotionDiagnosticsException("stale-world", "Motion diagnostics belong to a different world")
     }
 
     companion object {
@@ -189,6 +219,8 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
         pendingKnowledgeDiscoveries.clear()
         pathDiagnostics?.clear()
         pathDiagnostics = null
+        motionDiagnostics?.clear()
+        motionDiagnostics = null
         activeWorld = null
         this.scenario = null
         units = linkedMapOf()
@@ -313,7 +345,7 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
             val snapshot = checkNotNull(knowledgeStores?.get(unit.ownerPlayerId)).snapshot(checkNotNull(activeWorld))
             val affected = discoveries.any { (cell, discoveredAt) ->
                 discoveredAt > unit.lastPlannedKnowledgeRevision && snapshot.planningBlocked(cell.first, cell.second) &&
-                    KnowledgePathImpact.affects(unit.position, unit.pathPoints, target, unit.definition.radius,
+                    KnowledgePathImpact.affectsCenter(unit.position, unit.pathPoints, target,
                         cell.first, cell.second, map.tileWidth, map.tileHeight)
             }
             if (!affected) continue
@@ -340,11 +372,13 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
                 unit.moveTarget = null
                 unit.pathPoints.clear()
                 unit.clearMoveOrigin()
-                unit.movementState = if (unit.speed != 0.0 || unit.angularVelocity != 0.0) MovementState.DECELERATING else MovementState.IDLE
+                unit.movementState = if (unit.speed != 0.0) MovementState.DECELERATING else MovementState.IDLE
                 pendingEvents += Event("movement-cancelled", unit.unitId)
                 pendingEvents += Event("path-unreachable", unit.unitId)
             } else {
                 unit.pathPoints = path.toMutableList()
+                unit.localMotion = null
+                unit.localProgressTime = 0.0
                 unit.lastPlannedKnowledgeRevision = snapshot.revision
                 unit.movementState = MovementState.MOVING
             }
@@ -356,7 +390,17 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
             val target = unit.moveTarget ?: continue
             val first = unit.pathPoints.firstOrNull() ?: continue
             val terrain = planningTerrainFor(unit, map)
-            if (PlanningSegmentClearance.allows(terrain, unit.position, first, unit.definition.radius)) continue
+            val local = unit.ensureLocalMotion()
+            val firstConnectionClear = PlanningSegmentClearance.allows(terrain, unit.position, first, unit.definition.radius)
+            val localConnectionClear = PlanningSegmentClearance.allows(terrain, unit.position, local.aim, unit.definition.radius)
+            val nextLocal = local.next()
+            val localCornerStall = nextLocal != null &&
+                policies.coordinates.distanceSquared(unit.position, local.aim) < 9.0 &&
+                !PlanningSegmentClearance.allows(terrain, unit.position, nextLocal.aim, unit.definition.radius)
+            val nearCornerStall = unit.pathPoints.size > 1 &&
+                policies.coordinates.distanceSquared(unit.position, first) < 9.0 &&
+                !PlanningSegmentClearance.allows(terrain, unit.position, unit.pathPoints[1], unit.definition.radius)
+            if (firstConnectionClear && localConnectionClear && !nearCornerStall && !localCornerStall) continue
             val samples = pathDiagnostics
             fun search(destination: Position): List<Position>? =
                 if (samples == null) policies.path.findPath(terrain, unit.position, destination, unit.definition.radius)
@@ -366,17 +410,26 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
             val tailIsClear = oldPath.size > 1 && oldPath.zipWithNext().all { (a, b) ->
                 PlanningSegmentClearance.allows(terrain, a, b, unit.definition.radius)
             }
-            val connector = if (tailIsClear) search(first) else null
-            val path = if (connector != null) connector + oldPath.drop(1) else search(target)
+            val path = if (nearCornerStall || localCornerStall || (firstConnectionClear && !localConnectionClear)) {
+                // The local propulsion gate cannot close the last <3 units,
+                // and a safe capture cannot skip this corner. Plan from the
+                // actual position rather than reconnecting the same dead end.
+                search(target)
+            } else {
+                val connector = if (tailIsClear) search(first) else null
+                if (connector != null) connector + oldPath.drop(1) else search(target)
+            }
             if (path == null) {
                 unit.moveTarget = null
                 unit.pathPoints.clear()
                 unit.clearMoveOrigin()
-                unit.movementState = if (unit.speed != 0.0 || unit.angularVelocity != 0.0) MovementState.DECELERATING else MovementState.IDLE
+                unit.movementState = if (unit.speed != 0.0) MovementState.DECELERATING else MovementState.IDLE
                 pendingEvents += Event("movement-cancelled", unit.unitId)
                 pendingEvents += Event("path-unreachable", unit.unitId)
             } else {
                 unit.pathPoints = path.toMutableList()
+                unit.localMotion = null
+                unit.localProgressTime = 0.0
                 unit.lastPlannedKnowledgeRevision = plannedKnowledgeRevision(unit)
                 unit.movementState = MovementState.MOVING
             }
@@ -395,7 +448,7 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
                 unit.moveTarget = null
                 unit.pathPoints.clear()
                 unit.clearMoveOrigin()
-                unit.movementState = if (unit.speed != 0.0 || unit.angularVelocity != 0.0) MovementState.DECELERATING else MovementState.IDLE
+                unit.movementState = if (unit.speed != 0.0) MovementState.DECELERATING else MovementState.IDLE
                 ActionResult.Accepted(action.actionId, listOf(Event("movement-cancelled", unit.unitId)))
             }
             is MoveAction -> {
@@ -413,17 +466,20 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
                     unit.moveTarget = null
                     unit.pathPoints.clear()
                     unit.clearMoveOrigin()
-                    unit.movementState = if (unit.speed != 0.0 || unit.angularVelocity != 0.0) MovementState.DECELERATING else MovementState.IDLE
+                    unit.movementState = if (unit.speed != 0.0) MovementState.DECELERATING else MovementState.IDLE
                     ActionResult.Accepted(
                         action.actionId,
                         listOf(Event("movement-cancelled", unit.unitId), Event("path-unreachable", unit.unitId)),
                     )
                 } else {
                     unit.moveTarget = action.target
+                    unit.nearTargetTime = 0.0
                     unit.originMoveId = action.actionId
                     unit.originAtStep = action.atStep
                     unit.lastPlannedKnowledgeRevision = plannedKnowledgeRevision(unit)
                     unit.pathPoints = path.toMutableList()
+                    unit.localMotion = null
+                    unit.localProgressTime = 0.0
                     unit.movementState = MovementState.MOVING
                     ActionResult.Accepted(action.actionId, listOf(Event("movement-started", unit.unitId)))
                 }
@@ -458,12 +514,13 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
         units = units.mapValuesTo(linkedMapOf()) { (_, unit) -> unit.copy(pathPoints = unit.pathPoints.toMutableList()) }
         pendingEvents = pendingEvents.toMutableList()
         pendingActionResults = pendingActionResults.toMutableList()
+        val motionSamples = motionDiagnostics?.let { mutableListOf<MotionStepSample>() }
         var nextVision: AutomaticKnowledgeCommit? = null
         try {
             actions.forEach { applyAction(it, step.stepIndex) }
             replanForKnowledge(currentScenario.map, step.stepIndex)
             repairInvalidConnections(currentScenario.map, step.stepIndex)
-            for (unit in units.values.sortedBy { it.unitId }) updateUnit(unit, currentScenario.map, step.delta)
+            for (unit in units.values.sortedBy { it.unitId }) updateUnit(unit, currentScenario.map, step.delta, step.stepIndex, motionSamples)
             nextVision = prepareAutomaticKnowledge()
         } catch (error: Exception) {
             units = previousUnits
@@ -488,6 +545,7 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
         committedObservation = observation
         pendingEvents.clear()
         pendingActionResults.clear()
+        motionSamples?.let { checkNotNull(motionDiagnostics).addAll(it) }
         return observation
     }
 
@@ -653,70 +711,130 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
         latestObservation = null
     }
 
-    private fun updateUnit(unit: MutableUnit, map: MapDefinition, delta: Double) {
+    private fun updateUnit(unit: MutableUnit, map: MapDefinition, delta: Double, executionStep: Long,
+                           motionSamples: MutableList<MotionStepSample>?) {
         val movement = unit.definition.movement
         val contract = checkNotNull(scenario?.movementContract)
-        val target = unit.moveTarget
+        val positionBefore = unit.position
+        val headingBefore = unit.heading
+        val speedBefore = unit.speed
+        val angularVelocityBefore = unit.angularVelocity
+        val commandBefore = unit.moveTarget
+        val originBefore = unit.originMoveId
+        val progressBefore = unit.localProgressTime
+        val correctionBefore = unit.terrainCorrectionTime
+        var normalCompleted = false
+        var aimForSample: Position? = null
+        var finalForSample = false
+        var differenceForSample = 0.0
+        var requestedFraction = 0.0
+        var target = unit.moveTarget
         var speedTarget = 0.0
         if (target != null) {
-            val steeringTarget = unit.pathPoints.first()
-            val finalPoint = unit.pathPoints.size == 1
-            val d2 = policies.coordinates.distanceSquared(unit.position, steeringTarget)
-            val diff = policies.steering.turn(unit, steeringTarget, delta, policies.coordinates)
-            speedTarget = policies.propulsion.targetSpeed(movement, unit.speed, d2, diff, finalPoint, contract.targetRadius)
-            if (!finalPoint && policies.capture.inside(d2, contract.pathPointRadius) &&
-                PlanningSegmentClearance.allows(planningTerrainFor(unit, map), unit.position,
-                    unit.pathPoints[1], unit.definition.radius)) {
-                unit.pathPoints.removeAt(0)
-            } else if (finalPoint && policies.capture.inside(d2, contract.targetRadius)) {
+            val commandDistanceSquared = policies.coordinates.distanceSquared(unit.position, target)
+            if (commandDistanceSquared < 1681.0) unit.nearTargetTime += delta
+            val completionRadius = when {
+                unit.nearTargetTime > 340.0 -> 36.0
+                unit.nearTargetTime > 240.0 -> 16.0
+                else -> 7.0
+            }
+            if (policies.capture.inside(commandDistanceSquared, completionRadius)) {
                 unit.moveTarget = null
                 unit.pathPoints.clear()
                 unit.clearMoveOrigin()
-                speedTarget = 0.0
                 pendingEvents += Event("movement-arrived", unit.unitId)
+                target = null
+                normalCompleted = true
             }
-        } else {
-            unit.angularVelocity = approach(unit.angularVelocity, 0.0, movement.turnAcceleration * delta)
+        }
+        if (target != null) {
+            val local = unit.ensureLocalMotion()
+            val steeringTarget = local.aim
+            val finalPoint = unit.pathPoints.size == 1 && local.isLast
+            val d2 = policies.coordinates.distanceSquared(unit.position, steeringTarget)
+            val diff = policies.steering.turn(unit, steeringTarget, delta, policies.coordinates)
+            val fraction = policies.propulsion.targetFraction(movement, unit.speed, d2, diff, finalPoint, contract.targetRadius)
+            aimForSample = steeringTarget
+            finalForSample = finalPoint
+            differenceForSample = diff
+            requestedFraction = fraction
+            speedTarget = movement.moveSpeed * fraction
+            if (unit.pathPoints.size > 1 && policies.capture.inside(
+                    policies.coordinates.distanceSquared(unit.position, unit.pathPoints.first()), contract.pathPointRadius) &&
+                PlanningSegmentClearance.allows(planningTerrainFor(unit, map), unit.position,
+                    unit.pathPoints[1], unit.definition.radius)) {
+                unit.pathPoints.removeAt(0)
+                unit.localMotion = null
+                unit.localProgressTime = 0.0
+            } else {
+                val terrain = planningTerrainFor(unit, map)
+                val progress = LocalMotionMaintenance.advance(local, unit.localProgressTime, delta, fraction > 0.0,
+                    d2, !finalPoint && policies.capture.inside(d2, 16.0), unit.terrainCorrectionTime,
+                    { policies.coordinates.distanceSquared(unit.position, it) },
+                    { PlanningSegmentClearance.allows(terrain, unit.position, it, unit.definition.radius) })
+                unit.localMotion = progress.segment
+                unit.localProgressTime = progress.activeTime
+            }
         }
 
         val rate = if (unit.speed < speedTarget) movement.moveAccelerationSpeed else movement.moveDecelerationSpeed
-        unit.speed = approach(unit.speed, speedTarget, rate * delta)
+        // B/C advance the propulsion proportion; the public speed is in world units.
+        unit.speed = approach(unit.speed, speedTarget, rate * movement.moveSpeed * delta)
 
         val displacement = policies.coordinates.displacement(unit.heading, unit.speed * delta)
         val candidate = Position(unit.position.x + displacement.x, unit.position.y + displacement.y)
+        val integratedHeading = unit.heading
+        val integratedSpeed = unit.speed
+        fun recordMotion(resolved: Position?, disposition: MotionTerrainDisposition) {
+            motionSamples?.add(MotionStepSample(checkNotNull(activeWorld).id, unit.unitId, unit.ownerPlayerId, unit.typeId,
+                executionStep, simulationTime, delta, originBefore, positionBefore, headingBefore, speedBefore, angularVelocityBefore,
+                commandBefore, normalCompleted, aimForSample != null, aimForSample,
+                finalForSample.takeIf { aimForSample != null }, differenceForSample.takeIf { aimForSample != null },
+                requestedFraction, integratedHeading, integratedSpeed, candidate, resolved, disposition,
+                unit.position, unit.heading, unit.speed, unit.angularVelocity,
+                progressBefore, unit.localProgressTime, correctionBefore, unit.terrainCorrectionTime))
+        }
         if (!candidate.x.isFinite() || !candidate.y.isFinite()) {
             throw ArithmeticException("Non-finite movement candidate for ${unit.unitId}")
         }
         if (!MapBounds.contains(map.widthTiles.toDouble() * map.tileWidth,
                 map.heightTiles.toDouble() * map.tileHeight, candidate, unit.definition.radius)) {
-            unit.speed = 0.0
-            unit.angularVelocity = 0.0
-            unit.moveTarget = null
-            unit.pathPoints.clear()
-            unit.clearMoveOrigin()
-            unit.movementState = MovementState.BLOCKED
-            pendingEvents += Event("movement-boundary-blocked", unit.unitId)
+            blockAtMapBoundary(unit)
+            recordMotion(null, MotionTerrainDisposition.CANDIDATE_OUTSIDE_MAP)
             return
         }
-        if (unit.moveTarget != null && unit.pathPoints.isNotEmpty() &&
-            !PlanningSegmentClearance.allows(planningTerrainFor(unit, map), unit.position, candidate, unit.definition.radius)) {
-            unit.speed = 0.0
-            unit.movementState = MovementState.MOVING
+        val resolved = TerrainMotion.resolve(map, unit.position, candidate)
+        if (!MapBounds.contains(map.widthTiles.toDouble() * map.tileWidth,
+                map.heightTiles.toDouble() * map.tileHeight, resolved, unit.definition.radius)) {
+            blockAtMapBoundary(unit)
+            recordMotion(resolved, MotionTerrainDisposition.RESOLVED_OUTSIDE_MAP)
             return
         }
-        if (!PlanningSegmentClearance.allowsMovement(map, unit.position, candidate, unit.definition.radius)) {
-            unit.speed = 0.0
-            unit.angularVelocity = 0.0
-            unit.movementState = MovementState.BLOCKED
+        if (resolved != candidate) {
             pendingEvents += Event("movement-blocked", unit.unitId)
-            return
+            unit.terrainCorrectionTime += delta
+            unit.terrainClearSteps = 0
+        } else if (delta > 0.0) {
+            unit.terrainClearSteps = (unit.terrainClearSteps + 1).coerceAtMost(3)
+            if (unit.terrainClearSteps >= 3) unit.terrainCorrectionTime = 0.0
         }
-        unit.position = candidate
+        unit.position = resolved
         unit.movementState = when {
             unit.moveTarget != null -> MovementState.MOVING
-            unit.speed != 0.0 || unit.angularVelocity != 0.0 -> MovementState.DECELERATING
+            unit.speed != 0.0 -> MovementState.DECELERATING
             else -> MovementState.IDLE
         }
+        recordMotion(resolved, if (resolved == candidate) MotionTerrainDisposition.DIRECT else MotionTerrainDisposition.CORRECTED)
+    }
+
+    private fun blockAtMapBoundary(unit: MutableUnit) {
+        unit.speed = 0.0
+        unit.angularVelocity = 0.0
+        unit.moveTarget = null
+        unit.pathPoints.clear()
+        unit.clearMoveOrigin()
+        unit.movementState = MovementState.BLOCKED
+        pendingEvents += Event("movement-boundary-blocked", unit.unitId)
     }
 
     private fun recordObservation(): Observation {

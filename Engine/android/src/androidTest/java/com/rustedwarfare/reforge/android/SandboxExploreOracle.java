@@ -6,12 +6,13 @@ import com.badlogic.gdx.utils.JsonValue;
 public final class SandboxExploreOracle {
     private final long generation, commandSequence;
     private final String mode, world;
-    private final double targetY, pixelHeight;
+    private final double targetX, targetY, pixelHeight;
     private long sequence, step;
     private double time, arrivalX, arrivalY, arrivalSpeed;
     private long discoveryStep = -1;
     private boolean rerouted, failed;
     private JsonValue arrival;
+    private double previousX, previousY, previousSpeed, previousHeading, previousSteering, nearTime;
 
     private static void require(boolean value, String message) { if (!value) throw new IllegalArgumentException(message); }
     private static long integer(JsonValue row, String name) {
@@ -23,6 +24,25 @@ public final class SandboxExploreOracle {
     }
     private static String string(JsonValue row, String name) {
         require(row != null && row.has(name) && row.get(name).isString(), "SC07 missing string " + name); return row.getString(name);
+    }
+    private void remember(JsonValue value) {
+        previousX=number(value.get("position"),"x"); previousY=number(value.get("position"),"y");
+        previousSpeed=number(value,"speed"); previousHeading=number(value,"heading"); previousSteering=number(value,"angularVelocity");
+    }
+    private void clearedMotion(JsonValue value, boolean advancing) {
+        double x=number(value.get("position"),"x"), y=number(value.get("position"),"y"), speed=number(value,"speed");
+        require(value.get("moveTarget").isNull() && value.get("pathPoints").size==0,"SC07 goal/path restored after normal clear");
+        require(number(value,"heading")==previousHeading && number(value,"angularVelocity")==previousSteering,
+            "SC07 normal clear changed heading or retained steering");
+        if(advancing) {
+            require(Math.abs(speed-Math.max(previousSpeed-.187,0))<=1e-9,"SC07 invalid proportional post-clear deceleration");
+            // The fixed SC07 goal and every legal normal-clear radius lie in its open eastern area.
+            // This checks core arithmetic; original-versus-core tolerances do not apply here.
+            double theta=Math.toRadians(previousHeading);
+            require(Math.abs((x-previousX)-Math.sin(theta)*speed)<=1e-9 && Math.abs((y-previousY)+Math.cos(theta)*speed)<=1e-9,
+                "SC07 invalid post-clear displacement");
+            require(string(value,"movementState").equals(speed==0?"idle":"decelerating"),"SC07 invalid post-clear movement state");
+        } else require(speed==previousSpeed && x==previousX && y==previousY,"SC07 advanced while closing without a tick");
     }
     private JsonValue unit(JsonValue sample) {
         require(string(sample,"worldId").equals(world) && string(sample,"scenarioId").equals("p002-knowledge")
@@ -48,7 +68,7 @@ public final class SandboxExploreOracle {
         require(string(commanded,"kind").equals("observation") && string(commanded,"phase").equals("after-action")
             && integer(commanded,"generation") == generation && integer(commanded,"sequence") == commandSequence + 1,
             "SC07 requires the immediately adjacent after-action observation");
-        this.mode = mode; this.pixelHeight = pixelHeight; targetY = number(move.get("target"),"y");
+        this.mode = mode; this.pixelHeight = pixelHeight; targetX=number(move.get("target"),"x"); targetY = number(move.get("target"),"y");
         JsonValue sample = commanded.get("sample"); world = string(sample,"worldId"); require(!world.isEmpty(), "SC07 empty world");
         JsonValue unit = unit(sample), goal = unit.get("moveTarget");
         require(goal != null && goal.isObject() && number(goal,"x") == number(move.get("target"),"x")
@@ -64,6 +84,7 @@ public final class SandboxExploreOracle {
         sequence = integer(commanded,"sequence"); step = integer(sample,"stepIndex"); time = number(sample,"simulationTime");
         require(step >= 0 && time >= 0 && (time == 0 ? step == 0 : time == step + 1.0), "SC07 command step/time mismatch");
         if (time == 0) step = -1; // The initial and first actual tick both publicly use index 0.
+        remember(unit);
     }
     public void accept(JsonValue row) {
         try {
@@ -82,18 +103,16 @@ public final class SandboxExploreOracle {
                 step = nextStep; time = nextTime;
             } else require(phase.equals("before-close") && nextStep == step && nextTime == time, "SC07 unexpected phase/paused advancement");
             if (arrival != null) {
-                double x = number(unit.get("position"),"x"), y = number(unit.get("position"),"y"), speed = number(unit,"speed");
-                require(unit.get("moveTarget").isNull() && unit.get("pathPoints").size == 0 && Math.hypot(x-350,y-110) <= 4,
-                    "SC07 goal/path restored or left original arrival tolerance");
-                // Arrival clears intent while the approved movement model can still decelerate.
-                if (phase.equals("step")) require(speed <= arrivalSpeed && Math.hypot(x-arrivalX,y-arrivalY) <= 1.1 + 8*Math.ulp(1.1)
-                    && (arrivalSpeed != 0 || (speed == 0 && x == arrivalX && y == arrivalY)), "SC07 invalid post-arrival deceleration");
-                else require(speed == arrivalSpeed && x == arrivalX && y == arrivalY, "SC07 advanced while closing without a tick");
-                arrivalX = x; arrivalY = y; arrivalSpeed = speed;
+                clearedMotion(unit,phase.equals("step"));
+                JsonValue later=sample.get("events"); require(later!=null && later.isArray(),"SC07 missing events");
+                if(phase.equals("step"))for(JsonValue event:later) require(!string(event,"kind").equals("movement-arrived"),"SC07 duplicate arrival after normal clear");
+                remember(unit);
                 return;
             }
             if (!phase.equals("step")) return;
             require(nextStep <= 2499, "SC07 exhausted its 2500 world ticks without arrival");
+            double dx=previousX-targetX,dy=previousY-targetY;
+            if(dx*dx+dy*dy<1681)nearTime+=1;
             if (!mode.equals("NO_FOG")) {
                 JsonValue wall = SandboxKnowledgeView.sample(sample).get(164);
                 if (discoveryStep < 0 && wall.getBoolean("visible") && wall.get("blocked").isBoolean() && wall.getBoolean("blocked"))
@@ -104,12 +123,18 @@ public final class SandboxExploreOracle {
             JsonValue events = sample.get("events"); require(events != null && events.isArray(), "SC07 missing events");
             for (JsonValue event : events) if (string(event,"kind").equals("movement-arrived") && string(event,"unitId").equals("u1")) {
                 require(arrival == null, "Duplicate first arrival event");
-                arrivalX = number(unit.get("position"),"x"); arrivalY = number(unit.get("position"),"y");
-                require(unit.get("moveTarget").isNull() && unit.get("pathPoints").size == 0
-                    && Math.hypot(arrivalX - 350,arrivalY - 110) <= 4, "SC07 did not arrive within the original intent tolerance");
+                double capture=nearTime>340?36:nearTime>240?16:7;
+                require(dx*dx+dy*dy<capture*capture,"SC07 normal clear outside its strict 7/16/36 entry radius");
+                clearedMotion(unit,true);
                 require(mode.equals("NO_FOG") || (discoveryStep >= 0 && rerouted), "SC07 arrived without discovery then later reroute");
-                arrivalSpeed = number(unit,"speed"); arrival = row;
+                arrival = row;
             }
+            if(arrival==null) {
+                JsonValue goal=unit.get("moveTarget");
+                require(goal!=null && goal.isObject() && number(goal,"x")==targetX && number(goal,"y")==targetY,
+                    "SC07 command cleared or replaced without normal arrival");
+            }
+            remember(unit);
         } catch (RuntimeException failure) { failed = true; throw failure; }
     }
     public boolean ready() { return !failed && arrival != null; }

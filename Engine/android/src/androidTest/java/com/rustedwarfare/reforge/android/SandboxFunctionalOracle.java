@@ -439,9 +439,9 @@ public final class SandboxFunctionalOracle {
     public static final class Unreachable {
         private final long generation;
         private final String world;
-        private final double commandX, commandY;
+        private final double commandX, commandY, commandHeading, commandAngularVelocity;
         private long sequence, step;
-        private double time, stableX, stableY;
+        private double time, stableX, stableY, stableHeading;
         private int stableSteps;
         private boolean afterAction, locked, failed;
         public Unreachable(com.badlogic.gdx.utils.JsonValue started, com.badlogic.gdx.utils.JsonValue before,
@@ -461,6 +461,7 @@ public final class SandboxFunctionalOracle {
             com.badlogic.gdx.utils.JsonValue unit = observed(sample);
             step = integer(sample, "stepIndex"); time = number(sample, "simulationTime");
             commandX = number(unit.get("position"), "x"); commandY = number(unit.get("position"), "y");
+            commandHeading = number(unit, "heading"); commandAngularVelocity = number(unit, "angularVelocity");
             require(number(unit, "speed") > 0 && (commandX != 110 || commandY != 110)
                 && unit.get("moveTarget").isObject() && unit.get("pathPoints").size > 0, "Old movement was not active");
             require(number(unit.get("moveTarget"), "x") == number(started.get("target"), "x")
@@ -522,11 +523,14 @@ public final class SandboxFunctionalOracle {
                     afterAction = true;
                 } else if (isStep) require(nextStep > step && nextTime > time, "Duplicate or reordered cancellation step");
                 else require(nextStep == step && nextTime == time, "Unobserved advancement between cancellation samples");
-                boolean still = number(unit, "speed") == 0 && number(unit, "angularVelocity") == 0;
-                if (locked) require(still && x == stableX && y == stableY, "Unit moved after the stopped result");
+                double heading = number(unit, "heading");
+                require(heading == commandHeading && number(unit, "angularVelocity") == commandAngularVelocity,
+                    "Cancellation changed heading or retained steering state");
+                boolean still = number(unit, "speed") == 0;
+                if (locked) require(still && x == stableX && y == stableY && heading == stableHeading, "Unit moved after the stopped result");
                 if (isStep && !locked) {
-                    stableSteps = still ? (stableSteps > 0 && x == stableX && y == stableY ? stableSteps + 1 : 1) : 0;
-                    stableX = x; stableY = y;
+                    stableSteps = still ? (stableSteps > 0 && x == stableX && y == stableY && heading == stableHeading ? stableSteps + 1 : 1) : 0;
+                    stableX = x; stableY = y; stableHeading = heading;
                     locked = stableSteps >= 3;
                 }
                 sequence = integer(row, "sequence"); step = nextStep; time = nextTime;

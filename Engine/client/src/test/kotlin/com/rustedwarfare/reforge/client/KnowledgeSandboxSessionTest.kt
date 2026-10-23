@@ -6,6 +6,22 @@ import java.nio.file.Path
 import kotlin.test.*
 
 class KnowledgeSandboxSessionTest {
+    @Test fun visible_unit_circle_colors_distinguish_owner_allies_and_enemies_by_team() {
+        val players=mutableListOf(Player("p1",PlayerControl.LOCAL,"blue"),
+            Player("friend",PlayerControl.NONE,"blue"),Player("opponent",PlayerControl.NONE,"orange"),
+            Player("neutral-a",PlayerControl.NONE),Player("neutral-b",PlayerControl.NONE))
+        val input=scenario().copy(players=players,
+            units=scenario().units.map { it.copy(ownerPlayerId=if(it.unitId=="own")"p1"else if(it.unitId=="visible")"opponent"else"friend") })
+        val resources=SandboxRenderResources.from(input)
+        assertEquals(com.badlogic.gdx.graphics.Color(0.45f,0.91f,0.65f,1f),resources.unitCircleColor("p1","p1"))
+        assertEquals(com.badlogic.gdx.graphics.Color(1f,0.72f,0.3f,1f),resources.unitCircleColor("p1","friend"))
+        assertEquals(com.badlogic.gdx.graphics.Color.RED,resources.unitCircleColor("p1","opponent"))
+        assertEquals(com.badlogic.gdx.graphics.Color.RED,resources.unitCircleColor("p1","neutral-a"))
+        assertEquals(com.badlogic.gdx.graphics.Color.RED,resources.unitCircleColor("neutral-a","neutral-b"))
+        assertEquals(com.badlogic.gdx.graphics.Color(1f,0.72f,0.3f,1f),resources.unitCircleColor("friend","p1"))
+        players[1]=players[1].copy(teamId="orange")
+        assertEquals(com.badlogic.gdx.graphics.Color(1f,0.72f,0.3f,1f),resources.unitCircleColor("p1","friend"))
+    }
     private fun scenario(): Scenario {
         val tank = UnitDefinition("tank", "CustomUnitMetadata", 1.0, 1.0, 1, Path.of("unused.png"), 1.0,
             MovementProfile(MovementType.LAND, 1.1, 0.07, 0.17, 4.1, 0.25, false, false), emptySet(), 1)

@@ -50,7 +50,7 @@ class GeometryAndFailureTest {
     }
 
     @Test
-    fun circle_tangent_to_a_blocked_rectangle_is_not_a_path_candidate() {
+    fun circle_tangent_outside_a_blocked_cell_remains_a_path_candidate() {
         val source = TestContentFactory.openScenario()
         val unit = TestContentFactory.unitWith(source.unitDefinitions.getValue("tank"), radius = 10.0)
         val context = assertIs<InitResult.Accepted>(SimulationContext.initialize(source.copy(
@@ -60,11 +60,12 @@ class GeometryAndFailureTest {
         val result = assertIs<ActionResult.Accepted>(context.submit(
             MoveAction("a1", "p1", "u1", Position(130.0, 110.0), context.world),
         ))
-        assertEquals(listOf("movement-cancelled", "path-unreachable"), result.events.map { it.kind })
+        assertEquals(listOf("movement-started"), result.events.map { it.kind })
+        assertEquals(listOf(Position(130.0, 110.0)), context.observe().units.single().pathPoints)
     }
 
     @Test
-    fun illegal_exact_target_is_not_replaced_with_its_legal_tile_center() {
+    fun exact_open_center_target_survives_circle_overlap_but_blocked_target_is_not_replaced() {
         val source = TestContentFactory.openScenario()
         val unit = TestContentFactory.unitWith(source.unitDefinitions.getValue("tank"), radius = 10.0)
         val context = assertIs<InitResult.Accepted>(SimulationContext.initialize(source.copy(
@@ -75,12 +76,16 @@ class GeometryAndFailureTest {
         val result = assertIs<ActionResult.Accepted>(context.submit(
             MoveAction("a1", "p1", "u1", Position(134.0, 132.0), context.world),
         ))
-        assertEquals(listOf("movement-cancelled", "path-unreachable"), result.events.map { it.kind })
+        assertEquals(listOf("movement-started"), result.events.map { it.kind })
+        assertEquals(Position(134.0, 132.0), context.observe().units.single().moveTarget)
+        val blocked = assertIs<ActionResult.Accepted>(context.submit(
+            MoveAction("blocked", "p1", "u1", Position(140.0, 150.0), context.world)))
+        assertEquals(listOf("movement-cancelled", "path-unreachable"), blocked.events.map { it.kind })
         assertEquals(null, context.observe().units.single().moveTarget)
     }
 
     @Test
-    fun collision_rejects_candidate_displacement_and_zeroes_both_motion_components() {
+    fun terrain_edge_correction_preserves_propulsion_and_steering_state() {
         val source = TestContentFactory.openScenario()
         val definition = source.unitDefinitions.getValue("tank")
         val unit = TestContentFactory.unitWith(definition,
@@ -96,11 +101,18 @@ class GeometryAndFailureTest {
         val first = context.advance(Step(0, 1.0, "sim-tick")).units.single()
         assertEquals(Position(130.0, 110.0), first.position)
         context.submit(MoveAction("turn", "p1", "u1", Position(250.0, 112.0), context.world))
-        val blocked = context.advance(Step(1, 1.0, "sim-tick"))
-        assertEquals(first.position, blocked.units.single().position)
-        assertEquals(0.0, blocked.units.single().speed)
-        assertEquals(0.0, blocked.units.single().angularVelocity)
-        assertEquals(MovementState.BLOCKED, blocked.units.single().movementState)
+        val passing = context.advance(Step(1, 1.0, "sim-tick"))
+        assertTrue(passing.units.single().position.x > 149.0)
+        assertTrue(passing.events.none { it.kind == "movement-blocked" })
+        val blocked = context.advance(Step(2, 1.0, "sim-tick"))
+        assertEquals(159.8, blocked.units.single().position.x, 1e-9)
+        assertEquals(20.0, blocked.units.single().speed)
+        // D-094 uses the global anchor for V20. The second difference is below
+        // |cg|/A=1 degree, so the ordinary turn rule retains rate A=.25.
+        assertEquals(0.25, blocked.units.single().angularVelocity)
+        assertEquals(90.5, blocked.units.single().heading)
+        assertEquals(110.26179689566241, blocked.units.single().position.y, 1e-9)
+        assertEquals(MovementState.MOVING, blocked.units.single().movementState)
         assertTrue(blocked.events.any { it.kind == "movement-blocked" })
         context.close()
     }

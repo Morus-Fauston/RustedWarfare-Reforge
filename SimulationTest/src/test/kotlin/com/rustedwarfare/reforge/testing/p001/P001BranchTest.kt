@@ -47,13 +47,14 @@ class P001BranchTest {
     }
 
     @Test fun `M03 full branch checks event boundary speed literals distance and exact idle window`() {
-        val positions=listOf(110.07,110.21,110.42,110.70,111.05,111.47,111.96,112.52,113.15,113.85,114.62,115.46,116.37,117.35,118.40,119.50,120.43,121.19,121.78,122.20,122.45,122.53,122.53)
-        val speeds=listOf(.07,.14,.21,.28,.35,.42,.49,.56,.63,.70,.77,.84,.91,.98,1.05,1.1,.93,.76,.59,.42,.25,.08,0.0)
-        val samples=listOf(frame(-1,110.0))+ (0..42).map { step->frame(step,positions.getOrElse(step){122.53},speed=speeds.getOrElse(step){0.0},target=if(step<16) Position(250.0,110.0) else null,events=when(step) {0->listOf(Event("movement-started","u1"));16->listOf(Event("movement-cancelled","u1"));else->emptyList()}) }
+        // B=.07 and C=.17 advance proportions: world increments .077/.187 at vMax=1.1.
+        val positions=listOf(110.077,110.231,110.462,110.770,111.155,111.617,112.156,112.772,113.465,114.235,115.082,116.006,117.007,118.085,119.185,120.285,121.198,121.924,122.463,122.815,122.980,122.980)
+        val speeds=listOf(.077,.154,.231,.308,.385,.462,.539,.616,.693,.770,.847,.924,1.001,1.078,1.1,1.1,.913,.726,.539,.352,.165,0.0)
+        val samples=listOf(frame(-1,110.0))+ (0..42).map { step->frame(step,positions.getOrElse(step){122.980},speed=speeds.getOrElse(step){0.0},target=if(step<16) Position(250.0,110.0) else null,events=when(step) {0->listOf(Event("movement-started","u1"));16->listOf(Event("movement-cancelled","u1"));else->emptyList()}) }
         assertNull(P001Relations.evaluate(input("M03"),"M03",samples))
-        val missing=samples.toMutableList();missing[17]=frame(16,120.43,speed=.93)
+        val missing=samples.toMutableList();missing[17]=frame(16,121.198,speed=.913)
         assertEquals("movement-event-sequence",P001Relations.evaluate(input("M03"),"M03",missing)?.ruleId)
-        val drift=samples.toMutableList();drift[43]=frame(42,122.5300000001)
+        val drift=samples.toMutableList();drift[43]=frame(42,122.9800000001)
         assertEquals("idle-tail",P001Relations.evaluate(input("M03"),"M03",drift)?.ruleId)
     }
 
