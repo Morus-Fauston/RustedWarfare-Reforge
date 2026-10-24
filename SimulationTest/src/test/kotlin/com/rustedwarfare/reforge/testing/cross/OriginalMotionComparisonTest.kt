@@ -10,6 +10,7 @@ import kotlinx.serialization.json.*
 class OriginalMotionComparisonTest {
     private val folder = Files.createTempDirectory("reforge-o-cross-")
     private val root = Path.of(System.getProperty("repo.root"))
+    private val referenceRoot = System.getProperty("workflow.reference.root")?.let(Path::of) ?: root
     private fun evidence(role: String): String = """
         {"kind":"motion-evidence","schemaVersion":1,"role":"$role","runId":"fixture-$role","sourceKind":"tool-fixture","complete":true,"exitCode":0,
         "samples":[
@@ -118,7 +119,7 @@ class OriginalMotionComparisonTest {
     @Test fun `core O adapter runs fixed public steps and retains every raw DTO`() {
         val original=folder.resolve("core-replay-original-fixture.json").also{Files.writeString(it,evidence("original"))}
         val standard=root.resolve("TestLab/standards/P002-original-motion/O.v1.json")
-        val prepared=root.resolve(".scratch/开发票据/测试系统/P002-原版参考与规则性能/evidence/TEST-P002-022/o-approved-20261021/prepared-inputs.json")
+        val prepared=referenceRoot.resolve(".scratch/开发票据/测试系统/P002-原版参考与规则性能/evidence/TEST-P002-022/o-approved-20261021/prepared-inputs.json")
         fun ref(p: Path)=obj("path" to s(p.toString()),"sha256" to s(sha256(p)))
         val request=folder.resolve("core-request.json").also{Files.writeString(it,obj("kind" to s("motion-core-request"),"schemaVersion" to n(1),
             "caseId" to s("OM00"),"runId" to s(java.util.UUID.randomUUID().toString()),"standard" to ref(standard),
@@ -157,7 +158,7 @@ class OriginalMotionComparisonTest {
 
     @Test fun `core replay submits zero q first input immediately and ceil later input without advancing to consume`() {
         val standard=root.resolve("TestLab/standards/P002-original-motion/O.v1.json")
-        val prepared=root.resolve(".scratch/开发票据/测试系统/P002-原版参考与规则性能/evidence/TEST-P002-022/o-approved-20261021/prepared-inputs-v2.json")
+        val prepared=referenceRoot.resolve(".scratch/开发票据/测试系统/P002-原版参考与规则性能/evidence/TEST-P002-022/o-approved-20261021/prepared-inputs-v2.json")
         val base=json.parseToJsonElement(evidence("original")).jsonObject
         val commands=listOf(obj("sequence" to n(0),"q" to n(0),"action" to s("move"),"target" to obj("x" to n(500),"y" to n(200)),"raw" to obj()),
             obj("sequence" to n(1),"q" to n(7.2),"action" to s("stop"),"target" to JsonNull,"raw" to obj()))
@@ -175,7 +176,7 @@ class OriginalMotionComparisonTest {
     }
 
     @Test fun `actual native static raw capture and actual core replay can pass only through pinned raw revalidation`() {
-        val batch=root.resolve(".scratch/开发票据/测试系统/P002-原版参考与规则性能/evidence/TEST-P002-022/o-approved-20261021")
+        val batch=referenceRoot.resolve(".scratch/开发票据/测试系统/P002-原版参考与规则性能/evidence/TEST-P002-022/o-approved-20261021")
         val original=batch.resolve("scene-run-b28dacdf-ca46-4da8-aea0-3ddb9cbebeca/original-motion-evidence-v3.json")
         val standard=root.resolve("TestLab/standards/P002-original-motion/O.v1.json")
         fun ref(p: Path)=obj("path" to s(p.toString()),"sha256" to s(sha256(p)))

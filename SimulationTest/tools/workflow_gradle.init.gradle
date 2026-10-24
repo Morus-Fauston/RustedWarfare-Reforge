@@ -1,0 +1,85 @@
+import groovy.json.JsonOutput
+import org.gradle.api.tasks.testing.Test
+
+// Only the selected task graph writes receipts. Never consumes historical XML.
+def runDir = new File(System.getProperty('workflow.run.dir')).canonicalFile
+def repo = new File(System.getProperty('workflow.root')).canonicalFile
+def cache = gradle.gradleUserHomeDir.canonicalFile
+def expectedCache = new File(System.getProperty('workflow.cache')).canonicalFile
+if (cache != expectedCache || !cache.isAbsolute()) throw new GradleException('Effective Gradle cache differs from plan')
+gradle.projectsEvaluated {
+    gradle.rootProject.allprojects { p ->
+        if (System.getProperty('workflow.clean.id')) {
+            p.layout.buildDirectory.set(new File(gradle.rootProject.projectDir,
+                'build/workflow-clean/' + System.getProperty('workflow.clean.id') + '/' + p.path.replace(':','_')))
+        }
+        p.tasks.withType(Test).configureEach { task ->
+            if (p.name == 'core') {
+                def expected=new File(repo,'TestLab/local/P001-移动沙盒输入').absolutePath
+                if (systemProperties['p001.inputs.dir'] != null && systemProperties['p001.inputs.dir'] != expected)
+                    throw new GradleException('Configured p001.inputs.dir differs from plan')
+                systemProperty('p001.inputs.dir',expected)
+            }
+            if (p == gradle.rootProject) {
+                if (systemProperties['repo.root'] != null && systemProperties['repo.root'] != repo.absolutePath)
+                    throw new GradleException('Configured repo.root differs from plan')
+                systemProperty('repo.root',repo.absolutePath)
+            }
+            if (p == gradle.rootProject && p.name == 'simulation-test') {
+                if (System.getProperty('workflow.reference.root')) systemProperty('workflow.reference.root', System.getProperty('workflow.reference.root'))
+                systemProperty('workflow.test.helpers', new File(repo,
+                    '.scratch/开发票据/测试系统/P003-工作流整合改进/evidence/TEST-P003-001/frozen-test-helpers').absolutePath)
+                dependsOn(p.tasks.named('jar'))
+                doFirst { systemProperty('workflow.test.runtime',
+                    p.tasks.named('jar').get().archiveFile.get().asFile.absolutePath + File.pathSeparator +
+                    p.configurations.runtimeClasspath.asPath) }
+            }
+            maxParallelForks = 1
+            outputs.upToDateWhen { false }
+            outputs.cacheIf { false }
+            def leaf = new File(runDir, task.path.replace(':', '_'))
+            reports.junitXml.outputLocation.set(new File(leaf, 'xml'))
+            reports.html.outputLocation.set(new File(leaf, 'html'))
+            binaryResultsDirectory.set(new File(leaf, 'binary'))
+            doFirst {
+                leaf.mkdirs()
+                new File(leaf, 'started.json').text = JsonOutput.toJson([task:task.path, startedMillis:System.currentTimeMillis()])
+            }
+            afterSuite { descriptor, result ->
+                if (descriptor.parent == null) {
+                    leaf.mkdirs()
+                    new File(leaf, 'completed.json').text = JsonOutput.toJson([task:task.path,
+                        tests:result.testCount, failures:result.failedTestCount, skipped:result.skippedTestCount,
+                        result:result.resultType.toString(), endedMillis:System.currentTimeMillis()])
+                }
+            }
+        }
+    }
+}
+gradle.taskGraph.whenReady { graph ->
+    def rows = []
+    graph.allTasks.findAll { it instanceof Test }.each { task ->
+        def props = task.systemProperties
+        if (task.project.name == 'core' && props['p001.inputs.dir'] != new File(repo, 'TestLab/local/P001-移动沙盒输入').absolutePath)
+            throw new GradleException('Effective p001.inputs.dir overridden')
+        if (task.project == gradle.rootProject && props['repo.root'] != repo.absolutePath)
+            throw new GradleException('Effective repo.root overridden')
+        rows.add([task:task.path, systemProperties:props, maxParallelForks:task.maxParallelForks,
+            javaLauncher:task.javaLauncher.get().executablePath.asFile.absolutePath,
+            javaRuntimeVersion:task.javaLauncher.get().metadata.javaRuntimeVersion,
+            javaVendor:task.javaLauncher.get().metadata.vendor,
+            xml:task.reports.junitXml.outputLocation.get().asFile.absolutePath])
+    }
+    runDir.mkdirs()
+    new File(runDir, 'effective-config.json').text = JsonOutput.toJson([repo:repo.absolutePath, cache:cache.absolutePath,
+        maxWorkers:gradle.startParameter.maxWorkerCount, tests:rows,
+        buildDirectories:gradle.rootProject.allprojects.collectEntries { [(it.path):it.layout.buildDirectory.get().asFile.absolutePath] }])
+}
+def executions = []
+gradle.taskGraph.afterTask { task, state ->
+    executions.add([task:task.path, executed:state.executed, skipped:state.skipped,
+        skipMessage:state.skipMessage, upToDate:state.upToDate, noSource:state.noSource,
+        failure:state.failure == null ? null : state.failure.toString()])
+    runDir.mkdirs()
+    new File(runDir,'task-executions.json').text = JsonOutput.toJson(executions)
+}

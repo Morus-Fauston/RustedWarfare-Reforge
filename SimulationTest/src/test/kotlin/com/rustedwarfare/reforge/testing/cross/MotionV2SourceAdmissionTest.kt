@@ -9,6 +9,16 @@ import kotlinx.serialization.json.*
 
 /** Complete synthetic loader chain only. Never reserves IDs or starts a runtime. */
 class MotionV2SourceAdmissionTest {
+    // Test-only configurable runtime: clean builds must consume this invocation's JARs.
+    private fun runtime(root:Path):List<Path> = System.getProperty("workflow.test.runtime")?.split(java.io.File.pathSeparator)
+        ?.map(Path::of) ?: Files.list(root.resolve(".scratch/开发票据/引擎重写/P002-视野知识寻路/evidence/ENG-P002-017/20261021-preflight/post-gh-headless-diagnostics-63a6dfcdf0ac4c30bd10b07d81cfcff7/runtime/lib"))
+        .use { paths -> paths.filter { it.fileName.toString().endsWith(".jar") }.sorted().map { p ->
+            when(p.fileName.toString()) {
+                "simulation-test.jar" -> root.resolve("SimulationTest/build/libs/simulation-test.jar")
+                "core.jar" -> root.resolve("SimulationTest/build/core/libs/core.jar")
+                else -> p
+            }
+        }.toList() }
     private fun ref(p:Path)=obj("path" to s(p.toAbsolutePath().toString()),"bytes" to n(Files.size(p)),"sha256" to s(sha256(p)))
     private data class Fixture(val wrapper:Path,val campaign:Path,val request:JsonObject)
     private fun fixture(role:String="original",extraArtifact:JsonObject?=null):Fixture {
@@ -37,7 +47,7 @@ class MotionV2SourceAdmissionTest {
         f.wrapper,sha256(f.wrapper),f.campaign,sha256(f.campaign),f.request,"OM08",2,role)
     @Test fun original_read_preparation_requires_actual_started_role_and_approved_graph_without_running_a_reader() {
         val root=Path.of(System.getProperty("repo.root"))
-        val evidence=root.resolve(".scratch/开发票据/引擎重写/P002-视野知识寻路/evidence/ENG-P002-017/20261021-preflight")
+        val evidence=System.getProperty("workflow.test.helpers")?.let(Path::of) ?: root.resolve(".scratch/开发票据/引擎重写/P002-视野知识寻路/evidence/ENG-P002-017/20261021-preflight")
         val temp=Files.createTempDirectory("eng017-synthetic-original-preparation-")
         val cli=temp.resolve("original_source_read_cli_v1.py");Files.writeString(cli,"SYNTHETIC IDENTITY ONLY; NEVER EXECUTED")
         val code=ref(cli)
@@ -46,13 +56,7 @@ class MotionV2SourceAdmissionTest {
         val sources=obj(*(names.map { it to code }+listOf("pythonVersion" to s("SYNTHETIC NEVER EXECUTED"),"allowedCode" to array(listOf(code)))).toTypedArray())
         Files.writeString(graph,record("motion-v2-original-read-sources","sources" to sources,"cli" to code).toString())
         val f=fixture("original",ref(graph))
-        val dependencies=evidence.resolve("post-gh-headless-diagnostics-63a6dfcdf0ac4c30bd10b07d81cfcff7/runtime/lib")
-        val jars=Files.list(dependencies).use { paths->paths.filter { it.fileName.toString().endsWith(".jar") }.sorted().map { p->
-            ref(when(p.fileName.toString()) {
-                "simulation-test.jar"->root.resolve("SimulationTest/build/libs/simulation-test.jar")
-                "core.jar"->root.resolve("SimulationTest/build/core/libs/core.jar")
-                else->p
-            }) }.toList() }
+        val jars=runtime(root).map(::ref)
         val input=temp.resolve("control.json")
         Files.writeString(input,obj("wrapper" to ref(f.wrapper),"campaign" to ref(f.campaign),"request" to f.request,"graph" to ref(graph),
             "java" to ref(Path.of(System.getProperty("java.home")).resolve("bin/java.exe")),"jars" to array(jars)).toString())
@@ -69,14 +73,8 @@ class MotionV2SourceAdmissionTest {
     }
     @Test fun actual_jar_admission_to_temp_ledger_preserves_all_attempts_without_starting_a_simulation() {
         val f=fixture("core");val root=Path.of(System.getProperty("repo.root"))
-        val evidence=root.resolve(".scratch/开发票据/引擎重写/P002-视野知识寻路/evidence/ENG-P002-017/20261021-preflight")
-        val dependencies=evidence.resolve("post-gh-headless-diagnostics-63a6dfcdf0ac4c30bd10b07d81cfcff7/runtime/lib")
-        val jars=Files.list(dependencies).use { paths->paths.filter { it.fileName.toString().endsWith(".jar") }.sorted().map { p->
-            ref(when(p.fileName.toString()) {
-                "simulation-test.jar"->root.resolve("SimulationTest/build/libs/simulation-test.jar")
-                "core.jar"->root.resolve("SimulationTest/build/core/libs/core.jar")
-                else->p
-            }) }.toList() }
+        val evidence=System.getProperty("workflow.test.helpers")?.let(Path::of) ?: root.resolve(".scratch/开发票据/引擎重写/P002-视野知识寻路/evidence/ENG-P002-017/20261021-preflight")
+        val jars=runtime(root).map(::ref)
         val input=f.campaign.parent.resolve("bridge-input.json")
         Files.writeString(input,obj("wrapper" to ref(f.wrapper),"campaign" to ref(f.campaign),"request" to f.request,
             "java" to ref(Path.of(System.getProperty("java.home")).resolve("bin/java.exe")),"jars" to array(jars),
