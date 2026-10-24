@@ -50,6 +50,10 @@ class BootstrapScreen(
     private var loadError: String? = null
     private var presentationReady = false
     private var disposed = false
+    private data class HudState(val selected: com.rustedwarfare.reforge.core.sim.UnitObservation?,
+        val selectedId: String?, val feedback: String?, val step: Long?, val canEdit: Boolean,
+        val loading: Boolean, val error: String?, val hasSession: Boolean)
+    private var lastHudState: HudState? = null
 
     override fun create() {
         createPresentation()
@@ -57,6 +61,7 @@ class BootstrapScreen(
     }
 
     private fun createPresentation() {
+        lastHudState = null
         val created = mutableListOf<() -> Unit>()
         try {
         batch = SpriteBatch().also { created += { it.dispose() } }
@@ -233,9 +238,8 @@ class BootstrapScreen(
         val closingGraphics = graphics; graphics = null
         listOf<() -> Unit>({ closingSession?.close() }, { closingGraphics?.close() }).forEach { cleanup ->
             try { cleanup() } catch (failure: Exception) {
+                evidence.recordFailure("cleanup-error", failure)
                 Gdx.app.error("p001-cleanup", "Cleanup failed", failure)
-                try { evidence.record("cleanup-error", mapOf("message" to failure.toString())) }
-                catch (diagnosticFailure: Exception) { Gdx.app.error("p001-cleanup", "Cannot record cleanup failure", diagnosticFailure) }
             }
         }
     }
@@ -245,7 +249,9 @@ class BootstrapScreen(
         pendingLoad = null
         loading = false
         loadError = failure.message ?: failure.toString()
-        evidence.record("load-error", mapOf("generation" to generation, "message" to loadError))
+        preserveFailure(failure) {
+            evidence.recordWhenEnabled("load-error") { mapOf("generation" to generation, "message" to loadError) }
+        }
         Gdx.app.error("p001-load", loadError, failure)
         updateHud()
     }
@@ -259,7 +265,7 @@ class BootstrapScreen(
             try {
                 pendingGraphics = SandboxGraphics.load(scenario, activeRoot)
                 val runGeneration = generation
-                pendingSession = SandboxSession(scenario, ClientEvidence { kind, values ->
+                pendingSession = SandboxSession(scenario, if (evidence === ClientEvidence.NONE) evidence else ClientEvidence { kind, values ->
                     evidence.record(kind, values + ("generation" to runGeneration))
                 }, request.configuration.options)
                 evidence.record("load-ready", mapOf("generation" to generation, "mapWidth" to scenario.map.widthTiles,
@@ -308,6 +314,10 @@ class BootstrapScreen(
         if (!presentationReady) return
         val current = session
         val selected = current?.observation?.units?.find { it.unitId == current.selectedId }
+        val state = HudState(selected, current?.selectedId, current?.feedback, current?.observation?.stepIndex,
+            launch.canEdit, loading, loadError, current != null)
+        if (state == lastHudState) return
+        lastHudState = state
         selectedLabel.setText(if (selected == null) "None" else String.format(Locale.ROOT,
             "%s / %s\n%s\n\n%s\nx %.1f   y %.1f\nheading %.1f\nspeed %.2f",
             selected.unitId, selected.ownerPlayerId,
@@ -352,9 +362,9 @@ class BootstrapScreen(
                 graphics = session?.let { SandboxGraphics.load(it.renderResources, activeRoot) }
                 updateHud()
             } catch (failure: Exception) {
-                leaveMatch()
-                releasePresentation()
-                failLoad(failure)
+                preserveFailure(failure) { leaveMatch() }
+                preserveFailure(failure) { releasePresentation() }
+                preserveFailure(failure) { failLoad(failure) }
                 throw failure
             }
         }
@@ -376,9 +386,8 @@ class BootstrapScreen(
         listOf<() -> Unit>({ closingGraphics?.close() }, { stage.dispose() }, { skin.dispose() },
             { shapes.dispose() }, { batch.dispose() }).forEach { cleanup ->
             try { cleanup() } catch (failure: Exception) {
+                evidence.recordFailure("cleanup-error", failure)
                 Gdx.app.error("p001-presentation", "Cleanup failed", failure)
-                try { evidence.record("cleanup-error", mapOf("message" to failure.toString())) }
-                catch (diagnostic: Exception) { Gdx.app.error("p001-presentation", "Cannot record cleanup failure", diagnostic) }
             }
         }
         evidence.record("presentation-released", emptyMap())

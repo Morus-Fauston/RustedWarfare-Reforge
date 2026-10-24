@@ -31,9 +31,12 @@ class PlayerTerrainKnowledge private constructor(
     val width: Int,
     val height: Int,
     val rules: KnowledgeRules,
+    initialCells: List<CellKnowledge>,
+    initialRevision: Long = 0L,
 ) {
-    private var cells: List<CellKnowledge> = List(width * height) { CellKnowledge(false,null) }
-    private var revision=0L
+    private var cells: List<CellKnowledge> = initialCells
+    private var revision=initialRevision
+    private var cachedSnapshot: KnowledgeSnapshot? = null
     private var closed=false
 
     companion object {
@@ -41,7 +44,8 @@ class PlayerTerrainKnowledge private constructor(
             if(width<=0 || height<=0 || width.toLong()*height>Int.MAX_VALUE) throw KnowledgeException("invalid-dimensions", "Positive dimensions with product within Int are required")
             if(playerId.isBlank()) throw KnowledgeException("invalid-player", "Player ID must not be blank")
             if(rules.retention==TerrainRetention.HARDCORE_FORGET && rules.pathSource!=PathInformationSource.PLAYER_KNOWLEDGE) throw KnowledgeException("incompatible-rules", "Hardcore forgetting requires player knowledge path information")
-            return PlayerTerrainKnowledge(world,playerId,width,height,rules)
+            return PlayerTerrainKnowledge(world,playerId,width,height,rules,
+                List(width * height) { CellKnowledge(false,null) })
         }
     }
 
@@ -59,18 +63,19 @@ class PlayerTerrainKnowledge private constructor(
         for(cell in projection) next[cell.row*width+cell.column]=CellKnowledge(true,cell.blocked,cell.groundGid)
         cells=next
         revision++
+        cachedSnapshot=null
     }
 
     fun snapshot(world: WorldHandle): KnowledgeSnapshot {
         checkAccess(world)
-        return KnowledgeSnapshot(this.world.id,playerId,width,height,revision,cells)
+        return cachedSnapshot ?: KnowledgeSnapshot(this.world.id,playerId,width,height,revision,cells)
+            .also { cachedSnapshot=it }
     }
 
     internal fun projected(world: WorldHandle, visibleTerrain: List<VisibleTerrainCell>): PlayerTerrainKnowledge {
         checkAccess(world)
-        val next = PlayerTerrainKnowledge(this.world, playerId, width, height, rules)
-        next.cells = cells
-        next.revision = revision
+        // accept replaces the list atomically; neither this store nor the projection mutates it.
+        val next = PlayerTerrainKnowledge(this.world, playerId, width, height, rules, cells, revision)
         next.accept(world, visibleTerrain)
         return next
     }
@@ -79,6 +84,7 @@ class PlayerTerrainKnowledge private constructor(
         if(closed) return
         closed=true
         cells=emptyList()
+        cachedSnapshot=null
     }
 
     private fun checkAccess(world: WorldHandle) {

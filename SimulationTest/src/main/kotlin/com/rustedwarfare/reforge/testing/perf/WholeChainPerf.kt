@@ -33,6 +33,53 @@ object WholeChainPerf {
     const val HEIGHT = 40
     const val OFFSET = 200.0
 
+    /** Fixed independent truth geometry, prepared once per online or offline qualification. */
+    private class StepOracle(val fixture: WholeChainFixture) {
+        private val map = fixture.scenario.map
+        val truth = (0 until map.widthTiles * map.heightTiles)
+            .filter { map.blocking.isBlocked(it % map.widthTiles, it / map.widthTiles) }
+            .map { intArrayOf(it % map.widthTiles, it / map.widthTiles) }
+    }
+
+    /** Per-step memoization of this tool's own exact predicate, never production geometry. */
+    private class StepGeometry(private val map: MapDefinition, private val truth: List<IntArray>,
+                               private val known: List<IntArray>) {
+        private val truthResults = HashMap<List<Position>, Boolean>()
+        private val knownResults = HashMap<List<Position>, Boolean>()
+        fun allows(points: List<Position>, walls: List<IntArray>): Boolean {
+            check(walls === truth || walls === known)
+            val results = if (walls === truth) truthResults else knownResults
+            return results.getOrPut(points.toList()) {
+                MotionCenterGeometry.centerPath(points, walls, map.widthTiles, map.heightTiles, 20, 20, 11.0)
+            }
+        }
+    }
+
+    /** Same List contracts and values, without retaining two reference arrays for every step. */
+    private class TerrainColumns(cells: List<CellKnowledge>) {
+        private val values = ByteArray(cells.size) { index ->
+            val cell = cells[index]
+            ((when (cell.lastKnownBlocked) { null -> 0; false -> 1; true -> 2 }) or
+                if (cell.visible) 4 else 0).toByte()
+        }
+        val known: List<Boolean?> = object : AbstractList<Boolean?>(), java.util.RandomAccess {
+            override val size: Int get() = values.size
+            override fun get(index: Int): Boolean? = when (values[index].toInt() and 3) {
+                0 -> null; 1 -> false; else -> true
+            }
+        }
+        val visible: List<Boolean> = object : AbstractList<Boolean>(), java.util.RandomAccess {
+            override val size: Int get() = values.size
+            override fun get(index: Int): Boolean = values[index].toInt() and 4 != 0
+        }
+    }
+
+    private fun unitIndex(units: List<UnitObservation>): Map<String, UnitObservation> {
+        val index = HashMap<String, UnitObservation>(units.size)
+        for (unit in units) check(index.put(unit.unitId, unit) == null) { "Duplicate unit ID ${unit.unitId}" }
+        return index
+    }
+
     fun fixture(kind: String, count: Int, retention: TerrainRetention): WholeChainFixture {
         require(kind in KINDS && count in listOf(1, 10, 50))
         val base = AutomaticVisionPerf.hiddenDiscoveryFixture(retention).scenario
@@ -83,6 +130,7 @@ object WholeChainPerf {
             val submitNanos = System.nanoTime() - submitStart
             check(context.drainPathDiagnostics(context.world).isEmpty()) { "Search ran at submit" }
             var previous = initial; var knownBefore = initialKnown
+            val oracle = StepOracle(f)
             val nearTimes = mutableMapOf<String,Double>()
             var firstResponseNanos = 0L
             for (step in 0 until MAX_STEPS) {
@@ -95,7 +143,8 @@ object WholeChainPerf {
                 val sampleStart = System.nanoTime()
                 val samples = context.drainPathDiagnostics(context.world)
                 val knowledge = context.knowledgeSnapshot(context.world, "p1").cells
-                val known = knowledge.map { it.lastKnownBlocked }; val visible = knowledge.map { it.visible }
+                val columns = TerrainColumns(knowledge)
+                val known = columns.known; val visible = columns.visible
                 val heap = Runtime.getRuntime().let { it.totalMemory() - it.freeMemory() }
                 val sampleNanos = System.nanoTime() - sampleStart
                 val rowStart = System.nanoTime()
@@ -109,11 +158,13 @@ object WholeChainPerf {
                 })
                 val traceNanos = System.nanoTime() - rowStart
                 val verifyStart = System.nanoTime()
-                verifyStep(f, previous, knownBefore, observed, known, visible, samples, step, nearTimes)
+                verifyStep(oracle, previous, knownBefore, observed, known, visible, samples, step, nearTimes)
+                val previousById = unitIndex(previous.units)
+                val searchedIds = samples.mapTo(HashSet()) { it.unitId }
                 for (unit in observed.units) {
-                    val before = previous.units.single { it.unitId == unit.unitId }
+                    val before = previousById.getValue(unit.unitId)
                     if (unit.position != before.position) moved += unit.unitId
-                    if (before.moveTarget != null && samples.none { it.unitId == unit.unitId } && unit.moveTarget != null) reuse++
+                    if (before.moveTarget != null && unit.unitId !in searchedIds && unit.moveTarget != null) reuse++
                 }
                 observed.events.filter { it.kind == "movement-arrived" }.mapNotNullTo(arrived) { it.unitId }
                 observed.events.filter { it.kind == "path-unreachable" }.mapNotNullTo(cancelled) { it.unitId }
@@ -150,9 +201,10 @@ object WholeChainPerf {
         check(run.searches.filter { it.reason == PathSearchReason.USER_MOVE }.map { it.unitId }.toSet() == f.goals.keys)
         check(run.searches.count { it.reason == PathSearchReason.USER_MOVE } == f.count) { "Idle entities counted as load" }
         var previous = run.initial; var known = run.initialKnown
+        val oracle = StepOracle(f)
         val nearTimes = mutableMapOf<String,Double>()
         for (step in run.steps) {
-            verifyStep(f, previous, known, step.observation, step.known, step.visible, step.samples, step.step, nearTimes)
+            verifyStep(oracle, previous, known, step.observation, step.known, step.visible, step.samples, step.step, nearTimes)
             previous = step.observation; known = step.known
         }
         val terminal = run.steps.takeLast(TAIL + 1)
@@ -172,11 +224,15 @@ object WholeChainPerf {
         }
     }
 
-    private fun verifyStep(f: WholeChainFixture, previous: Observation, before: List<Boolean?>,
+    private fun verifyStep(oracle: StepOracle, previous: Observation, before: List<Boolean?>,
         observed: Observation, known: List<Boolean?>, visible: List<Boolean>, samples: List<PathSearchSample>, step: Int,
         nearTimes: MutableMap<String,Double>) {
+        val f = oracle.fixture
         check(observed.worldId == previous.worldId && observed.scenarioId == f.scenario.scenarioId && observed.stepIndex == step.toLong() && observed.simulationTime == step + 1.0) { "Observation identity/time" }
         check(observed.units.size == f.count && observed.units.map { it.unitId }.toSet() == f.goals.keys)
+        val previousById = unitIndex(previous.units)
+        check(previousById.keys == f.goals.keys) { "Previous unit IDs differ" }
+        val samplesByUnit = samples.groupBy { it.unitId }
         val map = f.scenario.map; val width = map.widthTiles; val height = map.heightTiles
         check(known.size == width * height && visible.size == width * height)
         if (step == 0) {
@@ -184,13 +240,15 @@ object WholeChainPerf {
             check(observed.actionResults.size == f.count && observed.actionResults.all { it is ActionResult.Accepted }) { "Actual accepted request count differs" }
             check(observed.actionResults.map { it.actionId }.toSet() == f.goals.keys.map { "s08-$it" }.toSet()) { "Wrong submitted action identity" }
         } else check(observed.actionResults.isEmpty()) { "Unexpected later user request" }
-        val truth = (0 until width * height).filter { map.blocking.isBlocked(it % width, it / width) }.map { intArrayOf(it % width, it / width) }
+        val truth = oracle.truth
         val knownWalls = before.indices.filter { before[it] == true }.map { intArrayOf(it % width, it / width) }
-        fun geometry(points: List<Position>, walls: List<IntArray>) = MotionCenterGeometry.centerPath(points, walls, width, height, 20, 20, 11.0)
+        val stepGeometry = StepGeometry(map, truth, knownWalls)
+        fun geometry(points: List<Position>, walls: List<IntArray>) = stepGeometry.allows(points, walls)
         val radius = f.scenario.unitDefinitions.getValue("tank").fogOfWarSightRange
+        val visionPositions = observed.units.map { it.position }.distinct()
         for (cell in 0 until width * height) {
-            val expectedVisible = observed.units.any { u ->
-                val dx = cell % width + .5 - u.position.x / 20; val dy = cell / width + .5 - u.position.y / 20
+            val expectedVisible = visionPositions.any { position ->
+                val dx = cell % width + .5 - position.x / 20; val dy = cell / width + .5 - position.y / 20
                 dx * dx + dy * dy <= radius * radius
             }
             check(visible[cell] == expectedVisible) { "Wrong automatic vision cell $cell" }
@@ -199,7 +257,7 @@ object WholeChainPerf {
             check(known[cell] == expected) { "Wrong retention cell $cell" }
         }
         for (u in observed.units) {
-            val old = previous.units.single { it.unitId == u.unitId }; val goal = f.goals.getValue(u.unitId)
+            val old = previousById.getValue(u.unitId); val goal = f.goals.getValue(u.unitId)
             check(u.ownerPlayerId == "p1" && u.typeId == "tank")
             if (step > 0 && old.moveTarget == null) check(u.moveTarget == null) { "Ended move resurrected" }
             check(u.heading.isFinite() && u.heading in 0.0..<360.0 && u.speed.isFinite() && u.speed in 0.0..1.1 && u.angularVelocity.isFinite())
@@ -244,19 +302,19 @@ object WholeChainPerf {
             check(s.unitId in f.goals && s.actionId == "s08-${s.unitId}" && s.scheduledStep == 0L && s.executionStep == step.toLong()) { "Search provenance" }
             check(s.actualSearchCalls == 1L && s.usedPlayerKnowledge && s.outcome != PathSearchOutcome.FAILED)
             check(s.searchStart != null && s.searchTarget != null && geometry(listOfNotNull(s.searchStart), knownWalls)) { "Search source illegal" }
-            check(s.searchTarget == f.goals[s.unitId] || (s.reason == PathSearchReason.ROUTE_REPAIR && s.searchTarget in previous.units.single { it.unitId == s.unitId }.pathPoints)) { "Search target differs" }
+            check(s.searchTarget == f.goals[s.unitId] || (s.reason == PathSearchReason.ROUTE_REPAIR && s.searchTarget in previousById.getValue(s.unitId).pathPoints)) { "Search target differs" }
             check((s.outcome == PathSearchOutcome.FOUND) == (s.pathPointCount > 0))
             if (s.reason == PathSearchReason.USER_MOVE) check(step == 0 && s.searchStart == f.scenario.units.single { it.unitId == s.unitId }.position)
             if (s.reason == PathSearchReason.KNOWLEDGE_REPLAN) check(step > 0)
         }
-        for (u in observed.units) qualifyAnchors(previous.units.single { it.unitId == u.unitId }, u,
-            f.goals.getValue(u.unitId), samples.filter { it.unitId == u.unitId }, knownWalls, step, map)
+        for (u in observed.units) qualifyAnchors(previousById.getValue(u.unitId), u,
+            f.goals.getValue(u.unitId), samplesByUnit[u.unitId].orEmpty(), step) { geometry(it, knownWalls) }
     }
 
     /** Same fixed-fixture pre-movement prefix/fallback contract as AutomaticVisionPerf. */
     private fun qualifyAnchors(old: UnitObservation, current: UnitObservation, goal: Position,
-        samples: List<PathSearchSample>, walls: List<IntArray>, step: Int, map: MapDefinition) {
-        fun safe(a: Position, b: Position) = MotionCenterGeometry.centerPath(listOf(a, b), walls, map.widthTiles, map.heightTiles, 20, 20, 11.0)
+        samples: List<PathSearchSample>, step: Int, geometry: (List<Position>) -> Boolean) {
+        fun safe(a: Position, b: Position) = geometry(listOf(a, b))
         val prefix = mutableListOf<Position>(); var from = old.position
         for (point in old.pathPoints) { if (!safe(from, point)) break; prefix += point; from = point }
         val needsRepair = old.pathPoints.isNotEmpty() && !safe(old.position, old.pathPoints.first())
@@ -292,32 +350,33 @@ object WholeChainPerf {
 
     fun stats(values: List<Long>) = buildJsonObject {
         put("n", values.size)
-        for ((name, q) in listOf("p50" to .5, "p95" to .95)) put(name, if (values.isEmpty()) JsonNull else JsonPrimitive(PathPerfBatch.nearestRank(values, q)))
+        for ((name, q) in listOf("p50" to .5, "p95" to .95)) put(name, if (values.isEmpty()) JsonNull else JsonPrimitive(DeterministicStatistics.nearestRank(values, q)))
         put("max", values.maxOrNull()?.let(::JsonPrimitive) ?: JsonNull)
     }
     fun summary(r: WholeChainRun) = buildJsonObject {
+        val searches = r.searches
         put("case", r.fixture.kind); put("count", r.fixture.count); put("retention", r.fixture.retention.name); put("fullTrace", r.fullTrace)
         put("geometryScope","fixed low-speed final center/D-083; owner half-open planning/anchors; no full C writeback claim")
         put("fullTerrainWritebackQualified",false)
         put("privateLocalRepairTriggerScope","local-trigger-not-observed; actual source/action/goal/outcome remain checked")
-        put("requests", r.requests); put("actualSearchCalls", r.searches.sumOf { it.actualSearchCalls })
-        put("userSearches", r.searches.count { it.reason == PathSearchReason.USER_MOVE })
-        put("knowledgeReplans", r.searches.count { it.reason == PathSearchReason.KNOWLEDGE_REPLAN }); put("routeRepairs", r.searches.count { it.reason == PathSearchReason.ROUTE_REPAIR })
-        put("preservedPrefixSearches", r.searches.count { it.preservedPrefixPointCount > 0 }); put("preservedPrefixPoints", r.searches.sumOf { it.preservedPrefixPointCount }); put("reuseEntitySteps", r.reuseEntitySteps)
+        put("requests", r.requests); put("actualSearchCalls", searches.sumOf { it.actualSearchCalls })
+        put("userSearches", searches.count { it.reason == PathSearchReason.USER_MOVE })
+        put("knowledgeReplans", searches.count { it.reason == PathSearchReason.KNOWLEDGE_REPLAN }); put("routeRepairs", searches.count { it.reason == PathSearchReason.ROUTE_REPAIR })
+        put("preservedPrefixSearches", searches.count { it.preservedPrefixPointCount > 0 }); put("preservedPrefixPoints", searches.sumOf { it.preservedPrefixPointCount }); put("reuseEntitySteps", r.reuseEntitySteps)
         put("arrived", r.arrived.size); put("unreachable", r.cancelled.size); put("moved", r.moved.size)
         val lost = r.steps.zipWithNext().flatMap { (a, b) -> a.visible.indices.filter { a.visible[it] && !b.visible[it] }.map { b.known[it] } }
         put("lostSightCellTransitions", lost.size); put("retainedLostCellTransitions", lost.count { it != null }); put("forgottenCellTransitions", lost.count { it == null })
         put("gameplaySha256", gameplaySha256(r))
         put("initNanos", r.initNanos); put("submitNanos", r.submitNanos); put("batchNanos", r.wallNanos)
-        put("advanceNanos", stats(r.steps.map { it.advanceNanos })); put("singleSearchNanos", stats(r.searches.map { it.searchNanos }))
-        put("inputPreparationNanos", stats(r.searches.map { it.inputPreparationNanos })); put("lightSampleNanos", stats(r.steps.map { it.sampleNanos }))
+        put("advanceNanos", stats(r.steps.map { it.advanceNanos })); put("singleSearchNanos", stats(searches.map { it.searchNanos }))
+        put("inputPreparationNanos", stats(searches.map { it.inputPreparationNanos })); put("lightSampleNanos", stats(r.steps.map { it.sampleNanos }))
         put("traceNanos", stats(r.steps.map { it.traceNanos })); put("verifyNanos", stats(r.steps.map { it.verifyNanos }))
         put("boundarySearchCallsPeak", r.steps.maxOf { s -> s.samples.sumOf { it.actualSearchCalls } }); put("boundarySearchNanosPeak", r.steps.maxOf { s -> s.samples.sumOf { it.searchNanos } })
         put("submitToFirstAdvanceReturnNanosUpperBound", r.firstResponseNanos)
         put("scheduledWaitSteps", 0); put("queueWaitNanos", JsonNull); put("queueWaitReason", "synchronous same-boundary execution; no worker queue")
         put("counters", buildJsonObject {
-            put("candidatesChecked", r.searches.sumOf { it.candidatesChecked }); put("popped", r.searches.sumOf { it.popped }); put("expanded", r.searches.sumOf { it.expanded })
-            put("enqueued", r.searches.sumOf { it.enqueued }); put("neighborsChecked", r.searches.sumOf { it.neighborsChecked }); put("heuristicCalls", r.searches.sumOf { it.heuristicCalls })
+            put("candidatesChecked", searches.sumOf { it.candidatesChecked }); put("popped", searches.sumOf { it.popped }); put("expanded", searches.sumOf { it.expanded })
+            put("enqueued", searches.sumOf { it.enqueued }); put("neighborsChecked", searches.sumOf { it.neighborsChecked }); put("heuristicCalls", searches.sumOf { it.heuristicCalls })
         }); put("memory", r.memory)
     }
     private fun gc(): Pair<Long, Long> = ManagementFactory.getGarbageCollectorMXBeans().let { beans ->

@@ -60,7 +60,8 @@ class MotionV2SourceAdmissionTest {
         val input=temp.resolve("control.json")
         Files.writeString(input,obj("wrapper" to ref(f.wrapper),"campaign" to ref(f.campaign),"request" to f.request,"graph" to ref(graph),
             "java" to ref(Path.of(System.getProperty("java.home")).resolve("bin/java.exe")),"jars" to array(jars)).toString())
-        val child=ProcessBuilder("python","-B",evidence.resolve("test_original_preparation_v1.py").toString(),input.toString())
+        val child=ProcessBuilder("python","-B",root.resolve("SimulationTest/tools/test_original_preparation_v2.py").toString(),
+            input.toString(),evidence.toString(),temp.resolve("control-evidence").toString())
             .redirectOutput(temp.resolve("stdout").toFile()).redirectError(temp.resolve("stderr").toFile()).start()
         try { assertTrue(child.waitFor(210,java.util.concurrent.TimeUnit.SECONDS),"finite original preparation controls timed out") }
         finally { if(child.isAlive) {

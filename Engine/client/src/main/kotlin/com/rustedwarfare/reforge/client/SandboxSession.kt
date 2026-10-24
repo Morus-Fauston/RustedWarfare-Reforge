@@ -10,7 +10,8 @@ class SandboxSession(scenario: Scenario, private val evidence: ClientEvidence = 
         is InitResult.Accepted -> initialized.context
         is InitResult.Rejected -> error("${initialized.error.code}: ${initialized.error.message}")
     }
-    private var latestFrame: SandboxFrame? = makeFrame()
+    private var terrainKnowledge: List<com.rustedwarfare.reforge.core.knowledge.CellKnowledge>? = null
+    private var latestFrame: SandboxFrame? = null
     val frame: SandboxFrame get() = checkNotNull(latestFrame) { "Match is closed" }
     val observation: PlayerObservation get() = frame.observation
     var selectedId: String? = null
@@ -24,7 +25,7 @@ class SandboxSession(scenario: Scenario, private val evidence: ClientEvidence = 
         private set
 
     init {
-        try { capture("initial") }
+        try { latestFrame = makeFrame(); capture("initial") }
         catch (failure: Exception) { context.close(); isOpen = false; throw failure }
     }
 
@@ -46,7 +47,7 @@ class SandboxSession(scenario: Scenario, private val evidence: ClientEvidence = 
         selectedId = unitAt(position)
         selectedId?.let { apply(SelectAction("click-${++actionNumber}", "p1", it, context.world)) }
         feedback = selectedId?.let { "Selected $it" } ?: "No selection"
-        evidence.record("selection", mapOf("selectedId" to selectedId, "world" to position.fields()))
+        evidence.recordWhenEnabled("selection") { mapOf("selectedId" to selectedId, "world" to position.fields()) }
     }
 
     fun tap(position: Position) {
@@ -68,19 +69,23 @@ class SandboxSession(scenario: Scenario, private val evidence: ClientEvidence = 
             is ActionResult.Rejected -> result.error.code
             is ActionResult.Accepted -> result.events.lastOrNull()?.kind ?: "Accepted"
         }
-        evidence.record("action", mapOf("type" to action.javaClass.simpleName,
+        evidence.recordWhenEnabled("action") { mapOf("type" to action.javaClass.simpleName,
             "actorPlayerId" to action.actorPlayerId, "unitId" to action.unitId,
-            "target" to (action as? MoveAction)?.target?.fields(), "result" to result.fields()))
+            "target" to (action as? MoveAction)?.target?.fields(), "result" to result.fields()) }
         capture("after-action")
         return result
     }
 
-    private fun capture(phase: String) { evidence.record("observation", mapOf("phase" to phase, "sample" to observation.fields())) }
+    private fun capture(phase: String) {
+        evidence.recordWhenEnabled("observation") { mapOf("phase" to phase, "sample" to observation.fields()) }
+    }
 
     private fun makeFrame(): SandboxFrame {
         val view = context.observePlayer(context.world, "p1")
         val map = scenario.map
         val knowledge = view.knowledge
+        val previous = latestFrame
+        if (previous != null && knowledge?.cells == terrainKnowledge) return previous.withObservation(view)
         // NoFog alone explicitly authorizes the local host's entire ground layout.
         val ground = if (knowledge == null) map.groundGids else null
         val terrain = List(map.widthTiles * map.heightTiles) { index ->
@@ -90,6 +95,7 @@ class SandboxSession(scenario: Scenario, private val evidence: ClientEvidence = 
             TerrainFrameCell(column, row, if (cell == null) checkNotNull(ground)[index] else cell.lastKnownGroundGid,
                 cell?.visible ?: true)
         }
+        terrainKnowledge = knowledge?.cells
         return SandboxFrame(view, terrain)
     }
 
@@ -109,6 +115,7 @@ class SandboxSession(scenario: Scenario, private val evidence: ClientEvidence = 
             isOpen = false
             selectedId = null
             latestFrame = null
+            terrainKnowledge = null
             feedback = "Match closed"
         }
         evidence.record("closed", emptyMap())

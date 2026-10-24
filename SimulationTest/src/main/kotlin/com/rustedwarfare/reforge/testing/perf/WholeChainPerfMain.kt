@@ -89,7 +89,7 @@ object WholeChainPerfMain {
             write("completion.json", buildJsonObject { put("complete", true); put("mode", mode); put("batches", summaries.size); put("finalPerformanceVerdict", "not-evaluated") })
             println(output)
         } catch (failure: Throwable) {
-            output?.let { Files.writeString(it.resolve("failure.txt"), failure.stackTraceToString(), StandardOpenOption.CREATE_NEW) }
+            preserveFailure(failure) { output?.let { Files.writeString(it.resolve("failure.txt"), failure.stackTraceToString(), StandardOpenOption.CREATE_NEW) } }
             System.err.println(failure.stackTraceToString()); exitProcess(if (failure is IllegalArgumentException) 64 else 4)
         }
     }

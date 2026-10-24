@@ -167,6 +167,23 @@ internal data class MutableUnit(
             ?: LocalMotionSegment.create(position, first, definition.movement).also { localMotion = it; localProgressTime = 0.0 }
     }
 
+    /** End the command while preserving linear/angular speed for the existing coasting rule. */
+    fun cancelRoute() {
+        moveTarget = null
+        pathPoints.clear()
+        clearMoveOrigin()
+        movementState = if (speed != 0.0) MovementState.DECELERATING else MovementState.IDLE
+    }
+
+    /** Replanning and repair preserve command identity, completion time and terrain history. */
+    fun adoptRoute(points: List<Position>, knowledgeRevision: Long) {
+        pathPoints = points.toMutableList()
+        localMotion = null
+        localProgressTime = 0.0
+        lastPlannedKnowledgeRevision = knowledgeRevision
+        movementState = MovementState.MOVING
+    }
+
     fun clearMoveOrigin() {
         originMoveId = null
         originAtStep = null

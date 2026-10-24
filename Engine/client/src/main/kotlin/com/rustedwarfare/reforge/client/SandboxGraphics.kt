@@ -55,7 +55,17 @@ class SandboxGraphics private constructor(private val resources: SandboxRenderRe
         } finally { pixmap.dispose() }
     }
 
-    private fun loadImages(root: Path) {
+    private fun loadParsedTiles() {
+        for (definition in resources.tileSets) {
+            val texture = texture(definition.imagePath, definition.transparentColor)
+            for (index in 0 until definition.tileCount) tiles[definition.firstGid + index] = TextureRegion(texture,
+                definition.margin + index % definition.columns * (definition.tileWidth + definition.spacing),
+                definition.margin + index / definition.columns * (definition.tileHeight + definition.spacing),
+                definition.tileWidth, definition.tileHeight)
+        }
+    }
+
+    private fun loadLegacyTiles(root: Path) {
         val mapFile = root.resolve("maps/p001-controlled.tmx")
         val mapXml = XmlReader().parse(Gdx.files.absolute(mapFile.toString()))
         for (reference in mapXml.getChildrenByName("tileset")) {
@@ -78,6 +88,13 @@ class SandboxGraphics private constructor(private val resources: SandboxRenderRe
             for (index in 0 until count) tiles[firstGid + index] = TextureRegion(texture,
                 margin + index % columns * (w + spacing), margin + index / columns * (h + spacing), w, h)
         }
+    }
+
+    private fun loadImages(root: Path) {
+        // Parsed content carries its immutable atlas layout across initial load and GL recovery.
+        // Retain the legacy constructor's unspecified-layout behavior for existing callers.
+        if (resources.tileSets.all { it.columns > 0 && it.tileCount != Int.MAX_VALUE }) loadParsedTiles()
+        else loadLegacyTiles(root)
         for ((id, definition) in resources.units) {
             val texture = texture(definition.imagePath)
             require(texture.width % definition.totalFrames == 0) { "Invalid unit image frames: ${definition.imagePath}" }

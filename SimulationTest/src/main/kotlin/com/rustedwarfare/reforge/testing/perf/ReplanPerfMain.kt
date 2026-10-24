@@ -116,7 +116,7 @@ object ReplanPerfMain {
             })
             println(output)
         } catch (error: Throwable) {
-            output?.let { Files.writeString(it.resolve("failure.txt"), error.stackTraceToString(), StandardOpenOption.CREATE_NEW) }
+            preserveFailure(error) { output?.let { Files.writeString(it.resolve("failure.txt"), error.stackTraceToString(), StandardOpenOption.CREATE_NEW) } }
             System.err.println(error.stackTraceToString())
             exitProcess(if (error is IllegalArgumentException) 64 else 4)
         }

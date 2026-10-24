@@ -118,6 +118,18 @@ public final class GbootStateIoTest {
             check(primary.getSuppressed().length == 2, "both exact secondary failures attached");
             check(primary.getSuppressed()[0] == wrapper.error && primary.getSuppressed()[1] == raw.error,
                   "body primary object contains ordered original causes");
+        } else if (scenario.equals("prior-fatal-healthy-close")) {
+            com.rustedwarfare.reforge.reference.io.FatalLatch.Failure first = failure("state-decode-failed",
+                () -> GbootBootstrap.requireStateDecoded(false));
+            Path path = Files.createTempFile(directory, "prior-healthy-", ".bin");
+            FileInputStream input = new FileInputStream(path.toFile());
+            GbootBootstrap.closeStateInput(input, null);
+            check(!input.getChannel().isOpen(), "state healthy close returns despite prior fatal");
+            FileOutputStream raw = new FileOutputStream(path.toFile());
+            GbootBootstrap.closeStateOutput(new DataOutputStream(raw), raw, null);
+            check(!raw.getChannel().isOpen(), "state output healthy close returns despite prior fatal");
+            check(failure("state-decode-failed", () -> GbootBootstrap.requireStateEncoded(true)) == first,
+                "healthy state cleanup preserves the prior fatal object");
         } else if (scenario.equals("prior-fatal-cleanup")) {
             com.rustedwarfare.reforge.reference.io.FatalLatch.Failure first = failure("state-decode-failed",
                 () -> GbootBootstrap.requireStateDecoded(false));

@@ -28,6 +28,7 @@ import java.util.Locale;
 /** Controlled static-patch bootstrap. Context behavior requires a later real APP probe. */
 public final class GbootBootstrap {
     private static final FatalLatch LATCH = new FatalLatch();
+    private static final GbootOwnedStreams STREAMS = new GbootOwnedStreams(LATCH);
     private static Context application;
     private static Path filesRoot;
     private static Path root;
@@ -576,43 +577,15 @@ public final class GbootBootstrap {
     public static PrintWriter openPreferencesWriter() {
         LATCH.check();
         requireRootsReady();
-        try {
-            Path canonical = io.privateFile(directories[2].resolve("preferences.ini").toString(), PrivatePathPolicy.Access.WRITE);
-            return new PrintWriter(canonical.toFile());
-        } catch (IOException | SecurityException error) {
-            throw LATCH.trip("io-error", "Cannot open preferences writer", error);
-        }
+        return STREAMS.openPreferencesWriter(io, directories[2]);
     }
 
     public static void requirePreferencesWriterOk(PrintWriter writer) {
-        LATCH.check();
-        if (writer == null) throw LATCH.trip("invalid-path", "An owned preferences writer is required", null);
-        if (writer.checkError())
-            throw LATCH.trip("preferences-write-failed", "Preferences writer reported an error", null);
+        STREAMS.requirePreferencesWriterOk(writer);
     }
 
     public static void closePreferencesWriter(PrintWriter writer, Throwable primary) {
-        // Cleanup must release before consulting an already-tripped session latch.
-        RuntimeException closeError = null;
-        boolean trouble = false;
-        if (writer != null) {
-            try { writer.close(); }
-            catch (RuntimeException error) { closeError = error; }
-            try { trouble = writer.checkError(); }
-            catch (RuntimeException error) {
-                if (closeError == null) closeError = error;
-                else if (closeError != error) closeError.addSuppressed(error);
-            }
-        }
-        FatalLatch.Failure failure = null;
-        if (closeError != null) failure = LATCH.trip("io-error", "Cannot close preferences writer", closeError);
-        else if (trouble) failure = LATCH.trip("preferences-write-failed", "Preferences writer reported a close error", null);
-        if (primary != null) {
-            Throwable secondary = closeError != null ? closeError : failure;
-            if (secondary != null && secondary != primary) primary.addSuppressed(secondary);
-            return;
-        }
-        LATCH.check();
+        STREAMS.closePreferencesWriter(writer, primary);
     }
 
     public static String unitsRoot() {
@@ -630,33 +603,13 @@ public final class GbootBootstrap {
     public static FileInputStream openStateInput() {
         LATCH.check();
         requireRootsReady();
-        Path fixed = directories[2].resolve("rtsSave");
-        try {
-            Path canonical = io.privateFile(fixed.toString(), PrivatePathPolicy.Access.EXISTS);
-            try {
-                Files.readAttributes(canonical, BasicFileAttributes.class, LinkOption.NOFOLLOW_LINKS);
-            } catch (NoSuchFileException missing) {
-                // Recheck the already-existing parent: only a missing legal leaf is an empty state.
-                io.existingDirectory(directories[2].toString());
-                return null;
-            }
-            Path readable = io.privateFile(canonical.toString(), PrivatePathPolicy.Access.READ);
-            return new FileInputStream(readable.toFile());
-        } catch (IOException | SecurityException error) {
-            throw LATCH.trip("io-error", "Cannot open private state input", error);
-        }
+        return STREAMS.openStateInput(io, directories[2]);
     }
 
     public static FileOutputStream openStateOutput() {
         LATCH.check();
         requireRootsReady();
-        try {
-            Path writable = io.privateFile(directories[2].resolve("rtsSave").toString(),
-                    PrivatePathPolicy.Access.WRITE);
-            return new FileOutputStream(writable.toFile(), false);
-        } catch (IOException | SecurityException error) {
-            throw LATCH.trip("io-error", "Cannot open private state output", error);
-        }
+        return STREAMS.openStateOutput(io, directories[2]);
     }
 
     public static File createPrivateTempFile(String prefix, String suffix) throws IOException {
@@ -678,33 +631,19 @@ public final class GbootBootstrap {
     }
 
     public static void requireStateDecoded(boolean accepted) {
-        LATCH.check();
-        if (!accepted) throw LATCH.trip("state-decode-failed", "Original state decoder rejected input", null);
+        STREAMS.requireStateDecoded(accepted);
     }
 
     public static void requireStateEncoded(boolean accepted) {
-        LATCH.check();
-        if (!accepted) throw LATCH.trip("state-encode-failed", "Original state encoder rejected output", null);
+        STREAMS.requireStateEncoded(accepted);
     }
 
     public static void closeStateInput(FileInputStream input, Throwable primary) {
-        IOException failure = null;
-        try { if (input != null) input.close(); }
-        catch (IOException error) { failure = error; }
-        if (failure != null) finishStateClose(primary, failure, null);
+        STREAMS.closeStateInput(input, primary);
     }
 
     public static void closeStateOutput(DataOutputStream output, FileOutputStream raw, Throwable primary) {
-        IOException first = null;
-        IOException second = null;
-        try { if (output != null) output.close(); }
-        catch (IOException error) { first = error; }
-        try { if (raw != null) raw.close(); }
-        catch (IOException error) {
-            if (first == null) first = error;
-            else second = error;
-        }
-        if (first != null) finishStateClose(primary, first, second);
+        STREAMS.closeStateOutput(output, raw, primary);
     }
 
     public static void requireProviderAuthorityMetadata(String authority) {
@@ -846,17 +785,7 @@ public final class GbootBootstrap {
             throw LATCH.trip("invalid-path", "Invalid ordinary IO route", null);
     }
 
-    private static void finishStateClose(Throwable primary, IOException first, IOException second) {
-        // Cleanup deliberately has no latch/roots/backend gate.
-        FatalLatch.Failure failure = LATCH.trip("io-error", "Cannot close private state stream", first);
-        if (primary != null) {
-            if (primary != first) primary.addSuppressed(first);
-            if (second != null && primary != second) primary.addSuppressed(second);
-            return;
-        }
-        if (second != null) failure.addSuppressed(second);
-        throw failure;
-    }
+
 
 // Candidate members of GbootBootstrap, review only. Not a compiled Java source.
 // Uses checkLiteralPackagedName as frozen in spec.md; it never strips assets/.

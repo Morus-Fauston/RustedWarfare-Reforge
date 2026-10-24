@@ -11,15 +11,19 @@ import java.util.Properties
 /** Fixed private sandbox fixtures, not a general scenario-file interpreter. */
 object ControlledScenario {
     fun load(root: Path): Scenario {
+        checkCancellation()
         val map = when (val result = ContentLoader.loadMap(root.resolve("maps/p001-controlled.tmx"))) {
             is ContentResult.Success -> result.value
             is ContentResult.Failure -> error(result.error.describe())
         }
+        checkCancellation()
         val tank = when (val result = ContentLoader.loadUnitVariant(root.resolve("units/weaponless_tank.ini"))) {
             is ContentResult.Success -> result.value
             is ContentResult.Failure -> error(result.error.describe())
         }
+        checkCancellation()
         val manifest = readManifest(root)
+        checkCancellation()
         val players = if (manifest == null) listOf(Player("p1", PlayerControl.LOCAL), Player("p2", PlayerControl.NONE))
             else (1..3).map { index -> Player("p$index", if (index == 1) PlayerControl.LOCAL else PlayerControl.NONE,
                 manifest.getProperty("p$index.team")) }
@@ -35,6 +39,10 @@ object ControlledScenario {
             TimeModel("p001.time.v1", "sim-tick", "ieee754-binary64", "fixed-explicit-delta"),
             MovementContract(16.0, 4.0),
         )
+    }
+
+    private fun checkCancellation() {
+        if (Thread.currentThread().isInterrupted) throw java.io.InterruptedIOException("Sandbox content load cancelled")
     }
 
     private fun readManifest(root: Path): Properties? {

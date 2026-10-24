@@ -79,14 +79,23 @@ object TraceFiles {
                 if (!Files.isRegularFile(path) || sha256(path) != trace.text("sha256")) missing("Missing, truncated or changed trace: $path")
             }
             val raw = readLines(directory.resolve("reforge/raw.jsonl"))
-            val normalized = readLines(directory.resolve("reforge/normalized.jsonl"))
-            if (raw.size != normalized.size) missing("Raw/normalized line count mismatch")
-            raw.zip(normalized).forEachIndexed { index, (original, standard) ->
-                val canonical = normalizeRecord(original, index + 1,
-                    if (index == 0) null else scenario.objectAt("coordinateModel").id("id"),
-                    if (index == 0) null else scenario.objectAt("timeModel").id("id"))
-                if (canonical != standard) missing("Normalization does not preserve raw record ${index + 1}")
+            var normalizedCount = 0
+            var normalizationFailure: RuntimeException? = null
+            visitLines(directory.resolve("reforge/normalized.jsonl")) { index, standard ->
+                normalizedCount++
+                // Preserve the old precedence: parse all normalized rows, then check length,
+                // then report the first normalization error. Never retain its full JSON tree.
+                if (index < raw.size && normalizationFailure == null) {
+                    try {
+                        val canonical = normalizeRecord(raw[index], index + 1,
+                            if (index == 0) null else scenario.objectAt("coordinateModel").id("id"),
+                            if (index == 0) null else scenario.objectAt("timeModel").id("id"))
+                        if (canonical != standard) missing("Normalization does not preserve raw record ${index + 1}")
+                    } catch (failure: RuntimeException) { normalizationFailure = failure }
+                }
             }
+            if (raw.size != normalizedCount) missing("Raw/normalized line count mismatch")
+            normalizationFailure?.let { throw it }
             val end = raw.lastOrNull() ?: missing("Empty trace")
             if (end["kind"] != s("run-end")) missing("Missing run-end")
             if (raw.first()["runId"] != manifest["runId"] || raw.first()["startedAt"] != manifest["startedAt"]) missing("Trace/manifest start mismatch")
@@ -103,15 +112,38 @@ object TraceFiles {
         }
     }
 
-    private fun readLines(path: Path): List<JsonObject> = try {
-        val content = Files.readString(path)
-        if (content.isEmpty() || !content.endsWith("\n")) throw ArchiveFailure(3, "truncated-jsonl", "Missing final JSONL newline: $path")
-        content.lineSequence().toList().dropLast(1).mapIndexed { index, line ->
-            json.parseToJsonElement(line) as? JsonObject ?: throw IllegalArgumentException("Expected object at line ${index + 1}")
-        }
-    } catch (failure: IllegalArgumentException) {
-        throw ArchiveFailure(3, "truncated-or-malformed-jsonl", "$path: ${failure.message}")
+    private fun readLines(path: Path): List<JsonObject> = buildList {
+        visitLines(path) { _, row -> add(row) }
     }
+
+    private fun visitLines(path: Path, consume: (Int, JsonObject) -> Unit) {
+        try {
+            // Validate decoding and the final newline before parsing, as readString did.
+            // A bounded character buffer replaces the former whole-file String and line list.
+            var last = -1
+            Files.newBufferedReader(path).use { reader ->
+                val buffer = CharArray(8192)
+                while (true) {
+                    val count = reader.read(buffer)
+                    if (count < 0) break
+                    if (count > 0) last = buffer[count - 1].code
+                }
+            }
+            if (last != '\n'.code) throw ArchiveFailure(3, "truncated-jsonl", "Missing final JSONL newline: $path")
+            Files.newBufferedReader(path).use { reader ->
+                var index = 0
+                while (true) {
+                    val line = reader.readLine() ?: break
+                    val row = json.parseToJsonElement(line) as? JsonObject
+                        ?: throw IllegalArgumentException("Expected object at line ${index + 1}")
+                    consume(index++, row)
+                }
+            }
+        } catch (failure: IllegalArgumentException) {
+            throw ArchiveFailure(3, "truncated-or-malformed-jsonl", "$path: ${failure.message}")
+        }
+    }
+
 }
 
 private class ArchiveFailure(val code: Int, val category: String, message: String) : RuntimeException(message)

@@ -18,6 +18,10 @@ data class TerrainFrameCell(val column: Int, val row: Int, val gid: Int?, val vi
     val known: Boolean get() = gid != null
 }
 
-class SandboxFrame internal constructor(val observation: PlayerObservation, terrain: List<TerrainFrameCell>) {
-    val terrain: List<TerrainFrameCell> = Collections.unmodifiableList(ArrayList(terrain))
+class SandboxFrame private constructor(val observation: PlayerObservation, val terrain: List<TerrainFrameCell>,
+                                      @Suppress("UNUSED_PARAMETER") shared: Unit) {
+    internal constructor(observation: PlayerObservation, terrain: List<TerrainFrameCell>) :
+        this(observation, Collections.unmodifiableList(ArrayList(terrain)), Unit)
+
+    internal fun withObservation(observation: PlayerObservation): SandboxFrame = SandboxFrame(observation, terrain, Unit)
 }

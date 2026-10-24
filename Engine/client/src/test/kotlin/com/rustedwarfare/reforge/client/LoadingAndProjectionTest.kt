@@ -13,6 +13,33 @@ class LoadingAndProjectionTest {
         error("Loader did not complete within 5 seconds")
     }
 
+    @Test fun cancelled_interruptible_load_releases_the_single_worker_for_the_latest_request() {
+        val entered = java.util.concurrent.CountDownLatch(1)
+        val release = java.util.concurrent.CountDownLatch(1)
+        val next = java.util.concurrent.CountDownLatch(1)
+        var nextInterrupted = true
+        SandboxLoader { path ->
+            if (path.fileName.toString() == "blocked") {
+                entered.countDown()
+                release.await()
+                error("Stale failure must never publish")
+            }
+            nextInterrupted = Thread.currentThread().isInterrupted
+            next.countDown()
+            ControlledScenario.load(root)
+        }.use { loader ->
+            try {
+                loader.request(root.resolve("blocked"))
+                assertTrue(entered.await(2, java.util.concurrent.TimeUnit.SECONDS))
+                loader.request(root)
+                assertTrue(next.await(2, java.util.concurrent.TimeUnit.SECONDS), "Cancelled work still blocks the latest request")
+                assertFalse(nextInterrupted)
+                assertEquals("p001-windows", await(loader).getOrThrow().scenarioId)
+                assertNull(loader.poll())
+            } finally { release.countDown() }
+        }
+    }
+
     @Test fun `failed load identifies the file and a subsequent valid request succeeds`() {
         SandboxLoader().use { loader ->
             loader.request(root.resolve("missing"))

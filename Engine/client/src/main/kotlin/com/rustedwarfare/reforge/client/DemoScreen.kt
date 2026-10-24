@@ -43,6 +43,9 @@ class DemoScreen(private val evidence: ClientEvidence = ClientEvidence.NONE) : A
     private var disposed = false
     private var generation = 0
     private var lastSample = -1L
+    private var hudObservation: com.rustedwarfare.reforge.core.sim.Observation? = null
+    private var hudSelection: Set<String>? = null
+    private var hudFeedback: String? = null
     private var previousFrameStart = 0L
     private val frameSamples = mutableListOf<Map<String, Any?>>()
     private val mapX = 32f
@@ -106,8 +109,8 @@ class DemoScreen(private val evidence: ClientEvidence = ClientEvidence.NONE) : A
             resize(Gdx.graphics.width, Gdx.graphics.height)
             record("demo-ready")
         } catch (failure: Throwable) {
-            evidence.record("demo-failed", mapOf("message" to failure.toString()))
-            dispose()
+            evidence.recordFailure("demo-failed", failure)
+            preserveFailure(failure) { dispose() }
             throw failure
         }
     }
@@ -176,8 +179,9 @@ class DemoScreen(private val evidence: ClientEvidence = ClientEvidence.NONE) : A
         shapes.begin(ShapeRenderer.ShapeType.Line)
         shapes.color = Color(0.26f, 0.32f, 0.30f, 1f)
         shapes.rect(mapX, mapY, 1280f, 800f)
+        val selectedIds = session.selectedIds
         for (unit in session.observation.units) {
-            if (unit.unitId !in session.selectedIds) continue
+            if (unit.unitId !in selectedIds) continue
             shapes.color = Color(0.46f, 0.95f, 0.67f, 0.9f)
             shapes.circle(x(unit.position.x), y(unit.position.y), 10f, 20)
             if (showPaths) {
@@ -194,10 +198,15 @@ class DemoScreen(private val evidence: ClientEvidence = ClientEvidence.NONE) : A
         shapes.line(x(target.x) - 18, y(target.y), x(target.x) + 18, y(target.y))
         shapes.line(x(target.x), y(target.y) - 18, x(target.x), y(target.y) + 18)
         shapes.end()
-        val explored = remembered.count { it != 0 } * 100 / remembered.size
-        val moving = session.observation.units.count { it.speed > 0.0 }
-        status.setText("${session.selectedIds.size}/50 selected     $moving moving     $explored% explored     ${session.replans} replans     Step ${session.observation.stepIndex}")
-        feedback.setText(if (paused) "Paused" else session.feedback)
+        if (hudObservation !== session.observation || hudSelection != selectedIds) {
+            val explored = remembered.count { it != 0 } * 100 / remembered.size
+            val moving = session.observation.units.count { it.speed > 0.0 }
+            status.setText("${selectedIds.size}/50 selected     $moving moving     $explored% explored     ${session.replans} replans     Step ${session.observation.stepIndex}")
+            hudObservation = session.observation
+            hudSelection = selectedIds
+        }
+        val currentFeedback = if (paused) "Paused" else session.feedback
+        if (hudFeedback != currentFeedback) { feedback.setText(currentFeedback); hudFeedback = currentFeedback }
         stage.act(Gdx.graphics.deltaTime); stage.draw()
         if (frameStart != 0L) {
             frameSamples += mapOf("generation" to generation, "step" to session.observation.stepIndex,
@@ -221,6 +230,7 @@ class DemoScreen(private val evidence: ClientEvidence = ClientEvidence.NONE) : A
     private fun y(world: Double) = mapY + 800 - world.toFloat()
 
     private fun record(kind: String) {
+        if (evidence === ClientEvidence.NONE) return
         val knowledge = session.knowledge
         evidence.record(kind, mapOf("generation" to generation, "paused" to paused,
             "selected" to session.selectedIds.toList(), "replans" to session.replans,
@@ -283,9 +293,9 @@ class DemoScreen(private val evidence: ClientEvidence = ClientEvidence.NONE) : A
         if (::batch.isInitialized) cleanup += { batch.dispose() }
         cleanup.forEach { close ->
             try { close() } catch (failure: Exception) {
-                Gdx.app.error("demo-cleanup", "Cleanup failed", failure)
                 // A failing diagnostic sink must not prevent the remaining resources closing.
-                runCatching { evidence.record("cleanup-error", mapOf("message" to failure.toString())) }
+                evidence.recordFailure("cleanup-error", failure)
+                Gdx.app.error("demo-cleanup", "Cleanup failed", failure)
             }
         }
         evidence.record("demo-disposed", emptyMap())

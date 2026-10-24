@@ -7,6 +7,22 @@ import com.rustedwarfare.reforge.testing.MotionCenterGeometry
 import kotlin.test.*
 
 class WholeChainPerfTest {
+    @Test fun indexed_pairing_rejects_duplicate_or_missing_previous_ids_and_accepts_reordering() {
+        val run = WholeChainPerf.capture(WholeChainPerf.fixture("OPEN", 10, TerrainRetention.MEMORY))
+        fun initial(units: List<UnitObservation>): WholeChainRun {
+            val old = run.initial
+            return run.copy(initial = Observation(old.sampleId, old.worldId, old.scenarioId, old.stepIndex,
+                old.simulationTime, units, old.events, old.actionResults))
+        }
+        assertFailsWith<IllegalStateException> { WholeChainPerf.qualify(initial(run.initial.units.dropLast(1) + run.initial.units.first())) }
+        assertFailsWith<IllegalStateException> { WholeChainPerf.qualify(initial(run.initial.units.dropLast(1))) }
+        val reversed = initial(run.initial.units.reversed()).copy(steps = run.steps.map { step ->
+            val old = step.observation
+            step.copy(observation = Observation(old.sampleId, old.worldId, old.scenarioId, old.stepIndex,
+                old.simulationTime, old.units.reversed(), old.events, old.actionResults))
+        })
+        WholeChainPerf.qualify(reversed)
+    }
     private fun changeUnit(run:WholeChainRun,index:Int,change:(UnitObservation)->UnitObservation):WholeChainRun {
         val steps=run.steps.toMutableList();val old=steps[index];val o=old.observation
         steps[index]=old.copy(observation=Observation(o.sampleId,o.worldId,o.scenarioId,o.stepIndex,o.simulationTime,

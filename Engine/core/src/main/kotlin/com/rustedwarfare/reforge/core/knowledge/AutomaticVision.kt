@@ -17,6 +17,11 @@ class VisionSnapshot internal constructor(
 ) {
     val basicCells: List<VisionCell> = Collections.unmodifiableList(ArrayList(basicCells))
     val effectiveCells: List<VisionCell> = Collections.unmodifiableList(ArrayList(effectiveCells))
+    private val effectiveIndex = this.effectiveCells.mapTo(HashSet()) { cellKey(it.column, it.row) }
+
+    internal fun contains(column: Int, row: Int): Boolean = cellKey(column, row) in effectiveIndex
+
+    private fun cellKey(column: Int, row: Int): Long = (row.toLong() shl 32) or (column.toLong() and 0xffffffffL)
 }
 
 internal data class VisionSource(val owner: String, val position: Position, val radius: Int)

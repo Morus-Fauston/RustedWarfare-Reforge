@@ -8,6 +8,21 @@ fun interface ClientEvidence {
     companion object { val NONE = ClientEvidence { _, _ -> } }
 }
 
+/** Keep the public sink contract; the canonical disabled sink needs no payload preparation. */
+internal inline fun ClientEvidence.recordWhenEnabled(kind: String, values: () -> Map<String, Any?>) {
+    if (this !== ClientEvidence.NONE) record(kind, values())
+}
+
+internal inline fun preserveFailure(primary: Throwable, action: () -> Unit) {
+    try { action() } catch (secondary: Throwable) {
+        if (secondary !== primary) primary.addSuppressed(secondary)
+    }
+}
+
+internal fun ClientEvidence.recordFailure(kind: String, primary: Throwable) {
+    preserveFailure(primary) { recordWhenEnabled(kind) { mapOf("message" to primary.toString()) } }
+}
+
 internal fun Position.fields(): Map<String, Any?> = mapOf("x" to x, "y" to y)
 internal fun ActionResult.fields(): Map<String, Any?> = when (this) {
     is ActionResult.Accepted -> mapOf("actionId" to actionId, "accepted" to true,

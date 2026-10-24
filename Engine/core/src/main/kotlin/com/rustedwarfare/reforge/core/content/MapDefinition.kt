@@ -24,11 +24,11 @@ class TileSetDefinition internal constructor(
     val tileHeight: Int,
     val imagePath: Path,
     blockedTileIds: Set<Int>,
-    internal val tileCount: Int,
-    internal val columns: Int,
-    internal val spacing: Int = 0,
-    internal val margin: Int = 0,
-    internal val transparentColor: String? = null,
+    val tileCount: Int,
+    val columns: Int,
+    val spacing: Int = 0,
+    val margin: Int = 0,
+    val transparentColor: String? = null,
 ) {
     val blockedTileIds: Set<Int> = Collections.unmodifiableSet(LinkedHashSet(blockedTileIds))
 
@@ -48,7 +48,12 @@ class BlockingGrid(val widthTiles: Int, val heightTiles: Int, blocked: BooleanAr
         require(widthTiles > 0 && heightTiles > 0 && widthTiles.toLong() * heightTiles == blocked.size.toLong())
     }
     private val cells = blocked.copyOf()
-    val blockedCount: Int = cells.count { it }
+    private val blockedIndex = com.rustedwarfare.reforge.core.path.BlockedCellIndex(widthTiles, cells)
+    val blockedCount: Int = blockedIndex.count
+
+    internal fun anyBlocked(firstColumn: Int, lastColumn: Int, firstRow: Int, lastRow: Int,
+                            predicate: (Int, Int) -> Boolean): Boolean =
+        blockedIndex.any(firstColumn, lastColumn, firstRow, lastRow, predicate)
 
     fun isBlocked(col: Int, row: Int): Boolean {
         if (col !in 0 until widthTiles || row !in 0 until heightTiles) {

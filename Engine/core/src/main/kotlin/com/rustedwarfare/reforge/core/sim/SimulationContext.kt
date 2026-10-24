@@ -30,9 +30,13 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
     private var committedObservation: Observation? = null
     private val scheduledActions = mutableListOf<Action>()
     private val actionIds = mutableSetOf<String>()
-    private val actionResultOwners = IdentityHashMap<ActionResult, String>()
+    private var actionResultOwners = IdentityHashMap<ActionResult, String>()
     private val playerActionRevisions = mutableMapOf<String, Long>()
     private val playerObservations = mutableMapOf<String, CachedPlayerObservation>()
+    private data class CachedPlanningTerrain(val world: WorldHandle, val map: MapDefinition,
+        val knowledge: KnowledgeSnapshot?, val terrain: PlanningTerrain)
+    private var noFogPlanning: CachedPlanningTerrain? = null
+    private val playerPlanning = mutableMapOf<String, CachedPlanningTerrain>()
     private var knowledgeStores: Map<String, PlayerTerrainKnowledge>? = null
     /** Immutable rules captured on the same successful commit boundary as [knowledgeStores]. */
     private var knowledgeRules: KnowledgeRules? = null
@@ -46,7 +50,31 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
         val events: List<Event>, val results: List<ActionResult>)
 
     private data class CachedPlayerObservation(val key: PlayerObservationKey,
-        val observation: PlayerObservation, val revision: Long)
+        val observation: PlayerObservation, val revision: Long, val source: Observation)
+
+    // initialize inserts unit IDs in sorted order; transactional copies preserve that order.
+    // Any future spawn/removal path must maintain this invariant before publishing units.
+    private fun orderedUnits(): Collection<MutableUnit> = units.values
+
+    private data class StepCheckpoint(
+        val units: MutableMap<String, MutableUnit>, val events: MutableList<Event>,
+        val results: MutableList<ActionResult>, val revision: Long, val observation: Observation?,
+        val owners: IdentityHashMap<ActionResult, String>, val playerRevisions: Map<String, Long>,
+    )
+
+    private fun checkpoint() = StepCheckpoint(units, pendingEvents, pendingActionResults, revision,
+        latestObservation, IdentityHashMap(actionResultOwners), HashMap(playerActionRevisions))
+
+    private fun restore(checkpoint: StepCheckpoint) {
+        units = checkpoint.units
+        pendingEvents = checkpoint.events
+        pendingActionResults = checkpoint.results
+        revision = checkpoint.revision
+        latestObservation = checkpoint.observation
+        actionResultOwners = checkpoint.owners
+        playerActionRevisions.clear()
+        playerActionRevisions.putAll(checkpoint.playerRevisions)
+    }
 
     private data class AutomaticKnowledgeCommit(
         val stores: Map<String, PlayerTerrainKnowledge>,
@@ -233,6 +261,8 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
         actionResultOwners.clear()
         playerActionRevisions.clear()
         playerObservations.clear()
+        noFogPlanning = null
+        playerPlanning.clear()
         return CloseResult.Closed
     }
 
@@ -279,17 +309,28 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
      * enabled PLAYER_KNOWLEDGE context never falls back to truth.
      */
     private fun planningTerrainFor(unit: MutableUnit, map: MapDefinition): PlanningTerrain {
+        fun noFog(): PlanningTerrain {
+            val cached = noFogPlanning
+            if (cached != null && cached.world === activeWorld && cached.map === map) return cached.terrain
+            return PlanningTerrain.fromNoFog(map).also {
+                noFogPlanning = CachedPlanningTerrain(world, map, null, it)
+            }
+        }
         // Not enabled at all: legacy no-fog behaviour, unchanged.
-        val stores = knowledgeStores ?: return PlanningTerrain.fromNoFog(map)
+        val stores = knowledgeStores ?: return noFog()
         // Enabled: stores and rules are published on the same commit boundary, so a missing rules
         // value is a broken internal invariant, never a reason to silently fall back to truth.
         val rules = checkNotNull(knowledgeRules) { "Knowledge rules must be published with knowledge stores" }
-        if (rules.pathSource != PathInformationSource.PLAYER_KNOWLEDGE) return PlanningTerrain.fromNoFog(map)
+        if (rules.pathSource != PathInformationSource.PLAYER_KNOWLEDGE) return noFog()
         val store = checkNotNull(stores[unit.ownerPlayerId]) {
             "Knowledge store is missing for owning player '${unit.ownerPlayerId}'"
         }
         val snapshot = store.snapshot(checkNotNull(activeWorld))
-        return PlanningTerrain.fromKnowledge(snapshot, map.tileWidth, map.tileHeight)
+        val cached = playerPlanning[unit.ownerPlayerId]
+        if (cached != null && cached.world === activeWorld && cached.map === map && cached.knowledge === snapshot) return cached.terrain
+        return PlanningTerrain.fromKnowledge(snapshot, map.tileWidth, map.tileHeight).also {
+            playerPlanning[unit.ownerPlayerId] = CachedPlanningTerrain(world, map, snapshot, it)
+        }
     }
 
     private fun findPathWithDiagnostics(actionId: String, atStep: Long?, target: Position,
@@ -339,7 +380,7 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
 
     private fun replanForKnowledge(map: MapDefinition, executionStep: Long) {
         if (pendingKnowledgeDiscoveries.isEmpty()) return
-        for (unit in units.values.sortedBy { it.unitId }) {
+        for (unit in orderedUnits()) {
             val target = unit.moveTarget ?: continue
             val discoveries = pendingKnowledgeDiscoveries[unit.ownerPlayerId] ?: continue
             val snapshot = checkNotNull(knowledgeStores?.get(unit.ownerPlayerId)).snapshot(checkNotNull(activeWorld))
@@ -369,24 +410,17 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
                 else prefix + if (suffix.firstOrNull() == prefix.last()) suffix.drop(1) else suffix
             } else search(unit.position)
             if (path == null) {
-                unit.moveTarget = null
-                unit.pathPoints.clear()
-                unit.clearMoveOrigin()
-                unit.movementState = if (unit.speed != 0.0) MovementState.DECELERATING else MovementState.IDLE
+                unit.cancelRoute()
                 pendingEvents += Event("movement-cancelled", unit.unitId)
                 pendingEvents += Event("path-unreachable", unit.unitId)
             } else {
-                unit.pathPoints = path.toMutableList()
-                unit.localMotion = null
-                unit.localProgressTime = 0.0
-                unit.lastPlannedKnowledgeRevision = snapshot.revision
-                unit.movementState = MovementState.MOVING
+                unit.adoptRoute(path, snapshot.revision)
             }
         }
     }
 
     private fun repairInvalidConnections(map: MapDefinition, executionStep: Long) {
-        for (unit in units.values.sortedBy { it.unitId }) {
+        for (unit in orderedUnits()) {
             val target = unit.moveTarget ?: continue
             val first = unit.pathPoints.firstOrNull() ?: continue
             val terrain = planningTerrainFor(unit, map)
@@ -420,18 +454,11 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
                 if (connector != null) connector + oldPath.drop(1) else search(target)
             }
             if (path == null) {
-                unit.moveTarget = null
-                unit.pathPoints.clear()
-                unit.clearMoveOrigin()
-                unit.movementState = if (unit.speed != 0.0) MovementState.DECELERATING else MovementState.IDLE
+                unit.cancelRoute()
                 pendingEvents += Event("movement-cancelled", unit.unitId)
                 pendingEvents += Event("path-unreachable", unit.unitId)
             } else {
-                unit.pathPoints = path.toMutableList()
-                unit.localMotion = null
-                unit.localProgressTime = 0.0
-                unit.lastPlannedKnowledgeRevision = plannedKnowledgeRevision(unit)
-                unit.movementState = MovementState.MOVING
+                unit.adoptRoute(path, plannedKnowledgeRevision(unit))
             }
         }
     }
@@ -445,10 +472,7 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
                 ActionResult.Accepted(action.actionId)
             }
             is StopAction -> {
-                unit.moveTarget = null
-                unit.pathPoints.clear()
-                unit.clearMoveOrigin()
-                unit.movementState = if (unit.speed != 0.0) MovementState.DECELERATING else MovementState.IDLE
+                unit.cancelRoute()
                 ActionResult.Accepted(action.actionId, listOf(Event("movement-cancelled", unit.unitId)))
             }
             is MoveAction -> {
@@ -463,10 +487,7 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
                         executionStep = executionStep)
                 }
                 if (path == null) {
-                    unit.moveTarget = null
-                    unit.pathPoints.clear()
-                    unit.clearMoveOrigin()
-                    unit.movementState = if (unit.speed != 0.0) MovementState.DECELERATING else MovementState.IDLE
+                    unit.cancelRoute()
                     ActionResult.Accepted(
                         action.actionId,
                         listOf(Event("movement-cancelled", unit.unitId), Event("path-unreachable", unit.unitId)),
@@ -476,11 +497,7 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
                     unit.nearTargetTime = 0.0
                     unit.originMoveId = action.actionId
                     unit.originAtStep = action.atStep
-                    unit.lastPlannedKnowledgeRevision = plannedKnowledgeRevision(unit)
-                    unit.pathPoints = path.toMutableList()
-                    unit.localMotion = null
-                    unit.localProgressTime = 0.0
-                    unit.movementState = MovementState.MOVING
+                    unit.adoptRoute(path, plannedKnowledgeRevision(unit))
                     ActionResult.Accepted(action.actionId, listOf(Event("movement-started", unit.unitId)))
                 }
             }
@@ -503,13 +520,7 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
             "advance cannot skip a scheduled action step"
         }
         val actions = scheduledActions.filter { it.atStep == step.stepIndex }
-        val previousUnits = units
-        val previousEvents = pendingEvents
-        val previousResults = pendingActionResults
-        val previousRevision = revision
-        val previousObservation = latestObservation
-        val previousResultOwners = IdentityHashMap(actionResultOwners)
-        val previousPlayerRevisions = HashMap(playerActionRevisions)
+        val previous = checkpoint()
         // Calculate on copies so a numerical failure cannot commit half of a multi-unit step.
         units = units.mapValuesTo(linkedMapOf()) { (_, unit) -> unit.copy(pathPoints = unit.pathPoints.toMutableList()) }
         pendingEvents = pendingEvents.toMutableList()
@@ -520,18 +531,10 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
             actions.forEach { applyAction(it, step.stepIndex) }
             replanForKnowledge(currentScenario.map, step.stepIndex)
             repairInvalidConnections(currentScenario.map, step.stepIndex)
-            for (unit in units.values.sortedBy { it.unitId }) updateUnit(unit, currentScenario.map, step.delta, step.stepIndex, motionSamples)
+            for (unit in orderedUnits()) updateUnit(unit, currentScenario.map, step.delta, step.stepIndex, motionSamples)
             nextVision = prepareAutomaticKnowledge()
         } catch (error: Exception) {
-            units = previousUnits
-            pendingEvents = previousEvents
-            pendingActionResults = previousResults
-            revision = previousRevision
-            latestObservation = previousObservation
-            actionResultOwners.clear()
-            actionResultOwners.putAll(previousResultOwners)
-            playerActionRevisions.clear()
-            playerActionRevisions.putAll(previousPlayerRevisions)
+            restore(previous)
             throw error
         }
         pendingKnowledgeDiscoveries.clear()
@@ -543,6 +546,11 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
         invalidateObservation()
         val observation = recordObservation()
         committedObservation = observation
+        // Only this committed window and subsequent immediate results can be observed.
+        // Replace the map as well as its entries: a previous burst must not retain its capacity.
+        val currentOwners = IdentityHashMap<ActionResult, String>(observation.actionResults.size)
+        for (result in observation.actionResults) actionResultOwners[result]?.let { currentOwners[result] = it }
+        actionResultOwners = currentOwners
         pendingEvents.clear()
         pendingActionResults.clear()
         motionSamples?.let { checkNotNull(motionDiagnostics).addAll(it) }
@@ -561,7 +569,7 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
                 map.heightTiles.toDouble() * map.tileHeight, position, 0.0)) return false
         val column = MapBounds.cell(position.x, map.tileWidth, map.widthTiles)
         val row = MapBounds.cell(position.y, map.tileHeight, map.heightTiles)
-        return VisionCell(column, row) in view.effectiveCells
+        return view.contains(column, row)
     }
 
     fun observePlayer(world: WorldHandle, playerId: String): PlayerObservation {
@@ -571,6 +579,10 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
         val observation = observe()
         val vision = automaticVisionSnapshots?.getValue(playerId)
         val knowledge = knowledgeStores?.getValue(playerId)?.snapshot(world)
+        val cached = playerObservations[playerId]
+        if (cached?.source === observation && cached.key.epoch == vision?.epoch &&
+            cached.key.knowledgeRevision == knowledge?.revision &&
+            cached.key.actionRevision == (playerActionRevisions[playerId] ?: 0L)) return cached.observation
         val visible = observation.units.filter { isVisibleTo(playerId, it.position) }.map {
             if (it.ownerPlayerId == playerId) it else it.copy(moveTarget = null, pathPoints = emptyList())
         }
@@ -585,13 +597,15 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
         }
         val key = PlayerObservationKey(stepIndex, simulationTime, vision?.epoch, knowledge?.revision,
             playerActionRevisions[playerId] ?: 0L, visible, events, results)
-        val cached = playerObservations[playerId]
-        if (cached?.key == key) return cached.observation
+        if (cached?.key == key) {
+            playerObservations[playerId] = cached.copy(source = observation)
+            return cached.observation
+        }
         val playerRevision = (cached?.revision ?: -1L) + 1L
         val result = PlayerObservation("${world.id}:$playerId:${if (hasAdvanced) "step$stepIndex" else "initial"}:${vision?.epoch ?: 0L}:$playerRevision",
             world.id, input.scenarioId, playerId, stepIndex, simulationTime, vision, knowledge,
             visible, events, results)
-        playerObservations[playerId] = CachedPlayerObservation(key, result, playerRevision)
+        playerObservations[playerId] = CachedPlayerObservation(key, result, playerRevision, observation)
         return result
     }
 
@@ -739,9 +753,7 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
                 else -> 7.0
             }
             if (policies.capture.inside(commandDistanceSquared, completionRadius)) {
-                unit.moveTarget = null
-                unit.pathPoints.clear()
-                unit.clearMoveOrigin()
+                unit.cancelRoute()
                 pendingEvents += Event("movement-arrived", unit.unitId)
                 target = null
                 normalCompleted = true
@@ -830,9 +842,7 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
     private fun blockAtMapBoundary(unit: MutableUnit) {
         unit.speed = 0.0
         unit.angularVelocity = 0.0
-        unit.moveTarget = null
-        unit.pathPoints.clear()
-        unit.clearMoveOrigin()
+        unit.cancelRoute()
         unit.movementState = MovementState.BLOCKED
         pendingEvents += Event("movement-boundary-blocked", unit.unitId)
     }
@@ -845,7 +855,7 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
             scenarioId = currentScenario.scenarioId,
             stepIndex = stepIndex,
             simulationTime = simulationTime,
-            units = units.values.sortedBy { it.unitId }.map { unit ->
+            units = orderedUnits().map { unit ->
                 UnitObservation(
                     unitId = unit.unitId,
                     ownerPlayerId = unit.ownerPlayerId,

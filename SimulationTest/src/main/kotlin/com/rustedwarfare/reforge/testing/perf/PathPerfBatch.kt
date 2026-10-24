@@ -142,13 +142,7 @@ object PathPerfBatch {
         val geometryVersion: String = DEVELOPMENT_GEOMETRY,
     )
 
-    fun nearestRank(values: List<Long>, q: Double): Long {
-        require(values.isNotEmpty()) { "nearestRank requires a non-empty sample" }
-        require(q.isFinite() && q > 0.0 && q <= 1.0) { "q must be finite and in (0, 1]" }
-        val sorted = values.sorted()
-        val index = ceil(q * sorted.size).toInt() - 1
-        return sorted[index.coerceIn(0, sorted.lastIndex)]
-    }
+    fun nearestRank(values: List<Long>, q: Double): Long = DeterministicStatistics.nearestRank(values, q)
 
     fun independentGeometry(
         points: List<Position>,
@@ -510,26 +504,18 @@ object PathPerfBatch {
     }
 
     private fun failedRun(output: Path, exitCode: Int, error: Throwable): PathPerfRunResult {
-        try {
-            Files.writeString(
-                output.resolve("manifest.json"),
-                buildJsonObject {
-                    developmentIdentity()
-                    put("completed", false)
-                    put("exitCode", exitCode)
-                    put("errorClass", error.javaClass.name)
-                    put("errorMessage", error.message ?: "no message")
-                }.toString(),
-                StandardOpenOption.CREATE_NEW, StandardOpenOption.WRITE,
-            )
-            Files.writeString(
-                output.resolve("error.log"),
-                error.stackTraceToString(),
-                StandardOpenOption.CREATE_NEW, StandardOpenOption.WRITE,
-            )
-        } catch (ignored: Throwable) {
-            // Best-effort: the output directory and already written files stay for inspection.
+        preserveFailure(error) {
+            Files.writeString(output.resolve("manifest.json"), buildJsonObject {
+                developmentIdentity()
+                put("completed", false); put("exitCode", exitCode)
+                put("errorClass", error.javaClass.name); put("errorMessage", error.message ?: "no message")
+            }.toString(), StandardOpenOption.CREATE_NEW, StandardOpenOption.WRITE)
         }
+        preserveFailure(error) {
+            Files.writeString(output.resolve("error.log"), error.stackTraceToString(),
+                StandardOpenOption.CREATE_NEW, StandardOpenOption.WRITE)
+        }
+        System.err.println(error.stackTraceToString())
         return PathPerfRunResult(output, exitCode)
     }
 
@@ -892,7 +878,7 @@ object PathPerfBatch {
 
     private fun insideForbidden(repo: Path, outputRoot: Path): Boolean {
         val normalized = outputRoot.normalize()
-        val forbidden = listOf("Rusted Warfare", "TestLab", "Docs", "Docs/Research-DEC", "Docs/归档", ".git")
+        val forbidden = listOf("Rusted Warfare", "TestLab", "Docs", "Docs/Research-DEC", "Docs/褰掓。", ".git")
         return forbidden.none { normalized.startsWith(repo.resolve(it).normalize()) }
     }
 

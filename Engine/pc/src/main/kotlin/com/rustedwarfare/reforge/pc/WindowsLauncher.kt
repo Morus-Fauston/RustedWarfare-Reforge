@@ -23,7 +23,7 @@ fun main(args: Array<String>) {
                 Lwjgl3Application(DemoScreen(evidence), config)
                 evidence.record("process-completed", mapOf("status" to "normal"))
             } catch (failure: Throwable) {
-                evidence.record("process-failed", mapOf("message" to failure.toString()))
+                preserveFailure(failure) { evidence.record("process-failed", mapOf("message" to failure.toString())) }
                 throw failure
             }
         }
@@ -47,7 +47,7 @@ fun main(args: Array<String>) {
             Lwjgl3Application(WindowPerfSampling(BootstrapScreen(inputs, evidence), evidence), config)
             evidence.record("process-completed", mapOf("status" to "normal"))
         } catch (failure: Throwable) {
-            evidence.record("process-failed", mapOf("message" to failure.toString()))
+            preserveFailure(failure) { evidence.record("process-failed", mapOf("message" to failure.toString())) }
             throw failure
         }
     }

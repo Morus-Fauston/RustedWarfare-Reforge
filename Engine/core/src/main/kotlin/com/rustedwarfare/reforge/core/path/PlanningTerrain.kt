@@ -18,6 +18,10 @@ class PlanningTerrain(
         if(blocked.size.toLong()!=widthTiles.toLong()*heightTiles) throw PlanningException("invalid-blocking", "Blocking count must match planning dimensions")
     }
     private val cells=blocked.copyOf()
+    private val blockedIndex = BlockedCellIndex(widthTiles, cells)
+    internal fun anyBlocked(firstColumn: Int, lastColumn: Int, firstRow: Int, lastRow: Int,
+                            predicate: (Int, Int) -> Boolean): Boolean =
+        blockedIndex.any(firstColumn, lastColumn, firstRow, lastRow, predicate)
     fun isBlocked(column: Int, row: Int): Boolean {
         if(column !in 0 until widthTiles || row !in 0 until heightTiles) throw PlanningException("out-of-bounds", "Planning cell is outside the terrain")
         return cells[row*widthTiles+column]

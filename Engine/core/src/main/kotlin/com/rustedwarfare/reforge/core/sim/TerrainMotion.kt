@@ -18,9 +18,17 @@ internal object TerrainMotion {
             val lastX = (maxOf(oldX, newX).toLong() + 1L).coerceAtMost(map.widthTiles.toLong() - 1L).toInt()
             val firstY = (minOf(oldY, newY).toLong() - 1L).coerceAtLeast(0L).toInt()
             val lastY = (maxOf(oldY, newY).toLong() + 1L).coerceAtMost(map.heightTiles.toLong() - 1L).toInt()
-            for (row in firstY..lastY) for (column in firstX..lastX) {
-                if (map.blocking.isBlocked(column, row) && line.enters(column, row, map.tileWidth, map.tileHeight,
-                        column == map.widthTiles - 1, row == map.heightTiles - 1)) return start
+            if (map.blocking.widthTiles == map.widthTiles && map.blocking.heightTiles == map.heightTiles) {
+                if (map.blocking.anyBlocked(firstX, lastX, firstY, lastY) { column, row ->
+                    line.enters(column, row, map.tileWidth, map.tileHeight,
+                        column == map.widthTiles - 1, row == map.heightTiles - 1)
+                }) return start
+            } else {
+                // Preserve the prior failure/short-circuit behavior for unqualified direct callers.
+                for (row in firstY..lastY) for (column in firstX..lastX) {
+                    if (map.blocking.isBlocked(column, row) && line.enters(column, row, map.tileWidth, map.tileHeight,
+                            column == map.widthTiles - 1, row == map.heightTiles - 1)) return start
+                }
             }
             return candidate
         }
