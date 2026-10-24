@@ -1,0 +1,2 @@
+# Preserve the exact bytes used by the local-clear patch's SHA check.
+motion_detail_patch_v2.py text eol=lf
