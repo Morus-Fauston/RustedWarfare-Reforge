@@ -24,6 +24,7 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
     private var nextObjectId: Long = 1L
     private var lastBirthSerial: Long = 0L
     private var productionLedger: ProductionLedger? = null
+    private var upgradeQueues: UpgradeQueues? = null
     private var buildingTerrain: BuildingTerrain? = null
     private var buildingKnowledge: Map<String, BuildingKnowledge> = emptyMap()
     private var pendingBuildingDiscoveries: Map<String, Map<Pair<Int, Int>, Long>> = emptyMap()
@@ -60,7 +61,8 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
     private data class PlayerObservationKey(val step: Long, val time: Double, val epoch: Long?,
         val knowledgeRevision: Long?, val actionRevision: Long, val units: List<UnitObservation>,
         val events: List<Event>, val results: List<ActionResult>, val projectiles: List<VisibleProjectile>,
-        val projectileEvents: List<VisibleProjectileEvent>, val balance: Long?, val factoryQueues: List<FactoryQueueObservation>)
+        val projectileEvents: List<VisibleProjectileEvent>, val balance: Long?, val factoryQueues: List<FactoryQueueObservation>,
+        val upgradeQueues: List<UpgradeQueueObservation>)
 
     private data class CachedPlayerObservation(val key: PlayerObservationKey,
         val observation: PlayerObservation, val revision: Long, val source: Observation)
@@ -79,13 +81,13 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
         val projectileEvents: MutableList<ProjectileEventObservation>,
         val buildings: BuildingTerrain?, val buildingKnowledge: Map<String, BuildingKnowledge>,
         val buildingDiscoveries: Map<String, Map<Pair<Int, Int>, Long>>,
-        val ledger: ProductionLedger?, val birthSerial: Long,
+        val ledger: ProductionLedger?, val birthSerial: Long, val upgrades: UpgradeQueues?,
     )
 
     private fun checkpoint() = StepCheckpoint(units, pendingEvents, pendingActionResults, revision,
         latestObservation, IdentityHashMap(actionResultOwners), HashMap(playerActionRevisions), projectiles, combatFrame, nextObjectId,
         pathDiagnostics, noFogPlanning, HashMap(playerPlanning), pendingProjectileEvents,
-        buildingTerrain, buildingKnowledge, pendingBuildingDiscoveries, productionLedger, lastBirthSerial)
+        buildingTerrain, buildingKnowledge, pendingBuildingDiscoveries, productionLedger, lastBirthSerial, upgradeQueues)
 
     private fun restore(checkpoint: StepCheckpoint) {
         units = checkpoint.units
@@ -101,6 +103,7 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
         buildingKnowledge = checkpoint.buildingKnowledge
         pendingBuildingDiscoveries = checkpoint.buildingDiscoveries
         productionLedger = checkpoint.ledger
+        upgradeQueues = checkpoint.upgrades
         lastBirthSerial = checkpoint.birthSerial
         pathDiagnostics = checkpoint.diagnostics
         noFogPlanning = checkpoint.noFog
@@ -322,6 +325,7 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
         activeWorld = null
         this.scenario = null
         productionLedger = null
+        upgradeQueues = null
         lastBirthSerial = 0L
         buildingTerrain = null
         buildingKnowledge = emptyMap()
@@ -617,6 +621,14 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
             return reject(action, "immobile-unit", "Unit cannot move")
         }
         val result = when (action) {
+            is UpgradeAction -> when (val change = applyUpgrade(action, unit, action.upgradeId, false)) {
+                is ActionResult.Accepted -> change
+                is ActionResult.Rejected -> return change
+            }
+            is CancelUpgradeAction -> when (val change = applyUpgrade(action, unit, action.upgradeId, true)) {
+                is ActionResult.Accepted -> change
+                is ActionResult.Rejected -> return change
+            }
             is ProduceAction -> when (val change = applyProduction(action, unit, action.productionTypeId, action.unitNonce)) {
                 is ActionResult.Accepted -> change
                 is ActionResult.Rejected -> return change
@@ -679,6 +691,62 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
         pendingEvents += result.events
         invalidateObservation()
         return result
+    }
+
+    private fun applyUpgrade(action: Action, unit: MutableUnit, upgradeId: String, cancel: Boolean): ActionResult {
+        val profile = unit.definition.upgrades ?: return reject(action, "cannot-upgrade", "Unit cannot upgrade")
+        val spec = profile.actions.singleOrNull { it.actionKey == upgradeId }
+            ?: return reject(action, "unsupported-upgrade", "Unit cannot perform this upgrade")
+        val queues = checkNotNull(upgradeQueues)
+        val ledger = checkNotNull(productionLedger)
+        val nextQueues: UpgradeQueues
+        val nextLedger: ProductionLedger
+        if (cancel) {
+            val change = queues.cancel(unit.unitId, upgradeId)
+            val removed = change.removed.singleOrNull()
+                ?: return reject(action, "empty-upgrade-queue", "No matching upgrade is queued")
+            nextQueues = change.queues
+            nextLedger = ledger.refund(unit.ownerPlayerId, removed.cost)
+        } else {
+            if (queues.queue(unit.unitId).any { it.actionKey == upgradeId })
+                return reject(action, "duplicate-upgrade", "This upgrade is already queued")
+            nextLedger = ledger.charge(unit.ownerPlayerId, spec.price)
+                ?: return reject(action, "insufficient-funds", "Insufficient funds")
+            nextQueues = queues.enqueue(unit.unitId, spec)
+        }
+        upgradeQueues = nextQueues
+        productionLedger = nextLedger
+        return ActionResult.Accepted(action.actionId, listOf(Event(if (cancel) "upgrade-cancelled" else "upgrade-queued", unit.unitId)))
+    }
+
+    private fun advanceUpgrade(unit: MutableUnit) {
+        val queues = upgradeQueues ?: return
+        val tick = queues.advance(unit.unitId)
+        upgradeQueues = tick.queues
+        val completed = tick.completed ?: return
+        val definition = checkNotNull(scenario).unitDefinitions.getValue(completed.targetTypeId)
+        check(unit.alive && unit.definition.upgrades?.actions?.any {
+            it.actionKey == completed.actionKey && it.targetTypeId == definition.id } == true)
+        val oldMaximum = checkNotNull(unit.definition.maximumHealth).toFloat()
+        val nextMaximum = checkNotNull(definition.maximumHealth).toFloat()
+        val health = checkNotNull(unit.health).toFloat() / oldMaximum * nextMaximum
+        require(health.isFinite() && health in 0f..nextMaximum) { "Converted health must remain finite and bounded" }
+        unit.typeId = definition.id
+        unit.definition = definition
+        unit.health = health.toDouble()
+        unit.speed = 0.0
+        unit.combat?.let { it.cooldown = minOf(it.cooldown, checkNotNull(definition.combat).shootDelay) }
+        pendingEvents += Event("upgrade-completed", unit.unitId)
+        refundUpgrades(unit, definition.upgrades?.actions?.mapTo(mutableSetOf()) { it.actionKey }.orEmpty())
+    }
+
+    private fun refundUpgrades(unit: MutableUnit, allowed: Set<String> = emptySet()) {
+        val change = upgradeQueues?.retain(unit.unitId, allowed) ?: return
+        var ledger = productionLedger
+        for (item in change.removed) ledger = checkNotNull(ledger).refund(unit.ownerPlayerId, item.cost)
+        upgradeQueues = change.queues
+        productionLedger = ledger
+        if (change.removed.isNotEmpty()) pendingEvents += Event("upgrade-refunded", unit.unitId)
     }
 
     private fun applyProduction(action: Action, unit: MutableUnit, typeId: String, nonce: String?): ActionResult {
@@ -782,6 +850,7 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
                 updatePointDefense(unit, step.delta)
                 updateUnit(unit, currentScenario.map, step.delta, step.stepIndex, motionSamples)
                 unit.combat?.let { it.cooldown = maxOf(0.0, it.cooldown - step.delta) }
+                advanceUpgrade(unit)
             }
             updateProjectiles(step.delta)
             nextVision = prepareAutomaticKnowledge()
@@ -855,9 +924,11 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
         val ids = visible.map { it.unitId }.toSet()
         fun visibleEvents(events: List<Event>): List<Event> {
             val allowed = events.filter { event -> event.unitId != null && event.unitId in ids &&
-                (!event.kind.startsWith("production-") || visible.any { it.unitId == event.unitId && it.ownerPlayerId == playerId }) }
+                (!(event.kind.startsWith("production-") || event.kind.startsWith("upgrade-")) ||
+                    visible.any { it.unitId == event.unitId && it.ownerPlayerId == playerId }) }
             val combatKinds = setOf("projectile-fired", "unit-damaged", "unit-died",
-                "production-queued", "production-cancelled", "production-refunded", "unit-produced")
+                "production-queued", "production-cancelled", "production-refunded", "unit-produced",
+                "upgrade-queued", "upgrade-cancelled", "upgrade-completed", "upgrade-refunded")
             // S1 command events retain submission order. Combat order is public-value canonical,
             // never the hidden source/host projectile allocation order used by the simulator.
             return allowed.filter { it.kind !in combatKinds } + allowed.filter { it.kind in combatKinds }
@@ -890,8 +961,14 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
                     FactoryQueueObservation(factory.unitId, observation.economy?.queuedProduction?.getValue(factory.unitId).orEmpty()
                         .map { ProductionQueueItem(it.typeId, it.progress) })
                 } else emptyList()
+        val playerUpgrades = if (input.players.first { it.playerId == playerId }.control == PlayerControl.LOCAL)
+            visible.filter { it.ownerPlayerId == playerId && it.alive && input.unitDefinitions.getValue(it.typeId).upgrades != null }
+                .sortedBy { it.unitId }.map { unit -> UpgradeQueueObservation(unit.unitId,
+                    observation.upgrades?.queues?.getValue(unit.unitId).orEmpty().map {
+                        UpgradeQueueItem(it.actionKey, it.targetTypeId, it.progress) }) }
+            else emptyList()
         val key = PlayerObservationKey(stepIndex, simulationTime, vision?.epoch, knowledge?.revision,
-            playerActionRevisions[playerId] ?: 0L, visible, events, results, projection.projectiles, projection.events, balance, factoryQueues)
+            playerActionRevisions[playerId] ?: 0L, visible, events, results, projection.projectiles, projection.events, balance, factoryQueues, playerUpgrades)
         if (cached?.key == key) {
             playerObservations[playerId] = cached.copy(source = observation)
             return cached.observation
@@ -899,7 +976,7 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
         val playerRevision = (cached?.revision ?: -1L) + 1L
         val result = PlayerObservation("${world.id}:$playerId:${if (hasAdvanced) "step$stepIndex" else "initial"}:${vision?.epoch ?: 0L}:$playerRevision",
             world.id, input.scenarioId, playerId, stepIndex, simulationTime, vision, knowledge,
-            visible, events, results, projection.projectiles, projection.events, balance, factoryQueues)
+            visible, events, results, projection.projectiles, projection.events, balance, factoryQueues, playerUpgrades)
         playerObservations[playerId] = CachedPlayerObservation(key, result, playerRevision, observation)
         return result
     }
@@ -931,6 +1008,8 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
                 it.copy(initialBalances = Collections.unmodifiableMap(LinkedHashMap(it.initialBalances))) },
         )
         productionLedger = initialLedger
+        upgradeQueues = nextScenario.units.filter { nextScenario.unitDefinitions.getValue(it.typeId).upgrades != null }
+            .map { it.unitId }.toSet().takeIf { it.isNotEmpty() }?.let(UpgradeQueues::initial)
         buildingTerrain = initialBuildings
         units = linkedMapOf()
         projectiles = mutableListOf()
@@ -999,6 +1078,7 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
         }
         if (input.units.any { it.ownerPlayerId !in players }) return SimulationError("bad-reference", "Unit owner is not a declared player")
         if (input.units.any { it.typeId !in input.unitDefinitions }) return SimulationError("bad-reference", "Unit type is not declared")
+        UpgradeRules.validate(input)?.let { return it }
         if (input.map.widthTiles <= 0 || input.map.heightTiles <= 0) return SimulationError("invalid-map", "Map dimensions must be positive")
         if (input.automaticVision != null && input.map.widthTiles.toLong() * input.map.heightTiles != input.map.groundGids.size.toLong()) {
             return SimulationError("invalid-map", "Automatic terrain knowledge requires matching ground dimensions")
@@ -1062,12 +1142,19 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
                     combat.projectile.speed, combat.recoil.outTime, combat.recoil.returnTime)
                 val nonnegative = listOf(combat.turretSize, combat.turretTurnSpeed, combat.turretTurnAcceleration, combat.projectile.directDamage)
                 val signed = listOf(combat.mount.localX, combat.mount.localY, combat.recoil.offset,
-                    combat.recoil.outTime + combat.recoil.returnTime)
+                    combat.recoil.outTime + combat.recoil.returnTime, combat.barrelX, combat.oddShotOffset)
+                val invalidGround = combat.projectile.ground?.let { ground ->
+                    !ground.areaDamage.isFinite() || ground.areaDamage < 0f ||
+                    !ground.areaRadius.isFinite() || ground.areaRadius <= 0f || !(ground.areaRadius * ground.areaRadius).isFinite() ||
+                    !ground.spread.isFinite() || ground.spread < 0f || !ground.initialVerticalSpeed.isFinite() ||
+                    !ground.gravity.isFinite() || ground.gravity < 0f || !ground.trueGravity.isFinite() || ground.trueGravity < 0f ||
+                    listOf(combat.attackRange, combat.projectile.life, combat.projectile.speed).any { !it.toFloat().isFinite() }
+                } == true
                 val invalidIdle = combat.idleSweep?.let { !it.angle.isFinite() || it.angle <= 0.0 ||
                     !it.delay.isFinite() || it.delay <= 0f || !it.speedFactor.isFinite() || it.speedFactor <= 0f ||
                     it.randomDelayExclusive <= 0 } == true
                 if (positive.any { !it.isFinite() || it <= 0.0 } || nonnegative.any { !it.isFinite() || it < 0.0 } ||
-                    signed.any { !it.isFinite() } || invalidIdle ||
+                    signed.any { !it.isFinite() } || invalidIdle || invalidGround ||
                     !combat.projectile.deflectionHealth.isFinite() || combat.projectile.deflectionHealth <= 0f)
                     return SimulationError("unsupported-combat", "Ordinary combat numbers must be finite and in range")
             }
@@ -1247,13 +1334,17 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
         nextObjectId = Math.addExact(nextObjectId, 1L)
         val scatter = OrdinaryWeapon.sample(contract.worldSeed, combatFrame, actorId, unit, state.randomCounter, 0, 1000) * .001f
         state.randomCounter += 1
-        val projectile = MutableProjectile(id, unit.unitId, target.unitId, muzzle, state.turretHeading,
-            weapon.projectile.life, capturedOffset, scatter, weapon.projectile.speed, weapon.projectile.directDamage, unit.height,
+        val ground = weapon.projectile.ground?.let { GroundWeapon.snapshot(unit, target, muzzle, contract.worldSeed, combatFrame, actorId) }
+        val position = if (ground == null) muzzle else Position(muzzle.x.toFloat().toDouble(), muzzle.y.toFloat().toDouble())
+        val projectile = MutableProjectile(id, unit.unitId, if (ground == null) target.unitId else null, position, state.turretHeading,
+            weapon.projectile.life, capturedOffset, scatter, weapon.projectile.speed, weapon.projectile.directDamage,
+            if (ground == null) unit.height else unit.height.toFloat().toDouble(),
             deflectionHealth = weapon.projectile.deflectionHealth, instant = weapon.projectile.instant,
-            nonDeflectable = weapon.projectile.nonDeflectable)
+            nonDeflectable = weapon.projectile.nonDeflectable, ground = ground, verticalSpeed = ground?.profile?.initialVerticalSpeed ?: 0f)
         projectiles += projectile
         pendingProjectileEvents += ProjectileEventObservation("born", projectileObservation(projectile))
         OrdinaryWeapon.refreshOffset(contract.worldSeed, combatFrame, actorId, unit, target)
+        state.oddShot = !state.oddShot
         pendingEvents += Event("projectile-fired", unit.unitId)
     }
 
@@ -1268,35 +1359,18 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
     private fun updateProjectiles(delta: Double) {
         for (projectile in projectiles.sortedBy { it.objectId }) {
             val target = units[projectile.targetUnitId]
-            if (target == null) {
+            if (target == null && projectile.ground == null) {
                 projectile.age += delta.toFloat()
                 pendingProjectileEvents += ProjectileEventObservation("target-ended", projectileObservation(projectile))
                 projectiles.remove(projectile)
                 continue
             }
-            val hit = OrdinaryWeapon.move(projectile, target, delta)
+            val hit = if (projectile.ground != null) GroundWeapon.move(projectile, delta)
+                else OrdinaryWeapon.move(projectile, checkNotNull(target), delta)
             projectile.age += delta.toFloat()
             if (hit) {
-                var appliedDamage = 0.0
-                if (target.alive && target.health != null) {
-                    val before = checkNotNull(target.health)
-                    target.health = maxOf(0.0, checkNotNull(target.health) - projectile.damage)
-                    appliedDamage = before - checkNotNull(target.health)
-                    pendingEvents += Event("unit-damaged", target.unitId)
-                    if (!target.alive) {
-                        if (target.definition.production != null) {
-                            if (checkNotNull(productionLedger).queue(target.unitId).isNotEmpty())
-                                pendingEvents += Event("production-refunded", target.unitId)
-                            productionLedger = checkNotNull(productionLedger).destroyFactory(target.unitId)
-                        }
-                        target.attackCommand = null
-                        target.cancelRoute()
-                        target.speed = 0.0
-                        target.angularVelocity = 0.0
-                        target.combat?.targetId = null
-                        pendingEvents += Event("unit-died", target.unitId)
-                    }
-                }
+                if (projectile.ground != null) applyAreaDamage(projectile)
+                val appliedDamage = if (projectile.ground == null) applyDamage(checkNotNull(target), projectile.damage) else null
                 pendingProjectileEvents += ProjectileEventObservation("impact", projectileObservation(projectile), appliedDamage)
                 projectiles.remove(projectile)
             } else if (projectile.remainingLife == 0.0) {
@@ -1307,6 +1381,53 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
                 projectiles.remove(projectile)
             }
         }
+    }
+
+    private fun applyAreaDamage(projectile: MutableProjectile) {
+        val profile = checkNotNull(projectile.ground).profile
+        val source = checkNotNull(units[projectile.sourceUnitId])
+        val players = checkNotNull(scenario).players
+        val team = players.single { it.playerId == source.ownerPlayerId }.teamId
+        val x = projectile.position.x.toFloat()
+        val y = projectile.position.y.toFloat()
+        val height = projectile.height.toFloat()
+        for (target in orderedUnits()) {
+            if (!target.alive || target.health == null || target.ownerPlayerId == source.ownerPlayerId ||
+                team != null && players.single { it.playerId == target.ownerPlayerId }.teamId == team) continue
+            // The finite supported LAND/NONE content has no air category.
+            if (height >= 5f || target.height.toFloat() < -5f && height >= -2f) continue
+            val distanceSquared = GroundMath.square(x, y, target.position.x.toFloat(), target.position.y.toFloat())
+            require(distanceSquared.isFinite()) { "Area geometry must remain finite" }
+            if (distanceSquared > profile.areaRadius * profile.areaRadius) continue
+            val distance = GroundMath.sqrt(distanceSquared)
+            if (distance > profile.areaRadius) continue
+            val falloff = minOf(1f, ((1f - distance / profile.areaRadius).toDouble() + .1).toFloat())
+            applyDamage(target, (profile.areaDamage * falloff).toDouble())
+        }
+    }
+
+    /** Direct and area hits share damage, death, queue refunds and later building-layer removal. */
+    private fun applyDamage(target: MutableUnit, damage: Double): Double {
+        if (!target.alive || target.health == null) return 0.0
+        require(damage.isFinite() && damage >= 0.0) { "Damage must remain finite and nonnegative" }
+        val before = checkNotNull(target.health)
+        target.health = maxOf(0.0, before - damage)
+        pendingEvents += Event("unit-damaged", target.unitId)
+        if (!target.alive) {
+            if (target.definition.production != null) {
+                if (checkNotNull(productionLedger).queue(target.unitId).isNotEmpty())
+                    pendingEvents += Event("production-refunded", target.unitId)
+                productionLedger = checkNotNull(productionLedger).destroyFactory(target.unitId)
+            }
+            refundUpgrades(target)
+            target.attackCommand = null
+            target.cancelRoute()
+            target.speed = 0.0
+            target.angularVelocity = 0.0
+            target.combat?.targetId = null
+            pendingEvents += Event("unit-died", target.unitId)
+        }
+        return before - checkNotNull(target.health)
     }
 
     private fun updateUnit(unit: MutableUnit, map: MapDefinition, delta: Double, executionStep: Long,
@@ -1447,6 +1568,7 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
         val objectIds = mutableSetOf<Long>()
         var previousKey: String? = null
         for (unit in orderedUnits()) {
+            require(input.unitDefinitions[unit.typeId] === unit.definition) { "Unit definition must remain registered" }
             require(listOf(unit.position.x, unit.position.y, unit.heading, unit.speed, unit.angularVelocity, unit.height)
                 .all { it.isFinite() } && (unit.health?.isFinite() != false)) { "Unit candidate must remain finite" }
             require(unit.birthRemaining.isFinite() && unit.birthRemaining in 0f..30f) { "Invalid birth timer" }
@@ -1490,7 +1612,9 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
         for (projectile in projectiles) {
             require(listOf(projectile.position.x, projectile.position.y,
                 projectile.height, projectile.heading, projectile.remainingLife).all { it.isFinite() } &&
-                projectile.age.isFinite() && projectile.age >= 0f && projectile.deflectionHealth.isFinite()) {
+                projectile.age.isFinite() && projectile.age >= 0f && projectile.deflectionHealth.isFinite() &&
+                projectile.verticalSpeed.isFinite() && projectile.groundDistanceSquared?.isFinite() != false &&
+                projectile.ground?.let { it.x.isFinite() && it.y.isFinite() && it.height.isFinite() } != false) {
                 "Projectile candidate must remain finite"
             }
             require(projectile.objectId > 0L && projectile.objectId < nextObjectId && objectIds.add(projectile.objectId)) {
@@ -1498,13 +1622,16 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
             }
         }
         productionLedger?.validateCandidate()
+        upgradeQueues?.validateCandidate(units)
         // Ended/event-only objects also enter the public window; removing them from the active
         // container must not let an invalid numeric candidate bypass the S4 publication gate.
         for (event in pendingProjectileEvents) {
             val projectile = event.projectile
             require(listOf(projectile.position.x, projectile.position.y, projectile.height,
                 projectile.heading, projectile.remainingLife).all { it.isFinite() } && event.damage?.isFinite() != false &&
-                projectile.age.isFinite() && projectile.age >= 0f && projectile.deflectionHealth.isFinite()) {
+                projectile.age.isFinite() && projectile.age >= 0f && projectile.deflectionHealth.isFinite() &&
+                projectile.ground?.let { it.targetPosition.x.isFinite() && it.targetPosition.y.isFinite() &&
+                    it.targetHeight.isFinite() && it.verticalSpeed.isFinite() && it.distanceSquared?.isFinite() != false } != false) {
                 "Projectile event candidate must remain finite"
             }
         }
@@ -1517,7 +1644,9 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
     private fun projectileObservation(projectile: MutableProjectile) = ProjectileObservation(projectile.objectId,
         projectile.sourceUnitId, projectile.targetUnitId, projectile.position, projectile.heading,
         projectile.remainingLife, projectile.offset, projectile.scatter, projectile.height, projectile.age,
-        projectile.deflectionHealth, projectile.intercepted)
+        projectile.deflectionHealth, projectile.intercepted, projectile.ground?.let {
+            GroundProjectileObservation(Position(it.x.toDouble(), it.y.toDouble()), it.height, projectile.verticalSpeed,
+                projectile.groundDistanceSquared) })
 
     private fun makeObservation(observedStep: Long, observedTime: Double, advanced: Boolean, observedRevision: Long): Observation {
         val currentScenario = checkNotNull(scenario)
@@ -1554,6 +1683,7 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
             projectiles = projectiles.map(::projectileObservation),
             projectileEvents = pendingProjectileEvents,
             economy = productionLedger?.observe(),
+            upgrades = upgradeQueues?.observe(),
             production = productionLedger?.let {
                 ProductionObservation(lastBirthSerial, orderedUnits().mapNotNull { unit ->
                     unit.producerId?.let { producer -> ProducedUnitObservation(unit.unitId,
@@ -1564,7 +1694,9 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
                 CombatObservation(combatFrame, nextObjectId, orderedUnits().mapNotNull { unit ->
                     unit.combat?.let { UnitWeaponObservation(unit.unitId, checkNotNull(unit.objectId),
                         it.randomCounter, it.offset, it.targetId, it.angularVelocity,
-                        OrdinaryWeapon.pivot(unit), OrdinaryWeapon.muzzle(unit)) }
+                        OrdinaryWeapon.pivot(unit), OrdinaryWeapon.muzzle(unit), it.cooldown, it.oddShot,
+                        idle = WeaponIdleObservation(it.idleBaseHeading, it.idleTimer, it.idleOffset,
+                            it.idleDirection, it.idleReached, it.idleHold)) }
                 })
             },
         )

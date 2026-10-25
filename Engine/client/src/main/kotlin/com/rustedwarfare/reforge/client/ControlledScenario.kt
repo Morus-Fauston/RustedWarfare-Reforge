@@ -12,6 +12,7 @@ import java.util.Properties
 object ControlledScenario {
     fun load(root: Path): Scenario {
         checkCancellation()
+        if (Files.exists(root.resolve("upgrade.properties"), NOFOLLOW_LINKS)) return loadUpgrade(root)
         if (Files.exists(root.resolve("point-defense.properties"), NOFOLLOW_LINKS)) return loadPointDefense(root)
         if (Files.exists(root.resolve("turret.properties"), NOFOLLOW_LINKS)) return loadTurret(root)
         if (Files.exists(root.resolve("production.properties"), NOFOLLOW_LINKS)) return loadProduction(root)
@@ -43,6 +44,31 @@ object ControlledScenario {
             TimeModel("p001.time.v1", "sim-tick", "ieee754-binary64", "fixed-explicit-delta"),
             MovementContract(16.0, 4.0),
         )
+    }
+
+    private fun loadUpgrade(root: Path): Scenario {
+        val marker = root.resolve("upgrade.properties")
+        require(Files.isRegularFile(marker, NOFOLLOW_LINKS) && !Files.isSymbolicLink(marker) &&
+            marker.toRealPath() == root.toRealPath().resolve("upgrade.properties")) { "$marker: expected ordinary in-root file" }
+        require(Files.readString(marker).trim().replace("\r\n", "\n") ==
+            "format=rw-reforge.upgrade-sandbox.v1\nvariant=two-branches") { "$marker: unsupported fixed upgrade fixture" }
+        val base = loadProduction(root)
+        fun tower(name: String, enabled: Boolean = false) = when (val result =
+            ContentLoader.loadTurretUnit(root.resolve("units/$name.ini"), enabled)) {
+            is ContentResult.Success -> result.value
+            is ContentResult.Failure -> error(result.error.describe())
+        }
+        checkCancellation()
+        val forms = listOf(tower("turret_t1", true), tower("turret_t2_gun"), tower("turret_t1_artillery"))
+        checkCancellation()
+        val enemies = listOf(126, 150, 174).mapIndexed { index, y ->
+            UnitSpawn("b0${index + 1}", "p2", "c_tank", Position(405.0, y.toDouble()), 270.0) }
+        return base.copy(scenarioId = "p005-upgrade", unitDefinitions = base.unitDefinitions + forms.associateBy { it.id },
+            units = listOf(UnitSpawn("a", "p1", "c_tank", Position(110.0, 310.0), 90.0),
+                UnitSpawn("f", "p1", "landFactory", Position(310.0, 310.0), 0.0),
+                UnitSpawn("t", "p1", "c_turret_t1", Position(230.0, 150.0), 90.0)) + enemies,
+            combatContract = CombatContract(12345, -1, mapOf("a" to 8L, "f" to 10L, "t" to 11L,
+                "b01" to 12L, "b02" to 13L, "b03" to 14L), 15L))
     }
 
     private fun loadPointDefense(root: Path): Scenario {

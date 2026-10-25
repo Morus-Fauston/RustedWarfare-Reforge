@@ -85,6 +85,25 @@ class SandboxSession(scenario: Scenario, private val evidence: ClientEvidence = 
         apply(CancelProductionAction("click-${++actionNumber}", "p1", checkNotNull(selectedId), type, context.world))
     }
 
+    val selectedUpgrades: List<com.rustedwarfare.reforge.core.content.UpgradeActionProfile>
+        get() {
+            if (!isOpen || selectedIds.size != 1) return emptyList()
+            val unit = observation.units.singleOrNull { it.unitId == selectedId } ?: return emptyList()
+            if (!controllable(unit)) return emptyList()
+            return scenario.unitDefinitions.getValue(unit.typeId).upgrades?.actions.orEmpty()
+        }
+
+    val selectedUpgradeQueue: UpgradeQueueObservation?
+        get() = if (selectedUpgrades.isEmpty()) null else observation.upgradeQueues.firstOrNull { it.unitId == selectedId }
+
+    fun upgrade(actionKey: String): ActionResult? = selectedUpgrades.firstOrNull { it.actionKey == actionKey }?.let {
+        apply(UpgradeAction("click-${++actionNumber}", "p1", checkNotNull(selectedId), it.actionKey, context.world))
+    }
+
+    fun cancelUpgrade(actionKey: String): ActionResult? = selectedUpgrades.firstOrNull { it.actionKey == actionKey }?.let {
+        apply(CancelUpgradeAction("click-${++actionNumber}", "p1", checkNotNull(selectedId), it.actionKey, context.world))
+    }
+
     fun move(position: Position): ActionResult? = dispatch { id ->
         MoveAction("click-${++actionNumber}", "p1", id, position, context.world)
     }
@@ -193,7 +212,9 @@ class SandboxSession(scenario: Scenario, private val evidence: ClientEvidence = 
         evidence.recordWhenEnabled("action") { mapOf("type" to action.javaClass.simpleName,
             "actorPlayerId" to action.actorPlayerId, "unitId" to action.unitId,
             "target" to (action as? MoveAction)?.target?.fields(),
-            "targetUnitId" to (action as? AttackAction)?.targetUnitId, "result" to result.fields()) }
+            "targetUnitId" to (action as? AttackAction)?.targetUnitId,
+            "upgradeId" to when (action) { is UpgradeAction -> action.upgradeId; is CancelUpgradeAction -> action.upgradeId; else -> null },
+            "result" to result.fields()) }
         capture("after-action")
         return result
     }

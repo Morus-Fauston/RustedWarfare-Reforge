@@ -2,6 +2,7 @@ package com.rustedwarfare.reforge.core.sim
 
 import com.rustedwarfare.reforge.core.content.MapDefinition
 import com.rustedwarfare.reforge.core.content.UnitDefinition
+import com.rustedwarfare.reforge.core.content.GroundProjectileProfile
 import java.util.Collections
 import com.rustedwarfare.reforge.core.knowledge.KnowledgeRules
 import com.rustedwarfare.reforge.core.knowledge.KnowledgeSnapshot
@@ -75,6 +76,22 @@ class EconomyObservation(balances: Map<String, Long>,
 
 data class ProductionQueueItem(val typeId: String, val progress: Float)
 
+data class UpgradeQueueItem(val actionKey: String, val targetTypeId: String, val progress: Float)
+
+data class PendingUpgradeObservation(val actionKey: String, val targetTypeId: String, val progress: Float,
+    val cost: Long, val rate: Float)
+
+class UpgradeObservation(queues: Map<String, List<PendingUpgradeObservation>>) {
+    val queues: Map<String, List<PendingUpgradeObservation>> = Collections.unmodifiableMap(
+        queues.mapValuesTo(linkedMapOf()) { immutable(it.value) })
+}
+
+class UpgradeQueueObservation(val unitId: String, items: List<UpgradeQueueItem>) {
+    val items: List<UpgradeQueueItem> = immutable(items)
+    override fun equals(other: Any?): Boolean = other is UpgradeQueueObservation && unitId == other.unitId && items == other.items
+    override fun hashCode(): Int = 31 * unitId.hashCode() + items.hashCode()
+}
+
 class FactoryQueueObservation(val factoryId: String, items: List<ProductionQueueItem>) {
     val items: List<ProductionQueueItem> = immutable(items)
     override fun equals(other: Any?): Boolean = other is FactoryQueueObservation &&
@@ -113,10 +130,13 @@ data class UnitObservation(
 )
 
 /** Host-only identity/target and arithmetic state. Never copied into player DTOs. */
-data class ProjectileObservation(val objectId: Long, val sourceUnitId: String, val targetUnitId: String,
+data class ProjectileObservation(val objectId: Long, val sourceUnitId: String, val targetUnitId: String?,
     val position: Position, val heading: Double, val remainingLife: Double, val offset: Position, val scatter: Float,
     val height: Double = 0.0, val age: Float = 0f, val deflectionHealth: Float = 1f,
-    val intercepted: Boolean = false)
+    val intercepted: Boolean = false, val ground: GroundProjectileObservation? = null)
+
+data class GroundProjectileObservation(val targetPosition: Position, val targetHeight: Float, val verticalSpeed: Float,
+    val distanceSquared: Float? = null)
 
 data class PointDefenseObservation(val energy: Float, val exhausted: Boolean)
 
@@ -143,7 +163,11 @@ class CombatObservation(val frameCounter: Int, val nextObjectId: Long, weapons: 
 
 data class UnitWeaponObservation(val unitId: String, val objectId: Long, val randomCounter: Int,
     val offset: Position, val targetUnitId: String?, val angularVelocity: Double,
-    val pivot: Position? = null, val muzzle: Position? = null)
+    val pivot: Position? = null, val muzzle: Position? = null, val cooldown: Double = 0.0,
+    val oddShot: Boolean = false, val idle: WeaponIdleObservation? = null)
+
+data class WeaponIdleObservation(val baseHeading: Double, val timer: Float, val offset: Double,
+    val direction: Int, val reached: Boolean, val hold: Float)
 
 data class Event(val kind: String, val unitId: String? = null)
 
@@ -169,6 +193,7 @@ class Observation(
     projectileEvents: List<ProjectileEventObservation> = emptyList(),
     val economy: EconomyObservation? = null,
     val production: ProductionObservation? = null,
+    val upgrades: UpgradeObservation? = null,
 ) {
     val units: List<UnitObservation> = immutable(units)
     val events: List<Event> = immutable(events)
@@ -193,7 +218,9 @@ class PlayerObservation internal constructor(
     projectileEvents: List<VisibleProjectileEvent> = emptyList(),
     val balance: Long? = null,
     factoryQueues: List<FactoryQueueObservation> = emptyList(),
+    upgradeQueues: List<UpgradeQueueObservation> = emptyList(),
 ) {
+    val upgradeQueues: List<UpgradeQueueObservation> = immutable(upgradeQueues)
     val factoryQueues: List<FactoryQueueObservation> = immutable(factoryQueues)
     val units: List<UnitObservation> = immutable(units)
     val events: List<Event> = immutable(events)
@@ -234,8 +261,8 @@ sealed interface CloseResult {
 internal data class MutableUnit(
     val unitId: String,
     val ownerPlayerId: String,
-    val typeId: String,
-    val definition: UnitDefinition,
+    var typeId: String,
+    var definition: UnitDefinition,
     var position: Position,
     var heading: Double,
     var speed: Double = 0.0,
@@ -307,13 +334,16 @@ internal data class MutableCombat(var turretHeading: Double, var angularVelocity
     var cooldown: Double = 0.0, var targetId: String? = null, var offset: Position = Position(0.0, 0.0),
     var randomCounter: Int = 0, var idleBaseHeading: Double = turretHeading,
     var idleTimer: Float = 0f, var idleOffset: Double = 0.0, var idleDirection: Int = -1,
-    var idleReached: Boolean = false, var idleHold: Float = 0f)
+    var idleReached: Boolean = false, var idleHold: Float = 0f, var oddShot: Boolean = false)
 
-internal data class MutableProjectile(val objectId: Long, val sourceUnitId: String, val targetUnitId: String,
+internal data class MutableProjectile(val objectId: Long, val sourceUnitId: String, val targetUnitId: String?,
     var position: Position, var heading: Double, var remainingLife: Double, val offset: Position,
     val scatter: Float, val speed: Double, val damage: Double, var height: Double = 0.0,
     var age: Float = 0f, var deflectionHealth: Float = 1f, var intercepted: Boolean = false,
-    val instant: Boolean = false, val nonDeflectable: Boolean = false)
+    val instant: Boolean = false, val nonDeflectable: Boolean = false,
+    val ground: GroundShot? = null, var verticalSpeed: Float = 0f, var groundDistanceSquared: Float? = null)
+
+internal data class GroundShot(val x: Float, val y: Float, val height: Float, val profile: GroundProjectileProfile)
 
 internal data class MutablePointDefense(var energy: Float, var exhausted: Boolean = false)
 

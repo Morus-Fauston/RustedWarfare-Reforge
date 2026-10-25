@@ -46,6 +46,18 @@ internal class ProductionLedger private constructor(
     })
     fun isActive(factoryId: String): Boolean = factoryId in factories && factoryId !in inactive
 
+    fun charge(owner: String, credits: Long): ProductionLedger? {
+        require(credits >= 0L)
+        val balance = balances.getValue(owner)
+        if (balance < credits) return null
+        return ProductionLedger(balances + (owner to Math.subtractExact(balance, credits)), factories, queues, nonces, inactive)
+    }
+
+    fun refund(owner: String, credits: Long): ProductionLedger {
+        require(credits >= 0L)
+        return ProductionLedger(balances + (owner to Math.addExact(balances.getValue(owner), credits)), factories, queues, nonces, inactive)
+    }
+
     fun validateCandidate() {
         require(balances.values.all { it >= 0L }) { "Production balance must remain nonnegative" }
         for ((factoryId, queue) in queues) {

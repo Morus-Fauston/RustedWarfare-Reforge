@@ -10,7 +10,7 @@ AGP 9.1.1、compileSdk/targetSdk 34、minSdk 26、Build Tools 36.0.0、Java 字�
 
 后台暂停模拟并在 GL 线程释放局内绘制、UI 与原生缓冲；恢复重建表现、保留同局与选择，不补算后台时间。销毁（包括非 finishing 的 Activity 重建）关闭核心与内容加载器，不保存对局；本轮验证 Home/恢复、返回退出/启动及 `Activity.recreate()`，不保证任意后台情形存活。
 
-`:android:stageSandboxAssets` 从本机批准的 P001 输入读取 7 个文件，使用 AGP Variant API 生成 APK assets；原字节和相对路径不改，启动时解出到应用私有目录后交给共享加载器。原版 PNG 仅为内部测试引用，未取得公开分发结论；APK 不得作为公开包。公开克隆缺少 TestLab 与参考素材时，构建此内部样本将明确失败。
+`:android:stageSandboxAssets` 从本机批准的 P001/P002 输入读取固定12个文件（两套各4件描述、P002配置和3张共用原图），使用 AGP Variant API 生成 APK assets；原字节和相对路径不改，启动时解出到应用私有目录后交给共享加载器。此默认包输入仍是移动／知识沙盒；P005共享代码构建兼容不表示已打包或在Android操作生产／升级场景。原版 PNG 仅为内部测试引用，未取得公开分发结论；APK 不得作为公开包。公开克隆缺少 TestLab 与参考素材时，构建此内部样本将明确失败。
 
 调试证据写入应用外部私有目录 `files/runs/run-<时间>-<唯一后缀>/client-diagnostic.jsonl`；这是客户端诊断流，不是正式兼容性轨迹协议。必要设备测试可构建 `:android:assembleDebugAndroidTest`，安装测试 APK 后显式选择已授权实例执行 `am instrument -w com.rustedwarfare.reforge.android.test/com.rustedwarfare.reforge.android.XmlSecurityInstrumentation`；测试自行准备输入并检查 XML 安全和 Activity 重建。
 

@@ -62,4 +62,6 @@ internal fun PlayerObservation.fields(): Map<String, Any?> =
             "blocked" to it.lastKnownBlocked, "gid" to it.lastKnownGroundGid) },
     ) + (balance?.let { mapOf("balance" to it, "factoryQueues" to factoryQueues.map { factory ->
         mapOf("factoryId" to factory.factoryId, "items" to factory.items.map { item ->
-            mapOf("typeId" to item.typeId, "progress" to item.progress) }) }) } ?: emptyMap())
+            mapOf("typeId" to item.typeId, "progress" to item.progress) }) },
+        "upgradeQueues" to upgradeQueues.map { queue -> mapOf("unitId" to queue.unitId, "items" to queue.items.map { item ->
+            mapOf("actionKey" to item.actionKey, "targetTypeId" to item.targetTypeId, "progress" to item.progress) }) }) } ?: emptyMap())

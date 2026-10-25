@@ -10,7 +10,7 @@ import java.nio.file.Path
 import java.util.zip.CRC32
 import java.util.zip.InflaterInputStream
 
-/** The fixed basic land turret and one local template; upgrade sections remain unconsumed data. */
+/** The three finite land turrets and their one local template. */
 internal object TurretContentReader {
     private val actionFields = setOf("convertTo", "price", "text", "description", "descriptionAddUnitStats",
         "displayType", "buildSpeed", "iconExtraImage", "iconExtraColor")
@@ -18,27 +18,33 @@ internal object TurretContentReader {
         "core" to setOf("name", "class", "copyFrom", "dont_load", "overrideAndReplace", "displayLocaleKey",
             "price", "maxHp", "mass", "techLevel", "buildSpeed", "radius", "displayRadius", "fogOfWarSightRange",
             "isBio", "isBuilding", "footprint", "constructionFootprint", "buildingSelectionOffset",
-            "buildingToFootprintOffsetX", "buildingToFootprintOffsetY"),
+            "buildingToFootprintOffsetX", "buildingToFootprintOffsetY", "fogOfWarSightRangeWhileNotBuilt"),
         "graphics" to setOf("total_frames", "image", "image_wreak", "image_turret", "imageScale", "turretImageScale",
             "image_shadow", "shadowOffsetX", "shadowOffsetY"),
         "attack" to setOf("canAttack", "canAttackFlyingUnits", "canAttackLandUnits", "canAttackUnderwaterUnits",
             "turretTurnSpeed", "turretSize", "maxAttackRange", "shootDelay"),
         "turret_1" to setOf("x", "y", "canShoot", "projectile", "shouldResetTurret", "idleSweepAngle", "idleSweepDelay",
             "idleSweepSpeed", "turnSpeedAcceleration", "turnSpeedDeceleration", "recoilOffset", "recoilOutTime",
-            "recoilReturnTime", "shoot_sound", "shoot_sound_vol", "shoot_flame", "shoot_light"),
+            "recoilReturnTime", "shoot_sound", "shoot_sound_vol", "shoot_flame", "shoot_light", "turnSpeed",
+            "barrelX", "barrelOffsetX_onOddShots"),
         "movement" to setOf("movementType", "moveSpeed", "moveAccelerationSpeed", "moveDecelerationSpeed", "maxTurnSpeed", "turnAcceleration"),
-        "projectile_1" to setOf("directDamage", "life", "speed", "frame"),
+        "projectile_1" to setOf("directDamage", "life", "speed", "frame", "targetGround", "areaDamage", "areaRadius",
+            "targetGroundSpread", "initialUnguidedSpeedHeight", "gravity", "drawType", "drawSize", "color",
+            "largeHitEffect", "lightColor", "lightCastOnGround"),
         "ai" to setOf("upgradedFrom", "buildPriority", "noneInBaseExtraPriority", "maxEachBase"),
         "action_upgrade_gun" to actionFields, "action_upgrade_artillery" to actionFields,
         "action_upgrade_flame" to actionFields, "action_upgrade_lightning" to actionFields,
+        "action_upgrade_gunT3" to actionFields, "action_upgrade_artilleryT2" to actionFields,
     )
     private val retained = setOf("core.price", "core.buildSpeed", "core.mass", "core.techLevel", "core.isBio",
         "core.displayLocaleKey", "core.buildingSelectionOffset", "graphics.image_shadow", "graphics.shadowOffsetX",
         "graphics.shadowOffsetY", "turret_1.shoot_sound", "turret_1.shoot_sound_vol", "turret_1.shoot_flame",
         "turret_1.shoot_light", "projectile_1.frame", "movement.moveAccelerationSpeed", "movement.moveDecelerationSpeed",
-        "movement.turnAcceleration")
+        "movement.turnAcceleration", "core.fogOfWarSightRangeWhileNotBuilt", "projectile_1.drawType",
+        "projectile_1.drawSize", "projectile_1.color", "projectile_1.largeHitEffect", "projectile_1.lightColor",
+        "projectile_1.lightCastOnGround")
 
-    fun read(path: Path): UnitDefinition {
+    fun read(path: Path, enableUpgrades: Boolean = false): UnitDefinition {
         ordinary(path, path, "core", "name")
         val child = parse(path)
         fun childIdentity(key: String, expected: String) {
@@ -48,8 +54,17 @@ internal object TurretContentReader {
         }
         if (child["core"]?.get("dont_load")?.let { it != "false" } == true)
             reject(ContentErrorCode.UNSUPPORTED_FEATURE, path, "core", "dont_load", reason = "A template cannot be loaded as a unit")
-        childIdentity("name", "c_turret_t1")
-        childIdentity("overrideAndReplace", "turret")
+        val id = child["core"]?.get("name")
+            ?: reject(ContentErrorCode.MISSING_REQUIRED_FIELD, path, "core", "name", reason = "Missing turret identity")
+        val replacement = when (id) {
+            "c_turret_t1" -> "turret"
+            "c_turret_t2_gun" -> "turretT2"
+            "c_turret_t1_artillery" -> "turret_artillery"
+            else -> reject(ContentErrorCode.UNSUPPORTED_FEATURE, path, "core", "name", id, "Unsupported turret identity")
+        }
+        childIdentity("overrideAndReplace", replacement)
+        if (enableUpgrades && id != "c_turret_t1")
+            reject(ContentErrorCode.UNSUPPORTED_FEATURE, path, "core", "name", id, "Only the basic turret can enable first upgrades")
         val parentName = child["core"]?.get("copyFrom")
             ?: reject(ContentErrorCode.MISSING_REQUIRED_FIELD, path, "core", "copyFrom", reason = "Missing land template")
         val parentPath = reference(path, parentName, "core", "copyFrom")
@@ -97,6 +112,15 @@ internal object TurretContentReader {
                 reject(ContentErrorCode.MALFORMED_SYNTAX, origin(s, k), s, k, reason = "Expected a representable binary32 number")
             return value
         }
+        fun time(s: String, k: String): Double {
+            val raw = required(s, k)
+            val seconds = raw.endsWith('s')
+            val parsed = (if (seconds) raw.dropLast(1) else raw).toFloatOrNull()
+            val ticks = parsed?.let { if (seconds) it * 60f else it }
+            if (ticks == null || !ticks.isFinite() || ticks <= 0f)
+                reject(ContentErrorCode.MALFORMED_SYNTAX, origin(s, k), s, k, raw, "Expected finite positive time")
+            return ticks.toDouble()
+        }
         fun footprint(k: String): BuildingFootprint {
             val values = required("core", k).split(',').map { it.trim().toIntOrNull() }
             if (values.size != 4 || values.any { it == null })
@@ -125,9 +149,29 @@ internal object TurretContentReader {
             number("turret_1", "recoilOutTime", positive = true), number("turret_1", "recoilReturnTime", positive = true))
         if (!(recoil.outTime + recoil.returnTime).isFinite())
             reject(ContentErrorCode.MALFORMED_SYNTAX, origin("turret_1", "recoilReturnTime"), "turret_1", "recoilReturnTime", reason = "Recoil duration overflow")
-        val delay = binary32("turret_1", "idleSweepDelay", true)
-        val idle = IdleSweepProfile(number("turret_1", "idleSweepAngle", positive = true), delay,
-            binary32("turret_1", "idleSweepSpeed", true), if (delay > 200f) 20 else if (delay > 50f) 5 else 1)
+        val idle = if (id == "c_turret_t1_artillery" &&
+            listOf("idleSweepAngle", "idleSweepDelay", "idleSweepSpeed").none { merged["turret_1"]?.containsKey(it) == true }) null
+        else {
+            val delay = binary32("turret_1", "idleSweepDelay", true)
+            IdleSweepProfile(number("turret_1", "idleSweepAngle", positive = true), delay,
+                binary32("turret_1", "idleSweepSpeed", true), if (delay > 200f) 20 else if (delay > 50f) 5 else 1)
+        }
+        val ground = if (id == "c_turret_t1_artillery") {
+            only("projectile_1", "targetGround", "true")
+            fun fixed(k: String, expected: Float): Float {
+                val value = binary32("projectile_1", k, true)
+                if (value != expected) reject(ContentErrorCode.UNSUPPORTED_FEATURE, origin("projectile_1", k),
+                    "projectile_1", k, reason = "Only the finite first artillery profile is supported")
+                return value
+            }
+            GroundProjectileProfile(fixed("areaDamage", 80f), fixed("areaRadius", 55f), fixed("targetGroundSpread", 10f),
+                fixed("initialUnguidedSpeedHeight", 1.2f), fixed("gravity", .18f))
+        } else {
+            if (listOf("targetGround", "areaDamage", "areaRadius", "targetGroundSpread", "initialUnguidedSpeedHeight", "gravity")
+                .any { merged["projectile_1"]?.containsKey(it) == true })
+                reject(ContentErrorCode.UNSUPPORTED_FEATURE, path, "projectile_1", reason = "Only artillery supports ground shots")
+            null
+        }
         fun image(k: String): Path {
             val file = origin("graphics", k)
             val result = reference(file, required("graphics", k), "graphics", k)
@@ -139,19 +183,38 @@ internal object TurretContentReader {
         val body = image("image"); val dead = image("image_wreak"); val top = image("image_turret")
         val hp = integer("core", "maxHp", positive = true).toDouble()
         val radius = number("core", "radius", positive = true)
-        val weapon = CombatProfile(hp, number("attack", "maxAttackRange", positive = true), number("attack", "shootDelay", positive = true),
-            number("attack", "turretSize"), number("attack", "turretTurnSpeed"), maxOf(0.0, acceleration),
-            ProjectileProfile(integer("projectile_1", "directDamage").toDouble(), number("projectile_1", "life", positive = true), number("projectile_1", "speed", positive = true)),
+        val weapon = CombatProfile(hp, number("attack", "maxAttackRange", positive = true),
+            if (ground != null) time("attack", "shootDelay") else number("attack", "shootDelay", positive = true),
+            number("attack", "turretSize"), if (merged["turret_1"]?.containsKey("turnSpeed") == true) number("turret_1", "turnSpeed")
+                else number("attack", "turretTurnSpeed"), maxOf(0.0, acceleration),
+            ProjectileProfile(integer("projectile_1", "directDamage", if (ground != null) 0 else null).toDouble(),
+                number("projectile_1", "life", positive = true), number("projectile_1", "speed", positive = true), ground = ground),
             top, dead, number("graphics", "turretImageScale", 1.0, positive = true),
-            TurretMount(number("turret_1", "x", signed = true), number("turret_1", "y", signed = true)), recoil, idle)
+            TurretMount(number("turret_1", "x", signed = true), number("turret_1", "y", signed = true)), recoil, idle,
+            number("turret_1", "barrelX", 0.0, signed = true), number("turret_1", "barrelOffsetX_onOddShots", 0.0, signed = true))
+        val consumed = mutableSetOf<String>()
+        val upgrades = if (enableUpgrades) UpgradeProfile(listOf(
+            "upgrade_gun" to "c_turret_t2_gun", "upgrade_artillery" to "c_turret_t1_artillery"
+        ).map { (action, target) ->
+            val section = "action_$action"
+            only(section, "convertTo", target)
+            val rawPrice = required(section, "price")
+            val price = rawPrice.toLongOrNull()
+            if (price == null || price < 0L) reject(ContentErrorCode.MALFORMED_SYNTAX, origin(section, "price"),
+                section, "price", rawPrice, "Expected a nonnegative credit amount")
+            val rate = binary32(section, "buildSpeed", true)
+            listOf("convertTo", "price", "buildSpeed").forEach { consumed += "$section.$it" }
+            UpgradeActionProfile(action, target, price, rate)
+        }) else null
         val kept = merged.flatMap { (s, values) -> values.keys.map { "$s.$it" }.filter {
-            it in retained || s == "ai" || s.startsWith("action_upgrade_") } }.toSet()
-        return UnitDefinition("c_turret_t1", "CustomUnitMetadata", radius,
+            (it in retained || s == "ai" || s.startsWith("action_upgrade_")) && it !in consumed } }.toSet()
+        return UnitDefinition(id, "CustomUnitMetadata", radius,
             number("core", "displayRadius", radius, positive = true), integer("graphics", "total_frames", positive = true),
             body, number("graphics", "imageScale", 1.0, positive = true),
             MovementProfile(MovementType.NONE, 0.0, 0.0, 0.0, 0.0, 0.0, false, false), kept,
             integer("core", "fogOfWarSightRange", 15), weapon, DurabilityProfile(hp, dead),
-            BuildingProfile(shape, anchor = FootprintAnchor(binary32("core", "buildingToFootprintOffsetX"), binary32("core", "buildingToFootprintOffsetY"))))
+            BuildingProfile(shape, anchor = FootprintAnchor(binary32("core", "buildingToFootprintOffsetX"), binary32("core", "buildingToFootprintOffsetY"))),
+            upgrades = upgrades)
     }
 
     private fun parse(path: Path): Map<String, Map<String, String>> {

@@ -12,7 +12,7 @@ internal object MotionV2CoreTraceJson {
         "unitId" to s(it.unitId),"worldId" to s(it.world.id),"atStep" to it.atStep?.let(::n),
         "kind" to s(when(it) { is MoveAction->"move";is StopAction->"stop";is SelectAction->"select"
             is AttackAction->error("Movement v2 trace does not support AttackAction")
-            is ProduceAction,is CancelProductionAction->error("Movement v2 trace does not support production actions") }),
+            is ProduceAction,is CancelProductionAction,is UpgradeAction,is CancelUpgradeAction->error("Movement v2 trace does not support economy actions") }),
         "target" to (it as? MoveAction)?.target?.json()) } ?: JsonNull
     fun motion(m:MotionStepSample):JsonObject=with(m) { obj(
         "worldId" to s(worldId),"stepIndex" to n(stepIndex),"unitId" to s(unitId),"ownerPlayerId" to s(ownerPlayerId),"typeId" to s(typeId),

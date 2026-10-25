@@ -45,6 +45,7 @@ class BootstrapScreen(
     private lateinit var productionLabel: Label
     private lateinit var produceButton: TextButton
     private lateinit var cancelProductionButton: TextButton
+    private val upgradeButtons = mutableMapOf<String, Pair<TextButton, TextButton>>()
     private lateinit var modeBox: SelectBox<String>
     private lateinit var shareBox: CheckBox
     private lateinit var startButton: TextButton
@@ -81,6 +82,7 @@ class BootstrapScreen(
         skin = makeSkin().also { created += { it.dispose() } }
         stage = Stage(viewport, batch).also { created += { it.dispose() } }
         groupButtons.clear()
+        upgradeButtons.clear()
         // Consume the whole panel, including empty space, for the full press chain.
         stage.addActor(Actor().apply {
             setBounds(736f, 0f, 224f, 592f)
@@ -97,6 +99,11 @@ class BootstrapScreen(
         selectedLabel = label("None", 752f, 414f, 176f, 100f)
         produceButton = button("Produce", 752f, 264f, 176f) { session?.produce(); updateHud() }
         cancelProductionButton = button("Cancel last", 752f, 216f, 176f) { session?.cancelProduction(); updateHud() }
+        for ((key, title, y) in listOf(Triple("upgrade_gun", "Gun 1000", 264f), Triple("upgrade_artillery", "Art 1600", 216f))) {
+            val buy = button(title, 752f, y, 84f) { session?.upgrade(key); updateHud() }
+            val cancel = button("Cancel", 844f, y, 84f) { session?.cancelUpgrade(key); updateHud() }
+            upgradeButtons[key] = buy to cancel
+        }
         statusLabel = label("", 16f, 52f, 480f, 44f)
         messageLabel = label("Loading", 40f, 400f, 560f, 260f)
         stopButton = button("Stop (S)", 752f, 168f, 176f) { session?.stop(); updateHud() }
@@ -366,18 +373,29 @@ class BootstrapScreen(
             if (selected.ownerPlayerId == "p1") "Local control" else "No controller",
             selected.movementState.name.lowercase(), selected.position.x, selected.position.y, selected.heading, selected.speed) +
             (selected.health?.let { "\nHP ${it.toInt()} / ${selected.maxHealth?.toInt()}" } ?: "") +
+            (if (selected.typeId.startsWith("c_turret")) "\n${selected.typeId}" else "") +
             (selected.pointDefense?.let { String.format(Locale.ROOT, "\nEnergy %.3f%s", it.energy,
                 if (it.exhausted) " LOCKED" else "") } ?: ""))
         val queue = current?.selectedFactoryQueue
         productionLabel.setText(state.balance?.let { balance ->
             "Funds $balance" + (queue?.let { "  Queue ${it.items.size}" +
-                (it.items.firstOrNull()?.let { head -> "  ${(head.progress * 100f).toInt()}%" } ?: "") } ?: "")
+                (it.items.firstOrNull()?.let { head -> "  ${(head.progress * 100f).toInt()}%" } ?: "") } ?: "") +
+                (current?.selectedUpgradeQueue?.items?.joinToString("") { item ->
+                    "  ${if (item.actionKey == "upgrade_gun") "Gun" else "Art"} ${(item.progress * 100f).toInt()}%" } ?: "")
         } ?: "")
         produceButton.isVisible = queue != null
         cancelProductionButton.isVisible = queue != null
         produceButton.isDisabled = current?.productionPrice == null
         produceButton.setText(current?.productionPrice?.let { "Produce $it" } ?: "Produce")
         cancelProductionButton.isDisabled = queue?.items?.isEmpty() != false
+        val upgrades = current?.selectedUpgrades.orEmpty()
+        for ((key, buttons) in upgradeButtons) {
+            val action = upgrades.firstOrNull { it.actionKey == key }
+            buttons.first.isVisible = action != null
+            buttons.second.isVisible = action != null
+            buttons.first.isDisabled = action == null
+            buttons.second.isDisabled = current?.selectedUpgradeQueue?.items?.none { it.actionKey == key } != false
+        }
         stopButton.isDisabled = selected == null
         stopButton.isVisible = current != null
         selectedLabel.isVisible = current != null

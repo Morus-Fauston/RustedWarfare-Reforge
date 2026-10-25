@@ -8,6 +8,24 @@ sealed interface Action {
     val atStep: Long?
 }
 
+data class UpgradeAction(
+    override val actionId: String,
+    override val actorPlayerId: String,
+    override val unitId: String,
+    val upgradeId: String,
+    override val world: WorldHandle,
+    override val atStep: Long? = null,
+) : Action
+
+data class CancelUpgradeAction(
+    override val actionId: String,
+    override val actorPlayerId: String,
+    override val unitId: String,
+    val upgradeId: String,
+    override val world: WorldHandle,
+    override val atStep: Long? = null,
+) : Action
+
 data class ProduceAction(
     override val actionId: String,
     override val actorPlayerId: String,

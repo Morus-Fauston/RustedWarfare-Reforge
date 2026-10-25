@@ -25,6 +25,7 @@ class JsonlEvidence internal constructor(private val directory: Path, private va
         writer = createWriter(directory.resolve("reforge/client-diagnostic.jsonl"))
         try {
             val ticket = when {
+                Files.exists(inputs.resolve("upgrade.properties")) -> "ENG-P005-004"
                 Files.exists(inputs.resolve("point-defense.properties")) -> "ENG-P005-005"
                 Files.exists(inputs.resolve("turret.properties")) -> "ENG-P005-003"
                 Files.exists(inputs.resolve("production.properties")) -> "ENG-P005-002"
@@ -35,6 +36,7 @@ class JsonlEvidence internal constructor(private val directory: Path, private va
                 "format" to "p001.windows-diagnostic.v1", "runId" to runId,
                 "phase" to if (ticket.startsWith("ENG-P005")) "P005" else "P002",
                 "topic" to when (ticket) {
+                    "ENG-P005-004" -> "upgrade-windows-client"
                     "ENG-P005-005" -> "point-defense-windows-client"
                     "ENG-P005-003" -> "turret-windows-client"
                     "ENG-P005-002" -> "production-windows-client"
@@ -68,7 +70,9 @@ class JsonlEvidence internal constructor(private val directory: Path, private va
             val production = scenario.unitDefinitions.values.any { it.production != null }
             val turret = scenario.unitDefinitions.containsKey("c_turret_t1")
             val defense = scenario.unitDefinitions.values.any { it.pointDefense != null }
+            val upgrade = scenario.unitDefinitions.values.any { it.upgrades != null }
             val fixedManifest = contentRoot.resolve(when {
+                upgrade -> "upgrade.properties"
                 defense -> "point-defense.properties"
                 turret -> "turret.properties"
                 production -> "production.properties"
@@ -88,6 +92,8 @@ class JsonlEvidence internal constructor(private val directory: Path, private va
             }
             if (turret) files.addAll(listOf(contentRoot.resolve("units/turret_t1.ini"),
                 contentRoot.resolve("units/turret_common_land.ini")))
+            if (upgrade) files.addAll(listOf(contentRoot.resolve("units/turret_t2_gun.ini"),
+                contentRoot.resolve("units/turret_t1_artillery.ini")))
             if (defense) files.add(contentRoot.resolve("units/laserDefence.properties"))
             files += scenario.map.tileSets.map { it.imagePath }
             files += scenario.unitDefinitions.values.map { it.imagePath }

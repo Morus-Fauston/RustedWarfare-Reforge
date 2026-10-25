@@ -12,7 +12,10 @@ import java.nio.file.Path
 object ContentLoader {
     fun loadPointDefense(path: Path): ContentResult<UnitDefinition> = load(path, PointDefenseContentReader::read)
 
-    fun loadTurretUnit(path: Path): ContentResult<UnitDefinition> = load(path, TurretContentReader::read)
+    fun loadTurretUnit(path: Path): ContentResult<UnitDefinition> = loadTurretUnit(path, false)
+
+    fun loadTurretUnit(path: Path, enableUpgrades: Boolean): ContentResult<UnitDefinition> =
+        load(path) { TurretContentReader.read(it, enableUpgrades) }
 
     fun loadFactory(path: Path): ContentResult<UnitDefinition> = load(path, FactoryContentReader::read)
 

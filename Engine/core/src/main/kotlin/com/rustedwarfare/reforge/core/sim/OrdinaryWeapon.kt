@@ -57,8 +57,11 @@ internal object OrdinaryWeapon {
     fun muzzle(unit: MutableUnit): Position {
         val state = checkNotNull(unit.combat)
         val base = pivot(unit)
-        val forward = ScreenPlane.displacement(state.turretHeading, checkNotNull(unit.definition.combat).turretSize)
-        return Position(base.x + forward.x, base.y + forward.y)
+        val weapon = checkNotNull(unit.definition.combat)
+        val forward = ScreenPlane.displacement(state.turretHeading, weapon.turretSize)
+        val side = ScreenPlane.displacement(state.turretHeading + 90.0,
+            weapon.barrelX + if (state.oddShot) weapon.oddShotOffset else 0.0)
+        return Position(base.x + forward.x + side.x, base.y + forward.y + side.y)
     }
 
     fun hasFiniteGeometry(unit: MutableUnit): Boolean {

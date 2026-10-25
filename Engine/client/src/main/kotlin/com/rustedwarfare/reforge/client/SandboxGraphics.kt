@@ -21,6 +21,8 @@ class SandboxGraphics private constructor(private val resources: SandboxRenderRe
     private val tiles = mutableMapOf<Int, TextureRegion>()
     private val units = mutableMapOf<String, TextureRegion>()
     private val turrets = mutableMapOf<String, TextureRegion>()
+    private val impacts = mutableMapOf<String, Pair<Position, Long>>()
+    private var impactSample: String? = null
     private val corpses = mutableMapOf<String, TextureRegion>()
     private val backs = mutableMapOf<String, TextureRegion>()
 
@@ -181,8 +183,20 @@ class SandboxGraphics private constructor(private val resources: SandboxRenderRe
         shapes.color = Color.YELLOW
         for (projectile in frame.observation.projectiles) {
             val x = projection.x(projectile.position.x)
-            val y = projection.y(projectile.position.y)
+            val y = projection.y(projectile.position.y) + (projectile.height * projection.scale).toFloat()
             shapes.circle(x, y, 2f, 8)
+        }
+        val now = System.nanoTime()
+        if (impactSample != frame.observation.sampleId) {
+            impactSample = frame.observation.sampleId
+            for (event in frame.observation.projectileEvents) if (event.kind == "impact")
+                impacts[event.token] = event.position to now
+        }
+        impacts.entries.removeAll { now - it.value.second > 180_000_000L }
+        shapes.color = Color.ORANGE
+        for ((position, started) in impacts.values) {
+            val fraction = (now - started).toDouble() / 180_000_000.0
+            shapes.circle(projection.x(position.x), projection.y(position.y), (3.0 + 9.0 * fraction).toFloat(), 16)
         }
         shapes.color = Color.CYAN
         for (beam in resources.defenseBeams(frame.observation)) {
@@ -230,7 +244,7 @@ class SandboxGraphics private constructor(private val resources: SandboxRenderRe
         owned.forEach { texture ->
             try { texture.dispose() } catch (error: Exception) { if (failure == null) failure = error else failure.addSuppressed(error) }
         }
-        owned.clear(); tiles.clear(); units.clear(); turrets.clear(); corpses.clear(); backs.clear()
+        owned.clear(); tiles.clear(); units.clear(); turrets.clear(); corpses.clear(); backs.clear(); impacts.clear()
         failure?.let { throw it }
     }
 }

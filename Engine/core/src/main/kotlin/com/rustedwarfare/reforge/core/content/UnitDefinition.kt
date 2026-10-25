@@ -21,6 +21,7 @@ class UnitDefinition(
     val build: BuildProfile? = null,
     val directHitTargetKind: DirectHitTargetKind = DirectHitTargetKind.ORDINARY,
     val pointDefense: PointDefenseProfile? = null,
+    val upgrades: UpgradeProfile? = null,
 ) {
     val retainedUnconsumed: Set<String> = Collections.unmodifiableSet(LinkedHashSet(retainedUnconsumed))
     val maximumHealth: Double? get() = durability?.maxHp ?: combat?.maxHp
@@ -50,6 +51,12 @@ data class BuildingProfile(val footprint: BuildingFootprint, val backImagePath: 
 data class ProductionProfile(val unitTypeId: String)
 data class BuildProfile(val price: Long, val rate: Float)
 
+data class UpgradeActionProfile(val actionKey: String, val targetTypeId: String, val price: Long, val rate: Float)
+
+class UpgradeProfile(actions: List<UpgradeActionProfile>) {
+    val actions: List<UpgradeActionProfile> = Collections.unmodifiableList(ArrayList(actions))
+}
+
 /** Finite native level-one defense fixture; no ordinary offensive weapon. */
 data class PointDefenseProfile(val range: Double = 160.0, val muzzleOffsetX: Double = 0.0,
     val muzzleOffsetY: Double = -13.0, val recharge: Float = .0004f, val cost: Float = .11f,
@@ -70,6 +77,8 @@ data class CombatProfile(
     val mount: TurretMount = TurretMount(),
     val recoil: WeaponRecoil = WeaponRecoil(),
     val idleSweep: IdleSweepProfile? = null,
+    val barrelX: Double = 0.0,
+    val oddShotOffset: Double = 0.0,
 )
 
 data class TurretMount(val localX: Double = 0.0, val localY: Double = 0.0)
@@ -78,4 +87,9 @@ data class IdleSweepProfile(val angle: Double, val delay: Float, val speedFactor
     val randomDelayExclusive: Int)
 
 data class ProjectileProfile(val directDamage: Double, val life: Double, val speed: Double,
-    val instant: Boolean = false, val nonDeflectable: Boolean = false, val deflectionHealth: Float = 1f)
+    val instant: Boolean = false, val nonDeflectable: Boolean = false, val deflectionHealth: Float = 1f,
+    val ground: GroundProjectileProfile? = null)
+
+/** Finite first artillery branch; these values describe a fixed ground snapshot shot. */
+data class GroundProjectileProfile(val areaDamage: Float, val areaRadius: Float, val spread: Float,
+    val initialVerticalSpeed: Float, val gravity: Float, val trueGravity: Float = 0f)
