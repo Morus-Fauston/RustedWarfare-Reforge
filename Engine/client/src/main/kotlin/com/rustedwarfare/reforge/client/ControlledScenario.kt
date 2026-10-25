@@ -12,6 +12,7 @@ import java.util.Properties
 object ControlledScenario {
     fun load(root: Path): Scenario {
         checkCancellation()
+        if (Files.exists(root.resolve("turret.properties"), NOFOLLOW_LINKS)) return loadTurret(root)
         if (Files.exists(root.resolve("production.properties"), NOFOLLOW_LINKS)) return loadProduction(root)
         if (Files.exists(root.resolve("combat.properties"), NOFOLLOW_LINKS)) return loadCombat(root)
         val map = when (val result = ContentLoader.loadMap(root.resolve("maps/p001-controlled.tmx"))) {
@@ -41,6 +42,26 @@ object ControlledScenario {
             TimeModel("p001.time.v1", "sim-tick", "ieee754-binary64", "fixed-explicit-delta"),
             MovementContract(16.0, 4.0),
         )
+    }
+
+    private fun loadTurret(root: Path): Scenario {
+        val marker = root.resolve("turret.properties")
+        require(Files.isRegularFile(marker, NOFOLLOW_LINKS) && !Files.isSymbolicLink(marker) &&
+            marker.toRealPath() == root.toRealPath().resolve("turret.properties")) { "$marker: expected ordinary in-root file" }
+        require(Files.readString(marker).trim().replace("\r\n", "\n") ==
+            "format=rw-reforge.turret-sandbox.v1\nvariant=basic-turret") { "$marker: unsupported fixed turret fixture" }
+        val base = loadProduction(root)
+        checkCancellation()
+        val turret = when (val result = ContentLoader.loadTurretUnit(root.resolve("units/turret_t1.ini"))) {
+            is ContentResult.Success -> result.value
+            is ContentResult.Failure -> error(result.error.describe())
+        }
+        return base.copy(scenarioId = "p005-turret", unitDefinitions = base.unitDefinitions + (turret.id to turret),
+            units = base.units + listOf(UnitSpawn("t", "p1", turret.id, Position(280.0, 150.0), 90.0),
+                UnitSpawn("u", "p2", turret.id, Position(500.0, 100.0), 270.0),
+                UnitSpawn("g", "p2", "landFactory", Position(430.0, 260.0), 0.0)),
+            combatContract = CombatContract(12345, -1,
+                mapOf("a" to 8L, "f" to 10L, "b" to 9L, "t" to 11L, "u" to 12L, "g" to 13L), 14L))
     }
 
     private fun loadProduction(root: Path): Scenario {

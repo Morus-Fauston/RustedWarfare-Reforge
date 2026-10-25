@@ -9,7 +9,7 @@ import java.util.PriorityQueue
 /** The candidate and waypoint policies are experimental and replaceable for later calibration. */
 internal interface PathPolicy {
     fun findPath(map: PlanningTerrain, start: Position, target: Position, radius: Double,
-                 counters: PathSearchCounters? = null): List<Position>?
+                 counters: PathSearchCounters? = null, targetRange: Double = 0.0): List<Position>?
 }
 
 internal class ClearanceAStarPolicy(
@@ -18,8 +18,10 @@ internal class ClearanceAStarPolicy(
     private val terrain: PlanningTerrainPolicy,
 ) : PathPolicy {
     override fun findPath(map: PlanningTerrain, start: Position, target: Position, radius: Double,
-                          counters: PathSearchCounters?): List<Position>? {
+                          counters: PathSearchCounters?, targetRange: Double): List<Position>? {
         if (counters != null) counters.actualSearchCalls++
+        require(targetRange.isFinite() && targetRange >= 0.0)
+        if (targetRange > 0.0) return findPathToRange(map, start, target, radius, targetRange, counters)
         if (!MapBounds.contains(map.widthTiles.toDouble() * map.tileWidth,
                 map.heightTiles.toDouble() * map.tileHeight, start, radius) ||
             !MapBounds.contains(map.widthTiles.toDouble() * map.tileWidth,
@@ -87,6 +89,77 @@ internal class ClearanceAStarPolicy(
                         counters.heuristicCalls++
                     }
                     open += Node(nextCol, nextRow, nextCost, nextCost + heuristic(nextCol, nextRow, goalCell.first, goalCell.second))
+                }
+            }
+        }
+        return null
+    }
+
+    /** Reach a continuous legal stance; the blocked target center is never opened for traversal. */
+    private fun findPathToRange(map: PlanningTerrain, start: Position, target: Position, radius: Double,
+                                range: Double, counters: PathSearchCounters?): List<Position>? {
+        val width = map.widthTiles.toDouble() * map.tileWidth
+        val height = map.heightTiles.toDouble() * map.tileHeight
+        if (!MapBounds.contains(width, height, start, radius) || terrain.intersects(map, start, radius)) return null
+        val startKey = checkNotNull(cellOf(map, start))
+        val points = Array(map.heightTiles) { arrayOfNulls<Position>(map.widthTiles) }
+        val goals = Array(map.heightTiles) { arrayOfNulls<Position>(map.widthTiles) }
+        for (row in 0 until map.heightTiles) for (col in 0 until map.widthTiles) {
+            if (counters != null) counters.candidatesChecked++
+            if (map.isBlocked(col, row)) continue
+            val left = maxOf(col.toDouble() * map.tileWidth, radius)
+            val top = maxOf(row.toDouble() * map.tileHeight, radius)
+            val right = minOf(Math.nextDown((col.toDouble() + 1.0) * map.tileWidth), width - radius)
+            val bottom = minOf(Math.nextDown((row.toDouble() + 1.0) * map.tileHeight), height - radius)
+            if (left > right || top > bottom) continue
+            val center = pointPolicy.point(map, col, row)
+            val point = Position(center.x.coerceIn(left, right), center.y.coerceIn(top, bottom))
+            if (terrain.intersects(map, point, radius)) continue
+            points[row][col] = point
+            val goal = Position(target.x.coerceIn(left, right), target.y.coerceIn(top, bottom))
+            if (ScreenPlane.distanceSquared(goal, target) < range * range && !terrain.intersects(map, goal, radius))
+                goals[row][col] = goal
+        }
+        data class Node(val col: Int, val row: Int, val g: Int)
+        val open = PriorityQueue<Node>(compareBy<Node> { it.g }.thenBy { it.row }.thenBy { it.col })
+        val cameFrom = HashMap<Pair<Int, Int>, Pair<Int, Int>>()
+        val cost = HashMap<Pair<Int, Int>, Int>().apply { this[startKey] = 0 }
+        open += Node(startKey.first, startKey.second, 0)
+        if (counters != null) counters.enqueued++
+        while (open.isNotEmpty()) {
+            val current = open.remove()
+            if (counters != null) counters.popped++
+            val key = current.col to current.row
+            if (cost[key] != current.g) continue
+            val from = if (key == startKey) start else checkNotNull(points[current.row][current.col])
+            val goal = goals[current.row][current.col]
+            if (goal != null && PlanningSegmentClearance.allows(map, from, goal, radius)) {
+                val cells = arrayListOf(key)
+                var cursor = key
+                while (cursor != startKey) {
+                    cursor = cameFrom[cursor] ?: return null
+                    cells += cursor
+                }
+                cells.reverse()
+                val path = cells.drop(1).map { (col, row) -> checkNotNull(points[row][col]) }.toMutableList()
+                if (path.lastOrNull() != goal) path += goal
+                return simplify(map, start, path, radius)
+            }
+            if (counters != null) counters.expanded++
+            for (direction in 0..3) {
+                val col = current.col + when (direction) { 1 -> -1; 2 -> 1; else -> 0 }
+                val row = current.row + when (direction) { 0 -> -1; 3 -> 1; else -> 0 }
+                if (col !in 0 until map.widthTiles || row !in 0 until map.heightTiles) continue
+                if (counters != null) counters.neighborsChecked++
+                val point = points[row][col] ?: continue
+                if (!PlanningSegmentClearance.allows(map, from, point, radius)) continue
+                val next = col to row
+                val nextCost = current.g + 1
+                if (nextCost < (cost[next] ?: Int.MAX_VALUE)) {
+                    cost[next] = nextCost
+                    cameFrom[next] = key
+                    open += Node(col, row, nextCost)
+                    if (counters != null) counters.enqueued++
                 }
             }
         }

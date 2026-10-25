@@ -134,9 +134,10 @@ class SandboxGraphics private constructor(private val resources: SandboxRenderRe
             batch.draw(region, projection.x(unit.position.x) - w / 2, projection.y(unit.position.y) - h / 2,
                 w / 2, h / 2, w, h, 1f, 1f, -unit.heading.toFloat())
             if (unit.alive) turrets[unit.typeId]?.let { turret ->
+                val pivot = definition.turretPosition(unit)
                 val tw = (turret.regionWidth * definition.turretImageScale * projection.scale).toFloat()
                 val th = (turret.regionHeight * definition.turretImageScale * projection.scale).toFloat()
-                batch.draw(turret, projection.x(unit.position.x) - tw / 2, projection.y(unit.position.y) - th / 2,
+                batch.draw(turret, projection.x(pivot.x) - tw / 2, projection.y(pivot.y) - th / 2,
                     tw / 2, th / 2, tw, th, 1f, 1f, -unit.turretHeading.toFloat())
             }
         }

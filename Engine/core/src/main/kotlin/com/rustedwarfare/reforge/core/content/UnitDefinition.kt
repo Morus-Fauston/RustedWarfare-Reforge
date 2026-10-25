@@ -43,7 +43,9 @@ enum class DirectHitTargetKind { ORDINARY, NATIVE_BUILDING }
 
 data class DurabilityProfile(val maxHp: Double, val deadImagePath: Path)
 data class BuildingFootprint(val left: Int, val top: Int, val right: Int, val bottom: Int)
-data class BuildingProfile(val footprint: BuildingFootprint, val backImagePath: Path)
+data class FootprintAnchor(val offsetX: Float, val offsetY: Float)
+data class BuildingProfile(val footprint: BuildingFootprint, val backImagePath: Path? = null,
+    val anchor: FootprintAnchor? = null)
 data class ProductionProfile(val unitTypeId: String)
 data class BuildProfile(val price: Long, val rate: Float)
 
@@ -59,6 +61,14 @@ data class CombatProfile(
     val turretImagePath: Path,
     val deadImagePath: Path,
     val turretImageScale: Double,
+    val mount: TurretMount = TurretMount(),
+    val recoil: WeaponRecoil = WeaponRecoil(),
+    val idleSweep: IdleSweepProfile? = null,
 )
+
+data class TurretMount(val localX: Double = 0.0, val localY: Double = 0.0)
+data class WeaponRecoil(val offset: Double = -2.0, val outTime: Double = 4.0, val returnTime: Double = 7.0)
+data class IdleSweepProfile(val angle: Double, val delay: Float, val speedFactor: Float,
+    val randomDelayExclusive: Int)
 
 data class ProjectileProfile(val directDamage: Double, val life: Double, val speed: Double)

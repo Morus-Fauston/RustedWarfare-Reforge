@@ -38,15 +38,20 @@ internal object OrdinaryWeapon {
 
     fun pivot(unit: MutableUnit): Position {
         val state = checkNotNull(unit.combat)
-        val delay = checkNotNull(unit.definition.combat).shootDelay
-        val elapsed = delay - state.cooldown
+        val weapon = checkNotNull(unit.definition.combat)
+        val profile = weapon.recoil
+        val elapsed = weapon.shootDelay - state.cooldown
         val recoil = if (state.cooldown <= 0.0) 0.0 else when {
-            elapsed < 4.0 -> elapsed / 4.0 * -2.0
-            elapsed < 11.0 -> -2.0 - (elapsed - 4.0) / 7.0 * -2.0
+            elapsed < profile.outTime -> elapsed / profile.outTime * profile.offset
+            elapsed < profile.outTime + profile.returnTime ->
+                profile.offset - (elapsed - profile.outTime) / profile.returnTime * profile.offset
             else -> 0.0
         }
         val d = ScreenPlane.displacement(state.turretHeading, recoil)
-        return Position(unit.position.x + d.x, unit.position.y + d.y)
+        val forward = ScreenPlane.displacement(unit.heading, weapon.mount.localY)
+        val side = ScreenPlane.displacement(unit.heading + 90.0, weapon.mount.localX)
+        return Position(unit.position.x + d.x + forward.x + side.x,
+            unit.position.y + d.y + forward.y + side.y)
     }
 
     fun muzzle(unit: MutableUnit): Position {
@@ -56,11 +61,23 @@ internal object OrdinaryWeapon {
         return Position(base.x + forward.x, base.y + forward.y)
     }
 
+    fun hasFiniteGeometry(unit: MutableUnit): Boolean {
+        val pivot = pivot(unit)
+        val muzzle = muzzle(unit)
+        return pivot.x.isFinite() && pivot.y.isFinite() && muzzle.x.isFinite() && muzzle.y.isFinite()
+    }
+
     fun aim(unit: MutableUnit, target: MutableUnit, delta: Double): Double {
         val state = checkNotNull(unit.combat)
-        val weapon = checkNotNull(unit.definition.combat)
         val aim = Position(target.position.x + state.offset.x, target.position.y + state.offset.y)
-        val diff = ScreenPlane.difference(ScreenPlane.desired(pivot(unit), aim), state.turretHeading)
+        turnTo(unit, ScreenPlane.desired(pivot(unit), aim), delta)
+        return ScreenPlane.difference(ScreenPlane.desired(pivot(unit), aim), state.turretHeading)
+    }
+
+    private fun turnTo(unit: MutableUnit, heading: Double, delta: Double): Double {
+        val state = checkNotNull(unit.combat)
+        val weapon = checkNotNull(unit.definition.combat)
+        val diff = ScreenPlane.difference(heading, state.turretHeading)
         if (abs(diff) >= .01) {
             val acceleration = weapon.turretTurnAcceleration
             val sign = if (diff < 0) -1.0 else 1.0
@@ -74,7 +91,29 @@ internal object OrdinaryWeapon {
                 diff
             } else turn)
         }
-        return ScreenPlane.difference(ScreenPlane.desired(pivot(unit), aim), state.turretHeading)
+        return ScreenPlane.difference(heading, state.turretHeading)
+    }
+
+    fun idle(seed: Int, frame: Int, objectId: Long, unit: MutableUnit, delta: Double) {
+        val profile = checkNotNull(unit.definition.combat).idleSweep ?: return
+        val state = checkNotNull(unit.combat)
+        val elapsed = delta.toFloat()
+        if (state.idleHold != 0f) {
+            state.idleHold = maxOf(0f, state.idleHold - elapsed)
+            return
+        }
+        state.idleTimer += elapsed
+        if (!state.idleReached) {
+            val residual = turnTo(unit, ScreenPlane.normalize(state.idleBaseHeading + state.idleOffset),
+                (profile.speedFactor * elapsed).toDouble())
+            if (abs(residual) < .01) state.idleReached = true
+        }
+        if (state.idleTimer > profile.delay) {
+            state.idleTimer = -sample(seed, frame, objectId, unit, 0, 0, profile.randomDelayExclusive).toFloat()
+            state.idleDirection = -state.idleDirection
+            state.idleOffset = profile.angle * state.idleDirection
+            state.idleReached = false
+        }
     }
 
     /** Cached pre-plane distance is retained unless the ordinary plane step overshoots. */

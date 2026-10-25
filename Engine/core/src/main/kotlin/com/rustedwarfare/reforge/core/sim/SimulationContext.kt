@@ -133,7 +133,8 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
                 view == null || view.contains(MapBounds.cell(unit.position.x, input.map.tileWidth, input.map.widthTiles),
                     MapBounds.cell(unit.position.y, input.map.tileHeight, input.map.heightTiles))
             }.flatMapTo(linkedSetOf()) { unit ->
-                BuildingTerrain.footprint(input.map, unit.position, checkNotNull(unit.definition.building).footprint)
+                val building = checkNotNull(unit.definition.building)
+                BuildingTerrain.footprint(input.map, unit.position, building.footprint, building.anchor)
             }
             val previous = buildingKnowledge[player.playerId]
             val next = BuildingKnowledge.projected(previous, authorized)
@@ -451,7 +452,8 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
                                         reason: PathSearchReason = PathSearchReason.USER_MOVE,
                                         executionStep: Long? = null,
                                         start: Position = unit.position,
-                                        preservedPrefixPointCount: Int = 0): List<Position>? {
+                                        preservedPrefixPointCount: Int = 0,
+                                        targetRange: Double = 0.0): List<Position>? {
         val counters = PathSearchCounters()
         val usedKnowledge = knowledgeStores != null && knowledgeRules?.pathSource == PathInformationSource.PLAYER_KNOWLEDGE
         var outcome = PathSearchOutcome.FAILED
@@ -468,7 +470,7 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
             preparationFinished = true
             searchStart = System.nanoTime()
             searchEntered = true
-            val path = policies.path.findPath(terrain, start, target, unit.definition.radius, counters)
+            val path = policies.path.findPath(terrain, start, target, unit.definition.radius, counters, targetRange)
             outcome = if (path == null) PathSearchOutcome.UNREACHABLE else PathSearchOutcome.FOUND
             pathPointCount = path?.size ?: 0
             return path
@@ -1026,7 +1028,8 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
                 val shape = building.footprint
                 if (m.type != MovementType.NONE || definition.maximumHealth == null || definition.radius <= 0.0 ||
                     shape.left > 0 || shape.top > 0 || shape.right < 0 || shape.bottom < 0 ||
-                    shape.left > shape.right || shape.top > shape.bottom)
+                    shape.left > shape.right || shape.top > shape.bottom ||
+                    building.anchor?.let { !it.offsetX.isFinite() || !it.offsetY.isFinite() } == true)
                     return SimulationError("unsupported-building", "Expected an immobile live building with an ordered footprint containing its center")
             }
             val numbers = listOf(definition.radius, m.moveSpeed, m.moveAccelerationSpeed, m.moveDecelerationSpeed,
@@ -1044,9 +1047,16 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
                 }
             }
             definition.combat?.let { combat ->
-                val positive = listOf(combat.maxHp, combat.attackRange, combat.shootDelay, combat.projectile.life, combat.projectile.speed)
+                val positive = listOf(combat.maxHp, combat.attackRange, combat.shootDelay, combat.projectile.life,
+                    combat.projectile.speed, combat.recoil.outTime, combat.recoil.returnTime)
                 val nonnegative = listOf(combat.turretSize, combat.turretTurnSpeed, combat.turretTurnAcceleration, combat.projectile.directDamage)
-                if (positive.any { !it.isFinite() || it <= 0.0 } || nonnegative.any { !it.isFinite() || it < 0.0 })
+                val signed = listOf(combat.mount.localX, combat.mount.localY, combat.recoil.offset,
+                    combat.recoil.outTime + combat.recoil.returnTime)
+                val invalidIdle = combat.idleSweep?.let { !it.angle.isFinite() || it.angle <= 0.0 ||
+                    !it.delay.isFinite() || it.delay <= 0f || !it.speedFactor.isFinite() || it.speedFactor <= 0f ||
+                    it.randomDelayExclusive <= 0 } == true
+                if (positive.any { !it.isFinite() || it <= 0.0 } || nonnegative.any { !it.isFinite() || it < 0.0 } ||
+                    signed.any { !it.isFinite() } || invalidIdle)
                     return SimulationError("unsupported-combat", "Ordinary combat numbers must be finite and in range")
             }
         }
@@ -1068,6 +1078,14 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
             }
             if (!spawn.heading.isFinite() || !spawn.height.isFinite() || policies.terrain.intersects(input.map, p, radius)) {
                 return SimulationError("invalid-spawn", "Unit '${spawn.unitId}' heading must be finite and spawn outside blocked terrain")
+            }
+            val definition = input.unitDefinitions.getValue(spawn.typeId)
+            if (definition.combat != null && !OrdinaryWeapon.hasFiniteGeometry(MutableUnit(
+                    unitId = spawn.unitId, ownerPlayerId = spawn.ownerPlayerId, typeId = spawn.typeId,
+                    definition = definition, position = p,
+                    heading = policies.coordinates.normalize(spawn.heading), height = spawn.height,
+                    objectId = input.combatContract?.unitObjectIds?.getValue(spawn.unitId)))) {
+                return SimulationError("unsupported-combat", "Initial weapon geometry must remain finite")
             }
         }
         return null
@@ -1132,12 +1150,21 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
             unit.attackCommand = command
             unit.lastAttackPathAttemptStep = null
         }
+        if (unit.definition.movement.type == MovementType.NONE) {
+            unit.cancelRoute()
+            return
+        }
         if (policies.coordinates.distanceSquared(unit.position, target.position) < weapon.attackRange * weapon.attackRange) {
             if (unit.moveTarget != null) unit.cancelRoute()
             return
         }
-        if (unit.lastAttackPathAttemptStep == executionStep ||
-            (unit.moveTarget == target.position && unit.pathPoints.isNotEmpty())) return
+        val targetRange = if (target.definition.building == null) 0.0 else weapon.attackRange
+        val routeEnd = unit.moveTarget
+        val reusable = routeEnd != null && unit.pathPoints.isNotEmpty() &&
+            if (targetRange == 0.0 || unit.birthRemaining > 0f) routeEnd == target.position
+            else policies.coordinates.distanceSquared(routeEnd, target.position) < targetRange * targetRange &&
+                !PlanningCenterTerrain.intersects(planningTerrainFor(unit, map), routeEnd, unit.definition.radius)
+        if (unit.lastAttackPathAttemptStep == executionStep || reusable) return
         unit.lastAttackPathAttemptStep = executionStep
         val samples = pathDiagnostics
         val path = if (unit.birthRemaining > 0f) {
@@ -1145,14 +1172,15 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
                     map.heightTiles.toDouble() * map.tileHeight, target.position, unit.definition.radius))
                 listOf(target.position) else null
         } else if (samples == null) {
-            policies.path.findPath(planningTerrainFor(unit, map), unit.position, target.position, unit.definition.radius)
+            policies.path.findPath(planningTerrainFor(unit, map), unit.position, target.position, unit.definition.radius,
+                targetRange = targetRange)
         } else findPathWithDiagnostics(command.actionId, command.atStep, target.position, unit, map, samples,
-            reason = PathSearchReason.ATTACK_PURSUIT, executionStep = executionStep)
+            reason = PathSearchReason.ATTACK_PURSUIT, executionStep = executionStep, targetRange = targetRange)
         if (path == null) {
             unit.cancelRoute()
             pendingEvents += Event("path-unreachable", unit.unitId)
         } else {
-            unit.moveTarget = target.position
+            unit.moveTarget = path.last()
             unit.originMoveId = command.actionId
             unit.originAtStep = command.atStep
             unit.nearTargetTime = 0.0
@@ -1166,6 +1194,7 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
         val input = checkNotNull(scenario)
         val contract = checkNotNull(input.combatContract)
         val actorId = checkNotNull(unit.objectId)
+        OrdinaryWeapon.idle(contract.worldSeed, combatFrame, actorId, unit, delta)
         val team = input.players.single { it.playerId == unit.ownerPlayerId }.teamId
         fun eligible(target: MutableUnit) = target.alive && target.health != null &&
             target.ownerPlayerId != unit.ownerPlayerId &&
@@ -1186,6 +1215,10 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
         if (state.targetId != target.unitId) {
             state.targetId = target.unitId
             if (target === manualTarget) OrdinaryWeapon.refreshOffset(contract.worldSeed, combatFrame, actorId, unit, target)
+        }
+        if (weapon.idleSweep != null) {
+            state.idleHold = maxOf(state.idleHold, 70f)
+            state.idleBaseHeading = state.turretHeading
         }
         val residual = OrdinaryWeapon.aim(unit, target, delta)
         if (state.cooldown > 0.0 || kotlin.math.abs(residual) >= 5.0) return
@@ -1264,6 +1297,11 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
         var requestedFraction = 0.0
         var target = unit.moveTarget
         var speedTarget = 0.0
+        val attackTarget = unit.attackCommand?.targetUnitId?.let { units[it] }
+        val approachingBuilding = attackTarget?.alive == true && attackTarget.definition.building != null &&
+            unit.definition.combat?.let { weapon ->
+                policies.coordinates.distanceSquared(unit.position, attackTarget.position) >= weapon.attackRange * weapon.attackRange
+            } == true
         if (target != null) {
             val commandDistanceSquared = policies.coordinates.distanceSquared(unit.position, target)
             if (commandDistanceSquared < 1681.0) unit.nearTargetTime += delta
@@ -1272,7 +1310,7 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
                 unit.nearTargetTime > 240.0 -> 16.0
                 else -> 7.0
             }
-            if (policies.capture.inside(commandDistanceSquared, completionRadius)) {
+            if (!approachingBuilding && policies.capture.inside(commandDistanceSquared, completionRadius)) {
                 unit.cancelRoute()
                 pendingEvents += Event("movement-arrived", unit.unitId)
                 target = null
@@ -1286,7 +1324,8 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
             val finalPoint = temporaryBirth || (unit.pathPoints.size == 1 && checkNotNull(local).isLast)
             val d2 = policies.coordinates.distanceSquared(unit.position, steeringTarget)
             val diff = policies.steering.turn(unit, steeringTarget, delta, policies.coordinates)
-            val fraction = policies.propulsion.targetFraction(movement, unit.speed, d2, diff, finalPoint, contract.targetRadius)
+            val propulsionDistance = if (approachingBuilding && finalPoint) maxOf(d2, 16.0) else d2
+            val fraction = policies.propulsion.targetFraction(movement, unit.speed, propulsionDistance, diff, finalPoint, contract.targetRadius)
             aimForSample = steeringTarget
             finalForSample = finalPoint
             differenceForSample = diff
@@ -1404,8 +1443,12 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
             unit.health?.let { require(it >= 0.0 && it <= checkNotNull(unit.definition.maximumHealth) &&
                 unit.alive == (it > 0.0)) { "Invalid unit life state" } }
             unit.combat?.let { state ->
-                require(listOf(state.turretHeading, state.angularVelocity, state.cooldown, state.offset.x, state.offset.y)
+                require(listOf(state.turretHeading, state.angularVelocity, state.cooldown, state.offset.x, state.offset.y,
+                    state.idleBaseHeading, state.idleOffset)
                     .all { it.isFinite() }) { "Weapon candidate must remain finite" }
+                require(state.idleTimer.isFinite() && state.idleHold.isFinite() && state.idleHold >= 0f &&
+                    state.idleDirection in setOf(-1, 1)) { "Invalid idle candidate" }
+                require(OrdinaryWeapon.hasFiniteGeometry(unit)) { "Weapon geometry must remain finite" }
             }
         }
         for (projectile in projectiles) {

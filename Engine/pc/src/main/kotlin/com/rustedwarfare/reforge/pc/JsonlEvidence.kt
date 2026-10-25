@@ -24,11 +24,22 @@ class JsonlEvidence internal constructor(private val directory: Path, private va
         Files.createDirectories(directory.resolve("review"))
         writer = createWriter(directory.resolve("reforge/client-diagnostic.jsonl"))
         try {
+            val ticket = when {
+                Files.exists(inputs.resolve("turret.properties")) -> "ENG-P005-003"
+                Files.exists(inputs.resolve("production.properties")) -> "ENG-P005-002"
+                Files.exists(inputs.resolve("combat.properties")) -> "ENG-P005-001"
+                else -> "ENG-P002-009"
+            }
             Files.writeString(directory.resolve("manifest.json"), json(mapOf(
                 "format" to "p001.windows-diagnostic.v1", "runId" to runId,
-                "phase" to if (Files.exists(inputs.resolve("combat.properties"))) "P005" else "P002",
-                "topic" to if (Files.exists(inputs.resolve("combat.properties"))) "combat-windows-client" else "03-windows-client",
-                "ticket" to if (Files.exists(inputs.resolve("combat.properties"))) "ENG-P005-001" else "ENG-P002-009",
+                "phase" to if (ticket.startsWith("ENG-P005")) "P005" else "P002",
+                "topic" to when (ticket) {
+                    "ENG-P005-003" -> "turret-windows-client"
+                    "ENG-P005-002" -> "production-windows-client"
+                    "ENG-P005-001" -> "combat-windows-client"
+                    else -> "03-windows-client"
+                },
+                "ticket" to ticket,
                 "startedAt" to Instant.now().toString(), "inputs" to inputs.toString(),
                 "javaVersion" to System.getProperty("java.version"), "javaHome" to System.getProperty("java.home"),
                 "osName" to System.getProperty("os.name"), "osVersion" to System.getProperty("os.version"),
@@ -52,21 +63,39 @@ class JsonlEvidence internal constructor(private val directory: Path, private va
         if (kind == "load-ready") {
             val scenario = ControlledScenario.load(contentRoot)
             val combat = scenario.combatContract != null
+            val production = scenario.unitDefinitions.values.any { it.production != null }
+            val turret = scenario.unitDefinitions.containsKey("c_turret_t1")
+            val fixedManifest = contentRoot.resolve(when {
+                turret -> "turret.properties"
+                production -> "production.properties"
+                else -> "combat.properties"
+            })
             val files = if (combat) mutableListOf(contentRoot.resolve("maps/p001-controlled.tmx"),
                 contentRoot.resolve("tilesets/p005-terrain.tsx"), contentRoot.resolve("units/tank.ini"),
-                contentRoot.resolve("combat.properties")) else mutableListOf(contentRoot.resolve("maps/p001-controlled.tmx"),
+                fixedManifest) else mutableListOf(contentRoot.resolve("maps/p001-controlled.tmx"),
                 contentRoot.resolve("tilesets/p001-ground.tsx"), contentRoot.resolve("tilesets/p001-rock.tsx"),
                 contentRoot.resolve("units/weaponless_tank.ini"))
+            if (production) {
+                files.add(contentRoot.resolve("production.properties"))
+                files.add(contentRoot.resolve("units/landFactory.properties"))
+                for (name in listOf("p005-corridor.tmx", "p005-sealed.tmx")) {
+                    contentRoot.resolve("maps/$name").takeIf { Files.isRegularFile(it) }?.let { files.add(it) }
+                }
+            }
+            if (turret) files.addAll(listOf(contentRoot.resolve("units/turret_t1.ini"),
+                contentRoot.resolve("units/turret_common_land.ini")))
             files += scenario.map.tileSets.map { it.imagePath }
             files += scenario.unitDefinitions.values.map { it.imagePath }
             files += scenario.unitDefinitions.values.mapNotNull { it.combat?.turretImagePath }
             files += scenario.unitDefinitions.values.mapNotNull { it.combat?.deadImagePath }
+            files += scenario.unitDefinitions.values.mapNotNull { it.durability?.deadImagePath }
+            files += scenario.unitDefinitions.values.mapNotNull { it.building?.backImagePath }
             val manifestFile = contentRoot.resolve("sandbox.properties")
             val manifest = manifestFile.takeIf { Files.exists(it) }?.let(::identity)
             if (manifest != null) files.add(manifestFile)
             record("input-identities", mapOf("generation" to values["generation"],
                 "root" to contentRoot.toString(), "scenarioId" to scenario.scenarioId,
-                "sandboxManifest" to if (combat) identity(contentRoot.resolve("combat.properties")) else (manifest ?: identity(manifestFile)),
+                "sandboxManifest" to if (combat) identity(fixedManifest) else (manifest ?: identity(manifestFile)),
                 "files" to files.distinct().map(::identity)))
         }
     }

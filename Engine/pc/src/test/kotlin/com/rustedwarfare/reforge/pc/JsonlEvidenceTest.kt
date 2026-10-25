@@ -14,6 +14,36 @@ import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
 class JsonlEvidenceTest {
+    @Test fun fixed_turret_evidence_labels_003_and_identifies_the_twenty_fixed_input_files() {
+        val repo = generateSequence(Path.of("").toAbsolutePath()) { it.parent }
+            .first { Files.isRegularFile(it.resolve("AGENTS.md")) }
+        val root = repo.resolve(".scratch/开发票据/引擎重写/P005-生产战斗与指挥沙盒/evidence/ENG-P005-003/20261026-e-turret-contract-01/input")
+        val temporary = Files.createTempDirectory("p005-turret-evidence-")
+        try {
+            val directory = temporary.resolve("run")
+            JsonlEvidence(directory, "turret-run", root).use {
+                it.record("load-request", mapOf("generation" to 1L, "root" to root.toString()))
+                it.record("load-ready", mapOf("generation" to 1L))
+            }
+            val manifest = JsonReader().parse(Files.readString(directory.resolve("manifest.json")))
+            assertEquals("P005", manifest.getString("phase"))
+            assertEquals("ENG-P005-003", manifest.getString("ticket"))
+            val identities = records(directory).single { it.getString("kind") == "input-identities" }
+            assertEquals("p005-turret", identities.getString("scenarioId"))
+            assertEquals(root.resolve("turret.properties").toString(), identities.get("sandboxManifest").getString("path"))
+            val files = identities.get("files").toList()
+            assertEquals(20, files.size)
+            val expected = Files.walk(root).use { paths -> paths.filter { Files.isRegularFile(it) }.toList().toSet() }
+            assertEquals(expected, files.map { Path.of(it.getString("path")) }.toSet())
+            for (row in files) {
+                val file = Path.of(row.getString("path"))
+                assertEquals(Files.size(file), row.getLong("bytes"))
+                assertEquals(MessageDigest.getInstance("SHA-256").digest(Files.readAllBytes(file))
+                    .joinToString("") { "%02x".format(it) }, row.getString("sha256"))
+            }
+        } finally { temporary.toFile().deleteRecursively() }
+    }
+
     private val properties = """
         format=rw-reforge.sandbox.v1
         p1.team=blue

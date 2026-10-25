@@ -298,7 +298,9 @@ internal data class ManualAttackCommand(val targetUnitId: String, val actionId: 
 
 internal data class MutableCombat(var turretHeading: Double, var angularVelocity: Double = 0.0,
     var cooldown: Double = 0.0, var targetId: String? = null, var offset: Position = Position(0.0, 0.0),
-    var randomCounter: Int = 0)
+    var randomCounter: Int = 0, var idleBaseHeading: Double = turretHeading,
+    var idleTimer: Float = 0f, var idleOffset: Double = 0.0, var idleDirection: Int = -1,
+    var idleReached: Boolean = false, var idleHold: Float = 0f)
 
 internal data class MutableProjectile(val objectId: Long, val sourceUnitId: String, val targetUnitId: String,
     var position: Position, var heading: Double, var remainingLife: Double, val offset: Position,
