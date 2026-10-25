@@ -8,6 +8,34 @@ sealed interface Action {
     val atStep: Long?
 }
 
+data class ProduceAction(
+    override val actionId: String,
+    override val actorPlayerId: String,
+    override val unitId: String,
+    val productionTypeId: String,
+    val unitNonce: String,
+    override val world: WorldHandle,
+    override val atStep: Long? = null,
+) : Action
+
+data class CancelProductionAction(
+    override val actionId: String,
+    override val actorPlayerId: String,
+    override val unitId: String,
+    val productionTypeId: String,
+    override val world: WorldHandle,
+    override val atStep: Long? = null,
+) : Action
+
+data class AttackAction(
+    override val actionId: String,
+    override val actorPlayerId: String,
+    override val unitId: String,
+    val targetUnitId: String,
+    override val world: WorldHandle,
+    override val atStep: Long? = null,
+) : Action
+
 data class MoveAction(
     override val actionId: String,
     override val actorPlayerId: String,

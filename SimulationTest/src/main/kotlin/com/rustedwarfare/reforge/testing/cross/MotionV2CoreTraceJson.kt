@@ -10,7 +10,9 @@ internal object MotionV2CoreTraceJson {
         "suppressed" to array(it.suppressed.map { x->obj("type" to s(x.javaClass.name),"message" to x.message?.let(::s)) })) } ?: JsonNull
     private fun action(a:Action?):JsonElement=a?.let { obj("actionId" to s(it.actionId),"actorPlayerId" to s(it.actorPlayerId),
         "unitId" to s(it.unitId),"worldId" to s(it.world.id),"atStep" to it.atStep?.let(::n),
-        "kind" to s(when(it) { is MoveAction->"move";is StopAction->"stop";is SelectAction->"select" }),
+        "kind" to s(when(it) { is MoveAction->"move";is StopAction->"stop";is SelectAction->"select"
+            is AttackAction->error("Movement v2 trace does not support AttackAction")
+            is ProduceAction,is CancelProductionAction->error("Movement v2 trace does not support production actions") }),
         "target" to (it as? MoveAction)?.target?.json()) } ?: JsonNull
     fun motion(m:MotionStepSample):JsonObject=with(m) { obj(
         "worldId" to s(worldId),"stepIndex" to n(stepIndex),"unitId" to s(unitId),"ownerPlayerId" to s(ownerPlayerId),"typeId" to s(typeId),

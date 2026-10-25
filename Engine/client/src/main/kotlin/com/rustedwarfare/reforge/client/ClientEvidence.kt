@@ -39,6 +39,9 @@ internal fun Observation.fields(): Map<String, Any?> = mapOf(
         "position" to unit.position.fields(), "heading" to unit.heading, "speed" to unit.speed,
         "angularVelocity" to unit.angularVelocity, "moveTarget" to unit.moveTarget?.fields(),
         "pathPoints" to unit.pathPoints.map { it.fields() }, "movementState" to unit.movementState.name.lowercase(),
+        "health" to unit.health, "maxHealth" to unit.maxHealth, "alive" to unit.alive,
+        "attackTargetId" to unit.attackTargetId, "turretHeading" to unit.turretHeading, "cooldown" to unit.cooldown,
+        "height" to unit.height,
     ) },
     "events" to events.map { mapOf("kind" to it.kind, "unitId" to it.unitId) },
     "actionResults" to actionResults.map { it.fields() },
@@ -48,6 +51,14 @@ internal fun PlayerObservation.fields(): Map<String, Any?> =
     Observation(sampleId, worldId, scenarioId, stepIndex, simulationTime, units, events, actionResults).fields() + mapOf(
         "playerId" to playerId,
         "visionEpoch" to vision?.epoch,
+        "projectiles" to projectiles.map { mapOf("token" to it.token, "multiplicity" to it.multiplicity,
+            "position" to it.position.fields(), "heading" to it.heading, "height" to it.height, "parentToken" to it.parentToken) },
+        "projectileEvents" to projectileEvents.map { mapOf("token" to it.token, "kind" to it.kind,
+            "occurrences" to it.occurrences, "position" to it.position.fields(), "heading" to it.heading,
+            "height" to it.height, "sourceUnitId" to it.sourceUnitId, "targetUnitId" to it.targetUnitId,
+            "damage" to it.damage, "parentToken" to it.parentToken) },
         "knowledge" to knowledge?.cells?.map { mapOf("visible" to it.visible,
             "blocked" to it.lastKnownBlocked, "gid" to it.lastKnownGroundGid) },
-    )
+    ) + (balance?.let { mapOf("balance" to it, "factoryQueues" to factoryQueues.map { factory ->
+        mapOf("factoryId" to factory.factoryId, "items" to factory.items.map { item ->
+            mapOf("typeId" to item.typeId, "progress" to item.progress) }) }) } ?: emptyMap())

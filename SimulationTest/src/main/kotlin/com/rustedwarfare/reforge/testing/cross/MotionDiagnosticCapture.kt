@@ -15,11 +15,16 @@ import kotlin.math.ceil
 object MotionDiagnosticCapture {
     internal fun submitAndRecord(context:SimulationContext,action:Action,original:JsonObject,sequence:Int,q:Int,
                                  attempts:MutableList<JsonElement>):ActionResult.Accepted {
+        require(action !is ProduceAction && action !is CancelProductionAction) {
+            "Movement diagnostic capture does not support production actions"
+        }
         val before=context.observe().json()
         val submitted=context.submit(action)
         val issued=obj("actionId" to s(action.actionId),"actorPlayerId" to s(action.actorPlayerId),"unitId" to s(action.unitId),
             "worldId" to s(action.world.id),"atStep" to action.atStep?.let(::n),
-            "kind" to s(when(action) { is MoveAction -> "move";is StopAction -> "stop";is SelectAction -> "select" }),
+            "kind" to s(when(action) { is MoveAction -> "move";is StopAction -> "stop";is SelectAction -> "select"
+                is AttackAction -> error("Movement diagnostic capture does not support AttackAction")
+                is ProduceAction, is CancelProductionAction -> error("Movement diagnostic capture does not support production actions") }),
             "target" to (action as? MoveAction)?.target?.json())
         attempts+=obj("attempted" to b(true),"sequence" to n(sequence),"q" to n(q),
             "actualSimulationTime" to before.required("simulationTime"),"actualStepIndex" to before.required("stepIndex"),

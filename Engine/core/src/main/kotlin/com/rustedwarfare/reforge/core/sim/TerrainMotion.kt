@@ -4,7 +4,7 @@ import com.rustedwarfare.reforge.core.content.MapDefinition
 
 /** Static LAND center/cell correction. Map outer-circle handling belongs to the caller. */
 internal object TerrainMotion {
-    fun resolve(map: MapDefinition, start: Position, candidate: Position): Position {
+    fun resolve(map: MapDefinition, start: Position, candidate: Position, ground: MapDefinition? = null): Position {
         val a = Position(start.x / map.tileWidth, start.y / map.tileHeight)
         val b = Position(candidate.x / map.tileWidth, candidate.y / map.tileHeight)
         // D-083 retains the map's closed outer edge for zero-radius units.
@@ -12,6 +12,10 @@ internal object TerrainMotion {
         val oldY = MapBounds.cell(start.y, map.tileHeight, map.heightTiles)
         val newX = MapBounds.cell(candidate.x, map.tileWidth, map.widthTiles)
         val newY = MapBounds.cell(candidate.y, map.tileHeight, map.heightTiles)
+        // C6 releases only the building layer from an already blocked start.
+        // Re-run the entire segment on hard ground, including multi-cell walls.
+        if (ground != null && (oldX != newX || oldY != newY) && map.blocking.isBlocked(oldX, oldY) &&
+            !ground.blocking.isBlocked(newX, newY)) return resolve(ground, start, candidate)
         if (kotlin.math.abs(newX.toLong() - oldX) > 1L || kotlin.math.abs(newY.toLong() - oldY) > 1L) {
             val line = ExactCenterLineCells(start, candidate)
             val firstX = (minOf(oldX, newX).toLong() - 1L).coerceAtLeast(0L).toInt()
@@ -43,8 +47,6 @@ internal object TerrainMotion {
             if (corrected == null && sideB) corrected = edgeCorrection(a, b, newX, oldY, ::blocked)
         }
         if (corrected == null) corrected = edgeCorrection(a, b, newX, newY, ::blocked)
-        // Both terrain queries use this core's sole static grid. There is no
-        // separate mask layer whose exclusion could permit an escape override.
         return corrected?.let { Position(it.x * map.tileWidth, it.y * map.tileHeight) } ?: start
     }
 

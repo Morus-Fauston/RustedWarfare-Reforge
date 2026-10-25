@@ -103,6 +103,29 @@ class MotionV2CoreInputsTest {
         } finally { context.close() }
     }
 
+    @Test fun unsupported_production_actions_are_rejected_before_the_movement_capture_submits_them() {
+        val f = fixture(); val loaded = MotionV2CoreInputs.load(f.manifest, f.request)
+        val scenario = Scenario("private.production-reject", loaded.map, mapOf("tank" to loaded.unit),
+            listOf(Player("p1", PlayerControl.LOCAL)), listOf(UnitSpawn("u1", "p1", "tank", Position(10.0,10.0),0.0)),
+            CoordinateModel("p001.coordinate.v1","2d","x-right","y-down","top-left","world-unit","double","ieee754-binary64"),
+            TimeModel("p001.time.v1","sim-tick","ieee754-binary64","fixed-explicit-delta"), MovementContract(16.0,4.0))
+        val context = assertIs<InitResult.Accepted>(SimulationContext.initialize(scenario)).context
+        try {
+            val actions = listOf(ProduceAction("unsupported-pay", "p1", "u1", "tank", "0".repeat(32), context.world),
+                CancelProductionAction("unsupported-cancel", "p1", "u1", "tank", context.world))
+            for (action in actions) {
+                val before = context.observe()
+                val attempts = mutableListOf<JsonElement>()
+                assertFails { MotionDiagnosticCapture.submitAndRecord(context, action,
+                    obj("q" to n(0),"action" to s("stop")), 0, 0, attempts) }
+                assertSame(before, context.observe(), "Unsupported capture must not register or reject a gameplay action")
+                assertTrue(attempts.isEmpty())
+                assertIs<ActionResult.Accepted>(context.submit(SelectAction(action.actionId, "p1", "u1", context.world)),
+                    "The unsupported adapter call must not consume the gameplay action ID")
+            }
+        } finally { context.close() }
+    }
+
     @Test fun legacy_capture_keeps_strict_request_fields() {
         val f=fixture();val q=readObject(f.request)
         Files.writeString(f.request,JsonObject(q+("sourceManifest" to identity(f.manifest))).toString())

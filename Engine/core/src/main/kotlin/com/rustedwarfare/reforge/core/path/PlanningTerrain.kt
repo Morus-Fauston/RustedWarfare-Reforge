@@ -27,6 +27,17 @@ class PlanningTerrain(
         return cells[row*widthTiles+column]
     }
 
+    /** Compose authorized dynamic cells into a self-contained value, without retaining a truth query. */
+    internal fun withBuildings(buildings: Set<Pair<Int, Int>>): PlanningTerrain {
+        if (buildings.isEmpty()) return this
+        val combined = cells.copyOf()
+        for ((column, row) in buildings) {
+            require(column in 0 until widthTiles && row in 0 until heightTiles)
+            combined[row * widthTiles + column] = true
+        }
+        return PlanningTerrain(widthTiles, heightTiles, tileWidth, tileHeight, combined)
+    }
+
     companion object {
         private fun validateShape(width: Int, height: Int, tileWidth: Int, tileHeight: Int) {
             if(width<=0 || height<=0 || width.toLong()*height>Int.MAX_VALUE) throw PlanningException("invalid-dimensions", "Positive dimensions with product within Int are required")
