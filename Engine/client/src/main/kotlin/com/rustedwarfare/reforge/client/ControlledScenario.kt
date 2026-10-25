@@ -12,6 +12,9 @@ import java.util.Properties
 object ControlledScenario {
     fun load(root: Path): Scenario {
         checkCancellation()
+        if (Files.exists(root.resolve("turret.properties"), NOFOLLOW_LINKS)) return loadTurret(root)
+        if (Files.exists(root.resolve("production.properties"), NOFOLLOW_LINKS)) return loadProduction(root)
+        if (Files.exists(root.resolve("combat.properties"), NOFOLLOW_LINKS)) return loadCombat(root)
         val map = when (val result = ContentLoader.loadMap(root.resolve("maps/p001-controlled.tmx"))) {
             is ContentResult.Success -> result.value
             is ContentResult.Failure -> error(result.error.describe())
@@ -39,6 +42,87 @@ object ControlledScenario {
             TimeModel("p001.time.v1", "sim-tick", "ieee754-binary64", "fixed-explicit-delta"),
             MovementContract(16.0, 4.0),
         )
+    }
+
+    private fun loadTurret(root: Path): Scenario {
+        val file = root.resolve("turret.properties")
+        require(Files.isRegularFile(file, NOFOLLOW_LINKS) && !Files.isSymbolicLink(file) &&
+            file.toRealPath() == root.toRealPath().resolve("turret.properties")) { "$file: expected ordinary in-root file" }
+        require(Files.readAllLines(file) == listOf("format=rw-reforge.turret-sandbox.v1", "variant=basic-turret")) {
+            "$file: unsupported fixed turret fixture"
+        }
+        checkCancellation()
+        val base = loadProduction(root)
+        checkCancellation()
+        val tower = when (val result = ContentLoader.loadTurretUnit(root.resolve("units/turret_t1.ini"))) {
+            is ContentResult.Success -> result.value
+            is ContentResult.Failure -> error(result.error.describe())
+        }
+        checkCancellation()
+        val combat = checkNotNull(base.combatContract)
+        return base.copy(scenarioId = "p005-turret", unitDefinitions = base.unitDefinitions + (tower.id to tower),
+            units = base.units + listOf(UnitSpawn("t", "p1", tower.id, Position(280.0, 100.0), 90.0),
+                UnitSpawn("u", "p2", tower.id, Position(500.0, 100.0), 270.0),
+                UnitSpawn("g", "p2", "landFactory", Position(430.0, 100.0), 0.0)),
+            combatContract = combat.copy(
+                unitObjectIds = combat.unitObjectIds + mapOf("t" to 11L, "u" to 12L, "g" to 13L), nextObjectId = 14L))
+    }
+
+    private fun loadProduction(root: Path): Scenario {
+        val file = root.resolve("production.properties")
+        require(Files.isRegularFile(file, NOFOLLOW_LINKS) && !Files.isSymbolicLink(file) &&
+            file.toRealPath() == root.toRealPath().resolve("production.properties")) { "$file: expected ordinary in-root file" }
+        require(Files.readString(file).trim().replace("\r\n", "\n") ==
+            "format=rw-reforge.production-sandbox.v1\nvariant=production") { "$file: unsupported fixed production fixture" }
+        val map = when (val result = ContentLoader.loadMap(root.resolve("maps/p001-controlled.tmx"))) {
+            is ContentResult.Success -> result.value
+            is ContentResult.Failure -> error(result.error.describe())
+        }
+        checkCancellation()
+        val tank = when (val result = ContentLoader.loadCombatUnit(root.resolve("units/tank.ini"))) {
+            is ContentResult.Success -> result.value
+            is ContentResult.Failure -> error(result.error.describe())
+        }
+        checkCancellation()
+        val factory = when (val result = ContentLoader.loadFactory(root.resolve("units/landFactory.properties"))) {
+            is ContentResult.Success -> result.value
+            is ContentResult.Failure -> error(result.error.describe())
+        }
+        return Scenario("p005-production", map, mapOf(tank.id to tank, factory.id to factory),
+            listOf(Player("p1", PlayerControl.LOCAL, "one"), Player("p2", PlayerControl.NONE, "two")),
+            listOf(UnitSpawn("a", "p1", tank.id, Position(110.0, 210.0), 90.0),
+                UnitSpawn("f", "p1", factory.id, Position(310.0, 210.0), 0.0),
+                UnitSpawn("b", "p2", tank.id, Position(430.0, 210.0), 270.0)),
+            CoordinateModel("p001.coordinate.v1", "2d", "x-right", "y-down", "top-left", "world-unit", "double", "ieee754-binary64"),
+            TimeModel("p001.time.v1", "sim-tick", "ieee754-binary64", "fixed-explicit-delta"), MovementContract(16.0, 4.0),
+            combatContract = CombatContract(12345, -1, mapOf("a" to 8L, "f" to 10L, "b" to 9L), 11L),
+            economyContract = EconomyContract(mapOf("p1" to 1750L, "p2" to 0L)))
+    }
+
+    /** Explicit fixed P005 fixture; arbitrary original unit/mod files are not a scene format. */
+    private fun loadCombat(root: Path): Scenario {
+        val file = root.resolve("combat.properties")
+        require(Files.isRegularFile(file, NOFOLLOW_LINKS) && !Files.isSymbolicLink(file) &&
+            file.toRealPath() == root.toRealPath().resolve("combat.properties")) { "$file: expected ordinary in-root file" }
+        val text = Files.readString(file).trim()
+        require(text == "format=rw-reforge.combat-sandbox.v1") { "$file: unsupported fixed combat fixture" }
+        val map = when (val result = ContentLoader.loadMap(root.resolve("maps/p001-controlled.tmx"))) {
+            is ContentResult.Success -> result.value
+            is ContentResult.Failure -> error(result.error.describe())
+        }
+        checkCancellation()
+        val tank = when (val result = ContentLoader.loadCombatUnit(root.resolve("units/tank.ini"))) {
+            is ContentResult.Success -> result.value
+            is ContentResult.Failure -> error(result.error.describe())
+        }
+        return Scenario("p005-combat", map, mapOf("c_tank" to tank),
+            listOf(Player("p1", PlayerControl.LOCAL, "one"), Player("p2", PlayerControl.NONE, "two")),
+            listOf(UnitSpawn("a", "p1", "c_tank", Position(110.0, 210.0), 90.0),
+                UnitSpawn("b", "p2", "c_tank", Position(350.0, 210.0), 270.0),
+                UnitSpawn("c", "p2", "c_tank", Position(510.0, 330.0), 270.0)),
+            CoordinateModel("p001.coordinate.v1", "2d", "x-right", "y-down", "top-left", "world-unit", "double", "ieee754-binary64"),
+            TimeModel("p001.time.v1", "sim-tick", "ieee754-binary64", "fixed-explicit-delta"), MovementContract(16.0, 4.0),
+            combatContract = CombatContract(12345, -1, mapOf("a" to 8L, "b" to 9L, "c" to 10L), 11L))
     }
 
     private fun checkCancellation() {

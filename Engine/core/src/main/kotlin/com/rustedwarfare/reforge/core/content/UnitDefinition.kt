@@ -14,8 +14,15 @@ class UnitDefinition(
     val movement: MovementProfile,
     retainedUnconsumed: Set<String>,
     val fogOfWarSightRange: Int = 15,
+    val combat: CombatProfile? = null,
+    val durability: DurabilityProfile? = null,
+    val building: BuildingProfile? = null,
+    val production: ProductionProfile? = null,
+    val build: BuildProfile? = null,
+    val directHitTargetKind: DirectHitTargetKind = DirectHitTargetKind.ORDINARY,
 ) {
     val retainedUnconsumed: Set<String> = Collections.unmodifiableSet(LinkedHashSet(retainedUnconsumed))
+    val maximumHealth: Double? get() = durability?.maxHp ?: combat?.maxHp
 }
 
 data class MovementProfile(
@@ -29,4 +36,39 @@ data class MovementProfile(
     val ignoringBody: Boolean,
 )
 
-enum class MovementType { LAND }
+enum class MovementType { LAND, NONE }
+
+/** Trusted original target class; a building or an unarmed life profile does not imply native membership. */
+enum class DirectHitTargetKind { ORDINARY, NATIVE_BUILDING }
+
+data class DurabilityProfile(val maxHp: Double, val deadImagePath: Path)
+data class BuildingFootprint(val left: Int, val top: Int, val right: Int, val bottom: Int)
+data class FootprintAnchor(val offsetX: Float, val offsetY: Float)
+data class BuildingProfile(val footprint: BuildingFootprint, val backImagePath: Path? = null,
+    val anchor: FootprintAnchor? = null)
+data class ProductionProfile(val unitTypeId: String)
+data class BuildProfile(val price: Long, val rate: Float)
+
+/** Explicit ordinary combat content; absent on legacy movement-only variants. */
+data class CombatProfile(
+    val maxHp: Double,
+    val attackRange: Double,
+    val shootDelay: Double,
+    val turretSize: Double,
+    val turretTurnSpeed: Double,
+    val turretTurnAcceleration: Double,
+    val projectile: ProjectileProfile,
+    val turretImagePath: Path,
+    val deadImagePath: Path,
+    val turretImageScale: Double,
+    val mount: TurretMount = TurretMount(),
+    val recoil: WeaponRecoil = WeaponRecoil(),
+    val idleSweep: IdleSweepProfile? = null,
+)
+
+data class TurretMount(val localX: Double = 0.0, val localY: Double = 0.0)
+data class WeaponRecoil(val offset: Double = -2.0, val outTime: Double = 4.0, val returnTime: Double = 7.0)
+data class IdleSweepProfile(val angle: Double, val delay: Float, val speedFactor: Float,
+    val randomDelayExclusive: Int)
+
+data class ProjectileProfile(val directDamage: Double, val life: Double, val speed: Double)
