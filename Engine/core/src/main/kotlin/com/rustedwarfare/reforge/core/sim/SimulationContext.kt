@@ -752,7 +752,8 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
         val previous = checkpoint()
         // Calculate on copies so a numerical failure cannot commit half of a multi-unit step.
         units = units.mapValuesTo(linkedMapOf()) { (_, unit) ->
-            unit.copy(pathPoints = unit.pathPoints.toMutableList(), combat = unit.combat?.copy()) }
+            unit.copy(pathPoints = unit.pathPoints.toMutableList(), combat = unit.combat?.copy(),
+                pointDefense = unit.pointDefense?.copy()) }
         projectiles = projectiles.mapTo(mutableListOf()) { it.copy() }
         pathDiagnostics = pathDiagnostics?.toMutableList()
         pendingEvents = pendingEvents.toMutableList()
@@ -778,6 +779,7 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
                 if (unit.definition.production != null) advanceProduction(unit, currentScenario)
                 updateAttackRoute(unit, currentScenario.map, step.stepIndex)
                 updateWeapon(unit, step.delta)
+                updatePointDefense(unit, step.delta)
                 updateUnit(unit, currentScenario.map, step.delta, step.stepIndex, motionSamples)
                 unit.combat?.let { it.cooldown = maxOf(0.0, it.cooldown - step.delta) }
             }
@@ -845,7 +847,7 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
         val visibleIds = visibleUnits.map { it.unitId }.toSet()
         val visible = visibleUnits.map {
             if (it.ownerPlayerId != playerId) {
-                it.copy(moveTarget = null, pathPoints = emptyList(), attackTargetId = null, cooldown = null)
+                it.copy(moveTarget = null, pathPoints = emptyList(), attackTargetId = null, cooldown = null, pointDefense = null)
             } else if (it.attackTargetId != null && it.attackTargetId !in visibleIds) {
                 it.copy(moveTarget = null, pathPoints = emptyList(), attackTargetId = null)
             } else it
@@ -869,11 +871,12 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
             if (it is ActionResult.Accepted) ActionResult.Accepted(it.actionId, visibleEvents(it.events), it.queuedForStep) else it
         }
         val rawProjectileEvents = committed?.projectileEvents.orEmpty() + observation.projectileEvents
-        val projectedEvents = rawProjectileEvents.filter { isVisibleTo(playerId, it.projectile.position) }.map { event ->
+        val projectedEvents = rawProjectileEvents.filter { isVisibleTo(playerId, it.projectile.position) &&
+            (it.interceptorUnitId == null || it.interceptorUnitId in ids) }.map { event ->
             val value = event.projectile
             val target = value.targetUnitId.takeIf { it in ids }
             ProjectedProjectileEvent(value.objectId, event.kind, value.position, value.heading, value.height,
-                value.sourceUnitId.takeIf { it in ids }, target, event.damage.takeIf { target != null })
+                value.sourceUnitId.takeIf { it in ids }, target, event.damage.takeIf { target != null }, event.interceptorUnitId)
         }
         val projection = projectileViews.getOrPut(playerId) { ProjectileProjection() }.project(
             observation.projectiles.filter { isVisibleTo(playerId, it.position) }, projectedEvents,
@@ -1019,6 +1022,14 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
         }
         for (definition in input.unitDefinitions.values) {
             val m = definition.movement
+            definition.pointDefense?.let { profile ->
+                if (definition.building == null || definition.combat != null || m.type != MovementType.NONE ||
+                    !profile.range.isFinite() || profile.range <= 0.0 || !(profile.range * profile.range).isFinite() ||
+                    !profile.muzzleOffsetX.isFinite() || !profile.muzzleOffsetY.isFinite() ||
+                    !profile.recharge.isFinite() || profile.recharge < 0f || !profile.cost.isFinite() || profile.cost < 0f ||
+                    !profile.initialEnergy.isFinite() || profile.initialEnergy !in 0f..1f)
+                    return SimulationError("unsupported-point-defense", "Expected a finite immobile defense building and valid energy profile")
+            }
             definition.production?.let { production ->
                 val build = input.unitDefinitions[production.unitTypeId]?.build
                 if (definition.building == null || build == null || build.price < 0L || !build.rate.isFinite() || build.rate <= 0f)
@@ -1056,7 +1067,8 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
                     !it.delay.isFinite() || it.delay <= 0f || !it.speedFactor.isFinite() || it.speedFactor <= 0f ||
                     it.randomDelayExclusive <= 0 } == true
                 if (positive.any { !it.isFinite() || it <= 0.0 } || nonnegative.any { !it.isFinite() || it < 0.0 } ||
-                    signed.any { !it.isFinite() } || invalidIdle)
+                    signed.any { !it.isFinite() } || invalidIdle ||
+                    !combat.projectile.deflectionHealth.isFinite() || combat.projectile.deflectionHealth <= 0f)
                     return SimulationError("unsupported-combat", "Ordinary combat numbers must be finite and in range")
             }
         }
@@ -1080,6 +1092,10 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
                 return SimulationError("invalid-spawn", "Unit '${spawn.unitId}' heading must be finite and spawn outside blocked terrain")
             }
             val definition = input.unitDefinitions.getValue(spawn.typeId)
+            definition.pointDefense?.let { profile ->
+                if (!(p.x + profile.muzzleOffsetX).isFinite() || !(p.y + profile.muzzleOffsetY).isFinite())
+                    return SimulationError("unsupported-point-defense", "Initial defense muzzle must remain finite")
+            }
             if (definition.combat != null && !OrdinaryWeapon.hasFiniteGeometry(MutableUnit(
                     unitId = spawn.unitId, ownerPlayerId = spawn.ownerPlayerId, typeId = spawn.typeId,
                     definition = definition, position = p,
@@ -1232,22 +1248,34 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
         val scatter = OrdinaryWeapon.sample(contract.worldSeed, combatFrame, actorId, unit, state.randomCounter, 0, 1000) * .001f
         state.randomCounter += 1
         val projectile = MutableProjectile(id, unit.unitId, target.unitId, muzzle, state.turretHeading,
-            weapon.projectile.life, capturedOffset, scatter, weapon.projectile.speed, weapon.projectile.directDamage, unit.height)
+            weapon.projectile.life, capturedOffset, scatter, weapon.projectile.speed, weapon.projectile.directDamage, unit.height,
+            deflectionHealth = weapon.projectile.deflectionHealth, instant = weapon.projectile.instant,
+            nonDeflectable = weapon.projectile.nonDeflectable)
         projectiles += projectile
         pendingProjectileEvents += ProjectileEventObservation("born", projectileObservation(projectile))
         OrdinaryWeapon.refreshOffset(contract.worldSeed, combatFrame, actorId, unit, target)
         pendingEvents += Event("projectile-fired", unit.unitId)
     }
 
+    private fun updatePointDefense(unit: MutableUnit, delta: Double) {
+        if (unit.pointDefense == null) return
+        val teams = checkNotNull(scenario).players.associate { it.playerId to it.teamId }
+        val shot = PointDefense.advance(unit, delta, projectiles, units, teams) ?: return
+        pendingProjectileEvents += ProjectileEventObservation("deflected", projectileObservation(shot),
+            interceptorUnitId = unit.unitId)
+    }
+
     private fun updateProjectiles(delta: Double) {
         for (projectile in projectiles.sortedBy { it.objectId }) {
             val target = units[projectile.targetUnitId]
             if (target == null) {
+                projectile.age += delta.toFloat()
                 pendingProjectileEvents += ProjectileEventObservation("target-ended", projectileObservation(projectile))
                 projectiles.remove(projectile)
                 continue
             }
             val hit = OrdinaryWeapon.move(projectile, target, delta)
+            projectile.age += delta.toFloat()
             if (hit) {
                 var appliedDamage = 0.0
                 if (target.alive && target.health != null) {
@@ -1273,6 +1301,9 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
                 projectiles.remove(projectile)
             } else if (projectile.remainingLife == 0.0) {
                 pendingProjectileEvents += ProjectileEventObservation("expired", projectileObservation(projectile))
+                projectiles.remove(projectile)
+            } else if (projectile.intercepted) {
+                pendingProjectileEvents += ProjectileEventObservation("intercepted", projectileObservation(projectile))
                 projectiles.remove(projectile)
             }
         }
@@ -1450,10 +1481,16 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
                     state.idleDirection in setOf(-1, 1)) { "Invalid idle candidate" }
                 require(OrdinaryWeapon.hasFiniteGeometry(unit)) { "Weapon geometry must remain finite" }
             }
+            unit.pointDefense?.let { state ->
+                require(state.energy.isFinite() && state.energy in 0f..1f) { "Defense energy candidate must remain finite and bounded" }
+                val muzzle = PointDefense.muzzle(unit)
+                require(muzzle.x.isFinite() && muzzle.y.isFinite()) { "Defense muzzle must remain finite" }
+            }
         }
         for (projectile in projectiles) {
             require(listOf(projectile.position.x, projectile.position.y,
-                projectile.height, projectile.heading, projectile.remainingLife).all { it.isFinite() }) {
+                projectile.height, projectile.heading, projectile.remainingLife).all { it.isFinite() } &&
+                projectile.age.isFinite() && projectile.age >= 0f && projectile.deflectionHealth.isFinite()) {
                 "Projectile candidate must remain finite"
             }
             require(projectile.objectId > 0L && projectile.objectId < nextObjectId && objectIds.add(projectile.objectId)) {
@@ -1466,7 +1503,8 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
         for (event in pendingProjectileEvents) {
             val projectile = event.projectile
             require(listOf(projectile.position.x, projectile.position.y, projectile.height,
-                projectile.heading, projectile.remainingLife).all { it.isFinite() } && event.damage?.isFinite() != false) {
+                projectile.heading, projectile.remainingLife).all { it.isFinite() } && event.damage?.isFinite() != false &&
+                projectile.age.isFinite() && projectile.age >= 0f && projectile.deflectionHealth.isFinite()) {
                 "Projectile event candidate must remain finite"
             }
         }
@@ -1478,7 +1516,8 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
 
     private fun projectileObservation(projectile: MutableProjectile) = ProjectileObservation(projectile.objectId,
         projectile.sourceUnitId, projectile.targetUnitId, projectile.position, projectile.heading,
-        projectile.remainingLife, projectile.offset, projectile.scatter, projectile.height)
+        projectile.remainingLife, projectile.offset, projectile.scatter, projectile.height, projectile.age,
+        projectile.deflectionHealth, projectile.intercepted)
 
     private fun makeObservation(observedStep: Long, observedTime: Double, advanced: Boolean, observedRevision: Long): Observation {
         val currentScenario = checkNotNull(scenario)
@@ -1507,6 +1546,7 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
                     turretHeading = unit.combat?.turretHeading ?: unit.heading,
                     cooldown = unit.combat?.cooldown,
                     height = unit.height,
+                    pointDefense = unit.pointDefense?.let { PointDefenseObservation(it.energy, it.exhausted) },
                 )
             },
             events = pendingEvents,

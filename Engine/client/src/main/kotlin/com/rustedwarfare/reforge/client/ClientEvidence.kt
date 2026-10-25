@@ -42,6 +42,7 @@ internal fun Observation.fields(): Map<String, Any?> = mapOf(
         "health" to unit.health, "maxHealth" to unit.maxHealth, "alive" to unit.alive,
         "attackTargetId" to unit.attackTargetId, "turretHeading" to unit.turretHeading, "cooldown" to unit.cooldown,
         "height" to unit.height,
+        "pointDefense" to unit.pointDefense?.let { mapOf("energy" to it.energy, "exhausted" to it.exhausted) },
     ) },
     "events" to events.map { mapOf("kind" to it.kind, "unitId" to it.unitId) },
     "actionResults" to actionResults.map { it.fields() },
@@ -56,7 +57,7 @@ internal fun PlayerObservation.fields(): Map<String, Any?> =
         "projectileEvents" to projectileEvents.map { mapOf("token" to it.token, "kind" to it.kind,
             "occurrences" to it.occurrences, "position" to it.position.fields(), "heading" to it.heading,
             "height" to it.height, "sourceUnitId" to it.sourceUnitId, "targetUnitId" to it.targetUnitId,
-            "damage" to it.damage, "parentToken" to it.parentToken) },
+            "damage" to it.damage, "parentToken" to it.parentToken, "interceptorUnitId" to it.interceptorUnitId) },
         "knowledge" to knowledge?.cells?.map { mapOf("visible" to it.visible,
             "blocked" to it.lastKnownBlocked, "gid" to it.lastKnownGroundGid) },
     ) + (balance?.let { mapOf("balance" to it, "factoryQueues" to factoryQueues.map { factory ->

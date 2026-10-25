@@ -365,7 +365,9 @@ class BootstrapScreen(
             if (selected.unitId.startsWith("produced:")) selected.typeId else selected.unitId, selected.ownerPlayerId,
             if (selected.ownerPlayerId == "p1") "Local control" else "No controller",
             selected.movementState.name.lowercase(), selected.position.x, selected.position.y, selected.heading, selected.speed) +
-            (selected.health?.let { "\nHP ${it.toInt()} / ${selected.maxHealth?.toInt()}" } ?: ""))
+            (selected.health?.let { "\nHP ${it.toInt()} / ${selected.maxHealth?.toInt()}" } ?: "") +
+            (selected.pointDefense?.let { String.format(Locale.ROOT, "\nEnergy %.3f%s", it.energy,
+                if (it.exhausted) " LOCKED" else "") } ?: ""))
         val queue = current?.selectedFactoryQueue
         productionLabel.setText(state.balance?.let { balance ->
             "Funds $balance" + (queue?.let { "  Queue ${it.items.size}" +

@@ -20,6 +20,7 @@ class UnitDefinition(
     val production: ProductionProfile? = null,
     val build: BuildProfile? = null,
     val directHitTargetKind: DirectHitTargetKind = DirectHitTargetKind.ORDINARY,
+    val pointDefense: PointDefenseProfile? = null,
 ) {
     val retainedUnconsumed: Set<String> = Collections.unmodifiableSet(LinkedHashSet(retainedUnconsumed))
     val maximumHealth: Double? get() = durability?.maxHp ?: combat?.maxHp
@@ -49,6 +50,11 @@ data class BuildingProfile(val footprint: BuildingFootprint, val backImagePath: 
 data class ProductionProfile(val unitTypeId: String)
 data class BuildProfile(val price: Long, val rate: Float)
 
+/** Finite native level-one defense fixture; no ordinary offensive weapon. */
+data class PointDefenseProfile(val range: Double = 160.0, val muzzleOffsetX: Double = 0.0,
+    val muzzleOffsetY: Double = -13.0, val recharge: Float = .0004f, val cost: Float = .11f,
+    val initialEnergy: Float = 1f)
+
 /** Explicit ordinary combat content; absent on legacy movement-only variants. */
 data class CombatProfile(
     val maxHp: Double,
@@ -71,4 +77,5 @@ data class WeaponRecoil(val offset: Double = -2.0, val outTime: Double = 4.0, va
 data class IdleSweepProfile(val angle: Double, val delay: Float, val speedFactor: Float,
     val randomDelayExclusive: Int)
 
-data class ProjectileProfile(val directDamage: Double, val life: Double, val speed: Double)
+data class ProjectileProfile(val directDamage: Double, val life: Double, val speed: Double,
+    val instant: Boolean = false, val nonDeflectable: Boolean = false, val deflectionHealth: Float = 1f)

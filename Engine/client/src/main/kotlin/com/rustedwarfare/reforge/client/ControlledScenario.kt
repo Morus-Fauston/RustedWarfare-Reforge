@@ -12,6 +12,7 @@ import java.util.Properties
 object ControlledScenario {
     fun load(root: Path): Scenario {
         checkCancellation()
+        if (Files.exists(root.resolve("point-defense.properties"), NOFOLLOW_LINKS)) return loadPointDefense(root)
         if (Files.exists(root.resolve("turret.properties"), NOFOLLOW_LINKS)) return loadTurret(root)
         if (Files.exists(root.resolve("production.properties"), NOFOLLOW_LINKS)) return loadProduction(root)
         if (Files.exists(root.resolve("combat.properties"), NOFOLLOW_LINKS)) return loadCombat(root)
@@ -42,6 +43,29 @@ object ControlledScenario {
             TimeModel("p001.time.v1", "sim-tick", "ieee754-binary64", "fixed-explicit-delta"),
             MovementContract(16.0, 4.0),
         )
+    }
+
+    private fun loadPointDefense(root: Path): Scenario {
+        val marker = root.resolve("point-defense.properties")
+        require(Files.isRegularFile(marker, NOFOLLOW_LINKS) && !Files.isSymbolicLink(marker) &&
+            marker.toRealPath() == root.toRealPath().resolve("point-defense.properties")) { "$marker: expected ordinary in-root file" }
+        require(Files.readString(marker).trim().replace("\r\n", "\n") ==
+            "format=rw-reforge.point-defense-sandbox.v1\nvariant=level-one") { "$marker: unsupported fixed defense fixture" }
+        val base = loadProduction(root)
+        checkCancellation()
+        val defense = when (val result = ContentLoader.loadPointDefense(root.resolve("units/laserDefence.properties"))) {
+            is ContentResult.Success -> result.value
+            is ContentResult.Failure -> error(result.error.describe())
+        }
+        val shooters = listOf(138, 162, 186, 210, 234, 258, 282).map { 410 to it } +
+            listOf(162, 186, 210, 234, 258).map { 434 to it }
+        val enemy = shooters.mapIndexed { index, (x, y) -> UnitSpawn("b" + (index + 1).toString().padStart(2, '0'), "p2", "c_tank",
+            Position(x.toDouble(), y.toDouble()), 270.0) }
+        return base.copy(scenarioId = "p005-point-defense", unitDefinitions = base.unitDefinitions + (defense.id to defense),
+            units = base.units.filter { it.unitId != "b" } +
+                UnitSpawn("d", "p1", defense.id, Position(230.0, 150.0), 0.0) + enemy,
+            combatContract = CombatContract(12345, -1, mapOf("a" to 8L, "f" to 10L, "d" to 11L) +
+                enemy.mapIndexed { index, unit -> unit.unitId to (12L + index) }, 24L))
     }
 
     private fun loadTurret(root: Path): Scenario {

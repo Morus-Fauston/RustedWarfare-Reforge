@@ -2,14 +2,15 @@ package com.rustedwarfare.reforge.core.sim
 
 /** Player-local history; host IDs only track membership, never assign order or public labels. */
 internal data class ProjectedProjectileEvent(val objectId: Long, val kind: String, val position: Position,
-    val heading: Double, val height: Double, val sourceUnitId: String?, val targetUnitId: String?, val damage: Double?)
+    val heading: Double, val height: Double, val sourceUnitId: String?, val targetUnitId: String?, val damage: Double?,
+    val interceptorUnitId: String? = null)
 
 internal data class ProjectileProjectionResult(val projectiles: List<VisibleProjectile>, val events: List<VisibleProjectileEvent>)
 
 internal class ProjectileProjection {
     private data class Appearance(val position: Position, val heading: Double, val height: Double)
     private data class PublicEvent(val kind: String, val appearance: Appearance,
-        val source: String?, val target: String?, val damage: Double?)
+        val source: String?, val target: String?, val damage: Double?, val interceptor: String?)
     private data class PublicKey(val appearance: Appearance, val active: Boolean, val events: List<PublicEvent>)
     private data class Input(val objectId: Long, val key: PublicKey)
     private data class Known(val token: String, val parentToken: String?)
@@ -28,6 +29,7 @@ internal class ProjectileProjection {
         if (value == 0) value = compareValues(a.source, b.source)
         if (value == 0) value = compareValues(a.target, b.target)
         if (value == 0) value = compareValues(a.damage, b.damage)
+        if (value == 0) value = compareValues(a.interceptor, b.interceptor)
         return value
     }
 
@@ -54,7 +56,7 @@ internal class ProjectileProjection {
         val inputs = (active.keys + eventGroups.keys).map { id ->
             val events = eventGroups[id].orEmpty().map { event -> PublicEvent(event.kind,
                 appearance(event.position, event.heading, event.height), event.sourceUnitId,
-                event.targetUnitId, event.damage?.let(::canonical)) }
+                event.targetUnitId, event.damage?.let(::canonical), event.interceptorUnitId) }
             val value = active[id]?.let { appearance(it.position, it.heading, it.height) } ?: events.last().appearance
             Input(id, PublicKey(value, id in active, events))
         }
@@ -76,7 +78,7 @@ internal class ProjectileProjection {
                 // Per-object causal order survives; class order is entirely public-key/history order.
                 for (event in key.events) resultEvents += VisibleProjectileEvent(known.token, event.kind, ids.size,
                     event.appearance.position, event.appearance.heading, event.appearance.height,
-                    event.source, event.target, event.damage, known.parentToken)
+                    event.source, event.target, event.damage, known.parentToken, event.interceptor)
             }
         }
         return ProjectileProjectionResult(immutable(result), immutable(resultEvents))

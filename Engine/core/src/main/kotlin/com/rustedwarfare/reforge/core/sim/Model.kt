@@ -109,22 +109,28 @@ data class UnitObservation(
     val turretHeading: Double = heading,
     val cooldown: Double? = null,
     val height: Double = 0.0,
+    val pointDefense: PointDefenseObservation? = null,
 )
 
 /** Host-only identity/target and arithmetic state. Never copied into player DTOs. */
 data class ProjectileObservation(val objectId: Long, val sourceUnitId: String, val targetUnitId: String,
     val position: Position, val heading: Double, val remainingLife: Double, val offset: Position, val scatter: Float,
-    val height: Double = 0.0)
+    val height: Double = 0.0, val age: Float = 0f, val deflectionHealth: Float = 1f,
+    val intercepted: Boolean = false)
+
+data class PointDefenseObservation(val energy: Float, val exhausted: Boolean)
 
 /** One public appearance class. Identical newly visible objects have one token and multiplicity. */
 data class VisibleProjectile(val token: String, val multiplicity: Int, val position: Position, val heading: Double,
     val height: Double = 0.0, val parentToken: String? = null)
 
-data class ProjectileEventObservation(val kind: String, val projectile: ProjectileObservation, val damage: Double? = null)
+data class ProjectileEventObservation(val kind: String, val projectile: ProjectileObservation, val damage: Double? = null,
+    val interceptorUnitId: String? = null)
 
 data class VisibleProjectileEvent(val token: String, val kind: String, val occurrences: Int,
     val position: Position, val heading: Double, val height: Double, val sourceUnitId: String?,
-    val targetUnitId: String?, val damage: Double?, val parentToken: String? = null)
+    val targetUnitId: String?, val damage: Double?, val parentToken: String? = null,
+    val interceptorUnitId: String? = null)
 
 /** Trusted-host state for deterministic replay/rollback verification, absent from player observations. */
 class CombatObservation(val frameCounter: Int, val nextObjectId: Long, weapons: List<UnitWeaponObservation>) {
@@ -257,6 +263,7 @@ internal data class MutableUnit(
     val updateKey: String = unitId,
     val producerId: String? = null,
     var birthRemaining: Float = 0f,
+    var pointDefense: MutablePointDefense? = definition.pointDefense?.let { MutablePointDefense(it.initialEnergy) },
 ) {
     val alive: Boolean get() = health == null || checkNotNull(health) > 0.0
     fun ensureLocalMotion(): LocalMotionSegment {
@@ -304,7 +311,11 @@ internal data class MutableCombat(var turretHeading: Double, var angularVelocity
 
 internal data class MutableProjectile(val objectId: Long, val sourceUnitId: String, val targetUnitId: String,
     var position: Position, var heading: Double, var remainingLife: Double, val offset: Position,
-    val scatter: Float, val speed: Double, val damage: Double, var height: Double = 0.0)
+    val scatter: Float, val speed: Double, val damage: Double, var height: Double = 0.0,
+    var age: Float = 0f, var deflectionHealth: Float = 1f, var intercepted: Boolean = false,
+    val instant: Boolean = false, val nonDeflectable: Boolean = false)
+
+internal data class MutablePointDefense(var energy: Float, var exhausted: Boolean = false)
 
 internal fun <T> immutable(values: Collection<T>): List<T> =
     Collections.unmodifiableList(ArrayList(values))

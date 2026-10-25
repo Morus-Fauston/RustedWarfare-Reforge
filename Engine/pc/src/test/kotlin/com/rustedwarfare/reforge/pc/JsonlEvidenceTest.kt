@@ -14,6 +14,35 @@ import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
 class JsonlEvidenceTest {
+    @Test fun fixed_defense_evidence_labels_005_and_identifies_every_one_of_the_eighteen_real_inputs() {
+        val repo = generateSequence(Path.of("").toAbsolutePath()) { it.parent }
+            .first { Files.isRegularFile(it.resolve("AGENTS.md")) }
+        val root = repo.resolve(".scratch/开发票据/引擎重写/P005-生产战斗与指挥沙盒/evidence/ENG-P005-005/20261026-e-defense-input-01/input")
+        val temporary = Files.createTempDirectory("p005-defense-evidence-")
+        try {
+            val directory = temporary.resolve("run")
+            JsonlEvidence(directory, "defense-run", root).use {
+                it.record("load-request", mapOf("generation" to 1L, "root" to root.toString()))
+                it.record("load-ready", mapOf("generation" to 1L))
+            }
+            val manifest = JsonReader().parse(Files.readString(directory.resolve("manifest.json")))
+            assertEquals("ENG-P005-005", manifest.getString("ticket"))
+            val identities = records(directory).single { it.getString("kind") == "input-identities" }
+            assertEquals("p005-point-defense", identities.getString("scenarioId"))
+            assertEquals(root.resolve("point-defense.properties").toString(), identities.get("sandboxManifest").getString("path"))
+            val files = identities.get("files").toList()
+            assertEquals(18, files.size)
+            val expected = Files.walk(root).use { paths -> paths.filter { Files.isRegularFile(it) }.toList().toSet() }
+            assertEquals(expected, files.map { Path.of(it.getString("path")) }.toSet())
+            for (row in files) {
+                val file = Path.of(row.getString("path"))
+                assertEquals(Files.size(file), row.getLong("bytes"))
+                assertEquals(MessageDigest.getInstance("SHA-256").digest(Files.readAllBytes(file))
+                    .joinToString("") { "%02x".format(it) }, row.getString("sha256"))
+            }
+        } finally { temporary.toFile().deleteRecursively() }
+    }
+
     @Test fun fixed_turret_evidence_labels_003_and_identifies_the_twenty_fixed_input_files() {
         val repo = generateSequence(Path.of("").toAbsolutePath()) { it.parent }
             .first { Files.isRegularFile(it.resolve("AGENTS.md")) }

@@ -160,6 +160,11 @@ class SandboxGraphics private constructor(private val resources: SandboxRenderRe
             if (unit.alive && health != null && maximum != null) {
                 shapes.line(x - radius, y + radius + 4f, x - radius + 2f * radius * (health / maximum).toFloat(), y + radius + 4f)
             }
+            if (unit.alive) unit.pointDefense?.let { defense ->
+                shapes.color = if (defense.exhausted) Color.ORANGE else Color.CYAN
+                shapes.line(x - radius, y + radius + 8f, x - radius + 2f * radius * defense.energy, y + radius + 8f)
+                shapes.color = resources.unitCircleColor(frame.observation.playerId, unit.ownerPlayerId)
+            }
             if (unit.unitId in selectedIds) {
                 shapes.circle(x, y, radius + 6f, 32)
                 var previous = unit.position
@@ -178,6 +183,10 @@ class SandboxGraphics private constructor(private val resources: SandboxRenderRe
             val x = projection.x(projectile.position.x)
             val y = projection.y(projectile.position.y)
             shapes.circle(x, y, 2f, 8)
+        }
+        shapes.color = Color.CYAN
+        for (beam in resources.defenseBeams(frame.observation)) {
+            shapes.line(projection.x(beam.start.x), projection.y(beam.start.y), projection.x(beam.end.x), projection.y(beam.end.y))
         }
         box?.let { (start, end) ->
             val x1 = projection.x(start.x); val x2 = projection.x(end.x)
