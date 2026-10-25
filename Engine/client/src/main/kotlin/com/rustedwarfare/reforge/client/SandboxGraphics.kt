@@ -10,10 +10,13 @@ import com.badlogic.gdx.graphics.glutils.ShapeRenderer
 import com.badlogic.gdx.utils.XmlReader
 import com.rustedwarfare.reforge.core.sim.Scenario
 import java.nio.file.Path
+import com.rustedwarfare.reforge.core.sim.Position
+import kotlin.math.abs
 
 class SandboxGraphics private constructor(private val resources: SandboxRenderResources) : AutoCloseable {
     val projection = MapProjection(resources.widthTiles.toDouble() * resources.tileWidth,
-        resources.heightTiles.toDouble() * resources.tileHeight)
+        resources.heightTiles.toDouble() * resources.tileHeight, MapArea(16.0, 64.0, 704.0, 512.0))
+    val minimap = Minimap(projection.worldWidth, projection.worldHeight)
     private val owned = mutableListOf<Texture>()
     private val tiles = mutableMapOf<Int, TextureRegion>()
     private val units = mutableMapOf<String, TextureRegion>()
@@ -143,7 +146,7 @@ class SandboxGraphics private constructor(private val resources: SandboxRenderRe
         }
     }
 
-    fun drawOverlay(shapes: ShapeRenderer, frame: SandboxFrame, selectedId: String?) {
+    fun drawOverlay(shapes: ShapeRenderer, frame: SandboxFrame, selectedIds: Set<String>, box: Pair<Position, Position>? = null) {
         shapes.color = Color(0.45f, 0.5f, 0.47f, 1f)
         shapes.rect(projection.left.toFloat(), projection.bottom.toFloat(), projection.width.toFloat(), projection.height.toFloat())
         for (unit in frame.observation.units) {
@@ -151,13 +154,13 @@ class SandboxGraphics private constructor(private val resources: SandboxRenderRe
             val radius = (resources.units.getValue(unit.typeId).displayRadius * projection.scale).toFloat()
             val x = projection.x(unit.position.x)
             val y = projection.y(unit.position.y)
-            shapes.circle(x, y, radius + if (unit.unitId == selectedId) 4f else 1f, 32)
+            shapes.circle(x, y, radius + if (unit.unitId in selectedIds) 4f else 1f, 32)
             val health = unit.health
             val maximum = unit.maxHealth
             if (unit.alive && health != null && maximum != null) {
                 shapes.line(x - radius, y + radius + 4f, x - radius + 2f * radius * (health / maximum).toFloat(), y + radius + 4f)
             }
-            if (unit.unitId == selectedId) {
+            if (unit.unitId in selectedIds) {
                 shapes.circle(x, y, radius + 6f, 32)
                 var previous = unit.position
                 for (point in unit.pathPoints) {
@@ -176,6 +179,41 @@ class SandboxGraphics private constructor(private val resources: SandboxRenderRe
             val y = projection.y(projectile.position.y)
             shapes.circle(x, y, 2f, 8)
         }
+        box?.let { (start, end) ->
+            val x1 = projection.x(start.x); val x2 = projection.x(end.x)
+            val y1 = projection.y(start.y); val y2 = projection.y(end.y)
+            shapes.color = Color(0.45f, 0.91f, 0.65f, 1f)
+            shapes.rect(minOf(x1, x2), minOf(y1, y2), abs(x1 - x2), abs(y1 - y2))
+        }
+    }
+
+    fun drawMinimap(shapes: ShapeRenderer, frame: SandboxFrame) {
+        val view = minimap.frame(frame)
+        val area = minimap.area
+        shapes.begin(ShapeRenderer.ShapeType.Filled)
+        shapes.color = Color.BLACK
+        shapes.rect(area.left.toFloat(), area.bottom.toFloat(), area.width.toFloat(), area.height.toFloat())
+        val width = (area.width / resources.widthTiles).toFloat()
+        val height = (area.height / resources.heightTiles).toFloat()
+        for (cell in view.terrain) {
+            if (!cell.known) continue
+            shapes.color = if (cell.visible) Color(0.35f, 0.46f, 0.34f, 1f) else Color(0.1f, 0.14f, 0.1f, 1f)
+            shapes.rect(minimap.x(cell.column.toDouble() * resources.tileWidth),
+                minimap.y((cell.row + 1.0) * resources.tileHeight), width, height)
+        }
+        for (unit in view.units) {
+            shapes.color = resources.unitCircleColor(frame.observation.playerId, unit.owner)
+            shapes.rect(minimap.x(unit.position.x) - 2f, minimap.y(unit.position.y) - 2f, 4f, 4f)
+        }
+        shapes.end()
+        shapes.begin(ShapeRenderer.ShapeType.Line)
+        shapes.color = Color.WHITE
+        shapes.rect(area.left.toFloat(), area.bottom.toFloat(), area.width.toFloat(), area.height.toFloat())
+        val topLeft = checkNotNull(projection.clippedWorld(projection.mapArea.left, projection.mapArea.bottom + projection.mapArea.height))
+        val bottomRight = checkNotNull(projection.clippedWorld(projection.mapArea.left + projection.mapArea.width, projection.mapArea.bottom))
+        shapes.rect(minimap.x(topLeft.x), minimap.y(bottomRight.y),
+            minimap.x(bottomRight.x) - minimap.x(topLeft.x), minimap.y(topLeft.y) - minimap.y(bottomRight.y))
+        shapes.end()
     }
 
     override fun close() {

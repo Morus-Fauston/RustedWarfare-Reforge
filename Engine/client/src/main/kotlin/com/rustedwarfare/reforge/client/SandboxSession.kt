@@ -4,7 +4,8 @@ import com.rustedwarfare.reforge.core.sim.*
 import java.util.UUID
 
 class SandboxSession(scenario: Scenario, private val evidence: ClientEvidence = ClientEvidence.NONE,
-                     val options: SandboxOptions = SandboxOptions()) : AutoCloseable {
+                     val options: SandboxOptions = SandboxOptions(),
+                     clockMillis: () -> Long = { System.nanoTime() / 1_000_000L }) : AutoCloseable {
     private val scenario: Scenario = scenario.copy(automaticVision = options.knowledgeRules())
     val renderResources: SandboxRenderResources = SandboxRenderResources.from(this.scenario)
     private val context = when (val initialized = SimulationContext.initialize(this.scenario)) {
@@ -15,7 +16,34 @@ class SandboxSession(scenario: Scenario, private val evidence: ClientEvidence = 
     private var latestFrame: SandboxFrame? = null
     val frame: SandboxFrame get() = checkNotNull(latestFrame) { "Match is closed" }
     val observation: PlayerObservation get() = frame.observation
-    var selectedId: String? = null
+    private val selection = SelectionState(clockMillis)
+    val selectedId: String? get() = selection.primaryId
+    val selectedIds: Set<String> get() = selection.selectedIds
+    fun saveGroup(index: Int) {
+        if (!isOpen) return
+        selection.saveGroup(index)
+        evidence.recordWhenEnabled("group-save") { mapOf("group" to index, "count" to groupCount(index)) }
+    }
+    fun groupCount(index: Int): Int {
+        if (!isOpen) return 0
+        val visible = observation.units.filter { it.alive }.map { it.unitId }.toSet()
+        return selection.groupMembers(index).count { it in visible }
+    }
+    fun recallGroup(index: Int, additive: Boolean = false): Position? {
+        if (!isOpen) return null
+        val alive = observation.units.filter { it.alive }.map { it.unitId }.toSet()
+        val eligible = selection.groupMembers(index).filter { it in alive }.filter { id ->
+            apply(SelectAction("click-${++actionNumber}", "p1", id, context.world)) is ActionResult.Accepted
+        }.toSet()
+        val centerId = selection.recallGroup(index, eligible, additive)
+        val center = observation.units.firstOrNull { it.unitId == centerId }?.position
+        rejectedFeedback = false
+        feedback = "Group $index: ${selectedIds.size} selected"
+        evidence.recordWhenEnabled("group-recall") { mapOf("group" to index, "additive" to additive,
+            "selectedIds" to selectedIds.toList(), "center" to center?.fields()) }
+        return center
+    }
+    var lastCommandBatch: SelectionCommandBatch? = null
         private set
 
     private var actionNumber = 0L
@@ -32,7 +60,12 @@ class SandboxSession(scenario: Scenario, private val evidence: ClientEvidence = 
     }
 
     val selectedFactoryQueue: FactoryQueueObservation?
-        get() = if (!isOpen) null else observation.factoryQueues.firstOrNull { it.factoryId == selectedId }
+        get() {
+            if (!isOpen || selectedIds.size != 1) return null
+            val unit = observation.units.singleOrNull { it.unitId == selectedId } ?: return null
+            if (!controllable(unit)) return null
+            return observation.factoryQueues.firstOrNull { it.factoryId == unit.unitId }
+        }
 
     private val productionTypeId: String?
         get() = selectedFactoryQueue?.let { queue ->
@@ -52,18 +85,42 @@ class SandboxSession(scenario: Scenario, private val evidence: ClientEvidence = 
         apply(CancelProductionAction("click-${++actionNumber}", "p1", checkNotNull(selectedId), type, context.world))
     }
 
-    fun move(position: Position): ActionResult? = selectedId?.let {
-        apply(MoveAction("click-${++actionNumber}", "p1", it, position, context.world))
+    fun move(position: Position): ActionResult? = dispatch { id ->
+        MoveAction("click-${++actionNumber}", "p1", id, position, context.world)
     }
-    fun stop(): ActionResult? = selectedId?.let {
-        apply(StopAction("click-${++actionNumber}", "p1", it, context.world))
+    fun stop(): ActionResult? = dispatch { id ->
+        StopAction("click-${++actionNumber}", "p1", id, context.world)
     }
+
+    private fun dispatch(action: (String) -> Action): ActionResult? {
+        val members = selectedIds.sorted()
+        val results = mutableListOf<SelectionCommandMember>()
+        var skipped = 0
+        lastCommandBatch = null
+        for (id in members) {
+            if (members.size > 1 && observation.units.none { it.unitId == id && controllable(it) }) { skipped++; continue }
+            results += SelectionCommandMember(id, apply(action(id)))
+        }
+        val batch = SelectionCommandBatch(results, skipped)
+        lastCommandBatch = batch
+        if (members.size > 1) {
+            feedback = "Accepted ${batch.accepted}, rejected ${batch.rejected}, skipped ${batch.skipped}" +
+                results.mapNotNull { (it.result as? ActionResult.Rejected)?.error?.code }.distinct().joinToString(", ", prefix = "; ")
+            rejectedFeedback = batch.rejected > 0
+            evidence.recordWhenEnabled("selection-command") { mapOf("accepted" to batch.accepted,
+                "rejected" to batch.rejected, "skipped" to batch.skipped,
+                "members" to results.map { mapOf("unitId" to it.unitId, "result" to it.result.fields()) }) }
+        }
+        return results.lastOrNull()?.result
+    }
+
+    private fun controllable(unit: UnitObservation): Boolean = unit.alive && unit.ownerPlayerId == "p1" &&
+        scenario.players.any { it.playerId == "p1" && it.control == PlayerControl.LOCAL }
     fun command(position: Position): ActionResult? {
-        val actor = selectedId ?: return null
         val targetId = unitAt(position)
         val target = observation.units.firstOrNull { it.unitId == targetId }
         return if (target != null && target.ownerPlayerId != "p1")
-            apply(AttackAction("click-${++actionNumber}", "p1", actor, target.unitId, context.world))
+            dispatch { actor -> AttackAction("click-${++actionNumber}", "p1", actor, target.unitId, context.world) }
         else move(position)
     }
     fun tick() {
@@ -74,10 +131,13 @@ class SandboxSession(scenario: Scenario, private val evidence: ClientEvidence = 
         capture("step")
     }
 
-    fun select(position: Position) {
+    fun select(position: Position, mode: SelectionMode = SelectionMode.REPLACE) {
         rejectedFeedback = false
-        selectedId = unitAt(position)
-        selectedId?.let { apply(SelectAction("click-${++actionNumber}", "p1", it, context.world)) }
+        val id = unitAt(position)
+        if (id != null) {
+            if (apply(SelectAction("click-${++actionNumber}", "p1", id, context.world)) is ActionResult.Accepted)
+                selection.select(listOf(id), mode)
+        } else if (mode == SelectionMode.REPLACE) selection.select(emptyList())
         feedback = selectedId?.let { "Selected $it" } ?: "No selection"
         evidence.recordWhenEnabled("selection") { mapOf("selectedId" to selectedId, "world" to position.fields()) }
     }
@@ -86,13 +146,40 @@ class SandboxSession(scenario: Scenario, private val evidence: ClientEvidence = 
         if (unitAt(position) != null) select(position) else move(position)
     }
 
-    private fun unitAt(position: Position): String? = observation.units.lastOrNull {
-            if (!it.alive) return@lastOrNull false
-            val radius = renderResources.units.getValue(it.typeId).displayRadius
-            val dx = it.position.x - position.x
-            val dy = it.position.y - position.y
-            dx * dx + dy * dy <= radius * radius
-        }?.unitId
+    fun selectBox(start: Position, end: Position, mode: SelectionMode = SelectionMode.REPLACE,
+                  selectionAtStart: Set<String> = selectedIds) {
+        if (!isOpen || listOf(start.x, start.y, end.x, end.y).any { !it.isFinite() }) return
+        val left = minOf(start.x, end.x); val right = maxOf(start.x, end.x)
+        val top = minOf(start.y, end.y); val bottom = maxOf(start.y, end.y)
+        val candidates = observation.units.filter { controllable(it) &&
+            it.position.x in left..right && it.position.y in top..bottom }
+        val mobile = candidates.filter { scenario.unitDefinitions.getValue(it.typeId).movement.type !=
+            com.rustedwarfare.reforge.core.content.MovementType.NONE }
+        val accepted = (mobile.ifEmpty { candidates }).sortedBy { it.unitId }.mapNotNull { unit ->
+            unit.unitId.takeIf { apply(SelectAction("click-${++actionNumber}", "p1", it, context.world)) is ActionResult.Accepted }
+        }
+        val visible = observation.units.filter { it.alive }.map { it.unitId }.toSet()
+        selection.select(selectionAtStart.filter { it in visible })
+        selection.select(accepted, mode)
+        rejectedFeedback = false
+        feedback = selectedId?.let { "Selected ${selectedIds.size}: $it" } ?: "No selection"
+        evidence.recordWhenEnabled("selection-box") { mapOf("selectedIds" to selectedIds.toList(),
+            "start" to start.fields(), "end" to end.fields(), "mode" to mode.name) }
+    }
+
+    private fun unitAt(position: Position): String? = observation.units.asSequence()
+        .filter { it.alive }
+        .map { unit ->
+            val dx = unit.position.x - position.x
+            val dy = unit.position.y - position.y
+            unit to (dx * dx + dy * dy)
+        }
+        .filter { (unit, distance) ->
+            val radius = renderResources.units.getValue(unit.typeId).displayRadius
+            distance <= radius * radius
+        }
+        .sortedWith(compareBy<Pair<UnitObservation, Double>> { it.second }.thenBy { it.first.unitId })
+        .firstOrNull()?.first?.unitId
 
     private fun apply(action: Action): ActionResult {
         capture("before-action")
@@ -136,8 +223,10 @@ class SandboxSession(scenario: Scenario, private val evidence: ClientEvidence = 
 
     private fun publishFrame() {
         latestFrame = makeFrame()
-        if (selectedId != null && observation.units.none { it.unitId == selectedId && it.alive }) {
-            selectedId = null
+        val previous = selectedIds
+        selection.reconcile(observation.units.filter { it.alive }.map { it.unitId }.toSet(),
+            observation.units.filter { !it.alive }.map { it.unitId }.toSet())
+        if (previous.isNotEmpty() && selectedIds.isEmpty()) {
             feedback = "No selection"
         }
     }
@@ -148,11 +237,19 @@ class SandboxSession(scenario: Scenario, private val evidence: ClientEvidence = 
         finally {
             context.close()
             isOpen = false
-            selectedId = null
+            selection.clear()
             latestFrame = null
             terrainKnowledge = null
             feedback = "Match closed"
         }
         evidence.record("closed", emptyMap())
     }
+}
+
+data class SelectionCommandMember(val unitId: String, val result: ActionResult)
+
+class SelectionCommandBatch(members: List<SelectionCommandMember>, val skipped: Int) {
+    val members: List<SelectionCommandMember> = java.util.Collections.unmodifiableList(ArrayList(members))
+    val accepted: Int get() = members.count { it.result is ActionResult.Accepted }
+    val rejected: Int get() = members.count { it.result is ActionResult.Rejected }
 }

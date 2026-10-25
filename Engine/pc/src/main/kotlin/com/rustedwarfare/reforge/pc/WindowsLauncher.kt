@@ -36,6 +36,7 @@ fun main(args: Array<String>) {
             setTitle(options.title)
             setWindowedMode(1200, 800)
             setWindowSizeLimits(960, 640, -1, -1)
+            setPauseWhenLostFocus(true)
             setForegroundFPS(60)
             useVsync(true)
             disableAudio(true)

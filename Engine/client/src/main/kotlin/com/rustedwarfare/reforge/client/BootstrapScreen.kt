@@ -9,6 +9,11 @@ import com.badlogic.gdx.graphics.g2d.BitmapFont
 import com.badlogic.gdx.graphics.g2d.SpriteBatch
 import com.badlogic.gdx.graphics.glutils.ShapeRenderer
 import com.badlogic.gdx.math.Vector2
+import com.badlogic.gdx.math.Rectangle
+import com.badlogic.gdx.scenes.scene2d.InputEvent
+import com.badlogic.gdx.scenes.scene2d.InputListener
+import com.badlogic.gdx.scenes.scene2d.utils.ScissorStack
+import com.rustedwarfare.reforge.core.sim.Position
 import com.badlogic.gdx.scenes.scene2d.Actor
 import com.badlogic.gdx.scenes.scene2d.Stage
 import com.badlogic.gdx.scenes.scene2d.ui.*
@@ -43,6 +48,9 @@ class BootstrapScreen(
     private lateinit var modeBox: SelectBox<String>
     private lateinit var shareBox: CheckBox
     private lateinit var startButton: TextButton
+    private lateinit var mapInput: SandboxInput
+    private lateinit var contentLabel: Label
+    private val groupButtons = mutableListOf<TextButton>()
     private val launch = SandboxLaunchState(SandboxConfiguration(initialRoot.toAbsolutePath().normalize(), SandboxOptions()))
     private var pendingLoad: SandboxLoad? = null
     private var loading = false
@@ -54,7 +62,7 @@ class BootstrapScreen(
     private var presentationReady = false
     private var disposed = false
     private data class HudState(val selected: com.rustedwarfare.reforge.core.sim.UnitObservation?,
-        val selectedId: String?, val feedback: String?, val step: Long?, val canEdit: Boolean,
+        val selectedIds: Set<String>, val groups: List<Int>, val feedback: String?, val step: Long?, val canEdit: Boolean,
         val loading: Boolean, val error: String?, val hasSession: Boolean,
         val balance: Long?, val queue: com.rustedwarfare.reforge.core.sim.FactoryQueueObservation?)
     private var lastHudState: HudState? = null
@@ -72,32 +80,37 @@ class BootstrapScreen(
         shapes = ShapeRenderer().also { created += { it.dispose() } }
         skin = makeSkin().also { created += { it.dispose() } }
         stage = Stage(viewport, batch).also { created += { it.dispose() } }
+        groupButtons.clear()
+        // Consume the whole panel, including empty space, for the full press chain.
+        stage.addActor(Actor().apply {
+            setBounds(736f, 0f, 224f, 592f)
+            addListener(object : InputListener() {
+                override fun touchDown(event: InputEvent, x: Float, y: Float, pointer: Int, button: Int) = true
+            })
+        })
         fun label(text: String, x: Float, y: Float, w: Float, h: Float): Label = Label(text, skin).also {
             it.setBounds(x, y - h, w, h); it.setAlignment(Align.topLeft); it.setWrap(true); stage.addActor(it)
         }
-        label("RustedWarfare-Reforge", 24f, 598f, 600f, 30f).setFontScale(1.5f)
-        label("Offline sandbox", 650f, 592f, 280f, 24f)
-        label("p1  Local", 24f, 532f, 220f, 22f).color = Color(0.45f, 0.91f, 0.65f, 1f)
-        label("p2  No controller", 290f, 532f, 300f, 22f).color = Color(1f, 0.72f, 0.3f, 1f)
-        label("Selection", 650f, 532f, 280f, 24f)
-        selectedLabel = label("None", 650f, 490f, 280f, 96f)
-        productionLabel = label("", 650f, 394f, 280f, 18f)
-        produceButton = button("Produce", 650f, 336f, 130f) { session?.produce(); updateHud() }
-        cancelProductionButton = button("Cancel last", 800f, 336f, 130f) { session?.cancelProduction(); updateHud() }
-        statusLabel = label("", 24f, 76f, 600f, 56f)
+        label("RustedWarfare-Reforge", 16f, 628f, 440f, 28f).setFontScale(1.3f)
+        productionLabel = label("", 470f, 628f, 474f, 28f)
+        label("Selection", 752f, 442f, 176f, 22f)
+        selectedLabel = label("None", 752f, 414f, 176f, 100f)
+        produceButton = button("Produce", 752f, 264f, 176f) { session?.produce(); updateHud() }
+        cancelProductionButton = button("Cancel last", 752f, 216f, 176f) { session?.cancelProduction(); updateHud() }
+        statusLabel = label("", 16f, 52f, 480f, 44f)
         messageLabel = label("Loading", 40f, 400f, 560f, 260f)
-        stopButton = button("Stop", 650f, 292f, 130f) { session?.stop(); updateHud() }
-        button("Exit match", 800f, 292f, 130f) { leaveMatch() }
-        label("Content folder", 650f, 270f, 280f, 24f)
+        stopButton = button("Stop (S)", 752f, 168f, 176f) { session?.stop(); updateHud() }
+        button("Exit match", 752f, 72f, 176f) { leaveMatch() }
+        contentLabel = label("Content folder", 752f, 378f, 176f, 24f)
         rootField = TextField(launch.configuration.root.toString(), skin).also {
             it.setOnlyFontChars(false)
-            it.setBounds(650f, 206f, 280f, 34f); stage.addActor(it)
+            it.setBounds(752f, 312f, 176f, 34f); stage.addActor(it)
             it.isDisabled = touchControls
         }
         modeBox = SelectBox<String>(skin).also {
             it.setItems("NoFog", "Memory", "Hardcore")
             it.selectedIndex = launch.configuration.options.mode.ordinal
-            it.setBounds(650f, 156f, 280f, 40f)
+            it.setBounds(752f, 264f, 176f, 40f)
             it.addListener(object : ChangeListener() {
                 override fun changed(event: ChangeEvent, actor: Actor) {
                     if (launch.canEdit) launch.configure(launch.configuration.copy(options =
@@ -108,7 +121,7 @@ class BootstrapScreen(
         }
         shareBox = CheckBox(" Shared vision", skin).also {
             it.isChecked = launch.configuration.options.shareAlliedVision
-            it.setBounds(650f, 108f, 280f, 40f)
+            it.setBounds(752f, 216f, 176f, 40f)
             it.addListener(object : ChangeListener() {
                 override fun changed(event: ChangeEvent, actor: Actor) {
                     if (launch.canEdit) launch.configure(launch.configuration.copy(options =
@@ -117,7 +130,38 @@ class BootstrapScreen(
             })
             stage.addActor(it)
         }
-        startButton = button("Start", 650f, 60f, 280f) { requestLoad() }
+        startButton = button("Start", 752f, 120f, 176f) { requestLoad() }
+        mapInput = SandboxInput({ session }, { graphics?.projection }, { x, y ->
+            viewport.unproject(Vector2(x.toFloat(), y.toFloat())).let { Position(it.x.toDouble(), it.y.toDouble()) }
+        }, { !paused && session != null }, { stage.keyboardFocus is TextField },
+            { Gdx.input.isKeyPressed(it) }, { updateHud() }, evidence, touchControls, { x, y ->
+                val bottom = Gdx.graphics.height - y
+                x >= viewport.screenX && x < viewport.screenX + viewport.screenWidth &&
+                    bottom >= viewport.screenY && bottom < viewport.screenY + viewport.screenHeight
+            })
+        for (index in 1..3) groupButtons += button("$index (0)", 508f + (index - 1) * 72f, 12f, 64f) { mapInput.group(index) }
+        stage.addActor(Actor().apply {
+            setBounds(752f, 456f, 176f, 112f)
+            addListener(object : InputListener() {
+                private var owned = false
+                private fun locate(x: Float, y: Float, dragging: Boolean) {
+                    if (paused || stage.keyboardFocus is TextField) return
+                    val g = graphics ?: return
+                    val target = g.minimap.locate(752.0 + x, 456.0 + y, dragging) ?: return
+                    g.projection.centerOn(target)
+                    evidence.record("camera", mapOf("reason" to "minimap",
+                        "center" to g.projection.camera.center.fields(), "zoom" to g.projection.camera.zoom))
+                }
+                override fun touchDown(event: InputEvent, x: Float, y: Float, pointer: Int, button: Int): Boolean {
+                    if (pointer != 0 || button != Input.Buttons.LEFT || session == null || paused) return false
+                    owned = true; locate(x, y, false); return true
+                }
+                override fun touchDragged(event: InputEvent, x: Float, y: Float, pointer: Int) {
+                    if (owned && pointer == 0) locate(x, y, true)
+                }
+                override fun touchUp(event: InputEvent, x: Float, y: Float, pointer: Int, button: Int) { owned = false }
+            })
+        })
         Gdx.input.inputProcessor = InputMultiplexer(stage, object : InputAdapter() {
             override fun keyDown(keycode: Int): Boolean {
                 if (!touchControls || keycode != Input.Keys.BACK) return false
@@ -125,26 +169,7 @@ class BootstrapScreen(
                 Gdx.app.exit()
                 return true
             }
-            override fun touchDown(screenX: Int, screenY: Int, pointer: Int, button: Int): Boolean {
-                if (paused) return false
-                if (pointer != 0 || button !in listOf(Input.Buttons.LEFT, Input.Buttons.RIGHT)) return false
-                val current = session ?: return false
-                val map = graphics?.projection ?: return false
-                val bottomY = Gdx.graphics.height - screenY
-                if (screenX < viewport.screenX || screenX >= viewport.screenX + viewport.screenWidth ||
-                    bottomY < viewport.screenY || bottomY >= viewport.screenY + viewport.screenHeight) return false
-                val ui = viewport.unproject(Vector2(screenX.toFloat(), screenY.toFloat()))
-                val world = map.toWorld(ui.x.toDouble(), ui.y.toDouble()) ?: return false
-                evidence.record("pointer", mapOf("generation" to generation, "screenX" to screenX,
-                    "screenY" to screenY, "windowWidth" to Gdx.graphics.width, "windowHeight" to Gdx.graphics.height,
-                    "uiX" to ui.x, "uiY" to ui.y, "world" to world.fields(), "button" to button))
-                stage.unfocusAll()
-                if (touchControls) current.tap(world)
-                else if (button == Input.Buttons.LEFT) current.select(world) else current.command(world)
-                updateHud()
-                return true
-            }
-        })
+        }, mapInput)
         if (touchControls) Gdx.input.setCatchKey(Input.Keys.BACK, true)
         resize(Gdx.graphics.width, Gdx.graphics.height)
         presentationReady = true
@@ -236,6 +261,7 @@ class BootstrapScreen(
     }
 
     private fun closeMatchResources() {
+        cancelInput()
         loader.cancel()
         pendingLoad = null
         loading = false
@@ -306,13 +332,21 @@ class BootstrapScreen(
         shapes.projectionMatrix = viewport.camera.combined
         shapes.begin(ShapeRenderer.ShapeType.Filled)
         shapes.color = Color(0.105f, 0.13f, 0.12f, 1f)
-        shapes.rect(638f, 0f, 322f, 560f)
+        shapes.rect(736f, 0f, 224f, 592f)
+        shapes.rect(0f, 592f, 960f, 48f)
+        shapes.color = Color.BLACK
+        shapes.rect(16f, 64f, 704f, 512f)
         shapes.end()
         if (current != null) {
-            batch.begin(); graphics?.draw(batch, current.frame); batch.end()
-            shapes.begin(ShapeRenderer.ShapeType.Line)
-            graphics?.drawOverlay(shapes, current.frame, current.selectedId)
-            shapes.end()
+            val clip = Rectangle()
+            stage.calculateScissors(Rectangle(16f, 64f, 704f, 512f), clip)
+            if (ScissorStack.pushScissors(clip)) try {
+                batch.begin(); graphics?.draw(batch, current.frame); batch.end()
+                shapes.begin(ShapeRenderer.ShapeType.Line)
+                graphics?.drawOverlay(shapes, current.frame, current.selectedIds, mapInput.box)
+                shapes.end()
+            } finally { ScissorStack.popScissors() }
+            graphics?.drawMinimap(shapes, current.frame)
         }
         stage.act(Gdx.graphics.deltaTime); stage.draw()
     }
@@ -321,11 +355,12 @@ class BootstrapScreen(
         if (!presentationReady) return
         val current = session
         val selected = current?.observation?.units?.find { it.unitId == current.selectedId }
-        val state = HudState(selected, current?.selectedId, current?.feedback, current?.observation?.stepIndex,
+        val state = HudState(selected, current?.selectedIds ?: emptySet(), (1..3).map { current?.groupCount(it) ?: 0 }, current?.feedback, current?.observation?.stepIndex,
             launch.canEdit, loading, loadError, current != null, current?.observation?.balance, current?.selectedFactoryQueue)
         if (state == lastHudState) return
         lastHudState = state
-        selectedLabel.setText(if (selected == null) "None" else String.format(Locale.ROOT,
+        selectedLabel.setText(if (selected == null) "None" else if (state.selectedIds.size > 1)
+            "${state.selectedIds.size} selected\n${current?.observation?.units?.count { it.unitId in state.selectedIds && it.alive && it.ownerPlayerId == "p1" }} controllable\nRight click: Move / Attack\nS: Stop" else String.format(Locale.ROOT,
             "%s / %s\n%s / %s\nx %.1f   y %.1f\nheading %.1f  speed %.2f",
             if (selected.unitId.startsWith("produced:")) selected.typeId else selected.unitId, selected.ownerPlayerId,
             if (selected.ownerPlayerId == "p1") "Local control" else "No controller",
@@ -336,12 +371,16 @@ class BootstrapScreen(
             "Funds $balance" + (queue?.let { "  Queue ${it.items.size}" +
                 (it.items.firstOrNull()?.let { head -> "  ${(head.progress * 100f).toInt()}%" } ?: "") } ?: "")
         } ?: "")
-        produceButton.isVisible = state.balance != null
-        cancelProductionButton.isVisible = state.balance != null
+        produceButton.isVisible = queue != null
+        cancelProductionButton.isVisible = queue != null
         produceButton.isDisabled = current?.productionPrice == null
         produceButton.setText(current?.productionPrice?.let { "Produce $it" } ?: "Produce")
         cancelProductionButton.isDisabled = queue?.items?.isEmpty() != false
         stopButton.isDisabled = selected == null
+        stopButton.isVisible = current != null
+        selectedLabel.isVisible = current != null
+        listOf<Actor>(contentLabel, rootField, modeBox, shareBox).forEach { it.isVisible = launch.canEdit }
+        groupButtons.forEachIndexed { index, button -> button.setText("${index + 1} (${state.groups[index]})"); button.isDisabled = current == null }
         rootField.isDisabled = touchControls || !launch.canEdit
         modeBox.isDisabled = !launch.canEdit
         shareBox.isDisabled = !launch.canEdit
@@ -357,6 +396,7 @@ class BootstrapScreen(
     }
 
     override fun resize(width: Int, height: Int) {
+        cancelInput()
         viewport.update(width, height, true)
         evidence.record("resize", mapOf("width" to width, "height" to height, "screenX" to viewport.screenX,
             "screenY" to viewport.screenY, "screenWidth" to viewport.screenWidth, "screenHeight" to viewport.screenHeight))
@@ -365,7 +405,7 @@ class BootstrapScreen(
         if (disposed) return
         paused = true
         accumulator = 0.0
-        stage.cancelTouchFocus(); stage.unfocusAll()
+        cancelInput()
         // Release GL and native buffers on the GL thread before Android suspends it.
         // A later non-finishing Activity destroy can then close the host without GL calls.
         if (touchControls) releasePresentation()
@@ -398,6 +438,7 @@ class BootstrapScreen(
 
     private fun releasePresentation() {
         if (!presentationReady) return
+        cancelInput()
         presentationReady = false
         Gdx.input.inputProcessor = null
         val closingGraphics = graphics; graphics = null
@@ -409,6 +450,11 @@ class BootstrapScreen(
             }
         }
         evidence.record("presentation-released", emptyMap())
+    }
+
+    private fun cancelInput() {
+        if (::mapInput.isInitialized) mapInput.cancel()
+        if (::stage.isInitialized) { stage.cancelTouchFocus(); stage.unfocusAll() }
     }
 
     override fun dispose() {

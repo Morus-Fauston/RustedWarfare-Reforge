@@ -6,6 +6,64 @@ import java.nio.file.Path
 import kotlin.test.*
 
 class KnowledgeSandboxSessionTest {
+    @Test fun hidden_presence_cannot_change_complete_player_evidence_selection_groups_or_minimap() {
+        val withHidden = fastScenario()
+        val withoutHidden = withHidden.copy(units = withHidden.units.filter { it.unitId != "hidden" })
+        for (mode in listOf(SandboxMode.MEMORY, SandboxMode.HARDCORE)) {
+            val recordsA = mutableListOf<Pair<String, Map<String, Any?>>>()
+            val recordsB = mutableListOf<Pair<String, Map<String, Any?>>>()
+            SandboxSession(withHidden, ClientEvidence { k, v -> recordsA += k to v }, SandboxOptions(mode)).use { a ->
+                SandboxSession(withoutHidden, ClientEvidence { k, v -> recordsB += k to v }, SandboxOptions(mode)).use { b ->
+                    val mini = Minimap(100.0, 100.0)
+                    assertEquals(listOf("own", "visible"), mini.frame(a.frame).units.map { it.id })
+                    assertEquals(25, mini.frame(a.frame).terrain.size)
+                    for (s in listOf(a, b)) {
+                        s.select(Position(30.0, 30.0)); s.move(Position(30.0, 90.0))
+                        s.select(Position(50.0, 30.0)); s.saveGroup(1)
+                    }
+                    repeat(4) {
+                        assertEquals(publicValues(a.observation), publicValues(b.observation), "Complete Player DTO")
+                        assertEquals(a.observation.fields(), b.observation.fields(), "Complete serialized evidence payload")
+                        assertEquals(a.selectedIds, b.selectedIds)
+                        assertEquals(a.groupCount(1), b.groupCount(1))
+                        assertEquals(mini.frame(a.frame), mini.frame(b.frame))
+                        assertEquals(recordsA, recordsB, "Complete actual ClientEvidence stream")
+                        a.tick(); b.tick()
+                    }
+                    assertTrue(a.selectedIds.isEmpty()); assertEquals(0, a.groupCount(1))
+                    assertTrue(mini.frame(a.frame).units.none { it.id == "visible" || it.id == "hidden" })
+                }
+            }
+        }
+    }
+
+    private fun publicValues(v: PlayerObservation): List<Any?> = listOf(
+        v.sampleId, v.worldId, v.scenarioId, v.playerId, v.stepIndex, v.simulationTime,
+        v.units, v.events, v.actionResults, v.projectiles, v.projectileEvents, v.balance, v.factoryQueues,
+        v.vision?.worldId, v.vision?.playerId, v.vision?.epoch, v.vision?.basicCells, v.vision?.effectiveCells,
+        v.knowledge?.worldId, v.knowledge?.playerId, v.knowledge?.width, v.knowledge?.height,
+        v.knowledge?.revision, v.knowledge?.cells)
+
+    @Test fun lost_group_ids_count_only_current_authorization_and_empty_recall_keeps_its_clock() {
+        for (mode in listOf(SandboxMode.MEMORY, SandboxMode.HARDCORE)) {
+            var now = 10000L
+            SandboxSession(fastScenario(), options = SandboxOptions(mode), clockMillis = { now }).use { s ->
+                s.select(Position(30.0, 30.0)); s.move(Position(30.0, 90.0))
+                s.select(Position(50.0, 30.0)); s.saveGroup(1)
+                assertEquals(1, s.groupCount(1))
+                s.tick(); assertNull(s.selectedId); assertEquals(0, s.groupCount(1))
+                assertNull(s.recallGroup(1)); assertTrue(s.selectedIds.isEmpty())
+                s.select(s.observation.units.single { it.unitId == "own" }.position)
+                assertIs<ActionResult.Accepted>(s.move(Position(30.0, 30.0)))
+                repeat(150) { if (s.groupCount(1) == 0) s.tick() }
+                assertEquals(1, s.groupCount(1), "Lost ID remains available once genuinely visible again")
+                now = 10200
+                assertEquals(Position(50.0, 30.0), s.recallGroup(1))
+                assertEquals(setOf("visible"), s.selectedIds)
+            }
+        }
+    }
+
     @Test fun visible_unit_circle_colors_distinguish_owner_allies_and_enemies_by_team() {
         val players=mutableListOf(Player("p1",PlayerControl.LOCAL,"blue"),
             Player("friend",PlayerControl.NONE,"blue"),Player("opponent",PlayerControl.NONE,"orange"),
