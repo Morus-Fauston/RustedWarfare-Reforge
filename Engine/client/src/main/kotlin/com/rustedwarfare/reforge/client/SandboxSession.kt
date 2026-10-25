@@ -1,6 +1,7 @@
 package com.rustedwarfare.reforge.client
 
 import com.rustedwarfare.reforge.core.sim.*
+import java.util.UUID
 
 class SandboxSession(scenario: Scenario, private val evidence: ClientEvidence = ClientEvidence.NONE,
                      val options: SandboxOptions = SandboxOptions()) : AutoCloseable {
@@ -23,10 +24,32 @@ class SandboxSession(scenario: Scenario, private val evidence: ClientEvidence = 
         private set
     var feedback = "Ready"
         private set
+    private var rejectedFeedback = false
 
     init {
         try { latestFrame = makeFrame(); capture("initial") }
         catch (failure: Exception) { context.close(); isOpen = false; throw failure }
+    }
+
+    val selectedFactoryQueue: FactoryQueueObservation?
+        get() = if (!isOpen) null else observation.factoryQueues.firstOrNull { it.factoryId == selectedId }
+
+    private val productionTypeId: String?
+        get() = selectedFactoryQueue?.let { queue ->
+            val factory = observation.units.single { it.unitId == queue.factoryId }
+            scenario.unitDefinitions.getValue(factory.typeId).production?.unitTypeId
+        }
+
+    val productionPrice: Long?
+        get() = productionTypeId?.let { scenario.unitDefinitions.getValue(it).build?.price }
+
+    fun produce(): ActionResult? = productionTypeId?.let { type ->
+        apply(ProduceAction("click-${++actionNumber}", "p1", checkNotNull(selectedId), type,
+            UUID.randomUUID().toString().replace("-", ""), context.world))
+    }
+
+    fun cancelProduction(): ActionResult? = productionTypeId?.let { type ->
+        apply(CancelProductionAction("click-${++actionNumber}", "p1", checkNotNull(selectedId), type, context.world))
     }
 
     fun move(position: Position): ActionResult? = selectedId?.let {
@@ -35,15 +58,24 @@ class SandboxSession(scenario: Scenario, private val evidence: ClientEvidence = 
     fun stop(): ActionResult? = selectedId?.let {
         apply(StopAction("click-${++actionNumber}", "p1", it, context.world))
     }
+    fun command(position: Position): ActionResult? {
+        val actor = selectedId ?: return null
+        val targetId = unitAt(position)
+        val target = observation.units.firstOrNull { it.unitId == targetId }
+        return if (target != null && target.ownerPlayerId != "p1")
+            apply(AttackAction("click-${++actionNumber}", "p1", actor, target.unitId, context.world))
+        else move(position)
+    }
     fun tick() {
         context.advance(Step(nextStep, 1.0, "sim-tick"))
         nextStep++
         publishFrame()
-        observation.events.lastOrNull()?.let { feedback = it.kind }
+        if (!rejectedFeedback) observation.events.lastOrNull()?.let { feedback = it.kind }
         capture("step")
     }
 
     fun select(position: Position) {
+        rejectedFeedback = false
         selectedId = unitAt(position)
         selectedId?.let { apply(SelectAction("click-${++actionNumber}", "p1", it, context.world)) }
         feedback = selectedId?.let { "Selected $it" } ?: "No selection"
@@ -55,6 +87,7 @@ class SandboxSession(scenario: Scenario, private val evidence: ClientEvidence = 
     }
 
     private fun unitAt(position: Position): String? = observation.units.lastOrNull {
+            if (!it.alive) return@lastOrNull false
             val radius = renderResources.units.getValue(it.typeId).displayRadius
             val dx = it.position.x - position.x
             val dy = it.position.y - position.y
@@ -69,9 +102,11 @@ class SandboxSession(scenario: Scenario, private val evidence: ClientEvidence = 
             is ActionResult.Rejected -> result.error.code
             is ActionResult.Accepted -> result.events.lastOrNull()?.kind ?: "Accepted"
         }
+        rejectedFeedback = result is ActionResult.Rejected
         evidence.recordWhenEnabled("action") { mapOf("type" to action.javaClass.simpleName,
             "actorPlayerId" to action.actorPlayerId, "unitId" to action.unitId,
-            "target" to (action as? MoveAction)?.target?.fields(), "result" to result.fields()) }
+            "target" to (action as? MoveAction)?.target?.fields(),
+            "targetUnitId" to (action as? AttackAction)?.targetUnitId, "result" to result.fields()) }
         capture("after-action")
         return result
     }
@@ -101,7 +136,7 @@ class SandboxSession(scenario: Scenario, private val evidence: ClientEvidence = 
 
     private fun publishFrame() {
         latestFrame = makeFrame()
-        if (selectedId != null && observation.units.none { it.unitId == selectedId }) {
+        if (selectedId != null && observation.units.none { it.unitId == selectedId && it.alive }) {
             selectedId = null
             feedback = "No selection"
         }

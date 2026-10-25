@@ -6,7 +6,9 @@ import com.badlogic.gdx.graphics.Color
 import java.nio.file.Path
 import java.util.Collections
 
-data class UnitAppearance(val displayRadius: Double, val imagePath: Path, val imageScale: Double, val totalFrames: Int)
+data class UnitAppearance(val displayRadius: Double, val imagePath: Path, val imageScale: Double, val totalFrames: Int,
+    val turretImagePath: Path? = null, val deadImagePath: Path? = null, val turretImageScale: Double = 1.0,
+    val backImagePath: Path? = null)
 
 class SandboxRenderResources private constructor(
     val widthTiles: Int, val heightTiles: Int, val tileWidth: Int, val tileHeight: Int,
@@ -27,7 +29,9 @@ class SandboxRenderResources private constructor(
             scenario.map.widthTiles, scenario.map.heightTiles, scenario.map.tileWidth, scenario.map.tileHeight,
             Collections.unmodifiableList(ArrayList(scenario.map.tileSets)),
             Collections.unmodifiableMap(scenario.unitDefinitions.mapValues { (_, unit) ->
-                UnitAppearance(unit.displayRadius, unit.imagePath, unit.imageScale, unit.totalFrames)
+                UnitAppearance(unit.displayRadius, unit.imagePath, unit.imageScale, unit.totalFrames,
+                    unit.combat?.turretImagePath, unit.durability?.deadImagePath ?: unit.combat?.deadImagePath,
+                    unit.combat?.turretImageScale ?: 1.0, unit.building?.backImagePath)
             }), Collections.unmodifiableMap(scenario.players.associate { it.playerId to it.teamId }))
     }
 }

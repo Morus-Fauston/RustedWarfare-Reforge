@@ -43,6 +43,7 @@ data class UnitSpawn(
     val typeId: String,
     val position: Position,
     val heading: Double,
+    val height: Double = 0.0,
 )
 
 data class Scenario(
@@ -55,7 +56,35 @@ data class Scenario(
     val timeModel: TimeModel,
     val movementContract: MovementContract?,
     val automaticVision: KnowledgeRules? = null,
+    val combatContract: CombatContract? = null,
+    val economyContract: EconomyContract? = null,
 )
+
+data class EconomyContract(val initialBalances: Map<String, Long>)
+
+/** Trusted host queue state. Nonces and payment details never enter player queue DTOs. */
+data class QueuedProductionObservation(val typeId: String, val unitNonce: String,
+    val progress: Float, val cost: Long, val rate: Float)
+
+class EconomyObservation(balances: Map<String, Long>,
+    queuedProduction: Map<String, List<QueuedProductionObservation>> = emptyMap()) {
+    val balances: Map<String, Long> = Collections.unmodifiableMap(LinkedHashMap(balances))
+    val queuedProduction: Map<String, List<QueuedProductionObservation>> =
+        Collections.unmodifiableMap(queuedProduction.mapValuesTo(linkedMapOf()) { immutable(it.value) })
+}
+
+data class ProductionQueueItem(val typeId: String, val progress: Float)
+
+class FactoryQueueObservation(val factoryId: String, items: List<ProductionQueueItem>) {
+    val items: List<ProductionQueueItem> = immutable(items)
+    override fun equals(other: Any?): Boolean = other is FactoryQueueObservation &&
+        factoryId == other.factoryId && items == other.items
+    override fun hashCode(): Int = 31 * factoryId.hashCode() + items.hashCode()
+}
+
+/** Trusted deterministic scene input, unrelated to command/display string IDs. */
+data class CombatContract(val worldSeed: Int, val initialFrameCounter: Int,
+    val unitObjectIds: Map<String, Long>, val nextObjectId: Long)
 
 data class Step(val stepIndex: Long, val delta: Double, val deltaUnit: String)
 
@@ -73,9 +102,52 @@ data class UnitObservation(
     val moveTarget: Position?,
     val pathPoints: List<Position>,
     val movementState: MovementState,
+    val health: Double? = null,
+    val maxHealth: Double? = null,
+    val alive: Boolean = true,
+    val attackTargetId: String? = null,
+    val turretHeading: Double = heading,
+    val cooldown: Double? = null,
+    val height: Double = 0.0,
 )
 
+/** Host-only identity/target and arithmetic state. Never copied into player DTOs. */
+data class ProjectileObservation(val objectId: Long, val sourceUnitId: String, val targetUnitId: String,
+    val position: Position, val heading: Double, val remainingLife: Double, val offset: Position, val scatter: Float,
+    val height: Double = 0.0)
+
+/** One public appearance class. Identical newly visible objects have one token and multiplicity. */
+data class VisibleProjectile(val token: String, val multiplicity: Int, val position: Position, val heading: Double,
+    val height: Double = 0.0, val parentToken: String? = null)
+
+data class ProjectileEventObservation(val kind: String, val projectile: ProjectileObservation, val damage: Double? = null)
+
+data class VisibleProjectileEvent(val token: String, val kind: String, val occurrences: Int,
+    val position: Position, val heading: Double, val height: Double, val sourceUnitId: String?,
+    val targetUnitId: String?, val damage: Double?, val parentToken: String? = null)
+
+/** Trusted-host state for deterministic replay/rollback verification, absent from player observations. */
+class CombatObservation(val frameCounter: Int, val nextObjectId: Long, weapons: List<UnitWeaponObservation>) {
+    val objectIdsExhausted: Boolean get() = nextObjectId == Long.MAX_VALUE
+    val weapons: List<UnitWeaponObservation> = immutable(weapons)
+    override fun equals(other: Any?): Boolean = other is CombatObservation && frameCounter == other.frameCounter &&
+        nextObjectId == other.nextObjectId && weapons == other.weapons
+    override fun hashCode(): Int = 31 * (31 * frameCounter + nextObjectId.hashCode()) + weapons.hashCode()
+}
+
+data class UnitWeaponObservation(val unitId: String, val objectId: Long, val randomCounter: Int,
+    val offset: Position, val targetUnitId: String?, val angularVelocity: Double,
+    val pivot: Position? = null, val muzzle: Position? = null)
+
 data class Event(val kind: String, val unitId: String? = null)
+
+/** Trusted-host birth state; never part of the player projection. */
+data class ProducedUnitObservation(val unitId: String, val objectId: Long, val updateKey: String,
+    val producerId: String, val birthRemaining: Float)
+
+class ProductionObservation(val lastBirthSerial: Long, units: List<ProducedUnitObservation>) {
+    val units: List<ProducedUnitObservation> = immutable(units)
+}
 
 class Observation(
     val sampleId: String,
@@ -86,10 +158,17 @@ class Observation(
     units: List<UnitObservation>,
     events: List<Event>,
     actionResults: List<ActionResult>,
+    projectiles: List<ProjectileObservation> = emptyList(),
+    val combat: CombatObservation? = null,
+    projectileEvents: List<ProjectileEventObservation> = emptyList(),
+    val economy: EconomyObservation? = null,
+    val production: ProductionObservation? = null,
 ) {
     val units: List<UnitObservation> = immutable(units)
     val events: List<Event> = immutable(events)
     val actionResults: List<ActionResult> = immutable(actionResults)
+    val projectiles: List<ProjectileObservation> = immutable(projectiles)
+    val projectileEvents: List<ProjectileEventObservation> = immutable(projectileEvents)
 }
 
 class PlayerObservation internal constructor(
@@ -104,10 +183,17 @@ class PlayerObservation internal constructor(
     units: List<UnitObservation>,
     events: List<Event>,
     actionResults: List<ActionResult>,
+    projectiles: List<VisibleProjectile> = emptyList(),
+    projectileEvents: List<VisibleProjectileEvent> = emptyList(),
+    val balance: Long? = null,
+    factoryQueues: List<FactoryQueueObservation> = emptyList(),
 ) {
+    val factoryQueues: List<FactoryQueueObservation> = immutable(factoryQueues)
     val units: List<UnitObservation> = immutable(units)
     val events: List<Event> = immutable(events)
     val actionResults: List<ActionResult> = immutable(actionResults)
+    val projectiles: List<VisibleProjectile> = immutable(projectiles)
+    val projectileEvents: List<VisibleProjectileEvent> = immutable(projectileEvents)
 }
 
 data class SimulationError(val code: String, val message: String)
@@ -155,12 +241,24 @@ internal data class MutableUnit(
     var originMoveId: String? = null,
     var originAtStep: Long? = null,
     var lastPlannedKnowledgeRevision: Long = -1L,
+    var lastPlannedBuildingRevision: Long = -1L,
     var nearTargetTime: Double = 0.0,
     var localMotion: LocalMotionSegment? = null,
     var localProgressTime: Double = 0.0,
     var terrainCorrectionTime: Double = 0.0,
     var terrainClearSteps: Int = 0,
+    var health: Double? = definition.maximumHealth,
+    var attackCommand: ManualAttackCommand? = null,
+    var lastAttackPathAttemptStep: Long? = null,
+    var combat: MutableCombat? = definition.combat?.let { MutableCombat(heading) },
+    val height: Double = 0.0,
+    /** Host identity and deterministic traversal order, never player DTO fields. */
+    val objectId: Long? = null,
+    val updateKey: String = unitId,
+    val producerId: String? = null,
+    var birthRemaining: Float = 0f,
 ) {
+    val alive: Boolean get() = health == null || checkNotNull(health) > 0.0
     fun ensureLocalMotion(): LocalMotionSegment {
         val first = pathPoints.first()
         return localMotion?.takeIf { it.anchor == first }
@@ -176,11 +274,12 @@ internal data class MutableUnit(
     }
 
     /** Replanning and repair preserve command identity, completion time and terrain history. */
-    fun adoptRoute(points: List<Position>, knowledgeRevision: Long) {
+    fun adoptRoute(points: List<Position>, knowledgeRevision: Long, buildingRevision: Long = -1L) {
         pathPoints = points.toMutableList()
         localMotion = null
         localProgressTime = 0.0
         lastPlannedKnowledgeRevision = knowledgeRevision
+        lastPlannedBuildingRevision = buildingRevision
         movementState = MovementState.MOVING
     }
 
@@ -188,11 +287,22 @@ internal data class MutableUnit(
         originMoveId = null
         originAtStep = null
         lastPlannedKnowledgeRevision = -1L
+        lastPlannedBuildingRevision = -1L
         nearTargetTime = 0.0
         localMotion = null
         localProgressTime = 0.0
     }
 }
+
+internal data class ManualAttackCommand(val targetUnitId: String, val actionId: String, val atStep: Long?)
+
+internal data class MutableCombat(var turretHeading: Double, var angularVelocity: Double = 0.0,
+    var cooldown: Double = 0.0, var targetId: String? = null, var offset: Position = Position(0.0, 0.0),
+    var randomCounter: Int = 0)
+
+internal data class MutableProjectile(val objectId: Long, val sourceUnitId: String, val targetUnitId: String,
+    var position: Position, var heading: Double, var remainingLife: Double, val offset: Position,
+    val scatter: Float, val speed: Double, val damage: Double, var height: Double = 0.0)
 
 internal fun <T> immutable(values: Collection<T>): List<T> =
     Collections.unmodifiableList(ArrayList(values))

@@ -26,7 +26,9 @@ class JsonlEvidence internal constructor(private val directory: Path, private va
         try {
             Files.writeString(directory.resolve("manifest.json"), json(mapOf(
                 "format" to "p001.windows-diagnostic.v1", "runId" to runId,
-                "phase" to "P002", "topic" to "03-windows-client", "ticket" to "ENG-P002-009",
+                "phase" to if (Files.exists(inputs.resolve("combat.properties"))) "P005" else "P002",
+                "topic" to if (Files.exists(inputs.resolve("combat.properties"))) "combat-windows-client" else "03-windows-client",
+                "ticket" to if (Files.exists(inputs.resolve("combat.properties"))) "ENG-P005-001" else "ENG-P002-009",
                 "startedAt" to Instant.now().toString(), "inputs" to inputs.toString(),
                 "javaVersion" to System.getProperty("java.version"), "javaHome" to System.getProperty("java.home"),
                 "osName" to System.getProperty("os.name"), "osVersion" to System.getProperty("os.version"),
@@ -48,18 +50,24 @@ class JsonlEvidence internal constructor(private val directory: Path, private va
         if (kind != "observation" || values["phase"] != "step") writer.flush()
         if (kind == "load-request") contentRoot = Path.of(values.getValue("root") as String).toAbsolutePath().normalize()
         if (kind == "load-ready") {
-            val files = mutableListOf(contentRoot.resolve("maps/p001-controlled.tmx"),
+            val scenario = ControlledScenario.load(contentRoot)
+            val combat = scenario.combatContract != null
+            val files = if (combat) mutableListOf(contentRoot.resolve("maps/p001-controlled.tmx"),
+                contentRoot.resolve("tilesets/p005-terrain.tsx"), contentRoot.resolve("units/tank.ini"),
+                contentRoot.resolve("combat.properties")) else mutableListOf(contentRoot.resolve("maps/p001-controlled.tmx"),
                 contentRoot.resolve("tilesets/p001-ground.tsx"), contentRoot.resolve("tilesets/p001-rock.tsx"),
                 contentRoot.resolve("units/weaponless_tank.ini"))
-            val scenario = ControlledScenario.load(contentRoot)
             files += scenario.map.tileSets.map { it.imagePath }
             files += scenario.unitDefinitions.values.map { it.imagePath }
+            files += scenario.unitDefinitions.values.mapNotNull { it.combat?.turretImagePath }
+            files += scenario.unitDefinitions.values.mapNotNull { it.combat?.deadImagePath }
             val manifestFile = contentRoot.resolve("sandbox.properties")
             val manifest = manifestFile.takeIf { Files.exists(it) }?.let(::identity)
             if (manifest != null) files.add(manifestFile)
             record("input-identities", mapOf("generation" to values["generation"],
                 "root" to contentRoot.toString(), "scenarioId" to scenario.scenarioId,
-                "sandboxManifest" to (manifest ?: identity(manifestFile)), "files" to files.distinct().map(::identity)))
+                "sandboxManifest" to if (combat) identity(contentRoot.resolve("combat.properties")) else (manifest ?: identity(manifestFile)),
+                "files" to files.distinct().map(::identity)))
         }
     }
 

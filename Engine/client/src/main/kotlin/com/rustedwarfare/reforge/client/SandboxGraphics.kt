@@ -17,6 +17,9 @@ class SandboxGraphics private constructor(private val resources: SandboxRenderRe
     private val owned = mutableListOf<Texture>()
     private val tiles = mutableMapOf<Int, TextureRegion>()
     private val units = mutableMapOf<String, TextureRegion>()
+    private val turrets = mutableMapOf<String, TextureRegion>()
+    private val corpses = mutableMapOf<String, TextureRegion>()
+    private val backs = mutableMapOf<String, TextureRegion>()
 
     companion object {
         fun load(resources: SandboxRenderResources, root: Path): SandboxGraphics {
@@ -99,6 +102,9 @@ class SandboxGraphics private constructor(private val resources: SandboxRenderRe
             val texture = texture(definition.imagePath)
             require(texture.width % definition.totalFrames == 0) { "Invalid unit image frames: ${definition.imagePath}" }
             units[id] = TextureRegion(texture, 0, 0, texture.width / definition.totalFrames, texture.height)
+            definition.turretImagePath?.let { turrets[id] = TextureRegion(texture(it)) }
+            definition.deadImagePath?.let { corpses[id] = TextureRegion(texture(it)) }
+            definition.backImagePath?.let { backs[id] = TextureRegion(texture(it)) }
         }
     }
 
@@ -116,11 +122,23 @@ class SandboxGraphics private constructor(private val resources: SandboxRenderRe
         batch.color = Color.WHITE
         for (unit in frame.observation.units) {
             val definition = resources.units.getValue(unit.typeId)
-            val region = units.getValue(unit.typeId)
+            if (unit.alive) backs[unit.typeId]?.let { back ->
+                val bw = (back.regionWidth * definition.imageScale * projection.scale).toFloat()
+                val bh = (back.regionHeight * definition.imageScale * projection.scale).toFloat()
+                batch.draw(back, projection.x(unit.position.x) - bw / 2, projection.y(unit.position.y) - bh / 2,
+                    bw / 2, bh / 2, bw, bh, 1f, 1f, -unit.heading.toFloat())
+            }
+            val region = if (!unit.alive) corpses[unit.typeId] ?: units.getValue(unit.typeId) else units.getValue(unit.typeId)
             val w = (region.regionWidth * definition.imageScale * projection.scale).toFloat()
             val h = (region.regionHeight * definition.imageScale * projection.scale).toFloat()
             batch.draw(region, projection.x(unit.position.x) - w / 2, projection.y(unit.position.y) - h / 2,
                 w / 2, h / 2, w, h, 1f, 1f, -unit.heading.toFloat())
+            if (unit.alive) turrets[unit.typeId]?.let { turret ->
+                val tw = (turret.regionWidth * definition.turretImageScale * projection.scale).toFloat()
+                val th = (turret.regionHeight * definition.turretImageScale * projection.scale).toFloat()
+                batch.draw(turret, projection.x(unit.position.x) - tw / 2, projection.y(unit.position.y) - th / 2,
+                    tw / 2, th / 2, tw, th, 1f, 1f, -unit.turretHeading.toFloat())
+            }
         }
     }
 
@@ -128,11 +146,16 @@ class SandboxGraphics private constructor(private val resources: SandboxRenderRe
         shapes.color = Color(0.45f, 0.5f, 0.47f, 1f)
         shapes.rect(projection.left.toFloat(), projection.bottom.toFloat(), projection.width.toFloat(), projection.height.toFloat())
         for (unit in frame.observation.units) {
-            shapes.color = resources.unitCircleColor(frame.observation.playerId, unit.ownerPlayerId)
+            shapes.color = if (unit.alive) resources.unitCircleColor(frame.observation.playerId, unit.ownerPlayerId) else Color.DARK_GRAY
             val radius = (resources.units.getValue(unit.typeId).displayRadius * projection.scale).toFloat()
             val x = projection.x(unit.position.x)
             val y = projection.y(unit.position.y)
             shapes.circle(x, y, radius + if (unit.unitId == selectedId) 4f else 1f, 32)
+            val health = unit.health
+            val maximum = unit.maxHealth
+            if (unit.alive && health != null && maximum != null) {
+                shapes.line(x - radius, y + radius + 4f, x - radius + 2f * radius * (health / maximum).toFloat(), y + radius + 4f)
+            }
             if (unit.unitId == selectedId) {
                 shapes.circle(x, y, radius + 6f, 32)
                 var previous = unit.position
@@ -146,6 +169,12 @@ class SandboxGraphics private constructor(private val resources: SandboxRenderRe
                 }
             }
         }
+        shapes.color = Color.YELLOW
+        for (projectile in frame.observation.projectiles) {
+            val x = projection.x(projectile.position.x)
+            val y = projection.y(projectile.position.y)
+            shapes.circle(x, y, 2f, 8)
+        }
     }
 
     override fun close() {
@@ -153,7 +182,7 @@ class SandboxGraphics private constructor(private val resources: SandboxRenderRe
         owned.forEach { texture ->
             try { texture.dispose() } catch (error: Exception) { if (failure == null) failure = error else failure.addSuppressed(error) }
         }
-        owned.clear(); tiles.clear(); units.clear()
+        owned.clear(); tiles.clear(); units.clear(); turrets.clear(); corpses.clear(); backs.clear()
         failure?.let { throw it }
     }
 }

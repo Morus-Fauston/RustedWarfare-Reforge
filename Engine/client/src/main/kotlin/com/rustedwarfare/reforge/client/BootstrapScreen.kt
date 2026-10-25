@@ -37,6 +37,9 @@ class BootstrapScreen(
     private lateinit var statusLabel: Label
     private lateinit var messageLabel: Label
     private lateinit var stopButton: TextButton
+    private lateinit var productionLabel: Label
+    private lateinit var produceButton: TextButton
+    private lateinit var cancelProductionButton: TextButton
     private lateinit var modeBox: SelectBox<String>
     private lateinit var shareBox: CheckBox
     private lateinit var startButton: TextButton
@@ -52,7 +55,8 @@ class BootstrapScreen(
     private var disposed = false
     private data class HudState(val selected: com.rustedwarfare.reforge.core.sim.UnitObservation?,
         val selectedId: String?, val feedback: String?, val step: Long?, val canEdit: Boolean,
-        val loading: Boolean, val error: String?, val hasSession: Boolean)
+        val loading: Boolean, val error: String?, val hasSession: Boolean,
+        val balance: Long?, val queue: com.rustedwarfare.reforge.core.sim.FactoryQueueObservation?)
     private var lastHudState: HudState? = null
 
     override fun create() {
@@ -76,7 +80,10 @@ class BootstrapScreen(
         label("p1  Local", 24f, 532f, 220f, 22f).color = Color(0.45f, 0.91f, 0.65f, 1f)
         label("p2  No controller", 290f, 532f, 300f, 22f).color = Color(1f, 0.72f, 0.3f, 1f)
         label("Selection", 650f, 532f, 280f, 24f)
-        selectedLabel = label("None", 650f, 490f, 280f, 140f)
+        selectedLabel = label("None", 650f, 490f, 280f, 96f)
+        productionLabel = label("", 650f, 394f, 280f, 18f)
+        produceButton = button("Produce", 650f, 336f, 130f) { session?.produce(); updateHud() }
+        cancelProductionButton = button("Cancel last", 800f, 336f, 130f) { session?.cancelProduction(); updateHud() }
         statusLabel = label("", 24f, 76f, 600f, 56f)
         messageLabel = label("Loading", 40f, 400f, 560f, 260f)
         stopButton = button("Stop", 650f, 292f, 130f) { session?.stop(); updateHud() }
@@ -133,7 +140,7 @@ class BootstrapScreen(
                     "uiX" to ui.x, "uiY" to ui.y, "world" to world.fields(), "button" to button))
                 stage.unfocusAll()
                 if (touchControls) current.tap(world)
-                else if (button == Input.Buttons.LEFT) current.select(world) else current.move(world)
+                else if (button == Input.Buttons.LEFT) current.select(world) else current.command(world)
                 updateHud()
                 return true
             }
@@ -315,14 +322,25 @@ class BootstrapScreen(
         val current = session
         val selected = current?.observation?.units?.find { it.unitId == current.selectedId }
         val state = HudState(selected, current?.selectedId, current?.feedback, current?.observation?.stepIndex,
-            launch.canEdit, loading, loadError, current != null)
+            launch.canEdit, loading, loadError, current != null, current?.observation?.balance, current?.selectedFactoryQueue)
         if (state == lastHudState) return
         lastHudState = state
         selectedLabel.setText(if (selected == null) "None" else String.format(Locale.ROOT,
-            "%s / %s\n%s\n\n%s\nx %.1f   y %.1f\nheading %.1f\nspeed %.2f",
-            selected.unitId, selected.ownerPlayerId,
+            "%s / %s\n%s / %s\nx %.1f   y %.1f\nheading %.1f  speed %.2f",
+            if (selected.unitId.startsWith("produced:")) selected.typeId else selected.unitId, selected.ownerPlayerId,
             if (selected.ownerPlayerId == "p1") "Local control" else "No controller",
-            selected.movementState.name.lowercase(), selected.position.x, selected.position.y, selected.heading, selected.speed))
+            selected.movementState.name.lowercase(), selected.position.x, selected.position.y, selected.heading, selected.speed) +
+            (selected.health?.let { "\nHP ${it.toInt()} / ${selected.maxHealth?.toInt()}" } ?: ""))
+        val queue = current?.selectedFactoryQueue
+        productionLabel.setText(state.balance?.let { balance ->
+            "Funds $balance" + (queue?.let { "  Queue ${it.items.size}" +
+                (it.items.firstOrNull()?.let { head -> "  ${(head.progress * 100f).toInt()}%" } ?: "") } ?: "")
+        } ?: "")
+        produceButton.isVisible = state.balance != null
+        cancelProductionButton.isVisible = state.balance != null
+        produceButton.isDisabled = current?.productionPrice == null
+        produceButton.setText(current?.productionPrice?.let { "Produce $it" } ?: "Produce")
+        cancelProductionButton.isDisabled = queue?.items?.isEmpty() != false
         stopButton.isDisabled = selected == null
         rootField.isDisabled = touchControls || !launch.canEdit
         modeBox.isDisabled = !launch.canEdit
