@@ -107,12 +107,19 @@ class SandboxSession(scenario: Scenario, private val evidence: ClientEvidence = 
     fun move(position: Position): ActionResult? = dispatch { id ->
         MoveAction("click-${++actionNumber}", "p1", id, position, context.world)
     }
+    val canPatrol: Boolean get() = isOpen && observation.units.any {
+        it.unitId in selectedIds && controllable(it) && scenario.unitDefinitions.getValue(it.typeId).movement.type !=
+            com.rustedwarfare.reforge.core.content.MovementType.NONE
+    }
+    fun patrol(position: Position, append: Boolean, members: Set<String> = selectedIds): ActionResult? = dispatch(members) { id ->
+        PatrolAction("click-${++actionNumber}", "p1", id, position, append, context.world)
+    }
     fun stop(): ActionResult? = dispatch { id ->
         StopAction("click-${++actionNumber}", "p1", id, context.world)
     }
 
-    private fun dispatch(action: (String) -> Action): ActionResult? {
-        val members = selectedIds.sorted()
+    private fun dispatch(selectionAtPress: Set<String> = selectedIds, action: (String) -> Action): ActionResult? {
+        val members = selectionAtPress.sorted()
         val results = mutableListOf<SelectionCommandMember>()
         var skipped = 0
         lastCommandBatch = null
@@ -211,7 +218,8 @@ class SandboxSession(scenario: Scenario, private val evidence: ClientEvidence = 
         rejectedFeedback = result is ActionResult.Rejected
         evidence.recordWhenEnabled("action") { mapOf("type" to action.javaClass.simpleName,
             "actorPlayerId" to action.actorPlayerId, "unitId" to action.unitId,
-            "target" to (action as? MoveAction)?.target?.fields(),
+            "target" to when (action) { is MoveAction -> action.target.fields(); is PatrolAction -> action.target.fields(); else -> null },
+            "append" to (action as? PatrolAction)?.append,
             "targetUnitId" to (action as? AttackAction)?.targetUnitId,
             "upgradeId" to when (action) { is UpgradeAction -> action.upgradeId; is CancelUpgradeAction -> action.upgradeId; else -> null },
             "result" to result.fields()) }

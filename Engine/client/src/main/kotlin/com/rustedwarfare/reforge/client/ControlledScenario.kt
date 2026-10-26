@@ -12,6 +12,7 @@ import java.util.Properties
 object ControlledScenario {
     fun load(root: Path): Scenario {
         checkCancellation()
+        if (Files.exists(root.resolve("patrol.properties"), NOFOLLOW_LINKS)) return loadPatrol(root)
         if (Files.exists(root.resolve("upgrade.properties"), NOFOLLOW_LINKS)) return loadUpgrade(root)
         if (Files.exists(root.resolve("point-defense.properties"), NOFOLLOW_LINKS)) return loadPointDefense(root)
         if (Files.exists(root.resolve("turret.properties"), NOFOLLOW_LINKS)) return loadTurret(root)
@@ -44,6 +45,26 @@ object ControlledScenario {
             TimeModel("p001.time.v1", "sim-tick", "ieee754-binary64", "fixed-explicit-delta"),
             MovementContract(16.0, 4.0),
         )
+    }
+
+    private fun loadPatrol(root: Path): Scenario {
+        val marker = root.resolve("patrol.properties")
+        require(Files.isRegularFile(marker, NOFOLLOW_LINKS) && !Files.isSymbolicLink(marker) &&
+            marker.toRealPath() == root.toRealPath().resolve("patrol.properties")) { "$marker: expected ordinary in-root file" }
+        require(Files.readString(marker).trim().replace("\r\n", "\n") ==
+            "format=rw-reforge.patrol-sandbox.v1\nvariant=patrol-return") { "$marker: unsupported fixed patrol fixture" }
+        val base = loadProduction(root)
+        val tank = base.unitDefinitions.getValue("c_tank")
+        val target = com.rustedwarfare.reforge.core.content.UnitDefinition("patrol_target", tank.className,
+            tank.radius, tank.displayRadius, tank.totalFrames, tank.imagePath, tank.imageScale, tank.movement,
+            tank.retainedUnconsumed, tank.fogOfWarSightRange,
+            durability = com.rustedwarfare.reforge.core.content.DurabilityProfile(25.0, checkNotNull(tank.combat).deadImagePath))
+        return base.copy(scenarioId = "p005-patrol", unitDefinitions = base.unitDefinitions + (target.id to target),
+            units = listOf(UnitSpawn("a", "p1", tank.id, Position(110.0, 210.0), 90.0),
+                UnitSpawn("c", "p1", tank.id, Position(110.0, 330.0), 90.0),
+                UnitSpawn("f", "p1", "landFactory", Position(310.0, 330.0), 0.0),
+                UnitSpawn("b", "p2", target.id, Position(310.0, 210.0), 0.0)),
+            combatContract = CombatContract(12345, -1, mapOf("a" to 8L, "b" to 9L, "c" to 11L, "f" to 10L), 12L))
     }
 
     private fun loadUpgrade(root: Path): Scenario {

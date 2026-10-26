@@ -361,10 +361,13 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
             is CommandActor.Denied -> return reject(action, access.error.code, access.error.message)
         }
         if (!unit.alive) return reject(action, "inactive-unit", "Unit is not active")
-        if (action is MoveAction && unit.definition.movement.type == MovementType.NONE) {
+        if ((action is MoveAction || action is PatrolAction) && unit.definition.movement.type == MovementType.NONE) {
             return reject(action, "immobile-unit", "Unit cannot move")
         }
         if (action is MoveAction && (!action.target.x.isFinite() || !action.target.y.isFinite())) {
+            return reject(action, "invalid-target", "Target coordinates must be finite")
+        }
+        if (action is PatrolAction && (!action.target.x.isFinite() || !action.target.y.isFinite())) {
             return reject(action, "invalid-target", "Target coordinates must be finite")
         }
         if (action is AttackAction) validateAttack(action, unit)?.let {
@@ -617,10 +620,21 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
             is CommandActor.Denied -> return reject(action, access.error.code, access.error.message)
         }
         if (!unit.alive) return reject(action, "inactive-unit", "Unit is not active")
-        if (action is MoveAction && unit.definition.movement.type == MovementType.NONE) {
+        if ((action is MoveAction || action is PatrolAction) && unit.definition.movement.type == MovementType.NONE) {
             return reject(action, "immobile-unit", "Unit cannot move")
         }
         val result = when (action) {
+            is PatrolAction -> {
+                if (!action.target.x.isFinite() || !action.target.y.isFinite())
+                    return reject(action, "invalid-target", "Target coordinates must be finite")
+                val task = UnitTask(UnitTaskKind.PATROL, action.actionId, action.target, atStep = action.atStep)
+                if (!action.append || unit.tasks.isEmpty()) {
+                    unit.attackCommand = null
+                    unit.cancelRoute()
+                }
+                unit.taskQueue = (if (action.append) unit.taskQueue else UnitTaskQueue()).append(task)
+                ActionResult.Accepted(action.actionId)
+            }
             is UpgradeAction -> when (val change = applyUpgrade(action, unit, action.upgradeId, false)) {
                 is ActionResult.Accepted -> change
                 is ActionResult.Rejected -> return change
@@ -640,6 +654,8 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
             is AttackAction -> {
                 validateAttack(action, unit)?.let { return reject(action, it.code, it.message) }
                 unit.cancelRoute()
+                unit.taskQueue = UnitTaskQueue().append(UnitTask(UnitTaskKind.ATTACK, action.actionId,
+                    targetUnitId = action.targetUnitId, atStep = action.atStep))
                 unit.attackCommand = ManualAttackCommand(action.targetUnitId, action.actionId, action.atStep)
                 unit.lastAttackPathAttemptStep = null
                 ActionResult.Accepted(action.actionId, listOf(Event("attack-started", unit.unitId)))
@@ -650,6 +666,8 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
             }
             is StopAction -> {
                 unit.attackCommand = null
+                unit.taskQueue = UnitTaskQueue()
+                unit.movementRequested = false
                 unit.combat?.targetId = null
                 unit.cancelRoute()
                 ActionResult.Accepted(action.actionId, listOf(Event("movement-cancelled", unit.unitId)))
@@ -671,12 +689,15 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
                 }
                 unit.attackCommand = null
                 if (path == null) {
+                    unit.taskQueue = UnitTaskQueue()
                     unit.cancelRoute()
                     ActionResult.Accepted(
                         action.actionId,
                         listOf(Event("movement-cancelled", unit.unitId), Event("path-unreachable", unit.unitId)),
                     )
                 } else {
+                    unit.taskQueue = UnitTaskQueue().append(UnitTask(UnitTaskKind.MOVE, action.actionId, action.target,
+                        atStep = action.atStep))
                     unit.moveTarget = action.target
                     unit.nearTargetTime = 0.0
                     unit.originMoveId = action.actionId
@@ -836,16 +857,25 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
         try {
             combatFrame += 1
             actions.forEach { applyAction(it, step.stepIndex) }
+            for (unit in orderedUnits()) if (unit.alive && unit.tasks.firstOrNull()?.kind == UnitTaskKind.PATROL)
+                retainedPatrolTarget(unit)
             replanForKnowledge(currentScenario.map, step.stepIndex)
             repairInvalidConnections(currentScenario.map, step.stepIndex)
             for (unit in orderedUnits().toList()) {
                 if (!unit.alive) continue
+                val previousRequest = unit.movementRequested
+                unit.movementRequested = false
                 if (unit.birthRemaining > 0f) {
                     unit.birthRemaining = maxOf(0f, unit.birthRemaining - 1f)
-                    if (unit.birthRemaining == 0f) resumeProductionRoute(unit, currentScenario.map, step.stepIndex)
+                    if (unit.birthRemaining == 0f) {
+                        if (unit.tasks.firstOrNull()?.kind == UnitTaskKind.PATROL) unit.cancelRoute()
+                        else resumeProductionRoute(unit, currentScenario.map, step.stepIndex)
+                    }
                 }
                 if (unit.definition.production != null) advanceProduction(unit, currentScenario)
-                updateAttackRoute(unit, currentScenario.map, step.stepIndex)
+                if (unit.tasks.firstOrNull()?.kind == UnitTaskKind.PATROL)
+                    updatePatrolRoute(unit, currentScenario.map, step.stepIndex, previousRequest)
+                else updateAttackRoute(unit, currentScenario.map, step.stepIndex)
                 updateWeapon(unit, step.delta)
                 updatePointDefense(unit, step.delta)
                 updateUnit(unit, currentScenario.map, step.delta, step.stepIndex, motionSamples)
@@ -915,11 +945,15 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
         val visibleUnits = observation.units.filter { isVisibleTo(playerId, it.position) }
         val visibleIds = visibleUnits.map { it.unitId }.toSet()
         val visible = visibleUnits.map {
+            val ownerTasks = immutable(it.tasks.map { task ->
+                if (task.targetUnitId != null && task.targetUnitId !in visibleIds) task.copy(targetUnitId = null) else task
+            })
             if (it.ownerPlayerId != playerId) {
-                it.copy(moveTarget = null, pathPoints = emptyList(), attackTargetId = null, cooldown = null, pointDefense = null)
+                it.copy(moveTarget = null, pathPoints = emptyList(), attackTargetId = null, cooldown = null, pointDefense = null,
+                    tasks = emptyList())
             } else if (it.attackTargetId != null && it.attackTargetId !in visibleIds) {
-                it.copy(moveTarget = null, pathPoints = emptyList(), attackTargetId = null)
-            } else it
+                it.copy(moveTarget = null, pathPoints = emptyList(), attackTargetId = null, tasks = ownerTasks)
+            } else it.copy(tasks = ownerTasks)
         }
         val ids = visible.map { it.unitId }.toSet()
         fun visibleEvents(events: List<Event>): List<Event> {
@@ -1227,6 +1261,49 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
         } else unit.adoptRoute(path, plannedKnowledgeRevision(unit), plannedBuildingRevision(unit))
     }
 
+    private fun updatePatrolRoute(unit: MutableUnit, map: MapDefinition, executionStep: Long, previousRequest: Boolean) {
+        val enemy = retainedPatrolTarget(unit)
+        val task = unit.tasks.first()
+        var target = checkNotNull(task.target)
+        // No unit-overlap separation exists here: the source ac counter remains its initial zero.
+        val multiple = unit.tasks.size > 1
+        val capture = if (!previousRequest || combatFrame == 0 || combatFrame == 1)
+            (if (multiple) 70.0 else 80.0) else 30.0
+        val captureX = unit.position.x.toFloat() - target.x.toFloat()
+        val captureY = unit.position.y.toFloat() - target.y.toFloat()
+        if (captureX * captureX + captureY * captureY < capture.toFloat() * capture.toFloat()) {
+            if (multiple) unit.taskQueue = unit.taskQueue.append(task).pop()
+            unit.cancelRoute()
+            if (multiple || enemy == null) return
+        }
+        if (enemy != null) {
+            val stopRange = checkNotNull(unit.definition.combat).attackRange.toFloat() - 1f
+            if (patrolDistanceSquared(unit, enemy) < stopRange * stopRange) {
+                unit.cancelRoute()
+                return
+            }
+            target = enemy.position
+        }
+        unit.movementRequested = true
+        if (unit.moveTarget == target && unit.pathPoints.isNotEmpty()) return
+        val samples = pathDiagnostics
+        val path = if (unit.birthRemaining > 0f) {
+            if (MapBounds.contains(map.widthTiles.toDouble() * map.tileWidth,
+                    map.heightTiles.toDouble() * map.tileHeight, target, unit.definition.radius)) listOf(target) else null
+        } else if (samples == null)
+            policies.path.findPath(planningTerrainFor(unit, map), unit.position, target, unit.definition.radius)
+        else findPathWithDiagnostics(task.actionId, task.atStep, target, unit, map, samples,
+            reason = if (enemy == null) PathSearchReason.USER_MOVE else PathSearchReason.ATTACK_PURSUIT,
+            executionStep = executionStep)
+        if (path == null) unit.cancelRoute()
+        else {
+            unit.moveTarget = target
+            unit.originMoveId = task.actionId
+            unit.originAtStep = task.atStep
+            unit.adoptRoute(path, plannedKnowledgeRevision(unit), plannedBuildingRevision(unit))
+        }
+    }
+
     private fun updateAttackRoute(unit: MutableUnit, map: MapDefinition, executionStep: Long) {
         var command = unit.attackCommand ?: return
         val weapon = unit.definition.combat ?: return
@@ -1246,11 +1323,15 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
             unit.cancelRoute()
             if (target == null) {
                 unit.attackCommand = null
+                if (unit.tasks.firstOrNull()?.kind == UnitTaskKind.ATTACK) unit.taskQueue = unit.taskQueue.pop()
                 pendingEvents += Event("attack-ended", unit.unitId)
                 return
             }
             command = command.copy(targetUnitId = target.unitId)
             unit.attackCommand = command
+            unit.tasks.firstOrNull()?.takeIf { it.kind == UnitTaskKind.ATTACK }?.let {
+                unit.taskQueue = unit.taskQueue.replaceHead(it.copy(targetUnitId = target.unitId))
+            }
             unit.lastAttackPathAttemptStep = null
         }
         if (unit.definition.movement.type == MovementType.NONE) {
@@ -1261,6 +1342,7 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
             if (unit.moveTarget != null) unit.cancelRoute()
             return
         }
+        unit.movementRequested = true
         val targetRange = if (target.definition.building == null) 0.0 else weapon.attackRange
         val routeEnd = unit.moveTarget
         val reusable = routeEnd != null && unit.pathPoints.isNotEmpty() &&
@@ -1291,6 +1373,60 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
         }
     }
 
+    private fun retainedPatrolTarget(unit: MutableUnit): MutableUnit? {
+        val state = unit.combat ?: return null
+        val oldId = state.targetId ?: return null
+        val input = checkNotNull(scenario)
+        val team = input.players.single { it.playerId == unit.ownerPlayerId }.teamId
+        val target = units[oldId]?.takeIf { it.alive && it.health != null &&
+            it.ownerPlayerId != unit.ownerPlayerId &&
+            (team == null || input.players.single { player -> player.playerId == it.ownerPlayerId }.teamId != team) &&
+            isVisibleTo(unit.ownerPlayerId, it.position) }
+        val range = maxOf(checkNotNull(unit.definition.combat).attackRange.toFloat() + 110f, 190f)
+        if (target != null && patrolDistanceSquared(unit, target) < range * range) return target
+        state.targetId = null
+        unit.cancelRoute()
+        unit.lastAttackPathAttemptStep = null
+        return null
+    }
+
+    private fun acquirePatrolTarget(unit: MutableUnit): MutableUnit? {
+        val weapon = unit.definition.combat ?: return null
+        val input = checkNotNull(scenario)
+        val team = input.players.single { it.playerId == unit.ownerPlayerId }.teamId
+        val range = maxOf(weapon.attackRange.toFloat() + 110f, 190f)
+        val candidates = orderedUnits().filter { candidate ->
+            candidate.alive && candidate.health != null && candidate.ownerPlayerId != unit.ownerPlayerId &&
+                (team == null || input.players.single { it.playerId == candidate.ownerPlayerId }.teamId != team) &&
+                isVisibleTo(unit.ownerPlayerId, candidate.position) &&
+                kotlin.math.abs(unit.position.x.toFloat() - candidate.position.x.toFloat()) <= range &&
+                kotlin.math.abs(unit.position.y.toFloat() - candidate.position.y.toFloat()) <= range
+        }
+        fun nearest(armedOnly: Boolean): MutableUnit? {
+            var threshold = range * range + 1f
+            var chosen: MutableUnit? = null
+            for (candidate in candidates) {
+                if (armedOnly && candidate.definition.combat?.let {
+                        it.attackRange > 0.0 && (it.projectile.directDamage > 0.0 ||
+                            (it.projectile.ground?.areaDamage ?: 0f) > 0f)
+                    } != true) continue
+                val distance = patrolDistanceSquared(unit, candidate)
+                if (distance < threshold) { threshold = distance; chosen = candidate }
+            }
+            return chosen
+        }
+        val first = nearest(true)
+        val attackRange = weapon.attackRange.toFloat()
+        return if (candidates.isNotEmpty() && (first == null ||
+                patrolDistanceSquared(unit, first) >= attackRange * attackRange)) nearest(false) else first
+    }
+
+    private fun patrolDistanceSquared(unit: MutableUnit, target: MutableUnit): Float {
+        val x = unit.position.x.toFloat() - target.position.x.toFloat()
+        val y = unit.position.y.toFloat() - target.position.y.toFloat()
+        return x * x + y * y
+    }
+
     private fun updateWeapon(unit: MutableUnit, delta: Double) {
         val state = unit.combat ?: return
         val weapon = checkNotNull(unit.definition.combat)
@@ -1306,13 +1442,28 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
             weapon.attackRange * weapon.attackRange
         val manual = unit.attackCommand
         val manualTarget = manual?.let { units[it.targetUnitId]?.takeIf { candidate -> eligible(candidate) && inRange(candidate) } }
-        val target = manualTarget ?: units[state.targetId]?.takeIf { eligible(it) && inRange(it) } ?: orderedUnits().filter {
+        val patrol = unit.tasks.firstOrNull()?.kind == UnitTaskKind.PATROL
+        val target = if (patrol) {
+            state.patrolSearchTimer = maxOf(0f, state.patrolSearchTimer - delta.toFloat())
+            state.patrolDispatchTimer = maxOf(0f, state.patrolDispatchTimer - delta.toFloat())
+            var retained = retainedPatrolTarget(unit)
+            val range = weapon.attackRange.toFloat()
+            val interval = 20f + unit.position.x.toFloat() % 5f + unit.position.y.toFloat() % 5f
+            if ((retained == null || patrolDistanceSquared(unit, retained) >= range * range) && state.patrolSearchTimer == 0f) {
+                state.patrolSearchTimer = interval
+                retained = acquirePatrolTarget(unit) ?: retained
+                state.targetId = retained?.unitId
+                if (retained != null) state.patrolDispatchTimer = 0f
+            }
+            if (retained != null && state.patrolDispatchTimer == 0f) state.patrolDispatchTimer = interval
+            retained?.takeIf(::inRange)
+        } else manualTarget ?: units[state.targetId]?.takeIf { eligible(it) && inRange(it) } ?: orderedUnits().filter {
                 eligible(it) && inRange(it)
             }.sortedWith(compareBy<MutableUnit> { it.definition.combat == null }.thenBy {
                 policies.coordinates.distanceSquared(unit.position, it.position)
             }).firstOrNull()
         if (target == null) {
-            state.targetId = null
+            if (!patrol) state.targetId = null
             return
         }
         if (state.targetId != target.unitId) {
@@ -1421,6 +1572,8 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
             }
             refundUpgrades(target)
             target.attackCommand = null
+            target.taskQueue = UnitTaskQueue()
+            target.movementRequested = false
             target.cancelRoute()
             target.speed = 0.0
             target.angularVelocity = 0.0
@@ -1454,7 +1607,7 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
             unit.definition.combat?.let { weapon ->
                 policies.coordinates.distanceSquared(unit.position, attackTarget.position) >= weapon.attackRange * weapon.attackRange
             } == true
-        if (target != null) {
+        if (target != null && unit.tasks.firstOrNull()?.kind != UnitTaskKind.PATROL) {
             val commandDistanceSquared = policies.coordinates.distanceSquared(unit.position, target)
             if (commandDistanceSquared < 1681.0) unit.nearTargetTime += delta
             val completionRadius = when {
@@ -1464,12 +1617,14 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
             }
             if (!approachingBuilding && policies.capture.inside(commandDistanceSquared, completionRadius)) {
                 unit.cancelRoute()
+                if (unit.tasks.firstOrNull()?.kind == UnitTaskKind.MOVE) unit.taskQueue = unit.taskQueue.pop()
                 pendingEvents += Event("movement-arrived", unit.unitId)
                 target = null
                 normalCompleted = true
             }
         }
         if (target != null) {
+            unit.movementRequested = true
             val temporaryBirth = unit.birthRemaining > 0f
             val local = if (temporaryBirth) null else unit.ensureLocalMotion()
             val steeringTarget = local?.aim ?: target
@@ -1572,6 +1727,7 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
             require(listOf(unit.position.x, unit.position.y, unit.heading, unit.speed, unit.angularVelocity, unit.height)
                 .all { it.isFinite() } && (unit.health?.isFinite() != false)) { "Unit candidate must remain finite" }
             require(unit.birthRemaining.isFinite() && unit.birthRemaining in 0f..30f) { "Invalid birth timer" }
+            unit.taskQueue.validateCandidate()
             require(previousKey?.let { it < unit.updateKey } != false) { "Unit update keys must remain strictly ordered" }
             previousKey = unit.updateKey
             if (input.combatContract != null) {
@@ -1601,6 +1757,10 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
                     .all { it.isFinite() }) { "Weapon candidate must remain finite" }
                 require(state.idleTimer.isFinite() && state.idleHold.isFinite() && state.idleHold >= 0f &&
                     state.idleDirection in setOf(-1, 1)) { "Invalid idle candidate" }
+                require(state.patrolSearchTimer.isFinite() && state.patrolSearchTimer >= 0f &&
+                    state.patrolDispatchTimer.isFinite() && state.patrolDispatchTimer >= 0f) {
+                    "Invalid patrol combat timers"
+                }
                 require(OrdinaryWeapon.hasFiniteGeometry(unit)) { "Weapon geometry must remain finite" }
             }
             unit.pointDefense?.let { state ->
@@ -1671,11 +1831,13 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
                     health = unit.health,
                     maxHealth = unit.definition.maximumHealth,
                     alive = unit.alive,
-                    attackTargetId = unit.attackCommand?.targetUnitId,
+                    attackTargetId = if (unit.tasks.firstOrNull()?.kind == UnitTaskKind.PATROL) unit.combat?.targetId
+                        else unit.attackCommand?.targetUnitId,
                     turretHeading = unit.combat?.turretHeading ?: unit.heading,
                     cooldown = unit.combat?.cooldown,
                     height = unit.height,
                     pointDefense = unit.pointDefense?.let { PointDefenseObservation(it.energy, it.exhausted) },
+                    tasks = unit.tasks,
                 )
             },
             events = pendingEvents,

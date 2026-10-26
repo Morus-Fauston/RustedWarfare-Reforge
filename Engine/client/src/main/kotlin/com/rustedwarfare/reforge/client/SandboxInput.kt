@@ -20,6 +20,13 @@ class SandboxInput(
     private var gesture: MapGesture? = null
     private var ownerButton: Int? = null
     private var pointerPosition: Position? = null
+    private data class PatrolPress(val members: Set<String>, val append: Boolean)
+    private var patrolPress: PatrolPress? = null
+    private var pHeld = false
+    var patrolMode = false
+        private set
+    var patrolPointCount = 0
+        private set
     val box: Pair<Position, Position>? get() = gesture?.box
     private fun control() = pressed(Input.Keys.CONTROL_LEFT) || pressed(Input.Keys.CONTROL_RIGHT)
     private fun shift() = pressed(Input.Keys.SHIFT_LEFT) || pressed(Input.Keys.SHIFT_RIGHT)
@@ -29,6 +36,7 @@ class SandboxInput(
         if (!active() || pointer != 0 || !insideViewport(screenX, screenY)) return false
         if (ownerButton != null) return false
         val current = session() ?: return false
+        if (patrolMode && button == Input.Buttons.RIGHT) { endPatrol(); changed(); return true }
         val map = projection() ?: return false
         val ui = uiPoint(screenX, screenY) ?: return false
         val world = map.toWorld(ui.x, ui.y) ?: return false
@@ -41,6 +49,11 @@ class SandboxInput(
         pointerPosition = ui
         evidence.record("pointer", mapOf("screenX" to screenX, "screenY" to screenY,
             "uiX" to ui.x, "uiY" to ui.y, "world" to world.fields(), "button" to button))
+        if (patrolMode && button == Input.Buttons.LEFT) {
+            patrolPress = PatrolPress(current.selectedIds.toSet(), patrolPointCount > 0 || shift())
+            ownerButton = button
+            changed(); return true
+        }
         if (touchControls) {
             if (button == Input.Buttons.LEFT) current.tap(world) else current.command(world)
             changed(); return true
@@ -64,6 +77,15 @@ class SandboxInput(
         val current = session()
         val ui = uiPoint(screenX, screenY)
         if (!active() || current == null || ui == null) { cancel(); return true }
+        patrolPress?.let { press ->
+            val point = if (insideViewport(screenX, screenY)) projection()?.toWorld(ui.x, ui.y) else null
+            if (point != null && current.patrol(point, press.append, press.members) != null) {
+                patrolPointCount++
+                evidence.record("patrol-point", mapOf("point" to point.fields(), "append" to press.append,
+                    "members" to press.members.sorted(), "pointCount" to patrolPointCount))
+            }
+            cancelGesture(); changed(); return true
+        }
         val intent = gesture?.release(ui.x, ui.y)
         when (intent) {
             is MapIntent.Click -> current.select(intent.position, intent.mode)
@@ -73,7 +95,7 @@ class SandboxInput(
         }
         evidence.record("map-release", mapOf("button" to button, "intent" to intent?.javaClass?.simpleName,
             "selectedIds" to current.selectedIds.toList()))
-        cancel(); changed(); return true
+        cancelGesture(); changed(); return true
     }
     override fun mouseMoved(screenX: Int, screenY: Int): Boolean {
         pointerPosition = uiPoint(screenX, screenY)
@@ -90,14 +112,35 @@ class SandboxInput(
     override fun keyDown(keycode: Int): Boolean {
         if (!active() || editing() || touchControls) return false
         val current = session() ?: return false
+        if (keycode == Input.Keys.P) {
+            if (pHeld) return true
+            pHeld = true
+            return beginPatrol()
+        }
+        if (keycode == Input.Keys.ESCAPE && patrolMode) { endPatrol(); changed(); return true }
         val group = when (keycode) {
             Input.Keys.NUM_0 -> 0; Input.Keys.NUM_1 -> 1; Input.Keys.NUM_2 -> 2; Input.Keys.NUM_3 -> 3
             Input.Keys.NUM_4 -> 4; Input.Keys.NUM_5 -> 5; Input.Keys.NUM_6 -> 6; Input.Keys.NUM_7 -> 7
             Input.Keys.NUM_8 -> 8; Input.Keys.NUM_9 -> 9; else -> null
         }
         if (group != null) { group(group); return true }
-        if (keycode == Input.Keys.S) { current.stop(); changed(); return true }
+        if (keycode == Input.Keys.S) { endPatrol(); current.stop(); changed(); return true }
         return false
+    }
+    override fun keyUp(keycode: Int): Boolean {
+        if (keycode != Input.Keys.P) return false
+        val held = pHeld; pHeld = false; return held
+    }
+    fun beginPatrol(): Boolean {
+        if (!active() || editing() || session()?.canPatrol != true) return false
+        cancelGesture(); patrolMode = true; patrolPointCount = 0
+        evidence.record("patrol-mode", mapOf("active" to true, "pointCount" to 0))
+        changed(); return true
+    }
+    private fun endPatrol() {
+        cancelGesture()
+        if (patrolMode) evidence.record("patrol-mode", mapOf("active" to false, "pointCount" to patrolPointCount))
+        patrolMode = false; patrolPointCount = 0
     }
     fun group(index: Int) {
         if (!active() || editing()) return
@@ -111,5 +154,8 @@ class SandboxInput(
         val map = projection() ?: return
         evidence.record("camera", mapOf("reason" to reason, "center" to map.camera.center.fields(), "zoom" to map.camera.zoom))
     }
-    fun cancel() { gesture?.cancel(); gesture = null; ownerButton = null; pointerPosition = null }
+    private fun cancelGesture() {
+        gesture?.cancel(); gesture = null; patrolPress = null; ownerButton = null; pointerPosition = null
+    }
+    fun cancel() { endPatrol(); pHeld = false }
 }

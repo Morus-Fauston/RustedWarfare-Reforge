@@ -169,6 +169,18 @@ class SandboxGraphics private constructor(private val resources: SandboxRenderRe
             }
             if (unit.unitId in selectedIds) {
                 shapes.circle(x, y, radius + 6f, 32)
+                if (unit.ownerPlayerId == frame.observation.playerId) {
+                    shapes.color = Color.CYAN
+                    var stored: Position? = null
+                    for (task in unit.tasks) if (task.kind == com.rustedwarfare.reforge.core.sim.UnitTaskKind.PATROL) {
+                        val point = checkNotNull(task.target)
+                        val px = projection.x(point.x); val py = projection.y(point.y)
+                        shapes.circle(px, py, 4f, 16)
+                        stored?.let { shapes.line(projection.x(it.x), projection.y(it.y), px, py) }
+                        stored = point
+                    }
+                    shapes.color = resources.unitCircleColor(frame.observation.playerId, unit.ownerPlayerId)
+                }
                 var previous = unit.position
                 for (point in unit.pathPoints) {
                     shapes.line(projection.x(previous.x), projection.y(previous.y), projection.x(point.x), projection.y(point.y))

@@ -71,6 +71,16 @@ data class StopAction(
     override val atStep: Long? = null,
 ) : Action
 
+data class PatrolAction(
+    override val actionId: String,
+    override val actorPlayerId: String,
+    override val unitId: String,
+    val target: Position,
+    val append: Boolean,
+    override val world: WorldHandle,
+    override val atStep: Long? = null,
+) : Action
+
 data class SelectAction(
     override val actionId: String,
     override val actorPlayerId: String,

@@ -1,3 +1,16 @@
+v0.1.35 (2026-10-27 00:33)
+  新增: 正式PC按钮/P逐点真实PatrolAction，与Move/Attack共享最多29有效任务；单点驻留/多点轮转/应敌返回/Stop与改令
+  反馈: 多选逐成员、首Shift追加/Esc右键结束点选；同屏Sent/有效Tasks/Head和授权路线；owner失视先清临时敌与追击缓存、按知识返回
+  修复: 出厂归零目标未变仍用临时直线，改正常知识路径重建；Attack死亡转Patrol同帧死T重核；两个诊断显式拒绝Patrol，P001对照保持相同冻结JSON字段
+  自动: 同587源core413/client99/pc21共533方法全绿，33巡逻专项包含其中；代码/最终运行独审必修闭合；两模式真实旧追击失视后完整JSONL/vision/600terrain配对，零转向只隔离因果、正常运动另证返回
+  实窗: 双尺寸最终新包10269连续记录/18原图，真实追击伤害死亡返回、31输入轮转28有效、多选Stop/生产支付退款/重开退出正常
+  Android: 同源assemble/四main harness414 checks及APK12合同/默认12资源字节绑定绿；仅共享构建宿主兼容，应用元数据仍0.1.0/1
+  [已知问题] SimulationTest348中346过2败：旧OM00 MuMuManager保护身份漂移拒绝、后续未到达；180秒串行helper超时，同源不改限时隔离173.055秒绿，完整批保失败且重复不加计数；warning/私有复跑依赖保留
+  [待完成] 原七票awaiting-human开发交接；维护者最终体验/completed和整期接收
+  [刻意不做] 本期Android入口触控布局/008、巡逻外新命令/任意AI；不宣设备ART网络安全正式性能或完整原版兼容，不公开私有原版材料
+
+====
+
 v0.1.34 (2026-10-26 07:45)
   新增: ENG-P005-004基础塔机枪1000/火炮1600真实支付、Float进度、取消退款和同对象比例HP转换；火炮预测快照/查表Float飞行/实际爆点AOE/死亡与建筑释放，正式升级面板及授权表现
   技术: 新升级弹体状态事务深copy、晚故障回滚与同step纠正后续对照；owner队列；hidden AOE完整ClientEvidence/terrain/真实JSONL配对，实付升级1004tick仅fields/vision/revision配对，未另跑升级完整ClientEvidence/JSONL，保持生产战斗选择知识

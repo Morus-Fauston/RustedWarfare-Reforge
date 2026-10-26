@@ -42,6 +42,8 @@ class BootstrapScreen(
     private lateinit var statusLabel: Label
     private lateinit var messageLabel: Label
     private lateinit var stopButton: TextButton
+    private lateinit var patrolButton: TextButton
+    private lateinit var patrolLabel: Label
     private lateinit var productionLabel: Label
     private lateinit var produceButton: TextButton
     private lateinit var cancelProductionButton: TextButton
@@ -65,7 +67,8 @@ class BootstrapScreen(
     private data class HudState(val selected: com.rustedwarfare.reforge.core.sim.UnitObservation?,
         val selectedIds: Set<String>, val groups: List<Int>, val feedback: String?, val step: Long?, val canEdit: Boolean,
         val loading: Boolean, val error: String?, val hasSession: Boolean,
-        val balance: Long?, val queue: com.rustedwarfare.reforge.core.sim.FactoryQueueObservation?)
+        val balance: Long?, val queue: com.rustedwarfare.reforge.core.sim.FactoryQueueObservation?,
+        val patrolMode: Boolean, val patrolPoints: Int)
     private var lastHudState: HudState? = null
 
     override fun create() {
@@ -97,6 +100,7 @@ class BootstrapScreen(
         productionLabel = label("", 470f, 628f, 474f, 28f)
         label("Selection", 752f, 442f, 176f, 22f)
         selectedLabel = label("None", 752f, 414f, 176f, 100f)
+        patrolLabel = label("", 752f, 306f, 176f, 72f)
         produceButton = button("Produce", 752f, 264f, 176f) { session?.produce(); updateHud() }
         cancelProductionButton = button("Cancel last", 752f, 216f, 176f) { session?.cancelProduction(); updateHud() }
         for ((key, title, y) in listOf(Triple("upgrade_gun", "Gun 1000", 264f), Triple("upgrade_artillery", "Art 1600", 216f))) {
@@ -106,7 +110,8 @@ class BootstrapScreen(
         }
         statusLabel = label("", 16f, 52f, 480f, 44f)
         messageLabel = label("Loading", 40f, 400f, 560f, 260f)
-        stopButton = button("Stop (S)", 752f, 168f, 176f) { session?.stop(); updateHud() }
+        stopButton = button("Stop (S)", 752f, 168f, 84f) { mapInput.cancel(); session?.stop(); updateHud() }
+        patrolButton = button("Patrol (P)", 844f, 168f, 84f) { mapInput.beginPatrol(); updateHud() }
         button("Exit match", 752f, 72f, 176f) { leaveMatch() }
         contentLabel = label("Content folder", 752f, 378f, 176f, 24f)
         rootField = TextField(launch.configuration.root.toString(), skin).also {
@@ -363,7 +368,8 @@ class BootstrapScreen(
         val current = session
         val selected = current?.observation?.units?.find { it.unitId == current.selectedId }
         val state = HudState(selected, current?.selectedIds ?: emptySet(), (1..3).map { current?.groupCount(it) ?: 0 }, current?.feedback, current?.observation?.stepIndex,
-            launch.canEdit, loading, loadError, current != null, current?.observation?.balance, current?.selectedFactoryQueue)
+            launch.canEdit, loading, loadError, current != null, current?.observation?.balance, current?.selectedFactoryQueue,
+            mapInput.patrolMode, mapInput.patrolPointCount)
         if (state == lastHudState) return
         lastHudState = state
         selectedLabel.setText(if (selected == null) "None" else if (state.selectedIds.size > 1)
@@ -398,6 +404,17 @@ class BootstrapScreen(
         }
         stopButton.isDisabled = selected == null
         stopButton.isVisible = current != null
+        patrolButton.isVisible = current != null && !touchControls
+        patrolButton.isDisabled = current?.canPatrol != true
+        patrolLabel.isVisible = current != null && !touchControls
+        val taskText = selected?.tasks?.firstOrNull()?.let { head ->
+                "Tasks ${selected.tasks.size}: ${head.kind.name.lowercase()}" +
+                    (head.target?.let { String.format(Locale.ROOT, "\nPoint %.0f, %.0f", it.x, it.y) } ?: "")
+            } ?: "Tasks 0"
+        patrolLabel.setText(if (state.patrolMode) "Sent points ${state.patrolPoints}\n$taskText\nLeft: point / Esc: finish"
+            else if (selected?.tasks?.isNotEmpty() == true) taskText else "P: set patrol points")
+        // Factories cannot receive Patrol; keep this hint clear of the production controls.
+        if (queue != null || upgrades.isNotEmpty()) patrolLabel.isVisible = false
         selectedLabel.isVisible = current != null
         listOf<Actor>(contentLabel, rootField, modeBox, shareBox).forEach { it.isVisible = launch.canEdit }
         groupButtons.forEachIndexed { index, button -> button.setText("${index + 1} (${state.groups[index]})"); button.isDisabled = current == null }

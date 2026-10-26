@@ -107,6 +107,12 @@ data class Step(val stepIndex: Long, val delta: Double, val deltaUnit: String)
 
 enum class MovementState { IDLE, MOVING, DECELERATING, BLOCKED }
 
+enum class UnitTaskKind { MOVE, ATTACK, PATROL }
+
+/** Owner control intent; temporary combat targets never become stored patrol points. */
+data class UnitTask(val kind: UnitTaskKind, val actionId: String, val target: Position? = null,
+    val targetUnitId: String? = null, val atStep: Long? = null)
+
 data class UnitObservation(
     val unitId: String,
     val ownerPlayerId: String,
@@ -127,6 +133,7 @@ data class UnitObservation(
     val cooldown: Double? = null,
     val height: Double = 0.0,
     val pointDefense: PointDefenseObservation? = null,
+    val tasks: List<UnitTask> = emptyList(),
 )
 
 /** Host-only identity/target and arithmetic state. Never copied into player DTOs. */
@@ -282,6 +289,9 @@ internal data class MutableUnit(
     var terrainClearSteps: Int = 0,
     var health: Double? = definition.maximumHealth,
     var attackCommand: ManualAttackCommand? = null,
+    var taskQueue: UnitTaskQueue = UnitTaskQueue(),
+    /** Last activity's logical request, independent of propulsion and path success. */
+    var movementRequested: Boolean = false,
     var lastAttackPathAttemptStep: Long? = null,
     var combat: MutableCombat? = definition.combat?.let { MutableCombat(heading) },
     val height: Double = 0.0,
@@ -293,6 +303,7 @@ internal data class MutableUnit(
     var pointDefense: MutablePointDefense? = definition.pointDefense?.let { MutablePointDefense(it.initialEnergy) },
 ) {
     val alive: Boolean get() = health == null || checkNotNull(health) > 0.0
+    val tasks: List<UnitTask> get() = taskQueue.tasks
     fun ensureLocalMotion(): LocalMotionSegment {
         val first = pathPoints.first()
         return localMotion?.takeIf { it.anchor == first }
@@ -334,7 +345,8 @@ internal data class MutableCombat(var turretHeading: Double, var angularVelocity
     var cooldown: Double = 0.0, var targetId: String? = null, var offset: Position = Position(0.0, 0.0),
     var randomCounter: Int = 0, var idleBaseHeading: Double = turretHeading,
     var idleTimer: Float = 0f, var idleOffset: Double = 0.0, var idleDirection: Int = -1,
-    var idleReached: Boolean = false, var idleHold: Float = 0f, var oddShot: Boolean = false)
+    var idleReached: Boolean = false, var idleHold: Float = 0f, var oddShot: Boolean = false,
+    var patrolSearchTimer: Float = 0f, var patrolDispatchTimer: Float = 0f)
 
 internal data class MutableProjectile(val objectId: Long, val sourceUnitId: String, val targetUnitId: String?,
     var position: Position, var heading: Double, var remainingLife: Double, val offset: Position,

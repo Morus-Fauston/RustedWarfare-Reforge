@@ -84,7 +84,11 @@ object P001Suite {
                         if(id=="M05") {
                             val capture=P001Lifecycle.capture(input,id)
                             child.lines("lifecycle.jsonl",capture.rows);failure=capture.failure
-                            if(samples.map { it.units to it.events }!=capture.observations.map { it.units to it.events }) failure=failure?:RelationFailure("continuous-cross-check",0,"Runner and continuous public driver agree","different observations")
+                            // Compare the P001 trace contract on both paths. Host-only task state is
+                            // deliberately absent from this frozen movement schema.
+                            if(samples.map { it.json().required("units") to it.json().required("events") }!=
+                                capture.observations.map { it.json().required("units") to it.json().required("events") })
+                                failure=failure?:RelationFailure("continuous-cross-check",0,"Runner and continuous public driver agree","different observations")
                         }
                     }
                     code=aggregate(listOf(code,samplingCode(samples,input.steps.size,true)))

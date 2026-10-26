@@ -25,6 +25,7 @@ class JsonlEvidence internal constructor(private val directory: Path, private va
         writer = createWriter(directory.resolve("reforge/client-diagnostic.jsonl"))
         try {
             val ticket = when {
+                Files.exists(inputs.resolve("patrol.properties")) -> "ENG-P005-007"
                 Files.exists(inputs.resolve("upgrade.properties")) -> "ENG-P005-004"
                 Files.exists(inputs.resolve("point-defense.properties")) -> "ENG-P005-005"
                 Files.exists(inputs.resolve("turret.properties")) -> "ENG-P005-003"
@@ -36,6 +37,7 @@ class JsonlEvidence internal constructor(private val directory: Path, private va
                 "format" to "p001.windows-diagnostic.v1", "runId" to runId,
                 "phase" to if (ticket.startsWith("ENG-P005")) "P005" else "P002",
                 "topic" to when (ticket) {
+                    "ENG-P005-007" -> "patrol-windows-client"
                     "ENG-P005-004" -> "upgrade-windows-client"
                     "ENG-P005-005" -> "point-defense-windows-client"
                     "ENG-P005-003" -> "turret-windows-client"
@@ -72,6 +74,7 @@ class JsonlEvidence internal constructor(private val directory: Path, private va
             val defense = scenario.unitDefinitions.values.any { it.pointDefense != null }
             val upgrade = scenario.unitDefinitions.values.any { it.upgrades != null }
             val fixedManifest = contentRoot.resolve(when {
+                scenario.scenarioId == "p005-patrol" -> "patrol.properties"
                 upgrade -> "upgrade.properties"
                 defense -> "point-defense.properties"
                 turret -> "turret.properties"
