@@ -93,8 +93,16 @@ class SandboxSession(scenario: Scenario, private val evidence: ClientEvidence = 
         "builder" -> "Builder"
         "c_tank" -> "Tank"
         "landFactory" -> "Land factory"
+        "extractorT1" -> "Extractor"
+        "fabricatorT1" -> "Fabricator"
         else -> "Unit"
     }
+
+    val hasEconomicConstruction: Boolean get() = scenario.unitDefinitions.containsKey("extractorT1")
+    fun nominalIncome(typeId: String): Float? = scenario.unitDefinitions[typeId]?.income?.let { it.credits * 40f / it.period }
+    val totalNominalIncome: Float get() = observation.units.filter {
+        it.alive && it.ownerPlayerId == observation.playerId && it.constructionProgress >= 1f
+    }.sumOf { nominalIncome(it.typeId)?.toDouble() ?: 0.0 }.toFloat()
 
     init {
         try { latestFrame = makeFrame(); capture("initial") }
@@ -181,7 +189,8 @@ class SandboxSession(scenario: Scenario, private val evidence: ClientEvidence = 
             val shape = building.placementFootprint
             return (shape.top..shape.bottom).flatMap { y -> (shape.left..shape.right).map { x -> col + x to row + y } }
         }
-        val candidate = cells(position, checkNotNull(definition.building))
+        val building = checkNotNull(definition.building)
+        val candidate = cells(position, building)
         var blocked = position.x - definition.radius < 0.0 || position.y - definition.radius < 0.0 ||
             position.x + definition.radius > map.widthTiles * 20.0 || position.y + definition.radius > map.heightTiles * 20.0
         var unknown = false
@@ -191,7 +200,9 @@ class SandboxSession(scenario: Scenario, private val evidence: ClientEvidence = 
             if (gid == null) { unknown = true; continue }
             val tileset = map.tileSets.lastOrNull { it.firstGid <= gid } ?: continue
             val tile = gid - tileset.firstGid
-            if (tile in tileset.blockedTileIds || tile in tileset.resourcePoolTileIds) blocked = true
+            if (building.requiresResourcePool) {
+                if (tile !in tileset.resourcePoolTileIds) blocked = true
+            } else if (tile in tileset.blockedTileIds || tile in tileset.resourcePoolTileIds) blocked = true
         }
         if (observation.units.any { unit -> unit.alive && scenario.unitDefinitions.getValue(unit.typeId).building?.let {
                 cells(unit.position, it).any { cell -> cell in candidate }

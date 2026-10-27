@@ -12,6 +12,7 @@ import java.io.IOException
 import java.nio.file.Path
 
 object ContentLoader {
+    fun loadEconomyUnit(path: Path): ContentResult<UnitDefinition> = load(path, com.rustedwarfare.reforge.core.content.internal.EconomyContentReader::read)
     fun loadCommandCenter(path: Path): ContentResult<UnitDefinition> = load(path, CommandCenterContentReader::read)
     fun loadBuilder(path: Path): ContentResult<UnitDefinition> = load(path, BuilderContentReader::read)
 

@@ -35,9 +35,14 @@ internal class BuildingTerrain private constructor(map: MapDefinition, occupied:
             val cells = linkedSetOf<Pair<Int, Int>>()
             for (unit in buildings) {
                 val building = checkNotNull(input.unitDefinitions.getValue(unit.typeId).building)
+                if (building.requiresResourcePool && !input.map.isResourcePool(
+                        MapBounds.cell(unit.position.x, input.map.tileWidth, input.map.widthTiles),
+                        MapBounds.cell(unit.position.y, input.map.tileHeight, input.map.heightTiles)))
+                    fail("Resource building requires a resource pool at its center")
                 for (cell in footprint(input.map, unit.position, building.footprint, building.anchor)) {
-                    if (input.map.blocking.isBlocked(cell.first, cell.second) || !cells.add(cell))
-                        fail("Building footprint must be clear of hard terrain and other live buildings")
+                    if ((!building.requiresResourcePool && (input.map.blocking.isBlocked(cell.first, cell.second) ||
+                            input.map.isResourcePool(cell.first, cell.second))) || !cells.add(cell))
+                        fail("Building footprint must respect ground, resource pools and other live buildings")
                 }
             }
             for (unit in input.units) {

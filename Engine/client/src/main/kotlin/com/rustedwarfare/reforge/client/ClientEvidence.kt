@@ -63,11 +63,13 @@ internal fun PlayerObservation.fields(): Map<String, Any?> =
         "playerId" to playerId,
         "visionEpoch" to vision?.epoch,
         "projectiles" to projectiles.map { mapOf("token" to it.token, "multiplicity" to it.multiplicity,
-            "position" to it.position.fields(), "heading" to it.heading, "height" to it.height, "parentToken" to it.parentToken) },
+            "position" to it.position.fields(), "heading" to it.heading, "height" to it.height, "parentToken" to it.parentToken) +
+                (it.areaRadius?.let { radius -> mapOf("areaRadius" to radius) } ?: emptyMap()) },
         "projectileEvents" to projectileEvents.map { mapOf("token" to it.token, "kind" to it.kind,
             "occurrences" to it.occurrences, "position" to it.position.fields(), "heading" to it.heading,
             "height" to it.height, "sourceUnitId" to it.sourceUnitId, "targetUnitId" to it.targetUnitId,
-            "damage" to it.damage, "parentToken" to it.parentToken, "interceptorUnitId" to it.interceptorUnitId) },
+            "damage" to it.damage, "parentToken" to it.parentToken, "interceptorUnitId" to it.interceptorUnitId) +
+                (it.areaRadius?.let { radius -> mapOf("areaRadius" to radius) } ?: emptyMap()) },
         "knowledge" to knowledge?.cells?.map { mapOf("visible" to it.visible,
             "blocked" to it.lastKnownBlocked, "gid" to it.lastKnownGroundGid) },
     ) + (balance?.let { mapOf("balance" to it, "factoryQueues" to factoryQueues.map { factory ->

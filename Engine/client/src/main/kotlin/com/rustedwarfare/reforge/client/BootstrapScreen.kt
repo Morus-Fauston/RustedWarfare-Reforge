@@ -66,10 +66,9 @@ class BootstrapScreen(
     private lateinit var secondProduceText: Label
     private lateinit var secondProductionInput: ProductionButtonInput
     private var secondProductionHover = false
-    private lateinit var constructionButton: Table
-    private lateinit var constructionIcon: Image
-    private lateinit var constructionText: Label
-    private var constructionHover = false
+    private data class ConstructionCard(val table: Table, val icon: Image, val text: Label, val input: ConstructionButtonInput)
+    private val constructionCards = linkedMapOf<String, ConstructionCard>()
+    private var constructionHover: String? = null
     private var nativeSelection: Set<String> = emptySet()
     private val nativePanel: Boolean get() = session?.observation?.scenarioId == "p006-construction"
     private val upgradeButtons = mutableMapOf<String, Pair<TextButton, TextButton>>()
@@ -112,6 +111,7 @@ class BootstrapScreen(
         stage = Stage(viewport, batch).also { created += { it.dispose() } }
         groupButtons.clear()
         upgradeButtons.clear()
+        constructionCards.clear()
         // Consume the whole panel, including empty space, for the full press chain.
         stage.addActor(Actor().apply {
             setBounds(736f, 0f, 224f, 592f)
@@ -156,36 +156,23 @@ class BootstrapScreen(
             table.addListener(secondProductionInput)
             stage.addActor(table)
         }
-        constructionIcon = Image().apply { touchable = Touchable.disabled }
-        constructionText = Label("Factory", skin).apply { setAlignment(Align.center); touchable = Touchable.disabled }
-        constructionButton = Table(skin).also { table ->
+        for (type in listOf("extractorT1", "landFactory", "fabricatorT1")) {
+            val icon = Image().apply { touchable = Touchable.disabled }
+            val text = Label("", skin).apply { setAlignment(Align.center); touchable = Touchable.disabled; setFontScale(.7f) }
+            val table = Table(skin)
             table.touchable = Touchable.enabled
             table.setBounds(752f, 256f, 84f, 64f)
-            table.add(constructionIcon).size(28f, 28f).padTop(3f).row()
-            table.add(constructionText).height(25f)
+            table.add(icon).size(28f, 28f).padTop(3f).row()
+            table.add(text).height(21f)
             table.background = skin.newDrawable("white", Color(.23f, .28f, .26f, 1f))
-            table.addListener(object : InputListener() {
-                private var selected: String? = null
-                override fun enter(event: InputEvent, x: Float, y: Float, pointer: Int, fromActor: Actor?) {
-                    if (pointer == -1) { constructionHover = true; lastHudState = null }
-                }
-                override fun exit(event: InputEvent, x: Float, y: Float, pointer: Int, toActor: Actor?) {
-                    if (pointer == -1) { constructionHover = false; lastHudState = null }
-                }
-                override fun touchDown(event: InputEvent, x: Float, y: Float, pointer: Int, button: Int): Boolean {
-                    if (paused || pointer != 0 || button != Input.Buttons.LEFT || session?.constructionActions?.isEmpty() != false) return false
-                    selected = session?.selectedId
-                    return true
-                }
-                override fun touchUp(event: InputEvent, x: Float, y: Float, pointer: Int, button: Int) {
-                    if (pointer != 0 || button != Input.Buttons.LEFT) return
-                    event.handle()
-                    if (!paused && selected != null && session?.selectedId == selected && x >= 0f && y >= 0f && x < table.width && y < table.height)
-                        session?.constructionActions?.firstOrNull()?.let { mapInput.beginConstruction(it.typeId) }
-                    selected = null
-                }
-            })
+            val listener = ConstructionButtonInput({ session }, { nativePanel && !paused }, type,
+                { mapInput.beginConstruction(it) }, { hovered ->
+                    if (hovered) constructionHover = type else if (constructionHover == type) constructionHover = null
+                    lastHudState = null
+                })
+            table.addListener(listener)
             stage.addActor(table)
+            constructionCards[type] = ConstructionCard(table, icon, text, listener)
         }
         nativeTooltipIcon = Image()
         nativeTooltipText = Label("", skin).apply { setWrap(true) }
@@ -436,7 +423,7 @@ class BootstrapScreen(
         Gdx.gl.glClearColor(0.075f, 0.09f, 0.085f, 1f)
         nativeTooltip.isVisible = nativePanel && !paused &&
             ((productionHover || secondProductionHover) && session?.productionAction != null ||
-                constructionHover && session?.constructionActions?.isNotEmpty() == true)
+                constructionHover != null && session?.constructionActions?.any { it.typeId == constructionHover } == true)
         if (nativeTooltip.isVisible) nativeTooltip.toFront()
         Gdx.gl.glClear(GL20.GL_COLOR_BUFFER_BIT)
         viewport.apply()
@@ -500,13 +487,21 @@ class BootstrapScreen(
         cancelProductionButton.isDisabled = queue?.items?.isEmpty() != false
         nativeProduceButton.isVisible = nativePanel && queue != null
         secondProduceButton.isVisible = nativePanel && current?.productionActions?.size == 2
-        constructionButton.isVisible = nativePanel && current?.constructionActions?.isNotEmpty() == true
+        for ((type, card) in constructionCards) {
+            card.table.isVisible = nativePanel && current?.constructionActions?.any { it.typeId == type } == true
+            if (current?.hasEconomicConstruction == true) {
+                val x = if (type == "extractorT1") 844f else 752f
+                val y = when (type) { "extractorT1" -> 280f; "landFactory" -> 220f; else -> 160f }
+                card.table.setBounds(x, y, 84f, 54f)
+            } else card.table.setBounds(752f, 256f, 84f, 64f)
+        }
         nativeInfo.isVisible = nativePanel && selected != null
         nativeIcon.isVisible = nativePanel && selected != null && state.selectedIds.size == 1
         if (nativeSelection != state.selectedIds) {
             productionInput.cancel()
             secondProductionInput.cancel()
-            constructionHover = false
+            constructionCards.values.forEach { it.input.cancel() }
+            constructionHover = null
             nativeSelection = state.selectedIds.toSet()
         }
         if (nativePanel) {
@@ -518,7 +513,9 @@ class BootstrapScreen(
             nativeIcon.drawable = selected?.let { graphics?.unitIcon(it.typeId) }?.let(::TextureRegionDrawable)
             nativeInfo.setText(selected?.let { unit ->
                 "${unit.health?.toInt() ?: 0} / ${unit.maxHealth?.toInt() ?: 0}" +
-                    (if (unit.typeId == "commandCenter") "\n+\$18" else "")
+                    (current?.nominalIncome(unit.typeId)?.let { "\n+\$${it.toInt()}" } ?: "") +
+                    (if (unit.typeId in setOf("extractorT1", "fabricatorT1"))
+                        if (unit.constructionProgress < 1f) "\nBuilding ${(unit.constructionProgress * 100f).toInt()}%" else "\nActive" else "")
             } ?: "")
             current?.productionAction?.let { action ->
                 val icon = graphics?.unitIcon(action.typeId)?.let(::TextureRegionDrawable)
@@ -542,17 +539,20 @@ class BootstrapScreen(
                         action.maximumHealth?.toInt() ?: 0, action.moveSpeed) +
                     (if (action.affordable) "Left: produce" else "Insufficient funds") + "\nRight: cancel one")
             }
-            current?.constructionActions?.firstOrNull()?.let { action ->
-                constructionIcon.drawable = graphics?.unitIcon(action.typeId)?.let(::TextureRegionDrawable)
-                constructionText.setText("Factory \$${action.price}")
-                if (constructionHover) {
-                    nativeTooltipIcon.drawable = constructionIcon.drawable
+            current?.constructionActions?.forEach { action ->
+                val card = constructionCards.getValue(action.typeId)
+                card.icon.drawable = graphics?.unitIcon(action.typeId)?.let(::TextureRegionDrawable)
+                card.text.setText("${unitTitle(action.typeId)}\n\$${action.price}")
+                if (constructionHover == action.typeId) {
+                    nativeTooltipIcon.drawable = card.icon.drawable
                     nativeTooltipText.setText("${action.title} (\$${action.price})\n" +
                         String.format(Locale.ROOT, "%.1fs\nHP %d\n", 1.0 / action.rate / 60.0, action.maximumHealth.toInt()) +
+                        (current.nominalIncome(action.typeId)?.let { "Income +\$${it.toInt()}\n" } ?: "") +
                         "Left: choose site\nEsc / right: cancel")
                 }
             }
-            productionLabel.setText(state.balance?.let { "\$$it" } ?: "")
+            productionLabel.setText(state.balance?.let { "\$$it" +
+                (if (current?.hasEconomicConstruction == true) "  (+\$${current.totalNominalIncome.toInt()})" else "") } ?: "")
             productionLabel.color = Color(.45f, .91f, .65f, 1f)
         } else {
             selectedLabel.setBounds(752f, 314f, 176f, 100f)
@@ -567,10 +567,11 @@ class BootstrapScreen(
             buttons.second.isDisabled = current?.selectedUpgradeQueue?.items?.none { it.actionKey == key } != false
         }
         stopButton.isDisabled = selected == null
-        stopButton.setY(if (nativePanel) 144f else 168f)
-        patrolButton.setY(if (nativePanel) 144f else 168f)
-        startButton.setY(if (nativePanel) 96f else 120f)
-        exitButton.setY(if (nativePanel) 48f else 72f)
+        val economicPanel = nativePanel && current?.hasEconomicConstruction == true
+        stopButton.setY(if (economicPanel) 112f else if (nativePanel) 144f else 168f)
+        patrolButton.setY(if (economicPanel) 112f else if (nativePanel) 144f else 168f)
+        startButton.setY(if (economicPanel) 64f else if (nativePanel) 96f else 120f)
+        exitButton.setY(if (economicPanel) 16f else if (nativePanel) 48f else 72f)
         stopButton.isVisible = current != null
         patrolButton.isVisible = current != null && !touchControls
         patrolButton.isDisabled = current?.canPatrol != true
@@ -659,7 +660,8 @@ class BootstrapScreen(
     }
 
     private fun cancelInput() {
-        constructionHover = false
+        constructionHover = null
+        constructionCards.values.forEach { it.input.cancel() }
         if (::productionInput.isInitialized) productionInput.cancel()
         if (::secondProductionInput.isInitialized) secondProductionInput.cancel()
         if (::nativeTooltip.isInitialized) nativeTooltip.isVisible = false
@@ -672,6 +674,8 @@ class BootstrapScreen(
         "builder" -> "Builder"
         "c_tank" -> "Tank"
         "landFactory" -> "Factory"
+        "extractorT1" -> "Extractor"
+        "fabricatorT1" -> "Fabricator"
         else -> type
     }
 

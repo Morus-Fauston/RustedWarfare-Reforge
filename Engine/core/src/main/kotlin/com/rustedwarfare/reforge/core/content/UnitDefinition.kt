@@ -25,6 +25,7 @@ class UnitDefinition(
     val income: IncomeProfile? = null,
     val builder: BuilderProfile? = null,
     val construction: ConstructionProfile? = null,
+    val deathExplosion: DeathExplosionProfile? = null,
 ) {
     val retainedUnconsumed: Set<String> = Collections.unmodifiableSet(LinkedHashSet(retainedUnconsumed))
     val maximumHealth: Double? get() = durability?.maxHp ?: combat?.maxHp
@@ -46,11 +47,12 @@ enum class MovementType { LAND, NONE }
 /** Trusted original target class; a building or an unarmed life profile does not imply native membership. */
 enum class DirectHitTargetKind { ORDINARY, NATIVE_BUILDING }
 
-data class DurabilityProfile(val maxHp: Double, val deadImagePath: Path, val maxDamagePerHit: Double? = null)
+data class DurabilityProfile(val maxHp: Double, val deadImagePath: Path?, val maxDamagePerHit: Double? = null)
 data class BuildingFootprint(val left: Int, val top: Int, val right: Int, val bottom: Int)
 data class FootprintAnchor(val offsetX: Float, val offsetY: Float)
 data class BuildingProfile(val footprint: BuildingFootprint, val backImagePath: Path? = null,
-    val anchor: FootprintAnchor? = null, val placementFootprint: BuildingFootprint = footprint)
+    val anchor: FootprintAnchor? = null, val placementFootprint: BuildingFootprint = footprint,
+    val requiresResourcePool: Boolean = false)
 class BuilderProfile(buildingTypeIds: List<String>) {
     val buildingTypeIds: List<String> = Collections.unmodifiableList(ArrayList(buildingTypeIds))
     val range: Float = 85f
@@ -69,6 +71,8 @@ class ProductionProfile(unitTypeIds: List<String>) {
 }
 data class BuildProfile(val price: Long, val rate: Float)
 data class IncomeProfile(val period: Float, val credits: Float)
+
+data class DeathExplosionProfile(val damage: Float, val radius: Float, val expandTime: Float)
 
 data class UpgradeActionProfile(val actionKey: String, val targetTypeId: String, val price: Long, val rate: Float)
 

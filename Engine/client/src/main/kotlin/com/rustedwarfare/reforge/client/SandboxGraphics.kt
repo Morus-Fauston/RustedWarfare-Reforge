@@ -128,6 +128,7 @@ class SandboxGraphics private constructor(private val resources: SandboxRenderRe
         batch.color = Color.WHITE
         for (unit in frame.observation.units) {
             val definition = resources.units.getValue(unit.typeId)
+            if (!definition.isDrawn(unit)) continue
             batch.setColor(1f, 1f, 1f, if (unit.alive && unit.constructionProgress < 1f) .45f else 1f)
             if (unit.alive) backs[unit.typeId]?.let { back ->
                 val bw = (back.regionWidth * definition.imageScale * projection.scale).toFloat()
@@ -170,6 +171,7 @@ class SandboxGraphics private constructor(private val resources: SandboxRenderRe
         shapes.color = Color(0.45f, 0.5f, 0.47f, 1f)
         shapes.rect(projection.left.toFloat(), projection.bottom.toFloat(), projection.width.toFloat(), projection.height.toFloat())
         for (unit in frame.observation.units) {
+            if (!resources.units.getValue(unit.typeId).isDrawn(unit)) continue
             shapes.color = if (unit.alive) resources.unitCircleColor(frame.observation.playerId, unit.ownerPlayerId) else Color.DARK_GRAY
             val radius = (resources.units.getValue(unit.typeId).displayRadius * projection.scale).toFloat()
             val x = projection.x(unit.position.x)
@@ -242,7 +244,9 @@ class SandboxGraphics private constructor(private val resources: SandboxRenderRe
         for (projectile in frame.observation.projectiles) {
             val x = projection.x(projectile.position.x)
             val y = projection.y(projectile.position.y) + (projectile.height * projection.scale).toFloat()
-            shapes.circle(x, y, 2f, 8)
+            val areaRadius = projectile.areaRadius
+            if (areaRadius == null) shapes.circle(x, y, 2f, 8)
+            else if (areaRadius > 0f) shapes.circle(x, y, (areaRadius * projection.scale).toFloat(), 48)
         }
         val now = System.nanoTime()
         if (impactSample != frame.observation.sampleId) {

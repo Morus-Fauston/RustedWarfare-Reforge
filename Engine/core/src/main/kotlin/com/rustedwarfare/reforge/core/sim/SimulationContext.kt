@@ -868,9 +868,13 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
         val view = automaticVisionSnapshots?.getValue(worker.ownerPlayerId)
         if (view != null && cells.any { !view.contains(it.first, it.second) }) return
         val live = orderedUnits().filter { it.alive && it.definition.building != null }
+        val poolAtCenter = input.map.isResourcePool(MapBounds.cell(position.x, input.map.tileWidth, input.map.widthTiles),
+            MapBounds.cell(position.y, input.map.tileHeight, input.map.heightTiles))
+        val terrainBlocked = if (building.requiresResourcePool) !poolAtCenter else
+            cells.any { input.map.blocking.isBlocked(it.first, it.second) || input.map.isResourcePool(it.first, it.second) }
         val blocked = cells.isEmpty() || !MapBounds.contains(input.map.widthTiles.toDouble() * input.map.tileWidth,
             input.map.heightTiles.toDouble() * input.map.tileHeight, position, definition.radius) ||
-            cells.any { input.map.blocking.isBlocked(it.first, it.second) || input.map.isResourcePool(it.first, it.second) } || live.any { other ->
+            terrainBlocked || live.any { other ->
                 val profile = checkNotNull(other.definition.building)
                 BuildingTerrain.footprint(input.map, other.position, profile.placementFootprint, profile.anchor, clipToMap = true).any { it in cells }
             }
@@ -1067,7 +1071,9 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
         units = units.mapValuesTo(linkedMapOf()) { (_, unit) ->
             unit.copy(pathPoints = unit.pathPoints.toMutableList(), combat = unit.combat?.copy(),
                 pointDefense = unit.pointDefense?.copy()) }
-        projectiles = projectiles.mapTo(mutableListOf()) { it.copy() }
+        val existingProjectileIds = projectiles.mapTo(hashSetOf()) { it.objectId }
+        projectiles = projectiles.mapTo(mutableListOf()) {
+            it.copy(expansion = it.expansion?.let { area -> area.copy(hitUnitIds = LinkedHashSet(area.hitUnitIds)) }) }
         pathDiagnostics = pathDiagnostics?.toMutableList()
         pendingEvents = pendingEvents.toMutableList()
         pendingProjectileEvents = pendingProjectileEvents.toMutableList()
@@ -1099,7 +1105,7 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
                 }
                 if (unit.definition.builder != null) updateConstruction(unit, currentScenario, step)
                 if (unit.definition.production != null && unit.constructionProgress >= 1f) advanceProduction(unit, currentScenario)
-                unit.definition.income?.let { income ->
+                unit.definition.income?.takeIf { unit.constructionProgress >= 1f }?.let { income ->
                     unit.incomeElapsed += step.delta.toFloat()
                     require(unit.incomeElapsed.isFinite()) { "Income elapsed time must remain finite" }
                     if (unit.incomeElapsed > income.period - .1f) {
@@ -1116,7 +1122,7 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
                 unit.combat?.let { it.cooldown = maxOf(0.0, it.cooldown - step.delta) }
                 advanceUpgrade(unit)
             }
-            updateProjectiles(step.delta)
+            updateProjectiles(step.delta, existingProjectileIds)
             missileTargets = missileTargets?.refresh(orderedUnits())
             nextVision = prepareAutomaticKnowledge()
             nextBuildings = prepareBuildings(nextVision?.views ?: automaticVisionSnapshots)
@@ -1218,7 +1224,8 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
             val value = event.projectile
             val target = value.targetUnitId.takeIf { it in ids }
             ProjectedProjectileEvent(value.objectId, event.kind, value.position, value.heading, value.height,
-                value.sourceUnitId.takeIf { it in ids }, target, event.damage.takeIf { target != null }, event.interceptorUnitId)
+                value.sourceUnitId.takeIf { it in ids }, target, event.damage.takeIf { target != null }, event.interceptorUnitId,
+                value.areaExpansion?.radius)
         }
         val projection = projectileViews.getOrPut(playerId) { ProjectileProjection() }.project(
             observation.projectiles.filter { isVisibleTo(playerId, it.position) }, projectedEvents,
@@ -1392,11 +1399,18 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
             }
             definition.construction?.let { construction ->
                 val building = definition.building
+                val factory = building?.placementFootprint == com.rustedwarfare.reforge.core.content.BuildingFootprint(-1, -1, 1, 3) &&
+                    building.footprint == com.rustedwarfare.reforge.core.content.BuildingFootprint(-1, -1, 1, 1) &&
+                    building.anchor == null && !building.requiresResourcePool
+                val extractor = building?.requiresResourcePool == true &&
+                    building.footprint == com.rustedwarfare.reforge.core.content.BuildingFootprint(0, 0, 0, 0) &&
+                    building.placementFootprint == building.footprint && building.anchor == com.rustedwarfare.reforge.core.content.FootprintAnchor(10f, 10f)
+                val fabricator = building?.requiresResourcePool == false &&
+                    building.footprint == com.rustedwarfare.reforge.core.content.BuildingFootprint(-1, -1, 1, 1) &&
+                    building.placementFootprint == building.footprint && building.anchor == com.rustedwarfare.reforge.core.content.FootprintAnchor(10f, 10f)
                 if (building == null || construction.price < 0L || !construction.rate.isFinite() || construction.rate <= 0f ||
-                    building.placementFootprint != com.rustedwarfare.reforge.core.content.BuildingFootprint(-1, -1, 1, 3) ||
-                    building.footprint != com.rustedwarfare.reforge.core.content.BuildingFootprint(-1, -1, 1, 1) ||
-                    building.anchor != null || definition.radius > 30.0)
-                    return SimulationError("unsupported-construction", "Expected finite factory construction metadata within the supported placement envelope")
+                    (!factory && !extractor && !fabricator) || definition.radius > 30.0)
+                    return SimulationError("unsupported-construction", "Expected finite construction metadata within the supported placement envelope")
             }
             definition.pointDefense?.let { profile ->
                 if (definition.building == null || definition.combat != null || m.type != MovementType.NONE ||
@@ -1405,6 +1419,12 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
                     !profile.recharge.isFinite() || profile.recharge < 0f || !profile.cost.isFinite() || profile.cost < 0f ||
                     !profile.initialEnergy.isFinite() || profile.initialEnergy !in 0f..1f)
                     return SimulationError("unsupported-point-defense", "Expected a finite immobile defense building and valid energy profile")
+            }
+            definition.deathExplosion?.let { profile ->
+                if (definition.building == null || definition.durability == null || m.type != MovementType.NONE ||
+                    !profile.damage.isFinite() || profile.damage < 0f || !profile.radius.isFinite() || profile.radius <= 0f ||
+                    !(profile.radius * profile.radius).isFinite() || !profile.expandTime.isFinite() || profile.expandTime <= 0f)
+                    return SimulationError("unsupported-death-explosion", "Expected a durable immobile building and finite death area")
             }
             definition.production?.let { production ->
                 if (definition.building == null || production.unitTypeIds.isEmpty() ||
@@ -1470,7 +1490,7 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
                     return SimulationError("unsupported-combat", "Ordinary combat numbers must be finite and in range")
             }
         }
-        if (input.unitDefinitions.values.any { it.combat != null } && input.combatContract == null)
+        if (input.unitDefinitions.values.any { it.combat != null || it.deathExplosion != null } && input.combatContract == null)
             return SimulationError("missing-combat-contract", "Combat scenes require an explicit identity and seed contract")
         input.combatContract?.let { combat ->
             val values = combat.unitObjectIds.values
@@ -1486,7 +1506,9 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
                     input.map.heightTiles.toDouble() * input.map.tileHeight, p, radius)) {
                 return SimulationError("invalid-spawn", "Unit '${spawn.unitId}' collision circle must be finite and entirely within the map")
             }
-            if (!spawn.heading.isFinite() || !spawn.height.isFinite() || policies.terrain.intersects(input.map, p, radius)) {
+            val resourceBuilding = input.unitDefinitions.getValue(spawn.typeId).building?.requiresResourcePool == true
+            if (!spawn.heading.isFinite() || !spawn.height.isFinite() ||
+                (!resourceBuilding && policies.terrain.intersects(input.map, p, radius))) {
                 return SimulationError("invalid-spawn", "Unit '${spawn.unitId}' heading must be finite and spawn outside blocked terrain")
             }
             val definition = input.unitDefinitions.getValue(spawn.typeId)
@@ -1798,8 +1820,17 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
             interceptorUnitId = unit.unitId)
     }
 
-    private fun updateProjectiles(delta: Double) {
-        for (projectile in projectiles.sortedBy { it.objectId }) {
+    private fun updateProjectiles(delta: Double, existingIds: Set<Long>) {
+        updateProjectileBatch(delta, projectiles.filter { it.objectId in existingIds }.sortedBy { it.objectId })
+        updateProjectileBatch(delta, projectiles.filter { it.objectId !in existingIds }.sortedBy { it.objectId })
+    }
+
+    private fun updateProjectileBatch(delta: Double, batch: List<MutableProjectile>) {
+        for (projectile in batch) {
+            if (projectile.expansion != null) {
+                updateDeathExplosion(projectile, delta)
+                continue
+            }
             if (projectile.missile != null && units[projectile.targetUnitId]?.alive == false) retargetMissile(projectile)
             val target = units[projectile.targetUnitId]
             if (target == null && projectile.ground == null) {
@@ -1824,6 +1855,35 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
                 pendingProjectileEvents += ProjectileEventObservation("intercepted", projectileObservation(projectile))
                 projectiles.remove(projectile)
             }
+        }
+    }
+
+    private fun updateDeathExplosion(projectile: MutableProjectile, delta: Double) {
+        val area = checkNotNull(projectile.expansion)
+        area.remaining = maxOf(0f, area.remaining - delta.toFloat())
+        area.radius = area.profile.radius * (1f - area.remaining / area.profile.expandTime)
+        projectile.age += delta.toFloat()
+        projectile.remainingLife = maxOf(0.0, projectile.remainingLife - delta)
+        val source = checkNotNull(units[projectile.sourceUnitId])
+        val players = checkNotNull(scenario).players
+        val team = players.single { it.playerId == source.ownerPlayerId }.teamId
+        for (target in orderedUnits()) {
+            if (!target.alive || target.health == null || target.unitId in area.hitUnitIds || target.height.toFloat() < -5f ||
+                target.ownerPlayerId != source.ownerPlayerId && team != null &&
+                    players.single { it.playerId == target.ownerPlayerId }.teamId == team) continue
+            val squared = GroundMath.square(projectile.position.x.toFloat(), projectile.position.y.toFloat(),
+                target.position.x.toFloat(), target.position.y.toFloat())
+            require(squared.isFinite()) { "Death area geometry must remain finite" }
+            if (squared > area.radius * area.radius) continue
+            val distance = GroundMath.sqrt(squared)
+            if (distance > area.radius) continue
+            area.hitUnitIds += target.unitId
+            val falloff = minOf(1f, ((1f - distance / area.profile.radius).toDouble() + .1).toFloat())
+            applyDamage(target, (area.profile.damage * falloff).toDouble())
+        }
+        if (area.remaining == 0f) {
+            pendingProjectileEvents += ProjectileEventObservation("impact", projectileObservation(projectile))
+            projectiles.remove(projectile)
         }
     }
 
@@ -1900,6 +1960,15 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
             target.angularVelocity = 0.0
             target.combat?.targetId = null
             pendingEvents += Event("unit-died", target.unitId)
+            target.definition.deathExplosion?.takeIf { target.constructionProgress >= 1f }?.let { profile ->
+                val id = nextObjectId
+                nextObjectId = Math.addExact(nextObjectId, 1L)
+                val explosion = MutableProjectile(id, target.unitId, null, target.position, 0.0, 99.0,
+                    Position(0.0, 0.0), 0f, 0.0, 0.0, instant = true, nonDeflectable = true,
+                    expansion = AreaExpansion(profile, profile.expandTime))
+                projectiles += explosion
+                pendingProjectileEvents += ProjectileEventObservation("born", projectileObservation(explosion))
+            }
         }
         return before - checkNotNull(target.health)
     }
@@ -2137,7 +2206,8 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
         projectile.deflectionHealth, projectile.intercepted, projectile.ground?.let {
             GroundProjectileObservation(Position(it.x.toDouble(), it.y.toDouble()), it.height, projectile.verticalSpeed,
                 projectile.groundDistanceSquared) }, projectile.missile?.let {
-            MissileObservation(projectile.speed.toFloat(), projectile.missileReachedApex, projectile.missileRawAz) })
+            MissileObservation(projectile.speed.toFloat(), projectile.missileReachedApex, projectile.missileRawAz) },
+        projectile.expansion?.let { AreaExpansionObservation(it.remaining, it.radius, it.hitUnitIds) })
 
     private fun makeObservation(observedStep: Long, observedTime: Double, advanced: Boolean, observedRevision: Long): Observation {
         val currentScenario = checkNotNull(scenario)
@@ -2180,6 +2250,8 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
             projectiles = projectiles.map(::projectileObservation),
             projectileEvents = pendingProjectileEvents,
             economy = productionLedger?.observe(),
+            incomeStates = orderedUnits().filter { it.definition.income != null }.map {
+                IncomeStateObservation(it.unitId, it.incomeElapsed) },
             upgrades = upgradeQueues?.observe(),
             construction = if (constructionNamespaceEnabled(currentScenario)) ConstructionObservation(constructionClock,
                 orderedUnits().filter { it.unitId.startsWith(CONSTRUCTED_UNIT_PREFIX) }.map {

@@ -25,9 +25,13 @@ class JsonlEvidence internal constructor(private val directory: Path, private va
         writer = createWriter(directory.resolve("reforge/client-diagnostic.jsonl"))
         try {
             val ticket = when {
-                Files.exists(inputs.resolve("construction.properties")) -> if (
-                    Files.readString(inputs.resolve("construction.properties")).lineSequence().any { it.trim() == "variant=factory-construction" }
-                ) "ENG-P006-002" else "ENG-P006-001"
+                Files.exists(inputs.resolve("construction.properties")) -> when (
+                    Files.readString(inputs.resolve("construction.properties")).lineSequence().map { it.trim() }
+                        .firstOrNull { it.startsWith("variant=") }) {
+                    "variant=economy-construction", "variant=economy-death" -> "ENG-P006-003"
+                    "variant=factory-construction" -> "ENG-P006-002"
+                    else -> "ENG-P006-001"
+                }
                 Files.exists(inputs.resolve("patrol.properties")) -> "ENG-P005-007"
                 Files.exists(inputs.resolve("upgrade.properties")) -> "ENG-P005-004"
                 Files.exists(inputs.resolve("point-defense.properties")) -> "ENG-P005-005"
@@ -42,6 +46,7 @@ class JsonlEvidence internal constructor(private val directory: Path, private va
                 "topic" to when (ticket) {
                     "ENG-P006-001" -> "construction-windows-client"
                     "ENG-P006-002" -> "factory-construction-windows-client"
+                    "ENG-P006-003" -> "economy-construction-windows-client"
                     "ENG-P005-007" -> "patrol-windows-client"
                     "ENG-P005-004" -> "upgrade-windows-client"
                     "ENG-P005-005" -> "point-defense-windows-client"
@@ -97,6 +102,9 @@ class JsonlEvidence internal constructor(private val directory: Path, private va
                 files.add(contentRoot.resolve("units/builder.properties"))
                 files.add(contentRoot.resolve("units/commandCenter.properties"))
                 if (scenario.unitDefinitions.containsKey("landFactory")) files.add(contentRoot.resolve("units/landFactory.properties"))
+                if (scenario.unitDefinitions.containsKey("extractorT1")) files.addAll(listOf(
+                    contentRoot.resolve("units/extractor.ini"), contentRoot.resolve("units/extractor_common.ini")))
+                if (scenario.unitDefinitions.containsKey("fabricatorT1")) files.add(contentRoot.resolve("units/fabricatorT1.ini"))
             } else if (production) {
                 files.add(contentRoot.resolve("production.properties"))
                 files.add(contentRoot.resolve("units/landFactory.properties"))

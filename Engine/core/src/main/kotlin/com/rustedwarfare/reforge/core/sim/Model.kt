@@ -4,6 +4,7 @@ import com.rustedwarfare.reforge.core.content.MapDefinition
 import com.rustedwarfare.reforge.core.content.UnitDefinition
 import com.rustedwarfare.reforge.core.content.GroundProjectileProfile
 import com.rustedwarfare.reforge.core.content.NativeMissileProfile
+import com.rustedwarfare.reforge.core.content.DeathExplosionProfile
 import java.util.Collections
 import com.rustedwarfare.reforge.core.knowledge.KnowledgeRules
 import com.rustedwarfare.reforge.core.knowledge.KnowledgeSnapshot
@@ -148,7 +149,11 @@ data class ProjectileObservation(val objectId: Long, val sourceUnitId: String, v
     val position: Position, val heading: Double, val remainingLife: Double, val offset: Position, val scatter: Float,
     val height: Double = 0.0, val age: Float = 0f, val deflectionHealth: Float = 1f,
     val intercepted: Boolean = false, val ground: GroundProjectileObservation? = null,
-    val missile: MissileObservation? = null)
+    val missile: MissileObservation? = null, val areaExpansion: AreaExpansionObservation? = null)
+
+class AreaExpansionObservation(val remaining: Float, val radius: Float, hitUnitIds: Set<String>) {
+    val hitUnitIds: Set<String> = Collections.unmodifiableSet(LinkedHashSet(hitUnitIds))
+}
 
 data class MissileObservation(val speed: Float, val reachedApex: Boolean, val rawAz: Float)
 
@@ -159,7 +164,7 @@ data class PointDefenseObservation(val energy: Float, val exhausted: Boolean)
 
 /** One public appearance class. Identical newly visible objects have one token and multiplicity. */
 data class VisibleProjectile(val token: String, val multiplicity: Int, val position: Position, val heading: Double,
-    val height: Double = 0.0, val parentToken: String? = null)
+    val height: Double = 0.0, val parentToken: String? = null, val areaRadius: Float? = null)
 
 data class ProjectileEventObservation(val kind: String, val projectile: ProjectileObservation, val damage: Double? = null,
     val interceptorUnitId: String? = null)
@@ -167,7 +172,7 @@ data class ProjectileEventObservation(val kind: String, val projectile: Projecti
 data class VisibleProjectileEvent(val token: String, val kind: String, val occurrences: Int,
     val position: Position, val heading: Double, val height: Double, val sourceUnitId: String?,
     val targetUnitId: String?, val damage: Double?, val parentToken: String? = null,
-    val interceptorUnitId: String? = null)
+    val interceptorUnitId: String? = null, val areaRadius: Float? = null)
 
 /** Trusted-host state for deterministic replay/rollback verification, absent from player observations. */
 class CombatObservation(val frameCounter: Int, val nextObjectId: Long, weapons: List<UnitWeaponObservation>) {
@@ -197,6 +202,9 @@ class ProductionObservation(val lastBirthSerial: Long, units: List<ProducedUnitO
 }
 
 data class ConstructedBuildingObservation(val unitId: String, val objectId: Long, val updateKey: String, val progress: Float)
+
+/** Trusted host income phase; never included in player observations. */
+data class IncomeStateObservation(val unitId: String, val elapsed: Float)
 data class ConstructionWorkerObservation(val unitId: String, val elapsed: Float, val retryTime: Int,
     val preparation: Float, val working: Boolean, val previousTargetActive: Boolean)
 /** Trusted host diagnostics, excluded from player observations. */
@@ -224,7 +232,9 @@ class Observation(
     val production: ProductionObservation? = null,
     val upgrades: UpgradeObservation? = null,
     val construction: ConstructionObservation? = null,
+    incomeStates: List<IncomeStateObservation> = emptyList(),
 ) {
+    val incomeStates: List<IncomeStateObservation> = immutable(incomeStates)
     val units: List<UnitObservation> = immutable(units)
     val events: List<Event> = immutable(events)
     val actionResults: List<ActionResult> = immutable(actionResults)
@@ -385,7 +395,11 @@ internal data class MutableProjectile(val objectId: Long, val sourceUnitId: Stri
     var age: Float = 0f, var deflectionHealth: Float = 1f, var intercepted: Boolean = false,
     val instant: Boolean = false, val nonDeflectable: Boolean = false,
     val ground: GroundShot? = null, var verticalSpeed: Float = 0f, var groundDistanceSquared: Float? = null,
-    val missile: NativeMissileProfile? = null, var missileReachedApex: Boolean = false, var missileRawAz: Float = 0f)
+    val missile: NativeMissileProfile? = null, var missileReachedApex: Boolean = false, var missileRawAz: Float = 0f,
+    val expansion: AreaExpansion? = null)
+
+internal data class AreaExpansion(val profile: DeathExplosionProfile, var remaining: Float,
+    var radius: Float = 0f, val hitUnitIds: MutableSet<String> = linkedSetOf())
 
 internal data class GroundShot(val x: Float, val y: Float, val height: Float, val profile: GroundProjectileProfile)
 

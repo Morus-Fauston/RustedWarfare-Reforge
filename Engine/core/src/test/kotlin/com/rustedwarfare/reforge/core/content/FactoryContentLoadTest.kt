@@ -28,7 +28,7 @@ class FactoryContentLoadTest {
         assertEquals(BuildingFootprint(-1, -1, 1, 1), assertNotNull(factory.building).footprint)
         assertEquals("c_tank", assertNotNull(factory.production).unitTypeId)
         assertEquals(15, factory.fogOfWarSightRange)
-        assertTrue(listOf(factory.imagePath, assertNotNull(factory.building.backImagePath), assertNotNull(factory.durability).deadImagePath)
+        assertTrue(listOf(factory.imagePath, assertNotNull(factory.building.backImagePath), assertNotNull(assertNotNull(factory.durability).deadImagePath))
             .all { it.isAbsolute && Files.isRegularFile(it) })
     }
 

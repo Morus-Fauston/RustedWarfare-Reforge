@@ -16,7 +16,10 @@ import kotlin.math.sin
 data class UnitAppearance(val displayRadius: Double, val imagePath: Path, val imageScale: Double, val totalFrames: Int,
     val turretImagePath: Path? = null, val deadImagePath: Path? = null, val turretImageScale: Double = 1.0,
     val backImagePath: Path? = null, val turretMount: TurretMount = TurretMount(),
-    val defenseMuzzleOffset: Position? = null, val recoil: WeaponRecoil? = null, val shootDelay: Double = 0.0) {
+    val defenseMuzzleOffset: Position? = null, val recoil: WeaponRecoil? = null, val shootDelay: Double = 0.0,
+    val economicBuilding: Boolean = false) {
+    fun isDrawn(unit: UnitObservation): Boolean = unit.alive || !economicBuilding ||
+        unit.constructionProgress >= 1f && deadImagePath != null
     fun turretPosition(unit: UnitObservation): Position {
         val forward = Math.toRadians(unit.heading)
         val side = Math.toRadians(unit.heading + 90.0)
@@ -67,7 +70,8 @@ class SandboxRenderResources private constructor(
                     unit.combat?.turretImageScale ?: 1.0, unit.building?.backImagePath,
                     unit.combat?.mount ?: TurretMount(),
                     unit.pointDefense?.let { Position(it.muzzleOffsetX, it.muzzleOffsetY) },
-                    unit.combat?.recoil, unit.combat?.shootDelay ?: 0.0)
+                    unit.combat?.recoil, unit.combat?.shootDelay ?: 0.0,
+                    economicBuilding = unit.income != null && unit.construction != null)
             }), Collections.unmodifiableMap(scenario.players.associate { it.playerId to it.teamId }))
     }
 }

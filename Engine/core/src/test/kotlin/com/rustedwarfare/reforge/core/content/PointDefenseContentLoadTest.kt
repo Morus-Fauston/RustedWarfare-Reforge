@@ -20,7 +20,7 @@ class PointDefenseContentLoadTest {
         assertEquals(DirectHitTargetKind.NATIVE_BUILDING, defense.directHitTargetKind)
         assertEquals(PointDefenseProfile(160.0, 0.0, -13.0, .0004f, .11f, 1f), defense.pointDefense)
         assertEquals("laser_defence.png", defense.imagePath.fileName.toString())
-        assertEquals("laser_defence_dead.png", defense.durability!!.deadImagePath.fileName.toString())
+        assertEquals("laser_defence_dead.png", assertNotNull(defense.durability!!.deadImagePath).fileName.toString())
     }
 
     @Test fun malformed_unknown_duplicate_missing_and_unsupported_native_values_fail_closed() {

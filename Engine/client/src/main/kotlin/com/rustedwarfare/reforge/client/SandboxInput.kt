@@ -188,9 +188,11 @@ class SandboxInput(
     fun group(index: Int) {
         if (!active() || editing()) return
         val current = session() ?: return
+        val previousSelection = current.selectedIds.toSet()
         if (control()) current.saveGroup(index) else current.recallGroup(index, shift())?.let {
             projection()?.centerOn(it); recordCamera("group")
         }
+        if (current.selectedIds != previousSelection) endConstruction()
         changed()
     }
     private fun recordCamera(reason: String) {
