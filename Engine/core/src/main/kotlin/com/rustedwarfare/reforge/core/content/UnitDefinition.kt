@@ -22,6 +22,7 @@ class UnitDefinition(
     val directHitTargetKind: DirectHitTargetKind = DirectHitTargetKind.ORDINARY,
     val pointDefense: PointDefenseProfile? = null,
     val upgrades: UpgradeProfile? = null,
+    val income: IncomeProfile? = null,
 ) {
     val retainedUnconsumed: Set<String> = Collections.unmodifiableSet(LinkedHashSet(retainedUnconsumed))
     val maximumHealth: Double? get() = durability?.maxHp ?: combat?.maxHp
@@ -43,13 +44,14 @@ enum class MovementType { LAND, NONE }
 /** Trusted original target class; a building or an unarmed life profile does not imply native membership. */
 enum class DirectHitTargetKind { ORDINARY, NATIVE_BUILDING }
 
-data class DurabilityProfile(val maxHp: Double, val deadImagePath: Path)
+data class DurabilityProfile(val maxHp: Double, val deadImagePath: Path, val maxDamagePerHit: Double? = null)
 data class BuildingFootprint(val left: Int, val top: Int, val right: Int, val bottom: Int)
 data class FootprintAnchor(val offsetX: Float, val offsetY: Float)
 data class BuildingProfile(val footprint: BuildingFootprint, val backImagePath: Path? = null,
     val anchor: FootprintAnchor? = null)
 data class ProductionProfile(val unitTypeId: String)
 data class BuildProfile(val price: Long, val rate: Float)
+data class IncomeProfile(val period: Float, val credits: Float)
 
 data class UpgradeActionProfile(val actionKey: String, val targetTypeId: String, val price: Long, val rate: Float)
 
@@ -71,7 +73,7 @@ data class CombatProfile(
     val turretTurnSpeed: Double,
     val turretTurnAcceleration: Double,
     val projectile: ProjectileProfile,
-    val turretImagePath: Path,
+    val turretImagePath: Path?,
     val deadImagePath: Path,
     val turretImageScale: Double,
     val mount: TurretMount = TurretMount(),
@@ -88,7 +90,11 @@ data class IdleSweepProfile(val angle: Double, val delay: Float, val speedFactor
 
 data class ProjectileProfile(val directDamage: Double, val life: Double, val speed: Double,
     val instant: Boolean = false, val nonDeflectable: Boolean = false, val deflectionHealth: Float = 1f,
-    val ground: GroundProjectileProfile? = null)
+    val ground: GroundProjectileProfile? = null, val missile: NativeMissileProfile? = null)
+
+data class NativeMissileProfile(val targetSpeed: Float = 5f, val acceleration: Float = .1f,
+    val climbThreshold: Float = 40f, val apex: Float = 60f, val verticalSpeed: Float = 2f,
+    val retargetRadius: Float = 120f, val retargetForward: Float = 15f)
 
 /** Finite first artillery branch; these values describe a fixed ground snapshot shot. */
 data class GroundProjectileProfile(val areaDamage: Float, val areaRadius: Float, val spread: Float,

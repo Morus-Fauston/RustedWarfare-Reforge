@@ -14,6 +14,35 @@ import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
 class JsonlEvidenceTest {
+    @Test fun construction_evidence_binds_only_loaded_inputs_and_uses_its_own_ticket() {
+        val repo = generateSequence(Path.of("").toAbsolutePath()) { it.parent }
+            .first { Files.isRegularFile(it.resolve("AGENTS.md")) }
+        val root = repo.resolve(".scratch/开发票据/引擎重写/P006-建造经济与原版操作/evidence/ENG-P006-001/20261027-intake-01/scene-input-01")
+        val temporary = Files.createTempDirectory("p006-construction-evidence-")
+        try {
+            val directory = temporary.resolve("run")
+            JsonlEvidence(directory, "construction-run", root).use {
+                it.record("load-request", mapOf("generation" to 1L, "root" to root.toString()))
+                it.record("load-ready", mapOf("generation" to 1L))
+            }
+            val manifest = JsonReader().parse(Files.readString(directory.resolve("manifest.json")))
+            assertEquals("ENG-P006-001", manifest.getString("ticket"))
+            assertEquals("P006", manifest.getString("phase"))
+            val identities = records(directory).single { it.getString("kind") == "input-identities" }
+            assertEquals("p006-construction", identities.getString("scenarioId"))
+            assertEquals(root.resolve("construction.properties").toString(), identities.get("sandboxManifest").getString("path"))
+            val files = identities.get("files").toList()
+            val unused = setOf("manifest.json", "p005-corridor.tmx", "p005-sealed.tmx")
+            val expected = Files.walk(root).use { paths -> paths.filter { Files.isRegularFile(it) && it.fileName.toString() !in unused }.toList().toSet() }
+            assertEquals(expected, files.map { Path.of(it.getString("path")) }.toSet())
+            for (row in files) {
+                val file = Path.of(row.getString("path"))
+                assertEquals(Files.size(file), row.getLong("bytes"))
+                assertEquals(evidenceSha256(file), row.getString("sha256"))
+            }
+        } finally { temporary.toFile().deleteRecursively() }
+    }
+
     @Test fun fixed_defense_evidence_labels_005_and_identifies_every_one_of_the_eighteen_real_inputs() {
         val repo = generateSequence(Path.of("").toAbsolutePath()) { it.parent }
             .first { Files.isRegularFile(it.resolve("AGENTS.md")) }

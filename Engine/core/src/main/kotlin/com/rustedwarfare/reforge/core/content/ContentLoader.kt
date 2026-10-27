@@ -1,6 +1,8 @@
 package com.rustedwarfare.reforge.core.content
 
 import com.rustedwarfare.reforge.core.content.internal.IniReader
+import com.rustedwarfare.reforge.core.content.internal.BuilderContentReader
+import com.rustedwarfare.reforge.core.content.internal.CommandCenterContentReader
 import com.rustedwarfare.reforge.core.content.internal.CombatContentReader
 import com.rustedwarfare.reforge.core.content.internal.FactoryContentReader
 import com.rustedwarfare.reforge.core.content.internal.PointDefenseContentReader
@@ -10,6 +12,9 @@ import java.io.IOException
 import java.nio.file.Path
 
 object ContentLoader {
+    fun loadCommandCenter(path: Path): ContentResult<UnitDefinition> = load(path, CommandCenterContentReader::read)
+    fun loadBuilder(path: Path): ContentResult<UnitDefinition> = load(path, BuilderContentReader::read)
+
     fun loadPointDefense(path: Path): ContentResult<UnitDefinition> = load(path, PointDefenseContentReader::read)
 
     fun loadTurretUnit(path: Path): ContentResult<UnitDefinition> = loadTurretUnit(path, false)

@@ -27,7 +27,7 @@ class TurretContentLoadTest {
         assertEquals(IdleSweepProfile(20.0, 210f, .2f, 20), weapon.idleSweep)
         assertEquals(ProjectileProfile(41.0, 240.0, 6.0), weapon.projectile)
         assertEquals(DurabilityProfile(700.0, weapon.deadImagePath), tower.durability)
-        assertTrue(listOf(tower.imagePath, weapon.turretImagePath, weapon.deadImagePath).all { it.isAbsolute && Files.isRegularFile(it) })
+        assertTrue(listOf(tower.imagePath, assertNotNull(weapon.turretImagePath), weapon.deadImagePath).all { it.isAbsolute && Files.isRegularFile(it) })
         val common = setOf("core.price", "core.buildSpeed", "core.mass", "core.techLevel", "core.isBio",
             "core.displayLocaleKey", "core.buildingSelectionOffset", "graphics.image_shadow", "graphics.shadowOffsetX",
             "graphics.shadowOffsetY", "turret_1.shoot_sound", "turret_1.shoot_sound_vol", "turret_1.shoot_flame",

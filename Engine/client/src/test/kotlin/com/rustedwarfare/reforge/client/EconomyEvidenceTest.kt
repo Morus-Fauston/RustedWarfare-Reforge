@@ -1,10 +1,43 @@
 package com.rustedwarfare.reforge.client
 
 import com.rustedwarfare.reforge.core.sim.*
+import com.rustedwarfare.reforge.core.content.IncomeProfile
+import com.rustedwarfare.reforge.core.content.UnitDefinition
 import java.nio.file.Path
 import kotlin.test.*
 
 class EconomyEvidenceTest {
+    @Test fun income_evidence_exposes_only_the_observers_precise_credits_and_preserves_legacy_fields() {
+        val base = scene()
+        val tank = base.unitDefinitions.getValue("c_tank")
+        val earner = UnitDefinition(tank.id, tank.className, tank.radius, tank.displayRadius, tank.totalFrames,
+            tank.imagePath, tank.imageScale, tank.movement, tank.retainedUnconsumed, tank.fogOfWarSightRange,
+            tank.combat, income = IncomeProfile(10f, .25f))
+        val recordings = mutableListOf<List<Map<String, Any?>>>()
+        for (enemyBalance in listOf(0L, 234567L)) {
+            val c = assertIs<InitResult.Accepted>(SimulationContext.initialize(base.copy(
+                unitDefinitions = mapOf(earner.id to earner),
+                economyContract = EconomyContract(mapOf("p1" to 1750L, "p2" to enemyBalance))))).context
+            try {
+                val rows = mutableListOf<Map<String, Any?>>()
+                repeat(20) { step ->
+                    c.advance(Step(step.toLong(), 1.0, "sim-tick"))
+                    c.observePlayer(c.world, "p2")
+                    rows += c.observePlayer(c.world, "p1").fields()
+                }
+                assertEquals(1750.25, rows[9]["credits"])
+                assertEquals(1750.5, rows[19]["credits"])
+                assertEquals(1750L, rows[19]["balance"])
+                rows.forEach { checkPrivateValues(it); assertFalse("preciseBalances" in it) }
+                recordings += rows
+            } finally { c.close() }
+        }
+        assertEquals(recordings[0], recordings[1])
+        val legacy = assertIs<InitResult.Accepted>(SimulationContext.initialize(base)).context
+        try { assertFalse("credits" in legacy.observePlayer(legacy.world, "p1").fields()) }
+        finally { legacy.close() }
+    }
+
     private fun scene(): Scenario {
         val root = Path.of(checkNotNull(System.getProperty("p001.inputs.dir"))).parent.parent.parent.resolve(
             ".scratch/开发票据/引擎重写/P005-生产战斗与指挥沙盒/evidence/ENG-P005-001/20261025-e-pc-representative-01/input")

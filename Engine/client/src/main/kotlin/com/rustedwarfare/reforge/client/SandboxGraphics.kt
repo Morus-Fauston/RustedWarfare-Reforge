@@ -25,6 +25,7 @@ class SandboxGraphics private constructor(private val resources: SandboxRenderRe
     private var impactSample: String? = null
     private val corpses = mutableMapOf<String, TextureRegion>()
     private val backs = mutableMapOf<String, TextureRegion>()
+    fun unitIcon(typeId: String): TextureRegion? = units[typeId]
 
     companion object {
         fun load(resources: SandboxRenderResources, root: Path): SandboxGraphics {
@@ -166,6 +167,13 @@ class SandboxGraphics private constructor(private val resources: SandboxRenderRe
                 shapes.color = if (defense.exhausted) Color.ORANGE else Color.CYAN
                 shapes.line(x - radius, y + radius + 8f, x - radius + 2f * radius * defense.energy, y + radius + 8f)
                 shapes.color = resources.unitCircleColor(frame.observation.playerId, unit.ownerPlayerId)
+            }
+            if (unit.alive && frame.observation.scenarioId == "p006-construction") {
+                frame.observation.factoryQueues.firstOrNull { it.factoryId == unit.unitId }?.items?.firstOrNull()?.let { head ->
+                    shapes.color = Color(.68f, .3f, .82f, 1f)
+                    shapes.line(x - radius, y - radius - 5f, x - radius + 2f * radius * head.progress, y - radius - 5f)
+                    shapes.color = resources.unitCircleColor(frame.observation.playerId, unit.ownerPlayerId)
+                }
             }
             if (unit.unitId in selectedIds) {
                 shapes.circle(x, y, radius + 6f, 32)

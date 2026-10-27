@@ -25,6 +25,7 @@ class JsonlEvidence internal constructor(private val directory: Path, private va
         writer = createWriter(directory.resolve("reforge/client-diagnostic.jsonl"))
         try {
             val ticket = when {
+                Files.exists(inputs.resolve("construction.properties")) -> "ENG-P006-001"
                 Files.exists(inputs.resolve("patrol.properties")) -> "ENG-P005-007"
                 Files.exists(inputs.resolve("upgrade.properties")) -> "ENG-P005-004"
                 Files.exists(inputs.resolve("point-defense.properties")) -> "ENG-P005-005"
@@ -35,8 +36,9 @@ class JsonlEvidence internal constructor(private val directory: Path, private va
             }
             Files.writeString(directory.resolve("manifest.json"), json(mapOf(
                 "format" to "p001.windows-diagnostic.v1", "runId" to runId,
-                "phase" to if (ticket.startsWith("ENG-P005")) "P005" else "P002",
+                "phase" to ticket.substringAfter("ENG-").substringBeforeLast('-'),
                 "topic" to when (ticket) {
+                    "ENG-P006-001" -> "construction-windows-client"
                     "ENG-P005-007" -> "patrol-windows-client"
                     "ENG-P005-004" -> "upgrade-windows-client"
                     "ENG-P005-005" -> "point-defense-windows-client"
@@ -69,11 +71,13 @@ class JsonlEvidence internal constructor(private val directory: Path, private va
         if (kind == "load-ready") {
             val scenario = ControlledScenario.load(contentRoot)
             val combat = scenario.combatContract != null
+            val construction = scenario.scenarioId == "p006-construction"
             val production = scenario.unitDefinitions.values.any { it.production != null }
             val turret = scenario.unitDefinitions.containsKey("c_turret_t1")
             val defense = scenario.unitDefinitions.values.any { it.pointDefense != null }
             val upgrade = scenario.unitDefinitions.values.any { it.upgrades != null }
             val fixedManifest = contentRoot.resolve(when {
+                construction -> "construction.properties"
                 scenario.scenarioId == "p005-patrol" -> "patrol.properties"
                 upgrade -> "upgrade.properties"
                 defense -> "point-defense.properties"
@@ -86,7 +90,10 @@ class JsonlEvidence internal constructor(private val directory: Path, private va
                 fixedManifest) else mutableListOf(contentRoot.resolve("maps/p001-controlled.tmx"),
                 contentRoot.resolve("tilesets/p001-ground.tsx"), contentRoot.resolve("tilesets/p001-rock.tsx"),
                 contentRoot.resolve("units/weaponless_tank.ini"))
-            if (production) {
+            if (construction) {
+                files.add(contentRoot.resolve("units/builder.properties"))
+                files.add(contentRoot.resolve("units/commandCenter.properties"))
+            } else if (production) {
                 files.add(contentRoot.resolve("production.properties"))
                 files.add(contentRoot.resolve("units/landFactory.properties"))
                 for (name in listOf("p005-corridor.tmx", "p005-sealed.tmx")) {

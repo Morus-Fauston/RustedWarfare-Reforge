@@ -12,6 +12,7 @@ import java.util.Properties
 object ControlledScenario {
     fun load(root: Path): Scenario {
         checkCancellation()
+        if (Files.exists(root.resolve("construction.properties"), NOFOLLOW_LINKS)) return loadConstruction(root)
         if (Files.exists(root.resolve("patrol.properties"), NOFOLLOW_LINKS)) return loadPatrol(root)
         if (Files.exists(root.resolve("upgrade.properties"), NOFOLLOW_LINKS)) return loadUpgrade(root)
         if (Files.exists(root.resolve("point-defense.properties"), NOFOLLOW_LINKS)) return loadPointDefense(root)
@@ -45,6 +46,42 @@ object ControlledScenario {
             TimeModel("p001.time.v1", "sim-tick", "ieee754-binary64", "fixed-explicit-delta"),
             MovementContract(16.0, 4.0),
         )
+    }
+
+    private fun loadConstruction(root: Path): Scenario {
+        val marker = root.resolve("construction.properties")
+        require(Files.isRegularFile(marker, NOFOLLOW_LINKS) && !Files.isSymbolicLink(marker) &&
+            marker.toRealPath() == root.toRealPath().resolve("construction.properties")) { "$marker: expected ordinary in-root file" }
+        val defense = when (Files.readString(marker).trim().replace("\r\n", "\n")) {
+            "format=rw-reforge.construction-sandbox.v1\nvariant=command-center-start" -> false
+            "format=rw-reforge.construction-sandbox.v1\nvariant=command-center-defense" -> true
+            else -> error("$marker: unsupported fixed construction fixture")
+        }
+        fun <T> read(result: ContentResult<T>): T {
+            checkCancellation()
+            return when (result) {
+                is ContentResult.Success -> result.value
+                is ContentResult.Failure -> error(result.error.describe())
+            }
+        }
+        val map = read(ContentLoader.loadMap(root.resolve("maps/p001-controlled.tmx")))
+        val tank = read(ContentLoader.loadCombatUnit(root.resolve("units/tank.ini")))
+        val builder = read(ContentLoader.loadBuilder(root.resolve("units/builder.properties")))
+        val center = read(ContentLoader.loadCommandCenter(root.resolve("units/commandCenter.properties")))
+        val enemies = if (defense) (1..12).map { index ->
+            UnitSpawn("z" + index.toString().padStart(2, '0'), "p2", tank.id,
+                Position(190.0 + ((index - 1) / 6) * 22.0, 150.0 + ((index - 1) % 6) * 22.0), 270.0)
+        } else listOf(UnitSpawn("z1", "p2", tank.id, Position(510.0, 110.0), 270.0),
+            UnitSpawn("z2", "p2", tank.id, Position(510.0, 330.0), 270.0))
+        val spawns = listOf(UnitSpawn("h", "p1", center.id, Position(110.0, 210.0), 0.0)) + enemies
+        return Scenario("p006-construction", map, listOf(tank, builder, center).associateBy { it.id },
+            listOf(Player("p1", PlayerControl.LOCAL, "one"), Player("p2", PlayerControl.NONE, "two")),
+            spawns,
+            CoordinateModel("p001.coordinate.v1", "2d", "x-right", "y-down", "top-left", "world-unit", "double", "ieee754-binary64"),
+            TimeModel("p001.time.v1", "sim-tick", "ieee754-binary64", "fixed-explicit-delta"), MovementContract(16.0, 4.0),
+            combatContract = CombatContract(12345, -1,
+                spawns.mapIndexed { index, spawn -> spawn.unitId to 10L + index }.toMap(), 10L + spawns.size),
+            economyContract = EconomyContract(mapOf("p1" to 1750L, "p2" to 0L)))
     }
 
     private fun loadPatrol(root: Path): Scenario {

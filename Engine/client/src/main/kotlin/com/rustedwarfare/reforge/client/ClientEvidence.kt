@@ -66,4 +66,5 @@ internal fun PlayerObservation.fields(): Map<String, Any?> =
         mapOf("factoryId" to factory.factoryId, "items" to factory.items.map { item ->
             mapOf("typeId" to item.typeId, "progress" to item.progress) }) },
         "upgradeQueues" to upgradeQueues.map { queue -> mapOf("unitId" to queue.unitId, "items" to queue.items.map { item ->
-            mapOf("actionKey" to item.actionKey, "targetTypeId" to item.targetTypeId, "progress" to item.progress) }) }) } ?: emptyMap())
+            mapOf("actionKey" to item.actionKey, "targetTypeId" to item.targetTypeId, "progress" to item.progress) }) }) } ?: emptyMap()) +
+        (credits?.let { mapOf("credits" to it) } ?: emptyMap())

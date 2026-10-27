@@ -18,13 +18,18 @@ internal sealed interface ProductionChange {
 
 /** Pure candidate bookkeeping. Completion describes work; it never fabricates or publishes a unit. */
 internal class ProductionLedger private constructor(
-    balances: Map<String, Long>,
+    integerBalances: Map<String, Long>?,
     private val factories: Map<String, FactoryProductionSpec>,
     queues: Map<String, List<PendingProduction>> = emptyMap(),
     nonces: Map<String, Set<String>> = emptyMap(),
     inactive: Set<String> = emptySet(),
+    preciseBalances: Map<String, Double>? = null,
 ) {
-    val balances: Map<String, Long> = Collections.unmodifiableMap(LinkedHashMap(balances))
+    private val integerBalances = integerBalances?.let { Collections.unmodifiableMap(LinkedHashMap(it)) }
+    private val preciseBalances = preciseBalances?.let { Collections.unmodifiableMap(LinkedHashMap(it)) }
+    val balances: Map<String, Long> get() = integerBalances ?: Collections.unmodifiableMap(
+        checkNotNull(preciseBalances).mapValuesTo(linkedMapOf()) { it.value.toLong() })
+    init { require((integerBalances == null) != (preciseBalances == null)) }
     private val queues = Collections.unmodifiableMap(queues.mapValuesTo(linkedMapOf()) { immutable(it.value) })
     private val nonces = Collections.unmodifiableMap(nonces.mapValuesTo(linkedMapOf()) {
         Collections.unmodifiableSet(LinkedHashSet(it.value)) })
@@ -32,34 +37,60 @@ internal class ProductionLedger private constructor(
 
     companion object {
         private val nonceFormat = Regex("[0-9a-f]{32}")
-        fun initial(balances: Map<String, Long>, factories: Map<String, FactoryProductionSpec>): ProductionLedger {
+        fun initial(balances: Map<String, Long>, factories: Map<String, FactoryProductionSpec>,
+                    incomeEnabled: Boolean = false): ProductionLedger {
             require(balances.values.all { it >= 0L }) { "Initial balances must be nonnegative" }
             require(factories.values.all { it.ownerPlayerId in balances && it.typeId.isNotBlank() &&
                 it.build.price >= 0L && it.build.rate.isFinite() && it.build.rate > 0f }) { "Invalid factory production registration" }
-            return ProductionLedger(balances, Collections.unmodifiableMap(LinkedHashMap(factories)))
+            return ProductionLedger(balances.takeUnless { incomeEnabled },
+                Collections.unmodifiableMap(LinkedHashMap(factories)),
+                preciseBalances = balances.takeIf { incomeEnabled }?.mapValues { it.value.toDouble() })
         }
     }
+
+    private fun copy(integerBalances: Map<String, Long>? = this.integerBalances,
+                     preciseBalances: Map<String, Double>? = this.preciseBalances,
+                     queues: Map<String, List<PendingProduction>> = this.queues,
+                     nonces: Map<String, Set<String>> = this.nonces,
+                     inactive: Set<String> = this.inactive) =
+        ProductionLedger(integerBalances, factories, queues, nonces, inactive, preciseBalances)
 
     fun queue(factoryId: String): List<PendingProduction> = queues[factoryId].orEmpty()
     fun observe(): EconomyObservation = EconomyObservation(balances, factories.keys.sorted().associateWith { factoryId ->
         queue(factoryId).map { QueuedProductionObservation(it.typeId, it.unitNonce, it.progress, it.cost, it.rate) }
-    })
+    }, preciseBalances)
     fun isActive(factoryId: String): Boolean = factoryId in factories && factoryId !in inactive
 
     fun charge(owner: String, credits: Long): ProductionLedger? {
         require(credits >= 0L)
-        val balance = balances.getValue(owner)
+        preciseBalances?.let {
+            val balance = it.getValue(owner)
+            if (balance < credits.toDouble()) return null
+            return copy(preciseBalances = it + (owner to (balance - credits.toDouble())))
+        }
+        val balance = checkNotNull(integerBalances).getValue(owner)
         if (balance < credits) return null
-        return ProductionLedger(balances + (owner to Math.subtractExact(balance, credits)), factories, queues, nonces, inactive)
+        return copy(integerBalances = integerBalances + (owner to Math.subtractExact(balance, credits)))
     }
 
     fun refund(owner: String, credits: Long): ProductionLedger {
         require(credits >= 0L)
-        return ProductionLedger(balances + (owner to Math.addExact(balances.getValue(owner), credits)), factories, queues, nonces, inactive)
+        preciseBalances?.let {
+            return copy(preciseBalances = it + (owner to (it.getValue(owner) + credits.toDouble())))
+        }
+        val amounts = checkNotNull(integerBalances)
+        return copy(integerBalances = amounts + (owner to Math.addExact(amounts.getValue(owner), credits)))
+    }
+
+    fun creditIncome(owner: String, credits: Float): ProductionLedger {
+        require(credits.isFinite() && credits >= 0f)
+        val amounts = checkNotNull(preciseBalances)
+        return copy(preciseBalances = amounts + (owner to minOf(amounts.getValue(owner) + credits.toDouble(), 999999999.0)))
     }
 
     fun validateCandidate() {
-        require(balances.values.all { it >= 0L }) { "Production balance must remain nonnegative" }
+        require(integerBalances?.values?.all { it >= 0L } != false &&
+            preciseBalances?.values?.all { it.isFinite() && it >= 0.0 } != false) { "Production balance must remain finite and nonnegative" }
         for ((factoryId, queue) in queues) {
             val factory = factories.getValue(factoryId)
             require(factoryId !in inactive || queue.isEmpty()) { "Inactive factory must not retain pending work" }
@@ -74,11 +105,11 @@ internal class ProductionLedger private constructor(
         if (typeId != factory.typeId) return ProductionChange.Rejected(ProductionError.INVALID_TYPE)
         if (!nonceFormat.matches(unitNonce)) return ProductionChange.Rejected(ProductionError.INVALID_NONCE)
         if (unitNonce in nonces[factory.ownerPlayerId].orEmpty()) return ProductionChange.Rejected(ProductionError.DUPLICATE_NONCE)
-        val balance = balances.getValue(factory.ownerPlayerId)
-        if (balance < factory.build.price) return ProductionChange.Rejected(ProductionError.INSUFFICIENT_FUNDS)
-        val next = ProductionLedger(balances + (factory.ownerPlayerId to Math.subtractExact(balance, factory.build.price)), factories,
-            queues + (factoryId to (queue(factoryId) + PendingProduction(typeId, unitNonce, 0f, factory.build.price, factory.build.rate))),
-            nonces + (factory.ownerPlayerId to (nonces[factory.ownerPlayerId].orEmpty() + unitNonce)), inactive)
+        val paid = charge(factory.ownerPlayerId, factory.build.price)
+            ?: return ProductionChange.Rejected(ProductionError.INSUFFICIENT_FUNDS)
+        val next = paid.copy(
+            queues = queues + (factoryId to (queue(factoryId) + PendingProduction(typeId, unitNonce, 0f, factory.build.price, factory.build.rate))),
+            nonces = nonces + (factory.ownerPlayerId to (nonces[factory.ownerPlayerId].orEmpty() + unitNonce)))
         return ProductionChange.Accepted(next)
     }
 
@@ -90,9 +121,8 @@ internal class ProductionLedger private constructor(
         val index = queue.indexOfLast { it.typeId == typeId }
         if (index < 0) return ProductionChange.Rejected(ProductionError.EMPTY_QUEUE)
         val kept = queue.filterIndexed { itemIndex, _ -> itemIndex != index }
-        return ProductionChange.Accepted(ProductionLedger(
-            balances + (factory.ownerPlayerId to Math.addExact(balances.getValue(factory.ownerPlayerId), queue[index].cost)),
-            factories, queues + (factoryId to kept), nonces, inactive))
+        return ProductionChange.Accepted(refund(factory.ownerPlayerId, queue[index].cost).copy(
+            queues = queues + (factoryId to kept)))
     }
 
     /** One fixed sim-tick, one head; excess progress is never transferred to another item. */
@@ -103,20 +133,19 @@ internal class ProductionLedger private constructor(
         val progress = head.progress + head.rate
         require(progress.isFinite()) { "Production progress must remain finite" }
         if (progress < 1f) {
-            return ProductionTick(ProductionLedger(balances, factories,
-                queues + (factoryId to (listOf(head.copy(progress = progress)) + queue.drop(1))), nonces, inactive))
+            return ProductionTick(copy(
+                queues = queues + (factoryId to (listOf(head.copy(progress = progress)) + queue.drop(1)))))
         }
         val completed = ProductionCompletion(factoryId, factories.getValue(factoryId).ownerPlayerId, head.typeId, head.unitNonce)
-        return ProductionTick(ProductionLedger(balances, factories, queues + (factoryId to queue.drop(1)), nonces, inactive), completed)
+        return ProductionTick(copy(queues = queues + (factoryId to queue.drop(1))), completed)
     }
 
     /** Pending work is refunded before the returned factory becomes inactive. */
     fun destroyFactory(factoryId: String): ProductionLedger {
         if (!isActive(factoryId)) return this
         val factory = factories.getValue(factoryId)
-        var refunded = balances.getValue(factory.ownerPlayerId)
-        for (item in queue(factoryId)) refunded = Math.addExact(refunded, item.cost)
-        return ProductionLedger(balances + (factory.ownerPlayerId to refunded), factories,
-            queues + (factoryId to emptyList()), nonces, inactive + factoryId)
+        var refunded = this
+        for (item in queue(factoryId)) refunded = refunded.refund(factory.ownerPlayerId, item.cost)
+        return refunded.copy(queues = queues + (factoryId to emptyList()), inactive = inactive + factoryId)
     }
 }

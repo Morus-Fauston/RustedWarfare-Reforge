@@ -3,6 +3,7 @@ package com.rustedwarfare.reforge.core.sim
 import com.rustedwarfare.reforge.core.content.MapDefinition
 import com.rustedwarfare.reforge.core.content.UnitDefinition
 import com.rustedwarfare.reforge.core.content.GroundProjectileProfile
+import com.rustedwarfare.reforge.core.content.NativeMissileProfile
 import java.util.Collections
 import com.rustedwarfare.reforge.core.knowledge.KnowledgeRules
 import com.rustedwarfare.reforge.core.knowledge.KnowledgeSnapshot
@@ -68,7 +69,10 @@ data class QueuedProductionObservation(val typeId: String, val unitNonce: String
     val progress: Float, val cost: Long, val rate: Float)
 
 class EconomyObservation(balances: Map<String, Long>,
-    queuedProduction: Map<String, List<QueuedProductionObservation>> = emptyMap()) {
+    queuedProduction: Map<String, List<QueuedProductionObservation>> = emptyMap(),
+    preciseBalances: Map<String, Double>? = null) {
+    val preciseBalances: Map<String, Double>? = preciseBalances?.let {
+        Collections.unmodifiableMap(LinkedHashMap(it)) }
     val balances: Map<String, Long> = Collections.unmodifiableMap(LinkedHashMap(balances))
     val queuedProduction: Map<String, List<QueuedProductionObservation>> =
         Collections.unmodifiableMap(queuedProduction.mapValuesTo(linkedMapOf()) { immutable(it.value) })
@@ -140,7 +144,10 @@ data class UnitObservation(
 data class ProjectileObservation(val objectId: Long, val sourceUnitId: String, val targetUnitId: String?,
     val position: Position, val heading: Double, val remainingLife: Double, val offset: Position, val scatter: Float,
     val height: Double = 0.0, val age: Float = 0f, val deflectionHealth: Float = 1f,
-    val intercepted: Boolean = false, val ground: GroundProjectileObservation? = null)
+    val intercepted: Boolean = false, val ground: GroundProjectileObservation? = null,
+    val missile: MissileObservation? = null)
+
+data class MissileObservation(val speed: Float, val reachedApex: Boolean, val rawAz: Float)
 
 data class GroundProjectileObservation(val targetPosition: Position, val targetHeight: Float, val verticalSpeed: Float,
     val distanceSquared: Float? = null)
@@ -226,6 +233,7 @@ class PlayerObservation internal constructor(
     val balance: Long? = null,
     factoryQueues: List<FactoryQueueObservation> = emptyList(),
     upgradeQueues: List<UpgradeQueueObservation> = emptyList(),
+    val credits: Double? = null,
 ) {
     val upgradeQueues: List<UpgradeQueueObservation> = immutable(upgradeQueues)
     val factoryQueues: List<FactoryQueueObservation> = immutable(factoryQueues)
@@ -300,6 +308,7 @@ internal data class MutableUnit(
     val updateKey: String = unitId,
     val producerId: String? = null,
     var birthRemaining: Float = 0f,
+    var incomeElapsed: Float = 0f,
     var pointDefense: MutablePointDefense? = definition.pointDefense?.let { MutablePointDefense(it.initialEnergy) },
 ) {
     val alive: Boolean get() = health == null || checkNotNull(health) > 0.0
@@ -348,12 +357,13 @@ internal data class MutableCombat(var turretHeading: Double, var angularVelocity
     var idleReached: Boolean = false, var idleHold: Float = 0f, var oddShot: Boolean = false,
     var patrolSearchTimer: Float = 0f, var patrolDispatchTimer: Float = 0f)
 
-internal data class MutableProjectile(val objectId: Long, val sourceUnitId: String, val targetUnitId: String?,
+internal data class MutableProjectile(val objectId: Long, val sourceUnitId: String, var targetUnitId: String?,
     var position: Position, var heading: Double, var remainingLife: Double, val offset: Position,
-    val scatter: Float, val speed: Double, val damage: Double, var height: Double = 0.0,
+    val scatter: Float, var speed: Double, val damage: Double, var height: Double = 0.0,
     var age: Float = 0f, var deflectionHealth: Float = 1f, var intercepted: Boolean = false,
     val instant: Boolean = false, val nonDeflectable: Boolean = false,
-    val ground: GroundShot? = null, var verticalSpeed: Float = 0f, var groundDistanceSquared: Float? = null)
+    val ground: GroundShot? = null, var verticalSpeed: Float = 0f, var groundDistanceSquared: Float? = null,
+    val missile: NativeMissileProfile? = null, var missileReachedApex: Boolean = false, var missileRawAz: Float = 0f)
 
 internal data class GroundShot(val x: Float, val y: Float, val height: Float, val profile: GroundProjectileProfile)
 

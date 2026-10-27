@@ -2,6 +2,13 @@ package com.rustedwarfare.reforge.client
 
 import com.rustedwarfare.reforge.core.sim.*
 import java.util.UUID
+import java.nio.file.Path
+
+data class ProductionActionView(val typeId: String, val title: String, val imagePath: Path, val totalFrames: Int,
+    val price: Long, val rate: Float, val maximumHealth: Double?, val moveSpeed: Double,
+    val count: Int, val progress: Float?, val affordable: Boolean)
+
+data class ProductionNotice(val text: String, val step: Long)
 
 class SandboxSession(scenario: Scenario, private val evidence: ClientEvidence = ClientEvidence.NONE,
                      val options: SandboxOptions = SandboxOptions(),
@@ -53,6 +60,34 @@ class SandboxSession(scenario: Scenario, private val evidence: ClientEvidence = 
     var feedback = "Ready"
         private set
     private var rejectedFeedback = false
+    var productionNotice: ProductionNotice? = null
+        private set
+
+    /** Player copy is separate from the original diagnostic feedback and identifiers. */
+    val playerFeedback: String
+        get() = when {
+            feedback.startsWith("Selected ") -> if (selectedIds.size > 1) "${selectedIds.size} units selected"
+                else observation.units.firstOrNull { it.unitId == selectedId }?.let { "${unitTitle(it.typeId)} selected" } ?: "No selection"
+            feedback == "insufficient-funds" -> "Insufficient funds"
+            feedback == "production-queued" -> "Added to production queue"
+            feedback == "production-cancelled" -> "Production cancelled; funds returned"
+            feedback == "empty-production-queue" -> "Production queue is empty"
+            feedback == "path-unreachable" -> "Destination is unreachable"
+            feedback == "unit-produced" -> "Unit created"
+            feedback == "unit-damaged" -> "Unit under attack"
+            feedback == "unit-died" -> "Unit destroyed"
+            feedback in setOf("Ready", "Accepted", "No selection", "Match closed") -> feedback
+            feedback.startsWith("Group ") || feedback.startsWith("Accepted ") -> feedback.substringBefore(';')
+            rejectedFeedback -> "Order unavailable"
+            else -> "Order received"
+        }
+
+    private fun unitTitle(type: String) = when (type) {
+        "commandCenter" -> "Command center"
+        "builder" -> "Builder"
+        "c_tank" -> "Tank"
+        else -> "Unit"
+    }
 
     init {
         try { latestFrame = makeFrame(); capture("initial") }
@@ -75,6 +110,19 @@ class SandboxSession(scenario: Scenario, private val evidence: ClientEvidence = 
 
     val productionPrice: Long?
         get() = productionTypeId?.let { scenario.unitDefinitions.getValue(it).build?.price }
+
+    val productionAction: ProductionActionView?
+        get() {
+            val type = productionTypeId ?: return null
+            val definition = scenario.unitDefinitions.getValue(type)
+            val build = definition.build ?: return null
+            val queue = checkNotNull(selectedFactoryQueue)
+            val affordable = observation.credits?.let { it >= build.price.toDouble() }
+                ?: (observation.balance?.let { it >= build.price } == true)
+            return ProductionActionView(type, if (type == "builder") "Builder" else "Tank", definition.imagePath,
+                definition.totalFrames, build.price, build.rate, definition.maximumHealth, definition.movement.moveSpeed,
+                queue.items.size, queue.items.firstOrNull()?.progress, affordable)
+        }
 
     fun produce(): ActionResult? = productionTypeId?.let { type ->
         apply(ProduceAction("click-${++actionNumber}", "p1", checkNotNull(selectedId), type,
@@ -153,6 +201,11 @@ class SandboxSession(scenario: Scenario, private val evidence: ClientEvidence = 
         context.advance(Step(nextStep, 1.0, "sim-tick"))
         nextStep++
         publishFrame()
+        observation.events.lastOrNull { it.kind == "unit-produced" }?.let { event ->
+            observation.units.firstOrNull { it.unitId == event.unitId && it.ownerPlayerId == observation.playerId }?.let { unit ->
+                productionNotice = ProductionNotice("${unitTitle(unit.typeId)} created", observation.stepIndex)
+            }
+        }
         if (!rejectedFeedback) observation.events.lastOrNull()?.let { feedback = it.kind }
         capture("step")
     }
@@ -269,6 +322,7 @@ class SandboxSession(scenario: Scenario, private val evidence: ClientEvidence = 
             selection.clear()
             latestFrame = null
             terrainKnowledge = null
+            productionNotice = null
             feedback = "Match closed"
         }
         evidence.record("closed", emptyMap())

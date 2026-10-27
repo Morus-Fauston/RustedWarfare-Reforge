@@ -28,7 +28,7 @@ class CombatContentLoadTest {
         assertEquals(5.0, combat.projectile.speed)
         assertEquals(4.0, combat.turretTurnSpeed)
         assertEquals(1.0, combat.turretTurnAcceleration)
-        assertTrue(listOf(unit.imagePath, combat.turretImagePath, combat.deadImagePath).all {
+        assertTrue(listOf(unit.imagePath, assertNotNull(combat.turretImagePath), combat.deadImagePath).all {
             it.isAbsolute && Files.isRegularFile(it)
         })
     }
