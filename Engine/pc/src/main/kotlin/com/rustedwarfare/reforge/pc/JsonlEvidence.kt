@@ -25,7 +25,9 @@ class JsonlEvidence internal constructor(private val directory: Path, private va
         writer = createWriter(directory.resolve("reforge/client-diagnostic.jsonl"))
         try {
             val ticket = when {
-                Files.exists(inputs.resolve("construction.properties")) -> "ENG-P006-001"
+                Files.exists(inputs.resolve("construction.properties")) -> if (
+                    Files.readString(inputs.resolve("construction.properties")).lineSequence().any { it.trim() == "variant=factory-construction" }
+                ) "ENG-P006-002" else "ENG-P006-001"
                 Files.exists(inputs.resolve("patrol.properties")) -> "ENG-P005-007"
                 Files.exists(inputs.resolve("upgrade.properties")) -> "ENG-P005-004"
                 Files.exists(inputs.resolve("point-defense.properties")) -> "ENG-P005-005"
@@ -39,6 +41,7 @@ class JsonlEvidence internal constructor(private val directory: Path, private va
                 "phase" to ticket.substringAfter("ENG-").substringBeforeLast('-'),
                 "topic" to when (ticket) {
                     "ENG-P006-001" -> "construction-windows-client"
+                    "ENG-P006-002" -> "factory-construction-windows-client"
                     "ENG-P005-007" -> "patrol-windows-client"
                     "ENG-P005-004" -> "upgrade-windows-client"
                     "ENG-P005-005" -> "point-defense-windows-client"
@@ -93,6 +96,7 @@ class JsonlEvidence internal constructor(private val directory: Path, private va
             if (construction) {
                 files.add(contentRoot.resolve("units/builder.properties"))
                 files.add(contentRoot.resolve("units/commandCenter.properties"))
+                if (scenario.unitDefinitions.containsKey("landFactory")) files.add(contentRoot.resolve("units/landFactory.properties"))
             } else if (production) {
                 files.add(contentRoot.resolve("production.properties"))
                 files.add(contentRoot.resolve("units/landFactory.properties"))

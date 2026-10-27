@@ -114,7 +114,7 @@ class SandboxGraphics private constructor(private val resources: SandboxRenderRe
         }
     }
 
-    fun draw(batch: SpriteBatch, frame: SandboxFrame) {
+    fun draw(batch: SpriteBatch, frame: SandboxFrame, construction: ConstructionPreview? = null) {
         for (cell in frame.terrain) {
             val gid = cell.gid ?: continue
             if (gid == 0) continue
@@ -128,6 +128,7 @@ class SandboxGraphics private constructor(private val resources: SandboxRenderRe
         batch.color = Color.WHITE
         for (unit in frame.observation.units) {
             val definition = resources.units.getValue(unit.typeId)
+            batch.setColor(1f, 1f, 1f, if (unit.alive && unit.constructionProgress < 1f) .45f else 1f)
             if (unit.alive) backs[unit.typeId]?.let { back ->
                 val bw = (back.regionWidth * definition.imageScale * projection.scale).toFloat()
                 val bh = (back.regionHeight * definition.imageScale * projection.scale).toFloat()
@@ -147,9 +148,25 @@ class SandboxGraphics private constructor(private val resources: SandboxRenderRe
                     tw / 2, th / 2, tw, th, 1f, 1f, -unit.turretHeading.toFloat())
             }
         }
+        construction?.let { preview ->
+            val definition = resources.units.getValue(preview.typeId)
+            when (preview.state) {
+                PlacementState.CLEAR -> batch.setColor(.6f, 1f, .6f, .5f)
+                PlacementState.BLOCKED -> batch.setColor(1f, .4f, .4f, .5f)
+                PlacementState.UNEXPLORED -> batch.setColor(1f, .85f, .4f, .5f)
+            }
+            for (region in listOfNotNull(backs[preview.typeId], units[preview.typeId])) {
+                val w = (region.regionWidth * definition.imageScale * projection.scale).toFloat()
+                val h = (region.regionHeight * definition.imageScale * projection.scale).toFloat()
+                batch.draw(region, projection.x(preview.position.x) - w / 2f,
+                    projection.y(preview.position.y) - h / 2f, w, h)
+            }
+        }
+        batch.color = Color.WHITE
     }
 
-    fun drawOverlay(shapes: ShapeRenderer, frame: SandboxFrame, selectedIds: Set<String>, box: Pair<Position, Position>? = null) {
+    fun drawOverlay(shapes: ShapeRenderer, frame: SandboxFrame, selectedIds: Set<String>, box: Pair<Position, Position>? = null,
+                    construction: ConstructionPreview? = null) {
         shapes.color = Color(0.45f, 0.5f, 0.47f, 1f)
         shapes.rect(projection.left.toFloat(), projection.bottom.toFloat(), projection.width.toFloat(), projection.height.toFloat())
         for (unit in frame.observation.units) {
@@ -157,11 +174,23 @@ class SandboxGraphics private constructor(private val resources: SandboxRenderRe
             val radius = (resources.units.getValue(unit.typeId).displayRadius * projection.scale).toFloat()
             val x = projection.x(unit.position.x)
             val y = projection.y(unit.position.y)
+            unit.constructionTargetId?.let { targetId ->
+                frame.observation.units.firstOrNull { it.unitId == targetId && it.alive }?.let { target ->
+                    shapes.color = Color.GREEN
+                    shapes.line(x, y, projection.x(target.position.x), projection.y(target.position.y))
+                    shapes.color = resources.unitCircleColor(frame.observation.playerId, unit.ownerPlayerId)
+                }
+            }
             shapes.circle(x, y, radius + if (unit.unitId in selectedIds) 4f else 1f, 32)
             val health = unit.health
             val maximum = unit.maxHealth
             if (unit.alive && health != null && maximum != null) {
                 shapes.line(x - radius, y + radius + 4f, x - radius + 2f * radius * (health / maximum).toFloat(), y + radius + 4f)
+            }
+            if (unit.alive && unit.constructionProgress < 1f) {
+                shapes.color = Color.CYAN
+                shapes.line(x - radius, y - radius - 9f, x - radius + 2f * radius * unit.constructionProgress, y - radius - 9f)
+                shapes.color = resources.unitCircleColor(frame.observation.playerId, unit.ownerPlayerId)
             }
             if (unit.alive) unit.pointDefense?.let { defense ->
                 shapes.color = if (defense.exhausted) Color.ORANGE else Color.CYAN
@@ -199,6 +228,15 @@ class SandboxGraphics private constructor(private val resources: SandboxRenderRe
                     shapes.line(tx - 5, ty, tx + 5, ty); shapes.line(tx, ty - 5, tx, ty + 5)
                 }
             }
+        }
+        construction?.let { preview ->
+            shapes.color = when (preview.state) {
+                PlacementState.CLEAR -> Color.GREEN
+                PlacementState.BLOCKED -> Color.RED
+                PlacementState.UNEXPLORED -> Color.GRAY
+            }
+            for ((col, row) in preview.cells) shapes.rect(projection.x(col * 20.0), projection.y((row + 1) * 20.0),
+                (20 * projection.scale).toFloat(), (20 * projection.scale).toFloat())
         }
         shapes.color = Color.YELLOW
         for (projectile in frame.observation.projectiles) {

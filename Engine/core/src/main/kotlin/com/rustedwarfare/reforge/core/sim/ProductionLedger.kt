@@ -4,7 +4,12 @@ import com.rustedwarfare.reforge.core.content.BuildProfile
 import java.util.Collections
 
 /** Trusted factory registration; command authority remains the simulation's responsibility. */
-internal data class FactoryProductionSpec(val ownerPlayerId: String, val typeId: String, val build: BuildProfile)
+internal class FactoryProductionSpec(val ownerPlayerId: String, products: Map<String, BuildProfile>) {
+    constructor(ownerPlayerId: String, typeId: String, build: BuildProfile) : this(ownerPlayerId, mapOf(typeId to build))
+    val products: Map<String, BuildProfile> = Collections.unmodifiableMap(LinkedHashMap(products))
+    fun valid(): Boolean = products.isNotEmpty() && products.all { (id, build) ->
+        id.isNotBlank() && build.price >= 0L && build.rate.isFinite() && build.rate > 0f }
+}
 internal data class PendingProduction(val typeId: String, val unitNonce: String, val progress: Float,
     val cost: Long, val rate: Float)
 internal data class ProductionCompletion(val factoryId: String, val ownerPlayerId: String, val typeId: String, val unitNonce: String)
@@ -40,8 +45,7 @@ internal class ProductionLedger private constructor(
         fun initial(balances: Map<String, Long>, factories: Map<String, FactoryProductionSpec>,
                     incomeEnabled: Boolean = false): ProductionLedger {
             require(balances.values.all { it >= 0L }) { "Initial balances must be nonnegative" }
-            require(factories.values.all { it.ownerPlayerId in balances && it.typeId.isNotBlank() &&
-                it.build.price >= 0L && it.build.rate.isFinite() && it.build.rate > 0f }) { "Invalid factory production registration" }
+            require(factories.values.all { it.ownerPlayerId in balances && it.valid() }) { "Invalid factory production registration" }
             return ProductionLedger(balances.takeUnless { incomeEnabled },
                 Collections.unmodifiableMap(LinkedHashMap(factories)),
                 preciseBalances = balances.takeIf { incomeEnabled }?.mapValues { it.value.toDouble() })
@@ -52,8 +56,14 @@ internal class ProductionLedger private constructor(
                      preciseBalances: Map<String, Double>? = this.preciseBalances,
                      queues: Map<String, List<PendingProduction>> = this.queues,
                      nonces: Map<String, Set<String>> = this.nonces,
-                     inactive: Set<String> = this.inactive) =
+                     inactive: Set<String> = this.inactive,
+                     factories: Map<String, FactoryProductionSpec> = this.factories) =
         ProductionLedger(integerBalances, factories, queues, nonces, inactive, preciseBalances)
+
+    fun register(factoryId: String, spec: FactoryProductionSpec): ProductionLedger {
+        require(factoryId !in factories && spec.ownerPlayerId in balances && spec.valid()) { "Invalid factory registration" }
+        return copy(factories = Collections.unmodifiableMap(factories + (factoryId to spec)))
+    }
 
     fun queue(factoryId: String): List<PendingProduction> = queues[factoryId].orEmpty()
     fun observe(): EconomyObservation = EconomyObservation(balances, factories.keys.sorted().associateWith { factoryId ->
@@ -94,7 +104,7 @@ internal class ProductionLedger private constructor(
         for ((factoryId, queue) in queues) {
             val factory = factories.getValue(factoryId)
             require(factoryId !in inactive || queue.isEmpty()) { "Inactive factory must not retain pending work" }
-            for (item in queue) require(item.typeId == factory.typeId && item.cost >= 0L &&
+            for (item in queue) require(item.typeId in factory.products && item.cost >= 0L &&
                 item.progress.isFinite() && item.progress in 0f..<1f && item.rate.isFinite() && item.rate > 0f &&
                 item.unitNonce in nonces[factory.ownerPlayerId].orEmpty()) { "Invalid production candidate" }
         }
@@ -102,13 +112,13 @@ internal class ProductionLedger private constructor(
     fun enqueue(factoryId: String, typeId: String, unitNonce: String): ProductionChange {
         val factory = factories[factoryId] ?: return ProductionChange.Rejected(ProductionError.UNKNOWN_FACTORY)
         if (!isActive(factoryId)) return ProductionChange.Rejected(ProductionError.INACTIVE_FACTORY)
-        if (typeId != factory.typeId) return ProductionChange.Rejected(ProductionError.INVALID_TYPE)
+        val build = factory.products[typeId] ?: return ProductionChange.Rejected(ProductionError.INVALID_TYPE)
         if (!nonceFormat.matches(unitNonce)) return ProductionChange.Rejected(ProductionError.INVALID_NONCE)
         if (unitNonce in nonces[factory.ownerPlayerId].orEmpty()) return ProductionChange.Rejected(ProductionError.DUPLICATE_NONCE)
-        val paid = charge(factory.ownerPlayerId, factory.build.price)
+        val paid = charge(factory.ownerPlayerId, build.price)
             ?: return ProductionChange.Rejected(ProductionError.INSUFFICIENT_FUNDS)
         val next = paid.copy(
-            queues = queues + (factoryId to (queue(factoryId) + PendingProduction(typeId, unitNonce, 0f, factory.build.price, factory.build.rate))),
+            queues = queues + (factoryId to (queue(factoryId) + PendingProduction(typeId, unitNonce, 0f, build.price, build.rate))),
             nonces = nonces + (factory.ownerPlayerId to (nonces[factory.ownerPlayerId].orEmpty() + unitNonce)))
         return ProductionChange.Accepted(next)
     }
@@ -116,7 +126,7 @@ internal class ProductionLedger private constructor(
     fun cancel(factoryId: String, typeId: String): ProductionChange {
         val factory = factories[factoryId] ?: return ProductionChange.Rejected(ProductionError.UNKNOWN_FACTORY)
         if (!isActive(factoryId)) return ProductionChange.Rejected(ProductionError.INACTIVE_FACTORY)
-        if (typeId != factory.typeId) return ProductionChange.Rejected(ProductionError.INVALID_TYPE)
+        if (typeId !in factory.products) return ProductionChange.Rejected(ProductionError.INVALID_TYPE)
         val queue = queue(factoryId)
         val index = queue.indexOfLast { it.typeId == typeId }
         if (index < 0) return ProductionChange.Rejected(ProductionError.EMPTY_QUEUE)

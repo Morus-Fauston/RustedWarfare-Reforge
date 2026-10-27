@@ -23,6 +23,8 @@ class UnitDefinition(
     val pointDefense: PointDefenseProfile? = null,
     val upgrades: UpgradeProfile? = null,
     val income: IncomeProfile? = null,
+    val builder: BuilderProfile? = null,
+    val construction: ConstructionProfile? = null,
 ) {
     val retainedUnconsumed: Set<String> = Collections.unmodifiableSet(LinkedHashSet(retainedUnconsumed))
     val maximumHealth: Double? get() = durability?.maxHp ?: combat?.maxHp
@@ -48,8 +50,23 @@ data class DurabilityProfile(val maxHp: Double, val deadImagePath: Path, val max
 data class BuildingFootprint(val left: Int, val top: Int, val right: Int, val bottom: Int)
 data class FootprintAnchor(val offsetX: Float, val offsetY: Float)
 data class BuildingProfile(val footprint: BuildingFootprint, val backImagePath: Path? = null,
-    val anchor: FootprintAnchor? = null)
-data class ProductionProfile(val unitTypeId: String)
+    val anchor: FootprintAnchor? = null, val placementFootprint: BuildingFootprint = footprint)
+class BuilderProfile(buildingTypeIds: List<String>) {
+    val buildingTypeIds: List<String> = Collections.unmodifiableList(ArrayList(buildingTypeIds))
+    val range: Float = 85f
+    val preparation: Float = 30f
+    val decay: Float = 1.3f
+    val repairRate: Float = .2f
+}
+data class ConstructionProfile(val price: Long, val rate: Float)
+class ProductionProfile(unitTypeIds: List<String>) {
+    constructor(unitTypeId: String) : this(listOf(unitTypeId))
+    val unitTypeIds: List<String> = Collections.unmodifiableList(ArrayList(unitTypeIds))
+    val unitTypeId: String get() = unitTypeIds.first()
+    override fun equals(other: Any?): Boolean = other is ProductionProfile && unitTypeIds == other.unitTypeIds
+    override fun hashCode(): Int = unitTypeIds.hashCode()
+    override fun toString(): String = "ProductionProfile(unitTypeIds=$unitTypeIds)"
+}
 data class BuildProfile(val price: Long, val rate: Float)
 data class IncomeProfile(val period: Float, val credits: Float)
 

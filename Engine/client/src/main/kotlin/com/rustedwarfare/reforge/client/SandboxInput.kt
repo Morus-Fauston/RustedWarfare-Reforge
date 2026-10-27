@@ -23,6 +23,18 @@ class SandboxInput(
     private data class PatrolPress(val members: Set<String>, val append: Boolean)
     private var patrolPress: PatrolPress? = null
     private var pHeld = false
+    var constructionTypeId: String? = null
+        private set
+    private var constructionOwner: String? = null
+    private var constructionPress = false
+    val constructionPreview: ConstructionPreview?
+        get() {
+            val type = constructionTypeId ?: return null
+            val current = session()?.takeIf { it.selectedId == constructionOwner } ?: return null
+            val ui = pointerPosition ?: return null
+            val world = projection()?.toWorld(ui.x, ui.y) ?: return null
+            return current.previewConstruction(type, world)
+        }
     var patrolMode = false
         private set
     var patrolPointCount = 0
@@ -36,6 +48,7 @@ class SandboxInput(
         if (!active() || pointer != 0 || !insideViewport(screenX, screenY)) return false
         if (ownerButton != null) return false
         val current = session() ?: return false
+        if (constructionTypeId != null && button == Input.Buttons.RIGHT) { endConstruction(); changed(); return true }
         if (patrolMode && button == Input.Buttons.RIGHT) { endPatrol(); changed(); return true }
         val map = projection() ?: return false
         val ui = uiPoint(screenX, screenY) ?: return false
@@ -49,6 +62,11 @@ class SandboxInput(
         pointerPosition = ui
         evidence.record("pointer", mapOf("screenX" to screenX, "screenY" to screenY,
             "uiX" to ui.x, "uiY" to ui.y, "world" to world.fields(), "button" to button))
+        if (constructionTypeId != null && button == Input.Buttons.LEFT) {
+            constructionPress = true
+            ownerButton = button
+            changed(); return true
+        }
         if (patrolMode && button == Input.Buttons.LEFT) {
             patrolPress = PatrolPress(current.selectedIds.toSet(), patrolPointCount > 0 || shift())
             ownerButton = button
@@ -77,6 +95,18 @@ class SandboxInput(
         val current = session()
         val ui = uiPoint(screenX, screenY)
         if (!active() || current == null || ui == null) { cancel(); return true }
+        if (constructionPress) {
+            val world = if (insideViewport(screenX, screenY)) projection()?.toWorld(ui.x, ui.y) else null
+            val type = constructionTypeId
+            pointerPosition = ui
+            if (world != null && type != null && current.selectedId == constructionOwner &&
+                current.build(type, world) is com.rustedwarfare.reforge.core.sim.ActionResult.Accepted) {
+                endConstruction()
+            } else {
+                constructionPress = false; ownerButton = null
+            }
+            changed(); return true
+        }
         patrolPress?.let { press ->
             val point = if (insideViewport(screenX, screenY)) projection()?.toWorld(ui.x, ui.y) else null
             if (point != null && current.patrol(point, press.append, press.members) != null) {
@@ -98,7 +128,7 @@ class SandboxInput(
         cancelGesture(); changed(); return true
     }
     override fun mouseMoved(screenX: Int, screenY: Int): Boolean {
-        pointerPosition = uiPoint(screenX, screenY)
+        pointerPosition = if (insideViewport(screenX, screenY)) uiPoint(screenX, screenY) else null
         return false
     }
     override fun scrolled(amountX: Float, amountY: Float): Boolean {
@@ -112,6 +142,7 @@ class SandboxInput(
     override fun keyDown(keycode: Int): Boolean {
         if (!active() || editing() || touchControls) return false
         val current = session() ?: return false
+        if (keycode == Input.Keys.ESCAPE && constructionTypeId != null) { endConstruction(); changed(); return true }
         if (keycode == Input.Keys.P) {
             if (pHeld) return true
             pHeld = true
@@ -124,7 +155,7 @@ class SandboxInput(
             Input.Keys.NUM_8 -> 8; Input.Keys.NUM_9 -> 9; else -> null
         }
         if (group != null) { group(group); return true }
-        if (keycode == Input.Keys.S) { endPatrol(); current.stop(); changed(); return true }
+        if (keycode == Input.Keys.S) { cancel(); current.stop(); changed(); return true }
         return false
     }
     override fun keyUp(keycode: Int): Boolean {
@@ -133,9 +164,21 @@ class SandboxInput(
     }
     fun beginPatrol(): Boolean {
         if (!active() || editing() || session()?.canPatrol != true) return false
+        endConstruction()
         cancelGesture(); patrolMode = true; patrolPointCount = 0
         evidence.record("patrol-mode", mapOf("active" to true, "pointCount" to 0))
         changed(); return true
+    }
+    fun beginConstruction(typeId: String): Boolean {
+        val current = session() ?: return false
+        if (!active() || editing() || touchControls || current.constructionActions.none { it.typeId == typeId }) return false
+        endPatrol()
+        constructionTypeId = typeId; constructionOwner = current.selectedId
+        changed(); return true
+    }
+    private fun endConstruction() {
+        cancelGesture()
+        constructionTypeId = null; constructionOwner = null
     }
     private fun endPatrol() {
         cancelGesture()
@@ -155,7 +198,7 @@ class SandboxInput(
         evidence.record("camera", mapOf("reason" to reason, "center" to map.camera.center.fields(), "zoom" to map.camera.zoom))
     }
     private fun cancelGesture() {
-        gesture?.cancel(); gesture = null; patrolPress = null; ownerButton = null; pointerPosition = null
+        gesture?.cancel(); gesture = null; patrolPress = null; constructionPress = false; ownerButton = null; pointerPosition = null
     }
-    fun cancel() { endPatrol(); pHeld = false }
+    fun cancel() { endConstruction(); endPatrol(); pHeld = false }
 }

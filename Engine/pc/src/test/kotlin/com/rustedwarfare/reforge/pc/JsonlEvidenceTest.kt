@@ -14,6 +14,29 @@ import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
 class JsonlEvidenceTest {
+    @Test fun factory_construction_records_the_new_ticket_and_the_factory_metadata_hash() {
+        val repo = generateSequence(Path.of("").toAbsolutePath()) { it.parent }
+            .first { Files.isRegularFile(it.resolve("AGENTS.md")) }
+        val root = repo.resolve(".scratch/开发票据/引擎重写/P006-建造经济与原版操作/evidence/ENG-P006-002/20261027-contract-01/candidate-input-01")
+        val temporary = Files.createTempDirectory("p006-factory-evidence-")
+        try {
+            val directory = temporary.resolve("run")
+            JsonlEvidence(directory, "factory-run", root).use {
+                it.record("load-ready", mapOf("generation" to 1L))
+            }
+            val manifest = JsonReader().parse(Files.readString(directory.resolve("manifest.json")))
+            assertEquals("ENG-P006-002", manifest.getString("ticket"))
+            val files = records(directory).single { it.getString("kind") == "input-identities" }.get("files").toList()
+            val factory = root.resolve("units/landFactory.properties")
+            assertEquals(evidenceSha256(factory), files.single { it.getString("path") == factory.toString() }.getString("sha256"))
+            val unused = setOf("manifest.json", "p005-corridor.tmx", "p005-sealed.tmx")
+            val expected = Files.walk(root).use { paths -> paths.filter { Files.isRegularFile(it) && it.fileName.toString() !in unused }.toList().toSet() }
+            assertEquals(expected, files.map { Path.of(it.getString("path")) }.toSet())
+        } finally {
+            Files.walk(temporary).use { paths -> paths.sorted(Comparator.reverseOrder()).forEach { Files.delete(it) } }
+        }
+    }
+
     @Test fun construction_evidence_binds_only_loaded_inputs_and_uses_its_own_ticket() {
         val repo = generateSequence(Path.of("").toAbsolutePath()) { it.parent }
             .first { Files.isRegularFile(it.resolve("AGENTS.md")) }

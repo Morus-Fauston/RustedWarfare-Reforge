@@ -8,7 +8,7 @@ import java.nio.file.Path
 internal object BuilderContentReader {
     private val fields = setOf("format", "name", "maxHp", "radius", "displayRadius", "movementType",
         "moveSpeed", "moveAccelerationSpeed", "moveDecelerationSpeed", "maxTurnSpeed", "turnAcceleration",
-        "price", "buildSpeed", "image", "image_dead", "fogOfWarSightRange")
+        "price", "buildSpeed", "image", "image_dead", "fogOfWarSightRange", "constructionTypes")
 
     fun read(path: Path): UnitDefinition {
         val values = linkedMapOf<String, String>()
@@ -44,7 +44,13 @@ internal object BuilderContentReader {
             }
             return result
         }
-        only("format", "rw-reforge.native-builder.v1")
+        val construction = required("format") == "rw-reforge.native-builder.v2"
+        if (construction) only("constructionTypes", "landFactory")
+        else {
+            only("format", "rw-reforge.native-builder.v1")
+            if ("constructionTypes" in values) reject(ContentErrorCode.UNSUPPORTED_FIELD, path,
+                field = "constructionTypes", reason = "Construction requires the v2 format")
+        }
         only("name", "builder")
         only("movementType", "LAND")
         return UnitDefinition("builder", "NativeBuilderFixture", number("radius", 10.0), number("displayRadius", 12.0),
@@ -53,6 +59,7 @@ internal object BuilderContentReader {
                 number("maxTurnSpeed", 3.8), number("turnAcceleration", .35), false, false), emptySet(),
             number("fogOfWarSightRange", 15.0).toInt(),
             durability = DurabilityProfile(number("maxHp", 170.0), image("image_dead")),
-            build = BuildProfile(number("price", 500.0).toLong(), number("buildSpeed", .002).toFloat()))
+            build = BuildProfile(number("price", 500.0).toLong(), number("buildSpeed", .002).toFloat()),
+            builder = if (construction) BuilderProfile(listOf("landFactory")) else null)
     }
 }

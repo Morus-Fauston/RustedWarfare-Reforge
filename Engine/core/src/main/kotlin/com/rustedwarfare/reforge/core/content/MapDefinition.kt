@@ -15,6 +15,13 @@ class MapDefinition(
     val tileSets: List<TileSetDefinition> = Collections.unmodifiableList(ArrayList(tileSets))
     private val gids = groundGids.copyOf()
     val groundGids: IntArray get() = gids.copyOf()
+
+    fun isResourcePool(col: Int, row: Int): Boolean {
+        require(col in 0 until widthTiles && row in 0 until heightTiles)
+        val gid = gids[row * widthTiles + col]
+        val tileset = tileSets.lastOrNull { it.firstGid <= gid } ?: return false
+        return gid - tileset.firstGid in tileset.resourcePoolTileIds
+    }
 }
 
 class TileSetDefinition internal constructor(
@@ -29,8 +36,10 @@ class TileSetDefinition internal constructor(
     val spacing: Int = 0,
     val margin: Int = 0,
     val transparentColor: String? = null,
+    resourcePoolTileIds: Set<Int> = emptySet(),
 ) {
     val blockedTileIds: Set<Int> = Collections.unmodifiableSet(LinkedHashSet(blockedTileIds))
+    val resourcePoolTileIds: Set<Int> = Collections.unmodifiableSet(LinkedHashSet(resourcePoolTileIds))
 
     constructor(
         firstGid: Int,

@@ -31,7 +31,7 @@ internal class BuildingTerrain private constructor(map: MapDefinition, occupied:
 
         fun initial(input: Scenario): BuildingTerrain? {
             val buildings = input.units.filter { input.unitDefinitions.getValue(it.typeId).building != null }
-            if (buildings.isEmpty()) return null
+            if (buildings.isEmpty() && input.unitDefinitions.values.none { it.builder != null }) return null
             val cells = linkedSetOf<Pair<Int, Int>>()
             for (unit in buildings) {
                 val building = checkNotNull(input.unitDefinitions.getValue(unit.typeId).building)
@@ -50,7 +50,7 @@ internal class BuildingTerrain private constructor(map: MapDefinition, occupied:
         }
 
         fun footprint(map: MapDefinition, position: Position, shape: BuildingFootprint,
-                      anchor: FootprintAnchor? = null): Set<Pair<Int, Int>> {
+                      anchor: FootprintAnchor? = null, clipToMap: Boolean = false): Set<Pair<Int, Int>> {
             fun custom(value: Double, offset: Float, tile: Int): Long {
                 // Each operation is binary32; the source's cast truncates toward zero.
                 val coordinate = ((value.toFloat() - offset) + 1f) * (1f / tile.toFloat())
@@ -62,10 +62,10 @@ internal class BuildingTerrain private constructor(map: MapDefinition, occupied:
                 else custom(position.x, anchor.offsetX, map.tileWidth)
             val row = if (anchor == null) MapBounds.cell(position.y, map.tileHeight, map.heightTiles).toLong()
                 else custom(position.y, anchor.offsetY, map.tileHeight)
-            val left = column + shape.left.toLong()
-            val right = column + shape.right.toLong()
-            val top = row + shape.top.toLong()
-            val bottom = row + shape.bottom.toLong()
+            val left = (column + shape.left.toLong()).let { if (clipToMap) maxOf(0L, it) else it }
+            val right = (column + shape.right.toLong()).let { if (clipToMap) minOf(map.widthTiles - 1L, it) else it }
+            val top = (row + shape.top.toLong()).let { if (clipToMap) maxOf(0L, it) else it }
+            val bottom = (row + shape.bottom.toLong()).let { if (clipToMap) minOf(map.heightTiles - 1L, it) else it }
             if (left < 0L || top < 0L || right >= map.widthTiles.toLong() || bottom >= map.heightTiles.toLong() ||
                 left > right || top > bottom) fail("Building footprint must be entirely within the map")
             // Only bounded spans may be multiplied, iterated, or converted back to Int.

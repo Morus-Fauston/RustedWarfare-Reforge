@@ -111,11 +111,12 @@ data class Step(val stepIndex: Long, val delta: Double, val deltaUnit: String)
 
 enum class MovementState { IDLE, MOVING, DECELERATING, BLOCKED }
 
-enum class UnitTaskKind { MOVE, ATTACK, PATROL }
+enum class UnitTaskKind { MOVE, ATTACK, PATROL, BUILD, CONSTRUCT }
 
 /** Owner control intent; temporary combat targets never become stored patrol points. */
 data class UnitTask(val kind: UnitTaskKind, val actionId: String, val target: Position? = null,
-    val targetUnitId: String? = null, val atStep: Long? = null)
+    val targetUnitId: String? = null, val atStep: Long? = null,
+    val buildingTypeId: String? = null, val buildingNonce: String? = null)
 
 data class UnitObservation(
     val unitId: String,
@@ -138,6 +139,8 @@ data class UnitObservation(
     val height: Double = 0.0,
     val pointDefense: PointDefenseObservation? = null,
     val tasks: List<UnitTask> = emptyList(),
+    val constructionProgress: Float = 1f,
+    val constructionTargetId: String? = null,
 )
 
 /** Host-only identity/target and arithmetic state. Never copied into player DTOs. */
@@ -193,6 +196,18 @@ class ProductionObservation(val lastBirthSerial: Long, units: List<ProducedUnitO
     val units: List<ProducedUnitObservation> = immutable(units)
 }
 
+data class ConstructedBuildingObservation(val unitId: String, val objectId: Long, val updateKey: String, val progress: Float)
+data class ConstructionWorkerObservation(val unitId: String, val elapsed: Float, val retryTime: Int,
+    val preparation: Float, val working: Boolean, val previousTargetActive: Boolean)
+/** Trusted host diagnostics, excluded from player observations. */
+class ConstructionObservation(val clock: Int, buildings: List<ConstructedBuildingObservation>,
+                              workers: List<ConstructionWorkerObservation>, nonces: Map<String, Set<String>>) {
+    val buildings: List<ConstructedBuildingObservation> = immutable(buildings)
+    val workers: List<ConstructionWorkerObservation> = immutable(workers)
+    val nonces: Map<String, Set<String>> = Collections.unmodifiableMap(nonces.mapValues {
+        Collections.unmodifiableSet(LinkedHashSet(it.value)) })
+}
+
 class Observation(
     val sampleId: String,
     val worldId: String,
@@ -208,6 +223,7 @@ class Observation(
     val economy: EconomyObservation? = null,
     val production: ProductionObservation? = null,
     val upgrades: UpgradeObservation? = null,
+    val construction: ConstructionObservation? = null,
 ) {
     val units: List<UnitObservation> = immutable(units)
     val events: List<Event> = immutable(events)
@@ -310,6 +326,12 @@ internal data class MutableUnit(
     var birthRemaining: Float = 0f,
     var incomeElapsed: Float = 0f,
     var pointDefense: MutablePointDefense? = definition.pointDefense?.let { MutablePointDefense(it.initialEnergy) },
+    var constructionProgress: Float = 1f,
+    var constructionElapsed: Float = 0f,
+    var constructionRetryTime: Int = -9999,
+    var constructionPreparation: Float = 0f,
+    var constructionWorking: Boolean = false,
+    var previousWorkTargetActive: Boolean = false,
 ) {
     val alive: Boolean get() = health == null || checkNotNull(health) > 0.0
     val tasks: List<UnitTask> get() = taskQueue.tasks

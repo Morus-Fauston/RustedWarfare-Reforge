@@ -9,6 +9,11 @@ data class ProductionActionView(val typeId: String, val title: String, val image
     val count: Int, val progress: Float?, val affordable: Boolean)
 
 data class ProductionNotice(val text: String, val step: Long)
+data class ConstructionActionView(val typeId: String, val title: String, val imagePath: Path, val price: Long,
+    val maximumHealth: Double, val rate: Float)
+enum class PlacementState { CLEAR, BLOCKED, UNEXPLORED }
+data class ConstructionPreview(val typeId: String, val position: Position, val state: PlacementState,
+    val cells: List<Pair<Int, Int>>)
 
 class SandboxSession(scenario: Scenario, private val evidence: ClientEvidence = ClientEvidence.NONE,
                      val options: SandboxOptions = SandboxOptions(),
@@ -68,7 +73,8 @@ class SandboxSession(scenario: Scenario, private val evidence: ClientEvidence = 
         get() = when {
             feedback.startsWith("Selected ") -> if (selectedIds.size > 1) "${selectedIds.size} units selected"
                 else observation.units.firstOrNull { it.unitId == selectedId }?.let { "${unitTitle(it.typeId)} selected" } ?: "No selection"
-            feedback == "insufficient-funds" -> "Insufficient funds"
+            feedback == "insufficient-funds" || feedback == "construction-insufficient-funds" -> "Insufficient funds"
+            feedback == "construction-unavailable" -> "Cannot build here"
             feedback == "production-queued" -> "Added to production queue"
             feedback == "production-cancelled" -> "Production cancelled; funds returned"
             feedback == "empty-production-queue" -> "Production queue is empty"
@@ -86,6 +92,7 @@ class SandboxSession(scenario: Scenario, private val evidence: ClientEvidence = 
         "commandCenter" -> "Command center"
         "builder" -> "Builder"
         "c_tank" -> "Tank"
+        "landFactory" -> "Land factory"
         else -> "Unit"
     }
 
@@ -102,35 +109,98 @@ class SandboxSession(scenario: Scenario, private val evidence: ClientEvidence = 
             return observation.factoryQueues.firstOrNull { it.factoryId == unit.unitId }
         }
 
-    private val productionTypeId: String?
+    private val productionTypeIds: List<String>
         get() = selectedFactoryQueue?.let { queue ->
             val factory = observation.units.single { it.unitId == queue.factoryId }
-            scenario.unitDefinitions.getValue(factory.typeId).production?.unitTypeId
-        }
+            scenario.unitDefinitions.getValue(factory.typeId).production?.unitTypeIds
+        }.orEmpty()
 
     val productionPrice: Long?
-        get() = productionTypeId?.let { scenario.unitDefinitions.getValue(it).build?.price }
+        get() = productionAction?.price
 
     val productionAction: ProductionActionView?
-        get() {
-            val type = productionTypeId ?: return null
+        get() = productionActions.firstOrNull()
+
+    val productionActions: List<ProductionActionView>
+        get() = productionTypeIds.map { type ->
             val definition = scenario.unitDefinitions.getValue(type)
-            val build = definition.build ?: return null
+            val build = checkNotNull(definition.build)
             val queue = checkNotNull(selectedFactoryQueue)
             val affordable = observation.credits?.let { it >= build.price.toDouble() }
                 ?: (observation.balance?.let { it >= build.price } == true)
-            return ProductionActionView(type, if (type == "builder") "Builder" else "Tank", definition.imagePath,
+            ProductionActionView(type, unitTitle(type), definition.imagePath,
                 definition.totalFrames, build.price, build.rate, definition.maximumHealth, definition.movement.moveSpeed,
-                queue.items.size, queue.items.firstOrNull()?.progress, affordable)
+                queue.items.count { it.typeId == type }, queue.items.firstOrNull()?.takeIf { it.typeId == type }?.progress, affordable)
         }
 
-    fun produce(): ActionResult? = productionTypeId?.let { type ->
+    fun produce(typeId: String? = productionTypeIds.firstOrNull()): ActionResult? = typeId?.takeIf { it in productionTypeIds }?.let { type ->
         apply(ProduceAction("click-${++actionNumber}", "p1", checkNotNull(selectedId), type,
             UUID.randomUUID().toString().replace("-", ""), context.world))
     }
 
-    fun cancelProduction(): ActionResult? = productionTypeId?.let { type ->
+    fun cancelProduction(typeId: String? = productionTypeIds.firstOrNull()): ActionResult? = typeId?.takeIf { it in productionTypeIds }?.let { type ->
         apply(CancelProductionAction("click-${++actionNumber}", "p1", checkNotNull(selectedId), type, context.world))
+    }
+
+    val constructionActions: List<ConstructionActionView>
+        get() {
+            if (!isOpen || selectedIds.size != 1) return emptyList()
+            val worker = observation.units.singleOrNull { it.unitId == selectedId && controllable(it) } ?: return emptyList()
+            return scenario.unitDefinitions.getValue(worker.typeId).builder?.buildingTypeIds.orEmpty().map { type ->
+                val definition = scenario.unitDefinitions.getValue(type)
+                ConstructionActionView(type, unitTitle(type), definition.imagePath, checkNotNull(definition.construction).price,
+                    checkNotNull(definition.maximumHealth), checkNotNull(definition.construction).rate)
+            }
+        }
+
+    fun build(typeId: String, position: Position): ActionResult? {
+        if (constructionActions.none { it.typeId == typeId }) return null
+        if (previewConstruction(typeId, position)?.state == PlacementState.BLOCKED) {
+            feedback = "construction-unavailable"
+            rejectedFeedback = false
+            return null
+        }
+        val result = apply(BuildAction("click-${++actionNumber}", "p1", checkNotNull(selectedId), typeId, position,
+            UUID.randomUUID().toString().replace("-", ""), context.world))
+        if (result is ActionResult.Accepted) selection.clear()
+        return result
+    }
+
+    /** Uses only the player's published terrain and visible buildings, never placement truth. */
+    fun previewConstruction(typeId: String, order: Position): ConstructionPreview? {
+        if (constructionActions.none { it.typeId == typeId } || !order.x.isFinite() || !order.y.isFinite()) return null
+        fun snap(value: Double) = ((((value.toFloat() - 10f) + 1f) * .05f).toInt() * 20f + 10f).toDouble()
+        val position = Position(snap(order.x), snap(order.y))
+        val map = scenario.map
+        val definition = scenario.unitDefinitions.getValue(typeId)
+        fun cells(point: Position, building: com.rustedwarfare.reforge.core.content.BuildingProfile): List<Pair<Int, Int>> {
+            fun coordinate(value: Double, offset: Float?) = if (offset == null) kotlin.math.floor(value / 20.0).toInt()
+                else (((value.toFloat() - offset) + 1f) * .05f).toInt()
+            val col = coordinate(point.x, building.anchor?.offsetX)
+            val row = coordinate(point.y, building.anchor?.offsetY)
+            val shape = building.placementFootprint
+            return (shape.top..shape.bottom).flatMap { y -> (shape.left..shape.right).map { x -> col + x to row + y } }
+        }
+        val candidate = cells(position, checkNotNull(definition.building))
+        var blocked = position.x - definition.radius < 0.0 || position.y - definition.radius < 0.0 ||
+            position.x + definition.radius > map.widthTiles * 20.0 || position.y + definition.radius > map.heightTiles * 20.0
+        var unknown = false
+        for ((col, row) in candidate) {
+            if (col !in 0 until map.widthTiles || row !in 0 until map.heightTiles) { blocked = true; continue }
+            val gid = frame.terrain[row * map.widthTiles + col].gid
+            if (gid == null) { unknown = true; continue }
+            val tileset = map.tileSets.lastOrNull { it.firstGid <= gid } ?: continue
+            val tile = gid - tileset.firstGid
+            if (tile in tileset.blockedTileIds || tile in tileset.resourcePoolTileIds) blocked = true
+        }
+        if (observation.units.any { unit -> unit.alive && scenario.unitDefinitions.getValue(unit.typeId).building?.let {
+                cells(unit.position, it).any { cell -> cell in candidate }
+            } == true }) blocked = true
+        return ConstructionPreview(typeId, position, when {
+            blocked -> PlacementState.BLOCKED
+            unknown -> PlacementState.UNEXPLORED
+            else -> PlacementState.CLEAR
+        }, java.util.Collections.unmodifiableList(candidate))
     }
 
     val selectedUpgrades: List<com.rustedwarfare.reforge.core.content.UpgradeActionProfile>
@@ -193,6 +263,9 @@ class SandboxSession(scenario: Scenario, private val evidence: ClientEvidence = 
     fun command(position: Position): ActionResult? {
         val targetId = unitAt(position)
         val target = observation.units.firstOrNull { it.unitId == targetId }
+        if (target != null && target.ownerPlayerId == "p1" && target.constructionProgress < 1f &&
+            constructionActions.any { it.typeId == target.typeId })
+            return apply(ResumeConstructionAction("click-${++actionNumber}", "p1", checkNotNull(selectedId), target.unitId, context.world))
         return if (target != null && target.ownerPlayerId != "p1")
             dispatch { actor -> AttackAction("click-${++actionNumber}", "p1", actor, target.unitId, context.world) }
         else move(position)
@@ -271,11 +344,11 @@ class SandboxSession(scenario: Scenario, private val evidence: ClientEvidence = 
         rejectedFeedback = result is ActionResult.Rejected
         evidence.recordWhenEnabled("action") { mapOf("type" to action.javaClass.simpleName,
             "actorPlayerId" to action.actorPlayerId, "unitId" to action.unitId,
-            "target" to when (action) { is MoveAction -> action.target.fields(); is PatrolAction -> action.target.fields(); else -> null },
+            "target" to when (action) { is MoveAction -> action.target.fields(); is PatrolAction -> action.target.fields(); is BuildAction -> action.target.fields(); else -> null },
             "append" to (action as? PatrolAction)?.append,
-            "targetUnitId" to (action as? AttackAction)?.targetUnitId,
+            "targetUnitId" to when (action) { is AttackAction -> action.targetUnitId; is ResumeConstructionAction -> action.targetUnitId; else -> null },
             "upgradeId" to when (action) { is UpgradeAction -> action.upgradeId; is CancelUpgradeAction -> action.upgradeId; else -> null },
-            "result" to result.fields()) }
+            "result" to result.fields()) + if (action is BuildAction) mapOf("buildingTypeId" to action.buildingTypeId) else emptyMap() }
         capture("after-action")
         return result
     }

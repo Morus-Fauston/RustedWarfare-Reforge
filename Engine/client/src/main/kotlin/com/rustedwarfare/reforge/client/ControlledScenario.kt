@@ -52,9 +52,10 @@ object ControlledScenario {
         val marker = root.resolve("construction.properties")
         require(Files.isRegularFile(marker, NOFOLLOW_LINKS) && !Files.isSymbolicLink(marker) &&
             marker.toRealPath() == root.toRealPath().resolve("construction.properties")) { "$marker: expected ordinary in-root file" }
-        val defense = when (Files.readString(marker).trim().replace("\r\n", "\n")) {
-            "format=rw-reforge.construction-sandbox.v1\nvariant=command-center-start" -> false
-            "format=rw-reforge.construction-sandbox.v1\nvariant=command-center-defense" -> true
+        val variant = when (Files.readString(marker).trim().replace("\r\n", "\n")) {
+            "format=rw-reforge.construction-sandbox.v1\nvariant=command-center-start" -> "start"
+            "format=rw-reforge.construction-sandbox.v1\nvariant=command-center-defense" -> "defense"
+            "format=rw-reforge.construction-sandbox.v1\nvariant=factory-construction" -> "factory"
             else -> error("$marker: unsupported fixed construction fixture")
         }
         fun <T> read(result: ContentResult<T>): T {
@@ -68,13 +69,17 @@ object ControlledScenario {
         val tank = read(ContentLoader.loadCombatUnit(root.resolve("units/tank.ini")))
         val builder = read(ContentLoader.loadBuilder(root.resolve("units/builder.properties")))
         val center = read(ContentLoader.loadCommandCenter(root.resolve("units/commandCenter.properties")))
-        val enemies = if (defense) (1..12).map { index ->
+        val factory = if (variant == "factory") read(ContentLoader.loadFactory(root.resolve("units/landFactory.properties"))) else null
+        require(if (variant == "factory") builder.builder?.buildingTypeIds == listOf("landFactory") &&
+            factory?.construction != null && factory.production?.unitTypeIds == listOf("builder", "c_tank")
+            else builder.builder == null) { "$marker: construction capabilities must match the fixed variant" }
+        val enemies = if (variant == "defense") (1..12).map { index ->
             UnitSpawn("z" + index.toString().padStart(2, '0'), "p2", tank.id,
                 Position(190.0 + ((index - 1) / 6) * 22.0, 150.0 + ((index - 1) % 6) * 22.0), 270.0)
         } else listOf(UnitSpawn("z1", "p2", tank.id, Position(510.0, 110.0), 270.0),
             UnitSpawn("z2", "p2", tank.id, Position(510.0, 330.0), 270.0))
         val spawns = listOf(UnitSpawn("h", "p1", center.id, Position(110.0, 210.0), 0.0)) + enemies
-        return Scenario("p006-construction", map, listOf(tank, builder, center).associateBy { it.id },
+        return Scenario("p006-construction", map, listOfNotNull(tank, builder, center, factory).associateBy { it.id },
             listOf(Player("p1", PlayerControl.LOCAL, "one"), Player("p2", PlayerControl.NONE, "two")),
             spawns,
             CoordinateModel("p001.coordinate.v1", "2d", "x-right", "y-down", "top-left", "world-unit", "double", "ieee754-binary64"),

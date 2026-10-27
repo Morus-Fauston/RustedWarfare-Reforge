@@ -261,8 +261,8 @@ internal object TurretContentReader {
         return file
     }
 
-    /** The native defense reader additionally accepts indexed8; turret inputs remain RGBA8. */
-    internal fun validatePng(path: Path, allowIndexed: Boolean = false) {
+    /** Native fixtures opt into their source encoding; turret inputs remain RGBA8. */
+    internal fun validatePng(path: Path, allowIndexed: Boolean = false, allowGrayAlpha: Boolean = false) {
         require(Files.size(path) <= 16L * 1024 * 1024) { "PNG read bound" }
         DataInputStream(ByteArrayInputStream(Files.readAllBytes(path))).use { input ->
             require(input.readLong() == -8552249625308161526L) { "PNG signature" }
@@ -281,7 +281,8 @@ internal object TurretContentReader {
                     DataInputStream(ByteArrayInputStream(data)).use { h ->
                         width = h.readInt(); height = h.readInt()
                         val depth = h.readUnsignedByte(); colorType = h.readUnsignedByte()
-                        require(width > 0 && height > 0 && depth == 8 && (colorType == 6 || allowIndexed && colorType == 3) &&
+                        require(width > 0 && height > 0 && depth == 8 &&
+                            (colorType == 6 || allowIndexed && colorType == 3 || allowGrayAlpha && colorType == 4) &&
                             h.readUnsignedByte() == 0 && h.readUnsignedByte() == 0 && h.readUnsignedByte() == 0) { "Expected noninterlaced RGBA8" }
                     }
                 } else require(name != "IHDR") { "Duplicate PNG header" }
@@ -299,7 +300,7 @@ internal object TurretContentReader {
                 }
                 if (ended) break
             }
-            val row = width.toLong() * (if (colorType == 3) 1L else 4L) + 1L
+            val row = width.toLong() * (when (colorType) { 3 -> 1L; 4 -> 2L; else -> 4L }) + 1L
             val expected = Math.multiplyExact(row, height.toLong())
             require(ended && compressed.size() > 0 && expected <= 16L * 1024 * 1024) { "PNG size or end" }
             InflaterInputStream(ByteArrayInputStream(compressed.toByteArray())).use { pixels ->

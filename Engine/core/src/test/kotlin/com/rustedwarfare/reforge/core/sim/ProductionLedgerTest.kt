@@ -119,7 +119,7 @@ class ProductionLedgerTest {
     fun reserved_nonce_is_per_owner_and_survives_cancel_and_other_factories() {
         val registered = spec()
         val initial = ProductionLedger.initial(mapOf("p1" to 1750L, "p2" to 350L),
-            mapOf("f" to registered, "g" to registered, "h" to registered.copy(ownerPlayerId = "p2")))
+            mapOf("f" to registered, "g" to registered, "h" to FactoryProductionSpec("p2", registered.products)))
         val paid = assertIs<ProductionChange.Accepted>(initial.enqueue("f", "c_tank", nonce(0))).ledger
         assertEquals(ProductionError.DUPLICATE_NONCE,
             assertIs<ProductionChange.Rejected>(paid.enqueue("g", "c_tank", nonce(0))).error)
@@ -145,7 +145,7 @@ class ProductionLedgerTest {
         assertEquals(0L, paid.balances["p1"])
         assertEquals(ProductionError.INSUFFICIENT_FUNDS,
             assertIs<ProductionChange.Rejected>(paid.enqueue("f", "c_tank", nonce(1))).error)
-        val zeroCost = spec().copy(build = BuildProfile(0L, 0.002f))
+        val zeroCost = FactoryProductionSpec("p1", "c_tank", BuildProfile(0L, 0.002f))
         var current = ProductionLedger.initial(mapOf("p1" to 0L), mapOf("f" to zeroCost))
         repeat(101) { current = assertIs<ProductionChange.Accepted>(current.enqueue("f", "c_tank", nonce(it))).ledger }
         assertEquals(101, current.queue("f").size)
@@ -163,7 +163,7 @@ class ProductionLedgerTest {
         assertEquals(Long.MAX_VALUE, refunded.balances["p1"])
         for (bad in listOf(BuildProfile(-1L, .002f), BuildProfile(350L, 0f), BuildProfile(350L, Float.NaN))) {
             assertFailsWith<IllegalArgumentException> {
-                ProductionLedger.initial(mapOf("p1" to 1750L), mapOf("f" to spec().copy(build = bad)))
+                ProductionLedger.initial(mapOf("p1" to 1750L), mapOf("f" to FactoryProductionSpec("p1", "c_tank", bad)))
             }
         }
     }

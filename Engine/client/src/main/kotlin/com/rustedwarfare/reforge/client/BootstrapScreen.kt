@@ -61,12 +61,22 @@ class BootstrapScreen(
     private lateinit var nativeTooltipText: Label
     private lateinit var productionInput: ProductionButtonInput
     private var productionHover = false
+    private lateinit var secondProduceButton: Table
+    private lateinit var secondProduceIcon: Image
+    private lateinit var secondProduceText: Label
+    private lateinit var secondProductionInput: ProductionButtonInput
+    private var secondProductionHover = false
+    private lateinit var constructionButton: Table
+    private lateinit var constructionIcon: Image
+    private lateinit var constructionText: Label
+    private var constructionHover = false
     private var nativeSelection: Set<String> = emptySet()
     private val nativePanel: Boolean get() = session?.observation?.scenarioId == "p006-construction"
     private val upgradeButtons = mutableMapOf<String, Pair<TextButton, TextButton>>()
     private lateinit var modeBox: SelectBox<String>
     private lateinit var shareBox: CheckBox
     private lateinit var startButton: TextButton
+    private lateinit var exitButton: TextButton
     private lateinit var mapInput: SandboxInput
     private lateinit var contentLabel: Label
     private val groupButtons = mutableListOf<TextButton>()
@@ -133,6 +143,50 @@ class BootstrapScreen(
             table.addListener(productionInput)
             stage.addActor(table)
         }
+        secondProduceIcon = Image().apply { touchable = Touchable.disabled }
+        secondProduceText = Label("Tank", skin).apply { setAlignment(Align.center); touchable = Touchable.disabled }
+        secondProduceButton = Table(skin).also { table ->
+            table.touchable = Touchable.enabled
+            table.setBounds(752f, 188f, 84f, 64f)
+            table.add(secondProduceIcon).size(28f, 28f).padTop(3f).row()
+            table.add(secondProduceText).height(25f)
+            secondProductionInput = ProductionButtonInput({ session }, { nativePanel && !paused },
+                { lastHudState = null; updateHud() }, { secondProductionHover = it },
+                { session?.productionActions?.getOrNull(1)?.typeId })
+            table.addListener(secondProductionInput)
+            stage.addActor(table)
+        }
+        constructionIcon = Image().apply { touchable = Touchable.disabled }
+        constructionText = Label("Factory", skin).apply { setAlignment(Align.center); touchable = Touchable.disabled }
+        constructionButton = Table(skin).also { table ->
+            table.touchable = Touchable.enabled
+            table.setBounds(752f, 256f, 84f, 64f)
+            table.add(constructionIcon).size(28f, 28f).padTop(3f).row()
+            table.add(constructionText).height(25f)
+            table.background = skin.newDrawable("white", Color(.23f, .28f, .26f, 1f))
+            table.addListener(object : InputListener() {
+                private var selected: String? = null
+                override fun enter(event: InputEvent, x: Float, y: Float, pointer: Int, fromActor: Actor?) {
+                    if (pointer == -1) { constructionHover = true; lastHudState = null }
+                }
+                override fun exit(event: InputEvent, x: Float, y: Float, pointer: Int, toActor: Actor?) {
+                    if (pointer == -1) { constructionHover = false; lastHudState = null }
+                }
+                override fun touchDown(event: InputEvent, x: Float, y: Float, pointer: Int, button: Int): Boolean {
+                    if (paused || pointer != 0 || button != Input.Buttons.LEFT || session?.constructionActions?.isEmpty() != false) return false
+                    selected = session?.selectedId
+                    return true
+                }
+                override fun touchUp(event: InputEvent, x: Float, y: Float, pointer: Int, button: Int) {
+                    if (pointer != 0 || button != Input.Buttons.LEFT) return
+                    event.handle()
+                    if (!paused && selected != null && session?.selectedId == selected && x >= 0f && y >= 0f && x < table.width && y < table.height)
+                        session?.constructionActions?.firstOrNull()?.let { mapInput.beginConstruction(it.typeId) }
+                    selected = null
+                }
+            })
+            stage.addActor(table)
+        }
         nativeTooltipIcon = Image()
         nativeTooltipText = Label("", skin).apply { setWrap(true) }
         nativeTooltip = Table(skin).also { table ->
@@ -154,7 +208,7 @@ class BootstrapScreen(
         messageLabel = label("Loading", 40f, 400f, 560f, 260f)
         stopButton = button("Stop (S)", 752f, 168f, 84f) { mapInput.cancel(); session?.stop(); updateHud() }
         patrolButton = button("Patrol (P)", 844f, 168f, 84f) { mapInput.beginPatrol(); updateHud() }
-        button("Exit match", 752f, 72f, 176f) { leaveMatch() }
+        exitButton = button("Exit match", 752f, 72f, 176f) { leaveMatch() }
         contentLabel = label("Content folder", 752f, 378f, 176f, 24f)
         rootField = TextField(launch.configuration.root.toString(), skin).also {
             it.setOnlyFontChars(false)
@@ -380,7 +434,9 @@ class BootstrapScreen(
         }
         updateHud()
         Gdx.gl.glClearColor(0.075f, 0.09f, 0.085f, 1f)
-        nativeTooltip.isVisible = nativePanel && productionHover && session?.productionAction != null && !paused
+        nativeTooltip.isVisible = nativePanel && !paused &&
+            ((productionHover || secondProductionHover) && session?.productionAction != null ||
+                constructionHover && session?.constructionActions?.isNotEmpty() == true)
         if (nativeTooltip.isVisible) nativeTooltip.toFront()
         Gdx.gl.glClear(GL20.GL_COLOR_BUFFER_BIT)
         viewport.apply()
@@ -397,9 +453,9 @@ class BootstrapScreen(
             val clip = Rectangle()
             stage.calculateScissors(Rectangle(16f, 64f, 704f, 512f), clip)
             if (ScissorStack.pushScissors(clip)) try {
-                batch.begin(); graphics?.draw(batch, current.frame); batch.end()
+                batch.begin(); graphics?.draw(batch, current.frame, mapInput.constructionPreview); batch.end()
                 shapes.begin(ShapeRenderer.ShapeType.Line)
-                graphics?.drawOverlay(shapes, current.frame, current.selectedIds, mapInput.box)
+                graphics?.drawOverlay(shapes, current.frame, current.selectedIds, mapInput.box, mapInput.constructionPreview)
                 shapes.end()
             } finally { ScissorStack.popScissors() }
             graphics?.drawMinimap(shapes, current.frame)
@@ -443,10 +499,14 @@ class BootstrapScreen(
         produceButton.setText(current?.productionPrice?.let { "Produce $it" } ?: "Produce")
         cancelProductionButton.isDisabled = queue?.items?.isEmpty() != false
         nativeProduceButton.isVisible = nativePanel && queue != null
+        secondProduceButton.isVisible = nativePanel && current?.productionActions?.size == 2
+        constructionButton.isVisible = nativePanel && current?.constructionActions?.isNotEmpty() == true
         nativeInfo.isVisible = nativePanel && selected != null
         nativeIcon.isVisible = nativePanel && selected != null && state.selectedIds.size == 1
         if (nativeSelection != state.selectedIds) {
             productionInput.cancel()
+            secondProductionInput.cancel()
+            constructionHover = false
             nativeSelection = state.selectedIds.toSet()
         }
         if (nativePanel) {
@@ -463,14 +523,34 @@ class BootstrapScreen(
             current?.productionAction?.let { action ->
                 val icon = graphics?.unitIcon(action.typeId)?.let(::TextureRegionDrawable)
                 nativeProduceIcon.drawable = icon
-                nativeTooltipIcon.drawable = icon
                 nativeProduceText.setText(action.title + if (action.count > 0) " (${action.count})" else "")
                 nativeProduceText.color = if (action.affordable) Color(.9f, .92f, .9f, 1f) else Color(.55f, .58f, .55f, 1f)
                 nativeProduceButton.background = skin.newDrawable("white", if (productionInput.pressed)
                     Color(.37f, .48f, .4f, 1f) else Color(.23f, .28f, .26f, 1f))
-                nativeTooltipText.setText("${action.title} (\$${action.price})\n8.3s\nHP ${action.maximumHealth?.toInt()}\n" +
-                    String.format(Locale.ROOT, "Speed %.2f\n", action.moveSpeed) +
+            }
+            current?.productionActions?.getOrNull(1)?.let { action ->
+                secondProduceIcon.drawable = graphics?.unitIcon(action.typeId)?.let(::TextureRegionDrawable)
+                secondProduceText.setText(action.title + if (action.count > 0) " (${action.count})" else "")
+                secondProduceText.color = if (action.affordable) Color(.9f, .92f, .9f, 1f) else Color(.55f, .58f, .55f, 1f)
+                secondProduceButton.background = skin.newDrawable("white", if (secondProductionInput.pressed)
+                    Color(.37f, .48f, .4f, 1f) else Color(.23f, .28f, .26f, 1f))
+            }
+            current?.productionActions?.getOrNull(if (secondProductionHover) 1 else 0)?.let { action ->
+                nativeTooltipIcon.drawable = graphics?.unitIcon(action.typeId)?.let(::TextureRegionDrawable)
+                nativeTooltipText.setText("${action.title} (\$${action.price})\n" +
+                    String.format(Locale.ROOT, "%.1fs\nHP %d\nSpeed %.2f\n", 1.0 / action.rate / 60.0,
+                        action.maximumHealth?.toInt() ?: 0, action.moveSpeed) +
                     (if (action.affordable) "Left: produce" else "Insufficient funds") + "\nRight: cancel one")
+            }
+            current?.constructionActions?.firstOrNull()?.let { action ->
+                constructionIcon.drawable = graphics?.unitIcon(action.typeId)?.let(::TextureRegionDrawable)
+                constructionText.setText("Factory \$${action.price}")
+                if (constructionHover) {
+                    nativeTooltipIcon.drawable = constructionIcon.drawable
+                    nativeTooltipText.setText("${action.title} (\$${action.price})\n" +
+                        String.format(Locale.ROOT, "%.1fs\nHP %d\n", 1.0 / action.rate / 60.0, action.maximumHealth.toInt()) +
+                        "Left: choose site\nEsc / right: cancel")
+                }
             }
             productionLabel.setText(state.balance?.let { "\$$it" } ?: "")
             productionLabel.color = Color(.45f, .91f, .65f, 1f)
@@ -487,6 +567,10 @@ class BootstrapScreen(
             buttons.second.isDisabled = current?.selectedUpgradeQueue?.items?.none { it.actionKey == key } != false
         }
         stopButton.isDisabled = selected == null
+        stopButton.setY(if (nativePanel) 144f else 168f)
+        patrolButton.setY(if (nativePanel) 144f else 168f)
+        startButton.setY(if (nativePanel) 96f else 120f)
+        exitButton.setY(if (nativePanel) 48f else 72f)
         stopButton.isVisible = current != null
         patrolButton.isVisible = current != null && !touchControls
         patrolButton.isDisabled = current?.canPatrol != true
@@ -498,7 +582,7 @@ class BootstrapScreen(
         patrolLabel.setText(if (state.patrolMode) "Sent points ${state.patrolPoints}\n$taskText\nLeft: point / Esc: finish"
             else if (selected?.tasks?.isNotEmpty() == true) taskText else "P: set patrol points")
         // Factories cannot receive Patrol; keep this hint clear of the production controls.
-        if (queue != null || upgrades.isNotEmpty()) patrolLabel.isVisible = false
+        if (queue != null || upgrades.isNotEmpty() || current?.constructionActions?.isNotEmpty() == true) patrolLabel.isVisible = false
         selectedLabel.isVisible = current != null
         listOf<Actor>(contentLabel, rootField, modeBox, shareBox).forEach { it.isVisible = launch.canEdit }
         groupButtons.forEachIndexed { index, button -> button.setText("${index + 1} (${state.groups[index]})"); button.isDisabled = current == null }
@@ -575,7 +659,9 @@ class BootstrapScreen(
     }
 
     private fun cancelInput() {
+        constructionHover = false
         if (::productionInput.isInitialized) productionInput.cancel()
+        if (::secondProductionInput.isInitialized) secondProductionInput.cancel()
         if (::nativeTooltip.isInitialized) nativeTooltip.isVisible = false
         if (::mapInput.isInitialized) mapInput.cancel()
         if (::stage.isInitialized) { stage.cancelTouchFocus(); stage.unfocusAll() }
@@ -585,6 +671,7 @@ class BootstrapScreen(
         "commandCenter" -> "Command"
         "builder" -> "Builder"
         "c_tank" -> "Tank"
+        "landFactory" -> "Factory"
         else -> type
     }
 

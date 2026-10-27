@@ -39,6 +39,12 @@ internal class UnitTaskQueue private constructor(private val slots: List<UnitTas
                 UnitTaskKind.ATTACK -> require(task.target == null && !task.targetUnitId.isNullOrEmpty()) {
                     "Invalid attack task"
                 }
+                UnitTaskKind.BUILD -> require(task.target?.let { it.x.isFinite() && it.y.isFinite() } == true &&
+                    !task.buildingTypeId.isNullOrEmpty() && task.buildingNonce?.matches(Regex("[0-9a-f]{32}")) == true &&
+                    task.targetUnitId == null) { "Invalid construction intent" }
+                UnitTaskKind.CONSTRUCT -> require(!task.targetUnitId.isNullOrEmpty() && task.target == null) {
+                    "Invalid construction target"
+                }
             }
         }
     }

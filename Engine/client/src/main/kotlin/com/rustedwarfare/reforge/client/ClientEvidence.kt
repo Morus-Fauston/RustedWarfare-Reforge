@@ -40,14 +40,22 @@ internal fun Observation.fields(): Map<String, Any?> = mapOf(
         "angularVelocity" to unit.angularVelocity, "moveTarget" to unit.moveTarget?.fields(),
         "pathPoints" to unit.pathPoints.map { it.fields() }, "movementState" to unit.movementState.name.lowercase(),
         "health" to unit.health, "maxHealth" to unit.maxHealth, "alive" to unit.alive,
+        "constructionProgress" to unit.constructionProgress, "constructionTargetId" to unit.constructionTargetId,
         "attackTargetId" to unit.attackTargetId, "turretHeading" to unit.turretHeading, "cooldown" to unit.cooldown,
         "height" to unit.height,
         "pointDefense" to unit.pointDefense?.let { mapOf("energy" to it.energy, "exhausted" to it.exhausted) },
         "tasks" to unit.tasks.map { task -> mapOf("kind" to task.kind.name.lowercase(),
-            "target" to task.target?.fields(), "targetUnitId" to task.targetUnitId) },
+            "target" to task.target?.fields(), "targetUnitId" to task.targetUnitId) +
+                (task.buildingTypeId?.let { mapOf("buildingTypeId" to it) } ?: emptyMap()) },
     ) },
     "events" to events.map { mapOf("kind" to it.kind, "unitId" to it.unitId) },
     "actionResults" to actionResults.map { it.fields() },
+    "construction" to construction?.let { value -> mapOf("clock" to value.clock,
+        "buildings" to value.buildings.map { mapOf("unitId" to it.unitId, "objectId" to it.objectId,
+            "updateKey" to it.updateKey, "progress" to it.progress) },
+        "workers" to value.workers.map { mapOf("unitId" to it.unitId, "elapsed" to it.elapsed,
+            "retryTime" to it.retryTime, "preparation" to it.preparation, "working" to it.working,
+            "previousTargetActive" to it.previousTargetActive) }, "nonces" to value.nonces) },
 )
 
 internal fun PlayerObservation.fields(): Map<String, Any?> =
