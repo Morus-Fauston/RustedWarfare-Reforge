@@ -15,6 +15,10 @@ internal class UpgradeQueues private constructor(queues: Map<String, List<Pendin
         fun initial(unitIds: Set<String>) = UpgradeQueues(unitIds.sorted().associateWith { emptyList() })
     }
     fun queue(unitId: String): List<PendingUpgrade> = queues[unitId].orEmpty()
+    fun register(unitId: String): UpgradeQueues {
+        require(unitId !in queues) { "Upgrade queue is already registered" }
+        return UpgradeQueues(queues + (unitId to emptyList()))
+    }
     fun enqueue(unitId: String, action: UpgradeActionProfile): UpgradeQueues {
         require(unitId in queues && queue(unitId).none { it.actionKey == action.actionKey })
         return UpgradeQueues(queues + (unitId to (queue(unitId) + PendingUpgrade(action.actionKey,

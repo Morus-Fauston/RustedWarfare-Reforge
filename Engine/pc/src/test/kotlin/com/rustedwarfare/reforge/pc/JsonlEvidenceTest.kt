@@ -14,6 +14,26 @@ import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
 class JsonlEvidenceTest {
+    @Test fun economic_upgrades_identify_the_new_ticket_and_every_loaded_input() {
+        val repo = generateSequence(Path.of("").toAbsolutePath()) { it.parent }
+            .first { Files.isRegularFile(it.resolve("AGENTS.md")) }
+        val root = repo.resolve(".scratch/开发票据/引擎重写/P006-建造经济与原版操作/evidence/ENG-P006-004/20261028-implementation-01/input")
+        val temporary = Files.createTempDirectory("p006-upgrade-evidence-")
+        try {
+            val directory = temporary.resolve("run")
+            JsonlEvidence(directory, "upgrades-run", root).use { it.record("load-ready", mapOf("generation" to 1L)) }
+            assertEquals("ENG-P006-004", JsonReader().parse(Files.readString(directory.resolve("manifest.json"))).getString("ticket"))
+            val files = records(directory).single { it.getString("kind") == "input-identities" }.get("files").toList()
+            val expected = Files.walk(root).use { paths -> paths.filter {
+                Files.isRegularFile(it) && it.fileName.toString() != "manifest.json" }.toList().toSet() }
+            assertEquals(34, expected.size)
+            assertEquals(expected, files.map { Path.of(it.getString("path")) }.toSet())
+            for (entry in files) assertEquals(evidenceSha256(Path.of(entry.getString("path"))), entry.getString("sha256"))
+        } finally {
+            Files.walk(temporary).use { paths -> paths.sorted(Comparator.reverseOrder()).forEach { Files.delete(it) } }
+        }
+    }
+
     @Test fun economic_construction_records_every_loaded_template_and_image_under_its_own_ticket() {
         val repo = generateSequence(Path.of("").toAbsolutePath()) { it.parent }
             .first { Files.isRegularFile(it.resolve("AGENTS.md")) }

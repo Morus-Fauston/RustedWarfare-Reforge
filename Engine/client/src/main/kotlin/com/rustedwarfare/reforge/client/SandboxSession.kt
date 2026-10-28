@@ -31,6 +31,7 @@ class SandboxSession(scenario: Scenario, private val evidence: ClientEvidence = 
     private val selection = SelectionState(clockMillis)
     val selectedId: String? get() = selection.primaryId
     val selectedIds: Set<String> get() = selection.selectedIds
+    val selectionRevision: Long get() = selection.revision
     fun saveGroup(index: Int) {
         if (!isOpen) return
         selection.saveGroup(index)
@@ -224,6 +225,24 @@ class SandboxSession(scenario: Scenario, private val evidence: ClientEvidence = 
 
     val selectedUpgradeQueue: UpgradeQueueObservation?
         get() = if (selectedUpgrades.isEmpty()) null else observation.upgradeQueues.firstOrNull { it.unitId == selectedId }
+
+    val economicUpgradeTooltip: String?
+        get() {
+            val action = selectedUpgrades.singleOrNull()?.takeIf { it.actionKey in setOf("upgrade_t2", "upgrade_t3") } ?: return null
+            val unit = observation.units.single { it.unitId == selectedId }
+            // Original menu labels are nominal times; they do not change simulation rates.
+            val seconds = when (unit.typeId) {
+                "extractorT1" -> "27.7"
+                "extractorT2" -> "55.5"
+                "fabricatorT1" -> "65.6"
+                "fabricatorT2" -> "93.3"
+                else -> return null
+            }
+            return "Upgrade - T${action.targetTypeId.last()} (\$${action.price})\n" +
+                "${seconds}s\n" +
+                "Income +\$${nominalIncome(unit.typeId)?.toInt() ?: 0} -> +\$${nominalIncome(action.targetTypeId)?.toInt() ?: 0}\n" +
+                (if ((observation.credits ?: 0.0) >= action.price) "Left: upgrade" else "Insufficient funds") + "\nRight: cancel one"
+        }
 
     fun upgrade(actionKey: String): ActionResult? = selectedUpgrades.firstOrNull { it.actionKey == actionKey }?.let {
         apply(UpgradeAction("click-${++actionNumber}", "p1", checkNotNull(selectedId), it.actionKey, context.world))

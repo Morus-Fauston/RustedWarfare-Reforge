@@ -58,6 +58,7 @@ object ControlledScenario {
             "format=rw-reforge.construction-sandbox.v1\nvariant=factory-construction" -> "factory"
             "format=rw-reforge.construction-sandbox.v1\nvariant=economy-construction" -> "economy"
             "format=rw-reforge.construction-sandbox.v1\nvariant=economy-death" -> "economy-death"
+            "format=rw-reforge.construction-sandbox.v1\nvariant=economy-upgrades" -> "economy-upgrades"
             else -> error("$marker: unsupported fixed construction fixture")
         }
         fun <T> read(result: ContentResult<T>): T {
@@ -71,11 +72,13 @@ object ControlledScenario {
         val tank = read(ContentLoader.loadCombatUnit(root.resolve("units/tank.ini")))
         val builder = read(ContentLoader.loadBuilder(root.resolve("units/builder.properties")))
         val center = read(ContentLoader.loadCommandCenter(root.resolve("units/commandCenter.properties")))
-        val economic = variant in setOf("economy", "economy-death")
+        val economic = variant in setOf("economy", "economy-death", "economy-upgrades")
+        val economyUpgrades = variant == "economy-upgrades"
         val factory = if (variant == "factory" || economic) read(ContentLoader.loadFactory(root.resolve("units/landFactory.properties"))) else null
-        val economicUnits = if (economic) listOf(
-            read(ContentLoader.loadEconomyUnit(root.resolve("units/extractor.ini"))),
-            read(ContentLoader.loadEconomyUnit(root.resolve("units/fabricatorT1.ini")))) else emptyList()
+        val economicUnits = if (economic) (listOf("extractor", "fabricatorT1") +
+            if (economyUpgrades) listOf("extractorT2", "extractorT3", "fabricatorT2", "fabricatorT3") else emptyList()).map {
+            read(ContentLoader.loadEconomyUnit(root.resolve("units/$it.ini"), economyUpgrades))
+        } else emptyList()
         require(if (variant == "factory" || economic) builder.builder?.buildingTypeIds ==
             (if (economic) listOf("extractorT1", "landFactory", "fabricatorT1") else listOf("landFactory")) &&
             factory?.construction != null && factory.production?.unitTypeIds == listOf("builder", "c_tank")

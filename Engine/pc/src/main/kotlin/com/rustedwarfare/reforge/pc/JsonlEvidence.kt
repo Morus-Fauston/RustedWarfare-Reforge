@@ -29,6 +29,7 @@ class JsonlEvidence internal constructor(private val directory: Path, private va
                     Files.readString(inputs.resolve("construction.properties")).lineSequence().map { it.trim() }
                         .firstOrNull { it.startsWith("variant=") }) {
                     "variant=economy-construction", "variant=economy-death" -> "ENG-P006-003"
+                    "variant=economy-upgrades" -> "ENG-P006-004"
                     "variant=factory-construction" -> "ENG-P006-002"
                     else -> "ENG-P006-001"
                 }
@@ -47,6 +48,7 @@ class JsonlEvidence internal constructor(private val directory: Path, private va
                     "ENG-P006-001" -> "construction-windows-client"
                     "ENG-P006-002" -> "factory-construction-windows-client"
                     "ENG-P006-003" -> "economy-construction-windows-client"
+                    "ENG-P006-004" -> "economy-upgrades-windows-client"
                     "ENG-P005-007" -> "patrol-windows-client"
                     "ENG-P005-004" -> "upgrade-windows-client"
                     "ENG-P005-005" -> "point-defense-windows-client"
@@ -105,6 +107,9 @@ class JsonlEvidence internal constructor(private val directory: Path, private va
                 if (scenario.unitDefinitions.containsKey("extractorT1")) files.addAll(listOf(
                     contentRoot.resolve("units/extractor.ini"), contentRoot.resolve("units/extractor_common.ini")))
                 if (scenario.unitDefinitions.containsKey("fabricatorT1")) files.add(contentRoot.resolve("units/fabricatorT1.ini"))
+                for (type in listOf("extractorT2", "extractorT3", "fabricatorT2", "fabricatorT3")) {
+                    if (scenario.unitDefinitions.containsKey(type)) files.add(contentRoot.resolve("units/$type.ini"))
+                }
             } else if (production) {
                 files.add(contentRoot.resolve("production.properties"))
                 files.add(contentRoot.resolve("units/landFactory.properties"))
@@ -114,7 +119,7 @@ class JsonlEvidence internal constructor(private val directory: Path, private va
             }
             if (turret) files.addAll(listOf(contentRoot.resolve("units/turret_t1.ini"),
                 contentRoot.resolve("units/turret_common_land.ini")))
-            if (upgrade) files.addAll(listOf(contentRoot.resolve("units/turret_t2_gun.ini"),
+            if (scenario.unitDefinitions["c_turret_t1"]?.upgrades != null) files.addAll(listOf(contentRoot.resolve("units/turret_t2_gun.ini"),
                 contentRoot.resolve("units/turret_t1_artillery.ini")))
             if (defense) files.add(contentRoot.resolve("units/laserDefence.properties"))
             files += scenario.map.tileSets.map { it.imagePath }

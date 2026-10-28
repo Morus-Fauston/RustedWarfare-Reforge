@@ -797,6 +797,19 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
         }
     }
 
+    private fun canContinueConstruction(worker: MutableUnit, target: MutableUnit): Boolean {
+        val types = checkNotNull(worker.definition.builder).buildingTypeIds
+        if (target.typeId in types) return true
+        // An already assigned project remains maintainable after its ordinary upgrade.
+        // This does not add higher tiers to the player's construction menu.
+        val base = when (target.typeId) {
+            "extractorT2", "extractorT3" -> "extractorT1"
+            "fabricatorT2", "fabricatorT3" -> "fabricatorT1"
+            else -> return false
+        }
+        return base in types && target.definition.construction != null
+    }
+
     private fun dispatchConstruction(worker: MutableUnit, input: Scenario, step: Step, wasWorking: Boolean) {
         val task = worker.tasks.firstOrNull() ?: return
         if (task.kind != UnitTaskKind.BUILD && task.kind != UnitTaskKind.CONSTRUCT) return
@@ -804,7 +817,7 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
         if (task.kind == UnitTaskKind.CONSTRUCT) {
             val target = units[task.targetUnitId]
             if (target == null || !target.alive || target.ownerPlayerId != worker.ownerPlayerId ||
-                target.typeId !in checkNotNull(worker.definition.builder).buildingTypeIds ||
+                !canContinueConstruction(worker, target) ||
                 target.constructionProgress >= 1f && checkNotNull(target.health) >= checkNotNull(target.definition.maximumHealth)) {
                 worker.taskQueue = worker.taskQueue.pop()
                 worker.constructionElapsed = 0f
@@ -913,6 +926,7 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
                     checkNotNull(input.unitDefinitions.getValue(it).build) }))
             } ?: paid
             units[publicId] = created
+            if (definition.upgrades != null) upgradeQueues = checkNotNull(upgradeQueues).register(publicId)
             constructionNonces = constructionNonces + (worker.ownerPlayerId to
                 (constructionNonces[worker.ownerPlayerId].orEmpty() + nonce))
             buildingTerrain = BuildingTerrain.fromLive(input.map, units.values, checkNotNull(buildingTerrain))
@@ -1105,6 +1119,8 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
                 }
                 if (unit.definition.builder != null) updateConstruction(unit, currentScenario, step)
                 if (unit.definition.production != null && unit.constructionProgress >= 1f) advanceProduction(unit, currentScenario)
+                val economicBuilding = unit.definition.income != null && unit.definition.construction != null
+                if (economicBuilding && unit.constructionProgress >= 1f) advanceUpgrade(unit)
                 unit.definition.income?.takeIf { unit.constructionProgress >= 1f }?.let { income ->
                     unit.incomeElapsed += step.delta.toFloat()
                     require(unit.incomeElapsed.isFinite()) { "Income elapsed time must remain finite" }
@@ -1120,7 +1136,7 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
                 updatePointDefense(unit, step.delta)
                 updateUnit(unit, currentScenario.map, step.delta, step.stepIndex, motionSamples)
                 unit.combat?.let { it.cooldown = maxOf(0.0, it.cooldown - step.delta) }
-                advanceUpgrade(unit)
+                if (!economicBuilding) advanceUpgrade(unit)
             }
             updateProjectiles(step.delta, existingProjectileIds)
             missileTargets = missileTargets?.refresh(orderedUnits())
@@ -1287,8 +1303,8 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
                 it.copy(initialBalances = Collections.unmodifiableMap(LinkedHashMap(it.initialBalances))) },
         )
         productionLedger = initialLedger
-        upgradeQueues = nextScenario.units.filter { nextScenario.unitDefinitions.getValue(it.typeId).upgrades != null }
-            .map { it.unitId }.toSet().takeIf { it.isNotEmpty() }?.let(UpgradeQueues::initial)
+        upgradeQueues = if (nextScenario.unitDefinitions.values.any { it.upgrades != null }) UpgradeQueues.initial(
+            nextScenario.units.filter { nextScenario.unitDefinitions.getValue(it.typeId).upgrades != null }.map { it.unitId }.toSet()) else null
         buildingTerrain = initialBuildings
         units = linkedMapOf()
         projectiles = mutableListOf()

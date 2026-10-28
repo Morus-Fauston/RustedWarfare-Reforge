@@ -72,6 +72,12 @@ class BootstrapScreen(
     private var nativeSelection: Set<String> = emptySet()
     private val nativePanel: Boolean get() = session?.observation?.scenarioId == "p006-construction"
     private val upgradeButtons = mutableMapOf<String, Pair<TextButton, TextButton>>()
+    private lateinit var economicUpgradeCard: Table
+    private lateinit var economicUpgradeIcon: Image
+    private lateinit var economicUpgradeText: Label
+    private lateinit var economicUpgradeProgress: ProgressBar
+    private lateinit var economicUpgradeInput: EconomyUpgradeInput
+    private var economicUpgradeHover = false
     private lateinit var modeBox: SelectBox<String>
     private lateinit var shareBox: CheckBox
     private lateinit var startButton: TextButton
@@ -173,6 +179,23 @@ class BootstrapScreen(
             table.addListener(listener)
             stage.addActor(table)
             constructionCards[type] = ConstructionCard(table, icon, text, listener)
+        }
+        economicUpgradeIcon = Image().apply { touchable = Touchable.disabled }
+        economicUpgradeText = Label("", skin).apply { setAlignment(Align.center); setFontScale(.85f); touchable = Touchable.disabled }
+        economicUpgradeProgress = ProgressBar(0f, 1f, .0001f, false, ProgressBar.ProgressBarStyle(
+            skin.newDrawable("white", Color(.10f, .13f, .11f, 1f)).apply { minHeight = 6f }, null).apply {
+                knobBefore = skin.newDrawable("white", Color(.45f, .91f, .65f, 1f))
+            }).apply { touchable = Touchable.disabled }
+        economicUpgradeCard = Table(skin).also { table ->
+            table.touchable = Touchable.enabled
+            table.setBounds(752f, 238f, 176f, 90f)
+            table.add(economicUpgradeIcon).size(30f).padTop(4f).row()
+            table.add(economicUpgradeText).height(39f).row()
+            table.add(economicUpgradeProgress).width(160f).height(6f).padBottom(4f)
+            economicUpgradeInput = EconomyUpgradeInput({ session }, { nativePanel && !paused },
+                { lastHudState = null; updateHud() }, { economicUpgradeHover = it; lastHudState = null })
+            table.addListener(economicUpgradeInput)
+            stage.addActor(table)
         }
         nativeTooltipIcon = Image()
         nativeTooltipText = Label("", skin).apply { setWrap(true) }
@@ -423,7 +446,8 @@ class BootstrapScreen(
         Gdx.gl.glClearColor(0.075f, 0.09f, 0.085f, 1f)
         nativeTooltip.isVisible = nativePanel && !paused &&
             ((productionHover || secondProductionHover) && session?.productionAction != null ||
-                constructionHover != null && session?.constructionActions?.any { it.typeId == constructionHover } == true)
+                constructionHover != null && session?.constructionActions?.any { it.typeId == constructionHover } == true ||
+                economicUpgradeHover && economicUpgradeCard.isVisible)
         if (nativeTooltip.isVisible) nativeTooltip.toFront()
         Gdx.gl.glClear(GL20.GL_COLOR_BUFFER_BIT)
         viewport.apply()
@@ -500,6 +524,7 @@ class BootstrapScreen(
         if (nativeSelection != state.selectedIds) {
             productionInput.cancel()
             secondProductionInput.cancel()
+            economicUpgradeInput.cancel()
             constructionCards.values.forEach { it.input.cancel() }
             constructionHover = null
             nativeSelection = state.selectedIds.toSet()
@@ -514,7 +539,7 @@ class BootstrapScreen(
             nativeInfo.setText(selected?.let { unit ->
                 "${unit.health?.toInt() ?: 0} / ${unit.maxHealth?.toInt() ?: 0}" +
                     (current?.nominalIncome(unit.typeId)?.let { "\n+\$${it.toInt()}" } ?: "") +
-                    (if (unit.typeId in setOf("extractorT1", "fabricatorT1"))
+                    (if (unit.typeId.startsWith("extractorT") || unit.typeId.startsWith("fabricatorT"))
                         if (unit.constructionProgress < 1f) "\nBuilding ${(unit.constructionProgress * 100f).toInt()}%" else "\nActive" else "")
             } ?: "")
             current?.productionAction?.let { action ->
@@ -559,6 +584,25 @@ class BootstrapScreen(
             productionLabel.color = Color(.9f, .92f, .9f, 1f)
         }
         val upgrades = current?.selectedUpgrades.orEmpty()
+        val economicUpgrade = upgrades.singleOrNull()?.takeIf { it.actionKey in setOf("upgrade_t2", "upgrade_t3") }
+        economicUpgradeCard.isVisible = nativePanel && economicUpgrade != null
+        if (economicUpgrade != null && economicUpgradeCard.isVisible) {
+            val item = current?.selectedUpgradeQueue?.items?.singleOrNull { it.actionKey == economicUpgrade.actionKey }
+            val affordable = (current?.observation?.credits ?: 0.0) >= economicUpgrade.price
+            val tier = economicUpgrade.targetTypeId.last()
+            economicUpgradeIcon.drawable = selected?.let { graphics?.unitIcon(it.typeId) }?.let(::TextureRegionDrawable)
+            economicUpgradeText.setText("^ Upgrade - T$tier${if (item != null) " (1)" else ""}\n" +
+                if (item == null) "\$${economicUpgrade.price}" else "${(item.progress * 100f).toInt()}%")
+            economicUpgradeText.color = if (affordable || item != null) Color(.9f, .92f, .9f, 1f) else Color(.55f, .58f, .55f, 1f)
+            economicUpgradeProgress.isVisible = item != null
+            economicUpgradeProgress.setValue(item?.progress ?: 0f)
+            economicUpgradeCard.background = skin.newDrawable("white", if (economicUpgradeInput.pressed)
+                Color(.37f, .48f, .4f, 1f) else Color(.23f, .28f, .26f, 1f))
+            if (economicUpgradeHover) {
+                nativeTooltipIcon.drawable = economicUpgradeIcon.drawable
+                nativeTooltipText.setText(current?.economicUpgradeTooltip ?: "")
+            }
+        }
         for ((key, buttons) in upgradeButtons) {
             val action = upgrades.firstOrNull { it.actionKey == key }
             buttons.first.isVisible = action != null
@@ -664,6 +708,7 @@ class BootstrapScreen(
         constructionCards.values.forEach { it.input.cancel() }
         if (::productionInput.isInitialized) productionInput.cancel()
         if (::secondProductionInput.isInitialized) secondProductionInput.cancel()
+        if (::economicUpgradeInput.isInitialized) economicUpgradeInput.cancel()
         if (::nativeTooltip.isInitialized) nativeTooltip.isVisible = false
         if (::mapInput.isInitialized) mapInput.cancel()
         if (::stage.isInitialized) { stage.cancelTouchFocus(); stage.unfocusAll() }
@@ -674,8 +719,8 @@ class BootstrapScreen(
         "builder" -> "Builder"
         "c_tank" -> "Tank"
         "landFactory" -> "Factory"
-        "extractorT1" -> "Extractor"
-        "fabricatorT1" -> "Fabricator"
+        "extractorT1", "extractorT2", "extractorT3" -> "Extractor T${type.last()}"
+        "fabricatorT1", "fabricatorT2", "fabricatorT3" -> "Fabricator T${type.last()}"
         else -> type
     }
 
