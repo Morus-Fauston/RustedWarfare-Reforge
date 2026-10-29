@@ -98,6 +98,12 @@ internal class ProductionLedger private constructor(
         return copy(preciseBalances = amounts + (owner to minOf(amounts.getValue(owner) + credits.toDouble(), 999999999.0)))
     }
 
+    fun creditReclaim(owner: String, credits: Double): ProductionLedger {
+        require(credits.isFinite() && credits >= 0.0)
+        val amounts = checkNotNull(preciseBalances)
+        return copy(preciseBalances = amounts + (owner to (amounts.getValue(owner) + credits)))
+    }
+
     fun validateCandidate() {
         require(integerBalances?.values?.all { it >= 0L } != false &&
             preciseBalances?.values?.all { it.isFinite() && it >= 0.0 } != false) { "Production balance must remain finite and nonnegative" }

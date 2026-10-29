@@ -327,6 +327,7 @@ object WholeChainPerf {
             if (index > 0) check(samples[index - 1].outcome == PathSearchOutcome.UNREACHABLE) { "Duplicate search after success" }
             when (sample.reason) {
                 PathSearchReason.ATTACK_PURSUIT -> error("Movement-only whole-chain profile does not support attack pursuit")
+                PathSearchReason.CONSTRUCTION_APPROACH -> error("Movement-only whole-chain profile does not support construction approach")
                 PathSearchReason.USER_MOVE -> check(step == 0 && samples.size == 1 && sample.searchStart == old.position && sample.searchTarget == goal && sample.preservedPrefixPointCount == 0)
                 PathSearchReason.KNOWLEDGE_REPLAN -> {
                     val hasPrefix = prefix.isNotEmpty() && prefix.size < old.pathPoints.size

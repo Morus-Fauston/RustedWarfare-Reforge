@@ -69,9 +69,14 @@ class BootstrapScreen(
     private data class ConstructionCard(val table: Table, val icon: Image, val text: Label, val input: ConstructionButtonInput)
     private val constructionCards = linkedMapOf<String, ConstructionCard>()
     private var constructionHover: String? = null
+    private lateinit var reclaimCard: Table
+    private lateinit var reclaimInput: ReclaimButtonInput
+    private var reclaimHover = false
     private var nativeSelection: Set<String> = emptySet()
     private val nativePanel: Boolean get() = session?.observation?.scenarioId == "p006-construction"
     private val upgradeButtons = mutableMapOf<String, Pair<TextButton, TextButton>>()
+    private val upgradeInputs = mutableListOf<UpgradeButtonInput>()
+    private var upgradeHover: String? = null
     private lateinit var economicUpgradeCard: Table
     private lateinit var economicUpgradeIcon: Image
     private lateinit var economicUpgradeText: Label
@@ -99,7 +104,7 @@ class BootstrapScreen(
         val selectedIds: Set<String>, val groups: List<Int>, val feedback: String?, val step: Long?, val canEdit: Boolean,
         val loading: Boolean, val error: String?, val hasSession: Boolean,
         val balance: Long?, val queue: com.rustedwarfare.reforge.core.sim.FactoryQueueObservation?,
-        val patrolMode: Boolean, val patrolPoints: Int)
+        val patrolMode: Boolean, val patrolPoints: Int, val reclaimMode: Boolean, val workerQueueText: String?)
     private var lastHudState: HudState? = null
 
     override fun create() {
@@ -117,6 +122,8 @@ class BootstrapScreen(
         stage = Stage(viewport, batch).also { created += { it.dispose() } }
         groupButtons.clear()
         upgradeButtons.clear()
+        upgradeInputs.clear()
+        upgradeHover = null
         constructionCards.clear()
         // Consume the whole panel, including empty space, for the full press chain.
         stage.addActor(Actor().apply {
@@ -162,7 +169,7 @@ class BootstrapScreen(
             table.addListener(secondProductionInput)
             stage.addActor(table)
         }
-        for (type in listOf("extractorT1", "landFactory", "fabricatorT1")) {
+        for (type in listOf("extractorT1", "landFactory", "fabricatorT1", "c_turret_t1", "laserDefence")) {
             val icon = Image().apply { touchable = Touchable.disabled }
             val text = Label("", skin).apply { setAlignment(Align.center); touchable = Touchable.disabled; setFontScale(.7f) }
             val table = Table(skin)
@@ -175,10 +182,20 @@ class BootstrapScreen(
                 { mapInput.beginConstruction(it) }, { hovered ->
                     if (hovered) constructionHover = type else if (constructionHover == type) constructionHover = null
                     lastHudState = null
-                })
+                }, modeRevision = { mapInput.modeRevision })
             table.addListener(listener)
             stage.addActor(table)
             constructionCards[type] = ConstructionCard(table, icon, text, listener)
+        }
+        reclaimCard = Table(skin).also { table ->
+            table.touchable = Touchable.enabled
+            table.setBounds(752f, 280f, 84f, 54f)
+            table.add(Label("Reclaim", skin).apply { setAlignment(Align.center); touchable = Touchable.disabled })
+            reclaimInput = ReclaimButtonInput({ session }, { nativePanel && !paused },
+                { mapInput.beginReclaim() }, { lastHudState = null; updateHud() },
+                { reclaimHover = it; lastHudState = null }, modeRevision = { mapInput.modeRevision })
+            table.addListener(reclaimInput)
+            stage.addActor(table)
         }
         economicUpgradeIcon = Image().apply { touchable = Touchable.disabled }
         economicUpgradeText = Label("", skin).apply { setAlignment(Align.center); setFontScale(.85f); touchable = Touchable.disabled }
@@ -208,9 +225,25 @@ class BootstrapScreen(
             table.add(nativeTooltipText).width(204f).pad(8f)
             stage.addActor(table)
         }
-        for ((key, title, y) in listOf(Triple("upgrade_gun", "Gun 1000", 264f), Triple("upgrade_artillery", "Art 1600", 216f))) {
-            val buy = button(title, 752f, y, 84f) { session?.upgrade(key); updateHud() }
-            val cancel = button("Cancel", 844f, y, 84f) { session?.cancelUpgrade(key); updateHud() }
+        for ((key, title, y) in listOf(Triple("upgrade_gun", "Gun T2", 264f), Triple("upgrade_artillery", "Artillery", 216f))) {
+            fun endpoint(text: String, x: Float, cancel: Boolean): TextButton = TextButton(text, skin).also { button ->
+                button.setBounds(x, y, 84f, 40f)
+                val input = UpgradeButtonInput({ session }, { !paused && button.isVisible && !button.isDisabled },
+                    key, cancel, { lastHudState = null; updateHud() })
+                upgradeInputs += input
+                button.addListener(input)
+                button.addListener(object : InputListener() {
+                    override fun enter(event: InputEvent, x: Float, y: Float, pointer: Int, fromActor: Actor?) {
+                        if (pointer == -1) { upgradeHover = key; lastHudState = null }
+                    }
+                    override fun exit(event: InputEvent, x: Float, y: Float, pointer: Int, toActor: Actor?) {
+                        if (pointer == -1 && upgradeHover == key) { upgradeHover = null; lastHudState = null }
+                    }
+                })
+                stage.addActor(button)
+            }
+            val buy = endpoint(title, 752f, false)
+            val cancel = endpoint("Cancel", 844f, true)
             upgradeButtons[key] = buy to cancel
         }
         statusLabel = label("", 16f, 52f, 480f, 44f)
@@ -447,7 +480,8 @@ class BootstrapScreen(
         nativeTooltip.isVisible = nativePanel && !paused &&
             ((productionHover || secondProductionHover) && session?.productionAction != null ||
                 constructionHover != null && session?.constructionActions?.any { it.typeId == constructionHover } == true ||
-                economicUpgradeHover && economicUpgradeCard.isVisible)
+                economicUpgradeHover && economicUpgradeCard.isVisible || reclaimHover && reclaimCard.isVisible ||
+                upgradeHover != null && session?.selectedUpgrades?.any { it.actionKey == upgradeHover } == true)
         if (nativeTooltip.isVisible) nativeTooltip.toFront()
         Gdx.gl.glClear(GL20.GL_COLOR_BUFFER_BIT)
         viewport.apply()
@@ -480,7 +514,7 @@ class BootstrapScreen(
         val selected = current?.observation?.units?.find { it.unitId == current.selectedId }
         val state = HudState(selected, current?.selectedIds ?: emptySet(), (1..3).map { current?.groupCount(it) ?: 0 }, current?.feedback, current?.observation?.stepIndex,
             launch.canEdit, loading, loadError, current != null, current?.observation?.balance, current?.selectedFactoryQueue,
-            mapInput.patrolMode, mapInput.patrolPointCount)
+            mapInput.patrolMode, mapInput.patrolPointCount, mapInput.reclaimMode, current?.selectedWorkerQueueText)
         if (state == lastHudState) return
         lastHudState = state
         selectedLabel.setText(if (selected == null) "None" else if (state.selectedIds.size > 1)
@@ -511,20 +545,31 @@ class BootstrapScreen(
         cancelProductionButton.isDisabled = queue?.items?.isEmpty() != false
         nativeProduceButton.isVisible = nativePanel && queue != null
         secondProduceButton.isVisible = nativePanel && current?.productionActions?.size == 2
+        reclaimCard.isVisible = nativePanel && current?.canMaintain == true
+        reclaimCard.background = skin.newDrawable("white", if (reclaimInput.pressed || state.reclaimMode)
+            Color(.37f, .48f, .4f, 1f) else Color(.23f, .28f, .26f, 1f))
         for ((type, card) in constructionCards) {
             card.table.isVisible = nativePanel && current?.constructionActions?.any { it.typeId == type } == true
             if (current?.hasEconomicConstruction == true) {
-                val x = if (type == "extractorT1") 844f else 752f
-                val y = when (type) { "extractorT1" -> 280f; "landFactory" -> 220f; else -> 160f }
+                val x = if (type in setOf("extractorT1", "c_turret_t1", "laserDefence")) 844f else 752f
+                val y = when (type) {
+                    "extractorT1" -> 280f
+                    "landFactory", "c_turret_t1" -> 220f
+                    else -> 160f
+                }
                 card.table.setBounds(x, y, 84f, 54f)
             } else card.table.setBounds(752f, 256f, 84f, 64f)
         }
-        nativeInfo.isVisible = nativePanel && selected != null
+        val selectedInfo = current?.selectedUnitInfo
+        nativeInfo.isVisible = nativePanel && selectedInfo != null
         nativeIcon.isVisible = nativePanel && selected != null && state.selectedIds.size == 1
         if (nativeSelection != state.selectedIds) {
             productionInput.cancel()
             secondProductionInput.cancel()
             economicUpgradeInput.cancel()
+            upgradeInputs.forEach { it.cancel() }
+            upgradeHover = null
+            reclaimInput.cancel()
             constructionCards.values.forEach { it.input.cancel() }
             constructionHover = null
             nativeSelection = state.selectedIds.toSet()
@@ -536,12 +581,8 @@ class BootstrapScreen(
             selectedLabel.setText(if (selected == null) "None" else if (state.selectedIds.size > 1)
                 "${state.selectedIds.size} selected" else "${unitTitle(selected.typeId)} x1")
             nativeIcon.drawable = selected?.let { graphics?.unitIcon(it.typeId) }?.let(::TextureRegionDrawable)
-            nativeInfo.setText(selected?.let { unit ->
-                "${unit.health?.toInt() ?: 0} / ${unit.maxHealth?.toInt() ?: 0}" +
-                    (current?.nominalIncome(unit.typeId)?.let { "\n+\$${it.toInt()}" } ?: "") +
-                    (if (unit.typeId.startsWith("extractorT") || unit.typeId.startsWith("fabricatorT"))
-                        if (unit.constructionProgress < 1f) "\nBuilding ${(unit.constructionProgress * 100f).toInt()}%" else "\nActive" else "")
-            } ?: "")
+            nativeInfo.setFontScale(if (state.workerQueueText != null) .7f else 1f)
+            nativeInfo.setText(selectedInfo ?: "")
             current?.productionAction?.let { action ->
                 val icon = graphics?.unitIcon(action.typeId)?.let(::TextureRegionDrawable)
                 nativeProduceIcon.drawable = icon
@@ -584,6 +625,10 @@ class BootstrapScreen(
             productionLabel.color = Color(.9f, .92f, .9f, 1f)
         }
         val upgrades = current?.selectedUpgrades.orEmpty()
+        if (reclaimHover && reclaimCard.isVisible) {
+            nativeTooltipIcon.drawable = null
+            nativeTooltipText.setText("Reclaim own building\nCredits returned on completion\nLeft: choose target\nEsc / right: cancel")
+        }
         val economicUpgrade = upgrades.singleOrNull()?.takeIf { it.actionKey in setOf("upgrade_t2", "upgrade_t3") }
         economicUpgradeCard.isVisible = nativePanel && economicUpgrade != null
         if (economicUpgrade != null && economicUpgradeCard.isVisible) {
@@ -605,6 +650,17 @@ class BootstrapScreen(
         }
         for ((key, buttons) in upgradeButtons) {
             val action = upgrades.firstOrNull { it.actionKey == key }
+            val item = current?.selectedUpgradeQueue?.items?.firstOrNull { it.actionKey == key }
+            if (action != null) {
+                val title = if (key == "upgrade_gun") "Gun T2" else "Artillery"
+                buttons.first.setText(title + if (item != null) "\n(1) ${(item.progress * 100f).toInt()}%" else "\n\$${action.price}")
+                if (upgradeHover == key) {
+                    nativeTooltipIcon.drawable = selected?.let { graphics?.unitIcon(it.typeId) }?.let(::TextureRegionDrawable)
+                    nativeTooltipText.setText("$title (\$${action.price})\n" +
+                        (item?.let { "Queue 1\n${(it.progress * 100f).toInt()}%\n" } ?: "") +
+                        "Left: upgrade\nCancel: cancel one")
+                }
+            }
             buttons.first.isVisible = action != null
             buttons.second.isVisible = action != null
             buttons.first.isDisabled = action == null
@@ -636,6 +692,7 @@ class BootstrapScreen(
         shareBox.isDisabled = !launch.canEdit
         startButton.setText(if (launch.canEdit) "Start" else "Reopen")
         statusLabel.setText(when {
+            state.reclaimMode -> "Select building to reclaim (Esc / right: cancel)"
             loading -> "Loading"
             loadError != null -> "Load failed"
             current == null -> "Ready"
@@ -705,6 +762,10 @@ class BootstrapScreen(
 
     private fun cancelInput() {
         constructionHover = null
+        upgradeHover = null
+        upgradeInputs.forEach { it.cancel() }
+        reclaimHover = false
+        if (::reclaimInput.isInitialized) reclaimInput.cancel()
         constructionCards.values.forEach { it.input.cancel() }
         if (::productionInput.isInitialized) productionInput.cancel()
         if (::secondProductionInput.isInitialized) secondProductionInput.cancel()
@@ -721,6 +782,10 @@ class BootstrapScreen(
         "landFactory" -> "Factory"
         "extractorT1", "extractorT2", "extractorT3" -> "Extractor T${type.last()}"
         "fabricatorT1", "fabricatorT2", "fabricatorT3" -> "Fabricator T${type.last()}"
+        "c_turret_t1" -> "Turret"
+        "c_turret_t2_gun" -> "Gun T2"
+        "c_turret_t1_artillery" -> "Artillery"
+        "laserDefence" -> "Laser Shield"
         else -> type
     }
 

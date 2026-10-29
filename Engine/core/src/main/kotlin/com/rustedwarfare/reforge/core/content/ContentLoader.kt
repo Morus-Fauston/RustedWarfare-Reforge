@@ -20,10 +20,16 @@ object ContentLoader {
 
     fun loadPointDefense(path: Path): ContentResult<UnitDefinition> = load(path, PointDefenseContentReader::read)
 
+    fun loadPointDefense(path: Path, enableConstruction: Boolean): ContentResult<UnitDefinition> =
+        load(path) { PointDefenseContentReader.read(it, enableConstruction) }
+
     fun loadTurretUnit(path: Path): ContentResult<UnitDefinition> = loadTurretUnit(path, false)
 
     fun loadTurretUnit(path: Path, enableUpgrades: Boolean): ContentResult<UnitDefinition> =
         load(path) { TurretContentReader.read(it, enableUpgrades) }
+
+    fun loadTurretUnit(path: Path, enableUpgrades: Boolean, enableConstruction: Boolean): ContentResult<UnitDefinition> =
+        load(path) { TurretContentReader.read(it, enableUpgrades, enableConstruction) }
 
     fun loadFactory(path: Path): ContentResult<UnitDefinition> = load(path, FactoryContentReader::read)
 

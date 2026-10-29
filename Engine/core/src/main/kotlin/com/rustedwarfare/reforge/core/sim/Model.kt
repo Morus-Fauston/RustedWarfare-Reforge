@@ -61,9 +61,15 @@ data class Scenario(
     val automaticVision: KnowledgeRules? = null,
     val combatContract: CombatContract? = null,
     val economyContract: EconomyContract? = null,
+    val maintenanceContract: MaintenanceContract? = null,
 )
 
 data class EconomyContract(val initialBalances: Map<String, Long>)
+
+/** Explicit finite maintenance capability; caller-owned maps cannot change a live world's prices. */
+class MaintenanceContract(basePrices: Map<String, Long>) {
+    val basePrices: Map<String, Long> = Collections.unmodifiableMap(LinkedHashMap(basePrices))
+}
 
 /** Trusted host queue state. Nonces and payment details never enter player queue DTOs. */
 data class QueuedProductionObservation(val typeId: String, val unitNonce: String,
@@ -112,7 +118,7 @@ data class Step(val stepIndex: Long, val delta: Double, val deltaUnit: String)
 
 enum class MovementState { IDLE, MOVING, DECELERATING, BLOCKED }
 
-enum class UnitTaskKind { MOVE, ATTACK, PATROL, BUILD, CONSTRUCT }
+enum class UnitTaskKind { MOVE, ATTACK, PATROL, BUILD, CONSTRUCT, RECLAIM }
 
 /** Owner control intent; temporary combat targets never become stored patrol points. */
 data class UnitTask(val kind: UnitTaskKind, val actionId: String, val target: Position? = null,
@@ -206,7 +212,10 @@ data class ConstructedBuildingObservation(val unitId: String, val objectId: Long
 /** Trusted host income phase; never included in player observations. */
 data class IncomeStateObservation(val unitId: String, val elapsed: Float)
 data class ConstructionWorkerObservation(val unitId: String, val elapsed: Float, val retryTime: Int,
-    val preparation: Float, val working: Boolean, val previousTargetActive: Boolean)
+    val preparation: Float, val working: Boolean, val previousTargetActive: Boolean,
+    val singleNodePathCount: Byte = 0, val logicalRequestX: Float? = null, val logicalRequestY: Float? = null,
+    val movementRequested: Boolean = false, val pendingPathNodeCounts: List<Int> = emptyList(),
+    val consumedPathNodeCounts: List<Int> = emptyList(), val qBeforeDispatch: Byte = 0)
 /** Trusted host diagnostics, excluded from player observations. */
 class ConstructionObservation(val clock: Int, buildings: List<ConstructedBuildingObservation>,
                               workers: List<ConstructionWorkerObservation>, nonces: Map<String, Set<String>>) {
@@ -233,7 +242,9 @@ class Observation(
     val upgrades: UpgradeObservation? = null,
     val construction: ConstructionObservation? = null,
     incomeStates: List<IncomeStateObservation> = emptyList(),
+    reclaimedUnitIds: List<String>? = null,
 ) {
+    val reclaimedUnitIds: List<String>? = reclaimedUnitIds?.let { immutable(it) }
     val incomeStates: List<IncomeStateObservation> = immutable(incomeStates)
     val units: List<UnitObservation> = immutable(units)
     val events: List<Event> = immutable(events)
@@ -342,6 +353,13 @@ internal data class MutableUnit(
     var constructionPreparation: Float = 0f,
     var constructionWorking: Boolean = false,
     var previousWorkTargetActive: Boolean = false,
+    var reclaimed: Boolean = false,
+    var singleNodePathCount: Byte = 0,
+    var logicalRequestX: Float? = null,
+    var logicalRequestY: Float? = null,
+    var pendingPathNodeCounts: List<Int> = emptyList(),
+    var consumedPathNodeCounts: List<Int> = emptyList(),
+    var qBeforeDispatch: Byte = 0,
 ) {
     val alive: Boolean get() = health == null || checkNotNull(health) > 0.0
     val tasks: List<UnitTask> get() = taskQueue.tasks
@@ -353,6 +371,16 @@ internal data class MutableUnit(
 
     /** End the command while preserving linear/angular speed for the existing coasting rule. */
     fun cancelRoute() {
+        pauseRoute()
+        singleNodePathCount = 0
+        logicalRequestX = null
+        logicalRequestY = null
+        pendingPathNodeCounts = emptyList()
+        consumedPathNodeCounts = emptyList()
+    }
+
+    /** No usable physical route; a still-active logical approach may remain. */
+    fun pauseRoute() {
         moveTarget = null
         pathPoints.clear()
         clearMoveOrigin()
@@ -360,13 +388,45 @@ internal data class MutableUnit(
     }
 
     /** Replanning and repair preserve command identity, completion time and terrain history. */
-    fun adoptRoute(points: List<Position>, knowledgeRevision: Long, buildingRevision: Long = -1L) {
+    fun adoptRoute(points: List<Position>, logicalTarget: Position, knowledgeRevision: Long, buildingRevision: Long = -1L) {
+        recordLogicalTarget(logicalTarget)
+        pendingPathNodeCounts = immutable(pendingPathNodeCounts + points.size)
         pathPoints = points.toMutableList()
         localMotion = null
         localProgressTime = 0.0
         lastPlannedKnowledgeRevision = knowledgeRevision
         lastPlannedBuildingRevision = buildingRevision
         movementState = MovementState.MOVING
+    }
+
+    fun requestMovement(target: Position) {
+        movementRequested = true
+        recordLogicalTarget(target)
+    }
+
+    private fun recordLogicalTarget(target: Position) {
+        val x = target.x.toFloat(); val y = target.y.toFloat()
+        require(x.isFinite() && y.isFinite()) { "Logical movement target must remain finite" }
+        val oldX = logicalRequestX; val oldY = logicalRequestY
+        if (oldX == null || oldY == null || oldX.toFloat() != x || oldY.toFloat() != y) {
+            singleNodePathCount = 0
+            pendingPathNodeCounts = emptyList()
+        }
+        logicalRequestX = x; logicalRequestY = y
+    }
+
+    /** Count each real acceptance only after this worker's activity dispatch. */
+    fun finishMovementRequest() {
+        if (!movementRequested) {
+            singleNodePathCount = 0
+            logicalRequestX = null; logicalRequestY = null
+            pendingPathNodeCounts = emptyList(); consumedPathNodeCounts = emptyList()
+            return
+        }
+        val consumed = pendingPathNodeCounts
+        for (count in consumed) if (count == 1) singleNodePathCount = (singleNodePathCount + 1).toByte()
+        pendingPathNodeCounts = emptyList()
+        consumedPathNodeCounts = consumed
     }
 
     fun clearMoveOrigin() {

@@ -59,6 +59,10 @@ object ControlledScenario {
             "format=rw-reforge.construction-sandbox.v1\nvariant=economy-construction" -> "economy"
             "format=rw-reforge.construction-sandbox.v1\nvariant=economy-death" -> "economy-death"
             "format=rw-reforge.construction-sandbox.v1\nvariant=economy-upgrades" -> "economy-upgrades"
+            "format=rw-reforge.construction-sandbox.v1\nvariant=building-maintenance" -> "building-maintenance"
+            "format=rw-reforge.construction-sandbox.v1\nvariant=construction-queue" -> "construction-queue"
+            "format=rw-reforge.construction-sandbox.v1\nvariant=defense-construction" -> "defense-construction"
+            "format=rw-reforge.construction-sandbox.v1\nvariant=defense-construction-siege" -> "defense-construction-siege"
             else -> error("$marker: unsupported fixed construction fixture")
         }
         fun <T> read(result: ContentResult<T>): T {
@@ -72,18 +76,26 @@ object ControlledScenario {
         val tank = read(ContentLoader.loadCombatUnit(root.resolve("units/tank.ini")))
         val builder = read(ContentLoader.loadBuilder(root.resolve("units/builder.properties")))
         val center = read(ContentLoader.loadCommandCenter(root.resolve("units/commandCenter.properties")))
-        val economic = variant in setOf("economy", "economy-death", "economy-upgrades")
-        val economyUpgrades = variant == "economy-upgrades"
+        val defenses = variant in setOf("defense-construction", "defense-construction-siege")
+        val maintenance = defenses || variant in setOf("building-maintenance", "construction-queue")
+        val economic = defenses || variant in setOf("economy", "economy-death", "economy-upgrades", "building-maintenance", "construction-queue")
+        val economyUpgrades = variant == "economy-upgrades" || maintenance
         val factory = if (variant == "factory" || economic) read(ContentLoader.loadFactory(root.resolve("units/landFactory.properties"))) else null
         val economicUnits = if (economic) (listOf("extractor", "fabricatorT1") +
             if (economyUpgrades) listOf("extractorT2", "extractorT3", "fabricatorT2", "fabricatorT3") else emptyList()).map {
             read(ContentLoader.loadEconomyUnit(root.resolve("units/$it.ini"), economyUpgrades))
         } else emptyList()
+        val defenseUnits = if (defenses) listOf(
+            read(ContentLoader.loadTurretUnit(root.resolve("units/turret_t1.ini"), true, true)),
+            read(ContentLoader.loadTurretUnit(root.resolve("units/turret_t2_gun.ini"), false, false)),
+            read(ContentLoader.loadTurretUnit(root.resolve("units/turret_t1_artillery.ini"), false, false)),
+            read(ContentLoader.loadPointDefense(root.resolve("units/laserDefence.properties"), true))) else emptyList()
         require(if (variant == "factory" || economic) builder.builder?.buildingTypeIds ==
-            (if (economic) listOf("extractorT1", "landFactory", "fabricatorT1") else listOf("landFactory")) &&
+            (if (defenses) listOf("extractorT1", "landFactory", "fabricatorT1", "c_turret_t1", "laserDefence")
+             else if (economic) listOf("extractorT1", "landFactory", "fabricatorT1") else listOf("landFactory")) &&
             factory?.construction != null && factory.production?.unitTypeIds == listOf("builder", "c_tank")
             else builder.builder == null) { "$marker: construction capabilities must match the fixed variant" }
-        val enemies = if (variant == "defense") (1..12).map { index ->
+        val enemies = if (variant in setOf("defense", "defense-construction-siege")) (1..12).map { index ->
             UnitSpawn("z" + index.toString().padStart(2, '0'), "p2", tank.id,
                 Position(190.0 + ((index - 1) / 6) * 22.0, 150.0 + ((index - 1) % 6) * 22.0), 270.0)
         } else listOf(UnitSpawn("z1", "p2", tank.id, Position(510.0, 110.0), 270.0),
@@ -94,14 +106,19 @@ object ControlledScenario {
             UnitSpawn("z1", "p2", tank.id, Position(410.0, 250.0), 270.0),
             UnitSpawn("z2", "p2", tank.id, Position(410.0, 290.0), 270.0))
         else listOf(UnitSpawn("h", "p1", center.id, Position(110.0, 210.0), 0.0)) + enemies
-        return Scenario("p006-construction", map, (listOfNotNull(tank, builder, center, factory) + economicUnits).associateBy { it.id },
+        return Scenario("p006-construction", map, (listOfNotNull(tank, builder, center, factory) + economicUnits + defenseUnits).associateBy { it.id },
             listOf(Player("p1", PlayerControl.LOCAL, "one"), Player("p2", PlayerControl.NONE, "two")),
             spawns,
             CoordinateModel("p001.coordinate.v1", "2d", "x-right", "y-down", "top-left", "world-unit", "double", "ieee754-binary64"),
             TimeModel("p001.time.v1", "sim-tick", "ieee754-binary64", "fixed-explicit-delta"), MovementContract(16.0, 4.0),
             combatContract = CombatContract(12345, -1,
                 spawns.mapIndexed { index, spawn -> spawn.unitId to 10L + index }.toMap(), 10L + spawns.size),
-            economyContract = EconomyContract(mapOf("p1" to 1750L, "p2" to 0L)))
+            economyContract = EconomyContract(mapOf("p1" to 1750L, "p2" to 0L)),
+            maintenanceContract = if (maintenance) MaintenanceContract(mapOf("commandCenter" to 3000L, "landFactory" to 700L,
+                "extractorT1" to 700L, "extractorT2" to 2100L, "extractorT3" to 6100L,
+                "fabricatorT1" to 2200L, "fabricatorT2" to 6600L, "fabricatorT3" to 14100L) +
+                if (defenses) mapOf("c_turret_t1" to 500L, "c_turret_t2_gun" to 1500L,
+                    "c_turret_t1_artillery" to 2100L, "laserDefence" to 1200L) else emptyMap()) else null)
     }
 
     private fun loadPatrol(root: Path): Scenario {

@@ -55,8 +55,11 @@ internal fun Observation.fields(): Map<String, Any?> = mapOf(
             "updateKey" to it.updateKey, "progress" to it.progress) },
         "workers" to value.workers.map { mapOf("unitId" to it.unitId, "elapsed" to it.elapsed,
             "retryTime" to it.retryTime, "preparation" to it.preparation, "working" to it.working,
-            "previousTargetActive" to it.previousTargetActive) }, "nonces" to value.nonces) },
-)
+            "previousTargetActive" to it.previousTargetActive, "singleNodePathCount" to it.singleNodePathCount,
+            "logicalRequestX" to it.logicalRequestX, "logicalRequestY" to it.logicalRequestY,
+            "movementRequested" to it.movementRequested, "pendingPathNodeCounts" to it.pendingPathNodeCounts,
+            "consumedPathNodeCounts" to it.consumedPathNodeCounts, "qBeforeDispatch" to it.qBeforeDispatch) }, "nonces" to value.nonces) },
+) + (reclaimedUnitIds?.let { mapOf("reclaimedUnitIds" to it) } ?: emptyMap())
 
 internal fun PlayerObservation.fields(): Map<String, Any?> =
     Observation(sampleId, worldId, scenarioId, stepIndex, simulationTime, units, events, actionResults).fields() + mapOf(

@@ -30,6 +30,9 @@ class JsonlEvidence internal constructor(private val directory: Path, private va
                         .firstOrNull { it.startsWith("variant=") }) {
                     "variant=economy-construction", "variant=economy-death" -> "ENG-P006-003"
                     "variant=economy-upgrades" -> "ENG-P006-004"
+                    "variant=building-maintenance" -> "ENG-P006-005"
+                    "variant=construction-queue" -> "ENG-P006-006"
+                    "variant=defense-construction", "variant=defense-construction-siege" -> "ENG-P006-007"
                     "variant=factory-construction" -> "ENG-P006-002"
                     else -> "ENG-P006-001"
                 }
@@ -49,6 +52,9 @@ class JsonlEvidence internal constructor(private val directory: Path, private va
                     "ENG-P006-002" -> "factory-construction-windows-client"
                     "ENG-P006-003" -> "economy-construction-windows-client"
                     "ENG-P006-004" -> "economy-upgrades-windows-client"
+                    "ENG-P006-005" -> "building-maintenance-windows-client"
+                    "ENG-P006-006" -> "construction-queue-windows-client"
+                    "ENG-P006-007" -> "defense-construction-windows-client"
                     "ENG-P005-007" -> "patrol-windows-client"
                     "ENG-P005-004" -> "upgrade-windows-client"
                     "ENG-P005-005" -> "point-defense-windows-client"

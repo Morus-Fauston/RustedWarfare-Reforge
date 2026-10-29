@@ -16,7 +16,7 @@ internal class PathSearchCounters {
 }
 
 enum class PathSearchOutcome { FOUND, UNREACHABLE, FAILED }
-enum class PathSearchReason { USER_MOVE, KNOWLEDGE_REPLAN, ROUTE_REPAIR, ATTACK_PURSUIT }
+enum class PathSearchReason { USER_MOVE, KNOWLEDGE_REPLAN, ROUTE_REPAIR, ATTACK_PURSUIT, CONSTRUCTION_APPROACH }
 
 data class PathSearchSample(
     val actionId: String,

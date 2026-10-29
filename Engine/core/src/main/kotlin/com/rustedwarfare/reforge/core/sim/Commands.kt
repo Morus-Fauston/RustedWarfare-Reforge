@@ -17,6 +17,27 @@ data class BuildAction(
     val buildingNonce: String,
     override val world: WorldHandle,
     override val atStep: Long? = null,
+    val append: Boolean = false,
+) : Action
+
+data class RepairBuildingAction(
+    override val actionId: String,
+    override val actorPlayerId: String,
+    override val unitId: String,
+    val targetUnitId: String,
+    override val world: WorldHandle,
+    override val atStep: Long? = null,
+    val append: Boolean = false,
+) : Action
+
+data class ReclaimBuildingAction(
+    override val actionId: String,
+    override val actorPlayerId: String,
+    override val unitId: String,
+    val targetUnitId: String,
+    override val world: WorldHandle,
+    override val atStep: Long? = null,
+    val append: Boolean = false,
 ) : Action
 
 data class ResumeConstructionAction(
@@ -26,6 +47,7 @@ data class ResumeConstructionAction(
     val targetUnitId: String,
     override val world: WorldHandle,
     override val atStep: Long? = null,
+    val append: Boolean = false,
 ) : Action
 
 data class UpgradeAction(

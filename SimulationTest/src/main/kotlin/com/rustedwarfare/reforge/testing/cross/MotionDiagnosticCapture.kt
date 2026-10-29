@@ -19,6 +19,10 @@ object MotionDiagnosticCapture {
         require(action !is ProduceAction && action !is CancelProductionAction && action !is UpgradeAction && action !is CancelUpgradeAction) {
             "Movement diagnostic capture does not support production actions"
         }
+        require(action !is BuildAction && action !is ResumeConstructionAction &&
+            action !is RepairBuildingAction && action !is ReclaimBuildingAction) {
+            "Movement diagnostic capture does not support construction actions"
+        }
         val before=context.observe().json()
         val submitted=context.submit(action)
         val issued=obj("actionId" to s(action.actionId),"actorPlayerId" to s(action.actorPlayerId),"unitId" to s(action.unitId),
@@ -26,6 +30,8 @@ object MotionDiagnosticCapture {
             "kind" to s(when(action) { is MoveAction -> "move";is StopAction -> "stop";is SelectAction -> "select"
                 is AttackAction -> error("Movement diagnostic capture does not support AttackAction")
                 is PatrolAction -> error("Movement diagnostic capture does not support PatrolAction")
+                is BuildAction, is ResumeConstructionAction, is RepairBuildingAction, is ReclaimBuildingAction ->
+                    error("Movement diagnostic capture does not support construction actions")
                 is ProduceAction, is CancelProductionAction, is UpgradeAction, is CancelUpgradeAction -> error("Movement diagnostic capture does not support economy actions") }),
             "target" to (action as? MoveAction)?.target?.json())
         attempts+=obj("attempted" to b(true),"sequence" to n(sequence),"q" to n(q),

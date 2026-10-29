@@ -126,6 +126,33 @@ class MotionV2CoreInputsTest {
         } finally { context.close() }
     }
 
+    @Test fun building_actions_are_refused_before_submission_and_cannot_be_serialized_as_movement() {
+        val f = fixture(); val loaded = MotionV2CoreInputs.load(f.manifest, f.request)
+        val scenario = Scenario("private.construction-reject", loaded.map, mapOf("tank" to loaded.unit),
+            listOf(Player("p1", PlayerControl.LOCAL)), listOf(UnitSpawn("u1", "p1", "tank", Position(10.0,10.0),0.0)),
+            CoordinateModel("p001.coordinate.v1","2d","x-right","y-down","top-left","world-unit","double","ieee754-binary64"),
+            TimeModel("p001.time.v1","sim-tick","ieee754-binary64","fixed-explicit-delta"), MovementContract(16.0,4.0))
+        val context = assertIs<InitResult.Accepted>(SimulationContext.initialize(scenario)).context
+        try {
+            val actions = listOf(BuildAction("build", "p1", "u1", "landFactory", Position(50.0,10.0), "0".repeat(32), context.world),
+                ResumeConstructionAction("resume", "p1", "u1", "target", context.world),
+                RepairBuildingAction("repair", "p1", "u1", "target", context.world),
+                ReclaimBuildingAction("reclaim", "p1", "u1", "target", context.world))
+            for (action in actions) {
+                val before = context.observe(); val attempts = mutableListOf<JsonElement>()
+                assertContains(assertFailsWith<IllegalArgumentException> {
+                    MotionDiagnosticCapture.submitAndRecord(context, action, obj("action" to s("stop")), 0, 0, attempts)
+                }.message.orEmpty(), "construction actions")
+                assertSame(before, context.observe()); assertTrue(attempts.isEmpty())
+                assertIs<ActionResult.Accepted>(context.submit(SelectAction(action.actionId, "p1", "u1", context.world)))
+                val op = MotionV2CoreExecution.Operation(0, "submit", 0, null, null, true, action, before, before, null, null, null)
+                val trace = MotionV2CoreExecution.Trace(null, before, listOf(op), null, null, null, emptyList(), emptyList(), true)
+                assertContains(assertFailsWith<IllegalStateException> { MotionV2CoreTraceJson.trace(trace) }.message.orEmpty(),
+                    "construction actions")
+            }
+        } finally { context.close() }
+    }
+
     @Test fun patrol_capture_rejects_before_submission_and_trace_explicitly_refuses_to_serialize_it_as_move() {
         val f=fixture();val loaded=MotionV2CoreInputs.load(f.manifest,f.request)
         val scenario=Scenario("private.patrol-reject",loaded.map,mapOf("tank" to loaded.unit),listOf(Player("p1",PlayerControl.LOCAL)),

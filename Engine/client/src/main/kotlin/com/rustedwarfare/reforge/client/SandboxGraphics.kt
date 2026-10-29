@@ -178,7 +178,8 @@ class SandboxGraphics private constructor(private val resources: SandboxRenderRe
             val y = projection.y(unit.position.y)
             unit.constructionTargetId?.let { targetId ->
                 frame.observation.units.firstOrNull { it.unitId == targetId && it.alive }?.let { target ->
-                    shapes.color = Color.GREEN
+                    shapes.color = if (unit.tasks.firstOrNull()?.kind ==
+                        com.rustedwarfare.reforge.core.sim.UnitTaskKind.RECLAIM) Color.RED else Color.BLUE
                     shapes.line(x, y, projection.x(target.position.x), projection.y(target.position.y))
                     shapes.color = resources.unitCircleColor(frame.observation.playerId, unit.ownerPlayerId)
                 }

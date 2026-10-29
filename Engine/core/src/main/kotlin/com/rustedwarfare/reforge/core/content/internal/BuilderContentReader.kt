@@ -44,9 +44,11 @@ internal object BuilderContentReader {
             }
             return result
         }
-        val economy = required("format") == "rw-reforge.native-builder.v3"
+        val defense = required("format") == "rw-reforge.native-builder.v4"
+        val economy = defense || required("format") == "rw-reforge.native-builder.v3"
         val construction = economy || required("format") == "rw-reforge.native-builder.v2"
-        val targets = if (economy) listOf("extractorT1", "landFactory", "fabricatorT1") else listOf("landFactory")
+        val targets = if (defense) listOf("extractorT1", "landFactory", "fabricatorT1", "c_turret_t1", "laserDefence")
+            else if (economy) listOf("extractorT1", "landFactory", "fabricatorT1") else listOf("landFactory")
         if (construction) only("constructionTypes", targets.joinToString(","))
         else {
             only("format", "rw-reforge.native-builder.v1")

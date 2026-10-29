@@ -3,6 +3,7 @@ package com.rustedwarfare.reforge.client
 import com.rustedwarfare.reforge.core.sim.*
 import java.util.UUID
 import java.nio.file.Path
+import java.util.Locale
 
 data class ProductionActionView(val typeId: String, val title: String, val imagePath: Path, val totalFrames: Int,
     val price: Long, val rate: Float, val maximumHealth: Double?, val moveSpeed: Double,
@@ -76,6 +77,7 @@ class SandboxSession(scenario: Scenario, private val evidence: ClientEvidence = 
                 else observation.units.firstOrNull { it.unitId == selectedId }?.let { "${unitTitle(it.typeId)} selected" } ?: "No selection"
             feedback == "insufficient-funds" || feedback == "construction-insufficient-funds" -> "Insufficient funds"
             feedback == "construction-unavailable" -> "Cannot build here"
+            feedback.substringBefore(';') == "construction-queue-full" -> "Construction queue is full"
             feedback == "production-queued" -> "Added to production queue"
             feedback == "production-cancelled" -> "Production cancelled; funds returned"
             feedback == "empty-production-queue" -> "Production queue is empty"
@@ -84,7 +86,7 @@ class SandboxSession(scenario: Scenario, private val evidence: ClientEvidence = 
             feedback == "unit-damaged" -> "Unit under attack"
             feedback == "unit-died" -> "Unit destroyed"
             feedback in setOf("Ready", "Accepted", "No selection", "Match closed") -> feedback
-            feedback.startsWith("Group ") || feedback.startsWith("Accepted ") -> feedback.substringBefore(';')
+            feedback.startsWith("Group ") || feedback.startsWith("Accepted ") || feedback.startsWith("Added ") -> feedback.substringBefore(';')
             rejectedFeedback -> "Order unavailable"
             else -> "Order received"
         }
@@ -96,10 +98,25 @@ class SandboxSession(scenario: Scenario, private val evidence: ClientEvidence = 
         "landFactory" -> "Land factory"
         "extractorT1" -> "Extractor"
         "fabricatorT1" -> "Fabricator"
+        "c_turret_t1" -> "Turret"
+        "laserDefence" -> "Laser Shield"
         else -> "Unit"
     }
 
     val hasEconomicConstruction: Boolean get() = scenario.unitDefinitions.containsKey("extractorT1")
+    val selectedUnitInfo: String?
+        get() {
+            if (!isOpen || selectedIds.isEmpty()) return null
+            if (selectedIds.size > 1) return selectedWorkerQueueText
+            val unit = observation.units.singleOrNull { it.unitId == selectedId } ?: return null
+            return "${unit.health?.toInt() ?: 0} / ${unit.maxHealth?.toInt() ?: 0}" +
+                (nominalIncome(unit.typeId)?.let { "\n+\$${it.toInt()}" } ?: "") +
+                (if (unit.constructionProgress < 1f) "\nBuilding ${(unit.constructionProgress * 100f).toInt()}%"
+                    else if (unit.typeId.startsWith("extractorT") || unit.typeId.startsWith("fabricatorT")) "\nActive" else "") +
+                (unit.pointDefense?.let { String.format(Locale.ROOT, "\nEnergy %.3f%s", it.energy,
+                    if (it.exhausted) " LOCKED" else "") } ?: "") +
+                (selectedWorkerQueueText?.let { "\n$it" } ?: "")
+        }
     fun nominalIncome(typeId: String): Float? = scenario.unitDefinitions[typeId]?.income?.let { it.credits * 40f / it.period }
     val totalNominalIncome: Float get() = observation.units.filter {
         it.alive && it.ownerPlayerId == observation.playerId && it.constructionProgress >= 1f
@@ -153,8 +170,12 @@ class SandboxSession(scenario: Scenario, private val evidence: ClientEvidence = 
 
     val constructionActions: List<ConstructionActionView>
         get() {
-            if (!isOpen || selectedIds.size != 1) return emptyList()
-            val worker = observation.units.singleOrNull { it.unitId == selectedId && controllable(it) } ?: return emptyList()
+            if (!isOpen || selectedIds.isEmpty()) return emptyList()
+            val workers = observation.units.filter { it.unitId in selectedIds }
+            if (workers.size != selectedIds.size || workers.any { !controllable(it) }) return emptyList()
+            val worker = workers.first()
+            // Mixed-capability aggregation remains outside the observed builder menu.
+            if (workers.any { it.typeId != worker.typeId }) return emptyList()
             return scenario.unitDefinitions.getValue(worker.typeId).builder?.buildingTypeIds.orEmpty().map { type ->
                 val definition = scenario.unitDefinitions.getValue(type)
                 ConstructionActionView(type, unitTitle(type), definition.imagePath, checkNotNull(definition.construction).price,
@@ -162,26 +183,89 @@ class SandboxSession(scenario: Scenario, private val evidence: ClientEvidence = 
             }
         }
 
-    fun build(typeId: String, position: Position): ActionResult? {
-        if (constructionActions.none { it.typeId == typeId }) return null
+    val canMaintain: Boolean
+        get() = isOpen && scenario.maintenanceContract != null && selectedIds.isNotEmpty() &&
+            observation.units.filter { it.unitId in selectedIds }.let { workers ->
+                workers.size == selectedIds.size && workers.all { controllable(it) && it.typeId == "builder" &&
+                    scenario.unitDefinitions.getValue(it.typeId).builder != null }
+            }
+
+    /** Owner-only queue copy for the ordinary construction panel. */
+    val selectedWorkerQueueText: String?
+        get() {
+            if (constructionActions.isEmpty()) return null
+            val workers = observation.units.filter { it.unitId in selectedIds }.sortedBy { it.unitId }
+            if (workers.size == 1) {
+                val tasks = workers.single().tasks
+                val head = tasks.firstOrNull()
+                val title = head?.buildingTypeId ?: head?.targetUnitId?.let { target ->
+                    observation.units.firstOrNull { it.unitId == target }?.typeId
+                }
+                return "Tasks ${tasks.size}\n" + (head?.kind?.name?.lowercase()?.replaceFirstChar { it.uppercase() } ?: "Idle") +
+                    (title?.let { " ${unitTitle(it)}" } ?: "")
+            }
+            val counts = workers.map { it.tasks.size }
+            val low = counts.min(); val high = counts.max()
+            val range = if (low == high) "$low" else "$low-$high"
+            val current = workers.groupingBy { it.tasks.firstOrNull()?.kind }.eachCount()
+                .entries.sortedBy { it.key?.ordinal ?: -1 }.joinToString("\n") { (kind, count) ->
+                    "${kind?.name?.lowercase()?.replaceFirstChar { it.uppercase() } ?: "Idle"} x$count"
+                }
+            return "Tasks $range each\n$current"
+        }
+
+    fun reclaimTargetAt(position: Position): String? {
+        if (!hasSelectedMaintainer()) return null
+        val id = unitAt(position)
+        return observation.units.singleOrNull { it.unitId == id && it.alive && it.ownerPlayerId == "p1" &&
+            it.typeId in checkNotNull(scenario.maintenanceContract).basePrices }?.unitId
+    }
+
+    fun reclaim(position: Position, append: Boolean = false): ActionResult? = reclaim(reclaimTargetAt(position) ?: "", append)
+
+    fun reclaim(targetUnitId: String, append: Boolean = false): ActionResult? {
+        lastCommandBatch = null
+        if (!hasSelectedMaintainer()) return null
+        val target = observation.units.singleOrNull { it.unitId == targetUnitId && it.alive && it.ownerPlayerId == "p1" &&
+            it.typeId in checkNotNull(scenario.maintenanceContract).basePrices }
+        if (target == null) {
+            feedback = "Select own building"
+            rejectedFeedback = false
+            return null
+        }
+        return dispatch { worker -> ReclaimBuildingAction("click-${++actionNumber}", "p1", worker, target.unitId, context.world, append = append) }
+    }
+
+    fun build(typeId: String, position: Position, append: Boolean = false): ActionResult? {
+        lastCommandBatch = null
+        if (!hasSelectedConstructor(typeId)) return null
         if (previewConstruction(typeId, position)?.state == PlacementState.BLOCKED) {
             feedback = "construction-unavailable"
             rejectedFeedback = false
             return null
         }
-        val result = apply(BuildAction("click-${++actionNumber}", "p1", checkNotNull(selectedId), typeId, position,
-            UUID.randomUUID().toString().replace("-", ""), context.world))
-        if (result is ActionResult.Accepted) selection.clear()
+        val result = dispatch { worker -> BuildAction("click-${++actionNumber}", "p1", worker, typeId, position,
+            UUID.randomUUID().toString().replace("-", ""), context.world, append = append) }
+        if (!append && checkNotNull(lastCommandBatch).accepted > 0) selection.clear()
         return result
     }
+
+    /** Dispatch eligibility is independent of the deliberately limited mixed-selection menu. */
+    private fun hasSelectedConstructor(typeId: String): Boolean = isOpen && observation.units.any { unit ->
+        unit.unitId in selectedIds && controllable(unit) &&
+            typeId in scenario.unitDefinitions.getValue(unit.typeId).builder?.buildingTypeIds.orEmpty()
+    }
+
+    private fun hasSelectedMaintainer(): Boolean = isOpen && scenario.maintenanceContract != null &&
+        observation.units.any { unit -> unit.unitId in selectedIds && controllable(unit) && unit.typeId == "builder" &&
+            scenario.unitDefinitions.getValue(unit.typeId).builder != null }
 
     /** Uses only the player's published terrain and visible buildings, never placement truth. */
     fun previewConstruction(typeId: String, order: Position): ConstructionPreview? {
         if (constructionActions.none { it.typeId == typeId } || !order.x.isFinite() || !order.y.isFinite()) return null
-        fun snap(value: Double) = ((((value.toFloat() - 10f) + 1f) * .05f).toInt() * 20f + 10f).toDouble()
-        val position = Position(snap(order.x), snap(order.y))
         val map = scenario.map
         val definition = scenario.unitDefinitions.getValue(typeId)
+        val position = ConstructionPlacement.snap(order, definition.building?.anchor)
         fun cells(point: Position, building: com.rustedwarfare.reforge.core.content.BuildingProfile): List<Pair<Int, Int>> {
             fun coordinate(value: Double, offset: Float?) = if (offset == null) kotlin.math.floor(value / 20.0).toInt()
                 else (((value.toFloat() - offset) + 1f) * .05f).toInt()
@@ -268,6 +352,7 @@ class SandboxSession(scenario: Scenario, private val evidence: ClientEvidence = 
 
     private fun dispatch(selectionAtPress: Set<String> = selectedIds, action: (String) -> Action): ActionResult? {
         val members = selectionAtPress.sorted()
+        val revision = selectionRevision
         val results = mutableListOf<SelectionCommandMember>()
         var skipped = 0
         lastCommandBatch = null
@@ -277,25 +362,38 @@ class SandboxSession(scenario: Scenario, private val evidence: ClientEvidence = 
         }
         val batch = SelectionCommandBatch(results, skipped)
         lastCommandBatch = batch
-        if (members.size > 1) {
-            feedback = "Accepted ${batch.accepted}, rejected ${batch.rejected}, skipped ${batch.skipped}" +
+        if (members.isEmpty()) {
+            feedback = "No selection"
+            rejectedFeedback = false
+        } else if (members.size > 1) {
+            feedback = (if (batch.queueFull == members.size) "construction-queue-full"
+                else if (batch.queueFull > 0) "Added ${batch.added}, queue full ${batch.queueFull}, rejected ${batch.rejected}, skipped ${batch.skipped}"
+                else "Accepted ${batch.accepted}, rejected ${batch.rejected}, skipped ${batch.skipped}") +
                 results.mapNotNull { (it.result as? ActionResult.Rejected)?.error?.code }.distinct().joinToString(", ", prefix = "; ")
             rejectedFeedback = batch.rejected > 0
-            evidence.recordWhenEnabled("selection-command") { mapOf("accepted" to batch.accepted,
-                "rejected" to batch.rejected, "skipped" to batch.skipped,
-                "members" to results.map { mapOf("unitId" to it.unitId, "result" to it.result.fields()) }) }
         }
+        evidence.recordWhenEnabled("selection-command") { mapOf("accepted" to batch.accepted,
+            "added" to batch.added, "queueFull" to batch.queueFull, "rejected" to batch.rejected, "skipped" to batch.skipped,
+            "selectionRevision" to revision, "selectionAtPress" to members,
+            "members" to results.map { mapOf("unitId" to it.unitId, "result" to it.result.fields()) }) }
         return results.lastOrNull()?.result
     }
 
     private fun controllable(unit: UnitObservation): Boolean = unit.alive && unit.ownerPlayerId == "p1" &&
         scenario.players.any { it.playerId == "p1" && it.control == PlayerControl.LOCAL }
-    fun command(position: Position): ActionResult? {
+    /** Read-only hit identity from this player's published observation. */
+    fun commandTargetAt(position: Position): String? = unitAt(position)
+
+    fun command(position: Position, append: Boolean = false): ActionResult? {
         val targetId = unitAt(position)
         val target = observation.units.firstOrNull { it.unitId == targetId }
+        if (hasSelectedMaintainer() && target != null && target.ownerPlayerId == "p1" &&
+            target.typeId in checkNotNull(scenario.maintenanceContract).basePrices &&
+            (target.constructionProgress < 1f || target.health!! < target.maxHealth!!))
+            return dispatch { worker -> RepairBuildingAction("click-${++actionNumber}", "p1", worker, target.unitId, context.world, append = append) }
         if (target != null && target.ownerPlayerId == "p1" && target.constructionProgress < 1f &&
-            constructionActions.any { it.typeId == target.typeId })
-            return apply(ResumeConstructionAction("click-${++actionNumber}", "p1", checkNotNull(selectedId), target.unitId, context.world))
+            hasSelectedConstructor(target.typeId))
+            return dispatch { worker -> ResumeConstructionAction("click-${++actionNumber}", "p1", worker, target.unitId, context.world, append = append) }
         return if (target != null && target.ownerPlayerId != "p1")
             dispatch { actor -> AttackAction("click-${++actionNumber}", "p1", actor, target.unitId, context.world) }
         else move(position)
@@ -375,8 +473,11 @@ class SandboxSession(scenario: Scenario, private val evidence: ClientEvidence = 
         evidence.recordWhenEnabled("action") { mapOf("type" to action.javaClass.simpleName,
             "actorPlayerId" to action.actorPlayerId, "unitId" to action.unitId,
             "target" to when (action) { is MoveAction -> action.target.fields(); is PatrolAction -> action.target.fields(); is BuildAction -> action.target.fields(); else -> null },
-            "append" to (action as? PatrolAction)?.append,
-            "targetUnitId" to when (action) { is AttackAction -> action.targetUnitId; is ResumeConstructionAction -> action.targetUnitId; else -> null },
+            "append" to when (action) { is PatrolAction -> action.append; is BuildAction -> action.append;
+                is ResumeConstructionAction -> action.append; is RepairBuildingAction -> action.append;
+                is ReclaimBuildingAction -> action.append; else -> null },
+            "targetUnitId" to when (action) { is AttackAction -> action.targetUnitId; is ResumeConstructionAction -> action.targetUnitId;
+                is RepairBuildingAction -> action.targetUnitId; is ReclaimBuildingAction -> action.targetUnitId; else -> null },
             "upgradeId" to when (action) { is UpgradeAction -> action.upgradeId; is CancelUpgradeAction -> action.upgradeId; else -> null },
             "result" to result.fields()) + if (action is BuildAction) mapOf("buildingTypeId" to action.buildingTypeId) else emptyMap() }
         capture("after-action")
@@ -410,7 +511,8 @@ class SandboxSession(scenario: Scenario, private val evidence: ClientEvidence = 
         latestFrame = makeFrame()
         val previous = selectedIds
         selection.reconcile(observation.units.filter { it.alive }.map { it.unitId }.toSet(),
-            observation.units.filter { !it.alive }.map { it.unitId }.toSet())
+            observation.units.filter { !it.alive }.map { it.unitId }.toSet() +
+                observation.events.filter { it.kind == "building-reclaimed" }.mapNotNull { it.unitId })
         if (previous.isNotEmpty() && selectedIds.isEmpty()) {
             feedback = "No selection"
         }
@@ -438,4 +540,8 @@ class SelectionCommandBatch(members: List<SelectionCommandMember>, val skipped: 
     val members: List<SelectionCommandMember> = java.util.Collections.unmodifiableList(ArrayList(members))
     val accepted: Int get() = members.count { it.result is ActionResult.Accepted }
     val rejected: Int get() = members.count { it.result is ActionResult.Rejected }
+    val queueFull: Int get() = members.count { member ->
+        (member.result as? ActionResult.Accepted)?.events?.any { it.kind == "construction-queue-full" } == true
+    }
+    val added: Int get() = accepted - queueFull
 }

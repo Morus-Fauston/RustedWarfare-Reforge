@@ -9,7 +9,7 @@ internal object PointDefenseContentReader {
     private val fields = setOf("format", "name", "maxHp", "radius", "footprint", "movementType",
         "image", "image_dead", "fogOfWarSightRange")
 
-    fun read(path: Path): UnitDefinition {
+    fun read(path: Path, enableConstruction: Boolean = false): UnitDefinition {
         val values = linkedMapOf<String, String>()
         Files.readAllLines(path).forEachIndexed { index, raw ->
             val line = raw.trim()
@@ -55,7 +55,9 @@ internal object PointDefenseContentReader {
         return UnitDefinition("laserDefence", "NativeLaserDefenceFixture", radius, radius, 2, image("image"), 1.0,
             MovementProfile(MovementType.NONE, 0.0, 0.0, 0.0, 0.0, 0.0, false, false), emptySet(), sight,
             durability = DurabilityProfile(fixedNumber("maxHp", 500.0), image("image_dead")),
-            building = BuildingProfile(BuildingFootprint(0, 0, 1, 1)),
-            directHitTargetKind = DirectHitTargetKind.NATIVE_BUILDING, pointDefense = PointDefenseProfile())
+            building = BuildingProfile(BuildingFootprint(0, 0, 1, 1),
+                anchor = if (enableConstruction) FootprintAnchor(20f, 20f) else null),
+            directHitTargetKind = DirectHitTargetKind.NATIVE_BUILDING, pointDefense = PointDefenseProfile(),
+            construction = if (enableConstruction) ConstructionProfile(1200L, .001f) else null)
     }
 }

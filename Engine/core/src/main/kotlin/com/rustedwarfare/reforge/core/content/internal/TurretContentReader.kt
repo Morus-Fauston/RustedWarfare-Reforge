@@ -44,7 +44,7 @@ internal object TurretContentReader {
         "projectile_1.drawSize", "projectile_1.color", "projectile_1.largeHitEffect", "projectile_1.lightColor",
         "projectile_1.lightCastOnGround")
 
-    fun read(path: Path, enableUpgrades: Boolean = false): UnitDefinition {
+    fun read(path: Path, enableUpgrades: Boolean = false, enableConstruction: Boolean = false): UnitDefinition {
         ordinary(path, path, "core", "name")
         val child = parse(path)
         fun childIdentity(key: String, expected: String) {
@@ -65,6 +65,8 @@ internal object TurretContentReader {
         childIdentity("overrideAndReplace", replacement)
         if (enableUpgrades && id != "c_turret_t1")
             reject(ContentErrorCode.UNSUPPORTED_FEATURE, path, "core", "name", id, "Only the basic turret can enable first upgrades")
+        if (enableConstruction && id != "c_turret_t1")
+            reject(ContentErrorCode.UNSUPPORTED_FEATURE, path, "core", "name", id, "Only the basic turret can enable construction")
         val parentName = child["core"]?.get("copyFrom")
             ?: reject(ContentErrorCode.MISSING_REQUIRED_FIELD, path, "core", "copyFrom", reason = "Missing land template")
         val parentPath = reference(path, parentName, "core", "copyFrom")
@@ -193,6 +195,20 @@ internal object TurretContentReader {
             TurretMount(number("turret_1", "x", signed = true), number("turret_1", "y", signed = true)), recoil, idle,
             number("turret_1", "barrelX", 0.0, signed = true), number("turret_1", "barrelOffsetX_onOddShots", 0.0, signed = true))
         val consumed = mutableSetOf<String>()
+        val construction = if (enableConstruction) {
+            val rawPrice = required("core", "price")
+            val price = rawPrice.toLongOrNull()
+            if (price == null || price <= 0L) reject(ContentErrorCode.MALFORMED_SYNTAX, origin("core", "price"),
+                "core", "price", rawPrice, "Expected a positive credit amount")
+            required("core", "buildSpeed")
+            val rate = binary32("core", "buildSpeed", true)
+            if (price != 500L) reject(ContentErrorCode.UNSUPPORTED_FEATURE, origin("core", "price"),
+                "core", "price", rawPrice, "Only the fixed basic turret construction price is supported")
+            if (rate != .0008f) reject(ContentErrorCode.UNSUPPORTED_FEATURE, origin("core", "buildSpeed"),
+                "core", "buildSpeed", reason = "Only the fixed basic turret construction rate is supported")
+            consumed += setOf("core.price", "core.buildSpeed")
+            ConstructionProfile(price, rate)
+        } else null
         val upgrades = if (enableUpgrades) UpgradeProfile(listOf(
             "upgrade_gun" to "c_turret_t2_gun", "upgrade_artillery" to "c_turret_t1_artillery"
         ).map { (action, target) ->
@@ -214,7 +230,7 @@ internal object TurretContentReader {
             MovementProfile(MovementType.NONE, 0.0, 0.0, 0.0, 0.0, 0.0, false, false), kept,
             integer("core", "fogOfWarSightRange", 15), weapon, DurabilityProfile(hp, dead),
             BuildingProfile(shape, anchor = FootprintAnchor(binary32("core", "buildingToFootprintOffsetX"), binary32("core", "buildingToFootprintOffsetY"))),
-            upgrades = upgrades)
+            upgrades = upgrades, construction = construction)
     }
 
     private fun parse(path: Path): Map<String, Map<String, String>> {
