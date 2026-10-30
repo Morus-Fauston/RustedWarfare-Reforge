@@ -267,17 +267,15 @@ class SandboxSession(scenario: Scenario, private val evidence: ClientEvidence = 
         val definition = scenario.unitDefinitions.getValue(typeId)
         val position = ConstructionPlacement.snap(order, definition.building?.anchor)
         fun cells(point: Position, building: com.rustedwarfare.reforge.core.content.BuildingProfile): List<Pair<Int, Int>> {
-            fun coordinate(value: Double, offset: Float?) = if (offset == null) kotlin.math.floor(value / 20.0).toInt()
-                else (((value.toFloat() - offset) + 1f) * .05f).toInt()
-            val col = coordinate(point.x, building.anchor?.offsetX)
-            val row = coordinate(point.y, building.anchor?.offsetY)
-            val shape = building.placementFootprint
-            return (shape.top..shape.bottom).flatMap { y -> (shape.left..shape.right).map { x -> col + x to row + y } }
+            return try {
+                ConstructionPlacement.footprint(map.widthTiles, map.heightTiles, map.tileWidth, map.tileHeight,
+                    point, building.placementFootprint, building.anchor).cells
+            } catch (_: IllegalArgumentException) { emptyList() }
         }
         val building = checkNotNull(definition.building)
         val candidate = cells(position, building)
-        var blocked = position.x - definition.radius < 0.0 || position.y - definition.radius < 0.0 ||
-            position.x + definition.radius > map.widthTiles * 20.0 || position.y + definition.radius > map.heightTiles * 20.0
+        var blocked = candidate.isEmpty() || !ConstructionPlacement.contains(map.widthTiles, map.heightTiles,
+            map.tileWidth, map.tileHeight, position, definition.radius)
         var unknown = false
         for ((col, row) in candidate) {
             if (col !in 0 until map.widthTiles || row !in 0 until map.heightTiles) { blocked = true; continue }

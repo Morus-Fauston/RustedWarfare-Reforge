@@ -979,8 +979,8 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
             MapBounds.cell(position.y, input.map.tileHeight, input.map.heightTiles))
         val terrainBlocked = if (building.requiresResourcePool) !poolAtCenter else
             cells.any { input.map.blocking.isBlocked(it.first, it.second) || input.map.isResourcePool(it.first, it.second) }
-        val blocked = cells.isEmpty() || !MapBounds.contains(input.map.widthTiles.toDouble() * input.map.tileWidth,
-            input.map.heightTiles.toDouble() * input.map.tileHeight, position, definition.radius) ||
+        val blocked = cells.isEmpty() || !ConstructionPlacement.contains(input.map.widthTiles, input.map.heightTiles,
+            input.map.tileWidth, input.map.tileHeight, position, definition.radius) ||
             terrainBlocked || live.any { other ->
                 val profile = checkNotNull(other.definition.building)
                 BuildingTerrain.footprint(input.map, other.position, profile.placementFootprint, profile.anchor, clipToMap = true).any { it in cells }

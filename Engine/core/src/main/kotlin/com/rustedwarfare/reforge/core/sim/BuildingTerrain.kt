@@ -56,28 +56,12 @@ internal class BuildingTerrain private constructor(map: MapDefinition, occupied:
 
         fun footprint(map: MapDefinition, position: Position, shape: BuildingFootprint,
                       anchor: FootprintAnchor? = null, clipToMap: Boolean = false): Set<Pair<Int, Int>> {
-            fun custom(value: Double, offset: Float, tile: Int): Long {
-                // Each operation is binary32; the source's cast truncates toward zero.
-                val coordinate = ((value.toFloat() - offset) + 1f) * (1f / tile.toFloat())
-                if (!coordinate.isFinite() || coordinate.toDouble() < Int.MIN_VALUE.toDouble() ||
-                    coordinate.toDouble() > Int.MAX_VALUE.toDouble()) fail("Custom building anchor is outside its integer domain")
-                return coordinate.toInt().toLong()
-            }
-            val column = if (anchor == null) MapBounds.cell(position.x, map.tileWidth, map.widthTiles).toLong()
-                else custom(position.x, anchor.offsetX, map.tileWidth)
-            val row = if (anchor == null) MapBounds.cell(position.y, map.tileHeight, map.heightTiles).toLong()
-                else custom(position.y, anchor.offsetY, map.tileHeight)
-            val left = (column + shape.left.toLong()).let { if (clipToMap) maxOf(0L, it) else it }
-            val right = (column + shape.right.toLong()).let { if (clipToMap) minOf(map.widthTiles - 1L, it) else it }
-            val top = (row + shape.top.toLong()).let { if (clipToMap) maxOf(0L, it) else it }
-            val bottom = (row + shape.bottom.toLong()).let { if (clipToMap) minOf(map.heightTiles - 1L, it) else it }
-            if (left < 0L || top < 0L || right >= map.widthTiles.toLong() || bottom >= map.heightTiles.toLong() ||
-                left > right || top > bottom) fail("Building footprint must be entirely within the map")
-            // Only bounded spans may be multiplied, iterated, or converted back to Int.
-            require((right - left + 1L) * (bottom - top + 1L) <= map.widthTiles.toLong() * map.heightTiles)
-            val cells = linkedSetOf<Pair<Int, Int>>()
-            for (y in top..bottom) for (x in left..right) cells += x.toInt() to y.toInt()
-            return cells
+            val geometry = try {
+                ConstructionPlacement.footprint(map.widthTiles, map.heightTiles, map.tileWidth, map.tileHeight,
+                    position, shape, anchor, clipToMap)
+            } catch (failure: IllegalArgumentException) { fail(checkNotNull(failure.message)) }
+            if (!geometry.withinMap) fail("Building footprint must be entirely within the map")
+            return geometry.cells.toSet()
         }
 
         private fun fail(message: String): Nothing = throw BuildingInitializationException(SimulationError("invalid-spawn", message))
