@@ -10,9 +10,9 @@ import kotlin.test.*
 
 class DefensePanelInputTest {
     @Test fun both_defense_choices_have_their_observed_names_and_an_ordinary_card_press_opens_only_the_chosen_mode() {
-        val root = generateSequence(Path.of("").toAbsolutePath()) { it.parent }
+        val root = (System.getProperty("public.fixtures.dir")?.let { Path.of(it).resolve("maintenance-defense/construction") } ?: generateSequence(Path.of("").toAbsolutePath()) { it.parent }
             .first { Files.isRegularFile(it.resolve("AGENTS.md")) }.resolve(
-                ".scratch/开发票据/引擎重写/P006-建造经济与原版操作/evidence/ENG-P006-007/20261029-implementation-01/defense-input")
+                ".scratch/开发票据/引擎重写/P006-建造经济与原版操作/evidence/ENG-P006-007/20261029-implementation-01/defense-input"))
         val scene = ControlledScenario.load(root).copy(
             units = listOf(UnitSpawn("worker", "p1", "builder", Position(120.0, 170.0), 90.0)),
             combatContract = CombatContract(1, -1, mapOf("worker" to 1L), 2L))

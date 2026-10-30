@@ -1,0 +1,14 @@
+{
+  "schemaVersion": 1,
+  "scenarioId": "platform-production-basics",
+  "inputs": "../../inputs/platform-basics/production",
+  "intents": [
+    {"intentId":"choose-tank","kind":"select","unitId":"a","position":{"x":110,"y":210}},
+    {"intentId":"move-tank","kind":"move","unitId":"a","position":{"x":450,"y":200},"waitSteps":20},
+    {"intentId":"stop-tank","kind":"stop","unitId":"a","waitSteps":20},
+    {"intentId":"attack-enemy","kind":"attack","unitId":"a","targetUnitId":"b","position":{"x":430,"y":210}},
+    {"intentId":"choose-factory","kind":"select","unitId":"f","position":{"x":310,"y":210}},
+    {"intentId":"make-tank","kind":"produce","unitId":"f","typeId":"c_tank"},
+    {"intentId":"cancel-tank","kind":"cancelProduction","unitId":"f","typeId":"c_tank"}
+  ]
+}

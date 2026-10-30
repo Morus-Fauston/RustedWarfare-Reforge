@@ -32,11 +32,15 @@ class PublicSelectionTest(unittest.TestCase):
             shutil.copyfile(entry, copied)
             registry = repo / 'SimulationTest/public/suites'
             registry.mkdir(parents=True)
+            for filename in ('scenario.json', 'contract.json'):
+                (registry.parent / filename).write_text('{}', encoding='utf8')
             cases = [
                 ('empty', {'tests': {}}),
                 ('invalid-module', {'tests': {'shell': ['Run']}}),
                 ('missing-scenario', {'short': [{'id': 'missing', 'scenario': 'absent.json', 'contract': 'absent-contract.json'}]}),
                 ('escaping-fixture', {'fixture': '../../../secret', 'tests': {'core': ['ValidTest']}}),
+                ('invalid-backend', {'short': [{'id': 'unsupported', 'backend': 'windows-input',
+                    'scenario': 'scenario.json', 'contract': 'contract.json'}]}),
             ]
             for name, fields in cases:
                 manifest = dict(schemaVersion=1, suiteId=name, inputScope='public', **fields)

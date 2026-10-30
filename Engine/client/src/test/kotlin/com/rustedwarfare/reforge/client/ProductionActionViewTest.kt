@@ -41,10 +41,10 @@ class ProductionActionViewTest {
 
     private fun scene(initial: Long = 496L): Scenario {
         val repo = Path.of(checkNotNull(System.getProperty("p001.inputs.dir"))).parent.parent.parent
-        val base = ControlledScenario.load(repo.resolve(
-            ".scratch/开发票据/引擎重写/P005-生产战斗与指挥沙盒/evidence/ENG-P005-002/20261025-e-input-01/input"))
-        val builder = assertIs<ContentResult.Success<UnitDefinition>>(ContentLoader.loadBuilder(repo.resolve(
-            ".scratch/开发票据/引擎重写/P006-建造经济与原版操作/evidence/ENG-P006-001/20261027-intake-01/builder-input-01/units/builder.properties"))).value
+        val base = ControlledScenario.load((System.getProperty("public.fixtures.dir")?.let { Path.of(it).resolve("production-combat/production") } ?: repo.resolve(
+            ".scratch/开发票据/引擎重写/P005-生产战斗与指挥沙盒/evidence/ENG-P005-002/20261025-e-input-01/input")))
+        val builder = assertIs<ContentResult.Success<UnitDefinition>>(ContentLoader.loadBuilder((System.getProperty("public.fixtures.dir")?.let { Path.of(it).resolve("build-economy/start/units/builder.properties") } ?: repo.resolve(
+            ".scratch/开发票据/引擎重写/P006-建造经济与原版操作/evidence/ENG-P006-001/20261027-intake-01/builder-input-01/units/builder.properties")))).value
         val f = base.unitDefinitions.getValue("landFactory")
         val factory = UnitDefinition(f.id, f.className, f.radius, f.displayRadius, f.totalFrames, f.imagePath,
             f.imageScale, f.movement, emptySet(), durability = f.durability, building = f.building,

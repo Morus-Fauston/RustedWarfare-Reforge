@@ -1,0 +1,9 @@
+{
+  "schemaVersion":1,
+  "scenarioId":"platform-construction-basics",
+  "inputs":"../../inputs/platform-basics/construction",
+  "intents":[
+    {"intentId":"choose-worker","kind":"select","unitId":"worker","position":{"x":270,"y":270}},
+    {"intentId":"build-extractor","kind":"build","unitId":"worker","typeId":"extractorT1","position":{"x":190,"y":290},"waitSteps":120}
+  ]
+}

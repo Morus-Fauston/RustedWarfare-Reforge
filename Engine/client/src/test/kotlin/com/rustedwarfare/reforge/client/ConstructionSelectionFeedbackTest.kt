@@ -60,8 +60,8 @@ class ConstructionSelectionFeedbackTest {
     }
 
     private fun scene(): Scenario {
-        val repo = generateSequence(Path.of("").toAbsolutePath()) { it.parent }.first { Files.isRegularFile(it.resolve("AGENTS.md")) }
-        val base = ControlledScenario.load(repo.resolve(".scratch/开发票据/引擎重写/P006-建造经济与原版操作/evidence/ENG-P006-006/20261029-implementation-01/input"))
+        val repo = System.getProperty("repo.root")?.let { Path.of(it) } ?: generateSequence(Path.of("").toAbsolutePath()) { it.parent }.first { Files.isRegularFile(it.resolve("AGENTS.md")) }
+        val base = ControlledScenario.load((System.getProperty("public.fixtures.dir")?.let { Path.of(it).resolve("build-economy/queue") } ?: repo.resolve(".scratch/开发票据/引擎重写/P006-建造经济与原版操作/evidence/ENG-P006-006/20261029-implementation-01/input")))
         val ground = base.map.tileSets.first { 2 in it.blockedTileIds }.firstGid
         val spawns = listOf(UnitSpawn("a", "p1", "builder", Position(120.0, 170.0), 90.0),
             UnitSpawn("b", "p1", "builder", Position(120.0, 210.0), 90.0),

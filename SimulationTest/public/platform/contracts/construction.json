@@ -1,0 +1,53 @@
+{
+  "schemaVersion": 1,
+  "scenarioId": "platform-construction-basics",
+  "rules": [
+    {
+      "intentId": "choose-worker",
+      "actionType": "SelectAction",
+      "unitId": "worker",
+      "accepted": true,
+      "assertions": [
+        {
+          "path": "units.worker.typeId",
+          "operator": "equals",
+          "value": "builder"
+        }
+      ],
+      "unitIdentity": {
+        "ownerPlayerId": "p1",
+        "typeId": "builder"
+      }
+    },
+    {
+      "intentId": "build-extractor",
+      "actionType": "BuildAction",
+      "unitId": "worker",
+      "accepted": true,
+      "actionFields": {
+        "buildingTypeId": "extractorT1"
+      },
+      "targetFromIntent": true,
+      "assertions": [
+        {
+          "path": "units.worker.ownerPlayerId",
+          "operator": "equals",
+          "value": "p1"
+        }
+      ],
+      "created": {
+        "event": "construction-created",
+        "typeId": "extractorT1",
+        "position": {
+          "x": 190,
+          "y": 290
+        },
+        "constructionProgress": 0
+      },
+      "unitIdentity": {
+        "ownerPlayerId": "p1",
+        "typeId": "builder"
+      }
+    }
+  ]
+}

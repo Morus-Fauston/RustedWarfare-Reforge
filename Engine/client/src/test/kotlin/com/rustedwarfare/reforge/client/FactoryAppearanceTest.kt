@@ -8,9 +8,9 @@ import kotlin.test.*
 class FactoryAppearanceTest {
     private fun input(): Scenario {
         val repo = Path.of(checkNotNull(System.getProperty("p001.inputs.dir"))).parent.parent.parent
-        val root = repo.resolve(".scratch/开发票据/引擎重写/P005-生产战斗与指挥沙盒/evidence/ENG-P005-002/20261025-e-input-01/input")
-        val base = ControlledScenario.load(repo.resolve(
-            ".scratch/开发票据/引擎重写/P005-生产战斗与指挥沙盒/evidence/ENG-P005-001/20261025-e-pc-representative-01/input"))
+        val root = (System.getProperty("public.fixtures.dir")?.let { Path.of(it).resolve("production-combat/production") } ?: repo.resolve(".scratch/开发票据/引擎重写/P005-生产战斗与指挥沙盒/evidence/ENG-P005-002/20261025-e-input-01/input"))
+        val base = ControlledScenario.load((System.getProperty("public.fixtures.dir")?.let { Path.of(it).resolve("production-combat/combat") } ?: repo.resolve(
+            ".scratch/开发票据/引擎重写/P005-生产战斗与指挥沙盒/evidence/ENG-P005-001/20261025-e-pc-representative-01/input")))
         val factory = assertIs<ContentResult.Success<UnitDefinition>>(ContentLoader.loadFactory(root.resolve("units/landFactory.properties"))).value
         return base.copy(unitDefinitions = base.unitDefinitions + (factory.id to factory))
     }

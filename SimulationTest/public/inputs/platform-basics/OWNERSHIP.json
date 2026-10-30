@@ -1,0 +1,448 @@
+{
+  "source": "Reviewed owned public synthetic inputs only; no private assets or original-game files read",
+  "semantics": "Client basic-operation fixture selection; no new gameplay rule or original-content equivalence",
+  "files": [
+    {
+      "path": "construction/assets/terrain.png",
+      "sha256": "8e7d231fcedf41052d83465e14df7c4682d0eca7d1c939924ecbc9bf082a5556",
+      "source": "inputs/maintenance-defense/maintenance/assets/terrain.png",
+      "sourceSha256": "8e7d231fcedf41052d83465e14df7c4682d0eca7d1c939924ecbc9bf082a5556"
+    },
+    {
+      "path": "construction/construction.properties",
+      "sha256": "c07e8eb3163951416204b4fdc7c15d664cec2c846808fbb247332409854369bd",
+      "source": "Newly authored fixed fixture metadata for existing ControlledScenario variants"
+    },
+    {
+      "path": "construction/maps/economy-chain.tmx",
+      "sha256": "e3fe055722418e2a37c5d33f7d117e8d4a0dbb88d2b267a58b8608a61999631d",
+      "source": "inputs/maintenance-defense/maintenance/maps/economy-chain.tmx",
+      "sourceSha256": "e3fe055722418e2a37c5d33f7d117e8d4a0dbb88d2b267a58b8608a61999631d"
+    },
+    {
+      "path": "construction/maps/open.tmx",
+      "sha256": "4b4ca42e2cb8b7a58170244541bf240418e789d27158c86b8f7c43d5066cf067",
+      "source": "inputs/maintenance-defense/maintenance/maps/open.tmx",
+      "sourceSha256": "4b4ca42e2cb8b7a58170244541bf240418e789d27158c86b8f7c43d5066cf067"
+    },
+    {
+      "path": "construction/maps/operating-chain.tmx",
+      "sha256": "bc06e32105e20b43fe4f7d884dfa822907fa1e107fbdbedfbf14f65fa6eeee93",
+      "source": "inputs/maintenance-defense/maintenance/maps/operating-chain.tmx",
+      "sourceSha256": "bc06e32105e20b43fe4f7d884dfa822907fa1e107fbdbedfbf14f65fa6eeee93"
+    },
+    {
+      "path": "construction/maps/p001-controlled.tmx",
+      "sha256": "e7b573add256f503a66455520166a0160dc1536074d876b60345998ac6c5bfd2",
+      "source": "inputs/maintenance-defense/maintenance/maps/p001-controlled.tmx",
+      "sourceSha256": "e7b573add256f503a66455520166a0160dc1536074d876b60345998ac6c5bfd2"
+    },
+    {
+      "path": "construction/maps/p005-sealed.tmx",
+      "sha256": "403134e730e4c25e9509f06073b4815bf917c9ca61eb55b05b9370ea150ebb5b",
+      "source": "inputs/maintenance-defense/maintenance/maps/p005-sealed.tmx",
+      "sourceSha256": "403134e730e4c25e9509f06073b4815bf917c9ca61eb55b05b9370ea150ebb5b"
+    },
+    {
+      "path": "construction/maps/production-chain.tmx",
+      "sha256": "978c8484f0b16d9d36f881abd39239be9a9a297f7838bb3447b8297819f98c58",
+      "source": "inputs/maintenance-defense/maintenance/maps/production-chain.tmx",
+      "sourceSha256": "978c8484f0b16d9d36f881abd39239be9a9a297f7838bb3447b8297819f98c58"
+    },
+    {
+      "path": "construction/units/base.png",
+      "sha256": "8095d081de1407fe59e9ff99f5a5822e03275f87ffbd0f2a09ac736f8f6b3695",
+      "source": "inputs/maintenance-defense/maintenance/units/base.png",
+      "sourceSha256": "8095d081de1407fe59e9ff99f5a5822e03275f87ffbd0f2a09ac736f8f6b3695"
+    },
+    {
+      "path": "construction/units/base_back.png",
+      "sha256": "07e2e3d786bf88d6d1dfe57add1b732e84a9bd2d6313732cc4f86ec8c4da2885",
+      "source": "inputs/maintenance-defense/maintenance/units/base_back.png",
+      "sourceSha256": "07e2e3d786bf88d6d1dfe57add1b732e84a9bd2d6313732cc4f86ec8c4da2885"
+    },
+    {
+      "path": "construction/units/base_dead.png",
+      "sha256": "940b030d8a9c0161c69b1831041186c97409e85d404aa5c5f6ec58fa5d831b16",
+      "source": "inputs/maintenance-defense/maintenance/units/base_dead.png",
+      "sourceSha256": "940b030d8a9c0161c69b1831041186c97409e85d404aa5c5f6ec58fa5d831b16"
+    },
+    {
+      "path": "construction/units/builder.png",
+      "sha256": "15060aa3fb36bffd4414e803beb8f5d9b2982ed14bb497fbca6cadd3de18cc1b",
+      "source": "inputs/maintenance-defense/maintenance/units/builder.png",
+      "sourceSha256": "15060aa3fb36bffd4414e803beb8f5d9b2982ed14bb497fbca6cadd3de18cc1b"
+    },
+    {
+      "path": "construction/units/builder.properties",
+      "sha256": "2d0b0e454b904182c8c6dca991a0252bead473942342556512b6eff2f726b82a",
+      "source": "inputs/maintenance-defense/maintenance/units/builder.properties",
+      "sourceSha256": "2d0b0e454b904182c8c6dca991a0252bead473942342556512b6eff2f726b82a"
+    },
+    {
+      "path": "construction/units/builder_dead.png",
+      "sha256": "15060aa3fb36bffd4414e803beb8f5d9b2982ed14bb497fbca6cadd3de18cc1b",
+      "source": "inputs/maintenance-defense/maintenance/units/builder_dead.png",
+      "sourceSha256": "15060aa3fb36bffd4414e803beb8f5d9b2982ed14bb497fbca6cadd3de18cc1b"
+    },
+    {
+      "path": "construction/units/commandCenter.properties",
+      "sha256": "935cd8c4dc4df0c51a43851059f19ae635e746e349bb50c1fc1a3b0a06f37224",
+      "source": "inputs/maintenance-defense/maintenance/units/commandCenter.properties",
+      "sourceSha256": "935cd8c4dc4df0c51a43851059f19ae635e746e349bb50c1fc1a3b0a06f37224"
+    },
+    {
+      "path": "construction/units/extractor.ini",
+      "sha256": "b8d4cb8cc0c03874a7dc86738d00f5f836f7ae30a70da5f9699a55404c99049f",
+      "source": "inputs/maintenance-defense/maintenance/units/extractor.ini",
+      "sourceSha256": "b8d4cb8cc0c03874a7dc86738d00f5f836f7ae30a70da5f9699a55404c99049f"
+    },
+    {
+      "path": "construction/units/extractorT2.ini",
+      "sha256": "dc349ea0620e40b3468ce3b21816263529f6d914876d1caaa8b4382d90a96dbe",
+      "source": "inputs/maintenance-defense/maintenance/units/extractorT2.ini",
+      "sourceSha256": "dc349ea0620e40b3468ce3b21816263529f6d914876d1caaa8b4382d90a96dbe"
+    },
+    {
+      "path": "construction/units/extractorT3.ini",
+      "sha256": "0c071094c03914af6cdf3b16d605a2e899eaa2c32a978007f93d28346307ccf9",
+      "source": "inputs/maintenance-defense/maintenance/units/extractorT3.ini",
+      "sourceSha256": "0c071094c03914af6cdf3b16d605a2e899eaa2c32a978007f93d28346307ccf9"
+    },
+    {
+      "path": "construction/units/extractor_back.png",
+      "sha256": "b7450a978080da75d5e52484ed62f4fe18d294c1c1e918e5c7f0abea608bea80",
+      "source": "inputs/maintenance-defense/maintenance/units/extractor_back.png",
+      "sourceSha256": "b7450a978080da75d5e52484ed62f4fe18d294c1c1e918e5c7f0abea608bea80"
+    },
+    {
+      "path": "construction/units/extractor_common.ini",
+      "sha256": "7c6a712d4a8c83e10a6f7640459b4e9817d931a6414b0201659e32425f9c94e0",
+      "source": "inputs/maintenance-defense/maintenance/units/extractor_common.ini",
+      "sourceSha256": "7c6a712d4a8c83e10a6f7640459b4e9817d931a6414b0201659e32425f9c94e0"
+    },
+    {
+      "path": "construction/units/extractor_t1.png",
+      "sha256": "96f912275ca7d1bc07fce8aa3c9343c8be1900bd35b56367e4fc165febf56ca6",
+      "source": "inputs/maintenance-defense/maintenance/units/extractor_t1.png",
+      "sourceSha256": "96f912275ca7d1bc07fce8aa3c9343c8be1900bd35b56367e4fc165febf56ca6"
+    },
+    {
+      "path": "construction/units/extractor_t2.png",
+      "sha256": "9e7ea8588ec440427424ff5daf7c628199e8e2579f783dfce0c413f135313467",
+      "source": "inputs/maintenance-defense/maintenance/units/extractor_t2.png",
+      "sourceSha256": "9e7ea8588ec440427424ff5daf7c628199e8e2579f783dfce0c413f135313467"
+    },
+    {
+      "path": "construction/units/extractor_t3.png",
+      "sha256": "21883c595db746c2ae40b55276469ccf82d74931004841c1ad1b62ed3c6317c7",
+      "source": "inputs/maintenance-defense/maintenance/units/extractor_t3.png",
+      "sourceSha256": "21883c595db746c2ae40b55276469ccf82d74931004841c1ad1b62ed3c6317c7"
+    },
+    {
+      "path": "construction/units/fabricatorT1.ini",
+      "sha256": "99a87d37001a9f16ad86b4463c7dc0ffa158c141557957e81957609d92fe5a69",
+      "source": "inputs/maintenance-defense/maintenance/units/fabricatorT1.ini",
+      "sourceSha256": "99a87d37001a9f16ad86b4463c7dc0ffa158c141557957e81957609d92fe5a69"
+    },
+    {
+      "path": "construction/units/fabricatorT1.png",
+      "sha256": "7ed97be7ee48026f65fbd0053a7c8c5139a650ee8b341bf404b706b3d9b6ce11",
+      "source": "inputs/maintenance-defense/maintenance/units/fabricatorT1.png",
+      "sourceSha256": "7ed97be7ee48026f65fbd0053a7c8c5139a650ee8b341bf404b706b3d9b6ce11"
+    },
+    {
+      "path": "construction/units/fabricatorT2.ini",
+      "sha256": "e114590f77392e87f4e353adec196e1aeee17e012d0ee23773c83ea1788441f1",
+      "source": "inputs/maintenance-defense/maintenance/units/fabricatorT2.ini",
+      "sourceSha256": "e114590f77392e87f4e353adec196e1aeee17e012d0ee23773c83ea1788441f1"
+    },
+    {
+      "path": "construction/units/fabricatorT2.png",
+      "sha256": "2b36cf34274f6682d069d7f0bdb449fcf9fc89628f9825c2ee5287d1e4177224",
+      "source": "inputs/maintenance-defense/maintenance/units/fabricatorT2.png",
+      "sourceSha256": "2b36cf34274f6682d069d7f0bdb449fcf9fc89628f9825c2ee5287d1e4177224"
+    },
+    {
+      "path": "construction/units/fabricatorT3.ini",
+      "sha256": "7c7dfe683765077b1980fa4df3a11990b968769938a08ff6df7a61609fe64fdf",
+      "source": "inputs/maintenance-defense/maintenance/units/fabricatorT3.ini",
+      "sourceSha256": "7c7dfe683765077b1980fa4df3a11990b968769938a08ff6df7a61609fe64fdf"
+    },
+    {
+      "path": "construction/units/fabricatorT3.png",
+      "sha256": "347901f6bab85bbd1c44b5cf3460e7755138e8b70d773fecb6b2a4a26b7c40fc",
+      "source": "inputs/maintenance-defense/maintenance/units/fabricatorT3.png",
+      "sourceSha256": "347901f6bab85bbd1c44b5cf3460e7755138e8b70d773fecb6b2a4a26b7c40fc"
+    },
+    {
+      "path": "construction/units/fabricator_dead.png",
+      "sha256": "55883ff610cb74713449cc980d2da5d04ce6a9bd57ed4fd6c29b1a3900722855",
+      "source": "inputs/maintenance-defense/maintenance/units/fabricator_dead.png",
+      "sourceSha256": "55883ff610cb74713449cc980d2da5d04ce6a9bd57ed4fd6c29b1a3900722855"
+    },
+    {
+      "path": "construction/units/factory.png",
+      "sha256": "f5fbe7d6c121670ef027714323b193a17734d63cae69bfc1ff317c5068e29e64",
+      "source": "inputs/maintenance-defense/maintenance/units/factory.png",
+      "sourceSha256": "f5fbe7d6c121670ef027714323b193a17734d63cae69bfc1ff317c5068e29e64"
+    },
+    {
+      "path": "construction/units/factory_back.png",
+      "sha256": "f5fbe7d6c121670ef027714323b193a17734d63cae69bfc1ff317c5068e29e64",
+      "source": "inputs/maintenance-defense/maintenance/units/factory_back.png",
+      "sourceSha256": "f5fbe7d6c121670ef027714323b193a17734d63cae69bfc1ff317c5068e29e64"
+    },
+    {
+      "path": "construction/units/factory_dead.png",
+      "sha256": "f833d96e5b74fa0d68a2331a36338518727636a48e56b2a9e5278ab20bd4ae83",
+      "source": "inputs/maintenance-defense/maintenance/units/factory_dead.png",
+      "sourceSha256": "f833d96e5b74fa0d68a2331a36338518727636a48e56b2a9e5278ab20bd4ae83"
+    },
+    {
+      "path": "construction/units/landFactory.properties",
+      "sha256": "304343c41f0f978fa537467f2a092e13920f8b610a750daa00b9850c76bd71fa",
+      "source": "inputs/maintenance-defense/maintenance/units/landFactory.properties",
+      "sourceSha256": "304343c41f0f978fa537467f2a092e13920f8b610a750daa00b9850c76bd71fa"
+    },
+    {
+      "path": "construction/units/tank.ini",
+      "sha256": "99aa63a6f6e87662e257af3ca7c4557290153e60e62fcdf74360e15caef612e8",
+      "source": "inputs/maintenance-defense/maintenance/units/tank.ini",
+      "sourceSha256": "99aa63a6f6e87662e257af3ca7c4557290153e60e62fcdf74360e15caef612e8"
+    },
+    {
+      "path": "construction/units/tank.png",
+      "sha256": "898fa8d12d89e73c988c258c3522a23660b2fdc500b4c8588fd2d8cf5fe4b605",
+      "source": "inputs/maintenance-defense/maintenance/units/tank.png",
+      "sourceSha256": "898fa8d12d89e73c988c258c3522a23660b2fdc500b4c8588fd2d8cf5fe4b605"
+    },
+    {
+      "path": "construction/units/tank_dead.png",
+      "sha256": "cbab7f92fa0cbef203e94823e2cbdc3e0116df3dab205f2ce0296e399a1a4ffa",
+      "source": "inputs/maintenance-defense/maintenance/units/tank_dead.png",
+      "sourceSha256": "cbab7f92fa0cbef203e94823e2cbdc3e0116df3dab205f2ce0296e399a1a4ffa"
+    },
+    {
+      "path": "construction/units/tank_turret.png",
+      "sha256": "20dfaa2a45dd5bb635e83425fb64a6d3d3f9fef48d1b0a3b573fe5b9b67c4985",
+      "source": "inputs/maintenance-defense/maintenance/units/tank_turret.png",
+      "sourceSha256": "20dfaa2a45dd5bb635e83425fb64a6d3d3f9fef48d1b0a3b573fe5b9b67c4985"
+    },
+    {
+      "path": "production/assets/terrain.png",
+      "sha256": "1b47e4821cdbfc66460f690322cf641afc1fc782a3ed6985df8b9e773ed98ff0",
+      "source": "inputs/production-combat/production/assets/terrain.png",
+      "sourceSha256": "1b47e4821cdbfc66460f690322cf641afc1fc782a3ed6985df8b9e773ed98ff0"
+    },
+    {
+      "path": "production/maps/open.tmx",
+      "sha256": "4b4ca42e2cb8b7a58170244541bf240418e789d27158c86b8f7c43d5066cf067",
+      "source": "inputs/production-combat/production/maps/open.tmx",
+      "sourceSha256": "4b4ca42e2cb8b7a58170244541bf240418e789d27158c86b8f7c43d5066cf067"
+    },
+    {
+      "path": "production/maps/p001-controlled.tmx",
+      "sha256": "4b4ca42e2cb8b7a58170244541bf240418e789d27158c86b8f7c43d5066cf067",
+      "source": "inputs/production-combat/production/maps/p001-controlled.tmx",
+      "sourceSha256": "4b4ca42e2cb8b7a58170244541bf240418e789d27158c86b8f7c43d5066cf067"
+    },
+    {
+      "path": "production/maps/p005-sealed.tmx",
+      "sha256": "403134e730e4c25e9509f06073b4815bf917c9ca61eb55b05b9370ea150ebb5b",
+      "source": "inputs/production-combat/production/maps/p005-sealed.tmx",
+      "sourceSha256": "403134e730e4c25e9509f06073b4815bf917c9ca61eb55b05b9370ea150ebb5b"
+    },
+    {
+      "path": "production/maps/production-chain.tmx",
+      "sha256": "978c8484f0b16d9d36f881abd39239be9a9a297f7838bb3447b8297819f98c58",
+      "source": "inputs/production-combat/production/maps/production-chain.tmx",
+      "sourceSha256": "978c8484f0b16d9d36f881abd39239be9a9a297f7838bb3447b8297819f98c58"
+    },
+    {
+      "path": "production/production.properties",
+      "sha256": "403c12c83138a9f24e134e27600153476093f5e7f643469a225eee89c569e0d0",
+      "source": "inputs/production-combat/production/production.properties",
+      "sourceSha256": "403c12c83138a9f24e134e27600153476093f5e7f643469a225eee89c569e0d0"
+    },
+    {
+      "path": "production/units/factory.png",
+      "sha256": "828526850b5b4981b0dec3b295d01e9bb6ade18d2ab11525dc8fa841aadb25b5",
+      "source": "inputs/production-combat/production/units/factory.png",
+      "sourceSha256": "828526850b5b4981b0dec3b295d01e9bb6ade18d2ab11525dc8fa841aadb25b5"
+    },
+    {
+      "path": "production/units/factory_back.png",
+      "sha256": "19862e56ddba457e83054e4729053f80f7aa74ec2a4ef24843f0899382d566a0",
+      "source": "inputs/production-combat/production/units/factory_back.png",
+      "sourceSha256": "19862e56ddba457e83054e4729053f80f7aa74ec2a4ef24843f0899382d566a0"
+    },
+    {
+      "path": "production/units/factory_dead.png",
+      "sha256": "4d7fa123ae28bd96d8435d558513cedafdf52a252365ee73d6c48f2c632d8706",
+      "source": "inputs/production-combat/production/units/factory_dead.png",
+      "sourceSha256": "4d7fa123ae28bd96d8435d558513cedafdf52a252365ee73d6c48f2c632d8706"
+    },
+    {
+      "path": "production/units/landFactory.properties",
+      "sha256": "d71035f937aa6753009f0beb3567e0eb87f81ade79f3dc27c18b1abe1127d9a1",
+      "source": "inputs/production-combat/production/units/landFactory.properties",
+      "sourceSha256": "d71035f937aa6753009f0beb3567e0eb87f81ade79f3dc27c18b1abe1127d9a1"
+    },
+    {
+      "path": "production/units/tank.ini",
+      "sha256": "99aa63a6f6e87662e257af3ca7c4557290153e60e62fcdf74360e15caef612e8",
+      "source": "inputs/production-combat/production/units/tank.ini",
+      "sourceSha256": "99aa63a6f6e87662e257af3ca7c4557290153e60e62fcdf74360e15caef612e8"
+    },
+    {
+      "path": "production/units/tank.png",
+      "sha256": "898fa8d12d89e73c988c258c3522a23660b2fdc500b4c8588fd2d8cf5fe4b605",
+      "source": "inputs/production-combat/production/units/tank.png",
+      "sourceSha256": "898fa8d12d89e73c988c258c3522a23660b2fdc500b4c8588fd2d8cf5fe4b605"
+    },
+    {
+      "path": "production/units/tank_dead.png",
+      "sha256": "cbab7f92fa0cbef203e94823e2cbdc3e0116df3dab205f2ce0296e399a1a4ffa",
+      "source": "inputs/production-combat/production/units/tank_dead.png",
+      "sourceSha256": "cbab7f92fa0cbef203e94823e2cbdc3e0116df3dab205f2ce0296e399a1a4ffa"
+    },
+    {
+      "path": "production/units/tank_turret.png",
+      "sha256": "20dfaa2a45dd5bb635e83425fb64a6d3d3f9fef48d1b0a3b573fe5b9b67c4985",
+      "source": "inputs/production-combat/production/units/tank_turret.png",
+      "sourceSha256": "20dfaa2a45dd5bb635e83425fb64a6d3d3f9fef48d1b0a3b573fe5b9b67c4985"
+    },
+    {
+      "path": "upgrade/assets/terrain.png",
+      "sha256": "1b47e4821cdbfc66460f690322cf641afc1fc782a3ed6985df8b9e773ed98ff0",
+      "source": "inputs/production-combat/upgrade/assets/terrain.png",
+      "sourceSha256": "1b47e4821cdbfc66460f690322cf641afc1fc782a3ed6985df8b9e773ed98ff0"
+    },
+    {
+      "path": "upgrade/maps/open.tmx",
+      "sha256": "4b4ca42e2cb8b7a58170244541bf240418e789d27158c86b8f7c43d5066cf067",
+      "source": "inputs/production-combat/upgrade/maps/open.tmx",
+      "sourceSha256": "4b4ca42e2cb8b7a58170244541bf240418e789d27158c86b8f7c43d5066cf067"
+    },
+    {
+      "path": "upgrade/maps/p001-controlled.tmx",
+      "sha256": "4b4ca42e2cb8b7a58170244541bf240418e789d27158c86b8f7c43d5066cf067",
+      "source": "inputs/production-combat/upgrade/maps/p001-controlled.tmx",
+      "sourceSha256": "4b4ca42e2cb8b7a58170244541bf240418e789d27158c86b8f7c43d5066cf067"
+    },
+    {
+      "path": "upgrade/maps/p005-sealed.tmx",
+      "sha256": "403134e730e4c25e9509f06073b4815bf917c9ca61eb55b05b9370ea150ebb5b",
+      "source": "inputs/production-combat/upgrade/maps/p005-sealed.tmx",
+      "sourceSha256": "403134e730e4c25e9509f06073b4815bf917c9ca61eb55b05b9370ea150ebb5b"
+    },
+    {
+      "path": "upgrade/maps/production-chain.tmx",
+      "sha256": "978c8484f0b16d9d36f881abd39239be9a9a297f7838bb3447b8297819f98c58",
+      "source": "inputs/production-combat/upgrade/maps/production-chain.tmx",
+      "sourceSha256": "978c8484f0b16d9d36f881abd39239be9a9a297f7838bb3447b8297819f98c58"
+    },
+    {
+      "path": "upgrade/production.properties",
+      "sha256": "403c12c83138a9f24e134e27600153476093f5e7f643469a225eee89c569e0d0",
+      "source": "inputs/production-combat/upgrade/production.properties",
+      "sourceSha256": "403c12c83138a9f24e134e27600153476093f5e7f643469a225eee89c569e0d0"
+    },
+    {
+      "path": "upgrade/units/factory.png",
+      "sha256": "828526850b5b4981b0dec3b295d01e9bb6ade18d2ab11525dc8fa841aadb25b5",
+      "source": "inputs/production-combat/upgrade/units/factory.png",
+      "sourceSha256": "828526850b5b4981b0dec3b295d01e9bb6ade18d2ab11525dc8fa841aadb25b5"
+    },
+    {
+      "path": "upgrade/units/factory_back.png",
+      "sha256": "19862e56ddba457e83054e4729053f80f7aa74ec2a4ef24843f0899382d566a0",
+      "source": "inputs/production-combat/upgrade/units/factory_back.png",
+      "sourceSha256": "19862e56ddba457e83054e4729053f80f7aa74ec2a4ef24843f0899382d566a0"
+    },
+    {
+      "path": "upgrade/units/factory_dead.png",
+      "sha256": "4d7fa123ae28bd96d8435d558513cedafdf52a252365ee73d6c48f2c632d8706",
+      "source": "inputs/production-combat/upgrade/units/factory_dead.png",
+      "sourceSha256": "4d7fa123ae28bd96d8435d558513cedafdf52a252365ee73d6c48f2c632d8706"
+    },
+    {
+      "path": "upgrade/units/landFactory.properties",
+      "sha256": "d71035f937aa6753009f0beb3567e0eb87f81ade79f3dc27c18b1abe1127d9a1",
+      "source": "inputs/production-combat/upgrade/units/landFactory.properties",
+      "sourceSha256": "d71035f937aa6753009f0beb3567e0eb87f81ade79f3dc27c18b1abe1127d9a1"
+    },
+    {
+      "path": "upgrade/units/tank.ini",
+      "sha256": "99aa63a6f6e87662e257af3ca7c4557290153e60e62fcdf74360e15caef612e8",
+      "source": "inputs/production-combat/upgrade/units/tank.ini",
+      "sourceSha256": "99aa63a6f6e87662e257af3ca7c4557290153e60e62fcdf74360e15caef612e8"
+    },
+    {
+      "path": "upgrade/units/tank.png",
+      "sha256": "898fa8d12d89e73c988c258c3522a23660b2fdc500b4c8588fd2d8cf5fe4b605",
+      "source": "inputs/production-combat/upgrade/units/tank.png",
+      "sourceSha256": "898fa8d12d89e73c988c258c3522a23660b2fdc500b4c8588fd2d8cf5fe4b605"
+    },
+    {
+      "path": "upgrade/units/tank_dead.png",
+      "sha256": "cbab7f92fa0cbef203e94823e2cbdc3e0116df3dab205f2ce0296e399a1a4ffa",
+      "source": "inputs/production-combat/upgrade/units/tank_dead.png",
+      "sourceSha256": "cbab7f92fa0cbef203e94823e2cbdc3e0116df3dab205f2ce0296e399a1a4ffa"
+    },
+    {
+      "path": "upgrade/units/tank_turret.png",
+      "sha256": "20dfaa2a45dd5bb635e83425fb64a6d3d3f9fef48d1b0a3b573fe5b9b67c4985",
+      "source": "inputs/production-combat/upgrade/units/tank_turret.png",
+      "sourceSha256": "20dfaa2a45dd5bb635e83425fb64a6d3d3f9fef48d1b0a3b573fe5b9b67c4985"
+    },
+    {
+      "path": "upgrade/units/turret.png",
+      "sha256": "907d5bdfcaf8d04cd5f7cfde00bb6b77bf1973cd1191db26b8dd5f408392106a",
+      "source": "inputs/production-combat/upgrade/units/turret.png",
+      "sourceSha256": "907d5bdfcaf8d04cd5f7cfde00bb6b77bf1973cd1191db26b8dd5f408392106a"
+    },
+    {
+      "path": "upgrade/units/turret_common_land.ini",
+      "sha256": "c95f3f098ff83ced4e3ab5d798873f5920c1b4af7a0edff9819c94e0f83d4930",
+      "source": "inputs/production-combat/upgrade/units/turret_common_land.ini",
+      "sourceSha256": "c95f3f098ff83ced4e3ab5d798873f5920c1b4af7a0edff9819c94e0f83d4930"
+    },
+    {
+      "path": "upgrade/units/turret_dead.png",
+      "sha256": "907d5bdfcaf8d04cd5f7cfde00bb6b77bf1973cd1191db26b8dd5f408392106a",
+      "source": "inputs/production-combat/upgrade/units/turret_dead.png",
+      "sourceSha256": "907d5bdfcaf8d04cd5f7cfde00bb6b77bf1973cd1191db26b8dd5f408392106a"
+    },
+    {
+      "path": "upgrade/units/turret_t1.ini",
+      "sha256": "c2cd55988a560ae0afc17163cc2e6320561ab076ed71b59f6e73c546f667293c",
+      "source": "inputs/production-combat/upgrade/units/turret_t1.ini",
+      "sourceSha256": "c2cd55988a560ae0afc17163cc2e6320561ab076ed71b59f6e73c546f667293c"
+    },
+    {
+      "path": "upgrade/units/turret_t1_artillery.ini",
+      "sha256": "c5cf98b507429e8b7650a8e75d6741aad5a632044d55115ec4de7d16dac09bc0",
+      "source": "inputs/production-combat/upgrade/units/turret_t1_artillery.ini",
+      "sourceSha256": "c5cf98b507429e8b7650a8e75d6741aad5a632044d55115ec4de7d16dac09bc0"
+    },
+    {
+      "path": "upgrade/units/turret_t2_gun.ini",
+      "sha256": "9be871d18ba2c0d50ae90cd38a9d46d62d56f903f288123e91e988e56b4bcad6",
+      "source": "inputs/production-combat/upgrade/units/turret_t2_gun.ini",
+      "sourceSha256": "9be871d18ba2c0d50ae90cd38a9d46d62d56f903f288123e91e988e56b4bcad6"
+    },
+    {
+      "path": "upgrade/units/turret_top.png",
+      "sha256": "907d5bdfcaf8d04cd5f7cfde00bb6b77bf1973cd1191db26b8dd5f408392106a",
+      "source": "inputs/production-combat/upgrade/units/turret_top.png",
+      "sourceSha256": "907d5bdfcaf8d04cd5f7cfde00bb6b77bf1973cd1191db26b8dd5f408392106a"
+    },
+    {
+      "path": "upgrade/upgrade.properties",
+      "sha256": "8598f7d530a2db9f5f746d7892bae047e8e5afe2931eaee6fac63813817f694a",
+      "source": "Newly authored fixed fixture metadata for existing ControlledScenario variants"
+    }
+  ]
+}

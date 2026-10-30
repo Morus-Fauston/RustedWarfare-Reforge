@@ -186,7 +186,7 @@ public final class SandboxKnowledgeEncodingTest {
     }
 
     private static void capacity(Path output) throws Exception {
-        Path root = Path.of("TestLab/local/P002-知识沙盒输入").toAbsolutePath();
+        Path root = Path.of(System.getProperty("p002.inputs.dir", "TestLab/local/P002-知识沙盒输入")).toAbsolutePath();
         for (SandboxMode mode : new SandboxMode[]{SandboxMode.MEMORY, SandboxMode.HARDCORE}) {
             Path leaf = output.resolve(mode.name() + "-3000-host.jsonl");
             MessageDigest hash = MessageDigest.getInstance("SHA-256");
@@ -214,8 +214,8 @@ public final class SandboxKnowledgeEncodingTest {
                         counts[1] += line.length; counts[2] = Math.max(counts[2], line.length);
                     } catch (IOException failure) { throw new IllegalStateException(failure); }
                 };
-                try (SandboxSession session = new SandboxSession(ControlledScenario.INSTANCE.load(root), evidence, new SandboxOptions(mode, false))) {
-                    session.select(new Position(110, 110)); session.move(new Position(350, 110));
+                try (SandboxSession session = new SandboxSession(ControlledScenario.INSTANCE.load(root), evidence, new SandboxOptions(mode, false), () -> System.nanoTime() / 1_000_000L)) {
+                    session.select(new Position(110, 110), com.rustedwarfare.reforge.client.SelectionMode.REPLACE); session.move(new Position(350, 110));
                     // Capacity fixture: 2500 generated ticks + a worst-sized 500-tick closing allowance.
                     // This does not apply the live entry's terminal boundary or count later ticks as eligibility.
                     for (int step = 0; step < 3000; step++) session.tick();

@@ -7,6 +7,7 @@ import re
 from pathlib import Path
 import shutil
 import subprocess
+import sys
 import tempfile
 import time
 import uuid
@@ -26,6 +27,8 @@ def source_files(repo):
               'Engine/pc/build.gradle.kts', 'SimulationTest/build.gradle.kts',
               'SimulationTest/settings.gradle.kts', 'SimulationTest/gradle.properties',
               'SimulationTest/gradlew', 'SimulationTest/gradlew.bat']]
+    paths += [repo / 'SimulationTest/tools' / name for name in
+              ['platform_scenario.py', 'test_platform_scenario.py', 'test_platform_session_cli.py']]
     return sorted(paths)
 
 
@@ -67,6 +70,8 @@ def plan_suite(repo, name, kind):
         if isinstance(cases, dict):
             cases = [dict(id='short', **cases)]
         for case in cases:
+            if case.get('backend', 'core') not in ('core', 'session'):
+                raise ValueError('Public CI supports only core or headless session scenarios')
             if not re.fullmatch(r'[a-z0-9][a-z0-9-]*', case['id']):
                 raise ValueError('Invalid scenario ID')
             for field in ['scenario', 'contract']:
@@ -137,6 +142,18 @@ def run(repo, output, plan):
         archives = []
         for case in plan['scenarios']:
             folder = output / case['id']
+            if case.get('backend') == 'session':
+                command(case['id'], [sys.executable, '-B', str(project / 'tools/platform_scenario.py'),
+                    'session', '--scenario', str(project / 'public' / case['scenario']),
+                    '--contract', str(project / 'public' / case['contract']),
+                    '--distribution', str(project / 'build/install/simulation-test'), '--output', str(folder)], project)
+                judgment = json.loads((folder / 'result.json').read_text(encoding='utf8'))
+                if judgment['exitCode'] != 0 or judgment['status'] != 'passed':
+                    raise RuntimeError('Session evidence is not complete/pass: ' + case['id'])
+                command(case['id']+'-recompare', [sys.executable, '-B', str(project / 'tools/platform_scenario.py'),
+                    'compare', '--run', str(folder)], project)
+                archives.append(dict(id=case['id'], kind=case['kind'], backend='session', path=str(folder)))
+                continue
             command(case['id'], cli + ['run', '--scenario', str(project / 'public' / case['scenario']),
                     '--contract', str(project / 'public' / case['contract']),
                     '--output', str(folder), '--mode', 'self'], project)

@@ -32,21 +32,21 @@ public final class SandboxVisibilityRouteTest {
                         raw.write(bytes);raw.flush();stream.feed(bytes,0,false);
                     }catch(java.io.IOException failure){throw new IllegalStateException(failure);}
                 };
-                try(var session=new SandboxSession(ControlledScenario.INSTANCE.load(Path.of("TestLab/local/P002-知识沙盒输入").toAbsolutePath()),sink,new SandboxOptions(mode,false))){
+                try(var session=new SandboxSession(ControlledScenario.INSTANCE.load(Path.of(System.getProperty("p002.inputs.dir", "TestLab/local/P002-知识沙盒输入")).toAbsolutePath()),sink,new SandboxOptions(mode,false), () -> System.nanoTime() / 1_000_000L)){
                     require(!visible(session),"u3 initially visible without shared vision");
-                    session.select(new Position(110,110));session.move(new Position(530,270));
+                    session.select(new Position(110,110), com.rustedwarfare.reforge.client.SelectionMode.REPLACE);session.move(new Position(530,270));
                     long firstVisible=-1;
                     while(own(session).getMoveTarget()!=null||own(session).getSpeed()!=0){
                         tick(session,ticks);if(firstVisible<0&&visible(session))firstVisible=session.getObservation().getStepIndex();
                     }
                     require(firstVisible>=0&&visible(session),"Fixed approach did not expose u3 at its stopped endpoint");
-                    phase[0]="visible-baseline";session.select(new Position(550,310));
+                    phase[0]="visible-baseline";session.select(new Position(550,310), com.rustedwarfare.reforge.client.SelectionMode.REPLACE);
                     require("u3".equals(session.getSelectedId()),"Visible foreign selection failed");
                     for(int i=0;i<3;i++){tick(session,ticks);require(visible(session)&&"u3".equals(session.getSelectedId()),"Visible baseline not stable");}
-                    phase[0]="leave";session.select(own(session).getPosition());session.move(new Position(110,290));
+                    phase[0]="leave";session.select(own(session).getPosition(), com.rustedwarfare.reforge.client.SelectionMode.REPLACE);session.move(new Position(110,290));
                     for(int i=0;i<3;i++)tick(session,ticks); // A concrete input-latency allowance; no Android timing claim.
                     require(visible(session),"u3 lost before actual second selection");
-                    session.select(new Position(550,310));require("u3".equals(session.getSelectedId()),"Leave-phase foreign selection failed");
+                    session.select(new Position(550,310), com.rustedwarfare.reforge.client.SelectionMode.REPLACE);require("u3".equals(session.getSelectedId()),"Leave-phase foreign selection failed");
                     while(visible(session))tick(session,ticks);
                     long loss=session.getObservation().getStepIndex();
                     require(session.getSelectedId()==null,"Automatic first-loss selection clearing failed");

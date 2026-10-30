@@ -100,3 +100,34 @@ python -B SimulationTest/ci/public_check.py --suite maintenance-defense --kind a
 `repair`、`reclaim`、`resume-construction`仅映射既有正式动作，`maintenanceContract.basePrices`映射核心既有维护合同。`turret-construction`和`point-defense-construction`显式启用已有防御施工加载能力。动态生产者和建造者共同按独立出生声明解析，父对象必须在命令前出生；不递归读取运行轨迹。`reclaimedUnits`把移除绑定正式回收动作、工人、拥有者、目标和固定移除步。战死对象仍在主机单位集合，回收对象单独登记并从单位集合移除；施工/生产诊断及nonce、已注册队列遵循核心实际保留规则，不能借对象消失删去历史登记。维护场景每步必须具有完整任务、施工和回收字段，玩家任务也保持正式隐藏规则。
 
 每次Runner归档的`manifest.json.costs`记录互不嵌套的纳秒区间：加载/初始化、核心提交/推进/观察（包括玩家DTO投影）、采样/归档及比较；`otherNanos`覆盖身份核验、守卫和未分配开销。分项加剩余严格等于`measuredNanos`，计时止于最终manifest准备，最终manifest写入和archive关闭不计入。构建成本使用外层`result.json.commands[].elapsedSeconds`的真实命令耗时，构建/测试/打包组合命令明确标注，不与Runner分项相加冒充性能基准。这些成本不证明原版、真实PC或Android性能。
+
+## 基本操作基线与共享输入
+
+```powershell
+python -B SimulationTest/ci/public_check.py --suite platform-basics --kind pr --isolated
+python -B -m unittest discover -s SimulationTest/tools -p test_platform_scenario.py
+```
+
+`platform-basics`选择客户端选择、投影、手势、按钮、生命周期和演示入口机制测试，以及三个无头Session短测。操作意图在`platform/scenarios`，独立玩法判据在`platform/contracts`；PC和无头使用相同文件及比较器。短测分别使用已有工厂/坦克、工人和T1炮塔的受控初态，覆盖选择、移动、停止、攻击、生产/取消、建造以及升级/取消。它们不表示从中心起步的完整经营链，也不代替CoreAdapter的精确模拟步场景。
+
+直接运行与只读复核（在仓库根执行，输出必须是不存在的新目录）：
+
+```powershell
+python -B SimulationTest/tools/platform_scenario.py session --scenario SimulationTest/public/platform/scenarios/production.json --contract SimulationTest/public/platform/contracts/production.json --distribution SimulationTest/build/install/simulation-test --output <new-directory>
+python -B SimulationTest/tools/platform_scenario.py windows --scenario SimulationTest/public/platform/scenarios/production.json --contract SimulationTest/public/platform/contracts/production.json --distribution SimulationTest/build/pc/install/pc --size 1200x800 --output <new-directory>
+python -B SimulationTest/tools/platform_scenario.py compare --run <existing-directory>
+```
+
+Windows入口需要已构建PC安装包、Python Pillow、可用交互桌面和前台控制权，仅操作它自己启动并核验身份的窗口。支持1200×800和960×640；`construction`、`upgrade`同样替换场景/契约文件名。输入快照、产物哈希、实际键鼠记录、诊断和截图随批次归档；正常退出和前台恢复缺证不能算通过。公共CI只运行无头入口。
+
+正式动作必须属于本次投递且拥有者、对象、接受结果及调用前后观察精确关联。金额使用同一次调用即时差值，停止检查固定尾部，建设绑定唯一新建事件/对象。仅真实PC点击目标允许按固定地图与实际viewport算出的一像素每轴上限；调用后的目标仍须精确等于正式动作target。原始nonce/身份/轨迹不改写，其余玩法判据及原CoreAdapter精确标准保持。
+
+基线身份包括共享源码/安装包、输入、场景/契约、比较器/驱动、窗口尺寸与平台环境。输入映射、投影、命中、布局、反馈或生命周期变化时补受影响操作：移动/停止/攻击用`production`，建造用`construction`，普通升级用`upgrade`；共同投影或平台接线变化运行三组双尺寸。纯玩法变更优先机制与无头回归，不机械重跑真实PC。旧平台脚本和历史证据保持原入口和身份，适用性按覆盖及源码核对。
+
+Android纯JDK宿主入口（不运行SDK、APK或设备）：
+
+```powershell
+python -B SimulationTest/tools/android_host_check.py --distribution SimulationTest/build/install/simulation-test --fixture SimulationTest/public/inputs/content-movement-knowledge/P002-知识沙盒输入 --output <new-directory>
+```
+
+它编译现有宿主测试并运行业务/失败边界、知识编码容量、可见性轨迹与存储检查，底层仍使用实际共享客户端。OwnRuns真实文件系统检查需要主机允许创建测试符号链接，缺权限会失败。Android instrumentation/ART和设备证据仍保留原所属入口，本批没有建立Android触控操作基线；最终共享源码兼容构建由四期收尾集中执行。

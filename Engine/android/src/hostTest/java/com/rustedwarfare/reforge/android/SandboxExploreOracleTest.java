@@ -203,8 +203,8 @@ public final class SandboxExploreOracleTest {
                                 if(event.getString("kind").equals("movement-arrived")&&event.getString("unitId").equals("u1"))arrived[0]=true;
                     }catch(java.io.IOException failure){throw new IllegalStateException(failure);}
                 };
-                try(var session=new SandboxSession(ControlledScenario.INSTANCE.load(Path.of("TestLab/local/P002-知识沙盒输入").toAbsolutePath()),evidence,new SandboxOptions(mode,shared))) {
-                    session.select(new Position(110,110));session.move(new Position(350,110));
+                try(var session=new SandboxSession(ControlledScenario.INSTANCE.load(Path.of(System.getProperty("p002.inputs.dir", "TestLab/local/P002-知识沙盒输入")).toAbsolutePath()),evidence,new SandboxOptions(mode,shared), () -> System.nanoTime() / 1_000_000L)) {
+                    session.select(new Position(110,110), com.rustedwarfare.reforge.client.SelectionMode.REPLACE);session.move(new Position(350,110));
                     current[0]=checker(stream.records,mode.name());cursor[0]=stream.records.size();
                     for(int tick=0;tick<2500&&!arrived[0];tick++)session.tick();
                     require(arrived[0],"Real scenario did not arrive within2500");for(int tail=0;tail<24;tail++)session.tick();
