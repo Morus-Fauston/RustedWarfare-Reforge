@@ -7,7 +7,7 @@ permissions:
 jobs:
   public-first-loop:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6
@@ -17,55 +17,49 @@ jobs:
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7
         with:
           python-version: '3.13'
-      - name: Public suite selector checks
-        run: python -B -m unittest discover -s SimulationTest/ci -p test_public_check.py
-      - name: Content movement knowledge mechanisms and short scenarios
-        run: python -B SimulationTest/ci/public_check.py --suite content-movement-knowledge --kind pr --output SimulationTest/build/public-ci
-      - name: Production combat mechanisms and short scenarios
-        run: python -B SimulationTest/ci/public_check.py --suite production-combat --kind pr --output SimulationTest/build/public-production-ci
-      - name: Construction economy mechanisms and short scenarios
-        run: python -B SimulationTest/ci/public_check.py --suite build-economy --kind pr --output SimulationTest/build/public-build-economy-ci
-      - name: Maintenance defense mechanisms and short scenarios
-        run: python -B SimulationTest/ci/public_check.py --suite maintenance-defense --kind pr --output SimulationTest/build/public-maintenance-defense-ci
-      - name: Shared platform contract negative checks
-        run: python -B -m unittest discover -s SimulationTest/tools -p test_platform_scenario.py
-      - name: Platform mechanisms and headless client intent scenarios
-        run: python -B SimulationTest/ci/public_check.py --suite platform-basics --kind pr --output SimulationTest/build/public-platform-ci
-      - name: Tooling mechanisms with authored portable fixtures
-        run: python -B SimulationTest/ci/public_check.py --suite tooling --kind mechanism --output SimulationTest/build/public-tooling-ci
+      - name: Complete public mechanism and short layer
+        run: python -B SimulationTest/ci/public_batch.py --kind pr --output SimulationTest/build/public-pr
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         if: always()
         with:
           name: public-first-loop-evidence
-          path: SimulationTest/build/public-ci
+          path: SimulationTest/build/public-pr/content-movement-knowledge
           if-no-files-found: error
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         if: always()
         with:
           name: public-production-combat-evidence
-          path: SimulationTest/build/public-production-ci
+          path: SimulationTest/build/public-pr/production-combat
           if-no-files-found: error
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         if: always()
         with:
           name: public-build-economy-evidence
-          path: SimulationTest/build/public-build-economy-ci
+          path: SimulationTest/build/public-pr/build-economy
           if-no-files-found: error
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         if: always()
         with:
           name: public-maintenance-defense-evidence
-          path: SimulationTest/build/public-maintenance-defense-ci
+          path: SimulationTest/build/public-pr/maintenance-defense
           if-no-files-found: error
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         if: always()
         with:
           name: public-platform-basics-evidence
-          path: SimulationTest/build/public-platform-ci
+          path: SimulationTest/build/public-pr/platform-basics
           if-no-files-found: error
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         if: always()
         with:
           name: public-tooling-evidence
-          path: SimulationTest/build/public-tooling-ci
+          path: SimulationTest/build/public-pr/tooling
+          if-no-files-found: error
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always()
+        with:
+          name: public-pr-batch-evidence
+          path: |
+            SimulationTest/build/public-pr/result.json
+            SimulationTest/build/public-pr/*.log
           if-no-files-found: error

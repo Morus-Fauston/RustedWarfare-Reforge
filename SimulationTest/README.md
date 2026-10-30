@@ -1,6 +1,6 @@
 # 模拟测试代码与构建入口
 
-2026-10-30新增：[首条公共机制/短测入口](public/README.md)。`python -B SimulationTest/ci/public_check.py --isolated`（从仓库根执行）只消费公开自有输入闭包；覆盖及公共CI入口见该说明。以下历史入口及原始证据保持不变。
+公共分层入口见[机制、短测与连续长测](public/README.md)。从仓库根执行`python -B SimulationTest/ci/public_batch.py --kind pr|long --isolated --output <new-directory>`可选择完整公共层级；`--kind mechanism|short`用于对应全层，单集继续使用`ci/public_check.py`。公开自有输入与私有比较链分别声明，真实CI按运行SHA和产物核验；以下历史入口及原始证据保持不变。
 
 本目录用于 Kotlin/JVM 测试控制器、原版测试桥及适配器、轨迹标准化和比较器的自有源码与构建配置，不在工具中重写另一套玩法规则。
 

@@ -8,6 +8,24 @@ import unittest
 
 
 class PublicSelectionTest(unittest.TestCase):
+    def test_portable_corner_and_failure_preservation_mechanisms_are_not_left_out(self):
+        for name, module, classes in [
+            ('content-movement-knowledge', 'core', ['com.rustedwarfare.reforge.core.sim.CornerCaptureTest']),
+            ('platform-basics', 'pc', ['com.rustedwarfare.reforge.pc.EvidenceInitializationFailureTest',
+                                     'com.rustedwarfare.reforge.pc.FailurePreservationTest']),
+        ]:
+            result = subprocess.run([sys.executable, '-B', str(Path(__file__).with_name('public_check.py')),
+                '--suite', name, '--kind', 'mechanism', '--list'], capture_output=True, text=True)
+            self.assertEqual(0, result.returncode, result.stderr)
+            for cls in classes:
+                self.assertIn(cls, json.loads(result.stdout)['tests'][module])
+
+    def test_tooling_includes_complete_layer_contract_tests(self):
+        result = subprocess.run([sys.executable, '-B', str(Path(__file__).with_name('public_check.py')),
+            '--suite', 'tooling', '--kind', 'mechanism', '--list'], capture_output=True, text=True)
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertIn('SimulationTest/ci/test_public_batch.py', json.loads(result.stdout)['pythonTests'])
+
     def test_tooling_plan_names_python_and_jvm_mechanisms_without_specialist_execution(self):
         result = subprocess.run([sys.executable, '-B', str(Path(__file__).with_name('public_check.py')),
             '--suite', 'tooling', '--kind', 'mechanism', '--list'], capture_output=True, text=True)

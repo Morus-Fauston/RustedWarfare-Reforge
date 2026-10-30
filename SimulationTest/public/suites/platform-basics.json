@@ -27,6 +27,8 @@
       "com.rustedwarfare.reforge.client.demo.DemoSessionTest"
     ],
     "pc": [
+      "com.rustedwarfare.reforge.pc.EvidenceInitializationFailureTest",
+      "com.rustedwarfare.reforge.pc.FailurePreservationTest",
       "com.rustedwarfare.reforge.pc.DemoEvidenceTest",
       "com.rustedwarfare.reforge.pc.WindowsLaunchOptionsTest"
     ],

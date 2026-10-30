@@ -50,6 +50,7 @@
     "Decompile/tools/test_verify_dec_evidence.py",
     "SimulationTest/tools/test_specialist_check.py",
     "SimulationTest/ci/test_python_check.py",
-    "SimulationTest/ci/test_public_check.py"
+    "SimulationTest/ci/test_public_check.py",
+    "SimulationTest/ci/test_public_batch.py"
   ]
 }

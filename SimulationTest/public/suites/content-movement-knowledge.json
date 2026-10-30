@@ -5,6 +5,7 @@
   "fixture": "inputs/content-movement-knowledge/P001-移动沙盒输入",
   "tests": {
     "core": [
+      "com.rustedwarfare.reforge.core.sim.CornerCaptureTest",
       "com.rustedwarfare.reforge.core.CoreRuntimeTest",
       "com.rustedwarfare.reforge.core.content.LoadFailureTest",
       "com.rustedwarfare.reforge.core.content.MapLoadTest",
