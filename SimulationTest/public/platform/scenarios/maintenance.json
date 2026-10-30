@@ -1,0 +1,47 @@
+{
+  "schemaVersion": 1,
+  "scenarioId": "platform-maintenance-basics",
+  "inputs": "../../inputs/platform-basics/maintenance",
+  "intents": [
+    {
+      "intentId": "choose-extractor",
+      "kind": "select",
+      "unitId": "extractor",
+      "position": {
+        "x": 190,
+        "y": 290
+      }
+    },
+    {
+      "intentId": "upgrade-economic",
+      "kind": "upgrade",
+      "unitId": "extractor",
+      "upgradeId": "upgrade_t2"
+    },
+    {
+      "intentId": "cancel-economic",
+      "kind": "cancelUpgrade",
+      "unitId": "extractor",
+      "upgradeId": "upgrade_t2"
+    },
+    {
+      "intentId": "choose-worker",
+      "kind": "select",
+      "unitId": "worker",
+      "position": {
+        "x": 270,
+        "y": 270
+      }
+    },
+    {
+      "intentId": "reclaim-extractor",
+      "kind": "reclaim",
+      "unitId": "worker",
+      "targetUnitId": "extractor",
+      "position": {
+        "x": 190,
+        "y": 290
+      }
+    }
+  ]
+}

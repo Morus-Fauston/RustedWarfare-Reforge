@@ -1,0 +1,30 @@
+{
+  "schemaVersion": 1,
+  "scenarioId": "platform-native-production-basics",
+  "inputs": "../../inputs/build-economy/start",
+  "intents": [
+    {
+      "intentId": "choose-center",
+      "kind": "select",
+      "unitId": "h",
+      "position": {
+        "x": 110,
+        "y": 210
+      }
+    },
+    {
+      "intentId": "native-produce-builder",
+      "kind": "produce",
+      "unitId": "h",
+      "typeId": "builder",
+      "control": "native-production"
+    },
+    {
+      "intentId": "native-cancel-builder",
+      "kind": "cancelProduction",
+      "unitId": "h",
+      "typeId": "builder",
+      "control": "native-production"
+    }
+  ]
+}

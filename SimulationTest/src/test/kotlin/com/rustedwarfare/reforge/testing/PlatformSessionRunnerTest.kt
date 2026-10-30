@@ -8,6 +8,28 @@ import kotlinx.serialization.json.*
 class PlatformSessionRunnerTest {
     private val publicRoot = Path.of(System.getProperty("repo.root")).resolve("SimulationTest/public")
 
+    @Test fun `maintenance intentions pay and refund an economic upgrade then enqueue reclaim on the same real world`() {
+        val output = Files.createTempDirectory("platform-maintenance-").resolve("run")
+        PlatformSessionRunner.run(publicRoot.resolve("inputs/platform-basics/maintenance"),
+            publicRoot.resolve("platform/scenarios/maintenance.json"), output)
+        val rows = Files.readAllLines(output.resolve("client-diagnostic.jsonl")).map { json.parseToJsonElement(it).jsonObject }
+        val actions = rows.filter { it["kind"] == s("action") }
+        assertEquals(listOf("SelectAction", "UpgradeAction", "CancelUpgradeAction", "SelectAction", "ReclaimBuildingAction"),
+            actions.map { it.text("type") })
+        assertTrue(actions.all { it.objectAt("result")["accepted"] == b(true) })
+        for ((type, delta) in listOf("UpgradeAction" to -1400.0, "CancelUpgradeAction" to 1400.0)) {
+            val index = rows.indexOfFirst { it["type"] == s(type) }
+            assertEquals(s("upgrade_t2"), rows[index]["upgradeId"])
+            assertEquals(delta, rows[index+1].objectAt("sample").number("balance") - rows[index-1].objectAt("sample").number("balance"))
+        }
+        val reclaim = rows.indexOfFirst { it["type"] == s("ReclaimBuildingAction") }
+        assertEquals(s("extractor"), rows[reclaim]["targetUnitId"])
+        val worker = rows[reclaim+1].objectAt("sample").arrayAt("units").single { it.jsonObject["unitId"] == s("worker") }.jsonObject
+        assertEquals("reclaim", worker.arrayAt("tasks").single().jsonObject.text("kind"))
+        assertEquals("extractor", worker.arrayAt("tasks").single().jsonObject.text("targetUnitId"))
+        assertEquals(1, rows.filter { it["kind"] == s("observation") }.map { it.objectAt("sample").text("worldId") }.distinct().size)
+    }
+
     @Test fun `shared turret upgrade and cancel intentions use the real branch and exact refund`() {
         val output = Files.createTempDirectory("platform-upgrade-").resolve("run")
         PlatformSessionRunner.run(publicRoot.resolve("inputs/platform-basics/upgrade"),

@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "suiteId": "public.platform-basics.v1",
   "inputScope": "public",
-  "fixture": "inputs/content-movement-knowledge/P001-\u79fb\u52a8\u6c99\u76d2\u8f93\u5165",
+  "fixture": "inputs/content-movement-knowledge/P001-移动沙盒输入",
   "tests": {
     "client": [
       "com.rustedwarfare.reforge.client.CameraProjectionTest",
@@ -54,6 +54,18 @@
       "backend": "session",
       "scenario": "platform/scenarios/upgrade.json",
       "contract": "platform/contracts/upgrade.json"
+    },
+    {
+      "id": "platform-maintenance",
+      "backend": "session",
+      "scenario": "platform/scenarios/maintenance.json",
+      "contract": "platform/contracts/maintenance.json"
+    },
+    {
+      "id": "platform-native-production",
+      "backend": "session",
+      "scenario": "platform/scenarios/native-production.json",
+      "contract": "platform/contracts/native-production.json"
     }
   ]
 }

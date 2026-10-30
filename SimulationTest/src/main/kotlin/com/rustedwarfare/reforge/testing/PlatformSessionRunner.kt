@@ -47,6 +47,7 @@ object PlatformSessionRunner {
                             intent.objectAt("position").let { Position(it.number("x"), it.number("y")) })
                         "upgrade" -> session.upgrade(intent.id("upgradeId"))
                         "cancelUpgrade" -> session.cancelUpgrade(intent.id("upgradeId"))
+                        "reclaim" -> session.reclaim(intent.id("targetUnitId"))
                         else -> throw InputError("Unsupported platform intent: ${intent.text("kind")}")
                     }
                     val waitSteps = if ("waitSteps" in intent) intent.integer("waitSteps") else 0L

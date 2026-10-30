@@ -9,6 +9,71 @@ import com.badlogic.gdx.scenes.scene2d.InputEvent
 import kotlin.test.*
 
 class ProductionActionViewTest {
+    @Test fun production_drag_back_and_wrong_releases_keep_the_original_button_until_one_valid_release() {
+        SandboxSession(scene(1000L)).use { session ->
+            session.select(Position(310.0, 210.0))
+            val input = ProductionButtonInput({ session }, { true })
+            val actor = Actor().apply { setBounds(0f, 0f, 84f, 64f); addListener(input) }
+            fun fire(kind: InputEvent.Type, x: Float = 10f, pointer: Int = 0,
+                     button: Int = Input.Buttons.LEFT) {
+                actor.fire(InputEvent().apply {
+                    type = kind; this.button = button; this.pointer = pointer
+                    stageX = x; stageY = 10f; touchFocus = false
+                })
+            }
+            fire(InputEvent.Type.touchDown)
+            fire(InputEvent.Type.touchDragged, x = 100f)
+            fire(InputEvent.Type.exit)
+            fire(InputEvent.Type.touchDragged)
+            fire(InputEvent.Type.touchUp, pointer = 1)
+            fire(InputEvent.Type.touchUp, button = Input.Buttons.RIGHT)
+            assertTrue(input.pressed)
+            assertEquals(1000.0, session.observation.credits)
+            fire(InputEvent.Type.touchUp)
+            fire(InputEvent.Type.touchUp)
+            assertFalse(input.pressed)
+            assertEquals(1, session.productionAction!!.count)
+            assertEquals(500.0, session.observation.credits)
+            fire(InputEvent.Type.touchDown, button = Input.Buttons.RIGHT)
+            fire(InputEvent.Type.touchUp, button = Input.Buttons.RIGHT)
+            assertEquals(0, session.productionAction!!.count)
+            assertEquals(1000.0, session.observation.credits)
+        }
+    }
+
+    @Test fun stale_production_press_cannot_survive_selection_round_trip_or_a_new_session_with_the_same_factory_id() {
+        for (reopen in listOf(false, true)) {
+            var session = SandboxSession(scene(1000L))
+            session.select(Position(310.0, 210.0))
+            val input = ProductionButtonInput({ session }, { true })
+            val actor = Actor().apply { setBounds(0f, 0f, 84f, 64f); addListener(input) }
+            fun fire(kind: InputEvent.Type): Boolean {
+                val event = InputEvent().apply {
+                    type = kind; button = Input.Buttons.LEFT; pointer = 0
+                    stageX = 10f; stageY = 10f; touchFocus = false
+                }
+                actor.fire(event)
+                return event.isHandled
+            }
+            try {
+                assertTrue(fire(InputEvent.Type.touchDown))
+                if (reopen) {
+                    session.close()
+                    session = SandboxSession(scene(1000L))
+                } else session.select(Position(510.0, 330.0))
+                session.select(Position(310.0, 210.0))
+                assertTrue(fire(InputEvent.Type.touchUp))
+                assertEquals(0, session.productionAction!!.count, "stale press, reopen=$reopen")
+                assertEquals(1000.0, session.observation.credits)
+                assertTrue(fire(InputEvent.Type.touchDown))
+                assertTrue(fire(InputEvent.Type.touchUp))
+                fire(InputEvent.Type.touchUp)
+                assertEquals(1, session.productionAction!!.count)
+                assertEquals(500.0, session.observation.credits)
+            } finally { session.close() }
+        }
+    }
+
     @Test fun scene2d_production_press_consumes_left_and_right_and_cancels_a_drag_outside() {
         val session = SandboxSession(scene(1000L))
         try {
