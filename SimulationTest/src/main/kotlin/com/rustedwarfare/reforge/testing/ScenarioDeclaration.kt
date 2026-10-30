@@ -24,6 +24,24 @@ internal object ScenarioDeclaration {
         val players = value.arrayAt("players").map { it.jsonObject }
         unique(players.map { it.id("playerId") }, "player")
         if (players.isEmpty() || players.any { it.text("control") !in setOf("local", "none") }) throw InputError("Invalid players")
+        value["automaticVision"]?.let { declaration ->
+            val vision = declaration.jsonObject
+            if (vision.keys != setOf("retention", "pathSource", "shareAlliedVision", "observers", "grid") ||
+                vision.text("retention") !in setOf("MEMORY", "HARDCORE_FORGET") ||
+                vision.text("pathSource") !in setOf("PLAYER_KNOWLEDGE", "ORIGINAL_COMPATIBILITY") ||
+                vision.required("shareAlliedVision").jsonPrimitive.booleanOrNull == null ||
+                (vision.text("retention") == "HARDCORE_FORGET" && vision.text("pathSource") != "PLAYER_KNOWLEDGE"))
+                throw InputError("Invalid automatic vision declaration")
+            val grid = vision.objectAt("grid")
+            if (grid.keys != setOf("width", "height") || grid.integer("width") <= 0 || grid.integer("height") <= 0 ||
+                grid.integer("width") > Int.MAX_VALUE || grid.integer("height") > Int.MAX_VALUE ||
+                grid.integer("width") * grid.integer("height") > Int.MAX_VALUE)
+                throw InputError("Invalid declared knowledge grid")
+            val observers = vision.arrayAt("observers").map { it.jsonPrimitive.content }
+            unique(observers, "observer")
+            if (observers.isEmpty() || observers.any { id -> players.none { it.id("playerId") == id } })
+                throw InputError("Unknown or empty player observer")
+        }
         val units = value.arrayAt("units").map { it.jsonObject }
         unique(units.map { it.id("unitId") }, "unit")
         if (units.isEmpty()) throw InputError("Empty unit declaration")

@@ -2,6 +2,7 @@ package com.rustedwarfare.reforge.testing
 
 import com.rustedwarfare.reforge.core.content.*
 import com.rustedwarfare.reforge.core.sim.*
+import com.rustedwarfare.reforge.core.knowledge.*
 import java.nio.file.Files
 import java.nio.file.Path
 import javax.xml.XMLConstants
@@ -66,6 +67,10 @@ internal object ScenarioReader {
         val paths = identities.map { it.path }.toSet()
         verifyXmlReferences(mapRef.path, paths, mutableSetOf())
         val map = unwrap(ContentLoader.loadMap(mapRef.path))
+        input["automaticVision"]?.jsonObject?.objectAt("grid")?.let { grid ->
+            if (grid.integer("width") != map.widthTiles.toLong() || grid.integer("height") != map.heightTiles.toLong())
+                throw InputError("Declared knowledge grid differs from verified map dimensions")
+        }
         val unit = unwrap(ContentLoader.loadUnitVariant(unitRef.path))
         if (unit.imagePath.toRealPath() !in paths || map.tileSets.any { it.imagePath.toRealPath() !in paths }) {
             throw InputError("A loaded image dependency has no declared identity")
@@ -90,6 +95,9 @@ internal object ScenarioReader {
                 coordinate.text("origin"), coordinate.text("unit"), coordinate.text("valueType"), coordinate.text("precision")),
             TimeModel(time.id("id"), time.text("deltaUnit"), time.text("precision"), time.text("stepRule")),
             MovementContract(movement.number("pathPointRadius"), movement.number("targetRadius")),
+            input["automaticVision"]?.jsonObject?.let { rules -> KnowledgeRules(
+                TerrainRetention.valueOf(rules.text("retention")), PathInformationSource.valueOf(rules.text("pathSource")),
+                rules.required("shareAlliedVision").jsonPrimitive.boolean) },
         )
         if (core.units.isEmpty() || core.players.isEmpty()) throw InputError("Empty initial world")
         val termination = input.objectAt("termination")

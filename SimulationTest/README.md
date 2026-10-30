@@ -84,3 +84,6 @@ java -cp "build/install/simulation-test/lib/*" com.rustedwarfare.reforge.testing
 该脚本运行打包入口的帮助、版本、坏参数、两次采集、坏哈希、未知版本、缺依赖、初始化失败、取消及超时，玩法批次仍归 TestLab。重复运行只比较固定输入的核心观测，不产生原版预期。
 
 本机测试需要已经制备的 `TestLab/local/P001-移动沙盒输入/` 和只读原版图像引用；它们受根 `.gitignore` 排除，公开克隆不包含这些资产。缺输入时测试明确失败，不空跑或跳过后报通过。源码与工具夹具为本票自写，未复制原版/参考项目玩法代码；本票不授权原版改包、安装、运行或素材分发。Windows/JVM 的证据不证明 Android、Linux、真实网络、性能或原版兼容。
+
+
+TEST-P004-002新增命名机制/短测/同局长测选择：`python -B SimulationTest/ci/public_check.py --suite content-movement-knowledge --kind all --isolated`。公开夹具与固定知识场景、旧私有专属入口及证据边界见[公共测试说明](public/README.md)。默认首环命令仍可复跑。

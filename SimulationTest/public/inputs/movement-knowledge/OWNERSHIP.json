@@ -1,0 +1,17 @@
+{
+  "origin": "Independently authored synthetic corridor and unit, existing owned solid image; no original files",
+  "files": [
+    {
+      "path": "corridor.tmx",
+      "sha256": "611d860611ea8384c34bc54b96c517fd386341e3d69f8f632fd49a6891bb436a"
+    },
+    {
+      "path": "owned.png",
+      "sha256": "83f552e61b69118f15ea71eec15ad99c2c4df1bb8fbcff3867fe0f206ef2b9c5"
+    },
+    {
+      "path": "walker.ini",
+      "sha256": "8b0272612d8e78db68ba24ee0e62f33f18c1885268064bd628f809d638fdda48"
+    }
+  ]
+}

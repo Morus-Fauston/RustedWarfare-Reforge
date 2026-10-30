@@ -56,7 +56,7 @@ object Runner {
                 CoreAdapter(input).use { core ->
                     val initial = core.initial()
                     initialStateChecked = true
-                    archive.observation(initial, "initial", input)
+                    archive.observation(initial, "initial", input, core.playerViews())
                     for (step in input.steps) {
                         checkExecution()
                         input.actions.filter { it.integer("atStep") == step.stepIndex }.forEach { action ->
@@ -69,7 +69,7 @@ object Runner {
                             observation.simulationTime != (observed + 1).toDouble()) {
                             throw CaptureError("Observation does not match the requested simulation boundary")
                         }
-                        archive.observation(observation, "after-advance", input)
+                        archive.observation(observation, "after-advance", input, core.playerViews())
                         observed++
                     }
                 }

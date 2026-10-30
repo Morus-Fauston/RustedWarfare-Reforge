@@ -1,0 +1,1 @@
+<tileset name="ground" tilewidth="20" tileheight="20" tilecount="40" columns="5"><image source="../assets/ground.png" width="100" height="160"/><tile id="16"><properties><property name="trees" value=""/></properties></tile></tileset>

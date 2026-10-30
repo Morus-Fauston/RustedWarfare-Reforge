@@ -18,8 +18,10 @@ jobs:
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7
         with:
           python-version: '3.13'
-      - name: Mechanisms and public short scenario
-        run: python -B SimulationTest/ci/public_check.py --output SimulationTest/build/public-ci
+      - name: Public suite selector checks
+        run: python -B -m unittest discover -s SimulationTest/ci -p test_public_check.py
+      - name: Content movement knowledge mechanisms and short scenarios
+        run: python -B SimulationTest/ci/public_check.py --suite content-movement-knowledge --kind pr --output SimulationTest/build/public-ci
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         if: always()
         with:

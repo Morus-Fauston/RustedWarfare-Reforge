@@ -1,8 +1,9 @@
-"""Local/CI entry for the first public mechanism + short suite (Python standard library)."""
+"""Local/CI named mechanism, short and continuous scenario suites (standard library)."""
 import argparse
 import hashlib
 import json
 import os
+import re
 from pathlib import Path
 import shutil
 import subprocess
@@ -16,11 +17,13 @@ REPO = Path(__file__).resolve().parents[2]
 
 def source_files(repo):
     """Explicit public source closure; never copy TestLab, Docs, evidence or original inputs."""
-    roots = ['Engine/core/src', 'SimulationTest/src/main', 'SimulationTest/src/test',
+    roots = ['Engine/core/src', 'Engine/client/src', 'Engine/pc/src',
+             'SimulationTest/src/main', 'SimulationTest/src/test', '.github/workflows',
              'SimulationTest/public', 'SimulationTest/ci', 'SimulationTest/gradle']
     paths = [p for root in roots for p in (repo / root).rglob('*')
              if p.is_file() and '__pycache__' not in p.parts]
-    paths += [repo / name for name in ['Engine/core/build.gradle.kts', 'SimulationTest/build.gradle.kts',
+    paths += [repo / name for name in ['Engine/core/build.gradle.kts', 'Engine/client/build.gradle.kts',
+              'Engine/pc/build.gradle.kts', 'SimulationTest/build.gradle.kts',
               'SimulationTest/settings.gradle.kts', 'SimulationTest/gradle.properties',
               'SimulationTest/gradlew', 'SimulationTest/gradlew.bat']]
     return sorted(paths)
@@ -31,12 +34,68 @@ def identities(repo):
             for p in source_files(repo)]
 
 
-def run(repo, output):
+MODULES = {'tools': (':test', 'build/test-results/test'),
+           'core': (':core:test', 'build/core/test-results/test'),
+           'client': (':client:test', 'build/client/test-results/test'),
+           'pc': (':pc:test', 'build/pc/test-results/test')}
+
+
+def plan_suite(repo, name, kind):
+    if not re.fullmatch(r'[a-z0-9][a-z0-9-]*', name):
+        raise ValueError('Suite name must be a public registry name, not a path')
+    path = repo / 'SimulationTest/public/suites' / (name + '.json')
+    if not path.is_file():
+        raise ValueError('Unknown suite: ' + name)
+    suite = json.loads(path.read_text(encoding='utf-8'))
+    if suite['schemaVersion'] != 1:
+        raise ValueError('Unsupported public suite schema')
+    tests = {}
+    if kind in ['mechanism', 'pr', 'all']:
+        tests = suite.get('tests', {'tools': suite.get('toolTests', []),
+                                    'core': suite.get('mechanismTests', [])})
+        tests = {module: classes for module, classes in tests.items() if classes}
+    if any(module not in MODULES or not isinstance(classes, list) or
+           len(classes) != len(set(classes)) or any(not isinstance(c, str) or
+           not re.fullmatch(r'[A-Za-z_][A-Za-z0-9_.]*', c) for c in classes)
+           for module, classes in tests.items()):
+        raise ValueError('Invalid module or fixed JUnit class selection')
+    scenarios = []
+    for category in ['short', 'long']:
+        if kind not in [category, 'all'] and not (kind == 'pr' and category == 'short'):
+            continue
+        cases = suite.get(category, [])
+        if isinstance(cases, dict):
+            cases = [dict(id='short', **cases)]
+        for case in cases:
+            if not re.fullmatch(r'[a-z0-9][a-z0-9-]*', case['id']):
+                raise ValueError('Invalid scenario ID')
+            for field in ['scenario', 'contract']:
+                root = (repo / 'SimulationTest/public').resolve()
+                if (not (root / case[field]).resolve().is_relative_to(root) or
+                        not (root / case[field]).is_file()):
+                    raise ValueError('Scenario/contract must exist inside public input directory')
+            scenarios.append(dict(case, kind=category))
+    if not tests and not scenarios:
+        raise ValueError('Selected suite/kind is empty')
+    if len({case['id'] for case in scenarios}) != len(scenarios):
+        raise ValueError('Duplicate scenario ID')
+    fixture = suite.get('fixture')
+    if fixture is not None:
+        root = (repo / 'SimulationTest/public').resolve()
+        if not isinstance(fixture, str) or not (root / fixture).resolve().is_relative_to(root) or not (root / fixture).is_dir():
+            raise ValueError('Fixture must exist inside public input directory')
+    return dict(suiteId=suite['suiteId'], kind=kind, tests=tests, scenarios=scenarios,
+                inputScope=suite.get('inputScope', 'public'), fixture=suite.get('fixture'))
+
+
+def run(repo, output, plan):
     output.mkdir(parents=True, exist_ok=False)
     initial = identities(repo)
-    result = dict(schemaVersion=1, suite='public-pr-first-loop', status='execution-failed',
+    result = dict(schemaVersion=1, suite=plan['suiteId'], selection=plan, status='execution-failed',
                   cloudRun=False, source=initial, commands=[], coverage=[],
-                  exclusions=['original-compatibility', 'platform-input', 'full-historical-migration', 'continuous-long'])
+                  exclusions=['original-compatibility', 'platform-input', 'historical-snapshot-reexecution'])
+    if not any(case['kind'] == 'long' for case in plan['scenarios']):
+        result['exclusions'].append('continuous-long')
     started = time.monotonic()
     def command(name, args, cwd):
         begin = time.monotonic()
@@ -63,34 +122,37 @@ def run(repo, output):
         result['coverage'].append(dict(name=name, classes=rows))
     try:
         project = repo / 'SimulationTest'
-        suite = json.loads((project / 'public/suites/pr-first-loop.json').read_text(encoding='utf-8'))
-        if suite['schemaVersion'] != 1 or suite['suiteId'] != result['suite']:
-            raise RuntimeError('Unsupported public suite identity')
         wrapper = [str(project / 'gradlew.bat')] if os.name == 'nt' else ['sh', str(project / 'gradlew')]
         common = ['--no-daemon', '--console=plain', '--max-workers=1', '--rerun-tasks']
-        tool_classes = suite['toolTests']
-        core_classes = suite['mechanismTests']
-        command('tools-and-package', wrapper + [':test'] +
-                [v for name in tool_classes for v in ['--tests', name]] + [':installDist'] + common, project)
-        junit(project / 'build/test-results/test', 'tool-tests', tool_classes)
-        command('mechanisms', wrapper + [':core:test'] +
-                [v for name in core_classes for v in ['--tests', name]] + common, project)
-        junit(project / 'build/core/test-results/test', 'mechanism-tests', core_classes)
+        if plan['fixture']:
+            common += ['-Dpublic.inputs.dir=' + str(project / 'public' / plan['fixture'])]
+        tasks = []
+        for module, classes in plan['tests'].items():
+            tasks += [MODULES[module][0]] + [v for name in classes for v in ['--tests', name]]
+        command('tests-and-package', wrapper + tasks + [':installDist'] + common, project)
+        for module, classes in plan['tests'].items():
+            junit(project / MODULES[module][1], module + '-tests', classes)
         launcher = project / 'build/install/simulation-test/bin' / ('simulation-test.bat' if os.name == 'nt' else 'simulation-test')
         cli = [str(launcher)] if os.name == 'nt' else ['sh', str(launcher)]
-        command('short', cli + ['run', '--scenario', str(project / 'public' / suite['short']['scenario']),
-                '--contract', str(project / 'public' / suite['short']['contract']),
-                '--output', str(output / 'short'), '--mode', 'self'], project)
-        batches = list((output / 'short').glob('run-*'))
-        if len(batches) != 1:
-            raise RuntimeError('Expected exactly one short-run archive')
-        judgment = json.loads((batches[0] / 'comparison/result.json').read_text(encoding='utf-8'))
-        manifest = json.loads((batches[0] / 'manifest.json').read_text(encoding='utf-8'))
-        if judgment['exitCode'] != 0 or not manifest['complete']:
-            raise RuntimeError('Short evidence is not complete/pass')
+        archives = []
+        for case in plan['scenarios']:
+            folder = output / case['id']
+            command(case['id'], cli + ['run', '--scenario', str(project / 'public' / case['scenario']),
+                    '--contract', str(project / 'public' / case['contract']),
+                    '--output', str(folder), '--mode', 'self'], project)
+            batches = list(folder.glob('run-*'))
+            if len(batches) != 1:
+                raise RuntimeError('Expected exactly one scenario-run archive')
+            judgment = json.loads((batches[0] / 'comparison/result.json').read_text(encoding='utf-8'))
+            manifest = json.loads((batches[0] / 'manifest.json').read_text(encoding='utf-8'))
+            if judgment['exitCode'] != 0 or not manifest['complete']:
+                raise RuntimeError('Scenario evidence is not complete/pass: ' + case['id'])
+            archives.append(dict(id=case['id'], kind=case['kind'], path=str(batches[0])))
         if initial != identities(repo):
             raise RuntimeError('Public source changed during verification')
-        result.update(status='passed', shortArchive=str(batches[0]))
+        result.update(status='passed', archives=archives)
+        if plan['suiteId'] == 'public-pr-first-loop' and archives:
+            result['shortArchive'] = archives[0]['path']
     except Exception as error:
         result['error'] = str(error)
     result['elapsedSeconds'] = time.monotonic() - started
@@ -103,7 +165,19 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--output', type=Path, help='New immutable output directory')
     parser.add_argument('--isolated', action='store_true', help='Copy only public source closure to a new system temporary directory')
+    parser.add_argument('--suite', default='pr-first-loop', help='Named registry under public/suites')
+    parser.add_argument('--kind', choices=['mechanism', 'short', 'long', 'pr', 'all'], default='pr')
+    parser.add_argument('--list', action='store_true', help='Print fixed plan without building or creating evidence')
     args = parser.parse_args()
+    try:
+        plan = plan_suite(REPO, args.suite, args.kind)
+    except (ValueError, KeyError, TypeError) as error:
+        parser.error(str(error))
+    if args.list:
+        print(json.dumps(plan))
+        return 0
+    if plan['inputScope'] != 'public' and (args.isolated or os.environ.get('GITHUB_ACTIONS') == 'true'):
+        parser.error('Private reference suite cannot run in the public closure or CI')
     output = (args.output or REPO / 'SimulationTest/build/public-check' / str(uuid.uuid4())).resolve()
     repo = REPO
     if args.isolated:
@@ -113,7 +187,7 @@ def main():
             target.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(source, target)
         print('Isolated public source:', repo)
-    return run(repo, output)
+    return run(repo, output, plan)
 
 
 if __name__ == '__main__':

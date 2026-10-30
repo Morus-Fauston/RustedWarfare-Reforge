@@ -26,3 +26,30 @@ GitHub Actions入口为仓库根目录的`.github/workflows/public-pr.yml`，沿
 `when`仍支持原`event=action-accepted/action-rejected`和`actionKind`。新增`actionId`、`unitId`精确绑定同一个动作结果；可加`stepIndex`和`phase`限定采样。事件只匹配本次观察之前、上次观察之后的动作，不跨观察复用旧事件。
 
 纯模拟时刻检查点同时声明`phase=initial/after-advance`与`stepIndex`，区分初态和第0步推进结果。动作过滤须有event；未知动作/对象、范围外步号、空条件或未知字段均拒绝。未触发必需检查点返回3；错预期返回2并指向ruleId与前后轨迹；执行失败返回4；声明错误返回64。没有新增数值容差。
+
+## 内容、移动与知识迁移（TEST-P004-002）
+
+`content-movement-knowledge` 显式选择48个core类、5个client类与5个tools类。公共机制使用 `generate_content_inputs.py` 独立生成的P001形状输入：30×20、20格、33阻挡、两个外部TSX及自有纯色图片。运动参数和尺寸来自原测试公开断言，未消费的价格等字段采用合成值；它不证明原版素材或兼容性。默认Engine私有夹具入口保持，只有该测试集显式传入公开根。
+
+```powershell
+python -B SimulationTest/ci/public_check.py --suite content-movement-knowledge --kind all --list
+python -B SimulationTest/ci/public_check.py --suite content-movement-knowledge --kind mechanism
+python -B SimulationTest/ci/public_check.py --suite content-movement-knowledge --kind short
+python -B SimulationTest/ci/public_check.py --suite content-movement-knowledge --kind long
+python -B SimulationTest/ci/public_check.py --suite content-movement-knowledge --kind all --isolated
+```
+
+`--list`只打印固定计划。PR使用`--kind pr`，运行机制与两条短测；本机或收口用`all`包含连续长测。机制和场景各自选取，空集、越界路径、缺输入或未知模块/类格式拒绝。旧默认首环入口仍可用。
+
+`movement-knowledge-short`与`movement-knowledge-chain`采用独立自有1×7走廊，70位置的障碍、视距1和速度20。初态己方在110、敌方在10，互不见；第1步上移至90并发现障碍，第2步重规划判不可达。外方停止被拒，己方停止生效。长测从同一局继续返回110，视野退出但记忆保留，直到第100步检查。长测指连续行为链，无现实耐久/性能含义。输入和检查点先固定，未由轨迹生成预期，未更改既有容差。
+
+可选`automaticVision`仅映射既有知识规则，`observers`声明采集玩家，`grid`声明地图格尺寸；加载时与已核哈希地图的真实尺寸核对，轨迹每步按该独立声明查尺寸和全格，不接受采样自报缩小网格。`observation.players.<playerId>`来自核心`observePlayer`，与宿主诊断`units`分开：包含玩家身份/边界、可见单位ID、授权事件/结果及知识格`c<列>r<行>`。每步必须完整且与宿主同局同边界；不启用该声明的旧场景不增加字段。
+
+8个原版输入相关历史测试类保留在`private-content-reference`机制集，仅可在具备原私有TestLab的本机运行：
+
+```powershell
+python -B SimulationTest/ci/public_check.py --suite private-content-reference --kind mechanism --list
+python -B SimulationTest/ci/public_check.py --suite private-content-reference --kind mechanism
+```
+
+私有集拒绝公共隔离或Actions运行；缺件/失败按执行失败处理，不跳过。P001/P002历史场景、契约、支持及CLI仍由原入口消费，原件不迁移到公共目录。专属环境和原版对照资格由TEST-P004-007承接，002不宣称已重跑这些断言。完整575版本逐项映射及六项领域归属修正在私有票据证据内，历史快照不冒作本次运行源码。

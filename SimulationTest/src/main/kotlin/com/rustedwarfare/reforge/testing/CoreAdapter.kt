@@ -34,6 +34,25 @@ internal class CoreAdapter(private val input: LoadedScenario) : AutoCloseable {
     }
     fun advance(step: Step) = context.advance(step)
     fun observe() = context.observe()
+    // The host archive labels these as player views; all fields come from the authorized core DTO.
+    fun playerViews(): JsonObject? = input.scenarioDocument["automaticVision"]?.jsonObject?.let { rules ->
+        JsonObject(rules.arrayAt("observers").associate { observer ->
+            val id = observer.jsonPrimitive.content
+            val view = context.observePlayer(context.world, id)
+            id to obj("playerId" to s(view.playerId), "worldId" to s(view.worldId),
+                "stepIndex" to n(view.stepIndex), "simulationTime" to n(view.simulationTime),
+                "visibleUnitIds" to array(view.units.map { s(it.unitId) }),
+                "actionResults" to array(view.actionResults.map { it.json() }),
+                "events" to array(view.events.map { it.json() }),
+                "knowledge" to view.knowledge?.let { knowledge -> obj(
+                    "width" to n(knowledge.width), "height" to n(knowledge.height), "revision" to n(knowledge.revision),
+                    "cells" to JsonObject(knowledge.cells.mapIndexed { index, cell ->
+                        "c${index % knowledge.width}r${index / knowledge.width}" to obj("visible" to b(cell.visible),
+                            "lastKnownBlocked" to cell.lastKnownBlocked?.let(::b),
+                            "lastKnownGroundGid" to cell.lastKnownGroundGid?.let(::n))
+                    }.toMap())) })
+        })
+    }
     fun reopen(): Observation {
         when (val result = context.reopen(input.core)) {
             is InitResult.Accepted -> Unit

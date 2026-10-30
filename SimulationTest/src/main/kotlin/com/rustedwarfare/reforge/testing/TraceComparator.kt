@@ -245,6 +245,7 @@ object TraceComparator {
                         if (observation.integer("stepIndex") != step) throw Incomplete("missing-step", "Missing, duplicate or reordered step")
                         if (!initial) time += decimal(steps[sampleCount - 1].required("delta"))
                         if (decimal(observation.required("simulationTime")).compareTo(time) != 0) throw Incomplete("time-alignment", "Simulation time differs from explicit schedule")
+                        validatePlayerSamples(scenario, observation)
                         val units = observation.arrayAt("units").map { it.jsonObject }
                         if (units.map { it.id("unitId") }.toSet() != unitIds || units.size != unitIds.size) throw Incomplete("missing-object", "Missing, duplicate or unknown unit")
                         units.forEach { unit ->
@@ -318,6 +319,39 @@ object TraceComparator {
             JsonObject(unit - "ownerPlayerId" - "typeId" + mapOf("owner" to unit.required("ownerPlayerId"),
                 "type" to unit.required("typeId"), "movementState" to s(unit.text("movementState").lowercase())))
         })))))
+    }
+
+    private fun validatePlayerSamples(scenario: JsonObject, observation: JsonObject) {
+        val declaration = scenario["automaticVision"] as? JsonObject ?: return
+        val expected = declaration.arrayAt("observers").map { it.jsonPrimitive.content }.toSet()
+        val players = observation["players"] as? JsonObject
+            ?: throw Incomplete("missing-player-sample", "Missing declared player observation")
+        if (players.keys != expected) throw Incomplete("missing-player-sample", "Missing or extra player observation")
+        val grid = declaration.objectAt("grid")
+        val expectedWidth = grid.integer("width"); val expectedHeight = grid.integer("height")
+        for ((id, element) in players) {
+            val player = element.jsonObject
+            if (player.text("playerId") != id || listOf("worldId", "stepIndex", "simulationTime").any { player[it] != observation[it] })
+                throw Incomplete("player-boundary", "Player observation is from another world or boundary")
+            val knownIds = scenario.arrayAt("units").map { it.jsonObject.id("unitId") }.toSet()
+            val visible = player.arrayAt("visibleUnitIds").map { it.jsonPrimitive.content }
+            if (visible.distinct().size != visible.size || visible.any { it !in knownIds })
+                throw Incomplete("player-units", "Unknown or duplicate visible unit")
+            player.arrayAt("events"); player.arrayAt("actionResults")
+            val knowledge = player.objectAt("knowledge")
+            val width = knowledge.integer("width"); val height = knowledge.integer("height")
+            val cells = knowledge.objectAt("cells")
+            if (width != expectedWidth || height != expectedHeight || width * height != cells.size.toLong() ||
+                cells.keys != (0 until height).flatMap { r -> (0 until width).map { c -> "c${c}r${r}" } }.toSet())
+                throw Incomplete("player-knowledge", "Incomplete player knowledge grid")
+            cells.values.forEach { cell ->
+                val value = cell.jsonObject
+                if (value.required("visible").jsonPrimitive.booleanOrNull == null ||
+                    value.required("lastKnownBlocked").let { it != JsonNull && it.jsonPrimitive.booleanOrNull == null })
+                    throw Incomplete("player-knowledge", "Invalid player knowledge cell")
+                value.required("lastKnownGroundGid")
+            }
+        }
     }
 
     private fun lookup(value: JsonElement, path: String): JsonElement? = when (value) {

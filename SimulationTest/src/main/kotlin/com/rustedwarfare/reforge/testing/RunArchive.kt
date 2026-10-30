@@ -26,8 +26,8 @@ internal class RunArchive(val path: Path) : AutoCloseable {
         normalized.write(normalizeRecord(record, lineNumber, input?.core?.coordinateModel?.id, input?.core?.timeModel?.id).toString())
         normalized.newLine(); normalized.flush()
     }
-    fun observation(value: Observation, phase: String, input: LoadedScenario) {
-        write(record("observation", "phase" to s(phase), "observation" to value.json()), input)
+    fun observation(value: Observation, phase: String, input: LoadedScenario, players: JsonObject? = null) {
+        write(record("observation", "phase" to s(phase), "observation" to (if (players == null) value.json() else JsonObject(value.json() + ("players" to players)))), input)
         value.events.forEachIndexed { index, event ->
             write(record("event", "eventId" to s("${value.sampleId}:event:$index"),
                 "sampleId" to s(value.sampleId), "stepIndex" to n(value.stepIndex),
