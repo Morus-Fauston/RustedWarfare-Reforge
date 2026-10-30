@@ -96,10 +96,12 @@ class WorkflowChecks(unittest.TestCase):
             # A workspace root itself may never become the output batch.
             with self.assertRaises(ValueError):workflow.output_domain(root,root)
 
-    @unittest.skipUnless(sys.platform=='win32','Windows process cleanup boundary')
     def test_cleanup_timeout_preserves_the_first_timeout_and_end_receipt(self):
         with tempfile.TemporaryDirectory() as temp:
-            with patch.object(workflow.subprocess,'run',side_effect=subprocess.TimeoutExpired('taskkill',30)):
+            cleanup = (patch.object(workflow.subprocess,'run',side_effect=subprocess.TimeoutExpired('taskkill',30))
+                       if sys.platform=='win32' else
+                       patch.object(workflow.os,'killpg',side_effect=OSError('owned process group termination unavailable')))
+            with cleanup:
                 r=workflow.execute_step([sys.executable,'-c','import time;time.sleep(.3)'],temp,Path(temp)/'attempt',timeout=.03)
             self.assertEqual(r['exitCode'],124)
             self.assertEqual(r['firstError']['kind'],'timeout')

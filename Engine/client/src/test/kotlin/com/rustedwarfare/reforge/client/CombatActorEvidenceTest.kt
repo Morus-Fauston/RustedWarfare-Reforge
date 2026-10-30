@@ -8,8 +8,8 @@ import kotlin.test.*
 
 class CombatActorEvidenceTest {
     private fun input(lethal: Boolean): Scenario {
-        val root = Path.of(checkNotNull(System.getProperty("p001.inputs.dir"))).parent.parent.parent.resolve(
-            ".scratch/开发票据/引擎重写/P005-生产战斗与指挥沙盒/evidence/ENG-P005-001/20261025-e-pc-representative-01/input")
+        val root = (System.getProperty("public.fixtures.dir")?.let { Path.of(it).resolve("production-combat/combat") } ?: Path.of(checkNotNull(System.getProperty("p001.inputs.dir"))).parent.parent.parent.resolve(
+            ".scratch/开发票据/引擎重写/P005-生产战斗与指挥沙盒/evidence/ENG-P005-001/20261025-e-pc-representative-01/input"))
         val base = ControlledScenario.load(root)
         val original = base.unitDefinitions.getValue("c_tank")
         fun definition(id: String, damage: Double) = UnitDefinition(id, original.className, original.radius,

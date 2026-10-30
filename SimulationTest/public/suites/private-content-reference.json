@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "suiteId": "private.content-reference.v1",
+  "inputScope": "private-reference",
+  "tests": {
+    "tools": [
+      "com.rustedwarfare.reforge.testing.p001.P001BranchTest",
+      "com.rustedwarfare.reforge.testing.p001.P001LifecycleTest",
+      "com.rustedwarfare.reforge.testing.p001.P001NaturalSuiteTest",
+      "com.rustedwarfare.reforge.testing.p001.P001SuiteTest",
+      "com.rustedwarfare.reforge.testing.p002.AutomaticKnowledgeArchiveTest",
+      "com.rustedwarfare.reforge.testing.p002.DevelopmentKnowledgeCoverageTest",
+      "com.rustedwarfare.reforge.testing.p002.DevelopmentKnowledgeSuiteTest",
+      "com.rustedwarfare.reforge.testing.p002.P002KnowledgeSuiteTest"
+    ]
+  }
+}

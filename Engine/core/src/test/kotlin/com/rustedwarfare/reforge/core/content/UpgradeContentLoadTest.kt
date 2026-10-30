@@ -5,8 +5,8 @@ import java.nio.file.Files
 import kotlin.test.*
 
 class UpgradeContentLoadTest {
-    private fun source(): Path = Path.of(checkNotNull(System.getProperty("p001.inputs.dir"))).parent.parent.parent.resolve(
-        ".scratch/开发票据/引擎重写/P005-生产战斗与指挥沙盒/evidence/ENG-P005-004/20261026-e-upgrade-input-01/input/units")
+    private fun source(): Path = (System.getProperty("public.fixtures.dir")?.let { Path.of(it).resolve("build-economy/turret-upgrades/units") } ?: Path.of(checkNotNull(System.getProperty("p001.inputs.dir"))).parent.parent.parent.resolve(
+        ".scratch/开发票据/引擎重写/P005-生产战斗与指挥沙盒/evidence/ENG-P005-004/20261026-e-upgrade-input-01/input/units"))
 
     @Test fun reads_both_real_first_branch_definitions_and_float_seconds_through_the_public_loader() {
         val gun = assertIs<ContentResult.Success<UnitDefinition>>(

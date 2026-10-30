@@ -1,0 +1,4 @@
+<map orientation="orthogonal" renderorder="right-down" width="1" height="7" tilewidth="20" tileheight="20">
+<tileset firstgid="1" name="owned" tilewidth="20" tileheight="20"><image source="owned.png" width="40" height="20"/><tile id="1"><properties><property name="trees" value="true"/></properties></tile></tileset>
+<layer name="Ground" width="1" height="7"><data encoding="csv">1,1,1,2,1,1,1</data></layer>
+</map>

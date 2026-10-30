@@ -7,8 +7,9 @@ import kotlin.test.*
 import java.nio.file.Files
 
 class TurretSandboxSessionTest {
-    private fun root(): Path = Path.of(checkNotNull(System.getProperty("p001.inputs.dir"))).parent.parent.parent.resolve(
-        ".scratch/开发票据/引擎重写/P005-生产战斗与指挥沙盒/evidence/ENG-P005-003/20261026-e-turret-contract-01/input")
+    private fun root(): Path = (System.getProperty("public.fixtures.dir")?.let { Path.of(it).resolve("maintenance-defense/turret") }
+        ?: Path.of(checkNotNull(System.getProperty("p001.inputs.dir"))).parent.parent.parent.resolve(
+        ".scratch/开发票据/引擎重写/P005-生产战斗与指挥沙盒/evidence/ENG-P005-003/20261026-e-turret-contract-01/input"))
 
     @Test fun current_single_selection_uses_display_radius_and_preserves_core_ownership_and_immobility_gates() {
         SandboxSession(ControlledScenario.load(root())).use { s ->

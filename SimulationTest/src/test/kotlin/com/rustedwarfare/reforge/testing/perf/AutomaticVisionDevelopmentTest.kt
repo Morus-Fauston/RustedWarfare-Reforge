@@ -45,6 +45,11 @@ class AutomaticVisionDevelopmentTest {
         val settle=run.rows.last().getValue("settleStep").jsonPrimitive.int
         reject("initial-position-synced",run.rows.mapIndexed { i,r->if(i==0)unit(r,mapOf("position" to buildJsonObject { put("x",51.0);put("y",70.0) }))else r },"fixed spawn")
         reject("queued-submit-motion",run.rows.mapIndexed { i,r->if(i==1)unit(r,mapOf("speed" to JsonPrimitive(0.1)))else r },"fixed spawn")
+        for ((field,value) in listOf("constructionProgress" to JsonPrimitive(0.5),
+            "constructionTargetId" to JsonPrimitive("unexpected-building"),
+            "tasks" to JsonArray(listOf(buildJsonObject { put("kind","MOVE") })))) {
+            reject("initial-$field",run.rows.mapIndexed { i,r->if(i==0)unit(r,mapOf(field to value))else r },"fixed spawn")
+        }
         val normalEvents=run.rows[normal+2].getValue("observation").jsonObject.getValue("events").jsonArray
         reject("duplicate-normal-synced",syncObservation(normal,"events",JsonArray(normalEvents+normalEvents)),"Duplicate per-unit lifecycle")
         reject("late-started-synced",syncObservation(1,"events",JsonArray(listOf(buildJsonObject { put("kind","movement-started");put("unitId","u0") }))),"Late start")

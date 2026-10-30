@@ -37,8 +37,7 @@ class MapLoadTest {
 
     @Test
     fun acceptsDifferentDimensionsInlineTilesetAndBlocksZeroGid() {
-        val image = inputs().resolve("tilesets/../../../../Rusted Warfare/assets/tilesets/bitmaps/longgrass.png")
-            .toAbsolutePath().normalize().toString().replace("&", "&amp;")
+        val image = tilesetImagePath("p001-ground").toString().replace("&", "&amp;")
         val csv = List(100) { if (it == 55) "0" else "1" }.joinToString(",")
         withMap("""<map orientation="orthogonal" renderorder="right-down" width="10" height="10" tilewidth="20" tileheight="20">
             <tileset firstgid="1" name="inline" tilewidth="20" tileheight="20">

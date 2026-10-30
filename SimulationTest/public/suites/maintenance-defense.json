@@ -1,0 +1,80 @@
+{
+  "schemaVersion": 1,
+  "suiteId": "public.maintenance-defense.v1",
+  "inputScope": "public",
+  "fixture": "inputs/content-movement-knowledge/P001-\u79fb\u52a8\u6c99\u76d2\u8f93\u5165",
+  "tests": {
+    "client": [
+      "com.rustedwarfare.reforge.client.BuildingMaintenanceTest",
+      "com.rustedwarfare.reforge.client.ConstructedDefenseTransactionTest",
+      "com.rustedwarfare.reforge.client.DefenseAfterCenterDeathTest",
+      "com.rustedwarfare.reforge.client.DefenseCompletionOrderingTest",
+      "com.rustedwarfare.reforge.client.DefenseConstructionTest",
+      "com.rustedwarfare.reforge.client.DefenseMaintenanceChainTest",
+      "com.rustedwarfare.reforge.client.DefenseOperationalTest",
+      "com.rustedwarfare.reforge.client.DefensePlacementBoundaryTest",
+      "com.rustedwarfare.reforge.client.DefensePrivacyTest",
+      "com.rustedwarfare.reforge.client.DefenseReopenTest",
+      "com.rustedwarfare.reforge.client.DefenseSiegeScenarioTest",
+      "com.rustedwarfare.reforge.client.DefenseStartChainTest",
+      "com.rustedwarfare.reforge.client.DefenseVariantClosureTest",
+      "com.rustedwarfare.reforge.client.MaintenanceBoundaryTest",
+      "com.rustedwarfare.reforge.client.MaintenanceInputQueueTest",
+      "com.rustedwarfare.reforge.client.MaintenanceLifecycleTest",
+      "com.rustedwarfare.reforge.client.MaintenanceOrderingTest",
+      "com.rustedwarfare.reforge.client.MaintenancePrivacyTest",
+      "com.rustedwarfare.reforge.client.MaintenanceQueueRangeTest",
+      "com.rustedwarfare.reforge.client.MaintenanceSourceTest",
+      "com.rustedwarfare.reforge.client.MaintenanceTransactionTest",
+      "com.rustedwarfare.reforge.client.MultiBuilderConstructionTest",
+      "com.rustedwarfare.reforge.client.PointDefenseSandboxSessionTest",
+      "com.rustedwarfare.reforge.client.TurretIdleTransactionTest",
+      "com.rustedwarfare.reforge.client.TurretSandboxSessionTest",
+      "com.rustedwarfare.reforge.client.UnfinishedDefenseDamageTest"
+    ],
+    "core": [
+      "com.rustedwarfare.reforge.core.content.DefenseConstructionContentTest",
+      "com.rustedwarfare.reforge.core.content.PointDefenseContentLoadTest",
+      "com.rustedwarfare.reforge.core.content.TurretContentLoadTest",
+      "com.rustedwarfare.reforge.core.sim.ArtilleryDefenseTest",
+      "com.rustedwarfare.reforge.core.sim.PointDefenseContractTest",
+      "com.rustedwarfare.reforge.core.sim.PointDefenseLifecycleTest",
+      "com.rustedwarfare.reforge.core.sim.PointDefenseTransactionTest",
+      "com.rustedwarfare.reforge.core.sim.TurretBuildingSpaceTest",
+      "com.rustedwarfare.reforge.core.sim.TurretCombatTest",
+      "com.rustedwarfare.reforge.core.sim.TurretIdleTest",
+      "com.rustedwarfare.reforge.core.sim.TurretLifecycleTest",
+      "com.rustedwarfare.reforge.core.sim.TurretProfileValidationTest"
+    ],
+    "pc": [
+      "com.rustedwarfare.reforge.pc.PointDefenseJsonlPairingTest"
+    ],
+    "tools": [
+      "com.rustedwarfare.reforge.testing.MaintenanceDefenseScenarioTest"
+    ]
+  },
+  "short": [
+    {
+      "id": "maintenance-repair-short",
+      "scenario": "scenarios/maintenance-repair-short.json",
+      "contract": "contracts/maintenance-repair-short.json"
+    },
+    {
+      "id": "maintenance-queue-short",
+      "scenario": "scenarios/maintenance-queue-short.json",
+      "contract": "contracts/maintenance-queue-short.json"
+    },
+    {
+      "id": "maintenance-privacy-short",
+      "scenario": "scenarios/maintenance-privacy-short.json",
+      "contract": "contracts/maintenance-privacy-short.json"
+    }
+  ],
+  "long": [
+    {
+      "id": "maintenance-defense-chain",
+      "scenario": "scenarios/maintenance-defense-chain.json",
+      "contract": "contracts/maintenance-defense-chain.json"
+    }
+  ]
+}

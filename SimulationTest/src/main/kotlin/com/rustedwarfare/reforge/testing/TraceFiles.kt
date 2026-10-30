@@ -69,7 +69,8 @@ object TraceFiles {
             if (inputs.map { it.id("id") }.distinct().size != inputs.size) missing("Duplicate input identities")
             val content = scenario["content"] as? JsonObject
             if (content != null) {
-                val contentRefs = listOf(content.objectAt("map"), content.objectAt("unitVariant")) + content.arrayAt("dependencies").map { it.jsonObject }
+                val contentRefs = listOf(content.objectAt("map")) + ScenarioDeclaration.unitReferences(content) +
+                    content.arrayAt("dependencies").map { it.jsonObject }
                 if (contentRefs.any { reference -> inputs.none { it["id"] == reference["id"] && it["sha256"] == reference["sha256"] } }) missing("Manifest lacks a required content identity")
             }
             val traces = manifest.arrayAt("traceFiles").map { it.jsonObject }

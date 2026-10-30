@@ -1,0 +1,4 @@
+<map orientation="orthogonal" renderorder="right-down" width="12" height="12" tilewidth="20" tileheight="20">
+<tileset firstgid="1" name="owned" tilewidth="20" tileheight="20"><image source="owned.png" width="20" height="20"/></tileset>
+<layer name="Ground" width="12" height="12"><data encoding="csv">1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1</data></layer>
+</map>

@@ -1,0 +1,1 @@
+<tileset name="owned" tilewidth="20" tileheight="20"><image source="../assets/terrain.png" width="40" height="20"/><tile id="1"><properties><property name="trees" value=""/></properties></tile></tileset>

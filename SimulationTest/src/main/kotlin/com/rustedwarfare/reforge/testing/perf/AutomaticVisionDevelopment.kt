@@ -142,6 +142,7 @@ object AutomaticVisionDevelopment {
             putJsonObject("position") { put("x",50.0);put("y",70.0) }
             put("heading",90.0);put("speed",0.0);put("angularVelocity",0.0)
             put("moveTarget",JsonNull);put("pathPoints",JsonArray(emptyList()));put("movementState","IDLE")
+            put("constructionProgress",1.0);put("constructionTargetId",JsonNull);put("tasks",JsonArray(emptyList()))
         }
         fun started()=buildJsonObject { put("kind","movement-started");put("unitId","u0") }
         fun accepted(queued:JsonElement,events:JsonArray)=buildJsonObject {

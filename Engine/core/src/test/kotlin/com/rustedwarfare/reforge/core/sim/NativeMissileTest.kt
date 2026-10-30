@@ -412,9 +412,11 @@ class NativeMissileTest {
         val repo = Path.of(checkNotNull(System.getProperty("p001.inputs.dir"))).parent.parent.parent
         val root = repo.resolve(".scratch/开发票据/引擎重写/P006-建造经济与原版操作/evidence/ENG-P006-001/20261027-intake-01")
         val center = assertIs<ContentResult.Success<UnitDefinition>>(ContentLoader.loadCommandCenter(
-            root.resolve("center-input-01/units/commandCenter.properties"))).value
+            System.getProperty("public.fixtures.dir")?.let { Path.of(it).resolve("production-combat/center/units/commandCenter.properties") }
+                ?: root.resolve("center-input-01/units/commandCenter.properties"))).value
         val builder = assertIs<ContentResult.Success<UnitDefinition>>(ContentLoader.loadBuilder(
-            root.resolve("builder-input-01/units/builder.properties"))).value
+            System.getProperty("public.fixtures.dir")?.let { Path.of(it).resolve("production-combat/center/units/builder.properties") }
+                ?: root.resolve("builder-input-01/units/builder.properties"))).value
         return BuildingTestContent.scenario().copy(unitDefinitions = mapOf(center.id to center, builder.id to builder),
             units = listOf(UnitSpawn("h", "p1", center.id, Position(110.0, 210.0), 0.0),
                 UnitSpawn("z", "p2", builder.id, Position(310.0, 210.0), 0.0)),

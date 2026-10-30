@@ -8,3 +8,6 @@ dependencyResolutionManagement {
 rootProject.name = "simulation-test"
 include(":core")
 project(":core").projectDir = file("../Engine/core")
+include(":client", ":pc")
+project(":client").projectDir = file("../Engine/client")
+project(":pc").projectDir = file("../Engine/pc")

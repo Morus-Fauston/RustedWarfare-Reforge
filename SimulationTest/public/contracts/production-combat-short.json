@@ -1,0 +1,347 @@
+{
+  "schemaVersion": 1,
+  "kind": "behavior-contract",
+  "contractId": "public.production-combat-short.v1.contract",
+  "scope": "self-behavior",
+  "scenarioIds": [
+    "public.production-combat-short.v1"
+  ],
+  "comparison": {
+    "numberMode": "declared-per-field",
+    "tolerances": {}
+  },
+  "approval": {
+    "status": "tool-fixture-only",
+    "source": "TEST-P004-003 independent existing ProductionCommandTest/WorldProductionTest contracts: 350 payment/refund, 501 Float updates; 170 HP unarmed enemy, seven 25 damage hits; no original compatibility"
+  },
+  "exclusions": [
+    "original-compatibility",
+    "platform-input",
+    "performance"
+  ],
+  "producedUnits": [
+    {
+      "unitId": "produced:p1:00000000000000000000000000000000",
+      "productionActionId": "produce",
+      "producerId": "f",
+      "owner": "p1",
+      "typeId": "c_tank",
+      "unitNonce": "00000000000000000000000000000000",
+      "birthStepIndex": 500
+    }
+  ],
+  "rules": [
+    {
+      "ruleId": "initial",
+      "when": {
+        "phase": "initial",
+        "stepIndex": 0
+      },
+      "assertions": [
+        {
+          "path": "economy.balances.p1",
+          "operator": "equals",
+          "value": 1750
+        },
+        {
+          "path": "economy.queues.f",
+          "operator": "equals",
+          "value": []
+        },
+        {
+          "path": "units.enemy.health",
+          "operator": "equals",
+          "value": 170
+        },
+        {
+          "path": "units.enemy.alive",
+          "operator": "equals",
+          "value": true
+        }
+      ]
+    },
+    {
+      "ruleId": "pay-and-cancel",
+      "when": {
+        "phase": "after-advance",
+        "stepIndex": 0
+      },
+      "assertions": [
+        {
+          "path": "economy.balances.p1",
+          "operator": "equals",
+          "value": 1400
+        },
+        {
+          "path": "players.p1.balance",
+          "operator": "equals",
+          "value": 1400
+        },
+        {
+          "path": "players.p2.balance",
+          "operator": "equals",
+          "value": 0
+        },
+        {
+          "path": "players.p2.factoryQueues",
+          "operator": "equals",
+          "value": {}
+        }
+      ]
+    },
+    {
+      "ruleId": "foreign-cannot-pay",
+      "when": {
+        "phase": "after-advance",
+        "stepIndex": 1
+      },
+      "assertions": [
+        {
+          "path": "economy.balances.p1",
+          "operator": "equals",
+          "value": 1400
+        },
+        {
+          "path": "economy.balances.p2",
+          "operator": "equals",
+          "value": 0
+        }
+      ]
+    },
+    {
+      "ruleId": "not-born-early",
+      "when": {
+        "phase": "after-advance",
+        "stepIndex": 499
+      },
+      "assertions": [
+        {
+          "path": "economy.balances.p1",
+          "operator": "equals",
+          "value": 1400
+        }
+      ]
+    },
+    {
+      "ruleId": "real-birth",
+      "when": {
+        "phase": "after-advance",
+        "stepIndex": 500
+      },
+      "assertions": [
+        {
+          "path": "economy.queues.f",
+          "operator": "equals",
+          "value": []
+        },
+        {
+          "path": "units.produced:p1:00000000000000000000000000000000.health",
+          "operator": "equals",
+          "value": 210
+        },
+        {
+          "path": "units.produced:p1:00000000000000000000000000000000.alive",
+          "operator": "equals",
+          "value": true
+        },
+        {
+          "path": "units.produced:p1:00000000000000000000000000000000.position",
+          "operator": "equals",
+          "value": {
+            "x": 50,
+            "y": 55
+          }
+        }
+      ]
+    },
+    {
+      "ruleId": "real-product-controlled",
+      "when": {
+        "phase": "after-advance",
+        "stepIndex": 501
+      },
+      "assertions": [
+        {
+          "path": "units.produced:p1:00000000000000000000000000000000.moveTarget",
+          "operator": "equals",
+          "value": null
+        },
+        {
+          "path": "units.produced:p1:00000000000000000000000000000000.attackTargetId",
+          "operator": "equals",
+          "value": null
+        },
+        {
+          "path": "economy.balances.p1",
+          "operator": "equals",
+          "value": 1400
+        }
+      ]
+    },
+    {
+      "ruleId": "attack-command",
+      "when": {
+        "phase": "after-advance",
+        "stepIndex": 502
+      },
+      "assertions": [
+        {
+          "path": "units.produced:p1:00000000000000000000000000000000.attackTargetId",
+          "operator": "equals",
+          "value": "enemy"
+        },
+        {
+          "path": "economy.balances.p1",
+          "operator": "equals",
+          "value": 1400
+        }
+      ]
+    },
+    {
+      "ruleId": "action.produce",
+      "when": {
+        "event": "action-accepted",
+        "actionId": "produce",
+        "actionKind": "produce",
+        "stepIndex": 0,
+        "phase": "after-advance"
+      },
+      "assertions": [
+        {
+          "path": "actionResults.produce.status",
+          "operator": "equals",
+          "value": "accepted"
+        }
+      ]
+    },
+    {
+      "ruleId": "action.produce-tail",
+      "when": {
+        "event": "action-accepted",
+        "actionId": "produce-tail",
+        "actionKind": "produce",
+        "stepIndex": 0,
+        "phase": "after-advance"
+      },
+      "assertions": [
+        {
+          "path": "actionResults.produce-tail.status",
+          "operator": "equals",
+          "value": "accepted"
+        }
+      ]
+    },
+    {
+      "ruleId": "action.cancel-tail",
+      "when": {
+        "event": "action-accepted",
+        "actionId": "cancel-tail",
+        "actionKind": "cancel-production",
+        "stepIndex": 0,
+        "phase": "after-advance"
+      },
+      "assertions": [
+        {
+          "path": "actionResults.cancel-tail.status",
+          "operator": "equals",
+          "value": "accepted"
+        }
+      ]
+    },
+    {
+      "ruleId": "action.foreign-produce",
+      "when": {
+        "event": "action-rejected",
+        "actionId": "foreign-produce",
+        "actionKind": "produce",
+        "stepIndex": 1,
+        "phase": "after-advance"
+      },
+      "assertions": [
+        {
+          "path": "actionResults.foreign-produce.status",
+          "operator": "equals",
+          "value": "rejected"
+        },
+        {
+          "path": "actionResults.foreign-produce.error.code",
+          "operator": "equals",
+          "value": "not-owner"
+        }
+      ]
+    },
+    {
+      "ruleId": "action.select-product",
+      "when": {
+        "event": "action-accepted",
+        "actionId": "select-product",
+        "actionKind": "select",
+        "stepIndex": 501,
+        "phase": "after-advance"
+      },
+      "assertions": [
+        {
+          "path": "actionResults.select-product.status",
+          "operator": "equals",
+          "value": "accepted"
+        }
+      ]
+    },
+    {
+      "ruleId": "action.stop-product",
+      "when": {
+        "event": "action-accepted",
+        "actionId": "stop-product",
+        "actionKind": "stop",
+        "stepIndex": 501,
+        "phase": "after-advance"
+      },
+      "assertions": [
+        {
+          "path": "actionResults.stop-product.status",
+          "operator": "equals",
+          "value": "accepted"
+        }
+      ]
+    },
+    {
+      "ruleId": "action.foreign-stop",
+      "when": {
+        "event": "action-rejected",
+        "actionId": "foreign-stop",
+        "actionKind": "stop",
+        "stepIndex": 502,
+        "phase": "after-advance"
+      },
+      "assertions": [
+        {
+          "path": "actionResults.foreign-stop.status",
+          "operator": "equals",
+          "value": "rejected"
+        },
+        {
+          "path": "actionResults.foreign-stop.error.code",
+          "operator": "equals",
+          "value": "unit-unavailable"
+        }
+      ]
+    },
+    {
+      "ruleId": "action.attack",
+      "when": {
+        "event": "action-accepted",
+        "actionId": "attack",
+        "actionKind": "attack",
+        "stepIndex": 502,
+        "phase": "after-advance"
+      },
+      "assertions": [
+        {
+          "path": "actionResults.attack.status",
+          "operator": "equals",
+          "value": "accepted"
+        }
+      ]
+    }
+  ]
+}

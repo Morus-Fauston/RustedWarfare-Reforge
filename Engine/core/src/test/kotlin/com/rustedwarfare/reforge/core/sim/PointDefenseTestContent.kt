@@ -7,7 +7,8 @@ import kotlin.test.assertIs
 /** All shots in this fixture are born from the ordinary public simulation path. */
 internal object PointDefenseTestContent {
     fun native(): UnitDefinition {
-        val root = Path.of(checkNotNull(System.getProperty("p001.inputs.dir"))).parent.parent.parent.resolve(
+        val root = System.getProperty("public.fixtures.dir")?.let { Path.of(it).resolve("production-combat/defense") }
+            ?: Path.of(checkNotNull(System.getProperty("p001.inputs.dir"))).parent.parent.parent.resolve(
             ".scratch/开发票据/引擎重写/P005-生产战斗与指挥沙盒/evidence/ENG-P005-005/20261026-e-defense-input-01/input")
         return assertIs<ContentResult.Success<UnitDefinition>>(ContentLoader.loadPointDefense(root.resolve("units/laserDefence.properties"))).value
     }

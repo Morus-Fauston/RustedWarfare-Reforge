@@ -1,0 +1,120 @@
+{
+  "schemaVersion": 1,
+  "kind": "behavior-contract",
+  "contractId": "public.build-economy-short.v1.contract",
+  "scope": "self-behavior",
+  "scenarioIds": [
+    "public.build-economy-short.v1"
+  ],
+  "comparison": {
+    "numberMode": "declared-per-field",
+    "tolerances": {}
+  },
+  "approval": {
+    "status": "tool-fixture-only",
+    "source": "Existing factory construction, WorldIncome and EconomyUpgrade cancellation assertions: 700 construction, 1400 paid/refunded, command center 4.5/10, extractor 8/40; fixed before run"
+  },
+  "exclusions": [
+    "original-compatibility",
+    "platform-input",
+    "performance"
+  ],
+  "rules": [
+    {
+      "ruleId": "paid",
+      "when": {
+        "phase": "after-advance",
+        "stepIndex": 0
+      },
+      "assertions": [
+        {
+          "path": "economy.preciseBalances.p1",
+          "operator": "equals",
+          "value": 2900
+        },
+        {
+          "path": "units.constructed:p1:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.constructionProgress",
+          "operator": "equals",
+          "value": 0
+        }
+      ]
+    },
+    {
+      "ruleId": "refund",
+      "when": {
+        "phase": "after-advance",
+        "stepIndex": 1
+      },
+      "assertions": [
+        {
+          "path": "economy.preciseBalances.p1",
+          "operator": "equals",
+          "value": 4300
+        },
+        {
+          "path": "upgrades.e",
+          "operator": "equals",
+          "value": []
+        }
+      ]
+    },
+    {
+      "ruleId": "native-center-income",
+      "when": {
+        "phase": "after-advance",
+        "stepIndex": 9
+      },
+      "assertions": [
+        {
+          "path": "economy.preciseBalances.p1",
+          "operator": "equals",
+          "value": 4304.5
+        }
+      ]
+    },
+    {
+      "ruleId": "combined-income",
+      "when": {
+        "phase": "after-advance",
+        "stepIndex": 39
+      },
+      "assertions": [
+        {
+          "path": "economy.preciseBalances.p1",
+          "operator": "equals",
+          "value": 4326
+        }
+      ]
+    },
+    {
+      "ruleId": "same-world-funds",
+      "when": {
+        "phase": "after-advance",
+        "stepIndex": 49
+      },
+      "assertions": [
+        {
+          "path": "economy.preciseBalances.p1",
+          "operator": "equals",
+          "value": 4330.5
+        },
+        {
+          "path": "units.constructed:p1:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.owner",
+          "operator": "equals",
+          "value": "p1"
+        }
+      ]
+    }
+  ],
+  "constructedUnits": [
+    {
+      "unitId": "constructed:p1:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "buildActionId": "build",
+      "builderId": "w",
+      "owner": "p1",
+      "typeId": "landFactory",
+      "buildingNonce": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "birthStepIndex": 0
+    }
+  ]
+}

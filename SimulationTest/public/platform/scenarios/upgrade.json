@@ -1,0 +1,10 @@
+{
+  "schemaVersion":1,
+  "scenarioId":"platform-upgrade-basics",
+  "inputs":"../../inputs/platform-basics/upgrade",
+  "intents":[
+    {"intentId":"choose-turret","kind":"select","unitId":"t","position":{"x":230,"y":150}},
+    {"intentId":"upgrade-gun","kind":"upgrade","unitId":"t","upgradeId":"upgrade_gun"},
+    {"intentId":"cancel-gun","kind":"cancelUpgrade","unitId":"t","upgradeId":"upgrade_gun"}
+  ]
+}

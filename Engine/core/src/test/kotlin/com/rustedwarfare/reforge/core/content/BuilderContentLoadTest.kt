@@ -6,8 +6,8 @@ import java.nio.file.Files
 import kotlin.test.*
 
 class BuilderContentLoadTest {
-    private fun file(): Path = Path.of(checkNotNull(System.getProperty("p001.inputs.dir"))).parent.parent.parent.resolve(
-        ".scratch/开发票据/引擎重写/P006-建造经济与原版操作/evidence/ENG-P006-001/20261027-intake-01/builder-input-01/units/builder.properties")
+    private fun file(): Path = (System.getProperty("public.fixtures.dir")?.let { Path.of(it).resolve("build-economy/start/units/builder.properties") } ?: Path.of(checkNotNull(System.getProperty("p001.inputs.dir"))).parent.parent.parent.resolve(
+        ".scratch/开发票据/引擎重写/P006-建造经济与原版操作/evidence/ENG-P006-001/20261027-intake-01/builder-input-01/units/builder.properties"))
 
     @Test fun loaded_native_builder_is_paid_born_selected_and_moved_through_the_real_world() {
         val builder = assertIs<ContentResult.Success<UnitDefinition>>(ContentLoader.loadBuilder(file())).value

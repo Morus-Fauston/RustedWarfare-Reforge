@@ -2,6 +2,7 @@ package com.rustedwarfare.reforge.testing
 
 import com.rustedwarfare.reforge.core.content.*
 import com.rustedwarfare.reforge.core.sim.*
+import com.rustedwarfare.reforge.core.knowledge.*
 import java.nio.file.Files
 import java.nio.file.Path
 import javax.xml.XMLConstants
@@ -59,15 +60,41 @@ internal object ScenarioReader {
             return InputIdentity(value.id("id"), path.toRealPath(), hash)
         }
         val mapRef = identity(content.objectAt("map"))
-        val unitRef = identity(content.objectAt("unitVariant"))
-        val identities = listOf(mapRef, unitRef) + content.arrayAt("dependencies").map { identity(it.jsonObject) }
+        val unitDeclarations = ScenarioDeclaration.unitReferences(content)
+        val unitRefs = unitDeclarations.map(::identity)
+        val identities = listOf(mapRef) + unitRefs + content.arrayAt("dependencies").map { identity(it.jsonObject) }
         if (identities.map { it.id }.distinct().size != identities.size ||
             identities.map { it.path }.distinct().size != identities.size) throw InputError("Duplicate content identity/path")
         val paths = identities.map { it.path }.toSet()
         verifyXmlReferences(mapRef.path, paths, mutableSetOf())
         val map = unwrap(ContentLoader.loadMap(mapRef.path))
-        val unit = unwrap(ContentLoader.loadUnitVariant(unitRef.path))
-        if (unit.imagePath.toRealPath() !in paths || map.tileSets.any { it.imagePath.toRealPath() !in paths }) {
+        input["automaticVision"]?.jsonObject?.objectAt("grid")?.let { grid ->
+            if (grid.integer("width") != map.widthTiles.toLong() || grid.integer("height") != map.heightTiles.toLong())
+                throw InputError("Declared knowledge grid differs from verified map dimensions")
+        }
+        val definitions = unitRefs.zip(unitDeclarations).associate { (ref, declaration) ->
+            verifyTemplateReferences(ref.path, paths, mutableSetOf())
+            val unit = unwrap(when (declaration["loader"]?.jsonPrimitive?.content ?: "variant") {
+                "combat" -> ContentLoader.loadCombatUnit(ref.path)
+                "factory" -> ContentLoader.loadFactory(ref.path)
+                "builder" -> ContentLoader.loadBuilder(ref.path)
+                "command-center" -> ContentLoader.loadCommandCenter(ref.path)
+                "turret" -> ContentLoader.loadTurretUnit(ref.path)
+                "turret-upgrades" -> ContentLoader.loadTurretUnit(ref.path, true)
+                "turret-construction" -> ContentLoader.loadTurretUnit(ref.path, true, true)
+                "point-defense" -> ContentLoader.loadPointDefense(ref.path)
+                "point-defense-construction" -> ContentLoader.loadPointDefense(ref.path, true)
+                "economy" -> ContentLoader.loadEconomyUnit(ref.path)
+                "economy-upgrades" -> ContentLoader.loadEconomyUnit(ref.path, true)
+                else -> ContentLoader.loadUnitVariant(ref.path)
+            })
+            if (content.containsKey("unitVariants") && ref.id != unit.id) throw InputError("Content type ID differs from loaded definition")
+            val images = listOfNotNull(unit.imagePath, unit.combat?.turretImagePath, unit.combat?.deadImagePath,
+                unit.durability?.deadImagePath, unit.building?.backImagePath)
+            if (images.any { it.toRealPath() !in paths }) throw InputError("A loaded image dependency has no declared identity")
+            ref.id to unit
+        }
+        if (map.tileSets.any { it.imagePath.toRealPath() !in paths }) {
             throw InputError("A loaded image dependency has no declared identity")
         }
         val coordinate = input.objectAt("coordinateModel")
@@ -75,21 +102,30 @@ internal object ScenarioReader {
         val movement = input.objectAt("movementContract")
         if (input.text("angleUnit") != "degree-clockwise-zero-up") throw InputError("Unsupported angleUnit")
         val core = Scenario(
-            scenarioId, map, mapOf(unitRef.id to unit),
+            scenarioId, map, definitions,
             input.arrayAt("players").map { value -> value.jsonObject.let {
                 Player(it.id("playerId"), when (it.text("control")) {
                     "local" -> PlayerControl.LOCAL
                     "none" -> PlayerControl.NONE
                     else -> throw InputError("Unknown player control")
-                })
+                }, it["teamId"]?.jsonPrimitive?.content)
             } },
             input.arrayAt("units").map { value -> value.jsonObject.let {
-                UnitSpawn(it.id("unitId"), it.id("owner"), it.id("type"), position(it.objectAt("position")), it.number("heading"))
+                UnitSpawn(it.id("unitId"), it.id("owner"), it.id("type"), position(it.objectAt("position")), it.number("heading"),
+                    it["height"]?.let { _ -> it.number("height") } ?: 0.0)
             } },
             CoordinateModel(coordinate.id("id"), coordinate.text("space"), coordinate.text("xAxis"), coordinate.text("yAxis"),
                 coordinate.text("origin"), coordinate.text("unit"), coordinate.text("valueType"), coordinate.text("precision")),
             TimeModel(time.id("id"), time.text("deltaUnit"), time.text("precision"), time.text("stepRule")),
             MovementContract(movement.number("pathPointRadius"), movement.number("targetRadius")),
+            input["automaticVision"]?.jsonObject?.let { rules -> KnowledgeRules(
+                TerrainRetention.valueOf(rules.text("retention")), PathInformationSource.valueOf(rules.text("pathSource")),
+                rules.required("shareAlliedVision").jsonPrimitive.boolean) },
+            input["combatContract"]?.jsonObject?.let { combat -> CombatContract(combat.integer("worldSeed").toInt(),
+                combat.integer("initialFrameCounter").toInt(), combat.objectAt("unitObjectIds").let { ids -> ids.keys.associateWith { ids.integer(it) } },
+                combat.integer("nextObjectId")) },
+            input["economyContract"]?.jsonObject?.objectAt("initialBalances")?.let { balances -> EconomyContract(balances.keys.associateWith { balances.integer(it) }) },
+            input["maintenanceContract"]?.jsonObject?.objectAt("basePrices")?.let { prices -> MaintenanceContract(prices.keys.associateWith { prices.integer(it) }) },
         )
         if (core.units.isEmpty() || core.players.isEmpty()) throw InputError("Empty initial world")
         val termination = input.objectAt("termination")
@@ -108,16 +144,26 @@ internal object ScenarioReader {
             if (!ids.add(action.id("actionId"))) throw InputError("Duplicate action ID")
             if (action.integer("atStep") !in 0L until steps.size.toLong()) throw InputError("Action outside schedule")
             action.id("actor"); action.id("unitId")
-            when (action.text("kind")) {
-                "move" -> position(action.objectAt("target"))
-                "select", "stop" -> Unit
-                else -> throw InputError("Unsupported action")
-            }
+            ScenarioDeclaration.validateAction(action)
         }
         return LoadedScenario(core, actions, steps, identities,
             InputIdentity(scenarioId, source, digest(scenarioText.toByteArray(Charsets.UTF_8))),
             InputIdentity(contract.id("contractId"), contractFile, digest(contractText.toByteArray(Charsets.UTF_8))), coordinate, time,
             input, contract)
+    }
+
+    private fun verifyTemplateReferences(path: Path, allowed: Set<Path>, visited: MutableSet<Path>) {
+        if (!visited.add(path)) throw InputError("Cyclic content template")
+        var section = ""
+        Files.readAllLines(path).forEach { raw ->
+            val line = raw.trim()
+            if (line.startsWith("[") && line.endsWith("]")) section = line.substring(1, line.length - 1).trim()
+            if (section == "core" && ':' in line && line.substringBefore(':').trim() == "copyFrom") {
+                val parent = path.parent.resolve(line.substringAfter(':').trim()).normalize().toAbsolutePath()
+                if (!Files.isRegularFile(parent) || parent.toRealPath() !in allowed) throw InputError("Undeclared content template: $parent")
+                verifyTemplateReferences(parent.toRealPath(), allowed, visited)
+            }
+        }
     }
 
     private fun verifyXmlReferences(path: Path, allowed: Set<Path>, visited: MutableSet<Path>) {

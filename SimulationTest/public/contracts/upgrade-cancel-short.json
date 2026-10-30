@@ -1,0 +1,235 @@
+{
+  "schemaVersion": 1,
+  "kind": "behavior-contract",
+  "contractId": "public.upgrade-cancel-short.v1.contract",
+  "scope": "self-behavior",
+  "scenarioIds": [
+    "public.upgrade-cancel-short.v1"
+  ],
+  "comparison": {
+    "numberMode": "declared-per-field",
+    "tolerances": {}
+  },
+  "approval": {
+    "status": "tool-fixture-only",
+    "source": "Independent UpgradeCommandTest: gun costs 1000, artillery costs 1600; cancel refunds paid cost; foreign static actor uses not-owner; no original compatibility"
+  },
+  "exclusions": [
+    "original-compatibility",
+    "platform-input",
+    "performance"
+  ],
+  "rules": [
+    {
+      "ruleId": "initial",
+      "when": {
+        "phase": "initial",
+        "stepIndex": 0
+      },
+      "assertions": [
+        {
+          "path": "economy.balances.p1",
+          "operator": "equals",
+          "value": 3000
+        },
+        {
+          "path": "upgrades.t",
+          "operator": "equals",
+          "value": []
+        }
+      ]
+    },
+    {
+      "ruleId": "paid",
+      "when": {
+        "phase": "after-advance",
+        "stepIndex": 0
+      },
+      "assertions": [
+        {
+          "path": "economy.balances.p1",
+          "operator": "equals",
+          "value": 2000
+        },
+        {
+          "path": "players.p1.balance",
+          "operator": "equals",
+          "value": 2000
+        },
+        {
+          "path": "players.p2.upgradeQueues",
+          "operator": "equals",
+          "value": {}
+        },
+        {
+          "path": "players.p1.upgradeQueues.t",
+          "operator": "equals",
+          "value": [
+            {
+              "actionKey": "upgrade_gun",
+              "targetTypeId": "c_turret_t2_gun",
+              "progress": 0.001
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "ruleId": "refunded",
+      "when": {
+        "phase": "after-advance",
+        "stepIndex": 1
+      },
+      "assertions": [
+        {
+          "path": "economy.balances.p1",
+          "operator": "equals",
+          "value": 3000
+        },
+        {
+          "path": "upgrades.t",
+          "operator": "equals",
+          "value": []
+        }
+      ]
+    },
+    {
+      "ruleId": "second-branch-refunded",
+      "when": {
+        "phase": "after-advance",
+        "stepIndex": 2
+      },
+      "assertions": [
+        {
+          "path": "economy.balances.p1",
+          "operator": "equals",
+          "value": 3000
+        },
+        {
+          "path": "upgrades.t",
+          "operator": "equals",
+          "value": []
+        }
+      ]
+    },
+    {
+      "ruleId": "same-world-final",
+      "when": {
+        "phase": "after-advance",
+        "stepIndex": 3
+      },
+      "assertions": [
+        {
+          "path": "economy.balances.p1",
+          "operator": "equals",
+          "value": 3000
+        },
+        {
+          "path": "units.t.type",
+          "operator": "equals",
+          "value": "c_turret_t1"
+        },
+        {
+          "path": "units.t.health",
+          "operator": "equals",
+          "value": 700
+        },
+        {
+          "path": "upgrades.t",
+          "operator": "equals",
+          "value": []
+        }
+      ]
+    },
+    {
+      "ruleId": "action.gun",
+      "when": {
+        "phase": "after-advance",
+        "stepIndex": 0,
+        "event": "action-accepted",
+        "actionId": "gun",
+        "actionKind": "upgrade"
+      },
+      "assertions": [
+        {
+          "path": "actionResults.gun.status",
+          "operator": "equals",
+          "value": "accepted"
+        }
+      ]
+    },
+    {
+      "ruleId": "action.foreign",
+      "when": {
+        "phase": "after-advance",
+        "stepIndex": 1,
+        "event": "action-rejected",
+        "actionId": "foreign",
+        "actionKind": "upgrade"
+      },
+      "assertions": [
+        {
+          "path": "actionResults.foreign.status",
+          "operator": "equals",
+          "value": "rejected"
+        },
+        {
+          "path": "actionResults.foreign.error.code",
+          "operator": "equals",
+          "value": "not-owner"
+        }
+      ]
+    },
+    {
+      "ruleId": "action.cancel-gun",
+      "when": {
+        "phase": "after-advance",
+        "stepIndex": 1,
+        "event": "action-accepted",
+        "actionId": "cancel-gun",
+        "actionKind": "cancel-upgrade"
+      },
+      "assertions": [
+        {
+          "path": "actionResults.cancel-gun.status",
+          "operator": "equals",
+          "value": "accepted"
+        }
+      ]
+    },
+    {
+      "ruleId": "action.artillery",
+      "when": {
+        "phase": "after-advance",
+        "stepIndex": 2,
+        "event": "action-accepted",
+        "actionId": "artillery",
+        "actionKind": "upgrade"
+      },
+      "assertions": [
+        {
+          "path": "actionResults.artillery.status",
+          "operator": "equals",
+          "value": "accepted"
+        }
+      ]
+    },
+    {
+      "ruleId": "action.cancel-artillery",
+      "when": {
+        "phase": "after-advance",
+        "stepIndex": 2,
+        "event": "action-accepted",
+        "actionId": "cancel-artillery",
+        "actionKind": "cancel-upgrade"
+      },
+      "assertions": [
+        {
+          "path": "actionResults.cancel-artillery.status",
+          "operator": "equals",
+          "value": "accepted"
+        }
+      ]
+    }
+  ]
+}

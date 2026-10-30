@@ -1,0 +1,107 @@
+{
+  "schemaVersion": 1,
+  "kind": "behavior-contract",
+  "contractId": "public.build-failure-short.v1.contract",
+  "scope": "self-behavior",
+  "scenarioIds": [
+    "public.build-failure-short.v1"
+  ],
+  "comparison": {
+    "numberMode": "declared-per-field",
+    "tolerances": {}
+  },
+  "approval": {
+    "status": "tool-fixture-only",
+    "source": "Existing placement/funds assertions: non-pool extractor is unavailable; 699 cannot pay 700; failed placement/payment cannot create a building or debit funds. SimulationContext.resolveCommandActor rejects commands for a foreign initial unit with not-owner; generated identity namespaces use unit-unavailable. Placement and payment checks fixed before execution; permission expectation corrected against the existing actor rule after the first failed run."
+  },
+  "exclusions": [
+    "original-compatibility",
+    "platform-input",
+    "performance"
+  ],
+  "rules": [
+    {
+      "ruleId": "bad-pool",
+      "when": {
+        "phase": "after-advance",
+        "stepIndex": 0
+      },
+      "assertions": [
+        {
+          "path": "economy.preciseBalances.p1",
+          "operator": "equals",
+          "value": 699
+        },
+        {
+          "path": "construction.buildings",
+          "operator": "equals",
+          "value": []
+        },
+        {
+          "path": "events",
+          "operator": "contains",
+          "value": "construction-unavailable"
+        }
+      ]
+    },
+    {
+      "ruleId": "unpaid",
+      "when": {
+        "phase": "after-advance",
+        "stepIndex": 1
+      },
+      "assertions": [
+        {
+          "path": "economy.preciseBalances.p1",
+          "operator": "equals",
+          "value": 699
+        },
+        {
+          "path": "construction.buildings",
+          "operator": "equals",
+          "value": []
+        },
+        {
+          "path": "events",
+          "operator": "contains",
+          "value": "construction-insufficient-funds"
+        }
+      ]
+    },
+    {
+      "ruleId": "wait-without-charge",
+      "when": {
+        "phase": "after-advance",
+        "stepIndex": 11
+      },
+      "assertions": [
+        {
+          "path": "economy.preciseBalances.p1",
+          "operator": "equals",
+          "value": 699
+        },
+        {
+          "path": "construction.buildings",
+          "operator": "equals",
+          "value": []
+        }
+      ]
+    },
+    {
+      "ruleId": "foreign",
+      "when": {
+        "event": "action-rejected",
+        "actionId": "foreign-build",
+        "stepIndex": 1
+      },
+      "assertions": [
+        {
+          "path": "actionResults.foreign-build.error.code",
+          "operator": "equals",
+          "value": "not-owner"
+        }
+      ]
+    }
+  ],
+  "constructedUnits": []
+}

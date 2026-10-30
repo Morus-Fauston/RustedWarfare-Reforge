@@ -1,0 +1,38 @@
+{
+  "schemaVersion": 1,
+  "kind": "behavior-contract",
+  "contractId": "public.select-move-stop.v1.contract",
+  "scope": "self-behavior",
+  "scenarioIds": ["public.select-move-stop.v1"],
+  "comparison": {"numberMode": "declared-per-field", "tolerances": {}},
+  "approval": {"status": "tool-fixture-only", "source": "TEST-P004-001 synthetic public input; independent literal assertions"},
+  "exclusions": ["original-compatibility", "platform-input", "full-historical-suite"],
+  "rules": [
+    {"ruleId": "initial.position", "when": {"phase": "initial", "stepIndex": 0}, "assertions": [
+      {"path": "units.u1.position", "operator": "equals", "value": {"x": 70, "y": 70}}
+    ]},
+    {"ruleId": "select.accepted", "when": {"event": "action-accepted", "actionId": "select-1", "unitId": "u1", "stepIndex": 0}, "assertions": [
+      {"path": "units.u1.owner", "operator": "equals", "value": "p1"}
+    ]},
+    {"ruleId": "move.accepted", "when": {"event": "action-accepted", "actionId": "move-1", "unitId": "u1", "stepIndex": 1}, "assertions": [
+      {"path": "units.u1.moveTarget", "operator": "equals", "value": {"x": 170, "y": 70}},
+      {"path": "units.u1.position", "operator": "equals", "value": {"x": 71, "y": 70}}
+    ]},
+    {"ruleId": "foreign.stop.rejected", "when": {"event": "action-rejected", "actionId": "foreign-stop", "unitId": "u1", "stepIndex": 2}, "assertions": [
+      {"path": "units.u1.moveTarget", "operator": "equals", "value": {"x": 170, "y": 70}},
+      {"path": "units.u1.position", "operator": "equals", "value": {"x": 72, "y": 70}}
+    ]},
+    {"ruleId": "stop.accepted", "when": {"event": "action-accepted", "actionId": "stop-1", "unitId": "u1", "stepIndex": 3}, "assertions": [
+      {"path": "units.u1.moveTarget", "operator": "absent-or-null"},
+      {"path": "events", "operator": "contains", "value": "movement-cancelled"}
+    ]},
+    {"ruleId": "stopped.step4", "when": {"phase": "after-advance", "stepIndex": 4}, "assertions": [
+      {"path": "units.u1.position", "operator": "equals", "value": {"x": 72, "y": 70}},
+      {"path": "units.u1.speed", "operator": "equals", "value": 0}
+    ]},
+    {"ruleId": "stopped.step5", "when": {"phase": "after-advance", "stepIndex": 5}, "assertions": [
+      {"path": "units.u1.position", "operator": "equals", "value": {"x": 72, "y": 70}},
+      {"path": "units.u1.movementState", "operator": "equals", "value": "idle"}
+    ]}
+  ]
+}

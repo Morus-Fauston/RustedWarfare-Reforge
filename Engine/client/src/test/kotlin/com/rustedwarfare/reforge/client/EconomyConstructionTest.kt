@@ -680,8 +680,8 @@ class EconomyConstructionTest {
     }
 
     private fun extractorScene(): Scenario {
-        val base = ControlledScenario.load(inputRoot().parent.parent.parent.resolve(
-            "ENG-P006-002/20261027-contract-01/candidate-input-01"))
+        val base = ControlledScenario.load((System.getProperty("public.fixtures.dir")?.let { Path.of(it).resolve("build-economy/factory") } ?: inputRoot().parent.parent.parent.resolve(
+            "ENG-P006-002/20261027-contract-01/candidate-input-01")))
         val extractor = assertIs<ContentResult.Success<UnitDefinition>>(
             ContentLoader.loadEconomyUnit(inputRoot().resolve("units/extractor.ini"))).value
         val oldWorker = base.unitDefinitions.getValue("builder")
@@ -713,7 +713,7 @@ class EconomyConstructionTest {
         } finally { Files.delete(file) }
     }
 
-    private fun inputRoot(): Path = generateSequence(Path.of("").toAbsolutePath()) { it.parent }
+    private fun inputRoot(): Path = (System.getProperty("public.fixtures.dir")?.let { Path.of(it).resolve("build-economy/economy") } ?: generateSequence(Path.of("").toAbsolutePath()) { it.parent }
         .first { Files.isRegularFile(it.resolve("AGENTS.md")) }.resolve(
-            ".scratch/开发票据/引擎重写/P006-建造经济与原版操作/evidence/ENG-P006-003/20261027-contract-01/candidate-input-01")
+            ".scratch/开发票据/引擎重写/P006-建造经济与原版操作/evidence/ENG-P006-003/20261027-contract-01/candidate-input-01"))
 }

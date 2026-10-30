@@ -8,8 +8,8 @@ import kotlin.test.*
 
 class UpgradePrivacyTest {
     private fun base(): Scenario {
-        val repo = generateSequence(Path.of("").toAbsolutePath()) { it.parent }.first { Files.isRegularFile(it.resolve("AGENTS.md")) }
-        return ControlledScenario.load(repo.resolve(".scratch/开发票据/引擎重写/P005-生产战斗与指挥沙盒/evidence/ENG-P005-004/20261026-e-upgrade-input-01/input"))
+        val repo = System.getProperty("repo.root")?.let { Path.of(it) } ?: generateSequence(Path.of("").toAbsolutePath()) { it.parent }.first { Files.isRegularFile(it.resolve("AGENTS.md")) }
+        return ControlledScenario.load((System.getProperty("public.fixtures.dir")?.let { Path.of(it).resolve("build-economy/turret-upgrades") } ?: repo.resolve(".scratch/开发票据/引擎重写/P005-生产战斗与指挥沙盒/evidence/ENG-P005-004/20261026-e-upgrade-input-01/input")))
     }
     private fun observer(tank: UnitDefinition) = UnitDefinition("observer", tank.className, tank.radius,
         tank.displayRadius, tank.totalFrames, tank.imagePath, tank.imageScale, tank.movement, tank.retainedUnconsumed, 1)

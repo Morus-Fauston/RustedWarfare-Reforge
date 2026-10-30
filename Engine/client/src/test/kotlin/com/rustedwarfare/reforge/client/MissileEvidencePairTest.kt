@@ -10,10 +10,10 @@ import kotlin.test.*
 
 class MissileEvidencePairTest {
     @Test fun hidden_missile_retarget_geometry_never_changes_the_complete_local_player_evidence() {
-        val repo = generateSequence(Path.of("").toAbsolutePath()) { it.parent }
+        val repo = System.getProperty("repo.root")?.let { Path.of(it) } ?: generateSequence(Path.of("").toAbsolutePath()) { it.parent }
             .first { Files.isRegularFile(it.resolve("AGENTS.md")) }
-        val base = ControlledScenario.load(repo.resolve(
-            ".scratch/开发票据/引擎重写/P006-建造经济与原版操作/evidence/ENG-P006-001/20261027-intake-01/scene-input-01"))
+        val base = ControlledScenario.load((System.getProperty("public.fixtures.dir")?.let { Path.of(it).resolve("production-combat/center") } ?: repo.resolve(
+            ".scratch/开发票据/引擎重写/P006-建造经济与原版操作/evidence/ENG-P006-001/20261027-intake-01/scene-input-01")))
         val builder = base.unitDefinitions.getValue("builder")
         val own = UnitDefinition("own", builder.className, builder.radius, builder.displayRadius, 1,
             builder.imagePath, 1.0, builder.movement, emptySet(), fogOfWarSightRange = 1, durability = builder.durability)

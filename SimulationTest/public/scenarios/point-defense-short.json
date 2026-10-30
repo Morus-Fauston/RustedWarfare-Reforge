@@ -1,0 +1,217 @@
+{
+  "schemaVersion": 1,
+  "kind": "scenario",
+  "scenarioId": "public.point-defense-short.v1",
+  "content": {
+    "map": {
+      "id": "map",
+      "path": "../inputs/production-combat/production/maps/production-chain.tmx",
+      "sha256": "978c8484f0b16d9d36f881abd39239be9a9a297f7838bb3447b8297819f98c58"
+    },
+    "unitVariants": [
+      {
+        "id": "c_tank",
+        "path": "../inputs/production-combat/production/units/tank.ini",
+        "sha256": "99aa63a6f6e87662e257af3ca7c4557290153e60e62fcdf74360e15caef612e8",
+        "loader": "combat"
+      },
+      {
+        "id": "laserDefence",
+        "path": "../inputs/production-combat/defense/units/laserDefence.properties",
+        "sha256": "b63cd9400082b8c507769c9c485495ec1f75b1fd26626dd59978d9b3d9ea64af",
+        "loader": "point-defense"
+      }
+    ],
+    "dependencies": [
+      {
+        "id": "terrain",
+        "path": "../inputs/production-combat/production/assets/terrain.png",
+        "sha256": "1b47e4821cdbfc66460f690322cf641afc1fc782a3ed6985df8b9e773ed98ff0"
+      },
+      {
+        "id": "tank.png",
+        "path": "../inputs/production-combat/production/units/tank.png",
+        "sha256": "898fa8d12d89e73c988c258c3522a23660b2fdc500b4c8588fd2d8cf5fe4b605"
+      },
+      {
+        "id": "tank_dead.png",
+        "path": "../inputs/production-combat/production/units/tank_dead.png",
+        "sha256": "cbab7f92fa0cbef203e94823e2cbdc3e0116df3dab205f2ce0296e399a1a4ffa"
+      },
+      {
+        "id": "tank_turret.png",
+        "path": "../inputs/production-combat/production/units/tank_turret.png",
+        "sha256": "20dfaa2a45dd5bb635e83425fb64a6d3d3f9fef48d1b0a3b573fe5b9b67c4985"
+      },
+      {
+        "id": "laser.png",
+        "path": "../inputs/production-combat/defense/units/laser.png",
+        "sha256": "1f522a83419339e64450cde9b8b9d251fa264e417e199bc60f805d342fe5da1e"
+      },
+      {
+        "id": "laser_dead.png",
+        "path": "../inputs/production-combat/defense/units/laser_dead.png",
+        "sha256": "1f522a83419339e64450cde9b8b9d251fa264e417e199bc60f805d342fe5da1e"
+      }
+    ]
+  },
+  "coordinateModel": {
+    "id": "public.coordinate.v1",
+    "space": "2d",
+    "xAxis": "x-right",
+    "yAxis": "y-down",
+    "origin": "top-left",
+    "unit": "world-unit",
+    "valueType": "double",
+    "precision": "ieee754-binary64"
+  },
+  "timeModel": {
+    "id": "public.time.v1",
+    "deltaUnit": "sim-tick",
+    "stepRule": "fixed-explicit-delta",
+    "precision": "ieee754-binary64"
+  },
+  "angleUnit": "degree-clockwise-zero-up",
+  "movementContract": {
+    "pathPointRadius": 16,
+    "targetRadius": 4
+  },
+  "automaticVision": {
+    "retention": "MEMORY",
+    "pathSource": "PLAYER_KNOWLEDGE",
+    "shareAlliedVision": false,
+    "observers": [
+      "p1",
+      "p2"
+    ],
+    "grid": {
+      "width": 10,
+      "height": 5
+    }
+  },
+  "combatContract": {
+    "worldSeed": 12345,
+    "initialFrameCounter": -1,
+    "unitObjectIds": {
+      "d": 10,
+      "s": 11
+    },
+    "nextObjectId": 12
+  },
+  "economyContract": {
+    "initialBalances": {
+      "p1": 1750,
+      "p2": 0
+    }
+  },
+  "players": [
+    {
+      "playerId": "p1",
+      "control": "local",
+      "teamId": "one"
+    },
+    {
+      "playerId": "p2",
+      "control": "local",
+      "teamId": "two"
+    }
+  ],
+  "units": [
+    {
+      "unitId": "d",
+      "owner": "p1",
+      "type": "laserDefence",
+      "position": {
+        "x": 50,
+        "y": 50
+      },
+      "heading": 0
+    },
+    {
+      "unitId": "s",
+      "owner": "p2",
+      "type": "c_tank",
+      "position": {
+        "x": 170,
+        "y": 50
+      },
+      "heading": 270
+    }
+  ],
+  "actions": [
+    {
+      "actionId": "hostile-attack",
+      "atStep": 0,
+      "actor": "p2",
+      "kind": "attack",
+      "unitId": "s",
+      "targetUnitId": "d"
+    }
+  ],
+  "termination": {
+    "kind": "explicit-steps",
+    "required": true,
+    "steps": [
+      {
+        "stepIndex": 0,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 1,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 2,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 3,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 4,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 5,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 6,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 7,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 8,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 9,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 10,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 11,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      }
+    ]
+  }
+}

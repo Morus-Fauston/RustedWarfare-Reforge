@@ -1,0 +1,92 @@
+{
+  "schemaVersion": 1,
+  "suiteId": "public.content-movement-knowledge.v1",
+  "inputScope": "public",
+  "fixture": "inputs/content-movement-knowledge/P001-移动沙盒输入",
+  "tests": {
+    "core": [
+      "com.rustedwarfare.reforge.core.sim.CornerCaptureTest",
+      "com.rustedwarfare.reforge.core.CoreRuntimeTest",
+      "com.rustedwarfare.reforge.core.content.LoadFailureTest",
+      "com.rustedwarfare.reforge.core.content.MapLoadTest",
+      "com.rustedwarfare.reforge.core.content.UnitSightRangeTest",
+      "com.rustedwarfare.reforge.core.content.UnitVariantLoadTest",
+      "com.rustedwarfare.reforge.core.content.XmlSecurityTest",
+      "com.rustedwarfare.reforge.core.knowledge.AutomaticKnowledgePrefixTest",
+      "com.rustedwarfare.reforge.core.knowledge.AutomaticVisionTest",
+      "com.rustedwarfare.reforge.core.knowledge.KnowledgeLifecycleFailureTest",
+      "com.rustedwarfare.reforge.core.knowledge.KnowledgeLifecycleTest",
+      "com.rustedwarfare.reforge.core.knowledge.KnowledgePathRoutingTest",
+      "com.rustedwarfare.reforge.core.knowledge.KnowledgePrefixFallbackTest",
+      "com.rustedwarfare.reforge.core.knowledge.KnowledgeReplanningTest",
+      "com.rustedwarfare.reforge.core.knowledge.PlayerTerrainKnowledgeTest",
+      "com.rustedwarfare.reforge.core.path.CapturedKnowledgeReachabilityTest",
+      "com.rustedwarfare.reforge.core.path.CenterPlanningBoundaryTest",
+      "com.rustedwarfare.reforge.core.path.ClearanceBoundaryTest",
+      "com.rustedwarfare.reforge.core.path.ContinuousStartConnectorTest",
+      "com.rustedwarfare.reforge.core.path.NaturalClearanceContractV2Test",
+      "com.rustedwarfare.reforge.core.path.NaturalPathTest",
+      "com.rustedwarfare.reforge.core.path.NaturalSamePointGeometryTest",
+      "com.rustedwarfare.reforge.core.path.PathDiagnosticsTest",
+      "com.rustedwarfare.reforge.core.path.PathPlannerTest",
+      "com.rustedwarfare.reforge.core.path.PlanningTerrainTest",
+      "com.rustedwarfare.reforge.core.path.RouteRepairTest",
+      "com.rustedwarfare.reforge.core.sim.ActionWindowTest",
+      "com.rustedwarfare.reforge.core.sim.AdaptiveLocalMotionTest",
+      "com.rustedwarfare.reforge.core.sim.AutomaticArrivalBudgetTest",
+      "com.rustedwarfare.reforge.core.sim.CenterTerrainMovementTest",
+      "com.rustedwarfare.reforge.core.sim.CommandTimelineTest",
+      "com.rustedwarfare.reforge.core.sim.GeometryAndFailureTest",
+      "com.rustedwarfare.reforge.core.sim.LocalMotionFollowingTest",
+      "com.rustedwarfare.reforge.core.sim.LocalMotionMaintenanceTest",
+      "com.rustedwarfare.reforge.core.sim.MapBoundaryTest",
+      "com.rustedwarfare.reforge.core.sim.MotionDiagnosticsTest",
+      "com.rustedwarfare.reforge.core.sim.MovementContractTest",
+      "com.rustedwarfare.reforge.core.sim.MovementSweepTest",
+      "com.rustedwarfare.reforge.core.sim.MultiCellTerrainGuardTest",
+      "com.rustedwarfare.reforge.core.sim.NaturalMovementContractV2Test",
+      "com.rustedwarfare.reforge.core.sim.NormalMoveCompletionTest",
+      "com.rustedwarfare.reforge.core.sim.OwnershipTest",
+      "com.rustedwarfare.reforge.core.sim.ProportionalMovementTest",
+      "com.rustedwarfare.reforge.core.sim.PropulsionPolicyTest",
+      "com.rustedwarfare.reforge.core.sim.ReopenTest",
+      "com.rustedwarfare.reforge.core.sim.RevisedMovementTest",
+      "com.rustedwarfare.reforge.core.sim.SimulationBoundaryTest",
+      "com.rustedwarfare.reforge.core.sim.SteeringRegressionTest",
+      "com.rustedwarfare.reforge.core.sim.UnitTaskQueueStateTest"
+    ],
+    "client": [
+      "com.rustedwarfare.reforge.client.ControlledScenarioTest",
+      "com.rustedwarfare.reforge.client.KnowledgeSandboxSessionTest",
+      "com.rustedwarfare.reforge.client.PrivateKnowledgeScenarioIntegrationTest",
+      "com.rustedwarfare.reforge.client.SandboxSessionTest",
+      "com.rustedwarfare.reforge.client.TileMetadataTest"
+    ],
+    "tools": [
+      "com.rustedwarfare.reforge.testing.MotionCenterGeometryTest",
+      "com.rustedwarfare.reforge.testing.p001.P001RelationsTest",
+      "com.rustedwarfare.reforge.testing.CheckpointTest",
+      "com.rustedwarfare.reforge.testing.PublicScenarioTest",
+      "com.rustedwarfare.reforge.testing.MovementKnowledgeScenarioTest"
+    ]
+  },
+  "short": [
+    {
+      "id": "select-move-stop",
+      "scenario": "scenarios/select-move-stop.json",
+      "contract": "contracts/select-move-stop.json"
+    },
+    {
+      "id": "movement-knowledge-short",
+      "scenario": "scenarios/movement-knowledge-short.json",
+      "contract": "contracts/movement-knowledge-short.json"
+    }
+  ],
+  "long": [
+    {
+      "id": "movement-knowledge-chain",
+      "scenario": "scenarios/movement-knowledge-chain.json",
+      "contract": "contracts/movement-knowledge-chain.json"
+    }
+  ]
+}

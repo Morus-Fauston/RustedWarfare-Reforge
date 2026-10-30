@@ -15,7 +15,8 @@ import kotlin.test.assertTrue
 
 class AttackCommandTest {
     private fun scenario(mapName: String = "p001-controlled.tmx"): Scenario {
-        val root = Path.of(checkNotNull(System.getProperty("p001.inputs.dir"))).parent.parent.parent.resolve(
+        val root = System.getProperty("public.fixtures.dir")?.let { Path.of(it).resolve("production-combat/combat") }
+            ?: Path.of(checkNotNull(System.getProperty("p001.inputs.dir"))).parent.parent.parent.resolve(
             ".scratch/开发票据/引擎重写/P005-生产战斗与指挥沙盒/evidence/ENG-P005-001/20261025-e-input-01/input",
         )
         val tank = assertIs<ContentResult.Success<UnitDefinition>>(ContentLoader.loadCombatUnit(root.resolve("units/tank.ini"))).value

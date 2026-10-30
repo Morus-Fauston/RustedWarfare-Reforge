@@ -6,9 +6,9 @@ import kotlin.test.*
 
 class PatrolScenarioTest {
     @Test fun the_fixed_pc_input_really_chases_damages_kills_and_returns_to_its_stored_patrol_point() {
-        val root = generateSequence(Path.of("").toAbsolutePath()) { it.parent }
+        val root = (System.getProperty("public.fixtures.dir")?.let { Path.of(it).resolve("production-combat/patrol-return") } ?: generateSequence(Path.of("").toAbsolutePath()) { it.parent }
             .first { java.nio.file.Files.isRegularFile(it.resolve("AGENTS.md")) }.resolve(
-                ".scratch/开发票据/引擎重写/P005-生产战斗与指挥沙盒/evidence/ENG-P005-007/20261026-e-patrol-pc-01/input")
+                ".scratch/开发票据/引擎重写/P005-生产战斗与指挥沙盒/evidence/ENG-P005-007/20261026-e-patrol-pc-01/input"))
         val scene = ControlledScenario.load(root)
         assertEquals("p005-patrol", scene.scenarioId)
         SandboxSession(scene).use { s ->

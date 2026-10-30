@@ -134,8 +134,9 @@ class TurretIdleTransactionTest {
         view.knowledge?.cells)
 
     private fun input(hold: Boolean, retention: TerrainRetention): Scenario {
-        val root = Path.of(checkNotNull(System.getProperty("p001.inputs.dir"))).parent.parent.parent.resolve(
-            ".scratch/开发票据/引擎重写/P005-生产战斗与指挥沙盒/evidence/ENG-P005-003/20261026-e-turret-contract-01/input")
+        val root = (System.getProperty("public.fixtures.dir")?.let { Path.of(it).resolve("maintenance-defense/turret") }
+        ?: Path.of(checkNotNull(System.getProperty("p001.inputs.dir"))).parent.parent.parent.resolve(
+            ".scratch/开发票据/引擎重写/P005-生产战斗与指挥沙盒/evidence/ENG-P005-003/20261026-e-turret-contract-01/input"))
         val base = ControlledScenario.load(root)
         val tower = base.unitDefinitions.getValue("c_turret_t1")
         val tank = base.unitDefinitions.getValue("c_tank")

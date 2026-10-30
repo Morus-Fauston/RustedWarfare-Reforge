@@ -16,6 +16,13 @@ internal fun inputs(): Path {
 
 internal fun unitPath(): Path = inputs().resolve("units/weaponless_tank.ini")
 internal fun mapPath(): Path = inputs().resolve("maps/p001-controlled.tmx")
+internal fun unitImageReference(): String = Files.readAllLines(unitPath())
+    .single { it.trim().startsWith("image:") }.substringAfter(':').trim()
+internal fun unitImagePath(): Path = unitPath().parent.resolve(unitImageReference()).toAbsolutePath().normalize()
+internal fun tilesetImageReference(name: String): String = Regex("<image[^>]*source=\"([^\"]+)\"")
+    .find(Files.readString(inputs().resolve("tilesets/$name.tsx")))!!.groupValues[1]
+internal fun tilesetImagePath(name: String): Path = inputs().resolve("tilesets")
+    .resolve(tilesetImageReference(name)).toAbsolutePath().normalize()
 
 class UnitVariantLoadTest {
     @Test
@@ -46,11 +53,10 @@ class UnitVariantLoadTest {
     fun loadsDifferentFileNameAndParametersWithDefaultImageScale() {
         val path = Files.createTempFile("p001-unit-", ".ini")
         try {
-            val image = unitPath().parent.resolve("../../../../Rusted Warfare/assets/units/tanks/tank.png")
-                .toAbsolutePath().normalize()
+            val image = unitImagePath()
             val text = Files.readString(unitPath()).replace("moveSpeed: 1.1", "moveSpeed : 2.0")
                 .replace("imageScale: 0.8", "")
-                .replace("../../../../Rusted Warfare/assets/units/tanks/tank.png", image.toString())
+                .replace(unitImageReference(), image.toString())
             Files.writeString(path, text)
             val unit = assertIs<ContentResult.Success<UnitDefinition>>(ContentLoader.loadUnitVariant(path)).value
             assertEquals(2.0, unit.movement.moveSpeed)

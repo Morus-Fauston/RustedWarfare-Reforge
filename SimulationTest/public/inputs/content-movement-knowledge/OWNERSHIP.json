@@ -1,0 +1,123 @@
+{
+  "source": "New authored functional fixtures from public MapLoadTest/UnitVariantLoadTest/LoadFailureTest requirements",
+  "pixels": "New solid RGB rasters encoded with Python standard library; no original art",
+  "semantics": "Movement values and geometry preserve existing assertions; unrelated retained values are synthetic",
+  "files": [
+    {
+      "path": "P001-\u79fb\u52a8\u6c99\u76d2\u8f93\u5165/assets/ground.png",
+      "sha256": "1dcf1489ef8e618ac2905588b5124dc72479275d1313100808098d16ffe7f540"
+    },
+    {
+      "path": "P001-\u79fb\u52a8\u6c99\u76d2\u8f93\u5165/assets/rock.png",
+      "sha256": "8ad644d4001c288a7a67484befde6ef25d5748d9f7e3ad2f3fdaf72142e94661"
+    },
+    {
+      "path": "P001-\u79fb\u52a8\u6c99\u76d2\u8f93\u5165/assets/unit.png",
+      "sha256": "bac79d8fe0e2e320bb9a553ea19199228e3c81e19fa94b013514356eb1bb2764"
+    },
+    {
+      "path": "P001-\u79fb\u52a8\u6c99\u76d2\u8f93\u5165/maps/p001-controlled.tmx",
+      "sha256": "03ee1618a68351280dbe992b4393d8f0181b286c79478adec67fd096708dd256"
+    },
+    {
+      "path": "P001-\u79fb\u52a8\u6c99\u76d2\u8f93\u5165/negative/L01.ini",
+      "sha256": "4ccc511bba524fe199821d62ad7f597fe69521ae481832171fc07dbc551b3703"
+    },
+    {
+      "path": "P001-\u79fb\u52a8\u6c99\u76d2\u8f93\u5165/negative/L02a.tmx",
+      "sha256": "1ea16f012f67fc22a88f84cd4ba8f78157b8385f8eee7b00b2b4f29b717d9a14"
+    },
+    {
+      "path": "P001-\u79fb\u52a8\u6c99\u76d2\u8f93\u5165/negative/L02b.ini",
+      "sha256": "5452f5eb5a423efb8aad00761f96419f0f3c02c6a8efe9cf48bb660d41db5c5b"
+    },
+    {
+      "path": "P001-\u79fb\u52a8\u6c99\u76d2\u8f93\u5165/negative/L03a.ini",
+      "sha256": "01e206c5ea652bfed2d7a2b293d2c6c23ec52cbcf19f844d2007b46aebb3c72c"
+    },
+    {
+      "path": "P001-\u79fb\u52a8\u6c99\u76d2\u8f93\u5165/negative/L03b.tmx",
+      "sha256": "49d01a7a414424e5bc14e4fbdcb536bd30b5d671e27322926db3c87f0a9ed6b1"
+    },
+    {
+      "path": "P001-\u79fb\u52a8\u6c99\u76d2\u8f93\u5165/negative/L03c.tmx",
+      "sha256": "b84ca50485c6636636960385f598fcf765e8491ad867040b13ce80597b3dde8d"
+    },
+    {
+      "path": "P001-\u79fb\u52a8\u6c99\u76d2\u8f93\u5165/negative/L03c.tsx",
+      "sha256": "1e080bd3799d85446bd1e87833553ec91d3925c3333781bae14397a356343ca1"
+    },
+    {
+      "path": "P001-\u79fb\u52a8\u6c99\u76d2\u8f93\u5165/tilesets/p001-ground.tsx",
+      "sha256": "4ee90987078b63273bba6d1c09014493391c9f781576ff6d100f003a12e9e319"
+    },
+    {
+      "path": "P001-\u79fb\u52a8\u6c99\u76d2\u8f93\u5165/tilesets/p001-rock.tsx",
+      "sha256": "1fa9b67c78f2a5fd4b740b3c9e9f164aeb9e197b8628b8b230a12b34b70cb851"
+    },
+    {
+      "path": "P001-\u79fb\u52a8\u6c99\u76d2\u8f93\u5165/units/weaponless_tank.ini",
+      "sha256": "45f23c61759c83645d185479dccff6061fedaf0b888895b1ef2f5501c4b48db3"
+    },
+    {
+      "path": "P002-\u77e5\u8bc6\u6c99\u76d2\u8f93\u5165/assets/ground.png",
+      "sha256": "1dcf1489ef8e618ac2905588b5124dc72479275d1313100808098d16ffe7f540"
+    },
+    {
+      "path": "P002-\u77e5\u8bc6\u6c99\u76d2\u8f93\u5165/assets/rock.png",
+      "sha256": "8ad644d4001c288a7a67484befde6ef25d5748d9f7e3ad2f3fdaf72142e94661"
+    },
+    {
+      "path": "P002-\u77e5\u8bc6\u6c99\u76d2\u8f93\u5165/assets/unit.png",
+      "sha256": "bac79d8fe0e2e320bb9a553ea19199228e3c81e19fa94b013514356eb1bb2764"
+    },
+    {
+      "path": "P002-\u77e5\u8bc6\u6c99\u76d2\u8f93\u5165/maps/p001-controlled.tmx",
+      "sha256": "03ee1618a68351280dbe992b4393d8f0181b286c79478adec67fd096708dd256"
+    },
+    {
+      "path": "P002-\u77e5\u8bc6\u6c99\u76d2\u8f93\u5165/negative/L01.ini",
+      "sha256": "4ccc511bba524fe199821d62ad7f597fe69521ae481832171fc07dbc551b3703"
+    },
+    {
+      "path": "P002-\u77e5\u8bc6\u6c99\u76d2\u8f93\u5165/negative/L02a.tmx",
+      "sha256": "1ea16f012f67fc22a88f84cd4ba8f78157b8385f8eee7b00b2b4f29b717d9a14"
+    },
+    {
+      "path": "P002-\u77e5\u8bc6\u6c99\u76d2\u8f93\u5165/negative/L02b.ini",
+      "sha256": "5452f5eb5a423efb8aad00761f96419f0f3c02c6a8efe9cf48bb660d41db5c5b"
+    },
+    {
+      "path": "P002-\u77e5\u8bc6\u6c99\u76d2\u8f93\u5165/negative/L03a.ini",
+      "sha256": "01e206c5ea652bfed2d7a2b293d2c6c23ec52cbcf19f844d2007b46aebb3c72c"
+    },
+    {
+      "path": "P002-\u77e5\u8bc6\u6c99\u76d2\u8f93\u5165/negative/L03b.tmx",
+      "sha256": "49d01a7a414424e5bc14e4fbdcb536bd30b5d671e27322926db3c87f0a9ed6b1"
+    },
+    {
+      "path": "P002-\u77e5\u8bc6\u6c99\u76d2\u8f93\u5165/negative/L03c.tmx",
+      "sha256": "b84ca50485c6636636960385f598fcf765e8491ad867040b13ce80597b3dde8d"
+    },
+    {
+      "path": "P002-\u77e5\u8bc6\u6c99\u76d2\u8f93\u5165/negative/L03c.tsx",
+      "sha256": "1e080bd3799d85446bd1e87833553ec91d3925c3333781bae14397a356343ca1"
+    },
+    {
+      "path": "P002-\u77e5\u8bc6\u6c99\u76d2\u8f93\u5165/sandbox.properties",
+      "sha256": "58d1e42dfcc30f820f8e051d764c32c3192deb11f097d41f4e8110fa096d1929"
+    },
+    {
+      "path": "P002-\u77e5\u8bc6\u6c99\u76d2\u8f93\u5165/tilesets/p001-ground.tsx",
+      "sha256": "4ee90987078b63273bba6d1c09014493391c9f781576ff6d100f003a12e9e319"
+    },
+    {
+      "path": "P002-\u77e5\u8bc6\u6c99\u76d2\u8f93\u5165/tilesets/p001-rock.tsx",
+      "sha256": "1fa9b67c78f2a5fd4b740b3c9e9f164aeb9e197b8628b8b230a12b34b70cb851"
+    },
+    {
+      "path": "P002-\u77e5\u8bc6\u6c99\u76d2\u8f93\u5165/units/weaponless_tank.ini",
+      "sha256": "45f23c61759c83645d185479dccff6061fedaf0b888895b1ef2f5501c4b48db3"
+    }
+  ]
+}

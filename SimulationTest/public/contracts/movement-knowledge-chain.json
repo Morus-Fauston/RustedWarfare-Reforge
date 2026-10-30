@@ -1,0 +1,233 @@
+{
+  "schemaVersion": 1,
+  "kind": "behavior-contract",
+  "contractId": "public.movement-knowledge-chain.v1.contract",
+  "scope": "self-behavior",
+  "scenarioIds": [
+    "public.movement-knowledge-chain.v1"
+  ],
+  "comparison": {
+    "numberMode": "declared-per-field",
+    "tolerances": {}
+  },
+  "approval": {
+    "status": "tool-fixture-only",
+    "source": "TEST-P004-002 literal geometry; AutomaticVisionTest av06 and memory semantics; no original compatibility claim"
+  },
+  "exclusions": [
+    "original-compatibility",
+    "platform-input",
+    "performance"
+  ],
+  "rules": [
+    {
+      "ruleId": "initial.hidden",
+      "when": {
+        "phase": "initial",
+        "stepIndex": 0
+      },
+      "assertions": [
+        {
+          "path": "players.p1.knowledge.cells.c0r3.lastKnownBlocked",
+          "operator": "equals",
+          "value": null
+        },
+        {
+          "path": "players.p1.knowledge.cells.c0r3.visible",
+          "operator": "equals",
+          "value": false
+        },
+        {
+          "path": "players.p1.visibleUnitIds",
+          "operator": "equals",
+          "value": [
+            "u1"
+          ]
+        },
+        {
+          "path": "players.p2.visibleUnitIds",
+          "operator": "equals",
+          "value": [
+            "u2"
+          ]
+        }
+      ]
+    },
+    {
+      "ruleId": "discovery",
+      "when": {
+        "phase": "after-advance",
+        "stepIndex": 1
+      },
+      "assertions": [
+        {
+          "path": "units.u1.position.y",
+          "operator": "equals",
+          "value": 90
+        },
+        {
+          "path": "players.p1.knowledge.cells.c0r3.lastKnownBlocked",
+          "operator": "equals",
+          "value": true
+        },
+        {
+          "path": "players.p1.knowledge.cells.c0r3.visible",
+          "operator": "equals",
+          "value": true
+        },
+        {
+          "path": "players.p1.visibleUnitIds",
+          "operator": "equals",
+          "value": [
+            "u1"
+          ]
+        }
+      ]
+    },
+    {
+      "ruleId": "blocked",
+      "when": {
+        "phase": "after-advance",
+        "stepIndex": 2
+      },
+      "assertions": [
+        {
+          "path": "units.u1.position.y",
+          "operator": "equals",
+          "value": 90
+        },
+        {
+          "path": "units.u1.moveTarget",
+          "operator": "equals",
+          "value": null
+        },
+        {
+          "path": "events",
+          "operator": "contains",
+          "value": "path-unreachable"
+        }
+      ]
+    },
+    {
+      "ruleId": "foreign.rejected",
+      "when": {
+        "phase": "after-advance",
+        "stepIndex": 3,
+        "event": "action-rejected",
+        "actionId": "foreign-stop",
+        "unitId": "u1"
+      },
+      "assertions": [
+        {
+          "path": "units.u1.position.y",
+          "operator": "equals",
+          "value": 90
+        }
+      ]
+    },
+    {
+      "ruleId": "stopped",
+      "when": {
+        "phase": "after-advance",
+        "stepIndex": 4,
+        "event": "action-accepted",
+        "actionId": "stop-1",
+        "unitId": "u1"
+      },
+      "assertions": [
+        {
+          "path": "units.u1.speed",
+          "operator": "equals",
+          "value": 0
+        },
+        {
+          "path": "units.u1.moveTarget",
+          "operator": "equals",
+          "value": null
+        }
+      ]
+    },
+    {
+      "ruleId": "returned.memory",
+      "when": {
+        "phase": "after-advance",
+        "stepIndex": 98
+      },
+      "assertions": [
+        {
+          "path": "units.u1.position.y",
+          "operator": "equals",
+          "value": 110
+        },
+        {
+          "path": "units.u1.moveTarget",
+          "operator": "equals",
+          "value": null
+        },
+        {
+          "path": "units.u1.speed",
+          "operator": "equals",
+          "value": 0
+        },
+        {
+          "path": "players.p1.knowledge.cells.c0r3.visible",
+          "operator": "equals",
+          "value": false
+        },
+        {
+          "path": "players.p1.knowledge.cells.c0r3.lastKnownBlocked",
+          "operator": "equals",
+          "value": true
+        },
+        {
+          "path": "players.p1.visibleUnitIds",
+          "operator": "equals",
+          "value": [
+            "u1"
+          ]
+        }
+      ]
+    },
+    {
+      "ruleId": "return.stop",
+      "when": {
+        "phase": "after-advance",
+        "stepIndex": 99,
+        "event": "action-accepted",
+        "actionId": "stop-return",
+        "unitId": "u1"
+      },
+      "assertions": [
+        {
+          "path": "units.u1.moveTarget",
+          "operator": "equals",
+          "value": null
+        }
+      ]
+    },
+    {
+      "ruleId": "final.memory",
+      "when": {
+        "phase": "after-advance",
+        "stepIndex": 100
+      },
+      "assertions": [
+        {
+          "path": "units.u1.position.y",
+          "operator": "equals",
+          "value": 110
+        },
+        {
+          "path": "players.p1.knowledge.cells.c0r3.visible",
+          "operator": "equals",
+          "value": false
+        },
+        {
+          "path": "players.p1.knowledge.cells.c0r3.lastKnownBlocked",
+          "operator": "equals",
+          "value": true
+        }
+      ]
+    }
+  ]
+}

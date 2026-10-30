@@ -124,12 +124,11 @@ class LoadFailureTest {
 
     @Test fun rejectsImageSmallerThanDeclaredRegionAtExternalTsxLocation() {
         val source = inputs().resolve("tilesets/p001-rock.tsx")
-        val image = source.parent.resolve("../../../../Rusted Warfare/assets/tilesets/bitmaps/mountain.png")
-            .toAbsolutePath().normalize().toString().replace("&", "&amp;")
+        val image = tilesetImagePath("p001-rock").toString().replace("&", "&amp;")
         val path = Files.createTempFile("p001-oversized-region-", ".tsx")
         try {
             val text = Files.readString(source).replace("height=\"100\"", "height=\"120\"")
-                .replace("../../../../Rusted Warfare/assets/tilesets/bitmaps/mountain.png", image)
+                .replace(tilesetImageReference("p001-rock"), image)
             Files.writeString(path, text)
             changedMap("../tilesets/p001-rock.tsx", path.toString().replace("&", "&amp;")) {
                 val result = error(ContentLoader.loadMap(it), ContentErrorCode.MALFORMED_SYNTAX,
@@ -168,9 +167,8 @@ private fun error(result: ContentResult<*>, code: ContentErrorCode, section: Str
 
 private fun withUnit(text: String, action: (Path) -> Unit) {
     val path = Files.createTempFile("p001-unit-negative-", ".ini")
-    val image = unitPath().parent.resolve("../../../../Rusted Warfare/assets/units/tanks/tank.png")
-        .toAbsolutePath().normalize()
-    val relocated = text.replace("../../../../Rusted Warfare/assets/units/tanks/tank.png", image.toString())
+    val image = unitImagePath()
+    val relocated = text.replace(unitImageReference(), image.toString())
     try { Files.writeString(path, relocated); action(path) } finally { Files.deleteIfExists(path) }
 }
 

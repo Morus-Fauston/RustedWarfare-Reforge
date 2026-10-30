@@ -7,7 +7,8 @@ import kotlin.test.*
 /** Module tests are bookkeeping evidence, not factory/world/PC production evidence. */
 class ProductionLedgerTest {
     private fun spec(owner: String = "p1"): FactoryProductionSpec {
-        val root = Path.of(checkNotNull(System.getProperty("p001.inputs.dir"))).parent.parent.parent.resolve(
+        val root = System.getProperty("public.fixtures.dir")?.let { Path.of(it).resolve("production-combat/production/units") }
+            ?: Path.of(checkNotNull(System.getProperty("p001.inputs.dir"))).parent.parent.parent.resolve(
             ".scratch/开发票据/引擎重写/P005-生产战斗与指挥沙盒/evidence/ENG-P005-002/20261025-e-input-01/input/units")
         val factory = assertIs<ContentResult.Success<UnitDefinition>>(ContentLoader.loadFactory(root.resolve("landFactory.properties"))).value
         val tank = assertIs<ContentResult.Success<UnitDefinition>>(ContentLoader.loadCombatUnit(root.resolve("tank.ini"))).value

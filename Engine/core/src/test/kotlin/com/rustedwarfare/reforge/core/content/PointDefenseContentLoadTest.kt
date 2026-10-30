@@ -5,8 +5,9 @@ import java.nio.file.Path
 import kotlin.test.*
 
 class PointDefenseContentLoadTest {
-    private fun file(): Path = Path.of(checkNotNull(System.getProperty("p001.inputs.dir"))).parent.parent.parent.resolve(
-        ".scratch/开发票据/引擎重写/P005-生产战斗与指挥沙盒/evidence/ENG-P005-005/20261026-e-defense-input-01/input/units/laserDefence.properties")
+    private fun file(): Path = (System.getProperty("public.fixtures.dir")?.let { Path.of(it).resolve("maintenance-defense/point-defense/units/laserDefence.properties") }
+        ?: Path.of(checkNotNull(System.getProperty("p001.inputs.dir"))).parent.parent.parent.resolve(
+        ".scratch/开发票据/引擎重写/P005-生产战斗与指挥沙盒/evidence/ENG-P005-005/20261026-e-defense-input-01/input/units/laserDefence.properties"))
 
     @Test fun native_two_frame_sheet_and_fixed_profile_are_consumed_without_an_offensive_weapon() {
         val defense = assertIs<ContentResult.Success<UnitDefinition>>(ContentLoader.loadPointDefense(file())).value

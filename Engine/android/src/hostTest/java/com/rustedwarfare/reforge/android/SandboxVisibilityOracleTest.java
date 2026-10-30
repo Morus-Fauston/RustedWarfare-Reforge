@@ -91,10 +91,11 @@ public final class SandboxVisibilityOracleTest {
     private static List<JsonValue> delayHiddenHit(List<JsonValue> rows,int terminalStep){
         // Deliberately constructed budget fixture: repeat a hidden public state and renumber step/time.
         // This is not a claim that the S03 simulation actually held that pose for 2000 more ticks.
+        JsonValue firstStep=firstHiddenStep(rows);
         List<JsonValue> result=new ArrayList<>();JsonValue previous=null;int delay=-1;
         for(JsonValue source:rows){
             if(delay<0&&source.getString("hostPhase","").equals("hidden-hit")){
-                delay=terminalStep-(int)source.get("sample").getLong("stepIndex")-2;
+                delay=terminalStep-(int)firstStep.get("sample").getLong("stepIndex")-2;
                 require(previous!=null&&delay>=0,"Bad delayed-hit template");
                 for(int i=1;i<=delay;i++){
                     JsonValue repeat=copy(previous);JsonValue s=repeat.get("sample");
@@ -110,6 +111,10 @@ public final class SandboxVisibilityOracleTest {
         }
         for(int i=0;i<result.size();i++)result.get(i).get("sequence").set((long)i,null);
         return result;
+    }
+    private static JsonValue firstHiddenStep(List<JsonValue> rows){
+        return rows.stream().filter(r->r.getString("hostPhase","").equals("hidden-hit")&&
+            r.getString("kind").equals("observation")&&r.getString("phase","").equals("step")).findFirst().orElseThrow();
     }
     private static JsonValue lastPrefixStep(List<JsonValue> rows){
         JsonValue last=null;for(JsonValue r:rows){if(r.getString("hostPhase","").equals("hidden-hit"))break;
@@ -233,8 +238,8 @@ public final class SandboxVisibilityOracleTest {
             if(group.equals("all")||group.equals("motion"))reviewMotion(rows,mode);
             if(group.equals("all")||group.equals("tail"))reviewTail(rows,mode);
             if(!group.equals("all"))continue;
-            JsonValue first=rows.stream().filter(r->r.getString("hostPhase","").equals("hidden-hit")).findFirst().orElseThrow();
-            long next=first.getLong("sequence");
+            JsonValue first=firstHiddenStep(rows);
+            long next=rows.stream().filter(r->r.getString("hostPhase","").equals("hidden-hit")).findFirst().orElseThrow().getLong("sequence");
             orderedDrain(rows,mode,next);
             for(int at: new int[]{2499,2500}){
                 List<JsonValue> delayed=delayHiddenHit(rows,at);var c=prefix(delayed,mode);

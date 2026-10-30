@@ -12,12 +12,25 @@ java {
 }
 dependencies {
     implementation(project(":core"))
+    implementation(project(":client"))
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.9.0")
     testImplementation(kotlin("test"))
 }
 application { mainClass.set("com.rustedwarfare.reforge.testing.MainKt") }
-project(":core") {
-    layout.buildDirectory.set(rootProject.layout.buildDirectory.dir("core"))
+subprojects {
+    layout.buildDirectory.set(rootProject.layout.buildDirectory.dir(name))
+}
+gradle.projectsEvaluated {
+    val publicInputs = System.getProperty("public.inputs.dir")
+    if (publicInputs != null) {
+        allprojects {
+            tasks.withType<Test>().configureEach {
+                systemProperty("p001.inputs.dir", publicInputs)
+                systemProperty("public.fixtures.dir", rootProject.file("public/inputs").absolutePath)
+                systemProperty("repo.root", rootProject.projectDir.parentFile.absolutePath)
+            }
+        }
+    }
 }
 tasks.test {
     useJUnitPlatform()

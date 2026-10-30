@@ -5,8 +5,9 @@ import java.nio.file.Path
 import kotlin.test.*
 
 class TurretContentLoadTest {
-    private fun source(): Path = Path.of(checkNotNull(System.getProperty("p001.inputs.dir"))).parent.parent.parent.resolve(
-        ".scratch/开发票据/引擎重写/P005-生产战斗与指挥沙盒/evidence/ENG-P005-003/20261026-e-turret-contract-01/input/units")
+    private fun source(): Path = (System.getProperty("public.fixtures.dir")?.let { Path.of(it).resolve("maintenance-defense/turret/units") }
+        ?: Path.of(checkNotNull(System.getProperty("p001.inputs.dir"))).parent.parent.parent.resolve(
+        ".scratch/开发票据/引擎重写/P005-生产战斗与指挥沙盒/evidence/ENG-P005-003/20261026-e-turret-contract-01/input/units"))
 
     @Test
     fun reads_real_two_layer_definition_defaults_images_and_every_retained_field() {

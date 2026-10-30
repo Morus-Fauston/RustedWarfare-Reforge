@@ -1,0 +1,59 @@
+{
+  "schemaVersion": 1,
+  "suiteId": "public.platform-basics.v1",
+  "inputScope": "public",
+  "fixture": "inputs/content-movement-knowledge/P001-\u79fb\u52a8\u6c99\u76d2\u8f93\u5165",
+  "tests": {
+    "client": [
+      "com.rustedwarfare.reforge.client.CameraProjectionTest",
+      "com.rustedwarfare.reforge.client.ClientFailureHandlingTest",
+      "com.rustedwarfare.reforge.client.ConstructionSelectionFeedbackTest",
+      "com.rustedwarfare.reforge.client.DefensePanelInputTest",
+      "com.rustedwarfare.reforge.client.DefenseSelectionInfoTest",
+      "com.rustedwarfare.reforge.client.FactoryAppearanceTest",
+      "com.rustedwarfare.reforge.client.LoadingAndProjectionTest",
+      "com.rustedwarfare.reforge.client.MapGestureTest",
+      "com.rustedwarfare.reforge.client.MinimapTest",
+      "com.rustedwarfare.reforge.client.PatrolSandboxInputTest",
+      "com.rustedwarfare.reforge.client.ProductionActionViewTest",
+      "com.rustedwarfare.reforge.client.SandboxInputTest",
+      "com.rustedwarfare.reforge.client.SelectionSandboxSessionTest",
+      "com.rustedwarfare.reforge.client.SelectionStateTest",
+      "com.rustedwarfare.reforge.client.TouchSessionTest",
+      "com.rustedwarfare.reforge.client.TurretAppearanceTest",
+      "com.rustedwarfare.reforge.client.UpgradeButtonInputTest",
+      "com.rustedwarfare.reforge.client.demo.DemoNaturalPathDiagnosticTest",
+      "com.rustedwarfare.reforge.client.demo.DemoScenarioTest",
+      "com.rustedwarfare.reforge.client.demo.DemoSessionTest"
+    ],
+    "pc": [
+      "com.rustedwarfare.reforge.pc.EvidenceInitializationFailureTest",
+      "com.rustedwarfare.reforge.pc.FailurePreservationTest",
+      "com.rustedwarfare.reforge.pc.DemoEvidenceTest",
+      "com.rustedwarfare.reforge.pc.WindowsLaunchOptionsTest"
+    ],
+    "tools": [
+      "com.rustedwarfare.reforge.testing.PlatformSessionRunnerTest"
+    ]
+  },
+  "short": [
+    {
+      "id": "platform-production",
+      "backend": "session",
+      "scenario": "platform/scenarios/production.json",
+      "contract": "platform/contracts/production.json"
+    },
+    {
+      "id": "platform-construction",
+      "backend": "session",
+      "scenario": "platform/scenarios/construction.json",
+      "contract": "platform/contracts/construction.json"
+    },
+    {
+      "id": "platform-upgrade",
+      "backend": "session",
+      "scenario": "platform/scenarios/upgrade.json",
+      "contract": "platform/contracts/upgrade.json"
+    }
+  ]
+}

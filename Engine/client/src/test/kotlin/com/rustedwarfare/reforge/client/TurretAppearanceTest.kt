@@ -7,8 +7,8 @@ import kotlin.test.*
 
 class TurretAppearanceTest {
     @Test fun real_resources_keep_static_body_mount_separate_from_private_weapon_state() {
-        val root = Path.of(checkNotNull(System.getProperty("p001.inputs.dir"))).parent.parent.parent.resolve(
-            ".scratch/开发票据/引擎重写/P005-生产战斗与指挥沙盒/evidence/ENG-P005-003/20261026-e-turret-contract-01/input")
+        val root = (System.getProperty("public.fixtures.dir")?.let { Path.of(it).resolve("maintenance-defense/turret") } ?: Path.of(checkNotNull(System.getProperty("p001.inputs.dir"))).parent.parent.parent.resolve(
+            ".scratch/开发票据/引擎重写/P005-生产战斗与指挥沙盒/evidence/ENG-P005-003/20261026-e-turret-contract-01/input"))
         val scene = ControlledScenario.load(root)
         val resources = SandboxRenderResources.from(scene)
         val tower = resources.units.getValue("c_turret_t1")

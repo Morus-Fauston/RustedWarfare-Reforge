@@ -20,6 +20,7 @@ object Runner {
         require(request.timeoutMillis > 0) { "timeoutMillis must be positive" }
         val started = Instant.now()
         val startNanos = System.nanoTime()
+        val costs = RunCosts(startNanos)
         var loaded: LoadedScenario? = null
         var observed = 0
         var initialStateChecked = false
@@ -35,14 +36,16 @@ object Runner {
         RunArchive(output).use { archive ->
             archive.write(record("run-start", "runId" to s(output.fileName.toString()), "startedAt" to s(started.toString())))
             try {
-                archive.snapshot(request.scenario, "scenario.json")
-                archive.snapshot(request.contract, "contract.json")
-                loaded = ScenarioReader.load(request.scenario, request.contract,
-                    output.resolve("inputs/scenario.json"), output.resolve("inputs/contract.json"))
+                costs.measure("captureArchive") {
+                    archive.snapshot(request.scenario, "scenario.json")
+                    archive.snapshot(request.contract, "contract.json")
+                }
+                loaded = costs.measure("loadInitialize") { ScenarioReader.load(request.scenario, request.contract,
+                    output.resolve("inputs/scenario.json"), output.resolve("inputs/contract.json")) }
                 val input = loaded
                 contract = input.contractDocument
                 scenario = input.scenarioDocument
-                TraceComparator.validateContract(scenario, contract)
+                costs.measure("loadInitialize") { TraceComparator.validateContract(scenario, contract) }
                 required = input.steps.size
                 if (sha256(output.resolve("inputs/scenario.json")) != input.scenarioIdentity.sha256 ||
                     sha256(output.resolve("inputs/contract.json")) != input.contractIdentity.sha256) {
@@ -53,23 +56,26 @@ object Runner {
                     if ((System.nanoTime() - startNanos) / 1_000_000 >= request.timeoutMillis) throw RunTimedOut()
                 }
                 checkExecution()
-                CoreAdapter(input).use { core ->
-                    val initial = core.initial()
+                costs.measure("loadInitialize") { CoreAdapter(input) }.use { core ->
+                    val initial = costs.measure("coreSimulation") { core.initial() }
                     initialStateChecked = true
-                    archive.observation(initial, "initial", input)
+                    val initialPlayers = costs.measure("coreSimulation") { core.playerViews() }
+                    costs.measure("captureArchive") { archive.observation(initial, "initial", input, initialPlayers) }
                     for (step in input.steps) {
                         checkExecution()
                         input.actions.filter { it.integer("atStep") == step.stepIndex }.forEach { action ->
                             checkExecution()
-                            archive.write(record("action-result", "atStep" to n(step.stepIndex), "action" to action,
-                                "result" to core.submit(action).json()), input)
+                            val result = costs.measure("coreSimulation") { core.submit(action) }
+                            costs.measure("captureArchive") { archive.write(record("action-result", "atStep" to n(step.stepIndex), "action" to action,
+                                "result" to result.json()), input) }
                         }
-                        val observation = core.advance(step)
+                        val observation = costs.measure("coreSimulation") { core.advance(step) }
                         if (observation.stepIndex != step.stepIndex || observation.scenarioId != input.core.scenarioId ||
                             observation.simulationTime != (observed + 1).toDouble()) {
                             throw CaptureError("Observation does not match the requested simulation boundary")
                         }
-                        archive.observation(observation, "after-advance", input)
+                        val players = costs.measure("coreSimulation") { core.playerViews() }
+                        costs.measure("captureArchive") { archive.observation(observation, "after-advance", input, players) }
                         observed++
                     }
                 }
@@ -84,8 +90,8 @@ object Runner {
                 // Validate the completed capture in memory before writing its final judgment/footer.
                 val completion = record("run-end", "status" to s("completed"), "exitCode" to n(0),
                     "observedSteps" to n(observed), "requiredSteps" to n(required), "complete" to b(true))
-                judgment = TraceComparator.evaluate(scenario, contract,
-                    archive.records + completion)
+                judgment = costs.measure("comparison") { TraceComparator.evaluate(scenario, contract,
+                    archive.records + completion) }
                 status = judgment.status
                 exitCode = judgment.exitCode
                 error = (judgment.document["reason"] as? JsonPrimitive)?.content
@@ -111,10 +117,12 @@ object Runner {
                 "workingDirectory" to s(Path.of("").toAbsolutePath().toString()),
                 "exitCode" to n(exitCode), "error" to error?.let(::s)))
             val tool = toolIdentity()
+            val costRecord = costs.json()
             archive.document("manifest.json", record("run-manifest", "runId" to s(output.fileName.toString()),
                 "ticket" to s("TEST-P001-002"), "period" to s("P001-自身行为验证"), "topic" to s(output.parent.fileName.toString()),
                 "startedAt" to s(started.toString()), "finishedAt" to s(Instant.now().toString()),
                 "wallElapsedMillis" to n((System.nanoTime() - startNanos) / 1_000_000),
+                "costs" to costRecord,
                 "status" to s(status), "exitCode" to n(exitCode), "complete" to b(complete),
                 "collectionStatus" to s(collectionStatus),
                 "environment" to obj("os" to s(System.getProperty("os.name")), "osVersion" to s(System.getProperty("os.version")),

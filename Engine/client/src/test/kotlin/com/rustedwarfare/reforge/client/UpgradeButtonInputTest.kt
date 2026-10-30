@@ -139,9 +139,9 @@ class UpgradeButtonInputTest {
     })
 
     private fun scene(): Scenario {
-        val root = generateSequence(Path.of("").toAbsolutePath()) { it.parent }
+        val root = (System.getProperty("public.fixtures.dir")?.let { Path.of(it).resolve("maintenance-defense/construction") } ?: generateSequence(Path.of("").toAbsolutePath()) { it.parent }
             .first { Files.isRegularFile(it.resolve("AGENTS.md")) }.resolve(
-                ".scratch/开发票据/引擎重写/P006-建造经济与原版操作/evidence/ENG-P006-007/20261029-implementation-01/defense-input")
+                ".scratch/开发票据/引擎重写/P006-建造经济与原版操作/evidence/ENG-P006-007/20261029-implementation-01/defense-input"))
         val base = ControlledScenario.load(root)
         val ground = base.map.tileSets.first { 2 in it.blockedTileIds }.firstGid
         val units = listOf(UnitSpawn("a", "p1", "c_turret_t1", Position(190.0, 170.0), 0.0),

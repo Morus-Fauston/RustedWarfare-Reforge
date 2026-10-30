@@ -1,0 +1,171 @@
+{
+  "schemaVersion": 1,
+  "scenarioId": "platform-production-basics",
+  "rules": [
+    {
+      "intentId": "choose-tank",
+      "actionType": "SelectAction",
+      "unitId": "a",
+      "accepted": true,
+      "assertions": [
+        {
+          "path": "units.a.typeId",
+          "operator": "equals",
+          "value": "c_tank"
+        }
+      ],
+      "unitIdentity": {
+        "ownerPlayerId": "p1",
+        "typeId": "c_tank"
+      }
+    },
+    {
+      "intentId": "move-tank",
+      "actionType": "MoveAction",
+      "unitId": "a",
+      "accepted": true,
+      "targetFromIntent": true,
+      "assertions": [
+        {
+          "path": "units.a.moveTarget",
+          "operator": "equalsActionTarget"
+        }
+      ],
+      "unitIdentity": {
+        "ownerPlayerId": "p1",
+        "typeId": "c_tank"
+      }
+    },
+    {
+      "intentId": "stop-tank",
+      "actionType": "StopAction",
+      "unitId": "a",
+      "accepted": true,
+      "assertions": [
+        {
+          "path": "units.a.moveTarget",
+          "operator": "equals",
+          "value": null
+        }
+      ],
+      "tail": {
+        "samples": 9,
+        "assertions": [
+          {
+            "path": "units.a.speed",
+            "operator": "equals",
+            "value": 0
+          },
+          {
+            "path": "units.a.angularVelocity",
+            "operator": "equals",
+            "value": 0
+          },
+          {
+            "path": "units.a.moveTarget",
+            "operator": "equals",
+            "value": null
+          },
+          {
+            "path": "units.a.position",
+            "operator": "stable"
+          }
+        ]
+      },
+      "unitIdentity": {
+        "ownerPlayerId": "p1",
+        "typeId": "c_tank"
+      }
+    },
+    {
+      "intentId": "attack-enemy",
+      "actionType": "AttackAction",
+      "unitId": "a",
+      "accepted": true,
+      "actionFields": {
+        "targetUnitId": "b"
+      },
+      "assertions": [
+        {
+          "path": "units.a.attackTargetId",
+          "operator": "equals",
+          "value": "b"
+        }
+      ],
+      "unitIdentity": {
+        "ownerPlayerId": "p1",
+        "typeId": "c_tank"
+      },
+      "targetIdentity": {
+        "ownerPlayerId": "p2",
+        "typeId": "c_tank"
+      }
+    },
+    {
+      "intentId": "choose-factory",
+      "actionType": "SelectAction",
+      "unitId": "f",
+      "accepted": true,
+      "assertions": [
+        {
+          "path": "units.f.typeId",
+          "operator": "equals",
+          "value": "landFactory"
+        }
+      ],
+      "unitIdentity": {
+        "ownerPlayerId": "p1",
+        "typeId": "landFactory"
+      }
+    },
+    {
+      "intentId": "make-tank",
+      "actionType": "ProduceAction",
+      "unitId": "f",
+      "accepted": true,
+      "assertions": [
+        {
+          "path": "balance",
+          "operator": "deltaEquals",
+          "value": -350
+        },
+        {
+          "path": "factoryQueues.f.items",
+          "operator": "equals",
+          "value": [
+            {
+              "typeId": "c_tank",
+              "progress": 0
+            }
+          ]
+        }
+      ],
+      "unitIdentity": {
+        "ownerPlayerId": "p1",
+        "typeId": "landFactory"
+      }
+    },
+    {
+      "intentId": "cancel-tank",
+      "actionType": "CancelProductionAction",
+      "unitId": "f",
+      "accepted": true,
+      "assertions": [
+        {
+          "path": "balance",
+          "operator": "deltaEquals",
+          "value": 350
+        },
+        {
+          "path": "factoryQueues.f.items",
+          "operator": "equals",
+          "value": []
+        }
+      ],
+      "unitIdentity": {
+        "ownerPlayerId": "p1",
+        "typeId": "landFactory"
+      }
+    }
+  ]
+}

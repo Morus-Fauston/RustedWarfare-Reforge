@@ -54,8 +54,8 @@ class ConstructionNavigationStateTest {
     }
 
     private fun worker(): MutableUnit {
-        val root = generateSequence(Path.of("").toAbsolutePath()) { it.parent }.first { Files.isRegularFile(it.resolve("AGENTS.md")) }
-            .resolve(".scratch/开发票据/引擎重写/P006-建造经济与原版操作/evidence/ENG-P006-006/20261029-implementation-01/input")
+        val root = (System.getProperty("public.fixtures.dir")?.let { Path.of(it).resolve("build-economy/queue") } ?: generateSequence(Path.of("").toAbsolutePath()) { it.parent }.first { Files.isRegularFile(it.resolve("AGENTS.md")) }
+            .resolve(".scratch/开发票据/引擎重写/P006-建造经济与原版操作/evidence/ENG-P006-006/20261029-implementation-01/input"))
         val definition = assertIs<ContentResult.Success<com.rustedwarfare.reforge.core.content.UnitDefinition>>(
             ContentLoader.loadBuilder(root.resolve("units/builder.properties"))).value
         return MutableUnit("worker", "p1", definition.id, definition, Position(120.0, 170.0), 90.0)

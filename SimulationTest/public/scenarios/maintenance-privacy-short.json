@@ -1,0 +1,383 @@
+{
+  "schemaVersion": 1,
+  "kind": "scenario",
+  "scenarioId": "public.maintenance-privacy-short.v1",
+  "content": {
+    "map": {
+      "id": "map",
+      "path": "../inputs/maintenance-defense/maintenance/maps/p001-controlled.tmx",
+      "sha256": "e7b573add256f503a66455520166a0160dc1536074d876b60345998ac6c5bfd2"
+    },
+    "unitVariants": [
+      {
+        "id": "commandCenter",
+        "path": "../inputs/maintenance-defense/maintenance/units/commandCenter.properties",
+        "sha256": "935cd8c4dc4df0c51a43851059f19ae635e746e349bb50c1fc1a3b0a06f37224",
+        "loader": "command-center"
+      },
+      {
+        "id": "builder",
+        "path": "../inputs/maintenance-defense/maintenance/units/builder.properties",
+        "sha256": "2d0b0e454b904182c8c6dca991a0252bead473942342556512b6eff2f726b82a",
+        "loader": "builder"
+      },
+      {
+        "id": "landFactory",
+        "path": "../inputs/maintenance-defense/maintenance/units/landFactory.properties",
+        "sha256": "304343c41f0f978fa537467f2a092e13920f8b610a750daa00b9850c76bd71fa",
+        "loader": "factory"
+      },
+      {
+        "id": "c_tank",
+        "path": "../inputs/maintenance-defense/maintenance/units/tank.ini",
+        "sha256": "99aa63a6f6e87662e257af3ca7c4557290153e60e62fcdf74360e15caef612e8",
+        "loader": "combat"
+      },
+      {
+        "id": "extractorT1",
+        "path": "../inputs/maintenance-defense/maintenance/units/extractor.ini",
+        "sha256": "b8d4cb8cc0c03874a7dc86738d00f5f836f7ae30a70da5f9699a55404c99049f",
+        "loader": "economy-upgrades"
+      },
+      {
+        "id": "extractorT2",
+        "path": "../inputs/maintenance-defense/maintenance/units/extractorT2.ini",
+        "sha256": "dc349ea0620e40b3468ce3b21816263529f6d914876d1caaa8b4382d90a96dbe",
+        "loader": "economy-upgrades"
+      },
+      {
+        "id": "extractorT3",
+        "path": "../inputs/maintenance-defense/maintenance/units/extractorT3.ini",
+        "sha256": "0c071094c03914af6cdf3b16d605a2e899eaa2c32a978007f93d28346307ccf9",
+        "loader": "economy-upgrades"
+      },
+      {
+        "id": "fabricatorT1",
+        "path": "../inputs/maintenance-defense/maintenance/units/fabricatorT1.ini",
+        "sha256": "99a87d37001a9f16ad86b4463c7dc0ffa158c141557957e81957609d92fe5a69",
+        "loader": "economy-upgrades"
+      },
+      {
+        "id": "fabricatorT2",
+        "path": "../inputs/maintenance-defense/maintenance/units/fabricatorT2.ini",
+        "sha256": "e114590f77392e87f4e353adec196e1aeee17e012d0ee23773c83ea1788441f1",
+        "loader": "economy-upgrades"
+      },
+      {
+        "id": "fabricatorT3",
+        "path": "../inputs/maintenance-defense/maintenance/units/fabricatorT3.ini",
+        "sha256": "7c7dfe683765077b1980fa4df3a11990b968769938a08ff6df7a61609fe64fdf",
+        "loader": "economy-upgrades"
+      }
+    ],
+    "dependencies": [
+      {
+        "id": "dep-base.png",
+        "path": "../inputs/maintenance-defense/maintenance/units/base.png",
+        "sha256": "8095d081de1407fe59e9ff99f5a5822e03275f87ffbd0f2a09ac736f8f6b3695"
+      },
+      {
+        "id": "dep-base_back.png",
+        "path": "../inputs/maintenance-defense/maintenance/units/base_back.png",
+        "sha256": "07e2e3d786bf88d6d1dfe57add1b732e84a9bd2d6313732cc4f86ec8c4da2885"
+      },
+      {
+        "id": "dep-base_dead.png",
+        "path": "../inputs/maintenance-defense/maintenance/units/base_dead.png",
+        "sha256": "940b030d8a9c0161c69b1831041186c97409e85d404aa5c5f6ec58fa5d831b16"
+      },
+      {
+        "id": "dep-builder.png",
+        "path": "../inputs/maintenance-defense/maintenance/units/builder.png",
+        "sha256": "15060aa3fb36bffd4414e803beb8f5d9b2982ed14bb497fbca6cadd3de18cc1b"
+      },
+      {
+        "id": "dep-builder_dead.png",
+        "path": "../inputs/maintenance-defense/maintenance/units/builder_dead.png",
+        "sha256": "15060aa3fb36bffd4414e803beb8f5d9b2982ed14bb497fbca6cadd3de18cc1b"
+      },
+      {
+        "id": "dep-extractor_back.png",
+        "path": "../inputs/maintenance-defense/maintenance/units/extractor_back.png",
+        "sha256": "b7450a978080da75d5e52484ed62f4fe18d294c1c1e918e5c7f0abea608bea80"
+      },
+      {
+        "id": "dep-extractor_common.ini",
+        "path": "../inputs/maintenance-defense/maintenance/units/extractor_common.ini",
+        "sha256": "7c6a712d4a8c83e10a6f7640459b4e9817d931a6414b0201659e32425f9c94e0"
+      },
+      {
+        "id": "dep-extractor_t1.png",
+        "path": "../inputs/maintenance-defense/maintenance/units/extractor_t1.png",
+        "sha256": "96f912275ca7d1bc07fce8aa3c9343c8be1900bd35b56367e4fc165febf56ca6"
+      },
+      {
+        "id": "dep-extractor_t2.png",
+        "path": "../inputs/maintenance-defense/maintenance/units/extractor_t2.png",
+        "sha256": "9e7ea8588ec440427424ff5daf7c628199e8e2579f783dfce0c413f135313467"
+      },
+      {
+        "id": "dep-extractor_t3.png",
+        "path": "../inputs/maintenance-defense/maintenance/units/extractor_t3.png",
+        "sha256": "21883c595db746c2ae40b55276469ccf82d74931004841c1ad1b62ed3c6317c7"
+      },
+      {
+        "id": "dep-fabricator_dead.png",
+        "path": "../inputs/maintenance-defense/maintenance/units/fabricator_dead.png",
+        "sha256": "55883ff610cb74713449cc980d2da5d04ce6a9bd57ed4fd6c29b1a3900722855"
+      },
+      {
+        "id": "dep-fabricatorT1.png",
+        "path": "../inputs/maintenance-defense/maintenance/units/fabricatorT1.png",
+        "sha256": "7ed97be7ee48026f65fbd0053a7c8c5139a650ee8b341bf404b706b3d9b6ce11"
+      },
+      {
+        "id": "dep-fabricatorT2.png",
+        "path": "../inputs/maintenance-defense/maintenance/units/fabricatorT2.png",
+        "sha256": "2b36cf34274f6682d069d7f0bdb449fcf9fc89628f9825c2ee5287d1e4177224"
+      },
+      {
+        "id": "dep-fabricatorT3.png",
+        "path": "../inputs/maintenance-defense/maintenance/units/fabricatorT3.png",
+        "sha256": "347901f6bab85bbd1c44b5cf3460e7755138e8b70d773fecb6b2a4a26b7c40fc"
+      },
+      {
+        "id": "dep-factory.png",
+        "path": "../inputs/maintenance-defense/maintenance/units/factory.png",
+        "sha256": "f5fbe7d6c121670ef027714323b193a17734d63cae69bfc1ff317c5068e29e64"
+      },
+      {
+        "id": "dep-factory_back.png",
+        "path": "../inputs/maintenance-defense/maintenance/units/factory_back.png",
+        "sha256": "f5fbe7d6c121670ef027714323b193a17734d63cae69bfc1ff317c5068e29e64"
+      },
+      {
+        "id": "dep-factory_dead.png",
+        "path": "../inputs/maintenance-defense/maintenance/units/factory_dead.png",
+        "sha256": "f833d96e5b74fa0d68a2331a36338518727636a48e56b2a9e5278ab20bd4ae83"
+      },
+      {
+        "id": "dep-tank.png",
+        "path": "../inputs/maintenance-defense/maintenance/units/tank.png",
+        "sha256": "898fa8d12d89e73c988c258c3522a23660b2fdc500b4c8588fd2d8cf5fe4b605"
+      },
+      {
+        "id": "dep-tank_dead.png",
+        "path": "../inputs/maintenance-defense/maintenance/units/tank_dead.png",
+        "sha256": "cbab7f92fa0cbef203e94823e2cbdc3e0116df3dab205f2ce0296e399a1a4ffa"
+      },
+      {
+        "id": "dep-tank_turret.png",
+        "path": "../inputs/maintenance-defense/maintenance/units/tank_turret.png",
+        "sha256": "20dfaa2a45dd5bb635e83425fb64a6d3d3f9fef48d1b0a3b573fe5b9b67c4985"
+      },
+      {
+        "id": "terrain",
+        "path": "../inputs/maintenance-defense/maintenance/assets/terrain.png",
+        "sha256": "8e7d231fcedf41052d83465e14df7c4682d0eca7d1c939924ecbc9bf082a5556"
+      }
+    ]
+  },
+  "coordinateModel": {
+    "id": "public.coordinate.v1",
+    "space": "2d",
+    "xAxis": "x-right",
+    "yAxis": "y-down",
+    "origin": "top-left",
+    "unit": "world-unit",
+    "valueType": "double",
+    "precision": "ieee754-binary64"
+  },
+  "timeModel": {
+    "id": "public.time.v1",
+    "deltaUnit": "sim-tick",
+    "stepRule": "fixed-explicit-delta",
+    "precision": "ieee754-binary64"
+  },
+  "angleUnit": "degree-clockwise-zero-up",
+  "movementContract": {
+    "pathPointRadius": 16,
+    "targetRadius": 4
+  },
+  "automaticVision": {
+    "retention": "MEMORY",
+    "pathSource": "PLAYER_KNOWLEDGE",
+    "shareAlliedVision": false,
+    "observers": [
+      "p1",
+      "p2"
+    ],
+    "grid": {
+      "width": 30,
+      "height": 20
+    }
+  },
+  "combatContract": {
+    "worldSeed": 1,
+    "initialFrameCounter": -1,
+    "unitObjectIds": {
+      "a": 1,
+      "b": 2,
+      "f": 3,
+      "hidden": 4
+    },
+    "nextObjectId": 5
+  },
+  "economyContract": {
+    "initialBalances": {
+      "p1": 1750,
+      "p2": 0
+    }
+  },
+  "players": [
+    {
+      "playerId": "p1",
+      "control": "local",
+      "teamId": "one"
+    },
+    {
+      "playerId": "p2",
+      "control": "local",
+      "teamId": "two"
+    }
+  ],
+  "units": [
+    {
+      "unitId": "a",
+      "owner": "p1",
+      "type": "builder",
+      "position": {
+        "x": 120,
+        "y": 170
+      },
+      "heading": 90
+    },
+    {
+      "unitId": "b",
+      "owner": "p1",
+      "type": "builder",
+      "position": {
+        "x": 120,
+        "y": 210
+      },
+      "heading": 90
+    },
+    {
+      "unitId": "f",
+      "owner": "p1",
+      "type": "landFactory",
+      "position": {
+        "x": 190,
+        "y": 170
+      },
+      "heading": 0
+    },
+    {
+      "unitId": "hidden",
+      "owner": "p2",
+      "type": "landFactory",
+      "position": {
+        "x": 510,
+        "y": 330
+      },
+      "heading": 0
+    }
+  ],
+  "actions": [
+    {
+      "actionId": "hidden-repair",
+      "atStep": 1,
+      "actor": "p1",
+      "kind": "repair",
+      "unitId": "a",
+      "targetUnitId": "hidden",
+      "append": false
+    },
+    {
+      "actionId": "missing-repair",
+      "atStep": 2,
+      "actor": "p1",
+      "kind": "repair",
+      "unitId": "a",
+      "targetUnitId": "missing",
+      "append": false
+    },
+    {
+      "actionId": "foreign-worker",
+      "atStep": 3,
+      "actor": "p2",
+      "kind": "reclaim",
+      "unitId": "a",
+      "targetUnitId": "f",
+      "append": false
+    }
+  ],
+  "termination": {
+    "kind": "explicit-steps",
+    "required": true,
+    "steps": [
+      {
+        "stepIndex": 0,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 1,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 2,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 3,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 4,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 5,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 6,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 7,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 8,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 9,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      }
+    ]
+  },
+  "maintenanceContract": {
+    "basePrices": {
+      "commandCenter": 3000,
+      "landFactory": 700,
+      "extractorT1": 700,
+      "extractorT2": 2100,
+      "extractorT3": 6100,
+      "fabricatorT1": 2200,
+      "fabricatorT2": 6600,
+      "fabricatorT3": 14100
+    }
+  }
+}

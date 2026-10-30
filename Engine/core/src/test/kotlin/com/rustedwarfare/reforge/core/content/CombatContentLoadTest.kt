@@ -10,7 +10,8 @@ import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 class CombatContentLoadTest {
-    private fun combatPath(): Path = inputs().parent.parent.parent.resolve(
+    private fun combatPath(): Path = System.getProperty("public.fixtures.dir")?.let { Path.of(it).resolve("production-combat/combat/units/tank.ini") }
+        ?: inputs().parent.parent.parent.resolve(
         ".scratch/开发票据/引擎重写/P005-生产战斗与指挥沙盒/evidence/ENG-P005-001/20261025-e-input-01/input/units/tank.ini",
     )
 

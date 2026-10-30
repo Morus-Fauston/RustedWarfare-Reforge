@@ -1,5 +1,7 @@
 # 模拟测试代码与构建入口
 
+公共分层入口见[机制、短测与连续长测](public/README.md)。从仓库根执行`python -B SimulationTest/ci/public_batch.py --kind pr|long --isolated --output <new-directory>`可选择完整公共层级；`--kind mechanism|short`用于对应全层，单集继续使用`ci/public_check.py`。公开自有输入与私有比较链分别声明，真实CI按运行SHA和产物核验；以下历史入口及原始证据保持不变。
+
 本目录用于 Kotlin/JVM 测试控制器、原版测试桥及适配器、轨迹标准化和比较器的自有源码与构建配置，不在工具中重写另一套玩法规则。
 
 唯一落位规则见[三线代码与构建落位](../Docs/当前决策/三线代码与构建落位.md)，执行原则见[自动行为校验](../Docs/当前决策/自动行为校验与Agent闭环.md)，任务见[测试开发线](../.scratch/开发票据/测试系统/README.md)。场景、契约、批次及本机隔离材料使用[TestLab](../TestLab/README.md)。
@@ -82,3 +84,6 @@ java -cp "build/install/simulation-test/lib/*" com.rustedwarfare.reforge.testing
 该脚本运行打包入口的帮助、版本、坏参数、两次采集、坏哈希、未知版本、缺依赖、初始化失败、取消及超时，玩法批次仍归 TestLab。重复运行只比较固定输入的核心观测，不产生原版预期。
 
 本机测试需要已经制备的 `TestLab/local/P001-移动沙盒输入/` 和只读原版图像引用；它们受根 `.gitignore` 排除，公开克隆不包含这些资产。缺输入时测试明确失败，不空跑或跳过后报通过。源码与工具夹具为本票自写，未复制原版/参考项目玩法代码；本票不授权原版改包、安装、运行或素材分发。Windows/JVM 的证据不证明 Android、Linux、真实网络、性能或原版兼容。
+
+
+TEST-P004-002新增命名机制/短测/同局长测选择：`python -B SimulationTest/ci/public_check.py --suite content-movement-knowledge --kind all --isolated`。公开夹具与固定知识场景、旧私有专属入口及证据边界见[公共测试说明](public/README.md)。默认首环命令仍可复跑。

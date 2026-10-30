@@ -1,0 +1,137 @@
+{
+  "schemaVersion": 1,
+  "kind": "scenario",
+  "scenarioId": "public.select-move-stop.v1",
+  "content": {
+    "map": {
+      "id": "public.open-ground",
+      "path": "../inputs/select-move-stop/open-ground.tmx",
+      "sha256": "634d458928422b61eb793f14df48e406317085af6c6dc4ad96686443809ae79f"
+    },
+    "unitVariant": {
+      "id": "public.walker",
+      "path": "../inputs/select-move-stop/walker.ini",
+      "sha256": "ce2dcbd102d0c774c1b6636df45eeb487faa5bf2bfadb17dbdf0be6f634ad209"
+    },
+    "dependencies": [
+      {
+        "id": "public.owned-image",
+        "path": "../inputs/select-move-stop/owned.png",
+        "sha256": "1693ccac5b144b51af3f8973fed918ce8eabf98714a7384667a7b0e7e0a89aad"
+      }
+    ]
+  },
+  "coordinateModel": {
+    "id": "public.coordinate.v1",
+    "space": "2d",
+    "xAxis": "x-right",
+    "yAxis": "y-down",
+    "origin": "top-left",
+    "unit": "world-unit",
+    "valueType": "double",
+    "precision": "ieee754-binary64"
+  },
+  "timeModel": {
+    "id": "public.time.v1",
+    "deltaUnit": "sim-tick",
+    "stepRule": "fixed-explicit-delta",
+    "precision": "ieee754-binary64"
+  },
+  "angleUnit": "degree-clockwise-zero-up",
+  "movementContract": {
+    "pathPointRadius": 16,
+    "targetRadius": 4
+  },
+  "players": [
+    {
+      "playerId": "p1",
+      "control": "local"
+    },
+    {
+      "playerId": "p2",
+      "control": "local"
+    }
+  ],
+  "units": [
+    {
+      "unitId": "u1",
+      "owner": "p1",
+      "type": "public.walker",
+      "position": {
+        "x": 70,
+        "y": 70
+      },
+      "heading": 90
+    }
+  ],
+  "actions": [
+    {
+      "actionId": "select-1",
+      "atStep": 0,
+      "actor": "p1",
+      "kind": "select",
+      "unitId": "u1"
+    },
+    {
+      "actionId": "move-1",
+      "atStep": 1,
+      "actor": "p1",
+      "kind": "move",
+      "unitId": "u1",
+      "target": {
+        "x": 170,
+        "y": 70
+      }
+    },
+    {
+      "actionId": "foreign-stop",
+      "atStep": 2,
+      "actor": "p2",
+      "kind": "stop",
+      "unitId": "u1"
+    },
+    {
+      "actionId": "stop-1",
+      "atStep": 3,
+      "actor": "p1",
+      "kind": "stop",
+      "unitId": "u1"
+    }
+  ],
+  "termination": {
+    "kind": "explicit-steps",
+    "required": true,
+    "steps": [
+      {
+        "stepIndex": 0,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 1,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 2,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 3,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 4,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 5,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      }
+    ]
+  }
+}

@@ -1,0 +1,79 @@
+{
+  "schemaVersion": 1,
+  "scenarioId": "platform-upgrade-basics",
+  "rules": [
+    {
+      "intentId": "choose-turret",
+      "actionType": "SelectAction",
+      "unitId": "t",
+      "accepted": true,
+      "assertions": [
+        {
+          "path": "units.t.typeId",
+          "operator": "equals",
+          "value": "c_turret_t1"
+        }
+      ],
+      "unitIdentity": {
+        "ownerPlayerId": "p1",
+        "typeId": "c_turret_t1"
+      }
+    },
+    {
+      "intentId": "upgrade-gun",
+      "actionType": "UpgradeAction",
+      "unitId": "t",
+      "accepted": true,
+      "actionFields": {
+        "upgradeId": "upgrade_gun"
+      },
+      "assertions": [
+        {
+          "path": "balance",
+          "operator": "deltaEquals",
+          "value": -1000
+        },
+        {
+          "path": "upgradeQueues.t.items",
+          "operator": "equals",
+          "value": [
+            {
+              "actionKey": "upgrade_gun",
+              "targetTypeId": "c_turret_t2_gun",
+              "progress": 0
+            }
+          ]
+        }
+      ],
+      "unitIdentity": {
+        "ownerPlayerId": "p1",
+        "typeId": "c_turret_t1"
+      }
+    },
+    {
+      "intentId": "cancel-gun",
+      "actionType": "CancelUpgradeAction",
+      "unitId": "t",
+      "accepted": true,
+      "actionFields": {
+        "upgradeId": "upgrade_gun"
+      },
+      "assertions": [
+        {
+          "path": "balance",
+          "operator": "deltaEquals",
+          "value": 1000
+        },
+        {
+          "path": "upgradeQueues.t.items",
+          "operator": "equals",
+          "value": []
+        }
+      ],
+      "unitIdentity": {
+        "ownerPlayerId": "p1",
+        "typeId": "c_turret_t1"
+      }
+    }
+  ]
+}
