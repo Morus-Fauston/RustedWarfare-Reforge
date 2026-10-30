@@ -98,6 +98,7 @@ object TraceComparator {
         val products = ProductionDeclaration.products(scenario, contract)
         val buildings = ConstructionDeclaration.buildings(scenario, contract)
         UpgradeDeclaration.conversions(scenario, contract)
+        ReclaimDeclaration.removals(scenario, contract)
         if (contract.text("scope") != "self-behavior" || scenario.required("scenarioId") !in contract.arrayAt("scenarioIds")) {
             throw InputError("Only the declared self-behavior scenario can be evaluated")
         }
@@ -215,6 +216,7 @@ object TraceComparator {
             val products = ProductionDeclaration.products(scenario, contract)
             val buildings = ConstructionDeclaration.buildings(scenario, contract)
             val conversions = UpgradeDeclaration.conversions(scenario, contract)
+            val removals = ReclaimDeclaration.removals(scenario, contract)
             val acceptedActions = mutableSetOf<String>()
             var sampleCount = 0
             var time = BigDecimal.ZERO
@@ -255,7 +257,20 @@ object TraceComparator {
                         if (decimal(observation.required("simulationTime")).compareTo(time) != 0) throw Incomplete("time-alignment", "Simulation time differs from explicit schedule")
                         val born = ProductionDeclaration.born(products, row)
                         val built = ProductionDeclaration.born(buildings, row)
-                        val expectedIds = unitIds + born.map { it.id("unitId") } + built.map { it.id("unitId") }
+                        val removed = ProductionDeclaration.born(removals, row, "removalStepIndex")
+                        val removedIds = removed.map { it.id("unitId") }.toSet()
+                        val expectedIds = (unitIds + born.map { it.id("unitId") } + built.map { it.id("unitId") }) - removedIds
+                        if (scenario.containsKey("maintenanceContract")) {
+                            val registered = observation.arrayAt("reclaimedUnitIds").map { it.jsonPrimitive.content }
+                            if (registered.size != removedIds.size || registered.toSet() != removedIds ||
+                                removed.any { it.id("reclaimActionId") !in acceptedActions })
+                                throw Incomplete("reclaim-identity", "Missing, premature or unknown reclaim registration")
+                            for (removal in removed.filter { it.integer("removalStepIndex") == step && !initial }) {
+                                if (observation.arrayAt("events").none { it.jsonObject["kind"] == s("building-reclaimed") &&
+                                        it.jsonObject["unitId"] == removal["unitId"] })
+                                    throw Incomplete("reclaim-event", "Removal has no formal reclaim event at its declared boundary")
+                            }
+                        }
                         validatePlayerSamples(scenario, observation, expectedIds)
                         val units = observation.arrayAt("units").map { it.jsonObject }
                         if (units.map { it.id("unitId") }.toSet() != expectedIds || units.size != expectedIds.size) throw Incomplete("missing-object", "Missing, duplicate, early or unknown unit")
@@ -264,9 +279,12 @@ object TraceComparator {
                             if (births.map { it.id("unitId") }.toSet() != born.map { it.id("unitId") }.toSet() || births.size != born.size)
                                 throw Incomplete("production-identity", "Missing or unexpected formal production result")
                             for (product in born) {
-                                val unit = units.single { it.id("unitId") == product.id("unitId") }
                                 val birth = births.single { it.id("unitId") == product.id("unitId") }
-                                if (product.id("productionActionId") !in acceptedActions || birth.id("producerId") != product.id("producerId") ||
+                                if (product.id("productionActionId") !in acceptedActions || birth.id("producerId") != product.id("producerId"))
+                                    throw Incomplete("production-identity", "Product differs from its accepted producer")
+                                if (product.id("unitId") in removedIds) continue
+                                val unit = units.single { it.id("unitId") == product.id("unitId") }
+                                if (
                                     unit.id("ownerPlayerId") != product.id("owner") ||
                                     unit.id("typeId") != UpgradeDeclaration.typeAt(product.id("unitId"), product.id("typeId"), conversions, row))
                                     throw Incomplete("production-identity", "Product differs from its accepted producer, owner or type")
@@ -274,6 +292,7 @@ object TraceComparator {
                         }
                         if (buildings.isNotEmpty()) {
                             for (building in built) {
+                                if (building.id("unitId") in removedIds) continue
                                 val unit = units.single { it.id("unitId") == building.id("unitId") }
                                 if (building.id("buildActionId") !in acceptedActions || unit.id("ownerPlayerId") != building.id("owner") ||
                                     unit.id("typeId") != UpgradeDeclaration.typeAt(building.id("unitId"), building.id("typeId"), conversions, row))
@@ -293,7 +312,13 @@ object TraceComparator {
                         val incomeTypes = typesLoadedBy(scenario, setOf("command-center", "economy", "economy-upgrades"))
                         if (incomeTypes.isNotEmpty()) {
                             val incomes = observation.arrayAt("incomeStates").map { it.jsonObject }
-                            val expectedIncome = units.filter { it.id("typeId") in incomeTypes }.map { it.id("unitId") }.toSet()
+                            // Income phases belong to registered objects, including reclaimed ones.
+                            // Derive their identities from the independent declarations, never the filtered view.
+                            val registered = scenario.arrayAt("units").map { it.jsonObject } + born + built
+                            val expectedIncome = registered.filter {
+                                val type = (it["typeId"] ?: it.required("type")).jsonPrimitive.content
+                                UpgradeDeclaration.typeAt(it.id("unitId"), type, conversions, row) in incomeTypes
+                            }.map { it.id("unitId") }.toSet()
                             if (incomes.size != expectedIncome.size || incomes.map { it.id("unitId") }.toSet() != expectedIncome)
                                 throw Incomplete("income-state", "Missing or extra income phase")
                             incomes.forEach { it.number("elapsed") }
@@ -359,10 +384,11 @@ object TraceComparator {
         }
     }
 
-    private fun upgradeTypes(scenario: JsonObject) = typesLoadedBy(scenario, setOf("turret-upgrades")) +
+    private fun upgradeTypes(scenario: JsonObject) = typesLoadedBy(scenario, setOf("turret-upgrades", "turret-construction")) +
         typesLoadedBy(scenario, setOf("economy-upgrades")).filter { it.endsWith("T1") || it.endsWith("T2") }
 
-    private fun hasConstruction(scenario: JsonObject) = scenario.arrayAt("actions").any { it.jsonObject.text("kind") == "build" }
+    private fun hasConstruction(scenario: JsonObject) = scenario.containsKey("maintenanceContract") ||
+        scenario.arrayAt("actions").any { it.jsonObject.text("kind") == "build" }
 
     private fun validateConstructionSample(scenario: JsonObject, observation: JsonObject, units: List<JsonObject>, built: List<JsonObject>) {
         val construction = observation.objectAt("construction")
@@ -411,6 +437,22 @@ object TraceComparator {
         if (hasConstruction(scenario)) {
             unit.number("constructionProgress")
             unit.required("constructionTargetId").let { if (it != JsonNull) unit.id("constructionTargetId") }
+        }
+        if (scenario.containsKey("maintenanceContract")) {
+            val tasks = unit.arrayAt("tasks").map { it.jsonObject }
+            if (tasks.size > 29 || tasks.map { it.id("actionId") }.distinct().size != tasks.size)
+                throw Incomplete("maintenance-tasks", "Invalid worker task queue")
+            tasks.forEach { task ->
+                if (task.keys != setOf("kind", "actionId", "target", "targetUnitId", "atStep", "buildingTypeId", "buildingNonce") ||
+                    task.text("kind") !in setOf("MOVE", "ATTACK", "PATROL", "BUILD", "CONSTRUCT", "RECLAIM"))
+                    throw Incomplete("maintenance-tasks", "Missing or invalid task fields")
+                task.id("actionId")
+                task.required("target").let { if (it != JsonNull) point(it.jsonObject) }
+                task.required("atStep").let { if (it != JsonNull) task.integer("atStep") }
+                listOf("targetUnitId", "buildingTypeId", "buildingNonce").forEach { field ->
+                    task.required(field).let { if (it != JsonNull) task.id(field) }
+                }
+            }
         }
         if (unit.text("movementState") !in setOf("IDLE", "MOVING", "DECELERATING", "BLOCKED")) throw Incomplete("invalid-field", "Unknown movement state")
         if (scenario.containsKey("combatContract") || scenario.containsKey("economyContract")) {

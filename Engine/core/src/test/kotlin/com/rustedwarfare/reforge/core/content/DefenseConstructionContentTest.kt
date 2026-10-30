@@ -6,7 +6,8 @@ import kotlin.test.*
 
 class DefenseConstructionContentTest {
     @Test fun builder_v4_exposes_exactly_five_buildings_without_changing_older_formats() {
-        val original = root().resolve(".scratch/开发票据/引擎重写/P006-建造经济与原版操作/evidence/ENG-P006-007/20261029-implementation-01/input/units/builder.properties")
+        val original = (System.getProperty("public.fixtures.dir")?.let { Path.of(it).resolve("build-economy/queue/units/builder.properties") }
+        ?: root().resolve(".scratch/开发票据/引擎重写/P006-建造经济与原版操作/evidence/ENG-P006-007/20261029-implementation-01/input/units/builder.properties"))
         val text = Files.readString(original).replace(Regex("(?m)^(image|image_dead)=(.*)$")) {
             "${it.groupValues[1]}=${original.parent.resolve(it.groupValues[2].trim()).toAbsolutePath()}"
         }
@@ -44,7 +45,8 @@ class DefenseConstructionContentTest {
     }
 
     @Test fun point_defense_construction_is_opt_in_and_keeps_the_legacy_profile() {
-        val path = root().resolve(".scratch/开发票据/引擎重写/P005-生产战斗与指挥沙盒/evidence/ENG-P005-005/20261026-e-defense-input-01/input/units/laserDefence.properties")
+        val path = (System.getProperty("public.fixtures.dir")?.let { Path.of(it).resolve("maintenance-defense/point-defense/units/laserDefence.properties") }
+        ?: root().resolve(".scratch/开发票据/引擎重写/P005-生产战斗与指挥沙盒/evidence/ENG-P005-005/20261026-e-defense-input-01/input/units/laserDefence.properties"))
         val legacy = assertIs<ContentResult.Success<UnitDefinition>>(ContentLoader.loadPointDefense(path)).value
         val disabled = assertIs<ContentResult.Success<UnitDefinition>>(ContentLoader.loadPointDefense(path, false)).value
         assertEquals(metadata(legacy), metadata(disabled))
@@ -171,6 +173,7 @@ class DefenseConstructionContentTest {
     private fun root(): Path = generateSequence(Path.of("").toAbsolutePath()) { it.parent }
         .first { Files.isRegularFile(it.resolve("AGENTS.md")) }
 
-    private fun source(): Path = root().resolve(
-            ".scratch/开发票据/引擎重写/P006-建造经济与原版操作/evidence/ENG-P006-007/20261029-implementation-01/turret-input/units")
+    private fun source(): Path = (System.getProperty("public.fixtures.dir")?.let { Path.of(it).resolve("maintenance-defense/construction/units") }
+        ?: root().resolve(
+            ".scratch/开发票据/引擎重写/P006-建造经济与原版操作/evidence/ENG-P006-007/20261029-implementation-01/turret-input/units"))
 }

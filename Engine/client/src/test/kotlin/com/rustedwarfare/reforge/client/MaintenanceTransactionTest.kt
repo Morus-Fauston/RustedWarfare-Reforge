@@ -7,9 +7,10 @@ import kotlin.test.*
 
 class MaintenanceTransactionTest {
     @Test fun a_late_overflow_restores_two_full_worker_queues_future_capacity_writes_and_scheduled_production_nonces() {
-        val base = ControlledScenario.load(generateSequence(Path.of("").toAbsolutePath()) { it.parent }
+        val base = ControlledScenario.load((System.getProperty("public.fixtures.dir")?.let { Path.of(it).resolve("maintenance-defense/maintenance") }
+        ?: generateSequence(Path.of("").toAbsolutePath()) { it.parent }
             .first { Files.isRegularFile(it.resolve("AGENTS.md")) }.resolve(
-                ".scratch/开发票据/引擎重写/P006-建造经济与原版操作/evidence/ENG-P006-006/20261029-implementation-01/input"))
+                ".scratch/开发票据/引擎重写/P006-建造经济与原版操作/evidence/ENG-P006-006/20261029-implementation-01/input")))
         val spawns = listOf(UnitSpawn("a-worker", "p1", "builder", Position(120.0, 170.0), 90.0),
             UnitSpawn("b-worker", "p1", "builder", Position(120.0, 210.0), 90.0),
             UnitSpawn("c-worker", "p1", "builder", Position(380.0, 170.0), 90.0),
@@ -108,9 +109,10 @@ class MaintenanceTransactionTest {
     }
 
     @Test fun a_late_real_production_overflow_rolls_back_the_reclaim_refund_queues_target_and_events_then_retries_once() {
-        val base = ControlledScenario.load(generateSequence(Path.of("").toAbsolutePath()) { it.parent }
+        val base = ControlledScenario.load((System.getProperty("public.fixtures.dir")?.let { Path.of(it).resolve("maintenance-defense/maintenance") }
+        ?: generateSequence(Path.of("").toAbsolutePath()) { it.parent }
             .first { Files.isRegularFile(it.resolve("AGENTS.md")) }.resolve(
-                ".scratch/开发票据/引擎重写/P006-建造经济与原版操作/evidence/ENG-P006-005/20261029-implementation-01/input"))
+                ".scratch/开发票据/引擎重写/P006-建造经济与原版操作/evidence/ENG-P006-005/20261029-implementation-01/input")))
         val spawns = listOf(UnitSpawn("a-worker", "p1", "builder", Position(120.0, 170.0), 90.0),
             UnitSpawn("m-target", "p1", "landFactory", Position(190.0, 170.0), 0.0),
             UnitSpawn("z-factory", "p1", "landFactory", Position(450.0, 170.0), 0.0))

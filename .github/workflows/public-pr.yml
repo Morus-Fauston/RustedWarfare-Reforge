@@ -25,6 +25,8 @@ jobs:
         run: python -B SimulationTest/ci/public_check.py --suite production-combat --kind pr --output SimulationTest/build/public-production-ci
       - name: Construction economy mechanisms and short scenarios
         run: python -B SimulationTest/ci/public_check.py --suite build-economy --kind pr --output SimulationTest/build/public-build-economy-ci
+      - name: Maintenance defense mechanisms and short scenarios
+        run: python -B SimulationTest/ci/public_check.py --suite maintenance-defense --kind pr --output SimulationTest/build/public-maintenance-defense-ci
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         if: always()
         with:
@@ -42,4 +44,10 @@ jobs:
         with:
           name: public-build-economy-evidence
           path: SimulationTest/build/public-build-economy-ci
+          if-no-files-found: error
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always()
+        with:
+          name: public-maintenance-defense-evidence
+          path: SimulationTest/build/public-maintenance-defense-ci
           if-no-files-found: error

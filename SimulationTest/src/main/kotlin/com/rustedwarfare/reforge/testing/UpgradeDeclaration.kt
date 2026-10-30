@@ -26,7 +26,7 @@ internal object UpgradeDeclaration {
                     definitions[source]?.get("loader") == s("economy-upgrades") &&
                         target == source.dropLast(1) + (source.last().digitToInt() + 1) &&
                         action.id("upgradeId") == "upgrade_t${target.last()}"
-                "c_turret_t1" -> definitions[source]?.get("loader") == s("turret-upgrades") &&
+                "c_turret_t1" -> definitions[source]?.get("loader") in setOf(s("turret-upgrades"), s("turret-construction")) &&
                     (action.id("upgradeId") to target) in setOf("upgrade_gun" to "c_turret_t2_gun", "upgrade_artillery" to "c_turret_t1_artillery")
                 else -> false
             }

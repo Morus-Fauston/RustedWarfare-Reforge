@@ -81,7 +81,9 @@ internal object ScenarioReader {
                 "command-center" -> ContentLoader.loadCommandCenter(ref.path)
                 "turret" -> ContentLoader.loadTurretUnit(ref.path)
                 "turret-upgrades" -> ContentLoader.loadTurretUnit(ref.path, true)
+                "turret-construction" -> ContentLoader.loadTurretUnit(ref.path, true, true)
                 "point-defense" -> ContentLoader.loadPointDefense(ref.path)
+                "point-defense-construction" -> ContentLoader.loadPointDefense(ref.path, true)
                 "economy" -> ContentLoader.loadEconomyUnit(ref.path)
                 "economy-upgrades" -> ContentLoader.loadEconomyUnit(ref.path, true)
                 else -> ContentLoader.loadUnitVariant(ref.path)
@@ -123,6 +125,7 @@ internal object ScenarioReader {
                 combat.integer("initialFrameCounter").toInt(), combat.objectAt("unitObjectIds").let { ids -> ids.keys.associateWith { ids.integer(it) } },
                 combat.integer("nextObjectId")) },
             input["economyContract"]?.jsonObject?.objectAt("initialBalances")?.let { balances -> EconomyContract(balances.keys.associateWith { balances.integer(it) }) },
+            input["maintenanceContract"]?.jsonObject?.objectAt("basePrices")?.let { prices -> MaintenanceContract(prices.keys.associateWith { prices.integer(it) }) },
         )
         if (core.units.isEmpty() || core.players.isEmpty()) throw InputError("Empty initial world")
         val termination = input.objectAt("termination")

@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 1, "kind": "behavior-contract", "contractId": "public.maintenance-privacy-short.v1",
+  "scope": "self-behavior", "scenarioIds": ["public.maintenance-privacy-short.v1"],
+  "approval": {"status": "tool-fixture-only", "source": "MaintenancePrivacyTest finite rejection and formal observePlayer hidden-unit boundary; fixed initial distances outside sight"},
+  "comparison": {"numberMode": "declared-per-field", "tolerances": {}, "eventOrder": "strict-record-and-array-order"},
+  "exclusions": ["original-compatibility", "platform-input", "performance"],
+  "rules": [
+    {"ruleId": "hidden-equals-absent-rejection", "when": {"phase": "after-advance", "stepIndex": 1}, "assertions": [
+      {"path": "actionResults.hidden-repair.error.code", "operator": "equals", "value": "invalid-maintenance-target"},
+      {"path": "players.p1.visibleUnitIds", "operator": "equals", "value": ["a", "b", "f"]},
+      {"path": "units.a.tasks", "operator": "equals", "value": []}
+    ]},
+    {"ruleId": "missing-same-error", "when": {"phase": "after-advance", "stepIndex": 2}, "assertions": [
+      {"path": "actionResults.missing-repair.error.code", "operator": "equals", "value": "invalid-maintenance-target"}
+    ]},
+    {"ruleId": "worker-ownership", "when": {"phase": "after-advance", "stepIndex": 3}, "assertions": [
+      {"path": "actionResults.foreign-worker.error.code", "operator": "equals", "value": "not-owner"},
+      {"path": "economy.preciseBalances.p1", "operator": "equals", "value": 1750},
+      {"path": "units.a.tasks", "operator": "equals", "value": []}
+    ]}
+  ]
+}

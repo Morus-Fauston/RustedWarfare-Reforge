@@ -36,6 +36,12 @@ internal class CoreAdapter(private val input: LoadedScenario) : AutoCloseable {
             "patrol" -> PatrolAction(id, actor, unit, position(value.objectAt("target")), value.required("append").jsonPrimitive.boolean, context.world)
             "upgrade" -> UpgradeAction(id, actor, unit, value.id("upgradeId"), context.world)
             "cancel-upgrade" -> CancelUpgradeAction(id, actor, unit, value.id("upgradeId"), context.world)
+            "repair" -> RepairBuildingAction(id, actor, unit, value.id("targetUnitId"), context.world,
+                append = value.required("append").jsonPrimitive.boolean)
+            "reclaim" -> ReclaimBuildingAction(id, actor, unit, value.id("targetUnitId"), context.world,
+                append = value.required("append").jsonPrimitive.boolean)
+            "resume-construction" -> ResumeConstructionAction(id, actor, unit, value.id("targetUnitId"), context.world,
+                append = value.required("append").jsonPrimitive.boolean)
             else -> throw InputError("Unsupported action")
         }
         return context.submit(action)
@@ -90,6 +96,7 @@ internal fun Observation.json(): JsonObject = JsonObject(obj(
     "units" to array(units.map { it.json(combat != null || economy != null) }),
     "events" to array(events.map { it.json() }), "actionResults" to array(actionResults.map { it.json() }),
 ).toMutableMap().apply {
+    reclaimedUnitIds?.let { put("reclaimedUnitIds", array(it.map(::s))) }
     economy?.let { state -> put("economy", obj("balances" to JsonObject(state.balances.mapValues { n(it.value) }),
         "preciseBalances" to state.preciseBalances?.let { JsonObject(it.mapValues { (_, amount) -> n(amount) }) },
         "queues" to JsonObject(state.queuedProduction.mapValues { (_, items) -> array(items.map { item -> obj(
@@ -116,6 +123,10 @@ internal fun UnitObservation.json(capabilities: Boolean): JsonObject = JsonObjec
     "angularVelocity" to n(angularVelocity), "moveTarget" to moveTarget?.json(),
     "pathPoints" to array(pathPoints.map { it.json() }), "movementState" to s(movementState.name),
     "constructionProgress" to n(constructionProgress), "constructionTargetId" to constructionTargetId?.let(::s),
+    "tasks" to array(tasks.map { obj("kind" to s(it.kind.name), "actionId" to s(it.actionId),
+        "target" to it.target?.json(), "targetUnitId" to it.targetUnitId?.let(::s),
+        "atStep" to it.atStep?.let(::n), "buildingTypeId" to it.buildingTypeId?.let(::s),
+        "buildingNonce" to it.buildingNonce?.let(::s)) }),
 ).toMutableMap().apply { if (capabilities) putAll(mapOf("health" to (health?.let(::n) ?: JsonNull),
     "maxHealth" to (maxHealth?.let(::n) ?: JsonNull), "alive" to b(alive), "attackTargetId" to (attackTargetId?.let(::s) ?: JsonNull),
     "pointDefense" to (pointDefense?.let { obj("energy" to n(it.energy), "exhausted" to b(it.exhausted)) } ?: JsonNull))) })

@@ -7,9 +7,10 @@ import kotlin.test.*
 
 class MaintenanceSourceTest {
     @Test fun a_real_command_center_missile_survives_reclaiming_its_source_and_income_stops() {
-        val base = ControlledScenario.load(generateSequence(Path.of("").toAbsolutePath()) { it.parent }
+        val base = ControlledScenario.load((System.getProperty("public.fixtures.dir")?.let { Path.of(it).resolve("maintenance-defense/maintenance") }
+        ?: generateSequence(Path.of("").toAbsolutePath()) { it.parent }
             .first { Files.isRegularFile(it.resolve("AGENTS.md")) }.resolve(
-                ".scratch/开发票据/引擎重写/P006-建造经济与原版操作/evidence/ENG-P006-005/20261029-implementation-01/input"))
+                ".scratch/开发票据/引擎重写/P006-建造经济与原版操作/evidence/ENG-P006-005/20261029-implementation-01/input")))
         val spawns = listOf(UnitSpawn("a-worker", "p1", "builder", Position(120.0, 170.0), 90.0),
             UnitSpawn("m-center", "p1", "commandCenter", Position(190.0, 170.0), 0.0),
             UnitSpawn("z-enemy", "p2", "c_tank", Position(480.0, 170.0), 270.0))

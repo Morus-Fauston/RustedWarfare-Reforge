@@ -11,8 +11,9 @@ import kotlin.test.*
 
 class PointDefenseJsonlPairingTest {
     @Test fun actual_jsonl_preserves_full_hidden_defense_pairing_in_both_knowledge_modes() {
-        val repo = generateSequence(Path.of("").toAbsolutePath()) { it.parent }.first { Files.isRegularFile(it.resolve("AGENTS.md")) }
-        val root = repo.resolve(".scratch/开发票据/引擎重写/P005-生产战斗与指挥沙盒/evidence/ENG-P005-005/20261026-e-defense-input-01/input")
+        val repo = System.getProperty("repo.root")?.let { Path.of(it) } ?: generateSequence(Path.of("").toAbsolutePath()) { it.parent }.first { Files.isRegularFile(it.resolve("AGENTS.md")) }
+        val root = (System.getProperty("public.fixtures.dir")?.let { Path.of(it).resolve("maintenance-defense/point-defense") }
+        ?: repo.resolve(".scratch/开发票据/引擎重写/P005-生产战斗与指挥沙盒/evidence/ENG-P005-005/20261026-e-defense-input-01/input"))
         val base = ControlledScenario.load(root)
         val tank = base.unitDefinitions.getValue("c_tank")
         val observer = UnitDefinition("observer", tank.className, tank.radius, tank.displayRadius, tank.totalFrames,

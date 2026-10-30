@@ -83,3 +83,20 @@ python -B SimulationTest/ci/public_check.py --suite build-economy --kind all --i
 `build-economy-short`核施工扣费和收入、升级支付与取消退款；`build-failure-short`核非资源点拒绝、699资金无法支付700且不创建建筑，以及外方操作初始建造者的`not-owner`拒绝。`build-economy-chain`仅以中心和1750初始资金起步，正式生产建造者、建造抽取器和工厂、获得收入，再把抽取器升至T2；5100个模拟步连续保留同局对象与账本。固定边界包括建造者第500步出生、第1599步核抽取器已完工（首次完工为第1533步）、第2800步核工厂已完工及抽取器第5066步完成升级。预期单独保存在contracts，生成器只写场景输入。
 
 动态建筑由`constructedUnits`绑定正式build动作、nonce、拥有者、类型、建造者和出生步；`convertedUnits`绑定已支持的普通升级动作及完成步，不能任意声明变形。逐步采样施工、收入周期和精确余额；宿主与玩家授权观察的施工字段须完整。缺采样返回证据不足，错预期返回行为失败。连续长测通过安装后的CLI执行，公共短测与机制不能替代真实PC按钮、Android操作、原版对照或性能证据。
+
+## 维护、协同与防御建设
+
+```powershell
+python -B SimulationTest/ci/public_check.py --suite maintenance-defense --kind pr
+python -B SimulationTest/ci/public_check.py --suite maintenance-defense --kind all --isolated
+```
+
+`generate_maintenance_inputs.py`只复用已有自有公开输入并生成新元数据和纯色RGBA图片；逐文件来源与哈希在`inputs/maintenance-defense/OWNERSHIP.json`。旧维护/队列地图保留330,170的障碍格，围攻地图保留第二炮塔位置的空地，两者有独立入口。原默认私有输入和既有断言保留。机制集全量承接维护拒绝、死亡、事务回滚、重开、协同、队列上限、切换、施工及防御战斗顺序；真实平台操作另有验收入口。
+
+`maintenance-repair-short`用两个建造者真实回收造成伤害，再停止并免费修理至满生命；`maintenance-queue-short`核零进度工程回收的100步门槛、Float退款、下一更新才执行队尾重建及正式接续施工；`maintenance-privacy-short`核外方工人、隐藏和缺失目标拒绝，读取正式玩家观察。PR只运行机制和三条短测，单独归档维护防御产物。
+
+`maintenance-defense-chain`从单中心、1750资金起步，16000步内正式生产工人、建设抽取器和工厂、生产工人与坦克。12敌坦克6500步接到正式攻击命令，中心真实毁灭后，由原工厂继续生产、幸存工人继续建炮塔和点防御，最终检查12敌死亡及经营对象存活。检查点与输入预先独立固定；同一世界中没有重置或注入对象。为控制无关知识格归档体积，长测仅采主机观察，玩家隐私由机制/短测覆盖。
+
+`repair`、`reclaim`、`resume-construction`仅映射既有正式动作，`maintenanceContract.basePrices`映射核心既有维护合同。`turret-construction`和`point-defense-construction`显式启用已有防御施工加载能力。动态生产者和建造者共同按独立出生声明解析，父对象必须在命令前出生；不递归读取运行轨迹。`reclaimedUnits`把移除绑定正式回收动作、工人、拥有者、目标和固定移除步。战死对象仍在主机单位集合，回收对象单独登记并从单位集合移除；施工/生产诊断及nonce、已注册队列遵循核心实际保留规则，不能借对象消失删去历史登记。维护场景每步必须具有完整任务、施工和回收字段，玩家任务也保持正式隐藏规则。
+
+每次Runner归档的`manifest.json.costs`记录互不嵌套的纳秒区间：加载/初始化、核心提交/推进/观察（包括玩家DTO投影）、采样/归档及比较；`otherNanos`覆盖身份核验、守卫和未分配开销。分项加剩余严格等于`measuredNanos`，计时止于最终manifest准备，最终manifest写入和archive关闭不计入。构建成本使用外层`result.json.commands[].elapsedSeconds`的真实命令耗时，构建/测试/打包组合命令明确标注，不与Runner分项相加冒充性能基准。这些成本不证明原版、真实PC或Android性能。

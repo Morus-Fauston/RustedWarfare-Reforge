@@ -74,6 +74,11 @@ internal object ScenarioDeclaration {
             if (balances.keys != players.map { it.id("playerId") }.toSet() || balances.keys.any { balances.integer(it) < 0 })
                 throw InputError("Invalid initial balances")
         }
+        value["maintenanceContract"]?.jsonObject?.let { maintenance ->
+            if (maintenance.keys != setOf("basePrices")) throw InputError("Invalid maintenance contract")
+            val prices = maintenance.objectAt("basePrices")
+            if (prices.isEmpty() || prices.keys.any { prices.integer(it) <= 0 }) throw InputError("Invalid maintenance price")
+        }
     }
     fun unitReferences(content: JsonObject): List<JsonObject> {
         if (content.containsKey("unitVariant") == content.containsKey("unitVariants")) throw InputError("Declare one unitVariant or unitVariants")
@@ -81,11 +86,11 @@ internal object ScenarioDeclaration {
             ?: content.arrayAt("unitVariants").map { it.jsonObject }
         if (units.isEmpty()) throw InputError("Empty content units")
         units.forEach { if ((it["loader"]?.jsonPrimitive?.content ?: "variant") !in
-            setOf("variant", "combat", "factory", "builder", "command-center", "turret", "turret-upgrades", "point-defense", "economy", "economy-upgrades"))
+            setOf("variant", "combat", "factory", "builder", "command-center", "turret", "turret-upgrades", "turret-construction", "point-defense", "point-defense-construction", "economy", "economy-upgrades"))
             throw InputError("Unsupported content loader") }
         return units
     }
-    val actionKinds = setOf("select", "move", "stop", "produce", "cancel-production", "attack", "patrol", "upgrade", "cancel-upgrade", "build")
+    val actionKinds = setOf("select", "move", "stop", "produce", "cancel-production", "attack", "patrol", "upgrade", "cancel-upgrade", "build", "repair", "reclaim", "resume-construction")
     fun validateAction(action: JsonObject) {
         when (action.text("kind")) {
             "move" -> point(action.objectAt("target"))
@@ -95,6 +100,10 @@ internal object ScenarioDeclaration {
             }
             "patrol" -> { point(action.objectAt("target")); if (action.required("append").jsonPrimitive.booleanOrNull == null) throw InputError("Expected patrol append boolean") }
             "attack" -> action.id("targetUnitId")
+            "repair", "reclaim", "resume-construction" -> {
+                action.id("targetUnitId")
+                if (action.required("append").jsonPrimitive.booleanOrNull == null) throw InputError("Expected maintenance append boolean")
+            }
             "produce" -> { action.id("productionTypeId"); action.id("unitNonce") }
             "cancel-production" -> action.id("productionTypeId")
             "upgrade", "cancel-upgrade" -> action.id("upgradeId")

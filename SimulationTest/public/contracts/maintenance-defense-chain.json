@@ -1,0 +1,349 @@
+{
+  "schemaVersion": 1,
+  "kind": "behavior-contract",
+  "contractId": "public.maintenance-defense-chain.v1",
+  "scope": "self-behavior",
+  "scenarioIds": [
+    "public.maintenance-defense-chain.v1"
+  ],
+  "approval": {
+    "status": "tool-fixture-only",
+    "source": "Fixed finite 1750 center opening, ordinary construction rates, Float production completion500, twelve tank attack; checkpoint margins independently fixed before run; no original equivalence"
+  },
+  "comparison": {
+    "numberMode": "declared-per-field",
+    "tolerances": {},
+    "eventOrder": "strict-record-and-array-order"
+  },
+  "exclusions": [
+    "original-compatibility",
+    "platform-input",
+    "player-visibility-long-capture",
+    "performance"
+  ],
+  "rules": [
+    {
+      "ruleId": "finite-opening",
+      "when": {
+        "phase": "after-advance",
+        "stepIndex": 0
+      },
+      "assertions": [
+        {
+          "path": "economy.preciseBalances.p1",
+          "operator": "equals",
+          "value": 1250
+        },
+        {
+          "path": "units.h.alive",
+          "operator": "equals",
+          "value": true
+        }
+      ]
+    },
+    {
+      "ruleId": "real-worker",
+      "when": {
+        "phase": "after-advance",
+        "stepIndex": 500
+      },
+      "assertions": [
+        {
+          "path": "units.produced:p1:00000000000000000000000000000000.type",
+          "operator": "equals",
+          "value": "builder"
+        }
+      ]
+    },
+    {
+      "ruleId": "resource-completed",
+      "when": {
+        "phase": "after-advance",
+        "stepIndex": 2499
+      },
+      "assertions": [
+        {
+          "path": "units.constructed:p1:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.constructionProgress",
+          "operator": "equals",
+          "value": 1
+        },
+        {
+          "path": "units.constructed:p1:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.alive",
+          "operator": "equals",
+          "value": true
+        }
+      ]
+    },
+    {
+      "ruleId": "factory-completed",
+      "when": {
+        "phase": "after-advance",
+        "stepIndex": 4499
+      },
+      "assertions": [
+        {
+          "path": "units.constructed:p1:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb.constructionProgress",
+          "operator": "equals",
+          "value": 1
+        }
+      ]
+    },
+    {
+      "ruleId": "before-siege",
+      "when": {
+        "phase": "after-advance",
+        "stepIndex": 6499
+      },
+      "assertions": [
+        {
+          "path": "units.h.alive",
+          "operator": "equals",
+          "value": true
+        },
+        {
+          "path": "units.produced:p1:11111111111111111111111111111111.alive",
+          "operator": "equals",
+          "value": true
+        },
+        {
+          "path": "units.produced:p1:22222222222222222222222222222222.alive",
+          "operator": "equals",
+          "value": true
+        }
+      ]
+    },
+    {
+      "ruleId": "center-truly-dead",
+      "when": {
+        "phase": "after-advance",
+        "stepIndex": 10499
+      },
+      "assertions": [
+        {
+          "path": "units.h.alive",
+          "operator": "equals",
+          "value": false
+        },
+        {
+          "path": "units.h.health",
+          "operator": "equals",
+          "value": 0
+        },
+        {
+          "path": "units.produced:p1:00000000000000000000000000000000.alive",
+          "operator": "equals",
+          "value": true
+        },
+        {
+          "path": "units.constructed:p1:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb.alive",
+          "operator": "equals",
+          "value": true
+        }
+      ]
+    },
+    {
+      "ruleId": "continued-production",
+      "when": {
+        "phase": "after-advance",
+        "stepIndex": 13500
+      },
+      "assertions": [
+        {
+          "path": "units.h.alive",
+          "operator": "equals",
+          "value": false
+        },
+        {
+          "path": "units.produced:p1:33333333333333333333333333333333.type",
+          "operator": "equals",
+          "value": "builder"
+        },
+        {
+          "path": "units.produced:p1:33333333333333333333333333333333.alive",
+          "operator": "equals",
+          "value": true
+        }
+      ]
+    },
+    {
+      "ruleId": "continued-construction",
+      "when": {
+        "phase": "after-advance",
+        "stepIndex": 15999
+      },
+      "assertions": [
+        {
+          "path": "units.h.alive",
+          "operator": "equals",
+          "value": false
+        },
+        {
+          "path": "units.constructed:p1:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb.alive",
+          "operator": "equals",
+          "value": true
+        },
+        {
+          "path": "units.constructed:p1:dddddddddddddddddddddddddddddddd.constructionProgress",
+          "operator": "equals",
+          "value": 1
+        },
+        {
+          "path": "units.constructed:p1:dddddddddddddddddddddddddddddddd.alive",
+          "operator": "equals",
+          "value": true
+        },
+        {
+          "path": "units.constructed:p1:cccccccccccccccccccccccccccccccc.constructionProgress",
+          "operator": "equals",
+          "value": 1
+        },
+        {
+          "path": "units.constructed:p1:cccccccccccccccccccccccccccccccc.alive",
+          "operator": "equals",
+          "value": true
+        },
+        {
+          "path": "units.constructed:p1:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.alive",
+          "operator": "equals",
+          "value": true
+        },
+        {
+          "path": "units.z01.alive",
+          "operator": "equals",
+          "value": false
+        },
+        {
+          "path": "units.z02.alive",
+          "operator": "equals",
+          "value": false
+        },
+        {
+          "path": "units.z03.alive",
+          "operator": "equals",
+          "value": false
+        },
+        {
+          "path": "units.z04.alive",
+          "operator": "equals",
+          "value": false
+        },
+        {
+          "path": "units.z05.alive",
+          "operator": "equals",
+          "value": false
+        },
+        {
+          "path": "units.z06.alive",
+          "operator": "equals",
+          "value": false
+        },
+        {
+          "path": "units.z07.alive",
+          "operator": "equals",
+          "value": false
+        },
+        {
+          "path": "units.z08.alive",
+          "operator": "equals",
+          "value": false
+        },
+        {
+          "path": "units.z09.alive",
+          "operator": "equals",
+          "value": false
+        },
+        {
+          "path": "units.z10.alive",
+          "operator": "equals",
+          "value": false
+        },
+        {
+          "path": "units.z11.alive",
+          "operator": "equals",
+          "value": false
+        },
+        {
+          "path": "units.z12.alive",
+          "operator": "equals",
+          "value": false
+        }
+      ]
+    }
+  ],
+  "producedUnits": [
+    {
+      "unitId": "produced:p1:00000000000000000000000000000000",
+      "productionActionId": "produce-worker",
+      "producerId": "h",
+      "owner": "p1",
+      "typeId": "builder",
+      "unitNonce": "00000000000000000000000000000000",
+      "birthStepIndex": 500
+    },
+    {
+      "unitId": "produced:p1:11111111111111111111111111111111",
+      "productionActionId": "factory-worker",
+      "producerId": "constructed:p1:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "owner": "p1",
+      "typeId": "builder",
+      "unitNonce": "11111111111111111111111111111111",
+      "birthStepIndex": 5000
+    },
+    {
+      "unitId": "produced:p1:22222222222222222222222222222222",
+      "productionActionId": "factory-tank",
+      "producerId": "constructed:p1:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "owner": "p1",
+      "typeId": "c_tank",
+      "unitNonce": "22222222222222222222222222222222",
+      "birthStepIndex": 5600
+    },
+    {
+      "unitId": "produced:p1:33333333333333333333333333333333",
+      "productionActionId": "surviving-factory-worker",
+      "producerId": "constructed:p1:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "owner": "p1",
+      "typeId": "builder",
+      "unitNonce": "33333333333333333333333333333333",
+      "birthStepIndex": 13500
+    }
+  ],
+  "constructedUnits": [
+    {
+      "unitId": "constructed:p1:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "buildActionId": "extractor",
+      "builderId": "produced:p1:00000000000000000000000000000000",
+      "owner": "p1",
+      "typeId": "extractorT1",
+      "buildingNonce": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "birthStepIndex": 1300
+    },
+    {
+      "unitId": "constructed:p1:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "buildActionId": "factory",
+      "builderId": "produced:p1:00000000000000000000000000000000",
+      "owner": "p1",
+      "typeId": "landFactory",
+      "buildingNonce": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "birthStepIndex": 3200
+    },
+    {
+      "unitId": "constructed:p1:cccccccccccccccccccccccccccccccc",
+      "buildActionId": "turret",
+      "builderId": "produced:p1:00000000000000000000000000000000",
+      "owner": "p1",
+      "typeId": "c_turret_t1",
+      "buildingNonce": "cccccccccccccccccccccccccccccccc",
+      "birthStepIndex": 11600
+    },
+    {
+      "unitId": "constructed:p1:dddddddddddddddddddddddddddddddd",
+      "buildActionId": "point-defense",
+      "builderId": "produced:p1:11111111111111111111111111111111",
+      "owner": "p1",
+      "typeId": "laserDefence",
+      "buildingNonce": "dddddddddddddddddddddddddddddddd",
+      "birthStepIndex": 14000
+    }
+  ]
+}

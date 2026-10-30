@@ -143,9 +143,10 @@ class DefenseSiegeScenarioTest {
     }
 
     private fun withSiegeInput(block: (Path) -> Unit) {
-        val repo = generateSequence(Path.of("").toAbsolutePath()) { it.parent }
+        val repo = System.getProperty("repo.root")?.let { Path.of(it) } ?: generateSequence(Path.of("").toAbsolutePath()) { it.parent }
             .first { Files.isRegularFile(it.resolve("AGENTS.md")) }
-        val source = repo.resolve(".scratch/开发票据/引擎重写/P006-建造经济与原版操作/evidence/ENG-P006-007/20261029-implementation-01/defense-input")
+        val source = (System.getProperty("public.fixtures.dir")?.let { Path.of(it).resolve("maintenance-defense/construction") }
+        ?: repo.resolve(".scratch/开发票据/引擎重写/P006-建造经济与原版操作/evidence/ENG-P006-007/20261029-implementation-01/defense-input"))
         val temp = Files.createTempDirectory("p006-siege-input-")
         try {
             Files.walk(source).use { paths -> paths.forEach { p ->

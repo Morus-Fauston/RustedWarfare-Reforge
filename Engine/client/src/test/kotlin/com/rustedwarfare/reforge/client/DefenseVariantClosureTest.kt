@@ -6,9 +6,10 @@ import kotlin.test.*
 
 class DefenseVariantClosureTest {
     @Test fun missing_defense_targets_and_mixed_variant_builder_versions_fail_without_fallback_while_the_old_queue_variant_still_loads() {
-        val source = generateSequence(Path.of("").toAbsolutePath()) { it.parent }
+        val source = (System.getProperty("public.fixtures.dir")?.let { Path.of(it).resolve("maintenance-defense/construction") }
+        ?: generateSequence(Path.of("").toAbsolutePath()) { it.parent }
             .first { Files.isRegularFile(it.resolve("AGENTS.md")) }.resolve(
-                ".scratch/开发票据/引擎重写/P006-建造经济与原版操作/evidence/ENG-P006-007/20261029-implementation-01/defense-input")
+                ".scratch/开发票据/引擎重写/P006-建造经济与原版操作/evidence/ENG-P006-007/20261029-implementation-01/defense-input"))
         val temporary = Files.createTempDirectory("defense-variant-closure-")
         fun fixture(name: String): Path {
             val root = temporary.resolve(name)
