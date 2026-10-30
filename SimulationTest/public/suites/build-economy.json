@@ -7,6 +7,8 @@
     "core": [
       "com.rustedwarfare.reforge.core.content.BuilderContentLoadTest",
       "com.rustedwarfare.reforge.core.content.EconomyUpgradeContentTest",
+      "com.rustedwarfare.reforge.core.content.PngContentTest",
+      "com.rustedwarfare.reforge.core.content.RestrictedFieldsTest",
       "com.rustedwarfare.reforge.core.content.UpgradeContentLoadTest",
       "com.rustedwarfare.reforge.core.sim.BuildingAttackApproachTest",
       "com.rustedwarfare.reforge.core.sim.BuildingSpaceTest",

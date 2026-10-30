@@ -1,7 +1,6 @@
 package com.rustedwarfare.reforge.core.content.internal
 
 import com.rustedwarfare.reforge.core.content.*
-import java.nio.file.Files
 import java.nio.file.Path
 
 /** Finite native center; neither its construction action nor arbitrary replacements are supported. */
@@ -10,20 +9,9 @@ internal object CommandCenterContentReader {
         "productionUnit", "image", "image_back", "image_dead", "fogOfWarSightRange", "incomePeriod", "incomeCredits")
 
     fun read(path: Path): UnitDefinition {
-        val values = linkedMapOf<String, String>()
-        Files.readAllLines(path).forEachIndexed { index, raw ->
-            val line = raw.trim()
-            if (line.isEmpty() || line.startsWith('#')) return@forEachIndexed
-            val separator = line.indexOf('=')
-            if (separator <= 0) reject(ContentErrorCode.MALFORMED_SYNTAX, path,
-                reason = "Expected center field=value at line ${index + 1}")
-            val key = line.substring(0, separator).trim()
-            if (key !in fields) reject(ContentErrorCode.UNSUPPORTED_FIELD, path, field = key, reason = "Unsupported center field")
-            if (values.putIfAbsent(key, line.substring(separator + 1).trim()) != null)
-                reject(ContentErrorCode.MALFORMED_SYNTAX, path, field = key, reason = "Duplicate center field")
-        }
-        fun required(key: String): String = values[key]?.takeIf { it.isNotBlank() }
-            ?: reject(ContentErrorCode.MISSING_REQUIRED_FIELD, path, field = key, reason = "Required center field is absent or empty")
+        val values = readNativeFields(path, fields, "center")
+        fun required(key: String): String = requiredContentField(values[key], path, null, key,
+            "Required center field is absent or empty")
         fun only(key: String, expected: String) {
             if (required(key) != expected) reject(ContentErrorCode.UNSUPPORTED_FEATURE, path, field = key, reason = "Only $expected is supported")
         }
@@ -36,17 +24,14 @@ internal object CommandCenterContentReader {
         fun image(key: String): Path {
             val result = resolveReference(path, required(key), "graphics", key)
             try {
-                TurretContentReader.validatePng(result, allowIndexed = true)
+                val metadata = readPngMetadata(result, allowIndexed = true)
                 val expected = when (key) {
                     "image" -> 212 to 68
                     "image_back" -> 53 to 68
                     else -> 53 to 74
                 }
-                java.io.DataInputStream(Files.newInputStream(result)).use { input ->
-                    input.readLong(); input.readInt(); input.readInt()
-                    require(input.readInt() == expected.first && input.readInt() == expected.second) {
-                        "Expected native ${expected.first}x${expected.second} PNG"
-                    }
+                require(metadata.width == expected.first && metadata.height == expected.second) {
+                    "Expected native ${expected.first}x${expected.second} PNG"
                 }
             } catch (failure: Exception) {
                 reject(ContentErrorCode.BAD_REFERENCE, path, "graphics", key, reason = "Invalid PNG: ${failure.message}")

@@ -64,8 +64,8 @@ internal object EconomyContentReader {
             val effective = entries - "@copyFrom_skipThisSection"
             if (effective.isNotEmpty()) values.getOrPut(section) { linkedMapOf() }.putAll(effective)
         }
-        fun required(section: String, key: String) = values[section]?.get(key)?.takeIf { it.isNotBlank() }
-            ?: reject(ContentErrorCode.MISSING_REQUIRED_FIELD, path, section, key, reason = "Missing economic field")
+        fun required(section: String, key: String) =
+            requiredContentField(values[section]?.get(key), path, section, key, "Missing economic field")
         fun fixed(section: String, key: String, expected: String) {
             if (required(section, key) != expected) reject(ContentErrorCode.UNSUPPORTED_FEATURE, path, section, key,
                 reason = "Expected fixed value $expected")
@@ -181,11 +181,8 @@ internal object EconomyContentReader {
         fun image(key: String, width: Int, height: Int): Path {
             val file = reference(path, required("graphics", key))
             try {
-                TurretContentReader.validatePng(file)
-                java.io.DataInputStream(Files.newInputStream(file)).use {
-                    it.readLong(); it.readInt(); it.readInt()
-                    require(it.readInt() == width && it.readInt() == height) { "Economic PNG dimensions" }
-                }
+                val metadata = readPngMetadata(file)
+                require(metadata.width == width && metadata.height == height) { "Economic PNG dimensions" }
             } catch (failure: Exception) {
                 reject(ContentErrorCode.BAD_REFERENCE, path, "graphics", key, reason = "Invalid PNG: ${failure.message}")
             }
@@ -228,31 +225,6 @@ internal object EconomyContentReader {
             reject(ContentErrorCode.BAD_REFERENCE, source, reason = "Economic reference must remain in content directory")
         return resolved.also { ordinary(it, source) }
     }
-    private fun parse(path: Path): Map<String, Map<String, String>> {
-        val values = linkedMapOf<String, MutableMap<String, String>>()
-        var section: String? = null
-        Files.readAllLines(path).forEachIndexed { index, raw ->
-            val line = raw.trim()
-            if (line.isEmpty() || line.startsWith('#')) return@forEachIndexed
-            if (line.startsWith('[')) {
-                if (!line.endsWith(']') || line.count { it == '[' } != 1 || line.count { it == ']' } != 1)
-                    reject(ContentErrorCode.MALFORMED_SYNTAX, path, reason = "Invalid section at line ${index + 1}")
-                val name = line.substring(1, line.length - 1)
-                if (name !in fields) reject(ContentErrorCode.UNSUPPORTED_FIELD, path, name, reason = "Unsupported economic section")
-                if (values.putIfAbsent(name, linkedMapOf()) != null)
-                    reject(ContentErrorCode.MALFORMED_SYNTAX, path, name, reason = "Duplicate section")
-                section = name
-            } else {
-                val current = section; val split = line.indexOf(':')
-                if (current == null || split <= 0) reject(ContentErrorCode.MALFORMED_SYNTAX, path,
-                    reason = "Invalid field at line ${index + 1}")
-                val key = line.substring(0, split).trim()
-                if (key !in fields.getValue(current)) reject(ContentErrorCode.UNSUPPORTED_FIELD, path, current, key,
-                    reason = "Unsupported economic field")
-                if (values.getValue(current).putIfAbsent(key, line.substring(split + 1).trim()) != null)
-                    reject(ContentErrorCode.MALFORMED_SYNTAX, path, current, key, reason = "Duplicate field")
-            }
-        }
-        return values
-    }
+    private fun parse(path: Path): Map<String, Map<String, String>> =
+        readSectionFields(path, fields, "economic", trimSectionName = false, reportCurrentSection = false)
 }
