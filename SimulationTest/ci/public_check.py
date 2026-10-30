@@ -28,7 +28,13 @@ def source_files(repo):
               'SimulationTest/settings.gradle.kts', 'SimulationTest/gradle.properties',
               'SimulationTest/gradlew', 'SimulationTest/gradlew.bat']]
     paths += [repo / 'SimulationTest/tools' / name for name in
-              ['platform_scenario.py', 'test_platform_scenario.py', 'test_platform_session_cli.py']]
+              ['platform_scenario.py', 'test_platform_scenario.py', 'test_platform_session_cli.py',
+               'workflow.py', 'workflow_inputs.py', 'workflow_device.py', 'workflow_windows.py',
+               'workflow_reuse.py', 'perf_report.py', 'platform_perf.py', 'test_workflow.py',
+               'test_workflow_device.py', 'test_workflow_windows.py', 'test_workflow_reuse.py', 'test_perf_analysis.py',
+               'specialist_check.py', 'test_specialist_check.py']]
+    paths += list((repo / 'Decompile/tools/p003').glob('*.py'))
+    paths += [repo / 'Decompile/tools' / name for name in ['verify_dec_evidence.py', 'test_verify_dec_evidence.py']]
     return sorted(paths)
 
 
@@ -62,6 +68,12 @@ def plan_suite(repo, name, kind):
            not re.fullmatch(r'[A-Za-z_][A-Za-z0-9_.]*', c) for c in classes)
            for module, classes in tests.items()):
         raise ValueError('Invalid module or fixed JUnit class selection')
+    python_tests = suite.get('pythonTests', []) if kind in ['mechanism', 'pr', 'all'] else []
+    public_sources = {p.relative_to(repo).as_posix() for p in source_files(repo)}
+    if (not isinstance(python_tests, list) or any(not isinstance(p, str) or p not in public_sources or
+            not re.fullmatch(r'(SimulationTest/(tools|ci)|Decompile/tools(/p003)?)/test_[a-z0-9_]+\.py', p)
+            for p in python_tests) or len(python_tests) != len(set(python_tests))):
+        raise ValueError('Python test must name a unique public mechanism file')
     scenarios = []
     for category in ['short', 'long']:
         if kind not in [category, 'all'] and not (kind == 'pr' and category == 'short'):
@@ -80,7 +92,7 @@ def plan_suite(repo, name, kind):
                         not (root / case[field]).is_file()):
                     raise ValueError('Scenario/contract must exist inside public input directory')
             scenarios.append(dict(case, kind=category))
-    if not tests and not scenarios:
+    if not tests and not scenarios and not python_tests:
         raise ValueError('Selected suite/kind is empty')
     if len({case['id'] for case in scenarios}) != len(scenarios):
         raise ValueError('Duplicate scenario ID')
@@ -90,7 +102,7 @@ def plan_suite(repo, name, kind):
         if not isinstance(fixture, str) or not (root / fixture).resolve().is_relative_to(root) or not (root / fixture).is_dir():
             raise ValueError('Fixture must exist inside public input directory')
     return dict(suiteId=suite['suiteId'], kind=kind, tests=tests, scenarios=scenarios,
-                inputScope=suite.get('inputScope', 'public'), fixture=suite.get('fixture'))
+                pythonTests=python_tests, inputScope=suite.get('inputScope', 'public'), fixture=suite.get('fixture'))
 
 
 def run(repo, output, plan):
@@ -137,6 +149,17 @@ def run(repo, output, plan):
         command('tests-and-package', wrapper + tasks + [':installDist'] + common, project)
         for module, classes in plan['tests'].items():
             junit(project / MODULES[module][1], module + '-tests', classes)
+        result['pythonCoverage'] = []
+        for index, relative in enumerate(plan.get('pythonTests', [])):
+            name = 'python-' + str(index) + '-' + Path(relative).stem
+            summary = output / (name + '.json')
+            command(name, [sys.executable, '-B', str(project/'ci/python_check.py'),
+                          '--test', str(repo/relative), '--output', str(summary)], repo)
+            measured = json.loads(summary.read_text(encoding='utf8'))
+            if (measured['status'] != 'passed' or measured['tests'] < 1 or
+                    any(measured[k] for k in ['failures', 'errors', 'skipped']) or not measured['sourceUnchanged']):
+                raise RuntimeError('Python mechanism evidence is incomplete: ' + relative)
+            result['pythonCoverage'].append(dict(path=relative, result=name+'.json', **measured))
         launcher = project / 'build/install/simulation-test/bin' / ('simulation-test.bat' if os.name == 'nt' else 'simulation-test')
         cli = [str(launcher)] if os.name == 'nt' else ['sh', str(launcher)]
         archives = []

@@ -7,15 +7,12 @@ import java.nio.file.Files
 import java.nio.file.Path
 import kotlinx.serialization.json.*
 import org.junit.jupiter.api.io.TempDir
-import org.junit.jupiter.api.condition.EnabledOnOs
-import org.junit.jupiter.api.condition.OS
-import java.util.concurrent.TimeUnit
 import kotlin.test.*
 
 /** Private tiny inputs, never original assets or a formal capture fixture. */
 class MotionV2CoreInputsTest {
     @TempDir lateinit var directory: Path
-    private fun identity(p:Path)=obj("path" to s(p.toAbsolutePath().normalize().toString()),"bytes" to n(Files.size(p)),"sha256" to s(sha256(p)))
+    internal fun identity(p:Path)=obj("path" to s(p.toAbsolutePath().normalize().toString()),"bytes" to n(Files.size(p)),"sha256" to s(sha256(p)))
     internal data class Fixture(val manifest:Path,val request:Path,val map:Path,val unit:Path,val tsx:Path,val png:Path)
     internal fun fixture():Fixture {
         val png=directory.resolve("atlas.png")
@@ -199,7 +196,7 @@ class MotionV2CoreInputsTest {
         assertEquals(b(false),failure.required("formalCompatibility"))
     }
 
-    private fun manifest(f:Fixture,changes:Map<String,JsonElement>) {
+    internal fun manifest(f:Fixture,changes:Map<String,JsonElement>) {
         Files.writeString(f.manifest,JsonObject(readObject(f.manifest)+changes).toString())
     }
     internal fun refresh(f:Fixture) {
@@ -282,27 +279,4 @@ class MotionV2CoreInputsTest {
         assertContains(error.message.orEmpty(),"DOCTYPE")
     }
 
-    @Test @EnabledOnOs(OS.WINDOWS)
-    fun actual_windows_junction_component_is_rejected_before_dependency_selection() {
-        val f=fixture();val target=Files.createDirectory(directory.resolve("target"))
-        val saved=target.resolve("tile.tsx");Files.copy(f.tsx,saved);val hash=sha256(saved)
-        val link=directory.resolve("redirect")
-        val process=ProcessBuilder("cmd.exe","/c","mklink","/J",link.toString(),target.toString()).redirectErrorStream(true).start()
-        val finished=process.waitFor(10,TimeUnit.SECONDS)
-        if(!finished) { process.destroyForcibly();error("Private junction creation timed out") }
-        val output=process.inputStream.bufferedReader().readText()
-        assertEquals(0,process.exitValue(),output)
-        try {
-            val alias=link.resolve("tile.tsx")
-            manifest(f,mapOf("files" to array(listOf(f.map,f.unit,alias,f.png).map(::identity))))
-            val error=assertFails { MotionV2CoreInputs.load(f.manifest,f.request) }
-            assertTrue(error.message.orEmpty().contains("Reparse input component") || error.message.orEmpty().contains("Redirected input component"),error.toString())
-            assertEquals(hash,sha256(saved))
-        } finally {
-            // Delete only this one generated junction, never recurse into its target.
-            check(link.toAbsolutePath().normalize().parent==directory.toAbsolutePath().normalize())
-            Files.delete(link)
-        }
-        assertEquals(hash,sha256(saved))
-    }
 }

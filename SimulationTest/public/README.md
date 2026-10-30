@@ -131,3 +131,25 @@ python -B SimulationTest/tools/android_host_check.py --distribution SimulationTe
 ```
 
 它编译现有宿主测试并运行业务/失败边界、知识编码容量、可见性轨迹与存储检查，底层仍使用实际共享客户端。OwnRuns真实文件系统检查需要主机允许创建测试符号链接，缺权限会失败。Android instrumentation/ART和设备证据仍保留原所属入口，本批没有建立Android触控操作基线；最终共享源码兼容构建由四期收尾集中执行。
+
+
+## 工具机制与专属验证入口
+
+```powershell
+python -B SimulationTest/ci/public_check.py --suite tooling --kind mechanism --list
+python -B SimulationTest/ci/public_check.py --suite tooling --kind mechanism --isolated --output <new-directory>
+python -B SimulationTest/tools/specialist_check.py --entry reference-host --list
+python -B SimulationTest/tools/specialist_check.py --entry reference-host --bindings <fixed-bindings.json> --output <new-directory>
+```
+
+`tooling`固定选择比较器、采集与诊断、失败保全、性能工具自身的合成机制测试，以及工作流、共享操作比较器、变换、DEC证据核验和选择器的Python测试。Gradle完成机制和安装包后逐文件运行Python例，避免实际Session CLI缺包。每类JUnit及每份Python收据必须非空、无失败且无跳过；保留命令、耗时及源码哈希。PR沿相同入口执行，并单独上传`public-tooling-evidence`。本集不启动正式测量、原版运行时或设备。
+
+五个p003公共合成夹具文件为`test_bf_observer_transform.py`、`test_gboot_transform.py`、`test_original_approved_layout.py`、`test_original_dependency_layout.py`与`test_original_input_transform.py`。其余九份smali相关控制及一份APK ZIP元数据控制读取固定私有输入，保留既有全部正反断言，实际输入身份另见批次记录，沿`transform-original`逐文件运行；不能用整个p003目录的glob冒公共测试。独立文件执行器`ci/python_check.py --test <file> --output <new-file>`只运行指定文件，拒绝零测试、跳过及覆盖旧收据。
+
+`MotionV2CoreInputsTest`的十二项可移植输入/真实加载断言进入公共集；原Windows junction断言完整移至`MotionV2CoreInputsWindowsTest`，本地以`:test --tests com.rustedwarfare.reforge.testing.cross.MotionV2CoreInputsWindowsTest`运行。原`:test`仍发现两个类，Linux公共集不以跳过Windows例求绿。`OriginalMotionComparisonTest`、`MotionV2StandardTest`、`MotionV2SourceAdmissionTest`、`ReplanPerfTest`和`PrefixDiagnosticSerializationTest`继续使用TestLab、原固定helpers/JAR或私有suite，以完整类为专属入口；没有删除断言或以公共样本替代原版资格。
+
+注册表`specialist-entries.json`说明参考桥纯JDK/SDK stub、原版比较与采集、设备、PC输入、正式性能、资格/开发测量、私有工具控制和本机目录工具的原入口、资源边界、必需文件角色及平台。`reference-host`与`reference-sdk`的完整编译/逐JVM场景见`Decompile/reference-bridge/README.md`；读取这些文档需要本地完整工作区。`original-compare`用CrossMain的`original-motion-v1`契约分派到既有O.v1比较器，须固定批准标准及双方合格采集；tool-fixture结果不等于运行时兼容通过。
+
+正式性能沿既有workflow性能计划的`mode=measure`和`maintainerApproved=true`执行WholeChainPerfMain，资格检查为`mode=qualify`；两者都需要固定协议、包清单与成功构建收据，数值最终结论仍单独判定。PathPerfBatchMain当前必须显式传`--geometry-version p002.dev.center-motion.v2`，只属于开发几何测试，历史省略该参数的120批命令不能当成当前正式入口。
+
+预检bindings格式为`{"released":true,"files":{"<role>":{"path":"<canonical-absolute-file>","sha256":"<fixed-sha256>"}}}`，角色必须与所选注册项完全相同，Manifest角色绑定已有清单文件而非目录。预检只读这些文件与身份，不递归证明清单成员完整、不检测运行时可用性，也不执行命令模板。`released`只声明资源/范围已释放，不能授予新的设备、原版或正式性能权限。结果始终`executed:false`；`ready`/退出0仅表示声明文件可读且哈希吻合，缺件/漂移为`evidence-insufficient`/退出3，未释放资源或平台不符为`blocked`/退出64。未知入口、无效参数和旧输出直接拒绝；任何这些状态都不能作为专属验证通过。历史结果保留原环境、命令和失败状态。

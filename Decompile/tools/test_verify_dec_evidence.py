@@ -3,6 +3,7 @@ from pathlib import Path
 import hashlib
 import json
 import shutil
+import tempfile
 import uuid
 import unittest
 import verify_dec_evidence as verifier
@@ -14,9 +15,7 @@ def hash_bytes(data):
 
 class VerificationTest(unittest.TestCase):
     def setUp(self):
-        workspace = Path(__file__).resolve().parents[2]
-        parent = workspace / '.scratch/研究缓存/dec-verifier-fixtures'
-        parent.mkdir(parents=True, exist_ok=True)
+        parent = Path(tempfile.gettempdir()).resolve()
         self.root = (parent / ('run-' + uuid.uuid4().hex)).resolve()
         self.root.mkdir()
         self.addCleanup(self.cleanup_fixture, parent.resolve(), self.root)

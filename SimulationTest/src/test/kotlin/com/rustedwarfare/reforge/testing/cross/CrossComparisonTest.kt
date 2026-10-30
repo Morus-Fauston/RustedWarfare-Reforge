@@ -149,7 +149,8 @@ class CrossComparisonTest {
             .map { Path.of(it.protectionDomain.codeSource.location.toURI()).toString() }.distinct().joinToString(java.io.File.pathSeparator)
         fun invoke(f: Triple<Path, Path, Path>, output: Path): Int {
             val log = directory.resolve("cli-${System.nanoTime()}.log")
-            val command = listOf(Path.of(System.getProperty("java.home"), "bin", "java.exe").toString(), "-cp", classpath,
+            val javaName = if (System.getProperty("os.name").startsWith("Windows")) "java.exe" else "java"
+            val command = listOf(Path.of(System.getProperty("java.home"), "bin", javaName).toString(), "-cp", classpath,
                 "com.rustedwarfare.reforge.testing.cross.CrossMainKt", "--contract", f.first.toString(), "--actual", f.second.toString(),
                 "--expected", f.third.toString(), "--output", output.toString())
             val process = ProcessBuilder(command).redirectErrorStream(true).redirectOutput(log.toFile()).start()

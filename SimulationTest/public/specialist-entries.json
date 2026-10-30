@@ -1,0 +1,390 @@
+{
+  "schemaVersion": 1,
+  "operation": "preflight-only",
+  "entries": [
+    {
+      "id": "reference-host",
+      "requiredRoles": [
+        "java",
+        "javac",
+        "hostSourcesManifest"
+      ],
+      "platforms": [
+        "Windows",
+        "Linux"
+      ],
+      "documentation": "Decompile/reference-bridge/README.md",
+      "boundary": "Pure JDK helper tests; no original runtime or Android claim",
+      "commandTemplate": [
+        "java",
+        "-cp",
+        "<compiled-own-helper-classes>",
+        "com.rustedwarfare.reforge.reference.probe.BoundaryStepProbeTest"
+      ]
+    },
+    {
+      "id": "reference-sdk",
+      "requiredRoles": [
+        "java",
+        "javac",
+        "androidJar",
+        "hostSourcesManifest"
+      ],
+      "platforms": [
+        "Windows",
+        "Linux"
+      ],
+      "documentation": "Decompile/reference-bridge/README.md",
+      "boundary": "SDK stub compile/host only; not ART/Context/SAF",
+      "commandTemplate": [
+        "java",
+        "-cp",
+        "<own-test-classes-and-androidJar>",
+        "com.rustedwarfare.reforge.reference.boot.GbootStateIoTest",
+        "<case>",
+        "<owned-fixtures>"
+      ]
+    },
+    {
+      "id": "transform-host",
+      "requiredRoles": [
+        "python",
+        "transformSources"
+      ],
+      "platforms": [
+        "Windows",
+        "Linux"
+      ],
+      "documentation": "Decompile/README.md",
+      "boundary": "Only the five self-authored p003 fixture files in public tooling; fixed-original smali controls remain transform-original",
+      "commandTemplate": [
+        "python",
+        "-B",
+        "SimulationTest/ci/public_check.py",
+        "--suite",
+        "tooling",
+        "--kind",
+        "mechanism",
+        "--isolated",
+        "--output",
+        "<new-directory>"
+      ]
+    },
+    {
+      "id": "original-compare",
+      "requiredRoles": [
+        "java",
+        "standard",
+        "actual",
+        "expected"
+      ],
+      "platforms": [
+        "Windows",
+        "Linux"
+      ],
+      "documentation": "SimulationTest/README.md",
+      "boundary": "CrossMain dispatches only contract scope original-motion-v1 to OriginalMotionComparison; O.v1 approved SHA and qualified runtime pair required; tool-fixture result is not compatibility-passed",
+      "commandTemplate": [
+        "java",
+        "-cp",
+        "SimulationTest/build/install/simulation-test/lib/*",
+        "com.rustedwarfare.reforge.testing.cross.CrossMainKt",
+        "--contract",
+        "<fixed-contract>",
+        "--actual",
+        "<qualified-actual>",
+        "--expected",
+        "<qualified-original>",
+        "--output",
+        "<new-result>"
+      ]
+    },
+    {
+      "id": "original-capture",
+      "requiredRoles": [
+        "plan",
+        "adb",
+        "originalPackage",
+        "inputs",
+        "protocol"
+      ],
+      "platforms": [
+        "Windows"
+      ],
+      "documentation": "SimulationTest/tools/workflow.md",
+      "boundary": "Exclusive released original MuMu instance, fixed package and original capture authorization required",
+      "commandTemplate": [
+        "python",
+        "-B",
+        "SimulationTest/tools/workflow.py",
+        "collect",
+        "--plan",
+        "<fixed-private-plan>",
+        "--target",
+        "original-mumu",
+        "--output",
+        "<new-batch>"
+      ]
+    },
+    {
+      "id": "android-device",
+      "requiredRoles": [
+        "plan",
+        "adb",
+        "package",
+        "inputs"
+      ],
+      "platforms": [
+        "Windows"
+      ],
+      "documentation": "SimulationTest/tools/workflow.md",
+      "boundary": "Exclusive released device, host epoch and package inventory; no install/reset authority",
+      "commandTemplate": [
+        "python",
+        "-B",
+        "SimulationTest/tools/workflow.py",
+        "run",
+        "--plan",
+        "<released-fixed-private-plan>",
+        "--target",
+        "core-mumu-art",
+        "--output",
+        "<new-batch>"
+      ]
+    },
+    {
+      "id": "pc-input",
+      "requiredRoles": [
+        "plan",
+        "java",
+        "packageManifest",
+        "inputs"
+      ],
+      "platforms": [
+        "Windows"
+      ],
+      "documentation": "SimulationTest/public/README.md",
+      "boundary": "Exclusive owned foreground/input; platform baseline separate from headless",
+      "commandTemplate": [
+        "python",
+        "-B",
+        "SimulationTest/tools/platform_scenario.py",
+        "windows",
+        "--scenario",
+        "<fixed-scenario>",
+        "--contract",
+        "<fixed-contract>",
+        "--distribution",
+        "<fixed-owned-PC-install>",
+        "--output",
+        "<new-batch>",
+        "--size",
+        "1200x800"
+      ]
+    },
+    {
+      "id": "performance-formal",
+      "requiredRoles": [
+        "python",
+        "java",
+        "plan",
+        "protocol",
+        "packageManifest",
+        "buildReceipt"
+      ],
+      "platforms": [
+        "Windows",
+        "Linux"
+      ],
+      "documentation": "SimulationTest/tools/workflow.md",
+      "boundary": "Existing S08 WholeChainPerfMain measure via workflow, 576 batches, approved idle window and protocol/package/build identities; numeric final verdict remains not-evaluated",
+      "commandTemplate": [
+        "python",
+        "-B",
+        "SimulationTest/tools/workflow.py",
+        "run",
+        "--plan",
+        "<fixed-plan-with-performance.mode=measure-and-maintainerApproved=true>",
+        "--profile",
+        "performance",
+        "--output",
+        "<new-batch>"
+      ]
+    },
+    {
+      "id": "performance-development",
+      "requiredRoles": [
+        "python",
+        "java",
+        "plan",
+        "protocol",
+        "packageManifest",
+        "buildReceipt"
+      ],
+      "platforms": [
+        "Windows",
+        "Linux"
+      ],
+      "documentation": "SimulationTest/tools/workflow.md",
+      "boundary": "WholeChainPerfMain qualify via workflow, 37 batches; no formal measurement or numeric acceptance",
+      "commandTemplate": [
+        "python",
+        "-B",
+        "SimulationTest/tools/workflow.py",
+        "run",
+        "--plan",
+        "<fixed-plan-with-performance.mode=qualify>",
+        "--profile",
+        "performance",
+        "--output",
+        "<new-batch>"
+      ]
+    },
+    {
+      "id": "private-tool-controls",
+      "requiredRoles": [
+        "python",
+        "config",
+        "helpersManifest",
+        "runtimeManifest"
+      ],
+      "platforms": [
+        "Windows"
+      ],
+      "documentation": "SimulationTest/tools/workflow.md",
+      "boundary": "Frozen private preparation controls and helpers; no public substitute for original preparation",
+      "commandTemplate": [
+        "python",
+        "-B",
+        "SimulationTest/tools/test_original_preparation_v2.py",
+        "<fixed-config-json>",
+        "<fixed-private-helper-root>",
+        "<new-canonical-absolute-output>"
+      ]
+    },
+    {
+      "id": "performance-geometry-development",
+      "requiredRoles": [
+        "java",
+        "unit",
+        "sourceManifest"
+      ],
+      "platforms": [
+        "Windows",
+        "Linux"
+      ],
+      "documentation": "SimulationTest/README.md",
+      "boundary": "PathPerfBatchMain explicit p002.dev.center-motion.v2, development-only fixed geometry; historical formal path batch is not replayed",
+      "commandTemplate": [
+        "java",
+        "-cp",
+        "SimulationTest/build/install/simulation-test/lib/*",
+        "com.rustedwarfare.reforge.testing.perf.PathPerfBatchMain",
+        "--repo-root",
+        "<absolute-repo>",
+        "--unit",
+        "<fixed-unit>",
+        "--unit-sha",
+        "<sha256>",
+        "--output",
+        "<new-approved-root>",
+        "--geometry-version",
+        "p002.dev.center-motion.v2"
+      ]
+    },
+    {
+      "id": "transform-original",
+      "requiredRoles": [
+        "python",
+        "fixedSmaliManifest",
+        "transformSourcesManifest"
+      ],
+      "platforms": [
+        "Windows"
+      ],
+      "documentation": "Decompile/README.md",
+      "boundary": "Nine smali-related controls and one APK ZIP metadata control read fixed private inputs; existing assertions retained, batch identities recorded separately; not public synthetic or original runtime execution",
+      "commandTemplate": [
+        "python",
+        "-B",
+        "SimulationTest/ci/python_check.py",
+        "--test",
+        "<one-fixed-original-test-file>",
+        "--output",
+        "<new-summary-file>"
+      ]
+    },
+    {
+      "id": "private-jvm-controls",
+      "requiredRoles": [
+        "java",
+        "inputsManifest",
+        "runtimeManifest",
+        "helpersManifest"
+      ],
+      "platforms": [
+        "Windows"
+      ],
+      "documentation": "SimulationTest/public/README.md",
+      "boundary": "OriginalMotionComparisonTest, MotionV2StandardTest, MotionV2SourceAdmissionTest, ReplanPerfTest and PrefixDiagnosticSerializationTest retain private inputs/helpers/standards; whole classes run with all original assertions",
+      "commandTemplate": [
+        "SimulationTest/gradlew.bat",
+        "-p",
+        "SimulationTest",
+        ":test",
+        "--tests",
+        "<registered-private-class>",
+        "--no-daemon",
+        "--max-workers=1"
+      ]
+    },
+    {
+      "id": "windows-input-controls",
+      "requiredRoles": [
+        "java",
+        "sourceManifest"
+      ],
+      "platforms": [
+        "Windows"
+      ],
+      "documentation": "SimulationTest/public/README.md",
+      "boundary": "Actual self-created junction rejection, Windows host filesystem permission required; no original runtime",
+      "commandTemplate": [
+        "SimulationTest/gradlew.bat",
+        "-p",
+        "SimulationTest",
+        ":test",
+        "--tests",
+        "com.rustedwarfare.reforge.testing.cross.MotionV2CoreInputsWindowsTest",
+        "--no-daemon",
+        "--max-workers=1"
+      ]
+    },
+    {
+      "id": "local-layout-controls",
+      "requiredRoles": [
+        "python",
+        "layoutTool",
+        "layoutTests"
+      ],
+      "platforms": [
+        "Windows",
+        "Linux"
+      ],
+      "documentation": "AGENTS.md",
+      "boundary": "Locally ignored repository governance tools, not part of public clone; self-authored temporary roots only",
+      "commandTemplate": [
+        "python",
+        "-B",
+        "-m",
+        "unittest",
+        "discover",
+        "-s",
+        "Decompile/tools",
+        "-p",
+        "test_workspace_layout.py"
+      ]
+    }
+  ],
+  "bindingContract": "Every role names a canonical absolute readable file and its pre-fixed SHA256; *Manifest roles bind inventories, not directories. released=true declares resource/scope release, never grants permission. This preflight does not recursively verify manifest content or execute commands. Templates are documentation only; substitute and inspect the linked source before a separately authorized run."
+}

@@ -7,10 +7,12 @@ import kotlin.io.path.readText
 import kotlin.test.*
 
 class TraceCaptureTest {
-    private val fixture = Path.of(System.getProperty("repo.root")).resolve("SimulationTest/fixtures/record-chain/scenario.json")
+    private val repo = Path.of(System.getProperty("repo.root"))
+    private val fixture = repo.resolve("SimulationTest/public/scenarios/select-move-stop.json")
+    private val contract = repo.resolve("SimulationTest/public/contracts/select-move-stop.json")
 
     @Test fun `nonfinite collected state cannot become JSON or silently become zero`() {
-        val input = ScenarioReader.load(fixture, fixture.resolveSibling("contract.json"))
+        val input = ScenarioReader.load(fixture, contract)
         val output = Files.createTempDirectory("simulation-invalid-capture-").resolve("run")
         CoreAdapter(input).use { core ->
             val initial = core.initial()
@@ -26,7 +28,7 @@ class TraceCaptureTest {
 
     @Test fun `controller failure retains the command error and incomplete footer`() {
         val output = Files.createTempDirectory("simulation-controller-failure-").resolve("run")
-        val result = Runner.run(RunRequest(fixture, fixture.resolveSibling("contract.json"), output,
+        val result = Runner.run(RunRequest(fixture, contract, output,
             listOf("controller-failure"), cancelled = { throw java.io.IOException("controller input unavailable") }))
         assertEquals(4, result.exitCode)
         val manifest = readObject(output.resolve("manifest.json"))

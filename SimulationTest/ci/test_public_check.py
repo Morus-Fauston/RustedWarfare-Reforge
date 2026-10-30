@@ -8,6 +8,17 @@ import unittest
 
 
 class PublicSelectionTest(unittest.TestCase):
+    def test_tooling_plan_names_python_and_jvm_mechanisms_without_specialist_execution(self):
+        result = subprocess.run([sys.executable, '-B', str(Path(__file__).with_name('public_check.py')),
+            '--suite', 'tooling', '--kind', 'mechanism', '--list'], capture_output=True, text=True)
+        self.assertEqual(0, result.returncode, result.stderr)
+        plan = json.loads(result.stdout)
+        self.assertIn('com.rustedwarfare.reforge.testing.cross.CrossComparisonTest', plan['tests']['tools'])
+        self.assertIn('SimulationTest/tools/test_workflow.py', plan['pythonTests'])
+        self.assertIn('Decompile/tools/p003/test_original_input_transform.py', plan['pythonTests'])
+        self.assertNotIn('SimulationTest/tools/test_original_preparation_v2.py', plan['pythonTests'])
+        self.assertEqual([], plan['scenarios'])
+
     def test_named_plan_lists_mechanisms_and_continuous_scenario_without_running(self):
         entry = Path(__file__).with_name('public_check.py')
         with tempfile.TemporaryDirectory(prefix='reforge-suite-cli-') as tmp:
@@ -37,6 +48,9 @@ class PublicSelectionTest(unittest.TestCase):
             cases = [
                 ('empty', {'tests': {}}),
                 ('invalid-module', {'tests': {'shell': ['Run']}}),
+                ('python-private', {'pythonTests': ['SimulationTest/tools/test_original_preparation_v2.py']}),
+                ('python-escape', {'pythonTests': ['../private/test_original.py']}),
+                ('python-duplicate', {'pythonTests': ['SimulationTest/ci/test_public_check.py'] * 2}),
                 ('missing-scenario', {'short': [{'id': 'missing', 'scenario': 'absent.json', 'contract': 'absent-contract.json'}]}),
                 ('escaping-fixture', {'fixture': '../../../secret', 'tests': {'core': ['ValidTest']}}),
                 ('invalid-backend', {'short': [{'id': 'unsupported', 'backend': 'windows-input',

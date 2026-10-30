@@ -31,6 +31,8 @@ jobs:
         run: python -B -m unittest discover -s SimulationTest/tools -p test_platform_scenario.py
       - name: Platform mechanisms and headless client intent scenarios
         run: python -B SimulationTest/ci/public_check.py --suite platform-basics --kind pr --output SimulationTest/build/public-platform-ci
+      - name: Tooling mechanisms with authored portable fixtures
+        run: python -B SimulationTest/ci/public_check.py --suite tooling --kind mechanism --output SimulationTest/build/public-tooling-ci
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         if: always()
         with:
@@ -60,4 +62,10 @@ jobs:
         with:
           name: public-platform-basics-evidence
           path: SimulationTest/build/public-platform-ci
+          if-no-files-found: error
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always()
+        with:
+          name: public-tooling-evidence
+          path: SimulationTest/build/public-tooling-ci
           if-no-files-found: error
