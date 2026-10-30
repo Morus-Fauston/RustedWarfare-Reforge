@@ -8,7 +8,7 @@
   ],
   "approval": {
     "status": "tool-fixture-only",
-    "source": "Fixed finite 1750 center opening, ordinary construction rates, Float production completion500, twelve tank attack; checkpoint margins independently fixed before run; no original equivalence"
+    "source": "Fixed finite 1750 center opening, ordinary construction rates, Float production completion500, twelve tank attack; checkpoint margins independently fixed before run; no original equivalence; R1 continuation uses the same real produced builder and constructed factory: damage, free repair, pending-production reclaim and next-update site reuse; 1200 HP / binary32 1.02 and 700 * Double(0.8f), original 35 assertions retained"
   },
   "comparison": {
     "numberMode": "declared-per-field",
@@ -268,6 +268,205 @@
           "value": false
         }
       ]
+    },
+    {
+      "ruleId": "maintenance-opening-balance",
+      "when": {
+        "phase": "after-advance",
+        "stepIndex": 15999
+      },
+      "assertions": [
+        {
+          "path": "economy.preciseBalances.p1",
+          "operator": "equals",
+          "value": 3155
+        }
+      ]
+    },
+    {
+      "ruleId": "real-maintenance-damage",
+      "when": {
+        "phase": "after-advance",
+        "stepIndex": 16199
+      },
+      "assertions": [
+        {
+          "path": "units.produced:p1:33333333333333333333333333333333.tasks.maintenance-damage.kind",
+          "operator": "equals",
+          "value": "RECLAIM"
+        }
+      ]
+    },
+    {
+      "ruleId": "repair-actually-working",
+      "when": {
+        "phase": "after-advance",
+        "stepIndex": 16200
+      },
+      "assertions": [
+        {
+          "path": "units.produced:p1:33333333333333333333333333333333.tasks.maintenance-repair.kind",
+          "operator": "equals",
+          "value": "CONSTRUCT"
+        }
+      ]
+    },
+    {
+      "ruleId": "repair-complete-without-charge",
+      "when": {
+        "phase": "after-advance",
+        "stepIndex": 17999
+      },
+      "assertions": [
+        {
+          "path": "units.constructed:p1:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb.health",
+          "operator": "equals",
+          "value": 1200
+        },
+        {
+          "path": "units.produced:p1:33333333333333333333333333333333.tasks",
+          "operator": "equals",
+          "value": []
+        },
+        {
+          "path": "economy.preciseBalances.p1",
+          "operator": "equals",
+          "value": 3555
+        }
+      ]
+    },
+    {
+      "ruleId": "paid-pending-before-terminal",
+      "when": {
+        "phase": "after-advance",
+        "stepIndex": 19000
+      },
+      "assertions": [
+        {
+          "path": "economy.preciseBalances.p1",
+          "operator": "equals",
+          "value": 3255
+        },
+        {
+          "path": "units.produced:p1:33333333333333333333333333333333.tasks.maintenance-terminal.kind",
+          "operator": "equals",
+          "value": "RECLAIM"
+        }
+      ]
+    },
+    {
+      "ruleId": "terminal-cleans-and-delays-tail",
+      "when": {
+        "phase": "after-advance",
+        "stepIndex": 19207
+      },
+      "assertions": [
+        {
+          "path": "reclaimedUnitIds",
+          "operator": "equals",
+          "value": [
+            "constructed:p1:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+          ]
+        },
+        {
+          "path": "economy.preciseBalances.p1",
+          "operator": "equals",
+          "value": 4355.00000834465
+        },
+        {
+          "path": "economy.queues.constructed:p1:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "operator": "equals",
+          "value": []
+        },
+        {
+          "path": "events",
+          "operator": "contains",
+          "value": "building-reclaimed"
+        },
+        {
+          "path": "events",
+          "operator": "contains",
+          "value": "maintenance-completed"
+        },
+        {
+          "path": "units.produced:p1:33333333333333333333333333333333.tasks.maintenance-rebuild.kind",
+          "operator": "equals",
+          "value": "BUILD"
+        },
+        {
+          "path": "units.produced:p1:33333333333333333333333333333333.tasks.maintenance-tail.kind",
+          "operator": "equals",
+          "value": "PATROL"
+        },
+        {
+          "path": "units.produced:p1:33333333333333333333333333333333.moveTarget",
+          "operator": "equals",
+          "value": null
+        }
+      ]
+    },
+    {
+      "ruleId": "following-update-reuses-the-site",
+      "when": {
+        "phase": "after-advance",
+        "stepIndex": 19208
+      },
+      "assertions": [
+        {
+          "path": "units.constructed:p1:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee.constructionProgress",
+          "operator": "equals",
+          "value": 0
+        },
+        {
+          "path": "units.constructed:p1:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee.position",
+          "operator": "equals",
+          "value": {
+            "x": 190,
+            "y": 330
+          }
+        },
+        {
+          "path": "economy.preciseBalances.p1",
+          "operator": "equals",
+          "value": 3655.0000083446503
+        }
+      ]
+    },
+    {
+      "ruleId": "rebuild-finishes-with-one-refund",
+      "when": {
+        "phase": "after-advance",
+        "stepIndex": 20999
+      },
+      "assertions": [
+        {
+          "path": "reclaimedUnitIds",
+          "operator": "equals",
+          "value": [
+            "constructed:p1:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+          ]
+        },
+        {
+          "path": "units.constructed:p1:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee.constructionProgress",
+          "operator": "equals",
+          "value": 1
+        },
+        {
+          "path": "units.constructed:p1:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee.alive",
+          "operator": "equals",
+          "value": true
+        },
+        {
+          "path": "economy.preciseBalances.p1",
+          "operator": "equals",
+          "value": 4015.0000083446503
+        },
+        {
+          "path": "economy.queues.constructed:p1:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "operator": "equals",
+          "value": []
+        }
+      ]
     }
   ],
   "producedUnits": [
@@ -344,6 +543,24 @@
       "typeId": "laserDefence",
       "buildingNonce": "dddddddddddddddddddddddddddddddd",
       "birthStepIndex": 14000
+    },
+    {
+      "unitId": "constructed:p1:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+      "buildActionId": "maintenance-rebuild",
+      "builderId": "produced:p1:33333333333333333333333333333333",
+      "owner": "p1",
+      "typeId": "landFactory",
+      "buildingNonce": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+      "birthStepIndex": 19208
+    }
+  ],
+  "reclaimedUnits": [
+    {
+      "unitId": "constructed:p1:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "reclaimActionId": "maintenance-terminal",
+      "workerId": "produced:p1:33333333333333333333333333333333",
+      "owner": "p1",
+      "removalStepIndex": 19207
     }
   ]
 }

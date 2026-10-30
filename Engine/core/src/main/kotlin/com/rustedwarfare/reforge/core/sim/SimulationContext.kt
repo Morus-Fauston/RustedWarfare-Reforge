@@ -655,44 +655,13 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
             return reject(action, "immobile-unit", "Unit cannot move")
         }
         val result = when (action) {
-            is RepairBuildingAction -> {
-                validateMaintenance(unit, action.targetUnitId)?.let { return reject(action, it.code, it.message) }
-                if (!action.append || unit.tasks.isEmpty()) {
-                    unit.attackCommand = null
-                    unit.cancelRoute()
-                    unit.constructionElapsed = 0f
-                    unit.constructionWorking = false
-                }
-                unit.taskQueue = (if (action.append) unit.taskQueue else UnitTaskQueue()).append(UnitTask(UnitTaskKind.CONSTRUCT, action.actionId,
-                    targetUnitId = action.targetUnitId, atStep = action.atStep))
-                ActionResult.Accepted(action.actionId)
-            }
-            is ReclaimBuildingAction -> {
-                validateMaintenance(unit, action.targetUnitId)?.let { return reject(action, it.code, it.message) }
-                if (!action.append || unit.tasks.isEmpty()) {
-                    unit.attackCommand = null
-                    unit.cancelRoute()
-                    unit.constructionElapsed = 0f
-                    unit.constructionWorking = false
-                }
-                unit.taskQueue = (if (action.append) unit.taskQueue else UnitTaskQueue()).append(UnitTask(UnitTaskKind.RECLAIM, action.actionId,
-                    targetUnitId = action.targetUnitId, atStep = action.atStep))
+            is RepairBuildingAction, is ReclaimBuildingAction, is ResumeConstructionAction -> {
+                buildingWork.requestTarget(action, unit, currentScenario, units,
+                    automaticVisionSnapshots?.getValue(unit.ownerPlayerId))?.let { return reject(action, it.code, it.message) }
                 ActionResult.Accepted(action.actionId)
             }
             is BuildAction -> {
                 buildingWork.request(action, unit, currentScenario)?.let { return reject(action, it.code, it.message) }
-                ActionResult.Accepted(action.actionId)
-            }
-            is ResumeConstructionAction -> {
-                validateResume(action, unit)?.let { return reject(action, it.code, it.message) }
-                if (!action.append || unit.tasks.isEmpty()) {
-                    unit.attackCommand = null
-                    unit.cancelRoute()
-                    unit.constructionElapsed = 0f
-                    unit.constructionWorking = false
-                }
-                unit.taskQueue = (if (action.append) unit.taskQueue else UnitTaskQueue()).append(UnitTask(UnitTaskKind.CONSTRUCT, action.actionId,
-                    targetUnitId = action.targetUnitId, atStep = action.atStep))
                 ActionResult.Accepted(action.actionId)
             }
             is PatrolAction -> {
@@ -800,28 +769,6 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
         else -> null
     }
 
-    private fun validateResume(action: ResumeConstructionAction, worker: MutableUnit): SimulationError? {
-        val builder = worker.definition.builder ?: return SimulationError("cannot-build", "Unit cannot construct buildings")
-        val target = units[action.targetUnitId]
-        if (target == null || !target.alive || target.ownerPlayerId != worker.ownerPlayerId ||
-            target.typeId !in builder.buildingTypeIds || target.constructionProgress >= 1f ||
-            !isVisibleTo(worker.ownerPlayerId, target.position))
-            return SimulationError("invalid-construction-target", "Construction target is not available")
-        return null
-    }
-
-    private fun validateMaintenance(worker: MutableUnit, targetId: String): SimulationError? {
-        val contract = checkNotNull(scenario).maintenanceContract
-        if (contract == null || worker.typeId != "builder" || worker.definition.builder == null)
-            return SimulationError("cannot-maintain", "Unit cannot maintain buildings")
-        val target = units[targetId]
-        if (target == null || target === worker || !target.alive || target.ownerPlayerId != worker.ownerPlayerId ||
-            target.definition.building == null || target.typeId !in contract.basePrices ||
-            !isVisibleTo(worker.ownerPlayerId, target.position))
-            return SimulationError("invalid-maintenance-target", "Maintenance target is not available")
-        return null
-    }
-
     private val buildingWorkAccess = object : BuildingWorkAccess {
         override fun path(worker: MutableUnit, target: Position, range: Double, task: UnitTask, step: Long): BuildingRoute? {
             val map = checkNotNull(scenario).map
@@ -842,77 +789,17 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
     }
 
     private fun updateConstruction(worker: MutableUnit, input: Scenario, step: Step) {
-        val wasWorking = worker.constructionWorking
-        worker.constructionWorking = false
-        try {
-            val task = worker.tasks.firstOrNull() ?: return
-            if (task.kind !in setOf(UnitTaskKind.BUILD, UnitTaskKind.CONSTRUCT, UnitTaskKind.RECLAIM)) return
-            val frame = BuildingWorkFrame(input, units, step, automaticVisionSnapshots?.getValue(worker.ownerPlayerId),
-                policies.coordinates, policies.steering, buildingWorkAccess)
-            if (task.kind == UnitTaskKind.RECLAIM) {
-                updateReclaim(worker, input, frame, wasWorking)
-                return
-            }
-            val change = buildingWork.dispatch(worker, frame, wasWorking, checkNotNull(productionLedger), ordinaryUpgrades)
-            buildingWork = change.work
-            productionLedger = change.ledger
-            ordinaryUpgrades = change.upgrades
-            change.created?.let { created ->
-                units[created.unitId] = created
-                buildingTerrain = BuildingTerrain.fromLive(input.map, units.values, checkNotNull(buildingTerrain))
-            }
-            pendingEvents += change.events
-        } finally { BuildingWork.finishActivity(worker, units, step.delta) }
-    }
-
-    // 004 preserves reclaim's complete behavior; 005 will own the maintenance lifecycle.
-    private fun updateReclaim(worker: MutableUnit, input: Scenario, frame: BuildingWorkFrame, wasWorking: Boolean) {
-        val task = checkNotNull(worker.tasks.firstOrNull())
-        worker.constructionElapsed += frame.step.delta.toFloat()
-        val target = units[task.targetUnitId]
-        if (target == null || !target.alive || target.ownerPlayerId != worker.ownerPlayerId ||
-            validateMaintenance(worker, target.unitId) != null) {
-            worker.taskQueue = worker.taskQueue.pop()
-            worker.constructionElapsed = 0f
-            worker.cancelRoute()
-            return
-        }
-        val preparation = buildingWork.prepareTarget(worker, target, wasWorking, frame)
-        pendingEvents += preparation.events
-        if (!preparation.ready) return
-        if (worker.constructionElapsed < 100f &&
-            (target.constructionProgress < .5f || target.constructionProgress >= .5f &&
-                checkNotNull(target.health).toFloat() / checkNotNull(target.definition.maximumHealth).toFloat() < .5f)) return
-        if (target.constructionProgress < 1f) {
-            target.constructionProgress = maxOf(0f, target.constructionProgress - .001f * 5.1f * frame.step.delta.toFloat())
-            if (target.constructionProgress <= 0f) finishReclaim(worker, target, input)
-        } else {
-            target.health = maxOf(0f, checkNotNull(target.health).toFloat() - .2f * 5.1f * frame.step.delta.toFloat()).toDouble()
-            if (checkNotNull(target.health) <= 0.0) finishReclaim(worker, target, input)
-        }
-    }
-
-    private fun finishReclaim(worker: MutableUnit, target: MutableUnit, input: Scenario) {
-        val price = checkNotNull(input.maintenanceContract).basePrices.getValue(target.typeId)
-        productionLedger = checkNotNull(productionLedger).creditReclaim(worker.ownerPlayerId, price.toDouble() * .8f.toDouble())
-        if (target.definition.production != null) productionLedger = checkNotNull(productionLedger).destroyFactory(target.unitId)
-        refundUpgrades(target)
-        target.health = 0.0
-        target.reclaimed = true
-        target.attackCommand = null
-        target.taskQueue = UnitTaskQueue()
-        target.cancelRoute()
-        target.movementRequested = false
-        target.constructionWorking = false
-        target.combat?.targetId = null
-        missileTargets = missileTargets?.remove(target.unitId)
-        buildingTerrain = BuildingTerrain.fromLive(input.map, units.values, checkNotNull(buildingTerrain))
-        worker.taskQueue = worker.taskQueue.pop()
-        worker.constructionElapsed = 0f
-        worker.constructionWorking = false
-        worker.cancelRoute()
-        pendingEvents += Event("building-reclaimed", target.unitId)
-        pendingEvents += Event("maintenance-completed", worker.unitId)
+        val frame = BuildingWorkFrame(input, units, step, automaticVisionSnapshots?.getValue(worker.ownerPlayerId),
+            policies.coordinates, policies.steering, buildingWorkAccess)
+        val change = buildingWork.advanceActivity(worker, frame, checkNotNull(productionLedger), ordinaryUpgrades)
+        buildingWork = change.work
+        productionLedger = change.ledger
+        ordinaryUpgrades = change.upgrades
+        change.created?.let { units[it.unitId] = it }
+        change.reclaimedUnitId?.let { missileTargets = missileTargets?.remove(it) }
+        if (change.created != null || change.reclaimedUnitId != null)
+            buildingTerrain = BuildingTerrain.fromLive(input.map, units.values, checkNotNull(buildingTerrain))
+        pendingEvents += change.events
     }
 
     private fun logicalRouteTarget(unit: MutableUnit, fallback: Position): Position {

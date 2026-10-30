@@ -12,10 +12,11 @@ internal interface BuildingWorkAccess {
 internal data class BuildingWorkFrame(val input: Scenario, val units: Map<String, MutableUnit>, val step: Step,
     val view: VisionSnapshot?, val coordinates: CoordinatePolicy, val steering: SteeringPolicy, val access: BuildingWorkAccess)
 internal data class BuildingWorkChange(val work: BuildingWork, val ledger: ProductionLedger,
-    val upgrades: OrdinaryUpgrades?, val created: MutableUnit? = null, val events: List<Event> = emptyList())
+    val upgrades: OrdinaryUpgrades?, val created: MutableUnit? = null, val events: List<Event> = emptyList(),
+    val reclaimedUnitId: String? = null)
 internal data class BuildingPreparation(val ready: Boolean, val events: List<Event> = emptyList())
 
-/** Immutable construction-world state; worker activity lives on the candidate unit. */
+/** Immutable building-work state; complete worker activity lives on the candidate unit. */
 internal class BuildingWork private constructor(val clock: Int, val nonces: Map<String, Set<String>>) {
     companion object {
         fun initial() = BuildingWork(0, emptyMap())
@@ -55,7 +56,56 @@ internal class BuildingWork private constructor(val clock: Int, val nonces: Map<
     private fun recordBirth(owner: String, nonce: String) = BuildingWork(clock, Collections.unmodifiableMap(
         nonces + (owner to Collections.unmodifiableSet(LinkedHashSet(nonces[owner].orEmpty() + nonce)))))
 
-    /** Common work approach retained by reclaim until its lifecycle migrates in the next ticket. */
+    private fun visible(target: MutableUnit, input: Scenario, view: VisionSnapshot?): Boolean {
+        if (view == null) return true
+        val map = input.map
+        if (!MapBounds.contains(map.widthTiles.toDouble() * map.tileWidth,
+                map.heightTiles.toDouble() * map.tileHeight, target.position, 0.0)) return false
+        return view.contains(MapBounds.cell(target.position.x, map.tileWidth, map.widthTiles),
+            MapBounds.cell(target.position.y, map.tileHeight, map.heightTiles))
+    }
+
+    private fun validateMaintenance(worker: MutableUnit, target: MutableUnit?, input: Scenario,
+                                    view: VisionSnapshot?): SimulationError? {
+        val contract = input.maintenanceContract
+        if (contract == null || worker.typeId != "builder" || worker.definition.builder == null)
+            return SimulationError("cannot-maintain", "Unit cannot maintain buildings")
+        if (target == null || target === worker || !target.alive || target.ownerPlayerId != worker.ownerPlayerId ||
+            target.definition.building == null || target.typeId !in contract.basePrices || !visible(target, input, view))
+            return SimulationError("invalid-maintenance-target", "Maintenance target is not available")
+        return null
+    }
+
+    fun requestTarget(action: Action, worker: MutableUnit, input: Scenario, units: Map<String, MutableUnit>,
+                      view: VisionSnapshot? = null): SimulationError? {
+        val targetId: String
+        val append: Boolean
+        val kind: UnitTaskKind
+        when (action) {
+            is ResumeConstructionAction -> { targetId = action.targetUnitId; append = action.append; kind = UnitTaskKind.CONSTRUCT }
+            is RepairBuildingAction -> { targetId = action.targetUnitId; append = action.append; kind = UnitTaskKind.CONSTRUCT }
+            is ReclaimBuildingAction -> { targetId = action.targetUnitId; append = action.append; kind = UnitTaskKind.RECLAIM }
+            else -> error("Expected a building continuation or maintenance action")
+        }
+        val target = units[targetId]
+        if (action is ResumeConstructionAction) {
+            val builder = worker.definition.builder ?: return SimulationError("cannot-build", "Unit cannot construct buildings")
+            if (target == null || !target.alive || target.ownerPlayerId != worker.ownerPlayerId ||
+                target.typeId !in builder.buildingTypeIds || isReady(target) || !visible(target, input, view))
+                return SimulationError("invalid-construction-target", "Construction target is not available")
+        } else validateMaintenance(worker, target, input, view)?.let { return it }
+        if (!append || worker.tasks.isEmpty()) {
+            worker.attackCommand = null
+            worker.cancelRoute()
+            worker.constructionElapsed = 0f
+            worker.constructionWorking = false
+        }
+        worker.taskQueue = (if (append) worker.taskQueue else UnitTaskQueue()).append(UnitTask(kind, action.actionId,
+            targetUnitId = targetId, atStep = action.atStep))
+        return null
+    }
+
+    /** Shared approach and preparation for construction, repair and reclaim. */
     fun prepareTarget(worker: MutableUnit, target: MutableUnit, wasWorking: Boolean,
                       frame: BuildingWorkFrame): BuildingPreparation {
         val profile = checkNotNull(worker.definition.builder)
@@ -97,13 +147,25 @@ internal class BuildingWork private constructor(val clock: Int, val nonces: Map<
         return emptyList()
     }
 
+    fun advanceActivity(worker: MutableUnit, frame: BuildingWorkFrame, ledger: ProductionLedger,
+                        upgrades: OrdinaryUpgrades?): BuildingWorkChange {
+        val wasWorking = worker.constructionWorking
+        worker.constructionWorking = false
+        try {
+            val kind = worker.tasks.firstOrNull()?.kind
+            return if (kind == UnitTaskKind.BUILD || kind == UnitTaskKind.CONSTRUCT || kind == UnitTaskKind.RECLAIM)
+                dispatch(worker, frame, wasWorking, ledger, upgrades) else BuildingWorkChange(this, ledger, upgrades)
+        } finally { finishActivity(worker, frame.units, frame.step.delta) }
+    }
+
     fun dispatch(worker: MutableUnit, frame: BuildingWorkFrame, wasWorking: Boolean,
                  ledger: ProductionLedger, upgrades: OrdinaryUpgrades?): BuildingWorkChange {
         val task = worker.tasks.firstOrNull() ?: return BuildingWorkChange(this, ledger, upgrades)
-        require(task.kind == UnitTaskKind.BUILD || task.kind == UnitTaskKind.CONSTRUCT)
+        require(task.kind == UnitTaskKind.BUILD || task.kind == UnitTaskKind.CONSTRUCT || task.kind == UnitTaskKind.RECLAIM)
         val input = frame.input
         val delta = frame.step.delta
         worker.constructionElapsed += delta.toFloat()
+        if (task.kind == UnitTaskKind.RECLAIM) return reclaim(worker, frame, wasWorking, ledger, upgrades)
         if (task.kind == UnitTaskKind.CONSTRUCT) {
             val target = frame.units[task.targetUnitId]
             if (target == null || !target.alive || target.ownerPlayerId != worker.ownerPlayerId ||
@@ -122,7 +184,6 @@ internal class BuildingWork private constructor(val clock: Int, val nonces: Map<
                 return BuildingWorkChange(this, ledger, upgrades, events =
                     if (isReady(target)) listOf(Event("construction-completed", target.unitId)) else emptyList())
             }
-            // CONSTRUCT already includes post-construction repair; keep that compatibility until 005.
             val health = checkNotNull(target.health).toFloat() + checkNotNull(worker.definition.builder).repairRate * delta.toFloat()
             val maximum = checkNotNull(target.definition.maximumHealth).toFloat()
             target.health = minOf(maximum, health).toDouble()
@@ -207,6 +268,52 @@ internal class BuildingWork private constructor(val clock: Int, val nonces: Map<
             targetUnitId = target.unitId, atStep = task.atStep))
         return BuildingWorkChange(next, paid, registered, created,
             if (created == null) emptyList() else listOf(Event("construction-created", target.unitId)))
+    }
+
+    private fun reclaim(worker: MutableUnit, frame: BuildingWorkFrame, wasWorking: Boolean,
+                        ledger: ProductionLedger, upgrades: OrdinaryUpgrades?): BuildingWorkChange {
+        val target = frame.units[checkNotNull(worker.tasks.firstOrNull()).targetUnitId]
+        if (target == null || !target.alive || target.ownerPlayerId != worker.ownerPlayerId ||
+            validateMaintenance(worker, target, frame.input, frame.view) != null) {
+            worker.taskQueue = worker.taskQueue.pop()
+            worker.constructionElapsed = 0f
+            worker.cancelRoute()
+            return BuildingWorkChange(this, ledger, upgrades)
+        }
+        val preparation = prepareTarget(worker, target, wasWorking, frame)
+        if (!preparation.ready) return BuildingWorkChange(this, ledger, upgrades, events = preparation.events)
+        if (worker.constructionElapsed < 100f &&
+            (target.constructionProgress < .5f || target.constructionProgress >= .5f &&
+                checkNotNull(target.health).toFloat() / checkNotNull(target.definition.maximumHealth).toFloat() < .5f))
+            return BuildingWorkChange(this, ledger, upgrades)
+        val finished = if (!isReady(target)) {
+            target.constructionProgress = maxOf(0f, target.constructionProgress - .001f * 5.1f * frame.step.delta.toFloat())
+            target.constructionProgress <= 0f
+        } else {
+            target.health = maxOf(0f, checkNotNull(target.health).toFloat() - .2f * 5.1f * frame.step.delta.toFloat()).toDouble()
+            checkNotNull(target.health) <= 0.0
+        }
+        if (!finished) return BuildingWorkChange(this, ledger, upgrades)
+        val price = checkNotNull(frame.input.maintenanceContract).basePrices.getValue(target.typeId)
+        var paid = ledger.creditReclaim(worker.ownerPlayerId, price.toDouble() * .8f.toDouble())
+        if (target.definition.production != null) paid = paid.destroyFactory(target.unitId)
+        val discarded = upgrades?.discard(target, paid)
+        paid = discarded?.ledger ?: paid
+        target.health = 0.0
+        target.reclaimed = true
+        target.attackCommand = null
+        target.taskQueue = UnitTaskQueue()
+        target.cancelRoute()
+        target.movementRequested = false
+        target.constructionWorking = false
+        target.combat?.targetId = null
+        worker.taskQueue = worker.taskQueue.pop()
+        worker.constructionElapsed = 0f
+        worker.constructionWorking = false
+        worker.cancelRoute()
+        return BuildingWorkChange(this, paid, discarded?.upgrades ?: upgrades,
+            events = discarded?.events.orEmpty() + listOf(Event("building-reclaimed", target.unitId),
+                Event("maintenance-completed", worker.unitId)), reclaimedUnitId = target.unitId)
     }
 
     private fun unavailable(worker: MutableUnit, ledger: ProductionLedger, upgrades: OrdinaryUpgrades?): BuildingWorkChange {

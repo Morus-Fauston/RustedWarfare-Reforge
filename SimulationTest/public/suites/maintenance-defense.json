@@ -37,6 +37,7 @@
       "com.rustedwarfare.reforge.core.content.PointDefenseContentLoadTest",
       "com.rustedwarfare.reforge.core.content.TurretContentLoadTest",
       "com.rustedwarfare.reforge.core.sim.ArtilleryDefenseTest",
+      "com.rustedwarfare.reforge.core.sim.BuildingMaintenanceWorkTest",
       "com.rustedwarfare.reforge.core.sim.PointDefenseContractTest",
       "com.rustedwarfare.reforge.core.sim.PointDefenseLifecycleTest",
       "com.rustedwarfare.reforge.core.sim.PointDefenseTransactionTest",
