@@ -35,7 +35,8 @@ class CommandCenterContentLoadTest {
         } finally { Files.deleteIfExists(path); Files.deleteIfExists(png) }
     }
 
-    private fun file(): Path = Path.of(checkNotNull(System.getProperty("p001.inputs.dir"))).parent.parent.parent.resolve(
+    private fun file(): Path = System.getProperty("public.fixtures.dir")?.let { Path.of(it).resolve("production-combat/center/units/commandCenter.properties") }
+        ?: Path.of(checkNotNull(System.getProperty("p001.inputs.dir"))).parent.parent.parent.resolve(
         ".scratch/开发票据/引擎重写/P006-建造经济与原版操作/evidence/ENG-P006-001/20261027-intake-01/center-input-01/units/commandCenter.properties")
 
     @Test fun native_center_loads_its_real_income_production_missile_and_four_frame_visual_identity() {

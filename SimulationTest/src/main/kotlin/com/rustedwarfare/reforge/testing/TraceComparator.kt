@@ -12,8 +12,8 @@ object TraceComparator {
     fun evaluate(scenario: JsonObject, contract: JsonObject, actual: List<JsonObject>,
                  expected: List<JsonObject>? = null): Judgment = try {
         validateContract(scenario, contract)
-        val left = expected?.let { validateTrace(scenario, it) }
-        val right = validateTrace(scenario, actual)
+        val left = expected?.let { validateTrace(scenario, contract, it) }
+        val right = validateTrace(scenario, contract, actual)
         val rules = contract.arrayAt("rules")
         if (rules.isEmpty()) throw Incomplete("empty-rules", "No self-behavior assertions declared")
         var evaluations = 0
@@ -95,6 +95,7 @@ object TraceComparator {
 
     internal fun validateContract(scenario: JsonObject, contract: JsonObject) {
         ScenarioDeclaration.validate(scenario); contract.header("behavior-contract")
+        val products = ProductionDeclaration.products(scenario, contract)
         if (contract.text("scope") != "self-behavior" || scenario.required("scenarioId") !in contract.arrayAt("scenarioIds")) {
             throw InputError("Only the declared self-behavior scenario can be evaluated")
         }
@@ -126,13 +127,13 @@ object TraceComparator {
                     condition.keys.any { it in setOf("actionKind", "actionId", "unitId") }) {
                     throw InputError("A sample checkpoint requires phase and stepIndex; action filters require an event")
                 }
-                condition["actionKind"]?.let { if (condition.text("actionKind") !in setOf("select", "move", "stop")) throw InputError("Unsupported action kind") }
+                condition["actionKind"]?.let { if (condition.text("actionKind") !in ScenarioDeclaration.actionKinds) throw InputError("Unsupported action kind") }
                 condition["actionId"]?.let {
                     if (scenario.arrayAt("actions").none { it.jsonObject.id("actionId") == condition.id("actionId") })
                         throw InputError("Checkpoint references an unknown action")
                 }
                 condition["unitId"]?.let {
-                    if (scenario.arrayAt("units").none { it.jsonObject.id("unitId") == condition.id("unitId") })
+                    if ((scenario.arrayAt("units").map { it.jsonObject } + products).none { it.id("unitId") == condition.id("unitId") })
                         throw InputError("Checkpoint references an unknown unit")
                 }
                 condition["stepIndex"]?.let {
@@ -175,7 +176,7 @@ object TraceComparator {
             observation.arrayAt("actionResults").isNotEmpty()
     }
 
-    private fun validateTrace(scenario: JsonObject, rows: List<JsonObject>): List<JsonObject> {
+    private fun validateTrace(scenario: JsonObject, contract: JsonObject, rows: List<JsonObject>): List<JsonObject> {
         if (rows.isEmpty()) throw Incomplete("missing-start", "Empty trace")
         try {
             rows.forEach { row ->
@@ -209,6 +210,8 @@ object TraceComparator {
             val actionIds = mutableSetOf<String>()
             val declaredActions = scenario.arrayAt("actions").map { it.jsonObject }
             val unitIds = scenario.arrayAt("units").map { it.jsonObject.id("unitId") }.toSet()
+            val products = ProductionDeclaration.products(scenario, contract)
+            val acceptedActions = mutableSetOf<String>()
             var sampleCount = 0
             var time = BigDecimal.ZERO
             var world: String? = null
@@ -228,6 +231,7 @@ object TraceComparator {
                         if (action.text("kind") == "move") point(action.objectAt("target"))
                         val result = row.objectAt("result")
                         actionResult(result)
+                        if (result.text("status") == "accepted") acceptedActions += id
                         if (result.id("actionId") != id) throw Incomplete("action-identity", "Action/result ID mismatch")
                         pendingActions += result
                     }
@@ -245,16 +249,47 @@ object TraceComparator {
                         if (observation.integer("stepIndex") != step) throw Incomplete("missing-step", "Missing, duplicate or reordered step")
                         if (!initial) time += decimal(steps[sampleCount - 1].required("delta"))
                         if (decimal(observation.required("simulationTime")).compareTo(time) != 0) throw Incomplete("time-alignment", "Simulation time differs from explicit schedule")
-                        validatePlayerSamples(scenario, observation)
+                        val born = ProductionDeclaration.born(products, row)
+                        val expectedIds = unitIds + born.map { it.id("unitId") }
+                        validatePlayerSamples(scenario, observation, expectedIds)
                         val units = observation.arrayAt("units").map { it.jsonObject }
-                        if (units.map { it.id("unitId") }.toSet() != unitIds || units.size != unitIds.size) throw Incomplete("missing-object", "Missing, duplicate or unknown unit")
-                        units.forEach { unit ->
-                            if (unit.keys.any { it in setOf("owner", "type", "rawMovementState") }) throw Incomplete("reserved-field", "Raw unit contains normalization aliases")
-                            unit.id("ownerPlayerId"); unit.id("typeId"); point(unit.objectAt("position"))
-                            listOf("heading", "speed", "angularVelocity").forEach { unit.number(it) }
-                            unit.required("moveTarget").let { if (it != JsonNull) point(it.jsonObject) }
-                            unit.arrayAt("pathPoints").forEach { point(it.jsonObject) }
-                            if (unit.text("movementState") !in setOf("IDLE", "MOVING", "DECELERATING", "BLOCKED")) throw Incomplete("invalid-field", "Unknown movement state")
+                        if (units.map { it.id("unitId") }.toSet() != expectedIds || units.size != expectedIds.size) throw Incomplete("missing-object", "Missing, duplicate, early or unknown unit")
+                        if (products.isNotEmpty()) {
+                            val births = observation.objectAt("production").arrayAt("units").map { it.jsonObject }
+                            if (births.map { it.id("unitId") }.toSet() != born.map { it.id("unitId") }.toSet() || births.size != born.size)
+                                throw Incomplete("production-identity", "Missing or unexpected formal production result")
+                            for (product in born) {
+                                val unit = units.single { it.id("unitId") == product.id("unitId") }
+                                val birth = births.single { it.id("unitId") == product.id("unitId") }
+                                if (product.id("productionActionId") !in acceptedActions || birth.id("producerId") != product.id("producerId") ||
+                                    unit.id("ownerPlayerId") != product.id("owner") || unit.id("typeId") != product.id("typeId"))
+                                    throw Incomplete("production-identity", "Product differs from its accepted producer, owner or type")
+                            }
+                        }
+                        units.forEach { validateUnitSample(it, scenario) }
+                        val upgradeTypes = typesLoadedBy(scenario, setOf("turret-upgrades"))
+                        if (upgradeTypes.isNotEmpty()) {
+                            val queues = observation.objectAt("upgrades")
+                            val registered = scenario.arrayAt("units").map { it.jsonObject }
+                                .filter { it.id("type") in upgradeTypes }.map { it.id("unitId") }.toSet()
+                            if (queues.keys != registered) throw Incomplete("missing-upgrades", "Missing or extra registered upgrade queue")
+                            validateUpgradeItems(queues, true)
+                        }
+                        if (scenario.containsKey("economyContract")) {
+                            val state = observation.objectAt("economy")
+                            val balances = state.objectAt("balances")
+                            if (balances.keys != scenario.objectAt("economyContract").objectAt("initialBalances").keys)
+                                throw Incomplete("missing-economy", "Missing player balance")
+                            balances.keys.forEach { balances.integer(it) }
+                            val queues = state.objectAt("queues")
+                            val factoryTypes = typesLoadedBy(scenario, setOf("factory", "command-center"))
+                            val registeredFactories = (scenario.arrayAt("units").map { it.jsonObject }.filter { it.id("type") in factoryTypes }.map { it.id("unitId") } +
+                                born.filter { it.id("typeId") in factoryTypes }.map { it.id("unitId") }).toSet()
+                            if (queues.keys != registeredFactories) throw Incomplete("missing-economy", "Missing or extra registered factory queue")
+                            queues.values.forEach { queue -> queue.jsonArray.forEach { element ->
+                                val item = element.jsonObject
+                                item.id("typeId"); item.id("unitNonce"); item.number("progress"); item.integer("cost"); item.number("rate")
+                            } }
                         }
                         val results = observation.arrayAt("actionResults").map { it.jsonObject.also(::actionResult) }
                         if (results != pendingActions) throw Incomplete("action-order", "Observation action results differ from submitted records")
@@ -285,6 +320,41 @@ object TraceComparator {
         } catch (failure: IllegalArgumentException) {
             throw Incomplete("missing-or-invalid-field", failure.message ?: "Invalid trace field")
         }
+    }
+
+    private fun typesLoadedBy(scenario: JsonObject, loaders: Set<String>) =
+        ScenarioDeclaration.unitReferences(scenario.objectAt("content")).filter { it["loader"]?.jsonPrimitive?.content in loaders }
+            .map { it.id("id") }.toSet()
+
+    private fun validateUnitSample(unit: JsonObject, scenario: JsonObject) {
+        if (unit.keys.any { it in setOf("owner", "type", "rawMovementState") }) throw Incomplete("reserved-field", "Raw unit contains normalization aliases")
+        unit.id("unitId"); unit.id("ownerPlayerId"); unit.id("typeId"); point(unit.objectAt("position"))
+        listOf("heading", "speed", "angularVelocity").forEach { unit.number(it) }
+        unit.required("moveTarget").let { if (it != JsonNull) point(it.jsonObject) }
+        unit.arrayAt("pathPoints").forEach { point(it.jsonObject) }
+        if (unit.text("movementState") !in setOf("IDLE", "MOVING", "DECELERATING", "BLOCKED")) throw Incomplete("invalid-field", "Unknown movement state")
+        if (scenario.containsKey("combatContract") || scenario.containsKey("economyContract")) {
+            for (field in listOf("health", "maxHealth")) unit.required(field).let { if (it != JsonNull) unit.number(field) }
+            if ((unit["health"] == JsonNull) != (unit["maxHealth"] == JsonNull)) throw Incomplete("invalid-field", "Partial durability sample")
+            unit.required("attackTargetId").let { if (it != JsonNull) unit.id("attackTargetId") }
+            booleanField(unit, "alive")
+            unit.required("pointDefense").let { if (it != JsonNull) {
+                val defense = it.jsonObject
+                defense.number("energy"); booleanField(defense, "exhausted")
+            } }
+        }
+    }
+
+    private fun booleanField(value: JsonObject, field: String) {
+        if (value.required(field) !in setOf(b(true), b(false))) throw Incomplete("invalid-field", "Expected boolean $field")
+    }
+
+    private fun validateUpgradeItems(queues: JsonObject, host: Boolean) {
+        queues.values.forEach { queue -> queue.jsonArray.forEach { element ->
+            val item = element.jsonObject
+            item.id("actionKey"); item.id("targetTypeId"); item.number("progress")
+            if (host) { item.integer("cost"); item.number("rate") }
+        } }
     }
 
     private fun point(value: JsonObject) { value.number("x"); value.number("y") }
@@ -321,7 +391,7 @@ object TraceComparator {
         })))))
     }
 
-    private fun validatePlayerSamples(scenario: JsonObject, observation: JsonObject) {
+    private fun validatePlayerSamples(scenario: JsonObject, observation: JsonObject, knownIds: Set<String>) {
         val declaration = scenario["automaticVision"] as? JsonObject ?: return
         val expected = declaration.arrayAt("observers").map { it.jsonPrimitive.content }.toSet()
         val players = observation["players"] as? JsonObject
@@ -333,11 +403,34 @@ object TraceComparator {
             val player = element.jsonObject
             if (player.text("playerId") != id || listOf("worldId", "stepIndex", "simulationTime").any { player[it] != observation[it] })
                 throw Incomplete("player-boundary", "Player observation is from another world or boundary")
-            val knownIds = scenario.arrayAt("units").map { it.jsonObject.id("unitId") }.toSet()
             val visible = player.arrayAt("visibleUnitIds").map { it.jsonPrimitive.content }
             if (visible.distinct().size != visible.size || visible.any { it !in knownIds })
                 throw Incomplete("player-units", "Unknown or duplicate visible unit")
             player.arrayAt("events"); player.arrayAt("actionResults")
+            if (scenario.containsKey("combatContract") || scenario.containsKey("economyContract")) {
+                player.required("balance").let { if (scenario.containsKey("economyContract") || it != JsonNull) player.integer("balance") }
+                player.required("credits").let { if (it != JsonNull) player.number("credits") }
+                val factoryQueues = player.objectAt("factoryQueues")
+                val upgradeQueues = player.objectAt("upgradeQueues")
+                val units = player.arrayAt("units").map { it.jsonObject }
+                if (units.map { it.id("unitId") }.toSet() != visible.toSet() || units.size != visible.size)
+                    throw Incomplete("player-units", "Incomplete visible unit samples")
+                units.forEach { validateUnitSample(it, scenario) }
+                val local = scenario.arrayAt("players").map { it.jsonObject }.single { it.id("playerId") == id }.text("control") == "local"
+                val factoryTypes = typesLoadedBy(scenario, setOf("factory", "command-center"))
+                val factories = units.filter { local && it.id("ownerPlayerId") == id && it["alive"] == b(true) && it.id("typeId") in factoryTypes }
+                    .map { it.id("unitId") }.toSet()
+                if (factoryQueues.keys != factories) throw Incomplete("player-queues", "Missing or extra authorized factory queue")
+                factoryQueues.values.forEach { queue -> queue.jsonArray.forEach { element ->
+                    val item = element.jsonObject
+                    item.id("typeId"); item.number("progress")
+                } }
+                val upgradeTypes = typesLoadedBy(scenario, setOf("turret-upgrades"))
+                val upgrades = units.filter { local && it.id("ownerPlayerId") == id && it["alive"] == b(true) && it.id("typeId") in upgradeTypes }
+                    .map { it.id("unitId") }.toSet()
+                if (upgradeQueues.keys != upgrades) throw Incomplete("player-queues", "Missing or extra authorized upgrade queue")
+                validateUpgradeItems(upgradeQueues, false)
+            }
             val knowledge = player.objectAt("knowledge")
             val width = knowledge.integer("width"); val height = knowledge.integer("height")
             val cells = knowledge.objectAt("cells")
@@ -364,7 +457,7 @@ object TraceComparator {
         is JsonArray -> {
             // IDs may contain dots. Bind the longest complete ID before resolving its field path.
             val candidates = value.filterIsInstance<JsonObject>().mapNotNull { unit ->
-                (unit["unitId"] as? JsonPrimitive)?.content?.let { id ->
+                (unit["unitId"] as? JsonPrimitive ?: unit["actionId"] as? JsonPrimitive)?.content?.let { id ->
                     if (path == id || path.startsWith("$id.")) id to unit else null
                 }
             }

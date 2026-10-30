@@ -11,7 +11,8 @@ import kotlin.test.assertTrue
 
 class FactoryContentLoadTest {
     private data class BadFactoryValue(val from: String, val to: String, val field: String, val code: ContentErrorCode)
-    private fun factoryPath(): Path = inputs().parent.parent.parent.resolve(
+    private fun factoryPath(): Path = System.getProperty("public.fixtures.dir")?.let { Path.of(it).resolve("production-combat/production/units/landFactory.properties") }
+        ?: inputs().parent.parent.parent.resolve(
         ".scratch/开发票据/引擎重写/P005-生产战斗与指挥沙盒/evidence/ENG-P005-002/20261025-e-input-01/input/units/landFactory.properties",
     )
 

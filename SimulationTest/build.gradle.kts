@@ -25,6 +25,7 @@ gradle.projectsEvaluated {
         allprojects {
             tasks.withType<Test>().configureEach {
                 systemProperty("p001.inputs.dir", publicInputs)
+                systemProperty("public.fixtures.dir", rootProject.file("public/inputs").absolutePath)
                 systemProperty("repo.root", rootProject.projectDir.parentFile.absolutePath)
             }
         }

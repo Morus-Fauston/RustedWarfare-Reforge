@@ -148,9 +148,9 @@ class PatrolJsonlPairingTest {
                 "effectiveCells" to it.effectiveCells.map { c->mapOf("column" to c.column,"row" to c.row) }) },
             "terrain" to s.frame.terrain.map { c->mapOf("column" to c.column,"row" to c.row,"gid" to c.gid,"visible" to c.visible) }))
     }
-    private fun root(): Path = generateSequence(Path.of("").toAbsolutePath()) { it.parent }
+    private fun root(): Path = (System.getProperty("public.fixtures.dir")?.let { Path.of(it).resolve("production-combat/patrol") } ?: generateSequence(Path.of("").toAbsolutePath()) { it.parent }
         .first { Files.isRegularFile(it.resolve("AGENTS.md")) }.resolve(
-            ".scratch/开发票据/引擎重写/P005-生产战斗与指挥沙盒/evidence/ENG-P005-006/20261026-e-selection-contract-01/input")
+            ".scratch/开发票据/引擎重写/P005-生产战斗与指挥沙盒/evidence/ENG-P005-006/20261026-e-selection-contract-01/input"))
 
     @Test fun real_session_loss_projects_and_returns_without_hidden_coordinate_changes_in_complete_jsonl_vision_and_terrain() {
         val base = ControlledScenario.load(root())

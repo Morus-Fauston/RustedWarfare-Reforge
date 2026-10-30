@@ -7,7 +7,7 @@ internal object ScenarioDeclaration {
     fun validate(value: JsonObject) {
         value.header("scenario"); value.id("scenarioId")
         val content = value.objectAt("content")
-        val references = listOf(content.objectAt("map"), content.objectAt("unitVariant")) +
+        val references = listOf(content.objectAt("map")) + unitReferences(content) +
             (content["dependencies"]?.jsonArray?.map { it.jsonObject } ?: emptyList())
         references.forEach {
             it.id("id")
@@ -60,11 +60,42 @@ internal object ScenarioDeclaration {
         actions.forEach { action ->
             if (action.integer("atStep") !in steps.indices.map(Int::toLong)) throw InputError("Action outside declared schedule")
             action.id("actor"); action.id("unitId")
-            when (action.text("kind")) {
-                "move" -> point(action.objectAt("target"))
-                "select", "stop" -> Unit
-                else -> throw InputError("Unsupported action")
-            }
+            validateAction(action)
+        }
+        value["combatContract"]?.jsonObject?.let { combat ->
+            for (key in listOf("worldSeed", "initialFrameCounter"))
+                if (combat.integer(key) !in Int.MIN_VALUE.toLong()..Int.MAX_VALUE.toLong()) throw InputError("Combat integer out of range")
+            val ids = combat.objectAt("unitObjectIds")
+            if (ids.keys != units.map { it.id("unitId") }.toSet() ||
+                ids.keys.any { ids.integer(it) <= 0 } || ids.values.distinct().size != ids.size ||
+                combat.integer("nextObjectId") <= (ids.keys.maxOfOrNull { ids.integer(it) } ?: 0)) throw InputError("Invalid combat object identity")
+        }
+        value["economyContract"]?.jsonObject?.objectAt("initialBalances")?.let { balances ->
+            if (balances.keys != players.map { it.id("playerId") }.toSet() || balances.keys.any { balances.integer(it) < 0 })
+                throw InputError("Invalid initial balances")
+        }
+    }
+    fun unitReferences(content: JsonObject): List<JsonObject> {
+        if (content.containsKey("unitVariant") == content.containsKey("unitVariants")) throw InputError("Declare one unitVariant or unitVariants")
+        val units = content["unitVariant"]?.let { listOf(it.jsonObject) }
+            ?: content.arrayAt("unitVariants").map { it.jsonObject }
+        if (units.isEmpty()) throw InputError("Empty content units")
+        units.forEach { if ((it["loader"]?.jsonPrimitive?.content ?: "variant") !in
+            setOf("variant", "combat", "factory", "builder", "command-center", "turret", "turret-upgrades", "point-defense"))
+            throw InputError("Unsupported content loader") }
+        return units
+    }
+    val actionKinds = setOf("select", "move", "stop", "produce", "cancel-production", "attack", "patrol", "upgrade", "cancel-upgrade")
+    fun validateAction(action: JsonObject) {
+        when (action.text("kind")) {
+            "move" -> point(action.objectAt("target"))
+            "patrol" -> { point(action.objectAt("target")); if (action.required("append").jsonPrimitive.booleanOrNull == null) throw InputError("Expected patrol append boolean") }
+            "attack" -> action.id("targetUnitId")
+            "produce" -> { action.id("productionTypeId"); action.id("unitNonce") }
+            "cancel-production" -> action.id("productionTypeId")
+            "upgrade", "cancel-upgrade" -> action.id("upgradeId")
+            "select", "stop" -> Unit
+            else -> throw InputError("Unsupported action")
         }
     }
     private fun unique(values: List<String>, kind: String) {

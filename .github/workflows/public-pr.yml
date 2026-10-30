@@ -21,9 +21,17 @@ jobs:
         run: python -B -m unittest discover -s SimulationTest/ci -p test_public_check.py
       - name: Content movement knowledge mechanisms and short scenarios
         run: python -B SimulationTest/ci/public_check.py --suite content-movement-knowledge --kind pr --output SimulationTest/build/public-ci
+      - name: Production combat mechanisms and short scenarios
+        run: python -B SimulationTest/ci/public_check.py --suite production-combat --kind pr --output SimulationTest/build/public-production-ci
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         if: always()
         with:
           name: public-first-loop-evidence
           path: SimulationTest/build/public-ci
+          if-no-files-found: error
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always()
+        with:
+          name: public-production-combat-evidence
+          path: SimulationTest/build/public-production-ci
           if-no-files-found: error

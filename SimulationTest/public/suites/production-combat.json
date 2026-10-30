@@ -1,0 +1,88 @@
+{
+  "schemaVersion": 1,
+  "suiteId": "public.production-combat.v1",
+  "inputScope": "public",
+  "fixture": "inputs/content-movement-knowledge/P001-\u79fb\u52a8\u6c99\u76d2\u8f93\u5165",
+  "tests": {
+    "core": [
+      "com.rustedwarfare.reforge.core.content.CombatContentLoadTest",
+      "com.rustedwarfare.reforge.core.content.CommandCenterContentLoadTest",
+      "com.rustedwarfare.reforge.core.content.FactoryContentLoadTest",
+      "com.rustedwarfare.reforge.core.sim.ArtilleryAreaTest",
+      "com.rustedwarfare.reforge.core.sim.ArtilleryFlightTest",
+      "com.rustedwarfare.reforge.core.sim.ArtillerySnapshotTest",
+      "com.rustedwarfare.reforge.core.sim.AttackCommandTest",
+      "com.rustedwarfare.reforge.core.sim.AttackPursuitTest",
+      "com.rustedwarfare.reforge.core.sim.CombatActorVisibilityTest",
+      "com.rustedwarfare.reforge.core.sim.CombatLifecycleOrderTest",
+      "com.rustedwarfare.reforge.core.sim.CombatTransactionTest",
+      "com.rustedwarfare.reforge.core.sim.DurabilityContractTest",
+      "com.rustedwarfare.reforge.core.sim.FactoryExitTest",
+      "com.rustedwarfare.reforge.core.sim.NativeMissileTest",
+      "com.rustedwarfare.reforge.core.sim.OrdinaryCombatTest",
+      "com.rustedwarfare.reforge.core.sim.OrdinaryWeaponContractTest",
+      "com.rustedwarfare.reforge.core.sim.PatrolCommandTest",
+      "com.rustedwarfare.reforge.core.sim.PlayerProjectilePairingTest",
+      "com.rustedwarfare.reforge.core.sim.ProductionAddressTest",
+      "com.rustedwarfare.reforge.core.sim.ProductionCommandTest",
+      "com.rustedwarfare.reforge.core.sim.ProductionIdentityTest",
+      "com.rustedwarfare.reforge.core.sim.ProductionLedgerTest",
+      "com.rustedwarfare.reforge.core.sim.ProductionTransactionTest",
+      "com.rustedwarfare.reforge.core.sim.S4ProjectileCandidateTest",
+      "com.rustedwarfare.reforge.core.sim.WorldProductionTest",
+      "com.rustedwarfare.reforge.core.sim.PointDefenseContractTest",
+      "com.rustedwarfare.reforge.core.sim.PointDefenseLifecycleTest",
+      "com.rustedwarfare.reforge.core.sim.PointDefenseTransactionTest",
+      "com.rustedwarfare.reforge.core.sim.TurretBuildingSpaceTest",
+      "com.rustedwarfare.reforge.core.sim.TurretCombatTest",
+      "com.rustedwarfare.reforge.core.sim.TurretIdleTest",
+      "com.rustedwarfare.reforge.core.sim.TurretLifecycleTest",
+      "com.rustedwarfare.reforge.core.sim.TurretProfileValidationTest",
+      "com.rustedwarfare.reforge.core.sim.UpgradeCommandTest",
+      "com.rustedwarfare.reforge.core.sim.UpgradeCompletionTest",
+      "com.rustedwarfare.reforge.core.sim.UpgradeInitializationTest",
+      "com.rustedwarfare.reforge.core.sim.UpgradeTransactionTest",
+      "com.rustedwarfare.reforge.core.sim.UpgradeWeaponStateTest"
+    ],
+    "client": [
+      "com.rustedwarfare.reforge.client.CombatActorEvidenceTest",
+      "com.rustedwarfare.reforge.client.CombatSandboxSessionTest",
+      "com.rustedwarfare.reforge.client.MissileEvidencePairTest",
+      "com.rustedwarfare.reforge.client.PatrolSandboxSessionTest",
+      "com.rustedwarfare.reforge.client.PatrolScenarioTest",
+      "com.rustedwarfare.reforge.client.ProductionCommandEvidenceTest",
+      "com.rustedwarfare.reforge.client.ProductionSandboxSessionTest",
+      "com.rustedwarfare.reforge.client.ProjectileEvidencePairingTest"
+    ],
+    "pc": [
+      "com.rustedwarfare.reforge.pc.PatrolJsonlPairingTest"
+    ],
+    "tools": [
+      "com.rustedwarfare.reforge.testing.ProductionCombatScenarioTest"
+    ]
+  },
+  "short": [
+    {
+      "id": "production-combat-short",
+      "scenario": "scenarios/production-combat-short.json",
+      "contract": "contracts/production-combat-short.json"
+    },
+    {
+      "id": "upgrade-cancel-short",
+      "scenario": "scenarios/upgrade-cancel-short.json",
+      "contract": "contracts/upgrade-cancel-short.json"
+    },
+    {
+      "id": "point-defense-short",
+      "scenario": "scenarios/point-defense-short.json",
+      "contract": "contracts/point-defense-short.json"
+    }
+  ],
+  "long": [
+    {
+      "id": "production-combat-chain",
+      "scenario": "scenarios/production-combat-chain.json",
+      "contract": "contracts/production-combat-chain.json"
+    }
+  ]
+}

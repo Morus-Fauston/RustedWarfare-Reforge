@@ -53,3 +53,19 @@ python -B SimulationTest/ci/public_check.py --suite private-content-reference --
 ```
 
 私有集拒绝公共隔离或Actions运行；缺件/失败按执行失败处理，不跳过。P001/P002历史场景、契约、支持及CLI仍由原入口消费，原件不迁移到公共目录。专属环境和原版对照资格由TEST-P004-007承接，002不宣称已重跑这些断言。完整575版本逐项映射及六项领域归属修正在私有票据证据内，历史快照不冒作本次运行源码。
+
+## 生产、战斗与指挥
+
+```powershell
+python -B SimulationTest/ci/public_check.py --suite production-combat --kind all --list
+python -B SimulationTest/ci/public_check.py --suite production-combat --kind pr
+python -B SimulationTest/ci/public_check.py --suite production-combat --kind all --isolated
+```
+
+`generate_combat_inputs.py`从公开加载语法及既有公开测试条件独立编写合成内容，图片为新建纯色RGBA；`inputs/production-combat/OWNERSHIP.json`记录来源边界和逐文件哈希。未复制原版文件、图片或旧私有场景。默认私有夹具入口保持，显式公开运行才切换测试根。机制集包含生产、攻击、弹道、伤害、观察隔离、巡逻、炮塔、升级及点防御；部分跨票机制作为共享支持，不代表其原所属票已交付。
+
+场景与独立契约分开，`generate_production_scenarios.py`只生成初态和操作。`production-combat-short`从1750资金生产两辆350的坦克、取消队尾退款，经过501个Float更新实际出生；新对象的ID、nonce、生产者、所有者和类型绑定声明的正式生产。随后选择、停止、拒绝外方操作并攻击。`production-combat-chain`从同一局继续到目标死亡；初态、出生、攻击和结束的固定检查点保留同一余额、单位和队列，未修改运行中资金或生命。
+
+`upgrade-cancel-short`调用正式升级与取消接口，核对支付、退款、队列和外方观察隔离；`point-defense-short`由敌方坦克正式开火，固定第7步尚未拦截、第8步扣除一次能量、第9步仅恢复能量，并保持目标生命。精确Float值来自既有机制条件。所有场景逐步采集完整观察，缺产物、健康、玩家资金或宿主经济采样均按证据不足拒绝。公共短测使用10×5自有空地图控制无关全格知识采样体量；其余原机制夹具保持30×20。
+
+PR运行机制及三条短测，连续长测独立于PR机制JUnit类；`--kind long`或`all`通过安装后的CLI执行同局长测。主分支长测工作流由批次收口接入。此处只证明自身行为，原版对照、真实PC输入及性能仍需各自适用证据。

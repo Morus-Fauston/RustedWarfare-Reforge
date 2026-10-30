@@ -1,5 +1,6 @@
 # Content identities are byte-based across Windows and Linux checkouts.
 *.json text eol=lf
 *.ini text eol=lf
+*.properties text eol=lf
 *.tmx text eol=lf
 *.png binary
