@@ -251,7 +251,7 @@ def read(path):
 
 def tree(root):
     root = Path(root)
-    paths = sorted(root.rglob('*'))
+    paths = sorted(root.rglob('*'), key=lambda path: path.relative_to(root).as_posix())
     if any(path.is_symlink() for path in paths) or root.is_symlink():
         raise PlatformError('input-identity', 'Symbolic links are not fixed input files', 1)
     return [dict(path=path.relative_to(root).as_posix(), sha256=sha(path)) for path in paths if path.is_file()]
@@ -296,7 +296,8 @@ def compare_archive(output):
     if (manifest.get('backend') != backend or not manifest.get('packageFiles') or
             manifest.get('scenarioSha256') != sha(output/'scenario.json') or
             manifest.get('contractSha256') != sha(output/'contract.json') or
-            not manifest.get('inputFiles') or manifest['inputFiles'] != tree(output/'inputSnapshot')):
+            not manifest.get('inputFiles') or
+            sorted(manifest['inputFiles'], key=lambda item: item['path']) != tree(output/'inputSnapshot')):
         raise PlatformError('archive-identity', 'Manifest, fixed inputs, scenario or contract identity differs')
     plan = read(output/'scenario.json')
     if backend == 'windows-input':

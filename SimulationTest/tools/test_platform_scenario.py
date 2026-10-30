@@ -9,6 +9,55 @@ import tempfile
 
 
 class PlatformIntentTest(unittest.TestCase):
+    def test_input_manifest_uses_case_sensitive_posix_order_on_every_host(self):
+        from platform_scenario import tree
+        with tempfile.TemporaryDirectory(prefix='platform-manifest-') as folder:
+            root = Path(folder)
+            for name in ('extractor_back.ini', 'extractorT2.ini'):
+                (root/name).write_text(name, encoding='utf8')
+            self.assertEqual(['extractorT2.ini', 'extractor_back.ini'], [row['path'] for row in tree(root)])
+
+    def test_archive_input_identity_survives_platform_order_but_rejects_changed_members(self):
+        from platform_scenario import compare_archive, save, sha, tree
+        with tempfile.TemporaryDirectory(prefix='platform-order-') as folder:
+            root = Path(folder)
+            (root/'session').mkdir()
+            (root/'inputSnapshot').mkdir()
+            for name in ('extractorT2.ini', 'extractor_back.ini'):
+                (root/'inputSnapshot'/name).write_text(name, encoding='utf8')
+            sample = dict(worldId='w',stepIndex=0,simulationTime=0,
+                          units=[dict(unitId='f',ownerPlayerId='p1',typeId='landFactory')])
+            save(root/'scenario.json',dict(scenarioId='s',intents=[dict(intentId='choose',kind='select',unitId='f')]))
+            save(root/'contract.json',dict(scenarioId='s',rules=[dict(intentId='choose',actionType='SelectAction',
+                unitId='f',accepted=True,assertions=[dict(path='units.f.typeId',operator='equals',value='landFactory')])]))
+            save(root/'intents.json',[dict(intentId='choose',afterSequence=1,endSequence=4)])
+            rows=[dict(sequence=0,kind='observation',phase='initial',sample=sample),
+                  dict(sequence=1,kind='intent-start',intentId='choose'),
+                  dict(sequence=2,kind='observation',phase='before-action',sample=sample),
+                  dict(sequence=3,kind='action',type='SelectAction',unitId='f',actorPlayerId='p1',result=dict(actionId='a',accepted=True)),
+                  dict(sequence=4,kind='observation',phase='after-action',sample=sample),
+                  dict(sequence=5,kind='observation',phase='before-close',sample=sample),dict(sequence=6,kind='closed')]
+            (root/'session/client-diagnostic.jsonl').write_text(''.join(json.dumps(row)+'\n' for row in rows),encoding='utf8')
+            for name in ('stdout.log','stderr.log'):
+                (root/name).write_bytes(b'')
+            manifest=dict(backend='session',packageFiles=[dict(path='adapter.jar',sha256='identity')],
+                          scenarioSha256=sha(root/'scenario.json'),contractSha256=sha(root/'contract.json'))
+            original=tree(root/'inputSnapshot')
+            for identities in (original, list(reversed(original))):
+                manifest['inputFiles']=identities
+                (root/'manifest.json').write_text(json.dumps(manifest),encoding='utf8')
+                (root/'archive.json').write_text(json.dumps(dict(complete=True,backend='session',
+                    files=[row for row in tree(root) if row['path']!='archive.json'])),encoding='utf8')
+                self.assertEqual(0,compare_archive(root)['exitCode'])
+            for identities in (original[:-1],original+[original[0]],
+                               [dict(original[0],sha256='changed'),original[1]]):
+                manifest['inputFiles']=identities
+                (root/'manifest.json').write_text(json.dumps(manifest),encoding='utf8')
+                (root/'archive.json').write_text(json.dumps(dict(complete=True,backend='session',
+                    files=[row for row in tree(root) if row['path']!='archive.json'])),encoding='utf8')
+                with self.assertRaises(PlatformError):
+                    compare_archive(root)
+
     def test_session_closed_does_not_hide_a_failed_windows_process_tail(self):
         intent=dict(intentId='choose',kind='select',unitId='f')
         rule=dict(intentId='choose',actionType='SelectAction',unitId='f',accepted=True,
