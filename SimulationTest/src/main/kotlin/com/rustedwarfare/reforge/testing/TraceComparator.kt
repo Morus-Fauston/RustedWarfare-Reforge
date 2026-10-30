@@ -47,7 +47,7 @@ object TraceComparator {
                     }
                 }
                 for (rule in rules.map { it.jsonObject }) {
-                    if (!matches(rule["when"] as? JsonObject, row.objectAt("observation"), right, index)) continue
+                    if (!matches(rule["when"] as? JsonObject, row, right, index)) continue
                     for (assertion in rule.arrayAt("assertions").map { it.jsonObject }) {
                         evaluations++
                         val path = assertion.text("path")
@@ -76,7 +76,7 @@ object TraceComparator {
             }
         }
         val untriggered = rules.map { it.jsonObject }.filter { rule -> right.withIndex().none { (i, row) ->
-            row.text("kind") == "observation" && matches(rule["when"] as? JsonObject, row.objectAt("observation"), right, i)
+            row.text("kind") == "observation" && matches(rule["when"] as? JsonObject, row, right, i)
         } }
         if (untriggered.isNotEmpty()) throw Incomplete("untriggered-rule", "Rule never evaluated: ${untriggered.map { it.id("ruleId") }}")
         val result = judgment(0, "completed", contract, "exact-self-behavior", evaluations)
@@ -118,9 +118,32 @@ object TraceComparator {
             if (rule.keys.any { it !in setOf("ruleId", "when", "assertions") }) throw InputError("Unsupported rule field")
             rule["when"]?.let { value ->
                 val condition = value.jsonObject
-                if (condition.keys.any { it !in setOf("event", "actionKind") } ||
-                    condition.text("event") !in setOf("action-accepted", "action-rejected")) throw InputError("Unsupported rule condition")
+                if (condition.keys.any { it !in setOf("event", "actionKind", "actionId", "unitId", "stepIndex", "phase") })
+                    throw InputError("Unsupported rule condition")
+                if (condition["event"] != null) {
+                    if (condition.text("event") !in setOf("action-accepted", "action-rejected")) throw InputError("Unsupported rule event")
+                } else if (condition["stepIndex"] == null || condition["phase"] == null ||
+                    condition.keys.any { it in setOf("actionKind", "actionId", "unitId") }) {
+                    throw InputError("A sample checkpoint requires phase and stepIndex; action filters require an event")
+                }
                 condition["actionKind"]?.let { if (condition.text("actionKind") !in setOf("select", "move", "stop")) throw InputError("Unsupported action kind") }
+                condition["actionId"]?.let {
+                    if (scenario.arrayAt("actions").none { it.jsonObject.id("actionId") == condition.id("actionId") })
+                        throw InputError("Checkpoint references an unknown action")
+                }
+                condition["unitId"]?.let {
+                    if (scenario.arrayAt("units").none { it.jsonObject.id("unitId") == condition.id("unitId") })
+                        throw InputError("Checkpoint references an unknown unit")
+                }
+                condition["stepIndex"]?.let {
+                    if (condition.integer("stepIndex") !in 0L until scenario.objectAt("termination").arrayAt("steps").size.toLong())
+                        throw InputError("Checkpoint outside declared schedule")
+                }
+                condition["phase"]?.let {
+                    if (condition.text("phase") !in setOf("initial", "after-advance") ||
+                        (condition["phase"] == s("initial") && condition["stepIndex"] != n(0)))
+                        throw InputError("Invalid checkpoint phase or initial boundary")
+                }
             }
             if (rule.arrayAt("assertions").isEmpty()) throw InputError("Empty assertion set")
             rule.arrayAt("assertions").forEach { value ->
@@ -137,12 +160,18 @@ object TraceComparator {
         }
     }
 
-    private fun matches(condition: JsonObject?, observation: JsonObject, rows: List<JsonObject>, index: Int): Boolean {
+    private fun matches(condition: JsonObject?, row: JsonObject, rows: List<JsonObject>, index: Int): Boolean {
         if (condition == null) return true
+        val observation = row.objectAt("observation")
+        if (condition["phase"] != null && condition["phase"] != row["phase"]) return false
+        if (condition["stepIndex"] != null && condition.integer("stepIndex") != observation.integer("stepIndex")) return false
+        if (condition["event"] == null) return true
         val status = if (condition.text("event") == "action-accepted") "accepted" else "rejected"
         val actions = rows.take(index).takeLastWhile { it.text("kind") != "observation" }.filter { it.text("kind") == "action-result" }
         return actions.any { it.objectAt("result").text("status") == status &&
-            (condition["actionKind"] == null || it.objectAt("action")["kind"] == condition["actionKind"]) } &&
+            (condition["actionKind"] == null || it.objectAt("action")["kind"] == condition["actionKind"]) &&
+            (condition["actionId"] == null || it.objectAt("action")["actionId"] == condition["actionId"]) &&
+            (condition["unitId"] == null || it.objectAt("action")["unitId"] == condition["unitId"]) } &&
             observation.arrayAt("actionResults").isNotEmpty()
     }
 

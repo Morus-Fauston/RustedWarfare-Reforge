@@ -1,0 +1,16 @@
+{
+  "schemaVersion": 1,
+  "suiteId": "public-pr-first-loop",
+  "toolTests": [
+    "com.rustedwarfare.reforge.testing.CheckpointTest",
+    "com.rustedwarfare.reforge.testing.PublicScenarioTest"
+  ],
+  "mechanismTests": [
+    "com.rustedwarfare.reforge.core.content.UnitSightRangeTest",
+    "com.rustedwarfare.reforge.core.path.ClearanceBoundaryTest"
+  ],
+  "short": {
+    "scenario": "scenarios/select-move-stop.json",
+    "contract": "contracts/select-move-stop.json"
+  }
+}
