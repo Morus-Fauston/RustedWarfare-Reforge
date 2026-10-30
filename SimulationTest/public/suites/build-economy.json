@@ -22,7 +22,9 @@
       "com.rustedwarfare.reforge.core.sim.UpgradeInitializationTest",
       "com.rustedwarfare.reforge.core.sim.UpgradeTransactionTest",
       "com.rustedwarfare.reforge.core.sim.UpgradeWeaponStateTest",
-      "com.rustedwarfare.reforge.core.sim.WorldIncomeTest"
+      "com.rustedwarfare.reforge.core.sim.WorldIncomeTest",
+      "com.rustedwarfare.reforge.core.sim.OrdinaryUpgradesTest",
+      "com.rustedwarfare.reforge.core.content.OrdinaryUpgradeContentTest"
     ],
     "client": [
       "com.rustedwarfare.reforge.client.BuildingEvidenceTest",

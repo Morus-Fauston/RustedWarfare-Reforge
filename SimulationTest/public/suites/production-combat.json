@@ -42,7 +42,8 @@
       "com.rustedwarfare.reforge.core.sim.UpgradeCompletionTest",
       "com.rustedwarfare.reforge.core.sim.UpgradeInitializationTest",
       "com.rustedwarfare.reforge.core.sim.UpgradeTransactionTest",
-      "com.rustedwarfare.reforge.core.sim.UpgradeWeaponStateTest"
+      "com.rustedwarfare.reforge.core.sim.UpgradeWeaponStateTest",
+      "com.rustedwarfare.reforge.core.sim.OrdinaryUpgradesTest"
     ],
     "client": [
       "com.rustedwarfare.reforge.client.CombatActorEvidenceTest",

@@ -126,10 +126,9 @@ internal object EconomyContentReader {
             fixed(section, "displayType", "upgrade")
             fixed(section, "iconExtraImage", "SHARED:icon_upgrade_top.png"); fixed(section, "iconExtraColor", "#AAFFFFFF")
         }
-        val upgradePrice = if (extractor) if (tier == 1) 1400L else 4000L else if (tier == 1) 4400L else 7500L
-        val upgradeRate = if (extractor) if (tier == 1) .0006f else .0003f else 1f / ((if (tier == 1) 65.6f else 93.3f) * 60f)
-        if (tier < 3) checkAction("action_upgradeT${tier + 1}", "${family}T${tier + 1}", upgradePrice.toDouble(),
-            if (extractor) if (tier == 1) "0.0006" else "0.0003" else if (tier == 1) "65.6s" else "93.3s",
+        val upgrade = OrdinaryUpgradeContent.economic[id]
+        if (tier < 3) checkAction("action_upgradeT${tier + 1}", checkNotNull(upgrade).action.targetTypeId,
+            upgrade.action.price.toDouble(), upgrade.sourceSpeed,
             "i:gui.actions.upgradeT${tier + 1}", "i:units.$family.upgrade.description" + if (tier == 2) "T3" else "")
         else if (extractor) {
             checkAction("action_overclock", "extractorT3_overclocked", 8000.0, "0.0002",
@@ -205,7 +204,7 @@ internal object EconomyContentReader {
             construction = ConstructionProfile(number("core", "price", (if (extractor) listOf(700.0, 2100.0, 6100.0) else listOf(2200.0, 6600.0, 14100.0))[tier - 1]).toLong(),
                 number("core", "buildSpeed", if (extractor) .001 else listOf(.0005, .0004, .0003)[tier - 1]).toFloat()),
             income = IncomeProfile(40f, income.toFloat()),
-            upgrades = if (enableUpgrades && tier < 3) UpgradeProfile(listOf(UpgradeActionProfile("upgrade_t${tier + 1}", "${family}T${tier + 1}", upgradePrice, upgradeRate))) else null,
+            upgrades = if (enableUpgrades && tier < 3) UpgradeProfile(listOf(checkNotNull(upgrade).action)) else null,
             deathExplosion = if (extractor) null else DeathExplosionProfile(listOf(350f, 450f, 850f)[tier - 1], 90f, 35f))
     }
 

@@ -26,7 +26,7 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
     private var constructionClock: Int = 0
     private var constructionNonces: Map<String, Set<String>> = emptyMap()
     private var productionLedger: ProductionLedger? = null
-    private var upgradeQueues: UpgradeQueues? = null
+    private var ordinaryUpgrades: OrdinaryUpgrades? = null
     private var missileTargets: MissileTargetIndex? = null
     private var buildingTerrain: BuildingTerrain? = null
     private var buildingKnowledge: Map<String, BuildingKnowledge> = emptyMap()
@@ -84,7 +84,7 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
         val projectileEvents: MutableList<ProjectileEventObservation>,
         val buildings: BuildingTerrain?, val buildingKnowledge: Map<String, BuildingKnowledge>,
         val buildingDiscoveries: Map<String, Map<Pair<Int, Int>, Long>>,
-        val ledger: ProductionLedger?, val birthSerial: Long, val upgrades: UpgradeQueues?,
+        val ledger: ProductionLedger?, val birthSerial: Long, val upgrades: OrdinaryUpgrades?,
         val missileTargets: MissileTargetIndex?,
         val constructionClock: Int, val constructionNonces: Map<String, Set<String>>,
     )
@@ -92,7 +92,7 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
     private fun checkpoint() = StepCheckpoint(units, pendingEvents, pendingActionResults, revision,
         latestObservation, IdentityHashMap(actionResultOwners), HashMap(playerActionRevisions), projectiles, combatFrame, nextObjectId,
         pathDiagnostics, noFogPlanning, HashMap(playerPlanning), pendingProjectileEvents,
-        buildingTerrain, buildingKnowledge, pendingBuildingDiscoveries, productionLedger, lastBirthSerial, upgradeQueues, missileTargets,
+        buildingTerrain, buildingKnowledge, pendingBuildingDiscoveries, productionLedger, lastBirthSerial, ordinaryUpgrades, missileTargets,
         constructionClock, constructionNonces)
 
     private fun restore(checkpoint: StepCheckpoint) {
@@ -109,7 +109,7 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
         buildingKnowledge = checkpoint.buildingKnowledge
         pendingBuildingDiscoveries = checkpoint.buildingDiscoveries
         productionLedger = checkpoint.ledger
-        upgradeQueues = checkpoint.upgrades
+        ordinaryUpgrades = checkpoint.upgrades
         missileTargets = checkpoint.missileTargets
         lastBirthSerial = checkpoint.birthSerial
         constructionClock = checkpoint.constructionClock
@@ -336,7 +336,7 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
         this.scenario = null
         productionLedger = null
         missileTargets = null
-        upgradeQueues = null
+        ordinaryUpgrades = null
         lastBirthSerial = 0L
         constructionClock = 0
         constructionNonces = emptyMap()
@@ -876,11 +876,7 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
         if (target.typeId in types) return true
         // An already assigned project remains maintainable after its ordinary upgrade.
         // This does not add higher tiers to the player's construction menu.
-        val base = when (target.typeId) {
-            "extractorT2", "extractorT3" -> "extractorT1"
-            "fabricatorT2", "fabricatorT3" -> "fabricatorT1"
-            else -> return false
-        }
+        val base = OrdinaryUpgrades.constructionBaseTypeId(target.typeId) ?: return false
         return base in types && target.definition.construction != null
     }
 
@@ -1020,7 +1016,7 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
                     checkNotNull(input.unitDefinitions.getValue(it).build) }))
             } ?: paid
             units[publicId] = created
-            if (definition.upgrades != null) upgradeQueues = checkNotNull(upgradeQueues).register(publicId)
+            ordinaryUpgrades = ordinaryUpgrades?.register(publicId, definition)
             constructionNonces = constructionNonces + (worker.ownerPlayerId to
                 (constructionNonces[worker.ownerPlayerId].orEmpty() + nonce))
             buildingTerrain = BuildingTerrain.fromLive(input.map, units.values, checkNotNull(buildingTerrain))
@@ -1095,59 +1091,27 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
     }
 
     private fun applyUpgrade(action: Action, unit: MutableUnit, upgradeId: String, cancel: Boolean): ActionResult {
-        val profile = unit.definition.upgrades ?: return reject(action, "cannot-upgrade", "Unit cannot upgrade")
-        val spec = profile.actions.singleOrNull { it.actionKey == upgradeId }
-            ?: return reject(action, "unsupported-upgrade", "Unit cannot perform this upgrade")
-        val queues = checkNotNull(upgradeQueues)
-        val ledger = checkNotNull(productionLedger)
-        val nextQueues: UpgradeQueues
-        val nextLedger: ProductionLedger
-        if (cancel) {
-            val change = queues.cancel(unit.unitId, upgradeId)
-            val removed = change.removed.singleOrNull()
-                ?: return reject(action, "empty-upgrade-queue", "No matching upgrade is queued")
-            nextQueues = change.queues
-            nextLedger = ledger.refund(unit.ownerPlayerId, removed.cost)
-        } else {
-            if (queues.queue(unit.unitId).any { it.actionKey == upgradeId })
-                return reject(action, "duplicate-upgrade", "This upgrade is already queued")
-            nextLedger = ledger.charge(unit.ownerPlayerId, spec.price)
-                ?: return reject(action, "insufficient-funds", "Insufficient funds")
-            nextQueues = queues.enqueue(unit.unitId, spec)
+        val upgrades = ordinaryUpgrades ?: return reject(action, "cannot-upgrade", "Unit cannot upgrade")
+        return when (val result = upgrades.request(unit, upgradeId, cancel, checkNotNull(productionLedger))) {
+            is OrdinaryUpgradeRequest.Rejected -> reject(action, result.error.code, result.error.message)
+            is OrdinaryUpgradeRequest.Accepted -> ActionResult.Accepted(action.actionId, applyUpgradeChange(result.change))
         }
-        upgradeQueues = nextQueues
-        productionLedger = nextLedger
-        return ActionResult.Accepted(action.actionId, listOf(Event(if (cancel) "upgrade-cancelled" else "upgrade-queued", unit.unitId)))
+    }
+
+    private fun applyUpgradeChange(change: OrdinaryUpgradeChange): List<Event> {
+        ordinaryUpgrades = change.upgrades
+        productionLedger = change.ledger
+        return change.events
     }
 
     private fun advanceUpgrade(unit: MutableUnit) {
-        val queues = upgradeQueues ?: return
-        val tick = queues.advance(unit.unitId)
-        upgradeQueues = tick.queues
-        val completed = tick.completed ?: return
-        val definition = checkNotNull(scenario).unitDefinitions.getValue(completed.targetTypeId)
-        check(unit.alive && unit.definition.upgrades?.actions?.any {
-            it.actionKey == completed.actionKey && it.targetTypeId == definition.id } == true)
-        val oldMaximum = checkNotNull(unit.definition.maximumHealth).toFloat()
-        val nextMaximum = checkNotNull(definition.maximumHealth).toFloat()
-        val health = checkNotNull(unit.health).toFloat() / oldMaximum * nextMaximum
-        require(health.isFinite() && health in 0f..nextMaximum) { "Converted health must remain finite and bounded" }
-        unit.typeId = definition.id
-        unit.definition = definition
-        unit.health = health.toDouble()
-        unit.speed = 0.0
-        unit.combat?.let { it.cooldown = minOf(it.cooldown, checkNotNull(definition.combat).shootDelay) }
-        pendingEvents += Event("upgrade-completed", unit.unitId)
-        refundUpgrades(unit, definition.upgrades?.actions?.mapTo(mutableSetOf()) { it.actionKey }.orEmpty())
+        val upgrades = ordinaryUpgrades ?: return
+        pendingEvents += applyUpgradeChange(upgrades.advance(unit, checkNotNull(productionLedger)))
     }
 
-    private fun refundUpgrades(unit: MutableUnit, allowed: Set<String> = emptySet()) {
-        val change = upgradeQueues?.retain(unit.unitId, allowed) ?: return
-        var ledger = productionLedger
-        for (item in change.removed) ledger = checkNotNull(ledger).refund(unit.ownerPlayerId, item.cost)
-        upgradeQueues = change.queues
-        productionLedger = ledger
-        if (change.removed.isNotEmpty()) pendingEvents += Event("upgrade-refunded", unit.unitId)
+    private fun refundUpgrades(unit: MutableUnit) {
+        val upgrades = ordinaryUpgrades ?: return
+        pendingEvents += applyUpgradeChange(upgrades.discard(unit, checkNotNull(productionLedger)))
     }
 
     private fun applyProduction(action: Action, unit: MutableUnit, typeId: String, nonce: String?): ActionResult {
@@ -1444,6 +1408,7 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
             ProductionLedger.initial(economy.initialBalances, factories,
                 nextScenario.unitDefinitions.values.any { it.income != null } || nextScenario.maintenanceContract != null)
         }
+        val initialUpgrades = OrdinaryUpgrades.initial(nextScenario)
         worldGeneration += 1
         activeWorld = WorldHandle("${nextScenario.scenarioId}:$worldGeneration")
         scenario = nextScenario.copy(
@@ -1456,8 +1421,7 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
                 it.copy(initialBalances = Collections.unmodifiableMap(LinkedHashMap(it.initialBalances))) },
         )
         productionLedger = initialLedger
-        upgradeQueues = if (nextScenario.unitDefinitions.values.any { it.upgrades != null }) UpgradeQueues.initial(
-            nextScenario.units.filter { nextScenario.unitDefinitions.getValue(it.typeId).upgrades != null }.map { it.unitId }.toSet()) else null
+        ordinaryUpgrades = initialUpgrades
         buildingTerrain = initialBuildings
         units = linkedMapOf()
         projectiles = mutableListOf()
@@ -1537,7 +1501,7 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
         if (input.units.any { it.ownerPlayerId !in players }) return SimulationError("bad-reference", "Unit owner is not a declared player")
         if (input.units.any { it.typeId !in input.unitDefinitions }) return SimulationError("bad-reference", "Unit type is not declared")
         MaintenanceRules.validate(input)?.let { return it }
-        UpgradeRules.validate(input)?.let { return it }
+        OrdinaryUpgrades.validate(input)?.let { return it }
         if (input.map.widthTiles <= 0 || input.map.heightTiles <= 0) return SimulationError("invalid-map", "Map dimensions must be positive")
         if (input.automaticVision != null && input.map.widthTiles.toLong() * input.map.heightTiles != input.map.groundGids.size.toLong()) {
             return SimulationError("invalid-map", "Automatic terrain knowledge requires matching ground dimensions")
@@ -2373,7 +2337,7 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
         }
         productionLedger?.validateCandidate()
         missileTargets?.validate(units)
-        upgradeQueues?.validateCandidate(units)
+        ordinaryUpgrades?.validateCandidate(units)
         // Ended/event-only objects also enter the public window; removing them from the active
         // container must not let an invalid numeric candidate bypass the S4 publication gate.
         for (event in pendingProjectileEvents) {
@@ -2448,7 +2412,7 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
             economy = productionLedger?.observe(),
             incomeStates = orderedUnits().filter { it.definition.income != null }.map {
                 IncomeStateObservation(it.unitId, it.incomeElapsed) },
-            upgrades = upgradeQueues?.observe(),
+            upgrades = ordinaryUpgrades?.observe(),
             construction = if (constructionNamespaceEnabled(currentScenario)) ConstructionObservation(constructionClock,
                 orderedUnits().filter { it.unitId.startsWith(CONSTRUCTED_UNIT_PREFIX) }.map {
                     ConstructedBuildingObservation(it.unitId, checkNotNull(it.objectId), it.updateKey, it.constructionProgress) },

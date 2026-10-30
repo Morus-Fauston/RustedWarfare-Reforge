@@ -204,9 +204,8 @@ internal object TurretContentReader {
             consumed += setOf("core.price", "core.buildSpeed")
             ConstructionProfile(price, rate)
         } else null
-        val upgrades = if (enableUpgrades) UpgradeProfile(listOf(
-            "upgrade_gun" to "c_turret_t2_gun", "upgrade_artillery" to "c_turret_t1_artillery"
-        ).map { (action, target) ->
+        val upgrades = if (enableUpgrades) UpgradeProfile(OrdinaryUpgradeContent.turret.map { (action, relation) ->
+            val target = relation.targetTypeId
             val section = "action_$action"
             only(section, "convertTo", target)
             val rawPrice = required(section, "price")
