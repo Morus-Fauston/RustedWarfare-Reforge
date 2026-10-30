@@ -24,7 +24,8 @@
       "com.rustedwarfare.reforge.core.sim.UpgradeWeaponStateTest",
       "com.rustedwarfare.reforge.core.sim.WorldIncomeTest",
       "com.rustedwarfare.reforge.core.sim.OrdinaryUpgradesTest",
-      "com.rustedwarfare.reforge.core.content.OrdinaryUpgradeContentTest"
+      "com.rustedwarfare.reforge.core.content.OrdinaryUpgradeContentTest",
+      "com.rustedwarfare.reforge.core.sim.BuildingWorkTest"
     ],
     "client": [
       "com.rustedwarfare.reforge.client.BuildingEvidenceTest",
