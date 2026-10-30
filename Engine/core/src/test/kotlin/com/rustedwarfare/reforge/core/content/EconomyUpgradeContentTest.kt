@@ -5,8 +5,8 @@ import java.nio.file.Files
 import kotlin.test.*
 
 class EconomyUpgradeContentTest {
-    private fun source(): Path = Path.of(checkNotNull(System.getProperty("p001.inputs.dir"))).parent.parent.parent.resolve(
-        ".scratch/开发票据/引擎重写/P006-建造经济与原版操作/evidence/ENG-P006-004/20261028-implementation-01/input/units")
+    private fun source(): Path = (System.getProperty("public.fixtures.dir")?.let { Path.of(it).resolve("build-economy/upgrades/units") } ?: Path.of(checkNotNull(System.getProperty("p001.inputs.dir"))).parent.parent.parent.resolve(
+        ".scratch/开发票据/引擎重写/P006-建造经济与原版操作/evidence/ENG-P006-004/20261028-implementation-01/input/units"))
 
     @Test fun a_windows_root_relative_image_cannot_escape_the_economic_content_directory() {
         if (!System.getProperty("os.name").startsWith("Windows")) return

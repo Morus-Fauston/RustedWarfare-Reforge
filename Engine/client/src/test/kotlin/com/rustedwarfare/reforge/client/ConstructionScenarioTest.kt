@@ -99,7 +99,7 @@ class ConstructionScenarioTest {
         }
     }
 
-    private fun inputRoot(): Path = generateSequence(Path.of("").toAbsolutePath()) { it.parent }
+    private fun inputRoot(): Path = (System.getProperty("public.fixtures.dir")?.let { Path.of(it).resolve("build-economy/start") } ?: generateSequence(Path.of("").toAbsolutePath()) { it.parent }
         .first { Files.isRegularFile(it.resolve("AGENTS.md")) }.resolve(
-            ".scratch/开发票据/引擎重写/P006-建造经济与原版操作/evidence/ENG-P006-001/20261027-intake-01/scene-input-01")
+            ".scratch/开发票据/引擎重写/P006-建造经济与原版操作/evidence/ENG-P006-001/20261027-intake-01/scene-input-01"))
 }

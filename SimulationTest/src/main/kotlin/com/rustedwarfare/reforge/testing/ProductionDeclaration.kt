@@ -29,8 +29,8 @@ internal object ProductionDeclaration {
         return products
     }
 
-    fun born(products: List<JsonObject>, row: JsonObject): List<JsonObject> =
+    fun born(products: List<JsonObject>, row: JsonObject, boundary: String = "birthStepIndex"): List<JsonObject> =
         if (row["phase"] == s("initial")) emptyList() else products.filter {
-            it.integer("birthStepIndex") <= row.objectAt("observation").integer("stepIndex")
+            it.integer(boundary) <= row.objectAt("observation").integer("stepIndex")
         }
 }

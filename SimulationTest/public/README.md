@@ -69,3 +69,17 @@ python -B SimulationTest/ci/public_check.py --suite production-combat --kind all
 `upgrade-cancel-short`调用正式升级与取消接口，核对支付、退款、队列和外方观察隔离；`point-defense-short`由敌方坦克正式开火，固定第7步尚未拦截、第8步扣除一次能量、第9步仅恢复能量，并保持目标生命。精确Float值来自既有机制条件。所有场景逐步采集完整观察，缺产物、健康、玩家资金或宿主经济采样均按证据不足拒绝。公共短测使用10×5自有空地图控制无关全格知识采样体量；其余原机制夹具保持30×20。
 
 PR运行机制及三条短测，连续长测独立于PR机制JUnit类；`--kind long`或`all`通过安装后的CLI执行同局长测。主分支长测工作流由批次收口接入。此处只证明自身行为，原版对照、真实PC输入及性能仍需各自适用证据。
+
+## 建造、经济与常规升级
+
+```powershell
+python -B SimulationTest/ci/public_check.py --suite build-economy --kind all --list
+python -B SimulationTest/ci/public_check.py --suite build-economy --kind pr
+python -B SimulationTest/ci/public_check.py --suite build-economy --kind all --isolated
+```
+
+`generate_economy_inputs.py`独立生成建造、经济、工厂及炮塔升级夹具，复用003自有生产内容；`inputs/build-economy/OWNERSHIP.json`记录每个文件的哈希和来源。默认私有根保留，显式公共命名集才切换输入。机制覆盖合法/非法选址、施工生命周期、排队替换与重试、缺钱等待、收入、升级扣费/退款/完成及失败回滚；既有断言不改变。PR运行这些机制和两条短测，并单独归档本领域产物。
+
+`build-economy-short`核施工扣费和收入、升级支付与取消退款；`build-failure-short`核非资源点拒绝、699资金无法支付700且不创建建筑，以及外方操作初始建造者的`not-owner`拒绝。`build-economy-chain`仅以中心和1750初始资金起步，正式生产建造者、建造抽取器和工厂、获得收入，再把抽取器升至T2；5100个模拟步连续保留同局对象与账本。固定边界包括建造者第500步出生、第1599步核抽取器已完工（首次完工为第1533步）、第2800步核工厂已完工及抽取器第5066步完成升级。预期单独保存在contracts，生成器只写场景输入。
+
+动态建筑由`constructedUnits`绑定正式build动作、nonce、拥有者、类型、建造者和出生步；`convertedUnits`绑定已支持的普通升级动作及完成步，不能任意声明变形。逐步采样施工、收入周期和精确余额；宿主与玩家授权观察的施工字段须完整。缺采样返回证据不足，错预期返回行为失败。连续长测通过安装后的CLI执行，公共短测与机制不能替代真实PC按钮、Android操作、原版对照或性能证据。

@@ -80,7 +80,7 @@ class ConstructionQueueTest {
             combatContract = CombatContract(1, -1, mapOf("worker" to 1L), 2L))
     }
 
-    private fun inputRoot(): Path = generateSequence(Path.of("").toAbsolutePath()) { it.parent }
+    private fun inputRoot(): Path = (System.getProperty("public.fixtures.dir")?.let { Path.of(it).resolve("build-economy/queue") } ?: generateSequence(Path.of("").toAbsolutePath()) { it.parent }
         .first { Files.isRegularFile(it.resolve("AGENTS.md")) }.resolve(
-            ".scratch/开发票据/引擎重写/P006-建造经济与原版操作/evidence/ENG-P006-006/20261029-implementation-01/input")
+            ".scratch/开发票据/引擎重写/P006-建造经济与原版操作/evidence/ENG-P006-006/20261029-implementation-01/input"))
 }

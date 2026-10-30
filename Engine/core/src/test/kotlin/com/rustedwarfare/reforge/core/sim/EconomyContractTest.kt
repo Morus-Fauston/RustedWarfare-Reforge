@@ -82,8 +82,8 @@ class EconomyContractTest {
     @Test
     fun production_metadata_cannot_silently_use_a_free_or_default_account() {
         val root = Path.of(checkNotNull(System.getProperty("p001.inputs.dir"))).parent.parent.parent
-        val factory = assertIs<ContentResult.Success<UnitDefinition>>(ContentLoader.loadFactory(root.resolve(
-            ".scratch/开发票据/引擎重写/P005-生产战斗与指挥沙盒/evidence/ENG-P005-002/20261025-e-input-01/input/units/landFactory.properties"))).value
+        val factory = assertIs<ContentResult.Success<UnitDefinition>>(ContentLoader.loadFactory((System.getProperty("public.fixtures.dir")?.let { Path.of(it).resolve("production-combat/production/units/landFactory.properties") } ?: root.resolve(
+            ".scratch/开发票据/引擎重写/P005-生产战斗与指挥沙盒/evidence/ENG-P005-002/20261025-e-input-01/input/units/landFactory.properties")))).value
         val base = CombatTestContent.scenario()
         assertEquals("missing-economy-contract", assertIs<InitResult.Rejected>(SimulationContext.initialize(
             base.copy(unitDefinitions = base.unitDefinitions + (factory.id to factory)))).error.code)

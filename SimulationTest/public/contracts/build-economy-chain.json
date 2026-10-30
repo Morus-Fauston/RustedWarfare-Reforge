@@ -1,0 +1,245 @@
+{
+  "schemaVersion": 1,
+  "kind": "behavior-contract",
+  "contractId": "public.build-economy-chain.v1.contract",
+  "scope": "self-behavior",
+  "scenarioIds": [
+    "public.build-economy-chain.v1"
+  ],
+  "comparison": {
+    "numberMode": "declared-per-field",
+    "tolerances": {}
+  },
+  "approval": {
+    "status": "tool-fixture-only",
+    "source": "Independent fixed sequence: paid builder at step500 (existing 501 binary32 production updates), nearby aligned build at501, preparation30 and construction .001; center income4.5/10 and extractor8/40; fixed construction complete by1599/factory by2800; upgrade at3400 takes1667 updates and completes5066. No runtime trace is an expectation source. Exact balances independently counted: extractor completes1533 (first work533 and1001 Float increments), credits at1599=550+720+8=1278; factory payment at1701=550+765+32-700=647; final=550-700-1400+2295+88*8+12=1461."
+  },
+  "exclusions": [
+    "original-compatibility",
+    "platform-input",
+    "performance"
+  ],
+  "rules": [
+    {
+      "ruleId": "paid-worker",
+      "when": {
+        "phase": "after-advance",
+        "stepIndex": 0
+      },
+      "assertions": [
+        {
+          "path": "economy.preciseBalances.p1",
+          "operator": "equals",
+          "value": 1250
+        }
+      ]
+    },
+    {
+      "ruleId": "worker-born",
+      "when": {
+        "phase": "after-advance",
+        "stepIndex": 500
+      },
+      "assertions": [
+        {
+          "path": "units.produced:p1:00000000000000000000000000000000.type",
+          "operator": "equals",
+          "value": "builder"
+        },
+        {
+          "path": "economy.preciseBalances.p1",
+          "operator": "equals",
+          "value": 1475
+        }
+      ]
+    },
+    {
+      "ruleId": "extractor-paid",
+      "when": {
+        "phase": "after-advance",
+        "stepIndex": 501
+      },
+      "assertions": [
+        {
+          "path": "units.constructed:p1:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.constructionProgress",
+          "operator": "equals",
+          "value": 0
+        },
+        {
+          "path": "economy.preciseBalances.p1",
+          "operator": "equals",
+          "value": 775
+        }
+      ]
+    },
+    {
+      "ruleId": "extractor-completed",
+      "when": {
+        "phase": "after-advance",
+        "stepIndex": 1599
+      },
+      "assertions": [
+        {
+          "path": "units.constructed:p1:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.constructionProgress",
+          "operator": "equals",
+          "value": 1
+        },
+        {
+          "path": "units.constructed:p1:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.health",
+          "operator": "equals",
+          "value": 800
+        },
+        {
+          "path": "economy.preciseBalances.p1",
+          "operator": "equals",
+          "value": 1278
+        }
+      ]
+    },
+    {
+      "ruleId": "factory-paid",
+      "when": {
+        "phase": "after-advance",
+        "stepIndex": 1701
+      },
+      "assertions": [
+        {
+          "path": "units.constructed:p1:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb.constructionProgress",
+          "operator": "equals",
+          "value": 0
+        },
+        {
+          "path": "economy.preciseBalances.p1",
+          "operator": "equals",
+          "value": 647
+        }
+      ]
+    },
+    {
+      "ruleId": "factory-completed",
+      "when": {
+        "phase": "after-advance",
+        "stepIndex": 2800
+      },
+      "assertions": [
+        {
+          "path": "units.constructed:p1:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb.constructionProgress",
+          "operator": "equals",
+          "value": 1
+        }
+      ]
+    },
+    {
+      "ruleId": "before-upgrade-completion",
+      "when": {
+        "phase": "after-advance",
+        "stepIndex": 5065
+      },
+      "assertions": [
+        {
+          "path": "units.constructed:p1:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.type",
+          "operator": "equals",
+          "value": "extractorT1"
+        }
+      ]
+    },
+    {
+      "ruleId": "upgrade-completed",
+      "when": {
+        "phase": "after-advance",
+        "stepIndex": 5066
+      },
+      "assertions": [
+        {
+          "path": "units.constructed:p1:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.type",
+          "operator": "equals",
+          "value": "extractorT2"
+        },
+        {
+          "path": "units.constructed:p1:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.maxHealth",
+          "operator": "equals",
+          "value": 1000
+        },
+        {
+          "path": "upgrades.constructed:p1:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "operator": "equals",
+          "value": []
+        }
+      ]
+    },
+    {
+      "ruleId": "same-world-finish",
+      "when": {
+        "phase": "after-advance",
+        "stepIndex": 5099
+      },
+      "assertions": [
+        {
+          "path": "units.constructed:p1:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.type",
+          "operator": "equals",
+          "value": "extractorT2"
+        },
+        {
+          "path": "units.constructed:p1:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb.constructionProgress",
+          "operator": "equals",
+          "value": 1
+        },
+        {
+          "path": "units.produced:p1:00000000000000000000000000000000.owner",
+          "operator": "equals",
+          "value": "p1"
+        },
+        {
+          "path": "units.constructed:p1:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.owner",
+          "operator": "equals",
+          "value": "p1"
+        },
+        {
+          "path": "economy.preciseBalances.p1",
+          "operator": "equals",
+          "value": 1461
+        }
+      ]
+    }
+  ],
+  "constructedUnits": [
+    {
+      "unitId": "constructed:p1:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "buildActionId": "build-extractor",
+      "builderId": "produced:p1:00000000000000000000000000000000",
+      "owner": "p1",
+      "typeId": "extractorT1",
+      "buildingNonce": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "birthStepIndex": 501
+    },
+    {
+      "unitId": "constructed:p1:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "buildActionId": "build-factory",
+      "builderId": "produced:p1:00000000000000000000000000000000",
+      "owner": "p1",
+      "typeId": "landFactory",
+      "buildingNonce": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "birthStepIndex": 1701
+    }
+  ],
+  "producedUnits": [
+    {
+      "unitId": "produced:p1:00000000000000000000000000000000",
+      "productionActionId": "produce-worker",
+      "producerId": "h",
+      "owner": "p1",
+      "typeId": "builder",
+      "unitNonce": "00000000000000000000000000000000",
+      "birthStepIndex": 500
+    }
+  ],
+  "convertedUnits": [
+    {
+      "unitId": "constructed:p1:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "upgradeActionId": "upgrade-extractor",
+      "sourceTypeId": "extractorT1",
+      "targetTypeId": "extractorT2",
+      "completionStepIndex": 5066
+    }
+  ]
+}

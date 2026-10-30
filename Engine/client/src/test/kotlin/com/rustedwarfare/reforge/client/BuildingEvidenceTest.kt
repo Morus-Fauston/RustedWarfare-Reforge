@@ -49,9 +49,9 @@ class BuildingEvidenceTest {
 
     private fun scene(lowFactoryHp: Boolean = false): Scenario {
         val repo = Path.of(checkNotNull(System.getProperty("p001.inputs.dir"))).parent.parent.parent
-        val root = repo.resolve(".scratch/开发票据/引擎重写/P005-生产战斗与指挥沙盒/evidence/ENG-P005-002/20261025-e-input-01/input")
-        val base = ControlledScenario.load(repo.resolve(
-            ".scratch/开发票据/引擎重写/P005-生产战斗与指挥沙盒/evidence/ENG-P005-001/20261025-e-pc-representative-01/input"))
+        val root = (System.getProperty("public.fixtures.dir")?.let { Path.of(it).resolve("production-combat/production") } ?: repo.resolve(".scratch/开发票据/引擎重写/P005-生产战斗与指挥沙盒/evidence/ENG-P005-002/20261025-e-input-01/input"))
+        val base = ControlledScenario.load((System.getProperty("public.fixtures.dir")?.let { Path.of(it).resolve("production-combat/combat") } ?: repo.resolve(
+            ".scratch/开发票据/引擎重写/P005-生产战斗与指挥沙盒/evidence/ENG-P005-001/20261025-e-pc-representative-01/input")))
         fun smallSight(unit: UnitDefinition) = UnitDefinition(unit.id, unit.className, unit.radius, unit.displayRadius,
             unit.totalFrames, unit.imagePath, unit.imageScale, unit.movement, unit.retainedUnconsumed, 1,
             unit.combat, unit.durability?.let { if (lowFactoryHp) it.copy(maxHp = 25.0) else it },

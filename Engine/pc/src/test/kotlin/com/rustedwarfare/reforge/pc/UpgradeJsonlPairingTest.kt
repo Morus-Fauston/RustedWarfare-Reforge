@@ -11,9 +11,9 @@ import java.security.MessageDigest
 import kotlin.test.*
 
 class UpgradeJsonlPairingTest {
-    private fun root(): Path = generateSequence(Path.of("").toAbsolutePath()) { it.parent }
+    private fun root(): Path = (System.getProperty("public.fixtures.dir")?.let { Path.of(it).resolve("build-economy/turret-upgrades") } ?: generateSequence(Path.of("").toAbsolutePath()) { it.parent }
         .first { Files.isRegularFile(it.resolve("AGENTS.md")) }.resolve(
-            ".scratch/开发票据/引擎重写/P005-生产战斗与指挥沙盒/evidence/ENG-P005-004/20261026-e-upgrade-input-01/input")
+            ".scratch/开发票据/引擎重写/P005-生产战斗与指挥沙盒/evidence/ENG-P005-004/20261026-e-upgrade-input-01/input"))
 
     @Test fun real_upgrade_evidence_identifies_all_twenty_five_inputs_and_preserves_public_queue_shape() {
         val root = root()

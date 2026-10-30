@@ -81,14 +81,18 @@ internal object ScenarioDeclaration {
             ?: content.arrayAt("unitVariants").map { it.jsonObject }
         if (units.isEmpty()) throw InputError("Empty content units")
         units.forEach { if ((it["loader"]?.jsonPrimitive?.content ?: "variant") !in
-            setOf("variant", "combat", "factory", "builder", "command-center", "turret", "turret-upgrades", "point-defense"))
+            setOf("variant", "combat", "factory", "builder", "command-center", "turret", "turret-upgrades", "point-defense", "economy", "economy-upgrades"))
             throw InputError("Unsupported content loader") }
         return units
     }
-    val actionKinds = setOf("select", "move", "stop", "produce", "cancel-production", "attack", "patrol", "upgrade", "cancel-upgrade")
+    val actionKinds = setOf("select", "move", "stop", "produce", "cancel-production", "attack", "patrol", "upgrade", "cancel-upgrade", "build")
     fun validateAction(action: JsonObject) {
         when (action.text("kind")) {
             "move" -> point(action.objectAt("target"))
+            "build" -> {
+                point(action.objectAt("target")); action.id("buildingTypeId"); action.id("buildingNonce")
+                if (action.required("append") !in setOf(b(true), b(false))) throw InputError("Expected build append boolean")
+            }
             "patrol" -> { point(action.objectAt("target")); if (action.required("append").jsonPrimitive.booleanOrNull == null) throw InputError("Expected patrol append boolean") }
             "attack" -> action.id("targetUnitId")
             "produce" -> { action.id("productionTypeId"); action.id("unitNonce") }

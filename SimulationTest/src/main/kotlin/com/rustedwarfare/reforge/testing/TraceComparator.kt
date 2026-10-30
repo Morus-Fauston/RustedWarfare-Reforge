@@ -96,6 +96,8 @@ object TraceComparator {
     internal fun validateContract(scenario: JsonObject, contract: JsonObject) {
         ScenarioDeclaration.validate(scenario); contract.header("behavior-contract")
         val products = ProductionDeclaration.products(scenario, contract)
+        val buildings = ConstructionDeclaration.buildings(scenario, contract)
+        UpgradeDeclaration.conversions(scenario, contract)
         if (contract.text("scope") != "self-behavior" || scenario.required("scenarioId") !in contract.arrayAt("scenarioIds")) {
             throw InputError("Only the declared self-behavior scenario can be evaluated")
         }
@@ -133,7 +135,7 @@ object TraceComparator {
                         throw InputError("Checkpoint references an unknown action")
                 }
                 condition["unitId"]?.let {
-                    if ((scenario.arrayAt("units").map { it.jsonObject } + products).none { it.id("unitId") == condition.id("unitId") })
+                    if ((scenario.arrayAt("units").map { it.jsonObject } + products + buildings).none { it.id("unitId") == condition.id("unitId") })
                         throw InputError("Checkpoint references an unknown unit")
                 }
                 condition["stepIndex"]?.let {
@@ -211,6 +213,8 @@ object TraceComparator {
             val declaredActions = scenario.arrayAt("actions").map { it.jsonObject }
             val unitIds = scenario.arrayAt("units").map { it.jsonObject.id("unitId") }.toSet()
             val products = ProductionDeclaration.products(scenario, contract)
+            val buildings = ConstructionDeclaration.buildings(scenario, contract)
+            val conversions = UpgradeDeclaration.conversions(scenario, contract)
             val acceptedActions = mutableSetOf<String>()
             var sampleCount = 0
             var time = BigDecimal.ZERO
@@ -250,7 +254,8 @@ object TraceComparator {
                         if (!initial) time += decimal(steps[sampleCount - 1].required("delta"))
                         if (decimal(observation.required("simulationTime")).compareTo(time) != 0) throw Incomplete("time-alignment", "Simulation time differs from explicit schedule")
                         val born = ProductionDeclaration.born(products, row)
-                        val expectedIds = unitIds + born.map { it.id("unitId") }
+                        val built = ProductionDeclaration.born(buildings, row)
+                        val expectedIds = unitIds + born.map { it.id("unitId") } + built.map { it.id("unitId") }
                         validatePlayerSamples(scenario, observation, expectedIds)
                         val units = observation.arrayAt("units").map { it.jsonObject }
                         if (units.map { it.id("unitId") }.toSet() != expectedIds || units.size != expectedIds.size) throw Incomplete("missing-object", "Missing, duplicate, early or unknown unit")
@@ -262,16 +267,43 @@ object TraceComparator {
                                 val unit = units.single { it.id("unitId") == product.id("unitId") }
                                 val birth = births.single { it.id("unitId") == product.id("unitId") }
                                 if (product.id("productionActionId") !in acceptedActions || birth.id("producerId") != product.id("producerId") ||
-                                    unit.id("ownerPlayerId") != product.id("owner") || unit.id("typeId") != product.id("typeId"))
+                                    unit.id("ownerPlayerId") != product.id("owner") ||
+                                    unit.id("typeId") != UpgradeDeclaration.typeAt(product.id("unitId"), product.id("typeId"), conversions, row))
                                     throw Incomplete("production-identity", "Product differs from its accepted producer, owner or type")
                             }
                         }
+                        if (buildings.isNotEmpty()) {
+                            for (building in built) {
+                                val unit = units.single { it.id("unitId") == building.id("unitId") }
+                                if (building.id("buildActionId") !in acceptedActions || unit.id("ownerPlayerId") != building.id("owner") ||
+                                    unit.id("typeId") != UpgradeDeclaration.typeAt(building.id("unitId"), building.id("typeId"), conversions, row))
+                                    throw Incomplete("construction-identity", "Building differs from its accepted command")
+                            }
+                        }
+                        for ((id, changes) in conversions.groupBy { it.id("unitId") }) {
+                            val unit = units.singleOrNull { it.id("unitId") == id } ?: continue
+                            val first = changes.minBy { it.integer("completionStepIndex") }
+                            val completed = ProductionDeclaration.born(changes, row, "completionStepIndex")
+                            if (completed.any { it.id("upgradeActionId") !in acceptedActions } || unit.id("typeId") !=
+                                UpgradeDeclaration.typeAt(id, first.id("sourceTypeId"), conversions, row))
+                                throw Incomplete("conversion-identity", "Converted unit differs from its accepted ordinary upgrade")
+                        }
                         units.forEach { validateUnitSample(it, scenario) }
-                        val upgradeTypes = typesLoadedBy(scenario, setOf("turret-upgrades"))
+                        if (hasConstruction(scenario)) validateConstructionSample(scenario, observation, units, built)
+                        val incomeTypes = typesLoadedBy(scenario, setOf("command-center", "economy", "economy-upgrades"))
+                        if (incomeTypes.isNotEmpty()) {
+                            val incomes = observation.arrayAt("incomeStates").map { it.jsonObject }
+                            val expectedIncome = units.filter { it.id("typeId") in incomeTypes }.map { it.id("unitId") }.toSet()
+                            if (incomes.size != expectedIncome.size || incomes.map { it.id("unitId") }.toSet() != expectedIncome)
+                                throw Incomplete("income-state", "Missing or extra income phase")
+                            incomes.forEach { it.number("elapsed") }
+                        }
+                        val upgradeTypes = upgradeTypes(scenario)
                         if (upgradeTypes.isNotEmpty()) {
                             val queues = observation.objectAt("upgrades")
                             val registered = scenario.arrayAt("units").map { it.jsonObject }
-                                .filter { it.id("type") in upgradeTypes }.map { it.id("unitId") }.toSet()
+                                .filter { it.id("type") in upgradeTypes }.map { it.id("unitId") }.toSet() +
+                                built.filter { it.id("typeId") in upgradeTypes }.map { it.id("unitId") }
                             if (queues.keys != registered) throw Incomplete("missing-upgrades", "Missing or extra registered upgrade queue")
                             validateUpgradeItems(queues, true)
                         }
@@ -281,10 +313,15 @@ object TraceComparator {
                             if (balances.keys != scenario.objectAt("economyContract").objectAt("initialBalances").keys)
                                 throw Incomplete("missing-economy", "Missing player balance")
                             balances.keys.forEach { balances.integer(it) }
+                            if (incomeTypes.isNotEmpty()) {
+                                val precise = state.objectAt("preciseBalances")
+                                if (precise.keys != balances.keys) throw Incomplete("missing-economy", "Missing precise account")
+                                precise.keys.forEach { precise.number(it) }
+                            }
                             val queues = state.objectAt("queues")
                             val factoryTypes = typesLoadedBy(scenario, setOf("factory", "command-center"))
                             val registeredFactories = (scenario.arrayAt("units").map { it.jsonObject }.filter { it.id("type") in factoryTypes }.map { it.id("unitId") } +
-                                born.filter { it.id("typeId") in factoryTypes }.map { it.id("unitId") }).toSet()
+                                (born + built).filter { it.id("typeId") in factoryTypes }.map { it.id("unitId") }).toSet()
                             if (queues.keys != registeredFactories) throw Incomplete("missing-economy", "Missing or extra registered factory queue")
                             queues.values.forEach { queue -> queue.jsonArray.forEach { element ->
                                 val item = element.jsonObject
@@ -322,6 +359,45 @@ object TraceComparator {
         }
     }
 
+    private fun upgradeTypes(scenario: JsonObject) = typesLoadedBy(scenario, setOf("turret-upgrades")) +
+        typesLoadedBy(scenario, setOf("economy-upgrades")).filter { it.endsWith("T1") || it.endsWith("T2") }
+
+    private fun hasConstruction(scenario: JsonObject) = scenario.arrayAt("actions").any { it.jsonObject.text("kind") == "build" }
+
+    private fun validateConstructionSample(scenario: JsonObject, observation: JsonObject, units: List<JsonObject>, built: List<JsonObject>) {
+        val construction = observation.objectAt("construction")
+        construction.integer("clock")
+        val buildings = construction.arrayAt("buildings").map { it.jsonObject }
+        if (buildings.map { it.id("unitId") }.toSet() != built.map { it.id("unitId") }.toSet() || buildings.size != built.size)
+            throw Incomplete("construction-identity", "Missing or unexpected constructed result")
+        buildings.forEach { element ->
+            val building = element.jsonObject
+            building.id("unitId"); building.integer("objectId"); building.text("updateKey"); building.number("progress")
+        }
+        val builderTypes = typesLoadedBy(scenario, setOf("builder"))
+        val expectedWorkers = units.filter { it.id("typeId") in builderTypes }.map { it.id("unitId") }.toSet()
+        val workers = construction.arrayAt("workers").map { it.jsonObject }
+        if (workers.size != expectedWorkers.size || workers.map { it.id("unitId") }.toSet() != expectedWorkers)
+            throw Incomplete("construction-workers", "Incomplete worker diagnostics")
+        workers.forEach { worker ->
+            listOf("elapsed", "preparation").forEach { worker.number(it) }
+            listOf("retryTime", "singleNodePathCount", "qBeforeDispatch").forEach { worker.integer(it) }
+            listOf("working", "previousTargetActive", "movementRequested").forEach { booleanField(worker, it) }
+            listOf("logicalRequestX", "logicalRequestY").forEach { field -> worker.required(field).let { if (it != JsonNull) worker.number(field) } }
+            listOf("pendingPathNodeCounts", "consumedPathNodeCounts").forEach { field -> worker.arrayAt(field).forEach { value ->
+                obj("value" to value).integer("value")
+            } }
+        }
+        val nonces = construction.objectAt("nonces")
+        val expectedNonces = built.groupBy { it.id("owner") }.mapValues { (_, declarations) -> declarations.map { it.id("buildingNonce") }.toSet() }
+        if (nonces.keys != expectedNonces.keys) throw Incomplete("construction-nonces", "Missing construction nonce owner")
+        nonces.forEach { (owner, values) ->
+            val ids = values.jsonArray.map { obj("nonce" to it).id("nonce") }
+            if (ids.size != ids.distinct().size || ids.toSet() != expectedNonces.getValue(owner))
+                throw Incomplete("construction-nonces", "Incomplete or unknown construction nonce")
+        }
+    }
+
     private fun typesLoadedBy(scenario: JsonObject, loaders: Set<String>) =
         ScenarioDeclaration.unitReferences(scenario.objectAt("content")).filter { it["loader"]?.jsonPrimitive?.content in loaders }
             .map { it.id("id") }.toSet()
@@ -332,6 +408,10 @@ object TraceComparator {
         listOf("heading", "speed", "angularVelocity").forEach { unit.number(it) }
         unit.required("moveTarget").let { if (it != JsonNull) point(it.jsonObject) }
         unit.arrayAt("pathPoints").forEach { point(it.jsonObject) }
+        if (hasConstruction(scenario)) {
+            unit.number("constructionProgress")
+            unit.required("constructionTargetId").let { if (it != JsonNull) unit.id("constructionTargetId") }
+        }
         if (unit.text("movementState") !in setOf("IDLE", "MOVING", "DECELERATING", "BLOCKED")) throw Incomplete("invalid-field", "Unknown movement state")
         if (scenario.containsKey("combatContract") || scenario.containsKey("economyContract")) {
             for (field in listOf("health", "maxHealth")) unit.required(field).let { if (it != JsonNull) unit.number(field) }
@@ -425,7 +505,7 @@ object TraceComparator {
                     val item = element.jsonObject
                     item.id("typeId"); item.number("progress")
                 } }
-                val upgradeTypes = typesLoadedBy(scenario, setOf("turret-upgrades"))
+                val upgradeTypes = upgradeTypes(scenario)
                 val upgrades = units.filter { local && it.id("ownerPlayerId") == id && it["alive"] == b(true) && it.id("typeId") in upgradeTypes }
                     .map { it.id("unitId") }.toSet()
                 if (upgradeQueues.keys != upgrades) throw Incomplete("player-queues", "Missing or extra authorized upgrade queue")

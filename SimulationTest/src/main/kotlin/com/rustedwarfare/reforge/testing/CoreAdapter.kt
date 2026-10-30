@@ -26,6 +26,8 @@ internal class CoreAdapter(private val input: LoadedScenario) : AutoCloseable {
         // Submit at the current explicit boundary; preserve file order and the core's permission checks.
         val action = when (value.text("kind")) {
             "move" -> MoveAction(id, actor, unit, position(value.objectAt("target")), context.world)
+            "build" -> BuildAction(id, actor, unit, value.id("buildingTypeId"), position(value.objectAt("target")),
+                value.id("buildingNonce"), context.world, append = value.required("append").jsonPrimitive.boolean)
             "stop" -> StopAction(id, actor, unit, context.world)
             "select" -> SelectAction(id, actor, unit, context.world)
             "produce" -> ProduceAction(id, actor, unit, value.id("productionTypeId"), value.id("unitNonce"), context.world)
@@ -89,18 +91,31 @@ internal fun Observation.json(): JsonObject = JsonObject(obj(
     "events" to array(events.map { it.json() }), "actionResults" to array(actionResults.map { it.json() }),
 ).toMutableMap().apply {
     economy?.let { state -> put("economy", obj("balances" to JsonObject(state.balances.mapValues { n(it.value) }),
+        "preciseBalances" to state.preciseBalances?.let { JsonObject(it.mapValues { (_, amount) -> n(amount) }) },
         "queues" to JsonObject(state.queuedProduction.mapValues { (_, items) -> array(items.map { item -> obj(
             "typeId" to s(item.typeId), "unitNonce" to s(item.unitNonce), "progress" to n(item.progress), "cost" to n(item.cost), "rate" to n(item.rate)) }) }))) }
     production?.let { state -> put("production", obj("lastBirthSerial" to n(state.lastBirthSerial), "units" to array(state.units.map { item -> obj(
         "unitId" to s(item.unitId), "producerId" to s(item.producerId), "objectId" to n(item.objectId), "birthRemaining" to n(item.birthRemaining)) }))) }
     upgrades?.let { state -> put("upgrades", JsonObject(state.queues.mapValues { (_, items) -> array(items.map { item -> obj(
         "actionKey" to s(item.actionKey), "targetTypeId" to s(item.targetTypeId), "progress" to n(item.progress), "cost" to n(item.cost), "rate" to n(item.rate)) }) })) }
+    put("incomeStates", array(incomeStates.map { obj("unitId" to s(it.unitId), "elapsed" to n(it.elapsed)) }))
+    construction?.let { state -> put("construction", obj("clock" to n(state.clock),
+        "buildings" to array(state.buildings.map { obj("unitId" to s(it.unitId), "objectId" to n(it.objectId),
+            "updateKey" to s(it.updateKey), "progress" to n(it.progress)) }),
+        "nonces" to JsonObject(state.nonces.mapValues { (_, values) -> array(values.sorted().map(::s)) }),
+        "workers" to array(state.workers.map { obj("unitId" to s(it.unitId), "elapsed" to n(it.elapsed),
+            "retryTime" to n(it.retryTime), "preparation" to n(it.preparation), "working" to b(it.working),
+            "previousTargetActive" to b(it.previousTargetActive), "singleNodePathCount" to n(it.singleNodePathCount),
+            "logicalRequestX" to it.logicalRequestX?.let(::n), "logicalRequestY" to it.logicalRequestY?.let(::n),
+            "movementRequested" to b(it.movementRequested), "pendingPathNodeCounts" to array(it.pendingPathNodeCounts.map(::n)),
+            "consumedPathNodeCounts" to array(it.consumedPathNodeCounts.map(::n)), "qBeforeDispatch" to n(it.qBeforeDispatch)) }))) }
 })
 internal fun UnitObservation.json(capabilities: Boolean): JsonObject = JsonObject(obj(
     "unitId" to s(unitId), "ownerPlayerId" to s(ownerPlayerId), "typeId" to s(typeId),
     "position" to position.json(), "heading" to n(heading), "speed" to n(speed),
     "angularVelocity" to n(angularVelocity), "moveTarget" to moveTarget?.json(),
     "pathPoints" to array(pathPoints.map { it.json() }), "movementState" to s(movementState.name),
+    "constructionProgress" to n(constructionProgress), "constructionTargetId" to constructionTargetId?.let(::s),
 ).toMutableMap().apply { if (capabilities) putAll(mapOf("health" to (health?.let(::n) ?: JsonNull),
     "maxHealth" to (maxHealth?.let(::n) ?: JsonNull), "alive" to b(alive), "attackTargetId" to (attackTargetId?.let(::s) ?: JsonNull),
     "pointDefense" to (pointDefense?.let { obj("energy" to n(it.energy), "exhausted" to b(it.exhausted)) } ?: JsonNull))) })

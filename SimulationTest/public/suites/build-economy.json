@@ -1,0 +1,69 @@
+{
+  "schemaVersion": 1,
+  "suiteId": "public.build-economy.v1",
+  "inputScope": "public",
+  "fixture": "inputs/content-movement-knowledge/P001-\u79fb\u52a8\u6c99\u76d2\u8f93\u5165",
+  "tests": {
+    "core": [
+      "com.rustedwarfare.reforge.core.content.BuilderContentLoadTest",
+      "com.rustedwarfare.reforge.core.content.EconomyUpgradeContentTest",
+      "com.rustedwarfare.reforge.core.content.UpgradeContentLoadTest",
+      "com.rustedwarfare.reforge.core.sim.BuildingAttackApproachTest",
+      "com.rustedwarfare.reforge.core.sim.BuildingSpaceTest",
+      "com.rustedwarfare.reforge.core.sim.ConstructionNavigationStateTest",
+      "com.rustedwarfare.reforge.core.sim.ConstructionRetryRulesTest",
+      "com.rustedwarfare.reforge.core.sim.EconomyContractTest",
+      "com.rustedwarfare.reforge.core.sim.NativeBuildingHitTest",
+      "com.rustedwarfare.reforge.core.sim.UpgradeCommandTest",
+      "com.rustedwarfare.reforge.core.sim.UpgradeCompletionTest",
+      "com.rustedwarfare.reforge.core.sim.UpgradeInitializationTest",
+      "com.rustedwarfare.reforge.core.sim.UpgradeTransactionTest",
+      "com.rustedwarfare.reforge.core.sim.UpgradeWeaponStateTest",
+      "com.rustedwarfare.reforge.core.sim.WorldIncomeTest"
+    ],
+    "client": [
+      "com.rustedwarfare.reforge.client.BuildingEvidenceTest",
+      "com.rustedwarfare.reforge.client.ConstructionLifecycleQueueTest",
+      "com.rustedwarfare.reforge.client.ConstructionMixedDispatchTest",
+      "com.rustedwarfare.reforge.client.ConstructionQTest",
+      "com.rustedwarfare.reforge.client.ConstructionQueueIdentityTest",
+      "com.rustedwarfare.reforge.client.ConstructionQueuePrivacyTest",
+      "com.rustedwarfare.reforge.client.ConstructionQueueTest",
+      "com.rustedwarfare.reforge.client.ConstructionReplacementTest",
+      "com.rustedwarfare.reforge.client.ConstructionRetryBoundaryTest",
+      "com.rustedwarfare.reforge.client.ConstructionReuseBoundaryTest",
+      "com.rustedwarfare.reforge.client.ConstructionScenarioTest",
+      "com.rustedwarfare.reforge.client.EconomyConstructionTest",
+      "com.rustedwarfare.reforge.client.EconomyEvidenceTest",
+      "com.rustedwarfare.reforge.client.EconomyUpgradeTest",
+      "com.rustedwarfare.reforge.client.FactoryConstructionTest",
+      "com.rustedwarfare.reforge.client.UpgradePrivacyTest",
+      "com.rustedwarfare.reforge.client.UpgradeSandboxSessionTest"
+    ],
+    "pc": [
+      "com.rustedwarfare.reforge.pc.UpgradeJsonlPairingTest"
+    ],
+    "tools": [
+      "com.rustedwarfare.reforge.testing.BuildEconomyScenarioTest"
+    ]
+  },
+  "short": [
+    {
+      "id": "build-economy-short",
+      "scenario": "scenarios/build-economy-short.json",
+      "contract": "contracts/build-economy-short.json"
+    },
+    {
+      "id": "build-failure-short",
+      "scenario": "scenarios/build-failure-short.json",
+      "contract": "contracts/build-failure-short.json"
+    }
+  ],
+  "long": [
+    {
+      "id": "build-economy-chain",
+      "scenario": "scenarios/build-economy-chain.json",
+      "contract": "contracts/build-economy-chain.json"
+    }
+  ]
+}

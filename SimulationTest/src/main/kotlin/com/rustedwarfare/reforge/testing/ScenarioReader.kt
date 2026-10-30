@@ -82,6 +82,8 @@ internal object ScenarioReader {
                 "turret" -> ContentLoader.loadTurretUnit(ref.path)
                 "turret-upgrades" -> ContentLoader.loadTurretUnit(ref.path, true)
                 "point-defense" -> ContentLoader.loadPointDefense(ref.path)
+                "economy" -> ContentLoader.loadEconomyUnit(ref.path)
+                "economy-upgrades" -> ContentLoader.loadEconomyUnit(ref.path, true)
                 else -> ContentLoader.loadUnitVariant(ref.path)
             })
             if (content.containsKey("unitVariants") && ref.id != unit.id) throw InputError("Content type ID differs from loaded definition")
