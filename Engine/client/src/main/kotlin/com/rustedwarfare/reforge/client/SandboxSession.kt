@@ -3,15 +3,14 @@ package com.rustedwarfare.reforge.client
 import com.rustedwarfare.reforge.core.sim.*
 import java.util.UUID
 import java.nio.file.Path
-import java.util.Locale
 
 data class ProductionActionView(val typeId: String, val title: String, val imagePath: Path, val totalFrames: Int,
     val price: Long, val rate: Float, val maximumHealth: Double?, val moveSpeed: Double,
-    val count: Int, val progress: Float?, val affordable: Boolean)
+    val count: Int, val progress: Float?, val affordable: Boolean, val tooltip: String = "")
 
 data class ProductionNotice(val text: String, val step: Long)
 data class ConstructionActionView(val typeId: String, val title: String, val imagePath: Path, val price: Long,
-    val maximumHealth: Double, val rate: Float)
+    val maximumHealth: Double, val rate: Float, val panelTitle: String = title, val tooltip: String = "")
 enum class PlacementState { CLEAR, BLOCKED, UNEXPLORED }
 data class ConstructionPreview(val typeId: String, val position: Position, val state: PlacementState,
     val cells: List<Pair<Int, Int>>)
@@ -29,6 +28,23 @@ class SandboxSession(scenario: Scenario, private val evidence: ClientEvidence = 
     private var latestFrame: SandboxFrame? = null
     val frame: SandboxFrame get() = checkNotNull(latestFrame) { "Match is closed" }
     val observation: PlayerObservation get() = frame.observation
+    private val actionCatalogue = ActionCatalogue(this.scenario.unitDefinitions)
+    private var menuObservation: PlayerObservation? = null
+    private var menuSelectionRevision = -1L
+    private var menu: ActionMenuView? = null
+    val actionMenu: ActionMenuView
+        get() {
+            if (!isOpen) return ActionMenuView()
+            val view = observation
+            if (menuObservation !== view || menuSelectionRevision != selectionRevision) {
+                menu = actionCatalogue.menu(view, selectedIds, selectedId,
+                    scenario.players.any { it.playerId == "p1" && it.control == PlayerControl.LOCAL },
+                    scenario.maintenanceContract != null)
+                menuObservation = view
+                menuSelectionRevision = selectionRevision
+            }
+            return checkNotNull(menu)
+        }
     private val selection = SelectionState(clockMillis)
     val selectedId: String? get() = selection.primaryId
     val selectedIds: Set<String> get() = selection.selectedIds
@@ -91,73 +107,22 @@ class SandboxSession(scenario: Scenario, private val evidence: ClientEvidence = 
             else -> "Order received"
         }
 
-    private fun unitTitle(type: String) = when (type) {
-        "commandCenter" -> "Command center"
-        "builder" -> "Builder"
-        "c_tank" -> "Tank"
-        "landFactory" -> "Land factory"
-        "extractorT1" -> "Extractor"
-        "fabricatorT1" -> "Fabricator"
-        "c_turret_t1" -> "Turret"
-        "laserDefence" -> "Laser Shield"
-        else -> "Unit"
-    }
-
+    private fun unitTitle(type: String) = actionCatalogue.title(type)
     val hasEconomicConstruction: Boolean get() = scenario.unitDefinitions.containsKey("extractorT1")
-    val selectedUnitInfo: String?
-        get() {
-            if (!isOpen || selectedIds.isEmpty()) return null
-            if (selectedIds.size > 1) return selectedWorkerQueueText
-            val unit = observation.units.singleOrNull { it.unitId == selectedId } ?: return null
-            return "${unit.health?.toInt() ?: 0} / ${unit.maxHealth?.toInt() ?: 0}" +
-                (nominalIncome(unit.typeId)?.let { "\n+\$${it.toInt()}" } ?: "") +
-                (if (unit.constructionProgress < 1f) "\nBuilding ${(unit.constructionProgress * 100f).toInt()}%"
-                    else if (unit.typeId.startsWith("extractorT") || unit.typeId.startsWith("fabricatorT")) "\nActive" else "") +
-                (unit.pointDefense?.let { String.format(Locale.ROOT, "\nEnergy %.3f%s", it.energy,
-                    if (it.exhausted) " LOCKED" else "") } ?: "") +
-                (selectedWorkerQueueText?.let { "\n$it" } ?: "")
-        }
-    fun nominalIncome(typeId: String): Float? = scenario.unitDefinitions[typeId]?.income?.let { it.credits * 40f / it.period }
-    val totalNominalIncome: Float get() = observation.units.filter {
-        it.alive && it.ownerPlayerId == observation.playerId && it.constructionProgress >= 1f
-    }.sumOf { nominalIncome(it.typeId)?.toDouble() ?: 0.0 }.toFloat()
+    val selectedUnitInfo: String? get() = actionMenu.selectedUnitInfo
+    fun nominalIncome(typeId: String): Float? = actionCatalogue.nominalIncome(typeId)
+    val totalNominalIncome: Float get() = actionMenu.totalNominalIncome
 
     init {
         try { latestFrame = makeFrame(); capture("initial") }
         catch (failure: Exception) { context.close(); isOpen = false; throw failure }
     }
 
-    val selectedFactoryQueue: FactoryQueueObservation?
-        get() {
-            if (!isOpen || selectedIds.size != 1) return null
-            val unit = observation.units.singleOrNull { it.unitId == selectedId } ?: return null
-            if (!controllable(unit)) return null
-            return observation.factoryQueues.firstOrNull { it.factoryId == unit.unitId }
-        }
-
-    private val productionTypeIds: List<String>
-        get() = selectedFactoryQueue?.let { queue ->
-            val factory = observation.units.single { it.unitId == queue.factoryId }
-            scenario.unitDefinitions.getValue(factory.typeId).production?.unitTypeIds
-        }.orEmpty()
-
-    val productionPrice: Long?
-        get() = productionAction?.price
-
-    val productionAction: ProductionActionView?
-        get() = productionActions.firstOrNull()
-
-    val productionActions: List<ProductionActionView>
-        get() = productionTypeIds.map { type ->
-            val definition = scenario.unitDefinitions.getValue(type)
-            val build = checkNotNull(definition.build)
-            val queue = checkNotNull(selectedFactoryQueue)
-            val affordable = observation.credits?.let { it >= build.price.toDouble() }
-                ?: (observation.balance?.let { it >= build.price } == true)
-            ProductionActionView(type, unitTitle(type), definition.imagePath,
-                definition.totalFrames, build.price, build.rate, definition.maximumHealth, definition.movement.moveSpeed,
-                queue.items.count { it.typeId == type }, queue.items.firstOrNull()?.takeIf { it.typeId == type }?.progress, affordable)
-        }
+    val selectedFactoryQueue: FactoryQueueObservation? get() = actionMenu.factoryQueue
+    private val productionTypeIds: List<String> get() = actionMenu.production.map { it.typeId }
+    val productionPrice: Long? get() = productionAction?.price
+    val productionAction: ProductionActionView? get() = actionMenu.production.firstOrNull()
+    val productionActions: List<ProductionActionView> get() = actionMenu.production
 
     fun produce(typeId: String? = productionTypeIds.firstOrNull()): ActionResult? = typeId?.takeIf { it in productionTypeIds }?.let { type ->
         apply(ProduceAction("click-${++actionNumber}", "p1", checkNotNull(selectedId), type,
@@ -168,51 +133,10 @@ class SandboxSession(scenario: Scenario, private val evidence: ClientEvidence = 
         apply(CancelProductionAction("click-${++actionNumber}", "p1", checkNotNull(selectedId), type, context.world))
     }
 
-    val constructionActions: List<ConstructionActionView>
-        get() {
-            if (!isOpen || selectedIds.isEmpty()) return emptyList()
-            val workers = observation.units.filter { it.unitId in selectedIds }
-            if (workers.size != selectedIds.size || workers.any { !controllable(it) }) return emptyList()
-            val worker = workers.first()
-            // Mixed-capability aggregation remains outside the observed builder menu.
-            if (workers.any { it.typeId != worker.typeId }) return emptyList()
-            return scenario.unitDefinitions.getValue(worker.typeId).builder?.buildingTypeIds.orEmpty().map { type ->
-                val definition = scenario.unitDefinitions.getValue(type)
-                ConstructionActionView(type, unitTitle(type), definition.imagePath, checkNotNull(definition.construction).price,
-                    checkNotNull(definition.maximumHealth), checkNotNull(definition.construction).rate)
-            }
-        }
-
-    val canMaintain: Boolean
-        get() = isOpen && scenario.maintenanceContract != null && selectedIds.isNotEmpty() &&
-            observation.units.filter { it.unitId in selectedIds }.let { workers ->
-                workers.size == selectedIds.size && workers.all { controllable(it) && it.typeId == "builder" &&
-                    scenario.unitDefinitions.getValue(it.typeId).builder != null }
-            }
-
-    /** Owner-only queue copy for the ordinary construction panel. */
-    val selectedWorkerQueueText: String?
-        get() {
-            if (constructionActions.isEmpty()) return null
-            val workers = observation.units.filter { it.unitId in selectedIds }.sortedBy { it.unitId }
-            if (workers.size == 1) {
-                val tasks = workers.single().tasks
-                val head = tasks.firstOrNull()
-                val title = head?.buildingTypeId ?: head?.targetUnitId?.let { target ->
-                    observation.units.firstOrNull { it.unitId == target }?.typeId
-                }
-                return "Tasks ${tasks.size}\n" + (head?.kind?.name?.lowercase()?.replaceFirstChar { it.uppercase() } ?: "Idle") +
-                    (title?.let { " ${unitTitle(it)}" } ?: "")
-            }
-            val counts = workers.map { it.tasks.size }
-            val low = counts.min(); val high = counts.max()
-            val range = if (low == high) "$low" else "$low-$high"
-            val current = workers.groupingBy { it.tasks.firstOrNull()?.kind }.eachCount()
-                .entries.sortedBy { it.key?.ordinal ?: -1 }.joinToString("\n") { (kind, count) ->
-                    "${kind?.name?.lowercase()?.replaceFirstChar { it.uppercase() } ?: "Idle"} x$count"
-                }
-            return "Tasks $range each\n$current"
-        }
+    val constructionActions: List<ConstructionActionView> get() = actionMenu.construction
+    val canMaintain: Boolean get() = actionMenu.canMaintain
+    /** Owner-only queue copy, derived with the rest of the selected menu. */
+    val selectedWorkerQueueText: String? get() = actionMenu.workerQueueText
 
     fun reclaimTargetAt(position: Position): String? {
         if (!hasSelectedMaintainer()) return null
@@ -298,33 +222,10 @@ class SandboxSession(scenario: Scenario, private val evidence: ClientEvidence = 
     }
 
     val selectedUpgrades: List<com.rustedwarfare.reforge.core.content.UpgradeActionProfile>
-        get() {
-            if (!isOpen || selectedIds.size != 1) return emptyList()
-            val unit = observation.units.singleOrNull { it.unitId == selectedId } ?: return emptyList()
-            if (!controllable(unit)) return emptyList()
-            return scenario.unitDefinitions.getValue(unit.typeId).upgrades?.actions.orEmpty()
-        }
-
-    val selectedUpgradeQueue: UpgradeQueueObservation?
-        get() = if (selectedUpgrades.isEmpty()) null else observation.upgradeQueues.firstOrNull { it.unitId == selectedId }
-
+        get() = java.util.Collections.unmodifiableList(actionMenu.upgrades.map { it.profile })
+    val selectedUpgradeQueue: UpgradeQueueObservation? get() = actionMenu.upgradeQueue
     val economicUpgradeTooltip: String?
-        get() {
-            val action = selectedUpgrades.singleOrNull()?.takeIf { it.actionKey in setOf("upgrade_t2", "upgrade_t3") } ?: return null
-            val unit = observation.units.single { it.unitId == selectedId }
-            // Original menu labels are nominal times; they do not change simulation rates.
-            val seconds = when (unit.typeId) {
-                "extractorT1" -> "27.7"
-                "extractorT2" -> "55.5"
-                "fabricatorT1" -> "65.6"
-                "fabricatorT2" -> "93.3"
-                else -> return null
-            }
-            return "Upgrade - T${action.targetTypeId.last()} (\$${action.price})\n" +
-                "${seconds}s\n" +
-                "Income +\$${nominalIncome(unit.typeId)?.toInt() ?: 0} -> +\$${nominalIncome(action.targetTypeId)?.toInt() ?: 0}\n" +
-                (if ((observation.credits ?: 0.0) >= action.price) "Left: upgrade" else "Insufficient funds") + "\nRight: cancel one"
-        }
+        get() = actionMenu.upgrades.singleOrNull()?.takeIf { it.kind == UpgradePresentationKind.ECONOMIC }?.tooltip
 
     fun upgrade(actionKey: String): ActionResult? = selectedUpgrades.firstOrNull { it.actionKey == actionKey }?.let {
         apply(UpgradeAction("click-${++actionNumber}", "p1", checkNotNull(selectedId), it.actionKey, context.world))
@@ -524,6 +425,8 @@ class SandboxSession(scenario: Scenario, private val evidence: ClientEvidence = 
             isOpen = false
             selection.clear()
             latestFrame = null
+            menuObservation = null
+            menu = null
             terrainKnowledge = null
             productionNotice = null
             feedback = "Match closed"

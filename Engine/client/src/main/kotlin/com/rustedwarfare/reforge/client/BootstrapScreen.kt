@@ -104,7 +104,7 @@ class BootstrapScreen(
         val selectedIds: Set<String>, val groups: List<Int>, val feedback: String?, val step: Long?, val canEdit: Boolean,
         val loading: Boolean, val error: String?, val hasSession: Boolean,
         val balance: Long?, val queue: com.rustedwarfare.reforge.core.sim.FactoryQueueObservation?,
-        val patrolMode: Boolean, val patrolPoints: Int, val reclaimMode: Boolean, val workerQueueText: String?)
+        val patrolMode: Boolean, val patrolPoints: Int, val reclaimMode: Boolean, val workerQueueText: String?, val menu: ActionMenuView?)
     private var lastHudState: HudState? = null
 
     override fun create() {
@@ -225,7 +225,7 @@ class BootstrapScreen(
             table.add(nativeTooltipText).width(204f).pad(8f)
             stage.addActor(table)
         }
-        for ((key, title, y) in listOf(Triple("upgrade_gun", "Gun T2", 264f), Triple("upgrade_artillery", "Artillery", 216f))) {
+        for ((key, y) in listOf("upgrade_gun" to 264f, "upgrade_artillery" to 216f)) {
             fun endpoint(text: String, x: Float, cancel: Boolean): TextButton = TextButton(text, skin).also { button ->
                 button.setBounds(x, y, 84f, 40f)
                 val input = UpgradeButtonInput({ session }, { !paused && button.isVisible && !button.isDisabled },
@@ -242,7 +242,7 @@ class BootstrapScreen(
                 })
                 stage.addActor(button)
             }
-            val buy = endpoint(title, 752f, false)
+            val buy = endpoint("", 752f, false)
             val cancel = endpoint("Cancel", 844f, true)
             upgradeButtons[key] = buy to cancel
         }
@@ -511,10 +511,11 @@ class BootstrapScreen(
     private fun updateHud() {
         if (!presentationReady) return
         val current = session
+        val menu = current?.actionMenu
         val selected = current?.observation?.units?.find { it.unitId == current.selectedId }
         val state = HudState(selected, current?.selectedIds ?: emptySet(), (1..3).map { current?.groupCount(it) ?: 0 }, current?.feedback, current?.observation?.stepIndex,
-            launch.canEdit, loading, loadError, current != null, current?.observation?.balance, current?.selectedFactoryQueue,
-            mapInput.patrolMode, mapInput.patrolPointCount, mapInput.reclaimMode, current?.selectedWorkerQueueText)
+            launch.canEdit, loading, loadError, current != null, menu?.balance, menu?.factoryQueue,
+            mapInput.patrolMode, mapInput.patrolPointCount, mapInput.reclaimMode, menu?.workerQueueText, menu)
         if (state == lastHudState) return
         lastHudState = state
         selectedLabel.setText(if (selected == null) "None" else if (state.selectedIds.size > 1)
@@ -527,7 +528,7 @@ class BootstrapScreen(
             (if (selected.typeId.startsWith("c_turret")) "\n${selected.typeId}" else "") +
             (selected.pointDefense?.let { String.format(Locale.ROOT, "\nEnergy %.3f%s", it.energy,
                 if (it.exhausted) " LOCKED" else "") } ?: ""))
-        val queue = current?.selectedFactoryQueue
+        val queue = menu?.factoryQueue
         selectionHeading.isVisible = !nativePanel
         val notice = current?.productionNotice
         productionNoticeLabel.isVisible = nativePanel && notice != null && current.observation.stepIndex - notice.step < 240
@@ -535,21 +536,20 @@ class BootstrapScreen(
         productionLabel.setText(state.balance?.let { balance ->
             "Funds $balance" + (queue?.let { "  Queue ${it.items.size}" +
                 (it.items.firstOrNull()?.let { head -> "  ${(head.progress * 100f).toInt()}%" } ?: "") } ?: "") +
-                (current?.selectedUpgradeQueue?.items?.joinToString("") { item ->
-                    "  ${if (item.actionKey == "upgrade_gun") "Gun" else "Art"} ${(item.progress * 100f).toInt()}%" } ?: "")
+                menu?.upgradeQueueText.orEmpty()
         } ?: "")
         produceButton.isVisible = queue != null
         cancelProductionButton.isVisible = queue != null
-        produceButton.isDisabled = current?.productionPrice == null
-        produceButton.setText(current?.productionPrice?.let { "Produce $it" } ?: "Produce")
+        produceButton.isDisabled = menu?.production?.firstOrNull()?.price == null
+        produceButton.setText(menu?.production?.firstOrNull()?.price?.let { "Produce $it" } ?: "Produce")
         cancelProductionButton.isDisabled = queue?.items?.isEmpty() != false
         nativeProduceButton.isVisible = nativePanel && queue != null
-        secondProduceButton.isVisible = nativePanel && current?.productionActions?.size == 2
-        reclaimCard.isVisible = nativePanel && current?.canMaintain == true
+        secondProduceButton.isVisible = nativePanel && menu?.production?.size == 2
+        reclaimCard.isVisible = nativePanel && menu?.canMaintain == true
         reclaimCard.background = skin.newDrawable("white", if (reclaimInput.pressed || state.reclaimMode)
             Color(.37f, .48f, .4f, 1f) else Color(.23f, .28f, .26f, 1f))
         for ((type, card) in constructionCards) {
-            card.table.isVisible = nativePanel && current?.constructionActions?.any { it.typeId == type } == true
+            card.table.isVisible = nativePanel && menu?.construction?.any { it.typeId == type } == true
             if (current?.hasEconomicConstruction == true) {
                 val x = if (type in setOf("extractorT1", "c_turret_t1", "laserDefence")) 844f else 752f
                 val y = when (type) {
@@ -560,7 +560,7 @@ class BootstrapScreen(
                 card.table.setBounds(x, y, 84f, 54f)
             } else card.table.setBounds(752f, 256f, 84f, 64f)
         }
-        val selectedInfo = current?.selectedUnitInfo
+        val selectedInfo = menu?.selectedUnitInfo
         nativeInfo.isVisible = nativePanel && selectedInfo != null
         nativeIcon.isVisible = nativePanel && selected != null && state.selectedIds.size == 1
         if (nativeSelection != state.selectedIds) {
@@ -579,92 +579,81 @@ class BootstrapScreen(
             cancelProductionButton.isVisible = false
             selectedLabel.setBounds(752f, 340f, 88f, 46f)
             selectedLabel.setText(if (selected == null) "None" else if (state.selectedIds.size > 1)
-                "${state.selectedIds.size} selected" else "${unitTitle(selected.typeId)} x1")
-            nativeIcon.drawable = selected?.let { graphics?.unitIcon(it.typeId) }?.let(::TextureRegionDrawable)
+                "${state.selectedIds.size} selected" else "${menu?.selectedTitle} x1")
+            setUnitIcon(nativeIcon, selected?.typeId)
             nativeInfo.setFontScale(if (state.workerQueueText != null) .7f else 1f)
             nativeInfo.setText(selectedInfo ?: "")
-            current?.productionAction?.let { action ->
-                val icon = graphics?.unitIcon(action.typeId)?.let(::TextureRegionDrawable)
-                nativeProduceIcon.drawable = icon
+            menu?.production?.firstOrNull()?.let { action ->
+                setUnitIcon(nativeProduceIcon, action.typeId)
                 nativeProduceText.setText(action.title + if (action.count > 0) " (${action.count})" else "")
                 nativeProduceText.color = if (action.affordable) Color(.9f, .92f, .9f, 1f) else Color(.55f, .58f, .55f, 1f)
                 nativeProduceButton.background = skin.newDrawable("white", if (productionInput.pressed)
                     Color(.37f, .48f, .4f, 1f) else Color(.23f, .28f, .26f, 1f))
             }
-            current?.productionActions?.getOrNull(1)?.let { action ->
-                secondProduceIcon.drawable = graphics?.unitIcon(action.typeId)?.let(::TextureRegionDrawable)
+            menu?.production?.getOrNull(1)?.let { action ->
+                setUnitIcon(secondProduceIcon, action.typeId)
                 secondProduceText.setText(action.title + if (action.count > 0) " (${action.count})" else "")
                 secondProduceText.color = if (action.affordable) Color(.9f, .92f, .9f, 1f) else Color(.55f, .58f, .55f, 1f)
                 secondProduceButton.background = skin.newDrawable("white", if (secondProductionInput.pressed)
                     Color(.37f, .48f, .4f, 1f) else Color(.23f, .28f, .26f, 1f))
             }
-            current?.productionActions?.getOrNull(if (secondProductionHover) 1 else 0)?.let { action ->
-                nativeTooltipIcon.drawable = graphics?.unitIcon(action.typeId)?.let(::TextureRegionDrawable)
-                nativeTooltipText.setText("${action.title} (\$${action.price})\n" +
-                    String.format(Locale.ROOT, "%.1fs\nHP %d\nSpeed %.2f\n", 1.0 / action.rate / 60.0,
-                        action.maximumHealth?.toInt() ?: 0, action.moveSpeed) +
-                    (if (action.affordable) "Left: produce" else "Insufficient funds") + "\nRight: cancel one")
+            menu?.production?.getOrNull(if (secondProductionHover) 1 else 0)?.let { action ->
+                setUnitIcon(nativeTooltipIcon, action.typeId)
+                nativeTooltipText.setText(action.tooltip)
             }
-            current?.constructionActions?.forEach { action ->
+            menu?.construction?.forEach { action ->
                 val card = constructionCards.getValue(action.typeId)
-                card.icon.drawable = graphics?.unitIcon(action.typeId)?.let(::TextureRegionDrawable)
-                card.text.setText("${unitTitle(action.typeId)}\n\$${action.price}")
+                setUnitIcon(card.icon, action.typeId)
+                card.text.setText("${action.panelTitle}\n\$${action.price}")
                 if (constructionHover == action.typeId) {
+                    nativeTooltipIcon.userObject = null
                     nativeTooltipIcon.drawable = card.icon.drawable
-                    nativeTooltipText.setText("${action.title} (\$${action.price})\n" +
-                        String.format(Locale.ROOT, "%.1fs\nHP %d\n", 1.0 / action.rate / 60.0, action.maximumHealth.toInt()) +
-                        (current.nominalIncome(action.typeId)?.let { "Income +\$${it.toInt()}\n" } ?: "") +
-                        "Left: choose site\nEsc / right: cancel")
+                    nativeTooltipText.setText(action.tooltip)
                 }
             }
             productionLabel.setText(state.balance?.let { "\$$it" +
-                (if (current?.hasEconomicConstruction == true) "  (+\$${current.totalNominalIncome.toInt()})" else "") } ?: "")
+                (if (current?.hasEconomicConstruction == true) "  (+\$${menu?.totalNominalIncome?.toInt() ?: 0})" else "") } ?: "")
             productionLabel.color = Color(.45f, .91f, .65f, 1f)
         } else {
             selectedLabel.setBounds(752f, 314f, 176f, 100f)
             productionLabel.color = Color(.9f, .92f, .9f, 1f)
         }
-        val upgrades = current?.selectedUpgrades.orEmpty()
+        val upgrades = menu?.upgrades.orEmpty()
         if (reclaimHover && reclaimCard.isVisible) {
+            nativeTooltipIcon.userObject = null
             nativeTooltipIcon.drawable = null
-            nativeTooltipText.setText("Reclaim own building\nCredits returned on completion\nLeft: choose target\nEsc / right: cancel")
+            nativeTooltipText.setText(menu?.reclaimTooltip.orEmpty())
         }
-        val economicUpgrade = upgrades.singleOrNull()?.takeIf { it.actionKey in setOf("upgrade_t2", "upgrade_t3") }
+        val economicUpgrade = upgrades.singleOrNull()?.takeIf { it.kind == UpgradePresentationKind.ECONOMIC }
         economicUpgradeCard.isVisible = nativePanel && economicUpgrade != null
         if (economicUpgrade != null && economicUpgradeCard.isVisible) {
-            val item = current?.selectedUpgradeQueue?.items?.singleOrNull { it.actionKey == economicUpgrade.actionKey }
-            val affordable = (current?.observation?.credits ?: 0.0) >= economicUpgrade.price
-            val tier = economicUpgrade.targetTypeId.last()
-            economicUpgradeIcon.drawable = selected?.let { graphics?.unitIcon(it.typeId) }?.let(::TextureRegionDrawable)
-            economicUpgradeText.setText("^ Upgrade - T$tier${if (item != null) " (1)" else ""}\n" +
-                if (item == null) "\$${economicUpgrade.price}" else "${(item.progress * 100f).toInt()}%")
-            economicUpgradeText.color = if (affordable || item != null) Color(.9f, .92f, .9f, 1f) else Color(.55f, .58f, .55f, 1f)
-            economicUpgradeProgress.isVisible = item != null
-            economicUpgradeProgress.setValue(item?.progress ?: 0f)
+            setUnitIcon(economicUpgradeIcon, selected?.typeId)
+            economicUpgradeText.setText(economicUpgrade.cardText)
+            economicUpgradeText.color = if (economicUpgrade.affordable || economicUpgrade.progress != null)
+                Color(.9f, .92f, .9f, 1f) else Color(.55f, .58f, .55f, 1f)
+            economicUpgradeProgress.isVisible = economicUpgrade.progress != null
+            economicUpgradeProgress.setValue(economicUpgrade.progress ?: 0f)
             economicUpgradeCard.background = skin.newDrawable("white", if (economicUpgradeInput.pressed)
                 Color(.37f, .48f, .4f, 1f) else Color(.23f, .28f, .26f, 1f))
             if (economicUpgradeHover) {
+                nativeTooltipIcon.userObject = null
                 nativeTooltipIcon.drawable = economicUpgradeIcon.drawable
-                nativeTooltipText.setText(current?.economicUpgradeTooltip ?: "")
+                nativeTooltipText.setText(economicUpgrade.tooltip)
             }
         }
         for ((key, buttons) in upgradeButtons) {
             val action = upgrades.firstOrNull { it.actionKey == key }
-            val item = current?.selectedUpgradeQueue?.items?.firstOrNull { it.actionKey == key }
             if (action != null) {
-                val title = if (key == "upgrade_gun") "Gun T2" else "Artillery"
-                buttons.first.setText(title + if (item != null) "\n(1) ${(item.progress * 100f).toInt()}%" else "\n\$${action.price}")
+                buttons.first.setText(action.cardText)
                 if (upgradeHover == key) {
-                    nativeTooltipIcon.drawable = selected?.let { graphics?.unitIcon(it.typeId) }?.let(::TextureRegionDrawable)
-                    nativeTooltipText.setText("$title (\$${action.price})\n" +
-                        (item?.let { "Queue 1\n${(it.progress * 100f).toInt()}%\n" } ?: "") +
-                        "Left: upgrade\nCancel: cancel one")
+                    setUnitIcon(nativeTooltipIcon, selected?.typeId)
+                    nativeTooltipText.setText(action.tooltip)
                 }
             }
             buttons.first.isVisible = action != null
             buttons.second.isVisible = action != null
             buttons.first.isDisabled = action == null
-            buttons.second.isDisabled = current?.selectedUpgradeQueue?.items?.none { it.actionKey == key } != false
+            buttons.second.isDisabled = action?.progress == null
         }
         stopButton.isDisabled = selected == null
         val economicPanel = nativePanel && current?.hasEconomicConstruction == true
@@ -683,7 +672,7 @@ class BootstrapScreen(
         patrolLabel.setText(if (state.patrolMode) "Sent points ${state.patrolPoints}\n$taskText\nLeft: point / Esc: finish"
             else if (selected?.tasks?.isNotEmpty() == true) taskText else "P: set patrol points")
         // Factories cannot receive Patrol; keep this hint clear of the production controls.
-        if (queue != null || upgrades.isNotEmpty() || current?.constructionActions?.isNotEmpty() == true) patrolLabel.isVisible = false
+        if (queue != null || upgrades.isNotEmpty() || menu?.construction?.isNotEmpty() == true) patrolLabel.isVisible = false
         selectedLabel.isVisible = current != null
         listOf<Actor>(contentLabel, rootField, modeBox, shareBox).forEach { it.isVisible = launch.canEdit }
         groupButtons.forEachIndexed { index, button -> button.setText("${index + 1} (${state.groups[index]})"); button.isDisabled = current == null }
@@ -701,6 +690,14 @@ class BootstrapScreen(
         })
         messageLabel.isVisible = current == null
         messageLabel.setText(if (loading) "Loading" else loadError ?: "Ready")
+    }
+
+    /** GL icon identity changes with the loaded presentation, independently from progress/funds refreshes. */
+    private fun setUnitIcon(image: Image, typeId: String?) {
+        val identity = graphics to typeId
+        if (image.userObject == identity) return
+        image.userObject = identity
+        image.drawable = typeId?.let { graphics?.unitIcon(it) }?.let(::TextureRegionDrawable)
     }
 
     override fun resize(width: Int, height: Int) {
@@ -773,20 +770,6 @@ class BootstrapScreen(
         if (::nativeTooltip.isInitialized) nativeTooltip.isVisible = false
         if (::mapInput.isInitialized) mapInput.cancel()
         if (::stage.isInitialized) { stage.cancelTouchFocus(); stage.unfocusAll() }
-    }
-
-    private fun unitTitle(type: String): String = when (type) {
-        "commandCenter" -> "Command"
-        "builder" -> "Builder"
-        "c_tank" -> "Tank"
-        "landFactory" -> "Factory"
-        "extractorT1", "extractorT2", "extractorT3" -> "Extractor T${type.last()}"
-        "fabricatorT1", "fabricatorT2", "fabricatorT3" -> "Fabricator T${type.last()}"
-        "c_turret_t1" -> "Turret"
-        "c_turret_t2_gun" -> "Gun T2"
-        "c_turret_t1_artillery" -> "Artillery"
-        "laserDefence" -> "Laser Shield"
-        else -> type
     }
 
     override fun dispose() {

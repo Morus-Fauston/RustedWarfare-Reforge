@@ -8,8 +8,7 @@ class UpgradeButtonInput(session: () -> SandboxSession?, active: () -> Boolean,
 ) : OwnedActionInput(session, active, setOf(Input.Buttons.LEFT), true,
     identity = { current ->
         InputActionIdentity(actionKey).takeIf {
-            actionKey in setOf("upgrade_gun", "upgrade_artillery") &&
-                current.selectedUpgrades.any { it.actionKey == actionKey } &&
+            current.actionMenu.upgrades.any { it.actionKey == actionKey && it.kind == UpgradePresentationKind.DEFENSE } &&
                 (!cancel || current.selectedUpgradeQueue?.items?.any { it.actionKey == actionKey } == true)
         }
     }, submit = { current, action, _ ->
