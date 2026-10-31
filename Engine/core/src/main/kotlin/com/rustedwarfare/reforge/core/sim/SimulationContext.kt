@@ -55,7 +55,6 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
     private var pendingBuildingDiscoveries: Map<String, Map<Pair<Int, Int>, Long>>
         get() = steps.current.pendingBuildingDiscoveries
         set(value) { steps.current.pendingBuildingDiscoveries = value }
-    private val projectileViews = mutableMapOf<String, ProjectileProjection>()
     private var worldGeneration: Long = 0
     private var closed: Boolean = true
     private var stepIndex: Long
@@ -93,7 +92,7 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
         set(value) { steps.current.actionResultOwners = value }
     private val playerActionRevisions: MutableMap<String, Long>
         get() = steps.current.playerActionRevisions
-    private val playerObservations = mutableMapOf<String, CachedPlayerObservation>()
+    private val playerObservationProjectors = mutableMapOf<String, PlayerObservationProjector>()
     private var noFogPlanning: CachedPlanningTerrain?
         get() = steps.current.noFogPlanning
         set(value) { steps.current.noFogPlanning = value }
@@ -115,15 +114,6 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
         set(value) { steps.current.motionDiagnostics = value }
     private val pendingKnowledgeDiscoveries: MutableMap<String, MutableMap<Pair<Int, Int>, Long>>
         get() = steps.current.pendingKnowledgeDiscoveries
-
-    private data class PlayerObservationKey(val step: Long, val time: Double, val epoch: Long?,
-        val knowledgeRevision: Long?, val actionRevision: Long, val units: List<UnitObservation>,
-        val events: List<Event>, val results: List<ActionResult>, val projectiles: List<VisibleProjectile>,
-        val projectileEvents: List<VisibleProjectileEvent>, val balance: Long?, val factoryQueues: List<FactoryQueueObservation>,
-        val upgradeQueues: List<UpgradeQueueObservation>, val credits: Double?)
-
-    private data class CachedPlayerObservation(val key: PlayerObservationKey,
-        val observation: PlayerObservation, val revision: Long, val source: Observation)
 
     // Initial IDs precede the reserved production keys; births append in creation order.
     // Public observation sorting is separate from deterministic gameplay traversal.
@@ -341,7 +331,6 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
         pendingBuildingDiscoveries = emptyMap()
         units = linkedMapOf()
         projectiles.clear()
-        projectileViews.clear()
         pendingEvents.clear()
         pendingProjectileEvents.clear()
         pendingActionResults.clear()
@@ -351,7 +340,7 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
         actionIds.clear()
         actionResultOwners.clear()
         playerActionRevisions.clear()
-        playerObservations.clear()
+        playerObservationProjectors.clear()
         noFogPlanning = null
         playerPlanning.clear()
         return CloseResult.Closed
@@ -984,89 +973,17 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
         val input = checkNotNull(scenario)
         if (input.players.none { it.playerId == playerId }) throw KnowledgeException("unknown-player", "Player is not declared in the current scenario")
         val observation = observe()
-        val vision = automaticVisionSnapshots?.getValue(playerId)
-        val knowledge = knowledgeStores?.getValue(playerId)?.snapshot(world)
-        val cached = playerObservations[playerId]
-        if (cached?.source === observation && cached.key.epoch == vision?.epoch &&
-            cached.key.knowledgeRevision == knowledge?.revision &&
-            cached.key.actionRevision == (playerActionRevisions[playerId] ?: 0L)) return cached.observation
-        val visibleUnits = observation.units.filter { isVisibleTo(playerId, it.position) }
-        val visibleIds = visibleUnits.map { it.unitId }.toSet()
-        val visible = visibleUnits.map {
-            val ownerTasks = immutable(it.tasks.map { task ->
-                if (task.targetUnitId != null && task.targetUnitId !in visibleIds) task.copy(targetUnitId = null) else task
-            })
-            if (it.ownerPlayerId != playerId) {
-                it.copy(moveTarget = null, pathPoints = emptyList(), attackTargetId = null, cooldown = null, pointDefense = null,
-                    tasks = emptyList(), constructionTargetId = null)
-            } else if (it.attackTargetId != null && it.attackTargetId !in visibleIds) {
-                it.copy(moveTarget = null, pathPoints = emptyList(), attackTargetId = null, tasks = ownerTasks,
-                    constructionTargetId = it.constructionTargetId?.takeIf { target -> target in visibleIds })
-            } else it.copy(tasks = ownerTasks, constructionTargetId = it.constructionTargetId?.takeIf { target -> target in visibleIds })
+        val owners = IdentityHashMap<ActionResult, String>()
+        (committedObservation?.actionResults.orEmpty() + observation.actionResults).forEach { result ->
+            actionResultOwners[result]?.let { owners[result] = it }
         }
-        val ids = visible.map { it.unitId }.toSet()
-        fun visibleEvents(events: List<Event>): List<Event> {
-            val allowed = events.filter { event -> if (event.kind == "building-reclaimed") {
-                units[event.unitId]?.let { it.reclaimed && it.ownerPlayerId == playerId } == true
-            } else event.unitId != null && event.unitId in ids &&
-                (!(event.kind.startsWith("production-") || event.kind.startsWith("upgrade-") ||
-                    event.kind in setOf("construction-unavailable", "construction-insufficient-funds", "construction-queue-full", "maintenance-completed")) ||
-                    visible.any { it.unitId == event.unitId && it.ownerPlayerId == playerId }) }
-            val combatKinds = setOf("projectile-fired", "unit-damaged", "unit-died",
-                "production-queued", "production-cancelled", "production-refunded", "unit-produced",
-                "upgrade-queued", "upgrade-cancelled", "upgrade-completed", "upgrade-refunded")
-            // S1 command events retain submission order. Combat order is public-value canonical,
-            // never the hidden source/host projectile allocation order used by the simulator.
-            return allowed.filter { it.kind !in combatKinds } + allowed.filter { it.kind in combatKinds }
-                .sortedWith(compareBy<Event> { it.kind }.thenBy { it.unitId })
-        }
-        // Keep the committed step's events when immediate actions replace the host observation.
-        // Hidden actions must neither erase these events nor advance the player's sample identity.
-        val committed = committedObservation?.takeIf { it !== observation }
-        val events = visibleEvents(committed?.events.orEmpty() + observation.events)
-        val results = (committed?.actionResults.orEmpty() + observation.actionResults).filter { actionResultOwners[it] == playerId }.map {
-            if (it is ActionResult.Accepted) ActionResult.Accepted(it.actionId, visibleEvents(it.events), it.queuedForStep) else it
-        }
-        val rawProjectileEvents = committed?.projectileEvents.orEmpty() + observation.projectileEvents
-        val projectedEvents = rawProjectileEvents.filter { isVisibleTo(playerId, it.projectile.position) &&
-            (it.interceptorUnitId == null || it.interceptorUnitId in ids) }.map { event ->
-            val value = event.projectile
-            val target = value.targetUnitId.takeIf { it in ids }
-            ProjectedProjectileEvent(value.objectId, event.kind, value.position, value.heading, value.height,
-                value.sourceUnitId.takeIf { it in ids }, target, event.damage.takeIf { target != null }, event.interceptorUnitId,
-                value.areaExpansion?.radius)
-        }
-        val projection = projectileViews.getOrPut(playerId) { ProjectileProjection() }.project(
-            observation.projectiles.filter { isVisibleTo(playerId, it.position) }, projectedEvents,
-            observation.projectiles.mapTo(mutableSetOf()) { it.objectId }.also { retained ->
-                rawProjectileEvents.forEach { retained += it.projectile.objectId }
-            })
-        val balance = observation.economy?.balances?.getValue(playerId)
-        val credits = observation.economy?.preciseBalances?.getValue(playerId)
-        val factoryQueues = if (input.players.first { it.playerId == playerId }.control == PlayerControl.LOCAL)
-            visible.filter { it.ownerPlayerId == playerId && it.alive &&
-                input.unitDefinitions.getValue(it.typeId).production != null }.sortedBy { it.unitId }.map { factory ->
-                    FactoryQueueObservation(factory.unitId, observation.economy?.queuedProduction?.getValue(factory.unitId).orEmpty()
-                        .map { ProductionQueueItem(it.typeId, it.progress) })
-                } else emptyList()
-        val playerUpgrades = if (input.players.first { it.playerId == playerId }.control == PlayerControl.LOCAL)
-            visible.filter { it.ownerPlayerId == playerId && it.alive && input.unitDefinitions.getValue(it.typeId).upgrades != null }
-                .sortedBy { it.unitId }.map { unit -> UpgradeQueueObservation(unit.unitId,
-                    observation.upgrades?.queues?.getValue(unit.unitId).orEmpty().map {
-                        UpgradeQueueItem(it.actionKey, it.targetTypeId, it.progress) }) }
-            else emptyList()
-        val key = PlayerObservationKey(stepIndex, simulationTime, vision?.epoch, knowledge?.revision,
-            playerActionRevisions[playerId] ?: 0L, visible, events, results, projection.projectiles, projection.events, balance, factoryQueues, playerUpgrades, credits)
-        if (cached?.key == key) {
-            playerObservations[playerId] = cached.copy(source = observation)
-            return cached.observation
-        }
-        val playerRevision = (cached?.revision ?: -1L) + 1L
-        val result = PlayerObservation("${world.id}:$playerId:${if (hasAdvanced) "step$stepIndex" else "initial"}:${vision?.epoch ?: 0L}:$playerRevision",
-            world.id, input.scenarioId, playerId, stepIndex, simulationTime, vision, knowledge,
-            visible, events, results, projection.projectiles, projection.events, balance, factoryQueues, playerUpgrades, credits)
-        playerObservations[playerId] = CachedPlayerObservation(key, result, playerRevision, observation)
-        return result
+        val frame = PlayerObservationFrame(observation, committedObservation,
+            automaticVisionSnapshots?.getValue(playerId), knowledgeStores?.getValue(playerId)?.snapshot(world),
+            playerActionRevisions[playerId] ?: 0L, hasAdvanced, owners,
+            units.values.filter { it.reclaimed }.associate { it.unitId to it.ownerPlayerId })
+        return playerObservationProjectors.getOrPut(playerId) {
+            PlayerObservationProjector(world, input, playerId)
+        }.observe(frame)
     }
 
     private fun initializeInternal(nextScenario: Scenario): InitResult {
