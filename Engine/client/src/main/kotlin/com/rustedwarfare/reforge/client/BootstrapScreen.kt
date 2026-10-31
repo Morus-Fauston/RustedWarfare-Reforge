@@ -449,9 +449,7 @@ class BootstrapScreen(
             try {
                 pendingGraphics = SandboxGraphics.load(scenario, activeRoot)
                 val runGeneration = generation
-                pendingSession = SandboxSession(scenario, if (evidence === ClientEvidence.NONE) evidence else ClientEvidence { kind, values ->
-                    evidence.record(kind, values + ("generation" to runGeneration))
-                }, request.configuration.options)
+                pendingSession = SandboxSession(scenario, evidence.withGeneration(runGeneration), request.configuration.options)
                 evidence.record("load-ready", mapOf("generation" to generation, "mapWidth" to scenario.map.widthTiles,
                     "mapHeight" to scenario.map.heightTiles, "blockedCount" to scenario.map.blocking.blockedCount))
                 check(launch.complete(request.generation)) { "Cancelled load generation" }

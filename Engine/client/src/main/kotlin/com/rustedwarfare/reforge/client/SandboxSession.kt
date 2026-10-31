@@ -384,7 +384,7 @@ class SandboxSession(scenario: Scenario, private val evidence: ClientEvidence = 
     }
 
     private fun capture(phase: String) {
-        evidence.recordWhenEnabled("observation") { mapOf("phase" to phase, "sample" to observation.fields()) }
+        if (evidence !== ClientEvidence.NONE) evidence.recordObservation(phase, observation)
     }
 
     private fun makeFrame(): SandboxFrame {

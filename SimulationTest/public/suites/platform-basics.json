@@ -25,13 +25,21 @@
       "com.rustedwarfare.reforge.client.UpgradeButtonInputTest",
       "com.rustedwarfare.reforge.client.demo.DemoNaturalPathDiagnosticTest",
       "com.rustedwarfare.reforge.client.demo.DemoScenarioTest",
-      "com.rustedwarfare.reforge.client.demo.DemoSessionTest"
+      "com.rustedwarfare.reforge.client.demo.DemoSessionTest",
+      "com.rustedwarfare.reforge.client.DiagnosticRecordTest",
+      "com.rustedwarfare.reforge.client.ObservationDiagnosticTest",
+      "com.rustedwarfare.reforge.client.ObservationEvidenceRoutingTest"
     ],
     "pc": [
       "com.rustedwarfare.reforge.pc.EvidenceInitializationFailureTest",
       "com.rustedwarfare.reforge.pc.FailurePreservationTest",
       "com.rustedwarfare.reforge.pc.DemoEvidenceTest",
-      "com.rustedwarfare.reforge.pc.WindowsLaunchOptionsTest"
+      "com.rustedwarfare.reforge.pc.WindowsLaunchOptionsTest",
+      "com.rustedwarfare.reforge.pc.AsyncEvidenceIntegrationTest",
+      "com.rustedwarfare.reforge.pc.BoundedDiagnosticWriterTest",
+      "com.rustedwarfare.reforge.pc.FixedDiagnosticEncodingTest",
+      "com.rustedwarfare.reforge.pc.TypedObservationEvidenceTest",
+      "com.rustedwarfare.reforge.pc.EvidenceStreamingTest"
     ],
     "tools": [
       "com.rustedwarfare.reforge.testing.PlatformSessionRunnerTest"

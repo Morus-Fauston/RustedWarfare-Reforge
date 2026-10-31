@@ -1,6 +1,10 @@
 package com.rustedwarfare.reforge.pc
 
 import com.rustedwarfare.reforge.client.ClientEvidence
+import com.rustedwarfare.reforge.client.DiagnosticLineOutput
+import com.rustedwarfare.reforge.client.DiagnosticWriter
+import com.rustedwarfare.reforge.client.FixedDiagnosticRecord
+import com.rustedwarfare.reforge.client.SynchronousDiagnosticWriter
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.StandardOpenOption
@@ -10,12 +14,15 @@ import java.time.Instant
 class DemoEvidence internal constructor(directory: Path, createWriter: (Path) -> java.io.BufferedWriter) : ClientEvidence, AutoCloseable {
     constructor(directory: Path) : this(directory, { Files.newBufferedWriter(it, StandardOpenOption.CREATE_NEW) })
     private val writer: java.io.BufferedWriter
-    private var sequence = 0L
+    private val diagnostics: DiagnosticWriter
 
     init {
         Files.createDirectories(directory.parent)
         Files.createDirectory(directory)
         writer = createWriter(directory.resolve("demo.jsonl"))
+        diagnostics = SynchronousDiagnosticWriter(DiagnosticLineOutput(writer) { sequence, record ->
+            evidenceJson(mapOf("sequence" to sequence, "at" to record.metadata["at"], "kind" to record.kind) + record.values)
+        })
         try {
             record("manifest", mapOf("format" to "reforge.windows-demo.v1", "mode" to "demo", "ticket" to "ENG-P002-006",
                 "java" to System.getProperty("java.version"),
@@ -27,15 +34,15 @@ class DemoEvidence internal constructor(directory: Path, createWriter: (Path) ->
                     mapOf("path" to path.toAbsolutePath().toString(), "sha256" to evidenceSha256(path))
                 }))
         } catch (failure: Throwable) {
-            preserveFailure(failure) { writer.close() }
+            preserveFailure(failure) { diagnostics.close() }
             throw failure
         }
     }
 
     override fun record(kind: String, values: Map<String, Any?>) {
-        val output = evidenceJson(mapOf("sequence" to sequence++, "at" to Instant.now().toString(), "kind" to kind) + values)
-        writer.write(output); writer.newLine(); writer.flush()
+        diagnostics.checkFailure()
+        diagnostics.record(FixedDiagnosticRecord.capture(kind, values, mapOf("at" to Instant.now().toString())), true)
     }
 
-    override fun close() = writer.close()
+    override fun close() = diagnostics.close()
 }
