@@ -15,6 +15,8 @@
       "com.rustedwarfare.reforge.core.sim.AttackPursuitTest",
       "com.rustedwarfare.reforge.core.sim.CombatActorVisibilityTest",
       "com.rustedwarfare.reforge.core.sim.CombatLifecycleOrderTest",
+      "com.rustedwarfare.reforge.core.sim.CombatTargetQueryTest",
+      "com.rustedwarfare.reforge.core.sim.CombatTargetSelectionTest",
       "com.rustedwarfare.reforge.core.sim.CombatTransactionTest",
       "com.rustedwarfare.reforge.core.sim.DurabilityContractTest",
       "com.rustedwarfare.reforge.core.sim.FactoryExitTest",

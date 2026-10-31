@@ -1319,7 +1319,7 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
         }
         if (enemy != null) {
             val stopRange = checkNotNull(unit.definition.combat).attackRange.toFloat() - 1f
-            if (patrolDistanceSquared(unit, enemy) < stopRange * stopRange) {
+            if (CombatTargetQuery.patrolDistanceSquared(unit, enemy) < stopRange * stopRange) {
                 unit.cancelRoute()
                 return
             }
@@ -1349,18 +1349,10 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
         var command = unit.attackCommand ?: return
         val weapon = unit.definition.combat ?: return
         val input = checkNotNull(scenario)
-        val team = input.players.single { it.playerId == unit.ownerPlayerId }.teamId
-        fun eligible(target: MutableUnit): Boolean = target.alive && target.health != null &&
-            target.ownerPlayerId != unit.ownerPlayerId &&
-            (team == null || input.players.single { it.playerId == target.ownerPlayerId }.teamId != team)
+        fun eligible(target: MutableUnit) = CombatTargetQuery.isEnemy(unit, target, input.players)
         var target = units[command.targetUnitId]?.takeIf(::eligible)
         if (target == null) {
-            val nearby = orderedUnits().filter { eligible(it) &&
-                policies.coordinates.distanceSquared(unit.position, it.position) < weapon.attackRange * weapon.attackRange }
-            val armed = nearby.filter { it.definition.combat != null }
-            target = (if (armed.isNotEmpty()) armed else nearby).minByOrNull {
-                policies.coordinates.distanceSquared(unit.position, it.position)
-            }
+            target = CombatTargetQuery.nearestEnemy(unit, orderedUnits(), input.players, policies.coordinates)
             unit.cancelRoute()
             if (target == null) {
                 unit.attackCommand = null
@@ -1418,55 +1410,18 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
         val state = unit.combat ?: return null
         val oldId = state.targetId ?: return null
         val input = checkNotNull(scenario)
-        val team = input.players.single { it.playerId == unit.ownerPlayerId }.teamId
-        val target = units[oldId]?.takeIf { it.alive && it.health != null &&
-            it.ownerPlayerId != unit.ownerPlayerId &&
-            (team == null || input.players.single { player -> player.playerId == it.ownerPlayerId }.teamId != team) &&
-            isVisibleTo(unit.ownerPlayerId, it.position) }
+        val target = units[oldId]?.takeIf {
+            CombatTargetQuery.isEnemy(unit, it, input.players) && isVisibleTo(unit.ownerPlayerId, it.position) }
         val range = maxOf(checkNotNull(unit.definition.combat).attackRange.toFloat() + 110f, 190f)
-        if (target != null && patrolDistanceSquared(unit, target) < range * range) return target
+        if (target != null && CombatTargetQuery.patrolDistanceSquared(unit, target) < range * range) return target
         state.targetId = null
         unit.cancelRoute()
         unit.lastAttackPathAttemptStep = null
         return null
     }
 
-    private fun acquirePatrolTarget(unit: MutableUnit): MutableUnit? {
-        val weapon = unit.definition.combat ?: return null
-        val input = checkNotNull(scenario)
-        val team = input.players.single { it.playerId == unit.ownerPlayerId }.teamId
-        val range = maxOf(weapon.attackRange.toFloat() + 110f, 190f)
-        val candidates = orderedUnits().filter { candidate ->
-            candidate.alive && candidate.health != null && candidate.ownerPlayerId != unit.ownerPlayerId &&
-                (team == null || input.players.single { it.playerId == candidate.ownerPlayerId }.teamId != team) &&
-                isVisibleTo(unit.ownerPlayerId, candidate.position) &&
-                kotlin.math.abs(unit.position.x.toFloat() - candidate.position.x.toFloat()) <= range &&
-                kotlin.math.abs(unit.position.y.toFloat() - candidate.position.y.toFloat()) <= range
-        }
-        fun nearest(armedOnly: Boolean): MutableUnit? {
-            var threshold = range * range + 1f
-            var chosen: MutableUnit? = null
-            for (candidate in candidates) {
-                if (armedOnly && candidate.definition.combat?.let {
-                        it.attackRange > 0.0 && (it.projectile.directDamage > 0.0 ||
-                            (it.projectile.ground?.areaDamage ?: 0f) > 0f)
-                    } != true) continue
-                val distance = patrolDistanceSquared(unit, candidate)
-                if (distance < threshold) { threshold = distance; chosen = candidate }
-            }
-            return chosen
-        }
-        val first = nearest(true)
-        val attackRange = weapon.attackRange.toFloat()
-        return if (candidates.isNotEmpty() && (first == null ||
-                patrolDistanceSquared(unit, first) >= attackRange * attackRange)) nearest(false) else first
-    }
-
-    private fun patrolDistanceSquared(unit: MutableUnit, target: MutableUnit): Float {
-        val x = unit.position.x.toFloat() - target.position.x.toFloat()
-        val y = unit.position.y.toFloat() - target.position.y.toFloat()
-        return x * x + y * y
-    }
+    private fun acquirePatrolTarget(unit: MutableUnit): MutableUnit? =
+        CombatTargetQuery.patrolEnemy(unit, orderedUnits(), checkNotNull(scenario).players, ::isVisibleTo)
 
     private fun updateWeapon(unit: MutableUnit, delta: Double) {
         val state = unit.combat ?: return
@@ -1475,10 +1430,7 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
         val contract = checkNotNull(input.combatContract)
         val actorId = checkNotNull(unit.objectId)
         OrdinaryWeapon.idle(contract.worldSeed, combatFrame, actorId, unit, delta)
-        val team = input.players.single { it.playerId == unit.ownerPlayerId }.teamId
-        fun eligible(target: MutableUnit) = target.alive && target.health != null &&
-            target.ownerPlayerId != unit.ownerPlayerId &&
-            (team == null || input.players.single { it.playerId == target.ownerPlayerId }.teamId != team)
+        fun eligible(target: MutableUnit) = CombatTargetQuery.isEnemy(unit, target, input.players)
         fun inRange(target: MutableUnit) = policies.coordinates.distanceSquared(unit.position, target.position) <
             weapon.attackRange * weapon.attackRange
         val manual = unit.attackCommand
@@ -1490,7 +1442,7 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
             var retained = retainedPatrolTarget(unit)
             val range = weapon.attackRange.toFloat()
             val interval = 20f + unit.position.x.toFloat() % 5f + unit.position.y.toFloat() % 5f
-            if ((retained == null || patrolDistanceSquared(unit, retained) >= range * range) && state.patrolSearchTimer == 0f) {
+            if ((retained == null || CombatTargetQuery.patrolDistanceSquared(unit, retained) >= range * range) && state.patrolSearchTimer == 0f) {
                 state.patrolSearchTimer = interval
                 retained = acquirePatrolTarget(unit) ?: retained
                 state.targetId = retained?.unitId
@@ -1498,11 +1450,7 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
             }
             if (retained != null && state.patrolDispatchTimer == 0f) state.patrolDispatchTimer = interval
             retained?.takeIf(::inRange)
-        } else manualTarget ?: units[state.targetId]?.takeIf { eligible(it) && inRange(it) } ?: orderedUnits().filter {
-                eligible(it) && inRange(it)
-            }.sortedWith(compareBy<MutableUnit> { it.definition.combat == null }.thenBy {
-                policies.coordinates.distanceSquared(unit.position, it.position)
-            }).firstOrNull()
+        } else manualTarget ?: units[state.targetId]?.takeIf { eligible(it) && inRange(it) } ?: CombatTargetQuery.nearestEnemy(unit, orderedUnits(), input.players, policies.coordinates)
         if (target == null) {
             if (!patrol) state.targetId = null
             return
