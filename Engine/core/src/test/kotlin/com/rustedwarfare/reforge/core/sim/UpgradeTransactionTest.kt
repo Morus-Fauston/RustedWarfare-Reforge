@@ -56,21 +56,50 @@ class UpgradeTransactionTest {
             players = base.players.map { it.copy(control = PlayerControl.LOCAL) },
             units = base.units + listOf(UnitSpawn("zz", "p2", bad.id, Position(430.0, 150.0), 270.0, Float.MAX_VALUE.toDouble()),
                 UnitSpawn("c", "p1", "dummy", Position(430.0, 270.0), 0.0)),
-            combatContract = CombatContract(12345, -1, mapOf("t" to 11L, "z" to 12L, "zz" to 13L, "c" to 14L), 15L))
+            combatContract = CombatContract(12345, -1, mapOf("t" to 11L, "z" to 12L, "zz" to 13L, "c" to 14L), 15L),
+            automaticVision = com.rustedwarfare.reforge.core.knowledge.KnowledgeRules(
+                com.rustedwarfare.reforge.core.knowledge.TerrainRetention.MEMORY,
+                com.rustedwarfare.reforge.core.knowledge.PathInformationSource.PLAYER_KNOWLEDGE, false))
         val contexts = pair(scene)
         try {
-            contexts.forEach { assertIs<ActionResult.Accepted>(it.submit(AttackAction("target", "p1", "t", "z", it.world))) }
+            contexts.forEach {
+                it.enablePathDiagnostics(it.world)
+                it.enableMotionDiagnostics(it.world)
+                assertIs<ActionResult.Accepted>(it.submit(AttackAction("target", "p1", "t", "z", it.world)))
+            }
             val failed = contexts[0]
             val before = failed.observe(); val view = failed.observePlayer(failed.world, "p1")
-            val error = assertFailsWith<IllegalArgumentException> { failed.advance(Step(0, 1.0, "sim-tick")) }
-            assertTrue(error.message!!.contains("Projectile"))
-            assertSame(before, failed.observe()); assertSame(view, failed.observePlayer(failed.world, "p1"))
+            val knowledge = failed.knowledgeSnapshot(failed.world, "p1")
+            val cells = knowledge.cells.toList()
+            val vision = failed.visionSnapshot(failed.world, "p1")
+            // The invalid flight reaches S4 after real area damage and knowledge preparation.
+            // Repeated failures must release only the new projection, leaving the old store usable.
+            repeat(2) {
+                val error = assertFailsWith<IllegalArgumentException> { failed.advance(Step(0, 1.0, "sim-tick")) }
+                assertTrue(error.message!!.contains("Projectile"))
+                assertSame(before, failed.observe()); assertSame(view, failed.observePlayer(failed.world, "p1"))
+                assertSame(knowledge, failed.knowledgeSnapshot(failed.world, "p1"))
+                assertSame(vision, failed.visionSnapshot(failed.world, "p1"))
+                assertTrue(failed.drainPathDiagnostics(failed.world).isEmpty())
+                assertTrue(failed.drainMotionDiagnostics(failed.world).isEmpty())
+            }
             assertEquals(10000.0, before.units.single { it.unitId == "z" }.health)
             contexts.forEach { assertIs<ActionResult.Accepted>(it.submit(AttackAction("correct", "p2", "zz", "c", it.world))) }
             for (step in 0L..5L) same(contexts[1].advance(Step(step, 1.0, "sim-tick")), failed.advance(Step(step, 1.0, "sim-tick")))
             assertEquals(9920.0, failed.observe().units.single { it.unitId == "z" }.health)
             assertTrue(before.projectiles.isEmpty())
             assertTrue(before.projectileEvents.isEmpty())
+            assertEquals(contexts[1].knowledgeSnapshot(contexts[1].world, "p1").cells,
+                failed.knowledgeSnapshot(failed.world, "p1").cells)
+            assertEquals(knowledge.revision + 6, failed.knowledgeSnapshot(failed.world, "p1").revision)
+            assertEquals(vision.epoch + 6, failed.visionSnapshot(failed.world, "p1").epoch)
+            val samples = failed.drainMotionDiagnostics(failed.world)
+            assertTrue(samples.isNotEmpty())
+            assertEquals(contexts[1].drainMotionDiagnostics(contexts[1].world), samples)
+            assertEquals(contexts[1].drainPathDiagnostics(contexts[1].world), failed.drainPathDiagnostics(failed.world))
+            failed.close()
+            assertEquals(cells, knowledge.cells)
+            assertEquals(10000.0, before.units.single { it.unitId == "z" }.health)
         } finally { contexts.forEach { it.close() } }
     }
 }
