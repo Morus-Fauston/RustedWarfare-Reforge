@@ -6,6 +6,38 @@ import kotlin.test.*
 
 /** Module tests are bookkeeping evidence, not factory/world/PC production evidence. */
 class ProductionLedgerTest {
+    @Test fun input_aliases_and_later_changes_cannot_mutate_published_integer_or_precise_ledgers() {
+        for (precise in listOf(false, true)) {
+            val balances = linkedMapOf("p1" to 1000L)
+            val registration = FactoryProductionSpec("p1", "tank", BuildProfile(7L, 0.25f))
+            val factories = linkedMapOf("f" to registration, "g" to registration)
+            val initial = ProductionLedger.initial(balances, factories, precise)
+            balances["p1"] = 0L
+            factories.clear()
+            val first = assertIs<ProductionChange.Accepted>(initial.enqueue("f", "tank", nonce(101))).ledger
+            val second = assertIs<ProductionChange.Accepted>(first.enqueue("g", "tank", nonce(102))).ledger
+            val published = second.observe()
+            var changed = checkNotNull(second.charge("p1", 2L)).refund("p1", 1L)
+            if (precise) changed = changed.creditIncome("p1", 0.125f)
+            changed = changed.advance("f").ledger
+            assertEquals(985L, changed.balances.getValue("p1"))
+            if (precise) assertEquals(985.125, changed.observe().preciseBalances!!.getValue("p1"))
+            assertEquals(0.25f, changed.queue("f").single().progress)
+            assertEquals(0f, changed.queue("g").single().progress)
+            changed = assertIs<ProductionChange.Accepted>(changed.cancel("g", "tank")).ledger
+            assertEquals(ProductionError.DUPLICATE_NONCE,
+                assertIs<ProductionChange.Rejected>(changed.enqueue("f", "tank", nonce(102))).error)
+            assertEquals(1000L, initial.balances.getValue("p1"))
+            assertTrue(initial.queue("f").isEmpty())
+            assertEquals(993L, first.balances.getValue("p1"))
+            assertTrue(first.queue("g").isEmpty())
+            assertEquals(986L, published.balances.getValue("p1"))
+            assertEquals(0f, published.queuedProduction.getValue("f").single().progress)
+            assertEquals(0f, second.queue("g").single().progress)
+            assertFailsWith<UnsupportedOperationException> { (second.queue("f") as MutableList<PendingProduction>).clear() }
+        }
+    }
+
     private fun spec(owner: String = "p1"): FactoryProductionSpec {
         val root = System.getProperty("public.fixtures.dir")?.let { Path.of(it).resolve("production-combat/production/units") }
             ?: Path.of(checkNotNull(System.getProperty("p001.inputs.dir"))).parent.parent.parent.resolve(

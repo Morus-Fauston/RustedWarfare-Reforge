@@ -9,40 +9,43 @@ internal data class UpgradeTick(val queues: UpgradeQueues, val completed: Pendin
 internal data class UpgradeRemoval(val queues: UpgradeQueues, val removed: List<PendingUpgrade>)
 
 /** Pure work queues. All credits remain exclusively in ProductionLedger. */
-internal class UpgradeQueues private constructor(queues: Map<String, List<PendingUpgrade>>) {
-    private val queues = Collections.unmodifiableMap(queues.mapValuesTo(linkedMapOf()) { immutable(it.value) })
+internal class UpgradeQueues private constructor(private val queues: Map<String, List<PendingUpgrade>>) {
     companion object {
-        fun initial(unitIds: Set<String>) = UpgradeQueues(unitIds.sorted().associateWith { emptyList() })
+        fun initial(unitIds: Set<String>) = UpgradeQueues(
+            Collections.unmodifiableMap(unitIds.sorted().associateWith { immutable(emptyList()) }))
     }
+    // Only the changed list needs freezing; all other values already belong to immutable snapshots.
+    private fun withQueue(unitId: String, items: List<PendingUpgrade>) =
+        UpgradeQueues(Collections.unmodifiableMap(queues + (unitId to immutable(items))))
     fun queue(unitId: String): List<PendingUpgrade> = queues[unitId].orEmpty()
     fun register(unitId: String): UpgradeQueues {
         require(unitId !in queues) { "Upgrade queue is already registered" }
-        return UpgradeQueues(queues + (unitId to emptyList()))
+        return withQueue(unitId, emptyList())
     }
     fun enqueue(unitId: String, action: UpgradeActionProfile): UpgradeQueues {
         require(unitId in queues && queue(unitId).none { it.actionKey == action.actionKey })
-        return UpgradeQueues(queues + (unitId to (queue(unitId) + PendingUpgrade(action.actionKey,
-            action.targetTypeId, 0f, action.price, action.rate))))
+        return withQueue(unitId, queue(unitId) + PendingUpgrade(action.actionKey,
+            action.targetTypeId, 0f, action.price, action.rate))
     }
     fun cancel(unitId: String, actionKey: String): UpgradeRemoval {
         val items = queue(unitId)
         val index = items.indexOfLast { it.actionKey == actionKey }
         if (index < 0) return UpgradeRemoval(this, emptyList())
-        return UpgradeRemoval(UpgradeQueues(queues + (unitId to items.filterIndexed { i, _ -> i != index })), listOf(items[index]))
+        return UpgradeRemoval(withQueue(unitId, items.filterIndexed { i, _ -> i != index }), listOf(items[index]))
     }
     fun retain(unitId: String, allowed: Set<String>): UpgradeRemoval {
         val items = queue(unitId)
         val removed = items.filter { it.actionKey !in allowed }
         if (removed.isEmpty()) return UpgradeRemoval(this, emptyList())
-        return UpgradeRemoval(UpgradeQueues(queues + (unitId to items.filter { it.actionKey in allowed })), removed)
+        return UpgradeRemoval(withQueue(unitId, items.filter { it.actionKey in allowed }), removed)
     }
     fun advance(unitId: String): UpgradeTick {
         val items = queue(unitId)
         val head = items.firstOrNull() ?: return UpgradeTick(this)
         val progress = head.progress + head.rate
         require(progress.isFinite()) { "Upgrade progress must remain finite" }
-        return if (progress >= 1f) UpgradeTick(UpgradeQueues(queues + (unitId to items.drop(1))), head)
-        else UpgradeTick(UpgradeQueues(queues + (unitId to (listOf(head.copy(progress = progress)) + items.drop(1)))))
+        return if (progress >= 1f) UpgradeTick(withQueue(unitId, items.drop(1)), head)
+        else UpgradeTick(withQueue(unitId, listOf(head.copy(progress = progress)) + items.drop(1)))
     }
     fun observe() = UpgradeObservation(queues.mapValues { (_, items) -> items.map {
         PendingUpgradeObservation(it.actionKey, it.targetTypeId, it.progress, it.cost, it.rate) } })

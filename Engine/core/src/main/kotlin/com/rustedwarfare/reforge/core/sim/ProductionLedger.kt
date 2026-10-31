@@ -23,32 +23,30 @@ internal sealed interface ProductionChange {
 
 /** Pure candidate bookkeeping. Completion describes work; it never fabricates or publishes a unit. */
 internal class ProductionLedger private constructor(
-    integerBalances: Map<String, Long>?,
+    private val integerBalances: Map<String, Long>?,
     private val factories: Map<String, FactoryProductionSpec>,
-    queues: Map<String, List<PendingProduction>> = emptyMap(),
-    nonces: Map<String, Set<String>> = emptyMap(),
-    inactive: Set<String> = emptySet(),
-    preciseBalances: Map<String, Double>? = null,
+    private val queues: Map<String, List<PendingProduction>> = emptyMap(),
+    private val nonces: Map<String, Set<String>> = emptyMap(),
+    private val inactive: Set<String> = emptySet(),
+    private val preciseBalances: Map<String, Double>? = null,
 ) {
-    private val integerBalances = integerBalances?.let { Collections.unmodifiableMap(LinkedHashMap(it)) }
-    private val preciseBalances = preciseBalances?.let { Collections.unmodifiableMap(LinkedHashMap(it)) }
     val balances: Map<String, Long> get() = integerBalances ?: Collections.unmodifiableMap(
         checkNotNull(preciseBalances).mapValuesTo(linkedMapOf()) { it.value.toLong() })
     init { require((integerBalances == null) != (preciseBalances == null)) }
-    private val queues = Collections.unmodifiableMap(queues.mapValuesTo(linkedMapOf()) { immutable(it.value) })
-    private val nonces = Collections.unmodifiableMap(nonces.mapValuesTo(linkedMapOf()) {
-        Collections.unmodifiableSet(LinkedHashSet(it.value)) })
-    private val inactive = Collections.unmodifiableSet(LinkedHashSet(inactive))
 
     companion object {
         private val nonceFormat = Regex("[0-9a-f]{32}")
+        private fun <K, V> freeze(values: Map<K, V>): Map<K, V> =
+            Collections.unmodifiableMap(LinkedHashMap(values))
         fun initial(balances: Map<String, Long>, factories: Map<String, FactoryProductionSpec>,
                     incomeEnabled: Boolean = false): ProductionLedger {
             require(balances.values.all { it >= 0L }) { "Initial balances must be nonnegative" }
             require(factories.values.all { it.ownerPlayerId in balances && it.valid() }) { "Invalid factory production registration" }
-            return ProductionLedger(balances.takeUnless { incomeEnabled },
-                Collections.unmodifiableMap(LinkedHashMap(factories)),
-                preciseBalances = balances.takeIf { incomeEnabled }?.mapValues { it.value.toDouble() })
+            return ProductionLedger(balances.takeUnless { incomeEnabled }?.let { freeze(it) },
+                freeze(factories),
+                queues = freeze(emptyMap()), nonces = freeze(emptyMap()),
+                inactive = Collections.unmodifiableSet(LinkedHashSet()),
+                preciseBalances = balances.takeIf { incomeEnabled }?.mapValues { it.value.toDouble() }?.let { freeze(it) })
         }
     }
 
@@ -58,7 +56,21 @@ internal class ProductionLedger private constructor(
                      nonces: Map<String, Set<String>> = this.nonces,
                      inactive: Set<String> = this.inactive,
                      factories: Map<String, FactoryProductionSpec> = this.factories) =
-        ProductionLedger(integerBalances, factories, queues, nonces, inactive, preciseBalances)
+        // Collection arguments come only from the private frozen update helpers or initial().
+        // Balance changes must not scan queues or historical nonce sets.
+        ProductionLedger(
+            integerBalances?.let { if (it === this.integerBalances) it else freeze(it) },
+            factories, queues, nonces, inactive,
+            preciseBalances?.let { if (it === this.preciseBalances) it else freeze(it) })
+
+    private fun changedQueue(factoryId: String, items: List<PendingProduction>) =
+        Collections.unmodifiableMap(queues + (factoryId to immutable(items)))
+
+    private fun reservedNonce(owner: String, nonce: String): Map<String, Set<String>> {
+        val used = LinkedHashSet(nonces[owner].orEmpty())
+        used += nonce
+        return Collections.unmodifiableMap(nonces + (owner to Collections.unmodifiableSet(used)))
+    }
 
     fun register(factoryId: String, spec: FactoryProductionSpec): ProductionLedger {
         require(factoryId !in factories && spec.ownerPlayerId in balances && spec.valid()) { "Invalid factory registration" }
@@ -124,8 +136,8 @@ internal class ProductionLedger private constructor(
         val paid = charge(factory.ownerPlayerId, build.price)
             ?: return ProductionChange.Rejected(ProductionError.INSUFFICIENT_FUNDS)
         val next = paid.copy(
-            queues = queues + (factoryId to (queue(factoryId) + PendingProduction(typeId, unitNonce, 0f, build.price, build.rate))),
-            nonces = nonces + (factory.ownerPlayerId to (nonces[factory.ownerPlayerId].orEmpty() + unitNonce)))
+            queues = paid.changedQueue(factoryId, queue(factoryId) + PendingProduction(typeId, unitNonce, 0f, build.price, build.rate)),
+            nonces = paid.reservedNonce(factory.ownerPlayerId, unitNonce))
         return ProductionChange.Accepted(next)
     }
 
@@ -138,7 +150,7 @@ internal class ProductionLedger private constructor(
         if (index < 0) return ProductionChange.Rejected(ProductionError.EMPTY_QUEUE)
         val kept = queue.filterIndexed { itemIndex, _ -> itemIndex != index }
         return ProductionChange.Accepted(refund(factory.ownerPlayerId, queue[index].cost).copy(
-            queues = queues + (factoryId to kept)))
+            queues = changedQueue(factoryId, kept)))
     }
 
     /** One fixed sim-tick, one head; excess progress is never transferred to another item. */
@@ -150,10 +162,10 @@ internal class ProductionLedger private constructor(
         require(progress.isFinite()) { "Production progress must remain finite" }
         if (progress < 1f) {
             return ProductionTick(copy(
-                queues = queues + (factoryId to (listOf(head.copy(progress = progress)) + queue.drop(1)))))
+                queues = changedQueue(factoryId, listOf(head.copy(progress = progress)) + queue.drop(1))))
         }
         val completed = ProductionCompletion(factoryId, factories.getValue(factoryId).ownerPlayerId, head.typeId, head.unitNonce)
-        return ProductionTick(copy(queues = queues + (factoryId to queue.drop(1))), completed)
+        return ProductionTick(copy(queues = changedQueue(factoryId, queue.drop(1))), completed)
     }
 
     /** Pending work is refunded before the returned factory becomes inactive. */
@@ -162,6 +174,7 @@ internal class ProductionLedger private constructor(
         val factory = factories.getValue(factoryId)
         var refunded = this
         for (item in queue(factoryId)) refunded = refunded.refund(factory.ownerPlayerId, item.cost)
-        return refunded.copy(queues = queues + (factoryId to emptyList()), inactive = inactive + factoryId)
+        return refunded.copy(queues = changedQueue(factoryId, emptyList()),
+            inactive = Collections.unmodifiableSet(LinkedHashSet(inactive).also { it += factoryId }))
     }
 }

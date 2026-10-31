@@ -4,6 +4,30 @@ import com.rustedwarfare.reforge.core.content.*
 import kotlin.test.*
 
 class OrdinaryUpgradesTest {
+    @Test fun independent_upgrade_work_keeps_old_heads_and_removed_values_frozen() {
+        val ids = mutableSetOf("a", "b")
+        val initial = UpgradeQueues.initial(ids)
+        ids.clear()
+        val action = UpgradeActionProfile("up", "next", 7L, 0.25f)
+        val first = initial.enqueue("a", action)
+        val both = first.enqueue("b", action)
+        val published = both.observe()
+        val advanced = both.advance("a").queues
+        val removed = advanced.cancel("b", "up")
+        assertEquals(0.25f, removed.queues.queue("a").single().progress)
+        assertTrue(removed.queues.queue("b").isEmpty())
+        assertEquals(0f, removed.removed.single().progress)
+        assertEquals(0f, both.queue("a").single().progress)
+        assertEquals(0f, advanced.queue("b").single().progress)
+        assertTrue(initial.queue("a").isEmpty())
+        assertTrue(first.queue("b").isEmpty())
+        assertEquals(0f, published.queues.getValue("a").single().progress)
+        assertFailsWith<UnsupportedOperationException> { (both.queue("b") as MutableList<PendingUpgrade>).clear() }
+        val finished = (0 until 3).fold(removed.queues) { queues, _ -> queues.advance("a").queues }
+        assertTrue(finished.queue("a").isEmpty())
+        assertEquals(0.25f, removed.queues.queue("a").single().progress)
+    }
+
     @Test fun trusted_same_semantics_registration_owns_payment_conversion_pruning_and_single_refund() {
         val base = UpgradeTestContent.scenario()
         val tower = UpgradeTestContent.variant(base.unitDefinitions.getValue("c_turret_t1"), id = "practice",
