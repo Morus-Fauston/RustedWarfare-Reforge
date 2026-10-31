@@ -156,28 +156,28 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
         val rules = checkNotNull(knowledgeRules)
         val oldStores = checkNotNull(knowledgeStores)
         val groundGids = input.map.groundGids
-        val views = AutomaticVision.compute(world.id, (automaticVisionSnapshots?.values?.firstOrNull()?.epoch ?: -1L) + 1,
+        val vision = AutomaticVision.project(steps.current.automaticVisionState, world.id, (automaticVisionSnapshots?.values?.firstOrNull()?.epoch ?: -1L) + 1,
             input.map.widthTiles, input.map.heightTiles, input.map.tileWidth, input.map.tileHeight, input.players,
             units.values.filter { it.alive }.map { VisionSource(it.ownerPlayerId, it.position, it.definition.fogOfWarSightRange) }, rules.shareAlliedVision)
+        val views = vision.views
         val nextStores = linkedMapOf<String, PlayerTerrainKnowledge>()
         val discoveries = linkedMapOf<String, MutableMap<Pair<Int, Int>, Long>>()
         try {
             for ((player, view) in views) {
                 val old = oldStores.getValue(player)
-                val before = old.snapshot(world)
                 val next = old.projected(world, view.effectiveCells.map {
                     VisibleTerrainCell(it.column, it.row, input.map.blocking.isBlocked(it.column, it.row),
                         groundGids[it.row * input.map.widthTiles + it.column])
                 })
-                nextStores[player] = next
-                val after = next.snapshot(world)
-                for (cell in view.effectiveCells) {
-                    if (!before.planningBlocked(cell.column, cell.row) && after.planningBlocked(cell.column, cell.row)) {
-                        discoveries.getOrPut(player) { linkedMapOf() }[cell.column to cell.row] = after.revision
+                nextStores[player] = next.store
+                val after = next.store.snapshot(world)
+                for (change in next.changes) {
+                    if (change.after.visible && change.before.lastKnownBlocked != true && change.after.lastKnownBlocked == true) {
+                        discoveries.getOrPut(player) { linkedMapOf() }[change.index % input.map.widthTiles to change.index / input.map.widthTiles] = after.revision
                     }
                 }
             }
-            return AutomaticKnowledgeCommit(nextStores, views, discoveries)
+            return AutomaticKnowledgeCommit(nextStores, views, discoveries, vision.state)
         } catch (failure: Exception) {
             nextStores.values.forEach { it.close() }
             throw failure
@@ -188,6 +188,7 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
         knowledgeStores?.values?.forEach { it.close() }
         knowledgeStores = next.stores
         automaticVisionSnapshots = next.views
+        steps.current.automaticVisionState = next.visionState
         pendingKnowledgeDiscoveries.clear()
         pendingKnowledgeDiscoveries.putAll(next.discoveries)
     }
@@ -314,6 +315,7 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
         knowledgeStores = null
         knowledgeRules = null
         automaticVisionSnapshots = null
+        steps.current.automaticVisionState = null
         pendingKnowledgeDiscoveries.clear()
         pathDiagnostics?.clear()
         pathDiagnostics = null

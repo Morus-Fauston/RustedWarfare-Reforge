@@ -14,6 +14,7 @@ internal data class AutomaticKnowledgeCommit(
     val stores: Map<String, PlayerTerrainKnowledge>,
     val views: Map<String, VisionSnapshot>,
     val discoveries: Map<String, MutableMap<Pair<Int, Int>, Long>>,
+    val visionState: AutomaticVisionState,
 )
 
 internal data class BuildingCommit(val truth: BuildingTerrain,
@@ -52,6 +53,7 @@ internal data class StepState(
     var playerPlanning: MutableMap<String, CachedPlanningTerrain> = mutableMapOf(),
     var knowledgeStores: Map<String, PlayerTerrainKnowledge>? = null,
     var automaticVisionSnapshots: Map<String, VisionSnapshot>? = null,
+    var automaticVisionState: AutomaticVisionState? = null,
     var pathDiagnostics: MutableList<PathSearchSample>? = null,
     var motionDiagnostics: MutableList<MotionStepSample>? = null,
     var pendingKnowledgeDiscoveries: MutableMap<String, MutableMap<Pair<Int, Int>, Long>> = mutableMapOf(),
@@ -74,6 +76,7 @@ internal data class StepState(
             (_, cells) -> LinkedHashMap(cells) },
         // Motion samples are staged separately and appended only on successful publication.
         // Do not recopy the already committed, potentially long diagnostic history per step.
+        // Vision source counts and knowledge blocks are immutable; sharing them is a fork.
     )
 
     fun validate(input: Scenario) {
@@ -217,6 +220,7 @@ internal class CandidateStep(val state: StepState, private val step: Step) {
         knowledge?.let {
             state.knowledgeStores = it.stores
             state.automaticVisionSnapshots = it.views
+            state.automaticVisionState = it.visionState
             state.pendingKnowledgeDiscoveries.putAll(it.discoveries)
         }
         buildings?.let {
