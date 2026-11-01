@@ -5,6 +5,8 @@
   "fixture": "inputs/content-movement-knowledge/P001-移动沙盒输入",
   "tests": {
     "client": [
+      "com.rustedwarfare.reforge.client.VisualAssetBindingTest",
+      "com.rustedwarfare.reforge.client.VisualAssetSelectionTest",
       "com.rustedwarfare.reforge.client.ActionMenuTest",
       "com.rustedwarfare.reforge.client.CameraProjectionTest",
       "com.rustedwarfare.reforge.client.ClientFailureHandlingTest",
@@ -32,6 +34,12 @@
       "com.rustedwarfare.reforge.client.ObservationEvidenceRoutingTest"
     ],
     "pc": [
+      "com.rustedwarfare.reforge.pc.VisualAssetPreparationTest",
+      "com.rustedwarfare.reforge.pc.VisualAssetCacheTest",
+      "com.rustedwarfare.reforge.pc.VisualAssetPlaceholderTest",
+      "com.rustedwarfare.reforge.pc.VisualAssetSettingsStoreTest",
+      "com.rustedwarfare.reforge.pc.VisualAssetSettingsApplicationTest",
+      "com.rustedwarfare.reforge.pc.VisualAssetFontTest",
       "com.rustedwarfare.reforge.pc.EvidenceInitializationFailureTest",
       "com.rustedwarfare.reforge.pc.FailurePreservationTest",
       "com.rustedwarfare.reforge.pc.DemoEvidenceTest",

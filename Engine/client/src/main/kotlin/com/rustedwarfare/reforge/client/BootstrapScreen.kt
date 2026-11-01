@@ -30,6 +30,7 @@ class BootstrapScreen(
     private val initialRoot: Path = Paths.get("TestLab/local/P001-移动沙盒输入"),
     private val evidence: ClientEvidence = ClientEvidence.NONE,
     private val touchControls: Boolean = false,
+    private val visualSettings: VisualAssetSettings? = null,
 ) : ApplicationAdapter() {
     private lateinit var batch: SpriteBatch
     private lateinit var shapes: ShapeRenderer
@@ -90,7 +91,10 @@ class BootstrapScreen(
     private lateinit var mapInput: SandboxInput
     private lateinit var contentLabel: Label
     private val groupButtons = mutableListOf<TextButton>()
-    private val launch = SandboxLaunchState(SandboxConfiguration(initialRoot.toAbsolutePath().normalize(), SandboxOptions()))
+    private val visualState = visualSettings?.let(::VisualAssetSettingsSession)
+    private var visualPanel: VisualAssetSettingsPanel? = null
+    private val launch = SandboxLaunchState(SandboxConfiguration(initialRoot.toAbsolutePath().normalize(), SandboxOptions(), visualState?.selection ?: VisualAssetSelection()))
+    private var activeVisuals: PreparedVisualAssets? = null
     private var pendingLoad: SandboxLoad? = null
     private var loading = false
     private var generation = 0L
@@ -98,6 +102,7 @@ class BootstrapScreen(
     private var accumulator = 0.0
     private var paused = false
     private var loadError: String? = null
+    private var visualRecoveryFailed = false
     private var presentationReady = false
     private var disposed = false
     private data class HudState(val selected: com.rustedwarfare.reforge.core.sim.UnitObservation?,
@@ -282,6 +287,9 @@ class BootstrapScreen(
             stage.addActor(it)
         }
         startButton = button("Start", 752f, 120f, 176f) { requestLoad() }
+        visualPanel = visualState?.let { state -> VisualAssetSettingsPanel(state, skin, visualSettings?.let { it::createUiFont }) {
+            loadError = null; lastHudState = null; updateHud()
+        }.also { it.setBounds(40f, 120f, 660f, 440f); stage.addActor(it) } }
         mapInput = SandboxInput({ session }, { graphics?.projection }, { x, y ->
             viewport.unproject(Vector2(x.toFloat(), y.toFloat())).let { Position(it.x.toDouble(), it.y.toDouble()) }
         }, { !paused && session != null }, { stage.keyboardFocus is TextField },
@@ -387,7 +395,9 @@ class BootstrapScreen(
     private fun requestLoad() {
         try {
             val request = if (launch.canEdit) {
-                launch.configure(launch.configuration.copy(root = Paths.get(rootField.text).toAbsolutePath().normalize()))
+                check(visualState?.canStart != false) { visualState?.error ?: "Save and apply the visual selection first" }
+                launch.configure(launch.configuration.copy(root = Paths.get(rootField.text).toAbsolutePath().normalize(),
+                    visuals = visualState?.selection ?: launch.configuration.visuals))
                 launch.start()
             } else launch.reopen()
             closeMatchResources()
@@ -399,7 +409,7 @@ class BootstrapScreen(
             evidence.record("load-request", mapOf("generation" to generation, "root" to activeRoot.toString(),
                 "mode" to request.configuration.options.mode.name,
                 "shareAlliedVision" to request.configuration.options.shareAlliedVision))
-            loader.request(activeRoot)
+            loader.request(activeRoot, visualSettings?.let { settings -> { settings.prepare(request.configuration.visuals) } })
         } catch (failure: Exception) { failLoad(failure) }
         updateHud()
     }
@@ -417,9 +427,11 @@ class BootstrapScreen(
         pendingLoad = null
         loading = false
         loadError = null
+        visualRecoveryFailed = false
         accumulator = 0.0
         val closingSession = session; session = null
         val closingGraphics = graphics; graphics = null
+        activeVisuals = null
         listOf<() -> Unit>({ closingSession?.close() }, { closingGraphics?.close() }).forEach { cleanup ->
             try { cleanup() } catch (failure: Exception) {
                 evidence.recordFailure("cleanup-error", failure)
@@ -442,12 +454,13 @@ class BootstrapScreen(
 
     override fun render() {
         if (!presentationReady || disposed) return
-        if (loading) loader.poll()?.fold(onSuccess = { scenario ->
+        if (loading) loader.pollPrepared()?.fold(onSuccess = { loaded ->
+            val scenario = loaded.scenario
             val request = pendingLoad ?: return@fold
             var pendingGraphics: SandboxGraphics? = null
             var pendingSession: SandboxSession? = null
             try {
-                pendingGraphics = SandboxGraphics.load(scenario, activeRoot)
+                pendingGraphics = SandboxGraphics.load(scenario, activeRoot, loaded.visuals)
                 val runGeneration = generation
                 pendingSession = SandboxSession(scenario, evidence.withGeneration(runGeneration), request.configuration.options)
                 evidence.record("load-ready", mapOf("generation" to generation, "mapWidth" to scenario.map.widthTiles,
@@ -455,7 +468,11 @@ class BootstrapScreen(
                 check(launch.complete(request.generation)) { "Cancelled load generation" }
                 pendingLoad = null
                 graphics = pendingGraphics
+                activeVisuals = loaded.visuals
                 session = pendingSession
+                loaded.visuals?.let { visuals -> evidence.record("visual-assets-ready", mapOf("source" to visuals.selection.source.value,
+                    "profile" to visuals.profileId, "identity" to visuals.identity, "generation" to generation,
+                    "units" to visuals.units.keys.toList(), "terrain" to visuals.terrain.keys.toList())) }
                 loading = false
                 accumulator = 0.0
             } catch (failure: Exception) {
@@ -681,15 +698,21 @@ class BootstrapScreen(
         modeBox.isDisabled = !launch.canEdit
         shareBox.isDisabled = !launch.canEdit
         startButton.setText(if (launch.canEdit) "Start" else "Reopen")
+        startButton.isDisabled = loading || launch.canEdit && visualState?.canStart == false
+        visualPanel?.let {
+            it.isVisible = current == null
+            it.setEditable(launch.canEdit && !loading)
+            it.setStatus(if (loading) "Loading scene and validating the selected visuals..." else loadError)
+        }
         statusLabel.setText(when {
             state.reclaimMode -> "Select building to reclaim (Esc / right: cancel)"
             loading -> "Loading"
-            loadError != null -> "Load failed"
+            loadError != null -> if (visualRecoveryFailed) "Visual cache failed. Reopen or exit match to prepare again." else "Load failed"
             current == null -> "Ready"
             nativePanel -> current.playerFeedback
             else -> "${current.feedback}\nStep ${current.observation.stepIndex}"
         })
-        messageLabel.isVisible = current == null
+        messageLabel.isVisible = current == null && visualPanel == null
         messageLabel.setText(if (loading) "Loading" else loadError ?: "Ready")
     }
 
@@ -720,10 +743,24 @@ class BootstrapScreen(
 
     override fun resume() {
         if (disposed) return
+        try { activeVisuals?.verify() }
+        catch (failure: Exception) {
+            paused = true
+            visualRecoveryFailed = true
+            loadError = failure.message ?: failure.toString()
+            evidence.recordFailure("visual-assets-recovery-failed", failure)
+            updateHud()
+            return
+        }
+        if (visualRecoveryFailed) {
+            visualRecoveryFailed = false
+            loadError = null
+            updateHud()
+        }
         if (touchControls && !presentationReady) {
             try {
                 createPresentation()
-                graphics = session?.let { SandboxGraphics.load(it.renderResources, activeRoot) }
+                graphics = session?.let { SandboxGraphics.load(activeVisuals?.let(it.renderResources::withVisuals) ?: it.renderResources, activeRoot) }
                 updateHud()
             } catch (failure: Exception) {
                 preserveFailure(failure) { leaveMatch() }
@@ -748,7 +785,7 @@ class BootstrapScreen(
         presentationReady = false
         Gdx.input.inputProcessor = null
         val closingGraphics = graphics; graphics = null
-        listOf<() -> Unit>({ closingGraphics?.close() }, { stage.dispose() }, { skin.dispose() },
+        listOf<() -> Unit>({ closingGraphics?.close() }, { visualPanel?.close() }, { stage.dispose() }, { skin.dispose() },
             { shapes.dispose() }, { batch.dispose() }).forEach { cleanup ->
             try { cleanup() } catch (failure: Exception) {
                 evidence.recordFailure("cleanup-error", failure)
@@ -777,7 +814,7 @@ class BootstrapScreen(
         if (disposed) return
         disposed = true
         Gdx.input.inputProcessor = null
-        listOf<() -> Unit>({ leaveMatch() }, { loader.close() }, { releasePresentation() }).forEach { cleanup ->
+        listOf<() -> Unit>({ leaveMatch() }, { loader.close() }, { visualState?.close() }, { releasePresentation() }).forEach { cleanup ->
             try { cleanup() } catch (failure: Exception) { Gdx.app.error("p001-dispose", "Cleanup failed", failure) }
         }
         evidence.record("application-disposed", emptyMap())

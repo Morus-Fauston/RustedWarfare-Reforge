@@ -37,8 +37,9 @@ class SandboxGraphics private constructor(private val resources: SandboxRenderRe
             }
         }
 
-        fun load(scenario: Scenario, root: Path): SandboxGraphics {
-            val graphics = load(SandboxRenderResources.from(scenario), root)
+        fun load(scenario: Scenario, root: Path, visuals: PreparedVisualAssets? = null): SandboxGraphics {
+            val resources = SandboxRenderResources.from(scenario)
+            val graphics = load(visuals?.let { resources.withVisuals(it) } ?: resources, root)
             try {
                 for (gid in scenario.map.groundGids) require(gid == 0 || graphics.tiles.containsKey(gid)) { "Missing tile image for gid=$gid" }
                 return graphics

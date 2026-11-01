@@ -3,12 +3,17 @@ package com.rustedwarfare.reforge.pc
 import com.badlogic.gdx.backends.lwjgl3.Lwjgl3Application
 import com.badlogic.gdx.backends.lwjgl3.Lwjgl3ApplicationConfiguration
 import com.rustedwarfare.reforge.client.BootstrapScreen
-import com.rustedwarfare.reforge.client.DemoScreen
+import com.rustedwarfare.reforge.client.DemoStartupScreen
 import java.nio.file.Path
 
 fun main(args: Array<String>) {
     val options = WindowsLaunchOptions.parse(args, Path.of(""))
     val runId = options.runId
+    val userBase = PcVisualAssetPaths.userBase(System.getenv("LOCALAPPDATA"), System.getProperty("user.home"))
+    val applicationRoot = PcVisualAssetPaths.applicationRoot(Path.of(PcVisualAssetSettings::class.java.protectionDomain.codeSource.location.toURI()),
+        Path.of(""))
+    val visualSettings = PcVisualAssetSettings(VisualAssetSettingsStore(userBase.resolve("settings.properties")),
+        userBase.resolve("cache"), applicationRoot, options)
     if (options.mode == "demo") {
         val output = options.evidence
         DemoEvidence(output).use { evidence ->
@@ -20,7 +25,7 @@ fun main(args: Array<String>) {
             }
             evidence.record("launch", mapOf("args" to args.toList(), "output" to output.toString()))
             try {
-                Lwjgl3Application(DemoScreen(evidence), config)
+                Lwjgl3Application(DemoStartupScreen(evidence, visualSettings), config)
                 evidence.record("process-completed", mapOf("status" to "normal"))
             } catch (failure: Throwable) {
                 preserveFailure(failure) { evidence.record("process-failed", mapOf("message" to failure.toString())) }
@@ -45,7 +50,8 @@ fun main(args: Array<String>) {
             "output" to output.toString(), "presentationStepsPerSecond" to 60, "coreDelta" to 1.0,
             "deltaUnit" to "sim-tick", "pacingIsOriginalGameFact" to false))
         try {
-            Lwjgl3Application(WindowPerfSampling(BootstrapScreen(inputs, evidence), evidence), config)
+            Lwjgl3Application(WindowPerfSampling(BootstrapScreen(inputs, evidence,
+                visualSettings = visualSettings), evidence), config)
             evidence.record("process-completed", mapOf("status" to "normal"))
         } catch (failure: Throwable) {
             preserveFailure(failure) { evidence.record("process-failed", mapOf("message" to failure.toString())) }

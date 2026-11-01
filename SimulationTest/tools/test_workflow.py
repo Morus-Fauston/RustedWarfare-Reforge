@@ -54,12 +54,16 @@ class WorkflowChecks(unittest.TestCase):
             self.assertTrue(result['endedUnix'])
             self.assertTrue((root/'attempt/result.json').is_file())
     def test_formal_performance_refuses_functional_overlap_in_both_orders(self):
-        with workflow.resources(['qualification-functional']):
-            with self.assertRaisesRegex(ValueError,'never queues'):
-                with workflow.resources([],formal=True):self.fail('must not enter formal window')
-        with workflow.resources([],formal=True):
-            with self.assertRaisesRegex(ValueError,'formal performance'):
-                with workflow.resources(['qualification-functional']):self.fail('must not enter functional window')
+        # This fixture models both resource states; the enclosing CI task may
+        # legitimately own a real machine-wide functional lease throughout.
+        with tempfile.TemporaryDirectory(prefix='workflow-qualification-') as temp:
+            with patch.object(workflow.tempfile,'gettempdir',return_value=temp):
+                with workflow.resources(['qualification-functional']):
+                    with self.assertRaisesRegex(ValueError,'never queues'):
+                        with workflow.resources([],formal=True):self.fail('must not enter formal window')
+                with workflow.resources([],formal=True):
+                    with self.assertRaisesRegex(ValueError,'formal performance'):
+                        with workflow.resources(['qualification-functional']):self.fail('must not enter functional window')
     def test_manifest_cannot_omit_seed_or_transitive_reference(self):
         with tempfile.TemporaryDirectory() as temp:
             root=Path(temp)

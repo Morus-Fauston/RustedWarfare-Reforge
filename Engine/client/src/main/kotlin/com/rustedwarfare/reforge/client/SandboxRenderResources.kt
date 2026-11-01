@@ -1,6 +1,5 @@
 package com.rustedwarfare.reforge.client
 
-import com.rustedwarfare.reforge.core.content.TileSetDefinition
 import com.rustedwarfare.reforge.core.sim.Scenario
 import com.badlogic.gdx.graphics.Color
 import com.rustedwarfare.reforge.core.content.TurretMount
@@ -40,9 +39,27 @@ internal data class DefenseBeam(val start: Position, val end: Position)
 
 class SandboxRenderResources private constructor(
     val widthTiles: Int, val heightTiles: Int, val tileWidth: Int, val tileHeight: Int,
-    val tileSets: List<TileSetDefinition>, val units: Map<String, UnitAppearance>,
+    val tileSets: List<VisualTileAtlas>, val units: Map<String, UnitAppearance>,
     private val playerTeams: Map<String, String?>,
 ) {
+    fun withVisuals(visuals: PreparedVisualAssets): SandboxRenderResources {
+        visuals.verify()
+        val mappedUnits = units.mapValues { (id, before) ->
+            val image = requireNotNull(visuals.units[id]) { "VISUAL_MAPPING_UNSUPPORTED: unit $id" }
+            fun slot(beforePath: Path?, replacement: Path?, name: String): Path? = if (beforePath == null) null
+                else requireNotNull(replacement) { "VISUAL_MAPPING_UNSUPPORTED: unit $id $name" }
+            before.copy(imagePath = image.body, totalFrames = image.totalFrames,
+                backImagePath = slot(before.backImagePath, image.back, "back"),
+                turretImagePath = slot(before.turretImagePath, image.turret, "turret"),
+                deadImagePath = slot(before.deadImagePath, image.dead, "dead"))
+        }
+        val mappedTiles = tileSets.map { atlas ->
+            val layout = atlas.supportedLayout()
+            atlas.copy(imagePath = requireNotNull(visuals.terrain[layout]) { "VISUAL_MAPPING_UNSUPPORTED: $layout" }, transparentColor = null)
+        }
+        return SandboxRenderResources(widthTiles, heightTiles, tileWidth, tileHeight,
+            Collections.unmodifiableList(mappedTiles), Collections.unmodifiableMap(mappedUnits), playerTeams)
+    }
     /** Both endpoints come from the authorized player view and immutable appearance metadata. */
     internal fun defenseBeams(observation: PlayerObservation): List<DefenseBeam> = observation.projectileEvents.mapNotNull { event ->
         if (event.kind != "deflected") return@mapNotNull null
@@ -63,7 +80,7 @@ class SandboxRenderResources private constructor(
     companion object {
         fun from(scenario: Scenario): SandboxRenderResources = SandboxRenderResources(
             scenario.map.widthTiles, scenario.map.heightTiles, scenario.map.tileWidth, scenario.map.tileHeight,
-            Collections.unmodifiableList(ArrayList(scenario.map.tileSets)),
+            Collections.unmodifiableList(scenario.map.tileSets.map(VisualTileAtlas::from)),
             Collections.unmodifiableMap(scenario.unitDefinitions.mapValues { (_, unit) ->
                 UnitAppearance(unit.displayRadius, unit.imagePath, unit.imageScale, unit.totalFrames,
                     unit.combat?.turretImagePath, unit.durability?.deadImagePath ?: unit.combat?.deadImagePath,

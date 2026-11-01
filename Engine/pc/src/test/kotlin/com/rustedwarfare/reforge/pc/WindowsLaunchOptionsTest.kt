@@ -12,10 +12,33 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
+import kotlin.test.assertFalse
+import com.rustedwarfare.reforge.client.VisualAssetSource
 import kotlin.test.assertIs
 import kotlin.test.assertSame
 
 class WindowsLaunchOptionsTest {
+    @Test fun visual_flags_are_explicit_temporary_overrides_with_resolved_paths_and_no_ambiguous_pairs() {
+        val repository = Files.createTempDirectory("visual-cli-")
+        try {
+            val defaults = WindowsLaunchOptions.parse(arrayOf("--mode", "demo"), repository)
+            assertNull(defaults.visualSource)
+            assertNull(defaults.originalAssets)
+            assertFalse(defaults.hasVisualOverride)
+            val original = WindowsLaunchOptions.parse(arrayOf("--mode", "demo", "--original-assets", "原版 assets"), repository)
+            assertEquals(VisualAssetSource.ORIGINAL, original.visualSource)
+            assertEquals(repository.resolve("原版 assets"), original.originalAssets)
+            assertTrue(original.hasVisualOverride)
+            assertEquals(VisualAssetSource.PLACEHOLDER, WindowsLaunchOptions.parse(arrayOf("--mode", "demo",
+                "--visuals", "placeholder"), repository).visualSource)
+            for (flags in listOf(arrayOf("--visuals", "unknown"),
+                arrayOf("--visuals", "placeholder", "--original-assets", "images"),
+                arrayOf("--visuals", "original", "--visuals", "original"),
+                arrayOf("--original-assets", "a", "--original-assets", "b"))) {
+                assertFailsWith<IllegalArgumentException> { WindowsLaunchOptions.parse(arrayOf("--mode", "demo", *flags), repository) }
+            }
+        } finally { repository.toFile().deleteRecursively() }
+    }
     @Test fun packaged_default_can_produce_its_first_worker_build_and_upgrade_from_the_finite_start() {
         val root = requireNotNull(WindowsLaunchOptions.parse(emptyArray(),
             java.nio.file.Path.of("").toAbsolutePath()).inputs)
