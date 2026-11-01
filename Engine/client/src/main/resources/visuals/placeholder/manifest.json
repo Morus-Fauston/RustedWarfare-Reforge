@@ -1,0 +1,414 @@
+{
+  "schemaVersion": 1,
+  "profileId": "reforge.placeholder.visual.v1",
+  "provenance": "Byte-identical copies of repository-authored public fixture and demo PNGs; no original-game images.",
+  "files": [
+    {
+      "id": "tank",
+      "resource": "units/tank.png",
+      "source": "SimulationTest/public/inputs/maintenance-defense/construction/units/tank.png",
+      "bytes": 112,
+      "sha256": "898fa8d12d89e73c988c258c3522a23660b2fdc500b4c8588fd2d8cf5fe4b605",
+      "width": 60,
+      "height": 20,
+      "frames": 3
+    },
+    {
+      "id": "tank-turret",
+      "resource": "units/tank-turret.png",
+      "source": "SimulationTest/public/inputs/maintenance-defense/construction/units/tank_turret.png",
+      "bytes": 87,
+      "sha256": "20dfaa2a45dd5bb635e83425fb64a6d3d3f9fef48d1b0a3b573fe5b9b67c4985",
+      "width": 20,
+      "height": 20,
+      "frames": 1
+    },
+    {
+      "id": "tank-dead",
+      "resource": "units/tank-dead.png",
+      "source": "SimulationTest/public/inputs/maintenance-defense/construction/units/tank_dead.png",
+      "bytes": 87,
+      "sha256": "cbab7f92fa0cbef203e94823e2cbdc3e0116df3dab205f2ce0296e399a1a4ffa",
+      "width": 20,
+      "height": 20,
+      "frames": 1
+    },
+    {
+      "id": "builder",
+      "resource": "units/builder.png",
+      "source": "SimulationTest/public/inputs/maintenance-defense/construction/units/builder.png",
+      "bytes": 87,
+      "sha256": "15060aa3fb36bffd4414e803beb8f5d9b2982ed14bb497fbca6cadd3de18cc1b",
+      "width": 20,
+      "height": 20,
+      "frames": 1
+    },
+    {
+      "id": "builder-dead",
+      "resource": "units/builder-dead.png",
+      "source": "SimulationTest/public/inputs/maintenance-defense/construction/units/builder_dead.png",
+      "bytes": 87,
+      "sha256": "15060aa3fb36bffd4414e803beb8f5d9b2982ed14bb497fbca6cadd3de18cc1b",
+      "width": 20,
+      "height": 20,
+      "frames": 1
+    },
+    {
+      "id": "center",
+      "resource": "units/center.png",
+      "source": "SimulationTest/public/inputs/maintenance-defense/construction/units/base.png",
+      "bytes": 277,
+      "sha256": "8095d081de1407fe59e9ff99f5a5822e03275f87ffbd0f2a09ac736f8f6b3695",
+      "width": 212,
+      "height": 68,
+      "frames": 4
+    },
+    {
+      "id": "center-back",
+      "resource": "units/center-back.png",
+      "source": "SimulationTest/public/inputs/maintenance-defense/construction/units/base_back.png",
+      "bytes": 165,
+      "sha256": "07e2e3d786bf88d6d1dfe57add1b732e84a9bd2d6313732cc4f86ec8c4da2885",
+      "width": 53,
+      "height": 68,
+      "frames": 1
+    },
+    {
+      "id": "center-dead",
+      "resource": "units/center-dead.png",
+      "source": "SimulationTest/public/inputs/maintenance-defense/construction/units/base_dead.png",
+      "bytes": 171,
+      "sha256": "940b030d8a9c0161c69b1831041186c97409e85d404aa5c5f6ec58fa5d831b16",
+      "width": 53,
+      "height": 74,
+      "frames": 1
+    },
+    {
+      "id": "factory",
+      "resource": "units/factory.png",
+      "source": "SimulationTest/public/inputs/maintenance-defense/construction/units/factory.png",
+      "bytes": 170,
+      "sha256": "f5fbe7d6c121670ef027714323b193a17734d63cae69bfc1ff317c5068e29e64",
+      "width": 50,
+      "height": 74,
+      "frames": 1
+    },
+    {
+      "id": "factory-back",
+      "resource": "units/factory-back.png",
+      "source": "SimulationTest/public/inputs/maintenance-defense/construction/units/factory_back.png",
+      "bytes": 170,
+      "sha256": "f5fbe7d6c121670ef027714323b193a17734d63cae69bfc1ff317c5068e29e64",
+      "width": 50,
+      "height": 74,
+      "frames": 1
+    },
+    {
+      "id": "factory-dead",
+      "resource": "units/factory-dead.png",
+      "source": "SimulationTest/public/inputs/maintenance-defense/construction/units/factory_dead.png",
+      "bytes": 164,
+      "sha256": "f833d96e5b74fa0d68a2331a36338518727636a48e56b2a9e5278ab20bd4ae83",
+      "width": 50,
+      "height": 69,
+      "frames": 1
+    },
+    {
+      "id": "laser",
+      "resource": "units/laser.png",
+      "source": "SimulationTest/public/inputs/maintenance-defense/construction/units/laser_defence.png",
+      "bytes": 141,
+      "sha256": "38ccdaa0f597da9b5fc756d28ba255f673c8d71775826accabd2ee4d46105b10",
+      "width": 72,
+      "height": 36,
+      "frames": 2
+    },
+    {
+      "id": "laser-dead",
+      "resource": "units/laser-dead.png",
+      "source": "SimulationTest/public/inputs/maintenance-defense/construction/units/laser_defence_dead.png",
+      "bytes": 117,
+      "sha256": "27a58b2d63f8ab80a51744f90b615c635d75605c1859bfc0766a62469f880456",
+      "width": 36,
+      "height": 36,
+      "frames": 1
+    },
+    {
+      "id": "extractor1",
+      "resource": "units/extractor1.png",
+      "source": "SimulationTest/public/inputs/maintenance-defense/construction/units/extractor_t1.png",
+      "bytes": 239,
+      "sha256": "96f912275ca7d1bc07fce8aa3c9343c8be1900bd35b56367e4fc165febf56ca6",
+      "width": 148,
+      "height": 59,
+      "frames": 4
+    },
+    {
+      "id": "extractor2",
+      "resource": "units/extractor2.png",
+      "source": "SimulationTest/public/inputs/maintenance-defense/construction/units/extractor_t2.png",
+      "bytes": 238,
+      "sha256": "9e7ea8588ec440427424ff5daf7c628199e8e2579f783dfce0c413f135313467",
+      "width": 148,
+      "height": 59,
+      "frames": 4
+    },
+    {
+      "id": "extractor3",
+      "resource": "units/extractor3.png",
+      "source": "SimulationTest/public/inputs/maintenance-defense/construction/units/extractor_t3.png",
+      "bytes": 238,
+      "sha256": "21883c595db746c2ae40b55276469ccf82d74931004841c1ad1b62ed3c6317c7",
+      "width": 148,
+      "height": 59,
+      "frames": 4
+    },
+    {
+      "id": "extractor-back",
+      "resource": "units/extractor-back.png",
+      "source": "SimulationTest/public/inputs/maintenance-defense/construction/units/extractor_back.png",
+      "bytes": 138,
+      "sha256": "b7450a978080da75d5e52484ed62f4fe18d294c1c1e918e5c7f0abea608bea80",
+      "width": 51,
+      "height": 44,
+      "frames": 1
+    },
+    {
+      "id": "fabricator1",
+      "resource": "units/fabricator1.png",
+      "source": "SimulationTest/public/inputs/maintenance-defense/construction/units/fabricatorT1.png",
+      "bytes": 234,
+      "sha256": "7ed97be7ee48026f65fbd0053a7c8c5139a650ee8b341bf404b706b3d9b6ce11",
+      "width": 141,
+      "height": 60,
+      "frames": 3
+    },
+    {
+      "id": "fabricator2",
+      "resource": "units/fabricator2.png",
+      "source": "SimulationTest/public/inputs/maintenance-defense/construction/units/fabricatorT2.png",
+      "bytes": 233,
+      "sha256": "2b36cf34274f6682d069d7f0bdb449fcf9fc89628f9825c2ee5287d1e4177224",
+      "width": 141,
+      "height": 60,
+      "frames": 3
+    },
+    {
+      "id": "fabricator3",
+      "resource": "units/fabricator3.png",
+      "source": "SimulationTest/public/inputs/maintenance-defense/construction/units/fabricatorT3.png",
+      "bytes": 233,
+      "sha256": "347901f6bab85bbd1c44b5cf3460e7755138e8b70d773fecb6b2a4a26b7c40fc",
+      "width": 141,
+      "height": 60,
+      "frames": 3
+    },
+    {
+      "id": "fabricator-dead",
+      "resource": "units/fabricator-dead.png",
+      "source": "SimulationTest/public/inputs/maintenance-defense/construction/units/fabricator_dead.png",
+      "bytes": 140,
+      "sha256": "55883ff610cb74713449cc980d2da5d04ce6a9bd57ed4fd6c29b1a3900722855",
+      "width": 47,
+      "height": 60,
+      "frames": 1
+    },
+    {
+      "id": "turret1",
+      "resource": "units/turret1.png",
+      "source": "SimulationTest/public/inputs/maintenance-defense/construction/units/turret.png",
+      "bytes": 127,
+      "sha256": "907d5bdfcaf8d04cd5f7cfde00bb6b77bf1973cd1191db26b8dd5f408392106a",
+      "width": 40,
+      "height": 40,
+      "frames": 1
+    },
+    {
+      "id": "turret2",
+      "resource": "units/turret2.png",
+      "source": "SimulationTest/public/inputs/maintenance-defense/construction/units/turret_base2.png",
+      "bytes": 127,
+      "sha256": "c7a05ab3c3edb89b81a698c08d60077f3b9771924a58f35fa1265f00c6d421c6",
+      "width": 40,
+      "height": 40,
+      "frames": 1
+    },
+    {
+      "id": "turret-dead",
+      "resource": "units/turret-dead.png",
+      "source": "SimulationTest/public/inputs/maintenance-defense/construction/units/turret_dead.png",
+      "bytes": 127,
+      "sha256": "907d5bdfcaf8d04cd5f7cfde00bb6b77bf1973cd1191db26b8dd5f408392106a",
+      "width": 40,
+      "height": 40,
+      "frames": 1
+    },
+    {
+      "id": "turret-top",
+      "resource": "units/turret-top.png",
+      "source": "SimulationTest/public/inputs/maintenance-defense/construction/units/turret_top.png",
+      "bytes": 127,
+      "sha256": "907d5bdfcaf8d04cd5f7cfde00bb6b77bf1973cd1191db26b8dd5f408392106a",
+      "width": 40,
+      "height": 40,
+      "frames": 1
+    },
+    {
+      "id": "turret-gun",
+      "resource": "units/turret-gun.png",
+      "source": "SimulationTest/public/inputs/maintenance-defense/construction/units/turret_top_l2.png",
+      "bytes": 127,
+      "sha256": "c7a05ab3c3edb89b81a698c08d60077f3b9771924a58f35fa1265f00c6d421c6",
+      "width": 40,
+      "height": 40,
+      "frames": 1
+    },
+    {
+      "id": "turret-artillery",
+      "resource": "units/turret-artillery.png",
+      "source": "SimulationTest/public/inputs/maintenance-defense/construction/units/turret_top_artillery.png",
+      "bytes": 127,
+      "sha256": "c7a05ab3c3edb89b81a698c08d60077f3b9771924a58f35fa1265f00c6d421c6",
+      "width": 40,
+      "height": 40,
+      "frames": 1
+    },
+    {
+      "id": "demo-body",
+      "resource": "units/demo-tank.png",
+      "source": "Engine/client/src/main/resources/demo/images/tank.png",
+      "bytes": 239,
+      "sha256": "a70c951a5dd18b025479da950e7e50a31d9d3843edefdd535b57c4f52d2a70e0",
+      "width": 32,
+      "height": 32,
+      "frames": 1
+    },
+    {
+      "id": "controlled-ground-40",
+      "resource": "terrain/controlled-ground-40.png",
+      "source": "SimulationTest/public/inputs/content-movement-knowledge/P001-\u79fb\u52a8\u6c99\u76d2\u8f93\u5165/assets/ground.png",
+      "bytes": 326,
+      "sha256": "1dcf1489ef8e618ac2905588b5124dc72479275d1313100808098d16ffe7f540",
+      "width": 100,
+      "height": 160,
+      "frames": 1
+    },
+    {
+      "id": "controlled-rock-35",
+      "resource": "terrain/controlled-rock-35.png",
+      "source": "SimulationTest/public/inputs/content-movement-knowledge/P001-\u79fb\u52a8\u6c99\u76d2\u8f93\u5165/assets/rock.png",
+      "bytes": 315,
+      "sha256": "8ad644d4001c288a7a67484befde6ef25d5748d9f7e3ad2f3fdaf72142e94661",
+      "width": 140,
+      "height": 100,
+      "frames": 1
+    },
+    {
+      "id": "construction-strip-5",
+      "resource": "terrain/construction-strip-5.png",
+      "source": "SimulationTest/public/inputs/maintenance-defense/construction/assets/terrain.png",
+      "bytes": 133,
+      "sha256": "8e7d231fcedf41052d83465e14df7c4682d0eca7d1c939924ecbc9bf082a5556",
+      "width": 100,
+      "height": 20,
+      "frames": 1
+    },
+    {
+      "id": "controlled-strip-2",
+      "resource": "terrain/controlled-strip-2.png",
+      "source": "SimulationTest/public/inputs/production-combat/combat/assets/terrain.png",
+      "bytes": 108,
+      "sha256": "1b47e4821cdbfc66460f690322cf641afc1fc782a3ed6985df8b9e773ed98ff0",
+      "width": 40,
+      "height": 20,
+      "frames": 1
+    },
+    {
+      "id": "demo-strip-4",
+      "resource": "terrain/demo-strip-4.png",
+      "source": "Engine/client/src/main/resources/demo/images/terrain.png",
+      "bytes": 1791,
+      "sha256": "b6dd624aa1b0de9347f0c82bb61f24710d2ba3087676dc241e243977a4a05621",
+      "width": 80,
+      "height": 20,
+      "frames": 1
+    }
+  ],
+  "unitBindings": {
+    "c_tank": {
+      "body": "tank",
+      "turret": "tank-turret",
+      "dead": "tank-dead"
+    },
+    "demo_tank": {
+      "body": "demo-body"
+    },
+    "builder": {
+      "body": "builder",
+      "dead": "builder-dead"
+    },
+    "commandCenter": {
+      "body": "center",
+      "back": "center-back",
+      "dead": "center-dead"
+    },
+    "landFactory": {
+      "body": "factory",
+      "back": "factory-back",
+      "dead": "factory-dead"
+    },
+    "laserDefence": {
+      "body": "laser",
+      "dead": "laser-dead"
+    },
+    "tank": {
+      "body": "tank"
+    },
+    "extractorT1": {
+      "body": "extractor1",
+      "back": "extractor-back"
+    },
+    "fabricatorT1": {
+      "body": "fabricator1",
+      "dead": "fabricator-dead"
+    },
+    "extractorT2": {
+      "body": "extractor2",
+      "back": "extractor-back"
+    },
+    "fabricatorT2": {
+      "body": "fabricator2",
+      "dead": "fabricator-dead"
+    },
+    "extractorT3": {
+      "body": "extractor3",
+      "back": "extractor-back"
+    },
+    "fabricatorT3": {
+      "body": "fabricator3",
+      "dead": "fabricator-dead"
+    },
+    "c_turret_t1": {
+      "body": "turret1",
+      "turret": "turret-top",
+      "dead": "turret-dead"
+    },
+    "c_turret_t2_gun": {
+      "body": "turret2",
+      "turret": "turret-gun",
+      "dead": "turret-dead"
+    },
+    "c_turret_t1_artillery": {
+      "body": "turret2",
+      "turret": "turret-artillery",
+      "dead": "turret-dead"
+    }
+  },
+  "terrain": {
+    "controlled-ground-40": "controlled-ground-40",
+    "controlled-rock-35": "controlled-rock-35",
+    "construction-strip-5": "construction-strip-5",
+    "controlled-strip-2": "controlled-strip-2",
+    "demo-strip-4": "demo-strip-4"
+  }
+}

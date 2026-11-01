@@ -21,7 +21,10 @@ import com.rustedwarfare.reforge.core.sim.Position
 import com.rustedwarfare.reforge.core.sim.Scenario
 
 /** Presentation-only host for the explicitly approved, self-owned Windows demonstration. */
-class DemoScreen(private val evidence: ClientEvidence = ClientEvidence.NONE) : ApplicationAdapter() {
+class DemoScreen(private val evidence: ClientEvidence = ClientEvidence.NONE,
+    private val visualAssets: PreparedVisualAssets? = null,
+    private val onExit: (() -> Unit)? = null, private val onRestart: (() -> Unit)? = null,
+    initialGeneration: Int = 0) : ApplicationAdapter() {
     private val viewport = FitViewport(1344f, 1000f)
     private lateinit var scenario: Scenario
     private lateinit var session: DemoSession
@@ -41,7 +44,9 @@ class DemoScreen(private val evidence: ClientEvidence = ClientEvidence.NONE) : A
     private var accumulator = 0.0
     private var showPaths = true
     private var disposed = false
-    private var generation = 0
+    private var generation = initialGeneration
+    internal val currentGeneration: Int get() = generation
+    private var visualFailure: String? = null
     private var lastSample = -1L
     private var hudObservation: com.rustedwarfare.reforge.core.sim.Observation? = null
     private var hudSelection: Set<String>? = null
@@ -59,13 +64,16 @@ class DemoScreen(private val evidence: ClientEvidence = ClientEvidence.NONE) : A
             stage = Stage(viewport, batch)
             scenario = DemoScenario.load()
             ground = scenario.map.groundGids
-            for (set in scenario.map.tileSets) {
+            val originalResources = SandboxRenderResources.from(scenario)
+            val resources = visualAssets?.let(originalResources::withVisuals) ?: originalResources
+            for (set in resources.tileSets) {
                 val image = texture(set.imagePath.toString())
-                for (index in 0 until image.width / set.tileWidth) {
-                    tiles[set.firstGid + index] = TextureRegion(image, index * set.tileWidth, 0, set.tileWidth, set.tileHeight)
+                for (index in 0 until set.tileCount) {
+                    tiles[set.firstGid + index] = TextureRegion(image, index % set.columns * set.tileWidth,
+                        index / set.columns * set.tileHeight, set.tileWidth, set.tileHeight)
                 }
             }
-            for ((id, definition) in scenario.unitDefinitions) {
+            for ((id, definition) in resources.units) {
                 val image = texture(definition.imagePath.toString())
                 unitImages[id] = TextureRegion(image, 0, 0, image.width / definition.totalFrames, image.height)
             }
@@ -81,7 +89,10 @@ class DemoScreen(private val evidence: ClientEvidence = ClientEvidence.NONE) : A
                 paused = !paused; accumulator = 0.0
                 pauseButton.setText(if (paused) "Resume" else "Pause"); record("pause-command")
             }
-            button("Restart", 590f, 48f, 110f) { restart(); pauseButton.setText("Pause"); record("restart-command") }
+            button("Restart", 590f, 48f, 110f) {
+                if (onRestart != null) onRestart.invoke() else { restart(); pauseButton.setText("Pause"); record("restart-command") }
+            }
+            if (onExit != null) button("Settings", 1170f, 10f, 142f) { onExit.invoke() }
             val paths = CheckBox(" Paths", skin).also { it.isChecked = true }
             paths.setBounds(724f, 48f, 105f, 36f)
             paths.addListener(object : ChangeListener() {
@@ -92,6 +103,7 @@ class DemoScreen(private val evidence: ClientEvidence = ClientEvidence.NONE) : A
             feedback = label("", 850f, 50f, 462f, 32f)
             Gdx.input.inputProcessor = InputMultiplexer(stage, object : InputAdapter() {
                 override fun touchDown(screenX: Int, screenY: Int, pointer: Int, button: Int): Boolean {
+                    if (visualFailure != null) return false
                     if (pointer != 0 || button !in listOf(Input.Buttons.LEFT, Input.Buttons.RIGHT)) return false
                     val bottom = Gdx.graphics.height - screenY
                     if (screenX !in viewport.screenX until viewport.screenX + viewport.screenWidth ||
@@ -108,6 +120,8 @@ class DemoScreen(private val evidence: ClientEvidence = ClientEvidence.NONE) : A
             })
             resize(Gdx.graphics.width, Gdx.graphics.height)
             record("demo-ready")
+            visualAssets?.let { evidence.record("visual-assets-ready", mapOf("source" to it.selection.source.value,
+                "profile" to it.profileId, "identity" to it.identity, "units" to it.units.keys.toList(), "terrain" to it.terrain.keys.toList())) }
         } catch (failure: Throwable) {
             evidence.recordFailure("demo-failed", failure)
             preserveFailure(failure) { dispose() }
@@ -205,7 +219,7 @@ class DemoScreen(private val evidence: ClientEvidence = ClientEvidence.NONE) : A
             hudObservation = session.observation
             hudSelection = selectedIds
         }
-        val currentFeedback = if (paused) "Paused" else session.feedback
+        val currentFeedback = visualFailure ?: if (paused) "Paused" else session.feedback
         if (hudFeedback != currentFeedback) { feedback.setText(currentFeedback); hudFeedback = currentFeedback }
         stage.act(Gdx.graphics.deltaTime); stage.draw()
         if (frameStart != 0L) {
@@ -246,7 +260,9 @@ class DemoScreen(private val evidence: ClientEvidence = ClientEvidence.NONE) : A
     private fun button(text: String, x: Float, y: Float, w: Float, action: () -> Unit) = TextButton(text, skin).also {
         it.setBounds(x, y, w, 36f)
         it.addListener(object : ChangeListener() {
-            override fun changed(event: ChangeEvent, actor: Actor) = action()
+            override fun changed(event: ChangeEvent, actor: Actor) {
+                if (visualFailure == null || text == "Settings") action()
+            }
         })
         stage.addActor(it)
     }
@@ -277,6 +293,17 @@ class DemoScreen(private val evidence: ClientEvidence = ClientEvidence.NONE) : A
         evidence.record("resize", mapOf("width" to width, "height" to height,
             "screenX" to viewport.screenX, "screenY" to viewport.screenY,
             "screenWidth" to viewport.screenWidth, "screenHeight" to viewport.screenHeight))
+    }
+
+    override fun resume() {
+        if (disposed) return
+        try { visualAssets?.verify(); visualFailure = null }
+        catch (failure: Exception) {
+            paused = true; accumulator = 0.0
+            visualFailure = "Visual cache failed. Open Settings and apply visuals again."
+            if (::pauseButton.isInitialized) pauseButton.setText("Resume")
+            evidence.recordFailure("visual-assets-recovery-failed", failure)
+        }
     }
 
     override fun dispose() {

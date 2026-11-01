@@ -29,6 +29,25 @@ Windows 使用 LWJGL3 离线启动入口；当前默认载入随包自有四期�
 
 支持成对参数 `--mode sandbox|demo`、`--inputs CONTENT_DIRECTORY`、`--evidence NEW_RUN_DIRECTORY`，默认模式为 sandbox；相对路径从工作目录解析。默认每次新建 `Engine/pc/build/sandbox-runs/run-<时间>-<随机值>/`，这是可丢弃开发输出；长期验收证据必须用 `--evidence` 指向对应票据 evidence 下的新批次。已存在的批次不会覆盖。可用 `:pc:run --args='--inputs ... --evidence ...'` 传参，含空格的路径需在 args 内加引号。Demo 使用既有随包自有输入及 `Engine/pc/build/demo-runs/`，拒绝 `--inputs`，其专项规则不代表正式沙盒规则。
 
+## 选择画面素材
+
+Windows沙盒和demo默认使用随包自有占位画面。仅把解包目录放在程序旁边不会启用原版；首次启动也不要求准备原版素材。
+
+需要原版画面时，在开局页的 `Visual assets` 中选择 `Original visuals (Android 1.15 / 176)`，填写解包目录，点击 `Save and apply`，准备成功后再开局。目录应直接包含 `AndroidManifest.xml`、`assets/` 和 `res/`；安装包运行时的目录提示为安装根目录下的 `Rusted Warfare`。可以填写其他位置以及中文、空格路径。切回 `Public placeholder visuals` 后保存会保留原目录，重启仍使用上次保存的来源。退出对局后才能修改来源；沙盒 `Reopen` 和demo `Restart` 每次都会重新校验所选素材。
+
+仅支持固定的Android `com.corrodinggames.rts`、版本`1.15`、版本号`176`，按内置清单校验manifest及30张PNG的精确身份。Steam版、其他版本、经过替换的图片或任意模组资源不能作为这套固定来源。原目录只读，程序仅整理当前已有画面需要的静态图层和地形；动画、声音、原版游戏核心均不在此入口内。原版素材由使用者自行准备，原图及本地派生图不随公开包提供。
+
+也可用参数临时覆盖当前进程：
+
+```powershell
+./Engine/pc/build/install/pc/bin/pc.bat --visuals original --original-assets "C:\Games\Rusted Warfare"
+./Engine/pc/build/install/pc/bin/pc.bat --mode demo --visuals placeholder
+```
+
+`--visuals` 只接受 `placeholder` 或 `original`。单独指定 `--original-assets DIRECTORY` 等同本次选择原版，相对路径按启动时工作目录解析；单独指定 `--visuals original` 使用保存的目录或安装根目录提示。`--visuals placeholder` 与 `--original-assets` 冲突，同一新参数重复也会拒绝。临时覆盖时页面显示 `Only this run`，`Apply (this run)` 同样不会覆盖保存设置。
+
+设置和私有缓存保存在 `%LOCALAPPDATA%\RustedWarfare-Reforge\visual-assets\v1\`；缺少该环境变量时使用用户目录下的`AppData\Local`。设置文件为`settings.properties`，缓存按固定映射身份分代放在`cache/`，不写回解包目录。准备时遇到缺件、损坏、错误版本、缓存锁忙或写入失败会明确报错并阻止加载，保留开局页供修正；不会自动换成占位或混用两套图片。损坏的保存设置也会报错，可在页面明确选择、应用后修正。运行中的一局固定使用已经校验的缓存代，恢复时再次核验；旧代不会被逐张覆盖，程序不自动清理旧代。
+
 ## 操作与证据
 
 开局区选择 NoFog、普通记忆或硬核遗忘及盟友共享视野，再点击 `Start` 加载并冻结本局参数。`Reopen` 复用本局输入和选项；`Exit match` 关闭当前世界后才可修改。左键点击当前可见单位单选，点击地图空白清空选择；右键点击地图向所选单位提交移动，`Stop` 提交停止。可见异主单位可查看，移动和停止会由核心返回 `not-owner`；失视清除选择。
