@@ -15,122 +15,109 @@ import java.util.Collections
 import java.util.IdentityHashMap
 
 class SimulationContext private constructor(private val policies: ExperimentalPolicies = ExperimentalPolicies()) {
+    private val steps = CandidateSteps()
     private var activeWorld: WorldHandle? = null
     val world: WorldHandle get() = checkNotNull(activeWorld) { "Simulation is closed" }
     private var scenario: Scenario? = null
-    private var units: MutableMap<String, MutableUnit> = linkedMapOf()
-    private var projectiles: MutableList<MutableProjectile> = mutableListOf()
-    private var combatFrame: Int = -1
-    private var nextObjectId: Long = 1L
-    private var lastBirthSerial: Long = 0L
-    private var constructionClock: Int = 0
-    private var constructionNonces: Map<String, Set<String>> = emptyMap()
-    private var productionLedger: ProductionLedger? = null
-    private var upgradeQueues: UpgradeQueues? = null
-    private var missileTargets: MissileTargetIndex? = null
-    private var buildingTerrain: BuildingTerrain? = null
-    private var buildingKnowledge: Map<String, BuildingKnowledge> = emptyMap()
-    private var pendingBuildingDiscoveries: Map<String, Map<Pair<Int, Int>, Long>> = emptyMap()
-    private val projectileViews = mutableMapOf<String, ProjectileProjection>()
+    private var units: MutableMap<String, MutableUnit>
+        get() = steps.current.units
+        set(value) { steps.current.units = value }
+    private var projectiles: MutableList<MutableProjectile>
+        get() = steps.current.projectiles
+        set(value) { steps.current.projectiles = value }
+    private var combatFrame: Int
+        get() = steps.current.combatFrame
+        set(value) { steps.current.combatFrame = value }
+    private var nextObjectId: Long
+        get() = steps.current.nextObjectId
+        set(value) { steps.current.nextObjectId = value }
+    private var lastBirthSerial: Long
+        get() = steps.current.lastBirthSerial
+        set(value) { steps.current.lastBirthSerial = value }
+    private var buildingWork: BuildingWork
+        get() = steps.current.buildingWork
+        set(value) { steps.current.buildingWork = value }
+    private var productionLedger: ProductionLedger?
+        get() = steps.current.productionLedger
+        set(value) { steps.current.productionLedger = value }
+    private var ordinaryUpgrades: OrdinaryUpgrades?
+        get() = steps.current.ordinaryUpgrades
+        set(value) { steps.current.ordinaryUpgrades = value }
+    private var missileTargets: MissileTargetIndex?
+        get() = steps.current.missileTargets
+        set(value) { steps.current.missileTargets = value }
+    private var buildingTerrain: BuildingTerrain?
+        get() = steps.current.buildingTerrain
+        set(value) { steps.current.buildingTerrain = value }
+    private var buildingKnowledge: Map<String, BuildingKnowledge>
+        get() = steps.current.buildingKnowledge
+        set(value) { steps.current.buildingKnowledge = value }
+    private var pendingBuildingDiscoveries: Map<String, Map<Pair<Int, Int>, Long>>
+        get() = steps.current.pendingBuildingDiscoveries
+        set(value) { steps.current.pendingBuildingDiscoveries = value }
     private var worldGeneration: Long = 0
     private var closed: Boolean = true
-    private var stepIndex: Long = 0
-    private var simulationTime: Double = 0.0
-    private var hasAdvanced = false
-    private var revision = 0L
-    private var pendingEvents: MutableList<Event> = mutableListOf()
-    private var pendingProjectileEvents: MutableList<ProjectileEventObservation> = mutableListOf()
-    private var pendingActionResults: MutableList<ActionResult> = mutableListOf()
-    private var latestObservation: Observation? = null
-    private var committedObservation: Observation? = null
-    private val scheduledActions = mutableListOf<Action>()
+    private var stepIndex: Long
+        get() = steps.current.stepIndex
+        set(value) { steps.current.stepIndex = value }
+    private var simulationTime: Double
+        get() = steps.current.simulationTime
+        set(value) { steps.current.simulationTime = value }
+    private var hasAdvanced: Boolean
+        get() = steps.current.hasAdvanced
+        set(value) { steps.current.hasAdvanced = value }
+    private var revision: Long
+        get() = steps.current.revision
+        set(value) { steps.current.revision = value }
+    private var pendingEvents: MutableList<Event>
+        get() = steps.current.pendingEvents
+        set(value) { steps.current.pendingEvents = value }
+    private var pendingProjectileEvents: MutableList<ProjectileEventObservation>
+        get() = steps.current.pendingProjectileEvents
+        set(value) { steps.current.pendingProjectileEvents = value }
+    private var pendingActionResults: MutableList<ActionResult>
+        get() = steps.current.pendingActionResults
+        set(value) { steps.current.pendingActionResults = value }
+    private var latestObservation: Observation?
+        get() = steps.current.latestObservation
+        set(value) { steps.current.latestObservation = value }
+    private var committedObservation: Observation?
+        get() = steps.current.committedObservation
+        set(value) { steps.current.committedObservation = value }
+    private val scheduledActions: MutableList<Action>
+        get() = steps.current.scheduledActions
     private val actionIds = mutableSetOf<String>()
-    private var actionResultOwners = IdentityHashMap<ActionResult, String>()
-    private val playerActionRevisions = mutableMapOf<String, Long>()
-    private val playerObservations = mutableMapOf<String, CachedPlayerObservation>()
-    private data class CachedPlanningTerrain(val world: WorldHandle, val map: MapDefinition,
-        val knowledge: KnowledgeSnapshot?, val terrain: PlanningTerrain, val buildings: Set<Pair<Int, Int>>? = null,
-        val escapingBuildings: Boolean = false)
-    private var noFogPlanning: CachedPlanningTerrain? = null
-    private val playerPlanning = mutableMapOf<String, CachedPlanningTerrain>()
-    private var knowledgeStores: Map<String, PlayerTerrainKnowledge>? = null
+    private var actionResultOwners: IdentityHashMap<ActionResult, String>
+        get() = steps.current.actionResultOwners
+        set(value) { steps.current.actionResultOwners = value }
+    private val playerActionRevisions: MutableMap<String, Long>
+        get() = steps.current.playerActionRevisions
+    private val playerObservationProjectors = mutableMapOf<String, PlayerObservationProjector>()
+    private var noFogPlanning: CachedPlanningTerrain?
+        get() = steps.current.noFogPlanning
+        set(value) { steps.current.noFogPlanning = value }
+    private val playerPlanning: MutableMap<String, CachedPlanningTerrain>
+        get() = steps.current.playerPlanning
+    private var knowledgeStores: Map<String, PlayerTerrainKnowledge>?
+        get() = steps.current.knowledgeStores
+        set(value) { steps.current.knowledgeStores = value }
     /** Immutable rules captured on the same successful commit boundary as [knowledgeStores]. */
     private var knowledgeRules: KnowledgeRules? = null
-    private var automaticVisionSnapshots: Map<String, VisionSnapshot>? = null
-    private var pathDiagnostics: MutableList<PathSearchSample>? = null
-    private var motionDiagnostics: MutableList<MotionStepSample>? = null
-    private val pendingKnowledgeDiscoveries = mutableMapOf<String, MutableMap<Pair<Int, Int>, Long>>()
-
-    private data class PlayerObservationKey(val step: Long, val time: Double, val epoch: Long?,
-        val knowledgeRevision: Long?, val actionRevision: Long, val units: List<UnitObservation>,
-        val events: List<Event>, val results: List<ActionResult>, val projectiles: List<VisibleProjectile>,
-        val projectileEvents: List<VisibleProjectileEvent>, val balance: Long?, val factoryQueues: List<FactoryQueueObservation>,
-        val upgradeQueues: List<UpgradeQueueObservation>, val credits: Double?)
-
-    private data class CachedPlayerObservation(val key: PlayerObservationKey,
-        val observation: PlayerObservation, val revision: Long, val source: Observation)
+    private var automaticVisionSnapshots: Map<String, VisionSnapshot>?
+        get() = steps.current.automaticVisionSnapshots
+        set(value) { steps.current.automaticVisionSnapshots = value }
+    private var pathDiagnostics: MutableList<PathSearchSample>?
+        get() = steps.current.pathDiagnostics
+        set(value) { steps.current.pathDiagnostics = value }
+    private var motionDiagnostics: MutableList<MotionStepSample>?
+        get() = steps.current.motionDiagnostics
+        set(value) { steps.current.motionDiagnostics = value }
+    private val pendingKnowledgeDiscoveries: MutableMap<String, MutableMap<Pair<Int, Int>, Long>>
+        get() = steps.current.pendingKnowledgeDiscoveries
 
     // Initial IDs precede the reserved production keys; births append in creation order.
     // Public observation sorting is separate from deterministic gameplay traversal.
     private fun orderedUnits(): Collection<MutableUnit> = units.values
-
-    private data class StepCheckpoint(
-        val units: MutableMap<String, MutableUnit>, val events: MutableList<Event>,
-        val results: MutableList<ActionResult>, val revision: Long, val observation: Observation?,
-        val owners: IdentityHashMap<ActionResult, String>, val playerRevisions: Map<String, Long>,
-        val projectiles: MutableList<MutableProjectile>, val frame: Int, val nextObjectId: Long,
-        val diagnostics: MutableList<PathSearchSample>?, val noFog: CachedPlanningTerrain?,
-        val planning: Map<String, CachedPlanningTerrain>,
-        val projectileEvents: MutableList<ProjectileEventObservation>,
-        val buildings: BuildingTerrain?, val buildingKnowledge: Map<String, BuildingKnowledge>,
-        val buildingDiscoveries: Map<String, Map<Pair<Int, Int>, Long>>,
-        val ledger: ProductionLedger?, val birthSerial: Long, val upgrades: UpgradeQueues?,
-        val missileTargets: MissileTargetIndex?,
-        val constructionClock: Int, val constructionNonces: Map<String, Set<String>>,
-    )
-
-    private fun checkpoint() = StepCheckpoint(units, pendingEvents, pendingActionResults, revision,
-        latestObservation, IdentityHashMap(actionResultOwners), HashMap(playerActionRevisions), projectiles, combatFrame, nextObjectId,
-        pathDiagnostics, noFogPlanning, HashMap(playerPlanning), pendingProjectileEvents,
-        buildingTerrain, buildingKnowledge, pendingBuildingDiscoveries, productionLedger, lastBirthSerial, upgradeQueues, missileTargets,
-        constructionClock, constructionNonces)
-
-    private fun restore(checkpoint: StepCheckpoint) {
-        units = checkpoint.units
-        pendingEvents = checkpoint.events
-        pendingProjectileEvents = checkpoint.projectileEvents
-        pendingActionResults = checkpoint.results
-        revision = checkpoint.revision
-        latestObservation = checkpoint.observation
-        projectiles = checkpoint.projectiles
-        combatFrame = checkpoint.frame
-        nextObjectId = checkpoint.nextObjectId
-        buildingTerrain = checkpoint.buildings
-        buildingKnowledge = checkpoint.buildingKnowledge
-        pendingBuildingDiscoveries = checkpoint.buildingDiscoveries
-        productionLedger = checkpoint.ledger
-        upgradeQueues = checkpoint.upgrades
-        missileTargets = checkpoint.missileTargets
-        lastBirthSerial = checkpoint.birthSerial
-        constructionClock = checkpoint.constructionClock
-        constructionNonces = checkpoint.constructionNonces
-        pathDiagnostics = checkpoint.diagnostics
-        noFogPlanning = checkpoint.noFog
-        playerPlanning.clear()
-        playerPlanning.putAll(checkpoint.planning)
-        actionResultOwners = checkpoint.owners
-        playerActionRevisions.clear()
-        playerActionRevisions.putAll(checkpoint.playerRevisions)
-    }
-
-    private data class AutomaticKnowledgeCommit(
-        val stores: Map<String, PlayerTerrainKnowledge>,
-        val views: Map<String, VisionSnapshot>,
-        val discoveries: Map<String, MutableMap<Pair<Int, Int>, Long>>,
-    )
-
-    private data class BuildingCommit(val truth: BuildingTerrain,
-        val owners: Map<String, BuildingKnowledge>, val discoveries: Map<String, Map<Pair<Int, Int>, Long>>)
 
     private fun prepareBuildings(views: Map<String, VisionSnapshot>?): BuildingCommit? {
         val old = buildingTerrain ?: return null
@@ -169,28 +156,28 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
         val rules = checkNotNull(knowledgeRules)
         val oldStores = checkNotNull(knowledgeStores)
         val groundGids = input.map.groundGids
-        val views = AutomaticVision.compute(world.id, (automaticVisionSnapshots?.values?.firstOrNull()?.epoch ?: -1L) + 1,
+        val vision = AutomaticVision.project(steps.current.automaticVisionState, world.id, (automaticVisionSnapshots?.values?.firstOrNull()?.epoch ?: -1L) + 1,
             input.map.widthTiles, input.map.heightTiles, input.map.tileWidth, input.map.tileHeight, input.players,
             units.values.filter { it.alive }.map { VisionSource(it.ownerPlayerId, it.position, it.definition.fogOfWarSightRange) }, rules.shareAlliedVision)
+        val views = vision.views
         val nextStores = linkedMapOf<String, PlayerTerrainKnowledge>()
         val discoveries = linkedMapOf<String, MutableMap<Pair<Int, Int>, Long>>()
         try {
             for ((player, view) in views) {
                 val old = oldStores.getValue(player)
-                val before = old.snapshot(world)
                 val next = old.projected(world, view.effectiveCells.map {
                     VisibleTerrainCell(it.column, it.row, input.map.blocking.isBlocked(it.column, it.row),
                         groundGids[it.row * input.map.widthTiles + it.column])
                 })
-                nextStores[player] = next
-                val after = next.snapshot(world)
-                for (cell in view.effectiveCells) {
-                    if (!before.planningBlocked(cell.column, cell.row) && after.planningBlocked(cell.column, cell.row)) {
-                        discoveries.getOrPut(player) { linkedMapOf() }[cell.column to cell.row] = after.revision
+                nextStores[player] = next.store
+                val after = next.store.snapshot(world)
+                for (change in next.changes) {
+                    if (change.after.visible && change.before.lastKnownBlocked != true && change.after.lastKnownBlocked == true) {
+                        discoveries.getOrPut(player) { linkedMapOf() }[change.index % input.map.widthTiles to change.index / input.map.widthTiles] = after.revision
                     }
                 }
             }
-            return AutomaticKnowledgeCommit(nextStores, views, discoveries)
+            return AutomaticKnowledgeCommit(nextStores, views, discoveries, vision.state)
         } catch (failure: Exception) {
             nextStores.values.forEach { it.close() }
             throw failure
@@ -201,6 +188,7 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
         knowledgeStores?.values?.forEach { it.close() }
         knowledgeStores = next.stores
         automaticVisionSnapshots = next.views
+        steps.current.automaticVisionState = next.visionState
         pendingKnowledgeDiscoveries.clear()
         pendingKnowledgeDiscoveries.putAll(next.discoveries)
     }
@@ -327,6 +315,7 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
         knowledgeStores = null
         knowledgeRules = null
         automaticVisionSnapshots = null
+        steps.current.automaticVisionState = null
         pendingKnowledgeDiscoveries.clear()
         pathDiagnostics?.clear()
         pathDiagnostics = null
@@ -336,16 +325,14 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
         this.scenario = null
         productionLedger = null
         missileTargets = null
-        upgradeQueues = null
+        ordinaryUpgrades = null
         lastBirthSerial = 0L
-        constructionClock = 0
-        constructionNonces = emptyMap()
+        buildingWork = BuildingWork.initial()
         buildingTerrain = null
         buildingKnowledge = emptyMap()
         pendingBuildingDiscoveries = emptyMap()
         units = linkedMapOf()
         projectiles.clear()
-        projectileViews.clear()
         pendingEvents.clear()
         pendingProjectileEvents.clear()
         pendingActionResults.clear()
@@ -355,7 +342,7 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
         actionIds.clear()
         actionResultOwners.clear()
         playerActionRevisions.clear()
-        playerObservations.clear()
+        playerObservationProjectors.clear()
         noFogPlanning = null
         playerPlanning.clear()
         return CloseResult.Closed
@@ -386,7 +373,7 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
         if (action is AttackAction) validateAttack(action, unit)?.let {
             return reject(action, it.code, it.message)
         }
-        validateConstructionEnvelope(action)?.let { return reject(action, it.code, it.message) }
+        BuildingWork.validateEnvelope(action)?.let { return reject(action, it.code, it.message) }
         val scheduledStep = action.atStep
         if (scheduledStep != null) {
             if (scheduledStep < 0 || (hasAdvanced && scheduledStep <= stepIndex)) {
@@ -642,7 +629,7 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
             is CommandActor.Denied -> return reject(action, access.error.code, access.error.message)
         }
         if (!unit.alive) return reject(action, "inactive-unit", "Unit is not active")
-        validateConstructionEnvelope(action)?.let { return reject(action, it.code, it.message) }
+        BuildingWork.validateEnvelope(action)?.let { return reject(action, it.code, it.message) }
         val constructionQueueFull = constructionAppend(action) == true && unit.taskQueue.size == 29
         if (constructionAppend(action) == false) {
             // A safe, authorized ordinary order clears first, even when its later capability check rejects it.
@@ -658,52 +645,13 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
             return reject(action, "immobile-unit", "Unit cannot move")
         }
         val result = when (action) {
-            is RepairBuildingAction -> {
-                validateMaintenance(unit, action.targetUnitId)?.let { return reject(action, it.code, it.message) }
-                if (!action.append || unit.tasks.isEmpty()) {
-                    unit.attackCommand = null
-                    unit.cancelRoute()
-                    unit.constructionElapsed = 0f
-                    unit.constructionWorking = false
-                }
-                unit.taskQueue = (if (action.append) unit.taskQueue else UnitTaskQueue()).append(UnitTask(UnitTaskKind.CONSTRUCT, action.actionId,
-                    targetUnitId = action.targetUnitId, atStep = action.atStep))
-                ActionResult.Accepted(action.actionId)
-            }
-            is ReclaimBuildingAction -> {
-                validateMaintenance(unit, action.targetUnitId)?.let { return reject(action, it.code, it.message) }
-                if (!action.append || unit.tasks.isEmpty()) {
-                    unit.attackCommand = null
-                    unit.cancelRoute()
-                    unit.constructionElapsed = 0f
-                    unit.constructionWorking = false
-                }
-                unit.taskQueue = (if (action.append) unit.taskQueue else UnitTaskQueue()).append(UnitTask(UnitTaskKind.RECLAIM, action.actionId,
-                    targetUnitId = action.targetUnitId, atStep = action.atStep))
+            is RepairBuildingAction, is ReclaimBuildingAction, is ResumeConstructionAction -> {
+                buildingWork.requestTarget(action, unit, currentScenario, units,
+                    automaticVisionSnapshots?.getValue(unit.ownerPlayerId))?.let { return reject(action, it.code, it.message) }
                 ActionResult.Accepted(action.actionId)
             }
             is BuildAction -> {
-                validateBuild(action, unit)?.let { return reject(action, it.code, it.message) }
-                if (!action.append || unit.tasks.isEmpty()) {
-                    unit.attackCommand = null
-                    unit.cancelRoute()
-                    unit.constructionElapsed = 0f
-                    unit.constructionWorking = false
-                }
-                unit.taskQueue = (if (action.append) unit.taskQueue else UnitTaskQueue()).append(UnitTask(UnitTaskKind.BUILD, action.actionId, action.target,
-                    atStep = action.atStep, buildingTypeId = action.buildingTypeId, buildingNonce = action.buildingNonce))
-                ActionResult.Accepted(action.actionId)
-            }
-            is ResumeConstructionAction -> {
-                validateResume(action, unit)?.let { return reject(action, it.code, it.message) }
-                if (!action.append || unit.tasks.isEmpty()) {
-                    unit.attackCommand = null
-                    unit.cancelRoute()
-                    unit.constructionElapsed = 0f
-                    unit.constructionWorking = false
-                }
-                unit.taskQueue = (if (action.append) unit.taskQueue else UnitTaskQueue()).append(UnitTask(UnitTaskKind.CONSTRUCT, action.actionId,
-                    targetUnitId = action.targetUnitId, atStep = action.atStep))
+                buildingWork.request(action, unit, currentScenario)?.let { return reject(action, it.code, it.message) }
                 ActionResult.Accepted(action.actionId)
             }
             is PatrolAction -> {
@@ -803,19 +751,6 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
         return publishedResult
     }
 
-    private fun validateBuild(action: BuildAction, unit: MutableUnit): SimulationError? {
-        val input = checkNotNull(scenario)
-        val builder = unit.definition.builder ?: return SimulationError("cannot-build", "Unit cannot construct buildings")
-        if (action.buildingTypeId !in builder.buildingTypeIds || input.unitDefinitions[action.buildingTypeId]?.construction == null)
-            return SimulationError("unsupported-construction-type", "Unit cannot construct this type")
-        if (!MapBounds.contains(input.map.widthTiles.toDouble() * input.map.tileWidth,
-                input.map.heightTiles.toDouble() * input.map.tileHeight, action.target, 0.0))
-            return SimulationError("invalid-target", "Target must be within the map")
-        if (action.buildingNonce in constructionNonces[unit.ownerPlayerId].orEmpty())
-            return SimulationError("duplicate-building-nonce", "Building nonce has already been used")
-        return null
-    }
-
     private fun constructionAppend(action: Action): Boolean? = when (action) {
         is BuildAction -> action.append
         is RepairBuildingAction -> action.append
@@ -824,235 +759,37 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
         else -> null
     }
 
-    private fun validateConstructionEnvelope(action: Action): SimulationError? {
-        if (action !is BuildAction) return null
-        if (!action.target.x.isFinite() || !action.target.y.isFinite())
-            return SimulationError("invalid-target", "Target coordinates must be finite")
-        if (!Regex("[0-9a-f]{32}").matches(action.buildingNonce))
-            return SimulationError("invalid-building-nonce", "Building nonce must be 32 lowercase hexadecimal characters")
-        return null
-    }
-
-    private fun validateResume(action: ResumeConstructionAction, worker: MutableUnit): SimulationError? {
-        val builder = worker.definition.builder ?: return SimulationError("cannot-build", "Unit cannot construct buildings")
-        val target = units[action.targetUnitId]
-        if (target == null || !target.alive || target.ownerPlayerId != worker.ownerPlayerId ||
-            target.typeId !in builder.buildingTypeIds || target.constructionProgress >= 1f ||
-            !isVisibleTo(worker.ownerPlayerId, target.position))
-            return SimulationError("invalid-construction-target", "Construction target is not available")
-        return null
-    }
-
-    private fun validateMaintenance(worker: MutableUnit, targetId: String): SimulationError? {
-        val contract = checkNotNull(scenario).maintenanceContract
-        if (contract == null || worker.typeId != "builder" || worker.definition.builder == null)
-            return SimulationError("cannot-maintain", "Unit cannot maintain buildings")
-        val target = units[targetId]
-        if (target == null || target === worker || !target.alive || target.ownerPlayerId != worker.ownerPlayerId ||
-            target.definition.building == null || target.typeId !in contract.basePrices ||
-            !isVisibleTo(worker.ownerPlayerId, target.position))
-            return SimulationError("invalid-maintenance-target", "Maintenance target is not available")
-        return null
-    }
-
-    private fun updateConstruction(worker: MutableUnit, input: Scenario, step: Step) {
-        val wasWorking = worker.constructionWorking
-        worker.constructionWorking = false
-        try { dispatchConstruction(worker, input, step, wasWorking) }
-        finally {
-            val target = worker.tasks.firstOrNull()?.takeIf {
-                it.kind == UnitTaskKind.CONSTRUCT || it.kind == UnitTaskKind.RECLAIM }?.targetUnitId?.let { units[it] }
-            val active = worker.constructionWorking && target?.alive == true
-            if (!worker.previousWorkTargetActive || !active) worker.constructionPreparation =
-                maxOf(0f, worker.constructionPreparation - checkNotNull(worker.definition.builder).decay * step.delta.toFloat())
-            worker.previousWorkTargetActive = active
+    private val buildingWorkAccess = object : BuildingWorkAccess {
+        override fun path(worker: MutableUnit, target: Position, range: Double, task: UnitTask, step: Long): BuildingRoute? {
+            val map = checkNotNull(scenario).map
+            val samples = pathDiagnostics
+            val path = if (worker.birthRemaining > 0f) listOf(target)
+                else if (samples == null) policies.path.findPath(planningTerrainFor(worker, map), worker.position, target,
+                    worker.definition.radius, targetRange = range)
+                else findPathWithDiagnostics(task.actionId, task.atStep, target, worker, map, samples,
+                    reason = PathSearchReason.CONSTRUCTION_APPROACH, executionStep = step, targetRange = range)
+            return path?.let { BuildingRoute(it, plannedKnowledgeRevision(worker), plannedBuildingRevision(worker)) }
         }
-    }
-
-    private fun canContinueConstruction(worker: MutableUnit, target: MutableUnit): Boolean {
-        if (checkNotNull(scenario).maintenanceContract?.basePrices?.containsKey(target.typeId) == true &&
-            worker.typeId == "builder" && target.definition.building != null) return true
-        val types = checkNotNull(worker.definition.builder).buildingTypeIds
-        if (target.typeId in types) return true
-        // An already assigned project remains maintainable after its ordinary upgrade.
-        // This does not add higher tiers to the player's construction menu.
-        val base = when (target.typeId) {
-            "extractorT2", "extractorT3" -> "extractorT1"
-            "fabricatorT2", "fabricatorT3" -> "fabricatorT1"
-            else -> return false
-        }
-        return base in types && target.definition.construction != null
-    }
-
-    private fun dispatchConstruction(worker: MutableUnit, input: Scenario, step: Step, wasWorking: Boolean) {
-        val task = worker.tasks.firstOrNull() ?: return
-        if (task.kind != UnitTaskKind.BUILD && task.kind != UnitTaskKind.CONSTRUCT && task.kind != UnitTaskKind.RECLAIM) return
-        worker.constructionElapsed += step.delta.toFloat()
-        if (task.kind == UnitTaskKind.CONSTRUCT || task.kind == UnitTaskKind.RECLAIM) {
-            val reclaim = task.kind == UnitTaskKind.RECLAIM
-            val target = units[task.targetUnitId]
-            if (target == null || !target.alive || target.ownerPlayerId != worker.ownerPlayerId ||
-                (if (reclaim) validateMaintenance(worker, target.unitId) != null else !canContinueConstruction(worker, target)) ||
-                !reclaim && target.constructionProgress >= 1f && checkNotNull(target.health) >= checkNotNull(target.definition.maximumHealth)) {
-                worker.taskQueue = worker.taskQueue.pop()
-                worker.constructionElapsed = 0f
-                worker.cancelRoute()
-                return
-            }
-            val profile = checkNotNull(worker.definition.builder)
-            val range = if (wasWorking) 90.0 else profile.range.toDouble()
-            if (policies.coordinates.distanceSquared(worker.position, target.position) > range * range) {
-                constructionRoute(worker, target.position, profile.range.toDouble(), task, input.map, step.stepIndex)
-                return
-            }
-            worker.cancelRoute()
-            val difference = policies.steering.turn(worker, target.position, step.delta, policies.coordinates)
-            if (kotlin.math.abs(difference) >= 30.0) return
-            worker.constructionWorking = true
-            if (worker.constructionPreparation < profile.preparation) {
-                worker.constructionPreparation += step.delta.toFloat()
-                return
-            }
-            worker.constructionPreparation = profile.preparation
-            if (reclaim) {
-                if (worker.constructionElapsed < 100f &&
-                    (target.constructionProgress < .5f ||
-                        target.constructionProgress >= .5f && checkNotNull(target.health).toFloat() /
-                            checkNotNull(target.definition.maximumHealth).toFloat() < .5f)) return
-                if (target.constructionProgress < 1f) {
-                    target.constructionProgress = maxOf(0f, target.constructionProgress - .001f * 5.1f * step.delta.toFloat())
-                    if (target.constructionProgress <= 0f) finishReclaim(worker, target, input)
-                } else {
-                    target.health = maxOf(0f, checkNotNull(target.health).toFloat() - .2f * 5.1f * step.delta.toFloat()).toDouble()
-                    if (checkNotNull(target.health) <= 0.0) finishReclaim(worker, target, input)
-                }
-            } else if (target.constructionProgress < 1f) {
-                target.constructionProgress = minOf(1f, target.constructionProgress +
-                    checkNotNull(target.definition.construction).rate * step.delta.toFloat())
-                if (target.constructionProgress >= 1f) pendingEvents += Event("construction-completed", target.unitId)
-            } else {
-                val health = checkNotNull(target.health).toFloat() + profile.repairRate * step.delta.toFloat()
-                val maximum = checkNotNull(target.definition.maximumHealth).toFloat()
-                target.health = minOf(maximum, health).toDouble()
-                if (health > maximum) {
-                    worker.taskQueue = worker.taskQueue.pop()
-                    worker.constructionElapsed = 0f
-                }
-            }
-            return
-        }
-        val order = checkNotNull(task.target)
-        val range = checkNotNull(worker.definition.builder).range.toDouble()
-        if (policies.coordinates.distanceSquared(worker.position, order) > range * range) {
-            constructionRoute(worker, order, range, task, input.map, step.stepIndex)
-            // A null result preserves the logical BUILD even when its old count is high.
-            // A new acceptance is still counted only after this activity dispatch.
-            if (worker.moveTarget != null && worker.singleNodePathCount > 3) {
-                worker.taskQueue = worker.taskQueue.pop()
-                worker.constructionElapsed = 0f
-                worker.cancelRoute()
-                return
-            }
-            return
-        }
-        worker.cancelRoute()
-        val difference = policies.steering.turn(worker, order, step.delta, policies.coordinates)
-        if (kotlin.math.abs(difference) > 30.0 ||
-            !ConstructionRetryRules.isDue(worker.constructionRetryTime, constructionClock)) return
-        val nonce = checkNotNull(task.buildingNonce)
-        if (nonce in constructionNonces[worker.ownerPlayerId].orEmpty()) {
-            worker.taskQueue = worker.taskQueue.pop()
-            worker.constructionElapsed = 0f
-            pendingEvents += Event("construction-unavailable", worker.unitId)
-            return
-        }
-        val definition = input.unitDefinitions.getValue(checkNotNull(task.buildingTypeId))
-        val building = checkNotNull(definition.building)
-        val position = ConstructionPlacement.snap(order, building.anchor)
-        val cells = try { BuildingTerrain.footprint(input.map, position, building.placementFootprint, building.anchor) }
-            catch (_: BuildingInitializationException) { emptySet() }
-        // This finite builder sees every candidate cell before querying live placement truth.
-        val view = automaticVisionSnapshots?.getValue(worker.ownerPlayerId)
-        if (view != null && cells.any { !view.contains(it.first, it.second) }) return
-        val live = orderedUnits().filter { it.alive && it.definition.building != null }
-        val poolAtCenter = input.map.isResourcePool(MapBounds.cell(position.x, input.map.tileWidth, input.map.widthTiles),
-            MapBounds.cell(position.y, input.map.tileHeight, input.map.heightTiles))
-        val terrainBlocked = if (building.requiresResourcePool) !poolAtCenter else
-            cells.any { input.map.blocking.isBlocked(it.first, it.second) || input.map.isResourcePool(it.first, it.second) }
-        val blocked = cells.isEmpty() || !MapBounds.contains(input.map.widthTiles.toDouble() * input.map.tileWidth,
-            input.map.heightTiles.toDouble() * input.map.tileHeight, position, definition.radius) ||
-            terrainBlocked || live.any { other ->
-                val profile = checkNotNull(other.definition.building)
-                BuildingTerrain.footprint(input.map, other.position, profile.placementFootprint, profile.anchor, clipToMap = true).any { it in cells }
-            }
-        val reused = if (blocked) live.firstOrNull { other ->
-            other.ownerPlayerId == worker.ownerPlayerId && other.typeId == definition.id &&
-                policies.coordinates.distanceSquared(position, other.position) <
-                    (definition.radius + other.definition.radius) * (definition.radius + other.definition.radius)
-        } else null
-        if (blocked && reused == null) {
-            worker.taskQueue = worker.taskQueue.pop()
-            worker.constructionElapsed = 0f
-            pendingEvents += Event("construction-unavailable", worker.unitId)
-            return
-        }
-        val target = reused ?: run {
-            val paid = checkNotNull(productionLedger).charge(worker.ownerPlayerId, checkNotNull(definition.construction).price)
-            if (paid == null) {
-                worker.constructionRetryTime = constructionClock
-                if (worker.constructionElapsed >= 1000f) {
-                    worker.taskQueue = worker.taskQueue.pop()
-                    worker.constructionElapsed = 0f
-                }
-                pendingEvents += Event("construction-insufficient-funds", worker.unitId)
-                return
-            }
-            val publicId = "constructed:${worker.ownerPlayerId}:$nonce"
-            check(publicId !in units)
+        override fun birth(): BuildingBirth {
             val objectId = nextObjectId
             nextObjectId = Math.incrementExact(nextObjectId)
             lastBirthSerial = Math.incrementExact(lastBirthSerial)
-            val created = MutableUnit(publicId, worker.ownerPlayerId, definition.id, definition, position, 0.0,
-                objectId = objectId, updateKey = "~produced/" + lastBirthSerial.toString().padStart(20, '0'),
-                constructionProgress = 0f)
-            productionLedger = definition.production?.let { production ->
-                paid.register(publicId, FactoryProductionSpec(worker.ownerPlayerId, production.unitTypeIds.associateWith {
-                    checkNotNull(input.unitDefinitions.getValue(it).build) }))
-            } ?: paid
-            units[publicId] = created
-            if (definition.upgrades != null) upgradeQueues = checkNotNull(upgradeQueues).register(publicId)
-            constructionNonces = constructionNonces + (worker.ownerPlayerId to
-                (constructionNonces[worker.ownerPlayerId].orEmpty() + nonce))
-            buildingTerrain = BuildingTerrain.fromLive(input.map, units.values, checkNotNull(buildingTerrain))
-            pendingEvents += Event("construction-created", publicId)
-            created
+            return BuildingBirth(objectId, "~produced/" + lastBirthSerial.toString().padStart(20, '0'))
         }
-        worker.constructionRetryTime = -9999
-        worker.taskQueue = worker.taskQueue.replaceHead(UnitTask(UnitTaskKind.CONSTRUCT, task.actionId,
-            targetUnitId = target.unitId, atStep = task.atStep))
     }
 
-    private fun finishReclaim(worker: MutableUnit, target: MutableUnit, input: Scenario) {
-        val price = checkNotNull(input.maintenanceContract).basePrices.getValue(target.typeId)
-        productionLedger = checkNotNull(productionLedger).creditReclaim(worker.ownerPlayerId, price.toDouble() * .8f.toDouble())
-        if (target.definition.production != null) productionLedger = checkNotNull(productionLedger).destroyFactory(target.unitId)
-        refundUpgrades(target)
-        target.health = 0.0
-        target.reclaimed = true
-        target.attackCommand = null
-        target.taskQueue = UnitTaskQueue()
-        target.cancelRoute()
-        target.movementRequested = false
-        target.constructionWorking = false
-        target.combat?.targetId = null
-        missileTargets = missileTargets?.remove(target.unitId)
-        buildingTerrain = BuildingTerrain.fromLive(input.map, units.values, checkNotNull(buildingTerrain))
-        worker.taskQueue = worker.taskQueue.pop()
-        worker.constructionElapsed = 0f
-        worker.constructionWorking = false
-        worker.cancelRoute()
-        pendingEvents += Event("building-reclaimed", target.unitId)
-        pendingEvents += Event("maintenance-completed", worker.unitId)
+    private fun updateConstruction(worker: MutableUnit, input: Scenario, step: Step) {
+        val frame = BuildingWorkFrame(input, units, step, automaticVisionSnapshots?.getValue(worker.ownerPlayerId),
+            policies.coordinates, policies.steering, buildingWorkAccess)
+        val change = buildingWork.advanceActivity(worker, frame, checkNotNull(productionLedger), ordinaryUpgrades)
+        buildingWork = change.work
+        productionLedger = change.ledger
+        ordinaryUpgrades = change.upgrades
+        change.created?.let { units[it.unitId] = it }
+        change.reclaimedUnitId?.let { missileTargets = missileTargets?.remove(it) }
+        if (change.created != null || change.reclaimedUnitId != null)
+            buildingTerrain = BuildingTerrain.fromLive(input.map, units.values, checkNotNull(buildingTerrain))
+        pendingEvents += change.events
     }
 
     private fun logicalRouteTarget(unit: MutableUnit, fallback: Position): Position {
@@ -1066,88 +803,28 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
         }
     }
 
-    private fun constructionRoute(worker: MutableUnit, target: Position, range: Double, task: UnitTask,
-                                  map: MapDefinition, executionStep: Long) {
-        worker.requestMovement(target)
-        if (worker.moveTarget == target && worker.pathPoints.isNotEmpty()) return
-        val samples = pathDiagnostics
-        val path = if (worker.birthRemaining > 0f) listOf(target)
-            else if (samples == null) policies.path.findPath(planningTerrainFor(worker, map), worker.position, target,
-                worker.definition.radius, targetRange = range)
-            else findPathWithDiagnostics(task.actionId, task.atStep, target, worker, map, samples,
-                reason = PathSearchReason.CONSTRUCTION_APPROACH, executionStep = executionStep, targetRange = range)
-        if (path == null) {
-            if (task.kind == UnitTaskKind.BUILD) {
-                // A synchronous null supplies no usable route, not a completed build.
-                worker.pauseRoute()
-                return
-            }
-            worker.taskQueue = worker.taskQueue.pop()
-            worker.constructionElapsed = 0f
-            worker.cancelRoute()
-            pendingEvents += Event("path-unreachable", worker.unitId)
-        } else {
-            worker.moveTarget = target
-            worker.originMoveId = task.actionId
-            worker.originAtStep = task.atStep
-            worker.adoptRoute(path, target, plannedKnowledgeRevision(worker), plannedBuildingRevision(worker))
+    private fun applyUpgrade(action: Action, unit: MutableUnit, upgradeId: String, cancel: Boolean): ActionResult {
+        val upgrades = ordinaryUpgrades ?: return reject(action, "cannot-upgrade", "Unit cannot upgrade")
+        return when (val result = upgrades.request(unit, upgradeId, cancel, checkNotNull(productionLedger))) {
+            is OrdinaryUpgradeRequest.Rejected -> reject(action, result.error.code, result.error.message)
+            is OrdinaryUpgradeRequest.Accepted -> ActionResult.Accepted(action.actionId, applyUpgradeChange(result.change))
         }
     }
 
-    private fun applyUpgrade(action: Action, unit: MutableUnit, upgradeId: String, cancel: Boolean): ActionResult {
-        val profile = unit.definition.upgrades ?: return reject(action, "cannot-upgrade", "Unit cannot upgrade")
-        val spec = profile.actions.singleOrNull { it.actionKey == upgradeId }
-            ?: return reject(action, "unsupported-upgrade", "Unit cannot perform this upgrade")
-        val queues = checkNotNull(upgradeQueues)
-        val ledger = checkNotNull(productionLedger)
-        val nextQueues: UpgradeQueues
-        val nextLedger: ProductionLedger
-        if (cancel) {
-            val change = queues.cancel(unit.unitId, upgradeId)
-            val removed = change.removed.singleOrNull()
-                ?: return reject(action, "empty-upgrade-queue", "No matching upgrade is queued")
-            nextQueues = change.queues
-            nextLedger = ledger.refund(unit.ownerPlayerId, removed.cost)
-        } else {
-            if (queues.queue(unit.unitId).any { it.actionKey == upgradeId })
-                return reject(action, "duplicate-upgrade", "This upgrade is already queued")
-            nextLedger = ledger.charge(unit.ownerPlayerId, spec.price)
-                ?: return reject(action, "insufficient-funds", "Insufficient funds")
-            nextQueues = queues.enqueue(unit.unitId, spec)
-        }
-        upgradeQueues = nextQueues
-        productionLedger = nextLedger
-        return ActionResult.Accepted(action.actionId, listOf(Event(if (cancel) "upgrade-cancelled" else "upgrade-queued", unit.unitId)))
+    private fun applyUpgradeChange(change: OrdinaryUpgradeChange): List<Event> {
+        ordinaryUpgrades = change.upgrades
+        productionLedger = change.ledger
+        return change.events
     }
 
     private fun advanceUpgrade(unit: MutableUnit) {
-        val queues = upgradeQueues ?: return
-        val tick = queues.advance(unit.unitId)
-        upgradeQueues = tick.queues
-        val completed = tick.completed ?: return
-        val definition = checkNotNull(scenario).unitDefinitions.getValue(completed.targetTypeId)
-        check(unit.alive && unit.definition.upgrades?.actions?.any {
-            it.actionKey == completed.actionKey && it.targetTypeId == definition.id } == true)
-        val oldMaximum = checkNotNull(unit.definition.maximumHealth).toFloat()
-        val nextMaximum = checkNotNull(definition.maximumHealth).toFloat()
-        val health = checkNotNull(unit.health).toFloat() / oldMaximum * nextMaximum
-        require(health.isFinite() && health in 0f..nextMaximum) { "Converted health must remain finite and bounded" }
-        unit.typeId = definition.id
-        unit.definition = definition
-        unit.health = health.toDouble()
-        unit.speed = 0.0
-        unit.combat?.let { it.cooldown = minOf(it.cooldown, checkNotNull(definition.combat).shootDelay) }
-        pendingEvents += Event("upgrade-completed", unit.unitId)
-        refundUpgrades(unit, definition.upgrades?.actions?.mapTo(mutableSetOf()) { it.actionKey }.orEmpty())
+        val upgrades = ordinaryUpgrades ?: return
+        pendingEvents += applyUpgradeChange(upgrades.advance(unit, checkNotNull(productionLedger)))
     }
 
-    private fun refundUpgrades(unit: MutableUnit, allowed: Set<String> = emptySet()) {
-        val change = upgradeQueues?.retain(unit.unitId, allowed) ?: return
-        var ledger = productionLedger
-        for (item in change.removed) ledger = checkNotNull(ledger).refund(unit.ownerPlayerId, item.cost)
-        upgradeQueues = change.queues
-        productionLedger = ledger
-        if (change.removed.isNotEmpty()) pendingEvents += Event("upgrade-refunded", unit.unitId)
+    private fun refundUpgrades(unit: MutableUnit) {
+        val upgrades = ordinaryUpgrades ?: return
+        pendingEvents += applyUpgradeChange(upgrades.discard(unit, checkNotNull(productionLedger)))
     }
 
     private fun applyProduction(action: Action, unit: MutableUnit, typeId: String, nonce: String?): ActionResult {
@@ -1218,27 +895,10 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
             "advance cannot skip a scheduled action step"
         }
         val actions = scheduledActions.filter { it.atStep == step.stepIndex }
-        val previous = checkpoint()
-        // Calculate on copies so a numerical failure cannot commit half of a multi-unit step.
-        units = units.mapValuesTo(linkedMapOf()) { (_, unit) ->
-            unit.copy(pathPoints = unit.pathPoints.toMutableList(), combat = unit.combat?.copy(),
-                pointDefense = unit.pointDefense?.copy()) }
-        val existingProjectileIds = projectiles.mapTo(hashSetOf()) { it.objectId }
-        projectiles = projectiles.mapTo(mutableListOf()) {
-            it.copy(expansion = it.expansion?.let { area -> area.copy(hitUnitIds = LinkedHashSet(area.hitUnitIds)) }) }
-        pathDiagnostics = pathDiagnostics?.toMutableList()
-        pendingEvents = pendingEvents.toMutableList()
-        pendingProjectileEvents = pendingProjectileEvents.toMutableList()
-        pendingActionResults = pendingActionResults.toMutableList()
-        val motionSamples = motionDiagnostics?.let { mutableListOf<MotionStepSample>() }
-        var nextVision: AutomaticKnowledgeCommit? = null
-        var nextBuildings: BuildingCommit? = null
-        var nextObservation: Observation? = null
-        var nextOwners: IdentityHashMap<ActionResult, String>? = null
-        val nextTime = simulationTime + step.delta
-        try {
+        return steps.advance(currentScenario, step, actions,
+            { index, time, nextRevision -> makeObservation(index, time, true, nextRevision) }) { candidate ->
             combatFrame += 1
-            constructionClock = (constructionClock.toFloat() + step.delta.toFloat() * 16.666666f).toInt()
+            buildingWork = buildingWork.advanceClock(step.delta)
             actions.forEach { applyAction(it, step.stepIndex) }
             for (unit in orderedUnits()) if (unit.alive && unit.tasks.firstOrNull()?.kind == UnitTaskKind.PATROL)
                 retainedPatrolTarget(unit)
@@ -1260,10 +920,10 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
                 unit.qBeforeDispatch = unit.singleNodePathCount
                 unit.consumedPathNodeCounts = emptyList()
                 if (unit.definition.builder != null) updateConstruction(unit, currentScenario, step)
-                if (unit.definition.production != null && unit.constructionProgress >= 1f) advanceProduction(unit, currentScenario)
+                if (unit.definition.production != null && BuildingWork.isReady(unit)) advanceProduction(unit, currentScenario)
                 val economicBuilding = unit.definition.income != null && unit.definition.construction != null
-                if (economicBuilding && unit.constructionProgress >= 1f) advanceUpgrade(unit)
-                unit.definition.income?.takeIf { unit.constructionProgress >= 1f }?.let { income ->
+                if (economicBuilding && BuildingWork.isReady(unit)) advanceUpgrade(unit)
+                unit.definition.income?.takeIf { BuildingWork.isReady(unit) }?.let { income ->
                     unit.incomeElapsed += step.delta.toFloat()
                     require(unit.incomeElapsed.isFinite()) { "Income elapsed time must remain finite" }
                     if (unit.incomeElapsed > income.period - .1f) {
@@ -1277,50 +937,22 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
                         updatePatrolRoute(unit, currentScenario.map, step.stepIndex, previousRequest)
                     else updateAttackRoute(unit, currentScenario.map, step.stepIndex)
                 }
-                if (unit.constructionProgress >= 1f) {
+                if (BuildingWork.isReady(unit)) {
                     updateWeapon(unit, step.delta)
                     updatePointDefense(unit, step.delta)
                 }
-                updateUnit(unit, currentScenario.map, step.delta, step.stepIndex, motionSamples)
+                updateUnit(unit, currentScenario.map, step.delta, step.stepIndex, candidate.motionSamples)
                 unit.finishMovementRequest()
-                if (unit.constructionProgress >= 1f) {
+                if (BuildingWork.isReady(unit)) {
                     unit.combat?.let { it.cooldown = maxOf(0.0, it.cooldown - step.delta) }
                     if (!economicBuilding) advanceUpgrade(unit)
                 }
             }
-            updateProjectiles(step.delta, existingProjectileIds)
+            updateProjectiles(step.delta, candidate.existingProjectileIds)
             missileTargets = missileTargets?.refresh(orderedUnits())
-            nextVision = prepareAutomaticKnowledge()
-            nextBuildings = prepareBuildings(nextVision?.views ?: automaticVisionSnapshots)
-            require(nextTime.isFinite()) { "Simulation time must remain finite" }
-            validateCandidate()
-            nextObservation = makeObservation(step.stepIndex, nextTime, true, revision + 1L)
-            nextOwners = IdentityHashMap<ActionResult, String>(nextObservation.actionResults.size)
-            for (result in nextObservation.actionResults) actionResultOwners[result]?.let { nextOwners[result] = it }
-        } catch (error: Exception) {
-            nextVision?.stores?.values?.forEach { it.close() }
-            restore(previous)
-            throw error
+            candidate.stageKnowledge(prepareAutomaticKnowledge())
+            candidate.stageBuildings(prepareBuildings(candidate.vision))
         }
-        pendingKnowledgeDiscoveries.clear()
-        nextVision?.let { commitAutomaticKnowledge(it) }
-        nextBuildings?.let { commitBuildings(it) }
-        scheduledActions.removeAll(actions.toSet())
-        stepIndex = step.stepIndex
-        hasAdvanced = true
-        simulationTime = nextTime
-        revision += 1L
-        val observation = checkNotNull(nextObservation)
-        latestObservation = observation
-        committedObservation = observation
-        // Only this committed window and subsequent immediate results can be observed.
-        // Replace the map as well as its entries: a previous burst must not retain its capacity.
-        actionResultOwners = checkNotNull(nextOwners)
-        pendingEvents.clear()
-        pendingProjectileEvents.clear()
-        pendingActionResults.clear()
-        motionSamples?.let { checkNotNull(motionDiagnostics).addAll(it) }
-        return observation
     }
 
     fun observe(): Observation {
@@ -1343,89 +975,17 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
         val input = checkNotNull(scenario)
         if (input.players.none { it.playerId == playerId }) throw KnowledgeException("unknown-player", "Player is not declared in the current scenario")
         val observation = observe()
-        val vision = automaticVisionSnapshots?.getValue(playerId)
-        val knowledge = knowledgeStores?.getValue(playerId)?.snapshot(world)
-        val cached = playerObservations[playerId]
-        if (cached?.source === observation && cached.key.epoch == vision?.epoch &&
-            cached.key.knowledgeRevision == knowledge?.revision &&
-            cached.key.actionRevision == (playerActionRevisions[playerId] ?: 0L)) return cached.observation
-        val visibleUnits = observation.units.filter { isVisibleTo(playerId, it.position) }
-        val visibleIds = visibleUnits.map { it.unitId }.toSet()
-        val visible = visibleUnits.map {
-            val ownerTasks = immutable(it.tasks.map { task ->
-                if (task.targetUnitId != null && task.targetUnitId !in visibleIds) task.copy(targetUnitId = null) else task
-            })
-            if (it.ownerPlayerId != playerId) {
-                it.copy(moveTarget = null, pathPoints = emptyList(), attackTargetId = null, cooldown = null, pointDefense = null,
-                    tasks = emptyList(), constructionTargetId = null)
-            } else if (it.attackTargetId != null && it.attackTargetId !in visibleIds) {
-                it.copy(moveTarget = null, pathPoints = emptyList(), attackTargetId = null, tasks = ownerTasks,
-                    constructionTargetId = it.constructionTargetId?.takeIf { target -> target in visibleIds })
-            } else it.copy(tasks = ownerTasks, constructionTargetId = it.constructionTargetId?.takeIf { target -> target in visibleIds })
+        val owners = IdentityHashMap<ActionResult, String>()
+        (committedObservation?.actionResults.orEmpty() + observation.actionResults).forEach { result ->
+            actionResultOwners[result]?.let { owners[result] = it }
         }
-        val ids = visible.map { it.unitId }.toSet()
-        fun visibleEvents(events: List<Event>): List<Event> {
-            val allowed = events.filter { event -> if (event.kind == "building-reclaimed") {
-                units[event.unitId]?.let { it.reclaimed && it.ownerPlayerId == playerId } == true
-            } else event.unitId != null && event.unitId in ids &&
-                (!(event.kind.startsWith("production-") || event.kind.startsWith("upgrade-") ||
-                    event.kind in setOf("construction-unavailable", "construction-insufficient-funds", "construction-queue-full", "maintenance-completed")) ||
-                    visible.any { it.unitId == event.unitId && it.ownerPlayerId == playerId }) }
-            val combatKinds = setOf("projectile-fired", "unit-damaged", "unit-died",
-                "production-queued", "production-cancelled", "production-refunded", "unit-produced",
-                "upgrade-queued", "upgrade-cancelled", "upgrade-completed", "upgrade-refunded")
-            // S1 command events retain submission order. Combat order is public-value canonical,
-            // never the hidden source/host projectile allocation order used by the simulator.
-            return allowed.filter { it.kind !in combatKinds } + allowed.filter { it.kind in combatKinds }
-                .sortedWith(compareBy<Event> { it.kind }.thenBy { it.unitId })
-        }
-        // Keep the committed step's events when immediate actions replace the host observation.
-        // Hidden actions must neither erase these events nor advance the player's sample identity.
-        val committed = committedObservation?.takeIf { it !== observation }
-        val events = visibleEvents(committed?.events.orEmpty() + observation.events)
-        val results = (committed?.actionResults.orEmpty() + observation.actionResults).filter { actionResultOwners[it] == playerId }.map {
-            if (it is ActionResult.Accepted) ActionResult.Accepted(it.actionId, visibleEvents(it.events), it.queuedForStep) else it
-        }
-        val rawProjectileEvents = committed?.projectileEvents.orEmpty() + observation.projectileEvents
-        val projectedEvents = rawProjectileEvents.filter { isVisibleTo(playerId, it.projectile.position) &&
-            (it.interceptorUnitId == null || it.interceptorUnitId in ids) }.map { event ->
-            val value = event.projectile
-            val target = value.targetUnitId.takeIf { it in ids }
-            ProjectedProjectileEvent(value.objectId, event.kind, value.position, value.heading, value.height,
-                value.sourceUnitId.takeIf { it in ids }, target, event.damage.takeIf { target != null }, event.interceptorUnitId,
-                value.areaExpansion?.radius)
-        }
-        val projection = projectileViews.getOrPut(playerId) { ProjectileProjection() }.project(
-            observation.projectiles.filter { isVisibleTo(playerId, it.position) }, projectedEvents,
-            observation.projectiles.mapTo(mutableSetOf()) { it.objectId }.also { retained ->
-                rawProjectileEvents.forEach { retained += it.projectile.objectId }
-            })
-        val balance = observation.economy?.balances?.getValue(playerId)
-        val credits = observation.economy?.preciseBalances?.getValue(playerId)
-        val factoryQueues = if (input.players.first { it.playerId == playerId }.control == PlayerControl.LOCAL)
-            visible.filter { it.ownerPlayerId == playerId && it.alive &&
-                input.unitDefinitions.getValue(it.typeId).production != null }.sortedBy { it.unitId }.map { factory ->
-                    FactoryQueueObservation(factory.unitId, observation.economy?.queuedProduction?.getValue(factory.unitId).orEmpty()
-                        .map { ProductionQueueItem(it.typeId, it.progress) })
-                } else emptyList()
-        val playerUpgrades = if (input.players.first { it.playerId == playerId }.control == PlayerControl.LOCAL)
-            visible.filter { it.ownerPlayerId == playerId && it.alive && input.unitDefinitions.getValue(it.typeId).upgrades != null }
-                .sortedBy { it.unitId }.map { unit -> UpgradeQueueObservation(unit.unitId,
-                    observation.upgrades?.queues?.getValue(unit.unitId).orEmpty().map {
-                        UpgradeQueueItem(it.actionKey, it.targetTypeId, it.progress) }) }
-            else emptyList()
-        val key = PlayerObservationKey(stepIndex, simulationTime, vision?.epoch, knowledge?.revision,
-            playerActionRevisions[playerId] ?: 0L, visible, events, results, projection.projectiles, projection.events, balance, factoryQueues, playerUpgrades, credits)
-        if (cached?.key == key) {
-            playerObservations[playerId] = cached.copy(source = observation)
-            return cached.observation
-        }
-        val playerRevision = (cached?.revision ?: -1L) + 1L
-        val result = PlayerObservation("${world.id}:$playerId:${if (hasAdvanced) "step$stepIndex" else "initial"}:${vision?.epoch ?: 0L}:$playerRevision",
-            world.id, input.scenarioId, playerId, stepIndex, simulationTime, vision, knowledge,
-            visible, events, results, projection.projectiles, projection.events, balance, factoryQueues, playerUpgrades, credits)
-        playerObservations[playerId] = CachedPlayerObservation(key, result, playerRevision, observation)
-        return result
+        val frame = PlayerObservationFrame(observation, committedObservation,
+            automaticVisionSnapshots?.getValue(playerId), knowledgeStores?.getValue(playerId)?.snapshot(world),
+            playerActionRevisions[playerId] ?: 0L, hasAdvanced, owners,
+            units.values.filter { it.reclaimed }.associate { it.unitId to it.ownerPlayerId })
+        return playerObservationProjectors.getOrPut(playerId) {
+            PlayerObservationProjector(world, input, playerId)
+        }.observe(frame)
     }
 
     private fun initializeInternal(nextScenario: Scenario): InitResult {
@@ -1444,6 +1004,7 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
             ProductionLedger.initial(economy.initialBalances, factories,
                 nextScenario.unitDefinitions.values.any { it.income != null } || nextScenario.maintenanceContract != null)
         }
+        val initialUpgrades = OrdinaryUpgrades.initial(nextScenario)
         worldGeneration += 1
         activeWorld = WorldHandle("${nextScenario.scenarioId}:$worldGeneration")
         scenario = nextScenario.copy(
@@ -1456,16 +1017,14 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
                 it.copy(initialBalances = Collections.unmodifiableMap(LinkedHashMap(it.initialBalances))) },
         )
         productionLedger = initialLedger
-        upgradeQueues = if (nextScenario.unitDefinitions.values.any { it.upgrades != null }) UpgradeQueues.initial(
-            nextScenario.units.filter { nextScenario.unitDefinitions.getValue(it.typeId).upgrades != null }.map { it.unitId }.toSet()) else null
+        ordinaryUpgrades = initialUpgrades
         buildingTerrain = initialBuildings
         units = linkedMapOf()
         projectiles = mutableListOf()
         combatFrame = nextScenario.combatContract?.initialFrameCounter ?: -1
         nextObjectId = nextScenario.combatContract?.nextObjectId ?: 1L
         lastBirthSerial = 0L
-        constructionClock = 0
-        constructionNonces = emptyMap()
+        buildingWork = BuildingWork.initial()
         nextScenario.units.sortedBy { it.unitId }.forEach { spawn ->
             units[spawn.unitId] = MutableUnit(
                 unitId = spawn.unitId,
@@ -1537,7 +1096,7 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
         if (input.units.any { it.ownerPlayerId !in players }) return SimulationError("bad-reference", "Unit owner is not a declared player")
         if (input.units.any { it.typeId !in input.unitDefinitions }) return SimulationError("bad-reference", "Unit type is not declared")
         MaintenanceRules.validate(input)?.let { return it }
-        UpgradeRules.validate(input)?.let { return it }
+        OrdinaryUpgrades.validate(input)?.let { return it }
         if (input.map.widthTiles <= 0 || input.map.heightTiles <= 0) return SimulationError("invalid-map", "Map dimensions must be positive")
         if (input.automaticVision != null && input.map.widthTiles.toLong() * input.map.heightTiles != input.map.groundGids.size.toLong()) {
             return SimulationError("invalid-map", "Automatic terrain knowledge requires matching ground dimensions")
@@ -1762,7 +1321,7 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
         }
         if (enemy != null) {
             val stopRange = checkNotNull(unit.definition.combat).attackRange.toFloat() - 1f
-            if (patrolDistanceSquared(unit, enemy) < stopRange * stopRange) {
+            if (CombatTargetQuery.patrolDistanceSquared(unit, enemy) < stopRange * stopRange) {
                 unit.cancelRoute()
                 return
             }
@@ -1792,18 +1351,10 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
         var command = unit.attackCommand ?: return
         val weapon = unit.definition.combat ?: return
         val input = checkNotNull(scenario)
-        val team = input.players.single { it.playerId == unit.ownerPlayerId }.teamId
-        fun eligible(target: MutableUnit): Boolean = target.alive && target.health != null &&
-            target.ownerPlayerId != unit.ownerPlayerId &&
-            (team == null || input.players.single { it.playerId == target.ownerPlayerId }.teamId != team)
+        fun eligible(target: MutableUnit) = CombatTargetQuery.isEnemy(unit, target, input.players)
         var target = units[command.targetUnitId]?.takeIf(::eligible)
         if (target == null) {
-            val nearby = orderedUnits().filter { eligible(it) &&
-                policies.coordinates.distanceSquared(unit.position, it.position) < weapon.attackRange * weapon.attackRange }
-            val armed = nearby.filter { it.definition.combat != null }
-            target = (if (armed.isNotEmpty()) armed else nearby).minByOrNull {
-                policies.coordinates.distanceSquared(unit.position, it.position)
-            }
+            target = CombatTargetQuery.nearestEnemy(unit, orderedUnits(), input.players, policies.coordinates)
             unit.cancelRoute()
             if (target == null) {
                 unit.attackCommand = null
@@ -1861,55 +1412,18 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
         val state = unit.combat ?: return null
         val oldId = state.targetId ?: return null
         val input = checkNotNull(scenario)
-        val team = input.players.single { it.playerId == unit.ownerPlayerId }.teamId
-        val target = units[oldId]?.takeIf { it.alive && it.health != null &&
-            it.ownerPlayerId != unit.ownerPlayerId &&
-            (team == null || input.players.single { player -> player.playerId == it.ownerPlayerId }.teamId != team) &&
-            isVisibleTo(unit.ownerPlayerId, it.position) }
+        val target = units[oldId]?.takeIf {
+            CombatTargetQuery.isEnemy(unit, it, input.players) && isVisibleTo(unit.ownerPlayerId, it.position) }
         val range = maxOf(checkNotNull(unit.definition.combat).attackRange.toFloat() + 110f, 190f)
-        if (target != null && patrolDistanceSquared(unit, target) < range * range) return target
+        if (target != null && CombatTargetQuery.patrolDistanceSquared(unit, target) < range * range) return target
         state.targetId = null
         unit.cancelRoute()
         unit.lastAttackPathAttemptStep = null
         return null
     }
 
-    private fun acquirePatrolTarget(unit: MutableUnit): MutableUnit? {
-        val weapon = unit.definition.combat ?: return null
-        val input = checkNotNull(scenario)
-        val team = input.players.single { it.playerId == unit.ownerPlayerId }.teamId
-        val range = maxOf(weapon.attackRange.toFloat() + 110f, 190f)
-        val candidates = orderedUnits().filter { candidate ->
-            candidate.alive && candidate.health != null && candidate.ownerPlayerId != unit.ownerPlayerId &&
-                (team == null || input.players.single { it.playerId == candidate.ownerPlayerId }.teamId != team) &&
-                isVisibleTo(unit.ownerPlayerId, candidate.position) &&
-                kotlin.math.abs(unit.position.x.toFloat() - candidate.position.x.toFloat()) <= range &&
-                kotlin.math.abs(unit.position.y.toFloat() - candidate.position.y.toFloat()) <= range
-        }
-        fun nearest(armedOnly: Boolean): MutableUnit? {
-            var threshold = range * range + 1f
-            var chosen: MutableUnit? = null
-            for (candidate in candidates) {
-                if (armedOnly && candidate.definition.combat?.let {
-                        it.attackRange > 0.0 && (it.projectile.directDamage > 0.0 ||
-                            (it.projectile.ground?.areaDamage ?: 0f) > 0f)
-                    } != true) continue
-                val distance = patrolDistanceSquared(unit, candidate)
-                if (distance < threshold) { threshold = distance; chosen = candidate }
-            }
-            return chosen
-        }
-        val first = nearest(true)
-        val attackRange = weapon.attackRange.toFloat()
-        return if (candidates.isNotEmpty() && (first == null ||
-                patrolDistanceSquared(unit, first) >= attackRange * attackRange)) nearest(false) else first
-    }
-
-    private fun patrolDistanceSquared(unit: MutableUnit, target: MutableUnit): Float {
-        val x = unit.position.x.toFloat() - target.position.x.toFloat()
-        val y = unit.position.y.toFloat() - target.position.y.toFloat()
-        return x * x + y * y
-    }
+    private fun acquirePatrolTarget(unit: MutableUnit): MutableUnit? =
+        CombatTargetQuery.patrolEnemy(unit, orderedUnits(), checkNotNull(scenario).players, ::isVisibleTo)
 
     private fun updateWeapon(unit: MutableUnit, delta: Double) {
         val state = unit.combat ?: return
@@ -1918,10 +1432,7 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
         val contract = checkNotNull(input.combatContract)
         val actorId = checkNotNull(unit.objectId)
         OrdinaryWeapon.idle(contract.worldSeed, combatFrame, actorId, unit, delta)
-        val team = input.players.single { it.playerId == unit.ownerPlayerId }.teamId
-        fun eligible(target: MutableUnit) = target.alive && target.health != null &&
-            target.ownerPlayerId != unit.ownerPlayerId &&
-            (team == null || input.players.single { it.playerId == target.ownerPlayerId }.teamId != team)
+        fun eligible(target: MutableUnit) = CombatTargetQuery.isEnemy(unit, target, input.players)
         fun inRange(target: MutableUnit) = policies.coordinates.distanceSquared(unit.position, target.position) <
             weapon.attackRange * weapon.attackRange
         val manual = unit.attackCommand
@@ -1933,7 +1444,7 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
             var retained = retainedPatrolTarget(unit)
             val range = weapon.attackRange.toFloat()
             val interval = 20f + unit.position.x.toFloat() % 5f + unit.position.y.toFloat() % 5f
-            if ((retained == null || patrolDistanceSquared(unit, retained) >= range * range) && state.patrolSearchTimer == 0f) {
+            if ((retained == null || CombatTargetQuery.patrolDistanceSquared(unit, retained) >= range * range) && state.patrolSearchTimer == 0f) {
                 state.patrolSearchTimer = interval
                 retained = acquirePatrolTarget(unit) ?: retained
                 state.targetId = retained?.unitId
@@ -1941,11 +1452,7 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
             }
             if (retained != null && state.patrolDispatchTimer == 0f) state.patrolDispatchTimer = interval
             retained?.takeIf(::inRange)
-        } else manualTarget ?: units[state.targetId]?.takeIf { eligible(it) && inRange(it) } ?: orderedUnits().filter {
-                eligible(it) && inRange(it)
-            }.sortedWith(compareBy<MutableUnit> { it.definition.combat == null }.thenBy {
-                policies.coordinates.distanceSquared(unit.position, it.position)
-            }).firstOrNull()
+        } else manualTarget ?: units[state.targetId]?.takeIf { eligible(it) && inRange(it) } ?: CombatTargetQuery.nearestEnemy(unit, orderedUnits(), input.players, policies.coordinates)
         if (target == null) {
             if (!patrol) state.targetId = null
             return
@@ -2300,95 +1807,6 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
         pendingEvents += Event("movement-boundary-blocked", unit.unitId)
     }
 
-    private fun validateCandidate() {
-        val input = checkNotNull(scenario)
-        val objectIds = mutableSetOf<Long>()
-        var previousKey: String? = null
-        for (unit in orderedUnits()) {
-            require(input.unitDefinitions[unit.typeId] === unit.definition) { "Unit definition must remain registered" }
-            require(listOf(unit.position.x, unit.position.y, unit.heading, unit.speed, unit.angularVelocity, unit.height)
-                .all { it.isFinite() } && (unit.health?.isFinite() != false)) { "Unit candidate must remain finite" }
-            require(unit.birthRemaining.isFinite() && unit.birthRemaining in 0f..30f) { "Invalid birth timer" }
-            unit.taskQueue.validateCandidate()
-            require((unit.logicalRequestX == null) == (unit.logicalRequestY == null) &&
-                unit.logicalRequestX?.isFinite() != false && unit.logicalRequestY?.isFinite() != false) {
-                "Logical movement coordinates must be a finite pair"
-            }
-            require(unit.pendingPathNodeCounts.all { it >= 0 } && unit.consumedPathNodeCounts.all { it >= 0 }) {
-                "Accepted path node counts must remain nonnegative"
-            }
-            require(previousKey?.let { it < unit.updateKey } != false) { "Unit update keys must remain strictly ordered" }
-            previousKey = unit.updateKey
-            if (input.combatContract != null) {
-                val id = checkNotNull(unit.objectId)
-                require(id > 0L && id < nextObjectId && objectIds.add(id)) { "Invalid or duplicate unit object ID" }
-            }
-            unit.producerId?.let { producerId ->
-                val producer = units.getValue(producerId)
-                val nonce = unit.unitId.removePrefix("produced:${unit.ownerPlayerId}:")
-                require(producer.ownerPlayerId == unit.ownerPlayerId &&
-                    producer.definition.production?.unitTypeIds?.contains(unit.typeId) == true &&
-                    Regex("[0-9a-f]{32}").matches(nonce) &&
-                    unit.updateKey.startsWith("~produced/") &&
-                    unit.updateKey.removePrefix("~produced/").toLong() in 1L..lastBirthSerial) {
-                    "Invalid produced unit identity"
-                }
-            }
-            require(MapBounds.contains(input.map.widthTiles.toDouble() * input.map.tileWidth,
-                input.map.heightTiles.toDouble() * input.map.tileHeight, unit.position, unit.definition.radius)) {
-                "Unit collision circle must remain within the map"
-            }
-            unit.health?.let { require(it >= 0.0 && it <= checkNotNull(unit.definition.maximumHealth) &&
-                unit.alive == (it > 0.0)) { "Invalid unit life state" } }
-            unit.combat?.let { state ->
-                require(listOf(state.turretHeading, state.angularVelocity, state.cooldown, state.offset.x, state.offset.y,
-                    state.idleBaseHeading, state.idleOffset)
-                    .all { it.isFinite() }) { "Weapon candidate must remain finite" }
-                require(state.idleTimer.isFinite() && state.idleHold.isFinite() && state.idleHold >= 0f &&
-                    state.idleDirection in setOf(-1, 1)) { "Invalid idle candidate" }
-                require(state.patrolSearchTimer.isFinite() && state.patrolSearchTimer >= 0f &&
-                    state.patrolDispatchTimer.isFinite() && state.patrolDispatchTimer >= 0f) {
-                    "Invalid patrol combat timers"
-                }
-                require(OrdinaryWeapon.hasFiniteGeometry(unit)) { "Weapon geometry must remain finite" }
-            }
-            unit.pointDefense?.let { state ->
-                require(state.energy.isFinite() && state.energy in 0f..1f) { "Defense energy candidate must remain finite and bounded" }
-                val muzzle = PointDefense.muzzle(unit)
-                require(muzzle.x.isFinite() && muzzle.y.isFinite()) { "Defense muzzle must remain finite" }
-            }
-        }
-        for (projectile in projectiles) {
-            require(listOf(projectile.position.x, projectile.position.y,
-                projectile.height, projectile.heading, projectile.remainingLife).all { it.isFinite() } &&
-                projectile.age.isFinite() && projectile.age >= 0f && projectile.deflectionHealth.isFinite() &&
-                projectile.verticalSpeed.isFinite() && projectile.groundDistanceSquared?.isFinite() != false &&
-                projectile.ground?.let { it.x.isFinite() && it.y.isFinite() && it.height.isFinite() } != false &&
-                (projectile.missile == null || projectile.speed.toFloat().let { it.isFinite() && it >= 0f } && projectile.missileRawAz.isFinite())) {
-                "Projectile candidate must remain finite"
-            }
-            require(projectile.objectId > 0L && projectile.objectId < nextObjectId && objectIds.add(projectile.objectId)) {
-                "Invalid or duplicate projectile object ID"
-            }
-        }
-        productionLedger?.validateCandidate()
-        missileTargets?.validate(units)
-        upgradeQueues?.validateCandidate(units)
-        // Ended/event-only objects also enter the public window; removing them from the active
-        // container must not let an invalid numeric candidate bypass the S4 publication gate.
-        for (event in pendingProjectileEvents) {
-            val projectile = event.projectile
-            require(listOf(projectile.position.x, projectile.position.y, projectile.height,
-                projectile.heading, projectile.remainingLife).all { it.isFinite() } && event.damage?.isFinite() != false &&
-                projectile.age.isFinite() && projectile.age >= 0f && projectile.deflectionHealth.isFinite() &&
-                projectile.ground?.let { it.targetPosition.x.isFinite() && it.targetPosition.y.isFinite() &&
-                    it.targetHeight.isFinite() && it.verticalSpeed.isFinite() && it.distanceSquared?.isFinite() != false } != false &&
-                projectile.missile?.let { it.speed.isFinite() && it.speed >= 0f && it.rawAz.isFinite() } != false) {
-                "Projectile event candidate must remain finite"
-            }
-        }
-    }
-
     private fun recordObservation(): Observation = makeObservation(stepIndex, simulationTime, hasAdvanced, revision).also {
         latestObservation = it
     }
@@ -2448,8 +1866,8 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
             economy = productionLedger?.observe(),
             incomeStates = orderedUnits().filter { it.definition.income != null }.map {
                 IncomeStateObservation(it.unitId, it.incomeElapsed) },
-            upgrades = upgradeQueues?.observe(),
-            construction = if (constructionNamespaceEnabled(currentScenario)) ConstructionObservation(constructionClock,
+            upgrades = ordinaryUpgrades?.observe(),
+            construction = if (constructionNamespaceEnabled(currentScenario)) ConstructionObservation(buildingWork.clock,
                 orderedUnits().filter { it.unitId.startsWith(CONSTRUCTED_UNIT_PREFIX) }.map {
                     ConstructedBuildingObservation(it.unitId, checkNotNull(it.objectId), it.updateKey, it.constructionProgress) },
                 orderedUnits().filter { it.definition.builder != null }.map {
@@ -2457,7 +1875,7 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
                         it.constructionPreparation, it.constructionWorking, it.previousWorkTargetActive,
                         it.singleNodePathCount, it.logicalRequestX, it.logicalRequestY, it.movementRequested,
                         Collections.unmodifiableList(it.pendingPathNodeCounts.toList()),
-                        Collections.unmodifiableList(it.consumedPathNodeCounts.toList()), it.qBeforeDispatch) }, constructionNonces) else null,
+                        Collections.unmodifiableList(it.consumedPathNodeCounts.toList()), it.qBeforeDispatch) }, buildingWork.nonces) else null,
             production = productionLedger?.let {
                 ProductionObservation(lastBirthSerial, orderedUnits().mapNotNull { unit ->
                     unit.producerId?.let { producer -> ProducedUnitObservation(unit.unitId,

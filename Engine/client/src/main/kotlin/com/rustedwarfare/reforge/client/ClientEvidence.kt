@@ -5,7 +5,26 @@ import com.rustedwarfare.reforge.core.sim.*
 fun interface ClientEvidence {
     fun record(kind: String, values: Map<String, Any?>)
 
+    /** Legacy sinks keep the original field shape; typed sinks can defer immutable knowledge. */
+    fun recordObservation(phase: String, observation: PlayerObservation, generation: Long? = null) {
+        if (this !== NONE) record("observation", mapOf("phase" to phase, "sample" to observation.fields()) +
+            (generation?.let { mapOf("generation" to it) } ?: emptyMap()))
+    }
+
     companion object { val NONE = ClientEvidence { _, _ -> } }
+}
+
+/** Preserve the typed path and the existing generation override through the window adapter. */
+internal fun ClientEvidence.withGeneration(generation: Long): ClientEvidence {
+    if (this === ClientEvidence.NONE) return this
+    val sink = this
+    val fixedGeneration = generation
+    return object : ClientEvidence {
+        override fun record(kind: String, values: Map<String, Any?>) =
+            sink.record(kind, values + ("generation" to generation))
+        override fun recordObservation(phase: String, observation: PlayerObservation, generation: Long?) =
+            sink.recordObservation(phase, observation, fixedGeneration)
+    }
 }
 
 /** Keep the public sink contract; the canonical disabled sink needs no payload preparation. */
@@ -61,7 +80,7 @@ internal fun Observation.fields(): Map<String, Any?> = mapOf(
             "consumedPathNodeCounts" to it.consumedPathNodeCounts, "qBeforeDispatch" to it.qBeforeDispatch) }, "nonces" to value.nonces) },
 ) + (reclaimedUnitIds?.let { mapOf("reclaimedUnitIds" to it) } ?: emptyMap())
 
-internal fun PlayerObservation.fields(): Map<String, Any?> =
+internal fun PlayerObservation.fields(includeKnowledge: Boolean = true): Map<String, Any?> =
     Observation(sampleId, worldId, scenarioId, stepIndex, simulationTime, units, events, actionResults).fields() + mapOf(
         "playerId" to playerId,
         "visionEpoch" to vision?.epoch,
@@ -73,8 +92,8 @@ internal fun PlayerObservation.fields(): Map<String, Any?> =
             "height" to it.height, "sourceUnitId" to it.sourceUnitId, "targetUnitId" to it.targetUnitId,
             "damage" to it.damage, "parentToken" to it.parentToken, "interceptorUnitId" to it.interceptorUnitId) +
                 (it.areaRadius?.let { radius -> mapOf("areaRadius" to radius) } ?: emptyMap()) },
-        "knowledge" to knowledge?.cells?.map { mapOf("visible" to it.visible,
-            "blocked" to it.lastKnownBlocked, "gid" to it.lastKnownGroundGid) },
+        "knowledge" to (if (includeKnowledge) knowledge?.cells?.map { mapOf("visible" to it.visible,
+            "blocked" to it.lastKnownBlocked, "gid" to it.lastKnownGroundGid) } else null),
     ) + (balance?.let { mapOf("balance" to it, "factoryQueues" to factoryQueues.map { factory ->
         mapOf("factoryId" to factory.factoryId, "items" to factory.items.map { item ->
             mapOf("typeId" to item.typeId, "progress" to item.progress) }) },

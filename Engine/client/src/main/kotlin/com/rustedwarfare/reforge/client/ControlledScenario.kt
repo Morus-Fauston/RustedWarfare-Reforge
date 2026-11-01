@@ -61,6 +61,7 @@ object ControlledScenario {
             "format=rw-reforge.construction-sandbox.v1\nvariant=economy-upgrades" -> "economy-upgrades"
             "format=rw-reforge.construction-sandbox.v1\nvariant=building-maintenance" -> "building-maintenance"
             "format=rw-reforge.construction-sandbox.v1\nvariant=construction-queue" -> "construction-queue"
+            "format=rw-reforge.construction-sandbox.v1\nvariant=platform-maintenance" -> "platform-maintenance"
             "format=rw-reforge.construction-sandbox.v1\nvariant=defense-construction" -> "defense-construction"
             "format=rw-reforge.construction-sandbox.v1\nvariant=defense-construction-siege" -> "defense-construction-siege"
             else -> error("$marker: unsupported fixed construction fixture")
@@ -77,8 +78,8 @@ object ControlledScenario {
         val builder = read(ContentLoader.loadBuilder(root.resolve("units/builder.properties")))
         val center = read(ContentLoader.loadCommandCenter(root.resolve("units/commandCenter.properties")))
         val defenses = variant in setOf("defense-construction", "defense-construction-siege")
-        val maintenance = defenses || variant in setOf("building-maintenance", "construction-queue")
-        val economic = defenses || variant in setOf("economy", "economy-death", "economy-upgrades", "building-maintenance", "construction-queue")
+        val maintenance = defenses || variant in setOf("building-maintenance", "construction-queue", "platform-maintenance")
+        val economic = defenses || variant in setOf("economy", "economy-death", "economy-upgrades", "building-maintenance", "construction-queue", "platform-maintenance")
         val economyUpgrades = variant == "economy-upgrades" || maintenance
         val factory = if (variant == "factory" || economic) read(ContentLoader.loadFactory(root.resolve("units/landFactory.properties"))) else null
         val economicUnits = if (economic) (listOf("extractor", "fabricatorT1") +
@@ -100,7 +101,10 @@ object ControlledScenario {
                 Position(190.0 + ((index - 1) / 6) * 22.0, 150.0 + ((index - 1) % 6) * 22.0), 270.0)
         } else listOf(UnitSpawn("z1", "p2", tank.id, Position(510.0, 110.0), 270.0),
             UnitSpawn("z2", "p2", tank.id, Position(510.0, 330.0), 270.0))
-        val spawns = if (variant == "economy-death") listOf(
+        val spawns = if (variant == "platform-maintenance") listOf(
+            UnitSpawn("extractor", "p1", "extractorT1", Position(190.0, 290.0), 0.0),
+            UnitSpawn("worker", "p1", builder.id, Position(270.0, 270.0), 0.0))
+        else if (variant == "economy-death") listOf(
             UnitSpawn("fab", "p1", "fabricatorT1", Position(330.0, 270.0), 0.0),
             UnitSpawn("worker", "p1", builder.id, Position(270.0, 270.0), 0.0),
             UnitSpawn("z1", "p2", tank.id, Position(410.0, 250.0), 270.0),

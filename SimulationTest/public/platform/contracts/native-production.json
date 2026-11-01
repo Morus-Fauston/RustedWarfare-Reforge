@@ -1,0 +1,87 @@
+{
+  "schemaVersion": 1,
+  "scenarioId": "platform-native-production-basics",
+  "rules": [
+    {
+      "intentId": "choose-center",
+      "actionType": "SelectAction",
+      "unitId": "h",
+      "accepted": true,
+      "unitIdentity": {
+        "ownerPlayerId": "p1",
+        "typeId": "commandCenter"
+      },
+      "assertions": [
+        {
+          "path": "scenarioId",
+          "operator": "equals",
+          "value": "p006-construction"
+        },
+        {
+          "path": "units.h.typeId",
+          "operator": "equals",
+          "value": "commandCenter"
+        }
+      ]
+    },
+    {
+      "intentId": "native-produce-builder",
+      "actionType": "ProduceAction",
+      "unitId": "h",
+      "accepted": true,
+      "unitIdentity": {
+        "ownerPlayerId": "p1",
+        "typeId": "commandCenter"
+      },
+      "assertions": [
+        {
+          "path": "scenarioId",
+          "operator": "equals",
+          "value": "p006-construction"
+        },
+        {
+          "path": "balance",
+          "operator": "deltaEquals",
+          "value": -500
+        },
+        {
+          "path": "factoryQueues.h.items",
+          "operator": "equals",
+          "value": [
+            {
+              "typeId": "builder",
+              "progress": 0
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "intentId": "native-cancel-builder",
+      "actionType": "CancelProductionAction",
+      "unitId": "h",
+      "accepted": true,
+      "unitIdentity": {
+        "ownerPlayerId": "p1",
+        "typeId": "commandCenter"
+      },
+      "assertions": [
+        {
+          "path": "scenarioId",
+          "operator": "equals",
+          "value": "p006-construction"
+        },
+        {
+          "path": "balance",
+          "operator": "deltaEquals",
+          "value": 500
+        },
+        {
+          "path": "factoryQueues.h.items",
+          "operator": "equals",
+          "value": []
+        }
+      ]
+    }
+  ]
+}

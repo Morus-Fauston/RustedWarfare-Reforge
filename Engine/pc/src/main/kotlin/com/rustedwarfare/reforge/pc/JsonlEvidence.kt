@@ -2,6 +2,10 @@ package com.rustedwarfare.reforge.pc
 
 import com.rustedwarfare.reforge.client.ClientEvidence
 import com.rustedwarfare.reforge.client.ControlledScenario
+import com.rustedwarfare.reforge.client.DiagnosticOutput
+import com.rustedwarfare.reforge.client.DiagnosticWriter
+import com.rustedwarfare.reforge.client.FixedDiagnosticRecord
+import com.rustedwarfare.reforge.core.sim.PlayerObservation
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.StandardOpenOption
@@ -13,7 +17,7 @@ class JsonlEvidence internal constructor(private val directory: Path, private va
     constructor(directory: Path, runId: String, inputs: Path) : this(directory, runId, inputs,
         { Files.newBufferedWriter(it, StandardOpenOption.CREATE_NEW) })
     private val writer: java.io.BufferedWriter
-    private var sequence = 0L
+    private val diagnostics: DiagnosticWriter
     private var contentRoot = inputs
 
     init {
@@ -76,13 +80,20 @@ class JsonlEvidence internal constructor(private val directory: Path, private va
             preserveFailure(failure) { writer.close() }
             throw failure
         }
+        diagnostics = BoundedDiagnosticWriter(diagnosticOutput(runId, writer))
+    }
+
+    override fun recordObservation(phase: String, observation: PlayerObservation, generation: Long?) {
+        diagnostics.checkFailure()
+        diagnostics.record(FixedDiagnosticRecord.observation(phase, observation, generation,
+            mapOf("wallTime" to Instant.now().toString())), phase != "step")
     }
 
     override fun record(kind: String, values: Map<String, Any?>) {
-        writer.write(json(mapOf("format" to "p001.windows-diagnostic.v1", "runId" to runId,
-            "sequence" to sequence++, "wallTime" to Instant.now().toString(), "kind" to kind) + values))
-        writer.newLine()
-        if (kind != "observation" || values["phase"] != "step") writer.flush()
+        diagnostics.checkFailure()
+        val fixed = FixedDiagnosticRecord.capture(kind, values,
+            mapOf("runId" to runId, "wallTime" to Instant.now().toString()))
+        diagnostics.record(fixed, kind != "observation" || fixed.values["phase"] != "step")
         if (kind == "load-request") contentRoot = Path.of(values.getValue("root") as String).toAbsolutePath().normalize()
         if (kind == "load-ready") {
             val scenario = ControlledScenario.load(contentRoot)
@@ -144,7 +155,7 @@ class JsonlEvidence internal constructor(private val directory: Path, private va
         }
     }
 
-    override fun close() { writer.close() }
+    override fun close() { diagnostics.close() }
 
     private fun identity(path: Path): Map<String, Any?> {
         val absolute = path.toAbsolutePath().normalize()
@@ -155,3 +166,15 @@ class JsonlEvidence internal constructor(private val directory: Path, private va
 
     private fun json(value: Any?): String = evidenceJson(value)
 }
+
+/** The worker owns the output and immutable run identity, never its host or GL objects. */
+private fun diagnosticOutput(runId: String, writer: java.io.BufferedWriter): DiagnosticOutput =
+    object : DiagnosticOutput {
+        override fun write(sequence: Long, record: FixedDiagnosticRecord) {
+            writeEvidenceJson(mapOf("format" to "p001.windows-diagnostic.v1", "runId" to runId,
+                "sequence" to sequence, "wallTime" to record.metadata["wallTime"], "kind" to record.kind) + record.values, writer)
+            writer.newLine()
+        }
+        override fun flush() = writer.flush()
+        override fun close() = writer.close()
+    }

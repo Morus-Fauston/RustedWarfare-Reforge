@@ -2,9 +2,10 @@
   "schemaVersion": 1,
   "suiteId": "public.platform-basics.v1",
   "inputScope": "public",
-  "fixture": "inputs/content-movement-knowledge/P001-\u79fb\u52a8\u6c99\u76d2\u8f93\u5165",
+  "fixture": "inputs/content-movement-knowledge/P001-移动沙盒输入",
   "tests": {
     "client": [
+      "com.rustedwarfare.reforge.client.ActionMenuTest",
       "com.rustedwarfare.reforge.client.CameraProjectionTest",
       "com.rustedwarfare.reforge.client.ClientFailureHandlingTest",
       "com.rustedwarfare.reforge.client.ConstructionSelectionFeedbackTest",
@@ -24,13 +25,21 @@
       "com.rustedwarfare.reforge.client.UpgradeButtonInputTest",
       "com.rustedwarfare.reforge.client.demo.DemoNaturalPathDiagnosticTest",
       "com.rustedwarfare.reforge.client.demo.DemoScenarioTest",
-      "com.rustedwarfare.reforge.client.demo.DemoSessionTest"
+      "com.rustedwarfare.reforge.client.demo.DemoSessionTest",
+      "com.rustedwarfare.reforge.client.DiagnosticRecordTest",
+      "com.rustedwarfare.reforge.client.ObservationDiagnosticTest",
+      "com.rustedwarfare.reforge.client.ObservationEvidenceRoutingTest"
     ],
     "pc": [
       "com.rustedwarfare.reforge.pc.EvidenceInitializationFailureTest",
       "com.rustedwarfare.reforge.pc.FailurePreservationTest",
       "com.rustedwarfare.reforge.pc.DemoEvidenceTest",
-      "com.rustedwarfare.reforge.pc.WindowsLaunchOptionsTest"
+      "com.rustedwarfare.reforge.pc.WindowsLaunchOptionsTest",
+      "com.rustedwarfare.reforge.pc.AsyncEvidenceIntegrationTest",
+      "com.rustedwarfare.reforge.pc.BoundedDiagnosticWriterTest",
+      "com.rustedwarfare.reforge.pc.FixedDiagnosticEncodingTest",
+      "com.rustedwarfare.reforge.pc.TypedObservationEvidenceTest",
+      "com.rustedwarfare.reforge.pc.EvidenceStreamingTest"
     ],
     "tools": [
       "com.rustedwarfare.reforge.testing.PlatformSessionRunnerTest"
@@ -54,6 +63,18 @@
       "backend": "session",
       "scenario": "platform/scenarios/upgrade.json",
       "contract": "platform/contracts/upgrade.json"
+    },
+    {
+      "id": "platform-maintenance",
+      "backend": "session",
+      "scenario": "platform/scenarios/maintenance.json",
+      "contract": "platform/contracts/maintenance.json"
+    },
+    {
+      "id": "platform-native-production",
+      "backend": "session",
+      "scenario": "platform/scenarios/native-production.json",
+      "contract": "platform/contracts/native-production.json"
     }
   ]
 }

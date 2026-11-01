@@ -128,7 +128,7 @@ python -B SimulationTest/ci/public_check.py --suite platform-basics --kind pr --
 python -B -m unittest discover -s SimulationTest/tools -p test_platform_scenario.py
 ```
 
-`platform-basics`选择客户端选择、投影、手势、按钮、生命周期和演示入口机制测试，以及三个无头Session短测。操作意图在`platform/scenarios`，独立玩法判据在`platform/contracts`；PC和无头使用相同文件及比较器。短测分别使用已有工厂/坦克、工人和T1炮塔的受控初态，覆盖选择、移动、停止、攻击、生产/取消、建造以及升级/取消。它们不表示从中心起步的完整经营链，也不代替CoreAdapter的精确模拟步场景。
+`platform-basics`选择客户端选择、投影、手势、按钮、生命周期和演示入口机制测试，以及五个无头Session短测。操作意图在`platform/scenarios`，独立玩法判据在`platform/contracts`；PC和无头使用相同文件及比较器。短测分别使用已有工厂/坦克、工人、T1炮塔及抽取器/工人的受控初态，覆盖选择、移动、停止、攻击、生产/取消、建造、防御或经济升级/取消以及回收任务。它们不表示从中心起步的完整经营链，也不代替CoreAdapter的精确模拟步场景。
 
 直接运行与只读复核（在仓库根执行，输出必须是不存在的新目录）：
 
@@ -138,11 +138,11 @@ python -B SimulationTest/tools/platform_scenario.py windows --scenario Simulatio
 python -B SimulationTest/tools/platform_scenario.py compare --run <existing-directory>
 ```
 
-Windows入口需要已构建PC安装包、Python Pillow、可用交互桌面和前台控制权，仅操作它自己启动并核验身份的窗口。支持1200×800和960×640；`construction`、`upgrade`同样替换场景/契约文件名。输入快照、产物哈希、实际键鼠记录、诊断和截图随批次归档；正常退出和前台恢复缺证不能算通过。公共CI只运行无头入口。
+Windows入口需要已构建PC安装包、Python Pillow、可用交互桌面和前台控制权，仅操作它自己启动并核验身份的窗口。支持1200×800和960×640；`construction`、`upgrade`、`maintenance`、`native-production`同样替换场景/契约文件名。输入快照、产物哈希、实际键鼠记录、诊断和截图随批次归档；正常退出和前台恢复缺证不能算通过。公共CI只运行无头入口。
 
 正式动作必须属于本次投递且拥有者、对象、接受结果及调用前后观察精确关联。金额使用同一次调用即时差值，停止检查固定尾部，建设绑定唯一新建事件/对象。仅真实PC点击目标允许按固定地图与实际viewport算出的一像素每轴上限；调用后的目标仍须精确等于正式动作target。原始nonce/身份/轨迹不改写，其余玩法判据及原CoreAdapter精确标准保持。
 
-基线身份包括共享源码/安装包、输入、场景/契约、比较器/驱动、窗口尺寸与平台环境。输入映射、投影、命中、布局、反馈或生命周期变化时补受影响操作：移动/停止/攻击用`production`，建造用`construction`，普通升级用`upgrade`；共同投影或平台接线变化运行三组双尺寸。纯玩法变更优先机制与无头回归，不机械重跑真实PC。旧平台脚本和历史证据保持原入口和身份，适用性按覆盖及源码核对。
+基线身份包括共享源码/安装包、输入、场景/契约、比较器/驱动、窗口尺寸与平台环境。输入映射、投影、命中、布局、反馈或生命周期变化时补受影响操作：移动/停止/攻击用`production`，建造用`construction`，防御升级用`upgrade`，经济升级/取消及回收用`maintenance`，原生生产卡左键/同卡右键用`native-production`（旧`production`走旧面板，不覆盖ProductionButtonInput）；共同投影或平台接线变化运行受影响组的双尺寸。纯玩法变更优先机制与无头回归，不机械重跑真实PC。旧平台脚本和历史证据保持原入口和身份，适用性按覆盖及源码核对。
 
 Android纯JDK宿主入口（不运行SDK、APK或设备）：
 

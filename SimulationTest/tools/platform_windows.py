@@ -113,6 +113,10 @@ def run_windows(scenario, contract, distribution, output, size, java='java'):
                         64+(512-height*scale)/2+(height-position['y'])*scale)
             for intent, rule in zip(plan['intents'], rules):
                 guard.check()
+                if anchors:
+                    # The comparator requires distinct dispatch boundaries. A quick capture may
+                    # finish before another diagnostic is emitted; wait for a real record.
+                    wait('next intent boundary', lambda rows: rows[-1]['sequence'] > anchors[-1]['endSequence'])
                 start = logs()[-1]['sequence']
                 record(dict(kind='intent-dispatch', intentId=intent['intentId'], afterSequence=start))
                 kind = intent['kind']
@@ -123,13 +127,22 @@ def run_windows(scenario, contract, distribution, output, size, java='java'):
                 elif kind == 'stop':
                     guard.key(83)
                 elif kind == 'produce':
-                    click(830, 284)
+                    click(794 if intent.get('control') == 'native-production' else 830, 284)
                 elif kind == 'cancelProduction':
-                    click(830, 236)
+                    if intent.get('control') == 'native-production':
+                        click(794, 284, button='right')
+                    else:
+                        click(830, 236)
                 elif kind == 'upgrade':
-                    click(790, 284)
+                    click(830 if intent.get('upgradeId') in ('upgrade_t2', 'upgrade_t3') else 790, 284)
                 elif kind == 'cancelUpgrade':
-                    click(884, 284)
+                    if intent.get('upgradeId') in ('upgrade_t2', 'upgrade_t3'):
+                        click(830, 284, button='right')
+                    else:
+                        click(884, 284)
+                elif kind == 'reclaim':
+                    click(790, 307)
+                    click(*world(intent['position']))
                 elif kind == 'build':
                     click(884, 307)
                     guard.move(*ui(*world(intent['position'])))

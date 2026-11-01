@@ -2,19 +2,13 @@ package com.rustedwarfare.reforge.core.sim
 
 import com.rustedwarfare.reforge.core.content.MovementType
 import com.rustedwarfare.reforge.core.content.UnitDefinition
-import com.rustedwarfare.reforge.core.content.UpgradeActionProfile
+import com.rustedwarfare.reforge.core.content.OrdinaryUpgradeContent
 
 /** Registration is closed over already loaded definitions; no completion path reads content files. */
 internal object UpgradeRules {
-    private val targets = mapOf("upgrade_gun" to "c_turret_t2_gun", "upgrade_artillery" to "c_turret_t1_artillery")
-    private val economicActions = mapOf(
-        "extractorT1" to UpgradeActionProfile("upgrade_t2", "extractorT2", 1400L, .0006f),
-        "extractorT2" to UpgradeActionProfile("upgrade_t3", "extractorT3", 4000L, .0003f),
-        "fabricatorT1" to UpgradeActionProfile("upgrade_t2", "fabricatorT2", 4400L, 1f / (65.6f * 60f)),
-        "fabricatorT2" to UpgradeActionProfile("upgrade_t3", "fabricatorT3", 7500L, 1f / (93.3f * 60f)),
-    )
+    private val economicActions = OrdinaryUpgradeContent.economic.mapValues { it.value.action }
 
-    fun validate(input: Scenario): SimulationError? {
+    fun validate(input: Scenario, registration: UpgradeRegistration = UpgradeRegistration()): SimulationError? {
         fun invalid() = SimulationError("unsupported-upgrade", "Expected a complete finite ordinary upgrade registration")
         for ((key, source) in input.unitDefinitions) {
             val profile = source.upgrades ?: continue
@@ -32,17 +26,18 @@ internal object UpgradeRules {
                     target.building?.requiresResourcePool != source.building?.requiresResourcePool) return invalid()
                 continue
             }
-            if (input.economyContract == null || key != source.id || source.id != "c_turret_t1" ||
-                !eligible(source) || profile.actions.size != 2 ||
+            val targets = registration.turrets[source.id] ?: return invalid()
+            if (input.economyContract == null || key != source.id ||
+                !eligible(source) || profile.actions.size != targets.size || targets.isEmpty() ||
                 profile.actions.map { it.actionKey }.toSet() != targets.keys) return invalid()
             for (action in profile.actions) {
-                if (action.targetTypeId != targets[action.actionKey] || action.price < 0L ||
+                if (action.targetTypeId != targets[action.actionKey]?.targetTypeId || action.price < 0L ||
                     !action.rate.isFinite() || action.rate <= 0f) return invalid()
                 val target = input.unitDefinitions[action.targetTypeId] ?: return invalid()
                 if (target.id != action.targetTypeId || !eligible(target) || target.upgrades != null ||
                     target.radius != source.radius || target.building?.footprint != source.building?.footprint ||
                     target.building?.anchor != source.building?.anchor ||
-                    (target.combat?.projectile?.ground != null) != (action.actionKey == "upgrade_artillery")) return invalid()
+                    (target.combat?.projectile?.ground != null) != targets.getValue(action.actionKey).groundProjectile) return invalid()
             }
         }
         return null

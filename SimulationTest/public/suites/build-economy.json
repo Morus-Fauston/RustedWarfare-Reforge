@@ -7,9 +7,12 @@
     "core": [
       "com.rustedwarfare.reforge.core.content.BuilderContentLoadTest",
       "com.rustedwarfare.reforge.core.content.EconomyUpgradeContentTest",
+      "com.rustedwarfare.reforge.core.content.PngContentTest",
+      "com.rustedwarfare.reforge.core.content.RestrictedFieldsTest",
       "com.rustedwarfare.reforge.core.content.UpgradeContentLoadTest",
       "com.rustedwarfare.reforge.core.sim.BuildingAttackApproachTest",
       "com.rustedwarfare.reforge.core.sim.BuildingSpaceTest",
+      "com.rustedwarfare.reforge.core.sim.ConstructionPlacementGeometryTest",
       "com.rustedwarfare.reforge.core.sim.ConstructionNavigationStateTest",
       "com.rustedwarfare.reforge.core.sim.ConstructionRetryRulesTest",
       "com.rustedwarfare.reforge.core.sim.EconomyContractTest",
@@ -19,10 +22,14 @@
       "com.rustedwarfare.reforge.core.sim.UpgradeInitializationTest",
       "com.rustedwarfare.reforge.core.sim.UpgradeTransactionTest",
       "com.rustedwarfare.reforge.core.sim.UpgradeWeaponStateTest",
-      "com.rustedwarfare.reforge.core.sim.WorldIncomeTest"
+      "com.rustedwarfare.reforge.core.sim.WorldIncomeTest",
+      "com.rustedwarfare.reforge.core.sim.OrdinaryUpgradesTest",
+      "com.rustedwarfare.reforge.core.content.OrdinaryUpgradeContentTest",
+      "com.rustedwarfare.reforge.core.sim.BuildingWorkTest"
     ],
     "client": [
       "com.rustedwarfare.reforge.client.BuildingEvidenceTest",
+      "com.rustedwarfare.reforge.client.ConstructionGeometryTest",
       "com.rustedwarfare.reforge.client.ConstructionLifecycleQueueTest",
       "com.rustedwarfare.reforge.client.ConstructionMixedDispatchTest",
       "com.rustedwarfare.reforge.client.ConstructionQTest",
