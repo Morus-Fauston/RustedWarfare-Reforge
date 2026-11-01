@@ -9,6 +9,27 @@ import java.nio.file.Path
 import kotlin.test.*
 
 class DefensePanelInputTest {
+    @Test fun u_cannot_choose_a_defense_branch_or_upgrade_an_enemy_economic_building() {
+        val root = System.getProperty("public.fixtures.dir")?.let { Path.of(it).resolve("maintenance-defense/construction") }
+            ?: generateSequence(Path.of("").toAbsolutePath()) { it.parent }
+                .first { Files.isRegularFile(it.resolve("AGENTS.md")) }.resolve(
+                    ".scratch/开发票据/引擎重写/P006-建造经济与原版操作/evidence/ENG-P006-007/20261029-implementation-01/defense-input")
+        val base = ControlledScenario.load(root)
+        for ((type, owner) in listOf("c_turret_t1" to "p1", "fabricatorT1" to "p2")) {
+            val scene = base.copy(units = listOf(UnitSpawn("subject", owner, type, Position(120.0, 170.0), 0.0)),
+                combatContract = CombatContract(1, -1, mapOf("subject" to 1L), 2L))
+            SandboxSession(scene).use { session ->
+                session.select(Position(120.0, 170.0))
+                if (owner == "p1") assertEquals(2, session.actionMenu.upgrades.size)
+                val before = session.observation.credits
+                val input = SandboxInput({ session }, { null }, { _, _ -> null }, { true }, { false }, { false })
+                assertFalse(input.keyDown(Input.Keys.U))
+                assertEquals(before, session.observation.credits)
+                assertTrue(session.observation.upgradeQueues.all { it.items.isEmpty() })
+            }
+        }
+    }
+
     @Test fun both_defense_choices_have_their_observed_names_and_an_ordinary_card_press_opens_only_the_chosen_mode() {
         val root = (System.getProperty("public.fixtures.dir")?.let { Path.of(it).resolve("maintenance-defense/construction") } ?: generateSequence(Path.of("").toAbsolutePath()) { it.parent }
             .first { Files.isRegularFile(it.resolve("AGENTS.md")) }.resolve(

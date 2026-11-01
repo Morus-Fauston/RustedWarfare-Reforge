@@ -31,10 +31,12 @@ data class WindowsLaunchOptions(
                     resolve(options["--evidence"] ?: "Engine/pc/build/demo-runs/$runId"), runId,
                     "RustedWarfare-Reforge | Field Demo")
             }
+            val explicitInputs = options["--inputs"]
             return WindowsLaunchOptions(mode,
-                resolve(options["--inputs"] ?: "TestLab/local/P002-知识沙盒输入"),
+                explicitInputs?.let(::resolve) ?: PhaseFourInputs.root,
                 resolve(options["--evidence"] ?: "Engine/pc/build/sandbox-runs/$runId"),
-                runId, "RustedWarfare-Reforge | P002 Windows sandbox")
+                runId, if (explicitInputs == null) "RustedWarfare-Reforge | Phase IV sandbox"
+                else "RustedWarfare-Reforge | P002 Windows sandbox")
         }
     }
 }

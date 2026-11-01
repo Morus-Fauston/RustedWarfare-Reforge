@@ -24,7 +24,11 @@ internal class ActionCatalogue(private val definitions: Map<String, UnitDefiniti
         "fabricatorT1" to "65.6", "fabricatorT2" to "93.3")
     private val construction = definitions.mapValues { (_, d) -> d.construction?.let { build ->
         ConstructionActionView(d.id, title(d.id), d.imagePath, build.price, checkNotNull(d.maximumHealth), build.rate,
-            title(d.id, panel = true), "${title(d.id)} (\$${build.price})\n" +
+            when (d.id) {
+                "c_turret_t1" -> "X ${title(d.id, panel = true)}"
+                "laserDefence" -> "J ${title(d.id, panel = true)}"
+                else -> title(d.id, panel = true)
+            }, "${title(d.id)} (\$${build.price})\n" +
                 String.format(Locale.ROOT, "%.1fs\nHP %d\n", 1.0 / build.rate / 60.0, checkNotNull(d.maximumHealth).toInt()) +
                 (nominalIncome(d.id)?.let { "Income +\$${it.toInt()}\n" } ?: "") + "Left: choose site\nEsc / right: cancel")
     } }
@@ -66,7 +70,7 @@ internal class ActionCatalogue(private val definitions: Map<String, UnitDefiniti
                 else title(profile.targetTypeId, panel = true)
             val affordable = affordable(view, profile.price)
             val cardText = if (kind == UpgradePresentationKind.ECONOMIC)
-                "^ $title${if (item != null) " (1)" else ""}\n" +
+                "U $title${if (item != null) " (1)" else ""}\n" +
                     (item?.let { "${(it.progress * 100f).toInt()}%" } ?: "\$${profile.price}")
                 else title + (item?.let { "\n(1) ${(it.progress * 100f).toInt()}%" } ?: "\n\$${profile.price}")
             val tooltip = "$title (\$${profile.price})\n" + if (kind == UpgradePresentationKind.ECONOMIC)

@@ -170,7 +170,7 @@ class SandboxSession(scenario: Scenario, private val evidence: ClientEvidence = 
         }
         val result = dispatch { worker -> BuildAction("click-${++actionNumber}", "p1", worker, typeId, position,
             UUID.randomUUID().toString().replace("-", ""), context.world, append = append) }
-        if (!append && checkNotNull(lastCommandBatch).accepted > 0) selection.clear()
+        if (!append && checkNotNull(lastCommandBatch).accepted > 0) selection.select(emptyList())
         return result
     }
 

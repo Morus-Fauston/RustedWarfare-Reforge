@@ -58,7 +58,7 @@ class ActionMenuTest {
             val paid = session.actionMenu.upgrades.single()
             assertEquals(0f, paid.progress)
             assertFalse(paid.affordable)
-            assertEquals("^ Upgrade - T2 (1)\n0%", paid.cardText)
+            assertEquals("U Upgrade - T2 (1)\n0%", paid.cardText)
             assertEquals("Upgrade - T2 ($1400)\n27.7s\nIncome +$8 -> +$12\nInsufficient funds\nRight: cancel one", paid.tooltip)
             session.tick()
             assertTrue(session.actionMenu.upgrades.single().progress!! > 0f)

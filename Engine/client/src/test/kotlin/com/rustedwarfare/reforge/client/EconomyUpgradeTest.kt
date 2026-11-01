@@ -5,8 +5,123 @@ import com.rustedwarfare.reforge.core.content.*
 import java.nio.file.Files
 import java.nio.file.Path
 import kotlin.test.*
+import com.badlogic.gdx.Input.Keys
 
 class EconomyUpgradeTest {
+    private fun shortcut(current: () -> SandboxSession?, active: () -> Boolean = { true },
+                         editing: () -> Boolean = { false }, pressed: (Int) -> Boolean = { false },
+                         touch: Boolean = false) = SandboxInput(current, { null }, { _, _ -> null },
+        active, editing, pressed, touchControls = touch)
+
+    @Test fun plain_u_executes_the_current_single_economic_upgrade_once_per_press() {
+        for (type in listOf("extractorT1", "extractorT2", "fabricatorT1", "fabricatorT2")) {
+            val scene = economicScene(type, 10000L)
+            val actions = mutableListOf<String>()
+            SandboxSession(scene, ClientEvidence { kind, data ->
+                if (kind == "action") actions += data["type"].toString()
+            }).use { session ->
+                session.select(scene.units.single().position)
+                val action = session.actionMenu.upgrades.single()
+                assertTrue(action.cardText.startsWith("U "), "The active economic card must expose its U binding")
+                val input = shortcut({ session })
+                val before = actions.size
+                assertTrue(input.keyDown(com.badlogic.gdx.Input.Keys.U), type)
+                assertEquals(10000.0 - action.price, session.observation.credits, type)
+                assertEquals(action.actionKey, session.selectedUpgradeQueue!!.items.single().actionKey)
+                repeat(3) { assertTrue(input.keyDown(com.badlogic.gdx.Input.Keys.U)) }
+                assertEquals(before + 1, actions.size, "Held U must not resubmit")
+                assertTrue(input.keyUp(com.badlogic.gdx.Input.Keys.U))
+                assertEquals(before + 1, actions.size, "Release does not execute")
+                assertIs<ActionResult.Accepted>(session.cancelUpgrade(action.actionKey))
+                assertTrue(input.keyDown(com.badlogic.gdx.Input.Keys.U))
+                assertEquals(action.actionKey, session.selectedUpgradeQueue!!.items.single().actionKey)
+            }
+        }
+    }
+
+    @Test fun modified_inactive_editing_and_touch_u_cannot_submit_an_upgrade() {
+        val modifiers = listOf(Keys.CONTROL_LEFT, Keys.CONTROL_RIGHT, Keys.SHIFT_LEFT,
+            Keys.SHIFT_RIGHT, Keys.ALT_LEFT, Keys.ALT_RIGHT)
+        val scene = economicScene("fabricatorT1", 10000L)
+        SandboxSession(scene).use { session ->
+            session.select(scene.units.single().position)
+            val inputs = modifiers.map { modifier -> shortcut({ session }, pressed = { it == modifier }) } +
+                listOf(shortcut({ session }, active = { false }), shortcut({ session }, editing = { true }),
+                    shortcut({ session }, touch = true), shortcut({ session }, pressed = { it in modifiers }))
+            for (input in inputs) {
+                assertFalse(input.keyDown(Keys.U))
+                input.keyUp(Keys.U)
+                assertEquals(10000.0, session.observation.credits)
+                assertTrue(session.selectedUpgradeQueue!!.items.isEmpty())
+            }
+        }
+    }
+
+    @Test fun u_on_empty_max_tier_or_closed_selection_has_no_old_release_effect() {
+        val scene = economicScene("fabricatorT3", 10000L)
+        var current: SandboxSession? = SandboxSession(scene)
+        val input = shortcut({ current })
+        try {
+            assertFalse(input.keyDown(com.badlogic.gdx.Input.Keys.U)); input.keyUp(com.badlogic.gdx.Input.Keys.U)
+            current!!.select(scene.units.single().position)
+            assertFalse(input.keyDown(com.badlogic.gdx.Input.Keys.U))
+            current!!.close(); input.cancel()
+            current = SandboxSession(economicScene("fabricatorT1", 10000L))
+            current!!.select(Position(110.0, 110.0))
+            input.keyUp(com.badlogic.gdx.Input.Keys.U)
+            assertEquals(10000.0, current!!.observation.credits)
+            assertTrue(current!!.selectedUpgradeQueue!!.items.isEmpty())
+        } finally { current?.close() }
+    }
+
+    @Test fun releasing_a_modifier_does_not_turn_a_held_modified_u_into_a_new_press() {
+        val scene = economicScene("fabricatorT1", 10000L)
+        SandboxSession(scene).use { session ->
+            session.select(scene.units.single().position)
+            var control = true
+            val input = shortcut({ session }, pressed = { control && it == Keys.CONTROL_LEFT })
+            assertFalse(input.keyDown(Keys.U))
+            control = false
+            input.keyDown(Keys.U)
+            assertEquals(10000.0, session.observation.credits)
+            assertTrue(session.selectedUpgradeQueue!!.items.isEmpty())
+            input.keyUp(Keys.U)
+            assertTrue(input.keyDown(Keys.U))
+            assertEquals(5600.0, session.observation.credits)
+        }
+    }
+
+    @Test fun insufficient_u_uses_the_existing_public_rejection_without_paying() {
+        val scene = economicScene("fabricatorT1", 0L)
+        SandboxSession(scene).use { session ->
+            session.select(scene.units.single().position)
+            assertTrue(shortcut({ session }).keyDown(Keys.U))
+            assertEquals(0.0, session.observation.credits)
+            assertTrue(session.selectedUpgradeQueue!!.items.isEmpty())
+            assertEquals("Insufficient funds", session.playerFeedback)
+        }
+    }
+
+    @Test fun u_cancels_an_old_site_preview_but_preserves_already_submitted_worker_work() {
+        val base = economicScene("fabricatorT1", 10000L)
+        val scene = base.copy(units = base.units + UnitSpawn("worker", "p1", "builder", Position(110.0, 210.0), 0.0),
+            combatContract = CombatContract(1, -1, mapOf("economic" to 1L, "worker" to 2L), 3L))
+        SandboxSession(scene).use { session ->
+            session.select(Position(110.0, 210.0))
+            assertIs<ActionResult.Accepted>(session.build("landFactory", Position(310.0, 310.0)))
+            session.select(Position(110.0, 210.0))
+            val input = shortcut({ session })
+            assertTrue(input.beginConstruction("extractorT1"))
+            session.select(Position(110.0, 110.0))
+            val beforeUpgrade = session.observation.credits!!
+            assertTrue(input.keyDown(Keys.U))
+            assertNull(input.constructionTypeId)
+            assertEquals(1, session.observation.units.single { it.unitId == "worker" }.tasks.size)
+            assertEquals("upgrade_t2", session.selectedUpgradeQueue!!.items.single().actionKey)
+            assertEquals(beforeUpgrade - 4400.0, session.observation.credits)
+        }
+    }
+
     @Test fun selected_economic_tooltips_show_observed_nominal_times_and_disappear_at_max_tier() {
         val expected = mapOf(
             "extractorT1" to "Upgrade - T2 ($1400)\n27.7s\nIncome +$8 -> +$12\nLeft: upgrade\nRight: cancel one",
