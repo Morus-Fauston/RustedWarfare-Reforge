@@ -602,7 +602,9 @@ class BootstrapScreen(
             menu?.construction?.forEach { action ->
                 val card = constructionCards.getValue(action.typeId)
                 setUnitIcon(card.icon, action.typeId)
-                card.text.setText("${action.panelTitle}\n\$${action.price}")
+                val cardTitle = if (touchControls &&
+                    (action.typeId == "c_turret_t1" || action.typeId == "laserDefence")) action.title else action.panelTitle
+                card.text.setText("$cardTitle\n\$${action.price}")
                 if (constructionHover == action.typeId) {
                     nativeTooltipIcon.userObject = null
                     nativeTooltipIcon.drawable = card.icon.drawable
@@ -626,7 +628,8 @@ class BootstrapScreen(
         economicUpgradeCard.isVisible = nativePanel && economicUpgrade != null
         if (economicUpgrade != null && economicUpgradeCard.isVisible) {
             setUnitIcon(economicUpgradeIcon, selected?.typeId)
-            economicUpgradeText.setText(economicUpgrade.cardText)
+            economicUpgradeText.setText(if (touchControls) economicUpgrade.cardText.replaceFirst("U ", "^ ")
+                else economicUpgrade.cardText)
             economicUpgradeText.color = if (economicUpgrade.affordable || economicUpgrade.progress != null)
                 Color(.9f, .92f, .9f, 1f) else Color(.55f, .58f, .55f, 1f)
             economicUpgradeProgress.isVisible = economicUpgrade.progress != null

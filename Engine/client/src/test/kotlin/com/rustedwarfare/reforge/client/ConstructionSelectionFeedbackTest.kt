@@ -9,6 +9,22 @@ import java.nio.file.Path
 import kotlin.test.*
 
 class ConstructionSelectionFeedbackTest {
+    @Test fun a_plain_build_deselects_workers_without_erasing_their_saved_control_groups() {
+        SandboxSession(scene()).use { session ->
+            session.select(Position(120.0, 170.0)); session.saveGroup(2)
+            session.select(Position(120.0, 210.0)); session.saveGroup(3)
+            session.recallGroup(2)
+            assertIs<ActionResult.Accepted>(session.build("landFactory", Position(190.0, 290.0)))
+            assertTrue(session.selectedIds.isEmpty())
+            assertEquals(1, session.groupCount(2))
+            assertEquals(1, session.groupCount(3))
+            session.recallGroup(2)
+            assertEquals(setOf("a"), session.selectedIds)
+            session.recallGroup(3)
+            assertEquals(setOf("b"), session.selectedIds)
+        }
+    }
+
     @Test fun an_empty_batch_after_a_real_success_does_not_retain_the_previous_success_feedback() {
         SandboxSession(scene()).use { session ->
             session.select(Position(120.0, 170.0))

@@ -26,6 +26,8 @@ class SandboxInput(
         val modeRevision: Long, val targetId: String?, val append: Boolean)
     private var commandPress: CommandPress? = null
     private var pHeld = false
+    private var upgradeHeld = false
+    private val constructionHeld = mutableSetOf<Int>()
     var modeRevision: Long = 0L
         private set
     var constructionTypeId: String? = null
@@ -225,6 +227,29 @@ class SandboxInput(
     override fun keyDown(keycode: Int): Boolean {
         if (!active() || editing() || touchControls) return false
         val current = session() ?: return false
+        val buildType = when (keycode) {
+            Input.Keys.X -> "c_turret_t1"
+            Input.Keys.J -> "laserDefence"
+            else -> null
+        }
+        if (buildType != null) {
+            if (!constructionHeld.add(keycode)) return true
+            if (control() || shift() || pressed(Input.Keys.ALT_LEFT) || pressed(Input.Keys.ALT_RIGHT)) return false
+            val action = current.constructionActions.firstOrNull { it.typeId == buildType } ?: return false
+            return beginConstruction(action.typeId)
+        }
+        if (keycode == Input.Keys.U) {
+            if (upgradeHeld) return true
+            upgradeHeld = true
+            if (control() || shift() || pressed(Input.Keys.ALT_LEFT) || pressed(Input.Keys.ALT_RIGHT)) return false
+            val action = current.actionMenu.upgrades.singleOrNull()
+                ?.takeIf { it.kind == UpgradePresentationKind.ECONOMIC } ?: return false
+            cancel()
+            upgradeHeld = true
+            current.upgrade(action.actionKey)
+            changed()
+            return true
+        }
         if (keycode == Input.Keys.ESCAPE && reclaimMode) { endReclaim(); changed(); return true }
         if (keycode == Input.Keys.ESCAPE && constructionTypeId != null) { endConstruction(); changed(); return true }
         if (keycode == Input.Keys.P) {
@@ -243,6 +268,10 @@ class SandboxInput(
         return false
     }
     override fun keyUp(keycode: Int): Boolean {
+        if (keycode == Input.Keys.X || keycode == Input.Keys.J) return constructionHeld.remove(keycode)
+        if (keycode == Input.Keys.U) {
+            val held = upgradeHeld; upgradeHeld = false; return held
+        }
         if (keycode != Input.Keys.P) return false
         val held = pHeld; pHeld = false; return held
     }
@@ -312,5 +341,5 @@ class SandboxInput(
     private fun cancelGesture() {
         gesture?.cancel(); gesture = null; patrolPress = null; commandPress = null; constructionPress = null; reclaimPress = null; ownerButton = null; pointerPosition = null
     }
-    fun cancel() { endConstruction(); endPatrol(); endReclaim(); pHeld = false }
+    fun cancel() { endConstruction(); endPatrol(); endReclaim(); pHeld = false; upgradeHeld = false; constructionHeld.clear() }
 }
