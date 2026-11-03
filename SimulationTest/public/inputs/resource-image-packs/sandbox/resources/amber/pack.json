@@ -1,0 +1,8 @@
+{
+  "formatVersion": 1,
+  "requiresResourceFormat": 1,
+  "id": "owned:amber",
+  "name": "琥珀履带",
+  "description": "自有双色对照：只替换车体，其他图片向下继承。",
+  "icon": "reforge:units/c_tank/body"
+}

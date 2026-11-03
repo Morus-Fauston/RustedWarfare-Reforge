@@ -10,11 +10,11 @@ python -B SimulationTest/ci/public_batch.py --kind pr --isolated --output <new-d
 python -B SimulationTest/ci/public_batch.py --kind long --isolated --output <new-directory>
 ```
 
-`mechanism`选择六个公共机制集；`short`选择五个具有短场景的集；`pr`执行这五集的机制/短测和工具机制集；`long`执行内容移动知识、生产战斗、建造经济、维护防御四个同局连续场景。各长场景各自只初始化一次，四个领域场景并不冒称共同一局。选择固定且非空，不读取私有参考集；`--list`只列计划，不写输出或构建。`--isolated`仅复制明确公开源码闭包到系统临时目录。JDK25、Python3.13与Gradle包装器所需网络/缓存适用于本地和CI。
+`mechanism`选择七个公共机制集；`short`选择六个具有短场景的集；`pr`执行这六集的机制/短测和工具机制集；`long`执行内容移动知识、生产战斗、建造经济、维护防御四个同局连续场景。各长场景各自只初始化一次，四个领域场景并不冒称共同一局。选择固定且非空，不读取私有参考集；`--list`只列计划，不写输出或构建。`--isolated`仅复制明确公开源码闭包到系统临时目录。JDK25、Python3.13与Gradle包装器所需网络/缓存适用于本地和CI。
 
 各子集仍调用下文同一`public_check.py`，保留原先单集入口及结果结构。批次根`result.json`记录固定选择、源码身份、实际命令、退出码及耗时，子目录保留完整JUnit、逐Python收据、输入快照和场景档案。任何子集失败立即停止后续集，保存失败日志与已有收据；旧输出拒绝覆盖。具体失败定位沿子目录日志及场景比较结果的阶段/操作/检查点，不以批次外层成功代替断言。
 
-PR更新通过`public-pr.yml`执行完整`pr`入口，保留六份领域产物并新增批次收据产物；`main`推送通过`public-long.yml`执行同一`long`入口，阶段收尾可手动触发该工作流或本地运行。CI只执行公开无头验证；真实PC、Android宿主/构建/设备、原版参考与正式性能边界见后文，不随批次绿扩大。配置存在不代表已有真实云端结果，实际源码SHA及产物以对应Actions运行记录为准。
+PR更新通过`public-pr.yml`执行完整`pr`入口，保留七份领域产物及批次收据产物；`main`推送通过`public-long.yml`执行同一`long`入口，阶段收尾可手动触发该工作流或本地运行。CI只执行公开无头验证；真实PC、Android宿主/构建/设备、原版参考与正式性能边界见后文，不随批次绿扩大。配置存在不代表已有真实云端结果，实际源码SHA及产物以对应Actions运行记录为准。
 
 旧`pr-first-loop`继续用于首闭环/历史复核；完整层级已由各领域集覆盖相同适用断言，因此不会额外重复选择旧集。`verify-comparison.ps1`和`verify-isolated-comparison.ps1`仍保留原私有比较链及输入要求，不改名成公共干净环境验证。历史冻结脚本与收据保持原版本和失败状态。
 
@@ -88,7 +88,9 @@ python -B SimulationTest/ci/public_check.py --suite production-combat --kind all
 
 `upgrade-cancel-short`调用正式升级与取消接口，核对支付、退款、队列和外方观察隔离；`point-defense-short`由敌方坦克正式开火，固定第7步尚未拦截、第8步扣除一次能量、第9步仅恢复能量，并保持目标生命。精确Float值来自既有机制条件。所有场景逐步采集完整观察，缺产物、健康、玩家资金或宿主经济采样均按证据不足拒绝。公共短测使用10×5自有空地图控制无关全格知识采样体量；其余原机制夹具保持30×20。
 
-PR运行机制及三条短测，连续长测独立于PR机制JUnit类；`--kind long`或`all`通过安装后的CLI执行同局长测。主分支长测工作流由批次收口接入。此处只证明自身行为，原版对照、真实PC输入及性能仍需各自适用证据。
+PR运行登记的机制及短测，连续长测独立于PR机制JUnit类；`--kind long`或`all`通过安装后的CLI执行同局长测。主分支长测工作流由批次收口接入。此处只证明自身行为，原版对照、真实PC输入及性能仍需各自适用证据。
+
+具名多武器机制与宿主归档/实际Session Runner测试登记在`production-combat`；该集还包含`named-weapons-{ini,json,hjson}-short`三条真实会话。自有输入见`inputs/named-weapons/README.md`，三格式使用相同开发参数与既有受控出生布局，验证near对b、far对c、真实发弹/伤害及整体Stop。合同按稳定武器名查授权观察并核出生事件，不以主炮标量代替第二炮。`platform-basics`包含客户端日志、多炮塔准备、死亡/资源重绑定与比较器反例；Python文件同时登记公共工具闭包。这些无头结果不证明GPU渲染、原版全调度或设备体验。
 
 ## 建造、经济与常规升级
 

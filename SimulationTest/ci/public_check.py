@@ -28,7 +28,7 @@ def source_files(repo):
               'SimulationTest/settings.gradle.kts', 'SimulationTest/gradle.properties',
               'SimulationTest/gradlew', 'SimulationTest/gradlew.bat']]
     paths += [repo / 'SimulationTest/tools' / name for name in
-              ['platform_scenario.py', 'test_platform_scenario.py', 'test_platform_session_cli.py',
+              ['platform_scenario.py', 'test_platform_scenario.py', 'test_platform_session_cli.py', 'test_named_weapon_platform.py',
                'workflow.py', 'workflow_inputs.py', 'workflow_device.py', 'workflow_windows.py',
                'workflow_reuse.py', 'perf_report.py', 'platform_perf.py', 'test_workflow.py',
                'test_workflow_device.py', 'test_workflow_windows.py', 'test_workflow_reuse.py', 'test_perf_analysis.py',

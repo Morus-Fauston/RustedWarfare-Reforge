@@ -15,6 +15,7 @@ java {
 }
 
 dependencies {
+    implementation("org.hjson:hjson:3.1.0")
     testImplementation(kotlin("test"))
 }
 

@@ -1,0 +1,16 @@
+# Local pack metadata
+{
+  "format": "rw-reforge.content-pack.v1",
+  "id": "amber.scouts.hjson",
+  "name": "Amber scouts HJSON",
+  "units": [
+    {
+      "type": "tank",
+      "file": "units/scout.hjson"
+    },
+    {
+      "type": "tank",
+      "file": "units/guard.hjson"
+    }
+  ]
+}

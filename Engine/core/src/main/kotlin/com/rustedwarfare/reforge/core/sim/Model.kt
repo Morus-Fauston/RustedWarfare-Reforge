@@ -148,6 +148,7 @@ data class UnitObservation(
     val tasks: List<UnitTask> = emptyList(),
     val constructionProgress: Float = 1f,
     val constructionTargetId: String? = null,
+    val mechPose: MechPose? = null,
 )
 
 /** Host-only identity/target and arithmetic state. Never copied into player DTOs. */
@@ -155,7 +156,8 @@ data class ProjectileObservation(val objectId: Long, val sourceUnitId: String, v
     val position: Position, val heading: Double, val remainingLife: Double, val offset: Position, val scatter: Float,
     val height: Double = 0.0, val age: Float = 0f, val deflectionHealth: Float = 1f,
     val intercepted: Boolean = false, val ground: GroundProjectileObservation? = null,
-    val missile: MissileObservation? = null, val areaExpansion: AreaExpansionObservation? = null)
+    val missile: MissileObservation? = null, val areaExpansion: AreaExpansionObservation? = null,
+    val sourceWeaponName: String? = null)
 
 class AreaExpansionObservation(val remaining: Float, val radius: Float, hitUnitIds: Set<String>) {
     val hitUnitIds: Set<String> = Collections.unmodifiableSet(LinkedHashSet(hitUnitIds))
@@ -178,7 +180,8 @@ data class ProjectileEventObservation(val kind: String, val projectile: Projecti
 data class VisibleProjectileEvent(val token: String, val kind: String, val occurrences: Int,
     val position: Position, val heading: Double, val height: Double, val sourceUnitId: String?,
     val targetUnitId: String?, val damage: Double?, val parentToken: String? = null,
-    val interceptorUnitId: String? = null, val areaRadius: Float? = null)
+    val interceptorUnitId: String? = null, val areaRadius: Float? = null,
+    val sourceWeaponName: String? = null)
 
 /** Trusted-host state for deterministic replay/rollback verification, absent from player observations. */
 class CombatObservation(val frameCounter: Int, val nextObjectId: Long, weapons: List<UnitWeaponObservation>) {
@@ -192,7 +195,8 @@ class CombatObservation(val frameCounter: Int, val nextObjectId: Long, weapons: 
 data class UnitWeaponObservation(val unitId: String, val objectId: Long, val randomCounter: Int,
     val offset: Position, val targetUnitId: String?, val angularVelocity: Double,
     val pivot: Position? = null, val muzzle: Position? = null, val cooldown: Double = 0.0,
-    val oddShot: Boolean = false, val idle: WeaponIdleObservation? = null)
+    val oddShot: Boolean = false, val idle: WeaponIdleObservation? = null,
+    val weaponName: String? = null, val warmup: Double = 0.0, val turretHeading: Double? = null)
 
 data class WeaponIdleObservation(val baseHeading: Double, val timer: Float, val offset: Double,
     val direction: Int, val reached: Boolean, val hold: Float)
@@ -243,7 +247,10 @@ class Observation(
     val construction: ConstructionObservation? = null,
     incomeStates: List<IncomeStateObservation> = emptyList(),
     reclaimedUnitIds: List<String>? = null,
+    soundTriggers: List<SoundTriggerObservation> = emptyList(),
 ) {
+    /** Trusted host only; player audio receives authorized parameters, not this list. */
+    val soundTriggers: List<SoundTriggerObservation> = immutable(soundTriggers)
     val reclaimedUnitIds: List<String>? = reclaimedUnitIds?.let { immutable(it) }
     val incomeStates: List<IncomeStateObservation> = immutable(incomeStates)
     val units: List<UnitObservation> = immutable(units)
@@ -252,6 +259,10 @@ class Observation(
     val projectiles: List<ProjectileObservation> = immutable(projectiles)
     val projectileEvents: List<ProjectileEventObservation> = immutable(projectileEvents)
 }
+
+data class VisibleUnitWeapon(val unitId: String, val weaponName: String, val turretHeading: Double,
+    val pivot: Position, val muzzle: Position, val cooldown: Double?,
+    val warmup: Double? = null, val targetUnitId: String? = null)
 
 class PlayerObservation internal constructor(
     val sampleId: String,
@@ -271,7 +282,9 @@ class PlayerObservation internal constructor(
     factoryQueues: List<FactoryQueueObservation> = emptyList(),
     upgradeQueues: List<UpgradeQueueObservation> = emptyList(),
     val credits: Double? = null,
+    weapons: List<VisibleUnitWeapon> = emptyList(),
 ) {
+    val weapons: List<VisibleUnitWeapon> = immutable(weapons)
     val upgradeQueues: List<UpgradeQueueObservation> = immutable(upgradeQueues)
     val factoryQueues: List<FactoryQueueObservation> = immutable(factoryQueues)
     val units: List<UnitObservation> = immutable(units)
@@ -360,9 +373,32 @@ internal data class MutableUnit(
     var pendingPathNodeCounts: List<Int> = emptyList(),
     var consumedPathNodeCounts: List<Int> = emptyList(),
     var qBeforeDispatch: Byte = 0,
+    var namedWeapons: MutableMap<String, MutableCombat>? = definition.combat?.takeIf { NamedWeaponRuntime.usesNamedState(it) }
+        ?.namedWeapons?.ordered?.mapIndexed { index, weapon ->
+            val initialHeading = ScreenPlane.normalize(heading + weapon.idleDirection)
+            weapon.name to if (index == 0) checkNotNull(combat).also {
+                it.turretHeading = initialHeading
+                it.idleBaseHeading = initialHeading
+            } else MutableCombat(initialHeading)
+        }?.toMap(linkedMapOf()),
+    var sharedWeaponTargetId: String? = null,
+    var mechState: MechState? = MechMotion.initial(definition, position, heading),
+    var productionSide: Boolean = false,
 ) {
     val alive: Boolean get() = health == null || checkNotNull(health) > 0.0
     val tasks: List<UnitTask> get() = taskQueue.tasks
+    var primaryCombatTargetId: String?
+        get() = if (namedWeapons != null) sharedWeaponTargetId else combat?.targetId
+        set(value) {
+            if (namedWeapons != null) sharedWeaponTargetId = value else combat?.targetId = value
+        }
+    fun clearWeaponTargets() {
+        sharedWeaponTargetId = null
+        for (state in namedWeapons?.values ?: listOfNotNull(combat)) {
+            state.targetId = null
+            state.aimReady = false
+        }
+    }
     fun ensureLocalMotion(): LocalMotionSegment {
         val first = pathPoints.first()
         return localMotion?.takeIf { it.anchor == first }
@@ -447,7 +483,8 @@ internal data class MutableCombat(var turretHeading: Double, var angularVelocity
     var randomCounter: Int = 0, var idleBaseHeading: Double = turretHeading,
     var idleTimer: Float = 0f, var idleOffset: Double = 0.0, var idleDirection: Int = -1,
     var idleReached: Boolean = false, var idleHold: Float = 0f, var oddShot: Boolean = false,
-    var patrolSearchTimer: Float = 0f, var patrolDispatchTimer: Float = 0f)
+    var patrolSearchTimer: Float = 0f, var patrolDispatchTimer: Float = 0f,
+    var warmup: Double = 0.0, var aimReady: Boolean = false)
 
 internal data class MutableProjectile(val objectId: Long, val sourceUnitId: String, var targetUnitId: String?,
     var position: Position, var heading: Double, var remainingLife: Double, val offset: Position,
@@ -456,7 +493,8 @@ internal data class MutableProjectile(val objectId: Long, val sourceUnitId: Stri
     val instant: Boolean = false, val nonDeflectable: Boolean = false,
     val ground: GroundShot? = null, var verticalSpeed: Float = 0f, var groundDistanceSquared: Float? = null,
     val missile: NativeMissileProfile? = null, var missileReachedApex: Boolean = false, var missileRawAz: Float = 0f,
-    val expansion: AreaExpansion? = null)
+    val expansion: AreaExpansion? = null, val sourceWeaponName: String? = null,
+    val acceleration: com.rustedwarfare.reforge.core.content.LinearProjectileAcceleration? = null)
 
 internal data class AreaExpansion(val profile: DeathExplosionProfile, var remaining: Float,
     var radius: Float = 0f, val hitUnitIds: MutableSet<String> = linkedSetOf())

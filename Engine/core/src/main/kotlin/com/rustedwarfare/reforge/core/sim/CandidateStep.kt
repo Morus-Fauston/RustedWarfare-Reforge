@@ -43,6 +43,7 @@ internal data class StepState(
     var revision: Long = 0L,
     var pendingEvents: MutableList<Event> = mutableListOf(),
     var pendingProjectileEvents: MutableList<ProjectileEventObservation> = mutableListOf(),
+    var pendingSoundTriggers: MutableList<SoundTriggerObservation> = mutableListOf(),
     var pendingActionResults: MutableList<ActionResult> = mutableListOf(),
     var latestObservation: Observation? = null,
     var committedObservation: Observation? = null,
@@ -60,12 +61,17 @@ internal data class StepState(
 ) {
     fun fork(): StepState = copy(
         units = units.mapValuesTo(linkedMapOf()) { (_, unit) ->
-            unit.copy(pathPoints = unit.pathPoints.toMutableList(), combat = unit.combat?.copy(),
+            val combat = unit.combat?.copy()
+            val named = unit.namedWeapons?.mapValuesTo(linkedMapOf()) { (_, state) ->
+                if (state === unit.combat) checkNotNull(combat) else state.copy()
+            }
+            unit.copy(pathPoints = unit.pathPoints.toMutableList(), combat = combat, namedWeapons = named,
                 pointDefense = unit.pointDefense?.copy()) },
         projectiles = projectiles.mapTo(mutableListOf()) {
             it.copy(expansion = it.expansion?.let { area -> area.copy(hitUnitIds = LinkedHashSet(area.hitUnitIds)) }) },
         pendingEvents = pendingEvents.toMutableList(),
         pendingProjectileEvents = pendingProjectileEvents.toMutableList(),
+        pendingSoundTriggers = pendingSoundTriggers.toMutableList(),
         pendingActionResults = pendingActionResults.toMutableList(),
         scheduledActions = scheduledActions.toMutableList(),
         actionResultOwners = IdentityHashMap(actionResultOwners),
@@ -86,7 +92,10 @@ internal data class StepState(
             require(input.unitDefinitions[unit.typeId] === unit.definition) { "Unit definition must remain registered" }
             require(listOf(unit.position.x, unit.position.y, unit.heading, unit.speed, unit.angularVelocity, unit.height)
                 .all { it.isFinite() } && (unit.health?.isFinite() != false)) { "Unit candidate must remain finite" }
-            require(unit.birthRemaining.isFinite() && unit.birthRemaining in 0f..30f) { "Invalid birth timer" }
+            MechMotion.requireFinitePose(unit)
+            val birthLimit = unit.producerId?.let { units[it]?.definition?.production?.exitProfile }
+                .let { if (it == com.rustedwarfare.reforge.core.content.FactoryExitProfile.CUSTOM_MECH) 45f else 30f }
+            require(unit.birthRemaining.isFinite() && unit.birthRemaining in 0f..birthLimit) { "Invalid birth timer" }
             unit.taskQueue.validateCandidate()
             require((unit.logicalRequestX == null) == (unit.logicalRequestY == null) &&
                 unit.logicalRequestX?.isFinite() != false && unit.logicalRequestY?.isFinite() != false) {
@@ -118,18 +127,19 @@ internal data class StepState(
             }
             unit.health?.let { require(it >= 0.0 && it <= checkNotNull(unit.definition.maximumHealth) &&
                 unit.alive == (it > 0.0)) { "Invalid unit life state" } }
-            unit.combat?.let { state ->
+            for (state in unit.namedWeapons?.values ?: listOfNotNull(unit.combat)) {
                 require(listOf(state.turretHeading, state.angularVelocity, state.cooldown, state.offset.x, state.offset.y,
-                    state.idleBaseHeading, state.idleOffset)
+                    state.idleBaseHeading, state.idleOffset, state.warmup)
                     .all { it.isFinite() }) { "Weapon candidate must remain finite" }
+                require(state.warmup >= 0.0) { "Warmup must remain nonnegative" }
                 require(state.idleTimer.isFinite() && state.idleHold.isFinite() && state.idleHold >= 0f &&
                     state.idleDirection in setOf(-1, 1)) { "Invalid idle candidate" }
                 require(state.patrolSearchTimer.isFinite() && state.patrolSearchTimer >= 0f &&
                     state.patrolDispatchTimer.isFinite() && state.patrolDispatchTimer >= 0f) {
                     "Invalid patrol combat timers"
                 }
-                require(OrdinaryWeapon.hasFiniteGeometry(unit)) { "Weapon geometry must remain finite" }
             }
+            if (unit.combat != null) require(OrdinaryWeapon.hasFiniteGeometry(unit)) { "Weapon geometry must remain finite" }
             unit.pointDefense?.let { state ->
                 require(state.energy.isFinite() && state.energy in 0f..1f) { "Defense energy candidate must remain finite and bounded" }
                 val muzzle = PointDefense.muzzle(unit)
@@ -138,7 +148,8 @@ internal data class StepState(
         }
         for (projectile in projectiles) {
             require(listOf(projectile.position.x, projectile.position.y,
-                projectile.height, projectile.heading, projectile.remainingLife).all { it.isFinite() } &&
+                projectile.height, projectile.heading, projectile.remainingLife, projectile.speed).all { it.isFinite() } &&
+                projectile.speed >= 0.0 &&
                 projectile.age.isFinite() && projectile.age >= 0f && projectile.deflectionHealth.isFinite() &&
                 projectile.verticalSpeed.isFinite() && projectile.groundDistanceSquared?.isFinite() != false &&
                 projectile.ground?.let { it.x.isFinite() && it.y.isFinite() && it.height.isFinite() } != false &&
@@ -164,6 +175,10 @@ internal data class StepState(
                 projectile.missile?.let { it.speed.isFinite() && it.speed >= 0f && it.rawAz.isFinite() } != false) {
                 "Projectile event candidate must remain finite"
             }
+        }
+        for (sound in pendingSoundTriggers) require(sound.position.x.isFinite() && sound.position.y.isFinite() &&
+            sound.volume.isFinite() && sound.volume > 0f && sound.volume <= 1f && sound.eventId.isNotBlank()) {
+            "Sound trigger candidate must remain finite and bounded"
         }
     }
 }
@@ -239,6 +254,7 @@ internal class CandidateStep(val state: StepState, private val step: Step) {
         state.actionResultOwners = owners
         state.pendingEvents.clear()
         state.pendingProjectileEvents.clear()
+        state.pendingSoundTriggers.clear()
         state.pendingActionResults.clear()
         motionSamples?.let { checkNotNull(committedMotion).addAll(it) }
         return observation

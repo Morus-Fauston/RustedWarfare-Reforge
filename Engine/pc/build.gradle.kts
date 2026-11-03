@@ -27,6 +27,16 @@ application {
     applicationDefaultJvmArgs = listOf("--enable-native-access=ALL-UNNAMED")
 }
 
+// Java expands this JAR wildcard itself, avoiding cmd's limit for deeply nested Windows installs.
+tasks.named<org.gradle.jvm.application.tasks.CreateStartScripts>("startScripts") {
+    doLast {
+        val generated = windowsScript.readText()
+        val assignment = Regex("(?m)^set CLASSPATH=[^\\r\\n]*")
+        check(assignment.findAll(generated).count() == 1) { "Expected one Windows classpath assignment" }
+        windowsScript.writeText(generated.replace(assignment) { "set CLASSPATH=%APP_HOME%\\lib\\*" })
+    }
+}
+
 tasks.named<JavaExec>("run") {
     workingDir = rootProject.projectDir.parentFile
 }

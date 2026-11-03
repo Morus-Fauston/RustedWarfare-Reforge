@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "suiteId": "public.production-combat.v1",
   "inputScope": "public",
-  "fixture": "inputs/content-movement-knowledge/P001-\u79fb\u52a8\u6c99\u76d2\u8f93\u5165",
+  "fixture": "inputs/content-movement-knowledge/P001-移动沙盒输入",
   "tests": {
     "core": [
       "com.rustedwarfare.reforge.core.content.CombatContentLoadTest",
@@ -21,6 +21,7 @@
       "com.rustedwarfare.reforge.core.sim.DurabilityContractTest",
       "com.rustedwarfare.reforge.core.sim.FactoryExitTest",
       "com.rustedwarfare.reforge.core.sim.NativeMissileTest",
+      "com.rustedwarfare.reforge.core.sim.NativeBuildingHitTest",
       "com.rustedwarfare.reforge.core.sim.OrdinaryCombatTest",
       "com.rustedwarfare.reforge.core.sim.OrdinaryWeaponContractTest",
       "com.rustedwarfare.reforge.core.sim.PatrolCommandTest",
@@ -45,7 +46,32 @@
       "com.rustedwarfare.reforge.core.sim.UpgradeInitializationTest",
       "com.rustedwarfare.reforge.core.sim.UpgradeTransactionTest",
       "com.rustedwarfare.reforge.core.sim.UpgradeWeaponStateTest",
-      "com.rustedwarfare.reforge.core.sim.OrdinaryUpgradesTest"
+      "com.rustedwarfare.reforge.core.sim.OrdinaryUpgradesTest",
+      "com.rustedwarfare.reforge.core.content.NamedWeaponContentTest",
+      "com.rustedwarfare.reforge.core.sim.NamedWeaponStateTest",
+      "com.rustedwarfare.reforge.core.sim.NamedWeaponTargetTest",
+      "com.rustedwarfare.reforge.core.sim.NamedWeaponWarmupTest",
+      "com.rustedwarfare.reforge.core.sim.NamedWeaponGateTest",
+      "com.rustedwarfare.reforge.core.sim.NamedWeaponMountTest",
+      "com.rustedwarfare.reforge.core.sim.NamedWeaponLinkTest",
+      "com.rustedwarfare.reforge.core.sim.NamedWeaponProjectionTest",
+      "com.rustedwarfare.reforge.core.content.MechContentPackTest",
+      "com.rustedwarfare.reforge.core.content.MechFactoryContentTest",
+      "com.rustedwarfare.reforge.core.content.MechFactoryReferencesTest",
+      "com.rustedwarfare.reforge.core.content.MechInputFailureTest",
+      "com.rustedwarfare.reforge.core.sim.ArmedMechCombatTest",
+      "com.rustedwarfare.reforge.core.sim.MechBodyTest",
+      "com.rustedwarfare.reforge.core.sim.MechFactoryFailureTest",
+      "com.rustedwarfare.reforge.core.sim.MechFactoryDirectHitTest",
+      "com.rustedwarfare.reforge.core.sim.MechFactoryProductionTest",
+      "com.rustedwarfare.reforge.core.sim.MechFactoryProfileTest",
+      "com.rustedwarfare.reforge.core.sim.MechGaitObservationTest",
+      "com.rustedwarfare.reforge.core.sim.MechKnowledgeTest",
+      "com.rustedwarfare.reforge.core.sim.MechLifecycleTest",
+      "com.rustedwarfare.reforge.core.sim.MechMovementTest",
+      "com.rustedwarfare.reforge.core.sim.MechPoseTest",
+      "com.rustedwarfare.reforge.core.sim.MechReverseMovementTest",
+      "com.rustedwarfare.reforge.core.sim.MechThreeFormatBehaviorTest"
     ],
     "client": [
       "com.rustedwarfare.reforge.client.CombatActorEvidenceTest",
@@ -55,13 +81,27 @@
       "com.rustedwarfare.reforge.client.PatrolScenarioTest",
       "com.rustedwarfare.reforge.client.ProductionCommandEvidenceTest",
       "com.rustedwarfare.reforge.client.ProductionSandboxSessionTest",
-      "com.rustedwarfare.reforge.client.ProjectileEvidencePairingTest"
+      "com.rustedwarfare.reforge.client.ProjectileEvidencePairingTest",
+      "com.rustedwarfare.reforge.client.MechAppearanceTest",
+      "com.rustedwarfare.reforge.client.MechProductionSandboxTest",
+      "com.rustedwarfare.reforge.client.MechProjectionTest",
+      "com.rustedwarfare.reforge.client.MechResourceBindingTest"
     ],
     "pc": [
-      "com.rustedwarfare.reforge.pc.PatrolJsonlPairingTest"
+      "com.rustedwarfare.reforge.pc.PatrolJsonlPairingTest",
+      "com.rustedwarfare.reforge.pc.MechOriginalProfileTest",
+      "com.rustedwarfare.reforge.pc.MechSessionEvidenceTest",
+      "com.rustedwarfare.reforge.pc.VisualAssetPreparationTest"
     ],
     "tools": [
-      "com.rustedwarfare.reforge.testing.ProductionCombatScenarioTest"
+      "com.rustedwarfare.reforge.testing.ProductionCombatScenarioTest",
+      "com.rustedwarfare.reforge.testing.NamedWeaponSessionRunnerTest",
+      "com.rustedwarfare.reforge.testing.NamedWeaponCoreAdapterTest",
+      "com.rustedwarfare.reforge.testing.MountedWeaponSessionTest",
+      "com.rustedwarfare.reforge.testing.LinkedWeaponSessionTest",
+      "com.rustedwarfare.reforge.testing.MechCoreAdapterTest",
+      "com.rustedwarfare.reforge.testing.MechPublicScenarioTest",
+      "com.rustedwarfare.reforge.testing.MechSessionRunnerTest"
     ]
   },
   "short": [
@@ -79,6 +119,147 @@
       "id": "point-defense-short",
       "scenario": "scenarios/point-defense-short.json",
       "contract": "contracts/point-defense-short.json"
+    },
+    {
+      "id": "named-weapons-ini-short",
+      "backend": "session",
+      "scenario": "platform/scenarios/named-weapons-ini-short.json",
+      "contract": "platform/contracts/named-weapons-ini-short.json"
+    },
+    {
+      "id": "named-weapons-json-short",
+      "backend": "session",
+      "scenario": "platform/scenarios/named-weapons-json-short.json",
+      "contract": "platform/contracts/named-weapons-json-short.json"
+    },
+    {
+      "id": "named-weapons-hjson-short",
+      "backend": "session",
+      "scenario": "platform/scenarios/named-weapons-hjson-short.json",
+      "contract": "platform/contracts/named-weapons-hjson-short.json"
+    },
+    {
+      "id": "weapon-relations-mounted-ini-short",
+      "backend": "session",
+      "scenario": "platform/scenarios/weapon-relations-mounted-ini-short.json",
+      "contract": "platform/contracts/weapon-relations-mounted-ini-short.json"
+    },
+    {
+      "id": "weapon-relations-mounted-json-short",
+      "backend": "session",
+      "scenario": "platform/scenarios/weapon-relations-mounted-json-short.json",
+      "contract": "platform/contracts/weapon-relations-mounted-json-short.json"
+    },
+    {
+      "id": "weapon-relations-mounted-hjson-short",
+      "backend": "session",
+      "scenario": "platform/scenarios/weapon-relations-mounted-hjson-short.json",
+      "contract": "platform/contracts/weapon-relations-mounted-hjson-short.json"
+    },
+    {
+      "id": "weapon-relations-linked-forward-ini-short",
+      "backend": "session",
+      "scenario": "platform/scenarios/weapon-relations-linked-forward-ini-short.json",
+      "contract": "platform/contracts/weapon-relations-linked-forward-ini-short.json"
+    },
+    {
+      "id": "weapon-relations-linked-forward-json-short",
+      "backend": "session",
+      "scenario": "platform/scenarios/weapon-relations-linked-forward-json-short.json",
+      "contract": "platform/contracts/weapon-relations-linked-forward-json-short.json"
+    },
+    {
+      "id": "weapon-relations-linked-forward-hjson-short",
+      "backend": "session",
+      "scenario": "platform/scenarios/weapon-relations-linked-forward-hjson-short.json",
+      "contract": "platform/contracts/weapon-relations-linked-forward-hjson-short.json"
+    },
+    {
+      "id": "weapon-relations-linked-reverse-ini-short",
+      "backend": "session",
+      "scenario": "platform/scenarios/weapon-relations-linked-reverse-ini-short.json",
+      "contract": "platform/contracts/weapon-relations-linked-reverse-ini-short.json"
+    },
+    {
+      "id": "weapon-relations-linked-reverse-json-short",
+      "backend": "session",
+      "scenario": "platform/scenarios/weapon-relations-linked-reverse-json-short.json",
+      "contract": "platform/contracts/weapon-relations-linked-reverse-json-short.json"
+    },
+    {
+      "id": "weapon-relations-linked-reverse-hjson-short",
+      "backend": "session",
+      "scenario": "platform/scenarios/weapon-relations-linked-reverse-hjson-short.json",
+      "contract": "platform/contracts/weapon-relations-linked-reverse-hjson-short.json"
+    },
+    {
+      "id": "weapon-relations-unlinked-ini-short",
+      "backend": "session",
+      "scenario": "platform/scenarios/weapon-relations-unlinked-ini-short.json",
+      "contract": "platform/contracts/weapon-relations-unlinked-ini-short.json"
+    },
+    {
+      "id": "weapon-relations-unlinked-json-short",
+      "backend": "session",
+      "scenario": "platform/scenarios/weapon-relations-unlinked-json-short.json",
+      "contract": "platform/contracts/weapon-relations-unlinked-json-short.json"
+    },
+    {
+      "id": "weapon-relations-unlinked-hjson-short",
+      "backend": "session",
+      "scenario": "platform/scenarios/weapon-relations-unlinked-hjson-short.json",
+      "contract": "platform/contracts/weapon-relations-unlinked-hjson-short.json"
+    },
+    {
+      "id": "weapon-relations-linked-disabled-ini-short",
+      "backend": "session",
+      "scenario": "platform/scenarios/weapon-relations-linked-disabled-ini-short.json",
+      "contract": "platform/contracts/weapon-relations-linked-disabled-ini-short.json"
+    },
+    {
+      "id": "weapon-relations-linked-disabled-json-short",
+      "backend": "session",
+      "scenario": "platform/scenarios/weapon-relations-linked-disabled-json-short.json",
+      "contract": "platform/contracts/weapon-relations-linked-disabled-json-short.json"
+    },
+    {
+      "id": "weapon-relations-linked-disabled-hjson-short",
+      "backend": "session",
+      "scenario": "platform/scenarios/weapon-relations-linked-disabled-hjson-short.json",
+      "contract": "platform/contracts/weapon-relations-linked-disabled-hjson-short.json"
+    },
+    {
+      "id": "mech-ini-short",
+      "scenario": "scenarios/mech-ini-short.json",
+      "contract": "contracts/mech-ini-short.json"
+    },
+    {
+      "id": "mech-ini-session-short",
+      "backend": "session",
+      "scenario": "platform/scenarios/mech-ini-session-short.json",
+      "contract": "platform/contracts/mech-ini-session-short.json"
+    },
+    {
+      "id": "mech-json-short",
+      "scenario": "scenarios/mech-json-short.json",
+      "contract": "contracts/mech-json-short.json"
+    },
+    {
+      "id": "mech-json-session-short",
+      "backend": "session",
+      "scenario": "platform/scenarios/mech-json-session-short.json",
+      "contract": "platform/contracts/mech-json-session-short.json"
+    },
+    {
+      "id": "mech-hjson-short",
+      "scenario": "scenarios/mech-hjson-short.json",
+      "contract": "contracts/mech-hjson-short.json"
+    },
+    {
+      "id": "mech-hjson-session-short",
+      "backend": "session",
+      "scenario": "platform/scenarios/mech-hjson-session-short.json",
+      "contract": "platform/contracts/mech-hjson-session-short.json"
     }
   ],
   "long": [
@@ -86,6 +267,21 @@
       "id": "production-combat-chain",
       "scenario": "scenarios/production-combat-chain.json",
       "contract": "contracts/production-combat-chain.json"
+    },
+    {
+      "id": "mech-production-ini-chain",
+      "scenario": "scenarios/mech-production-ini-chain.json",
+      "contract": "contracts/mech-production-ini-chain.json"
+    },
+    {
+      "id": "mech-production-json-chain",
+      "scenario": "scenarios/mech-production-json-chain.json",
+      "contract": "contracts/mech-production-json-chain.json"
+    },
+    {
+      "id": "mech-production-hjson-chain",
+      "scenario": "scenarios/mech-production-hjson-chain.json",
+      "contract": "contracts/mech-production-hjson-chain.json"
     }
   ]
 }

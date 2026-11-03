@@ -1,0 +1,110 @@
+{
+  "schemaVersion": 1,
+  "scenarioId": "content-pack-json-short",
+  "rules": [
+    {
+      "intentId": "choose-tank",
+      "actionType": "SelectAction",
+      "unitId": "a",
+      "accepted": true,
+      "assertions": [
+        {
+          "path": "units.a.typeId",
+          "operator": "equals",
+          "value": "amber_scout"
+        },
+        {
+          "path": "units.a.maxHealth",
+          "operator": "equals",
+          "value": 250
+        }
+      ],
+      "unitIdentity": {
+        "ownerPlayerId": "p1",
+        "typeId": "amber_scout"
+      }
+    },
+    {
+      "intentId": "move-tank",
+      "actionType": "MoveAction",
+      "unitId": "a",
+      "accepted": true,
+      "targetFromIntent": true,
+      "assertions": [
+        {
+          "path": "units.a.moveTarget",
+          "operator": "equalsActionTarget"
+        }
+      ],
+      "unitIdentity": {
+        "ownerPlayerId": "p1",
+        "typeId": "amber_scout"
+      }
+    },
+    {
+      "intentId": "stop-tank",
+      "actionType": "StopAction",
+      "unitId": "a",
+      "accepted": true,
+      "assertions": [
+        {
+          "path": "units.a.moveTarget",
+          "operator": "equals",
+          "value": null
+        }
+      ],
+      "tail": {
+        "samples": 9,
+        "assertions": [
+          {
+            "path": "units.a.speed",
+            "operator": "equals",
+            "value": 0
+          },
+          {
+            "path": "units.a.angularVelocity",
+            "operator": "equals",
+            "value": 0
+          },
+          {
+            "path": "units.a.moveTarget",
+            "operator": "equals",
+            "value": null
+          },
+          {
+            "path": "units.a.position",
+            "operator": "stable"
+          }
+        ]
+      },
+      "unitIdentity": {
+        "ownerPlayerId": "p1",
+        "typeId": "amber_scout"
+      }
+    },
+    {
+      "intentId": "attack-enemy",
+      "actionType": "AttackAction",
+      "unitId": "a",
+      "accepted": true,
+      "actionFields": {
+        "targetUnitId": "b"
+      },
+      "assertions": [
+        {
+          "path": "units.a.attackTargetId",
+          "operator": "equals",
+          "value": "b"
+        }
+      ],
+      "unitIdentity": {
+        "ownerPlayerId": "p1",
+        "typeId": "amber_scout"
+      },
+      "targetIdentity": {
+        "ownerPlayerId": "p2",
+        "typeId": "amber_scout"
+      }
+    }
+  ]
+}

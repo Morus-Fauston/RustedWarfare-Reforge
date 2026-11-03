@@ -1,0 +1,107 @@
+{
+  "schemaVersion": 1,
+  "kind": "behavior-contract",
+  "contractId": "public.content-three-formats-economy-maintenance-repair-short-ini.v1.contract",
+  "scope": "self-behavior",
+  "scenarioIds": [
+    "public.content-three-formats-economy-maintenance-repair-short-ini.v1"
+  ],
+  "approval": {
+    "status": "tool-fixture-only",
+    "source": "ENG-P008-003: unchanged maintenance-repair-short authored actions/rules; only explicit three-format input counterparts, identities and scenario attribution; no trajectory-derived expectations"
+  },
+  "comparison": {
+    "numberMode": "declared-per-field",
+    "tolerances": {},
+    "eventOrder": "strict-record-and-array-order"
+  },
+  "exclusions": [
+    "original-compatibility",
+    "platform-input",
+    "performance"
+  ],
+  "rules": [
+    {
+      "ruleId": "first-worker-reclaims",
+      "when": {
+        "phase": "after-advance",
+        "stepIndex": 0
+      },
+      "assertions": [
+        {
+          "path": "units.a.tasks.reclaim-a.kind",
+          "operator": "equals",
+          "value": "RECLAIM"
+        },
+        {
+          "path": "units.a.tasks.reclaim-a.targetUnitId",
+          "operator": "equals",
+          "value": "f"
+        },
+        {
+          "path": "units.b.tasks.reclaim-b.kind",
+          "operator": "equals",
+          "value": "RECLAIM"
+        }
+      ]
+    },
+    {
+      "ruleId": "both-repair",
+      "when": {
+        "phase": "after-advance",
+        "stepIndex": 80
+      },
+      "assertions": [
+        {
+          "path": "units.a.tasks.repair-a.kind",
+          "operator": "equals",
+          "value": "CONSTRUCT"
+        },
+        {
+          "path": "units.b.tasks.repair-b.kind",
+          "operator": "equals",
+          "value": "CONSTRUCT"
+        },
+        {
+          "path": "units.a.tasks.repair-a.actionId",
+          "operator": "equals",
+          "value": "repair-a"
+        }
+      ]
+    },
+    {
+      "ruleId": "free-repair-finishes",
+      "when": {
+        "phase": "after-advance",
+        "stepIndex": 379
+      },
+      "assertions": [
+        {
+          "path": "units.f.health",
+          "operator": "equals",
+          "value": 1200
+        },
+        {
+          "path": "units.a.tasks",
+          "operator": "equals",
+          "value": []
+        },
+        {
+          "path": "units.b.tasks",
+          "operator": "equals",
+          "value": []
+        },
+        {
+          "path": "economy.preciseBalances.p1",
+          "operator": "equals",
+          "value": 1750
+        },
+        {
+          "path": "reclaimedUnitIds",
+          "operator": "equals",
+          "value": []
+        }
+      ]
+    }
+  ]
+}

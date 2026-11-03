@@ -29,7 +29,7 @@ internal class PcVisualAssetService(private val cacheRoot: Path,
         val units = profile.json.get("unitBindings").associate { binding ->
             fun slot(name: String): Path? = binding.getString(name, null)?.let { prepared.outputs.getValue(it) }
             binding.name to VisualUnitImages(requireNotNull(slot("body")), slot("back"), slot("turret"), slot("dead"),
-                profile.recipes.getValue(binding.getString("body")).getInt("frames", 1))
+                profile.recipes.getValue(binding.getString("body")).getInt("frames", 1), leg = slot("leg"), foot = slot("foot"))
         }
         val terrain = profile.json.get("terrainOutputs").associate { it.name to prepared.outputs.getValue(it.name) }
         return PreparedVisualAssets(selection.copy(originalDirectory = root), profile.id,
@@ -147,13 +147,17 @@ internal class PcVisualAssetService(private val cacheRoot: Path,
         val source = images.getValue(recipe.getString("source"))
         val rect = recipe.get("rect").asIntArray()
         val target = recipe.get("target").asIntArray()
+        val rotation = recipe.getInt("rotate", 0)
+        require(rotation == 0 || rotation == 90) { "VISUAL_MAPPING_UNSUPPORTED: crop rotation" }
         require(rect.size == 4 && target.size == 2 && rect[0] >= 0 && rect[1] >= 0 && rect[2] > 0 && rect[3] > 0 &&
             rect[0] + rect[2] <= source.width && rect[1] + rect[3] <= source.height &&
             target[0] > 0 && target[1] > 0 && offset + target[0] <= output.width && target[1] <= output.height) {
             "VISUAL_MAPPING_UNSUPPORTED: crop bounds"
         }
         for (y in 0 until target[1]) for (x in 0 until target[0]) {
-            val color = source.getRGB(rect[0] + x * rect[2] / target[0], rect[1] + y * rect[3] / target[1])
+            val sourceX = if (rotation == 90) y * rect[2] / target[1] else x * rect[2] / target[0]
+            val sourceY = if (rotation == 90) rect[3] - 1 - x * rect[3] / target[0] else y * rect[3] / target[1]
+            val color = source.getRGB(rect[0] + sourceX, rect[1] + sourceY)
             output.setRGB(offset + x, y, if (blend) over(color, output.getRGB(offset + x, y)) else color)
         }
     }

@@ -1,0 +1,8 @@
+{
+  "formatVersion": 1,
+  "requiresResourceFormat": 2,
+  "id": "reforge:base",
+  "name": "Public placeholder pack",
+  "description": "Repository-authored placeholder pictures and sounds.",
+  "icon": "reforge:units/c_tank/body"
+}

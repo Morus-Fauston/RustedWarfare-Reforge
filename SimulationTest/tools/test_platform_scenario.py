@@ -9,6 +9,87 @@ import tempfile
 
 
 class PlatformIntentTest(unittest.TestCase):
+    def test_session_forwards_its_explicit_process_budget_to_the_actual_java_load_boundary(self):
+        from unittest.mock import patch
+        from types import SimpleNamespace
+        from platform_scenario import run_session, save
+        with tempfile.TemporaryDirectory(prefix='platform-budget-') as folder:
+            root=Path(folder);(root/'inputs').mkdir();(root/'inputs/input.txt').write_text('owned',encoding='utf8')
+            (root/'dist/lib').mkdir(parents=True);(root/'dist/lib/owned.jar').write_bytes(b'owned')
+            save(root/'plan.json',dict(inputs='inputs'));save(root/'contract.json',{})
+            with patch('platform_scenario.subprocess.run',return_value=SimpleNamespace(returncode=1)) as process:
+                result=run_session(root/'plan.json',root/'contract.json',root/'dist',root/'out',timeout=180)
+            self.assertEqual('adapter-process',result['category'])
+            self.assertEqual('180',process.call_args.args[0][-1])
+            self.assertEqual(180,process.call_args.kwargs['timeout'])
+            for invalid in (0,-1,601):
+                with self.subTest(timeout=invalid),self.assertRaises(PlatformError):
+                    run_session(root/'plan.json',root/'contract.json',root/'dist',root/('invalid-'+str(invalid)),timeout=invalid)
+                self.assertFalse((root/('invalid-'+str(invalid))).exists())
+
+    def test_weighted_sound_contract_checks_exact_tables_and_only_legal_actual_choices_without_sample_quotas(self):
+        from platform_scenario import compare_resource_sounds
+        event = 'reforge:events/tank-fire'
+        candidates = [dict(sound='owned:sounds/a', weight=2, providerId='owned:upper'),
+                      dict(sound='owned:sounds/b', weight=1, providerId='owned:lower')]
+        tables = {event: dict(providerId='owned:upper', totalWeight=3, candidates=candidates),
+                  'owned:events/other': dict(providerId='owned:lower', totalWeight=1,
+                      candidates=[dict(sound='owned:sounds/b', weight=1, providerId='owned:lower')])}
+        expected = dict(eventId=event, events=tables, minimumRequests=1)
+        stack = dict(events=copy.deepcopy(tables), resources={
+            'owned:sounds/a': dict(path='a.wav', sha256='a'*64),
+            'owned:sounds/b': dict(path='b.wav', sha256='b'*64)})
+        request = dict(kind='sound-play-requested', eventId=event, resourceId='owned:sounds/b',
+            path='b.wav', sha256='b'*64, volume=.3, pitch=1., pan=0., frame=1, serial=1, step=0, voice=1)
+        rows = [dict(kind='visual-assets-ready', soundStack=stack),
+                dict(kind='sound-backend-ready', backend='device-free'), request]
+        self.assertEqual(['owned:sounds/b'], compare_resource_sounds(rows, expected)['selectedResources'])
+        for field, value in [('weight', 1), ('providerId', 'owned:wrong'), ('sound', 'owned:sounds/missing')]:
+            changed = copy.deepcopy(rows); changed[0]['soundStack']['events'][event]['candidates'][0][field] = value
+            with self.subTest(field=field), self.assertRaises(PlatformError): compare_resource_sounds(changed, expected)
+        changed = copy.deepcopy(rows); del changed[0]['soundStack']['events']['owned:events/other']
+        with self.assertRaises(PlatformError): compare_resource_sounds(changed, expected)
+        for field, value in [('resourceId', 'owned:sounds/outside'), ('path', 'a.wav'), ('position', [1, 2])]:
+            changed = copy.deepcopy(rows); changed[-1][field] = value
+            with self.subTest(field=field), self.assertRaises(PlatformError): compare_resource_sounds(changed, expected)
+        with self.assertRaises(PlatformError): compare_resource_sounds(rows+[request], expected)
+
+    def test_sound_contract_requires_authorized_requests_and_rejects_duplicates_failures_or_wrong_bindings(self):
+        from platform_scenario import compare_resource_sounds
+        expected = dict(eventId='reforge:events/tank-fire', resourceId='owned:sounds/shot',
+                        providerId='owned:sound-wav', minimumRequests=1)
+        stack = dict(events={expected['eventId']:dict(sound=expected['resourceId'], providerId=expected['providerId'])},
+                     resources={expected['resourceId']:dict(path='fixed.wav', sha256='a'*64)})
+        request = dict(kind='sound-play-requested', eventId=expected['eventId'], resourceId=expected['resourceId'],
+                       path='fixed.wav', sha256='a'*64, volume=.3, pitch=1., pan=0., frame=1, serial=1, step=0, voice=1)
+        rows = [dict(kind='visual-assets-ready', soundStack=stack),
+                dict(kind='sound-backend-ready', backend='device-free'), request]
+        self.assertEqual(1, compare_resource_sounds(rows, expected)['requests'])
+        for key, value in [('resourceId', 'wrong:resource'), ('volume', 2.), ('pitch', 2.), ('pan', 1.),
+                           ('position', [1, 2]), ('path', 'other.wav'), ('sha256', 'b'*64), ('voice', -1), ('frame', True)]:
+            changed = copy.deepcopy(rows); changed[-1][key] = value
+            with self.subTest(key=key), self.assertRaises(PlatformError): compare_resource_sounds(changed, expected)
+        for changed in (rows[:-1], rows+[request], rows+[dict(kind='sound-play-failed')],
+                        [rows[0], dict(kind='sound-backend-ready', backend='actual'), request]):
+            with self.subTest(changed=changed), self.assertRaises(PlatformError): compare_resource_sounds(changed, expected)
+
+    def test_resource_stack_contract_rejects_wrong_winners_layout_or_missing_preparation(self):
+        from platform_scenario import compare_resource_images
+        expectation = dict(packOrder=['owned:amber','owned:blue','reforge:base'], resources={
+            'reforge:units/c_tank/body':dict(providerId='owned:amber',frameWidth=20,frameHeight=20,
+                totalFrames=3,pixelWidth=120,pixelHeight=40,bound=True)})
+        row = dict(kind='visual-assets-ready',resourceStack=copy.deepcopy(expectation))
+        self.assertEqual(expectation['packOrder'],compare_resource_images([row],expectation)['packOrder'])
+        for field,value in [('providerId','owned:blue'),('frameWidth',40),('pixelWidth',60),('bound',False)]:
+            changed=copy.deepcopy(row)
+            changed['resourceStack']['resources']['reforge:units/c_tank/body'][field]=value
+            with self.subTest(field=field),self.assertRaises(PlatformError):compare_resource_images([changed],expectation)
+        for rows in ([],[row,row]):
+            with self.subTest(rows=len(rows)),self.assertRaises(PlatformError):compare_resource_images(rows,expectation)
+        for bad in ({},dict(expectation,resources={}),dict(expectation,packOrder=[]),
+                    dict(expectation,resources={'reforge:units/c_tank/body':dict(unknown=1)})):
+            with self.subTest(bad=bad),self.assertRaises(PlatformError):compare_resource_images([row],bad)
+
     def test_input_manifest_uses_case_sensitive_posix_order_on_every_host(self):
         from platform_scenario import tree
         with tempfile.TemporaryDirectory(prefix='platform-manifest-') as folder:

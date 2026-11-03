@@ -12,16 +12,41 @@ import java.io.IOException
 import java.nio.file.Path
 
 object ContentLoader {
+    /** Composes checked immutable declarations without touching the filesystem or renderer. */
+    fun composeContentPacks(packs: List<LoadedContentPack>): ContentResult<LoadedContentSet> =
+        load(packs.firstOrNull()?.manifest ?: Path.of(".")) { errorPath ->
+            com.rustedwarfare.reforge.core.content.internal.ContentPackComposer.compose(packs, errorPath)
+        }
+
+    fun loadContentPacks(paths: List<Path>): ContentResult<LoadedContentSet> =
+        load(paths.firstOrNull() ?: Path.of(".")) { errorPath ->
+            val packs = paths.map { com.rustedwarfare.reforge.core.content.internal.ContentPackReader.read(it.toAbsolutePath().normalize()) }
+            val combined = com.rustedwarfare.reforge.core.content.internal.ContentPackComposer.compose(packs, errorPath)
+            when (val stable = combined.verifyStable()) {
+                is ContentResult.Failure -> throw ContentReadException(stable.error)
+                is ContentResult.Success -> Unit
+            }
+            combined
+        }
+    fun loadContentPack(path: Path): ContentResult<LoadedContentPack> =
+        load(path, com.rustedwarfare.reforge.core.content.internal.ContentPackReader::read)
     fun loadEconomyUnit(path: Path): ContentResult<UnitDefinition> = load(path, com.rustedwarfare.reforge.core.content.internal.EconomyContentReader::read)
     fun loadEconomyUnit(path: Path, enableUpgrades: Boolean): ContentResult<UnitDefinition> =
         load(path) { com.rustedwarfare.reforge.core.content.internal.EconomyContentReader.read(it, enableUpgrades) }
+    fun loadEconomyUnitWithSources(path: Path, enableUpgrades: Boolean = false): ContentResult<LoadedUnitContent> =
+        load(path) { com.rustedwarfare.reforge.core.content.internal.EconomyContentReader.readWithSources(it, enableUpgrades) }
     fun loadCommandCenter(path: Path): ContentResult<UnitDefinition> = load(path, CommandCenterContentReader::read)
+    fun loadCommandCenterWithSources(path: Path): ContentResult<LoadedUnitContent> = load(path, CommandCenterContentReader::readWithSources)
     fun loadBuilder(path: Path): ContentResult<UnitDefinition> = load(path, BuilderContentReader::read)
+    fun loadBuilderWithSources(path: Path): ContentResult<LoadedUnitContent> = load(path, BuilderContentReader::readWithSources)
 
     fun loadPointDefense(path: Path): ContentResult<UnitDefinition> = load(path, PointDefenseContentReader::read)
 
     fun loadPointDefense(path: Path, enableConstruction: Boolean): ContentResult<UnitDefinition> =
         load(path) { PointDefenseContentReader.read(it, enableConstruction) }
+
+    fun loadPointDefenseWithSources(path: Path, enableConstruction: Boolean = false): ContentResult<LoadedUnitContent> =
+        load(path) { PointDefenseContentReader.readWithSources(it, enableConstruction) }
 
     fun loadTurretUnit(path: Path): ContentResult<UnitDefinition> = loadTurretUnit(path, false)
 
@@ -31,9 +56,23 @@ object ContentLoader {
     fun loadTurretUnit(path: Path, enableUpgrades: Boolean, enableConstruction: Boolean): ContentResult<UnitDefinition> =
         load(path) { TurretContentReader.read(it, enableUpgrades, enableConstruction) }
 
+    fun loadTurretUnitWithSources(path: Path, enableUpgrades: Boolean = false,
+                                 enableConstruction: Boolean = false): ContentResult<LoadedUnitContent> =
+        load(path) { TurretContentReader.readWithSources(it, enableUpgrades, enableConstruction) }
+
     fun loadFactory(path: Path): ContentResult<UnitDefinition> = load(path, FactoryContentReader::read)
+    fun loadFactoryWithSources(path: Path): ContentResult<LoadedUnitContent> = load(path, FactoryContentReader::readWithSources)
 
     fun loadCombatUnit(iniPath: Path): ContentResult<UnitDefinition> = load(iniPath, CombatContentReader::read)
+
+    fun loadCombatUnitWithSources(path: Path): ContentResult<LoadedUnitContent> = load(path, CombatContentReader::readWithSources)
+
+    /** The finite two-legged mech schema shares the ordinary content/source reader. */
+    fun loadMechUnit(path: Path): ContentResult<UnitDefinition> =
+        load(path) { CombatContentReader.readMechWithSources(it).definition }
+
+    fun loadDeclaredTankWithSources(path: Path): ContentResult<LoadedUnitContent> =
+        load(path) { CombatContentReader.readDeclaredWithSources(it) }
 
     fun loadUnitVariant(iniPath: Path): ContentResult<UnitDefinition> = load(iniPath, IniReader::read)
     fun loadMap(tmxPath: Path): ContentResult<MapDefinition> = load(tmxPath, TmxReader::read)

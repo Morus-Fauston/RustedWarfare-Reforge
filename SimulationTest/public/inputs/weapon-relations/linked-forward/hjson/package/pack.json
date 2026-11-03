@@ -1,0 +1,11 @@
+{
+  "format": "rw-reforge.content-pack.v1",
+  "id": "reforge.weapon-relations.linked-forward.hjson",
+  "name": "Owned linked-forward representative",
+  "units": [
+    {
+      "type": "tank",
+      "file": "units/linked.hjson"
+    }
+  ]
+}

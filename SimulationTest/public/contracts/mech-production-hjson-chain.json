@@ -1,0 +1,192 @@
+{
+  "schemaVersion": 1,
+  "kind": "behavior-contract",
+  "contractId": "public.mech-production-hjson-chain.v1.contract",
+  "scope": "self-behavior",
+  "scenarioIds": [
+    "public.mech-production-hjson-chain.v1"
+  ],
+  "comparison": {
+    "numberMode": "declared-per-field",
+    "tolerances": {}
+  },
+  "approval": {
+    "status": "tool-fixture-only",
+    "source": "ENG-P008-014 frozen finite contract: actual builder places 1000-credit L1 factory, 600-credit mech, HP500 and 23 direct damage; independent Float32 .0012 reaches 1 after 834 updates, production starts at1200 and birth2033. Literal exit277,149 heading180. No original compatibility claim. The target is an armed mech: PlayerControl.NONE only disables commands, not autonomous weapons. Both HP500 mechs require 22 hits of23; this self-scenario checks both actual deaths, including in-flight shots after a source dies. The earlier survival assertion was an author contract error, not a product regression."
+  },
+  "exclusions": [
+    "original-compatibility",
+    "platform-input",
+    "performance"
+  ],
+  "constructedUnits": [
+    {
+      "unitId": "constructed:p1:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "buildActionId": "build",
+      "builderId": "worker",
+      "owner": "p1",
+      "typeId": "mechFactory",
+      "buildingNonce": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "birthStepIndex": 0
+    }
+  ],
+  "producedUnits": [
+    {
+      "unitId": "produced:p1:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "productionActionId": "produce",
+      "producerId": "constructed:p1:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "owner": "p1",
+      "typeId": "mechGun",
+      "unitNonce": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "birthStepIndex": 2033
+    }
+  ],
+  "rules": [
+    {
+      "ruleId": "initial-ledger",
+      "when": {
+        "phase": "initial",
+        "stepIndex": 0
+      },
+      "assertions": [
+        {
+          "path": "economy.balances.p1",
+          "operator": "equals",
+          "value": 3000
+        },
+        {
+          "path": "units.target.health",
+          "operator": "equals",
+          "value": 500
+        }
+      ]
+    },
+    {
+      "ruleId": "build-payment",
+      "when": {
+        "phase": "after-advance",
+        "stepIndex": 0
+      },
+      "assertions": [
+        {
+          "path": "economy.balances.p1",
+          "operator": "equals",
+          "value": 2000
+        },
+        {
+          "path": "units.constructed:p1:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.constructionProgress",
+          "operator": "equals",
+          "value": 0
+        }
+      ]
+    },
+    {
+      "ruleId": "factory-ready",
+      "when": {
+        "phase": "after-advance",
+        "stepIndex": 1199
+      },
+      "assertions": [
+        {
+          "path": "units.constructed:p1:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.constructionProgress",
+          "operator": "equals",
+          "value": 1
+        },
+        {
+          "path": "economy.balances.p1",
+          "operator": "equals",
+          "value": 2000
+        }
+      ]
+    },
+    {
+      "ruleId": "production-payment",
+      "when": {
+        "phase": "after-advance",
+        "stepIndex": 1200
+      },
+      "assertions": [
+        {
+          "path": "economy.balances.p1",
+          "operator": "equals",
+          "value": 1400
+        }
+      ]
+    },
+    {
+      "ruleId": "fixed-birth",
+      "when": {
+        "phase": "after-advance",
+        "stepIndex": 2033
+      },
+      "assertions": [
+        {
+          "path": "units.produced:p1:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb.position",
+          "operator": "equals",
+          "value": {
+            "x": 277,
+            "y": 149
+          }
+        },
+        {
+          "path": "units.produced:p1:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb.heading",
+          "operator": "equals",
+          "value": 180
+        },
+        {
+          "path": "units.produced:p1:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb.health",
+          "operator": "equals",
+          "value": 500
+        }
+      ]
+    },
+    {
+      "ruleId": "explicit-stop",
+      "when": {
+        "phase": "after-advance",
+        "stepIndex": 2260
+      },
+      "assertions": [
+        {
+          "path": "units.produced:p1:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb.moveTarget",
+          "operator": "equals",
+          "value": null
+        }
+      ]
+    },
+    {
+      "ruleId": "real-death-and-ledger",
+      "when": {
+        "phase": "after-advance",
+        "stepIndex": 3199
+      },
+      "assertions": [
+        {
+          "path": "units.target.alive",
+          "operator": "equals",
+          "value": false
+        },
+        {
+          "path": "units.target.health",
+          "operator": "equals",
+          "value": 0
+        },
+        {
+          "path": "economy.balances.p1",
+          "operator": "equals",
+          "value": 1400
+        },
+        {
+          "path": "units.produced:p1:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb.alive",
+          "operator": "equals",
+          "value": false
+        },
+        {
+          "path": "units.produced:p1:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb.health",
+          "operator": "equals",
+          "value": 0
+        }
+      ]
+    }
+  ]
+}

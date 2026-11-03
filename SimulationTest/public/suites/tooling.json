@@ -51,6 +51,7 @@
     "SimulationTest/tools/test_specialist_check.py",
     "SimulationTest/ci/test_python_check.py",
     "SimulationTest/ci/test_public_check.py",
-    "SimulationTest/ci/test_public_batch.py"
+    "SimulationTest/ci/test_public_batch.py",
+    "SimulationTest/tools/test_named_weapon_platform.py"
   ]
 }

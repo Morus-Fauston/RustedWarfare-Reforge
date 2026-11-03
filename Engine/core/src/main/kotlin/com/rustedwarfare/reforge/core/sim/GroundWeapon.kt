@@ -45,15 +45,16 @@ internal object GroundWeapon {
         return distance < 36f && kotlin.math.abs(dz) < gate
     }
 
-    fun snapshot(unit: MutableUnit, target: MutableUnit, muzzle: Position, seed: Int, frame: Int, objectId: Long): GroundShot {
-        val weapon = checkNotNull(unit.definition.combat)
+    fun snapshot(unit: MutableUnit, target: MutableUnit, muzzle: Position, seed: Int, frame: Int, objectId: Long,
+                 state: MutableCombat = checkNotNull(unit.combat),
+                 weapon: com.rustedwarfare.reforge.core.content.CombatProfile = checkNotNull(unit.definition.combat)): GroundShot {
         val profile = checkNotNull(weapon.projectile.ground)
         val predicted = GroundMath.predict(muzzle.x.toFloat(), muzzle.y.toFloat(), target,
             weapon.projectile.speed.toFloat(), weapon.projectile.life.toFloat(), weapon.attackRange.toFloat())
         val bound = (profile.spread * 100f).toInt()
         require(bound in 0..Int.MAX_VALUE / 2) { "Ground spread must fit the finite integer sampler" }
         fun scatter(salt: Int) = if (bound == 0) 0f
-            else OrdinaryWeapon.sample(seed, frame, objectId, unit, salt, -bound, bound).toFloat() / 100f
+            else OrdinaryWeapon.sample(seed, frame, objectId, unit, salt, -bound, bound, state).toFloat() / 100f
         val x = predicted.x + scatter(2)
         val y = predicted.y + scatter(7)
         require(x.isFinite() && y.isFinite()) { "Ground snapshot must remain finite" }

@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "profileId": "rw.android.1.15.176.visual.v1",
+  "profileId": "rw.android.1.15.176.visual.v2",
   "identity": {
     "package": "com.corrodinggames.rts",
     "versionName": "1.15",
@@ -250,6 +250,54 @@
       "sha256": "06a5ada93b09be1bd218b0f77a9a9a538f3aa7877ca547f15320d114496ec1de",
       "width": 79,
       "height": 160
+    },
+    {
+      "id": "mech-gun",
+      "path": "assets/units/mechs_small/topGun.png",
+      "bytes": 3008,
+      "sha256": "25a4ef35b4083d9d950ee390d467f7aa41f9ade31770399634a9330924498137",
+      "width": 18,
+      "height": 31
+    },
+    {
+      "id": "mech-leg",
+      "path": "assets/units/mechs_small/leg.png",
+      "bytes": 256,
+      "sha256": "548f97f3183736d43d51229383a97bd45a34740606379228d967f42e9dd3af5a",
+      "width": 7,
+      "height": 47
+    },
+    {
+      "id": "mech-foot",
+      "path": "assets/units/mechs_small/foot.png",
+      "bytes": 2796,
+      "sha256": "1beede731931f4af47bddb63a8b909cfe2bcfe00e2ffb5393796ca0edb935b2e",
+      "width": 6,
+      "height": 18
+    },
+    {
+      "id": "mech-factory",
+      "path": "assets/units/mech_factory/mechFactoryTop.png",
+      "bytes": 1810,
+      "sha256": "e0547a289ceb44a80579133fc5562026359f0d712bacd5d740f4e62efa0e7d83",
+      "width": 74,
+      "height": 106
+    },
+    {
+      "id": "mech-factory-back",
+      "path": "assets/units/mech_factory/mechFactoryBottom.png",
+      "bytes": 2428,
+      "sha256": "7f4ccbedaa1162a0314cc976dce637550d62fdfcc2810cb2704e6f1efc6b0686",
+      "width": 74,
+      "height": 106
+    },
+    {
+      "id": "mech-factory-dead",
+      "path": "assets/units/mech_factory/mechFactoryDead.png",
+      "bytes": 3530,
+      "sha256": "41e8d43d03b3b7fdf42445b22719f3ba3f7c455c5d4ad2563edec7387185f0b1",
+      "width": 72,
+      "height": 88
     }
   ],
   "unitOutputs": {
@@ -684,6 +732,103 @@
         54
       ],
       "frames": 1
+    },
+    "mech-gun": {
+      "file": "units/mech-gun.png",
+      "operation": "crop",
+      "source": "mech-gun",
+      "rect": [
+        0,
+        0,
+        18,
+        31
+      ],
+      "target": [
+        18,
+        31
+      ],
+      "frames": 1
+    },
+    "mech-leg": {
+      "file": "units/mech-leg.png",
+      "operation": "crop",
+      "source": "mech-leg",
+      "rect": [
+        0,
+        0,
+        7,
+        47
+      ],
+      "target": [
+        47,
+        7
+      ],
+      "frames": 1,
+      "rotate": 90
+    },
+    "mech-foot": {
+      "file": "units/mech-foot.png",
+      "operation": "crop",
+      "source": "mech-foot",
+      "rect": [
+        0,
+        0,
+        6,
+        18
+      ],
+      "target": [
+        6,
+        18
+      ],
+      "frames": 1
+    },
+    "mech-factory": {
+      "file": "units/mech-factory.png",
+      "operation": "crop",
+      "source": "mech-factory",
+      "rect": [
+        0,
+        0,
+        74,
+        106
+      ],
+      "target": [
+        74,
+        106
+      ],
+      "frames": 1
+    },
+    "mech-factory-back": {
+      "file": "units/mech-factory-back.png",
+      "operation": "crop",
+      "source": "mech-factory-back",
+      "rect": [
+        0,
+        0,
+        74,
+        106
+      ],
+      "target": [
+        74,
+        106
+      ],
+      "frames": 1
+    },
+    "mech-factory-dead": {
+      "file": "units/mech-factory-dead.png",
+      "operation": "crop",
+      "source": "mech-factory-dead",
+      "rect": [
+        0,
+        0,
+        72,
+        88
+      ],
+      "target": [
+        72,
+        88
+      ],
+      "frames": 1
     }
   },
   "unitBindings": {
@@ -754,6 +899,16 @@
       "body": "turret2",
       "turret": "turret-artillery",
       "dead": "turret-dead"
+    },
+    "mechGun": {
+      "body": "mech-gun",
+      "leg": "mech-leg",
+      "foot": "mech-foot"
+    },
+    "mechFactory": {
+      "body": "mech-factory",
+      "back": "mech-factory-back",
+      "dead": "mech-factory-dead"
     }
   },
   "terrainOutputs": {

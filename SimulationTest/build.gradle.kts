@@ -13,10 +13,20 @@ java {
 dependencies {
     implementation(project(":core"))
     implementation(project(":client"))
+    implementation(project(":pc"))
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.9.0")
     testImplementation(kotlin("test"))
 }
 application { mainClass.set("com.rustedwarfare.reforge.testing.MainKt") }
+// Windows cmd expands every absolute JAR path before Java starts. Keep deep installs below its line limit.
+tasks.named<org.gradle.jvm.application.tasks.CreateStartScripts>("startScripts") {
+    doLast {
+        val generated = windowsScript.readText()
+        val assignment = Regex("(?m)^set CLASSPATH=[^\\r\\n]*")
+        check(assignment.findAll(generated).count() == 1) { "Expected one Windows classpath assignment" }
+        windowsScript.writeText(generated.replace(assignment) { "set CLASSPATH=%APP_HOME%\\lib\\*" })
+    }
+}
 subprojects {
     layout.buildDirectory.set(rootProject.layout.buildDirectory.dir(name))
 }

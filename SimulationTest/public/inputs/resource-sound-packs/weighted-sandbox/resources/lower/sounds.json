@@ -1,0 +1,33 @@
+{
+  "formatVersion": 2,
+  "sounds": {
+    "owned:sounds/lower-a": {
+      "file": "base-tone.wav"
+    },
+    "owned:sounds/lower-b": {
+      "file": "user-tone.wav"
+    }
+  },
+  "events": {
+    "reforge:events/tank-fire": {
+      "candidates": [
+        {
+          "sound": "owned:sounds/lower-a",
+          "weight": 2
+        },
+        {
+          "sound": "owned:sounds/lower-b",
+          "weight": 1
+        }
+      ]
+    },
+    "owned:events/retained": {
+      "candidates": [
+        {
+          "sound": "owned:sounds/lower-b",
+          "weight": 1
+        }
+      ]
+    }
+  }
+}

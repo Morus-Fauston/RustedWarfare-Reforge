@@ -1,0 +1,91 @@
+{
+  "schemaVersion": 1,
+  "scenarioId": "resource-sound-weighted-append",
+  "rules": [
+    {
+      "intentId": "choose-tank",
+      "actionType": "SelectAction",
+      "unitId": "a",
+      "accepted": true,
+      "assertions": [
+        {
+          "path": "units.a.typeId",
+          "operator": "equals",
+          "value": "c_tank"
+        }
+      ]
+    },
+    {
+      "intentId": "attack-enemy",
+      "actionType": "AttackAction",
+      "unitId": "a",
+      "accepted": true,
+      "actionFields": {
+        "targetUnitId": "b"
+      },
+      "assertions": [
+        {
+          "path": "units.a.attackTargetId",
+          "operator": "equals",
+          "value": "b"
+        }
+      ]
+    }
+  ],
+  "resourceImages": {
+    "packOrder": [
+      "owned:weighted-append",
+      "owned:weighted-lower",
+      "reforge:base"
+    ],
+    "resources": {
+      "owned:sound-icon": {
+        "providerId": "owned:weighted-append",
+        "frameWidth": 32,
+        "frameHeight": 32,
+        "totalFrames": 1,
+        "pixelWidth": 64,
+        "pixelHeight": 64,
+        "bound": false
+      }
+    }
+  },
+  "resourceSounds": {
+    "eventId": "reforge:events/tank-fire",
+    "minimumRequests": 1,
+    "events": {
+      "reforge:events/tank-fire": {
+        "providerId": "owned:weighted-append",
+        "totalWeight": 6,
+        "candidates": [
+          {
+            "sound": "owned:sounds/append-a",
+            "weight": 3,
+            "providerId": "owned:weighted-append"
+          },
+          {
+            "sound": "owned:sounds/lower-a",
+            "weight": 2,
+            "providerId": "owned:weighted-lower"
+          },
+          {
+            "sound": "owned:sounds/lower-b",
+            "weight": 1,
+            "providerId": "owned:weighted-lower"
+          }
+        ]
+      },
+      "owned:events/retained": {
+        "providerId": "owned:weighted-lower",
+        "totalWeight": 1,
+        "candidates": [
+          {
+            "sound": "owned:sounds/lower-b",
+            "weight": 1,
+            "providerId": "owned:weighted-lower"
+          }
+        ]
+      }
+    }
+  }
+}

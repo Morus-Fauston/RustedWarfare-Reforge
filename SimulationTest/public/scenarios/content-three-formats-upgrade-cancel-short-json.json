@@ -1,0 +1,199 @@
+{
+  "schemaVersion": 1,
+  "kind": "scenario",
+  "scenarioId": "public.content-three-formats-upgrade-cancel-short-json.v1",
+  "content": {
+    "map": {
+      "id": "map",
+      "path": "../inputs/three-format-production/production/json/maps/production-chain.tmx",
+      "sha256": "978c8484f0b16d9d36f881abd39239be9a9a297f7838bb3447b8297819f98c58"
+    },
+    "unitVariants": [
+      {
+        "id": "c_turret_t1",
+        "path": "../inputs/three-format-production/upgrade/json/units/turret_t1.json",
+        "sha256": "5ed52617d296ac2fcb38ce7f6502a234d3b989a863b158ef54c50fe590fe5808",
+        "loader": "turret-upgrades"
+      },
+      {
+        "id": "c_turret_t2_gun",
+        "path": "../inputs/three-format-production/upgrade/json/units/turret_t2_gun.json",
+        "sha256": "bdebdaf7e923abf8103bd1691c71ad2cc67ad2ead9b83240ea032f61767afdf6",
+        "loader": "turret"
+      },
+      {
+        "id": "c_turret_t1_artillery",
+        "path": "../inputs/three-format-production/upgrade/json/units/turret_t1_artillery.json",
+        "sha256": "3eabe5a38c510e153e4fc4449a88438ca7e46961692a866d0f6bff8bfccfafa2",
+        "loader": "turret"
+      }
+    ],
+    "dependencies": [
+      {
+        "id": "terrain",
+        "path": "../inputs/three-format-production/production/json/assets/terrain.png",
+        "sha256": "1b47e4821cdbfc66460f690322cf641afc1fc782a3ed6985df8b9e773ed98ff0"
+      },
+      {
+        "id": "template",
+        "path": "../inputs/three-format-production/upgrade/json/units/turret_common_land.json",
+        "sha256": "600cc6666f8347cb41cd44193e917192fde705c642074f59501597066da4a793"
+      },
+      {
+        "id": "turret.png",
+        "path": "../inputs/three-format-production/upgrade/json/units/turret.png",
+        "sha256": "907d5bdfcaf8d04cd5f7cfde00bb6b77bf1973cd1191db26b8dd5f408392106a"
+      },
+      {
+        "id": "turret_dead.png",
+        "path": "../inputs/three-format-production/upgrade/json/units/turret_dead.png",
+        "sha256": "907d5bdfcaf8d04cd5f7cfde00bb6b77bf1973cd1191db26b8dd5f408392106a"
+      },
+      {
+        "id": "turret_top.png",
+        "path": "../inputs/three-format-production/upgrade/json/units/turret_top.png",
+        "sha256": "907d5bdfcaf8d04cd5f7cfde00bb6b77bf1973cd1191db26b8dd5f408392106a"
+      }
+    ]
+  },
+  "coordinateModel": {
+    "id": "public.coordinate.v1",
+    "space": "2d",
+    "xAxis": "x-right",
+    "yAxis": "y-down",
+    "origin": "top-left",
+    "unit": "world-unit",
+    "valueType": "double",
+    "precision": "ieee754-binary64"
+  },
+  "timeModel": {
+    "id": "public.time.v1",
+    "deltaUnit": "sim-tick",
+    "stepRule": "fixed-explicit-delta",
+    "precision": "ieee754-binary64"
+  },
+  "angleUnit": "degree-clockwise-zero-up",
+  "movementContract": {
+    "pathPointRadius": 16,
+    "targetRadius": 4
+  },
+  "automaticVision": {
+    "retention": "MEMORY",
+    "pathSource": "PLAYER_KNOWLEDGE",
+    "shareAlliedVision": false,
+    "observers": [
+      "p1",
+      "p2"
+    ],
+    "grid": {
+      "width": 10,
+      "height": 5
+    }
+  },
+  "combatContract": {
+    "worldSeed": 12345,
+    "initialFrameCounter": -1,
+    "unitObjectIds": {
+      "t": 10
+    },
+    "nextObjectId": 11
+  },
+  "economyContract": {
+    "initialBalances": {
+      "p1": 3000,
+      "p2": 0
+    }
+  },
+  "players": [
+    {
+      "playerId": "p1",
+      "control": "local",
+      "teamId": "one"
+    },
+    {
+      "playerId": "p2",
+      "control": "local",
+      "teamId": "two"
+    }
+  ],
+  "units": [
+    {
+      "unitId": "t",
+      "owner": "p1",
+      "type": "c_turret_t1",
+      "position": {
+        "x": 50,
+        "y": 50
+      },
+      "heading": 90
+    }
+  ],
+  "actions": [
+    {
+      "actionId": "gun",
+      "atStep": 0,
+      "actor": "p1",
+      "kind": "upgrade",
+      "unitId": "t",
+      "upgradeId": "upgrade_gun"
+    },
+    {
+      "actionId": "foreign",
+      "atStep": 1,
+      "actor": "p2",
+      "kind": "upgrade",
+      "unitId": "t",
+      "upgradeId": "upgrade_artillery"
+    },
+    {
+      "actionId": "cancel-gun",
+      "atStep": 1,
+      "actor": "p1",
+      "kind": "cancel-upgrade",
+      "unitId": "t",
+      "upgradeId": "upgrade_gun"
+    },
+    {
+      "actionId": "artillery",
+      "atStep": 2,
+      "actor": "p1",
+      "kind": "upgrade",
+      "unitId": "t",
+      "upgradeId": "upgrade_artillery"
+    },
+    {
+      "actionId": "cancel-artillery",
+      "atStep": 2,
+      "actor": "p1",
+      "kind": "cancel-upgrade",
+      "unitId": "t",
+      "upgradeId": "upgrade_artillery"
+    }
+  ],
+  "termination": {
+    "kind": "explicit-steps",
+    "required": true,
+    "steps": [
+      {
+        "stepIndex": 0,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 1,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 2,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 3,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      }
+    ]
+  }
+}

@@ -297,6 +297,9 @@ class SandboxSession(scenario: Scenario, private val evidence: ClientEvidence = 
             dispatch { actor -> AttackAction("click-${++actionNumber}", "p1", actor, target.unitId, context.world) }
         else move(position)
     }
+    /** Host-authorized sound parameters only; player truth is never read by a playback backend. */
+    fun consumeSounds(listener: SoundListener): AuthorizedSoundBatch = context.consumeSounds(context.world, "p1", listener)
+
     fun tick() {
         context.advance(Step(nextStep, 1.0, "sim-tick"))
         nextStep++

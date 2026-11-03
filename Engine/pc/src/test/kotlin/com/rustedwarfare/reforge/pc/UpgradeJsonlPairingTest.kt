@@ -20,10 +20,11 @@ class UpgradeJsonlPairingTest {
         val temporary = Files.createTempDirectory("p005-upgrade-jsonl-")
         try {
             val out = temporary.resolve("run")
+            val loaded = load(root)
             JsonlEvidence(out, "upgrade-run", root).use { sink ->
                 sink.record("load-request", mapOf("generation" to 1L, "root" to root.toString()))
-                sink.record("load-ready", mapOf("generation" to 1L))
-                SandboxSession(ControlledScenario.load(root), sink).use { session ->
+                sink.recordLoadReady(1L, loaded)
+                SandboxSession(loaded.scenario, sink).use { session ->
                     session.select(Position(230.0, 150.0))
                     assertIs<ActionResult.Accepted>(session.upgrade("upgrade_artillery"))
                     session.tick()
@@ -96,5 +97,11 @@ class UpgradeJsonlPairingTest {
                 assertEquals(normalized[0], normalized[1], "Real JSONL: every key and nested value, only wallTime omitted: $mode")
             }
         } finally { temporary.toFile().deleteRecursively() }
+    }
+
+    private fun load(root: Path): LoadedSandbox = SandboxLoader().use { loader ->
+        loader.request(root)
+        repeat(5000) { loader.pollPrepared()?.let { return@use it.getOrThrow() }; Thread.sleep(1) }
+        error("Actual background loader did not complete")
     }
 }

@@ -1,0 +1,47 @@
+{
+  "schemaVersion": 1,
+  "scenarioId": "mech-json-session-short",
+  "inputs": "../../inputs/mech-production/json",
+  "contentPack": {
+    "directory": "package",
+    "unitId": "mechGun"
+  },
+  "intents": [
+    {
+      "intentId": "choose",
+      "kind": "select",
+      "unitId": "a",
+      "position": {
+        "x": 110,
+        "y": 210
+      }
+    },
+    {
+      "intentId": "walk",
+      "kind": "move",
+      "unitId": "a",
+      "position": {
+        "x": 250,
+        "y": 210
+      },
+      "waitSteps": 20
+    },
+    {
+      "intentId": "stop",
+      "kind": "stop",
+      "unitId": "a",
+      "waitSteps": 20
+    },
+    {
+      "intentId": "fire",
+      "kind": "attack",
+      "unitId": "a",
+      "targetUnitId": "b",
+      "position": {
+        "x": 350,
+        "y": 210
+      },
+      "waitSteps": 180
+    }
+  ]
+}

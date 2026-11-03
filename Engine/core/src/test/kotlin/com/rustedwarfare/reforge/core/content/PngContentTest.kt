@@ -7,6 +7,19 @@ import javax.imageio.ImageIO
 import kotlin.test.*
 
 class PngContentTest {
+    @Test fun existing_rgb_base_images_require_an_explicit_permission_and_still_validate_the_complete_png() {
+        val file = Files.createTempFile("content-png-rgb-base-", ".png")
+        try {
+            ImageIO.write(BufferedImage(7, 5, BufferedImage.TYPE_INT_RGB), "png", file.toFile())
+            val bytes = Files.readAllBytes(file)
+            assertFailsWith<IllegalArgumentException> { readPngMetadata(file) }
+            assertFailsWith<IllegalArgumentException> { PngImages.inspect(bytes) }
+            assertEquals(PngImageDimensions(7, 5), PngImages.inspect(bytes, allowRgb = true))
+            for (broken in listOf(bytes.copyOf(bytes.size - 12), bytes.copyOf().also { it[it.lastIndex] = (it.last().toInt() xor 1).toByte() }))
+                assertFailsWith<IllegalArgumentException> { PngImages.inspect(broken, allowRgb = true) }
+        } finally { Files.delete(file) }
+    }
+
     @Test fun valid_header_never_publishes_metadata_for_a_corrupted_or_truncated_image() {
         val file = Files.createTempFile("content-png-invalid-", ".png")
         try {

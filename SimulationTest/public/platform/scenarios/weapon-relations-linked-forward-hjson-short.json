@@ -1,0 +1,36 @@
+{
+  "schemaVersion": 1,
+  "scenarioId": "weapon-relations-linked-forward-hjson-short",
+  "inputs": "../../inputs/weapon-relations/linked-forward/hjson",
+  "contentPack": {
+    "directory": "package",
+    "unitId": "linked_tank"
+  },
+  "intents": [
+    {
+      "intentId": "choose",
+      "kind": "select",
+      "unitId": "a",
+      "position": {
+        "x": 110,
+        "y": 210
+      }
+    },
+    {
+      "intentId": "relations",
+      "kind": "attack",
+      "unitId": "a",
+      "targetUnitId": "b",
+      "position": {
+        "x": 350,
+        "y": 210
+      },
+      "waitSteps": 120
+    },
+    {
+      "intentId": "stop",
+      "kind": "stop",
+      "unitId": "a"
+    }
+  ]
+}

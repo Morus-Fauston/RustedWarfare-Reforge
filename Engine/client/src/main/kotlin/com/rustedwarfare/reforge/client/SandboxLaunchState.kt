@@ -3,7 +3,7 @@ package com.rustedwarfare.reforge.client
 import java.nio.file.Path
 
 data class SandboxConfiguration(val root: Path, val options: SandboxOptions,
-    val visuals: VisualAssetSelection = VisualAssetSelection())
+    val visuals: VisualAssetSelection = VisualAssetSelection(), val contentPack: ContentPackChoice? = null)
 data class SandboxLoad(val generation: Long, val configuration: SandboxConfiguration)
 
 /** Owned by the presentation thread; a cancelled generation can never become a match. */

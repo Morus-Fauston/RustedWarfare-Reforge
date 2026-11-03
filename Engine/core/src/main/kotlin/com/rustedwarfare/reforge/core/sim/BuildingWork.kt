@@ -306,7 +306,7 @@ internal class BuildingWork private constructor(val clock: Int, val nonces: Map<
         target.cancelRoute()
         target.movementRequested = false
         target.constructionWorking = false
-        target.combat?.targetId = null
+        target.clearWeaponTargets()
         worker.taskQueue = worker.taskQueue.pop()
         worker.constructionElapsed = 0f
         worker.constructionWorking = false

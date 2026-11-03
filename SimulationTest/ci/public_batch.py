@@ -13,10 +13,10 @@ from public_check import REPO, identities, plan_suite, source_files
 
 
 SUITES = ('content-movement-knowledge', 'production-combat', 'build-economy',
-          'maintenance-defense', 'platform-basics', 'tooling')
+          'maintenance-defense', 'platform-basics', 'content-three-formats', 'tooling')
 LAYERS = {
     'mechanism': SUITES,
-    'short': SUITES[:5],
+    'short': SUITES[:-1],
     'pr': SUITES,
     'long': SUITES[:4],
 }

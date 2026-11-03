@@ -1,0 +1,50 @@
+{
+  "schemaVersion": 1,
+  "scenarioId": "content-pack-composition-chain-short",
+  "inputs": "../../inputs/content-pack-combinations/sandbox",
+  "intents": [
+    {
+      "intentId": "choose-tank",
+      "kind": "select",
+      "unitId": "a",
+      "position": {
+        "x": 110,
+        "y": 210
+      }
+    },
+    {
+      "intentId": "move-tank",
+      "kind": "move",
+      "unitId": "a",
+      "position": {
+        "x": 150,
+        "y": 210
+      },
+      "waitSteps": 20
+    },
+    {
+      "intentId": "stop-tank",
+      "kind": "stop",
+      "unitId": "a",
+      "waitSteps": 20
+    },
+    {
+      "intentId": "attack-enemy",
+      "kind": "attack",
+      "unitId": "a",
+      "targetUnitId": "b",
+      "position": {
+        "x": 350,
+        "y": 210
+      }
+    }
+  ],
+  "contentPack": {
+    "directories": [
+      "final",
+      "base",
+      "overlay"
+    ],
+    "unitId": "amber_scout"
+  }
+}

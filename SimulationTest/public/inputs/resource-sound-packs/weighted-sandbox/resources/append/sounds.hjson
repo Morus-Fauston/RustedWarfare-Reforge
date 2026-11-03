@@ -1,0 +1,22 @@
+{
+  "formatVersion": 2,
+  "sounds": {
+    "owned:sounds/append-a": {
+      "file": "user-tone.wav"
+    },
+    "owned:sounds/append-b": {
+      "file": "user-tone.wav"
+    }
+  },
+  "events": {
+    "reforge:events/tank-fire": {
+      "candidates": [
+        {
+          "sound": "owned:sounds/append-a",
+          "weight": 3
+        }
+      ],
+      "append": true
+    }
+  }
+}

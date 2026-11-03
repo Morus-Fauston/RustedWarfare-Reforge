@@ -10,8 +10,8 @@ internal fun visualHash(bytes: ByteArray): String = MessageDigest.getInstance("S
 /** Fixed, bundled metadata. This parser is internal; launch arguments cannot select a profile. */
 internal class VisualAssetProfile private constructor(val key: String, val json: JsonValue) {
     val id: String = json.getString("profileId")
-    val recipes: Map<String, JsonValue> = listOf("unitOutputs", "terrainOutputs").flatMap { group ->
-        json.get(group).map { it.name to it }
+    val recipes: Map<String, JsonValue> = listOf("unitOutputs", "terrainOutputs", "soundOutputs").flatMap { group ->
+        json.get(group)?.map { it.name to it }.orEmpty()
     }.toMap()
 
     companion object {
@@ -21,7 +21,9 @@ internal class VisualAssetProfile private constructor(val key: String, val json:
             return VisualAssetProfile(visualHash(bytes), json)
         }
 
-        fun bundled(): VisualAssetProfile = parse(requireNotNull(VisualAssetProfile::class.java
-            .getResourceAsStream("/visuals/original-profile.json")) { "Missing bundled visual profile" }.use { it.readBytes() })
+        fun bundled(): VisualAssetProfile = bundledFile("original-profile.json")
+        fun versionOne(): VisualAssetProfile = bundledFile("original-profile-v1.json")
+        private fun bundledFile(name: String): VisualAssetProfile = parse(requireNotNull(VisualAssetProfile::class.java
+            .getResourceAsStream("/visuals/$name")) { "Missing bundled visual profile $name" }.use { it.readBytes() })
     }
 }

@@ -8,8 +8,15 @@ internal object PointDefenseContentReader {
     private val fields = setOf("format", "name", "maxHp", "radius", "footprint", "movementType",
         "image", "image_dead", "fogOfWarSightRange")
 
-    fun read(path: Path, enableConstruction: Boolean = false): UnitDefinition {
-        val values = readNativeFields(path, fields, "defense")
+    private val documents = UnitSourceReader(UnitContentSchema.native(fields, setOf("rw-reforge.native-laser-defence.v1")))
+
+    fun read(path: Path, enableConstruction: Boolean = false): UnitDefinition = readWithSources(path, enableConstruction).definition
+
+    fun readWithSources(path: Path, enableConstruction: Boolean = false): LoadedUnitContent = documents.load(path) { loaded ->
+        definition(path, loaded.values.getValue("core"), enableConstruction)
+    }
+
+    private fun definition(path: Path, values: Map<String, String>, enableConstruction: Boolean): UnitDefinition {
         fun required(key: String): String = requiredContentField(values[key], path, null, key,
             "Required defense field is absent or empty")
         fun only(key: String, expected: String) {

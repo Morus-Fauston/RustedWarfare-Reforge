@@ -8,8 +8,15 @@ internal object CommandCenterContentReader {
     private val fields = setOf("format", "name", "maxHp", "radius", "footprint", "movementType",
         "productionUnit", "image", "image_back", "image_dead", "fogOfWarSightRange", "incomePeriod", "incomeCredits")
 
-    fun read(path: Path): UnitDefinition {
-        val values = readNativeFields(path, fields, "center")
+    private val documents = UnitSourceReader(UnitContentSchema.native(fields, setOf("rw-reforge.native-command-center.v1")))
+
+    fun read(path: Path): UnitDefinition = readWithSources(path).definition
+
+    fun readWithSources(path: Path): LoadedUnitContent = documents.load(path) { loaded ->
+        definition(path, loaded.values.getValue("core"))
+    }
+
+    private fun definition(path: Path, values: Map<String, String>): UnitDefinition {
         fun required(key: String): String = requiredContentField(values[key], path, null, key,
             "Required center field is absent or empty")
         fun only(key: String, expected: String) {

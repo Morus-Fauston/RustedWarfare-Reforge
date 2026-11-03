@@ -1,0 +1,46 @@
+{
+  "schemaVersion": 1,
+  "scenarioId": "content-pack-hjson-short",
+  "inputs": "../../inputs/content-pack-sandboxes/hjson",
+  "intents": [
+    {
+      "intentId": "choose-tank",
+      "kind": "select",
+      "unitId": "a",
+      "position": {
+        "x": 110,
+        "y": 210
+      }
+    },
+    {
+      "intentId": "move-tank",
+      "kind": "move",
+      "unitId": "a",
+      "position": {
+        "x": 150,
+        "y": 210
+      },
+      "waitSteps": 20
+    },
+    {
+      "intentId": "stop-tank",
+      "kind": "stop",
+      "unitId": "a",
+      "waitSteps": 20
+    },
+    {
+      "intentId": "attack-enemy",
+      "kind": "attack",
+      "unitId": "a",
+      "targetUnitId": "b",
+      "position": {
+        "x": 350,
+        "y": 210
+      }
+    }
+  ],
+  "contentPack": {
+    "directory": "package",
+    "unitId": "amber_scout"
+  }
+}

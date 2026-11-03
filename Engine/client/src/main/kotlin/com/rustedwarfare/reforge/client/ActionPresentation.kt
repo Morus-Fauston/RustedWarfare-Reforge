@@ -12,6 +12,7 @@ internal class ActionCatalogue(private val definitions: Map<String, UnitDefiniti
     private val names = mapOf(
         "commandCenter" to Names("Command", "Command center"), "builder" to Names("Builder"),
         "c_tank" to Names("Tank"), "landFactory" to Names("Factory", "Land factory"),
+        "mechFactory" to Names("Mech factory"), "mechGun" to Names("Gun mech"),
         "extractorT1" to Names("Extractor T1", "Extractor"), "extractorT2" to Names("Extractor T2", "Unit"),
         "extractorT3" to Names("Extractor T3", "Unit"), "fabricatorT1" to Names("Fabricator T1", "Fabricator"),
         "fabricatorT2" to Names("Fabricator T2", "Unit"), "fabricatorT3" to Names("Fabricator T3", "Unit"),
@@ -39,6 +40,8 @@ internal class ActionCatalogue(private val definitions: Map<String, UnitDefiniti
 
     private fun production(view: PlayerObservation, queue: FactoryQueueObservation?): List<ProductionActionView> {
         val factory = view.units.singleOrNull { it.unitId == queue?.factoryId } ?: return emptyList()
+        if (factory.constructionProgress < 1f && definitions.getValue(factory.typeId).production?.exitProfile ==
+            com.rustedwarfare.reforge.core.content.FactoryExitProfile.CUSTOM_MECH) return emptyList()
         return immutable(definitions.getValue(factory.typeId).production?.unitTypeIds.orEmpty().map { type ->
             val action = checkNotNull(production[type]); val items = checkNotNull(queue).items
             val affordable = affordable(view, action.price)

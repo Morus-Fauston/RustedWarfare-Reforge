@@ -1,0 +1,11 @@
+{
+  "format": "rw-reforge.content-pack.v1",
+  "id": "p008-mech-production-ini",
+  "name": "Own two-legged mech representative",
+  "units": [
+    {
+      "type": "mech",
+      "file": "units/mech.ini"
+    }
+  ]
+}

@@ -1,6 +1,26 @@
 # Content identities are byte-based across Windows and Linux checkouts.
 *.json text eol=lf
+*.hjson text eol=lf
 *.ini text eol=lf
 *.properties text eol=lf
 *.tmx text eol=lf
 *.png binary
+
+# These authored fixture families carry exact byte identities in scenarios,
+# package declarations and evidence. Preserve their reviewed bytes on every OS;
+# source/scenario/contract text outside inputs keeps the LF rules above.
+inputs/three-format-tanks/** -text whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol
+inputs/three-format-production/** -text whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol
+inputs/three-format-economy/** -text whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol
+inputs/content-packs/** -text whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol
+inputs/content-pack-sandboxes/** -text whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol
+inputs/content-pack-combinations/** -text whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol
+inputs/resource-image-packs/** -text whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol
+inputs/resource-sound-packs/** -text whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol
+inputs/named-weapons/** -text whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol
+inputs/weapon-relations/** -text whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol
+inputs/mech-production/** -text whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol
+# Historical authored TMX samples include a double-CR line ending. That legal
+# XML whitespace is part of their frozen SHA; do not rewrite it during staging.
+inputs/resource-sound-packs/portrait-sandbox/maps/p001-controlled.tmx -whitespace
+inputs/resource-sound-packs/sandbox/maps/portrait.tmx -whitespace

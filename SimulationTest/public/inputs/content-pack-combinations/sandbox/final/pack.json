@@ -1,0 +1,21 @@
+{
+  "format": "rw-reforge.content-pack.v1",
+  "id": "final.scouts",
+  "name": "Final scouts",
+  "units": [
+    {
+      "type": "tank",
+      "file": "units/scout.ini"
+    }
+  ],
+  "dependencies": [
+    "overlay.scouts"
+  ],
+  "replacements": [
+    {
+      "contentId": "amber_scout",
+      "targetPackId": "overlay.scouts",
+      "targetContentId": "amber_scout"
+    }
+  ]
+}

@@ -1,0 +1,11 @@
+{
+  "format": "rw-reforge.content-pack.v1",
+  "id": "reforge.weapon-relations.mounted.ini",
+  "name": "Mounted independent and slave representative",
+  "units": [
+    {
+      "type": "tank",
+      "file": "units/mounted.ini"
+    }
+  ]
+}

@@ -1,0 +1,107 @@
+{
+  "schemaVersion": 1,
+  "kind": "behavior-contract",
+  "contractId": "public.content-three-formats-economy-build-failure-short-ini.v1.contract",
+  "scope": "self-behavior",
+  "scenarioIds": [
+    "public.content-three-formats-economy-build-failure-short-ini.v1"
+  ],
+  "comparison": {
+    "numberMode": "declared-per-field",
+    "tolerances": {}
+  },
+  "approval": {
+    "status": "tool-fixture-only",
+    "source": "ENG-P008-003: unchanged build-failure-short authored actions/rules; only explicit three-format input counterparts, identities and scenario attribution; no trajectory-derived expectations"
+  },
+  "exclusions": [
+    "original-compatibility",
+    "platform-input",
+    "performance"
+  ],
+  "rules": [
+    {
+      "ruleId": "bad-pool",
+      "when": {
+        "phase": "after-advance",
+        "stepIndex": 0
+      },
+      "assertions": [
+        {
+          "path": "economy.preciseBalances.p1",
+          "operator": "equals",
+          "value": 699
+        },
+        {
+          "path": "construction.buildings",
+          "operator": "equals",
+          "value": []
+        },
+        {
+          "path": "events",
+          "operator": "contains",
+          "value": "construction-unavailable"
+        }
+      ]
+    },
+    {
+      "ruleId": "unpaid",
+      "when": {
+        "phase": "after-advance",
+        "stepIndex": 1
+      },
+      "assertions": [
+        {
+          "path": "economy.preciseBalances.p1",
+          "operator": "equals",
+          "value": 699
+        },
+        {
+          "path": "construction.buildings",
+          "operator": "equals",
+          "value": []
+        },
+        {
+          "path": "events",
+          "operator": "contains",
+          "value": "construction-insufficient-funds"
+        }
+      ]
+    },
+    {
+      "ruleId": "wait-without-charge",
+      "when": {
+        "phase": "after-advance",
+        "stepIndex": 11
+      },
+      "assertions": [
+        {
+          "path": "economy.preciseBalances.p1",
+          "operator": "equals",
+          "value": 699
+        },
+        {
+          "path": "construction.buildings",
+          "operator": "equals",
+          "value": []
+        }
+      ]
+    },
+    {
+      "ruleId": "foreign",
+      "when": {
+        "event": "action-rejected",
+        "actionId": "foreign-build",
+        "stepIndex": 1
+      },
+      "assertions": [
+        {
+          "path": "actionResults.foreign-build.error.code",
+          "operator": "equals",
+          "value": "not-owner"
+        }
+      ]
+    }
+  ],
+  "constructedUnits": []
+}

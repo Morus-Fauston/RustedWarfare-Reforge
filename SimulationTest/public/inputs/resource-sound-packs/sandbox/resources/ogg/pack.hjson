@@ -1,0 +1,8 @@
+{
+  "formatVersion": 1,
+  "requiresResourceFormat": 2,
+  "id": "owned:sound-ogg",
+  "name": "自有OGG声效",
+  "description": "Analytical owned tone, no gameplay changes",
+  "icon": "owned:sound-icon"
+}

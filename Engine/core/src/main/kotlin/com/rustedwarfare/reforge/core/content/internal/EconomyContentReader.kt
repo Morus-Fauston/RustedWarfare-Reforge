@@ -30,40 +30,76 @@ internal object EconomyContentReader {
             "targetGround", "areaDamage", "areaRadius", "areaExpandTime", "deflectionPower", "lightColor", "lightSize", "friendlyFire"),
     )
 
-    fun read(path: Path): UnitDefinition = read(path, false)
+    private val numbers = setOf("price", "maxHp", "mass", "techLevel", "buildSpeed", "radius", "displayRadius",
+        "buildingSelectionOffset", "numBitsOnDeath", "total_frames", "maxAttackRange", "moveSpeed",
+        "moveAccelerationSpeed", "moveDecelerationSpeed", "maxTurnSpeed", "turnAcceleration", "KeyframeTimeScale",
+        "buildPriority", "recommendedInEachBasePriorityIfUnmet", "recommendedInEachBaseNum", "noneInBaseExtraPriority",
+        "noneGlobalExtraPriority", "maxEachBase", "maxGlobal", "x", "y", "life", "speed", "frame", "shadowFrame",
+        "drawType", "areaDamage", "areaRadius", "areaExpandTime", "deflectionPower", "lightSize")
+    private val booleans = setOf("dont_load", "isBio", "isBuilding", "placeOnlyOnResPool", "hideScorchMark",
+        "image_back_always_use_full_image", "canAttack", "canAttackFlyingUnits", "canAttackLandUnits",
+        "canAttackUnderwaterUnits", "pingPong", "canShoot", "instant", "largeHitEffect", "targetGround", "friendlyFire")
+    private val schema = UnitContentSchema(fields, numbers, booleans, fields.values.flatten().toSet() - numbers - booleans,
+        dynamicWeapons = false, trimSectionName = false,
+        timeFieldLocations = fields.keys.filter { it.startsWith("action_") }.map { it to "buildSpeed" }.toSet())
 
-    fun read(path: Path, enableUpgrades: Boolean): UnitDefinition {
-        ordinary(path, path)
-        val child = parse(path)
-        val id = child["core"]?.get("name")
-            ?: reject(ContentErrorCode.MISSING_REQUIRED_FIELD, path, "core", "name", reason = "Missing economic identity")
-        val ids = if (enableUpgrades) setOf("extractorT1", "extractorT2", "extractorT3", "fabricatorT1", "fabricatorT2", "fabricatorT3")
-            else setOf("extractorT1", "fabricatorT1")
-        if (id !in ids) reject(ContentErrorCode.UNSUPPORTED_FEATURE, path, "core", "name", id,
-            "Unsupported economic type")
+    fun read(path: Path): UnitDefinition = read(path, false)
+    fun read(path: Path, enableUpgrades: Boolean): UnitDefinition = readWithSources(path, enableUpgrades).definition
+
+    fun readWithSources(path: Path, enableUpgrades: Boolean): LoadedUnitContent {
+        var rootId = ""
+        val reader = UnitSourceReader(schema, preRead = { ordinary(it, it) }, inputGuard = { file, input, root ->
+            val core = input.sections["core"].orEmpty()
+            if (root) {
+                rootId = core["name"] ?: reject(ContentErrorCode.MISSING_REQUIRED_FIELD, file, "core", "name",
+                    reason = "Missing economic identity")
+                val ids = if (enableUpgrades) setOf("extractorT1", "extractorT2", "extractorT3", "fabricatorT1", "fabricatorT2", "fabricatorT3")
+                    else setOf("extractorT1", "fabricatorT1")
+                if (rootId !in ids) reject(ContentErrorCode.UNSUPPORTED_FEATURE, file, "core", "name", rootId, "Unsupported economic type")
+                if ("dont_load" in input.declaredControls) reject(
+                    if (input.templateOnly) ContentErrorCode.UNSUPPORTED_FEATURE else ContentErrorCode.UNSUPPORTED_FIELD,
+                    file, "core", "dont_load", reason = if (input.templateOnly) "Template-only input cannot be loaded as a unit"
+                    else "Only the template may set dont_load")
+                val parentStem = if (rootId.startsWith("extractor")) "extractor_common" else if (rootId != "fabricatorT1") "fabricatorT1" else null
+                if (parentStem == null) {
+                    if ("copyFrom" in input.declaredControls) reject(ContentErrorCode.UNSUPPORTED_FEATURE, file, "core", "copyFrom",
+                        reason = "The fixed T1 fabricator has no parent")
+                } else {
+                    val allowed = setOf("$parentStem.ini", "$parentStem.json", "$parentStem.hjson")
+                    if (input.parents.size != 1 || input.parents.single() !in allowed)
+                        reject(ContentErrorCode.UNSUPPORTED_FEATURE, file, "core", "copyFrom", reason = "Expected the fixed local economic parent")
+                    reference(file, input.parents.single())
+                }
+            } else {
+                if ("copyFrom" in input.declaredControls) reject(ContentErrorCode.UNSUPPORTED_FEATURE, file, "core", "copyFrom",
+                    reason = "Expected one economic template layer")
+                if (rootId.startsWith("extractor")) {
+                    if (!input.templateOnly) reject(ContentErrorCode.UNSUPPORTED_FEATURE, file, "core", "dont_load", reason = "Expected a template")
+                } else if (core["name"] != "fabricatorT1" || "dont_load" in input.declaredControls) {
+                    reject(ContentErrorCode.UNSUPPORTED_FEATURE, file, "core", "copyFrom", reason = "Expected the fixed T1 parent")
+                }
+            }
+            for ((section, entries) in input.sections) {
+                if (section !in fields || "@copyFromSection" in entries)
+                    reject(ContentErrorCode.UNSUPPORTED_FIELD, file, section, reason = "Unsupported economic section inheritance")
+                if ("@copyFrom_skipThisSection" in entries &&
+                    (!root || !rootId.startsWith("fabricator") || rootId == "fabricatorT1" ||
+                    section !in setOf("animation_idle", "action_upgradeT2") || entries["@copyFrom_skipThisSection"] != "true"))
+                    reject(ContentErrorCode.UNSUPPORTED_FEATURE, file, section, reason = "Unexpected section inheritance override")
+            }
+        })
+        return reader.load(path) { loaded ->
+            // An explicit skip of a complete inherited section leaves no semantic section.
+            val values = loaded.values.filterValues { it.isNotEmpty() }
+            definition(path, values, enableUpgrades)
+        }
+    }
+
+    private fun definition(path: Path, values: Map<String, Map<String, String>>, enableUpgrades: Boolean): UnitDefinition {
+        val id = values.getValue("core").getValue("name")
         val extractor = id.startsWith("extractor")
         val tier = id.last().digitToInt()
         val family = if (extractor) "extractor" else "fabricator"
-        val parentName = if (extractor) "extractor_common.ini" else if (tier > 1) "fabricatorT1.ini" else null
-        if ((extractor && child["core"]?.get("copyFrom") != "extractor_common.ini") ||
-            (!extractor && child["core"]?.get("copyFrom") != parentName) || child["core"]?.get("dont_load") == "true")
-            reject(ContentErrorCode.UNSUPPORTED_FEATURE, path, "core", "copyFrom", reason = "Expected the fixed extractor template")
-        val parent = parentName?.let { parse(reference(path, it)) } ?: emptyMap()
-        if (extractor && (parent["core"]?.get("dont_load") != "true" || parent["core"]?.containsKey("copyFrom") == true))
-            reject(ContentErrorCode.UNSUPPORTED_FEATURE, path, "core", "copyFrom", reason = "Expected one template layer")
-        if (!extractor && tier > 1 && (parent["core"]?.get("name") != "fabricatorT1" ||
-                parent["core"]?.containsKey("copyFrom") == true || parent["core"]?.containsKey("dont_load") == true))
-            reject(ContentErrorCode.UNSUPPORTED_FEATURE, path, "core", "copyFrom", reason = "Expected the fixed T1 parent")
-        val values = linkedMapOf<String, MutableMap<String, String>>()
-        for (source in listOf(parent, child)) for ((section, entries) in source) {
-            if ("@copyFrom_skipThisSection" in entries) {
-                if (extractor || tier == 1 || source !== child || entries["@copyFrom_skipThisSection"] != "true")
-                    reject(ContentErrorCode.UNSUPPORTED_FEATURE, path, section, reason = "Unexpected section inheritance override")
-                values.remove(section)
-            }
-            val effective = entries - "@copyFrom_skipThisSection"
-            if (effective.isNotEmpty()) values.getOrPut(section) { linkedMapOf() }.putAll(effective)
-        }
         fun required(section: String, key: String) =
             requiredContentField(values[section]?.get(key), path, section, key, "Missing economic field")
         fun fixed(section: String, key: String, expected: String) {
@@ -86,8 +122,6 @@ internal object EconomyContentReader {
             "explodeTypeOnDeath", "dont_load")
         if (!extractor && values["core"]!!.keys.any { it in extractorOnly })
             reject(ContentErrorCode.UNSUPPORTED_FIELD, path, "core", reason = "Extractor-only economic field")
-        if (child["core"]?.containsKey("dont_load") == true)
-            reject(ContentErrorCode.UNSUPPORTED_FIELD, path, "core", "dont_load", reason = "Only the template may set dont_load")
         exactKeys("graphics", if (extractor) setOf("total_frames", "image", "image_back", "image_back_always_use_full_image")
             else setOf("total_frames", "image", "image_wreak"))
         fixed("core", "displayLocaleKey", if (extractor) "extractor" else "fabricator")
@@ -224,6 +258,4 @@ internal object EconomyContentReader {
             reject(ContentErrorCode.BAD_REFERENCE, source, reason = "Economic reference must remain in content directory")
         return resolved.also { ordinary(it, source) }
     }
-    private fun parse(path: Path): Map<String, Map<String, String>> =
-        readSectionFields(path, fields, "economic", trimSectionName = false, reportCurrentSection = false)
 }

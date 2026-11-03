@@ -1,0 +1,58 @@
+{
+  "schemaVersion": 1,
+  "scenarioId": "resource-sound-wav",
+  "rules": [
+    {
+      "intentId": "choose-tank",
+      "actionType": "SelectAction",
+      "unitId": "a",
+      "accepted": true,
+      "assertions": [
+        {
+          "path": "units.a.typeId",
+          "operator": "equals",
+          "value": "c_tank"
+        }
+      ]
+    },
+    {
+      "intentId": "attack-enemy",
+      "actionType": "AttackAction",
+      "unitId": "a",
+      "accepted": true,
+      "actionFields": {
+        "targetUnitId": "b"
+      },
+      "assertions": [
+        {
+          "path": "units.a.attackTargetId",
+          "operator": "equals",
+          "value": "b"
+        }
+      ]
+    }
+  ],
+  "resourceImages": {
+    "packOrder": [
+      "owned:sound-wav",
+      "reforge:base"
+    ],
+    "resources": {
+      "owned:sound-icon": {
+        "providerId": "owned:sound-wav",
+        "frameWidth": 32,
+        "frameHeight": 32,
+        "totalFrames": 1,
+        "pixelWidth": 64,
+        "pixelHeight": 64,
+        "bound": false
+      }
+    }
+  },
+  "resourceSounds": {
+    "eventId": "reforge:events/tank-fire",
+    "resourceId": "owned:sounds/shot",
+    "providerId": "owned:sound-wav",
+    "minimumRequests": 1
+  }
+}

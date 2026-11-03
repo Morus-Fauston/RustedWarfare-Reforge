@@ -1,0 +1,15 @@
+{
+  "format": "rw-reforge.content-pack.v1",
+  "id": "base.scouts",
+  "name": "Base scouts",
+  "units": [
+    {
+      "type": "tank",
+      "file": "units/scout.json"
+    },
+    {
+      "type": "tank",
+      "file": "units/guard.json"
+    }
+  ]
+}

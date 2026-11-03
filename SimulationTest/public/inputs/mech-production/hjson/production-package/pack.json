@@ -1,0 +1,19 @@
+{
+  "format": "rw-reforge.content-pack.v1",
+  "id": "p008-mech-production-chain-hjson",
+  "name": "Self-owned L1 mech factory production chain",
+  "units": [
+    {
+      "type": "mech",
+      "file": "units/mech.hjson"
+    },
+    {
+      "type": "mech-factory",
+      "file": "units/mechFactory.hjson"
+    },
+    {
+      "type": "builder",
+      "file": "units/builder.hjson"
+    }
+  ]
+}

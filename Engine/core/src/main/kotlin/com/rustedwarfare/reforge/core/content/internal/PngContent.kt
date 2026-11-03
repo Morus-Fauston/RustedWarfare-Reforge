@@ -13,7 +13,13 @@ internal data class PngMetadata(val width: Int, val height: Int)
 /** Native fixtures opt into their source encoding; turret inputs remain RGBA8. */
 internal fun readPngMetadata(path: Path, allowIndexed: Boolean = false, allowGrayAlpha: Boolean = false): PngMetadata {
     require(Files.size(path) <= 16L * 1024 * 1024) { "PNG read bound" }
-    return DataInputStream(ByteArrayInputStream(Files.readAllBytes(path))).use { input ->
+    return readPngMetadata(Files.newInputStream(path).use { it.readNBytes(16 * 1024 * 1024 + 1) }, allowIndexed, allowGrayAlpha)
+}
+
+internal fun readPngMetadata(bytes: ByteArray, allowIndexed: Boolean = false, allowGrayAlpha: Boolean = false,
+    allowRgb: Boolean = false): PngMetadata {
+    require(bytes.size <= 16 * 1024 * 1024) { "PNG read bound" }
+    return DataInputStream(ByteArrayInputStream(bytes)).use { input ->
         require(input.readLong() == -8552249625308161526L) { "PNG signature" }
         var width = 0; var height = 0; var ended = false; var colorType = 6; var paletteEntries = 0
         val compressed = ByteArrayOutputStream()
@@ -31,7 +37,7 @@ internal fun readPngMetadata(path: Path, allowIndexed: Boolean = false, allowGra
                     width = h.readInt(); height = h.readInt()
                     val depth = h.readUnsignedByte(); colorType = h.readUnsignedByte()
                     require(width > 0 && height > 0 && depth == 8 &&
-                        (colorType == 6 || allowIndexed && colorType == 3 || allowGrayAlpha && colorType == 4) &&
+                        (colorType == 6 || allowIndexed && colorType == 3 || allowGrayAlpha && colorType == 4 || allowRgb && colorType == 2) &&
                         h.readUnsignedByte() == 0 && h.readUnsignedByte() == 0 && h.readUnsignedByte() == 0) { "Expected noninterlaced RGBA8" }
                 }
             } else require(name != "IHDR") { "Duplicate PNG header" }
@@ -49,7 +55,7 @@ internal fun readPngMetadata(path: Path, allowIndexed: Boolean = false, allowGra
             }
             if (ended) break
         }
-        val row = width.toLong() * (when (colorType) { 3 -> 1L; 4 -> 2L; else -> 4L }) + 1L
+        val row = width.toLong() * (when (colorType) { 3 -> 1L; 4 -> 2L; 2 -> 3L; else -> 4L }) + 1L
         val expected = Math.multiplyExact(row, height.toLong())
         require(ended && compressed.size() > 0 && expected <= 16L * 1024 * 1024) { "PNG size or end" }
         InflaterInputStream(ByteArrayInputStream(compressed.toByteArray())).use { pixels ->

@@ -2,6 +2,8 @@ package com.rustedwarfare.reforge.pc
 
 import com.badlogic.gdx.utils.JsonReader
 import com.rustedwarfare.reforge.client.*
+import com.rustedwarfare.reforge.core.content.ContentLoader
+import com.rustedwarfare.reforge.core.content.ContentResult
 import java.io.BufferedWriter
 import java.io.StringWriter
 import java.nio.file.Files
@@ -10,6 +12,48 @@ import java.util.concurrent.*
 import kotlin.test.*
 
 class TypedObservationEvidenceTest {
+    @Test fun actual_named_session_typed_jsonl_hides_enemy_cooldowns_and_preserves_owner_values() {
+        val fixtures = System.getProperty("public.fixtures.dir")?.let(Path::of)
+            ?: Path.of("../../SimulationTest/public/inputs")
+        val inputs = fixtures.resolve("named-weapons/json")
+        val content = when (val loaded = ContentLoader.loadContentPacks(listOf(inputs.resolve("package")))) {
+            is ContentResult.Success -> loaded.value
+            is ContentResult.Failure -> error(loaded.error.toString())
+        }
+        val scene = SandboxLoader().use { loader ->
+            loader.requestPack(inputs, ContentPackChoice(content, "named_tank"))
+            val deadline = System.nanoTime() + 5_000_000_000L
+            var loaded = loader.pollPrepared()
+            while (loaded == null && System.nanoTime() < deadline) { Thread.sleep(5); loaded = loader.pollPrepared() }
+            checkNotNull(loaded) { "Content preparation timed out" }.getOrThrow().scenario
+        }
+        val root = Files.createTempDirectory("named-cooldown-jsonl-").toAbsolutePath().normalize()
+        try {
+            val expected = SandboxSession(scene).use { session ->
+                repeat(3) { session.tick() }
+                val view = session.observation
+                JsonlEvidence(root.resolve("run"), "named-cooldown", inputs).use { evidence ->
+                    evidence.recordObservation("step", view, 1)
+                }
+                view.weapons.filter { it.unitId == "a" }.associate { it.weaponName to it.cooldown }
+            }
+            val rows = Files.readAllLines(root.resolve("run/reforge/client-diagnostic.jsonl")).map { JsonReader().parse(it) }
+            val sample = rows.single { it.getString("kind") == "observation" }.get("sample")
+            val weapons = sample.get("weapons").toList()
+            val owner = weapons.filter { it.getString("unitId") == "a" }
+            val enemies = weapons.filter { it.getString("unitId") != "a" }
+            assertEquals(setOf("near", "far"), owner.map { it.getString("weaponName") }.toSet())
+            assertTrue(enemies.isNotEmpty())
+            assertTrue(enemies.all { it.get("cooldown").isNull && it.get("warmup").isNull && it.get("targetUnitId").isNull })
+            assertEquals(expected, owner.associate { it.getString("weaponName") to it.getDouble("cooldown") })
+        } finally {
+            require(root.isAbsolute && root.fileName.toString().startsWith("named-cooldown-jsonl-"))
+            Files.walk(root).use { paths -> paths.sorted(Comparator.reverseOrder()).forEach {
+                require(it.toAbsolutePath().normalize().startsWith(root)); Files.delete(it)
+            } }
+        }
+    }
+
     private fun session(mode: SandboxMode) = SandboxSession(
         ControlledScenario.load(Path.of(checkNotNull(System.getProperty("p001.inputs.dir")))),
         ClientEvidence.NONE, SandboxOptions(mode))

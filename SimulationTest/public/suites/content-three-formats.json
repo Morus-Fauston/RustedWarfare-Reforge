@@ -1,0 +1,224 @@
+{
+  "schemaVersion": 1,
+  "suiteId": "public.content-three-formats.v1",
+  "inputScope": "public",
+  "fixture": "inputs/three-format-tanks/ini",
+  "tests": {
+    "core": [
+      "com.rustedwarfare.reforge.core.content.ThreeFormatCombatContentTest",
+      "com.rustedwarfare.reforge.core.content.ThreeFormatProductionContentTest",
+      "com.rustedwarfare.reforge.core.content.ThreeFormatEconomyContentTest",
+      "com.rustedwarfare.reforge.core.content.DeclaredTankContentTest",
+      "com.rustedwarfare.reforge.core.content.ContentPackLoadTest",
+      "com.rustedwarfare.reforge.core.content.ContentPackCompositionTest",
+      "com.rustedwarfare.reforge.core.sim.SoundAuthorizationTest"
+    ],
+    "client": [
+      "com.rustedwarfare.reforge.client.ThreeFormatSandboxTest",
+      "com.rustedwarfare.reforge.client.ThreeFormatProductionSandboxTest",
+      "com.rustedwarfare.reforge.client.ThreeFormatEconomySandboxTest",
+      "com.rustedwarfare.reforge.client.ContentPackSandboxTest",
+      "com.rustedwarfare.reforge.client.ContentPackSelectionTest",
+      "com.rustedwarfare.reforge.client.ContentPackCompositionSandboxTest"
+    ],
+    "pc": [
+      "com.rustedwarfare.reforge.pc.ThreeFormatInputEvidenceTest",
+      "com.rustedwarfare.reforge.pc.ThreeFormatProductionEvidenceTest",
+      "com.rustedwarfare.reforge.pc.ThreeFormatEconomyEvidenceTest",
+      "com.rustedwarfare.reforge.pc.ContentPackEvidenceTest",
+      "com.rustedwarfare.reforge.pc.ContentPackCompositionEvidenceTest"
+    ],
+    "tools": [
+      "com.rustedwarfare.reforge.testing.PlatformSessionRunnerTest"
+    ]
+  },
+  "short": [
+    {
+      "id": "content-three-formats-ini",
+      "scenario": "scenarios/content-three-formats-ini.json",
+      "contract": "contracts/content-three-formats-ini.json"
+    },
+    {
+      "id": "content-three-formats-json",
+      "scenario": "scenarios/content-three-formats-json.json",
+      "contract": "contracts/content-three-formats-json.json"
+    },
+    {
+      "id": "content-three-formats-hjson",
+      "scenario": "scenarios/content-three-formats-hjson.json",
+      "contract": "contracts/content-three-formats-hjson.json"
+    },
+    {
+      "id": "content-three-formats-production-combat-short-ini",
+      "scenario": "scenarios/content-three-formats-production-combat-short-ini.json",
+      "contract": "contracts/content-three-formats-production-combat-short-ini.json"
+    },
+    {
+      "id": "content-three-formats-production-combat-short-json",
+      "scenario": "scenarios/content-three-formats-production-combat-short-json.json",
+      "contract": "contracts/content-three-formats-production-combat-short-json.json"
+    },
+    {
+      "id": "content-three-formats-production-combat-short-hjson",
+      "scenario": "scenarios/content-three-formats-production-combat-short-hjson.json",
+      "contract": "contracts/content-three-formats-production-combat-short-hjson.json"
+    },
+    {
+      "id": "content-three-formats-upgrade-cancel-short-ini",
+      "scenario": "scenarios/content-three-formats-upgrade-cancel-short-ini.json",
+      "contract": "contracts/content-three-formats-upgrade-cancel-short-ini.json"
+    },
+    {
+      "id": "content-three-formats-upgrade-cancel-short-json",
+      "scenario": "scenarios/content-three-formats-upgrade-cancel-short-json.json",
+      "contract": "contracts/content-three-formats-upgrade-cancel-short-json.json"
+    },
+    {
+      "id": "content-three-formats-upgrade-cancel-short-hjson",
+      "scenario": "scenarios/content-three-formats-upgrade-cancel-short-hjson.json",
+      "contract": "contracts/content-three-formats-upgrade-cancel-short-hjson.json"
+    },
+    {
+      "id": "content-three-formats-point-defense-short-ini",
+      "scenario": "scenarios/content-three-formats-point-defense-short-ini.json",
+      "contract": "contracts/content-three-formats-point-defense-short-ini.json"
+    },
+    {
+      "id": "content-three-formats-point-defense-short-json",
+      "scenario": "scenarios/content-three-formats-point-defense-short-json.json",
+      "contract": "contracts/content-three-formats-point-defense-short-json.json"
+    },
+    {
+      "id": "content-three-formats-point-defense-short-hjson",
+      "scenario": "scenarios/content-three-formats-point-defense-short-hjson.json",
+      "contract": "contracts/content-three-formats-point-defense-short-hjson.json"
+    },
+    {
+      "id": "content-three-formats-build-economy-short-ini",
+      "scenario": "scenarios/content-three-formats-build-economy-short-ini.json",
+      "contract": "contracts/content-three-formats-build-economy-short-ini.json"
+    },
+    {
+      "id": "content-three-formats-build-economy-short-json",
+      "scenario": "scenarios/content-three-formats-build-economy-short-json.json",
+      "contract": "contracts/content-three-formats-build-economy-short-json.json"
+    },
+    {
+      "id": "content-three-formats-build-economy-short-hjson",
+      "scenario": "scenarios/content-three-formats-build-economy-short-hjson.json",
+      "contract": "contracts/content-three-formats-build-economy-short-hjson.json"
+    },
+    {
+      "id": "content-three-formats-economy-build-economy-short-ini",
+      "scenario": "scenarios/content-three-formats-economy-build-economy-short-ini.json",
+      "contract": "contracts/content-three-formats-economy-build-economy-short-ini.json"
+    },
+    {
+      "id": "content-three-formats-economy-build-economy-short-json",
+      "scenario": "scenarios/content-three-formats-economy-build-economy-short-json.json",
+      "contract": "contracts/content-three-formats-economy-build-economy-short-json.json"
+    },
+    {
+      "id": "content-three-formats-economy-build-economy-short-hjson",
+      "scenario": "scenarios/content-three-formats-economy-build-economy-short-hjson.json",
+      "contract": "contracts/content-three-formats-economy-build-economy-short-hjson.json"
+    },
+    {
+      "id": "content-three-formats-economy-build-failure-short-ini",
+      "scenario": "scenarios/content-three-formats-economy-build-failure-short-ini.json",
+      "contract": "contracts/content-three-formats-economy-build-failure-short-ini.json"
+    },
+    {
+      "id": "content-three-formats-economy-build-failure-short-json",
+      "scenario": "scenarios/content-three-formats-economy-build-failure-short-json.json",
+      "contract": "contracts/content-three-formats-economy-build-failure-short-json.json"
+    },
+    {
+      "id": "content-three-formats-economy-build-failure-short-hjson",
+      "scenario": "scenarios/content-three-formats-economy-build-failure-short-hjson.json",
+      "contract": "contracts/content-three-formats-economy-build-failure-short-hjson.json"
+    },
+    {
+      "id": "content-three-formats-economy-maintenance-repair-short-ini",
+      "scenario": "scenarios/content-three-formats-economy-maintenance-repair-short-ini.json",
+      "contract": "contracts/content-three-formats-economy-maintenance-repair-short-ini.json"
+    },
+    {
+      "id": "content-three-formats-economy-maintenance-repair-short-json",
+      "scenario": "scenarios/content-three-formats-economy-maintenance-repair-short-json.json",
+      "contract": "contracts/content-three-formats-economy-maintenance-repair-short-json.json"
+    },
+    {
+      "id": "content-three-formats-economy-maintenance-repair-short-hjson",
+      "scenario": "scenarios/content-three-formats-economy-maintenance-repair-short-hjson.json",
+      "contract": "contracts/content-three-formats-economy-maintenance-repair-short-hjson.json"
+    },
+    {
+      "id": "content-three-formats-economy-maintenance-queue-short-ini",
+      "scenario": "scenarios/content-three-formats-economy-maintenance-queue-short-ini.json",
+      "contract": "contracts/content-three-formats-economy-maintenance-queue-short-ini.json"
+    },
+    {
+      "id": "content-three-formats-economy-maintenance-queue-short-json",
+      "scenario": "scenarios/content-three-formats-economy-maintenance-queue-short-json.json",
+      "contract": "contracts/content-three-formats-economy-maintenance-queue-short-json.json"
+    },
+    {
+      "id": "content-three-formats-economy-maintenance-queue-short-hjson",
+      "scenario": "scenarios/content-three-formats-economy-maintenance-queue-short-hjson.json",
+      "contract": "contracts/content-three-formats-economy-maintenance-queue-short-hjson.json"
+    },
+    {
+      "id": "content-three-formats-economy-maintenance-privacy-short-ini",
+      "scenario": "scenarios/content-three-formats-economy-maintenance-privacy-short-ini.json",
+      "contract": "contracts/content-three-formats-economy-maintenance-privacy-short-ini.json"
+    },
+    {
+      "id": "content-three-formats-economy-maintenance-privacy-short-json",
+      "scenario": "scenarios/content-three-formats-economy-maintenance-privacy-short-json.json",
+      "contract": "contracts/content-three-formats-economy-maintenance-privacy-short-json.json"
+    },
+    {
+      "id": "content-three-formats-economy-maintenance-privacy-short-hjson",
+      "scenario": "scenarios/content-three-formats-economy-maintenance-privacy-short-hjson.json",
+      "contract": "contracts/content-three-formats-economy-maintenance-privacy-short-hjson.json"
+    },
+    {
+      "id": "content-pack-ini-short",
+      "backend": "session",
+      "scenario": "platform/scenarios/content-pack-ini-short.json",
+      "contract": "platform/contracts/content-pack-ini-short.json"
+    },
+    {
+      "id": "content-pack-json-short",
+      "backend": "session",
+      "scenario": "platform/scenarios/content-pack-json-short.json",
+      "contract": "platform/contracts/content-pack-json-short.json"
+    },
+    {
+      "id": "content-pack-hjson-short",
+      "backend": "session",
+      "scenario": "platform/scenarios/content-pack-hjson-short.json",
+      "contract": "platform/contracts/content-pack-hjson-short.json"
+    },
+    {
+      "id": "content-pack-composition-replace-short",
+      "backend": "session",
+      "scenario": "platform/scenarios/content-pack-composition-replace-short.json",
+      "contract": "platform/contracts/content-pack-composition-replace-short.json"
+    },
+    {
+      "id": "content-pack-composition-reverse-short",
+      "backend": "session",
+      "scenario": "platform/scenarios/content-pack-composition-reverse-short.json",
+      "contract": "platform/contracts/content-pack-composition-reverse-short.json"
+    },
+    {
+      "id": "content-pack-composition-chain-short",
+      "backend": "session",
+      "scenario": "platform/scenarios/content-pack-composition-chain-short.json",
+      "contract": "platform/contracts/content-pack-composition-chain-short.json"
+    }
+  ],
+  "long": []
+}

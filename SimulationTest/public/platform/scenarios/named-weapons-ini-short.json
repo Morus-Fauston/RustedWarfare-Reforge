@@ -1,0 +1,36 @@
+{
+  "schemaVersion": 1,
+  "scenarioId": "named-weapons-ini-short",
+  "inputs": "../../inputs/named-weapons/ini",
+  "contentPack": {
+    "directory": "package",
+    "unitId": "named_tank"
+  },
+  "intents": [
+    {
+      "intentId": "choose",
+      "kind": "select",
+      "unitId": "a",
+      "position": {
+        "x": 110,
+        "y": 210
+      }
+    },
+    {
+      "intentId": "dual",
+      "kind": "attack",
+      "unitId": "a",
+      "targetUnitId": "b",
+      "position": {
+        "x": 350,
+        "y": 210
+      },
+      "waitSteps": 120
+    },
+    {
+      "intentId": "stop",
+      "kind": "stop",
+      "unitId": "a"
+    }
+  ]
+}

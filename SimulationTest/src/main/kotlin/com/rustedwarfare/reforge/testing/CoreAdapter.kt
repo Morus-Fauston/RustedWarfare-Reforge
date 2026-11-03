@@ -8,6 +8,7 @@ internal class CoreAdapter(private val input: LoadedScenario) : AutoCloseable {
         is InitResult.Accepted -> result.context
         is InitResult.Rejected -> throw CoreFailure("Initialization rejected: ${result.error}")
     }
+    private val namedArchive = context.observe().combat?.weapons?.any { it.weaponName != null } == true
     fun initial(): Observation = context.observe().also { observation ->
         val expected = input.core.units.associateBy { it.unitId }
         if (observation.scenarioId != input.core.scenarioId || observation.simulationTime != 0.0 ||
@@ -58,6 +59,12 @@ internal class CoreAdapter(private val input: LoadedScenario) : AutoCloseable {
                 "credits" to view.credits?.let(::n),
                 "factoryQueues" to JsonObject(view.factoryQueues.associate { it.factoryId to array(it.items.map { item -> obj("typeId" to s(item.typeId), "progress" to n(item.progress)) }) }),
                 "upgradeQueues" to JsonObject(view.upgradeQueues.associate { it.unitId to array(it.items.map { item -> obj("actionKey" to s(item.actionKey), "targetTypeId" to s(item.targetTypeId), "progress" to n(item.progress)) }) }))
+            val namedWeapons = if (!namedArchive) emptyMap() else mapOf(
+                "weapons" to array(view.weapons.map { it.json() }),
+                "projectiles" to array(view.projectiles.map { obj("token" to s(it.token), "multiplicity" to n(it.multiplicity),
+                    "position" to it.position.json(), "heading" to n(it.heading), "height" to n(it.height),
+                    "parentToken" to it.parentToken?.let(::s), "areaRadius" to it.areaRadius?.let(::n)) }),
+                "projectileEvents" to array(view.projectileEvents.map { it.json() }))
             id to JsonObject(obj("playerId" to s(view.playerId), "worldId" to s(view.worldId),
                 "stepIndex" to n(view.stepIndex), "simulationTime" to n(view.simulationTime),
                 "visibleUnitIds" to array(view.units.map { s(it.unitId) }),
@@ -69,7 +76,10 @@ internal class CoreAdapter(private val input: LoadedScenario) : AutoCloseable {
                         "c${index % knowledge.width}r${index / knowledge.width}" to obj("visible" to b(cell.visible),
                             "lastKnownBlocked" to cell.lastKnownBlocked?.let(::b),
                             "lastKnownGroundGid" to cell.lastKnownGroundGid?.let(::n))
-                    }.toMap())) }).toMutableMap().apply { capabilities.forEach { (key, value) -> put(key, value ?: JsonNull) } })
+                    }.toMap())) }).toMutableMap().apply {
+                        capabilities.forEach { (key, value) -> put(key, value ?: JsonNull) }
+                        putAll(namedWeapons)
+                    })
         })
     }
     fun reopen(): Observation {
@@ -96,6 +106,14 @@ internal fun Observation.json(): JsonObject = JsonObject(obj(
     "units" to array(units.map { it.json(combat != null || economy != null) }),
     "events" to array(events.map { it.json() }), "actionResults" to array(actionResults.map { it.json() }),
 ).toMutableMap().apply {
+    combat?.takeIf { state -> state.weapons.any { it.weaponName != null } }?.let { state ->
+        put("combat", obj("frameCounter" to n(state.frameCounter), "nextObjectId" to n(state.nextObjectId),
+            "weapons" to array(state.weapons.map { it.json() })))
+        put("projectiles", array(projectiles.map { it.json() }))
+        put("projectileEvents", array(projectileEvents.map { obj("kind" to s(it.kind),
+            "projectile" to it.projectile.json(), "damage" to it.damage?.let(::n),
+            "interceptorUnitId" to it.interceptorUnitId?.let(::s)) }))
+    }
     reclaimedUnitIds?.let { put("reclaimedUnitIds", array(it.map(::s))) }
     economy?.let { state -> put("economy", obj("balances" to JsonObject(state.balances.mapValues { n(it.value) }),
         "preciseBalances" to state.preciseBalances?.let { JsonObject(it.mapValues { (_, amount) -> n(amount) }) },
@@ -117,6 +135,32 @@ internal fun Observation.json(): JsonObject = JsonObject(obj(
             "movementRequested" to b(it.movementRequested), "pendingPathNodeCounts" to array(it.pendingPathNodeCounts.map(::n)),
             "consumedPathNodeCounts" to array(it.consumedPathNodeCounts.map(::n)), "qBeforeDispatch" to n(it.qBeforeDispatch)) }))) }
 })
+internal fun VisibleUnitWeapon.json() = obj("unitId" to s(unitId), "weaponName" to s(weaponName),
+    "turretHeading" to n(turretHeading), "pivot" to pivot.json(), "muzzle" to muzzle.json(),
+    "cooldown" to cooldown?.let(::n), "warmup" to warmup?.let(::n), "targetUnitId" to targetUnitId?.let(::s))
+internal fun UnitWeaponObservation.json() = obj("unitId" to s(unitId), "weaponName" to weaponName?.let(::s),
+    "objectId" to n(objectId), "randomCounter" to n(randomCounter), "offset" to offset.json(),
+    "targetUnitId" to targetUnitId?.let(::s), "angularVelocity" to n(angularVelocity),
+    "pivot" to pivot?.json(), "muzzle" to muzzle?.json(), "cooldown" to n(cooldown),
+    "oddShot" to b(oddShot), "warmup" to n(warmup), "turretHeading" to turretHeading?.let(::n),
+    "idle" to idle?.let { obj("baseHeading" to n(it.baseHeading), "timer" to n(it.timer),
+        "offset" to n(it.offset), "direction" to n(it.direction), "reached" to b(it.reached), "hold" to n(it.hold)) })
+internal fun ProjectileObservation.json() = obj("objectId" to n(objectId), "sourceUnitId" to s(sourceUnitId),
+    "sourceWeaponName" to sourceWeaponName?.let(::s), "targetUnitId" to targetUnitId?.let(::s),
+    "position" to position.json(), "heading" to n(heading), "remainingLife" to n(remainingLife),
+    "offset" to offset.json(), "scatter" to n(scatter), "height" to n(height), "age" to n(age),
+    "deflectionHealth" to n(deflectionHealth), "intercepted" to b(intercepted),
+    "ground" to ground?.let { obj("targetPosition" to it.targetPosition.json(), "targetHeight" to n(it.targetHeight),
+        "verticalSpeed" to n(it.verticalSpeed), "distanceSquared" to it.distanceSquared?.let(::n)) },
+    "missile" to missile?.let { obj("speed" to n(it.speed), "reachedApex" to b(it.reachedApex), "rawAz" to n(it.rawAz)) },
+    "areaExpansion" to areaExpansion?.let { obj("remaining" to n(it.remaining), "radius" to n(it.radius),
+        "hitUnitIds" to array(it.hitUnitIds.map(::s))) })
+internal fun VisibleProjectileEvent.json() = obj("token" to s(token), "kind" to s(kind), "occurrences" to n(occurrences),
+    "position" to position.json(), "heading" to n(heading), "height" to n(height),
+    "sourceUnitId" to sourceUnitId?.let(::s), "sourceWeaponName" to sourceWeaponName?.let(::s),
+    "targetUnitId" to targetUnitId?.let(::s), "damage" to damage?.let(::n),
+    "parentToken" to parentToken?.let(::s), "interceptorUnitId" to interceptorUnitId?.let(::s),
+    "areaRadius" to areaRadius?.let(::n))
 internal fun UnitObservation.json(capabilities: Boolean): JsonObject = JsonObject(obj(
     "unitId" to s(unitId), "ownerPlayerId" to s(ownerPlayerId), "typeId" to s(typeId),
     "position" to position.json(), "heading" to n(heading), "speed" to n(speed),
@@ -127,6 +171,13 @@ internal fun UnitObservation.json(capabilities: Boolean): JsonObject = JsonObjec
         "target" to it.target?.json(), "targetUnitId" to it.targetUnitId?.let(::s),
         "atStep" to it.atStep?.let(::n), "buildingTypeId" to it.buildingTypeId?.let(::s),
         "buildingNonce" to it.buildingNonce?.let(::s)) }),
-).toMutableMap().apply { if (capabilities) putAll(mapOf("health" to (health?.let(::n) ?: JsonNull),
+).toMutableMap().apply {
+    mechPose?.let { put("mechPose", it.json()) }
+    if (capabilities) putAll(mapOf("health" to (health?.let(::n) ?: JsonNull),
     "maxHealth" to (maxHealth?.let(::n) ?: JsonNull), "alive" to b(alive), "attackTargetId" to (attackTargetId?.let(::s) ?: JsonNull),
     "pointDefense" to (pointDefense?.let { obj("energy" to n(it.energy), "exhausted" to b(it.exhausted)) } ?: JsonNull))) })
+
+internal fun MechPose.json(): JsonObject = obj(
+    "forwardHeading" to n(forwardHeading), "angularVelocity" to n(angularVelocity), "reversing" to b(reversing),
+    "legs" to array(legs.map { leg -> obj("index" to n(leg.index), "anchor" to leg.anchor.json(),
+        "foot" to leg.foot.json(), "height" to n(leg.height), "heading" to n(leg.heading), "phase" to s(leg.phase.name)) }))

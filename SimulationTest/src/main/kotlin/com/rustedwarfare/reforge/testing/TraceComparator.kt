@@ -434,6 +434,7 @@ object TraceComparator {
         listOf("heading", "speed", "angularVelocity").forEach { unit.number(it) }
         unit.required("moveTarget").let { if (it != JsonNull) point(it.jsonObject) }
         unit.arrayAt("pathPoints").forEach { point(it.jsonObject) }
+        if (unit.id("typeId") in typesLoadedBy(scenario, setOf("mech"))) validateMechPose(unit.objectAt("mechPose"))
         if (hasConstruction(scenario)) {
             unit.number("constructionProgress")
             unit.required("constructionTargetId").let { if (it != JsonNull) unit.id("constructionTargetId") }
@@ -464,6 +465,28 @@ object TraceComparator {
                 val defense = it.jsonObject
                 defense.number("energy"); booleanField(defense, "exhausted")
             } }
+        }
+    }
+
+    private fun validateMechPose(pose: JsonObject) {
+        if (pose.keys != setOf("forwardHeading", "angularVelocity", "reversing", "legs"))
+            throw Incomplete("mech-pose", "Incomplete or unapproved mech pose fields")
+        pose.number("forwardHeading"); pose.number("angularVelocity"); booleanField(pose, "reversing")
+        val legs = pose.arrayAt("legs")
+        if (legs.size != 2) throw Incomplete("mech-pose", "The declared finite mech requires two legs")
+        legs.forEachIndexed { index, value ->
+            val leg = value.jsonObject
+            if (leg.keys != setOf("index", "anchor", "foot", "height", "heading", "phase") ||
+                leg.integer("index") != index.toLong())
+                throw Incomplete("mech-pose", "Incomplete or incorrectly indexed mech leg")
+            for (field in listOf("anchor", "foot")) {
+                val vector = leg.objectAt(field)
+                if (vector.keys != setOf("x", "y")) throw Incomplete("mech-pose", "Invalid mech leg vector fields")
+                point(vector)
+            }
+            leg.number("height"); leg.number("heading")
+            if (leg.text("phase") !in setOf("PLANTED", "WARMING_UP", "LIFTING", "SWINGING", "LOWERING"))
+                throw Incomplete("mech-pose", "Unknown mech leg phase")
         }
     }
 

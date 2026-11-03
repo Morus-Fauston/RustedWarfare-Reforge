@@ -1,0 +1,9 @@
+{
+  "formatVersion": 1,
+  "sounds": {
+    "reforge:sounds/tank-fire": { "file": "tank-fire.wav" }
+  },
+  "events": {
+    "reforge:events/tank-fire": { "sound": "reforge:sounds/tank-fire" }
+  }
+}

@@ -31,6 +31,7 @@ class BootstrapScreen(
     private val evidence: ClientEvidence = ClientEvidence.NONE,
     private val touchControls: Boolean = false,
     private val visualSettings: VisualAssetSettings? = null,
+    private val soundFactory: PlaybackSoundFactory = GdxPlaybackSoundFactory,
 ) : ApplicationAdapter() {
     private lateinit var batch: SpriteBatch
     private lateinit var shapes: ShapeRenderer
@@ -40,6 +41,7 @@ class BootstrapScreen(
     private val loader = SandboxLoader()
     private var session: SandboxSession? = null
     private var graphics: SandboxGraphics? = null
+    private var sounds: SoundPlayback? = null
     private lateinit var rootField: TextField
     private lateinit var selectedLabel: Label
     private lateinit var selectionHeading: Label
@@ -74,7 +76,7 @@ class BootstrapScreen(
     private lateinit var reclaimInput: ReclaimButtonInput
     private var reclaimHover = false
     private var nativeSelection: Set<String> = emptySet()
-    private val nativePanel: Boolean get() = session?.observation?.scenarioId == "p006-construction"
+    private val nativePanel: Boolean get() = session?.observation?.scenarioId in setOf("p006-construction", "p008-mech-production")
     private val upgradeButtons = mutableMapOf<String, Pair<TextButton, TextButton>>()
     private val upgradeInputs = mutableListOf<UpgradeButtonInput>()
     private var upgradeHover: String? = null
@@ -93,6 +95,11 @@ class BootstrapScreen(
     private val groupButtons = mutableListOf<TextButton>()
     private val visualState = visualSettings?.let(::VisualAssetSettingsSession)
     private var visualPanel: VisualAssetSettingsPanel? = null
+    private val packState = ContentPackSelectionSession()
+    private var packPanel: ContentPackPanel? = null
+    private lateinit var visualsTab: TextButton
+    private lateinit var packTab: TextButton
+    private var showContentPack = visualSettings == null
     private val launch = SandboxLaunchState(SandboxConfiguration(initialRoot.toAbsolutePath().normalize(), SandboxOptions(), visualState?.selection ?: VisualAssetSelection()))
     private var activeVisuals: PreparedVisualAssets? = null
     private var pendingLoad: SandboxLoad? = null
@@ -174,7 +181,7 @@ class BootstrapScreen(
             table.addListener(secondProductionInput)
             stage.addActor(table)
         }
-        for (type in listOf("extractorT1", "landFactory", "fabricatorT1", "c_turret_t1", "laserDefence")) {
+        for (type in listOf("extractorT1", "landFactory", "mechFactory", "fabricatorT1", "c_turret_t1", "laserDefence")) {
             val icon = Image().apply { touchable = Touchable.disabled }
             val text = Label("", skin).apply { setAlignment(Align.center); touchable = Touchable.disabled; setFontScale(.7f) }
             val table = Table(skin)
@@ -287,9 +294,29 @@ class BootstrapScreen(
             stage.addActor(it)
         }
         startButton = button("Start", 752f, 120f, 176f) { requestLoad() }
-        visualPanel = visualState?.let { state -> VisualAssetSettingsPanel(state, skin, visualSettings?.let { it::createUiFont }) {
+        visualPanel = visualState?.let { state -> VisualAssetSettingsPanel(state, skin, visualSettings?.let { it::createUiFont },
+            contentChoice = packState::choice) {
+            evidence.recordVisualAssetMenu(state)
             loadError = null; lastHudState = null; updateHud()
         }.also { it.setBounds(40f, 120f, 660f, 440f); stage.addActor(it) } }
+        packPanel = ContentPackPanel(packState, skin, visualSettings?.let { it::createUiFont }) {
+            if (visualState?.busy == true) visualState.cancel("Content changed during resource preparation. Apply again.")
+            evidence.recordWhenEnabled("content-pack-menu") { mapOf("busy" to packState.busy,
+                "enabled" to packState.enabled, "canEnable" to packState.canEnable, "canStart" to packState.canStart,
+                "input" to packState.inputPath?.toString(), "checkedId" to packState.checked?.id,
+                "unitId" to packState.selectedUnitId, "error" to packState.error,
+                "enabledIds" to packState.enabledPackages.map { it.id }, "compositionError" to packState.compositionError,
+                "effectiveSources" to packState.composition?.provenance?.mapValues { (_, origin) -> mapOf(
+                    "packageId" to origin.packageId, "entryPath" to origin.entryPath.toString(),
+                    "replacedPackageIds" to origin.replacedPackageIds) }) }
+            loadError = null; lastHudState = null; updateHud()
+        }.also { it.setBounds(40f, 120f, 660f, 440f); stage.addActor(it) }
+        visualsTab = button("Resource packs", 40f, 568f, 176f) {
+            showContentPack = false; lastHudState = null; updateHud()
+        }
+        packTab = button("Content pack", 232f, 568f, 176f) {
+            showContentPack = true; lastHudState = null; updateHud()
+        }
         mapInput = SandboxInput({ session }, { graphics?.projection }, { x, y ->
             viewport.unproject(Vector2(x.toFloat(), y.toFloat())).let { Position(it.x.toDouble(), it.y.toDouble()) }
         }, { !paused && session != null }, { stage.keyboardFocus is TextField },
@@ -396,8 +423,9 @@ class BootstrapScreen(
         try {
             val request = if (launch.canEdit) {
                 check(visualState?.canStart != false) { visualState?.error ?: "Save and apply the visual selection first" }
+                check(packState.canStart) { packState.error ?: "Finish checking the content package first" }
                 launch.configure(launch.configuration.copy(root = Paths.get(rootField.text).toAbsolutePath().normalize(),
-                    visuals = visualState?.selection ?: launch.configuration.visuals))
+                    visuals = visualState?.selection ?: launch.configuration.visuals, contentPack = packState.choice()))
                 launch.start()
             } else launch.reopen()
             closeMatchResources()
@@ -409,7 +437,10 @@ class BootstrapScreen(
             evidence.record("load-request", mapOf("generation" to generation, "root" to activeRoot.toString(),
                 "mode" to request.configuration.options.mode.name,
                 "shareAlliedVision" to request.configuration.options.shareAlliedVision))
-            loader.request(activeRoot, visualSettings?.let { settings -> { settings.prepare(request.configuration.visuals) } })
+            val contentPack = request.configuration.contentPack
+            val prepare = visualSettings?.let { settings -> { settings.prepareForContent(request.configuration.visuals, contentPack) } }
+            if (contentPack == null) loader.request(activeRoot, prepare)
+            else loader.requestPack(activeRoot, contentPack, prepare)
         } catch (failure: Exception) { failLoad(failure) }
         updateHud()
     }
@@ -431,8 +462,9 @@ class BootstrapScreen(
         accumulator = 0.0
         val closingSession = session; session = null
         val closingGraphics = graphics; graphics = null
+        val closingSounds = sounds; sounds = null
         activeVisuals = null
-        listOf<() -> Unit>({ closingSession?.close() }, { closingGraphics?.close() }).forEach { cleanup ->
+        listOf<() -> Unit>({ closingSounds?.close() }, { closingSession?.close() }, { closingGraphics?.close() }).forEach { cleanup ->
             try { cleanup() } catch (failure: Exception) {
                 evidence.recordFailure("cleanup-error", failure)
                 Gdx.app.error("p001-cleanup", "Cleanup failed", failure)
@@ -459,23 +491,26 @@ class BootstrapScreen(
             val request = pendingLoad ?: return@fold
             var pendingGraphics: SandboxGraphics? = null
             var pendingSession: SandboxSession? = null
+            var pendingSounds: SoundPlayback? = null
             try {
                 pendingGraphics = SandboxGraphics.load(scenario, activeRoot, loaded.visuals)
                 val runGeneration = generation
                 pendingSession = SandboxSession(scenario, evidence.withGeneration(runGeneration), request.configuration.options)
-                evidence.record("load-ready", mapOf("generation" to generation, "mapWidth" to scenario.map.widthTiles,
-                    "mapHeight" to scenario.map.heightTiles, "blockedCount" to scenario.map.blocking.blockedCount))
+                pendingSounds = loaded.visuals?.resolvedSounds?.let { resources -> SoundPlayback(
+                    pendingSession.consumeSounds(pendingGraphics.projection.soundListener()), resources,
+                    soundFactory, evidence.withGeneration(runGeneration)) }
+                evidence.recordLoadReady(generation, loaded)
                 check(launch.complete(request.generation)) { "Cancelled load generation" }
                 pendingLoad = null
                 graphics = pendingGraphics
                 activeVisuals = loaded.visuals
                 session = pendingSession
-                loaded.visuals?.let { visuals -> evidence.record("visual-assets-ready", mapOf("source" to visuals.selection.source.value,
-                    "profile" to visuals.profileId, "identity" to visuals.identity, "generation" to generation,
-                    "units" to visuals.units.keys.toList(), "terrain" to visuals.terrain.keys.toList())) }
+                sounds = pendingSounds
+                loaded.visuals?.let { visuals -> evidence.recordVisualAssetsReady(visuals, generation) }
                 loading = false
                 accumulator = 0.0
             } catch (failure: Exception) {
+                try { pendingSounds?.close() } catch (cleanup: Exception) { failure.addSuppressed(cleanup) }
                 try { pendingSession?.close() } catch (cleanup: Exception) { failure.addSuppressed(cleanup) }
                 try { pendingGraphics?.close() } catch (cleanup: Exception) { failure.addSuppressed(cleanup) }
                 failLoad(failure)
@@ -486,8 +521,16 @@ class BootstrapScreen(
             // Presentation pacing only, not the original game's tick frequency.
             accumulator += Gdx.graphics.deltaTime.toDouble()
             var steps = 0
-            while (accumulator >= 1.0 / 60 && steps < 8) {
-                current.tick(); accumulator -= 1.0 / 60; steps++
+            sounds?.beginFrame()
+            try {
+                while (accumulator >= 1.0 / 60 && steps < 8) {
+                    current.tick()
+                    sounds?.let { player -> player.consume(current.consumeSounds(checkNotNull(graphics).projection.soundListener())) }
+                    accumulator -= 1.0 / 60; steps++
+                }
+            } catch (failure: Exception) {
+                preserveFailure(failure) { releaseSounds() }
+                throw failure
             }
         }
         updateHud()
@@ -536,7 +579,7 @@ class BootstrapScreen(
         selectedLabel.setText(if (selected == null) "None" else if (state.selectedIds.size > 1)
             "${state.selectedIds.size} selected\n${current?.observation?.units?.count { it.unitId in state.selectedIds && it.alive && it.ownerPlayerId == "p1" }} controllable\nRight click: Move / Attack\nS: Stop" else String.format(Locale.ROOT,
             "%s / %s\n%s / %s\nx %.1f   y %.1f\nheading %.1f  speed %.2f",
-            if (selected.unitId.startsWith("produced:")) selected.typeId else selected.unitId, selected.ownerPlayerId,
+            if (selected.unitId.startsWith("produced:") || current?.observation?.scenarioId == "p008-content-pack") selected.typeId else selected.unitId, selected.ownerPlayerId,
             if (selected.ownerPlayerId == "p1") "Local control" else "No controller",
             selected.movementState.name.lowercase(), selected.position.x, selected.position.y, selected.heading, selected.speed) +
             (selected.health?.let { "\nHP ${it.toInt()} / ${selected.maxHealth?.toInt()}" } ?: "") +
@@ -698,11 +741,18 @@ class BootstrapScreen(
         modeBox.isDisabled = !launch.canEdit
         shareBox.isDisabled = !launch.canEdit
         startButton.setText(if (launch.canEdit) "Start" else "Reopen")
-        startButton.isDisabled = loading || launch.canEdit && visualState?.canStart == false
+        startButton.isDisabled = loading || launch.canEdit && (visualState?.canStart == false || !packState.canStart)
+        visualsTab.isVisible = current == null && visualPanel != null
+        packTab.isVisible = current == null
         visualPanel?.let {
-            it.isVisible = current == null
+            it.isVisible = current == null && !showContentPack
             it.setEditable(launch.canEdit && !loading)
             it.setStatus(if (loading) "Loading scene and validating the selected visuals..." else loadError)
+        }
+        packPanel?.let {
+            it.isVisible = current == null && showContentPack
+            it.setEditable(launch.canEdit && !loading)
+            it.setStatus(if (loading) "Loading the fixed next-match selection..." else loadError)
         }
         statusLabel.setText(when {
             state.reclaimMode -> "Select building to reclaim (Esc / right: cancel)"
@@ -735,6 +785,7 @@ class BootstrapScreen(
         paused = true
         accumulator = 0.0
         cancelInput()
+        releaseSounds()
         // Release GL and native buffers on the GL thread before Android suspends it.
         // A later non-finishing Activity destroy can then close the host without GL calls.
         if (touchControls) releasePresentation()
@@ -769,6 +820,18 @@ class BootstrapScreen(
                 throw failure
             }
         }
+        try {
+            val current = session
+            if (current != null && sounds == null) sounds = activeVisuals?.resolvedSounds?.let { resources -> SoundPlayback(
+                current.consumeSounds(checkNotNull(graphics).projection.soundListener()), resources,
+                soundFactory, evidence.withGeneration(generation)) }
+        } catch (failure: Exception) {
+            paused = true
+            loadError = failure.message ?: failure.toString()
+            evidence.recordFailure("sound-recovery-failed", failure)
+            updateHud()
+            return
+        }
         paused = false
         accumulator = 0.0
         evidence.record("resume", emptyMap())
@@ -779,13 +842,18 @@ class BootstrapScreen(
         dispose()
     }
 
+    private fun releaseSounds() {
+        val closing = sounds; sounds = null
+        closing?.close()
+    }
+
     private fun releasePresentation() {
         if (!presentationReady) return
         cancelInput()
         presentationReady = false
         Gdx.input.inputProcessor = null
         val closingGraphics = graphics; graphics = null
-        listOf<() -> Unit>({ closingGraphics?.close() }, { visualPanel?.close() }, { stage.dispose() }, { skin.dispose() },
+        listOf<() -> Unit>({ releaseSounds() }, { closingGraphics?.close() }, { visualPanel?.close() }, { packPanel?.close() }, { stage.dispose() }, { skin.dispose() },
             { shapes.dispose() }, { batch.dispose() }).forEach { cleanup ->
             try { cleanup() } catch (failure: Exception) {
                 evidence.recordFailure("cleanup-error", failure)
@@ -814,7 +882,7 @@ class BootstrapScreen(
         if (disposed) return
         disposed = true
         Gdx.input.inputProcessor = null
-        listOf<() -> Unit>({ leaveMatch() }, { loader.close() }, { visualState?.close() }, { releasePresentation() }).forEach { cleanup ->
+        listOf<() -> Unit>({ leaveMatch() }, { loader.close() }, { visualState?.close() }, { packState.close() }, { releasePresentation() }).forEach { cleanup ->
             try { cleanup() } catch (failure: Exception) { Gdx.app.error("p001-dispose", "Cleanup failed", failure) }
         }
         evidence.record("application-disposed", emptyMap())
