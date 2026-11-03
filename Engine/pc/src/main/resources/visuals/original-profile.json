@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "profileId": "rw.android.1.15.176.visual.v2",
+  "profileId": "rw.android.1.15.176.visual.v3",
   "identity": {
     "package": "com.corrodinggames.rts",
     "versionName": "1.15",
@@ -298,6 +298,46 @@
       "sha256": "41e8d43d03b3b7fdf42445b22719f3ba3f7c455c5d4ad2563edec7387185f0b1",
       "width": 72,
       "height": 88
+    },
+    {
+      "id": "helicopter",
+      "path": "assets/units/helicopter/helicopter.png",
+      "bytes": 4039,
+      "sha256": "3b1a4e6276c696969ae336eab6968cacd4d925c189aa1a457b43c5a626d5362f",
+      "width": 26,
+      "height": 46
+    },
+    {
+      "id": "helicopter-rotor",
+      "path": "assets/units/helicopter/helicopter_blades.png",
+      "bytes": 4000,
+      "sha256": "3eb95637f28194606b1166d6f95797b69c8aa81a1ad5c65cefda5628ec9c090b",
+      "width": 46,
+      "height": 20
+    },
+    {
+      "id": "helicopter-dead",
+      "path": "assets/units/helicopter/helicopter_dead.png",
+      "bytes": 867,
+      "sha256": "f67582fc2e356744dd7481f3928c707463e87dfedb623b118087de0ace047b46",
+      "width": 26,
+      "height": 46
+    },
+    {
+      "id": "air-factory",
+      "path": "res/drawable/air_factory.png",
+      "bytes": 1945,
+      "sha256": "07c64f396ab60b0d8dbd1906d5313e18e6a2270334aa25af62ab27edbb95207c",
+      "width": 200,
+      "height": 63
+    },
+    {
+      "id": "air-factory-dead",
+      "path": "res/drawable/air_factory_dead.png",
+      "bytes": 1546,
+      "sha256": "a69bb97f81a5301ea5867ad56ec3541c43258c005480dd35a73d3a0dd61154fb",
+      "width": 40,
+      "height": 61
     }
   ],
   "unitOutputs": {
@@ -829,6 +869,86 @@
         88
       ],
       "frames": 1
+    },
+    "helicopter": {
+      "file": "units/helicopter.png",
+      "operation": "crop",
+      "source": "helicopter",
+      "rect": [
+        0,
+        0,
+        26,
+        46
+      ],
+      "target": [
+        26,
+        46
+      ],
+      "frames": 1
+    },
+    "helicopter-rotor": {
+      "file": "units/helicopter-rotor.png",
+      "operation": "crop",
+      "source": "helicopter-rotor",
+      "rect": [
+        0,
+        0,
+        46,
+        20
+      ],
+      "target": [
+        46,
+        20
+      ],
+      "frames": 1
+    },
+    "helicopter-dead": {
+      "file": "units/helicopter-dead.png",
+      "operation": "crop",
+      "source": "helicopter-dead",
+      "rect": [
+        0,
+        0,
+        26,
+        46
+      ],
+      "target": [
+        26,
+        46
+      ],
+      "frames": 1
+    },
+    "air-factory": {
+      "file": "units/air-factory.png",
+      "operation": "crop",
+      "source": "air-factory",
+      "rect": [
+        0,
+        0,
+        40,
+        61
+      ],
+      "target": [
+        40,
+        61
+      ],
+      "frames": 1
+    },
+    "air-factory-dead": {
+      "file": "units/air-factory-dead.png",
+      "operation": "crop",
+      "source": "air-factory-dead",
+      "rect": [
+        0,
+        0,
+        40,
+        61
+      ],
+      "target": [
+        40,
+        61
+      ],
+      "frames": 1
     }
   },
   "unitBindings": {
@@ -909,6 +1029,15 @@
       "body": "mech-factory",
       "back": "mech-factory-back",
       "dead": "mech-factory-dead"
+    },
+    "helicopter": {
+      "body": "helicopter",
+      "rotor": "helicopter-rotor",
+      "dead": "helicopter-dead"
+    },
+    "airFactory": {
+      "body": "air-factory",
+      "dead": "air-factory-dead"
     }
   },
   "terrainOutputs": {

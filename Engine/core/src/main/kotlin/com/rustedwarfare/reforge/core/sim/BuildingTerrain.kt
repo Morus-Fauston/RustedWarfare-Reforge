@@ -4,6 +4,7 @@ import com.rustedwarfare.reforge.core.content.BuildingFootprint
 import com.rustedwarfare.reforge.core.content.BlockingGrid
 import com.rustedwarfare.reforge.core.content.MapDefinition
 import com.rustedwarfare.reforge.core.content.FootprintAnchor
+import com.rustedwarfare.reforge.core.content.MovementType
 import java.util.Collections
 
 internal class BuildingInitializationException(val error: SimulationError) : IllegalArgumentException(error.message)
@@ -46,7 +47,8 @@ internal class BuildingTerrain private constructor(map: MapDefinition, occupied:
                 }
             }
             for (unit in input.units) {
-                if (input.unitDefinitions.getValue(unit.typeId).building != null) continue
+                val definition = input.unitDefinitions.getValue(unit.typeId)
+                if (definition.building != null || definition.movement.type == MovementType.AIR) continue
                 val cell = MapBounds.cell(unit.position.x, input.map.tileWidth, input.map.widthTiles) to
                     MapBounds.cell(unit.position.y, input.map.tileHeight, input.map.heightTiles)
                 if (cell in cells) fail("Initial mobile unit center must be outside live building cost")

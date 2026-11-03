@@ -71,6 +71,9 @@ object ContentLoader {
     fun loadMechUnit(path: Path): ContentResult<UnitDefinition> =
         load(path) { CombatContentReader.readMechWithSources(it).definition }
 
+    fun loadHelicopterUnit(path: Path): ContentResult<UnitDefinition> =
+        load(path) { CombatContentReader.readHelicopterWithSources(it).definition }
+
     fun loadDeclaredTankWithSources(path: Path): ContentResult<LoadedUnitContent> =
         load(path) { CombatContentReader.readDeclaredWithSources(it) }
 

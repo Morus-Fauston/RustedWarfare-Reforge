@@ -27,6 +27,7 @@ class UnitDefinition(
     val construction: ConstructionProfile? = null,
     val deathExplosion: DeathExplosionProfile? = null,
     val mech: MechDefinition? = null,
+    val rotor: RotorDefinition? = null,
 ) {
     val retainedUnconsumed: Set<String> = Collections.unmodifiableSet(LinkedHashSet(retainedUnconsumed))
     val maximumHealth: Double? get() = durability?.maxHp ?: combat?.maxHp
@@ -42,9 +43,21 @@ data class MovementProfile(
     val slidingMode: Boolean,
     val ignoringBody: Boolean,
     val reverseSpeedPercentage: Double = 0.0,
+    val slidingDirection: Int = -1,
+    val flight: FlightProfile? = null,
 )
 
-enum class MovementType { LAND, NONE }
+enum class MovementType { LAND, NONE, AIR }
+
+data class FlightProfile(val targetHeight: Double, val heightDrift: Double,
+    val heightChangeRate: Double, val startingHeightOffset: Double) {
+    fun isValid(): Boolean = listOf(targetHeight, heightDrift, heightChangeRate, startingHeightOffset).all { it.isFinite() } &&
+        targetHeight >= 0.0 && heightDrift >= 0.0 && startingHeightOffset >= 0.0 &&
+        (targetHeight + heightDrift).isFinite() && (heightChangeRate == -1.0 || heightChangeRate >= 0.0)
+}
+
+/** The finite helicopter has one rotor at the body origin, drawn above its body. */
+data class RotorDefinition(val imagePath: Path, val spinRate: Double)
 
 /** Trusted original target class; a building or an unarmed life profile does not imply native membership. */
 enum class DirectHitTargetKind { ORDINARY, NATIVE_BUILDING }
@@ -63,7 +76,7 @@ class BuilderProfile(buildingTypeIds: List<String>) {
     val repairRate: Float = .2f
 }
 data class ConstructionProfile(val price: Long, val rate: Float)
-enum class FactoryExitProfile { NATIVE_LAND, CUSTOM_MECH }
+enum class FactoryExitProfile { NATIVE_LAND, CUSTOM_MECH, NATIVE_AIR }
 
 class ProductionProfile(unitTypeIds: List<String>, val exitProfile: FactoryExitProfile = FactoryExitProfile.NATIVE_LAND) {
     constructor(unitTypeId: String) : this(listOf(unitTypeId))

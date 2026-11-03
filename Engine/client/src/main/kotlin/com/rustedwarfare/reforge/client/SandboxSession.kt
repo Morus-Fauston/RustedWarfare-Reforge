@@ -334,7 +334,7 @@ class SandboxSession(scenario: Scenario, private val evidence: ClientEvidence = 
         val left = minOf(start.x, end.x); val right = maxOf(start.x, end.x)
         val top = minOf(start.y, end.y); val bottom = maxOf(start.y, end.y)
         val candidates = observation.units.filter { controllable(it) &&
-            it.position.x in left..right && it.position.y in top..bottom }
+            it.displayedBodyPosition().let { center -> center.x in left..right && center.y in top..bottom } }
         val mobile = candidates.filter { scenario.unitDefinitions.getValue(it.typeId).movement.type !=
             com.rustedwarfare.reforge.core.content.MovementType.NONE }
         val accepted = (mobile.ifEmpty { candidates }).sortedBy { it.unitId }.mapNotNull { unit ->
@@ -352,8 +352,9 @@ class SandboxSession(scenario: Scenario, private val evidence: ClientEvidence = 
     private fun unitAt(position: Position): String? = observation.units.asSequence()
         .filter { it.alive }
         .map { unit ->
-            val dx = unit.position.x - position.x
-            val dy = unit.position.y - position.y
+            val center = unit.displayedBodyPosition()
+            val dx = center.x - position.x
+            val dy = center.y - position.y
             unit to (dx * dx + dy * dy)
         }
         .filter { (unit, distance) ->

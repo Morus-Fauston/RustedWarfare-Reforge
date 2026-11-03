@@ -20,6 +20,7 @@ inputs/resource-sound-packs/** -text whitespace=blank-at-eol,blank-at-eof,space-
 inputs/named-weapons/** -text whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol
 inputs/weapon-relations/** -text whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol
 inputs/mech-production/** -text whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol
+inputs/helicopter-production/** -text whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol
 # Historical authored TMX samples include a double-CR line ending. That legal
 # XML whitespace is part of their frozen SHA; do not rewrite it during staging.
 inputs/resource-sound-packs/portrait-sandbox/maps/p001-controlled.tmx -whitespace

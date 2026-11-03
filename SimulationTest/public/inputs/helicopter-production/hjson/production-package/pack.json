@@ -1,0 +1,19 @@
+{
+  "format": "rw-reforge.content-pack.v1",
+  "id": "p008-helicopter-production-hjson",
+  "name": "Self-owned L1 air factory production chain",
+  "units": [
+    {
+      "type": "helicopter",
+      "file": "units/helicopter.hjson"
+    },
+    {
+      "type": "air-factory",
+      "file": "units/airFactory.hjson"
+    },
+    {
+      "type": "builder",
+      "file": "units/builder.hjson"
+    }
+  ]
+}

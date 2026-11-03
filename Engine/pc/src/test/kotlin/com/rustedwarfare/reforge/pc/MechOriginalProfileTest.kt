@@ -13,7 +13,7 @@ class MechOriginalProfileTest {
             assertEquals(hash, visualHash(bytes), "The previously qualified profile cannot be rewritten")
         }
         val legacy = PcOriginalResourceProfile.versionOne()
-        val current = PcOriginalResourceProfile.bundled()
+        val current = PcOriginalResourceProfile.versionTwo()
         assertEquals("rw.pc.steam.9902063.resources.v1", legacy.id)
         assertEquals("rw.pc.steam.9902063.images.v1", legacy.images.id)
         assertEquals(32, legacy.images.mappedImages!!.recipes.size)
@@ -23,8 +23,8 @@ class MechOriginalProfileTest {
         assertEquals(legacy.sounds, current.sounds)
         assertEquals(legacy.events, current.events)
     }
-    @Test fun current_qualified_mapping_contains_the_two_new_objects_and_the_exact_six_static_slots() {
-        val profile = VisualAssetProfile.bundled()
+    @Test fun frozen_v2_qualified_mapping_contains_the_two_mech_objects_and_the_exact_six_static_slots() {
+        val profile = VisualAssetProfile.versionTwo()
         val mech = assertNotNull(profile.json.get("unitBindings").get("mechGun"))
         assertEquals(setOf("body", "leg", "foot"), mech.map { it.name }.toSet())
         val factory = assertNotNull(profile.json.get("unitBindings").get("mechFactory"))
@@ -37,9 +37,9 @@ class MechOriginalProfileTest {
         assertEquals(listOf(74, 106), size(factory.getString("body")))
         assertEquals(listOf(74, 106), size(factory.getString("back")))
         assertEquals(listOf(72, 88), size(factory.getString("dead")))
-        val pc = PcOriginalImageProfile.bundled()
+        val pc = PcOriginalImageProfile.versionTwo()
         assertEquals("rw.pc.steam.9902063.images.v2", pc.id)
         assertEquals(profile.json.get("unitBindings").toString(), pc.mappedImages!!.json.get("unitBindings").toString())
-        assertEquals("rw.pc.steam.9902063.resources.v2", PcOriginalResourceProfile.bundled().id)
+        assertEquals("rw.pc.steam.9902063.resources.v2", PcOriginalResourceProfile.versionTwo().id)
     }
 }

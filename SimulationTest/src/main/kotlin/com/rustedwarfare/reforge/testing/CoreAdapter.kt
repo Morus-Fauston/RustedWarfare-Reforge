@@ -173,6 +173,7 @@ internal fun UnitObservation.json(capabilities: Boolean): JsonObject = JsonObjec
         "buildingNonce" to it.buildingNonce?.let(::s)) }),
 ).toMutableMap().apply {
     mechPose?.let { put("mechPose", it.json()) }
+    flightPose?.let { put("height", n(height)); put("flightPose", it.json()) }
     if (capabilities) putAll(mapOf("health" to (health?.let(::n) ?: JsonNull),
     "maxHealth" to (maxHealth?.let(::n) ?: JsonNull), "alive" to b(alive), "attackTargetId" to (attackTargetId?.let(::s) ?: JsonNull),
     "pointDefense" to (pointDefense?.let { obj("energy" to n(it.energy), "exhausted" to b(it.exhausted)) } ?: JsonNull))) })
@@ -181,3 +182,7 @@ internal fun MechPose.json(): JsonObject = obj(
     "forwardHeading" to n(forwardHeading), "angularVelocity" to n(angularVelocity), "reversing" to b(reversing),
     "legs" to array(legs.map { leg -> obj("index" to n(leg.index), "anchor" to leg.anchor.json(),
         "foot" to leg.foot.json(), "height" to n(leg.height), "heading" to n(leg.heading), "phase" to s(leg.phase.name)) }))
+
+internal fun FlightPose.json(): JsonObject = obj("velocity" to velocity.json(), "height" to n(height),
+    "heightPhase" to n(heightPhase), "rotorPhase" to n(rotorPhase), "rotorHeading" to n(rotorHeading),
+    "rotorHeightOffset" to n(rotorHeightOffset))

@@ -72,6 +72,9 @@ internal object ContentPackComposer {
             unit.production?.let { production -> production.unitTypeIds.forEach { target ->
                 val product = units[target]
                 if (product?.build == null) bad(target, "productionUnits", "Production target must exist with build metadata in the final set")
+                if (production.exitProfile == FactoryExitProfile.NATIVE_AIR &&
+                    (product.movement.type != MovementType.AIR || product.rotor == null || product.combat == null))
+                    bad(target, "productionUnits", "Air factory targets require an armed AIR unit with the finite rotor capability")
                 if (production.exitProfile == FactoryExitProfile.CUSTOM_MECH &&
                     (target == "builder" && product.builder == null || target == "mechGun" && product.mech == null))
                     bad(target, "productionUnits", "Mech factory targets require the corresponding builder or two-legged mech capability")

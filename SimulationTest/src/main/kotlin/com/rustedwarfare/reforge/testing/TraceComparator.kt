@@ -435,6 +435,7 @@ object TraceComparator {
         unit.required("moveTarget").let { if (it != JsonNull) point(it.jsonObject) }
         unit.arrayAt("pathPoints").forEach { point(it.jsonObject) }
         if (unit.id("typeId") in typesLoadedBy(scenario, setOf("mech"))) validateMechPose(unit.objectAt("mechPose"))
+        if (unit.id("typeId") in typesLoadedBy(scenario, setOf("helicopter"))) validateFlightPose(unit)
         if (hasConstruction(scenario)) {
             unit.number("constructionProgress")
             unit.required("constructionTargetId").let { if (it != JsonNull) unit.id("constructionTargetId") }
@@ -466,6 +467,18 @@ object TraceComparator {
                 defense.number("energy"); booleanField(defense, "exhausted")
             } }
         }
+    }
+
+    private fun validateFlightPose(unit: JsonObject) {
+        val pose = unit.objectAt("flightPose")
+        if (pose.keys != setOf("velocity", "height", "heightPhase", "rotorPhase", "rotorHeading", "rotorHeightOffset"))
+            throw Incomplete("flight-pose", "Incomplete or unapproved flight pose fields")
+        val velocity = pose.objectAt("velocity")
+        if (velocity.keys != setOf("x", "y")) throw Incomplete("flight-pose", "Invalid flight velocity fields")
+        point(velocity)
+        for (field in listOf("height", "heightPhase", "rotorPhase", "rotorHeading", "rotorHeightOffset")) pose.number(field)
+        if (unit.number("height") != pose.number("height"))
+            throw Incomplete("flight-pose", "Flight pose and physical unit height differ")
     }
 
     private fun validateMechPose(pose: JsonObject) {

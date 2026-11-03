@@ -6,7 +6,7 @@ import java.util.Collections
 
 data class VisualUnitImages(val body: Path, val back: Path? = null, val turret: Path? = null,
     val dead: Path? = null, val totalFrames: Int = 1, val logicalImages: UnitImageLogicalSizes? = null,
-    val leg: Path? = null, val foot: Path? = null)
+    val leg: Path? = null, val foot: Path? = null, val rotor: Path? = null)
 
 /** Immutable paths and generation identity, with no core or GL ownership. */
 class PreparedVisualAssets private constructor(val selection: VisualAssetSelection, val profileId: String, val identity: String,
@@ -20,7 +20,7 @@ class PreparedVisualAssets private constructor(val selection: VisualAssetSelecti
     val units: Map<String, VisualUnitImages> = Collections.unmodifiableMap(resourcePack.unitBindings.mapValues { (_, binding) ->
         VisualUnitImages(resourcePack.resolve(binding.body), binding.back?.let(resourcePack::resolve),
             binding.turret?.let(resourcePack::resolve), binding.dead?.let(resourcePack::resolve), binding.totalFrames, binding.logicalImages,
-            binding.leg?.let(resourcePack::resolve), binding.foot?.let(resourcePack::resolve))
+            binding.leg?.let(resourcePack::resolve), binding.foot?.let(resourcePack::resolve), binding.rotor?.let(resourcePack::resolve))
     })
     val terrain: Map<String, Path> = Collections.unmodifiableMap(resourcePack.terrainBindings.mapValues { (_, id) -> resourcePack.resolve(id) })
     fun verify() = validate()
@@ -44,9 +44,10 @@ class PreparedVisualAssets private constructor(val selection: VisualAssetSelecti
             val dead = binding.dead?.let(::image)
             val leg = binding.leg?.let(::image)
             val foot = binding.foot?.let(::image)
+            val rotor = binding.rotor?.let(::image)
             VisualUnitImages(body.path, back?.path, turret?.path, dead?.path, body.declaration.totalFrames,
-                UnitImageLogicalSizes(size(body), back?.let(::size), turret?.let(::size), dead?.let(::size), leg?.let(::size), foot?.let(::size)),
-                leg?.path, foot?.path)
+                UnitImageLogicalSizes(size(body), back?.let(::size), turret?.let(::size), dead?.let(::size), leg?.let(::size), foot?.let(::size), rotor?.let(::size)),
+                leg?.path, foot?.path, rotor?.path)
         }
         val tiles = resourcePack.terrainBindings.mapValues { (_, id) -> image(id).path }
         return PreparedVisualAssets(selection, profileId, identity, mapped, tiles,

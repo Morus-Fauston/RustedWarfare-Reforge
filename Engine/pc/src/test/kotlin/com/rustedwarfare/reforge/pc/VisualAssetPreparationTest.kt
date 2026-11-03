@@ -109,17 +109,19 @@ class VisualAssetPreparationTest {
         }
     }
     @Test fun production_profile_is_fixed_complete_metadata_without_machine_paths() {
-        val profile = VisualAssetProfile.bundled()
-        assertEquals("rw.android.1.15.176.visual.v2", profile.id)
-        assertEquals(36, profile.json.get("sources").size)
-        assertEquals(33, profile.json.get("unitOutputs").size)
-        assertEquals(5, profile.json.get("terrainOutputs").size)
-        assertEquals(18, profile.json.get("unitBindings").size)
-        assertEquals(38, profile.recipes.size)
-        assertEquals("815e383faa17ba46dc42ee596b299d14b95da696e604cc21fd97a11bad630251",
-            profile.json.get("identity").getString("manifestSha256"))
-        assertEquals(null, profile.json.get("sourceRootObserved"))
-        assertEquals(null, profile.json.get("baseline"))
+        for ((profile, version) in listOf(VisualAssetProfile.versionTwo() to 2, VisualAssetProfile.bundled() to 3)) {
+            val addedImages = if (version == 3) 5 else 0
+            assertEquals("rw.android.1.15.176.visual.v$version", profile.id)
+            assertEquals(36 + addedImages, profile.json.get("sources").size)
+            assertEquals(33 + addedImages, profile.json.get("unitOutputs").size)
+            assertEquals(5, profile.json.get("terrainOutputs").size)
+            assertEquals(if (version == 3) 20 else 18, profile.json.get("unitBindings").size)
+            assertEquals(38 + addedImages, profile.recipes.size)
+            assertEquals("815e383faa17ba46dc42ee596b299d14b95da696e604cc21fd97a11bad630251",
+                profile.json.get("identity").getString("manifestSha256"))
+            assertEquals(null, profile.json.get("sourceRootObserved"))
+            assertEquals(null, profile.json.get("baseline"))
+        }
     }
     @Test fun reports_all_missing_members_and_never_uses_a_cache_with_invalid_source() {
         VisualAssetTestFixture().use { fixture ->

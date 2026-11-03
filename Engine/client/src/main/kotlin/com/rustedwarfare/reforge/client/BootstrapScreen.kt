@@ -76,7 +76,7 @@ class BootstrapScreen(
     private lateinit var reclaimInput: ReclaimButtonInput
     private var reclaimHover = false
     private var nativeSelection: Set<String> = emptySet()
-    private val nativePanel: Boolean get() = session?.observation?.scenarioId in setOf("p006-construction", "p008-mech-production")
+    private val nativePanel: Boolean get() = session?.observation?.scenarioId in setOf("p006-construction", "p008-mech-production", "p008-helicopter-production")
     private val upgradeButtons = mutableMapOf<String, Pair<TextButton, TextButton>>()
     private val upgradeInputs = mutableListOf<UpgradeButtonInput>()
     private var upgradeHover: String? = null
@@ -181,7 +181,7 @@ class BootstrapScreen(
             table.addListener(secondProductionInput)
             stage.addActor(table)
         }
-        for (type in listOf("extractorT1", "landFactory", "mechFactory", "fabricatorT1", "c_turret_t1", "laserDefence")) {
+        for (type in listOf("extractorT1", "landFactory", "mechFactory", "airFactory", "fabricatorT1", "c_turret_t1", "laserDefence")) {
             val icon = Image().apply { touchable = Touchable.disabled }
             val text = Label("", skin).apply { setAlignment(Align.center); touchable = Touchable.disabled; setFontScale(.7f) }
             val table = Table(skin)

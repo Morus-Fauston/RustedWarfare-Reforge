@@ -1,7 +1,20 @@
 package com.rustedwarfare.reforge.core.sim
 
+import com.rustedwarfare.reforge.core.content.MovementType
+
 /** Queries current candidate objects in gameplay order; no position or membership survives a call. */
 internal object CombatTargetQuery {
+    fun isFlying(target: MutableUnit): Boolean =
+        target.definition.movement.type == MovementType.AIR && target.height >= 4.0
+
+    /** Existing LAND/NONE intent stays unchanged; AIR uses its current physical-height category. */
+    fun canAttackAirCategory(actor: MutableUnit, target: MutableUnit): Boolean {
+        if (target.definition.movement.type != MovementType.AIR) return true
+        val flying = isFlying(target)
+        val catalog = actor.definition.combat?.namedWeapons ?: return !flying
+        return catalog.ordered.any { it.canShoot && if (flying) it.canAttackFlyingUnits else it.canAttackLandUnits }
+    }
+
     fun isEnemy(actor: MutableUnit, target: MutableUnit, players: List<Player>): Boolean =
         isEnemy(actor.ownerPlayerId, players.single { it.playerId == actor.ownerPlayerId }.teamId, target, players)
 
@@ -18,7 +31,7 @@ internal object CombatTargetQuery {
         var chosenDistance = 0.0
         var chosenArmed = false
         for (candidate in candidates) {
-            if (!isEnemy(actor.ownerPlayerId, team, candidate, players)) continue
+            if (!isEnemy(actor.ownerPlayerId, team, candidate, players) || !canAttackAirCategory(actor, candidate)) continue
             val distance = coordinates.distanceSquared(actor.position, candidate.position)
             if (!(distance < rangeSquared)) continue
             val armed = candidate.definition.combat != null
@@ -42,7 +55,7 @@ internal object CombatTargetQuery {
         var any: MutableUnit? = null
         var armed: MutableUnit? = null
         for (candidate in candidates) {
-            if (!isEnemy(actor.ownerPlayerId, team, candidate, players) ||
+            if (!isEnemy(actor.ownerPlayerId, team, candidate, players) || !canAttackAirCategory(actor, candidate) ||
                 !visible(actor.ownerPlayerId, candidate.position) ||
                 !(kotlin.math.abs(actor.position.x.toFloat() - candidate.position.x.toFloat()) <= range) ||
                 !(kotlin.math.abs(actor.position.y.toFloat() - candidate.position.y.toFloat()) <= range)) continue

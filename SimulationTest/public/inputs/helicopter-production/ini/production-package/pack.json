@@ -1,0 +1,19 @@
+{
+  "format": "rw-reforge.content-pack.v1",
+  "id": "p008-helicopter-production-ini",
+  "name": "Self-owned L1 air factory production chain",
+  "units": [
+    {
+      "type": "helicopter",
+      "file": "units/helicopter.ini"
+    },
+    {
+      "type": "air-factory",
+      "file": "units/airFactory.ini"
+    },
+    {
+      "type": "builder",
+      "file": "units/builder.ini"
+    }
+  ]
+}

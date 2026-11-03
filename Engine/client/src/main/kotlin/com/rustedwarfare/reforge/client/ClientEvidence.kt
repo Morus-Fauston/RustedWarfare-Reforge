@@ -106,6 +106,9 @@ internal fun ClientEvidence.recordFailure(kind: String, primary: Throwable) {
 }
 
 internal fun Position.fields(): Map<String, Any?> = mapOf("x" to x, "y" to y)
+internal fun FlightPose.fields(): Map<String, Any?> = mapOf(
+    "velocity" to velocity.fields(), "height" to height, "heightPhase" to heightPhase,
+    "rotorPhase" to rotorPhase, "rotorHeading" to rotorHeading, "rotorHeightOffset" to rotorHeightOffset)
 internal fun MechPose.fields(): Map<String, Any?> = mapOf(
     "forwardHeading" to forwardHeading, "angularVelocity" to angularVelocity, "reversing" to reversing,
     "legs" to legs.map { leg -> mapOf("index" to leg.index, "anchor" to leg.anchor.fields(),
@@ -138,6 +141,7 @@ internal fun UnitObservation.fields(): Map<String, Any?> {
                 (task.buildingTypeId?.let { mapOf("buildingTypeId" to it) } ?: emptyMap()) },
     )
     unit.mechPose?.let { values["mechPose"] = it.fields() }
+    unit.flightPose?.let { values["flightPose"] = it.fields() }
     return values
 }
 

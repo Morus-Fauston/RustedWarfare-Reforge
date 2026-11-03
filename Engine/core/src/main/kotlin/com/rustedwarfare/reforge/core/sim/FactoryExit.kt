@@ -9,6 +9,21 @@ internal data class FactoryBirth(val position: Position, val heading: Double, va
 
 /** Finite supported factory exits; no unit collision search or new spawn-file interpreter. */
 internal object FactoryExit {
+    fun supportsAirFactory(definition: UnitDefinition): Boolean {
+        val building = definition.building ?: return false
+        return definition.id == "airFactory" && definition.production?.exitProfile == FactoryExitProfile.NATIVE_AIR &&
+            definition.production.unitTypeIds == listOf("helicopter") &&
+            definition.build == BuildProfile(1000L, .001f) && definition.construction == ConstructionProfile(1000L, .001f) &&
+            definition.radius == 30.0 && definition.maximumHealth == 1000.0 &&
+            definition.movement.type == MovementType.NONE && definition.fogOfWarSightRange == 15 &&
+            definition.combat == null && definition.mech == null && definition.builder == null && definition.income == null &&
+            definition.pointDefense == null && definition.upgrades == null && definition.deathExplosion == null && definition.rotor == null &&
+            definition.directHitTargetKind == DirectHitTargetKind.NATIVE_BUILDING && definition.durability?.maxDamagePerHit == null &&
+            building.footprint == BuildingFootprint(-1, -1, 1, 1) &&
+            building.placementFootprint == BuildingFootprint(-1, -1, 1, 2) && building.backImagePath == null &&
+            building.anchor == null && !building.requiresResourcePool
+    }
+
     fun supportsMechFactory(definition: UnitDefinition): Boolean {
         val building = definition.building ?: return false
         return definition.id == "mechFactory" && definition.production?.exitProfile == FactoryExitProfile.CUSTOM_MECH &&

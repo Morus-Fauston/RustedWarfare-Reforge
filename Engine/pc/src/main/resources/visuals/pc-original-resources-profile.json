@@ -1,8 +1,8 @@
 {
   "schemaVersion": 1,
-  "profileId": "rw.pc.steam.9902063.resources.v2",
-  "imageProfileId": "rw.pc.steam.9902063.images.v2",
-  "imageQualificationSha256": "7f51746072fb90bc470f9ccda95a839a419d95d9cc478a4a896ca9dac987f9f3",
+  "profileId": "rw.pc.steam.9902063.resources.v3",
+  "imageProfileId": "rw.pc.steam.9902063.images.v3",
+  "imageQualificationSha256": "881f31dc239cbbc98ba1c54d6ff6d91406de611907a6ef74c307076349ba632f",
   "identity": {
     "bytes": 2639503,
     "sha256": "8a550a37e2d8a5430866090d4e7d5892f9010b47f52a5a09350fc66c620deec9"

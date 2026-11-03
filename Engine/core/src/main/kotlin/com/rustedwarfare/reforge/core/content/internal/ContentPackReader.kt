@@ -106,8 +106,8 @@ internal object ContentPackReader {
             val field = "units[$index]"
             val spec = objectFields(entry, setOf("type", "file"), manifest, field)
             val capability = string(spec.get("type"), "$field.type")
-            if (capability !in setOf("tank", "mech", "mech-factory", "builder"))
-                reject(ContentErrorCode.UNSUPPORTED_FEATURE, manifest, field = "$field.type", reason = "Expected an implemented tank, two-legged mech, mech factory or builder capability")
+            if (capability !in setOf("tank", "mech", "mech-factory", "builder", "helicopter", "air-factory"))
+                reject(ContentErrorCode.UNSUPPORTED_FEATURE, manifest, field = "$field.type", reason = "Expected an implemented tank, two-legged mech, mech factory, builder, helicopter or air factory capability")
             val reference = string(spec.get("file"), "$field.file")
             val pieces = reference.split('/')
             if (reference.any { it == '\\' || it == ':' } || pieces.any { it.isEmpty() || it == "." || it == ".." })
@@ -122,6 +122,11 @@ internal object ContentPackReader {
             if (!files.add(input)) reject(ContentErrorCode.IDENTITY_CONFLICT, manifest, field = "$field.file", ref = reference,
                 reason = "Duplicate package entry")
             val loaded = when (capability) {
+                "helicopter" -> CombatContentReader.readHelicopterWithSources(input) { requireOrdinary(root, it) }
+                "air-factory" -> FactoryContentReader.readWithSources(input) { requireOrdinary(root, it) }.also {
+                    if (it.definition.production?.exitProfile != FactoryExitProfile.NATIVE_AIR)
+                        reject(ContentErrorCode.UNSUPPORTED_FEATURE, input, field = "format", reason = "Expected the finite native air factory profile")
+                }
                 "mech" -> CombatContentReader.readMechWithSources(input) { requireOrdinary(root, it) }
                 "mech-factory" -> FactoryContentReader.readWithSources(input) { requireOrdinary(root, it) }.also {
                     if (it.definition.production?.exitProfile != FactoryExitProfile.CUSTOM_MECH)
@@ -142,7 +147,8 @@ internal object ContentPackReader {
             val combat = definition.combat
             val images = listOf("image" to definition.imagePath, "image_turret" to combat?.turretImagePath,
                 "image_wreak" to (definition.durability?.deadImagePath ?: combat?.deadImagePath),
-                "image_back" to definition.building?.backImagePath) + definition.mech?.legs.orEmpty().flatMap {
+                "image_back" to definition.building?.backImagePath,
+                "image_end" to definition.rotor?.imagePath) + definition.mech?.legs.orEmpty().flatMap {
                     listOf("image_leg" to it.legImage, "image_foot" to it.footImage) }
             for ((slot, image) in images) {
                 if (image == null) continue

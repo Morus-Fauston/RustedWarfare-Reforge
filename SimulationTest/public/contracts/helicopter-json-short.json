@@ -1,0 +1,86 @@
+{
+  "schemaVersion": 1,
+  "kind": "behavior-contract",
+  "contractId": "public.helicopter-json-short.v1.contract",
+  "scope": "self-behavior",
+  "scenarioIds": [
+    "public.helicopter-json-short.v1"
+  ],
+  "comparison": {
+    "numberMode": "declared-per-field",
+    "tolerances": {}
+  },
+  "approval": {
+    "status": "tool-fixture-only",
+    "source": "ENG-P008-015 owned finite helicopter: HP150, single rotor30, height phase2 per q; no original compatibility claim."
+  },
+  "exclusions": [
+    "original-compatibility",
+    "platform-input",
+    "performance"
+  ],
+  "rules": [
+    {
+      "ruleId": "initial-flight-pose",
+      "when": {
+        "phase": "initial",
+        "stepIndex": 0
+      },
+      "assertions": [
+        {
+          "path": "units.a.health",
+          "operator": "equals",
+          "value": 150
+        },
+        {
+          "path": "units.a.flightPose.heightPhase",
+          "operator": "equals",
+          "value": 0
+        },
+        {
+          "path": "units.a.flightPose.rotorPhase",
+          "operator": "equals",
+          "value": 0
+        }
+      ]
+    },
+    {
+      "ruleId": "first-rotor-and-height-phase",
+      "when": {
+        "phase": "after-advance",
+        "stepIndex": 0
+      },
+      "assertions": [
+        {
+          "path": "units.a.flightPose.rotorPhase",
+          "operator": "equals",
+          "value": 30
+        },
+        {
+          "path": "units.a.flightPose.heightPhase",
+          "operator": "equals",
+          "value": 2
+        }
+      ]
+    },
+    {
+      "ruleId": "stop-clears-order",
+      "when": {
+        "phase": "after-advance",
+        "stepIndex": 10
+      },
+      "assertions": [
+        {
+          "path": "units.a.moveTarget",
+          "operator": "equals",
+          "value": null
+        },
+        {
+          "path": "units.a.health",
+          "operator": "equals",
+          "value": 150
+        }
+      ]
+    }
+  ]
+}

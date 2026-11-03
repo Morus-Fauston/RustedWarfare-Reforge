@@ -28,6 +28,7 @@ class SandboxGraphics private constructor(private val resources: SandboxRenderRe
     private val backs = mutableMapOf<String, TextureRegion>()
     private val legs = mutableMapOf<String, TextureRegion>()
     private val feet = mutableMapOf<String, TextureRegion>()
+    private val rotors = mutableMapOf<String, TextureRegion>()
     fun unitIcon(typeId: String): TextureRegion? = units[typeId]
 
     companion object {
@@ -121,6 +122,7 @@ class SandboxGraphics private constructor(private val resources: SandboxRenderRe
             definition.backImagePath?.let { backs[id] = TextureRegion(texture(it)) }
             definition.legImagePath?.let { legs[id] = TextureRegion(texture(it)) }
             definition.footImagePath?.let { feet[id] = TextureRegion(texture(it)) }
+            definition.rotorImagePath?.let { rotors[id] = TextureRegion(texture(it)) }
         }
     }
 
@@ -138,11 +140,14 @@ class SandboxGraphics private constructor(private val resources: SandboxRenderRe
         batch.color = Color.WHITE
         val visibleWeapons = frame.observation.weapons.groupBy { it.unitId }
         val mechFrames = MechPresentation.project(frame.observation, projection).associateBy { it.unitId }
+        val flightFrames = FlightPresentation.project(frame.observation, projection).associateBy { it.unitId }
         for (unit in frame.observation.units) {
             val definition = resources.units.getValue(unit.typeId)
             if (!definition.isDrawn(unit)) continue
             batch.setColor(1f, 1f, 1f, if (unit.alive && unit.constructionProgress < 1f) .45f else 1f)
             val mech = mechFrames[unit.unitId]
+            val flight = flightFrames[unit.unitId]
+            if (unit.alive && unit.flightPose != null && flight == null) continue
             mech?.legs?.forEach { leg ->
                 val shaft = legs.getValue(unit.typeId)
                 val foot = feet.getValue(unit.typeId)
@@ -168,9 +173,17 @@ class SandboxGraphics private constructor(private val resources: SandboxRenderRe
             val size = definition.drawSize(if (corpse != null) UnitImageSlot.DEAD else UnitImageSlot.BODY, region.regionWidth, region.regionHeight)
             val w = (size.width * projection.scale).toFloat()
             val h = (size.height * projection.scale).toFloat()
-            batch.draw(region, (mech?.bodyX ?: projection.x(unit.position.x)) - w / 2,
-                (mech?.bodyY ?: projection.y(unit.position.y)) - h / 2,
-                w / 2, h / 2, w, h, 1f, 1f, mech?.rotation ?: -unit.heading.toFloat())
+            batch.draw(region, (flight?.bodyX ?: mech?.bodyX ?: projection.x(unit.position.x)) - w / 2,
+                (flight?.bodyY ?: mech?.bodyY ?: projection.y(unit.position.y)) - h / 2,
+                w / 2, h / 2, w, h, 1f, 1f, flight?.bodyRotation ?: mech?.rotation ?: -unit.heading.toFloat())
+            flight?.let { pose ->
+                val rotor = rotors.getValue(unit.typeId)
+                val rotorSize = definition.drawSize(UnitImageSlot.ROTOR, rotor.regionWidth, rotor.regionHeight)
+                val rw = (rotorSize.width * projection.scale).toFloat()
+                val rh = (rotorSize.height * projection.scale).toFloat()
+                batch.draw(rotor, pose.rotorX - rw / 2, pose.rotorY - rh / 2, rw / 2, rh / 2,
+                    rw, rh, 1f, 1f, pose.rotorRotation)
+            }
             for (drawing in definition.turretDrawings(unit, visibleWeapons[unit.unitId].orEmpty())) {
                 val turret = drawing.weaponName?.let { namedTurrets.getValue(unit.typeId to it) } ?: turrets.getValue(unit.typeId)
                 val pivot = drawing.pivot
@@ -210,8 +223,10 @@ class SandboxGraphics private constructor(private val resources: SandboxRenderRe
             if (!resources.units.getValue(unit.typeId).isDrawn(unit)) continue
             shapes.color = if (unit.alive) resources.unitCircleColor(frame.observation.playerId, unit.ownerPlayerId) else Color.DARK_GRAY
             val radius = (resources.units.getValue(unit.typeId).displayRadius * projection.scale).toFloat()
-            val x = projection.x(unit.position.x)
-            val y = projection.y(unit.position.y)
+            val center = unit.displayedBodyPosition()
+            val x = projection.x(center.x)
+            val y = projection.y(center.y)
+            if (!x.isFinite() || !y.isFinite()) continue
             unit.constructionTargetId?.let { targetId ->
                 frame.observation.units.firstOrNull { it.unitId == targetId && it.alive }?.let { target ->
                     shapes.color = if (unit.tasks.firstOrNull()?.kind ==

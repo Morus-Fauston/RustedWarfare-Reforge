@@ -149,7 +149,12 @@ data class UnitObservation(
     val constructionProgress: Float = 1f,
     val constructionTargetId: String? = null,
     val mechPose: MechPose? = null,
+    val flightPose: FlightPose? = null,
 )
+
+/** Current visible physical flight state, without host identities or future commands. */
+data class FlightPose(val velocity: Position, val height: Double, val heightPhase: Double,
+    val rotorPhase: Double, val rotorHeading: Double, val rotorHeightOffset: Double)
 
 /** Host-only identity/target and arithmetic state. Never copied into player DTOs. */
 data class ProjectileObservation(val objectId: Long, val sourceUnitId: String, val targetUnitId: String?,
@@ -352,7 +357,11 @@ internal data class MutableUnit(
     var movementRequested: Boolean = false,
     var lastAttackPathAttemptStep: Long? = null,
     var combat: MutableCombat? = definition.combat?.let { MutableCombat(heading) },
-    val height: Double = 0.0,
+    var height: Double = definition.movement.flight?.startingHeightOffset ?: 0.0,
+    var heightPhase: Double = 0.0,
+    var flightVelocity: Position = Position(0.0, 0.0),
+    var rotorPhase: Double = 0.0,
+    var rotorHeightOffset: Double = if (definition.movement.flight == null) 0.0 else .1,
     /** Host identity and deterministic traversal order, never player DTO fields. */
     val objectId: Long? = null,
     val updateKey: String = unitId,

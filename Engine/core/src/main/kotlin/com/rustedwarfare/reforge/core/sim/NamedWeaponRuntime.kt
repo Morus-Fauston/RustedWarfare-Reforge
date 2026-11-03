@@ -23,6 +23,7 @@ internal object NamedWeaponRuntime {
         if (!CombatTargetQuery.isEnemy(unit, target, players)) return false
         val categoryAllowed = when (target.definition.movement.type) {
             MovementType.LAND, MovementType.NONE -> weapon.canAttackLandUnits
+            MovementType.AIR -> if (CombatTargetQuery.isFlying(target)) weapon.canAttackFlyingUnits else weapon.canAttackLandUnits
         }
         if (!categoryAllowed) return false
         weapon.limitingAngle?.takeIf { it != -1.0 }?.let { limit ->

@@ -16,20 +16,29 @@ internal class PcOriginalImageProfile(val id: String, val jarBytes: Int, val jar
 
     companion object {
         /** Fixed qualification and unchanged reviewed recipes, not an arbitrary profile input. */
-        fun bundled(): PcOriginalImageProfile = readBundled(false)
-        fun versionOne(): PcOriginalImageProfile = readBundled(true)
+        fun bundled(): PcOriginalImageProfile = readBundled(3)
+        fun versionOne(): PcOriginalImageProfile = readBundled(1)
+        fun versionTwo(): PcOriginalImageProfile = readBundled(2)
         fun forPackage(pack: PreparedImagePack): PcOriginalImageProfile =
-            if (originalCertificateProfile(pack, "extraction.json") == "rw.pc.steam.9902063.images.v1") versionOne() else bundled()
+            when (originalCertificateProfile(pack, "extraction.json")) {
+                "rw.pc.steam.9902063.images.v1" -> versionOne()
+                "rw.pc.steam.9902063.images.v2" -> versionTwo()
+                else -> bundled()
+            }
 
-        private fun readBundled(versionOne: Boolean): PcOriginalImageProfile {
-            val path = "/visuals/pc-original-images-profile${if (versionOne) "-v1" else ""}.json"
+        private fun readBundled(version: Int): PcOriginalImageProfile {
+            val path = "/visuals/pc-original-images-profile${if (version == 3) "" else "-v$version"}.json"
             val bytes = requireNotNull(PcOriginalImageProfile::class.java.getResourceAsStream(path)) { "Missing bundled PC image qualification" }.use { it.readBytes() }
             val root = JsonReader().parse(bytes.toString(Charsets.UTF_8))
             require(root.getInt("schemaVersion") == 1)
             val identity = root.get("identity")
             val images = root.get("images").map { row -> PcOriginalImageSource(row.getString("path"), row.getInt("bytes"),
                 row.getString("sha256"), row.getString("format"), row.get("width")?.asInt(), row.get("height")?.asInt()) }
-            val old = if (versionOne) VisualAssetProfile.versionOne() else VisualAssetProfile.bundled()
+            val old = when (version) {
+                1 -> VisualAssetProfile.versionOne()
+                2 -> VisualAssetProfile.versionTwo()
+                else -> VisualAssetProfile.bundled()
+            }
             require(old.key == root.get("mappingBasis").getString("androidProfileSha256")) { "Reviewed mapping profile changed; PC qualification must be updated" }
             val mapped = JsonReader().parse(old.json.toJson(OutputType.json))
             mapped.remove("profileId"); mapped.addChild("profileId", JsonValue(root.getString("profileId") + ".mapped"))

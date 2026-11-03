@@ -23,7 +23,7 @@ data class UnitAppearance(val displayRadius: Double, val imagePath: Path, val im
     val defenseMuzzleOffset: Position? = null, val recoil: WeaponRecoil? = null, val shootDelay: Double = 0.0,
     val economicBuilding: Boolean = false, val logicalImages: UnitImageLogicalSizes? = null,
     val weaponImages: Map<String, WeaponAppearance> = emptyMap(),
-    val legImagePath: Path? = null, val footImagePath: Path? = null) {
+    val legImagePath: Path? = null, val footImagePath: Path? = null, val rotorImagePath: Path? = null) {
     internal fun turretDrawings(unit: UnitObservation, weapons: List<VisibleUnitWeapon>): List<TurretDrawing> {
         if (!unit.alive) return emptyList()
         if (weapons.isNotEmpty()) {
@@ -83,6 +83,7 @@ class SandboxRenderResources private constructor(
                 turretImagePath = turret,
                 legImagePath = slot(before.legImagePath, image.leg, "leg"),
                 footImagePath = slot(before.footImagePath, image.foot, "foot"),
+                rotorImagePath = slot(before.rotorImagePath, image.rotor, "rotor"),
                 deadImagePath = slot(before.deadImagePath, image.dead, "dead"), logicalImages = image.logicalImages,
                 weaponImages = Collections.unmodifiableMap(before.weaponImages.mapValues { (_, weapon) ->
                     if (weapon.imagePath != null && weapon.imagePath == before.turretImagePath) weapon.copy(imagePath = turret)
@@ -135,7 +136,8 @@ class SandboxRenderResources private constructor(
                     weaponImages = Collections.unmodifiableMap(unit.combat?.namedWeapons?.ordered.orEmpty()
                         .associate { it.name to WeaponAppearance(it.imagePath, it.imageScale) }),
                     legImagePath = unit.mech?.legs?.first()?.legImage,
-                    footImagePath = unit.mech?.legs?.first()?.footImage)
+                    footImagePath = unit.mech?.legs?.first()?.footImage,
+                    rotorImagePath = unit.rotor?.imagePath)
             }), Collections.unmodifiableMap(scenario.players.associate { it.playerId to it.teamId }))
     }
 }

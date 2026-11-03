@@ -6,7 +6,7 @@ import java.util.Locale
 
 data class VisualUnitResourceIds(val body: ResourceId, val back: ResourceId?, val turret: ResourceId?,
     val dead: ResourceId?, val totalFrames: Int, val logicalImages: UnitImageLogicalSizes? = null,
-    val leg: ResourceId? = null, val foot: ResourceId? = null)
+    val leg: ResourceId? = null, val foot: ResourceId? = null, val rotor: ResourceId? = null)
 
 /** Immutable logical bindings for an already prepared generation; lookup never performs IO. */
 class PreparedResourcePack private constructor(val metadata: ResourcePackMetadata, resources: Map<ResourceId, Path>,
@@ -35,7 +35,8 @@ class PreparedResourcePack private constructor(val metadata: ResourcePackMetadat
                 require(images.totalFrames > 0) { "RESOURCE_PACK_BINDING_INVALID: ${metadata.id} / $unitId: Invalid frame count" }
                 VisualUnitResourceIds(bind(prefix + "body", images.body), images.back?.let { bind(prefix + "back", it) },
                     images.turret?.let { bind(prefix + "turret", it) }, images.dead?.let { bind(prefix + "dead", it) }, images.totalFrames, images.logicalImages,
-                    images.leg?.let { bind(prefix + "leg", it) }, images.foot?.let { bind(prefix + "foot", it) })
+                    images.leg?.let { bind(prefix + "leg", it) }, images.foot?.let { bind(prefix + "foot", it) },
+                    images.rotor?.let { bind(prefix + "rotor", it) })
             }
             val terrainBindings = terrain.mapValues { (layout, image) -> bind("reforge:terrain/$layout", image) }
             return PreparedResourcePack(metadata, resources, unitBindings, terrainBindings)

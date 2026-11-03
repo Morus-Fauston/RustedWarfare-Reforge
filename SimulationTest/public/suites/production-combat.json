@@ -71,7 +71,14 @@
       "com.rustedwarfare.reforge.core.sim.MechMovementTest",
       "com.rustedwarfare.reforge.core.sim.MechPoseTest",
       "com.rustedwarfare.reforge.core.sim.MechReverseMovementTest",
-      "com.rustedwarfare.reforge.core.sim.MechThreeFormatBehaviorTest"
+      "com.rustedwarfare.reforge.core.sim.MechThreeFormatBehaviorTest",
+      "com.rustedwarfare.reforge.core.content.HelicopterContentPackTest",
+      "com.rustedwarfare.reforge.core.content.HelicopterContentFailureTest",
+      "com.rustedwarfare.reforge.core.sim.HelicopterSimulationTest",
+      "com.rustedwarfare.reforge.core.sim.HelicopterBehaviorTest",
+      "com.rustedwarfare.reforge.core.sim.HelicopterCombatTest",
+      "com.rustedwarfare.reforge.core.sim.HelicopterFactoryProductionTest",
+      "com.rustedwarfare.reforge.core.sim.HelicopterFactoryFailureTest"
     ],
     "client": [
       "com.rustedwarfare.reforge.client.CombatActorEvidenceTest",
@@ -85,13 +92,17 @@
       "com.rustedwarfare.reforge.client.MechAppearanceTest",
       "com.rustedwarfare.reforge.client.MechProductionSandboxTest",
       "com.rustedwarfare.reforge.client.MechProjectionTest",
-      "com.rustedwarfare.reforge.client.MechResourceBindingTest"
+      "com.rustedwarfare.reforge.client.MechResourceBindingTest",
+      "com.rustedwarfare.reforge.client.HelicopterSandboxTest",
+      "com.rustedwarfare.reforge.client.HelicopterResourceBindingTest",
+      "com.rustedwarfare.reforge.client.HelicopterProjectionTest"
     ],
     "pc": [
       "com.rustedwarfare.reforge.pc.PatrolJsonlPairingTest",
       "com.rustedwarfare.reforge.pc.MechOriginalProfileTest",
       "com.rustedwarfare.reforge.pc.MechSessionEvidenceTest",
-      "com.rustedwarfare.reforge.pc.VisualAssetPreparationTest"
+      "com.rustedwarfare.reforge.pc.VisualAssetPreparationTest",
+      "com.rustedwarfare.reforge.pc.HelicopterOriginalProfileTest"
     ],
     "tools": [
       "com.rustedwarfare.reforge.testing.ProductionCombatScenarioTest",
@@ -101,7 +112,10 @@
       "com.rustedwarfare.reforge.testing.LinkedWeaponSessionTest",
       "com.rustedwarfare.reforge.testing.MechCoreAdapterTest",
       "com.rustedwarfare.reforge.testing.MechPublicScenarioTest",
-      "com.rustedwarfare.reforge.testing.MechSessionRunnerTest"
+      "com.rustedwarfare.reforge.testing.MechSessionRunnerTest",
+      "com.rustedwarfare.reforge.testing.HelicopterCoreAdapterTest",
+      "com.rustedwarfare.reforge.testing.HelicopterPublicScenarioTest",
+      "com.rustedwarfare.reforge.testing.HelicopterSessionRunnerTest"
     ]
   },
   "short": [
@@ -260,6 +274,39 @@
       "backend": "session",
       "scenario": "platform/scenarios/mech-hjson-session-short.json",
       "contract": "platform/contracts/mech-hjson-session-short.json"
+    },
+    {
+      "id": "helicopter-ini-short",
+      "scenario": "scenarios/helicopter-ini-short.json",
+      "contract": "contracts/helicopter-ini-short.json"
+    },
+    {
+      "id": "helicopter-ini-session-short",
+      "backend": "session",
+      "scenario": "platform/scenarios/helicopter-ini-session-short.json",
+      "contract": "platform/contracts/helicopter-ini-session-short.json"
+    },
+    {
+      "id": "helicopter-json-short",
+      "scenario": "scenarios/helicopter-json-short.json",
+      "contract": "contracts/helicopter-json-short.json"
+    },
+    {
+      "id": "helicopter-json-session-short",
+      "backend": "session",
+      "scenario": "platform/scenarios/helicopter-json-session-short.json",
+      "contract": "platform/contracts/helicopter-json-session-short.json"
+    },
+    {
+      "id": "helicopter-hjson-short",
+      "scenario": "scenarios/helicopter-hjson-short.json",
+      "contract": "contracts/helicopter-hjson-short.json"
+    },
+    {
+      "id": "helicopter-hjson-session-short",
+      "backend": "session",
+      "scenario": "platform/scenarios/helicopter-hjson-session-short.json",
+      "contract": "platform/contracts/helicopter-hjson-session-short.json"
     }
   ],
   "long": [
@@ -282,6 +329,21 @@
       "id": "mech-production-hjson-chain",
       "scenario": "scenarios/mech-production-hjson-chain.json",
       "contract": "contracts/mech-production-hjson-chain.json"
+    },
+    {
+      "id": "helicopter-production-ini-chain",
+      "scenario": "scenarios/helicopter-production-ini-chain.json",
+      "contract": "contracts/helicopter-production-ini-chain.json"
+    },
+    {
+      "id": "helicopter-production-json-chain",
+      "scenario": "scenarios/helicopter-production-json-chain.json",
+      "contract": "contracts/helicopter-production-json-chain.json"
+    },
+    {
+      "id": "helicopter-production-hjson-chain",
+      "scenario": "scenarios/helicopter-production-hjson-chain.json",
+      "contract": "contracts/helicopter-production-hjson-chain.json"
     }
   ]
 }

@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "profileId": "rw.pc.steam.9902063.images.v2",
+  "profileId": "rw.pc.steam.9902063.images.v3",
   "identity": {
     "jarPath": "game-lib.jar",
     "jarBytes": 2639503,
@@ -6193,10 +6193,15 @@
     "mech-foot": "assets/units/mechs_small/foot.png",
     "mech-factory": "assets/units/mech_factory/mechFactoryTop.png",
     "mech-factory-back": "assets/units/mech_factory/mechFactoryBottom.png",
-    "mech-factory-dead": "assets/units/mech_factory/mechFactoryDead.png"
+    "mech-factory-dead": "assets/units/mech_factory/mechFactoryDead.png",
+    "helicopter": "assets/units/helicopter/helicopter.png",
+    "helicopter-rotor": "assets/units/helicopter/helicopter_blades.png",
+    "helicopter-dead": "assets/units/helicopter/helicopter_dead.png",
+    "air-factory": "res/drawable/air_factory.png",
+    "air-factory-dead": "res/drawable/air_factory_dead.png"
   },
   "mappingBasis": {
-    "androidProfileSha256": "a21b3f3ce3e080a5c66ede5115fd8b6f3b80ede798e9206d6d718e29c1ab2fae",
-    "scope": "Thirty-six qualified source images;33 static unit outputs and5 existing terrain outputs for18 supported objects. Six mech/factory images have independently matched APK/PC bytes and decoded RGBA. No original gameplay execution or all-image rendering claim."
+    "androidProfileSha256": "0aae02084f82106699971d17054573bc28f370d51730b01cce8155f253a81d7f",
+    "scope": "Forty-one qualified source images; 38 static unit outputs and 5 existing terrain outputs for 20 supported objects. Five helicopter/air-factory image sources have independently matched decoded APK/PC RGBA. Native air-factory static first frame uses the reviewed top-left 40x61 crop. Original collections and prior mappings are unchanged; no original gameplay execution or all-image rendering claim."
   }
 }

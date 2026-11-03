@@ -12,7 +12,7 @@ internal object BuilderContentReader {
     private val numbers = fields - setOf("format", "name", "movementType", "image", "image_dead", "constructionTypes")
     private val schema = UnitContentSchema(mapOf("core" to fields), numbers,
         setOf("dont_load"), fields - numbers,
-        nativeFormats = (1..5).map { "rw-reforge.native-builder.v$it" }.toSet())
+        nativeFormats = (1..6).map { "rw-reforge.native-builder.v$it" }.toSet())
 
     fun read(path: Path): UnitDefinition = readWithSources(path).definition
 
@@ -43,12 +43,14 @@ internal object BuilderContentReader {
             return result
         }
         val mech = required("format") == "rw-reforge.native-builder.v5"
+        val air = required("format") == "rw-reforge.native-builder.v6"
         val defense = required("format") == "rw-reforge.native-builder.v4"
         val economy = defense || required("format") == "rw-reforge.native-builder.v3"
-        val construction = mech || economy || required("format") == "rw-reforge.native-builder.v2"
-        val targets = if (mech) required("constructionTypes").split(',').also { targets ->
-            if (targets.isEmpty() || targets.distinct().size != targets.size || targets.any { it !in setOf("landFactory", "mechFactory") })
-                reject(ContentErrorCode.UNSUPPORTED_FEATURE, path, field = "constructionTypes", reason = "Expected a nonempty unique subset of landFactory,mechFactory")
+        val construction = air || mech || economy || required("format") == "rw-reforge.native-builder.v2"
+        val targets = if (mech || air) required("constructionTypes").split(',').also { targets ->
+            val allowed = if (air) setOf("landFactory", "mechFactory", "airFactory") else setOf("landFactory", "mechFactory")
+            if (targets.isEmpty() || targets.distinct().size != targets.size || targets.any { it !in allowed })
+                reject(ContentErrorCode.UNSUPPORTED_FEATURE, path, field = "constructionTypes", reason = "Expected a nonempty unique subset of ${allowed.joinToString(",")}")
         } else if (defense) listOf("extractorT1", "landFactory", "fabricatorT1", "c_turret_t1", "laserDefence")
             else if (economy) listOf("extractorT1", "landFactory", "fabricatorT1") else listOf("landFactory")
         if (construction) only("constructionTypes", targets.joinToString(","))
