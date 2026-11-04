@@ -3,8 +3,8 @@ package com.rustedwarfare.reforge.core.sim
 import com.rustedwarfare.reforge.core.content.UpgradeActionProfile
 import java.util.Collections
 
-internal data class PendingUpgrade(val actionKey: String, val targetTypeId: String, val progress: Float,
-    val cost: Long, val rate: Float)
+internal data class PendingUpgrade(val actionKey: String, val targetTypeId: String, override val progress: Float,
+    override val cost: Long, override val rate: Float) : PendingFactoryWork
 internal data class UpgradeTick(val queues: UpgradeQueues, val completed: PendingUpgrade? = null)
 internal data class UpgradeRemoval(val queues: UpgradeQueues, val removed: List<PendingUpgrade>)
 

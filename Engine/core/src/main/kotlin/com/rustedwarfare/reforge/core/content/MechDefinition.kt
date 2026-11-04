@@ -2,13 +2,30 @@ package com.rustedwarfare.reforge.core.content
 
 import java.nio.file.Path
 import java.util.Collections
+import kotlin.math.sqrt
 
-/** Two-legged LAND gait and body metadata; weapon capability remains in CombatProfile. */
-class MechDefinition(val body: MechBodyDefinition, legs: List<MechLegDefinition>) {
+enum class MechKind { TWO_LEGGED, FOUR_LEGGED }
+
+/** Finite LAND gait metadata; the kind distinguishes the two qualified representatives. */
+class MechDefinition(val body: MechBodyDefinition, legs: List<MechLegDefinition>,
+    val kind: MechKind = MechKind.TWO_LEGGED) {
     val legs: List<MechLegDefinition> = Collections.unmodifiableList(ArrayList(legs))
+    internal val neighbours: List<List<Int>> = this.legs.mapIndexed { index, leg ->
+        val distances = this.legs.map { other ->
+            val dx = (other.x - leg.x) * if (leg.favourOppositeSideNeighbours) .1 else 1.0
+            val dy = other.y - leg.y
+            dx * dx + dy * dy
+        }
+        val nearest = distances.indices.filter { it != index }.minOfOrNull { distances[it] }
+        if (nearest == null) emptyList() else {
+            val limit = sqrt(nearest) + 2.0
+            distances.indices.filter { it != index && distances[it] <= limit * limit }
+        }
+    }
 
-    internal fun isValid(): Boolean = legs.size == 2 && body.isValid() && legs.all { it.isValid() } &&
-        legs[0].legImage == legs[1].legImage && legs[0].footImage == legs[1].footImage
+    internal fun isValid(): Boolean = legs.size == (if (kind == MechKind.TWO_LEGGED) 2 else 4) &&
+        body.isValid() && legs.all { it.isValid() } &&
+        legs.all { it.legImage == legs[0].legImage && it.footImage == legs[0].footImage }
 }
 
 data class MechBodyDefinition(
@@ -47,6 +64,7 @@ data class MechLegDefinition(
     val liftOffset: Double = 2.0,
     val targetHeight: Double = 0.0,
     val hardLimit: Double = 50.0,
+    val favourOppositeSideNeighbours: Boolean = false,
 ) {
     internal fun isValid(): Boolean =
         listOf(x, y, attachX, attachY, moveSpeed, warmUp, rotateSpeed, heightSpeed,

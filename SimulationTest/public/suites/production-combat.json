@@ -78,7 +78,24 @@
       "com.rustedwarfare.reforge.core.sim.HelicopterBehaviorTest",
       "com.rustedwarfare.reforge.core.sim.HelicopterCombatTest",
       "com.rustedwarfare.reforge.core.sim.HelicopterFactoryProductionTest",
-      "com.rustedwarfare.reforge.core.sim.HelicopterFactoryFailureTest"
+      "com.rustedwarfare.reforge.core.sim.HelicopterFactoryFailureTest",
+      "com.rustedwarfare.reforge.core.content.HeavyMechContentPackTest",
+      "com.rustedwarfare.reforge.core.content.HeavyMechFactoryContentTest",
+      "com.rustedwarfare.reforge.core.sim.HeavyMechBodyTest",
+      "com.rustedwarfare.reforge.core.sim.HeavyMechCombatTest",
+      "com.rustedwarfare.reforge.core.sim.HeavyMechFactoryLifecycleTest",
+      "com.rustedwarfare.reforge.core.sim.HeavyMechFactoryUpgradeTest",
+      "com.rustedwarfare.reforge.core.sim.HeavyMechFailureTest",
+      "com.rustedwarfare.reforge.core.sim.HeavyMechGaitTest",
+      "com.rustedwarfare.reforge.core.sim.HeavyMechGroundSafetyTest",
+      "com.rustedwarfare.reforge.core.sim.HeavyMechMovementTest",
+      "com.rustedwarfare.reforge.core.sim.HeavyMechPoseTest",
+      "com.rustedwarfare.reforge.core.sim.HeavyMechProductionTest",
+      "com.rustedwarfare.reforge.core.sim.HeavyMechRetargetBoundaryTest",
+      "com.rustedwarfare.reforge.core.sim.HeavyMechRetargetTest",
+      "com.rustedwarfare.reforge.core.sim.HeavyMechSplashHeightTest",
+      "com.rustedwarfare.reforge.core.sim.HeavyMechSplashTest",
+      "com.rustedwarfare.reforge.core.sim.HeavyMechTransactionTest"
     ],
     "client": [
       "com.rustedwarfare.reforge.client.CombatActorEvidenceTest",
@@ -95,14 +112,21 @@
       "com.rustedwarfare.reforge.client.MechResourceBindingTest",
       "com.rustedwarfare.reforge.client.HelicopterSandboxTest",
       "com.rustedwarfare.reforge.client.HelicopterResourceBindingTest",
-      "com.rustedwarfare.reforge.client.HelicopterProjectionTest"
+      "com.rustedwarfare.reforge.client.HelicopterProjectionTest",
+      "com.rustedwarfare.reforge.client.HeavyMechAppearanceTest",
+      "com.rustedwarfare.reforge.client.HeavyMechLegDrawingTest",
+      "com.rustedwarfare.reforge.client.HeavyMechNativePanelTest",
+      "com.rustedwarfare.reforge.client.HeavyMechProductionSandboxTest",
+      "com.rustedwarfare.reforge.client.HeavyMechResourceBindingTest"
     ],
     "pc": [
       "com.rustedwarfare.reforge.pc.PatrolJsonlPairingTest",
       "com.rustedwarfare.reforge.pc.MechOriginalProfileTest",
       "com.rustedwarfare.reforge.pc.MechSessionEvidenceTest",
       "com.rustedwarfare.reforge.pc.VisualAssetPreparationTest",
-      "com.rustedwarfare.reforge.pc.HelicopterOriginalProfileTest"
+      "com.rustedwarfare.reforge.pc.HelicopterOriginalProfileTest",
+      "com.rustedwarfare.reforge.pc.HeavyMechOriginalProfileTest",
+      "com.rustedwarfare.reforge.pc.HeavyMechResourceApplicationTest"
     ],
     "tools": [
       "com.rustedwarfare.reforge.testing.ProductionCombatScenarioTest",
@@ -115,7 +139,10 @@
       "com.rustedwarfare.reforge.testing.MechSessionRunnerTest",
       "com.rustedwarfare.reforge.testing.HelicopterCoreAdapterTest",
       "com.rustedwarfare.reforge.testing.HelicopterPublicScenarioTest",
-      "com.rustedwarfare.reforge.testing.HelicopterSessionRunnerTest"
+      "com.rustedwarfare.reforge.testing.HelicopterSessionRunnerTest",
+      "com.rustedwarfare.reforge.testing.HeavyMechProductionSessionTest",
+      "com.rustedwarfare.reforge.testing.HeavyMechPublicScenarioTest",
+      "com.rustedwarfare.reforge.testing.HeavyMechSessionRunnerTest"
     ]
   },
   "short": [
@@ -307,6 +334,39 @@
       "backend": "session",
       "scenario": "platform/scenarios/helicopter-hjson-session-short.json",
       "contract": "platform/contracts/helicopter-hjson-session-short.json"
+    },
+    {
+      "id": "heavy-mech-ini-short",
+      "scenario": "scenarios/heavy-mech-ini-short.json",
+      "contract": "contracts/heavy-mech-ini-short.json"
+    },
+    {
+      "id": "heavy-mech-ini-session-short",
+      "backend": "session",
+      "scenario": "platform/scenarios/heavy-mech-ini-session-short.json",
+      "contract": "platform/contracts/heavy-mech-ini-session-short.json"
+    },
+    {
+      "id": "heavy-mech-json-short",
+      "scenario": "scenarios/heavy-mech-json-short.json",
+      "contract": "contracts/heavy-mech-json-short.json"
+    },
+    {
+      "id": "heavy-mech-json-session-short",
+      "backend": "session",
+      "scenario": "platform/scenarios/heavy-mech-json-session-short.json",
+      "contract": "platform/contracts/heavy-mech-json-session-short.json"
+    },
+    {
+      "id": "heavy-mech-hjson-short",
+      "scenario": "scenarios/heavy-mech-hjson-short.json",
+      "contract": "contracts/heavy-mech-hjson-short.json"
+    },
+    {
+      "id": "heavy-mech-hjson-session-short",
+      "backend": "session",
+      "scenario": "platform/scenarios/heavy-mech-hjson-session-short.json",
+      "contract": "platform/contracts/heavy-mech-hjson-session-short.json"
     }
   ],
   "long": [
@@ -344,6 +404,21 @@
       "id": "helicopter-production-hjson-chain",
       "scenario": "scenarios/helicopter-production-hjson-chain.json",
       "contract": "contracts/helicopter-production-hjson-chain.json"
+    },
+    {
+      "id": "heavy-mech-production-ini-chain",
+      "scenario": "scenarios/heavy-mech-production-ini-chain.json",
+      "contract": "contracts/heavy-mech-production-ini-chain.json"
+    },
+    {
+      "id": "heavy-mech-production-json-chain",
+      "scenario": "scenarios/heavy-mech-production-json-chain.json",
+      "contract": "contracts/heavy-mech-production-json-chain.json"
+    },
+    {
+      "id": "heavy-mech-production-hjson-chain",
+      "scenario": "scenarios/heavy-mech-production-hjson-chain.json",
+      "contract": "contracts/heavy-mech-production-hjson-chain.json"
     }
   ]
 }

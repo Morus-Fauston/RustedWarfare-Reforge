@@ -5,3 +5,6 @@ pc-original-resources-profile.json -text whitespace=blank-at-eol,blank-at-eof,sp
 original-profile-v2.json -text whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol
 pc-original-images-profile-v2.json -text whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol
 pc-original-resources-profile-v2.json -text whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol
+original-profile-v3.json -text whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol
+pc-original-images-profile-v3.json -text whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol
+pc-original-resources-profile-v3.json -text whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol

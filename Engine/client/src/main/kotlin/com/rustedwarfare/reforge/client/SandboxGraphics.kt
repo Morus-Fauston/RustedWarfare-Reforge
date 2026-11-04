@@ -117,7 +117,7 @@ class SandboxGraphics private constructor(private val resources: SandboxRenderRe
             units[id] = TextureRegion(texture, 0, 0, texture.width / definition.totalFrames, texture.height)
             definition.turretImagePath?.let { turrets[id] = turretRegion(it) }
             for ((name, weapon) in definition.weaponImages)
-                weapon.imagePath?.let { namedTurrets[id to name] = turretRegion(it) }
+                if (!weapon.invisible) weapon.imagePath?.let { namedTurrets[id to name] = turretRegion(it) }
             definition.deadImagePath?.let { corpses[id] = TextureRegion(texture(it)) }
             definition.backImagePath?.let { backs[id] = TextureRegion(texture(it)) }
             definition.legImagePath?.let { legs[id] = TextureRegion(texture(it)) }
@@ -139,7 +139,7 @@ class SandboxGraphics private constructor(private val resources: SandboxRenderRe
         }
         batch.color = Color.WHITE
         val visibleWeapons = frame.observation.weapons.groupBy { it.unitId }
-        val mechFrames = MechPresentation.project(frame.observation, projection).associateBy { it.unitId }
+        val mechFrames = MechPresentation.project(frame.observation, projection, resources).associateBy { it.unitId }
         val flightFrames = FlightPresentation.project(frame.observation, projection).associateBy { it.unitId }
         for (unit in frame.observation.units) {
             val definition = resources.units.getValue(unit.typeId)
@@ -151,10 +151,22 @@ class SandboxGraphics private constructor(private val resources: SandboxRenderRe
             mech?.legs?.forEach { leg ->
                 val shaft = legs.getValue(unit.typeId)
                 val foot = feet.getValue(unit.typeId)
-                val shaftSize = definition.drawSize(UnitImageSlot.LEG, shaft.regionWidth, shaft.regionHeight)
-                val thickness = (shaftSize.height * projection.scale).toFloat()
-                batch.draw(shaft, leg.anchorX, leg.anchorY - thickness / 2, 0f, thickness / 2,
-                    leg.length, thickness, 1f, 1f, leg.rotation)
+                val vertical = leg.shaft
+                if (vertical != null) {
+                    if (vertical.sourceHeight > 0) {
+                        val crop = TextureRegion(shaft)
+                        val span = shaft.v2 - shaft.v
+                        crop.setRegion(shaft.u, shaft.v + span * vertical.sourceY / 68f,
+                            shaft.u2, shaft.v + span * (vertical.sourceY + vertical.sourceHeight) / 68f)
+                        batch.draw(crop, vertical.x - vertical.width / 2, vertical.y - vertical.height / 2,
+                            vertical.width / 2, vertical.height / 2, vertical.width, vertical.height, 1f, 1f, vertical.rotation)
+                    }
+                } else {
+                    val shaftSize = definition.drawSize(UnitImageSlot.LEG, shaft.regionWidth, shaft.regionHeight)
+                    val thickness = (shaftSize.height * projection.scale).toFloat()
+                    batch.draw(shaft, leg.anchorX, leg.anchorY - thickness / 2, 0f, thickness / 2,
+                        leg.length, thickness, 1f, 1f, leg.rotation)
+                }
                 val footSize = definition.drawSize(UnitImageSlot.FOOT, foot.regionWidth, foot.regionHeight)
                 val fw = (footSize.width * projection.scale).toFloat()
                 val fh = (footSize.height * projection.scale).toFloat()
@@ -187,9 +199,7 @@ class SandboxGraphics private constructor(private val resources: SandboxRenderRe
             for (drawing in definition.turretDrawings(unit, visibleWeapons[unit.unitId].orEmpty())) {
                 val turret = drawing.weaponName?.let { namedTurrets.getValue(unit.typeId to it) } ?: turrets.getValue(unit.typeId)
                 val pivot = drawing.pivot
-                val size = if (drawing.imagePath == definition.turretImagePath)
-                    definition.drawSize(UnitImageSlot.TURRET, turret.regionWidth, turret.regionHeight, drawing.imageScale)
-                    else ImageDrawSize(turret.regionWidth * drawing.imageScale, turret.regionHeight * drawing.imageScale)
+                val size = drawing.drawSize(turret.regionWidth, turret.regionHeight)
                 val tw = (size.width * projection.scale).toFloat()
                 val th = (size.height * projection.scale).toFloat()
                 batch.draw(turret, projection.x(pivot.x) - tw / 2, projection.y(pivot.y) - th / 2,

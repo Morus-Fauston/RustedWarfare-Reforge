@@ -6,11 +6,25 @@ import kotlin.math.*
 internal object MechGait {
     fun advance(unit: MutableUnit, delta: Double) {
         val previous = unit.mechState ?: return
-        val definitions = checkNotNull(unit.definition.mech).legs
-        val rawPrediction = unit.speed * 15.0
-        finite(rawPrediction)
-        val length = min(15.0, 240.0 * rawPrediction * rawPrediction)
-        val prediction = ScreenPlane.displacement(unit.heading, sign(rawPrediction) * length)
+        val mech = checkNotNull(unit.definition.mech)
+        val definitions = mech.legs
+        val prediction = if (unit.definition.movement.slidingMode) {
+            val raw = Position(unit.flightVelocity.x * 15.0, unit.flightVelocity.y * 15.0)
+            finite(raw.x, raw.y)
+            val lengthSquared = raw.x * raw.x + raw.y * raw.y
+            finite(lengthSquared)
+            val length = min(15.0, 240.0 * lengthSquared)
+            if (lengthSquared == 0.0) Position(0.0, 0.0) else {
+                val direction = atan2(raw.y, raw.x)
+                Position(cos(direction) * length, sin(direction) * length)
+            }
+        } else {
+            // Preserve the qualified two-leg scalar arithmetic, including its rounding order.
+            val raw = unit.speed * 15.0
+            finite(raw)
+            val length = min(15.0, 240.0 * raw * raw)
+            ScreenPlane.displacement(unit.heading, sign(raw) * length)
+        }
         val targets = definitions.map { definition ->
             val base = MechMotion.offset(unit.position, unit.heading, definition.x, definition.y)
             Position(base.x + prediction.x * definition.predictionMultiplier,
@@ -38,7 +52,7 @@ internal object MechGait {
                     target.y + (foot.position.y - target.y) / distance * definition.hardLimit), moving = true)
             }
             if (!foot.moving && foot.height <= definition.targetHeight + 0.1 && movingCount < 3 && index == furthest) {
-                val neighbourMoving = feet[1 - index].moving
+                val neighbourMoving = mech.neighbours[index].any { feet[it].moving }
                 val threshold = if (neighbourMoving) definition.holdWithMovingNeighbour else definition.holdMinimum
                 if (oldDistance > threshold * threshold) {
                     foot = foot.copy(moving = true)

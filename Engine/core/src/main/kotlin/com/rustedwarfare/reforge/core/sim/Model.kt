@@ -503,7 +503,9 @@ internal data class MutableProjectile(val objectId: Long, val sourceUnitId: Stri
     val ground: GroundShot? = null, var verticalSpeed: Float = 0f, var groundDistanceSquared: Float? = null,
     val missile: NativeMissileProfile? = null, var missileReachedApex: Boolean = false, var missileRawAz: Float = 0f,
     val expansion: AreaExpansion? = null, val sourceWeaponName: String? = null,
-    val acceleration: com.rustedwarfare.reforge.core.content.LinearProjectileAcceleration? = null)
+    val acceleration: com.rustedwarfare.reforge.core.content.LinearProjectileAcceleration? = null,
+    val splash: com.rustedwarfare.reforge.core.content.OrdinarySplashProfile? = null,
+    val retargetOnDeath: Boolean = false)
 
 internal data class AreaExpansion(val profile: DeathExplosionProfile, var remaining: Float,
     var radius: Float = 0f, val hitUnitIds: MutableSet<String> = linkedSetOf())

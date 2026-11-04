@@ -157,6 +157,8 @@ python -B SimulationTest/tools/android_host_check.py --distribution SimulationTe
 
 ## 工具机制与专属验证入口
 
+五期重型机甲的有限输入位于`inputs/heavy-mech-production`，纳入既有`production-combat`集：三格式Core/Session短场景检查四足、普通LAND移动与小炮射击；`HeavyMechProductionSessionTest`通过三份8060q正式Session计划完成builder→T1→同一工厂T2→付费heavy→实际地空战斗，并核完整诊断。重型保留LAND开发变体，不含盾或越崖；新具名小炮图、工厂升级及资源失败回退机制也随该集选择。`public_check.py --suite production-combat --kind all --isolated`执行公开闭包，真实PC双尺寸及私有完整原图资源验证另记，不能由这些无头结果推定。
+
 ```powershell
 python -B SimulationTest/ci/public_check.py --suite tooling --kind mechanism --list
 python -B SimulationTest/ci/public_check.py --suite tooling --kind mechanism --isolated --output <new-directory>

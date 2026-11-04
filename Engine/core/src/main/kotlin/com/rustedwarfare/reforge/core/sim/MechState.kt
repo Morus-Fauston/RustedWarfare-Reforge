@@ -1,6 +1,7 @@
 package com.rustedwarfare.reforge.core.sim
 
 import com.rustedwarfare.reforge.core.content.UnitDefinition
+import com.rustedwarfare.reforge.core.content.MechKind
 import kotlin.math.cos
 import kotlin.math.sin
 import kotlin.math.abs
@@ -32,8 +33,14 @@ internal object MechMotion {
         val aim = if (reverse) Position(2.0 * unit.position.x - target.x, 2.0 * unit.position.y - target.y) else target
         val headingBefore = unit.heading
         val difference = steering.turn(unit, aim, delta, coordinates)
+        val applied = coordinates.difference(unit.heading, headingBefore)
+        if (unit.definition.combat?.rotateWithBody == true) {
+            for (state in unit.namedWeapons?.values ?: listOfNotNull(unit.combat)) {
+                state.turretHeading = coordinates.normalize(state.turretHeading + applied)
+            }
+        }
         // Integrate the applied turn: canonical public headings cannot retain both signs of 180.
-        var motionAngle = previous.motionAngle + coordinates.difference(unit.heading, headingBefore)
+        var motionAngle = previous.motionAngle + applied
         if (motionAngle > 180.0) motionAngle -= 360.0
         if (motionAngle < -180.0) motionAngle += 360.0
         unit.mechState = previous.copy(reversing = reverse, hold = hold, motionAngle = motionAngle)
@@ -70,8 +77,9 @@ internal object MechMotion {
     }
 
     fun pose(unit: MutableUnit): MechPose? = unit.mechState?.let { state ->
-        MechPose(unit.combat?.turretHeading ?: ScreenPlane.normalize(state.bodyAngle + 90.0),
-            unit.combat?.angularVelocity ?: state.angularVelocity, state.reversing,
+        val fourLegged = unit.definition.mech?.kind == MechKind.FOUR_LEGGED
+        MechPose(if (fourLegged) unit.heading else unit.combat?.turretHeading ?: ScreenPlane.normalize(state.bodyAngle + 90.0),
+            if (fourLegged) unit.angularVelocity else unit.combat?.angularVelocity ?: state.angularVelocity, state.reversing,
             checkNotNull(unit.definition.mech).legs.mapIndexed { index, definition ->
                 val foot = state.feet[index]
                 MechLegPose(index, offset(unit.position, unit.heading, definition.attachX, definition.attachY),

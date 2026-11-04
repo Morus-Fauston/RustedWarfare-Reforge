@@ -12,6 +12,14 @@ internal object UpgradeRules {
         fun invalid() = SimulationError("unsupported-upgrade", "Expected a complete finite ordinary upgrade registration")
         for ((key, source) in input.unitDefinitions) {
             val profile = source.upgrades ?: continue
+            if (source.id == "mechFactory") {
+                val target = input.unitDefinitions["mechFactoryT2"] ?: return invalid()
+                if (input.economyContract == null || key != source.id || !FactoryExit.supportsMechFactory(source) ||
+                    profile.actions != listOf(com.rustedwarfare.reforge.core.content.UpgradeActionProfile("upgrade_t2", "mechFactoryT2", 4000L, .0004f)) ||
+                    !FactoryExit.supportsMechFactory(target) || target.id != "mechFactoryT2" || target.upgrades != null)
+                    return invalid()
+                continue
+            }
             val economicAction = economicActions[source.id]
             if (economicAction != null) {
                 if (input.economyContract == null || key != source.id || !economicEligible(source) ||

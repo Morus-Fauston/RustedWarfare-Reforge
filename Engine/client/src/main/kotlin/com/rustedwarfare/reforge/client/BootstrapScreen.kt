@@ -69,6 +69,11 @@ class BootstrapScreen(
     private lateinit var secondProduceText: Label
     private lateinit var secondProductionInput: ProductionButtonInput
     private var secondProductionHover = false
+    private lateinit var thirdProduceButton: Table
+    private lateinit var thirdProduceIcon: Image
+    private lateinit var thirdProduceText: Label
+    private lateinit var thirdProductionInput: ProductionButtonInput
+    private var thirdProductionHover = false
     private data class ConstructionCard(val table: Table, val icon: Image, val text: Label, val input: ConstructionButtonInput)
     private val constructionCards = linkedMapOf<String, ConstructionCard>()
     private var constructionHover: String? = null
@@ -76,7 +81,7 @@ class BootstrapScreen(
     private lateinit var reclaimInput: ReclaimButtonInput
     private var reclaimHover = false
     private var nativeSelection: Set<String> = emptySet()
-    private val nativePanel: Boolean get() = session?.observation?.scenarioId in setOf("p006-construction", "p008-mech-production", "p008-helicopter-production")
+    private val nativePanel: Boolean get() = NativeActionPanel.supports(session?.observation?.scenarioId)
     private val upgradeButtons = mutableMapOf<String, Pair<TextButton, TextButton>>()
     private val upgradeInputs = mutableListOf<UpgradeButtonInput>()
     private var upgradeHover: String? = null
@@ -160,7 +165,7 @@ class BootstrapScreen(
         nativeProduceText = Label("Builder", skin).apply { setAlignment(Align.center); touchable = Touchable.disabled }
         nativeProduceButton = Table(skin).also { table ->
             table.touchable = Touchable.enabled
-            table.setBounds(752f, 256f, 84f, 64f)
+            NativeActionPanel.production[0].let { table.setBounds(it.x, it.y, it.width, it.height) }
             table.add(nativeProduceIcon).size(28f, 28f).padTop(3f).row()
             table.add(nativeProduceText).height(25f)
             productionInput = ProductionButtonInput({ session }, { nativePanel && !paused }, { lastHudState = null; updateHud() },
@@ -172,13 +177,28 @@ class BootstrapScreen(
         secondProduceText = Label("Tank", skin).apply { setAlignment(Align.center); touchable = Touchable.disabled }
         secondProduceButton = Table(skin).also { table ->
             table.touchable = Touchable.enabled
-            table.setBounds(752f, 188f, 84f, 64f)
+            NativeActionPanel.production[1].let { table.setBounds(it.x, it.y, it.width, it.height) }
             table.add(secondProduceIcon).size(28f, 28f).padTop(3f).row()
             table.add(secondProduceText).height(25f)
             secondProductionInput = ProductionButtonInput({ session }, { nativePanel && !paused },
                 { lastHudState = null; updateHud() }, { secondProductionHover = it },
                 { session?.productionActions?.getOrNull(1)?.typeId })
             table.addListener(secondProductionInput)
+            stage.addActor(table)
+        }
+        thirdProduceIcon = Image().apply { touchable = Touchable.disabled }
+        thirdProduceText = Label("Heavy mech", skin).apply {
+            setAlignment(Align.center); touchable = Touchable.disabled
+        }
+        thirdProduceButton = Table(skin).also { table ->
+            table.touchable = Touchable.enabled
+            NativeActionPanel.production[2].let { table.setBounds(it.x, it.y, it.width, it.height) }
+            table.add(thirdProduceIcon).size(24f, 24f).padTop(3f).row()
+            table.add(thirdProduceText).width(80f).height(30f)
+            thirdProductionInput = ProductionButtonInput({ session }, { nativePanel && !paused },
+                { lastHudState = null; updateHud() }, { thirdProductionHover = it },
+                { session?.productionActions?.getOrNull(2)?.typeId })
+            table.addListener(thirdProductionInput)
             stage.addActor(table)
         }
         for (type in listOf("extractorT1", "landFactory", "mechFactory", "airFactory", "fabricatorT1", "c_turret_t1", "laserDefence")) {
@@ -237,9 +257,9 @@ class BootstrapScreen(
             table.add(nativeTooltipText).width(204f).pad(8f)
             stage.addActor(table)
         }
-        for ((key, y) in listOf("upgrade_gun" to 264f, "upgrade_artillery" to 216f)) {
-            fun endpoint(text: String, x: Float, cancel: Boolean): TextButton = TextButton(text, skin).also { button ->
-                button.setBounds(x, y, 84f, 40f)
+        for ((key, positions) in NativeActionPanel.upgrades) {
+            fun endpoint(text: String, bounds: NativeCardBounds, cancel: Boolean): TextButton = TextButton(text, skin).also { button ->
+                button.setBounds(bounds.x, bounds.y, bounds.width, bounds.height)
                 val input = UpgradeButtonInput({ session }, { !paused && button.isVisible && !button.isDisabled },
                     key, cancel, { lastHudState = null; updateHud() })
                 upgradeInputs += input
@@ -254,8 +274,8 @@ class BootstrapScreen(
                 })
                 stage.addActor(button)
             }
-            val buy = endpoint("", 752f, false)
-            val cancel = endpoint("Cancel", 844f, true)
+            val buy = endpoint("", positions.first, false)
+            val cancel = endpoint("Cancel", positions.second, true)
             upgradeButtons[key] = buy to cancel
         }
         statusLabel = label("", 16f, 52f, 480f, 44f)
@@ -536,7 +556,7 @@ class BootstrapScreen(
         updateHud()
         Gdx.gl.glClearColor(0.075f, 0.09f, 0.085f, 1f)
         nativeTooltip.isVisible = nativePanel && !paused &&
-            ((productionHover || secondProductionHover) && session?.productionAction != null ||
+            ((productionHover || secondProductionHover || thirdProductionHover) && session?.productionAction != null ||
                 constructionHover != null && session?.constructionActions?.any { it.typeId == constructionHover } == true ||
                 economicUpgradeHover && economicUpgradeCard.isVisible || reclaimHover && reclaimCard.isVisible ||
                 upgradeHover != null && session?.selectedUpgrades?.any { it.actionKey == upgradeHover } == true)
@@ -602,7 +622,8 @@ class BootstrapScreen(
         produceButton.setText(menu?.production?.firstOrNull()?.price?.let { "Produce $it" } ?: "Produce")
         cancelProductionButton.isDisabled = queue?.items?.isEmpty() != false
         nativeProduceButton.isVisible = nativePanel && queue != null
-        secondProduceButton.isVisible = nativePanel && menu?.production?.size == 2
+        secondProduceButton.isVisible = nativePanel && (menu?.production?.size ?: 0) >= 2
+        thirdProduceButton.isVisible = nativePanel && (menu?.production?.size ?: 0) >= 3
         reclaimCard.isVisible = nativePanel && menu?.canMaintain == true
         reclaimCard.background = skin.newDrawable("white", if (reclaimInput.pressed || state.reclaimMode)
             Color(.37f, .48f, .4f, 1f) else Color(.23f, .28f, .26f, 1f))
@@ -624,6 +645,7 @@ class BootstrapScreen(
         if (nativeSelection != state.selectedIds) {
             productionInput.cancel()
             secondProductionInput.cancel()
+            thirdProductionInput.cancel()
             economicUpgradeInput.cancel()
             upgradeInputs.forEach { it.cancel() }
             upgradeHover = null
@@ -655,7 +677,15 @@ class BootstrapScreen(
                 secondProduceButton.background = skin.newDrawable("white", if (secondProductionInput.pressed)
                     Color(.37f, .48f, .4f, 1f) else Color(.23f, .28f, .26f, 1f))
             }
-            menu?.production?.getOrNull(if (secondProductionHover) 1 else 0)?.let { action ->
+            menu?.production?.getOrNull(2)?.let { action ->
+                setUnitIcon(thirdProduceIcon, action.typeId)
+                val title = if (action.typeId == "mechHeavyMissile") "Heavy mech" else action.title
+                thirdProduceText.setText(title + if (action.count > 0) "\n(${action.count})" else "")
+                thirdProduceText.color = if (action.affordable) Color(.9f, .92f, .9f, 1f) else Color(.55f, .58f, .55f, 1f)
+                thirdProduceButton.background = skin.newDrawable("white", if (thirdProductionInput.pressed)
+                    Color(.37f, .48f, .4f, 1f) else Color(.23f, .28f, .26f, 1f))
+            }
+            menu?.production?.getOrNull(if (thirdProductionHover) 2 else if (secondProductionHover) 1 else 0)?.let { action ->
                 setUnitIcon(nativeTooltipIcon, action.typeId)
                 nativeTooltipText.setText(action.tooltip)
             }
@@ -705,7 +735,8 @@ class BootstrapScreen(
         for ((key, buttons) in upgradeButtons) {
             val action = upgrades.firstOrNull { it.actionKey == key }
             if (action != null) {
-                buttons.first.setText(action.cardText)
+                buttons.first.setText(if (key == "upgrade_t2")
+                    action.cardText.replaceFirst(action.title, "Factory T2") else action.cardText)
                 if (upgradeHover == key) {
                     setUnitIcon(nativeTooltipIcon, selected?.typeId)
                     nativeTooltipText.setText(action.tooltip)
@@ -872,6 +903,7 @@ class BootstrapScreen(
         constructionCards.values.forEach { it.input.cancel() }
         if (::productionInput.isInitialized) productionInput.cancel()
         if (::secondProductionInput.isInitialized) secondProductionInput.cancel()
+        if (::thirdProductionInput.isInitialized) thirdProductionInput.cancel()
         if (::economicUpgradeInput.isInitialized) economicUpgradeInput.cancel()
         if (::nativeTooltip.isInitialized) nativeTooltip.isVisible = false
         if (::mapInput.isInitialized) mapInput.cancel()

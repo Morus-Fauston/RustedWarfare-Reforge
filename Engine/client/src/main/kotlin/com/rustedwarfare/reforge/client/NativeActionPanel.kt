@@ -1,0 +1,12 @@
+package com.rustedwarfare.reforge.client
+
+internal data class NativeCardBounds(val x: Float, val y: Float, val width: Float, val height: Float)
+
+/** Fixed native panel geometry shared by actors and ordinary press/release validation. */
+internal object NativeActionPanel {
+    fun supports(scenarioId: String?) = scenarioId in setOf("p006-construction", "p008-mech-production", "p008-helicopter-production", "p008-heavy-mech-production")
+    val production = listOf(NativeCardBounds(752f, 256f, 84f, 64f), NativeCardBounds(752f, 188f, 84f, 64f), NativeCardBounds(844f, 256f, 84f, 64f))
+    val upgrades = listOf("upgrade_gun" to 264f, "upgrade_artillery" to 216f).associate { (key, y) ->
+        key to (NativeCardBounds(752f, y, 84f, 40f) to NativeCardBounds(844f, y, 84f, 40f))
+    } + ("upgrade_t2" to (NativeCardBounds(844f, 264f, 84f, 40f) to NativeCardBounds(844f, 216f, 84f, 40f)))
+}

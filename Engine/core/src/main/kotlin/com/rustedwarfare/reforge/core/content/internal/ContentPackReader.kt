@@ -106,8 +106,8 @@ internal object ContentPackReader {
             val field = "units[$index]"
             val spec = objectFields(entry, setOf("type", "file"), manifest, field)
             val capability = string(spec.get("type"), "$field.type")
-            if (capability !in setOf("tank", "mech", "mech-factory", "builder", "helicopter", "air-factory"))
-                reject(ContentErrorCode.UNSUPPORTED_FEATURE, manifest, field = "$field.type", reason = "Expected an implemented tank, two-legged mech, mech factory, builder, helicopter or air factory capability")
+            if (capability !in setOf("tank", "mech", "mech-heavy", "mech-factory", "builder", "helicopter", "air-factory"))
+                reject(ContentErrorCode.UNSUPPORTED_FEATURE, manifest, field = "$field.type", reason = "Expected an implemented finite combat, mech, factory or builder capability")
             val reference = string(spec.get("file"), "$field.file")
             val pieces = reference.split('/')
             if (reference.any { it == '\\' || it == ':' } || pieces.any { it.isEmpty() || it == "." || it == ".." })
@@ -128,6 +128,7 @@ internal object ContentPackReader {
                         reject(ContentErrorCode.UNSUPPORTED_FEATURE, input, field = "format", reason = "Expected the finite native air factory profile")
                 }
                 "mech" -> CombatContentReader.readMechWithSources(input) { requireOrdinary(root, it) }
+                "mech-heavy" -> CombatContentReader.readHeavyMechWithSources(input) { requireOrdinary(root, it) }
                 "mech-factory" -> FactoryContentReader.readWithSources(input) { requireOrdinary(root, it) }.also {
                     if (it.definition.production?.exitProfile != FactoryExitProfile.CUSTOM_MECH)
                         reject(ContentErrorCode.UNSUPPORTED_FEATURE, input, field = "format", reason = "Expected the finite mech factory profile")
@@ -149,7 +150,8 @@ internal object ContentPackReader {
                 "image_wreak" to (definition.durability?.deadImagePath ?: combat?.deadImagePath),
                 "image_back" to definition.building?.backImagePath,
                 "image_end" to definition.rotor?.imagePath) + definition.mech?.legs.orEmpty().flatMap {
-                    listOf("image_leg" to it.legImage, "image_foot" to it.footImage) }
+                    listOf("image_leg" to it.legImage, "image_foot" to it.footImage) } +
+                combat?.namedWeapons?.ordered.orEmpty().map { "turret_${it.name}.image" to it.imagePath }
             for ((slot, image) in images) {
                 if (image == null) continue
                 requireOrdinary(root, image)

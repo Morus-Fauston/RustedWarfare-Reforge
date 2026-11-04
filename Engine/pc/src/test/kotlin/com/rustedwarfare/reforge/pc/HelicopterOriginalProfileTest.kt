@@ -16,7 +16,7 @@ class HelicopterOriginalProfileTest {
     }
 
     @Test fun the_new_qualification_maps_only_the_five_finite_helicopter_and_air_factory_slots() {
-        val profile = VisualAssetProfile.bundled()
+        val profile = VisualAssetProfile.versionThree()
         val helicopter = assertNotNull(profile.json.get("unitBindings").get("helicopter"))
         assertEquals(setOf("body", "rotor", "dead"), helicopter.map { it.name }.toSet())
         val factory = assertNotNull(profile.json.get("unitBindings").get("airFactory"))
@@ -29,10 +29,10 @@ class HelicopterOriginalProfileTest {
         assertEquals(listOf(40, 61), size(factory.getString("dead")))
         assertEquals(listOf(0, 0, 40, 61), profile.recipes.getValue(factory.getString("body")).get("rect").asIntArray().toList())
         assertEquals("rw.android.1.15.176.visual.v3", profile.id)
-        val pc = PcOriginalImageProfile.bundled()
+        val pc = PcOriginalImageProfile.versionThree()
         assertEquals("rw.pc.steam.9902063.images.v3", pc.id)
         assertEquals(profile.json.get("unitBindings").toString(), pc.mappedImages!!.json.get("unitBindings").toString())
-        val current = PcOriginalResourceProfile.bundled()
+        val current = PcOriginalResourceProfile.versionThree()
         assertEquals("rw.pc.steam.9902063.resources.v3", current.id)
         val old = PcOriginalResourceProfile.versionOne()
         assertEquals(old.images.jarSha256, current.images.jarSha256)

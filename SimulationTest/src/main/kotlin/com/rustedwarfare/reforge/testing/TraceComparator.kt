@@ -434,7 +434,12 @@ object TraceComparator {
         listOf("heading", "speed", "angularVelocity").forEach { unit.number(it) }
         unit.required("moveTarget").let { if (it != JsonNull) point(it.jsonObject) }
         unit.arrayAt("pathPoints").forEach { point(it.jsonObject) }
-        if (unit.id("typeId") in typesLoadedBy(scenario, setOf("mech"))) validateMechPose(unit.objectAt("mechPose"))
+        val mechLegCount = when (unit.id("typeId")) {
+            in typesLoadedBy(scenario, setOf("mech")) -> 2
+            in typesLoadedBy(scenario, setOf("mech-heavy")) -> 4
+            else -> null
+        }
+        if (mechLegCount != null) validateMechPose(unit.objectAt("mechPose"), mechLegCount)
         if (unit.id("typeId") in typesLoadedBy(scenario, setOf("helicopter"))) validateFlightPose(unit)
         if (hasConstruction(scenario)) {
             unit.number("constructionProgress")
@@ -481,12 +486,12 @@ object TraceComparator {
             throw Incomplete("flight-pose", "Flight pose and physical unit height differ")
     }
 
-    private fun validateMechPose(pose: JsonObject) {
+    private fun validateMechPose(pose: JsonObject, expectedLegCount: Int) {
         if (pose.keys != setOf("forwardHeading", "angularVelocity", "reversing", "legs"))
             throw Incomplete("mech-pose", "Incomplete or unapproved mech pose fields")
         pose.number("forwardHeading"); pose.number("angularVelocity"); booleanField(pose, "reversing")
         val legs = pose.arrayAt("legs")
-        if (legs.size != 2) throw Incomplete("mech-pose", "The declared finite mech requires two legs")
+        if (legs.size != expectedLegCount) throw Incomplete("mech-pose", "The declared finite mech requires $expectedLegCount legs")
         legs.forEachIndexed { index, value ->
             val leg = value.jsonObject
             if (leg.keys != setOf("index", "anchor", "foot", "height", "heading", "phase") ||

@@ -1,0 +1,31 @@
+{
+  "format": "rw-reforge.content-pack.v1",
+  "id": "p008-heavy-production-chain-json",
+  "name": "Owned T1 to T2 heavy-mech production chain",
+  "units": [
+    {
+      "type": "mech",
+      "file": "units/mech.json"
+    },
+    {
+      "type": "mech-factory",
+      "file": "units/mechFactory.json"
+    },
+    {
+      "type": "builder",
+      "file": "units/builder.json"
+    },
+    {
+      "type": "mech-heavy",
+      "file": "units/heavy/heavy.json"
+    },
+    {
+      "type": "mech-factory",
+      "file": "units/mechFactoryT2.json"
+    },
+    {
+      "type": "helicopter",
+      "file": "units/air/helicopter.json"
+    }
+  ]
+}

@@ -12,7 +12,8 @@ object ResourceImagePreparation {
             listOf(binding.body to binding.logicalImages?.body, binding.back to binding.logicalImages?.back,
                 binding.turret to binding.logicalImages?.turret, binding.dead to binding.logicalImages?.dead,
                 binding.leg to binding.logicalImages?.leg, binding.foot to binding.logicalImages?.foot,
-                binding.rotor to binding.logicalImages?.rotor)
+                binding.rotor to binding.logicalImages?.rotor) + binding.weaponTurrets.map { (name, id) ->
+                    id to binding.logicalImages?.weaponTurrets?.get(name) }
         }.filter { it.first != null && it.second != null }.associate { requireNotNull(it.first) to requireNotNull(it.second) }
         val images = prepared.resourcePack.resources.mapValues { (id, path) ->
             val bytes = Files.newInputStream(path).use { it.readNBytes(16 * 1024 * 1024 + 1) }

@@ -70,9 +70,12 @@ internal object CombatContentReader {
     fun readHelicopterWithSources(path: Path, validatePath: (Path) -> Unit = {}): LoadedUnitContent =
         readWithSources(path, true, validatePath, helicopter = true)
 
+    fun readHeavyMechWithSources(path: Path, validatePath: (Path) -> Unit = {}): LoadedUnitContent =
+        readWithSources(path, true, validatePath, heavy = true)
+
     private fun readWithSources(path: Path, declared: Boolean, validatePath: (Path) -> Unit = {}, mech: Boolean = false,
-                                helicopter: Boolean = false): LoadedUnitContent =
-        UnitSourceReader(when { mech -> MechContentFields.schema(schema)
+                                helicopter: Boolean = false, heavy: Boolean = false): LoadedUnitContent =
+        UnitSourceReader(when { heavy -> HeavyMechContentFields.schema(schema); mech -> MechContentFields.schema(schema)
             helicopter -> HelicopterContentFields.schema(schema); else -> schema }, preRead = validatePath).load(path) { loaded ->
         val sections = loaded.values
         fun invalid(code: ContentErrorCode, s: String, key: String, ref: String? = null, reason: String): Nothing {
@@ -164,7 +167,8 @@ internal object CombatContentReader {
             ?: invalid(ContentErrorCode.MALFORMED_SYNTAX, "core", "buildSpeed", reason = "Expected finite positive binary32 build rate")
         val identity = required("core", "name")
         if (declared) {
-            if (if (mech) identity != "mechGun" else !identity.matches(Regex("[a-z][a-z0-9_.-]*")))
+            if (when { mech -> identity != "mechGun"; heavy -> identity != "mechHeavyMissile"
+                    else -> !identity.matches(Regex("[a-z][a-z0-9_.-]*")) })
                 invalid(ContentErrorCode.MALFORMED_SYNTAX, "core", "name", identity, "Expected a stable lowercase content ID")
             if ("overrideAndReplace" in sections["core"].orEmpty())
                 invalid(ContentErrorCode.UNSUPPORTED_FEATURE, "core", "overrideAndReplace",
@@ -180,7 +184,7 @@ internal object CombatContentReader {
                 reason = "Soft unit collision is not supported by the ordinary combat subset")
         }
         only("attack", "canAttack", "true")
-        only("attack", "canAttackFlyingUnits", if (helicopter) "true" else "false")
+        only("attack", "canAttackFlyingUnits", if (helicopter || heavy) "true" else "false")
         only("attack", "canAttackLandUnits", "true")
         only("attack", "canAttackUnderwaterUnits", "false")
         for (weapon in weapons) {
@@ -190,14 +194,15 @@ internal object CombatContentReader {
                 invalid(ContentErrorCode.MALFORMED_SYNTAX, weapon, "barrelY", reason = "barrelY and size are aliases and cannot both be specified")
         }
         only("movement", "movementType", if (helicopter) "AIR" else "LAND")
-        only("movement", "moveSlidingMode", helicopter.toString())
-        only("movement", "moveIgnoringBody", helicopter.toString())
+        only("movement", "moveSlidingMode", (helicopter || heavy).toString())
+        only("movement", "moveIgnoringBody", (helicopter || heavy).toString())
         val sight = sections["core"]?.get("fogOfWarSightRange")?.let {
             it.toIntOrNull() ?: invalid(ContentErrorCode.MALFORMED_SYNTAX, "core", "fogOfWarSightRange", reason = "Expected integer sight range")
         } ?: 15
         val imageScale = if ("imageScale" in sections["graphics"].orEmpty()) number("graphics", "imageScale", true) else 1.0
         val turretScale = if ("turretImageScale" in sections["graphics"].orEmpty()) number("graphics", "turretImageScale", true) else 1.0
-        val gait = if (mech) MechContentFields.read(path, loaded, validatePath) else null
+        val gait = when { heavy -> HeavyMechContentFields.read(path, loaded, validatePath)
+            mech -> MechContentFields.read(path, loaded, validatePath); else -> null }
         val flight = if (helicopter) HelicopterContentFields.read(path, loaded, validatePath) else null
         val reverse = if (mech || helicopter) number("movement", "reverseSpeedPercentage") else 0.0
         if (reverse !in (if (helicopter) setOf(0.1) else setOf(0.0, 1.0))) invalid(ContentErrorCode.UNSUPPORTED_FEATURE, "movement", "reverseSpeedPercentage",
@@ -205,11 +210,16 @@ internal object CombatContentReader {
         val projectileProfiles = projectiles.associateWith { projectile ->
             ProjectileProfile(integer(projectile, "directDamage").toDouble(),
                 number(projectile, "life", true), number(projectile, "speed", !mech),
-                acceleration = if (mech) LinearProjectileAcceleration(number(projectile, "targetSpeed", true),
-                    number(projectile, "targetSpeedAcceleration", true)) else null)
+                acceleration = if (mech || heavy && "targetSpeed" in sections.getValue(projectile))
+                    LinearProjectileAcceleration(number(projectile, "targetSpeed", true),
+                        if (heavy && "targetSpeedAcceleration" !in sections.getValue(projectile)) .1
+                        else number(projectile, "targetSpeedAcceleration", true)) else null,
+                splash = if (heavy && "areaDamage" in sections.getValue(projectile))
+                    OrdinarySplashProfile(number(projectile, "areaDamage").toFloat(), number(projectile, "areaRadius", true).toFloat()) else null,
+                retargetOnDeath = heavy && optionalBoolean(projectile, "autoTargetingOnDeadTarget", false))
         }
         val turretImage = if ((mech || helicopter) && required("graphics", "image_turret") == "NONE") null else image("image_turret")
-        val deadImage = if (mech && required("graphics", "image_wreak") == "NONE") null else image("image_wreak")
+        val deadImage = if ((mech || heavy) && required("graphics", "image_wreak") == "NONE") null else image("image_wreak")
         val catalog = WeaponCatalog(weapons.map { weapon ->
             val projectileName = required(weapon, "projectile")
             NamedWeaponDefinition(weapon.removePrefix("turret_"), projectileName,
@@ -223,17 +233,21 @@ internal object CombatContentReader {
                     else -> number("attack", "turretSize")
                 },
                 if ("turnSpeed" in sections.getValue(weapon)) number(weapon, "turnSpeed") else number("attack", "turretTurnSpeed"),
-                number(weapon, "turnSpeedAcceleration"),
-                turretImage, turretScale,
+                if (heavy && "turnSpeedAcceleration" !in sections.getValue(weapon)) 0.0
+                    else if (heavy && signedNumber(weapon, "turnSpeedAcceleration") == -1.0) 0.0
+                    else number(weapon, "turnSpeedAcceleration"),
+                if (heavy && "image" in sections.getValue(weapon)) {
+                    resolveReference(path, required(weapon, "image"), weapon, "image").also(validatePath)
+                } else turretImage, turretScale,
                 // Keep the existing ordinary adapter's omitted-field default; explicit values are per weapon.
-                recoil = WeaponRecoil(if ("recoilOffset" in sections.getValue(weapon)) signedNumber(weapon, "recoilOffset") else -2.0,
+                recoil = WeaponRecoil(if ("recoilOffset" in sections.getValue(weapon)) signedNumber(weapon, "recoilOffset") else if (heavy) 0.0 else -2.0,
                     if ("recoilOutTime" in sections.getValue(weapon)) number(weapon, "recoilOutTime", !helicopter) else 4.0,
                     if ("recoilReturnTime" in sections.getValue(weapon)) number(weapon, "recoilReturnTime", !helicopter) else 7.0),
-                fireSound = if (mech || helicopter) null else FireSoundProfile.TANK,
+                fireSound = if (mech || helicopter || heavy) null else FireSoundProfile.TANK,
                 minimumRange = if ("limitingMinRange" in sections.getValue(weapon)) number(weapon, "limitingMinRange") else 0.0,
                 maximumRange = if ("limitingRange" in sections.getValue(weapon)) number(weapon, "limitingRange") else null,
                 canAttackLandUnits = optionalBoolean(weapon, "canAttackLandUnits", true),
-                canAttackFlyingUnits = optionalBoolean(weapon, "canAttackFlyingUnits", helicopter),
+                canAttackFlyingUnits = optionalBoolean(weapon, "canAttackFlyingUnits", helicopter || heavy),
                 canAttackUnderwaterUnits = optionalBoolean(weapon, "canAttackUnderwaterUnits", false),
                 warmup = if ("warmup" in sections.getValue(weapon)) number(weapon, "warmup") else 0.0,
                 warmupCallDownRate = if ("warmupCallDownRate" in sections.getValue(weapon)) number(weapon, "warmupCallDownRate") else 4.0,
@@ -254,7 +268,10 @@ internal object CombatContentReader {
                 },
                 idleDirection = if ("idleDir" in sections.getValue(weapon)) signedNumber(weapon, "idleDir") else 0.0,
                 barrelX = if ("barrelX" in sections.getValue(weapon)) signedNumber(weapon, "barrelX") else null,
-                oddShotOffset = if ("barrelOffsetX_onOddShots" in sections.getValue(weapon)) signedNumber(weapon, "barrelOffsetX_onOddShots") else null)
+                oddShotOffset = if ("barrelOffsetX_onOddShots" in sections.getValue(weapon)) signedNumber(weapon, "barrelOffsetX_onOddShots") else null,
+                invisible = heavy && optionalBoolean(weapon, "invisible", false),
+                imageOffsetX = if (heavy && "image_drawOffsetX" in sections.getValue(weapon)) signedNumber(weapon, "image_drawOffsetX") else 0.0,
+                imageOffsetY = if (heavy && "image_drawOffsetY" in sections.getValue(weapon)) signedNumber(weapon, "image_drawOffsetY") else 0.0)
         })
         val primary = catalog.ordered.first()
         val profile = CombatProfile(
@@ -263,18 +280,19 @@ internal object CombatContentReader {
             primary.projectile, turretImage, deadImage, turretScale,
             mount = primary.mount,
             recoil = primary.recoil, barrelX = primary.barrelX ?: 0.0, oddShotOffset = primary.oddShotOffset ?: 0.0,
-            fireSound = if (mech || helicopter) null else FireSoundProfile.TANK,
-            idleSweep = gait?.body?.let { IdleSweepProfile(it.sweepAngle, it.sweepDelay.toFloat(), it.sweepTimeScale.toFloat(), it.sweepRandomDelay) },
+            fireSound = if (mech || helicopter || heavy) null else FireSoundProfile.TANK,
+            idleSweep = if (heavy) null else gait?.body?.let { IdleSweepProfile(it.sweepAngle, it.sweepDelay.toFloat(), it.sweepTimeScale.toFloat(), it.sweepRandomDelay) },
             namedWeapons = catalog,
             multiTargeting = optionalBoolean("attack", "turretMultiTargeting", false),
+            rotateWithBody = heavy && optionalBoolean("attack", "turretRotateWithBody", true),
         )
         val definition = UnitDefinition(identity, "CustomUnitMetadata", number("core", "radius", true),
             number("core", "displayRadius", true), integer("graphics", "total_frames", true),
             image("image"), imageScale,
             MovementProfile(if (helicopter) MovementType.AIR else MovementType.LAND, number("movement", "moveSpeed"), number("movement", "moveAccelerationSpeed"),
                 number("movement", "moveDecelerationSpeed"), number("movement", "maxTurnSpeed"),
-                number("movement", "turnAcceleration"), helicopter, helicopter, reverse,
-                if (helicopter) integer("movement", "moveSlidingDir") else -1, flight?.first),
+                number("movement", "turnAcceleration"), helicopter || heavy, helicopter || heavy, reverse,
+                if (helicopter || heavy) integer("movement", "moveSlidingDir") else -1, flight?.first),
             sections.flatMap { (s, values) -> values.keys.filter { it in retained[sectionKind(s)].orEmpty() } }.toSet(), sight, profile,
             build = BuildProfile(price, buildRate), mech = gait, rotor = flight?.second)
         definition

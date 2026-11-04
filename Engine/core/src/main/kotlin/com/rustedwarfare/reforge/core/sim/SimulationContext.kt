@@ -811,6 +811,8 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
     }
 
     private fun applyUpgrade(action: Action, unit: MutableUnit, upgradeId: String, cancel: Boolean): ActionResult {
+        if (!cancel && unit.definition.production != null && !BuildingWork.isReady(unit))
+            return reject(action, "factory-under-construction", "The factory must finish construction before accepting an upgrade")
         val upgrades = ordinaryUpgrades ?: return reject(action, "cannot-upgrade", "Unit cannot upgrade")
         return when (val result = upgrades.request(unit, upgradeId, cancel, checkNotNull(productionLedger))) {
             is OrdinaryUpgradeRequest.Rejected -> reject(action, result.error.code, result.error.message)
@@ -939,7 +941,11 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
                 unit.qBeforeDispatch = unit.singleNodePathCount
                 unit.consumedPathNodeCounts = emptyList()
                 if (unit.definition.builder != null) updateConstruction(unit, currentScenario, step)
-                if (unit.definition.production != null && BuildingWork.isReady(unit)) advanceProduction(unit, currentScenario)
+                val factoryWork = unit.definition.production != null
+                if (factoryWork && BuildingWork.isReady(unit)) {
+                    if (checkNotNull(productionLedger).upgradeAtHead(unit.unitId)) advanceUpgrade(unit)
+                    else advanceProduction(unit, currentScenario)
+                }
                 val economicBuilding = unit.definition.income != null && unit.definition.construction != null
                 if (economicBuilding && BuildingWork.isReady(unit)) advanceUpgrade(unit)
                 unit.definition.income?.takeIf { BuildingWork.isReady(unit) }?.let { income ->
@@ -956,11 +962,13 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
                         updatePatrolRoute(unit, currentScenario.map, step.stepIndex, previousRequest)
                     else updateAttackRoute(unit, currentScenario.map, step.stepIndex)
                 }
+                val fourLegged = unit.definition.mech?.kind == com.rustedwarfare.reforge.core.content.MechKind.FOUR_LEGGED
+                if (fourLegged) updateUnit(unit, currentScenario.map, step.delta, step.stepIndex, candidate.motionSamples)
                 if (BuildingWork.isReady(unit)) {
                     updateWeapon(unit, step.delta)
                     updatePointDefense(unit, step.delta)
                 }
-                updateUnit(unit, currentScenario.map, step.delta, step.stepIndex, candidate.motionSamples)
+                if (!fourLegged) updateUnit(unit, currentScenario.map, step.delta, step.stepIndex, candidate.motionSamples)
                 FlightMotion.advancePose(unit, step.delta)
                 MechGait.advance(unit, step.delta)
                 MechMotion.requireFinitePose(unit)
@@ -971,7 +979,7 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
                             else minOf(0.0, it.cooldown + step.delta)
                     }
                         ?: unit.combat?.let { it.cooldown = maxOf(0.0, it.cooldown - step.delta) }
-                    if (!economicBuilding) advanceUpgrade(unit)
+                    if (!economicBuilding && !factoryWork) advanceUpgrade(unit)
                 }
             }
             updateProjectiles(step.delta, candidate.existingProjectileIds)
@@ -1033,9 +1041,10 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
         }
         val initialLedger = nextScenario.economyContract?.let { economy ->
             val factories = nextScenario.units.mapNotNull { spawn ->
-                val producer = nextScenario.unitDefinitions.getValue(spawn.typeId).production ?: return@mapNotNull null
+                val definition = nextScenario.unitDefinitions.getValue(spawn.typeId)
+                val producer = definition.production ?: return@mapNotNull null
                 spawn.unitId to FactoryProductionSpec(spawn.ownerPlayerId, producer.unitTypeIds.associateWith {
-                    checkNotNull(nextScenario.unitDefinitions.getValue(it).build) })
+                    checkNotNull(nextScenario.unitDefinitions.getValue(it).build) }, definition.upgrades?.actions.orEmpty())
             }.toMap()
             ProductionLedger.initial(economy.initialBalances, factories,
                 nextScenario.unitDefinitions.values.any { it.income != null } || nextScenario.maintenanceContract != null)
@@ -1164,7 +1173,7 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
             if (!m.reverseSpeedPercentage.isFinite() || !air && (m.reverseSpeedPercentage !in setOf(0.0, 1.0) ||
                 m.reverseSpeedPercentage != 0.0 && definition.mech == null) ||
                 definition.mech?.let { !it.isValid() || m.type != MovementType.LAND } == true)
-                return SimulationError("unsupported-mech", "Expected a finite two-legged LAND profile for reverse movement")
+                return SimulationError("unsupported-mech", "Expected a finite supported LAND mech profile")
             definition.builder?.let { builder ->
                 if (definition.fogOfWarSightRange < 15 || m.type != MovementType.LAND || m.moveSpeed > .8 ||
                     builder.buildingTypeIds.isEmpty() || builder.buildingTypeIds.distinct().size != builder.buildingTypeIds.size ||
@@ -1242,10 +1251,12 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
             }
             val numbers = listOf(definition.radius, m.moveSpeed, m.moveAccelerationSpeed, m.moveDecelerationSpeed,
                 m.maxTurnSpeed, m.turnAcceleration)
+            val fourLegged = definition.mech?.kind == com.rustedwarfare.reforge.core.content.MechKind.FOUR_LEGGED
             if (numbers.any { !it.isFinite() || it < 0.0 } ||
-                (definition.building == null && definition.radius >= input.map.tileWidth) ||
-                m.type != MovementType.AIR && (m.slidingMode || m.ignoringBody)) {
-                return SimulationError("unsupported-unit", "Expected finite nonnegative, non-sliding movement and radius below tile size")
+                (definition.building == null && definition.radius >= input.map.tileWidth && !(fourLegged && definition.radius == 22.0)) ||
+                m.type != MovementType.AIR && !fourLegged && (m.slidingMode || m.ignoringBody) ||
+                fourLegged && (m.type != MovementType.LAND || !m.slidingMode || !m.ignoringBody)) {
+                return SimulationError("unsupported-unit", "Expected finite movement and the supported representative's radius and locomotion")
             }
             if (m.type == MovementType.NONE && numbers.drop(1).any { it != 0.0 })
                 return SimulationError("unsupported-unit", "Immobile definitions require zero movement parameters")
@@ -1318,11 +1329,16 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
                     !ground.gravity.isFinite() || ground.gravity < 0f || !ground.trueGravity.isFinite() || ground.trueGravity < 0f ||
                     listOf(combat.attackRange, combat.projectile.life, combat.projectile.speed).any { !it.toFloat().isFinite() }
                 } == true
+                val invalidSplash = combat.projectile.splash?.let { splash ->
+                    !splash.damage.isFinite() || splash.damage < 0f || !splash.radius.isFinite() || splash.radius <= 0f ||
+                        !(splash.radius * splash.radius).isFinite() || combat.projectile.ground != null ||
+                        combat.projectile.missile != null || combat.projectile.instant
+                } == true
                 val invalidIdle = combat.idleSweep?.let { !it.angle.isFinite() || it.angle <= 0.0 ||
                     !it.delay.isFinite() || it.delay <= 0f || !it.speedFactor.isFinite() || it.speedFactor <= 0f ||
                     it.randomDelayExclusive <= 0 } == true
                 if (positive.any { !it.isFinite() || it <= 0.0 } || nonnegative.any { !it.isFinite() || it < 0.0 } ||
-                    signed.any { !it.isFinite() } || invalidIdle || invalidGround || invalidAcceleration ||
+                    signed.any { !it.isFinite() } || invalidIdle || invalidGround || invalidSplash || invalidAcceleration ||
                     !combat.projectile.deflectionHealth.isFinite() || combat.projectile.deflectionHealth <= 0f)
                     return SimulationError("unsupported-combat", "Ordinary combat numbers must be finite and in range")
             }
@@ -1475,7 +1491,9 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
             unit.cancelRoute()
             return
         }
-        if (policies.coordinates.distanceSquared(unit.position, target.position) < weapon.attackRange * weapon.attackRange) {
+        val compositeRange = unit.definition.mech?.kind == com.rustedwarfare.reforge.core.content.MechKind.FOUR_LEGGED
+        if (policies.coordinates.distanceSquared(unit.position, target.position) < weapon.attackRange * weapon.attackRange &&
+            (!compositeRange || NamedWeaponRuntime.inRange(unit, target, input.players, policies.coordinates))) {
             if (unit.moveTarget != null) unit.cancelRoute()
             return
         }
@@ -1731,7 +1749,8 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
             if (ground == null) unit.height else unit.height.toFloat().toDouble(),
             deflectionHealth = weapon.projectile.deflectionHealth, instant = weapon.projectile.instant,
             nonDeflectable = weapon.projectile.nonDeflectable, ground = ground, verticalSpeed = ground?.profile?.initialVerticalSpeed ?: 0f,
-            sourceWeaponName = definition?.name, acceleration = weapon.projectile.acceleration)
+            sourceWeaponName = definition?.name, acceleration = weapon.projectile.acceleration,
+            splash = weapon.projectile.splash, retargetOnDeath = weapon.projectile.retargetOnDeath)
         projectiles += projectile
         pendingProjectileEvents += ProjectileEventObservation("born", projectileObservation(projectile))
         weapon.fireSound?.let { steps.current.pendingSoundTriggers += SoundTriggerObservation(it.eventId, position, it.volume) }
@@ -1760,6 +1779,7 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
                 continue
             }
             if (projectile.missile != null && units[projectile.targetUnitId]?.alive == false) retargetMissile(projectile)
+            if (projectile.retargetOnDeath && units[projectile.targetUnitId]?.alive == false) retargetOrdinaryMissile(projectile)
             val target = units[projectile.targetUnitId]
             if (target == null && projectile.ground == null) {
                 projectile.age += delta.toFloat()
@@ -1774,6 +1794,7 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
             if (hit) {
                 if (projectile.ground != null) applyAreaDamage(projectile)
                 val appliedDamage = if (projectile.ground == null) applyDamage(checkNotNull(target), projectile.damage) else null
+                if (projectile.splash != null) applyOrdinarySplash(projectile)
                 pendingProjectileEvents += ProjectileEventObservation("impact", projectileObservation(projectile), appliedDamage)
                 projectiles.remove(projectile)
             } else if (projectile.remainingLife == 0.0) {
@@ -1839,6 +1860,56 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
         chosen?.let { shot.targetUnitId = it.unitId }
     }
 
+    private fun retargetOrdinaryMissile(shot: MutableProjectile) {
+        val source = units[shot.sourceUnitId]?.takeIf { it.alive } ?: return
+        val catalog = source.definition.combat?.namedWeapons ?: return
+        val weapon = catalog.byName[shot.sourceWeaponName] ?: return
+        val players = checkNotNull(scenario).players
+        val forward = policies.coordinates.displacement(shot.heading, 15.0)
+        val center = Position(shot.position.x + forward.x, shot.position.y + forward.y)
+        require(center.x.isFinite() && center.y.isFinite()) { "Ordinary missile search center must remain finite" }
+        val preferred = units[source.primaryCombatTargetId]
+        var nearest = 120.0 * 120.0
+        var chosen: MutableUnit? = null
+        for (candidate in orderedUnits()) {
+            if (!CombatTargetQuery.canAttackAirCategory(source, candidate) ||
+                !NamedWeaponRuntime.qualifies(source, candidate, weapon, players, policies.coordinates, checkRange = false) ||
+                weapon.attachedTo?.let { parent -> !NamedWeaponRuntime.qualifies(source, candidate,
+                    catalog.byName.getValue(parent), players, policies.coordinates, checkRange = false) } == true) continue
+            val distance = policies.coordinates.distanceSquared(center, candidate.position)
+            require(distance.isFinite()) { "Ordinary missile search distance must remain finite" }
+            if (distance >= 120.0 * 120.0) continue
+            if (distance < nearest || candidate === preferred) {
+                chosen = candidate
+                nearest = distance
+            }
+        }
+        chosen?.let { shot.targetUnitId = it.unitId }
+    }
+
+    private fun applyOrdinarySplash(projectile: MutableProjectile) {
+        val profile = checkNotNull(projectile.splash)
+        val source = checkNotNull(units[projectile.sourceUnitId])
+        val players = checkNotNull(scenario).players
+        val team = players.single { it.playerId == source.ownerPlayerId }.teamId
+        val x = projectile.position.x.toFloat()
+        val y = projectile.position.y.toFloat()
+        val height = projectile.height.toFloat()
+        for (target in orderedUnits()) {
+            if (!target.alive || target.health == null || target.ownerPlayerId == source.ownerPlayerId ||
+                team != null && players.single { it.playerId == target.ownerPlayerId }.teamId == team) continue
+            if (CombatTargetQuery.isFlying(target) != (height >= 5f) ||
+                target.height.toFloat() < -5f && height >= -2f) continue
+            val squared = GroundMath.square(x, y, target.position.x.toFloat(), target.position.y.toFloat())
+            require(squared.isFinite()) { "Ordinary splash geometry must remain finite" }
+            if (squared > profile.radius * profile.radius) continue
+            val distance = GroundMath.sqrt(squared)
+            if (distance > profile.radius) continue
+            val falloff = minOf(1f, ((1f - distance / profile.radius).toDouble() + .1).toFloat())
+            applyDamage(target, (profile.damage * falloff).toDouble())
+        }
+    }
+
     private fun applyAreaDamage(projectile: MutableProjectile) {
         val profile = checkNotNull(projectile.ground).profile
         val source = checkNotNull(units[projectile.sourceUnitId])
@@ -1875,6 +1946,8 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
         if (!target.alive) {
             missileTargets = missileTargets?.remove(target.unitId)
             if (target.definition.production != null) {
+                if (checkNotNull(productionLedger).upgradeQueue(target.unitId).isNotEmpty())
+                    pendingEvents += Event("upgrade-refunded", target.unitId)
                 if (checkNotNull(productionLedger).queue(target.unitId).isNotEmpty())
                     pendingEvents += Event("production-refunded", target.unitId)
                 productionLedger = checkNotNull(productionLedger).destroyFactory(target.unitId)
@@ -1907,6 +1980,7 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
                            motionSamples: MutableList<MotionStepSample>?) {
         val movement = unit.definition.movement
         val air = movement.type == MovementType.AIR
+        val sliding = movement.slidingMode
         val contract = checkNotNull(scenario?.movementContract)
         val positionBefore = unit.position
         val headingBefore = unit.heading
@@ -1971,7 +2045,8 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
             val diff = if (unit.mechState == null) policies.steering.turn(unit, steeringTarget, delta, policies.coordinates)
                 else MechMotion.turn(unit, steeringTarget, delta, policies.steering, policies.coordinates)
             val propulsionDistance = if ((approachingBuilding || approachingWork) && finalPoint) maxOf(d2, 16.0) else d2
-            val fraction = policies.propulsion.targetFraction(movement, unit.speed, propulsionDistance, diff, finalPoint, contract.targetRadius)
+            val fraction = policies.propulsion.targetFraction(movement, unit.speed, propulsionDistance,
+                if (movement.ignoringBody) 0.0 else diff, finalPoint, contract.targetRadius)
             aimForSample = steeringTarget
             finalForSample = finalPoint
             differenceForSample = diff
@@ -1998,15 +2073,16 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
         }
 
         unit.mechState = unit.mechState?.copy(hadMotionAim = aimForSample != null)
-        val displacement = if (air) {
-            val desiredVelocity = if (target == null) Position(0.0, 0.0) else
-                policies.coordinates.displacement(policies.coordinates.desired(unit.position, target), speedTarget)
+        val displacement = if (sliding) {
+            val desiredVelocity = aimForSample?.let {
+                policies.coordinates.displacement(policies.coordinates.desired(unit.position, it), speedTarget)
+            } ?: Position(0.0, 0.0)
             unit.flightVelocity = FlightMotion.velocity(movement, unit.flightVelocity, desiredVelocity, requestedFraction, delta)
             unit.speed = kotlin.math.hypot(unit.flightVelocity.x, unit.flightVelocity.y)
             Position(unit.flightVelocity.x * delta, unit.flightVelocity.y * delta)
         } else {
             val rate = if (unit.speed < speedTarget) movement.moveAccelerationSpeed else movement.moveDecelerationSpeed
-            // LAND B/C advance the propulsion proportion; AIR B/C limit a velocity vector.
+            // Non-sliding LAND B/C advance the propulsion proportion.
             unit.speed = approach(unit.speed, speedTarget, rate * movement.moveSpeed * delta)
             policies.coordinates.displacement(unit.heading, unit.speed * delta)
         }
@@ -2130,7 +2206,7 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
             economy = productionLedger?.observe(),
             incomeStates = orderedUnits().filter { it.definition.income != null }.map {
                 IncomeStateObservation(it.unitId, it.incomeElapsed) },
-            upgrades = ordinaryUpgrades?.observe(),
+            upgrades = ordinaryUpgrades?.observe(checkNotNull(productionLedger)),
             construction = if (constructionNamespaceEnabled(currentScenario)) ConstructionObservation(buildingWork.clock,
                 orderedUnits().filter { it.unitId.startsWith(CONSTRUCTED_UNIT_PREFIX) }.map {
                     ConstructedBuildingObservation(it.unitId, checkNotNull(it.objectId), it.updateKey, it.constructionProgress) },

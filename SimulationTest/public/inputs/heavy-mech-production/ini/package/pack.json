@@ -1,0 +1,11 @@
+{
+  "format": "rw-reforge.content-pack.v1",
+  "id": "p008-heavy-ini",
+  "name": "Owned ordinary LAND heavy-mech development variant",
+  "units": [
+    {
+      "type": "mech-heavy",
+      "file": "units/heavy.ini"
+    }
+  ]
+}

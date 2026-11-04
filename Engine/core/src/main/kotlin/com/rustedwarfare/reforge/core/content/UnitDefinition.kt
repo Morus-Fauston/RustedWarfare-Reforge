@@ -122,6 +122,7 @@ data class CombatProfile(
     val fireSound: FireSoundProfile? = null,
     val namedWeapons: WeaponCatalog? = null,
     val multiTargeting: Boolean = false,
+    val rotateWithBody: Boolean = false,
 )
 
 /** Stable content references and declaration order are separate from runtime storage indices. */
@@ -151,7 +152,8 @@ data class NamedWeaponDefinition(val name: String, val projectileName: String,
     val attachedTo: String? = null, val slave: Boolean = false,
     val linkDelayWithTurret: String? = null, val limitingAngle: Double? = null,
     val idleDirection: Double = 0.0,
-    val barrelX: Double? = null, val oddShotOffset: Double? = null)
+    val barrelX: Double? = null, val oddShotOffset: Double? = null,
+    val invisible: Boolean = false, val imageOffsetX: Double = 0.0, val imageOffsetY: Double = 0.0)
 
 /** Gameplay trigger identity, never an audio filename or resource-pack decision. */
 enum class FireSoundProfile(val eventId: String, val volume: Float) {
@@ -166,7 +168,11 @@ data class IdleSweepProfile(val angle: Double, val delay: Float, val speedFactor
 data class ProjectileProfile(val directDamage: Double, val life: Double, val speed: Double,
     val instant: Boolean = false, val nonDeflectable: Boolean = false, val deflectionHealth: Float = 1f,
     val ground: GroundProjectileProfile? = null, val missile: NativeMissileProfile? = null,
-    val acceleration: LinearProjectileAcceleration? = null)
+    val acceleration: LinearProjectileAcceleration? = null,
+    val splash: OrdinarySplashProfile? = null, val retargetOnDeath: Boolean = false)
+
+/** Ordinary homing impact area; separate from a fixed ground-snapshot artillery shot. */
+data class OrdinarySplashProfile(val damage: Float, val radius: Float)
 
 data class LinearProjectileAcceleration(val targetSpeed: Double, val acceleration: Double)
 

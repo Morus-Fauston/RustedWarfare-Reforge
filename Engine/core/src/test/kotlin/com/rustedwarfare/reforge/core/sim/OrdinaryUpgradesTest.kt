@@ -54,7 +54,7 @@ class OrdinaryUpgradesTest {
         assertEquals(12L, ledger.balances.getValue("p1"))
         assertEquals("duplicate-upgrade", assertIs<OrdinaryUpgradeRequest.Rejected>(
             state.request(unit, "practice_gun", false, ledger)).error.code)
-        val queued = state.observe()
+        val queued = state.observe(ledger)
         val change = state.advance(unit, ledger)
         assertEquals("c_turret_t2_gun", unit.typeId)
         assertEquals(550.0, unit.health)
@@ -63,7 +63,7 @@ class OrdinaryUpgradesTest {
         assertEquals(Position(230.0, 150.0), unit.position)
         assertEquals(23L, change.ledger.balances.getValue("p1"))
         assertEquals(listOf(Event("upgrade-completed", "t"), Event("upgrade-refunded", "t")), change.events)
-        assertTrue(change.upgrades.observe().queues.getValue("t").isEmpty())
+        assertTrue(change.upgrades.observe(change.ledger).queues.getValue("t").isEmpty())
         assertEquals(2, queued.queues.getValue("t").size)
         val again = change.upgrades.discard(unit, change.ledger)
         assertEquals(23L, again.ledger.balances.getValue("p1"))
@@ -72,7 +72,7 @@ class OrdinaryUpgradesTest {
         val cancelled = assertIs<OrdinaryUpgradeRequest.Accepted>(state.request(unit.copy(typeId = "practice",
             definition = tower), "practice_artillery", true, ledger)).change
         assertEquals(23L, cancelled.ledger.balances.getValue("p1"))
-        assertEquals(1, cancelled.upgrades.observe().queues.getValue("t").size)
-        assertEquals(2, state.observe().queues.getValue("t").size)
+        assertEquals(1, cancelled.upgrades.observe(cancelled.ledger).queues.getValue("t").size)
+        assertEquals(2, state.observe(ledger).queues.getValue("t").size)
     }
 }

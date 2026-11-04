@@ -1,6 +1,7 @@
 package com.rustedwarfare.reforge.core.sim
 
 import com.rustedwarfare.reforge.core.content.MechBodyDefinition
+import com.rustedwarfare.reforge.core.content.MechKind
 import java.util.Random
 import kotlin.math.abs
 import kotlin.math.sign
@@ -9,6 +10,7 @@ import kotlin.math.sign
 internal object MechBody {
     fun advance(unit: MutableUnit, delta: Double) {
         val old = unit.mechState ?: return
+        if (unit.definition.mech?.kind == MechKind.FOUR_LEGGED) return
         val definition = checkNotNull(unit.definition.mech).body
         if (old.hold != 0.0) {
             unit.mechState = old.copy(hold = approach(old.hold, 0.0, delta))

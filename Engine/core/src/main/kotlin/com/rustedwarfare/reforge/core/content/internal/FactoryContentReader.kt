@@ -7,13 +7,14 @@ import java.nio.file.Path
 internal object FactoryContentReader {
     private val fields = setOf("format", "name", "maxHp", "radius", "footprint", "movementType",
         "productionUnit", "image", "image_back", "image_dead", "fogOfWarSightRange",
-        "productionUnits", "placementFootprint", "price", "buildSpeed", "exitX", "exitY", "exitDistance")
+        "productionUnits", "placementFootprint", "price", "buildSpeed", "exitX", "exitY", "exitDistance",
+        "techLevel", "upgradeTo", "upgradePrice", "upgradeBuildSpeed")
 
     private val schema = UnitContentSchema.native(fields,
         setOf("rw-reforge.native-land-factory.v1", "rw-reforge.native-land-factory.v2", "rw-reforge.mech-factory.v1",
-            "rw-reforge.native-air-factory.v1")).let {
-        it.copy(numericFields = it.numericFields + setOf("exitX", "exitY", "exitDistance"),
-            textFields = it.textFields - setOf("exitX", "exitY", "exitDistance"))
+            "rw-reforge.mech-factory.v2", "rw-reforge.native-air-factory.v1")).let {
+        val numbers = setOf("exitX", "exitY", "exitDistance", "techLevel", "upgradePrice", "upgradeBuildSpeed")
+        it.copy(numericFields = it.numericFields + numbers, textFields = it.textFields - numbers)
     }
 
     fun read(path: Path): UnitDefinition = readWithSources(path).definition
@@ -31,16 +32,29 @@ internal object FactoryContentReader {
         }
         fun positive(key: String): Double = required(key).toDoubleOrNull()?.takeIf { it.isFinite() && it > 0.0 }
             ?: reject(ContentErrorCode.MALFORMED_SYNTAX, path, field = key, reason = "Expected finite positive number")
-        val mech = required("format") == "rw-reforge.mech-factory.v1"
+        val mechV2 = required("format") == "rw-reforge.mech-factory.v2"
+        val mech = mechV2 || required("format") == "rw-reforge.mech-factory.v1"
+        val t2 = mechV2 && required("techLevel") == "2"
+        val upgradeFields = setOf("upgradeTo", "upgradePrice", "upgradeBuildSpeed")
+        if (mechV2) {
+            only("techLevel", if (t2) "2" else "1")
+            if (!t2) {
+                only("upgradeTo", "mechFactoryT2"); only("upgradePrice", "4000"); only("upgradeBuildSpeed", "0.0004")
+            } else values.keys.firstOrNull { it in upgradeFields }?.let {
+                reject(ContentErrorCode.UNSUPPORTED_FIELD, path, field = it, reason = "The finite T2 factory has no further upgrade")
+            }
+        } else values.keys.firstOrNull { it in upgradeFields || it == "techLevel" }?.let {
+            reject(ContentErrorCode.UNSUPPORTED_FIELD, path, field = it, reason = "Factory upgrades require the finite mech v2 format")
+        }
         val air = required("format") == "rw-reforge.native-air-factory.v1"
         val construction = mech || air || required("format") == "rw-reforge.native-land-factory.v2"
         val newFields = setOf("productionUnits", "placementFootprint", "price", "buildSpeed")
         if (construction) {
-            only("productionUnits", when { air -> "helicopter"; mech -> "builder,mechGun"; else -> "builder,c_tank" })
+            only("productionUnits", when { air -> "helicopter"; t2 -> "builder,mechGun,mechHeavyMissile"; mech -> "builder,mechGun"; else -> "builder,c_tank" })
             only("placementFootprint", if (air) "-1,-1,1,2" else "-1,-1,1,3")
-            only("price", if (mech || air) "1000" else "700")
-            only("buildSpeed", "0.001")
-            only("maxHp", when { air -> "1000"; mech -> "1800"; else -> "1200" })
+            only("price", when { t2 -> "5000"; mech || air -> "1000"; else -> "700" })
+            only("buildSpeed", if (t2) "0.0005" else "0.001")
+            only("maxHp", when { air -> "1000"; t2 -> "3100"; mech -> "1800"; else -> "1200" })
             only("radius", if (mech) "35" else "30")
             only("fogOfWarSightRange", "15")
             if ("productionUnit" in values) reject(ContentErrorCode.UNSUPPORTED_FIELD, path,
@@ -58,7 +72,8 @@ internal object FactoryContentReader {
         }
         if (air && "image_back" in values) reject(ContentErrorCode.UNSUPPORTED_FIELD, path, field = "image_back",
             reason = "The finite native air factory has no back image")
-        only("name", when { air -> "airFactory"; mech -> "mechFactory"; else -> "landFactory" })
+        val id = when { air -> "airFactory"; t2 -> "mechFactoryT2"; mech -> "mechFactory"; else -> "landFactory" }
+        only("name", id)
         only("movementType", "NONE")
         only("footprint", "-1,-1,1,1")
         val sight = required("fogOfWarSightRange").toIntOrNull()?.takeIf { it >= 0 }
@@ -79,7 +94,7 @@ internal object FactoryContentReader {
             }
             return result
         }
-        return UnitDefinition(when { air -> "airFactory"; mech -> "mechFactory"; else -> "landFactory" },
+        return UnitDefinition(id,
             when { air -> "NativeAirFactoryFixture"; mech -> "FiniteMechFactoryFixture"; else -> "NativeLandFactoryFixture" }, radius, radius, 1,
             image("image"), 1.0,
             MovementProfile(MovementType.NONE, 0.0, 0.0, 0.0, 0.0, 0.0, false, false), emptySet(), sight,
@@ -88,10 +103,11 @@ internal object FactoryContentReader {
                 if (air) null else image("image_back"), placementFootprint = if (air) BuildingFootprint(-1, -1, 1, 2)
                     else if (construction) BuildingFootprint(-1, -1, 1, 3)
                     else BuildingFootprint(-1, -1, 1, 1)),
-            production = ProductionProfile(if (air) listOf("helicopter") else if (mech) listOf("builder", "mechGun") else if (construction) listOf("builder", "c_tank") else listOf("c_tank"),
+            production = ProductionProfile(if (air) listOf("helicopter") else if (t2) listOf("builder", "mechGun", "mechHeavyMissile") else if (mech) listOf("builder", "mechGun") else if (construction) listOf("builder", "c_tank") else listOf("c_tank"),
                 when { air -> FactoryExitProfile.NATIVE_AIR; mech -> FactoryExitProfile.CUSTOM_MECH; else -> FactoryExitProfile.NATIVE_LAND }),
-            build = if (construction) BuildProfile(if (mech || air) 1000L else 700L, .001f) else null,
-            construction = if (construction) ConstructionProfile(if (mech || air) 1000L else 700L, .001f) else null,
+            build = if (construction) BuildProfile(positive("price").toLong(), positive("buildSpeed").toFloat()) else null,
+            construction = if (construction) ConstructionProfile(positive("price").toLong(), positive("buildSpeed").toFloat()) else null,
+            upgrades = if (mechV2 && !t2) UpgradeProfile(listOf(UpgradeActionProfile("upgrade_t2", "mechFactoryT2", 4000L, .0004f))) else null,
             directHitTargetKind = if (mech) DirectHitTargetKind.ORDINARY else DirectHitTargetKind.NATIVE_BUILDING)
     }
 }

@@ -2,6 +2,7 @@ package com.rustedwarfare.reforge.core.sim
 
 import com.rustedwarfare.reforge.core.content.DirectHitTargetKind
 import com.rustedwarfare.reforge.core.content.CombatProfile
+import com.rustedwarfare.reforge.core.content.MechKind
 import kotlin.math.abs
 import kotlin.math.sqrt
 
@@ -106,7 +107,8 @@ internal object OrdinaryWeapon {
                 diff
             } else turn
             state.turretHeading = ScreenPlane.normalize(state.turretHeading + applied)
-            if (state === unit.combat) unit.mechState?.let { unit.mechState = it.copy(bodyAngle = it.bodyAngle + applied) }
+            if (state === unit.combat && unit.definition.mech?.kind == MechKind.TWO_LEGGED)
+                unit.mechState?.let { unit.mechState = it.copy(bodyAngle = it.bodyAngle + applied) }
         }
         return ScreenPlane.difference(heading, state.turretHeading)
     }

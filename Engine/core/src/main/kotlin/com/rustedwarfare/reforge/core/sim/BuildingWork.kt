@@ -256,7 +256,7 @@ internal class BuildingWork private constructor(val clock: Int, val nonces: Map<
                 objectId = identity.objectId, updateKey = identity.updateKey, constructionProgress = 0f)
             paid = definition.production?.let { production ->
                 charged.register(publicId, FactoryProductionSpec(worker.ownerPlayerId, production.unitTypeIds.associateWith {
-                    checkNotNull(input.unitDefinitions.getValue(it).build) }))
+                    checkNotNull(input.unitDefinitions.getValue(it).build) }, definition.upgrades?.actions.orEmpty()))
             } ?: charged
             registered = upgrades?.register(publicId, definition)
             next = recordBirth(worker.ownerPlayerId, nonce)

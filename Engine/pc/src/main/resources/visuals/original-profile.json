@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "profileId": "rw.android.1.15.176.visual.v3",
+  "profileId": "rw.android.1.15.176.visual.v4",
   "identity": {
     "package": "com.corrodinggames.rts",
     "versionName": "1.15",
@@ -338,6 +338,54 @@
       "sha256": "a69bb97f81a5301ea5867ad56ec3541c43258c005480dd35a73d3a0dd61154fb",
       "width": 40,
       "height": 61
+    },
+    {
+      "id": "heavy-mech",
+      "path": "assets/units/mechs_large/topHeavyMissile.png",
+      "bytes": 3413,
+      "sha256": "f5763fc35a6311d77b4af83cb3c4095ce55790a8a22844e203071f7d42c13885",
+      "width": 25,
+      "height": 39
+    },
+    {
+      "id": "heavy-mech-turret",
+      "path": "assets/units/mechs_large/heavyMisssileTurret.png",
+      "bytes": 3272,
+      "sha256": "2be2903eb6eef3916cd8af926aa4c3fe009a58d2209e100f2b629563d19f865a",
+      "width": 35,
+      "height": 28
+    },
+    {
+      "id": "heavy-mech-small-turret",
+      "path": "assets/units/mechs_large/smallTurret2.png",
+      "bytes": 3150,
+      "sha256": "b05d73498bec9ea6c0ea8322a4990143fdde4db7e4b53949b3c024e0d1440c49",
+      "width": 11,
+      "height": 24
+    },
+    {
+      "id": "heavy-mech-leg",
+      "path": "assets/units/mechs_large/leg.png",
+      "bytes": 339,
+      "sha256": "b1a80d2e224b3592e0375d47ee5e72d060a09bbb1f92fcf0b16716b39f12b742",
+      "width": 16,
+      "height": 68
+    },
+    {
+      "id": "heavy-mech-foot",
+      "path": "assets/units/mechs_large/foot_small2.png",
+      "bytes": 293,
+      "sha256": "1c635118ff7a3ff1ce0e342162fe6096186bc022c849f6553b744a9fcdb8e594",
+      "width": 11,
+      "height": 18
+    },
+    {
+      "id": "mech-factory-t2",
+      "path": "assets/units/mech_factory/mechFactoryTopT2.png",
+      "bytes": 1814,
+      "sha256": "5ce690c2c96ef2d13e590581bb1b9cc31fae445160436f12cebcfb7746b8000c",
+      "width": 74,
+      "height": 106
     }
   ],
   "unitOutputs": {
@@ -949,6 +997,102 @@
         61
       ],
       "frames": 1
+    },
+    "heavy-mech": {
+      "file": "units/heavy-mech.png",
+      "operation": "crop",
+      "source": "heavy-mech",
+      "rect": [
+        0,
+        0,
+        25,
+        39
+      ],
+      "target": [
+        25,
+        39
+      ],
+      "frames": 1
+    },
+    "heavy-mech-turret": {
+      "file": "units/heavy-mech-turret.png",
+      "operation": "crop",
+      "source": "heavy-mech-turret",
+      "rect": [
+        0,
+        0,
+        35,
+        28
+      ],
+      "target": [
+        35,
+        28
+      ],
+      "frames": 1
+    },
+    "heavy-mech-small-turret": {
+      "file": "units/heavy-mech-small-turret.png",
+      "operation": "crop",
+      "source": "heavy-mech-small-turret",
+      "rect": [
+        0,
+        0,
+        11,
+        24
+      ],
+      "target": [
+        11,
+        24
+      ],
+      "frames": 1
+    },
+    "heavy-mech-leg": {
+      "file": "units/heavy-mech-leg.png",
+      "operation": "crop",
+      "source": "heavy-mech-leg",
+      "rect": [
+        0,
+        0,
+        16,
+        68
+      ],
+      "target": [
+        16,
+        68
+      ],
+      "frames": 1
+    },
+    "heavy-mech-foot": {
+      "file": "units/heavy-mech-foot.png",
+      "operation": "crop",
+      "source": "heavy-mech-foot",
+      "rect": [
+        0,
+        0,
+        11,
+        18
+      ],
+      "target": [
+        11,
+        18
+      ],
+      "frames": 1
+    },
+    "mech-factory-t2": {
+      "file": "units/mech-factory-t2.png",
+      "operation": "crop",
+      "source": "mech-factory-t2",
+      "rect": [
+        0,
+        0,
+        74,
+        106
+      ],
+      "target": [
+        74,
+        106
+      ],
+      "frames": 1
     }
   },
   "unitBindings": {
@@ -1038,6 +1182,20 @@
     "airFactory": {
       "body": "air-factory",
       "dead": "air-factory-dead"
+    },
+    "mechHeavyMissile": {
+      "body": "heavy-mech",
+      "turret": "heavy-mech-turret",
+      "leg": "heavy-mech-leg",
+      "foot": "heavy-mech-foot",
+      "weaponTurrets": {
+        "smallLaser": "heavy-mech-small-turret"
+      }
+    },
+    "mechFactoryT2": {
+      "body": "mech-factory-t2",
+      "back": "mech-factory-back",
+      "dead": "mech-factory-dead"
     }
   },
   "terrainOutputs": {

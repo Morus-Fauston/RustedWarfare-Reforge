@@ -8,6 +8,15 @@ import com.rustedwarfare.reforge.core.content.MovementType
 internal object NamedWeaponRuntime {
     // cg.ab constructor default in the fixed original turret evidence.
     private const val DEFAULT_LIMITING_RANGE = 99999.0
+    fun inRange(unit: MutableUnit, target: MutableUnit, players: List<Player>, coordinates: CoordinatePolicy): Boolean {
+        val catalog = checkNotNull(unit.definition.combat?.namedWeapons)
+        return catalog.ordered.any { weapon ->
+            weapon.canShoot && qualifies(unit, target, weapon, players, coordinates) &&
+                (weapon.attachedTo?.let { parent ->
+                    qualifies(unit, target, catalog.byName.getValue(parent), players, coordinates)
+                } ?: true)
+        }
+    }
     fun usesNamedState(combat: CombatProfile): Boolean = combat.namedWeapons?.let { catalog ->
         catalog.ordered.size > 1 || catalog.ordered.any { weapon ->
             weapon.minimumRange > 0.0 || weapon.maximumRange?.let { it < combat.attackRange } == true ||
@@ -19,7 +28,7 @@ internal object NamedWeaponRuntime {
         }
     } == true
     fun qualifies(unit: MutableUnit, target: MutableUnit, weapon: NamedWeaponDefinition,
-                  players: List<Player>, coordinates: CoordinatePolicy): Boolean {
+                  players: List<Player>, coordinates: CoordinatePolicy, checkRange: Boolean = true): Boolean {
         if (!CombatTargetQuery.isEnemy(unit, target, players)) return false
         val categoryAllowed = when (target.definition.movement.type) {
             MovementType.LAND, MovementType.NONE -> weapon.canAttackLandUnits
@@ -32,6 +41,7 @@ internal object NamedWeaponRuntime {
             val bearing = ScreenPlane.desired(unit.position, target.position)
             if (kotlin.math.abs(ScreenPlane.difference(bearing, heading + weapon.idleDirection)) > limit) return false
         }
+        if (!checkRange) return true
         val globalRange = checkNotNull(unit.definition.combat).attackRange
         val maximum = minOf(globalRange, weapon.maximumRange ?: DEFAULT_LIMITING_RANGE)
         val distance = coordinates.distanceSquared(unit.position, target.position)

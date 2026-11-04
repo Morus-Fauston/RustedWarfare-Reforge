@@ -161,6 +161,7 @@ internal data class StepState(
             }
         }
         productionLedger?.validateCandidate()
+        productionLedger?.validateUpgrades(units)
         missileTargets?.validate(units)
         ordinaryUpgrades?.validateCandidate(units)
         // Ended/event-only objects also enter the public window; removing them from the active

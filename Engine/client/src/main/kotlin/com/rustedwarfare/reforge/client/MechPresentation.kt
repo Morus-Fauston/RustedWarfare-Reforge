@@ -4,18 +4,26 @@ import com.rustedwarfare.reforge.core.sim.PlayerObservation
 import java.util.Collections
 import kotlin.math.atan2
 import kotlin.math.hypot
+import kotlin.math.sqrt
+import com.rustedwarfare.reforge.core.content.MechKind
+
+data class MechShaftFrame(val sourceY: Int, val sourceHeight: Int, val width: Float, val height: Float,
+    val x: Float, val y: Float, val rotation: Float)
 
 data class MechLegFrame(val index: Int, val anchorX: Float, val anchorY: Float,
-    val footX: Float, val footY: Float, val length: Float, val rotation: Float, val footRotation: Float)
+    val footX: Float, val footY: Float, val length: Float, val rotation: Float, val footRotation: Float,
+    val shaft: MechShaftFrame? = null)
 
 data class MechUnitFrame(val unitId: String, val rotation: Float, val legs: List<MechLegFrame>,
     val bodyX: Float, val bodyY: Float)
 
 /** Geometry consumes only the caller's already-filtered observation; height is presentation-only. */
 object MechPresentation {
-    fun project(observation: PlayerObservation, projection: MapProjection): List<MechUnitFrame> {
+    fun project(observation: PlayerObservation, projection: MapProjection,
+                resources: SandboxRenderResources? = null): List<MechUnitFrame> {
         val mainBodies = observation.weapons.filter { it.weaponName == "mainBody" }.associateBy { it.unitId }
         return frozen(observation.units.filter { it.alive }.mapNotNull { unit -> unit.mechPose?.let { pose ->
+            val appearance = resources?.units?.getValue(unit.typeId)
             val weapon = mainBodies[unit.unitId]
             val origin = weapon?.pivot ?: unit.position
             val bodyX = projection.x(origin.x); val bodyY = projection.y(origin.y)
@@ -25,8 +33,19 @@ object MechPresentation {
                 val fx = projection.x(leg.foot.x); val fy = projection.y(leg.foot.y - leg.height)
                 require(listOf(ax, ay, fx, fy).all { it.isFinite() }) { "Non-finite projected mech geometry" }
                 val dx = (fx - ax).toDouble(); val dy = (fy - ay).toDouble()
+                val shaft = if (appearance?.mechKind == MechKind.FOUR_LEGGED) {
+                    // Crop uses world shoulder/foot separation; visual foot height only offsets the draw center.
+                    val sx = leg.anchor.x - leg.foot.x
+                    val sy = leg.anchor.y - leg.foot.y
+                    val squared = sx * sx + sy * sy
+                    require(squared.isFinite()) { "Non-finite four-leg shaft separation" }
+                    val half = if (squared < 1024.0) Math.round(sqrt(squared.toInt().toDouble())).toInt() else 34
+                    MechShaftFrame(34 - half, half * 2, finite(16.0 * appearance.imageScale * projection.scale),
+                        finite(half * 2.0 * appearance.imageScale * projection.scale), fx, fy,
+                        finite(Math.toDegrees(atan2(-sy, sx)) - 90.0))
+                } else null
                 MechLegFrame(leg.index, ax, ay, fx, fy, finite(hypot(dx, dy)),
-                    finite(Math.toDegrees(atan2(dy, dx))), finite(-leg.heading))
+                    finite(Math.toDegrees(atan2(dy, dx))), finite(-leg.heading), shaft)
             }), bodyX, bodyY)
         } })
     }

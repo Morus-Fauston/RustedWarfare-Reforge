@@ -77,6 +77,7 @@ internal object ScenarioReader {
             val unit = unwrap(when (declaration["loader"]?.jsonPrimitive?.content ?: "variant") {
                 "combat" -> ContentLoader.loadCombatUnit(ref.path)
                 "mech" -> ContentLoader.loadMechUnit(ref.path)
+                "mech-heavy" -> ContentLoader.loadHeavyMechUnit(ref.path)
                 "helicopter" -> ContentLoader.loadHelicopterUnit(ref.path)
                 "factory" -> ContentLoader.loadFactory(ref.path)
                 "builder" -> ContentLoader.loadBuilder(ref.path)
@@ -93,7 +94,8 @@ internal object ScenarioReader {
             if (content.containsKey("unitVariants") && ref.id != unit.id) throw InputError("Content type ID differs from loaded definition")
             val images = listOfNotNull(unit.imagePath, unit.combat?.turretImagePath, unit.combat?.deadImagePath,
                 unit.durability?.deadImagePath, unit.building?.backImagePath, unit.rotor?.imagePath) +
-                unit.mech?.legs.orEmpty().flatMap { listOf(it.legImage, it.footImage) }
+                unit.mech?.legs.orEmpty().flatMap { listOf(it.legImage, it.footImage) } +
+                unit.combat?.namedWeapons?.ordered.orEmpty().mapNotNull { it.imagePath }
             if (images.any { it.toRealPath() !in paths }) throw InputError("A loaded image dependency has no declared identity")
             ref.id to unit
         }

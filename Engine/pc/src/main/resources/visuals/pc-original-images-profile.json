@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "profileId": "rw.pc.steam.9902063.images.v3",
+  "profileId": "rw.pc.steam.9902063.images.v4",
   "identity": {
     "jarPath": "game-lib.jar",
     "jarBytes": 2639503,
@@ -6198,10 +6198,16 @@
     "helicopter-rotor": "assets/units/helicopter/helicopter_blades.png",
     "helicopter-dead": "assets/units/helicopter/helicopter_dead.png",
     "air-factory": "res/drawable/air_factory.png",
-    "air-factory-dead": "res/drawable/air_factory_dead.png"
+    "air-factory-dead": "res/drawable/air_factory_dead.png",
+    "heavy-mech": "assets/units/mechs_large/topHeavyMissile.png",
+    "heavy-mech-turret": "assets/units/mechs_large/heavyMisssileTurret.png",
+    "heavy-mech-small-turret": "assets/units/mechs_large/smallTurret2.png",
+    "heavy-mech-leg": "assets/units/mechs_large/leg.png",
+    "heavy-mech-foot": "assets/units/mechs_large/foot_small2.png",
+    "mech-factory-t2": "assets/units/mech_factory/mechFactoryTopT2.png"
   },
   "mappingBasis": {
-    "androidProfileSha256": "0aae02084f82106699971d17054573bc28f370d51730b01cce8155f253a81d7f",
-    "scope": "Forty-one qualified source images; 38 static unit outputs and 5 existing terrain outputs for 20 supported objects. Five helicopter/air-factory image sources have independently matched decoded APK/PC RGBA. Native air-factory static first frame uses the reviewed top-left 40x61 crop. Original collections and prior mappings are unchanged; no original gameplay execution or all-image rendering claim."
+    "androidProfileSha256": "c21f3e42c418a0645853ca24a269b7a90a4379a8c3dcb90fbe6ffd37bcae0758",
+    "scope": "Forty-seven qualified source images; six new heavy-mech and T2 body recipes. Heavy named smallLaser has its own image; T2 back/dead reuse the unchanged T1 outputs. Eight new resource aliases; all prior recipes and the full original source collection are unchanged. Static mapping only, without original gameplay execution or all-image rendering claim."
   }
 }

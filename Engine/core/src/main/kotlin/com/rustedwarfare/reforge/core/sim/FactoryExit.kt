@@ -26,13 +26,18 @@ internal object FactoryExit {
 
     fun supportsMechFactory(definition: UnitDefinition): Boolean {
         val building = definition.building ?: return false
-        return definition.id == "mechFactory" && definition.production?.exitProfile == FactoryExitProfile.CUSTOM_MECH &&
-            definition.production.unitTypeIds == listOf("builder", "mechGun") &&
-            definition.build == BuildProfile(1000L, .001f) && definition.construction == ConstructionProfile(1000L, .001f) &&
-            definition.radius == 35.0 && definition.maximumHealth == 1800.0 &&
+        val t2 = definition.id == "mechFactoryT2"
+        val upgrades = definition.upgrades?.actions
+        return definition.id in setOf("mechFactory", "mechFactoryT2") && definition.production?.exitProfile == FactoryExitProfile.CUSTOM_MECH &&
+            definition.production.unitTypeIds == (if (t2) listOf("builder", "mechGun", "mechHeavyMissile") else listOf("builder", "mechGun")) &&
+            definition.build == BuildProfile(if (t2) 5000L else 1000L, if (t2) .0005f else .001f) &&
+            definition.construction == ConstructionProfile(if (t2) 5000L else 1000L, if (t2) .0005f else .001f) &&
+            definition.radius == 35.0 && definition.maximumHealth == (if (t2) 3100.0 else 1800.0) &&
             definition.movement.type == MovementType.NONE && definition.fogOfWarSightRange == 15 &&
             definition.combat == null && definition.mech == null && definition.builder == null && definition.income == null &&
-            definition.pointDefense == null && definition.upgrades == null && definition.deathExplosion == null &&
+            definition.pointDefense == null &&
+            (upgrades == null || !t2 && upgrades == listOf(UpgradeActionProfile("upgrade_t2", "mechFactoryT2", 4000L, .0004f))) &&
+            definition.deathExplosion == null && definition.rotor == null &&
             definition.directHitTargetKind == DirectHitTargetKind.ORDINARY && definition.durability?.maxDamagePerHit == null &&
             building.footprint == BuildingFootprint(-1, -1, 1, 1) &&
             building.placementFootprint == BuildingFootprint(-1, -1, 1, 3) && building.anchor == null && !building.requiresResourcePool

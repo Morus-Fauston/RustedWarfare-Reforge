@@ -13,9 +13,14 @@ import java.util.Collections
 import kotlin.math.cos
 import kotlin.math.sin
 
-data class WeaponAppearance(val imagePath: Path?, val imageScale: Double)
+data class WeaponAppearance(val imagePath: Path?, val imageScale: Double,
+    val invisible: Boolean = false, val offsetX: Double = 0.0, val offsetY: Double = 0.0,
+    val logicalSize: ImageLogicalSize? = null)
 internal data class TurretDrawing(val weaponName: String?, val imagePath: Path, val imageScale: Double,
-    val pivot: Position, val heading: Double)
+    val pivot: Position, val heading: Double, val logicalSize: ImageLogicalSize? = null) {
+    fun drawSize(pixelWidth: Int, pixelHeight: Int) = ImageDrawSize(
+        (logicalSize?.width ?: pixelWidth) * imageScale, (logicalSize?.height ?: pixelHeight) * imageScale)
+}
 
 data class UnitAppearance(val displayRadius: Double, val imagePath: Path, val imageScale: Double, val totalFrames: Int,
     val turretImagePath: Path? = null, val deadImagePath: Path? = null, val turretImageScale: Double = 1.0,
@@ -23,7 +28,8 @@ data class UnitAppearance(val displayRadius: Double, val imagePath: Path, val im
     val defenseMuzzleOffset: Position? = null, val recoil: WeaponRecoil? = null, val shootDelay: Double = 0.0,
     val economicBuilding: Boolean = false, val logicalImages: UnitImageLogicalSizes? = null,
     val weaponImages: Map<String, WeaponAppearance> = emptyMap(),
-    val legImagePath: Path? = null, val footImagePath: Path? = null, val rotorImagePath: Path? = null) {
+    val legImagePath: Path? = null, val footImagePath: Path? = null, val rotorImagePath: Path? = null,
+    val mechKind: com.rustedwarfare.reforge.core.content.MechKind? = null) {
     internal fun turretDrawings(unit: UnitObservation, weapons: List<VisibleUnitWeapon>): List<TurretDrawing> {
         if (!unit.alive) return emptyList()
         if (weapons.isNotEmpty()) {
@@ -31,14 +37,19 @@ data class UnitAppearance(val displayRadius: Double, val imagePath: Path, val im
             check(weapons.all { it.unitId == unit.unitId } && byName.size == weapons.size && byName.keys == weaponImages.keys) {
                 "Visible weapon poses must match the prepared unit catalog"
             }
-            return weaponImages.mapNotNull { (name, image) -> image.imagePath?.let { path ->
+            return weaponImages.mapNotNull { (name, image) -> if (image.invisible) null else image.imagePath?.let { path ->
                 val pose = byName.getValue(name)
-                TurretDrawing(name, path, image.imageScale, pose.pivot, pose.turretHeading)
+                val forward = Math.toRadians(pose.turretHeading)
+                val side = Math.toRadians(pose.turretHeading + 90.0)
+                val pivot = Position(pose.pivot.x + sin(forward) * image.offsetY + sin(side) * image.offsetX,
+                    pose.pivot.y - cos(forward) * image.offsetY - cos(side) * image.offsetX)
+                TurretDrawing(name, path, image.imageScale, pivot, pose.turretHeading,
+                    image.logicalSize ?: logicalImages?.turret?.takeIf { path == turretImagePath })
             } }
         }
         check(weaponImages.size <= 1) { "A multi-weapon unit requires authorized weapon poses" }
         return turretImagePath?.let { listOf(TurretDrawing(null, it, turretImageScale,
-            turretPosition(unit), unit.turretHeading)) } ?: emptyList()
+            turretPosition(unit), unit.turretHeading, logicalImages?.turret)) } ?: emptyList()
     }
     fun drawSize(slot: UnitImageSlot, pixelWidth: Int, pixelHeight: Int,
                  turretScale: Double = turretImageScale): ImageDrawSize {
@@ -85,9 +96,11 @@ class SandboxRenderResources private constructor(
                 footImagePath = slot(before.footImagePath, image.foot, "foot"),
                 rotorImagePath = slot(before.rotorImagePath, image.rotor, "rotor"),
                 deadImagePath = slot(before.deadImagePath, image.dead, "dead"), logicalImages = image.logicalImages,
-                weaponImages = Collections.unmodifiableMap(before.weaponImages.mapValues { (_, weapon) ->
-                    if (weapon.imagePath != null && weapon.imagePath == before.turretImagePath) weapon.copy(imagePath = turret)
-                    else weapon
+                weaponImages = Collections.unmodifiableMap(before.weaponImages.mapValues { (name, weapon) ->
+                    if (weapon.imagePath == null) weapon
+                    else if (weapon.imagePath == before.turretImagePath) weapon.copy(imagePath = turret, logicalSize = image.logicalImages?.turret)
+                    else weapon.copy(imagePath = requireNotNull(image.weaponTurrets[name]) { "VISUAL_MAPPING_UNSUPPORTED: unit $id weapon $name" },
+                        logicalSize = image.logicalImages?.weaponTurrets?.get(name))
                 }))
         }
         val mappedTiles = tileSets.map { atlas ->
@@ -134,10 +147,10 @@ class SandboxRenderResources private constructor(
                     unit.combat?.recoil, unit.combat?.shootDelay ?: 0.0,
                     economicBuilding = unit.income != null && unit.construction != null,
                     weaponImages = Collections.unmodifiableMap(unit.combat?.namedWeapons?.ordered.orEmpty()
-                        .associate { it.name to WeaponAppearance(it.imagePath, it.imageScale) }),
+                        .associate { it.name to WeaponAppearance(it.imagePath, it.imageScale, it.invisible, it.imageOffsetX, it.imageOffsetY) }),
                     legImagePath = unit.mech?.legs?.first()?.legImage,
                     footImagePath = unit.mech?.legs?.first()?.footImage,
-                    rotorImagePath = unit.rotor?.imagePath)
+                    rotorImagePath = unit.rotor?.imagePath, mechKind = unit.mech?.kind)
             }), Collections.unmodifiableMap(scenario.players.associate { it.playerId to it.teamId }))
     }
 }

@@ -1,0 +1,226 @@
+{
+  "schemaVersion": 1,
+  "kind": "behavior-contract",
+  "contractId": "public.heavy-mech-production-chain.v1.contract",
+  "scope": "self-behavior",
+  "scenarioIds": [
+    "public.heavy-mech-production-chain.v1"
+  ],
+  "comparison": {
+    "numberMode": "declared-per-field",
+    "tolerances": {}
+  },
+  "approval": {
+    "status": "tool-fixture-only",
+    "source": "Frozen016/R1: ordinary LAND variant, real builder16000/T1-1000/T2-4000/heavy-8500. Float32 .0004 gives2500 updates, upgrade1200 completes3699; .0006 gives1667, produce3800 born5466. No original compatibility or dynamic collision claim."
+  },
+  "exclusions": [
+    "original-compatibility",
+    "platform-input",
+    "performance"
+  ],
+  "constructedUnits": [
+    {
+      "unitId": "constructed:p1:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "buildActionId": "build",
+      "builderId": "a",
+      "owner": "p1",
+      "typeId": "mechFactory",
+      "buildingNonce": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "birthStepIndex": 0
+    }
+  ],
+  "producedUnits": [
+    {
+      "unitId": "produced:p1:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "productionActionId": "produce",
+      "producerId": "constructed:p1:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "owner": "p1",
+      "typeId": "mechHeavyMissile",
+      "unitNonce": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "birthStepIndex": 5466
+    }
+  ],
+  "convertedUnits": [
+    {
+      "unitId": "constructed:p1:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "upgradeActionId": "upgrade",
+      "sourceTypeId": "mechFactory",
+      "targetTypeId": "mechFactoryT2",
+      "completionStepIndex": 3699
+    }
+  ],
+  "rules": [
+    {
+      "ruleId": "initial",
+      "when": {
+        "phase": "initial",
+        "stepIndex": 0
+      },
+      "assertions": [
+        {
+          "path": "economy.balances.p1",
+          "operator": "equals",
+          "value": 16000
+        }
+      ]
+    },
+    {
+      "ruleId": "build-payment",
+      "when": {
+        "phase": "after-advance",
+        "stepIndex": 0
+      },
+      "assertions": [
+        {
+          "path": "economy.balances.p1",
+          "operator": "equals",
+          "value": 15000
+        }
+      ]
+    },
+    {
+      "ruleId": "t1-ready",
+      "when": {
+        "phase": "after-advance",
+        "stepIndex": 1199
+      },
+      "assertions": [
+        {
+          "path": "units.constructed:p1:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.constructionProgress",
+          "operator": "equals",
+          "value": 1
+        },
+        {
+          "path": "units.constructed:p1:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.health",
+          "operator": "equals",
+          "value": 1800
+        }
+      ]
+    },
+    {
+      "ruleId": "upgrade-payment",
+      "when": {
+        "phase": "after-advance",
+        "stepIndex": 1200
+      },
+      "assertions": [
+        {
+          "path": "economy.balances.p1",
+          "operator": "equals",
+          "value": 11000
+        }
+      ]
+    },
+    {
+      "ruleId": "same-t2",
+      "when": {
+        "phase": "after-advance",
+        "stepIndex": 3799
+      },
+      "assertions": [
+        {
+          "path": "units.constructed:p1:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.health",
+          "operator": "equals",
+          "value": 3100
+        },
+        {
+          "path": "units.constructed:p1:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.maxHealth",
+          "operator": "equals",
+          "value": 3100
+        }
+      ]
+    },
+    {
+      "ruleId": "heavy-payment",
+      "when": {
+        "phase": "after-advance",
+        "stepIndex": 3800
+      },
+      "assertions": [
+        {
+          "path": "economy.balances.p1",
+          "operator": "equals",
+          "value": 2500
+        }
+      ]
+    },
+    {
+      "ruleId": "birth",
+      "when": {
+        "phase": "after-advance",
+        "stepIndex": 5466
+      },
+      "assertions": [
+        {
+          "path": "units.produced:p1:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb.position.x",
+          "operator": "equals",
+          "value": 277
+        },
+        {
+          "path": "units.produced:p1:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb.position.y",
+          "operator": "equals",
+          "value": 149
+        },
+        {
+          "path": "units.produced:p1:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb.heading",
+          "operator": "equals",
+          "value": 180
+        },
+        {
+          "path": "units.produced:p1:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb.health",
+          "operator": "equals",
+          "value": 2500
+        }
+      ]
+    },
+    {
+      "ruleId": "stop",
+      "when": {
+        "phase": "after-advance",
+        "stepIndex": 6259
+      },
+      "assertions": [
+        {
+          "path": "units.produced:p1:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb.moveTarget",
+          "operator": "equals",
+          "value": null
+        },
+        {
+          "path": "units.produced:p1:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb.speed",
+          "operator": "equals",
+          "value": 0
+        }
+      ]
+    },
+    {
+      "ruleId": "final",
+      "when": {
+        "phase": "after-advance",
+        "stepIndex": 8059
+      },
+      "assertions": [
+        {
+          "path": "economy.balances.p1",
+          "operator": "equals",
+          "value": 2500
+        },
+        {
+          "path": "units.b.alive",
+          "operator": "equals",
+          "value": false
+        },
+        {
+          "path": "units.c.alive",
+          "operator": "equals",
+          "value": false
+        },
+        {
+          "path": "units.produced:p1:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb.alive",
+          "operator": "equals",
+          "value": true
+        }
+      ]
+    }
+  ]
+}
