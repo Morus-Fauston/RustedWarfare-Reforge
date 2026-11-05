@@ -21,6 +21,7 @@ internal class PcVisualAssetSettings(private val store: VisualAssetSettingsStore
     imageExtractionMove: (Path, Path, Boolean) -> Unit = ::moveVisualAtomically,
     private val resourceExtractionProfile: PcOriginalResourceProfile? = null,
 ) : VisualAssetSettings {
+    private val auditedVisuals = PcAuditedVisualReuse()
     private val placeholders = PcPlaceholderVisualAssets()
     private val importer = PcResourcePackImporter(cache)
     private val pcImageExtractor = PcOriginalImageExtractor(cache, imageExtractionProfile ?: resourceExtractionProfile?.images, imageExtractionMove)
@@ -42,38 +43,47 @@ internal class PcVisualAssetSettings(private val store: VisualAssetSettingsStore
 
     override fun prepare(selection: VisualAssetSelection): PreparedVisualAssets = prepareForContent(selection, null)
 
+    @Synchronized
     override fun prepareForContent(selection: VisualAssetSelection, content: ContentPackChoice?): PreparedVisualAssets {
         val checked = content?.revalidate()
         val resolved = selection.copy(originalDirectory = selection.originalDirectory?.toAbsolutePath()?.normalize()
             ?: if (selection.source == VisualAssetSource.ORIGINAL) applicationRoot.resolve("Rusted Warfare").toAbsolutePath().normalize() else null,
             temporary = options.hasVisualOverride)
-        val placeholderBase = placeholders.prepare(resolved.copy(source = VisualAssetSource.PLACEHOLDER))
-        val base = checked?.let { contentPackVisuals(placeholderBase, it) } ?: placeholderBase
-        val baseImages = ResourceImagePreparation.baseLayer(base, BuiltInResourcePacks.forSource(VisualAssetSource.PLACEHOLDER))
-        val builtinImages = if (checked == null) baseImages else
-            ResourceImagePreparation.baseLayer(placeholderBase, BuiltInResourcePacks.forSource(VisualAssetSource.PLACEHOLDER))
-        val original = if (resolved.source == VisualAssetSource.ORIGINAL) prepareOriginal(resolved) else null
-        val baseSounds = baseSoundResources.prepare()
-        val users = resolved.packs.enabled.filterNot { it == VisualAssetSource.ORIGINAL.resourcePackId }.map { id ->
-            val expected = resolved.packs.catalog.single { it.id == id }
-            importer.load(expected.manifest).also { pack ->
-                require(pack.catalogEntry == expected) { "RESOURCE_PACK_SOURCE_CHANGED: $id / ${expected.manifest}: Pack changed after checking; check it again" }
+        val roots = resolved.packs.enabled.filterNot { it == VisualAssetSource.ORIGINAL.resourcePackId }
+            .map { id -> requireNotNull(resolved.packs.catalog.single { it.id == id }.manifest.parent) }
+        // Original-directory extraction retains its existing audit path. User packs (including v5)
+        // may reuse only this settings instance's independently audited, non-GL description.
+        val key = if (resolved.source == VisualAssetSource.PLACEHOLDER)
+            listOf(resolved, checked?.unitId, checked?.content?.sources) else null
+        return auditedVisuals.prepare(key, roots) { verifyAuditedInputs ->
+            val placeholderBase = placeholders.prepare(resolved.copy(source = VisualAssetSource.PLACEHOLDER))
+            val base = checked?.let { contentPackVisuals(placeholderBase, it) } ?: placeholderBase
+            val baseImages = ResourceImagePreparation.baseLayer(base, BuiltInResourcePacks.forSource(VisualAssetSource.PLACEHOLDER))
+            val builtinImages = if (checked == null) baseImages else
+                ResourceImagePreparation.baseLayer(placeholderBase, BuiltInResourcePacks.forSource(VisualAssetSource.PLACEHOLDER))
+            val original = if (resolved.source == VisualAssetSource.ORIGINAL) prepareOriginal(resolved) else null
+            val baseSounds = baseSoundResources.prepare()
+            val users = resolved.packs.enabled.filterNot { it == VisualAssetSource.ORIGINAL.resourcePackId }.map { id ->
+                val expected = resolved.packs.catalog.single { it.id == id }
+                importer.load(expected.manifest).also { pack ->
+                    require(pack.catalogEntry == expected) { "RESOURCE_PACK_SOURCE_CHANGED: $id / ${expected.manifest}: Pack changed after checking; check it again" }
+                }
             }
+            val layers = users.associate { pack -> pack.metadata.id.value to
+                ResourceImageLayer(pack.metadata, pack.images, pack.identity, pack.sources) { if (key == null) pack.verifySources() else verifyAuditedInputs() }
+                    .withSounds(pack.sounds, pack.soundEvents)
+                    .withStaticBaseContracts(if (pack.metadata.id.value.startsWith("reforge:pc-original-resources-"))
+                        pcResourceExtractor.staticBaseContracts(pack, builtinImages)
+                        else pcImageExtractor.staticBaseContracts(pack, builtinImages)) }.toMutableMap()
+            original?.let { layers[VisualAssetSource.ORIGINAL.resourcePackId] =
+                ResourceImagePreparation.baseLayer(it, BuiltInResourcePacks.forSource(VisualAssetSource.ORIGINAL)) }
+            val images = ResourceImageComposer.compose(baseImages.withSounds(baseSounds.sounds, baseSounds.events),
+                resolved.packs.enabled.map(layers::getValue))
+            base.withConfiguration(resolved, original?.profileId ?: base.profileId, original?.identity ?: base.identity)
+                .withResourceImages(images) { baseSounds.verify(); original?.verify(); users.forEach { it.verify() } }
+                .withResourceSounds(ResourceSoundComposer.compose(images))
+                .also { it.verifyForPublication() }
         }
-        val layers = users.associate { pack -> pack.metadata.id.value to
-            ResourceImageLayer(pack.metadata, pack.images, pack.identity, pack.sources, pack::verifySources)
-                .withSounds(pack.sounds, pack.soundEvents)
-                .withStaticBaseContracts(if (pack.metadata.id.value.startsWith("reforge:pc-original-resources-"))
-                    pcResourceExtractor.staticBaseContracts(pack, builtinImages)
-                    else pcImageExtractor.staticBaseContracts(pack, builtinImages)) }.toMutableMap()
-        original?.let { layers[VisualAssetSource.ORIGINAL.resourcePackId] =
-            ResourceImagePreparation.baseLayer(it, BuiltInResourcePacks.forSource(VisualAssetSource.ORIGINAL)) }
-        val images = ResourceImageComposer.compose(baseImages.withSounds(baseSounds.sounds, baseSounds.events),
-            resolved.packs.enabled.map(layers::getValue))
-        return base.withConfiguration(resolved, original?.profileId ?: base.profileId, original?.identity ?: base.identity)
-            .withResourceImages(images) { baseSounds.verify(); original?.verify(); users.forEach { it.verify() } }
-            .withResourceSounds(ResourceSoundComposer.compose(images))
-            .also { it.verifyForPublication() }
     }
 
     override fun applyPrepared(prepared: PreparedVisualAssets) {
