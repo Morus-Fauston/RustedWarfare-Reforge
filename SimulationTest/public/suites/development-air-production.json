@@ -1,0 +1,14 @@
+{
+  "schemaVersion": 1,
+  "suiteId": "public.development-air-production.v1",
+  "inputScope": "public",
+  "fixture": "inputs/content-movement-knowledge/P001-移动沙盒输入",
+  "tests": {
+    "client": [
+      "com.rustedwarfare.reforge.client.HelicopterSandboxTest",
+      "com.rustedwarfare.reforge.client.MechProductionSandboxTest",
+      "com.rustedwarfare.reforge.client.ConstructionHotkeyInputTest",
+      "com.rustedwarfare.reforge.client.ActionMenuTest"
+    ]
+  }
+}

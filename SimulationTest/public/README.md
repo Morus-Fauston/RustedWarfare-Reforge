@@ -18,6 +18,23 @@ PR更新通过`public-pr.yml`执行完整`pr`入口，保留七份领域产物�
 
 旧`pr-first-loop`继续用于首闭环/历史复核；完整层级已由各领域集覆盖相同适用断言，因此不会额外重复选择旧集。`verify-comparison.ps1`和`verify-isolated-comparison.ps1`仍保留原私有比较链及输入要求，不改名成公共干净环境验证。历史冻结脚本与收据保持原版本和失败状态。
 
+## 日常机制回归与冷隔离
+
+开发时可用同一固定公共清单复用兼容Gradle daemon及编译产物：
+
+```powershell
+$devRun = [guid]::NewGuid().ToString('N')
+python -B SimulationTest/ci/development_check.py --suite development-air-production --output "SimulationTest/build/development-$devRun"
+python -B SimulationTest/ci/development_check.py --suite development-air-production --cold --isolated --output "SimulationTest/build/development-cold-$devRun"
+python -B SimulationTest/ci/development_check.py --suite platform-basics --suite content-three-formats --list
+```
+
+`development-air-production`固定四个客户端类，覆盖直升机/机甲生产、建造热键和动作菜单。可重复`--suite`组合现有命名清单的机制部分：相同模块、类及输入上下文才合并，不同fixture分别执行；Python机制仍真实运行。此入口只测机制，不运行短/长场景或打安装包；阶段及CI完整层级继续使用`public_batch.py`。
+
+默认仅复用编译任务，Test任务禁用缓存及up-to-date，每次实际执行并写入全新输出目录。`--cold --isolated`从公开源码新副本全任务重编，使用single-use Gradle daemon；用户级依赖和OS文件缓存仍可能已热。`--isolated`要求`--cold`。输出不能覆盖旧批次，工具自动取得本工作区Engine/SimulationTest构建锁；Gradle缓存沿用户级配置。
+
+每组保留精确类过滤、生效输入/JDK/daemon身份、逐任务状态、当前开始/结束标记和每方法JUnit XML。默认位置的旧XML列入`ignoredPreviousXml`，不计本次执行；跳过、空类、缺类、失败或只有up-to-date的测试均不能通过。返回码与`result.json`共同判断结果，失败原件保留。
+
 ## 首条公共无头短测
 
 本目录全部为TEST-P004-001新建的自有合成输入，不复制原版地图、INI或图片。`generate_inputs.py`用标准库生成12×12空地、一个单位声明和20×20纯色PNG，并固定文件SHA256；它不生成预期。断言独立写在`contracts/select-move-stop.json`，运行时不改输入或预期。

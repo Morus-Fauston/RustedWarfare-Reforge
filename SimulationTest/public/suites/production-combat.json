@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "suiteId": "public.production-combat.v1",
   "inputScope": "public",
-  "fixture": "inputs/content-movement-knowledge/P001-\u79fb\u52a8\u6c99\u76d2\u8f93\u5165",
+  "fixture": "inputs/content-movement-knowledge/P001-移动沙盒输入",
   "tests": {
     "core": [
       "com.rustedwarfare.reforge.core.content.CombatContentLoadTest",
@@ -175,7 +175,8 @@
       "com.rustedwarfare.reforge.testing.HeavyMechSessionRunnerTest",
       "com.rustedwarfare.reforge.testing.NavalBallisticArchiveTest",
       "com.rustedwarfare.reforge.testing.NavalProductionArchiveTest",
-      "com.rustedwarfare.reforge.testing.NavalProductionSessionTest"
+      "com.rustedwarfare.reforge.testing.NavalProductionSessionTest",
+      "com.rustedwarfare.reforge.testing.ProducedWeaponArchiveTest"
     ]
   },
   "short": [
