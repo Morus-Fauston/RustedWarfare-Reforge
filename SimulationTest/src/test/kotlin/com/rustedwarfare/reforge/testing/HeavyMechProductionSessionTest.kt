@@ -9,7 +9,9 @@ class HeavyMechProductionSessionTest {
     @Test fun three_format_formal_sessions_build_upgrade_and_produce_before_real_ground_and_air_combat() {
         val root = Path.of(System.getProperty("repo.root")).resolve("SimulationTest/public")
         for (format in listOf("ini", "json", "hjson")) {
-            val output = Files.createTempDirectory("heavy-production-session-$format-").resolve("run")
+            val output = System.getenv("RWRE_P005_ARCHIVE_ROOT")?.let {
+                Files.createDirectories(Path.of(it)).resolve("heavy-production-session-$format")
+            } ?: Files.createTempDirectory("heavy-production-session-$format-").resolve("run")
             val plan = root.resolve("platform/scenarios/heavy-mech-$format-production-chain.json")
             val steps = readObject(plan).arrayAt("intents").sumOf { it.jsonObject["waitSteps"]?.jsonPrimitive?.long ?: 0L }
             PlatformSessionRunner.run(root.resolve("inputs/heavy-mech-production/$format"), plan, output)
