@@ -52,7 +52,7 @@ class PublicBatchTest(unittest.TestCase):
             (repo/'SimulationTest/gradlew.bat').write_text('@exit /b 9\n', encoding='utf8')
             # These are source identity members; no imported helper is faked or replaced.
             for relative in ['platform_scenario.py', 'test_platform_scenario.py', 'test_platform_session_cli.py', 'test_named_weapon_platform.py',
-                'workflow.py', 'workflow_inputs.py', 'workflow_device.py', 'workflow_windows.py',
+                'workflow.py', 'workflow_scenarios.py', 'test_workflow_scenarios.py', 'workflow_inputs.py', 'workflow_device.py', 'workflow_windows.py',
                 'workflow_reuse.py', 'perf_report.py', 'platform_perf.py', 'test_workflow.py',
                 'test_workflow_device.py', 'test_workflow_windows.py', 'test_workflow_reuse.py',
                 'test_perf_analysis.py', 'specialist_check.py', 'test_specialist_check.py']:

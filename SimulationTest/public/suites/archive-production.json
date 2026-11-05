@@ -1,0 +1,40 @@
+{
+  "schemaVersion": 1,
+  "suiteId": "public.archive-production.v1",
+  "inputScope": "public",
+  "long": [
+    {
+      "id": "core-heavy-ini-production",
+      "scenario": "scenarios/heavy-mech-production-ini-chain.json",
+      "contract": "contracts/heavy-mech-production-ini-chain.json"
+    },
+    {
+      "id": "session-heavy-ini-production",
+      "backend": "session",
+      "scenario": "platform/scenarios/heavy-mech-ini-production-chain.json",
+      "contract": "platform/contracts/heavy-mech-ini-production-chain.json"
+    },
+    {
+      "id": "core-heavy-json-production",
+      "scenario": "scenarios/heavy-mech-production-json-chain.json",
+      "contract": "contracts/heavy-mech-production-json-chain.json"
+    },
+    {
+      "id": "session-heavy-json-production",
+      "backend": "session",
+      "scenario": "platform/scenarios/heavy-mech-json-production-chain.json",
+      "contract": "platform/contracts/heavy-mech-json-production-chain.json"
+    },
+    {
+      "id": "core-heavy-hjson-production",
+      "scenario": "scenarios/heavy-mech-production-hjson-chain.json",
+      "contract": "contracts/heavy-mech-production-hjson-chain.json"
+    },
+    {
+      "id": "session-heavy-hjson-production",
+      "backend": "session",
+      "scenario": "platform/scenarios/heavy-mech-hjson-production-chain.json",
+      "contract": "platform/contracts/heavy-mech-hjson-production-chain.json"
+    }
+  ]
+}

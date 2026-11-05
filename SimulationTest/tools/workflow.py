@@ -567,6 +567,9 @@ def run_plan(plan, output, profile='quick', clean=False,prepare_only=False):
 
 
 def main():
+    if len(sys.argv)>1 and sys.argv[1].startswith('scenario-'):
+        from workflow_scenarios import main as scenario_main
+        return scenario_main(sys.argv[1:])
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('operation', choices=['prepare', 'run', 'reuse', 'device-inspect', 'collect','launch'])
     parser.add_argument('--plan', required=True)

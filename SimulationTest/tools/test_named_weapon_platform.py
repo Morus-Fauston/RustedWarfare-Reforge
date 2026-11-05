@@ -1,10 +1,23 @@
 """Independent comparator examples; real three-format Session runs are separate."""
 import copy
 import unittest
-from platform_scenario import compare_intent, PlatformError
+from platform_scenario import compare_intent, value_at, PlatformError
 
 
 class NamedWeaponPlatformTest(unittest.TestCase):
+    def test_projectile_observation_paths_resolve_index_or_unique_token(self):
+        sample = dict(projectiles=[dict(token='shot-1', multiplicity=1,
+                                       position=dict(x=3.0, y=4.0))])
+        self.assertEqual(3.0, value_at(sample, 'projectiles.0.position.x'))
+        self.assertEqual(4.0, value_at(sample, 'projectiles.shot-1.position.y'))
+        for path in ('projectiles.1.position.x', 'projectiles.-1.position.x',
+                     'projectiles.00.position.x', 'projectiles.missing.position.x'):
+            with self.subTest(path=path), self.assertRaises(PlatformError):
+                value_at(sample, path)
+        duplicate = dict(projectiles=sample['projectiles']*2)
+        with self.assertRaises(PlatformError):
+            value_at(duplicate, 'projectiles.shot-1.position.x')
+
     def case(self):
         before = dict(worldId='w', stepIndex=-1, simulationTime=0, units=[
             dict(unitId='a', ownerPlayerId='p1', typeId='named_tank', health=100000, attackTargetId=None),

@@ -8,6 +8,12 @@ import unittest
 
 
 class PublicSelectionTest(unittest.TestCase):
+    def test_public_record_chain_fixture_is_in_the_isolated_source_closure(self):
+        from public_check import REPO, source_files
+        names={p.relative_to(REPO).as_posix() for p in source_files(REPO)}
+        self.assertIn('SimulationTest/fixtures/record-chain/scenario.json',names)
+        self.assertIn('SimulationTest/fixtures/record-chain/contract.json',names)
+
     def test_portable_corner_and_failure_preservation_mechanisms_are_not_left_out(self):
         for name, module, classes in [
             ('content-movement-knowledge', 'core', ['com.rustedwarfare.reforge.core.sim.CornerCaptureTest']),

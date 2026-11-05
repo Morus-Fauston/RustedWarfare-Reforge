@@ -9,6 +9,200 @@ import tempfile
 
 
 class PlatformIntentTest(unittest.TestCase):
+    def test_history_binds_formal_action_identity_parameters_and_production_fifo(self):
+        from platform_scenario import session_anchors
+        sample=dict(worldId='w',stepIndex=-1,simulationTime=0,balance=100,weapons=[],
+            units=[dict(unitId='a',ownerPlayerId='p1',typeId='owned',alive=True,position=dict(x=0,y=0)),
+                   dict(unitId='f',ownerPlayerId='p1',typeId='owned_factory',alive=True,position=dict(x=2,y=2)),
+                   dict(unitId='b',ownerPlayerId='p2',typeId='enemy',alive=True,position=dict(x=3,y=4))],
+            factoryQueues=[dict(factoryId='f',items=[dict(typeId='old_product',progress=.25)])])
+        cases=[('build','BuildAction',dict(typeId='new_factory',position=dict(x=1,y=2)),
+                dict(buildingTypeId='new_factory',target=dict(x=1,y=2))),
+               ('upgrade','UpgradeAction',dict(upgradeId='upgrade_t2'),dict(upgradeId='upgrade_t2')),
+               ('move','MoveAction',dict(position=dict(x=1,y=2)),dict(target=dict(x=1,y=2))),
+               ('attack','AttackAction',dict(targetUnitId='b',position=dict(x=3,y=4)),dict(targetUnitId='b')),
+               ('produce','ProduceAction',dict(typeId='new_product'),{})]
+        for kind,action_type,parameters,fields in cases:
+            before=copy.deepcopy(sample);after=copy.deepcopy(sample)
+            if kind=='produce':after['factoryQueues'][0]['items'].append(dict(typeId='new_product',progress=0))
+            action=dict(kind='action',sequence=3,type=action_type,unitId='f' if kind=='produce' else 'a',
+                        actorPlayerId='p1',result=dict(actionId='one',accepted=True),**fields)
+            rows=[dict(sequence=0,kind='observation',phase='initial',sample=before),
+                  dict(sequence=1,kind='intent-start',intentId='one'),
+                  dict(sequence=2,kind='observation',phase='before-action',sample=before),action,
+                  dict(sequence=4,kind='observation',phase='after-action',sample=after),
+                  dict(sequence=5,kind='intent-end',intentId='one'),
+                  dict(sequence=6,kind='observation',phase='before-close',sample=after),dict(sequence=7,kind='closed')]
+            plan=dict(scenarioId='s',intents=[dict(intentId='one',kind=kind,**parameters)])
+            contract=dict(scenarioId='s',rules=[dict(intentId='one')],history=dict(initialBalance=100))
+            anchors=session_anchors(rows)
+            self.assertEqual(0,compare_run(rows,plan,contract,anchors)['exitCode'])
+            faults=['actor','absent-unit','foreign-unit','boundary']
+            if kind=='build':faults+=['building-type','position']
+            elif kind=='upgrade':faults+=['upgrade']
+            elif kind=='move':faults+=['position']
+            elif kind=='attack':faults+=['target','target-position']
+            else:faults+=['factory-binding','fifo-prefix','extra-product','product-type']
+            for fault in faults:
+                changed=copy.deepcopy(rows)
+                if fault=='actor':changed[3]['actorPlayerId']='p2'
+                elif fault=='absent-unit':changed[3]['unitId']='missing'
+                elif fault=='foreign-unit':changed[3]['unitId']='b'
+                elif fault=='boundary':changed[2]['phase']='unrelated'
+                elif fault=='building-type':changed[3]['buildingTypeId']='wrong_factory'
+                elif fault=='position':changed[3]['target']=dict(x=9,y=9)
+                elif fault=='upgrade':changed[3]['upgradeId']='wrong_upgrade'
+                elif fault=='target':changed[3]['targetUnitId']='f'
+                elif fault=='target-position':changed[2]['sample']['units'][2]['position']=dict(x=9,y=9)
+                elif fault=='factory-binding':changed[4]['sample']['factoryQueues'][0]['factoryId']='another_factory'
+                elif fault=='fifo-prefix':changed[4]['sample']['factoryQueues'][0]['items'][0]['progress']=.5
+                elif fault=='extra-product':changed[4]['sample']['factoryQueues'][0]['items'].append(dict(typeId='new_product',progress=0))
+                else:changed[4]['sample']['factoryQueues'][0]['items'][-1]['typeId']='wrong_product'
+                with self.subTest(kind=kind,fault=fault),self.assertRaises(PlatformError):
+                    compare_run(changed,plan,contract,anchors)
+
+    def test_declared_mech_pose_rejects_incomplete_or_private_leg_fields(self):
+        from platform_scenario import validate_history_poses
+        pose=dict(forwardHeading=90,angularVelocity=0,reversing=False,legs=[
+            dict(index=i,anchor=dict(x=0,y=0),foot=dict(x=2,y=3),height=0,heading=90,phase='PLANTED')
+            for i in range(2)])
+        unit=dict(typeId='owned_mech',mechPose=pose);policy=dict(mechLegs=dict(owned_mech=2))
+        validate_history_poses([unit],policy)
+        for fault in ('missing-pose','null-pose','missing-leg','duplicate-index','wrong-phase','missing-foot',
+                      'string-height','missing-body-spin','string-reverse','private-target'):
+            changed=copy.deepcopy(unit);p=changed['mechPose']
+            if fault=='missing-pose':del changed['mechPose']
+            elif fault=='null-pose':changed['mechPose']=None
+            elif fault=='missing-leg':p['legs'].pop()
+            elif fault=='duplicate-index':p['legs'][1]['index']=0
+            elif fault=='wrong-phase':p['legs'][0]['phase']='HOVERING'
+            elif fault=='missing-foot':del p['legs'][0]['foot']
+            elif fault=='string-height':p['legs'][0]['height']='0'
+            elif fault=='missing-body-spin':del p['angularVelocity']
+            elif fault=='string-reverse':p['reversing']='false'
+            else:p['predictedFootTarget']=dict(x=1,y=2)
+            with self.subTest(fault=fault),self.assertRaises(PlatformError):
+                validate_history_poses([changed],policy)
+
+    def test_history_checks_every_balance_and_the_declared_first_step_charge(self):
+        def sample(step, balance):
+            return dict(worldId='w', stepIndex=step, simulationTime=max(step+1,0), balance=balance,
+                units=[dict(unitId='a',ownerPlayerId='p1',typeId='builder',health=100,maxHealth=100,alive=True)],
+                weapons=[],projectiles=[],projectileEvents=[])
+        before=sample(-1,100);after=sample(0,90)
+        rows=[dict(sequence=0,kind='observation',phase='initial',sample=before),
+              dict(sequence=1,kind='intent-start',intentId='build'),
+              dict(sequence=2,kind='observation',phase='before-action',sample=before),
+              dict(sequence=3,kind='action',type='BuildAction',unitId='a',actorPlayerId='p1',result=dict(actionId='click-1',accepted=True)),
+              dict(sequence=4,kind='observation',phase='after-action',sample=before),
+              dict(sequence=5,kind='observation',phase='step',sample=after),
+              dict(sequence=6,kind='intent-end',intentId='build'),
+              dict(sequence=7,kind='observation',phase='before-close',sample=after),dict(sequence=8,kind='closed')]
+        plan=dict(scenarioId='s',intents=[dict(intentId='build',kind='build',waitSteps=1)])
+        contract=dict(scenarioId='s',rules=[dict(intentId='build')],history=dict(initialBalance=100,
+            spend=[dict(intentId='build',amount=10,at='first-step')]))
+        anchors=[dict(intentId='build',afterSequence=1,endSequence=5)]
+        self.assertEqual(0,compare_run(rows,plan,contract,anchors)['exitCode'])
+        for index in (4,5,7):
+            changed=copy.deepcopy(rows);changed[index]['sample']['balance']-=1
+            with self.subTest(index=index),self.assertRaises(PlatformError):
+                compare_run(changed,plan,contract,anchors)
+        changed=copy.deepcopy(rows);changed[3]['type']='UpgradeAction'
+        with self.assertRaises(PlatformError):
+            compare_run(changed,plan,contract,anchors)
+        dead=copy.deepcopy(rows)
+        for index in (5,7):
+            dead[index]['sample']['units'][0].update(alive=False,health=0)
+        self.assertEqual(0,compare_run(dead,plan,contract,anchors)['exitCode'])
+        dead[5]['sample']['weapons']=[dict(unitId='a',weaponName='main')]
+        with self.assertRaises(PlatformError):
+            compare_run(dead,plan,contract,anchors)
+        wrong_step=copy.deepcopy(rows);wrong_step[5]['sample']['stepIndex']=42
+        with self.assertRaises(PlatformError):
+            compare_run(wrong_step,plan,contract,anchors)
+        unclosed=copy.deepcopy(rows);unclosed[6]['kind']='note'
+        with self.assertRaises(PlatformError):
+            compare_run(unclosed,plan,contract,anchors)
+        free=copy.deepcopy(rows);free_contract=copy.deepcopy(contract);free_contract['history']['spend']=[]
+        for row in free:
+            if 'sample' in row:row['sample']['balance']=100
+        self.assertEqual(0,compare_run(free,plan,free_contract,anchors)['exitCode'])
+        free[3]['kind']='note'
+        with self.assertRaises(PlatformError):
+            compare_run(free,plan,free_contract,anchors)
+
+    def test_session_uses_one_unicode_wildcard_and_a_short_working_directory(self):
+        from unittest.mock import patch
+        from types import SimpleNamespace
+        from platform_scenario import run_session, save
+        with tempfile.TemporaryDirectory(prefix='platform-argument-file-') as temporary:
+            root=Path(temporary); (root/'inputs').mkdir()
+            (root/'inputs/owned.txt').write_text('owned',encoding='utf8')
+            lib=root/'distribution with spaces/lib';lib.mkdir(parents=True)
+            for name in ('owned-one.jar','owned-two.jar'):
+                (lib/name).write_bytes(b'Owned non-executable process-boundary fixture')
+            save(root/'scenario.json',dict(inputs='inputs'));save(root/'contract.json',{})
+            with patch('platform_scenario.subprocess.run',return_value=SimpleNamespace(returncode=1)) as process:
+                run_session(root/'scenario.json',root/'contract.json',lib.parent,root/'output')
+            argv=process.call_args.args[0]
+            self.assertIn('-cp',argv)
+            self.assertFalse(any(a.startswith('@') for a in argv))
+            wildcard=argv[argv.index('-cp')+1]
+            expected=str(lib.resolve()/'*')
+            if __import__('os').name=='nt':expected='\\\\?\\'+expected
+            self.assertEqual(expected,wildcard)
+            self.assertEqual(Path(tempfile.gettempdir()).resolve(),process.call_args.kwargs['cwd'])
+            manifest=json.loads((root/'output/manifest.json').read_text(encoding='utf8'))
+            self.assertEqual(['owned-one.jar','owned-two.jar'],[p['path'] for p in manifest['packageFiles']])
+            self.assertEqual(str(Path(tempfile.gettempdir()).resolve()),manifest['commandCwd'])
+
+    def test_session_timeout_preserves_separate_execution_and_incomplete_archive(self):
+        from unittest.mock import patch
+        import subprocess
+        from platform_scenario import run_session, save, compare_archive
+        with tempfile.TemporaryDirectory(prefix='platform-timeout-preservation-') as temporary:
+            root=Path(temporary); (root/'inputs').mkdir(); (root/'inputs/owned.txt').write_text('owned',encoding='utf8')
+            (root/'dist/lib').mkdir(parents=True); (root/'dist/lib/owned.jar').write_bytes(b'Owned non-executable fixture')
+            save(root/'scenario.json',dict(inputs='inputs'));save(root/'contract.json',{})
+            with patch('platform_scenario.subprocess.run',side_effect=subprocess.TimeoutExpired('owned external boundary',1)):
+                result=run_session(root/'scenario.json',root/'contract.json',root/'dist',root/'output',timeout=1)
+            self.assertEqual('timed-out',result['execution']['status'])
+            self.assertEqual('not-run',result['consumption']['status'])
+            self.assertEqual('preserved-incomplete',result['sealing']['status'])
+            self.assertTrue((root/'output/stdout.log').is_file())
+            self.assertIs(False,json.loads((root/'output/archive.json').read_text(encoding='utf8'))['complete'])
+            with self.assertRaises(PlatformError):
+                compare_archive(root/'output')
+
+    def test_reused_world_text_does_not_hide_an_old_or_missing_generation(self):
+        sample = dict(worldId='reused-world-text', stepIndex=-1, simulationTime=0,
+                      units=[dict(unitId='f', ownerPlayerId='p1', typeId='landFactory')])
+        intent = dict(intentId='choose', kind='select', unitId='f')
+        rule = dict(intentId='choose', actionType='SelectAction', unitId='f', accepted=True,
+                    assertions=[dict(path='units.f.typeId', operator='equals', value='landFactory')])
+        rows = [dict(sequence=0, kind='load-ready', generation=2),
+                dict(sequence=1, kind='observation', generation=2, phase='initial', sample=sample),
+                dict(sequence=2, kind='intent-start', generation=2, intentId='choose'),
+                dict(sequence=3, kind='observation', generation=2, phase='before-action', sample=sample),
+                dict(sequence=4, kind='action', generation=2, type='SelectAction', unitId='f',
+                     actorPlayerId='p1', result=dict(actionId='a', accepted=True)),
+                dict(sequence=5, kind='observation', generation=2, phase='after-action', sample=sample),
+                dict(sequence=6, kind='intent-end', generation=2, intentId='choose'),
+                dict(sequence=7, kind='observation', generation=2, phase='before-close', sample=sample),
+                dict(sequence=8, kind='closed', generation=2)]
+        plan = dict(scenarioId='s', intents=[intent]); contract = dict(scenarioId='s', rules=[rule])
+        anchors = [dict(intentId='choose', afterSequence=2, endSequence=5)]
+        self.assertEqual(0, compare_run(rows, plan, contract, anchors)['exitCode'])
+        for generation in (1, None, True, -1):
+            changed = copy.deepcopy(rows); changed[5]['generation'] = generation
+            with self.subTest(generation=generation), self.assertRaises(PlatformError):
+                compare_run(changed, plan, contract, anchors)
+        changed = copy.deepcopy(rows); del changed[5]['generation']
+        with self.assertRaises(PlatformError):
+            compare_run(changed, plan, contract, anchors)
+        legacy = [{k:v for k,v in row.items() if k != 'generation' or row['kind']=='load-ready'} for row in rows]
+        self.assertEqual(0, compare_run(legacy, plan, contract, anchors)['exitCode'])
+
     def test_session_forwards_its_explicit_process_budget_to_the_actual_java_load_boundary(self):
         from unittest.mock import patch
         from types import SimpleNamespace
@@ -22,6 +216,11 @@ class PlatformIntentTest(unittest.TestCase):
             self.assertEqual('adapter-process',result['category'])
             self.assertEqual('180',process.call_args.args[0][-1])
             self.assertEqual(180,process.call_args.kwargs['timeout'])
+            self.assertEqual('failed',result['execution']['status'])
+            self.assertEqual(1,result['execution']['exitCode'])
+            self.assertEqual('not-run',result['consumption']['status'])
+            self.assertEqual('preserved-incomplete',result['sealing']['status'])
+            self.assertIs(False,json.loads((root/'out/archive.json').read_text(encoding='utf8'))['complete'])
             for invalid in (0,-1,601):
                 with self.subTest(timeout=invalid),self.assertRaises(PlatformError):
                     run_session(root/'plan.json',root/'contract.json',root/'dist',root/('invalid-'+str(invalid)),timeout=invalid)

@@ -20,7 +20,8 @@ def source_files(repo):
     """Explicit public source closure; never copy TestLab, Docs, evidence or original inputs."""
     roots = ['Engine/core/src', 'Engine/client/src', 'Engine/pc/src',
              'SimulationTest/src/main', 'SimulationTest/src/test', '.github/workflows',
-             'SimulationTest/public', 'SimulationTest/ci', 'SimulationTest/gradle']
+             'SimulationTest/public', 'SimulationTest/fixtures/record-chain',
+             'SimulationTest/ci', 'SimulationTest/gradle']
     paths = [p for root in roots for p in (repo / root).rglob('*')
              if p.is_file() and '__pycache__' not in p.parts]
     paths += [repo / name for name in ['Engine/core/build.gradle.kts', 'Engine/client/build.gradle.kts',
@@ -29,6 +30,7 @@ def source_files(repo):
               'SimulationTest/gradlew', 'SimulationTest/gradlew.bat']]
     paths += [repo / 'SimulationTest/tools' / name for name in
               ['platform_scenario.py', 'test_platform_scenario.py', 'test_platform_session_cli.py', 'test_named_weapon_platform.py',
+               'workflow_scenarios.py', 'test_workflow_scenarios.py',
                'workflow.py', 'workflow_inputs.py', 'workflow_device.py', 'workflow_windows.py',
                'workflow_reuse.py', 'perf_report.py', 'platform_perf.py', 'test_workflow.py',
                'test_workflow_device.py', 'test_workflow_windows.py', 'test_workflow_reuse.py', 'test_perf_analysis.py',
