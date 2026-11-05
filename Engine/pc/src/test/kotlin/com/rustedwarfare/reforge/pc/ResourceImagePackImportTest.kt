@@ -13,6 +13,33 @@ import kotlin.test.assertNotEquals
 import kotlin.test.assertTrue
 
 class ResourceImagePackImportTest {
+    @Test fun a_forged_self_consistent_disk_generation_cannot_replace_the_checked_source_pixels_after_restart() {
+        fixture { _, pack, cache ->
+            val first = PcResourcePackImporter(cache).load(pack)
+            val id = ResourceId.parse("reforge:units/c_tank/body")
+            val oldImage = first.images.getValue(id).path
+            val generation = oldImage.parent.parent
+            val manifestPath = generation.resolve("manifest.json")
+            val readyPath = generation.parent.parent.resolve("ready.json")
+            writePng(oldImage, 0xff2040d0.toInt())
+            val forgedBytes = Files.readAllBytes(oldImage)
+            val json = com.badlogic.gdx.utils.JsonReader()
+            val manifest = json.parse(Files.readString(manifestPath))
+            val output = manifest.get("outputs").get("image0")
+            output.remove("bytes"); output.addChild("bytes", com.badlogic.gdx.utils.JsonValue(forgedBytes.size.toLong()))
+            output.remove("sha256"); output.addChild("sha256", com.badlogic.gdx.utils.JsonValue(visualHash(forgedBytes)))
+            val forgedManifest = manifest.toJson(com.badlogic.gdx.utils.JsonWriter.OutputType.json).toByteArray()
+            Files.write(manifestPath, forgedManifest)
+            val ready = json.parse(Files.readString(readyPath))
+            ready.remove("manifestSha256"); ready.addChild("manifestSha256", com.badlogic.gdx.utils.JsonValue(visualHash(forgedManifest)))
+            Files.writeString(readyPath, ready.toJson(com.badlogic.gdx.utils.JsonWriter.OutputType.json))
+            val restarted = PcResourcePackImporter(cache).load(pack)
+            assertContentEquals(Files.readAllBytes(pack.resolve("images/body.png")), Files.readAllBytes(restarted.images.getValue(id).path))
+            assertNotEquals(oldImage, restarted.images.getValue(id).path, "Untrusted self-consistency must rebuild a new fixed generation")
+            assertContentEquals(forgedBytes, Files.readAllBytes(oldImage), "The old bad generation remains available for diagnosis")
+        }
+    }
+
     @Test fun aliases_share_png_bytes_but_each_logical_layout_must_be_valid() {
         fixture { _, pack, cache ->
             val declaration = pack.resolve("images.json")

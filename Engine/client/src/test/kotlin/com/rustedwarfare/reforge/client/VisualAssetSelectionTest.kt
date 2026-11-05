@@ -126,16 +126,19 @@ class VisualAssetSelectionTest {
 
     @Test fun a_published_matching_descriptor_is_retained_without_repeating_backend_preparation() {
         val calls = java.util.concurrent.atomic.AtomicInteger()
+        val acknowledged = mutableListOf<PreparedVisualAssets>()
         val backend = object : VisualAssetSettings {
             override val initialSelection = VisualAssetSelection()
             override val initialError: String? = null
             override fun prepare(selection: VisualAssetSelection) = PreparedVisualAssets(selection, "self-owned",
                 "prepared-${calls.incrementAndGet()}", emptyMap(), emptyMap())
             override fun applyPrepared(prepared: PreparedVisualAssets) = Unit
+            override fun onPublished(prepared: PreparedVisualAssets) { acknowledged += prepared }
         }
         VisualAssetSettingsSession(backend).use { state ->
             val published = state.prepareForLoad()()
             state.rememberPublished(published)
+            assertEquals(listOf(published), acknowledged)
             kotlin.test.assertSame(published, state.prepareForLoad()())
             assertEquals(1, calls.get())
             state.edit(state.selection.copy(originalDirectory = Path.of("different")))
@@ -143,6 +146,7 @@ class VisualAssetSelectionTest {
             val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5)
             while (!state.poll() && System.nanoTime() < deadline) Thread.sleep(2)
             state.rememberPublished(published) // A late result cannot replace the current selection's descriptor.
+            assertEquals(listOf(published), acknowledged, "A late result cannot publish a platform audit for another selection")
             assertEquals("prepared-2", state.prepareForLoad()().identity)
             assertEquals(2, calls.get())
         }

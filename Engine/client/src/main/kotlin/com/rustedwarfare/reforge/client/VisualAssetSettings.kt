@@ -17,6 +17,8 @@ interface VisualAssetSettings {
         return (checked?.let { contentPackVisuals(prepared, it) } ?: prepared).also { it.verifyForPublication() }
     }
     fun applyPrepared(prepared: PreparedVisualAssets)
+    /** The current launch accepted this exact descriptor; optional platform cache publication. */
+    fun onPublished(prepared: PreparedVisualAssets) = Unit
     /** Worker-only local import; checking never enables a pack or writes the selection. */
     fun checkImagePack(path: Path): PreparedImagePack = throw UnsupportedOperationException("Local image-pack import is unavailable")
     val supportsOriginalImageExtraction: Boolean get() = false

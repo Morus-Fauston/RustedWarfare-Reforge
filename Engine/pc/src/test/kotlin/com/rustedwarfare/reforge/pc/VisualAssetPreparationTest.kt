@@ -15,6 +15,35 @@ import com.rustedwarfare.reforge.client.VisualAssetSource
 
 /** Self-authored tiny images. No original files or private directories are needed. */
 class VisualAssetPreparationTest {
+    @Test fun restarting_a_trusted_recipe_rejects_a_forged_reference_cache_even_when_all_local_hashes_agree() {
+        VisualAssetTestFixture().use { fixture ->
+            val first = fixture.service().prepare(fixture.root)
+            val imagePath = first.outputs.getValue("body")
+            val forged = BufferedImage(2, 1, BufferedImage.TYPE_INT_ARGB)
+            forged.setRGB(0, 0, 0xff2040d0.toInt()); forged.setRGB(1, 0, 0xff2040d0.toInt())
+            assertTrue(ImageIO.write(forged, "png", imagePath.toFile()))
+            val changed = Files.readAllBytes(imagePath)
+            val manifestPath = first.generation.resolve("manifest.json")
+            val readyPath = first.generation.parent.parent.resolve("ready.json")
+            val parser = com.badlogic.gdx.utils.JsonReader()
+            val manifest = parser.parse(Files.readString(manifestPath))
+            val body = manifest.get("outputs").get("body")
+            body.remove("bytes"); body.addChild("bytes", com.badlogic.gdx.utils.JsonValue(changed.size.toLong()))
+            body.remove("sha256"); body.addChild("sha256", com.badlogic.gdx.utils.JsonValue(visualHash(changed)))
+            val manifestBytes = manifest.toJson(com.badlogic.gdx.utils.JsonWriter.OutputType.json).toByteArray()
+            Files.write(manifestPath, manifestBytes)
+            val ready = parser.parse(Files.readString(readyPath))
+            ready.remove("manifestSha256"); ready.addChild("manifestSha256", com.badlogic.gdx.utils.JsonValue(visualHash(manifestBytes)))
+            Files.writeString(readyPath, ready.toJson(com.badlogic.gdx.utils.JsonWriter.OutputType.json))
+            val restarted = fixture.service().prepare(fixture.root)
+            val actual = ImageIO.read(restarted.outputs.getValue("body").toFile())
+            assertEquals(0xffff0000.toInt(), actual.getRGB(0, 0))
+            assertEquals(0xff00ff00.toInt(), actual.getRGB(1, 0))
+            assertNotEquals(first.generation, restarted.generation)
+            assertContentEquals(changed, Files.readAllBytes(imagePath))
+        }
+    }
+
     @Test fun trusted_quarter_turn_recipe_rotates_actual_pixels_without_stretching_or_changing_the_source() {
         val recipe = """"unitOutputs":{"body":{"file":"units/body.png","operation":"crop","source":"own","rect":[0,0,4,1],"target":[1,4],"rotate":90}},"terrainOutputs":{}"""
         VisualAssetTestFixture(recipe).use { fixture ->

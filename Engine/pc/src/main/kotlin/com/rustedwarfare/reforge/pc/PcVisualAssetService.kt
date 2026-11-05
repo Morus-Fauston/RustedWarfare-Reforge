@@ -123,8 +123,9 @@ internal class PcVisualAssetService(private val cacheRoot: Path,
             for (source in profile.json.get("sources")) member(source.getString("path"), source.getInt("bytes"), source.getString("sha256"), frozen = false)
             require(errors.isEmpty()) { errors.joinToString("\n") }
         }
-        return cache.prepare(beforePublish = ::revalidate) { staging ->
-        for ((_, recipe) in profile.recipes) {
+        // Derive output identities from the checked source and trusted recipes before
+        // considering a disk hit. A self-consistent local reference is not a trust anchor.
+        val rendered = profile.recipes.mapValues { (_, recipe) ->
             checkVisualCancellation()
             val target = recipe.get("target").asIntArray()
             val result = BufferedImage(target[0], target[1], BufferedImage.TYPE_INT_ARGB)
@@ -142,13 +143,18 @@ internal class PcVisualAssetService(private val cacheRoot: Path,
                 }
                 else -> error("VISUAL_MAPPING_UNSUPPORTED: recipe")
             }
-            val output = staging.resolve(recipe.getString("file"))
-            Files.createDirectories(output.parent)
-            val bytes = ByteArrayOutputStream().also { buffer ->
+            ByteArrayOutputStream().also { buffer ->
                 MemoryCacheImageOutputStream(buffer).use { require(ImageIO.write(result, "png", it)) }
             }.toByteArray()
-            Files.write(output, bytes)
         }
+        return cache.prepare(beforePublish = ::revalidate,
+            expectedImageDigests = rendered.mapValues { (_, bytes) -> visualHash(bytes) }) { staging ->
+            for ((id, bytes) in rendered) {
+                checkVisualCancellation()
+                val output = staging.resolve(profile.recipes.getValue(id).getString("file"))
+                Files.createDirectories(output.parent)
+                Files.write(output, bytes)
+            }
         }
     }
 

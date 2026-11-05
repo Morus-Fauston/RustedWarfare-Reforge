@@ -27,17 +27,24 @@ internal class PcOriginalResourceExtractor(private val cache: Path, private val 
         staticBaseContracts(pack, builtin, null)
 
     fun staticBaseContracts(pack: PreparedImagePack, builtin: ResourceImageLayer,
-        inputs: PcFrozenResourceInputs?): Map<ResourceId, ResourceImageDeclaration> {
-        val accepted = profile ?: PcOriginalResourceProfile.forPackage(pack)
+        inputs: PcFrozenResourceInputs?): Map<ResourceId, ResourceImageDeclaration> = staticBaseContracts(pack, builtin, inputs, null)
+
+    fun staticBaseContracts(pack: PreparedImagePack, builtin: ResourceImageLayer,
+        inputs: PcFrozenResourceInputs?, reviewed: PcTrustedOutputVersion?): Map<ResourceId, ResourceImageDeclaration> {
+        val accepted = profileFor(pack.manifest, inputs)
+        require(reviewed == null || reviewed.basis == PcTrustedOutputIndex.basis(accepted))
         if (inputs != null) {
-            val qualification = PcOriginalImageContracts.qualify(pack, accepted.images, builtin, cache, atomicMove, inputs)
-            PcOriginalResourceContracts.verify(pack, accepted, inputs, qualification)
+            val qualification = PcOriginalImageContracts.qualify(pack, accepted.images, builtin, cache, atomicMove, inputs, reviewed)
+            PcOriginalResourceContracts.verify(pack, accepted, inputs, qualification, reviewed)
             return qualification?.contracts.orEmpty()
         }
         val contracts = PcOriginalImageContracts.verify(pack, accepted.images, builtin, cache, atomicMove, inputs)
         PcOriginalResourceContracts.verify(pack, accepted, inputs)
         return contracts
     }
+
+    fun profileFor(manifest: Path, inputs: PcFrozenResourceInputs?): PcOriginalResourceProfile =
+        profile ?: PcOriginalProfileVersions.resources(manifest, inputs)
 
     fun extract(input: Path): PreparedImagePack {
         checkVisualCancellation()

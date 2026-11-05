@@ -82,18 +82,27 @@ internal class VisualAssetCache(private val cache: Path, private val profile: Vi
         }
     }
 
-    fun prepare(beforePublish: () -> Unit = ::checkVisualCancellation, produce: (Path) -> Unit): PcPreparedVisualAssets {
+    fun prepare(beforePublish: () -> Unit = ::checkVisualCancellation,
+        expectedImageDigests: Map<String, String>? = null, produce: (Path) -> Unit): PcPreparedVisualAssets {
         checkVisualCancellation()
+        val imageRecipes = profile.recipes.filterValues { it.getString("kind", "image") == "image" }
+        val expected = expectedImageDigests ?: imageRecipes.mapNotNull { (id, recipe) ->
+            recipe.getString("sha256", null)?.let { id to it }
+        }.toMap()
+        require(expected.keys.all { it in imageRecipes } && expected.values.all { it.matches(Regex("[0-9a-f]{64}")) })
+        // A ready/manifest pair can locate a generation, but cannot prove its own pixels.
+        val independentlyChecked = expected.keys == imageRecipes.keys
+        require(expectedImageDigests == null || independentlyChecked) { "PREPARE_FAILED: incomplete independent image basis" }
         Files.createDirectories(cache.resolve("generations"))
         val ready = cache.resolve("ready.json")
-        if (Files.exists(ready)) {
+        if (independentlyChecked && Files.exists(ready)) {
             val hit = runCatching {
                 val pointer = JsonReader().parse(Files.readString(ready))
                 val id = UUID.fromString(pointer.getString("generation")).toString()
                 val directory = cache.resolve("generations/$id")
                 val bytes = Files.readAllBytes(directory.resolve("manifest.json"))
                 require(visualHash(bytes) == pointer.getString("manifestSha256"))
-                read(directory, bytes).also { it.verify() }
+                read(directory, bytes, expected).also { it.verify() }
             }.getOrNull()
             if (hit != null) { beforePublish(); return hit }
         }
@@ -101,6 +110,10 @@ internal class VisualAssetCache(private val cache: Path, private val profile: Vi
         val staging = Files.createDirectory(cache.resolve(".preparing-$id"))
         produce(staging)
         beforePublish()
+        // Callers lacking a complete independent basis must really produce a new generation.
+        val fixedImages = if (independentlyChecked) expected else imageRecipes.mapValues { (_, recipe) ->
+            visualHash(Files.readAllBytes(staging.resolve(recipe.getString("file"))))
+        }
         val entries = profile.recipes.map { (name, recipe) ->
             val bytes = Files.readAllBytes(staging.resolve(recipe.getString("file")))
             if (recipe.getString("kind", "image") == "pcm16") {
@@ -117,7 +130,7 @@ internal class VisualAssetCache(private val cache: Path, private val profile: Vi
             "\"identity\":${profile.json.get("identity").toJson(OutputType.json)}," +
             "\"sources\":${profile.json.get("sources").toJson(OutputType.json)},\"outputs\":{$entries}}").toByteArray()
         Files.write(staging.resolve("manifest.json"), manifest)
-        read(staging, manifest).verify()
+        read(staging, manifest, fixedImages).verify()
         val generation = cache.resolve("generations/$id")
         beforePublish()
         atomicMove(staging, generation, false)
@@ -125,10 +138,26 @@ internal class VisualAssetCache(private val cache: Path, private val profile: Vi
         Files.writeString(temporary, "{\"generation\":\"$id\",\"manifestSha256\":\"${visualHash(manifest)}\"}")
         beforePublish()
         atomicMove(temporary, ready, true)
-        return read(generation, manifest)
+        return read(generation, manifest, fixedImages)
     }
 
-    private fun read(directory: Path, bytes: ByteArray): PcPreparedVisualAssets {
+    /** Restores one fixed generation; caller still proves source/qualification independently. */
+    fun restoreFixed(directory: Path): PcPreparedVisualAssets {
+        checkVisualCancellation()
+        val id = UUID.fromString(requireNotNull(directory.fileName).toString()).toString()
+        val expectedDirectory = cache.toAbsolutePath().normalize().resolve("generations").resolve(id)
+        require(directory == expectedDirectory && Files.isDirectory(directory, NOFOLLOW_LINKS) && directory.toRealPath() == directory) {
+            "PREPARE_FAILED: invalid fixed cache location"
+        }
+        val manifest = directory.resolve("manifest.json")
+        require(Files.isRegularFile(manifest, NOFOLLOW_LINKS) && manifest.toRealPath() == manifest && Files.size(manifest) in 1..16L * 1024 * 1024)
+        val expected = profile.recipes.filterValues { it.getString("kind", "image") == "image" }.mapValues { (_, recipe) ->
+            requireNotNull(recipe.getString("sha256", null)) { "PREPARE_FAILED: no independent fixed image identity" }
+        }
+        return read(directory, Files.readAllBytes(manifest), expected).also { it.verify() }
+    }
+
+    private fun read(directory: Path, bytes: ByteArray, expectedImageDigests: Map<String, String>): PcPreparedVisualAssets {
         val manifest = JsonReader().parse(bytes.toString(Charsets.UTF_8))
         require(manifest.getInt("schemaVersion") == 1 && manifest.getBoolean("complete") && manifest.getString("profile") == profile.key)
         require(manifest.get("sources").toJson(OutputType.json) == profile.json.get("sources").toJson(OutputType.json))
@@ -147,6 +176,10 @@ internal class VisualAssetCache(private val cache: Path, private val profile: Vi
             require(recipe.getString("kind", "image") == "image")
             val target = recipe.get("target").asIntArray()
             require(identity.width == target[0] && identity.height == target[1] && identity.bytes >= 24)
+            require(identity.sha256 == expectedImageDigests.getValue(name)) { "PREPARE_FAILED: cached image lacks an independent output identity: $name" }
+            recipe.getString("sha256", null)?.let { expected ->
+                require(identity.sha256 == expected) { "PREPARE_FAILED: fixed image differs from independently checked source: $name" }
+            }
         }
         for ((name, sound) in sounds) {
             val recipe = profile.recipes.getValue(name)

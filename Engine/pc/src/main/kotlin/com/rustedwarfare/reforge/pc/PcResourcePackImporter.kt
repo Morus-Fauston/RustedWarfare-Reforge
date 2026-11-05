@@ -153,16 +153,15 @@ internal class PcResourcePackImporter(private val cacheRoot: Path,
                         else bad(source.path, "Source changed after checking; check this pack again")
                 }
             }
+            val sourceHashes = sources.associate { it.path to it.sha256 }
             val outputs = images.mapIndexed { index, image ->
-                "\"image$index\":{\"file\":\"images/$index.png\",\"target\":[${image.width},${image.height}]}"
+                "\"image$index\":{\"file\":\"images/$index.png\",\"target\":[${image.width},${image.height}]," +
+                    "\"sha256\":\"${sourceHashes.getValue(image.source)}\"}"
             }.joinToString(",")
             val soundOutputs = decodedSounds.entries.mapIndexed { index, (file, pcm) ->
                 "\"sound$index\":{\"file\":\"sounds/$index.wav\",\"kind\":\"pcm16\",\"channels\":${pcm.channels},\"sampleRate\":${pcm.sampleRate},\"frames\":${pcm.frames},\"sha256\":\"${visualHash(canonicalSounds.getValue(file))}\"}"
             }.joinToString(",")
-            val soundProfile = if (decodedSounds.isEmpty()) "" else ",\"soundOutputs\":{$soundOutputs}"
-            val profile = VisualAssetProfile.parse(("{\"schemaVersion\":1,\"profileId\":${quote("resource-pack:$pack")}," +
-                "\"identity\":{\"packId\":${quote(pack)},\"sourceDigest\":${quote(identity)}},\"sources\":$sourceJson," +
-                "\"unitOutputs\":{$outputs},\"terrainOutputs\":{}$soundProfile}").toByteArray(Charsets.UTF_8))
+            val profile = profile(pack, identity, sourceJson, outputs, soundOutputs)
             val publisher = VisualAssetCache(cache.resolve("image-packs").resolve(profile.key), profile, atomicMove)
             val prepared = publisher.locked {
                 publisher.prepare(beforePublish = ::verifySources) { staging ->
@@ -191,4 +190,84 @@ internal class PcResourcePackImporter(private val cacheRoot: Path,
             bad(absolute, failure.message ?: "Invalid package input")
         } catch (failure: java.io.IOException) { bad(absolute, "Cannot read package input: ${failure.message}") }
     }
+    /** A fixed-generation read, admitted only by independent distribution facts and current source hashes. */
+    fun restoreReviewed(manifest: Path, inputs: PcFrozenResourceInputs, facts: PcTrustedOutputVersion,
+        generation: Path): PreparedImagePack {
+        checkVisualCancellation()
+        val root = requireNotNull(manifest.parent)
+        require(manifest.isAbsolute && manifest == manifest.normalize() && manifest.fileName.toString() in setOf("pack.json", "pack.hjson"))
+        require(Files.isDirectory(root, NOFOLLOW_LINKS) && root.toRealPath() == root)
+        val requestedCache = cacheRoot.toAbsolutePath().normalize()
+        var ancestor = requestedCache
+        while (Files.notExists(ancestor, NOFOLLOW_LINKS)) ancestor = requireNotNull(ancestor.parent)
+        val cache = ancestor.toRealPath().resolve(ancestor.relativize(requestedCache))
+        require(!cache.startsWith(root) && !root.startsWith(cache)) { "RESOURCE_PACK_IMAGE_INVALID: Package source and private cache overlap" }
+        val sources = linkedMapOf<Path, ContentSourceIdentity>()
+        fun capture(path: Path): ByteArray {
+            require(path.startsWith(root) && path != root)
+            return inputs.read(path, 16 * 1024 * 1024).also { sources[path] = inputs.identityFor(path) }
+        }
+        val metadata = ResourcePackMetadata.read(capture(manifest), manifest.toString())
+        require(VisualAssetSource.entries.none { it.resourcePackId == metadata.id.value })
+        val lists = listOf("images.json", "images.hjson").map(root::resolve).filter { Files.exists(it, NOFOLLOW_LINKS) }
+        require(lists.size == 1)
+        val declarations = ResourceImageManifest.read(capture(lists.single()), lists.single().toString())
+        require(metadata.icon in declarations.images)
+        val soundLists = listOf("sounds.json", "sounds.hjson").map(root::resolve).filter { Files.exists(it, NOFOLLOW_LINKS) }
+        require(soundLists.size <= 1 && (soundLists.isEmpty() || metadata.requiresResourceFormat >= 2))
+        val sounds = soundLists.singleOrNull()?.let { ResourceSoundManifest.read(capture(it), it.toString()) }
+        require(sounds == null || metadata.requiresResourceFormat >= sounds.requiredResourceFormat)
+        data class Image(val id: ResourceId, val declaration: ResourceImageDeclaration, val facts: PcTrustedPngOutput)
+        val images = declarations.images.toSortedMap(compareBy { it.value }).map { (id, declaration) ->
+            checkVisualCancellation()
+            val file = root.resolve(declaration.file).normalize(); require(file.startsWith(root) && file != root)
+            val known = facts.images.getValue(declaration.file)
+            sources[file] = inputs.requireMember(file, known.bytes.toLong(), known.sha256)
+            require(known.width % declaration.totalFrames == 0 &&
+                (known.width / declaration.totalFrames).toLong() * declaration.frameHeight == known.height.toLong() * declaration.frameWidth)
+            Image(id, declaration, known)
+        }
+        data class Sound(val id: ResourceId, val source: Path, val facts: CachedPcmSound)
+        val audio = sounds?.sounds.orEmpty().toSortedMap(compareBy { it.value }).map { (id, declaration) ->
+            checkVisualCancellation()
+            val file = root.resolve(declaration.file).normalize(); require(file.startsWith(root) && file != root)
+            val known = facts.sounds.getValue(declaration.file)
+            sources[file] = inputs.requireMember(file, known.bytes.toLong(), known.sha256)
+            Sound(id, file, known)
+        }
+        val uniqueSounds = linkedMapOf<Path, CachedPcmSound>()
+        audio.forEach { uniqueSounds.putIfAbsent(it.source, it.facts) }
+        val sourceList = sources.values.sortedBy { it.path.toString() }
+        fun quote(value: String) = OutputType.json.quoteValue(value)
+        val sourceJson = sourceList.joinToString(",", "[", "]") {
+            "{\"path\":${quote(it.path.toString())},\"bytes\":${it.bytes},\"sha256\":${quote(it.sha256)}}"
+        }
+        val identity = visualHash(sourceJson.toByteArray(Charsets.UTF_8))
+        val imageOutputs = images.mapIndexed { index, image ->
+            "\"image$index\":{\"file\":\"images/$index.png\",\"target\":[${image.facts.width},${image.facts.height}],\"sha256\":\"${image.facts.sha256}\"}"
+        }.joinToString(",")
+        val soundOutputs = uniqueSounds.values.mapIndexed { index, sound ->
+            "\"sound$index\":{\"file\":\"sounds/$index.wav\",\"kind\":\"pcm16\",\"channels\":${sound.channels},\"sampleRate\":${sound.sampleRate},\"frames\":${sound.frames},\"sha256\":\"${sound.sha256}\"}"
+        }.joinToString(",")
+        val profile = profile(metadata.id.value, identity, sourceJson, imageOutputs, soundOutputs)
+        val publisher = VisualAssetCache(cache.resolve("image-packs").resolve(profile.key), profile, atomicMove)
+        val fixed = publisher.locked { publisher.restoreFixed(generation) }
+        val soundIndices = uniqueSounds.keys.withIndex().associate { it.value to it.index }
+        return PreparedImagePack(metadata, manifest, identity, images.mapIndexed { index, image ->
+            image.id to PreparedResourceImage(fixed.outputs.getValue("image$index"), image.declaration, image.facts.width, image.facts.height)
+        }.toMap(), sourceList, fixed::verify, inputs::verifyCurrent, audio.associate { sound ->
+            val value = sound.facts
+            sound.id to PreparedResourceSound(fixed.outputs.getValue("sound${soundIndices.getValue(sound.source)}"),
+                value.channels, value.sampleRate, value.frames, value.bytes, value.sha256)
+        }, sounds?.events.orEmpty())
+    }
+
+    private fun profile(pack: String, identity: String, sourceJson: String, images: String, sounds: String): VisualAssetProfile {
+        fun quote(value: String) = OutputType.json.quoteValue(value)
+        val soundProfile = if (sounds.isEmpty()) "" else ",\"soundOutputs\":{$sounds}"
+        return VisualAssetProfile.parse(("{\"schemaVersion\":1,\"profileId\":${quote("resource-pack:$pack")}," +
+            "\"identity\":{\"packId\":${quote(pack)},\"sourceDigest\":${quote(identity)}},\"sources\":$sourceJson," +
+            "\"unitOutputs\":{$images},\"terrainOutputs\":{}$soundProfile}").toByteArray(Charsets.UTF_8))
+    }
+
 }

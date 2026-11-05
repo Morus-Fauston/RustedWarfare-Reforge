@@ -9,6 +9,20 @@ import kotlin.test.assertSame
 import kotlin.test.assertTrue
 
 class ResourcePackPreparationTest {
+    @Test fun a_local_qualified_flag_does_not_replace_a_new_backends_audit_but_same_process_reuse_is_reported() {
+        ResourceImagePackApplicationFixture().use { fixture ->
+            val pack = fixture.create("owned:no-proof", listOf(OwnPackImage("reforge:units/c_tank/body")))
+            val selection = VisualAssetSelection(packs = ResourcePackSelection(listOf(pack.catalogEntry), listOf(pack.metadata.id.value)))
+            fixture.backend().prepare(selection)
+            java.nio.file.Files.writeString(fixture.cache.resolve("checked-audit.json"), """{"qualified":true,"complete":true}""")
+            val restarted = fixture.backend()
+            val first = restarted.prepare(selection)
+            assertEquals(PcResourcePreparationPath.FULL_AUDIT, restarted.lastPreparationPath)
+            assertSame(first, restarted.prepare(selection))
+            assertEquals(PcResourcePreparationPath.PROCESS_REUSE, restarted.lastPreparationPath)
+        }
+    }
+
     @Test
     fun unreferenced_package_members_do_not_acquire_the_declared_media_size_limit() {
         ResourceImagePackApplicationFixture().use { fixture ->
