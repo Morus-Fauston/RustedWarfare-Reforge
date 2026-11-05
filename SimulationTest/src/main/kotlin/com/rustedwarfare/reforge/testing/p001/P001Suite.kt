@@ -84,9 +84,12 @@ object P001Suite {
                         if(id=="M05") {
                             val capture=P001Lifecycle.capture(input,id)
                             child.lines("lifecycle.jsonl",capture.rows);failure=capture.failure
-                            // Compare the P001 trace contract on both paths. Host-only task state is
-                            // deliberately absent from this frozen movement schema.
-                            if(samples.map { it.json().required("units") to it.json().required("events") }!=
+                            // readSamples keeps the frozen movement relation view. Cross-check the
+                            // original complete unit/event fields so newer task DTOs are not lost.
+                            val complete = Files.readAllLines(run.output.resolve("reforge/raw.jsonl"))
+                                .map { json.parseToJsonElement(it).jsonObject }.filter { it.text("kind") == "observation" }
+                                .map { it.objectAt("observation").let { view -> view.required("units") to view.required("events") } }
+                            if(complete!=
                                 capture.observations.map { it.json().required("units") to it.json().required("events") })
                                 failure=failure?:RelationFailure("continuous-cross-check",0,"Runner and continuous public driver agree","different observations")
                         }

@@ -8,6 +8,7 @@ import com.rustedwarfare.reforge.core.content.internal.FactoryContentReader
 import com.rustedwarfare.reforge.core.content.internal.PointDefenseContentReader
 import com.rustedwarfare.reforge.core.content.internal.TurretContentReader
 import com.rustedwarfare.reforge.core.content.internal.TmxReader
+import com.rustedwarfare.reforge.core.content.internal.UnderwaterTargetContentReader
 import java.io.IOException
 import java.nio.file.Path
 
@@ -76,6 +77,12 @@ object ContentLoader {
 
     fun loadHeavyMechUnit(path: Path): ContentResult<UnitDefinition> =
         load(path) { CombatContentReader.readHeavyMechWithSources(it).definition }
+
+    fun loadBattleshipUnit(path: Path): ContentResult<UnitDefinition> =
+        load(path) { CombatContentReader.readBattleshipWithSources(it).definition }
+
+    fun loadUnderwaterTargetUnit(path: Path): ContentResult<UnitDefinition> =
+        load(path) { UnderwaterTargetContentReader.readWithSources(it) {}.definition }
 
     fun loadDeclaredTankWithSources(path: Path): ContentResult<LoadedUnitContent> =
         load(path) { CombatContentReader.readDeclaredWithSources(it) }

@@ -1,8 +1,8 @@
 {
   "schemaVersion": 1,
-  "profileId": "rw.pc.steam.9902063.resources.v4",
-  "imageProfileId": "rw.pc.steam.9902063.images.v4",
-  "imageQualificationSha256": "3325d4bfc17cc1bbe9df49f99a6543ba2c7776a39826a3610e4fc04e7853c1d5",
+  "profileId": "rw.pc.steam.9902063.resources.v5",
+  "imageProfileId": "rw.pc.steam.9902063.images.v5",
+  "imageQualificationSha256": "4c7a82a3f643ceb6ecd0966d01bbd980fa9f7a00243c7966eb6dab60cbf0182e",
   "identity": {
     "bytes": 2639503,
     "sha256": "8a550a37e2d8a5430866090d4e7d5892f9010b47f52a5a09350fc66c620deec9"
@@ -253,6 +253,14 @@
     {
       "eventId": "reforge:events/tank-fire",
       "sourcePath": "res/raw/tank_firing.ogg"
+    },
+    {
+      "eventId": "reforge:events/naval-main-fire",
+      "sourcePath": "res/raw/large_gun_fire2.ogg"
+    },
+    {
+      "eventId": "reforge:events/naval-missile-fire",
+      "sourcePath": "res/raw/missile_fire.ogg"
     }
   ],
   "excludedMusicDomain": "assets/music/",

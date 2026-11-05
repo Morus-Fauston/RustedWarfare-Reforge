@@ -12,7 +12,7 @@ internal object FactoryContentReader {
 
     private val schema = UnitContentSchema.native(fields,
         setOf("rw-reforge.native-land-factory.v1", "rw-reforge.native-land-factory.v2", "rw-reforge.mech-factory.v1",
-            "rw-reforge.mech-factory.v2", "rw-reforge.native-air-factory.v1")).let {
+            "rw-reforge.mech-factory.v2", "rw-reforge.native-air-factory.v1", "rw-reforge.native-sea-factory.v1")).let {
         val numbers = setOf("exitX", "exitY", "exitDistance", "techLevel", "upgradePrice", "upgradeBuildSpeed")
         it.copy(numericFields = it.numericFields + numbers, textFields = it.textFields - numbers)
     }
@@ -24,6 +24,7 @@ internal object FactoryContentReader {
     }
 
     private fun definition(path: Path, values: Map<String, String>, validatePath: (Path) -> Unit): UnitDefinition {
+        if (values["format"] == "rw-reforge.native-sea-factory.v1") return seaDefinition(path, values, validatePath)
         fun required(key: String): String = requiredContentField(values[key], path, null, key,
             "Required factory field is absent or empty")
         fun only(key: String, expected: String) {
@@ -109,5 +110,51 @@ internal object FactoryContentReader {
             construction = if (construction) ConstructionProfile(positive("price").toLong(), positive("buildSpeed").toFloat()) else null,
             upgrades = if (mechV2 && !t2) UpgradeProfile(listOf(UpgradeActionProfile("upgrade_t2", "mechFactoryT2", 4000L, .0004f))) else null,
             directHitTargetKind = if (mech) DirectHitTargetKind.ORDINARY else DirectHitTargetKind.NATIVE_BUILDING)
+    }
+
+    /** Explicit T1/T2 native profile on the common syntax, source and image path. */
+    private fun seaDefinition(path: Path, values: Map<String, String>, validatePath: (Path) -> Unit): UnitDefinition {
+        fun required(key: String): String = requiredContentField(values[key], path, null, key, "Required sea factory field")
+        fun only(key: String, expected: String) {
+            if (required(key) != expected) reject(ContentErrorCode.UNSUPPORTED_FEATURE, path, field = key,
+                reason = "Expected $expected for the finite sea factory")
+        }
+        val tier = required("techLevel")
+        if (tier !in setOf("1", "2")) reject(ContentErrorCode.UNSUPPORTED_FEATURE, path, field = "techLevel",
+            reason = "Expected native sea factory tier 1 or 2")
+        val t2 = tier == "2"
+        val id = if (t2) "seaFactoryT2" else "seaFactory"
+        val upgradeFields = setOf("upgradeTo", "upgradePrice", "upgradeBuildSpeed")
+        val allowed = setOf("format", "name", "techLevel", "maxHp", "radius", "footprint", "placementFootprint",
+            "movementType", "productionUnits", "price", "buildSpeed", "fogOfWarSightRange", "image", "image_dead") +
+            if (t2) emptySet() else upgradeFields
+        values.keys.firstOrNull { it !in allowed }?.let {
+            reject(ContentErrorCode.UNSUPPORTED_FIELD, path, field = it, reason = "Field is outside this finite sea factory tier")
+        }
+        for ((key, value) in mapOf("name" to id, "maxHp" to "1000", "radius" to "45", "footprint" to "-1,-1,1,2",
+            "placementFootprint" to "-2,-1,2,4", "movementType" to "NONE", "productionUnits" to if (t2) "heavyBattleship" else "NONE",
+            "price" to if (t2) "3000" else "1000", "buildSpeed" to "0.0007", "fogOfWarSightRange" to "15")) only(key, value)
+        if (!t2) {
+            only("upgradeTo", "seaFactoryT2"); only("upgradePrice", "2000"); only("upgradeBuildSpeed", "0.0004")
+        }
+        fun image(key: String): Path {
+            val result = resolveReference(path, required(key), "graphics", key)
+            validatePath(result)
+            try {
+                val png = readPngMetadata(result, allowIndexed = true, allowGrayAlpha = key == "image_dead")
+                require(png.width == 90 && png.height == 99) { "Expected 90x99 sea factory PNG" }
+            } catch (failure: Exception) {
+                reject(ContentErrorCode.BAD_REFERENCE, path, "graphics", key, reason = "Invalid PNG: ${failure.message}")
+            }
+            return result
+        }
+        return UnitDefinition(id, "NativeSeaFactoryFixture", 45.0, 45.0, 1, image("image"), 1.0,
+            MovementProfile(MovementType.NONE, 0.0, 0.0, 0.0, 0.0, 0.0, false, false), emptySet(), 15,
+            durability = DurabilityProfile(1000.0, image("image_dead")),
+            building = BuildingProfile(BuildingFootprint(-1, -1, 1, 2), placementFootprint = BuildingFootprint(-2, -1, 2, 4)),
+            production = ProductionProfile(if (t2) listOf("heavyBattleship") else emptyList(), FactoryExitProfile.NATIVE_SEA),
+            build = BuildProfile(if (t2) 3000L else 1000L, .0007f), construction = ConstructionProfile(if (t2) 3000L else 1000L, .0007f),
+            upgrades = if (t2) null else UpgradeProfile(listOf(UpgradeActionProfile("upgrade_t2", "seaFactoryT2", 2000L, .0004f))),
+            directHitTargetKind = DirectHitTargetKind.NATIVE_BUILDING)
     }
 }

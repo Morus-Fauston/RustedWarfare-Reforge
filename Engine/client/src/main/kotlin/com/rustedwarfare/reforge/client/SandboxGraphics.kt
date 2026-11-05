@@ -141,13 +141,16 @@ class SandboxGraphics private constructor(private val resources: SandboxRenderRe
         val visibleWeapons = frame.observation.weapons.groupBy { it.unitId }
         val mechFrames = MechPresentation.project(frame.observation, projection, resources).associateBy { it.unitId }
         val flightFrames = FlightPresentation.project(frame.observation, projection).associateBy { it.unitId }
+        val waterFrames = WaterPresentation.project(frame.observation, projection).associateBy { it.unitId }
         for (unit in frame.observation.units) {
             val definition = resources.units.getValue(unit.typeId)
             if (!definition.isDrawn(unit)) continue
             batch.setColor(1f, 1f, 1f, if (unit.alive && unit.constructionProgress < 1f) .45f else 1f)
             val mech = mechFrames[unit.unitId]
             val flight = flightFrames[unit.unitId]
+            val water = waterFrames[unit.unitId]
             if (unit.alive && unit.flightPose != null && flight == null) continue
+            if (unit.waterPose != null && water == null) continue
             mech?.legs?.forEach { leg ->
                 val shaft = legs.getValue(unit.typeId)
                 val foot = feet.getValue(unit.typeId)
@@ -185,9 +188,9 @@ class SandboxGraphics private constructor(private val resources: SandboxRenderRe
             val size = definition.drawSize(if (corpse != null) UnitImageSlot.DEAD else UnitImageSlot.BODY, region.regionWidth, region.regionHeight)
             val w = (size.width * projection.scale).toFloat()
             val h = (size.height * projection.scale).toFloat()
-            batch.draw(region, (flight?.bodyX ?: mech?.bodyX ?: projection.x(unit.position.x)) - w / 2,
-                (flight?.bodyY ?: mech?.bodyY ?: projection.y(unit.position.y)) - h / 2,
-                w / 2, h / 2, w, h, 1f, 1f, flight?.bodyRotation ?: mech?.rotation ?: -unit.heading.toFloat())
+            batch.draw(region, (flight?.bodyX ?: mech?.bodyX ?: water?.bodyX ?: projection.x(unit.position.x)) - w / 2,
+                (flight?.bodyY ?: mech?.bodyY ?: water?.bodyY ?: projection.y(unit.position.y)) - h / 2,
+                w / 2, h / 2, w, h, 1f, 1f, flight?.bodyRotation ?: mech?.rotation ?: water?.bodyRotation ?: -unit.heading.toFloat())
             flight?.let { pose ->
                 val rotor = rotors.getValue(unit.typeId)
                 val rotorSize = definition.drawSize(UnitImageSlot.ROTOR, rotor.regionWidth, rotor.regionHeight)

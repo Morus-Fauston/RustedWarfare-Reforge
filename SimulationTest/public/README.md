@@ -157,6 +157,8 @@ python -B SimulationTest/tools/android_host_check.py --distribution SimulationTe
 
 ## 工具机制与专属验证入口
 
+五期有限海军输入位于`inputs/naval-production`，同样进入`production-combat`集。三格式正常岸边建造者以12000完成海厂T1→同厂T2→6000付费重舰；8200步正式Core/Session计划覆盖离厂、实际水面移动/停止及五炮对地面、空中、固定水下靶的交战。核心归档使用未改normalizer逐行比较完整JSON玩法值，保持原身份与全部中间状态。水面身体/沉没、有限弹道、失败事务、岸线建造/退款/出生和新资源接线的完整测试类一并登记；真实PC双尺寸、合格原版全资源及声音输出仍分开验证。
+
 五期重型机甲的有限输入位于`inputs/heavy-mech-production`，纳入既有`production-combat`集：三格式Core/Session短场景检查四足、普通LAND移动与小炮射击；`HeavyMechProductionSessionTest`通过三份8060q正式Session计划完成builder→T1→同一工厂T2→付费heavy→实际地空战斗，并核完整诊断。重型保留LAND开发变体，不含盾或越崖；新具名小炮图、工厂升级及资源失败回退机制也随该集选择。`public_check.py --suite production-combat --kind all --isolated`执行公开闭包，真实PC双尺寸及私有完整原图资源验证另记，不能由这些无头结果推定。
 
 ```powershell

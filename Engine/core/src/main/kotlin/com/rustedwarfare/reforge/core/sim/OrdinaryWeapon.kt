@@ -91,7 +91,7 @@ internal object OrdinaryWeapon {
         return ScreenPlane.difference(ScreenPlane.desired(origin(), aim), state.turretHeading)
     }
 
-    private fun turnTo(unit: MutableUnit, heading: Double, delta: Double, state: MutableCombat,
+    fun turnTo(unit: MutableUnit, heading: Double, delta: Double, state: MutableCombat,
                        weapon: CombatProfile, difference: Double = ScreenPlane.difference(heading, state.turretHeading)): Double {
         val diff = difference
         if (abs(diff) >= .01) {

@@ -32,10 +32,11 @@ class ContentPackSelectionSession(
     val inputPath: Path? get() = path
     val busy: Boolean get() = pending != null
     val canEnable: Boolean get() = !busy && !dirty && error == null && checked != null
-    val availableUnits: Set<String> get() = if (enabledManifests.isEmpty()) checked?.units?.keys.orEmpty()
-        else composition?.units?.keys.orEmpty()
+    val availableUnits: Set<String> get() = (if (enabledManifests.isEmpty()) checked?.units else composition?.units)
+        ?.filterValues { it.fixedUnderwaterTarget == null }?.keys.orEmpty()
     val canSelect: Boolean get() = !busy && !dirty && error == null && availableUnits.isNotEmpty()
-    val canStart: Boolean get() = !busy && (enabledManifests.isEmpty() || !dirty && error == null && composition != null)
+    val canStart: Boolean get() = !busy && (enabledManifests.isEmpty() ||
+        !dirty && error == null && composition != null && selectedUnitId in availableUnits)
 
     fun edit(value: Path?) {
         check(!busy) { "Cancel the current package check before editing" }

@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "profileId": "rw.pc.steam.9902063.images.v4",
+  "profileId": "rw.pc.steam.9902063.images.v5",
   "identity": {
     "jarPath": "game-lib.jar",
     "jarBytes": 2639503,
@@ -6204,10 +6204,16 @@
     "heavy-mech-small-turret": "assets/units/mechs_large/smallTurret2.png",
     "heavy-mech-leg": "assets/units/mechs_large/leg.png",
     "heavy-mech-foot": "assets/units/mechs_large/foot_small2.png",
-    "mech-factory-t2": "assets/units/mech_factory/mechFactoryTopT2.png"
+    "mech-factory-t2": "assets/units/mech_factory/mechFactoryTopT2.png",
+    "heavy-battleship": "assets/units/heavy_battleship/heavy_battleship.png",
+    "heavy-battleship-dead": "assets/units/heavy_battleship/heavy_battleship_dead.png",
+    "naval-large-turret": "assets/units/shared/large_turret.png",
+    "sea-factory": "res/drawable/sea_factory.png",
+    "sea-factory-t2": "res/drawable/sea_factory_t2.png",
+    "sea-factory-dead": "res/drawable/sea_factory_dead.png"
   },
   "mappingBasis": {
-    "androidProfileSha256": "c21f3e42c418a0645853ca24a269b7a90a4379a8c3dcb90fbe6ffd37bcae0758",
-    "scope": "Forty-seven qualified source images; six new heavy-mech and T2 body recipes. Heavy named smallLaser has its own image; T2 back/dead reuse the unchanged T1 outputs. Eight new resource aliases; all prior recipes and the full original source collection are unchanged. Static mapping only, without original gameplay execution or all-image rendering claim."
+    "androidProfileSha256": "e273280ab37b1a24714e6b15d8e1cb14fdd395e228ea7c71a62dd2f24d334780",
+    "scope": "Fifty-three qualified source images; six new naval image recipes and seven aliases for stock heavy battleship and Sea T1/T2. Shared turret serves the two visible main turrets; missile launchers stay invisible. T2 dead reuses T1. All prior recipes and the complete original source collection remain unchanged. Static mapping, no original gameplay execution or all-image rendering claim."
   }
 }

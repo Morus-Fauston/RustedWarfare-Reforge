@@ -12,6 +12,12 @@ internal object UpgradeRules {
         fun invalid() = SimulationError("unsupported-upgrade", "Expected a complete finite ordinary upgrade registration")
         for ((key, source) in input.unitDefinitions) {
             val profile = source.upgrades ?: continue
+            if (source.id == "seaFactory") {
+                val target = input.unitDefinitions["seaFactoryT2"] ?: return invalid()
+                if (input.economyContract == null || key != source.id || !FactoryExit.supportsSeaFactory(source) ||
+                    !FactoryExit.supportsSeaFactory(target) || target.id != "seaFactoryT2") return invalid()
+                continue
+            }
             if (source.id == "mechFactory") {
                 val target = input.unitDefinitions["mechFactoryT2"] ?: return invalid()
                 if (input.economyContract == null || key != source.id || !FactoryExit.supportsMechFactory(source) ||

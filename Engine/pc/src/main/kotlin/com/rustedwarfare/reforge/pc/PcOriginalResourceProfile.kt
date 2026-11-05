@@ -15,15 +15,17 @@ internal class PcOriginalResourceProfile(val id: String, val images: PcOriginalI
     val events: Map<String, String> = Collections.unmodifiableMap(LinkedHashMap(events))
 
     companion object {
-        fun bundled(): PcOriginalResourceProfile = readBundled(4)
+        fun bundled(): PcOriginalResourceProfile = readBundled(5)
         fun versionOne(): PcOriginalResourceProfile = readBundled(1)
         fun versionTwo(): PcOriginalResourceProfile = readBundled(2)
         fun versionThree(): PcOriginalResourceProfile = readBundled(3)
+        fun versionFour(): PcOriginalResourceProfile = readBundled(4)
         fun forPackage(pack: PreparedImagePack): PcOriginalResourceProfile =
             when (originalCertificateProfile(pack, "resource-extraction.json")) {
                 "rw.pc.steam.9902063.resources.v1" -> versionOne()
                 "rw.pc.steam.9902063.resources.v2" -> versionTwo()
                 "rw.pc.steam.9902063.resources.v3" -> versionThree()
+                "rw.pc.steam.9902063.resources.v4" -> versionFour()
                 else -> bundled()
             }
 
@@ -31,7 +33,7 @@ internal class PcOriginalResourceProfile(val id: String, val images: PcOriginalI
             fun resource(name: String) = requireNotNull(PcOriginalResourceProfile::class.java.getResourceAsStream("/visuals/$name")) {
                 "Missing bundled PC resource qualification"
             }.use { it.readNBytes(PcmAudioDecoder.MAX_BYTES + 1) }.also { require(it.size <= PcmAudioDecoder.MAX_BYTES) }
-            val suffix = if (version == 4) "" else "-v$version"
+            val suffix = if (version == 5) "" else "-v$version"
             val root = JsonReader().parse(resource("pc-original-resources-profile$suffix.json").toString(Charsets.UTF_8))
             require(root.getInt("schemaVersion") == 1)
             require(root.getString("imageQualificationSha256") == visualHash(resource("pc-original-images-profile$suffix.json"))) {
@@ -41,6 +43,7 @@ internal class PcOriginalResourceProfile(val id: String, val images: PcOriginalI
                 1 -> PcOriginalImageProfile.versionOne()
                 2 -> PcOriginalImageProfile.versionTwo()
                 3 -> PcOriginalImageProfile.versionThree()
+                4 -> PcOriginalImageProfile.versionFour()
                 else -> PcOriginalImageProfile.bundled()
             }
             require(image.id == root.getString("imageProfileId") && image.jarBytes == root.get("identity").getInt("bytes") &&

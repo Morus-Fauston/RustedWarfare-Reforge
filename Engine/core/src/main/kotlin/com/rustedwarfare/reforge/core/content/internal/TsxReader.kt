@@ -59,6 +59,8 @@ internal object TsxReader {
         val seen = mutableSetOf<Int>()
         val blocked = mutableSetOf<Int>()
         val resourcePools = mutableSetOf<Int>()
+        val water = mutableSetOf<Int>()
+        val bridges = mutableSetOf<Int>()
         for (tile in children.filter { it.tagName == "tile" }) {
             attributes(tile, path, setOf("id"))
             val id = integer(tile, path, "id", 0)
@@ -73,15 +75,20 @@ internal object TsxReader {
                 if (property.tagName != "property") reject(ContentErrorCode.UNSUPPORTED_FEATURE, path, property.tagName, reason = "Expected property element")
                 attributes(property, path, setOf("name", "value"))
                 val propertyName = required(property, path, "name")
-                if (propertyName !in blockingProperties && propertyName != "res_pool") reject(ContentErrorCode.UNSUPPORTED_PROPERTY, path, "property", "name", propertyName, "Unsupported tile property")
+                if (propertyName !in blockingProperties && propertyName !in setOf("res_pool", "water", "water-bridge")) reject(ContentErrorCode.UNSUPPORTED_PROPERTY, path, "property", "name", propertyName, "Unsupported tile property")
                 if (!property.hasAttribute("value")) reject(ContentErrorCode.MISSING_REQUIRED_FIELD, path, "property", "value", propertyName, "Property value attribute is required (may be empty)")
                 if (!names.add(propertyName)) reject(ContentErrorCode.MALFORMED_SYNTAX, path, "property", "name", propertyName, "Duplicate property")
                 if (elements(property, path).isNotEmpty()) reject(ContentErrorCode.UNSUPPORTED_FEATURE, path, "property", reason = "Property cannot contain children")
-                if (propertyName == "res_pool") resourcePools.add(id) else blocked.add(id)
+                when (propertyName) {
+                    "res_pool" -> resourcePools.add(id)
+                    "water" -> water.add(id)
+                    "water-bridge" -> bridges.add(id)
+                    else -> blocked.add(id)
+                }
             }
         }
         return TileSetDefinition(firstGid, name, width, height, imagePath, blocked, tileCount, columns, spacing, margin,
-            image.getAttribute("trans").takeIf { image.hasAttribute("trans") }, resourcePools)
+            image.getAttribute("trans").takeIf { image.hasAttribute("trans") }, resourcePools, water, bridges)
     }
 
     private fun verifyPngDimensions(image: Path, file: Path, source: String, width: Int, height: Int) {

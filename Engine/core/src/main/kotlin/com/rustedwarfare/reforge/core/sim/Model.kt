@@ -4,6 +4,7 @@ import com.rustedwarfare.reforge.core.content.MapDefinition
 import com.rustedwarfare.reforge.core.content.UnitDefinition
 import com.rustedwarfare.reforge.core.content.GroundProjectileProfile
 import com.rustedwarfare.reforge.core.content.NativeMissileProfile
+import com.rustedwarfare.reforge.core.content.CustomBallisticProfile
 import com.rustedwarfare.reforge.core.content.DeathExplosionProfile
 import java.util.Collections
 import com.rustedwarfare.reforge.core.knowledge.KnowledgeRules
@@ -150,7 +151,11 @@ data class UnitObservation(
     val constructionTargetId: String? = null,
     val mechPose: MechPose? = null,
     val flightPose: FlightPose? = null,
+    val waterPose: WaterPose? = null,
 )
+
+/** Visible ordinary water-body state; it has neither legs nor host identities. */
+data class WaterPose(val reversing: Boolean, val sinkSpeed: Float, val settled: Boolean)
 
 /** Current visible physical flight state, without host identities or future commands. */
 data class FlightPose(val velocity: Position, val height: Double, val heightPhase: Double,
@@ -162,13 +167,15 @@ data class ProjectileObservation(val objectId: Long, val sourceUnitId: String, v
     val height: Double = 0.0, val age: Float = 0f, val deflectionHealth: Float = 1f,
     val intercepted: Boolean = false, val ground: GroundProjectileObservation? = null,
     val missile: MissileObservation? = null, val areaExpansion: AreaExpansionObservation? = null,
-    val sourceWeaponName: String? = null)
+    val sourceWeaponName: String? = null, val ballistic: BallisticObservation? = null)
 
 class AreaExpansionObservation(val remaining: Float, val radius: Float, hitUnitIds: Set<String>) {
     val hitUnitIds: Set<String> = Collections.unmodifiableSet(LinkedHashSet(hitUnitIds))
 }
 
 data class MissileObservation(val speed: Float, val reachedApex: Boolean, val rawAz: Float)
+
+data class BallisticObservation(val speed: Float, val reachedApex: Boolean, val rawAz: Float)
 
 data class GroundProjectileObservation(val targetPosition: Position, val targetHeight: Float, val verticalSpeed: Float,
     val distanceSquared: Float? = null)
@@ -392,8 +399,12 @@ internal data class MutableUnit(
         }?.toMap(linkedMapOf()),
     var sharedWeaponTargetId: String? = null,
     var mechState: MechState? = MechMotion.initial(definition, position, heading),
+    var bodyReversing: Boolean = false,
+    var sinkSpeed: Float = 0f,
+    var waterSettled: Boolean = false,
     var productionSide: Boolean = false,
 ) {
+    val reversing: Boolean get() = mechState?.reversing ?: bodyReversing
     val alive: Boolean get() = health == null || checkNotNull(health) > 0.0
     val tasks: List<UnitTask> get() = taskQueue.tasks
     var primaryCombatTargetId: String?
@@ -505,7 +516,8 @@ internal data class MutableProjectile(val objectId: Long, val sourceUnitId: Stri
     val expansion: AreaExpansion? = null, val sourceWeaponName: String? = null,
     val acceleration: com.rustedwarfare.reforge.core.content.LinearProjectileAcceleration? = null,
     val splash: com.rustedwarfare.reforge.core.content.OrdinarySplashProfile? = null,
-    val retargetOnDeath: Boolean = false)
+    val retargetOnDeath: Boolean = false,
+    val ballistic: CustomBallisticProfile? = null, var ballisticReachedApex: Boolean = false, var ballisticRawAz: Float = 0f)
 
 internal data class AreaExpansion(val profile: DeathExplosionProfile, var remaining: Float,
     var radius: Float = 0f, val hitUnitIds: MutableSet<String> = linkedSetOf())

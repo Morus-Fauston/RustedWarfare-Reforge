@@ -1,0 +1,35 @@
+{
+  "format": "rw-reforge.content-pack.v1",
+  "id": "p008-naval-chain-hjson",
+  "name": "Owned finite sea factory and battleship content",
+  "units": [
+    {
+      "type": "battleship",
+      "file": "units/naval/heavyBattleship.hjson"
+    },
+    {
+      "type": "sea-factory",
+      "file": "units/seaFactory.hjson"
+    },
+    {
+      "type": "sea-factory",
+      "file": "units/seaFactoryT2.hjson"
+    },
+    {
+      "type": "underwater-target",
+      "file": "units/naval/underwaterTarget.hjson"
+    },
+    {
+      "type": "builder",
+      "file": "units/builder.hjson"
+    },
+    {
+      "type": "tank",
+      "file": "units/land/tank.hjson"
+    },
+    {
+      "type": "helicopter",
+      "file": "units/air/helicopter.hjson"
+    }
+  ]
+}

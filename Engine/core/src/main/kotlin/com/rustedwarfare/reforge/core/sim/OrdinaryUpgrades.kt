@@ -104,11 +104,14 @@ internal class OrdinaryUpgrades private constructor(private val definitions: Map
             it.actionKey == completed.actionKey && it.targetTypeId == definition.id } == true)
         val oldMaximum = checkNotNull(unit.definition.maximumHealth).toFloat()
         val nextMaximum = checkNotNull(definition.maximumHealth).toFloat()
-        val health = checkNotNull(unit.health).toFloat() / oldMaximum * nextMaximum
-        require(health.isFinite() && health in 0f..nextMaximum) { "Converted health must remain finite and bounded" }
+        // Native sea tier conversion changes its menu/appearance only; its setter never writes HP.
+        val nativeSea = unit.definition.production?.exitProfile == com.rustedwarfare.reforge.core.content.FactoryExitProfile.NATIVE_SEA
+        val health = if (nativeSea) checkNotNull(unit.health)
+            else (checkNotNull(unit.health).toFloat() / oldMaximum * nextMaximum).toDouble()
+        require(health.isFinite() && health in 0.0..nextMaximum.toDouble()) { "Converted health must remain finite and bounded" }
         unit.typeId = definition.id
         unit.definition = definition
-        unit.health = health.toDouble()
+        unit.health = health
         unit.speed = 0.0
         unit.combat?.let { it.cooldown = minOf(it.cooldown, checkNotNull(definition.combat).shootDelay) }
         val convertedLedger = definition.production?.let { production -> workingLedger.replaceFactory(unit.unitId,

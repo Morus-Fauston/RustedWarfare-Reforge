@@ -1,18 +1,30 @@
 package com.rustedwarfare.reforge.core.sim
 
 import com.rustedwarfare.reforge.core.content.MovementType
+import com.rustedwarfare.reforge.core.content.NamedWeaponDefinition
 
 /** Queries current candidate objects in gameplay order; no position or membership survives a call. */
 internal object CombatTargetQuery {
     fun isFlying(target: MutableUnit): Boolean =
         target.definition.movement.type == MovementType.AIR && target.height >= 4.0
 
-    /** Existing LAND/NONE intent stays unchanged; AIR uses its current physical-height category. */
+    fun isUnderwater(target: MutableUnit): Boolean =
+        target.definition.fixedUnderwaterTarget != null && target.height <= -1.0
+
+    /** Physical flying takes precedence; negative ordinary heights do not grant underwater capability. */
+    fun weaponAllows(target: MutableUnit, weapon: NamedWeaponDefinition): Boolean = when {
+        isFlying(target) -> weapon.canAttackFlyingUnits
+        isUnderwater(target) -> weapon.canAttackUnderwaterUnits
+        else -> weapon.canAttackLandUnits
+    }
+
+    /** Common target category envelope for manual intent and gameplay candidate selection. */
     fun canAttackAirCategory(actor: MutableUnit, target: MutableUnit): Boolean {
-        if (target.definition.movement.type != MovementType.AIR) return true
-        val flying = isFlying(target)
-        val catalog = actor.definition.combat?.namedWeapons ?: return !flying
-        return catalog.ordered.any { it.canShoot && if (flying) it.canAttackFlyingUnits else it.canAttackLandUnits }
+        // Preserve surface intent and non-shooting parent tracking; only the explicit special
+        // categories require an actor-wide shooting capability before per-weapon qualification.
+        if (target.definition.movement.type != MovementType.AIR && !isUnderwater(target)) return true
+        val catalog = actor.definition.combat?.namedWeapons ?: return !isFlying(target) && !isUnderwater(target)
+        return catalog.ordered.any { it.canShoot && weaponAllows(target, it) }
     }
 
     fun isEnemy(actor: MutableUnit, target: MutableUnit, players: List<Player>): Boolean =

@@ -154,7 +154,10 @@ internal fun ProjectileObservation.json() = obj("objectId" to n(objectId), "sour
         "verticalSpeed" to n(it.verticalSpeed), "distanceSquared" to it.distanceSquared?.let(::n)) },
     "missile" to missile?.let { obj("speed" to n(it.speed), "reachedApex" to b(it.reachedApex), "rawAz" to n(it.rawAz)) },
     "areaExpansion" to areaExpansion?.let { obj("remaining" to n(it.remaining), "radius" to n(it.radius),
-        "hitUnitIds" to array(it.hitUnitIds.map(::s))) })
+        "hitUnitIds" to array(it.hitUnitIds.map(::s))) }).let { fields ->
+        ballistic?.let { JsonObject(fields + ("ballistic" to obj("speed" to n(it.speed),
+            "reachedApex" to b(it.reachedApex), "rawAz" to n(it.rawAz)))) } ?: fields
+    }
 internal fun VisibleProjectileEvent.json() = obj("token" to s(token), "kind" to s(kind), "occurrences" to n(occurrences),
     "position" to position.json(), "heading" to n(heading), "height" to n(height),
     "sourceUnitId" to sourceUnitId?.let(::s), "sourceWeaponName" to sourceWeaponName?.let(::s),
@@ -174,6 +177,10 @@ internal fun UnitObservation.json(capabilities: Boolean): JsonObject = JsonObjec
 ).toMutableMap().apply {
     mechPose?.let { put("mechPose", it.json()) }
     flightPose?.let { put("height", n(height)); put("flightPose", it.json()) }
+    waterPose?.let { put("height", n(height)); put("waterPose", obj(
+        "reversing" to b(it.reversing), "sinkSpeed" to n(it.sinkSpeed), "settled" to b(it.settled))) }
+    // This finite loader requires matching declared/source identity, including singular declarations.
+    if (typeId == "navalUnderwaterTarget") put("height", n(height))
     if (capabilities) putAll(mapOf("health" to (health?.let(::n) ?: JsonNull),
     "maxHealth" to (maxHealth?.let(::n) ?: JsonNull), "alive" to b(alive), "attackTargetId" to (attackTargetId?.let(::s) ?: JsonNull),
     "pointDefense" to (pointDefense?.let { obj("energy" to n(it.energy), "exhausted" to b(it.exhausted)) } ?: JsonNull))) })

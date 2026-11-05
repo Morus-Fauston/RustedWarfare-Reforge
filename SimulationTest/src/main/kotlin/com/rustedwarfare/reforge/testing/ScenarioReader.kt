@@ -79,6 +79,8 @@ internal object ScenarioReader {
                 "mech" -> ContentLoader.loadMechUnit(ref.path)
                 "mech-heavy" -> ContentLoader.loadHeavyMechUnit(ref.path)
                 "helicopter" -> ContentLoader.loadHelicopterUnit(ref.path)
+                "battleship" -> ContentLoader.loadBattleshipUnit(ref.path)
+                "underwater-target" -> ContentLoader.loadUnderwaterTargetUnit(ref.path)
                 "factory" -> ContentLoader.loadFactory(ref.path)
                 "builder" -> ContentLoader.loadBuilder(ref.path)
                 "command-center" -> ContentLoader.loadCommandCenter(ref.path)

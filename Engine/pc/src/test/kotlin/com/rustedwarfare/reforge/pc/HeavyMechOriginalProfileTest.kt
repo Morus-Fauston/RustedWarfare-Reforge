@@ -4,7 +4,7 @@ import kotlin.test.*
 
 class HeavyMechOriginalProfileTest {
     @Test fun four_leg_and_named_turret_recipes_have_their_own_finite_slots_in_v4() {
-        val profile = VisualAssetProfile.bundled()
+        val profile = VisualAssetProfile.versionFour()
         val heavy = assertNotNull(profile.json.get("unitBindings").get("mechHeavyMissile"))
         assertEquals(setOf("body", "turret", "leg", "foot", "weaponTurrets"), heavy.map { it.name }.toSet())
         val named = heavy.get("weaponTurrets")
@@ -22,8 +22,8 @@ class HeavyMechOriginalProfileTest {
         assertEquals(t1.getString("back"), factory.getString("back"))
         assertEquals(t1.getString("dead"), factory.getString("dead"))
         assertEquals("rw.android.1.15.176.visual.v4", profile.id)
-        assertEquals("rw.pc.steam.9902063.images.v4", PcOriginalImageProfile.bundled().id)
-        assertEquals("rw.pc.steam.9902063.resources.v4", PcOriginalResourceProfile.bundled().id)
+        assertEquals("rw.pc.steam.9902063.images.v4", PcOriginalImageProfile.versionFour().id)
+        assertEquals("rw.pc.steam.9902063.resources.v4", PcOriginalResourceProfile.versionFour().id)
     }
 
     @Test fun v3_certificate_metadata_keeps_its_exact_frozen_bytes() {

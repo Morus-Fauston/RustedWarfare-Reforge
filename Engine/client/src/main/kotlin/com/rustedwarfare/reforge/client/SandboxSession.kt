@@ -1,6 +1,9 @@
 package com.rustedwarfare.reforge.client
 
 import com.rustedwarfare.reforge.core.sim.*
+import com.rustedwarfare.reforge.core.content.MovementType
+import com.rustedwarfare.reforge.core.content.foundationMovementType
+import com.rustedwarfare.reforge.core.content.waterBlocked
 import java.util.UUID
 import java.nio.file.Path
 
@@ -209,7 +212,9 @@ class SandboxSession(scenario: Scenario, private val evidence: ClientEvidence = 
             val tile = gid - tileset.firstGid
             if (building.requiresResourcePool) {
                 if (tile !in tileset.resourcePoolTileIds) blocked = true
-            } else if (tile in tileset.blockedTileIds || tile in tileset.resourcePoolTileIds) blocked = true
+            } else if (tile in tileset.resourcePoolTileIds ||
+                if (definition.foundationMovementType == MovementType.WATER) map.tileSets.waterBlocked(gid)
+                else tile in tileset.blockedTileIds || tile in tileset.waterTileIds) blocked = true
         }
         if (observation.units.any { unit -> unit.alive && scenario.unitDefinitions.getValue(unit.typeId).building?.let {
                 cells(unit.position, it).any { cell -> cell in candidate }

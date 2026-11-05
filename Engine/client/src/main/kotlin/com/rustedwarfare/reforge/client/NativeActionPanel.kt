@@ -4,7 +4,8 @@ internal data class NativeCardBounds(val x: Float, val y: Float, val width: Floa
 
 /** Fixed native panel geometry shared by actors and ordinary press/release validation. */
 internal object NativeActionPanel {
-    fun supports(scenarioId: String?) = scenarioId in setOf("p006-construction", "p008-mech-production", "p008-helicopter-production", "p008-heavy-mech-production")
+    fun supports(scenarioId: String?) = scenarioId in setOf("p006-construction", "p008-mech-production", "p008-helicopter-production", "p008-heavy-mech-production", "p008-naval-production")
+    val constructionTypes = listOf("extractorT1", "landFactory", "mechFactory", "airFactory", "seaFactory", "fabricatorT1", "c_turret_t1", "laserDefence")
     val production = listOf(NativeCardBounds(752f, 256f, 84f, 64f), NativeCardBounds(752f, 188f, 84f, 64f), NativeCardBounds(844f, 256f, 84f, 64f))
     val upgrades = listOf("upgrade_gun" to 264f, "upgrade_artillery" to 216f).associate { (key, y) ->
         key to (NativeCardBounds(752f, y, 84f, 40f) to NativeCardBounds(844f, y, 84f, 40f))

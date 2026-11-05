@@ -8,7 +8,8 @@ import java.util.IdentityHashMap
 
 internal data class CachedPlanningTerrain(val world: WorldHandle, val map: MapDefinition,
     val knowledge: KnowledgeSnapshot?, val terrain: PlanningTerrain, val buildings: Set<Pair<Int, Int>>? = null,
-    val escapingBuildings: Boolean = false)
+    val escapingBuildings: Boolean = false,
+    val movementType: com.rustedwarfare.reforge.core.content.MovementType = com.rustedwarfare.reforge.core.content.MovementType.LAND)
 
 internal data class AutomaticKnowledgeCommit(
     val stores: Map<String, PlayerTerrainKnowledge>,
@@ -93,8 +94,13 @@ internal data class StepState(
             require(listOf(unit.position.x, unit.position.y, unit.heading, unit.speed, unit.angularVelocity, unit.height)
                 .all { it.isFinite() } && (unit.health?.isFinite() != false)) { "Unit candidate must remain finite" }
             MechMotion.requireFinitePose(unit)
+            require(unit.sinkSpeed.isFinite() && unit.sinkSpeed >= 0f) { "Water-body sink state must remain finite" }
             val birthLimit = unit.producerId?.let { units[it]?.definition?.production?.exitProfile }
-                .let { if (it == com.rustedwarfare.reforge.core.content.FactoryExitProfile.CUSTOM_MECH) 45f else 30f }
+                .let { when (it) {
+                    com.rustedwarfare.reforge.core.content.FactoryExitProfile.CUSTOM_MECH -> 45f
+                    com.rustedwarfare.reforge.core.content.FactoryExitProfile.NATIVE_SEA -> 80f
+                    else -> 30f
+                } }
             require(unit.birthRemaining.isFinite() && unit.birthRemaining in 0f..birthLimit) { "Invalid birth timer" }
             unit.taskQueue.validateCandidate()
             require((unit.logicalRequestX == null) == (unit.logicalRequestY == null) &&
@@ -152,6 +158,7 @@ internal data class StepState(
                 projectile.speed >= 0.0 &&
                 projectile.age.isFinite() && projectile.age >= 0f && projectile.deflectionHealth.isFinite() &&
                 projectile.verticalSpeed.isFinite() && projectile.groundDistanceSquared?.isFinite() != false &&
+                projectile.ballisticRawAz.isFinite() && !(projectile.ballistic != null && projectile.missile != null) &&
                 projectile.ground?.let { it.x.isFinite() && it.y.isFinite() && it.height.isFinite() } != false &&
                 (projectile.missile == null || projectile.speed.toFloat().let { it.isFinite() && it >= 0f } && projectile.missileRawAz.isFinite())) {
                 "Projectile candidate must remain finite"

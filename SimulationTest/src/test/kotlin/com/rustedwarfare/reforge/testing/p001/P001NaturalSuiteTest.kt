@@ -8,7 +8,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 
 class P001NaturalSuiteTest {
-    @Test fun `natural suite verifies and rejects mismatched archived contract even with refreshed inventory`() {
+    @Test fun `natural suite reports newly supported water against frozen negatives and rejects changed archived contracts`() {
         val root = Path.of(System.getProperty("repo.root"))
         val directory = Files.createTempDirectory("p001-natural-")
         // P001 requires a root-relative output; a relative path within this temporary copy is used.
@@ -32,8 +32,19 @@ class P001NaturalSuiteTest {
         }
         val result = P001Suite.run(directory, suiteName, "results", listOf("natural-suite-test"))
         println("p001-natural-output=${result.output}")
-        assertEquals(0, result.exitCode)
-        assertEquals(0, P001Suite.verifyArchive(result.output))
+        // The historical approved L03c requires rejecting water. Preserve that contract and
+        // all original inputs; current water support must report its precise incompatibility.
+        assertEquals(2, result.exitCode)
+        val results = readObject(result.output.resolve("results.json"))
+        assertEquals(b(true), results["complete"])
+        val casesRun = results.arrayAt("cases").map { it.jsonObject }
+        assertEquals(16, casesRun.size)
+        assertEquals(listOf("L03c", "L04"), casesRun.filter { it.integer("exitCode") != 0L }.map { it.id("caseId") })
+        for (case in casesRun.filter { it.id("caseId") in setOf("L03c", "L04") }) {
+            assertEquals(2, case.integer("exitCode").toInt())
+            assertEquals("load-rejected", case.objectAt("firstDivergence").text("ruleId"))
+        }
+        assertEquals(2, P001Suite.verifyArchive(result.output))
         val relationPath = result.output.resolve("inputs/M02.relations.json")
         val relation = readObject(relationPath)
         for (marker in listOf(null, s("unknown"))) {

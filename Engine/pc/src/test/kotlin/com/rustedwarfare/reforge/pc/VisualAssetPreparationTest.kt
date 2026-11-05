@@ -110,12 +110,13 @@ class VisualAssetPreparationTest {
     }
     @Test fun production_profile_is_fixed_complete_metadata_without_machine_paths() {
         for ((profile, version, addedImages) in listOf(Triple(VisualAssetProfile.versionTwo(), 2, 0),
-            Triple(VisualAssetProfile.versionThree(), 3, 5), Triple(VisualAssetProfile.bundled(), 4, 11))) {
+            Triple(VisualAssetProfile.versionThree(), 3, 5), Triple(VisualAssetProfile.versionFour(), 4, 11),
+            Triple(VisualAssetProfile.bundled(), 5, 17))) {
             assertEquals("rw.android.1.15.176.visual.v$version", profile.id)
             assertEquals(36 + addedImages, profile.json.get("sources").size)
             assertEquals(33 + addedImages, profile.json.get("unitOutputs").size)
             assertEquals(5, profile.json.get("terrainOutputs").size)
-            assertEquals(when (version) { 2 -> 18; 3 -> 20; else -> 22 }, profile.json.get("unitBindings").size)
+            assertEquals(when (version) { 2 -> 18; 3 -> 20; 4 -> 22; else -> 25 }, profile.json.get("unitBindings").size)
             assertEquals(38 + addedImages, profile.recipes.size)
             assertEquals("815e383faa17ba46dc42ee596b299d14b95da696e604cc21fd97a11bad630251",
                 profile.json.get("identity").getString("manifestSha256"))

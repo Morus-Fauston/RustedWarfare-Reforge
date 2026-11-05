@@ -12,7 +12,10 @@ data class ContentPackChoice(val content: LoadedContentSet, val unitId: String) 
         is ContentResult.Success -> result.value
     }, unitId)
 
-    init { require(unitId in content.units) { "Unknown package unit: $unitId" } }
+    init {
+        require(unitId in content.units) { "Unknown package unit: $unitId" }
+        require(content.units.getValue(unitId).fixedUnderwaterTarget == null) { "A fixed evidence target cannot be a player start choice" }
+    }
     /** The selected unit's effective author; all validation uses the complete set. */
     val pack: LoadedContentPack get() = content.packages.single { it.id == content.provenance.getValue(unitId).packageId }
 
@@ -73,13 +76,31 @@ fun contentPackVisuals(visuals: PreparedVisualAssets, choice: ContentPackChoice)
 
 /** Reuses the existing controlled combat layout, not a new map or spawn-file interpreter. */
 internal fun contentPackScenario(root: Path, choice: ContentPackChoice): Scenario {
-    val map = when (val result = ContentLoader.loadMap(root.resolve("maps/p001-controlled.tmx"))) {
+    val naval = choice.unitId in setOf("builder", "seaFactory", "seaFactoryT2", "heavyBattleship", "c_tank", "helicopter") &&
+        choice.content.units["heavyBattleship"]?.movement?.type == MovementType.WATER &&
+        choice.content.units["seaFactory"]?.production?.exitProfile == FactoryExitProfile.NATIVE_SEA &&
+        choice.content.units["seaFactoryT2"]?.production?.unitTypeIds == listOf("heavyBattleship") &&
+        choice.content.units["builder"]?.builder?.buildingTypeIds == listOf("seaFactory") &&
+        choice.content.units["c_tank"]?.movement?.type == MovementType.LAND &&
+        choice.content.units["helicopter"]?.rotor != null &&
+        choice.content.units["navalUnderwaterTarget"]?.fixedUnderwaterTarget == FixedUnderwaterTargetProfile(-8.0)
+    val map = when (val result = ContentLoader.loadMap(root.resolve(if (naval) "maps/naval-shore.tmx" else "maps/p001-controlled.tmx"))) {
         is ContentResult.Failure -> error(result.error.describe())
         is ContentResult.Success -> result.value
     }
     require(map.widthTiles * map.tileWidth >= 600 && map.heightTiles * map.tileHeight >= 400) {
         "The existing controlled combat layout requires a map at least 600 by 400 world units"
     }
+    if (naval) return Scenario("p008-naval-production", map, choice.content.units,
+        listOf(Player("p1", PlayerControl.LOCAL, "one"), Player("p2", PlayerControl.NONE, "two")),
+        listOf(UnitSpawn("a", "p1", "builder", Position(390.0, 150.0), 90.0),
+            UnitSpawn("b", "p2", "c_tank", Position(330.0, 550.0), 270.0),
+            UnitSpawn("c", "p2", "helicopter", Position(650.0, 150.0), 270.0),
+            UnitSpawn("d", "p2", "navalUnderwaterTarget", Position(600.0, 300.0), 0.0, -8.0)),
+        CoordinateModel("p001.coordinate.v1", "2d", "x-right", "y-down", "top-left", "world-unit", "double", "ieee754-binary64"),
+        TimeModel("p001.time.v1", "sim-tick", "ieee754-binary64", "fixed-explicit-delta"), MovementContract(16.0, 4.0),
+        combatContract = CombatContract(12345, -1, mapOf("a" to 8L, "b" to 9L, "c" to 10L, "d" to 11L), 12L),
+        economyContract = EconomyContract(mapOf("p1" to 12000L, "p2" to 0L)))
     if (choice.unitId in setOf("builder", "mechFactory", "mechFactoryT2", "mechHeavyMissile") &&
         choice.content.units["mechHeavyMissile"]?.mech?.kind == MechKind.FOUR_LEGGED &&
         choice.content.units["mechFactoryT2"]?.production?.exitProfile == FactoryExitProfile.CUSTOM_MECH &&

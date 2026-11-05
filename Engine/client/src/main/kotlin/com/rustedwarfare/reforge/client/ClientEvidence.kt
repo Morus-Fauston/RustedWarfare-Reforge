@@ -142,6 +142,8 @@ internal fun UnitObservation.fields(): Map<String, Any?> {
     )
     unit.mechPose?.let { values["mechPose"] = it.fields() }
     unit.flightPose?.let { values["flightPose"] = it.fields() }
+    unit.waterPose?.let { values["waterPose"] = mapOf(
+        "reversing" to it.reversing, "sinkSpeed" to it.sinkSpeed, "settled" to it.settled) }
     return values
 }
 

@@ -25,9 +25,23 @@ class LoadFailureTest {
     @Test fun l03bBase64Encoding() {
         error(ContentLoader.loadMap(negative("L03b.tmx")), ContentErrorCode.UNSUPPORTED_ENCODING, "data", "encoding")
     }
-    @Test fun l03cUnsupportedTileProperty() {
-        val result = error(ContentLoader.loadMap(negative("L03c.tmx")), ContentErrorCode.UNSUPPORTED_PROPERTY, "property", "name", "water")
-        assertEquals(negative("L03c.tsx").toAbsolutePath().normalize().toString(), result.file)
+    @Test fun l03cWaterIsSupportedWhileUnknownTilePropertiesRemainRejected() {
+        // Keep the historical fixture bytes; water is now an explicitly supported input.
+        val historical = assertIs<ContentResult.Success<MapDefinition>>(ContentLoader.loadMap(negative("L03c.tmx"))).value
+        assertEquals(setOf(16), historical.tileSets.first().waterTileIds)
+        assertEquals(33, historical.blocking.blockedCount)
+        val image = tilesetImagePath("p001-ground").toString().replace("&", "&amp;")
+        withMap("""<map orientation="orthogonal" renderorder="right-down" width="1" height="1" tilewidth="20" tileheight="20">
+            <tileset firstgid="1" name="unknown-property" tilewidth="20" tileheight="20">
+              <image source="$image" width="100" height="160"/>
+              <tile id="0"><properties><property name="not-supported" value=""/></properties></tile>
+            </tileset>
+            <layer name="Ground" width="1" height="1"><data encoding="csv">1</data></layer>
+            </map>""") { path ->
+            val result = error(ContentLoader.loadMap(path), ContentErrorCode.UNSUPPORTED_PROPERTY, "property", "name", "not-supported")
+            assertEquals(path.toAbsolutePath().normalize().toString(), result.file)
+            assertEquals(33, assertIs<ContentResult.Success<MapDefinition>>(ContentLoader.loadMap(mapPath())).value.blocking.blockedCount)
+        }
     }
     @Test fun l04FailuresNeverContaminateSubsequentSuccessfulLoads() {
         for (name in listOf("L01.ini", "L02b.ini", "L03a.ini")) {
@@ -35,7 +49,7 @@ class LoadFailureTest {
             assertEquals("p001_weaponless_tank", assertIs<ContentResult.Success<UnitDefinition>>(
                 ContentLoader.loadUnitVariant(unitPath())).value.id)
         }
-        for (name in listOf("L02a.tmx", "L03b.tmx", "L03c.tmx")) {
+        for (name in listOf("L02a.tmx", "L03b.tmx")) {
             assertIs<ContentResult.Failure>(ContentLoader.loadMap(negative(name)))
             assertEquals(33, assertIs<ContentResult.Success<MapDefinition>>(ContentLoader.loadMap(mapPath())).value.blocking.blockedCount)
         }

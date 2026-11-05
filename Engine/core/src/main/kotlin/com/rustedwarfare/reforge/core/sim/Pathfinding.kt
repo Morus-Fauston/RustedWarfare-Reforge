@@ -222,11 +222,14 @@ internal object PlanningCenterTerrain : PlanningTerrainPolicy {
 }
 
 internal fun interface TerrainPolicy {
-    fun intersects(map: MapDefinition, position: Position, radius: Double): Boolean
+    fun intersects(map: MapDefinition, position: Position, radius: Double,
+                   movementType: com.rustedwarfare.reforge.core.content.MovementType): Boolean
 }
 
 internal object CenterTerrain : TerrainPolicy {
-    override fun intersects(map: MapDefinition, position: Position, radius: Double): Boolean =
-        map.blocking.isBlocked(MapBounds.cell(position.x, map.tileWidth, map.widthTiles),
+    override fun intersects(map: MapDefinition, position: Position, radius: Double,
+                            movementType: com.rustedwarfare.reforge.core.content.MovementType): Boolean =
+        map.blockingFor(movementType)
+            .isBlocked(MapBounds.cell(position.x, map.tileWidth, map.widthTiles),
             MapBounds.cell(position.y, map.tileHeight, map.heightTiles))
 }

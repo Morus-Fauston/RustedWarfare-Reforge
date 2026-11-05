@@ -4,7 +4,6 @@ import com.rustedwarfare.reforge.core.content.UnitDefinition
 import com.rustedwarfare.reforge.core.content.MechKind
 import kotlin.math.cos
 import kotlin.math.sin
-import kotlin.math.abs
 
 /** Internal angles retain the reference frame and unwrapped increments; DTOs convert to core headings. */
 internal data class MechFootState(val position: Position, val heading: Double, val height: Double = 0.1,
@@ -24,27 +23,16 @@ internal object MechMotion {
     fun turn(unit: MutableUnit, target: Position, delta: Double, steering: SteeringPolicy,
              coordinates: CoordinatePolicy): Double {
         val previous = checkNotNull(unit.mechState)
-        val desired = coordinates.desired(unit.position, target)
-        val reverse = unit.definition.movement.reverseSpeedPercentage > 0.95 &&
-            abs(coordinates.difference(desired, unit.heading)) > 100.0
+        val turn = BodyMotion.turn(unit, target, delta, steering, coordinates, previous.reversing)
+        val reverse = turn.reversing
         val hold = if (unit.combat == null && reverse != previous.reversing && previous.hold >= 0.0)
             maxOf(25.0, previous.hold) else previous.hold
-        if (reverse != previous.reversing) unit.combat?.let { it.idleHold = maxOf(25f, it.idleHold) }
-        val aim = if (reverse) Position(2.0 * unit.position.x - target.x, 2.0 * unit.position.y - target.y) else target
-        val headingBefore = unit.heading
-        val difference = steering.turn(unit, aim, delta, coordinates)
-        val applied = coordinates.difference(unit.heading, headingBefore)
-        if (unit.definition.combat?.rotateWithBody == true) {
-            for (state in unit.namedWeapons?.values ?: listOfNotNull(unit.combat)) {
-                state.turretHeading = coordinates.normalize(state.turretHeading + applied)
-            }
-        }
         // Integrate the applied turn: canonical public headings cannot retain both signs of 180.
-        var motionAngle = previous.motionAngle + applied
+        var motionAngle = previous.motionAngle + turn.applied
         if (motionAngle > 180.0) motionAngle -= 360.0
         if (motionAngle < -180.0) motionAngle += 360.0
         unit.mechState = previous.copy(reversing = reverse, hold = hold, motionAngle = motionAngle)
-        return difference
+        return turn.difference
     }
 
     /** Preserve both signs of the exact half-turn, as in the reference angular helper. */

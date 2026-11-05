@@ -5,6 +5,7 @@ import com.rustedwarfare.reforge.core.content.BlockingGrid
 import com.rustedwarfare.reforge.core.content.MapDefinition
 import com.rustedwarfare.reforge.core.content.FootprintAnchor
 import com.rustedwarfare.reforge.core.content.MovementType
+import com.rustedwarfare.reforge.core.content.foundationMovementType
 import java.util.Collections
 
 internal class BuildingInitializationException(val error: SimulationError) : IllegalArgumentException(error.message)
@@ -19,7 +20,7 @@ internal class BuildingTerrain private constructor(map: MapDefinition, occupied:
                 val column = index % map.widthTiles
                 val row = index / map.widthTiles
                 map.blocking.isBlocked(column, row) || (column to row) in cells
-            }))
+            }), map.waterObstacles + cells)
 
     companion object {
         fun fromLive(map: MapDefinition, units: Collection<MutableUnit>, old: BuildingTerrain): BuildingTerrain {
@@ -35,13 +36,14 @@ internal class BuildingTerrain private constructor(map: MapDefinition, occupied:
             if (buildings.isEmpty() && input.unitDefinitions.values.none { it.builder != null }) return null
             val cells = linkedSetOf<Pair<Int, Int>>()
             for (unit in buildings) {
-                val building = checkNotNull(input.unitDefinitions.getValue(unit.typeId).building)
+                val definition = input.unitDefinitions.getValue(unit.typeId)
+                val building = checkNotNull(definition.building)
                 if (building.requiresResourcePool && !input.map.isResourcePool(
                         MapBounds.cell(unit.position.x, input.map.tileWidth, input.map.widthTiles),
                         MapBounds.cell(unit.position.y, input.map.tileHeight, input.map.heightTiles)))
                     fail("Resource building requires a resource pool at its center")
                 for (cell in footprint(input.map, unit.position, building.footprint, building.anchor)) {
-                    if ((!building.requiresResourcePool && (input.map.blocking.isBlocked(cell.first, cell.second) ||
+                    if ((!building.requiresResourcePool && (input.map.blockingFor(definition.foundationMovementType).isBlocked(cell.first, cell.second) ||
                             input.map.isResourcePool(cell.first, cell.second))) || !cells.add(cell))
                         fail("Building footprint must respect ground, resource pools and other live buildings")
                 }

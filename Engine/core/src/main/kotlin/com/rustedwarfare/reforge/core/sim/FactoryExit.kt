@@ -9,6 +9,25 @@ internal data class FactoryBirth(val position: Position, val heading: Double, va
 
 /** Finite supported factory exits; no unit collision search or new spawn-file interpreter. */
 internal object FactoryExit {
+    fun supportsSeaFactory(definition: UnitDefinition): Boolean {
+        val building = definition.building ?: return false
+        val t2 = definition.id == "seaFactoryT2"
+        return definition.id in setOf("seaFactory", "seaFactoryT2") &&
+            definition.production == ProductionProfile(if (t2) listOf("heavyBattleship") else emptyList(), FactoryExitProfile.NATIVE_SEA) &&
+            definition.build == BuildProfile(if (t2) 3000L else 1000L, .0007f) &&
+            definition.construction == ConstructionProfile(if (t2) 3000L else 1000L, .0007f) &&
+            definition.radius == 45.0 && definition.maximumHealth == 1000.0 &&
+            definition.movement == MovementProfile(MovementType.NONE, 0.0, 0.0, 0.0, 0.0, 0.0, false, false) &&
+            definition.fogOfWarSightRange == 15 && definition.combat == null && definition.mech == null &&
+            definition.builder == null && definition.income == null && definition.pointDefense == null &&
+            definition.rotor == null && definition.fixedUnderwaterTarget == null && definition.deathExplosion == null &&
+            definition.upgrades?.actions.orEmpty() == (if (t2) emptyList() else
+                listOf(UpgradeActionProfile("upgrade_t2", "seaFactoryT2", 2000L, .0004f))) &&
+            (if (t2) definition.upgrades == null else definition.upgrades != null) &&
+            definition.directHitTargetKind == DirectHitTargetKind.NATIVE_BUILDING && definition.durability?.maxDamagePerHit == null &&
+            building == BuildingProfile(BuildingFootprint(-1, -1, 1, 2), placementFootprint = BuildingFootprint(-2, -1, 2, 4))
+    }
+
     fun supportsAirFactory(definition: UnitDefinition): Boolean {
         val building = definition.building ?: return false
         return definition.id == "airFactory" && definition.production?.exitProfile == FactoryExitProfile.NATIVE_AIR &&
@@ -44,6 +63,13 @@ internal object FactoryExit {
     }
 
     fun birth(factory: MutableUnit, product: UnitDefinition, map: MapDefinition): FactoryBirth {
+        if (factory.definition.production?.exitProfile == FactoryExitProfile.NATIVE_SEA) {
+            val speed = product.movement.moveSpeed.toFloat()
+            val protection = 30f + (if (speed < .75f) 30f else 0f) + (if (speed < .55f) 20f else 0f)
+            return FactoryBirth(Position(factory.position.x, maxOf(factory.position.y + 5.0,
+                factory.position.y - 20.0 + product.radius)), 180.0,
+                Position(factory.position.x - 1.0, factory.position.y + 135.0), protection)
+        }
         if (factory.definition.production?.exitProfile != FactoryExitProfile.CUSTOM_MECH)
             return FactoryBirth(Position(factory.position.x, factory.position.y + 5.0), 180.0,
                 Position(factory.position.x - 1.0, factory.position.y + 90.0), 30f)

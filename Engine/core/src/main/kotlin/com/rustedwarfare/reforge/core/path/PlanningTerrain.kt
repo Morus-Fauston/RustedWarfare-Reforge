@@ -1,7 +1,11 @@
 package com.rustedwarfare.reforge.core.path
 
 import com.rustedwarfare.reforge.core.content.MapDefinition
+import com.rustedwarfare.reforge.core.content.MovementType
+import com.rustedwarfare.reforge.core.content.TileSetDefinition
+import com.rustedwarfare.reforge.core.content.waterBlocked
 import com.rustedwarfare.reforge.core.knowledge.KnowledgeSnapshot
+import com.rustedwarfare.reforge.core.knowledge.CellKnowledge
 
 class PlanningException(val code: String, message: String) : IllegalArgumentException(message)
 
@@ -43,18 +47,32 @@ class PlanningTerrain(
             if(width<=0 || height<=0 || width.toLong()*height>Int.MAX_VALUE) throw PlanningException("invalid-dimensions", "Positive dimensions with product within Int are required")
             if(tileWidth<=0 || tileHeight<=0) throw PlanningException("invalid-geometry", "Planning tile dimensions must be positive")
         }
-        fun fromKnowledge(snapshot: KnowledgeSnapshot, tileWidth: Int, tileHeight: Int): PlanningTerrain {
+        fun fromKnowledge(snapshot: KnowledgeSnapshot, tileWidth: Int, tileHeight: Int,
+                          movementType: MovementType = MovementType.LAND,
+                          tileSets: List<TileSetDefinition> = emptyList()): PlanningTerrain {
             validateShape(snapshot.width,snapshot.height,tileWidth,tileHeight)
             return PlanningTerrain(snapshot.width,snapshot.height,tileWidth,tileHeight,
-                BooleanArray(snapshot.width*snapshot.height) { snapshot.planningBlocked(it%snapshot.width,it/snapshot.width) })
+                BooleanArray(snapshot.width*snapshot.height) {
+                    snapshot.movementBlocked(it%snapshot.width, it/snapshot.width, movementType, tileSets)
+                })
         }
 
         /** Trusted no-fog host adapter. The result retains no reference to map or blocking grid. */
-        fun fromNoFog(map: MapDefinition): PlanningTerrain {
+        fun fromNoFog(map: MapDefinition, movementType: MovementType = MovementType.LAND): PlanningTerrain {
             validateShape(map.widthTiles,map.heightTiles,map.tileWidth,map.tileHeight)
-            if(map.blocking.widthTiles!=map.widthTiles || map.blocking.heightTiles!=map.heightTiles) throw PlanningException("invalid-blocking", "Truth blocking dimensions do not match map dimensions")
+            val blocking = map.blockingFor(movementType)
+            if(blocking.widthTiles!=map.widthTiles || blocking.heightTiles!=map.heightTiles) throw PlanningException("invalid-blocking", "Truth blocking dimensions do not match map dimensions")
             return PlanningTerrain(map.widthTiles,map.heightTiles,map.tileWidth,map.tileHeight,
-                BooleanArray(map.widthTiles*map.heightTiles) { map.blocking.isBlocked(it%map.widthTiles,it/map.widthTiles) })
+                BooleanArray(map.widthTiles*map.heightTiles) { blocking.isBlocked(it%map.widthTiles,it/map.widthTiles) })
         }
     }
 }
+
+/** Authorized memory plus public tile semantics only; absent GIDs retain unknown-cell exploration. */
+internal fun KnowledgeSnapshot.movementBlocked(column: Int, row: Int, type: MovementType,
+                                               tileSets: List<TileSetDefinition>): Boolean =
+    cell(column, row).movementBlocked(type, tileSets)
+
+internal fun CellKnowledge.movementBlocked(type: MovementType, tileSets: List<TileSetDefinition>): Boolean =
+    if (type == MovementType.WATER) lastKnownGroundGid?.let { tileSets.waterBlocked(it) } ?: false
+    else lastKnownBlocked ?: false

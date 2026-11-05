@@ -162,12 +162,14 @@ class BootstrapScreen(
         nativeIcon = Image().also { it.setBounds(760f, 390f, 40f, 40f); it.touchable = Touchable.disabled; stage.addActor(it) }
         nativeInfo = label("", 848f, 434f, 92f, 94f)
         nativeProduceIcon = Image().apply { touchable = Touchable.disabled }
-        nativeProduceText = Label("Builder", skin).apply { setAlignment(Align.center); touchable = Touchable.disabled }
+        nativeProduceText = Label("Builder", skin).apply {
+            setAlignment(Align.center); setWrap(true); touchable = Touchable.disabled
+        }
         nativeProduceButton = Table(skin).also { table ->
             table.touchable = Touchable.enabled
             NativeActionPanel.production[0].let { table.setBounds(it.x, it.y, it.width, it.height) }
             table.add(nativeProduceIcon).size(28f, 28f).padTop(3f).row()
-            table.add(nativeProduceText).height(25f)
+            table.add(nativeProduceText).width(80f).height(30f)
             productionInput = ProductionButtonInput({ session }, { nativePanel && !paused }, { lastHudState = null; updateHud() },
                 { productionHover = it })
             table.addListener(productionInput)
@@ -201,7 +203,7 @@ class BootstrapScreen(
             table.addListener(thirdProductionInput)
             stage.addActor(table)
         }
-        for (type in listOf("extractorT1", "landFactory", "mechFactory", "airFactory", "fabricatorT1", "c_turret_t1", "laserDefence")) {
+        for (type in NativeActionPanel.constructionTypes) {
             val icon = Image().apply { touchable = Touchable.disabled }
             val text = Label("", skin).apply { setAlignment(Align.center); touchable = Touchable.disabled; setFontScale(.7f) }
             val table = Table(skin)
@@ -621,7 +623,7 @@ class BootstrapScreen(
         produceButton.isDisabled = menu?.production?.firstOrNull()?.price == null
         produceButton.setText(menu?.production?.firstOrNull()?.price?.let { "Produce $it" } ?: "Produce")
         cancelProductionButton.isDisabled = queue?.items?.isEmpty() != false
-        nativeProduceButton.isVisible = nativePanel && queue != null
+        nativeProduceButton.isVisible = nativePanel && queue != null && menu?.production?.isNotEmpty() == true
         secondProduceButton.isVisible = nativePanel && (menu?.production?.size ?: 0) >= 2
         thirdProduceButton.isVisible = nativePanel && (menu?.production?.size ?: 0) >= 3
         reclaimCard.isVisible = nativePanel && menu?.canMaintain == true
@@ -665,6 +667,7 @@ class BootstrapScreen(
             nativeInfo.setText(selectedInfo ?: "")
             menu?.production?.firstOrNull()?.let { action ->
                 setUnitIcon(nativeProduceIcon, action.typeId)
+                nativeProduceText.setFontScale(if (action.typeId == "heavyBattleship") .7f else 1f)
                 nativeProduceText.setText(action.title + if (action.count > 0) " (${action.count})" else "")
                 nativeProduceText.color = if (action.affordable) Color(.9f, .92f, .9f, 1f) else Color(.55f, .58f, .55f, 1f)
                 nativeProduceButton.background = skin.newDrawable("white", if (productionInput.pressed)

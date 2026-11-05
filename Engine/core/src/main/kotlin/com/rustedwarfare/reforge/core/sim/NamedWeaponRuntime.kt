@@ -30,10 +30,7 @@ internal object NamedWeaponRuntime {
     fun qualifies(unit: MutableUnit, target: MutableUnit, weapon: NamedWeaponDefinition,
                   players: List<Player>, coordinates: CoordinatePolicy, checkRange: Boolean = true): Boolean {
         if (!CombatTargetQuery.isEnemy(unit, target, players)) return false
-        val categoryAllowed = when (target.definition.movement.type) {
-            MovementType.LAND, MovementType.NONE -> weapon.canAttackLandUnits
-            MovementType.AIR -> if (CombatTargetQuery.isFlying(target)) weapon.canAttackFlyingUnits else weapon.canAttackLandUnits
-        }
+        val categoryAllowed = CombatTargetQuery.weaponAllows(target, weapon)
         if (!categoryAllowed) return false
         weapon.limitingAngle?.takeIf { it != -1.0 }?.let { limit ->
             val heading = weapon.attachedTo?.let { checkNotNull(unit.namedWeapons).getValue(it).turretHeading }
@@ -104,6 +101,21 @@ internal object NamedWeaponRuntime {
     fun effectiveDelay(weapon: NamedWeaponDefinition, state: MutableCombat): Double = weapon.shootDelay +
         if (weapon.warmup == 0.0 || weapon.warmupShootDelayTransfer == 0.0) 0.0
         else -weapon.warmupShootDelayTransfer * (state.warmup / weapon.warmup)
+
+    /** Finite ordinary idle direction, separate from the legacy mech sweep/body animation. */
+    fun idle(unit: MutableUnit, weapon: NamedWeaponDefinition, state: MutableCombat, delta: Double) {
+        val reverseIdle = weapon.idleDirectionReversing ?: return
+        if (state.idleHold != 0f) {
+            state.idleHold = maxOf(0f, state.idleHold - delta.toFloat())
+            return
+        }
+        val base = weapon.attachedTo?.let { checkNotNull(unit.namedWeapons).getValue(it).turretHeading } ?: unit.heading
+        val idle = if (unit.reversing && unit.definition.movement.reverseSpeedPercentage > .95) reverseIdle else weapon.idleDirection
+        val heading = ScreenPlane.normalize(base + idle)
+        state.idleBaseHeading = heading
+        OrdinaryWeapon.turnTo(unit, heading, delta, state, profile(unit, weapon),
+            MechMotion.angleDifference(heading, state.turretHeading))
+    }
 
     fun muzzle(unit: MutableUnit, weapon: NamedWeaponDefinition, state: MutableCombat): Position {
         return OrdinaryWeapon.muzzle(unit, state, profile(unit, weapon), pivot(unit, weapon, state))

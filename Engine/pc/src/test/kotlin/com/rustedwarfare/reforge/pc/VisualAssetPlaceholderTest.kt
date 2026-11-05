@@ -16,7 +16,7 @@ class VisualAssetPlaceholderTest {
             val prepared = PcPlaceholderVisualAssets().prepare(selection)
             assertEquals(selection, prepared.selection)
             assertEquals(16, prepared.units.size)
-            assertEquals(5, prepared.terrain.size)
+            assertEquals(6, prepared.terrain.size)
             assertEquals(3, prepared.units.getValue("c_tank").totalFrames)
             assertEquals(1, prepared.units.getValue("demo_tank").totalFrames)
             assertTrue(Files.notExists(selection.originalDirectory))

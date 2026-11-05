@@ -25,6 +25,7 @@ internal class VisualAssetProfile private constructor(val key: String, val json:
         fun versionOne(): VisualAssetProfile = bundledFile("original-profile-v1.json")
         fun versionTwo(): VisualAssetProfile = bundledFile("original-profile-v2.json")
         fun versionThree(): VisualAssetProfile = bundledFile("original-profile-v3.json")
+        fun versionFour(): VisualAssetProfile = bundledFile("original-profile-v4.json")
         private fun bundledFile(name: String): VisualAssetProfile = parse(requireNotNull(VisualAssetProfile::class.java
             .getResourceAsStream("/visuals/$name")) { "Missing bundled visual profile $name" }.use { it.readBytes() })
     }

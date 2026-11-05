@@ -15,6 +15,8 @@ internal class ActionCatalogue(private val definitions: Map<String, UnitDefiniti
         "mechFactory" to Names("Mech factory"), "mechGun" to Names("Gun mech"),
         "mechFactoryT2" to Names("Mech factory T2"), "mechHeavyMissile" to Names("Heavy missile mech"),
         "airFactory" to Names("Air factory"), "helicopter" to Names("Helicopter"),
+        "seaFactory" to Names("Sea factory"), "seaFactoryT2" to Names("Sea factory T2"),
+        "heavyBattleship" to Names("Heavy battleship"),
         "extractorT1" to Names("Extractor T1", "Extractor"), "extractorT2" to Names("Extractor T2", "Unit"),
         "extractorT3" to Names("Extractor T3", "Unit"), "fabricatorT1" to Names("Fabricator T1", "Fabricator"),
         "fabricatorT2" to Names("Fabricator T2", "Unit"), "fabricatorT3" to Names("Fabricator T3", "Unit"),

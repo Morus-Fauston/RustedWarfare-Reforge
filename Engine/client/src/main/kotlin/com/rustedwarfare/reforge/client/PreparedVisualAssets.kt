@@ -73,6 +73,7 @@ data class VisualTileAtlas(val firstGid: Int, val name: String, val tileWidth: I
     fun supportedLayout(): String {
         require(tileWidth == 20 && tileHeight == 20 && spacing == 0 && margin == 0) { "VISUAL_MAPPING_UNSUPPORTED: atlas $name" }
         return when {
+            name == "naval-ground" && columns == 5 && tileCount == 40 && blockedTileIds.isEmpty() && resourcePoolTileIds.isEmpty() -> "naval-ground-40"
             columns == 5 && tileCount == 40 && blockedTileIds == setOf(16) && resourcePoolTileIds.isEmpty() -> "controlled-ground-40"
             columns == 7 && tileCount == 35 && blockedTileIds == setOf(7, 8, 21, 22, 28, 29) && resourcePoolTileIds.isEmpty() -> "controlled-rock-35"
             columns == 5 && tileCount == 5 && blockedTileIds == setOf(1, 2) && resourcePoolTileIds == setOf(4) -> "construction-strip-5"

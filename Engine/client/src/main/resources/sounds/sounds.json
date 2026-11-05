@@ -1,9 +1,25 @@
 {
   "formatVersion": 1,
   "sounds": {
-    "reforge:sounds/tank-fire": { "file": "tank-fire.wav" }
+    "reforge:sounds/tank-fire": {
+      "file": "tank-fire.wav"
+    },
+    "reforge:sounds/naval-main-fire": {
+      "file": "naval-main-fire.wav"
+    },
+    "reforge:sounds/naval-missile-fire": {
+      "file": "naval-missile-fire.wav"
+    }
   },
   "events": {
-    "reforge:events/tank-fire": { "sound": "reforge:sounds/tank-fire" }
+    "reforge:events/tank-fire": {
+      "sound": "reforge:sounds/tank-fire"
+    },
+    "reforge:events/naval-main-fire": {
+      "sound": "reforge:sounds/naval-main-fire"
+    },
+    "reforge:events/naval-missile-fire": {
+      "sound": "reforge:sounds/naval-missile-fire"
+    }
   }
 }

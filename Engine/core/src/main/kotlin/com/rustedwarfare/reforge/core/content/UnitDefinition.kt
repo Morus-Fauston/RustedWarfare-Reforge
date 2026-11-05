@@ -28,6 +28,7 @@ class UnitDefinition(
     val deathExplosion: DeathExplosionProfile? = null,
     val mech: MechDefinition? = null,
     val rotor: RotorDefinition? = null,
+    val fixedUnderwaterTarget: FixedUnderwaterTargetProfile? = null,
 ) {
     val retainedUnconsumed: Set<String> = Collections.unmodifiableSet(LinkedHashSet(retainedUnconsumed))
     val maximumHealth: Double? get() = durability?.maxHp ?: combat?.maxHp
@@ -47,7 +48,7 @@ data class MovementProfile(
     val flight: FlightProfile? = null,
 )
 
-enum class MovementType { LAND, NONE, AIR }
+enum class MovementType { LAND, NONE, AIR, WATER }
 
 data class FlightProfile(val targetHeight: Double, val heightDrift: Double,
     val heightChangeRate: Double, val startingHeightOffset: Double) {
@@ -58,6 +59,9 @@ data class FlightProfile(val targetHeight: Double, val heightDrift: Double,
 
 /** The finite helicopter has one rotor at the body origin, drawn above its body. */
 data class RotorDefinition(val imagePath: Path, val spinRate: Double)
+
+/** Explicit finite evidence target; this grants neither submarine movement nor production. */
+data class FixedUnderwaterTargetProfile(val height: Double = -8.0)
 
 /** Trusted original target class; a building or an unarmed life profile does not imply native membership. */
 enum class DirectHitTargetKind { ORDINARY, NATIVE_BUILDING }
@@ -76,7 +80,11 @@ class BuilderProfile(buildingTypeIds: List<String>) {
     val repairRate: Float = .2f
 }
 data class ConstructionProfile(val price: Long, val rate: Float)
-enum class FactoryExitProfile { NATIVE_LAND, CUSTOM_MECH, NATIVE_AIR }
+enum class FactoryExitProfile { NATIVE_LAND, CUSTOM_MECH, NATIVE_AIR, NATIVE_SEA }
+
+/** A native sea factory is immobile, but its foundation uses the water terrain class. */
+val UnitDefinition.foundationMovementType: MovementType
+    get() = if (production?.exitProfile == FactoryExitProfile.NATIVE_SEA) MovementType.WATER else movement.type
 
 class ProductionProfile(unitTypeIds: List<String>, val exitProfile: FactoryExitProfile = FactoryExitProfile.NATIVE_LAND) {
     constructor(unitTypeId: String) : this(listOf(unitTypeId))
@@ -153,11 +161,14 @@ data class NamedWeaponDefinition(val name: String, val projectileName: String,
     val linkDelayWithTurret: String? = null, val limitingAngle: Double? = null,
     val idleDirection: Double = 0.0,
     val barrelX: Double? = null, val oddShotOffset: Double? = null,
-    val invisible: Boolean = false, val imageOffsetX: Double = 0.0, val imageOffsetY: Double = 0.0)
+    val invisible: Boolean = false, val imageOffsetX: Double = 0.0, val imageOffsetY: Double = 0.0,
+    val idleDirectionReversing: Double? = null)
 
 /** Gameplay trigger identity, never an audio filename or resource-pack decision. */
 enum class FireSoundProfile(val eventId: String, val volume: Float) {
     TANK("reforge:events/tank-fire", .3f),
+    NAVAL_MAIN("reforge:events/naval-main-fire", .3f),
+    NAVAL_MISSILE("reforge:events/naval-missile-fire", .1f),
 }
 
 data class TurretMount(val localX: Double = 0.0, val localY: Double = 0.0)
@@ -169,7 +180,11 @@ data class ProjectileProfile(val directDamage: Double, val life: Double, val spe
     val instant: Boolean = false, val nonDeflectable: Boolean = false, val deflectionHealth: Float = 1f,
     val ground: GroundProjectileProfile? = null, val missile: NativeMissileProfile? = null,
     val acceleration: LinearProjectileAcceleration? = null,
-    val splash: OrdinarySplashProfile? = null, val retargetOnDeath: Boolean = false)
+    val splash: OrdinarySplashProfile? = null, val retargetOnDeath: Boolean = false,
+    val ballistic: CustomBallisticProfile? = null)
+
+/** A verticalSpeed of -1 uses the current custom projectile speed. */
+data class CustomBallisticProfile(val delayMoveHeight: Float, val apex: Float, val verticalSpeed: Float = -1f)
 
 /** Ordinary homing impact area; separate from a fixed ground-snapshot artillery shot. */
 data class OrdinarySplashProfile(val damage: Float, val radius: Float)

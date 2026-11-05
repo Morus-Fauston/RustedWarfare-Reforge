@@ -9,8 +9,10 @@ internal class FactoryProductionSpec(val ownerPlayerId: String, products: Map<St
     constructor(ownerPlayerId: String, typeId: String, build: BuildProfile) : this(ownerPlayerId, mapOf(typeId to build))
     val products: Map<String, BuildProfile> = Collections.unmodifiableMap(LinkedHashMap(products))
     val upgradeActions = immutable(upgradeActions)
-    fun valid(): Boolean = products.isNotEmpty() && products.all { (id, build) ->
-        id.isNotBlank() && build.price >= 0L && build.rate.isFinite() && build.rate > 0f }
+    fun valid(): Boolean = (products.isNotEmpty() || upgradeActions.isNotEmpty()) && products.all { (id, build) ->
+        id.isNotBlank() && build.price >= 0L && build.rate.isFinite() && build.rate > 0f } &&
+        upgradeActions.all { it.actionKey.isNotBlank() && it.targetTypeId.isNotBlank() &&
+            it.price >= 0L && it.rate.isFinite() && it.rate > 0f }
 }
 internal sealed interface PendingFactoryWork {
     val progress: Float

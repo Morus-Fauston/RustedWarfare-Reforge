@@ -308,6 +308,7 @@ object TraceComparator {
                                 throw Incomplete("conversion-identity", "Converted unit differs from its accepted ordinary upgrade")
                         }
                         units.forEach { validateUnitSample(it, scenario) }
+                        validateBallisticSamples(observation, scenario, units)
                         if (hasConstruction(scenario)) validateConstructionSample(scenario, observation, units, built)
                         val incomeTypes = typesLoadedBy(scenario, setOf("command-center", "economy", "economy-upgrades"))
                         if (incomeTypes.isNotEmpty()) {
@@ -428,6 +429,35 @@ object TraceComparator {
         ScenarioDeclaration.unitReferences(scenario.objectAt("content")).filter { it["loader"]?.jsonPrimitive?.content in loaders }
             .map { it.id("id") }.toSet()
 
+    private fun validateBallisticSamples(observation: JsonObject, scenario: JsonObject, units: List<JsonObject>) {
+        val types = typesLoadedBy(scenario, setOf("battleship"))
+        if (types.isEmpty()) return
+        val sources = units.filter { it.id("typeId") in types }.map { it.id("unitId") }.toSet()
+        fun invalid(reason: String): Nothing = throw Incomplete("ballistic-state", reason)
+        fun validate(shot: JsonObject) {
+            if ((shot["sourceUnitId"] as? JsonPrimitive)?.content !in sources) return
+            val name = shot["sourceWeaponName"] as? JsonPrimitive
+            if (name?.isString != true || name.content !in setOf("1", "2", "3", "4", "5")) invalid("Missing or unknown naval source weapon")
+            val state = shot["ballistic"]
+            if (name.content !in setOf("4", "5")) {
+                if (state != null && state != JsonNull) invalid("Unexpected ballistic state on a non-ballistic naval weapon")
+                return
+            }
+            if (state !is JsonObject || state.keys != setOf("speed", "reachedApex", "rawAz")) invalid("Incomplete or unapproved ballistic state fields")
+            for (field in listOf("speed", "rawAz")) {
+                val value = state[field] as? JsonPrimitive
+                val number = value?.doubleOrNull
+                if (value == null || value.isString || number == null || !number.isFinite() || !number.toFloat().isFinite() ||
+                    field == "speed" && number < 0.0) invalid("Invalid ballistic $field")
+            }
+            if (state["reachedApex"] !in setOf(b(true), b(false))) invalid("Expected a ballistic apex boolean")
+            if (listOf("ground", "missile").any { shot[it] != null && shot[it] != JsonNull })
+                invalid("Incompatible ballistic projectile profiles")
+        }
+        observation.arrayAt("projectiles").forEach { validate(it.jsonObject) }
+        observation.arrayAt("projectileEvents").forEach { validate(it.jsonObject.objectAt("projectile")) }
+    }
+
     private fun validateUnitSample(unit: JsonObject, scenario: JsonObject) {
         if (unit.keys.any { it in setOf("owner", "type", "rawMovementState") }) throw Incomplete("reserved-field", "Raw unit contains normalization aliases")
         unit.id("unitId"); unit.id("ownerPlayerId"); unit.id("typeId"); point(unit.objectAt("position"))
@@ -441,6 +471,13 @@ object TraceComparator {
         }
         if (mechLegCount != null) validateMechPose(unit.objectAt("mechPose"), mechLegCount)
         if (unit.id("typeId") in typesLoadedBy(scenario, setOf("helicopter"))) validateFlightPose(unit)
+        if (unit.id("typeId") in typesLoadedBy(scenario, setOf("battleship"))) validateWaterPose(unit)
+        if (unit.id("typeId") in typesLoadedBy(scenario, setOf("underwater-target"))) {
+            val height = unit["height"] as? JsonPrimitive
+            if (height == null || height.isString || height.doubleOrNull != -8.0 ||
+                listOf("mechPose", "flightPose", "waterPose").any { unit[it] != null && unit[it] != JsonNull })
+                throw Incomplete("underwater-target", "Expected the complete fixed-depth target height without another locomotion pose")
+        }
         if (hasConstruction(scenario)) {
             unit.number("constructionProgress")
             unit.required("constructionTargetId").let { if (it != JsonNull) unit.id("constructionTargetId") }
@@ -472,6 +509,22 @@ object TraceComparator {
                 defense.number("energy"); booleanField(defense, "exhausted")
             } }
         }
+    }
+
+    private fun validateWaterPose(unit: JsonObject) {
+        fun invalid(reason: String): Nothing = throw Incomplete("water-pose", reason)
+        val pose = unit["waterPose"] as? JsonObject ?: invalid("Missing ordinary water-body pose")
+        if (pose.keys != setOf("reversing", "sinkSpeed", "settled")) invalid("Incomplete or unapproved water-body fields")
+        for (key in listOf("reversing", "settled"))
+            if (pose[key] !in setOf(b(false), b(true))) invalid("Expected water-body $key boolean")
+        for ((name, value) in listOf("height" to unit["height"], "sinkSpeed" to pose["sinkSpeed"])) {
+            val literal = value as? JsonPrimitive
+            val number = literal?.doubleOrNull
+            if (literal == null || literal.isString || number == null || !number.isFinite() ||
+                !number.toFloat().isFinite() || name == "sinkSpeed" && number < 0.0) invalid("Invalid water-body $name")
+        }
+        if (listOf("mechPose", "flightPose").any { unit[it] != null && unit[it] != JsonNull })
+            invalid("Incompatible water-body locomotion poses")
     }
 
     private fun validateFlightPose(unit: JsonObject) {
