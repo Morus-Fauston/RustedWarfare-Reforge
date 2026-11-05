@@ -1,0 +1,315 @@
+{
+  "schemaVersion": 1,
+  "profileId": "rw.pc.steam.9902063.resources.v5",
+  "imageProfileId": "rw.pc.steam.9902063.images.v5",
+  "imageQualificationSha256": "4c7a82a3f643ceb6ecd0966d01bbd980fa9f7a00243c7966eb6dab60cbf0182e",
+  "identity": {
+    "bytes": 2639503,
+    "sha256": "8a550a37e2d8a5430866090d4e7d5892f9010b47f52a5a09350fc66c620deec9"
+  },
+  "sounds": [
+    {
+      "path": "res/raw/attack.wav",
+      "bytes": 43262,
+      "sha256": "8554ed4db69e9667f07f66a9fad7c279c05e9dee93b7384556abc8de9352e1bc",
+      "format": "PCM16_WAV",
+      "channels": 1,
+      "sampleRate": 44100
+    },
+    {
+      "path": "res/raw/attack2.wav",
+      "bytes": 95104,
+      "sha256": "5a2c637f2a32e2597f216da8d6096fe56a7f692a576f405beea82a5c14a4b1d4",
+      "format": "PCM16_WAV",
+      "channels": 2,
+      "sampleRate": 48000
+    },
+    {
+      "path": "res/raw/bug_attack.ogg",
+      "bytes": 7302,
+      "sha256": "1ca1369bab01fa16c17953ac4605da0454a4c0e80b5d1b5a7d2b495344724fc1",
+      "format": "OGG_VORBIS",
+      "channels": 2,
+      "sampleRate": 44100
+    },
+    {
+      "path": "res/raw/bug_die.ogg",
+      "bytes": 8888,
+      "sha256": "8a9b063bee4813dd8626b6f4e6d112bdb8b19e63a1609343e78a3d8cc7226afc",
+      "format": "OGG_VORBIS",
+      "channels": 2,
+      "sampleRate": 44100
+    },
+    {
+      "path": "res/raw/buiding_explode.ogg",
+      "bytes": 90481,
+      "sha256": "bc6fc08cf25d8142b3c9a30f5edf59a64a7b95f0c10db7001142efe12b9c1da0",
+      "format": "OGG_VORBIS",
+      "channels": 2,
+      "sampleRate": 44100
+    },
+    {
+      "path": "res/raw/cannon_firing.ogg",
+      "bytes": 11926,
+      "sha256": "299876cf46583aa171915b368e38065545226101f502a3fa1024f4da00b9e3db",
+      "format": "OGG_VORBIS",
+      "channels": 1,
+      "sampleRate": 16000
+    },
+    {
+      "path": "res/raw/click.ogg",
+      "bytes": 8270,
+      "sha256": "770e3bda37bdea81d2b49f13f433944b73cffe270a353fc4352eba2a71220912",
+      "format": "OGG_VORBIS",
+      "channels": 1,
+      "sampleRate": 44100
+    },
+    {
+      "path": "res/raw/click_add.ogg",
+      "bytes": 9388,
+      "sha256": "a0e8b001c935358b0c1968455adf2349e5476502be5f9825863d26dc14d0e41a",
+      "format": "OGG_VORBIS",
+      "channels": 2,
+      "sampleRate": 48000
+    },
+    {
+      "path": "res/raw/click_remove.ogg",
+      "bytes": 6477,
+      "sha256": "5cda02a08a771644e89631554dca9e1c3b52fe6292551e839735a43b9d124dca",
+      "format": "OGG_VORBIS",
+      "channels": 1,
+      "sampleRate": 48000
+    },
+    {
+      "path": "res/raw/firing3.ogg",
+      "bytes": 9486,
+      "sha256": "80df9a8b6758b079d5a3402c431afe314d74ac404b6f597122b25eeaf1435d73",
+      "format": "OGG_VORBIS",
+      "channels": 2,
+      "sampleRate": 44100
+    },
+    {
+      "path": "res/raw/firing4.ogg",
+      "bytes": 10450,
+      "sha256": "1a428b76fc2d0ff16f37e19658cbb350817f8bcb10b42fb682a8d9ffb8d9e489",
+      "format": "OGG_VORBIS",
+      "channels": 2,
+      "sampleRate": 44100
+    },
+    {
+      "path": "res/raw/gun_fire.ogg",
+      "bytes": 16143,
+      "sha256": "968c8a9ef80493e5e1e214051446624ca20410ca918bc1bde37525f84d0e43ac",
+      "format": "OGG_VORBIS",
+      "channels": 2,
+      "sampleRate": 44100
+    },
+    {
+      "path": "res/raw/interface_error.ogg",
+      "bytes": 8804,
+      "sha256": "77c3329353cb830732d28d4c27c04871f6e12addbc33e354dfe041b51c25ac5f",
+      "format": "OGG_VORBIS",
+      "channels": 2,
+      "sampleRate": 44100
+    },
+    {
+      "path": "res/raw/large_gun_fire1.ogg",
+      "bytes": 11595,
+      "sha256": "3e0ab21b4620d735149068f2e6d488db44b4b7136a95a51a51939ae73f8785d9",
+      "format": "OGG_VORBIS",
+      "channels": 2,
+      "sampleRate": 44100
+    },
+    {
+      "path": "res/raw/large_gun_fire2.ogg",
+      "bytes": 10768,
+      "sha256": "8ebc5a42ef7d89b852b22a125e25319278613496ab54caf04941a9c1e5c53255",
+      "format": "OGG_VORBIS",
+      "channels": 2,
+      "sampleRate": 44100
+    },
+    {
+      "path": "res/raw/laser_deflect.ogg",
+      "bytes": 9457,
+      "sha256": "f8b4ef78b4a6e6acab14a0677f7b0288884dee39492a835bdfdcebc326fdcc05",
+      "format": "OGG_VORBIS",
+      "channels": 2,
+      "sampleRate": 44100
+    },
+    {
+      "path": "res/raw/laser_deflect2.ogg",
+      "bytes": 7549,
+      "sha256": "eaadb67ecddb534cfe380b85e93b4a7611c9601bebbcf59aeb766ef999bfa64e",
+      "format": "OGG_VORBIS",
+      "channels": 2,
+      "sampleRate": 44100
+    },
+    {
+      "path": "res/raw/lighting_burst.ogg",
+      "bytes": 13101,
+      "sha256": "e0708babb7b07ff1c4727ef294fa59a27df000ba3a99b5cd64cc729b7ed5437c",
+      "format": "OGG_VORBIS",
+      "channels": 1,
+      "sampleRate": 44100
+    },
+    {
+      "path": "res/raw/message.ogg",
+      "bytes": 9170,
+      "sha256": "9f8fcb59b81033324c55fde7956e1b491da3c086444c0765627c9dc583850d39",
+      "format": "OGG_VORBIS",
+      "channels": 2,
+      "sampleRate": 48000
+    },
+    {
+      "path": "res/raw/missile_fire.ogg",
+      "bytes": 35621,
+      "sha256": "e2390366d1967d73b47846b1def2d3ae8e736fc2788a79eca1b0965ee87fe18a",
+      "format": "OGG_VORBIS",
+      "channels": 2,
+      "sampleRate": 44100
+    },
+    {
+      "path": "res/raw/missile_hit.ogg",
+      "bytes": 26428,
+      "sha256": "848ce792bc5d1aa37d223e864bb92f5a3cfb39c8d6ee693f43664a47bf4ef6e5",
+      "format": "OGG_VORBIS",
+      "channels": 2,
+      "sampleRate": 44100
+    },
+    {
+      "path": "res/raw/move.wav",
+      "bytes": 33470,
+      "sha256": "eb13fb5969d08c8b5a115b40b7d10dedac0edbc688effe23a25f643930c95073",
+      "format": "PCM16_WAV",
+      "channels": 1,
+      "sampleRate": 44100
+    },
+    {
+      "path": "res/raw/nuke_explode.ogg",
+      "bytes": 78953,
+      "sha256": "5ab17e1636c501a1e490514dfd6d4899d82234049b878eb66465ab6750c59d80",
+      "format": "OGG_VORBIS",
+      "channels": 1,
+      "sampleRate": 44100
+    },
+    {
+      "path": "res/raw/nuke_launch.ogg",
+      "bytes": 111419,
+      "sha256": "c2cba6e594091f3af8ff073aef4079314991a977aa4085800cf936ce59d0532c",
+      "format": "OGG_VORBIS",
+      "channels": 2,
+      "sampleRate": 44100
+    },
+    {
+      "path": "res/raw/plasma_fire.ogg",
+      "bytes": 8895,
+      "sha256": "858a7ea9b636b425ff688d57354b6a32aa1f44b6deb4c424d95976159333b572",
+      "format": "OGG_VORBIS",
+      "channels": 1,
+      "sampleRate": 22050
+    },
+    {
+      "path": "res/raw/plasma_fire2.ogg",
+      "bytes": 8810,
+      "sha256": "2fe98685e3c6970636d6e96e9462d0dc2b856871f5be4bac1db800407ad5be11",
+      "format": "OGG_VORBIS",
+      "channels": 2,
+      "sampleRate": 44100
+    },
+    {
+      "path": "res/raw/tank_firing.ogg",
+      "bytes": 23660,
+      "sha256": "4569e633f6e9a179a4335966b283f0c9c7e7c8be58bcad9ebd67d0ef7d0eb753",
+      "format": "OGG_VORBIS",
+      "channels": 2,
+      "sampleRate": 44100
+    },
+    {
+      "path": "res/raw/unit_explode.ogg",
+      "bytes": 60157,
+      "sha256": "506886fc03179f2ba642c6d03cd8dde05dc600580865e065d4fef32644a950bd",
+      "format": "OGG_VORBIS",
+      "channels": 2,
+      "sampleRate": 44100
+    },
+    {
+      "path": "res/raw/unit_explode_old.ogg",
+      "bytes": 57960,
+      "sha256": "79bab762776c217423857eaae7b426011923d1ab3e49925203e191823eccd790",
+      "format": "OGG_VORBIS",
+      "channels": 2,
+      "sampleRate": 44100
+    },
+    {
+      "path": "res/raw/warning.ogg",
+      "bytes": 17544,
+      "sha256": "3a010c050a6b97339dd69e4b3a4c05038bdb9b38ee744768a76fbf2520d970e1",
+      "format": "OGG_VORBIS",
+      "channels": 2,
+      "sampleRate": 48000
+    }
+  ],
+  "events": [
+    {
+      "eventId": "reforge:events/tank-fire",
+      "sourcePath": "res/raw/tank_firing.ogg"
+    },
+    {
+      "eventId": "reforge:events/naval-main-fire",
+      "sourcePath": "res/raw/large_gun_fire2.ogg"
+    },
+    {
+      "eventId": "reforge:events/naval-missile-fire",
+      "sourcePath": "res/raw/missile_fire.ogg"
+    }
+  ],
+  "excludedMusicDomain": "assets/music/",
+  "knownExcludedMusic": [
+    {
+      "path": "assets/music/attacked/Adama-Bobthede-11966.ogg",
+      "bytes": 154058,
+      "sha256": "8daf55c19e97260a27ef082cae142e7fbc052215dc454eafe308b76b420df9d9"
+    },
+    {
+      "path": "assets/music/buildup/[noloop]Ove Melaa - Theme Crystalized.ogg",
+      "bytes": 4626955,
+      "sha256": "6a98a8267095eecd9846d1da14ddc9ddca0508e4620a9bdd8bb8f0ad153bbdae"
+    },
+    {
+      "path": "assets/music/buildup/[noloop]The Planets - Mars (Part A).ogg",
+      "bytes": 2797629,
+      "sha256": "744006cca233096957bf9a1ada412f421e538ef950bfd785d497c0e6e840bad0"
+    },
+    {
+      "path": "assets/music/buildup/[noloop]The Planets - Mars (Part B).ogg",
+      "bytes": 2889617,
+      "sha256": "b47994a953967d7ef2c9bc52f5f9483ab91ae67226feeabeb180a280e8518899"
+    },
+    {
+      "path": "assets/music/buildup/Acti-Rudy_Ves-8657.ogg",
+      "bytes": 333720,
+      "sha256": "9341d5b4e8674de0abba61995dda461a3c29cb05735323fe60f55c8cc64bb10f"
+    },
+    {
+      "path": "assets/music/buildup/Ove - Earth Is All We Have.ogg",
+      "bytes": 1921896,
+      "sha256": "af012078098e82ba5da6ee37c6b876d4fda4b7e656aceb020bb08ebf8471102d"
+    },
+    {
+      "path": "assets/music/starting/battletanks1B.ogg",
+      "bytes": 1705699,
+      "sha256": "0161ff732beafc8231fb80cdb2957bb37cee765be524b98d12e0076d6ea46f4a"
+    },
+    {
+      "path": "assets/music/starting/Cont-Edgen-6084.ogg",
+      "bytes": 326370,
+      "sha256": "154a0f30d6032dccfe1238b8f900311ca5e2f756b80d24b46849aaeb9bf857b0"
+    },
+    {
+      "path": "assets/music/starting/sile-Justin_R-6891.ogg",
+      "bytes": 476013,
+      "sha256": "45bf94723812dcfe146e84312721441872e5a82b3745a07a1311d4449cac0f03"
+    }
+  ],
+  "boundary": "Owned qualification metadata only. All30 original effects, one already-qualified supported event;9 music entries excluded. No original bytes or runtime, new trigger/permission or full-platform equivalence."
+}

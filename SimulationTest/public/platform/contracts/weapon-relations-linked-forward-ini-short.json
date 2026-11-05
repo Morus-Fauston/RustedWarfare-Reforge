@@ -1,0 +1,125 @@
+{
+  "schemaVersion": 1,
+  "scenarioId": "weapon-relations-linked-forward-ini-short",
+  "rules": [
+    {
+      "intentId": "choose",
+      "actionType": "SelectAction",
+      "unitId": "a",
+      "accepted": true,
+      "unitIdentity": {
+        "ownerPlayerId": "p1",
+        "typeId": "linked_tank"
+      },
+      "assertions": [
+        {
+          "path": "units.a.maxHealth",
+          "operator": "equals",
+          "value": 100000
+        }
+      ]
+    },
+    {
+      "intentId": "relations",
+      "actionType": "AttackAction",
+      "unitId": "a",
+      "accepted": true,
+      "unitIdentity": {
+        "ownerPlayerId": "p1",
+        "typeId": "linked_tank"
+      },
+      "targetIdentity": {
+        "ownerPlayerId": "p2",
+        "typeId": "linked_tank"
+      },
+      "actionFields": {
+        "targetUnitId": "b"
+      },
+      "tail": {
+        "samples": 1,
+        "assertions": [
+          {
+            "path": "weapons.a.leader.targetUnitId",
+            "operator": "equals",
+            "value": "c"
+          },
+          {
+            "path": "weapons.a.follower.targetUnitId",
+            "operator": "equals",
+            "value": "b"
+          },
+          {
+            "path": "weapons.a.follower.cooldown",
+            "operator": "equals",
+            "value": 8973
+          },
+          {
+            "path": "units.b.health",
+            "operator": "lessThan",
+            "value": 100000
+          },
+          {
+            "path": "units.c.health",
+            "operator": "lessThan",
+            "value": 100000
+          }
+        ]
+      },
+      "weaponBirths": [
+        {
+          "unitId": "a",
+          "weaponName": "leader",
+          "targetUnitId": "c",
+          "minimumOccurrences": 4
+        },
+        {
+          "unitId": "a",
+          "weaponName": "follower",
+          "targetUnitId": "b",
+          "minimumOccurrences": 4
+        }
+      ],
+      "assertions": [
+        {
+          "path": "units.a.attackTargetId",
+          "operator": "equals",
+          "value": "b"
+        }
+      ]
+    },
+    {
+      "intentId": "stop",
+      "actionType": "StopAction",
+      "unitId": "a",
+      "accepted": true,
+      "unitIdentity": {
+        "ownerPlayerId": "p1",
+        "typeId": "linked_tank"
+      },
+      "assertions": [
+        {
+          "path": "weapons.a.leader.targetUnitId",
+          "operator": "equals",
+          "value": null
+        },
+        {
+          "path": "weapons.a.follower.targetUnitId",
+          "operator": "equals",
+          "value": null
+        }
+      ]
+    }
+  ],
+  "approval": {
+    "status": "owned-development-sample",
+    "source": "ENG-P008-013 frozen contract01; linked-forward independent clock 8973"
+  },
+  "exclusions": [
+    "original-runtime",
+    "full-scheduler",
+    "native-render",
+    "device",
+    "performance",
+    "maintainer-acceptance"
+  ]
+}

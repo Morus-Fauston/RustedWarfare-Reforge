@@ -1,0 +1,33 @@
+{
+  "schemaVersion": 1,
+  "scenarioId": "resource-sound-weighted-append",
+  "inputs": "../../inputs/resource-sound-packs/weighted-sandbox",
+  "intents": [
+    {
+      "intentId": "choose-tank",
+      "kind": "select",
+      "unitId": "a",
+      "position": {
+        "x": 110,
+        "y": 210
+      }
+    },
+    {
+      "intentId": "attack-enemy",
+      "kind": "attack",
+      "unitId": "a",
+      "targetUnitId": "b",
+      "position": {
+        "x": 350,
+        "y": 210
+      },
+      "waitSteps": 600
+    }
+  ],
+  "resourcePacks": {
+    "directories": [
+      "resources/append",
+      "resources/lower"
+    ]
+  }
+}

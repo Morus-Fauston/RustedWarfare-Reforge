@@ -1,0 +1,128 @@
+{
+  "schemaVersion": 1,
+  "scenarioId": "heavy-mech-hjson-session-short",
+  "rules": [
+    {
+      "intentId": "choose",
+      "actionType": "SelectAction",
+      "unitId": "a",
+      "accepted": true,
+      "unitIdentity": {
+        "ownerPlayerId": "p1",
+        "typeId": "mechHeavyMissile"
+      },
+      "assertions": [
+        {
+          "path": "units.a.maxHealth",
+          "operator": "equals",
+          "value": 2500
+        },
+        {
+          "path": "units.a.mechPose.forwardHeading",
+          "operator": "equals",
+          "value": 90
+        }
+      ]
+    },
+    {
+      "intentId": "walk",
+      "actionType": "MoveAction",
+      "unitId": "a",
+      "accepted": true,
+      "unitIdentity": {
+        "ownerPlayerId": "p1",
+        "typeId": "mechHeavyMissile"
+      },
+      "assertions": [
+        {
+          "path": "units.a.moveTarget",
+          "operator": "equalsActionTarget"
+        }
+      ],
+      "tail": {
+        "samples": 3,
+        "assertions": [
+          {
+            "path": "units.a.mechPose.reversing",
+            "operator": "equals",
+            "value": false
+          }
+        ]
+      }
+    },
+    {
+      "intentId": "stop",
+      "actionType": "StopAction",
+      "unitId": "a",
+      "accepted": true,
+      "unitIdentity": {
+        "ownerPlayerId": "p1",
+        "typeId": "mechHeavyMissile"
+      },
+      "assertions": [
+        {
+          "path": "units.a.moveTarget",
+          "operator": "equals",
+          "value": null
+        },
+        {
+          "path": "units.a.attackTargetId",
+          "operator": "equals",
+          "value": null
+        }
+      ],
+      "tail": {
+        "samples": 3,
+        "assertions": [
+          {
+            "path": "units.a.speed",
+            "operator": "equals",
+            "value": 0
+          }
+        ]
+      }
+    },
+    {
+      "intentId": "fire",
+      "actionType": "AttackAction",
+      "unitId": "a",
+      "accepted": true,
+      "unitIdentity": {
+        "ownerPlayerId": "p1",
+        "typeId": "mechHeavyMissile"
+      },
+      "assertions": [
+        {
+          "path": "units.a.attackTargetId",
+          "operator": "equals",
+          "value": "b"
+        }
+      ],
+      "targetIdentity": {
+        "ownerPlayerId": "p2",
+        "typeId": "mechHeavyMissile"
+      },
+      "actionFields": {
+        "targetUnitId": "b"
+      },
+      "tail": {
+        "samples": 3,
+        "assertions": [
+          {
+            "path": "units.b.health",
+            "operator": "lessThan",
+            "value": 2500
+          }
+        ]
+      },
+      "weaponBirths": [
+        {
+          "unitId": "a",
+          "weaponName": "smallLaser",
+          "targetUnitId": "b",
+          "minimumOccurrences": 1
+        }
+      ]
+    }
+  ]
+}

@@ -35,6 +35,7 @@ class DemoScreen(private val evidence: ClientEvidence = ClientEvidence.NONE,
     private val textures = mutableListOf<Texture>()
     private val tiles = mutableMapOf<Int, TextureRegion>()
     private val unitImages = mutableMapOf<String, TextureRegion>()
+    private lateinit var unitAppearances: Map<String, UnitAppearance>
     private lateinit var remembered: IntArray
     private lateinit var ground: IntArray
     private lateinit var status: Label
@@ -66,11 +67,12 @@ class DemoScreen(private val evidence: ClientEvidence = ClientEvidence.NONE,
             ground = scenario.map.groundGids
             val originalResources = SandboxRenderResources.from(scenario)
             val resources = visualAssets?.let(originalResources::withVisuals) ?: originalResources
+            unitAppearances = resources.units
             for (set in resources.tileSets) {
                 val image = texture(set.imagePath.toString())
                 for (index in 0 until set.tileCount) {
-                    tiles[set.firstGid + index] = TextureRegion(image, index % set.columns * set.tileWidth,
-                        index / set.columns * set.tileHeight, set.tileWidth, set.tileHeight)
+                    tiles[set.firstGid + index] = TextureRegion(image, index % set.columns * set.pixelTileWidth,
+                        index / set.columns * set.pixelTileHeight, set.pixelTileWidth, set.pixelTileHeight)
                 }
             }
             for ((id, definition) in resources.units) {
@@ -120,8 +122,7 @@ class DemoScreen(private val evidence: ClientEvidence = ClientEvidence.NONE,
             })
             resize(Gdx.graphics.width, Gdx.graphics.height)
             record("demo-ready")
-            visualAssets?.let { evidence.record("visual-assets-ready", mapOf("source" to it.selection.source.value,
-                "profile" to it.profileId, "identity" to it.identity, "units" to it.units.keys.toList(), "terrain" to it.terrain.keys.toList())) }
+            visualAssets?.let { evidence.recordVisualAssetsReady(it) }
         } catch (failure: Throwable) {
             evidence.recordFailure("demo-failed", failure)
             preserveFailure(failure) { dispose() }
@@ -183,9 +184,10 @@ class DemoScreen(private val evidence: ClientEvidence = ClientEvidence.NONE,
         batch.color = Color.WHITE
         for (unit in session.observation.units) {
             val image = unitImages.getValue(unit.typeId)
-            val definition = scenario.unitDefinitions.getValue(unit.typeId)
-            val width = image.regionWidth * definition.imageScale.toFloat()
-            val height = image.regionHeight * definition.imageScale.toFloat()
+            val definition = unitAppearances.getValue(unit.typeId)
+            val size = definition.drawSize(UnitImageSlot.BODY, image.regionWidth, image.regionHeight)
+            val width = size.width.toFloat()
+            val height = size.height.toFloat()
             batch.draw(image, x(unit.position.x) - width / 2, y(unit.position.y) - height / 2,
                 width / 2, height / 2, width, height, 1f, 1f, -unit.heading.toFloat())
         }

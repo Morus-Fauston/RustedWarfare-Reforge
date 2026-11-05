@@ -1,6 +1,9 @@
 package com.rustedwarfare.reforge.client
 
 import com.rustedwarfare.reforge.core.sim.*
+import com.rustedwarfare.reforge.core.content.MovementType
+import com.rustedwarfare.reforge.core.content.foundationMovementType
+import com.rustedwarfare.reforge.core.content.waterBlocked
 import java.util.UUID
 import java.nio.file.Path
 
@@ -209,7 +212,9 @@ class SandboxSession(scenario: Scenario, private val evidence: ClientEvidence = 
             val tile = gid - tileset.firstGid
             if (building.requiresResourcePool) {
                 if (tile !in tileset.resourcePoolTileIds) blocked = true
-            } else if (tile in tileset.blockedTileIds || tile in tileset.resourcePoolTileIds) blocked = true
+            } else if (tile in tileset.resourcePoolTileIds ||
+                if (definition.foundationMovementType == MovementType.WATER) map.tileSets.waterBlocked(gid)
+                else tile in tileset.blockedTileIds || tile in tileset.waterTileIds) blocked = true
         }
         if (observation.units.any { unit -> unit.alive && scenario.unitDefinitions.getValue(unit.typeId).building?.let {
                 cells(unit.position, it).any { cell -> cell in candidate }
@@ -297,6 +302,9 @@ class SandboxSession(scenario: Scenario, private val evidence: ClientEvidence = 
             dispatch { actor -> AttackAction("click-${++actionNumber}", "p1", actor, target.unitId, context.world) }
         else move(position)
     }
+    /** Host-authorized sound parameters only; player truth is never read by a playback backend. */
+    fun consumeSounds(listener: SoundListener): AuthorizedSoundBatch = context.consumeSounds(context.world, "p1", listener)
+
     fun tick() {
         context.advance(Step(nextStep, 1.0, "sim-tick"))
         nextStep++
@@ -331,7 +339,7 @@ class SandboxSession(scenario: Scenario, private val evidence: ClientEvidence = 
         val left = minOf(start.x, end.x); val right = maxOf(start.x, end.x)
         val top = minOf(start.y, end.y); val bottom = maxOf(start.y, end.y)
         val candidates = observation.units.filter { controllable(it) &&
-            it.position.x in left..right && it.position.y in top..bottom }
+            it.displayedBodyPosition().let { center -> center.x in left..right && center.y in top..bottom } }
         val mobile = candidates.filter { scenario.unitDefinitions.getValue(it.typeId).movement.type !=
             com.rustedwarfare.reforge.core.content.MovementType.NONE }
         val accepted = (mobile.ifEmpty { candidates }).sortedBy { it.unitId }.mapNotNull { unit ->
@@ -349,8 +357,9 @@ class SandboxSession(scenario: Scenario, private val evidence: ClientEvidence = 
     private fun unitAt(position: Position): String? = observation.units.asSequence()
         .filter { it.alive }
         .map { unit ->
-            val dx = unit.position.x - position.x
-            val dy = unit.position.y - position.y
+            val center = unit.displayedBodyPosition()
+            val dx = center.x - position.x
+            val dy = center.y - position.y
             unit to (dx * dx + dy * dy)
         }
         .filter { (unit, distance) ->

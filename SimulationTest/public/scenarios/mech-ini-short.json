@@ -1,0 +1,179 @@
+{
+  "schemaVersion": 1,
+  "kind": "scenario",
+  "scenarioId": "public.mech-ini-short.v1",
+  "content": {
+    "map": {
+      "id": "map",
+      "path": "../inputs/mech-production/ini/maps/p001-controlled.tmx",
+      "sha256": "4b4ca42e2cb8b7a58170244541bf240418e789d27158c86b8f7c43d5066cf067"
+    },
+    "unitVariants": [
+      {
+        "id": "mechGun",
+        "path": "../inputs/mech-production/ini/package/units/mech.ini",
+        "sha256": "9b5c4b473c8f3ce5c744c8ed94843ac3222d9d1c28e965ba5bc3c5c383858477",
+        "loader": "mech"
+      }
+    ],
+    "dependencies": [
+      {
+        "id": "dep0",
+        "path": "../inputs/mech-production/ini/package/units/body.png",
+        "sha256": "07d1b87466e2b51b5800452a5ad32cce939e5f17dabfd793cb2f0f05f7b07c07"
+      },
+      {
+        "id": "dep1",
+        "path": "../inputs/mech-production/ini/package/units/foot.png",
+        "sha256": "aa467f0cf16491a8ee42e826459d42f141dbe0dbde0ac4063d84cdad163775e7"
+      },
+      {
+        "id": "dep2",
+        "path": "../inputs/mech-production/ini/package/units/leg.png",
+        "sha256": "4ec9be2fef0a297abe341f3dbd5201dd66c5454a0bb190cc1dd4a5d2252c5819"
+      },
+      {
+        "id": "dep3",
+        "path": "../inputs/mech-production/ini/assets/terrain.png",
+        "sha256": "1b47e4821cdbfc66460f690322cf641afc1fc782a3ed6985df8b9e773ed98ff0"
+      }
+    ]
+  },
+  "coordinateModel": {
+    "id": "public.coordinate.v1",
+    "space": "2d",
+    "xAxis": "x-right",
+    "yAxis": "y-down",
+    "origin": "top-left",
+    "unit": "world-unit",
+    "valueType": "double",
+    "precision": "ieee754-binary64"
+  },
+  "timeModel": {
+    "id": "public.time.v1",
+    "deltaUnit": "sim-tick",
+    "stepRule": "fixed-explicit-delta",
+    "precision": "ieee754-binary64"
+  },
+  "angleUnit": "degree-clockwise-zero-up",
+  "movementContract": {
+    "pathPointRadius": 16,
+    "targetRadius": 4
+  },
+  "players": [
+    {
+      "playerId": "p1",
+      "control": "local"
+    },
+    {
+      "playerId": "p2",
+      "control": "none"
+    }
+  ],
+  "units": [
+    {
+      "unitId": "a",
+      "owner": "p1",
+      "type": "mechGun",
+      "position": {
+        "x": 110,
+        "y": 210
+      },
+      "heading": 90
+    }
+  ],
+  "actions": [
+    {
+      "actionId": "move",
+      "atStep": 0,
+      "actor": "p1",
+      "unitId": "a",
+      "kind": "move",
+      "target": {
+        "x": 250,
+        "y": 210
+      }
+    },
+    {
+      "actionId": "stop",
+      "atStep": 10,
+      "actor": "p1",
+      "unitId": "a",
+      "kind": "stop"
+    }
+  ],
+  "termination": {
+    "kind": "explicit-steps",
+    "required": true,
+    "steps": [
+      {
+        "stepIndex": 0,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 1,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 2,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 3,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 4,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 5,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 6,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 7,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 8,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 9,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 10,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 11,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      }
+    ]
+  },
+  "combatContract": {
+    "worldSeed": 12345,
+    "initialFrameCounter": -1,
+    "unitObjectIds": {
+      "a": 8
+    },
+    "nextObjectId": 9
+  }
+}

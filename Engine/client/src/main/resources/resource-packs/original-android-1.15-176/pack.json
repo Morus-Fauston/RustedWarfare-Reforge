@@ -1,0 +1,8 @@
+{
+  "formatVersion": 1,
+  "requiresResourceFormat": 1,
+  "id": "reforge:original-android-1.15-176",
+  "name": "Original pictures (Android 1.15 / 176)",
+  "description": "Validated pictures from your local original directory.",
+  "icon": "reforge:units/c_tank/body"
+}

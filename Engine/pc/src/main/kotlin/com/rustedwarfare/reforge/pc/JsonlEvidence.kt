@@ -1,7 +1,7 @@
 package com.rustedwarfare.reforge.pc
 
 import com.rustedwarfare.reforge.client.ClientEvidence
-import com.rustedwarfare.reforge.client.ControlledScenario
+import com.rustedwarfare.reforge.client.LoadedSandbox
 import com.rustedwarfare.reforge.client.DiagnosticOutput
 import com.rustedwarfare.reforge.client.DiagnosticWriter
 import com.rustedwarfare.reforge.client.FixedDiagnosticRecord
@@ -18,7 +18,6 @@ class JsonlEvidence internal constructor(private val directory: Path, private va
         { Files.newBufferedWriter(it, StandardOpenOption.CREATE_NEW) })
     private val writer: java.io.BufferedWriter
     private val diagnostics: DiagnosticWriter
-    private var contentRoot = inputs
 
     init {
         Files.createDirectories(directory.parent)
@@ -94,65 +93,104 @@ class JsonlEvidence internal constructor(private val directory: Path, private va
         val fixed = FixedDiagnosticRecord.capture(kind, values,
             mapOf("runId" to runId, "wallTime" to Instant.now().toString()))
         diagnostics.record(fixed, kind != "observation" || fixed.values["phase"] != "step")
-        if (kind == "load-request") contentRoot = Path.of(values.getValue("root") as String).toAbsolutePath().normalize()
-        if (kind == "load-ready") {
-            val scenario = ControlledScenario.load(contentRoot)
-            val combat = scenario.combatContract != null
-            val construction = scenario.scenarioId == "p006-construction"
-            val production = scenario.unitDefinitions.values.any { it.production != null }
-            val turret = scenario.unitDefinitions.containsKey("c_turret_t1")
-            val defense = scenario.unitDefinitions.values.any { it.pointDefense != null }
-            val upgrade = scenario.unitDefinitions.values.any { it.upgrades != null }
-            val fixedManifest = contentRoot.resolve(when {
-                construction -> "construction.properties"
-                scenario.scenarioId == "p005-patrol" -> "patrol.properties"
-                upgrade -> "upgrade.properties"
-                defense -> "point-defense.properties"
-                turret -> "turret.properties"
-                production -> "production.properties"
-                else -> "combat.properties"
-            })
-            val files = if (combat) mutableListOf(contentRoot.resolve("maps/p001-controlled.tmx"),
-                contentRoot.resolve("tilesets/p005-terrain.tsx"), contentRoot.resolve("units/tank.ini"),
-                fixedManifest) else mutableListOf(contentRoot.resolve("maps/p001-controlled.tmx"),
-                contentRoot.resolve("tilesets/p001-ground.tsx"), contentRoot.resolve("tilesets/p001-rock.tsx"),
-                contentRoot.resolve("units/weaponless_tank.ini"))
-            if (construction) {
-                files.add(contentRoot.resolve("units/builder.properties"))
-                files.add(contentRoot.resolve("units/commandCenter.properties"))
-                if (scenario.unitDefinitions.containsKey("landFactory")) files.add(contentRoot.resolve("units/landFactory.properties"))
-                if (scenario.unitDefinitions.containsKey("extractorT1")) files.addAll(listOf(
-                    contentRoot.resolve("units/extractor.ini"), contentRoot.resolve("units/extractor_common.ini")))
-                if (scenario.unitDefinitions.containsKey("fabricatorT1")) files.add(contentRoot.resolve("units/fabricatorT1.ini"))
-                for (type in listOf("extractorT2", "extractorT3", "fabricatorT2", "fabricatorT3")) {
-                    if (scenario.unitDefinitions.containsKey(type)) files.add(contentRoot.resolve("units/$type.ini"))
-                }
-            } else if (production) {
-                files.add(contentRoot.resolve("production.properties"))
-                files.add(contentRoot.resolve("units/landFactory.properties"))
-                for (name in listOf("p005-corridor.tmx", "p005-sealed.tmx")) {
-                    contentRoot.resolve("maps/$name").takeIf { Files.isRegularFile(it) }?.let { files.add(it) }
-                }
+    }
+
+    override fun recordLoadReady(generation: Long, loaded: LoadedSandbox) {
+        val contentRoot = requireNotNull(loaded.inputRoot) { "Loaded input root is required for identity evidence" }
+        val scenario = loaded.scenario
+        val contentPack = loaded.contentPack
+        val parsedSources = loaded.contentSources.associateBy { it.path }
+        val combat = scenario.combatContract != null
+        val construction = scenario.scenarioId == "p006-construction"
+        val production = scenario.unitDefinitions.values.any { it.production != null }
+        val turret = scenario.unitDefinitions.containsKey("c_turret_t1")
+        val defense = scenario.unitDefinitions.values.any { it.pointDefense != null }
+        val upgrade = scenario.unitDefinitions.values.any { it.upgrades != null }
+        val fixedManifest = contentRoot.resolve(when {
+            construction -> "construction.properties"
+            scenario.scenarioId == "p005-patrol" -> "patrol.properties"
+            upgrade -> "upgrade.properties"
+            defense -> "point-defense.properties"
+            turret -> "turret.properties"
+            production -> "production.properties"
+            else -> "combat.properties"
+        })
+        val files = if (contentPack != null) mutableListOf(contentRoot.resolve("maps/p001-controlled.tmx")).apply {
+            addAll(loaded.contentSources.map { it.path })
+        } else if (combat) mutableListOf(contentRoot.resolve("maps/p001-controlled.tmx")).apply {
+            contentRoot.resolve("tilesets/p005-terrain.tsx").takeIf { Files.isRegularFile(it) }?.let { add(it) }
+            addAll(loaded.contentSources.map { it.path })
+            add(fixedManifest)
+        } else mutableListOf(contentRoot.resolve("maps/p001-controlled.tmx"),
+            contentRoot.resolve("tilesets/p001-ground.tsx"), contentRoot.resolve("tilesets/p001-rock.tsx"),
+            contentRoot.resolve("units/weaponless_tank.ini"))
+        fun legacyUnit(relative: String) {
+            val legacy = contentRoot.resolve(relative).toAbsolutePath().normalize()
+            val stem = legacy.fileName.toString().substringBeforeLast('.')
+            val alreadyParsed = parsedSources.keys.any {
+                it.parent == legacy.parent && it.fileName.toString().substringBeforeLast('.') == stem
             }
-            if (turret) files.addAll(listOf(contentRoot.resolve("units/turret_t1.ini"),
-                contentRoot.resolve("units/turret_common_land.ini")))
-            if (scenario.unitDefinitions["c_turret_t1"]?.upgrades != null) files.addAll(listOf(contentRoot.resolve("units/turret_t2_gun.ini"),
-                contentRoot.resolve("units/turret_t1_artillery.ini")))
-            if (defense) files.add(contentRoot.resolve("units/laserDefence.properties"))
-            files += scenario.map.tileSets.map { it.imagePath }
-            files += scenario.unitDefinitions.values.map { it.imagePath }
-            files += scenario.unitDefinitions.values.mapNotNull { it.combat?.turretImagePath }
-            files += scenario.unitDefinitions.values.mapNotNull { it.combat?.deadImagePath }
-            files += scenario.unitDefinitions.values.mapNotNull { it.durability?.deadImagePath }
-            files += scenario.unitDefinitions.values.mapNotNull { it.building?.backImagePath }
-            val manifestFile = contentRoot.resolve("sandbox.properties")
-            val manifest = manifestFile.takeIf { Files.exists(it) }?.let(::identity)
-            if (manifest != null) files.add(manifestFile)
-            record("input-identities", mapOf("generation" to values["generation"],
-                "root" to contentRoot.toString(), "scenarioId" to scenario.scenarioId,
-                "sandboxManifest" to if (combat) identity(fixedManifest) else (manifest ?: identity(manifestFile)),
-                "files" to files.distinct().map(::identity)))
+            if (!alreadyParsed) files.add(legacy)
         }
+        if (construction) {
+            legacyUnit("units/builder.properties")
+            legacyUnit("units/commandCenter.properties")
+            if (scenario.unitDefinitions.containsKey("landFactory")) legacyUnit("units/landFactory.properties")
+            if (scenario.unitDefinitions.containsKey("extractorT1")) {
+                legacyUnit("units/extractor.ini")
+                legacyUnit("units/extractor_common.ini")
+            }
+            if (scenario.unitDefinitions.containsKey("fabricatorT1")) legacyUnit("units/fabricatorT1.ini")
+            for (type in listOf("extractorT2", "extractorT3", "fabricatorT2", "fabricatorT3")) {
+                if (scenario.unitDefinitions.containsKey(type)) legacyUnit("units/$type.ini")
+            }
+        } else if (production) {
+            files.add(contentRoot.resolve("production.properties"))
+            legacyUnit("units/landFactory.properties")
+            for (name in listOf("p005-corridor.tmx", "p005-sealed.tmx")) {
+                contentRoot.resolve("maps/$name").takeIf { Files.isRegularFile(it) }?.let { files.add(it) }
+            }
+        }
+        if (turret) listOf("units/turret_t1.ini", "units/turret_common_land.ini").forEach(::legacyUnit)
+        if (scenario.unitDefinitions["c_turret_t1"]?.upgrades != null)
+            listOf("units/turret_t2_gun.ini", "units/turret_t1_artillery.ini").forEach(::legacyUnit)
+        if (defense) legacyUnit("units/laserDefence.properties")
+        files += scenario.map.tileSets.map { it.imagePath }
+        files += scenario.unitDefinitions.values.map { it.imagePath }
+        files += scenario.unitDefinitions.values.mapNotNull { it.combat?.turretImagePath }
+        files += scenario.unitDefinitions.values.mapNotNull { it.combat?.deadImagePath }
+        files += scenario.unitDefinitions.values.mapNotNull { it.durability?.deadImagePath }
+        files += scenario.unitDefinitions.values.mapNotNull { it.building?.backImagePath }
+        val manifestFile = contentRoot.resolve("sandbox.properties")
+        val manifest = manifestFile.takeIf { contentPack == null && Files.exists(it) }?.let(::identity)
+        if (manifest != null) files.add(manifestFile)
+        val fileIdentities = files.distinct().map { file ->
+            val parsed = parsedSources[file.toAbsolutePath().normalize()]
+            if (parsed == null) identity(file) else mapOf("path" to parsed.path.toString(), "bytes" to parsed.bytes, "sha256" to parsed.sha256)
+        }
+        super<ClientEvidence>.recordLoadReady(generation, loaded)
+        val packageManifest = contentPack?.let { selected ->
+            val source = parsedSources.getValue(selected.pack.manifest)
+            mapOf("path" to source.path.toString(), "bytes" to source.bytes, "sha256" to source.sha256)
+        }
+        val contentSet = contentPack?.content?.let { content ->
+            val packages = content.packages.associateBy { it.id }
+            fun loadedIdentity(path: Path): Map<String, Any?> {
+                val source = parsedSources.getValue(path)
+                return mapOf("path" to source.path.toString(), "bytes" to source.bytes, "sha256" to source.sha256)
+            }
+            mapOf("packages" to content.packages.map { pack -> mapOf("id" to pack.id, "name" to pack.name,
+                "root" to pack.root.toString(), "manifest" to loadedIdentity(pack.manifest), "dependencies" to pack.dependencies) },
+                "units" to content.provenance.mapValues { (_, origin) -> mapOf("packageId" to origin.packageId,
+                    "manifest" to loadedIdentity(packages.getValue(origin.packageId).manifest),
+                    "entryPath" to origin.entryPath.toString(), "replacedPackageIds" to origin.replacedPackageIds) })
+        }
+        record("input-identities", mapOf("generation" to generation,
+            "root" to contentRoot.toString(), "scenarioId" to scenario.scenarioId,
+            "sandboxManifest" to (packageManifest ?: if (combat) identity(fixedManifest) else (manifest ?: identity(manifestFile))),
+            "files" to fileIdentities) + (contentPack?.let { selected -> mapOf("contentPack" to mapOf(
+                "id" to selected.pack.id, "name" to selected.pack.name, "unitId" to selected.unitId,
+                "root" to selected.pack.root.toString(), "manifest" to packageManifest), "contentSet" to contentSet) } ?: emptyMap()))
     }
 
     override fun close() { diagnostics.close() }

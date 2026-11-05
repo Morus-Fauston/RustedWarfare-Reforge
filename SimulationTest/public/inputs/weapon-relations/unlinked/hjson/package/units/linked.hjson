@@ -1,0 +1,31 @@
+// Owned link/order/control representative.
+{
+  format: "rw-reforge.unit.v1",
+  copyFrom: [
+    "base.ini"
+  ],
+  core: {
+    name: "linked_tank"
+  },
+  weapons: [
+    {
+      name: "leader",
+      x: -12,
+      limitingMinRange: 300,
+      delay: 30,
+      copyFromSections: [
+        "template_gun"
+      ]
+    },
+    {
+      name: "follower",
+      x: 12,
+      limitingRange: 300,
+      warmup: 3,
+      copyFromSections: [
+        "template_gun"
+      ],
+      delay: 9000
+    }
+  ]
+}

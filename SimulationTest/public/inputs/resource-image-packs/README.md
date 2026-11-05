@@ -1,0 +1,3 @@
+ENG-P008-007 self-authored fixtures. The sandbox/package input is copied byte-for-byte from the existing public content-pack-sandboxes/json fixture. New RGBA PNGs are deterministic geometric patterns authored for this repository, with no original-game assets. Images preserve 20x20 logical frames: body 3 frames at 2x, blue turret 1 frame at 3x, terrain at 2x. Resource order is high to low; imported packages are not automatically enabled by the application. JSON syntax in .hjson is deliberately valid Hjson.
+
+Demo body overrides use the existing 32x32/1 logical frame at 2x. The blue turret is a narrow barrel with a rear mounting block, so body priority remains visible beneath it. These patterns are visual test inputs, not original-game artwork.

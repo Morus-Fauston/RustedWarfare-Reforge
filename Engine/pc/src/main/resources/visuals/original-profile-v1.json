@@ -1,0 +1,1050 @@
+{
+  "schemaVersion": 1,
+  "profileId": "rw.android.1.15.176.visual.v1",
+  "identity": {
+    "package": "com.corrodinggames.rts",
+    "versionName": "1.15",
+    "versionCode": 176,
+    "manifestPath": "AndroidManifest.xml",
+    "manifestBytes": 9540,
+    "manifestSha256": "815e383faa17ba46dc42ee596b299d14b95da696e604cc21fd97a11bad630251",
+    "scope": "Manifest and listed images only; not full APK verification or distribution permission"
+  },
+  "sources": [
+    {
+      "id": "tank",
+      "path": "assets/units/tanks/tank.png",
+      "bytes": 1158,
+      "sha256": "ba7a15e3d4c8f406ad4f8257716b2355003c0324e935d5633260e2a29944dca3",
+      "width": 48,
+      "height": 30
+    },
+    {
+      "id": "tank-turret",
+      "path": "assets/units/tanks/tank_turret.png",
+      "bytes": 510,
+      "sha256": "b53c5d0e2f1aaa65c1f3807d61c1b63490aadb6f95870dc97e74c541acbb5e2e",
+      "width": 10,
+      "height": 40
+    },
+    {
+      "id": "tank-dead",
+      "path": "assets/units/tanks/tank_dead.png",
+      "bytes": 591,
+      "sha256": "faf77939a30e8076f2a6853c1671ffcde8786914f7c7d33838c561efa719887e",
+      "width": 16,
+      "height": 30
+    },
+    {
+      "id": "builder",
+      "path": "res/drawable/builder.png",
+      "bytes": 371,
+      "sha256": "4aa1e2705b0579f5178add943eade2070feec3c04b626bb75bdbb46253502268",
+      "width": 20,
+      "height": 20
+    },
+    {
+      "id": "builder-dead",
+      "path": "res/drawable/builder_dead.png",
+      "bytes": 308,
+      "sha256": "fea7aa5369de2388053e0c7367beb0f438088b0b1787b3ea019c7161da56e29a",
+      "width": 20,
+      "height": 20
+    },
+    {
+      "id": "center",
+      "path": "res/drawable/base.png",
+      "bytes": 1676,
+      "sha256": "e91b155ee033a529f3b18cb3c13ef816d8ebffe1b141e560c252772f207a55b3",
+      "width": 212,
+      "height": 68
+    },
+    {
+      "id": "center-back",
+      "path": "res/drawable/base_back.png",
+      "bytes": 1697,
+      "sha256": "32f241799aed7da1b3e8a7da768663827648f6855ac0992cab04842f21857817",
+      "width": 53,
+      "height": 68
+    },
+    {
+      "id": "center-dead",
+      "path": "res/drawable/base_dead.png",
+      "bytes": 2009,
+      "sha256": "d1cb6cb6c6cf0c5251813c48e7c4c99c3883cc6388d1ebfbb5121ae35adc8b05",
+      "width": 53,
+      "height": 74
+    },
+    {
+      "id": "factory",
+      "path": "res/drawable/land_factory_front.png",
+      "bytes": 1111,
+      "sha256": "f92068771ac94dcb7a4ca33ff8c8bb2749b4f9ec831d5b7ab8936c63b61ad197",
+      "width": 50,
+      "height": 74
+    },
+    {
+      "id": "factory-back",
+      "path": "res/drawable/land_factory_back.png",
+      "bytes": 1499,
+      "sha256": "0cc201dfeb5f722aed247f0077a0560cca0fe2976e2ec603d795f1d0c6861ee1",
+      "width": 50,
+      "height": 74
+    },
+    {
+      "id": "factory-dead",
+      "path": "res/drawable/land_factory_dead.png",
+      "bytes": 1293,
+      "sha256": "64060d747dc90ea8964964fa849f95fed26537c425a5202d407b4f11770374f5",
+      "width": 50,
+      "height": 69
+    },
+    {
+      "id": "laser",
+      "path": "res/drawable/laser_defence.png",
+      "bytes": 891,
+      "sha256": "d000b02be61c5b0aa64ae216805c1cd8aed83fc24872fcc4e5de5aac67bdfaab",
+      "width": 72,
+      "height": 57
+    },
+    {
+      "id": "laser-dead",
+      "path": "res/drawable/laser_defence_dead.png",
+      "bytes": 902,
+      "sha256": "b499ad5e2be19ece84e284e3a1a04544fefe7f98817649c501afcc1b25315844",
+      "width": 36,
+      "height": 57
+    },
+    {
+      "id": "extractor1",
+      "path": "assets/units/extractor/extractor.png",
+      "bytes": 2924,
+      "sha256": "455955725cdbf5708e2bb82eb4fd8a9ff5f9eba621a1f060b477549a4312146a",
+      "width": 148,
+      "height": 59
+    },
+    {
+      "id": "extractor2",
+      "path": "assets/units/extractor/extractor_t2.png",
+      "bytes": 2994,
+      "sha256": "c6aaa95bbba07476ab80cc9e5a8f605ab0dd7dd021d24f6162b759f0172c5ccb",
+      "width": 148,
+      "height": 59
+    },
+    {
+      "id": "extractor3",
+      "path": "assets/units/extractor/extractor_t3.png",
+      "bytes": 3110,
+      "sha256": "997411ba66c2881f4401de01320407292b13329cc61299f39e25474019c30159",
+      "width": 148,
+      "height": 59
+    },
+    {
+      "id": "extractor-back",
+      "path": "assets/units/extractor/extractor_back.png",
+      "bytes": 550,
+      "sha256": "91af6007c19fe84cf3bcef0ba17aaefd274c1a856894343850c9c2513e33c2c3",
+      "width": 51,
+      "height": 44
+    },
+    {
+      "id": "fabricator1",
+      "path": "assets/units/fabricator/fabricatorT1.png",
+      "bytes": 4033,
+      "sha256": "601a21dda9f4aec025b6de07f73bd96c89d4eb02dc0efc32e383c811b2bf732d",
+      "width": 141,
+      "height": 60
+    },
+    {
+      "id": "fabricator2",
+      "path": "assets/units/fabricator/fabricatorT2.png",
+      "bytes": 4018,
+      "sha256": "cf4821da356bf88c2d815f61663aa67d075a8446dc97da44645adac156622994",
+      "width": 141,
+      "height": 60
+    },
+    {
+      "id": "fabricator3",
+      "path": "assets/units/fabricator/fabricatorT3.png",
+      "bytes": 4038,
+      "sha256": "6410831301af5a2c23f1a1e67ff417bf4fb76e8dcfeea2f390a29c4a637607a8",
+      "width": 141,
+      "height": 60
+    },
+    {
+      "id": "fabricator-dead",
+      "path": "assets/units/fabricator/fabricator_dead.png",
+      "bytes": 2169,
+      "sha256": "ccf0f60261c216b7917f757a194e60dbe2ddae268a01f36c39c282e1192af592",
+      "width": 47,
+      "height": 60
+    },
+    {
+      "id": "turret1",
+      "path": "assets/units/turrets/turret_base.png",
+      "bytes": 981,
+      "sha256": "febec2cde7c9102c3729dae6e7fdd81b718f9e1ec11af68b0f332e4ec2c0b938",
+      "width": 35,
+      "height": 32
+    },
+    {
+      "id": "turret2",
+      "path": "assets/units/turrets/turret_base2.png",
+      "bytes": 1353,
+      "sha256": "96761f1be62dd4f6d462988a4cf286627848f75a2c4ea7bbcc6356d5ecc92b56",
+      "width": 43,
+      "height": 36
+    },
+    {
+      "id": "turret-dead",
+      "path": "assets/units/turrets/turret_base_dead.png",
+      "bytes": 1108,
+      "sha256": "20280a1273c1237760b138f7ab46653fcc641656137362ced044b1ca1f51972e",
+      "width": 35,
+      "height": 42
+    },
+    {
+      "id": "turret-top",
+      "path": "assets/units/turrets/turret_top.png",
+      "bytes": 502,
+      "sha256": "9f8aa25d4e0f3d5a920981d1927439f2f32ec60a363ad751c8a11f640136005f",
+      "width": 12,
+      "height": 46
+    },
+    {
+      "id": "turret-gun",
+      "path": "assets/units/turrets/turret_top_l2.png",
+      "bytes": 569,
+      "sha256": "2ac036cb8bc5096a63029b5aadc6798cf5f4edcb33fac486d7c5f895d2ab490b",
+      "width": 14,
+      "height": 46
+    },
+    {
+      "id": "turret-artillery",
+      "path": "assets/units/turrets/turret_top_artillery.png",
+      "bytes": 669,
+      "sha256": "a24fb4a17079312adfe278ac29a84b87e7a92ea7253b65bc55816a00c69d08fb",
+      "width": 16,
+      "height": 54
+    },
+    {
+      "id": "grass",
+      "path": "assets/tilesets/bitmaps/longgrass.png",
+      "bytes": 22847,
+      "sha256": "a46eac220e3456305d257fd49d5114065610eca71f38c82f70355a618e32ef4f",
+      "width": 100,
+      "height": 200
+    },
+    {
+      "id": "mountain",
+      "path": "assets/tilesets/bitmaps/mountain.png",
+      "bytes": 14082,
+      "sha256": "6697287c91bc5db0b8c885ceba5cc219aeeb777b1d126ea4ba5e8d98ffbdc535",
+      "width": 140,
+      "height": 100
+    },
+    {
+      "id": "misc",
+      "path": "assets/tilesets/bitmaps/misc.png",
+      "bytes": 10556,
+      "sha256": "06a5ada93b09be1bd218b0f77a9a9a538f3aa7877ca547f15320d114496ec1de",
+      "width": 79,
+      "height": 160
+    }
+  ],
+  "unitOutputs": {
+    "tank": {
+      "file": "units/tank.png",
+      "operation": "crop",
+      "source": "tank",
+      "rect": [
+        0,
+        0,
+        16,
+        30
+      ],
+      "target": [
+        16,
+        30
+      ],
+      "frames": 1
+    },
+    "tank-turret": {
+      "file": "units/tank-turret.png",
+      "operation": "crop",
+      "source": "tank-turret",
+      "rect": [
+        0,
+        0,
+        10,
+        40
+      ],
+      "target": [
+        10,
+        40
+      ],
+      "frames": 1
+    },
+    "tank-dead": {
+      "file": "units/tank-dead.png",
+      "operation": "crop",
+      "source": "tank-dead",
+      "rect": [
+        0,
+        0,
+        16,
+        30
+      ],
+      "target": [
+        16,
+        30
+      ],
+      "frames": 1
+    },
+    "builder": {
+      "file": "units/builder.png",
+      "operation": "crop",
+      "source": "builder",
+      "rect": [
+        0,
+        0,
+        20,
+        20
+      ],
+      "target": [
+        20,
+        20
+      ],
+      "frames": 1
+    },
+    "builder-dead": {
+      "file": "units/builder-dead.png",
+      "operation": "crop",
+      "source": "builder-dead",
+      "rect": [
+        0,
+        0,
+        20,
+        20
+      ],
+      "target": [
+        20,
+        20
+      ],
+      "frames": 1
+    },
+    "center": {
+      "file": "units/center.png",
+      "operation": "crop",
+      "source": "center",
+      "rect": [
+        0,
+        0,
+        53,
+        68
+      ],
+      "target": [
+        53,
+        68
+      ],
+      "frames": 1
+    },
+    "center-back": {
+      "file": "units/center-back.png",
+      "operation": "crop",
+      "source": "center-back",
+      "rect": [
+        0,
+        0,
+        53,
+        68
+      ],
+      "target": [
+        53,
+        68
+      ],
+      "frames": 1
+    },
+    "center-dead": {
+      "file": "units/center-dead.png",
+      "operation": "crop",
+      "source": "center-dead",
+      "rect": [
+        0,
+        0,
+        53,
+        74
+      ],
+      "target": [
+        53,
+        74
+      ],
+      "frames": 1
+    },
+    "factory": {
+      "file": "units/factory.png",
+      "operation": "crop",
+      "source": "factory",
+      "rect": [
+        0,
+        0,
+        50,
+        74
+      ],
+      "target": [
+        50,
+        74
+      ],
+      "frames": 1
+    },
+    "factory-back": {
+      "file": "units/factory-back.png",
+      "operation": "crop",
+      "source": "factory-back",
+      "rect": [
+        0,
+        0,
+        50,
+        74
+      ],
+      "target": [
+        50,
+        74
+      ],
+      "frames": 1
+    },
+    "factory-dead": {
+      "file": "units/factory-dead.png",
+      "operation": "crop",
+      "source": "factory-dead",
+      "rect": [
+        0,
+        0,
+        50,
+        69
+      ],
+      "target": [
+        50,
+        69
+      ],
+      "frames": 1
+    },
+    "laser": {
+      "file": "units/laser.png",
+      "operation": "crop",
+      "source": "laser",
+      "rect": [
+        0,
+        0,
+        36,
+        57
+      ],
+      "target": [
+        36,
+        57
+      ],
+      "frames": 1
+    },
+    "laser-dead": {
+      "file": "units/laser-dead.png",
+      "operation": "crop",
+      "source": "laser-dead",
+      "rect": [
+        0,
+        0,
+        36,
+        57
+      ],
+      "target": [
+        36,
+        57
+      ],
+      "frames": 1
+    },
+    "extractor1": {
+      "file": "units/extractor1.png",
+      "operation": "crop",
+      "source": "extractor1",
+      "rect": [
+        0,
+        0,
+        37,
+        59
+      ],
+      "target": [
+        37,
+        59
+      ],
+      "frames": 1
+    },
+    "extractor2": {
+      "file": "units/extractor2.png",
+      "operation": "crop",
+      "source": "extractor2",
+      "rect": [
+        0,
+        0,
+        37,
+        59
+      ],
+      "target": [
+        37,
+        59
+      ],
+      "frames": 1
+    },
+    "extractor3": {
+      "file": "units/extractor3.png",
+      "operation": "crop",
+      "source": "extractor3",
+      "rect": [
+        0,
+        0,
+        37,
+        59
+      ],
+      "target": [
+        37,
+        59
+      ],
+      "frames": 1
+    },
+    "extractor-back": {
+      "file": "units/extractor-back.png",
+      "operation": "crop",
+      "source": "extractor-back",
+      "rect": [
+        0,
+        0,
+        51,
+        44
+      ],
+      "target": [
+        51,
+        44
+      ],
+      "frames": 1
+    },
+    "fabricator1": {
+      "file": "units/fabricator1.png",
+      "operation": "crop",
+      "source": "fabricator1",
+      "rect": [
+        0,
+        0,
+        47,
+        60
+      ],
+      "target": [
+        47,
+        60
+      ],
+      "frames": 1
+    },
+    "fabricator2": {
+      "file": "units/fabricator2.png",
+      "operation": "crop",
+      "source": "fabricator2",
+      "rect": [
+        0,
+        0,
+        47,
+        60
+      ],
+      "target": [
+        47,
+        60
+      ],
+      "frames": 1
+    },
+    "fabricator3": {
+      "file": "units/fabricator3.png",
+      "operation": "crop",
+      "source": "fabricator3",
+      "rect": [
+        0,
+        0,
+        47,
+        60
+      ],
+      "target": [
+        47,
+        60
+      ],
+      "frames": 1
+    },
+    "fabricator-dead": {
+      "file": "units/fabricator-dead.png",
+      "operation": "crop",
+      "source": "fabricator-dead",
+      "rect": [
+        0,
+        0,
+        47,
+        60
+      ],
+      "target": [
+        47,
+        60
+      ],
+      "frames": 1
+    },
+    "turret1": {
+      "file": "units/turret1.png",
+      "operation": "crop",
+      "source": "turret1",
+      "rect": [
+        0,
+        0,
+        35,
+        32
+      ],
+      "target": [
+        35,
+        32
+      ],
+      "frames": 1
+    },
+    "turret2": {
+      "file": "units/turret2.png",
+      "operation": "crop",
+      "source": "turret2",
+      "rect": [
+        0,
+        0,
+        43,
+        36
+      ],
+      "target": [
+        43,
+        36
+      ],
+      "frames": 1
+    },
+    "turret-dead": {
+      "file": "units/turret-dead.png",
+      "operation": "crop",
+      "source": "turret-dead",
+      "rect": [
+        0,
+        0,
+        35,
+        42
+      ],
+      "target": [
+        35,
+        42
+      ],
+      "frames": 1
+    },
+    "turret-top": {
+      "file": "units/turret-top.png",
+      "operation": "crop",
+      "source": "turret-top",
+      "rect": [
+        0,
+        0,
+        12,
+        46
+      ],
+      "target": [
+        12,
+        46
+      ],
+      "frames": 1
+    },
+    "turret-gun": {
+      "file": "units/turret-gun.png",
+      "operation": "crop",
+      "source": "turret-gun",
+      "rect": [
+        0,
+        0,
+        14,
+        46
+      ],
+      "target": [
+        14,
+        46
+      ],
+      "frames": 1
+    },
+    "turret-artillery": {
+      "file": "units/turret-artillery.png",
+      "operation": "crop",
+      "source": "turret-artillery",
+      "rect": [
+        0,
+        0,
+        16,
+        54
+      ],
+      "target": [
+        16,
+        54
+      ],
+      "frames": 1
+    }
+  },
+  "unitBindings": {
+    "c_tank": {
+      "body": "tank",
+      "turret": "tank-turret",
+      "dead": "tank-dead"
+    },
+    "demo_tank": {
+      "body": "tank"
+    },
+    "builder": {
+      "body": "builder",
+      "dead": "builder-dead"
+    },
+    "commandCenter": {
+      "body": "center",
+      "back": "center-back",
+      "dead": "center-dead"
+    },
+    "landFactory": {
+      "body": "factory",
+      "back": "factory-back",
+      "dead": "factory-dead"
+    },
+    "laserDefence": {
+      "body": "laser",
+      "dead": "laser-dead"
+    },
+    "tank": {
+      "body": "tank"
+    },
+    "extractorT1": {
+      "body": "extractor1",
+      "back": "extractor-back"
+    },
+    "fabricatorT1": {
+      "body": "fabricator1",
+      "dead": "fabricator-dead"
+    },
+    "extractorT2": {
+      "body": "extractor2",
+      "back": "extractor-back"
+    },
+    "fabricatorT2": {
+      "body": "fabricator2",
+      "dead": "fabricator-dead"
+    },
+    "extractorT3": {
+      "body": "extractor3",
+      "back": "extractor-back"
+    },
+    "fabricatorT3": {
+      "body": "fabricator3",
+      "dead": "fabricator-dead"
+    },
+    "c_turret_t1": {
+      "body": "turret1",
+      "turret": "turret-top",
+      "dead": "turret-dead"
+    },
+    "c_turret_t2_gun": {
+      "body": "turret2",
+      "turret": "turret-gun",
+      "dead": "turret-dead"
+    },
+    "c_turret_t1_artillery": {
+      "body": "turret2",
+      "turret": "turret-artillery",
+      "dead": "turret-dead"
+    }
+  },
+  "terrainOutputs": {
+    "controlled-ground-40": {
+      "file": "terrain/controlled-ground-40.png",
+      "operation": "crop",
+      "source": "grass",
+      "rect": [
+        0,
+        0,
+        100,
+        160
+      ],
+      "target": [
+        100,
+        160
+      ],
+      "layout": {
+        "tileWidth": 20,
+        "tileHeight": 20,
+        "columns": 5,
+        "tileCount": 40
+      }
+    },
+    "controlled-rock-35": {
+      "file": "terrain/controlled-rock-35.png",
+      "operation": "crop",
+      "source": "mountain",
+      "rect": [
+        0,
+        0,
+        140,
+        100
+      ],
+      "target": [
+        140,
+        100
+      ],
+      "layout": {
+        "tileWidth": 20,
+        "tileHeight": 20,
+        "columns": 7,
+        "tileCount": 35
+      }
+    },
+    "construction-strip-5": {
+      "file": "terrain/construction-strip-5.png",
+      "operation": "compose-strip",
+      "target": [
+        100,
+        20
+      ],
+      "cells": [
+        {
+          "source": "grass",
+          "rect": [
+            0,
+            0,
+            20,
+            20
+          ],
+          "target": [
+            20,
+            20
+          ],
+          "filter": "nearest"
+        },
+        {
+          "source": "grass",
+          "rect": [
+            0,
+            40,
+            60,
+            40
+          ],
+          "target": [
+            20,
+            20
+          ],
+          "filter": "nearest"
+        },
+        {
+          "source": "mountain",
+          "rect": [
+            0,
+            60,
+            40,
+            40
+          ],
+          "target": [
+            20,
+            20
+          ],
+          "filter": "nearest"
+        },
+        {
+          "source": "grass",
+          "rect": [
+            20,
+            0,
+            20,
+            20
+          ],
+          "target": [
+            20,
+            20
+          ],
+          "filter": "nearest"
+        },
+        {
+          "source": "misc",
+          "rect": [
+            0,
+            0,
+            40,
+            40
+          ],
+          "target": [
+            20,
+            20
+          ],
+          "filter": "nearest"
+        }
+      ],
+      "layout": {
+        "tileWidth": 20,
+        "tileHeight": 20,
+        "columns": 5,
+        "tileCount": 5
+      },
+      "background": {
+        "source": "grass",
+        "rect": [
+          0,
+          0,
+          20,
+          20
+        ],
+        "target": [
+          20,
+          20
+        ],
+        "filter": "nearest"
+      },
+      "blend": "source-over"
+    },
+    "demo-strip-4": {
+      "file": "terrain/demo-strip-4.png",
+      "operation": "compose-strip",
+      "target": [
+        80,
+        20
+      ],
+      "cells": [
+        {
+          "source": "grass",
+          "rect": [
+            0,
+            0,
+            20,
+            20
+          ],
+          "target": [
+            20,
+            20
+          ],
+          "filter": "nearest"
+        },
+        {
+          "source": "grass",
+          "rect": [
+            20,
+            0,
+            20,
+            20
+          ],
+          "target": [
+            20,
+            20
+          ],
+          "filter": "nearest"
+        },
+        {
+          "source": "mountain",
+          "rect": [
+            0,
+            20,
+            20,
+            20
+          ],
+          "target": [
+            20,
+            20
+          ],
+          "filter": "nearest"
+        },
+        {
+          "source": "mountain",
+          "rect": [
+            0,
+            60,
+            40,
+            40
+          ],
+          "target": [
+            20,
+            20
+          ],
+          "filter": "nearest"
+        }
+      ],
+      "layout": {
+        "tileWidth": 20,
+        "tileHeight": 20,
+        "columns": 4,
+        "tileCount": 4
+      },
+      "background": {
+        "source": "grass",
+        "rect": [
+          0,
+          0,
+          20,
+          20
+        ],
+        "target": [
+          20,
+          20
+        ],
+        "filter": "nearest"
+      },
+      "blend": "source-over"
+    },
+    "controlled-strip-2": {
+      "file": "terrain/controlled-strip-2.png",
+      "operation": "compose-strip",
+      "target": [
+        40,
+        20
+      ],
+      "cells": [
+        {
+          "source": "grass",
+          "rect": [
+            0,
+            0,
+            20,
+            20
+          ],
+          "target": [
+            20,
+            20
+          ],
+          "filter": "nearest"
+        },
+        {
+          "source": "grass",
+          "rect": [
+            0,
+            40,
+            60,
+            40
+          ],
+          "target": [
+            20,
+            20
+          ],
+          "filter": "nearest"
+        }
+      ],
+      "layout": {
+        "tileWidth": 20,
+        "tileHeight": 20,
+        "columns": 2,
+        "tileCount": 2
+      },
+      "background": {
+        "source": "grass",
+        "rect": [
+          0,
+          0,
+          20,
+          20
+        ],
+        "target": [
+          20,
+          20
+        ],
+        "filter": "nearest"
+      },
+      "blend": "source-over"
+    }
+  }
+}

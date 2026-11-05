@@ -7,6 +7,7 @@ import os
 from pathlib import Path
 import shutil
 import subprocess
+import struct
 import sys
 import time
 import xml.etree.ElementTree as ET
@@ -21,7 +22,18 @@ class PlatformError(ValueError):
 
 def value_at(sample, path):
     current = sample
-    for part in path.split('.'):
+    parts = path.split('.')
+    if parts[0] == 'weapons':
+        values = sample.get('weapons')
+        if len(parts) < 4 or not isinstance(values, list):
+            raise PlatformError('missing-field', 'Missing weapon observation: '+path)
+        matches = [item for item in values if isinstance(item, dict) and
+                   item.get('unitId') == parts[1] and item.get('weaponName') == parts[2]]
+        if len(matches) != 1:
+            raise PlatformError('missing-field', 'Missing or ambiguous named weapon: '+path)
+        current = matches[0]
+        parts = parts[3:]
+    for part in parts:
         if isinstance(current, list):
             matches = [x for x in current if isinstance(x, dict) and
                        (x.get('unitId') == part or x.get('factoryId') == part)]
@@ -144,11 +156,49 @@ def compare_intent(records, intent, rule, after_sequence, geometry=None):
                 passed = all(value == values[0] for value in values)
             elif operator == 'equals' and 'value' in assertion:
                 passed = all(value == assertion['value'] for value in values)
+            elif operator == 'lessThan' and 'value' in assertion:
+                bound = assertion['value']
+                if type(bound) not in (int, float) or not math.isfinite(bound):
+                    raise PlatformError('input-contract', 'lessThan needs a finite numeric bound', 1)
+                passed = all(type(value) in (int, float) and math.isfinite(value) and value < bound for value in values)
             else:
                 raise PlatformError('input-contract', 'Unknown stable tail assertion', 1)
             if not passed:
                 raise PlatformError('tail-assertion', 'Post-command tail differs: '+assertion['path'], 2)
         judgment['tailSampleSequences'] = [row['sequence'] for row in samples]
+    if 'weaponBirths' in rule:
+        expected = rule['weaponBirths']
+        if (not isinstance(expected, list) or not expected or any(
+                not isinstance(item, dict) or set(item) != {'unitId', 'weaponName', 'targetUnitId', 'minimumOccurrences'} or
+                any(not isinstance(item[key], str) or not item[key] for key in ('unitId', 'weaponName', 'targetUnitId')) or
+                type(item['minimumOccurrences']) is not int or item['minimumOccurrences'] <= 0 for item in expected)):
+            raise PlatformError('input-contract', 'Expected fixed named weapon birth identities and positive counts', 1)
+        identities = [(item['unitId'], item['weaponName'], item['targetUnitId']) for item in expected]
+        if len(set(identities)) != len(identities):
+            raise PlatformError('input-contract', 'Duplicate named weapon birth expectation', 1)
+        births = []
+        for row in records:
+            if row.get('kind') != 'observation' or row.get('phase') != 'step' or row['sequence'] <= after['sequence']:
+                continue
+            events = row['sample'].get('projectileEvents')
+            if not isinstance(events, list) or any(not isinstance(event, dict) for event in events):
+                raise PlatformError('missing-field', 'Named firing needs actual projectile event observations')
+            for event in events:
+                if event.get('kind') != 'born':
+                    continue
+                if type(event.get('occurrences')) is not int or event['occurrences'] <= 0:
+                    raise PlatformError('missing-field', 'Birth occurrence count must be a positive integer')
+                births.append((row['sequence'], event))
+        observed = []
+        for item in expected:
+            matching = [(sequence, event) for sequence, event in births if
+                (event.get('sourceUnitId'), event.get('sourceWeaponName'), event.get('targetUnitId')) ==
+                (item['unitId'], item['weaponName'], item['targetUnitId'])]
+            count = sum(event['occurrences'] for _, event in matching)
+            if count < item['minimumOccurrences']:
+                raise PlatformError('weapon-births', 'Missing actual named weapon births: '+item['unitId']+'/'+item['weaponName'], 2)
+            observed.append(dict(item, observedOccurrences=count, sampleSequences=[sequence for sequence, _ in matching]))
+        judgment['weaponBirths'] = observed
     if 'created' in rule:
         expected = rule['created']
         creations = [(row, event) for row in records if row.get('kind') == 'observation' and
@@ -169,6 +219,111 @@ def compare_intent(records, intent, rule, after_sequence, geometry=None):
             raise PlatformError('creation-postcondition', 'New object has a different owner', 2)
         judgment.update(createdUnitId=identity, creationSampleSequence=row['sequence'])
     return judgment
+
+
+def compare_resource_images(records, expectation):
+    fields = {'providerId', 'frameWidth', 'frameHeight', 'totalFrames', 'pixelWidth', 'pixelHeight', 'bound'}
+    if not isinstance(expectation, dict) or set(expectation) != {'packOrder', 'resources'}:
+        raise PlatformError('input-contract', 'Expected fixed resource pack order and image assertions', 1)
+    order, images = expectation['packOrder'], expectation['resources']
+    if (not isinstance(order, list) or not order or any(not isinstance(item, str) or not item for item in order) or
+            len(set(order)) != len(order) or order[-1] != 'reforge:base' or not isinstance(images, dict) or not images):
+        raise PlatformError('input-contract', 'Expected nonempty unique pack order ending in base and image assertions', 1)
+    for address, image in images.items():
+        if (not isinstance(address, str) or not address or not isinstance(image, dict) or set(image) != fields or
+                image['providerId'] not in order or type(image['bound']) is not bool or
+                any(type(image[key]) is not int or image[key] <= 0 for key in fields - {'providerId', 'bound'})):
+            raise PlatformError('input-contract', 'Invalid fixed resource image assertion: '+str(address), 1)
+    ready = [row for row in records if row.get('kind') == 'visual-assets-ready']
+    if len(ready) != 1 or not isinstance(ready[0].get('resourceStack'), dict):
+        raise PlatformError('resource-preparation', 'Expected exactly one prepared resource stack')
+    stack = ready[0]['resourceStack']
+    if stack.get('packOrder') != order or not isinstance(stack.get('resources'), dict):
+        raise PlatformError('resource-order', 'Prepared priority differs from the fixed contract', 2)
+    for address, expected in images.items():
+        actual = stack['resources'].get(address)
+        if not isinstance(actual, dict) or any(type(actual.get(key)) is not type(value) or actual.get(key) != value for key, value in expected.items()):
+            raise PlatformError('resource-image', 'Prepared provider or layout differs: '+address, 2)
+    return dict(packOrder=order, checkedResources=len(images), boundary='Prepared bindings; no GL or original-game equivalence claim')
+
+
+def compare_resource_sounds(records, expected):
+    legacy = isinstance(expected, dict) and set(expected) == {'eventId', 'resourceId', 'providerId', 'minimumRequests'}
+    weighted = isinstance(expected, dict) and set(expected) == {'eventId', 'events', 'minimumRequests'}
+    if (not (legacy or weighted) or not isinstance(expected.get('eventId'), str) or not expected['eventId'] or
+            type(expected.get('minimumRequests')) is not int or not 1 <= expected['minimumRequests'] <= 600):
+        raise PlatformError('input-contract', 'Expected fixed sound mappings and bounded minimum requests', 1)
+    if legacy:
+        if any(not isinstance(expected[key], str) or not expected[key] for key in ('resourceId', 'providerId')):
+            raise PlatformError('input-contract', 'Invalid single sound mapping', 1)
+        permitted = {expected['resourceId']}
+    else:
+        tables = expected['events']
+        if not isinstance(tables, dict) or expected['eventId'] not in tables:
+            raise PlatformError('input-contract', 'Missing weighted event contract', 1)
+        for event_id, table in tables.items():
+            if (not isinstance(event_id, str) or not event_id or not isinstance(table, dict) or
+                    set(table) != {'providerId', 'totalWeight', 'candidates'} or
+                    not isinstance(table['providerId'], str) or not table['providerId'] or
+                    type(table['totalWeight']) is not int or not 0 < table['totalWeight'] <= 9223372036854775807 or
+                    not isinstance(table['candidates'], list) or not table['candidates']):
+                raise PlatformError('input-contract', 'Invalid weighted table contract', 1)
+            for candidate in table['candidates']:
+                if (not isinstance(candidate, dict) or set(candidate) != {'sound', 'weight', 'providerId'} or
+                        any(not isinstance(candidate[key], str) or not candidate[key] for key in ('sound', 'providerId')) or
+                        type(candidate['weight']) is not int or not 1 <= candidate['weight'] <= 2147483647):
+                    raise PlatformError('input-contract', 'Invalid weighted candidate contract', 1)
+            if sum(candidate['weight'] for candidate in table['candidates']) != table['totalWeight']:
+                raise PlatformError('input-contract', 'Inconsistent weighted contract total', 1)
+        permitted = {candidate['sound'] for candidate in tables[expected['eventId']]['candidates']}
+    ready = [row for row in records if row.get('kind') == 'visual-assets-ready']
+    backend = [row for row in records if row.get('kind') == 'sound-backend-ready']
+    if (len(ready) != 1 or not isinstance(ready[0].get('soundStack'), dict) or len(backend) != 1 or
+            backend[0].get('backend') != 'device-free'):
+        raise PlatformError('sound-preparation', 'Expected one sound stack and explicit device-free backend')
+    stack = ready[0]['soundStack']
+    resources = stack.get('resources', {})
+    if legacy:
+        mapping = stack.get('events', {}).get(expected['eventId'])
+        if (not isinstance(mapping, dict) or mapping.get('sound') != expected['resourceId'] or
+                mapping.get('providerId') != expected['providerId']):
+            raise PlatformError('sound-mapping', 'Sound mapping differs from the fixed contract', 2)
+    else:
+        for event_id, table in tables.items():
+            mapping = stack.get('events', {}).get(event_id)
+            if (not isinstance(mapping, dict) or any(mapping.get(key) != value for key, value in table.items()) or
+                    type(mapping.get('totalWeight')) is not int or any(
+                        type(candidate.get('weight')) is not int for candidate in mapping.get('candidates', []))):
+                raise PlatformError('sound-mapping', 'Weighted event table differs: '+event_id, 2)
+            if any(not isinstance(resources.get(candidate['sound']), dict) for candidate in table['candidates']):
+                raise PlatformError('sound-mapping', 'Weighted table contains an unbound candidate', 2)
+    if any(not isinstance(resources.get(address), dict) for address in permitted):
+        raise PlatformError('sound-mapping', 'Sound resource is not bound', 2)
+    requests = [row for row in records if row.get('kind') == 'sound-play-requested']
+    if (len(requests) < expected['minimumRequests'] or
+            any(row.get('kind') == 'sound-play-failed' for row in records)):
+        raise PlatformError('sound-output', 'Missing authorized playback request or backend failure', 2)
+    frames = set()
+    allowed = {'sequence', 'kind', 'eventId', 'resourceId', 'path', 'sha256', 'volume', 'pitch', 'pan',
+               'step', 'serial', 'frame', 'voice'}
+    for row in requests:
+        resource = resources.get(row.get('resourceId'), {})
+        if (set(row) - allowed or row.get('eventId') != expected['eventId'] or row.get('resourceId') not in permitted or
+                any(row.get(key) != resource.get(key) or not isinstance(row.get(key), str) for key in ('path', 'sha256')) or
+                any(type(row.get(key)) not in (float, int) for key in ('volume', 'pitch', 'pan')) or
+                not 0 < row['volume'] <= struct.unpack('!f', struct.pack('!f', .3))[0] or
+                not struct.unpack('!f', struct.pack('!f', .93))[0] <= row['pitch'] <= struct.unpack('!f', struct.pack('!f', 1.07))[0] or row['pan'] != 0 or
+                any(type(row.get(key)) is not int or row[key] < 0 for key in ('step', 'serial', 'frame', 'voice'))):
+            raise PlatformError('sound-request', 'Unbound, unauthorized or invalid sound request', 2)
+        identity = (row['frame'], row['path'])
+        if identity in frames:
+            raise PlatformError('sound-deduplication', 'One sound object was requested twice in the same outer frame', 2)
+        frames.add(identity)
+    result = dict(requests=len(requests), eventId=expected['eventId'],
+                  selectedResources=sorted({row['resourceId'] for row in requests}),
+                  boundary='Device-free requests only; finite choices do not establish distribution or device output')
+    if legacy: result['resourceId'] = expected['resourceId']
+    return result
 
 
 def compare_run(records, plan, contract, anchors, geometry=None):
@@ -232,7 +387,12 @@ def compare_run(records, plan, contract, anchors, geometry=None):
     if ({row['sequence'] for row in actions} != {j['actionSequence'] for j in judgments} or
             len({j['actionId'] for j in judgments}) != len(judgments)):
         raise PlatformError('action-identity', 'Unclaimed or reused formal actions')
-    return dict(exitCode=0, status='passed', scenarioId=plan['scenarioId'], judgments=judgments)
+    result = dict(exitCode=0, status='passed', scenarioId=plan['scenarioId'], judgments=judgments)
+    if 'resourcePacks' in plan or 'resourceImages' in contract:
+        result['resourceImages'] = compare_resource_images(records, contract.get('resourceImages'))
+    if 'resourceSounds' in contract:
+        result['resourceSounds'] = compare_resource_sounds(records, contract['resourceSounds'])
+    return result
 
 
 def sha(path):
@@ -334,7 +494,7 @@ def run_session(scenario, contract, distribution, output, java='java', timeout=6
     inputs = (scenario.parent / plan['inputs']).resolve()
     expected_inputs = tree(inputs)
     jars = sorted((distribution / 'lib').glob('*.jar'))
-    if not jars or not expected_inputs or timeout <= 0:
+    if not jars or not expected_inputs or type(timeout) is not int or not 1 <= timeout <= 600:
         raise PlatformError('input-identity', 'Installed adapter, bounded deadline, and input files are required', 1)
     output.mkdir()
     started = time.time()
@@ -347,7 +507,7 @@ def run_session(scenario, contract, distribution, output, java='java', timeout=6
             raise PlatformError('input-identity', 'Inputs changed while freezing the run')
         command = [java, '-Xmx512m', '-cp', os.pathsep.join(map(str, jars)),
                    'com.rustedwarfare.reforge.testing.PlatformSessionRunnerKt',
-                   str(output/'inputSnapshot'), str(output/'scenario.json'), str(output/'session')]
+                   str(output/'inputSnapshot'), str(output/'scenario.json'), str(output/'session'), str(timeout)]
         save(output/'manifest.json', dict(backend='session', command=command, timeoutSeconds=timeout,
             scenarioSha256=sha(output/'scenario.json'), contractSha256=sha(output/'contract.json'),
             inputFiles=expected_inputs, packageFiles=[dict(path=p.name, sha256=sha(p)) for p in jars],

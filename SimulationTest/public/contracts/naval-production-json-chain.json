@@ -1,0 +1,153 @@
+{
+  "schemaVersion": 1,
+  "kind": "behavior-contract",
+  "contractId": "public.naval-production-chain.contract.v1",
+  "scope": "self-behavior",
+  "scenarioIds": [
+    "public.naval-production-chain.v1"
+  ],
+  "comparison": {
+    "numberMode": "declared-per-field",
+    "tolerances": {}
+  },
+  "approval": {
+    "status": "tool-fixture-only",
+    "source": "Frozen017 normal builder12000 / sea T1-1000 / T2-2000 / ship-6000. Binary32 work sum independently calculated before collection. Owned self behavior; no original execution or GPU claim."
+  },
+  "exclusions": [
+    "original-compatibility",
+    "platform-input",
+    "performance"
+  ],
+  "constructedUnits": [
+    {
+      "unitId": "constructed:p1:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "buildActionId": "build",
+      "builderId": "a",
+      "owner": "p1",
+      "typeId": "seaFactory",
+      "buildingNonce": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "birthStepIndex": 0
+    }
+  ],
+  "producedUnits": [
+    {
+      "unitId": "produced:p1:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "productionActionId": "produce",
+      "producerId": "constructed:p1:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "owner": "p1",
+      "typeId": "heavyBattleship",
+      "unitNonce": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "birthStepIndex": 6699
+    }
+  ],
+  "convertedUnits": [
+    {
+      "unitId": "constructed:p1:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "upgradeActionId": "upgrade",
+      "sourceTypeId": "seaFactory",
+      "targetTypeId": "seaFactoryT2",
+      "completionStepIndex": 4099
+    }
+  ],
+  "rules": [
+    {
+      "ruleId": "initial",
+      "when": {
+        "phase": "initial",
+        "stepIndex": 0
+      },
+      "assertions": [
+        {
+          "path": "economy.balances.p1",
+          "operator": "equals",
+          "value": 12000
+        }
+      ]
+    },
+    {
+      "ruleId": "build-payment",
+      "when": {
+        "phase": "after-advance",
+        "stepIndex": 0
+      },
+      "assertions": [
+        {
+          "path": "economy.balances.p1",
+          "operator": "equals",
+          "value": 11000
+        }
+      ]
+    },
+    {
+      "ruleId": "t1-ready",
+      "when": {
+        "phase": "after-advance",
+        "stepIndex": 1599
+      },
+      "assertions": [
+        {
+          "path": "units.constructed:p1:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.constructionProgress",
+          "operator": "equals",
+          "value": 1
+        }
+      ]
+    },
+    {
+      "ruleId": "upgrade-payment",
+      "when": {
+        "phase": "after-advance",
+        "stepIndex": 1600
+      },
+      "assertions": [
+        {
+          "path": "economy.balances.p1",
+          "operator": "equals",
+          "value": 9000
+        }
+      ]
+    },
+    {
+      "ruleId": "product-payment",
+      "when": {
+        "phase": "after-advance",
+        "stepIndex": 4200
+      },
+      "assertions": [
+        {
+          "path": "economy.balances.p1",
+          "operator": "equals",
+          "value": 3000
+        }
+      ]
+    },
+    {
+      "ruleId": "final-bank",
+      "when": {
+        "phase": "after-advance",
+        "stepIndex": 8199
+      },
+      "assertions": [
+        {
+          "path": "economy.balances.p1",
+          "operator": "equals",
+          "value": 3000
+        }
+      ]
+    },
+    {
+      "ruleId": "surviving-ship",
+      "when": {
+        "phase": "after-advance",
+        "stepIndex": 8199
+      },
+      "assertions": [
+        {
+          "path": "units.produced:p1:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb.alive",
+          "operator": "equals",
+          "value": true
+        }
+      ]
+    }
+  ]
+}

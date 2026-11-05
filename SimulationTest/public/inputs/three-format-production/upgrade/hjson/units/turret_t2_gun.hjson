@@ -1,0 +1,2 @@
+# formal Hjson, identical schema
+{"format":"rw-reforge.unit.v1","copyFrom":["turret_common_land.hjson"],"core":{"name":"c_turret_t2_gun","overrideAndReplace":"turretT2","dont_load":false,"maxHp":1100},"attack":{"maxAttackRange":185,"shootDelay":20},"weapons":[{"name":"1","barrelX":-3,"barrelOffsetX_onOddShots":6}],"projectiles":[{"name":"1","directDamage":44}]}

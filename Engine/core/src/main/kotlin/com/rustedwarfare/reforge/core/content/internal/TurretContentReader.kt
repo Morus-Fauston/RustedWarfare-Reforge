@@ -39,48 +39,69 @@ internal object TurretContentReader {
         "projectile_1.drawSize", "projectile_1.color", "projectile_1.largeHitEffect", "projectile_1.lightColor",
         "projectile_1.lightCastOnGround")
 
-    fun read(path: Path, enableUpgrades: Boolean = false, enableConstruction: Boolean = false): UnitDefinition {
-        ordinary(path, path, "core", "name")
-        val child = parse(path)
-        fun childIdentity(key: String, expected: String) {
-            val value = child["core"]?.get(key)
-                ?: reject(ContentErrorCode.MISSING_REQUIRED_FIELD, path, "core", key, reason = "Missing turret identity")
-            if (value != expected) reject(ContentErrorCode.UNSUPPORTED_FEATURE, path, "core", key, value, "Unsupported turret identity")
-        }
-        if (child["core"]?.get("dont_load")?.let { it != "false" } == true)
-            reject(ContentErrorCode.UNSUPPORTED_FEATURE, path, "core", "dont_load", reason = "A template cannot be loaded as a unit")
-        val id = child["core"]?.get("name")
-            ?: reject(ContentErrorCode.MISSING_REQUIRED_FIELD, path, "core", "name", reason = "Missing turret identity")
-        val replacement = when (id) {
-            "c_turret_t1" -> "turret"
-            "c_turret_t2_gun" -> "turretT2"
-            "c_turret_t1_artillery" -> "turret_artillery"
-            else -> reject(ContentErrorCode.UNSUPPORTED_FEATURE, path, "core", "name", id, "Unsupported turret identity")
-        }
-        childIdentity("overrideAndReplace", replacement)
-        if (enableUpgrades && id != "c_turret_t1")
-            reject(ContentErrorCode.UNSUPPORTED_FEATURE, path, "core", "name", id, "Only the basic turret can enable first upgrades")
-        if (enableConstruction && id != "c_turret_t1")
-            reject(ContentErrorCode.UNSUPPORTED_FEATURE, path, "core", "name", id, "Only the basic turret can enable construction")
-        val parentName = child["core"]?.get("copyFrom")
-            ?: reject(ContentErrorCode.MISSING_REQUIRED_FIELD, path, "core", "copyFrom", reason = "Missing land template")
-        val parentPath = reference(path, parentName, "core", "copyFrom")
-        if (parentName != "turret_common_land.ini")
-            reject(ContentErrorCode.UNSUPPORTED_FEATURE, path, "core", "copyFrom", parentName, "Only the fixed local template is supported")
-        val parent = parse(parentPath)
-        if (parent["core"]?.containsKey("copyFrom") == true)
-            reject(ContentErrorCode.UNSUPPORTED_FEATURE, parentPath, "core", "copyFrom", reason = "Nested inheritance is unsupported")
-        if (parent["core"]?.get("dont_load") != "true")
-            reject(ContentErrorCode.UNSUPPORTED_FEATURE, parentPath, "core", "dont_load", reason = "Expected a template")
-        val merged = linkedMapOf<String, MutableMap<String, String>>()
-        val origins = mutableMapOf<Pair<String, String>, Path>()
-        for ((file, sections) in listOf(parentPath to parent, path to child)) for ((s, values) in sections) {
-            for ((k, v) in values) {
-                merged.getOrPut(s) { linkedMapOf() }[k] = v
-                origins[s to k] = file
+    private val schema = UnitContentSchema(
+        fields.mapValues { (_, keys) -> keys - setOf("copyFrom", "dont_load") },
+        setOf("price", "buildSpeed", "maxHp", "radius", "displayRadius", "fogOfWarSightRange",
+            "total_frames", "imageScale", "turretImageScale", "turretTurnSpeed", "turretSize", "maxAttackRange",
+            "shootDelay", "x", "y", "turnSpeedAcceleration", "turnSpeedDeceleration", "recoilOffset",
+            "recoilOutTime", "recoilReturnTime", "idleSweepAngle", "idleSweepDelay", "idleSweepSpeed", "turnSpeed",
+            "barrelX", "barrelOffsetX_onOddShots", "directDamage", "life", "speed", "areaDamage", "areaRadius",
+            "targetGroundSpread", "initialUnguidedSpeedHeight", "gravity", "moveSpeed", "moveAccelerationSpeed",
+            "moveDecelerationSpeed", "maxTurnSpeed", "turnAcceleration", "buildingToFootprintOffsetX", "buildingToFootprintOffsetY"),
+        setOf("isBio", "isBuilding", "canAttack", "canAttackFlyingUnits", "canAttackLandUnits",
+            "canAttackUnderwaterUnits", "canShoot", "shouldResetTurret", "targetGround", "dont_load"),
+        setOf("name", "class", "overrideAndReplace", "footprint", "constructionFootprint", "movementType",
+            "image", "image_wreak", "image_turret", "projectile", "convertTo"),
+        dynamicWeapons = false, timeFields = setOf("shootDelay"),
+    )
+
+    private fun documents(path: Path, enableUpgrades: Boolean, enableConstruction: Boolean) = UnitSourceReader(schema,
+        preRead = { file -> ordinary(file, path, "core", if (file == path) "name" else "copyFrom") },
+        inputGuard = { file, input, isRoot ->
+            if (isRoot) {
+                val child = input.sections
+                if (input.templateOnly) reject(ContentErrorCode.UNSUPPORTED_FEATURE, file, "core", "dont_load",
+                    reason = "A template cannot be loaded as a unit")
+                val id = child["core"]?.get("name") ?: reject(ContentErrorCode.MISSING_REQUIRED_FIELD, file,
+                    "core", "name", reason = "Missing turret identity")
+                val replacement = when (id) {
+                    "c_turret_t1" -> "turret"
+                    "c_turret_t2_gun" -> "turretT2"
+                    "c_turret_t1_artillery" -> "turret_artillery"
+                    else -> reject(ContentErrorCode.UNSUPPORTED_FEATURE, file, "core", "name", id, "Unsupported turret identity")
+                }
+                val override = child["core"]?.get("overrideAndReplace") ?: reject(ContentErrorCode.MISSING_REQUIRED_FIELD,
+                    file, "core", "overrideAndReplace", reason = "Missing turret identity")
+                if (override != replacement) reject(ContentErrorCode.UNSUPPORTED_FEATURE, file, "core", "overrideAndReplace",
+                    override, "Unsupported turret identity")
+                if (enableUpgrades && id != "c_turret_t1") reject(ContentErrorCode.UNSUPPORTED_FEATURE, file,
+                    "core", "name", id, "Only the basic turret can enable first upgrades")
+                if (enableConstruction && id != "c_turret_t1") reject(ContentErrorCode.UNSUPPORTED_FEATURE, file,
+                    "core", "name", id, "Only the basic turret can enable construction")
+                if (input.parents.isEmpty()) reject(ContentErrorCode.MISSING_REQUIRED_FIELD, file,
+                    "core", "copyFrom", reason = "Missing land template")
+                if (input.parents.size != 1) reject(ContentErrorCode.UNSUPPORTED_FEATURE, file,
+                    "core", "copyFrom", reason = "Only one fixed local land template is supported")
+                val parent = input.parents.single()
+                reference(file, parent, "core", "copyFrom")
+                if (parent !in setOf("turret_common_land.ini", "turret_common_land.json", "turret_common_land.hjson"))
+                    reject(ContentErrorCode.UNSUPPORTED_FEATURE, file, "core", "copyFrom", parent, "Only the fixed local template is supported")
+            } else {
+                if (input.parents.isNotEmpty()) reject(ContentErrorCode.UNSUPPORTED_FEATURE, file,
+                    "core", "copyFrom", reason = "Nested inheritance is unsupported by the finite turret profile")
+                if (!input.templateOnly) reject(ContentErrorCode.UNSUPPORTED_FEATURE, file,
+                    "core", "dont_load", reason = "Expected a template")
             }
-        }
-        fun origin(s: String, k: String) = origins[s to k] ?: path
+        })
+
+    fun read(path: Path, enableUpgrades: Boolean = false, enableConstruction: Boolean = false): UnitDefinition =
+        readWithSources(path, enableUpgrades, enableConstruction).definition
+
+    fun readWithSources(path: Path, enableUpgrades: Boolean = false, enableConstruction: Boolean = false): LoadedUnitContent =
+        documents(path, enableUpgrades, enableConstruction).load(path) { loaded ->
+        val merged = loaded.values
+        val id = merged.getValue("core").getValue("name")
+        fun origin(s: String, k: String) = loaded.origins[s to k]?.path ?: path
         fun required(s: String, k: String): String =
             requiredContentField(merged[s]?.get(k), origin(s, k), s, k, "Missing turret field")
         fun only(s: String, k: String, expected: String, default: String? = null) {
@@ -218,7 +239,7 @@ internal object TurretContentReader {
         }) else null
         val kept = merged.flatMap { (s, values) -> values.keys.map { "$s.$it" }.filter {
             (it in retained || s == "ai" || s.startsWith("action_upgrade_")) && it !in consumed } }.toSet()
-        return UnitDefinition(id, "CustomUnitMetadata", radius,
+        UnitDefinition(id, "CustomUnitMetadata", radius,
             number("core", "displayRadius", radius, positive = true), integer("graphics", "total_frames", positive = true),
             body, number("graphics", "imageScale", 1.0, positive = true),
             MovementProfile(MovementType.NONE, 0.0, 0.0, 0.0, 0.0, 0.0, false, false), kept,
@@ -226,9 +247,6 @@ internal object TurretContentReader {
             BuildingProfile(shape, anchor = FootprintAnchor(binary32("core", "buildingToFootprintOffsetX"), binary32("core", "buildingToFootprintOffsetY"))),
             upgrades = upgrades, construction = construction)
     }
-
-    private fun parse(path: Path): Map<String, Map<String, String>> =
-        readSectionFields(path, fields, "turret", trimSectionName = true, reportCurrentSection = true)
 
     private fun ordinary(file: Path, source: Path, section: String, field: String) {
         if (!Files.isRegularFile(file, NOFOLLOW_LINKS) || !Files.isReadable(file) ||

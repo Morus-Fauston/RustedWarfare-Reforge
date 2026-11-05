@@ -1,0 +1,42 @@
+{
+  "format": "rw-reforge.unit.v1",
+  "copyFrom": [
+    "base.ini"
+  ],
+  "core": {
+    "name": "mounted_tank"
+  },
+  "weapons": [
+    {
+      "name": "base",
+      "canShoot": false,
+      "limitingMinRange": 300,
+      "delay": 75,
+      "copyFromSections": [
+        "template_gun"
+      ]
+    },
+    {
+      "name": "independent",
+      "x": -18,
+      "attachedTo": "base",
+      "limitingRange": 300,
+      "delay": 30,
+      "warmup": 2,
+      "copyFromSections": [
+        "template_gun"
+      ]
+    },
+    {
+      "name": "slave",
+      "x": 18,
+      "attachedTo": "base",
+      "slave": true,
+      "delay": 45,
+      "warmup": 4,
+      "copyFromSections": [
+        "template_gun"
+      ]
+    }
+  ]
+}

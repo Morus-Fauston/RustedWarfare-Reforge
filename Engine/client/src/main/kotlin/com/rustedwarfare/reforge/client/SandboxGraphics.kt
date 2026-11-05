@@ -21,10 +21,14 @@ class SandboxGraphics private constructor(private val resources: SandboxRenderRe
     private val tiles = mutableMapOf<Int, TextureRegion>()
     private val units = mutableMapOf<String, TextureRegion>()
     private val turrets = mutableMapOf<String, TextureRegion>()
+    private val namedTurrets = mutableMapOf<Pair<String, String>, TextureRegion>()
     private val impacts = mutableMapOf<String, Pair<Position, Long>>()
     private var impactSample: String? = null
     private val corpses = mutableMapOf<String, TextureRegion>()
     private val backs = mutableMapOf<String, TextureRegion>()
+    private val legs = mutableMapOf<String, TextureRegion>()
+    private val feet = mutableMapOf<String, TextureRegion>()
+    private val rotors = mutableMapOf<String, TextureRegion>()
     fun unitIcon(typeId: String): TextureRegion? = units[typeId]
 
     companion object {
@@ -69,9 +73,9 @@ class SandboxGraphics private constructor(private val resources: SandboxRenderRe
         for (definition in resources.tileSets) {
             val texture = texture(definition.imagePath, definition.transparentColor)
             for (index in 0 until definition.tileCount) tiles[definition.firstGid + index] = TextureRegion(texture,
-                definition.margin + index % definition.columns * (definition.tileWidth + definition.spacing),
-                definition.margin + index / definition.columns * (definition.tileHeight + definition.spacing),
-                definition.tileWidth, definition.tileHeight)
+                definition.margin + index % definition.columns * (definition.pixelTileWidth + definition.spacing),
+                definition.margin + index / definition.columns * (definition.pixelTileHeight + definition.spacing),
+                definition.pixelTileWidth, definition.pixelTileHeight)
         }
     }
 
@@ -105,13 +109,20 @@ class SandboxGraphics private constructor(private val resources: SandboxRenderRe
         // Retain the legacy constructor's unspecified-layout behavior for existing callers.
         if (resources.tileSets.all { it.columns > 0 && it.tileCount != Int.MAX_VALUE }) loadParsedTiles()
         else loadLegacyTiles(root)
+        val turretImages = mutableMapOf<Path, TextureRegion>()
+        fun turretRegion(path: Path) = turretImages.getOrPut(path) { TextureRegion(texture(path)) }
         for ((id, definition) in resources.units) {
             val texture = texture(definition.imagePath)
             require(texture.width % definition.totalFrames == 0) { "Invalid unit image frames: ${definition.imagePath}" }
             units[id] = TextureRegion(texture, 0, 0, texture.width / definition.totalFrames, texture.height)
-            definition.turretImagePath?.let { turrets[id] = TextureRegion(texture(it)) }
+            definition.turretImagePath?.let { turrets[id] = turretRegion(it) }
+            for ((name, weapon) in definition.weaponImages)
+                if (!weapon.invisible) weapon.imagePath?.let { namedTurrets[id to name] = turretRegion(it) }
             definition.deadImagePath?.let { corpses[id] = TextureRegion(texture(it)) }
             definition.backImagePath?.let { backs[id] = TextureRegion(texture(it)) }
+            definition.legImagePath?.let { legs[id] = TextureRegion(texture(it)) }
+            definition.footImagePath?.let { feet[id] = TextureRegion(texture(it)) }
+            definition.rotorImagePath?.let { rotors[id] = TextureRegion(texture(it)) }
         }
     }
 
@@ -127,27 +138,75 @@ class SandboxGraphics private constructor(private val resources: SandboxRenderRe
                 (resources.tileWidth * projection.scale).toFloat(), (resources.tileHeight * projection.scale).toFloat())
         }
         batch.color = Color.WHITE
+        val visibleWeapons = frame.observation.weapons.groupBy { it.unitId }
+        val mechFrames = MechPresentation.project(frame.observation, projection, resources).associateBy { it.unitId }
+        val flightFrames = FlightPresentation.project(frame.observation, projection).associateBy { it.unitId }
+        val waterFrames = WaterPresentation.project(frame.observation, projection).associateBy { it.unitId }
         for (unit in frame.observation.units) {
             val definition = resources.units.getValue(unit.typeId)
             if (!definition.isDrawn(unit)) continue
             batch.setColor(1f, 1f, 1f, if (unit.alive && unit.constructionProgress < 1f) .45f else 1f)
+            val mech = mechFrames[unit.unitId]
+            val flight = flightFrames[unit.unitId]
+            val water = waterFrames[unit.unitId]
+            if (unit.alive && unit.flightPose != null && flight == null) continue
+            if (unit.waterPose != null && water == null) continue
+            mech?.legs?.forEach { leg ->
+                val shaft = legs.getValue(unit.typeId)
+                val foot = feet.getValue(unit.typeId)
+                val vertical = leg.shaft
+                if (vertical != null) {
+                    if (vertical.sourceHeight > 0) {
+                        val crop = TextureRegion(shaft)
+                        val span = shaft.v2 - shaft.v
+                        crop.setRegion(shaft.u, shaft.v + span * vertical.sourceY / 68f,
+                            shaft.u2, shaft.v + span * (vertical.sourceY + vertical.sourceHeight) / 68f)
+                        batch.draw(crop, vertical.x - vertical.width / 2, vertical.y - vertical.height / 2,
+                            vertical.width / 2, vertical.height / 2, vertical.width, vertical.height, 1f, 1f, vertical.rotation)
+                    }
+                } else {
+                    val shaftSize = definition.drawSize(UnitImageSlot.LEG, shaft.regionWidth, shaft.regionHeight)
+                    val thickness = (shaftSize.height * projection.scale).toFloat()
+                    batch.draw(shaft, leg.anchorX, leg.anchorY - thickness / 2, 0f, thickness / 2,
+                        leg.length, thickness, 1f, 1f, leg.rotation)
+                }
+                val footSize = definition.drawSize(UnitImageSlot.FOOT, foot.regionWidth, foot.regionHeight)
+                val fw = (footSize.width * projection.scale).toFloat()
+                val fh = (footSize.height * projection.scale).toFloat()
+                batch.draw(foot, leg.footX - fw / 2, leg.footY - fh / 2, fw / 2, fh / 2,
+                    fw, fh, 1f, 1f, leg.footRotation)
+            }
             if (unit.alive) backs[unit.typeId]?.let { back ->
-                val bw = (back.regionWidth * definition.imageScale * projection.scale).toFloat()
-                val bh = (back.regionHeight * definition.imageScale * projection.scale).toFloat()
+                val size = definition.drawSize(UnitImageSlot.BACK, back.regionWidth, back.regionHeight)
+                val bw = (size.width * projection.scale).toFloat()
+                val bh = (size.height * projection.scale).toFloat()
                 batch.draw(back, projection.x(unit.position.x) - bw / 2, projection.y(unit.position.y) - bh / 2,
                     bw / 2, bh / 2, bw, bh, 1f, 1f, -unit.heading.toFloat())
             }
-            val region = if (!unit.alive) corpses[unit.typeId] ?: units.getValue(unit.typeId) else units.getValue(unit.typeId)
-            val w = (region.regionWidth * definition.imageScale * projection.scale).toFloat()
-            val h = (region.regionHeight * definition.imageScale * projection.scale).toFloat()
-            batch.draw(region, projection.x(unit.position.x) - w / 2, projection.y(unit.position.y) - h / 2,
-                w / 2, h / 2, w, h, 1f, 1f, -unit.heading.toFloat())
-            if (unit.alive) turrets[unit.typeId]?.let { turret ->
-                val pivot = definition.turretPosition(unit)
-                val tw = (turret.regionWidth * definition.turretImageScale * projection.scale).toFloat()
-                val th = (turret.regionHeight * definition.turretImageScale * projection.scale).toFloat()
+            val corpse = if (!unit.alive) corpses[unit.typeId] else null
+            val region = corpse ?: units.getValue(unit.typeId)
+            val size = definition.drawSize(if (corpse != null) UnitImageSlot.DEAD else UnitImageSlot.BODY, region.regionWidth, region.regionHeight)
+            val w = (size.width * projection.scale).toFloat()
+            val h = (size.height * projection.scale).toFloat()
+            batch.draw(region, (flight?.bodyX ?: mech?.bodyX ?: water?.bodyX ?: projection.x(unit.position.x)) - w / 2,
+                (flight?.bodyY ?: mech?.bodyY ?: water?.bodyY ?: projection.y(unit.position.y)) - h / 2,
+                w / 2, h / 2, w, h, 1f, 1f, flight?.bodyRotation ?: mech?.rotation ?: water?.bodyRotation ?: -unit.heading.toFloat())
+            flight?.let { pose ->
+                val rotor = rotors.getValue(unit.typeId)
+                val rotorSize = definition.drawSize(UnitImageSlot.ROTOR, rotor.regionWidth, rotor.regionHeight)
+                val rw = (rotorSize.width * projection.scale).toFloat()
+                val rh = (rotorSize.height * projection.scale).toFloat()
+                batch.draw(rotor, pose.rotorX - rw / 2, pose.rotorY - rh / 2, rw / 2, rh / 2,
+                    rw, rh, 1f, 1f, pose.rotorRotation)
+            }
+            for (drawing in definition.turretDrawings(unit, visibleWeapons[unit.unitId].orEmpty())) {
+                val turret = drawing.weaponName?.let { namedTurrets.getValue(unit.typeId to it) } ?: turrets.getValue(unit.typeId)
+                val pivot = drawing.pivot
+                val size = drawing.drawSize(turret.regionWidth, turret.regionHeight)
+                val tw = (size.width * projection.scale).toFloat()
+                val th = (size.height * projection.scale).toFloat()
                 batch.draw(turret, projection.x(pivot.x) - tw / 2, projection.y(pivot.y) - th / 2,
-                    tw / 2, th / 2, tw, th, 1f, 1f, -unit.turretHeading.toFloat())
+                    tw / 2, th / 2, tw, th, 1f, 1f, -drawing.heading.toFloat())
             }
         }
         construction?.let { preview ->
@@ -157,9 +216,11 @@ class SandboxGraphics private constructor(private val resources: SandboxRenderRe
                 PlacementState.BLOCKED -> batch.setColor(1f, .4f, .4f, .5f)
                 PlacementState.UNEXPLORED -> batch.setColor(1f, .85f, .4f, .5f)
             }
-            for (region in listOfNotNull(backs[preview.typeId], units[preview.typeId])) {
-                val w = (region.regionWidth * definition.imageScale * projection.scale).toFloat()
-                val h = (region.regionHeight * definition.imageScale * projection.scale).toFloat()
+            for ((slot, region) in listOf(UnitImageSlot.BACK to backs[preview.typeId], UnitImageSlot.BODY to units[preview.typeId])) {
+                if (region == null) continue
+                val size = definition.drawSize(slot, region.regionWidth, region.regionHeight)
+                val w = (size.width * projection.scale).toFloat()
+                val h = (size.height * projection.scale).toFloat()
                 batch.draw(region, projection.x(preview.position.x) - w / 2f,
                     projection.y(preview.position.y) - h / 2f, w, h)
             }
@@ -175,8 +236,10 @@ class SandboxGraphics private constructor(private val resources: SandboxRenderRe
             if (!resources.units.getValue(unit.typeId).isDrawn(unit)) continue
             shapes.color = if (unit.alive) resources.unitCircleColor(frame.observation.playerId, unit.ownerPlayerId) else Color.DARK_GRAY
             val radius = (resources.units.getValue(unit.typeId).displayRadius * projection.scale).toFloat()
-            val x = projection.x(unit.position.x)
-            val y = projection.y(unit.position.y)
+            val center = unit.displayedBodyPosition()
+            val x = projection.x(center.x)
+            val y = projection.y(center.y)
+            if (!x.isFinite() || !y.isFinite()) continue
             unit.constructionTargetId?.let { targetId ->
                 frame.observation.units.firstOrNull { it.unitId == targetId && it.alive }?.let { target ->
                     shapes.color = if (unit.tasks.firstOrNull()?.kind ==
@@ -308,7 +371,8 @@ class SandboxGraphics private constructor(private val resources: SandboxRenderRe
         owned.forEach { texture ->
             try { texture.dispose() } catch (error: Exception) { if (failure == null) failure = error else failure.addSuppressed(error) }
         }
-        owned.clear(); tiles.clear(); units.clear(); turrets.clear(); corpses.clear(); backs.clear(); impacts.clear()
+        owned.clear(); tiles.clear(); units.clear(); turrets.clear(); namedTurrets.clear(); corpses.clear(); backs.clear()
+        legs.clear(); feet.clear(); impacts.clear()
         failure?.let { throw it }
     }
 }

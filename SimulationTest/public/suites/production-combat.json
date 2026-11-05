@@ -21,6 +21,7 @@
       "com.rustedwarfare.reforge.core.sim.DurabilityContractTest",
       "com.rustedwarfare.reforge.core.sim.FactoryExitTest",
       "com.rustedwarfare.reforge.core.sim.NativeMissileTest",
+      "com.rustedwarfare.reforge.core.sim.NativeBuildingHitTest",
       "com.rustedwarfare.reforge.core.sim.OrdinaryCombatTest",
       "com.rustedwarfare.reforge.core.sim.OrdinaryWeaponContractTest",
       "com.rustedwarfare.reforge.core.sim.PatrolCommandTest",
@@ -45,7 +46,78 @@
       "com.rustedwarfare.reforge.core.sim.UpgradeInitializationTest",
       "com.rustedwarfare.reforge.core.sim.UpgradeTransactionTest",
       "com.rustedwarfare.reforge.core.sim.UpgradeWeaponStateTest",
-      "com.rustedwarfare.reforge.core.sim.OrdinaryUpgradesTest"
+      "com.rustedwarfare.reforge.core.sim.OrdinaryUpgradesTest",
+      "com.rustedwarfare.reforge.core.content.NamedWeaponContentTest",
+      "com.rustedwarfare.reforge.core.sim.NamedWeaponStateTest",
+      "com.rustedwarfare.reforge.core.sim.NamedWeaponTargetTest",
+      "com.rustedwarfare.reforge.core.sim.NamedWeaponWarmupTest",
+      "com.rustedwarfare.reforge.core.sim.NamedWeaponGateTest",
+      "com.rustedwarfare.reforge.core.sim.NamedWeaponMountTest",
+      "com.rustedwarfare.reforge.core.sim.NamedWeaponLinkTest",
+      "com.rustedwarfare.reforge.core.sim.NamedWeaponProjectionTest",
+      "com.rustedwarfare.reforge.core.content.MechContentPackTest",
+      "com.rustedwarfare.reforge.core.content.MechFactoryContentTest",
+      "com.rustedwarfare.reforge.core.content.MechFactoryReferencesTest",
+      "com.rustedwarfare.reforge.core.content.MechInputFailureTest",
+      "com.rustedwarfare.reforge.core.sim.ArmedMechCombatTest",
+      "com.rustedwarfare.reforge.core.sim.MechBodyTest",
+      "com.rustedwarfare.reforge.core.sim.MechFactoryFailureTest",
+      "com.rustedwarfare.reforge.core.sim.MechFactoryDirectHitTest",
+      "com.rustedwarfare.reforge.core.sim.MechFactoryProductionTest",
+      "com.rustedwarfare.reforge.core.sim.MechFactoryProfileTest",
+      "com.rustedwarfare.reforge.core.sim.MechGaitObservationTest",
+      "com.rustedwarfare.reforge.core.sim.MechKnowledgeTest",
+      "com.rustedwarfare.reforge.core.sim.MechLifecycleTest",
+      "com.rustedwarfare.reforge.core.sim.MechMovementTest",
+      "com.rustedwarfare.reforge.core.sim.MechPoseTest",
+      "com.rustedwarfare.reforge.core.sim.MechReverseMovementTest",
+      "com.rustedwarfare.reforge.core.sim.MechThreeFormatBehaviorTest",
+      "com.rustedwarfare.reforge.core.content.HelicopterContentPackTest",
+      "com.rustedwarfare.reforge.core.content.HelicopterContentFailureTest",
+      "com.rustedwarfare.reforge.core.sim.HelicopterSimulationTest",
+      "com.rustedwarfare.reforge.core.sim.HelicopterBehaviorTest",
+      "com.rustedwarfare.reforge.core.sim.HelicopterCombatTest",
+      "com.rustedwarfare.reforge.core.sim.HelicopterFactoryProductionTest",
+      "com.rustedwarfare.reforge.core.sim.HelicopterFactoryFailureTest",
+      "com.rustedwarfare.reforge.core.content.HeavyMechContentPackTest",
+      "com.rustedwarfare.reforge.core.content.HeavyMechFactoryContentTest",
+      "com.rustedwarfare.reforge.core.sim.HeavyMechBodyTest",
+      "com.rustedwarfare.reforge.core.sim.HeavyMechCombatTest",
+      "com.rustedwarfare.reforge.core.sim.HeavyMechFactoryLifecycleTest",
+      "com.rustedwarfare.reforge.core.sim.HeavyMechFactoryUpgradeTest",
+      "com.rustedwarfare.reforge.core.sim.HeavyMechFailureTest",
+      "com.rustedwarfare.reforge.core.sim.HeavyMechGaitTest",
+      "com.rustedwarfare.reforge.core.sim.HeavyMechGroundSafetyTest",
+      "com.rustedwarfare.reforge.core.sim.HeavyMechMovementTest",
+      "com.rustedwarfare.reforge.core.sim.HeavyMechPoseTest",
+      "com.rustedwarfare.reforge.core.sim.HeavyMechProductionTest",
+      "com.rustedwarfare.reforge.core.sim.HeavyMechRetargetBoundaryTest",
+      "com.rustedwarfare.reforge.core.sim.HeavyMechRetargetTest",
+      "com.rustedwarfare.reforge.core.sim.HeavyMechSplashHeightTest",
+      "com.rustedwarfare.reforge.core.sim.HeavyMechSplashTest",
+      "com.rustedwarfare.reforge.core.sim.HeavyMechTransactionTest",
+      "com.rustedwarfare.reforge.core.content.BattleshipContentTest",
+      "com.rustedwarfare.reforge.core.content.NavalBuilderContentTest",
+      "com.rustedwarfare.reforge.core.content.SeaFactoryContentTest",
+      "com.rustedwarfare.reforge.core.content.UnderwaterTargetContentTest",
+      "com.rustedwarfare.reforge.core.content.WaterTerrainContentTest",
+      "com.rustedwarfare.reforge.core.sim.BattleshipAreaTest",
+      "com.rustedwarfare.reforge.core.sim.BattleshipBallisticBoundaryTest",
+      "com.rustedwarfare.reforge.core.sim.BattleshipBallisticFailureTest",
+      "com.rustedwarfare.reforge.core.sim.BattleshipBallisticTest",
+      "com.rustedwarfare.reforge.core.sim.BattleshipCombatTest",
+      "com.rustedwarfare.reforge.core.sim.BattleshipIdleTest",
+      "com.rustedwarfare.reforge.core.sim.BattleshipMovementTest",
+      "com.rustedwarfare.reforge.core.sim.BattleshipSinkingTest",
+      "com.rustedwarfare.reforge.core.sim.BattleshipSoundTest",
+      "com.rustedwarfare.reforge.core.sim.BattleshipTorpedoDefenseTest",
+      "com.rustedwarfare.reforge.core.sim.NavalConstructionChainTest",
+      "com.rustedwarfare.reforge.core.sim.SeaFactoryBirthBoundaryTest",
+      "com.rustedwarfare.reforge.core.sim.SeaFactoryFailureTest",
+      "com.rustedwarfare.reforge.core.sim.SeaFactoryProductionTest",
+      "com.rustedwarfare.reforge.core.sim.SeaFactoryUpgradeTest",
+      "com.rustedwarfare.reforge.core.sim.UnderwaterTargetContractTest",
+      "com.rustedwarfare.reforge.core.sim.WaterMovementTest"
     ],
     "client": [
       "com.rustedwarfare.reforge.client.CombatActorEvidenceTest",
@@ -55,13 +127,55 @@
       "com.rustedwarfare.reforge.client.PatrolScenarioTest",
       "com.rustedwarfare.reforge.client.ProductionCommandEvidenceTest",
       "com.rustedwarfare.reforge.client.ProductionSandboxSessionTest",
-      "com.rustedwarfare.reforge.client.ProjectileEvidencePairingTest"
+      "com.rustedwarfare.reforge.client.ProjectileEvidencePairingTest",
+      "com.rustedwarfare.reforge.client.MechAppearanceTest",
+      "com.rustedwarfare.reforge.client.MechProductionSandboxTest",
+      "com.rustedwarfare.reforge.client.MechProjectionTest",
+      "com.rustedwarfare.reforge.client.MechResourceBindingTest",
+      "com.rustedwarfare.reforge.client.HelicopterSandboxTest",
+      "com.rustedwarfare.reforge.client.HelicopterResourceBindingTest",
+      "com.rustedwarfare.reforge.client.HelicopterProjectionTest",
+      "com.rustedwarfare.reforge.client.HeavyMechAppearanceTest",
+      "com.rustedwarfare.reforge.client.HeavyMechLegDrawingTest",
+      "com.rustedwarfare.reforge.client.HeavyMechNativePanelTest",
+      "com.rustedwarfare.reforge.client.HeavyMechProductionSandboxTest",
+      "com.rustedwarfare.reforge.client.HeavyMechResourceBindingTest",
+      "com.rustedwarfare.reforge.client.NavalEvidenceTest",
+      "com.rustedwarfare.reforge.client.NavalNativePanelTest",
+      "com.rustedwarfare.reforge.client.NavalPlacementTest",
+      "com.rustedwarfare.reforge.client.NavalProductionSandboxTest",
+      "com.rustedwarfare.reforge.client.NavalProjectionTest"
     ],
     "pc": [
-      "com.rustedwarfare.reforge.pc.PatrolJsonlPairingTest"
+      "com.rustedwarfare.reforge.pc.PatrolJsonlPairingTest",
+      "com.rustedwarfare.reforge.pc.MechOriginalProfileTest",
+      "com.rustedwarfare.reforge.pc.MechSessionEvidenceTest",
+      "com.rustedwarfare.reforge.pc.VisualAssetPreparationTest",
+      "com.rustedwarfare.reforge.pc.HelicopterOriginalProfileTest",
+      "com.rustedwarfare.reforge.pc.HeavyMechOriginalProfileTest",
+      "com.rustedwarfare.reforge.pc.HeavyMechResourceApplicationTest",
+      "com.rustedwarfare.reforge.pc.NavalBaseSoundTest",
+      "com.rustedwarfare.reforge.pc.NavalOriginalProfileTest",
+      "com.rustedwarfare.reforge.pc.NavalTerrainAppearanceTest"
     ],
     "tools": [
-      "com.rustedwarfare.reforge.testing.ProductionCombatScenarioTest"
+      "com.rustedwarfare.reforge.testing.ProductionCombatScenarioTest",
+      "com.rustedwarfare.reforge.testing.NamedWeaponSessionRunnerTest",
+      "com.rustedwarfare.reforge.testing.NamedWeaponCoreAdapterTest",
+      "com.rustedwarfare.reforge.testing.MountedWeaponSessionTest",
+      "com.rustedwarfare.reforge.testing.LinkedWeaponSessionTest",
+      "com.rustedwarfare.reforge.testing.MechCoreAdapterTest",
+      "com.rustedwarfare.reforge.testing.MechPublicScenarioTest",
+      "com.rustedwarfare.reforge.testing.MechSessionRunnerTest",
+      "com.rustedwarfare.reforge.testing.HelicopterCoreAdapterTest",
+      "com.rustedwarfare.reforge.testing.HelicopterPublicScenarioTest",
+      "com.rustedwarfare.reforge.testing.HelicopterSessionRunnerTest",
+      "com.rustedwarfare.reforge.testing.HeavyMechProductionSessionTest",
+      "com.rustedwarfare.reforge.testing.HeavyMechPublicScenarioTest",
+      "com.rustedwarfare.reforge.testing.HeavyMechSessionRunnerTest",
+      "com.rustedwarfare.reforge.testing.NavalBallisticArchiveTest",
+      "com.rustedwarfare.reforge.testing.NavalProductionArchiveTest",
+      "com.rustedwarfare.reforge.testing.NavalProductionSessionTest"
     ]
   },
   "short": [
@@ -79,6 +193,213 @@
       "id": "point-defense-short",
       "scenario": "scenarios/point-defense-short.json",
       "contract": "contracts/point-defense-short.json"
+    },
+    {
+      "id": "named-weapons-ini-short",
+      "backend": "session",
+      "scenario": "platform/scenarios/named-weapons-ini-short.json",
+      "contract": "platform/contracts/named-weapons-ini-short.json"
+    },
+    {
+      "id": "named-weapons-json-short",
+      "backend": "session",
+      "scenario": "platform/scenarios/named-weapons-json-short.json",
+      "contract": "platform/contracts/named-weapons-json-short.json"
+    },
+    {
+      "id": "named-weapons-hjson-short",
+      "backend": "session",
+      "scenario": "platform/scenarios/named-weapons-hjson-short.json",
+      "contract": "platform/contracts/named-weapons-hjson-short.json"
+    },
+    {
+      "id": "weapon-relations-mounted-ini-short",
+      "backend": "session",
+      "scenario": "platform/scenarios/weapon-relations-mounted-ini-short.json",
+      "contract": "platform/contracts/weapon-relations-mounted-ini-short.json"
+    },
+    {
+      "id": "weapon-relations-mounted-json-short",
+      "backend": "session",
+      "scenario": "platform/scenarios/weapon-relations-mounted-json-short.json",
+      "contract": "platform/contracts/weapon-relations-mounted-json-short.json"
+    },
+    {
+      "id": "weapon-relations-mounted-hjson-short",
+      "backend": "session",
+      "scenario": "platform/scenarios/weapon-relations-mounted-hjson-short.json",
+      "contract": "platform/contracts/weapon-relations-mounted-hjson-short.json"
+    },
+    {
+      "id": "weapon-relations-linked-forward-ini-short",
+      "backend": "session",
+      "scenario": "platform/scenarios/weapon-relations-linked-forward-ini-short.json",
+      "contract": "platform/contracts/weapon-relations-linked-forward-ini-short.json"
+    },
+    {
+      "id": "weapon-relations-linked-forward-json-short",
+      "backend": "session",
+      "scenario": "platform/scenarios/weapon-relations-linked-forward-json-short.json",
+      "contract": "platform/contracts/weapon-relations-linked-forward-json-short.json"
+    },
+    {
+      "id": "weapon-relations-linked-forward-hjson-short",
+      "backend": "session",
+      "scenario": "platform/scenarios/weapon-relations-linked-forward-hjson-short.json",
+      "contract": "platform/contracts/weapon-relations-linked-forward-hjson-short.json"
+    },
+    {
+      "id": "weapon-relations-linked-reverse-ini-short",
+      "backend": "session",
+      "scenario": "platform/scenarios/weapon-relations-linked-reverse-ini-short.json",
+      "contract": "platform/contracts/weapon-relations-linked-reverse-ini-short.json"
+    },
+    {
+      "id": "weapon-relations-linked-reverse-json-short",
+      "backend": "session",
+      "scenario": "platform/scenarios/weapon-relations-linked-reverse-json-short.json",
+      "contract": "platform/contracts/weapon-relations-linked-reverse-json-short.json"
+    },
+    {
+      "id": "weapon-relations-linked-reverse-hjson-short",
+      "backend": "session",
+      "scenario": "platform/scenarios/weapon-relations-linked-reverse-hjson-short.json",
+      "contract": "platform/contracts/weapon-relations-linked-reverse-hjson-short.json"
+    },
+    {
+      "id": "weapon-relations-unlinked-ini-short",
+      "backend": "session",
+      "scenario": "platform/scenarios/weapon-relations-unlinked-ini-short.json",
+      "contract": "platform/contracts/weapon-relations-unlinked-ini-short.json"
+    },
+    {
+      "id": "weapon-relations-unlinked-json-short",
+      "backend": "session",
+      "scenario": "platform/scenarios/weapon-relations-unlinked-json-short.json",
+      "contract": "platform/contracts/weapon-relations-unlinked-json-short.json"
+    },
+    {
+      "id": "weapon-relations-unlinked-hjson-short",
+      "backend": "session",
+      "scenario": "platform/scenarios/weapon-relations-unlinked-hjson-short.json",
+      "contract": "platform/contracts/weapon-relations-unlinked-hjson-short.json"
+    },
+    {
+      "id": "weapon-relations-linked-disabled-ini-short",
+      "backend": "session",
+      "scenario": "platform/scenarios/weapon-relations-linked-disabled-ini-short.json",
+      "contract": "platform/contracts/weapon-relations-linked-disabled-ini-short.json"
+    },
+    {
+      "id": "weapon-relations-linked-disabled-json-short",
+      "backend": "session",
+      "scenario": "platform/scenarios/weapon-relations-linked-disabled-json-short.json",
+      "contract": "platform/contracts/weapon-relations-linked-disabled-json-short.json"
+    },
+    {
+      "id": "weapon-relations-linked-disabled-hjson-short",
+      "backend": "session",
+      "scenario": "platform/scenarios/weapon-relations-linked-disabled-hjson-short.json",
+      "contract": "platform/contracts/weapon-relations-linked-disabled-hjson-short.json"
+    },
+    {
+      "id": "mech-ini-short",
+      "scenario": "scenarios/mech-ini-short.json",
+      "contract": "contracts/mech-ini-short.json"
+    },
+    {
+      "id": "mech-ini-session-short",
+      "backend": "session",
+      "scenario": "platform/scenarios/mech-ini-session-short.json",
+      "contract": "platform/contracts/mech-ini-session-short.json"
+    },
+    {
+      "id": "mech-json-short",
+      "scenario": "scenarios/mech-json-short.json",
+      "contract": "contracts/mech-json-short.json"
+    },
+    {
+      "id": "mech-json-session-short",
+      "backend": "session",
+      "scenario": "platform/scenarios/mech-json-session-short.json",
+      "contract": "platform/contracts/mech-json-session-short.json"
+    },
+    {
+      "id": "mech-hjson-short",
+      "scenario": "scenarios/mech-hjson-short.json",
+      "contract": "contracts/mech-hjson-short.json"
+    },
+    {
+      "id": "mech-hjson-session-short",
+      "backend": "session",
+      "scenario": "platform/scenarios/mech-hjson-session-short.json",
+      "contract": "platform/contracts/mech-hjson-session-short.json"
+    },
+    {
+      "id": "helicopter-ini-short",
+      "scenario": "scenarios/helicopter-ini-short.json",
+      "contract": "contracts/helicopter-ini-short.json"
+    },
+    {
+      "id": "helicopter-ini-session-short",
+      "backend": "session",
+      "scenario": "platform/scenarios/helicopter-ini-session-short.json",
+      "contract": "platform/contracts/helicopter-ini-session-short.json"
+    },
+    {
+      "id": "helicopter-json-short",
+      "scenario": "scenarios/helicopter-json-short.json",
+      "contract": "contracts/helicopter-json-short.json"
+    },
+    {
+      "id": "helicopter-json-session-short",
+      "backend": "session",
+      "scenario": "platform/scenarios/helicopter-json-session-short.json",
+      "contract": "platform/contracts/helicopter-json-session-short.json"
+    },
+    {
+      "id": "helicopter-hjson-short",
+      "scenario": "scenarios/helicopter-hjson-short.json",
+      "contract": "contracts/helicopter-hjson-short.json"
+    },
+    {
+      "id": "helicopter-hjson-session-short",
+      "backend": "session",
+      "scenario": "platform/scenarios/helicopter-hjson-session-short.json",
+      "contract": "platform/contracts/helicopter-hjson-session-short.json"
+    },
+    {
+      "id": "heavy-mech-ini-short",
+      "scenario": "scenarios/heavy-mech-ini-short.json",
+      "contract": "contracts/heavy-mech-ini-short.json"
+    },
+    {
+      "id": "heavy-mech-ini-session-short",
+      "backend": "session",
+      "scenario": "platform/scenarios/heavy-mech-ini-session-short.json",
+      "contract": "platform/contracts/heavy-mech-ini-session-short.json"
+    },
+    {
+      "id": "heavy-mech-json-short",
+      "scenario": "scenarios/heavy-mech-json-short.json",
+      "contract": "contracts/heavy-mech-json-short.json"
+    },
+    {
+      "id": "heavy-mech-json-session-short",
+      "backend": "session",
+      "scenario": "platform/scenarios/heavy-mech-json-session-short.json",
+      "contract": "platform/contracts/heavy-mech-json-session-short.json"
+    },
+    {
+      "id": "heavy-mech-hjson-short",
+      "scenario": "scenarios/heavy-mech-hjson-short.json",
+      "contract": "contracts/heavy-mech-hjson-short.json"
+    },
+    {
+      "id": "heavy-mech-hjson-session-short",
+      "backend": "session",
+      "scenario": "platform/scenarios/heavy-mech-hjson-session-short.json",
+      "contract": "platform/contracts/heavy-mech-hjson-session-short.json"
     }
   ],
   "long": [
@@ -86,6 +407,66 @@
       "id": "production-combat-chain",
       "scenario": "scenarios/production-combat-chain.json",
       "contract": "contracts/production-combat-chain.json"
+    },
+    {
+      "id": "mech-production-ini-chain",
+      "scenario": "scenarios/mech-production-ini-chain.json",
+      "contract": "contracts/mech-production-ini-chain.json"
+    },
+    {
+      "id": "mech-production-json-chain",
+      "scenario": "scenarios/mech-production-json-chain.json",
+      "contract": "contracts/mech-production-json-chain.json"
+    },
+    {
+      "id": "mech-production-hjson-chain",
+      "scenario": "scenarios/mech-production-hjson-chain.json",
+      "contract": "contracts/mech-production-hjson-chain.json"
+    },
+    {
+      "id": "helicopter-production-ini-chain",
+      "scenario": "scenarios/helicopter-production-ini-chain.json",
+      "contract": "contracts/helicopter-production-ini-chain.json"
+    },
+    {
+      "id": "helicopter-production-json-chain",
+      "scenario": "scenarios/helicopter-production-json-chain.json",
+      "contract": "contracts/helicopter-production-json-chain.json"
+    },
+    {
+      "id": "helicopter-production-hjson-chain",
+      "scenario": "scenarios/helicopter-production-hjson-chain.json",
+      "contract": "contracts/helicopter-production-hjson-chain.json"
+    },
+    {
+      "id": "heavy-mech-production-ini-chain",
+      "scenario": "scenarios/heavy-mech-production-ini-chain.json",
+      "contract": "contracts/heavy-mech-production-ini-chain.json"
+    },
+    {
+      "id": "heavy-mech-production-json-chain",
+      "scenario": "scenarios/heavy-mech-production-json-chain.json",
+      "contract": "contracts/heavy-mech-production-json-chain.json"
+    },
+    {
+      "id": "heavy-mech-production-hjson-chain",
+      "scenario": "scenarios/heavy-mech-production-hjson-chain.json",
+      "contract": "contracts/heavy-mech-production-hjson-chain.json"
+    },
+    {
+      "id": "naval-production-ini-chain",
+      "scenario": "scenarios/naval-production-ini-chain.json",
+      "contract": "contracts/naval-production-ini-chain.json"
+    },
+    {
+      "id": "naval-production-json-chain",
+      "scenario": "scenarios/naval-production-json-chain.json",
+      "contract": "contracts/naval-production-json-chain.json"
+    },
+    {
+      "id": "naval-production-hjson-chain",
+      "scenario": "scenarios/naval-production-hjson-chain.json",
+      "contract": "contracts/naval-production-hjson-chain.json"
     }
   ]
 }

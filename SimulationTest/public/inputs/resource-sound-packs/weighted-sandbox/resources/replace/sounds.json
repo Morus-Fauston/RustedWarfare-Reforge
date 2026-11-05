@@ -1,0 +1,25 @@
+{
+  "formatVersion": 2,
+  "sounds": {
+    "owned:sounds/replace-a": {
+      "file": "base-tone.wav"
+    },
+    "owned:sounds/replace-b": {
+      "file": "user-tone.wav"
+    }
+  },
+  "events": {
+    "reforge:events/tank-fire": {
+      "candidates": [
+        {
+          "sound": "owned:sounds/replace-a",
+          "weight": 3
+        },
+        {
+          "sound": "owned:sounds/replace-b",
+          "weight": 1
+        }
+      ]
+    }
+  }
+}

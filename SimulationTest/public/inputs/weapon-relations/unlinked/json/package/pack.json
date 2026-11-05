@@ -1,0 +1,11 @@
+{
+  "format": "rw-reforge.content-pack.v1",
+  "id": "reforge.weapon-relations.unlinked.json",
+  "name": "Owned unlinked representative",
+  "units": [
+    {
+      "type": "tank",
+      "file": "units/linked.json"
+    }
+  ]
+}

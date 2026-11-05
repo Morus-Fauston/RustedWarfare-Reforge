@@ -31,7 +31,16 @@
       "com.rustedwarfare.reforge.client.demo.DemoSessionTest",
       "com.rustedwarfare.reforge.client.DiagnosticRecordTest",
       "com.rustedwarfare.reforge.client.ObservationDiagnosticTest",
-      "com.rustedwarfare.reforge.client.ObservationEvidenceRoutingTest"
+      "com.rustedwarfare.reforge.client.ObservationEvidenceRoutingTest",
+      "com.rustedwarfare.reforge.client.ResourceIdTest",
+      "com.rustedwarfare.reforge.client.ResourcePackMetadataTest",
+      "com.rustedwarfare.reforge.client.ResourceImageManifestTest",
+      "com.rustedwarfare.reforge.client.ResourceImageComposerTest",
+      "com.rustedwarfare.reforge.client.ResourceImageBindingTest",
+      "com.rustedwarfare.reforge.client.ResourceSoundManifestTest",
+      "com.rustedwarfare.reforge.client.SoundPlaybackTest",
+      "com.rustedwarfare.reforge.client.NamedWeaponEvidenceTest",
+      "com.rustedwarfare.reforge.client.NamedTurretAppearanceTest"
     ],
     "pc": [
       "com.rustedwarfare.reforge.pc.VisualAssetPreparationTest",
@@ -48,10 +57,26 @@
       "com.rustedwarfare.reforge.pc.BoundedDiagnosticWriterTest",
       "com.rustedwarfare.reforge.pc.FixedDiagnosticEncodingTest",
       "com.rustedwarfare.reforge.pc.TypedObservationEvidenceTest",
-      "com.rustedwarfare.reforge.pc.EvidenceStreamingTest"
+      "com.rustedwarfare.reforge.pc.EvidenceStreamingTest",
+      "com.rustedwarfare.reforge.pc.ResourcePackSettingsMigrationTest",
+      "com.rustedwarfare.reforge.pc.ResourcePackPreparationTest",
+      "com.rustedwarfare.reforge.pc.ResourcePackStackSettingsTest",
+      "com.rustedwarfare.reforge.pc.ResourceImagePackImportTest",
+      "com.rustedwarfare.reforge.pc.ResourceImagePackApplicationTest",
+      "com.rustedwarfare.reforge.pc.ResourceImagePackMenuSessionTest",
+      "com.rustedwarfare.reforge.pc.PcmAudioDecoderTest",
+      "com.rustedwarfare.reforge.pc.ResourceSoundPackImportTest",
+      "com.rustedwarfare.reforge.pc.PcPlaybackSoundFactoryTest",
+      "com.rustedwarfare.reforge.pc.WeightedSoundPackCompositionTest",
+      "com.rustedwarfare.reforge.pc.PcOriginalImageExtractionTest",
+      "com.rustedwarfare.reforge.pc.PcOriginalResourceExtractionTest"
     ],
     "tools": [
-      "com.rustedwarfare.reforge.testing.PlatformSessionRunnerTest"
+      "com.rustedwarfare.reforge.testing.PlatformSessionRunnerTest",
+      "com.rustedwarfare.reforge.testing.ResourceImagePlatformSessionTest"
+    ],
+    "core": [
+      "com.rustedwarfare.reforge.core.content.PngContentTest"
     ]
   },
   "short": [
@@ -84,6 +109,52 @@
       "backend": "session",
       "scenario": "platform/scenarios/native-production.json",
       "contract": "platform/contracts/native-production.json"
+    },
+    {
+      "id": "resource-images-amber-first",
+      "backend": "session",
+      "scenario": "platform/scenarios/resource-images-amber-first.json",
+      "contract": "platform/contracts/resource-images-amber-first.json"
+    },
+    {
+      "id": "resource-images-blue-first",
+      "backend": "session",
+      "scenario": "platform/scenarios/resource-images-blue-first.json",
+      "contract": "platform/contracts/resource-images-blue-first.json"
+    },
+    {
+      "id": "resource-sound-wav",
+      "backend": "session",
+      "scenario": "platform/scenarios/resource-sound-wav.json",
+      "contract": "platform/contracts/resource-sound-wav.json"
+    },
+    {
+      "id": "resource-sound-ogg",
+      "backend": "session",
+      "scenario": "platform/scenarios/resource-sound-ogg.json",
+      "contract": "platform/contracts/resource-sound-ogg.json"
+    },
+    {
+      "id": "resource-sound-portrait",
+      "backend": "session",
+      "scenario": "platform/scenarios/resource-sound-portrait.json",
+      "contract": "platform/contracts/resource-sound-portrait.json"
+    },
+    {
+      "id": "resource-sound-weighted-replace",
+      "backend": "session",
+      "scenario": "platform/scenarios/resource-sound-weighted-replace.json",
+      "contract": "platform/contracts/resource-sound-weighted-replace.json"
+    },
+    {
+      "id": "resource-sound-weighted-append",
+      "backend": "session",
+      "scenario": "platform/scenarios/resource-sound-weighted-append.json",
+      "contract": "platform/contracts/resource-sound-weighted-append.json"
     }
+  ],
+  "pythonTests": [
+    "SimulationTest/tools/test_platform_scenario.py",
+    "SimulationTest/tools/test_named_weapon_platform.py"
   ]
 }

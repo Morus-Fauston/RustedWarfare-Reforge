@@ -1,0 +1,11 @@
+{
+  "format": "rw-reforge.content-pack.v1",
+  "id": "reforge.weapon-relations.linked-disabled.ini",
+  "name": "Owned linked-disabled representative",
+  "units": [
+    {
+      "type": "tank",
+      "file": "units/linked.ini"
+    }
+  ]
+}

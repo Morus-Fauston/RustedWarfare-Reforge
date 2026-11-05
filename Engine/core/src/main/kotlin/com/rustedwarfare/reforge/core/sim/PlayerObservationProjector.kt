@@ -41,7 +41,7 @@ internal class PlayerObservationProjector(world: WorldHandle, scenario: Scenario
         val knowledgeRevision: Long?, val actionRevision: Long, val units: List<UnitObservation>,
         val events: List<Event>, val results: List<ActionResult>, val projectiles: List<VisibleProjectile>,
         val projectileEvents: List<VisibleProjectileEvent>, val balance: Long?, val factoryQueues: List<FactoryQueueObservation>,
-        val upgradeQueues: List<UpgradeQueueObservation>, val credits: Double?)
+        val upgradeQueues: List<UpgradeQueueObservation>, val credits: Double?, val weapons: List<VisibleUnitWeapon>)
 
     private data class CachedPlayerObservation(val key: PlayerObservationKey,
         val observation: PlayerObservation, val revision: Long, val source: Observation)
@@ -77,6 +77,15 @@ internal class PlayerObservationProjector(world: WorldHandle, scenario: Scenario
             } else it.copy(tasks = ownerTasks, constructionTargetId = it.constructionTargetId?.takeIf { target -> target in visibleIds })
         }
         val ids = visible.map { it.unitId }.toSet()
+        val visibleById = visible.associateBy { it.unitId }
+        val weapons = observation.combat?.weapons.orEmpty().filter {
+            it.weaponName != null && visibleById[it.unitId]?.alive == true
+        }.map { state ->
+            val own = visibleById.getValue(state.unitId).ownerPlayerId == playerId
+            VisibleUnitWeapon(state.unitId, checkNotNull(state.weaponName), checkNotNull(state.turretHeading),
+                checkNotNull(state.pivot), checkNotNull(state.muzzle), state.cooldown.takeIf { own },
+                state.warmup.takeIf { own }, state.targetUnitId?.takeIf { own && it in ids })
+        }.sortedBy { it.unitId }
         fun visibleEvents(events: List<Event>): List<Event> {
             val allowed = events.filter { event -> if (event.kind == "building-reclaimed") {
                 frame.reclaimedOwner(event.unitId) == playerId
@@ -104,9 +113,10 @@ internal class PlayerObservationProjector(world: WorldHandle, scenario: Scenario
             (it.interceptorUnitId == null || it.interceptorUnitId in ids) }.map { event ->
             val value = event.projectile
             val target = value.targetUnitId.takeIf { it in ids }
+            val source = value.sourceUnitId.takeIf { it in ids }
             ProjectedProjectileEvent(value.objectId, event.kind, value.position, value.heading, value.height,
-                value.sourceUnitId.takeIf { it in ids }, target, event.damage.takeIf { target != null }, event.interceptorUnitId,
-                value.areaExpansion?.radius)
+                source, target, event.damage.takeIf { target != null }, event.interceptorUnitId,
+                value.areaExpansion?.radius, value.sourceWeaponName?.takeIf { source != null })
         }
         val projection = projectileProjection.project(
             observation.projectiles.filter { isVisible(vision, it.position) }, projectedEvents,
@@ -128,7 +138,7 @@ internal class PlayerObservationProjector(world: WorldHandle, scenario: Scenario
                         UpgradeQueueItem(it.actionKey, it.targetTypeId, it.progress) }) }
             else emptyList()
         val key = PlayerObservationKey(observation.stepIndex, observation.simulationTime, vision?.epoch, knowledge?.revision,
-            frame.actionRevision, visible, events, results, projection.projectiles, projection.events, balance, factoryQueues, playerUpgrades, credits)
+            frame.actionRevision, visible, events, results, projection.projectiles, projection.events, balance, factoryQueues, playerUpgrades, credits, weapons)
         if (cached?.key == key) {
             cachedObservation = cached.copy(source = observation)
             return cached.observation
@@ -136,7 +146,7 @@ internal class PlayerObservationProjector(world: WorldHandle, scenario: Scenario
         val playerRevision = (cached?.revision ?: -1L) + 1L
         val result = PlayerObservation("${worldId}:$playerId:${if (frame.hasAdvanced) "step${observation.stepIndex}" else "initial"}:${vision?.epoch ?: 0L}:$playerRevision",
             worldId, scenarioId, playerId, observation.stepIndex, observation.simulationTime, vision, knowledge,
-            visible, events, results, projection.projectiles, projection.events, balance, factoryQueues, playerUpgrades, credits)
+            visible, events, results, projection.projectiles, projection.events, balance, factoryQueues, playerUpgrades, credits, weapons)
         cachedObservation = CachedPlayerObservation(key, result, playerRevision, observation)
         return result
     }

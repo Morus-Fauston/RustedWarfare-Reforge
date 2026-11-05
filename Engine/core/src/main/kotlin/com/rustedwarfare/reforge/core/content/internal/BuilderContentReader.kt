@@ -9,8 +9,18 @@ internal object BuilderContentReader {
         "moveSpeed", "moveAccelerationSpeed", "moveDecelerationSpeed", "maxTurnSpeed", "turnAcceleration",
         "price", "buildSpeed", "image", "image_dead", "fogOfWarSightRange", "constructionTypes")
 
-    fun read(path: Path): UnitDefinition {
-        val values = readNativeFields(path, fields, "builder")
+    private val numbers = fields - setOf("format", "name", "movementType", "image", "image_dead", "constructionTypes")
+    private val schema = UnitContentSchema(mapOf("core" to fields), numbers,
+        setOf("dont_load"), fields - numbers,
+        nativeFormats = (1..7).map { "rw-reforge.native-builder.v$it" }.toSet())
+
+    fun read(path: Path): UnitDefinition = readWithSources(path).definition
+
+    fun readWithSources(path: Path, validatePath: (Path) -> Unit = {}): LoadedUnitContent = UnitSourceReader(schema, validatePath).load(path) { loaded ->
+        definition(path, loaded.values.getValue("core"), validatePath)
+    }
+
+    private fun definition(path: Path, values: Map<String, String>, validatePath: (Path) -> Unit): UnitDefinition {
         fun required(key: String): String = requiredContentField(values[key], path, null, key,
             "Required builder field is absent or empty")
         fun only(key: String, expected: String) {
@@ -26,15 +36,24 @@ internal object BuilderContentReader {
         }
         fun image(key: String): Path {
             val result = resolveReference(path, required(key), "graphics", key)
+            validatePath(result)
             try { readPngMetadata(result, allowIndexed = true) } catch (failure: Exception) {
                 reject(ContentErrorCode.BAD_REFERENCE, path, "graphics", key, reason = "Invalid PNG: ${failure.message}")
             }
             return result
         }
+        val mech = required("format") == "rw-reforge.native-builder.v5"
+        val air = required("format") == "rw-reforge.native-builder.v6"
+        val naval = required("format") == "rw-reforge.native-builder.v7"
         val defense = required("format") == "rw-reforge.native-builder.v4"
         val economy = defense || required("format") == "rw-reforge.native-builder.v3"
-        val construction = economy || required("format") == "rw-reforge.native-builder.v2"
-        val targets = if (defense) listOf("extractorT1", "landFactory", "fabricatorT1", "c_turret_t1", "laserDefence")
+        val construction = naval || air || mech || economy || required("format") == "rw-reforge.native-builder.v2"
+        val targets = if (naval || mech || air) required("constructionTypes").split(',').also { targets ->
+            val allowed = if (naval) setOf("landFactory", "mechFactory", "airFactory", "seaFactory")
+                else if (air) setOf("landFactory", "mechFactory", "airFactory") else setOf("landFactory", "mechFactory")
+            if (targets.isEmpty() || targets.distinct().size != targets.size || targets.any { it !in allowed })
+                reject(ContentErrorCode.UNSUPPORTED_FEATURE, path, field = "constructionTypes", reason = "Expected a nonempty unique subset of ${allowed.joinToString(",")}")
+        } else if (defense) listOf("extractorT1", "landFactory", "fabricatorT1", "c_turret_t1", "laserDefence")
             else if (economy) listOf("extractorT1", "landFactory", "fabricatorT1") else listOf("landFactory")
         if (construction) only("constructionTypes", targets.joinToString(","))
         else {

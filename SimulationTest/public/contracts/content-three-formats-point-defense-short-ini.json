@@ -1,0 +1,146 @@
+{
+  "schemaVersion": 1,
+  "kind": "behavior-contract",
+  "contractId": "public.content-three-formats-point-defense-short-ini.v1.contract",
+  "scope": "self-behavior",
+  "scenarioIds": [
+    "public.content-three-formats-point-defense-short-ini.v1"
+  ],
+  "comparison": {
+    "numberMode": "declared-per-field",
+    "tolerances": {}
+  },
+  "approval": {
+    "status": "tool-fixture-only",
+    "source": "ENG-P008-002: unchanged point-defense-short authored actions/rules; only explicit three-format input counterparts, identities and scenario attribution; no trajectory-derived expectations"
+  },
+  "exclusions": [
+    "original-compatibility",
+    "platform-input",
+    "performance"
+  ],
+  "rules": [
+    {
+      "ruleId": "initial",
+      "when": {
+        "phase": "initial",
+        "stepIndex": 0
+      },
+      "assertions": [
+        {
+          "path": "units.d.pointDefense.energy",
+          "operator": "equals",
+          "value": 1
+        },
+        {
+          "path": "units.d.health",
+          "operator": "equals",
+          "value": 500
+        }
+      ]
+    },
+    {
+      "ruleId": "before-strict-age",
+      "when": {
+        "phase": "after-advance",
+        "stepIndex": 7
+      },
+      "assertions": [
+        {
+          "path": "units.d.pointDefense.energy",
+          "operator": "equals",
+          "value": 1
+        },
+        {
+          "path": "units.d.health",
+          "operator": "equals",
+          "value": 500
+        }
+      ]
+    },
+    {
+      "ruleId": "intercepted",
+      "when": {
+        "phase": "after-advance",
+        "stepIndex": 8
+      },
+      "assertions": [
+        {
+          "path": "units.d.pointDefense.energy",
+          "operator": "equals",
+          "value": 0.89
+        },
+        {
+          "path": "units.d.health",
+          "operator": "equals",
+          "value": 500
+        },
+        {
+          "path": "units.d.alive",
+          "operator": "equals",
+          "value": true
+        }
+      ]
+    },
+    {
+      "ruleId": "no-double-charge",
+      "when": {
+        "phase": "after-advance",
+        "stepIndex": 9
+      },
+      "assertions": [
+        {
+          "path": "units.d.pointDefense.energy",
+          "operator": "equals",
+          "value": 0.8904
+        },
+        {
+          "path": "units.d.health",
+          "operator": "equals",
+          "value": 500
+        }
+      ]
+    },
+    {
+      "ruleId": "target-survives",
+      "when": {
+        "phase": "after-advance",
+        "stepIndex": 11
+      },
+      "assertions": [
+        {
+          "path": "units.d.health",
+          "operator": "equals",
+          "value": 500
+        },
+        {
+          "path": "units.d.alive",
+          "operator": "equals",
+          "value": true
+        },
+        {
+          "path": "economy.balances.p1",
+          "operator": "equals",
+          "value": 1750
+        }
+      ]
+    },
+    {
+      "ruleId": "attack",
+      "when": {
+        "phase": "after-advance",
+        "stepIndex": 0,
+        "event": "action-accepted",
+        "actionId": "hostile-attack",
+        "actionKind": "attack"
+      },
+      "assertions": [
+        {
+          "path": "actionResults.hostile-attack.status",
+          "operator": "equals",
+          "value": "accepted"
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,47 @@
+{
+  "schemaVersion": 1,
+  "scenarioId": "helicopter-hjson-session-short",
+  "inputs": "../../inputs/helicopter-production/hjson",
+  "contentPack": {
+    "directory": "package",
+    "unitId": "helicopter"
+  },
+  "intents": [
+    {
+      "intentId": "choose",
+      "kind": "select",
+      "unitId": "a",
+      "position": {
+        "x": 110,
+        "y": 210
+      }
+    },
+    {
+      "intentId": "fly",
+      "kind": "move",
+      "unitId": "a",
+      "position": {
+        "x": 250,
+        "y": 210
+      },
+      "waitSteps": 20
+    },
+    {
+      "intentId": "stop",
+      "kind": "stop",
+      "unitId": "a",
+      "waitSteps": 120
+    },
+    {
+      "intentId": "fire",
+      "kind": "attack",
+      "unitId": "a",
+      "targetUnitId": "b",
+      "position": {
+        "x": 350,
+        "y": 190
+      },
+      "waitSteps": 180
+    }
+  ]
+}

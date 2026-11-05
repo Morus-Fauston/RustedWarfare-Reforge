@@ -1,0 +1,113 @@
+{
+  "schemaVersion": 1,
+  "scenarioId": "named-weapons-hjson-short",
+  "rules": [
+    {
+      "intentId": "choose",
+      "actionType": "SelectAction",
+      "unitId": "a",
+      "accepted": true,
+      "unitIdentity": {
+        "ownerPlayerId": "p1",
+        "typeId": "named_tank"
+      },
+      "assertions": [
+        {
+          "path": "units.a.maxHealth",
+          "operator": "equals",
+          "value": 100000
+        }
+      ]
+    },
+    {
+      "intentId": "dual",
+      "actionType": "AttackAction",
+      "unitId": "a",
+      "accepted": true,
+      "unitIdentity": {
+        "ownerPlayerId": "p1",
+        "typeId": "named_tank"
+      },
+      "targetIdentity": {
+        "ownerPlayerId": "p2",
+        "typeId": "named_tank"
+      },
+      "actionFields": {
+        "targetUnitId": "b"
+      },
+      "assertions": [
+        {
+          "path": "units.a.attackTargetId",
+          "operator": "equals",
+          "value": "b"
+        }
+      ],
+      "tail": {
+        "samples": 10,
+        "assertions": [
+          {
+            "path": "weapons.a.near.targetUnitId",
+            "operator": "equals",
+            "value": "b"
+          },
+          {
+            "path": "weapons.a.far.targetUnitId",
+            "operator": "equals",
+            "value": "c"
+          },
+          {
+            "path": "units.b.health",
+            "operator": "lessThan",
+            "value": 100000
+          },
+          {
+            "path": "units.c.health",
+            "operator": "lessThan",
+            "value": 100000
+          }
+        ]
+      },
+      "weaponBirths": [
+        {
+          "unitId": "a",
+          "weaponName": "near",
+          "targetUnitId": "b",
+          "minimumOccurrences": 1
+        },
+        {
+          "unitId": "a",
+          "weaponName": "far",
+          "targetUnitId": "c",
+          "minimumOccurrences": 1
+        }
+      ]
+    },
+    {
+      "intentId": "stop",
+      "actionType": "StopAction",
+      "unitId": "a",
+      "accepted": true,
+      "unitIdentity": {
+        "ownerPlayerId": "p1",
+        "typeId": "named_tank"
+      },
+      "assertions": [
+        {
+          "path": "units.a.attackTargetId",
+          "operator": "equals",
+          "value": null
+        },
+        {
+          "path": "weapons.a.near.targetUnitId",
+          "operator": "equals",
+          "value": null
+        },
+        {
+          "path": "weapons.a.far.targetUnitId",
+          "operator": "equals",
+          "value": null
+        }
+      ]
+    }
+  ]
+}

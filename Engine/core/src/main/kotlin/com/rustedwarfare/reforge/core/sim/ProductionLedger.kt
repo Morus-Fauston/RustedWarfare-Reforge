@@ -4,14 +4,25 @@ import com.rustedwarfare.reforge.core.content.BuildProfile
 import java.util.Collections
 
 /** Trusted factory registration; command authority remains the simulation's responsibility. */
-internal class FactoryProductionSpec(val ownerPlayerId: String, products: Map<String, BuildProfile>) {
+internal class FactoryProductionSpec(val ownerPlayerId: String, products: Map<String, BuildProfile>,
+    upgradeActions: List<com.rustedwarfare.reforge.core.content.UpgradeActionProfile> = emptyList()) {
     constructor(ownerPlayerId: String, typeId: String, build: BuildProfile) : this(ownerPlayerId, mapOf(typeId to build))
     val products: Map<String, BuildProfile> = Collections.unmodifiableMap(LinkedHashMap(products))
-    fun valid(): Boolean = products.isNotEmpty() && products.all { (id, build) ->
-        id.isNotBlank() && build.price >= 0L && build.rate.isFinite() && build.rate > 0f }
+    val upgradeActions = immutable(upgradeActions)
+    fun valid(): Boolean = (products.isNotEmpty() || upgradeActions.isNotEmpty()) && products.all { (id, build) ->
+        id.isNotBlank() && build.price >= 0L && build.rate.isFinite() && build.rate > 0f } &&
+        upgradeActions.all { it.actionKey.isNotBlank() && it.targetTypeId.isNotBlank() &&
+            it.price >= 0L && it.rate.isFinite() && it.rate > 0f }
 }
-internal data class PendingProduction(val typeId: String, val unitNonce: String, val progress: Float,
-    val cost: Long, val rate: Float)
+internal sealed interface PendingFactoryWork {
+    val progress: Float
+    val cost: Long
+    val rate: Float
+}
+internal data class PendingProduction(val typeId: String, val unitNonce: String, override val progress: Float,
+    override val cost: Long, override val rate: Float) : PendingFactoryWork
+internal data class FactoryUpgradeTick(val ledger: ProductionLedger, val completed: PendingUpgrade? = null)
+internal data class FactoryUpgradeRemoval(val ledger: ProductionLedger, val removed: List<PendingUpgrade>)
 internal data class ProductionCompletion(val factoryId: String, val ownerPlayerId: String, val typeId: String, val unitNonce: String)
 internal data class ProductionTick(val ledger: ProductionLedger, val completed: ProductionCompletion? = null)
 internal enum class ProductionError { UNKNOWN_FACTORY, INACTIVE_FACTORY, INVALID_TYPE, INVALID_NONCE,
@@ -25,7 +36,7 @@ internal sealed interface ProductionChange {
 internal class ProductionLedger private constructor(
     private val integerBalances: Map<String, Long>?,
     private val factories: Map<String, FactoryProductionSpec>,
-    private val queues: Map<String, List<PendingProduction>> = emptyMap(),
+    private val queues: Map<String, List<PendingFactoryWork>> = emptyMap(),
     private val nonces: Map<String, Set<String>> = emptyMap(),
     private val inactive: Set<String> = emptySet(),
     private val preciseBalances: Map<String, Double>? = null,
@@ -52,7 +63,7 @@ internal class ProductionLedger private constructor(
 
     private fun copy(integerBalances: Map<String, Long>? = this.integerBalances,
                      preciseBalances: Map<String, Double>? = this.preciseBalances,
-                     queues: Map<String, List<PendingProduction>> = this.queues,
+                     queues: Map<String, List<PendingFactoryWork>> = this.queues,
                      nonces: Map<String, Set<String>> = this.nonces,
                      inactive: Set<String> = this.inactive,
                      factories: Map<String, FactoryProductionSpec> = this.factories) =
@@ -63,7 +74,7 @@ internal class ProductionLedger private constructor(
             factories, queues, nonces, inactive,
             preciseBalances?.let { if (it === this.preciseBalances) it else freeze(it) })
 
-    private fun changedQueue(factoryId: String, items: List<PendingProduction>) =
+    private fun changedQueue(factoryId: String, items: List<PendingFactoryWork>) =
         Collections.unmodifiableMap(queues + (factoryId to immutable(items)))
 
     private fun reservedNonce(owner: String, nonce: String): Map<String, Set<String>> {
@@ -77,7 +88,52 @@ internal class ProductionLedger private constructor(
         return copy(factories = Collections.unmodifiableMap(factories + (factoryId to spec)))
     }
 
-    fun queue(factoryId: String): List<PendingProduction> = queues[factoryId].orEmpty()
+    private fun work(factoryId: String): List<PendingFactoryWork> = queues[factoryId].orEmpty()
+    /** Classification projections never determine advancement order. */
+    fun queue(factoryId: String): List<PendingProduction> = immutable(work(factoryId).filterIsInstance<PendingProduction>())
+    fun upgradeQueue(factoryId: String): List<PendingUpgrade> = immutable(work(factoryId).filterIsInstance<PendingUpgrade>())
+    fun upgradeAtHead(factoryId: String): Boolean = work(factoryId).firstOrNull() is PendingUpgrade
+    fun enqueueUpgrade(factoryId: String, action: com.rustedwarfare.reforge.core.content.UpgradeActionProfile): ProductionLedger {
+        require(isActive(factoryId) && action in factories.getValue(factoryId).upgradeActions &&
+            upgradeQueue(factoryId).none { it.actionKey == action.actionKey })
+        return copy(queues = changedQueue(factoryId, work(factoryId) + PendingUpgrade(action.actionKey,
+            action.targetTypeId, 0f, action.price, action.rate)))
+    }
+    fun retainUpgrades(factoryId: String, allowed: Set<String>): FactoryUpgradeRemoval {
+        val removed = upgradeQueue(factoryId).filter { it.actionKey !in allowed }
+        if (removed.isEmpty()) return FactoryUpgradeRemoval(this, emptyList())
+        return FactoryUpgradeRemoval(copy(queues = changedQueue(factoryId,
+            work(factoryId).filter { it !is PendingUpgrade || it.actionKey in allowed })), removed)
+    }
+    fun cancelUpgrade(factoryId: String, actionKey: String): FactoryUpgradeRemoval =
+        retainUpgrades(factoryId, upgradeQueue(factoryId).mapTo(mutableSetOf()) { it.actionKey } - actionKey)
+    fun advanceUpgrade(factoryId: String): FactoryUpgradeTick {
+        if (!isActive(factoryId)) return FactoryUpgradeTick(this)
+        val items = work(factoryId)
+        val head = items.firstOrNull() as? PendingUpgrade ?: return FactoryUpgradeTick(this)
+        val progress = head.progress + head.rate
+        require(progress.isFinite()) { "Factory upgrade progress must remain finite" }
+        return if (progress >= 1f) FactoryUpgradeTick(copy(queues = changedQueue(factoryId, items.drop(1))), head)
+        else FactoryUpgradeTick(copy(queues = changedQueue(factoryId, listOf(head.copy(progress = progress)) + items.drop(1))))
+    }
+    fun upgradeObservation(): Map<String, List<PendingUpgradeObservation>> = factories.filter { (id, spec) ->
+        spec.upgradeActions.isNotEmpty() || upgradeQueue(id).isNotEmpty()
+    }.mapValues { (id, _) -> upgradeQueue(id).map {
+        PendingUpgradeObservation(it.actionKey, it.targetTypeId, it.progress, it.cost, it.rate) } }
+    fun validateUpgrades(units: Map<String, MutableUnit>) {
+        for ((id, _) in queues) for (item in upgradeQueue(id)) {
+            val unit = units.getValue(id)
+            val action = unit.definition.upgrades?.actions?.singleOrNull { it.actionKey == item.actionKey }
+            require(unit.alive && action != null && item.targetTypeId == action.targetTypeId && item.cost == action.price && item.rate == action.rate)
+        }
+    }
+    fun replaceFactory(factoryId: String, spec: FactoryProductionSpec): ProductionLedger {
+        require(isActive(factoryId) && spec.valid() && factories.getValue(factoryId).ownerPlayerId == spec.ownerPlayerId)
+        var refunded = this
+        for (item in queue(factoryId)) if (item.typeId !in spec.products) refunded = refunded.refund(spec.ownerPlayerId, item.cost)
+        return refunded.copy(factories = Collections.unmodifiableMap(factories + (factoryId to spec)),
+            queues = changedQueue(factoryId, work(factoryId).filter { it !is PendingProduction || it.typeId in spec.products }))
+    }
     fun observe(): EconomyObservation = EconomyObservation(balances, factories.keys.sorted().associateWith { factoryId ->
         queue(factoryId).map { QueuedProductionObservation(it.typeId, it.unitNonce, it.progress, it.cost, it.rate) }
     }, preciseBalances)
@@ -122,9 +178,12 @@ internal class ProductionLedger private constructor(
         for ((factoryId, queue) in queues) {
             val factory = factories.getValue(factoryId)
             require(factoryId !in inactive || queue.isEmpty()) { "Inactive factory must not retain pending work" }
-            for (item in queue) require(item.typeId in factory.products && item.cost >= 0L &&
-                item.progress.isFinite() && item.progress in 0f..<1f && item.rate.isFinite() && item.rate > 0f &&
-                item.unitNonce in nonces[factory.ownerPlayerId].orEmpty()) { "Invalid production candidate" }
+            require(queue.filterIsInstance<PendingUpgrade>().map { it.actionKey }.toSet().size == queue.count { it is PendingUpgrade })
+            for (item in queue) require(item.cost >= 0L && item.progress.isFinite() && item.progress in 0f..<1f &&
+                item.rate.isFinite() && item.rate > 0f &&
+                (item !is PendingProduction || item.typeId in factory.products && item.unitNonce in nonces[factory.ownerPlayerId].orEmpty())) {
+                "Invalid factory work candidate"
+            }
         }
     }
     fun enqueue(factoryId: String, typeId: String, unitNonce: String): ProductionChange {
@@ -136,7 +195,7 @@ internal class ProductionLedger private constructor(
         val paid = charge(factory.ownerPlayerId, build.price)
             ?: return ProductionChange.Rejected(ProductionError.INSUFFICIENT_FUNDS)
         val next = paid.copy(
-            queues = paid.changedQueue(factoryId, queue(factoryId) + PendingProduction(typeId, unitNonce, 0f, build.price, build.rate)),
+            queues = paid.changedQueue(factoryId, work(factoryId) + PendingProduction(typeId, unitNonce, 0f, build.price, build.rate)),
             nonces = paid.reservedNonce(factory.ownerPlayerId, unitNonce))
         return ProductionChange.Accepted(next)
     }
@@ -145,8 +204,8 @@ internal class ProductionLedger private constructor(
         val factory = factories[factoryId] ?: return ProductionChange.Rejected(ProductionError.UNKNOWN_FACTORY)
         if (!isActive(factoryId)) return ProductionChange.Rejected(ProductionError.INACTIVE_FACTORY)
         if (typeId !in factory.products) return ProductionChange.Rejected(ProductionError.INVALID_TYPE)
-        val queue = queue(factoryId)
-        val index = queue.indexOfLast { it.typeId == typeId }
+        val queue = work(factoryId)
+        val index = queue.indexOfLast { it is PendingProduction && it.typeId == typeId }
         if (index < 0) return ProductionChange.Rejected(ProductionError.EMPTY_QUEUE)
         val kept = queue.filterIndexed { itemIndex, _ -> itemIndex != index }
         return ProductionChange.Accepted(refund(factory.ownerPlayerId, queue[index].cost).copy(
@@ -156,8 +215,8 @@ internal class ProductionLedger private constructor(
     /** One fixed sim-tick, one head; excess progress is never transferred to another item. */
     fun advance(factoryId: String): ProductionTick {
         if (!isActive(factoryId)) return ProductionTick(this)
-        val queue = queue(factoryId)
-        val head = queue.firstOrNull() ?: return ProductionTick(this)
+        val queue = work(factoryId)
+        val head = queue.firstOrNull() as? PendingProduction ?: return ProductionTick(this)
         val progress = head.progress + head.rate
         require(progress.isFinite()) { "Production progress must remain finite" }
         if (progress < 1f) {
@@ -173,7 +232,7 @@ internal class ProductionLedger private constructor(
         if (!isActive(factoryId)) return this
         val factory = factories.getValue(factoryId)
         var refunded = this
-        for (item in queue(factoryId)) refunded = refunded.refund(factory.ownerPlayerId, item.cost)
+        for (item in work(factoryId)) refunded = refunded.refund(factory.ownerPlayerId, item.cost)
         return refunded.copy(queues = changedQueue(factoryId, emptyList()),
             inactive = Collections.unmodifiableSet(LinkedHashSet(inactive).also { it += factoryId }))
     }

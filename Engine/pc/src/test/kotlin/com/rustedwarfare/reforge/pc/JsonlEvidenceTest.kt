@@ -15,6 +15,8 @@ import kotlin.test.assertTrue
 import kotlin.test.assertIs
 import com.rustedwarfare.reforge.core.sim.*
 import com.rustedwarfare.reforge.client.ControlledScenario
+import com.rustedwarfare.reforge.client.ClientEvidence
+import com.rustedwarfare.reforge.client.SandboxLoader
 import com.rustedwarfare.reforge.client.SandboxSession
 import com.rustedwarfare.reforge.client.SandboxInput
 import com.rustedwarfare.reforge.client.MapProjection
@@ -41,7 +43,7 @@ class JsonlEvidenceTest {
                 assertEquals("ENG-P006-007", manifest.getString("ticket"))
                 assertEquals("P006", manifest.getString("phase"))
                 assertEquals("defense-construction-windows-client", manifest.getString("topic"))
-                sink.record("load-ready", mapOf("generation" to 1L))
+                loadReady(sink, inputs, 1L)
             }
             val rows = records(directory)
             assertTrue(rows.all { it.getString("runId") == "siege-run" })
@@ -79,7 +81,7 @@ class JsonlEvidenceTest {
                 assertEquals("defense-construction-windows-client", manifest.getString("topic"))
                 assertEquals("defense-run", manifest.getString("runId"))
                 sink.record("load-request", mapOf("generation" to 7L, "root" to root.toString()))
-                sink.record("load-ready", mapOf("generation" to 7L))
+                loadReady(sink, root, 7L)
             }
             val rows = records(directory)
             assertTrue(rows.all { it.getString("runId") == "defense-run" })
@@ -127,7 +129,7 @@ class JsonlEvidenceTest {
                     } else assertFalse(entry.getBoolean("exists"))
                 }
                 sink.record("load-request", mapOf("generation" to 7L, "root" to inputs.toString()))
-                sink.record("load-ready", mapOf("generation" to 7L))
+                loadReady(sink, inputs, 7L)
             }
             val identity = records(directory).single { it.getString("kind") == "input-identities" }
             assertEquals(7L, identity.getLong("generation"))
@@ -293,7 +295,7 @@ class JsonlEvidenceTest {
         val temporary = Files.createTempDirectory("p006-maintenance-evidence-")
         try {
             val directory = temporary.resolve("run")
-            JsonlEvidence(directory, "maintenance-run", root).use { it.record("load-ready", mapOf("generation" to 1L)) }
+            JsonlEvidence(directory, "maintenance-run", root).use { loadReady(it, root, 1L) }
             val manifest = JsonReader().parse(Files.readString(directory.resolve("manifest.json")))
             assertEquals("ENG-P006-005", manifest.getString("ticket"))
             assertEquals("building-maintenance-windows-client", manifest.getString("topic"))
@@ -311,7 +313,7 @@ class JsonlEvidenceTest {
         val temporary = Files.createTempDirectory("p006-upgrade-evidence-")
         try {
             val directory = temporary.resolve("run")
-            JsonlEvidence(directory, "upgrades-run", root).use { it.record("load-ready", mapOf("generation" to 1L)) }
+            JsonlEvidence(directory, "upgrades-run", root).use { loadReady(it, root, 1L) }
             assertEquals("ENG-P006-004", JsonReader().parse(Files.readString(directory.resolve("manifest.json"))).getString("ticket"))
             val files = records(directory).single { it.getString("kind") == "input-identities" }.get("files").toList()
             val expected = Files.walk(root).use { paths -> paths.filter {
@@ -331,7 +333,7 @@ class JsonlEvidenceTest {
         val temporary = Files.createTempDirectory("p006-economic-evidence-")
         try {
             val directory = temporary.resolve("run")
-            JsonlEvidence(directory, "economic-run", root).use { it.record("load-ready", mapOf("generation" to 1L)) }
+            JsonlEvidence(directory, "economic-run", root).use { loadReady(it, root, 1L) }
             assertEquals("ENG-P006-003", JsonReader().parse(Files.readString(directory.resolve("manifest.json"))).getString("ticket"))
             val files = records(directory).single { it.getString("kind") == "input-identities" }.get("files").toList()
             val expected = Files.walk(root).use { paths -> paths.filter {
@@ -351,7 +353,7 @@ class JsonlEvidenceTest {
         try {
             val directory = temporary.resolve("run")
             JsonlEvidence(directory, "factory-run", root).use {
-                it.record("load-ready", mapOf("generation" to 1L))
+                loadReady(it, root, 1L)
             }
             val manifest = JsonReader().parse(Files.readString(directory.resolve("manifest.json")))
             assertEquals("ENG-P006-002", manifest.getString("ticket"))
@@ -375,7 +377,7 @@ class JsonlEvidenceTest {
             val directory = temporary.resolve("run")
             JsonlEvidence(directory, "construction-run", root).use {
                 it.record("load-request", mapOf("generation" to 1L, "root" to root.toString()))
-                it.record("load-ready", mapOf("generation" to 1L))
+                loadReady(it, root, 1L)
             }
             val manifest = JsonReader().parse(Files.readString(directory.resolve("manifest.json")))
             assertEquals("ENG-P006-001", manifest.getString("ticket"))
@@ -404,7 +406,7 @@ class JsonlEvidenceTest {
             val directory = temporary.resolve("run")
             JsonlEvidence(directory, "defense-run", root).use {
                 it.record("load-request", mapOf("generation" to 1L, "root" to root.toString()))
-                it.record("load-ready", mapOf("generation" to 1L))
+                loadReady(it, root, 1L)
             }
             val manifest = JsonReader().parse(Files.readString(directory.resolve("manifest.json")))
             assertEquals("ENG-P005-005", manifest.getString("ticket"))
@@ -433,7 +435,7 @@ class JsonlEvidenceTest {
             val directory = temporary.resolve("run")
             JsonlEvidence(directory, "turret-run", root).use {
                 it.record("load-request", mapOf("generation" to 1L, "root" to root.toString()))
-                it.record("load-ready", mapOf("generation" to 1L))
+                loadReady(it, root, 1L)
             }
             val manifest = JsonReader().parse(Files.readString(directory.resolve("manifest.json")))
             assertEquals("P005", manifest.getString("phase"))
@@ -544,7 +546,7 @@ class JsonlEvidenceTest {
             val directory = temporary.resolve("run")
             JsonlEvidence(directory, "p002-run", temporary.resolve("unused-initial-inputs")).use {
                 it.record("load-request", mapOf("generation" to 7L, "root" to root.toString()))
-                it.record("load-ready", mapOf("generation" to 7L))
+                loadReady(it, root, 7L)
             }
             val identities = records(directory).single { it.getString("kind") == "input-identities" }
             assertEquals("p002-knowledge", identities.getString("scenarioId", null))
@@ -574,7 +576,7 @@ class JsonlEvidenceTest {
             val directory = temporary.resolve("run")
             JsonlEvidence(directory, "p001-run", root).use {
                 it.record("load-request", mapOf("generation" to 3L, "root" to root.toString()))
-                it.record("load-ready", mapOf("generation" to 3L))
+                loadReady(it, root, 3L)
             }
             val identities = records(directory).single { it.getString("kind") == "input-identities" }
             assertEquals("p001-windows", identities.getString("scenarioId"))
@@ -601,7 +603,7 @@ class JsonlEvidenceTest {
             JsonlEvidence(directory, "generations", temporary.resolve("unused")).use {
                 for ((generation, root) in listOf(7L to p002, 9L to p001)) {
                     it.record("load-request", mapOf("generation" to generation, "root" to root.toString()))
-                    it.record("load-ready", mapOf("generation" to generation))
+                    loadReady(it, root, generation)
                 }
             }
             val rows = records(directory)
@@ -629,9 +631,9 @@ class JsonlEvidenceTest {
             val directory = temporary.resolve("run")
             JsonlEvidence(directory, "recovery", invalid).use {
                 it.record("load-request", mapOf("generation" to 1L, "root" to invalid.toString()))
-                assertFailsWith<IllegalArgumentException> { it.record("load-ready", mapOf("generation" to 1L)) }
+                assertFailsWith<IllegalArgumentException> { loadReady(it, invalid, 1L) }
                 it.record("load-request", mapOf("generation" to 2L, "root" to valid.toString()))
-                it.record("load-ready", mapOf("generation" to 2L))
+                loadReady(it, valid, 2L)
             }
             val identities = records(directory).filter { it.getString("kind") == "input-identities" }
             assertEquals(1, identities.size)
@@ -639,6 +641,18 @@ class JsonlEvidenceTest {
             assertEquals(valid.toString(), identities.single().getString("root"))
         } finally {
             temporary.toFile().deleteRecursively()
+        }
+    }
+
+    private fun loadReady(sink: ClientEvidence, root: Path, generation: Long) {
+        SandboxLoader().use { loader ->
+            loader.request(root)
+            val deadline = System.nanoTime() + 5_000_000_000
+            while (System.nanoTime() < deadline) {
+                loader.pollPrepared()?.let { sink.recordLoadReady(generation, it.getOrThrow()); return }
+                Thread.sleep(5)
+            }
+            error("Sandbox loader did not complete within five seconds")
         }
     }
 

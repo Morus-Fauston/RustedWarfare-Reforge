@@ -1,0 +1,15 @@
+{
+  "format": "rw-reforge.content-pack.v1",
+  "id": "amber.scouts.ini",
+  "name": "Amber scouts INI",
+  "units": [
+    {
+      "type": "tank",
+      "file": "units/scout.ini"
+    },
+    {
+      "type": "tank",
+      "file": "units/guard.ini"
+    }
+  ]
+}

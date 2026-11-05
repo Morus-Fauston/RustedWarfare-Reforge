@@ -1,0 +1,10 @@
+{
+  "format": "rw-reforge.unit.v1",
+  "copyFrom": [
+    "base.ini"
+  ],
+  "core": {
+    "name": "amber_guard",
+    "maxHp": 320
+  }
+}

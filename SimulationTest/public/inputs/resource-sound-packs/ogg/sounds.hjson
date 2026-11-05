@@ -1,0 +1,13 @@
+{
+  "formatVersion": 1,
+  "sounds": {
+    "owned:sounds/shot": {
+      "file": "clip.ogg"
+    }
+  },
+  "events": {
+    "reforge:events/tank-fire": {
+      "sound": "owned:sounds/shot"
+    }
+  }
+}

@@ -1,0 +1,23 @@
+{
+  "formatVersion": 1,
+  "images": {
+    "reforge:units/c_tank/body": {
+      "file": "body.png",
+      "frameWidth": 20,
+      "frameHeight": 20,
+      "totalFrames": 3
+    },
+    "reforge:units/amber_scout/body": {
+      "file": "body.png",
+      "frameWidth": 20,
+      "frameHeight": 20,
+      "totalFrames": 3
+    },
+    "reforge:units/demo_tank/body": {
+      "file": "demo-body.png",
+      "frameWidth": 32,
+      "frameHeight": 32,
+      "totalFrames": 1
+    }
+  }
+}

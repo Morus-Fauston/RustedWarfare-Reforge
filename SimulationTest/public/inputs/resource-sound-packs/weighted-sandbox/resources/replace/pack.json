@@ -1,0 +1,8 @@
+{
+  "formatVersion": 1,
+  "requiresResourceFormat": 3,
+  "id": "owned:weighted-replace",
+  "name": "自有加权replace",
+  "description": "Owned analytical tones; weighted local presentation only",
+  "icon": "owned:sound-icon"
+}

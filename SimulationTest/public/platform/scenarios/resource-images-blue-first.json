@@ -1,0 +1,52 @@
+{
+  "schemaVersion": 1,
+  "scenarioId": "resource-images-blue-first",
+  "inputs": "../../inputs/resource-image-packs/sandbox",
+  "intents": [
+    {
+      "intentId": "choose-tank",
+      "kind": "select",
+      "unitId": "a",
+      "position": {
+        "x": 110,
+        "y": 210
+      }
+    },
+    {
+      "intentId": "move-tank",
+      "kind": "move",
+      "unitId": "a",
+      "position": {
+        "x": 150,
+        "y": 210
+      },
+      "waitSteps": 20
+    },
+    {
+      "intentId": "stop-tank",
+      "kind": "stop",
+      "unitId": "a",
+      "waitSteps": 20
+    },
+    {
+      "intentId": "attack-enemy",
+      "kind": "attack",
+      "unitId": "a",
+      "targetUnitId": "b",
+      "position": {
+        "x": 350,
+        "y": 210
+      }
+    }
+  ],
+  "contentPack": {
+    "directory": "package",
+    "unitId": "amber_scout"
+  },
+  "resourcePacks": {
+    "directories": [
+      "resources/blue",
+      "resources/amber"
+    ]
+  }
+}

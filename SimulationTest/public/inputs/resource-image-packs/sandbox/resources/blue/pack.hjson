@@ -1,0 +1,8 @@
+{
+  "formatVersion": 1,
+  "requiresResourceFormat": 1,
+  "id": "owned:blue",
+  "name": "蓝色装甲",
+  "description": "自有高清对照：车体两倍、炮塔三倍与图集两倍。",
+  "icon": "reforge:units/c_tank/body"
+}

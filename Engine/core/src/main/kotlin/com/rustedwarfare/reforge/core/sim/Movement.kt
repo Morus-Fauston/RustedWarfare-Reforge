@@ -26,7 +26,7 @@ internal object ReferencePropulsion : PropulsionPolicy {
         if (distanceSquared > 361.0) limit = 46.0
         if (distanceSquared > 3600.0) limit = 89.0
         if (turn < 1.4) limit = if (distanceSquared > 6400.0) limit * 0.5 else 17.0
-        if (v > 5.0 && ratio < 0.01) limit = 1.0
+        if (v > 5.0 && ratio > -0.01 && ratio < 0.01) limit = 1.0
         if (turn < 1.1) limit *= 0.7
         if (ratio > 0.4 && distanceSquared > 16900.0) limit = 180.0
         // The local final-waypoint propulsion gate is separate from command completion.

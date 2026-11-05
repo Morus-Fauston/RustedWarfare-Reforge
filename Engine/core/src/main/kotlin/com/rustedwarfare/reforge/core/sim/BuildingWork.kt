@@ -1,6 +1,7 @@
 package com.rustedwarfare.reforge.core.sim
 
 import com.rustedwarfare.reforge.core.knowledge.VisionSnapshot
+import com.rustedwarfare.reforge.core.content.foundationMovementType
 import java.util.Collections
 
 internal data class BuildingRoute(val points: List<Position>, val knowledgeRevision: Long, val buildingRevision: Long)
@@ -221,7 +222,8 @@ internal class BuildingWork private constructor(val clock: Int, val nonces: Map<
         val poolAtCenter = input.map.isResourcePool(MapBounds.cell(position.x, input.map.tileWidth, input.map.widthTiles),
             MapBounds.cell(position.y, input.map.tileHeight, input.map.heightTiles))
         val terrainBlocked = if (building.requiresResourcePool) !poolAtCenter else
-            cells.any { input.map.blocking.isBlocked(it.first, it.second) || input.map.isResourcePool(it.first, it.second) }
+            cells.any { input.map.blockingFor(definition.foundationMovementType).isBlocked(it.first, it.second) ||
+                input.map.isResourcePool(it.first, it.second) }
         val blocked = cells.isEmpty() || !ConstructionPlacement.contains(input.map.widthTiles, input.map.heightTiles,
             input.map.tileWidth, input.map.tileHeight, position, definition.radius) ||
             terrainBlocked || live.any { other ->
@@ -256,7 +258,7 @@ internal class BuildingWork private constructor(val clock: Int, val nonces: Map<
                 objectId = identity.objectId, updateKey = identity.updateKey, constructionProgress = 0f)
             paid = definition.production?.let { production ->
                 charged.register(publicId, FactoryProductionSpec(worker.ownerPlayerId, production.unitTypeIds.associateWith {
-                    checkNotNull(input.unitDefinitions.getValue(it).build) }))
+                    checkNotNull(input.unitDefinitions.getValue(it).build) }, definition.upgrades?.actions.orEmpty()))
             } ?: charged
             registered = upgrades?.register(publicId, definition)
             next = recordBirth(worker.ownerPlayerId, nonce)
@@ -306,7 +308,7 @@ internal class BuildingWork private constructor(val clock: Int, val nonces: Map<
         target.cancelRoute()
         target.movementRequested = false
         target.constructionWorking = false
-        target.combat?.targetId = null
+        target.clearWeaponTargets()
         worker.taskQueue = worker.taskQueue.pop()
         worker.constructionElapsed = 0f
         worker.constructionWorking = false

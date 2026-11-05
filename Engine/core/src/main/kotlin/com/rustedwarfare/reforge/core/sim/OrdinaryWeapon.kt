@@ -1,14 +1,16 @@
 package com.rustedwarfare.reforge.core.sim
 
 import com.rustedwarfare.reforge.core.content.DirectHitTargetKind
+import com.rustedwarfare.reforge.core.content.CombatProfile
+import com.rustedwarfare.reforge.core.content.MechKind
 import kotlin.math.abs
 import kotlin.math.sqrt
 
 /** Ordinary ground weapon only; geometry uses this core's Double/ScreenPlane contract. */
 internal object OrdinaryWeapon {
-    fun sample(seed: Int, frame: Int, objectId: Long, unit: MutableUnit, salt: Int, min: Int, max: Int): Int {
+    fun sample(seed: Int, frame: Int, objectId: Long, unit: MutableUnit, salt: Int, min: Int, max: Int,
+               state: MutableCombat = checkNotNull(unit.combat)): Int {
         require(max > min)
-        val state = checkNotNull(unit.combat)
         val t = frame + 1
         var h = (seed.toLong() + objectId * 1313L).toInt()
         val x = unit.position.x.toFloat()
@@ -28,19 +30,20 @@ internal object OrdinaryWeapon {
         return min + remainder
     }
 
-    fun refreshOffset(seed: Int, frame: Int, objectId: Long, unit: MutableUnit, target: MutableUnit) {
+    fun refreshOffset(seed: Int, frame: Int, objectId: Long, unit: MutableUnit, target: MutableUnit,
+                      state: MutableCombat = checkNotNull(unit.combat)) {
         val bound = (target.definition.radius.toFloat() * .6f).toInt()
-        val state = checkNotNull(unit.combat)
         state.offset = if (bound == 0) Position(0.0, 0.0) else Position(
-            sample(seed, frame, objectId, unit, 1, -bound, bound).toDouble(),
-            sample(seed, frame, objectId, unit, 2, -bound, bound).toDouble())
+            sample(seed, frame, objectId, unit, 1, -bound, bound, state).toDouble(),
+            sample(seed, frame, objectId, unit, 2, -bound, bound, state).toDouble())
     }
 
-    fun pivot(unit: MutableUnit): Position {
-        val state = checkNotNull(unit.combat)
-        val weapon = checkNotNull(unit.definition.combat)
+    fun pivot(unit: MutableUnit, state: MutableCombat = checkNotNull(unit.combat),
+              weapon: CombatProfile = checkNotNull(unit.definition.combat),
+              origin: Position = unit.position, baseHeading: Double = unit.heading,
+              recoilDelay: Double = weapon.shootDelay): Position {
         val profile = weapon.recoil
-        val elapsed = weapon.shootDelay - state.cooldown
+        val elapsed = recoilDelay - state.cooldown
         val recoil = if (state.cooldown <= 0.0) 0.0 else when {
             elapsed < profile.outTime -> elapsed / profile.outTime * profile.offset
             elapsed < profile.outTime + profile.returnTime ->
@@ -48,16 +51,15 @@ internal object OrdinaryWeapon {
             else -> 0.0
         }
         val d = ScreenPlane.displacement(state.turretHeading, recoil)
-        val forward = ScreenPlane.displacement(unit.heading, weapon.mount.localY)
-        val side = ScreenPlane.displacement(unit.heading + 90.0, weapon.mount.localX)
-        return Position(unit.position.x + d.x + forward.x + side.x,
-            unit.position.y + d.y + forward.y + side.y)
+        val forward = ScreenPlane.displacement(baseHeading, weapon.mount.localY)
+        val side = ScreenPlane.displacement(baseHeading + 90.0, weapon.mount.localX)
+        return Position(origin.x + d.x + forward.x + side.x,
+            origin.y + d.y + forward.y + side.y)
     }
 
-    fun muzzle(unit: MutableUnit): Position {
-        val state = checkNotNull(unit.combat)
-        val base = pivot(unit)
-        val weapon = checkNotNull(unit.definition.combat)
+    fun muzzle(unit: MutableUnit, state: MutableCombat = checkNotNull(unit.combat),
+               weapon: CombatProfile = checkNotNull(unit.definition.combat),
+               base: Position = pivot(unit, state, weapon)): Position {
         val forward = ScreenPlane.displacement(state.turretHeading, weapon.turretSize)
         val side = ScreenPlane.displacement(state.turretHeading + 90.0,
             weapon.barrelX + if (state.oddShot) weapon.oddShotOffset else 0.0)
@@ -65,22 +67,33 @@ internal object OrdinaryWeapon {
     }
 
     fun hasFiniteGeometry(unit: MutableUnit): Boolean {
+        unit.definition.combat?.takeIf { NamedWeaponRuntime.usesNamedState(it) }?.namedWeapons?.let { catalog ->
+            val states = unit.namedWeapons ?: return false
+            if (states.keys.toList() != catalog.ordered.map { it.name }) return false
+            return catalog.ordered.all { definition ->
+                val state = states.getValue(definition.name)
+                val pivot = NamedWeaponRuntime.pivot(unit, definition, state)
+                val muzzle = NamedWeaponRuntime.muzzle(unit, definition, state)
+                pivot.x.isFinite() && pivot.y.isFinite() && muzzle.x.isFinite() && muzzle.y.isFinite()
+            }
+        }
         val pivot = pivot(unit)
         val muzzle = muzzle(unit)
         return pivot.x.isFinite() && pivot.y.isFinite() && muzzle.x.isFinite() && muzzle.y.isFinite()
     }
 
-    fun aim(unit: MutableUnit, target: MutableUnit, delta: Double): Double {
-        val state = checkNotNull(unit.combat)
+    fun aim(unit: MutableUnit, target: MutableUnit, delta: Double, state: MutableCombat = checkNotNull(unit.combat),
+            weapon: CombatProfile = checkNotNull(unit.definition.combat),
+            pivotForAim: (() -> Position)? = null): Double {
         val aim = Position(target.position.x + state.offset.x, target.position.y + state.offset.y)
-        turnTo(unit, ScreenPlane.desired(pivot(unit), aim), delta)
-        return ScreenPlane.difference(ScreenPlane.desired(pivot(unit), aim), state.turretHeading)
+        fun origin() = pivotForAim?.invoke() ?: pivot(unit, state, weapon)
+        turnTo(unit, ScreenPlane.desired(origin(), aim), delta, state, weapon)
+        return ScreenPlane.difference(ScreenPlane.desired(origin(), aim), state.turretHeading)
     }
 
-    private fun turnTo(unit: MutableUnit, heading: Double, delta: Double): Double {
-        val state = checkNotNull(unit.combat)
-        val weapon = checkNotNull(unit.definition.combat)
-        val diff = ScreenPlane.difference(heading, state.turretHeading)
+    fun turnTo(unit: MutableUnit, heading: Double, delta: Double, state: MutableCombat,
+                       weapon: CombatProfile, difference: Double = ScreenPlane.difference(heading, state.turretHeading)): Double {
+        val diff = difference
         if (abs(diff) >= .01) {
             val acceleration = weapon.turretTurnAcceleration
             val sign = if (diff < 0) -1.0 else 1.0
@@ -89,30 +102,47 @@ internal object OrdinaryWeapon {
             state.angularVelocity = if (acceleration == 0.0) sign * rate else
                 approach(state.angularVelocity, sign * rate, acceleration * delta)
             val turn = state.angularVelocity * delta
-            state.turretHeading = ScreenPlane.normalize(state.turretHeading + if (abs(turn) > abs(diff)) {
+            val applied = if (abs(turn) > abs(diff)) {
                 state.angularVelocity = 0.0
                 diff
-            } else turn)
+            } else turn
+            state.turretHeading = ScreenPlane.normalize(state.turretHeading + applied)
+            if (state === unit.combat && unit.definition.mech?.kind == MechKind.TWO_LEGGED)
+                unit.mechState?.let { unit.mechState = it.copy(bodyAngle = it.bodyAngle + applied) }
         }
         return ScreenPlane.difference(heading, state.turretHeading)
     }
 
-    fun idle(seed: Int, frame: Int, objectId: Long, unit: MutableUnit, delta: Double) {
-        val profile = checkNotNull(unit.definition.combat).idleSweep ?: return
-        val state = checkNotNull(unit.combat)
+    fun idle(seed: Int, frame: Int, objectId: Long, unit: MutableUnit, delta: Double,
+             state: MutableCombat = checkNotNull(unit.combat),
+             weapon: CombatProfile = checkNotNull(unit.definition.combat)) {
+        val profile = weapon.idleSweep ?: return
         val elapsed = delta.toFloat()
         if (state.idleHold != 0f) {
             state.idleHold = maxOf(0f, state.idleHold - elapsed)
             return
         }
+        unit.mechState?.takeIf { it.hadMotionAim }?.let { motion ->
+            val body = checkNotNull(unit.definition.mech).body
+            val base = motion.motionAngle + if (motion.reversing && unit.definition.movement.reverseSpeedPercentage > .95)
+                body.reverseIdleDirection else body.idleDirection
+            state.idleBaseHeading = ScreenPlane.normalize(base + 90.0)
+            val difference = MechMotion.angleDifference(base, motion.bodyAngle)
+            when {
+                motion.bodyAngle == base -> Unit
+                abs(difference) < .5 -> { state.idleHold = 20f; state.angularVelocity = 0.0 }
+                else -> turnTo(unit, state.idleBaseHeading, delta, state, weapon, difference)
+            }
+            return
+        }
         state.idleTimer += elapsed
         if (!state.idleReached) {
             val residual = turnTo(unit, ScreenPlane.normalize(state.idleBaseHeading + state.idleOffset),
-                (profile.speedFactor * elapsed).toDouble())
+                (profile.speedFactor * elapsed).toDouble(), state, weapon)
             if (abs(residual) < .01) state.idleReached = true
         }
         if (state.idleTimer > profile.delay) {
-            state.idleTimer = -sample(seed, frame, objectId, unit, 0, 0, profile.randomDelayExclusive).toFloat()
+            state.idleTimer = -sample(seed, frame, objectId, unit, 0, 0, profile.randomDelayExclusive, state).toFloat()
             state.idleDirection = -state.idleDirection
             state.idleOffset = profile.angle * state.idleDirection
             state.idleReached = false
@@ -145,6 +175,11 @@ internal object OrdinaryWeapon {
         val heightStep = if (heightDifference != 0.0 && distanceSquared > .1)
             minOf(abs(heightDifference) / sqrt(distanceSquared) * step, step) else step
         projectile.height = approach(projectile.height, target.height, heightStep)
+        projectile.acceleration?.let { profile ->
+            val amount = profile.acceleration * delta
+            require(amount.isFinite()) { "Projectile acceleration step must remain finite" }
+            projectile.speed = approach(projectile.speed, profile.targetSpeed, amount)
+        }
         val contactRadius = when (target.definition.directHitTargetKind) {
             DirectHitTargetKind.ORDINARY -> 6f
             DirectHitTargetKind.NATIVE_BUILDING -> maxOf(6f, target.definition.radius.toFloat() * .8f)

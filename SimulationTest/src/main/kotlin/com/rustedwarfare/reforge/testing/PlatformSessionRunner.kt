@@ -6,17 +6,33 @@ import java.nio.file.StandardOpenOption.CREATE_NEW
 import com.rustedwarfare.reforge.client.ClientEvidence
 import com.rustedwarfare.reforge.client.ControlledScenario
 import com.rustedwarfare.reforge.client.SandboxSession
+import com.rustedwarfare.reforge.client.SandboxLoader
+import com.rustedwarfare.reforge.client.ContentPackChoice
+import com.rustedwarfare.reforge.client.LoadedSandbox
+import com.rustedwarfare.reforge.client.SandboxRenderResources
+import com.rustedwarfare.reforge.client.MapProjection
+import com.rustedwarfare.reforge.client.SoundPlayback
+import com.rustedwarfare.reforge.client.PlaybackSound
+import com.rustedwarfare.reforge.client.PlaybackSoundFactory
+import com.rustedwarfare.reforge.client.soundListener
+import com.rustedwarfare.reforge.core.content.ContentLoader
+import com.rustedwarfare.reforge.core.content.ContentResult
+import com.rustedwarfare.reforge.core.sim.Scenario
 import com.rustedwarfare.reforge.core.sim.Position
+import com.rustedwarfare.reforge.pc.PcResourceImagePreparation
 import kotlinx.serialization.json.*
 
 fun main(args: Array<String>) {
-    require(args.size == 3) { "PlatformSessionRunnerKt INPUT_ROOT PLAN_JSON NEW_OUTPUT_DIRECTORY" }
-    PlatformSessionRunner.run(Path.of(args[0]), Path.of(args[1]), Path.of(args[2]))
+    require(args.size in 3..4) { "PlatformSessionRunnerKt INPUT_ROOT PLAN_JSON NEW_OUTPUT_DIRECTORY [LOAD_TIMEOUT_SECONDS]" }
+    val timeout = if (args.size == 4) requireNotNull(args[3].toIntOrNull()) { "Expected integer load timeout" } else 5
+    require(timeout in 1..600) { "Load timeout must be bounded to 1..600 seconds" }
+    PlatformSessionRunner.run(Path.of(args[0]), Path.of(args[1]), Path.of(args[2]), timeout)
 }
 
 /** Executes client intentions; it never edits simulation state or expected values. */
 object PlatformSessionRunner {
-    fun run(inputs: Path, plan: Path, output: Path) {
+    fun run(inputs: Path, plan: Path, output: Path, loadTimeoutSeconds: Int = 5) {
+        require(loadTimeoutSeconds in 1..600) { "Load timeout must be bounded to 1..600 seconds" }
         val document = readObject(plan)
         require(document.integer("schemaVersion") == 1L) { "Unsupported platform plan version" }
         val intents = document.arrayAt("intents").map { it.jsonObject }
@@ -30,7 +46,23 @@ object PlatformSessionRunner {
                 writer.newLine()
                 writer.flush()
             }
-            SandboxSession(ControlledScenario.load(inputs), evidence).use { session ->
+            val loaded = loadScenario(inputs, document, evidence, output, loadTimeoutSeconds)
+            SandboxSession(loaded.scenario, evidence).use { session ->
+                val projection = MapProjection(loaded.scenario.map.widthTiles.toDouble() * loaded.scenario.map.tileWidth,
+                    loaded.scenario.map.heightTiles.toDouble() * loaded.scenario.map.tileHeight)
+                val listener = projection.soundListener()
+                val player = loaded.visuals?.resolvedSounds?.let { sounds ->
+                    evidence.record("sound-backend-ready", mapOf("backend" to "device-free"))
+                    SoundPlayback(session.consumeSounds(listener), sounds, PlaybackSoundFactory {
+                        object : PlaybackSound {
+                            private var voice = 0L
+                            override fun play(volume: Float, pitch: Float): Long = ++voice
+                            override fun stop() {}
+                            override fun close() {}
+                        }
+                    }, evidence)
+                }
+                player.use {
                 for (intent in intents) {
                     evidence.record("intent-start", mapOf("intentId" to intent.id("intentId")))
                     when (intent.text("kind")) {
@@ -52,11 +84,92 @@ object PlatformSessionRunner {
                     }
                     val waitSteps = if ("waitSteps" in intent) intent.integer("waitSteps") else 0L
                     require(waitSteps in 0..600) { "Client intent wait must be bounded to 600 steps" }
-                    repeat(waitSteps.toInt()) { session.tick() }
+                    repeat(waitSteps.toInt()) { tick ->
+                        if (tick % 8 == 0) player?.beginFrame()
+                        session.tick()
+                        player?.consume(session.consumeSounds(listener))
+                    }
                     evidence.record("intent-end", mapOf("intentId" to intent.id("intentId")))
+                }
                 }
             }
         }
+    }
+
+    private fun loadScenario(inputs: Path, document: JsonObject, evidence: ClientEvidence, output: Path, loadTimeoutSeconds: Int): LoadedSandbox {
+        val imageDirectories = if ("resourcePacks" in document) {
+            val images = document.objectAt("resourcePacks")
+            if (images.keys != setOf("directories")) throw InputError("Expected resourcePacks directories only")
+            val names = images.arrayAt("directories").map { item ->
+                val name = item as? JsonPrimitive
+                if (name == null || !name.isString || name.content.isBlank()) throw InputError("Expected local image package directory text")
+                name.content
+            }
+            if (names.isEmpty()) throw InputError("Expected at least one image package directory")
+            val root = inputs.toAbsolutePath().normalize()
+            names.map { name ->
+                val path = Path.of(name)
+                if (path.isAbsolute || path.any { it.toString() == ".." }) throw InputError("Image package must stay inside input snapshot")
+                val directory = root.resolve(path).normalize()
+                if (!directory.startsWith(root) || !directory.toRealPath().startsWith(root.toRealPath()))
+                    throw InputError("Image package escapes input snapshot")
+                directory
+            }
+        } else null
+        if ("contentPack" !in document && imageDirectories == null) {
+            val scenario = ControlledScenario.load(inputs)
+            return LoadedSandbox(scenario, null, SandboxRenderResources.from(scenario))
+        }
+        val contentChoice = if ("contentPack" in document) loadContentChoice(inputs, document) else null
+        return SandboxLoader().use { loader ->
+            val prepare = imageDirectories?.let { directories -> { PcResourceImagePreparation.prepare(directories, output.resolve("resource-cache"), contentChoice) } }
+            if (contentChoice == null) loader.request(inputs, prepare) else loader.requestPack(inputs, contentChoice, prepare)
+            val deadline = System.nanoTime() + loadTimeoutSeconds * 1_000_000_000L
+            while (System.nanoTime() < deadline) {
+                loader.pollPrepared()?.let { result ->
+                    val loaded = result.getOrThrow()
+                    evidence.recordLoadReady(1L, loaded)
+                    loaded.visuals?.let { evidence.recordVisualAssetsReady(it, 1L) }
+                    loaded.contentPack?.let { current ->
+                        evidence.record("content-pack-ready", mapOf("id" to current.pack.id, "unitId" to current.unitId,
+                            "packageIds" to current.content.packages.map { it.id },
+                            "effectiveSources" to current.content.provenance.mapValues { (_, origin) -> mapOf(
+                                "packageId" to origin.packageId, "entryPath" to origin.entryPath.toString(),
+                                "replacedPackageIds" to origin.replacedPackageIds) },
+                            "sources" to loaded.contentSources.map { mapOf("path" to it.path.toString(), "bytes" to it.bytes, "sha256" to it.sha256) }))
+                    }
+                    return@use loaded
+                }
+                Thread.sleep(5)
+            }
+            throw InputError("Package sandbox did not load within $loadTimeoutSeconds seconds")
+        }
+    }
+
+    private fun loadContentChoice(inputs: Path, document: JsonObject): ContentPackChoice {
+        val selection = document.objectAt("contentPack")
+        val names = when (selection.keys) {
+            setOf("directory", "unitId") -> listOf(selection.text("directory"))
+            setOf("directories", "unitId") -> selection.arrayAt("directories").map { value ->
+                val text = value as? JsonPrimitive
+                if (text == null || !text.isString || text.content.isBlank()) throw InputError("Expected local package directory text")
+                text.content
+            }
+            else -> throw InputError("Expected contentPack directory or directories, and unitId")
+        }
+        val root = inputs.toAbsolutePath().normalize()
+        val directories = names.map { name ->
+            val relative = Path.of(name)
+            if (relative.isAbsolute || relative.any { it.toString() == ".." }) throw InputError("Package directory must stay inside input snapshot")
+            val directory = root.resolve(relative).normalize()
+            if (!directory.startsWith(root)) throw InputError("Package directory escapes input snapshot")
+            directory
+        }
+        val content = when (val result = ContentLoader.loadContentPacks(directories)) {
+            is ContentResult.Success -> result.value
+            is ContentResult.Failure -> throw InputError(result.error.describe())
+        }
+        return ContentPackChoice(content, selection.text("unitId"))
     }
 
     private fun encode(value: Any?): JsonElement = when (value) {

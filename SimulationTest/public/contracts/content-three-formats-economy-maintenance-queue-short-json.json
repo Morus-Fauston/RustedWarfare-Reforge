@@ -1,0 +1,147 @@
+{
+  "schemaVersion": 1,
+  "kind": "behavior-contract",
+  "contractId": "public.content-three-formats-economy-maintenance-queue-short-json.v1.contract",
+  "scope": "self-behavior",
+  "scenarioIds": [
+    "public.content-three-formats-economy-maintenance-queue-short-json.v1"
+  ],
+  "approval": {
+    "status": "tool-fixture-only",
+    "source": "ENG-P008-003: unchanged maintenance-queue-short authored actions/rules; only explicit three-format input counterparts, identities and scenario attribution; no trajectory-derived expectations"
+  },
+  "comparison": {
+    "numberMode": "declared-per-field",
+    "tolerances": {},
+    "eventOrder": "strict-record-and-array-order"
+  },
+  "exclusions": [
+    "original-compatibility",
+    "platform-input",
+    "performance"
+  ],
+  "constructedUnits": [
+    {
+      "unitId": "constructed:p1:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "buildActionId": "build",
+      "builderId": "a",
+      "owner": "p1",
+      "typeId": "landFactory",
+      "buildingNonce": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "birthStepIndex": 0
+    },
+    {
+      "unitId": "constructed:p1:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "buildActionId": "rebuild",
+      "builderId": "a",
+      "owner": "p1",
+      "typeId": "landFactory",
+      "buildingNonce": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "birthStepIndex": 101
+    }
+  ],
+  "reclaimedUnits": [
+    {
+      "unitId": "constructed:p1:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "reclaimActionId": "reclaim",
+      "workerId": "a",
+      "owner": "p1",
+      "removalStepIndex": 100
+    }
+  ],
+  "rules": [
+    {
+      "ruleId": "not-before-guard",
+      "when": {
+        "phase": "after-advance",
+        "stepIndex": 99
+      },
+      "assertions": [
+        {
+          "path": "units.constructed:p1:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.constructionProgress",
+          "operator": "equals",
+          "value": 0
+        },
+        {
+          "path": "reclaimedUnitIds",
+          "operator": "equals",
+          "value": []
+        }
+      ]
+    },
+    {
+      "ruleId": "terminal-refund",
+      "when": {
+        "phase": "after-advance",
+        "stepIndex": 100
+      },
+      "assertions": [
+        {
+          "path": "reclaimedUnitIds",
+          "operator": "equals",
+          "value": [
+            "constructed:p1:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          ]
+        },
+        {
+          "path": "economy.preciseBalances.p1",
+          "operator": "equals",
+          "value": 1610.0000083446503
+        },
+        {
+          "path": "units.a.tasks.rebuild.kind",
+          "operator": "equals",
+          "value": "BUILD"
+        },
+        {
+          "path": "units.a.tasks.tail.kind",
+          "operator": "equals",
+          "value": "PATROL"
+        },
+        {
+          "path": "units.a.moveTarget",
+          "operator": "equals",
+          "value": null
+        }
+      ]
+    },
+    {
+      "ruleId": "next-update-rebuild",
+      "when": {
+        "phase": "after-advance",
+        "stepIndex": 101
+      },
+      "assertions": [
+        {
+          "path": "units.constructed:p1:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb.constructionProgress",
+          "operator": "equals",
+          "value": 0
+        },
+        {
+          "path": "economy.preciseBalances.p1",
+          "operator": "equals",
+          "value": 910.0000083446503
+        }
+      ]
+    },
+    {
+      "ruleId": "formal-resume",
+      "when": {
+        "phase": "after-advance",
+        "stepIndex": 102
+      },
+      "assertions": [
+        {
+          "path": "units.a.tasks.resume.kind",
+          "operator": "equals",
+          "value": "CONSTRUCT"
+        },
+        {
+          "path": "units.a.tasks.resume.targetUnitId",
+          "operator": "equals",
+          "value": "constructed:p1:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        }
+      ]
+    }
+  ]
+}

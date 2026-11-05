@@ -1,0 +1,182 @@
+{
+  "schemaVersion": 1,
+  "kind": "behavior-contract",
+  "contractId": "public.helicopter-production-json-chain.v1.contract",
+  "scope": "self-behavior",
+  "scenarioIds": [
+    "public.helicopter-production-json-chain.v1"
+  ],
+  "comparison": {
+    "numberMode": "declared-per-field",
+    "tolerances": {}
+  },
+  "approval": {
+    "status": "tool-fixture-only",
+    "source": "ENG-P008-015 sealed finite self-behavior contract: builder constructs the 1000-credit native air factory; 700-credit helicopter, HP150 and 17 direct damage. The unchanged Float32 .0012 needs 834 updates, so production at1200 births at2033. Native birth270,155, heading180, height0 and phase0. No original-compatibility claim or new tolerance. Actual archive tests separately require emitted helicopter projectiles and real target damage; the final rule only fixes the unchanged paid ledger."
+  },
+  "exclusions": [
+    "original-compatibility",
+    "platform-input",
+    "performance"
+  ],
+  "constructedUnits": [
+    {
+      "unitId": "constructed:p1:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "buildActionId": "build",
+      "builderId": "worker",
+      "owner": "p1",
+      "typeId": "airFactory",
+      "buildingNonce": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "birthStepIndex": 0
+    }
+  ],
+  "producedUnits": [
+    {
+      "unitId": "produced:p1:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "productionActionId": "produce",
+      "producerId": "constructed:p1:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "owner": "p1",
+      "typeId": "helicopter",
+      "unitNonce": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "birthStepIndex": 2033
+    }
+  ],
+  "rules": [
+    {
+      "ruleId": "initial-ledger",
+      "when": {
+        "phase": "initial",
+        "stepIndex": 0
+      },
+      "assertions": [
+        {
+          "path": "economy.balances.p1",
+          "operator": "equals",
+          "value": 3000
+        },
+        {
+          "path": "units.target.health",
+          "operator": "equals",
+          "value": 150
+        }
+      ]
+    },
+    {
+      "ruleId": "build-payment",
+      "when": {
+        "phase": "after-advance",
+        "stepIndex": 0
+      },
+      "assertions": [
+        {
+          "path": "economy.balances.p1",
+          "operator": "equals",
+          "value": 2000
+        },
+        {
+          "path": "units.constructed:p1:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.constructionProgress",
+          "operator": "equals",
+          "value": 0
+        }
+      ]
+    },
+    {
+      "ruleId": "factory-ready",
+      "when": {
+        "phase": "after-advance",
+        "stepIndex": 1199
+      },
+      "assertions": [
+        {
+          "path": "units.constructed:p1:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.constructionProgress",
+          "operator": "equals",
+          "value": 1
+        },
+        {
+          "path": "economy.balances.p1",
+          "operator": "equals",
+          "value": 2000
+        }
+      ]
+    },
+    {
+      "ruleId": "production-payment",
+      "when": {
+        "phase": "after-advance",
+        "stepIndex": 1200
+      },
+      "assertions": [
+        {
+          "path": "economy.balances.p1",
+          "operator": "equals",
+          "value": 1300
+        }
+      ]
+    },
+    {
+      "ruleId": "fixed-birth",
+      "when": {
+        "phase": "after-advance",
+        "stepIndex": 2033
+      },
+      "assertions": [
+        {
+          "path": "units.produced:p1:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb.position",
+          "operator": "equals",
+          "value": {
+            "x": 270,
+            "y": 155
+          }
+        },
+        {
+          "path": "units.produced:p1:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb.heading",
+          "operator": "equals",
+          "value": 180
+        },
+        {
+          "path": "units.produced:p1:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb.health",
+          "operator": "equals",
+          "value": 150
+        },
+        {
+          "path": "units.produced:p1:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb.height",
+          "operator": "equals",
+          "value": 0
+        },
+        {
+          "path": "units.produced:p1:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb.flightPose.rotorPhase",
+          "operator": "equals",
+          "value": 0
+        }
+      ]
+    },
+    {
+      "ruleId": "explicit-stop",
+      "when": {
+        "phase": "after-advance",
+        "stepIndex": 2260
+      },
+      "assertions": [
+        {
+          "path": "units.produced:p1:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb.moveTarget",
+          "operator": "equals",
+          "value": null
+        }
+      ]
+    },
+    {
+      "ruleId": "final-paid-ledger",
+      "when": {
+        "phase": "after-advance",
+        "stepIndex": 3199
+      },
+      "assertions": [
+        {
+          "path": "economy.balances.p1",
+          "operator": "equals",
+          "value": 1300
+        }
+      ]
+    }
+  ]
+}

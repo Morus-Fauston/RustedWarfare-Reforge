@@ -1,0 +1,11 @@
+{
+  "format": "rw-reforge.content-pack.v1",
+  "id": "reforge.named-weapons.json",
+  "name": "Named weapons json",
+  "units": [
+    {
+      "type": "tank",
+      "file": "units/named.json"
+    }
+  ]
+}

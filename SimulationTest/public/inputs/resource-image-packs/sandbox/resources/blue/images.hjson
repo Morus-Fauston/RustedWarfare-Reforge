@@ -1,0 +1,47 @@
+{
+  "formatVersion": 1,
+  "images": {
+    "reforge:units/c_tank/body": {
+      "file": "body.png",
+      "frameWidth": 20,
+      "frameHeight": 20,
+      "totalFrames": 3
+    },
+    "reforge:units/amber_scout/body": {
+      "file": "body.png",
+      "frameWidth": 20,
+      "frameHeight": 20,
+      "totalFrames": 3
+    },
+    "reforge:units/c_tank/turret": {
+      "file": "turret.png",
+      "frameWidth": 20,
+      "frameHeight": 20,
+      "totalFrames": 1
+    },
+    "reforge:units/amber_scout/turret": {
+      "file": "turret.png",
+      "frameWidth": 20,
+      "frameHeight": 20,
+      "totalFrames": 1
+    },
+    "reforge:terrain/controlled-strip-2": {
+      "file": "controlled-strip-2.png",
+      "frameWidth": 40,
+      "frameHeight": 20,
+      "totalFrames": 1
+    },
+    "reforge:terrain/demo-strip-4": {
+      "file": "demo-strip-4.png",
+      "frameWidth": 80,
+      "frameHeight": 20,
+      "totalFrames": 1
+    },
+    "reforge:units/demo_tank/body": {
+      "file": "demo-body.png",
+      "frameWidth": 32,
+      "frameHeight": 32,
+      "totalFrames": 1
+    }
+  }
+}

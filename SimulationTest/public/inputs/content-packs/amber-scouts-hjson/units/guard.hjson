@@ -1,0 +1,11 @@
+# Cross-format local template
+{
+  "format": "rw-reforge.unit.v1",
+  "copyFrom": [
+    "base.json"
+  ],
+  "core": {
+    "name": "amber_guard",
+    "maxHp": 320
+  }
+}

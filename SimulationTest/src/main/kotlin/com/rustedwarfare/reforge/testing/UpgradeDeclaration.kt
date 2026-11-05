@@ -28,6 +28,8 @@ internal object UpgradeDeclaration {
                         action.id("upgradeId") == "upgrade_t${target.last()}"
                 "c_turret_t1" -> definitions[source]?.get("loader") in setOf(s("turret-upgrades"), s("turret-construction")) &&
                     (action.id("upgradeId") to target) in setOf("upgrade_gun" to "c_turret_t2_gun", "upgrade_artillery" to "c_turret_t1_artillery")
+                "mechFactory", "seaFactory" -> definitions[source]?.get("loader") == s("factory") &&
+                    target == "${source}T2" && action.id("upgradeId") == "upgrade_t2"
                 else -> false
             }
             val completion = change.integer("completionStepIndex")

@@ -1,0 +1,62 @@
+{
+  "schemaVersion": 1,
+  "kind": "behavior-contract",
+  "contractId": "public.heavy-mech-hjson-short.v1.contract",
+  "scope": "self-behavior",
+  "scenarioIds": [
+    "public.heavy-mech-hjson-short.v1"
+  ],
+  "comparison": {
+    "numberMode": "declared-per-field",
+    "tolerances": {}
+  },
+  "approval": {
+    "status": "tool-fixture-only",
+    "source": "ENG-P008-016 owned ordinary LAND development variant: HP2500, four finite legs, existing Move/Stop. No original compatibility claim."
+  },
+  "exclusions": [
+    "original-compatibility",
+    "platform-input",
+    "performance"
+  ],
+  "rules": [
+    {
+      "ruleId": "initial-health-and-heading",
+      "when": {
+        "phase": "initial",
+        "stepIndex": 0
+      },
+      "assertions": [
+        {
+          "path": "units.a.health",
+          "operator": "equals",
+          "value": 2500
+        },
+        {
+          "path": "units.a.mechPose.forwardHeading",
+          "operator": "equals",
+          "value": 90
+        }
+      ]
+    },
+    {
+      "ruleId": "stop-clears-order",
+      "when": {
+        "phase": "after-advance",
+        "stepIndex": 10
+      },
+      "assertions": [
+        {
+          "path": "units.a.moveTarget",
+          "operator": "equals",
+          "value": null
+        },
+        {
+          "path": "units.a.health",
+          "operator": "equals",
+          "value": 2500
+        }
+      ]
+    }
+  ]
+}

@@ -15,6 +15,36 @@ import com.rustedwarfare.reforge.client.VisualAssetSource
 
 /** Self-authored tiny images. No original files or private directories are needed. */
 class VisualAssetPreparationTest {
+    @Test fun trusted_quarter_turn_recipe_rotates_actual_pixels_without_stretching_or_changing_the_source() {
+        val recipe = """"unitOutputs":{"body":{"file":"units/body.png","operation":"crop","source":"own","rect":[0,0,4,1],"target":[1,4],"rotate":90}},"terrainOutputs":{}"""
+        VisualAssetTestFixture(recipe).use { fixture ->
+            val source = Files.readAllBytes(fixture.source)
+            val output = fixture.service().prepare(fixture.root).outputs.getValue("body")
+            val image = ImageIO.read(output.toFile())
+            assertEquals(1, image.width); assertEquals(4, image.height)
+            assertEquals(0xffff0000.toInt(), image.getRGB(0, 0))
+            assertEquals(0xff00ff00.toInt(), image.getRGB(0, 1))
+            assertEquals(0, image.getRGB(0, 2))
+            assertEquals(0x800000ff.toInt(), image.getRGB(0, 3))
+            assertContentEquals(source, Files.readAllBytes(fixture.source))
+        }
+    }
+    @Test fun prepared_leg_and_foot_bindings_survive_the_real_verified_source_and_cache_adapter() {
+        VisualAssetTestFixture(transformProfile = { it.replace("\"body\":\"body\"",
+            "\"body\":\"body\",\"leg\":\"body\",\"foot\":\"body\"") }).use { fixture ->
+            assertTrue(fixture.root.parent.toAbsolutePath().normalize().startsWith(
+                java.nio.file.Path.of(System.getProperty("java.io.tmpdir")).toRealPath()))
+            val selected = VisualAssetSelection(VisualAssetSource.ORIGINAL, fixture.root, temporary = true)
+            val visuals = fixture.service().prepareVisuals(selected)
+            val images = visuals.units.getValue("own")
+            assertEquals(images.body, images.leg)
+            assertEquals(images.body, images.foot)
+            assertEquals(images.leg, visuals.resourcePack.resolve(com.rustedwarfare.reforge.client.ResourceId.parse("reforge:units/own/leg")))
+            assertEquals(images.foot, visuals.resourcePack.resolve(com.rustedwarfare.reforge.client.ResourceId.parse("reforge:units/own/foot")))
+            assertEquals(0xffff0000.toInt(), ImageIO.read(images.leg!!.toFile()).getRGB(0, 0))
+            visuals.verifyForPublication()
+        }
+    }
     @Test fun cache_output_inside_the_original_source_is_rejected_before_any_directory_is_created() {
         VisualAssetTestFixture().use { fixture ->
             val forbidden = fixture.root.resolve("must-stay-absent")
@@ -79,17 +109,20 @@ class VisualAssetPreparationTest {
         }
     }
     @Test fun production_profile_is_fixed_complete_metadata_without_machine_paths() {
-        val profile = VisualAssetProfile.bundled()
-        assertEquals("rw.android.1.15.176.visual.v1", profile.id)
-        assertEquals(30, profile.json.get("sources").size)
-        assertEquals(27, profile.json.get("unitOutputs").size)
-        assertEquals(5, profile.json.get("terrainOutputs").size)
-        assertEquals(16, profile.json.get("unitBindings").size)
-        assertEquals(32, profile.recipes.size)
-        assertEquals("815e383faa17ba46dc42ee596b299d14b95da696e604cc21fd97a11bad630251",
-            profile.json.get("identity").getString("manifestSha256"))
-        assertEquals(null, profile.json.get("sourceRootObserved"))
-        assertEquals(null, profile.json.get("baseline"))
+        for ((profile, version, addedImages) in listOf(Triple(VisualAssetProfile.versionTwo(), 2, 0),
+            Triple(VisualAssetProfile.versionThree(), 3, 5), Triple(VisualAssetProfile.versionFour(), 4, 11),
+            Triple(VisualAssetProfile.bundled(), 5, 17))) {
+            assertEquals("rw.android.1.15.176.visual.v$version", profile.id)
+            assertEquals(36 + addedImages, profile.json.get("sources").size)
+            assertEquals(33 + addedImages, profile.json.get("unitOutputs").size)
+            assertEquals(5, profile.json.get("terrainOutputs").size)
+            assertEquals(when (version) { 2 -> 18; 3 -> 20; 4 -> 22; else -> 25 }, profile.json.get("unitBindings").size)
+            assertEquals(38 + addedImages, profile.recipes.size)
+            assertEquals("815e383faa17ba46dc42ee596b299d14b95da696e604cc21fd97a11bad630251",
+                profile.json.get("identity").getString("manifestSha256"))
+            assertEquals(null, profile.json.get("sourceRootObserved"))
+            assertEquals(null, profile.json.get("baseline"))
+        }
     }
     @Test fun reports_all_missing_members_and_never_uses_a_cache_with_invalid_source() {
         VisualAssetTestFixture().use { fixture ->

@@ -1,0 +1,11 @@
+{
+  "format": "rw-reforge.content-pack.v1",
+  "id": "reforge.weapon-relations.linked-reverse.json",
+  "name": "Owned linked-reverse representative",
+  "units": [
+    {
+      "type": "tank",
+      "file": "units/linked.json"
+    }
+  ]
+}

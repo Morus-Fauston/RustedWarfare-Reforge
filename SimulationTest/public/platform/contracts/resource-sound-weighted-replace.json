@@ -1,0 +1,86 @@
+{
+  "schemaVersion": 1,
+  "scenarioId": "resource-sound-weighted-replace",
+  "rules": [
+    {
+      "intentId": "choose-tank",
+      "actionType": "SelectAction",
+      "unitId": "a",
+      "accepted": true,
+      "assertions": [
+        {
+          "path": "units.a.typeId",
+          "operator": "equals",
+          "value": "c_tank"
+        }
+      ]
+    },
+    {
+      "intentId": "attack-enemy",
+      "actionType": "AttackAction",
+      "unitId": "a",
+      "accepted": true,
+      "actionFields": {
+        "targetUnitId": "b"
+      },
+      "assertions": [
+        {
+          "path": "units.a.attackTargetId",
+          "operator": "equals",
+          "value": "b"
+        }
+      ]
+    }
+  ],
+  "resourceImages": {
+    "packOrder": [
+      "owned:weighted-replace",
+      "owned:weighted-lower",
+      "reforge:base"
+    ],
+    "resources": {
+      "owned:sound-icon": {
+        "providerId": "owned:weighted-replace",
+        "frameWidth": 32,
+        "frameHeight": 32,
+        "totalFrames": 1,
+        "pixelWidth": 64,
+        "pixelHeight": 64,
+        "bound": false
+      }
+    }
+  },
+  "resourceSounds": {
+    "eventId": "reforge:events/tank-fire",
+    "minimumRequests": 1,
+    "events": {
+      "reforge:events/tank-fire": {
+        "providerId": "owned:weighted-replace",
+        "totalWeight": 4,
+        "candidates": [
+          {
+            "sound": "owned:sounds/replace-a",
+            "weight": 3,
+            "providerId": "owned:weighted-replace"
+          },
+          {
+            "sound": "owned:sounds/replace-b",
+            "weight": 1,
+            "providerId": "owned:weighted-replace"
+          }
+        ]
+      },
+      "owned:events/retained": {
+        "providerId": "owned:weighted-lower",
+        "totalWeight": 1,
+        "candidates": [
+          {
+            "sound": "owned:sounds/lower-b",
+            "weight": 1,
+            "providerId": "owned:weighted-lower"
+          }
+        ]
+      }
+    }
+  }
+}

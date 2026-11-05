@@ -1,0 +1,22 @@
+// Explicit local dependency; no discovery or download.
+{
+  "format": "rw-reforge.content-pack.v1",
+  "id": "overlay.scouts",
+  "name": "Overlay scouts",
+  "units": [
+    {
+      "type": "tank",
+      "file": "units/scout.json"
+    }
+  ],
+  "dependencies": [
+    "base.scouts"
+  ],
+  "replacements": [
+    {
+      "contentId": "amber_scout",
+      "targetPackId": "base.scouts",
+      "targetContentId": "amber_scout"
+    }
+  ]
+}

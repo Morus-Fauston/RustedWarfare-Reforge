@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "profileId": "reforge.placeholder.visual.v1",
+  "profileId": "reforge.placeholder.visual.v2",
   "provenance": "Byte-identical copies of repository-authored public fixture and demo PNGs; no original-game images.",
   "files": [
     {
@@ -286,7 +286,7 @@
     {
       "id": "controlled-ground-40",
       "resource": "terrain/controlled-ground-40.png",
-      "source": "SimulationTest/public/inputs/content-movement-knowledge/P001-\u79fb\u52a8\u6c99\u76d2\u8f93\u5165/assets/ground.png",
+      "source": "SimulationTest/public/inputs/content-movement-knowledge/P001-移动沙盒输入/assets/ground.png",
       "bytes": 326,
       "sha256": "1dcf1489ef8e618ac2905588b5124dc72479275d1313100808098d16ffe7f540",
       "width": 100,
@@ -296,7 +296,7 @@
     {
       "id": "controlled-rock-35",
       "resource": "terrain/controlled-rock-35.png",
-      "source": "SimulationTest/public/inputs/content-movement-knowledge/P001-\u79fb\u52a8\u6c99\u76d2\u8f93\u5165/assets/rock.png",
+      "source": "SimulationTest/public/inputs/content-movement-knowledge/P001-移动沙盒输入/assets/rock.png",
       "bytes": 315,
       "sha256": "8ad644d4001c288a7a67484befde6ef25d5748d9f7e3ad2f3fdaf72142e94661",
       "width": 140,
@@ -331,6 +331,16 @@
       "sha256": "b6dd624aa1b0de9347f0c82bb61f24710d2ba3087676dc241e243977a4a05621",
       "width": 80,
       "height": 20,
+      "frames": 1
+    },
+    {
+      "id": "naval-ground-40",
+      "resource": "terrain/naval-ground-40.png",
+      "source": "SimulationTest/public/inputs/naval-production/ini/assets/naval-ground.png",
+      "bytes": 344,
+      "sha256": "9c32ebad05ee1c22011d8639a9f1674704967b0ed225b384726d11c654ed6cde",
+      "width": 100,
+      "height": 160,
       "frames": 1
     }
   ],
@@ -409,6 +419,7 @@
     "controlled-rock-35": "controlled-rock-35",
     "construction-strip-5": "construction-strip-5",
     "controlled-strip-2": "controlled-strip-2",
-    "demo-strip-4": "demo-strip-4"
+    "demo-strip-4": "demo-strip-4",
+    "naval-ground-40": "naval-ground-40"
   }
 }

@@ -28,7 +28,7 @@ def source_files(repo):
               'SimulationTest/settings.gradle.kts', 'SimulationTest/gradle.properties',
               'SimulationTest/gradlew', 'SimulationTest/gradlew.bat']]
     paths += [repo / 'SimulationTest/tools' / name for name in
-              ['platform_scenario.py', 'test_platform_scenario.py', 'test_platform_session_cli.py',
+              ['platform_scenario.py', 'test_platform_scenario.py', 'test_platform_session_cli.py', 'test_named_weapon_platform.py',
                'workflow.py', 'workflow_inputs.py', 'workflow_device.py', 'workflow_windows.py',
                'workflow_reuse.py', 'perf_report.py', 'platform_perf.py', 'test_workflow.py',
                'test_workflow_device.py', 'test_workflow_windows.py', 'test_workflow_reuse.py', 'test_perf_analysis.py',
@@ -143,10 +143,27 @@ def run(repo, output, plan):
         common = ['--no-daemon', '--console=plain', '--max-workers=1', '--rerun-tasks']
         if plan['fixture']:
             common += ['-Dpublic.inputs.dir=' + str(project / 'public' / plan['fixture'])]
-        tasks = []
-        for module, classes in plan['tests'].items():
-            tasks += [MODULES[module][0]] + [v for name in classes for v in ['--tests', name]]
-        command('tests-and-package', wrapper + tasks + [':installDist'] + common, project)
+        tasks = [MODULES[module][0] for module in plan['tests']]
+        selection_args = []
+        if tasks:
+            # A growing fixed registry can exceed cmd.exe's .bat command-line limit.
+            # Keep the same exact class filters in an archived Gradle init script.
+            selection = output / 'selected-tests.gradle'
+            entries = [json.dumps(MODULES[module][0]) + ': ' + json.dumps(classes)
+                       for module, classes in plan['tests'].items()]
+            selection.write_text('def selectedTests = [\n' + ',\n'.join(entries) + '\n]\n' +
+                'gradle.projectsEvaluated {\n'
+                '    gradle.rootProject.allprojects { project ->\n'
+                '        project.tasks.withType(org.gradle.api.tasks.testing.Test).configureEach { task ->\n'
+                '            def classes = selectedTests[task.path]\n'
+                '            if (classes != null) task.filter.setIncludePatterns(classes as String[])\n'
+                '        }\n'
+                '    }\n'
+                '}\n', encoding='utf8')
+            selection_args = ['--init-script', str(selection)]
+            result['testSelection'] = dict(path=str(selection),
+                sha256=hashlib.sha256(selection.read_bytes()).hexdigest())
+        command('tests-and-package', wrapper + tasks + [':installDist'] + common + selection_args, project)
         for module, classes in plan['tests'].items():
             junit(project / MODULES[module][1], module + '-tests', classes)
         result['pythonCoverage'] = []

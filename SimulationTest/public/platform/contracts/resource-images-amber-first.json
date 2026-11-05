@@ -1,0 +1,155 @@
+{
+  "schemaVersion": 1,
+  "scenarioId": "resource-images-amber-first",
+  "rules": [
+    {
+      "intentId": "choose-tank",
+      "actionType": "SelectAction",
+      "unitId": "a",
+      "accepted": true,
+      "assertions": [
+        {
+          "path": "units.a.typeId",
+          "operator": "equals",
+          "value": "amber_scout"
+        },
+        {
+          "path": "units.a.maxHealth",
+          "operator": "equals",
+          "value": 250
+        }
+      ],
+      "unitIdentity": {
+        "ownerPlayerId": "p1",
+        "typeId": "amber_scout"
+      }
+    },
+    {
+      "intentId": "move-tank",
+      "actionType": "MoveAction",
+      "unitId": "a",
+      "accepted": true,
+      "targetFromIntent": true,
+      "assertions": [
+        {
+          "path": "units.a.moveTarget",
+          "operator": "equalsActionTarget"
+        }
+      ],
+      "unitIdentity": {
+        "ownerPlayerId": "p1",
+        "typeId": "amber_scout"
+      }
+    },
+    {
+      "intentId": "stop-tank",
+      "actionType": "StopAction",
+      "unitId": "a",
+      "accepted": true,
+      "assertions": [
+        {
+          "path": "units.a.moveTarget",
+          "operator": "equals",
+          "value": null
+        }
+      ],
+      "tail": {
+        "samples": 9,
+        "assertions": [
+          {
+            "path": "units.a.speed",
+            "operator": "equals",
+            "value": 0
+          },
+          {
+            "path": "units.a.angularVelocity",
+            "operator": "equals",
+            "value": 0
+          },
+          {
+            "path": "units.a.moveTarget",
+            "operator": "equals",
+            "value": null
+          },
+          {
+            "path": "units.a.position",
+            "operator": "stable"
+          }
+        ]
+      },
+      "unitIdentity": {
+        "ownerPlayerId": "p1",
+        "typeId": "amber_scout"
+      }
+    },
+    {
+      "intentId": "attack-enemy",
+      "actionType": "AttackAction",
+      "unitId": "a",
+      "accepted": true,
+      "actionFields": {
+        "targetUnitId": "b"
+      },
+      "assertions": [
+        {
+          "path": "units.a.attackTargetId",
+          "operator": "equals",
+          "value": "b"
+        }
+      ],
+      "unitIdentity": {
+        "ownerPlayerId": "p1",
+        "typeId": "amber_scout"
+      },
+      "targetIdentity": {
+        "ownerPlayerId": "p2",
+        "typeId": "amber_scout"
+      }
+    }
+  ],
+  "resourceImages": {
+    "packOrder": [
+      "owned:amber",
+      "owned:blue",
+      "reforge:base"
+    ],
+    "resources": {
+      "reforge:units/amber_scout/body": {
+        "providerId": "owned:amber",
+        "frameWidth": 20,
+        "frameHeight": 20,
+        "totalFrames": 3,
+        "pixelWidth": 120,
+        "pixelHeight": 40,
+        "bound": true
+      },
+      "reforge:units/amber_scout/turret": {
+        "providerId": "owned:blue",
+        "frameWidth": 20,
+        "frameHeight": 20,
+        "totalFrames": 1,
+        "pixelWidth": 60,
+        "pixelHeight": 60,
+        "bound": true
+      },
+      "reforge:units/amber_scout/dead": {
+        "providerId": "reforge:base",
+        "frameWidth": 20,
+        "frameHeight": 20,
+        "totalFrames": 1,
+        "pixelWidth": 20,
+        "pixelHeight": 20,
+        "bound": true
+      },
+      "reforge:terrain/controlled-strip-2": {
+        "providerId": "owned:blue",
+        "frameWidth": 40,
+        "frameHeight": 20,
+        "totalFrames": 1,
+        "pixelWidth": 80,
+        "pixelHeight": 40,
+        "bound": true
+      }
+    }
+  }
+}

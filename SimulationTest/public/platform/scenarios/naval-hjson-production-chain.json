@@ -1,0 +1,180 @@
+{
+  "schemaVersion": 1,
+  "scenarioId": "naval-hjson-production-chain",
+  "inputs": "../../inputs/naval-production/hjson",
+  "contentPack": {
+    "directory": "production-package",
+    "unitId": "builder"
+  },
+  "intents": [
+    {
+      "intentId": "select-builder",
+      "kind": "select",
+      "position": {
+        "x": 390,
+        "y": 150
+      }
+    },
+    {
+      "intentId": "build-t1",
+      "kind": "build",
+      "typeId": "seaFactory",
+      "position": {
+        "x": 450,
+        "y": 150
+      },
+      "waitSteps": 600
+    },
+    {
+      "intentId": "wait-t1",
+      "kind": "select",
+      "position": {
+        "x": 450,
+        "y": 150
+      },
+      "waitSteps": 600
+    },
+    {
+      "intentId": "finish-t1",
+      "kind": "select",
+      "position": {
+        "x": 450,
+        "y": 150
+      },
+      "waitSteps": 400
+    },
+    {
+      "intentId": "upgrade-t2",
+      "kind": "upgrade",
+      "upgradeId": "upgrade_t2",
+      "waitSteps": 600
+    },
+    {
+      "intentId": "wait-upgrade-0",
+      "kind": "select",
+      "position": {
+        "x": 450,
+        "y": 150
+      },
+      "waitSteps": 600
+    },
+    {
+      "intentId": "wait-upgrade-1",
+      "kind": "select",
+      "position": {
+        "x": 450,
+        "y": 150
+      },
+      "waitSteps": 600
+    },
+    {
+      "intentId": "wait-upgrade-2",
+      "kind": "select",
+      "position": {
+        "x": 450,
+        "y": 150
+      },
+      "waitSteps": 600
+    },
+    {
+      "intentId": "finish-upgrade",
+      "kind": "select",
+      "position": {
+        "x": 450,
+        "y": 150
+      },
+      "waitSteps": 200
+    },
+    {
+      "intentId": "produce-ship",
+      "kind": "produce",
+      "typeId": "heavyBattleship",
+      "waitSteps": 600
+    },
+    {
+      "intentId": "wait-ship-0",
+      "kind": "select",
+      "position": {
+        "x": 450,
+        "y": 150
+      },
+      "waitSteps": 600
+    },
+    {
+      "intentId": "wait-ship-1",
+      "kind": "select",
+      "position": {
+        "x": 450,
+        "y": 150
+      },
+      "waitSteps": 600
+    },
+    {
+      "intentId": "wait-ship-2",
+      "kind": "select",
+      "position": {
+        "x": 450,
+        "y": 150
+      },
+      "waitSteps": 600
+    },
+    {
+      "intentId": "wait-ship-3",
+      "kind": "select",
+      "position": {
+        "x": 450,
+        "y": 150
+      },
+      "waitSteps": 600
+    },
+    {
+      "intentId": "leave-factory",
+      "kind": "select",
+      "position": {
+        "x": 450,
+        "y": 150
+      },
+      "waitSteps": 100
+    },
+    {
+      "intentId": "select-ship",
+      "kind": "select",
+      "position": {
+        "x": 449,
+        "y": 285
+      }
+    },
+    {
+      "intentId": "move-ship",
+      "kind": "move",
+      "position": {
+        "x": 450,
+        "y": 400
+      },
+      "waitSteps": 20
+    },
+    {
+      "intentId": "stop-ship",
+      "kind": "stop",
+      "waitSteps": 40
+    },
+    {
+      "intentId": "attack-ground",
+      "kind": "attack",
+      "position": {
+        "x": 330,
+        "y": 550
+      },
+      "waitSteps": 440
+    },
+    {
+      "intentId": "attack-underwater",
+      "kind": "attack",
+      "position": {
+        "x": 600,
+        "y": 300
+      },
+      "waitSteps": 400
+    }
+  ]
+}

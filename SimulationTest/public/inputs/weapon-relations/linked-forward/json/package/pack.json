@@ -1,0 +1,11 @@
+{
+  "format": "rw-reforge.content-pack.v1",
+  "id": "reforge.weapon-relations.linked-forward.json",
+  "name": "Linked cooldown with independent warmup",
+  "units": [
+    {
+      "type": "tank",
+      "file": "units/linked.json"
+    }
+  ]
+}

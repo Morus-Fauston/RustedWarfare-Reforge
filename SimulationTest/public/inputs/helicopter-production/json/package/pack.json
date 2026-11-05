@@ -1,0 +1,11 @@
+{
+  "format": "rw-reforge.content-pack.v1",
+  "id": "p008-helicopter-json",
+  "name": "Own helicopter representative",
+  "units": [
+    {
+      "type": "helicopter",
+      "file": "units/helicopter.json"
+    }
+  ]
+}

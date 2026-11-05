@@ -1,10 +1,13 @@
 package com.rustedwarfare.reforge.core.sim
 
 import com.rustedwarfare.reforge.core.content.MapDefinition
+import com.rustedwarfare.reforge.core.content.MovementType
 
-/** Static LAND center/cell correction. Map outer-circle handling belongs to the caller. */
+/** Typed static center/cell correction. Map outer-circle handling belongs to the caller. */
 internal object TerrainMotion {
-    fun resolve(map: MapDefinition, start: Position, candidate: Position, ground: MapDefinition? = null): Position {
+    fun resolve(map: MapDefinition, start: Position, candidate: Position, ground: MapDefinition? = null,
+                movementType: MovementType = MovementType.LAND): Position {
+        val blocking = map.blockingFor(movementType)
         val a = Position(start.x / map.tileWidth, start.y / map.tileHeight)
         val b = Position(candidate.x / map.tileWidth, candidate.y / map.tileHeight)
         // D-083 retains the map's closed outer edge for zero-radius units.
@@ -14,29 +17,29 @@ internal object TerrainMotion {
         val newY = MapBounds.cell(candidate.y, map.tileHeight, map.heightTiles)
         // C6 releases only the building layer from an already blocked start.
         // Re-run the entire segment on hard ground, including multi-cell walls.
-        if (ground != null && (oldX != newX || oldY != newY) && map.blocking.isBlocked(oldX, oldY) &&
-            !ground.blocking.isBlocked(newX, newY)) return resolve(ground, start, candidate)
+        if (ground != null && (oldX != newX || oldY != newY) && blocking.isBlocked(oldX, oldY) &&
+            !ground.blockingFor(movementType).isBlocked(newX, newY)) return resolve(ground, start, candidate, movementType = movementType)
         if (kotlin.math.abs(newX.toLong() - oldX) > 1L || kotlin.math.abs(newY.toLong() - oldY) > 1L) {
             val line = ExactCenterLineCells(start, candidate)
             val firstX = (minOf(oldX, newX).toLong() - 1L).coerceAtLeast(0L).toInt()
             val lastX = (maxOf(oldX, newX).toLong() + 1L).coerceAtMost(map.widthTiles.toLong() - 1L).toInt()
             val firstY = (minOf(oldY, newY).toLong() - 1L).coerceAtLeast(0L).toInt()
             val lastY = (maxOf(oldY, newY).toLong() + 1L).coerceAtMost(map.heightTiles.toLong() - 1L).toInt()
-            if (map.blocking.widthTiles == map.widthTiles && map.blocking.heightTiles == map.heightTiles) {
-                if (map.blocking.anyBlocked(firstX, lastX, firstY, lastY) { column, row ->
+            if (blocking.widthTiles == map.widthTiles && blocking.heightTiles == map.heightTiles) {
+                if (blocking.anyBlocked(firstX, lastX, firstY, lastY) { column, row ->
                     line.enters(column, row, map.tileWidth, map.tileHeight,
                         column == map.widthTiles - 1, row == map.heightTiles - 1)
                 }) return start
             } else {
                 // Preserve the prior failure/short-circuit behavior for unqualified direct callers.
                 for (row in firstY..lastY) for (column in firstX..lastX) {
-                    if (map.blocking.isBlocked(column, row) && line.enters(column, row, map.tileWidth, map.tileHeight,
+                    if (blocking.isBlocked(column, row) && line.enters(column, row, map.tileWidth, map.tileHeight,
                             column == map.widthTiles - 1, row == map.heightTiles - 1)) return start
                 }
             }
             return candidate
         }
-        fun blocked(x: Int, y: Int): Boolean = x !in 0 until map.widthTiles || y !in 0 until map.heightTiles || map.blocking.isBlocked(x, y)
+        fun blocked(x: Int, y: Int): Boolean = x !in 0 until map.widthTiles || y !in 0 until map.heightTiles || blocking.isBlocked(x, y)
         if ((oldX == newX && oldY == newY) || !blocked(newX, newY)) return candidate
         var corrected: Position? = null
         if (oldX != newX && oldY != newY) {

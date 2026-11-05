@@ -1,0 +1,10 @@
+{
+  "format": "rw-reforge.unit.v1",
+  "copyFrom": [
+    "base.ini"
+  ],
+  "core": {
+    "name": "amber_scout",
+    "maxHp": 420
+  }
+}
