@@ -38,7 +38,7 @@ class DefenseConstructionContentTest {
             val missing = assertIs<ContentResult.Failure>(load(input(4, null))).error
             assertEquals(ContentErrorCode.MISSING_REQUIRED_FIELD, missing.code)
             assertEquals("constructionTypes", missing.field)
-            val unknown = assertIs<ContentResult.Failure>(load(input(5, five))).error
+            val unknown = assertIs<ContentResult.Failure>(load(input(8, five))).error
             assertEquals(ContentErrorCode.UNSUPPORTED_FEATURE, unknown.code)
             assertEquals("format", unknown.field)
         } finally { Files.deleteIfExists(file) }
