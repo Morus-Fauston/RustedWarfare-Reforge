@@ -105,7 +105,43 @@ def plan_suite(repo, name, kind):
                 pythonTests=python_tests, inputScope=suite.get('inputScope', 'public'), fixture=suite.get('fixture'))
 
 
-def run(repo, output, plan):
+def build_shared_distribution(repo, output, source):
+    """Produce one immutable long-batch package, not a previous test result."""
+    from public_distribution import seal, verify, toolchain_identity
+    output.mkdir(parents=True, exist_ok=False)
+    started = time.monotonic()
+    project = repo/'SimulationTest'
+    wrapper = [str(project/'gradlew.bat')] if os.name == 'nt' else ['sh', str(project/'gradlew')]
+    argv = wrapper + [':installDist', '--no-daemon', '--console=plain', '--max-workers=1', '--rerun-tasks']
+    result = dict(status='execution-failed', argv=argv, exitCode=None)
+    try:
+        initial_toolchain = toolchain_identity()
+        result['toolchainBefore'] = initial_toolchain
+        with (output/'build.log').open('w', encoding='utf8') as log:
+            result['exitCode'] = subprocess.run(argv, cwd=project, stdout=log,
+                                                stderr=subprocess.STDOUT, timeout=600).returncode
+        if result['exitCode']:
+            raise RuntimeError('Shared distribution build failed: exit '+str(result['exitCode']))
+        if identities(repo) != source:
+            raise RuntimeError('Public source changed during shared distribution build')
+        final_toolchain = toolchain_identity()
+        result['toolchainAfter'] = final_toolchain
+        if final_toolchain != initial_toolchain:
+            raise RuntimeError('JDK or Gradle configuration changed during shared distribution build')
+        package = output/'package'
+        shutil.copytree(project/'build/install/simulation-test', package)
+        receipt = output/'distribution.json'
+        pin = seal(package, receipt, source, initial_toolchain)
+        verify(receipt, pin, identities(repo))
+        result.update(status='passed', receipt=str(receipt), sha256=pin)
+    except Exception as error:
+        result['error'] = str(error)
+    result['elapsedSeconds'] = time.monotonic()-started
+    (output/'result.json').write_text(json.dumps(result, ensure_ascii=False, indent=2)+'\n', encoding='utf8')
+    return result
+
+
+def run(repo, output, plan, prepared_distribution=None):
     output.mkdir(parents=True, exist_ok=False)
     initial = identities(repo)
     result = dict(schemaVersion=1, suite=plan['suiteId'], selection=plan, status='execution-failed',
@@ -114,7 +150,12 @@ def run(repo, output, plan):
     if not any(case['kind'] == 'long' for case in plan['scenarios']):
         result['exclusions'].append('continuous-long')
     started = time.monotonic()
+    def admit():
+        from public_distribution import verify
+        return verify(prepared_distribution[0], prepared_distribution[1], identities(repo))
     def command(name, args, cwd):
+        if prepared_distribution is not None:
+            admit()
         begin = time.monotonic()
         with (output / (name + '.log')).open('w', encoding='utf-8') as stream:
             try:
@@ -125,6 +166,8 @@ def run(repo, output, plan):
                 code = 124
         result['commands'].append(dict(name=name, argv=[str(a) for a in args], exitCode=code,
                                        elapsedSeconds=time.monotonic() - begin))
+        if prepared_distribution is not None:
+            admit()
         if code:
             raise RuntimeError(f'{name}: exit {code}; see {name}.log')
     def junit(folder, name, expected):
@@ -139,6 +182,11 @@ def run(repo, output, plan):
         result['coverage'].append(dict(name=name, classes=rows))
     try:
         project = repo / 'SimulationTest'
+        if prepared_distribution is not None:
+            if plan['kind'] != 'long' or plan['tests'] or plan.get('pythonTests') or plan['inputScope'] != 'public':
+                raise ValueError('A prepared package only supplies public long scenarios; it cannot replace mechanism tests')
+            distribution = admit()
+            result['preparedDistribution'] = dict(receipt=str(prepared_distribution[0]), sha256=prepared_distribution[1])
         wrapper = [str(project / 'gradlew.bat')] if os.name == 'nt' else ['sh', str(project / 'gradlew')]
         common = ['--no-daemon', '--console=plain', '--max-workers=1', '--rerun-tasks']
         if plan['fixture']:
@@ -163,7 +211,9 @@ def run(repo, output, plan):
             selection_args = ['--init-script', str(selection)]
             result['testSelection'] = dict(path=str(selection),
                 sha256=hashlib.sha256(selection.read_bytes()).hexdigest())
-        command('tests-and-package', wrapper + tasks + [':installDist'] + common + selection_args, project)
+        if prepared_distribution is None:
+            command('tests-and-package', wrapper + tasks + [':installDist'] + common + selection_args, project)
+            distribution = project/'build/install/simulation-test'
         for module, classes in plan['tests'].items():
             junit(project / MODULES[module][1], module + '-tests', classes)
         result['pythonCoverage'] = []
@@ -177,7 +227,7 @@ def run(repo, output, plan):
                     any(measured[k] for k in ['failures', 'errors', 'skipped']) or not measured['sourceUnchanged']):
                 raise RuntimeError('Python mechanism evidence is incomplete: ' + relative)
             result['pythonCoverage'].append(dict(path=relative, result=name+'.json', **measured))
-        launcher = project / 'build/install/simulation-test/bin' / ('simulation-test.bat' if os.name == 'nt' else 'simulation-test')
+        launcher = distribution / 'bin' / ('simulation-test.bat' if os.name == 'nt' else 'simulation-test')
         cli = [str(launcher)] if os.name == 'nt' else ['sh', str(launcher)]
         archives = []
         for case in plan['scenarios']:
@@ -186,7 +236,7 @@ def run(repo, output, plan):
                 command(case['id'], [sys.executable, '-B', str(project / 'tools/platform_scenario.py'),
                     'session', '--scenario', str(project / 'public' / case['scenario']),
                     '--contract', str(project / 'public' / case['contract']),
-                    '--distribution', str(project / 'build/install/simulation-test'), '--output', str(folder)], project)
+                    '--distribution', str(distribution), '--output', str(folder)], project)
                 judgment = json.loads((folder / 'result.json').read_text(encoding='utf8'))
                 if judgment['exitCode'] != 0 or judgment['status'] != 'passed':
                     raise RuntimeError('Session evidence is not complete/pass: ' + case['id'])
@@ -225,6 +275,8 @@ def main():
     parser.add_argument('--suite', default='pr-first-loop', help='Named registry under public/suites')
     parser.add_argument('--kind', choices=['mechanism', 'short', 'long', 'pr', 'all'], default='pr')
     parser.add_argument('--list', action='store_true', help='Print fixed plan without building or creating evidence')
+    parser.add_argument('--distribution-receipt', type=Path, help='Same-batch fixed public long package receipt')
+    parser.add_argument('--distribution-sha256', help='Receipt digest pinned by the parent batch')
     args = parser.parse_args()
     try:
         plan = plan_suite(REPO, args.suite, args.kind)
@@ -233,6 +285,10 @@ def main():
     if args.list:
         print(json.dumps(plan))
         return 0
+    if bool(args.distribution_receipt) != bool(args.distribution_sha256):
+        parser.error('The fixed distribution receipt and its pinned digest are required together')
+    if args.distribution_receipt and args.isolated:
+        parser.error('The parent already fixes the isolated source closure for a prepared package')
     if plan['inputScope'] != 'public' and (args.isolated or os.environ.get('GITHUB_ACTIONS') == 'true'):
         parser.error('Private reference suite cannot run in the public closure or CI')
     output = (args.output or REPO / 'SimulationTest/build/public-check' / str(uuid.uuid4())).resolve()
@@ -244,7 +300,8 @@ def main():
             target.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(source, target)
         print('Isolated public source:', repo)
-    return run(repo, output, plan)
+    prepared = (args.distribution_receipt, args.distribution_sha256) if args.distribution_receipt else None
+    return run(repo, output, plan, prepared)
 
 
 if __name__ == '__main__':

@@ -9,7 +9,7 @@ import sys
 import tempfile
 import time
 
-from public_check import REPO, identities, plan_suite, source_files
+from public_check import REPO, identities, plan_suite, source_files, build_shared_distribution
 
 
 SUITES = ('content-movement-knowledge', 'production-combat', 'build-economy',
@@ -41,11 +41,23 @@ def run_layer(repo, output, plan, isolated):
     result = dict(schemaVersion=1, status='execution-failed', selection=plan, source=source,
                   isolated=isolated, suites=[], cloudRun=os.environ.get('GITHUB_ACTIONS') == 'true')
     try:
+        shared = None
+        if plan['kind'] == 'long':
+            if any(row['plan']['tests'] or row['plan'].get('pythonTests') for row in plan['suites']):
+                raise ValueError('Shared long distribution cannot skip selected mechanism tests')
+            shared = build_shared_distribution(repo, output/'shared-distribution', source)
+            result['sharedBuild'] = shared
+            if shared['status'] != 'passed':
+                raise RuntimeError(shared.get('error', 'Shared distribution build failed'))
         for row in plan['suites']:
             name = row['name']
             child = output / name
             argv = [sys.executable, '-B', str(repo/'SimulationTest/ci/public_check.py'),
                     '--suite', name, '--kind', row['plan']['kind'], '--output', str(child)]
+            if shared is not None:
+                from public_distribution import verify
+                verify(shared['receipt'], shared['sha256'], identities(repo))
+                argv += ['--distribution-receipt', shared['receipt'], '--distribution-sha256', shared['sha256']]
             record = dict(name=name, argv=argv, result=name+'/result.json', exitCode=None)
             result['suites'].append(record)
             with (output/(name+'.log')).open('w', encoding='utf8') as log:
@@ -60,6 +72,8 @@ def run_layer(repo, output, plan, isolated):
                     measured['source'] != source):
                 raise RuntimeError(name + ': incomplete, mismatched or changed-source receipt')
             record.update(status='passed', elapsedSeconds=measured['elapsedSeconds'])
+            if shared is not None:
+                verify(shared['receipt'], shared['sha256'], identities(repo))
         if identities(repo) != source:
             raise RuntimeError('Public source changed during batch')
         result['status'] = 'passed'
