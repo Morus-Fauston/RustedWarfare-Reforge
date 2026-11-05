@@ -41,12 +41,13 @@ class VisualAssetSettingsSession(private val backend: VisualAssetSettings) : Aut
     var hasUnsavedCatalog: Boolean = false
         private set
     val busy: Boolean get() = pending != null
+    val preparationStatus: String? get() = backend.preparationStatus
     val supportsOriginalImageExtraction: Boolean get() = backend.supportsOriginalImageExtraction
     val supportsOriginalResourceExtraction: Boolean get() = backend.supportsOriginalResourceExtraction
     val canStart: Boolean get() = !dirty && error == null &&
         (!busy || operation == Operation.PREVIEW || operation == Operation.CATALOG)
     val hasUnappliedChanges: Boolean get() = dirty
-    val operationLabel: String? get() = when (operation) {
+    val operationLabel: String? get() = (if (busy) preparationStatus else null) ?: when (operation) {
         Operation.APPLY -> "Validating and preparing selected resources..."
         Operation.IMPORT -> "Checking local image pack..."
         Operation.EXTRACT -> "Extracting verified PC images..."

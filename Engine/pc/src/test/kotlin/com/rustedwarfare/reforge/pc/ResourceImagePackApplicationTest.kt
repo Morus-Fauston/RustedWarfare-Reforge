@@ -17,6 +17,26 @@ import kotlin.test.assertTrue
 
 class ResourceImagePackApplicationTest {
     @Test
+    fun sharing_builtin_preparation_preserves_the_complete_final_content_image_baseline() {
+        for (frames in listOf(1, 3)) ResourceImagePackApplicationFixture().use { fixture ->
+            val backend = fixture.backend()
+            val choice = changedBuiltinContent(fixture, "shared-$frames", frames)
+            val original = backend.prepare(backend.initialSelection)
+            val reference = contentPackVisuals(original, choice)
+            val expected = ResourceImagePreparation.baseLayer(reference, BuiltInResourcePacks.forSource(VisualAssetSource.PLACEHOLDER))
+            val actual = assertNotNull(backend.prepareForContent(backend.initialSelection, choice).resolvedImages).layers.last()
+            assertEquals(expected.images.keys, actual.images.keys)
+            for ((id, before) in expected.images) {
+                val after = actual.images.getValue(id)
+                assertEquals(listOf(before.path, before.declaration.file, before.declaration.frameWidth,
+                    before.declaration.frameHeight, before.declaration.totalFrames, before.pixelWidth, before.pixelHeight),
+                    listOf(after.path, after.declaration.file, after.declaration.frameWidth,
+                        after.declaration.frameHeight, after.declaration.totalFrames, after.pixelWidth, after.pixelHeight), id.value)
+            }
+        }
+    }
+
+    @Test
     fun final_content_loader_and_configuration_rebinding_preserve_the_actual_sound_stack() {
         for (weighted in listOf(false, true)) ResourceImagePackApplicationFixture().use { fixture ->
             val choice = changedBuiltinContent(fixture, "sound-content", 1)

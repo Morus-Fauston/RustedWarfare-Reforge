@@ -12,7 +12,13 @@ import java.util.concurrent.CancellationException
 
 /** Full resource proof checks, alongside the unchanged image recipe/pixel reconstruction. */
 internal object PcOriginalResourceContracts {
-    fun verify(pack: PreparedImagePack, profile: PcOriginalResourceProfile) {
+    fun verify(pack: PreparedImagePack, profile: PcOriginalResourceProfile) = verify(pack, profile, null)
+
+    fun verify(pack: PreparedImagePack, profile: PcOriginalResourceProfile, inputs: PcFrozenResourceInputs?) =
+        verify(pack, profile, inputs, null)
+
+    fun verify(pack: PreparedImagePack, profile: PcOriginalResourceProfile, inputs: PcFrozenResourceInputs?,
+        imageQualification: PcOriginalImageContracts.Qualification?) {
         val root = pack.manifest.parent
         fun bad(reason: String): Nothing = throw IllegalArgumentException("SOURCE_GENERATED_RESOURCE_PACKAGE_INVALID: ${pack.metadata.id} / $root: $reason")
         fun text(row: JsonValue, key: String): String {
@@ -34,6 +40,12 @@ internal object PcOriginalResourceContracts {
             checkVisualCancellation()
             val file = root.resolve(name).normalize()
             if (!file.startsWith(root) || file == root || name.split('/').any { it.isBlank() || it == "." || it == ".." }) bad("Unsafe certificate member $name")
+            if (inputs != null) {
+                val frozen = inputs.read(file, PcmAudioDecoder.MAX_BYTES)
+                if (frozen.isEmpty() || size != null && frozen.size != size || hash != null && inputs.sha256(file) != hash)
+                    bad("Certificate member changed or SHA-256 differs: $name")
+                return frozen
+            }
             var cursor = root
             for (part in root.relativize(file)) { cursor = cursor.resolve(part); if (Files.isSymbolicLink(cursor) || cursor.toRealPath() != cursor) bad("Linked certificate member $name") }
             if (!Files.isRegularFile(file, NOFOLLOW_LINKS)) bad("Missing certificate member $name")
@@ -51,7 +63,9 @@ internal object PcOriginalResourceContracts {
                 text(proof, "profileId") != profile.id || text(proof, "imageProfileId") != profile.images.id) bad("Unknown or incomplete resource certificate")
             if (pack.metadata.requiresResourceFormat != 2) bad("Expected the qualified pictures/sounds capability")
             val imageBytes = member("extraction.json", hash = text(proof, "imageExtractionSha256"))
-            val imageProof = JsonReader().parse(imageBytes.toString(Charsets.UTF_8))
+            val imageProof = imageQualification?.certificate(pack, profile.images, inputs,
+                inputs?.sha256(root.resolve("extraction.json")) ?: visualHash(imageBytes))
+                ?: JsonReader().parse(imageBytes.toString(Charsets.UTF_8))
             if (number(imageProof, "schemaVersion") != 1 || imageProof.get("complete")?.isBoolean != true || !imageProof.getBoolean("complete") ||
                 text(imageProof, "profileId") != profile.images.id) bad("Image qualification differs")
             val jar = imageProof.get("jar") ?: bad("Missing source identity")
@@ -64,7 +78,10 @@ internal object PcOriginalResourceContracts {
             for (source in profile.images.images) {
                 val row = byImage.getValue(source.path); val file = "original/${source.path}"
                 if (text(row, "file") != file || number(row, "bytes") != source.bytes || text(row, "sha256") != source.sha256 || text(row, "format") != source.format) bad("Original image identity differs: ${source.path}")
-                member(file, source.bytes, source.sha256); expectedImages += file
+                // The scoped qualification already proved these bytes against this trusted profile.
+                // Strict certificate types and the full-resource-only raw layout/set checks remain below.
+                if (imageQualification == null) member(file, source.bytes, source.sha256)
+                expectedImages += file
                 if (source.format != "XCF") {
                     val address = "reforge:original/pc/" + source.path.toByteArray(Charsets.UTF_8).joinToString("") { "%02x".format(it) }
                     val png = "renderable/${visualHash(source.path.toByteArray(Charsets.UTF_8))}.png"

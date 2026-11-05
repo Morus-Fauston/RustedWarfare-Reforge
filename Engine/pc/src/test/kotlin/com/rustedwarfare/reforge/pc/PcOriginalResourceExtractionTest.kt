@@ -304,6 +304,18 @@ class PcOriginalResourceExtractionTest {
             val backend = PcVisualAssetSettings(fixture.store, fixture.cache, fixture.root,
                 WindowsLaunchOptions.parse(arrayOf("--mode", "demo"), fixture.root), resourceExtractionProfile = profile)
             val pack = backend.extractOriginalResourcePack(source)
+            PcFrozenResourceInputs.capture(listOf(pack.manifest.parent)).use { inputs ->
+                val proof = assertNotNull(PcOriginalImageContracts.qualify(pack, images,
+                    ResourceImageLayer(BuiltInResourcePacks.forSource(VisualAssetSource.PLACEHOLDER), emptyMap()),
+                    fixture.cache, ::moveVisualAtomically, inputs))
+                PcOriginalResourceContracts.verify(pack, profile, inputs, proof)
+                val otherPack = backend.checkImagePack(pack.manifest)
+                assertFailsWith<IllegalArgumentException> { PcOriginalResourceContracts.verify(otherPack, profile, inputs, proof) }
+                PcFrozenResourceInputs.capture(listOf(pack.manifest.parent)).use { otherInputs ->
+                    assertFailsWith<IllegalArgumentException> { PcOriginalResourceContracts.verify(pack, profile, otherInputs, proof) }
+                }
+                inputs.verifyCurrent()
+            }
             VisualAssetSettingsSession(backend).use { state ->
                 state.importImagePack(pack.manifest); await(state)
                 assertTrue(state.selection.packs.enabled.isEmpty())

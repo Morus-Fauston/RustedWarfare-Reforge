@@ -17,7 +17,9 @@ import javax.imageio.stream.MemoryCacheImageInputStream
 /** Bounded local import around the existing PNG validator and visual cache publisher. */
 internal class PcResourcePackImporter(private val cacheRoot: Path,
     private val atomicMove: (Path, Path, Boolean) -> Unit = ::moveVisualAtomically) {
-    fun load(input: Path): PreparedImagePack {
+    fun load(input: Path): PreparedImagePack = load(input, null)
+
+    fun load(input: Path, inputs: PcFrozenResourceInputs?): PreparedImagePack {
         checkVisualCancellation()
         val absolute = input.toAbsolutePath().normalize()
         var pack = absolute.toString()
@@ -51,7 +53,8 @@ internal class PcResourcePackImporter(private val cacheRoot: Path,
                 }
                 if (!Files.isRegularFile(path, NOFOLLOW_LINKS)) bad(path, "Expected an ordinary input file")
             }
-            fun read(path: Path): ByteArray {
+            fun read(path: Path, frozen: Boolean = true): ByteArray {
+                if (frozen && inputs != null) return inputs.read(path, 16 * 1024 * 1024)
                 try {
                     checkVisualCancellation(); ordinary(path)
                     fun attributes() = Files.readAttributes(path, BasicFileAttributes::class.java, NOFOLLOW_LINKS)
@@ -87,23 +90,27 @@ internal class PcResourcePackImporter(private val cacheRoot: Path,
                 audioBad(soundLists.single(), "Sound declaration format ${soundDeclarations.formatVersion} requires resource capability ${soundDeclarations.requiredResourceFormat}")
             if (metadata.icon !in declarations.images) bad(manifest, "Pack must provide its own icon ${metadata.icon}")
             data class Image(val id: ResourceId, val declaration: ResourceImageDeclaration, val source: Path, val width: Int, val height: Int)
+            val decodedImages = linkedMapOf<Path, com.rustedwarfare.reforge.core.content.PngImageDimensions>()
             val images = declarations.images.toSortedMap(compareBy { it.value }).map { (id, declaration) ->
                 val file = root.resolve(declaration.file).normalize()
                 try {
                     val bytes = capture(file)
-                    val dimensions = PngImages.inspect(bytes)
+                    val dimensions = decodedImages.getOrPut(file) {
+                        PngImages.inspect(bytes).also { dimensions ->
+                            MemoryCacheImageInputStream(ByteArrayInputStream(bytes)).use { stream ->
+                                val reader = ImageIO.getImageReadersByFormatName("png").next()
+                                try {
+                                    reader.input = stream
+                                    val decoded = reader.read(0)
+                                    require(decoded.width == dimensions.width && decoded.height == dimensions.height) { "Decoded PNG dimensions differ" }
+                                } finally { reader.dispose() }
+                            }
+                        }
+                    }
                     val width = dimensions.width; val height = dimensions.height
                     require(width % declaration.totalFrames == 0) { "Frame count does not divide PNG width" }
                     require((width / declaration.totalFrames).toLong() * declaration.frameHeight == height.toLong() * declaration.frameWidth) {
                         "PNG frame aspect differs from declared logical layout"
-                    }
-                    MemoryCacheImageInputStream(ByteArrayInputStream(bytes)).use { stream ->
-                        val reader = ImageIO.getImageReadersByFormatName("png").next()
-                        try {
-                            reader.input = stream
-                            val decoded = reader.read(0)
-                            require(decoded.width == width && decoded.height == height) { "Decoded PNG dimensions differ" }
-                        } finally { reader.dispose() }
                     }
                     Image(id, declaration, file, width, height)
                 } catch (failure: CancellationException) { throw failure }
@@ -123,7 +130,7 @@ internal class PcResourcePackImporter(private val cacheRoot: Path,
             val canonicalSounds = decodedSounds.mapValues { (_, pcm) -> pcm.wavBytes() }
             val soundIndices = decodedSounds.keys.withIndex().associate { (index, file) -> file to index }
             val sources = captured.entries.sortedBy { it.key.toString() }.map { (path, bytes) ->
-                ContentSourceIdentity(path, bytes.size.toLong(), visualHash(bytes))
+                ContentSourceIdentity(path, bytes.size.toLong(), inputs?.sha256(path) ?: visualHash(bytes))
             }
             fun quote(text: String) = OutputType.json.quoteValue(text)
             val sourceJson = sources.joinToString(",", "[", "]") {
@@ -136,7 +143,7 @@ internal class PcResourcePackImporter(private val cacheRoot: Path,
                 val currentSoundLists = listOf("sounds.json", "sounds.hjson").map(root::resolve).filter { Files.exists(it, NOFOLLOW_LINKS) }
                 if (currentSoundLists != soundLists) audioBad(root, "Sound declaration discovery changed after checking: $currentSoundLists")
                 for (source in sources) {
-                    val current = try { read(source.path) } catch (failure: CancellationException) { throw failure }
+                    val current = try { read(source.path, frozen = false) } catch (failure: CancellationException) { throw failure }
                     catch (failure: Exception) {
                         if (source.path in decodedSounds || source.path in soundLists) audioBad(source.path, failure.message ?: "Cannot recheck sound source")
                         throw failure

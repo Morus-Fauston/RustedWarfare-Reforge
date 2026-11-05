@@ -13,6 +13,43 @@ import kotlin.test.assertNotEquals
 import kotlin.test.assertTrue
 
 class ResourceImagePackImportTest {
+    @Test fun aliases_share_png_bytes_but_each_logical_layout_must_be_valid() {
+        fixture { _, pack, cache ->
+            val declaration = pack.resolve("images.json")
+            val original = Files.readString(declaration)
+            val body = "\"reforge:units/c_tank/body\""
+            val row = "\"file\":\"images/body.png\",\"frameWidth\":20,\"frameHeight\":20,\"totalFrames\":3"
+            Files.writeString(declaration, """{"formatVersion":1,"images":{$body:{$row},"owned:alias":{$row}}}""")
+            val loaded = PcResourcePackImporter(cache).load(pack)
+            assertEquals(2, loaded.images.size)
+            assertContentEquals(Files.readAllBytes(loaded.images.getValue(ResourceId.parse("owned:alias")).path),
+                Files.readAllBytes(loaded.images.getValue(ResourceId.parse("reforge:units/c_tank/body")).path))
+            Files.writeString(declaration, Files.readString(declaration).replace("\"owned:alias\":{\"file\":\"images/body.png\",\"frameWidth\":20",
+                "\"owned:alias\":{\"file\":\"images/body.png\",\"frameWidth\":21"))
+            val error = assertFailsWith<IllegalArgumentException> { PcResourcePackImporter(cache).load(pack) }
+            assertTrue(error.message.orEmpty().contains("aspect"), error.message)
+            Files.writeString(declaration, original)
+            loaded.verify()
+        }
+    }
+
+    @Test
+    fun frozen_audit_bytes_are_shared_but_cache_publication_rechecks_the_actual_sources() {
+        fixture { _, pack, cache ->
+            PcFrozenResourceInputs.capture(listOf(pack)).use { inputs ->
+                val image = pack.resolve("images/body.png")
+                inputs.read(image, 16 * 1024 * 1024)
+                val bytes = Files.readAllBytes(image)
+                val modified = Files.getLastModifiedTime(image)
+                Files.write(image, bytes.copyOf().also { it[it.lastIndex] = (it.last().toInt() xor 1).toByte() })
+                Files.setLastModifiedTime(image, modified)
+                val failure = assertFailsWith<IllegalArgumentException> { PcResourcePackImporter(cache).load(pack, inputs) }
+                assertTrue(failure.message.orEmpty().contains("Source changed after checking"), failure.message)
+                assertTrue(failure.message.orEmpty().contains("body.png"), failure.message)
+            }
+        }
+    }
+
     @Test
     fun a_missing_checked_source_is_a_package_diagnostic_while_the_old_generation_stays_valid() {
         fixture { _, pack, cache ->

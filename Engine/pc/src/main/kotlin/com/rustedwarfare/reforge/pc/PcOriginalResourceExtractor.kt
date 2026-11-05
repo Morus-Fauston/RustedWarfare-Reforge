@@ -23,10 +23,19 @@ import java.util.UUID
 internal class PcOriginalResourceExtractor(private val cache: Path, private val profile: PcOriginalResourceProfile?,
     private val extractImages: (Path) -> PreparedImagePack,
     private val atomicMove: (Path, Path, Boolean) -> Unit = ::moveVisualAtomically) {
-    fun staticBaseContracts(pack: PreparedImagePack, builtin: ResourceImageLayer): Map<ResourceId, ResourceImageDeclaration> {
+    fun staticBaseContracts(pack: PreparedImagePack, builtin: ResourceImageLayer): Map<ResourceId, ResourceImageDeclaration> =
+        staticBaseContracts(pack, builtin, null)
+
+    fun staticBaseContracts(pack: PreparedImagePack, builtin: ResourceImageLayer,
+        inputs: PcFrozenResourceInputs?): Map<ResourceId, ResourceImageDeclaration> {
         val accepted = profile ?: PcOriginalResourceProfile.forPackage(pack)
-        val contracts = PcOriginalImageContracts.verify(pack, accepted.images, builtin, cache, atomicMove)
-        PcOriginalResourceContracts.verify(pack, accepted)
+        if (inputs != null) {
+            val qualification = PcOriginalImageContracts.qualify(pack, accepted.images, builtin, cache, atomicMove, inputs)
+            PcOriginalResourceContracts.verify(pack, accepted, inputs, qualification)
+            return qualification?.contracts.orEmpty()
+        }
+        val contracts = PcOriginalImageContracts.verify(pack, accepted.images, builtin, cache, atomicMove, inputs)
+        PcOriginalResourceContracts.verify(pack, accepted, inputs)
         return contracts
     }
 

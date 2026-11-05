@@ -5,6 +5,7 @@ import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
 import java.nio.file.Files
 import java.nio.file.Path
+import java.util.concurrent.CancellationException
 import javax.imageio.ImageIO
 import javax.imageio.stream.MemoryCacheImageInputStream
 import javax.imageio.stream.MemoryCacheImageOutputStream
@@ -21,11 +22,13 @@ import com.rustedwarfare.reforge.client.VisualUnitImages
 internal class PcVisualAssetService(private val cacheRoot: Path,
     private val profile: VisualAssetProfile = VisualAssetProfile.bundled(),
     private val atomicMove: (Path, Path, Boolean) -> Unit = ::moveVisualAtomically) {
-    fun prepareVisuals(selection: VisualAssetSelection): PreparedVisualAssets {
+    fun prepareVisuals(selection: VisualAssetSelection): PreparedVisualAssets = prepareVisuals(selection, null)
+
+    fun prepareVisuals(selection: VisualAssetSelection, inputs: PcFrozenResourceInputs?): PreparedVisualAssets {
         require(selection.source == VisualAssetSource.ORIGINAL)
         val root = requireNotNull(selection.originalDirectory) { "SOURCE_ROOT_INVALID: original directory required" }
             .toAbsolutePath().normalize()
-        val prepared = prepare(root)
+        val prepared = prepare(root, inputs)
         val units = profile.json.get("unitBindings").associate { binding ->
             fun slot(name: String): Path? = binding.getString(name, null)?.let { prepared.outputs.getValue(it) }
             binding.name to VisualUnitImages(requireNotNull(slot("body")), slot("back"), slot("turret"), slot("dead"),
@@ -37,7 +40,9 @@ internal class PcVisualAssetService(private val cacheRoot: Path,
             profile.key + "/" + prepared.generation.fileName, units, terrain, prepared::verify)
     }
 
-    fun prepare(sourceRoot: Path): PcPreparedVisualAssets {
+    fun prepare(sourceRoot: Path): PcPreparedVisualAssets = prepare(sourceRoot, null)
+
+    fun prepare(sourceRoot: Path, inputs: PcFrozenResourceInputs?): PcPreparedVisualAssets {
         checkVisualCancellation()
         val root = try { sourceRoot.toRealPath().also { require(Files.isDirectory(it)) } }
             catch (error: Exception) { throw IllegalArgumentException("SOURCE_ROOT_INVALID: $sourceRoot", error) }
@@ -50,17 +55,17 @@ internal class PcVisualAssetService(private val cacheRoot: Path,
                 "SOURCE_ROOT_INVALID: source and private cache must not overlap: $root"
             }
             val cache = VisualAssetCache(canonicalCache.resolve(profile.key), profile, atomicMove)
-            return cache.locked { prepareLocked(root, cache) }
+            return cache.locked { prepareLocked(root, cache, inputs) }
         }
         catch (error: java.io.IOException) { throw IllegalArgumentException("PREPARE_FAILED: ${error.message}", error) }
     }
 
-    private fun prepareLocked(sourceRoot: Path, cache: VisualAssetCache): PcPreparedVisualAssets {
+    private fun prepareLocked(sourceRoot: Path, cache: VisualAssetCache, inputs: PcFrozenResourceInputs?): PcPreparedVisualAssets {
         val root = sourceRoot
         val identity = profile.json.get("identity")
         val errors = mutableListOf<String>()
         val observed = mutableMapOf<Path, Triple<Long, FileTime, Any?>>()
-        fun member(path: String, size: Int, hash: String, version: Boolean = false): ByteArray? {
+        fun member(path: String, size: Int, hash: String, version: Boolean = false, frozen: Boolean = true): ByteArray? {
             checkVisualCancellation()
             try {
                 val target = root.resolve(path).normalize()
@@ -74,12 +79,15 @@ internal class PcVisualAssetService(private val cacheRoot: Path,
                 fun attributes(): Triple<Long, FileTime, Any?> = Files.readAttributes(target, BasicFileAttributes::class.java,
                     NOFOLLOW_LINKS).let { Triple(it.size(), it.lastModifiedTime(), it.fileKey()) }
                 val before = attributes()
-                val bytes = Files.newInputStream(target).use { it.readNBytes(size + 1) }
-                require(bytes.size == size && visualHash(bytes) == hash) { "length or SHA-256 mismatch" }
+                val bytes = if (frozen && inputs != null) inputs.read(target, maxOf(1, size))
+                    else Files.newInputStream(target).use { it.readNBytes(size + 1) }
+                val digest = if (frozen && inputs != null) inputs.sha256(target) else visualHash(bytes)
+                require(bytes.size == size && digest == hash) { "length or SHA-256 mismatch" }
                 require(attributes() == before && (observed[target] == null || observed[target] == before)) { "source changed during preparation" }
                 observed[target] = before
                 return bytes
             } catch (error: Exception) {
+                if (error is CancellationException) throw error
                 val code = when {
                     Files.notExists(root.resolve(path), NOFOLLOW_LINKS) -> "SOURCE_ASSET_MISSING"
                     version -> "SOURCE_VERSION_UNSUPPORTED"
@@ -111,8 +119,8 @@ internal class PcVisualAssetService(private val cacheRoot: Path,
         require(errors.isEmpty()) { errors.joinToString("\n") }
         fun revalidate() {
             checkVisualCancellation()
-            member(identity.getString("manifestPath"), identity.getInt("manifestBytes"), identity.getString("manifestSha256"), true)
-            for (source in profile.json.get("sources")) member(source.getString("path"), source.getInt("bytes"), source.getString("sha256"))
+            member(identity.getString("manifestPath"), identity.getInt("manifestBytes"), identity.getString("manifestSha256"), true, frozen = false)
+            for (source in profile.json.get("sources")) member(source.getString("path"), source.getInt("bytes"), source.getString("sha256"), frozen = false)
             require(errors.isEmpty()) { errors.joinToString("\n") }
         }
         return cache.prepare(beforePublish = ::revalidate) { staging ->

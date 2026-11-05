@@ -123,7 +123,7 @@ class BootstrapScreen(
     private var disposed = false
     private data class HudState(val selected: com.rustedwarfare.reforge.core.sim.UnitObservation?,
         val selectedIds: Set<String>, val groups: List<Int>, val feedback: String?, val step: Long?, val canEdit: Boolean,
-        val loading: Boolean, val error: String?, val hasSession: Boolean,
+        val loading: Boolean, val preparationStatus: String?, val error: String?, val hasSession: Boolean,
         val balance: Long?, val queue: com.rustedwarfare.reforge.core.sim.FactoryQueueObservation?,
         val patrolMode: Boolean, val patrolPoints: Int, val reclaimMode: Boolean, val workerQueueText: String?, val menu: ActionMenuView?)
     private var lastHudState: HudState? = null
@@ -640,9 +640,13 @@ class BootstrapScreen(
         val menu = current?.actionMenu
         val selected = current?.observation?.units?.find { it.unitId == current.selectedId }
         val state = HudState(selected, current?.selectedIds ?: emptySet(), (1..3).map { current?.groupCount(it) ?: 0 }, current?.feedback, current?.observation?.stepIndex,
-            launch.canEdit, loading, loadError, current != null, menu?.balance, menu?.factoryQueue,
+            launch.canEdit, loading, visualState?.preparationStatus, loadError, current != null, menu?.balance, menu?.factoryQueue,
             mapInput.patrolMode, mapInput.patrolPointCount, mapInput.reclaimMode, menu?.workerQueueText, menu)
         if (state == lastHudState) return
+        if (state.preparationStatus != null && state.preparationStatus != lastHudState?.preparationStatus) {
+            evidence.record("resource-preparation-stage", mapOf("generation" to generation, "stage" to state.preparationStatus,
+                "scope" to if (loading) "match-load" else "menu-preparation"))
+        }
         lastHudState = state
         selectedLabel.setText(if (selected == null) "None" else if (state.selectedIds.size > 1)
             "${state.selectedIds.size} selected\n${current?.observation?.units?.count { it.unitId in state.selectedIds && it.alive && it.ownerPlayerId == "p1" }} controllable\nRight click: Move / Attack\nS: Stop" else String.format(Locale.ROOT,
@@ -827,16 +831,17 @@ class BootstrapScreen(
         visualPanel?.let {
             it.isVisible = current == null && !showContentPack
             it.setEditable(launch.canEdit && !loading)
-            it.setStatus(if (loading) "Loading scene and validating the selected visuals..." else loadError)
+            it.setStatus(if (loading) state.preparationStatus ?: "Preparing scene..." else loadError)
         }
         packPanel?.let {
             it.isVisible = current == null && showContentPack
             it.setEditable(launch.canEdit && !loading)
-            it.setStatus(if (loading) "Loading the fixed next-match selection..." else loadError)
+            it.setStatus(if (loading) state.preparationStatus ?: "Preparing scene..." else loadError)
         }
         statusLabel.setText(when {
             state.reclaimMode -> "Select building to reclaim (Esc / right: cancel)"
-            loading -> "Loading"
+            loading -> state.preparationStatus ?: "Preparing scene..."
+            state.preparationStatus != null -> state.preparationStatus
             loadError != null -> if (visualRecoveryFailed) "Visual cache failed. Reopen or exit match to prepare again." else "Load failed"
             current == null -> "Ready"
             nativePanel -> current.playerFeedback

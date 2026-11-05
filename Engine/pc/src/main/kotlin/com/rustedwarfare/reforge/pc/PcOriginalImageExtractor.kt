@@ -26,8 +26,12 @@ import javax.imageio.stream.MemoryCacheImageInputStream
 internal class PcOriginalImageExtractor(private val cacheRoot: Path, private val profile: PcOriginalImageProfile? = null,
     private val atomicMove: (Path, Path, Boolean) -> Unit = ::moveVisualAtomically) {
     fun staticBaseContracts(pack: PreparedImagePack, builtin: com.rustedwarfare.reforge.client.ResourceImageLayer) =
+        staticBaseContracts(pack, builtin, null)
+
+    fun staticBaseContracts(pack: PreparedImagePack, builtin: com.rustedwarfare.reforge.client.ResourceImageLayer,
+        inputs: PcFrozenResourceInputs?) =
         if (!pack.metadata.id.value.startsWith("reforge:pc-original-images-")) emptyMap()
-        else PcOriginalImageContracts.verify(pack, profile ?: PcOriginalImageProfile.forPackage(pack), builtin, cacheRoot, atomicMove)
+        else PcOriginalImageContracts.verify(pack, profile ?: PcOriginalImageProfile.forPackage(pack), builtin, cacheRoot, atomicMove, inputs)
 
     fun extract(input: Path): PreparedImagePack {
         checkVisualCancellation()

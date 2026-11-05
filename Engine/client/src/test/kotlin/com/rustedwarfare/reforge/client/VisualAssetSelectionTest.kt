@@ -10,6 +10,79 @@ import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 class VisualAssetSelectionTest {
+    @Test fun optional_previews_report_the_current_stage_and_can_be_cancelled_before_start() {
+        val entered = CountDownLatch(1); val release = CountDownLatch(1); val stopped = CountDownLatch(1)
+        val phase = java.util.concurrent.atomic.AtomicReference<String?>()
+        val backend = object : VisualAssetSettings {
+            override val initialSelection = VisualAssetSelection()
+            override val initialError: String? = null
+            override val preparationStatus: String? get() = phase.get()
+            override fun prepare(selection: VisualAssetSelection): PreparedVisualAssets {
+                phase.set("Checking pictures...")
+                try {
+                    entered.countDown(); release.await()
+                    return PreparedVisualAssets(selection, "owned", "owned", emptyMap(), emptyMap())
+                } finally { phase.set(null); stopped.countDown() }
+            }
+            override fun applyPrepared(prepared: PreparedVisualAssets) = Unit
+        }
+        VisualAssetSettingsSession(backend).use { state ->
+            try {
+                assertTrue(state.ensurePreviews())
+                assertTrue(entered.await(5, TimeUnit.SECONDS))
+                assertEquals("Checking pictures...", state.operationLabel)
+                phase.set("Checking sounds...")
+                assertEquals("Checking sounds...", state.operationLabel)
+                state.cancel()
+                assertTrue(stopped.await(5, TimeUnit.SECONDS))
+                assertNull(state.operationLabel); assertNull(state.preparationStatus)
+                assertTrue(state.canStart)
+                release.countDown()
+                state.prepareForLoad()()
+                assertNull(state.preparationStatus)
+            } finally { release.countDown() }
+        }
+    }
+
+    @Test fun loading_reports_the_current_stage_and_cancellation_clears_it_before_retry() {
+        val entered = CountDownLatch(1)
+        val release = CountDownLatch(1)
+        val phase = java.util.concurrent.atomic.AtomicReference<String?>()
+        val backend = object : VisualAssetSettings {
+            override val initialSelection = VisualAssetSelection()
+            override val initialError: String? = null
+            override val preparationStatus: String? get() = phase.get()
+            override fun prepare(selection: VisualAssetSelection): PreparedVisualAssets {
+                phase.set("Checking pictures...")
+                try {
+                    entered.countDown()
+                    release.await()
+                    return PreparedVisualAssets(selection, "owned", "owned", emptyMap(), emptyMap())
+                } finally { phase.set(null) }
+            }
+            override fun applyPrepared(prepared: PreparedVisualAssets) = Unit
+        }
+        VisualAssetSettingsSession(backend).use { state ->
+            val worker = java.util.concurrent.Executors.newSingleThreadExecutor()
+            try {
+                assertNull(state.preparationStatus)
+                val action = state.prepareForLoad()
+                val pending = worker.submit<PreparedVisualAssets> { action() }
+                assertTrue(entered.await(5, TimeUnit.SECONDS))
+                assertEquals("Checking pictures...", state.preparationStatus)
+                phase.set("Checking sounds...")
+                assertEquals("Checking sounds...", state.preparationStatus)
+                pending.cancel(true)
+                worker.submit {}.get(5, TimeUnit.SECONDS)
+                assertNull(state.preparationStatus)
+                release.countDown()
+                worker.submit<PreparedVisualAssets> { state.prepareForLoad()() }.get(5, TimeUnit.SECONDS)
+                assertNull(state.preparationStatus)
+                assertTrue(state.canStart)
+            } finally { release.countDown(); worker.shutdownNow() }
+        }
+    }
+
     @Test fun repeated_content_loads_retain_one_content_binding_and_one_stable_visual_identity() {
         val repo = generateSequence(Path.of("").toAbsolutePath()) { it.parent }.first { Files.isRegularFile(it.resolve("AGENTS.md")) }
         val fixtures=repo.resolve("SimulationTest/public/inputs")

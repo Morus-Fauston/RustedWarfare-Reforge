@@ -6,6 +6,8 @@ import java.nio.file.Path
 interface VisualAssetSettings {
     val initialSelection: VisualAssetSelection
     val initialError: String?
+    /** Worker-published description of current preparation; null when idle. */
+    val preparationStatus: String? get() = null
     val availableResourcePacks: List<ResourcePackMetadata> get() = BuiltInResourcePacks.all
     fun prepare(selection: VisualAssetSelection): PreparedVisualAssets
     /** Worker-only: apply/save must use the same final-content contract as a new world. */
