@@ -12,7 +12,8 @@ data class VisualUnitImages(val body: Path, val back: Path? = null, val turret: 
 /** Immutable paths and generation identity, with no core or GL ownership. */
 class PreparedVisualAssets private constructor(val selection: VisualAssetSelection, val profileId: String, val identity: String,
     units: Map<String, VisualUnitImages>, terrain: Map<String, Path>, private val validate: () -> Unit,
-    val resolvedImages: ResolvedResourceImages?, val resolvedSounds: ResolvedResourceSounds?) {
+    val resolvedImages: ResolvedResourceImages?, val resolvedSounds: ResolvedResourceSounds?,
+    private val boundContent: ContentPackChoice? = null) {
     constructor(selection: VisualAssetSelection, profileId: String, identity: String,
         units: Map<String, VisualUnitImages>, terrain: Map<String, Path>, validate: () -> Unit = {}) :
         this(selection, profileId, identity, units, terrain, validate, null, null)
@@ -30,10 +31,16 @@ class PreparedVisualAssets private constructor(val selection: VisualAssetSelecti
     fun verifyForPublication() { verify(); resolvedImages?.layers?.forEach { it.verifyInputs() } }
 
     fun withConfiguration(selection: VisualAssetSelection, profileId: String = this.profileId, identity: String = this.identity) =
-        PreparedVisualAssets(selection, profileId, identity, units, terrain, validate, resolvedImages, resolvedSounds)
+        PreparedVisualAssets(selection, profileId, identity, units, terrain, validate, resolvedImages, resolvedSounds, boundContent)
 
     fun withResourceSounds(resolved: ResolvedResourceSounds) =
-        PreparedVisualAssets(selection, profileId, identity, units, terrain, validate, resolvedImages, resolved)
+        PreparedVisualAssets(selection, profileId, identity, units, terrain, validate, resolvedImages, resolved, boundContent)
+
+    internal fun isBoundTo(choice: ContentPackChoice): Boolean = boundContent?.unitId == choice.unitId &&
+        boundContent.content.sources == choice.content.sources
+
+    internal fun withContentBinding(choice: ContentPackChoice) = PreparedVisualAssets(selection, profileId, identity,
+        units, terrain, validate, resolvedImages, resolvedSounds, choice)
 
     /** Pure binding of an already checked combination; fixed-generation checks remain explicit. */
     fun withResourceImages(resolved: ResolvedResourceImages, verifyAdditional: () -> Unit = {}): PreparedVisualAssets {
@@ -55,7 +62,7 @@ class PreparedVisualAssets private constructor(val selection: VisualAssetSelecti
         }
         val tiles = resourcePack.terrainBindings.mapValues { (_, id) -> image(id).path }
         return PreparedVisualAssets(selection, profileId, identity, mapped, tiles,
-            { this.verify(); verifyAdditional() }, resolved, resolvedSounds?.let { ResourceSoundComposer.compose(resolved) })
+            { this.verify(); verifyAdditional() }, resolved, resolvedSounds?.let { ResourceSoundComposer.compose(resolved) }, boundContent)
     }
 }
 

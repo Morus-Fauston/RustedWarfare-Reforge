@@ -109,6 +109,10 @@ class BootstrapScreen(
     private var activeVisuals: PreparedVisualAssets? = null
     private var pendingLoad: SandboxLoad? = null
     private var loading = false
+    private var menuDrawn = false
+    private var menuEpoch = 0L
+    private var lastStartAvailable: Boolean? = null
+    private var firstDrawnGeneration: Long? = null
     private var generation = 0L
     private var activeRoot: Path = initialRoot
     private var accumulator = 0.0
@@ -322,7 +326,7 @@ class BootstrapScreen(
             loadError = null; lastHudState = null; updateHud()
         }.also { it.setBounds(40f, 120f, 660f, 440f); stage.addActor(it) } }
         packPanel = ContentPackPanel(packState, skin, visualSettings?.let { it::createUiFont }) {
-            if (visualState?.busy == true) visualState.cancel("Content changed during resource preparation. Apply again.")
+            if (visualState?.busy == true) visualState.cancel()
             evidence.recordWhenEnabled("content-pack-menu") { mapOf("busy" to packState.busy,
                 "enabled" to packState.enabled, "canEnable" to packState.canEnable, "canStart" to packState.canStart,
                 "input" to packState.inputPath?.toString(), "checkedId" to packState.checked?.id,
@@ -442,6 +446,10 @@ class BootstrapScreen(
         }
 
     private fun requestLoad() {
+        if (loading) {
+            evidence.record("load-request-ignored", mapOf("generation" to generation, "reason" to "already-loading"))
+            return
+        }
         try {
             val request = if (launch.canEdit) {
                 check(visualState?.canStart != false) { visualState?.error ?: "Save and apply the visual selection first" }
@@ -450,17 +458,21 @@ class BootstrapScreen(
                     visuals = visualState?.selection ?: launch.configuration.visuals, contentPack = packState.choice()))
                 launch.start()
             } else launch.reopen()
+            val acceptedNanos = System.nanoTime()
             closeMatchResources()
+            menuDrawn = false
             pendingLoad = request
             generation = request.generation
             activeRoot = request.configuration.root
             loading = true
             loadError = null
             evidence.record("load-request", mapOf("generation" to generation, "root" to activeRoot.toString(),
+                "acceptedNanos" to acceptedNanos, "menuEpoch" to menuEpoch,
                 "mode" to request.configuration.options.mode.name,
                 "shareAlliedVision" to request.configuration.options.shareAlliedVision))
             val contentPack = request.configuration.contentPack
-            val prepare = visualSettings?.let { settings -> { settings.prepareForContent(request.configuration.visuals, contentPack) } }
+            val prepare = visualState?.prepareForLoad(contentPack)
+                ?: visualSettings?.let { settings -> { settings.prepareForContent(request.configuration.visuals, contentPack) } }
             if (contentPack == null) loader.request(activeRoot, prepare)
             else loader.requestPack(activeRoot, contentPack, prepare)
         } catch (failure: Exception) { failLoad(failure) }
@@ -470,6 +482,8 @@ class BootstrapScreen(
     private fun leaveMatch() {
         closeMatchResources()
         launch.exit()
+        if (visualState?.busy == true) visualState.cancel()
+        menuDrawn = false
         if (presentationReady) { stage.unfocusAll(); updateHud() }
         evidence.record("match-exit", mapOf("generation" to generation))
     }
@@ -515,7 +529,16 @@ class BootstrapScreen(
             var pendingSession: SandboxSession? = null
             var pendingSounds: SoundPlayback? = null
             try {
-                pendingGraphics = SandboxGraphics.load(scenario, activeRoot, loaded.visuals)
+                loaded.preparationTiming?.let { timing -> evidence.record("load-background-ready", mapOf(
+                    "generation" to generation, "startedNanos" to timing.startedNanos,
+                    "scenarioPreparedNanos" to timing.scenarioPreparedNanos,
+                    "visualsPreparedNanos" to timing.visualsPreparedNanos, "completedNanos" to timing.completedNanos,
+                    "observedNanos" to System.nanoTime())) }
+                val graphicsStartedNanos = System.nanoTime()
+                pendingGraphics = SandboxGraphics.load(loaded, activeRoot)
+                evidence.record("load-graphics-ready", mapOf("generation" to generation,
+                    "startedNanos" to graphicsStartedNanos, "completedNanos" to System.nanoTime(),
+                    "worldWidth" to pendingGraphics.projection.worldWidth, "worldHeight" to pendingGraphics.projection.worldHeight))
                 val runGeneration = generation
                 pendingSession = SandboxSession(scenario, evidence.withGeneration(runGeneration), request.configuration.options)
                 pendingSounds = loaded.visuals?.resolvedSounds?.let { resources -> SoundPlayback(
@@ -523,6 +546,7 @@ class BootstrapScreen(
                     soundFactory, evidence.withGeneration(runGeneration)) }
                 evidence.recordLoadReady(generation, loaded)
                 check(launch.complete(request.generation)) { "Cancelled load generation" }
+                loaded.visuals?.let { visualState?.rememberPublished(it, loaded.contentPack) }
                 pendingLoad = null
                 graphics = pendingGraphics
                 activeVisuals = loaded.visuals
@@ -586,6 +610,28 @@ class BootstrapScreen(
             graphics?.drawMinimap(shapes, current.frame)
         }
         stage.act(Gdx.graphics.deltaTime); stage.draw()
+        val drawnNanos = System.nanoTime()
+        if (current == null && !loading && launch.canEdit) {
+            val available = !startButton.isDisabled
+            if (!menuDrawn) {
+                menuEpoch++
+                evidence.record("startup-menu-drawn", mapOf("menuEpoch" to menuEpoch, "drawnNanos" to drawnNanos,
+                    "canStart" to available, "visualBusy" to visualState?.busy,
+                    "boundary" to "Stage draw submitted; native pixels are separate evidence"))
+                menuDrawn = true; lastStartAvailable = null
+            }
+            if (lastStartAvailable != available) {
+                evidence.record("start-availability", mapOf("menuEpoch" to menuEpoch, "drawnNanos" to drawnNanos,
+                    "canStart" to available, "visualBusy" to visualState?.busy,
+                    "actionId" to "start-match", "bounds" to mapOf("x" to startButton.x, "y" to startButton.y,
+                        "width" to startButton.width, "height" to startButton.height)))
+                lastStartAvailable = available
+            }
+        } else if (current != null && !loading && firstDrawnGeneration != generation) {
+            evidence.record("load-first-frame-drawn", mapOf("generation" to generation, "drawnNanos" to drawnNanos,
+                "boundary" to "World and Stage draw submitted; native pixels/input receipts are separate evidence"))
+            firstDrawnGeneration = generation
+        }
     }
 
     private fun updateHud() {

@@ -91,6 +91,7 @@ internal class PcVisualAssetSettings(private val store: VisualAssetSettingsStore
         store.save(prepared.selection.copy(temporary = options.hasVisualOverride))
     }
 
+    @Synchronized
     override fun checkImagePack(path: Path): PreparedImagePack = importer.load(path)
     override fun extractOriginalImagePack(path: Path): PreparedImagePack = pcImageExtractor.extract(path)
     override fun extractOriginalResourcePack(path: Path): PreparedImagePack {

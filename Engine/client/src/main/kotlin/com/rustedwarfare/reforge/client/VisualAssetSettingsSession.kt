@@ -14,7 +14,8 @@ class VisualAssetSettingsSession(private val backend: VisualAssetSettings) : Aut
     private enum class Operation { APPLY, IMPORT, EXTRACT, EXTRACT_RESOURCES, CATALOG, RESTORE, PREVIEW }
     private data class Checked(val entry: ResourcePackCatalogEntry, val pack: PreparedImagePack?, val error: String?)
     private sealed interface Completed {
-        data class Prepared(val assets: PreparedVisualAssets, val save: Boolean, val checks: List<Checked>? = null) : Completed
+        data class Prepared(val assets: PreparedVisualAssets, val save: Boolean, val checks: List<Checked>? = null,
+            val content: ContentPackChoice? = null) : Completed
         data class Imported(val pack: PreparedImagePack) : Completed
         data class Catalog(val checks: List<Checked>) : Completed
     }
@@ -24,6 +25,7 @@ class VisualAssetSettingsSession(private val backend: VisualAssetSettings) : Aut
     private var importPath: Path? = null
     private val known = linkedMapOf<String, Checked>()
     private var lastPrepared: PreparedVisualAssets? = null
+    private var lastPreparedContent: ContentPackChoice? = null
     private var previewsRequested = false
     private var dirty = false
     var selection: VisualAssetSelection = backend.initialSelection
@@ -41,7 +43,8 @@ class VisualAssetSettingsSession(private val backend: VisualAssetSettings) : Aut
     val busy: Boolean get() = pending != null
     val supportsOriginalImageExtraction: Boolean get() = backend.supportsOriginalImageExtraction
     val supportsOriginalResourceExtraction: Boolean get() = backend.supportsOriginalResourceExtraction
-    val canStart: Boolean get() = !busy && !dirty && error == null
+    val canStart: Boolean get() = !dirty && error == null &&
+        (!busy || operation == Operation.PREVIEW || operation == Operation.CATALOG)
     val hasUnappliedChanges: Boolean get() = dirty
     val operationLabel: String? get() = when (operation) {
         Operation.APPLY -> "Validating and preparing selected resources..."
@@ -127,15 +130,41 @@ class VisualAssetSettingsSession(private val backend: VisualAssetSettings) : Aut
         if (busy || dirty || lastPrepared != null || previewsRequested || error != null) return false
         previewsRequested = true
         val selected = selection
-        begin(Operation.PREVIEW) { Completed.Prepared(backend.prepareForContent(selected, content), save = false) }
+        begin(Operation.PREVIEW) { Completed.Prepared(backend.prepareForContent(selected, content), save = false, content = content) }
         return true
+    }
+
+    /** Freeze on the UI thread; run the returned action only on the loading worker.
+     * The loader must still verify the returned frozen descriptor before publication. */
+    fun prepareForLoad(content: ContentPackChoice? = null): () -> PreparedVisualAssets {
+        check(canStart) { error ?: "Apply the selected resources before starting" }
+        val selected = selection
+        fun sameContent(previous: ContentPackChoice?) = previous?.unitId == content?.unitId &&
+            previous?.content?.sources == content?.content?.sources
+        val ready = lastPrepared?.takeIf { it.selection == selected && sameContent(lastPreparedContent) }
+        val shared = pending // Passive catalog/preview only: canStart excludes explicit edits.
+        return {
+            if (ready != null) ready else {
+                val prepared = shared?.get()?.getOrThrow() as? Completed.Prepared
+                if (prepared != null && prepared.assets.selection == selected && sameContent(prepared.content)) prepared.assets
+                else backend.prepareForContent(selected, content)
+            }
+        }
+    }
+
+    /** UI-thread receipt for a load accepted by the launch state after final publication checks.
+     * Retains only the non-GL descriptor, never the world, textures, or an unapplied selection. */
+    internal fun rememberPublished(assets: PreparedVisualAssets, content: ContentPackChoice? = null) {
+        if (assets.selection != selection) return
+        lastPrepared = assets
+        lastPreparedContent = content
     }
 
     fun apply(content: ContentPackChoice? = null) {
         val selected = selection
         check(!busy) { "Visual preparation is already running" }
         error = null
-        begin(Operation.APPLY) { Completed.Prepared(backend.prepareForContent(selected, content), save = true) }
+        begin(Operation.APPLY) { Completed.Prepared(backend.prepareForContent(selected, content), save = true, content = content) }
     }
 
     fun importImagePack(path: Path) {
@@ -163,7 +192,7 @@ class VisualAssetSettingsSession(private val backend: VisualAssetSettings) : Aut
         begin(Operation.RESTORE) {
             val saved = backend.loadSavedSelection()
             val checks = checkCatalog(saved.packs.catalog)
-            Completed.Prepared(backend.prepareForContent(saved, content), save = false, checks = checks)
+            Completed.Prepared(backend.prepareForContent(saved, content), save = false, checks = checks, content = content)
         }
     }
 
@@ -226,6 +255,7 @@ class VisualAssetSettingsSession(private val backend: VisualAssetSettings) : Aut
                     if (result.save) backend.applyPrepared(result.assets)
                     selection = result.assets.selection
                     lastPrepared = result.assets
+                    lastPreparedContent = result.content
                     result.checks?.let(::install)
                     dirty = false; error = null
                     if (result.save || kind == Operation.RESTORE) hasUnsavedCatalog = false
@@ -258,11 +288,13 @@ class VisualAssetSettingsSession(private val backend: VisualAssetSettings) : Aut
         val notice = message ?: when (kind) {
             Operation.EXTRACT -> "Image extraction cancelled. Your selection is unchanged."
             Operation.EXTRACT_RESOURCES -> "Resource extraction cancelled. Your selection is unchanged."
+            Operation.PREVIEW -> "Optional previews cancelled. The saved selection will be checked when starting."
+            Operation.CATALOG -> "Resource list reading cancelled. The saved selection will be checked when starting."
             else -> "Preparation cancelled. Apply again or choose public placeholders."
         }
         pending?.cancel(true); pending = null; operation = null; importPath = null
-        if (kind == Operation.IMPORT || kind == Operation.EXTRACT || kind == Operation.EXTRACT_RESOURCES || kind == Operation.RESTORE) diagnostic = notice
-        else if (kind == Operation.CATALOG && selection.packs.enabled.none { it != VisualAssetSource.ORIGINAL.resourcePackId }) diagnostic = notice
+        if (kind == Operation.IMPORT || kind == Operation.EXTRACT || kind == Operation.EXTRACT_RESOURCES ||
+            kind == Operation.RESTORE || kind == Operation.PREVIEW || kind == Operation.CATALOG) diagnostic = notice
         else fail(notice)
         revision++
     }

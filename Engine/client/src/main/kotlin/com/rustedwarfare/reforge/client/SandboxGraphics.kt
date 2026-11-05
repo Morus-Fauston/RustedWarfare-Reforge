@@ -32,23 +32,25 @@ class SandboxGraphics private constructor(private val resources: SandboxRenderRe
     fun unitIcon(typeId: String): TextureRegion? = units[typeId]
 
     companion object {
-        fun load(resources: SandboxRenderResources, root: Path): SandboxGraphics {
-            val graphics = SandboxGraphics(resources)
-            try { graphics.loadImages(root); return graphics }
-            catch (failure: Exception) {
-                try { graphics.close() } catch (cleanup: Exception) { failure.addSuppressed(cleanup) }
-                throw failure
-            }
-        }
+        fun load(resources: SandboxRenderResources, root: Path): SandboxGraphics =
+            loadPrepared(resources, root, intArrayOf())
+
+        /** Consume worker-bound metadata; GL owns texture upload, completeness checks and release. */
+        fun load(loaded: LoadedSandbox, root: Path): SandboxGraphics =
+            loadPrepared(loaded.renderResources, root, loaded.scenario.map.groundGids)
 
         fun load(scenario: Scenario, root: Path, visuals: PreparedVisualAssets? = null): SandboxGraphics {
             val resources = SandboxRenderResources.from(scenario)
-            val graphics = load(visuals?.let { resources.withVisuals(it) } ?: resources, root)
+            return loadPrepared(visuals?.let { resources.withVisuals(it) } ?: resources, root, scenario.map.groundGids)
+        }
+
+        private fun loadPrepared(resources: SandboxRenderResources, root: Path, ground: IntArray): SandboxGraphics {
+            val graphics = SandboxGraphics(resources)
             try {
-                for (gid in scenario.map.groundGids) require(gid == 0 || graphics.tiles.containsKey(gid)) { "Missing tile image for gid=$gid" }
+                graphics.loadImages(root)
+                for (gid in ground) require(gid == 0 || graphics.tiles.containsKey(gid)) { "Missing tile image for gid=$gid" }
                 return graphics
-            }
-            catch (failure: Exception) {
+            } catch (failure: Exception) {
                 try { graphics.close() } catch (cleanup: Exception) { failure.addSuppressed(cleanup) }
                 throw failure
             }

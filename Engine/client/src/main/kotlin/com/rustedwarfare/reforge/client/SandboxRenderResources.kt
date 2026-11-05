@@ -84,6 +84,11 @@ class SandboxRenderResources private constructor(
 ) {
     fun withVisuals(visuals: PreparedVisualAssets): SandboxRenderResources {
         visuals.verify()
+        return bindVisuals(visuals)
+    }
+
+    /** Pure worker binding. The loader verifies the complete descriptor after binding, before publishing it. */
+    internal fun bindVisuals(visuals: PreparedVisualAssets): SandboxRenderResources {
         val mappedUnits = units.mapValues { (id, before) ->
             val image = requireNotNull(visuals.units[id]) { "VISUAL_MAPPING_UNSUPPORTED: unit $id" }
             fun slot(beforePath: Path?, replacement: Path?, name: String): Path? = if (beforePath == null) null

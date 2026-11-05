@@ -7,9 +7,12 @@ import java.nio.file.Path
 import java.util.concurrent.Executors
 import java.util.concurrent.Future
 
+data class SandboxPreparationTiming(val startedNanos: Long, val scenarioPreparedNanos: Long,
+    val visualsPreparedNanos: Long, val completedNanos: Long)
+
 data class LoadedSandbox(val scenario: Scenario, val visuals: PreparedVisualAssets?, val renderResources: SandboxRenderResources,
                          val contentSources: List<ContentSourceIdentity> = emptyList(), val inputRoot: Path? = null,
-                         val contentPack: ContentPackChoice? = null)
+                         val contentPack: ContentPackChoice? = null, val preparationTiming: SandboxPreparationTiming? = null)
 
 /** The render thread alone consumes results. Cancelled jobs never publish a world or own GL resources. */
 class SandboxLoader internal constructor(private val load: ((Path) -> Scenario)?) : AutoCloseable {
@@ -28,20 +31,24 @@ class SandboxLoader internal constructor(private val load: ((Path) -> Scenario)?
     private fun begin(root: Path, contentPack: ContentPackChoice?, prepareVisuals: (() -> PreparedVisualAssets)?) {
         cancel()
         pending = executor.submit<Result<LoadedSandbox>> { runCatching {
+            val startedNanos = System.nanoTime()
             val checked = contentPack?.revalidate()
             val prepared = if (checked != null) PreparedControlledScenario(contentPackScenario(root, checked), emptyList())
                 else load?.let { PreparedControlledScenario(it(root), emptyList()) } ?: ControlledScenario.prepare(root)
             val scene = prepared.scenario
+            val scenarioPreparedNanos = System.nanoTime()
             val visuals = prepareVisuals?.invoke()?.let { before -> checked?.let { contentPackVisuals(before, it) } ?: before }
+            val visualsPreparedNanos = System.nanoTime()
             val resources = SandboxRenderResources.from(scene)
-            val renderResources = visuals?.let { resources.withVisuals(it) } ?: resources
+            val renderResources = visuals?.let { resources.bindVisuals(it) } ?: resources
             prepared.verifyStable()
             checked?.content?.verifyStable()?.let { stable ->
                 if (stable is ContentResult.Failure) error(stable.error.describe())
             }
             visuals?.verifyForPublication()
             LoadedSandbox(scene, visuals, renderResources, checked?.content?.sources ?: prepared.sources,
-                root.toAbsolutePath().normalize(), checked)
+                root.toAbsolutePath().normalize(), checked,
+                SandboxPreparationTiming(startedNanos, scenarioPreparedNanos, visualsPreparedNanos, System.nanoTime()))
         } }
     }
     fun poll(): Result<Scenario>? = pollPrepared()?.map { it.scenario }

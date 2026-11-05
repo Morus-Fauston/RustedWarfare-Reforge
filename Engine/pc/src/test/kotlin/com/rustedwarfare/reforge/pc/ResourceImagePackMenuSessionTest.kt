@@ -11,6 +11,40 @@ class ResourceImagePackMenuSessionTest {
     private val body = "reforge:units/c_tank/body"
 
     @Test
+    fun saved_catalog_check_keeps_start_available_and_load_waits_for_its_completion() {
+        ResourceImagePackApplicationFixture().use { fixture ->
+            val pack = fixture.create("owned:catalog", listOf(OwnPackImage(body)))
+            val saved = VisualAssetSelection(packs = ResourcePackSelection(listOf(pack.catalogEntry), listOf(pack.metadata.id.value)))
+            fixture.store.save(saved)
+            val actual = fixture.backend()
+            val entered = java.util.concurrent.CountDownLatch(1)
+            val release = java.util.concurrent.CountDownLatch(1)
+            val checked = java.util.concurrent.atomic.AtomicBoolean()
+            val backend = object : VisualAssetSettings by actual {
+                override fun checkImagePack(path: java.nio.file.Path): PreparedImagePack {
+                    entered.countDown(); release.await()
+                    return actual.checkImagePack(path).also { checked.set(true) }
+                }
+                override fun prepareForContent(selection: VisualAssetSelection, content: ContentPackChoice?): PreparedVisualAssets {
+                    check(checked.get()) { "Load raced the catalog's importer" }
+                    return actual.prepareForContent(selection, content)
+                }
+            }
+            VisualAssetSettingsSession(backend).use { state ->
+                try {
+                    assertTrue(entered.await(2, java.util.concurrent.TimeUnit.SECONDS))
+                    assertTrue(state.canStart)
+                    val prepare = state.prepareForLoad()
+                    val result = java.util.concurrent.CompletableFuture.supplyAsync { prepare() }
+                    assertFailsWith<java.util.concurrent.TimeoutException> { result.get(100, java.util.concurrent.TimeUnit.MILLISECONDS) }
+                    release.countDown()
+                    result.get(5, java.util.concurrent.TimeUnit.SECONDS).verifyForPublication()
+                } finally { release.countDown() }
+            }
+        }
+    }
+
+    @Test
     fun restoring_an_old_valid_stack_rechecks_the_current_content_and_does_not_rewrite_it() {
         ResourceImagePackApplicationFixture().use { fixture ->
             val incompatible = fixture.create("owned:old-layout", listOf(OwnPackImage("reforge:units/amber_scout/body", frames = 1)))

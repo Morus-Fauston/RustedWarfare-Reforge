@@ -25,17 +25,18 @@ data class ContentPackChoice(val content: LoadedContentSet, val unitId: String) 
             is ContentResult.Failure -> error(stable.error.describe())
             is ContentResult.Success -> Unit
         }
-        val current = when (val result = ContentLoader.loadContentPacks(content.packages.map { it.manifest })) {
-            is ContentResult.Failure -> error(result.error.describe())
-            is ContentResult.Success -> result.value
-        }
-        check(current.sources == content.sources) { "Package sources changed after checking; check the packages again" }
-        return ContentPackChoice(current, unitId)
+        // The in-process content set owns immutable checked definitions and the complete source
+        // closure. Recheck every ordinary path and byte identity, then retain those definitions.
+        // A new process must still load/parse normally; final publication verifies the sources again.
+        return this
     }
 }
 
 /** Worker-only final content baseline, also used by platforms before their first layer composition. */
 fun contentPackVisuals(visuals: PreparedVisualAssets, choice: ContentPackChoice): PreparedVisualAssets {
+    // A retained descriptor may already contain this exact checked content. Do not nest its
+    // publication validators or recompose the same bindings on every reopen.
+    if (visuals.isBoundTo(choice)) return visuals
     if (visuals.selection.source != VisualAssetSource.PLACEHOLDER && visuals.resolvedImages == null) return visuals
     val images = choice.content.units.mapValues { (_, unit) ->
         VisualUnitImages(unit.imagePath, unit.building?.backImagePath, unit.combat?.turretImagePath,
@@ -60,7 +61,7 @@ fun contentPackVisuals(visuals: PreparedVisualAssets, choice: ContentPackChoice)
         visuals.verify(); verifyContent()
     }
     val rebound = visuals.resolvedSounds?.let(reboundImages::withResourceSounds) ?: reboundImages
-    val prior = visuals.resolvedImages ?: return rebound
+    val prior = visuals.resolvedImages ?: return rebound.withContentBinding(choice)
     val base = prior.layers.last()
     val contentOnly = PreparedVisualAssets(VisualAssetSelection(), "content-image-base", sourceIdentity, images, emptyMap(), ::verifyContent)
     val additions = ResourceImagePreparation.baseLayer(contentOnly, BuiltInResourcePacks.forSource(VisualAssetSource.PLACEHOLDER))
@@ -71,7 +72,7 @@ fun contentPackVisuals(visuals: PreparedVisualAssets, choice: ContentPackChoice)
     }
     val currentBase = ResourceImageLayer(base.metadata, base.images + additions.images, identity, sources.values.toList(), ::verifyContent)
         .withSounds(base.sounds, base.soundEvents)
-    return rebound.withResourceImages(ResourceImageComposer.compose(currentBase, prior.layers.dropLast(1)))
+    return rebound.withResourceImages(ResourceImageComposer.compose(currentBase, prior.layers.dropLast(1))).withContentBinding(choice)
 }
 
 /** Reuses the existing controlled combat layout, not a new map or spawn-file interpreter. */

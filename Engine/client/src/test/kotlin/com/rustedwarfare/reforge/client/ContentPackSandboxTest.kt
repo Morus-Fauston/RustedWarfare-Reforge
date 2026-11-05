@@ -12,6 +12,40 @@ import kotlin.test.assertTrue
 
 class ContentPackSandboxTest {
     @Test
+    fun unchanged_content_reuses_its_checked_definitions_but_same_length_source_changes_still_fail() {
+        val fixtures=System.getProperty("public.fixtures.dir")?.let(Path::of) ?: Path.of("../../SimulationTest/public/inputs")
+        val temporary=Files.createTempDirectory("sp003-checked-content-").toAbsolutePath().normalize()
+        try {
+            val source=fixtures.resolve("content-packs/amber-scouts-json")
+            Files.walk(source).use { paths -> paths.forEach { file ->
+                val destination=temporary.resolve(source.relativize(file)).normalize()
+                require(destination.startsWith(temporary))
+                if(Files.isDirectory(file))Files.createDirectories(destination) else Files.copy(file,destination)
+            } }
+            val pack=assertIs<ContentResult.Success<LoadedContentPack>>(ContentLoader.loadContentPack(temporary)).value
+            val choice=ContentPackChoice(pack,"amber_scout")
+            kotlin.test.assertSame(choice,choice.revalidate(),"A stable in-process choice must retain its already checked definitions")
+            for(sourceIdentity in pack.sources) {
+                val changed=sourceIdentity.path
+                require(changed.toAbsolutePath().normalize().startsWith(temporary))
+                val bytes=Files.readAllBytes(changed)
+                val modified=Files.getLastModifiedTime(changed)
+                try {
+                    val altered=bytes.copyOf();altered[altered.lastIndex]=(altered.last().toInt() xor 1).toByte()
+                    Files.write(changed,altered);Files.setLastModifiedTime(changed,modified)
+                    val failure=kotlin.test.assertFails { choice.revalidate() }
+                    assertTrue(failure.message.orEmpty().contains("Content source bytes changed"),"Full byte identity required: $changed")
+                } finally {Files.write(changed,bytes);Files.setLastModifiedTime(changed,modified)}
+                kotlin.test.assertSame(choice,choice.revalidate())
+            }
+        } finally {
+            Files.walk(temporary).use { paths -> paths.sorted(Comparator.reverseOrder()).forEach { owned ->
+                require(owned.toAbsolutePath().normalize().startsWith(temporary));Files.deleteIfExists(owned)
+            } }
+        }
+    }
+
+    @Test
     fun changed_sources_and_incompatible_original_visuals_fail_without_publishing_and_repair_can_reopen() {
         val fixtures = System.getProperty("public.fixtures.dir")?.let(Path::of)
             ?: Path.of("../../SimulationTest/public/inputs")

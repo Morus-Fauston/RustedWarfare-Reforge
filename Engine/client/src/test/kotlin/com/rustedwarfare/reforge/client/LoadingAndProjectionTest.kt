@@ -13,6 +13,22 @@ class LoadingAndProjectionTest {
         error("Loader did not complete within 5 seconds")
     }
 
+    @Test fun prepared_world_reports_ordered_worker_stage_times_before_publication() {
+        SandboxLoader().use { loader ->
+            loader.request(root)
+            val deadline = System.nanoTime() + 5_000_000_000L
+            var loaded: LoadedSandbox? = null
+            while (loaded == null && System.nanoTime() < deadline) {
+                loaded = loader.pollPrepared()?.getOrThrow()
+                if (loaded == null) Thread.sleep(2)
+            }
+            val timing = assertNotNull(assertNotNull(loaded).preparationTiming)
+            assertTrue(timing.startedNanos <= timing.scenarioPreparedNanos)
+            assertTrue(timing.scenarioPreparedNanos <= timing.visualsPreparedNanos)
+            assertTrue(timing.visualsPreparedNanos <= timing.completedNanos)
+        }
+    }
+
     @Test fun cancelled_interruptible_load_releases_the_single_worker_for_the_latest_request() {
         val entered = java.util.concurrent.CountDownLatch(1)
         val release = java.util.concurrent.CountDownLatch(1)
