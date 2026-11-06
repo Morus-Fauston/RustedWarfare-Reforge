@@ -27,30 +27,26 @@ class MapDefinition(
 
     internal fun blockingFor(type: MovementType): BlockingGrid = if (type == MovementType.WATER) waterBlocking else blocking
 
+    /** Authoritative ordinary foundation cell; resource-required buildings check their center separately. */
+    fun isFoundationBlocked(col: Int, row: Int, type: MovementType): Boolean =
+        blockingFor(type).isBlocked(col, row) || isResourcePool(col, row)
+
     /** Current liquid truth for the finite water content; bridge presence alone is not liquid. */
     internal fun isWater(col: Int, row: Int): Boolean {
         require(col in 0 until widthTiles && row in 0 until heightTiles)
         val gid = gids[row * widthTiles + col]
-        val owner = tileSets.lastOrNull { it.firstGid <= gid } ?: return false
-        return gid - owner.firstGid in owner.waterTileIds
+        return GroundRules.liquid(tileSets, gid)
     }
 
     fun isResourcePool(col: Int, row: Int): Boolean {
         require(col in 0 until widthTiles && row in 0 until heightTiles)
         val gid = gids[row * widthTiles + col]
-        val tileset = tileSets.lastOrNull { it.firstGid <= gid } ?: return false
-        return gid - tileset.firstGid in tileset.resourcePoolTileIds
+        return GroundRules.resourcePool(tileSets, gid)
     }
 }
 
 /** GID semantics only: it cannot query a position, world or hidden current ground. */
-fun List<TileSetDefinition>.waterBlocked(gid: Int): Boolean {
-    if (gid == 0) return true
-    val owner = firstOrNull { gid.toLong() >= it.firstGid && gid.toLong() < it.firstGid.toLong() + it.tileCount }
-        ?: return true
-    val local = gid - owner.firstGid
-    return local in owner.blockedTileIds || (local !in owner.waterTileIds && local !in owner.waterBridgeTileIds)
-}
+fun List<TileSetDefinition>.waterBlocked(gid: Int): Boolean = GroundRules.blocked(this, gid, MovementType.WATER)
 
 class TileSetDefinition internal constructor(
     val firstGid: Int,

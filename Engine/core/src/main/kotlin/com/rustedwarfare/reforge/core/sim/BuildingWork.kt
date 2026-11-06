@@ -221,8 +221,7 @@ internal class BuildingWork private constructor(val clock: Int, val nonces: Map<
         val poolAtCenter = input.map.isResourcePool(MapBounds.cell(position.x, input.map.tileWidth, input.map.widthTiles),
             MapBounds.cell(position.y, input.map.tileHeight, input.map.heightTiles))
         val terrainBlocked = if (building.requiresResourcePool) !poolAtCenter else
-            cells.any { input.map.blockingFor(definition.foundationMovementType).isBlocked(it.first, it.second) ||
-                input.map.isResourcePool(it.first, it.second) }
+            cells.any { input.map.isFoundationBlocked(it.first, it.second, definition.foundationMovementType) }
         val blocked = cells.isEmpty() || !ConstructionPlacement.contains(input.map.widthTiles, input.map.heightTiles,
             input.map.tileWidth, input.map.tileHeight, position, definition.radius) ||
             terrainBlocked || live.any { other ->

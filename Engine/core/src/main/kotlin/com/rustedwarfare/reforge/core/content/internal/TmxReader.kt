@@ -72,9 +72,9 @@ internal object TmxReader {
         val blocked = BooleanArray(gids.size) { index ->
             val gid = gids[index]
             if (gid == 0) true else {
-                val tileSet = tileSets.firstOrNull { gid.toLong() >= it.firstGid && gid.toLong() < it.firstGid.toLong() + it.tileCount }
-                    ?: reject(ContentErrorCode.BAD_REFERENCE, path, "data", "gid", gid.toString(), "No tileset owns GID at cell $index")
-                gid - tileSet.firstGid in tileSet.blockedTileIds || gid - tileSet.firstGid in tileSet.waterTileIds
+                if (!GroundRules.owns(tileSets, gid))
+                    reject(ContentErrorCode.BAD_REFERENCE, path, "data", "gid", gid.toString(), "No tileset owns GID at cell $index")
+                GroundRules.blocked(tileSets, gid, MovementType.LAND)
             }
         }
         return MapDefinition(width, height, tileWidth, tileHeight, tileSets, gids, BlockingGrid(width, height, blocked))

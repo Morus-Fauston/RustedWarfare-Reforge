@@ -60,8 +60,8 @@ internal class BuildingTerrain private constructor(map: MapDefinition, occupied:
                 fail("Resource building requires a resource pool at its center")
             val cells = footprint(map, position, building.footprint, building.anchor)
             for (cell in cells) {
-                if ((!building.requiresResourcePool && (map.blockingFor(definition.foundationMovementType).isBlocked(cell.first, cell.second) ||
-                        map.isResourcePool(cell.first, cell.second))) || cell in occupied)
+                if ((!building.requiresResourcePool && map.isFoundationBlocked(cell.first, cell.second,
+                        definition.foundationMovementType)) || cell in occupied)
                     fail("Building footprint must respect ground, resource pools and other live buildings")
             }
             return cells

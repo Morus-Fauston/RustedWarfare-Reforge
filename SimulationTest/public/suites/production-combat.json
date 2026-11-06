@@ -102,6 +102,7 @@
       "com.rustedwarfare.reforge.core.content.SeaFactoryContentTest",
       "com.rustedwarfare.reforge.core.content.UnderwaterTargetContentTest",
       "com.rustedwarfare.reforge.core.content.WaterTerrainContentTest",
+      "com.rustedwarfare.reforge.core.content.GroundRulesTest",
       "com.rustedwarfare.reforge.core.sim.BattleshipAreaTest",
       "com.rustedwarfare.reforge.core.sim.BattleshipBallisticBoundaryTest",
       "com.rustedwarfare.reforge.core.sim.BattleshipBallisticFailureTest",
