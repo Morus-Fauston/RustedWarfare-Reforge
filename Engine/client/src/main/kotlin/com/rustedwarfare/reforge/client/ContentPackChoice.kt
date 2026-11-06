@@ -38,15 +38,7 @@ fun contentPackVisuals(visuals: PreparedVisualAssets, choice: ContentPackChoice)
     // publication validators or recompose the same bindings on every reopen.
     if (visuals.isBoundTo(choice)) return visuals
     if (visuals.selection.source != VisualAssetSource.PLACEHOLDER && visuals.resolvedImages == null) return visuals
-    val images = choice.content.units.mapValues { (_, unit) ->
-        VisualUnitImages(unit.imagePath, unit.building?.backImagePath, unit.combat?.turretImagePath,
-            unit.durability?.deadImagePath ?: unit.combat?.deadImagePath, unit.totalFrames,
-            leg = unit.mech?.legs?.first()?.legImage, foot = unit.mech?.legs?.first()?.footImage,
-            rotor = unit.rotor?.imagePath,
-            weaponTurrets = unit.combat?.namedWeapons?.ordered.orEmpty().filter {
-                it.imagePath != null && it.imagePath != unit.combat?.turretImagePath
-            }.associate { it.name to requireNotNull(it.imagePath) })
-    }
+    val images = choice.content.units.mapValues { (_, unit) -> unit.imageBindings().visualImages() }
     val sourceIdentity = MessageDigest.getInstance("SHA-256")
         .digest(choice.content.sources.joinToString("\n") { "${it.path}:${it.sha256}" }.toByteArray(Charsets.UTF_8))
         .joinToString("") { "%02x".format(it.toInt() and 255) }

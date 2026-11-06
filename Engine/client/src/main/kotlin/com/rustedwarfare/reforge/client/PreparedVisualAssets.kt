@@ -20,10 +20,9 @@ class PreparedVisualAssets private constructor(val selection: VisualAssetSelecti
 
     val resourcePack: PreparedResourcePack = PreparedResourcePack.fromBindings(BuiltInResourcePacks.forSource(selection.source), units, terrain)
     val units: Map<String, VisualUnitImages> = Collections.unmodifiableMap(resourcePack.unitBindings.mapValues { (_, binding) ->
-        VisualUnitImages(resourcePack.resolve(binding.body), binding.back?.let(resourcePack::resolve),
-            binding.turret?.let(resourcePack::resolve), binding.dead?.let(resourcePack::resolve), binding.totalFrames, binding.logicalImages,
-            binding.leg?.let(resourcePack::resolve), binding.foot?.let(resourcePack::resolve), binding.rotor?.let(resourcePack::resolve),
-            Collections.unmodifiableMap(binding.weaponTurrets.mapValues { (_, id) -> resourcePack.resolve(id) }))
+        binding.bindings().map { _, image ->
+            BoundUnitImage(resourcePack.resolve(image.resource), image.logicalSize, image.totalFrames)
+        }.visualImages()
     })
     val terrain: Map<String, Path> = Collections.unmodifiableMap(resourcePack.terrainBindings.mapValues { (_, id) -> resourcePack.resolve(id) })
     fun verify() = validate()
@@ -45,20 +44,13 @@ class PreparedVisualAssets private constructor(val selection: VisualAssetSelecti
     /** Pure binding of an already checked combination; fixed-generation checks remain explicit. */
     fun withResourceImages(resolved: ResolvedResourceImages, verifyAdditional: () -> Unit = {}): PreparedVisualAssets {
         fun image(id: ResourceId) = requireNotNull(resolved.images[id]) { "RESOURCE_PACK_BINDING_INVALID: $id: Missing resolved resource" }
-        fun size(image: PreparedResourceImage) = ImageLogicalSize(image.declaration.frameWidth, image.declaration.frameHeight)
         val mapped = resourcePack.unitBindings.mapValues { (_, binding) ->
-            val body = image(binding.body)
-            val back = binding.back?.let(::image)
-            val turret = binding.turret?.let(::image)
-            val dead = binding.dead?.let(::image)
-            val leg = binding.leg?.let(::image)
-            val foot = binding.foot?.let(::image)
-            val rotor = binding.rotor?.let(::image)
-            val weapons = binding.weaponTurrets.mapValues { (_, id) -> image(id) }
-            VisualUnitImages(body.path, back?.path, turret?.path, dead?.path, body.declaration.totalFrames,
-                UnitImageLogicalSizes(size(body), back?.let(::size), turret?.let(::size), dead?.let(::size), leg?.let(::size), foot?.let(::size), rotor?.let(::size),
-                    weapons.mapValues { (_, value) -> size(value) }),
-                leg?.path, foot?.path, rotor?.path, weapons.mapValues { (_, value) -> value.path })
+            binding.bindings().map { _, bound ->
+                val resolvedImage = image(bound.resource)
+                BoundUnitImage(resolvedImage.path,
+                    ImageLogicalSize(resolvedImage.declaration.frameWidth, resolvedImage.declaration.frameHeight),
+                    resolvedImage.declaration.totalFrames)
+            }.visualImages()
         }
         val tiles = resourcePack.terrainBindings.mapValues { (_, id) -> image(id).path }
         return PreparedVisualAssets(selection, profileId, identity, mapped, tiles,

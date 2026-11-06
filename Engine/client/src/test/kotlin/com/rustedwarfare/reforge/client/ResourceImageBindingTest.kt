@@ -2,6 +2,9 @@ package com.rustedwarfare.reforge.client
 
 import com.rustedwarfare.reforge.client.demo.DemoScenario
 import com.rustedwarfare.reforge.core.content.PngImages
+import com.rustedwarfare.reforge.core.content.ContentLoader
+import com.rustedwarfare.reforge.core.content.ContentResult
+import com.rustedwarfare.reforge.core.content.LoadedContentPack
 import com.rustedwarfare.reforge.core.sim.Scenario
 import java.nio.file.Files
 import java.nio.file.Path
@@ -10,8 +13,47 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertSame
 import kotlin.test.assertTrue
+import kotlin.test.assertIs
 
 class ResourceImageBindingTest {
+    @Test
+    fun naval_content_keeps_hull_and_factory_wreck_bindings_when_only_the_hull_wreck_is_high_resolution() {
+        for (format in listOf("ini", "json", "hjson")) {
+            val root = repo().resolve("SimulationTest/public/inputs/naval-production/$format")
+            val pack = assertIs<ContentResult.Success<LoadedContentPack>>(
+                ContentLoader.loadContentPack(root.resolve("production-package"))).value
+            val choice = ContentPackChoice(pack, "builder")
+            val before = SandboxRenderResources.from(contentPackScenario(root, choice))
+            val prepared = contentPackVisuals(PreparedVisualAssets(VisualAssetSelection(), "owned-naval-parts", "fixed",
+                emptyMap(), before.tileSets.associate { it.supportedLayout() to it.imagePath }), choice)
+            val base = ResourceImagePreparation.baseLayer(prepared, BuiltInResourcePacks.forSource(VisualAssetSource.PLACEHOLDER))
+            val hullId = ResourceId.parse("reforge:units/heavybattleship/dead")
+            val factoryId = ResourceId.parse("reforge:units/seafactory/dead")
+            val hull = base.images.getValue(hullId)
+            val factory = base.images.getValue(factoryId)
+            val hd = hull.copy(path = Path.of("no-io/naval-hull-wreck-hd.png").toAbsolutePath(),
+                pixelWidth = hull.pixelWidth * 2, pixelHeight = hull.pixelHeight * 2)
+            val bound = before.withVisuals(prepared.withResourceImages(ResourceImageComposer.compose(base,
+                listOf(ResourceImageLayer(metadata("owned:naval-wreck-hd"), mapOf(hullId to hd))))))
+            val ship = bound.units.getValue("heavyBattleship")
+            val seaFactory = bound.units.getValue("seaFactory")
+            assertEquals(hd.path, ship.deadImagePath)
+            assertEquals(factory.path, seaFactory.deadImagePath)
+            assertEquals(pack.units.getValue("heavyBattleship").combat!!.deadImagePath,
+                before.units.getValue("heavyBattleship").deadImagePath)
+            assertEquals(pack.units.getValue("seaFactory").durability!!.deadImagePath,
+                before.units.getValue("seaFactory").deadImagePath)
+            assertEquals(before.units.getValue("heavyBattleship").drawSize(UnitImageSlot.DEAD, hull.pixelWidth, hull.pixelHeight),
+                ship.drawSize(UnitImageSlot.DEAD, hd.pixelWidth, hd.pixelHeight))
+            assertEquals(before.units.getValue("seaFactory").drawSize(UnitImageSlot.DEAD, factory.pixelWidth, factory.pixelHeight),
+                seaFactory.drawSize(UnitImageSlot.DEAD, factory.pixelWidth, factory.pixelHeight))
+            assertEquals(before.units.getValue("heavyBattleship").imagePath, ship.imagePath)
+            assertEquals(before.units.getValue("heavyBattleship").turretImagePath, ship.turretImagePath)
+            assertEquals(before.units.getValue("seaFactory").imagePath, seaFactory.imagePath)
+            assertEquals(before.units.getValue("seaFactory").backImagePath, seaFactory.backImagePath)
+        }
+    }
+
     @Test
     fun high_resolution_bindings_keep_each_real_unit_slot_world_size_and_all_five_atlas_layouts() {
         val repo = repo()

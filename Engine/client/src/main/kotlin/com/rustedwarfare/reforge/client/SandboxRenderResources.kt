@@ -91,22 +91,10 @@ class SandboxRenderResources private constructor(
     internal fun bindVisuals(visuals: PreparedVisualAssets): SandboxRenderResources {
         val mappedUnits = units.mapValues { (id, before) ->
             val image = requireNotNull(visuals.units[id]) { "VISUAL_MAPPING_UNSUPPORTED: unit $id" }
-            fun slot(beforePath: Path?, replacement: Path?, name: String): Path? = if (beforePath == null) null
-                else requireNotNull(replacement) { "VISUAL_MAPPING_UNSUPPORTED: unit $id $name" }
-            val turret = slot(before.turretImagePath, image.turret, "turret")
-            before.copy(imagePath = image.body, totalFrames = image.totalFrames,
-                backImagePath = slot(before.backImagePath, image.back, "back"),
-                turretImagePath = turret,
-                legImagePath = slot(before.legImagePath, image.leg, "leg"),
-                footImagePath = slot(before.footImagePath, image.foot, "foot"),
-                rotorImagePath = slot(before.rotorImagePath, image.rotor, "rotor"),
-                deadImagePath = slot(before.deadImagePath, image.dead, "dead"), logicalImages = image.logicalImages,
-                weaponImages = Collections.unmodifiableMap(before.weaponImages.mapValues { (name, weapon) ->
-                    if (weapon.imagePath == null) weapon
-                    else if (weapon.imagePath == before.turretImagePath) weapon.copy(imagePath = turret, logicalSize = image.logicalImages?.turret)
-                    else weapon.copy(imagePath = requireNotNull(image.weaponTurrets[name]) { "VISUAL_MAPPING_UNSUPPORTED: unit $id weapon $name" },
-                        logicalSize = image.logicalImages?.weaponTurrets?.get(name))
-                }))
+            val replacements = image.bindings()
+            before.withImages(before.imageBindings().map { part, _ ->
+                requireNotNull(replacements.images[part]) { "VISUAL_MAPPING_UNSUPPORTED: unit $id ${part.suffix}" }
+            })
         }
         val mappedTiles = tileSets.map { atlas ->
             val layout = atlas.supportedLayout()
@@ -144,18 +132,17 @@ class SandboxRenderResources private constructor(
             scenario.map.widthTiles, scenario.map.heightTiles, scenario.map.tileWidth, scenario.map.tileHeight,
             Collections.unmodifiableList(scenario.map.tileSets.map(VisualTileAtlas::from)),
             Collections.unmodifiableMap(scenario.unitDefinitions.mapValues { (_, unit) ->
-                UnitAppearance(unit.displayRadius, unit.imagePath, unit.imageScale, unit.totalFrames,
-                    unit.combat?.turretImagePath, unit.durability?.deadImagePath ?: unit.combat?.deadImagePath,
-                    unit.combat?.turretImageScale ?: 1.0, unit.building?.backImagePath,
+                val images = unit.imageBindings().visualImages()
+                UnitAppearance(unit.displayRadius, images.body, unit.imageScale, images.totalFrames,
+                    images.turret, images.dead, unit.combat?.turretImageScale ?: 1.0, images.back,
                     unit.combat?.mount ?: TurretMount(),
                     unit.pointDefense?.let { Position(it.muzzleOffsetX, it.muzzleOffsetY) },
                     unit.combat?.recoil, unit.combat?.shootDelay ?: 0.0,
                     economicBuilding = unit.income != null && unit.construction != null,
                     weaponImages = Collections.unmodifiableMap(unit.combat?.namedWeapons?.ordered.orEmpty()
                         .associate { it.name to WeaponAppearance(it.imagePath, it.imageScale, it.invisible, it.imageOffsetX, it.imageOffsetY) }),
-                    legImagePath = unit.mech?.legs?.first()?.legImage,
-                    footImagePath = unit.mech?.legs?.first()?.footImage,
-                    rotorImagePath = unit.rotor?.imagePath, mechKind = unit.mech?.kind)
+                    legImagePath = images.leg, footImagePath = images.foot,
+                    rotorImagePath = images.rotor, mechKind = unit.mech?.kind)
             }), Collections.unmodifiableMap(scenario.players.associate { it.playerId to it.teamId }))
     }
 }

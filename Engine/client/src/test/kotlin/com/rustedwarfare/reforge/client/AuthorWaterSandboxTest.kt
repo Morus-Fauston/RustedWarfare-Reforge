@@ -3,11 +3,71 @@ package com.rustedwarfare.reforge.client
 import com.rustedwarfare.reforge.core.content.*
 import com.rustedwarfare.reforge.core.sim.*
 import java.nio.file.Path
+import java.nio.file.Files
 import kotlin.test.*
 
 class AuthorWaterSandboxTest {
     private val fixtures: Path get() = System.getProperty("public.fixtures.dir")?.let(Path::of)
         ?: Path.of("../../SimulationTest/public/inputs")
+
+    @Test fun hidden_unpictured_weapon_and_independent_turret_survive_the_normal_preparation_and_draw_path() {
+        for (format in listOf("ini", "json", "hjson")) {
+            val root = Files.createTempDirectory("rwr-hidden-water-client-").toAbsolutePath().normalize()
+            try {
+                val source = fixtures.resolve("author-water/$format")
+                Files.walk(source).use { paths -> paths.forEach { path ->
+                    val target = root.resolve(source.relativize(path)).normalize()
+                    require(target.startsWith(root))
+                    if (Files.isDirectory(path)) Files.createDirectories(target) else Files.copy(path, target)
+                } }
+                val child = root.resolve("package/units/spcruiser.$format")
+                Files.writeString(child, Files.readString(child).replace("cannon.png", "NONE"))
+                val template = root.resolve("package/units/base.ini")
+                Files.writeString(template, Files.readString(template).replace("[template_gun]", "[template_gun]\ninvisible: true") +
+                    "\n[turret_port]\ninvisible: false\nimage: cannon.png\n")
+                val pack = assertIs<ContentResult.Success<LoadedContentPack>>(ContentLoader.loadContentPack(root.resolve("package"))).value
+                val choice = ContentPackChoice(pack, "spcruiser")
+                val initial = PreparedVisualAssets(VisualAssetSelection(), "owned-hidden-water", "fixed", emptyMap(),
+                    SandboxRenderResources.from(contentPackScenario(root, choice)).tileSets.associate { it.supportedLayout() to it.imagePath })
+                val prepared = contentPackVisuals(initial, choice)
+                val base = ResourceImagePreparation.baseLayer(prepared, BuiltInResourcePacks.forSource(VisualAssetSource.PLACEHOLDER))
+                val resolved = prepared.withResourceImages(ResourceImageComposer.compose(base, emptyList()))
+                assertFalse(ResourceId.parse("reforge:units/spcruiser/turret") in base.images)
+                assertFalse(ResourceId.parse("reforge:units/spcruiser/weapons/starboard/turret") in base.images)
+                val port = ResourceId.parse("reforge:units/spcruiser/weapons/port/turret")
+                assertEquals(root.resolve("package/units/cannon.png"), base.images.getValue(port).path)
+                SandboxLoader().use { loader ->
+                    loader.requestPack(root, choice) { resolved }
+                    val loaded = await(loader)
+                    val appearance = loaded.renderResources.units.getValue("spcruiser")
+                    assertNull(appearance.turretImagePath)
+                    assertTrue(appearance.weaponImages.getValue("starboard").invisible)
+                    assertNull(appearance.weaponImages.getValue("starboard").imagePath)
+                    SandboxSession(loaded.scenario).use { session ->
+                        val view = session.observation
+                        val drawings = appearance.turretDrawings(view.units.single { it.unitId == "a" }, view.weapons.filter { it.unitId == "a" })
+                        assertEquals(listOf("port"), drawings.map { it.weaponName })
+                        assertEquals(base.images.getValue(port).path, drawings.single().imagePath)
+                        assertEquals(view.weapons.single { it.unitId == "a" && it.weaponName == "port" }.pivot, drawings.single().pivot)
+                    }
+                }
+            } finally {
+                Files.walk(root).use { paths -> paths.sorted(Comparator.reverseOrder()).forEach { path ->
+                    require(path.toAbsolutePath().normalize().startsWith(root))
+                    Files.deleteIfExists(path)
+                } }
+            }
+        }
+    }
+
+    private fun await(loader: SandboxLoader): LoadedSandbox {
+        val deadline = System.nanoTime() + 5_000_000_000L
+        while (System.nanoTime() < deadline) {
+            loader.pollPrepared()?.let { return it.getOrThrow() }
+            Thread.sleep(5)
+        }
+        error("Normal hidden-water preparation timed out")
+    }
 
     private fun load(format: String): LoadedSandbox {
         val pack = assertIs<ContentResult.Success<LoadedContentPack>>(ContentLoader.loadContentPack(

@@ -5,6 +5,27 @@ import java.nio.file.Files
 import kotlin.test.*
 
 class AuthorWaterContentTest {
+    @Test fun a_hidden_water_weapon_needs_no_image_while_an_independent_visible_weapon_keeps_its_image() {
+        for (format in listOf("ini", "json", "hjson")) withPack(format) { root ->
+            val child = root.resolve("units/spcruiser.$format")
+            Files.writeString(child, Files.readString(child).replace("cannon.png", "NONE"))
+            val template = root.resolve("units/base.ini")
+            Files.writeString(template, Files.readString(template).replace("[template_gun]", "[template_gun]\ninvisible: true") +
+                "\n[turret_port]\ninvisible: false\nimage: cannon.png\n")
+            val attempt = ContentLoader.loadContentPack(root)
+            val pack = assertIs<ContentResult.Success<LoadedContentPack>>(attempt, "$format: $attempt").value
+            val combat = assertNotNull(pack.units.getValue("spcruiser").combat)
+            assertNull(combat.turretImagePath)
+            val weapons = assertNotNull(combat.namedWeapons).ordered
+            assertEquals(listOf("port", "starboard"), weapons.map { it.name })
+            assertFalse(weapons[0].invisible)
+            assertEquals(root.resolve("units/cannon.png"), weapons[0].imagePath)
+            assertTrue(weapons[1].invisible)
+            assertNull(weapons[1].imagePath)
+            assertIs<ContentResult.Success<Unit>>(pack.verifyStable())
+        }
+    }
+
     @Test fun three_format_author_packs_inherit_two_named_weapons_for_the_same_new_water_id() {
         val fixtures = System.getProperty("public.fixtures.dir")?.let(Path::of)
             ?: Path.of("../../SimulationTest/public/inputs")

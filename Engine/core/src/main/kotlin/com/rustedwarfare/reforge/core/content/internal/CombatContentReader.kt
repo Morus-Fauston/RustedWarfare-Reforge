@@ -237,7 +237,7 @@ internal object CombatContentReader {
                     OrdinarySplashProfile(number(projectile, "areaDamage").toFloat(), number(projectile, "areaRadius", true).toFloat()) else null,
                 retargetOnDeath = heavy && optionalBoolean(projectile, "autoTargetingOnDeadTarget", false))
         }
-        val turretImage = if ((mech || helicopter) && required("graphics", "image_turret") == "NONE") null else image("image_turret")
+        val turretImage = if ((mech || helicopter || authorWater) && required("graphics", "image_turret") == "NONE") null else image("image_turret")
         val deadImage = if ((mech || heavy) && required("graphics", "image_wreak") == "NONE") null else image("image_wreak")
         val catalog = WeaponCatalog(weapons.map { weapon ->
             val projectileName = required(weapon, "projectile")
