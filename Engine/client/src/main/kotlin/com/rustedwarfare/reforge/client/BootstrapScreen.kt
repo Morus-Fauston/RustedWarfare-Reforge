@@ -50,6 +50,9 @@ class BootstrapScreen(
     private lateinit var messageLabel: Label
     private lateinit var stopButton: TextButton
     private lateinit var patrolButton: TextButton
+    private val rateButtons = linkedMapOf<OfflineRate, TextButton>()
+    private lateinit var simulationPauseButton: TextButton
+    private lateinit var pacingLabel: Label
     private lateinit var patrolLabel: Label
     private lateinit var productionLabel: Label
     private lateinit var produceButton: TextButton
@@ -116,7 +119,10 @@ class BootstrapScreen(
     private var firstDrawnGeneration: Long? = null
     private var generation = 0L
     private var activeRoot: Path = initialRoot
-    private var accumulator = 0.0
+    private val stepClock = OfflineStepClock()
+    private var lastPacingFrame = OfflinePacingFrame(0, 0.0)
+    private var ignoreNextHostFrame = true
+    private var lastPacingRecordedNanos = 0L
     private var paused = false
     private var loadError: String? = null
     private var visualRecoveryFailed = false
@@ -161,6 +167,24 @@ class BootstrapScreen(
         }
         label("RustedWarfare-Reforge", 16f, 628f, 440f, 28f).setFontScale(1.3f)
         productionLabel = label("", 470f, 628f, 474f, 28f)
+        rateButtons.clear()
+        OfflineRate.entries.forEachIndexed { index, rate ->
+            rateButtons[rate] = button("${rate.multiplier}x", 40f + index * 66f, 576f, 60f) {
+                if (!paused && !loading && session?.isOpen == true) {
+                    stepClock.setRate(rate)
+                    recordSimulationControl("speed")
+                }
+            }.apply { height = 24f }
+        }
+        simulationPauseButton = button("Pause", 238f, 576f, 96f) {
+            if (!paused && !loading && session?.isOpen == true) {
+                stepClock.setPaused(!stepClock.isPaused)
+                ignoreNextHostFrame = true
+                cancelInput()
+                recordSimulationControl("pause")
+            }
+        }.apply { height = 24f }
+        pacingLabel = label("", 344f, 600f, 376f, 24f)
         selectionHeading = label("Selection", 752f, 442f, 176f, 22f)
         selectedLabel = label("None", 752f, 414f, 176f, 100f)
         patrolLabel = label("", 752f, 306f, 176f, 72f)
@@ -499,7 +523,10 @@ class BootstrapScreen(
         loading = false
         loadError = null
         visualRecoveryFailed = false
-        accumulator = 0.0
+        stepClock.reset()
+        lastPacingFrame = OfflinePacingFrame(0, 0.0)
+        ignoreNextHostFrame = true
+        lastPacingRecordedNanos = 0L
         val closingSession = session; session = null
         val closingGraphics = graphics; graphics = null
         val closingSounds = sounds; sounds = null
@@ -558,7 +585,10 @@ class BootstrapScreen(
                 sounds = pendingSounds
                 loaded.visuals?.let { visuals -> evidence.recordVisualAssetsReady(visuals, generation) }
                 loading = false
-                accumulator = 0.0
+                stepClock.reset()
+                lastPacingFrame = OfflinePacingFrame(0, 0.0)
+                ignoreNextHostFrame = true
+                lastPacingRecordedNanos = 0L
             } catch (failure: Exception) {
                 try { pendingSounds?.close() } catch (cleanup: Exception) { failure.addSuppressed(cleanup) }
                 try { pendingSession?.close() } catch (cleanup: Exception) { failure.addSuppressed(cleanup) }
@@ -568,22 +598,23 @@ class BootstrapScreen(
         }, onFailure = { failLoad(it) })
         val current = session
         if (current != null && !paused) {
-            // Presentation pacing only, not the original game's tick frequency.
-            accumulator += Gdx.graphics.deltaTime.toDouble()
-            var steps = 0
+            // Every scheduled callback remains one complete unchanged simulation tick.
+            val elapsed = if (ignoreNextHostFrame) 0.0 else Gdx.graphics.deltaTime.toDouble()
+            ignoreNextHostFrame = false
             sounds?.beginFrame()
             try {
-                while (accumulator >= 1.0 / 60 && steps < 8) {
+                lastPacingFrame = stepClock.advance(elapsed) {
                     current.tick()
                     sounds?.let { player -> player.consume(current.consumeSounds(checkNotNull(graphics).projection.soundListener())) }
-                    accumulator -= 1.0 / 60; steps++
                 }
+                recordSimulationPacing()
             } catch (failure: Exception) {
                 preserveFailure(failure) { releaseSounds() }
                 throw failure
             }
         }
         updateHud()
+        updatePacingHud()
         Gdx.gl.glClearColor(0.075f, 0.09f, 0.085f, 1f)
         nativeTooltip.isVisible = nativePanel && !paused &&
             ((productionHover || secondProductionHover || thirdProductionHover) && session?.productionAction != null ||
@@ -648,6 +679,8 @@ class BootstrapScreen(
             entries += DrawnAction(id, actor, actor.text.toString(), enabled = !actor.isDisabled)
         }
         button("start-match", startButton); button("exit-match", exitButton)
+        rateButtons.forEach { (rate, actor) -> button("set-speed:${rate.multiplier}", actor) }
+        button("pause-simulation", simulationPauseButton)
         button("content-tab", packTab)
         packPanel?.let { entries += it.drawnActions() }
         button("stop", stopButton); button("choose-patrol", patrolButton)
@@ -694,6 +727,45 @@ class BootstrapScreen(
                 "screenX" to viewport.screenX, "screenY" to viewport.screenY,
                 "screenWidth" to viewport.screenWidth, "screenHeight" to viewport.screenHeight), projection)
         drawnActionLayout.afterDraw(stage.root, frame, entries, drawnNanos)?.let { evidence.record("action-layout", it) }
+    }
+
+    private fun recordSimulationControl(action: String) {
+        lastPacingRecordedNanos = 0L
+        evidence.recordWhenEnabled("simulation-control") { mapOf("generation" to generation,
+            "action" to action, "rate" to stepClock.rate.multiplier, "paused" to stepClock.isPaused,
+            "stepIndex" to session?.observation?.stepIndex) }
+        updatePacingHud()
+    }
+
+    private fun recordSimulationPacing() {
+        if (evidence === ClientEvidence.NONE) return
+        val now = System.nanoTime()
+        if (lastPacingRecordedNanos != 0L && now - lastPacingRecordedNanos < 500_000_000L) return
+        lastPacingRecordedNanos = now
+        evidence.record("simulation-pacing", mapOf("generation" to generation,
+            "rate" to stepClock.rate.multiplier, "paused" to stepClock.isPaused,
+            "actualMultiplier" to stepClock.actualMultiplier,
+            "frameSteps" to lastPacingFrame.executedSteps, "pendingSteps" to lastPacingFrame.pendingSteps,
+            "stepIndex" to session?.observation?.stepIndex, "hostNanos" to now))
+    }
+
+    private fun updatePacingHud() {
+        if (!presentationReady) return
+        val visible = session?.isOpen == true
+        rateButtons.forEach { (rate, actor) ->
+            actor.isVisible = visible
+            actor.isDisabled = paused || loading || !visible
+            actor.setText("${rate.multiplier}x" + if (stepClock.rate == rate) " *" else "")
+        }
+        simulationPauseButton.isVisible = visible
+        simulationPauseButton.isDisabled = paused || loading || !visible
+        simulationPauseButton.setText(if (stepClock.isPaused) "Resume" else "Pause")
+        pacingLabel.isVisible = visible
+        val actual = if (paused) 0.0 else stepClock.actualMultiplier
+        val state = if (paused) "Suspended" else if (stepClock.isPaused) "Paused" else "Speed"
+        pacingLabel.setText("$state ${stepClock.rate.multiplier}x | actual " +
+            (actual?.let { String.format(Locale.ROOT, "%.2fx", it) } ?: "--") +
+            " | backlog ${lastPacingFrame.pendingSteps.toLong()}")
     }
 
     private fun updateHud() {
@@ -930,7 +1002,8 @@ class BootstrapScreen(
     override fun pause() {
         if (disposed) return
         paused = true
-        accumulator = 0.0
+        stepClock.discardCatchup()
+        ignoreNextHostFrame = true
         cancelInput()
         releaseSounds()
         // Release GL and native buffers on the GL thread before Android suspends it.
@@ -980,7 +1053,8 @@ class BootstrapScreen(
             return
         }
         paused = false
-        accumulator = 0.0
+        stepClock.discardCatchup()
+        ignoreNextHostFrame = true
         evidence.record("resume", emptyMap())
     }
 
