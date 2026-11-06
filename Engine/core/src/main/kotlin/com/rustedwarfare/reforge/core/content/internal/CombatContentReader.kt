@@ -59,27 +59,37 @@ internal object CombatContentReader {
 
     fun read(path: Path): UnitDefinition = readWithSources(path).definition
 
-    fun readWithSources(path: Path): LoadedUnitContent = readWithSources(path, false)
+    private enum class Kind { NATIVE_TANK, DECLARED_TANK, MECH, HELICOPTER, HEAVY_MECH, BATTLESHIP, AUTHOR_WATER }
 
+    fun readWithSources(path: Path): LoadedUnitContent = readWithSources(path, Kind.NATIVE_TANK)
     fun readDeclaredWithSources(path: Path, validatePath: (Path) -> Unit = {}): LoadedUnitContent =
-        readWithSources(path, true, validatePath)
-
+        readWithSources(path, Kind.DECLARED_TANK, validatePath)
     fun readMechWithSources(path: Path, validatePath: (Path) -> Unit = {}): LoadedUnitContent =
-        readWithSources(path, true, validatePath, mech = true)
-
+        readWithSources(path, Kind.MECH, validatePath)
     fun readHelicopterWithSources(path: Path, validatePath: (Path) -> Unit = {}): LoadedUnitContent =
-        readWithSources(path, true, validatePath, helicopter = true)
-
+        readWithSources(path, Kind.HELICOPTER, validatePath)
     fun readHeavyMechWithSources(path: Path, validatePath: (Path) -> Unit = {}): LoadedUnitContent =
-        readWithSources(path, true, validatePath, heavy = true)
-
+        readWithSources(path, Kind.HEAVY_MECH, validatePath)
     fun readBattleshipWithSources(path: Path, validatePath: (Path) -> Unit = {}): LoadedUnitContent =
-        readWithSources(path, true, validatePath, naval = true)
+        readWithSources(path, Kind.BATTLESHIP, validatePath)
+    fun readAuthorWaterWithSources(path: Path, validatePath: (Path) -> Unit = {}): LoadedUnitContent =
+        readWithSources(path, Kind.AUTHOR_WATER, validatePath)
 
-    private fun readWithSources(path: Path, declared: Boolean, validatePath: (Path) -> Unit = {}, mech: Boolean = false,
-                                helicopter: Boolean = false, heavy: Boolean = false, naval: Boolean = false): LoadedUnitContent =
-        UnitSourceReader(when { naval -> NavalContentFields.schema(schema); heavy -> HeavyMechContentFields.schema(schema); mech -> MechContentFields.schema(schema)
-            helicopter -> HelicopterContentFields.schema(schema); else -> schema }, preRead = validatePath).load(path) { loaded ->
+    private fun readWithSources(path: Path, kind: Kind, validatePath: (Path) -> Unit = {}): LoadedUnitContent =
+        UnitSourceReader(when (kind) {
+            Kind.BATTLESHIP, Kind.AUTHOR_WATER -> NavalContentFields.schema(schema)
+            Kind.HEAVY_MECH -> HeavyMechContentFields.schema(schema)
+            Kind.MECH -> MechContentFields.schema(schema)
+            Kind.HELICOPTER -> HelicopterContentFields.schema(schema)
+            else -> schema
+        }, preRead = validatePath).load(path) { loaded ->
+        val declared = kind != Kind.NATIVE_TANK
+        val mech = kind == Kind.MECH
+        val helicopter = kind == Kind.HELICOPTER
+        val heavy = kind == Kind.HEAVY_MECH
+        val naval = kind == Kind.BATTLESHIP
+        val authorWater = kind == Kind.AUTHOR_WATER
+        val water = naval || authorWater
         val sections = loaded.values
         fun invalid(code: ContentErrorCode, s: String, key: String, ref: String? = null, reason: String): Nothing {
             val origin = loaded.origins[s to key] ?: UnitSourceReader.Origin(path, s, key)
@@ -187,16 +197,21 @@ internal object CombatContentReader {
                 reason = "Soft unit collision is not supported by the ordinary combat subset")
         }
         only("attack", "canAttack", "true")
-        only("attack", "canAttackFlyingUnits", if (helicopter || heavy || naval) "true" else "false")
-        only("attack", "canAttackLandUnits", "true")
-        only("attack", "canAttackUnderwaterUnits", naval.toString())
+        if (!authorWater) {
+            only("attack", "canAttackFlyingUnits", if (helicopter || heavy || naval) "true" else "false")
+            only("attack", "canAttackLandUnits", "true")
+            only("attack", "canAttackUnderwaterUnits", naval.toString())
+        }
+        val landDefault = if (authorWater) optionalBoolean("attack", "canAttackLandUnits", true) else true
+        val airDefault = if (authorWater) optionalBoolean("attack", "canAttackFlyingUnits", false) else helicopter || heavy || naval
+        val underwaterDefault = authorWater && optionalBoolean("attack", "canAttackUnderwaterUnits", false)
         for (weapon in weapons) {
             if ("canShoot" in sections.getValue(weapon) && "canAttack" in sections.getValue(weapon))
                 invalid(ContentErrorCode.MALFORMED_SYNTAX, weapon, "canShoot", reason = "canShoot and canAttack are aliases and cannot both be specified")
             if ("barrelY" in sections.getValue(weapon) && "size" in sections.getValue(weapon))
                 invalid(ContentErrorCode.MALFORMED_SYNTAX, weapon, "barrelY", reason = "barrelY and size are aliases and cannot both be specified")
         }
-        only("movement", "movementType", if (naval) "WATER" else if (helicopter) "AIR" else "LAND")
+        only("movement", "movementType", if (water) "WATER" else if (helicopter) "AIR" else "LAND")
         only("movement", "moveSlidingMode", (helicopter || heavy).toString())
         only("movement", "moveIgnoringBody", (helicopter || heavy).toString())
         val sight = sections["core"]?.get("fogOfWarSightRange")?.let {
@@ -207,11 +222,12 @@ internal object CombatContentReader {
         val gait = when { heavy -> HeavyMechContentFields.read(path, loaded, validatePath)
             mech -> MechContentFields.read(path, loaded, validatePath); else -> null }
         val flight = if (helicopter) HelicopterContentFields.read(path, loaded, validatePath) else null
-        val reverse = if (mech || helicopter || naval) number("movement", "reverseSpeedPercentage") else 0.0
+        val reverse = if (authorWater && "reverseSpeedPercentage" !in sections.getValue("movement")) 0.0
+            else if (mech || helicopter || water) number("movement", "reverseSpeedPercentage") else 0.0
         if (reverse !in (if (helicopter) setOf(0.1) else setOf(0.0, 1.0))) invalid(ContentErrorCode.UNSUPPORTED_FEATURE, "movement", "reverseSpeedPercentage",
             reason = "The finite mech supports disabled or full-speed reverse")
         val projectileProfiles = projectiles.associateWith { projectile ->
-            if (naval) NavalContentFields.projectile(path, loaded, projectile) else ProjectileProfile(integer(projectile, "directDamage").toDouble(),
+            if (water) NavalContentFields.projectile(path, loaded, projectile) else ProjectileProfile(integer(projectile, "directDamage").toDouble(),
                 number(projectile, "life", true), number(projectile, "speed", !mech),
                 acceleration = if (mech || heavy && "targetSpeed" in sections.getValue(projectile))
                     LinearProjectileAcceleration(number(projectile, "targetSpeed", true),
@@ -236,22 +252,22 @@ internal object CombatContentReader {
                     else -> number("attack", "turretSize")
                 },
                 if ("turnSpeed" in sections.getValue(weapon)) number(weapon, "turnSpeed") else number("attack", "turretTurnSpeed"),
-                if ((heavy || naval) && "turnSpeedAcceleration" !in sections.getValue(weapon)) 0.0
-                    else if ((heavy || naval) && signedNumber(weapon, "turnSpeedAcceleration") == -1.0) 0.0
+                if ((heavy || water) && "turnSpeedAcceleration" !in sections.getValue(weapon)) 0.0
+                    else if ((heavy || water) && signedNumber(weapon, "turnSpeedAcceleration") == -1.0) 0.0
                     else number(weapon, "turnSpeedAcceleration"),
-                if ((heavy || naval) && "image" in sections.getValue(weapon)) {
+                if ((heavy || water) && "image" in sections.getValue(weapon)) {
                     resolveReference(path, required(weapon, "image"), weapon, "image").also(validatePath)
                 } else turretImage, turretScale,
                 // Keep the existing ordinary adapter's omitted-field default; explicit values are per weapon.
-                recoil = WeaponRecoil(if ("recoilOffset" in sections.getValue(weapon)) signedNumber(weapon, "recoilOffset") else if (heavy || naval) 0.0 else -2.0,
+                recoil = WeaponRecoil(if ("recoilOffset" in sections.getValue(weapon)) signedNumber(weapon, "recoilOffset") else if (heavy || water) 0.0 else -2.0,
                     if ("recoilOutTime" in sections.getValue(weapon)) number(weapon, "recoilOutTime", !helicopter) else 4.0,
                     if ("recoilReturnTime" in sections.getValue(weapon)) number(weapon, "recoilReturnTime", !helicopter) else 7.0),
-                fireSound = if (naval) NavalContentFields.sound(path, sections.getValue(weapon), weapon) else if (mech || helicopter || heavy) null else FireSoundProfile.TANK,
+                fireSound = if (water) NavalContentFields.sound(path, sections.getValue(weapon), weapon) else if (mech || helicopter || heavy) null else FireSoundProfile.TANK,
                 minimumRange = if ("limitingMinRange" in sections.getValue(weapon)) number(weapon, "limitingMinRange") else 0.0,
                 maximumRange = if ("limitingRange" in sections.getValue(weapon)) number(weapon, "limitingRange") else null,
-                canAttackLandUnits = optionalBoolean(weapon, "canAttackLandUnits", true),
-                canAttackFlyingUnits = optionalBoolean(weapon, "canAttackFlyingUnits", helicopter || heavy || naval),
-                canAttackUnderwaterUnits = optionalBoolean(weapon, "canAttackUnderwaterUnits", false),
+                canAttackLandUnits = optionalBoolean(weapon, "canAttackLandUnits", landDefault),
+                canAttackFlyingUnits = optionalBoolean(weapon, "canAttackFlyingUnits", airDefault),
+                canAttackUnderwaterUnits = optionalBoolean(weapon, "canAttackUnderwaterUnits", underwaterDefault),
                 warmup = if ("warmup" in sections.getValue(weapon)) number(weapon, "warmup") else 0.0,
                 warmupCallDownRate = if ("warmupCallDownRate" in sections.getValue(weapon)) number(weapon, "warmupCallDownRate") else 4.0,
                 warmupNoReset = optionalBoolean(weapon, "warmupNoReset", false),
@@ -272,10 +288,10 @@ internal object CombatContentReader {
                 idleDirection = if ("idleDir" in sections.getValue(weapon)) signedNumber(weapon, "idleDir") else 0.0,
                 barrelX = if ("barrelX" in sections.getValue(weapon)) signedNumber(weapon, "barrelX") else null,
                 oddShotOffset = if ("barrelOffsetX_onOddShots" in sections.getValue(weapon)) signedNumber(weapon, "barrelOffsetX_onOddShots") else null,
-                invisible = (heavy || naval) && optionalBoolean(weapon, "invisible", false),
+                invisible = (heavy || water) && optionalBoolean(weapon, "invisible", false),
                 imageOffsetX = if (heavy && "image_drawOffsetX" in sections.getValue(weapon)) signedNumber(weapon, "image_drawOffsetX") else 0.0,
                 imageOffsetY = if (heavy && "image_drawOffsetY" in sections.getValue(weapon)) signedNumber(weapon, "image_drawOffsetY") else 0.0,
-                idleDirectionReversing = if (naval) {
+                idleDirectionReversing = if (water) {
                     if ("idleDirReversing" in sections.getValue(weapon)) signedNumber(weapon, "idleDirReversing")
                     else if (sections.getValue(weapon)["attachedTo"] != null) 0.0
                     else (if ("idleDir" in sections.getValue(weapon)) signedNumber(weapon, "idleDir") else 0.0) + 180.0
@@ -288,7 +304,7 @@ internal object CombatContentReader {
             primary.projectile, turretImage, deadImage, turretScale,
             mount = primary.mount,
             recoil = primary.recoil, barrelX = primary.barrelX ?: 0.0, oddShotOffset = primary.oddShotOffset ?: 0.0,
-            fireSound = if (naval) primary.fireSound else if (mech || helicopter || heavy) null else FireSoundProfile.TANK,
+            fireSound = if (water) primary.fireSound else if (mech || helicopter || heavy) null else FireSoundProfile.TANK,
             idleSweep = if (heavy) null else gait?.body?.let { IdleSweepProfile(it.sweepAngle, it.sweepDelay.toFloat(), it.sweepTimeScale.toFloat(), it.sweepRandomDelay) },
             namedWeapons = catalog,
             multiTargeting = optionalBoolean("attack", "turretMultiTargeting", false),
@@ -297,12 +313,13 @@ internal object CombatContentReader {
         val definition = UnitDefinition(identity, "CustomUnitMetadata", number("core", "radius", true),
             number("core", "displayRadius", true), integer("graphics", "total_frames", true),
             image("image"), imageScale,
-            MovementProfile(if (naval) MovementType.WATER else if (helicopter) MovementType.AIR else MovementType.LAND, number("movement", "moveSpeed"), number("movement", "moveAccelerationSpeed"),
+            MovementProfile(if (water) MovementType.WATER else if (helicopter) MovementType.AIR else MovementType.LAND, number("movement", "moveSpeed"), number("movement", "moveAccelerationSpeed"),
                 number("movement", "moveDecelerationSpeed"), number("movement", "maxTurnSpeed"),
                 number("movement", "turnAcceleration"), helicopter || heavy, helicopter || heavy, reverse,
                 if (helicopter || heavy) integer("movement", "moveSlidingDir") else -1, flight?.first),
-            sections.flatMap { (s, values) -> values.keys.filter { it in retained[sectionKind(s)].orEmpty() || naval && s == "core" && it == "transportSlotsNeeded" } }.toSet(), sight, profile,
-            build = BuildProfile(price, buildRate), mech = gait, rotor = flight?.second)
+            sections.flatMap { (s, values) -> values.keys.filter { it in retained[sectionKind(s)].orEmpty() || water && s == "core" && it == "transportSlotsNeeded" } }.toSet(), sight, profile,
+            build = BuildProfile(price, buildRate), mech = gait, rotor = flight?.second,
+            authoredWaterCombat = authorWater)
         definition
     }
 }

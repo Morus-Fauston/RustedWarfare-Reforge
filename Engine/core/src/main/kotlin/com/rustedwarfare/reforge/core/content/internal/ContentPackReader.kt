@@ -106,7 +106,7 @@ internal object ContentPackReader {
             val field = "units[$index]"
             val spec = objectFields(entry, setOf("type", "file"), manifest, field)
             val capability = string(spec.get("type"), "$field.type")
-            if (capability !in setOf("tank", "mech", "mech-heavy", "mech-factory", "builder", "helicopter", "air-factory", "battleship", "sea-factory", "underwater-target"))
+            if (capability !in setOf("tank", "mech", "mech-heavy", "mech-factory", "builder", "helicopter", "air-factory", "battleship", "water-combat", "sea-factory", "underwater-target"))
                 reject(ContentErrorCode.UNSUPPORTED_FEATURE, manifest, field = "$field.type", reason = "Expected an implemented finite combat, mech, factory or builder capability")
             val reference = string(spec.get("file"), "$field.file")
             val pieces = reference.split('/')
@@ -124,6 +124,7 @@ internal object ContentPackReader {
             val loaded = when (capability) {
                 "underwater-target" -> UnderwaterTargetContentReader.readWithSources(input) { requireOrdinary(root, it) }
                 "battleship" -> CombatContentReader.readBattleshipWithSources(input) { requireOrdinary(root, it) }
+                "water-combat" -> CombatContentReader.readAuthorWaterWithSources(input) { requireOrdinary(root, it) }
                 "sea-factory" -> FactoryContentReader.readWithSources(input) { requireOrdinary(root, it) }.also {
                     if (it.definition.production?.exitProfile != FactoryExitProfile.NATIVE_SEA)
                         reject(ContentErrorCode.UNSUPPORTED_FEATURE, input, field = "format", reason = "Expected the finite native sea factory profile")

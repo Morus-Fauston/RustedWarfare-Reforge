@@ -1,0 +1,43 @@
+{
+  "schemaVersion": 1,
+  "kind": "behavior-contract",
+  "contractId": "public.author-water.contract.v1",
+  "scope": "self-behavior",
+  "scenarioIds": [
+    "public.author-water.v1"
+  ],
+  "comparison": {
+    "numberMode": "declared-per-field",
+    "tolerances": {}
+  },
+  "approval": {
+    "status": "tool-fixture-only",
+    "source": "Owned SP010 content entry; existing controlled water geometry and literal configured hull/weapon values. No original or performance claim."
+  },
+  "exclusions": [
+    "original-compatibility",
+    "platform-input",
+    "performance"
+  ],
+  "rules": [
+    {
+      "ruleId": "initial-hull",
+      "when": {
+        "phase": "initial",
+        "stepIndex": 0
+      },
+      "assertions": [
+        {
+          "path": "units.a.health",
+          "operator": "equals",
+          "value": 4000
+        },
+        {
+          "path": "units.a.height",
+          "operator": "equals",
+          "value": 0
+        }
+      ]
+    }
+  ]
+}

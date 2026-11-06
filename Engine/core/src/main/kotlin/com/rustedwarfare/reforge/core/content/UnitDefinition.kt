@@ -29,6 +29,8 @@ class UnitDefinition(
     val mech: MechDefinition? = null,
     val rotor: RotorDefinition? = null,
     val fixedUnderwaterTarget: FixedUnderwaterTargetProfile? = null,
+    /** Explicit author surface capability; native hull qualification remains separate. */
+    val authoredWaterCombat: Boolean = false,
 ) {
     val retainedUnconsumed: Set<String> = Collections.unmodifiableSet(LinkedHashSet(retainedUnconsumed))
     val maximumHealth: Double? get() = durability?.maxHp ?: combat?.maxHp

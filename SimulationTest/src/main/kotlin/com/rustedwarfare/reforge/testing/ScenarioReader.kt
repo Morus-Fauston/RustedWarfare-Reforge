@@ -80,6 +80,20 @@ internal object ScenarioReader {
                 "mech-heavy" -> ContentLoader.loadHeavyMechUnit(ref.path)
                 "helicopter" -> ContentLoader.loadHelicopterUnit(ref.path)
                 "battleship" -> ContentLoader.loadBattleshipUnit(ref.path)
+                "water-combat" -> when (val loaded = ContentLoader.loadAuthorWaterUnitWithSources(ref.path)) {
+                    is ContentResult.Failure -> loaded
+                    is ContentResult.Success -> {
+                        val declaredSources = identities.associateBy { it.path }
+                        for (source in loaded.value.sources) {
+                            val declared = declaredSources[source.path.toRealPath()]
+                                ?: throw InputError("An inherited author source has no declared identity: ${source.path}")
+                            if (source.sha256 != declared.sha256 || source.bytes != Files.size(declared.path))
+                                throw InputError("Parsed author source differs from its declared identity: ${source.path}")
+                        }
+                        unwrap(loaded.value.verifyStable())
+                        ContentResult.Success(loaded.value.definition)
+                    }
+                }
                 "underwater-target" -> ContentLoader.loadUnderwaterTargetUnit(ref.path)
                 "factory" -> ContentLoader.loadFactory(ref.path)
                 "builder" -> ContentLoader.loadBuilder(ref.path)

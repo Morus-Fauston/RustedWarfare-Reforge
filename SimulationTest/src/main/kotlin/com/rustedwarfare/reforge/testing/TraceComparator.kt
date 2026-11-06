@@ -471,7 +471,7 @@ object TraceComparator {
         }
         if (mechLegCount != null) validateMechPose(unit.objectAt("mechPose"), mechLegCount)
         if (unit.id("typeId") in typesLoadedBy(scenario, setOf("helicopter"))) validateFlightPose(unit)
-        if (unit.id("typeId") in typesLoadedBy(scenario, setOf("battleship"))) validateWaterPose(unit)
+        if (unit.id("typeId") in typesLoadedBy(scenario, setOf("battleship", "water-combat"))) validateWaterPose(unit)
         if (unit.id("typeId") in typesLoadedBy(scenario, setOf("underwater-target"))) {
             val height = unit["height"] as? JsonPrimitive
             if (height == null || height.isString || height.doubleOrNull != -8.0 ||

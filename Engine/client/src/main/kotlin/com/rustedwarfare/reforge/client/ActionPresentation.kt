@@ -23,7 +23,7 @@ internal class ActionCatalogue(private val definitions: Map<String, UnitDefiniti
         "c_turret_t1" to Names("Turret"), "c_turret_t2_gun" to Names("Gun T2", "Unit"),
         "c_turret_t1_artillery" to Names("Artillery", "Unit"), "laserDefence" to Names("Laser Shield"))
     fun title(type: String, panel: Boolean = false): String = names[type]?.let { if (panel) it.panel else it.full }
-        ?: if (panel) type else "Unit"
+        ?: type
     fun nominalIncome(type: String): Float? = definitions[type]?.income?.let { it.credits * 40f / it.period }
     private val nominalSeconds = mapOf("extractorT1" to "27.7", "extractorT2" to "55.5",
         "fabricatorT1" to "65.6", "fabricatorT2" to "93.3")

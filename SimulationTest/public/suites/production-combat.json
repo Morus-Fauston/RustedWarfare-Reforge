@@ -123,7 +123,9 @@
       "com.rustedwarfare.reforge.core.sim.WaterMovementTest",
       "com.rustedwarfare.reforge.core.sim.SandboxCommandParserTest",
       "com.rustedwarfare.reforge.core.sim.OfflineSandboxHostTest",
-      "com.rustedwarfare.reforge.core.sim.WeaponAssemblyRuntimeTest"
+      "com.rustedwarfare.reforge.core.sim.WeaponAssemblyRuntimeTest",
+      "com.rustedwarfare.reforge.core.content.AuthorWaterContentTest",
+      "com.rustedwarfare.reforge.core.sim.AuthorWaterRuntimeTest"
     ],
     "client": [
       "com.rustedwarfare.reforge.client.CombatActorEvidenceTest",
@@ -150,7 +152,8 @@
       "com.rustedwarfare.reforge.client.NavalNativePanelTest",
       "com.rustedwarfare.reforge.client.NavalPlacementTest",
       "com.rustedwarfare.reforge.client.NavalProductionSandboxTest",
-      "com.rustedwarfare.reforge.client.NavalProjectionTest"
+      "com.rustedwarfare.reforge.client.NavalProjectionTest",
+      "com.rustedwarfare.reforge.client.AuthorWaterSandboxTest"
     ],
     "pc": [
       "com.rustedwarfare.reforge.pc.PatrolJsonlPairingTest",
@@ -182,7 +185,8 @@
       "com.rustedwarfare.reforge.testing.NavalBallisticArchiveTest",
       "com.rustedwarfare.reforge.testing.NavalProductionArchiveTest",
       "com.rustedwarfare.reforge.testing.NavalProductionSessionTest",
-      "com.rustedwarfare.reforge.testing.ProducedWeaponArchiveTest"
+      "com.rustedwarfare.reforge.testing.ProducedWeaponArchiveTest",
+      "com.rustedwarfare.reforge.testing.AuthorWaterScenarioTest"
     ]
   },
   "short": [
@@ -407,6 +411,39 @@
       "backend": "session",
       "scenario": "platform/scenarios/heavy-mech-hjson-session-short.json",
       "contract": "platform/contracts/heavy-mech-hjson-session-short.json"
+    },
+    {
+      "id": "author-water-ini-core",
+      "scenario": "scenarios/author-water-ini.json",
+      "contract": "contracts/author-water-ini.json"
+    },
+    {
+      "id": "author-water-ini-session",
+      "backend": "session",
+      "scenario": "platform/scenarios/author-water-ini.json",
+      "contract": "platform/contracts/author-water-ini.json"
+    },
+    {
+      "id": "author-water-json-core",
+      "scenario": "scenarios/author-water-json.json",
+      "contract": "contracts/author-water-json.json"
+    },
+    {
+      "id": "author-water-json-session",
+      "backend": "session",
+      "scenario": "platform/scenarios/author-water-json.json",
+      "contract": "platform/contracts/author-water-json.json"
+    },
+    {
+      "id": "author-water-hjson-core",
+      "scenario": "scenarios/author-water-hjson.json",
+      "contract": "contracts/author-water-hjson.json"
+    },
+    {
+      "id": "author-water-hjson-session",
+      "backend": "session",
+      "scenario": "platform/scenarios/author-water-hjson.json",
+      "contract": "platform/contracts/author-water-hjson.json"
     }
   ],
   "long": [

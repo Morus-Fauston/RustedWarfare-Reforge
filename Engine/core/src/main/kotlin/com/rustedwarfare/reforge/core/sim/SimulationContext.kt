@@ -3,6 +3,7 @@ package com.rustedwarfare.reforge.core.sim
 import com.rustedwarfare.reforge.core.content.MapDefinition
 import com.rustedwarfare.reforge.core.content.MovementType
 import com.rustedwarfare.reforge.core.content.foundationMovementType
+import com.rustedwarfare.reforge.core.content.DirectHitTargetKind
 import com.rustedwarfare.reforge.core.path.PlanningTerrain
 import com.rustedwarfare.reforge.core.path.PlanningSegmentClearance
 import com.rustedwarfare.reforge.core.path.PathDiagnosticsException
@@ -1309,8 +1310,19 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
                 m.maxTurnSpeed, m.turnAcceleration)
             val fourLegged = definition.mech?.kind == com.rustedwarfare.reforge.core.content.MechKind.FOUR_LEGGED
             val navalHull = definition.id == "heavyBattleship" && m.type == MovementType.WATER && definition.radius == 40.0
+            val authoredSurface = definition.authoredWaterCombat
+            if (authoredSurface && (m.type != MovementType.WATER || definition.combat == null ||
+                    definition.className != "CustomUnitMetadata" || !definition.id.matches(Regex("[a-z][a-z0-9_.-]*")) ||
+                    definition.radius <= 0.0 || !definition.displayRadius.isFinite() || definition.displayRadius <= 0.0 ||
+                    !definition.imageScale.isFinite() || definition.imageScale <= 0.0 || definition.totalFrames <= 0 ||
+                    definition.fixedUnderwaterTarget != null || definition.building != null || definition.production != null ||
+                    definition.builder != null || definition.construction != null || definition.income != null ||
+                    definition.upgrades != null || definition.deathExplosion != null || definition.pointDefense != null ||
+                    definition.mech != null || definition.rotor != null || m.flight != null ||
+                    definition.directHitTargetKind != DirectHitTargetKind.ORDINARY))
+                return SimulationError("unsupported-unit", "Expected finite authored surface combat without unsupported capability combinations")
             if (numbers.any { !it.isFinite() || it < 0.0 } ||
-                (definition.building == null && definition.radius >= input.map.tileWidth && !(fourLegged && definition.radius == 22.0) && !navalHull) ||
+                (definition.building == null && definition.radius >= input.map.tileWidth && !(fourLegged && definition.radius == 22.0) && !navalHull && !authoredSurface) ||
                 m.type != MovementType.AIR && !fourLegged && (m.slidingMode || m.ignoringBody) ||
                 fourLegged && (m.type != MovementType.LAND || !m.slidingMode || !m.ignoringBody)) {
                 return SimulationError("unsupported-unit", "Expected finite movement and the supported representative's radius and locomotion")
@@ -1428,6 +1440,8 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
             }
             val resourceBuilding = input.unitDefinitions.getValue(spawn.typeId).building?.requiresResourcePool == true
             val spawnDefinition = input.unitDefinitions.getValue(spawn.typeId)
+            if (spawnDefinition.authoredWaterCombat && spawn.height != 0.0)
+                return SimulationError("invalid-spawn", "Authored surface combat must start at height zero")
             if (spawnDefinition.id == "heavyBattleship" && spawnDefinition.movement.type == MovementType.WATER &&
                 spawnDefinition.radius == 40.0 && spawn.height != 0.0)
                 return SimulationError("invalid-spawn", "The finite surface battleship must start at height zero")

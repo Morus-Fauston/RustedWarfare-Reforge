@@ -85,7 +85,8 @@ internal fun contentPackScenario(root: Path, choice: ContentPackChoice): Scenari
         choice.content.units["c_tank"]?.movement?.type == MovementType.LAND &&
         choice.content.units["helicopter"]?.rotor != null &&
         choice.content.units["navalUnderwaterTarget"]?.fixedUnderwaterTarget == FixedUnderwaterTargetProfile(-8.0)
-    val map = when (val result = ContentLoader.loadMap(root.resolve(if (naval) "maps/naval-shore.tmx" else "maps/p001-controlled.tmx"))) {
+    val authorWater = choice.content.units.getValue(choice.unitId).authoredWaterCombat
+    val map = when (val result = ContentLoader.loadMap(root.resolve(if (naval || authorWater) "maps/naval-shore.tmx" else "maps/p001-controlled.tmx"))) {
         is ContentResult.Failure -> error(result.error.describe())
         is ContentResult.Success -> result.value
     }
@@ -102,6 +103,13 @@ internal fun contentPackScenario(root: Path, choice: ContentPackChoice): Scenari
         TimeModel("p001.time.v1", "sim-tick", "ieee754-binary64", "fixed-explicit-delta"), MovementContract(16.0, 4.0),
         combatContract = CombatContract(12345, -1, mapOf("a" to 8L, "b" to 9L, "c" to 10L, "d" to 11L), 12L),
         economyContract = EconomyContract(mapOf("p1" to 12000L, "p2" to 0L)))
+    if (authorWater) return Scenario("p008-content-pack", map, choice.content.units,
+        listOf(Player("p1", PlayerControl.LOCAL, "one"), Player("p2", PlayerControl.NONE, "two")),
+        listOf(UnitSpawn("a", "p1", choice.unitId, Position(500.0, 300.0), 90.0),
+            UnitSpawn("b", "p2", choice.unitId, Position(650.0, 300.0), 270.0)),
+        CoordinateModel("p001.coordinate.v1", "2d", "x-right", "y-down", "top-left", "world-unit", "double", "ieee754-binary64"),
+        TimeModel("p001.time.v1", "sim-tick", "ieee754-binary64", "fixed-explicit-delta"), MovementContract(16.0, 4.0),
+        combatContract = CombatContract(12345, -1, mapOf("a" to 8L, "b" to 9L), 10L))
     if (choice.unitId in setOf("builder", "mechFactory", "mechFactoryT2", "mechHeavyMissile") &&
         choice.content.units["mechHeavyMissile"]?.mech?.kind == MechKind.FOUR_LEGGED &&
         choice.content.units["mechFactoryT2"]?.production?.exitProfile == FactoryExitProfile.CUSTOM_MECH &&

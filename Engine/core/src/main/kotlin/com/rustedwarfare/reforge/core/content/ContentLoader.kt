@@ -81,6 +81,10 @@ object ContentLoader {
     fun loadBattleshipUnit(path: Path): ContentResult<UnitDefinition> =
         load(path) { CombatContentReader.readBattleshipWithSources(it).definition }
 
+    /** Author surface combat shares the common syntax and retains its complete parsed source closure. */
+    fun loadAuthorWaterUnitWithSources(path: Path): ContentResult<LoadedUnitContent> =
+        load(path) { CombatContentReader.readAuthorWaterWithSources(it) }
+
     fun loadUnderwaterTargetUnit(path: Path): ContentResult<UnitDefinition> =
         load(path) { UnderwaterTargetContentReader.readWithSources(it) {}.definition }
 
