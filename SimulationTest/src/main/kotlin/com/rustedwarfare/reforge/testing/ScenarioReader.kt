@@ -72,7 +72,8 @@ internal object ScenarioReader {
             if (grid.integer("width") != map.widthTiles.toLong() || grid.integer("height") != map.heightTiles.toLong())
                 throw InputError("Declared knowledge grid differs from verified map dimensions")
         }
-        fun checkedAuthor(loaded: ContentResult<LoadedUnitContent>, producer: Boolean? = null): ContentResult<UnitDefinition> = when (loaded) {
+        fun checkedAuthor(loaded: ContentResult<LoadedUnitContent>, producer: Boolean? = null,
+                          upgrading: Boolean? = null): ContentResult<UnitDefinition> = when (loaded) {
             is ContentResult.Failure -> loaded
             is ContentResult.Success -> {
                 val declaredSources = identities.associateBy { it.path }
@@ -85,6 +86,8 @@ internal object ScenarioReader {
                 unwrap(loaded.value.verifyStable())
                 if (producer != null && (loaded.value.definition.production != null) != producer)
                     throw InputError("Author factory adapter must declare its actual production capability")
+                if (upgrading != null && (loaded.value.definition.upgrades != null) != upgrading)
+                    throw InputError("Author factory adapter must declare its actual upgrade capability")
                 ContentResult.Success(loaded.value.definition)
             }
         }
@@ -98,8 +101,9 @@ internal object ScenarioReader {
                 "battleship" -> ContentLoader.loadBattleshipUnit(ref.path)
                 "water-combat" -> checkedAuthor(ContentLoader.loadAuthorWaterUnitWithSources(ref.path))
                 "constructor" -> checkedAuthor(ContentLoader.loadAuthorConstructorWithSources(ref.path))
-                "author-factory" -> checkedAuthor(ContentLoader.loadAuthorBuildingWithSources(ref.path), false)
-                "author-producer" -> checkedAuthor(ContentLoader.loadAuthorBuildingWithSources(ref.path), true)
+                "author-factory" -> checkedAuthor(ContentLoader.loadAuthorBuildingWithSources(ref.path), false, false)
+                "author-producer" -> checkedAuthor(ContentLoader.loadAuthorBuildingWithSources(ref.path), true, false)
+                "author-upgrading-producer" -> checkedAuthor(ContentLoader.loadAuthorBuildingWithSources(ref.path), true, true)
                 "underwater-target" -> ContentLoader.loadUnderwaterTargetUnit(ref.path)
                 "factory" -> ContentLoader.loadFactory(ref.path)
                 "builder" -> ContentLoader.loadBuilder(ref.path)

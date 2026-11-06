@@ -14,8 +14,11 @@ internal object AuthorConstructionContentReader {
         setOf("dont_load"), constructorFields - constructorNumbers, nativeFormats = setOf("rw-reforge.constructor.v1"))
     private val buildingFields = setOf("format", "name", "maxHp", "radius", "footprint", "placementFootprint",
         "movementType", "foundationMovementType", "price", "buildSpeed", "image", "image_back", "image_dead", "fogOfWarSightRange",
-        "productionUnits", "exitProfile")
-    private val buildingSchema = UnitContentSchema.native(buildingFields, setOf("rw-reforge.factory.v1"))
+        "productionUnits", "exitProfile", "upgradeTo", "upgradePrice", "upgradeBuildSpeed")
+    private val upgradeNumbers = setOf("upgradePrice", "upgradeBuildSpeed")
+    private val buildingSchema = UnitContentSchema.native(buildingFields, setOf("rw-reforge.factory.v1")).let {
+        it.copy(numericFields = it.numericFields + upgradeNumbers, textFields = it.textFields - upgradeNumbers)
+    }
 
     fun readConstructorWithSources(path: Path, validatePath: (Path) -> Unit = {}): LoadedUnitContent =
         UnitSourceReader(constructorSchema, validatePath).load(path) { loaded ->
@@ -58,6 +61,7 @@ internal object AuthorConstructionContentReader {
                 building = BuildingProfile(footprint, if ("image_back" in loaded.values.getValue("core")) fields.image("image_back") else null,
                     placementFootprint = placement, foundationMovementType = foundation),
                 production = fields.production(),
+                upgrades = fields.upgrades(),
                 construction = ConstructionProfile(fields.price(), fields.rate()))
         }
 
@@ -78,6 +82,15 @@ internal object AuthorConstructionContentReader {
             val exit = FactoryExitProfile.entries.singleOrNull { it.name == required("exitProfile") }
                 ?: reject(ContentErrorCode.UNSUPPORTED_FEATURE, path, field = "exitProfile", reason = "Expected an existing finite factory exit profile")
             return ProductionProfile(ids("productionUnits"), exit)
+        }
+        fun upgrades(): UpgradeProfile? {
+            if (values.keys.none { it in setOf("upgradeTo", "upgradePrice", "upgradeBuildSpeed") }) return null
+            val target = ids("upgradeTo").singleOrNull() ?: bad("upgradeTo", "Expected one resolved upgrade target")
+            val price = required("upgradePrice").toLongOrNull()?.takeIf { it >= 0L }
+                ?: bad("upgradePrice", "Expected nonnegative integer upgrade price")
+            val rate = required("upgradeBuildSpeed").toFloatOrNull()?.takeIf { it.isFinite() && it > 0f }
+                ?: bad("upgradeBuildSpeed", "Expected positive finite binary32 upgrade speed")
+            return UpgradeProfile(listOf(UpgradeActionProfile(target, target, price, rate)))
         }
         private fun number(key: String): Double = required(key).toDoubleOrNull()?.takeIf { it.isFinite() }
             ?: bad(key, "Expected a finite number")

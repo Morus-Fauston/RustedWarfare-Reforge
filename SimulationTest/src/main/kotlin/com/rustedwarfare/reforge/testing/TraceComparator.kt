@@ -327,9 +327,11 @@ object TraceComparator {
                         val upgradeTypes = upgradeTypes(scenario)
                         if (upgradeTypes.isNotEmpty()) {
                             val queues = observation.objectAt("upgrades")
+                            val authorTypes = typesLoadedBy(scenario, setOf("author-upgrading-producer"))
                             val registered = scenario.arrayAt("units").map { it.jsonObject }
-                                .filter { it.id("type") in upgradeTypes }.map { it.id("unitId") }.toSet() +
-                                built.filter { it.id("typeId") in upgradeTypes }.map { it.id("unitId") }
+                                .filter { it.id("type") in upgradeTypes - authorTypes }.map { it.id("unitId") }.toSet() +
+                                built.filter { it.id("typeId") in upgradeTypes - authorTypes }.map { it.id("unitId") } +
+                                units.filter { it.id("typeId") in authorTypes }.map { it.id("unitId") }
                             if (queues.keys != registered) throw Incomplete("missing-upgrades", "Missing or extra registered upgrade queue")
                             validateUpgradeItems(queues, true)
                         }
@@ -345,7 +347,7 @@ object TraceComparator {
                                 precise.keys.forEach { precise.number(it) }
                             }
                             val queues = state.objectAt("queues")
-                            val factoryTypes = typesLoadedBy(scenario, setOf("factory", "command-center", "author-producer"))
+                            val factoryTypes = typesLoadedBy(scenario, setOf("factory", "command-center", "author-producer", "author-upgrading-producer"))
                             val registeredFactories = (scenario.arrayAt("units").map { it.jsonObject }.filter { it.id("type") in factoryTypes }.map { it.id("unitId") } +
                                 (born + built).filter { it.id("typeId") in factoryTypes }.map { it.id("unitId") }).toSet()
                             if (queues.keys != registeredFactories) throw Incomplete("missing-economy", "Missing or extra registered factory queue")
@@ -386,7 +388,8 @@ object TraceComparator {
     }
 
     private fun upgradeTypes(scenario: JsonObject) = typesLoadedBy(scenario, setOf("turret-upgrades", "turret-construction")) +
-        typesLoadedBy(scenario, setOf("economy-upgrades")).filter { it.endsWith("T1") || it.endsWith("T2") }
+        typesLoadedBy(scenario, setOf("economy-upgrades")).filter { it.endsWith("T1") || it.endsWith("T2") } +
+        typesLoadedBy(scenario, setOf("author-upgrading-producer"))
 
     private fun hasConstruction(scenario: JsonObject) = scenario.containsKey("maintenanceContract") ||
         scenario.arrayAt("actions").any { it.jsonObject.text("kind") == "build" }
@@ -633,7 +636,7 @@ object TraceComparator {
                     throw Incomplete("player-units", "Incomplete visible unit samples")
                 units.forEach { validateUnitSample(it, scenario) }
                 val local = scenario.arrayAt("players").map { it.jsonObject }.single { it.id("playerId") == id }.text("control") == "local"
-                val factoryTypes = typesLoadedBy(scenario, setOf("factory", "command-center", "author-producer"))
+                val factoryTypes = typesLoadedBy(scenario, setOf("factory", "command-center", "author-producer", "author-upgrading-producer"))
                 val factories = units.filter { local && it.id("ownerPlayerId") == id && it["alive"] == b(true) && it.id("typeId") in factoryTypes }
                     .map { it.id("unitId") }.toSet()
                 if (factoryQueues.keys != factories) throw Incomplete("player-queues", "Missing or extra authorized factory queue")

@@ -335,6 +335,9 @@ sealed interface CloseResult {
     data object AlreadyClosed : CloseResult
 }
 
+/** One immutable origin shared by candidate copies; never a player DTO. */
+internal data class ProducedOrigin(val producerId: String, val factoryTypeId: String)
+
 internal data class MutableUnit(
     val unitId: String,
     val ownerPlayerId: String,
@@ -372,7 +375,7 @@ internal data class MutableUnit(
     /** Host identity and deterministic traversal order, never player DTO fields. */
     val objectId: Long? = null,
     val updateKey: String = unitId,
-    val producerId: String? = null,
+    val productionOrigin: ProducedOrigin? = null,
     var birthRemaining: Float = 0f,
     var incomeElapsed: Float = 0f,
     var pointDefense: MutablePointDefense? = definition.pointDefense?.let { MutablePointDefense(it.initialEnergy) },
@@ -397,6 +400,7 @@ internal data class MutableUnit(
     var waterSettled: Boolean = false,
     var productionSide: Boolean = false,
 ) {
+    val producerId: String? get() = productionOrigin?.producerId
     val reversing: Boolean get() = mechState?.reversing ?: bodyReversing
     val alive: Boolean get() = health == null || checkNotNull(health) > 0.0
     val tasks: List<UnitTask> get() = taskQueue.tasks

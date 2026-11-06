@@ -131,7 +131,10 @@
       "com.rustedwarfare.reforge.core.sim.AuthorConstructionLifecycleTest",
       "com.rustedwarfare.reforge.core.content.AuthorFactoryContentTest",
       "com.rustedwarfare.reforge.core.sim.AuthorFactoryProductionTest",
-      "com.rustedwarfare.reforge.core.sim.AuthorFactoryLifecycleTest"
+      "com.rustedwarfare.reforge.core.sim.AuthorFactoryLifecycleTest",
+      "com.rustedwarfare.reforge.core.content.AuthorUpgradeContentTest",
+      "com.rustedwarfare.reforge.core.sim.AuthorFactoryUpgradeTest",
+      "com.rustedwarfare.reforge.core.sim.AuthorUpgradeLifecycleTest"
     ],
     "client": [
       "com.rustedwarfare.reforge.client.CombatActorEvidenceTest",
@@ -161,7 +164,8 @@
       "com.rustedwarfare.reforge.client.NavalProjectionTest",
       "com.rustedwarfare.reforge.client.AuthorWaterSandboxTest",
       "com.rustedwarfare.reforge.client.AuthorConstructionSandboxTest",
-      "com.rustedwarfare.reforge.client.AuthorFactorySandboxTest"
+      "com.rustedwarfare.reforge.client.AuthorFactorySandboxTest",
+      "com.rustedwarfare.reforge.client.AuthorUpgradeSandboxTest"
     ],
     "pc": [
       "com.rustedwarfare.reforge.pc.PatrolJsonlPairingTest",
@@ -196,7 +200,8 @@
       "com.rustedwarfare.reforge.testing.ProducedWeaponArchiveTest",
       "com.rustedwarfare.reforge.testing.AuthorWaterScenarioTest",
       "com.rustedwarfare.reforge.testing.AuthorConstructionScenarioTest",
-      "com.rustedwarfare.reforge.testing.AuthorFactoryScenarioTest"
+      "com.rustedwarfare.reforge.testing.AuthorFactoryScenarioTest",
+      "com.rustedwarfare.reforge.testing.AuthorUpgradeScenarioTest"
     ]
   },
   "short": [
@@ -520,6 +525,44 @@
       "scenario": "platform/scenarios/author-production-hjson.json",
       "contract": "platform/contracts/author-production-hjson.json",
       "backend": "session"
+    },
+    {
+      "id": "author-upgrade-ini",
+      "scenario": "scenarios/author-upgrade-ini.json",
+      "contract": "contracts/author-upgrade-ini.json"
+    },
+    {
+      "id": "author-upgrade-session-ini",
+      "backend": "session",
+      "scenario": "platform/scenarios/author-upgrade-ini.json",
+      "contract": "platform/contracts/author-upgrade-ini.json"
+    },
+    {
+      "id": "author-upgrade-json",
+      "scenario": "scenarios/author-upgrade-json.json",
+      "contract": "contracts/author-upgrade-json.json"
+    },
+    {
+      "id": "author-upgrade-session-json",
+      "backend": "session",
+      "scenario": "platform/scenarios/author-upgrade-json.json",
+      "contract": "platform/contracts/author-upgrade-json.json"
+    },
+    {
+      "id": "author-upgrade-hjson",
+      "scenario": "scenarios/author-upgrade-hjson.json",
+      "contract": "contracts/author-upgrade-hjson.json"
+    },
+    {
+      "id": "author-upgrade-session-hjson",
+      "backend": "session",
+      "scenario": "platform/scenarios/author-upgrade-hjson.json",
+      "contract": "platform/contracts/author-upgrade-hjson.json"
+    },
+    {
+      "id": "author-upgrade-player-views-json",
+      "scenario": "scenarios/author-upgrade-views-json.json",
+      "contract": "contracts/author-upgrade-views-json.json"
     }
   ],
   "long": [

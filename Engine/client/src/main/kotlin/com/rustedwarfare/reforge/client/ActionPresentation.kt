@@ -69,12 +69,16 @@ internal class ActionCatalogue(private val definitions: Map<String, UnitDefiniti
         fun controllable(unit: UnitObservation) = localControl && unit.alive && unit.ownerPlayerId == view.playerId
         val ownSingle = selected?.takeIf { ids.size == 1 && controllable(it) }
         val factory = ownSingle?.let { unit -> view.factoryQueues.firstOrNull { it.factoryId == unit.unitId } }
-        val profiles = ownSingle?.let { definitions.getValue(it.typeId).upgrades?.actions }.orEmpty()
+        val profiles = ownSingle?.takeUnless { it.constructionProgress < 1f &&
+            definitions.getValue(it.typeId).className == "AuthoredBuilding" }
+            ?.let { definitions.getValue(it.typeId).upgrades?.actions }.orEmpty()
         val upgradeQueue = if (profiles.isEmpty()) null else view.upgradeQueues.firstOrNull { it.unitId == primary }
         val upgrades = immutable(profiles.map { profile ->
             val item = upgradeQueue?.items?.firstOrNull { it.actionKey == profile.actionKey }
             val seconds = nominalSeconds[selected?.typeId]
-            val kind = if (seconds != null) UpgradePresentationKind.ECONOMIC else UpgradePresentationKind.DEFENSE
+            val authored = selected?.let { definitions.getValue(it.typeId).className == "AuthoredBuilding" } == true
+            val kind = if (authored) UpgradePresentationKind.FACTORY
+                else if (seconds != null) UpgradePresentationKind.ECONOMIC else UpgradePresentationKind.DEFENSE
             val title = if (kind == UpgradePresentationKind.ECONOMIC) "Upgrade - T${profile.targetTypeId.last()}"
                 else title(profile.targetTypeId, panel = true)
             val affordable = affordable(view, profile.price)
@@ -85,7 +89,10 @@ internal class ActionCatalogue(private val definitions: Map<String, UnitDefiniti
             val tooltip = "$title (\$${profile.price})\n" + if (kind == UpgradePresentationKind.ECONOMIC)
                 "${seconds}s\nIncome +\$${nominalIncome(checkNotNull(selected).typeId)?.toInt() ?: 0} -> +\$${nominalIncome(profile.targetTypeId)?.toInt() ?: 0}\n" +
                     (if (affordable) "Left: upgrade" else "Insufficient funds") + "\nRight: cancel one"
-                else (item?.let { "Queue 1\n${(it.progress * 100f).toInt()}%\n" } ?: "") + "Left: upgrade\nCancel: cancel one"
+                else (if (kind == UpgradePresentationKind.FACTORY)
+                    String.format(Locale.ROOT, "%.1fs\n", 1.0 / profile.rate / 60.0) else "") +
+                    (item?.let { "Queue 1\n${(it.progress * 100f).toInt()}%\n" } ?: "") +
+                    "Left: upgrade\n" + (if (kind == UpgradePresentationKind.FACTORY) "Right: cancel one" else "Cancel: cancel one")
             UpgradeActionView(profile, kind, title, cardText, tooltip, item?.progress, affordable)
         })
         val workers = view.units.filter { it.unitId in ids }
@@ -108,7 +115,9 @@ internal class ActionCatalogue(private val definitions: Map<String, UnitDefiniti
             view.units.filter { it.alive && it.ownerPlayerId == view.playerId && it.constructionProgress >= 1f }
                 .sumOf { nominalIncome(it.typeId)?.toDouble() ?: 0.0 }.toFloat(),
             upgradeQueue?.items?.joinToString("") { item ->
-                "  ${if (item.actionKey == "upgrade_gun") "Gun" else "Art"} ${(item.progress * 100f).toInt()}%"
+                val name = if (upgrades.any { it.kind == UpgradePresentationKind.FACTORY && it.actionKey == item.actionKey })
+                    title(item.targetTypeId, panel = true) else if (item.actionKey == "upgrade_gun") "Gun" else "Art"
+                "  $name ${(item.progress * 100f).toInt()}%"
             }.orEmpty(), view.balance)
     }
 
@@ -132,7 +141,7 @@ internal class ActionCatalogue(private val definitions: Map<String, UnitDefiniti
 private fun <T> immutable(items: List<T>): List<T> = Collections.unmodifiableList(ArrayList(items))
 
 /** Published values never retain a mutable work list from a later refresh. */
-enum class UpgradePresentationKind { ECONOMIC, DEFENSE }
+enum class UpgradePresentationKind { ECONOMIC, DEFENSE, FACTORY }
 data class UpgradeActionView(val profile: UpgradeActionProfile, val kind: UpgradePresentationKind,
     val title: String, val cardText: String, val tooltip: String, val progress: Float?, val affordable: Boolean) {
     val actionKey: String get() = profile.actionKey

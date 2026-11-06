@@ -24,7 +24,8 @@ internal object UnitRegistration {
         val identity = nextIdentity(state)
         val spawn = UnitSpawn(publicId, factory.ownerPlayerId, completed.typeId, birth.position, birth.heading,
             definition.movement.flight?.startingHeightOffset ?: 0.0)
-        val born = register(state, input, spawn, identity.objectId, identity.updateKey, factory.unitId, birth.protection) { unit ->
+        val born = register(state, input, spawn, identity.objectId, identity.updateKey,
+            ProducedOrigin(factory.unitId, factory.typeId), birth.protection) { unit ->
             if (factory.definition.production?.exitProfile == FactoryExitProfile.CUSTOM_MECH) {
                 factory.productionSide = !factory.productionSide
                 if (birth.fallback) state.pendingEvents += Event("production-exit-fallback", publicId)
@@ -89,18 +90,19 @@ internal object UnitRegistration {
     }
 
     private fun create(input: Scenario, spawn: UnitSpawn, objectId: Long?, updateKey: String = spawn.unitId,
-                       producerId: String? = null, birthRemaining: Float = 0f,
+                       origin: ProducedOrigin? = null, birthRemaining: Float = 0f,
                        constructionProgress: Float = 1f): MutableUnit =
         MutableUnit(spawn.unitId, spawn.ownerPlayerId, spawn.typeId,
             input.unitDefinitions.getValue(spawn.typeId), spawn.position, spawn.heading,
             height = spawn.height, objectId = objectId, updateKey = updateKey,
-            producerId = producerId, birthRemaining = birthRemaining, constructionProgress = constructionProgress)
+            productionOrigin = origin,
+            birthRemaining = birthRemaining, constructionProgress = constructionProgress)
 
     private fun register(state: StepState, input: Scenario, spawn: UnitSpawn, objectId: Long?,
-                         updateKey: String = spawn.unitId, producerId: String? = null, birthRemaining: Float = 0f,
+                         updateKey: String = spawn.unitId, origin: ProducedOrigin? = null, birthRemaining: Float = 0f,
                          beforeInsert: (MutableUnit) -> Unit = {}): MutableUnit {
         check(spawn.unitId !in state.units) { "Unit identity must be new in this world" }
-        val unit = create(input, spawn, objectId, updateKey, producerId, birthRemaining)
+        val unit = create(input, spawn, objectId, updateKey, origin, birthRemaining)
         beforeInsert(unit)
         registerPrepared(state, unit)
         return unit

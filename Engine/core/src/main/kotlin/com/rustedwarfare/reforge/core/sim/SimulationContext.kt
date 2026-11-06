@@ -1307,7 +1307,8 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
                     authored && (building.foundationMovementType == null || definition.construction == null ||
                         definition.production != null && !com.rustedwarfare.reforge.core.content.AuthorFactoryRules.supports(definition, input.unitDefinitions) ||
                         definition.builder != null || definition.combat != null ||
-                        definition.upgrades != null || definition.income != null || definition.pointDefense != null))
+                        definition.upgrades != null && !com.rustedwarfare.reforge.core.content.AuthorFactoryRules.supports(definition, input.unitDefinitions) ||
+                        definition.income != null || definition.pointDefense != null))
                     return SimulationError("unsupported-building", "Explicit author foundations require a finite plain construction body")
                 if (m.type != MovementType.NONE || definition.maximumHealth == null || definition.radius <= 0.0 ||
                     shape.left > 0 || shape.top > 0 || shape.right < 0 || shape.bottom < 0 ||
