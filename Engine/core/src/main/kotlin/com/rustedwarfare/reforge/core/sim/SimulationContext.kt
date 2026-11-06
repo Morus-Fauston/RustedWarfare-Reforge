@@ -847,9 +847,9 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
     private fun applyProduction(action: Action, unit: MutableUnit, typeId: String, nonce: String?): ActionResult {
         if (unit.definition.production == null) return reject(action, "cannot-produce", "Unit cannot produce")
         val exitProfile = unit.definition.production?.exitProfile
-        if (exitProfile in setOf(com.rustedwarfare.reforge.core.content.FactoryExitProfile.CUSTOM_MECH,
+        if ((unit.definition.className == "AuthoredBuilding" || exitProfile in setOf(com.rustedwarfare.reforge.core.content.FactoryExitProfile.CUSTOM_MECH,
                 com.rustedwarfare.reforge.core.content.FactoryExitProfile.NATIVE_AIR,
-                com.rustedwarfare.reforge.core.content.FactoryExitProfile.NATIVE_SEA) && !BuildingWork.isReady(unit))
+                com.rustedwarfare.reforge.core.content.FactoryExitProfile.NATIVE_SEA)) && !BuildingWork.isReady(unit))
             return reject(action, "factory-under-construction", if (exitProfile == com.rustedwarfare.reforge.core.content.FactoryExitProfile.NATIVE_AIR)
                 "The air factory must finish construction before accepting production"
                 else "The factory must finish construction before accepting production")
@@ -1279,15 +1279,16 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
                     return SimulationError("unsupported-death-explosion", "Expected a durable immobile building and finite death area")
             }
             definition.production?.let { production ->
-                if (production.exitProfile == com.rustedwarfare.reforge.core.content.FactoryExitProfile.NATIVE_SEA &&
+                val authoredFactory = com.rustedwarfare.reforge.core.content.AuthorFactoryRules.supports(definition, input.unitDefinitions)
+                if (!authoredFactory && production.exitProfile == com.rustedwarfare.reforge.core.content.FactoryExitProfile.NATIVE_SEA &&
                     (!FactoryExit.supportsSeaFactory(definition) || input.unitDefinitions["heavyBattleship"]?.movement?.type != MovementType.WATER ||
                         input.unitDefinitions["heavyBattleship"]?.combat == null))
                     return SimulationError("unsupported-production", "Native sea exits require the finite factory tier and armed WATER product")
-                if (production.exitProfile == com.rustedwarfare.reforge.core.content.FactoryExitProfile.NATIVE_AIR &&
+                if (!authoredFactory && production.exitProfile == com.rustedwarfare.reforge.core.content.FactoryExitProfile.NATIVE_AIR &&
                     (!FactoryExit.supportsAirFactory(definition) || input.unitDefinitions["helicopter"]?.movement?.type != MovementType.AIR ||
                         input.unitDefinitions["helicopter"]?.combat == null))
                     return SimulationError("unsupported-production", "Native air exits require the complete finite L1 factory and armed AIR product capabilities")
-                if (production.exitProfile == com.rustedwarfare.reforge.core.content.FactoryExitProfile.CUSTOM_MECH &&
+                if (!authoredFactory && production.exitProfile == com.rustedwarfare.reforge.core.content.FactoryExitProfile.CUSTOM_MECH &&
                     (!FactoryExit.supportsMechFactory(definition) || input.unitDefinitions["builder"]?.builder == null ||
                         input.unitDefinitions["mechGun"]?.mech == null))
                     return SimulationError("unsupported-production", "Custom mech exits require the complete finite L1 factory and product capabilities")
@@ -1304,7 +1305,8 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
                 if (building.foundationMovementType != null && (!authored ||
                         building.foundationMovementType !in setOf(MovementType.LAND, MovementType.WATER)) ||
                     authored && (building.foundationMovementType == null || definition.construction == null ||
-                        definition.production != null || definition.builder != null || definition.combat != null ||
+                        definition.production != null && !com.rustedwarfare.reforge.core.content.AuthorFactoryRules.supports(definition, input.unitDefinitions) ||
+                        definition.builder != null || definition.combat != null ||
                         definition.upgrades != null || definition.income != null || definition.pointDefense != null))
                     return SimulationError("unsupported-building", "Explicit author foundations require a finite plain construction body")
                 if (m.type != MovementType.NONE || definition.maximumHealth == null || definition.radius <= 0.0 ||

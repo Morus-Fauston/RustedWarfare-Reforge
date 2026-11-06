@@ -1,0 +1,120 @@
+{
+  "schemaVersion": 1,
+  "kind": "behavior-contract",
+  "contractId": "public.author-production.contract.v1",
+  "scope": "self-behavior",
+  "scenarioIds": [
+    "public.author-production.v1"
+  ],
+  "comparison": {
+    "numberMode": "declared-per-field",
+    "tolerances": {}
+  },
+  "approval": {
+    "status": "tool-fixture-only",
+    "source": "Owned preplaced author factory; current native builder500 and tank350/.002 binary32 products. One initial3000 budget, two payments total850, FIFO completion500/1001. Original native tank source retains its strict global identity declaration in this explicit Core input; normal pack uses the same gameplay fields with that declaration removed. No original/performance claim."
+  },
+  "exclusions": [
+    "original-compatibility",
+    "platform-input",
+    "performance"
+  ],
+  "producedUnits": [
+    {
+      "unitId": "produced:p1:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "productionActionId": "produce-builder",
+      "producerId": "f",
+      "owner": "p1",
+      "typeId": "builder",
+      "unitNonce": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "birthStepIndex": 500
+    },
+    {
+      "unitId": "produced:p1:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "productionActionId": "produce-c_tank",
+      "producerId": "f",
+      "owner": "p1",
+      "typeId": "c_tank",
+      "unitNonce": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "birthStepIndex": 1001
+    }
+  ],
+  "rules": [
+    {
+      "ruleId": "paid-both-products",
+      "when": {
+        "phase": "after-advance",
+        "stepIndex": 0
+      },
+      "assertions": [
+        {
+          "path": "economy.balances.p1",
+          "operator": "equals",
+          "value": 2150
+        }
+      ]
+    },
+    {
+      "ruleId": "first-born",
+      "when": {
+        "phase": "after-advance",
+        "stepIndex": 500
+      },
+      "assertions": [
+        {
+          "path": "units.produced:p1:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.health",
+          "operator": "equals",
+          "value": 170
+        },
+        {
+          "path": "events",
+          "operator": "contains",
+          "value": "unit-produced"
+        }
+      ]
+    },
+    {
+      "ruleId": "second-born",
+      "when": {
+        "phase": "after-advance",
+        "stepIndex": 1001
+      },
+      "assertions": [
+        {
+          "path": "units.produced:p1:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb.health",
+          "operator": "equals",
+          "value": 210
+        },
+        {
+          "path": "events",
+          "operator": "contains",
+          "value": "unit-produced"
+        }
+      ]
+    },
+    {
+      "ruleId": "complete",
+      "when": {
+        "phase": "after-advance",
+        "stepIndex": 1099
+      },
+      "assertions": [
+        {
+          "path": "economy.balances.p1",
+          "operator": "equals",
+          "value": 2150
+        },
+        {
+          "path": "units.produced:p1:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.alive",
+          "operator": "equals",
+          "value": true
+        },
+        {
+          "path": "units.produced:p1:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb.alive",
+          "operator": "equals",
+          "value": true
+        }
+      ]
+    }
+  ]
+}

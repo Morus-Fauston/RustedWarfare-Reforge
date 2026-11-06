@@ -1,0 +1,19 @@
+{
+  "format": "rw-reforge.content-pack.v1",
+  "id": "sp-author-production-ini",
+  "name": "Owned author factory with two existing products",
+  "units": [
+    {
+      "type": "factory",
+      "file": "units/spfactory.ini"
+    },
+    {
+      "type": "builder",
+      "file": "units/builder.ini"
+    },
+    {
+      "type": "tank",
+      "file": "units/tank.ini"
+    }
+  ]
+}

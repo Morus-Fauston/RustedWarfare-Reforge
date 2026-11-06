@@ -13,7 +13,8 @@ internal object AuthorConstructionContentReader {
     private val constructorSchema = UnitContentSchema(mapOf("core" to constructorFields), constructorNumbers,
         setOf("dont_load"), constructorFields - constructorNumbers, nativeFormats = setOf("rw-reforge.constructor.v1"))
     private val buildingFields = setOf("format", "name", "maxHp", "radius", "footprint", "placementFootprint",
-        "movementType", "foundationMovementType", "price", "buildSpeed", "image", "image_back", "image_dead", "fogOfWarSightRange")
+        "movementType", "foundationMovementType", "price", "buildSpeed", "image", "image_back", "image_dead", "fogOfWarSightRange",
+        "productionUnits", "exitProfile")
     private val buildingSchema = UnitContentSchema.native(buildingFields, setOf("rw-reforge.factory.v1"))
 
     fun readConstructorWithSources(path: Path, validatePath: (Path) -> Unit = {}): LoadedUnitContent =
@@ -34,7 +35,7 @@ internal object AuthorConstructionContentReader {
                 build = BuildProfile(fields.price(), fields.rate()), builder = BuilderProfile(targets))
         }
 
-    /** The planned factory format currently admits its ordinary construction body, without production or upgrade abilities. */
+    /** A construction body may register products through an existing factory exit. */
     fun readBuildingWithSources(path: Path, validatePath: (Path) -> Unit = {}): LoadedUnitContent =
         UnitSourceReader(buildingSchema, validatePath).load(path) { loaded ->
             val fields = Fields(path, loaded, validatePath)
@@ -56,6 +57,7 @@ internal object AuthorConstructionContentReader {
                 durability = DurabilityProfile(fields.positive("maxHp"), fields.image("image_dead")),
                 building = BuildingProfile(footprint, if ("image_back" in loaded.values.getValue("core")) fields.image("image_back") else null,
                     placementFootprint = placement, foundationMovementType = foundation),
+                production = fields.production(),
                 construction = ConstructionProfile(fields.price(), fields.rate()))
         }
 
@@ -70,6 +72,12 @@ internal object AuthorConstructionContentReader {
         fun ids(key: String): List<String> = required(key).split(',').map(String::trim).also { ids ->
             if (ids.isEmpty() || ids.distinct().size != ids.size || ids.any { !it.matches(Regex("[a-z][a-z0-9_.-]*")) })
                 bad(key, "Expected a nonempty unique list of stable lowercase content IDs")
+        }
+        fun production(): ProductionProfile? {
+            if ("productionUnits" !in values && "exitProfile" !in values) return null
+            val exit = FactoryExitProfile.entries.singleOrNull { it.name == required("exitProfile") }
+                ?: reject(ContentErrorCode.UNSUPPORTED_FEATURE, path, field = "exitProfile", reason = "Expected an existing finite factory exit profile")
+            return ProductionProfile(ids("productionUnits"), exit)
         }
         private fun number(key: String): Double = required(key).toDoubleOrNull()?.takeIf { it.isFinite() }
             ?: bad(key, "Expected a finite number")

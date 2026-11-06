@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "suiteId": "public.production-combat.v1",
   "inputScope": "public",
-  "fixture": "inputs/content-movement-knowledge/P001-移动沙盒输入",
+  "fixture": "inputs/content-movement-knowledge/P001-\u79fb\u52a8\u6c99\u76d2\u8f93\u5165",
   "tests": {
     "core": [
       "com.rustedwarfare.reforge.core.content.CombatContentLoadTest",
@@ -128,7 +128,10 @@
       "com.rustedwarfare.reforge.core.sim.AuthorWaterRuntimeTest",
       "com.rustedwarfare.reforge.core.content.AuthorConstructionContentTest",
       "com.rustedwarfare.reforge.core.sim.AuthorBuildingFoundationTest",
-      "com.rustedwarfare.reforge.core.sim.AuthorConstructionLifecycleTest"
+      "com.rustedwarfare.reforge.core.sim.AuthorConstructionLifecycleTest",
+      "com.rustedwarfare.reforge.core.content.AuthorFactoryContentTest",
+      "com.rustedwarfare.reforge.core.sim.AuthorFactoryProductionTest",
+      "com.rustedwarfare.reforge.core.sim.AuthorFactoryLifecycleTest"
     ],
     "client": [
       "com.rustedwarfare.reforge.client.CombatActorEvidenceTest",
@@ -157,7 +160,8 @@
       "com.rustedwarfare.reforge.client.NavalProductionSandboxTest",
       "com.rustedwarfare.reforge.client.NavalProjectionTest",
       "com.rustedwarfare.reforge.client.AuthorWaterSandboxTest",
-      "com.rustedwarfare.reforge.client.AuthorConstructionSandboxTest"
+      "com.rustedwarfare.reforge.client.AuthorConstructionSandboxTest",
+      "com.rustedwarfare.reforge.client.AuthorFactorySandboxTest"
     ],
     "pc": [
       "com.rustedwarfare.reforge.pc.PatrolJsonlPairingTest",
@@ -191,7 +195,8 @@
       "com.rustedwarfare.reforge.testing.NavalProductionSessionTest",
       "com.rustedwarfare.reforge.testing.ProducedWeaponArchiveTest",
       "com.rustedwarfare.reforge.testing.AuthorWaterScenarioTest",
-      "com.rustedwarfare.reforge.testing.AuthorConstructionScenarioTest"
+      "com.rustedwarfare.reforge.testing.AuthorConstructionScenarioTest",
+      "com.rustedwarfare.reforge.testing.AuthorFactoryScenarioTest"
     ]
   },
   "short": [
@@ -481,6 +486,39 @@
       "id": "author-construction-hjson-session",
       "scenario": "platform/scenarios/author-construction-hjson.json",
       "contract": "platform/contracts/author-construction-hjson.json",
+      "backend": "session"
+    },
+    {
+      "id": "author-production-ini-core",
+      "scenario": "scenarios/author-production-ini.json",
+      "contract": "contracts/author-production-ini.json"
+    },
+    {
+      "id": "author-production-ini-session",
+      "scenario": "platform/scenarios/author-production-ini.json",
+      "contract": "platform/contracts/author-production-ini.json",
+      "backend": "session"
+    },
+    {
+      "id": "author-production-json-core",
+      "scenario": "scenarios/author-production-json.json",
+      "contract": "contracts/author-production-json.json"
+    },
+    {
+      "id": "author-production-json-session",
+      "scenario": "platform/scenarios/author-production-json.json",
+      "contract": "platform/contracts/author-production-json.json",
+      "backend": "session"
+    },
+    {
+      "id": "author-production-hjson-core",
+      "scenario": "scenarios/author-production-hjson.json",
+      "contract": "contracts/author-production-hjson.json"
+    },
+    {
+      "id": "author-production-hjson-session",
+      "scenario": "platform/scenarios/author-production-hjson.json",
+      "contract": "platform/contracts/author-production-hjson.json",
       "backend": "session"
     }
   ],

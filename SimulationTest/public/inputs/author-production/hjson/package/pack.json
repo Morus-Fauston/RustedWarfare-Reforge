@@ -1,0 +1,19 @@
+{
+  "format": "rw-reforge.content-pack.v1",
+  "id": "sp-author-production-hjson",
+  "name": "Owned author factory with two existing products",
+  "units": [
+    {
+      "type": "factory",
+      "file": "units/spfactory.hjson"
+    },
+    {
+      "type": "builder",
+      "file": "units/builder.hjson"
+    },
+    {
+      "type": "tank",
+      "file": "units/tank.hjson"
+    }
+  ]
+}

@@ -24,6 +24,7 @@ class SandboxSession(scenario: Scenario, private val evidence: ClientEvidence = 
                      val generation: Long = 1L) : AutoCloseable {
     private val scenario: Scenario = scenario.copy(automaticVision = options.knowledgeRules())
     val hasConstructorDefinitions: Boolean = this.scenario.unitDefinitions.values.any { it.builder != null }
+    val hasProductionDefinitions: Boolean = this.scenario.unitDefinitions.values.any { it.production != null }
     val renderResources: SandboxRenderResources = SandboxRenderResources.from(this.scenario)
     private val commandHost = OfflineSandboxHost(this.scenario, options.deploymentEnabled, generation)
     private val context = commandHost.context

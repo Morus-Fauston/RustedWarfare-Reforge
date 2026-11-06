@@ -72,7 +72,7 @@ internal object ScenarioReader {
             if (grid.integer("width") != map.widthTiles.toLong() || grid.integer("height") != map.heightTiles.toLong())
                 throw InputError("Declared knowledge grid differs from verified map dimensions")
         }
-        fun checkedAuthor(loaded: ContentResult<LoadedUnitContent>): ContentResult<UnitDefinition> = when (loaded) {
+        fun checkedAuthor(loaded: ContentResult<LoadedUnitContent>, producer: Boolean? = null): ContentResult<UnitDefinition> = when (loaded) {
             is ContentResult.Failure -> loaded
             is ContentResult.Success -> {
                 val declaredSources = identities.associateBy { it.path }
@@ -83,6 +83,8 @@ internal object ScenarioReader {
                         throw InputError("Parsed author source differs from its declared identity: ${source.path}")
                 }
                 unwrap(loaded.value.verifyStable())
+                if (producer != null && (loaded.value.definition.production != null) != producer)
+                    throw InputError("Author factory adapter must declare its actual production capability")
                 ContentResult.Success(loaded.value.definition)
             }
         }
@@ -96,7 +98,8 @@ internal object ScenarioReader {
                 "battleship" -> ContentLoader.loadBattleshipUnit(ref.path)
                 "water-combat" -> checkedAuthor(ContentLoader.loadAuthorWaterUnitWithSources(ref.path))
                 "constructor" -> checkedAuthor(ContentLoader.loadAuthorConstructorWithSources(ref.path))
-                "author-factory" -> checkedAuthor(ContentLoader.loadAuthorBuildingWithSources(ref.path))
+                "author-factory" -> checkedAuthor(ContentLoader.loadAuthorBuildingWithSources(ref.path), false)
+                "author-producer" -> checkedAuthor(ContentLoader.loadAuthorBuildingWithSources(ref.path), true)
                 "underwater-target" -> ContentLoader.loadUnderwaterTargetUnit(ref.path)
                 "factory" -> ContentLoader.loadFactory(ref.path)
                 "builder" -> ContentLoader.loadBuilder(ref.path)

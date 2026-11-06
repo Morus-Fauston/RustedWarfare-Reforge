@@ -345,7 +345,7 @@ object TraceComparator {
                                 precise.keys.forEach { precise.number(it) }
                             }
                             val queues = state.objectAt("queues")
-                            val factoryTypes = typesLoadedBy(scenario, setOf("factory", "command-center"))
+                            val factoryTypes = typesLoadedBy(scenario, setOf("factory", "command-center", "author-producer"))
                             val registeredFactories = (scenario.arrayAt("units").map { it.jsonObject }.filter { it.id("type") in factoryTypes }.map { it.id("unitId") } +
                                 (born + built).filter { it.id("typeId") in factoryTypes }.map { it.id("unitId") }).toSet()
                             if (queues.keys != registeredFactories) throw Incomplete("missing-economy", "Missing or extra registered factory queue")
@@ -633,7 +633,7 @@ object TraceComparator {
                     throw Incomplete("player-units", "Incomplete visible unit samples")
                 units.forEach { validateUnitSample(it, scenario) }
                 val local = scenario.arrayAt("players").map { it.jsonObject }.single { it.id("playerId") == id }.text("control") == "local"
-                val factoryTypes = typesLoadedBy(scenario, setOf("factory", "command-center"))
+                val factoryTypes = typesLoadedBy(scenario, setOf("factory", "command-center", "author-producer"))
                 val factories = units.filter { local && it.id("ownerPlayerId") == id && it["alive"] == b(true) && it.id("typeId") in factoryTypes }
                     .map { it.id("unitId") }.toSet()
                 if (factoryQueues.keys != factories) throw Incomplete("player-queues", "Missing or extra authorized factory queue")

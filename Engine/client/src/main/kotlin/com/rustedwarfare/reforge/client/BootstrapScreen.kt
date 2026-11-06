@@ -64,26 +64,19 @@ class BootstrapScreen(
     private lateinit var productionLabel: Label
     private lateinit var produceButton: TextButton
     private lateinit var cancelProductionButton: TextButton
-    private lateinit var nativeProduceButton: Table
-    private lateinit var nativeProduceIcon: Image
-    private lateinit var nativeProduceText: Label
     private lateinit var nativeInfo: Label
     private lateinit var nativeIcon: Image
     private lateinit var nativeTooltip: Table
     private lateinit var nativeTooltipIcon: Image
     private lateinit var nativeTooltipText: Label
-    private lateinit var productionInput: ProductionButtonInput
-    private var productionHover = false
-    private lateinit var secondProduceButton: Table
-    private lateinit var secondProduceIcon: Image
-    private lateinit var secondProduceText: Label
-    private lateinit var secondProductionInput: ProductionButtonInput
-    private var secondProductionHover = false
-    private lateinit var thirdProduceButton: Table
-    private lateinit var thirdProduceIcon: Image
-    private lateinit var thirdProduceText: Label
-    private lateinit var thirdProductionInput: ProductionButtonInput
-    private var thirdProductionHover = false
+    private data class ProductionCard(val table: Table, val icon: Image, val text: Label, val count: Label,
+                                     val input: ProductionButtonInput, var compact: Boolean? = null)
+    private val productionCards = linkedMapOf<String, ProductionCard>()
+    private lateinit var productionLayer: Group
+    private lateinit var productionContent: Group
+    private lateinit var productionScroll: ScrollPane
+    private val productionCorner = Vector2()
+    private var productionHover: String? = null
     private data class ConstructionCard(val table: Table, val icon: Image, val text: Label, val input: ConstructionButtonInput)
     private val constructionCards = linkedMapOf<String, ConstructionCard>()
     private lateinit var constructionLayer: Group
@@ -97,7 +90,7 @@ class BootstrapScreen(
     private var reclaimHover = false
     private var nativeSelection: Set<String> = emptySet()
     private val nativePanel: Boolean get() = NativeActionPanel.supports(session?.observation?.scenarioId) ||
-        session?.hasConstructorDefinitions == true
+        session?.hasConstructorDefinitions == true || session?.hasProductionDefinitions == true
     private val upgradeButtons = mutableMapOf<String, Pair<TextButton, TextButton>>()
     private val upgradeInputs = mutableListOf<UpgradeButtonInput>()
     private var upgradeHover: String? = null
@@ -167,6 +160,7 @@ class BootstrapScreen(
         upgradeInputs.clear()
         upgradeHover = null
         constructionCards.clear()
+        productionCards.clear()
         // Consume the whole panel, including empty space, for the full press chain.
         stage.addActor(Actor().apply {
             setBounds(736f, 0f, 224f, 592f)
@@ -204,47 +198,27 @@ class BootstrapScreen(
         cancelProductionButton = button("Cancel last", 752f, 216f, 176f) { session?.cancelProduction(); updateHud() }
         nativeIcon = Image().also { it.setBounds(760f, 390f, 40f, 40f); it.touchable = Touchable.disabled; stage.addActor(it) }
         nativeInfo = label("", 848f, 434f, 92f, 94f)
-        nativeProduceIcon = Image().apply { touchable = Touchable.disabled }
-        nativeProduceText = Label("Builder", skin).apply {
-            setAlignment(Align.center); setWrap(true); touchable = Touchable.disabled
-        }
-        nativeProduceButton = Table(skin).also { table ->
-            table.touchable = Touchable.enabled
-            NativeActionPanel.production[0].let { table.setBounds(it.x, it.y, it.width, it.height) }
-            table.add(nativeProduceIcon).size(28f, 28f).padTop(3f).row()
-            table.add(nativeProduceText).width(80f).height(30f)
-            productionInput = ProductionButtonInput({ session }, { nativePanel && !paused }, { lastHudState = null; updateHud() },
-                { productionHover = it })
-            table.addListener(productionInput)
-            stage.addActor(table)
-        }
-        secondProduceIcon = Image().apply { touchable = Touchable.disabled }
-        secondProduceText = Label("Tank", skin).apply { setAlignment(Align.center); touchable = Touchable.disabled }
-        secondProduceButton = Table(skin).also { table ->
-            table.touchable = Touchable.enabled
-            NativeActionPanel.production[1].let { table.setBounds(it.x, it.y, it.width, it.height) }
-            table.add(secondProduceIcon).size(28f, 28f).padTop(3f).row()
-            table.add(secondProduceText).height(25f)
-            secondProductionInput = ProductionButtonInput({ session }, { nativePanel && !paused },
-                { lastHudState = null; updateHud() }, { secondProductionHover = it },
-                { session?.productionActions?.getOrNull(1)?.typeId })
-            table.addListener(secondProductionInput)
-            stage.addActor(table)
-        }
-        thirdProduceIcon = Image().apply { touchable = Touchable.disabled }
-        thirdProduceText = Label("Heavy mech", skin).apply {
-            setAlignment(Align.center); touchable = Touchable.disabled
-        }
-        thirdProduceButton = Table(skin).also { table ->
-            table.touchable = Touchable.enabled
-            NativeActionPanel.production[2].let { table.setBounds(it.x, it.y, it.width, it.height) }
-            table.add(thirdProduceIcon).size(24f, 24f).padTop(3f).row()
-            table.add(thirdProduceText).width(80f).height(30f)
-            thirdProductionInput = ProductionButtonInput({ session }, { nativePanel && !paused },
-                { lastHudState = null; updateHud() }, { thirdProductionHover = it },
-                { session?.productionActions?.getOrNull(2)?.typeId })
-            table.addListener(thirdProductionInput)
-            stage.addActor(table)
+        productionLayer = Group().also { it.setTransform(false); stage.addActor(it) }
+        productionContent = Group().apply { setTransform(false) }
+        productionScroll = ScrollPane(productionContent, ScrollPane.ScrollPaneStyle().apply {
+            vScroll = skin.newDrawable("white", Color(.12f, .15f, .14f, 1f)).apply { minWidth = 6f }
+            vScrollKnob = skin.newDrawable("white", Color(.45f, .5f, .47f, 1f)).apply { minWidth = 6f; minHeight = 24f }
+        }).also { pane ->
+            pane.setBounds(752f, 160f, 184f, 174f)
+            pane.setScrollingDisabled(true, false)
+            pane.setFadeScrollBars(false)
+            pane.setSmoothScrolling(false)
+            pane.setOverscroll(false, false)
+            pane.addListener(object : InputListener() {
+                override fun enter(event: InputEvent, x: Float, y: Float, pointer: Int, fromActor: Actor?) {
+                    if (pointer == -1) stage.scrollFocus = pane
+                }
+                override fun exit(event: InputEvent, x: Float, y: Float, pointer: Int, toActor: Actor?) {
+                    if (pointer == -1 && (toActor == null || !toActor.isDescendantOf(pane)) && stage.scrollFocus === pane)
+                        stage.scrollFocus = null
+                }
+            })
+            productionLayer.addActor(pane)
         }
         constructionLayer = Group().also { stage.addActor(it) }
         constructionContent = Group()
@@ -687,7 +661,7 @@ class BootstrapScreen(
         updatePacingHud()
         Gdx.gl.glClearColor(0.075f, 0.09f, 0.085f, 1f)
         nativeTooltip.isVisible = nativePanel && !paused &&
-            ((productionHover || secondProductionHover || thirdProductionHover) && session?.productionAction != null ||
+            (productionHover != null && session?.productionActions?.any { it.typeId == productionHover } == true ||
                 constructionHover != null && session?.constructionActions?.any { it.typeId == constructionHover } == true ||
                 economicUpgradeHover && economicUpgradeCard.isVisible || reclaimHover && reclaimCard.isVisible ||
                 upgradeHover != null && session?.selectedUpgrades?.any { it.actionKey == upgradeHover } == true)
@@ -759,15 +733,14 @@ class BootstrapScreen(
         packPanel?.let { entries += it.drawnActions() }
         button("stop", stopButton); button("choose-patrol", patrolButton)
         val nativeActive = nativePanel && !paused && current?.isOpen == true
-        val productionSlots = listOf(nativeProduceButton to nativeProduceText,
-            secondProduceButton to secondProduceText, thirdProduceButton to thirdProduceText)
-        menu?.production?.forEachIndexed { index, action ->
-            productionSlots.getOrNull(index)?.let { (actor, label) ->
-                entries += DrawnAction("produce:${action.typeId}", actor, label.text.toString(), enabled = nativeActive)
-                entries += DrawnAction("cancel-production:${action.typeId}", actor, label.text.toString(),
-                    button = "right", enabled = nativeActive)
-            }
+        for ((type, card) in productionCards) {
+            if (card.table.parent === productionContent && !productionCardExposed(card.table)) continue
+            val enabled = nativeActive && menu?.production?.any { it.typeId == type } == true
+            val text = card.text.text.toString() + if (card.count.text.isNotEmpty()) "\n${card.count.text}" else ""
+            entries += DrawnAction("produce:$type", card.table, text, enabled = enabled)
+            entries += DrawnAction("cancel-production:$type", card.table, text, button = "right", enabled = enabled)
         }
+        entries += DrawnAction("production-list", productionScroll, "Products", enabled = nativeActive)
         menu?.production?.firstOrNull()?.let { action ->
             button("produce:${action.typeId}", produceButton)
             button("cancel-production:${action.typeId}", cancelProductionButton)
@@ -849,6 +822,78 @@ class BootstrapScreen(
         if (::commandField.isInitialized && stage.keyboardFocus === commandField) stage.keyboardFocus = null
         lastHudState = null
         evidence.record("sandbox-console", mapOf("generation" to generation, "open" to false))
+    }
+
+    private fun syncProductionCards(actions: List<ProductionActionView>) {
+        val stale = productionCards.iterator()
+        while (stale.hasNext()) {
+            val (type, card) = stale.next()
+            if (actions.none { it.typeId == type }) {
+                card.input.cancel(); card.table.remove(); stale.remove()
+                if (productionHover == type) productionHover = null
+            }
+        }
+        val overflow = actions.size > 6
+        productionScroll.isVisible = nativePanel && overflow
+        if (!productionScroll.isVisible && stage.scrollFocus === productionScroll) stage.scrollFocus = null
+        val rows = (actions.size + 1) / 2
+        if (overflow) productionContent.setSize(176f, rows * 60f)
+        actions.forEachIndexed { index, action ->
+            val type = action.typeId
+            val card = productionCards.getOrPut(type) {
+                val icon = Image().apply { touchable = Touchable.disabled }
+                val text = Label("", skin).apply {
+                    setAlignment(Align.center); touchable = Touchable.disabled; setFontScale(.7f); setEllipsis(true)
+                }
+                val count = Label("", skin).apply { setAlignment(Align.center); touchable = Touchable.disabled }
+                val table = Table(skin).apply {
+                    touchable = Touchable.enabled
+                    add(icon).size(28f, 28f).padTop(3f).row()
+                    add(text).width(80f).height(16f).row()
+                    add(count).width(80f).height(12f)
+                }
+                val input = ProductionButtonInput({ session }, { nativePanel && !paused },
+                    { lastHudState = null; updateHud() }, { hovered ->
+                        if (hovered) productionHover = type else if (productionHover == type) productionHover = null
+                        lastHudState = null
+                    }, { type })
+                table.addListener(input)
+                ProductionCard(table, icon, text, count, input)
+            }
+            val parent = if (overflow) productionContent else productionLayer
+            if (card.table.parent !== parent) { card.input.cancel(); parent.addActor(card.table) }
+            card.table.isVisible = nativePanel
+            when {
+                overflow -> card.table.setBounds((index % 2) * 92f, (rows - 1 - index / 2) * 60f, 84f, 54f)
+                actions.size <= 3 -> NativeActionPanel.production[index].let { card.table.setBounds(it.x, it.y, it.width, it.height) }
+                else -> card.table.setBounds(752f + (index % 2) * 92f, 280f - (index / 2) * 60f, 84f, 54f)
+            }
+            setUnitIcon(card.icon, type)
+            val title = if (type == "mechHeavyMissile") "Heavy mech" else action.title
+            val compact = actions.size > 3
+            if (card.compact != compact) {
+                card.table.getCell(card.icon).size(if (compact) 24f else 28f)
+                card.table.getCell(card.text).height(if (compact) 12f else 16f)
+                card.table.getCell(card.count).height(if (compact) 10f else 12f)
+                card.table.invalidate(); card.compact = compact
+            }
+            card.text.setFontScale(if (compact || title.length > 12 || type == "mechHeavyMissile") .7f else 1f)
+            card.text.setText(title)
+            card.count.setFontScale(if (compact) .6f else .7f)
+            card.count.setText(if (action.count > 0) "(${action.count})" else "")
+            card.text.color = if (action.affordable) Color(.9f, .92f, .9f, 1f) else Color(.55f, .58f, .55f, 1f)
+            card.count.color = card.text.color
+            card.table.background = skin.newDrawable("white", if (card.input.pressed)
+                Color(.37f, .48f, .4f, 1f) else Color(.23f, .28f, .26f, 1f))
+        }
+        if (overflow) productionScroll.invalidate()
+    }
+
+    private fun productionCardExposed(table: Table): Boolean {
+        table.localToStageCoordinates(productionCorner.set(0f, 0f))
+        return productionCorner.x >= productionScroll.x && productionCorner.y >= productionScroll.y &&
+            productionCorner.x + table.width <= productionScroll.x + productionScroll.width &&
+            productionCorner.y + table.height <= productionScroll.y + productionScroll.height
     }
 
     private fun syncConstructionCards(actions: List<ConstructionActionView>, economic: Boolean) {
@@ -962,9 +1007,7 @@ class BootstrapScreen(
         produceButton.isDisabled = menu?.production?.firstOrNull()?.price == null
         produceButton.setText(menu?.production?.firstOrNull()?.price?.let { "Produce $it" } ?: "Produce")
         cancelProductionButton.isDisabled = queue?.items?.isEmpty() != false
-        nativeProduceButton.isVisible = nativePanel && queue != null && menu?.production?.isNotEmpty() == true
-        secondProduceButton.isVisible = nativePanel && (menu?.production?.size ?: 0) >= 2
-        thirdProduceButton.isVisible = nativePanel && (menu?.production?.size ?: 0) >= 3
+        syncProductionCards(menu?.production.orEmpty())
         reclaimCard.isVisible = nativePanel && menu?.canMaintain == true
         reclaimCard.background = skin.newDrawable("white", if (reclaimInput.pressed || state.reclaimMode)
             Color(.37f, .48f, .4f, 1f) else Color(.23f, .28f, .26f, 1f))
@@ -973,9 +1016,8 @@ class BootstrapScreen(
         nativeInfo.isVisible = nativePanel && selectedInfo != null
         nativeIcon.isVisible = nativePanel && selected != null && state.selectedIds.size == 1
         if (nativeSelection != state.selectedIds) {
-            productionInput.cancel()
-            secondProductionInput.cancel()
-            thirdProductionInput.cancel()
+            productionCards.values.forEach { it.input.cancel() }
+            productionHover = null
             economicUpgradeInput.cancel()
             upgradeInputs.forEach { it.cancel() }
             upgradeHover = null
@@ -993,30 +1035,7 @@ class BootstrapScreen(
             setUnitIcon(nativeIcon, selected?.typeId)
             nativeInfo.setFontScale(if (state.workerQueueText != null) .7f else 1f)
             nativeInfo.setText(selectedInfo ?: "")
-            menu?.production?.firstOrNull()?.let { action ->
-                setUnitIcon(nativeProduceIcon, action.typeId)
-                nativeProduceText.setFontScale(if (action.typeId == "heavyBattleship") .7f else 1f)
-                nativeProduceText.setText(action.title + if (action.count > 0) " (${action.count})" else "")
-                nativeProduceText.color = if (action.affordable) Color(.9f, .92f, .9f, 1f) else Color(.55f, .58f, .55f, 1f)
-                nativeProduceButton.background = skin.newDrawable("white", if (productionInput.pressed)
-                    Color(.37f, .48f, .4f, 1f) else Color(.23f, .28f, .26f, 1f))
-            }
-            menu?.production?.getOrNull(1)?.let { action ->
-                setUnitIcon(secondProduceIcon, action.typeId)
-                secondProduceText.setText(action.title + if (action.count > 0) " (${action.count})" else "")
-                secondProduceText.color = if (action.affordable) Color(.9f, .92f, .9f, 1f) else Color(.55f, .58f, .55f, 1f)
-                secondProduceButton.background = skin.newDrawable("white", if (secondProductionInput.pressed)
-                    Color(.37f, .48f, .4f, 1f) else Color(.23f, .28f, .26f, 1f))
-            }
-            menu?.production?.getOrNull(2)?.let { action ->
-                setUnitIcon(thirdProduceIcon, action.typeId)
-                val title = if (action.typeId == "mechHeavyMissile") "Heavy mech" else action.title
-                thirdProduceText.setText(title + if (action.count > 0) "\n(${action.count})" else "")
-                thirdProduceText.color = if (action.affordable) Color(.9f, .92f, .9f, 1f) else Color(.55f, .58f, .55f, 1f)
-                thirdProduceButton.background = skin.newDrawable("white", if (thirdProductionInput.pressed)
-                    Color(.37f, .48f, .4f, 1f) else Color(.23f, .28f, .26f, 1f))
-            }
-            menu?.production?.getOrNull(if (thirdProductionHover) 2 else if (secondProductionHover) 1 else 0)?.let { action ->
+            menu?.production?.firstOrNull { it.typeId == productionHover }?.let { action ->
                 setUnitIcon(nativeTooltipIcon, action.typeId)
                 nativeTooltipText.setText(action.tooltip)
             }
@@ -1079,7 +1098,7 @@ class BootstrapScreen(
             buttons.second.isDisabled = action?.progress == null
         }
         stopButton.isDisabled = selected == null
-        val economicPanel = nativePanel && (current?.hasEconomicConstruction == true || constructionCards.size > 4)
+        val economicPanel = nativePanel && (current?.hasEconomicConstruction == true || constructionCards.size > 4 || productionCards.size > 4)
         stopButton.setY(if (economicPanel) 112f else if (nativePanel) 144f else 168f)
         patrolButton.setY(if (economicPanel) 112f else if (nativePanel) 144f else 168f)
         startButton.setY(if (economicPanel) 64f else if (nativePanel) 96f else 120f)
@@ -1237,9 +1256,8 @@ class BootstrapScreen(
         reclaimHover = false
         if (::reclaimInput.isInitialized) reclaimInput.cancel()
         constructionCards.values.forEach { it.input.cancel() }
-        if (::productionInput.isInitialized) productionInput.cancel()
-        if (::secondProductionInput.isInitialized) secondProductionInput.cancel()
-        if (::thirdProductionInput.isInitialized) thirdProductionInput.cancel()
+        productionHover = null
+        productionCards.values.forEach { it.input.cancel() }
         if (::economicUpgradeInput.isInitialized) economicUpgradeInput.cancel()
         if (::nativeTooltip.isInitialized) nativeTooltip.isVisible = false
         if (::mapInput.isInitialized) mapInput.cancel()
