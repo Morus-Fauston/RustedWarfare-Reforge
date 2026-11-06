@@ -106,7 +106,7 @@ internal object ContentPackReader {
             val field = "units[$index]"
             val spec = objectFields(entry, setOf("type", "file"), manifest, field)
             val capability = string(spec.get("type"), "$field.type")
-            if (capability !in setOf("tank", "mech", "mech-heavy", "mech-factory", "builder", "helicopter", "air-factory", "battleship", "water-combat", "sea-factory", "underwater-target"))
+            if (capability !in setOf("tank", "mech", "mech-heavy", "mech-factory", "builder", "constructor", "factory", "helicopter", "air-factory", "battleship", "water-combat", "sea-factory", "underwater-target"))
                 reject(ContentErrorCode.UNSUPPORTED_FEATURE, manifest, field = "$field.type", reason = "Expected an implemented finite combat, mech, factory or builder capability")
             val reference = string(spec.get("file"), "$field.file")
             val pieces = reference.split('/')
@@ -141,6 +141,8 @@ internal object ContentPackReader {
                         reject(ContentErrorCode.UNSUPPORTED_FEATURE, input, field = "format", reason = "Expected the finite mech factory profile")
                 }
                 "builder" -> BuilderContentReader.readWithSources(input) { requireOrdinary(root, it) }
+                "constructor" -> AuthorConstructionContentReader.readConstructorWithSources(input) { requireOrdinary(root, it) }
+                "factory" -> AuthorConstructionContentReader.readBuildingWithSources(input) { requireOrdinary(root, it) }
                 else -> CombatContentReader.readDeclaredWithSources(input) { requireOrdinary(root, it) }
             }
             val definition = loaded.definition

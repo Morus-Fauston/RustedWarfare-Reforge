@@ -1300,6 +1300,13 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
             }
             definition.building?.let { building ->
                 val shape = building.footprint
+                val authored = definition.className == "AuthoredBuilding"
+                if (building.foundationMovementType != null && (!authored ||
+                        building.foundationMovementType !in setOf(MovementType.LAND, MovementType.WATER)) ||
+                    authored && (building.foundationMovementType == null || definition.construction == null ||
+                        definition.production != null || definition.builder != null || definition.combat != null ||
+                        definition.upgrades != null || definition.income != null || definition.pointDefense != null))
+                    return SimulationError("unsupported-building", "Explicit author foundations require a finite plain construction body")
                 if (m.type != MovementType.NONE || definition.maximumHealth == null || definition.radius <= 0.0 ||
                     shape.left > 0 || shape.top > 0 || shape.right < 0 || shape.bottom < 0 ||
                     shape.left > shape.right || shape.top > shape.bottom ||

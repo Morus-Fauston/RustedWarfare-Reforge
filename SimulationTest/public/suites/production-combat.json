@@ -125,7 +125,10 @@
       "com.rustedwarfare.reforge.core.sim.OfflineSandboxHostTest",
       "com.rustedwarfare.reforge.core.sim.WeaponAssemblyRuntimeTest",
       "com.rustedwarfare.reforge.core.content.AuthorWaterContentTest",
-      "com.rustedwarfare.reforge.core.sim.AuthorWaterRuntimeTest"
+      "com.rustedwarfare.reforge.core.sim.AuthorWaterRuntimeTest",
+      "com.rustedwarfare.reforge.core.content.AuthorConstructionContentTest",
+      "com.rustedwarfare.reforge.core.sim.AuthorBuildingFoundationTest",
+      "com.rustedwarfare.reforge.core.sim.AuthorConstructionLifecycleTest"
     ],
     "client": [
       "com.rustedwarfare.reforge.client.CombatActorEvidenceTest",
@@ -153,7 +156,8 @@
       "com.rustedwarfare.reforge.client.NavalPlacementTest",
       "com.rustedwarfare.reforge.client.NavalProductionSandboxTest",
       "com.rustedwarfare.reforge.client.NavalProjectionTest",
-      "com.rustedwarfare.reforge.client.AuthorWaterSandboxTest"
+      "com.rustedwarfare.reforge.client.AuthorWaterSandboxTest",
+      "com.rustedwarfare.reforge.client.AuthorConstructionSandboxTest"
     ],
     "pc": [
       "com.rustedwarfare.reforge.pc.PatrolJsonlPairingTest",
@@ -186,7 +190,8 @@
       "com.rustedwarfare.reforge.testing.NavalProductionArchiveTest",
       "com.rustedwarfare.reforge.testing.NavalProductionSessionTest",
       "com.rustedwarfare.reforge.testing.ProducedWeaponArchiveTest",
-      "com.rustedwarfare.reforge.testing.AuthorWaterScenarioTest"
+      "com.rustedwarfare.reforge.testing.AuthorWaterScenarioTest",
+      "com.rustedwarfare.reforge.testing.AuthorConstructionScenarioTest"
     ]
   },
   "short": [
@@ -444,6 +449,39 @@
       "backend": "session",
       "scenario": "platform/scenarios/author-water-hjson.json",
       "contract": "platform/contracts/author-water-hjson.json"
+    },
+    {
+      "id": "author-construction-ini-core",
+      "scenario": "scenarios/author-construction-ini.json",
+      "contract": "contracts/author-construction-ini.json"
+    },
+    {
+      "id": "author-construction-ini-session",
+      "scenario": "platform/scenarios/author-construction-ini.json",
+      "contract": "platform/contracts/author-construction-ini.json",
+      "backend": "session"
+    },
+    {
+      "id": "author-construction-json-core",
+      "scenario": "scenarios/author-construction-json.json",
+      "contract": "contracts/author-construction-json.json"
+    },
+    {
+      "id": "author-construction-json-session",
+      "scenario": "platform/scenarios/author-construction-json.json",
+      "contract": "platform/contracts/author-construction-json.json",
+      "backend": "session"
+    },
+    {
+      "id": "author-construction-hjson-core",
+      "scenario": "scenarios/author-construction-hjson.json",
+      "contract": "contracts/author-construction-hjson.json"
+    },
+    {
+      "id": "author-construction-hjson-session",
+      "scenario": "platform/scenarios/author-construction-hjson.json",
+      "contract": "platform/contracts/author-construction-hjson.json",
+      "backend": "session"
     }
   ],
   "long": [

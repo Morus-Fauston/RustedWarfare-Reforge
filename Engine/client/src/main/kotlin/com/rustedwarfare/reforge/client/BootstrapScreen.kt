@@ -17,6 +17,7 @@ import com.badlogic.gdx.scenes.scene2d.utils.TextureRegionDrawable
 import com.badlogic.gdx.scenes.scene2d.Touchable
 import com.rustedwarfare.reforge.core.sim.Position
 import com.badlogic.gdx.scenes.scene2d.Actor
+import com.badlogic.gdx.scenes.scene2d.Group
 import com.badlogic.gdx.scenes.scene2d.Stage
 import com.badlogic.gdx.scenes.scene2d.ui.*
 import com.badlogic.gdx.scenes.scene2d.utils.ChangeListener
@@ -85,13 +86,18 @@ class BootstrapScreen(
     private var thirdProductionHover = false
     private data class ConstructionCard(val table: Table, val icon: Image, val text: Label, val input: ConstructionButtonInput)
     private val constructionCards = linkedMapOf<String, ConstructionCard>()
+    private lateinit var constructionLayer: Group
+    private lateinit var constructionContent: Group
+    private lateinit var constructionScroll: ScrollPane
+    private val constructionCorner = Vector2()
     private var constructionHover: String? = null
     private lateinit var reclaimCard: Table
     private lateinit var reclaimText: Label
     private lateinit var reclaimInput: ReclaimButtonInput
     private var reclaimHover = false
     private var nativeSelection: Set<String> = emptySet()
-    private val nativePanel: Boolean get() = NativeActionPanel.supports(session?.observation?.scenarioId)
+    private val nativePanel: Boolean get() = NativeActionPanel.supports(session?.observation?.scenarioId) ||
+        session?.hasConstructorDefinitions == true
     private val upgradeButtons = mutableMapOf<String, Pair<TextButton, TextButton>>()
     private val upgradeInputs = mutableListOf<UpgradeButtonInput>()
     private var upgradeHover: String? = null
@@ -240,23 +246,28 @@ class BootstrapScreen(
             table.addListener(thirdProductionInput)
             stage.addActor(table)
         }
-        for (type in NativeActionPanel.constructionTypes) {
-            val icon = Image().apply { touchable = Touchable.disabled }
-            val text = Label("", skin).apply { setAlignment(Align.center); touchable = Touchable.disabled; setFontScale(.7f) }
-            val table = Table(skin)
-            table.touchable = Touchable.enabled
-            table.setBounds(752f, 256f, 84f, 64f)
-            table.add(icon).size(28f, 28f).padTop(3f).row()
-            table.add(text).height(21f)
-            table.background = skin.newDrawable("white", Color(.23f, .28f, .26f, 1f))
-            val listener = ConstructionButtonInput({ session }, { nativePanel && !paused }, type,
-                { mapInput.beginConstruction(it) }, { hovered ->
-                    if (hovered) constructionHover = type else if (constructionHover == type) constructionHover = null
-                    lastHudState = null
-                }, modeRevision = { mapInput.modeRevision })
-            table.addListener(listener)
-            stage.addActor(table)
-            constructionCards[type] = ConstructionCard(table, icon, text, listener)
+        constructionLayer = Group().also { stage.addActor(it) }
+        constructionContent = Group()
+        constructionScroll = ScrollPane(constructionContent, ScrollPane.ScrollPaneStyle().apply {
+            vScroll = skin.newDrawable("white", Color(.12f, .15f, .14f, 1f)).apply { minWidth = 6f }
+            vScrollKnob = skin.newDrawable("white", Color(.45f, .5f, .47f, 1f)).apply { minWidth = 6f; minHeight = 24f }
+        }).also {
+            it.setBounds(752f, 160f, 184f, 174f)
+            it.setScrollingDisabled(true, false)
+            it.setFadeScrollBars(false)
+            it.setSmoothScrolling(false)
+            it.setOverscroll(false, false)
+            it.addListener(object : InputListener() {
+                override fun enter(event: InputEvent, x: Float, y: Float, pointer: Int, fromActor: Actor?) {
+                    if (pointer == -1) stage.scrollFocus = constructionScroll
+                }
+                override fun exit(event: InputEvent, x: Float, y: Float, pointer: Int, toActor: Actor?) {
+                    if (pointer == -1 && toActor?.isDescendantOf(constructionScroll) != true &&
+                        stage.scrollFocus === constructionScroll) stage.scrollFocus = null
+                }
+            })
+            it.isVisible = false
+            constructionLayer.addActor(it)
         }
         reclaimCard = Table(skin).also { table ->
             table.touchable = Touchable.enabled
@@ -762,6 +773,7 @@ class BootstrapScreen(
             button("cancel-production:${action.typeId}", cancelProductionButton)
         }
         for ((type, card) in constructionCards) {
+            if (card.table.parent === constructionContent && !constructionCardExposed(card.table)) continue
             entries += DrawnAction("choose-construction:$type", card.table, card.text.text.toString(),
                 enabled = nativeActive && menu?.construction?.any { it.typeId == type } == true)
         }
@@ -839,6 +851,71 @@ class BootstrapScreen(
         evidence.record("sandbox-console", mapOf("generation" to generation, "open" to false))
     }
 
+    private fun syncConstructionCards(actions: List<ConstructionActionView>, economic: Boolean) {
+        val stale = constructionCards.iterator()
+        while (stale.hasNext()) {
+            val (type, card) = stale.next()
+            if (actions.none { it.typeId == type }) {
+                card.input.cancel()
+                card.table.remove()
+                stale.remove()
+            }
+        }
+        val overflow = actions.size > 6
+        val legacy = economic && actions.all { it.typeId in setOf("extractorT1", "landFactory",
+            "mechFactory", "airFactory", "seaFactory", "fabricatorT1", "c_turret_t1", "laserDefence") }
+        constructionScroll.isVisible = nativePanel && overflow
+        if (!constructionScroll.isVisible && stage.scrollFocus === constructionScroll) stage.scrollFocus = null
+        val rows = (actions.size + 1) / 2
+        if (overflow) constructionContent.setSize(176f, rows * 60f)
+        actions.forEachIndexed { index, action ->
+            val type = action.typeId
+            val card = constructionCards.getOrPut(type) {
+                val icon = Image().apply { touchable = Touchable.disabled }
+                val text = Label("", skin).apply {
+                    setAlignment(Align.center); touchable = Touchable.disabled; setFontScale(.7f); setEllipsis(true)
+                }
+                val table = Table(skin).apply {
+                    touchable = Touchable.enabled
+                    add(icon).size(28f, 28f).padTop(3f).row()
+                    add(text).width(80f).height(21f)
+                    background = skin.newDrawable("white", Color(.23f, .28f, .26f, 1f))
+                }
+                val input = ConstructionButtonInput({ session }, { nativePanel && !paused }, type,
+                    { mapInput.beginConstruction(it) }, { hovered ->
+                        if (hovered) constructionHover = type else if (constructionHover == type) constructionHover = null
+                        lastHudState = null
+                    }, modeRevision = { mapInput.modeRevision })
+                table.addListener(input)
+                ConstructionCard(table, icon, text, input)
+            }
+            val parent = if (overflow) constructionContent else constructionLayer
+            if (card.table.parent !== parent) {
+                card.input.cancel()
+                parent.addActor(card.table)
+            }
+            card.table.isVisible = nativePanel
+            when {
+                overflow -> card.table.setBounds((index % 2) * 92f, (rows - 1 - index / 2) * 60f, 84f, 54f)
+                legacy -> card.table.setBounds(
+                    if (type in setOf("extractorT1", "c_turret_t1", "laserDefence")) 844f else 752f,
+                    when (type) { "extractorT1" -> 280f; "landFactory", "c_turret_t1" -> 220f; else -> 160f },
+                    84f, 54f)
+                actions.size > 4 -> card.table.setBounds(752f + (index % 2) * 92f, 280f - (index / 2) * 60f, 84f, 54f)
+                else -> card.table.setBounds(752f + (index % 2) * 92f, 256f - (index / 2) * 68f, 84f, 64f)
+            }
+        }
+        if (overflow) constructionScroll.invalidate()
+    }
+
+    /** Only advertise complete drawn cards, including the ScrollPane's clipping boundary. */
+    private fun constructionCardExposed(table: Table): Boolean {
+        table.localToStageCoordinates(constructionCorner.set(0f, 0f))
+        return constructionCorner.x >= constructionScroll.x && constructionCorner.y >= constructionScroll.y &&
+            constructionCorner.x + table.width <= constructionScroll.x + constructionScroll.width &&
+            constructionCorner.y + table.height <= constructionScroll.y + constructionScroll.height
+    }
+
     private fun updateHud() {
         if (!presentationReady) return
         val current = session
@@ -891,18 +968,7 @@ class BootstrapScreen(
         reclaimCard.isVisible = nativePanel && menu?.canMaintain == true
         reclaimCard.background = skin.newDrawable("white", if (reclaimInput.pressed || state.reclaimMode)
             Color(.37f, .48f, .4f, 1f) else Color(.23f, .28f, .26f, 1f))
-        for ((type, card) in constructionCards) {
-            card.table.isVisible = nativePanel && menu?.construction?.any { it.typeId == type } == true
-            if (current?.hasEconomicConstruction == true) {
-                val x = if (type in setOf("extractorT1", "c_turret_t1", "laserDefence")) 844f else 752f
-                val y = when (type) {
-                    "extractorT1" -> 280f
-                    "landFactory", "c_turret_t1" -> 220f
-                    else -> 160f
-                }
-                card.table.setBounds(x, y, 84f, 54f)
-            } else card.table.setBounds(752f, 256f, 84f, 64f)
-        }
+        syncConstructionCards(menu?.construction.orEmpty(), current?.hasEconomicConstruction == true)
         val selectedInfo = menu?.selectedUnitInfo
         nativeInfo.isVisible = nativePanel && selectedInfo != null
         nativeIcon.isVisible = nativePanel && selected != null && state.selectedIds.size == 1
@@ -1013,7 +1079,7 @@ class BootstrapScreen(
             buttons.second.isDisabled = action?.progress == null
         }
         stopButton.isDisabled = selected == null
-        val economicPanel = nativePanel && current?.hasEconomicConstruction == true
+        val economicPanel = nativePanel && (current?.hasEconomicConstruction == true || constructionCards.size > 4)
         stopButton.setY(if (economicPanel) 112f else if (nativePanel) 144f else 168f)
         patrolButton.setY(if (economicPanel) 112f else if (nativePanel) 144f else 168f)
         startButton.setY(if (economicPanel) 64f else if (nativePanel) 96f else 120f)

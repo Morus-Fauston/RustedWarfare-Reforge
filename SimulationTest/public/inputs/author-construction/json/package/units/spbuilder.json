@@ -1,0 +1,8 @@
+{
+  "format": "rw-reforge.constructor.v1",
+  "copyFrom": [
+    "base-constructor.ini"
+  ],
+  "name": "spbuilder",
+  "constructionTypes": "workshop"
+}

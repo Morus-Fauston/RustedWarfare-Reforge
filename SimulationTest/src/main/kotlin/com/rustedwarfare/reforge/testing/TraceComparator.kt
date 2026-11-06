@@ -401,7 +401,7 @@ object TraceComparator {
             val building = element.jsonObject
             building.id("unitId"); building.integer("objectId"); building.text("updateKey"); building.number("progress")
         }
-        val builderTypes = typesLoadedBy(scenario, setOf("builder"))
+        val builderTypes = typesLoadedBy(scenario, setOf("builder", "constructor"))
         val expectedWorkers = units.filter { it.id("typeId") in builderTypes }.map { it.id("unitId") }.toSet()
         val workers = construction.arrayAt("workers").map { it.jsonObject }
         if (workers.size != expectedWorkers.size || workers.map { it.id("unitId") }.toSet() != expectedWorkers)

@@ -8,13 +8,11 @@ import com.rustedwarfare.reforge.core.sim.*
 import kotlin.test.*
 
 class NavalNativePanelTest {
-    @Test fun builder_sea_factory_action_has_a_registered_native_card_and_release_selects_legal_water_construction() {
+    @Test fun builder_sea_factory_press_and_release_selects_legal_water_construction() {
         for (format in listOf("ini", "json", "hjson")) SandboxSession(NavalSandboxScene.load(format).scenario).use { session ->
             session.select(Position(390.0, 150.0))
             val action = session.actionMenu.construction.single()
             assertEquals("seaFactory", action.typeId)
-            assertTrue(action.typeId in NativeActionPanel.constructionTypes,
-                "Every displayed construction action must have a native card before HUD refresh: ${action.typeId}")
             var chosen: String? = null
             val card = actor(NativeActionPanel.production.first(),
                 ConstructionButtonInput({ session }, { true }, action.typeId, { chosen = it }))

@@ -85,6 +85,12 @@ object ContentLoader {
     fun loadAuthorWaterUnitWithSources(path: Path): ContentResult<LoadedUnitContent> =
         load(path) { CombatContentReader.readAuthorWaterWithSources(it) }
 
+    fun loadAuthorConstructorWithSources(path: Path): ContentResult<LoadedUnitContent> =
+        load(path) { com.rustedwarfare.reforge.core.content.internal.AuthorConstructionContentReader.readConstructorWithSources(it) }
+
+    fun loadAuthorBuildingWithSources(path: Path): ContentResult<LoadedUnitContent> =
+        load(path) { com.rustedwarfare.reforge.core.content.internal.AuthorConstructionContentReader.readBuildingWithSources(it) }
+
     fun loadUnderwaterTargetUnit(path: Path): ContentResult<UnitDefinition> =
         load(path) { UnderwaterTargetContentReader.readWithSources(it) {}.definition }
 
