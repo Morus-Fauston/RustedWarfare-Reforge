@@ -788,12 +788,8 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
                     reason = PathSearchReason.CONSTRUCTION_APPROACH, executionStep = step, targetRange = range)
             return path?.let { BuildingRoute(it, plannedKnowledgeRevision(worker), plannedBuildingRevision(worker)) }
         }
-        override fun birth(): BuildingBirth {
-            val objectId = nextObjectId
-            nextObjectId = Math.incrementExact(nextObjectId)
-            lastBirthSerial = Math.incrementExact(lastBirthSerial)
-            return BuildingBirth(objectId, "~produced/" + lastBirthSerial.toString().padStart(20, '0'))
-        }
+        override fun prepareConstruction(ownerPlayerId: String, typeId: String, position: Position, nonce: String): MutableUnit =
+            UnitRegistration.prepareConstruction(steps.current, checkNotNull(scenario), ownerPlayerId, typeId, position, nonce)
     }
 
     private fun updateConstruction(worker: MutableUnit, input: Scenario, step: Step) {
@@ -803,7 +799,7 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
         buildingWork = change.work
         productionLedger = change.ledger
         ordinaryUpgrades = change.upgrades
-        change.created?.let { units[it.unitId] = it }
+        change.created?.let { UnitRegistration.registerPrepared(steps.current, it) }
         change.reclaimedUnitId?.let { missileTargets = missileTargets?.remove(it) }
         if (change.created != null || change.reclaimedUnitId != null)
             buildingTerrain = BuildingTerrain.fromLive(input.map, units.values, checkNotNull(buildingTerrain))

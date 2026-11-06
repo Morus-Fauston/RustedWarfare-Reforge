@@ -1,6 +1,7 @@
 package com.rustedwarfare.reforge.core.sim
 
-import com.rustedwarfare.reforge.core.content.UnitDefinition
+import com.rustedwarfare.reforge.core.content.*
+import java.nio.file.Path
 import kotlin.test.*
 
 class UnitRegistrationTest {
@@ -99,6 +100,47 @@ class UnitRegistrationTest {
             assertEquals("a", view.units.single().unitId)
             assertEquals(Position(170.0, 210.0), view.units.single().moveTarget)
         } finally { context.close() }
+    }
+
+
+    @Test fun construction_prepares_identity_and_defaults_without_inserting_before_the_callers_bookkeeping() {
+        val base = BuildingTestContent.scenario()
+        val root = Path.of(checkNotNull(System.getProperty("public.fixtures.dir"))).resolve("build-economy/factory/units")
+        val definition = assertIs<ContentResult.Success<UnitDefinition>>(
+            ContentLoader.loadFactory(root.resolve("landFactory.properties"))).value
+        val input = base.copy(unitDefinitions = base.unitDefinitions + (definition.id to definition))
+        val ledger = ProductionLedger.initial(mapOf("p1" to 1750L, "p2" to 0L), emptyMap())
+        val state = StepState(nextObjectId = 11L, productionLedger = ledger)
+        val nonce = "a".repeat(32)
+        val site = UnitRegistration.prepareConstruction(state, input, "p1", "landFactory", Position(190.0, 170.0), nonce)
+        val id = "constructed:p1:$nonce"
+        assertEquals(id, site.unitId)
+        assertEquals("p1", site.ownerPlayerId)
+        assertEquals("landFactory", site.typeId)
+        assertEquals(11L, site.objectId)
+        assertEquals("~produced/00000000000000000001", site.updateKey)
+        assertEquals(Position(190.0, 170.0), site.position)
+        assertEquals(0.0, site.heading)
+        assertEquals(0.0, site.height)
+        assertEquals(1200.0, site.health)
+        assertEquals(0f, site.constructionProgress)
+        assertFalse(BuildingWork.isReady(site))
+        assertNull(site.producerId)
+        assertEquals(0f, site.birthRemaining)
+        assertEquals(12L, state.nextObjectId)
+        assertEquals(1L, state.lastBirthSerial)
+        assertFalse(id in state.units, "The builder must finish ledger/upgrades/nonce before map insertion")
+        assertSame(ledger, state.productionLedger)
+        assertEquals(1750L, ledger.balances.getValue("p1"))
+        assertTrue(state.pendingEvents.isEmpty())
+        UnitRegistration.registerPrepared(state, site)
+        assertSame(site, state.units.getValue(id))
+        assertFailsWith<IllegalStateException> { UnitRegistration.registerPrepared(state, site) }
+        assertEquals(1, state.units.size)
+        assertEquals(12L, state.nextObjectId)
+        assertEquals(1L, state.lastBirthSerial)
+        assertSame(ledger, state.productionLedger)
+        assertTrue(state.pendingEvents.isEmpty(), "Construction-created remains the building caller's event")
     }
 
 }

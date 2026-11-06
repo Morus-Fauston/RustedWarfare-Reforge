@@ -5,10 +5,9 @@ import com.rustedwarfare.reforge.core.content.foundationMovementType
 import java.util.Collections
 
 internal data class BuildingRoute(val points: List<Position>, val knowledgeRevision: Long, val buildingRevision: Long)
-internal data class BuildingBirth(val objectId: Long, val updateKey: String)
 internal interface BuildingWorkAccess {
     fun path(worker: MutableUnit, target: Position, range: Double, task: UnitTask, step: Long): BuildingRoute?
-    fun birth(): BuildingBirth
+    fun prepareConstruction(ownerPlayerId: String, typeId: String, position: Position, nonce: String): MutableUnit
 }
 internal data class BuildingWorkFrame(val input: Scenario, val units: Map<String, MutableUnit>, val step: Step,
     val view: VisionSnapshot?, val coordinates: CoordinatePolicy, val steering: SteeringPolicy, val access: BuildingWorkAccess)
@@ -251,11 +250,8 @@ internal class BuildingWork private constructor(val clock: Int, val nonces: Map<
                 return BuildingWorkChange(this, ledger, upgrades,
                     events = listOf(Event("construction-insufficient-funds", worker.unitId)))
             }
-            val publicId = "constructed:${worker.ownerPlayerId}:$nonce"
-            check(publicId !in frame.units)
-            val identity = frame.access.birth()
-            val unit = MutableUnit(publicId, worker.ownerPlayerId, definition.id, definition, position, 0.0,
-                objectId = identity.objectId, updateKey = identity.updateKey, constructionProgress = 0f)
+            val unit = frame.access.prepareConstruction(worker.ownerPlayerId, definition.id, position, nonce)
+            val publicId = unit.unitId
             paid = definition.production?.let { production ->
                 charged.register(publicId, FactoryProductionSpec(worker.ownerPlayerId, production.unitTypeIds.associateWith {
                     checkNotNull(input.unitDefinitions.getValue(it).build) }, definition.upgrades?.actions.orEmpty()))

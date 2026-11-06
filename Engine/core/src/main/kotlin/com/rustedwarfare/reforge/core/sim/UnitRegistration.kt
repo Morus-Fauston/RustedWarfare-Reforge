@@ -21,14 +21,10 @@ internal object UnitRegistration {
             input.map.heightTiles.toDouble() * input.map.tileHeight, birth.position, definition.radius)) {
             "Produced unit collision circle must remain within the map"
         }
-        val objectId = state.nextObjectId
-        state.nextObjectId = Math.addExact(state.nextObjectId, 1L)
-        state.lastBirthSerial = Math.incrementExact(state.lastBirthSerial)
-        val updateKey = "~produced/" + state.lastBirthSerial.toString().padStart(20, '0')
-        check(state.units.values.lastOrNull()?.updateKey?.let { it < updateKey } != false)
+        val identity = nextIdentity(state)
         val spawn = UnitSpawn(publicId, factory.ownerPlayerId, completed.typeId, birth.position, birth.heading,
             definition.movement.flight?.startingHeightOffset ?: 0.0)
-        val born = register(state, input, spawn, objectId, updateKey, factory.unitId, birth.protection) { unit ->
+        val born = register(state, input, spawn, identity.objectId, identity.updateKey, factory.unitId, birth.protection) { unit ->
             if (factory.definition.production?.exitProfile == FactoryExitProfile.CUSTOM_MECH) {
                 factory.productionSide = !factory.productionSide
                 if (birth.fallback) state.pendingEvents += Event("production-exit-fallback", publicId)
@@ -47,16 +43,49 @@ internal object UnitRegistration {
         return born
     }
 
+    /** Prepares an unfinished site; the caller registers it after its own bookkeeping. */
+    fun prepareConstruction(state: StepState, input: Scenario, ownerPlayerId: String, typeId: String,
+                            position: Position, nonce: String): MutableUnit {
+        val id = "constructed:$ownerPlayerId:$nonce"
+        check(id !in state.units) { "Construction identity must be new in this world" }
+        val definition = input.unitDefinitions.getValue(typeId)
+        val identity = nextIdentity(state)
+        return create(input, UnitSpawn(id, ownerPlayerId, typeId, position, 0.0,
+            definition.movement.flight?.startingHeightOffset ?: 0.0), identity.objectId, identity.updateKey,
+            constructionProgress = 0f)
+    }
+
+    fun registerPrepared(state: StepState, unit: MutableUnit) {
+        check(unit.unitId !in state.units) { "Unit identity must be new in this world" }
+        state.units[unit.unitId] = unit
+    }
+
+    private data class Identity(val objectId: Long, val updateKey: String)
+
+    private fun nextIdentity(state: StepState): Identity {
+        val objectId = state.nextObjectId
+        state.nextObjectId = Math.addExact(state.nextObjectId, 1L)
+        state.lastBirthSerial = Math.incrementExact(state.lastBirthSerial)
+        val updateKey = "~produced/" + state.lastBirthSerial.toString().padStart(20, '0')
+        check(state.units.values.lastOrNull()?.updateKey?.let { it < updateKey } != false)
+        return Identity(objectId, updateKey)
+    }
+
+    private fun create(input: Scenario, spawn: UnitSpawn, objectId: Long?, updateKey: String = spawn.unitId,
+                       producerId: String? = null, birthRemaining: Float = 0f,
+                       constructionProgress: Float = 1f): MutableUnit =
+        MutableUnit(spawn.unitId, spawn.ownerPlayerId, spawn.typeId,
+            input.unitDefinitions.getValue(spawn.typeId), spawn.position, spawn.heading,
+            height = spawn.height, objectId = objectId, updateKey = updateKey,
+            producerId = producerId, birthRemaining = birthRemaining, constructionProgress = constructionProgress)
+
     private fun register(state: StepState, input: Scenario, spawn: UnitSpawn, objectId: Long?,
                          updateKey: String = spawn.unitId, producerId: String? = null, birthRemaining: Float = 0f,
                          beforeInsert: (MutableUnit) -> Unit = {}): MutableUnit {
         check(spawn.unitId !in state.units) { "Unit identity must be new in this world" }
-        val unit = MutableUnit(spawn.unitId, spawn.ownerPlayerId, spawn.typeId,
-            input.unitDefinitions.getValue(spawn.typeId), spawn.position, spawn.heading,
-            height = spawn.height, objectId = objectId, updateKey = updateKey,
-            producerId = producerId, birthRemaining = birthRemaining)
+        val unit = create(input, spawn, objectId, updateKey, producerId, birthRemaining)
         beforeInsert(unit)
-        state.units[spawn.unitId] = unit
+        registerPrepared(state, unit)
         return unit
     }
 }
