@@ -3,6 +3,12 @@ package com.rustedwarfare.reforge.core.sim
 import com.rustedwarfare.reforge.core.content.NamedWeaponDefinition
 import com.rustedwarfare.reforge.core.content.CombatProfile
 import com.rustedwarfare.reforge.core.content.MovementType
+import com.rustedwarfare.reforge.core.content.WeaponAssembly
+
+/** Stack-scoped world inputs. Candidates are selected by the host; lookup never grants visibility. */
+internal class NamedWeaponFrame(val worldSeed: Int, val counter: Int, val delta: Double,
+    val players: List<Player>, val coordinates: CoordinatePolicy, val units: Map<String, MutableUnit>,
+    val candidates: Collection<MutableUnit>, val primary: MutableUnit?, val manual: MutableUnit?)
 
 /** Per-weapon geometry reads the real named state without switching the unit's definition. */
 internal object NamedWeaponRuntime {
@@ -17,16 +23,112 @@ internal object NamedWeaponRuntime {
                 } ?: true)
         }
     }
-    fun usesNamedState(combat: CombatProfile): Boolean = combat.namedWeapons?.let { catalog ->
-        catalog.ordered.size > 1 || catalog.ordered.any { weapon ->
-            weapon.minimumRange > 0.0 || weapon.maximumRange?.let { it < combat.attackRange } == true ||
-                !weapon.canAttackLandUnits || weapon.warmup != 0.0 || weapon.warmupNoReset ||
-                weapon.warmupShootDelayTransfer != 0.0 || !weapon.canShoot || weapon.aimMaxAngle != 5.0 ||
-                weapon.attachedTo != null || weapon.slave || weapon.linkDelayWithTurret != null ||
-                weapon.limitingAngle?.let { it != -1.0 } == true || weapon.idleDirection != 0.0 ||
-                weapon.barrelX != null || weapon.oddShotOffset != null
+    fun usesNamedState(combat: CombatProfile): Boolean = WeaponAssembly.requiresNamedState(combat)
+
+    fun initialStates(combat: CombatProfile?, heading: Double, primary: MutableCombat?): MutableMap<String, MutableCombat>? =
+        combat?.takeIf(::usesNamedState)?.weaponAssembly?.slots?.mapIndexed { index, slot ->
+            val initialHeading = ScreenPlane.normalize(heading + slot.definition.idleDirection)
+            slot.definition.name to if (index == 0) checkNotNull(primary).also {
+                it.turretHeading = initialHeading
+                it.idleBaseHeading = initialHeading
+            } else MutableCombat(initialHeading)
+        }?.toMap(linkedMapOf())
+
+    /** All independent aim passes finish before slaves and the declaration-ordered fire pass. */
+    fun advance(unit: MutableUnit, frame: NamedWeaponFrame,
+                fire: (MutableUnit, MutableCombat, CombatProfile, Double, NamedWeaponDefinition) -> Unit) {
+        val assembly = checkNotNull(unit.definition.combat).weaponAssembly
+        val actorId = checkNotNull(unit.objectId)
+        val states = checkNotNull(unit.namedWeapons)
+        for (slot in assembly.slots) {
+            val definition = slot.definition
+            val state = states.getValue(definition.name)
+            state.aimReady = false
+            val weapon = slot.profile
+            OrdinaryWeapon.idle(frame.worldSeed, frame.counter, actorId, unit, frame.delta, state, weapon)
+            if (definition.slave) continue
+            val target = NamedWeaponRuntime.target(unit, definition, state, frame.primary, frame.candidates, frame.players, frame.coordinates)
+            if (state.targetId != target?.unitId) {
+                state.targetId = target?.unitId
+                if (target != null && target === frame.manual) OrdinaryWeapon.refreshOffset(frame.worldSeed, frame.counter, actorId, unit, target, state)
+            }
+            if (target == null) NamedWeaponRuntime.idle(unit, definition, state, frame.delta)
         }
-    } == true
+        for (slot in assembly.slots) {
+            val definition = slot.definition
+            if (definition.slave) continue
+            val state = states.getValue(definition.name)
+            val weapon = slot.profile
+            val target = frame.units[state.targetId] ?: continue
+            if (weapon.idleSweep != null) {
+                state.idleHold = maxOf(state.idleHold, 70f)
+                state.idleBaseHeading = state.turretHeading
+            }
+            val residual = OrdinaryWeapon.aim(unit, target, frame.delta, state, weapon) {
+                NamedWeaponRuntime.pivot(unit, definition, state)
+            }
+            state.aimReady = kotlin.math.abs(residual) < definition.aimMaxAngle
+        }
+        // The aim pass completes for every independent weapon before any slave reads its parent.
+        for (slot in assembly.slots) {
+            val definition = slot.definition
+            if (!definition.slave) continue
+            val state = states.getValue(definition.name)
+            val parent = states.getValue(checkNotNull(assembly.parent(definition.name)).definition.name)
+            val target = frame.units[parent.targetId]?.takeIf {
+                NamedWeaponRuntime.qualifies(unit, it, definition, frame.players, frame.coordinates)
+            }
+            state.targetId = target?.unitId
+            state.turretHeading = parent.turretHeading
+            state.aimReady = target != null && parent.aimReady
+        }
+        var active = false
+        for (slot in assembly.slots) {
+            val definition = slot.definition
+            val state = states.getValue(definition.name)
+            val target = frame.units[state.targetId] ?: continue
+            if (!state.aimReady || !NamedWeaponRuntime.qualifies(unit, target, definition, frame.players, frame.coordinates)) continue
+            val weapon = slot.profile
+            if (state.cooldown == 0.0) active = true
+            if (definition.warmupNoReset) {
+                state.warmup = if (state.warmup < definition.warmup) state.warmup + frame.delta else definition.warmup
+            }
+            if (state.cooldown != 0.0 || !definition.canShoot) continue
+            if (!definition.warmupNoReset && state.warmup < definition.warmup) {
+                state.warmup += frame.delta
+                continue
+            }
+            val delay = NamedWeaponRuntime.effectiveDelay(definition, state)
+            if (!definition.warmupNoReset) state.warmup = 0.0
+            fire(target, state, weapon, delay, definition)
+        }
+        if (!active) for (slot in assembly.slots) {
+            val definition = slot.definition
+            val state = checkNotNull(unit.namedWeapons).getValue(definition.name)
+            state.warmup = maxOf(0.0, state.warmup - definition.warmupCallDownRate * frame.delta)
+        }
+    }
+
+    /** Called at the old fire boundary after its own cooldown is set, before projectile allocation. */
+    fun fired(unit: MutableUnit, definition: NamedWeaponDefinition) {
+        val assembly = checkNotNull(unit.definition.combat).weaponAssembly
+        val states = checkNotNull(unit.namedWeapons)
+        for (slot in assembly.followers(definition.name)) {
+            val other = slot.definition
+            if (other.name == definition.name) continue
+            val otherState = states.getValue(other.name)
+            // Literal 9000 excludes the separate warmup transfer used by effectiveDelay.
+            if (otherState.cooldown < 9000.0 - (definition.shootDelay * 0.5 - other.warmup))
+                otherState.cooldown = 0.0
+        }
+        assembly.parent(definition.name)?.definition?.let { parent ->
+            if (!parent.canShoot && parent.recoil.offset != 0.0) {
+                val parentState = states.getValue(parent.name)
+                parentState.cooldown = effectiveDelay(parent, parentState)
+            }
+        }
+    }
+
     fun qualifies(unit: MutableUnit, target: MutableUnit, weapon: NamedWeaponDefinition,
                   players: List<Player>, coordinates: CoordinatePolicy, checkRange: Boolean = true): Boolean {
         if (!CombatTargetQuery.isEnemy(unit, target, players)) return false
@@ -72,24 +174,14 @@ internal object NamedWeaponRuntime {
 
     fun profile(unit: MutableUnit, weapon: NamedWeaponDefinition) = profile(checkNotNull(unit.definition.combat), weapon)
 
-    fun profile(base: CombatProfile, weapon: NamedWeaponDefinition): CombatProfile {
-        // The legacy scalar adapter belongs to the first weapon only. Other omitted
-        // local fields use their own zero default; inherited template values are explicit.
-        val primary = base.namedWeapons?.ordered?.firstOrNull()?.name == weapon.name
-        return base.copy(
-        projectile = weapon.projectile, shootDelay = weapon.shootDelay, turretSize = weapon.turretSize,
-        turretTurnSpeed = weapon.turnSpeed, turretTurnAcceleration = weapon.turnAcceleration,
-        mount = weapon.mount, turretImagePath = weapon.imagePath, turretImageScale = weapon.imageScale,
-        recoil = weapon.recoil, fireSound = weapon.fireSound, namedWeapons = null,
-        barrelX = weapon.barrelX ?: if (primary) base.barrelX else 0.0,
-        oddShotOffset = weapon.oddShotOffset ?: if (primary) base.oddShotOffset else 0.0)
-    }
+    fun profile(base: CombatProfile, weapon: NamedWeaponDefinition): CombatProfile =
+        base.weaponAssembly.byName.getValue(weapon.name).profile
 
     fun pivot(unit: MutableUnit, weapon: NamedWeaponDefinition, state: MutableCombat): Position {
         var origin = unit.position
         var heading = unit.heading
-        weapon.attachedTo?.let { name ->
-            val parent = checkNotNull(unit.definition.combat?.namedWeapons).byName.getValue(name)
+        checkNotNull(unit.definition.combat).weaponAssembly.parent(weapon.name)?.definition?.let { parent ->
+            val name = parent.name
             require(parent.name != weapon.name && parent.attachedTo == null) { "Invalid nested weapon mount" }
             val parentState = checkNotNull(unit.namedWeapons).getValue(name)
             origin = pivot(unit, parent, parentState)

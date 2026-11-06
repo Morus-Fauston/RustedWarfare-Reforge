@@ -131,7 +131,10 @@ data class CombatProfile(
     val namedWeapons: WeaponCatalog? = null,
     val multiTargeting: Boolean = false,
     val rotateWithBody: Boolean = false,
-)
+) {
+    /** Bound to this actual immutable definition; replacements never reuse an old unit ID's layout. */
+    val weaponAssembly: WeaponAssembly by lazy(LazyThreadSafetyMode.PUBLICATION) { WeaponAssembly.compile(this) }
+}
 
 /** Stable content references and declaration order are separate from runtime storage indices. */
 class WeaponCatalog(weapons: List<NamedWeaponDefinition>) {

@@ -389,14 +389,7 @@ internal data class MutableUnit(
     var pendingPathNodeCounts: List<Int> = emptyList(),
     var consumedPathNodeCounts: List<Int> = emptyList(),
     var qBeforeDispatch: Byte = 0,
-    var namedWeapons: MutableMap<String, MutableCombat>? = definition.combat?.takeIf { NamedWeaponRuntime.usesNamedState(it) }
-        ?.namedWeapons?.ordered?.mapIndexed { index, weapon ->
-            val initialHeading = ScreenPlane.normalize(heading + weapon.idleDirection)
-            weapon.name to if (index == 0) checkNotNull(combat).also {
-                it.turretHeading = initialHeading
-                it.idleBaseHeading = initialHeading
-            } else MutableCombat(initialHeading)
-        }?.toMap(linkedMapOf()),
+    var namedWeapons: MutableMap<String, MutableCombat>? = NamedWeaponRuntime.initialStates(definition.combat, heading, combat),
     var sharedWeaponTargetId: String? = null,
     var mechState: MechState? = MechMotion.initial(definition, position, heading),
     var bodyReversing: Boolean = false,

@@ -103,6 +103,7 @@
       "com.rustedwarfare.reforge.core.content.UnderwaterTargetContentTest",
       "com.rustedwarfare.reforge.core.content.WaterTerrainContentTest",
       "com.rustedwarfare.reforge.core.content.GroundRulesTest",
+      "com.rustedwarfare.reforge.core.content.WeaponAssemblyTest",
       "com.rustedwarfare.reforge.core.sim.BattleshipAreaTest",
       "com.rustedwarfare.reforge.core.sim.BattleshipBallisticBoundaryTest",
       "com.rustedwarfare.reforge.core.sim.BattleshipBallisticFailureTest",
@@ -121,7 +122,8 @@
       "com.rustedwarfare.reforge.core.sim.UnderwaterTargetContractTest",
       "com.rustedwarfare.reforge.core.sim.WaterMovementTest",
       "com.rustedwarfare.reforge.core.sim.SandboxCommandParserTest",
-      "com.rustedwarfare.reforge.core.sim.OfflineSandboxHostTest"
+      "com.rustedwarfare.reforge.core.sim.OfflineSandboxHostTest",
+      "com.rustedwarfare.reforge.core.sim.WeaponAssemblyRuntimeTest"
     ],
     "client": [
       "com.rustedwarfare.reforge.client.CombatActorEvidenceTest",

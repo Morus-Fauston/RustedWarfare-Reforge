@@ -1672,8 +1672,6 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
     private fun updateNamedWeapons(unit: MutableUnit, delta: Double) {
         val input = checkNotNull(scenario)
         val contract = checkNotNull(input.combatContract)
-        val actorId = checkNotNull(unit.objectId)
-        val catalog = checkNotNull(unit.definition.combat?.namedWeapons)
         val candidates = orderedUnits()
         val globalRange = checkNotNull(unit.definition.combat).attackRange
         fun globalEligible(target: MutableUnit) = CombatTargetQuery.isEnemy(unit, target, input.players) &&
@@ -1704,68 +1702,9 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
         }
         val weaponCandidates = if (!patrol) candidates else if (unit.primaryCombatTargetId == null) emptyList()
             else candidates.filter { isVisibleTo(unit.ownerPlayerId, it.position) }
-        val states = checkNotNull(unit.namedWeapons)
-        for (definition in catalog.ordered) {
-            val state = states.getValue(definition.name)
-            state.aimReady = false
-            val weapon = NamedWeaponRuntime.profile(unit, definition)
-            OrdinaryWeapon.idle(contract.worldSeed, combatFrame, actorId, unit, delta, state, weapon)
-            if (definition.slave) continue
-            val target = NamedWeaponRuntime.target(unit, definition, state, primary, weaponCandidates, input.players, policies.coordinates)
-            if (state.targetId != target?.unitId) {
-                state.targetId = target?.unitId
-                if (target != null && target === manual) OrdinaryWeapon.refreshOffset(contract.worldSeed, combatFrame, actorId, unit, target, state)
-            }
-            if (target == null) NamedWeaponRuntime.idle(unit, definition, state, delta)
-        }
-        for (definition in catalog.ordered) {
-            if (definition.slave) continue
-            val state = states.getValue(definition.name)
-            val weapon = NamedWeaponRuntime.profile(unit, definition)
-            val target = units[state.targetId] ?: continue
-            if (weapon.idleSweep != null) {
-                state.idleHold = maxOf(state.idleHold, 70f)
-                state.idleBaseHeading = state.turretHeading
-            }
-            val residual = OrdinaryWeapon.aim(unit, target, delta, state, weapon) {
-                NamedWeaponRuntime.pivot(unit, definition, state)
-            }
-            state.aimReady = kotlin.math.abs(residual) < definition.aimMaxAngle
-        }
-        // The aim pass completes for every independent weapon before any slave reads its parent.
-        for (definition in catalog.ordered) {
-            if (!definition.slave) continue
-            val state = states.getValue(definition.name)
-            val parent = states.getValue(checkNotNull(definition.attachedTo))
-            val target = units[parent.targetId]?.takeIf {
-                NamedWeaponRuntime.qualifies(unit, it, definition, input.players, policies.coordinates)
-            }
-            state.targetId = target?.unitId
-            state.turretHeading = parent.turretHeading
-            state.aimReady = target != null && parent.aimReady
-        }
-        var active = false
-        for (definition in catalog.ordered) {
-            val state = states.getValue(definition.name)
-            val target = units[state.targetId] ?: continue
-            if (!state.aimReady || !NamedWeaponRuntime.qualifies(unit, target, definition, input.players, policies.coordinates)) continue
-            val weapon = NamedWeaponRuntime.profile(unit, definition)
-            if (state.cooldown == 0.0) active = true
-            if (definition.warmupNoReset) {
-                state.warmup = if (state.warmup < definition.warmup) state.warmup + delta else definition.warmup
-            }
-            if (state.cooldown != 0.0 || !definition.canShoot) continue
-            if (!definition.warmupNoReset && state.warmup < definition.warmup) {
-                state.warmup += delta
-                continue
-            }
-            val delay = NamedWeaponRuntime.effectiveDelay(definition, state)
-            if (!definition.warmupNoReset) state.warmup = 0.0
+        NamedWeaponRuntime.advance(unit, NamedWeaponFrame(contract.worldSeed, combatFrame, delta,
+            input.players, policies.coordinates, units, weaponCandidates, primary, manual)) { target, state, weapon, delay, definition ->
             fireWeapon(unit, target, state, weapon, delay, definition)
-        }
-        if (!active) for (definition in catalog.ordered) {
-            val state = checkNotNull(unit.namedWeapons).getValue(definition.name)
-            state.warmup = maxOf(0.0, state.warmup - definition.warmupCallDownRate * delta)
         }
     }
 
@@ -1776,23 +1715,7 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
         val contract = checkNotNull(scenario?.combatContract)
         val actorId = checkNotNull(unit.objectId)
         state.cooldown = effectiveDelay
-        if (definition != null) {
-            val catalog = checkNotNull(unit.definition.combat?.namedWeapons)
-            for (other in catalog.ordered) {
-                if (other.name == definition.name || other.linkDelayWithTurret != definition.name) continue
-                val otherState = checkNotNull(unit.namedWeapons).getValue(other.name)
-                // custom-fire's literal 9000 uses b(I), without the separate warmup transfer o(I).
-                if (otherState.cooldown < 9000.0 - (definition.shootDelay * 0.5 - other.warmup))
-                    otherState.cooldown = 0.0
-            }
-        }
-        definition?.attachedTo?.let { name ->
-            val parent = checkNotNull(unit.definition.combat?.namedWeapons).byName.getValue(name)
-            if (!parent.canShoot && parent.recoil.offset != 0.0) {
-                val parentState = checkNotNull(unit.namedWeapons).getValue(name)
-                parentState.cooldown = NamedWeaponRuntime.effectiveDelay(parent, parentState)
-            }
-        }
+        definition?.let { NamedWeaponRuntime.fired(unit, it) }
         val capturedOffset = state.offset
         weapon.projectile.missile?.let { missile ->
             val id = nextObjectId
