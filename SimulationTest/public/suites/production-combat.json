@@ -134,7 +134,8 @@
       "com.rustedwarfare.reforge.core.sim.AuthorFactoryLifecycleTest",
       "com.rustedwarfare.reforge.core.content.AuthorUpgradeContentTest",
       "com.rustedwarfare.reforge.core.sim.AuthorFactoryUpgradeTest",
-      "com.rustedwarfare.reforge.core.sim.AuthorUpgradeLifecycleTest"
+      "com.rustedwarfare.reforge.core.sim.AuthorUpgradeLifecycleTest",
+      "com.rustedwarfare.reforge.core.sim.AuthorShoreConstructionTest"
     ],
     "client": [
       "com.rustedwarfare.reforge.client.CombatActorEvidenceTest",
@@ -165,7 +166,8 @@
       "com.rustedwarfare.reforge.client.AuthorWaterSandboxTest",
       "com.rustedwarfare.reforge.client.AuthorConstructionSandboxTest",
       "com.rustedwarfare.reforge.client.AuthorFactorySandboxTest",
-      "com.rustedwarfare.reforge.client.AuthorUpgradeSandboxTest"
+      "com.rustedwarfare.reforge.client.AuthorUpgradeSandboxTest",
+      "com.rustedwarfare.reforge.client.AuthorShoreSandboxTest"
     ],
     "pc": [
       "com.rustedwarfare.reforge.pc.PatrolJsonlPairingTest",
@@ -201,7 +203,8 @@
       "com.rustedwarfare.reforge.testing.AuthorWaterScenarioTest",
       "com.rustedwarfare.reforge.testing.AuthorConstructionScenarioTest",
       "com.rustedwarfare.reforge.testing.AuthorFactoryScenarioTest",
-      "com.rustedwarfare.reforge.testing.AuthorUpgradeScenarioTest"
+      "com.rustedwarfare.reforge.testing.AuthorUpgradeScenarioTest",
+      "com.rustedwarfare.reforge.testing.AuthorShoreScenarioTest"
     ]
   },
   "short": [
@@ -563,6 +566,39 @@
       "id": "author-upgrade-player-views-json",
       "scenario": "scenarios/author-upgrade-views-json.json",
       "contract": "contracts/author-upgrade-views-json.json"
+    },
+    {
+      "id": "author-shore-core-ini",
+      "scenario": "scenarios/author-shore-ini.json",
+      "contract": "contracts/author-shore-ini.json"
+    },
+    {
+      "id": "author-shore-session-ini",
+      "scenario": "platform/scenarios/author-shore-ini.json",
+      "contract": "platform/contracts/author-shore-ini.json",
+      "backend": "session"
+    },
+    {
+      "id": "author-shore-core-json",
+      "scenario": "scenarios/author-shore-json.json",
+      "contract": "contracts/author-shore-json.json"
+    },
+    {
+      "id": "author-shore-session-json",
+      "scenario": "platform/scenarios/author-shore-json.json",
+      "contract": "platform/contracts/author-shore-json.json",
+      "backend": "session"
+    },
+    {
+      "id": "author-shore-core-hjson",
+      "scenario": "scenarios/author-shore-hjson.json",
+      "contract": "contracts/author-shore-hjson.json"
+    },
+    {
+      "id": "author-shore-session-hjson",
+      "scenario": "platform/scenarios/author-shore-hjson.json",
+      "contract": "platform/contracts/author-shore-hjson.json",
+      "backend": "session"
     }
   ],
   "long": [

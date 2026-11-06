@@ -1,0 +1,9 @@
+{
+  // Existing sea exit and explicit WATER foundation; no new ship ID.
+  "format": "rw-reforge.factory.v1",
+  "copyFrom": [
+    "factory-base.ini"
+  ],
+  "productionUnits": "spcruiser",
+  "exitProfile": "NATIVE_SEA"
+}

@@ -1,0 +1,81 @@
+{
+  "schemaVersion": 1,
+  "scenarioId": "author-shore-hjson",
+  "inputs": "../../inputs/author-shore/hjson",
+  "contentPack": {
+    "directory": "package",
+    "unitId": "spbuilder"
+  },
+  "intents": [
+    {
+      "intentId": "select-builder",
+      "kind": "select",
+      "unitId": "a",
+      "position": {
+        "x": 110,
+        "y": 210
+      }
+    },
+    {
+      "intentId": "approach-shore",
+      "kind": "move",
+      "unitId": "a",
+      "position": {
+        "x": 170,
+        "y": 210
+      },
+      "waitSteps": 180
+    },
+    {
+      "intentId": "build-shipyard",
+      "kind": "build",
+      "unitId": "a",
+      "typeId": "spshipyard",
+      "position": {
+        "x": 250,
+        "y": 210
+      },
+      "waitSteps": 300
+    },
+    {
+      "intentId": "select-shipyard",
+      "kind": "select",
+      "position": {
+        "x": 250,
+        "y": 210
+      }
+    },
+    {
+      "intentId": "produce-ship",
+      "kind": "produce",
+      "typeId": "spcruiser",
+      "waitSteps": 600
+    },
+    {
+      "intentId": "wait-exit",
+      "kind": "select",
+      "position": {
+        "x": 250,
+        "y": 210
+      },
+      "waitSteps": 150
+    },
+    {
+      "intentId": "select-ship",
+      "kind": "select",
+      "position": {
+        "x": 249,
+        "y": 345
+      }
+    },
+    {
+      "intentId": "sail",
+      "kind": "move",
+      "position": {
+        "x": 250,
+        "y": 430
+      },
+      "waitSteps": 300
+    }
+  ]
+}
