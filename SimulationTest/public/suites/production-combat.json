@@ -207,7 +207,9 @@
       "com.rustedwarfare.reforge.testing.AuthorUpgradeScenarioTest",
       "com.rustedwarfare.reforge.testing.AuthorShoreScenarioTest",
       "com.rustedwarfare.reforge.testing.AuthorNavalChainScenarioTest",
-      "com.rustedwarfare.reforge.testing.AuthorNavalChainSessionTest"
+      "com.rustedwarfare.reforge.testing.AuthorNavalChainSessionTest",
+      "com.rustedwarfare.reforge.testing.RunnerToolCostTest",
+      "com.rustedwarfare.reforge.testing.perf.WholeChainToolCostTest"
     ]
   },
   "short": [

@@ -49,7 +49,7 @@ object WholeChainPerfMain {
                 put("os", System.getProperty("os.name")); put("arch", System.getProperty("os.arch")); put("processors", Runtime.getRuntime().availableProcessors())
                 put("jvmArgs", JsonArray(ManagementFactory.getRuntimeMXBean().inputArguments.map(::JsonPrimitive)))
                 put("arguments", JsonArray(args.map(::JsonPrimitive))); put("purpose", if (mode == "qualify") "functional-only; timings are probe data, no final performance verdict" else "maintainer final measurement; no numeric acceptance threshold")
-                put("batchBoundary", "submit+advance+light sampling+raw serialization/write+inline geometry/knowledge oracle; excludes init/close and final second-pass qualification")
+                put("batchBoundary", "submit+advance+light sampling+raw serialization/write+inline geometry/knowledge oracle; excludes init/close and completion validation and summary construction")
                 put("lightBoundary", "drain diagnostics+knowledge snapshot+heap sample; trace/output separately timed")
                 put("fullTraceBoundary", "same movement/search raw plus all 2000 knowledge/visibility cells each step; costs separately timed")
                 put("unavailable", "GPU/native/process memory, individual GC pause distribution, async queue latency; frame/input sampled by separate platform collector")

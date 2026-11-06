@@ -20,7 +20,8 @@ data class WholeChainRun(val fixture: WholeChainFixture, val requests: Int,
     val steps: List<WholeChainStep>, val initial: Observation, val initialKnown: List<Boolean?>,
     val arrived: Set<String>, val cancelled: Set<String>, val moved: Set<String>,
     val reuseEntitySteps: Long, val initNanos: Long, val submitNanos: Long, val firstResponseNanos: Long, val wallNanos: Long,
-    val memory: JsonObject, val fullTrace: Boolean) {
+    val memory: JsonObject, val fullTrace: Boolean,
+    val completionValidationNanos: Long = 0L) {
     val searches get() = steps.flatMap { it.samples }
 }
 
@@ -188,25 +189,39 @@ object WholeChainPerf {
             }
             val run = WholeChainRun(f, f.count, steps, initial, initialKnown, arrived, cancelled, moved, reuse,
                 initNanos, submitNanos, firstResponseNanos, wall, memory, fullTrace)
-            qualify(run)
-            raw(buildJsonObject { put("kind", "completion"); put("summary", summary(run)) })
-            return run
+            val validationStarted = System.nanoTime()
+            // Every captured step already passed verifyStep after its raw record was
+            // emitted. Keep final invariants here; public offline qualify replays all steps.
+            checkEnvelope(run)
+            checkCompletion(run)
+            val measured = run.copy(completionValidationNanos = System.nanoTime() - validationStarted)
+            raw(buildJsonObject { put("kind", "completion"); put("summary", summary(measured)) })
+            return measured
         } finally { context.close() }
     }
 
     fun qualify(run: WholeChainRun) {
-        val f = run.fixture
-        check(run.requests == f.count && run.steps.isNotEmpty() && run.steps.size <= MAX_STEPS)
-        check(run.steps.map { it.step } == run.steps.indices.toList()) { "Missing steps" }
-        check(run.searches.filter { it.reason == PathSearchReason.USER_MOVE }.map { it.unitId }.toSet() == f.goals.keys)
-        check(run.searches.count { it.reason == PathSearchReason.USER_MOVE } == f.count) { "Idle entities counted as load" }
+        checkEnvelope(run)
         var previous = run.initial; var known = run.initialKnown
-        val oracle = StepOracle(f)
+        val oracle = StepOracle(run.fixture)
         val nearTimes = mutableMapOf<String,Double>()
         for (step in run.steps) {
             verifyStep(oracle, previous, known, step.observation, step.known, step.visible, step.samples, step.step, nearTimes)
             previous = step.observation; known = step.known
         }
+        checkCompletion(run)
+    }
+
+    private fun checkEnvelope(run: WholeChainRun) {
+        val f = run.fixture
+        check(run.requests == f.count && run.steps.isNotEmpty() && run.steps.size <= MAX_STEPS)
+        check(run.steps.map { it.step } == run.steps.indices.toList()) { "Missing steps" }
+        check(run.searches.filter { it.reason == PathSearchReason.USER_MOVE }.map { it.unitId }.toSet() == f.goals.keys)
+        check(run.searches.count { it.reason == PathSearchReason.USER_MOVE } == f.count) { "Idle entities counted as load" }
+    }
+
+    private fun checkCompletion(run: WholeChainRun) {
+        val f = run.fixture
         val terminal = run.steps.takeLast(TAIL + 1)
         check(terminal.size == TAIL + 1 && terminal.all { s -> s.observation.units.all { it.moveTarget == null && it.pathPoints.isEmpty() && it.speed == 0.0 && it.movementState == MovementState.IDLE && it.angularVelocity.isFinite() } }) { "Missing terminal tail within 2500" }
         for ((a, b) in terminal.zipWithNext()) check(a.observation.units == b.observation.units) { "Stopped terminal drift" }
@@ -380,6 +395,16 @@ object WholeChainPerf {
             put("candidatesChecked", searches.sumOf { it.candidatesChecked }); put("popped", searches.sumOf { it.popped }); put("expanded", searches.sumOf { it.expanded })
             put("enqueued", searches.sumOf { it.enqueued }); put("neighborsChecked", searches.sumOf { it.neighborsChecked }); put("heuristicCalls", searches.sumOf { it.heuristicCalls })
         }); put("memory", r.memory)
+        put("toolCosts", buildJsonObject {
+            put("clock", "System.nanoTime")
+            put("initializationNanos", r.initNanos)
+            put("advanceNanos", r.steps.sumOf { it.advanceNanos })
+            put("samplingNanos", r.steps.sumOf { it.sampleNanos })
+            put("onlineValidationNanos", r.steps.sumOf { it.verifyNanos })
+            put("traceEnvelopeNanos", r.steps.sumOf { it.traceNanos })
+            put("completionValidationNanos", r.completionValidationNanos)
+            put("boundary", "Loop stages are disjoint; trace envelope includes JSON preparation and the raw callback. Completion validation follows the loop; fixture preparation, summary construction and final close are outside these fields.")
+        })
     }
     private fun gc(): Pair<Long, Long> = ManagementFactory.getGarbageCollectorMXBeans().let { beans ->
         if (beans.isEmpty() || beans.any { it.collectionCount < 0 || it.collectionTime < 0 }) -1L to -1L
