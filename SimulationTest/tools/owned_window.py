@@ -40,6 +40,32 @@ def validate(expected, state, foreground=True, size=True):
         raise GuardFailure('owned-keyboard-layout-changed')
     return state
 
+
+def focus_owned_once(api,expected,record,sleep=time.sleep):
+    """One ordinary click in this client's noninteractive header, with no activation fallback."""
+    state=validate(expected,api.snapshot(),foreground=False)
+    if state['width']<16 or state['height']<16:raise GuardFailure('initial-owned-header-unavailable')
+    def idle():
+        if (any(api.pressed('mouse',v) for v in ('left','right')) or
+                any(api.pressed('key',v) for v in (16,17,18,32))):
+            raise GuardFailure('initial-unowned-input-held')
+    idle();point=(state['x']+8,state['y']+8)
+    if not api.point_owned(*point):raise GuardFailure('initial-owned-header-occluded')
+    api.move(*point)
+    after=validate(expected,api.snapshot(),foreground=False)
+    if (after['x'],after['y'])!=(state['x'],state['y']):raise GuardFailure('initial-owned-client-moved')
+    if api.cursor()!=point or not api.point_owned(*point):raise GuardFailure('initial-owned-cursor-readback-failed')
+    idle();down=False
+    try:
+        api.send('mouse','left',False);down=True
+        record(dict(kind='single-initial-owned-header-click',point=point,window=after))
+        sleep(.06)
+    finally:
+        if down:api.send('mouse','left',True)
+    sleep(.15)
+    observed=api.snapshot();record(dict(kind='owned-initial-focus-observed',window=observed))
+    return validate(expected,observed,foreground=True)
+
 class Guard:
     def __init__(self, api, expected, record, sleep=time.sleep):
         self.api, self.expected, self.record, self.sleep = api, dict(expected), record, sleep
@@ -168,12 +194,31 @@ class Guard:
         if path.exists():
             raise FileExistsError('never-overwrite-capture')
         before = self.check()
+        self.check_capture_exposure(before)
         bitmap = self.api.capture((before['x'], before['y'], before['x'] + before['width'], before['y'] + before['height']))
         after = self.check()
         if before != after:
             raise GuardFailure('capture-window-changed')
+        self.check_capture_exposure(after)
         bitmap.save(path)
-        self.record({'kind': 'captured-owned-no-activation', 'path': str(path), 'window': after})
+        pixels={'size':list(bitmap.size),'mode':bitmap.mode}
+        reason=None
+        if bitmap.size!=(before['width'],before['height']):reason='capture-client-size-mismatch'
+        elif bitmap.mode not in ('RGB','RGBA'):reason='capture-pixel-format-unavailable'
+        else:
+            pixels['extrema']=bitmap.getextrema()
+            if all(high==0 for low,high in pixels['extrema'][:3]):reason='capture-black-buffer'
+            elif bitmap.mode=='RGBA' and pixels['extrema'][3][1]==0:reason='capture-transparent-buffer'
+        self.record({'kind': 'rejected-owned-capture' if reason else 'captured-owned-no-activation',
+                     'path': str(path), 'window': after,'pixels':pixels,'reason':reason})
+        if reason:raise GuardFailure(reason)
+
+    def check_capture_exposure(self,state):
+        xs={state['x']+1,state['x']+(state['width']-1)//2,state['x']+state['width']-2}
+        ys={state['y']+1,state['y']+(state['height']-1)//2,state['y']+state['height']-2}
+        points=[{'x':x,'y':y,'owned':bool(self.api.point_owned(x,y))} for x in sorted(xs) for y in sorted(ys)]
+        self.record({'kind':'owned-capture-exposure','window':state,'points':points})
+        if not all(p['owned'] for p in points):raise GuardFailure('owned-client-occluded')
 
     def close_owned(self):
         self.check_identity(foreground=False)
@@ -252,17 +297,38 @@ class Win32:
         self.bound_state = dict(bound)
         return dict(bound)
 
-    def initial_focus_once(self, allowed):
+    def initial_focus_once(self, allowed, record=None):
         if not allowed or self.initial_focus_used: raise GuardFailure('no-initial-focus-grant')
         self.initial_focus_used = True
         if not self.bound_state: raise GuardFailure('initial-focus-without-owned-binding')
         expected = getattr(self, 'input_state', None)
         if not expected: raise GuardFailure('initial-focus-without-qualified-input-state')
         validate(expected, self.snapshot(), foreground=False)
-        # The sole activation call in this helper; no thread attachment or fallback.
-        self.u.SetForegroundWindow(self.hwnd)
+        return focus_owned_once(self,expected,record or (lambda row:None))
+
+    def place_for_input(self,record):
+        """Expose only our ordinary window on a measured monitor, without activation."""
+        before=validate(self.input_state,self.snapshot(),foreground=False)
+        monitors=[]
+        callback_type=ctypes.WINFUNCTYPE(W.BOOL,W.HANDLE,W.HDC,ctypes.POINTER(W.RECT),W.LPARAM)
+        @callback_type
+        def collect(monitor,dc,rect,data):
+            r=rect.contents;monitors.append((r.left,r.top,r.right,r.bottom));return True
+        if not self.u.EnumDisplayMonitors(None,None,collect,0):raise GuardFailure('monitor-inventory-unavailable')
+        choices=[b for b in monitors if b[2]-b[0]>=before['width']+120 and b[3]-b[1]>=before['height']+120]
+        if not choices:raise GuardFailure('no-monitor-contains-owned-client')
+        preferred=[b for b in choices if b[0]>0]
+        left,top,right,bottom=max(preferred or choices,key=lambda b:(b[2]-b[0])*(b[3]-b[1]))
+        # HWND_TOP is an ordinary z-order placement; never topmost and never activate.
+        if not self.u.SetWindowPos(self.hwnd,None,left+40,top+40,0,0,0x0011):
+            raise GuardFailure('owned-nonactivating-placement-failed')
         time.sleep(.15)
-        validate(expected, self.snapshot(), foreground=True)
+        observed=validate(self.input_state,self.snapshot(),foreground=False)
+        record(dict(kind='owned-nonactivating-monitor-placement',monitors=monitors,before=before,observed=observed,flags=0x0011))
+        if observed['foreground']!=before['foreground']:raise GuardFailure('nonactivating-placement-changed-focus')
+        if not (left<=observed['x'] and observed['x']+observed['width']<=right and
+                top<=observed['y'] and observed['y']+observed['height']<=bottom):
+            raise GuardFailure('placed-owned-client-outside-measured-monitor')
 
     def loaded_english_layout(self):
         # Read-only enumeration: never load/install/activate a global layout.
@@ -381,7 +447,7 @@ class Win32:
 
     def capture(self, box):
         from PIL import ImageGrab
-        return ImageGrab.grab(bbox=box)
+        return ImageGrab.grab(bbox=box,all_screens=True)
 
     def close_message(self):
         if not self.u.PostMessageW(self.hwnd, 0x0010, 0, 0): raise GuardFailure('owned-WM_CLOSE-failed')

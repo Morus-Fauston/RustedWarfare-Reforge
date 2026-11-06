@@ -73,7 +73,7 @@ class SandboxSession(scenario: Scenario, private val evidence: ClientEvidence = 
         rejectedFeedback = false
         feedback = "Group $index: ${selectedIds.size} selected"
         evidence.recordWhenEnabled("group-recall") { mapOf("group" to index, "additive" to additive,
-            "selectedIds" to selectedIds.toList(), "center" to center?.fields()) }
+            "selectedIds" to selectedIds.toList(), "selectionRevision" to selectionRevision, "center" to center?.fields()) }
         return center
     }
     var lastCommandBatch: SelectionCommandBatch? = null
@@ -326,7 +326,8 @@ class SandboxSession(scenario: Scenario, private val evidence: ClientEvidence = 
                 selection.select(listOf(id), mode)
         } else if (mode == SelectionMode.REPLACE) selection.select(emptyList())
         feedback = selectedId?.let { "Selected $it" } ?: "No selection"
-        evidence.recordWhenEnabled("selection") { mapOf("selectedId" to selectedId, "world" to position.fields()) }
+        evidence.recordWhenEnabled("selection") { mapOf("selectedId" to selectedId, "selectedIds" to selectedIds.sorted(),
+            "selectionRevision" to selectionRevision, "world" to position.fields()) }
     }
 
     fun tap(position: Position) {

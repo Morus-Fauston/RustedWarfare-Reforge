@@ -9,6 +9,19 @@ import tempfile
 
 
 class PlatformIntentTest(unittest.TestCase):
+    def test_windows_geometry_uses_the_frozen_loaded_map_dimensions_not_an_old_filename(self):
+        from platform_scenario import windows_geometry
+        with tempfile.TemporaryDirectory() as temporary:
+            root=Path(temporary);maps=root/'inputSnapshot/maps';maps.mkdir(parents=True)
+            (maps/'naval-shore.tmx').write_text('<map width="40" height="30" tilewidth="20" tileheight="20"/>')
+            records=[dict(kind='load-graphics-ready',generation=1,worldWidth=800,worldHeight=600),
+                     dict(kind='load-ready',generation=1,mapWidth=40,mapHeight=30)]
+            self.assertEqual(dict(worldWidth=800,worldHeight=600),windows_geometry(root,records))
+            for changed in ([dict(records[0],worldWidth=900),records[1]],
+                            [records[0],dict(records[1],generation=2)],
+                            [records[0],dict(records[1],mapWidth=41)]):
+                with self.assertRaises(PlatformError):windows_geometry(root,changed)
+
     def test_history_binds_formal_action_identity_parameters_and_production_fifo(self):
         from platform_scenario import session_anchors
         sample=dict(worldId='w',stepIndex=-1,simulationTime=0,balance=100,weapons=[],

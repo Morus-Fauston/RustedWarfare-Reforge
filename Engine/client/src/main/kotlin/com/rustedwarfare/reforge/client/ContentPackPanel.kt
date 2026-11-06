@@ -2,6 +2,7 @@ package com.rustedwarfare.reforge.client
 
 import com.badlogic.gdx.graphics.Color
 import com.badlogic.gdx.graphics.g2d.BitmapFont
+import com.badlogic.gdx.math.Rectangle
 import com.badlogic.gdx.scenes.scene2d.Actor
 import com.badlogic.gdx.scenes.scene2d.Group
 import com.badlogic.gdx.scenes.scene2d.ui.*
@@ -101,6 +102,26 @@ class ContentPackPanel(private val state: ContentPackSelectionSession, skin: Ski
 
     fun setEditable(value: Boolean) { editable = value; availability() }
     fun setStatus(value: String?) { status = value; availability() }
+
+    /** Read the same actors and labels as the menu; input still goes through the platform. */
+    internal fun drawnActions(): List<DrawnAction> {
+        val actions = mutableListOf(
+        DrawnAction("content-directory", directory, directory.text, enabled = !directory.isDisabled),
+        DrawnAction("content-check", inspect, inspect.text.toString(), enabled = !inspect.isDisabled),
+        DrawnAction("content-enable", enabled, enabled.text.toString(), enabled = !enabled.isDisabled),
+        DrawnAction("content-unit", selected, selected.selected.orEmpty(), enabled = !selected.isDisabled))
+        val list = selected.list
+        if (list.stage != null && list.isTouchable) {
+            val top = list.height - (list.style.background?.topHeight ?: 0f)
+            for (index in 0 until list.items.size) {
+                val item = list.items[index]
+                actions += DrawnAction("content-unit:$item", list, item,
+                    enabled = !selected.isDisabled, localBounds = Rectangle(0f,
+                        top - (index + 1) * list.itemHeight, list.width, list.itemHeight))
+            }
+        }
+        return actions
+    }
 
     private fun availability() {
         directory.isDisabled = !editable || state.busy

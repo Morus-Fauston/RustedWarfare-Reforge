@@ -78,6 +78,7 @@ class BootstrapScreen(
     private val constructionCards = linkedMapOf<String, ConstructionCard>()
     private var constructionHover: String? = null
     private lateinit var reclaimCard: Table
+    private lateinit var reclaimText: Label
     private lateinit var reclaimInput: ReclaimButtonInput
     private var reclaimHover = false
     private var nativeSelection: Set<String> = emptySet()
@@ -127,6 +128,7 @@ class BootstrapScreen(
         val balance: Long?, val queue: com.rustedwarfare.reforge.core.sim.FactoryQueueObservation?,
         val patrolMode: Boolean, val patrolPoints: Int, val reclaimMode: Boolean, val workerQueueText: String?, val menu: ActionMenuView?)
     private var lastHudState: HudState? = null
+    private val drawnActionLayout = DrawnActionLayout()
 
     override fun create() {
         createPresentation()
@@ -135,6 +137,7 @@ class BootstrapScreen(
 
     private fun createPresentation() {
         lastHudState = null
+        drawnActionLayout.invalidate()
         val created = mutableListOf<() -> Unit>()
         try {
         batch = SpriteBatch().also { created += { it.dispose() } }
@@ -228,7 +231,8 @@ class BootstrapScreen(
         reclaimCard = Table(skin).also { table ->
             table.touchable = Touchable.enabled
             table.setBounds(752f, 280f, 84f, 54f)
-            table.add(Label("Reclaim", skin).apply { setAlignment(Align.center); touchable = Touchable.disabled })
+            reclaimText = Label("Reclaim", skin).apply { setAlignment(Align.center); touchable = Touchable.disabled }
+            table.add(reclaimText)
             reclaimInput = ReclaimButtonInput({ session }, { nativePanel && !paused },
                 { mapInput.beginReclaim() }, { lastHudState = null; updateHud() },
                 { reclaimHover = it; lastHudState = null }, modeRevision = { mapInput.modeRevision })
@@ -330,7 +334,7 @@ class BootstrapScreen(
             evidence.recordWhenEnabled("content-pack-menu") { mapOf("busy" to packState.busy,
                 "enabled" to packState.enabled, "canEnable" to packState.canEnable, "canStart" to packState.canStart,
                 "input" to packState.inputPath?.toString(), "checkedId" to packState.checked?.id,
-                "unitId" to packState.selectedUnitId, "error" to packState.error,
+                "unitId" to packState.selectedUnitId, "availableUnits" to packState.availableUnits.toList(), "error" to packState.error,
                 "enabledIds" to packState.enabledPackages.map { it.id }, "compositionError" to packState.compositionError,
                 "effectiveSources" to packState.composition?.provenance?.mapValues { (_, origin) -> mapOf(
                     "packageId" to origin.packageId, "entryPath" to origin.entryPath.toString(),
@@ -632,6 +636,64 @@ class BootstrapScreen(
                 "boundary" to "World and Stage draw submitted; native pixels/input receipts are separate evidence"))
             firstDrawnGeneration = generation
         }
+        recordDrawnActions(drawnNanos)
+    }
+
+    private fun recordDrawnActions(drawnNanos: Long) {
+        if (evidence === ClientEvidence.NONE) return
+        val current = session
+        val menu = current?.actionMenu
+        val entries = mutableListOf<DrawnAction>()
+        fun button(id: String, actor: TextButton) {
+            entries += DrawnAction(id, actor, actor.text.toString(), enabled = !actor.isDisabled)
+        }
+        button("start-match", startButton); button("exit-match", exitButton)
+        button("content-tab", packTab)
+        packPanel?.let { entries += it.drawnActions() }
+        button("stop", stopButton); button("choose-patrol", patrolButton)
+        val nativeActive = nativePanel && !paused && current?.isOpen == true
+        val productionSlots = listOf(nativeProduceButton to nativeProduceText,
+            secondProduceButton to secondProduceText, thirdProduceButton to thirdProduceText)
+        menu?.production?.forEachIndexed { index, action ->
+            productionSlots.getOrNull(index)?.let { (actor, label) ->
+                entries += DrawnAction("produce:${action.typeId}", actor, label.text.toString(), enabled = nativeActive)
+                entries += DrawnAction("cancel-production:${action.typeId}", actor, label.text.toString(),
+                    button = "right", enabled = nativeActive)
+            }
+        }
+        menu?.production?.firstOrNull()?.let { action ->
+            button("produce:${action.typeId}", produceButton)
+            button("cancel-production:${action.typeId}", cancelProductionButton)
+        }
+        for ((type, card) in constructionCards) {
+            entries += DrawnAction("choose-construction:$type", card.table, card.text.text.toString(),
+                enabled = nativeActive && menu?.construction?.any { it.typeId == type } == true)
+        }
+        entries += DrawnAction("choose-reclaim", reclaimCard, reclaimText.text.toString(), enabled = nativeActive && menu?.canMaintain == true)
+        menu?.upgrades?.singleOrNull()?.takeIf { it.kind == UpgradePresentationKind.ECONOMIC }?.let { action ->
+            entries += DrawnAction("upgrade:${action.actionKey}", economicUpgradeCard,
+                economicUpgradeText.text.toString(), enabled = nativeActive)
+            entries += DrawnAction("cancel-upgrade:${action.actionKey}", economicUpgradeCard,
+                economicUpgradeText.text.toString(), button = "right", enabled = nativeActive)
+        }
+        for ((key, actors) in upgradeButtons) {
+            val action = menu?.upgrades?.firstOrNull { it.actionKey == key && it.kind == UpgradePresentationKind.DEFENSE }
+            entries += DrawnAction("upgrade:$key", actors.first, actors.first.text.toString(),
+                enabled = nativeActive && action != null && !actors.first.isDisabled)
+            entries += DrawnAction("cancel-upgrade:$key", actors.second, actors.second.text.toString(),
+                enabled = nativeActive && action?.progress != null && !actors.second.isDisabled)
+        }
+        val selected = current?.selectedIds.orEmpty()
+        val projection = graphics?.projection?.let { map -> mapOf("worldWidth" to map.worldWidth,
+            "worldHeight" to map.worldHeight, "left" to map.left, "bottom" to map.bottom, "scale" to map.scale,
+            "areaLeft" to map.mapArea.left, "areaBottom" to map.mapArea.bottom,
+            "areaWidth" to map.mapArea.width, "areaHeight" to map.mapArea.height) }
+        val frame = ActionLayoutFrame(generation, current?.selectionRevision ?: 0, selected.toList(),
+            current?.observation?.units.orEmpty().filter { it.unitId in selected }.associate { it.unitId to it.typeId },
+            menuEpoch, mapOf("width" to Gdx.graphics.width, "height" to Gdx.graphics.height,
+                "screenX" to viewport.screenX, "screenY" to viewport.screenY,
+                "screenWidth" to viewport.screenWidth, "screenHeight" to viewport.screenHeight), projection)
+        drawnActionLayout.afterDraw(stage.root, frame, entries, drawnNanos)?.let { evidence.record("action-layout", it) }
     }
 
     private fun updateHud() {

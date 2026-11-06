@@ -31,6 +31,9 @@ def source_files(repo):
     paths += [repo / 'SimulationTest/tools' / name for name in
               ['platform_scenario.py', 'test_platform_scenario.py', 'test_platform_session_cli.py', 'test_named_weapon_platform.py',
                'workflow_scenarios.py', 'test_workflow_scenarios.py',
+               'diagnostic_reader.py', 'test_diagnostic_reader.py',
+               'action_layout.py', 'test_action_layout.py',
+               'platform_windows.py', 'owned_window.py', 'test_owned_window.py',
                'workflow.py', 'workflow_inputs.py', 'workflow_device.py', 'workflow_windows.py',
                'workflow_reuse.py', 'perf_report.py', 'platform_perf.py', 'test_workflow.py',
                'test_workflow_device.py', 'test_workflow_windows.py', 'test_workflow_reuse.py', 'test_perf_analysis.py',

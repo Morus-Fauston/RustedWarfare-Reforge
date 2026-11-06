@@ -60,7 +60,7 @@ def value_at(sample, path):
     return current
 
 
-def compare_intent(records, intent, rule, after_sequence, geometry=None):
+def validate_intent_contract(intent,rule):
     assertions = rule.get('assertions')
     if (not isinstance(assertions, list) or not assertions or
             any(not isinstance(a, dict) or a.get('operator') not in ('equals', 'deltaEquals', 'equalsActionTarget') or
@@ -69,6 +69,11 @@ def compare_intent(records, intent, rule, after_sequence, geometry=None):
             not intent.get('intentId') or intent.get('intentId') != rule.get('intentId') or
             not rule.get('actionType') or not rule.get('unitId') or type(rule.get('accepted')) is not bool):
         raise PlatformError('input-contract', 'Invalid or empty fixed intent contract', 1)
+
+
+def compare_intent(records, intent, rule, after_sequence, geometry=None):
+    validate_intent_contract(intent,rule)
+    assertions=rule['assertions']
     actions = [r for r in records if r.get('sequence', -1) > after_sequence and
                r.get('kind') == 'action' and r.get('type') == rule['actionType']]
     if len(actions) != 1:
@@ -672,6 +677,31 @@ def session_anchors(records):
     return anchors
 
 
+def windows_geometry(output,records):
+    graphics=[r for r in records if r.get('kind')=='load-graphics-ready']
+    ready=[r for r in records if r.get('kind')=='load-ready']
+    if not graphics:
+        # Preserve pre-instrumentation short archives without inventing a new map choice.
+        path=Path(output)/'inputSnapshot/maps/p001-controlled.tmx'
+        if not path.is_file():raise PlatformError('input-geometry','Legacy archive has no fixed controlled map')
+        root=ET.parse(path).getroot()
+        return dict(worldWidth=int(root.get('width'))*int(root.get('tilewidth')),
+                    worldHeight=int(root.get('height'))*int(root.get('tileheight')))
+    if len(graphics)!=1 or len(ready)!=1 or graphics[0].get('generation')!=ready[0].get('generation'):
+        raise PlatformError('input-geometry','One successful graphics/map generation required')
+    g,r=graphics[0],ready[0]
+    width,height=g.get('worldWidth'),g.get('worldHeight')
+    if any(type(v) not in (int,float) or not math.isfinite(v) or v<=0 for v in (width,height)):
+        raise PlatformError('input-geometry','Finite positive loaded map dimensions required')
+    for path in sorted((Path(output)/'inputSnapshot/maps').glob('*.tmx')):
+        root=ET.parse(path).getroot()
+        if (int(root.get('width'))==r.get('mapWidth') and int(root.get('height'))==r.get('mapHeight') and
+                int(root.get('width'))*int(root.get('tilewidth'))==width and
+                int(root.get('height'))*int(root.get('tileheight'))==height):
+            return dict(worldWidth=width,worldHeight=height)
+    raise PlatformError('input-geometry','Loaded graphics geometry has no matching frozen input map')
+
+
 def compare_archive(output):
     output = Path(output)
     archive = read(output / 'archive.json')
@@ -724,9 +754,7 @@ def compare_archive(output):
     records = [json.loads(line) for line in raw.splitlines()]
     geometry = None
     if backend == 'windows-input':
-        root = ET.parse(output/'inputSnapshot/maps/p001-controlled.tmx').getroot()
-        geometry = dict(worldWidth=int(root.get('width'))*int(root.get('tilewidth')),
-                        worldHeight=int(root.get('height'))*int(root.get('tileheight')))
+        geometry = windows_geometry(output,records)
     return compare_run(records, plan, read(output/'contract.json'), read(output/'intents.json'), geometry)
 
 
