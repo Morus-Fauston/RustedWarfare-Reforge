@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "suiteId": "public.production-combat.v1",
   "inputScope": "public",
-  "fixture": "inputs/content-movement-knowledge/P001-\u79fb\u52a8\u6c99\u76d2\u8f93\u5165",
+  "fixture": "inputs/content-movement-knowledge/P001-移动沙盒输入",
   "tests": {
     "core": [
       "com.rustedwarfare.reforge.core.content.CombatContentLoadTest",
@@ -167,7 +167,8 @@
       "com.rustedwarfare.reforge.client.AuthorConstructionSandboxTest",
       "com.rustedwarfare.reforge.client.AuthorFactorySandboxTest",
       "com.rustedwarfare.reforge.client.AuthorUpgradeSandboxTest",
-      "com.rustedwarfare.reforge.client.AuthorShoreSandboxTest"
+      "com.rustedwarfare.reforge.client.AuthorShoreSandboxTest",
+      "com.rustedwarfare.reforge.client.AuthorNavalChainSandboxTest"
     ],
     "pc": [
       "com.rustedwarfare.reforge.pc.PatrolJsonlPairingTest",
@@ -204,7 +205,9 @@
       "com.rustedwarfare.reforge.testing.AuthorConstructionScenarioTest",
       "com.rustedwarfare.reforge.testing.AuthorFactoryScenarioTest",
       "com.rustedwarfare.reforge.testing.AuthorUpgradeScenarioTest",
-      "com.rustedwarfare.reforge.testing.AuthorShoreScenarioTest"
+      "com.rustedwarfare.reforge.testing.AuthorShoreScenarioTest",
+      "com.rustedwarfare.reforge.testing.AuthorNavalChainScenarioTest",
+      "com.rustedwarfare.reforge.testing.AuthorNavalChainSessionTest"
     ]
   },
   "short": [
@@ -598,6 +601,39 @@
       "id": "author-shore-session-hjson",
       "scenario": "platform/scenarios/author-shore-hjson.json",
       "contract": "platform/contracts/author-shore-hjson.json",
+      "backend": "session"
+    },
+    {
+      "id": "author-naval-chain-core-ini",
+      "scenario": "scenarios/author-naval-chain-ini.json",
+      "contract": "contracts/author-naval-chain-ini.json"
+    },
+    {
+      "id": "author-naval-chain-session-ini",
+      "scenario": "platform/scenarios/author-naval-chain-ini.json",
+      "contract": "platform/contracts/author-naval-chain-ini.json",
+      "backend": "session"
+    },
+    {
+      "id": "author-naval-chain-core-json",
+      "scenario": "scenarios/author-naval-chain-json.json",
+      "contract": "contracts/author-naval-chain-json.json"
+    },
+    {
+      "id": "author-naval-chain-session-json",
+      "scenario": "platform/scenarios/author-naval-chain-json.json",
+      "contract": "platform/contracts/author-naval-chain-json.json",
+      "backend": "session"
+    },
+    {
+      "id": "author-naval-chain-core-hjson",
+      "scenario": "scenarios/author-naval-chain-hjson.json",
+      "contract": "contracts/author-naval-chain-hjson.json"
+    },
+    {
+      "id": "author-naval-chain-session-hjson",
+      "scenario": "platform/scenarios/author-naval-chain-hjson.json",
+      "contract": "platform/contracts/author-naval-chain-hjson.json",
       "backend": "session"
     }
   ],

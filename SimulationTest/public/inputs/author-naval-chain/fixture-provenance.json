@@ -1,0 +1,197 @@
+{
+  "scope": "All copied public inputs are existing repository-owned fixtures. No original or derived original pixels. New hull/dock values are authored example parameters, not original balance facts.",
+  "unchangedCopies": {
+    "ini/assets/naval-ground.png": {
+      "source": "SimulationTest/public/inputs/author-shore/ini/assets/naval-ground.png",
+      "sha256": "9c32ebad05ee1c22011d8639a9f1674704967b0ed225b384726d11c654ed6cde"
+    },
+    "ini/maps/p001-controlled.tmx": {
+      "source": "SimulationTest/public/inputs/author-shore/ini/maps/p001-controlled.tmx",
+      "sha256": "e1c3bfd8ac6f83df83e59b6b15a7886f0ea7fd35424ec197aefa12521eae5330"
+    },
+    "ini/package/units/base.ini": {
+      "source": "SimulationTest/public/inputs/author-shore/ini/package/units/base.ini",
+      "sha256": "0a6f3edcc4f48a5d10a775ce9fe6ec4fad8b6ced66807c0a7808608c0a3e7e8f"
+    },
+    "ini/package/units/base-constructor.ini": {
+      "source": "SimulationTest/public/inputs/author-shore/ini/package/units/base-constructor.ini",
+      "sha256": "ada1ada5be91d3ad922ce1cbe422d336d93cba6f4b9411884e393e7ccdacb128"
+    },
+    "ini/package/units/factory-base.ini": {
+      "source": "SimulationTest/public/inputs/author-shore/ini/package/units/factory-base.ini",
+      "sha256": "45b23b0bd67f5529b2fb22b223edab8cd43ff405453b03935791e407cc0e4616"
+    },
+    "ini/package/units/builder.png": {
+      "source": "SimulationTest/public/inputs/author-shore/ini/package/units/builder.png",
+      "sha256": "15060aa3fb36bffd4414e803beb8f5d9b2982ed14bb497fbca6cadd3de18cc1b"
+    },
+    "ini/package/units/builder_dead.png": {
+      "source": "SimulationTest/public/inputs/author-shore/ini/package/units/builder_dead.png",
+      "sha256": "15060aa3fb36bffd4414e803beb8f5d9b2982ed14bb497fbca6cadd3de18cc1b"
+    },
+    "ini/package/units/workshop.png": {
+      "source": "SimulationTest/public/inputs/author-shore/ini/package/units/workshop.png",
+      "sha256": "828526850b5b4981b0dec3b295d01e9bb6ade18d2ab11525dc8fa841aadb25b5"
+    },
+    "ini/package/units/workshop_back.png": {
+      "source": "SimulationTest/public/inputs/author-shore/ini/package/units/workshop_back.png",
+      "sha256": "19862e56ddba457e83054e4729053f80f7aa74ec2a4ef24843f0899382d566a0"
+    },
+    "ini/package/units/workshop_dead.png": {
+      "source": "SimulationTest/public/inputs/author-shore/ini/package/units/workshop_dead.png",
+      "sha256": "4d7fa123ae28bd96d8435d558513cedafdf52a252365ee73d6c48f2c632d8706"
+    },
+    "ini/package/units/ship.png": {
+      "source": "SimulationTest/public/inputs/author-shore/ini/package/units/ship.png",
+      "sha256": "fed347e885f6b394f48ebb3f82a3c7deb86ce6cd73e1035715b2be69fdb87a1f"
+    },
+    "ini/package/units/ship_dead.png": {
+      "source": "SimulationTest/public/inputs/author-shore/ini/package/units/ship_dead.png",
+      "sha256": "b3b38d14f12c1cc7dada9e25ac1ee1c5a126472ec36f561c37d0949fbdc256a7"
+    },
+    "ini/package/units/cannon.png": {
+      "source": "SimulationTest/public/inputs/author-shore/ini/package/units/cannon.png",
+      "sha256": "786ebb3167e16227585aa46f179ccc0fb21136deec159be7d9cf82708918550b"
+    },
+    "ini/package/units/hull-base.ini": {
+      "source": "SimulationTest/public/inputs/author-shore/ini/package/units/spcruiser.ini",
+      "sha256": "57e035d8903873461c60824205154b28a641eba399e45e76bd4cb87142087178"
+    },
+    "ini/package/units/underwaterTarget.ini": {
+      "source": "SimulationTest/public/inputs/naval-production/ini/production-package/units/naval/underwaterTarget.ini",
+      "sha256": "0283ff50809b75d4dc758a91295d5fd25ac70f50b04d31bed084c657e8ad7dc2"
+    },
+    "ini/package/units/underwater_target.png": {
+      "source": "SimulationTest/public/inputs/naval-production/ini/production-package/units/naval/underwater_target.png",
+      "sha256": "bc8f3bf04c77313d277018f3da1296e7c85cc255086ff26d6fe23ef7113b8a6b"
+    },
+    "json/assets/naval-ground.png": {
+      "source": "SimulationTest/public/inputs/author-shore/json/assets/naval-ground.png",
+      "sha256": "9c32ebad05ee1c22011d8639a9f1674704967b0ed225b384726d11c654ed6cde"
+    },
+    "json/maps/p001-controlled.tmx": {
+      "source": "SimulationTest/public/inputs/author-shore/json/maps/p001-controlled.tmx",
+      "sha256": "e1c3bfd8ac6f83df83e59b6b15a7886f0ea7fd35424ec197aefa12521eae5330"
+    },
+    "json/package/units/base.ini": {
+      "source": "SimulationTest/public/inputs/author-shore/json/package/units/base.ini",
+      "sha256": "0a6f3edcc4f48a5d10a775ce9fe6ec4fad8b6ced66807c0a7808608c0a3e7e8f"
+    },
+    "json/package/units/base-constructor.ini": {
+      "source": "SimulationTest/public/inputs/author-shore/json/package/units/base-constructor.ini",
+      "sha256": "ada1ada5be91d3ad922ce1cbe422d336d93cba6f4b9411884e393e7ccdacb128"
+    },
+    "json/package/units/factory-base.ini": {
+      "source": "SimulationTest/public/inputs/author-shore/json/package/units/factory-base.ini",
+      "sha256": "45b23b0bd67f5529b2fb22b223edab8cd43ff405453b03935791e407cc0e4616"
+    },
+    "json/package/units/builder.png": {
+      "source": "SimulationTest/public/inputs/author-shore/json/package/units/builder.png",
+      "sha256": "15060aa3fb36bffd4414e803beb8f5d9b2982ed14bb497fbca6cadd3de18cc1b"
+    },
+    "json/package/units/builder_dead.png": {
+      "source": "SimulationTest/public/inputs/author-shore/json/package/units/builder_dead.png",
+      "sha256": "15060aa3fb36bffd4414e803beb8f5d9b2982ed14bb497fbca6cadd3de18cc1b"
+    },
+    "json/package/units/workshop.png": {
+      "source": "SimulationTest/public/inputs/author-shore/json/package/units/workshop.png",
+      "sha256": "828526850b5b4981b0dec3b295d01e9bb6ade18d2ab11525dc8fa841aadb25b5"
+    },
+    "json/package/units/workshop_back.png": {
+      "source": "SimulationTest/public/inputs/author-shore/json/package/units/workshop_back.png",
+      "sha256": "19862e56ddba457e83054e4729053f80f7aa74ec2a4ef24843f0899382d566a0"
+    },
+    "json/package/units/workshop_dead.png": {
+      "source": "SimulationTest/public/inputs/author-shore/json/package/units/workshop_dead.png",
+      "sha256": "4d7fa123ae28bd96d8435d558513cedafdf52a252365ee73d6c48f2c632d8706"
+    },
+    "json/package/units/ship.png": {
+      "source": "SimulationTest/public/inputs/author-shore/json/package/units/ship.png",
+      "sha256": "fed347e885f6b394f48ebb3f82a3c7deb86ce6cd73e1035715b2be69fdb87a1f"
+    },
+    "json/package/units/ship_dead.png": {
+      "source": "SimulationTest/public/inputs/author-shore/json/package/units/ship_dead.png",
+      "sha256": "b3b38d14f12c1cc7dada9e25ac1ee1c5a126472ec36f561c37d0949fbdc256a7"
+    },
+    "json/package/units/cannon.png": {
+      "source": "SimulationTest/public/inputs/author-shore/json/package/units/cannon.png",
+      "sha256": "786ebb3167e16227585aa46f179ccc0fb21136deec159be7d9cf82708918550b"
+    },
+    "json/package/units/hull-base.ini": {
+      "source": "SimulationTest/public/inputs/author-shore/ini/package/units/spcruiser.ini",
+      "sha256": "57e035d8903873461c60824205154b28a641eba399e45e76bd4cb87142087178"
+    },
+    "json/package/units/underwaterTarget.json": {
+      "source": "SimulationTest/public/inputs/naval-production/json/production-package/units/naval/underwaterTarget.json",
+      "sha256": "0e97a0ab19c3ef833664a8e67c43feddae745ba986c6694e6b67dc3125cfef1d"
+    },
+    "json/package/units/underwater_target.png": {
+      "source": "SimulationTest/public/inputs/naval-production/json/production-package/units/naval/underwater_target.png",
+      "sha256": "bc8f3bf04c77313d277018f3da1296e7c85cc255086ff26d6fe23ef7113b8a6b"
+    },
+    "hjson/assets/naval-ground.png": {
+      "source": "SimulationTest/public/inputs/author-shore/hjson/assets/naval-ground.png",
+      "sha256": "9c32ebad05ee1c22011d8639a9f1674704967b0ed225b384726d11c654ed6cde"
+    },
+    "hjson/maps/p001-controlled.tmx": {
+      "source": "SimulationTest/public/inputs/author-shore/hjson/maps/p001-controlled.tmx",
+      "sha256": "e1c3bfd8ac6f83df83e59b6b15a7886f0ea7fd35424ec197aefa12521eae5330"
+    },
+    "hjson/package/units/base.ini": {
+      "source": "SimulationTest/public/inputs/author-shore/hjson/package/units/base.ini",
+      "sha256": "0a6f3edcc4f48a5d10a775ce9fe6ec4fad8b6ced66807c0a7808608c0a3e7e8f"
+    },
+    "hjson/package/units/base-constructor.ini": {
+      "source": "SimulationTest/public/inputs/author-shore/hjson/package/units/base-constructor.ini",
+      "sha256": "ada1ada5be91d3ad922ce1cbe422d336d93cba6f4b9411884e393e7ccdacb128"
+    },
+    "hjson/package/units/factory-base.ini": {
+      "source": "SimulationTest/public/inputs/author-shore/hjson/package/units/factory-base.ini",
+      "sha256": "45b23b0bd67f5529b2fb22b223edab8cd43ff405453b03935791e407cc0e4616"
+    },
+    "hjson/package/units/builder.png": {
+      "source": "SimulationTest/public/inputs/author-shore/hjson/package/units/builder.png",
+      "sha256": "15060aa3fb36bffd4414e803beb8f5d9b2982ed14bb497fbca6cadd3de18cc1b"
+    },
+    "hjson/package/units/builder_dead.png": {
+      "source": "SimulationTest/public/inputs/author-shore/hjson/package/units/builder_dead.png",
+      "sha256": "15060aa3fb36bffd4414e803beb8f5d9b2982ed14bb497fbca6cadd3de18cc1b"
+    },
+    "hjson/package/units/workshop.png": {
+      "source": "SimulationTest/public/inputs/author-shore/hjson/package/units/workshop.png",
+      "sha256": "828526850b5b4981b0dec3b295d01e9bb6ade18d2ab11525dc8fa841aadb25b5"
+    },
+    "hjson/package/units/workshop_back.png": {
+      "source": "SimulationTest/public/inputs/author-shore/hjson/package/units/workshop_back.png",
+      "sha256": "19862e56ddba457e83054e4729053f80f7aa74ec2a4ef24843f0899382d566a0"
+    },
+    "hjson/package/units/workshop_dead.png": {
+      "source": "SimulationTest/public/inputs/author-shore/hjson/package/units/workshop_dead.png",
+      "sha256": "4d7fa123ae28bd96d8435d558513cedafdf52a252365ee73d6c48f2c632d8706"
+    },
+    "hjson/package/units/ship.png": {
+      "source": "SimulationTest/public/inputs/author-shore/hjson/package/units/ship.png",
+      "sha256": "fed347e885f6b394f48ebb3f82a3c7deb86ce6cd73e1035715b2be69fdb87a1f"
+    },
+    "hjson/package/units/ship_dead.png": {
+      "source": "SimulationTest/public/inputs/author-shore/hjson/package/units/ship_dead.png",
+      "sha256": "b3b38d14f12c1cc7dada9e25ac1ee1c5a126472ec36f561c37d0949fbdc256a7"
+    },
+    "hjson/package/units/cannon.png": {
+      "source": "SimulationTest/public/inputs/author-shore/hjson/package/units/cannon.png",
+      "sha256": "786ebb3167e16227585aa46f179ccc0fb21136deec159be7d9cf82708918550b"
+    },
+    "hjson/package/units/hull-base.ini": {
+      "source": "SimulationTest/public/inputs/author-shore/ini/package/units/spcruiser.ini",
+      "sha256": "57e035d8903873461c60824205154b28a641eba399e45e76bd4cb87142087178"
+    },
+    "hjson/package/units/underwaterTarget.hjson": {
+      "source": "SimulationTest/public/inputs/naval-production/hjson/production-package/units/naval/underwaterTarget.hjson",
+      "sha256": "0e97a0ab19c3ef833664a8e67c43feddae745ba986c6694e6b67dc3125cfef1d"
+    },
+    "hjson/package/units/underwater_target.png": {
+      "source": "SimulationTest/public/inputs/naval-production/hjson/production-package/units/naval/underwater_target.png",
+      "sha256": "bc8f3bf04c77313d277018f3da1296e7c85cc255086ff26d6fe23ef7113b8a6b"
+    }
+  }
+}

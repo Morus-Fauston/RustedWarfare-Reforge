@@ -1,0 +1,216 @@
+{
+  "schemaVersion": 1,
+  "kind": "behavior-contract",
+  "contractId": "public.author-naval-chain.contract.v1",
+  "scope": "self-behavior",
+  "scenarioIds": [
+    "public.author-naval-chain.v1"
+  ],
+  "comparison": {
+    "numberMode": "declared-per-field",
+    "tolerances": {}
+  },
+  "approval": {
+    "status": "tool-fixture-only",
+    "source": "Owned content-only ordinary constructor, water dock700/.004, paid T2 upgrade900/.004, FIFO corvette350/.002 and frigate450/.002, inherited named guns. Explicit core prelude starts builder110/150 eastward; ordinary menu starts110/210. Build180, ready499, upgrade700 completes949, first1700/second2201. Movement completion, physical stop and final position are separate existing policies D086/D088/D092; no new radius/tolerance, steering rule, original, platform or performance claim."
+  },
+  "exclusions": [
+    "original-compatibility",
+    "platform-input",
+    "performance"
+  ],
+  "rules": [
+    {
+      "ruleId": "first-charge",
+      "when": {
+        "phase": "after-advance",
+        "stepIndex": 180
+      },
+      "assertions": [
+        {
+          "path": "economy.balances.p1",
+          "operator": "equals",
+          "value": 2300
+        },
+        {
+          "path": "units.constructed:p1:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.constructionProgress",
+          "operator": "equals",
+          "value": 0
+        }
+      ]
+    },
+    {
+      "ruleId": "ready-t1",
+      "when": {
+        "phase": "after-advance",
+        "stepIndex": 499
+      },
+      "assertions": [
+        {
+          "path": "units.constructed:p1:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.constructionProgress",
+          "operator": "equals",
+          "value": 1
+        },
+        {
+          "path": "units.constructed:p1:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.health",
+          "operator": "equals",
+          "value": 1200
+        }
+      ]
+    },
+    {
+      "ruleId": "upgrade-charge",
+      "when": {
+        "phase": "after-advance",
+        "stepIndex": 700
+      },
+      "assertions": [
+        {
+          "path": "economy.balances.p1",
+          "operator": "equals",
+          "value": 1400
+        }
+      ]
+    },
+    {
+      "ruleId": "ready-t2",
+      "when": {
+        "phase": "after-advance",
+        "stepIndex": 949
+      },
+      "assertions": [
+        {
+          "path": "units.constructed:p1:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.type",
+          "operator": "equals",
+          "value": "spdockt2"
+        },
+        {
+          "path": "units.constructed:p1:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.health",
+          "operator": "equals",
+          "value": 1800
+        }
+      ]
+    },
+    {
+      "ruleId": "paid-fifo",
+      "when": {
+        "phase": "after-advance",
+        "stepIndex": 1200
+      },
+      "assertions": [
+        {
+          "path": "economy.balances.p1",
+          "operator": "equals",
+          "value": 600
+        }
+      ]
+    },
+    {
+      "ruleId": "first-born",
+      "when": {
+        "phase": "after-advance",
+        "stepIndex": 1700
+      },
+      "assertions": [
+        {
+          "path": "units.produced:p1:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb.type",
+          "operator": "equals",
+          "value": "spcorvette"
+        },
+        {
+          "path": "units.produced:p1:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb.health",
+          "operator": "equals",
+          "value": 1200
+        }
+      ]
+    },
+    {
+      "ruleId": "second-born",
+      "when": {
+        "phase": "after-advance",
+        "stepIndex": 2201
+      },
+      "assertions": [
+        {
+          "path": "units.produced:p1:cccccccccccccccccccccccccccccccc.type",
+          "operator": "equals",
+          "value": "spfrigate"
+        },
+        {
+          "path": "units.produced:p1:cccccccccccccccccccccccccccccccc.health",
+          "operator": "equals",
+          "value": 1600
+        }
+      ]
+    },
+    {
+      "ruleId": "stopped-second",
+      "when": {
+        "phase": "after-advance",
+        "stepIndex": 3199
+      },
+      "assertions": [
+        {
+          "path": "units.produced:p1:cccccccccccccccccccccccccccccccc.speed",
+          "operator": "equals",
+          "value": 0
+        },
+        {
+          "path": "units.produced:p1:cccccccccccccccccccccccccccccccc.moveTarget",
+          "operator": "equals",
+          "value": null
+        },
+        {
+          "path": "units.produced:p1:cccccccccccccccccccccccccccccccc.tasks",
+          "operator": "equals",
+          "value": []
+        },
+        {
+          "path": "economy.balances.p1",
+          "operator": "equals",
+          "value": 600
+        }
+      ]
+    }
+  ],
+  "constructedUnits": [
+    {
+      "unitId": "constructed:p1:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "buildActionId": "build-shipyard",
+      "builderId": "a",
+      "owner": "p1",
+      "typeId": "spdock",
+      "buildingNonce": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "birthStepIndex": 180
+    }
+  ],
+  "producedUnits": [
+    {
+      "unitId": "produced:p1:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "productionActionId": "produce-corvette",
+      "producerId": "constructed:p1:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "owner": "p1",
+      "typeId": "spcorvette",
+      "unitNonce": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "birthStepIndex": 1700
+    },
+    {
+      "unitId": "produced:p1:cccccccccccccccccccccccccccccccc",
+      "productionActionId": "produce-frigate",
+      "producerId": "constructed:p1:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "owner": "p1",
+      "typeId": "spfrigate",
+      "unitNonce": "cccccccccccccccccccccccccccccccc",
+      "birthStepIndex": 2201
+    }
+  ],
+  "convertedUnits": [
+    {
+      "unitId": "constructed:p1:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "upgradeActionId": "upgrade-shipyard",
+      "sourceTypeId": "spdock",
+      "targetTypeId": "spdockt2",
+      "completionStepIndex": 949
+    }
+  ]
+}

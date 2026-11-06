@@ -1,0 +1,31 @@
+{
+  "format": "rw-reforge.content-pack.v1",
+  "id": "sp-author-naval-chain-ini",
+  "name": "Owned shore upgrade and two inherited ships",
+  "units": [
+    {
+      "type": "constructor",
+      "file": "units/spbuilder.ini"
+    },
+    {
+      "type": "factory",
+      "file": "units/spdock.ini"
+    },
+    {
+      "type": "factory",
+      "file": "units/spdockt2.ini"
+    },
+    {
+      "type": "water-combat",
+      "file": "units/spcorvette.ini"
+    },
+    {
+      "type": "water-combat",
+      "file": "units/spfrigate.ini"
+    },
+    {
+      "type": "underwater-target",
+      "file": "units/underwaterTarget.ini"
+    }
+  ]
+}

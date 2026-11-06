@@ -1,0 +1,107 @@
+{
+  "schemaVersion": 1,
+  "scenarioId": "author-naval-chain-hjson",
+  "rules": [
+    {
+      "intentId": "select-builder"
+    },
+    {
+      "intentId": "approach-shore"
+    },
+    {
+      "intentId": "build-dock"
+    },
+    {
+      "intentId": "select-dock"
+    },
+    {
+      "intentId": "upgrade-t2"
+    },
+    {
+      "intentId": "buy-corvette"
+    },
+    {
+      "intentId": "buy-frigate"
+    },
+    {
+      "intentId": "wait-first-exit"
+    },
+    {
+      "intentId": "select-corvette"
+    },
+    {
+      "intentId": "sail-corvette"
+    },
+    {
+      "intentId": "attack-builder"
+    },
+    {
+      "intentId": "select-frigate"
+    },
+    {
+      "intentId": "sail-frigate"
+    },
+    {
+      "intentId": "observe-stopped-frigate"
+    }
+  ],
+  "history": {
+    "initialBalance": 3000,
+    "initialOwnedTypes": [
+      "spbuilder"
+    ],
+    "ownerPlayerId": "p1",
+    "projectileBirthsRequired": true,
+    "spend": [
+      {
+        "intentId": "build-dock",
+        "amount": 700,
+        "at": "first-step"
+      },
+      {
+        "intentId": "upgrade-t2",
+        "amount": 900,
+        "at": "action"
+      },
+      {
+        "intentId": "buy-corvette",
+        "amount": 350,
+        "at": "action"
+      },
+      {
+        "intentId": "buy-frigate",
+        "amount": 450,
+        "at": "action"
+      }
+    ],
+    "finalUnits": [
+      {
+        "ownerPlayerId": "p1",
+        "typeId": "spdockt2",
+        "fields": {
+          "alive": true,
+          "health": 1800,
+          "maxHealth": 1800
+        }
+      },
+      {
+        "ownerPlayerId": "p1",
+        "typeId": "spcorvette",
+        "fields": {
+          "alive": true,
+          "health": 1200,
+          "maxHealth": 1200
+        }
+      },
+      {
+        "ownerPlayerId": "p1",
+        "typeId": "spfrigate",
+        "fields": {
+          "alive": true,
+          "health": 1600,
+          "maxHealth": 1600
+        }
+      }
+    ]
+  }
+}

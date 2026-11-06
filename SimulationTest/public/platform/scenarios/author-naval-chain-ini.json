@@ -1,0 +1,125 @@
+{
+  "schemaVersion": 1,
+  "scenarioId": "author-naval-chain-ini",
+  "inputs": "../../inputs/author-naval-chain/ini",
+  "contentPack": {
+    "directory": "package",
+    "unitId": "spbuilder"
+  },
+  "intents": [
+    {
+      "intentId": "select-builder",
+      "kind": "select",
+      "position": {
+        "x": 110,
+        "y": 210
+      }
+    },
+    {
+      "intentId": "approach-shore",
+      "kind": "move",
+      "position": {
+        "x": 170,
+        "y": 150
+      },
+      "waitSteps": 180
+    },
+    {
+      "intentId": "build-dock",
+      "kind": "build",
+      "typeId": "spdock",
+      "position": {
+        "x": 250,
+        "y": 150
+      },
+      "waitSteps": 600
+    },
+    {
+      "intentId": "select-dock",
+      "kind": "select",
+      "position": {
+        "x": 250,
+        "y": 150
+      }
+    },
+    {
+      "intentId": "upgrade-t2",
+      "kind": "upgrade",
+      "upgradeId": "spdockt2",
+      "waitSteps": 300
+    },
+    {
+      "intentId": "buy-corvette",
+      "kind": "produce",
+      "typeId": "spcorvette"
+    },
+    {
+      "intentId": "buy-frigate",
+      "kind": "produce",
+      "typeId": "spfrigate",
+      "waitSteps": 600
+    },
+    {
+      "intentId": "wait-first-exit",
+      "kind": "select",
+      "position": {
+        "x": 250,
+        "y": 150
+      },
+      "waitSteps": 200
+    },
+    {
+      "intentId": "select-corvette",
+      "kind": "select",
+      "position": {
+        "x": 249,
+        "y": 285
+      }
+    },
+    {
+      "intentId": "sail-corvette",
+      "kind": "move",
+      "position": {
+        "x": 300,
+        "y": 210
+      },
+      "waitSteps": 200
+    },
+    {
+      "intentId": "attack-builder",
+      "kind": "attack",
+      "position": {
+        "x": 350,
+        "y": 210
+      },
+      "waitSteps": 400,
+      "targetUnitId": "b"
+    },
+    {
+      "intentId": "select-frigate",
+      "kind": "select",
+      "position": {
+        "x": 249,
+        "y": 285
+      }
+    },
+    {
+      "intentId": "sail-frigate",
+      "kind": "move",
+      "position": {
+        "x": 250,
+        "y": 430
+      },
+      "waitSteps": 600
+    },
+    {
+      "intentId": "observe-stopped-frigate",
+      "kind": "select",
+      "position": {
+        "x": 250,
+        "y": 430
+      },
+      "waitSteps": 500
+    }
+  ]
+}

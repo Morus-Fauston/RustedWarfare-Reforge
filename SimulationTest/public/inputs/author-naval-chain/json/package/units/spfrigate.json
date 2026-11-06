@@ -1,0 +1,14 @@
+{
+  "format": "rw-reforge.unit.v1",
+  "copyFrom": [
+    "spcorvette.json"
+  ],
+  "core": {
+    "name": "spfrigate",
+    "price": 450,
+    "maxHp": 1600
+  },
+  "movement": {
+    "moveSpeed": 1.0
+  }
+}
