@@ -33,6 +33,7 @@
       "com.rustedwarfare.reforge.core.sim.ProductionTransactionTest",
       "com.rustedwarfare.reforge.core.sim.S4ProjectileCandidateTest",
       "com.rustedwarfare.reforge.core.sim.WorldProductionTest",
+      "com.rustedwarfare.reforge.core.sim.UnitRegistrationTest",
       "com.rustedwarfare.reforge.core.sim.PointDefenseContractTest",
       "com.rustedwarfare.reforge.core.sim.PointDefenseLifecycleTest",
       "com.rustedwarfare.reforge.core.sim.PointDefenseTransactionTest",

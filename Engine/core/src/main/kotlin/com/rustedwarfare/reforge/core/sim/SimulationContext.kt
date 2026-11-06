@@ -879,39 +879,7 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
     private fun advanceProduction(factory: MutableUnit, input: Scenario) {
         val tick = checkNotNull(productionLedger).advance(factory.unitId)
         tick.completed?.let { completed ->
-            check(completed.ownerPlayerId == factory.ownerPlayerId)
-            val definition = input.unitDefinitions.getValue(completed.typeId)
-            val publicId = "produced:${factory.ownerPlayerId}:${completed.unitNonce}"
-            check(publicId !in units) { "A paid production nonce must identify a new unit" }
-            val birth = FactoryExit.birth(factory, definition, input.map)
-            val position = birth.position
-            require(MapBounds.contains(input.map.widthTiles.toDouble() * input.map.tileWidth,
-                input.map.heightTiles.toDouble() * input.map.tileHeight, position, definition.radius)) {
-                "Produced unit collision circle must remain within the map"
-            }
-            val objectId = nextObjectId
-            nextObjectId = Math.addExact(nextObjectId, 1L)
-            lastBirthSerial = Math.incrementExact(lastBirthSerial)
-            val updateKey = "~produced/" + lastBirthSerial.toString().padStart(20, '0')
-            check(orderedUnits().lastOrNull()?.updateKey?.let { it < updateKey } != false)
-            val exit = birth.target
-            val born = MutableUnit(publicId, factory.ownerPlayerId, completed.typeId, definition, position, birth.heading,
-                objectId = objectId, updateKey = updateKey, producerId = factory.unitId, birthRemaining = birth.protection)
-            if (factory.definition.production?.exitProfile == com.rustedwarfare.reforge.core.content.FactoryExitProfile.CUSTOM_MECH) {
-                factory.productionSide = !factory.productionSide
-                if (birth.fallback) pendingEvents += Event("production-exit-fallback", publicId)
-            }
-            if (MapBounds.contains(input.map.widthTiles.toDouble() * input.map.tileWidth,
-                    input.map.heightTiles.toDouble() * input.map.tileHeight, exit, definition.radius)) {
-                born.moveTarget = exit
-                born.originMoveId = "production-exit:$publicId"
-                born.adoptRoute(listOf(exit), exit, -1L)
-            } else {
-                pendingEvents += Event("movement-cancelled", publicId)
-                pendingEvents += Event("path-unreachable", publicId)
-            }
-            units[publicId] = born
-            pendingEvents += Event("unit-produced", publicId)
+            UnitRegistration.produced(steps.current, input, factory, completed)
         }
         productionLedger = tick.ledger
     }
@@ -1086,16 +1054,7 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
         lastBirthSerial = 0L
         buildingWork = BuildingWork.initial()
         nextScenario.units.sortedBy { it.unitId }.forEach { spawn ->
-            units[spawn.unitId] = MutableUnit(
-                unitId = spawn.unitId,
-                ownerPlayerId = spawn.ownerPlayerId,
-                typeId = spawn.typeId,
-                definition = checkNotNull(nextScenario.unitDefinitions[spawn.typeId]),
-                position = spawn.position,
-                heading = policies.coordinates.normalize(spawn.heading),
-                height = checkNotNull(nextScenario.unitDefinitions[spawn.typeId]).movement.flight?.startingHeightOffset ?: spawn.height,
-                objectId = nextScenario.combatContract?.unitObjectIds?.getValue(spawn.unitId),
-            )
+            UnitRegistration.initial(steps.current, nextScenario, spawn, policies.coordinates)
         }
         missileTargets = if (nextScenario.unitDefinitions.values.any { it.combat?.projectile?.missile != null })
             MissileTargetIndex.initial(nextScenario.map, orderedUnits()) else null
