@@ -880,7 +880,76 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
         productionLedger = tick.ledger
     }
 
-    fun advance(step: Step): Observation {
+    internal fun isCurrentSandboxWorld(handle: WorldHandle): Boolean = !closed && activeWorld === handle
+
+    internal fun validateSandboxSpawn(command: SandboxCommand.Spawn, generation: Long, sequence: Long): SimulationError? {
+        val input = checkNotNull(scenario)
+        fun rejected(code: String) = SimulationError(code, "Sandbox spawn rejected: $code")
+        val definition = input.unitDefinitions[command.typeId] ?: return rejected("unknown-type")
+        if (UnitRegistration.sandboxId(command.ownerPlayerId, generation, sequence) in units)
+            return rejected("duplicate-unit-id")
+        if (input.players.none { it.playerId == command.ownerPlayerId }) return rejected("unknown-owner")
+        if (command.state == SandboxInitialState.DAMAGED && definition.maximumHealth == null)
+            return rejected("unsupported-state")
+        if (definition.production != null && productionLedger == null) return rejected("unsupported-type")
+        if (!command.heading.isFinite() || !MapBounds.contains(input.map.widthTiles.toDouble() * input.map.tileWidth,
+                input.map.heightTiles.toDouble() * input.map.tileHeight, command.position, definition.radius))
+            return rejected("invalid-placement")
+        if (definition.building?.requiresResourcePool != true && definition.movement.type != MovementType.AIR &&
+            policies.terrain.intersects(buildingTerrain?.collisionMap ?: input.map, command.position,
+                definition.radius, definition.foundationMovementType)) return rejected("invalid-placement")
+        if (definition.building != null) {
+            val cells = try {
+                BuildingTerrain.placementCells(input.map, definition, command.position, buildingTerrain?.cells.orEmpty())
+            } catch (failure: BuildingInitializationException) { return rejected("invalid-placement") }
+            if (orderedUnits().any { unit ->
+                    unit.alive && unit.definition.building == null && unit.definition.movement.type != MovementType.AIR &&
+                        (MapBounds.cell(unit.position.x, input.map.tileWidth, input.map.widthTiles) to
+                            MapBounds.cell(unit.position.y, input.map.tileHeight, input.map.heightTiles)) in cells
+                }) return rejected("invalid-placement")
+        }
+        return null
+    }
+
+    internal fun advanceSandbox(step: Step, commands: List<Pair<SandboxCommandRequest, SandboxCommand.Spawn>>):
+            Pair<Observation, List<SandboxCommandReceipt>> {
+        val results = mutableListOf<SandboxCommandReceipt>()
+        val observation = advanceInternal(step) {
+            for ((request, command) in commands) {
+                val error = validateSandboxSpawn(command, request.generation, request.sequence)
+                if (error != null) {
+                    results += SandboxCommandReceipt(request.sequence, request.generation, world.id,
+                        SandboxCommandStatus.REJECTED, command, step.stepIndex, code = error.code)
+                    continue
+                }
+                val born = UnitRegistration.sandbox(steps.current, checkNotNull(scenario), command,
+                    request.generation, request.sequence, policies.coordinates)
+                born.definition.production?.let { production ->
+                    val input = checkNotNull(scenario)
+                    productionLedger = checkNotNull(productionLedger).register(born.unitId,
+                        FactoryProductionSpec(born.ownerPlayerId, production.unitTypeIds.associateWith {
+                            checkNotNull(input.unitDefinitions.getValue(it).build)
+                        }, born.definition.upgrades?.actions.orEmpty()))
+                }
+                ordinaryUpgrades = ordinaryUpgrades?.register(born.unitId, born.definition)
+                if (born.definition.building != null) {
+                    val input = checkNotNull(scenario)
+                    buildingTerrain = buildingTerrain?.let { BuildingTerrain.fromLive(input.map, units.values, it) }
+                        ?: BuildingTerrain.initial(input.copy(units = orderedUnits().filter { it.alive }.map {
+                            UnitSpawn(it.unitId, it.ownerPlayerId, it.typeId, it.position, it.heading, it.height)
+                        }))
+                }
+                pendingEvents += Event("unit-spawned", born.unitId)
+                results += SandboxCommandReceipt(request.sequence, request.generation, world.id,
+                    SandboxCommandStatus.APPLIED, command, step.stepIndex, born.unitId)
+            }
+        }
+        return observation to results
+    }
+
+    fun advance(step: Step): Observation = advanceInternal(step) {}
+
+    private fun advanceInternal(step: Step, deploy: () -> Unit): Observation {
         check(!closed) { "Simulation is closed" }
         val currentScenario = checkNotNull(scenario)
         require(step.stepIndex >= 0 && (!hasAdvanced || step.stepIndex > stepIndex)) {
@@ -894,6 +963,7 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
         return steps.advance(currentScenario, step, actions,
             { index, time, nextRevision -> makeObservation(index, time, true, nextRevision) }) { candidate ->
             combatFrame += 1
+            deploy()
             buildingWork = buildingWork.advanceClock(step.delta)
             actions.forEach { applyAction(it, step.stepIndex) }
             for (unit in orderedUnits()) if (unit.alive && unit.tasks.firstOrNull()?.kind == UnitTaskKind.PATROL)

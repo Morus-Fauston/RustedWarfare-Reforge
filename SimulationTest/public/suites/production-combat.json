@@ -118,7 +118,9 @@
       "com.rustedwarfare.reforge.core.sim.SeaFactoryProductionTest",
       "com.rustedwarfare.reforge.core.sim.SeaFactoryUpgradeTest",
       "com.rustedwarfare.reforge.core.sim.UnderwaterTargetContractTest",
-      "com.rustedwarfare.reforge.core.sim.WaterMovementTest"
+      "com.rustedwarfare.reforge.core.sim.WaterMovementTest",
+      "com.rustedwarfare.reforge.core.sim.SandboxCommandParserTest",
+      "com.rustedwarfare.reforge.core.sim.OfflineSandboxHostTest"
     ],
     "client": [
       "com.rustedwarfare.reforge.client.CombatActorEvidenceTest",

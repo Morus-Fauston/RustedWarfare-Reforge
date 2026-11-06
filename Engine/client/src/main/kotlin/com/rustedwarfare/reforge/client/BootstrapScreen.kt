@@ -42,6 +42,12 @@ class BootstrapScreen(
     private var session: SandboxSession? = null
     private var graphics: SandboxGraphics? = null
     private var sounds: SoundPlayback? = null
+    private lateinit var deploymentBox: CheckBox
+    private lateinit var commandField: TextField
+    private lateinit var commandFeedbackLabel: Label
+    private lateinit var commandHintLabel: Label
+    private lateinit var commandPanel: Table
+    private var commandConsoleOpen = false
     private lateinit var rootField: TextField
     private lateinit var selectedLabel: Label
     private lateinit var selectionHeading: Label
@@ -347,6 +353,17 @@ class BootstrapScreen(
             })
             stage.addActor(it)
         }
+        deploymentBox = CheckBox(" Sandbox deployment", skin).also {
+            it.isChecked = launch.configuration.options.deploymentEnabled
+            it.setBounds(752f, 176f, 176f, 40f)
+            it.addListener(object : ChangeListener() {
+                override fun changed(event: ChangeEvent, actor: Actor) {
+                    if (launch.canEdit) launch.configure(launch.configuration.copy(options =
+                        launch.configuration.options.copy(deploymentEnabled = deploymentBox.isChecked)))
+                }
+            })
+            stage.addActor(it)
+        }
         startButton = button("Start", 752f, 120f, 176f) { requestLoad() }
         visualPanel = visualState?.let { state -> VisualAssetSettingsPanel(state, skin, visualSettings?.let { it::createUiFont },
             contentChoice = packState::choice) {
@@ -402,7 +419,45 @@ class BootstrapScreen(
                 override fun touchUp(event: InputEvent, x: Float, y: Float, pointer: Int, button: Int) { owned = false }
             })
         })
-        Gdx.input.inputProcessor = InputMultiplexer(stage, object : InputAdapter() {
+        commandPanel = Table().also {
+            it.background = skin.newDrawable("white", Color(.07f, .10f, .09f, 1f))
+            it.setBounds(40f, 100f, 660f, 140f)
+            stage.addActor(it)
+        }
+        commandFeedbackLabel = label("", 48f, 232f, 644f, 84f).also {
+            it.setWrap(true); it.setAlignment(Align.topLeft)
+        }
+        commandField = TextField("", skin).also {
+            it.setOnlyFontChars(false); it.maxLength = 512
+            it.setBounds(48f, 108f, 644f, 34f); stage.addActor(it)
+        }
+        commandHintLabel = label("Sandbox: / for commands", 40f, 100f, 660f, 24f)
+        commandConsoleOpen = false
+        Gdx.input.inputProcessor = InputMultiplexer(object : InputAdapter() {
+            override fun keyDown(keycode: Int): Boolean {
+                if (keycode == Input.Keys.SLASH && !commandConsoleOpen && !paused && !loading &&
+                    !touchControls && session?.canDeploy == true && stage.keyboardFocus !is TextField) {
+                    mapInput.cancel()
+                    commandConsoleOpen = true
+                    commandField.text = ""
+                    stage.keyboardFocus = commandField
+                    lastHudState = null; updateHud()
+                    evidence.record("sandbox-console", mapOf("generation" to generation, "open" to true))
+                    return true
+                }
+                if (!commandConsoleOpen) return false
+                if (keycode == Input.Keys.ESCAPE) {
+                    closeCommandConsole(); updateHud(); return true
+                }
+                if (keycode == Input.Keys.ENTER) {
+                    session?.submitSandboxCommand(commandField.text)
+                    commandField.selectAll()
+                    lastHudState = null; updateHud(); return true
+                }
+                return false
+            }
+            override fun keyTyped(character: Char): Boolean = commandConsoleOpen && (character == '\r' || character == '\n')
+        }, stage, object : InputAdapter() {
             override fun keyDown(keycode: Int): Boolean {
                 if (!touchControls || keycode != Input.Keys.BACK) return false
                 leaveMatch()
@@ -497,7 +552,8 @@ class BootstrapScreen(
             evidence.record("load-request", mapOf("generation" to generation, "root" to activeRoot.toString(),
                 "acceptedNanos" to acceptedNanos, "menuEpoch" to menuEpoch,
                 "mode" to request.configuration.options.mode.name,
-                "shareAlliedVision" to request.configuration.options.shareAlliedVision))
+                "shareAlliedVision" to request.configuration.options.shareAlliedVision,
+                "deploymentEnabled" to request.configuration.options.deploymentEnabled))
             val contentPack = request.configuration.contentPack
             val prepare = visualState?.prepareForLoad(contentPack)
                 ?: visualSettings?.let { settings -> { settings.prepareForContent(request.configuration.visuals, contentPack) } }
@@ -510,6 +566,8 @@ class BootstrapScreen(
     private fun leaveMatch() {
         closeMatchResources()
         launch.exit()
+        launch.configure(launch.configuration.copy(options = launch.configuration.options.copy(deploymentEnabled = false)))
+        if (::deploymentBox.isInitialized) deploymentBox.isChecked = false
         if (visualState?.busy == true) visualState.cancel()
         menuDrawn = false
         if (presentationReady) { stage.unfocusAll(); updateHud() }
@@ -517,6 +575,7 @@ class BootstrapScreen(
     }
 
     private fun closeMatchResources() {
+        closeCommandConsole()
         cancelInput()
         loader.cancel()
         pendingLoad = null
@@ -571,7 +630,7 @@ class BootstrapScreen(
                     "startedNanos" to graphicsStartedNanos, "completedNanos" to System.nanoTime(),
                     "worldWidth" to pendingGraphics.projection.worldWidth, "worldHeight" to pendingGraphics.projection.worldHeight))
                 val runGeneration = generation
-                pendingSession = SandboxSession(scenario, evidence.withGeneration(runGeneration), request.configuration.options)
+                pendingSession = SandboxSession(scenario, evidence.withGeneration(runGeneration), request.configuration.options, generation = runGeneration)
                 pendingSounds = loaded.visuals?.resolvedSounds?.let { resources -> SoundPlayback(
                     pendingSession.consumeSounds(pendingGraphics.projection.soundListener()), resources,
                     soundFactory, evidence.withGeneration(runGeneration)) }
@@ -682,6 +741,10 @@ class BootstrapScreen(
         rateButtons.forEach { (rate, actor) -> button("set-speed:${rate.multiplier}", actor) }
         button("pause-simulation", simulationPauseButton)
         button("content-tab", packTab)
+        entries += DrawnAction("sandbox-deployment", deploymentBox, deploymentBox.text.toString(),
+            enabled = !deploymentBox.isDisabled)
+        entries += DrawnAction("sandbox-command-input", commandField, commandField.text,
+            enabled = commandConsoleOpen && current?.canDeploy == true)
         packPanel?.let { entries += it.drawnActions() }
         button("stop", stopButton); button("choose-patrol", patrolButton)
         val nativeActive = nativePanel && !paused && current?.isOpen == true
@@ -768,9 +831,24 @@ class BootstrapScreen(
             " | backlog ${lastPacingFrame.pendingSteps.toLong()}")
     }
 
+    private fun closeCommandConsole() {
+        if (!commandConsoleOpen) return
+        commandConsoleOpen = false
+        if (::commandField.isInitialized && stage.keyboardFocus === commandField) stage.keyboardFocus = null
+        lastHudState = null
+        evidence.record("sandbox-console", mapOf("generation" to generation, "open" to false))
+    }
+
     private fun updateHud() {
         if (!presentationReady) return
         val current = session
+        if (current?.canDeploy != true) closeCommandConsole()
+        val showConsole = commandConsoleOpen && current?.canDeploy == true
+        commandPanel.isVisible = showConsole
+        commandField.isVisible = showConsole
+        commandFeedbackLabel.isVisible = showConsole
+        commandFeedbackLabel.setText(current?.sandboxCommandFeedback ?: "")
+        commandHintLabel.isVisible = current?.canDeploy == true && !showConsole && !touchControls
         val menu = current?.actionMenu
         val selected = current?.observation?.units?.find { it.unitId == current.selectedId }
         val state = HudState(selected, current?.selectedIds ?: emptySet(), (1..3).map { current?.groupCount(it) ?: 0 }, current?.feedback, current?.observation?.stepIndex,
@@ -958,6 +1036,8 @@ class BootstrapScreen(
         rootField.isDisabled = touchControls || !launch.canEdit
         modeBox.isDisabled = !launch.canEdit
         shareBox.isDisabled = !launch.canEdit
+        deploymentBox.isVisible = launch.canEdit && !touchControls
+        deploymentBox.isDisabled = loading || !launch.canEdit || touchControls
         startButton.setText(if (launch.canEdit) "Start" else "Reopen")
         startButton.isDisabled = loading || launch.canEdit && (visualState?.canStart == false || !packState.canStart)
         visualsTab.isVisible = current == null && visualPanel != null

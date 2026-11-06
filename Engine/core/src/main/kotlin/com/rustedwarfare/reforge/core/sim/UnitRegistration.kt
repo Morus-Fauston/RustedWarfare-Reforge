@@ -43,6 +43,23 @@ internal object UnitRegistration {
         return born
     }
 
+    fun sandboxId(ownerPlayerId: String, generation: Long, sequence: Long): String =
+        "sandbox:$ownerPlayerId:$generation:$sequence"
+
+    fun sandbox(state: StepState, input: Scenario, command: SandboxCommand.Spawn,
+                generation: Long, sequence: Long, coordinates: CoordinatePolicy): MutableUnit {
+        val definition = input.unitDefinitions.getValue(command.typeId)
+        val id = sandboxId(command.ownerPlayerId, generation, sequence)
+        check(id !in state.units) { "Sandbox identity must be new" }
+        val identity = nextIdentity(state)
+        val unit = create(input, UnitSpawn(id, command.ownerPlayerId, command.typeId, command.position,
+            coordinates.normalize(command.heading), definition.movement.flight?.startingHeightOffset
+                ?: definition.fixedUnderwaterTarget?.height ?: 0.0), identity.objectId, identity.updateKey)
+        if (command.state == SandboxInitialState.DAMAGED) unit.health = checkNotNull(definition.maximumHealth) / 2.0
+        registerPrepared(state, unit)
+        return unit
+    }
+
     /** Prepares an unfinished site; the caller registers it after its own bookkeeping. */
     fun prepareConstruction(state: StepState, input: Scenario, ownerPlayerId: String, typeId: String,
                             position: Position, nonce: String): MutableUnit {

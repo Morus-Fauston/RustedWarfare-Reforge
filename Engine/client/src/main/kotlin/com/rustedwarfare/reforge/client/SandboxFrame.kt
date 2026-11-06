@@ -6,7 +6,8 @@ import java.util.Collections
 
 enum class SandboxMode { NO_FOG, MEMORY, HARDCORE }
 
-data class SandboxOptions(val mode: SandboxMode = SandboxMode.NO_FOG, val shareAlliedVision: Boolean = false) {
+data class SandboxOptions(val mode: SandboxMode = SandboxMode.NO_FOG, val shareAlliedVision: Boolean = false,
+                          val deploymentEnabled: Boolean = false) {
     internal fun knowledgeRules(): KnowledgeRules? = when (mode) {
         SandboxMode.NO_FOG -> null
         SandboxMode.MEMORY -> KnowledgeRules(TerrainRetention.MEMORY, PathInformationSource.PLAYER_KNOWLEDGE, shareAlliedVision)
