@@ -696,7 +696,10 @@ def save(path, document):
 
 
 def read(path):
-    return json.loads(Path(path).read_text(encoding='utf8'))
+    document = json.loads(Path(path).read_text(encoding='utf8'))
+    if isinstance(document, dict) and document.get('kind') == 'behavior-contract' and 'platform' in document:
+        return document['platform']
+    return document
 
 
 def tree(root):

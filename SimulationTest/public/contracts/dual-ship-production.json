@@ -1,0 +1,323 @@
+{
+  "schemaVersion": 1,
+  "kind": "behavior-contract",
+  "contractId": "public.author-naval-chain.contract.v1",
+  "scope": "self-behavior",
+  "scenarioIds": [
+    "public.author-naval-chain.v1"
+  ],
+  "comparison": {
+    "numberMode": "declared-per-field",
+    "tolerances": {}
+  },
+  "approval": {
+    "status": "tool-fixture-only",
+    "source": "Same menu/Core/Session seed starts builder110/210 eastward,3000 credits. Owned dock700/.004, T2 upgrade900/.004, FIFO corvette350/.002 and frigate450/.002. Existing construction, movement, steering and stopping policies unchanged; no original or performance claim. In this paired initial layout the ordinary builder approaches the site after Build180; actual site creation/charge is189. T1 must be complete by499; upgrade700 completes949, first1700/second2201. This is a self-owned fixture checkpoint, not an original timing standard."
+  },
+  "exclusions": [
+    "original-compatibility",
+    "platform-input",
+    "performance"
+  ],
+  "rules": [
+    {
+      "ruleId": "first-charge",
+      "when": {
+        "phase": "after-advance",
+        "stepIndex": 189
+      },
+      "assertions": [
+        {
+          "path": "economy.balances.p1",
+          "operator": "equals",
+          "value": 2300
+        },
+        {
+          "path": "units.constructed:p1:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.constructionProgress",
+          "operator": "equals",
+          "value": 0
+        }
+      ]
+    },
+    {
+      "ruleId": "ready-t1",
+      "when": {
+        "phase": "after-advance",
+        "stepIndex": 499
+      },
+      "assertions": [
+        {
+          "path": "units.constructed:p1:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.constructionProgress",
+          "operator": "equals",
+          "value": 1
+        },
+        {
+          "path": "units.constructed:p1:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.health",
+          "operator": "equals",
+          "value": 1200
+        }
+      ]
+    },
+    {
+      "ruleId": "upgrade-charge",
+      "when": {
+        "phase": "after-advance",
+        "stepIndex": 700
+      },
+      "assertions": [
+        {
+          "path": "economy.balances.p1",
+          "operator": "equals",
+          "value": 1400
+        }
+      ]
+    },
+    {
+      "ruleId": "ready-t2",
+      "when": {
+        "phase": "after-advance",
+        "stepIndex": 949
+      },
+      "assertions": [
+        {
+          "path": "units.constructed:p1:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.type",
+          "operator": "equals",
+          "value": "spdockt2"
+        },
+        {
+          "path": "units.constructed:p1:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.health",
+          "operator": "equals",
+          "value": 1800
+        }
+      ]
+    },
+    {
+      "ruleId": "paid-fifo",
+      "when": {
+        "phase": "after-advance",
+        "stepIndex": 1200
+      },
+      "assertions": [
+        {
+          "path": "economy.balances.p1",
+          "operator": "equals",
+          "value": 600
+        }
+      ]
+    },
+    {
+      "ruleId": "first-born",
+      "when": {
+        "phase": "after-advance",
+        "stepIndex": 1700
+      },
+      "assertions": [
+        {
+          "path": "units.produced:p1:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb.type",
+          "operator": "equals",
+          "value": "spcorvette"
+        },
+        {
+          "path": "units.produced:p1:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb.health",
+          "operator": "equals",
+          "value": 1200
+        }
+      ]
+    },
+    {
+      "ruleId": "second-born",
+      "when": {
+        "phase": "after-advance",
+        "stepIndex": 2201
+      },
+      "assertions": [
+        {
+          "path": "units.produced:p1:cccccccccccccccccccccccccccccccc.type",
+          "operator": "equals",
+          "value": "spfrigate"
+        },
+        {
+          "path": "units.produced:p1:cccccccccccccccccccccccccccccccc.health",
+          "operator": "equals",
+          "value": 1600
+        }
+      ]
+    },
+    {
+      "ruleId": "stopped-second",
+      "when": {
+        "phase": "after-advance",
+        "stepIndex": 3199
+      },
+      "assertions": [
+        {
+          "path": "units.produced:p1:cccccccccccccccccccccccccccccccc.speed",
+          "operator": "equals",
+          "value": 0
+        },
+        {
+          "path": "units.produced:p1:cccccccccccccccccccccccccccccccc.moveTarget",
+          "operator": "equals",
+          "value": null
+        },
+        {
+          "path": "units.produced:p1:cccccccccccccccccccccccccccccccc.tasks",
+          "operator": "equals",
+          "value": []
+        },
+        {
+          "path": "economy.balances.p1",
+          "operator": "equals",
+          "value": 600
+        }
+      ]
+    }
+  ],
+  "constructedUnits": [
+    {
+      "unitId": "constructed:p1:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "buildActionId": "build-shipyard",
+      "builderId": "a",
+      "owner": "p1",
+      "typeId": "spdock",
+      "buildingNonce": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "birthStepIndex": 189
+    }
+  ],
+  "producedUnits": [
+    {
+      "unitId": "produced:p1:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "productionActionId": "produce-corvette",
+      "producerId": "constructed:p1:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "owner": "p1",
+      "typeId": "spcorvette",
+      "unitNonce": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "birthStepIndex": 1700
+    },
+    {
+      "unitId": "produced:p1:cccccccccccccccccccccccccccccccc",
+      "productionActionId": "produce-frigate",
+      "producerId": "constructed:p1:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "owner": "p1",
+      "typeId": "spfrigate",
+      "unitNonce": "cccccccccccccccccccccccccccccccc",
+      "birthStepIndex": 2201
+    }
+  ],
+  "convertedUnits": [
+    {
+      "unitId": "constructed:p1:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "upgradeActionId": "upgrade-shipyard",
+      "sourceTypeId": "spdock",
+      "targetTypeId": "spdockt2",
+      "completionStepIndex": 949
+    }
+  ],
+  "platform": {
+    "schemaVersion": 1,
+    "scenarioId": "public.author-naval-chain.v1",
+    "rules": [
+      {
+        "intentId": "select-builder"
+      },
+      {
+        "intentId": "approach-shore"
+      },
+      {
+        "intentId": "build-dock"
+      },
+      {
+        "intentId": "select-dock"
+      },
+      {
+        "intentId": "upgrade-t2"
+      },
+      {
+        "intentId": "buy-corvette"
+      },
+      {
+        "intentId": "buy-frigate"
+      },
+      {
+        "intentId": "wait-first-exit"
+      },
+      {
+        "intentId": "select-corvette"
+      },
+      {
+        "intentId": "sail-corvette"
+      },
+      {
+        "intentId": "attack-builder"
+      },
+      {
+        "intentId": "select-frigate"
+      },
+      {
+        "intentId": "sail-frigate"
+      },
+      {
+        "intentId": "observe-stopped-frigate"
+      }
+    ],
+    "history": {
+      "initialBalance": 3000,
+      "initialOwnedTypes": [
+        "spbuilder"
+      ],
+      "ownerPlayerId": "p1",
+      "projectileBirthsRequired": true,
+      "spend": [
+        {
+          "intentId": "build-dock",
+          "amount": 700,
+          "at": "construction-created"
+        },
+        {
+          "intentId": "upgrade-t2",
+          "amount": 900,
+          "at": "action"
+        },
+        {
+          "intentId": "buy-corvette",
+          "amount": 350,
+          "at": "action"
+        },
+        {
+          "intentId": "buy-frigate",
+          "amount": 450,
+          "at": "action"
+        }
+      ],
+      "finalUnits": [
+        {
+          "ownerPlayerId": "p1",
+          "typeId": "spdockt2",
+          "fields": {
+            "alive": true,
+            "health": 1800,
+            "maxHealth": 1800
+          }
+        },
+        {
+          "ownerPlayerId": "p1",
+          "typeId": "spcorvette",
+          "fields": {
+            "alive": true,
+            "health": 1200,
+            "maxHealth": 1200
+          }
+        },
+        {
+          "ownerPlayerId": "p1",
+          "typeId": "spfrigate",
+          "fields": {
+            "alive": true,
+            "health": 1600,
+            "maxHealth": 1600
+          }
+        }
+      ]
+    }
+  }
+}

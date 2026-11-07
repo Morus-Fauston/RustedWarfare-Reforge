@@ -33,6 +33,7 @@ class BootstrapScreen(
     private val touchControls: Boolean = false,
     private val visualSettings: VisualAssetSettings? = null,
     private val soundFactory: PlaybackSoundFactory = GdxPlaybackSoundFactory,
+    private val testScenarioSeed: Path? = null,
 ) : ApplicationAdapter() {
     private lateinit var batch: SpriteBatch
     private lateinit var shapes: ShapeRenderer
@@ -116,6 +117,11 @@ class BootstrapScreen(
     private lateinit var visualsTab: TextButton
     private lateinit var packTab: TextButton
     private var showContentPack = visualSettings == null
+    private var showTestScenarios = false
+    private val testScenes = TestScenarioMenu()
+    private var testScenePanel: TestScenarioPanel? = null
+    private lateinit var testSceneTab: TextButton
+    private var customRootText = initialRoot.toAbsolutePath().normalize().toString()
     private val launch = SandboxLaunchState(SandboxConfiguration(initialRoot.toAbsolutePath().normalize(), SandboxOptions(), visualState?.selection ?: VisualAssetSelection()))
     private var activeVisuals: PreparedVisualAssets? = null
     private var pendingLoad: SandboxLoad? = null
@@ -355,7 +361,7 @@ class BootstrapScreen(
         }
         startButton = button("Start", 752f, 120f, 176f) { requestLoad() }
         visualPanel = visualState?.let { state -> VisualAssetSettingsPanel(state, skin, visualSettings?.let { it::createUiFont },
-            contentChoice = packState::choice) {
+            contentChoice = { testScenes.choice?.content ?: packState.choice() }) {
             evidence.recordVisualAssetMenu(state)
             loadError = null; lastHudState = null; updateHud()
         }.also { it.setBounds(40f, 120f, 660f, 440f); stage.addActor(it) } }
@@ -372,11 +378,28 @@ class BootstrapScreen(
             loadError = null; lastHudState = null; updateHud()
         }.also { it.setBounds(40f, 120f, 660f, 440f); stage.addActor(it) }
         visualsTab = button("Resource packs", 40f, 568f, 176f) {
-            showContentPack = false; lastHudState = null; updateHud()
+            showTestScenarios = false; showContentPack = false; lastHudState = null; updateHud()
         }
         packTab = button("Content pack", 232f, 568f, 176f) {
+            if (testScenes.selected) rootField.text = customRootText
+            showTestScenarios = false; testScenes.useCustomContent()
             showContentPack = true; lastHudState = null; updateHud()
         }
+        testSceneTab = button("Test scenes", 424f, 568f, 176f) {
+            showTestScenarios = true; lastHudState = null; updateHud()
+        }
+        testScenePanel = TestScenarioPanel(testScenes, testScenarioSeed, skin, visualSettings?.let { it::createUiFont }) {
+            if (visualState?.busy == true) visualState.cancel()
+            if (testScenes.selected) {
+                if (!rootField.isDisabled) customRootText = rootField.text
+                testScenes.choice?.let { rootField.text = it.root.toString() }
+            } else rootField.text = customRootText
+            val selected = testScenes.choice
+            evidence.record("test-scenario-choice", mapOf("selected" to testScenes.selected, "id" to selected?.id,
+                "seed" to selected?.seed?.toString(), "inputRoot" to selected?.root?.toString(),
+                "unitId" to selected?.content?.unitId, "error" to testScenes.error))
+            loadError = null; lastHudState = null; updateHud()
+        }.also { it.setBounds(40f, 120f, 660f, 440f); stage.addActor(it) }
         mapInput = SandboxInput({ session }, { graphics?.projection }, { x, y ->
             viewport.unproject(Vector2(x.toFloat(), y.toFloat())).let { Position(it.x.toDouble(), it.y.toDouble()) }
         }, { !paused && session != null }, { stage.keyboardFocus is TextField },
@@ -525,9 +548,11 @@ class BootstrapScreen(
         try {
             val request = if (launch.canEdit) {
                 check(visualState?.canStart != false) { visualState?.error ?: "Save and apply the visual selection first" }
-                check(packState.canStart) { packState.error ?: "Finish checking the content package first" }
-                launch.configure(launch.configuration.copy(root = Paths.get(rootField.text).toAbsolutePath().normalize(),
-                    visuals = visualState?.selection ?: launch.configuration.visuals, contentPack = packState.choice()))
+                check(testScenes.canStart) { testScenes.error ?: "Choose a valid test scenario first" }
+                check(testScenes.selected || packState.canStart) { packState.error ?: "Finish checking the content package first" }
+                val scene = testScenes.choice
+                launch.configure(launch.configuration.copy(root = scene?.root ?: Paths.get(rootField.text).toAbsolutePath().normalize(),
+                    visuals = visualState?.selection ?: launch.configuration.visuals, contentPack = scene?.content ?: packState.choice(), testScenario = scene))
                 launch.start()
             } else launch.reopen()
             val acceptedNanos = System.nanoTime()
@@ -542,11 +567,14 @@ class BootstrapScreen(
                 "acceptedNanos" to acceptedNanos, "menuEpoch" to menuEpoch,
                 "mode" to request.configuration.options.mode.name,
                 "shareAlliedVision" to request.configuration.options.shareAlliedVision,
-                "deploymentEnabled" to request.configuration.options.deploymentEnabled))
+                "deploymentEnabled" to request.configuration.options.deploymentEnabled,
+                "testScenarioId" to request.configuration.testScenario?.id, "testScenarioSeed" to request.configuration.testScenario?.seed?.toString()))
             val contentPack = request.configuration.contentPack
             val prepare = visualState?.prepareForLoad(contentPack)
                 ?: visualSettings?.let { settings -> { settings.prepareForContent(request.configuration.visuals, contentPack) } }
-            if (contentPack == null) loader.request(activeRoot, prepare)
+            val testScenario = request.configuration.testScenario
+            if (testScenario != null) loader.requestTestScenario(testScenario, prepare)
+            else if (contentPack == null) loader.request(activeRoot, prepare)
             else loader.requestPack(activeRoot, contentPack, prepare)
         } catch (failure: Exception) { failLoad(failure) }
         updateHud()
@@ -735,6 +763,9 @@ class BootstrapScreen(
         button("pause-simulation", simulationPauseButton)
         button("content-tab", packTab)
         button("resource-tab", visualsTab)
+        button("test-scenes-tab", testSceneTab)
+        entries += DrawnAction("content-root", rootField, rootField.text, enabled = !rootField.isDisabled)
+        testScenePanel?.let { entries += it.drawnActions() }
         visualPanel?.let { entries += it.drawnActions() }
         entries += DrawnAction("sandbox-deployment", deploymentBox, deploymentBox.text.toString(),
             enabled = !deploymentBox.isDisabled)
@@ -1173,22 +1204,28 @@ class BootstrapScreen(
         selectedLabel.isVisible = current != null
         listOf<Actor>(contentLabel, rootField, modeBox, shareBox).forEach { it.isVisible = launch.canEdit }
         groupButtons.forEachIndexed { index, button -> button.setText("${index + 1} (${state.groups[index]})"); button.isDisabled = current == null }
-        rootField.isDisabled = touchControls || !launch.canEdit
+        rootField.isDisabled = touchControls || !launch.canEdit || testScenes.selected
         modeBox.isDisabled = !launch.canEdit
         shareBox.isDisabled = !launch.canEdit
         deploymentBox.isVisible = launch.canEdit && !touchControls
         deploymentBox.isDisabled = loading || !launch.canEdit || touchControls
         startButton.setText(if (launch.canEdit) "Start" else "Reopen")
-        startButton.isDisabled = loading || launch.canEdit && (visualState?.canStart == false || !packState.canStart)
+        startButton.isDisabled = loading || launch.canEdit && (visualState?.canStart == false || !testScenes.canStart || !testScenes.selected && !packState.canStart)
         visualsTab.isVisible = current == null && visualPanel != null
         packTab.isVisible = current == null
+        testSceneTab.isVisible = current == null && testScenarioSeed != null && !touchControls
+        testScenePanel?.let {
+            it.isVisible = current == null && showTestScenarios
+            it.setEditable(launch.canEdit && !loading)
+            it.refresh(if (loading) state.preparationStatus ?: "Preparing scene..." else loadError)
+        }
         visualPanel?.let {
-            it.isVisible = current == null && !showContentPack
+            it.isVisible = current == null && !showContentPack && !showTestScenarios
             it.setEditable(launch.canEdit && !loading)
             it.setStatus(if (loading) state.preparationStatus ?: "Preparing scene..." else loadError)
         }
         packPanel?.let {
-            it.isVisible = current == null && showContentPack
+            it.isVisible = current == null && showContentPack && !showTestScenarios
             it.setEditable(launch.canEdit && !loading)
             it.setStatus(if (loading) state.preparationStatus ?: "Preparing scene..." else loadError)
         }
@@ -1294,7 +1331,7 @@ class BootstrapScreen(
         presentationReady = false
         Gdx.input.inputProcessor = null
         val closingGraphics = graphics; graphics = null
-        listOf<() -> Unit>({ releaseSounds() }, { closingGraphics?.close() }, { visualPanel?.close() }, { packPanel?.close() }, { stage.dispose() }, { skin.dispose() },
+        listOf<() -> Unit>({ releaseSounds() }, { closingGraphics?.close() }, { visualPanel?.close() }, { packPanel?.close() }, { testScenePanel?.close() }, { stage.dispose() }, { skin.dispose() },
             { shapes.dispose() }, { batch.dispose() }).forEach { cleanup ->
             try { cleanup() } catch (failure: Exception) {
                 evidence.recordFailure("cleanup-error", failure)

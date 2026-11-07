@@ -48,7 +48,7 @@ object PlatformSessionRunner {
                 writer.newLine()
                 writer.flush()
             }
-            val loaded = loadScenario(inputs, document, evidence, output, loadTimeoutSeconds)
+            val loaded = loadScenario(inputs, document, evidence, output, loadTimeoutSeconds, plan)
             SandboxSession(loaded.scenario, evidence).use { session ->
                 val projection = MapProjection(loaded.scenario.map.widthTiles.toDouble() * loaded.scenario.map.tileWidth,
                     loaded.scenario.map.heightTiles.toDouble() * loaded.scenario.map.tileHeight)
@@ -98,7 +98,7 @@ object PlatformSessionRunner {
         }
     }
 
-    private fun loadScenario(inputs: Path, document: JsonObject, evidence: ClientEvidence, output: Path, loadTimeoutSeconds: Int): LoadedSandbox {
+    private fun loadScenario(inputs: Path, document: JsonObject, evidence: ClientEvidence, output: Path, loadTimeoutSeconds: Int, seed: Path): LoadedSandbox {
         val imageDirectories = if ("resourcePacks" in document) {
             val images = document.objectAt("resourcePacks")
             if (images.keys != setOf("directories")) throw InputError("Expected resourcePacks directories only")
@@ -118,14 +118,16 @@ object PlatformSessionRunner {
                 directory
             }
         } else null
-        if ("contentPack" !in document && imageDirectories == null) {
+        val testScenario = if ("testScene" in document) com.rustedwarfare.reforge.client.TestScenarioChoice.open(seed, inputs) else null
+        if (testScenario == null && "contentPack" !in document && imageDirectories == null) {
             val scenario = ControlledScenario.load(inputs)
             return LoadedSandbox(scenario, null, SandboxRenderResources.from(scenario))
         }
-        val contentChoice = if ("contentPack" in document) loadContentChoice(inputs, document) else null
+        val contentChoice = testScenario?.content ?: if ("contentPack" in document) loadContentChoice(inputs, document) else null
         return SandboxLoader().use { loader ->
             val prepare = imageDirectories?.let { directories -> { PcResourceImagePreparation.prepare(directories, output.resolve("resource-cache"), contentChoice) } }
-            if (contentChoice == null) loader.request(inputs, prepare) else loader.requestPack(inputs, contentChoice, prepare)
+            if (testScenario != null) loader.requestTestScenario(testScenario, prepare)
+            else if (contentChoice == null) loader.request(inputs, prepare) else loader.requestPack(inputs, contentChoice, prepare)
             val deadline = System.nanoTime() + loadTimeoutSeconds * 1_000_000_000L
             while (System.nanoTime() < deadline) {
                 loader.pollPrepared()?.let { result ->
