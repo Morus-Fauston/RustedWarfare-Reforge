@@ -64,6 +64,23 @@ def focus_owned_once(api,expected,record,sleep=time.sleep):
         if down:api.send('mouse','left',True)
     sleep(.15)
     observed=api.snapshot();record(dict(kind='owned-initial-focus-observed',window=observed))
+    validate_identity(expected,observed,foreground=True)
+    if observed.get('keyboardLayout')!=expected.get('qualifiedKeyboardLayout'):
+        # Windows may restore the per-window language during this one activation.
+        # Requalify only this owned thread, before creating a gameplay input guard.
+        hkl=api.loaded_english_layout()
+        if hkl!=expected['qualifiedKeyboardLayout']:
+            raise GuardFailure('post-focus-qualified-English-layout-changed')
+        posted=api.post_input_language(hkl)
+        record(dict(kind='single-post-focus-owned-language-request',hkl=hkl,posted=posted,globalOrBroadcast=False))
+        if not posted:raise GuardFailure('post-focus-owned-English-request-failed')
+        end=time.monotonic()+3
+        while True:
+            observed=validate_identity(expected,api.snapshot(),foreground=True)
+            if observed.get('keyboardLayout')==hkl and observed.get('keyboardLanguage')==0x409:break
+            if time.monotonic()>=end:raise GuardFailure('post-focus-owned-English-request-not-observed')
+            sleep(.03)
+        record(dict(kind='post-focus-owned-English-qualified',window=observed))
     return validate(expected,observed,foreground=True)
 
 class Guard:

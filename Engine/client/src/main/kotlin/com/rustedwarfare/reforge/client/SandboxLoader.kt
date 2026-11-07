@@ -28,12 +28,18 @@ class SandboxLoader internal constructor(private val load: ((Path) -> Scenario)?
         begin(root, contentPack, prepareVisuals)
     }
 
-    private fun begin(root: Path, contentPack: ContentPackChoice?, prepareVisuals: (() -> PreparedVisualAssets)?) {
+    fun requestTestScenario(choice: TestScenarioChoice, prepareVisuals: (() -> PreparedVisualAssets)? = null) {
+        begin(choice.root, choice.content, prepareVisuals, choice)
+    }
+
+    private fun begin(root: Path, contentPack: ContentPackChoice?, prepareVisuals: (() -> PreparedVisualAssets)?, testScenario: TestScenarioChoice? = null) {
         cancel()
         pending = executor.submit<Result<LoadedSandbox>> { runCatching {
             val startedNanos = System.nanoTime()
+            testScenario?.verifyStable()
             val checked = contentPack?.revalidate()
-            val prepared = if (checked != null) PreparedControlledScenario(contentPackScenario(root, checked), emptyList())
+            val prepared = if (testScenario != null) PreparedControlledScenario(testScenario.scenario, emptyList())
+                else if (checked != null) PreparedControlledScenario(contentPackScenario(root, checked), emptyList())
                 else load?.let { PreparedControlledScenario(it(root), emptyList()) } ?: ControlledScenario.prepare(root)
             val scene = prepared.scenario
             val scenarioPreparedNanos = System.nanoTime()
@@ -45,6 +51,7 @@ class SandboxLoader internal constructor(private val load: ((Path) -> Scenario)?
             checked?.content?.verifyStable()?.let { stable ->
                 if (stable is ContentResult.Failure) error(stable.error.describe())
             }
+            testScenario?.verifyStable()
             visuals?.verifyForPublication()
             LoadedSandbox(scene, visuals, renderResources, checked?.content?.sources ?: prepared.sources,
                 root.toAbsolutePath().normalize(), checked,

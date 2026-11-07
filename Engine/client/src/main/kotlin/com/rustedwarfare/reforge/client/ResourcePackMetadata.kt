@@ -10,7 +10,7 @@ import org.hjson.ParseException
 class ResourcePackMetadata private constructor(val id: ResourceId, val name: String, val description: String,
     val icon: ResourceId, val formatVersion: Int, val requiresResourceFormat: Int) {
     companion object {
-        const val CURRENT_RESOURCE_FORMAT = 3
+        const val CURRENT_RESOURCE_FORMAT = 4
         fun read(bytes: ByteArray, source: String): ResourcePackMetadata {
             fun bad(field: String, reason: String): Nothing =
                 throw IllegalArgumentException("RESOURCE_PACK_METADATA_INVALID: $source / $field: $reason")

@@ -44,3 +44,20 @@ tasks.named<JavaExec>("run") {
 tasks.test {
     useJUnitPlatform()
 }
+
+// Self-owned, paired scene inputs travel with the installed PC application.
+distributions {
+    main {
+        contents {
+            from(rootProject.projectDir.parentFile.resolve("SimulationTest/public/scenarios/dual-ship-production.json")) {
+                into("test-scenarios/scenarios")
+            }
+            from(rootProject.projectDir.parentFile.resolve("SimulationTest/public/contracts/dual-ship-production.json")) {
+                into("test-scenarios/contracts")
+            }
+            from(rootProject.projectDir.parentFile.resolve("SimulationTest/public/inputs/author-naval-chain/json")) {
+                into("test-scenarios/inputs/author-naval-chain/json")
+            }
+        }
+    }
+}

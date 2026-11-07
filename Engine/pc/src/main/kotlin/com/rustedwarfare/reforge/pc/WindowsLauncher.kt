@@ -10,7 +10,8 @@ fun main(args: Array<String>) {
     val options = WindowsLaunchOptions.parse(args, Path.of(""))
     val runId = options.runId
     val userBase = PcVisualAssetPaths.userBase(System.getenv("LOCALAPPDATA"), System.getProperty("user.home"))
-    val applicationRoot = PcVisualAssetPaths.applicationRoot(Path.of(PcVisualAssetSettings::class.java.protectionDomain.codeSource.location.toURI()),
+    val codeLocation = Path.of(PcVisualAssetSettings::class.java.protectionDomain.codeSource.location.toURI())
+    val applicationRoot = PcVisualAssetPaths.applicationRoot(codeLocation,
         Path.of(""))
     val visualSettings = PcVisualAssetSettings(VisualAssetSettingsStore(userBase.resolve("settings.properties")),
         userBase.resolve("cache"), applicationRoot, options)
@@ -51,7 +52,9 @@ fun main(args: Array<String>) {
             "deltaUnit" to "sim-tick", "pacingIsOriginalGameFact" to false))
         try {
             Lwjgl3Application(WindowPerfSampling(BootstrapScreen(inputs, evidence,
-                visualSettings = visualSettings, soundFactory = PcPlaybackSoundFactory()), evidence), config)
+                visualSettings = visualSettings, soundFactory = PcPlaybackSoundFactory(),
+                testScenarioSeed = if (codeLocation.fileName.toString().endsWith(".jar")) applicationRoot.resolve("test-scenarios/scenarios/dual-ship-production.json")
+                    else applicationRoot.resolve("SimulationTest/public/scenarios/dual-ship-production.json")), evidence), config)
             evidence.record("process-completed", mapOf("status" to "normal"))
         } catch (failure: Throwable) {
             preserveFailure(failure) { evidence.record("process-failed", mapOf("message" to failure.toString())) }

@@ -187,7 +187,9 @@ class VisualAssetSettingsSession(private val backend: VisualAssetSettings) : Aut
         check(!busy) { "Cancel the current resource operation first" }
         if (!supportsOriginalResourceExtraction) throw UnsupportedOperationException("Complete PC resource extraction is unavailable on this platform")
         val source = path.toAbsolutePath().normalize()
-        begin(Operation.EXTRACT_RESOURCES) { Completed.Imported(backend.extractOriginalResourcePack(source)) }
+        begin(Operation.EXTRACT_RESOURCES) {
+            Completed.Imported(backend.extractAndCheckOriginalResources(source))
+        }
     }
 
     fun restoreSaved(content: ContentPackChoice? = null) {
@@ -208,7 +210,7 @@ class VisualAssetSettingsSession(private val backend: VisualAssetSettings) : Aut
     private fun checkCatalog(entries: List<ResourcePackCatalogEntry>): List<Checked> = entries.map { entry ->
         if (Thread.currentThread().isInterrupted) throw CancellationException("Catalog reading cancelled")
         runCatching {
-            backend.checkImagePack(entry.manifest).also { pack ->
+            backend.inspectSavedImagePack(entry.manifest).also { pack ->
                 require(pack.catalogEntry == entry) { "RESOURCE_PACK_SOURCE_CHANGED: ${entry.id} / ${entry.manifest}: Saved source changed; import it again" }
             }
         }.fold({ Checked(entry, it, null) }, { Checked(entry, null, "${entry.id}: ${it.message ?: it}") })
@@ -218,8 +220,10 @@ class VisualAssetSettingsSession(private val backend: VisualAssetSettings) : Aut
 
     private fun acceptImport(pack: PreparedImagePack, extracted: Boolean = false) {
         val entry = pack.catalogEntry
-        val previous = selection.packs.catalog.singleOrNull { it.manifest == entry.manifest }
-        require(selection.packs.catalog.none { it.id == entry.id && it.manifest != entry.manifest }) { "Duplicate resource pack ID ${entry.id}: ${entry.manifest}" }
+        val previous = selection.packs.catalog.singleOrNull {
+            it.manifest == entry.manifest || pack.clientHeld && it.id == entry.id
+        }
+        require(selection.packs.catalog.none { it.id == entry.id && it != previous }) { "Duplicate resource pack ID ${entry.id}: ${entry.manifest}" }
         if (extracted && previous == entry) {
             known[entry.id] = Checked(entry, pack, null)
             selectedPackId = entry.id

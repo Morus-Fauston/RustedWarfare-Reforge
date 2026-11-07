@@ -16,7 +16,7 @@ import java.nio.file.Path
 import java.nio.file.Files
 import java.util.concurrent.CancellationException
 
-internal enum class PcResourcePreparationPath { FULL_AUDIT, PROCESS_REUSE, DISK_REUSE }
+internal enum class PcResourcePreparationPath { FULL_AUDIT, PROCESS_REUSE, DISK_REUSE, MANAGED_REUSE }
 
 internal class PcVisualAssetSettings @JvmOverloads constructor(private val store: VisualAssetSettingsStore, cache: Path,
     private val applicationRoot: Path, private val options: WindowsLaunchOptions,
@@ -29,6 +29,12 @@ internal class PcVisualAssetSettings @JvmOverloads constructor(private val store
     private val auditedVisuals = PcAuditedVisualReuse()
     private val placeholders = PcPlaceholderVisualAssets()
     private val importer = PcResourcePackImporter(cache)
+    private val acceptedResources = PcAcceptedResourceStore(cache, imageExtractionMove, ::originalQualificationBasis)
+    private val finishedOriginal = PcOriginalPreparedPack(cache, imageExtractionMove)
+    private var lastCompleteExtraction: Pair<com.rustedwarfare.reforge.client.ResourcePackCatalogEntry, PreparedImagePack>? = null
+    private val originalProducerBasis by lazy {
+        PcTrustedOutputIndex.currentProducers().toSortedMap().entries.joinToString("\u0000") { "${it.key}=${it.value}" }
+    }
     private val pcImageExtractor = PcOriginalImageExtractor(cache, imageExtractionProfile ?: resourceExtractionProfile?.images, imageExtractionMove)
     private val pcResourceExtractor = PcOriginalResourceExtractor(cache, resourceExtractionProfile, pcImageExtractor::extract, imageExtractionMove)
     private val baseSoundResources = PcBaseSoundResources(cache)
@@ -45,6 +51,8 @@ internal class PcVisualAssetSettings @JvmOverloads constructor(private val store
     override val initialSelection: VisualAssetSelection
     override val initialError: String?
     @Volatile override var preparationStatus: String? = null
+        private set
+    @Volatile override var preparationDiagnostics: Map<String, Any?> = emptyMap()
         private set
     /** Successful worker result for diagnostics; never a saved qualification flag. */
     @Volatile var lastPreparationPath: PcResourcePreparationPath? = null
@@ -66,6 +74,7 @@ internal class PcVisualAssetSettings @JvmOverloads constructor(private val store
         lastDiskReuseReason = null
         pendingPublication = null
         preparationStatus = "Checking selected content..."
+        preparationDiagnostics = emptyMap()
         try { return prepareAudited(selection, content) }
         finally { preparationStatus = null }
     }
@@ -76,7 +85,8 @@ internal class PcVisualAssetSettings @JvmOverloads constructor(private val store
             ?: if (selection.source == VisualAssetSource.ORIGINAL) applicationRoot.resolve("Rusted Warfare").toAbsolutePath().normalize() else null,
             temporary = options.hasVisualOverride)
         val roots = resolved.packs.enabled.filterNot { it == VisualAssetSource.ORIGINAL.resourcePackId }
-            .map { id -> requireNotNull(resolved.packs.catalog.single { it.id == id }.manifest.parent) }
+            .map { id -> resolved.packs.catalog.single { it.id == id }.manifest }
+            .filterNot(acceptedResources::owns).map { requireNotNull(it.parent) }
         // Original-directory extraction retains its existing audit path. User packs (including v5)
         // may reuse only this settings instance's independently audited, non-GL description.
         val key = if (resolved.source == VisualAssetSource.PLACEHOLDER)
@@ -84,6 +94,8 @@ internal class PcVisualAssetSettings @JvmOverloads constructor(private val store
         preparationStatus = "Checking resource sources..."
         var preparationPath = PcResourcePreparationPath.PROCESS_REUSE
         var producedProof: Publication? = null
+        var fullPackImports = 0
+        var acceptedVersions: List<Map<String, String>> = emptyList()
         val result = auditedVisuals.prepare(key, roots) { verifyAuditedInputs, inputs ->
             preparationPath = PcResourcePreparationPath.FULL_AUDIT
             preparationStatus = "Preparing built-in pictures..."
@@ -113,6 +125,12 @@ internal class PcVisualAssetSettings @JvmOverloads constructor(private val store
                 com.rustedwarfare.reforge.client.ResourceImageDeclaration>>()
             val users = resolved.packs.enabled.filterNot { it == VisualAssetSource.ORIGINAL.resourcePackId }.map { id ->
                 val expected = resolved.packs.catalog.single { it.id == id }
+                if (acceptedResources.owns(expected.manifest)) {
+                    val held = acceptedResources.restore(expected.manifest)
+                    require(held.catalogEntry == expected) { "RESOURCE_PACK_ACCEPTANCE_INVALID: Catalog identity differs" }
+                    preparationPath = PcResourcePreparationPath.MANAGED_REUSE
+                    return@map held
+                }
                 val restored = if (inputs != null && key != null && id.startsWith("reforge:pc-original-resources-")) try {
                     val previous = saved.singleOrNull { it.id == id && it.manifest == expected.manifest && it.identity == expected.identity }
                     if (previous == null) null else {
@@ -132,15 +150,18 @@ internal class PcVisualAssetSettings @JvmOverloads constructor(private val store
                 } catch (failure: CancellationException) { throw failure }
                   catch (failure: Exception) { lastDiskReuseReason = failure.message ?: failure.javaClass.simpleName; null }
                 else null
-                (restored ?: importer.load(expected.manifest, inputs)).also { pack ->
+                (restored ?: run { fullPackImports++; importer.load(expected.manifest, inputs) }).also { pack ->
                     require(pack.catalogEntry == expected) { "RESOURCE_PACK_SOURCE_CHANGED: $id / ${expected.manifest}: Pack changed after checking; check it again" }
                 }
+            }
+            acceptedVersions = users.filter { it.clientHeld }.map {
+                mapOf("id" to it.metadata.id.value, "identity" to it.identity, "manifest" to it.manifest.toString())
             }
             preparationStatus = "Checking picture and sound qualifications..."
             val layers = users.associate { pack -> pack.metadata.id.value to
                 ResourceImageLayer(pack.metadata, pack.images, pack.identity, pack.sources) { if (key == null) pack.verifySources() else verifyAuditedInputs() }
                     .withSounds(pack.sounds, pack.soundEvents)
-                    .withStaticBaseContracts(restoredContracts[pack.metadata.id.value] ?: if (pack.metadata.id.value.startsWith("reforge:pc-original-resources-"))
+                    .withStaticBaseContracts(if (pack.clientHeld) pack.staticBaseContracts else restoredContracts[pack.metadata.id.value] ?: if (pack.metadata.id.value.startsWith("reforge:pc-original-resources-"))
                         pcResourceExtractor.staticBaseContracts(pack, builtinImages, inputs, reviewedOutputs(pack, inputs))
                         else pcImageExtractor.staticBaseContracts(pack, builtinImages, inputs)) }.toMutableMap()
             original?.let { layers[VisualAssetSource.ORIGINAL.resourcePackId] =
@@ -148,13 +169,15 @@ internal class PcVisualAssetSettings @JvmOverloads constructor(private val store
             val images = ResourceImageComposer.compose(baseImages.withSounds(baseSounds.sounds, baseSounds.events),
                 resolved.packs.enabled.map(layers::getValue))
             preparationStatus = "Checking prepared resources before loading..."
+            val sounds = ResourceSoundComposer.compose(images)
+            val used = (base.resourcePack.resources.keys.map { images.images.getValue(it).path } + sounds.sounds.values.map { it.path }).toSet()
             val prepared = base.withConfiguration(resolved, original?.profileId ?: base.profileId, original?.identity ?: base.identity)
-                .withResourceImages(images) { baseSounds.verify(); original?.verify(); users.forEach { it.verify() } }
-                .withResourceSounds(ResourceSoundComposer.compose(images))
+                .withResourceImages(images) { baseSounds.verify(); original?.verify(); users.forEach { it.verifyUsed(used) } }
+                .withResourceSounds(sounds)
                 .also { it.verifyForPublication() }
             if (key != null && inputs != null && trustedOutputs.identity != null) {
                 val records = users.mapNotNull { pack ->
-                    if (!pack.metadata.id.value.startsWith("reforge:pc-original-resources-")) return@mapNotNull null
+                    if (pack.clientHeld || !pack.metadata.id.value.startsWith("reforge:pc-original-resources-")) return@mapNotNull null
                     val accepted = pcResourceExtractor.profileFor(pack.manifest, inputs)
                     val facts = trustedOutputs.forProfile(accepted) ?: return@mapNotNull null
                     // A semantically valid alternate encoding may pass the full audit but cannot
@@ -176,6 +199,15 @@ internal class PcVisualAssetSettings @JvmOverloads constructor(private val store
         if (preparationPath != PcResourcePreparationPath.PROCESS_REUSE) completeProof = producedProof
         pendingPublication = completeProof?.takeIf { it.assets === result }
         lastPreparationPath = preparationPath
+        if (preparationPath == PcResourcePreparationPath.PROCESS_REUSE) {
+            acceptedVersions = result.resolvedImages?.layers.orEmpty().filter {
+                layer -> resolved.packs.catalog.any { it.id == layer.metadata.id.value && acceptedResources.owns(it.manifest) }
+            }.map { layer -> val entry = resolved.packs.catalog.single { it.id == layer.metadata.id.value }
+                mapOf("id" to entry.id, "identity" to entry.identity, "manifest" to entry.manifest.toString()) }
+        }
+        preparationDiagnostics = mapOf("path" to preparationPath.name, "wholePackImports" to fullPackImports,
+            "externalSourceTreeRoots" to roots.map { it.toString() }, "acceptedVersions" to acceptedVersions,
+            "boundary" to "Worker branch receipt; media integrity checks remain on selected fixed paths")
         return result
     }
 
@@ -212,10 +244,59 @@ internal class PcVisualAssetSettings @JvmOverloads constructor(private val store
     }
 
     @Synchronized
-    override fun checkImagePack(path: Path): PreparedImagePack = importer.load(path)
+    override fun checkImagePack(path: Path): PreparedImagePack {
+        if (acceptedResources.owns(path)) return acceptedResources.restore(path).also { pack ->
+            pack.verifyUsed(setOf(pack.images.getValue(pack.metadata.icon).path))
+        }
+        val pack = importer.load(path)
+        if (pack.metadata.id.value.startsWith("reforge:pc-original-resources-")) {
+            val qualificationRoot = if (pack.metadata.requiresResourceFormat == 4) finishedOriginal.qualificationRoot(pack) else pack.manifest.parent
+            return PcFrozenResourceInputs.capture(listOf(pack.manifest.parent, qualificationRoot).distinct()).use { inputs ->
+                val qualified = if (pack.metadata.requiresResourceFormat == 4) importer.load(qualificationRoot, inputs) else pack
+                val profile = pcResourceExtractor.profileFor(qualified.manifest, inputs)
+                val base = placeholders.prepare(initialSelection.copy(source = VisualAssetSource.PLACEHOLDER))
+                val builtin = ResourceImagePreparation.baseLayer(base, BuiltInResourcePacks.forSource(VisualAssetSource.PLACEHOLDER))
+                val contracts = pcResourceExtractor.staticBaseContracts(qualified, builtin, inputs, reviewedOutputs(qualified, inputs))
+                if (pack.metadata.requiresResourceFormat == 4) finishedOriginal.verifyEquivalent(pack, qualified)
+                val qualification = PcAcceptedOriginalQualification(profile.id, requireNotNull(originalQualificationBasis(profile.id)),
+                    inputs.snapshotIdentity(qualificationRoot), inputs.sha256(qualificationRoot.resolve("extraction.json")),
+                    inputs.sha256(qualificationRoot.resolve("resource-extraction.json")), contracts, inputs::verifyCurrent)
+                acceptedResources.accept(pack, qualification)
+            }
+        }
+        return if (pack.metadata.requiresResourceFormat == 4) acceptedResources.accept(pack) else pack
+    }
+
+    /** Qualifier and producer identities are distribution-owned; package hints never supply either. */
+    private fun originalQualificationBasis(id: String): String? {
+        val profile = if (resourceExtractionProfile != null) resourceExtractionProfile.takeIf { it.id == id }
+            else (1..5).asSequence().map(PcOriginalProfileVersions::version).firstOrNull { it.id == id }
+        return profile?.let { visualHash((PcTrustedOutputIndex.basis(it) + "\u0000" + originalProducerBasis).toByteArray(Charsets.UTF_8)) }
+    }
+
+    @Synchronized override fun inspectSavedImagePack(path: Path): PreparedImagePack =
+        if (acceptedResources.owns(path)) acceptedResources.restore(path).also { pack ->
+            pack.verifyUsed(setOf(pack.images.getValue(pack.metadata.icon).path))
+        } else importer.load(path)
     override fun extractOriginalImagePack(path: Path): PreparedImagePack = pcImageExtractor.extract(path)
     override fun extractOriginalResourcePack(path: Path): PreparedImagePack {
         return pcResourceExtractor.extract(path)
+    }
+    override fun extractOriginalPreparedResourcePack(path: Path): PreparedImagePack =
+        finishedOriginal.export(pcResourceExtractor.extract(path))
+    @Synchronized override fun extractAndCheckOriginalResources(path: Path): PreparedImagePack {
+        val original = pcResourceExtractor.extract(path)
+        lastCompleteExtraction?.takeIf { it.first == original.catalogEntry }?.second?.let { previous ->
+            try {
+                val restored = acceptedResources.restore(previous.manifest)
+                restored.verify(); original.verify(); original.verifySources()
+                return restored
+            } catch (failure: CancellationException) { throw failure }
+              catch (_: Exception) { /* A damaged held version is repaired by a new full import. */ }
+        }
+        return checkImagePack(finishedOriginal.export(original).manifest).also {
+            lastCompleteExtraction = original.catalogEntry to it
+        }
     }
 
     override fun loadSavedSelection(): VisualAssetSelection {

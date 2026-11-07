@@ -1,0 +1,34 @@
+{
+  "schemaVersion": 1,
+  "suiteId": "public.dual-ship-scene.v1",
+  "inputScope": "public",
+  "fixture": "inputs/content-movement-knowledge/P001-移动沙盒输入",
+  "tests": {
+    "client": [
+      "com.rustedwarfare.reforge.client.TestScenarioLaunchTest",
+      "com.rustedwarfare.reforge.client.AuthorNavalChainSandboxTest",
+      "com.rustedwarfare.reforge.client.LoadingAndProjectionTest"
+    ],
+    "tools": [
+      "com.rustedwarfare.reforge.testing.TestScenarioSeedParityTest"
+    ]
+  },
+  "long": [
+    {
+      "id": "shared-dual-ship-core",
+      "scenario": "scenarios/dual-ship-production.json",
+      "contract": "contracts/dual-ship-production.json"
+    },
+    {
+      "id": "shared-dual-ship-session",
+      "backend": "session",
+      "scenario": "scenarios/dual-ship-production.json",
+      "contract": "contracts/dual-ship-production.json"
+    }
+  ],
+  "pythonTests": [
+    "SimulationTest/tools/test_platform_scenario.py",
+    "SimulationTest/tools/test_platform_wait.py",
+    "SimulationTest/tools/test_owned_window.py"
+  ]
+}

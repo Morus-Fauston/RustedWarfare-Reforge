@@ -10,6 +10,32 @@ from owned_window import Guard,GuardFailure,Win32,focus_owned_once
 
 
 class OwnedCaptureTest(unittest.TestCase):
+    def test_initial_activation_layout_change_is_requalified_before_gameplay(self):
+        base=dict(pid=11,startTicks=22,path='owned-java',hwnd=33,title='owned',windowThreadId=44,
+            alive=True,visible=True,foreground=99,width=100,height=80,x=10,y=20,
+            keyboardLayout=0x12340409,qualifiedKeyboardLayout=0x12340409,keyboardLanguage=0x409)
+        for allowed in (True,False):
+            with self.subTest(allowed=allowed):
+                state=dict(base);point=[0,0];sent=[];requests=[]
+                def send(kind,value,up):
+                    sent.append((kind,value,up))
+                    if up:state.update(foreground=33,keyboardLayout=0x8040804,keyboardLanguage=0x804)
+                def post(hkl):
+                    requests.append(hkl)
+                    if allowed:state.update(keyboardLayout=hkl,keyboardLanguage=0x409)
+                    return allowed
+                api=types.SimpleNamespace(snapshot=lambda:dict(state),point_owned=lambda x,y:True,
+                    pressed=lambda kind,value:False,move=lambda x,y:point.__setitem__(slice(None),[x,y]),
+                    cursor=lambda:tuple(point),send=send,loaded_english_layout=lambda:base['keyboardLayout'],
+                    post_input_language=post)
+                if allowed:
+                    result=focus_owned_once(api,base,lambda row:None,sleep=lambda n:None)
+                    self.assertEqual(result['keyboardLayout'],base['keyboardLayout'])
+                else:
+                    with self.assertRaises(GuardFailure):focus_owned_once(api,base,lambda row:None,sleep=lambda n:None)
+                self.assertEqual(requests,[base['keyboardLayout']])
+                self.assertEqual(sent,[('mouse','left',False),('mouse','left',True)])
+
     def test_initial_focus_uses_one_verified_owned_header_click_and_never_retries(self):
         base=dict(pid=11,startTicks=22,path='owned-java',hwnd=33,title='owned',windowThreadId=44,
             alive=True,visible=True,foreground=99,width=100,height=80,x=10,y=20,

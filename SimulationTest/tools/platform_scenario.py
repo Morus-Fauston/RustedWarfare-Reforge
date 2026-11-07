@@ -71,6 +71,18 @@ def validate_intent_contract(intent,rule):
         raise PlatformError('input-contract', 'Invalid or empty fixed intent contract', 1)
 
 
+def input_footprint(geometry):
+    if geometry is None:return dict(x=0,y=0)
+    viewport=geometry['viewport']
+    dimensions=[geometry['worldWidth'],geometry['worldHeight'],viewport['screenWidth'],viewport['screenHeight']]
+    if (any(type(v) not in (int,float) or not math.isfinite(v) or v<=0 for v in dimensions) or
+            (viewport['width'],viewport['height']) not in ((1200,800),(960,640)) or
+            viewport['screenWidth']!=viewport['width'] or viewport['screenHeight']!=viewport['height']):
+        raise PlatformError('input-geometry','Missing or unregistered fixed map/viewport geometry')
+    scale=min(704/geometry['worldWidth'],512/geometry['worldHeight'])
+    return dict(x=1/(scale*viewport['screenWidth']/960),y=1/(scale*viewport['screenHeight']/640))
+
+
 def compare_intent(records, intent, rule, after_sequence, geometry=None):
     validate_intent_contract(intent,rule)
     assertions=rule['assertions']
@@ -87,16 +99,7 @@ def compare_intent(records, intent, rule, after_sequence, geometry=None):
         if key not in action or action[key] != expected:
             raise PlatformError('action-fields', 'Formal action differs: '+key, 2)
     if rule.get('targetFromIntent') is True:
-        limits = dict(x=0, y=0)
-        if geometry is not None:
-            viewport = geometry['viewport']
-            dimensions = [geometry['worldWidth'], geometry['worldHeight'], viewport['screenWidth'], viewport['screenHeight']]
-            if (any(type(v) not in (int, float) or not math.isfinite(v) or v <= 0 for v in dimensions) or
-                    (viewport['width'], viewport['height']) not in ((1200, 800), (960, 640)) or
-                    viewport['screenWidth'] != viewport['width'] or viewport['screenHeight'] != viewport['height']):
-                raise PlatformError('input-geometry', 'Missing or unregistered fixed map/viewport geometry')
-            scale = min(704/geometry['worldWidth'], 512/geometry['worldHeight'])
-            limits = dict(x=1/(scale*viewport['screenWidth']/960), y=1/(scale*viewport['screenHeight']/640))
+        limits = input_footprint(geometry)
         for axis in ('x', 'y'):
             actual, expected = action.get('target', {}).get(axis), intent.get('position', {}).get(axis)
             if any(type(v) not in (int, float) or not math.isfinite(v) for v in (actual, expected)):
@@ -385,7 +388,7 @@ def validate_history_poses(units, policy):
                 raise PlatformError('history-pose', 'Missing, duplicate or invalid mech leg', 2)
 
 
-def validate_history_action(records, row, intent):
+def validate_history_action(records, row, intent, geometry=None):
     """Bind a fixed intention to its existing exported call and owned object."""
     index=row['sequence']
     if not 0 < index < len(records)-1:
@@ -418,12 +421,16 @@ def validate_history_action(records, row, intent):
     if 'targetUnitId' in intent:fields['targetUnitId']=intent['targetUnitId']
     if any(row.get(key)!=value for key,value in fields.items()):
         raise PlatformError('history-action-fields','Formal action parameters differ from the fixed intention',2)
-    def same_point(actual,expected):
+    def same_point(actual,expected,limits=None):
         return all(isinstance(p,dict) and set(p)=={'x','y'} and all(
             type(p[k]) in (int,float) and math.isfinite(p[k]) for k in ('x','y'))
-            for p in (actual,expected)) and actual==expected
-    if kind in ('build','move') and 'position' in intent and not same_point(row.get('target'),intent['position']):
+            for p in (actual,expected)) and all(abs(actual[k]-expected[k])<=(limits or dict(x=0,y=0))[k] for k in ('x','y'))
+    if kind in ('build','move') and 'position' in intent and not same_point(row.get('target'),intent['position'],input_footprint(geometry)):
         raise PlatformError('history-action-fields','Formal destination differs from the fixed Session point',2)
+    if kind=='move':
+        unit=next(u for u in right['units'] if u.get('unitId')==identity)
+        if not same_point(unit.get('moveTarget'),row.get('target')):
+            raise PlatformError('history-action-fields','Move target did not exactly match the accepted formal destination',2)
     if kind=='attack':
         targets=[u for u in left.get('units',[]) if u.get('unitId')==row.get('targetUnitId')]
         if (len(targets)!=1 or targets[0].get('alive') is not True or targets[0].get('ownerPlayerId')==actor or
@@ -442,10 +449,40 @@ def validate_history_action(records, row, intent):
             raise PlatformError('history-action-fields','Production did not append the fixed product to its FIFO',2)
 
 
-def compare_history(records, plan, policy):
+def validate_production_history(records, policy):
+    """Match declared completion order against fresh simulation events."""
+    declarations={'unit-produced':'productionOrder','upgrade-completed':'completedUpgradeTypes'}
+    actual={kind:[] for kind in declarations}
+    seen={kind:set() for kind in declarations}
+    for name in declarations.values():
+        if name in policy and (not isinstance(policy[name],list) or
+                any(not isinstance(t,str) or not t for t in policy[name])):
+            raise PlatformError('input-contract','Completion order requires fixed unit type lists',1)
+    for row in records:
+        if row.get('kind')!='observation' or row.get('phase')!='step':continue
+        sample=row['sample']
+        for event in sample.get('events',[]):
+            kind=event.get('kind')
+            if kind not in declarations or declarations[kind] not in policy:continue
+            matches=[u for u in sample.get('units',[]) if u.get('unitId')==event.get('unitId')]
+            if len(matches)!=1:
+                raise PlatformError('history-production','Completion lacks a unique observed unit',2)
+            unit=matches[0]
+            if unit.get('ownerPlayerId')!=policy.get('ownerPlayerId','p1'):continue
+            identity=unit['unitId']
+            if identity in seen[kind]:
+                raise PlatformError('history-production','Repeated completion event for one unit',2)
+            seen[kind].add(identity);actual[kind].append(unit.get('typeId'))
+    for kind,name in declarations.items():
+        if name in policy and actual[kind]!=policy[name]:
+            raise PlatformError('history-production','Missing or reordered completion: '+name,2)
+
+
+def compare_history(records, plan, policy, native_anchors=None, geometry=None):
     """Check a declared ledger at every observation, including call boundaries."""
     allowed={'initialBalance','spend','noActionIntents','projectileBirthsRequired','mechLegs',
-             'ownerPlayerId','initialOwnedTypes','finalUnits','minimumBirths'}
+             'ownerPlayerId','initialOwnedTypes','finalUnits','minimumBirths',
+             'productionOrder','completedUpgradeTypes'}
     if not isinstance(policy,dict) or set(policy)-allowed:
         raise PlatformError('input-contract', 'Unknown or malformed history obligations', 1)
     balance = policy.get('initialBalance')
@@ -491,7 +528,22 @@ def compare_history(records, plan, policy):
     completed, steps, intent_steps, initial_step, action_count = 0, 0, 0, None, 0
     action_ids = set()
     construction_charges, construction_ids, seen_units = {}, set(), set()
-    for row in records:
+    stream=records
+    if native_anchors is not None:
+        if ([a.get('intentId') for a in native_anchors]!=[i['intentId'] for i in plan['intents']] or
+                any(type(a.get(k)) is not int for a in native_anchors for k in ('afterSequence','endSequence')) or
+                any(a['afterSequence']>=a['endSequence'] for a in native_anchors) or
+                any(a['endSequence']>=b['afterSequence'] for a,b in zip(native_anchors,native_anchors[1:])) or
+                any(a['afterSequence']<0 or a['endSequence']>=len(records) for a in native_anchors)):
+            raise PlatformError('history-intent','Invalid recorded native input boundaries',1)
+        starts={a['afterSequence']+1:a['intentId'] for a in native_anchors}
+        ends={a['endSequence']:a['intentId'] for a in native_anchors}
+        stream=[]
+        for row in records:
+            if row['sequence'] in starts:stream.append(dict(kind='intent-start',intentId=starts[row['sequence']]))
+            stream.append(row)
+            if row['sequence'] in ends:stream.append(dict(kind='intent-end',intentId=ends[row['sequence']]))
+    for row in stream:
         if row.get('kind') == 'intent-start':
             if (active is not None or completed >= len(plan['intents']) or
                     row.get('intentId') != plan['intents'][completed]['intentId']):
@@ -502,7 +554,8 @@ def compare_history(records, plan, policy):
             if active in construction_charges:
                 raise PlatformError('history-construction', 'Build intention lacks its unique new construction site', 2)
             if (active is None or row.get('intentId') != active or
-                    intent_steps != intents[active].get('waitSteps', 0) or
+                    (intent_steps < intents[active].get('waitSteps', 0) if native_anchors is not None
+                     else intent_steps != intents[active].get('waitSteps', 0)) or
                     action_count != (0 if active in no_actions else 1)):
                 raise PlatformError('history-intent', 'Unfinished intention or wrong explicit step count')
             active = None
@@ -519,7 +572,12 @@ def compare_history(records, plan, policy):
                     intents.get(active, {}).get('kind'))
             if expected_type is None or row.get('type') != expected_type:
                 raise PlatformError('history-action', 'Action type differs from the fixed client intention', 2)
-            validate_history_action(records,row,intents[active])
+            context=None
+            if geometry is not None:
+                viewport=next((r for r in reversed(records) if r.get('kind')=='resize' and r['sequence']<row['sequence']),None)
+                if viewport is None:raise PlatformError('input-geometry','History lacks a formal viewport')
+                context=dict(geometry,viewport=viewport)
+            validate_history_action(records,row,intents[active],context)
             charge = charges.get(active)
             if charge:
                 if charge['at'] == 'action': balance -= charge['amount']
@@ -537,7 +595,7 @@ def compare_history(records, plan, policy):
                     if actual!=sorted(policy['initialOwnedTypes']):
                         raise PlatformError('history-initial', 'Initial owned units differ from the fixed starting chain', 2)
             if row.get('phase') == 'step':
-                if active is None or index != steps:
+                if (active is None and native_anchors is None) or index != steps:
                     raise PlatformError('history-step', 'Missing or reordered simulation step')
                 steps += 1; intent_steps += 1
             elif index != max(initial_step, steps-1):
@@ -601,6 +659,7 @@ def compare_history(records, plan, policy):
                 raise PlatformError('input-contract', 'Final history fields must be scalar predicates', 1)
             if name not in selected[0] or (type(actual) is bool)!=(type(wanted) is bool) or actual!=wanted:
                 raise PlatformError('history-final', 'Terminal unit differs: '+name, 2)
+    validate_production_history(records,policy)
     if not all(fired):raise PlatformError('history-firing', 'Missing independently required named weapon birth/target', 2)
     return dict(exitCode=0, status='passed', scenarioId=plan['scenarioId'], history=dict(observations=observations, balance=balance))
 
@@ -656,7 +715,7 @@ def compare_run(records, plan, contract, anchors, geometry=None):
     elif close_index != len(records)-1:
         raise PlatformError('closing-tail', 'Unexpected records after Session close')
     if 'history' in contract:
-        return compare_history(records, plan, contract['history'])
+        return compare_history(records, plan, contract['history'], anchors if geometry is not None else None, geometry)
     judgments = []
     previous_end = -1
     for intent, rule, anchor in zip(intents, rules, anchors):
@@ -696,7 +755,10 @@ def save(path, document):
 
 
 def read(path):
-    return json.loads(Path(path).read_text(encoding='utf8'))
+    document = json.loads(Path(path).read_text(encoding='utf8'))
+    if isinstance(document, dict) and document.get('kind') == 'behavior-contract' and 'platform' in document:
+        return document['platform']
+    return document
 
 
 def tree(root):
@@ -891,6 +953,7 @@ def main(argv=None):
         windows.add_argument('--'+option, required=True, type=Path)
     windows.add_argument('--java', default='java')
     windows.add_argument('--size', choices=['1200x800', '960x640'], required=True)
+    windows.add_argument('--rate-profile', choices=['normal','segmented'], default='normal')
     compare = commands.add_parser('compare')
     compare.add_argument('--run', required=True, type=Path)
     args = parser.parse_args(argv)
@@ -900,7 +963,7 @@ def main(argv=None):
         elif args.command == 'windows':
             from platform_windows import run_windows
             result = run_windows(args.scenario, args.contract, args.distribution, args.output,
-                                 tuple(map(int, args.size.split('x'))), args.java)
+                                 tuple(map(int, args.size.split('x'))), args.java, args.rate_profile)
         else:
             result = compare_archive(args.run)
     except PlatformError as error:

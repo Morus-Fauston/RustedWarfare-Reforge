@@ -6,9 +6,85 @@ import subprocess
 import sys
 import tempfile
 import unittest
+import os
 
 
 class PublicBatchTest(unittest.TestCase):
+    def test_bounded_command_timeout_kills_the_spawned_tree_and_stops_the_batch(self):
+        from public_check import REPO,source_files
+        with tempfile.TemporaryDirectory(prefix='reforge-layer-timeout-') as tmp:
+            repo=Path(tmp)
+            # Minimal authored source closure, with the actual process executor.
+            for source in source_files(REPO):
+                relative=source.relative_to(REPO)
+                if str(relative).replace('\\','/') not in {
+                    'SimulationTest/ci/public_batch.py','SimulationTest/ci/public_check.py',
+                    'SimulationTest/tools/workflow.py','SimulationTest/tools/workflow_inputs.py'}:
+                    if source.name not in {'gradlew','gradlew.bat','build.gradle.kts','settings.gradle.kts','gradle.properties'}:continue
+                target=repo/relative;target.parent.mkdir(parents=True,exist_ok=True);shutil.copyfile(source,target)
+            # Explicit nonimported identity members may be empty in this CLI-only fixture.
+            for source in source_files(REPO):
+                target=repo/source.relative_to(REPO)
+                if not target.exists() and source.parent==REPO/'SimulationTest/tools':
+                    target.parent.mkdir(parents=True,exist_ok=True);target.write_text('',encoding='utf8')
+            for name in ['verify_dec_evidence.py','test_verify_dec_evidence.py']:
+                p=repo/'Decompile/tools'/name;p.parent.mkdir(parents=True,exist_ok=True);p.write_text('',encoding='utf8')
+            suites=repo/'SimulationTest/public/suites';suites.mkdir(parents=True)
+            for name in ['content-movement-knowledge','production-combat','build-economy','maintenance-defense','platform-basics','content-three-formats','tooling']:
+                (suites/(name+'.json')).write_text(json.dumps(dict(schemaVersion=1,suiteId=name,inputScope='public',tests={'tools':['ProbeTest']})),encoding='utf8')
+            worker=repo/'worker.py'
+            worker.write_text("import subprocess,sys,time\nfrom pathlib import Path\np=subprocess.Popen([sys.executable,'-c','import time;time.sleep(30)'])\nPath(__file__).with_name('child.pid').write_text(str(p.pid))\ntime.sleep(30)\n",encoding='utf8')
+            (repo/'SimulationTest/gradlew.bat').write_text('@echo off\n"'+sys.executable+'" -B "'+str(worker)+'"\n',encoding='utf8')
+            (repo/'SimulationTest/gradlew').write_text('#!/bin/sh\nexec "'+sys.executable+'" -B "'+str(worker)+'"\n',encoding='utf8')
+            output=repo/'batch';pid=None
+            def alive(pid):
+                if os.name=='nt':
+                    import ctypes
+                    k=ctypes.WinDLL('kernel32',use_last_error=True)
+                    k.OpenProcess.restype=ctypes.c_void_p;k.WaitForSingleObject.argtypes=[ctypes.c_void_p,ctypes.c_ulong];k.CloseHandle.argtypes=[ctypes.c_void_p]
+                    h=k.OpenProcess(0x100000,False,pid)
+                    if not h:return False
+                    try:return k.WaitForSingleObject(h,0)==258
+                    finally:k.CloseHandle(h)
+                status=Path('/proc')/str(pid)/'stat'
+                if status.exists() and status.read_text().rsplit(')',1)[1].split()[0]=='Z':return False
+                try:os.kill(pid,0);return True
+                except ProcessLookupError:return False
+            try:
+                result=subprocess.run([sys.executable,'-B',str(repo/'SimulationTest/ci/public_batch.py'),'--kind','mechanism','--command-timeout','1','--output',str(output)],capture_output=True,text=True,timeout=35)
+                if (repo/'child.pid').exists():pid=int((repo/'child.pid').read_text())
+                self.assertEqual(1,result.returncode,result.stderr)
+                self.assertIsNotNone(pid,'The timeout must happen after the real child was spawned')
+                batch=json.loads((output/'result.json').read_bytes());self.assertEqual(1,len(batch['suites']))
+                child=json.loads((output/'content-movement-knowledge/result.json').read_bytes())
+                self.assertEqual(124,child['commands'][0]['exitCode'])
+                receipt=json.loads((output/'content-movement-knowledge/tests-and-package-process/result.json').read_bytes())
+                self.assertEqual('timeout',receipt['firstError']['kind'])
+                self.assertEqual(1,receipt['timeoutSeconds'])
+                self.assertFalse(receipt['passed'])
+                self.assertEqual(1,child['commandTimeoutSeconds'])
+                self.assertFalse(alive(pid),'Timed-out child escaped process-tree cleanup')
+                self.assertFalse((output/'production-combat').exists())
+            finally:
+                if pid and alive(pid):
+                    if os.name=='nt':subprocess.run(['taskkill','/PID',str(pid),'/T','/F'],capture_output=True,timeout=10)
+                    else:
+                        import signal
+                        os.kill(pid,signal.SIGKILL)
+
+    def test_explicit_budget_is_bounded_without_changing_the_selected_contract(self):
+        with tempfile.TemporaryDirectory(prefix='reforge-command-budget-') as tmp:
+            output=Path(tmp)/'must-not-exist'
+            for filename,scope in [('public_batch.py',['--kind','pr']),('public_check.py',['--suite','production-combat','--kind','pr'])]:
+                argv=[sys.executable,'-B',str(Path(__file__).with_name(filename)),*scope,'--list','--output',str(output)]
+                baseline=subprocess.run(argv,capture_output=True,text=True,timeout=20)
+                extended=subprocess.run(argv+['--command-timeout','1800'],capture_output=True,text=True,timeout=20)
+                self.assertEqual(0,baseline.returncode,baseline.stderr);self.assertEqual(0,extended.returncode,extended.stderr)
+                self.assertEqual(json.loads(baseline.stdout),json.loads(extended.stdout))
+                for invalid in ['0','-1','nan','inf','3601']:
+                    rejected=subprocess.run(argv+['--command-timeout',invalid],capture_output=True,text=True,timeout=20)
+                    self.assertEqual(2,rejected.returncode)
+                self.assertFalse(output.exists())
     def test_pr_and_long_select_all_applicable_suites_without_private_or_legacy_duplicates(self):
         entry = Path(__file__).with_name('public_batch.py')
         with tempfile.TemporaryDirectory(prefix='reforge-public-layer-') as tmp:
@@ -52,7 +128,7 @@ class PublicBatchTest(unittest.TestCase):
             (repo/'SimulationTest/gradlew.bat').write_text('@exit /b 9\n', encoding='utf8')
             # These are source identity members; no imported helper is faked or replaced.
             for relative in ['platform_scenario.py', 'test_platform_scenario.py', 'test_platform_session_cli.py', 'test_named_weapon_platform.py',
-                'workflow.py', 'workflow_scenarios.py', 'test_workflow_scenarios.py', 'diagnostic_reader.py', 'test_diagnostic_reader.py',
+                'workflow.py', 'workflow_scenarios.py', 'test_workflow_scenarios.py', 'platform_wait.py', 'test_platform_wait.py', 'diagnostic_reader.py', 'test_diagnostic_reader.py',
                 'platform_windows.py', 'owned_window.py', 'test_owned_window.py', 'action_layout.py', 'test_action_layout.py', 'workflow_inputs.py', 'workflow_device.py', 'workflow_windows.py',
                 'workflow_reuse.py', 'perf_report.py', 'platform_perf.py', 'test_workflow.py',
                 'test_workflow_device.py', 'test_workflow_windows.py', 'test_workflow_reuse.py',
@@ -60,6 +136,8 @@ class PublicBatchTest(unittest.TestCase):
                 p=repo/'SimulationTest/tools'/relative
                 p.parent.mkdir(parents=True, exist_ok=True)
                 p.write_text('', encoding='utf8')
+            for name in ['workflow.py','workflow_inputs.py']:
+                shutil.copyfile(Path(__file__).parents[1]/'tools'/name,repo/'SimulationTest/tools'/name)
             for relative in ['verify_dec_evidence.py', 'test_verify_dec_evidence.py']:
                 p=repo/'Decompile/tools'/relative
                 p.parent.mkdir(parents=True, exist_ok=True)
