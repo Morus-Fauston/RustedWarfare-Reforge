@@ -75,6 +75,20 @@ MODULES = {'tools': (':test', 'build/test-results/test'),
            'pc': (':pc:test', 'build/pc/test-results/test')}
 
 
+def test_forks(value):
+    if str(value) not in ('1', '2', '4'):
+        raise argparse.ArgumentTypeError('Test forks must be 1, 2 or 4')
+    return int(value)
+
+
+def test_concurrency(tests, forks):
+    forks = test_forks(forks)
+    return dict(requested=forks, maxWorkers=forks, modules={
+        module: dict(maxParallelForks=1 if module == 'pc' else forks,
+                     reason='PC tests remain serial' if module == 'pc' else 'Independent class JVMs')
+        for module in tests})
+
+
 def plan_suite(repo, name, kind):
     if not re.fullmatch(r'[a-z0-9][a-z0-9-]*', name):
         raise ValueError('Suite name must be a public registry name, not a path')
@@ -166,13 +180,14 @@ def build_shared_distribution(repo, output, source, command_timeout_seconds=600)
     return result
 
 
-def run(repo, output, plan, prepared_distribution=None, command_timeout_seconds=600):
+def run(repo, output, plan, prepared_distribution=None, command_timeout_seconds=600, forks=1):
     output.mkdir(parents=True, exist_ok=False)
     initial = identities(repo)
     result = dict(schemaVersion=1, suite=plan['suiteId'], selection=plan, status='execution-failed',
                   cloudRun=False, source=initial, commands=[], coverage=[],
                   exclusions=['original-compatibility', 'platform-input', 'historical-snapshot-reexecution'],
-                  commandTimeoutSeconds=command_timeout_seconds)
+                  commandTimeoutSeconds=command_timeout_seconds,
+                  testConcurrency=test_concurrency(plan['tests'], forks))
     if not any(case['kind'] == 'long' for case in plan['scenarios']):
         result['exclusions'].append('continuous-long')
     started = time.monotonic()
@@ -191,16 +206,6 @@ def run(repo, output, plan, prepared_distribution=None, command_timeout_seconds=
             admit()
         if not measured['passed']:
             raise RuntimeError(f'{name}: exit {code}; see {name}.log')
-    def junit(folder, name, expected):
-        rows = []
-        for path in sorted(folder.glob('TEST-*.xml')):
-            suite = ET.parse(path).getroot()
-            rows.append({key: suite.attrib[key] for key in ['name', 'tests', 'failures', 'errors', 'skipped']})
-        if {r['name'] for r in rows} != set(expected) or any(
-                int(r['tests']) < 1 or any(int(r[k]) for k in ['failures', 'errors', 'skipped']) for r in rows):
-            raise RuntimeError(f'{name}: missing, unexpected, empty, failed or skipped test class: {rows}')
-        shutil.copytree(folder, output / name)
-        result['coverage'].append(dict(name=name, classes=rows))
     try:
         project = repo / 'SimulationTest'
         if prepared_distribution is not None:
@@ -209,34 +214,26 @@ def run(repo, output, plan, prepared_distribution=None, command_timeout_seconds=
             distribution = admit()
             result['preparedDistribution'] = dict(receipt=str(prepared_distribution[0]), sha256=prepared_distribution[1])
         wrapper = [str(project / 'gradlew.bat')] if os.name == 'nt' else ['sh', str(project / 'gradlew')]
-        common = ['--no-daemon', '--console=plain', '--max-workers=1', '--rerun-tasks']
+        common = ['--no-daemon', '--console=plain', '--max-workers='+str(forks), '--rerun-tasks']
         if plan['fixture']:
             common += ['-Dpublic.inputs.dir=' + str(project / 'public' / plan['fixture'])]
-        tasks = [MODULES[module][0] for module in plan['tests']]
-        selection_args = []
-        if tasks:
-            # A growing fixed registry can exceed cmd.exe's .bat command-line limit.
-            # Keep the same exact class filters in an archived Gradle init script.
-            selection = output / 'selected-tests.gradle'
-            entries = [json.dumps(MODULES[module][0]) + ': ' + json.dumps(classes)
-                       for module, classes in plan['tests'].items()]
-            selection.write_text('def selectedTests = [\n' + ',\n'.join(entries) + '\n]\n' +
-                'gradle.projectsEvaluated {\n'
-                '    gradle.rootProject.allprojects { project ->\n'
-                '        project.tasks.withType(org.gradle.api.tasks.testing.Test).configureEach { task ->\n'
-                '            def classes = selectedTests[task.path]\n'
-                '            if (classes != null) task.filter.setIncludePatterns(classes as String[])\n'
-                '        }\n'
-                '    }\n'
-                '}\n', encoding='utf8')
-            selection_args = ['--init-script', str(selection)]
-            result['testSelection'] = dict(path=str(selection),
-                sha256=hashlib.sha256(selection.read_bytes()).hexdigest())
         if prepared_distribution is None:
-            command('tests-and-package', wrapper + tasks + [':installDist'] + common + selection_args, project)
+            if plan['tests']:
+                from development_check import execute_test_group
+                executed = execute_test_group(repo, output/'test-execution',
+                    dict(fixture=plan['fixture'], tests=plan['tests'], suites=[plan['suiteId']]),
+                    True, forks, package=True, timeout=command_timeout_seconds)
+                result['testExecution'] = executed
+                process = executed['command']
+                result['commands'].append(dict(name='tests-and-package', argv=process['argv'],
+                    exitCode=process['exitCode'], elapsedSeconds=process['elapsedSeconds'],
+                    receipt='test-execution/command/result.json', firstError=process['firstError']))
+                result['coverage'] = executed['tests'].get('coverage', [])
+                if not process['passed'] or executed['tests']['status'] != 'passed':
+                    raise RuntimeError('Current test execution or packaging did not pass')
+            else:
+                command('tests-and-package', wrapper + [':installDist'] + common, project)
             distribution = project/'build/install/simulation-test'
-        for module, classes in plan['tests'].items():
-            junit(project / MODULES[module][1], module + '-tests', classes)
         result['pythonCoverage'] = []
         for index, relative in enumerate(plan.get('pythonTests', [])):
             name = 'python-' + str(index) + '-' + Path(relative).stem
@@ -296,6 +293,7 @@ def main():
     parser.add_argument('--suite', default='pr-first-loop', help='Named registry under public/suites')
     parser.add_argument('--kind', choices=['mechanism', 'short', 'long', 'pr', 'all'], default='pr')
     parser.add_argument('--list', action='store_true', help='Print fixed plan without building or creating evidence')
+    parser.add_argument('--test-forks', type=test_forks, default=1, help='Bound independent test JVMs: 1, 2 or 4; PC stays serial')
     parser.add_argument('--command-timeout',type=command_timeout,default=600,
                         help='Explicit per-command seconds, at most 3600; default 600. Selection is unchanged.')
     parser.add_argument('--distribution-receipt', type=Path, help='Same-batch fixed public long package receipt')
@@ -306,7 +304,7 @@ def main():
     except (ValueError, KeyError, TypeError) as error:
         parser.error(str(error))
     if args.list:
-        print(json.dumps(plan))
+        print(json.dumps(dict(plan, testConcurrency=test_concurrency(plan['tests'], args.test_forks))))
         return 0
     if bool(args.distribution_receipt) != bool(args.distribution_sha256):
         parser.error('The fixed distribution receipt and its pinned digest are required together')
@@ -324,7 +322,10 @@ def main():
             shutil.copy2(source, target)
         print('Isolated public source:', repo)
     prepared = (args.distribution_receipt, args.distribution_sha256) if args.distribution_receipt else None
-    return run(repo, output, plan, prepared, args.command_timeout)
+    sys.path.insert(0, str(REPO/'SimulationTest/tools'))
+    from workflow import resources
+    with resources(['build:'+str(REPO/'Engine'), 'build:'+str(REPO/'SimulationTest')]):
+        return run(repo, output, plan, prepared, args.command_timeout, args.test_forks)
 
 
 if __name__ == '__main__':

@@ -11,8 +11,7 @@ class ProducedWeaponArchiveTest {
         val root = Path.of(System.getProperty("repo.root")).resolve("SimulationTest/public")
         val source = root.resolve("scenarios/heavy-mech-ini-short.json")
         val contractPath = root.resolve("contracts/heavy-mech-ini-short.json")
-        val batch = System.getenv("RWRE_P005_ARCHIVE_ROOT")?.let { Files.createDirectories(Path.of(it)).resolve("core-short") }
-            ?: Files.createTempDirectory("authorized-weapon-archive-").resolve("core-short")
+        val batch = TestArchives.directory("RWRE_P005_ARCHIVE_ROOT", javaClass, "authorized-weapons").resolve("core-short")
         val result = Runner.run(RunRequest(source, contractPath, batch, listOf("ProducedWeaponArchiveTest/Runner.run")))
         assertEquals(0, result.exitCode)
         assertEquals(0, TraceFiles.compare(source, contractPath, batch).exitCode)
@@ -97,8 +96,7 @@ class ProducedWeaponArchiveTest {
             assertTrue(reset.json().objectAt("combat").arrayAt("weapons").isEmpty())
             assertTrue(reset.json().arrayAt("projectiles").isEmpty())
             assertTrue(reset.json().arrayAt("projectileEvents").isEmpty())
-            val evidence = System.getenv("RWRE_P005_ARCHIVE_ROOT")?.let { Files.createDirectories(Path.of(it)) }
-                ?: Files.createTempDirectory("produced-core-boundaries-")
+            val evidence = TestArchives.directory("RWRE_P005_ARCHIVE_ROOT", javaClass, "boundaries-$format")
             Files.writeString(evidence.resolve("selected-core-boundaries-$format.json"), obj(
                 "scope" to s("Selected real CoreAdapter serialization boundaries; not a complete Runner trace"),
                 "sourceScenarioSha256" to s(base.scenarioIdentity.sha256),

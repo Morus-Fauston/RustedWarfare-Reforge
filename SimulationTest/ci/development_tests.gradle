@@ -1,16 +1,53 @@
 import groovy.json.JsonSlurper
 import groovy.json.JsonOutput
 import org.gradle.api.tasks.testing.Test
+import org.gradle.api.tasks.testing.junitplatform.JUnitPlatformOptions
+
+// Discover the supported JUnit form from compiled classes, independently of execution filters.
+// Fail explicitly for forms whose discovery/display semantics are not supported here.
+def expectedMethods = { task, classes ->
+    def loader = new URLClassLoader(task.classpath.files.collect { it.toURI().toURL() } as URL[], ClassLoader.platformClassLoader)
+    try {
+        classes.collectMany { name ->
+            def type = Class.forName(name, false, loader)
+            if (type.superclass != Object || type.interfaces.length != 0 ||
+                type.declaredClasses.any { nested -> nested.annotations.any { it.annotationType().name == 'org.junit.jupiter.api.Nested' } } ||
+                type.annotations.any { it.annotationType().name in ['org.junit.jupiter.api.DisplayNameGeneration','org.junit.jupiter.api.Nested'] })
+                throw new GradleException('Unsupported test discovery form: '+name)
+            def found = []
+            type.declaredMethods.each { method ->
+                def annotations = method.annotations.collect { it.annotationType().name }
+                if (annotations.any { it in ['org.junit.jupiter.api.TestFactory','org.junit.jupiter.api.TestTemplate',
+                    'org.junit.jupiter.api.RepeatedTest','org.junit.jupiter.params.ParameterizedTest','org.junit.Test'] })
+                    throw new GradleException('Unsupported test discovery form: '+name+'.'+method.name)
+                if ('org.junit.jupiter.api.Test' in annotations) {
+                    if (method.parameterCount != 0 || method.returnType != Void.TYPE ||
+                        java.lang.reflect.Modifier.isPrivate(method.modifiers) || java.lang.reflect.Modifier.isStatic(method.modifiers) ||
+                        'org.junit.jupiter.api.DisplayName' in annotations)
+                        throw new GradleException('Unsupported test method form: '+name+'.'+method.name)
+                    found.add([className:name, name:method.name+'()'])
+                }
+            }
+            if (found.isEmpty()) throw new GradleException('No independently discovered tests: '+name)
+            found.sort { it.name }
+        }
+    } finally {
+        loader.close()
+    }
+}
 
 def plan = new JsonSlurper().parse(new File(System.getProperty('development.selection')))
 def output = new File(plan.output)
+if (!(plan.testForks in [1, 2, 4]) || gradle.startParameter.maxWorkerCount != plan.testForks)
+    throw new GradleException('Test forks must match the bounded Gradle worker budget')
 gradle.projectsEvaluated {
     gradle.rootProject.allprojects { p ->
         p.tasks.withType(Test).configureEach { task ->
             def selection = plan.tasks[task.path]
             if (selection != null) {
                 task.filter.setIncludePatterns(selection.classes as String[])
-                maxParallelForks = 1
+                maxParallelForks = task.path == ':pc:test' ? 1 : plan.testForks
+                forkEvery = 0
                 outputs.upToDateWhen { false }
                 outputs.cacheIf { false }
                 if (plan.fixture != null) {
@@ -18,13 +55,34 @@ gradle.projectsEvaluated {
                     systemProperty('public.fixtures.dir', new File(plan.repo, 'SimulationTest/public/inputs').absolutePath)
                 }
                 systemProperty('repo.root', plan.repo)
+                systemProperty('junit.jupiter.execution.parallel.enabled', 'false')
                 def leaf = new File(output, selection.module)
+                systemProperty('test.archive.root', new File(leaf, 'archives').absolutePath)
+                systemProperty('test.archive.run', plan.archiveRun)
+                systemProperty('test.archive.module', selection.module)
                 reports.junitXml.outputLocation.set(new File(leaf, 'xml'))
                 reports.html.outputLocation.set(new File(leaf, 'html'))
                 binaryResultsDirectory.set(new File(leaf, 'binary'))
                 doFirst {
                     leaf.mkdirs()
+                    new File(leaf, 'expected-methods.json').text = JsonOutput.toJson(expectedMethods(task, selection.classes))
                     new File(leaf, 'started.json').text = JsonOutput.toJson([task:task.path, millis:System.currentTimeMillis()])
+                }
+                def methods = []
+                beforeTest { descriptor ->
+                    synchronized (methods) {
+                        methods.add([className:descriptor.className, name:descriptor.name, started:System.currentTimeMillis()])
+                        new File(leaf, 'methods.json').text = JsonOutput.toJson(methods)
+                    }
+                }
+                afterTest { descriptor, result ->
+                    synchronized (methods) {
+                        def record = methods.find { it.className == descriptor.className && it.name == descriptor.name && !it.completed }
+                        if (record == null) throw new GradleException('Test completed without starting')
+                        record.completed = System.currentTimeMillis()
+                        record.result = result.resultType.toString()
+                        new File(leaf, 'methods.json').text = JsonOutput.toJson(methods)
+                    }
                 }
                 afterSuite { descriptor, result ->
                     if (descriptor.parent == null) {
@@ -45,14 +103,27 @@ gradle.taskGraph.whenReady { graph ->
         def selection = plan.tasks[task.path]
         if ((task.filter.includePatterns as Set) != (selection.classes as Set))
             throw new GradleException('Effective test selection differs from plan')
+        if (!(task.options instanceof JUnitPlatformOptions))
+            throw new GradleException('Expected JUnit Platform test discovery')
+        def framework = [includeTags:task.options.includeTags, excludeTags:task.options.excludeTags,
+                         includeEngines:task.options.includeEngines, excludeEngines:task.options.excludeEngines]
+        if (task.filter.excludePatterns || task.filter.commandLineIncludePatterns || task.includes || task.excludes ||
+            framework.values().any { !it.isEmpty() })
+            throw new GradleException('Unexpected test exclusion or narrowed discovery filter')
+        if (task.maxParallelForks != (task.path == ':pc:test' ? 1 : plan.testForks) || task.forkEvery != 0)
+            throw new GradleException('Effective test forks differ from budget')
         if (task.systemProperties['repo.root'] != plan.repo || (plan.fixture != null &&
             (task.systemProperties['p001.inputs.dir'] != new File(plan.repo, 'SimulationTest/public/'+plan.fixture).absolutePath ||
              task.systemProperties['public.fixtures.dir'] != new File(plan.repo, 'SimulationTest/public/inputs').absolutePath)))
             throw new GradleException('Effective test inputs differ from plan')
         [task:task.path, classes:task.filter.includePatterns, systemProperties:task.systemProperties,
+         excludePatterns:task.filter.excludePatterns, commandLineIncludePatterns:task.filter.commandLineIncludePatterns,
+         fileIncludes:task.includes, fileExcludes:task.excludes, junitOptions:framework,
+         testClasspath:task.classpath.files.collect { it.absolutePath },
+         maxParallelForks:task.maxParallelForks, forkEvery:task.forkEvery,
          javaLauncher:task.javaLauncher.get().executablePath.asFile.absolutePath]
     }
-    new File(output, 'effective.json').text = JsonOutput.toJson([tests:rows,
+    new File(output, 'effective.json').text = JsonOutput.toJson([tests:rows, testForks:plan.testForks, maxWorkers:gradle.startParameter.maxWorkerCount,
         daemonPid:ProcessHandle.current().pid(), javaHome:System.getProperty('java.home'),
         gradleUserHome:gradle.gradleUserHomeDir.absolutePath])
 }

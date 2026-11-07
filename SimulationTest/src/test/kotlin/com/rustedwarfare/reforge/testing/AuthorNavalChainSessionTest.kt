@@ -8,8 +8,7 @@ import kotlin.test.*
 class AuthorNavalChainSessionTest {
     @Test fun complete_ordinary_three_format_paid_chains_stream_authorized_player_archives_from_initial_empty_weapons() {
         val public = Path.of(System.getProperty("repo.root")).resolve("SimulationTest/public")
-        val root = System.getenv("RWR_AUTHOR_WATER_ARCHIVE_ROOT")?.let(Path::of)
-            ?: Files.createTempDirectory("rwr-author-naval-session-")
+        val root = TestArchives.directory("RWR_AUTHOR_WATER_ARCHIVE_ROOT", javaClass, "rwr-author-naval-session-")
         Files.createDirectories(root)
         for (format in listOf("ini", "json", "hjson")) {
             val output = root.resolve("naval-chain-session-$format")

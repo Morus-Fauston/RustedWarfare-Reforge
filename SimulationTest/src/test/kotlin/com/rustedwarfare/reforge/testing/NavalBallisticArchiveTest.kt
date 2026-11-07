@@ -10,11 +10,7 @@ class NavalBallisticArchiveTest {
     @Test
     fun runner_persists_ballistic_state_and_strict_reader_rejects_corrupted_intermediate_values_after_valid_rehash() {
         val repo = Path.of(System.getProperty("repo.root"))
-        val root = System.getenv("RWR_NAVAL_ARCHIVE_ROOT")?.let {
-            val parent = Path.of(it).toAbsolutePath().normalize()
-            Files.createDirectories(parent)
-            Files.createDirectory(parent.resolve("ballistic-archive"))
-        } ?: Files.createTempDirectory("p008-naval-ballistic-archive-")
+        val root = TestArchives.directory("RWR_NAVAL_ARCHIVE_ROOT", javaClass, "ballistic-archive")
         val public = repo.resolve("SimulationTest/public")
         val base = readObject(public.resolve("scenarios/helicopter-ini-short.json"))
         val fixture = Files.createDirectory(root.resolve("fixture"))

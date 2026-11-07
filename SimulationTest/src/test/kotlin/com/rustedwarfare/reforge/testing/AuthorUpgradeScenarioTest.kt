@@ -32,8 +32,7 @@ class AuthorUpgradeScenarioTest {
 
     @Test fun real_player_views_require_only_the_authorized_current_tier_upgrade_queue() {
         val public = Path.of(System.getProperty("repo.root")).resolve("SimulationTest/public")
-        val output = System.getenv("RWR_AUTHOR_WATER_ARCHIVE_ROOT")?.let(Path::of)
-            ?: Files.createTempDirectory("rwr-author-upgrade-views-")
+        val output = TestArchives.directory("RWR_AUTHOR_WATER_ARCHIVE_ROOT", javaClass, "rwr-author-upgrade-views-")
         Files.createDirectories(output)
         val scenario = public.resolve("scenarios/author-upgrade-views-json.json")
         val contract = public.resolve("contracts/author-upgrade-views-json.json")
@@ -66,8 +65,7 @@ class AuthorUpgradeScenarioTest {
 
     @Test fun three_formats_archive_the_shared_production_upgrade_fifo_and_require_its_complete_upgrade_queues() {
         val public = Path.of(System.getProperty("repo.root")).resolve("SimulationTest/public")
-        val output = System.getenv("RWR_AUTHOR_WATER_ARCHIVE_ROOT")?.let(Path::of)
-            ?: Files.createTempDirectory("rwr-author-upgrade-archive-")
+        val output = TestArchives.directory("RWR_AUTHOR_WATER_ARCHIVE_ROOT", javaClass, "rwr-author-upgrade-archive-")
         Files.createDirectories(output)
         var baseline: List<JsonObject>? = null
         for (format in listOf("ini", "json", "hjson")) {

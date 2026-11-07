@@ -35,6 +35,12 @@ python -B SimulationTest/ci/development_check.py --suite platform-basics --suite
 
 每组保留精确类过滤、生效输入/JDK/daemon身份、逐任务状态、当前开始/结束标记和每方法JUnit XML。默认位置的旧XML列入`ignoredPreviousXml`，不计本次执行；跳过、空类、缺类、失败或只有up-to-date的测试均不能通过。返回码与`result.json`共同判断结果，失败原件保留。
 
+日常入口、单组公共入口和公共批次均可指定`--test-forks 1|2|4`。默认1路；2/4路仅用于独立测试JVM之间的类并行，PC模块始终1路，JUnit方法不并行。Gradle `--max-workers`等于请求值，构建与测试共用该全局上限；Python工具测试仍逐项串行。`--list`显示请求及各模块有效并发，不创建输出。显式`--test-forks 1`可串行复跑同一选择。
+
+公共与日常检查使用同一全新Test输出：XML/binary/html、当前方法开始/完成/结果、任务实际执行和生效fork配置须相互一致。显式测试归档环境变量是外层根；目录继续按运行、模块、worker、类和case隔离，重复case拒绝覆盖，异步工作沿已取得的路径落盘。没有显式根时归档放本次Test输出下；历史归档不会被作为当前执行结果。
+
+方法覆盖同时核对执行前从编译类独立发现的预期集合，不能由XML和监听器共同漏测后相互证明。非空Gradle排除、额外命令行或文件过滤、JUnit标签/引擎过滤一律拒绝并留有效配置；当前发现合同支持本项目现有的普通JUnit Jupiter无参Test，继承/接口、嵌套、动态/参数化/重复测试及自定义方法显示名等尚不支持的形式明确拒绝资格，须先扩展发现合同，不能静默少算。
+
 ## 首条公共无头短测
 
 本目录全部为TEST-P004-001新建的自有合成输入，不复制原版地图、INI或图片。`generate_inputs.py`用标准库生成12×12空地、一个单位声明和20×20纯色PNG，并固定文件SHA256；它不生成预期。断言独立写在`contracts/select-move-stop.json`，运行时不改输入或预期。

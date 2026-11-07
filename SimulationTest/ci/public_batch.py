@@ -9,7 +9,7 @@ import sys
 import tempfile
 import time
 
-from public_check import REPO, identities, plan_suite, source_files, build_shared_distribution, command_timeout
+from public_check import REPO, identities, plan_suite, source_files, build_shared_distribution, command_timeout, test_forks, test_concurrency
 
 
 SUITES = ('content-movement-knowledge', 'production-combat', 'build-economy',
@@ -34,13 +34,15 @@ def plan_layer(repo, kind):
                 exclusions=['original-runtime', 'device', 'real-platform-input', 'formal-performance'])
 
 
-def run_layer(repo, output, plan, isolated, command_timeout_seconds=600):
+def run_layer(repo, output, plan, isolated, command_timeout_seconds=600, forks=1):
     output.mkdir(parents=True, exist_ok=False)
     started = time.monotonic()
     source = identities(repo)
     result = dict(schemaVersion=1, status='execution-failed', selection=plan, source=source,
                   isolated=isolated, suites=[], cloudRun=os.environ.get('GITHUB_ACTIONS') == 'true',
-                  commandTimeoutSeconds=command_timeout_seconds)
+                  commandTimeoutSeconds=command_timeout_seconds,
+                  testConcurrency=test_concurrency(
+                      {m: [] for row in plan['suites'] for m in row['plan']['tests']}, forks))
     try:
         shared = None
         if plan['kind'] == 'long':
@@ -55,7 +57,7 @@ def run_layer(repo, output, plan, isolated, command_timeout_seconds=600):
             child = output / name
             argv = [sys.executable, '-B', str(repo/'SimulationTest/ci/public_check.py'),
                     '--suite', name, '--kind', row['plan']['kind'], '--output', str(child),
-                    '--command-timeout',str(command_timeout_seconds)]
+                    '--command-timeout',str(command_timeout_seconds), '--test-forks', str(forks)]
             if shared is not None:
                 from public_distribution import verify
                 verify(shared['receipt'], shared['sha256'], identities(repo))
@@ -93,6 +95,7 @@ def main():
     parser.add_argument('--output', type=Path, help='New immutable batch directory')
     parser.add_argument('--list', action='store_true', help='List fixed complete layer without execution')
     parser.add_argument('--isolated', action='store_true', help='Copy only authored public source closure')
+    parser.add_argument('--test-forks', type=test_forks, default=1, help='Bound independent test JVMs: 1, 2 or 4; PC stays serial')
     parser.add_argument('--command-timeout',type=command_timeout,default=600,
                         help='Per-command seconds forwarded to every suite and shared build; at most 3600')
     args = parser.parse_args()
@@ -101,7 +104,8 @@ def main():
     except (ValueError, KeyError, TypeError, OSError) as error:
         parser.error(str(error))
     if args.list:
-        print(json.dumps(plan))
+        print(json.dumps(dict(plan, testConcurrency=test_concurrency(
+            {m: [] for row in plan['suites'] for m in row['plan']['tests']}, args.test_forks))))
         return 0
     if args.output is None:
         parser.error('--output is required for execution')
@@ -115,7 +119,7 @@ def main():
             target = repo/source.relative_to(REPO)
             target.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(source, target)
-    return run_layer(repo, output, plan, args.isolated, args.command_timeout)
+    return run_layer(repo, output, plan, args.isolated, args.command_timeout, args.test_forks)
 
 
 if __name__ == '__main__':

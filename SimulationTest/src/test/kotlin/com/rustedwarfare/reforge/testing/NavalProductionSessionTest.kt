@@ -9,8 +9,7 @@ class NavalProductionSessionTest {
     @Test fun formal_sessions_persist_normal_three_format_builder_factory_ship_and_three_category_combat_from_the_first_record() {
         val repo = Path.of(System.getProperty("repo.root"))
         val public = repo.resolve("SimulationTest/public")
-        val root = System.getenv("RWR_NAVAL_ARCHIVE_ROOT")?.let { Files.createDirectories(Path.of(it)).resolve("production-session") }
-            ?: Files.createTempDirectory("naval-production-session-").resolve("archives")
+        val root = TestArchives.directory("RWR_NAVAL_ARCHIVE_ROOT", javaClass, "production-session").resolve("archives")
         Files.createDirectory(root)
         val seal = Files.createDirectory(root.resolve("sealed-inputs"))
         val entries = mutableListOf<JsonObject>()

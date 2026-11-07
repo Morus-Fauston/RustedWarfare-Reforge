@@ -8,8 +8,7 @@ import kotlin.test.*
 class AuthorConstructionScenarioTest {
     @Test fun three_format_fixed_nonce_construction_archives_preserve_all_gameplay_records() {
         val public = Path.of(System.getProperty("repo.root")).resolve("SimulationTest/public")
-        val output = System.getenv("RWR_AUTHOR_WATER_ARCHIVE_ROOT")?.let(Path::of)
-            ?: Files.createTempDirectory("rwr-author-construction-archive-")
+        val output = TestArchives.directory("RWR_AUTHOR_WATER_ARCHIVE_ROOT", javaClass, "rwr-author-construction-archive-")
         Files.createDirectories(output)
         var baseline: List<JsonObject>? = null
         for (format in listOf("ini", "json", "hjson")) {
