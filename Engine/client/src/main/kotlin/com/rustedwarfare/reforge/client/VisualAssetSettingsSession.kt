@@ -187,7 +187,9 @@ class VisualAssetSettingsSession(private val backend: VisualAssetSettings) : Aut
         check(!busy) { "Cancel the current resource operation first" }
         if (!supportsOriginalResourceExtraction) throw UnsupportedOperationException("Complete PC resource extraction is unavailable on this platform")
         val source = path.toAbsolutePath().normalize()
-        begin(Operation.EXTRACT_RESOURCES) { Completed.Imported(backend.extractOriginalResourcePack(source)) }
+        begin(Operation.EXTRACT_RESOURCES) {
+            Completed.Imported(backend.extractAndCheckOriginalResources(source))
+        }
     }
 
     fun restoreSaved(content: ContentPackChoice? = null) {

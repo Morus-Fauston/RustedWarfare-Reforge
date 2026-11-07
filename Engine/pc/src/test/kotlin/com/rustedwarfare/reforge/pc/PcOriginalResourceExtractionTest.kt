@@ -11,6 +11,95 @@ import com.rustedwarfare.reforge.client.*
 import kotlin.test.*
 
 class PcOriginalResourceExtractionTest {
+    @Test fun interrupted_finished_publication_preserves_settings_and_the_incomplete_stage_is_not_importable() {
+        ResourceImagePackApplicationFixture().use { fixture ->
+            val (source, profile) = ownedSource(fixture.root)
+            val normal = PcVisualAssetSettings(fixture.store, fixture.cache, fixture.root,
+                WindowsLaunchOptions.parse(arrayOf("--mode", "demo"), fixture.root), resourceExtractionProfile = profile)
+            normal.applyPrepared(normal.prepare(normal.initialSelection))
+            val saved = Files.readAllBytes(fixture.settings)
+            var stage: Path? = null
+            val interrupted = PcVisualAssetSettings(fixture.store, fixture.cache, fixture.root,
+                WindowsLaunchOptions.parse(arrayOf("--mode", "demo"), fixture.root), resourceExtractionProfile = profile,
+                imageExtractionMove = { from, to, replace ->
+                    if (from.parent.fileName.toString() == "prepared-original-packs") {
+                        stage = from; throw java.util.concurrent.CancellationException("Owned export cancellation")
+                    }
+                    moveVisualAtomically(from, to, replace)
+                })
+            assertFailsWith<java.util.concurrent.CancellationException> { interrupted.extractOriginalPreparedResourcePack(source) }
+            assertContentEquals(saved, Files.readAllBytes(fixture.settings))
+            assertFailsWith<IllegalArgumentException> { normal.checkImagePack(assertNotNull(stage).resolve("runtime")) }
+            val retried = normal.extractAndCheckOriginalResources(source)
+            assertTrue(retried.clientHeld); retried.verify()
+            assertContentEquals(saved, Files.readAllBytes(fixture.settings))
+        }
+    }
+
+    @Test fun finished_extraction_menu_keeps_the_saved_choice_when_runtime_or_qualification_is_damaged() {
+        ResourceImagePackApplicationFixture().use { fixture ->
+            val (source, profile) = ownedSource(fixture.root)
+            fun backend() = PcVisualAssetSettings(fixture.store, fixture.cache, fixture.root,
+                WindowsLaunchOptions.parse(arrayOf("--mode", "demo"), fixture.root), resourceExtractionProfile = profile)
+            VisualAssetSettingsSession(backend()).use { menu ->
+                menu.extractOriginalResources(source); await(menu)
+                assertNull(menu.error); assertTrue(menu.diagnostic.orEmpty().startsWith("Extracted"), menu.diagnostic)
+                val choice = menu.selection.packs.catalog.single()
+                assertFalse(choice.id in menu.selection.packs.enabled)
+                menu.setEnabled(choice.id, true); menu.apply(); await(menu)
+                assertNull(menu.error); val saved = Files.readAllBytes(fixture.settings)
+                val external = backend().extractOriginalPreparedResourcePack(source)
+                val imageFile = external.manifest.parent.resolve(JsonReader().parse(Files.readString(external.manifest.parent.resolve("images.json")))
+                    .get("images").first().getString("file"))
+                val originalImage = Files.readAllBytes(imageFile)
+                val changed = BufferedImage(8, 6, BufferedImage.TYPE_INT_ARGB)
+                for (x in 0 until 8) for (y in 0 until 6) changed.setRGB(x, y, 0xffaa3311.toInt())
+                assertTrue(ImageIO.write(changed, "png", imageFile.toFile()))
+                menu.importImagePack(external.manifest); await(menu)
+                assertTrue(menu.diagnostic.orEmpty().contains("Finished media or mapping differs"), menu.diagnostic)
+                assertEquals(listOf(choice), menu.selection.packs.catalog)
+                assertContentEquals(saved, Files.readAllBytes(fixture.settings))
+                Files.write(imageFile, originalImage)
+                val proof = external.manifest.parent.parent.resolve("qualification/resource-extraction.json")
+                val bytes = Files.readAllBytes(proof); Files.writeString(proof, "{}")
+                menu.importImagePack(external.manifest); await(menu)
+                assertEquals(listOf(choice), menu.selection.packs.catalog)
+                assertContentEquals(saved, Files.readAllBytes(fixture.settings))
+                Files.write(proof, bytes)
+                menu.importImagePack(external.manifest); await(menu)
+                assertTrue(menu.diagnostic.orEmpty().startsWith("Imported"), menu.diagnostic)
+            }
+        }
+    }
+
+    @Test fun complete_menu_extraction_outputs_a_finished_pack_and_can_import_it_in_another_client() {
+        ResourceImagePackApplicationFixture().use { fixture ->
+            val (source, profile) = ownedSource(fixture.root)
+            val backend = PcVisualAssetSettings(fixture.store, fixture.cache, fixture.root,
+                WindowsLaunchOptions.parse(arrayOf("--mode", "demo"), fixture.root), resourceExtractionProfile = profile)
+            val result = backend.extractOriginalPreparedResourcePack(source)
+            assertEquals(4, result.metadata.requiresResourceFormat)
+            assertTrue(Files.isRegularFile(result.manifest.parent.resolve("images.json")))
+            assertTrue(Files.isRegularFile(result.manifest.parent.resolve("sounds.json")))
+            val otherCache = fixture.root.resolve("other-client-cache")
+            val other = PcVisualAssetSettings(fixture.store, otherCache, fixture.root,
+                WindowsLaunchOptions.parse(arrayOf("--mode", "demo"), fixture.root), resourceExtractionProfile = profile)
+            val imported = other.checkImagePack(result.manifest)
+            assertTrue(imported.clientHeld)
+            assertEquals(result.images.keys, imported.images.keys)
+            assertEquals(result.soundEvents, imported.soundEvents)
+            val selection = other.initialSelection.copy(packs = ResourcePackSelection(listOf(imported.catalogEntry), listOf(imported.metadata.id.value)))
+            other.applyPrepared(other.prepare(selection))
+            val parked = result.manifest.parent.parent.resolveSibling("parked-finished-generation")
+            require(parked.startsWith(fixture.root) && result.manifest.parent.parent.startsWith(fixture.root))
+            Files.move(result.manifest.parent.parent, parked)
+            val restarted = PcVisualAssetSettings(fixture.store, otherCache, fixture.root,
+                WindowsLaunchOptions.parse(arrayOf("--mode", "demo"), fixture.root), resourceExtractionProfile = profile)
+            restarted.prepare(restarted.initialSelection).verifyForPublication()
+            assertEquals("MANAGED_REUSE", restarted.lastPreparationPath?.name)
+        }
+    }
+
     @Test fun passive_legacy_catalog_read_keeps_the_saved_identity_until_explicit_import() {
         ResourceImagePackApplicationFixture().use { fixture ->
             val (source, profile) = ownedSource(fixture.root)

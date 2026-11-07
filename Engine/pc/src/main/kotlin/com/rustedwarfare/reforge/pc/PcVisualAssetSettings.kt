@@ -30,6 +30,8 @@ internal class PcVisualAssetSettings @JvmOverloads constructor(private val store
     private val placeholders = PcPlaceholderVisualAssets()
     private val importer = PcResourcePackImporter(cache)
     private val acceptedResources = PcAcceptedResourceStore(cache, imageExtractionMove, ::originalQualificationBasis)
+    private val finishedOriginal = PcOriginalPreparedPack(cache, imageExtractionMove)
+    private var lastCompleteExtraction: Pair<com.rustedwarfare.reforge.client.ResourcePackCatalogEntry, PreparedImagePack>? = null
     private val originalProducerBasis by lazy {
         PcTrustedOutputIndex.currentProducers().toSortedMap().entries.joinToString("\u0000") { "${it.key}=${it.value}" }
     }
@@ -247,15 +249,18 @@ internal class PcVisualAssetSettings @JvmOverloads constructor(private val store
             pack.verifyUsed(setOf(pack.images.getValue(pack.metadata.icon).path))
         }
         val pack = importer.load(path)
-        if (pack.metadata.id.value.startsWith("reforge:pc-original-resources-") && pack.metadata.requiresResourceFormat == 2) {
-            return PcFrozenResourceInputs.capture(listOf(pack.manifest.parent)).use { inputs ->
-                val profile = pcResourceExtractor.profileFor(pack.manifest, inputs)
+        if (pack.metadata.id.value.startsWith("reforge:pc-original-resources-")) {
+            val qualificationRoot = if (pack.metadata.requiresResourceFormat == 4) finishedOriginal.qualificationRoot(pack) else pack.manifest.parent
+            return PcFrozenResourceInputs.capture(listOf(pack.manifest.parent, qualificationRoot).distinct()).use { inputs ->
+                val qualified = if (pack.metadata.requiresResourceFormat == 4) importer.load(qualificationRoot, inputs) else pack
+                val profile = pcResourceExtractor.profileFor(qualified.manifest, inputs)
                 val base = placeholders.prepare(initialSelection.copy(source = VisualAssetSource.PLACEHOLDER))
                 val builtin = ResourceImagePreparation.baseLayer(base, BuiltInResourcePacks.forSource(VisualAssetSource.PLACEHOLDER))
-                val contracts = pcResourceExtractor.staticBaseContracts(pack, builtin, inputs, reviewedOutputs(pack, inputs))
+                val contracts = pcResourceExtractor.staticBaseContracts(qualified, builtin, inputs, reviewedOutputs(qualified, inputs))
+                if (pack.metadata.requiresResourceFormat == 4) finishedOriginal.verifyEquivalent(pack, qualified)
                 val qualification = PcAcceptedOriginalQualification(profile.id, requireNotNull(originalQualificationBasis(profile.id)),
-                    inputs.snapshotIdentity(pack.manifest.parent), inputs.sha256(pack.manifest.parent.resolve("extraction.json")),
-                    inputs.sha256(pack.manifest.parent.resolve("resource-extraction.json")), contracts, inputs::verifyCurrent)
+                    inputs.snapshotIdentity(qualificationRoot), inputs.sha256(qualificationRoot.resolve("extraction.json")),
+                    inputs.sha256(qualificationRoot.resolve("resource-extraction.json")), contracts, inputs::verifyCurrent)
                 acceptedResources.accept(pack, qualification)
             }
         }
@@ -276,6 +281,22 @@ internal class PcVisualAssetSettings @JvmOverloads constructor(private val store
     override fun extractOriginalImagePack(path: Path): PreparedImagePack = pcImageExtractor.extract(path)
     override fun extractOriginalResourcePack(path: Path): PreparedImagePack {
         return pcResourceExtractor.extract(path)
+    }
+    override fun extractOriginalPreparedResourcePack(path: Path): PreparedImagePack =
+        finishedOriginal.export(pcResourceExtractor.extract(path))
+    @Synchronized override fun extractAndCheckOriginalResources(path: Path): PreparedImagePack {
+        val original = pcResourceExtractor.extract(path)
+        lastCompleteExtraction?.takeIf { it.first == original.catalogEntry }?.second?.let { previous ->
+            try {
+                val restored = acceptedResources.restore(previous.manifest)
+                restored.verify(); original.verify(); original.verifySources()
+                return restored
+            } catch (failure: CancellationException) { throw failure }
+              catch (_: Exception) { /* A damaged held version is repaired by a new full import. */ }
+        }
+        return checkImagePack(finishedOriginal.export(original).manifest).also {
+            lastCompleteExtraction = original.catalogEntry to it
+        }
     }
 
     override fun loadSavedSelection(): VisualAssetSelection {

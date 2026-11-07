@@ -110,9 +110,10 @@ class VisualAssetSettingsPanel(private val state: VisualAssetSettingsSession, pr
         refresh()
     }
 
-    internal fun drawnActions(): List<DrawnAction> = listOf(
+    internal fun drawnActions(): List<DrawnAction> = listOfNotNull(
         DrawnAction("resource-directory", importPath, importPath.text, enabled = !importPath.isDisabled),
         DrawnAction("resource-import", importButton, importButton.text.toString(), enabled = !importButton.isDisabled),
+        extractButton?.let { DrawnAction("resource-extract", it, it.text.toString(), enabled = !it.isDisabled) },
         DrawnAction("resource-enable", enable, enable.text.toString(), enabled = !enable.isDisabled),
         DrawnAction("resource-apply", apply, apply.text.toString(), enabled = !apply.isDisabled),
         DrawnAction("resource-cancel", cancel, cancel.text.toString(), enabled = !cancel.isDisabled)

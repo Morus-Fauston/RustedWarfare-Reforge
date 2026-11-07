@@ -78,7 +78,7 @@ internal class PcAcceptedResourceStore(cache: Path,
         original?.verifyCurrent?.invoke()
         val originalId = pack.metadata.id.value.startsWith("reforge:pc-original-")
         require(if (originalId) pack.metadata.id.value.startsWith("reforge:pc-original-resources-") &&
-            pack.metadata.requiresResourceFormat == 2 && original != null && original.basis == originalBasis(original.profile)
+            pack.metadata.requiresResourceFormat in setOf(2, 4) && original != null && original.basis == originalBasis(original.profile)
             else pack.metadata.requiresResourceFormat == 4 && original == null) {
             "RESOURCE_PACK_ACCEPTANCE_INVALID: Original packages require their independent qualification adapter"
         }

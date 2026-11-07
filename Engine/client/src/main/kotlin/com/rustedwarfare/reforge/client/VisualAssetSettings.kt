@@ -31,6 +31,10 @@ interface VisualAssetSettings {
     val supportsOriginalResourceExtraction: Boolean get() = false
     /** Worker-only complete PC pictures/sounds. Legacy image-only extraction remains separate. */
     fun extractOriginalResourcePack(path: Path): PreparedImagePack = throw UnsupportedOperationException("PC resource extraction is unavailable")
+    /** Finished portable media output; legacy callers retain the original extraction contract. */
+    fun extractOriginalPreparedResourcePack(path: Path): PreparedImagePack = extractOriginalResourcePack(path)
+    /** Menu operation; a platform may retain an unchanged, still-valid extracted choice. */
+    fun extractAndCheckOriginalResources(path: Path): PreparedImagePack = checkImagePack(extractOriginalPreparedResourcePack(path).manifest)
     /** Worker-only read; restoration still validates this choice against the current content. */
     fun loadSavedSelection(): VisualAssetSelection = initialSelection
     /** Optional local-platform font; called and disposed only on the render thread. */
