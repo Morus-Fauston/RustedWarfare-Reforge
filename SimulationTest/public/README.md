@@ -171,6 +171,8 @@ python -B SimulationTest/tools/android_host_check.py --distribution SimulationTe
 
 它编译现有宿主测试并运行业务/失败边界、知识编码容量、可见性轨迹与存储检查，底层仍使用实际共享客户端。OwnRuns真实文件系统检查需要主机允许创建测试符号链接，缺权限会失败。Android instrumentation/ART和设备证据仍保留原所属入口，本批没有建立Android触控操作基线；最终共享源码兼容构建由四期收尾集中执行。
 
+`result.json`的`toolCosts`分别记录编译命令、宿主命令和命令外成本；宿主命令包含JVM启动、场景及断言，未独立打点的启动、场景、观察时间为`null`。命令的`timeoutSeconds`是超时上限，`elapsedSeconds`才是实际耗时。日志IO失败、进程调用失败和超时分别保留命令、实际耗时及失败类别。`processAttempted`标明是否已调用进程接口；该接口抛普通IO异常而无法确认启动状态时，`processStarted`为`null`。没有实际退出码时`exitCode`为`null`。这些记录不代表Android构建、模拟器或设备验证，也不据此删减必要的画面稳定和参考采样窗口。
+
 
 ## 工具机制与专属验证入口
 

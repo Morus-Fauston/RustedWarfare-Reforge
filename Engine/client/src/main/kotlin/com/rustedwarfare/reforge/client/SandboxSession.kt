@@ -22,6 +22,9 @@ class SandboxSession(scenario: Scenario, private val evidence: ClientEvidence = 
                      val options: SandboxOptions = SandboxOptions(),
                      clockMillis: () -> Long = { System.nanoTime() / 1_000_000L },
                      val generation: Long = 1L) : AutoCloseable {
+    constructor(scenario: Scenario, evidence: ClientEvidence, options: SandboxOptions, clockMillis: () -> Long) :
+        this(scenario, evidence, options, clockMillis, 1L)
+
     private val scenario: Scenario = scenario.copy(automaticVision = options.knowledgeRules())
     val hasConstructorDefinitions: Boolean = this.scenario.unitDefinitions.values.any { it.builder != null }
     val hasProductionDefinitions: Boolean = this.scenario.unitDefinitions.values.any { it.production != null }
