@@ -8,6 +8,8 @@ interface VisualAssetSettings {
     val initialError: String?
     /** Worker-published description of current preparation; null when idle. */
     val preparationStatus: String? get() = null
+    /** Last completed worker preparation, for runtime evidence rather than stored trust. */
+    val preparationDiagnostics: Map<String, Any?> get() = emptyMap()
     val availableResourcePacks: List<ResourcePackMetadata> get() = BuiltInResourcePacks.all
     fun prepare(selection: VisualAssetSelection): PreparedVisualAssets
     /** Worker-only: apply/save must use the same final-content contract as a new world. */

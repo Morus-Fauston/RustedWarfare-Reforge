@@ -123,6 +123,9 @@ internal class PcResourcePackImporter(private val cacheRoot: Path,
                 try {
                     val bytes = capture(file)
                     val pcm = decodedSounds.getOrPut(file) { PcmAudioDecoder.decode(bytes, file.toString()) }
+                    if (metadata.requiresResourceFormat == 4) require(file.toString().endsWith(".wav", true) && bytes.contentEquals(pcm.wavBytes())) {
+                        "Finished resource capability 4 requires canonical PCM16 WAV bytes"
+                    }
                     Sound(id, file, pcm)
                 } catch (failure: CancellationException) { throw failure }
                 catch (failure: Exception) { audioBad(file, "$id: ${failure.message}") }

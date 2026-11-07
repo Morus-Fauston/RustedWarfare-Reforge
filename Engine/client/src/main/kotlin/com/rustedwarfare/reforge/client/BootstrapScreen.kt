@@ -632,6 +632,9 @@ class BootstrapScreen(
                 session = pendingSession
                 sounds = pendingSounds
                 loaded.visuals?.let { visuals -> evidence.recordVisualAssetsReady(visuals, generation) }
+                visualSettings?.preparationDiagnostics?.takeIf { it.isNotEmpty() }?.let {
+                    evidence.record("resource-acceptance-reuse", it + mapOf("generation" to generation))
+                }
                 loading = false
                 stepClock.reset()
                 lastPacingFrame = OfflinePacingFrame(0, 0.0)
@@ -731,6 +734,8 @@ class BootstrapScreen(
         rateButtons.forEach { (rate, actor) -> button("set-speed:${rate.multiplier}", actor) }
         button("pause-simulation", simulationPauseButton)
         button("content-tab", packTab)
+        button("resource-tab", visualsTab)
+        visualPanel?.let { entries += it.drawnActions() }
         entries += DrawnAction("sandbox-deployment", deploymentBox, deploymentBox.text.toString(),
             enabled = !deploymentBox.isDisabled)
         entries += DrawnAction("sandbox-command-input", commandField, commandField.text,

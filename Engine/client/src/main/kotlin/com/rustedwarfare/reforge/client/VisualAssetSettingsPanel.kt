@@ -110,6 +110,16 @@ class VisualAssetSettingsPanel(private val state: VisualAssetSettingsSession, pr
         refresh()
     }
 
+    internal fun drawnActions(): List<DrawnAction> = listOf(
+        DrawnAction("resource-directory", importPath, importPath.text, enabled = !importPath.isDisabled),
+        DrawnAction("resource-import", importButton, importButton.text.toString(), enabled = !importButton.isDisabled),
+        DrawnAction("resource-enable", enable, enable.text.toString(), enabled = !enable.isDisabled),
+        DrawnAction("resource-apply", apply, apply.text.toString(), enabled = !apply.isDisabled),
+        DrawnAction("resource-cancel", cancel, cancel.text.toString(), enabled = !cancel.isDisabled)
+    ) + state.rows.zip(rowButtons).map { (row, actor) ->
+        DrawnAction("resource-pack:${row.id}", actor, actor.text.toString(), enabled = !actor.isDisabled)
+    }
+
     private fun selected() = state.rows.singleOrNull { it.id == state.selectedPackId }
     private fun operate(action: () -> Unit) {
         if (!state.busy) try { action() }

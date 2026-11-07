@@ -218,8 +218,10 @@ class VisualAssetSettingsSession(private val backend: VisualAssetSettings) : Aut
 
     private fun acceptImport(pack: PreparedImagePack, extracted: Boolean = false) {
         val entry = pack.catalogEntry
-        val previous = selection.packs.catalog.singleOrNull { it.manifest == entry.manifest }
-        require(selection.packs.catalog.none { it.id == entry.id && it.manifest != entry.manifest }) { "Duplicate resource pack ID ${entry.id}: ${entry.manifest}" }
+        val previous = selection.packs.catalog.singleOrNull {
+            it.manifest == entry.manifest || pack.clientHeld && it.id == entry.id
+        }
+        require(selection.packs.catalog.none { it.id == entry.id && it != previous }) { "Duplicate resource pack ID ${entry.id}: ${entry.manifest}" }
         if (extracted && previous == entry) {
             known[entry.id] = Checked(entry, pack, null)
             selectedPackId = entry.id

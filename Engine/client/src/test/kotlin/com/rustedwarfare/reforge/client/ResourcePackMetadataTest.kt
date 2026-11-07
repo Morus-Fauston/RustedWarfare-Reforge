@@ -60,7 +60,7 @@ class ResourcePackMetadataTest {
             valid.replace("\"formatVersion\":1", "\"formatVersion\":\"1\"") to "formatVersion",
             valid.replace("\"requiresResourceFormat\":1", "\"requiresResourceFormat\":null") to "requiresResourceFormat",
             valid.replace("\"requiresResourceFormat\":1", "\"requiresResourceFormat\":true") to "requiresResourceFormat",
-            valid.replace("\"requiresResourceFormat\":1", "\"requiresResourceFormat\":4") to "requiresResourceFormat",
+            valid.replace("\"requiresResourceFormat\":1", "\"requiresResourceFormat\":5") to "requiresResourceFormat",
             valid.replace("\"requiresResourceFormat\":1", "\"requiresResourceFormat\":2.0") to "requiresResourceFormat",
             valid.replace("\"requiresResourceFormat\":1", "\"requiresResourceFormat\":2e0") to "requiresResourceFormat",
             valid.replace("\"name\":\"基础素材\"", "\"name\":\"\"") to "name",
