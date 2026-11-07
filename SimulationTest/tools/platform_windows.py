@@ -12,6 +12,7 @@ import time
 
 from platform_scenario import PlatformError, compare_archive, read, save, sha, tree, validate_intent_contract
 from diagnostic_reader import DiagnosticReader
+from platform_wait import WaitSegment
 from action_layout import wait_layout
 
 TITLE = 'RustedWarfare-Reforge | P002 Windows sandbox'
@@ -19,16 +20,28 @@ TITLE = 'RustedWarfare-Reforge | P002 Windows sandbox'
 
 def validate_windows_plan(plan,contract):
     intents,rules=plan.get('intents'),contract.get('rules')
-    if ('history' in contract or not isinstance(intents,list) or not intents or
+    history='history' in contract
+    if ((history and 'testScene' not in plan) or not isinstance(intents,list) or not intents or
             not isinstance(rules,list) or len(intents)!=len(rules) or
             plan.get('scenarioId')!=contract.get('scenarioId')):
         raise PlatformError('input-contract','Windows requires matching immediate short-intent contracts; explicit-step history uses Core/Session',1)
     if len({i.get('intentId') for i in intents})!=len(intents):
         raise PlatformError('input-contract','Duplicate Windows intention identity',1)
-    for intent,rule in zip(intents,rules):validate_intent_contract(intent,rule)
+    if not history:
+        for intent,rule in zip(intents,rules):validate_intent_contract(intent,rule)
+    else:
+        if [i['intentId'] for i in intents]!=[r['intentId'] for r in rules]:
+            raise PlatformError('input-contract','History intention order differs',1)
+        for identity,segment in plan.get('windowsWaits',{}).items():
+            intent=next((i for i in intents if i['intentId']==identity),None)
+            if (not intent or not intent.get('waitSteps') or segment.get('rate')!=4 or
+                    not isinstance(segment.get('eventKind'),str) or not isinstance(segment.get('unitType'),str) or
+                    not intent['waitSteps']<=segment.get('maximumSimulationSteps',0)<=1200 or
+                    not 0<segment.get('stallSeconds',0)<=segment.get('maximumWallSeconds',0)<=60):
+                raise PlatformError('input-contract','Invalid declared waiting segment',1)
 
 
-def run_windows(scenario, contract, distribution, output, size, java='java'):
+def run_windows(scenario, contract, distribution, output, size, java='java', rate_profile='normal'):
     from owned_window import Guard, Win32
     from workflow import resources
     if os.name != 'nt' or size not in ((1200, 800), (960, 640)):
@@ -37,7 +50,11 @@ def run_windows(scenario, contract, distribution, output, size, java='java'):
     java = str(Path(shutil.which(java) or java).resolve())
     plan, contract_data = read(scenario), read(contract)
     validate_windows_plan(plan,contract_data)
-    rules=contract_data['rules']
+    if rate_profile not in ('normal','segmented') or rate_profile=='segmented' and not plan.get('windowsWaits'):
+        raise PlatformError('input-contract','Segmented profile requires declared waiting segments',1)
+    history='history' in contract_data
+    action_types={'select':'SelectAction','move':'MoveAction','build':'BuildAction','upgrade':'UpgradeAction','produce':'ProduceAction','attack':'AttackAction'}
+    rules=[dict(r,actionType=action_types[i['kind']]) for i,r in zip(plan['intents'],contract_data['rules'])] if history else contract_data['rules']
     package_before = tree(distribution)
     inputs = (scenario.parent / plan['inputs']).resolve()
     input_before = tree(inputs)
@@ -54,11 +71,16 @@ def run_windows(scenario, contract, distribution, output, size, java='java'):
     diagnostic = output/'runtime/reforge/client-diagnostic.jsonl'
     reader=DiagnosticReader(diagnostic)
     current_generation=None
+    case_deadline=time.monotonic()+300
+    segments=[]
+    def save_segments():
+        (output/'waiting-segments.json').write_text(json.dumps(segments,indent=2,allow_nan=False)+'\n',encoding='utf8')
     def logs():
         wait('current live diagnostic prefix',lambda rows:True)
         return [r for r in reader.view() if current_generation is None or
                 'generation' not in r or r['generation']==current_generation]
     def wait(label,predicate,deadline=15,after_sequence=-1,after_generation=None):
+        deadline=min(deadline,max(.01,case_deadline-time.monotonic()))
         return reader.wait(label,predicate,proc,after_sequence=after_sequence,
             generation=current_generation if after_generation is None else None,
             after_generation=after_generation,timeout=deadline,check=guard.check if guard is not None else None)
@@ -117,6 +139,41 @@ def run_windows(scenario, contract, distribution, output, size, java='java'):
                        for a in layout().frame['actions'])
         wait('package previews and enabled Start',start_drawn,deadline=60)
         guard.capture(output/'content-package-enabled.png')
+    def set_speed(rate):
+        boundary=reader.cursor
+        click_action('set-speed:'+str(rate))
+        rows=wait('current speed receipt '+str(rate),lambda rows:WaitSegment.speed_ack(rows,current_generation,boundary,rate),deadline=3)
+        ack=next(r for r in reversed(rows) if r.get('kind')=='simulation-control' and r['sequence']>boundary)
+        record(dict(kind='verified-speed',requestedRate=rate,receipt=ack))
+        return ack
+    def wait_segment(intent,action,immediate):
+        declaration=plan.get('windowsWaits',{}).get(intent['intentId'])
+        rate=4 if declaration and rate_profile=='segmented' else 1
+        limits=declaration or dict(maximumSimulationSteps=1200,maximumWallSeconds=35,stallSeconds=4)
+        began=time.monotonic()
+        gate=WaitSegment(generation=current_generation,world=immediate['worldId'],after_sequence=action['sequence'],
+            initial_step=immediate['stepIndex'],minimum_steps=intent.get('waitSteps',0),
+            maximum_steps=limits['maximumSimulationSteps'],wall_seconds=limits['maximumWallSeconds'],
+            stall_seconds=limits['stallSeconds'],started=began,
+            event_kind=declaration.get('eventKind') if declaration else None,
+            unit_type=declaration.get('unitType') if declaration else None)
+        entry=dict(intentId=intent['intentId'],requestedRate=rate,startedUnix=time.time(),actionSequence=action['sequence'])
+        segments.append(entry)
+        try:
+            entry['speedStart']=set_speed(rate)
+            wait('event and bounded progress '+intent['intentId'],lambda rows:gate.observe(rows,time.monotonic()),deadline=limits['maximumWallSeconds']+1)
+            entry.update(gate.receipt(time.monotonic()))
+            entry['speedRestored']=set_speed(1)
+            pacing=[r for r in reader.view() if r.get('kind')=='simulation-pacing' and r.get('generation')==current_generation and
+                entry['speedStart']['sequence']<=r['sequence']<=entry['speedRestored']['sequence']]
+            entry['actualPacing']=pacing
+            entry['measuredMultiplier']=entry['simulationSteps']/60/max(entry['wallSeconds'],.0001)
+            entry['endedUnix']=time.time()
+        except Exception as error:
+            entry.update(gate.receipt(time.monotonic()))
+            entry['firstFailure']=entry['firstFailure'] or str(error)
+            raise
+        finally:save_segments()
     u = ctypes.WinDLL('user32', use_last_error=True)
     u.GetForegroundWindow.restype = W.HWND
     u.GetWindowThreadProcessId.argtypes = [W.HWND, ctypes.POINTER(W.DWORD)]
@@ -147,8 +204,10 @@ def run_windows(scenario, contract, distribution, output, size, java='java'):
                 comparatorSha256=sha(Path(__file__).with_name('platform_scenario.py')),
                 driverSha256=sha(__file__), guardSha256=sha(Path(__file__).with_name('owned_window.py')),
                 readerSha256=sha(Path(__file__).with_name('diagnostic_reader.py')),
+                waitSha256=sha(Path(__file__).with_name('platform_wait.py')),
                 layoutSha256=sha(Path(__file__).with_name('action_layout.py')),
                 childLocalAppData=str(output/'user-data'),visuals='placeholder',
+                rateProfile=rate_profile,
                 previousForeground=dict(hwnd=previous, pid=previous_pid.value, thread=previous_thread)))
             with (output/'stdout.log').open('xb') as stdout, (output/'stderr.log').open('xb') as stderr:
                 proc = subprocess.Popen(command, stdout=stdout, stderr=stderr, stdin=subprocess.DEVNULL,
@@ -170,7 +229,12 @@ def run_windows(scenario, contract, distribution, output, size, java='java'):
             wait('viewport', lambda rows: any(row.get('kind') == 'resize' and
                  (row['width'], row['height']) == size for row in rows))
             layout();guard.capture(output/'startup-menu.png')
-            choose_content_pack()
+            if 'testScene' in plan:
+                packaged=distribution/'test-scenarios/scenarios/dual-ship-production.json'
+                if sha(packaged)!=sha(scenario):raise PlatformError('input-identity','Packaged and dispatched seed differ',1)
+                click_action('test-scenes-tab');click_action('test-scene-use')
+                wait('paired scene selected',lambda rows:any(r.get('kind')=='test-scenario-choice' and r.get('id')==plan['scenarioId'] and r.get('error') is None for r in rows))
+            else:choose_content_pack()
             load_boundary=reader.cursor
             previous_generation=max((r['generation'] for r in reader.view() if r['kind']=='load-request'),default=0)
             click_action('start-match')
@@ -182,6 +246,7 @@ def run_windows(scenario, contract, distribution, output, size, java='java'):
             wait('first interactive frame',lambda rows:any(r['kind']=='load-first-frame-drawn' for r in rows),
                  after_sequence=load_boundary)
             guard.capture(output/'first-world.png')
+            if history:set_speed(1)
             for intent, rule in zip(plan['intents'], rules):
                 guard.check()
                 if anchors:
@@ -223,10 +288,13 @@ def run_windows(scenario, contract, distribution, output, size, java='java'):
                 immediate = next(row for row in rows if row['sequence'] == action['sequence']+1)['sample']
                 steps = intent.get('waitSteps', 0)
                 if steps:
-                    rows = wait('bounded post-command steps', lambda rows: any(row.get('phase') == 'step' and
-                                row['sequence'] > action['sequence'] and row['sample']['stepIndex'] >= immediate['stepIndex']+steps for row in rows))
+                    if history:wait_segment(intent,action,immediate)
+                    else:
+                        rows = wait('bounded post-command steps', lambda rows: any(row.get('phase') == 'step' and
+                                    row['sequence'] > action['sequence'] and row['sample']['stepIndex'] >= immediate['stepIndex']+steps for row in rows))
                 anchors.append(dict(intentId=intent['intentId'], afterSequence=start, endSequence=reader.cursor))
                 guard.capture(output/(intent['intentId']+'.png'))
+            if history:save_segments()
             guard.close_owned()
             result['processExitCode'] = proc.wait(timeout=20)
             result['stream']=reader.finish(result['processExitCode'])

@@ -27,6 +27,8 @@
     }
   ],
   "pythonTests": [
-    "SimulationTest/tools/test_platform_scenario.py"
+    "SimulationTest/tools/test_platform_scenario.py",
+    "SimulationTest/tools/test_platform_wait.py",
+    "SimulationTest/tools/test_owned_window.py"
   ]
 }

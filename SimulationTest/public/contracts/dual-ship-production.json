@@ -317,6 +317,13 @@
             "maxHealth": 1600
           }
         }
+      ],
+      "productionOrder": [
+        "spcorvette",
+        "spfrigate"
+      ],
+      "completedUpgradeTypes": [
+        "spdockt2"
       ]
     }
   }

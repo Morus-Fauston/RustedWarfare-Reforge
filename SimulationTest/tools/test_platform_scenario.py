@@ -9,6 +9,58 @@ import tempfile
 
 
 class PlatformIntentTest(unittest.TestCase):
+    def test_native_history_targets_use_the_approved_pixel_footprint_only(self):
+        from platform_scenario import validate_history_action
+        sample=dict(worldId='w',stepIndex=0,simulationTime=1,
+            units=[dict(unitId='a',ownerPlayerId='p1',alive=True,moveTarget=dict(x=170.3125,y=150.00007))])
+        rows=[dict(sequence=0,kind='observation',phase='before-action',sample=sample),
+              dict(sequence=1,kind='action',unitId='a',actorPlayerId='p1',target=dict(x=170.3125,y=150.00007)),
+              dict(sequence=2,kind='observation',phase='after-action',sample=sample)]
+        intent=dict(kind='move',position=dict(x=170,y=150))
+        geometry=dict(worldWidth=800,worldHeight=600,viewport=dict(width=1200,height=800,screenWidth=1200,screenHeight=800))
+        validate_history_action(rows,rows[1],intent,geometry)
+        with self.assertRaises(PlatformError):validate_history_action(rows,rows[1],intent)
+        for value in (171,float('nan')):
+            changed=copy.deepcopy(rows);changed[1]['target']['x']=value
+            with self.assertRaises(PlatformError):validate_history_action(changed,changed[1],intent,geometry)
+        for value in (None,dict(x=999,y=999),dict(x=170.3125,y=150.00008)):
+            changed=copy.deepcopy(rows)
+            changed[2]['sample']['units'][0]['moveTarget']=value
+            with self.subTest(moveTarget=value),self.assertRaises(PlatformError):
+                validate_history_action(changed,changed[1],intent,geometry)
+
+    def test_production_history_requires_the_declared_fifo_and_completed_upgrade(self):
+        from platform_scenario import validate_production_history
+        def event(identity,typ,kind):
+            return dict(kind='observation',phase='step',sample=dict(units=[dict(unitId=identity,typeId=typ,ownerPlayerId='p1')],
+                events=[dict(kind=kind,unitId=identity)]))
+        rows=[event('dock','spdockt2','upgrade-completed'),event('one','spcorvette','unit-produced'),event('two','spfrigate','unit-produced')]
+        policy=dict(productionOrder=['spcorvette','spfrigate'],completedUpgradeTypes=['spdockt2'])
+        validate_production_history(rows,policy)
+        for changed in [rows[:1]+rows[1:][::-1],rows[1:],rows+rows[2:],rows[:-1]]:
+            with self.subTest(rows=changed),self.assertRaises(PlatformError):validate_production_history(changed,policy)
+
+    def test_native_history_uses_recorded_input_boundaries_and_continuous_steps(self):
+        from platform_scenario import compare_history
+        def sample(step):return dict(worldId='w',stepIndex=step,simulationTime=step+1,balance=100,
+            units=[dict(unitId='a',ownerPlayerId='p1',typeId='builder',alive=True,position=dict(x=1,y=2))])
+        rows=[dict(sequence=0,kind='observation',phase='initial',sample=sample(-1)),
+              dict(sequence=1,kind='observation',phase='step',sample=sample(0)),
+              dict(sequence=2,kind='observation',phase='before-action',sample=sample(0)),
+              dict(sequence=3,kind='action',type='SelectAction',unitId='a',actorPlayerId='p1',
+                   result=dict(actionId='select',accepted=True)),
+              dict(sequence=4,kind='observation',phase='after-action',sample=sample(0)),
+              dict(sequence=5,kind='observation',phase='step',sample=sample(1)),
+              dict(sequence=6,kind='observation',phase='step',sample=sample(2)),
+              dict(sequence=7,kind='observation',phase='before-close',sample=sample(2))]
+        plan=dict(scenarioId='s',intents=[dict(intentId='select',kind='select',position=dict(x=1,y=2),waitSteps=1)])
+        policy=dict(initialBalance=100)
+        anchors=[dict(intentId='select',afterSequence=1,endSequence=6)]
+        self.assertEqual(0,compare_history(rows,plan,policy,anchors)['exitCode'])
+        for changed in ([dict(anchors[0],endSequence=4)], [dict(anchors[0],afterSequence=3)],
+                        [dict(anchors[0],intentId='wrong')]):
+            with self.subTest(anchors=changed),self.assertRaises(PlatformError):compare_history(rows,plan,policy,changed)
+
     def test_history_charges_the_formal_build_when_its_new_site_is_created(self):
         actor=dict(unitId='a',ownerPlayerId='p1',typeId='builder',health=100,maxHealth=100,alive=True)
         site=dict(unitId='site',ownerPlayerId='p1',typeId='dock',position=dict(x=5,y=6),health=10,maxHealth=100,alive=True)
@@ -89,6 +141,7 @@ class PlatformIntentTest(unittest.TestCase):
                ('produce','ProduceAction',dict(typeId='new_product'),{})]
         for kind,action_type,parameters,fields in cases:
             before=copy.deepcopy(sample);after=copy.deepcopy(sample)
+            if kind=='move':after['units'][0]['moveTarget']=copy.deepcopy(fields['target'])
             if kind=='produce':after['factoryQueues'][0]['items'].append(dict(typeId='new_product',progress=0))
             action=dict(kind='action',sequence=3,type=action_type,unitId='f' if kind=='produce' else 'a',
                         actorPlayerId='p1',result=dict(actionId='one',accepted=True),**fields)

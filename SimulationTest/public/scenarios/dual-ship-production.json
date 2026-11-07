@@ -16447,5 +16447,55 @@
       "package/units/workshop_back.png": "19862e56ddba457e83054e4729053f80f7aa74ec2a4ef24843f0899382d566a0",
       "package/units/workshop_dead.png": "4d7fa123ae28bd96d8435d558513cedafdf52a252365ee73d6c48f2c632d8706"
     }
+  },
+  "windowsWaits": {
+    "approach-shore": {
+      "rate": 4,
+      "eventKind": "movement-arrived",
+      "unitType": "spbuilder",
+      "maximumSimulationSteps": 1200,
+      "maximumWallSeconds": 35,
+      "stallSeconds": 4
+    },
+    "build-dock": {
+      "rate": 4,
+      "eventKind": "construction-completed",
+      "unitType": "spdock",
+      "maximumSimulationSteps": 1200,
+      "maximumWallSeconds": 35,
+      "stallSeconds": 4
+    },
+    "upgrade-t2": {
+      "rate": 4,
+      "eventKind": "upgrade-completed",
+      "unitType": "spdockt2",
+      "maximumSimulationSteps": 1200,
+      "maximumWallSeconds": 35,
+      "stallSeconds": 4
+    },
+    "buy-frigate": {
+      "rate": 4,
+      "eventKind": "unit-produced",
+      "unitType": "spcorvette",
+      "maximumSimulationSteps": 1200,
+      "maximumWallSeconds": 35,
+      "stallSeconds": 4
+    },
+    "sail-corvette": {
+      "rate": 4,
+      "eventKind": "movement-arrived",
+      "unitType": "spcorvette",
+      "maximumSimulationSteps": 1200,
+      "maximumWallSeconds": 35,
+      "stallSeconds": 4
+    },
+    "sail-frigate": {
+      "rate": 4,
+      "eventKind": "movement-arrived",
+      "unitType": "spfrigate",
+      "maximumSimulationSteps": 1200,
+      "maximumWallSeconds": 35,
+      "stallSeconds": 4
+    }
   }
 }
