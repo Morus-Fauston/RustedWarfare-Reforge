@@ -9,7 +9,7 @@ import sys
 import tempfile
 import time
 
-from public_check import REPO, identities, plan_suite, source_files, build_shared_distribution
+from public_check import REPO, identities, plan_suite, source_files, build_shared_distribution, command_timeout
 
 
 SUITES = ('content-movement-knowledge', 'production-combat', 'build-economy',
@@ -34,18 +34,19 @@ def plan_layer(repo, kind):
                 exclusions=['original-runtime', 'device', 'real-platform-input', 'formal-performance'])
 
 
-def run_layer(repo, output, plan, isolated):
+def run_layer(repo, output, plan, isolated, command_timeout_seconds=600):
     output.mkdir(parents=True, exist_ok=False)
     started = time.monotonic()
     source = identities(repo)
     result = dict(schemaVersion=1, status='execution-failed', selection=plan, source=source,
-                  isolated=isolated, suites=[], cloudRun=os.environ.get('GITHUB_ACTIONS') == 'true')
+                  isolated=isolated, suites=[], cloudRun=os.environ.get('GITHUB_ACTIONS') == 'true',
+                  commandTimeoutSeconds=command_timeout_seconds)
     try:
         shared = None
         if plan['kind'] == 'long':
             if any(row['plan']['tests'] or row['plan'].get('pythonTests') for row in plan['suites']):
                 raise ValueError('Shared long distribution cannot skip selected mechanism tests')
-            shared = build_shared_distribution(repo, output/'shared-distribution', source)
+            shared = build_shared_distribution(repo, output/'shared-distribution', source, command_timeout_seconds)
             result['sharedBuild'] = shared
             if shared['status'] != 'passed':
                 raise RuntimeError(shared.get('error', 'Shared distribution build failed'))
@@ -53,7 +54,8 @@ def run_layer(repo, output, plan, isolated):
             name = row['name']
             child = output / name
             argv = [sys.executable, '-B', str(repo/'SimulationTest/ci/public_check.py'),
-                    '--suite', name, '--kind', row['plan']['kind'], '--output', str(child)]
+                    '--suite', name, '--kind', row['plan']['kind'], '--output', str(child),
+                    '--command-timeout',str(command_timeout_seconds)]
             if shared is not None:
                 from public_distribution import verify
                 verify(shared['receipt'], shared['sha256'], identities(repo))
@@ -91,6 +93,8 @@ def main():
     parser.add_argument('--output', type=Path, help='New immutable batch directory')
     parser.add_argument('--list', action='store_true', help='List fixed complete layer without execution')
     parser.add_argument('--isolated', action='store_true', help='Copy only authored public source closure')
+    parser.add_argument('--command-timeout',type=command_timeout,default=600,
+                        help='Per-command seconds forwarded to every suite and shared build; at most 3600')
     args = parser.parse_args()
     try:
         plan = plan_layer(REPO, args.kind)
@@ -111,7 +115,7 @@ def main():
             target = repo/source.relative_to(REPO)
             target.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(source, target)
-    return run_layer(repo, output, plan, args.isolated)
+    return run_layer(repo, output, plan, args.isolated, args.command_timeout)
 
 
 if __name__ == '__main__':

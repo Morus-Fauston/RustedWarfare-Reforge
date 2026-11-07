@@ -1,12 +1,12 @@
 """Local/CI named mechanism, short and continuous scenario suites (standard library)."""
 import argparse
 import hashlib
+import math
 import json
 import os
 import re
 from pathlib import Path
 import shutil
-import subprocess
 import sys
 import tempfile
 import time
@@ -14,6 +14,27 @@ import uuid
 import xml.etree.ElementTree as ET
 
 REPO = Path(__file__).resolve().parents[2]
+
+
+def command_timeout(value):
+    seconds=float(value)
+    if not math.isfinite(seconds) or not 0<seconds<=3600:
+        raise argparse.ArgumentTypeError('Command timeout must be positive and at most 3600 seconds')
+    return seconds
+
+
+def execute_command(output, name, argv, cwd, timeout):
+    """Keep the existing process-tree executor and its unmodified first-error receipt."""
+    sys.path.insert(0,str(REPO/'SimulationTest/tools'))
+    from workflow import execute_step
+    folder=output/(name+'-process')
+    measured=execute_step(argv,cwd,folder.resolve(),timeout=timeout)
+    # Compatibility summary only; separately captured raw streams remain authoritative.
+    with (output/(name+'.log')).open('xb') as log:
+        for stream in ['stdout.log','stderr.log']:
+            path=folder/stream
+            if path.exists():log.write(path.read_bytes())
+    return measured
 
 
 def source_files(repo):
@@ -110,7 +131,7 @@ def plan_suite(repo, name, kind):
                 pythonTests=python_tests, inputScope=suite.get('inputScope', 'public'), fixture=suite.get('fixture'))
 
 
-def build_shared_distribution(repo, output, source):
+def build_shared_distribution(repo, output, source, command_timeout_seconds=600):
     """Produce one immutable long-batch package, not a previous test result."""
     from public_distribution import seal, verify, toolchain_identity
     output.mkdir(parents=True, exist_ok=False)
@@ -122,10 +143,9 @@ def build_shared_distribution(repo, output, source):
     try:
         initial_toolchain = toolchain_identity()
         result['toolchainBefore'] = initial_toolchain
-        with (output/'build.log').open('w', encoding='utf8') as log:
-            result['exitCode'] = subprocess.run(argv, cwd=project, stdout=log,
-                                                stderr=subprocess.STDOUT, timeout=600).returncode
-        if result['exitCode']:
+        measured=execute_command(output,'build',argv,project,command_timeout_seconds)
+        result.update(exitCode=measured['exitCode'],command=measured)
+        if not measured['passed']:
             raise RuntimeError('Shared distribution build failed: exit '+str(result['exitCode']))
         if identities(repo) != source:
             raise RuntimeError('Public source changed during shared distribution build')
@@ -146,12 +166,13 @@ def build_shared_distribution(repo, output, source):
     return result
 
 
-def run(repo, output, plan, prepared_distribution=None):
+def run(repo, output, plan, prepared_distribution=None, command_timeout_seconds=600):
     output.mkdir(parents=True, exist_ok=False)
     initial = identities(repo)
     result = dict(schemaVersion=1, suite=plan['suiteId'], selection=plan, status='execution-failed',
                   cloudRun=False, source=initial, commands=[], coverage=[],
-                  exclusions=['original-compatibility', 'platform-input', 'historical-snapshot-reexecution'])
+                  exclusions=['original-compatibility', 'platform-input', 'historical-snapshot-reexecution'],
+                  commandTimeoutSeconds=command_timeout_seconds)
     if not any(case['kind'] == 'long' for case in plan['scenarios']):
         result['exclusions'].append('continuous-long')
     started = time.monotonic()
@@ -161,19 +182,14 @@ def run(repo, output, plan, prepared_distribution=None):
     def command(name, args, cwd):
         if prepared_distribution is not None:
             admit()
-        begin = time.monotonic()
-        with (output / (name + '.log')).open('w', encoding='utf-8') as stream:
-            try:
-                completed = subprocess.run(args, cwd=cwd, stdout=stream, stderr=subprocess.STDOUT,
-                                           timeout=600, check=False)
-                code = completed.returncode
-            except subprocess.TimeoutExpired:
-                code = 124
+        measured=execute_command(output,name,args,cwd,command_timeout_seconds)
+        code=measured['exitCode']
         result['commands'].append(dict(name=name, argv=[str(a) for a in args], exitCode=code,
-                                       elapsedSeconds=time.monotonic() - begin))
+                                       elapsedSeconds=measured['elapsedSeconds'],
+                                       receipt=name+'-process/result.json',firstError=measured['firstError']))
         if prepared_distribution is not None:
             admit()
-        if code:
+        if not measured['passed']:
             raise RuntimeError(f'{name}: exit {code}; see {name}.log')
     def junit(folder, name, expected):
         rows = []
@@ -280,6 +296,8 @@ def main():
     parser.add_argument('--suite', default='pr-first-loop', help='Named registry under public/suites')
     parser.add_argument('--kind', choices=['mechanism', 'short', 'long', 'pr', 'all'], default='pr')
     parser.add_argument('--list', action='store_true', help='Print fixed plan without building or creating evidence')
+    parser.add_argument('--command-timeout',type=command_timeout,default=600,
+                        help='Explicit per-command seconds, at most 3600; default 600. Selection is unchanged.')
     parser.add_argument('--distribution-receipt', type=Path, help='Same-batch fixed public long package receipt')
     parser.add_argument('--distribution-sha256', help='Receipt digest pinned by the parent batch')
     args = parser.parse_args()
@@ -306,7 +324,7 @@ def main():
             shutil.copy2(source, target)
         print('Isolated public source:', repo)
     prepared = (args.distribution_receipt, args.distribution_sha256) if args.distribution_receipt else None
-    return run(repo, output, plan, prepared)
+    return run(repo, output, plan, prepared, args.command_timeout)
 
 
 if __name__ == '__main__':
