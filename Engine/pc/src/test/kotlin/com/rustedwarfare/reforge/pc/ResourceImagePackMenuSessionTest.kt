@@ -21,9 +21,9 @@ class ResourceImagePackMenuSessionTest {
             val release = java.util.concurrent.CountDownLatch(1)
             val checked = java.util.concurrent.atomic.AtomicBoolean()
             val backend = object : VisualAssetSettings by actual {
-                override fun checkImagePack(path: java.nio.file.Path): PreparedImagePack {
+                override fun inspectSavedImagePack(path: java.nio.file.Path): PreparedImagePack {
                     entered.countDown(); release.await()
-                    return actual.checkImagePack(path).also { checked.set(true) }
+                    return actual.inspectSavedImagePack(path).also { checked.set(true) }
                 }
                 override fun prepareForContent(selection: VisualAssetSelection, content: ContentPackChoice?): PreparedVisualAssets {
                     check(checked.get()) { "Load raced the catalog's importer" }

@@ -38,7 +38,8 @@ class PersistedResourceAuditTest {
             assertTrue(pretty.contains('\n'))
             Files.writeString(pack.manifest, pretty.replace("\r\n", "\n").replace("\n", "\r\n"))
             rehashMetadata(pack.manifest.parent)
-            val crlf = backend.checkImagePack(pack.manifest)
+            // Preserve coverage of saved legacy byte audits; explicit migration has its own tests.
+            val crlf = backend.inspectSavedImagePack(pack.manifest)
             val selected = backend.initialSelection.copy(packs = ResourcePackSelection(listOf(crlf.catalogEntry), listOf(crlf.catalogEntry.id)))
             backend.applyPrepared(backend.prepare(selected))
             val oldAudit = Files.readAllBytes(fixture.audit)
@@ -47,7 +48,7 @@ class PersistedResourceAuditTest {
             val restarted = fixture.backend()
             assertFailsWith<IllegalArgumentException> { restarted.prepare(restarted.initialSelection) }
             assertContentEquals(oldAudit, Files.readAllBytes(fixture.audit))
-            val lf = restarted.checkImagePack(pack.manifest)
+            val lf = restarted.inspectSavedImagePack(pack.manifest)
             assertNotEquals(crlf.catalogEntry.identity, lf.catalogEntry.identity)
             val checked = selected.copy(packs = ResourcePackSelection(listOf(lf.catalogEntry), listOf(lf.catalogEntry.id)))
             val prepared = restarted.prepare(checked)

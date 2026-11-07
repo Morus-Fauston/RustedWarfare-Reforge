@@ -11,6 +11,117 @@ import com.rustedwarfare.reforge.client.*
 import kotlin.test.*
 
 class PcOriginalResourceExtractionTest {
+    @Test fun passive_legacy_catalog_read_keeps_the_saved_identity_until_explicit_import() {
+        ResourceImagePackApplicationFixture().use { fixture ->
+            val (source, profile) = ownedSource(fixture.root)
+            fun backend() = PcVisualAssetSettings(fixture.store, fixture.cache, fixture.root,
+                WindowsLaunchOptions.parse(arrayOf("--mode", "demo"), fixture.root), resourceExtractionProfile = profile)
+            val legacy = backend().extractOriginalResourcePack(source)
+            val selected = backend().initialSelection.copy(packs = ResourcePackSelection(listOf(legacy.catalogEntry), listOf(legacy.metadata.id.value)))
+            fixture.store.save(selected)
+            val saved = Files.readAllBytes(fixture.settings)
+            VisualAssetSettingsSession(backend()).use { menu ->
+                await(menu)
+                assertNull(menu.error)
+                assertEquals(listOf(legacy.catalogEntry), menu.selection.packs.catalog)
+                assertContentEquals(saved, Files.readAllBytes(fixture.settings))
+                menu.importImagePack(legacy.manifest); await(menu)
+                assertNull(menu.error)
+                assertNotEquals(legacy.manifest, menu.selection.packs.catalog.single().manifest)
+                assertFalse(legacy.metadata.id.value in menu.selection.packs.enabled)
+                assertContentEquals(saved, Files.readAllBytes(fixture.settings))
+            }
+        }
+    }
+
+    @Test fun client_held_original_acceptance_cannot_survive_an_incompatible_independent_mapping_basis() {
+        ResourceImagePackApplicationFixture().use { fixture ->
+            val (source, profile) = ownedSource(fixture.root)
+            val backend = PcVisualAssetSettings(fixture.store, fixture.cache, fixture.root,
+                WindowsLaunchOptions.parse(arrayOf("--mode", "demo"), fixture.root), resourceExtractionProfile = profile)
+            val legacy = backend.extractOriginalResourcePack(source)
+            val accepted = backend.checkImagePack(legacy.manifest)
+            val selected = backend.initialSelection.copy(packs = ResourcePackSelection(listOf(accepted.catalogEntry), listOf(accepted.metadata.id.value)))
+            backend.applyPrepared(backend.prepare(selected))
+            val saved = Files.readAllBytes(fixture.settings)
+            val incompatible = PcOriginalResourceProfile(profile.id, profile.images, profile.sounds,
+                mapOf("reforge:events/tank-fire" to "res/raw/unused.wav"))
+            val newer = PcVisualAssetSettings(fixture.store, fixture.cache, fixture.root,
+                WindowsLaunchOptions.parse(arrayOf("--mode", "demo"), fixture.root), resourceExtractionProfile = incompatible)
+            val failure = assertFailsWith<IllegalArgumentException> { newer.prepare(selected) }
+            assertTrue(failure.message.orEmpty().contains("Independent original qualification differs"), failure.message)
+            assertContentEquals(saved, Files.readAllBytes(fixture.settings))
+            backend.prepare(selected).verifyForPublication()
+        }
+    }
+
+    @Test fun a_legacy_certificate_change_at_publication_is_rejected_without_changing_the_saved_version_and_can_retry() {
+        ResourceImagePackApplicationFixture().use { fixture ->
+            val (source, profile) = ownedSource(fixture.root)
+            fun backend() = PcVisualAssetSettings(fixture.store, fixture.cache, fixture.root,
+                WindowsLaunchOptions.parse(arrayOf("--mode", "demo"), fixture.root), resourceExtractionProfile = profile)
+            val good = backend()
+            val legacy = good.extractOriginalResourcePack(source)
+            val accepted = good.checkImagePack(legacy.manifest)
+            val selection = good.initialSelection.copy(packs = ResourcePackSelection(listOf(accepted.catalogEntry), listOf(accepted.metadata.id.value)))
+            good.applyPrepared(good.prepare(selection))
+            val saved = Files.readAllBytes(fixture.settings)
+            val certificate = legacy.manifest.parent.resolve("resource-extraction.json")
+            val original = Files.readAllBytes(certificate)
+            val changed = PcVisualAssetSettings(fixture.store, fixture.cache, fixture.root,
+                WindowsLaunchOptions.parse(arrayOf("--mode", "demo"), fixture.root), resourceExtractionProfile = profile,
+                imageExtractionMove = { from, to, replace ->
+                    moveVisualAtomically(from, to, replace)
+                    if (from.fileName.toString().startsWith("pending-")) Files.writeString(certificate, "{}")
+                })
+            try {
+                val failure = assertFailsWith<IllegalArgumentException> { changed.checkImagePack(legacy.manifest) }
+                assertTrue(failure.message.orEmpty().contains("SOURCE_CHANGED"), failure.message)
+                assertContentEquals(saved, Files.readAllBytes(fixture.settings))
+                backend().prepare(selection).verifyForPublication()
+            } finally { Files.write(certificate, original) }
+            backend().checkImagePack(legacy.manifest).verify()
+        }
+    }
+
+    @Test fun normal_import_migrates_a_qualified_legacy_pack_and_restarts_without_the_package_or_installation() {
+        ResourceImagePackApplicationFixture().use { fixture ->
+            val (source, profile) = ownedSource(fixture.root)
+            fun backend() = PcVisualAssetSettings(fixture.store, fixture.cache, fixture.root,
+                WindowsLaunchOptions.parse(arrayOf("--mode", "demo"), fixture.root), resourceExtractionProfile = profile)
+            val legacy = backend().extractOriginalResourcePack(source)
+            val before = Files.walk(legacy.manifest.parent).use { files -> files.filter { Files.isRegularFile(it) }
+                .toList().associate { it to visualHash(Files.readAllBytes(it)) } }
+            VisualAssetSettingsSession(backend()).use { menu ->
+                menu.importImagePack(legacy.manifest); await(menu)
+                assertNull(menu.error); assertTrue(menu.diagnostic.orEmpty().startsWith("Imported"), menu.diagnostic)
+                val migrated = menu.selection.packs.catalog.single()
+                assertNotEquals(legacy.manifest, migrated.manifest)
+                assertFalse(migrated.id in menu.selection.packs.enabled)
+                menu.setEnabled(migrated.id, true); menu.apply(); await(menu)
+                assertNull(menu.error)
+                before.forEach { (path, hash) -> assertEquals(hash, visualHash(Files.readAllBytes(path))) }
+                val parked = fixture.root.resolve("parked-legacy-package")
+                require(parked.isAbsolute && parked.startsWith(fixture.root) && legacy.manifest.parent.startsWith(fixture.root))
+                Files.move(legacy.manifest.parent, parked)
+                val parkedSource = fixture.root.resolve("parked-installation")
+                require(parkedSource.isAbsolute && parkedSource.startsWith(fixture.root) && source.startsWith(fixture.root))
+                Files.move(source, parkedSource)
+                val restarted = backend()
+                val ready = restarted.prepare(restarted.initialSelection)
+                ready.verifyForPublication()
+                val layer = ready.resolvedImages!!.layers.single { it.metadata.id.value == migrated.id }
+                assertEquals(4, layer.metadata.requiresResourceFormat)
+                assertEquals(legacy.images.keys, layer.images.keys)
+                assertEquals(legacy.sounds.mapValues { it.value.sha256 }, layer.sounds.mapValues { it.value.sha256 })
+                assertEquals(legacy.soundEvents, layer.soundEvents)
+                assertEquals("MANAGED_REUSE", restarted.lastPreparationPath?.name)
+                assertEquals(0, restarted.preparationDiagnostics["wholePackImports"])
+                assertEquals(emptyList<String>(), restarted.preparationDiagnostics["externalSourceTreeRoots"])
+            }
+        }
+    }
+
     @Test fun reviewed_output_data_is_bound_to_the_producer_and_the_whole_trusted_profile() {
         ResourceImagePackApplicationFixture().use { fixture ->
             val (_, profile) = ownedSource(fixture.root)
@@ -62,9 +173,12 @@ class PcOriginalResourceExtractionTest {
                 set(resources, "imageExtractionSha256", JsonValue(visualHash(Files.readAllBytes(badRoot.resolve("extraction.json")))))
                 rehash(resources); write("resource-extraction.json", resources)
             }
-            val imported = backend.checkImagePack(badRoot)
-            val selected = backend.initialSelection.copy(packs = ResourcePackSelection(listOf(imported.catalogEntry), listOf(imported.catalogEntry.id)))
-            val failure = assertFailsWith<IllegalArgumentException> { backend.prepare(selected) }
+            val failure = assertFailsWith<IllegalArgumentException> {
+                // Complete legacy packs qualify before migration; image-only retains its old path.
+                val imported = backend.checkImagePack(badRoot)
+                val selected = backend.initialSelection.copy(packs = ResourcePackSelection(listOf(imported.catalogEntry), listOf(imported.catalogEntry.id)))
+                backend.prepare(selected)
+            }
             assertTrue(failure.message.orEmpty().contains("Raw image pixels differ"), failure.message)
         }
     }
@@ -104,14 +218,12 @@ class PcOriginalResourceExtractionTest {
                 set(proof, "imageExtractionSha256", JsonValue(visualHash(Files.readAllBytes(forged.resolve("extraction.json")))))
                 rehash(proof); write("resource-extraction.json", proof)
                 state.importImagePack(forged); await(state)
-                val badId = state.selectedPackId
-                state.setEnabled(badId, true); state.apply(); await(state)
-                assertFalse(state.canStart)
-                assertTrue(state.error.orEmpty().contains("SOURCE_GENERATED_RESOURCE_PACKAGE_INVALID"), state.error)
-                assertTrue(state.error.orEmpty().contains("res/raw/unused.wav"), state.error)
-                assertContentEquals(saved, Files.readAllBytes(fixture.settings))
-                state.setEnabled(badId, false); state.apply(); await(state)
                 assertTrue(state.canStart, state.error)
+                assertTrue(state.diagnostic.orEmpty().contains("SOURCE_GENERATED_RESOURCE_PACKAGE_INVALID"), state.diagnostic)
+                assertTrue(state.diagnostic.orEmpty().contains("res/raw/unused.wav"), state.diagnostic)
+                assertEquals(1, state.selection.packs.catalog.size)
+                assertContentEquals(saved, Files.readAllBytes(fixture.settings))
+                state.prepareForLoad()().verifyForPublication()
                 assertEquals(listOf(first.catalogEntry.id), fixture.store.load().packs.enabled)
             }
         }

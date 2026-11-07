@@ -23,6 +23,8 @@ interface VisualAssetSettings {
     fun onPublished(prepared: PreparedVisualAssets) = Unit
     /** Worker-only local import; checking never enables a pack or writes the selection. */
     fun checkImagePack(path: Path): PreparedImagePack = throw UnsupportedOperationException("Local image-pack import is unavailable")
+    /** Passive saved-catalog inspection must not migrate or replace a saved version. */
+    fun inspectSavedImagePack(path: Path): PreparedImagePack = checkImagePack(path)
     val supportsOriginalImageExtraction: Boolean get() = false
     /** Worker-only PC source extraction. It never enables the resulting ordinary pack or saves settings. */
     fun extractOriginalImagePack(path: Path): PreparedImagePack = throw UnsupportedOperationException("PC image extraction is unavailable")

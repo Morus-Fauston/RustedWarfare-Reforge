@@ -16,11 +16,17 @@ import java.util.UUID
 import javax.crypto.Mac
 import javax.crypto.spec.SecretKeySpec
 
+/** Supplied only after the platform's independent complete original audit, never parsed from a package. */
+internal class PcAcceptedOriginalQualification(val profile: String, val basis: String, val sourceTree: String,
+    val imageCertificate: String, val resourceCertificate: String,
+    val contracts: Map<ResourceId, ResourceImageDeclaration>, val verifyCurrent: () -> Unit)
+
 /** Accepted versions belong to this client. External JSON never constitutes an acceptance receipt.
  * The local authentication key separates receipts from editable packages/cache locator records;
  * it does not claim protection against an attacker controlling the user's entire account. */
 internal class PcAcceptedResourceStore(cache: Path,
-    private val atomicMove: (Path, Path, Boolean) -> Unit = ::moveVisualAtomically) {
+    private val atomicMove: (Path, Path, Boolean) -> Unit = ::moveVisualAtomically,
+    private val originalBasis: (String) -> String? = { null }) {
     private val root = cache.toAbsolutePath().normalize().resolve("accepted-resources")
     private val versions = root.resolve("versions")
 
@@ -67,10 +73,13 @@ internal class PcAcceptedResourceStore(cache: Path,
     }
 
     /** Only call after the full public importer (and, for original inputs, independent qualification). */
-    fun accept(pack: PreparedImagePack): PreparedImagePack = locked {
+    fun accept(pack: PreparedImagePack, original: PcAcceptedOriginalQualification? = null): PreparedImagePack = locked {
         pack.verify(); pack.verifySources()
-        require(pack.metadata.requiresResourceFormat == 4)
-        require(!pack.metadata.id.value.startsWith("reforge:pc-original-")) {
+        original?.verifyCurrent?.invoke()
+        val originalId = pack.metadata.id.value.startsWith("reforge:pc-original-")
+        require(if (originalId) pack.metadata.id.value.startsWith("reforge:pc-original-resources-") &&
+            pack.metadata.requiresResourceFormat == 2 && original != null && original.basis == originalBasis(original.profile)
+            else pack.metadata.requiresResourceFormat == 4 && original == null) {
             "RESOURCE_PACK_ACCEPTANCE_INVALID: Original packages require their independent qualification adapter"
         }
         val stage = Files.createDirectory(versions.resolve("pending-${UUID.randomUUID()}"))
@@ -78,6 +87,16 @@ internal class PcAcceptedResourceStore(cache: Path,
         val meta = JsonObject().add("formatVersion", 1).add("requiresResourceFormat", 4)
             .add("id", metadata.id.value).add("name", metadata.name).add("description", metadata.description).add("icon", metadata.icon.value)
         val receipt = JsonObject().add("rules", RULES).add("metadata", meta)
+        if (original != null) {
+            val contracts = JsonObject()
+            original.contracts.toSortedMap(compareBy { it.value }).forEach { (id, layout) ->
+                contracts.add(id.value, declaration(layout.file, layout))
+            }
+            receipt.add("originalQualification", JsonObject().add("profile", original.profile).add("basis", original.basis)
+                .add("sourceManifest", pack.manifest.toString()).add("sourceIdentity", pack.identity)
+                .add("sourceTree", original.sourceTree).add("imageCertificate", original.imageCertificate)
+                .add("resourceCertificate", original.resourceCertificate).add("contracts", contracts))
+        }
         val images = JsonObject(); val sounds = JsonObject(); val events = JsonObject()
         val members = JsonObject()
         val copied = linkedMapOf<Path, String>()
@@ -109,10 +128,11 @@ internal class PcAcceptedResourceStore(cache: Path,
         Files.write(stage.resolve("receipt.json"), bytes, CREATE_NEW)
         Files.write(stage.resolve("receipt.mac"), authenticate(bytes), CREATE_NEW)
         Files.writeString(stage.resolve("pack.json"), meta.toJson(OutputType.json), CREATE_NEW)
-        pack.verify(); pack.verifySources(); checkVisualCancellation()
+        pack.verify(); pack.verifySources(); original?.verifyCurrent?.invoke(); checkVisualCancellation()
         // Reimport can repair a damaged version without overwriting its evidence or a running match.
         val target = versions.resolve("$identity-${UUID.randomUUID()}")
         atomicMove(stage, target, false)
+        original?.verifyCurrent?.invoke()
         val restored = restore(target.resolve("pack.json"))
         restored.verify()
         restored
@@ -132,20 +152,21 @@ internal class PcAcceptedResourceStore(cache: Path,
         val metaBytes = receipt.get("metadata").toJson(OutputType.json).toByteArray(Charsets.UTF_8)
         require(read(manifest).contentEquals(metaBytes)) { "RESOURCE_PACK_ACCEPTANCE_INVALID: Client metadata differs" }
         val metadata = ResourcePackMetadata.read(metaBytes, manifest.toString())
-        require(metadata.requiresResourceFormat == 4 && !metadata.id.value.startsWith("reforge:pc-original-"))
+        require(metadata.requiresResourceFormat == 4)
+        val original = receipt.get("originalQualification")
+        val contracts = if (metadata.id.value.startsWith("reforge:pc-original-")) {
+            require(metadata.id.value.startsWith("reforge:pc-original-resources-") && original != null &&
+                original.getString("basis") == originalBasis(original.getString("profile"))) {
+                "RESOURCE_PACK_ACCEPTANCE_INVALID: Independent original qualification differs; reimport"
+            }
+            layouts(original.get("contracts").asObject())
+        } else { require(original == null); emptyMap() }
         val members = receipt.get("members").asObject()
         fun member(file: String): Path {
             require(file.matches(Regex("media-[0-9]+\\.(png|wav)")) && members.get(file) != null)
             return directory.resolve(file)
         }
-        val imageDeclarations = JsonObject()
-        for (row in receipt.get("images")) {
-            imageDeclarations.add(row.name, JsonObject().add("file", row.getString("file"))
-                .add("frameWidth", row.getInt("frameWidth")).add("frameHeight", row.getInt("frameHeight"))
-                .add("totalFrames", row.getInt("totalFrames")))
-        }
-        val imageManifest = JsonObject().add("formatVersion", 1).add("images", imageDeclarations)
-        val layouts = ResourceImageManifest.read(imageManifest.toJson(OutputType.json).toByteArray(), "images.json").images
+        val layouts = layouts(receipt.get("images"))
         val images = receipt.get("images").asObject().associate { row ->
             val value = row.asObject(); val file = value.getString("file", "")
             ResourceId.parse(row.name) to PreparedResourceImage(member(file), layouts.getValue(ResourceId.parse(row.name)),
@@ -178,7 +199,18 @@ internal class PcAcceptedResourceStore(cache: Path,
         }
         return PreparedImagePack(metadata, manifest, identity, images, emptyList(),
             { verify((images.values.map { it.path } + sounds.values.map { it.path }).toSet()) },
-            ::checkVisualCancellation, sounds, events, ::verify, clientHeld = true)
+            ::checkVisualCancellation, sounds, events, ::verify, clientHeld = true, staticBaseContracts = contracts)
+    }
+
+    private fun declaration(file: String, layout: ResourceImageDeclaration) = JsonObject().add("file", file)
+        .add("frameWidth", layout.frameWidth).add("frameHeight", layout.frameHeight).add("totalFrames", layout.totalFrames)
+    private fun layouts(rows: JsonValue): Map<ResourceId, ResourceImageDeclaration> {
+        val declarations = JsonObject()
+        for (row in rows) declarations.add(row.name, JsonObject().add("file", row.getString("file"))
+            .add("frameWidth", row.getInt("frameWidth")).add("frameHeight", row.getInt("frameHeight"))
+            .add("totalFrames", row.getInt("totalFrames")))
+        return ResourceImageManifest.read(JsonObject().add("formatVersion", 1).add("images", declarations)
+            .toJson(OutputType.json).toByteArray(Charsets.UTF_8), "images.json").images
     }
 
     private fun JsonObject() = JsonValue(JsonValue.ValueType.`object`)

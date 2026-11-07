@@ -208,7 +208,7 @@ class VisualAssetSettingsSession(private val backend: VisualAssetSettings) : Aut
     private fun checkCatalog(entries: List<ResourcePackCatalogEntry>): List<Checked> = entries.map { entry ->
         if (Thread.currentThread().isInterrupted) throw CancellationException("Catalog reading cancelled")
         runCatching {
-            backend.checkImagePack(entry.manifest).also { pack ->
+            backend.inspectSavedImagePack(entry.manifest).also { pack ->
                 require(pack.catalogEntry == entry) { "RESOURCE_PACK_SOURCE_CHANGED: ${entry.id} / ${entry.manifest}: Saved source changed; import it again" }
             }
         }.fold({ Checked(entry, it, null) }, { Checked(entry, null, "${entry.id}: ${it.message ?: it}") })

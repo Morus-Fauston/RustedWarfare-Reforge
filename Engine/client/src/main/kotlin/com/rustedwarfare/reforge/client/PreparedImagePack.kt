@@ -16,11 +16,14 @@ class PreparedImagePack(val metadata: ResourcePackMetadata, val manifest: Path, 
     images: Map<ResourceId, PreparedResourceImage>, sources: List<ContentSourceIdentity>,
     private val verifyPrepared: () -> Unit, private val recheckSources: () -> Unit,
     sounds: Map<ResourceId, PreparedResourceSound> = emptyMap(), soundEvents: Map<ResourceId, ResourceSoundEvent> = emptyMap(),
-    private val verifySelected: ((Set<Path>) -> Unit)? = null, val clientHeld: Boolean = false) {
+    private val verifySelected: ((Set<Path>) -> Unit)? = null, val clientHeld: Boolean = false,
+    staticBaseContracts: Map<ResourceId, ResourceImageDeclaration> = emptyMap()) {
     val images: Map<ResourceId, PreparedResourceImage> = Collections.unmodifiableMap(LinkedHashMap(images))
     val sources: List<ContentSourceIdentity> = Collections.unmodifiableList(ArrayList(sources))
     val sounds: Map<ResourceId, PreparedResourceSound> = Collections.unmodifiableMap(LinkedHashMap(sounds))
     val soundEvents: Map<ResourceId, ResourceSoundEvent> = Collections.unmodifiableMap(LinkedHashMap(soundEvents))
+    /** A platform-qualified original mapping, retained only in authenticated client-held versions. */
+    val staticBaseContracts: Map<ResourceId, ResourceImageDeclaration> = Collections.unmodifiableMap(LinkedHashMap(staticBaseContracts))
     val catalogEntry = ResourcePackCatalogEntry(metadata.id.value, manifest, identity)
     init { require(metadata.icon in this.images) { "RESOURCE_PACK_IMAGE_INVALID: ${metadata.id} / ${metadata.icon}: Pack must provide its own icon" } }
     fun verify() = verifyPrepared()

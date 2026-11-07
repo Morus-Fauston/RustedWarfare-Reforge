@@ -29,7 +29,10 @@ internal class PcVisualAssetSettings @JvmOverloads constructor(private val store
     private val auditedVisuals = PcAuditedVisualReuse()
     private val placeholders = PcPlaceholderVisualAssets()
     private val importer = PcResourcePackImporter(cache)
-    private val acceptedResources = PcAcceptedResourceStore(cache, imageExtractionMove)
+    private val acceptedResources = PcAcceptedResourceStore(cache, imageExtractionMove, ::originalQualificationBasis)
+    private val originalProducerBasis by lazy {
+        PcTrustedOutputIndex.currentProducers().toSortedMap().entries.joinToString("\u0000") { "${it.key}=${it.value}" }
+    }
     private val pcImageExtractor = PcOriginalImageExtractor(cache, imageExtractionProfile ?: resourceExtractionProfile?.images, imageExtractionMove)
     private val pcResourceExtractor = PcOriginalResourceExtractor(cache, resourceExtractionProfile, pcImageExtractor::extract, imageExtractionMove)
     private val baseSoundResources = PcBaseSoundResources(cache)
@@ -156,7 +159,7 @@ internal class PcVisualAssetSettings @JvmOverloads constructor(private val store
             val layers = users.associate { pack -> pack.metadata.id.value to
                 ResourceImageLayer(pack.metadata, pack.images, pack.identity, pack.sources) { if (key == null) pack.verifySources() else verifyAuditedInputs() }
                     .withSounds(pack.sounds, pack.soundEvents)
-                    .withStaticBaseContracts(restoredContracts[pack.metadata.id.value] ?: if (pack.metadata.id.value.startsWith("reforge:pc-original-resources-"))
+                    .withStaticBaseContracts(if (pack.clientHeld) pack.staticBaseContracts else restoredContracts[pack.metadata.id.value] ?: if (pack.metadata.id.value.startsWith("reforge:pc-original-resources-"))
                         pcResourceExtractor.staticBaseContracts(pack, builtinImages, inputs, reviewedOutputs(pack, inputs))
                         else pcImageExtractor.staticBaseContracts(pack, builtinImages, inputs)) }.toMutableMap()
             original?.let { layers[VisualAssetSource.ORIGINAL.resourcePackId] =
@@ -172,7 +175,7 @@ internal class PcVisualAssetSettings @JvmOverloads constructor(private val store
                 .also { it.verifyForPublication() }
             if (key != null && inputs != null && trustedOutputs.identity != null) {
                 val records = users.mapNotNull { pack ->
-                    if (!pack.metadata.id.value.startsWith("reforge:pc-original-resources-")) return@mapNotNull null
+                    if (pack.clientHeld || !pack.metadata.id.value.startsWith("reforge:pc-original-resources-")) return@mapNotNull null
                     val accepted = pcResourceExtractor.profileFor(pack.manifest, inputs)
                     val facts = trustedOutputs.forProfile(accepted) ?: return@mapNotNull null
                     // A semantically valid alternate encoding may pass the full audit but cannot
@@ -244,8 +247,32 @@ internal class PcVisualAssetSettings @JvmOverloads constructor(private val store
             pack.verifyUsed(setOf(pack.images.getValue(pack.metadata.icon).path))
         }
         val pack = importer.load(path)
+        if (pack.metadata.id.value.startsWith("reforge:pc-original-resources-") && pack.metadata.requiresResourceFormat == 2) {
+            return PcFrozenResourceInputs.capture(listOf(pack.manifest.parent)).use { inputs ->
+                val profile = pcResourceExtractor.profileFor(pack.manifest, inputs)
+                val base = placeholders.prepare(initialSelection.copy(source = VisualAssetSource.PLACEHOLDER))
+                val builtin = ResourceImagePreparation.baseLayer(base, BuiltInResourcePacks.forSource(VisualAssetSource.PLACEHOLDER))
+                val contracts = pcResourceExtractor.staticBaseContracts(pack, builtin, inputs, reviewedOutputs(pack, inputs))
+                val qualification = PcAcceptedOriginalQualification(profile.id, requireNotNull(originalQualificationBasis(profile.id)),
+                    inputs.snapshotIdentity(pack.manifest.parent), inputs.sha256(pack.manifest.parent.resolve("extraction.json")),
+                    inputs.sha256(pack.manifest.parent.resolve("resource-extraction.json")), contracts, inputs::verifyCurrent)
+                acceptedResources.accept(pack, qualification)
+            }
+        }
         return if (pack.metadata.requiresResourceFormat == 4) acceptedResources.accept(pack) else pack
     }
+
+    /** Qualifier and producer identities are distribution-owned; package hints never supply either. */
+    private fun originalQualificationBasis(id: String): String? {
+        val profile = if (resourceExtractionProfile != null) resourceExtractionProfile.takeIf { it.id == id }
+            else (1..5).asSequence().map(PcOriginalProfileVersions::version).firstOrNull { it.id == id }
+        return profile?.let { visualHash((PcTrustedOutputIndex.basis(it) + "\u0000" + originalProducerBasis).toByteArray(Charsets.UTF_8)) }
+    }
+
+    @Synchronized override fun inspectSavedImagePack(path: Path): PreparedImagePack =
+        if (acceptedResources.owns(path)) acceptedResources.restore(path).also { pack ->
+            pack.verifyUsed(setOf(pack.images.getValue(pack.metadata.icon).path))
+        } else importer.load(path)
     override fun extractOriginalImagePack(path: Path): PreparedImagePack = pcImageExtractor.extract(path)
     override fun extractOriginalResourcePack(path: Path): PreparedImagePack {
         return pcResourceExtractor.extract(path)
