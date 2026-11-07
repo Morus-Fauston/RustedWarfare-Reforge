@@ -35,6 +35,7 @@
     ]
   },
   "pythonTests": [
+    "SimulationTest/ci/test_source_snapshots.py",
     "SimulationTest/tools/test_perf_analysis.py",
     "SimulationTest/tools/test_platform_scenario.py",
     "SimulationTest/tools/test_platform_session_cli.py",

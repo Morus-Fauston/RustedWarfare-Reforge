@@ -10,6 +10,52 @@ import unittest
 
 
 class ScenarioQualificationTest(unittest.TestCase):
+    def test_complete_version_two_without_its_source_reference_is_rejected(self):
+        from workflow_scenarios import restore_scenarios
+        from platform_scenario import tree
+        with tempfile.TemporaryDirectory(prefix='workflow-source-version-') as temporary:
+            root=Path(temporary).resolve();run=root/'run';run.mkdir()
+            (run/'owned.txt').write_bytes(b'owned')
+            payload=run/'payload.json';payload.write_text(json.dumps(dict(schemaVersion=2,
+                kind='scenario-archive-manifest',complete=True,files=tree(run))),encoding='utf8')
+            (run/'seal.json').write_text(json.dumps(dict(payloadSha256=hashlib.sha256(payload.read_bytes()).hexdigest())),encoding='utf8')
+            with self.assertRaisesRegex(ValueError,'requires its source reference'):
+                restore_scenarios(run,root/'must-not-exist')
+            self.assertFalse((root/'must-not-exist').exists())
+            for index,flag in enumerate([1,'true',None]):
+                document=json.loads(payload.read_bytes());document['complete']=flag
+                payload.write_text(json.dumps(document),encoding='utf8')
+                (run/'seal.json').write_text(json.dumps(dict(payloadSha256=hashlib.sha256(payload.read_bytes()).hexdigest())),encoding='utf8')
+                target=root/f'invalid-completion-{index}'
+                with self.assertRaises(ValueError):
+                    restore_scenarios(run,target)
+                self.assertFalse(target.exists())
+
+    def test_restore_carries_a_referenced_source_snapshot_to_an_independent_ticket_store(self):
+        from source_snapshots import SnapshotStore
+        from workflow_scenarios import restore_scenarios
+        from platform_scenario import tree
+        with tempfile.TemporaryDirectory(prefix='workflow-source-reference-') as temporary:
+            root=Path(temporary).resolve();source=root/'source';source.mkdir()
+            (source/'owned.txt').write_bytes(b'owned source\n')
+            run=root/'original/run';(run/'candidate').mkdir(parents=True)
+            store=root/'original/source-snapshots'
+            SnapshotStore(store).capture(source,['owned.txt'],run/'candidate/source-reference.json')
+            payload=run/'payload.json';payload.write_text(json.dumps(dict(schemaVersion=2,
+                kind='scenario-archive-manifest',complete=True,files=tree(run))),encoding='utf8')
+            (run/'seal.json').write_text(json.dumps(dict(payloadSha256=hashlib.sha256(payload.read_bytes()).hexdigest())),encoding='utf8')
+            restored=root/'independent/restored'
+            result=restore_scenarios(run,restored)
+            self.assertTrue(result['passed'])
+            destination_store=root/'independent/source-snapshots'
+            self.assertTrue((destination_store/'objects').is_dir())
+            hidden=root/'old-ticket-unavailable'
+            self.assertEqual(root,store.parent.resolve().parent)
+            self.assertEqual(root,hidden.resolve().parent)
+            store.parent.rename(hidden)
+            SnapshotStore(destination_store).restore(restored/'candidate/source-reference.json',root/'recovered-source')
+            self.assertEqual(b'owned source\n',(root/'recovered-source/owned.txt').read_bytes())
+
     def test_buffered_terminal_failure_is_recorded_before_returning(self):
         import io
         from unittest.mock import patch

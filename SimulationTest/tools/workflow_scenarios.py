@@ -16,6 +16,15 @@ from workflow import execute_step, resources
 ROOT=Path(__file__).resolve().parents[2]
 
 
+def source_store_root(run):
+    """Share across batches of one evidence ticket; portable runs use their parent."""
+    run=Path(run)
+    for parent in run.parents:
+        if parent.parent.name=='evidence' and re.fullmatch(r'(ENG|TEST)-P[0-9]{3}-[0-9]{3}',parent.name):
+            return parent/'source-snapshots'
+    return run.parent/'source-snapshots'
+
+
 def read_run_plan(path):
     path=Path(path).resolve(strict=True)
     plan=json.loads(path.read_text(encoding='utf8'))
@@ -92,6 +101,11 @@ def copy_qualification(index_path,target):
 
 
 def run_scenarios(plan_path,output):
+    with resources(['build:'+str(ROOT/'Engine'),'build:'+str(ROOT/'SimulationTest')]):
+        return _run_scenarios(plan_path,output)
+
+
+def _run_scenarios(plan_path,output):
     plan,cases,indexes=read_run_plan(plan_path)
     output=scenario_output(output)
     guard=ROOT/'Decompile/tools/workspace_layout.py'
@@ -111,112 +125,114 @@ def run_scenarios(plan_path,output):
         build=dict(status='not-run'),qualification=dict(status='not-run'),execution=[],consumption=[])
     candidate=output/'candidate';snapshot=candidate/'source';package=candidate/'package'
     stage='source-capture'
-    with resources(['build:'+str(ROOT/'Engine'),'build:'+str(ROOT/'SimulationTest')]):
-        try:
-            for source in source_files(ROOT):
-                if source.is_symlink():raise ValueError('Source snapshot cannot follow links')
-                target=snapshot/source.relative_to(ROOT);target.parent.mkdir(parents=True,exist_ok=True)
-                shutil.copy2(source,target)
-            if identities(snapshot)!=initial:raise ValueError('Public source changed during capture')
-            public=snapshot/'SimulationTest/public'
-            for case in cases:
-                if case.get('backend','core')=='core':freeze(public,[case['scenario'],case['contract']])
-                else:
-                    scene=json.loads((public/case['scenario']).read_text(encoding='utf8'))
-                    inputs=(public/case['scenario']).parent/scene['inputs']
-                    if not inputs.resolve().is_relative_to(public) or not tree(inputs):
-                        raise ValueError('Session inputs must be a nonempty public closure')
-            fixed_indexes=[copy_qualification(p,output/'qualification-inputs'/str(i)) for i,p in enumerate(indexes)]
-            if any(digest(p)!=record['sha256'] for p,record in zip(fixed_indexes,plan['qualifications'])):
-                raise ValueError('Pinned qualification changed during capture')
-            stage='build'
-            build_root=Path(tempfile.mkdtemp(prefix='rwre-scenario-build-'))
-            for row in initial:
-                source=snapshot/row['path'];target=build_root/row['path']
-                target.parent.mkdir(parents=True,exist_ok=True);shutil.copy2(source,target)
-            wrapper=[str(build_root/'SimulationTest/gradlew.bat')] if os.name=='nt' else ['sh',str(build_root/'SimulationTest/gradlew')]
-            built=execute_step(wrapper+[':installDist','--no-daemon','--console=plain','--max-workers=1','--rerun-tasks'],
-                build_root/'SimulationTest',output/'build-command')
-            result['build']=dict(status='passed' if built['passed'] else 'failed',command=built,temporarySource=str(build_root))
-            if not built['passed']:raise ValueError('Fixed scenario distribution build failed')
-            shutil.copytree(build_root/'SimulationTest/build/install/simulation-test',package)
-            save(candidate/'identity.json',dict(source=initial,packageFiles=tree(package),toolchain=toolchain))
-            stage='qualification';qualified=[]
-            for i,index in enumerate(fixed_indexes):
-                leaf=output/'qualification-results'/str(i);leaf.mkdir(parents=True)
-                # The frozen worker has its own source ROOT. Give it an allowed
-                # Temp destination, then preserve its complete bytes in this batch.
-                worker_output=Path(tempfile.mkdtemp(prefix='rwre-scenario-qualification-'))/'actual'
-                command=execute_step([sys.executable,'-B',str(snapshot/'SimulationTest/tools/workflow.py'),
-                    'scenario-qualify','--index',str(index),'--distribution',str(package),'--output',str(worker_output)],
-                    snapshot,leaf/'command')
-                copied=worker_output.is_dir()
-                worker_files=tree(worker_output) if copied else []
-                if copied:
-                    shutil.copytree(worker_output,leaf/'actual')
-                    if tree(worker_output)!=worker_files or tree(leaf/'actual')!=worker_files:
-                        raise ValueError('Qualification bytes changed while preserving worker output')
-                save(leaf/'relocation.json',dict(original=str(worker_output),
-                    captured='actual' if copied else None,files=worker_files,
-                    scope='Original worker output preserved, including failures; inputs unchanged'))
-                qualified.append(dict(path=str(leaf.relative_to(output)),command=command))
-                result['qualification']=dict(status='running',cases=qualified)
-                if not command['passed'] or not json.loads((leaf/'actual/result.json').read_text(encoding='utf8'))['passed']:
-                    raise ValueError('Consumer qualification failed; no producer scenario starts')
-            result['qualification']['status']='passed'
-            for case in cases:
-                if tree(package)!=json.loads((candidate/'identity.json').read_text(encoding='utf8'))['packageFiles']:
-                    raise ValueError('Fixed package changed before scenario execution')
-                leaf=output/'runs'/case['id'];leaf.mkdir(parents=True)
-                scenario=public/case['scenario'];contract=public/case['contract'];backend=case.get('backend','core')
-                stage='execution:'+case['id']
-                if backend=='core':
-                    launcher=package/'bin'/('simulation-test.bat' if os.name=='nt' else 'simulation-test')
-                    argv=[str(launcher)] if os.name=='nt' else ['sh',str(launcher)]
-                    command=execute_step(argv+['run','--scenario',str(scenario),'--contract',str(contract),
-                        '--output',str(leaf/'archive'),'--mode','self'],snapshot,leaf/'execution')
-                    archives=list((leaf/'archive').glob('run-*'))
-                    actual=archives[0] if len(archives)==1 else None
-                    collected=bool(actual and json.loads((actual/'manifest.json').read_text(encoding='utf8')).get('complete'))
-                    compare=argv+['compare','--scenario',str(scenario),'--contract',str(contract),'--actual',str(actual),
-                        '--output',str(leaf/'recomparison'),'--mode','self']
-                else:
-                    actual=leaf/'archive'
-                    adapter=[sys.executable,'-B',str(snapshot/'SimulationTest/tools/platform_scenario.py')]
-                    command=execute_step(adapter+['session','--scenario',str(scenario),'--contract',str(contract),
-                        '--distribution',str(package),'--output',str(actual),'--timeout','180'],snapshot,leaf/'execution')
-                    collected=(actual/'archive.json').is_file() and json.loads((actual/'archive.json').read_text(encoding='utf8')).get('complete') is True
-                    compare=adapter+['compare','--run',str(actual)]
-                result['execution'].append(dict(case=case['id'],backend=backend,command=command,
-                    collected=collected,archive=actual.relative_to(output).as_posix() if actual else None))
-                stage='consumption:'+case['id']
-                if collected:
-                    consumed=execute_step(compare,snapshot,leaf/'consumption')
-                    result['consumption'].append(dict(case=case['id'],command=consumed))
-                else:consumed=dict(passed=False)
-                if not command['passed']:
-                    stage='execution:'+case['id']
-                    raise ValueError('Scenario process failed; captured evidence preserved without rerun')
-                if not consumed['passed']:
-                    raise ValueError('Independent consumption failed; captured evidence preserved without rerun')
-            stage='identity-verification'
-            if identities(ROOT)!=initial or toolchain_identity()!=toolchain:
-                raise ValueError('Original source/input/toolchain changed after freezing')
+    try:
+        from source_snapshots import SnapshotStore
+        reference=candidate/'source-reference.json'
+        store=SnapshotStore(source_store_root(output))
+        result['sourceCapture']=store.capture(ROOT,[p.relative_to(ROOT).as_posix() for p in source_files(ROOT)],reference)
+        result['sourceStorage']=dict(kind='shared-tree-zip-v1',reference='candidate/source-reference.json',
+            store=Path(os.path.relpath(store.root,output)).as_posix(),recovery='Keep the referenced objects; scenario-restore transfers them')
+        # The immutable snapshot is shared. Only a mutable build/worker tree
+        # is materialized in Temp, never another archived source tree.
+        snapshot=Path(tempfile.mkdtemp(prefix='rwre-scenario-source-'))/'source'
+        store.restore(reference,snapshot)
+        if identities(snapshot)!=initial:raise ValueError('Public source changed during capture')
+        public=snapshot/'SimulationTest/public'
+        for case in cases:
+            if case.get('backend','core')=='core':freeze(public,[case['scenario'],case['contract']])
+            else:
+                scene=json.loads((public/case['scenario']).read_text(encoding='utf8'))
+                inputs=(public/case['scenario']).parent/scene['inputs']
+                if not inputs.resolve().is_relative_to(public) or not tree(inputs):
+                    raise ValueError('Session inputs must be a nonempty public closure')
+        fixed_indexes=[copy_qualification(p,output/'qualification-inputs'/str(i)) for i,p in enumerate(indexes)]
+        if any(digest(p)!=record['sha256'] for p,record in zip(fixed_indexes,plan['qualifications'])):
+            raise ValueError('Pinned qualification changed during capture')
+        stage='build'
+        build_root=snapshot
+        wrapper=[str(build_root/'SimulationTest/gradlew.bat')] if os.name=='nt' else ['sh',str(build_root/'SimulationTest/gradlew')]
+        built=execute_step(wrapper+[':installDist','--no-daemon','--console=plain','--max-workers=1','--rerun-tasks'],
+            build_root/'SimulationTest',output/'build-command')
+        result['build']=dict(status='passed' if built['passed'] else 'failed',command=built,temporarySource=str(build_root))
+        if not built['passed']:raise ValueError('Fixed scenario distribution build failed')
+        shutil.copytree(build_root/'SimulationTest/build/install/simulation-test',package)
+        save(candidate/'identity.json',dict(source=initial,packageFiles=tree(package),toolchain=toolchain))
+        stage='qualification';qualified=[]
+        for i,index in enumerate(fixed_indexes):
+            leaf=output/'qualification-results'/str(i);leaf.mkdir(parents=True)
+            # The frozen worker has its own source ROOT. Give it an allowed
+            # Temp destination, then preserve its complete bytes in this batch.
+            worker_output=Path(tempfile.mkdtemp(prefix='rwre-scenario-qualification-'))/'actual'
+            command=execute_step([sys.executable,'-B',str(snapshot/'SimulationTest/tools/workflow.py'),
+                'scenario-qualify','--index',str(index),'--distribution',str(package),'--output',str(worker_output)],
+                snapshot,leaf/'command')
+            copied=worker_output.is_dir()
+            worker_files=tree(worker_output) if copied else []
+            if copied:
+                shutil.copytree(worker_output,leaf/'actual')
+                if tree(worker_output)!=worker_files or tree(leaf/'actual')!=worker_files:
+                    raise ValueError('Qualification bytes changed while preserving worker output')
+            save(leaf/'relocation.json',dict(original=str(worker_output),
+                captured='actual' if copied else None,files=worker_files,
+                scope='Original worker output preserved, including failures; inputs unchanged'))
+            qualified.append(dict(path=str(leaf.relative_to(output)),command=command))
+            result['qualification']=dict(status='running',cases=qualified)
+            if not command['passed'] or not json.loads((leaf/'actual/result.json').read_text(encoding='utf8'))['passed']:
+                raise ValueError('Consumer qualification failed; no producer scenario starts')
+        result['qualification']['status']='passed'
+        for case in cases:
             if tree(package)!=json.loads((candidate/'identity.json').read_text(encoding='utf8'))['packageFiles']:
-                raise ValueError('Fixed scenario package changed during execution')
-            result['passed']=True
-        except Exception as error:
-            if stage=='qualification' and result['qualification']['status']!='passed':
-                result['qualification']['status']='failed'
-            result['firstError']=dict(stage=stage,message=type(error).__name__+': '+str(error))
-        save(output/'execution.json',result['execution']);save(output/'consumption.json',result['consumption'])
-        save(output/'build.json',result['build']);save(output/'qualification.json',result['qualification'])
-        save(output/'summary.json',result)
-        complete=(len(result['execution'])==len(cases) and all(r['collected'] for r in result['execution']) and package.is_dir())
-        payload=dict(schemaVersion=1,kind='scenario-archive-manifest',complete=complete,files=tree(output))
-        save(output/'payload.json',payload)
-        result['sealing']=dict(status='sealed-complete' if complete else 'preserved-incomplete',payloadSha256=digest(output/'payload.json'))
-        save(output/'seal.json',result['sealing'])
+                raise ValueError('Fixed package changed before scenario execution')
+            leaf=output/'runs'/case['id'];leaf.mkdir(parents=True)
+            scenario=public/case['scenario'];contract=public/case['contract'];backend=case.get('backend','core')
+            stage='execution:'+case['id']
+            if backend=='core':
+                launcher=package/'bin'/('simulation-test.bat' if os.name=='nt' else 'simulation-test')
+                argv=[str(launcher)] if os.name=='nt' else ['sh',str(launcher)]
+                command=execute_step(argv+['run','--scenario',str(scenario),'--contract',str(contract),
+                    '--output',str(leaf/'archive'),'--mode','self'],snapshot,leaf/'execution')
+                archives=list((leaf/'archive').glob('run-*'))
+                actual=archives[0] if len(archives)==1 else None
+                collected=bool(actual and json.loads((actual/'manifest.json').read_text(encoding='utf8')).get('complete'))
+                compare=argv+['compare','--scenario',str(scenario),'--contract',str(contract),'--actual',str(actual),
+                    '--output',str(leaf/'recomparison'),'--mode','self']
+            else:
+                actual=leaf/'archive'
+                adapter=[sys.executable,'-B',str(snapshot/'SimulationTest/tools/platform_scenario.py')]
+                command=execute_step(adapter+['session','--scenario',str(scenario),'--contract',str(contract),
+                    '--distribution',str(package),'--output',str(actual),'--timeout','180'],snapshot,leaf/'execution')
+                collected=(actual/'archive.json').is_file() and json.loads((actual/'archive.json').read_text(encoding='utf8')).get('complete') is True
+                compare=adapter+['compare','--run',str(actual)]
+            result['execution'].append(dict(case=case['id'],backend=backend,command=command,
+                collected=collected,archive=actual.relative_to(output).as_posix() if actual else None))
+            stage='consumption:'+case['id']
+            if collected:
+                consumed=execute_step(compare,snapshot,leaf/'consumption')
+                result['consumption'].append(dict(case=case['id'],command=consumed))
+            else:consumed=dict(passed=False)
+            if not command['passed']:
+                stage='execution:'+case['id']
+                raise ValueError('Scenario process failed; captured evidence preserved without rerun')
+            if not consumed['passed']:
+                raise ValueError('Independent consumption failed; captured evidence preserved without rerun')
+        stage='identity-verification'
+        if identities(ROOT)!=initial or identities(snapshot)!=initial or toolchain_identity()!=toolchain:
+            raise ValueError('Original source/input/toolchain changed after freezing')
+        if tree(package)!=json.loads((candidate/'identity.json').read_text(encoding='utf8'))['packageFiles']:
+            raise ValueError('Fixed scenario package changed during execution')
+        result['passed']=True
+    except Exception as error:
+        if stage=='qualification' and result['qualification']['status']!='passed':
+            result['qualification']['status']='failed'
+        result['firstError']=dict(stage=stage,message=type(error).__name__+': '+str(error))
+    save(output/'execution.json',result['execution']);save(output/'consumption.json',result['consumption'])
+    save(output/'build.json',result['build']);save(output/'qualification.json',result['qualification'])
+    save(output/'summary.json',result)
+    complete=(len(result['execution'])==len(cases) and all(r['collected'] for r in result['execution']) and package.is_dir())
+    payload=dict(schemaVersion=2,kind='scenario-archive-manifest',complete=complete,files=tree(output))
+    save(output/'payload.json',payload)
+    result['sealing']=dict(status='sealed-complete' if complete else 'preserved-incomplete',payloadSha256=digest(output/'payload.json'))
+    save(output/'seal.json',result['sealing'])
     return result
 
 
@@ -224,7 +240,9 @@ def verify_payload(run):
     run=Path(run).resolve(strict=True)
     payload=json.loads((run/'payload.json').read_text(encoding='utf8'))
     seal=json.loads((run/'seal.json').read_text(encoding='utf8'))
-    if (payload.get('schemaVersion')!=1 or payload.get('kind')!='scenario-archive-manifest' or
+    if type(payload.get('schemaVersion')) is not int or type(payload.get('complete')) is not bool:
+        raise ValueError('Invalid scenario archive version or completion type')
+    if (payload.get('schemaVersion') not in (1,2) or payload.get('kind')!='scenario-archive-manifest' or
             digest(run/'payload.json')!=seal.get('payloadSha256')):
         raise ValueError('Missing or changed scenario payload identity')
     files=payload.get('files')
@@ -245,13 +263,30 @@ def verify_payload(run):
             metadata.add(item['path'])
     actual={f['path'] for f in tree(run)}-{'payload.json','seal.json','result.json','terminal.json','restore.json'}
     if actual!={f['path'] for f in files}|metadata:raise ValueError('Scenario payload closure changed')
+    reference=run/'candidate/source-reference.json'
+    if payload['schemaVersion']==2 and payload.get('complete') is True and not reference.is_file():
+        raise ValueError('Complete source-reference archive requires its source reference')
+    if reference.is_file():
+        sys.path.insert(0,str(ROOT/'SimulationTest/ci'))
+        from source_snapshots import SnapshotStore
+        SnapshotStore(source_store_root(run)).verify(reference)
     return run,payload,seal
 
 
 def restore_scenarios(run,output):
+    with resources(['build:'+str(ROOT/'Engine'),'build:'+str(ROOT/'SimulationTest')]):
+        return _restore_scenarios(run,output)
+
+
+def _restore_scenarios(run,output):
     run,payload,seal=verify_payload(run)
     output=scenario_output(output)
     if output.is_relative_to(run):raise ValueError('Restore output must stay outside the captured run')
+    reference=run/'candidate/source-reference.json'
+    if reference.is_file():
+        sys.path.insert(0,str(ROOT/'SimulationTest/ci'))
+        from source_snapshots import SnapshotStore
+        SnapshotStore(source_store_root(run)).copy_to(reference,source_store_root(output))
     output.mkdir(parents=True,exist_ok=False)
     for name in [f['path'] for f in payload['files']]+['payload.json','seal.json']:
         source=member(run,name);target=member(output,name)
@@ -265,13 +300,24 @@ def restore_scenarios(run,output):
     save(output/'restore.json',dict(schemaVersion=1,origin=str(run),payloadSha256=seal['payloadSha256'],
         locatorPolicy='Captured payload paths remain relative; original documents and hashes are unchanged',metadata=metadata))
     verify_payload(output);verify_payload(run)
+    restoration=dict(status='verified',payloadSha256=seal['payloadSha256'])
+    if reference.is_file():
+        restored_source=Path(tempfile.mkdtemp(prefix='rwre-restored-candidate-'))/'source'
+        SnapshotStore(source_store_root(output)).restore(output/'candidate/source-reference.json',restored_source)
+        restoration.update(sourceRoot=str(restored_source),sourceStore=str(source_store_root(output)),
+            sourceReference='candidate/source-reference.json')
     return dict(schemaVersion=1,passed=payload['complete'],firstError=None if payload['complete'] else
         dict(stage='restore',message='Bytes restored, but original capture was incomplete'),postErrors=[],
-        execution=dict(status='not-run'),restoration=dict(status='verified',payloadSha256=seal['payloadSha256']),
-        scope='Restored candidate/source/package/input/raw bytes only; no simulation or build')
+        execution=dict(status='not-run'),restoration=restoration,
+        scope='Restored candidate source/package/input/raw bytes only; no simulation or build')
 
 
 def compare_scenarios(run,output):
+    with resources(['build:'+str(ROOT/'Engine'),'build:'+str(ROOT/'SimulationTest')]):
+        return _compare_scenarios(run,output)
+
+
+def _compare_scenarios(run,output):
     run,payload,seal=verify_payload(run)
     output=scenario_output(output)
     if output.is_relative_to(run):raise ValueError('Replay output must stay outside the captured run')
@@ -287,32 +333,37 @@ def compare_scenarios(run,output):
     result=dict(schemaVersion=1,passed=False,firstError=None,postErrors=[],execution=dict(status='not-run',
         reason='Independent replay only; no simulation or build'),consumption=[],originalPayloadSha256=seal['payloadSha256'],
         originalRun=str(run),scope='Captured candidate consumers and inputs only; not current private workspace acceptance')
-    with resources(['build:'+str(ROOT/'Engine'),'build:'+str(ROOT/'SimulationTest')]):
-        try:
-            for case in selection:
-                capture=next((e for e in execution if e['case']==case['id']),None)
-                if not capture or not capture['collected'] or not capture.get('archive'):
-                    raise ValueError('Selected scenario lacks a complete capture: '+case['id'])
-                # Early schema-1 Windows captures stored native relative separators.
-                # Resolve that locator explicitly; never rewrite the sealed original.
-                locator=capture['archive'].replace('\\','/')
-                actual=member(run,locator);leaf=output/case['id'];leaf.mkdir()
-                if case.get('backend','core')=='core':
-                    launcher=package/'bin'/('simulation-test.bat' if os.name=='nt' else 'simulation-test')
-                    argv=[str(launcher)] if os.name=='nt' else ['sh',str(launcher)]
-                    public=snapshot/'SimulationTest/public'
-                    argv+=['compare','--scenario',str(public/case['scenario']),'--contract',str(public/case['contract']),
-                        '--actual',str(actual),'--output',str(leaf/'comparison-output'),'--mode','self']
-                else:
-                    argv=[sys.executable,'-B',str(snapshot/'SimulationTest/tools/platform_scenario.py'),'compare','--run',str(actual)]
-                command=execute_step(argv,snapshot,leaf/'command')
-                result['consumption'].append(dict(case=case['id'],command=command))
-                if not command['passed']:raise ValueError('Independent consumption rejected '+case['id'])
-            verify_payload(run)
-            result['passed']=True
-        except Exception as error:
-            result['firstError']=dict(stage='consumption',message=type(error).__name__+': '+str(error))
-        save(output/'consumption.json',result['consumption'])
+    try:
+        reference=run/'candidate/source-reference.json'
+        if reference.is_file():
+            sys.path.insert(0,str(ROOT/'SimulationTest/ci'))
+            from source_snapshots import SnapshotStore
+            snapshot=Path(tempfile.mkdtemp(prefix='rwre-scenario-replay-'))/'source'
+            SnapshotStore(source_store_root(run)).restore(reference,snapshot)
+        for case in selection:
+            capture=next((e for e in execution if e['case']==case['id']),None)
+            if not capture or not capture['collected'] or not capture.get('archive'):
+                raise ValueError('Selected scenario lacks a complete capture: '+case['id'])
+            # Early schema-1 Windows captures stored native relative separators.
+            # Resolve that locator explicitly; never rewrite the sealed original.
+            locator=capture['archive'].replace('\\','/')
+            actual=member(run,locator);leaf=output/case['id'];leaf.mkdir()
+            if case.get('backend','core')=='core':
+                launcher=package/'bin'/('simulation-test.bat' if os.name=='nt' else 'simulation-test')
+                argv=[str(launcher)] if os.name=='nt' else ['sh',str(launcher)]
+                public=snapshot/'SimulationTest/public'
+                argv+=['compare','--scenario',str(public/case['scenario']),'--contract',str(public/case['contract']),
+                    '--actual',str(actual),'--output',str(leaf/'comparison-output'),'--mode','self']
+            else:
+                argv=[sys.executable,'-B',str(snapshot/'SimulationTest/tools/platform_scenario.py'),'compare','--run',str(actual)]
+            command=execute_step(argv,snapshot,leaf/'command')
+            result['consumption'].append(dict(case=case['id'],command=command))
+            if not command['passed']:raise ValueError('Independent consumption rejected '+case['id'])
+        verify_payload(run)
+        result['passed']=True
+    except Exception as error:
+        result['firstError']=dict(stage='consumption',message=type(error).__name__+': '+str(error))
+    save(output/'consumption.json',result['consumption'])
     return result
 
 

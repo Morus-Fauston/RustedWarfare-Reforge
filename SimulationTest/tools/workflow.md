@@ -49,11 +49,19 @@ python -B C:/Users/46348/.codex/worktrees/test-p003-workflow/RustedWarfare-Refor
 
 计划严格包含 `schemaVersion:1`、当前绝对 `root`、`suite`、`kind:short|long`、唯一 `cases` ID 列表和 `qualifications:[{path,sha256}]`。每种选定 backend 都须有资格索引；索引路径相对计划文件，SHA 固定索引原字节。`scenario-qualify --index <索引> --distribution <固定分发包> --output <新目录>` 也可单独检查。索引包含 schemaVersion、backend、fixtureKind（Core 为 core-archive，Session 为 legacy-raw）、scenario、contract 和 cases；每例有唯一 case、相对 path、expectedExitCode。至少一个好例 0 和一个语义／证据坏例 2 或 3；坏例必须声明 expectedCategory（旧 Core 索引兼容 category），Session raw 另有 sha256。进程失败或输入错误不能充当消费者资格。
 
-批次保留 candidate/source、candidate/package、资格原件、每场景完整 raw、Core normalized、命令与标准输出错误；execution、consumption、summary、payload／seal、terminal／result 分别记录执行、独立判定、封存和打印结果。complete 仅代表所选采集完整，不代表契约或整期通过。进程失败保留部分原件并停止后续场景，不偷偷重跑。封存清单和哈希用于本工具归档完整性核验，不构成外部可信签名。
+旧格式批次保留 candidate/source、candidate/package、资格原件、每场景完整 raw、Core normalized、命令与标准输出错误；execution、consumption、summary、payload／seal、terminal／result 分别记录执行、独立判定、封存和打印结果。complete 仅代表所选采集完整，不代表契约或整期通过。进程失败保留部分原件并停止后续场景，不偷偷重跑。封存清单和哈希用于本工具归档完整性核验，不构成外部可信签名。
+
+新 scenario-run 使用归档schemaVersion 2（源引用本身仍为版本1），让不支持引用的旧读者明确拒绝；当前读者继续兼容原版本1完整源码档。新批次默认按同票字节树共用压缩快照，批内保留 candidate/source-reference.json、candidate/package 和独立命令／结果；源码仅在系统临时构建／工作目录展开。存储在最近的 evidence/<ENG或TEST票号>/source-snapshots；其它允许位置使用批次父目录的 source-snapshots，跨同票批次不会重复压缩同一树。封存清单包含完整源引用，核验同时逐文件验证其外部快照；备份／转移需保留票据对象目录。scenario-restore 自动复制所需快照到目的票据对象目录，并在结果 restoration.sourceRoot 给出完整展开源码；scenario-compare 自动从引用恢复消费环境。旧 sealed 批次仍走既有 candidate/source 原读法，不改原件、哈希或历史格式。
+
+其它新采集批次也可单独使用 `python -B SimulationTest/ci/source_snapshots.py --store <同票对象目录> capture --repo <工作区> --reference <本批新source.json>`，按 `public_check.source_files` 的显式公开源闭包捕获。每批命令、结果、引用及其 SHA 仍独立保存，调用方串行协调资源。手工入口和正常归档使用同一库；不迁移历史 ZIP 或失败档。
+
+引用 schemaVersion 1 含完整相对路径、原始字节 SHA-256、大小、模式及对象地址。树身份为排序后 path／sha256／bytes 清单的规范 JSON SHA-256；不以时间戳或文件名代替内容。每棵树使用单个 `objects/<树SHA>.zip`，ZIP DEFLATE level 6、固定条目时间。首次写入及每次复用均逐文件解码并核对清单、大小和原始 SHA，不省略检验。相同树只有一份树元数据及压缩快照，各批完整引用保留自己的模式；文件内容变更形成新树，不跨异树单独去重文件。对象损坏不覆盖原件，捕获不发布引用。 新对象、转移和树表均在同目录临时成员完整写入并校验后发布；已捕获写入异常会清理本次未发布内容，既有对象只验证、不覆盖。调用方串行协调全部存储写入。
+
+恢复命令为 `python -B <复制的source_snapshots.py> --store <对象目录> restore --reference <本批source.json> --destination <新源码目录>`。只需该脚本、该批引用和引用的对象，使用标准库，不读原工作区、旧绝对路径或 trees 注册表。先验证完整清单及全部对象，再在目标父目录临时组装、校验、移入新目标；已有目标拒绝覆盖。对象丢失／损坏、越界或冲突路径明确失败，不发布半完成目标。对象目录和引用构成一个恢复集合，不能仅备份引用；哈希表示完整性，不构成可信签名。CLI 返回树身份、引用身份、文件数和字节量，采集耗时仍由外层独立命令收据记录。
 
 `scenario-restore --run <原批次> --output <新目录>` 原字节复制候选和已封存文件，以 restore.json 记录显式位置映射；不改写旧清单或哈希。`scenario-compare --run <原批次或恢复副本> --output <另一个新目录>` 使用档内固定 Core 包和 Python 消费者独立重判，不构建或推进模拟。恢复成功只说明完整归档复制通过，仍需单独重判；不完整原件的恢复不会变为通过。重判、恢复目录必须在原批次之外。历史 Windows 相对定位符可显式解析反斜杠，原件保持不变。消费者升级后的新规则资格须另行验证，此入口默认固定档内版本。
 
-输出只可进入项目 build、对应票 evidence 批次或系统 Temp。生产 run 仍要求私有工作区布局守卫；公开克隆缺守卫不能冒称完整工作区验收。恢复副本可使用档内 `candidate/source/SimulationTest/tools/workflow.py scenario-compare`，限该档捕获的公开输入与同平台运行条件；不代表 Android、PC 操作、网络或原版对拍。Session 启动通过单个 lib 通配符保持命令短，Windows 用 Unicode 扩展路径和短 Temp 工作目录，全部实际 JAR 身份仍逐一记录。
+输出只可进入项目 build、对应票 evidence 批次或系统 Temp。生产 run 仍要求私有工作区布局守卫；公开克隆缺守卫不能冒称完整工作区验收。旧格式恢复副本可使用档内 `candidate/source/SimulationTest/tools/workflow.py scenario-compare`，新引用格式可从 restoration.sourceRoot 的 SimulationTest/tools/workflow.py 调用相同操作（输出用系统Temp）。两者限该档捕获的公开输入与同平台运行条件；不代表 Android、PC 操作、网络或原版对拍。Session 启动通过单个 lib 通配符保持命令短，Windows 用 Unicode 扩展路径和短 Temp 工作目录，全部实际 JAR 身份仍逐一记录。
 
 Session 的可选 `history` 契约用于显式声明长链检查义务，rules 仍须逐一对应全部 intentId。initialBalance 为独立初始金额；spend 声明 intentId、正 amount、at（action 或 first-step）。noActionIntents 显式列无动作意图；其余意图检查固定动作种类及接受状态、完整步数／时序与逐观测余额。mechLegs 声明类型对应腿数，检查姿态字段、有限数值和腿序；始终拒绝死亡／不存在单位残留炮态。可选 ownerPlayerId、initialOwnedTypes、finalUnits、minimumBirths 检查声明的初态、终态和射击义务；projectileBirthsRequired 只适用于可见出生记录完整的固定场景，不能推广到任意战争迷雾记录。弹体路径可用 canonical 非负索引或唯一 token；不猜测不存在的 id 字段。新 Session 记录含 generation；混入旧代次或缺失代次拒绝，旧版整档无观测代次仍可按原读法追溯。这些是独立声明的证据义务，不替代核心玩法或新增通用玩法规则。
 
