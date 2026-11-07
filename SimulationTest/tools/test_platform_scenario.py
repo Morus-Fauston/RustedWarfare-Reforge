@@ -9,6 +9,58 @@ import tempfile
 
 
 class PlatformIntentTest(unittest.TestCase):
+    def test_history_charges_the_formal_build_when_its_new_site_is_created(self):
+        actor=dict(unitId='a',ownerPlayerId='p1',typeId='builder',health=100,maxHealth=100,alive=True)
+        site=dict(unitId='site',ownerPlayerId='p1',typeId='dock',position=dict(x=5,y=6),health=10,maxHealth=100,alive=True)
+        def sample(step,balance,created=False,event=False):
+            return dict(worldId='w',stepIndex=step,simulationTime=max(step+1,0),balance=balance,
+                units=copy.deepcopy([actor,site] if created else [actor]),events=[dict(kind='construction-created',unitId='site')] if event else [],
+                weapons=[],projectiles=[],projectileEvents=[])
+        before=sample(-1,100);first=sample(0,100);created=sample(1,90,True,True);tail=sample(2,90,True)
+        rows=[dict(sequence=0,kind='observation',phase='initial',sample=before),
+              dict(sequence=1,kind='intent-start',intentId='build'),
+              dict(sequence=2,kind='observation',phase='before-action',sample=before),
+              dict(sequence=3,kind='action',type='BuildAction',unitId='a',actorPlayerId='p1',buildingTypeId='dock',target=dict(x=5,y=6),append=False,result=dict(actionId='click-1',accepted=True)),
+              dict(sequence=4,kind='observation',phase='after-action',sample=before),
+              dict(sequence=5,kind='observation',phase='step',sample=first),
+              dict(sequence=6,kind='observation',phase='step',sample=created),
+              dict(sequence=7,kind='observation',phase='step',sample=tail),
+              dict(sequence=8,kind='intent-end',intentId='build'),
+              dict(sequence=9,kind='observation',phase='before-close',sample=tail),dict(sequence=10,kind='closed')]
+        plan=dict(scenarioId='s',intents=[dict(intentId='build',kind='build',typeId='dock',position=dict(x=5,y=6),waitSteps=3)])
+        contract=dict(scenarioId='s',rules=[dict(intentId='build')],history=dict(initialBalance=100,spend=[dict(intentId='build',amount=10,at='construction-created')]))
+        anchors=[dict(intentId='build',afterSequence=1,endSequence=7)]
+        self.assertEqual(0,compare_run(rows,plan,contract,anchors)['exitCode'])
+        for fault in ['early-debit','missing-debit','missing-event','free-without-event','repeated-event',
+                      'wrong-owner','wrong-type','wrong-position','preexisting-site','two-sites']:
+            changed=copy.deepcopy(rows)
+            if fault=='early-debit':changed[5]['sample']['balance']=90
+            elif fault=='missing-debit':changed[6]['sample']['balance']=100
+            elif fault in ('missing-event','free-without-event'):
+                changed[6]['sample']['events']=[]
+                if fault=='free-without-event':
+                    for row in changed:
+                        if 'sample' in row:row['sample']['balance']=100
+            elif fault=='repeated-event':changed[7]['sample']['events']=[dict(kind='construction-created',unitId='site')]
+            elif fault in ('wrong-owner','wrong-type','wrong-position'):
+                unit=changed[6]['sample']['units'][1]
+                unit.update({'ownerPlayerId':'p2'} if fault=='wrong-owner' else {'typeId':'other'} if fault=='wrong-type' else {'position':dict(x=6,y=6)})
+            elif fault=='preexisting-site':
+                for index in (0,2,4,5):changed[index]['sample']['units']=copy.deepcopy([actor,site])
+            elif fault=='two-sites':
+                changed[6]['sample']['units'].append(dict(site,unitId='second-site'))
+                changed[6]['sample']['events'].append(dict(kind='construction-created',unitId='second-site'))
+            with self.subTest(fault=fault),self.assertRaises(PlatformError):compare_run(changed,plan,contract,anchors)
+        for field in ('typeId','position'):
+            changed=copy.deepcopy(plan);del changed['intents'][0][field]
+            with self.subTest(missing=field),self.assertRaises(PlatformError):compare_run(rows,changed,contract,anchors)
+        for spend in (None,{},'charges',[None],[[]],[dict(intentId=[],amount=10,at='construction-created')],
+                      [dict(intentId='build',amount=10,at='construction-created',unknown=True)]):
+            changed=copy.deepcopy(contract);changed['history']['spend']=spend
+            with self.subTest(spend=spend):
+                with self.assertRaises(PlatformError) as error:compare_run(rows,plan,changed,anchors)
+                self.assertEqual(('input-contract',1),(error.exception.category,error.exception.exit_code))
+
     def test_windows_geometry_uses_the_frozen_loaded_map_dimensions_not_an_old_filename(self):
         from platform_scenario import windows_geometry
         with tempfile.TemporaryDirectory() as temporary:
@@ -284,6 +336,28 @@ class PlatformIntentTest(unittest.TestCase):
         for changed in (rows[:-1], rows+[request], rows+[dict(kind='sound-play-failed')],
                         [rows[0], dict(kind='sound-backend-ready', backend='actual'), request]):
             with self.subTest(changed=changed), self.assertRaises(PlatformError): compare_resource_sounds(changed, expected)
+
+        current=[dict(kind='load-ready',generation=1),*[dict(row,generation=1) for row in rows]]
+        self.assertEqual(1,compare_resource_sounds(current,expected)['requests'])
+        with self.assertRaises(PlatformError):compare_resource_sounds([current[0],*current],expected)
+        for index in range(len(current)):
+            for wrong in (2,True,None):
+                changed=copy.deepcopy(current)
+                if wrong is None:del changed[index]['generation']
+                else:changed[index]['generation']=wrong
+                with self.subTest(index=index,generation=wrong),self.assertRaises(PlatformError):
+                    compare_resource_sounds(changed,expected)
+        legacy=[dict(kind='load-ready',generation=1),dict(rows[0],generation=1),*rows[1:],dict(kind='closed')]
+        self.assertEqual(1,compare_resource_sounds(legacy,expected)['requests'])
+        for fault in ('missing-preparation','wrong-preparation','labelled-world','labelled-playback','duplicate-load'):
+            changed=copy.deepcopy(legacy)
+            if fault=='missing-preparation':del changed[1]['generation']
+            elif fault=='wrong-preparation':changed[0]['generation']=2
+            elif fault=='labelled-world':changed[-1]['generation']=1
+            elif fault=='labelled-playback':changed[-2]['generation']=1
+            else:changed.insert(0,copy.deepcopy(changed[0]))
+            with self.subTest(legacy=fault),self.assertRaises(PlatformError):compare_resource_sounds(changed,expected)
+        with self.assertRaises(PlatformError):compare_resource_sounds([*current,dict(kind='closed',generation=2)],expected)
 
     def test_resource_stack_contract_rejects_wrong_winners_layout_or_missing_preparation(self):
         from platform_scenario import compare_resource_images

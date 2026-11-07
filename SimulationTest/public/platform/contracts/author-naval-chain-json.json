@@ -56,7 +56,7 @@
       {
         "intentId": "build-dock",
         "amount": 700,
-        "at": "first-step"
+        "at": "construction-created"
       },
       {
         "intentId": "upgrade-t2",

@@ -321,8 +321,20 @@ def compare_resource_sounds(records, expected):
     if (len(requests) < expected['minimumRequests'] or
             any(row.get('kind') == 'sound-play-failed' for row in records)):
         raise PlatformError('sound-output', 'Missing authorized playback request or backend failure', 2)
+    loads = [row for row in records if row.get('kind') == 'load-ready']
+    world = [row for row in records if row.get('kind') in ('observation','action','closed')]
+    playback = backend + requests
+    # Older producers labelled the prepared assets but not playback or world records.
+    generation_rows = loads + ready
+    if any('generation' in row for row in playback + world):
+        generation_rows += playback + world
+    if any('generation' in row for row in generation_rows):
+        generation = ready[0].get('generation')
+        if (len(loads) != 1 or type(generation) is not int or generation < 1 or
+                any(type(row.get('generation')) is not int or row['generation'] != generation for row in generation_rows)):
+            raise PlatformError('sound-generation', 'Playback and preparation must match the loaded generation', 2)
     frames = set()
-    allowed = {'sequence', 'kind', 'eventId', 'resourceId', 'path', 'sha256', 'volume', 'pitch', 'pan',
+    allowed = {'sequence', 'kind', 'generation', 'eventId', 'resourceId', 'path', 'sha256', 'volume', 'pitch', 'pan',
                'step', 'serial', 'frame', 'voice'}
     for row in requests:
         resource = resources.get(row.get('resourceId'), {})
@@ -456,15 +468,29 @@ def compare_history(records, plan, policy):
             not isinstance(b['weaponNames'],list) or not b['weaponNames'] for b in births)):
         raise PlatformError('input-contract', 'Expected fixed firing source/type/weapon/target obligations', 1)
     fired=[False]*len(births)
-    for charge in policy.get('spend', []):
+    declared_charges=policy.get('spend',[])
+    if not isinstance(declared_charges,list):
+        raise PlatformError('input-contract', 'History spend must be a list', 1)
+    for charge in declared_charges:
+        if (not isinstance(charge,dict) or set(charge)!={'intentId','amount','at'} or
+                not isinstance(charge['intentId'],str)):
+            raise PlatformError('input-contract', 'Expected a fixed history charge with intentId, amount and at', 1)
         identity = charge.get('intentId'); amount = charge.get('amount')
         if (identity not in ids or identity in charges or type(amount) not in (int, float) or
-                not math.isfinite(amount) or amount <= 0 or charge.get('at') not in ('action', 'first-step')):
+                not math.isfinite(amount) or amount <= 0 or charge.get('at') not in ('action', 'first-step', 'construction-created') or
+                charge.get('at')=='construction-created' and intents[identity].get('kind')!='build'):
             raise PlatformError('input-contract', 'Invalid or duplicate fixed history charge', 1)
         charges[identity] = charge
+        if charge['at']=='construction-created':
+            target=intents[identity].get('position')
+            if (not isinstance(intents[identity].get('typeId'),str) or not intents[identity]['typeId'] or
+                    not isinstance(target,dict) or set(target)!={'x','y'} or
+                    any(type(v) not in (int,float) or not math.isfinite(v) for v in target.values())):
+                raise PlatformError('input-contract', 'Construction charge requires a fixed building type and target', 1)
     active, pending, observations = None, 0, 0
     completed, steps, intent_steps, initial_step, action_count = 0, 0, 0, None, 0
     action_ids = set()
+    construction_charges, construction_ids, seen_units = {}, set(), set()
     for row in records:
         if row.get('kind') == 'intent-start':
             if (active is not None or completed >= len(plan['intents']) or
@@ -473,6 +499,8 @@ def compare_history(records, plan, policy):
             active = row.get('intentId')
             intent_steps = 0; action_count = 0
         elif row.get('kind') == 'intent-end':
+            if active in construction_charges:
+                raise PlatformError('history-construction', 'Build intention lacks its unique new construction site', 2)
             if (active is None or row.get('intentId') != active or
                     intent_steps != intents[active].get('waitSteps', 0) or
                     action_count != (0 if active in no_actions else 1)):
@@ -495,7 +523,8 @@ def compare_history(records, plan, policy):
             charge = charges.get(active)
             if charge:
                 if charge['at'] == 'action': balance -= charge['amount']
-                else: pending += charge['amount']
+                elif charge['at'] == 'first-step': pending += charge['amount']
+                else: construction_charges[active] = dict(charge=charge, action=row)
         elif row.get('kind') == 'observation':
             sample = row['sample']
             index, simulation_time = sample.get('stepIndex'), sample.get('simulationTime')
@@ -539,11 +568,25 @@ def compare_history(records, plan, policy):
                     raise PlatformError('history-weapons', 'An absent or dead unit retains a weapon observation', 2)
             if row.get('phase') == 'step':
                 balance -= pending; pending = 0
+                events=sample.get('events',[])
+                if construction_ids and any(event.get('kind')=='construction-created' and event.get('unitId') in construction_ids for event in events):
+                    raise PlatformError('history-construction', 'A charged construction site was created again', 2)
+                for identity, entry in list(construction_charges.items()):
+                    action=entry['action'];intent=intents[identity]
+                    matches=[event['unitId'] for event in events if event.get('kind')=='construction-created' and
+                        (unit:=units.get(event.get('unitId'))) is not None and
+                        unit.get('typeId')==intent.get('typeId') and unit.get('ownerPlayerId')==action.get('actorPlayerId') and
+                        unit.get('position')==intent.get('position')]
+                    if matches:
+                        if len(matches)!=1 or matches[0] in seen_units or identity!=active:
+                            raise PlatformError('history-construction', 'Construction charge is not bound to one new owned site in its build intention', 2)
+                        balance-=entry['charge']['amount'];construction_ids.add(matches[0]);del construction_charges[identity]
             observed = row['sample'].get('balance')
             if type(observed) not in (int, float) or not math.isfinite(observed) or observed != balance:
                 raise PlatformError('history-ledger', 'Balance differs at observation '+str(row['sequence']), 2)
             observations += 1
-    if not observations or pending or active is not None or completed != len(plan['intents']):
+            seen_units.update(units)
+    if not observations or pending or construction_charges or active is not None or completed != len(plan['intents']):
         raise PlatformError('incomplete-run', 'Missing history observations or a pending first-step charge')
     for expected in policy.get('finalUnits',[]):
         if not isinstance(expected,dict) or not isinstance(expected.get('fields'),dict) or not expected['fields']:

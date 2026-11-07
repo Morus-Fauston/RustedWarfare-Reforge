@@ -10,6 +10,16 @@ import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 class VisualAssetSelectionTest {
+    private fun publicFixtures(): Path {
+        val root = System.getProperty("public.fixtures.dir")?.let(Path::of)
+            ?: System.getProperty("repo.root")?.let { Path.of(it).resolve("SimulationTest/public/inputs") }
+            ?: generateSequence(Path.of("").toAbsolutePath()) { it.parent }
+                .map { it.resolve("SimulationTest/public/inputs") }.firstOrNull { Files.isDirectory(it) }
+            ?: error("Public fixtures not found; set public.fixtures.dir")
+        require(Files.isDirectory(root)) { "Public fixture directory is missing: $root" }
+        return root
+    }
+
     @Test fun optional_previews_report_the_current_stage_and_can_be_cancelled_before_start() {
         val entered = CountDownLatch(1); val release = CountDownLatch(1); val stopped = CountDownLatch(1)
         val phase = java.util.concurrent.atomic.AtomicReference<String?>()
@@ -84,8 +94,7 @@ class VisualAssetSelectionTest {
     }
 
     @Test fun repeated_content_loads_retain_one_content_binding_and_one_stable_visual_identity() {
-        val repo = generateSequence(Path.of("").toAbsolutePath()) { it.parent }.first { Files.isRegularFile(it.resolve("AGENTS.md")) }
-        val fixtures=repo.resolve("SimulationTest/public/inputs")
+        val fixtures=publicFixtures()
         val input=fixtures.resolve("three-format-tanks/ini")
         val pack=(com.rustedwarfare.reforge.core.content.ContentLoader.loadContentPack(fixtures.resolve("content-packs/amber-scouts-json")) as
             com.rustedwarfare.reforge.core.content.ContentResult.Success).value
@@ -153,8 +162,7 @@ class VisualAssetSelectionTest {
     }
 
     @Test fun the_loader_verifies_the_frozen_descriptor_once_after_binding_before_publication() {
-        val repo = generateSequence(Path.of("").toAbsolutePath()) { it.parent }.first { Files.isRegularFile(it.resolve("AGENTS.md")) }
-        val input = repo.resolve("SimulationTest/public/inputs/maintenance-defense/construction")
+        val input = publicFixtures().resolve("maintenance-defense/construction")
         val resources = SandboxRenderResources.from(ControlledScenario.load(input))
         val checks = java.util.concurrent.atomic.AtomicInteger()
         val assets = PreparedVisualAssets(VisualAssetSelection(), "self-owned", "shared",
@@ -172,8 +180,7 @@ class VisualAssetSelectionTest {
     }
 
     @Test fun a_completed_preview_is_reused_but_final_load_still_rechecks_its_inputs() {
-        val repo = generateSequence(Path.of("").toAbsolutePath()) { it.parent }.first { Files.isRegularFile(it.resolve("AGENTS.md")) }
-        val input = repo.resolve("SimulationTest/public/inputs/maintenance-defense/construction")
+        val input = publicFixtures().resolve("maintenance-defense/construction")
         val resources = SandboxRenderResources.from(ControlledScenario.load(input))
         val valid = java.util.concurrent.atomic.AtomicBoolean(true)
         val calls = java.util.concurrent.atomic.AtomicInteger()
@@ -211,10 +218,10 @@ class VisualAssetSelectionTest {
     }
 
     @Test fun a_different_content_source_never_reuses_the_prior_content_bound_preview() {
-        val repo = generateSequence(Path.of("").toAbsolutePath()) { it.parent }.first { Files.isRegularFile(it.resolve("AGENTS.md")) }
+        val fixtures = publicFixtures()
         fun choice(format: String): ContentPackChoice {
             val pack = (com.rustedwarfare.reforge.core.content.ContentLoader.loadContentPack(
-                repo.resolve("SimulationTest/public/inputs/content-pack-sandboxes/$format/package")) as
+                fixtures.resolve("content-pack-sandboxes/$format/package")) as
                 com.rustedwarfare.reforge.core.content.ContentResult.Success).value
             return ContentPackChoice(pack, "amber_scout")
         }
@@ -343,9 +350,7 @@ class VisualAssetSelectionTest {
         }
     }
     @Test fun cancelled_visual_preparation_never_publishes_over_the_latest_loading_request() {
-        val repo = System.getProperty("repo.root")?.let(Path::of) ?: generateSequence(Path.of("").toAbsolutePath()) { it.parent }
-            .first { Files.isRegularFile(it.resolve("AGENTS.md")) }
-        val root = repo.resolve("SimulationTest/public/inputs/maintenance-defense/construction")
+        val root = publicFixtures().resolve("maintenance-defense/construction")
         val entered = CountDownLatch(1)
         val release = CountDownLatch(1)
         fun visuals(id: String, scene: com.rustedwarfare.reforge.core.sim.Scenario): PreparedVisualAssets {
