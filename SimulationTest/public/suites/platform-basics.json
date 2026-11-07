@@ -8,6 +8,8 @@
       "com.rustedwarfare.reforge.client.VisualAssetBindingTest",
       "com.rustedwarfare.reforge.client.VisualAssetSelectionTest",
       "com.rustedwarfare.reforge.client.ActionMenuTest",
+      "com.rustedwarfare.reforge.client.DrawnActionLayoutTest",
+      "com.rustedwarfare.reforge.client.OfflineStepClockTest",
       "com.rustedwarfare.reforge.client.CameraProjectionTest",
       "com.rustedwarfare.reforge.client.ClientFailureHandlingTest",
       "com.rustedwarfare.reforge.client.ConstructionHotkeyInputTest",
@@ -73,7 +75,8 @@
     ],
     "tools": [
       "com.rustedwarfare.reforge.testing.PlatformSessionRunnerTest",
-      "com.rustedwarfare.reforge.testing.ResourceImagePlatformSessionTest"
+      "com.rustedwarfare.reforge.testing.ResourceImagePlatformSessionTest",
+      "com.rustedwarfare.reforge.testing.OfflineSpeedReplayTest"
     ],
     "core": [
       "com.rustedwarfare.reforge.core.content.PngContentTest"

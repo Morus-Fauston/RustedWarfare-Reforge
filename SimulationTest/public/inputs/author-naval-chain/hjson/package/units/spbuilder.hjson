@@ -1,0 +1,9 @@
+// Self-owned chain; INI templates and named weapon inheritance are intentional.
+{
+  "format": "rw-reforge.constructor.v1",
+  "copyFrom": [
+    "base-constructor.ini"
+  ],
+  "name": "spbuilder",
+  "constructionTypes": "spdock"
+}

@@ -1,0 +1,46 @@
+{
+  "schemaVersion": 1,
+  "scenarioId": "author-production-hjson",
+  "inputs": "../../inputs/author-production/hjson",
+  "contentPack": {
+    "directory": "package",
+    "unitId": "spfactory"
+  },
+  "intents": [
+    {
+      "intentId": "select-factory",
+      "kind": "select",
+      "unitId": "a",
+      "position": {
+        "x": 110,
+        "y": 210
+      }
+    },
+    {
+      "intentId": "buy-builder",
+      "kind": "produce",
+      "unitId": "a",
+      "typeId": "builder",
+      "waitSteps": 600
+    },
+    {
+      "intentId": "queue-tank",
+      "kind": "produce",
+      "unitId": "a",
+      "typeId": "c_tank"
+    },
+    {
+      "intentId": "cancel-tank",
+      "kind": "cancelProduction",
+      "unitId": "a",
+      "typeId": "c_tank"
+    },
+    {
+      "intentId": "buy-tank",
+      "kind": "produce",
+      "unitId": "a",
+      "typeId": "c_tank",
+      "waitSteps": 600
+    }
+  ]
+}

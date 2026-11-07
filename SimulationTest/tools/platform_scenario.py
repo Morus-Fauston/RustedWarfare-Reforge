@@ -10,6 +10,7 @@ import subprocess
 import struct
 import sys
 import time
+import tempfile
 import xml.etree.ElementTree as ET
 
 
@@ -33,8 +34,20 @@ def value_at(sample, path):
             raise PlatformError('missing-field', 'Missing or ambiguous named weapon: '+path)
         current = matches[0]
         parts = parts[3:]
-    for part in parts:
+    for depth, part in enumerate(parts):
         if isinstance(current, list):
+            if parts[0] == 'projectiles' and depth == 1:
+                if part.isascii() and part.isdecimal():
+                    index = int(part)
+                    if str(index) != part or index >= len(current):
+                        raise PlatformError('missing-field', 'Missing projectile observation index: '+path)
+                    current = current[index]
+                    continue
+                matches = [x for x in current if isinstance(x, dict) and x.get('token') == part]
+                if len(matches) != 1:
+                    raise PlatformError('missing-field', 'Missing or ambiguous projectile token: '+path)
+                current = matches[0]
+                continue
             matches = [x for x in current if isinstance(x, dict) and
                        (x.get('unitId') == part or x.get('factoryId') == part)]
             if len(matches) != 1:
@@ -47,7 +60,7 @@ def value_at(sample, path):
     return current
 
 
-def compare_intent(records, intent, rule, after_sequence, geometry=None):
+def validate_intent_contract(intent,rule):
     assertions = rule.get('assertions')
     if (not isinstance(assertions, list) or not assertions or
             any(not isinstance(a, dict) or a.get('operator') not in ('equals', 'deltaEquals', 'equalsActionTarget') or
@@ -56,6 +69,11 @@ def compare_intent(records, intent, rule, after_sequence, geometry=None):
             not intent.get('intentId') or intent.get('intentId') != rule.get('intentId') or
             not rule.get('actionType') or not rule.get('unitId') or type(rule.get('accepted')) is not bool):
         raise PlatformError('input-contract', 'Invalid or empty fixed intent contract', 1)
+
+
+def compare_intent(records, intent, rule, after_sequence, geometry=None):
+    validate_intent_contract(intent,rule)
+    assertions=rule['assertions']
     actions = [r for r in records if r.get('sequence', -1) > after_sequence and
                r.get('kind') == 'action' and r.get('type') == rule['actionType']]
     if len(actions) != 1:
@@ -303,8 +321,20 @@ def compare_resource_sounds(records, expected):
     if (len(requests) < expected['minimumRequests'] or
             any(row.get('kind') == 'sound-play-failed' for row in records)):
         raise PlatformError('sound-output', 'Missing authorized playback request or backend failure', 2)
+    loads = [row for row in records if row.get('kind') == 'load-ready']
+    world = [row for row in records if row.get('kind') in ('observation','action','closed')]
+    playback = backend + requests
+    # Older producers labelled the prepared assets but not playback or world records.
+    generation_rows = loads + ready
+    if any('generation' in row for row in playback + world):
+        generation_rows += playback + world
+    if any('generation' in row for row in generation_rows):
+        generation = ready[0].get('generation')
+        if (len(loads) != 1 or type(generation) is not int or generation < 1 or
+                any(type(row.get('generation')) is not int or row['generation'] != generation for row in generation_rows)):
+            raise PlatformError('sound-generation', 'Playback and preparation must match the loaded generation', 2)
     frames = set()
-    allowed = {'sequence', 'kind', 'eventId', 'resourceId', 'path', 'sha256', 'volume', 'pitch', 'pan',
+    allowed = {'sequence', 'kind', 'generation', 'eventId', 'resourceId', 'path', 'sha256', 'volume', 'pitch', 'pan',
                'step', 'serial', 'frame', 'voice'}
     for row in requests:
         resource = resources.get(row.get('resourceId'), {})
@@ -326,6 +356,255 @@ def compare_resource_sounds(records, expected):
     return result
 
 
+def validate_history_poses(units, policy):
+    counts = policy.get('mechLegs', {})
+    if not isinstance(counts, dict) or any(type(n) is not int or n < 1 for n in counts.values()):
+        raise PlatformError('input-contract', 'Expected declared positive mech leg counts', 1)
+    def number(value):
+        return type(value) in (int, float) and math.isfinite(value)
+    def point(value):
+        return isinstance(value, dict) and set(value) == {'x','y'} and all(number(v) for v in value.values())
+    for unit in units:
+        expected = counts.get(unit.get('typeId'))
+        if expected is None:
+            if 'mechPose' in unit:
+                raise PlatformError('input-contract', 'Missing independent leg count for '+str(unit.get('typeId')), 1)
+            continue
+        pose = unit.get('mechPose')
+        if (not isinstance(pose, dict) or set(pose) != {'forwardHeading','angularVelocity','reversing','legs'} or
+                not number(pose.get('forwardHeading')) or not number(pose.get('angularVelocity')) or
+                type(pose.get('reversing')) is not bool or not isinstance(pose.get('legs'), list) or
+                len(pose['legs']) != expected):
+            raise PlatformError('history-pose', 'Missing or invalid complete mech pose', 2)
+        for index, leg in enumerate(pose['legs']):
+            if (not isinstance(leg, dict) or set(leg) != {'index','anchor','foot','height','heading','phase'} or
+                    type(leg.get('index')) is not int or leg['index'] != index or
+                    not point(leg.get('anchor')) or not point(leg.get('foot')) or
+                    not number(leg.get('height')) or not number(leg.get('heading')) or
+                    leg.get('phase') not in ('PLANTED','WARMING_UP','LIFTING','SWINGING','LOWERING')):
+                raise PlatformError('history-pose', 'Missing, duplicate or invalid mech leg', 2)
+
+
+def validate_history_action(records, row, intent):
+    """Bind a fixed intention to its existing exported call and owned object."""
+    index=row['sequence']
+    if not 0 < index < len(records)-1:
+        raise PlatformError('history-action-boundary','Missing adjacent action observations')
+    before,after=records[index-1],records[index+1]
+    if (before.get('kind')!='observation' or before.get('phase')!='before-action' or
+            after.get('kind')!='observation' or after.get('phase')!='after-action' or
+            before.get('sequence')+1!=index or after.get('sequence')!=index+1):
+        raise PlatformError('history-action-boundary','Action lacks its immediate before/after observations')
+    left,right=before['sample'],after['sample']
+    if (not left.get('worldId') or any(left.get(k)!=right.get(k) for k in
+            ('worldId','stepIndex','simulationTime')) or
+            any('generation' in r for r in (before,row,after)) and
+            (type(row.get('generation')) is not int or row['generation']<1 or
+             any(r.get('generation')!=row['generation'] for r in (before,after)))):
+        raise PlatformError('history-action-boundary','World, generation or simulation boundary changed inside a call')
+    actor=intent.get('actor','p1');identity=row.get('unitId');kind=intent['kind']
+    if not isinstance(actor,str) or not actor:
+        raise PlatformError('input-contract','Fixed actor must be a nonempty player identity',1)
+    if row.get('actorPlayerId')!=actor or 'unitId' in intent and identity!=intent['unitId']:
+        raise PlatformError('history-action-identity','Formal actor or unit differs from the fixed intention',2)
+    for sample in (left,right):
+        units=[u for u in sample.get('units',[]) if u.get('unitId')==identity]
+        if (len(units)!=1 or units[0].get('alive') is not True or
+                kind!='select' and units[0].get('ownerPlayerId')!=actor):
+            raise PlatformError('history-action-identity','Formal object is absent, ambiguous, dead or not owned',2)
+    fields={}
+    if kind=='build' and 'typeId' in intent:fields['buildingTypeId']=intent['typeId']
+    if 'upgradeId' in intent:fields['upgradeId']=intent['upgradeId']
+    if 'targetUnitId' in intent:fields['targetUnitId']=intent['targetUnitId']
+    if any(row.get(key)!=value for key,value in fields.items()):
+        raise PlatformError('history-action-fields','Formal action parameters differ from the fixed intention',2)
+    def same_point(actual,expected):
+        return all(isinstance(p,dict) and set(p)=={'x','y'} and all(
+            type(p[k]) in (int,float) and math.isfinite(p[k]) for k in ('x','y'))
+            for p in (actual,expected)) and actual==expected
+    if kind in ('build','move') and 'position' in intent and not same_point(row.get('target'),intent['position']):
+        raise PlatformError('history-action-fields','Formal destination differs from the fixed Session point',2)
+    if kind=='attack':
+        targets=[u for u in left.get('units',[]) if u.get('unitId')==row.get('targetUnitId')]
+        if (len(targets)!=1 or targets[0].get('alive') is not True or targets[0].get('ownerPlayerId')==actor or
+                'position' in intent and not same_point(targets[0].get('position'),intent['position'])):
+            raise PlatformError('history-action-fields','Attack target differs from the fixed visible target/point',2)
+    if kind=='produce' and 'typeId' in intent:
+        queues=[]
+        for sample in (left,right):
+            matches=[q for q in sample.get('factoryQueues',[]) if q.get('factoryId')==identity]
+            if len(matches)!=1 or not isinstance(matches[0].get('items'),list):
+                raise PlatformError('history-action-fields','Production lacks the uniquely bound factory queue',2)
+            queues.append(matches[0]['items'])
+        old,new=queues
+        if (len(new)!=len(old)+1 or new[:-1]!=old or not isinstance(new[-1],dict) or
+                new[-1].get('typeId')!=intent['typeId']):
+            raise PlatformError('history-action-fields','Production did not append the fixed product to its FIFO',2)
+
+
+def compare_history(records, plan, policy):
+    """Check a declared ledger at every observation, including call boundaries."""
+    allowed={'initialBalance','spend','noActionIntents','projectileBirthsRequired','mechLegs',
+             'ownerPlayerId','initialOwnedTypes','finalUnits','minimumBirths'}
+    if not isinstance(policy,dict) or set(policy)-allowed:
+        raise PlatformError('input-contract', 'Unknown or malformed history obligations', 1)
+    balance = policy.get('initialBalance')
+    if type(balance) not in (int, float) or not math.isfinite(balance):
+        raise PlatformError('input-contract', 'History requires a finite initial balance', 1)
+    charges = {}
+    intents = {i['intentId']: i for i in plan['intents']}
+    ids = set(intents)
+    no_actions = policy.get('noActionIntents', [])
+    if (not isinstance(no_actions, list) or len(no_actions) != len(set(no_actions)) or
+            any(i not in ids or intents[i].get('kind') != 'select' for i in no_actions)):
+        raise PlatformError('input-contract', 'Only fixed empty selections may declare no formal action', 1)
+    require_births = policy.get('projectileBirthsRequired', False)
+    if type(require_births) is not bool:
+        raise PlatformError('input-contract', 'Projectile birth coverage must be explicitly boolean', 1)
+    known_projectiles = set()
+    births=policy.get('minimumBirths',[])
+    if (not isinstance(births,list) or any(not isinstance(b,dict) or
+            set(b)!={'ownerPlayerId','typeId','weaponNames','targetUnitId'} or
+            not isinstance(b['weaponNames'],list) or not b['weaponNames'] for b in births)):
+        raise PlatformError('input-contract', 'Expected fixed firing source/type/weapon/target obligations', 1)
+    fired=[False]*len(births)
+    declared_charges=policy.get('spend',[])
+    if not isinstance(declared_charges,list):
+        raise PlatformError('input-contract', 'History spend must be a list', 1)
+    for charge in declared_charges:
+        if (not isinstance(charge,dict) or set(charge)!={'intentId','amount','at'} or
+                not isinstance(charge['intentId'],str)):
+            raise PlatformError('input-contract', 'Expected a fixed history charge with intentId, amount and at', 1)
+        identity = charge.get('intentId'); amount = charge.get('amount')
+        if (identity not in ids or identity in charges or type(amount) not in (int, float) or
+                not math.isfinite(amount) or amount <= 0 or charge.get('at') not in ('action', 'first-step', 'construction-created') or
+                charge.get('at')=='construction-created' and intents[identity].get('kind')!='build'):
+            raise PlatformError('input-contract', 'Invalid or duplicate fixed history charge', 1)
+        charges[identity] = charge
+        if charge['at']=='construction-created':
+            target=intents[identity].get('position')
+            if (not isinstance(intents[identity].get('typeId'),str) or not intents[identity]['typeId'] or
+                    not isinstance(target,dict) or set(target)!={'x','y'} or
+                    any(type(v) not in (int,float) or not math.isfinite(v) for v in target.values())):
+                raise PlatformError('input-contract', 'Construction charge requires a fixed building type and target', 1)
+    active, pending, observations = None, 0, 0
+    completed, steps, intent_steps, initial_step, action_count = 0, 0, 0, None, 0
+    action_ids = set()
+    construction_charges, construction_ids, seen_units = {}, set(), set()
+    for row in records:
+        if row.get('kind') == 'intent-start':
+            if (active is not None or completed >= len(plan['intents']) or
+                    row.get('intentId') != plan['intents'][completed]['intentId']):
+                raise PlatformError('history-intent', 'Missing or reordered fixed client intention')
+            active = row.get('intentId')
+            intent_steps = 0; action_count = 0
+        elif row.get('kind') == 'intent-end':
+            if active in construction_charges:
+                raise PlatformError('history-construction', 'Build intention lacks its unique new construction site', 2)
+            if (active is None or row.get('intentId') != active or
+                    intent_steps != intents[active].get('waitSteps', 0) or
+                    action_count != (0 if active in no_actions else 1)):
+                raise PlatformError('history-intent', 'Unfinished intention or wrong explicit step count')
+            active = None
+            completed += 1
+        elif row.get('kind') == 'action':
+            outcome = row.get('result', {})
+            action_id = outcome.get('actionId')
+            if (outcome.get('accepted') is not True or not isinstance(action_id, str) or
+                    not action_id or action_id in action_ids):
+                raise PlatformError('history-action', 'Missing, rejected or reused formal action', 2)
+            action_ids.add(action_id); action_count += 1
+            expected_type = {'select':'SelectAction', 'build':'BuildAction', 'upgrade':'UpgradeAction',
+                'produce':'ProduceAction', 'move':'MoveAction', 'stop':'StopAction', 'attack':'AttackAction'}.get(
+                    intents.get(active, {}).get('kind'))
+            if expected_type is None or row.get('type') != expected_type:
+                raise PlatformError('history-action', 'Action type differs from the fixed client intention', 2)
+            validate_history_action(records,row,intents[active])
+            charge = charges.get(active)
+            if charge:
+                if charge['at'] == 'action': balance -= charge['amount']
+                elif charge['at'] == 'first-step': pending += charge['amount']
+                else: construction_charges[active] = dict(charge=charge, action=row)
+        elif row.get('kind') == 'observation':
+            sample = row['sample']
+            index, simulation_time = sample.get('stepIndex'), sample.get('simulationTime')
+            if initial_step is None:
+                if row.get('phase') != 'initial' or type(index) is not int or index not in (-1, 0):
+                    raise PlatformError('history-step', 'History must start at a fresh initial observation')
+                initial_step = index
+                if 'initialOwnedTypes' in policy:
+                    actual=sorted(u.get('typeId') for u in sample.get('units',[]) if u.get('ownerPlayerId')==policy.get('ownerPlayerId','p1'))
+                    if actual!=sorted(policy['initialOwnedTypes']):
+                        raise PlatformError('history-initial', 'Initial owned units differ from the fixed starting chain', 2)
+            if row.get('phase') == 'step':
+                if active is None or index != steps:
+                    raise PlatformError('history-step', 'Missing or reordered simulation step')
+                steps += 1; intent_steps += 1
+            elif index != max(initial_step, steps-1):
+                raise PlatformError('history-step', 'Call observation differs from its simulation boundary')
+            if type(simulation_time) not in (int, float) or simulation_time != steps:
+                raise PlatformError('history-step', 'Simulation time differs from explicit steps')
+            units = {u['unitId']: u for u in row['sample'].get('units', [])}
+            validate_history_poses(units.values(), policy)
+            for event in sample.get('projectileEvents',[]):
+                source=units.get(event.get('sourceUnitId'),{})
+                for i,expected in enumerate(births):
+                    if (event.get('kind')=='born' and source.get('ownerPlayerId')==expected['ownerPlayerId'] and
+                            source.get('typeId')==expected['typeId'] and event.get('sourceWeaponName') in expected['weaponNames'] and
+                            event.get('targetUnitId')==expected['targetUnitId']):fired[i]=True
+            if require_births:
+                for event in sample.get('projectileEvents', []):
+                    if event.get('kind') == 'born':
+                        token = event.get('token')
+                        if not isinstance(token, str) or not token:
+                            raise PlatformError('history-projectile', 'Missing actual birth token', 2)
+                        known_projectiles.add(token)
+                for projectile in sample.get('projectiles', []):
+                    if projectile.get('token') not in known_projectiles:
+                        raise PlatformError('history-projectile', 'Observed projectile has no declared visible birth', 2)
+            for weapon in row['sample'].get('weapons', []):
+                unit = units.get(weapon.get('unitId'))
+                if unit is None or unit.get('alive') is not True:
+                    raise PlatformError('history-weapons', 'An absent or dead unit retains a weapon observation', 2)
+            if row.get('phase') == 'step':
+                balance -= pending; pending = 0
+                events=sample.get('events',[])
+                if construction_ids and any(event.get('kind')=='construction-created' and event.get('unitId') in construction_ids for event in events):
+                    raise PlatformError('history-construction', 'A charged construction site was created again', 2)
+                for identity, entry in list(construction_charges.items()):
+                    action=entry['action'];intent=intents[identity]
+                    matches=[event['unitId'] for event in events if event.get('kind')=='construction-created' and
+                        (unit:=units.get(event.get('unitId'))) is not None and
+                        unit.get('typeId')==intent.get('typeId') and unit.get('ownerPlayerId')==action.get('actorPlayerId') and
+                        unit.get('position')==intent.get('position')]
+                    if matches:
+                        if len(matches)!=1 or matches[0] in seen_units or identity!=active:
+                            raise PlatformError('history-construction', 'Construction charge is not bound to one new owned site in its build intention', 2)
+                        balance-=entry['charge']['amount'];construction_ids.add(matches[0]);del construction_charges[identity]
+            observed = row['sample'].get('balance')
+            if type(observed) not in (int, float) or not math.isfinite(observed) or observed != balance:
+                raise PlatformError('history-ledger', 'Balance differs at observation '+str(row['sequence']), 2)
+            observations += 1
+            seen_units.update(units)
+    if not observations or pending or construction_charges or active is not None or completed != len(plan['intents']):
+        raise PlatformError('incomplete-run', 'Missing history observations or a pending first-step charge')
+    for expected in policy.get('finalUnits',[]):
+        if not isinstance(expected,dict) or not isinstance(expected.get('fields'),dict) or not expected['fields']:
+            raise PlatformError('input-contract', 'Expected unique final unit selectors and scalar fields', 1)
+        selected=[u for u in units.values() if (u.get('unitId')==expected['unitId'] if 'unitId' in expected else
+            u.get('ownerPlayerId')==expected.get('ownerPlayerId') and u.get('typeId')==expected.get('typeId'))]
+        if len(selected)!=1:
+            raise PlatformError('history-final', 'Missing or ambiguous fixed terminal unit', 2)
+        for name,wanted in expected['fields'].items():
+            actual=selected[0].get(name)
+            if isinstance(wanted,(list,dict)):
+                raise PlatformError('input-contract', 'Final history fields must be scalar predicates', 1)
+            if name not in selected[0] or (type(actual) is bool)!=(type(wanted) is bool) or actual!=wanted:
+                raise PlatformError('history-final', 'Terminal unit differs: '+name, 2)
+    if not all(fired):raise PlatformError('history-firing', 'Missing independently required named weapon birth/target', 2)
+    return dict(exitCode=0, status='passed', scenarioId=plan['scenarioId'], history=dict(observations=observations, balance=balance))
+
+
 def compare_run(records, plan, contract, anchors, geometry=None):
     intents, rules = plan['intents'], contract['rules']
     ids = [intent['intentId'] for intent in intents]
@@ -338,6 +617,15 @@ def compare_run(records, plan, contract, anchors, geometry=None):
         raise PlatformError('input-contract', 'Plan, contract, and intent boundaries differ', 1)
     if [row.get('sequence') for row in records] != list(range(len(records))):
         raise PlatformError('record-sequence', 'Diagnostic records are truncated or out of order')
+    # Old Session archives did not label observations. Keep that reader, but a
+    # labelled run must never mix unlabelled or stale observations from a reopen.
+    world_rows = [r for r in records if r.get('kind') in ('observation', 'action', 'closed')]
+    if any('generation' in r for r in world_rows):
+        generations = [r.get('generation') for r in world_rows]
+        if (any(type(g) is not int or g < 1 for g in generations) or
+                len(set(generations)) != 1 or any(
+                    r.get('generation') != generations[0] for r in records if r.get('kind') == 'load-ready')):
+            raise PlatformError('world-generation', 'Current observations, actions and closing tail must share one loaded generation')
     worlds = {row['sample']['worldId'] for row in records if row.get('kind') == 'observation'}
     if len(worlds) != 1 or not next(iter(worlds), None):
         raise PlatformError('world-identity', 'A short scenario must remain in one nonempty world')
@@ -367,6 +655,8 @@ def compare_run(records, plan, contract, anchors, geometry=None):
             raise PlatformError('input-geometry', 'Viewport changed during the fixed platform scenario')
     elif close_index != len(records)-1:
         raise PlatformError('closing-tail', 'Unexpected records after Session close')
+    if 'history' in contract:
+        return compare_history(records, plan, contract['history'])
     judgments = []
     previous_end = -1
     for intent, rule, anchor in zip(intents, rules, anchors):
@@ -430,6 +720,31 @@ def session_anchors(records):
     return anchors
 
 
+def windows_geometry(output,records):
+    graphics=[r for r in records if r.get('kind')=='load-graphics-ready']
+    ready=[r for r in records if r.get('kind')=='load-ready']
+    if not graphics:
+        # Preserve pre-instrumentation short archives without inventing a new map choice.
+        path=Path(output)/'inputSnapshot/maps/p001-controlled.tmx'
+        if not path.is_file():raise PlatformError('input-geometry','Legacy archive has no fixed controlled map')
+        root=ET.parse(path).getroot()
+        return dict(worldWidth=int(root.get('width'))*int(root.get('tilewidth')),
+                    worldHeight=int(root.get('height'))*int(root.get('tileheight')))
+    if len(graphics)!=1 or len(ready)!=1 or graphics[0].get('generation')!=ready[0].get('generation'):
+        raise PlatformError('input-geometry','One successful graphics/map generation required')
+    g,r=graphics[0],ready[0]
+    width,height=g.get('worldWidth'),g.get('worldHeight')
+    if any(type(v) not in (int,float) or not math.isfinite(v) or v<=0 for v in (width,height)):
+        raise PlatformError('input-geometry','Finite positive loaded map dimensions required')
+    for path in sorted((Path(output)/'inputSnapshot/maps').glob('*.tmx')):
+        root=ET.parse(path).getroot()
+        if (int(root.get('width'))==r.get('mapWidth') and int(root.get('height'))==r.get('mapHeight') and
+                int(root.get('width'))*int(root.get('tilewidth'))==width and
+                int(root.get('height'))*int(root.get('tileheight'))==height):
+            return dict(worldWidth=width,worldHeight=height)
+    raise PlatformError('input-geometry','Loaded graphics geometry has no matching frozen input map')
+
+
 def compare_archive(output):
     output = Path(output)
     archive = read(output / 'archive.json')
@@ -482,9 +797,7 @@ def compare_archive(output):
     records = [json.loads(line) for line in raw.splitlines()]
     geometry = None
     if backend == 'windows-input':
-        root = ET.parse(output/'inputSnapshot/maps/p001-controlled.tmx').getroot()
-        geometry = dict(worldWidth=int(root.get('width'))*int(root.get('tilewidth')),
-                        worldHeight=int(root.get('height'))*int(root.get('tileheight')))
+        geometry = windows_geometry(output,records)
     return compare_run(records, plan, read(output/'contract.json'), read(output/'intents.json'), geometry)
 
 
@@ -498,33 +811,68 @@ def run_session(scenario, contract, distribution, output, java='java', timeout=6
         raise PlatformError('input-identity', 'Installed adapter, bounded deadline, and input files are required', 1)
     output.mkdir()
     started = time.time()
-    result = dict(exitCode=3, status='incomplete', backend='session', startedUnix=started)
+    result = dict(exitCode=3, status='incomplete', backend='session', startedUnix=started,
+                  execution=dict(status='not-run', exitCode=None),
+                  consumption=dict(status='not-run'), sealing=dict(status='pending'))
     try:
         shutil.copyfile(scenario, output/'scenario.json')
         shutil.copyfile(contract, output/'contract.json')
         shutil.copytree(inputs, output/'inputSnapshot')
         if tree(output/'inputSnapshot') != expected_inputs or tree(inputs) != expected_inputs:
             raise PlatformError('input-identity', 'Inputs changed while freezing the run')
-        command = [java, '-Xmx512m', '-cp', os.pathsep.join(map(str, jars)),
+        # A single wildcard avoids the expanded JAR list and native-encoding
+        # argument files. Windows receives the path through CreateProcessW;
+        # Java needs the extended prefix for installs beyond MAX_PATH. Keep
+        # the working directory short because CreateProcess rejects deep CWDs.
+        classpath=str(distribution/'lib'/'*')
+        if os.name=='nt':classpath='\\\\?\\'+classpath
+        command_cwd=Path(tempfile.gettempdir()).resolve()
+        command = [java, '-Xmx512m', '-cp', classpath,
                    'com.rustedwarfare.reforge.testing.PlatformSessionRunnerKt',
                    str(output/'inputSnapshot'), str(output/'scenario.json'), str(output/'session'), str(timeout)]
-        save(output/'manifest.json', dict(backend='session', command=command, timeoutSeconds=timeout,
+        save(output/'manifest.json', dict(backend='session', command=command, commandCwd=str(command_cwd),timeoutSeconds=timeout,
             scenarioSha256=sha(output/'scenario.json'), contractSha256=sha(output/'contract.json'),
             inputFiles=expected_inputs, packageFiles=[dict(path=p.name, sha256=sha(p)) for p in jars],
             comparatorSha256=sha(__file__)))
+        result['execution'] = dict(status='running', exitCode=None, startedUnix=time.time())
         with (output/'stdout.log').open('xb') as stdout, (output/'stderr.log').open('xb') as stderr:
-            process = subprocess.run(command, stdout=stdout, stderr=stderr, timeout=timeout, shell=False)
+            process = subprocess.run(command, cwd=command_cwd, stdout=stdout, stderr=stderr, timeout=timeout, shell=False)
+        result['execution'].update(status='passed' if process.returncode == 0 else 'failed',
+                                   exitCode=process.returncode, endedUnix=time.time())
+        save(output/'execution.json', result['execution'])
         if process.returncode != 0:
             raise PlatformError('adapter-process', 'Session adapter failed: '+str(process.returncode))
         records = [json.loads(line) for line in (output/'session/client-diagnostic.jsonl').read_text(encoding='utf8').splitlines()]
         save(output/'intents.json', session_anchors(records))
         save(output/'archive.json', dict(complete=True, backend='session', files=tree(output)))
+        result['sealing'] = dict(status='sealed-complete')
+        result['consumption'] = dict(status='running')
         result.update(compare_archive(output))
+        result['consumption'] = dict(status='passed', exitCode=result['exitCode'])
     except PlatformError as error:
+        if result['consumption']['status'] == 'running':
+            result['consumption'] = dict(status='failed', exitCode=error.exit_code, category=error.category)
         result.update(exitCode=error.exit_code, status='failed' if error.exit_code == 2 else 'incomplete',
                       category=error.category, message=str(error))
     except (OSError, ValueError, KeyError, TypeError, subprocess.SubprocessError) as error:
         result.update(category='adapter-exception', message=str(error))
+        if result['execution']['status'] == 'running':
+            result['execution'].update(status='timed-out' if isinstance(error, subprocess.TimeoutExpired)
+                                       else 'failed', endedUnix=time.time())
+        if result['consumption']['status'] == 'running':
+            result['consumption'] = dict(status='incomplete', error=str(error))
+    if result['execution']['status'] == 'running':
+        result['execution'].update(status='failed', endedUnix=time.time())
+    # Failure is evidence too. A partial archive cannot claim collection or
+    # consumption success, but keeps its independent process/sealing receipts.
+    try:
+        if not (output/'execution.json').exists():
+            save(output/'execution.json', result['execution'])
+        if not (output/'archive.json').exists():
+            save(output/'archive.json', dict(complete=False, backend='session', files=tree(output)))
+            result['sealing'] = dict(status='preserved-incomplete')
+    except OSError as error:
+        result['sealing'] = dict(status='failed', error=str(error))
     result['endedUnix'] = time.time()
     save(output/'result.json', result)
     return result

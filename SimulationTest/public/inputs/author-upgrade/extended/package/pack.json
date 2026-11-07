@@ -1,0 +1,47 @@
+{
+  "format": "rw-reforge.content-pack.v1",
+  "id": "sp-author-upgrade-extended",
+  "name": "Owned factory shared scrolling products and upgrade",
+  "units": [
+    {
+      "type": "factory",
+      "file": "units/spfactory.ini"
+    },
+    {
+      "type": "factory",
+      "file": "units/spfactoryt2.ini"
+    },
+    {
+      "type": "builder",
+      "file": "units/builder.ini"
+    },
+    {
+      "type": "tank",
+      "file": "units/tank.ini"
+    },
+    {
+      "type": "tank",
+      "file": "units/tank_3.ini"
+    },
+    {
+      "type": "tank",
+      "file": "units/tank_4.ini"
+    },
+    {
+      "type": "tank",
+      "file": "units/tank_5.ini"
+    },
+    {
+      "type": "tank",
+      "file": "units/tank_6.ini"
+    },
+    {
+      "type": "tank",
+      "file": "units/sp_tank_7_with_long_name.ini"
+    },
+    {
+      "type": "tank",
+      "file": "units/sp_tank_8_after_upgrade.ini"
+    }
+  ]
+}

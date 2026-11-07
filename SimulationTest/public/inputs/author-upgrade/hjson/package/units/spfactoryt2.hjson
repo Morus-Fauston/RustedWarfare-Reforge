@@ -1,0 +1,11 @@
+# Owned author upgrade fields; parsed through the shared Hjson syntax entry.
+{
+  "format": "rw-reforge.factory.v1",
+  "copyFrom": [
+    "factory-base.ini"
+  ],
+  "name": "spfactoryt2",
+  "maxHp": 1800,
+  "productionUnits": "builder,c_tank",
+  "exitProfile": "NATIVE_LAND"
+}

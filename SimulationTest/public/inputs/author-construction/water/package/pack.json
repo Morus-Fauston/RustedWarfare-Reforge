@@ -1,0 +1,15 @@
+{
+  "format": "rw-reforge.content-pack.v1",
+  "id": "sp-author-construction-water",
+  "name": "Owned author constructor and ordinary building",
+  "units": [
+    {
+      "type": "constructor",
+      "file": "units/spbuilder.ini"
+    },
+    {
+      "type": "factory",
+      "file": "units/workshop.ini"
+    }
+  ]
+}

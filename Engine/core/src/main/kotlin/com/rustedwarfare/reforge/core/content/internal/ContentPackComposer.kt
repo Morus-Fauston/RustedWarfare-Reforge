@@ -69,9 +69,17 @@ internal object ContentPackComposer {
             unit.builder?.buildingTypeIds?.forEach { target ->
                 if (units[target]?.construction == null) bad(target, "constructionTypes", "Builder target must exist with construction metadata in the final set")
             }
+            if (unit.className == "AuthoredBuilding") unit.upgrades?.let { profile ->
+                val target = profile.actions.singleOrNull()?.targetTypeId
+                if (target == null || units[target]?.let { AuthorFactoryRules.upgrade(unit, it) } != true)
+                    bad(target.orEmpty(), "upgradeTo", "Author factory upgrade requires a complete compatible terminal factory target")
+            }
             unit.production?.let { production -> production.unitTypeIds.forEach { target ->
                 val product = units[target]
                 if (product?.build == null) bad(target, "productionUnits", "Production target must exist with build metadata in the final set")
+                if (unit.className == "AuthoredBuilding" && (!AuthorFactoryRules.body(unit) ||
+                        !AuthorFactoryRules.accepts(production.exitProfile, product)))
+                    bad(target, "productionUnits", "Author factory foundation and product capabilities must match the selected existing exit")
                 if (production.exitProfile == FactoryExitProfile.NATIVE_AIR &&
                     (product.movement.type != MovementType.AIR || product.rotor == null || product.combat == null))
                     bad(target, "productionUnits", "Air factory targets require an armed AIR unit with the finite rotor capability")

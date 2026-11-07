@@ -95,7 +95,9 @@ internal data class StepState(
                 .all { it.isFinite() } && (unit.health?.isFinite() != false)) { "Unit candidate must remain finite" }
             MechMotion.requireFinitePose(unit)
             require(unit.sinkSpeed.isFinite() && unit.sinkSpeed >= 0f) { "Water-body sink state must remain finite" }
-            val birthLimit = unit.producerId?.let { units[it]?.definition?.production?.exitProfile }
+            val origin = unit.productionOrigin
+            val birthDefinition = origin?.let { input.unitDefinitions[it.factoryTypeId] }
+            val birthLimit = birthDefinition?.production?.exitProfile
                 .let { when (it) {
                     com.rustedwarfare.reforge.core.content.FactoryExitProfile.CUSTOM_MECH -> 45f
                     com.rustedwarfare.reforge.core.content.FactoryExitProfile.NATIVE_SEA -> 80f
@@ -116,11 +118,13 @@ internal data class StepState(
                 val id = checkNotNull(unit.objectId)
                 require(id > 0L && id < nextObjectId && objectIds.add(id)) { "Invalid or duplicate unit object ID" }
             }
-            unit.producerId?.let { producerId ->
-                val producer = units.getValue(producerId)
+            origin?.let { birth ->
+                val producer = units.getValue(birth.producerId)
                 val nonce = unit.unitId.removePrefix("produced:${unit.ownerPlayerId}:")
                 require(producer.ownerPlayerId == unit.ownerPlayerId &&
-                    producer.definition.production?.unitTypeIds?.contains(unit.typeId) == true &&
+                    birthDefinition?.production?.unitTypeIds?.contains(unit.typeId) == true &&
+                    (producer.typeId == birthDefinition.id || birthDefinition.upgrades?.actions?.any {
+                        it.targetTypeId == producer.typeId } == true) &&
                     Regex("[0-9a-f]{32}").matches(nonce) &&
                     unit.updateKey.startsWith("~produced/") &&
                     unit.updateKey.removePrefix("~produced/").toLong() in 1L..lastBirthSerial) {

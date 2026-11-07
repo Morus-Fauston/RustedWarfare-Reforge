@@ -1,0 +1,15 @@
+// Self-owned chain; INI templates and named weapon inheritance are intentional.
+{
+  "format": "rw-reforge.unit.v1",
+  "copyFrom": [
+    "spcorvette.hjson"
+  ],
+  "core": {
+    "name": "spfrigate",
+    "price": 450,
+    "maxHp": 1600
+  },
+  "movement": {
+    "moveSpeed": 1.0
+  }
+}

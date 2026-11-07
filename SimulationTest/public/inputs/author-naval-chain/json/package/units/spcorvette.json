@@ -1,0 +1,25 @@
+{
+  "format": "rw-reforge.unit.v1",
+  "copyFrom": [
+    "hull-base.ini"
+  ],
+  "core": {
+    "name": "spcorvette",
+    "maxHp": 1200,
+    "radius": 30,
+    "displayRadius": 30
+  },
+  "attack": {
+    "maxAttackRange": 70
+  },
+  "weapons": [
+    {
+      "name": "port",
+      "canAttackUnderwaterUnits": false
+    },
+    {
+      "name": "starboard",
+      "canAttackUnderwaterUnits": true
+    }
+  ]
+}

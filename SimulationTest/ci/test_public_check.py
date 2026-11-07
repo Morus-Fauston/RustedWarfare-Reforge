@@ -8,6 +8,27 @@ import unittest
 
 
 class PublicSelectionTest(unittest.TestCase):
+    def test_native_driver_and_capture_contract_are_in_the_isolated_source_closure(self):
+        from public_check import REPO,source_files
+        names={p.relative_to(REPO).as_posix() for p in source_files(REPO)}
+        self.assertTrue('SimulationTest/tools/platform_windows.py' in names,'Shared native driver missing')
+        self.assertTrue('SimulationTest/tools/owned_window.py' in names,'Owned capture/input guard missing')
+        self.assertTrue('SimulationTest/tools/test_owned_window.py' in names,'Owned capture contract missing')
+        self.assertTrue('SimulationTest/tools/action_layout.py' in names,'Drawn action locator missing')
+        self.assertTrue('SimulationTest/tools/test_action_layout.py' in names,'Drawn action contract missing')
+
+    def test_the_shared_live_reader_and_its_contract_survive_an_isolated_source_copy(self):
+        from public_check import REPO,source_files
+        names={p.relative_to(REPO).as_posix() for p in source_files(REPO)}
+        self.assertTrue('SimulationTest/tools/diagnostic_reader.py' in names,'Shared live reader missing from isolated source')
+        self.assertTrue('SimulationTest/tools/test_diagnostic_reader.py' in names,'Live reader contract missing from isolated source')
+
+    def test_public_record_chain_fixture_is_in_the_isolated_source_closure(self):
+        from public_check import REPO, source_files
+        names={p.relative_to(REPO).as_posix() for p in source_files(REPO)}
+        self.assertIn('SimulationTest/fixtures/record-chain/scenario.json',names)
+        self.assertIn('SimulationTest/fixtures/record-chain/contract.json',names)
+
     def test_portable_corner_and_failure_preservation_mechanisms_are_not_left_out(self):
         for name, module, classes in [
             ('content-movement-knowledge', 'core', ['com.rustedwarfare.reforge.core.sim.CornerCaptureTest']),

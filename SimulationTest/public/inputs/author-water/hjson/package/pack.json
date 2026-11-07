@@ -1,0 +1,11 @@
+{
+  "format": "rw-reforge.content-pack.v1",
+  "id": "sp-author-water-hjson",
+  "name": "Owned author water combat example",
+  "units": [
+    {
+      "type": "water-combat",
+      "file": "units/spcruiser.hjson"
+    }
+  ]
+}

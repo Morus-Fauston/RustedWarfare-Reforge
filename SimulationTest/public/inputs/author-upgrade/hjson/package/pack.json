@@ -1,0 +1,23 @@
+{
+  "format": "rw-reforge.content-pack.v1",
+  "id": "sp-author-upgrade-hjson",
+  "name": "Owned author factory paid upgrade and shared FIFO",
+  "units": [
+    {
+      "type": "factory",
+      "file": "units/spfactory.hjson"
+    },
+    {
+      "type": "factory",
+      "file": "units/spfactoryt2.hjson"
+    },
+    {
+      "type": "builder",
+      "file": "units/builder.hjson"
+    },
+    {
+      "type": "tank",
+      "file": "units/tank.hjson"
+    }
+  ]
+}

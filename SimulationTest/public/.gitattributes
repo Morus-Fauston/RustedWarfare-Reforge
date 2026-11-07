@@ -23,6 +23,12 @@ inputs/mech-production/** -text whitespace=blank-at-eol,blank-at-eof,space-befor
 inputs/helicopter-production/** -text whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol
 inputs/heavy-mech-production/** -text whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol
 inputs/naval-production/** -text whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol
+inputs/author-construction/*/** -text whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol
+inputs/author-naval-chain/*/** -text whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol
+inputs/author-production/*/** -text whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol
+inputs/author-shore/*/** -text whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol
+inputs/author-upgrade/*/** -text whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol
+inputs/author-water/*/** -text whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol
 # Historical authored TMX samples include a double-CR line ending. That legal
 # XML whitespace is part of their frozen SHA; do not rewrite it during staging.
 inputs/resource-sound-packs/portrait-sandbox/maps/p001-controlled.tmx -whitespace

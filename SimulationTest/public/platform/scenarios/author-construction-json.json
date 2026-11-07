@@ -1,0 +1,41 @@
+{
+  "schemaVersion": 1,
+  "scenarioId": "author-construction-json",
+  "inputs": "../../inputs/author-construction/json",
+  "contentPack": {
+    "directory": "package",
+    "unitId": "spbuilder"
+  },
+  "intents": [
+    {
+      "intentId": "select-builder",
+      "kind": "select",
+      "unitId": "a",
+      "position": {
+        "x": 110,
+        "y": 210
+      }
+    },
+    {
+      "intentId": "build-workshop",
+      "kind": "build",
+      "unitId": "a",
+      "typeId": "workshop",
+      "position": {
+        "x": 190,
+        "y": 210
+      },
+      "waitSteps": 600
+    },
+    {
+      "intentId": "finish-workshop",
+      "kind": "select",
+      "unitId": "a",
+      "position": {
+        "x": 110,
+        "y": 210
+      },
+      "waitSteps": 600
+    }
+  ]
+}

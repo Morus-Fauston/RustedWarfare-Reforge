@@ -3,6 +3,7 @@ package com.rustedwarfare.reforge.core.sim
 import com.rustedwarfare.reforge.core.content.BuildingFootprint
 import com.rustedwarfare.reforge.core.content.BlockingGrid
 import com.rustedwarfare.reforge.core.content.MapDefinition
+import com.rustedwarfare.reforge.core.content.UnitDefinition
 import com.rustedwarfare.reforge.core.content.FootprintAnchor
 import com.rustedwarfare.reforge.core.content.MovementType
 import com.rustedwarfare.reforge.core.content.foundationMovementType
@@ -37,16 +38,7 @@ internal class BuildingTerrain private constructor(map: MapDefinition, occupied:
             val cells = linkedSetOf<Pair<Int, Int>>()
             for (unit in buildings) {
                 val definition = input.unitDefinitions.getValue(unit.typeId)
-                val building = checkNotNull(definition.building)
-                if (building.requiresResourcePool && !input.map.isResourcePool(
-                        MapBounds.cell(unit.position.x, input.map.tileWidth, input.map.widthTiles),
-                        MapBounds.cell(unit.position.y, input.map.tileHeight, input.map.heightTiles)))
-                    fail("Resource building requires a resource pool at its center")
-                for (cell in footprint(input.map, unit.position, building.footprint, building.anchor)) {
-                    if ((!building.requiresResourcePool && (input.map.blockingFor(definition.foundationMovementType).isBlocked(cell.first, cell.second) ||
-                            input.map.isResourcePool(cell.first, cell.second))) || !cells.add(cell))
-                        fail("Building footprint must respect ground, resource pools and other live buildings")
-                }
+                cells += placementCells(input.map, definition, unit.position, cells)
             }
             for (unit in input.units) {
                 val definition = input.unitDefinitions.getValue(unit.typeId)
@@ -56,6 +48,23 @@ internal class BuildingTerrain private constructor(map: MapDefinition, occupied:
                 if (cell in cells) fail("Initial mobile unit center must be outside live building cost")
             }
             return BuildingTerrain(input.map, cells)
+        }
+
+        /** Check this proposed building only; existing live products may still occupy their birth factory. */
+        fun placementCells(map: MapDefinition, definition: UnitDefinition, position: Position,
+                           occupied: Set<Pair<Int, Int>>): Set<Pair<Int, Int>> {
+            val building = checkNotNull(definition.building)
+            if (building.requiresResourcePool && !map.isResourcePool(
+                    MapBounds.cell(position.x, map.tileWidth, map.widthTiles),
+                    MapBounds.cell(position.y, map.tileHeight, map.heightTiles)))
+                fail("Resource building requires a resource pool at its center")
+            val cells = footprint(map, position, building.footprint, building.anchor)
+            for (cell in cells) {
+                if ((!building.requiresResourcePool && map.isFoundationBlocked(cell.first, cell.second,
+                        definition.foundationMovementType)) || cell in occupied)
+                    fail("Building footprint must respect ground, resource pools and other live buildings")
+            }
+            return cells
         }
 
         fun footprint(map: MapDefinition, position: Position, shape: BuildingFootprint,

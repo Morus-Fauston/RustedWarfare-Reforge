@@ -8,7 +8,6 @@ internal class CoreAdapter(private val input: LoadedScenario) : AutoCloseable {
         is InitResult.Accepted -> result.context
         is InitResult.Rejected -> throw CoreFailure("Initialization rejected: ${result.error}")
     }
-    private val namedArchive = context.observe().combat?.weapons?.any { it.weaponName != null } == true
     fun initial(): Observation = context.observe().also { observation ->
         val expected = input.core.units.associateBy { it.unitId }
         if (observation.scenarioId != input.core.scenarioId || observation.simulationTime != 0.0 ||
@@ -59,7 +58,9 @@ internal class CoreAdapter(private val input: LoadedScenario) : AutoCloseable {
                 "credits" to view.credits?.let(::n),
                 "factoryQueues" to JsonObject(view.factoryQueues.associate { it.factoryId to array(it.items.map { item -> obj("typeId" to s(item.typeId), "progress" to n(item.progress)) }) }),
                 "upgradeQueues" to JsonObject(view.upgradeQueues.associate { it.unitId to array(it.items.map { item -> obj("actionKey" to s(item.actionKey), "targetTypeId" to s(item.targetTypeId), "progress" to n(item.progress)) }) }))
-            val namedWeapons = if (!namedArchive) emptyMap() else mapOf(
+            // Every sample describes the current authorized projection, including an empty result.
+            // A factory can introduce the first named weapon after the initial world was archived.
+            val namedWeapons = mapOf(
                 "weapons" to array(view.weapons.map { it.json() }),
                 "projectiles" to array(view.projectiles.map { obj("token" to s(it.token), "multiplicity" to n(it.multiplicity),
                     "position" to it.position.json(), "heading" to n(it.heading), "height" to n(it.height),
@@ -106,7 +107,7 @@ internal fun Observation.json(): JsonObject = JsonObject(obj(
     "units" to array(units.map { it.json(combat != null || economy != null) }),
     "events" to array(events.map { it.json() }), "actionResults" to array(actionResults.map { it.json() }),
 ).toMutableMap().apply {
-    combat?.takeIf { state -> state.weapons.any { it.weaponName != null } }?.let { state ->
+    combat?.let { state ->
         put("combat", obj("frameCounter" to n(state.frameCounter), "nextObjectId" to n(state.nextObjectId),
             "weapons" to array(state.weapons.map { it.json() })))
         put("projectiles", array(projectiles.map { it.json() }))

@@ -19,6 +19,35 @@ class SandboxSessionTest {
             TimeModel("p001.time.v1", "sim-tick", "ieee754-binary64", "fixed-explicit-delta"), MovementContract(16.0, 4.0))
     }
 
+    @Test fun explicit_deployment_session_uses_the_shared_next_step_host_and_records_command_receipts() {
+        val records = mutableListOf<Pair<String, Map<String, Any?>>>()
+        val ordinary = SandboxSession(scenario())
+        val session = SandboxSession(scenario(), ClientEvidence { kind, fields -> records += kind to fields },
+            SandboxOptions(deploymentEnabled = true), generation = 9L)
+        try {
+            assertEquals("deployment-disabled", ordinary.submitSandboxCommand("/help").code)
+            val before = session.observation.units
+            val queued = session.submitSandboxCommand("/spawn tank 190 110 p1 heading=90")
+            assertEquals(SandboxCommandStatus.QUEUED, queued.status)
+            assertEquals(before, session.observation.units)
+            session.tick()
+            val applied = assertNotNull(session.lastSandboxReceipt)
+            assertEquals(SandboxCommandStatus.APPLIED, applied.status)
+            assertEquals(9L, applied.generation)
+            assertEquals(0L, applied.stepIndex)
+            assertEquals(3, session.observation.units.size)
+            assertEquals("tank", session.observation.units.single { it.unitId == applied.unitId }.typeId)
+            val commandRecords = records.filter { it.first == "sandbox-command" }.map { it.second }
+            assertEquals(listOf("QUEUED", "APPLIED"), commandRecords.map { it["status"] })
+            assertEquals(listOf(1L, 1L), commandRecords.map { it["requestSequence"] })
+            assertTrue(commandRecords.all { it["generation"] == 9L && it["worldId"] is String })
+            assertEquals(SandboxCommandStatus.HELP, session.submitSandboxCommand("/help").status)
+            assertTrue(session.sandboxCommandFeedback.contains("/spawn"))
+            session.close()
+            assertEquals("closed", session.submitSandboxCommand("/help").code)
+        } finally { ordinary.close(); session.close() }
+    }
+
     @Test fun `click selects exactly one unit without changing gameplay state`() {
         val session = SandboxSession(scenario())
         val before = session.observation.units

@@ -1,0 +1,12 @@
+{
+  "format": "rw-reforge.factory.v1",
+  "copyFrom": [
+    "factory-base.ini"
+  ],
+  "name": "spdock",
+  "productionUnits": "spcorvette",
+  "exitProfile": "NATIVE_SEA",
+  "upgradeTo": "spdockt2",
+  "upgradePrice": 900,
+  "upgradeBuildSpeed": 0.004
+}

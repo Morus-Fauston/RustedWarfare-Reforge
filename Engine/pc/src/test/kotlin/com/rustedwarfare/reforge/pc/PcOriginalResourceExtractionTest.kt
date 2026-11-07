@@ -11,6 +11,64 @@ import com.rustedwarfare.reforge.client.*
 import kotlin.test.*
 
 class PcOriginalResourceExtractionTest {
+    @Test fun reviewed_output_data_is_bound_to_the_producer_and_the_whole_trusted_profile() {
+        ResourceImagePackApplicationFixture().use { fixture ->
+            val (_, profile) = ownedSource(fixture.root)
+            val file = "renderable/${visualHash("assets/picture.png".toByteArray())}.png"
+            val audio = profile.sounds.joinToString(",") { source ->
+                """{"file":"sounds/${visualHash(source.path.toByteArray())}.wav","bytes":48,"sha256":"${"b".repeat(64)}","channels":1,"sampleRate":22050,"frames":2}"""
+            }
+            val producer = mapOf("self-owned-producer-v1" to "c".repeat(64))
+            val bytes = """{"schemaVersion":1,"producers":{"self-owned-producer-v1":"${"c".repeat(64)}"},
+                "profiles":[{"id":"${profile.id}","basis":"${PcTrustedOutputIndex.basis(profile)}",
+                "images":[{"file":"$file","bytes":100,"sha256":"${"a".repeat(64)}","pixelSha256":"${"d".repeat(64)}","width":8,"height":6}],
+                "mapped":[],"sounds":[$audio]}]}""".toByteArray()
+            val trusted = PcTrustedOutputIndex.fromReviewed(bytes, producer)
+            assertEquals("a".repeat(64), assertNotNull(trusted.forProfile(profile)).images.getValue(file).sha256)
+            assertNull(PcTrustedOutputIndex.fromReviewed(bytes, mapOf("self-owned-producer-v1" to "e".repeat(64))).forProfile(profile))
+            val wrongImages = PcOriginalImageProfile(profile.images.id, profile.images.jarBytes, "0".repeat(64), profile.images.images)
+            assertNull(trusted.forProfile(PcOriginalResourceProfile(profile.id, wrongImages, profile.sounds, profile.events)))
+            assertNull(PcTrustedOutputIndex.fromReviewed(bytes.toString(Charsets.UTF_8).replace("\"schemaVersion\":1", "\"schemaVersion\":\"1\"").toByteArray(), producer).forProfile(profile))
+        }
+    }
+
+    @Test fun rehashing_certificates_cannot_certify_renderable_pixels_different_from_the_trusted_original() {
+        for (complete in listOf(true, false)) ResourceImagePackApplicationFixture().use { fixture ->
+            val (source, profile) = ownedSource(fixture.root)
+            val backend = PcVisualAssetSettings(fixture.store, fixture.cache, fixture.root,
+                WindowsLaunchOptions.parse(arrayOf("--mode", "demo"), fixture.root), resourceExtractionProfile = profile)
+            val first = if (complete) backend.extractOriginalResourcePack(source) else backend.extractOriginalImagePack(source)
+            val badRoot = Files.createDirectory(fixture.root.resolve("forged raw pixels"))
+            Files.walk(first.manifest.parent).use { files -> files.forEach { file ->
+                val target = badRoot.resolve(first.manifest.parent.relativize(file)).normalize()
+                require(target.startsWith(badRoot))
+                if (Files.isDirectory(file)) Files.createDirectories(target) else Files.copy(file, target)
+            } }
+            fun read(name: String) = JsonReader().parse(Files.readString(badRoot.resolve(name)))
+            fun set(row: JsonValue, key: String, value: JsonValue) { row.remove(key); row.addChild(key, value) }
+            fun write(name: String, value: JsonValue) = Files.writeString(badRoot.resolve(name), value.toJson(OutputType.json))
+            fun rehash(proof: JsonValue) { for (row in proof.get("outputs")) {
+                val bytes = Files.readAllBytes(badRoot.resolve(row.getString("file")))
+                set(row, "bytes", JsonValue(bytes.size.toLong())); set(row, "sha256", JsonValue(visualHash(bytes)))
+            } }
+            val images = read("extraction.json")
+            val renderable = images.get("originalImages").single().getString("renderableFile")
+            val changed = BufferedImage(8, 6, BufferedImage.TYPE_INT_ARGB)
+            for (x in 0 until 8) for (y in 0 until 6) changed.setRGB(x, y, 0xffd02040.toInt())
+            assertTrue(ImageIO.write(changed, "png", badRoot.resolve(renderable).toFile()))
+            rehash(images); write("extraction.json", images)
+            if (complete) {
+                val resources = read("resource-extraction.json")
+                set(resources, "imageExtractionSha256", JsonValue(visualHash(Files.readAllBytes(badRoot.resolve("extraction.json")))))
+                rehash(resources); write("resource-extraction.json", resources)
+            }
+            val imported = backend.checkImagePack(badRoot)
+            val selected = backend.initialSelection.copy(packs = ResourcePackSelection(listOf(imported.catalogEntry), listOf(imported.catalogEntry.id)))
+            val failure = assertFailsWith<IllegalArgumentException> { backend.prepare(selected) }
+            assertTrue(failure.message.orEmpty().contains("Raw image pixels differ"), failure.message)
+        }
+    }
+
     @Test fun forged_output_hashes_cannot_certify_a_changed_unmapped_canonical_sound_or_overwrite_the_good_saved_combination() {
         ResourceImagePackApplicationFixture().use { fixture ->
             val (source, profile) = ownedSource(fixture.root)

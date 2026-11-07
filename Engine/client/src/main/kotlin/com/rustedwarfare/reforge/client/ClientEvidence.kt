@@ -185,4 +185,4 @@ internal fun PlayerObservation.fields(includeKnowledge: Boolean = true): Map<Str
         "upgradeQueues" to upgradeQueues.map { queue -> mapOf("unitId" to queue.unitId, "items" to queue.items.map { item ->
             mapOf("actionKey" to item.actionKey, "targetTypeId" to item.targetTypeId, "progress" to item.progress) }) }) } ?: emptyMap()) +
         (credits?.let { mapOf("credits" to it) } ?: emptyMap()) +
-        (if (weapons.isEmpty()) emptyMap() else mapOf("weapons" to weapons.map { it.fields() }))
+        mapOf("weapons" to weapons.map { it.fields() })

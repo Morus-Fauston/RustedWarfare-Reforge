@@ -1,0 +1,104 @@
+{
+  "schemaVersion": 1,
+  "scenarioId": "author-water-ini",
+  "rules": [
+    {
+      "intentId": "select",
+      "actionType": "SelectAction",
+      "unitId": "a",
+      "accepted": true,
+      "unitIdentity": {
+        "ownerPlayerId": "p1",
+        "typeId": "spcruiser"
+      },
+      "assertions": [
+        {
+          "path": "units.a.maxHealth",
+          "operator": "equals",
+          "value": 4000
+        },
+        {
+          "path": "units.a.height",
+          "operator": "equals",
+          "value": 0
+        }
+      ]
+    },
+    {
+      "intentId": "move",
+      "actionType": "MoveAction",
+      "unitId": "a",
+      "accepted": true,
+      "unitIdentity": {
+        "ownerPlayerId": "p1",
+        "typeId": "spcruiser"
+      },
+      "assertions": [
+        {
+          "path": "units.a.attackTargetId",
+          "operator": "equals",
+          "value": null
+        }
+      ],
+      "targetFromIntent": true
+    },
+    {
+      "intentId": "attack",
+      "actionType": "AttackAction",
+      "unitId": "a",
+      "accepted": true,
+      "unitIdentity": {
+        "ownerPlayerId": "p1",
+        "typeId": "spcruiser"
+      },
+      "assertions": [
+        {
+          "path": "units.a.attackTargetId",
+          "operator": "equals",
+          "value": "b"
+        }
+      ],
+      "targetIdentity": {
+        "ownerPlayerId": "p2",
+        "typeId": "spcruiser"
+      },
+      "actionFields": {
+        "targetUnitId": "b"
+      },
+      "tail": {
+        "samples": 10,
+        "assertions": [
+          {
+            "path": "weapons.a.port.targetUnitId",
+            "operator": "equals",
+            "value": "b"
+          },
+          {
+            "path": "weapons.a.starboard.targetUnitId",
+            "operator": "equals",
+            "value": "b"
+          },
+          {
+            "path": "units.b.health",
+            "operator": "lessThan",
+            "value": 4000
+          }
+        ]
+      },
+      "weaponBirths": [
+        {
+          "unitId": "a",
+          "weaponName": "port",
+          "targetUnitId": "b",
+          "minimumOccurrences": 1
+        },
+        {
+          "unitId": "a",
+          "weaponName": "starboard",
+          "targetUnitId": "b",
+          "minimumOccurrences": 1
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,185 @@
+{
+  "schemaVersion": 1,
+  "kind": "behavior-contract",
+  "contractId": "public.author-upgrade.contract.v1",
+  "scope": "self-behavior",
+  "scenarioIds": [
+    "public.author-upgrade.v1"
+  ],
+  "comparison": {
+    "numberMode": "declared-per-field",
+    "tolerances": {}
+  },
+  "approval": {
+    "status": "tool-fixture-only",
+    "source": "Owned three-format factory upgrade2100/.004, one shared FIFO. Builder500 then250 upgrade ticks completes750, next builder1251, newly enabled tank1752. Independently declared counts/identities; explicit native tank source kept strict, ordinary Session package separately qualified. No original/platform/performance claim."
+  },
+  "exclusions": [
+    "original-compatibility",
+    "platform-input",
+    "performance"
+  ],
+  "producedUnits": [
+    {
+      "unitId": "produced:p1:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "productionActionId": "first-builder",
+      "producerId": "f",
+      "owner": "p1",
+      "typeId": "builder",
+      "unitNonce": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "birthStepIndex": 500
+    },
+    {
+      "unitId": "produced:p1:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "productionActionId": "last-builder",
+      "producerId": "f",
+      "owner": "p1",
+      "typeId": "builder",
+      "unitNonce": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "birthStepIndex": 1251
+    },
+    {
+      "unitId": "produced:p1:cccccccccccccccccccccccccccccccc",
+      "productionActionId": "new-tank",
+      "producerId": "f",
+      "owner": "p1",
+      "typeId": "c_tank",
+      "unitNonce": "cccccccccccccccccccccccccccccccc",
+      "birthStepIndex": 1752
+    }
+  ],
+  "rules": [
+    {
+      "ruleId": "paid-mixed",
+      "when": {
+        "phase": "after-advance",
+        "stepIndex": 0
+      },
+      "assertions": [
+        {
+          "path": "economy.balances.p1",
+          "operator": "equals",
+          "value": 6900
+        }
+      ]
+    },
+    {
+      "ruleId": "first-born",
+      "when": {
+        "phase": "after-advance",
+        "stepIndex": 500
+      },
+      "assertions": [
+        {
+          "path": "events",
+          "operator": "contains",
+          "value": "unit-produced"
+        }
+      ]
+    },
+    {
+      "ruleId": "upgraded",
+      "when": {
+        "phase": "after-advance",
+        "stepIndex": 750
+      },
+      "assertions": [
+        {
+          "path": "units.f.type",
+          "operator": "equals",
+          "value": "spfactoryt2"
+        },
+        {
+          "path": "units.f.health",
+          "operator": "equals",
+          "value": 1800
+        },
+        {
+          "path": "events",
+          "operator": "contains",
+          "value": "upgrade-completed"
+        },
+        {
+          "path": "economy.balances.p1",
+          "operator": "equals",
+          "value": 6900
+        }
+      ]
+    },
+    {
+      "ruleId": "new-product-paid",
+      "when": {
+        "phase": "after-advance",
+        "stepIndex": 751
+      },
+      "assertions": [
+        {
+          "path": "economy.balances.p1",
+          "operator": "equals",
+          "value": 6550
+        }
+      ]
+    },
+    {
+      "ruleId": "second-born",
+      "when": {
+        "phase": "after-advance",
+        "stepIndex": 1251
+      },
+      "assertions": [
+        {
+          "path": "events",
+          "operator": "contains",
+          "value": "unit-produced"
+        }
+      ]
+    },
+    {
+      "ruleId": "third-born",
+      "when": {
+        "phase": "after-advance",
+        "stepIndex": 1752
+      },
+      "assertions": [
+        {
+          "path": "units.produced:p1:cccccccccccccccccccccccccccccccc.health",
+          "operator": "equals",
+          "value": 210
+        },
+        {
+          "path": "events",
+          "operator": "contains",
+          "value": "unit-produced"
+        }
+      ]
+    },
+    {
+      "ruleId": "complete",
+      "when": {
+        "phase": "after-advance",
+        "stepIndex": 1799
+      },
+      "assertions": [
+        {
+          "path": "economy.balances.p1",
+          "operator": "equals",
+          "value": 6550
+        },
+        {
+          "path": "units.f.type",
+          "operator": "equals",
+          "value": "spfactoryt2"
+        }
+      ]
+    }
+  ],
+  "convertedUnits": [
+    {
+      "unitId": "f",
+      "upgradeActionId": "upgrade-middle",
+      "sourceTypeId": "spfactory",
+      "targetTypeId": "spfactoryt2",
+      "completionStepIndex": 750
+    }
+  ]
+}

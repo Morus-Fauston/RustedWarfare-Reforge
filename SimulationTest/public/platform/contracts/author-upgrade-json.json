@@ -1,0 +1,204 @@
+{
+  "schemaVersion": 1,
+  "scenarioId": "author-upgrade-json",
+  "rules": [
+    {
+      "intentId": "select-factory",
+      "actionType": "SelectAction",
+      "unitId": "a",
+      "accepted": true,
+      "unitIdentity": {
+        "ownerPlayerId": "p1",
+        "typeId": "spfactory"
+      },
+      "assertions": [
+        {
+          "path": "balance",
+          "operator": "equals",
+          "value": 3000
+        }
+      ]
+    },
+    {
+      "intentId": "queue-upgrade",
+      "actionType": "UpgradeAction",
+      "unitId": "a",
+      "accepted": true,
+      "unitIdentity": {
+        "ownerPlayerId": "p1",
+        "typeId": "spfactory"
+      },
+      "assertions": [
+        {
+          "path": "balance",
+          "operator": "equals",
+          "value": 900
+        },
+        {
+          "path": "upgradeQueues.a.items",
+          "operator": "equals",
+          "value": [
+            {
+              "actionKey": "spfactoryt2",
+              "targetTypeId": "spfactoryt2",
+              "progress": 0
+            }
+          ]
+        }
+      ],
+      "actionFields": {
+        "upgradeId": "spfactoryt2"
+      }
+    },
+    {
+      "intentId": "cancel-upgrade",
+      "actionType": "CancelUpgradeAction",
+      "unitId": "a",
+      "accepted": true,
+      "unitIdentity": {
+        "ownerPlayerId": "p1",
+        "typeId": "spfactory"
+      },
+      "assertions": [
+        {
+          "path": "balance",
+          "operator": "equals",
+          "value": 3000
+        },
+        {
+          "path": "upgradeQueues.a.items",
+          "operator": "equals",
+          "value": []
+        }
+      ],
+      "actionFields": {
+        "upgradeId": "spfactoryt2"
+      }
+    },
+    {
+      "intentId": "finish-upgrade",
+      "actionType": "UpgradeAction",
+      "unitId": "a",
+      "accepted": true,
+      "unitIdentity": {
+        "ownerPlayerId": "p1",
+        "typeId": "spfactory"
+      },
+      "assertions": [
+        {
+          "path": "balance",
+          "operator": "equals",
+          "value": 900
+        }
+      ],
+      "actionFields": {
+        "upgradeId": "spfactoryt2"
+      },
+      "tail": {
+        "samples": 10,
+        "assertions": [
+          {
+            "path": "units.a.typeId",
+            "operator": "equals",
+            "value": "spfactoryt2"
+          },
+          {
+            "path": "units.a.health",
+            "operator": "equals",
+            "value": 1800
+          },
+          {
+            "path": "balance",
+            "operator": "equals",
+            "value": 900
+          },
+          {
+            "path": "upgradeQueues",
+            "operator": "equals",
+            "value": []
+          }
+        ]
+      }
+    },
+    {
+      "intentId": "buy-builder",
+      "actionType": "ProduceAction",
+      "unitId": "a",
+      "accepted": true,
+      "unitIdentity": {
+        "ownerPlayerId": "p1",
+        "typeId": "spfactoryt2"
+      },
+      "assertions": [
+        {
+          "path": "balance",
+          "operator": "equals",
+          "value": 400
+        }
+      ],
+      "created": {
+        "event": "unit-produced",
+        "typeId": "builder",
+        "position": {
+          "x": 110,
+          "y": 215
+        }
+      },
+      "tail": {
+        "samples": 10,
+        "assertions": [
+          {
+            "path": "balance",
+            "operator": "equals",
+            "value": 400
+          },
+          {
+            "path": "factoryQueues.a.items",
+            "operator": "equals",
+            "value": []
+          }
+        ]
+      }
+    },
+    {
+      "intentId": "buy-tank",
+      "actionType": "ProduceAction",
+      "unitId": "a",
+      "accepted": true,
+      "unitIdentity": {
+        "ownerPlayerId": "p1",
+        "typeId": "spfactoryt2"
+      },
+      "assertions": [
+        {
+          "path": "balance",
+          "operator": "equals",
+          "value": 50
+        }
+      ],
+      "created": {
+        "event": "unit-produced",
+        "typeId": "c_tank",
+        "position": {
+          "x": 110,
+          "y": 215
+        }
+      },
+      "tail": {
+        "samples": 10,
+        "assertions": [
+          {
+            "path": "balance",
+            "operator": "equals",
+            "value": 50
+          },
+          {
+            "path": "factoryQueues.a.items",
+            "operator": "equals",
+            "value": []
+          }
+        ]
+      }
+    }
+  ]
+}

@@ -18,6 +18,23 @@ PR更新通过`public-pr.yml`执行完整`pr`入口，保留七份领域产物�
 
 旧`pr-first-loop`继续用于首闭环/历史复核；完整层级已由各领域集覆盖相同适用断言，因此不会额外重复选择旧集。`verify-comparison.ps1`和`verify-isolated-comparison.ps1`仍保留原私有比较链及输入要求，不改名成公共干净环境验证。历史冻结脚本与收据保持原版本和失败状态。
 
+## 日常机制回归与冷隔离
+
+开发时可用同一固定公共清单复用兼容Gradle daemon及编译产物：
+
+```powershell
+$devRun = [guid]::NewGuid().ToString('N')
+python -B SimulationTest/ci/development_check.py --suite development-air-production --output "SimulationTest/build/development-$devRun"
+python -B SimulationTest/ci/development_check.py --suite development-air-production --cold --isolated --output "SimulationTest/build/development-cold-$devRun"
+python -B SimulationTest/ci/development_check.py --suite platform-basics --suite content-three-formats --list
+```
+
+`development-air-production`固定四个客户端类，覆盖直升机/机甲生产、建造热键和动作菜单。可重复`--suite`组合现有命名清单的机制部分：相同模块、类及输入上下文才合并，不同fixture分别执行；Python机制仍真实运行。此入口只测机制，不运行短/长场景或打安装包；阶段及CI完整层级继续使用`public_batch.py`。
+
+默认仅复用编译任务，Test任务禁用缓存及up-to-date，每次实际执行并写入全新输出目录。`--cold --isolated`从公开源码新副本全任务重编，使用single-use Gradle daemon；用户级依赖和OS文件缓存仍可能已热。`--isolated`要求`--cold`。输出不能覆盖旧批次，工具自动取得本工作区Engine/SimulationTest构建锁；Gradle缓存沿用户级配置。
+
+每组保留精确类过滤、生效输入/JDK/daemon身份、逐任务状态、当前开始/结束标记和每方法JUnit XML。默认位置的旧XML列入`ignoredPreviousXml`，不计本次执行；跳过、空类、缺类、失败或只有up-to-date的测试均不能通过。返回码与`result.json`共同判断结果，失败原件保留。
+
 ## 首条公共无头短测
 
 本目录全部为TEST-P004-001新建的自有合成输入，不复制原版地图、INI或图片。`generate_inputs.py`用标准库生成12×12空地、一个单位声明和20×20纯色PNG，并固定文件SHA256；它不生成预期。断言独立写在`contracts/select-move-stop.json`，运行时不改输入或预期。
@@ -144,6 +161,8 @@ Windows入口需要已构建PC安装包、Python Pillow、可用交互桌面和�
 
 正式动作必须属于本次投递且拥有者、对象、接受结果及调用前后观察精确关联。金额使用同一次调用即时差值，停止检查固定尾部，建设绑定唯一新建事件/对象。仅真实PC点击目标允许按固定地图与实际viewport算出的一像素每轴上限；调用后的目标仍须精确等于正式动作target。原始nonce/身份/轨迹不改写，其余玩法判据及原CoreAdapter精确标准保持。
 
+完整历史账本的`history.spend.at`可声明`construction-created`：施工费在同一正式建造意图内，唯一新工地的创建事件出现时计入。工地必须匹配动作的类型、玩家和目标位置，不能复用旧对象或重复创建；每次观察仍精确核余额。原`action`和`first-step`扣费时点保持，旧封存契约不会被自动改写成新时点。
+
 基线身份包括共享源码/安装包、输入、场景/契约、比较器/驱动、窗口尺寸与平台环境。输入映射、投影、命中、布局、反馈或生命周期变化时补受影响操作：移动/停止/攻击用`production`，建造用`construction`，防御升级用`upgrade`，经济升级/取消及回收用`maintenance`，原生生产卡左键/同卡右键用`native-production`（旧`production`走旧面板，不覆盖ProductionButtonInput）；共同投影或平台接线变化运行受影响组的双尺寸。纯玩法变更优先机制与无头回归，不机械重跑真实PC。旧平台脚本和历史证据保持原入口和身份，适用性按覆盖及源码核对。
 
 Android纯JDK宿主入口（不运行SDK、APK或设备）：
@@ -153,6 +172,8 @@ python -B SimulationTest/tools/android_host_check.py --distribution SimulationTe
 ```
 
 它编译现有宿主测试并运行业务/失败边界、知识编码容量、可见性轨迹与存储检查，底层仍使用实际共享客户端。OwnRuns真实文件系统检查需要主机允许创建测试符号链接，缺权限会失败。Android instrumentation/ART和设备证据仍保留原所属入口，本批没有建立Android触控操作基线；最终共享源码兼容构建由四期收尾集中执行。
+
+`result.json`的`toolCosts`分别记录编译命令、宿主命令和命令外成本；宿主命令包含JVM启动、场景及断言，未独立打点的启动、场景、观察时间为`null`。命令的`timeoutSeconds`是超时上限，`elapsedSeconds`才是实际耗时。日志IO失败、进程调用失败和超时分别保留命令、实际耗时及失败类别。`processAttempted`标明是否已调用进程接口；该接口抛普通IO异常而无法确认启动状态时，`processStarted`为`null`。没有实际退出码时`exitCode`为`null`。这些记录不代表Android构建、模拟器或设备验证，也不据此删减必要的画面稳定和参考采样窗口。
 
 
 ## 工具机制与专属验证入口
@@ -179,3 +200,21 @@ python -B SimulationTest/tools/specialist_check.py --entry reference-host --bind
 正式性能沿既有workflow性能计划的`mode=measure`和`maintainerApproved=true`执行WholeChainPerfMain，资格检查为`mode=qualify`；两者都需要固定协议、包清单与成功构建收据，数值最终结论仍单独判定。PathPerfBatchMain当前必须显式传`--geometry-version p002.dev.center-motion.v2`，只属于开发几何测试，历史省略该参数的120批命令不能当成当前正式入口。
 
 预检bindings格式为`{"released":true,"files":{"<role>":{"path":"<canonical-absolute-file>","sha256":"<fixed-sha256>"}}}`，角色必须与所选注册项完全相同，Manifest角色绑定已有清单文件而非目录。预检只读这些文件与身份，不递归证明清单成员完整、不检测运行时可用性，也不执行命令模板。`released`只声明资源/范围已释放，不能授予新的设备、原版或正式性能权限。结果始终`executed:false`；`ready`/退出0仅表示声明文件可读且哈希吻合，缺件/漂移为`evidence-insufficient`/退出3，未释放资源或平台不符为`blocked`/退出64。未知入口、无效参数和旧输出直接拒绝；任何这些状态都不能作为专属验证通过。历史结果保留原环境、命令和失败状态。
+
+
+## 首次长链归档与独立重判
+
+`python -B SimulationTest/tools/workflow.py scenario-run --plan <固定计划.json> --output <新批次>` 为所选公开 Core／Session 场景冻结源码、输入、JDK 身份，构建一次分发包；先用固定真实好档和语义坏档检验消费者，再执行场景。可选 `archive-production` 的 long 层包含三格式各一条 Core 与 Session 正常建造生产战斗链，不加入日常七组默认选择。
+
+计划严格包含 `schemaVersion:1`、当前绝对 `root`、`suite`、`kind:short|long`、唯一 `cases` ID 列表和 `qualifications:[{path,sha256}]`。每种选定 backend 都须有资格索引；索引路径相对计划文件，SHA 固定索引原字节。`scenario-qualify --index <索引> --distribution <固定分发包> --output <新目录>` 也可单独检查。索引包含 schemaVersion、backend、fixtureKind（Core 为 core-archive，Session 为 legacy-raw）、scenario、contract 和 cases；每例有唯一 case、相对 path、expectedExitCode。至少一个好例 0 和一个语义／证据坏例 2 或 3；坏例必须声明 expectedCategory（旧 Core 索引兼容 category），Session raw 另有 sha256。进程失败或输入错误不能充当消费者资格。
+
+批次保留 candidate/source、candidate/package、资格原件、每场景完整 raw、Core normalized、命令与标准输出错误；execution、consumption、summary、payload／seal、terminal／result 分别记录执行、独立判定、封存和打印结果。complete 仅代表所选采集完整，不代表契约或整期通过。进程失败保留部分原件并停止后续场景，不偷偷重跑。封存清单和哈希用于本工具归档完整性核验，不构成外部可信签名。
+
+`scenario-restore --run <原批次> --output <新目录>` 原字节复制候选和已封存文件，以 restore.json 记录显式位置映射；不改写旧清单或哈希。`scenario-compare --run <原批次或恢复副本> --output <另一个新目录>` 使用档内固定 Core 包和 Python 消费者独立重判，不构建或推进模拟。恢复成功只说明完整归档复制通过，仍需单独重判；不完整原件的恢复不会变为通过。重判、恢复目录必须在原批次之外。历史 Windows 相对定位符可显式解析反斜杠，原件保持不变。消费者升级后的新规则资格须另行验证，此入口默认固定档内版本。
+
+输出只可进入项目 build、对应票 evidence 批次或系统 Temp。生产 run 仍要求私有工作区布局守卫；公开克隆缺守卫不能冒称完整工作区验收。恢复副本可使用档内 `candidate/source/SimulationTest/tools/workflow.py scenario-compare`，限该档捕获的公开输入与同平台运行条件；不代表 Android、PC 操作、网络或原版对拍。Session 启动通过单个 lib 通配符保持命令短，Windows 用 Unicode 扩展路径和短 Temp 工作目录，全部实际 JAR 身份仍逐一记录。
+
+Session 的可选 `history` 契约用于显式声明长链检查义务，rules 仍须逐一对应全部 intentId。initialBalance 为独立初始金额；spend 声明 intentId、正 amount、at（action 或 first-step）。noActionIntents 显式列无动作意图；其余意图检查固定动作种类及接受状态、完整步数／时序与逐观测余额。mechLegs 声明类型对应腿数，检查姿态字段、有限数值和腿序；始终拒绝死亡／不存在单位残留炮态。可选 ownerPlayerId、initialOwnedTypes、finalUnits、minimumBirths 检查声明的初态、终态和射击义务；projectileBirthsRequired 只适用于可见出生记录完整的固定场景，不能推广到任意战争迷雾记录。弹体路径可用 canonical 非负索引或唯一 token；不猜测不存在的 id 字段。新 Session 记录含 generation；混入旧代次或缺失代次拒绝，旧版整档无观测代次仍可按原读法追溯。这些是独立声明的证据义务，不替代核心玩法或新增通用玩法规则。
+
+
+长链动作还须与紧邻的 before/action/after、固定 actor 和实际存活对象绑定；非选择指令核对象归属，已有建造类型、升级、目的地和目标身份逐项对应意图。旧生产动作没有产品字段时，通过同厂 factoryQueues 的 FIFO 前缀不变、恰好新增一个指定产品核对，不由终局反推请求。Session 合同声明的攻击精确点按该固定场景核对，不增加通用鼠标命中容差。独立资格 CLI 同样取得构建资源锁并限制输出目录；候选 worker 先写新 Temp，完整字节复制回父批次并保存位置映射，失败也保留。终端须实际 flush 成功才记录打印通过。

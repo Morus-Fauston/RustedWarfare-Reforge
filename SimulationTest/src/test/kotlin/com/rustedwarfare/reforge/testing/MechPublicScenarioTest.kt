@@ -21,7 +21,9 @@ class MechPublicScenarioTest {
             "automaticVision" to obj("retention" to s("MEMORY"), "pathSource" to s("PLAYER_KNOWLEDGE"),
                 "shareAlliedVision" to b(false), "observers" to array(listOf(s("p1"), s("p2"))),
                 "grid" to obj("width" to n(30), "height" to n(20)))))
-        val temporary = Files.createTempDirectory("mech-pose-integrity-")
+        val temporary = System.getenv("RWRE_P005_ARCHIVE_ROOT")?.let {
+            Files.createDirectories(Path.of(it)).resolve("mech-qualification").also { target -> Files.createDirectory(target) }
+        } ?: Files.createTempDirectory("mech-pose-integrity-")
         val scenario = temporary.resolve("scenario.json")
         Files.writeString(scenario, document.toString())
         val contractPath = root.resolve("contracts/mech-ini-short.json")
@@ -30,6 +32,25 @@ class MechPublicScenarioTest {
         val rows = Files.readAllLines(output.resolve("reforge/raw.jsonl")).map { json.parseToJsonElement(it).jsonObject }
         val contract = readObject(contractPath)
         assertEquals(0, TraceComparator.evaluate(document, contract, rows).exitCode)
+        assertEquals(0, TraceFiles.compare(scenario, contractPath, output).exitCode)
+        val qualifications = mutableListOf(obj("case" to s("good"), "path" to s("run"), "expectedExitCode" to n(0)))
+        fun persistVariant(name: String, changed: List<JsonObject>): Judgment {
+            val target = temporary.resolve(name)
+            Files.walk(output).use { paths -> paths.forEach { file ->
+                val copy = target.resolve(output.relativize(file))
+                if (Files.isDirectory(file)) Files.createDirectories(copy) else Files.copy(file, copy)
+            } }
+            Files.writeString(target.resolve("reforge/raw.jsonl"), changed.joinToString("\n", postfix="\n"))
+            val normalized = changed.mapIndexed { index, row -> normalizeRecord(row, index + 1,
+                if (index == 0) null else document.objectAt("coordinateModel").id("id"),
+                if (index == 0) null else document.objectAt("timeModel").id("id")) }
+            Files.writeString(target.resolve("reforge/normalized.jsonl"), normalized.joinToString("\n", postfix="\n"))
+            val manifest = readObject(target.resolve("manifest.json"))
+            Files.writeString(target.resolve("manifest.json"), JsonObject(manifest + ("traceFiles" to array(
+                listOf("reforge/raw.jsonl", "reforge/normalized.jsonl").map { path ->
+                    obj("path" to s(path), "sha256" to s(sha256(target.resolve(path)))) }))).toString())
+            return TraceFiles.compare(scenario, contractPath, target)
+        }
         val variants = listOf("missing-pose", "null-pose", "missing-leg", "duplicate-index", "wrong-phase",
             "missing-foot", "string-height", "missing-body-spin", "string-reverse", "private-target")
         fun damage(unit: JsonObject, variant: String): JsonObject {
@@ -75,8 +96,21 @@ class MechPublicScenarioTest {
             }
             val result = TraceComparator.evaluate(document, contract, damaged)
             if (result.exitCode != 3) missed += "$view/$variant:${result.exitCode}"
+            val name = "bad-$view-$variant"
+            val formal = persistVariant(name, damaged)
+            assertEquals(3, formal.exitCode, name)
+            assertEquals(result.document.objectAt("comparison")["category"],
+                formal.document.objectAt("comparison")["category"], "Semantic rejection, not digest rejection: $name")
+            qualifications += obj("case" to s(name), "path" to s(name), "expectedExitCode" to n(3),
+                "category" to formal.document.objectAt("comparison").required("category"), "judgment" to formal.document)
         }
         assertEquals(emptyList(), missed, "Every partial mech sample must invalidate its public archive")
+        Files.copy(contractPath, temporary.resolve("contract.json"))
+        Files.writeString(temporary.resolve("qualification.json"), obj("schemaVersion" to n(1),
+            "scenario" to s("scenario.json"), "contract" to s("contract.json"),
+            "scope" to s("Derived semantic bad archives; one actual good Core run; original raw is preserved"),
+            "cases" to array(qualifications)).toString())
+        assertTrue(Files.isRegularFile(temporary.resolve("qualification.json")), "Formal good/bad archive qualifications must be retained")
     }
 
     @Test

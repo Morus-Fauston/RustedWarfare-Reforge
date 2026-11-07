@@ -21,6 +21,7 @@ STORAGE = ['SandboxAssetFilesTest', 'metadata.MetadataProbeHostTest',
 
 
 def run(distribution, fixture, output, kind='all', java='java', javac='javac'):
+    operation_started = time.monotonic()
     repo = Path(__file__).resolve().parents[2]
     distribution, fixture, output = (Path(p).resolve() for p in (distribution, fixture, output))
     source_root = repo/'Engine/android/src'
@@ -36,13 +37,29 @@ def run(distribution, fixture, output, kind='all', java='java', javac='javac'):
                   classes=str(classes), commands=[], startedUnix=time.time(), source=source_before,
                   package=package_before, inputs=tree(output/'inputSnapshot'))
     def command(name, arguments):
-        begin = time.time()
-        with (output/(name+'.stdout.log')).open('xb') as stdout, (output/(name+'.stderr.log')).open('xb') as stderr:
-            process = subprocess.run(list(map(str, arguments)), cwd=repo, stdout=stdout, stderr=stderr, timeout=180)
-        result['commands'].append(dict(name=name, argv=list(map(str, arguments)), exitCode=process.returncode,
-                                       elapsedSeconds=time.time()-begin))
-        if process.returncode:
-            raise RuntimeError(name+': exit '+str(process.returncode))
+        begin = time.monotonic()
+        record = dict(name=name, argv=list(map(str, arguments)), phase='build' if name=='compile' else 'harness',
+                      timeoutSeconds=180, exitCode=None, outcome='log-io-failed',
+                      processAttempted=False, processStarted=False, timedOut=False)
+        try:
+            with (output/(name+'.stdout.log')).open('xb') as stdout, (output/(name+'.stderr.log')).open('xb') as stderr:
+                record.update(outcome='process-call-failed', processAttempted=True, processStarted=None)
+                process = subprocess.run(record['argv'], cwd=repo, stdout=stdout, stderr=stderr, timeout=180)
+                record.update(exitCode=process.returncode, processStarted=True,
+                              outcome='passed' if process.returncode==0 else 'failed-exit')
+        except subprocess.TimeoutExpired as error:
+            record.update(outcome='timed-out', processStarted=True, timedOut=True, error=str(error))
+            raise
+        except OSError as error:
+            if record['processStarted'] is True:
+                record['outcome'] = 'log-io-failed'
+            record['error'] = str(error)
+            raise
+        finally:
+            record['elapsedSeconds'] = time.monotonic()-begin
+            result['commands'].append(record)
+        if record['exitCode']:
+            raise RuntimeError(name+': exit '+str(record['exitCode']))
     try:
         selected = (FUNCTIONAL if kind in ('all', 'functional') else []) + (STORAGE if kind in ('all', 'storage') else [])
         sources = []
@@ -89,6 +106,14 @@ def run(distribution, fixture, output, kind='all', java='java', javac='javac'):
     except (OSError, ValueError, RuntimeError, subprocess.SubprocessError) as error:
         result['error'] = str(error)
     result['endedUnix'] = time.time()
+    elapsed = time.monotonic()-operation_started
+    build = sum(row['elapsedSeconds'] for row in result['commands'] if row['phase']=='build')
+    harnesses = sum(row['elapsedSeconds'] for row in result['commands'] if row['phase']=='harness')
+    result['toolCosts'] = dict(totalOperationSeconds=elapsed, buildCommandSeconds=build,
+        harnessCommandSeconds=harnesses, outsideCommandsSeconds=max(0.0,elapsed-build-harnesses),
+        processStartupSeconds=None, scenarioOnlySeconds=None, observationOnlySeconds=None,
+        boundary='Operation entry through identity checks and cost formation; excludes final result write and stdout. Command time includes log IO and process waiting, including failed attempts.',
+        limitation='Harness time includes JVM startup, scenario execution and assertions; existing harnesses provide no separate startup/scenario/observation markers. Timeout values are limits, not observed waits.')
     save(output/'result.json', result)
     print(json.dumps(dict(status=result['status'], device=False, commands=len(result['commands']), error=result.get('error'))))
     return 0 if result['status'] == 'passed' else 1

@@ -21,7 +21,9 @@ internal object UpgradeDeclaration {
                 ?: throw InputError("Missing upgrade action")
             val source = change.id("sourceTypeId")
             val target = change.id("targetTypeId")
-            val supported = when (source) {
+            val supported = if (definitions[source]?.get("loader") == s("author-upgrading-producer"))
+                definitions[target]?.get("loader") == s("author-producer") && action.id("upgradeId") == target
+            else when (source) {
                 "extractorT1", "extractorT2", "fabricatorT1", "fabricatorT2" ->
                     definitions[source]?.get("loader") == s("economy-upgrades") &&
                         target == source.dropLast(1) + (source.last().digitToInt() + 1) &&

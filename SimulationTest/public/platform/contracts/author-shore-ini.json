@@ -1,0 +1,70 @@
+{
+  "schemaVersion": 1,
+  "scenarioId": "author-shore-ini",
+  "rules": [
+    {
+      "intentId": "select-builder"
+    },
+    {
+      "intentId": "approach-shore"
+    },
+    {
+      "intentId": "build-shipyard"
+    },
+    {
+      "intentId": "select-shipyard"
+    },
+    {
+      "intentId": "produce-ship"
+    },
+    {
+      "intentId": "wait-exit"
+    },
+    {
+      "intentId": "select-ship"
+    },
+    {
+      "intentId": "sail"
+    }
+  ],
+  "history": {
+    "initialBalance": 3000,
+    "initialOwnedTypes": [
+      "spbuilder"
+    ],
+    "ownerPlayerId": "p1",
+    "projectileBirthsRequired": true,
+    "spend": [
+      {
+        "intentId": "build-shipyard",
+        "amount": 700,
+        "at": "first-step"
+      },
+      {
+        "intentId": "produce-ship",
+        "amount": 350,
+        "at": "action"
+      }
+    ],
+    "finalUnits": [
+      {
+        "ownerPlayerId": "p1",
+        "typeId": "spshipyard",
+        "fields": {
+          "alive": true,
+          "constructionProgress": 1,
+          "health": 1200
+        }
+      },
+      {
+        "ownerPlayerId": "p1",
+        "typeId": "spcruiser",
+        "fields": {
+          "alive": true,
+          "health": 4000,
+          "maxHealth": 4000
+        }
+      }
+    ]
+  }
+}

@@ -21,14 +21,7 @@ internal class PcOriginalImageProfile(val id: String, val jarBytes: Int, val jar
         fun versionTwo(): PcOriginalImageProfile = readBundled(2)
         fun versionThree(): PcOriginalImageProfile = readBundled(3)
         fun versionFour(): PcOriginalImageProfile = readBundled(4)
-        fun forPackage(pack: PreparedImagePack): PcOriginalImageProfile =
-            when (originalCertificateProfile(pack, "extraction.json")) {
-                "rw.pc.steam.9902063.images.v1" -> versionOne()
-                "rw.pc.steam.9902063.images.v2" -> versionTwo()
-                "rw.pc.steam.9902063.images.v3" -> versionThree()
-                "rw.pc.steam.9902063.images.v4" -> versionFour()
-                else -> bundled()
-            }
+        fun forPackage(pack: PreparedImagePack): PcOriginalImageProfile = PcOriginalProfileVersions.images(pack.manifest, null)
 
         private fun readBundled(version: Int): PcOriginalImageProfile {
             val path = "/visuals/pc-original-images-profile${if (version == 5) "" else "-v$version"}.json"

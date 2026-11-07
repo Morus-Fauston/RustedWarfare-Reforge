@@ -157,6 +157,7 @@ class VisualAssetSettingsSession(private val backend: VisualAssetSettings) : Aut
      * Retains only the non-GL descriptor, never the world, textures, or an unapplied selection. */
     internal fun rememberPublished(assets: PreparedVisualAssets, content: ContentPackChoice? = null) {
         if (assets.selection != selection) return
+        backend.onPublished(assets)
         lastPrepared = assets
         lastPreparedContent = content
     }

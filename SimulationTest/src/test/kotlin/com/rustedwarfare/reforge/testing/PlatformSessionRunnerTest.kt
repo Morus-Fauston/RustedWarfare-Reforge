@@ -23,6 +23,7 @@ class PlatformSessionRunnerTest {
             invoke(arrayOf(input.toString(), plan.toString(), output.toString(), "180"))
             val rows = Files.readAllLines(output.resolve("client-diagnostic.jsonl")).map { json.parseToJsonElement(it).jsonObject }
             assertTrue(rows.any { it["kind"] == s("visual-assets-ready") })
+            assertTrue(rows.all { it["generation"] == n(1) }, "Every first-world record carries the same explicit generation")
             for (invalid in listOf("0", "-1", "601", "invalid")) {
                 val refused = temporary.resolve("refused-$invalid")
                 assertFailsWith<IllegalArgumentException> { invoke(arrayOf(input.toString(), plan.toString(), refused.toString(), invalid)) }

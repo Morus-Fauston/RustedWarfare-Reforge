@@ -29,6 +29,8 @@ class UnitDefinition(
     val mech: MechDefinition? = null,
     val rotor: RotorDefinition? = null,
     val fixedUnderwaterTarget: FixedUnderwaterTargetProfile? = null,
+    /** Explicit author surface capability; native hull qualification remains separate. */
+    val authoredWaterCombat: Boolean = false,
 ) {
     val retainedUnconsumed: Set<String> = Collections.unmodifiableSet(LinkedHashSet(retainedUnconsumed))
     val maximumHealth: Double? get() = durability?.maxHp ?: combat?.maxHp
@@ -71,7 +73,8 @@ data class BuildingFootprint(val left: Int, val top: Int, val right: Int, val bo
 data class FootprintAnchor(val offsetX: Float, val offsetY: Float)
 data class BuildingProfile(val footprint: BuildingFootprint, val backImagePath: Path? = null,
     val anchor: FootprintAnchor? = null, val placementFootprint: BuildingFootprint = footprint,
-    val requiresResourcePool: Boolean = false)
+    val requiresResourcePool: Boolean = false,
+    val foundationMovementType: MovementType? = null)
 class BuilderProfile(buildingTypeIds: List<String>) {
     val buildingTypeIds: List<String> = Collections.unmodifiableList(ArrayList(buildingTypeIds))
     val range: Float = 85f
@@ -82,9 +85,10 @@ class BuilderProfile(buildingTypeIds: List<String>) {
 data class ConstructionProfile(val price: Long, val rate: Float)
 enum class FactoryExitProfile { NATIVE_LAND, CUSTOM_MECH, NATIVE_AIR, NATIVE_SEA }
 
-/** A native sea factory is immobile, but its foundation uses the water terrain class. */
+/** Author buildings declare their terrain class; native sea factories retain their existing water fallback. */
 val UnitDefinition.foundationMovementType: MovementType
-    get() = if (production?.exitProfile == FactoryExitProfile.NATIVE_SEA) MovementType.WATER else movement.type
+    get() = building?.foundationMovementType
+        ?: if (production?.exitProfile == FactoryExitProfile.NATIVE_SEA) MovementType.WATER else movement.type
 
 class ProductionProfile(unitTypeIds: List<String>, val exitProfile: FactoryExitProfile = FactoryExitProfile.NATIVE_LAND) {
     constructor(unitTypeId: String) : this(listOf(unitTypeId))
@@ -131,7 +135,10 @@ data class CombatProfile(
     val namedWeapons: WeaponCatalog? = null,
     val multiTargeting: Boolean = false,
     val rotateWithBody: Boolean = false,
-)
+) {
+    /** Bound to this actual immutable definition; replacements never reuse an old unit ID's layout. */
+    val weaponAssembly: WeaponAssembly by lazy(LazyThreadSafetyMode.PUBLICATION) { WeaponAssembly.compile(this) }
+}
 
 /** Stable content references and declaration order are separate from runtime storage indices. */
 class WeaponCatalog(weapons: List<NamedWeaponDefinition>) {

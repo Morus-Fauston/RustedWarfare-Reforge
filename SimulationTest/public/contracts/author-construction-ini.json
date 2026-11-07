@@ -1,0 +1,78 @@
+{
+  "schemaVersion": 1,
+  "kind": "behavior-contract",
+  "contractId": "public.author-construction.contract.v1",
+  "scope": "self-behavior",
+  "scenarioIds": [
+    "public.author-construction.v1"
+  ],
+  "comparison": {
+    "numberMode": "declared-per-field",
+    "tolerances": {}
+  },
+  "approval": {
+    "status": "tool-fixture-only",
+    "source": "Owned author constructor: 3000 initial, one payment 700, ordinary 1200 HP body, .001 binary32 work with existing preparation30. Fixed nonce; completion by1199. No original or performance claim."
+  },
+  "exclusions": [
+    "original-compatibility",
+    "platform-input",
+    "performance"
+  ],
+  "rules": [
+    {
+      "ruleId": "paid-once",
+      "when": {
+        "phase": "after-advance",
+        "stepIndex": 0
+      },
+      "assertions": [
+        {
+          "path": "economy.balances.p1",
+          "operator": "equals",
+          "value": 2300
+        },
+        {
+          "path": "units.constructed:p1:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.constructionProgress",
+          "operator": "equals",
+          "value": 0
+        }
+      ]
+    },
+    {
+      "ruleId": "completed",
+      "when": {
+        "phase": "after-advance",
+        "stepIndex": 1199
+      },
+      "assertions": [
+        {
+          "path": "economy.balances.p1",
+          "operator": "equals",
+          "value": 2300
+        },
+        {
+          "path": "units.constructed:p1:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.constructionProgress",
+          "operator": "equals",
+          "value": 1
+        },
+        {
+          "path": "units.constructed:p1:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.health",
+          "operator": "equals",
+          "value": 1200
+        }
+      ]
+    }
+  ],
+  "constructedUnits": [
+    {
+      "unitId": "constructed:p1:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "buildActionId": "build",
+      "builderId": "a",
+      "owner": "p1",
+      "typeId": "workshop",
+      "buildingNonce": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "birthStepIndex": 0
+    }
+  ]
+}

@@ -72,6 +72,25 @@ internal object ScenarioReader {
             if (grid.integer("width") != map.widthTiles.toLong() || grid.integer("height") != map.heightTiles.toLong())
                 throw InputError("Declared knowledge grid differs from verified map dimensions")
         }
+        fun checkedAuthor(loaded: ContentResult<LoadedUnitContent>, producer: Boolean? = null,
+                          upgrading: Boolean? = null): ContentResult<UnitDefinition> = when (loaded) {
+            is ContentResult.Failure -> loaded
+            is ContentResult.Success -> {
+                val declaredSources = identities.associateBy { it.path }
+                for (source in loaded.value.sources) {
+                    val declared = declaredSources[source.path.toRealPath()]
+                        ?: throw InputError("An inherited author source has no declared identity: ${source.path}")
+                    if (source.sha256 != declared.sha256 || source.bytes != Files.size(declared.path))
+                        throw InputError("Parsed author source differs from its declared identity: ${source.path}")
+                }
+                unwrap(loaded.value.verifyStable())
+                if (producer != null && (loaded.value.definition.production != null) != producer)
+                    throw InputError("Author factory adapter must declare its actual production capability")
+                if (upgrading != null && (loaded.value.definition.upgrades != null) != upgrading)
+                    throw InputError("Author factory adapter must declare its actual upgrade capability")
+                ContentResult.Success(loaded.value.definition)
+            }
+        }
         val definitions = unitRefs.zip(unitDeclarations).associate { (ref, declaration) ->
             verifyTemplateReferences(ref.path, paths, mutableSetOf())
             val unit = unwrap(when (declaration["loader"]?.jsonPrimitive?.content ?: "variant") {
@@ -80,6 +99,11 @@ internal object ScenarioReader {
                 "mech-heavy" -> ContentLoader.loadHeavyMechUnit(ref.path)
                 "helicopter" -> ContentLoader.loadHelicopterUnit(ref.path)
                 "battleship" -> ContentLoader.loadBattleshipUnit(ref.path)
+                "water-combat" -> checkedAuthor(ContentLoader.loadAuthorWaterUnitWithSources(ref.path))
+                "constructor" -> checkedAuthor(ContentLoader.loadAuthorConstructorWithSources(ref.path))
+                "author-factory" -> checkedAuthor(ContentLoader.loadAuthorBuildingWithSources(ref.path), false, false)
+                "author-producer" -> checkedAuthor(ContentLoader.loadAuthorBuildingWithSources(ref.path), true, false)
+                "author-upgrading-producer" -> checkedAuthor(ContentLoader.loadAuthorBuildingWithSources(ref.path), true, true)
                 "underwater-target" -> ContentLoader.loadUnderwaterTargetUnit(ref.path)
                 "factory" -> ContentLoader.loadFactory(ref.path)
                 "builder" -> ContentLoader.loadBuilder(ref.path)

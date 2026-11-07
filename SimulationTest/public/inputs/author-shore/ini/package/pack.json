@@ -1,0 +1,19 @@
+{
+  "format": "rw-reforge.content-pack.v1",
+  "id": "sp-author-shore-ini",
+  "name": "Owned author shore construction and existing ship",
+  "units": [
+    {
+      "type": "constructor",
+      "file": "units/spbuilder.ini"
+    },
+    {
+      "type": "factory",
+      "file": "units/spshipyard.ini"
+    },
+    {
+      "type": "water-combat",
+      "file": "units/spcruiser.ini"
+    }
+  ]
+}

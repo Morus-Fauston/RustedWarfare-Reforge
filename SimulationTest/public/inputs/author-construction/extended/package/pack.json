@@ -1,0 +1,39 @@
+{
+  "format": "rw-reforge.content-pack.v1",
+  "id": "sp-author-construction-extended",
+  "name": "Owned author constructor and ordinary building",
+  "units": [
+    {
+      "type": "constructor",
+      "file": "units/spbuilder.ini"
+    },
+    {
+      "type": "factory",
+      "file": "units/workshop.ini"
+    },
+    {
+      "type": "factory",
+      "file": "units/workshop_2.ini"
+    },
+    {
+      "type": "factory",
+      "file": "units/workshop_3.ini"
+    },
+    {
+      "type": "factory",
+      "file": "units/workshop_4.ini"
+    },
+    {
+      "type": "factory",
+      "file": "units/workshop_5.ini"
+    },
+    {
+      "type": "factory",
+      "file": "units/workshop_6.ini"
+    },
+    {
+      "type": "factory",
+      "file": "units/workshop_7.ini"
+    }
+  ]
+}

@@ -1,0 +1,8 @@
+{
+  "format": "rw-reforge.factory.v1",
+  "copyFrom": [
+    "factory-base.ini"
+  ],
+  "productionUnits": "builder,c_tank",
+  "exitProfile": "NATIVE_LAND"
+}

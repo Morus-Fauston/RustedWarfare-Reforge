@@ -1,0 +1,65 @@
+import groovy.json.JsonSlurper
+import groovy.json.JsonOutput
+import org.gradle.api.tasks.testing.Test
+
+def plan = new JsonSlurper().parse(new File(System.getProperty('development.selection')))
+def output = new File(plan.output)
+gradle.projectsEvaluated {
+    gradle.rootProject.allprojects { p ->
+        p.tasks.withType(Test).configureEach { task ->
+            def selection = plan.tasks[task.path]
+            if (selection != null) {
+                task.filter.setIncludePatterns(selection.classes as String[])
+                maxParallelForks = 1
+                outputs.upToDateWhen { false }
+                outputs.cacheIf { false }
+                if (plan.fixture != null) {
+                    systemProperty('p001.inputs.dir', new File(plan.repo, 'SimulationTest/public/'+plan.fixture).absolutePath)
+                    systemProperty('public.fixtures.dir', new File(plan.repo, 'SimulationTest/public/inputs').absolutePath)
+                }
+                systemProperty('repo.root', plan.repo)
+                def leaf = new File(output, selection.module)
+                reports.junitXml.outputLocation.set(new File(leaf, 'xml'))
+                reports.html.outputLocation.set(new File(leaf, 'html'))
+                binaryResultsDirectory.set(new File(leaf, 'binary'))
+                doFirst {
+                    leaf.mkdirs()
+                    new File(leaf, 'started.json').text = JsonOutput.toJson([task:task.path, millis:System.currentTimeMillis()])
+                }
+                afterSuite { descriptor, result ->
+                    if (descriptor.parent == null) {
+                        leaf.mkdirs()
+                        new File(leaf, 'completed.json').text = JsonOutput.toJson([task:task.path,
+                            tests:result.testCount, failures:result.failedTestCount, skipped:result.skippedTestCount])
+                    }
+                }
+            }
+        }
+    }
+}
+gradle.taskGraph.whenReady { graph ->
+    def tests = graph.allTasks.findAll { it instanceof Test }
+    if ((tests.collect { it.path } as Set) != (plan.tasks.keySet() as Set))
+        throw new GradleException('Unexpected or missing test task')
+    def rows = tests.collect { task ->
+        def selection = plan.tasks[task.path]
+        if ((task.filter.includePatterns as Set) != (selection.classes as Set))
+            throw new GradleException('Effective test selection differs from plan')
+        if (task.systemProperties['repo.root'] != plan.repo || (plan.fixture != null &&
+            (task.systemProperties['p001.inputs.dir'] != new File(plan.repo, 'SimulationTest/public/'+plan.fixture).absolutePath ||
+             task.systemProperties['public.fixtures.dir'] != new File(plan.repo, 'SimulationTest/public/inputs').absolutePath)))
+            throw new GradleException('Effective test inputs differ from plan')
+        [task:task.path, classes:task.filter.includePatterns, systemProperties:task.systemProperties,
+         javaLauncher:task.javaLauncher.get().executablePath.asFile.absolutePath]
+    }
+    new File(output, 'effective.json').text = JsonOutput.toJson([tests:rows,
+        daemonPid:ProcessHandle.current().pid(), javaHome:System.getProperty('java.home'),
+        gradleUserHome:gradle.gradleUserHomeDir.absolutePath])
+}
+def executions = []
+gradle.taskGraph.afterTask { task, state ->
+    executions.add([task:task.path, skipped:state.skipped, upToDate:state.upToDate,
+        noSource:state.noSource, skipMessage:state.skipMessage,
+        failure:state.failure == null ? null : state.failure.toString()])
+    new File(output, 'task-executions.json').text = JsonOutput.toJson(executions)
+}

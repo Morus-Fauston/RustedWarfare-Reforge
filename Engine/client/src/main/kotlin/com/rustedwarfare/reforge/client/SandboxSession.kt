@@ -20,13 +20,56 @@ data class ConstructionPreview(val typeId: String, val position: Position, val s
 
 class SandboxSession(scenario: Scenario, private val evidence: ClientEvidence = ClientEvidence.NONE,
                      val options: SandboxOptions = SandboxOptions(),
-                     clockMillis: () -> Long = { System.nanoTime() / 1_000_000L }) : AutoCloseable {
+                     clockMillis: () -> Long = { System.nanoTime() / 1_000_000L },
+                     val generation: Long = 1L) : AutoCloseable {
+    constructor(scenario: Scenario, evidence: ClientEvidence, options: SandboxOptions, clockMillis: () -> Long) :
+        this(scenario, evidence, options, clockMillis, 1L)
+
     private val scenario: Scenario = scenario.copy(automaticVision = options.knowledgeRules())
+    val hasConstructorDefinitions: Boolean = this.scenario.unitDefinitions.values.any { it.builder != null }
+    val hasProductionDefinitions: Boolean = this.scenario.unitDefinitions.values.any { it.production != null }
     val renderResources: SandboxRenderResources = SandboxRenderResources.from(this.scenario)
-    private val context = when (val initialized = SimulationContext.initialize(this.scenario)) {
-        is InitResult.Accepted -> initialized.context
-        is InitResult.Rejected -> error("${initialized.error.code}: ${initialized.error.message}")
+    private val commandHost = OfflineSandboxHost(this.scenario, options.deploymentEnabled, generation)
+    private val context = commandHost.context
+    private val commandWorld = context.world
+    private var commandSequence = 0L
+    private val pendingSandboxRequests = linkedMapOf<Long, SandboxCommandRequest>()
+    var lastSandboxReceipt: SandboxCommandReceipt? = null
+        private set
+    var sandboxCommandFeedback: String = SandboxCommands.HELP
+        private set
+    val canDeploy: Boolean get() = isOpen && options.deploymentEnabled
+
+    fun submitSandboxCommand(text: String): SandboxCommandReceipt {
+        commandSequence = Math.incrementExact(commandSequence)
+        val request = SandboxCommandRequest(commandSequence, commandWorld, generation, text)
+        val result = commandHost.submit(request)
+        if (result.status == SandboxCommandStatus.QUEUED) pendingSandboxRequests[result.sequence] = request
+        recordSandboxReceipt(request, result)
+        return result
     }
+
+    private fun recordSandboxReceipt(request: SandboxCommandRequest, result: SandboxCommandReceipt) {
+        lastSandboxReceipt = result
+        sandboxCommandFeedback = when (result.status) {
+            SandboxCommandStatus.HELP -> SandboxCommands.HELP
+            SandboxCommandStatus.QUEUED -> "Queued for next simulation step"
+            SandboxCommandStatus.APPLIED -> "Spawned ${checkNotNull(result.unitId)}"
+            SandboxCommandStatus.REJECTED -> "Rejected: ${result.code}" +
+                (result.errorPosition?.let { " at character $it" } ?: "")
+        }
+        evidence.recordWhenEnabled("sandbox-command") {
+            val command = result.command as? SandboxCommand.Spawn
+            mapOf("requestSequence" to result.sequence, "generation" to result.generation,
+                "worldId" to result.worldId, "stepIndex" to (result.stepIndex ?: nextStep),
+                "status" to result.status.name, "input" to request.text.take(512),
+                "parameters" to command?.let { mapOf("type" to it.typeId, "x" to it.position.x,
+                    "y" to it.position.y, "owner" to it.ownerPlayerId, "heading" to it.heading,
+                    "state" to it.state.name.lowercase(java.util.Locale.ROOT)) },
+                "unitId" to result.unitId, "code" to result.code, "errorPosition" to result.errorPosition)
+        }
+    }
+
     private var terrainKnowledge: List<com.rustedwarfare.reforge.core.knowledge.CellKnowledge>? = null
     private var latestFrame: SandboxFrame? = null
     val frame: SandboxFrame get() = checkNotNull(latestFrame) { "Match is closed" }
@@ -73,7 +116,7 @@ class SandboxSession(scenario: Scenario, private val evidence: ClientEvidence = 
         rejectedFeedback = false
         feedback = "Group $index: ${selectedIds.size} selected"
         evidence.recordWhenEnabled("group-recall") { mapOf("group" to index, "additive" to additive,
-            "selectedIds" to selectedIds.toList(), "center" to center?.fields()) }
+            "selectedIds" to selectedIds.toList(), "selectionRevision" to selectionRevision, "center" to center?.fields()) }
         return center
     }
     var lastCommandBatch: SelectionCommandBatch? = null
@@ -306,8 +349,15 @@ class SandboxSession(scenario: Scenario, private val evidence: ClientEvidence = 
     fun consumeSounds(listener: SoundListener): AuthorizedSoundBatch = context.consumeSounds(context.world, "p1", listener)
 
     fun tick() {
-        context.advance(Step(nextStep, 1.0, "sim-tick"))
+        commandHost.advance(Step(nextStep, 1.0, "sim-tick"))
         nextStep++
+        for ((sequence, request) in pendingSandboxRequests.toMap()) {
+            val result = checkNotNull(commandHost.receipt(sequence))
+            if (result.status != SandboxCommandStatus.QUEUED) {
+                recordSandboxReceipt(request, result)
+                pendingSandboxRequests.remove(sequence)
+            }
+        }
         publishFrame()
         observation.events.lastOrNull { it.kind == "unit-produced" }?.let { event ->
             observation.units.firstOrNull { it.unitId == event.unitId && it.ownerPlayerId == observation.playerId }?.let { unit ->
@@ -326,7 +376,8 @@ class SandboxSession(scenario: Scenario, private val evidence: ClientEvidence = 
                 selection.select(listOf(id), mode)
         } else if (mode == SelectionMode.REPLACE) selection.select(emptyList())
         feedback = selectedId?.let { "Selected $it" } ?: "No selection"
-        evidence.recordWhenEnabled("selection") { mapOf("selectedId" to selectedId, "world" to position.fields()) }
+        evidence.recordWhenEnabled("selection") { mapOf("selectedId" to selectedId, "selectedIds" to selectedIds.sorted(),
+            "selectionRevision" to selectionRevision, "world" to position.fields()) }
     }
 
     fun tap(position: Position) {
@@ -430,7 +481,8 @@ class SandboxSession(scenario: Scenario, private val evidence: ClientEvidence = 
         if (!isOpen) return
         try { capture("before-close") }
         finally {
-            context.close()
+            commandHost.close()
+            pendingSandboxRequests.clear()
             isOpen = false
             selection.clear()
             latestFrame = null

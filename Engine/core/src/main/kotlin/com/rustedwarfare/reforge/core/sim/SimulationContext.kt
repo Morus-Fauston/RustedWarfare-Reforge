@@ -3,6 +3,7 @@ package com.rustedwarfare.reforge.core.sim
 import com.rustedwarfare.reforge.core.content.MapDefinition
 import com.rustedwarfare.reforge.core.content.MovementType
 import com.rustedwarfare.reforge.core.content.foundationMovementType
+import com.rustedwarfare.reforge.core.content.DirectHitTargetKind
 import com.rustedwarfare.reforge.core.path.PlanningTerrain
 import com.rustedwarfare.reforge.core.path.PlanningSegmentClearance
 import com.rustedwarfare.reforge.core.path.PathDiagnosticsException
@@ -788,12 +789,8 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
                     reason = PathSearchReason.CONSTRUCTION_APPROACH, executionStep = step, targetRange = range)
             return path?.let { BuildingRoute(it, plannedKnowledgeRevision(worker), plannedBuildingRevision(worker)) }
         }
-        override fun birth(): BuildingBirth {
-            val objectId = nextObjectId
-            nextObjectId = Math.incrementExact(nextObjectId)
-            lastBirthSerial = Math.incrementExact(lastBirthSerial)
-            return BuildingBirth(objectId, "~produced/" + lastBirthSerial.toString().padStart(20, '0'))
-        }
+        override fun prepareConstruction(ownerPlayerId: String, typeId: String, position: Position, nonce: String): MutableUnit =
+            UnitRegistration.prepareConstruction(steps.current, checkNotNull(scenario), ownerPlayerId, typeId, position, nonce)
     }
 
     private fun updateConstruction(worker: MutableUnit, input: Scenario, step: Step) {
@@ -803,7 +800,7 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
         buildingWork = change.work
         productionLedger = change.ledger
         ordinaryUpgrades = change.upgrades
-        change.created?.let { units[it.unitId] = it }
+        change.created?.let { UnitRegistration.registerPrepared(steps.current, it) }
         change.reclaimedUnitId?.let { missileTargets = missileTargets?.remove(it) }
         if (change.created != null || change.reclaimedUnitId != null)
             buildingTerrain = BuildingTerrain.fromLive(input.map, units.values, checkNotNull(buildingTerrain))
@@ -850,9 +847,9 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
     private fun applyProduction(action: Action, unit: MutableUnit, typeId: String, nonce: String?): ActionResult {
         if (unit.definition.production == null) return reject(action, "cannot-produce", "Unit cannot produce")
         val exitProfile = unit.definition.production?.exitProfile
-        if (exitProfile in setOf(com.rustedwarfare.reforge.core.content.FactoryExitProfile.CUSTOM_MECH,
+        if ((unit.definition.className == "AuthoredBuilding" || exitProfile in setOf(com.rustedwarfare.reforge.core.content.FactoryExitProfile.CUSTOM_MECH,
                 com.rustedwarfare.reforge.core.content.FactoryExitProfile.NATIVE_AIR,
-                com.rustedwarfare.reforge.core.content.FactoryExitProfile.NATIVE_SEA) && !BuildingWork.isReady(unit))
+                com.rustedwarfare.reforge.core.content.FactoryExitProfile.NATIVE_SEA)) && !BuildingWork.isReady(unit))
             return reject(action, "factory-under-construction", if (exitProfile == com.rustedwarfare.reforge.core.content.FactoryExitProfile.NATIVE_AIR)
                 "The air factory must finish construction before accepting production"
                 else "The factory must finish construction before accepting production")
@@ -879,44 +876,81 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
     private fun advanceProduction(factory: MutableUnit, input: Scenario) {
         val tick = checkNotNull(productionLedger).advance(factory.unitId)
         tick.completed?.let { completed ->
-            check(completed.ownerPlayerId == factory.ownerPlayerId)
-            val definition = input.unitDefinitions.getValue(completed.typeId)
-            val publicId = "produced:${factory.ownerPlayerId}:${completed.unitNonce}"
-            check(publicId !in units) { "A paid production nonce must identify a new unit" }
-            val birth = FactoryExit.birth(factory, definition, input.map)
-            val position = birth.position
-            require(MapBounds.contains(input.map.widthTiles.toDouble() * input.map.tileWidth,
-                input.map.heightTiles.toDouble() * input.map.tileHeight, position, definition.radius)) {
-                "Produced unit collision circle must remain within the map"
-            }
-            val objectId = nextObjectId
-            nextObjectId = Math.addExact(nextObjectId, 1L)
-            lastBirthSerial = Math.incrementExact(lastBirthSerial)
-            val updateKey = "~produced/" + lastBirthSerial.toString().padStart(20, '0')
-            check(orderedUnits().lastOrNull()?.updateKey?.let { it < updateKey } != false)
-            val exit = birth.target
-            val born = MutableUnit(publicId, factory.ownerPlayerId, completed.typeId, definition, position, birth.heading,
-                objectId = objectId, updateKey = updateKey, producerId = factory.unitId, birthRemaining = birth.protection)
-            if (factory.definition.production?.exitProfile == com.rustedwarfare.reforge.core.content.FactoryExitProfile.CUSTOM_MECH) {
-                factory.productionSide = !factory.productionSide
-                if (birth.fallback) pendingEvents += Event("production-exit-fallback", publicId)
-            }
-            if (MapBounds.contains(input.map.widthTiles.toDouble() * input.map.tileWidth,
-                    input.map.heightTiles.toDouble() * input.map.tileHeight, exit, definition.radius)) {
-                born.moveTarget = exit
-                born.originMoveId = "production-exit:$publicId"
-                born.adoptRoute(listOf(exit), exit, -1L)
-            } else {
-                pendingEvents += Event("movement-cancelled", publicId)
-                pendingEvents += Event("path-unreachable", publicId)
-            }
-            units[publicId] = born
-            pendingEvents += Event("unit-produced", publicId)
+            UnitRegistration.produced(steps.current, input, factory, completed)
         }
         productionLedger = tick.ledger
     }
 
-    fun advance(step: Step): Observation {
+    internal fun isCurrentSandboxWorld(handle: WorldHandle): Boolean = !closed && activeWorld === handle
+
+    internal fun validateSandboxSpawn(command: SandboxCommand.Spawn, generation: Long, sequence: Long): SimulationError? {
+        val input = checkNotNull(scenario)
+        fun rejected(code: String) = SimulationError(code, "Sandbox spawn rejected: $code")
+        val definition = input.unitDefinitions[command.typeId] ?: return rejected("unknown-type")
+        if (UnitRegistration.sandboxId(command.ownerPlayerId, generation, sequence) in units)
+            return rejected("duplicate-unit-id")
+        if (input.players.none { it.playerId == command.ownerPlayerId }) return rejected("unknown-owner")
+        if (command.state == SandboxInitialState.DAMAGED && definition.maximumHealth == null)
+            return rejected("unsupported-state")
+        if (definition.production != null && productionLedger == null) return rejected("unsupported-type")
+        if (!command.heading.isFinite() || !MapBounds.contains(input.map.widthTiles.toDouble() * input.map.tileWidth,
+                input.map.heightTiles.toDouble() * input.map.tileHeight, command.position, definition.radius))
+            return rejected("invalid-placement")
+        if (definition.building?.requiresResourcePool != true && definition.movement.type != MovementType.AIR &&
+            policies.terrain.intersects(buildingTerrain?.collisionMap ?: input.map, command.position,
+                definition.radius, definition.foundationMovementType)) return rejected("invalid-placement")
+        if (definition.building != null) {
+            val cells = try {
+                BuildingTerrain.placementCells(input.map, definition, command.position, buildingTerrain?.cells.orEmpty())
+            } catch (failure: BuildingInitializationException) { return rejected("invalid-placement") }
+            if (orderedUnits().any { unit ->
+                    unit.alive && unit.definition.building == null && unit.definition.movement.type != MovementType.AIR &&
+                        (MapBounds.cell(unit.position.x, input.map.tileWidth, input.map.widthTiles) to
+                            MapBounds.cell(unit.position.y, input.map.tileHeight, input.map.heightTiles)) in cells
+                }) return rejected("invalid-placement")
+        }
+        return null
+    }
+
+    internal fun advanceSandbox(step: Step, commands: List<Pair<SandboxCommandRequest, SandboxCommand.Spawn>>):
+            Pair<Observation, List<SandboxCommandReceipt>> {
+        val results = mutableListOf<SandboxCommandReceipt>()
+        val observation = advanceInternal(step) {
+            for ((request, command) in commands) {
+                val error = validateSandboxSpawn(command, request.generation, request.sequence)
+                if (error != null) {
+                    results += SandboxCommandReceipt(request.sequence, request.generation, world.id,
+                        SandboxCommandStatus.REJECTED, command, step.stepIndex, code = error.code)
+                    continue
+                }
+                val born = UnitRegistration.sandbox(steps.current, checkNotNull(scenario), command,
+                    request.generation, request.sequence, policies.coordinates)
+                born.definition.production?.let { production ->
+                    val input = checkNotNull(scenario)
+                    productionLedger = checkNotNull(productionLedger).register(born.unitId,
+                        FactoryProductionSpec(born.ownerPlayerId, production.unitTypeIds.associateWith {
+                            checkNotNull(input.unitDefinitions.getValue(it).build)
+                        }, born.definition.upgrades?.actions.orEmpty()))
+                }
+                ordinaryUpgrades = ordinaryUpgrades?.register(born.unitId, born.definition)
+                if (born.definition.building != null) {
+                    val input = checkNotNull(scenario)
+                    buildingTerrain = buildingTerrain?.let { BuildingTerrain.fromLive(input.map, units.values, it) }
+                        ?: BuildingTerrain.initial(input.copy(units = orderedUnits().filter { it.alive }.map {
+                            UnitSpawn(it.unitId, it.ownerPlayerId, it.typeId, it.position, it.heading, it.height)
+                        }))
+                }
+                pendingEvents += Event("unit-spawned", born.unitId)
+                results += SandboxCommandReceipt(request.sequence, request.generation, world.id,
+                    SandboxCommandStatus.APPLIED, command, step.stepIndex, born.unitId)
+            }
+        }
+        return observation to results
+    }
+
+    fun advance(step: Step): Observation = advanceInternal(step) {}
+
+    private fun advanceInternal(step: Step, deploy: () -> Unit): Observation {
         check(!closed) { "Simulation is closed" }
         val currentScenario = checkNotNull(scenario)
         require(step.stepIndex >= 0 && (!hasAdvanced || step.stepIndex > stepIndex)) {
@@ -930,6 +964,7 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
         return steps.advance(currentScenario, step, actions,
             { index, time, nextRevision -> makeObservation(index, time, true, nextRevision) }) { candidate ->
             combatFrame += 1
+            deploy()
             buildingWork = buildingWork.advanceClock(step.delta)
             actions.forEach { applyAction(it, step.stepIndex) }
             for (unit in orderedUnits()) if (unit.alive && unit.tasks.firstOrNull()?.kind == UnitTaskKind.PATROL)
@@ -1086,16 +1121,7 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
         lastBirthSerial = 0L
         buildingWork = BuildingWork.initial()
         nextScenario.units.sortedBy { it.unitId }.forEach { spawn ->
-            units[spawn.unitId] = MutableUnit(
-                unitId = spawn.unitId,
-                ownerPlayerId = spawn.ownerPlayerId,
-                typeId = spawn.typeId,
-                definition = checkNotNull(nextScenario.unitDefinitions[spawn.typeId]),
-                position = spawn.position,
-                heading = policies.coordinates.normalize(spawn.heading),
-                height = checkNotNull(nextScenario.unitDefinitions[spawn.typeId]).movement.flight?.startingHeightOffset ?: spawn.height,
-                objectId = nextScenario.combatContract?.unitObjectIds?.getValue(spawn.unitId),
-            )
+            UnitRegistration.initial(steps.current, nextScenario, spawn, policies.coordinates)
         }
         missileTargets = if (nextScenario.unitDefinitions.values.any { it.combat?.projectile?.missile != null })
             MissileTargetIndex.initial(nextScenario.map, orderedUnits()) else null
@@ -1253,15 +1279,16 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
                     return SimulationError("unsupported-death-explosion", "Expected a durable immobile building and finite death area")
             }
             definition.production?.let { production ->
-                if (production.exitProfile == com.rustedwarfare.reforge.core.content.FactoryExitProfile.NATIVE_SEA &&
+                val authoredFactory = com.rustedwarfare.reforge.core.content.AuthorFactoryRules.supports(definition, input.unitDefinitions)
+                if (!authoredFactory && production.exitProfile == com.rustedwarfare.reforge.core.content.FactoryExitProfile.NATIVE_SEA &&
                     (!FactoryExit.supportsSeaFactory(definition) || input.unitDefinitions["heavyBattleship"]?.movement?.type != MovementType.WATER ||
                         input.unitDefinitions["heavyBattleship"]?.combat == null))
                     return SimulationError("unsupported-production", "Native sea exits require the finite factory tier and armed WATER product")
-                if (production.exitProfile == com.rustedwarfare.reforge.core.content.FactoryExitProfile.NATIVE_AIR &&
+                if (!authoredFactory && production.exitProfile == com.rustedwarfare.reforge.core.content.FactoryExitProfile.NATIVE_AIR &&
                     (!FactoryExit.supportsAirFactory(definition) || input.unitDefinitions["helicopter"]?.movement?.type != MovementType.AIR ||
                         input.unitDefinitions["helicopter"]?.combat == null))
                     return SimulationError("unsupported-production", "Native air exits require the complete finite L1 factory and armed AIR product capabilities")
-                if (production.exitProfile == com.rustedwarfare.reforge.core.content.FactoryExitProfile.CUSTOM_MECH &&
+                if (!authoredFactory && production.exitProfile == com.rustedwarfare.reforge.core.content.FactoryExitProfile.CUSTOM_MECH &&
                     (!FactoryExit.supportsMechFactory(definition) || input.unitDefinitions["builder"]?.builder == null ||
                         input.unitDefinitions["mechGun"]?.mech == null))
                     return SimulationError("unsupported-production", "Custom mech exits require the complete finite L1 factory and product capabilities")
@@ -1274,6 +1301,15 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
             }
             definition.building?.let { building ->
                 val shape = building.footprint
+                val authored = definition.className == "AuthoredBuilding"
+                if (building.foundationMovementType != null && (!authored ||
+                        building.foundationMovementType !in setOf(MovementType.LAND, MovementType.WATER)) ||
+                    authored && (building.foundationMovementType == null || definition.construction == null ||
+                        definition.production != null && !com.rustedwarfare.reforge.core.content.AuthorFactoryRules.supports(definition, input.unitDefinitions) ||
+                        definition.builder != null || definition.combat != null ||
+                        definition.upgrades != null && !com.rustedwarfare.reforge.core.content.AuthorFactoryRules.supports(definition, input.unitDefinitions) ||
+                        definition.income != null || definition.pointDefense != null))
+                    return SimulationError("unsupported-building", "Explicit author foundations require a finite plain construction body")
                 if (m.type != MovementType.NONE || definition.maximumHealth == null || definition.radius <= 0.0 ||
                     shape.left > 0 || shape.top > 0 || shape.right < 0 || shape.bottom < 0 ||
                     shape.left > shape.right || shape.top > shape.bottom ||
@@ -1284,8 +1320,19 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
                 m.maxTurnSpeed, m.turnAcceleration)
             val fourLegged = definition.mech?.kind == com.rustedwarfare.reforge.core.content.MechKind.FOUR_LEGGED
             val navalHull = definition.id == "heavyBattleship" && m.type == MovementType.WATER && definition.radius == 40.0
+            val authoredSurface = definition.authoredWaterCombat
+            if (authoredSurface && (m.type != MovementType.WATER || definition.combat == null ||
+                    definition.className != "CustomUnitMetadata" || !definition.id.matches(Regex("[a-z][a-z0-9_.-]*")) ||
+                    definition.radius <= 0.0 || !definition.displayRadius.isFinite() || definition.displayRadius <= 0.0 ||
+                    !definition.imageScale.isFinite() || definition.imageScale <= 0.0 || definition.totalFrames <= 0 ||
+                    definition.fixedUnderwaterTarget != null || definition.building != null || definition.production != null ||
+                    definition.builder != null || definition.construction != null || definition.income != null ||
+                    definition.upgrades != null || definition.deathExplosion != null || definition.pointDefense != null ||
+                    definition.mech != null || definition.rotor != null || m.flight != null ||
+                    definition.directHitTargetKind != DirectHitTargetKind.ORDINARY))
+                return SimulationError("unsupported-unit", "Expected finite authored surface combat without unsupported capability combinations")
             if (numbers.any { !it.isFinite() || it < 0.0 } ||
-                (definition.building == null && definition.radius >= input.map.tileWidth && !(fourLegged && definition.radius == 22.0) && !navalHull) ||
+                (definition.building == null && definition.radius >= input.map.tileWidth && !(fourLegged && definition.radius == 22.0) && !navalHull && !authoredSurface) ||
                 m.type != MovementType.AIR && !fourLegged && (m.slidingMode || m.ignoringBody) ||
                 fourLegged && (m.type != MovementType.LAND || !m.slidingMode || !m.ignoringBody)) {
                 return SimulationError("unsupported-unit", "Expected finite movement and the supported representative's radius and locomotion")
@@ -1403,6 +1450,8 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
             }
             val resourceBuilding = input.unitDefinitions.getValue(spawn.typeId).building?.requiresResourcePool == true
             val spawnDefinition = input.unitDefinitions.getValue(spawn.typeId)
+            if (spawnDefinition.authoredWaterCombat && spawn.height != 0.0)
+                return SimulationError("invalid-spawn", "Authored surface combat must start at height zero")
             if (spawnDefinition.id == "heavyBattleship" && spawnDefinition.movement.type == MovementType.WATER &&
                 spawnDefinition.radius == 40.0 && spawn.height != 0.0)
                 return SimulationError("invalid-spawn", "The finite surface battleship must start at height zero")
@@ -1647,8 +1696,6 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
     private fun updateNamedWeapons(unit: MutableUnit, delta: Double) {
         val input = checkNotNull(scenario)
         val contract = checkNotNull(input.combatContract)
-        val actorId = checkNotNull(unit.objectId)
-        val catalog = checkNotNull(unit.definition.combat?.namedWeapons)
         val candidates = orderedUnits()
         val globalRange = checkNotNull(unit.definition.combat).attackRange
         fun globalEligible(target: MutableUnit) = CombatTargetQuery.isEnemy(unit, target, input.players) &&
@@ -1679,68 +1726,9 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
         }
         val weaponCandidates = if (!patrol) candidates else if (unit.primaryCombatTargetId == null) emptyList()
             else candidates.filter { isVisibleTo(unit.ownerPlayerId, it.position) }
-        val states = checkNotNull(unit.namedWeapons)
-        for (definition in catalog.ordered) {
-            val state = states.getValue(definition.name)
-            state.aimReady = false
-            val weapon = NamedWeaponRuntime.profile(unit, definition)
-            OrdinaryWeapon.idle(contract.worldSeed, combatFrame, actorId, unit, delta, state, weapon)
-            if (definition.slave) continue
-            val target = NamedWeaponRuntime.target(unit, definition, state, primary, weaponCandidates, input.players, policies.coordinates)
-            if (state.targetId != target?.unitId) {
-                state.targetId = target?.unitId
-                if (target != null && target === manual) OrdinaryWeapon.refreshOffset(contract.worldSeed, combatFrame, actorId, unit, target, state)
-            }
-            if (target == null) NamedWeaponRuntime.idle(unit, definition, state, delta)
-        }
-        for (definition in catalog.ordered) {
-            if (definition.slave) continue
-            val state = states.getValue(definition.name)
-            val weapon = NamedWeaponRuntime.profile(unit, definition)
-            val target = units[state.targetId] ?: continue
-            if (weapon.idleSweep != null) {
-                state.idleHold = maxOf(state.idleHold, 70f)
-                state.idleBaseHeading = state.turretHeading
-            }
-            val residual = OrdinaryWeapon.aim(unit, target, delta, state, weapon) {
-                NamedWeaponRuntime.pivot(unit, definition, state)
-            }
-            state.aimReady = kotlin.math.abs(residual) < definition.aimMaxAngle
-        }
-        // The aim pass completes for every independent weapon before any slave reads its parent.
-        for (definition in catalog.ordered) {
-            if (!definition.slave) continue
-            val state = states.getValue(definition.name)
-            val parent = states.getValue(checkNotNull(definition.attachedTo))
-            val target = units[parent.targetId]?.takeIf {
-                NamedWeaponRuntime.qualifies(unit, it, definition, input.players, policies.coordinates)
-            }
-            state.targetId = target?.unitId
-            state.turretHeading = parent.turretHeading
-            state.aimReady = target != null && parent.aimReady
-        }
-        var active = false
-        for (definition in catalog.ordered) {
-            val state = states.getValue(definition.name)
-            val target = units[state.targetId] ?: continue
-            if (!state.aimReady || !NamedWeaponRuntime.qualifies(unit, target, definition, input.players, policies.coordinates)) continue
-            val weapon = NamedWeaponRuntime.profile(unit, definition)
-            if (state.cooldown == 0.0) active = true
-            if (definition.warmupNoReset) {
-                state.warmup = if (state.warmup < definition.warmup) state.warmup + delta else definition.warmup
-            }
-            if (state.cooldown != 0.0 || !definition.canShoot) continue
-            if (!definition.warmupNoReset && state.warmup < definition.warmup) {
-                state.warmup += delta
-                continue
-            }
-            val delay = NamedWeaponRuntime.effectiveDelay(definition, state)
-            if (!definition.warmupNoReset) state.warmup = 0.0
+        NamedWeaponRuntime.advance(unit, NamedWeaponFrame(contract.worldSeed, combatFrame, delta,
+            input.players, policies.coordinates, units, weaponCandidates, primary, manual)) { target, state, weapon, delay, definition ->
             fireWeapon(unit, target, state, weapon, delay, definition)
-        }
-        if (!active) for (definition in catalog.ordered) {
-            val state = checkNotNull(unit.namedWeapons).getValue(definition.name)
-            state.warmup = maxOf(0.0, state.warmup - definition.warmupCallDownRate * delta)
         }
     }
 
@@ -1751,23 +1739,7 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
         val contract = checkNotNull(scenario?.combatContract)
         val actorId = checkNotNull(unit.objectId)
         state.cooldown = effectiveDelay
-        if (definition != null) {
-            val catalog = checkNotNull(unit.definition.combat?.namedWeapons)
-            for (other in catalog.ordered) {
-                if (other.name == definition.name || other.linkDelayWithTurret != definition.name) continue
-                val otherState = checkNotNull(unit.namedWeapons).getValue(other.name)
-                // custom-fire's literal 9000 uses b(I), without the separate warmup transfer o(I).
-                if (otherState.cooldown < 9000.0 - (definition.shootDelay * 0.5 - other.warmup))
-                    otherState.cooldown = 0.0
-            }
-        }
-        definition?.attachedTo?.let { name ->
-            val parent = checkNotNull(unit.definition.combat?.namedWeapons).byName.getValue(name)
-            if (!parent.canShoot && parent.recoil.offset != 0.0) {
-                val parentState = checkNotNull(unit.namedWeapons).getValue(name)
-                parentState.cooldown = NamedWeaponRuntime.effectiveDelay(parent, parentState)
-            }
-        }
+        definition?.let { NamedWeaponRuntime.fired(unit, it) }
         val capturedOffset = state.offset
         weapon.projectile.missile?.let { missile ->
             val id = nextObjectId

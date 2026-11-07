@@ -1,0 +1,152 @@
+{
+  "schemaVersion": 1,
+  "scenarioId": "author-production-ini",
+  "rules": [
+    {
+      "intentId": "select-factory",
+      "actionType": "SelectAction",
+      "unitId": "a",
+      "accepted": true,
+      "unitIdentity": {
+        "ownerPlayerId": "p1",
+        "typeId": "spfactory"
+      },
+      "assertions": [
+        {
+          "path": "balance",
+          "operator": "equals",
+          "value": 3000
+        }
+      ]
+    },
+    {
+      "intentId": "buy-builder",
+      "actionType": "ProduceAction",
+      "unitId": "a",
+      "accepted": true,
+      "unitIdentity": {
+        "ownerPlayerId": "p1",
+        "typeId": "spfactory"
+      },
+      "assertions": [
+        {
+          "path": "balance",
+          "operator": "equals",
+          "value": 2500
+        }
+      ],
+      "created": {
+        "event": "unit-produced",
+        "typeId": "builder",
+        "position": {
+          "x": 110,
+          "y": 215
+        }
+      },
+      "tail": {
+        "samples": 10,
+        "assertions": [
+          {
+            "path": "balance",
+            "operator": "equals",
+            "value": 2500
+          },
+          {
+            "path": "factoryQueues.a.items",
+            "operator": "equals",
+            "value": []
+          }
+        ]
+      }
+    },
+    {
+      "intentId": "queue-tank",
+      "actionType": "ProduceAction",
+      "unitId": "a",
+      "accepted": true,
+      "unitIdentity": {
+        "ownerPlayerId": "p1",
+        "typeId": "spfactory"
+      },
+      "assertions": [
+        {
+          "path": "balance",
+          "operator": "equals",
+          "value": 2150
+        },
+        {
+          "path": "factoryQueues.a.items",
+          "operator": "equals",
+          "value": [
+            {
+              "typeId": "c_tank",
+              "progress": 0
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "intentId": "cancel-tank",
+      "actionType": "CancelProductionAction",
+      "unitId": "a",
+      "accepted": true,
+      "unitIdentity": {
+        "ownerPlayerId": "p1",
+        "typeId": "spfactory"
+      },
+      "assertions": [
+        {
+          "path": "balance",
+          "operator": "equals",
+          "value": 2500
+        },
+        {
+          "path": "factoryQueues.a.items",
+          "operator": "equals",
+          "value": []
+        }
+      ]
+    },
+    {
+      "intentId": "buy-tank",
+      "actionType": "ProduceAction",
+      "unitId": "a",
+      "accepted": true,
+      "unitIdentity": {
+        "ownerPlayerId": "p1",
+        "typeId": "spfactory"
+      },
+      "assertions": [
+        {
+          "path": "balance",
+          "operator": "equals",
+          "value": 2150
+        }
+      ],
+      "created": {
+        "event": "unit-produced",
+        "typeId": "c_tank",
+        "position": {
+          "x": 110,
+          "y": 215
+        }
+      },
+      "tail": {
+        "samples": 10,
+        "assertions": [
+          {
+            "path": "balance",
+            "operator": "equals",
+            "value": 2150
+          },
+          {
+            "path": "factoryQueues.a.items",
+            "operator": "equals",
+            "value": []
+          }
+        ]
+      }
+    }
+  ]
+}

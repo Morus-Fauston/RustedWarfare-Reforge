@@ -1,0 +1,47 @@
+{
+  "schemaVersion": 1,
+  "scenarioId": "author-upgrade-hjson",
+  "inputs": "../../inputs/author-upgrade/hjson",
+  "contentPack": {
+    "directory": "package",
+    "unitId": "spfactory"
+  },
+  "intents": [
+    {
+      "intentId": "select-factory",
+      "kind": "select",
+      "position": {
+        "x": 110,
+        "y": 210
+      }
+    },
+    {
+      "intentId": "queue-upgrade",
+      "kind": "upgrade",
+      "upgradeId": "spfactoryt2"
+    },
+    {
+      "intentId": "cancel-upgrade",
+      "kind": "cancelUpgrade",
+      "upgradeId": "spfactoryt2"
+    },
+    {
+      "intentId": "finish-upgrade",
+      "kind": "upgrade",
+      "upgradeId": "spfactoryt2",
+      "waitSteps": 300
+    },
+    {
+      "intentId": "buy-builder",
+      "kind": "produce",
+      "typeId": "builder",
+      "waitSteps": 600
+    },
+    {
+      "intentId": "buy-tank",
+      "kind": "produce",
+      "typeId": "c_tank",
+      "waitSteps": 600
+    }
+  ]
+}

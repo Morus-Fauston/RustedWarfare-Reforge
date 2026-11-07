@@ -105,7 +105,7 @@ internal class OrdinaryUpgrades private constructor(private val definitions: Map
         val oldMaximum = checkNotNull(unit.definition.maximumHealth).toFloat()
         val nextMaximum = checkNotNull(definition.maximumHealth).toFloat()
         // Native sea tier conversion changes its menu/appearance only; its setter never writes HP.
-        val nativeSea = unit.definition.production?.exitProfile == com.rustedwarfare.reforge.core.content.FactoryExitProfile.NATIVE_SEA
+        val nativeSea = FactoryExit.supportsSeaFactory(unit.definition)
         val health = if (nativeSea) checkNotNull(unit.health)
             else (checkNotNull(unit.health).toFloat() / oldMaximum * nextMaximum).toDouble()
         require(health.isFinite() && health in 0.0..nextMaximum.toDouble()) { "Converted health must remain finite and bounded" }

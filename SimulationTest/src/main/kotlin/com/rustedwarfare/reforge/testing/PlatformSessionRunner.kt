@@ -41,7 +41,9 @@ object PlatformSessionRunner {
         var sequence = 0L
         Files.newBufferedWriter(output.resolve("client-diagnostic.jsonl"), CREATE_NEW).use { writer ->
             val evidence = ClientEvidence { kind, values ->
-                val row = obj("sequence" to n(sequence++), "kind" to s(kind))
+                // This adapter executes one freshly loaded world per invocation.
+                // Label every record so readers can reject stale rows even if worldId text is reused.
+                val row = obj("sequence" to n(sequence++), "kind" to s(kind), "generation" to n(1))
                 writer.write(JsonObject(row + values.mapValues { encode(it.value) }).toString())
                 writer.newLine()
                 writer.flush()

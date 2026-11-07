@@ -10,8 +10,9 @@ import java.util.HexFormat
 /** One audit's checked source bytes. Consumers must not mutate returned internal buffers.
  * Publication still checks the current complete tree; closing releases only the transient bytes. */
 internal class PcFrozenResourceInputs private constructor(
-    private val roots: List<Path>, private val initial: Map<Path, String>, private val retainedBytesLimit: Long,
+    private val roots: List<Path>, private val initial: Map<Path, Member>, private val retainedBytesLimit: Long,
 ) : AutoCloseable {
+    private data class Member(val sha256: String, val bytes: Long)
     private val bytes = linkedMapOf<Path, ByteArray>()
     private var closed = false
     private var retainedBytes = 0L
@@ -22,7 +23,7 @@ internal class PcFrozenResourceInputs private constructor(
         checkVisualCancellation()
         val file = input.toAbsolutePath().normalize()
         val expected = initial[file]
-        require(expected != null && expected != "directory") { "RESOURCE_PACK_SOURCE_CHANGED: Unknown frozen member $file" }
+        require(expected != null && expected.bytes >= 0) { "RESOURCE_PACK_SOURCE_CHANGED: Unknown frozen member $file" }
         bytes[file]?.let { cached ->
             require(cached.size <= maximum) { "RESOURCE_PACK_SOURCE_CHANGED: Member exceeds read bound $file" }
             return cached
@@ -39,7 +40,7 @@ internal class PcFrozenResourceInputs private constructor(
         val after = attributes()
         require(captured.size.toLong() == before.size() && captured.size <= maximum &&
             before.size() == after.size() && before.lastModifiedTime() == after.lastModifiedTime() &&
-            before.fileKey() == after.fileKey() && visualHash(captured) == expected) {
+            before.fileKey() == after.fileKey() && captured.size.toLong() == expected.bytes && visualHash(captured) == expected.sha256) {
             "RESOURCE_PACK_SOURCE_CHANGED: Frozen member changed while reading $file"
         }
         checkVisualCancellation()
@@ -54,9 +55,42 @@ internal class PcFrozenResourceInputs private constructor(
     fun sha256(input: Path): String {
         checkVisualCancellation()
         val file = input.toAbsolutePath().normalize()
-        return requireNotNull(initial[file]?.takeUnless { it == "directory" }) {
+        return requireNotNull(initial[file]?.takeIf { it.bytes >= 0 }?.sha256) {
             "RESOURCE_PACK_SOURCE_CHANGED: Unknown frozen member $file"
         }
+    }
+
+    /** Metadata of the complete bytes actually hashed at capture, not a cache's claim. */
+    fun identityFor(input: Path): com.rustedwarfare.reforge.core.content.ContentSourceIdentity {
+        checkVisualCancellation()
+        val file = input.toAbsolutePath().normalize()
+        val member = requireNotNull(initial[file]?.takeIf { it.bytes >= 0 }) { "RESOURCE_PACK_SOURCE_CHANGED: Unknown frozen member $file" }
+        return com.rustedwarfare.reforge.core.content.ContentSourceIdentity(file, member.bytes, member.sha256)
+    }
+
+    fun requireMember(input: Path, bytes: Long, sha256: String) = identityFor(input).also {
+        require(it.bytes == bytes && it.sha256 == sha256) { "RESOURCE_PACK_SOURCE_CHANGED: Captured member differs: $input" }
+    }
+
+    fun snapshotIdentity(root: Path? = null): String {
+        checkVisualCancellation()
+        require(root == null || initial[root]?.bytes == -1L)
+        val digest = MessageDigest.getInstance("SHA-256")
+        for ((path, member) in initial.entries.filter { root == null || it.key.startsWith(root) }.sortedBy { it.key.toString() }) {
+            val name = path.toString().toByteArray(Charsets.UTF_8)
+            digest.update(java.nio.ByteBuffer.allocate(4).putInt(name.size).array()); digest.update(name)
+            digest.update(java.nio.ByteBuffer.allocate(8).putLong(member.bytes).array())
+            digest.update(member.sha256.toByteArray(Charsets.US_ASCII))
+        }
+        return HexFormat.of().formatHex(digest.digest())
+    }
+
+    fun filesUnder(root: Path): Set<String> {
+        checkVisualCancellation()
+        require(initial[root]?.bytes == -1L)
+        return initial.entries.filter { it.key.startsWith(root) && it.value.bytes >= 0 }.map {
+            root.relativize(it.key).toString().replace('\\', '/')
+        }.toSet()
     }
 
     /** A separate publication boundary, never a cached successful check. Valid after close(). */
@@ -73,8 +107,8 @@ internal class PcFrozenResourceInputs private constructor(
             return PcFrozenResourceInputs(roots, snapshot(roots), retainedBytesLimit)
         }
 
-        private fun snapshot(roots: List<Path>): Map<Path, String> {
-            val result = linkedMapOf<Path, String>()
+        private fun snapshot(roots: List<Path>): Map<Path, Member> {
+            val result = linkedMapOf<Path, Member>()
             val buffer = ByteArray(64 * 1024)
             for (root in roots) {
                 require(root.toRealPath() == root && Files.isDirectory(root, NOFOLLOW_LINKS)) {
@@ -87,7 +121,7 @@ internal class PcFrozenResourceInputs private constructor(
                     require(!Files.isSymbolicLink(path) && path.toRealPath() == path) {
                         "RESOURCE_PACK_SOURCE_CHANGED: Linked package member $path"
                     }
-                    if (Files.isDirectory(path, NOFOLLOW_LINKS)) { result[path] = "directory"; continue }
+                    if (Files.isDirectory(path, NOFOLLOW_LINKS)) { result[path] = Member("", -1); continue }
                     fun attributes() = Files.readAttributes(path, BasicFileAttributes::class.java, NOFOLLOW_LINKS)
                     val before = attributes()
                     require(before.isRegularFile) { "RESOURCE_PACK_SOURCE_CHANGED: Invalid package member $path" }
@@ -108,7 +142,7 @@ internal class PcFrozenResourceInputs private constructor(
                         before.lastModifiedTime() == after.lastModifiedTime() && before.fileKey() == after.fileKey()) {
                         "RESOURCE_PACK_SOURCE_CHANGED: Package member changed while reading $path"
                     }
-                    result[path] = HexFormat.of().formatHex(digest.digest())
+                    result[path] = Member(HexFormat.of().formatHex(digest.digest()), count)
                 }
                 require(members() == paths) { "RESOURCE_PACK_SOURCE_CHANGED: Package membership changed $root" }
             }

@@ -18,7 +18,11 @@ internal object PcOriginalResourceContracts {
         verify(pack, profile, inputs, null)
 
     fun verify(pack: PreparedImagePack, profile: PcOriginalResourceProfile, inputs: PcFrozenResourceInputs?,
-        imageQualification: PcOriginalImageContracts.Qualification?) {
+        imageQualification: PcOriginalImageContracts.Qualification?) = verify(pack, profile, inputs, imageQualification, null)
+
+    fun verify(pack: PreparedImagePack, profile: PcOriginalResourceProfile, inputs: PcFrozenResourceInputs?,
+        imageQualification: PcOriginalImageContracts.Qualification?, reviewed: PcTrustedOutputVersion?) {
+        require(reviewed == null || inputs != null && reviewed.basis == PcTrustedOutputIndex.basis(profile))
         val root = pack.manifest.parent
         fun bad(reason: String): Nothing = throw IllegalArgumentException("SOURCE_GENERATED_RESOURCE_PACKAGE_INVALID: ${pack.metadata.id} / $root: $reason")
         fun text(row: JsonValue, key: String): String {
@@ -56,6 +60,13 @@ internal object PcOriginalResourceContracts {
             if (bytes.size.toLong() != before.first || attributes() != before || hash != null && visualHash(bytes) != hash) bad("Certificate member changed or SHA-256 differs: $name")
             return bytes
         }
+        fun checkMember(name: String, size: Int, hash: String) {
+            if (reviewed != null) {
+                val file = root.resolve(name).normalize()
+                if (!file.startsWith(root) || file == root || name.split('/').any { it.isBlank() || it == "." || it == ".." }) bad("Unsafe certificate member $name")
+                requireNotNull(inputs).requireMember(file, size.toLong(), hash)
+            } else member(name, size, hash)
+        }
         try {
             val bytes = member("resource-extraction.json")
             val proof = JsonReader().parse(bytes.toString(Charsets.UTF_8))
@@ -88,6 +99,8 @@ internal object PcOriginalResourceContracts {
                     val image = pack.images[ResourceId.parse(address)] ?: bad("Missing raw image $address")
                     if (text(row, "resourceId") != address || text(row, "renderableFile") != png || image.declaration.file != png ||
                         image.declaration.frameWidth != source.width || image.declaration.frameHeight != source.height || image.declaration.totalFrames != 1) bad("Raw image declaration differs: $address")
+                    if (imageQualification == null) PcOriginalImageContracts.verifyRawPixels(source,
+                        member(file, source.bytes, source.sha256), image)
                     expectedImages += png; addresses += ResourceId.parse(address)
                 }
             }
@@ -106,12 +119,20 @@ internal object PcOriginalResourceContracts {
                 val canonical = "sounds/${visualHash(source.path.toByteArray(Charsets.UTF_8))}.wav"
                 if (text(row, "file") != file || number(row, "bytes") != source.bytes || text(row, "sha256") != source.sha256 || text(row, "format") != source.format ||
                     text(row, "resourceId") != address(source.path).value || text(row, "canonicalFile") != canonical) bad("Original audio identity differs: ${source.path}")
-                val decoded = PcmAudioDecoder.decode(member(file, source.bytes, source.sha256), source.path)
+                val decoded = if (reviewed == null) PcmAudioDecoder.decode(member(file, source.bytes, source.sha256), source.path)
+                else reviewed.sounds.getValue(canonical).let { known ->
+                    checkMember(file, source.bytes, source.sha256)
+                    // The distribution facts describe canonical PCM16 with its exact 44-byte header.
+                    val canonicalBytes = member(canonical, known.bytes, known.sha256)
+                    PcmAudio(known.channels, known.sampleRate, canonicalBytes.copyOfRange(44, canonicalBytes.size)).also {
+                        require(it.frames == known.frames && visualHash(it.wavBytes()) == known.sha256)
+                    }
+                }
                 val wav = decoded.wavBytes(); val hash = visualHash(wav)
                 if (decoded.channels != source.channels || decoded.sampleRate != source.sampleRate || number(row, "channels") != decoded.channels ||
                     number(row, "sampleRate") != decoded.sampleRate || number(row, "frames") != decoded.frames || number(row, "canonicalBytes") != wav.size ||
                     text(row, "canonicalSha256") != hash) bad("Canonical audio format differs: ${source.path}")
-                member(canonical, wav.size, hash)
+                checkMember(canonical, wav.size, hash)
                 val sound = pack.sounds[address(source.path)] ?: bad("Missing sound declaration ${source.path}")
                 if (sound.sha256 != hash || sound.bytes != wav.size || sound.channels != decoded.channels || sound.sampleRate != decoded.sampleRate || sound.frames != decoded.frames) bad("Prepared audio differs: ${source.path}")
                 expectedFiles += file; expectedFiles += canonical
@@ -131,13 +152,16 @@ internal object PcOriginalResourceContracts {
             if (music.map { text(it, "path") }.distinct().size != music.size || music.any { !text(it, "path").startsWith("assets/music/") || text(it, "reason") != "music-out-of-scope" }) bad("Music exclusion evidence differs")
             val outputs = rows(proof, "outputs"); val byFile = outputs.associateBy { text(it, "file") }
             if (outputs.size != byFile.size || byFile.keys != expectedFiles) bad("Complete resource output collection differs")
-            for (row in outputs) member(text(row, "file"), number(row, "bytes"), text(row, "sha256"))
-            val actual = Files.walk(root).use { files -> files.map { file ->
+            for (row in outputs) checkMember(text(row, "file"), number(row, "bytes"), text(row, "sha256"))
+            val actual = if (reviewed != null) requireNotNull(inputs).filesUnder(root) else Files.walk(root).use { files -> files.map { file ->
                 if (Files.isSymbolicLink(file) || file.toRealPath() != file) bad("Linked complete package entry $file")
                 file
             }.filter { Files.isRegularFile(it, NOFOLLOW_LINKS) }.map { root.relativize(it).toString().replace('\\', '/') }.toList().toSet() }
             if (actual != expectedFiles + "resource-extraction.json") bad("Unaccounted complete resource package files")
-            member("resource-extraction.json", bytes.size, visualHash(bytes)); pack.verify(); pack.verifySources()
+            member("resource-extraction.json", bytes.size, visualHash(bytes))
+            // A reviewed proof is over this invocation's complete capture. Final
+            // preparation and load publication still recheck current source/output bytes.
+            if (reviewed == null) { pack.verify(); pack.verifySources() }
         } catch (failure: CancellationException) { throw failure }
         catch (failure: Exception) { bad(failure.message ?: failure.javaClass.name) }
     }

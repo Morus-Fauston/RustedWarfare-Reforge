@@ -20,14 +20,7 @@ internal class PcOriginalResourceProfile(val id: String, val images: PcOriginalI
         fun versionTwo(): PcOriginalResourceProfile = readBundled(2)
         fun versionThree(): PcOriginalResourceProfile = readBundled(3)
         fun versionFour(): PcOriginalResourceProfile = readBundled(4)
-        fun forPackage(pack: PreparedImagePack): PcOriginalResourceProfile =
-            when (originalCertificateProfile(pack, "resource-extraction.json")) {
-                "rw.pc.steam.9902063.resources.v1" -> versionOne()
-                "rw.pc.steam.9902063.resources.v2" -> versionTwo()
-                "rw.pc.steam.9902063.resources.v3" -> versionThree()
-                "rw.pc.steam.9902063.resources.v4" -> versionFour()
-                else -> bundled()
-            }
+        fun forPackage(pack: PreparedImagePack): PcOriginalResourceProfile = PcOriginalProfileVersions.resources(pack.manifest, null)
 
         private fun readBundled(version: Int): PcOriginalResourceProfile {
             fun resource(name: String) = requireNotNull(PcOriginalResourceProfile::class.java.getResourceAsStream("/visuals/$name")) {

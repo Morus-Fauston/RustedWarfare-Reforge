@@ -1,0 +1,84 @@
+{
+  "schemaVersion": 1,
+  "scenarioId": "author-construction-ini",
+  "rules": [
+    {
+      "intentId": "select-builder",
+      "actionType": "SelectAction",
+      "unitId": "a",
+      "accepted": true,
+      "unitIdentity": {
+        "ownerPlayerId": "p1",
+        "typeId": "spbuilder"
+      },
+      "assertions": [
+        {
+          "path": "balance",
+          "operator": "equals",
+          "value": 3000
+        }
+      ]
+    },
+    {
+      "intentId": "build-workshop",
+      "actionType": "BuildAction",
+      "unitId": "a",
+      "accepted": true,
+      "unitIdentity": {
+        "ownerPlayerId": "p1",
+        "typeId": "spbuilder"
+      },
+      "assertions": [
+        {
+          "path": "balance",
+          "operator": "equals",
+          "value": 3000
+        }
+      ],
+      "actionFields": {
+        "buildingTypeId": "workshop"
+      },
+      "targetFromIntent": true,
+      "created": {
+        "event": "construction-created",
+        "typeId": "workshop",
+        "position": {
+          "x": 190,
+          "y": 210
+        }
+      }
+    },
+    {
+      "intentId": "finish-workshop",
+      "actionType": "SelectAction",
+      "unitId": "a",
+      "accepted": true,
+      "unitIdentity": {
+        "ownerPlayerId": "p1",
+        "typeId": "spbuilder"
+      },
+      "assertions": [
+        {
+          "path": "balance",
+          "operator": "equals",
+          "value": 2300
+        }
+      ],
+      "tail": {
+        "samples": 10,
+        "assertions": [
+          {
+            "path": "balance",
+            "operator": "equals",
+            "value": 2300
+          },
+          {
+            "path": "units.a.tasks",
+            "operator": "equals",
+            "value": []
+          }
+        ]
+      }
+    }
+  ]
+}

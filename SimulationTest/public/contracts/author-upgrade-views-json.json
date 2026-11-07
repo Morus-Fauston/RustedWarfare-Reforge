@@ -1,0 +1,67 @@
+{
+  "schemaVersion": 1,
+  "kind": "behavior-contract",
+  "contractId": "public.author-upgrade-views.contract.v1",
+  "scope": "self-behavior",
+  "scenarioIds": [
+    "public.author-upgrade-views.v1"
+  ],
+  "comparison": {
+    "numberMode": "declared-per-field",
+    "tolerances": {}
+  },
+  "approval": {
+    "status": "tool-fixture-only",
+    "source": "Owned short author-upgrade factory capability transition, fixed .004 rate and2100 fee; p1/p2 actual authorized views archived. Independent target boundary249. No original/platform/performance claim."
+  },
+  "exclusions": [
+    "original-compatibility",
+    "platform-input",
+    "performance"
+  ],
+  "producedUnits": [],
+  "rules": [
+    {
+      "ruleId": "paid",
+      "when": {
+        "phase": "after-advance",
+        "stepIndex": 0
+      },
+      "assertions": [
+        {
+          "path": "economy.balances.p1",
+          "operator": "equals",
+          "value": 7900
+        }
+      ]
+    },
+    {
+      "ruleId": "converted",
+      "when": {
+        "phase": "after-advance",
+        "stepIndex": 249
+      },
+      "assertions": [
+        {
+          "path": "units.f.type",
+          "operator": "equals",
+          "value": "spfactoryt2"
+        },
+        {
+          "path": "units.f.health",
+          "operator": "equals",
+          "value": 1800
+        }
+      ]
+    }
+  ],
+  "convertedUnits": [
+    {
+      "unitId": "f",
+      "upgradeActionId": "upgrade",
+      "sourceTypeId": "spfactory",
+      "targetTypeId": "spfactoryt2",
+      "completionStepIndex": 249
+    }
+  ]
+}
