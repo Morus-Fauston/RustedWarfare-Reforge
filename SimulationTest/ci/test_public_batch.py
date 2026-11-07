@@ -158,6 +158,14 @@ class PublicBatchTest(unittest.TestCase):
                 '--kind', 'mechanism', '--output', str(output)], capture_output=True, text=True)
             self.assertEqual(2, retry.returncode)
             self.assertEqual(original, (output/'result.json').read_bytes())
+            pr_output = repo/'pr-batch'
+            prepared_failure = subprocess.run([sys.executable, '-B', str(ci/'public_batch.py'),
+                '--kind', 'pr', '--output', str(pr_output)], capture_output=True, text=True, timeout=30)
+            self.assertEqual(1, prepared_failure.returncode, prepared_failure.stderr)
+            pr_batch = json.loads((pr_output/'result.json').read_text(encoding='utf8'))
+            self.assertEqual(9, pr_batch['sharedBuild']['exitCode'])
+            self.assertEqual([], pr_batch['suites'], 'Preparation failure must precede every suite')
+            self.assertFalse((pr_output/'content-movement-knowledge').exists())
 
 
 if __name__ == '__main__':

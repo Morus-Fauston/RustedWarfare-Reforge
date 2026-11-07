@@ -145,14 +145,25 @@ def plan_suite(repo, name, kind):
                 pythonTests=python_tests, inputScope=suite.get('inputScope', 'public'), fixture=suite.get('fixture'))
 
 
-def build_shared_distribution(repo, output, source, command_timeout_seconds=600):
-    """Produce one immutable long-batch package, not a previous test result."""
-    from public_distribution import seal, verify, toolchain_identity
+def build_shared_distribution(repo, output, source, command_timeout_seconds=600, preparation_plan=None, forks=1):
+    """Pin one batch's package and, for PR, its compiled test inputs; never test results."""
+    from public_distribution import seal, verify, toolchain_identity, artifact_identities
     output.mkdir(parents=True, exist_ok=False)
     started = time.monotonic()
     project = repo/'SimulationTest'
     wrapper = [str(project/'gradlew.bat')] if os.name == 'nt' else ['sh', str(project/'gradlew')]
     argv = wrapper + [':installDist', '--no-daemon', '--console=plain', '--max-workers=1', '--rerun-tasks']
+    preparation = None
+    kind = 'pr' if preparation_plan is not None else 'long'
+    if preparation_plan is not None:
+        modules = sorted({m for row in preparation_plan['suites'] for m in row['plan']['tests']})
+        tasks = [(':testClasses' if m == 'tools' else ':'+m+':testClasses') for m in modules] + [':installDist']
+        control = dict(mode='prepare', tasks={}, modules=modules, preparationTasks=tasks,
+                       repo=str(repo.resolve()), output=str(output.resolve()), testForks=forks)
+        (output/'selection.json').write_text(json.dumps(control), encoding='utf8')
+        argv = wrapper + [':publicPreparation', '--daemon', '--console=plain', '--max-workers='+str(forks),
+            '--rerun-tasks', '--no-build-cache', '--init-script', str(project/'ci/development_tests.gradle'),
+            '-Ddevelopment.selection='+str(output/'selection.json')]
     result = dict(status='execution-failed', argv=argv, exitCode=None)
     try:
         initial_toolchain = toolchain_identity()
@@ -167,12 +178,23 @@ def build_shared_distribution(repo, output, source, command_timeout_seconds=600)
         result['toolchainAfter'] = final_toolchain
         if final_toolchain != initial_toolchain:
             raise RuntimeError('JDK or Gradle configuration changed during shared distribution build')
+        if preparation_plan is not None:
+            effective = json.loads((output/'effective.json').read_text(encoding='utf8'))
+            executions = json.loads((output/'task-executions.json').read_text(encoding='utf8'))
+            if (effective['tests'] or effective['mode'] != 'prepare' or effective['preparationTasks'] != tasks or
+                    any(r['failure'] for r in executions) or
+                    not set(tasks).issubset(r['task'] for r in executions)):
+                raise RuntimeError('Incomplete shared preparation task execution')
+            preparation = dict(repo=str(repo.resolve()), selection=[r['plan'] for r in preparation_plan['suites']],
+                tasks=tasks, executions=executions, effective=effective,
+                artifacts=artifact_identities(json.loads((output/'artifact-roots.json').read_text(encoding='utf8'))))
         package = output/'package'
         shutil.copytree(project/'build/install/simulation-test', package)
         receipt = output/'distribution.json'
-        pin = seal(package, receipt, source, initial_toolchain)
-        verify(receipt, pin, identities(repo))
-        result.update(status='passed', receipt=str(receipt), sha256=pin)
+        pin = seal(package, receipt, source, initial_toolchain, kind=kind, preparation=preparation)
+        for selected in preparation['selection'] if preparation else [None]:
+            verify(receipt, pin, identities(repo), kind=kind, plan=selected, repo=repo)
+        result.update(status='passed', receipt=str(receipt), sha256=pin, kind=kind, preparation=preparation)
     except Exception as error:
         result['error'] = str(error)
     result['elapsedSeconds'] = time.monotonic()-started
@@ -193,7 +215,8 @@ def run(repo, output, plan, prepared_distribution=None, command_timeout_seconds=
     started = time.monotonic()
     def admit():
         from public_distribution import verify
-        return verify(prepared_distribution[0], prepared_distribution[1], identities(repo))
+        return verify(prepared_distribution[0], prepared_distribution[1], identities(repo),
+            kind='long' if plan['kind'] == 'long' else 'pr', plan=plan, repo=repo)
     def command(name, args, cwd):
         if prepared_distribution is not None:
             admit()
@@ -209,30 +232,38 @@ def run(repo, output, plan, prepared_distribution=None, command_timeout_seconds=
     try:
         project = repo / 'SimulationTest'
         if prepared_distribution is not None:
-            if plan['kind'] != 'long' or plan['tests'] or plan.get('pythonTests') or plan['inputScope'] != 'public':
-                raise ValueError('A prepared package only supplies public long scenarios; it cannot replace mechanism tests')
+            if plan['kind'] not in ('pr', 'mechanism', 'long') or plan['inputScope'] != 'public':
+                raise ValueError('A prepared package requires its exact public PR or long selection')
             distribution = admit()
             result['preparedDistribution'] = dict(receipt=str(prepared_distribution[0]), sha256=prepared_distribution[1])
         wrapper = [str(project / 'gradlew.bat')] if os.name == 'nt' else ['sh', str(project / 'gradlew')]
         common = ['--no-daemon', '--console=plain', '--max-workers='+str(forks), '--rerun-tasks']
         if plan['fixture']:
             common += ['-Dpublic.inputs.dir=' + str(project / 'public' / plan['fixture'])]
+        if plan['tests']:
+            if prepared_distribution is not None:
+                admit()
+            from development_check import execute_test_group
+            executed = execute_test_group(repo, output/'test-execution',
+                dict(fixture=plan['fixture'], tests=plan['tests'], suites=[plan['suiteId']]),
+                prepared_distribution is None, forks, package=prepared_distribution is None, timeout=command_timeout_seconds)
+            result['testExecution'] = executed
+            process = executed['command']
+            result['commands'].append(dict(name='tests-and-package' if prepared_distribution is None else 'current-tests',
+                argv=process['argv'], exitCode=process['exitCode'], elapsedSeconds=process['elapsedSeconds'],
+                receipt='test-execution/command/result.json', firstError=process['firstError']))
+            result['coverage'] = executed['tests'].get('coverage', [])
+            if not process['passed'] or executed['tests']['status'] != 'passed':
+                raise RuntimeError('Current test execution or packaging did not pass')
+            if prepared_distribution is not None:
+                admit()
+                test_tasks = {MODULES[m][0] for m in plan['tests']}
+                if any(r.get('didWork') for r in executed['tests']['tasks'] if r['task'] not in test_tasks):
+                    raise RuntimeError('Prepared compilation or packaging executed again')
+                result['preparationReused'] = True
+        elif prepared_distribution is None:
+            command('tests-and-package', wrapper + [':installDist'] + common, project)
         if prepared_distribution is None:
-            if plan['tests']:
-                from development_check import execute_test_group
-                executed = execute_test_group(repo, output/'test-execution',
-                    dict(fixture=plan['fixture'], tests=plan['tests'], suites=[plan['suiteId']]),
-                    True, forks, package=True, timeout=command_timeout_seconds)
-                result['testExecution'] = executed
-                process = executed['command']
-                result['commands'].append(dict(name='tests-and-package', argv=process['argv'],
-                    exitCode=process['exitCode'], elapsedSeconds=process['elapsedSeconds'],
-                    receipt='test-execution/command/result.json', firstError=process['firstError']))
-                result['coverage'] = executed['tests'].get('coverage', [])
-                if not process['passed'] or executed['tests']['status'] != 'passed':
-                    raise RuntimeError('Current test execution or packaging did not pass')
-            else:
-                command('tests-and-package', wrapper + [':installDist'] + common, project)
             distribution = project/'build/install/simulation-test'
         result['pythonCoverage'] = []
         for index, relative in enumerate(plan.get('pythonTests', [])):
@@ -275,6 +306,8 @@ def run(repo, output, plan, prepared_distribution=None, command_timeout_seconds=
             archives.append(dict(id=case['id'], kind=case['kind'], path=str(batches[0])))
         if initial != identities(repo):
             raise RuntimeError('Public source changed during verification')
+        if prepared_distribution is not None:
+            admit()
         result.update(status='passed', archives=archives)
         if plan['suiteId'] == 'public-pr-first-loop' and archives:
             result['shortArchive'] = archives[0]['path']
@@ -296,7 +329,7 @@ def main():
     parser.add_argument('--test-forks', type=test_forks, default=1, help='Bound independent test JVMs: 1, 2 or 4; PC stays serial')
     parser.add_argument('--command-timeout',type=command_timeout,default=600,
                         help='Explicit per-command seconds, at most 3600; default 600. Selection is unchanged.')
-    parser.add_argument('--distribution-receipt', type=Path, help='Same-batch fixed public long package receipt')
+    parser.add_argument('--distribution-receipt', type=Path, help='Same-batch fixed public PR preparation or long package receipt')
     parser.add_argument('--distribution-sha256', help='Receipt digest pinned by the parent batch')
     args = parser.parse_args()
     try:

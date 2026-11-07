@@ -14,6 +14,10 @@ python -B SimulationTest/ci/public_batch.py --kind long --isolated --output <new
 
 各子集仍调用下文同一`public_check.py`，保留原先单集入口及结果结构。批次根`result.json`记录固定选择、源码身份、实际命令、退出码及耗时，子目录保留完整JUnit、逐Python收据、输入快照和场景档案。任何子集失败立即停止后续集，保存失败日志与已有收据；旧输出拒绝覆盖。具体失败定位沿子目录日志及场景比较结果的阶段/操作/检查点，不以批次外层成功代替断言。
 
+PR批次先计算所有选中模块的`testClasses`并集，与`installDist`一次准备；随后逐组复用编译和固定运行包，各组Test仍禁用缓存/up-to-date，Python测试照常执行。相同类在不同fixture下分别运行并生成独立方法/XML/任务收据，不能复用通过结论。单组直接运行继续独立冷构建，不要求手工准备批次。
+
+固定分发收据统一使用schemaVersion=2，声明`pr`或`long`范围。PR同时封存准确组选择/fixture、实际准备任务、编译输出及解析后的测试classpath文件身份；父批固定收据摘要，子组开始/结束核源码、JDK/Gradle配置、准备产物和包。漂移、缺件、错误范围或再次实际编译均失败；外部传入包也不能跳过所选Test/Python。long保留一次打包及无机制执行语义。当前收据格式统一更新，历史收据保持原样，不由当前消费者读取。
+
 PR更新通过`public-pr.yml`执行完整`pr`入口，保留七份领域产物及批次收据产物；`main`推送通过`public-long.yml`执行同一`long`入口，阶段收尾可手动触发该工作流或本地运行。CI只执行公开无头验证；真实PC、Android宿主/构建/设备、原版参考与正式性能边界见后文，不随批次绿扩大。配置存在不代表已有真实云端结果，实际源码SHA及产物以对应Actions运行记录为准。
 
 旧`pr-first-loop`继续用于首闭环/历史复核；完整层级已由各领域集覆盖相同适用断言，因此不会额外重复选择旧集。`verify-comparison.ps1`和`verify-isolated-comparison.ps1`仍保留原私有比较链及输入要求，不改名成公共干净环境验证。历史冻结脚本与收据保持原版本和失败状态。

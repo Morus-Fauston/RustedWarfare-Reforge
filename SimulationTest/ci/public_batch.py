@@ -45,10 +45,14 @@ def run_layer(repo, output, plan, isolated, command_timeout_seconds=600, forks=1
                       {m: [] for row in plan['suites'] for m in row['plan']['tests']}, forks))
     try:
         shared = None
-        if plan['kind'] == 'long':
-            if any(row['plan']['tests'] or row['plan'].get('pythonTests') for row in plan['suites']):
+        if plan['kind'] in ('pr', 'long'):
+            if plan['kind'] == 'long' and any(row['plan']['tests'] or row['plan'].get('pythonTests') for row in plan['suites']):
                 raise ValueError('Shared long distribution cannot skip selected mechanism tests')
-            shared = build_shared_distribution(repo, output/'shared-distribution', source, command_timeout_seconds)
+            sys.path.insert(0, str(REPO/'SimulationTest/tools'))
+            from workflow import resources
+            with resources(['build:'+str(repo/'Engine'), 'build:'+str(repo/'SimulationTest')]):
+                shared = build_shared_distribution(repo, output/'shared-distribution', source, command_timeout_seconds,
+                    preparation_plan=plan if plan['kind'] == 'pr' else None, forks=forks)
             result['sharedBuild'] = shared
             if shared['status'] != 'passed':
                 raise RuntimeError(shared.get('error', 'Shared distribution build failed'))
@@ -60,7 +64,7 @@ def run_layer(repo, output, plan, isolated, command_timeout_seconds=600, forks=1
                     '--command-timeout',str(command_timeout_seconds), '--test-forks', str(forks)]
             if shared is not None:
                 from public_distribution import verify
-                verify(shared['receipt'], shared['sha256'], identities(repo))
+                verify(shared['receipt'], shared['sha256'], identities(repo), kind=plan['kind'], plan=row['plan'], repo=repo)
                 argv += ['--distribution-receipt', shared['receipt'], '--distribution-sha256', shared['sha256']]
             record = dict(name=name, argv=argv, result=name+'/result.json', exitCode=None)
             result['suites'].append(record)
@@ -75,9 +79,25 @@ def run_layer(repo, output, plan, isolated, command_timeout_seconds=600, forks=1
             if (measured['status'] != 'passed' or measured['selection'] != row['plan'] or
                     measured['source'] != source):
                 raise RuntimeError(name + ': incomplete, mismatched or changed-source receipt')
+            if shared is not None and plan['kind'] == 'pr':
+                if measured.get('preparedDistribution') != dict(receipt=shared['receipt'], sha256=shared['sha256']):
+                    raise RuntimeError(name + ': fixed preparation pin differs')
+                if row['plan']['tests']:
+                    from development_check import collect_tests
+                    current = collect_tests(child/'test-execution', row['plan']['tests'])
+                    process = json.loads((child/'test-execution/command/result.json').read_text(encoding='utf8'))
+                    if (current['status'] != 'passed' or not process['passed'] or
+                            current != measured['testExecution']['tests'] or not measured.get('preparationReused')):
+                        raise RuntimeError(name + ': current method evidence is incomplete')
+                for coverage in measured['pythonCoverage']:
+                    current = json.loads((child/coverage['result']).read_text(encoding='utf8'))
+                    if current['status'] != 'passed' or current['tests'] < 1 or not current['sourceUnchanged']:
+                        raise RuntimeError(name + ': current Python evidence is incomplete')
+                if [c['path'] for c in measured['pythonCoverage']] != row['plan']['pythonTests']:
+                    raise RuntimeError(name + ': current Python selection differs')
             record.update(status='passed', elapsedSeconds=measured['elapsedSeconds'])
             if shared is not None:
-                verify(shared['receipt'], shared['sha256'], identities(repo))
+                verify(shared['receipt'], shared['sha256'], identities(repo), kind=plan['kind'], plan=row['plan'], repo=repo)
         if identities(repo) != source:
             raise RuntimeError('Public source changed during batch')
         result['status'] = 'passed'

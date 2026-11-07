@@ -41,6 +41,20 @@ def output = new File(plan.output)
 if (!(plan.testForks in [1, 2, 4]) || gradle.startParameter.maxWorkerCount != plan.testForks)
     throw new GradleException('Test forks must match the bounded Gradle worker budget')
 gradle.projectsEvaluated {
+    if (plan.mode == 'prepare') {
+        gradle.rootProject.tasks.register('publicPreparation') {
+            dependsOn(plan.preparationTasks)
+            doLast {
+                def roots = gradle.taskGraph.allTasks.findAll { it.path != ':publicPreparation' }
+                    .collectMany { it.outputs.files.files.collect { f -> f.absolutePath } }
+                plan.modules.each { module ->
+                    def path = module == 'tools' ? ':test' : ':'+module+':test'
+                    roots.addAll(gradle.rootProject.tasks.getByPath(path).classpath.files.collect { it.absolutePath })
+                }
+                new File(output, 'artifact-roots.json').text = JsonOutput.toJson(roots.unique().sort())
+            }
+        }
+    }
     gradle.rootProject.allprojects { p ->
         p.tasks.withType(Test).configureEach { task ->
             def selection = plan.tasks[task.path]
@@ -124,13 +138,17 @@ gradle.taskGraph.whenReady { graph ->
          javaLauncher:task.javaLauncher.get().executablePath.asFile.absolutePath]
     }
     new File(output, 'effective.json').text = JsonOutput.toJson([tests:rows, testForks:plan.testForks, maxWorkers:gradle.startParameter.maxWorkerCount,
+        mode:plan.mode ?: 'test', preparationTasks:plan.preparationTasks ?: [],
         daemonPid:ProcessHandle.current().pid(), javaHome:System.getProperty('java.home'),
         gradleUserHome:gradle.gradleUserHomeDir.absolutePath])
 }
 def executions = []
+def taskStarted = [:]
+gradle.taskGraph.beforeTask { task -> taskStarted[task.path] = System.nanoTime() }
 gradle.taskGraph.afterTask { task, state ->
     executions.add([task:task.path, skipped:state.skipped, upToDate:state.upToDate,
         noSource:state.noSource, skipMessage:state.skipMessage,
+        didWork:state.didWork, elapsedSeconds:(System.nanoTime()-taskStarted[task.path])/1_000_000_000.0,
         failure:state.failure == null ? null : state.failure.toString()])
     new File(output, 'task-executions.json').text = JsonOutput.toJson(executions)
 }

@@ -8,6 +8,40 @@ import unittest
 
 
 class PublicSelectionTest(unittest.TestCase):
+    def test_prepared_pr_still_executes_selected_python_and_rejects_a_long_package(self):
+        import shutil
+        from public_check import run, source_files, identities
+        from public_distribution import seal, artifact_identities
+        with tempfile.TemporaryDirectory(prefix='reforge-pr-consumer-') as temporary:
+            repo = Path(temporary)
+            for path in source_files(repo):
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text('', encoding='utf8')
+            ci = repo/'SimulationTest/ci'
+            ci.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(Path(__file__).with_name('python_check.py'), ci/'python_check.py')
+            test = ci/'test_owned.py'
+            test.write_text('import unittest\nclass Current(unittest.TestCase):\n def test_current(self): self.assertEqual(2,1+1)\n', encoding='utf8')
+            package = repo/'package'; package.mkdir()
+            (package/'app.jar').write_bytes(b'owned package fixture; no JVM launch')
+            compiled = repo/'compiled'; compiled.mkdir()
+            (compiled/'owned.bin').write_bytes(b'owned preparation identity fixture')
+            plan = dict(suiteId='owned', kind='pr', inputScope='public', fixture=None,
+                        tests={}, pythonTests=['SimulationTest/ci/test_owned.py'], scenarios=[])
+            preparation = dict(repo=str(repo.resolve()), selection=[plan], tasks=[':installDist'],
+                executions=[dict(task=':installDist', failure=None)], artifacts=artifact_identities([compiled]))
+            source = identities(repo)
+            pr = repo/'pr.json'; pr_pin = seal(package, pr, source, kind='pr', preparation=preparation)
+            output = repo/'accepted'
+            self.assertEqual(0, run(repo, output, plan, (pr, pr_pin)))
+            result = json.loads((output/'result.json').read_text(encoding='utf8'))
+            self.assertEqual(1, result['pythonCoverage'][0]['tests'])
+            self.assertTrue(result['commands'][0]['argv'])
+            long = repo/'long.json'; long_pin = seal(package, long, source)
+            refused = repo/'refused'
+            self.assertEqual(1, run(repo, refused, plan, (long, long_pin)))
+            self.assertEqual([], json.loads((refused/'result.json').read_text(encoding='utf8'))['commands'])
+
     def test_native_driver_and_capture_contract_are_in_the_isolated_source_closure(self):
         from public_check import REPO,source_files
         names={p.relative_to(REPO).as_posix() for p in source_files(REPO)}
