@@ -15,10 +15,12 @@ data class WindowsLaunchOptions(
     val title: String,
     val visualSource: VisualAssetSource? = null,
     val originalAssets: Path? = null,
+    val testScenarioSeed: Path? = null,
 ) {
     val hasVisualOverride: Boolean get() = visualSource != null || originalAssets != null
     companion object {
-        fun parse(args: Array<String>, repoRoot: Path): WindowsLaunchOptions {
+        fun parse(args: Array<String>, repoRoot: Path,
+                  defaultScenarioSeed: Path = repoRoot.resolve("SimulationTest/public/scenarios/phase-five-json.json")): WindowsLaunchOptions {
             require(args.size % 2 == 0) { "Usage: [--mode sandbox|demo] [--inputs PATH] [--evidence NEW_RUN_DIRECTORY] [--visuals placeholder|original] [--original-assets PATH]" }
             val visualKeys = setOf("--visuals", "--original-assets")
             val pairs = args.toList().chunked(2)
@@ -50,11 +52,13 @@ data class WindowsLaunchOptions(
                     "RustedWarfare-Reforge | Field Demo", visualSource, originalAssets)
             }
             val explicitInputs = options["--inputs"]
+            val seed = defaultScenarioSeed.toAbsolutePath().normalize()
             return WindowsLaunchOptions(mode,
-                explicitInputs?.let(::resolve) ?: PhaseFourInputs.root,
+                explicitInputs?.let(::resolve) ?: seed.parent.resolve("../inputs/phase-five-sandbox/json").normalize(),
                 resolve(options["--evidence"] ?: "Engine/pc/build/sandbox-runs/$runId"),
-                runId, if (explicitInputs == null) "RustedWarfare-Reforge | Phase IV sandbox"
-                else "RustedWarfare-Reforge | P002 Windows sandbox", visualSource, originalAssets)
+                runId, if (explicitInputs == null) "RustedWarfare-Reforge | Phase V sandbox"
+                else "RustedWarfare-Reforge | P002 Windows sandbox", visualSource, originalAssets,
+                if (explicitInputs == null) seed else null)
         }
     }
 }

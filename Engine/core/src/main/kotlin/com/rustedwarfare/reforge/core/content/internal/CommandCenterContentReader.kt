@@ -2,21 +2,22 @@ package com.rustedwarfare.reforge.core.content.internal
 
 import com.rustedwarfare.reforge.core.content.*
 import java.nio.file.Path
+import java.util.concurrent.CancellationException
 
 /** Finite native center; neither its construction action nor arbitrary replacements are supported. */
 internal object CommandCenterContentReader {
     private val fields = setOf("format", "name", "maxHp", "radius", "footprint", "movementType",
         "productionUnit", "image", "image_back", "image_dead", "fogOfWarSightRange", "incomePeriod", "incomeCredits")
 
-    private val documents = UnitSourceReader(UnitContentSchema.native(fields, setOf("rw-reforge.native-command-center.v1")))
+    private val schema = UnitContentSchema.native(fields, setOf("rw-reforge.native-command-center.v1"))
 
     fun read(path: Path): UnitDefinition = readWithSources(path).definition
 
-    fun readWithSources(path: Path): LoadedUnitContent = documents.load(path) { loaded ->
-        definition(path, loaded.values.getValue("core"))
+    fun readWithSources(path: Path, validatePath: (Path) -> Unit = {}): LoadedUnitContent = UnitSourceReader(schema, validatePath).load(path) { loaded ->
+        definition(path, loaded.values.getValue("core"), validatePath)
     }
 
-    private fun definition(path: Path, values: Map<String, String>): UnitDefinition {
+    private fun definition(path: Path, values: Map<String, String>, validatePath: (Path) -> Unit): UnitDefinition {
         fun required(key: String): String = requiredContentField(values[key], path, null, key,
             "Required center field is absent or empty")
         fun only(key: String, expected: String) {
@@ -30,6 +31,7 @@ internal object CommandCenterContentReader {
         }
         fun image(key: String): Path {
             val result = resolveReference(path, required(key), "graphics", key)
+            validatePath(result)
             try {
                 val metadata = readPngMetadata(result, allowIndexed = true)
                 val expected = when (key) {
@@ -40,6 +42,8 @@ internal object CommandCenterContentReader {
                 require(metadata.width == expected.first && metadata.height == expected.second) {
                     "Expected native ${expected.first}x${expected.second} PNG"
                 }
+            } catch (failure: CancellationException) {
+                throw failure
             } catch (failure: Exception) {
                 reject(ContentErrorCode.BAD_REFERENCE, path, "graphics", key, reason = "Invalid PNG: ${failure.message}")
             }

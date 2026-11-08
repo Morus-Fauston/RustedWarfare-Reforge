@@ -18,6 +18,15 @@ from action_layout import wait_layout
 TITLE = 'RustedWarfare-Reforge | P002 Windows sandbox'
 
 
+def startup_arguments(plan,snapshot,evidence):
+    default=plan.get('windowsDefaultStart',False)
+    if type(default) is not bool or default and 'testScene' not in plan:
+        raise PlatformError('input-contract','Default Windows startup requires an explicit paired scene',1)
+    tail=['--evidence',str(evidence),'--visuals','placeholder']
+    if default:return tail,'RustedWarfare-Reforge | Phase V sandbox'
+    return ['--mode','sandbox','--inputs',str(snapshot)]+tail,TITLE
+
+
 def validate_windows_plan(plan,contract):
     intents,rules=plan.get('intents'),contract.get('rules')
     history='history' in contract
@@ -34,11 +43,22 @@ def validate_windows_plan(plan,contract):
             raise PlatformError('input-contract','History intention order differs',1)
         for identity,segment in plan.get('windowsWaits',{}).items():
             intent=next((i for i in intents if i['intentId']==identity),None)
+            progress=segment.get('progressOnly',False)
+            event_valid=(type(progress) is bool and
+                (not any(k in segment for k in ('eventKind','unitType')) if progress else
+                 isinstance(segment.get('eventKind'),str) and isinstance(segment.get('unitType'),str)))
             if (not intent or not intent.get('waitSteps') or segment.get('rate')!=4 or
-                    not isinstance(segment.get('eventKind'),str) or not isinstance(segment.get('unitType'),str) or
+                    not event_valid or
                     not intent['waitSteps']<=segment.get('maximumSimulationSteps',0)<=1200 or
                     not 0<segment.get('stallSeconds',0)<=segment.get('maximumWallSeconds',0)<=60):
                 raise PlatformError('input-contract','Invalid declared waiting segment',1)
+    action_types={'select':'SelectAction','move':'MoveAction','build':'BuildAction','upgrade':'UpgradeAction',
+                  'produce':'ProduceAction','attack':'AttackAction','stop':'StopAction'}
+    if history:
+        if any(i.get('kind') not in action_types for i in intents):
+            raise PlatformError('input-contract','Unsupported Windows history intention',1)
+        return [dict(r,actionType=action_types[i['kind']]) for i,r in zip(intents,rules)]
+    return rules
 
 
 def run_windows(scenario, contract, distribution, output, size, java='java', rate_profile='normal'):
@@ -49,12 +69,10 @@ def run_windows(scenario, contract, distribution, output, size, java='java', rat
     scenario, contract, distribution, output = map(lambda p: Path(p).resolve(), (scenario, contract, distribution, output))
     java = str(Path(shutil.which(java) or java).resolve())
     plan, contract_data = read(scenario), read(contract)
-    validate_windows_plan(plan,contract_data)
+    rules=validate_windows_plan(plan,contract_data)
     if rate_profile not in ('normal','segmented') or rate_profile=='segmented' and not plan.get('windowsWaits'):
         raise PlatformError('input-contract','Segmented profile requires declared waiting segments',1)
     history='history' in contract_data
-    action_types={'select':'SelectAction','move':'MoveAction','build':'BuildAction','upgrade':'UpgradeAction','produce':'ProduceAction','attack':'AttackAction'}
-    rules=[dict(r,actionType=action_types[i['kind']]) for i,r in zip(plan['intents'],contract_data['rules'])] if history else contract_data['rules']
     package_before = tree(distribution)
     inputs = (scenario.parent / plan['inputs']).resolve()
     input_before = tree(inputs)
@@ -195,9 +213,9 @@ def run_windows(scenario, contract, distribution, output, size, java='java', rat
             shutil.copytree(inputs, output/'inputSnapshot')
             if tree(output/'inputSnapshot') != input_before or tree(inputs) != input_before:
                 raise PlatformError('input-identity', 'Input snapshot changed while freezing')
+            arguments,title=startup_arguments(plan,output/'inputSnapshot',output/'runtime')
             command = [java, '--enable-native-access=ALL-UNNAMED', '-cp', os.pathsep.join(map(str, jars)),
-                       'com.rustedwarfare.reforge.pc.WindowsLauncherKt', '--mode', 'sandbox',
-                       '--inputs', str(output/'inputSnapshot'), '--evidence', str(output/'runtime'), '--visuals','placeholder']
+                       'com.rustedwarfare.reforge.pc.WindowsLauncherKt']+arguments
             save(output/'manifest.json', dict(backend='windows-input', command=command, size=list(size),
                 scenarioSha256=sha(output/'scenario.json'), contractSha256=sha(output/'contract.json'),
                 inputFiles=input_before, packageFiles=package_before, javaSha256=sha(java),
@@ -214,7 +232,7 @@ def run_windows(scenario, contract, distribution, output, size, java='java', rat
                                         creationflags=subprocess.CREATE_NO_WINDOW, shell=False,
                                         env=dict(os.environ,LOCALAPPDATA=str(output/'user-data')))
             result['pid'] = proc.pid
-            api = Win32(proc, java, TITLE)
+            api = Win32(proc, java, title)
             end = time.monotonic()+15
             while not api.candidates():
                 if proc.poll() is not None or time.monotonic() > end:
@@ -230,10 +248,18 @@ def run_windows(scenario, contract, distribution, output, size, java='java', rat
                  (row['width'], row['height']) == size for row in rows))
             layout();guard.capture(output/'startup-menu.png')
             if 'testScene' in plan:
-                packaged=distribution/'test-scenarios/scenarios/dual-ship-production.json'
+                default=plan.get('windowsDefaultStart',False)
+                packaged=distribution/'test-scenarios/scenarios'/('phase-five-json.json' if default else 'dual-ship-production.json')
                 if sha(packaged)!=sha(scenario):raise PlatformError('input-identity','Packaged and dispatched seed differ',1)
-                click_action('test-scenes-tab');click_action('test-scene-use')
-                wait('paired scene selected',lambda rows:any(r.get('kind')=='test-scenario-choice' and r.get('id')==plan['scenarioId'] and r.get('error') is None for r in rows))
+                if default:
+                    installed_inputs=(packaged.parent/plan['inputs']).resolve()
+                    if (not installed_inputs.is_relative_to(distribution/'test-scenarios/inputs') or
+                            tree(installed_inputs)!=input_before):
+                        raise PlatformError('input-identity','Default installed input closure differs from the fixed scene',1)
+                    record(dict(kind='default-start-ready',seed=str(packaged),inputRoot=str(installed_inputs),menuChoiceClicks=0))
+                else:
+                    click_action('test-scenes-tab');click_action('test-scene-use')
+                    wait('paired scene selected',lambda rows:any(r.get('kind')=='test-scenario-choice' and r.get('id')==plan['scenarioId'] and r.get('error') is None for r in rows))
             else:choose_content_pack()
             load_boundary=reader.cursor
             previous_generation=max((r['generation'] for r in reader.view() if r['kind']=='load-request'),default=0)
@@ -241,6 +267,9 @@ def run_windows(scenario, contract, distribution, output, size, java='java', rat
             request=wait('load-request',lambda rows:any(r['kind']=='load-request' for r in rows),
                          after_sequence=load_boundary,after_generation=previous_generation)
             current_generation=next(r['generation'] for r in request if r['kind']=='load-request')
+            if plan.get('windowsDefaultStart') and not any(r.get('kind')=='load-request' and
+                    r.get('testScenarioId')==plan['scenarioId'] for r in request):
+                raise PlatformError('default-start','Default Start did not consume its paired scene',2)
             rows=wait('load-ready',lambda rows:any(r['kind']=='load-ready' for r in rows),
                       deadline=180,after_sequence=load_boundary)
             wait('first interactive frame',lambda rows:any(r['kind']=='load-first-frame-drawn' for r in rows),

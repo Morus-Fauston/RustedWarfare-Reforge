@@ -8,6 +8,40 @@ class TestScenarioLaunchTest {
     private val fixtures: Path get() = Path.of(checkNotNull(System.getProperty("public.fixtures.dir")))
     private val seed: Path get() = fixtures.parent.resolve("scenarios/dual-ship-production.json")
 
+    @Test fun paired_stop_uses_the_existing_session_action_and_rejects_a_different_core_action() {
+        val copy = copiedSeed()
+        val home = copy.parent.parent
+        try {
+            val parser = com.badlogic.gdx.utils.JsonReader()
+            val document = parser.parse(java.nio.file.Files.readString(copy))
+            document.get("actions").addChild(parser.parse("""{"actionId":"paired-stop","atStep":0,"actor":"p1","unitId":"a","kind":"stop"}"""))
+            val intents = com.badlogic.gdx.utils.JsonValue(com.badlogic.gdx.utils.JsonValue.ValueType.array)
+            val previous = document.get("intents").toList()
+            fun append(value: com.badlogic.gdx.utils.JsonValue) {
+                intents.addChild(parser.parse(value.toJson(com.badlogic.gdx.utils.JsonWriter.OutputType.json)))
+            }
+            append(previous.first())
+            intents.addChild(parser.parse("""{"intentId":"paired-stop","kind":"stop","coreActionId":"paired-stop"}"""))
+            previous.drop(1).forEach(::append)
+            document.remove("intents"); document.addChild("intents", intents)
+            java.nio.file.Files.writeString(copy, document.toJson(com.badlogic.gdx.utils.JsonWriter.OutputType.json))
+
+            val choice = TestScenarioChoice.open(copy)
+            SandboxSession(choice.scenario).use { session ->
+                session.select(Position(110.0, 210.0))
+                assertIs<ActionResult.Accepted>(session.stop())
+            }
+            intents[1].remove("coreActionId")
+            intents[1].addChild("coreActionId", com.badlogic.gdx.utils.JsonValue("approach"))
+            java.nio.file.Files.writeString(copy, document.toJson(com.badlogic.gdx.utils.JsonWriter.OutputType.json))
+            val failure = assertFailsWith<IllegalArgumentException> { TestScenarioChoice.open(copy) }
+            assertTrue(failure.message.orEmpty().contains("TEST_SCENE_INTENT_MISMATCH"), failure.message)
+        } finally {
+            require(home.isAbsolute && home.fileName.toString().startsWith("owned-test-scene-"))
+            home.toFile().deleteRecursively()
+        }
+    }
+
     @Test fun choosing_the_dual_ship_seed_starts_its_paired_map_pack_and_normal_builder() {
         val choice = TestScenarioChoice.open(seed)
         assertEquals("public.author-naval-chain.v1", choice.id)

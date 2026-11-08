@@ -1,0 +1,63 @@
+{
+  "schemaVersion": 1,
+  "kind": "behavior-contract",
+  "contractId": "public.phase-five.start.contract.v1",
+  "scope": "self-behavior",
+  "scenarioIds": [
+    "public.phase-five-start.v1"
+  ],
+  "comparison": {
+    "numberMode": "declared-per-field",
+    "tolerances": {}
+  },
+  "approval": {
+    "status": "tool-fixture-only",
+    "source": "ENG-P008-018 pre-fixed owned sample contract02/revision04. Initial center30000; twelve normal charges26350; income4.5 per10 ticks. Literal binary32 production boundaries reused from reviewed native profiles (.002:501, .0012:834, .0006:1667, .0004:2500). Four factories, same identities on two upgrades, five simultaneous products at15000 then ordinary mixed combat to22000. No original timing, platform or performance claim."
+  },
+  "exclusions": [
+    "original-compatibility",
+    "platform-input",
+    "performance"
+  ],
+  "producedUnits": [
+    {
+      "unitId": "produced:p1:11111111111111111111111111111111",
+      "productionActionId": "produce-builder",
+      "producerId": "center",
+      "owner": "p1",
+      "typeId": "builder",
+      "unitNonce": "11111111111111111111111111111111",
+      "birthStepIndex": 500
+    }
+  ],
+  "rules": [
+    {
+      "ruleId": "initial",
+      "when": {
+        "phase": "initial",
+        "stepIndex": 0
+      },
+      "assertions": [
+        {
+          "path": "economy.balances.p1",
+          "operator": "equals",
+          "value": 30000
+        }
+      ]
+    },
+    {
+      "ruleId": "worker-exit",
+      "when": {
+        "phase": "after-advance",
+        "stepIndex": 799
+      },
+      "assertions": [
+        {
+          "path": "economy.balances.p1",
+          "operator": "equals",
+          "value": 29860
+        }
+      ]
+    }
+  ]
+}

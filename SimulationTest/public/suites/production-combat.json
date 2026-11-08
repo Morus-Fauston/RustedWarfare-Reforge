@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "suiteId": "public.production-combat.v1",
   "inputScope": "public",
-  "fixture": "inputs/content-movement-knowledge/P001-移动沙盒输入",
+  "fixture": "inputs/content-movement-knowledge/P001-\u79fb\u52a8\u6c99\u76d2\u8f93\u5165",
   "tests": {
     "core": [
       "com.rustedwarfare.reforge.core.content.CombatContentLoadTest",
@@ -168,7 +168,8 @@
       "com.rustedwarfare.reforge.client.AuthorFactorySandboxTest",
       "com.rustedwarfare.reforge.client.AuthorUpgradeSandboxTest",
       "com.rustedwarfare.reforge.client.AuthorShoreSandboxTest",
-      "com.rustedwarfare.reforge.client.AuthorNavalChainSandboxTest"
+      "com.rustedwarfare.reforge.client.AuthorNavalChainSandboxTest",
+      "com.rustedwarfare.reforge.client.PhaseFiveSandboxTest"
     ],
     "pc": [
       "com.rustedwarfare.reforge.pc.PatrolJsonlPairingTest",
@@ -209,7 +210,8 @@
       "com.rustedwarfare.reforge.testing.AuthorNavalChainScenarioTest",
       "com.rustedwarfare.reforge.testing.AuthorNavalChainSessionTest",
       "com.rustedwarfare.reforge.testing.RunnerToolCostTest",
-      "com.rustedwarfare.reforge.testing.perf.WholeChainToolCostTest"
+      "com.rustedwarfare.reforge.testing.perf.WholeChainToolCostTest",
+      "com.rustedwarfare.reforge.testing.PhaseFiveArchiveTest"
     ]
   },
   "short": [
@@ -637,6 +639,26 @@
       "scenario": "platform/scenarios/author-naval-chain-hjson.json",
       "contract": "platform/contracts/author-naval-chain-hjson.json",
       "backend": "session"
+    },
+    {
+      "id": "phase-five-ini-start-short",
+      "scenario": "scenarios/phase-five-ini-start-short.json",
+      "contract": "contracts/phase-five-ini-start-short.json"
+    },
+    {
+      "id": "phase-five-json-start-short",
+      "scenario": "scenarios/phase-five-json-start-short.json",
+      "contract": "contracts/phase-five-json-start-short.json"
+    },
+    {
+      "id": "phase-five-hjson-start-short",
+      "scenario": "scenarios/phase-five-hjson-start-short.json",
+      "contract": "contracts/phase-five-hjson-start-short.json"
+    },
+    {
+      "id": "phase-five-mixed-start-short",
+      "scenario": "scenarios/phase-five-mixed-start-short.json",
+      "contract": "contracts/phase-five-mixed-start-short.json"
     }
   ],
   "long": [
@@ -704,6 +726,54 @@
       "id": "naval-production-hjson-chain",
       "scenario": "scenarios/naval-production-hjson-chain.json",
       "contract": "contracts/naval-production-hjson-chain.json"
+    },
+    {
+      "id": "phase-five-ini-core-chain",
+      "backend": "core",
+      "scenario": "scenarios/phase-five-ini.json",
+      "contract": "contracts/phase-five-ini.json"
+    },
+    {
+      "id": "phase-five-ini-session-chain",
+      "backend": "session",
+      "scenario": "scenarios/phase-five-ini.json",
+      "contract": "contracts/phase-five-ini.json"
+    },
+    {
+      "id": "phase-five-json-core-chain",
+      "backend": "core",
+      "scenario": "scenarios/phase-five-json.json",
+      "contract": "contracts/phase-five-json.json"
+    },
+    {
+      "id": "phase-five-json-session-chain",
+      "backend": "session",
+      "scenario": "scenarios/phase-five-json.json",
+      "contract": "contracts/phase-five-json.json"
+    },
+    {
+      "id": "phase-five-hjson-core-chain",
+      "backend": "core",
+      "scenario": "scenarios/phase-five-hjson.json",
+      "contract": "contracts/phase-five-hjson.json"
+    },
+    {
+      "id": "phase-five-hjson-session-chain",
+      "backend": "session",
+      "scenario": "scenarios/phase-five-hjson.json",
+      "contract": "contracts/phase-five-hjson.json"
+    },
+    {
+      "id": "phase-five-mixed-core-chain",
+      "backend": "core",
+      "scenario": "scenarios/phase-five-mixed.json",
+      "contract": "contracts/phase-five-mixed.json"
+    },
+    {
+      "id": "phase-five-mixed-session-chain",
+      "backend": "session",
+      "scenario": "scenarios/phase-five-mixed.json",
+      "contract": "contracts/phase-five-mixed.json"
     }
   ]
 }

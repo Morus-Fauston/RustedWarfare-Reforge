@@ -49,6 +49,17 @@ tasks.test {
 distributions {
     main {
         contents {
+            from(rootProject.projectDir.parentFile.resolve("SimulationTest/public/scenarios")) {
+                include("phase-five-*.json")
+                into("test-scenarios/scenarios")
+            }
+            from(rootProject.projectDir.parentFile.resolve("SimulationTest/public/inputs/phase-five-sandbox")) {
+                into("test-scenarios/inputs/phase-five-sandbox")
+            }
+            from(rootProject.projectDir.parentFile.resolve("SimulationTest/public/contracts")) {
+                include("phase-five-*.json")
+                into("test-scenarios/contracts")
+            }
             from(rootProject.projectDir.parentFile.resolve("SimulationTest/public/scenarios/dual-ship-production.json")) {
                 into("test-scenarios/scenarios")
             }

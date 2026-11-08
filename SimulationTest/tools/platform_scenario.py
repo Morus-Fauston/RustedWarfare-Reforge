@@ -433,8 +433,12 @@ def validate_history_action(records, row, intent, geometry=None):
             raise PlatformError('history-action-fields','Move target did not exactly match the accepted formal destination',2)
     if kind=='attack':
         targets=[u for u in left.get('units',[]) if u.get('unitId')==row.get('targetUnitId')]
+        # Flight/water bodies are drawn above their core ground position. The
+        # runtime hit test binds the click to the exported target ID; an explicit
+        # independent ground point keeps that separate coordinate check exact.
+        fixed_position=intent.get('targetGroundPosition',intent.get('position'))
         if (len(targets)!=1 or targets[0].get('alive') is not True or targets[0].get('ownerPlayerId')==actor or
-                'position' in intent and not same_point(targets[0].get('position'),intent['position'])):
+                fixed_position is not None and not same_point(targets[0].get('position'),fixed_position)):
             raise PlatformError('history-action-fields','Attack target differs from the fixed visible target/point',2)
     if kind=='produce' and 'typeId' in intent:
         queues=[]
@@ -482,12 +486,18 @@ def compare_history(records, plan, policy, native_anchors=None, geometry=None):
     """Check a declared ledger at every observation, including call boundaries."""
     allowed={'initialBalance','spend','noActionIntents','projectileBirthsRequired','mechLegs',
              'ownerPlayerId','initialOwnedTypes','finalUnits','minimumBirths',
-             'productionOrder','completedUpgradeTypes'}
+             'productionOrder','completedUpgradeTypes','initialIncome'}
     if not isinstance(policy,dict) or set(policy)-allowed:
         raise PlatformError('input-contract', 'Unknown or malformed history obligations', 1)
     balance = policy.get('initialBalance')
     if type(balance) not in (int, float) or not math.isfinite(balance):
         raise PlatformError('input-contract', 'History requires a finite initial balance', 1)
+    income=policy.get('initialIncome')
+    if income is not None and (not isinstance(income,dict) or set(income)!={'unitId','typeId','period','credits'} or
+            any(not isinstance(income[k],str) or not income[k] for k in ('unitId','typeId')) or
+            type(income['period']) is not int or income['period']<=0 or
+            type(income['credits']) not in (int,float) or not math.isfinite(income['credits']) or income['credits']<=0):
+        raise PlatformError('input-contract', 'Expected a fixed initial income source, positive integer period and finite credits', 1)
     charges = {}
     intents = {i['intentId']: i for i in plan['intents']}
     ids = set(intents)
@@ -603,6 +613,12 @@ def compare_history(records, plan, policy, native_anchors=None, geometry=None):
             if type(simulation_time) not in (int, float) or simulation_time != steps:
                 raise PlatformError('history-step', 'Simulation time differs from explicit steps')
             units = {u['unitId']: u for u in row['sample'].get('units', [])}
+            if income is not None:
+                sources=[u for u in sample.get('units',[]) if u.get('unitId')==income['unitId']]
+                if (len(sources)!=1 or sources[0].get('typeId')!=income['typeId'] or
+                        sources[0].get('ownerPlayerId')!=policy.get('ownerPlayerId','p1') or
+                        sources[0].get('alive') is not True or sources[0].get('constructionProgress')!=1):
+                    raise PlatformError('history-income', 'Fixed initial income source changed or is not a live completed owned unit', 2)
             validate_history_poses(units.values(), policy)
             for event in sample.get('projectileEvents',[]):
                 source=units.get(event.get('sourceUnitId'),{})
@@ -626,6 +642,7 @@ def compare_history(records, plan, policy, native_anchors=None, geometry=None):
                     raise PlatformError('history-weapons', 'An absent or dead unit retains a weapon observation', 2)
             if row.get('phase') == 'step':
                 balance -= pending; pending = 0
+                if income is not None and steps % income['period']==0:balance+=income['credits']
                 events=sample.get('events',[])
                 if construction_ids and any(event.get('kind')=='construction-created' and event.get('unitId') in construction_ids for event in events):
                     raise PlatformError('history-construction', 'A charged construction site was created again', 2)
@@ -640,8 +657,12 @@ def compare_history(records, plan, policy, native_anchors=None, geometry=None):
                             raise PlatformError('history-construction', 'Construction charge is not bound to one new owned site in its build intention', 2)
                         balance-=entry['charge']['amount'];construction_ids.add(matches[0]);del construction_charges[identity]
             observed = row['sample'].get('balance')
-            if type(observed) not in (int, float) or not math.isfinite(observed) or observed != balance:
+            expected_balance=math.trunc(balance) if income is not None else balance
+            if type(observed) not in (int, float) or not math.isfinite(observed) or observed != expected_balance:
                 raise PlatformError('history-ledger', 'Balance differs at observation '+str(row['sequence']), 2)
+            if income is not None and (type(sample.get('credits')) not in (int,float) or
+                    not math.isfinite(sample['credits']) or sample['credits']!=balance):
+                raise PlatformError('history-ledger', 'Precise credits differ at observation '+str(row['sequence']), 2)
             observations += 1
             seen_units.update(units)
     if not observations or pending or construction_charges or active is not None or completed != len(plan['intents']):

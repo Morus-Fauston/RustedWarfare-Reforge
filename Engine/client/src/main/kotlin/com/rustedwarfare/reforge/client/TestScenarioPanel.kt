@@ -34,8 +34,8 @@ internal class TestScenarioPanel(private val state: TestScenarioMenu, private va
 
     fun refresh(status: String?) {
         val choice = state.choice
-        summary.setText(if (choice == null) "双舰生产与交战\nDual-ship production & combat\nUse this scene to inspect its paired map, content pack and starting builder."
-            else "${choice.name}\nMap: ${choice.scenario.map.widthTiles * choice.scenario.map.tileWidth} x ${choice.scenario.map.heightTiles * choice.scenario.map.tileHeight} shore waterway\nContent: ${choice.content.pack.name}\nStart: ${choice.content.unitId} | Credits: ${choice.scenario.economyContract?.initialBalances?.get("p1")}")
+        summary.setText(if (choice == null) "Test scene\nUse this scene to check its map, content and starting units."
+            else "${choice.name}\nMap: ${choice.scenario.map.widthTiles * choice.scenario.map.tileWidth} x ${choice.scenario.map.heightTiles * choice.scenario.map.tileHeight}\nContent: ${choice.content.pack.name}\nStart: ${choice.content.unitId} | Credits: ${choice.scenario.economyContract?.initialBalances?.get("p1")}")
         notice.setText(status ?: state.error ?: if (state.selected) "Scene selected. Choose resources in Resource packs, then Start." else "Resources are selected separately in Resource packs.")
         choose.isDisabled = !editable || seed == null
         custom.isDisabled = !editable || !state.selected

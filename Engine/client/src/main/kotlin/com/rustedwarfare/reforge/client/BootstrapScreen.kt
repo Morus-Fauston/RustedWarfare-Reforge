@@ -34,6 +34,7 @@ class BootstrapScreen(
     private val visualSettings: VisualAssetSettings? = null,
     private val soundFactory: PlaybackSoundFactory = GdxPlaybackSoundFactory,
     private val testScenarioSeed: Path? = null,
+    private val selectDefaultTestScenario: Boolean = false,
 ) : ApplicationAdapter() {
     private lateinit var batch: SpriteBatch
     private lateinit var shapes: ShapeRenderer
@@ -118,7 +119,9 @@ class BootstrapScreen(
     private lateinit var packTab: TextButton
     private var showContentPack = visualSettings == null
     private var showTestScenarios = false
-    private val testScenes = TestScenarioMenu()
+    private val testScenes = TestScenarioMenu().apply {
+        if (selectDefaultTestScenario) choose(requireNotNull(testScenarioSeed))
+    }
     private var testScenePanel: TestScenarioPanel? = null
     private lateinit var testSceneTab: TextButton
     private var customRootText = initialRoot.toAbsolutePath().normalize().toString()
