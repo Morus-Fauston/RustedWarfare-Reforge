@@ -7,7 +7,8 @@ import java.util.Collections
 internal data class BuildingRoute(val points: List<Position>, val knowledgeRevision: Long, val buildingRevision: Long)
 internal interface BuildingWorkAccess {
     fun path(worker: MutableUnit, target: Position, range: Double, task: UnitTask, step: Long): BuildingRoute?
-    fun prepareConstruction(ownerPlayerId: String, typeId: String, position: Position, nonce: String): MutableUnit
+    fun construct(ownerPlayerId: String, typeId: String, position: Position, nonce: String,
+                  paidLedger: ProductionLedger): ConstructionRegistration
 }
 internal data class BuildingWorkFrame(val input: Scenario, val units: Map<String, MutableUnit>, val step: Step,
     val view: VisionSnapshot?, val coordinates: CoordinatePolicy, val steering: SteeringPolicy, val access: BuildingWorkAccess)
@@ -249,13 +250,10 @@ internal class BuildingWork private constructor(val clock: Int, val nonces: Map<
                 return BuildingWorkChange(this, ledger, upgrades,
                     events = listOf(Event("construction-insufficient-funds", worker.unitId)))
             }
-            val unit = frame.access.prepareConstruction(worker.ownerPlayerId, definition.id, position, nonce)
-            val publicId = unit.unitId
-            paid = definition.production?.let { production ->
-                charged.register(publicId, FactoryProductionSpec(worker.ownerPlayerId, production.unitTypeIds.associateWith {
-                    checkNotNull(input.unitDefinitions.getValue(it).build) }, definition.upgrades?.actions.orEmpty()))
-            } ?: charged
-            registered = upgrades?.register(publicId, definition)
+            val birth = frame.access.construct(worker.ownerPlayerId, definition.id, position, nonce, charged)
+            val unit = birth.unit
+            paid = birth.ledger
+            registered = birth.upgrades
             next = recordBirth(worker.ownerPlayerId, nonce)
             created = unit
             unit

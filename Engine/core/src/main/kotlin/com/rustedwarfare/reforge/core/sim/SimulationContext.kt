@@ -789,8 +789,9 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
                     reason = PathSearchReason.CONSTRUCTION_APPROACH, executionStep = step, targetRange = range)
             return path?.let { BuildingRoute(it, plannedKnowledgeRevision(worker), plannedBuildingRevision(worker)) }
         }
-        override fun prepareConstruction(ownerPlayerId: String, typeId: String, position: Position, nonce: String): MutableUnit =
-            UnitRegistration.prepareConstruction(steps.current, checkNotNull(scenario), ownerPlayerId, typeId, position, nonce)
+        override fun construct(ownerPlayerId: String, typeId: String, position: Position, nonce: String,
+                               paidLedger: ProductionLedger): ConstructionRegistration =
+            UnitRegistration.construction(steps.current, checkNotNull(scenario), ownerPlayerId, typeId, position, nonce, paidLedger)
     }
 
     private fun updateConstruction(worker: MutableUnit, input: Scenario, step: Step) {
@@ -800,9 +801,8 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
         buildingWork = change.work
         productionLedger = change.ledger
         ordinaryUpgrades = change.upgrades
-        change.created?.let { UnitRegistration.registerPrepared(steps.current, it) }
         change.reclaimedUnitId?.let { missileTargets = missileTargets?.remove(it) }
-        if (change.created != null || change.reclaimedUnitId != null)
+        if (change.reclaimedUnitId != null)
             buildingTerrain = BuildingTerrain.fromLive(input.map, units.values, checkNotNull(buildingTerrain))
         pendingEvents += change.events
     }
@@ -875,10 +875,10 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
 
     private fun advanceProduction(factory: MutableUnit, input: Scenario) {
         val tick = checkNotNull(productionLedger).advance(factory.unitId)
+        productionLedger = tick.ledger
         tick.completed?.let { completed ->
             UnitRegistration.produced(steps.current, input, factory, completed)
         }
-        productionLedger = tick.ledger
     }
 
     internal fun isCurrentSandboxWorld(handle: WorldHandle): Boolean = !closed && activeWorld === handle
@@ -925,21 +925,6 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
                 }
                 val born = UnitRegistration.sandbox(steps.current, checkNotNull(scenario), command,
                     request.generation, request.sequence, policies.coordinates)
-                born.definition.production?.let { production ->
-                    val input = checkNotNull(scenario)
-                    productionLedger = checkNotNull(productionLedger).register(born.unitId,
-                        FactoryProductionSpec(born.ownerPlayerId, production.unitTypeIds.associateWith {
-                            checkNotNull(input.unitDefinitions.getValue(it).build)
-                        }, born.definition.upgrades?.actions.orEmpty()))
-                }
-                ordinaryUpgrades = ordinaryUpgrades?.register(born.unitId, born.definition)
-                if (born.definition.building != null) {
-                    val input = checkNotNull(scenario)
-                    buildingTerrain = buildingTerrain?.let { BuildingTerrain.fromLive(input.map, units.values, it) }
-                        ?: BuildingTerrain.initial(input.copy(units = orderedUnits().filter { it.alive }.map {
-                            UnitSpawn(it.unitId, it.ownerPlayerId, it.typeId, it.position, it.heading, it.height)
-                        }))
-                }
                 pendingEvents += Event("unit-spawned", born.unitId)
                 results += SandboxCommandReceipt(request.sequence, request.generation, world.id,
                     SandboxCommandStatus.APPLIED, command, step.stepIndex, born.unitId)
@@ -1090,16 +1075,10 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
             return InitResult.Rejected(failure.error)
         }
         val initialLedger = nextScenario.economyContract?.let { economy ->
-            val factories = nextScenario.units.mapNotNull { spawn ->
-                val definition = nextScenario.unitDefinitions.getValue(spawn.typeId)
-                val producer = definition.production ?: return@mapNotNull null
-                spawn.unitId to FactoryProductionSpec(spawn.ownerPlayerId, producer.unitTypeIds.associateWith {
-                    checkNotNull(nextScenario.unitDefinitions.getValue(it).build) }, definition.upgrades?.actions.orEmpty())
-            }.toMap()
-            ProductionLedger.initial(economy.initialBalances, factories,
+            ProductionLedger.initial(economy.initialBalances, emptyMap(),
                 nextScenario.unitDefinitions.values.any { it.income != null } || nextScenario.maintenanceContract != null)
         }
-        val initialUpgrades = OrdinaryUpgrades.initial(nextScenario)
+        val initialUpgrades = OrdinaryUpgrades.prepare(nextScenario)
         worldGeneration += 1
         activeWorld = WorldHandle("${nextScenario.scenarioId}:$worldGeneration")
         scenario = nextScenario.copy(

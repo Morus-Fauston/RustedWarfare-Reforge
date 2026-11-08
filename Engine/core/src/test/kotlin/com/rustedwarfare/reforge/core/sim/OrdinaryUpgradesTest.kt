@@ -41,7 +41,7 @@ class OrdinaryUpgradesTest {
         assertEquals("unsupported-upgrade", OrdinaryUpgrades.validate(scene)?.code)
         assertNull(OrdinaryUpgrades.validate(scene, registration))
         relations.clear() // The running registration must own its input.
-        var state = OrdinaryUpgrades.initial(scene, registration)!!
+        var state = OrdinaryUpgrades.prepare(scene, registration)!!.register("t", tower)
         var ledger = ProductionLedger.initial(mapOf("p1" to 30L), emptyMap())
         val unit = MutableUnit("t", "p1", "practice", tower, Position(230.0, 150.0), 90.0,
             health = 350.0, objectId = 11L)

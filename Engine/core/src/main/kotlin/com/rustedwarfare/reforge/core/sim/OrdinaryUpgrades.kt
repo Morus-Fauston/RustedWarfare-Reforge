@@ -25,13 +25,11 @@ internal class OrdinaryUpgrades private constructor(private val definitions: Map
         fun validate(input: Scenario, registration: UpgradeRegistration = UpgradeRegistration()): SimulationError? =
             UpgradeRules.validate(input, registration)
 
-        fun initial(input: Scenario, registration: UpgradeRegistration = UpgradeRegistration()): OrdinaryUpgrades? {
+        fun prepare(input: Scenario, registration: UpgradeRegistration = UpgradeRegistration()): OrdinaryUpgrades? {
             check(validate(input, registration) == null) { "Invalid ordinary upgrade registration" }
             if (input.unitDefinitions.values.none { it.upgrades != null }) return null
             return OrdinaryUpgrades(Collections.unmodifiableMap(LinkedHashMap(input.unitDefinitions)),
-                UpgradeQueues.initial(input.units.filter { input.unitDefinitions.getValue(it.typeId).let { definition ->
-                    definition.upgrades != null && definition.production == null } }
-                    .mapTo(mutableSetOf()) { it.unitId }))
+                UpgradeQueues.initial(emptySet()))
         }
 
         fun baseTypeId(typeId: String): String? = OrdinaryUpgradeContent.baseTypeId(typeId)

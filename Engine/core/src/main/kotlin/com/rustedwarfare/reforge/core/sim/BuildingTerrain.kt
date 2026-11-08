@@ -24,12 +24,12 @@ internal class BuildingTerrain private constructor(map: MapDefinition, occupied:
             }), map.waterObstacles + cells)
 
     companion object {
-        fun fromLive(map: MapDefinition, units: Collection<MutableUnit>, old: BuildingTerrain): BuildingTerrain {
+        fun fromLive(map: MapDefinition, units: Collection<MutableUnit>, old: BuildingTerrain?): BuildingTerrain {
             val cells = units.filter { it.alive && it.definition.building != null }.flatMapTo(linkedSetOf()) {
                 val building = checkNotNull(it.definition.building)
                 footprint(map, it.position, building.footprint, building.anchor)
             }
-            return if (cells == old.cells) old else BuildingTerrain(map, cells)
+            return if (old != null && cells == old.cells) old else BuildingTerrain(map, cells)
         }
 
         fun initial(input: Scenario): BuildingTerrain? {

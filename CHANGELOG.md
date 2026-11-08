@@ -1,5 +1,36 @@
 # Changelog
 
+## v0.3.0 (2026-11-08 16:05)
+
+### 架构改进
+
+- **统一单位生成**：开局、工厂出厂、施工及沙盒生成共用初始化、身份和关联登记入口，调用方保留各自的准入、付费与任务规则。
+- **完整登记**：单位入世界时一并登记生产账本、升级队列和建筑占地，移除调用方的重复拼装。
+
+### 修复
+
+- **失败原子性**：身份溢出或关联定义缺失时不消耗出生游标、不留下半注册对象；出厂完成后保留新生单位的账本登记。
+
+### 技术
+
+- **分层回归**：受影响机制测试与五条固定无头链通过；Windows 原版资源正常导入、重开及完整生产施工短链通过，扩展战斗链的后段选中超时保留在报告中。
+
+### 文件变更表
+
+| 文件 | 变更 |
+|:-----|:------|
+| `Engine/core/src/main/kotlin/com/rustedwarfare/reforge/core/sim/UnitRegistration.kt` | 统一生成与关联登记，先准备再提交身份 |
+| `Engine/core/src/main/kotlin/com/rustedwarfare/reforge/core/sim/SimulationContext.kt` | 三条真实创建路径消费共同入口 |
+| `Engine/core/src/main/kotlin/com/rustedwarfare/reforge/core/sim/BuildingWork.kt` | 保留施工自身规则，使用一次生成结果 |
+| `Engine/core/src/main/kotlin/com/rustedwarfare/reforge/core/sim/BuildingTerrain.kt` | 支持共同入口准备初始建筑占地 |
+| `Engine/core/src/main/kotlin/com/rustedwarfare/reforge/core/sim/OrdinaryUpgrades.kt` | 准备空队列，由共同入口逐对象登记 |
+| `Engine/core/src/test/kotlin/com/rustedwarfare/reforge/core/sim/UnitRegistrationTest.kt` | 验证完整登记、失败重试与身份不消耗 |
+| `Engine/core/src/test/kotlin/com/rustedwarfare/reforge/core/sim/BuildingWorkTest.kt` | 验证施工登记失败的局部原子性 |
+| `Engine/core/src/test/kotlin/com/rustedwarfare/reforge/core/sim/BuildingMaintenanceWorkTest.kt` | 适配施工接口，保持维修边界 |
+| `Engine/core/src/test/kotlin/com/rustedwarfare/reforge/core/sim/OrdinaryUpgradesTest.kt` | 适配队列准备与登记职责 |
+
+---
+
 ## v0.2.43 (2026-11-08 13:58)
 
 ### 修复

@@ -5,6 +5,55 @@ import java.nio.file.Path
 import kotlin.test.*
 
 class UnitRegistrationTest {
+    @Test fun sandbox_factory_arrives_with_paid_production_and_building_cost_registered() {
+        val input = BuildingTestContent.scenario()
+        val state = StepState(nextObjectId = 11L,
+            productionLedger = ProductionLedger.initial(mapOf("p1" to 1750L, "p2" to 0L), emptyMap()))
+        val spawn = input.units.single { it.unitId == "f" }
+        val born = UnitRegistration.sandbox(state, input,
+            SandboxCommand.Spawn(spawn.typeId, spawn.position, "p1", state = SandboxInitialState.DAMAGED),
+            3L, 1L, ScreenPlane)
+        val paid = assertIs<ProductionChange.Accepted>(state.productionLedger!!.enqueue(born.unitId, "c_tank", "2".repeat(32)))
+        assertEquals(1400L, paid.ledger.balances.getValue("p1"))
+        assertEquals(checkNotNull(born.definition.maximumHealth) / 2.0, born.health)
+        assertTrue(checkNotNull(state.buildingTerrain).cells.isNotEmpty())
+        assertEquals("sandbox:p1:3:1", born.unitId)
+    }
+
+    @Test fun failed_birth_identity_does_not_consume_a_cursor_or_register_a_partial_unit() {
+        val input = BuildingTestContent.scenario()
+        val state = StepState(nextObjectId = 11L, lastBirthSerial = Long.MAX_VALUE,
+            productionLedger = ProductionLedger.initial(mapOf("p1" to 1750L, "p2" to 0L), emptyMap()))
+        val factory = UnitRegistration.initial(state, input, input.units.single { it.unitId == "f" }, ScreenPlane)
+        val ledger = state.productionLedger
+        val completed = ProductionCompletion("f", "p1", "c_tank", "1".repeat(32))
+        assertFailsWith<ArithmeticException> { UnitRegistration.produced(state, input, factory, completed) }
+        assertEquals(11L, state.nextObjectId)
+        assertEquals(Long.MAX_VALUE, state.lastBirthSerial)
+        assertEquals(listOf("f"), state.units.keys.toList())
+        assertSame(ledger, state.productionLedger)
+        assertTrue(state.pendingEvents.isEmpty())
+        assertFalse(factory.productionSide)
+        state.lastBirthSerial = 0L
+        val born = UnitRegistration.produced(state, input, factory, completed)
+        assertEquals(11L, born.objectId)
+        assertEquals(2, state.units.size)
+        assertEquals(listOf(Event("unit-produced", born.unitId)), state.pendingEvents)
+    }
+
+    @Test fun initial_factory_can_accept_paid_production_without_caller_registration() {
+        val input = BuildingTestContent.scenario()
+        val state = StepState(nextObjectId = 11L,
+            productionLedger = ProductionLedger.initial(mapOf("p1" to 1750L, "p2" to 0L), emptyMap()))
+        UnitRegistration.initial(state, input, input.units.single { it.unitId == "f" }, ScreenPlane)
+        val paid = assertIs<ProductionChange.Accepted>(
+            state.productionLedger!!.enqueue("f", "c_tank", "0".repeat(32)))
+        assertEquals(1400L, paid.ledger.balances.getValue("p1"))
+        assertEquals("c_tank", paid.ledger.queue("f").single().typeId)
+        assertEquals(11L, state.nextObjectId)
+        assertEquals(0L, state.lastBirthSerial)
+    }
+
     @Test fun initial_registration_keeps_explicit_identity_without_consuming_birth_sequence() {
         val input = BuildingTestContent.scenario()
         val state = StepState(nextObjectId = 11L)
@@ -30,8 +79,10 @@ class UnitRegistrationTest {
 
     @Test fun completed_factory_work_registers_a_real_unit_with_shared_identity_and_its_own_exit_state() {
         val input = BuildingTestContent.scenario()
-        val state = StepState(nextObjectId = 11L)
+        val state = StepState(nextObjectId = 11L,
+            productionLedger = ProductionLedger.initial(mapOf("p1" to 1750L, "p2" to 0L), emptyMap()))
         val factory = UnitRegistration.initial(state, input, input.units.single { it.unitId == "f" }, ScreenPlane)
+        val registeredLedger = state.productionLedger
         val nonce = "0".repeat(32)
         val unit = UnitRegistration.produced(state, input, factory,
             ProductionCompletion("f", "p1", "c_tank", nonce))
@@ -56,13 +107,14 @@ class UnitRegistrationTest {
         assertEquals(12L, state.nextObjectId)
         assertEquals(1L, state.lastBirthSerial)
         assertEquals(listOf(Event("unit-produced", id)), state.pendingEvents)
-        assertNull(state.productionLedger, "Arrival registration must not create or advance the caller's paid ledger")
+        assertSame(registeredLedger, state.productionLedger, "Arrival must not advance the paid ledger")
     }
 
 
     @Test fun duplicate_initial_or_completed_identity_is_rejected_without_a_second_birth() {
         val input = BuildingTestContent.scenario()
-        val state = StepState(nextObjectId = 11L)
+        val state = StepState(nextObjectId = 11L,
+            productionLedger = ProductionLedger.initial(mapOf("p1" to 1750L, "p2" to 0L), emptyMap()))
         val spawn = input.units.single { it.unitId == "f" }
         val factory = UnitRegistration.initial(state, input, spawn, ScreenPlane)
         assertFailsWith<IllegalStateException> { UnitRegistration.initial(state, input, spawn, ScreenPlane) }
@@ -103,16 +155,18 @@ class UnitRegistrationTest {
     }
 
 
-    @Test fun construction_prepares_identity_and_defaults_without_inserting_before_the_callers_bookkeeping() {
+    @Test fun construction_registers_identity_defaults_factory_and_building_cost_together() {
         val base = BuildingTestContent.scenario()
         val root = Path.of(checkNotNull(System.getProperty("public.fixtures.dir"))).resolve("build-economy/factory/units")
         val definition = assertIs<ContentResult.Success<UnitDefinition>>(
             ContentLoader.loadFactory(root.resolve("landFactory.properties"))).value
-        val input = base.copy(unitDefinitions = base.unitDefinitions + (definition.id to definition))
+        val builder = assertIs<ContentResult.Success<UnitDefinition>>(
+            ContentLoader.loadBuilder(root.resolve("builder.properties"))).value
+        val input = base.copy(unitDefinitions = base.unitDefinitions + mapOf(definition.id to definition, builder.id to builder))
         val ledger = ProductionLedger.initial(mapOf("p1" to 1750L, "p2" to 0L), emptyMap())
         val state = StepState(nextObjectId = 11L, productionLedger = ledger)
         val nonce = "a".repeat(32)
-        val site = UnitRegistration.prepareConstruction(state, input, "p1", "landFactory", Position(190.0, 170.0), nonce)
+        val site = UnitRegistration.construction(state, input, "p1", "landFactory", Position(190.0, 170.0), nonce).unit
         val id = "constructed:p1:$nonce"
         assertEquals(id, site.unitId)
         assertEquals("p1", site.ownerPlayerId)
@@ -129,17 +183,18 @@ class UnitRegistrationTest {
         assertEquals(0f, site.birthRemaining)
         assertEquals(12L, state.nextObjectId)
         assertEquals(1L, state.lastBirthSerial)
-        assertFalse(id in state.units, "The builder must finish ledger/upgrades/nonce before map insertion")
-        assertSame(ledger, state.productionLedger)
+        assertSame(site, state.units.getValue(id))
+        val paid = assertIs<ProductionChange.Accepted>(state.productionLedger!!.enqueue(id, "c_tank", "3".repeat(32)))
+        assertEquals(1400L, paid.ledger.balances.getValue("p1"))
+        assertTrue(checkNotNull(state.buildingTerrain).cells.isNotEmpty())
         assertEquals(1750L, ledger.balances.getValue("p1"))
         assertTrue(state.pendingEvents.isEmpty())
-        UnitRegistration.registerPrepared(state, site)
-        assertSame(site, state.units.getValue(id))
-        assertFailsWith<IllegalStateException> { UnitRegistration.registerPrepared(state, site) }
+        assertFailsWith<IllegalStateException> {
+            UnitRegistration.construction(state, input, "p1", "landFactory", Position(190.0, 170.0), nonce)
+        }
         assertEquals(1, state.units.size)
         assertEquals(12L, state.nextObjectId)
         assertEquals(1L, state.lastBirthSerial)
-        assertSame(ledger, state.productionLedger)
         assertTrue(state.pendingEvents.isEmpty(), "Construction-created remains the building caller's event")
     }
 

@@ -29,7 +29,8 @@ class BuildingMaintenanceWorkTest {
             override fun path(worker: MutableUnit, target: Position, range: Double, task: UnitTask, step: Long): BuildingRoute? =
                 policies.path.findPath(com.rustedwarfare.reforge.core.path.PlanningTerrain.fromNoFog(scene.map),
                     worker.position, target, worker.definition.radius, targetRange = range)?.let { BuildingRoute(it, -1L, -1L) }
-            override fun prepareConstruction(ownerPlayerId: String, typeId: String, position: Position, nonce: String): MutableUnit =
+            override fun construct(ownerPlayerId: String, typeId: String, position: Position, nonce: String,
+                                   paidLedger: ProductionLedger): ConstructionRegistration =
                 error("Maintenance does not create an object")
         }
         fun frame(step: Long) = BuildingWorkFrame(scene, units, Step(step, 1.0, "sim-tick"), null,
