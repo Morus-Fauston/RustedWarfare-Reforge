@@ -42,7 +42,9 @@
       "com.rustedwarfare.reforge.client.ResourceSoundManifestTest",
       "com.rustedwarfare.reforge.client.SoundPlaybackTest",
       "com.rustedwarfare.reforge.client.NamedWeaponEvidenceTest",
-      "com.rustedwarfare.reforge.client.NamedTurretAppearanceTest"
+      "com.rustedwarfare.reforge.client.NamedTurretAppearanceTest",
+      "com.rustedwarfare.reforge.client.ShieldPresentationTest",
+      "com.rustedwarfare.reforge.client.ShieldResourceBindingTest"
     ],
     "pc": [
       "com.rustedwarfare.reforge.pc.VisualAssetPreparationTest",
@@ -71,7 +73,8 @@
       "com.rustedwarfare.reforge.pc.PcPlaybackSoundFactoryTest",
       "com.rustedwarfare.reforge.pc.WeightedSoundPackCompositionTest",
       "com.rustedwarfare.reforge.pc.PcOriginalImageExtractionTest",
-      "com.rustedwarfare.reforge.pc.PcOriginalResourceExtractionTest"
+      "com.rustedwarfare.reforge.pc.PcOriginalResourceExtractionTest",
+      "com.rustedwarfare.reforge.pc.ShieldOriginalProfileTest"
     ],
     "tools": [
       "com.rustedwarfare.reforge.testing.PlatformSessionRunnerTest",

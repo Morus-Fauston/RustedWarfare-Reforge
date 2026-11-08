@@ -6213,7 +6213,8 @@
     "sea-factory-dead": "res/drawable/sea_factory_dead.png",
     "hover-body": "res/drawable/hover_tank.png",
     "hover-dead": "res/drawable/hover_tank_dead.png",
-    "hover-shadow": "res/drawable/hover_tank_shadow.png"
+    "hover-shadow": "res/drawable/hover_tank_shadow.png",
+    "heavy-shield": "res/drawable/shield_mid.png"
   },
   "mappingBasis": {
     "androidProfileSha256": "e273280ab37b1a24714e6b15d8e1cb14fdd395e228ea7c71a62dd2f24d334780",
@@ -6243,6 +6244,14 @@
       "sha256": "f7f80f8ae08e89839030061b3fd9c64c6fa7da7187f246f037677a42dc85944c",
       "width": 17,
       "height": 24
+    },
+    {
+      "path": "res/drawable/shield_mid.png",
+      "bytes": 2961,
+      "sha256": "9d5fa70ddd3475b261f588db2e38625bbe6804952b57a887530edb902f9d3bab",
+      "width": 92,
+      "height": 92,
+      "id": "heavy-shield"
     }
   ],
   "mappingUnitOutputs": {
@@ -6293,6 +6302,22 @@
         24
       ],
       "frames": 1
+    },
+    "heavy-shield": {
+      "file": "units/heavy-shield.png",
+      "operation": "crop",
+      "source": "heavy-shield",
+      "rect": [
+        0,
+        0,
+        92,
+        92
+      ],
+      "target": [
+        92,
+        92
+      ],
+      "frames": 1
     }
   },
   "mappingUnitBindings": {
@@ -6300,6 +6325,16 @@
       "body": "hover-body",
       "dead": "hover-dead",
       "shadow": "hover-shadow"
+    },
+    "mechHeavyMissile": {
+      "body": "heavy-mech",
+      "turret": "heavy-mech-turret",
+      "leg": "heavy-mech-leg",
+      "foot": "heavy-mech-foot",
+      "weaponTurrets": {
+        "smallLaser": "heavy-mech-small-turret"
+      },
+      "shield": "heavy-shield"
     }
   }
 }

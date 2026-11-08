@@ -473,6 +473,7 @@ object TraceComparator {
             else -> null
         }
         if (mechLegCount != null) validateMechPose(unit.objectAt("mechPose"), mechLegCount)
+        validateShieldSample(unit, unit.id("typeId") in typesLoadedBy(scenario, setOf("mech-heavy")))
         if (unit.id("typeId") in typesLoadedBy(scenario, setOf("helicopter"))) validateFlightPose(unit)
         if (unit.id("typeId") in typesLoadedBy(scenario, setOf("battleship", "water-combat"))) validateWaterPose(unit)
         if (unit.id("typeId") in typesLoadedBy(scenario, setOf("underwater-target"))) {
@@ -512,6 +513,24 @@ object TraceComparator {
                 defense.number("energy"); booleanField(defense, "exhausted")
             } }
         }
+    }
+
+    private fun validateShieldSample(unit: JsonObject, required: Boolean) {
+        fun invalid(reason: String): Nothing = throw Incomplete("shield-state", reason)
+        val value = unit["shield"]
+        if (!required && (value == null || value == JsonNull)) return
+        val shield = value as? JsonObject ?: invalid("Missing visible shield state")
+        if (shield.keys != setOf("current", "maximum", "displayDamage"))
+            invalid("Incomplete or unapproved shield fields")
+        val numbers = listOf("current", "maximum", "displayDamage").associateWith { key ->
+            val literal = shield[key] as? JsonPrimitive
+            val number = literal?.doubleOrNull
+            if (literal == null || literal.isString || number == null || !number.isFinite() ||
+                !number.toFloat().isFinite() || number < 0.0) invalid("Invalid shield $key")
+            number
+        }
+        if (numbers.getValue("maximum").toFloat() <= 0f ||
+            numbers.getValue("current") > numbers.getValue("maximum")) invalid("Invalid shield capacity or amount")
     }
 
     private fun validateWaterPose(unit: JsonObject) {

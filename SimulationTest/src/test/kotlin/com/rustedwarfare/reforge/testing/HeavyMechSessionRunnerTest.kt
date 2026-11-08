@@ -24,7 +24,10 @@ class HeavyMechSessionRunnerTest {
             assertTrue(poses.all { it.arrayAt("legs").size == 4 })
             assertTrue(poses.take(20).any { pose -> pose.arrayAt("legs").any { it.jsonObject.number("height") > .1 } })
             val final = samples.last().objectAt("sample")
-            assertTrue(final.arrayAt("units").single { it.jsonObject["unitId"] == s("b") }.jsonObject.number("health") < 2500.0)
+            val target = final.arrayAt("units").single { it.jsonObject["unitId"] == s("b") }.jsonObject
+            assertTrue(target.objectAt("shield").number("current") < 500.0,
+                "The normal heavy target now spends its shield before health")
+            assertEquals(2500.0, target.number("health"))
             val births = samples.flatMap { it.objectAt("sample").arrayAt("projectileEvents") }.map { it.jsonObject }
                 .filter { it["kind"] == s("born") && it["sourceUnitId"] == s("a") }
             assertTrue(births.any { it["sourceWeaponName"] == s("smallLaser") && it["targetUnitId"] == s("b") })

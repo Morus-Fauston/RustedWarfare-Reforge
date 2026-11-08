@@ -964,6 +964,13 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
                     HoverMotion.advanceCorpse(unit, currentScenario.map, step.delta)
                     continue
                 }
+                unit.definition.shield?.let { profile ->
+                    val restored = unit.shield + profile.regeneration * step.delta.toFloat()
+                    require(restored.isFinite()) { "Shield regeneration must remain finite" }
+                    unit.shield = restored.coerceIn(0f, profile.maximum)
+                    val faded = unit.shieldDisplayDamage - unit.shieldDisplayDamage * .02f * step.delta.toFloat()
+                    unit.shieldDisplayDamage = maxOf(0f, faded - 4f * step.delta.toFloat()).coerceAtMost(50f)
+                }
                 if (unit.combat == null) MechBody.advance(unit, step.delta)
                 val previousRequest = unit.movementRequested
                 unit.movementRequested = false
@@ -1188,6 +1195,8 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
             return SimulationError("invalid-contract", "Capture radii must be finite and positive")
         }
         for (definition in input.unitDefinitions.values) {
+            if (definition.shield?.let { !it.isValid() || definition.maximumHealth == null } == true)
+                return SimulationError("unsupported-shield", "Expected finite positive shield capacity and nonnegative regeneration on a durable unit")
             val m = definition.movement
             val air = m.type == MovementType.AIR
             val hovering = m.type == MovementType.HOVER && m.hover != null
@@ -1953,7 +1962,13 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
         val constructionDamage = if (target.constructionProgress < 1f) damage * 1.75 else damage
         require(constructionDamage.isFinite()) { "Construction damage must remain finite" }
         val applied = target.definition.durability?.maxDamagePerHit?.let { minOf(constructionDamage, it) } ?: constructionDamage
-        target.health = maxOf(0.0, before - applied)
+        val absorbed = minOf(target.shield.toDouble(), applied)
+        target.shield = (target.shield - absorbed).toFloat()
+        if (absorbed > 0.0) {
+            target.shieldDisplayDamage += absorbed.toFloat()
+            pendingEvents += Event("shield-damaged", target.unitId)
+        }
+        target.health = maxOf(0.0, before - (applied - absorbed))
         pendingEvents += Event("unit-damaged", target.unitId)
         if (!target.alive) {
             missileTargets = missileTargets?.remove(target.unitId)
@@ -2202,6 +2217,7 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
                     movementState = unit.movementState,
                     health = unit.health,
                     maxHealth = unit.definition.maximumHealth,
+                    shield = unit.definition.shield?.let { ShieldObservation(unit.shield, it.maximum, unit.shieldDisplayDamage) },
                     alive = unit.alive,
                     attackTargetId = if (unit.tasks.firstOrNull()?.kind == UnitTaskKind.PATROL) unit.primaryCombatTargetId
                         else unit.attackCommand?.targetUnitId,

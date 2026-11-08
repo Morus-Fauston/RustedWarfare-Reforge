@@ -176,6 +176,8 @@ internal fun UnitObservation.json(capabilities: Boolean): JsonObject = JsonObjec
         "atStep" to it.atStep?.let(::n), "buildingTypeId" to it.buildingTypeId?.let(::s),
         "buildingNonce" to it.buildingNonce?.let(::s)) }),
 ).toMutableMap().apply {
+    shield?.let { put("shield", obj("current" to n(it.current), "maximum" to n(it.maximum),
+        "displayDamage" to n(it.displayDamage))) }
     mechPose?.let { put("mechPose", it.json()) }
     flightPose?.let { put("height", n(height)); put("flightPose", it.json()) }
     waterPose?.let { put("height", n(height)); put("waterPose", obj(

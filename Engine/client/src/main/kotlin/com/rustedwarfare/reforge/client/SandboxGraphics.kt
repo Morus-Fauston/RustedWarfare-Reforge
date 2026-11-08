@@ -30,6 +30,7 @@ class SandboxGraphics private constructor(private val resources: SandboxRenderRe
     private val feet = mutableMapOf<String, TextureRegion>()
     private val rotors = mutableMapOf<String, TextureRegion>()
     private val shadows = mutableMapOf<String, TextureRegion>()
+    private val shields = mutableMapOf<String, TextureRegion>()
     fun unitIcon(typeId: String): TextureRegion? = units[typeId]
 
     companion object {
@@ -127,6 +128,7 @@ class SandboxGraphics private constructor(private val resources: SandboxRenderRe
             definition.footImagePath?.let { feet[id] = TextureRegion(texture(it)) }
             definition.rotorImagePath?.let { rotors[id] = TextureRegion(texture(it)) }
             definition.shadowImagePath?.let { shadows[id] = TextureRegion(texture(it)) }
+            definition.shieldImagePath?.let { shields[id] = TextureRegion(texture(it)) }
         }
     }
 
@@ -221,6 +223,16 @@ class SandboxGraphics private constructor(private val resources: SandboxRenderRe
                 batch.draw(turret, projection.x(pivot.x) - tw / 2, projection.y(pivot.y) - th / 2,
                     tw / 2, th / 2, tw, th, 1f, 1f, -drawing.heading.toFloat())
             }
+            ShieldPresentation.image(unit, shields)?.let { drawing ->
+                val shield = drawing.resource
+                val shieldSize = definition.drawSize(UnitImageSlot.SHIELD, shield.regionWidth, shield.regionHeight)
+                val sw = (shieldSize.width * projection.scale).toFloat()
+                val sh = (shieldSize.height * projection.scale).toFloat()
+                val center = unit.displayedBodyPosition()
+                batch.setColor(1f, 1f, 1f, drawing.opacity)
+                batch.draw(shield, projection.x(center.x) - sw / 2, projection.y(center.y) - sh / 2, sw, sh)
+                batch.color = Color.WHITE
+            }
         }
         construction?.let { preview ->
             val definition = resources.units.getValue(preview.typeId)
@@ -266,6 +278,12 @@ class SandboxGraphics private constructor(private val resources: SandboxRenderRe
             val maximum = unit.maxHealth
             if (unit.alive && health != null && maximum != null) {
                 shapes.line(x - radius, y + radius + 4f, x - radius + 2f * radius * (health / maximum).toFloat(), y + radius + 4f)
+            }
+            if (unit.alive) unit.shield?.let { shield ->
+                shapes.color = Color.CYAN
+                shapes.line(x - radius, y + radius + 8f,
+                    x - radius + 2f * radius * (shield.current / shield.maximum), y + radius + 8f)
+                shapes.color = resources.unitCircleColor(frame.observation.playerId, unit.ownerPlayerId)
             }
             if (unit.alive && unit.constructionProgress < 1f) {
                 shapes.color = Color.CYAN

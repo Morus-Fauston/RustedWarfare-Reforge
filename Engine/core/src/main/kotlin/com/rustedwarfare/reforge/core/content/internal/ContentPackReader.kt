@@ -164,7 +164,8 @@ internal object ContentPackReader {
             val images = listOf("image" to definition.imagePath, "image_turret" to combat?.turretImagePath,
                 "image_wreak" to (definition.durability?.deadImagePath ?: combat?.deadImagePath),
                 "image_back" to definition.building?.backImagePath,
-                "image_end" to definition.rotor?.imagePath, "image_shadow" to definition.shadowImagePath) + definition.mech?.legs.orEmpty().flatMap {
+                "image_end" to definition.rotor?.imagePath, "image_shadow" to definition.shadowImagePath,
+                "image_shield" to definition.shieldImagePath) + definition.mech?.legs.orEmpty().flatMap {
                     listOf("image_leg" to it.legImage, "image_foot" to it.footImage) } +
                 combat?.namedWeapons?.ordered.orEmpty().map { "turret_${it.name}.image" to it.imagePath }
             for ((slot, image) in images) {

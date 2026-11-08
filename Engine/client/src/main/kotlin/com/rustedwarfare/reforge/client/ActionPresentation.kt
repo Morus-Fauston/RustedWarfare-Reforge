@@ -104,6 +104,7 @@ internal class ActionCatalogue(private val definitions: Map<String, UnitDefiniti
         val workerText = if (buildings.isEmpty()) null else workerText(workers.sortedBy { it.unitId }, view)
         val info = if (ids.isEmpty()) null else if (ids.size > 1) workerText else selected?.let { unit ->
             "${unit.health?.toInt() ?: 0} / ${unit.maxHealth?.toInt() ?: 0}" +
+                (unit.shield?.let { "\nShield ${it.current.toInt()} / ${it.maximum.toInt()}" } ?: "") +
                 (nominalIncome(unit.typeId)?.let { "\n+\$${it.toInt()}" } ?: "") +
                 (if (unit.constructionProgress < 1f) "\nBuilding ${(unit.constructionProgress * 100f).toInt()}%"
                     else if (unit.typeId.startsWith("extractorT") || unit.typeId.startsWith("fabricatorT")) "\nActive" else "") +

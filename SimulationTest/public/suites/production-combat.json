@@ -147,7 +147,11 @@
       "com.rustedwarfare.reforge.core.sim.HoverSoundTest",
       "com.rustedwarfare.reforge.core.sim.HoverSinkingTest",
       "com.rustedwarfare.reforge.core.sim.HoverBoundaryTest",
-      "com.rustedwarfare.reforge.core.sim.HoverTargetTest"
+      "com.rustedwarfare.reforge.core.sim.HoverTargetTest",
+      "com.rustedwarfare.reforge.core.sim.ShieldCombatTest",
+      "com.rustedwarfare.reforge.core.sim.ShieldLifecycleTest",
+      "com.rustedwarfare.reforge.core.sim.ShieldValidationTest",
+      "com.rustedwarfare.reforge.core.sim.ShieldVisibilityTest"
     ],
     "client": [
       "com.rustedwarfare.reforge.client.CombatActorEvidenceTest",
@@ -183,7 +187,9 @@
       "com.rustedwarfare.reforge.client.AuthorNavalChainSandboxTest",
       "com.rustedwarfare.reforge.client.PhaseFiveSandboxTest",
       "com.rustedwarfare.reforge.client.HoverProjectionTest",
-      "com.rustedwarfare.reforge.client.HoverProductionSandboxTest"
+      "com.rustedwarfare.reforge.client.HoverProductionSandboxTest",
+      "com.rustedwarfare.reforge.client.ShieldPresentationTest",
+      "com.rustedwarfare.reforge.client.ShieldResourceBindingTest"
     ],
     "pc": [
       "com.rustedwarfare.reforge.pc.PatrolJsonlPairingTest",
@@ -196,7 +202,8 @@
       "com.rustedwarfare.reforge.pc.NavalBaseSoundTest",
       "com.rustedwarfare.reforge.pc.NavalOriginalProfileTest",
       "com.rustedwarfare.reforge.pc.NavalTerrainAppearanceTest",
-      "com.rustedwarfare.reforge.pc.HoverOriginalProfileTest"
+      "com.rustedwarfare.reforge.pc.HoverOriginalProfileTest",
+      "com.rustedwarfare.reforge.pc.ShieldOriginalProfileTest"
     ],
     "tools": [
       "com.rustedwarfare.reforge.testing.ProductionCombatScenarioTest",
@@ -227,7 +234,8 @@
       "com.rustedwarfare.reforge.testing.RunnerToolCostTest",
       "com.rustedwarfare.reforge.testing.perf.WholeChainToolCostTest",
       "com.rustedwarfare.reforge.testing.PhaseFiveArchiveTest",
-      "com.rustedwarfare.reforge.testing.HoverArchiveTest"
+      "com.rustedwarfare.reforge.testing.HoverArchiveTest",
+      "com.rustedwarfare.reforge.testing.ShieldArchiveTest"
     ]
   },
   "short": [

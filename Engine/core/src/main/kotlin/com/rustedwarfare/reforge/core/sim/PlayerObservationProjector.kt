@@ -93,7 +93,7 @@ internal class PlayerObservationProjector(world: WorldHandle, scenario: Scenario
                 (!(event.kind.startsWith("production-") || event.kind.startsWith("upgrade-") ||
                     event.kind in setOf("construction-unavailable", "construction-insufficient-funds", "construction-queue-full", "maintenance-completed")) ||
                     visible.any { it.unitId == event.unitId && it.ownerPlayerId == playerId }) }
-            val combatKinds = setOf("projectile-fired", "unit-damaged", "unit-died",
+            val combatKinds = setOf("projectile-fired", "unit-damaged", "shield-damaged", "unit-died",
                 "production-queued", "production-cancelled", "production-refunded", "unit-produced",
                 "upgrade-queued", "upgrade-cancelled", "upgrade-completed", "upgrade-refunded")
             // S1 command events retain submission order. Combat order is public-value canonical,

@@ -12,7 +12,7 @@
       {
         "id": "mechHeavyMissile",
         "path": "../inputs/heavy-mech-production/json/package/units/heavy.json",
-        "sha256": "e84997cfa340405a86cf3d3dfaceeed0a48738988af0ddab558636a8440c3398",
+        "sha256": "9a275a4df24efb36e503975896c69237887c4687570b8ff6b0d395b16c544788",
         "loader": "mech-heavy"
       }
     ],
@@ -46,6 +46,11 @@
         "id": "dep3",
         "path": "../inputs/mech-production/json/assets/terrain.png",
         "sha256": "1b47e4821cdbfc66460f690322cf641afc1fc782a3ed6985df8b9e773ed98ff0"
+      },
+      {
+        "id": "heavy-shield-image",
+        "path": "../inputs/heavy-mech-production/json/package/units/shield.png",
+        "sha256": "78f7f5c331d0235c56db25d364ae43bf01f8deb021bfceadf60353a9e6384179"
       }
     ]
   },

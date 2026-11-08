@@ -153,7 +153,11 @@ data class UnitObservation(
     val flightPose: FlightPose? = null,
     val waterPose: WaterPose? = null,
     val hoverPose: HoverPose? = null,
+    val shield: ShieldObservation? = null,
 )
+
+/** Visible durability state; no source identity or hidden combat scheduling. */
+data class ShieldObservation(val current: Float, val maximum: Float, val displayDamage: Float = 0f)
 
 /** Current visible hover state; its height does not grant the AIR target category. */
 data class HoverPose(val velocity: Position, val heightPhase: Double)
@@ -365,6 +369,8 @@ internal data class MutableUnit(
     var terrainCorrectionTime: Double = 0.0,
     var terrainClearSteps: Int = 0,
     var health: Double? = definition.maximumHealth,
+    var shield: Float = definition.shield?.maximum ?: 0f,
+    var shieldDisplayDamage: Float = 0f,
     var attackCommand: ManualAttackCommand? = null,
     var taskQueue: UnitTaskQueue = UnitTaskQueue(),
     /** Last activity's logical request, independent of propulsion and path success. */

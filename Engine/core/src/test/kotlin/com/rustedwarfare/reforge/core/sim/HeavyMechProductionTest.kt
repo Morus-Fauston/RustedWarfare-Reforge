@@ -44,6 +44,8 @@ class HeavyMechProductionTest {
                 val productionLimit = q + 1900
                 while (context.observe().units.none { it.unitId == heavy } && q < productionLimit) tick()
                 val born = context.observe().units.single { it.unitId == heavy }
+                assertEquals(ShieldObservation(500f, 500f), born.shield,
+                    "Normal paid production uses the same full shield initialization as initial spawns")
                 assertEquals(Position(277.0, 149.0), born.position)
                 assertEquals(4, assertNotNull(born.mechPose).legs.size)
                 assertNull(born.flightPose)

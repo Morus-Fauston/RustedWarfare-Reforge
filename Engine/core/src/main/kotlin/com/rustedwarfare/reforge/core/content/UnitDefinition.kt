@@ -32,6 +32,8 @@ class UnitDefinition(
     /** Explicit author surface capability; native hull qualification remains separate. */
     val authoredWaterCombat: Boolean = false,
     val shadowImagePath: Path? = null,
+    val shield: ShieldProfile? = null,
+    val shieldImagePath: Path? = null,
 ) {
     val retainedUnconsumed: Set<String> = Collections.unmodifiableSet(LinkedHashSet(retainedUnconsumed))
     val maximumHealth: Double? get() = durability?.maxHp ?: combat?.maxHp
@@ -77,6 +79,11 @@ data class FixedUnderwaterTargetProfile(val height: Double = -8.0)
 enum class DirectHitTargetKind { ORDINARY, NATIVE_BUILDING }
 
 data class DurabilityProfile(val maxHp: Double, val deadImagePath: Path?, val maxDamagePerHit: Double? = null)
+
+/** Actual shield capacity and per-simulation-time regeneration, separate from hit display. */
+data class ShieldProfile(val maximum: Float, val regeneration: Float) {
+    fun isValid(): Boolean = maximum.isFinite() && maximum > 0f && regeneration.isFinite() && regeneration >= 0f
+}
 data class BuildingFootprint(val left: Int, val top: Int, val right: Int, val bottom: Int)
 data class FootprintAnchor(val offsetX: Float, val offsetY: Float)
 data class BuildingProfile(val footprint: BuildingFootprint, val backImagePath: Path? = null,

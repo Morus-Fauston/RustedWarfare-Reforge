@@ -304,6 +304,13 @@ internal object CombatContentReader {
                 } else null)
         })
         val primary = catalog.ordered.first()
+        val shield = if (heavy) {
+            fun shieldNumber(key: String, positive: Boolean): Float = number("core", key, positive).toFloat().also {
+                if (!it.isFinite() || positive && it <= 0f) invalid(ContentErrorCode.MALFORMED_SYNTAX, "core", key,
+                    reason = "Expected a finite ${if (positive) "positive" else "nonnegative"} shield float")
+            }
+            ShieldProfile(shieldNumber("maxShield", true), shieldNumber("shieldRegen", false))
+        } else null
         val profile = CombatProfile(
             integer("core", "maxHp", true).toDouble(), number("attack", "maxAttackRange", true),
             primary.shootDelay, primary.turretSize, primary.turnSpeed, primary.turnAcceleration,
@@ -326,7 +333,8 @@ internal object CombatContentReader {
                 if (hover) HoverProfile() else null),
             sections.flatMap { (s, values) -> values.keys.filter { it in retained[sectionKind(s)].orEmpty() || water && s == "core" && it == "transportSlotsNeeded" } }.toSet(), sight, profile,
             build = BuildProfile(price, buildRate), mech = gait, rotor = flight?.second,
-            authoredWaterCombat = authorWater, shadowImagePath = if (hover) image("image_shadow") else null)
+            authoredWaterCombat = authorWater, shadowImagePath = if (hover) image("image_shadow") else null,
+            shield = shield, shieldImagePath = if (heavy) image("image_shield") else null)
         definition
     }
 }

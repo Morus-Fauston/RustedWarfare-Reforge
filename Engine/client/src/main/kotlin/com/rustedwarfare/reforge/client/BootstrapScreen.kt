@@ -1072,6 +1072,7 @@ class BootstrapScreen(
             if (selected.ownerPlayerId == "p1") "Local control" else "No controller",
             selected.movementState.name.lowercase(), selected.position.x, selected.position.y, selected.heading, selected.speed) +
             (selected.health?.let { "\nHP ${it.toInt()} / ${selected.maxHealth?.toInt()}" } ?: "") +
+            (selected.shield?.let { "\nShield ${it.current.toInt()} / ${it.maximum.toInt()}" } ?: "") +
             (if (selected.typeId.startsWith("c_turret")) "\n${selected.typeId}" else "") +
             (selected.pointDefense?.let { String.format(Locale.ROOT, "\nEnergy %.3f%s", it.energy,
                 if (it.exhausted) " LOCKED" else "") } ?: ""))

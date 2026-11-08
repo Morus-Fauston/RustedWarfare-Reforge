@@ -53,7 +53,10 @@ internal class PcOriginalImageProfile(val id: String, val jarBytes: Int, val jar
             fun clone(value: JsonValue) = JsonReader().parse(value.toJson(OutputType.json))
             root.get("mappingSources")?.forEach { mapped.get("sources").addChild(clone(it)) }
             root.get("mappingUnitOutputs")?.forEach { mapped.get("unitOutputs").addChild(it.name, clone(it)) }
-            root.get("mappingUnitBindings")?.forEach { mapped.get("unitBindings").addChild(it.name, clone(it)) }
+            root.get("mappingUnitBindings")?.forEach {
+                mapped.get("unitBindings").remove(it.name)
+                mapped.get("unitBindings").addChild(it.name, clone(it))
+            }
             for (source in mapped.get("sources")) {
                 val pathName = root.get("mappedSourceIds").getString(source.getString("id"))
                 require(pathName == source.getString("path"))

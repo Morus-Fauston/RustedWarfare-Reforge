@@ -7,7 +7,7 @@ import java.util.Locale
 data class VisualUnitResourceIds(val body: ResourceId, val back: ResourceId?, val turret: ResourceId?,
     val dead: ResourceId?, val totalFrames: Int, val logicalImages: UnitImageLogicalSizes? = null,
     val leg: ResourceId? = null, val foot: ResourceId? = null, val rotor: ResourceId? = null,
-    val weaponTurrets: Map<String, ResourceId> = emptyMap(), val shadow: ResourceId? = null)
+    val weaponTurrets: Map<String, ResourceId> = emptyMap(), val shadow: ResourceId? = null, val shield: ResourceId? = null)
 
 /** Immutable logical bindings for an already prepared generation; lookup never performs IO. */
 class PreparedResourcePack private constructor(val metadata: ResourcePackMetadata, resources: Map<ResourceId, Path>,
