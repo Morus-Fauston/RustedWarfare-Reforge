@@ -95,6 +95,7 @@ internal object ScenarioReader {
             verifyTemplateReferences(ref.path, paths, mutableSetOf())
             val unit = unwrap(when (declaration["loader"]?.jsonPrimitive?.content ?: "variant") {
                 "combat" -> ContentLoader.loadCombatUnit(ref.path)
+                "declared-tank" -> checkedAuthor(ContentLoader.loadDeclaredTankWithSources(ref.path))
                 "mech" -> ContentLoader.loadMechUnit(ref.path)
                 "mech-heavy" -> ContentLoader.loadHeavyMechUnit(ref.path)
                 "helicopter" -> ContentLoader.loadHelicopterUnit(ref.path)

@@ -8,8 +8,7 @@ import kotlin.test.*
 class AuthorNavalChainScenarioTest {
     @Test fun complete_three_format_paid_upgrade_dual_birth_and_normal_arrival_archives_match() {
         val public = Path.of(System.getProperty("repo.root")).resolve("SimulationTest/public")
-        val output = System.getenv("RWR_AUTHOR_WATER_ARCHIVE_ROOT")?.let(Path::of)
-            ?: Files.createTempDirectory("rwr-author-naval-chain-")
+        val output = TestArchives.directory("RWR_AUTHOR_WATER_ARCHIVE_ROOT", javaClass, "rwr-author-naval-chain-")
         Files.createDirectories(output)
         var baseline: String? = null
         val secondId = "produced:p1:" + "c".repeat(32)

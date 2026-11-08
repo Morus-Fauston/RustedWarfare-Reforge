@@ -4,6 +4,7 @@
   "inputScope": "public",
   "tests": {
     "tools": [
+      "com.rustedwarfare.reforge.testing.TestArchivesTest",
       "com.rustedwarfare.reforge.testing.cross.CrossComparisonTest",
       "com.rustedwarfare.reforge.testing.cross.MotionV2CampaignTest",
       "com.rustedwarfare.reforge.testing.cross.MotionV2CoreAssessmentTest",

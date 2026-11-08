@@ -54,8 +54,7 @@ class AuthorWaterScenarioTest {
     }
     @Test fun complete_author_archives_match_across_formats_and_missing_water_pose_is_rejected() {
         val public = Path.of(System.getProperty("repo.root")).resolve("SimulationTest/public")
-        val output = System.getenv("RWR_AUTHOR_WATER_ARCHIVE_ROOT")?.let(Path::of)
-            ?: Files.createTempDirectory("rwr-author-water-archive-")
+        val output = TestArchives.directory("RWR_AUTHOR_WATER_ARCHIVE_ROOT", javaClass, "rwr-author-water-archive-")
         Files.createDirectories(output)
         var baseline: List<JsonObject>? = null
         for (format in listOf("ini", "json", "hjson")) {
@@ -90,8 +89,7 @@ class AuthorWaterScenarioTest {
     }
     @Test fun normal_platform_sessions_keep_all_authored_weapon_births_and_close_in_all_formats() {
         val public = Path.of(System.getProperty("repo.root")).resolve("SimulationTest/public")
-        val output = System.getenv("RWR_AUTHOR_WATER_ARCHIVE_ROOT")?.let(Path::of)
-            ?: Files.createTempDirectory("rwr-author-water-session-")
+        val output = TestArchives.directory("RWR_AUTHOR_WATER_ARCHIVE_ROOT", javaClass, "rwr-author-water-session-")
         Files.createDirectories(output)
         for (format in listOf("ini", "json", "hjson")) {
             val target = output.resolve("session-$format")

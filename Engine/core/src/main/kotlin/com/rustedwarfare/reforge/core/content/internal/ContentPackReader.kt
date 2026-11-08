@@ -106,7 +106,7 @@ internal object ContentPackReader {
             val field = "units[$index]"
             val spec = objectFields(entry, setOf("type", "file"), manifest, field)
             val capability = string(spec.get("type"), "$field.type")
-            if (capability !in setOf("tank", "mech", "mech-heavy", "mech-factory", "builder", "constructor", "factory", "helicopter", "air-factory", "battleship", "water-combat", "sea-factory", "underwater-target"))
+            if (capability !in setOf("tank", "mech", "mech-heavy", "mech-factory", "builder", "constructor", "factory", "helicopter", "air-factory", "battleship", "water-combat", "sea-factory", "underwater-target", "command-center", "land-factory"))
                 reject(ContentErrorCode.UNSUPPORTED_FEATURE, manifest, field = "$field.type", reason = "Expected an implemented finite combat, mech, factory or builder capability")
             val reference = string(spec.get("file"), "$field.file")
             val pieces = reference.split('/')
@@ -122,6 +122,11 @@ internal object ContentPackReader {
             if (!files.add(input)) reject(ContentErrorCode.IDENTITY_CONFLICT, manifest, field = "$field.file", ref = reference,
                 reason = "Duplicate package entry")
             val loaded = when (capability) {
+                "command-center" -> CommandCenterContentReader.readWithSources(input) { requireOrdinary(root, it) }
+                "land-factory" -> FactoryContentReader.readWithSources(input) { requireOrdinary(root, it) }.also {
+                    if (it.definition.production?.exitProfile != FactoryExitProfile.NATIVE_LAND)
+                        reject(ContentErrorCode.UNSUPPORTED_FEATURE, input, field = "format", reason = "Expected the finite native land factory profile")
+                }
                 "underwater-target" -> UnderwaterTargetContentReader.readWithSources(input) { requireOrdinary(root, it) }
                 "battleship" -> CombatContentReader.readBattleshipWithSources(input) { requireOrdinary(root, it) }
                 "water-combat" -> CombatContentReader.readAuthorWaterWithSources(input) { requireOrdinary(root, it) }

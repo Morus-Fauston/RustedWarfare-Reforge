@@ -7,7 +7,7 @@ import kotlin.test.*
 import kotlinx.serialization.json.*
 
 class CrossComparisonTest {
-    private val directory = System.getenv("REFORGE_CROSS_EVIDENCE")?.let(Path::of) ?: Files.createTempDirectory("reforge-cross-")
+    private val directory = TestArchives.directory("REFORGE_CROSS_EVIDENCE", javaClass, "instance-"+java.util.UUID.randomUUID().toString())
     private fun trace(id: String, objectId: String, x: String = "1", inputStep: Int = 0): String = """
         {"kind":"start","implementationId":"$id","traceSchema":"cross-trajectory-v1"}
         {"kind":"sample","step":0,"objects":[{"id":"$objectId","x":0}]}

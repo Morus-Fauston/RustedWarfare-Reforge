@@ -21,9 +21,7 @@ class MechPublicScenarioTest {
             "automaticVision" to obj("retention" to s("MEMORY"), "pathSource" to s("PLAYER_KNOWLEDGE"),
                 "shareAlliedVision" to b(false), "observers" to array(listOf(s("p1"), s("p2"))),
                 "grid" to obj("width" to n(30), "height" to n(20)))))
-        val temporary = System.getenv("RWRE_P005_ARCHIVE_ROOT")?.let {
-            Files.createDirectories(Path.of(it)).resolve("mech-qualification").also { target -> Files.createDirectory(target) }
-        } ?: Files.createTempDirectory("mech-pose-integrity-")
+        val temporary = TestArchives.directory("RWRE_P005_ARCHIVE_ROOT", javaClass, "mech-qualification")
         val scenario = temporary.resolve("scenario.json")
         Files.writeString(scenario, document.toString())
         val contractPath = root.resolve("contracts/mech-ini-short.json")

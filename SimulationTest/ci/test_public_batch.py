@@ -19,6 +19,7 @@ class PublicBatchTest(unittest.TestCase):
                 relative=source.relative_to(REPO)
                 if str(relative).replace('\\','/') not in {
                     'SimulationTest/ci/public_batch.py','SimulationTest/ci/public_check.py',
+                    'SimulationTest/ci/development_check.py','SimulationTest/ci/public_distribution.py',
                     'SimulationTest/tools/workflow.py','SimulationTest/tools/workflow_inputs.py'}:
                     if source.name not in {'gradlew','gradlew.bat','build.gradle.kts','settings.gradle.kts','gradle.properties'}:continue
                 target=repo/relative;target.parent.mkdir(parents=True,exist_ok=True);shutil.copyfile(source,target)
@@ -58,7 +59,7 @@ class PublicBatchTest(unittest.TestCase):
                 batch=json.loads((output/'result.json').read_bytes());self.assertEqual(1,len(batch['suites']))
                 child=json.loads((output/'content-movement-knowledge/result.json').read_bytes())
                 self.assertEqual(124,child['commands'][0]['exitCode'])
-                receipt=json.loads((output/'content-movement-knowledge/tests-and-package-process/result.json').read_bytes())
+                receipt=json.loads((output/'content-movement-knowledge/test-execution/command/result.json').read_bytes())
                 self.assertEqual('timeout',receipt['firstError']['kind'])
                 self.assertEqual(1,receipt['timeoutSeconds'])
                 self.assertFalse(receipt['passed'])
@@ -110,7 +111,7 @@ class PublicBatchTest(unittest.TestCase):
             repo = Path(tmp)
             ci = repo/'SimulationTest/ci'
             ci.mkdir(parents=True)
-            for filename in ['public_batch.py', 'public_check.py']:
+            for filename in ['public_batch.py', 'public_check.py', 'development_check.py', 'public_distribution.py']:
                 shutil.copyfile(Path(__file__).with_name(filename), ci/filename)
             public = repo/'SimulationTest/public'
             (public/'suites').mkdir(parents=True)
@@ -157,6 +158,14 @@ class PublicBatchTest(unittest.TestCase):
                 '--kind', 'mechanism', '--output', str(output)], capture_output=True, text=True)
             self.assertEqual(2, retry.returncode)
             self.assertEqual(original, (output/'result.json').read_bytes())
+            pr_output = repo/'pr-batch'
+            prepared_failure = subprocess.run([sys.executable, '-B', str(ci/'public_batch.py'),
+                '--kind', 'pr', '--output', str(pr_output)], capture_output=True, text=True, timeout=30)
+            self.assertEqual(1, prepared_failure.returncode, prepared_failure.stderr)
+            pr_batch = json.loads((pr_output/'result.json').read_text(encoding='utf8'))
+            self.assertEqual(9, pr_batch['sharedBuild']['exitCode'])
+            self.assertEqual([], pr_batch['suites'], 'Preparation failure must precede every suite')
+            self.assertFalse((pr_output/'content-movement-knowledge').exists())
 
 
 if __name__ == '__main__':

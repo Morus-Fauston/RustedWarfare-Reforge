@@ -113,7 +113,7 @@ class TestScenarioChoice private constructor(val seed: Path, val root: Path, val
                         "build" -> matching(intent.getString("typeId") == action.getString("buildingTypeId"))
                         "produce" -> matching(intent.getString("typeId") == action.getString("productionTypeId"))
                         "upgrade" -> matching(intent.getString("upgradeId") == action.getString("upgradeId"))
-                        "move", "attack" -> Unit
+                        "move", "attack", "stop" -> Unit
                         else -> matching(false)
                     }
                 }

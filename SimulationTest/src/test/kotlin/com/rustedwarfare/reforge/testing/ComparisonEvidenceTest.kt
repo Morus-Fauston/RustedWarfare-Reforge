@@ -9,8 +9,7 @@ import kotlinx.serialization.json.*
 /** Literal tool fixtures, never a gameplay baseline or an expectation extracted from a core run. */
 class ComparisonEvidenceTest {
     @Test fun `file archives prove T01 T02 T03 with immutable expected input`() {
-        val root = System.getenv("SIMULATION_COMPARISON_EVIDENCE")?.let(Path::of)
-            ?: Files.createTempDirectory("comparison-evidence-").resolve("suite")
+        val root = TestArchives.directory("SIMULATION_COMPARISON_EVIDENCE", javaClass, "comparison-evidence-").resolve("suite")
         Files.createDirectory(root)
         val fixtures = ComparisonTest()
         val scenario = fixtures.scenario()

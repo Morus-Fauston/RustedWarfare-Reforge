@@ -9,6 +9,78 @@ import tempfile
 
 
 class PlatformIntentTest(unittest.TestCase):
+    def test_default_windows_startup_uses_no_content_override_and_keeps_evidence_isolated(self):
+        from platform_windows import startup_arguments
+        snapshot=Path('owned-snapshot');evidence=Path('owned-evidence')
+        args,title=startup_arguments(dict(testScene={},windowsDefaultStart=True),snapshot,evidence)
+        self.assertEqual(['--evidence',str(evidence),'--visuals','placeholder'],args)
+        self.assertEqual('RustedWarfare-Reforge | Phase V sandbox',title)
+        explicit,title=startup_arguments({},snapshot,evidence)
+        self.assertEqual(['--mode','sandbox','--inputs',str(snapshot),'--evidence',str(evidence),'--visuals','placeholder'],explicit)
+        self.assertEqual('RustedWarfare-Reforge | P002 Windows sandbox',title)
+        for plan in (dict(windowsDefaultStart='true',testScene={}),dict(windowsDefaultStart=True)):
+            with self.subTest(plan=plan),self.assertRaises(PlatformError):startup_arguments(plan,snapshot,evidence)
+
+    def test_progress_only_four_times_wait_is_explicit_and_keeps_all_existing_bounds(self):
+        from platform_windows import validate_windows_plan
+        plan=dict(scenarioId='s',testScene={},intents=[dict(intentId='wait',kind='select',waitSteps=600)],
+            windowsWaits=dict(wait=dict(rate=4,progressOnly=True,maximumSimulationSteps=720,maximumWallSeconds=10,stallSeconds=4)))
+        contract=dict(scenarioId='s',rules=[dict(intentId='wait')],history=dict(initialBalance=100))
+        self.assertEqual([dict(intentId='wait',actionType='SelectAction')],validate_windows_plan(plan,contract))
+        for fault in ('implicit','too-few-steps','unbounded','wall','stall','event-ambiguity'):
+            changed=copy.deepcopy(plan);wait=changed['windowsWaits']['wait']
+            if fault=='implicit':wait.pop('progressOnly')
+            elif fault=='too-few-steps':wait['maximumSimulationSteps']=599
+            elif fault=='unbounded':wait['maximumSimulationSteps']=1201
+            elif fault=='wall':wait['maximumWallSeconds']=61
+            elif fault=='stall':wait['stallSeconds']=11
+            else:wait['eventKind']='unit-produced';wait['unitType']='builder'
+            with self.subTest(fault=fault),self.assertRaises(PlatformError):validate_windows_plan(changed,contract)
+
+    def test_windows_history_dispatches_the_existing_stop_action_and_rejects_unknown_intents(self):
+        from platform_windows import validate_windows_plan
+        plan=dict(scenarioId='s',testScene={},intents=[dict(intentId='stop',kind='stop')])
+        contract=dict(scenarioId='s',rules=[dict(intentId='stop')],history=dict(initialBalance=100))
+        self.assertEqual([dict(intentId='stop',actionType='StopAction')],validate_windows_plan(plan,contract))
+        changed=copy.deepcopy(plan);changed['intents'][0]['kind']='invented'
+        with self.assertRaises(PlatformError):validate_windows_plan(changed,contract)
+
+    def test_history_checks_fractional_periodic_income_and_its_live_owned_source_at_every_boundary(self):
+        from platform_scenario import compare_history
+        source=dict(unitId='center',ownerPlayerId='p1',typeId='commandCenter',alive=True,
+                    constructionProgress=1,position=dict(x=1,y=2))
+        def sample(step,precise):
+            return dict(worldId='w',stepIndex=step,simulationTime=step+1,balance=int(precise),credits=precise,
+                        units=[copy.deepcopy(source)])
+        rows=[dict(sequence=0,kind='observation',phase='initial',sample=sample(-1,100)),
+              dict(sequence=1,kind='observation',phase='step',sample=sample(0,100)),
+              dict(sequence=2,kind='observation',phase='before-action',sample=sample(0,100)),
+              dict(sequence=3,kind='action',type='SelectAction',unitId='center',actorPlayerId='p1',
+                   result=dict(actionId='select',accepted=True)),
+              dict(sequence=4,kind='observation',phase='after-action',sample=sample(0,100)),
+              dict(sequence=5,kind='observation',phase='step',sample=sample(1,104.5)),
+              dict(sequence=6,kind='observation',phase='step',sample=sample(2,104.5)),
+              dict(sequence=7,kind='observation',phase='before-close',sample=sample(2,104.5))]
+        plan=dict(scenarioId='s',intents=[dict(intentId='select',kind='select',position=dict(x=1,y=2),waitSteps=1)])
+        policy=dict(initialBalance=100,initialIncome=dict(unitId='center',typeId='commandCenter',period=2,credits=4.5))
+        anchors=[dict(intentId='select',afterSequence=1,endSequence=6)]
+        self.assertEqual(0,compare_history(rows,plan,policy,anchors)['exitCode'])
+        for fault in ('early','missing','imprecise','double','dead','foreign','wrong-type','duplicate','incomplete'):
+            changed=copy.deepcopy(rows)
+            if fault=='early':changed[1]['sample'].update(balance=104,credits=104.5)
+            elif fault=='missing':changed[5]['sample'].update(balance=100,credits=100)
+            elif fault=='imprecise':changed[5]['sample']['credits']=104.4
+            elif fault=='double':changed[6]['sample'].update(balance=109,credits=109)
+            elif fault=='dead':changed[5]['sample']['units'][0]['alive']=False
+            elif fault=='foreign':changed[5]['sample']['units'][0]['ownerPlayerId']='p2'
+            elif fault=='wrong-type':changed[5]['sample']['units'][0]['typeId']='builder'
+            elif fault=='duplicate':changed[5]['sample']['units'].append(copy.deepcopy(source))
+            else:changed[5]['sample']['units'][0]['constructionProgress']=.5
+            with self.subTest(fault=fault),self.assertRaises(PlatformError):compare_history(changed,plan,policy,anchors)
+        for invalid in (dict(period=0),dict(credits=float('nan')),dict(extra=True),dict(period=True)):
+            changed=copy.deepcopy(policy);changed['initialIncome'].update(invalid)
+            with self.subTest(invalid=invalid),self.assertRaises(PlatformError):compare_history(rows,plan,changed,anchors)
+
     def test_native_history_targets_use_the_approved_pixel_footprint_only(self):
         from platform_scenario import validate_history_action
         sample=dict(worldId='w',stepIndex=0,simulationTime=1,
@@ -125,6 +197,26 @@ class PlatformIntentTest(unittest.TestCase):
                             [records[0],dict(records[1],generation=2)],
                             [records[0],dict(records[1],mapWidth=41)]):
                 with self.assertRaises(PlatformError):windows_geometry(root,changed)
+
+    def test_attack_history_distinguishes_the_fixed_ground_position_from_the_flight_click_point(self):
+        from platform_scenario import validate_history_action
+        sample=dict(worldId='w',stepIndex=0,simulationTime=1,units=[
+            dict(unitId='a',ownerPlayerId='p1',alive=True),
+            dict(unitId='air',ownerPlayerId='p2',alive=True,position=dict(x=750,y=650),height=20)])
+        action=dict(sequence=1,kind='action',type='AttackAction',unitId='a',actorPlayerId='p1',
+                    targetUnitId='air',result=dict(accepted=True))
+        rows=[dict(sequence=0,kind='observation',phase='before-action',sample=copy.deepcopy(sample)),action,
+              dict(sequence=2,kind='observation',phase='after-action',sample=copy.deepcopy(sample))]
+        intent=dict(kind='attack',targetUnitId='air',position=dict(x=750,y=630),targetGroundPosition=dict(x=750,y=650))
+        validate_history_action(rows,action,intent)
+        for fault in ('wrong-ground','wrong-id','dead','friendly'):
+            changed=copy.deepcopy(rows)
+            if fault=='wrong-ground':changed[0]['sample']['units'][1]['position']['y']=651
+            elif fault=='wrong-id':changed[1]['targetUnitId']='other'
+            elif fault=='dead':changed[0]['sample']['units'][1]['alive']=False
+            else:changed[0]['sample']['units'][1]['ownerPlayerId']='p1'
+            with self.subTest(fault=fault),self.assertRaises(PlatformError):
+                validate_history_action(changed,changed[1],intent)
 
     def test_history_binds_formal_action_identity_parameters_and_production_fifo(self):
         from platform_scenario import session_anchors

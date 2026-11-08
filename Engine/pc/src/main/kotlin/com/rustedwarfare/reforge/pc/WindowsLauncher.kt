@@ -7,12 +7,14 @@ import com.rustedwarfare.reforge.client.DemoStartupScreen
 import java.nio.file.Path
 
 fun main(args: Array<String>) {
-    val options = WindowsLaunchOptions.parse(args, Path.of(""))
-    val runId = options.runId
     val userBase = PcVisualAssetPaths.userBase(System.getenv("LOCALAPPDATA"), System.getProperty("user.home"))
     val codeLocation = Path.of(PcVisualAssetSettings::class.java.protectionDomain.codeSource.location.toURI())
     val applicationRoot = PcVisualAssetPaths.applicationRoot(codeLocation,
         Path.of(""))
+    val sceneRoot = applicationRoot.resolve(if (codeLocation.fileName.toString().endsWith(".jar"))
+        "test-scenarios/scenarios" else "SimulationTest/public/scenarios")
+    val options = WindowsLaunchOptions.parse(args, Path.of(""), sceneRoot.resolve("phase-five-json.json"))
+    val runId = options.runId
     val visualSettings = PcVisualAssetSettings(VisualAssetSettingsStore(userBase.resolve("settings.properties")),
         userBase.resolve("cache"), applicationRoot, options)
     if (options.mode == "demo") {
@@ -53,8 +55,8 @@ fun main(args: Array<String>) {
         try {
             Lwjgl3Application(WindowPerfSampling(BootstrapScreen(inputs, evidence,
                 visualSettings = visualSettings, soundFactory = PcPlaybackSoundFactory(),
-                testScenarioSeed = if (codeLocation.fileName.toString().endsWith(".jar")) applicationRoot.resolve("test-scenarios/scenarios/dual-ship-production.json")
-                    else applicationRoot.resolve("SimulationTest/public/scenarios/dual-ship-production.json")), evidence), config)
+                testScenarioSeed = options.testScenarioSeed ?: sceneRoot.resolve("dual-ship-production.json"),
+                selectDefaultTestScenario = options.testScenarioSeed != null), evidence), config)
             evidence.record("process-completed", mapOf("status" to "normal"))
         } catch (failure: Throwable) {
             preserveFailure(failure) { evidence.record("process-failed", mapOf("message" to failure.toString())) }

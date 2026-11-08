@@ -12,6 +12,30 @@ from public_check import build_shared_distribution, identities, source_files
 
 
 class PublicDistributionTest(unittest.TestCase):
+    def test_pr_package_pins_prepared_classes_and_exact_suite_without_granting_long_or_other_inputs(self):
+        from public_distribution import artifact_identities
+        with self.fixture() as (root, distribution, _, source, toolchain, _):
+            compiled = root/'compiled'; compiled.mkdir()
+            (compiled/'Example.class').write_bytes(b'owned compiled fixture')
+            plan = dict(suiteId='owned-pr', kind='pr', inputScope='public',
+                        fixture='inputs/one', tests={'core':['Example']}, pythonTests=[], scenarios=[])
+            preparation = dict(repo=str(root.resolve()), selection=[plan],
+                tasks=[':core:testClasses', ':installDist'],
+                executions=[dict(task=':core:compileTestKotlin', failure=None)],
+                artifacts=artifact_identities([compiled]))
+            receipt = root/'pr-distribution.json'
+            pinned = seal(distribution, receipt, source, toolchain, kind='pr', preparation=preparation)
+            self.assertEqual(distribution.resolve(), verify(receipt, pinned, source, toolchain,
+                kind='pr', plan=plan, repo=root))
+            for changed in [dict(plan, fixture='inputs/two'), dict(plan, tests={'core':['Other']})]:
+                with self.assertRaisesRegex(ValueError, 'prepared selection'):
+                    verify(receipt, pinned, source, toolchain, kind='pr', plan=changed, repo=root)
+            with self.assertRaisesRegex(ValueError, 'kind'):
+                verify(receipt, pinned, source, toolchain, kind='long')
+            (compiled/'Example.class').write_bytes(b'changed compiled fixture')
+            with self.assertRaisesRegex(ValueError, 'prepared artifacts'):
+                verify(receipt, pinned, source, toolchain, kind='pr', plan=plan, repo=root)
+
     def owned_environment(self, root):
         jdk = root/'owned JDK identity fixture'
         (jdk/'bin').mkdir(parents=True)

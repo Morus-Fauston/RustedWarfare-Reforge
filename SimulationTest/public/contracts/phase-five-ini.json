@@ -1,0 +1,696 @@
+{
+  "schemaVersion": 1,
+  "kind": "behavior-contract",
+  "contractId": "public.phase-five.contract.v1",
+  "scope": "self-behavior",
+  "scenarioIds": [
+    "public.phase-five-sandbox.v1"
+  ],
+  "comparison": {
+    "numberMode": "declared-per-field",
+    "tolerances": {}
+  },
+  "approval": {
+    "status": "tool-fixture-only",
+    "source": "ENG-P008-018 pre-fixed owned sample contract02/revision04. Initial center30000; twelve normal charges26350; income4.5 per10 ticks. Literal binary32 production boundaries reused from reviewed native profiles (.002:501, .0012:834, .0006:1667, .0004:2500). Four factories, same identities on two upgrades, five simultaneous products at15000 then ordinary mixed combat to22000. No original timing, platform or performance claim. Session firing identities follow the existing ordinary projectile unnamed-weapon export and named ballistic point shots with null unit targets; ground ballistic target details are covered by the existing017 Core archive and its independent tests."
+  },
+  "exclusions": [
+    "original-compatibility",
+    "platform-input",
+    "performance"
+  ],
+  "constructedUnits": [
+    {
+      "unitId": "constructed:p1:22222222222222222222222222222222",
+      "buildActionId": "build-land",
+      "builderId": "produced:p1:11111111111111111111111111111111",
+      "owner": "p1",
+      "typeId": "landFactory",
+      "buildingNonce": "22222222222222222222222222222222",
+      "birthStepIndex": 1100
+    },
+    {
+      "unitId": "constructed:p1:44444444444444444444444444444444",
+      "buildActionId": "build-mech",
+      "builderId": "produced:p1:11111111111111111111111111111111",
+      "owner": "p1",
+      "typeId": "mechFactory",
+      "buildingNonce": "44444444444444444444444444444444",
+      "birthStepIndex": 2600
+    },
+    {
+      "unitId": "constructed:p1:66666666666666666666666666666666",
+      "buildActionId": "build-air",
+      "builderId": "produced:p1:11111111111111111111111111111111",
+      "owner": "p1",
+      "typeId": "airFactory",
+      "buildingNonce": "66666666666666666666666666666666",
+      "birthStepIndex": 5450
+    },
+    {
+      "unitId": "constructed:p1:88888888888888888888888888888888",
+      "buildActionId": "build-sea",
+      "builderId": "produced:p1:11111111111111111111111111111111",
+      "owner": "p1",
+      "typeId": "seaFactory",
+      "buildingNonce": "88888888888888888888888888888888",
+      "birthStepIndex": 7650
+    }
+  ],
+  "producedUnits": [
+    {
+      "unitId": "produced:p1:11111111111111111111111111111111",
+      "productionActionId": "produce-builder",
+      "producerId": "center",
+      "owner": "p1",
+      "typeId": "builder",
+      "unitNonce": "11111111111111111111111111111111",
+      "birthStepIndex": 500
+    },
+    {
+      "unitId": "produced:p1:33333333333333333333333333333333",
+      "productionActionId": "produce-tank",
+      "producerId": "constructed:p1:22222222222222222222222222222222",
+      "owner": "p1",
+      "typeId": "c_tank",
+      "unitNonce": "33333333333333333333333333333333",
+      "birthStepIndex": 2800
+    },
+    {
+      "unitId": "produced:p1:55555555555555555555555555555555",
+      "productionActionId": "produce-mech",
+      "producerId": "constructed:p1:44444444444444444444444444444444",
+      "owner": "p1",
+      "typeId": "mechGun",
+      "unitNonce": "55555555555555555555555555555555",
+      "birthStepIndex": 4633
+    },
+    {
+      "unitId": "produced:p1:77777777777777777777777777777777",
+      "productionActionId": "produce-helicopter",
+      "producerId": "constructed:p1:66666666666666666666666666666666",
+      "owner": "p1",
+      "typeId": "helicopter",
+      "unitNonce": "77777777777777777777777777777777",
+      "birthStepIndex": 7483
+    },
+    {
+      "unitId": "produced:p1:99999999999999999999999999999999",
+      "productionActionId": "produce-heavy",
+      "producerId": "constructed:p1:44444444444444444444444444444444",
+      "owner": "p1",
+      "typeId": "mechHeavyMissile",
+      "unitNonce": "99999999999999999999999999999999",
+      "birthStepIndex": 9316
+    },
+    {
+      "unitId": "produced:p1:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "productionActionId": "produce-battleship",
+      "producerId": "constructed:p1:88888888888888888888888888888888",
+      "owner": "p1",
+      "typeId": "heavyBattleship",
+      "unitNonce": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "birthStepIndex": 14449
+    }
+  ],
+  "convertedUnits": [
+    {
+      "unitId": "constructed:p1:44444444444444444444444444444444",
+      "upgradeActionId": "upgrade-mech",
+      "sourceTypeId": "mechFactory",
+      "targetTypeId": "mechFactoryT2",
+      "completionStepIndex": 7199
+    },
+    {
+      "unitId": "constructed:p1:88888888888888888888888888888888",
+      "upgradeActionId": "upgrade-sea",
+      "sourceTypeId": "seaFactory",
+      "targetTypeId": "seaFactoryT2",
+      "completionStepIndex": 11849
+    }
+  ],
+  "rules": [
+    {
+      "ruleId": "initial",
+      "when": {
+        "phase": "initial",
+        "stepIndex": 0
+      },
+      "assertions": [
+        {
+          "path": "economy.balances.p1",
+          "operator": "equals",
+          "value": 30000
+        }
+      ]
+    },
+    {
+      "ruleId": "worker-exit",
+      "when": {
+        "phase": "after-advance",
+        "stepIndex": 799
+      },
+      "assertions": [
+        {
+          "path": "economy.balances.p1",
+          "operator": "equals",
+          "value": 29860
+        }
+      ]
+    },
+    {
+      "ruleId": "five-coexist",
+      "when": {
+        "phase": "after-advance",
+        "stepIndex": 14999
+      },
+      "assertions": [
+        {
+          "path": "economy.balances.p1",
+          "operator": "equals",
+          "value": 10400
+        },
+        {
+          "path": "economy.preciseBalances.p1",
+          "operator": "equals",
+          "value": 10400
+        },
+        {
+          "path": "units.produced:p1:33333333333333333333333333333333.alive",
+          "operator": "equals",
+          "value": true
+        },
+        {
+          "path": "units.produced:p1:33333333333333333333333333333333.type",
+          "operator": "equals",
+          "value": "c_tank"
+        },
+        {
+          "path": "units.produced:p1:55555555555555555555555555555555.alive",
+          "operator": "equals",
+          "value": true
+        },
+        {
+          "path": "units.produced:p1:55555555555555555555555555555555.type",
+          "operator": "equals",
+          "value": "mechGun"
+        },
+        {
+          "path": "units.produced:p1:77777777777777777777777777777777.alive",
+          "operator": "equals",
+          "value": true
+        },
+        {
+          "path": "units.produced:p1:77777777777777777777777777777777.type",
+          "operator": "equals",
+          "value": "helicopter"
+        },
+        {
+          "path": "units.produced:p1:99999999999999999999999999999999.alive",
+          "operator": "equals",
+          "value": true
+        },
+        {
+          "path": "units.produced:p1:99999999999999999999999999999999.type",
+          "operator": "equals",
+          "value": "mechHeavyMissile"
+        },
+        {
+          "path": "units.produced:p1:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.alive",
+          "operator": "equals",
+          "value": true
+        },
+        {
+          "path": "units.produced:p1:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.type",
+          "operator": "equals",
+          "value": "heavyBattleship"
+        }
+      ]
+    },
+    {
+      "ruleId": "mixed-combat",
+      "when": {
+        "phase": "after-advance",
+        "stepIndex": 21999
+      },
+      "assertions": [
+        {
+          "path": "economy.balances.p1",
+          "operator": "equals",
+          "value": 13550
+        },
+        {
+          "path": "economy.preciseBalances.p1",
+          "operator": "equals",
+          "value": 13550
+        },
+        {
+          "path": "units.tankTarget.alive",
+          "operator": "equals",
+          "value": false
+        },
+        {
+          "path": "units.mechTarget.alive",
+          "operator": "equals",
+          "value": false
+        },
+        {
+          "path": "units.helicopterTarget.alive",
+          "operator": "equals",
+          "value": false
+        },
+        {
+          "path": "units.airTarget.alive",
+          "operator": "equals",
+          "value": false
+        }
+      ]
+    }
+  ],
+  "platform": {
+    "schemaVersion": 1,
+    "scenarioId": "public.phase-five-sandbox.v1",
+    "rules": [
+      {
+        "intentId": "select-center"
+      },
+      {
+        "intentId": "produce-builder"
+      },
+      {
+        "intentId": "wait-1"
+      },
+      {
+        "intentId": "select-builder-land"
+      },
+      {
+        "intentId": "approach-land"
+      },
+      {
+        "intentId": "approach-land-face-build"
+      },
+      {
+        "intentId": "builder-build-land"
+      },
+      {
+        "intentId": "build-land"
+      },
+      {
+        "intentId": "wait-2"
+      },
+      {
+        "intentId": "select-land"
+      },
+      {
+        "intentId": "produce-tank"
+      },
+      {
+        "intentId": "select-builder-mech"
+      },
+      {
+        "intentId": "approach-mech"
+      },
+      {
+        "intentId": "approach-mech-face-build"
+      },
+      {
+        "intentId": "builder-build-mech"
+      },
+      {
+        "intentId": "build-mech"
+      },
+      {
+        "intentId": "wait-3"
+      },
+      {
+        "intentId": "select-mech-t1"
+      },
+      {
+        "intentId": "produce-mech"
+      },
+      {
+        "intentId": "wait-4"
+      },
+      {
+        "intentId": "select-mech-upgrade"
+      },
+      {
+        "intentId": "upgrade-mech"
+      },
+      {
+        "intentId": "select-builder-air"
+      },
+      {
+        "intentId": "approach-air"
+      },
+      {
+        "intentId": "wait-5"
+      },
+      {
+        "intentId": "wait-5-select-builder"
+      },
+      {
+        "intentId": "wait-5-face-build"
+      },
+      {
+        "intentId": "builder-build-air"
+      },
+      {
+        "intentId": "build-air"
+      },
+      {
+        "intentId": "wait-6"
+      },
+      {
+        "intentId": "select-air"
+      },
+      {
+        "intentId": "produce-helicopter"
+      },
+      {
+        "intentId": "select-builder-sea"
+      },
+      {
+        "intentId": "approach-sea"
+      },
+      {
+        "intentId": "wait-7"
+      },
+      {
+        "intentId": "wait-7-select-builder"
+      },
+      {
+        "intentId": "wait-7-face-build"
+      },
+      {
+        "intentId": "select-mech-t2"
+      },
+      {
+        "intentId": "produce-heavy"
+      },
+      {
+        "intentId": "builder-build-sea"
+      },
+      {
+        "intentId": "build-sea"
+      },
+      {
+        "intentId": "wait-8"
+      },
+      {
+        "intentId": "wait-9"
+      },
+      {
+        "intentId": "select-sea-t1"
+      },
+      {
+        "intentId": "upgrade-sea"
+      },
+      {
+        "intentId": "wait-10"
+      },
+      {
+        "intentId": "wait-11"
+      },
+      {
+        "intentId": "wait-12"
+      },
+      {
+        "intentId": "wait-13"
+      },
+      {
+        "intentId": "select-sea-t2"
+      },
+      {
+        "intentId": "produce-battleship"
+      },
+      {
+        "intentId": "wait-14"
+      },
+      {
+        "intentId": "wait-15"
+      },
+      {
+        "intentId": "wait-16"
+      },
+      {
+        "intentId": "wait-17"
+      },
+      {
+        "intentId": "wait-18"
+      },
+      {
+        "intentId": "select-combat-tank"
+      },
+      {
+        "intentId": "move-combat-tank"
+      },
+      {
+        "intentId": "stop-combat-tank"
+      },
+      {
+        "intentId": "attack-combat-tank"
+      },
+      {
+        "intentId": "select-combat-mech"
+      },
+      {
+        "intentId": "move-combat-mech"
+      },
+      {
+        "intentId": "stop-combat-mech"
+      },
+      {
+        "intentId": "attack-combat-mech"
+      },
+      {
+        "intentId": "select-combat-heavy"
+      },
+      {
+        "intentId": "move-combat-heavy"
+      },
+      {
+        "intentId": "stop-combat-heavy"
+      },
+      {
+        "intentId": "attack-combat-heavy"
+      },
+      {
+        "intentId": "select-combat-helicopter"
+      },
+      {
+        "intentId": "move-combat-helicopter"
+      },
+      {
+        "intentId": "stop-combat-helicopter"
+      },
+      {
+        "intentId": "attack-combat-helicopter"
+      },
+      {
+        "intentId": "select-combat-battleship"
+      },
+      {
+        "intentId": "move-combat-battleship"
+      },
+      {
+        "intentId": "stop-combat-battleship"
+      },
+      {
+        "intentId": "attack-combat-battleship"
+      },
+      {
+        "intentId": "wait-combat-1"
+      },
+      {
+        "intentId": "wait-combat-2"
+      },
+      {
+        "intentId": "wait-combat-3"
+      },
+      {
+        "intentId": "wait-combat-4"
+      },
+      {
+        "intentId": "wait-combat-5"
+      },
+      {
+        "intentId": "wait-combat-6"
+      },
+      {
+        "intentId": "wait-combat-7"
+      },
+      {
+        "intentId": "wait-combat-8"
+      },
+      {
+        "intentId": "wait-combat-9"
+      },
+      {
+        "intentId": "wait-combat-10"
+      },
+      {
+        "intentId": "wait-combat-11"
+      }
+    ],
+    "history": {
+      "initialBalance": 30000,
+      "initialOwnedTypes": [
+        "commandCenter"
+      ],
+      "initialIncome": {
+        "unitId": "center",
+        "typeId": "commandCenter",
+        "period": 10,
+        "credits": 4.5
+      },
+      "spend": [
+        {
+          "intentId": "produce-builder",
+          "amount": 500,
+          "at": "action"
+        },
+        {
+          "intentId": "build-land",
+          "amount": 700,
+          "at": "construction-created"
+        },
+        {
+          "intentId": "produce-tank",
+          "amount": 350,
+          "at": "action"
+        },
+        {
+          "intentId": "build-mech",
+          "amount": 1000,
+          "at": "construction-created"
+        },
+        {
+          "intentId": "produce-mech",
+          "amount": 600,
+          "at": "action"
+        },
+        {
+          "intentId": "upgrade-mech",
+          "amount": 4000,
+          "at": "action"
+        },
+        {
+          "intentId": "build-air",
+          "amount": 1000,
+          "at": "construction-created"
+        },
+        {
+          "intentId": "produce-helicopter",
+          "amount": 700,
+          "at": "action"
+        },
+        {
+          "intentId": "produce-heavy",
+          "amount": 8500,
+          "at": "action"
+        },
+        {
+          "intentId": "build-sea",
+          "amount": 1000,
+          "at": "construction-created"
+        },
+        {
+          "intentId": "upgrade-sea",
+          "amount": 2000,
+          "at": "action"
+        },
+        {
+          "intentId": "produce-battleship",
+          "amount": 6000,
+          "at": "action"
+        }
+      ],
+      "projectileBirthsRequired": true,
+      "mechLegs": {
+        "mechGun": 2,
+        "mechHeavyMissile": 4
+      },
+      "productionOrder": [
+        "builder",
+        "c_tank",
+        "mechGun",
+        "helicopter",
+        "mechHeavyMissile",
+        "heavyBattleship"
+      ],
+      "completedUpgradeTypes": [
+        "mechFactoryT2",
+        "seaFactoryT2"
+      ],
+      "minimumBirths": [
+        {
+          "ownerPlayerId": "p1",
+          "typeId": "c_tank",
+          "weaponNames": [
+            null
+          ],
+          "targetUnitId": "tankTarget"
+        },
+        {
+          "ownerPlayerId": "p1",
+          "typeId": "mechGun",
+          "weaponNames": [
+            "mainBody"
+          ],
+          "targetUnitId": "mechTarget"
+        },
+        {
+          "ownerPlayerId": "p1",
+          "typeId": "mechHeavyMissile",
+          "weaponNames": [
+            "smallLaser"
+          ],
+          "targetUnitId": "helicopterTarget"
+        },
+        {
+          "ownerPlayerId": "p1",
+          "typeId": "helicopter",
+          "weaponNames": [
+            "gun"
+          ],
+          "targetUnitId": "airTarget"
+        },
+        {
+          "ownerPlayerId": "p1",
+          "typeId": "heavyBattleship",
+          "weaponNames": [
+            "1"
+          ],
+          "targetUnitId": null
+        }
+      ],
+      "finalUnits": [
+        {
+          "unitId": "tankTarget",
+          "fields": {
+            "alive": false
+          }
+        },
+        {
+          "unitId": "mechTarget",
+          "fields": {
+            "alive": false
+          }
+        },
+        {
+          "unitId": "helicopterTarget",
+          "fields": {
+            "alive": false
+          }
+        },
+        {
+          "unitId": "airTarget",
+          "fields": {
+            "alive": false
+          }
+        }
+      ]
+    }
+  }
+}

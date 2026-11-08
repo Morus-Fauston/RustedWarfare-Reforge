@@ -9,8 +9,7 @@ class NavalProductionArchiveTest {
     @Test fun normal_three_format_production_archives_preserve_and_compare_every_intermediate_gameplay_field() {
         val repo = Path.of(System.getProperty("repo.root"))
         val public = repo.resolve("SimulationTest/public")
-        val root = System.getenv("RWR_NAVAL_ARCHIVE_ROOT")?.let { Files.createDirectories(Path.of(it)).resolve("production-core") }
-            ?: Files.createTempDirectory("naval-production-core-").resolve("archives")
+        val root = TestArchives.directory("RWR_NAVAL_ARCHIVE_ROOT", javaClass, "production-core").resolve("archives")
         Files.createDirectory(root)
         var expected: Path? = null
         for (format in listOf("ini", "json", "hjson")) {

@@ -7,8 +7,7 @@ import kotlin.test.*
 class RunnerToolCostTest {
     @Test fun fixed_short_archive_separates_loading_validation_sampling_encoding_and_writing_without_changing_judgment() {
         val public = Path.of(System.getProperty("repo.root")).resolve("SimulationTest/public")
-        val root = System.getenv("RWRE_P005_COST_ARCHIVE_ROOT")?.let(Path::of)
-            ?: Files.createTempDirectory("rwr-tool-cost-")
+        val root = TestArchives.directory("RWRE_P005_COST_ARCHIVE_ROOT", javaClass, "rwr-tool-cost-")
         Files.createDirectories(root)
         val output = root.resolve("short-cost")
         val scenario = public.resolve("scenarios/select-move-stop.json")

@@ -1,0 +1,105 @@
+# Own commented two-legged declaration
+{
+  format: "rw-reforge.unit.v1",
+  core: {
+    "name": "mechGun",
+    "class": "CustomUnitMetadata",
+    "price": 600,
+    "maxHp": 500,
+    "mass": 3000,
+    "techLevel": 1,
+    "buildSpeed": 0.0012,
+    "radius": 13,
+    "displayRadius": 11,
+    "isBio": false,
+    "softCollisionOnAll": 0,
+    "fogOfWarSightRange": 15
+  },
+  "graphics": {
+    "total_frames": 1,
+    "image": "body.png",
+    "image_turret": "NONE",
+    "image_wreak": "NONE",
+    "lock_body_rotation_with_main_turret": true,
+    "lock_leg_rotation_with_main_turret": false
+  },
+  "attack": {
+    "canAttack": true,
+    "canAttackFlyingUnits": false,
+    "canAttackLandUnits": true,
+    "canAttackUnderwaterUnits": false,
+    "turretSize": 20,
+    "turretTurnSpeed": 3,
+    "maxAttackRange": 130,
+    "shootDelay": 30
+  },
+  "weapons": [
+    {
+      "name": "mainBody",
+      "x": 0,
+      "y": 0,
+      "idleDir": 0,
+      "barrelX": 5,
+      "barrelY": 16,
+      "turnSpeed": 2.9,
+      "turnSpeedAcceleration": 0.3,
+      "recoilOffset": -1,
+      "recoilOutTime": 2,
+      "recoilReturnTime": 14,
+      "projectile": "1",
+      "canShoot": true,
+      "warmup": 7,
+      "idleSweepAngle": 20,
+      "idleSweepSpeed": 0.3,
+      "idleSweepDelay": 100,
+      "idleSweepAddRandomDelay": 50,
+      "idleSweepCondition": "if not self.isMoving()"
+    }
+  ],
+  "projectiles": [
+    {
+      "name": "1",
+      "directDamage": 23,
+      "life": 70,
+      "speed": 0,
+      "targetSpeed": 8,
+      "targetSpeedAcceleration": 1.5
+    }
+  ],
+  "movement": {
+    "movementType": "LAND",
+    "moveSpeed": 0.8,
+    "moveAccelerationSpeed": 0.07,
+    "moveDecelerationSpeed": 0.07,
+    "maxTurnSpeed": 7,
+    "turnAcceleration": 0.5,
+    "moveSlidingMode": false,
+    "moveIgnoringBody": false,
+    "reverseSpeedPercentage": 1
+  },
+  "leg_1": {
+    "x": -8,
+    "y": 0,
+    "attach_x": -3,
+    "attach_y": 0,
+    "moveSpeed": 2.8,
+    "moveWarmUp": "0.1s",
+    "rotateSpeed": 7,
+    "heightSpeed": 0.65,
+    "resetAngle": 25,
+    "holdDisMin": 5,
+    "holdDisMax": 20,
+    "estimatingPositionMultiplier": 0.8,
+    "image_leg": "leg.png",
+    "image_foot": "foot.png"
+  },
+  "leg_2": {
+    "copyFromSections": [
+      "leg_1"
+    ],
+    "x": 8,
+    "y": 0,
+    "attach_x": 3,
+    "attach_y": 0
+  }
+}

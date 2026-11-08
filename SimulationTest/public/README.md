@@ -14,6 +14,18 @@ python -B SimulationTest/ci/public_batch.py --kind long --isolated --output <new
 
 各子集仍调用下文同一`public_check.py`，保留原先单集入口及结果结构。批次根`result.json`记录固定选择、源码身份、实际命令、退出码及耗时，子目录保留完整JUnit、逐Python收据、输入快照和场景档案。任何子集失败立即停止后续集，保存失败日志与已有收据；旧输出拒绝覆盖。具体失败定位沿子目录日志及场景比较结果的阶段/操作/检查点，不以批次外层成功代替断言。
 
+PR批次先计算所有选中模块的`testClasses`并集，与`installDist`一次准备；随后逐组复用编译和固定运行包，各组Test仍禁用缓存/up-to-date，Python测试照常执行。相同类在不同fixture下分别运行并生成独立方法/XML/任务收据，不能复用通过结论。单组直接运行继续独立冷构建，不要求手工准备批次。
+
+固定分发收据统一使用schemaVersion=2，声明`pr`或`long`范围。PR同时封存准确组选择/fixture、实际准备任务、编译输出及解析后的测试classpath文件身份；父批固定收据摘要，子组开始/结束核源码、JDK/Gradle配置、准备产物和包。漂移、缺件、错误范围或再次实际编译均失败；外部传入包也不能跳过所选Test/Python。long保留一次打包及无机制执行语义。当前收据格式统一更新，历史收据保持原样，不由当前消费者读取。
+
+`public_check.py`与`public_batch.py`支持`--scenario-workers 1|2|4`，场景默认2路；显式1路可串行复跑，4路仅显式选择。构建、Test及Python机制结束后才启动场景队列，各suite仍串行，不将测试fork和场景worker相乘。development入口只执行机制，不接受场景并发参数。
+
+每个独立场景使用自己的输出、日志和进程树收据；Session在同一工作项内先run、核归档再recompare。`scenario-execution.json`记录注册顺序、各项终态/起止时间、请求上限及工作项峰值；后者不冒称实测JVM数量。固定包在派发及命令前后核验，输出冲突先拒绝；首错停止新派发，已开始项有界收尾，失败与未开始项不能计为通过。超时沿既有执行器仅清理本次自有进程树。真实窗口、键鼠、设备与正式性能采集不进入队列。
+
+失败登记与派发决定共用同步边界；已提交但尚未开始的工作在首错后保持`not-started`，不启动命令或创建场景输出。
+
+构建锁覆盖实际构建/Test和场景阶段；Python机制测试阶段释放外层构建锁，由被测workflow入口取得自己的资源，避免真实资格/恢复测试被父检查自锁拒绝。其它持锁者仍会阻止对应构建，不启用跨进程锁绕过或重入。
+
 PR更新通过`public-pr.yml`执行完整`pr`入口，保留七份领域产物及批次收据产物；`main`推送通过`public-long.yml`执行同一`long`入口，阶段收尾可手动触发该工作流或本地运行。CI只执行公开无头验证；真实PC、Android宿主/构建/设备、原版参考与正式性能边界见后文，不随批次绿扩大。配置存在不代表已有真实云端结果，实际源码SHA及产物以对应Actions运行记录为准。
 
 旧`pr-first-loop`继续用于首闭环/历史复核；完整层级已由各领域集覆盖相同适用断言，因此不会额外重复选择旧集。`verify-comparison.ps1`和`verify-isolated-comparison.ps1`仍保留原私有比较链及输入要求，不改名成公共干净环境验证。历史冻结脚本与收据保持原版本和失败状态。
@@ -34,6 +46,12 @@ python -B SimulationTest/ci/development_check.py --suite platform-basics --suite
 默认仅复用编译任务，Test任务禁用缓存及up-to-date，每次实际执行并写入全新输出目录。`--cold --isolated`从公开源码新副本全任务重编，使用single-use Gradle daemon；用户级依赖和OS文件缓存仍可能已热。`--isolated`要求`--cold`。输出不能覆盖旧批次，工具自动取得本工作区Engine/SimulationTest构建锁；Gradle缓存沿用户级配置。
 
 每组保留精确类过滤、生效输入/JDK/daemon身份、逐任务状态、当前开始/结束标记和每方法JUnit XML。默认位置的旧XML列入`ignoredPreviousXml`，不计本次执行；跳过、空类、缺类、失败或只有up-to-date的测试均不能通过。返回码与`result.json`共同判断结果，失败原件保留。
+
+日常入口、单组公共入口和公共批次均可指定`--test-forks 1|2|4`。默认1路；2/4路仅用于独立测试JVM之间的类并行，PC模块始终1路，JUnit方法不并行。Gradle `--max-workers`等于请求值，构建与测试共用该全局上限；Python工具测试仍逐项串行。`--list`显示请求及各模块有效并发，不创建输出。显式`--test-forks 1`可串行复跑同一选择。
+
+公共与日常检查使用同一全新Test输出：XML/binary/html、当前方法开始/完成/结果、任务实际执行和生效fork配置须相互一致。显式测试归档环境变量是外层根；目录继续按运行、模块、worker、类和case隔离，重复case拒绝覆盖，异步工作沿已取得的路径落盘。没有显式根时归档放本次Test输出下；历史归档不会被作为当前执行结果。
+
+方法覆盖同时核对执行前从编译类独立发现的预期集合，不能由XML和监听器共同漏测后相互证明。非空Gradle排除、额外命令行或文件过滤、JUnit标签/引擎过滤一律拒绝并留有效配置；当前发现合同支持本项目现有的普通JUnit Jupiter无参Test，继承/接口、嵌套、动态/参数化/重复测试及自定义方法显示名等尚不支持的形式明确拒绝资格，须先扩展发现合同，不能静默少算。
 
 ## 首条公共无头短测
 

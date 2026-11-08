@@ -9,8 +9,7 @@ import kotlin.test.*
 class AuthorShoreScenarioTest {
     @Test fun normal_shore_construction_birth_and_navigation_preserve_complete_three_format_archives() {
         val public = Path.of(System.getProperty("repo.root")).resolve("SimulationTest/public")
-        val output = System.getenv("RWR_AUTHOR_WATER_ARCHIVE_ROOT")?.let(Path::of)
-            ?: Files.createTempDirectory("rwr-author-shore-archive-")
+        val output = TestArchives.directory("RWR_AUTHOR_WATER_ARCHIVE_ROOT", javaClass, "rwr-author-shore-archive-")
         Files.createDirectories(output)
         var baseline: List<JsonObject>? = null
         for (format in listOf("ini", "json", "hjson")) {
