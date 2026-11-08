@@ -3,7 +3,7 @@ package com.rustedwarfare.reforge.core.content.internal
 import com.rustedwarfare.reforge.core.content.*
 import java.nio.file.Path
 
-/** Four-legged LAND representative on the existing shared syntax and provenance path. */
+/** Four-legged OVER_CLIFF movement slice on the existing shared syntax and provenance path. */
 internal object HeavyMechContentFields {
     fun schema(base: UnitContentSchema): UnitContentSchema {
         val mech = MechContentFields.schema(base)

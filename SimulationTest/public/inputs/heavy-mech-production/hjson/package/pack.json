@@ -1,7 +1,7 @@
 {
   "format": "rw-reforge.content-pack.v1",
   "id": "p008-heavy-hjson",
-  "name": "Owned ordinary LAND heavy-mech development variant",
+  "name": "Owned OVER_CLIFF heavy-mech movement slice",
   "units": [
     {
       "type": "mech-heavy",

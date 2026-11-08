@@ -19,7 +19,7 @@ class HeavyMechMovementTest {
                 val observation = context.advance(Step(q, 1.0, "sim-tick"))
                 open.advance(Step(q, 1.0, "sim-tick"))
                 val unit = observation.units.single()
-                assertTrue(unit.position.x < 300.0, "A LAND sliding unit cannot cross the sealed wall")
+                assertTrue(unit.position.x < 300.0, "An OVER_CLIFF sliding unit cannot cross the sealed wall")
                 assertFalse((unit.position.x / 20).toInt() to (unit.position.y / 20).toInt() in wall)
                 assertNull(unit.flightPose)
                 detour = detour || unit.pathPoints.any { kotlin.math.abs(it.y - 200.0) > 40.0 }
@@ -37,7 +37,7 @@ class HeavyMechMovementTest {
         } finally { context.close(); open.close() }
     }
 
-    @Test fun land_sliding_moves_before_body_alignment_and_stop_keeps_the_inertial_tail() {
+    @Test fun cliff_sliding_moves_before_body_alignment_and_stop_keeps_the_inertial_tail() {
         val context = HeavyMechTestScene.open()
         try {
             assertIs<ActionResult.Accepted>(context.submit(MoveAction("east", "p1", "heavy", Position(600.0, 200.0), context.world)))

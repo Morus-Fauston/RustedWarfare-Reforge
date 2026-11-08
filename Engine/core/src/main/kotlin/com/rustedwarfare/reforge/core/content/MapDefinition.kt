@@ -32,7 +32,15 @@ class MapDefinition(
         })
     }
 
+    val overCliffBlocking: BlockingGrid by lazy {
+        BlockingGrid(widthTiles, heightTiles, BooleanArray(widthTiles * heightTiles) { index ->
+            (index % widthTiles to index / widthTiles) in this.waterObstacles ||
+                GroundRules.blocked(this.tileSets, gids.getOrNull(index) ?: 0, MovementType.OVER_CLIFF)
+        })
+    }
+
     internal fun blockingFor(type: MovementType): BlockingGrid = when (type) {
+        MovementType.OVER_CLIFF -> overCliffBlocking
         MovementType.WATER -> waterBlocking
         MovementType.HOVER -> hoverBlocking
         else -> blocking
@@ -47,6 +55,11 @@ class MapDefinition(
         require(col in 0 until widthTiles && row in 0 until heightTiles)
         val gid = gids[row * widthTiles + col]
         return GroundRules.liquid(tileSets, gid)
+    }
+
+    internal fun isCliff(col: Int, row: Int): Boolean {
+        if (col !in 0 until widthTiles || row !in 0 until heightTiles) return true
+        return GroundRules.cliff(tileSets, gids[row * widthTiles + col])
     }
 
     fun isResourcePool(col: Int, row: Int): Boolean {
@@ -75,12 +88,14 @@ class TileSetDefinition internal constructor(
     waterTileIds: Set<Int> = emptySet(),
     waterBridgeTileIds: Set<Int> = emptySet(),
     hoverBlockedTileIds: Set<Int> = blockedTileIds,
+    overCliffBlockedTileIds: Set<Int> = blockedTileIds,
 ) {
     val blockedTileIds: Set<Int> = Collections.unmodifiableSet(LinkedHashSet(blockedTileIds))
     val resourcePoolTileIds: Set<Int> = Collections.unmodifiableSet(LinkedHashSet(resourcePoolTileIds))
     val waterTileIds: Set<Int> = Collections.unmodifiableSet(LinkedHashSet(waterTileIds))
     val waterBridgeTileIds: Set<Int> = Collections.unmodifiableSet(LinkedHashSet(waterBridgeTileIds))
     val hoverBlockedTileIds: Set<Int> = Collections.unmodifiableSet(LinkedHashSet(hoverBlockedTileIds))
+    val overCliffBlockedTileIds: Set<Int> = Collections.unmodifiableSet(LinkedHashSet(overCliffBlockedTileIds))
 
     constructor(
         firstGid: Int,

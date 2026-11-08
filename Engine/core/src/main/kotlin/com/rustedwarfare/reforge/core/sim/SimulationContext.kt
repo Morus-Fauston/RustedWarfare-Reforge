@@ -160,7 +160,8 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
         val rules = checkNotNull(knowledgeRules)
         val oldStores = checkNotNull(knowledgeStores)
         val groundGids = input.map.groundGids
-        val hasWater = input.unitDefinitions.values.any { it.movement.type == MovementType.WATER }
+        val groundTypes = input.unitDefinitions.values.map { it.movement.type }
+            .filter { it != MovementType.LAND && it != MovementType.AIR }.distinct()
         val vision = AutomaticVision.project(steps.current.automaticVisionState, world.id, (automaticVisionSnapshots?.values?.firstOrNull()?.epoch ?: -1L) + 1,
             input.map.widthTiles, input.map.heightTiles, input.map.tileWidth, input.map.tileHeight, input.players,
             units.values.filter { it.alive }.map { VisionSource(it.ownerPlayerId, it.position, it.definition.fogOfWarSightRange) }, rules.shareAlliedVision)
@@ -178,8 +179,8 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
                 val after = next.store.snapshot(world)
                 for (change in next.changes) {
                     if (change.after.visible && ((change.before.lastKnownBlocked != true && change.after.lastKnownBlocked == true) ||
-                            hasWater && !change.before.movementBlocked(MovementType.WATER, input.map.tileSets) &&
-                            change.after.movementBlocked(MovementType.WATER, input.map.tileSets))) {
+                            groundTypes.any { type -> !change.before.movementBlocked(type, input.map.tileSets) &&
+                                change.after.movementBlocked(type, input.map.tileSets) })) {
                         discoveries.getOrPut(player) { linkedMapOf() }[change.index % input.map.widthTiles to change.index / input.map.widthTiles] = after.revision
                     }
                 }
@@ -291,11 +292,12 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
         store.accept(world, visibleTerrain)
         val after = store.snapshot(world)
         val input = checkNotNull(scenario)
-        val hasWater = input.unitDefinitions.values.any { it.movement.type == MovementType.WATER }
+        val groundTypes = input.unitDefinitions.values.map { it.movement.type }
+            .filter { it != MovementType.LAND && it != MovementType.AIR }.distinct()
         for (row in 0 until after.height) for (column in 0 until after.width) {
             if ((!before.planningBlocked(column, row) && after.planningBlocked(column, row)) ||
-                hasWater && !before.movementBlocked(column, row, MovementType.WATER, input.map.tileSets) &&
-                    after.movementBlocked(column, row, MovementType.WATER, input.map.tileSets)) {
+                groundTypes.any { type -> !before.movementBlocked(column, row, type, input.map.tileSets) &&
+                    after.movementBlocked(column, row, type, input.map.tileSets) }) {
                 pendingKnowledgeDiscoveries.getOrPut(playerId) { linkedMapOf() }[column to row] = after.revision
             }
         }
@@ -1208,8 +1210,8 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
                 return SimulationError("unsupported-flight", "Expected a finite AIR profile and a single finite rotor")
             if (!m.reverseSpeedPercentage.isFinite() || !air && (m.reverseSpeedPercentage !in setOf(0.0, 1.0) ||
                 m.reverseSpeedPercentage != 0.0 && definition.mech == null && m.type != MovementType.WATER) ||
-                definition.mech?.let { !it.isValid() || m.type != MovementType.LAND } == true)
-                return SimulationError("unsupported-mech", "Expected a finite supported LAND mech profile")
+                definition.mech?.let { !it.isValid() || m.type != (if (it.kind == com.rustedwarfare.reforge.core.content.MechKind.FOUR_LEGGED) MovementType.OVER_CLIFF else MovementType.LAND) } == true)
+                return SimulationError("unsupported-mech", "Expected the finite supported mech locomotion category")
             definition.builder?.let { builder ->
                 if (definition.fogOfWarSightRange < 15 || m.type != MovementType.LAND || m.moveSpeed > .8 ||
                     builder.buildingTypeIds.isEmpty() || builder.buildingTypeIds.distinct().size != builder.buildingTypeIds.size ||
@@ -1319,7 +1321,7 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
             if (numbers.any { !it.isFinite() || it < 0.0 } ||
                 (definition.building == null && definition.radius >= input.map.tileWidth && !(fourLegged && definition.radius == 22.0) && !navalHull && !authoredSurface) ||
                 m.type != MovementType.AIR && !fourLegged && !hovering && (m.slidingMode || m.ignoringBody) ||
-                fourLegged && (m.type != MovementType.LAND || !m.slidingMode || !m.ignoringBody)) {
+                fourLegged && (m.type != MovementType.OVER_CLIFF || !m.slidingMode || !m.ignoringBody)) {
                 return SimulationError("unsupported-unit", "Expected finite movement and the supported representative's radius and locomotion")
             }
             if (m.type == MovementType.NONE && numbers.drop(1).any { it != 0.0 })
@@ -1989,6 +1991,7 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
     private fun updateUnit(unit: MutableUnit, map: MapDefinition, delta: Double, executionStep: Long,
                            motionSamples: MutableList<MotionStepSample>?) {
         val movement = unit.definition.movement
+        val maximumSpeed = movement.moveSpeed * unit.terrainSpeedMultiplier
         val air = movement.type == MovementType.AIR
         val sliding = movement.slidingMode
         val contract = checkNotNull(scenario?.movementContract)
@@ -2040,7 +2043,7 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
             val d2 = policies.coordinates.distanceSquared(unit.position, target)
             val difference = policies.steering.turn(unit, target, delta, policies.coordinates)
             requestedFraction = policies.propulsion.targetFraction(movement, unit.speed, d2, 0.0, true, contract.targetRadius)
-            speedTarget = movement.moveSpeed * requestedFraction
+            speedTarget = maximumSpeed * requestedFraction
             aimForSample = target
             finalForSample = true
             differenceForSample = difference
@@ -2064,7 +2067,7 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
             finalForSample = finalPoint
             differenceForSample = diff
             requestedFraction = if (unit.reversing) -fraction * movement.reverseSpeedPercentage else fraction
-            speedTarget = movement.moveSpeed * requestedFraction
+            speedTarget = maximumSpeed * requestedFraction
             if (temporaryBirth) {
                 // cn supplies the command aim directly, without normal route-node lookahead.
             } else if (unit.pathPoints.size > 1 && policies.capture.inside(
@@ -2090,13 +2093,13 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
             val desiredVelocity = aimForSample?.let {
                 policies.coordinates.displacement(policies.coordinates.desired(unit.position, it), speedTarget)
             } ?: Position(0.0, 0.0)
-            unit.flightVelocity = FlightMotion.velocity(movement, unit.flightVelocity, desiredVelocity, requestedFraction, delta)
+            unit.flightVelocity = FlightMotion.velocity(movement, unit.flightVelocity, desiredVelocity, requestedFraction, delta, maximumSpeed)
             unit.speed = kotlin.math.hypot(unit.flightVelocity.x, unit.flightVelocity.y)
             Position(unit.flightVelocity.x * delta, unit.flightVelocity.y * delta)
         } else {
             val rate = if (unit.speed < speedTarget) movement.moveAccelerationSpeed else movement.moveDecelerationSpeed
             // Non-sliding LAND B/C advance the propulsion proportion.
-            unit.speed = approach(unit.speed, speedTarget, rate * movement.moveSpeed * delta)
+            unit.speed = approach(unit.speed, speedTarget, rate * maximumSpeed * delta)
             policies.coordinates.displacement(unit.heading, unit.speed * delta)
         }
         val candidate = Position(unit.position.x + displacement.x, unit.position.y + displacement.y)
@@ -2138,6 +2141,14 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
             if (unit.terrainClearSteps >= 3) unit.terrainCorrectionTime = 0.0
         }
         unit.position = resolved
+        // The normal custom I() gate is open for this alive, uncarried, nonbuilding unit.
+        // ad.b is a usable locomotion aim, even when collision prevented displacement.
+        // Match the proven base-update -> custom multiplier order; Stop does not reset j.
+        if (movement.type == MovementType.OVER_CLIFF && aimForSample != null) {
+            val column = MapBounds.cell(unit.position.x, map.tileWidth, map.widthTiles)
+            val row = MapBounds.cell(unit.position.y, map.tileHeight, map.heightTiles)
+            unit.terrainSpeedMultiplier = if (map.isCliff(column, row)) .7 else 1.0
+        }
         unit.movementState = when {
             unit.moveTarget != null -> MovementState.MOVING
             unit.speed != 0.0 -> MovementState.DECELERATING

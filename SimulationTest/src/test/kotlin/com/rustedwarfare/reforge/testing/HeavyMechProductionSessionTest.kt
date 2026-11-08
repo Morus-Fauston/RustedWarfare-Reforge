@@ -63,6 +63,8 @@ class HeavyMechProductionSessionTest {
             assertEquals(3100.0, own("finish-upgrade", "mechFactoryT2").number("maxHealth"))
             assertEquals(2500L, stages.getValue("leave-factory").integer("balance"))
             assertTrue(own("leave-factory", "mechHeavyMissile").objectAt("position").number("y") > 240.0)
+            assertTrue(own("move-heavy", "mechHeavyMissile").objectAt("position").number("x") > 400.0)
+            assertTrue(own("return-cliff", "mechHeavyMissile").objectAt("position").number("x") < 300.0)
             assertEquals(JsonNull, own("stop-heavy", "mechHeavyMissile")["moveTarget"])
             for (type in listOf("BuildAction", "UpgradeAction", "ProduceAction", "MoveAction", "StopAction", "AttackAction"))
                 assertTrue(actions.any { it["type"] == s(type) && it.objectAt("result")["accepted"] == b(true) }, "$format missing $type: $output")

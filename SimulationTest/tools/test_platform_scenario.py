@@ -9,6 +9,65 @@ import tempfile
 
 
 class PlatformIntentTest(unittest.TestCase):
+    def test_windows_empty_release_binds_through_the_real_generation_filtered_reader(self):
+        from platform_windows import wait_for_input
+        from diagnostic_reader import DiagnosticReader
+        sample=dict(worldId='w',stepIndex=100)
+        events=[dict(kind='selection',generation=1,selectedId=None,selectedIds=[]),
+            dict(kind='map-release',button=0,intent='Click',selectedIds=[]),
+            dict(kind='observation',generation=1,phase='step',sample=sample)]
+        with tempfile.TemporaryDirectory() as folder:
+            path=Path(folder)/'diagnostic.jsonl'
+            records=[dict(format='p001.windows-diagnostic.v1',runId='r',sequence=i,**r) for i,r in enumerate(events)]
+            path.write_text(''.join(json.dumps(r)+'\n' for r in records),encoding='utf8')
+            reader=DiagnosticReader(path)
+            class Process:
+                def poll(self):return None
+            def wait(label,predicate):
+                return reader.wait(label,predicate,Process(),generation=1,timeout=.1,sleep=lambda _:None)
+            release,observed=wait_for_input(wait,reader,'empty',dict(noFormalAction=True),-1)
+            self.assertEqual(records[1],release)
+            self.assertEqual(sample,observed)
+
+    def test_windows_empty_selection_wait_keeps_the_explicit_no_action_contract(self):
+        from platform_windows import validate_windows_plan
+        plan=dict(scenarioId='s',contentPack={},intents=[dict(intentId='empty',kind='select',waitSteps=600)])
+        contract=dict(scenarioId='s',rules=[dict(intentId='empty')],
+            history=dict(initialBalance=100,noActionIntents=['empty']))
+        self.assertEqual([dict(intentId='empty',actionType='SelectAction',noFormalAction=True)],
+            validate_windows_plan(plan,contract))
+        for fault in ('unknown','duplicate','not-select','not-list'):
+            p=copy.deepcopy(plan);c=copy.deepcopy(contract)
+            if fault=='unknown':c['history']['noActionIntents']=['other']
+            elif fault=='duplicate':c['history']['noActionIntents']=['empty','empty']
+            elif fault=='not-select':p['intents'][0]['kind']='stop'
+            else:c['history']['noActionIntents']='empty'
+            with self.subTest(fault=fault),self.assertRaises(PlatformError):validate_windows_plan(p,c)
+
+    def test_windows_empty_selection_requires_the_current_release_and_observation_without_any_formal_action(self):
+        from platform_windows import input_receipt
+        rule=dict(actionType='SelectAction',noFormalAction=True)
+        sample=dict(worldId='w',stepIndex=100)
+        rows=[dict(sequence=20,kind='selection',selectedId=None,selectedIds=[]),
+            dict(sequence=21,kind='map-release',button=0,intent='Click',selectedIds=[]),
+            dict(sequence=22,kind='observation',phase='step',sample=sample)]
+        self.assertEqual((rows[1],sample),input_receipt(rows,rule,19))
+        self.assertIsNone(input_receipt(rows,rule,22))
+        for missing in (0,1,2):
+            with self.subTest(missing=missing):self.assertIsNone(input_receipt(rows[:missing]+rows[missing+1:],rule,19))
+        for fault in ('formal-action','selected-unit','wrong-button'):
+            changed=copy.deepcopy(rows)
+            if fault=='formal-action':changed.append(dict(sequence=23,kind='action',type='SelectAction'))
+            elif fault=='selected-unit':changed[0].update(selectedId='a',selectedIds=['a'])
+            else:changed[1]['button']=1
+            if fault=='wrong-button':self.assertIsNone(input_receipt(changed,rule,19))
+            else:
+                with self.subTest(fault=fault),self.assertRaises(PlatformError):input_receipt(changed,rule,19)
+        formal=[dict(sequence=30,kind='action',type='StopAction'),
+            dict(sequence=31,kind='observation',phase='after-action',sample=sample)]
+        self.assertEqual((formal[0],sample),input_receipt(formal,dict(actionType='StopAction'),29))
+        self.assertIsNone(input_receipt(formal,dict(actionType='StopAction'),30))
+
     def test_windows_history_accepts_normal_content_menu_and_keeps_wait_bounds(self):
         from platform_windows import validate_windows_plan
         plan=dict(scenarioId='hover',contentPack=dict(directory='package',unitId='commandCenter'),

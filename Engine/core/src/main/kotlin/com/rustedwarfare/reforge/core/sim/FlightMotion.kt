@@ -7,11 +7,11 @@ import com.rustedwarfare.reforge.core.content.MovementProfile
 
 /** Adapted from the qualified movement-only flight slice, using the shared physical height. */
 internal object FlightMotion {
-    fun velocity(profile: MovementProfile, current: Position, target: Position, fraction: Double, delta: Double): Position {
+    fun velocity(profile: MovementProfile, current: Position, target: Position, fraction: Double, delta: Double, maximumSpeed: Double = profile.moveSpeed): Position {
         val oldDistance = hypot(target.x - current.x, target.y - current.y)
         var vx = current.x
         var vy = current.y
-        if (oldDistance > profile.moveSpeed) {
+        if (oldDistance > maximumSpeed) {
             vx *= 1.0 - .05 * delta
             vy *= 1.0 - .05 * delta
         }

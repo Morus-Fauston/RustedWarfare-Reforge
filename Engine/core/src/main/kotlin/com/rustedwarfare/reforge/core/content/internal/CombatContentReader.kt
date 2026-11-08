@@ -217,7 +217,7 @@ internal object CombatContentReader {
             if ("barrelY" in sections.getValue(weapon) && "size" in sections.getValue(weapon))
                 invalid(ContentErrorCode.MALFORMED_SYNTAX, weapon, "barrelY", reason = "barrelY and size are aliases and cannot both be specified")
         }
-        only("movement", "movementType", if (hover) "HOVER" else if (water) "WATER" else if (helicopter) "AIR" else "LAND")
+        only("movement", "movementType", if (heavy) "OVER_CLIFF" else if (hover) "HOVER" else if (water) "WATER" else if (helicopter) "AIR" else "LAND")
         only("movement", "moveSlidingMode", (helicopter || heavy || hover).toString())
         only("movement", "moveIgnoringBody", (helicopter || heavy || hover).toString())
         val sight = sections["core"]?.get("fogOfWarSightRange")?.let {
@@ -319,7 +319,7 @@ internal object CombatContentReader {
         val definition = UnitDefinition(identity, "CustomUnitMetadata", number("core", "radius", true),
             number("core", "displayRadius", true), integer("graphics", "total_frames", true),
             image("image"), imageScale,
-            MovementProfile(if (hover) MovementType.HOVER else if (water) MovementType.WATER else if (helicopter) MovementType.AIR else MovementType.LAND, number("movement", "moveSpeed"), number("movement", "moveAccelerationSpeed"),
+            MovementProfile(if (heavy) MovementType.OVER_CLIFF else if (hover) MovementType.HOVER else if (water) MovementType.WATER else if (helicopter) MovementType.AIR else MovementType.LAND, number("movement", "moveSpeed"), number("movement", "moveAccelerationSpeed"),
                 number("movement", "moveDecelerationSpeed"), number("movement", "maxTurnSpeed"),
                 number("movement", "turnAcceleration"), helicopter || heavy || hover, helicopter || heavy || hover, reverse,
                 if (helicopter || heavy) integer("movement", "moveSlidingDir") else -1, flight?.first,

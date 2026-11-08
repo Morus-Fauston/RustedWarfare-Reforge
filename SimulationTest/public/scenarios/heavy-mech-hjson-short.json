@@ -12,7 +12,7 @@
       {
         "id": "mechHeavyMissile",
         "path": "../inputs/heavy-mech-production/hjson/package/units/heavy.hjson",
-        "sha256": "35bc48d9df168b3a19decfc4201ee19760b2a69492bc32861c16d165dac2f026",
+        "sha256": "583ac6a402032a5573f30ad5dc6b28322d8b4c6990bfad7794bafa4c768c055f",
         "loader": "mech-heavy"
       }
     ],

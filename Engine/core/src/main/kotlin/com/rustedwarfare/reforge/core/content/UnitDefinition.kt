@@ -52,7 +52,7 @@ data class MovementProfile(
     val hover: HoverProfile? = null,
 )
 
-enum class MovementType { LAND, NONE, AIR, WATER, HOVER }
+enum class MovementType { LAND, NONE, AIR, WATER, HOVER, OVER_CLIFF }
 
 data class HoverProfile(val targetHeight: Double = 4.0, val heightDrift: Double = 1.5,
     val phaseSpeed: Double = 3.0, val heightChangeRate: Double = .1) {

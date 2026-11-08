@@ -12,7 +12,7 @@
       {
         "id": "mechHeavyMissile",
         "path": "../inputs/heavy-mech-production/ini/package/units/heavy.ini",
-        "sha256": "70593392ca3dfd967d50f13bade429dbc2a64c7a701c96d4684824545428bc2d",
+        "sha256": "1618b1509abb469c05c125d2c0c9ab591690d5e9e1d3c2acdd021ae56d4170d1",
         "loader": "mech-heavy"
       }
     ],

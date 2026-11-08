@@ -10,7 +10,7 @@ import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 class HeavyMechContentPackTest {
-    @Test fun player_can_load_the_same_four_legged_land_variant_through_all_three_content_formats() {
+    @Test fun player_can_load_the_same_four_legged_cliff_movement_slice_through_all_three_content_formats() {
         val inputs = System.getProperty("public.fixtures.dir")?.let(Path::of)
             ?: Path.of("../../SimulationTest/public/inputs")
         for (format in listOf("ini", "json", "hjson")) {
@@ -23,7 +23,7 @@ class HeavyMechContentPackTest {
             assertEquals(22.0, unit.radius)
             assertEquals(19.0, unit.displayRadius)
             assertEquals(1.1, unit.imageScale)
-            assertEquals(MovementType.LAND, unit.movement.type)
+            assertEquals(MovementType.OVER_CLIFF, unit.movement.type)
             assertTrue(unit.movement.slidingMode)
             assertTrue(unit.movement.ignoringBody)
             assertEquals(.61, unit.movement.moveSpeed)

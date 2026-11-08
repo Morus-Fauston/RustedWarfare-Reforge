@@ -76,5 +76,5 @@ internal fun KnowledgeSnapshot.movementBlocked(column: Int, row: Int, type: Move
 
 internal fun CellKnowledge.movementBlocked(type: MovementType, tileSets: List<TileSetDefinition>): Boolean =
     if (type == MovementType.WATER) lastKnownGroundGid?.let { tileSets.waterBlocked(it) } ?: false
-    else if (type == MovementType.HOVER) lastKnownGroundGid?.let { GroundRules.blocked(tileSets, it, type) } ?: false
+    else if (type == MovementType.HOVER || type == MovementType.OVER_CLIFF) lastKnownGroundGid?.let { GroundRules.blocked(tileSets, it, type) } ?: false
     else lastKnownBlocked ?: false

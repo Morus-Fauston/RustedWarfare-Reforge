@@ -57,8 +57,47 @@ def validate_windows_plan(plan,contract):
     if history:
         if any(i.get('kind') not in action_types for i in intents):
             raise PlatformError('input-contract','Unsupported Windows history intention',1)
-        return [dict(r,actionType=action_types[i['kind']]) for i,r in zip(intents,rules)]
+        no_actions=contract['history'].get('noActionIntents',[])
+        if (not isinstance(no_actions,list) or any(not isinstance(x,str) for x in no_actions) or
+                len(no_actions)!=len(set(no_actions)) or
+                any(not any(i['intentId']==x and i['kind']=='select' for i in intents) for x in no_actions)):
+            raise PlatformError('input-contract','Only declared empty selections may omit a formal action',1)
+        return [dict(r,actionType=action_types[i['kind']],**({'noFormalAction':True} if i['intentId'] in no_actions else {}))
+                for i,r in zip(intents,rules)]
     return rules
+
+
+def input_receipt(rows,rule,start,input_events=None):
+    """Bind the dispatched input to its real formal call or explicit empty-selection release."""
+    current=[r for r in rows if r['sequence']>start]
+    if rule.get('noFormalAction'):
+        if any(r.get('kind')=='action' for r in current):
+            raise PlatformError('input-action','An empty selection unexpectedly submitted a formal action',2)
+        selection=next((r for r in current if r.get('kind')=='selection'),None)
+        if selection is None:return None
+        if selection.get('selectedId') is not None or selection.get('selectedIds')!=[]:
+            raise PlatformError('input-selection','Expected the declared empty selection',2)
+        releases=current if input_events is None else input_events
+        release=next((r for r in releases if r.get('kind')=='map-release' and
+            r['sequence']==selection['sequence']+1 and r.get('button')==0 and
+            r.get('intent')=='Click' and r.get('selectedIds')==[] and
+            r.get('generation',selection.get('generation'))==selection.get('generation')),None)
+        if release is None:return None
+        after=next((r for r in current if r.get('kind')=='observation' and
+            r.get('phase')=='step' and r['sequence']>release['sequence']),None)
+        return (release,after['sample']) if after is not None else None
+    action=next((r for r in current if r.get('kind')=='action' and r.get('type')==rule['actionType']),None)
+    if action is None:return None
+    after=next((r for r in current if r.get('kind')=='observation' and
+        r.get('phase')=='after-action' and r['sequence']==action['sequence']+1),None)
+    return (action,after['sample']) if after is not None else None
+
+
+def wait_for_input(wait,reader,label,rule,start):
+    # map-release is an unscoped UI receipt. Bind it only by the immediate sequence
+    # after the generation-qualified selection; observations remain generation filtered.
+    rows=wait(label,lambda rows:input_receipt(rows,rule,start,reader.view()) is not None)
+    return input_receipt(rows,rule,start,reader.view())
 
 
 def run_windows(scenario, contract, distribution, output, size, java='java', rate_profile='normal'):
@@ -310,11 +349,7 @@ def run_windows(scenario, contract, distribution, output, size, java='java', rat
                     guard.click(*world(intent['position']))
                 else:
                     raise PlatformError('input-contract', 'Unsupported PC intention: '+kind, 1)
-                rows = wait(intent['intentId'], lambda rows: any(row.get('kind') == 'action' and
-                            row['sequence'] > start and row.get('type') == rule['actionType'] for row in rows))
-                action = next(row for row in rows if row.get('kind') == 'action' and row['sequence'] > start and row.get('type') == rule['actionType'])
-                rows = wait('after-action', lambda rows: any(row.get('phase') == 'after-action' and row['sequence'] == action['sequence']+1 for row in rows))
-                immediate = next(row for row in rows if row['sequence'] == action['sequence']+1)['sample']
+                action,immediate = wait_for_input(wait,reader,intent['intentId'],rule,start)
                 steps = intent.get('waitSteps', 0)
                 if steps:
                     if history:wait_segment(intent,action,immediate)

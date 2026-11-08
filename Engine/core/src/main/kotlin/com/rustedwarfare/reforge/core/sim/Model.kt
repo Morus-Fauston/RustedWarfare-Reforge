@@ -403,6 +403,8 @@ internal data class MutableUnit(
     var sinkSpeed: Float = 0f,
     var waterSettled: Boolean = false,
     var productionSide: Boolean = false,
+    /** Custom instance j; retained when the normal locomotion-aim gate is closed. */
+    var terrainSpeedMultiplier: Double = 1.0,
 ) {
     val producerId: String? get() = productionOrigin?.producerId
     val reversing: Boolean get() = mechState?.reversing ?: bodyReversing
