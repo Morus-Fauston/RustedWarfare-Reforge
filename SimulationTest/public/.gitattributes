@@ -23,6 +23,7 @@ inputs/mech-production/** -text whitespace=blank-at-eol,blank-at-eof,space-befor
 inputs/helicopter-production/** -text whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol
 inputs/heavy-mech-production/** -text whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol
 inputs/naval-production/** -text whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol
+inputs/phase-five-sandbox/** -text whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol
 inputs/author-construction/*/** -text whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol
 inputs/author-naval-chain/*/** -text whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol
 inputs/author-production/*/** -text whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol
