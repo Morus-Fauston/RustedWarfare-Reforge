@@ -31,6 +31,7 @@ class UnitDefinition(
     val fixedUnderwaterTarget: FixedUnderwaterTargetProfile? = null,
     /** Explicit author surface capability; native hull qualification remains separate. */
     val authoredWaterCombat: Boolean = false,
+    val shadowImagePath: Path? = null,
 ) {
     val retainedUnconsumed: Set<String> = Collections.unmodifiableSet(LinkedHashSet(retainedUnconsumed))
     val maximumHealth: Double? get() = durability?.maxHp ?: combat?.maxHp
@@ -48,9 +49,16 @@ data class MovementProfile(
     val reverseSpeedPercentage: Double = 0.0,
     val slidingDirection: Int = -1,
     val flight: FlightProfile? = null,
+    val hover: HoverProfile? = null,
 )
 
-enum class MovementType { LAND, NONE, AIR, WATER }
+enum class MovementType { LAND, NONE, AIR, WATER, HOVER }
+
+data class HoverProfile(val targetHeight: Double = 4.0, val heightDrift: Double = 1.5,
+    val phaseSpeed: Double = 3.0, val heightChangeRate: Double = .1) {
+    fun isValid(): Boolean = listOf(targetHeight, heightDrift, phaseSpeed, heightChangeRate).all { it.isFinite() && it >= 0.0 } &&
+        targetHeight >= heightDrift && (targetHeight + heightDrift).isFinite()
+}
 
 data class FlightProfile(val targetHeight: Double, val heightDrift: Double,
     val heightChangeRate: Double, val startingHeightOffset: Double) {
@@ -172,8 +180,9 @@ data class NamedWeaponDefinition(val name: String, val projectileName: String,
     val idleDirectionReversing: Double? = null)
 
 /** Gameplay trigger identity, never an audio filename or resource-pack decision. */
-enum class FireSoundProfile(val eventId: String, val volume: Float) {
+enum class FireSoundProfile(val eventId: String, val volume: Float, val pitch: Float = 1f) {
     TANK("reforge:events/tank-fire", .3f),
+    HOVER("reforge:events/hover-fire", .3f, 1.3f),
     NAVAL_MAIN("reforge:events/naval-main-fire", .3f),
     NAVAL_MISSILE("reforge:events/naval-missile-fire", .1f),
 }

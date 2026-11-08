@@ -59,7 +59,7 @@ internal object CombatContentReader {
 
     fun read(path: Path): UnitDefinition = readWithSources(path).definition
 
-    private enum class Kind { NATIVE_TANK, DECLARED_TANK, MECH, HELICOPTER, HEAVY_MECH, BATTLESHIP, AUTHOR_WATER }
+    private enum class Kind { NATIVE_TANK, DECLARED_TANK, MECH, HELICOPTER, HEAVY_MECH, BATTLESHIP, AUTHOR_WATER, HOVER_TANK }
 
     fun readWithSources(path: Path): LoadedUnitContent = readWithSources(path, Kind.NATIVE_TANK)
     fun readDeclaredWithSources(path: Path, validatePath: (Path) -> Unit = {}): LoadedUnitContent =
@@ -74,9 +74,14 @@ internal object CombatContentReader {
         readWithSources(path, Kind.BATTLESHIP, validatePath)
     fun readAuthorWaterWithSources(path: Path, validatePath: (Path) -> Unit = {}): LoadedUnitContent =
         readWithSources(path, Kind.AUTHOR_WATER, validatePath)
+    fun readHoverTankWithSources(path: Path, validatePath: (Path) -> Unit = {}): LoadedUnitContent =
+        readWithSources(path, Kind.HOVER_TANK, validatePath)
 
     private fun readWithSources(path: Path, kind: Kind, validatePath: (Path) -> Unit = {}): LoadedUnitContent =
         UnitSourceReader(when (kind) {
+            Kind.HOVER_TANK -> schema.copy(
+                fields = schema.fields + ("projectile_1" to (schema.fields.getValue("projectile_1") + setOf("targetSpeed", "targetSpeedAcceleration"))),
+                numericFields = schema.numericFields + setOf("targetSpeed", "targetSpeedAcceleration"))
             Kind.BATTLESHIP, Kind.AUTHOR_WATER -> NavalContentFields.schema(schema)
             Kind.HEAVY_MECH -> HeavyMechContentFields.schema(schema)
             Kind.MECH -> MechContentFields.schema(schema)
@@ -89,6 +94,7 @@ internal object CombatContentReader {
         val heavy = kind == Kind.HEAVY_MECH
         val naval = kind == Kind.BATTLESHIP
         val authorWater = kind == Kind.AUTHOR_WATER
+        val hover = kind == Kind.HOVER_TANK
         val water = naval || authorWater
         val sections = loaded.values
         fun invalid(code: ContentErrorCode, s: String, key: String, ref: String? = null, reason: String): Nothing {
@@ -180,7 +186,7 @@ internal object CombatContentReader {
             ?: invalid(ContentErrorCode.MALFORMED_SYNTAX, "core", "buildSpeed", reason = "Expected finite positive binary32 build rate")
         val identity = required("core", "name")
         if (declared) {
-            if (when { naval -> identity != "heavyBattleship"; mech -> identity != "mechGun"; heavy -> identity != "mechHeavyMissile"
+            if (when { hover -> identity != "hoverTank"; naval -> identity != "heavyBattleship"; mech -> identity != "mechGun"; heavy -> identity != "mechHeavyMissile"
                     else -> !identity.matches(Regex("[a-z][a-z0-9_.-]*")) })
                 invalid(ContentErrorCode.MALFORMED_SYNTAX, "core", "name", identity, "Expected a stable lowercase content ID")
             if ("overrideAndReplace" in sections["core"].orEmpty())
@@ -211,9 +217,9 @@ internal object CombatContentReader {
             if ("barrelY" in sections.getValue(weapon) && "size" in sections.getValue(weapon))
                 invalid(ContentErrorCode.MALFORMED_SYNTAX, weapon, "barrelY", reason = "barrelY and size are aliases and cannot both be specified")
         }
-        only("movement", "movementType", if (water) "WATER" else if (helicopter) "AIR" else "LAND")
-        only("movement", "moveSlidingMode", (helicopter || heavy).toString())
-        only("movement", "moveIgnoringBody", (helicopter || heavy).toString())
+        only("movement", "movementType", if (hover) "HOVER" else if (water) "WATER" else if (helicopter) "AIR" else "LAND")
+        only("movement", "moveSlidingMode", (helicopter || heavy || hover).toString())
+        only("movement", "moveIgnoringBody", (helicopter || heavy || hover).toString())
         val sight = sections["core"]?.get("fogOfWarSightRange")?.let {
             it.toIntOrNull() ?: invalid(ContentErrorCode.MALFORMED_SYNTAX, "core", "fogOfWarSightRange", reason = "Expected integer sight range")
         } ?: 15
@@ -229,7 +235,7 @@ internal object CombatContentReader {
         val projectileProfiles = projectiles.associateWith { projectile ->
             if (water) NavalContentFields.projectile(path, loaded, projectile) else ProjectileProfile(integer(projectile, "directDamage").toDouble(),
                 number(projectile, "life", true), number(projectile, "speed", !mech),
-                acceleration = if (mech || heavy && "targetSpeed" in sections.getValue(projectile))
+                acceleration = if (hover || mech || heavy && "targetSpeed" in sections.getValue(projectile))
                     LinearProjectileAcceleration(number(projectile, "targetSpeed", true),
                         if (heavy && "targetSpeedAcceleration" !in sections.getValue(projectile)) .1
                         else number(projectile, "targetSpeedAcceleration", true)) else null,
@@ -237,7 +243,7 @@ internal object CombatContentReader {
                     OrdinarySplashProfile(number(projectile, "areaDamage").toFloat(), number(projectile, "areaRadius", true).toFloat()) else null,
                 retargetOnDeath = heavy && optionalBoolean(projectile, "autoTargetingOnDeadTarget", false))
         }
-        val turretImage = if ((mech || helicopter || authorWater) && required("graphics", "image_turret") == "NONE") null else image("image_turret")
+        val turretImage = if ((mech || helicopter || authorWater || hover) && required("graphics", "image_turret") == "NONE") null else image("image_turret")
         val deadImage = if ((mech || heavy) && required("graphics", "image_wreak") == "NONE") null else image("image_wreak")
         val catalog = WeaponCatalog(weapons.map { weapon ->
             val projectileName = required(weapon, "projectile")
@@ -262,7 +268,7 @@ internal object CombatContentReader {
                 recoil = WeaponRecoil(if ("recoilOffset" in sections.getValue(weapon)) signedNumber(weapon, "recoilOffset") else if (heavy || water) 0.0 else -2.0,
                     if ("recoilOutTime" in sections.getValue(weapon)) number(weapon, "recoilOutTime", !helicopter) else 4.0,
                     if ("recoilReturnTime" in sections.getValue(weapon)) number(weapon, "recoilReturnTime", !helicopter) else 7.0),
-                fireSound = if (water) NavalContentFields.sound(path, sections.getValue(weapon), weapon) else if (mech || helicopter || heavy) null else FireSoundProfile.TANK,
+                fireSound = if (hover) FireSoundProfile.HOVER else if (water) NavalContentFields.sound(path, sections.getValue(weapon), weapon) else if (mech || helicopter || heavy) null else FireSoundProfile.TANK,
                 minimumRange = if ("limitingMinRange" in sections.getValue(weapon)) number(weapon, "limitingMinRange") else 0.0,
                 maximumRange = if ("limitingRange" in sections.getValue(weapon)) number(weapon, "limitingRange") else null,
                 canAttackLandUnits = optionalBoolean(weapon, "canAttackLandUnits", landDefault),
@@ -304,7 +310,7 @@ internal object CombatContentReader {
             primary.projectile, turretImage, deadImage, turretScale,
             mount = primary.mount,
             recoil = primary.recoil, barrelX = primary.barrelX ?: 0.0, oddShotOffset = primary.oddShotOffset ?: 0.0,
-            fireSound = if (water) primary.fireSound else if (mech || helicopter || heavy) null else FireSoundProfile.TANK,
+            fireSound = if (hover) FireSoundProfile.HOVER else if (water) primary.fireSound else if (mech || helicopter || heavy) null else FireSoundProfile.TANK,
             idleSweep = if (heavy) null else gait?.body?.let { IdleSweepProfile(it.sweepAngle, it.sweepDelay.toFloat(), it.sweepTimeScale.toFloat(), it.sweepRandomDelay) },
             namedWeapons = catalog,
             multiTargeting = optionalBoolean("attack", "turretMultiTargeting", false),
@@ -313,13 +319,14 @@ internal object CombatContentReader {
         val definition = UnitDefinition(identity, "CustomUnitMetadata", number("core", "radius", true),
             number("core", "displayRadius", true), integer("graphics", "total_frames", true),
             image("image"), imageScale,
-            MovementProfile(if (water) MovementType.WATER else if (helicopter) MovementType.AIR else MovementType.LAND, number("movement", "moveSpeed"), number("movement", "moveAccelerationSpeed"),
+            MovementProfile(if (hover) MovementType.HOVER else if (water) MovementType.WATER else if (helicopter) MovementType.AIR else MovementType.LAND, number("movement", "moveSpeed"), number("movement", "moveAccelerationSpeed"),
                 number("movement", "moveDecelerationSpeed"), number("movement", "maxTurnSpeed"),
-                number("movement", "turnAcceleration"), helicopter || heavy, helicopter || heavy, reverse,
-                if (helicopter || heavy) integer("movement", "moveSlidingDir") else -1, flight?.first),
+                number("movement", "turnAcceleration"), helicopter || heavy || hover, helicopter || heavy || hover, reverse,
+                if (helicopter || heavy) integer("movement", "moveSlidingDir") else -1, flight?.first,
+                if (hover) HoverProfile() else null),
             sections.flatMap { (s, values) -> values.keys.filter { it in retained[sectionKind(s)].orEmpty() || water && s == "core" && it == "transportSlotsNeeded" } }.toSet(), sight, profile,
             build = BuildProfile(price, buildRate), mech = gait, rotor = flight?.second,
-            authoredWaterCombat = authorWater)
+            authoredWaterCombat = authorWater, shadowImagePath = if (hover) image("image_shadow") else null)
         definition
     }
 }

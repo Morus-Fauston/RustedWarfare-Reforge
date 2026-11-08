@@ -12,6 +12,9 @@
     }
   },
   "events": {
+    "reforge:events/hover-fire": {
+      "sound": "reforge:sounds/tank-fire"
+    },
     "reforge:events/tank-fire": {
       "sound": "reforge:sounds/tank-fire"
     },

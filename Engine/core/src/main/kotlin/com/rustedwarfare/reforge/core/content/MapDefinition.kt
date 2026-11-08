@@ -25,7 +25,18 @@ class MapDefinition(
         })
     }
 
-    internal fun blockingFor(type: MovementType): BlockingGrid = if (type == MovementType.WATER) waterBlocking else blocking
+    val hoverBlocking: BlockingGrid by lazy {
+        BlockingGrid(widthTiles, heightTiles, BooleanArray(widthTiles * heightTiles) { index ->
+            (index % widthTiles to index / widthTiles) in this.waterObstacles ||
+                GroundRules.blocked(this.tileSets, gids.getOrNull(index) ?: 0, MovementType.HOVER)
+        })
+    }
+
+    internal fun blockingFor(type: MovementType): BlockingGrid = when (type) {
+        MovementType.WATER -> waterBlocking
+        MovementType.HOVER -> hoverBlocking
+        else -> blocking
+    }
 
     /** Authoritative ordinary foundation cell; resource-required buildings check their center separately. */
     fun isFoundationBlocked(col: Int, row: Int, type: MovementType): Boolean =
@@ -63,11 +74,13 @@ class TileSetDefinition internal constructor(
     resourcePoolTileIds: Set<Int> = emptySet(),
     waterTileIds: Set<Int> = emptySet(),
     waterBridgeTileIds: Set<Int> = emptySet(),
+    hoverBlockedTileIds: Set<Int> = blockedTileIds,
 ) {
     val blockedTileIds: Set<Int> = Collections.unmodifiableSet(LinkedHashSet(blockedTileIds))
     val resourcePoolTileIds: Set<Int> = Collections.unmodifiableSet(LinkedHashSet(resourcePoolTileIds))
     val waterTileIds: Set<Int> = Collections.unmodifiableSet(LinkedHashSet(waterTileIds))
     val waterBridgeTileIds: Set<Int> = Collections.unmodifiableSet(LinkedHashSet(waterBridgeTileIds))
+    val hoverBlockedTileIds: Set<Int> = Collections.unmodifiableSet(LinkedHashSet(hoverBlockedTileIds))
 
     constructor(
         firstGid: Int,

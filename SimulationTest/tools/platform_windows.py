@@ -30,10 +30,10 @@ def startup_arguments(plan,snapshot,evidence):
 def validate_windows_plan(plan,contract):
     intents,rules=plan.get('intents'),contract.get('rules')
     history='history' in contract
-    if ((history and 'testScene' not in plan) or not isinstance(intents,list) or not intents or
+    if ((history and 'testScene' not in plan and 'contentPack' not in plan) or not isinstance(intents,list) or not intents or
             not isinstance(rules,list) or len(intents)!=len(rules) or
             plan.get('scenarioId')!=contract.get('scenarioId')):
-        raise PlatformError('input-contract','Windows requires matching immediate short-intent contracts; explicit-step history uses Core/Session',1)
+        raise PlatformError('input-contract','Windows requires matching intents and a paired scene or normal content menu for history',1)
     if len({i.get('intentId') for i in intents})!=len(intents):
         raise PlatformError('input-contract','Duplicate Windows intention identity',1)
     if not history:

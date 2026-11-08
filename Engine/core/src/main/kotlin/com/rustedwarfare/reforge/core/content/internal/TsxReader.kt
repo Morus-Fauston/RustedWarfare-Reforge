@@ -8,7 +8,8 @@ import java.nio.file.Path
 import org.w3c.dom.Element
 
 internal object TsxReader {
-    private val blockingProperties = setOf("trees", "large-rock", "small-rock", "cliff", "large-cliff")
+    private val blockingProperties = setOf("trees", "large-rock", "small-rock", "cliff", "large-cliff",
+        "cliff-soft", "lava", "lava-cliff", "block-land")
     private val tilesetAttributes = setOf("name", "tilewidth", "tileheight", "tilecount", "columns", "spacing", "margin")
 
     fun read(path: Path, firstGid: Int, tileWidth: Int, tileHeight: Int): TileSetDefinition =
@@ -58,6 +59,7 @@ internal object TsxReader {
         if (tileCount > capacity) reject(ContentErrorCode.MALFORMED_SYNTAX, path, "tileset", "tilecount", reason = "Tile count exceeds atlas capacity")
         val seen = mutableSetOf<Int>()
         val blocked = mutableSetOf<Int>()
+        val hoverBlocked = mutableSetOf<Int>()
         val resourcePools = mutableSetOf<Int>()
         val water = mutableSetOf<Int>()
         val bridges = mutableSetOf<Int>()
@@ -85,10 +87,12 @@ internal object TsxReader {
                     "water-bridge" -> bridges.add(id)
                     else -> blocked.add(id)
                 }
+                if (propertyName in setOf("trees", "large-rock", "large-cliff", "lava", "lava-cliff", "block-land"))
+                    hoverBlocked.add(id)
             }
         }
         return TileSetDefinition(firstGid, name, width, height, imagePath, blocked, tileCount, columns, spacing, margin,
-            image.getAttribute("trans").takeIf { image.hasAttribute("trans") }, resourcePools, water, bridges)
+            image.getAttribute("trans").takeIf { image.hasAttribute("trans") }, resourcePools, water, bridges, hoverBlocked)
     }
 
     private fun verifyPngDimensions(image: Path, file: Path, source: String, width: Int, height: Int) {

@@ -152,7 +152,11 @@ data class UnitObservation(
     val mechPose: MechPose? = null,
     val flightPose: FlightPose? = null,
     val waterPose: WaterPose? = null,
+    val hoverPose: HoverPose? = null,
 )
+
+/** Current visible hover state; its height does not grant the AIR target category. */
+data class HoverPose(val velocity: Position, val heightPhase: Double)
 
 /** Visible ordinary water-body state; it has neither legs nor host identities. */
 data class WaterPose(val reversing: Boolean, val sinkSpeed: Float, val settled: Boolean)

@@ -1,0 +1,205 @@
+{
+  "schemaVersion": 1,
+  "scenarioId": "p009-hover-normal-chain",
+  "inputs": "../../inputs/hover-production/json",
+  "contentPack": {
+    "directory": "package",
+    "unitId": "commandCenter"
+  },
+  "intents": [
+    {
+      "intentId": "select-center",
+      "kind": "select",
+      "position": {
+        "x": 130,
+        "y": 130
+      }
+    },
+    {
+      "intentId": "produce-builder",
+      "kind": "produce",
+      "typeId": "builder",
+      "waitSteps": 600
+    },
+    {
+      "intentId": "wait-worker-exit",
+      "kind": "select",
+      "position": {
+        "x": 130,
+        "y": 130
+      },
+      "waitSteps": 200
+    },
+    {
+      "intentId": "select-builder",
+      "kind": "select",
+      "position": {
+        "x": 129,
+        "y": 220
+      }
+    },
+    {
+      "intentId": "approach-factory",
+      "kind": "move",
+      "position": {
+        "x": 190,
+        "y": 190
+      },
+      "waitSteps": 200
+    },
+    {
+      "intentId": "build-factory",
+      "kind": "build",
+      "typeId": "landFactory",
+      "position": {
+        "x": 270,
+        "y": 190
+      },
+      "waitSteps": 600
+    },
+    {
+      "intentId": "wait-factory",
+      "kind": "select",
+      "position": {
+        "x": 130,
+        "y": 130
+      },
+      "waitSteps": 600
+    },
+    {
+      "intentId": "select-factory",
+      "kind": "select",
+      "position": {
+        "x": 270,
+        "y": 190
+      }
+    },
+    {
+      "intentId": "produce-hover",
+      "kind": "produce",
+      "typeId": "hoverTank",
+      "waitSteps": 600
+    },
+    {
+      "intentId": "wait-hover-exit",
+      "kind": "select",
+      "position": {
+        "x": 130,
+        "y": 130
+      },
+      "waitSteps": 200
+    },
+    {
+      "intentId": "select-hover",
+      "kind": "select",
+      "position": {
+        "x": 269,
+        "y": 276
+      }
+    },
+    {
+      "intentId": "cross-water",
+      "kind": "move",
+      "position": {
+        "x": 490,
+        "y": 350
+      },
+      "waitSteps": 400
+    },
+    {
+      "intentId": "return-land",
+      "kind": "move",
+      "position": {
+        "x": 350,
+        "y": 350
+      },
+      "waitSteps": 300
+    },
+    {
+      "intentId": "stop-hover",
+      "kind": "stop"
+    },
+    {
+      "intentId": "attack-ground",
+      "kind": "attack",
+      "targetUnitId": "b",
+      "position": {
+        "x": 650,
+        "y": 350
+      },
+      "waitSteps": 600
+    }
+  ],
+  "windowsWaits": {
+    "produce-builder": {
+      "rate": 4,
+      "progressOnly": true,
+      "maximumSimulationSteps": 720,
+      "maximumWallSeconds": 10,
+      "stallSeconds": 4
+    },
+    "wait-worker-exit": {
+      "rate": 4,
+      "progressOnly": true,
+      "maximumSimulationSteps": 320,
+      "maximumWallSeconds": 10,
+      "stallSeconds": 4
+    },
+    "approach-factory": {
+      "rate": 4,
+      "progressOnly": true,
+      "maximumSimulationSteps": 320,
+      "maximumWallSeconds": 10,
+      "stallSeconds": 4
+    },
+    "build-factory": {
+      "rate": 4,
+      "progressOnly": true,
+      "maximumSimulationSteps": 720,
+      "maximumWallSeconds": 10,
+      "stallSeconds": 4
+    },
+    "wait-factory": {
+      "rate": 4,
+      "progressOnly": true,
+      "maximumSimulationSteps": 720,
+      "maximumWallSeconds": 10,
+      "stallSeconds": 4
+    },
+    "produce-hover": {
+      "rate": 4,
+      "progressOnly": true,
+      "maximumSimulationSteps": 720,
+      "maximumWallSeconds": 10,
+      "stallSeconds": 4
+    },
+    "wait-hover-exit": {
+      "rate": 4,
+      "progressOnly": true,
+      "maximumSimulationSteps": 320,
+      "maximumWallSeconds": 10,
+      "stallSeconds": 4
+    },
+    "cross-water": {
+      "rate": 4,
+      "progressOnly": true,
+      "maximumSimulationSteps": 520,
+      "maximumWallSeconds": 10,
+      "stallSeconds": 4
+    },
+    "return-land": {
+      "rate": 4,
+      "progressOnly": true,
+      "maximumSimulationSteps": 420,
+      "maximumWallSeconds": 10,
+      "stallSeconds": 4
+    },
+    "attack-ground": {
+      "rate": 4,
+      "progressOnly": true,
+      "maximumSimulationSteps": 720,
+      "maximumWallSeconds": 10,
+      "stallSeconds": 4
+    }
+  }
+}

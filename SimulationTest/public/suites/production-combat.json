@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "suiteId": "public.production-combat.v1",
   "inputScope": "public",
-  "fixture": "inputs/content-movement-knowledge/P001-\u79fb\u52a8\u6c99\u76d2\u8f93\u5165",
+  "fixture": "inputs/content-movement-knowledge/P001-移动沙盒输入",
   "tests": {
     "core": [
       "com.rustedwarfare.reforge.core.content.CombatContentLoadTest",
@@ -135,7 +135,16 @@
       "com.rustedwarfare.reforge.core.content.AuthorUpgradeContentTest",
       "com.rustedwarfare.reforge.core.sim.AuthorFactoryUpgradeTest",
       "com.rustedwarfare.reforge.core.sim.AuthorUpgradeLifecycleTest",
-      "com.rustedwarfare.reforge.core.sim.AuthorShoreConstructionTest"
+      "com.rustedwarfare.reforge.core.sim.AuthorShoreConstructionTest",
+      "com.rustedwarfare.reforge.core.content.HoverContentTest",
+      "com.rustedwarfare.reforge.core.content.HoverTerrainTest",
+      "com.rustedwarfare.reforge.core.sim.HoverKnowledgeTest",
+      "com.rustedwarfare.reforge.core.sim.HoverMotionTest",
+      "com.rustedwarfare.reforge.core.sim.HoverProductionTest",
+      "com.rustedwarfare.reforge.core.sim.HoverSoundTest",
+      "com.rustedwarfare.reforge.core.sim.HoverSinkingTest",
+      "com.rustedwarfare.reforge.core.sim.HoverBoundaryTest",
+      "com.rustedwarfare.reforge.core.sim.HoverTargetTest"
     ],
     "client": [
       "com.rustedwarfare.reforge.client.CombatActorEvidenceTest",
@@ -169,7 +178,9 @@
       "com.rustedwarfare.reforge.client.AuthorUpgradeSandboxTest",
       "com.rustedwarfare.reforge.client.AuthorShoreSandboxTest",
       "com.rustedwarfare.reforge.client.AuthorNavalChainSandboxTest",
-      "com.rustedwarfare.reforge.client.PhaseFiveSandboxTest"
+      "com.rustedwarfare.reforge.client.PhaseFiveSandboxTest",
+      "com.rustedwarfare.reforge.client.HoverProjectionTest",
+      "com.rustedwarfare.reforge.client.HoverProductionSandboxTest"
     ],
     "pc": [
       "com.rustedwarfare.reforge.pc.PatrolJsonlPairingTest",
@@ -181,7 +192,8 @@
       "com.rustedwarfare.reforge.pc.HeavyMechResourceApplicationTest",
       "com.rustedwarfare.reforge.pc.NavalBaseSoundTest",
       "com.rustedwarfare.reforge.pc.NavalOriginalProfileTest",
-      "com.rustedwarfare.reforge.pc.NavalTerrainAppearanceTest"
+      "com.rustedwarfare.reforge.pc.NavalTerrainAppearanceTest",
+      "com.rustedwarfare.reforge.pc.HoverOriginalProfileTest"
     ],
     "tools": [
       "com.rustedwarfare.reforge.testing.ProductionCombatScenarioTest",
@@ -211,7 +223,8 @@
       "com.rustedwarfare.reforge.testing.AuthorNavalChainSessionTest",
       "com.rustedwarfare.reforge.testing.RunnerToolCostTest",
       "com.rustedwarfare.reforge.testing.perf.WholeChainToolCostTest",
-      "com.rustedwarfare.reforge.testing.PhaseFiveArchiveTest"
+      "com.rustedwarfare.reforge.testing.PhaseFiveArchiveTest",
+      "com.rustedwarfare.reforge.testing.HoverArchiveTest"
     ]
   },
   "short": [
@@ -774,6 +787,11 @@
       "backend": "session",
       "scenario": "scenarios/phase-five-mixed.json",
       "contract": "contracts/phase-five-mixed.json"
+    },
+    {
+      "id": "hover-production-json-chain",
+      "scenario": "scenarios/hover-production-json-chain.json",
+      "contract": "contracts/hover-production-json-chain.json"
     }
   ]
 }

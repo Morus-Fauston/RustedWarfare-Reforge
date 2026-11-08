@@ -106,7 +106,7 @@ internal object ContentPackReader {
             val field = "units[$index]"
             val spec = objectFields(entry, setOf("type", "file"), manifest, field)
             val capability = string(spec.get("type"), "$field.type")
-            if (capability !in setOf("tank", "mech", "mech-heavy", "mech-factory", "builder", "constructor", "factory", "helicopter", "air-factory", "battleship", "water-combat", "sea-factory", "underwater-target", "command-center", "land-factory"))
+            if (capability !in setOf("tank", "hover-tank", "mech", "mech-heavy", "mech-factory", "builder", "constructor", "factory", "helicopter", "air-factory", "battleship", "water-combat", "sea-factory", "underwater-target", "command-center", "land-factory"))
                 reject(ContentErrorCode.UNSUPPORTED_FEATURE, manifest, field = "$field.type", reason = "Expected an implemented finite combat, mech, factory or builder capability")
             val reference = string(spec.get("file"), "$field.file")
             val pieces = reference.split('/')
@@ -122,6 +122,7 @@ internal object ContentPackReader {
             if (!files.add(input)) reject(ContentErrorCode.IDENTITY_CONFLICT, manifest, field = "$field.file", ref = reference,
                 reason = "Duplicate package entry")
             val loaded = when (capability) {
+                "hover-tank" -> CombatContentReader.readHoverTankWithSources(input) { requireOrdinary(root, it) }
                 "command-center" -> CommandCenterContentReader.readWithSources(input) { requireOrdinary(root, it) }
                 "land-factory" -> FactoryContentReader.readWithSources(input) { requireOrdinary(root, it) }.also {
                     if (it.definition.production?.exitProfile != FactoryExitProfile.NATIVE_LAND)
@@ -163,7 +164,7 @@ internal object ContentPackReader {
             val images = listOf("image" to definition.imagePath, "image_turret" to combat?.turretImagePath,
                 "image_wreak" to (definition.durability?.deadImagePath ?: combat?.deadImagePath),
                 "image_back" to definition.building?.backImagePath,
-                "image_end" to definition.rotor?.imagePath) + definition.mech?.legs.orEmpty().flatMap {
+                "image_end" to definition.rotor?.imagePath, "image_shadow" to definition.shadowImagePath) + definition.mech?.legs.orEmpty().flatMap {
                     listOf("image_leg" to it.legImage, "image_foot" to it.footImage) } +
                 combat?.namedWeapons?.ordered.orEmpty().map { "turret_${it.name}.image" to it.imagePath }
             for ((slot, image) in images) {

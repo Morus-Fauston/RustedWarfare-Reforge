@@ -33,7 +33,7 @@ internal class PcVisualAssetService(private val cacheRoot: Path,
             fun slot(name: String): Path? = binding.getString(name, null)?.let { prepared.outputs.getValue(it) }
             binding.name to VisualUnitImages(requireNotNull(slot("body")), slot("back"), slot("turret"), slot("dead"),
                 profile.recipes.getValue(binding.getString("body")).getInt("frames", 1), leg = slot("leg"), foot = slot("foot"), rotor = slot("rotor"),
-                weaponTurrets = binding.get("weaponTurrets")?.associate { it.name to prepared.outputs.getValue(it.asString()) }.orEmpty())
+                weaponTurrets = binding.get("weaponTurrets")?.associate { it.name to prepared.outputs.getValue(it.asString()) }.orEmpty(), shadow = slot("shadow"))
         }
         val terrain = profile.json.get("terrainOutputs").associate { it.name to prepared.outputs.getValue(it.name) }
         return PreparedVisualAssets(selection.copy(originalDirectory = root), profile.id,

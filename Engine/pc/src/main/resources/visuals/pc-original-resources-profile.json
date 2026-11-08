@@ -1,8 +1,8 @@
 {
   "schemaVersion": 1,
-  "profileId": "rw.pc.steam.9902063.resources.v5",
-  "imageProfileId": "rw.pc.steam.9902063.images.v5",
-  "imageQualificationSha256": "4c7a82a3f643ceb6ecd0966d01bbd980fa9f7a00243c7966eb6dab60cbf0182e",
+  "profileId": "rw.pc.steam.9902063.resources.v6",
+  "imageProfileId": "rw.pc.steam.9902063.images.v6",
+  "imageQualificationSha256": "0ee1841fb7e176d6921708b1bd5c373810dce7de724e7143070f33b51ef69aa1",
   "identity": {
     "bytes": 2639503,
     "sha256": "8a550a37e2d8a5430866090d4e7d5892f9010b47f52a5a09350fc66c620deec9"
@@ -261,6 +261,10 @@
     {
       "eventId": "reforge:events/naval-missile-fire",
       "sourcePath": "res/raw/missile_fire.ogg"
+    },
+    {
+      "eventId": "reforge:events/hover-fire",
+      "sourcePath": "res/raw/plasma_fire2.ogg"
     }
   ],
   "excludedMusicDomain": "assets/music/",
@@ -311,5 +315,5 @@
       "sha256": "45bf94723812dcfe146e84312721441872e5a82b3745a07a1311d4449cac0f03"
     }
   ],
-  "boundary": "Owned qualification metadata only. All30 original effects, one already-qualified supported event;9 music entries excluded. No original bytes or runtime, new trigger/permission or full-platform equivalence."
+  "boundary": "Owned PC qualification metadata. Native hover body, corpse and shadow use fixed PC sources; hover event maps to plasma_fire2. No original bytes, gameplay runtime or Android equivalence."
 }

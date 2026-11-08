@@ -959,6 +959,7 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
             for (unit in orderedUnits().toList()) {
                 if (!unit.alive) {
                     WaterBody.advanceCorpse(unit, currentScenario.map, step.delta)
+                    HoverMotion.advanceCorpse(unit, currentScenario.map, step.delta)
                     continue
                 }
                 if (unit.combat == null) MechBody.advance(unit, step.delta)
@@ -1005,6 +1006,7 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
                 }
                 if (!fourLegged) updateUnit(unit, currentScenario.map, step.delta, step.stepIndex, candidate.motionSamples)
                 FlightMotion.advancePose(unit, step.delta)
+                HoverMotion.advancePose(unit, step.delta)
                 MechGait.advance(unit, step.delta)
                 MechMotion.requireFinitePose(unit)
                 unit.finishMovementRequest()
@@ -1186,6 +1188,10 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
         for (definition in input.unitDefinitions.values) {
             val m = definition.movement
             val air = m.type == MovementType.AIR
+            val hovering = m.type == MovementType.HOVER && m.hover != null
+            if (m.hover != null && (!hovering || !m.hover.isValid() || m.flight != null ||
+                    !m.slidingMode || !m.ignoringBody || m.reverseSpeedPercentage != 0.0 || definition.mech != null))
+                return SimulationError("unsupported-hover", "Expected a finite sliding HOVER height profile")
             definition.fixedUnderwaterTarget?.let { fixed ->
                 if (fixed.height != -8.0 || m.type != MovementType.WATER ||
                     listOf(m.moveSpeed, m.moveAccelerationSpeed, m.moveDecelerationSpeed, m.maxTurnSpeed,
@@ -1312,7 +1318,7 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
                 return SimulationError("unsupported-unit", "Expected finite authored surface combat without unsupported capability combinations")
             if (numbers.any { !it.isFinite() || it < 0.0 } ||
                 (definition.building == null && definition.radius >= input.map.tileWidth && !(fourLegged && definition.radius == 22.0) && !navalHull && !authoredSurface) ||
-                m.type != MovementType.AIR && !fourLegged && (m.slidingMode || m.ignoringBody) ||
+                m.type != MovementType.AIR && !fourLegged && !hovering && (m.slidingMode || m.ignoringBody) ||
                 fourLegged && (m.type != MovementType.LAND || !m.slidingMode || !m.ignoringBody)) {
                 return SimulationError("unsupported-unit", "Expected finite movement and the supported representative's radius and locomotion")
             }
@@ -1730,7 +1736,7 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
                 missile = missile, sourceWeaponName = definition?.name)
             projectiles += projectile
             pendingProjectileEvents += ProjectileEventObservation("born", projectileObservation(projectile))
-            weapon.fireSound?.let { steps.current.pendingSoundTriggers += SoundTriggerObservation(it.eventId, projectile.position, it.volume) }
+            weapon.fireSound?.let { steps.current.pendingSoundTriggers += SoundTriggerObservation(it.eventId, projectile.position, it.volume, it.pitch) }
             OrdinaryWeapon.refreshOffset(contract.worldSeed, combatFrame, actorId, unit, target, state)
             pendingEvents += Event("projectile-fired", unit.unitId)
             return
@@ -1756,7 +1762,7 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
             ballistic = weapon.projectile.ballistic)
         projectiles += projectile
         pendingProjectileEvents += ProjectileEventObservation("born", projectileObservation(projectile))
-        weapon.fireSound?.let { steps.current.pendingSoundTriggers += SoundTriggerObservation(it.eventId, position, it.volume) }
+        weapon.fireSound?.let { steps.current.pendingSoundTriggers += SoundTriggerObservation(it.eventId, position, it.volume, it.pitch) }
         OrdinaryWeapon.refreshOffset(contract.worldSeed, combatFrame, actorId, unit, target, state)
         state.oddShot = !state.oddShot
         pendingEvents += Event("projectile-fired", unit.unitId)
@@ -2197,6 +2203,7 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
                     mechPose = MechMotion.pose(unit),
                     waterPose = if (unit.definition.movement.type == MovementType.WATER && unit.definition.fixedUnderwaterTarget == null)
                         WaterPose(unit.bodyReversing, unit.sinkSpeed, unit.waterSettled) else null,
+                    hoverPose = if (unit.definition.movement.hover != null) HoverPose(unit.flightVelocity, unit.heightPhase) else null,
                     flightPose = if (unit.definition.movement.type == MovementType.AIR) FlightPose(
                         unit.flightVelocity, unit.height, unit.heightPhase, unit.rotorPhase,
                         policies.coordinates.normalize(unit.heading + unit.rotorPhase), unit.rotorHeightOffset) else null,

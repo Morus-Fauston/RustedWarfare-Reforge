@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "profileId": "rw.pc.steam.9902063.images.v5",
+  "profileId": "rw.pc.steam.9902063.images.v6",
   "identity": {
     "jarPath": "game-lib.jar",
     "jarBytes": 2639503,
@@ -6210,10 +6210,96 @@
     "naval-large-turret": "assets/units/shared/large_turret.png",
     "sea-factory": "res/drawable/sea_factory.png",
     "sea-factory-t2": "res/drawable/sea_factory_t2.png",
-    "sea-factory-dead": "res/drawable/sea_factory_dead.png"
+    "sea-factory-dead": "res/drawable/sea_factory_dead.png",
+    "hover-body": "res/drawable/hover_tank.png",
+    "hover-dead": "res/drawable/hover_tank_dead.png",
+    "hover-shadow": "res/drawable/hover_tank_shadow.png"
   },
   "mappingBasis": {
     "androidProfileSha256": "e273280ab37b1a24714e6b15d8e1cb14fdd395e228ea7c71a62dd2f24d334780",
     "scope": "Fifty-three qualified source images; six new naval image recipes and seven aliases for stock heavy battleship and Sea T1/T2. Shared turret serves the two visible main turrets; missile launchers stay invisible. T2 dead reuses T1. All prior recipes and the complete original source collection remain unchanged. Static mapping, no original gameplay execution or all-image rendering claim."
+  },
+  "mappingSources": [
+    {
+      "id": "hover-body",
+      "path": "res/drawable/hover_tank.png",
+      "bytes": 399,
+      "sha256": "6fad0e7b1f507d4eef7a26c17a6aa18c27ca1260d769aa88f7185b33b5ae30a1",
+      "width": 17,
+      "height": 24
+    },
+    {
+      "id": "hover-dead",
+      "path": "res/drawable/hover_tank_dead.png",
+      "bytes": 452,
+      "sha256": "5301e378cef067899af319c3e361bb71b19272b45b6c8b2af650bc367a3799ca",
+      "width": 17,
+      "height": 24
+    },
+    {
+      "id": "hover-shadow",
+      "path": "res/drawable/hover_tank_shadow.png",
+      "bytes": 164,
+      "sha256": "f7f80f8ae08e89839030061b3fd9c64c6fa7da7187f246f037677a42dc85944c",
+      "width": 17,
+      "height": 24
+    }
+  ],
+  "mappingUnitOutputs": {
+    "hover-body": {
+      "file": "units/hover-body.png",
+      "operation": "crop",
+      "source": "hover-body",
+      "rect": [
+        0,
+        0,
+        17,
+        24
+      ],
+      "target": [
+        17,
+        24
+      ],
+      "frames": 1
+    },
+    "hover-dead": {
+      "file": "units/hover-dead.png",
+      "operation": "crop",
+      "source": "hover-dead",
+      "rect": [
+        0,
+        0,
+        17,
+        24
+      ],
+      "target": [
+        17,
+        24
+      ],
+      "frames": 1
+    },
+    "hover-shadow": {
+      "file": "units/hover-shadow.png",
+      "operation": "crop",
+      "source": "hover-shadow",
+      "rect": [
+        0,
+        0,
+        17,
+        24
+      ],
+      "target": [
+        17,
+        24
+      ],
+      "frames": 1
+    }
+  },
+  "mappingUnitBindings": {
+    "hoverTank": {
+      "body": "hover-body",
+      "dead": "hover-dead",
+      "shadow": "hover-shadow"
+    }
   }
 }

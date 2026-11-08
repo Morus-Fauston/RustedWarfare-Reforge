@@ -29,7 +29,7 @@ data class UnitAppearance(val displayRadius: Double, val imagePath: Path, val im
     val economicBuilding: Boolean = false, val logicalImages: UnitImageLogicalSizes? = null,
     val weaponImages: Map<String, WeaponAppearance> = emptyMap(),
     val legImagePath: Path? = null, val footImagePath: Path? = null, val rotorImagePath: Path? = null,
-    val mechKind: com.rustedwarfare.reforge.core.content.MechKind? = null) {
+    val mechKind: com.rustedwarfare.reforge.core.content.MechKind? = null, val shadowImagePath: Path? = null) {
     internal fun turretDrawings(unit: UnitObservation, weapons: List<VisibleUnitWeapon>): List<TurretDrawing> {
         if (!unit.alive) return emptyList()
         if (weapons.isNotEmpty()) {
@@ -142,7 +142,7 @@ class SandboxRenderResources private constructor(
                     weaponImages = Collections.unmodifiableMap(unit.combat?.namedWeapons?.ordered.orEmpty()
                         .associate { it.name to WeaponAppearance(it.imagePath, it.imageScale, it.invisible, it.imageOffsetX, it.imageOffsetY) }),
                     legImagePath = images.leg, footImagePath = images.foot,
-                    rotorImagePath = images.rotor, mechKind = unit.mech?.kind)
+                    rotorImagePath = images.rotor, mechKind = unit.mech?.kind, shadowImagePath = images.shadow)
             }), Collections.unmodifiableMap(scenario.players.associate { it.playerId to it.teamId }))
     }
 }

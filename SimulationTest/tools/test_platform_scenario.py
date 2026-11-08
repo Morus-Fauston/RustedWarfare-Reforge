@@ -9,6 +9,21 @@ import tempfile
 
 
 class PlatformIntentTest(unittest.TestCase):
+    def test_windows_history_accepts_normal_content_menu_and_keeps_wait_bounds(self):
+        from platform_windows import validate_windows_plan
+        plan=dict(scenarioId='hover',contentPack=dict(directory='package',unitId='commandCenter'),
+            intents=[dict(intentId='worker',kind='produce',typeId='builder',waitSteps=600)],
+            windowsWaits=dict(worker=dict(rate=4,progressOnly=True,maximumSimulationSteps=720,
+                maximumWallSeconds=10,stallSeconds=4)))
+        contract=dict(scenarioId='hover',rules=[dict(intentId='worker')],history=dict(initialBalance=5000))
+        self.assertEqual([dict(intentId='worker',actionType='ProduceAction')],validate_windows_plan(plan,contract))
+        for fault in ('no-entry','wait-bound','unknown-action'):
+            changed=copy.deepcopy(plan)
+            if fault=='no-entry':changed.pop('contentPack')
+            elif fault=='wait-bound':changed['windowsWaits']['worker']['maximumSimulationSteps']=1201
+            else:changed['intents'][0]['kind']='invented'
+            with self.subTest(fault=fault),self.assertRaises(PlatformError):validate_windows_plan(changed,contract)
+
     def test_default_windows_startup_uses_no_content_override_and_keeps_evidence_isolated(self):
         from platform_windows import startup_arguments
         snapshot=Path('owned-snapshot');evidence=Path('owned-evidence')

@@ -12,6 +12,7 @@ internal class ActionCatalogue(private val definitions: Map<String, UnitDefiniti
     private val names = mapOf(
         "commandCenter" to Names("Command", "Command center"), "builder" to Names("Builder"),
         "c_tank" to Names("Tank"), "landFactory" to Names("Factory", "Land factory"),
+        "hoverTank" to Names("Hover tank"),
         "mechFactory" to Names("Mech factory"), "mechGun" to Names("Gun mech"),
         "mechFactoryT2" to Names("Mech factory T2"), "mechHeavyMissile" to Names("Heavy missile mech"),
         "airFactory" to Names("Air factory"), "helicopter" to Names("Helicopter"),

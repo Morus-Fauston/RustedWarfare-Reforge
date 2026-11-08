@@ -5,8 +5,9 @@ import kotlin.test.*
 class NavalOriginalProfileTest {
     @Test fun frozen_resource_versions_load_from_their_bundled_qualification_chain() {
         val profiles = listOf(PcOriginalResourceProfile.versionOne(), PcOriginalResourceProfile.versionTwo(),
-            PcOriginalResourceProfile.versionThree(), PcOriginalResourceProfile.versionFour())
-        assertEquals((1..4).map { "rw.pc.steam.9902063.resources.v$it" }, profiles.map { it.id })
+            PcOriginalResourceProfile.versionThree(), PcOriginalResourceProfile.versionFour(),
+            PcOriginalResourceProfile.versionFive())
+        assertEquals((1..5).map { "rw.pc.steam.9902063.resources.v$it" }, profiles.map { it.id })
     }
 
     @Test fun previous_v4_qualification_keeps_its_exact_published_metadata_bytes() {
@@ -22,7 +23,7 @@ class NavalOriginalProfileTest {
     @Test fun current_profile_has_finite_naval_body_dead_shared_turret_and_distinct_original_sound_events() {
         val profile = VisualAssetProfile.bundled()
         assertEquals("rw.android.1.15.176.visual.v5", profile.id)
-        assertEquals("rw.pc.steam.9902063.images.v5", PcOriginalImageProfile.bundled().id)
+        assertEquals("rw.pc.steam.9902063.images.v6", PcOriginalImageProfile.bundled().id)
         val bindings = profile.json.get("unitBindings")
         val ship = assertNotNull(bindings.get("heavyBattleship"))
         assertEquals(setOf("body", "dead", "turret"), ship.map { it.name }.toSet())
@@ -38,7 +39,7 @@ class NavalOriginalProfileTest {
         }
         assertEquals(t1.getString("dead"), t2.getString("dead"))
         val sounds = PcOriginalResourceProfile.bundled()
-        assertEquals("rw.pc.steam.9902063.resources.v5", sounds.id)
+        assertEquals("rw.pc.steam.9902063.resources.v6", sounds.id)
         assertEquals("res/raw/large_gun_fire2.ogg", sounds.events["reforge:events/naval-main-fire"])
         assertEquals("res/raw/missile_fire.ogg", sounds.events["reforge:events/naval-missile-fire"])
     }

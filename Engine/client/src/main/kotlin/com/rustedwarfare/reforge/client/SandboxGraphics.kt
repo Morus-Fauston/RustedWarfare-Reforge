@@ -29,6 +29,7 @@ class SandboxGraphics private constructor(private val resources: SandboxRenderRe
     private val legs = mutableMapOf<String, TextureRegion>()
     private val feet = mutableMapOf<String, TextureRegion>()
     private val rotors = mutableMapOf<String, TextureRegion>()
+    private val shadows = mutableMapOf<String, TextureRegion>()
     fun unitIcon(typeId: String): TextureRegion? = units[typeId]
 
     companion object {
@@ -125,6 +126,7 @@ class SandboxGraphics private constructor(private val resources: SandboxRenderRe
             definition.legImagePath?.let { legs[id] = TextureRegion(texture(it)) }
             definition.footImagePath?.let { feet[id] = TextureRegion(texture(it)) }
             definition.rotorImagePath?.let { rotors[id] = TextureRegion(texture(it)) }
+            definition.shadowImagePath?.let { shadows[id] = TextureRegion(texture(it)) }
         }
     }
 
@@ -151,8 +153,17 @@ class SandboxGraphics private constructor(private val resources: SandboxRenderRe
             val mech = mechFrames[unit.unitId]
             val flight = flightFrames[unit.unitId]
             val water = waterFrames[unit.unitId]
+            val hover = HoverPresentation.project(unit, projection)
             if (unit.alive && unit.flightPose != null && flight == null) continue
             if (unit.waterPose != null && water == null) continue
+            if (unit.hoverPose != null && hover == null) continue
+            if (hover?.drawShadow == true) shadows[unit.typeId]?.let { shadow ->
+                val size = definition.drawSize(UnitImageSlot.SHADOW, shadow.regionWidth, shadow.regionHeight)
+                val sw = (size.width * projection.scale).toFloat()
+                val sh = (size.height * projection.scale).toFloat()
+                batch.draw(shadow, hover.shadowX - sw / 2, hover.shadowY - sh / 2,
+                    sw / 2, sh / 2, sw, sh, 1f, 1f, hover.rotation)
+            }
             mech?.legs?.forEach { leg ->
                 val shaft = legs.getValue(unit.typeId)
                 val foot = feet.getValue(unit.typeId)
@@ -190,9 +201,9 @@ class SandboxGraphics private constructor(private val resources: SandboxRenderRe
             val size = definition.drawSize(if (corpse != null) UnitImageSlot.DEAD else UnitImageSlot.BODY, region.regionWidth, region.regionHeight)
             val w = (size.width * projection.scale).toFloat()
             val h = (size.height * projection.scale).toFloat()
-            batch.draw(region, (flight?.bodyX ?: mech?.bodyX ?: water?.bodyX ?: projection.x(unit.position.x)) - w / 2,
-                (flight?.bodyY ?: mech?.bodyY ?: water?.bodyY ?: projection.y(unit.position.y)) - h / 2,
-                w / 2, h / 2, w, h, 1f, 1f, flight?.bodyRotation ?: mech?.rotation ?: water?.bodyRotation ?: -unit.heading.toFloat())
+            batch.draw(region, (flight?.bodyX ?: mech?.bodyX ?: water?.bodyX ?: hover?.bodyX ?: projection.x(unit.position.x)) - w / 2,
+                (flight?.bodyY ?: mech?.bodyY ?: water?.bodyY ?: hover?.bodyY ?: projection.y(unit.position.y)) - h / 2,
+                w / 2, h / 2, w, h, 1f, 1f, flight?.bodyRotation ?: mech?.rotation ?: water?.bodyRotation ?: hover?.rotation ?: -unit.heading.toFloat())
             flight?.let { pose ->
                 val rotor = rotors.getValue(unit.typeId)
                 val rotorSize = definition.drawSize(UnitImageSlot.ROTOR, rotor.regionWidth, rotor.regionHeight)

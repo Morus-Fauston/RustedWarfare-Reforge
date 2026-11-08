@@ -12,6 +12,7 @@ object GroundRules {
     fun blocked(tileSets: List<TileSetDefinition>, gid: Int, type: MovementType): Boolean {
         val tileSet = owner(tileSets, gid) ?: return true
         val local = gid - tileSet.firstGid
+        if (type == MovementType.HOVER) return local in tileSet.hoverBlockedTileIds
         return local in tileSet.blockedTileIds || if (type == MovementType.WATER)
             local !in tileSet.waterTileIds && local !in tileSet.waterBridgeTileIds
         else local in tileSet.waterTileIds

@@ -7,7 +7,7 @@ import java.util.Collections
 data class VisualUnitImages(val body: Path, val back: Path? = null, val turret: Path? = null,
     val dead: Path? = null, val totalFrames: Int = 1, val logicalImages: UnitImageLogicalSizes? = null,
     val leg: Path? = null, val foot: Path? = null, val rotor: Path? = null,
-    val weaponTurrets: Map<String, Path> = emptyMap())
+    val weaponTurrets: Map<String, Path> = emptyMap(), val shadow: Path? = null)
 
 /** Immutable paths and generation identity, with no core or GL ownership. */
 class PreparedVisualAssets private constructor(val selection: VisualAssetSelection, val profileId: String, val identity: String,

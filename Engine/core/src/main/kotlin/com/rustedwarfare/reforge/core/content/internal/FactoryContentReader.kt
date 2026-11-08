@@ -51,7 +51,13 @@ internal object FactoryContentReader {
         val construction = mech || air || required("format") == "rw-reforge.native-land-factory.v2"
         val newFields = setOf("productionUnits", "placementFootprint", "price", "buildSpeed")
         if (construction) {
-            only("productionUnits", when { air -> "helicopter"; t2 -> "builder,mechGun,mechHeavyMissile"; mech -> "builder,mechGun"; else -> "builder,c_tank" })
+            if (!air && !mech) {
+                val products = required("productionUnits").split(',')
+                if (products.isEmpty() || products.distinct().size != products.size ||
+                    products.any { it !in setOf("builder", "c_tank", "hoverTank") })
+                    reject(ContentErrorCode.UNSUPPORTED_FEATURE, path, field = "productionUnits",
+                        reason = "Expected a nonempty unique native land factory product list")
+            } else only("productionUnits", when { air -> "helicopter"; t2 -> "builder,mechGun,mechHeavyMissile"; else -> "builder,mechGun" })
             only("placementFootprint", if (air) "-1,-1,1,2" else "-1,-1,1,3")
             only("price", when { t2 -> "5000"; mech || air -> "1000"; else -> "700" })
             only("buildSpeed", if (t2) "0.0005" else "0.001")
@@ -104,7 +110,7 @@ internal object FactoryContentReader {
                 if (air) null else image("image_back"), placementFootprint = if (air) BuildingFootprint(-1, -1, 1, 2)
                     else if (construction) BuildingFootprint(-1, -1, 1, 3)
                     else BuildingFootprint(-1, -1, 1, 1)),
-            production = ProductionProfile(if (air) listOf("helicopter") else if (t2) listOf("builder", "mechGun", "mechHeavyMissile") else if (mech) listOf("builder", "mechGun") else if (construction) listOf("builder", "c_tank") else listOf("c_tank"),
+            production = ProductionProfile(if (air) listOf("helicopter") else if (t2) listOf("builder", "mechGun", "mechHeavyMissile") else if (mech) listOf("builder", "mechGun") else if (construction) required("productionUnits").split(',') else listOf("c_tank"),
                 when { air -> FactoryExitProfile.NATIVE_AIR; mech -> FactoryExitProfile.CUSTOM_MECH; else -> FactoryExitProfile.NATIVE_LAND }),
             build = if (construction) BuildProfile(positive("price").toLong(), positive("buildSpeed").toFloat()) else null,
             construction = if (construction) ConstructionProfile(positive("price").toLong(), positive("buildSpeed").toFloat()) else null,
