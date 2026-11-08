@@ -10,6 +10,7 @@ import tempfile
 import time
 
 from public_check import REPO, identities, plan_suite, source_files, build_shared_distribution, command_timeout, test_forks, test_concurrency
+from public_check import scenario_workers, scenario_concurrency
 
 
 SUITES = ('content-movement-knowledge', 'production-combat', 'build-economy',
@@ -34,13 +35,13 @@ def plan_layer(repo, kind):
                 exclusions=['original-runtime', 'device', 'real-platform-input', 'formal-performance'])
 
 
-def run_layer(repo, output, plan, isolated, command_timeout_seconds=600, forks=1):
+def run_layer(repo, output, plan, isolated, command_timeout_seconds=600, forks=1, workers=2):
     output.mkdir(parents=True, exist_ok=False)
     started = time.monotonic()
     source = identities(repo)
     result = dict(schemaVersion=1, status='execution-failed', selection=plan, source=source,
                   isolated=isolated, suites=[], cloudRun=os.environ.get('GITHUB_ACTIONS') == 'true',
-                  commandTimeoutSeconds=command_timeout_seconds,
+                  commandTimeoutSeconds=command_timeout_seconds, scenarioConcurrency=scenario_concurrency(workers),
                   testConcurrency=test_concurrency(
                       {m: [] for row in plan['suites'] for m in row['plan']['tests']}, forks))
     try:
@@ -61,7 +62,8 @@ def run_layer(repo, output, plan, isolated, command_timeout_seconds=600, forks=1
             child = output / name
             argv = [sys.executable, '-B', str(repo/'SimulationTest/ci/public_check.py'),
                     '--suite', name, '--kind', row['plan']['kind'], '--output', str(child),
-                    '--command-timeout',str(command_timeout_seconds), '--test-forks', str(forks)]
+                    '--command-timeout',str(command_timeout_seconds), '--test-forks', str(forks),
+                    '--scenario-workers',str(workers)]
             if shared is not None:
                 from public_distribution import verify
                 verify(shared['receipt'], shared['sha256'], identities(repo), kind=plan['kind'], plan=row['plan'], repo=repo)
@@ -79,6 +81,21 @@ def run_layer(repo, output, plan, isolated, command_timeout_seconds=600, forks=1
             if (measured['status'] != 'passed' or measured['selection'] != row['plan'] or
                     measured['source'] != source):
                 raise RuntimeError(name + ': incomplete, mismatched or changed-source receipt')
+            scenarios = json.loads((child/'scenario-execution.json').read_text(encoding='utf8'))
+            if (scenarios != measured.get('scenarioExecution') or scenarios['status'] != 'passed' or
+                    scenarios['requestedWorkers'] != workers or scenarios['peakRunning'] > workers or
+                    [r['id'] for r in scenarios['items']] != [c['id'] for c in row['plan']['scenarios']] or
+                    any(r['status'] != 'passed' for r in scenarios['items']) or
+                    measured['archives'] != [r['archive'] for r in scenarios['items']]):
+                raise RuntimeError(name + ': scenario selection or terminal evidence is incomplete')
+            if scenarios['items']:
+                first_start = min(r['startedUnix'] for r in scenarios['items'])
+                scene_names = {c['name'] for r in scenarios['items'] for c in r['commands']}
+                for command in measured['commands']:
+                    if command['name'] not in scene_names:
+                        process = json.loads((child/command['receipt']).read_text(encoding='utf8'))
+                        if process['endedUnix'] > first_start:
+                            raise RuntimeError(name + ': scenario phase overlaps build or mechanism execution')
             if shared is not None and plan['kind'] == 'pr':
                 if measured.get('preparedDistribution') != dict(receipt=shared['receipt'], sha256=shared['sha256']):
                     raise RuntimeError(name + ': fixed preparation pin differs')
@@ -116,6 +133,7 @@ def main():
     parser.add_argument('--list', action='store_true', help='List fixed complete layer without execution')
     parser.add_argument('--isolated', action='store_true', help='Copy only authored public source closure')
     parser.add_argument('--test-forks', type=test_forks, default=1, help='Bound independent test JVMs: 1, 2 or 4; PC stays serial')
+    parser.add_argument('--scenario-workers', type=scenario_workers, default=2, help='Bound independent headless scenarios after tests: 1, 2 or 4')
     parser.add_argument('--command-timeout',type=command_timeout,default=600,
                         help='Per-command seconds forwarded to every suite and shared build; at most 3600')
     args = parser.parse_args()
@@ -125,7 +143,8 @@ def main():
         parser.error(str(error))
     if args.list:
         print(json.dumps(dict(plan, testConcurrency=test_concurrency(
-            {m: [] for row in plan['suites'] for m in row['plan']['tests']}, args.test_forks))))
+            {m: [] for row in plan['suites'] for m in row['plan']['tests']}, args.test_forks),
+            scenarioConcurrency=scenario_concurrency(args.scenario_workers))))
         return 0
     if args.output is None:
         parser.error('--output is required for execution')
@@ -139,7 +158,7 @@ def main():
             target = repo/source.relative_to(REPO)
             target.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(source, target)
-    return run_layer(repo, output, plan, args.isolated, args.command_timeout, args.test_forks)
+    return run_layer(repo, output, plan, args.isolated, args.command_timeout, args.test_forks, args.scenario_workers)
 
 
 if __name__ == '__main__':
