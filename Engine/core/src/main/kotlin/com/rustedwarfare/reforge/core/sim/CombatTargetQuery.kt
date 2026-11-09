@@ -24,6 +24,7 @@ internal object CombatTargetQuery {
     /** Common target category envelope for manual intent and gameplay candidate selection. */
     fun canAttackAirCategory(actor: MutableUnit, target: MutableUnit, map: MapDefinition): Boolean {
         if (target.carriedBy != null) return false
+        if (actor.definition.combat?.projectile?.beam != null) return isFlying(target)
         if (actor.definition.submarine != null || actor.amphibiousState != null) {
             val submerged = if (actor.amphibiousState != null) actor.height < -1.0 else SubmarineMotion.submerged(actor)
             if (isFlying(target)) return !submerged

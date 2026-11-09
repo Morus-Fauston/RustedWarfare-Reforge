@@ -6229,11 +6229,17 @@
     "landing-craft-shadow": "res/drawable/hovercraft_shadow.png",
     "air-transport-body": "res/drawable/dropship.png",
     "air-transport-dead": "res/drawable/dropship_dead.png",
-    "air-transport-shadow": "res/drawable/dropship_shadow.png"
+    "air-transport-shadow": "res/drawable/dropship_shadow.png",
+    "aa-beam-body": "assets/units/aa_beam_gunship/base3.png",
+    "aa-beam-dead": "assets/units/aa_beam_gunship/base3_dead.png",
+    "aa-beam-turret": "assets/units/aa_beam_gunship/beam_turret.png",
+    "aa-beam-beam": "assets/units/shared/beam3.png",
+    "aa-beam-beamStart": "assets/units/shared/beam1_start.png",
+    "aa-beam-beamEnd": "assets/units/shared/beam1_end.png"
   },
   "mappingBasis": {
     "androidProfileSha256": "e273280ab37b1a24714e6b15d8e1cb14fdd395e228ea7c71a62dd2f24d334780",
-    "scope": "Qualified PC finite mappings include native amphibious body/dead/shadow, independent p2 left and p1 right wings rotated into the client north basis, and T2 air factory first animation frame. No Android source or original gameplay execution claim. Native landing craft uses the fixed PC 20x32 body/dead/shadow without rotation; native dimensions and loaded drawables follow e.i. Native air transport uses the fixed PC 45x47 body/dead/shadow without rotation; native dimensions and loaded drawables follow e.i."
+    "scope": "Qualified PC finite mappings include native amphibious body/dead/shadow, independent p2 left and p1 right wings rotated into the client north basis, and T2 air factory first animation frame. No Android source or original gameplay execution claim. Native landing craft uses the fixed PC 20x32 body/dead/shadow without rotation; native dimensions and loaded drawables follow e.i. Native air transport uses the fixed PC 45x47 body/dead/shadow without rotation; native dimensions and loaded drawables follow e.i. Qualified PC AA custom body/dead/turret and shared three-image beam retain native sizes and north orientation; AUTO shadow preserves body alpha with RGB black. No original gameplay execution claim."
   },
   "mappingSources": [
     {
@@ -6387,6 +6393,54 @@
       "sha256": "265277904340af97301c751d92bcbb2cf20817fffa24b2b1c3dda3f979945004",
       "width": 45,
       "height": 47
+    },
+    {
+      "id": "aa-beam-body",
+      "path": "assets/units/aa_beam_gunship/base3.png",
+      "bytes": 4532,
+      "sha256": "579d7b04f4154d0ec888b3a75ada1cee14ec692a80a5c036a17ea34fa2d4bcdf",
+      "width": 33,
+      "height": 52
+    },
+    {
+      "id": "aa-beam-dead",
+      "path": "assets/units/aa_beam_gunship/base3_dead.png",
+      "bytes": 4952,
+      "sha256": "e575bf2dcdb075701e60e48f233d8d7673d589a7dc74f4f64e129700b1dcaa1a",
+      "width": 33,
+      "height": 52
+    },
+    {
+      "id": "aa-beam-turret",
+      "path": "assets/units/aa_beam_gunship/beam_turret.png",
+      "bytes": 3227,
+      "sha256": "31ba693ff32af22268050a4553b4e5a0716ec368272e1173994f65683f1f72ca",
+      "width": 16,
+      "height": 26
+    },
+    {
+      "id": "aa-beam-beam",
+      "path": "assets/units/shared/beam3.png",
+      "bytes": 336,
+      "sha256": "198ea5ef412ca9bb3a3333fe5f5a3d40f0d5f18764ff5bca179dea8885add6f0",
+      "width": 13,
+      "height": 20
+    },
+    {
+      "id": "aa-beam-beamStart",
+      "path": "assets/units/shared/beam1_start.png",
+      "bytes": 350,
+      "sha256": "78d95ff0ce0ed5f6f7b8f1ec29253996f36d197bdb54d0ee7f0c802fd3385181",
+      "width": 20,
+      "height": 20
+    },
+    {
+      "id": "aa-beam-beamEnd",
+      "path": "assets/units/shared/beam1_end.png",
+      "bytes": 637,
+      "sha256": "ad4f36c99fc0b962ccc28fcd118a5469123c59a79172c8c071228d7b903d1aa5",
+      "width": 20,
+      "height": 20
     }
   ],
   "mappingUnitOutputs": {
@@ -6698,6 +6752,118 @@
         47
       ],
       "frames": 1
+    },
+    "aa-beam-body": {
+      "file": "units/aa-beam-body.png",
+      "operation": "crop",
+      "source": "aa-beam-body",
+      "rect": [
+        0,
+        0,
+        33,
+        52
+      ],
+      "target": [
+        33,
+        52
+      ],
+      "frames": 1
+    },
+    "aa-beam-dead": {
+      "file": "units/aa-beam-dead.png",
+      "operation": "crop",
+      "source": "aa-beam-dead",
+      "rect": [
+        0,
+        0,
+        33,
+        52
+      ],
+      "target": [
+        33,
+        52
+      ],
+      "frames": 1
+    },
+    "aa-beam-shadow": {
+      "file": "units/aa-beam-shadow.png",
+      "operation": "alpha-shadow",
+      "source": "aa-beam-body",
+      "rect": [
+        0,
+        0,
+        33,
+        52
+      ],
+      "target": [
+        33,
+        52
+      ],
+      "frames": 1
+    },
+    "aa-beam-turret": {
+      "file": "units/aa-beam-turret.png",
+      "operation": "crop",
+      "source": "aa-beam-turret",
+      "rect": [
+        0,
+        0,
+        16,
+        26
+      ],
+      "target": [
+        16,
+        26
+      ],
+      "frames": 1
+    },
+    "aa-beam-beam": {
+      "file": "units/aa-beam-beam.png",
+      "operation": "crop",
+      "source": "aa-beam-beam",
+      "rect": [
+        0,
+        0,
+        13,
+        20
+      ],
+      "target": [
+        13,
+        20
+      ],
+      "frames": 1
+    },
+    "aa-beam-beamStart": {
+      "file": "units/aa-beam-beamStart.png",
+      "operation": "crop",
+      "source": "aa-beam-beamStart",
+      "rect": [
+        0,
+        0,
+        20,
+        20
+      ],
+      "target": [
+        20,
+        20
+      ],
+      "frames": 1
+    },
+    "aa-beam-beamEnd": {
+      "file": "units/aa-beam-beamEnd.png",
+      "operation": "crop",
+      "source": "aa-beam-beamEnd",
+      "rect": [
+        0,
+        0,
+        20,
+        20
+      ],
+      "target": [
+        20,
+        20
+      ],
+      "frames": 1
     }
   },
   "mappingUnitBindings": {
@@ -6740,6 +6906,15 @@
       "body": "air-transport-body",
       "dead": "air-transport-dead",
       "shadow": "air-transport-shadow"
+    },
+    "aaBeamGunship": {
+      "body": "aa-beam-body",
+      "dead": "aa-beam-dead",
+      "shadow": "aa-beam-shadow",
+      "turret": "aa-beam-turret",
+      "beam": "aa-beam-beam",
+      "beamStart": "aa-beam-beamStart",
+      "beamEnd": "aa-beam-beamEnd"
     }
   }
 }

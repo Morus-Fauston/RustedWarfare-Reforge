@@ -1103,6 +1103,8 @@ class BootstrapScreen(
             selected.movementState.name.lowercase(), selected.position.x, selected.position.y, selected.heading, selected.speed) +
             (selected.health?.let { "\nHP ${it.toInt()} / ${selected.maxHealth?.toInt()}" } ?: "") +
             (selected.shield?.let { "\nShield ${it.current.toInt()} / ${it.maximum.toInt()}" } ?: "") +
+            (selected.energy?.let { String.format(Locale.ROOT, "\nEnergy %.3f / %.3f%s", it.current, it.maximum,
+                if (it.recharging) " LOCKED" else "") } ?: "") +
             (if (selected.typeId.startsWith("c_turret")) "\n${selected.typeId}" else "") +
             (selected.pointDefense?.let { String.format(Locale.ROOT, "\nEnergy %.3f%s", it.energy,
                 if (it.exhausted) " LOCKED" else "") } ?: ""))

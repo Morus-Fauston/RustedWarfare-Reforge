@@ -32,6 +32,7 @@ class SandboxGraphics private constructor(private val resources: SandboxRenderRe
     private val shadows = mutableMapOf<String, TextureRegion>()
     private val shields = mutableMapOf<String, TextureRegion>()
     private val wings = mutableMapOf<Pair<String, UnitImageSlot>, TextureRegion>()
+    private val beamImages = mutableMapOf<Path, TextureRegion>()
     fun unitIcon(typeId: String): TextureRegion? = units[typeId]
 
     companion object {
@@ -132,6 +133,10 @@ class SandboxGraphics private constructor(private val resources: SandboxRenderRe
             definition.shieldImagePath?.let { shields[id] = TextureRegion(texture(it)) }
             definition.leftWingImagePath?.let { wings[id to UnitImageSlot.LEFT_WING] = TextureRegion(texture(it)) }
             definition.rightWingImagePath?.let { wings[id to UnitImageSlot.RIGHT_WING] = TextureRegion(texture(it)) }
+            for (path in listOfNotNull(definition.beamImagePath, definition.beamStartImagePath, definition.beamEndImagePath)) {
+                beamImages[path] = TextureRegion(texture(path))
+            }
+            definition.beamImagePath?.let { beamImages.getValue(it).texture.setWrap(Texture.TextureWrap.ClampToEdge, Texture.TextureWrap.Repeat) }
         }
     }
 
@@ -264,6 +269,33 @@ class SandboxGraphics private constructor(private val resources: SandboxRenderRe
                 batch.color = Color.WHITE
             }
         }
+        for (drawing in BeamPresentation.project(frame.observation, resources)) {
+            val x = projection.x(drawing.start.x)
+            val y = projection.y(drawing.start.y)
+            val endX = projection.x(drawing.end.x)
+            val endY = projection.y(drawing.end.y)
+            val length = kotlin.math.hypot(endX - x, endY - y)
+            if (!listOf(x, y, endX, endY, length).all { it.isFinite() } || length == 0f) continue
+            val images = drawing.images
+            val body = beamImages.getValue(requireNotNull(images.beamImagePath))
+            val size = images.drawSize(UnitImageSlot.BEAM, body.regionWidth, body.regionHeight)
+            val width = (size.width * projection.scale).toFloat()
+            val tileHeight = (size.height * projection.scale).toFloat()
+            val repeated = TextureRegion(body)
+            val phase = drawing.textureOffset / size.height.toFloat()
+            repeated.setRegion(body.u, body.v + phase, body.u2, body.v + phase + length / tileHeight)
+            val angle = Math.toDegrees(kotlin.math.atan2((endY - y).toDouble(), (endX - x).toDouble())).toFloat() - 90f
+            batch.draw(repeated, x - width / 2, y, width / 2, 0f, width, length, 1f, 1f, angle)
+            for ((path, slot, point) in listOf(
+                Triple(requireNotNull(images.beamStartImagePath), UnitImageSlot.BEAM_START, x to y),
+                Triple(requireNotNull(images.beamEndImagePath), UnitImageSlot.BEAM_END, endX to endY))) {
+                val cap = beamImages.getValue(path)
+                val capSize = images.drawSize(slot, cap.regionWidth, cap.regionHeight)
+                val cw = (capSize.width * projection.scale).toFloat()
+                val ch = (capSize.height * projection.scale).toFloat()
+                batch.draw(cap, point.first - cw / 2, point.second - ch / 2, cw, ch)
+            }
+        }
         construction?.let { preview ->
             val definition = resources.units.getValue(preview.typeId)
             when (preview.state) {
@@ -325,6 +357,12 @@ class SandboxGraphics private constructor(private val resources: SandboxRenderRe
                 shapes.line(x - radius, y + radius + 8f, x - radius + 2f * radius * defense.energy, y + radius + 8f)
                 shapes.color = resources.unitCircleColor(frame.observation.playerId, unit.ownerPlayerId)
             }
+            if (unit.alive) unit.energy?.let { energy ->
+                shapes.color = if (energy.recharging) Color.ORANGE else Color.CYAN
+                shapes.line(x - radius, y + radius + 8f,
+                    x - radius + 2f * radius * (energy.current / energy.maximum), y + radius + 8f)
+                shapes.color = resources.unitCircleColor(frame.observation.playerId, unit.ownerPlayerId)
+            }
             if (unit.alive && frame.observation.scenarioId == "p006-construction") {
                 frame.observation.factoryQueues.firstOrNull { it.factoryId == unit.unitId }?.items?.firstOrNull()?.let { head ->
                     shapes.color = Color(.68f, .3f, .82f, 1f)
@@ -368,6 +406,7 @@ class SandboxGraphics private constructor(private val resources: SandboxRenderRe
         }
         shapes.color = Color.YELLOW
         for (projectile in frame.observation.projectiles) {
+            if (projectile.beam != null) continue
             val x = projection.x(projectile.position.x)
             val y = projection.y(projectile.position.y) + (projectile.height * projection.scale).toFloat()
             val areaRadius = projectile.areaRadius
@@ -382,7 +421,7 @@ class SandboxGraphics private constructor(private val resources: SandboxRenderRe
         val now = System.nanoTime()
         if (impactSample != frame.observation.sampleId) {
             impactSample = frame.observation.sampleId
-            for (event in frame.observation.projectileEvents) if (event.kind == "impact")
+            for (event in frame.observation.projectileEvents) if (event.kind == "impact" && event.beam == null)
                 impacts[event.token] = event.position to now
         }
         impacts.entries.removeAll { now - it.value.second > 180_000_000L }

@@ -83,7 +83,7 @@ internal object ContentPackComposer {
                 if (production.exitProfile == FactoryExitProfile.NATIVE_AIR &&
                     (product.movement.type != MovementType.AIR ||
                         product.transport != TransportProfile.NATIVE_DROPSHIP &&
-                        (product.rotor == null && product.amphibiousJet == null || product.combat == null)))
+                        (product.rotor == null && product.amphibiousJet == null && product.combat?.projectile?.beam == null || product.combat == null)))
                     bad(target, "productionUnits", "Air factory targets require a supported native flight or air transport capability")
                 if (production.exitProfile == FactoryExitProfile.CUSTOM_MECH &&
                     (target == "builder" && product.builder == null || target == "mechGun" && product.mech == null))

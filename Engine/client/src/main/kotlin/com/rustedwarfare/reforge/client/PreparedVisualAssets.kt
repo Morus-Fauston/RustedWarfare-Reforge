@@ -8,7 +8,8 @@ data class VisualUnitImages(val body: Path, val back: Path? = null, val turret: 
     val dead: Path? = null, val totalFrames: Int = 1, val logicalImages: UnitImageLogicalSizes? = null,
     val leg: Path? = null, val foot: Path? = null, val rotor: Path? = null,
     val weaponTurrets: Map<String, Path> = emptyMap(), val shadow: Path? = null, val shield: Path? = null,
-    val leftWing: Path? = null, val rightWing: Path? = null)
+    val leftWing: Path? = null, val rightWing: Path? = null,
+    val beam: Path? = null, val beamStart: Path? = null, val beamEnd: Path? = null)
 
 /** Immutable paths and generation identity, with no core or GL ownership. */
 class PreparedVisualAssets private constructor(val selection: VisualAssetSelection, val profileId: String, val identity: String,

@@ -105,6 +105,7 @@ internal object ScenarioReader {
                 "amphibious-jet" -> checkedAuthor(ContentLoader.loadAmphibiousJetWithSources(ref.path))
                 "hovercraft" -> checkedAuthor(ContentLoader.loadHovercraftWithSources(ref.path))
                 "dropship" -> checkedAuthor(ContentLoader.loadDropshipWithSources(ref.path))
+                "aa-beam-gunship" -> checkedAuthor(ContentLoader.loadAaBeamWithSources(ref.path))
                 "water-combat" -> checkedAuthor(ContentLoader.loadAuthorWaterUnitWithSources(ref.path))
                 "constructor" -> checkedAuthor(ContentLoader.loadAuthorConstructorWithSources(ref.path))
                 "author-factory" -> checkedAuthor(ContentLoader.loadAuthorBuildingWithSources(ref.path), false, false)
@@ -127,7 +128,9 @@ internal object ScenarioReader {
             val images = listOfNotNull(unit.imagePath, unit.combat?.turretImagePath, unit.combat?.deadImagePath,
                 unit.durability?.deadImagePath, unit.building?.backImagePath, unit.rotor?.imagePath, unit.shadowImagePath) +
                 unit.mech?.legs.orEmpty().flatMap { listOf(it.legImage, it.footImage) } +
-                unit.combat?.namedWeapons?.ordered.orEmpty().mapNotNull { it.imagePath }
+                unit.combat?.namedWeapons?.ordered.orEmpty().mapNotNull { it.imagePath } +
+                (listOfNotNull(unit.combat?.projectile) + unit.combat?.namedWeapons?.ordered.orEmpty().map { it.projectile })
+                    .flatMap { it.beam?.let { beam -> listOf(beam.image, beam.startImage, beam.endImage) }.orEmpty() }
             if (images.any { it.toRealPath() !in paths }) throw InputError("A loaded image dependency has no declared identity")
             ref.id to unit
         }

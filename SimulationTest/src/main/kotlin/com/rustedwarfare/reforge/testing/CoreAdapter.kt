@@ -70,7 +70,7 @@ internal class CoreAdapter(private val input: LoadedScenario) : AutoCloseable {
                     "appearance" to s(it.appearance.name),
                     "position" to it.position.json(), "heading" to n(it.heading), "height" to n(it.height),
                     "parentToken" to it.parentToken?.let(::s), "areaRadius" to it.areaRadius?.let(::n),
-                    "lightning" to it.lightning?.json()) }),
+                    "lightning" to it.lightning?.json(), "beam" to it.beam?.json()) }),
                 "projectileEvents" to array(view.projectileEvents.map { it.json() }))
             id to JsonObject(obj("playerId" to s(view.playerId), "worldId" to s(view.worldId),
                 "stepIndex" to n(view.stepIndex), "simulationTime" to n(view.simulationTime),
@@ -166,7 +166,8 @@ internal fun ProjectileObservation.json() = obj("objectId" to n(objectId), "sour
         "hitUnitIds" to array(it.hitUnitIds.map(::s))) }).let { fields ->
         JsonObject((ballistic?.let { fields + ("ballistic" to obj("speed" to n(it.speed),
             "reachedApex" to b(it.reachedApex), "rawAz" to n(it.rawAz))) } ?: fields) +
-            (lightning?.let { mapOf("lightning" to it.json()) } ?: emptyMap()))
+            (lightning?.let { mapOf("lightning" to it.json()) } ?: emptyMap()) +
+            (beam?.let { mapOf("beam" to it.json()) } ?: emptyMap()))
     }
 internal fun VisibleProjectileEvent.json() = obj("token" to s(token), "kind" to s(kind), "occurrences" to n(occurrences),
     "appearance" to s(appearance.name),
@@ -174,7 +175,7 @@ internal fun VisibleProjectileEvent.json() = obj("token" to s(token), "kind" to 
     "sourceUnitId" to sourceUnitId?.let(::s), "sourceWeaponName" to sourceWeaponName?.let(::s),
     "targetUnitId" to targetUnitId?.let(::s), "damage" to damage?.let(::n),
     "parentToken" to parentToken?.let(::s), "interceptorUnitId" to interceptorUnitId?.let(::s),
-    "areaRadius" to areaRadius?.let(::n), "lightning" to lightning?.json())
+    "areaRadius" to areaRadius?.let(::n), "lightning" to lightning?.json(), "beam" to beam?.json())
 internal fun UnitObservation.json(capabilities: Boolean): JsonObject = JsonObject(obj(
     "unitId" to s(unitId), "ownerPlayerId" to s(ownerPlayerId), "typeId" to s(typeId),
     "position" to position.json(), "heading" to n(heading), "speed" to n(speed),
@@ -194,6 +195,7 @@ internal fun UnitObservation.json(capabilities: Boolean): JsonObject = JsonObjec
         "unloadRemaining" to it.unloadRemaining?.let(::n), "canUnload" to b(it.canUnload))) }
     shield?.let { put("shield", obj("current" to n(it.current), "maximum" to n(it.maximum),
         "displayDamage" to n(it.displayDamage))) }
+    energy?.let { put("energy", obj("current" to n(it.current), "maximum" to n(it.maximum), "recharging" to b(it.recharging))) }
     mechPose?.let { put("mechPose", it.json()) }
     flightPose?.let { put("height", n(height)); put("flightPose", it.json()) }
     waterPose?.let { put("height", n(height)); put("waterPose", obj(
@@ -220,4 +222,8 @@ internal fun MechPose.json(): JsonObject = obj(
 
 internal fun FlightPose.json(): JsonObject = obj("velocity" to velocity.json(), "height" to n(height),
     "heightPhase" to n(heightPhase), "rotorPhase" to n(rotorPhase), "rotorHeading" to n(rotorHeading),
-    "rotorHeightOffset" to n(rotorHeightOffset))
+    "rotorHeightOffset" to n(rotorHeightOffset)).let { fields -> JsonObject(fields +
+        (fall?.let { mapOf("fall" to obj("speed" to n(it.speed), "landed" to b(it.landed),
+            "landedInWater" to b(it.landedInWater), "settled" to b(it.settled))) } ?: emptyMap())) }
+
+internal fun BeamSegment.json(): JsonObject = obj("end" to end.json(), "endHeight" to n(endHeight), "textureOffset" to n(textureOffset))

@@ -120,17 +120,19 @@ internal class PlayerObservationProjector(world: WorldHandle, scenario: Scenario
         val rawProjectileEvents = committed?.projectileEvents.orEmpty() + observation.projectileEvents
         val projectedEvents = rawProjectileEvents.filter { isVisible(vision, it.projectile.position) &&
             (it.projectile.lightning?.let { line -> isVisible(vision, line.end) } ?: true) &&
+            (it.projectile.beam?.let { line -> isVisible(vision, line.end) } ?: true) &&
             (it.interceptorUnitId == null || it.interceptorUnitId in ids) }.map { event ->
             val value = event.projectile
             val target = value.targetUnitId.takeIf { it in ids }
             val source = value.sourceUnitId.takeIf { it in ids }
             ProjectedProjectileEvent(value.objectId, event.kind, value.position, value.heading, value.height,
                 source, target, event.damage.takeIf { target != null }, event.interceptorUnitId,
-                value.areaExpansion?.radius, value.sourceWeaponName?.takeIf { source != null }, value.appearance, value.lightning)
+                value.areaExpansion?.radius, value.sourceWeaponName?.takeIf { source != null }, value.appearance, value.lightning, value.beam)
         }
         val projection = projectileProjection.project(
             observation.projectiles.filter { isVisible(vision, it.position) &&
-                (it.lightning?.let { line -> isVisible(vision, line.end) } ?: true) }, projectedEvents,
+                (it.lightning?.let { line -> isVisible(vision, line.end) } ?: true) &&
+                (it.beam?.let { line -> isVisible(vision, line.end) } ?: true) }, projectedEvents,
             observation.projectiles.mapTo(mutableSetOf()) { it.objectId }.also { retained ->
                 rawProjectileEvents.forEach { retained += it.projectile.objectId }
             })

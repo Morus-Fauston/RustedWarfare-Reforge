@@ -220,7 +220,17 @@
       "com.rustedwarfare.reforge.core.sim.DropshipProductionTest",
       "com.rustedwarfare.reforge.core.sim.DropshipTransactionTest",
       "com.rustedwarfare.reforge.core.sim.DropshipUnloadingTest",
-      "com.rustedwarfare.reforge.core.content.DropshipFactoryFailureTest"
+      "com.rustedwarfare.reforge.core.content.DropshipFactoryFailureTest",
+      "com.rustedwarfare.reforge.core.content.AaBeamContentTest",
+      "com.rustedwarfare.reforge.core.sim.AaBeamAdmissionTest",
+      "com.rustedwarfare.reforge.core.sim.AaBeamDamageBoundaryTest",
+      "com.rustedwarfare.reforge.core.sim.AaBeamDeathTest",
+      "com.rustedwarfare.reforge.core.sim.AaBeamEnergyTest",
+      "com.rustedwarfare.reforge.core.sim.AaBeamFlightTest",
+      "com.rustedwarfare.reforge.core.sim.AaBeamLifecycleTest",
+      "com.rustedwarfare.reforge.core.sim.AaBeamProductionTest",
+      "com.rustedwarfare.reforge.core.sim.AaBeamProjectileTest",
+      "com.rustedwarfare.reforge.core.sim.AaBeamTargetTest"
     ],
     "client": [
       "com.rustedwarfare.reforge.client.CombatActorEvidenceTest",
@@ -276,7 +286,9 @@
       "com.rustedwarfare.reforge.client.LandingCraftUnloadMenuTest",
       "com.rustedwarfare.reforge.client.DropshipProductionSandboxTest",
       "com.rustedwarfare.reforge.client.DropshipProjectionTest",
-      "com.rustedwarfare.reforge.client.DropshipUnloadMenuTest"
+      "com.rustedwarfare.reforge.client.DropshipUnloadMenuTest",
+      "com.rustedwarfare.reforge.client.AaBeamPresentationTest",
+      "com.rustedwarfare.reforge.client.AaBeamSandboxTest"
     ],
     "pc": [
       "com.rustedwarfare.reforge.pc.PatrolJsonlPairingTest",
@@ -294,7 +306,8 @@
       "com.rustedwarfare.reforge.pc.SubmarineOriginalProfileTest",
       "com.rustedwarfare.reforge.pc.AmphibiousOriginalProfileTest",
       "com.rustedwarfare.reforge.pc.LandingCraftOriginalProfileTest",
-      "com.rustedwarfare.reforge.pc.DropshipOriginalProfileTest"
+      "com.rustedwarfare.reforge.pc.DropshipOriginalProfileTest",
+      "com.rustedwarfare.reforge.pc.AaBeamOriginalProfileTest"
     ],
     "tools": [
       "com.rustedwarfare.reforge.testing.ProductionCombatScenarioTest",
@@ -346,7 +359,9 @@
       "com.rustedwarfare.reforge.testing.DropshipPairedSessionTest",
       "com.rustedwarfare.reforge.testing.DropshipPlayerArchiveTest",
       "com.rustedwarfare.reforge.testing.DropshipProductionSessionTest",
-      "com.rustedwarfare.reforge.testing.DropshipPublicScenarioTest"
+      "com.rustedwarfare.reforge.testing.DropshipPublicScenarioTest",
+      "com.rustedwarfare.reforge.testing.AaBeamArchiveTest",
+      "com.rustedwarfare.reforge.testing.AaBeamProductionSessionTest"
     ]
   },
   "short": [
@@ -938,6 +953,42 @@
       "backend": "session",
       "scenario": "platform/scenarios/air-transport-hjson-production-chain.json",
       "contract": "platform/contracts/air-transport-hjson-production-chain.json"
+    },
+    {
+      "id": "aa-beam-ini-short",
+      "backend": "core",
+      "scenario": "scenarios/aa-beam-ini-short.json",
+      "contract": "contracts/aa-beam-ini-short.json"
+    },
+    {
+      "id": "aa-beam-ini-production-chain",
+      "backend": "session",
+      "scenario": "platform/scenarios/aa-beam-ini-production-chain.json",
+      "contract": "platform/contracts/aa-beam-ini-production-chain.json"
+    },
+    {
+      "id": "aa-beam-json-short",
+      "backend": "core",
+      "scenario": "scenarios/aa-beam-json-short.json",
+      "contract": "contracts/aa-beam-json-short.json"
+    },
+    {
+      "id": "aa-beam-json-production-chain",
+      "backend": "session",
+      "scenario": "platform/scenarios/aa-beam-json-production-chain.json",
+      "contract": "platform/contracts/aa-beam-json-production-chain.json"
+    },
+    {
+      "id": "aa-beam-hjson-short",
+      "backend": "core",
+      "scenario": "scenarios/aa-beam-hjson-short.json",
+      "contract": "contracts/aa-beam-hjson-short.json"
+    },
+    {
+      "id": "aa-beam-hjson-production-chain",
+      "backend": "session",
+      "scenario": "platform/scenarios/aa-beam-hjson-production-chain.json",
+      "contract": "platform/contracts/aa-beam-hjson-production-chain.json"
     }
   ],
   "long": [
@@ -1081,6 +1132,7 @@
   "pythonTests": [
     "SimulationTest/tools/test_submarine_platform.py",
     "SimulationTest/tools/test_amphibious_platform.py",
-    "SimulationTest/tools/test_transport_platform.py"
+    "SimulationTest/tools/test_transport_platform.py",
+    "SimulationTest/tools/test_aa_beam_archive.py"
   ]
 }

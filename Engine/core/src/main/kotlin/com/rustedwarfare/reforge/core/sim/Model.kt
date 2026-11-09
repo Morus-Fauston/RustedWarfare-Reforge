@@ -160,7 +160,10 @@ data class UnitObservation(
     val carriedBy: String? = null,
     val transport: TransportObservation? = null,
     val transportExit: TransportExitObservation? = null,
+    val energy: EnergyObservation? = null,
 )
+
+data class EnergyObservation(val current: Float, val maximum: Float, val recharging: Boolean)
 
 data class TransportObservation(val passengerIds: List<String>?, val passengerCount: Int,
     val occupiedSlots: Int, val capacity: Int, val unloading: Boolean, val unloadRemaining: Float?,
@@ -190,7 +193,10 @@ data class WaterPose(val reversing: Boolean, val sinkSpeed: Float, val settled: 
 
 /** Current visible physical flight state, without host identities or future commands. */
 data class FlightPose(val velocity: Position, val height: Double, val heightPhase: Double,
-    val rotorPhase: Double, val rotorHeading: Double, val rotorHeightOffset: Double)
+    val rotorPhase: Double, val rotorHeading: Double, val rotorHeightOffset: Double,
+    val fall: FlightFallPose? = null)
+
+data class FlightFallPose(val speed: Float, val landed: Boolean, val landedInWater: Boolean, val settled: Boolean)
 
 /** Host-only identity/target and arithmetic state. Never copied into player DTOs. */
 data class ProjectileObservation(val objectId: Long, val sourceUnitId: String, val targetUnitId: String?,
@@ -199,15 +205,19 @@ data class ProjectileObservation(val objectId: Long, val sourceUnitId: String, v
     val intercepted: Boolean = false, val ground: GroundProjectileObservation? = null,
     val missile: MissileObservation? = null, val areaExpansion: AreaExpansionObservation? = null,
     val sourceWeaponName: String? = null, val ballistic: BallisticObservation? = null,
-    val appearance: ProjectileAppearance = ProjectileAppearance.STANDARD, val lightning: LightningSegment? = null)
+    val appearance: ProjectileAppearance = ProjectileAppearance.STANDARD, val lightning: LightningSegment? = null,
+    val beam: BeamSegment? = null)
 
 /** Captured endpoint of a visible instant discharge; no host object or hidden future target. */
 data class LightningSegment(val end: Position, val endHeight: Double)
 
+/** Current visible beam endpoint, captured without a host target identity. */
+data class BeamSegment(val end: Position, val endHeight: Double, val textureOffset: Float = 0f)
+
 /** Public launch appearance, independent of hidden source identity or its subsequent depth. */
 enum class ProjectileAppearance(val red: Int, val green: Int, val blue: Int, val drawSize: Float) {
     STANDARD(255, 255, 0, 2f), SUBMARINE_MISSILE(230, 230, 50, 2f), SUBMARINE_TORPEDO(30, 30, 150, 1f),
-    AMPHIBIOUS_LIGHTNING(247, 212, 129, 2f)
+    AMPHIBIOUS_LIGHTNING(247, 212, 129, 2f), AA_BEAM(255, 255, 255, 2f)
 }
 
 class AreaExpansionObservation(val remaining: Float, val radius: Float, hitUnitIds: Set<String>) {
@@ -226,7 +236,8 @@ data class PointDefenseObservation(val energy: Float, val exhausted: Boolean)
 /** One public appearance class. Identical newly visible objects have one token and multiplicity. */
 data class VisibleProjectile(val token: String, val multiplicity: Int, val position: Position, val heading: Double,
     val height: Double = 0.0, val parentToken: String? = null, val areaRadius: Float? = null,
-    val appearance: ProjectileAppearance = ProjectileAppearance.STANDARD, val lightning: LightningSegment? = null)
+    val appearance: ProjectileAppearance = ProjectileAppearance.STANDARD, val lightning: LightningSegment? = null,
+    val beam: BeamSegment? = null)
 
 data class ProjectileEventObservation(val kind: String, val projectile: ProjectileObservation, val damage: Double? = null,
     val interceptorUnitId: String? = null)
@@ -236,7 +247,7 @@ data class VisibleProjectileEvent(val token: String, val kind: String, val occur
     val targetUnitId: String?, val damage: Double?, val parentToken: String? = null,
     val interceptorUnitId: String? = null, val areaRadius: Float? = null,
     val sourceWeaponName: String? = null, val appearance: ProjectileAppearance = ProjectileAppearance.STANDARD,
-    val lightning: LightningSegment? = null)
+    val lightning: LightningSegment? = null, val beam: BeamSegment? = null)
 
 /** Trusted-host state for deterministic replay/rollback verification, absent from player observations. */
 class CombatObservation(val frameCounter: Int, val nextObjectId: Long, weapons: List<UnitWeaponObservation>) {
@@ -420,7 +431,7 @@ internal data class MutableUnit(
     var heightPhase: Double = 0.0,
     var flightVelocity: Position = Position(0.0, 0.0),
     var rotorPhase: Double = 0.0,
-    var rotorHeightOffset: Double = if (definition.movement.flight == null) 0.0 else .1,
+    var rotorHeightOffset: Double = if (definition.rotor == null) 0.0 else .1,
     /** Host identity and deterministic traversal order, never player DTO fields. */
     val objectId: Long? = null,
     val updateKey: String = unitId,
@@ -447,6 +458,8 @@ internal data class MutableUnit(
     var bodyReversing: Boolean = false,
     var sinkSpeed: Float = 0f,
     var waterSettled: Boolean = false,
+    var flightLanded: Boolean = false,
+    var flightLandedInWater: Boolean = false,
     var productionSide: Boolean = false,
     /** Custom instance j; retained when the normal locomotion-aim gate is closed. */
     var terrainSpeedMultiplier: Double = 1.0,
@@ -457,6 +470,8 @@ internal data class MutableUnit(
     var nativeTransportPlacement: Boolean = false,
     /** Native cj writes health first; the subsequent base health update dispatches death. */
     var deathPending: Boolean = false,
+    var energy: Float = definition.energy?.maximum ?: 0f,
+    var energyRecharging: Boolean = false,
 ) {
     val producerId: String? get() = productionOrigin?.producerId
     val reversing: Boolean get() = mechState?.reversing ?: bodyReversing
@@ -562,7 +577,7 @@ internal data class MutableCombat(var turretHeading: Double, var angularVelocity
     var warmup: Double = 0.0, var aimReady: Boolean = false)
 
 internal data class MutableProjectile(val objectId: Long, val sourceUnitId: String, var targetUnitId: String?,
-    var position: Position, var heading: Double, var remainingLife: Double, val offset: Position,
+    var position: Position, var heading: Double, var remainingLife: Double, var offset: Position,
     val scatter: Float, var speed: Double, val damage: Double, var height: Double = 0.0,
     var age: Float = 0f, var deflectionHealth: Float = 1f, var intercepted: Boolean = false,
     val instant: Boolean = false, val nonDeflectable: Boolean = false,
@@ -576,7 +591,8 @@ internal data class MutableProjectile(val objectId: Long, val sourceUnitId: Stri
     val appearance: ProjectileAppearance = ProjectileAppearance.STANDARD,
     val lightning: Boolean = false, var hitApplied: Boolean = false, val lightningSegment: LightningSegment? = null,
     val damageModifiers: com.rustedwarfare.reforge.core.content.ProjectileDamageModifiers =
-        com.rustedwarfare.reforge.core.content.ProjectileDamageModifiers())
+        com.rustedwarfare.reforge.core.content.ProjectileDamageModifiers(),
+    val beam: Boolean = false, var beamSegment: BeamSegment? = null)
 
 internal data class AreaExpansion(val profile: DeathExplosionProfile, var remaining: Float,
     var radius: Float = 0f, val hitUnitIds: MutableSet<String> = linkedSetOf())

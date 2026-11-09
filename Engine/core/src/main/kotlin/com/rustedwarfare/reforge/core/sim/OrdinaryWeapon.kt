@@ -32,6 +32,10 @@ internal object OrdinaryWeapon {
 
     fun refreshOffset(seed: Int, frame: Int, objectId: Long, unit: MutableUnit, target: MutableUnit,
                       state: MutableCombat = checkNotNull(unit.combat)) {
+        if (unit.definition.combat?.projectile?.beam != null) {
+            state.offset = Position(0.0, 0.0)
+            return
+        }
         val bound = (target.definition.radius.toFloat() * .6f).toInt()
         state.offset = if (bound == 0) Position(0.0, 0.0) else Position(
             sample(seed, frame, objectId, unit, 1, -bound, bound, state).toDouble(),

@@ -95,6 +95,9 @@ internal data class StepState(
             require(listOf(unit.position.x, unit.position.y, unit.heading, unit.speed, unit.angularVelocity, unit.height)
                 .all { it.isFinite() } && (unit.health?.isFinite() != false)) { "Unit candidate must remain finite" }
             MechMotion.requireFinitePose(unit)
+            unit.definition.energy?.let { profile ->
+                require(unit.energy.isFinite() && unit.energy in 0f..profile.maximum) { "Weapon energy candidate must be bounded" }
+            }
             require(unit.sinkSpeed.isFinite() && unit.sinkSpeed >= 0f) { "Water-body sink state must remain finite" }
             require(unit.submarineVerticalSpeed.isFinite() && unit.submarineVerticalSpeed in 0f..0.08f) {
                 "Submarine vertical speed must remain finite and bounded"

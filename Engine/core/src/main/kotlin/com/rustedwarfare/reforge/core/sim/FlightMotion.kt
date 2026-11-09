@@ -25,8 +25,9 @@ internal object FlightMotion {
 
     fun advancePose(unit: MutableUnit, delta: Double) {
         val profile = unit.definition.movement.flight ?: return
-        val rotor = checkNotNull(unit.definition.rotor)
-        unit.rotorPhase = (unit.rotorPhase + rotor.spinRate * delta) % 360.0
+        unit.definition.rotor?.let { rotor ->
+            unit.rotorPhase = (unit.rotorPhase + rotor.spinRate * delta) % 360.0
+        }
         unit.rotorHeightOffset = (unit.rotorHeightOffset - .3 * delta).coerceAtLeast(0.0)
         unit.heightPhase += 2.0 * delta
         if (unit.heightPhase > 360.0) unit.heightPhase -= 360.0

@@ -16,7 +16,7 @@ internal class ActionCatalogue(private val definitions: Map<String, UnitDefiniti
         "mechFactory" to Names("Mech factory"), "mechGun" to Names("Gun mech"),
         "mechFactoryT2" to Names("Mech factory T2"), "mechHeavyMissile" to Names("Heavy missile mech"),
         "airFactory" to Names("Air factory"), "airFactoryT2" to Names("Air factory T2"),
-        "helicopter" to Names("Helicopter"), "amphibiousJet" to Names("Amphibious jet"),
+        "helicopter" to Names("Helicopter"), "amphibiousJet" to Names("Amphibious jet"), "aaBeamGunship" to Names("AA beam gunship"),
         "seaFactory" to Names("Sea factory"), "seaFactoryT2" to Names("Sea factory T2"),
         "heavyBattleship" to Names("Heavy battleship"), "attackSubmarine" to Names("Submarine"),
         "extractorT1" to Names("Extractor T1", "Extractor"), "extractorT2" to Names("Extractor T2", "Unit"),
@@ -126,6 +126,8 @@ internal class ActionCatalogue(private val definitions: Map<String, UnitDefiniti
                 (unit.transport?.let { "\nCargo ${it.occupiedSlots} / ${it.capacity}\nPassengers ${it.passengerCount}" } ?: "") +
                 (if (unit.transport != null && unit.flightPose != null) String.format(Locale.ROOT, "\nHeight %.2f", unit.height) else "") +
                 (unit.shield?.let { "\nShield ${it.current.toInt()} / ${it.maximum.toInt()}" } ?: "") +
+                (unit.energy?.let { String.format(Locale.ROOT, "\nEnergy %.3f / %.3f%s", it.current, it.maximum,
+                    if (it.recharging) " LOCKED" else "") } ?: "") +
                 (unit.submarine?.let { String.format(Locale.ROOT, "\n%s\nDepth %.2f\nSpeed %.2f\nRange %.0f",
                     if (it.underwater) "Underwater" else "Surface", unit.height, it.maximumSpeed, it.attackRange) } ?: "") +
                 (unit.amphibiousJet?.let { String.format(Locale.ROOT, "\n%s / %s\nHeight %.2f\nSpeed %.2f\nRange %.0f",

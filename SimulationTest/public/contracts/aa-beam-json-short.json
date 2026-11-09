@@ -1,0 +1,67 @@
+{
+  "schemaVersion": 1,
+  "kind": "behavior-contract",
+  "contractId": "public.aa-beam-json.short.contract.v1",
+  "scope": "self-behavior",
+  "scenarioIds": [
+    "p009-aa-beam-combat"
+  ],
+  "comparison": {
+    "numberMode": "declared-per-field",
+    "tolerances": {}
+  },
+  "approval": {
+    "status": "tool-fixture-only",
+    "source": "ENG-P009-009 qualified DEC static facts; owned self-behavior only"
+  },
+  "exclusions": [
+    "original-compatibility",
+    "platform-input",
+    "performance"
+  ],
+  "rules": [
+    {
+      "ruleId": "initial-energy",
+      "when": {
+        "phase": "initial",
+        "stepIndex": 0
+      },
+      "assertions": [
+        {
+          "path": "units.aa.energy.current",
+          "operator": "equals",
+          "value": 6
+        },
+        {
+          "path": "units.aa.energy.recharging",
+          "operator": "equals",
+          "value": false
+        },
+        {
+          "path": "units.enemy.health",
+          "operator": "equals",
+          "value": 2500
+        }
+      ]
+    },
+    {
+      "ruleId": "thirteen-paid-shots-and-full-recharge-lock",
+      "when": {
+        "phase": "after-advance",
+        "stepIndex": 100
+      },
+      "assertions": [
+        {
+          "path": "units.aa.energy.recharging",
+          "operator": "equals",
+          "value": true
+        },
+        {
+          "path": "units.enemy.health",
+          "operator": "equals",
+          "value": 2214
+        }
+      ]
+    }
+  ]
+}

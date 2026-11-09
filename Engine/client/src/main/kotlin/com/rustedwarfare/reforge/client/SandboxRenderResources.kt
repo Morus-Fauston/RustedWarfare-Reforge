@@ -33,7 +33,8 @@ data class UnitAppearance(val displayRadius: Double, val imagePath: Path, val im
     val legImagePath: Path? = null, val footImagePath: Path? = null, val rotorImagePath: Path? = null,
     val mechKind: com.rustedwarfare.reforge.core.content.MechKind? = null, val shadowImagePath: Path? = null,
     val shieldImagePath: Path? = null, val shieldRadius: Double = 0.0,
-    val leftWingImagePath: Path? = null, val rightWingImagePath: Path? = null) {
+    val leftWingImagePath: Path? = null, val rightWingImagePath: Path? = null,
+    val beamImagePath: Path? = null, val beamStartImagePath: Path? = null, val beamEndImagePath: Path? = null) {
     internal fun amphibiousWings(unit: UnitObservation, weapons: List<VisibleUnitWeapon>): List<WingDrawing> {
         if (!unit.alive || unit.amphibiousJet == null) return emptyList()
         val poses = weapons.filter { it.unitId == unit.unitId }.associateBy { it.weaponName }
@@ -56,7 +57,8 @@ data class UnitAppearance(val displayRadius: Double, val imagePath: Path, val im
                 val forward = Math.toRadians(pose.turretHeading)
                 val side = Math.toRadians(pose.turretHeading + 90.0)
                 val pivot = Position(pose.pivot.x + sin(forward) * image.offsetY + sin(side) * image.offsetX,
-                    pose.pivot.y - cos(forward) * image.offsetY - cos(side) * image.offsetX)
+                    pose.pivot.y - cos(forward) * image.offsetY - cos(side) * image.offsetX -
+                        if (unit.energy != null) unit.height else 0.0)
                 TurretDrawing(name, path, image.imageScale, pivot, pose.turretHeading,
                     image.logicalSize ?: logicalImages?.turret?.takeIf { path == turretImagePath })
             } }
@@ -162,7 +164,8 @@ class SandboxRenderResources private constructor(
                     legImagePath = images.leg, footImagePath = images.foot,
                     rotorImagePath = images.rotor, mechKind = unit.mech?.kind, shadowImagePath = images.shadow,
                     shieldImagePath = images.shield, shieldRadius = unit.radius,
-                    leftWingImagePath = images.leftWing, rightWingImagePath = images.rightWing)
+                    leftWingImagePath = images.leftWing, rightWingImagePath = images.rightWing,
+                    beamImagePath = images.beam, beamStartImagePath = images.beamStart, beamEndImagePath = images.beamEnd)
             }), Collections.unmodifiableMap(scenario.players.associate { it.playerId to it.teamId }))
     }
 }

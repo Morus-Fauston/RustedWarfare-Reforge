@@ -368,6 +368,27 @@ def validate_history_poses(units, policy):
     def point(value):
         return isinstance(value, dict) and set(value) == {'x','y'} and all(number(v) for v in value.values())
     for unit in units:
+        if unit.get('typeId')=='aaBeamGunship':
+            energy=unit.get('energy');pose=unit.get('flightPose')
+            if (not isinstance(energy,dict) or set(energy)!={'current','maximum','recharging'} or
+                    not number(energy.get('current')) or not 0<=energy['current']<=6 or
+                    not number(energy.get('maximum')) or energy['maximum']!=6 or type(energy.get('recharging')) is not bool or
+                    energy['recharging'] and energy['current']>=6 or not energy['recharging'] and energy['current']<.5):
+                raise PlatformError('history-aa-beam','Missing or inconsistent weapon energy and recharge lock',2)
+            if (not isinstance(pose,dict) or set(pose)!={'velocity','height','heightPhase','rotorPhase','rotorHeading','rotorHeightOffset','fall'} or
+                    not point(pose.get('velocity')) or any(not number(pose.get(k)) for k in
+                        ('height','heightPhase','rotorPhase','rotorHeading','rotorHeightOffset')) or
+                    not number(unit.get('height')) or pose['height']!=unit['height'] or pose['rotorHeightOffset']!=0):
+                raise PlatformError('history-aa-beam','Missing or invalid rotorless flight pose',2)
+            fall=pose['fall']
+            if (not isinstance(fall,dict) or set(fall)!={'speed','landed','landedInWater','settled'} or
+                    not number(fall.get('speed')) or fall['speed']<0 or
+                    any(type(fall.get(k)) is not bool for k in ('landed','landedInWater','settled')) or
+                    not fall['landed'] and (fall['landedInWater'] or fall['settled']) or
+                    unit.get('alive') is True and (fall['landed'] or fall['speed']!=0)):
+                raise PlatformError('history-aa-beam','Missing or inconsistent fall state',2)
+        elif unit.get('energy') is not None:
+            raise PlatformError('history-aa-beam','Weapon energy on an unsupported unit',2)
         if unit.get('carriedBy') is not None:
             raise PlatformError('history-transport','Carried passenger in a player sample',2)
         transport=unit.get('transport')
@@ -596,8 +617,8 @@ def validate_launch_appearance(shot, units):
     source=units.get(shot.get('sourceUnitId'),{})
     style=shot.get('appearance','STANDARD')
     expected={'attackSubmarine':('SUBMARINE_MISSILE','SUBMARINE_TORPEDO'),
-              'amphibiousJet':('AMPHIBIOUS_LIGHTNING',)}.get(source.get('typeId'),('STANDARD',))
-    if (style not in ('STANDARD','SUBMARINE_MISSILE','SUBMARINE_TORPEDO','AMPHIBIOUS_LIGHTNING') or
+              'amphibiousJet':('AMPHIBIOUS_LIGHTNING',),'aaBeamGunship':('AA_BEAM',)}.get(source.get('typeId'),('STANDARD',))
+    if (style not in ('STANDARD','SUBMARINE_MISSILE','SUBMARINE_TORPEDO','AMPHIBIOUS_LIGHTNING','AA_BEAM') or
             source and style not in expected):
         raise PlatformError('history-projectile','Invalid native launch appearance or source',2)
     line=shot.get('lightning')
@@ -611,6 +632,20 @@ def validate_launch_appearance(shot, units):
             raise PlatformError('history-projectile','Missing or invalid native lightning geometry',2)
     elif line is not None:
         raise PlatformError('history-projectile','Lightning geometry on an unsupported launch appearance',2)
+    beam=shot.get('beam')
+    if style=='AA_BEAM':
+        def finite(value):return type(value) in (int,float) and math.isfinite(value)
+        if (not isinstance(beam,dict) or set(beam)!={'end','endHeight','textureOffset'} or
+                not isinstance(beam.get('end'),dict) or set(beam['end'])!={'x','y'} or
+                any(not finite(v) for v in beam['end'].values()) or not finite(beam.get('endHeight')) or
+                not finite(beam.get('textureOffset')) or beam['textureOffset']<0 or
+                ('kind' in shot or source) and shot.get('sourceWeaponName')!='1' or
+                any(shot.get(k) is not None for k in ('ground','missile','ballistic','areaExpansion','lightning'))):
+            raise PlatformError('history-aa-beam','Missing or invalid authorized beam geometry',2)
+        if 'kind' in shot and shot['kind'] not in ('born','rearmed','impact','expired','target-ended'):
+            raise PlatformError('history-aa-beam','Unknown beam lifecycle event',2)
+    elif beam is not None:
+        raise PlatformError('history-aa-beam','Beam geometry on an unsupported launch appearance',2)
     return style
 
 

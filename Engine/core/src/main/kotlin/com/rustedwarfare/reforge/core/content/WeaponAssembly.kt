@@ -43,7 +43,7 @@ class WeaponAssembly private constructor(slots: List<AssembledWeapon>, val usesN
                     weapon.warmupShootDelayTransfer != 0.0 || !weapon.canShoot || weapon.aimMaxAngle != 5.0 ||
                     weapon.attachedTo != null || weapon.slave || weapon.linkDelayWithTurret != null ||
                     weapon.limitingAngle?.let { it != -1.0 } == true || weapon.idleDirection != 0.0 ||
-                    weapon.barrelX != null || weapon.oddShotOffset != null
+                    weapon.barrelX != null || weapon.oddShotOffset != null || weapon.energyUsage != 0f
             }
         } == true
     }

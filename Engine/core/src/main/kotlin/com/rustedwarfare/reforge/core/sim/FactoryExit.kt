@@ -36,7 +36,7 @@ internal object FactoryExit {
         return definition.id in setOf("airFactory", "airFactoryT2") && definition.production?.exitProfile == FactoryExitProfile.NATIVE_AIR &&
             (if (t2) definition.production.unitTypeIds.isNotEmpty() &&
                 definition.production.unitTypeIds.distinct().size == definition.production.unitTypeIds.size &&
-                definition.production.unitTypeIds.all { it in setOf("helicopter", "amphibiousJet", "dropship") }
+                definition.production.unitTypeIds.all { it in setOf("helicopter", "amphibiousJet", "dropship", "aaBeamGunship") }
                 else definition.production.unitTypeIds == listOf("helicopter")) &&
             definition.build == BuildProfile(if (t2) 2500L else 1000L, .001f) &&
             definition.construction == ConstructionProfile(if (t2) 2500L else 1000L, .001f) &&

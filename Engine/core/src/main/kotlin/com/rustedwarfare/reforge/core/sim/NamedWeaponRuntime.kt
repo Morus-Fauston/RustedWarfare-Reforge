@@ -9,7 +9,8 @@ import com.rustedwarfare.reforge.core.content.MapDefinition
 /** Stack-scoped world inputs. Candidates are selected by the host; lookup never grants visibility. */
 internal class NamedWeaponFrame(val worldSeed: Int, val counter: Int, val delta: Double,
     val players: List<Player>, val coordinates: CoordinatePolicy, val units: Map<String, MutableUnit>,
-    val candidates: Collection<MutableUnit>, val primary: MutableUnit?, val manual: MutableUnit?, val map: MapDefinition)
+    val candidates: Collection<MutableUnit>, val primary: MutableUnit?, val manual: MutableUnit?, val map: MapDefinition,
+    val beamOffsets: Map<String, Position> = emptyMap())
 
 /** Per-weapon geometry reads the real named state without switching the unit's definition. */
 internal object NamedWeaponRuntime {
@@ -61,6 +62,7 @@ internal object NamedWeaponRuntime {
             val state = states.getValue(definition.name)
             val weapon = slot.profile
             val target = frame.units[state.targetId] ?: continue
+            if (weapon.projectile.beam != null) state.offset = frame.beamOffsets[definition.name] ?: Position(0.0, 0.0)
             if (weapon.idleSweep != null) {
                 state.idleHold = maxOf(state.idleHold, 70f)
                 state.idleBaseHeading = state.turretHeading
@@ -89,6 +91,7 @@ internal object NamedWeaponRuntime {
             val state = states.getValue(definition.name)
             val target = frame.units[state.targetId] ?: continue
             if (!state.aimReady || !NamedWeaponRuntime.qualifies(unit, target, definition, frame.players, frame.coordinates, frame.map)) continue
+            if (!WeaponEnergy.canFire(unit, definition.energyUsage)) continue
             val weapon = slot.profile
             if (state.cooldown == 0.0) active = true
             if (definition.warmupNoReset) {

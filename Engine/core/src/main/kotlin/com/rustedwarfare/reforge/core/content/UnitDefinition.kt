@@ -38,6 +38,7 @@ class UnitDefinition(
     val amphibiousJet: AmphibiousJetProfile? = null,
     val transport: TransportProfile? = null,
     val transportSlots: Int = 1,
+    val energy: EnergyProfile? = null,
 ) {
     val retainedUnconsumed: Set<String> = Collections.unmodifiableSet(LinkedHashSet(retainedUnconsumed))
     val maximumHealth: Double? get() = durability?.maxHp ?: combat?.maxHp
@@ -96,6 +97,13 @@ data class DurabilityProfile(val maxHp: Double, val deadImagePath: Path?, val ma
 data class ShieldProfile(val maximum: Float, val regeneration: Float) {
     fun isValid(): Boolean = maximum.isFinite() && maximum > 0f && regeneration.isFinite() && regeneration >= 0f
 }
+
+/** Weapon energy is separate from the point-defense module's different exhaustion rule. */
+data class EnergyProfile(val maximum: Float, val regeneration: Float, val rechargingRegeneration: Float,
+    val needsFullRecharge: Boolean)
+
+/** Qualified custom AA beam art and reuse; ordinary instant lightning keeps its own lifetime. */
+data class BeamProfile(val image: Path, val startImage: Path, val endImage: Path)
 data class BuildingFootprint(val left: Int, val top: Int, val right: Int, val bottom: Int)
 data class FootprintAnchor(val offsetX: Float, val offsetY: Float)
 data class BuildingProfile(val footprint: BuildingFootprint, val backImagePath: Path? = null,
@@ -197,7 +205,8 @@ data class NamedWeaponDefinition(val name: String, val projectileName: String,
     val idleDirection: Double = 0.0,
     val barrelX: Double? = null, val oddShotOffset: Double? = null,
     val invisible: Boolean = false, val imageOffsetX: Double = 0.0, val imageOffsetY: Double = 0.0,
-    val idleDirectionReversing: Double? = null, val turnDeceleration: Double? = null)
+    val idleDirectionReversing: Double? = null, val turnDeceleration: Double? = null,
+    val energyUsage: Float = 0f)
 
 /** Gameplay trigger identity, never an audio filename or resource-pack decision. */
 enum class FireSoundProfile(val eventId: String, val volume: Float, val pitch: Float = 1f) {
@@ -220,7 +229,8 @@ data class ProjectileProfile(val directDamage: Double, val life: Double, val spe
     val acceleration: LinearProjectileAcceleration? = null,
     val splash: OrdinarySplashProfile? = null, val retargetOnDeath: Boolean = false,
     val ballistic: CustomBallisticProfile? = null, val lightning: Boolean = false,
-    val damageModifiers: ProjectileDamageModifiers = ProjectileDamageModifiers())
+    val damageModifiers: ProjectileDamageModifiers = ProjectileDamageModifiers(),
+    val beam: BeamProfile? = null)
 
 /** Shield expenditure and damage deflection are separate native projectile properties. */
 data class ProjectileDamageModifiers(val shieldDamage: Double = 1.0, val shieldDeflection: Double = 1.0,

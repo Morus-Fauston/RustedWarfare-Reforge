@@ -371,6 +371,20 @@ class PublicSelectionTest(unittest.TestCase):
         for name in ('air_transport_fixture.py','air_transport_scenarios.py'):
             self.assertIn('SimulationTest/tools/'+name,names)
 
+    def test_aa_beam_uses_the_public_mechanisms_and_three_format_core_and_session_contracts(self):
+        from public_check import REPO,plan_suite,source_files
+        plan=plan_suite(REPO,'production-combat','pr')
+        for module,name in [('core','core.sim.AaBeamAdmissionTest'),('client','client.AaBeamPresentationTest'),
+                            ('pc','pc.AaBeamOriginalProfileTest'),('tools','testing.AaBeamArchiveTest')]:
+            self.assertIn('com.rustedwarfare.reforge.'+name,plan['tests'][module])
+        cases={row['id']:row for row in plan['scenarios']}
+        for fmt in ('ini','json','hjson'):
+            self.assertEqual('core',cases['aa-beam-'+fmt+'-short']['backend'])
+            self.assertEqual('session',cases['aa-beam-'+fmt+'-production-chain']['backend'])
+        names={p.relative_to(REPO).as_posix() for p in source_files(REPO)}
+        for name in ('aa_beam_fixture.py','aa_beam_scenarios.py','test_aa_beam_archive.py'):
+            self.assertIn('SimulationTest/tools/'+name,names)
+
     def test_the_shared_live_reader_and_its_contract_survive_an_isolated_source_copy(self):
         from public_check import REPO,source_files
         names={p.relative_to(REPO).as_posix() for p in source_files(REPO)}
