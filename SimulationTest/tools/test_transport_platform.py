@@ -6,6 +6,32 @@ from platform_scenario import PlatformError, compare_history, validate_history_a
 
 
 class TransportPlatformTest(unittest.TestCase):
+    def test_air_transport_history_requires_real_cargo_and_the_declared_carrier_type(self):
+        unit = self.unit()
+        unit['typeId'] = 'dropship'
+        validate_history_poses([unit], {})
+        sample = dict(worldId='w', stepIndex=-1, simulationTime=0, balance=0, units=[unit], events=[])
+        action = dict(sequence=3, kind='action', type='SelectAction', unitId='craft', actorPlayerId='p1',
+                      result=dict(actionId='select', accepted=True))
+        rows = [dict(sequence=0, kind='observation', phase='initial', sample=copy.deepcopy(sample)),
+                dict(sequence=1, kind='intent-start', intentId='select'),
+                dict(sequence=2, kind='observation', phase='before-action', sample=copy.deepcopy(sample)), action,
+                dict(sequence=4, kind='observation', phase='after-action', sample=copy.deepcopy(sample)),
+                dict(sequence=5, kind='intent-end', intentId='select')]
+        plan = dict(scenarioId='air-transport', intents=[dict(intentId='select', kind='select')])
+        policy = dict(initialBalance=0, transportStages=[dict(intentId='select', typeId='dropship',
+                      passengerCount=1, unloading=False)])
+        self.assertEqual('passed', compare_history(rows, plan, policy)['status'])
+        for type_id in ('hovercraft', 'unknown', None, [], {}):
+            bad = copy.deepcopy(policy)
+            bad['transportStages'][0]['typeId'] = type_id
+            with self.subTest(type_id=type_id), self.assertRaises(PlatformError):
+                compare_history(rows, plan, bad)
+        bad = copy.deepcopy(unit)
+        bad['transport']['passengerCount'] = 0
+        with self.assertRaises(PlatformError):
+            validate_history_poses([bad], {})
+
     def test_windows_pause_is_explicit_known_zero_wait_intents_only(self):
         plan=dict(scenarioId='transport',contentPack=dict(directory='package',unitId='commandCenter'),
             intents=[dict(intentId='start',kind='unload',unloading=True,waitSteps=0)],windowsPausedIntents=['start'])

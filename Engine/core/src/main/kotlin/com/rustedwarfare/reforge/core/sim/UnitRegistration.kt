@@ -34,6 +34,8 @@ internal object UnitRegistration {
             if (reachable) {
                 unit.moveTarget = birth.target
                 unit.originMoveId = "production-exit:$publicId"
+                if (definition.transport == com.rustedwarfare.reforge.core.content.TransportProfile.NATIVE_DROPSHIP)
+                    unit.taskQueue = UnitTaskQueue().append(UnitTask(UnitTaskKind.MOVE, checkNotNull(unit.originMoveId), birth.target))
                 unit.adoptRoute(listOf(birth.target), birth.target, -1L)
             }
         }

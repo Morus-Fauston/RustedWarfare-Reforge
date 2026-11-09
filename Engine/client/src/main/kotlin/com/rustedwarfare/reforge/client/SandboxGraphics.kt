@@ -166,6 +166,13 @@ class SandboxGraphics private constructor(private val resources: SandboxRenderRe
             if (unit.alive && unit.flightPose != null && flight == null) continue
             if (unit.waterPose != null && water == null) continue
             if (unit.hoverPose != null && hover == null) continue
+            if (flight?.drawShadow == true) shadows[unit.typeId]?.let { shadow ->
+                val size = definition.drawSize(UnitImageSlot.SHADOW, shadow.regionWidth, shadow.regionHeight)
+                val sw = (size.width * projection.scale).toFloat()
+                val sh = (size.height * projection.scale).toFloat()
+                batch.draw(shadow, projection.x(unit.position.x) - sw / 2, projection.y(unit.position.y) - sh / 2,
+                    sw / 2, sh / 2, sw, sh, 1f, 1f, -unit.heading.toFloat())
+            }
             if (hover?.drawShadow == true) shadows[unit.typeId]?.let { shadow ->
                 val size = definition.drawSize(UnitImageSlot.SHADOW, shadow.regionWidth, shadow.regionHeight)
                 val sw = (size.width * projection.scale).toFloat()
@@ -229,12 +236,13 @@ class SandboxGraphics private constructor(private val resources: SandboxRenderRe
                     ww / 2, wh / 2, ww, wh, 1f, 1f, -drawing.heading.toFloat())
             }
             flight?.let { pose ->
-                val rotor = rotors.getValue(unit.typeId)
-                val rotorSize = definition.drawSize(UnitImageSlot.ROTOR, rotor.regionWidth, rotor.regionHeight)
-                val rw = (rotorSize.width * projection.scale).toFloat()
-                val rh = (rotorSize.height * projection.scale).toFloat()
-                batch.draw(rotor, pose.rotorX - rw / 2, pose.rotorY - rh / 2, rw / 2, rh / 2,
-                    rw, rh, 1f, 1f, pose.rotorRotation)
+                rotors[unit.typeId]?.let { rotor ->
+                    val rotorSize = definition.drawSize(UnitImageSlot.ROTOR, rotor.regionWidth, rotor.regionHeight)
+                    val rw = (rotorSize.width * projection.scale).toFloat()
+                    val rh = (rotorSize.height * projection.scale).toFloat()
+                    batch.draw(rotor, pose.rotorX - rw / 2, pose.rotorY - rh / 2, rw / 2, rh / 2,
+                        rw, rh, 1f, 1f, pose.rotorRotation)
+                }
             }
             for (drawing in definition.turretDrawings(unit, visibleWeapons[unit.unitId].orEmpty())) {
                 val turret = drawing.weaponName?.let { namedTurrets.getValue(unit.typeId to it) } ?: turrets.getValue(unit.typeId)

@@ -12,7 +12,7 @@ internal class ActionCatalogue(private val definitions: Map<String, UnitDefiniti
     private val names = mapOf(
         "commandCenter" to Names("Command", "Command center"), "builder" to Names("Builder"),
         "c_tank" to Names("Tank"), "landFactory" to Names("Factory", "Land factory"),
-        "hoverTank" to Names("Hover tank"), "hovercraft" to Names("Landing craft"),
+        "hoverTank" to Names("Hover tank"), "hovercraft" to Names("Landing craft"), "dropship" to Names("Transport", "Air transport"),
         "mechFactory" to Names("Mech factory"), "mechGun" to Names("Gun mech"),
         "mechFactoryT2" to Names("Mech factory T2"), "mechHeavyMissile" to Names("Heavy missile mech"),
         "airFactory" to Names("Air factory"), "airFactoryT2" to Names("Air factory T2"),
@@ -124,6 +124,7 @@ internal class ActionCatalogue(private val definitions: Map<String, UnitDefiniti
         val info = if (ids.isEmpty()) null else if (ids.size > 1) workerText else selected?.let { unit ->
             "${unit.health?.toInt() ?: 0} / ${unit.maxHealth?.toInt() ?: 0}" +
                 (unit.transport?.let { "\nCargo ${it.occupiedSlots} / ${it.capacity}\nPassengers ${it.passengerCount}" } ?: "") +
+                (if (unit.transport != null && unit.flightPose != null) String.format(Locale.ROOT, "\nHeight %.2f", unit.height) else "") +
                 (unit.shield?.let { "\nShield ${it.current.toInt()} / ${it.maximum.toInt()}" } ?: "") +
                 (unit.submarine?.let { String.format(Locale.ROOT, "\n%s\nDepth %.2f\nSpeed %.2f\nRange %.0f",
                     if (it.underwater) "Underwater" else "Surface", unit.height, it.maximumSpeed, it.attackRange) } ?: "") +

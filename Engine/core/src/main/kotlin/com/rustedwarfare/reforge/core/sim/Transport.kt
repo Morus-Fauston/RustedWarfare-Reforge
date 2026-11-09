@@ -7,7 +7,7 @@ import com.rustedwarfare.reforge.core.content.*
 /** Immutable per-carrier value: candidate forks never share a mutable passenger container. */
 internal data class TransportState(val passengerIds: List<String> = emptyList(),
     val unloading: Boolean = false, val unloadRemaining: Float = 0f, val motionGate: Boolean = true,
-    val liquid: Boolean = false)
+    val liquid: Boolean = false, val airCorpseLanded: Boolean = false)
 
 internal data class TransportChange(val error: SimulationError? = null, val event: Event? = null,
     val approach: Position? = null)
@@ -34,14 +34,20 @@ internal object Transport {
     fun queryPosition(unit: MutableUnit, position: Position = unit.position): Position =
         queryPosition(position, unit.nativeTransportPlacement)
 
-    fun supports(definition: UnitDefinition): Boolean = definition.transport == TransportProfile.NATIVE_HOVERCRAFT &&
-        definition.id == "hovercraft" && definition.className == "NativeHovercraft" &&
-        definition.radius == 15.0 && definition.displayRadius == 15.0 && definition.totalFrames == 1 &&
-        definition.imageScale == 1.0 && definition.fogOfWarSightRange == 15 &&
-        definition.movement == MovementProfile(MovementType.HOVER, .9, .03, .05, 1.4, .1, false, false,
-            hover = HoverProfile(3.0, 1.5, 4.0, .1)) && definition.maximumHealth == 450.0 &&
+    fun supports(definition: UnitDefinition): Boolean = when (definition.transport) {
+        TransportProfile.NATIVE_HOVERCRAFT -> definition.id == "hovercraft" && definition.className == "NativeHovercraft" &&
+            definition.radius == 15.0 && definition.displayRadius == 15.0 &&
+            definition.movement == MovementProfile(MovementType.HOVER, .9, .03, .05, 1.4, .1, false, false,
+                hover = HoverProfile(3.0, 1.5, 4.0, .1)) && definition.maximumHealth == 450.0 &&
+            definition.build == BuildProfile(600L, .003f)
+        TransportProfile.NATIVE_DROPSHIP -> definition.id == "dropship" && definition.className == "NativeDropship" &&
+            definition.radius == 20.0 && definition.displayRadius == 20.0 &&
+            definition.movement == MovementProfile(MovementType.AIR, 2.3, .03, .05, 1.4, 0.0, false, false, .6) &&
+            definition.maximumHealth == 500.0 && definition.build == BuildProfile(800L, .001f) && definition.shadowImagePath != null
+        null -> false
+    } && definition.totalFrames == 1 && definition.imageScale == 1.0 && definition.fogOfWarSightRange == 15 &&
         definition.durability?.deadImagePath != null && definition.durability.maxDamagePerHit == null &&
-        definition.build == BuildProfile(600L, .003f) && definition.transportSlots == 1 &&
+        definition.transportSlots == 1 &&
         definition.combat == null && definition.building == null && definition.builder == null &&
         definition.construction == null && definition.production == null && definition.upgrades == null &&
         definition.income == null && definition.pointDefense == null && definition.deathExplosion == null &&
@@ -71,6 +77,27 @@ internal object Transport {
 
     fun refreshTerrain(unit: MutableUnit, map: MapDefinition) {
         unit.transportState = unit.transportState?.copy(liquid = liquid(unit, map))
+    }
+
+    /** Native air-base death update; live transport height never runs on a corpse. */
+    fun advanceCorpse(unit: MutableUnit, map: MapDefinition, delta: Double) {
+        if (unit.definition.transport != TransportProfile.NATIVE_DROPSHIP || unit.waterSettled) return
+        val state = checkNotNull(unit.transportState)
+        val elapsed = delta.toFloat()
+        if (unit.height > 0.0) {
+            unit.sinkSpeed += .06f * elapsed
+            unit.height = (unit.height.toFloat() - unit.sinkSpeed * elapsed).toDouble()
+        } else if (!state.airCorpseLanded) {
+            unit.transportState = state.copy(airCorpseLanded = true, liquid = liquid(unit, map))
+            unit.sinkSpeed = 0f
+        } else if (!state.liquid) {
+            unit.height = 0.0
+            unit.waterSettled = true
+        } else if (unit.height > -10.0) {
+            unit.sinkSpeed += .0008f * elapsed
+            unit.height = (unit.height.toFloat() - unit.sinkSpeed * elapsed).toDouble()
+        } else unit.waterSettled = true
+        require(unit.sinkSpeed.isFinite() && unit.height.isFinite()) { "Air transport corpse must remain finite" }
     }
 
     /** Native f(true): release relations and write cj's negative health, retaining corpse processing. */
@@ -126,7 +153,8 @@ internal object Transport {
         }
         var state = unit.transportState ?: return emptyList()
         val events = mutableListOf<Event>()
-        if (state.unloading && !liquid(unit, map) && !state.motionGate) {
+        if (state.unloading && !liquid(unit, map) && !state.motionGate &&
+            (unit.definition.transport != TransportProfile.NATIVE_DROPSHIP || unit.height.toFloat() < 4f)) {
             state = state.copy(unloadRemaining = maxOf(0f, state.unloadRemaining - delta.toFloat()))
             if (state.unloadRemaining == 0f) {
                 state = state.copy(unloadRemaining = 30f)
@@ -148,9 +176,15 @@ internal object Transport {
                         passenger.attackCommand = null
                         passenger.clearWeaponTargets()
                         passenger.cancelRoute()
-                        val angle = passenger.heading.toFloat() - 90f + if (negativeSide) -9f else 9f
-                        val target = Position((point.x.toFloat() + GroundMath.cos(angle) * 70f).toDouble(),
-                            (point.y.toFloat() + GroundMath.sin(angle) * 70f).toDouble())
+                        val target = if (unit.definition.transport == TransportProfile.NATIVE_DROPSHIP) {
+                            val angle = unit.heading.toFloat() - 90f
+                            Position((unit.position.x.toFloat() + GroundMath.cos(angle) * -66f).toDouble(),
+                                (unit.position.y.toFloat() + GroundMath.sin(angle) * -66f).toDouble())
+                        } else {
+                            val angle = passenger.heading.toFloat() - 90f + if (negativeSide) -9f else 9f
+                            Position((point.x.toFloat() + GroundMath.cos(angle) * 70f).toDouble(),
+                                (point.y.toFloat() + GroundMath.sin(angle) * 70f).toDouble())
+                        }
                         passenger.taskQueue = UnitTaskQueue().append(UnitTask(UnitTaskKind.MOVE,
                             "transport-exit:${unit.unitId}:${passenger.unitId}", target))
                         passenger.moveTarget = target
@@ -163,6 +197,17 @@ internal object Transport {
             }
         }
         unit.transportState = state
+        if (unit.definition.transport == TransportProfile.NATIVE_DROPSHIP) {
+            var phase = unit.heightPhase.toFloat() + 2f * delta.toFloat()
+            if (phase > 360f) phase -= 360f
+            unit.heightPhase = phase.toDouble()
+            val landing = unit.tasks.isEmpty() && !liquid(unit, map)
+            val target = if (landing) 2f else 35f + GroundMath.sin(phase) * 1.5f
+            val limit = (if (landing) .4f else .35f) * delta.toFloat()
+            val height = unit.height.toFloat()
+            unit.height = (if (height < target) minOf(target, height + limit) else maxOf(target, height - limit)).toDouble()
+            return events
+        }
         var phase = unit.heightPhase.toFloat() + 4f * delta.toFloat()
         if (phase > 360f) phase -= 360f
         unit.heightPhase = phase.toDouble()
@@ -179,8 +224,18 @@ internal object Transport {
     private fun landingPoint(carrier: MutableUnit, passenger: MutableUnit, map: MapDefinition, negativeSide: Boolean): Position? {
         val rear = carrier.heading.toFloat() - 270f
         val side = if (negativeSide) -9f else 9f
-        val x = carrier.position.x.toFloat() + GroundMath.cos(rear) * 7f + GroundMath.cos(carrier.heading.toFloat()) * side
-        val y = carrier.position.y.toFloat() + GroundMath.sin(rear) * 7f + GroundMath.sin(carrier.heading.toFloat()) * side
+        val x: Float
+        val y: Float
+        if (carrier.definition.transport == TransportProfile.NATIVE_DROPSHIP) {
+            val angle = carrier.heading.toFloat() - 90f
+            val airSide = if (negativeSide) -7f else 7f
+            x = carrier.position.x.toFloat() + GroundMath.cos(angle) * -9f +
+                GroundMath.cos(angle + 90f) * airSide + GroundMath.sin(angle + 90f) * airSide
+            y = carrier.position.y.toFloat() + GroundMath.sin(angle) * -9f
+        } else {
+            x = carrier.position.x.toFloat() + GroundMath.cos(rear) * 7f + GroundMath.cos(carrier.heading.toFloat()) * side
+            y = carrier.position.y.toFloat() + GroundMath.sin(rear) * 7f + GroundMath.sin(carrier.heading.toFloat()) * side
+        }
         val candidates = listOf(x to y, x + 10f to y, x - 10f to y, x - 20f to y + 10f, x - 20f to y - 10f)
         val blocking = map.blockingFor(UnitLocomotion.movement(passenger).type)
         return candidates.firstOrNull { (px, py) ->

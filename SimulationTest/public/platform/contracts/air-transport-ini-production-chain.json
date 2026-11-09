@@ -1,0 +1,207 @@
+{
+  "schemaVersion": 1,
+  "scenarioId": "air-transport-ini-production-chain",
+  "rules": [
+    {
+      "intentId": "select-center"
+    },
+    {
+      "intentId": "produce-worker"
+    },
+    {
+      "intentId": "leave-center"
+    },
+    {
+      "intentId": "select-worker"
+    },
+    {
+      "intentId": "place-worker"
+    },
+    {
+      "intentId": "stop-worker"
+    },
+    {
+      "intentId": "build-t1"
+    },
+    {
+      "intentId": "finish-t1"
+    },
+    {
+      "intentId": "upgrade-t2"
+    },
+    {
+      "intentId": "wait-upgrade-1"
+    },
+    {
+      "intentId": "wait-upgrade-2"
+    },
+    {
+      "intentId": "wait-upgrade-3"
+    },
+    {
+      "intentId": "finish-upgrade"
+    },
+    {
+      "intentId": "produce-air"
+    },
+    {
+      "intentId": "finish-air"
+    },
+    {
+      "intentId": "select-air"
+    },
+    {
+      "intentId": "approach-worker"
+    },
+    {
+      "intentId": "stop-board"
+    },
+    {
+      "intentId": "board"
+    },
+    {
+      "intentId": "cross-water"
+    },
+    {
+      "intentId": "return-land"
+    },
+    {
+      "intentId": "stop-land"
+    },
+    {
+      "intentId": "start-unload"
+    },
+    {
+      "intentId": "cancel-unload"
+    },
+    {
+      "intentId": "resume-unload"
+    },
+    {
+      "intentId": "select-released"
+    },
+    {
+      "intentId": "move-released"
+    },
+    {
+      "intentId": "stop-released"
+    }
+  ],
+  "history": {
+    "initialBalance": 10000,
+    "ownerPlayerId": "p1",
+    "initialOwnedTypes": [
+      "commandCenter"
+    ],
+    "initialIncome": {
+      "unitId": "a",
+      "typeId": "commandCenter",
+      "period": 10,
+      "credits": 4.5
+    },
+    "productionOrder": [
+      "builder",
+      "dropship"
+    ],
+    "projectileBirthsRequired": false,
+    "spend": [
+      {
+        "intentId": "produce-worker",
+        "amount": 500,
+        "at": "action"
+      },
+      {
+        "intentId": "build-t1",
+        "amount": 1000,
+        "at": "construction-created"
+      },
+      {
+        "intentId": "upgrade-t2",
+        "amount": 1500,
+        "at": "action"
+      },
+      {
+        "intentId": "produce-air",
+        "amount": 800,
+        "at": "action"
+      }
+    ],
+    "finalUnits": [
+      {
+        "ownerPlayerId": "p1",
+        "typeId": "commandCenter",
+        "fields": {
+          "alive": true
+        }
+      },
+      {
+        "ownerPlayerId": "p1",
+        "typeId": "builder",
+        "fields": {
+          "alive": true
+        }
+      },
+      {
+        "ownerPlayerId": "p1",
+        "typeId": "airFactoryT2",
+        "fields": {
+          "alive": true
+        }
+      },
+      {
+        "ownerPlayerId": "p1",
+        "typeId": "dropship",
+        "fields": {
+          "alive": true
+        }
+      }
+    ],
+    "transportStages": [
+      {
+        "intentId": "board",
+        "typeId": "dropship",
+        "passengerCount": 1,
+        "unloading": false
+      },
+      {
+        "intentId": "cross-water",
+        "typeId": "dropship",
+        "passengerCount": 1,
+        "unloading": false,
+        "minimumX": 400
+      },
+      {
+        "intentId": "return-land",
+        "typeId": "dropship",
+        "passengerCount": 1,
+        "unloading": false,
+        "maximumX": 350
+      },
+      {
+        "intentId": "stop-land",
+        "typeId": "dropship",
+        "passengerCount": 1,
+        "unloading": false,
+        "maximumX": 350
+      },
+      {
+        "intentId": "start-unload",
+        "typeId": "dropship",
+        "passengerCount": 1,
+        "unloading": true
+      },
+      {
+        "intentId": "cancel-unload",
+        "typeId": "dropship",
+        "passengerCount": 1,
+        "unloading": false
+      },
+      {
+        "intentId": "resume-unload",
+        "typeId": "dropship",
+        "passengerCount": 0,
+        "unloading": false
+      }
+    ]
+  }
+}

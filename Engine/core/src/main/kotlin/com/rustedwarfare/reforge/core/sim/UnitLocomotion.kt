@@ -2,13 +2,15 @@ package com.rustedwarfare.reforge.core.sim
 
 import com.rustedwarfare.reforge.core.content.MovementProfile
 import com.rustedwarfare.reforge.core.content.MovementType
+import com.rustedwarfare.reforge.core.content.TransportProfile
 
 /** The current physical locomotion profile, shared by planning, steering and displacement. */
 internal object UnitLocomotion {
     fun movement(unit: MutableUnit): MovementProfile {
         unit.transportState?.let { state ->
-            return unit.definition.movement.copy(moveSpeed = if (state.liquid) 1.2 else .9,
-                maxTurnSpeed = if (state.liquid) 1.8 else 1.4)
+            if (unit.definition.transport == TransportProfile.NATIVE_HOVERCRAFT)
+                return unit.definition.movement.copy(moveSpeed = if (state.liquid) 1.2 else .9,
+                    maxTurnSpeed = if (state.liquid) 1.8 else 1.4)
         }
         val state = unit.amphibiousState ?: return SubmarineMotion.movement(unit)
         val underwater = unit.height < -1.0

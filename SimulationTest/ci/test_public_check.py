@@ -356,6 +356,21 @@ class PublicSelectionTest(unittest.TestCase):
         names={p.relative_to(REPO).as_posix() for p in source_files(REPO)}
         self.assertIn('SimulationTest/tools/test_transport_platform.py',names)
 
+    def test_air_transport_uses_registered_public_mechanisms_and_all_three_format_scenarios(self):
+        from public_check import REPO,plan_suite,source_files
+        plan=plan_suite(REPO,'production-combat','pr')
+        self.assertIn('com.rustedwarfare.reforge.core.content.DropshipContentFailureTest',plan['tests']['core'])
+        self.assertIn('com.rustedwarfare.reforge.client.DropshipProductionSandboxTest',plan['tests']['client'])
+        self.assertIn('com.rustedwarfare.reforge.pc.DropshipOriginalProfileTest',plan['tests']['pc'])
+        self.assertIn('com.rustedwarfare.reforge.testing.DropshipProductionSessionTest',plan['tests']['tools'])
+        cases={row['id']:row for row in plan['scenarios']}
+        for fmt in ('ini','json','hjson'):
+            self.assertEqual('core',cases['air-transport-'+fmt+'-short']['backend'])
+            self.assertEqual('session',cases['air-transport-'+fmt+'-production-chain']['backend'])
+        names={p.relative_to(REPO).as_posix() for p in source_files(REPO)}
+        for name in ('air_transport_fixture.py','air_transport_scenarios.py'):
+            self.assertIn('SimulationTest/tools/'+name,names)
+
     def test_the_shared_live_reader_and_its_contract_survive_an_isolated_source_copy(self):
         from public_check import REPO,source_files
         names={p.relative_to(REPO).as_posix() for p in source_files(REPO)}

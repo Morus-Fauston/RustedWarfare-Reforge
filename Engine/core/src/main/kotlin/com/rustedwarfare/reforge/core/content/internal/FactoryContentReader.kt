@@ -136,8 +136,12 @@ internal object FactoryContentReader {
         }
         for ((key, value) in mapOf("name" to id, "maxHp" to "1000", "radius" to "30", "footprint" to "-1,-1,1,1",
             "placementFootprint" to "-1,-1,1,2", "movementType" to "NONE",
-            "productionUnits" to if (t2) "helicopter,amphibiousJet" else "helicopter",
             "price" to if (t2) "2500" else "1000", "buildSpeed" to "0.001", "fogOfWarSightRange" to "15")) only(key, value)
+        val products = required("productionUnits").split(',')
+        val supported = if (t2) setOf("helicopter", "amphibiousJet", "dropship") else setOf("helicopter")
+        if (products.isEmpty() || products.distinct().size != products.size || products.any { it !in supported })
+            reject(ContentErrorCode.UNSUPPORTED_FEATURE, path, "core", "productionUnits",
+                reason = "Expected a nonempty unique menu of implemented native air products for tier $tier")
         if (upgrade) {
             only("upgradeTo", "airFactoryT2"); only("upgradePrice", "1500"); only("upgradeBuildSpeed", "0.0004")
         }
@@ -155,7 +159,7 @@ internal object FactoryContentReader {
             MovementProfile(MovementType.NONE, 0.0, 0.0, 0.0, 0.0, 0.0, false, false), emptySet(), 15,
             durability = DurabilityProfile(1000.0, image("image_dead")),
             building = BuildingProfile(BuildingFootprint(-1, -1, 1, 1), placementFootprint = BuildingFootprint(-1, -1, 1, 2)),
-            production = ProductionProfile(if (t2) listOf("helicopter", "amphibiousJet") else listOf("helicopter"), FactoryExitProfile.NATIVE_AIR),
+            production = ProductionProfile(products, FactoryExitProfile.NATIVE_AIR),
             build = BuildProfile(if (t2) 2500L else 1000L, .001f), construction = ConstructionProfile(if (t2) 2500L else 1000L, .001f),
             upgrades = if (upgrade) UpgradeProfile(listOf(UpgradeActionProfile("upgrade_t2", "airFactoryT2", 1500L, .0004f))) else null,
             directHitTargetKind = DirectHitTargetKind.NATIVE_BUILDING)

@@ -236,3 +236,7 @@ Session 的可选 `history` 契约用于显式声明长链检查义务，rules �
 
 
 长链动作还须与紧邻的 before/action/after、固定 actor 和实际存活对象绑定；非选择指令核对象归属，已有建造类型、升级、目的地和目标身份逐项对应意图。旧生产动作没有产品字段时，通过同厂 factoryQueues 的 FIFO 前缀不变、恰好新增一个指定产品核对，不由终局反推请求。Session 合同声明的攻击精确点按该固定场景核对，不增加通用鼠标命中容差。独立资格 CLI 同样取得构建资源锁并限制输出目录；候选 worker 先写新 Temp，完整字节复制回父批次并保存位置映射，失败也保留。终端须实际 flush 成功才记录打印通过。
+
+## 空运代表
+
+`air-transport-production` 为自有素材的 INI／JSON／Hjson 同语义输入族。`production-combat` 的 short／PR 入口注册三格式 Core 短链与三格式 Session 正常生产链：指挥中心产工人、付费建空厂并升级、生产无武器运输机、装载、跨水返回、Stop 降落、取消并重启卸载和乘员后续指挥。输入说明与生成来源见 `inputs/air-transport-production/README.md`；精确字节由场景 SHA 和 `.gitattributes` 共同固定。沿用已有运行器与严格归档消费者，不代表 Android 设备、真实联网、性能或原版实时等价验收。

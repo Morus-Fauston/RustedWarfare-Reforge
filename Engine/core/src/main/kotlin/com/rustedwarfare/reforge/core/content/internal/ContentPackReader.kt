@@ -106,7 +106,7 @@ internal object ContentPackReader {
             val field = "units[$index]"
             val spec = objectFields(entry, setOf("type", "file"), manifest, field)
             val capability = string(spec.get("type"), "$field.type")
-            if (capability !in setOf("tank", "hover-tank", "hovercraft", "mech", "mech-heavy", "mech-factory", "builder", "constructor", "factory", "helicopter", "amphibious-jet", "air-factory", "battleship", "water-combat", "sea-factory", "underwater-target", "submarine", "command-center", "land-factory"))
+            if (capability !in setOf("tank", "hover-tank", "hovercraft", "dropship", "mech", "mech-heavy", "mech-factory", "builder", "constructor", "factory", "helicopter", "amphibious-jet", "air-factory", "battleship", "water-combat", "sea-factory", "underwater-target", "submarine", "command-center", "land-factory"))
                 reject(ContentErrorCode.UNSUPPORTED_FEATURE, manifest, field = "$field.type", reason = "Expected an implemented finite combat, mech, factory or builder capability")
             val reference = string(spec.get("file"), "$field.file")
             val pieces = reference.split('/')
@@ -123,6 +123,7 @@ internal object ContentPackReader {
                 reason = "Duplicate package entry")
             val loaded = when (capability) {
                 "hovercraft" -> HovercraftContentReader.readWithSources(input) { requireOrdinary(root, it) }
+                "dropship" -> DropshipContentReader.readWithSources(input) { requireOrdinary(root, it) }
                 "amphibious-jet" -> AmphibiousJetContentReader.readWithSources(input) { requireOrdinary(root, it) }
                 "submarine" -> SubmarineContentReader.readWithSources(input) { requireOrdinary(root, it) }
                 "hover-tank" -> CombatContentReader.readHoverTankWithSources(input) { requireOrdinary(root, it) }

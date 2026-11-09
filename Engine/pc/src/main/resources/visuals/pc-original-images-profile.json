@@ -6226,11 +6226,14 @@
     "air-factory-t2-dead": "res/drawable/air_factory_t2_dead.png",
     "landing-craft-body": "res/drawable/hovercraft.png",
     "landing-craft-dead": "res/drawable/hovercraft_dead.png",
-    "landing-craft-shadow": "res/drawable/hovercraft_shadow.png"
+    "landing-craft-shadow": "res/drawable/hovercraft_shadow.png",
+    "air-transport-body": "res/drawable/dropship.png",
+    "air-transport-dead": "res/drawable/dropship_dead.png",
+    "air-transport-shadow": "res/drawable/dropship_shadow.png"
   },
   "mappingBasis": {
     "androidProfileSha256": "e273280ab37b1a24714e6b15d8e1cb14fdd395e228ea7c71a62dd2f24d334780",
-    "scope": "Qualified PC finite mappings include native amphibious body/dead/shadow, independent p2 left and p1 right wings rotated into the client north basis, and T2 air factory first animation frame. No Android source or original gameplay execution claim. Native landing craft uses the fixed PC 20x32 body/dead/shadow without rotation; native dimensions and loaded drawables follow e.i."
+    "scope": "Qualified PC finite mappings include native amphibious body/dead/shadow, independent p2 left and p1 right wings rotated into the client north basis, and T2 air factory first animation frame. No Android source or original gameplay execution claim. Native landing craft uses the fixed PC 20x32 body/dead/shadow without rotation; native dimensions and loaded drawables follow e.i. Native air transport uses the fixed PC 45x47 body/dead/shadow without rotation; native dimensions and loaded drawables follow e.i."
   },
   "mappingSources": [
     {
@@ -6360,6 +6363,30 @@
       "sha256": "42ecbec90736551f715071273600e0ac287f58353a8773cfcc6632faa272cef1",
       "width": 20,
       "height": 32
+    },
+    {
+      "id": "air-transport-body",
+      "path": "res/drawable/dropship.png",
+      "bytes": 1700,
+      "sha256": "a9b1718c6b55aed84cd0debe43fb30fbcdba8cc860c518786f1f23cf3c3608f0",
+      "width": 45,
+      "height": 47
+    },
+    {
+      "id": "air-transport-dead",
+      "path": "res/drawable/dropship_dead.png",
+      "bytes": 1832,
+      "sha256": "94d9d3521dbfce0d64006e61fd58304d696d0b9c3a91094b999f29c0fbd16f92",
+      "width": 45,
+      "height": 47
+    },
+    {
+      "id": "air-transport-shadow",
+      "path": "res/drawable/dropship_shadow.png",
+      "bytes": 314,
+      "sha256": "265277904340af97301c751d92bcbb2cf20817fffa24b2b1c3dda3f979945004",
+      "width": 45,
+      "height": 47
     }
   ],
   "mappingUnitOutputs": {
@@ -6623,6 +6650,54 @@
         32
       ],
       "frames": 1
+    },
+    "air-transport-body": {
+      "file": "units/air-transport-body.png",
+      "operation": "crop",
+      "source": "air-transport-body",
+      "rect": [
+        0,
+        0,
+        45,
+        47
+      ],
+      "target": [
+        45,
+        47
+      ],
+      "frames": 1
+    },
+    "air-transport-dead": {
+      "file": "units/air-transport-dead.png",
+      "operation": "crop",
+      "source": "air-transport-dead",
+      "rect": [
+        0,
+        0,
+        45,
+        47
+      ],
+      "target": [
+        45,
+        47
+      ],
+      "frames": 1
+    },
+    "air-transport-shadow": {
+      "file": "units/air-transport-shadow.png",
+      "operation": "crop",
+      "source": "air-transport-shadow",
+      "rect": [
+        0,
+        0,
+        45,
+        47
+      ],
+      "target": [
+        45,
+        47
+      ],
+      "frames": 1
     }
   },
   "mappingUnitBindings": {
@@ -6660,6 +6735,11 @@
       "body": "landing-craft-body",
       "dead": "landing-craft-dead",
       "shadow": "landing-craft-shadow"
+    },
+    "dropship": {
+      "body": "air-transport-body",
+      "dead": "air-transport-dead",
+      "shadow": "air-transport-shadow"
     }
   }
 }

@@ -34,7 +34,10 @@ internal object FactoryExit {
         val building = definition.building ?: return false
         val t2 = definition.id == "airFactoryT2"
         return definition.id in setOf("airFactory", "airFactoryT2") && definition.production?.exitProfile == FactoryExitProfile.NATIVE_AIR &&
-            definition.production.unitTypeIds == (if (t2) listOf("helicopter", "amphibiousJet") else listOf("helicopter")) &&
+            (if (t2) definition.production.unitTypeIds.isNotEmpty() &&
+                definition.production.unitTypeIds.distinct().size == definition.production.unitTypeIds.size &&
+                definition.production.unitTypeIds.all { it in setOf("helicopter", "amphibiousJet", "dropship") }
+                else definition.production.unitTypeIds == listOf("helicopter")) &&
             definition.build == BuildProfile(if (t2) 2500L else 1000L, .001f) &&
             definition.construction == ConstructionProfile(if (t2) 2500L else 1000L, .001f) &&
             definition.radius == 30.0 && definition.maximumHealth == 1000.0 &&

@@ -371,7 +371,7 @@ def validate_history_poses(units, policy):
         if unit.get('carriedBy') is not None:
             raise PlatformError('history-transport','Carried passenger in a player sample',2)
         transport=unit.get('transport')
-        if unit.get('typeId')=='hovercraft' and unit.get('ownerPlayerId')==policy.get('ownerPlayerId','p1'):
+        if unit.get('typeId') in {'hovercraft','dropship'} and unit.get('ownerPlayerId')==policy.get('ownerPlayerId','p1'):
             if (not isinstance(transport,dict) or set(transport)!={'passengerIds','passengerCount','occupiedSlots','capacity','unloading','unloadRemaining','canUnload'} or
                     not number(unit.get('height'))):
                 raise PlatformError('history-transport','Missing or unapproved owner cargo fields',2)
@@ -638,8 +638,10 @@ def compare_history(records, plan, policy, native_anchors=None, geometry=None):
     if not isinstance(declarations,list):
         raise PlatformError('input-contract','Transport stages must be a fixed list',1)
     for stage in declarations:
-        if (not isinstance(stage,dict) or set(stage)-{'intentId','passengerCount','unloading','minimumX','maximumX'} or
+        if (not isinstance(stage,dict) or set(stage)-{'intentId','typeId','passengerCount','unloading','minimumX','maximumX'} or
                 not {'intentId','passengerCount','unloading'}<=set(stage) or stage['intentId'] not in ids or
+                not isinstance(stage.get('typeId','hovercraft'),str) or
+                stage.get('typeId','hovercraft') not in {'hovercraft','dropship'} or
                 stage['intentId'] in transport_stages or type(stage['passengerCount']) is not int or stage['passengerCount']<0 or
                 type(stage['unloading']) is not bool or any(type(stage[k]) not in (int,float) or not math.isfinite(stage[k])
                     for k in ('minimumX','maximumX') if k in stage) or
@@ -716,7 +718,7 @@ def compare_history(records, plan, policy, native_anchors=None, geometry=None):
                 raise PlatformError('history-intent', 'Unfinished intention or wrong explicit step count')
             stage=transport_stages.get(active)
             if stage is not None:
-                carriers=[u for u in units.values() if u.get('typeId')=='hovercraft' and u.get('ownerPlayerId')==policy.get('ownerPlayerId','p1')]
+                carriers=[u for u in units.values() if u.get('typeId')==stage.get('typeId','hovercraft') and u.get('ownerPlayerId')==policy.get('ownerPlayerId','p1')]
                 if len(carriers)!=1:
                     raise PlatformError('history-transport-stage','Missing or ambiguous stage carrier',2)
                 carrier=carriers[0];cargo=carrier.get('transport') or {};x=(carrier.get('position') or {}).get('x')

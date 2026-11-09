@@ -43,7 +43,7 @@ class UnitDefinition(
     val maximumHealth: Double? get() = durability?.maxHp ?: combat?.maxHp
 }
 
-enum class TransportProfile { NATIVE_HOVERCRAFT }
+enum class TransportProfile { NATIVE_HOVERCRAFT, NATIVE_DROPSHIP }
 
 data class MovementProfile(
     val type: MovementType,

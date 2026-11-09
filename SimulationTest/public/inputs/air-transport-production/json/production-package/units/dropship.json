@@ -1,0 +1,11 @@
+{
+  "format": "rw-reforge.native-dropship.v1",
+  "name": "dropship",
+  "maxHp": 500,
+  "radius": 20,
+  "price": 800,
+  "buildSpeed": 0.001,
+  "image": "dropship.png",
+  "image_dead": "dropship_dead.png",
+  "image_shadow": "dropship_shadow.png"
+}

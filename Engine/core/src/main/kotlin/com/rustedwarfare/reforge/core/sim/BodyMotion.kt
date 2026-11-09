@@ -12,7 +12,8 @@ internal object BodyMotion {
         // Native jet inherits bc=.6: its ordinary single-unit Move is a group
         // leader of size one. The source additionally requires 1..2 remaining
         // nodes and a local aim strictly closer than 100 world units.
-        val shortJetMove = unit.amphibiousState != null && unit.birthRemaining == 0f &&
+        val shortJetMove = (unit.amphibiousState != null ||
+            unit.definition.transport == com.rustedwarfare.reforge.core.content.TransportProfile.NATIVE_DROPSHIP) && unit.birthRemaining == 0f &&
             unit.tasks.singleOrNull()?.kind == UnitTaskKind.MOVE && unit.pathPoints.size in 1..2 &&
             coordinates.distanceSquared(unit.position, target) < 10000.0
         val reverse = (unit.definition.movement.reverseSpeedPercentage > .95 || shortJetMove) &&

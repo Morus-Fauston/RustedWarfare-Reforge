@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "suiteId": "public.production-combat.v1",
   "inputScope": "public",
-  "fixture": "inputs/content-movement-knowledge/P001-移动沙盒输入",
+  "fixture": "inputs/content-movement-knowledge/P001-\u79fb\u52a8\u6c99\u76d2\u8f93\u5165",
   "tests": {
     "core": [
       "com.rustedwarfare.reforge.core.content.CombatContentLoadTest",
@@ -206,7 +206,21 @@
       "com.rustedwarfare.reforge.core.sim.LandingCraftShoreLoadingTest",
       "com.rustedwarfare.reforge.core.sim.LandingCraftTransactionTest",
       "com.rustedwarfare.reforge.core.sim.LandingCraftUnloadGateTest",
-      "com.rustedwarfare.reforge.core.sim.LandingCraftUnloadingTest"
+      "com.rustedwarfare.reforge.core.sim.LandingCraftUnloadingTest",
+      "com.rustedwarfare.reforge.core.content.DropshipContentFailureTest",
+      "com.rustedwarfare.reforge.core.content.DropshipContentTest",
+      "com.rustedwarfare.reforge.core.content.DropshipPackContentTest",
+      "com.rustedwarfare.reforge.core.sim.DropshipBlockedUnloadTest",
+      "com.rustedwarfare.reforge.core.sim.DropshipDeathTest",
+      "com.rustedwarfare.reforge.core.sim.DropshipEnvironmentTest",
+      "com.rustedwarfare.reforge.core.sim.DropshipExitTest",
+      "com.rustedwarfare.reforge.core.sim.DropshipHeightTest",
+      "com.rustedwarfare.reforge.core.sim.DropshipMovementTest",
+      "com.rustedwarfare.reforge.core.sim.DropshipPlayerProjectionTest",
+      "com.rustedwarfare.reforge.core.sim.DropshipProductionTest",
+      "com.rustedwarfare.reforge.core.sim.DropshipTransactionTest",
+      "com.rustedwarfare.reforge.core.sim.DropshipUnloadingTest",
+      "com.rustedwarfare.reforge.core.content.DropshipFactoryFailureTest"
     ],
     "client": [
       "com.rustedwarfare.reforge.client.CombatActorEvidenceTest",
@@ -259,7 +273,10 @@
       "com.rustedwarfare.reforge.client.LandingCraftEvidenceTest",
       "com.rustedwarfare.reforge.client.LandingCraftProductionSandboxTest",
       "com.rustedwarfare.reforge.client.LandingCraftUnloadInputTest",
-      "com.rustedwarfare.reforge.client.LandingCraftUnloadMenuTest"
+      "com.rustedwarfare.reforge.client.LandingCraftUnloadMenuTest",
+      "com.rustedwarfare.reforge.client.DropshipProductionSandboxTest",
+      "com.rustedwarfare.reforge.client.DropshipProjectionTest",
+      "com.rustedwarfare.reforge.client.DropshipUnloadMenuTest"
     ],
     "pc": [
       "com.rustedwarfare.reforge.pc.PatrolJsonlPairingTest",
@@ -276,7 +293,8 @@
       "com.rustedwarfare.reforge.pc.ShieldOriginalProfileTest",
       "com.rustedwarfare.reforge.pc.SubmarineOriginalProfileTest",
       "com.rustedwarfare.reforge.pc.AmphibiousOriginalProfileTest",
-      "com.rustedwarfare.reforge.pc.LandingCraftOriginalProfileTest"
+      "com.rustedwarfare.reforge.pc.LandingCraftOriginalProfileTest",
+      "com.rustedwarfare.reforge.pc.DropshipOriginalProfileTest"
     ],
     "tools": [
       "com.rustedwarfare.reforge.testing.ProductionCombatScenarioTest",
@@ -323,7 +341,12 @@
       "com.rustedwarfare.reforge.testing.LandingCraftPairedSessionTest",
       "com.rustedwarfare.reforge.testing.LandingCraftPlayerArchiveTest",
       "com.rustedwarfare.reforge.testing.LandingCraftProductionSessionTest",
-      "com.rustedwarfare.reforge.testing.LandingCraftPublicScenarioTest"
+      "com.rustedwarfare.reforge.testing.LandingCraftPublicScenarioTest",
+      "com.rustedwarfare.reforge.testing.DropshipArchiveTest",
+      "com.rustedwarfare.reforge.testing.DropshipPairedSessionTest",
+      "com.rustedwarfare.reforge.testing.DropshipPlayerArchiveTest",
+      "com.rustedwarfare.reforge.testing.DropshipProductionSessionTest",
+      "com.rustedwarfare.reforge.testing.DropshipPublicScenarioTest"
     ]
   },
   "short": [
@@ -879,6 +902,42 @@
       "backend": "session",
       "scenario": "platform/scenarios/transport-hjson-production-chain.json",
       "contract": "platform/contracts/transport-hjson-production-chain.json"
+    },
+    {
+      "id": "air-transport-ini-short",
+      "backend": "core",
+      "scenario": "scenarios/air-transport-ini-short.json",
+      "contract": "contracts/air-transport-ini-short.json"
+    },
+    {
+      "id": "air-transport-ini-production-chain",
+      "backend": "session",
+      "scenario": "platform/scenarios/air-transport-ini-production-chain.json",
+      "contract": "platform/contracts/air-transport-ini-production-chain.json"
+    },
+    {
+      "id": "air-transport-json-short",
+      "backend": "core",
+      "scenario": "scenarios/air-transport-json-short.json",
+      "contract": "contracts/air-transport-json-short.json"
+    },
+    {
+      "id": "air-transport-json-production-chain",
+      "backend": "session",
+      "scenario": "platform/scenarios/air-transport-json-production-chain.json",
+      "contract": "platform/contracts/air-transport-json-production-chain.json"
+    },
+    {
+      "id": "air-transport-hjson-short",
+      "backend": "core",
+      "scenario": "scenarios/air-transport-hjson-short.json",
+      "contract": "contracts/air-transport-hjson-short.json"
+    },
+    {
+      "id": "air-transport-hjson-production-chain",
+      "backend": "session",
+      "scenario": "platform/scenarios/air-transport-hjson-production-chain.json",
+      "contract": "platform/contracts/air-transport-hjson-production-chain.json"
     }
   ],
   "long": [

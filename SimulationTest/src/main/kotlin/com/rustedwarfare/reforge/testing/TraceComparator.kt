@@ -436,7 +436,7 @@ object TraceComparator {
             .map { it.id("id") }.toSet()
 
     private fun validateTransportSamples(units: List<JsonObject>, scenario: JsonObject) {
-        val types = typesLoadedBy(scenario, setOf("hovercraft"))
+        val types = typesLoadedBy(scenario, setOf("hovercraft", "dropship"))
         if (types.isEmpty()) return
         fun invalid(reason: String): Nothing = throw Incomplete("transport-state", reason)
         fun number(value: JsonElement?, name: String): Double {
@@ -539,7 +539,7 @@ object TraceComparator {
         }
         if (mechLegCount != null) validateMechPose(unit.objectAt("mechPose"), mechLegCount)
         validateShieldSample(unit, unit.id("typeId") in typesLoadedBy(scenario, setOf("mech-heavy")))
-        if (unit.id("typeId") in typesLoadedBy(scenario, setOf("helicopter"))) validateFlightPose(unit)
+        if (unit.id("typeId") in typesLoadedBy(scenario, setOf("helicopter", "dropship"))) validateFlightPose(unit)
         if (unit.id("typeId") in typesLoadedBy(scenario, setOf("submarine"))) validateSubmarine(unit, observer, initial)
         else if (unit["submarine"] != null && unit["submarine"] != JsonNull)
             throw Incomplete("submarine-state", "Submarine state on an unsupported unit")
@@ -767,7 +767,7 @@ object TraceComparator {
     }
 
     private fun validateFlightPose(unit: JsonObject) {
-        val pose = unit.objectAt("flightPose")
+        val pose = unit["flightPose"] as? JsonObject ?: throw Incomplete("flight-pose", "Missing flight pose")
         if (pose.keys != setOf("velocity", "height", "heightPhase", "rotorPhase", "rotorHeading", "rotorHeightOffset"))
             throw Incomplete("flight-pose", "Incomplete or unapproved flight pose fields")
         val velocity = pose.objectAt("velocity")
@@ -870,7 +870,7 @@ object TraceComparator {
                 val units = player.arrayAt("units").map { it.jsonObject }
                 if (units.map { it.id("unitId") }.toSet() != visible.toSet() || units.size != visible.size)
                     throw Incomplete("player-units", "Incomplete visible unit samples")
-                if (typesLoadedBy(scenario, setOf("hovercraft")).isNotEmpty()) {
+                if (typesLoadedBy(scenario, setOf("hovercraft", "dropship")).isNotEmpty()) {
                     val authoritative = observation.arrayAt("units").map { it.jsonObject }.associateBy { it.id("unitId") }
                     for (unit in units) {
                         val host = authoritative[unit.id("unitId")]

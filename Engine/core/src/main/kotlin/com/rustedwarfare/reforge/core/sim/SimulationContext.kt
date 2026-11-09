@@ -1019,6 +1019,7 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
                     AmphibiousJetMotion.advanceCorpse(unit, currentScenario.map, step.delta)
                     WaterBody.advanceCorpse(unit, currentScenario.map, step.delta)
                     HoverMotion.advanceCorpse(unit, currentScenario.map, step.delta)
+                    Transport.advanceCorpse(unit, currentScenario.map, step.delta)
                     continue
                 }
                 if (unit.carriedBy != null) continue
@@ -1278,13 +1279,14 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
         }
         for (definition in input.unitDefinitions.values) {
             if (definition.transport != null && !Transport.supports(definition))
-                return SimulationError("unsupported-transport", "Expected the finite native landing craft capability")
+                return SimulationError("unsupported-transport", "Expected a finite native transport capability")
             if (definition.transportSlots < 0) return SimulationError("invalid-transport-slots", "Transport slots must be a nonnegative integer")
             if (definition.shield?.let { !it.isValid() || definition.maximumHealth == null } == true)
                 return SimulationError("unsupported-shield", "Expected finite positive shield capacity and nonnegative regeneration on a durable unit")
             val m = definition.movement
             val submarine = definition.submarine != null
             val amphibious = definition.amphibiousJet != null
+            val dropship = definition.transport == com.rustedwarfare.reforge.core.content.TransportProfile.NATIVE_DROPSHIP
             if (amphibious && !AmphibiousJetMotion.supports(definition))
                 return SimulationError("unsupported-amphibious-jet", "Expected the finite native amphibious jet capability")
             if (submarine && !SubmarineMotion.supports(definition))
@@ -1304,7 +1306,7 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
                     definition.deathExplosion != null || definition.pointDefense != null || definition.maximumHealth == null)
                     return SimulationError("unsupported-underwater-target", "Expected the finite fixed-depth unarmed WATER target")
             }
-            if (air && !amphibious && (m.flight?.isValid() != true || definition.rotor?.spinRate?.isFinite() != true ||
+            if (air && !amphibious && !dropship && (m.flight?.isValid() != true || definition.rotor?.spinRate?.isFinite() != true ||
                     !m.slidingMode || !m.ignoringBody || m.reverseSpeedPercentage != .1 || definition.mech != null) ||
                 !air && (m.flight != null || definition.rotor != null))
                 return SimulationError("unsupported-flight", "Expected a finite AIR profile and a single finite rotor")
@@ -1372,9 +1374,12 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
                         input.unitDefinitions["heavyBattleship"]?.combat == null))
                     return SimulationError("unsupported-production", "Native sea exits require the finite factory tier and armed WATER product")
                 if (!authoredFactory && production.exitProfile == com.rustedwarfare.reforge.core.content.FactoryExitProfile.NATIVE_AIR &&
-                    (!FactoryExit.supportsAirFactory(definition) || input.unitDefinitions["helicopter"]?.movement?.type != MovementType.AIR ||
-                        input.unitDefinitions["helicopter"]?.combat == null))
-                    return SimulationError("unsupported-production", "Native air exits require the complete finite L1 factory and armed AIR product capabilities")
+                    (!FactoryExit.supportsAirFactory(definition) || production.unitTypeIds.any { id ->
+                        val product = input.unitDefinitions[id]
+                        product?.movement?.type != MovementType.AIR ||
+                            product.combat == null && product.transport != com.rustedwarfare.reforge.core.content.TransportProfile.NATIVE_DROPSHIP
+                    }))
+                    return SimulationError("unsupported-production", "Native air exits require the finite factory and its declared AIR product capabilities")
                 if (!authoredFactory && production.exitProfile == com.rustedwarfare.reforge.core.content.FactoryExitProfile.CUSTOM_MECH &&
                     (!FactoryExit.supportsMechFactory(definition) || input.unitDefinitions["builder"]?.builder == null ||
                         input.unitDefinitions["mechGun"]?.mech == null))
@@ -1419,7 +1424,7 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
                     definition.directHitTargetKind != DirectHitTargetKind.ORDINARY))
                 return SimulationError("unsupported-unit", "Expected finite authored surface combat without unsupported capability combinations")
             if (numbers.any { !it.isFinite() || it < 0.0 } ||
-                (definition.building == null && definition.radius >= input.map.tileWidth && !(fourLegged && definition.radius == 22.0) && !navalHull && !authoredSurface) ||
+                (definition.building == null && definition.radius >= input.map.tileWidth && !(fourLegged && definition.radius == 22.0) && !navalHull && !authoredSurface && !dropship) ||
                 m.type != MovementType.AIR && !fourLegged && !hovering && (m.slidingMode || m.ignoringBody) ||
                 fourLegged && (m.type != MovementType.OVER_CLIFF || !m.slidingMode || !m.ignoringBody)) {
                 return SimulationError("unsupported-unit", "Expected finite movement and the supported representative's radius and locomotion")
@@ -2113,7 +2118,8 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
             target.cancelRoute()
             target.speed = 0.0
             target.flightVelocity = Position(0.0, 0.0)
-            if (target.definition.movement.type == MovementType.AIR && target.amphibiousState == null) target.height = 0.0
+            if (target.definition.movement.type == MovementType.AIR && target.amphibiousState == null &&
+                target.definition.transport != com.rustedwarfare.reforge.core.content.TransportProfile.NATIVE_DROPSHIP) target.height = 0.0
             target.angularVelocity = 0.0
             target.clearWeaponTargets()
             pendingEvents += Event("unit-died", target.unitId)
@@ -2182,12 +2188,14 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
         if (target != null && air) {
             unit.requestMovement(logicalRouteTarget(unit, target))
             val d2 = policies.coordinates.distanceSquared(unit.position, target)
-            val difference = if (unit.amphibiousState != null)
+            val ordinaryBody = unit.amphibiousState != null ||
+                unit.definition.transport == com.rustedwarfare.reforge.core.content.TransportProfile.NATIVE_DROPSHIP
+            val difference = if (ordinaryBody)
                 BodyMotion.turnOrdinary(unit, target, delta, policies.steering, policies.coordinates)
                 else policies.steering.turn(unit, target, delta, policies.coordinates)
             val fraction = policies.propulsion.targetFraction(movement, unit.speed, d2,
-                if (unit.amphibiousState != null) difference else 0.0, true, contract.targetRadius)
-            requestedFraction = if (unit.amphibiousState != null && unit.reversing)
+                if (ordinaryBody) difference else 0.0, true, contract.targetRadius)
+            requestedFraction = if (ordinaryBody && unit.reversing)
                 -fraction * movement.reverseSpeedPercentage else fraction
             speedTarget = maximumSpeed * requestedFraction
             aimForSample = target
