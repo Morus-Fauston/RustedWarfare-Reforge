@@ -154,7 +154,12 @@ data class UnitObservation(
     val waterPose: WaterPose? = null,
     val hoverPose: HoverPose? = null,
     val shield: ShieldObservation? = null,
+    val submarine: SubmarineObservation? = null,
 )
+
+/** Actual public depth state; control intent and vertical integrator are owner-only. */
+data class SubmarineObservation(val surfaceIntent: Boolean?, val verticalSpeed: Float?, val underwater: Boolean,
+    val surfacePresentation: Boolean, val maximumSpeed: Double, val attackRange: Double)
 
 /** Visible durability state; no source identity or hidden combat scheduling. */
 data class ShieldObservation(val current: Float, val maximum: Float, val displayDamage: Float = 0f)
@@ -175,7 +180,13 @@ data class ProjectileObservation(val objectId: Long, val sourceUnitId: String, v
     val height: Double = 0.0, val age: Float = 0f, val deflectionHealth: Float = 1f,
     val intercepted: Boolean = false, val ground: GroundProjectileObservation? = null,
     val missile: MissileObservation? = null, val areaExpansion: AreaExpansionObservation? = null,
-    val sourceWeaponName: String? = null, val ballistic: BallisticObservation? = null)
+    val sourceWeaponName: String? = null, val ballistic: BallisticObservation? = null,
+    val appearance: ProjectileAppearance = ProjectileAppearance.STANDARD)
+
+/** Public launch appearance, independent of hidden source identity or its subsequent depth. */
+enum class ProjectileAppearance(val red: Int, val green: Int, val blue: Int, val drawSize: Float) {
+    STANDARD(255, 255, 0, 2f), SUBMARINE_MISSILE(230, 230, 50, 2f), SUBMARINE_TORPEDO(30, 30, 150, 1f)
+}
 
 class AreaExpansionObservation(val remaining: Float, val radius: Float, hitUnitIds: Set<String>) {
     val hitUnitIds: Set<String> = Collections.unmodifiableSet(LinkedHashSet(hitUnitIds))
@@ -192,7 +203,8 @@ data class PointDefenseObservation(val energy: Float, val exhausted: Boolean)
 
 /** One public appearance class. Identical newly visible objects have one token and multiplicity. */
 data class VisibleProjectile(val token: String, val multiplicity: Int, val position: Position, val heading: Double,
-    val height: Double = 0.0, val parentToken: String? = null, val areaRadius: Float? = null)
+    val height: Double = 0.0, val parentToken: String? = null, val areaRadius: Float? = null,
+    val appearance: ProjectileAppearance = ProjectileAppearance.STANDARD)
 
 data class ProjectileEventObservation(val kind: String, val projectile: ProjectileObservation, val damage: Double? = null,
     val interceptorUnitId: String? = null)
@@ -201,7 +213,7 @@ data class VisibleProjectileEvent(val token: String, val kind: String, val occur
     val position: Position, val heading: Double, val height: Double, val sourceUnitId: String?,
     val targetUnitId: String?, val damage: Double?, val parentToken: String? = null,
     val interceptorUnitId: String? = null, val areaRadius: Float? = null,
-    val sourceWeaponName: String? = null)
+    val sourceWeaponName: String? = null, val appearance: ProjectileAppearance = ProjectileAppearance.STANDARD)
 
 /** Trusted-host state for deterministic replay/rollback verification, absent from player observations. */
 class CombatObservation(val frameCounter: Int, val nextObjectId: Long, weapons: List<UnitWeaponObservation>) {
@@ -378,6 +390,9 @@ internal data class MutableUnit(
     var lastAttackPathAttemptStep: Long? = null,
     var combat: MutableCombat? = definition.combat?.let { MutableCombat(heading) },
     var height: Double = definition.movement.flight?.startingHeightOffset ?: 0.0,
+    var submarineSurfaceIntent: Boolean = false,
+    var submarineVerticalSpeed: Float = 0f,
+    var submarineSurfacePresentation: Boolean = true,
     var heightPhase: Double = 0.0,
     var flightVelocity: Position = Position(0.0, 0.0),
     var rotorPhase: Double = 0.0,
@@ -431,7 +446,7 @@ internal data class MutableUnit(
     fun ensureLocalMotion(): LocalMotionSegment {
         val first = pathPoints.first()
         return localMotion?.takeIf { it.anchor == first }
-            ?: LocalMotionSegment.create(position, first, definition.movement).also { localMotion = it; localProgressTime = 0.0 }
+            ?: LocalMotionSegment.create(position, first, SubmarineMotion.movement(this)).also { localMotion = it; localProgressTime = 0.0 }
     }
 
     /** End the command while preserving linear/angular speed for the existing coasting rule. */
@@ -526,7 +541,8 @@ internal data class MutableProjectile(val objectId: Long, val sourceUnitId: Stri
     val acceleration: com.rustedwarfare.reforge.core.content.LinearProjectileAcceleration? = null,
     val splash: com.rustedwarfare.reforge.core.content.OrdinarySplashProfile? = null,
     val retargetOnDeath: Boolean = false,
-    val ballistic: CustomBallisticProfile? = null, var ballisticReachedApex: Boolean = false, var ballisticRawAz: Float = 0f)
+    val ballistic: CustomBallisticProfile? = null, var ballisticReachedApex: Boolean = false, var ballisticRawAz: Float = 0f,
+    val appearance: ProjectileAppearance = ProjectileAppearance.STANDARD)
 
 internal data class AreaExpansion(val profile: DeathExplosionProfile, var remaining: Float,
     var radius: Float = 0f, val hitUnitIds: MutableSet<String> = linkedSetOf())

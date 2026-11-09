@@ -307,8 +307,9 @@ object TraceComparator {
                                 UpgradeDeclaration.typeAt(id, first.id("sourceTypeId"), conversions, row))
                                 throw Incomplete("conversion-identity", "Converted unit differs from its accepted ordinary upgrade")
                         }
-                        units.forEach { validateUnitSample(it, scenario) }
+                        units.forEach { validateUnitSample(it, scenario, initial = row["phase"] == s("initial")) }
                         validateBallisticSamples(observation, scenario, units)
+                        validateSubmarineProjectiles(observation, scenario, units)
                         if (hasConstruction(scenario)) validateConstructionSample(scenario, observation, units, built)
                         val incomeTypes = typesLoadedBy(scenario, setOf("command-center", "economy", "economy-upgrades"))
                         if (incomeTypes.isNotEmpty()) {
@@ -461,7 +462,7 @@ object TraceComparator {
         observation.arrayAt("projectileEvents").forEach { validate(it.jsonObject.objectAt("projectile")) }
     }
 
-    private fun validateUnitSample(unit: JsonObject, scenario: JsonObject) {
+    private fun validateUnitSample(unit: JsonObject, scenario: JsonObject, observer: String? = null, initial: Boolean = false) {
         if (unit.keys.any { it in setOf("owner", "type", "rawMovementState") }) throw Incomplete("reserved-field", "Raw unit contains normalization aliases")
         unit.id("unitId"); unit.id("ownerPlayerId"); unit.id("typeId"); point(unit.objectAt("position"))
         listOf("heading", "speed", "angularVelocity").forEach { unit.number(it) }
@@ -475,7 +476,10 @@ object TraceComparator {
         if (mechLegCount != null) validateMechPose(unit.objectAt("mechPose"), mechLegCount)
         validateShieldSample(unit, unit.id("typeId") in typesLoadedBy(scenario, setOf("mech-heavy")))
         if (unit.id("typeId") in typesLoadedBy(scenario, setOf("helicopter"))) validateFlightPose(unit)
-        if (unit.id("typeId") in typesLoadedBy(scenario, setOf("battleship", "water-combat"))) validateWaterPose(unit)
+        if (unit.id("typeId") in typesLoadedBy(scenario, setOf("submarine"))) validateSubmarine(unit, observer, initial)
+        else if (unit["submarine"] != null && unit["submarine"] != JsonNull)
+            throw Incomplete("submarine-state", "Submarine state on an unsupported unit")
+        if (unit.id("typeId") in typesLoadedBy(scenario, setOf("battleship", "water-combat", "submarine"))) validateWaterPose(unit)
         if (unit.id("typeId") in typesLoadedBy(scenario, setOf("underwater-target"))) {
             val height = unit["height"] as? JsonPrimitive
             if (height == null || height.isString || height.doubleOrNull != -8.0 ||
@@ -513,6 +517,73 @@ object TraceComparator {
                 defense.number("energy"); booleanField(defense, "exhausted")
             } }
         }
+    }
+
+    private fun validateSubmarine(unit: JsonObject, observer: String?, initial: Boolean) {
+        fun invalid(reason: String): Nothing = throw Incomplete("submarine-state", reason)
+        val state = unit["submarine"] as? JsonObject ?: invalid("Missing native submarine state")
+        if (state.keys != setOf("surfaceIntent", "verticalSpeed", "underwater", "surfacePresentation", "maximumSpeed", "attackRange"))
+            invalid("Incomplete or unapproved submarine fields")
+        fun number(value: JsonElement?, name: String): Double {
+            val literal = value as? JsonPrimitive
+            val result = literal?.doubleOrNull
+            if (literal == null || literal.isString || result == null || !result.isFinite() || !result.toFloat().isFinite())
+                invalid("Invalid submarine $name")
+            return result
+        }
+        val height = number(unit["height"], "height")
+        val underwater = height < -1.0
+        if (state["underwater"] != b(underwater) || state["surfacePresentation"] !in setOf(b(true), b(false)))
+            invalid("Invalid submarine depth category or presentation")
+        // Explicit initial depth does not run the first presentation update; corpses retain their death presentation.
+        if (!initial && unit["alive"] == b(true) && state["surfacePresentation"] != b(!underwater))
+            invalid("Submarine presentation differs from its live physical depth")
+        if (number(state["maximumSpeed"], "maximumSpeed") != (if (underwater) .45 else .8) ||
+            number(state["attackRange"], "attackRange") != (if (underwater) 180.0 else 250.0))
+            invalid("Submarine speed or range differs from actual depth")
+        if (observer == null || observer == unit.id("ownerPlayerId")) {
+            if (state["surfaceIntent"] !in setOf(b(true), b(false))) invalid("Missing owner submarine intent")
+            val speed = number(state["verticalSpeed"], "verticalSpeed")
+            // n(Float) writes the shortest round-trip decimal (0.08), not its expanded binary64 conversion.
+            if (speed !in 0.0..0.08) invalid("Invalid submarine vertical speed")
+        } else if (state["surfaceIntent"] != JsonNull || state["verticalSpeed"] != JsonNull)
+            invalid("Enemy submarine control state must be redacted")
+    }
+
+    private fun validateSubmarineProjectiles(observation: JsonObject, scenario: JsonObject, units: List<JsonObject>) {
+        val types = typesLoadedBy(scenario, setOf("submarine"))
+        if (types.isEmpty()) return
+        val sources = units.filter { it.id("typeId") in types }.map { it.id("unitId") }.toSet()
+        fun invalid(reason: String): Nothing = throw Incomplete("submarine-projectile", reason)
+        fun validate(shot: JsonObject) {
+            val source = (shot["sourceUnitId"] as? JsonPrimitive)?.content
+            val appearance = shot["appearance"] as? JsonPrimitive
+            if (appearance?.isString != true || appearance.content !in setOf("STANDARD", "SUBMARINE_MISSILE", "SUBMARINE_TORPEDO"))
+                invalid("Missing or unknown launch appearance")
+            if (source !in sources) {
+                if (appearance.content != "STANDARD") invalid("Submarine launch appearance on an unsupported source")
+                return
+            }
+            // The existing native single-weapon channel exports null, unlike authored named-weapon channels.
+            if (shot["sourceWeaponName"] != JsonNull || appearance.content == "STANDARD") invalid("Invalid native submarine launch identity")
+            if (listOf("ground", "missile").any { shot[it] != null && shot[it] != JsonNull }) invalid("Incompatible submarine projectile profile")
+            val ballistic = shot["ballistic"]
+            if (appearance.content == "SUBMARINE_TORPEDO") {
+                if (ballistic != null && ballistic != JsonNull) invalid("Underwater torpedo cannot be ballistic")
+            } else {
+                val state = ballistic as? JsonObject ?: invalid("Missing surface missile ballistic state")
+                if (state.keys != setOf("speed", "reachedApex", "rawAz") || state["reachedApex"] !in setOf(b(true), b(false)))
+                    invalid("Incomplete surface missile ballistic state")
+                for (field in listOf("speed", "rawAz")) {
+                    val value = state[field] as? JsonPrimitive
+                    val number = value?.doubleOrNull
+                    if (value == null || value.isString || number == null || !number.isFinite() || !number.toFloat().isFinite() ||
+                        field == "speed" && number < 0.0) invalid("Invalid surface missile $field")
+                }
+            }
+        }
+        observation.arrayAt("projectiles").forEach { validate(it.jsonObject) }
+        observation.arrayAt("projectileEvents").forEach { validate(it.jsonObject.objectAt("projectile")) }
     }
 
     private fun validateShieldSample(unit: JsonObject, required: Boolean) {
@@ -653,7 +724,22 @@ object TraceComparator {
                 val units = player.arrayAt("units").map { it.jsonObject }
                 if (units.map { it.id("unitId") }.toSet() != visible.toSet() || units.size != visible.size)
                     throw Incomplete("player-units", "Incomplete visible unit samples")
-                units.forEach { validateUnitSample(it, scenario) }
+                units.forEach { validateUnitSample(it, scenario, id, observation.number("simulationTime") == 0.0) }
+                if (typesLoadedBy(scenario, setOf("submarine")).isNotEmpty()) {
+                    for (field in listOf("projectiles", "projectileEvents")) for (element in player.arrayAt(field)) {
+                        val shot = element.jsonObject
+                        val style = shot["appearance"] as? JsonPrimitive
+                        if (style?.isString != true || style.content !in setOf("STANDARD", "SUBMARINE_MISSILE", "SUBMARINE_TORPEDO"))
+                            throw Incomplete("submarine-projectile", "Missing or unknown authorized launch appearance")
+                        // Public projectile rows deliberately omit hidden source identity; never infer it from depth.
+                        val source = (shot["sourceUnitId"] as? JsonPrimitive)?.content
+                        if (source != null) {
+                            val unit = units.singleOrNull { it["unitId"] == s(source) }
+                            if (unit != null && (unit.id("typeId") in typesLoadedBy(scenario, setOf("submarine"))) != (style.content != "STANDARD"))
+                                throw Incomplete("submarine-projectile", "Authorized source and launch appearance differ")
+                        }
+                    }
+                }
                 val local = scenario.arrayAt("players").map { it.jsonObject }.single { it.id("playerId") == id }.text("control") == "local"
                 val factoryTypes = typesLoadedBy(scenario, setOf("factory", "command-center", "author-producer", "author-upgrading-producer"))
                 val factories = units.filter { local && it.id("ownerPlayerId") == id && it["alive"] == b(true) && it.id("typeId") in factoryTypes }

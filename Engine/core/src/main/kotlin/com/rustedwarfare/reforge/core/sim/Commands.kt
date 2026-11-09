@@ -8,6 +8,16 @@ sealed interface Action {
     val atStep: Long?
 }
 
+/** Native Surface/Dive intent, independent from actual depth and the current movement order. */
+data class SubmarineDepthAction(
+    override val actionId: String,
+    override val actorPlayerId: String,
+    override val unitId: String,
+    val surface: Boolean,
+    override val world: WorldHandle,
+    override val atStep: Long? = null,
+) : Action
+
 data class BuildAction(
     override val actionId: String,
     override val actorPlayerId: String,

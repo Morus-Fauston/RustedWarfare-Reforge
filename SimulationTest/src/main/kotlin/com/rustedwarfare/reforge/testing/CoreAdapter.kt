@@ -25,6 +25,7 @@ internal class CoreAdapter(private val input: LoadedScenario) : AutoCloseable {
         val unit = value.id("unitId")
         // Submit at the current explicit boundary; preserve file order and the core's permission checks.
         val action = when (value.text("kind")) {
+            "submarine-depth" -> SubmarineDepthAction(id, actor, unit, value.required("surface").jsonPrimitive.boolean, context.world)
             "move" -> MoveAction(id, actor, unit, position(value.objectAt("target")), context.world)
             "build" -> BuildAction(id, actor, unit, value.id("buildingTypeId"), position(value.objectAt("target")),
                 value.id("buildingNonce"), context.world, append = value.required("append").jsonPrimitive.boolean)
@@ -63,6 +64,7 @@ internal class CoreAdapter(private val input: LoadedScenario) : AutoCloseable {
             val namedWeapons = mapOf(
                 "weapons" to array(view.weapons.map { it.json() }),
                 "projectiles" to array(view.projectiles.map { obj("token" to s(it.token), "multiplicity" to n(it.multiplicity),
+                    "appearance" to s(it.appearance.name),
                     "position" to it.position.json(), "heading" to n(it.heading), "height" to n(it.height),
                     "parentToken" to it.parentToken?.let(::s), "areaRadius" to it.areaRadius?.let(::n)) }),
                 "projectileEvents" to array(view.projectileEvents.map { it.json() }))
@@ -147,6 +149,7 @@ internal fun UnitWeaponObservation.json() = obj("unitId" to s(unitId), "weaponNa
     "idle" to idle?.let { obj("baseHeading" to n(it.baseHeading), "timer" to n(it.timer),
         "offset" to n(it.offset), "direction" to n(it.direction), "reached" to b(it.reached), "hold" to n(it.hold)) })
 internal fun ProjectileObservation.json() = obj("objectId" to n(objectId), "sourceUnitId" to s(sourceUnitId),
+    "appearance" to s(appearance.name),
     "sourceWeaponName" to sourceWeaponName?.let(::s), "targetUnitId" to targetUnitId?.let(::s),
     "position" to position.json(), "heading" to n(heading), "remainingLife" to n(remainingLife),
     "offset" to offset.json(), "scatter" to n(scatter), "height" to n(height), "age" to n(age),
@@ -160,6 +163,7 @@ internal fun ProjectileObservation.json() = obj("objectId" to n(objectId), "sour
             "reachedApex" to b(it.reachedApex), "rawAz" to n(it.rawAz)))) } ?: fields
     }
 internal fun VisibleProjectileEvent.json() = obj("token" to s(token), "kind" to s(kind), "occurrences" to n(occurrences),
+    "appearance" to s(appearance.name),
     "position" to position.json(), "heading" to n(heading), "height" to n(height),
     "sourceUnitId" to sourceUnitId?.let(::s), "sourceWeaponName" to sourceWeaponName?.let(::s),
     "targetUnitId" to targetUnitId?.let(::s), "damage" to damage?.let(::n),
@@ -182,6 +186,9 @@ internal fun UnitObservation.json(capabilities: Boolean): JsonObject = JsonObjec
     flightPose?.let { put("height", n(height)); put("flightPose", it.json()) }
     waterPose?.let { put("height", n(height)); put("waterPose", obj(
         "reversing" to b(it.reversing), "sinkSpeed" to n(it.sinkSpeed), "settled" to b(it.settled))) }
+    submarine?.let { put("height", n(height)); put("submarine", obj("surfaceIntent" to it.surfaceIntent?.let(::b),
+        "verticalSpeed" to it.verticalSpeed?.let(::n), "underwater" to b(it.underwater),
+        "surfacePresentation" to b(it.surfacePresentation), "maximumSpeed" to n(it.maximumSpeed), "attackRange" to n(it.attackRange))) }
     // This finite loader requires matching declared/source identity, including singular declarations.
     if (typeId == "navalUnderwaterTarget") put("height", n(height))
     if (capabilities) putAll(mapOf("health" to (health?.let(::n) ?: JsonNull),

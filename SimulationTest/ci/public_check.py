@@ -50,7 +50,7 @@ def source_files(repo):
               'SimulationTest/settings.gradle.kts', 'SimulationTest/gradle.properties',
               'SimulationTest/gradlew', 'SimulationTest/gradlew.bat']]
     paths += [repo / 'SimulationTest/tools' / name for name in
-              ['platform_scenario.py', 'test_platform_scenario.py', 'platform_wait.py', 'test_platform_wait.py', 'test_platform_session_cli.py', 'test_named_weapon_platform.py',
+              ['platform_scenario.py', 'test_platform_scenario.py', 'platform_wait.py', 'test_platform_wait.py', 'test_platform_session_cli.py', 'test_named_weapon_platform.py', 'test_submarine_platform.py',
                'workflow_scenarios.py', 'test_workflow_scenarios.py',
                'diagnostic_reader.py', 'test_diagnostic_reader.py',
                'action_layout.py', 'test_action_layout.py',

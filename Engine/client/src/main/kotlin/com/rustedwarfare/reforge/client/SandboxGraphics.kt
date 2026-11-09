@@ -341,7 +341,9 @@ class SandboxGraphics private constructor(private val resources: SandboxRenderRe
             val x = projection.x(projectile.position.x)
             val y = projection.y(projectile.position.y) + (projectile.height * projection.scale).toFloat()
             val areaRadius = projectile.areaRadius
-            if (areaRadius == null) shapes.circle(x, y, 2f, 8)
+            val appearance = projectile.appearance
+            shapes.setColor(appearance.red / 255f, appearance.green / 255f, appearance.blue / 255f, 1f)
+            if (areaRadius == null) shapes.circle(x, y, appearance.drawSize, 8)
             else if (areaRadius > 0f) shapes.circle(x, y, (areaRadius * projection.scale).toFloat(), 48)
         }
         val now = System.nanoTime()

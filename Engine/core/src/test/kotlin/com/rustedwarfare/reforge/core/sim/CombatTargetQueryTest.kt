@@ -17,9 +17,9 @@ class CombatTargetQueryTest {
         tank.imagePath,tank.imageScale,tank.movement,tank.retainedUnconsumed,tank.fogOfWarSightRange,
         checkNotNull(tank.combat).let { it.copy(projectile=it.projectile.copy(directDamage=0.0)) })
     private fun nearest(units:Collection<MutableUnit>,coordinates:CoordinatePolicy=ScreenPlane) =
-        CombatTargetQuery.nearestEnemy(actor,units,scene.players,coordinates)
+        CombatTargetQuery.nearestEnemy(actor,units,scene.players,coordinates,scene.map)
     private fun patrol(units:Collection<MutableUnit>,visible:(String,Position)->Boolean={_,_->true}) =
-        CombatTargetQuery.patrolEnemy(actor,units,scene.players,visible)
+        CombatTargetQuery.patrolEnemy(actor,units,scene.players,visible,scene.map)
 
     @Test
     fun ordinary_armed_priority_and_stable_equal_distance_are_independent_of_ids() {
@@ -52,7 +52,7 @@ class CombatTargetQueryTest {
         val candidates=listOf(actor,unit("own",1.0,owner="p1"),unit("ally",2.0),
             unit("dead",3.0,owner="p3").also { it.health=0.0 },
             unit("healthless",4.0,owner="p3").also { it.health=null },enemy)
-        assertSame(enemy,CombatTargetQuery.nearestEnemy(actor,candidates,players,ScreenPlane))
+        assertSame(enemy,CombatTargetQuery.nearestEnemy(actor,candidates,players,ScreenPlane,scene.map))
         assertTrue(CombatTargetQuery.isEnemy(actor,enemy,players))
         assertFalse(CombatTargetQuery.isEnemy(actor,candidates[2],players))
     }

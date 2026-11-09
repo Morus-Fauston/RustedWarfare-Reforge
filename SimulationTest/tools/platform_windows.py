@@ -53,7 +53,9 @@ def validate_windows_plan(plan,contract):
                     not 0<segment.get('stallSeconds',0)<=segment.get('maximumWallSeconds',0)<=60):
                 raise PlatformError('input-contract','Invalid declared waiting segment',1)
     action_types={'select':'SelectAction','move':'MoveAction','build':'BuildAction','upgrade':'UpgradeAction',
-                  'produce':'ProduceAction','attack':'AttackAction','stop':'StopAction'}
+                  'produce':'ProduceAction','attack':'AttackAction','stop':'StopAction','submarine-depth':'SubmarineDepthAction'}
+    if any(i.get('kind')=='submarine-depth' and type(i.get('surface')) is not bool for i in intents):
+        raise PlatformError('input-contract','Submarine intention requires a strict surface boolean',1)
     if history:
         if any(i.get('kind') not in action_types for i in intents):
             raise PlatformError('input-contract','Unsupported Windows history intention',1)
@@ -330,6 +332,8 @@ def run_windows(scenario, contract, distribution, output, size, java='java', rat
                     guard.click(*world(intent['position']), button='right')
                 elif kind == 'stop':
                     click_action('stop')
+                elif kind == 'submarine-depth':
+                    click_action('submarine-surface' if intent['surface'] else 'submarine-dive')
                 elif kind == 'produce':
                     click_action('produce:'+intent['typeId'])
                 elif kind == 'cancelProduction':

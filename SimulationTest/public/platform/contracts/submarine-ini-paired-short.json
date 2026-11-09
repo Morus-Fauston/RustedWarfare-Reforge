@@ -1,0 +1,38 @@
+{
+  "schemaVersion": 1,
+  "scenarioId": "p009-submarine-production",
+  "rules": [
+    {
+      "intentId": "choose"
+    },
+    {
+      "intentId": "surface"
+    },
+    {
+      "intentId": "dive"
+    },
+    {
+      "intentId": "move"
+    },
+    {
+      "intentId": "stop"
+    }
+  ],
+  "history": {
+    "initialBalance": 12000,
+    "initialOwnedTypes": [
+      "attackSubmarine"
+    ],
+    "projectileBirthsRequired": true,
+    "finalUnits": [
+      {
+        "unitId": "sub",
+        "fields": {
+          "alive": true,
+          "height": -8,
+          "moveTarget": null
+        }
+      }
+    ]
+  }
+}

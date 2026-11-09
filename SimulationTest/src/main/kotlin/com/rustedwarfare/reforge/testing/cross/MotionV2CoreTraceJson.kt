@@ -11,6 +11,7 @@ internal object MotionV2CoreTraceJson {
     private fun action(a:Action?):JsonElement=a?.let { obj("actionId" to s(it.actionId),"actorPlayerId" to s(it.actorPlayerId),
         "unitId" to s(it.unitId),"worldId" to s(it.world.id),"atStep" to it.atStep?.let(::n),
         "kind" to s(when(it) { is MoveAction->"move";is StopAction->"stop";is SelectAction->"select"
+            is SubmarineDepthAction->error("Movement v2 trace does not support SubmarineDepthAction")
             is AttackAction->error("Movement v2 trace does not support AttackAction")
             is PatrolAction->error("Movement v2 trace does not support PatrolAction")
             is BuildAction,is ResumeConstructionAction,is RepairBuildingAction,is ReclaimBuildingAction->

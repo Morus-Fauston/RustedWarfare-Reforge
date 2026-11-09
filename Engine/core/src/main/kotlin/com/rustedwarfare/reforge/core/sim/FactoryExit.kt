@@ -13,7 +13,7 @@ internal object FactoryExit {
         val building = definition.building ?: return false
         val t2 = definition.id == "seaFactoryT2"
         return definition.id in setOf("seaFactory", "seaFactoryT2") &&
-            definition.production == ProductionProfile(if (t2) listOf("heavyBattleship") else emptyList(), FactoryExitProfile.NATIVE_SEA) &&
+            definition.production == ProductionProfile(if (t2) listOf("heavyBattleship", "attackSubmarine") else listOf("attackSubmarine"), FactoryExitProfile.NATIVE_SEA) &&
             definition.build == BuildProfile(if (t2) 3000L else 1000L, .0007f) &&
             definition.construction == ConstructionProfile(if (t2) 3000L else 1000L, .0007f) &&
             definition.radius == 45.0 && definition.maximumHealth == 1000.0 &&

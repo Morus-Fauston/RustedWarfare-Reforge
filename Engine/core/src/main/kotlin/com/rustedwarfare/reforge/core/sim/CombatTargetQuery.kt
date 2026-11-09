@@ -2,6 +2,7 @@ package com.rustedwarfare.reforge.core.sim
 
 import com.rustedwarfare.reforge.core.content.MovementType
 import com.rustedwarfare.reforge.core.content.NamedWeaponDefinition
+import com.rustedwarfare.reforge.core.content.MapDefinition
 
 /** Queries current candidate objects in gameplay order; no position or membership survives a call. */
 internal object CombatTargetQuery {
@@ -9,7 +10,7 @@ internal object CombatTargetQuery {
         target.definition.movement.type == MovementType.AIR && target.height >= 4.0
 
     fun isUnderwater(target: MutableUnit): Boolean =
-        target.definition.fixedUnderwaterTarget != null && target.height <= -1.0
+        SubmarineMotion.submerged(target) || target.definition.fixedUnderwaterTarget != null && target.height <= -1.0
 
     /** Physical flying takes precedence; negative ordinary heights do not grant underwater capability. */
     fun weaponAllows(target: MutableUnit, weapon: NamedWeaponDefinition): Boolean = when {
@@ -19,7 +20,14 @@ internal object CombatTargetQuery {
     }
 
     /** Common target category envelope for manual intent and gameplay candidate selection. */
-    fun canAttackAirCategory(actor: MutableUnit, target: MutableUnit): Boolean {
+    fun canAttackAirCategory(actor: MutableUnit, target: MutableUnit, map: MapDefinition): Boolean {
+        if (actor.definition.submarine != null) {
+            val submerged = SubmarineMotion.submerged(actor)
+            if (isFlying(target)) return !submerged
+            if (isUnderwater(target)) return submerged
+            return !submerged || target.height <= 2.0 && map.isOverWater(
+                (target.position.x / map.tileWidth).toInt(), (target.position.y / map.tileHeight).toInt())
+        }
         // Preserve surface intent and non-shooting parent tracking; only the explicit special
         // categories require an actor-wide shooting capability before per-weapon qualification.
         if (target.definition.movement.type != MovementType.AIR && !isUnderwater(target)) return true
@@ -35,15 +43,16 @@ internal object CombatTargetQuery {
             (team == null || players.single { it.playerId == target.ownerPlayerId }.teamId != team)
 
     fun nearestEnemy(actor: MutableUnit, candidates: Collection<MutableUnit>, players: List<Player>,
-                     coordinates: CoordinatePolicy): MutableUnit? {
+                     coordinates: CoordinatePolicy, map: MapDefinition): MutableUnit? {
         val weapon = actor.definition.combat ?: return null
         val team = players.single { it.playerId == actor.ownerPlayerId }.teamId
-        val rangeSquared = weapon.attackRange * weapon.attackRange
+        val range = SubmarineCombat.range(actor)
+        val rangeSquared = range * range
         var chosen: MutableUnit? = null
         var chosenDistance = 0.0
         var chosenArmed = false
         for (candidate in candidates) {
-            if (!isEnemy(actor.ownerPlayerId, team, candidate, players) || !canAttackAirCategory(actor, candidate)) continue
+            if (!isEnemy(actor.ownerPlayerId, team, candidate, players) || !canAttackAirCategory(actor, candidate, map)) continue
             val distance = coordinates.distanceSquared(actor.position, candidate.position)
             if (!(distance < rangeSquared)) continue
             val armed = candidate.definition.combat != null
@@ -58,16 +67,16 @@ internal object CombatTargetQuery {
     }
 
     fun patrolEnemy(actor: MutableUnit, candidates: Collection<MutableUnit>, players: List<Player>,
-                    visible: (String, Position) -> Boolean): MutableUnit? {
+                    visible: (String, Position) -> Boolean, map: MapDefinition): MutableUnit? {
         val weapon = actor.definition.combat ?: return null
         val team = players.single { it.playerId == actor.ownerPlayerId }.teamId
-        val range = maxOf(weapon.attackRange.toFloat() + 110f, 190f)
+        val range = maxOf(SubmarineCombat.range(actor).toFloat() + 110f, 190f)
         var anyDistance = range * range + 1f
         var armedDistance = anyDistance
         var any: MutableUnit? = null
         var armed: MutableUnit? = null
         for (candidate in candidates) {
-            if (!isEnemy(actor.ownerPlayerId, team, candidate, players) || !canAttackAirCategory(actor, candidate) ||
+            if (!isEnemy(actor.ownerPlayerId, team, candidate, players) || !canAttackAirCategory(actor, candidate, map) ||
                 !visible(actor.ownerPlayerId, candidate.position) ||
                 !(kotlin.math.abs(actor.position.x.toFloat() - candidate.position.x.toFloat()) <= range) ||
                 !(kotlin.math.abs(actor.position.y.toFloat() - candidate.position.y.toFloat()) <= range)) continue
@@ -81,7 +90,7 @@ internal object CombatTargetQuery {
                 armed = candidate
             }
         }
-        val attackRange = weapon.attackRange.toFloat()
+        val attackRange = SubmarineCombat.range(actor).toFloat()
         return if (armed == null || armedDistance >= attackRange * attackRange) any else armed
     }
 

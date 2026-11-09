@@ -42,7 +42,7 @@ class NavalNativePanelTest {
             SandboxSession(input).use { session ->
                 session.select(Position(450.0, 150.0))
                 if (tier == "seaFactory") {
-                    assertTrue(session.productionActions.isEmpty())
+                    assertEquals(listOf("attackSubmarine"), session.productionActions.map { it.typeId })
                     val upgrade = session.actionMenu.upgrades.single()
                     assertEquals("Sea factory T2", upgrade.title)
                     assertEquals(2000L, upgrade.profile.price)
@@ -55,12 +55,13 @@ class NavalNativePanelTest {
                     press(cancel, false); assertEquals(12000L, session.observation.balance)
                     assertTrue(session.observation.upgradeQueues.single().items.isEmpty())
                 } else {
-                    val product = session.productionActions.single()
+                    assertEquals(listOf("heavyBattleship", "attackSubmarine"), session.productionActions.map { it.typeId })
+                    val product = session.productionActions.single { it.typeId == "heavyBattleship" }
                     assertEquals("heavyBattleship", product.typeId)
                     assertEquals("Heavy battleship", product.title)
                     assertEquals(6000L, product.price)
                     val buy = actor(NativeActionPanel.production.first(), ProductionButtonInput({ session }, { true },
-                        typeId = { session.productionActions.single().typeId }))
+                        typeId = { session.productionActions.first().typeId }))
                     press(buy, true); assertEquals(12000L, session.observation.balance)
                     press(buy, false); assertEquals(6000L, session.observation.balance)
                     assertEquals(listOf("heavyBattleship"), session.observation.factoryQueues.single().items.map { it.typeId })

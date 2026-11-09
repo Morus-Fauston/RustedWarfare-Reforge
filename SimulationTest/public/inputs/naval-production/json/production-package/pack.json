@@ -30,6 +30,10 @@
     {
       "type": "helicopter",
       "file": "units/air/helicopter.json"
+    },
+    {
+      "type": "submarine",
+      "file": "units/submarine/submarine.json"
     }
   ]
 }

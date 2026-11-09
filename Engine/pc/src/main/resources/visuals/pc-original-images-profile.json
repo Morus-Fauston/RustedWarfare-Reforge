@@ -6214,11 +6214,13 @@
     "hover-body": "res/drawable/hover_tank.png",
     "hover-dead": "res/drawable/hover_tank_dead.png",
     "hover-shadow": "res/drawable/hover_tank_shadow.png",
-    "heavy-shield": "res/drawable/shield_mid.png"
+    "heavy-shield": "res/drawable/shield_mid.png",
+    "submarine-body": "res/drawable/attack_submarine.png",
+    "submarine-dead": "res/drawable/attack_submarine_dead.png"
   },
   "mappingBasis": {
     "androidProfileSha256": "e273280ab37b1a24714e6b15d8e1cb14fdd395e228ea7c71a62dd2f24d334780",
-    "scope": "Fifty-three qualified source images; six new naval image recipes and seven aliases for stock heavy battleship and Sea T1/T2. Shared turret serves the two visible main turrets; missile launchers stay invisible. T2 dead reuses T1. All prior recipes and the complete original source collection remain unchanged. Static mapping, no original gameplay execution or all-image rendering claim."
+    "scope": "Qualified PC image snapshot and reviewed finite mappings, including native submarine body/dead at 12x40; PC-only additions do not assert an Android source or original gameplay execution. The complete source inventory is unchanged."
   },
   "mappingSources": [
     {
@@ -6252,6 +6254,22 @@
       "width": 92,
       "height": 92,
       "id": "heavy-shield"
+    },
+    {
+      "path": "res/drawable/attack_submarine.png",
+      "bytes": 776,
+      "sha256": "781ec1b35171d07ccb4d8c217ea2ca653e78237b0296486c99eea54251f9d85d",
+      "width": 12,
+      "height": 40,
+      "id": "submarine-body"
+    },
+    {
+      "path": "res/drawable/attack_submarine_dead.png",
+      "bytes": 495,
+      "sha256": "71b370c9186510e3cfd04a97fb0e1abb4d94a704af9d7b3b61e3067682f4bfd2",
+      "width": 12,
+      "height": 40,
+      "id": "submarine-dead"
     }
   ],
   "mappingUnitOutputs": {
@@ -6318,6 +6336,38 @@
         92
       ],
       "frames": 1
+    },
+    "submarine-body": {
+      "file": "units/submarine-body.png",
+      "operation": "crop",
+      "source": "submarine-body",
+      "rect": [
+        0,
+        0,
+        12,
+        40
+      ],
+      "target": [
+        12,
+        40
+      ],
+      "frames": 1
+    },
+    "submarine-dead": {
+      "file": "units/submarine-dead.png",
+      "operation": "crop",
+      "source": "submarine-dead",
+      "rect": [
+        0,
+        0,
+        12,
+        40
+      ],
+      "target": [
+        12,
+        40
+      ],
+      "frames": 1
     }
   },
   "mappingUnitBindings": {
@@ -6335,6 +6385,10 @@
         "smallLaser": "heavy-mech-small-turret"
       },
       "shield": "heavy-shield"
+    },
+    "attackSubmarine": {
+      "body": "submarine-body",
+      "dead": "submarine-dead"
     }
   }
 }

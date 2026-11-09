@@ -11,7 +11,7 @@ class BattleshipContentTest {
             val pack = assertIs<ContentResult.Success<LoadedContentPack>>(ContentLoader.loadContentPack(
                 fixtures.resolve("naval-production/$format/production-package"))).value
             val set = assertIs<ContentResult.Success<LoadedContentSet>>(ContentLoader.composeContentPacks(listOf(pack))).value
-            assertEquals(setOf("heavyBattleship", "seaFactory", "seaFactoryT2", "navalUnderwaterTarget", "builder", "c_tank", "helicopter"), set.units.keys)
+            assertEquals(setOf("heavyBattleship", "seaFactory", "seaFactoryT2", "navalUnderwaterTarget", "builder", "c_tank", "helicopter", "attackSubmarine"), set.units.keys)
             val ship = set.units.getValue("heavyBattleship")
             assertEquals(4000.0, ship.maximumHealth)
             assertEquals(40.0, ship.radius)

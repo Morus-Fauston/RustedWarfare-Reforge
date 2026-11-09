@@ -97,6 +97,9 @@ object ContentLoader {
     fun loadUnderwaterTargetUnit(path: Path): ContentResult<UnitDefinition> =
         load(path) { UnderwaterTargetContentReader.readWithSources(it) {}.definition }
 
+    fun loadSubmarineWithSources(path: Path): ContentResult<LoadedUnitContent> =
+        load(path) { com.rustedwarfare.reforge.core.content.internal.SubmarineContentReader.readWithSources(it) {} }
+
     fun loadDeclaredTankWithSources(path: Path): ContentResult<LoadedUnitContent> =
         load(path) { CombatContentReader.readDeclaredWithSources(it) }
 

@@ -76,6 +76,10 @@ object PlatformSessionRunner {
                         "cancelProduction" -> session.cancelProduction(intent.id("typeId"))
                         "move" -> session.move(intent.objectAt("position").let { Position(it.number("x"), it.number("y")) })
                         "stop" -> session.stop()
+                        "submarine-depth" -> {
+                            if (intent.required("surface") !in setOf(b(true), b(false))) throw InputError("Expected submarine surface boolean")
+                            session.submarineDepth(intent.required("surface").jsonPrimitive.boolean)
+                        }
                         "attack" -> session.command(intent.objectAt("position").let { Position(it.number("x"), it.number("y")) })
                         "build" -> session.build(intent.id("typeId"),
                             intent.objectAt("position").let { Position(it.number("x"), it.number("y")) })

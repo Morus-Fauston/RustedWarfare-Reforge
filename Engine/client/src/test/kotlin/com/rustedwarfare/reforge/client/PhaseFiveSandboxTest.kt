@@ -173,7 +173,7 @@ class PhaseFiveSandboxTest {
             val choice = TestScenarioChoice.open(publicRoot.resolve("scenarios/phase-five-$format.json"))
             assertEquals("commandCenter", choice.content.unitId)
             assertEquals(setOf("commandCenter", "builder", "landFactory", "mechFactory", "mechFactoryT2",
-                "airFactory", "seaFactory", "seaFactoryT2", "c_tank", "mechGun", "mechHeavyMissile", "helicopter", "heavyBattleship"),
+                "airFactory", "seaFactory", "seaFactoryT2", "c_tank", "mechGun", "mechHeavyMissile", "helicopter", "heavyBattleship", "attackSubmarine"),
                 choice.content.content.units.keys)
             choice.verifyStable()
             SandboxSession(choice.scenario).use { session ->

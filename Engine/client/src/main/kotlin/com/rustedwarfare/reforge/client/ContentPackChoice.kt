@@ -69,10 +69,11 @@ fun contentPackVisuals(visuals: PreparedVisualAssets, choice: ContentPackChoice)
 
 /** Reuses the existing controlled combat layout, not a new map or spawn-file interpreter. */
 internal fun contentPackScenario(root: Path, choice: ContentPackChoice): Scenario {
-    val naval = choice.unitId in setOf("builder", "seaFactory", "seaFactoryT2", "heavyBattleship", "c_tank", "helicopter") &&
+    val naval = choice.unitId in setOf("builder", "seaFactory", "seaFactoryT2", "heavyBattleship", "attackSubmarine", "c_tank", "helicopter") &&
         choice.content.units["heavyBattleship"]?.movement?.type == MovementType.WATER &&
         choice.content.units["seaFactory"]?.production?.exitProfile == FactoryExitProfile.NATIVE_SEA &&
-        choice.content.units["seaFactoryT2"]?.production?.unitTypeIds == listOf("heavyBattleship") &&
+        choice.content.units["seaFactoryT2"]?.production?.unitTypeIds == listOf("heavyBattleship", "attackSubmarine") &&
+        choice.content.units["attackSubmarine"]?.submarine == SubmarineProfile.NATIVE &&
         choice.content.units["builder"]?.builder?.buildingTypeIds == listOf("seaFactory") &&
         choice.content.units["c_tank"]?.movement?.type == MovementType.LAND &&
         choice.content.units["helicopter"]?.rotor != null &&
@@ -98,7 +99,7 @@ internal fun contentPackScenario(root: Path, choice: ContentPackChoice): Scenari
         TimeModel("p001.time.v1", "sim-tick", "ieee754-binary64", "fixed-explicit-delta"), MovementContract(16.0, 4.0),
         combatContract = CombatContract(12345, -1, mapOf("a" to 8L, "b" to 9L), 10L),
         economyContract = EconomyContract(mapOf("p1" to 5000L, "p2" to 0L)))
-    if (naval) return Scenario("p008-naval-production", map, choice.content.units,
+    if (naval) return Scenario(if (choice.unitId == "attackSubmarine") "p009-submarine-production" else "p008-naval-production", map, choice.content.units,
         listOf(Player("p1", PlayerControl.LOCAL, "one"), Player("p2", PlayerControl.NONE, "two")),
         listOf(UnitSpawn("a", "p1", "builder", Position(390.0, 150.0), 90.0),
             UnitSpawn("b", "p2", "c_tank", Position(330.0, 550.0), 270.0),

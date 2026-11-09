@@ -142,6 +142,9 @@ internal fun UnitObservation.fields(): Map<String, Any?> {
     )
     unit.mechPose?.let { values["mechPose"] = it.fields() }
     unit.shield?.let { values["shield"] = mapOf("current" to it.current, "maximum" to it.maximum, "displayDamage" to it.displayDamage) }
+    unit.submarine?.let { values["submarine"] = mapOf("surfaceIntent" to it.surfaceIntent,
+        "verticalSpeed" to it.verticalSpeed, "underwater" to it.underwater, "surfacePresentation" to it.surfacePresentation,
+        "maximumSpeed" to it.maximumSpeed, "attackRange" to it.attackRange) }
     unit.flightPose?.let { values["flightPose"] = it.fields() }
     unit.hoverPose?.let { values["hoverPose"] = mapOf("velocity" to it.velocity.fields(), "heightPhase" to it.heightPhase) }
     unit.waterPose?.let { values["waterPose"] = mapOf(
@@ -172,13 +175,15 @@ internal fun PlayerObservation.fields(includeKnowledge: Boolean = true): Map<Str
         "visionEpoch" to vision?.epoch,
         "projectiles" to projectiles.map { mapOf("token" to it.token, "multiplicity" to it.multiplicity,
             "position" to it.position.fields(), "heading" to it.heading, "height" to it.height, "parentToken" to it.parentToken) +
-                (it.areaRadius?.let { radius -> mapOf("areaRadius" to radius) } ?: emptyMap()) },
+                (it.areaRadius?.let { radius -> mapOf("areaRadius" to radius) } ?: emptyMap()) +
+                (if (it.appearance != ProjectileAppearance.STANDARD) mapOf("appearance" to it.appearance.name) else emptyMap()) },
         "projectileEvents" to projectileEvents.map { mapOf("token" to it.token, "kind" to it.kind,
             "occurrences" to it.occurrences, "position" to it.position.fields(), "heading" to it.heading,
             "height" to it.height, "sourceUnitId" to it.sourceUnitId, "targetUnitId" to it.targetUnitId,
             "damage" to it.damage, "parentToken" to it.parentToken, "interceptorUnitId" to it.interceptorUnitId) +
                 (it.areaRadius?.let { radius -> mapOf("areaRadius" to radius) } ?: emptyMap()) +
-                (it.sourceWeaponName?.let { name -> mapOf("sourceWeaponName" to name) } ?: emptyMap()) },
+                (it.sourceWeaponName?.let { name -> mapOf("sourceWeaponName" to name) } ?: emptyMap()) +
+                (if (it.appearance != ProjectileAppearance.STANDARD) mapOf("appearance" to it.appearance.name) else emptyMap()) },
         "knowledge" to (if (includeKnowledge) knowledge?.cells?.map { mapOf("visible" to it.visible,
             "blocked" to it.lastKnownBlocked, "gid" to it.lastKnownGroundGid) } else null),
     ) + (balance?.let { mapOf("balance" to it, "factoryQueues" to factoryQueues.map { factory ->

@@ -368,6 +368,22 @@ def validate_history_poses(units, policy):
     def point(value):
         return isinstance(value, dict) and set(value) == {'x','y'} and all(number(v) for v in value.values())
     for unit in units:
+        if unit.get('typeId')=='attackSubmarine':
+            state=unit.get('submarine');height=unit.get('height')
+            if (not isinstance(state,dict) or set(state)!={'surfaceIntent','verticalSpeed','underwater','surfacePresentation','maximumSpeed','attackRange'} or
+                    not number(height) or type(state.get('underwater')) is not bool or state['underwater']!=(height < -1) or
+                    type(state.get('surfacePresentation')) is not bool or
+                    not number(state.get('maximumSpeed')) or state['maximumSpeed']!=(.45 if height < -1 else .8) or
+                    not number(state.get('attackRange')) or state['attackRange']!=(180 if height < -1 else 250)):
+                raise PlatformError('history-submarine','Missing or inconsistent physical submarine state',2)
+            if unit.get('ownerPlayerId')==policy.get('ownerPlayerId','p1'):
+                if (type(state.get('surfaceIntent')) is not bool or not number(state.get('verticalSpeed')) or
+                        not 0<=state['verticalSpeed']<=.08):
+                    raise PlatformError('history-submarine','Missing or invalid owner submarine control state',2)
+            elif state['surfaceIntent'] is not None or state['verticalSpeed'] is not None:
+                raise PlatformError('history-submarine','Enemy submarine control state must be redacted',2)
+        elif unit.get('submarine') is not None:
+            raise PlatformError('history-submarine','Unsupported submarine capability in the archive',2)
         expected = counts.get(unit.get('typeId'))
         if expected is None:
             if 'mechPose' in unit:
@@ -421,6 +437,19 @@ def validate_history_action(records, row, intent, geometry=None):
     if 'targetUnitId' in intent:fields['targetUnitId']=intent['targetUnitId']
     if any(row.get(key)!=value for key,value in fields.items()):
         raise PlatformError('history-action-fields','Formal action parameters differ from the fixed intention',2)
+    if kind=='submarine-depth':
+        if type(intent.get('surface')) is not bool or type(row.get('surface')) is not bool or row['surface']!=intent['surface']:
+            raise PlatformError('history-action-fields','Submarine action differs from the fixed surface boolean',2)
+        old=next(u for u in left['units'] if u['unitId']==identity)
+        new=next(u for u in right['units'] if u['unitId']==identity)
+        state_old,state_new=old.get('submarine'),new.get('submarine')
+        if (old.get('typeId')!='attackSubmarine' or not isinstance(state_old,dict) or not isinstance(state_new,dict) or
+                type(state_old.get('surfaceIntent')) is not bool or state_old['surfaceIntent']==intent['surface'] or
+                type(state_new.get('surfaceIntent')) is not bool or state_new['surfaceIntent']!=intent['surface'] or
+                set(state_old)!=set(state_new) or
+                any(state_old[k]!=state_new[k] for k in state_old if k!='surfaceIntent') or
+                any(k not in old or k not in new or old[k]!=new[k] for k in ('height','position','moveTarget','tasks'))):
+            raise PlatformError('history-action-fields','Depth intention must preserve physical state and the existing route',2)
     def same_point(actual,expected,limits=None):
         return all(isinstance(p,dict) and set(p)=={'x','y'} and all(
             type(p[k]) in (int,float) and math.isfinite(p[k]) for k in ('x','y'))
@@ -509,6 +538,7 @@ def compare_history(records, plan, policy, native_anchors=None, geometry=None):
     if type(require_births) is not bool:
         raise PlatformError('input-contract', 'Projectile birth coverage must be explicitly boolean', 1)
     known_projectiles = set()
+    launch_appearances = {}
     births=policy.get('minimumBirths',[])
     if (not isinstance(births,list) or any(not isinstance(b,dict) or
             set(b)!={'ownerPlayerId','typeId','weaponNames','targetUnitId'} or
@@ -578,7 +608,8 @@ def compare_history(records, plan, policy, native_anchors=None, geometry=None):
                 raise PlatformError('history-action', 'Missing, rejected or reused formal action', 2)
             action_ids.add(action_id); action_count += 1
             expected_type = {'select':'SelectAction', 'build':'BuildAction', 'upgrade':'UpgradeAction',
-                'produce':'ProduceAction', 'move':'MoveAction', 'stop':'StopAction', 'attack':'AttackAction'}.get(
+                'produce':'ProduceAction', 'move':'MoveAction', 'stop':'StopAction', 'attack':'AttackAction',
+                'submarine-depth':'SubmarineDepthAction'}.get(
                     intents.get(active, {}).get('kind'))
             if expected_type is None or row.get('type') != expected_type:
                 raise PlatformError('history-action', 'Action type differs from the fixed client intention', 2)
@@ -622,10 +653,28 @@ def compare_history(records, plan, policy, native_anchors=None, geometry=None):
             validate_history_poses(units.values(), policy)
             for event in sample.get('projectileEvents',[]):
                 source=units.get(event.get('sourceUnitId'),{})
+                style=event.get('appearance','STANDARD')
+                token=event.get('token')
+                if (style not in ('STANDARD','SUBMARINE_MISSILE','SUBMARINE_TORPEDO') or
+                        source.get('typeId')=='attackSubmarine' and style=='STANDARD' or
+                        source and source.get('typeId')!='attackSubmarine' and style!='STANDARD'):
+                    raise PlatformError('history-projectile','Invalid submarine launch appearance or source',2)
+                if event.get('kind')=='born':
+                    if token in launch_appearances and launch_appearances[token]!=style:
+                        raise PlatformError('history-projectile','Repeated birth changed launch appearance',2)
+                    launch_appearances[token]=style
+                elif token in launch_appearances and launch_appearances[token]!=style:
+                    raise PlatformError('history-projectile','Projectile event changed launch appearance',2)
                 for i,expected in enumerate(births):
                     if (event.get('kind')=='born' and source.get('ownerPlayerId')==expected['ownerPlayerId'] and
                             source.get('typeId')==expected['typeId'] and event.get('sourceWeaponName') in expected['weaponNames'] and
                             event.get('targetUnitId')==expected['targetUnitId']):fired[i]=True
+            for projectile in sample.get('projectiles',[]):
+                style=projectile.get('appearance','STANDARD')
+                token=projectile.get('token')
+                if (style not in ('STANDARD','SUBMARINE_MISSILE','SUBMARINE_TORPEDO') or
+                        token in launch_appearances and launch_appearances[token]!=style):
+                    raise PlatformError('history-projectile','Observed projectile changed launch appearance',2)
             if require_births:
                 for event in sample.get('projectileEvents', []):
                     if event.get('kind') == 'born':

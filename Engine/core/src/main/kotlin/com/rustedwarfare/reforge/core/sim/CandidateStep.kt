@@ -95,6 +95,9 @@ internal data class StepState(
                 .all { it.isFinite() } && (unit.health?.isFinite() != false)) { "Unit candidate must remain finite" }
             MechMotion.requireFinitePose(unit)
             require(unit.sinkSpeed.isFinite() && unit.sinkSpeed >= 0f) { "Water-body sink state must remain finite" }
+            require(unit.submarineVerticalSpeed.isFinite() && unit.submarineVerticalSpeed in 0f..0.08f) {
+                "Submarine vertical speed must remain finite and bounded"
+            }
             val origin = unit.productionOrigin
             val birthDefinition = origin?.let { input.unitDefinitions[it.factoryTypeId] }
             val birthLimit = birthDefinition?.production?.exitProfile

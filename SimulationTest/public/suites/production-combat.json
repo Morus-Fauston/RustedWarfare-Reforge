@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "suiteId": "public.production-combat.v1",
   "inputScope": "public",
-  "fixture": "inputs/content-movement-knowledge/P001-移动沙盒输入",
+  "fixture": "inputs/content-movement-knowledge/P001-\u79fb\u52a8\u6c99\u76d2\u8f93\u5165",
   "tests": {
     "core": [
       "com.rustedwarfare.reforge.core.content.CombatContentLoadTest",
@@ -151,7 +151,21 @@
       "com.rustedwarfare.reforge.core.sim.ShieldCombatTest",
       "com.rustedwarfare.reforge.core.sim.ShieldLifecycleTest",
       "com.rustedwarfare.reforge.core.sim.ShieldValidationTest",
-      "com.rustedwarfare.reforge.core.sim.ShieldVisibilityTest"
+      "com.rustedwarfare.reforge.core.sim.ShieldVisibilityTest",
+      "com.rustedwarfare.reforge.core.content.SubmarineContentTest",
+      "com.rustedwarfare.reforge.core.sim.SubmarineActionTest",
+      "com.rustedwarfare.reforge.core.sim.SubmarineCombatLifecycleTest",
+      "com.rustedwarfare.reforge.core.sim.SubmarineDeathTest",
+      "com.rustedwarfare.reforge.core.sim.SubmarineDefinitionValidationTest",
+      "com.rustedwarfare.reforge.core.sim.SubmarineFailureTest",
+      "com.rustedwarfare.reforge.core.sim.SubmarineMotionTest",
+      "com.rustedwarfare.reforge.core.sim.SubmarineProductionTest",
+      "com.rustedwarfare.reforge.core.sim.SubmarineProjectilePresentationTest",
+      "com.rustedwarfare.reforge.core.sim.SubmarineProjectionTest",
+      "com.rustedwarfare.reforge.core.sim.SubmarineSpeedTest",
+      "com.rustedwarfare.reforge.core.sim.SubmarineTargetTest",
+      "com.rustedwarfare.reforge.core.sim.SubmarineTransactionTest",
+      "com.rustedwarfare.reforge.core.sim.SubmarineWeaponTest"
     ],
     "client": [
       "com.rustedwarfare.reforge.client.CombatActorEvidenceTest",
@@ -189,7 +203,11 @@
       "com.rustedwarfare.reforge.client.HoverProjectionTest",
       "com.rustedwarfare.reforge.client.HoverProductionSandboxTest",
       "com.rustedwarfare.reforge.client.ShieldPresentationTest",
-      "com.rustedwarfare.reforge.client.ShieldResourceBindingTest"
+      "com.rustedwarfare.reforge.client.ShieldResourceBindingTest",
+      "com.rustedwarfare.reforge.client.SubmarineDepthInputTest",
+      "com.rustedwarfare.reforge.client.SubmarineEvidenceTest",
+      "com.rustedwarfare.reforge.client.SubmarinePairedSceneTest",
+      "com.rustedwarfare.reforge.client.SubmarineProductionSandboxTest"
     ],
     "pc": [
       "com.rustedwarfare.reforge.pc.PatrolJsonlPairingTest",
@@ -203,7 +221,8 @@
       "com.rustedwarfare.reforge.pc.NavalOriginalProfileTest",
       "com.rustedwarfare.reforge.pc.NavalTerrainAppearanceTest",
       "com.rustedwarfare.reforge.pc.HoverOriginalProfileTest",
-      "com.rustedwarfare.reforge.pc.ShieldOriginalProfileTest"
+      "com.rustedwarfare.reforge.pc.ShieldOriginalProfileTest",
+      "com.rustedwarfare.reforge.pc.SubmarineOriginalProfileTest"
     ],
     "tools": [
       "com.rustedwarfare.reforge.testing.ProductionCombatScenarioTest",
@@ -235,7 +254,12 @@
       "com.rustedwarfare.reforge.testing.perf.WholeChainToolCostTest",
       "com.rustedwarfare.reforge.testing.PhaseFiveArchiveTest",
       "com.rustedwarfare.reforge.testing.HoverArchiveTest",
-      "com.rustedwarfare.reforge.testing.ShieldArchiveTest"
+      "com.rustedwarfare.reforge.testing.ShieldArchiveTest",
+      "com.rustedwarfare.reforge.testing.SubmarineArchiveTest",
+      "com.rustedwarfare.reforge.testing.SubmarineCoreAdapterTest",
+      "com.rustedwarfare.reforge.testing.SubmarinePlayerArchiveTest",
+      "com.rustedwarfare.reforge.testing.SubmarineProductionSessionTest",
+      "com.rustedwarfare.reforge.testing.SubmarinePublicScenarioTest"
     ]
   },
   "short": [
@@ -683,6 +707,42 @@
       "id": "phase-five-mixed-start-short",
       "scenario": "scenarios/phase-five-mixed-start-short.json",
       "contract": "contracts/phase-five-mixed-start-short.json"
+    },
+    {
+      "id": "submarine-ini-core-short",
+      "backend": "core",
+      "scenario": "scenarios/submarine-ini-short.json",
+      "contract": "contracts/submarine-ini-short.json"
+    },
+    {
+      "id": "submarine-ini-session-short",
+      "backend": "session",
+      "scenario": "scenarios/submarine-ini-short.json",
+      "contract": "platform/contracts/submarine-ini-paired-short.json"
+    },
+    {
+      "id": "submarine-json-core-short",
+      "backend": "core",
+      "scenario": "scenarios/submarine-json-short.json",
+      "contract": "contracts/submarine-json-short.json"
+    },
+    {
+      "id": "submarine-json-session-short",
+      "backend": "session",
+      "scenario": "scenarios/submarine-json-short.json",
+      "contract": "platform/contracts/submarine-json-paired-short.json"
+    },
+    {
+      "id": "submarine-hjson-core-short",
+      "backend": "core",
+      "scenario": "scenarios/submarine-hjson-short.json",
+      "contract": "contracts/submarine-hjson-short.json"
+    },
+    {
+      "id": "submarine-hjson-session-short",
+      "backend": "session",
+      "scenario": "scenarios/submarine-hjson-short.json",
+      "contract": "platform/contracts/submarine-hjson-paired-short.json"
     }
   ],
   "long": [
@@ -803,6 +863,27 @@
       "id": "hover-production-json-chain",
       "scenario": "scenarios/hover-production-json-chain.json",
       "contract": "contracts/hover-production-json-chain.json"
+    },
+    {
+      "id": "submarine-ini-production-chain",
+      "backend": "session",
+      "scenario": "platform/scenarios/submarine-ini-production-chain.json",
+      "contract": "platform/contracts/submarine-ini-production-chain.json"
+    },
+    {
+      "id": "submarine-json-production-chain",
+      "backend": "session",
+      "scenario": "platform/scenarios/submarine-json-production-chain.json",
+      "contract": "platform/contracts/submarine-json-production-chain.json"
+    },
+    {
+      "id": "submarine-hjson-production-chain",
+      "backend": "session",
+      "scenario": "platform/scenarios/submarine-hjson-production-chain.json",
+      "contract": "platform/contracts/submarine-hjson-production-chain.json"
     }
+  ],
+  "pythonTests": [
+    "SimulationTest/tools/test_submarine_platform.py"
   ]
 }

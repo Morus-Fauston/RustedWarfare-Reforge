@@ -34,6 +34,7 @@ class UnitDefinition(
     val shadowImagePath: Path? = null,
     val shield: ShieldProfile? = null,
     val shieldImagePath: Path? = null,
+    val submarine: SubmarineProfile? = null,
 ) {
     val retainedUnconsumed: Set<String> = Collections.unmodifiableSet(LinkedHashSet(retainedUnconsumed))
     val maximumHealth: Double? get() = durability?.maxHp ?: combat?.maxHp
@@ -74,6 +75,9 @@ data class RotorDefinition(val imagePath: Path, val spinRate: Double)
 
 /** Explicit finite evidence target; this grants neither submarine movement nor production. */
 data class FixedUnderwaterTargetProfile(val height: Double = -8.0)
+
+/** Explicit native capability; depth alone does not make an ordinary unit a submarine. */
+enum class SubmarineProfile { NATIVE }
 
 /** Trusted original target class; a building or an unarmed life profile does not imply native membership. */
 enum class DirectHitTargetKind { ORDINARY, NATIVE_BUILDING }
@@ -192,6 +196,7 @@ enum class FireSoundProfile(val eventId: String, val volume: Float, val pitch: F
     HOVER("reforge:events/hover-fire", .3f, 1.3f),
     NAVAL_MAIN("reforge:events/naval-main-fire", .3f),
     NAVAL_MISSILE("reforge:events/naval-missile-fire", .1f),
+    SUBMARINE_MISSILE("reforge:events/naval-missile-fire", .8f),
 }
 
 data class TurretMount(val localX: Double = 0.0, val localY: Double = 0.0)

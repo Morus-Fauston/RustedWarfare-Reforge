@@ -297,6 +297,10 @@ class SandboxSession(scenario: Scenario, private val evidence: ClientEvidence = 
         StopAction("click-${++actionNumber}", "p1", id, context.world)
     }
 
+    fun submarineDepth(surface: Boolean): ActionResult? = actionMenu.depthAction?.takeIf { it.surface == surface }?.let {
+        apply(SubmarineDepthAction("click-${++actionNumber}", "p1", checkNotNull(selectedId), surface, context.world))
+    }
+
     private fun dispatch(selectionAtPress: Set<String> = selectedIds, action: (String) -> Action): ActionResult? {
         val members = selectionAtPress.sorted()
         val revision = selectionRevision
@@ -438,7 +442,8 @@ class SandboxSession(scenario: Scenario, private val evidence: ClientEvidence = 
             "targetUnitId" to when (action) { is AttackAction -> action.targetUnitId; is ResumeConstructionAction -> action.targetUnitId;
                 is RepairBuildingAction -> action.targetUnitId; is ReclaimBuildingAction -> action.targetUnitId; else -> null },
             "upgradeId" to when (action) { is UpgradeAction -> action.upgradeId; is CancelUpgradeAction -> action.upgradeId; else -> null },
-            "result" to result.fields()) + if (action is BuildAction) mapOf("buildingTypeId" to action.buildingTypeId) else emptyMap() }
+            "result" to result.fields()) + (if (action is BuildAction) mapOf("buildingTypeId" to action.buildingTypeId) else emptyMap()) +
+            (if (action is SubmarineDepthAction) mapOf("surface" to action.surface) else emptyMap()) }
         capture("after-action")
         return result
     }

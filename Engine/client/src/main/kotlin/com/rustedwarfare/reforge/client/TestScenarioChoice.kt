@@ -106,6 +106,8 @@ class TestScenarioChoice private constructor(val seed: Path, val root: Path, val
                         action.getString("kind") == kind && action.getString("actor") == intent.getString("actor", "p1"))
                     fun position() = intent.get("position")
                     when (kind) {
+                        "submarine-depth" -> matching(intent.get("surface")?.isBoolean == true && action.get("surface")?.isBoolean == true &&
+                            intent.getBoolean("surface") == action.getBoolean("surface"))
                         "move", "build" -> matching(position().getDouble("x") == action.get("target").getDouble("x") && position().getDouble("y") == action.get("target").getDouble("y"))
                         "attack" -> matching(intent.getString("targetUnitId") == action.getString("targetUnitId"))
                     }
@@ -113,7 +115,7 @@ class TestScenarioChoice private constructor(val seed: Path, val root: Path, val
                         "build" -> matching(intent.getString("typeId") == action.getString("buildingTypeId"))
                         "produce" -> matching(intent.getString("typeId") == action.getString("productionTypeId"))
                         "upgrade" -> matching(intent.getString("upgradeId") == action.getString("upgradeId"))
-                        "move", "attack", "stop" -> Unit
+                        "move", "attack", "stop", "submarine-depth" -> Unit
                         else -> matching(false)
                     }
                 }

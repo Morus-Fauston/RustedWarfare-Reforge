@@ -59,6 +59,8 @@ class BootstrapScreen(
     private lateinit var messageLabel: Label
     private lateinit var stopButton: TextButton
     private lateinit var patrolButton: TextButton
+    private lateinit var depthButton: TextButton
+    private lateinit var depthInput: SubmarineDepthButtonInput
     private val rateButtons = linkedMapOf<OfflineRate, TextButton>()
     private lateinit var simulationPauseButton: TextButton
     private lateinit var pacingLabel: Label
@@ -321,6 +323,13 @@ class BootstrapScreen(
         messageLabel = label("Loading", 40f, 400f, 560f, 260f)
         stopButton = button("Stop (S)", 752f, 168f, 84f) { mapInput.cancel(); session?.stop(); updateHud() }
         patrolButton = button("Patrol (P)", 844f, 168f, 84f) { mapInput.beginPatrol(); updateHud() }
+        depthButton = TextButton("Surface", skin).also { actor ->
+            actor.setBounds(752f, 188f, 176f, 40f)
+            depthInput = SubmarineDepthButtonInput({ session }, { !paused && !loading && session?.isOpen == true },
+                { lastHudState = null; updateHud() })
+            actor.addListener(depthInput)
+            stage.addActor(actor)
+        }
         exitButton = button("Exit match", 752f, 72f, 176f) { leaveMatch() }
         contentLabel = label("Content folder", 752f, 378f, 176f, 24f)
         rootField = TextField(launch.configuration.root.toString(), skin).also {
@@ -776,6 +785,7 @@ class BootstrapScreen(
             enabled = commandConsoleOpen && current?.canDeploy == true)
         packPanel?.let { entries += it.drawnActions() }
         button("stop", stopButton); button("choose-patrol", patrolButton)
+        button(if (menu?.depthAction?.surface == false) "submarine-dive" else "submarine-surface", depthButton)
         val nativeActive = nativePanel && !paused && current?.isOpen == true
         for ((type, card) in productionCards) {
             if (card.table.parent === productionContent && !productionCardExposed(card.table)) continue
@@ -1106,6 +1116,7 @@ class BootstrapScreen(
             productionHover = null
             economicUpgradeInput.cancel()
             upgradeInputs.forEach { it.cancel() }
+            depthInput.cancel()
             upgradeHover = null
             reclaimInput.cancel()
             constructionCards.values.forEach { it.input.cancel() }
@@ -1119,7 +1130,7 @@ class BootstrapScreen(
             selectedLabel.setText(if (selected == null) "None" else if (state.selectedIds.size > 1)
                 "${state.selectedIds.size} selected" else "${menu?.selectedTitle} x1")
             setUnitIcon(nativeIcon, selected?.typeId)
-            nativeInfo.setFontScale(if (state.workerQueueText != null) .7f else 1f)
+            nativeInfo.setFontScale(if (state.workerQueueText != null) .7f else if (selected?.submarine != null) .8f else 1f)
             nativeInfo.setText(selectedInfo ?: "")
             menu?.production?.firstOrNull { it.typeId == productionHover }?.let { action ->
                 setUnitIcon(nativeTooltipIcon, action.typeId)
@@ -1188,6 +1199,9 @@ class BootstrapScreen(
             buttons.second.isDisabled = action?.progress == null
         }
         stopButton.isDisabled = selected == null
+        depthButton.isVisible = menu?.depthAction != null
+        depthButton.isDisabled = menu?.depthAction == null
+        depthButton.setText(menu?.depthAction?.title ?: "Surface")
         val economicPanel = nativePanel && (current?.hasEconomicConstruction == true || constructionCards.size > 4 || productionCards.size + factoryUpgradeCards.size > 4)
         stopButton.setY(if (economicPanel) 112f else if (nativePanel) 144f else 168f)
         patrolButton.setY(if (economicPanel) 112f else if (nativePanel) 144f else 168f)

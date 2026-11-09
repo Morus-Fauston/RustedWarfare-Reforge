@@ -3,12 +3,14 @@ package com.rustedwarfare.reforge.core.sim
 /** Player-local history; host IDs only track membership, never assign order or public labels. */
 internal data class ProjectedProjectileEvent(val objectId: Long, val kind: String, val position: Position,
     val heading: Double, val height: Double, val sourceUnitId: String?, val targetUnitId: String?, val damage: Double?,
-    val interceptorUnitId: String? = null, val areaRadius: Float? = null, val sourceWeaponName: String? = null)
+    val interceptorUnitId: String? = null, val areaRadius: Float? = null, val sourceWeaponName: String? = null,
+    val appearance: ProjectileAppearance = ProjectileAppearance.STANDARD)
 
 internal data class ProjectileProjectionResult(val projectiles: List<VisibleProjectile>, val events: List<VisibleProjectileEvent>)
 
 internal class ProjectileProjection {
-    private data class Appearance(val position: Position, val heading: Double, val height: Double, val areaRadius: Float?)
+    private data class Appearance(val position: Position, val heading: Double, val height: Double, val areaRadius: Float?,
+        val style: ProjectileAppearance)
     private data class PublicEvent(val kind: String, val appearance: Appearance,
         val source: String?, val target: String?, val damage: Double?, val interceptor: String?, val weapon: String?)
     private data class PublicKey(val appearance: Appearance, val active: Boolean, val events: List<PublicEvent>)
@@ -18,10 +20,10 @@ internal class ProjectileProjection {
     private val memberships = mutableMapOf<Long, Known>()
 
     private fun canonical(value: Double): Double = if (value == 0.0) 0.0 else value
-    private fun appearance(position: Position, heading: Double, height: Double, areaRadius: Float?) =
-        Appearance(Position(canonical(position.x), canonical(position.y)), canonical(heading), canonical(height), areaRadius)
+    private fun appearance(position: Position, heading: Double, height: Double, areaRadius: Float?, style: ProjectileAppearance) =
+        Appearance(Position(canonical(position.x), canonical(position.y)), canonical(heading), canonical(height), areaRadius, style)
     private val appearanceOrder = compareBy<Appearance> { it.position.x }.thenBy { it.position.y }
-        .thenBy { it.heading }.thenBy { it.height }.thenBy { it.areaRadius }
+        .thenBy { it.heading }.thenBy { it.height }.thenBy { it.areaRadius }.thenBy { it.style.ordinal }
 
     private fun compareEvent(a: PublicEvent, b: PublicEvent): Int {
         var value = compareValues(a.kind, b.kind)
@@ -56,9 +58,9 @@ internal class ProjectileProjection {
         val eventGroups = visibleEvents.groupBy { it.objectId }
         val inputs = (active.keys + eventGroups.keys).map { id ->
             val events = eventGroups[id].orEmpty().map { event -> PublicEvent(event.kind,
-                appearance(event.position, event.heading, event.height, event.areaRadius), event.sourceUnitId,
+                appearance(event.position, event.heading, event.height, event.areaRadius, event.appearance), event.sourceUnitId,
                 event.targetUnitId, event.damage?.let(::canonical), event.interceptorUnitId, event.sourceWeaponName) }
-            val value = active[id]?.let { appearance(it.position, it.heading, it.height, it.areaExpansion?.radius) } ?: events.last().appearance
+            val value = active[id]?.let { appearance(it.position, it.heading, it.height, it.areaExpansion?.radius, it.appearance) } ?: events.last().appearance
             Input(id, PublicKey(value, id in active, events))
         }
         val result = mutableListOf<VisibleProjectile>()
@@ -75,11 +77,12 @@ internal class ProjectileProjection {
                     Known("shot-${++nextToken}", previous?.token)
                 for (id in ids) memberships[id] = known
                 if (key.active) result += VisibleProjectile(known.token, ids.size, key.appearance.position,
-                    key.appearance.heading, key.appearance.height, known.parentToken, key.appearance.areaRadius)
+                    key.appearance.heading, key.appearance.height, known.parentToken, key.appearance.areaRadius, key.appearance.style)
                 // Per-object causal order survives; class order is entirely public-key/history order.
                 for (event in key.events) resultEvents += VisibleProjectileEvent(known.token, event.kind, ids.size,
                     event.appearance.position, event.appearance.heading, event.appearance.height,
-                    event.source, event.target, event.damage, known.parentToken, event.interceptor, event.appearance.areaRadius, event.weapon)
+                    event.source, event.target, event.damage, known.parentToken, event.interceptor, event.appearance.areaRadius, event.weapon,
+                    event.appearance.style)
             }
         }
         return ProjectileProjectionResult(immutable(result), immutable(resultEvents))

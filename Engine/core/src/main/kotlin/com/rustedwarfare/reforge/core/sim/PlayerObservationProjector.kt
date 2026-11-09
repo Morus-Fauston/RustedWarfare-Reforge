@@ -70,7 +70,8 @@ internal class PlayerObservationProjector(world: WorldHandle, scenario: Scenario
             })
             if (it.ownerPlayerId != playerId) {
                 it.copy(moveTarget = null, pathPoints = emptyList(), attackTargetId = null, cooldown = null, pointDefense = null,
-                    tasks = emptyList(), constructionTargetId = null)
+                    tasks = emptyList(), constructionTargetId = null,
+                    submarine = it.submarine?.copy(surfaceIntent = null, verticalSpeed = null))
             } else if (it.attackTargetId != null && it.attackTargetId !in visibleIds) {
                 it.copy(moveTarget = null, pathPoints = emptyList(), attackTargetId = null, tasks = ownerTasks,
                     constructionTargetId = it.constructionTargetId?.takeIf { target -> target in visibleIds })
@@ -91,7 +92,8 @@ internal class PlayerObservationProjector(world: WorldHandle, scenario: Scenario
                 frame.reclaimedOwner(event.unitId) == playerId
             } else event.unitId != null && event.unitId in ids &&
                 (!(event.kind.startsWith("production-") || event.kind.startsWith("upgrade-") ||
-                    event.kind in setOf("construction-unavailable", "construction-insufficient-funds", "construction-queue-full", "maintenance-completed")) ||
+                    event.kind in setOf("construction-unavailable", "construction-insufficient-funds", "construction-queue-full", "maintenance-completed",
+                        "submarine-surface-requested", "submarine-dive-requested")) ||
                     visible.any { it.unitId == event.unitId && it.ownerPlayerId == playerId }) }
             val combatKinds = setOf("projectile-fired", "unit-damaged", "shield-damaged", "unit-died",
                 "production-queued", "production-cancelled", "production-refunded", "unit-produced",
@@ -116,7 +118,7 @@ internal class PlayerObservationProjector(world: WorldHandle, scenario: Scenario
             val source = value.sourceUnitId.takeIf { it in ids }
             ProjectedProjectileEvent(value.objectId, event.kind, value.position, value.heading, value.height,
                 source, target, event.damage.takeIf { target != null }, event.interceptorUnitId,
-                value.areaExpansion?.radius, value.sourceWeaponName?.takeIf { source != null })
+                value.areaExpansion?.radius, value.sourceWeaponName?.takeIf { source != null }, value.appearance)
         }
         val projection = projectileProjection.project(
             observation.projectiles.filter { isVisible(vision, it.position) }, projectedEvents,

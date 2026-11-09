@@ -138,7 +138,7 @@ internal object FactoryContentReader {
             reject(ContentErrorCode.UNSUPPORTED_FIELD, path, field = it, reason = "Field is outside this finite sea factory tier")
         }
         for ((key, value) in mapOf("name" to id, "maxHp" to "1000", "radius" to "45", "footprint" to "-1,-1,1,2",
-            "placementFootprint" to "-2,-1,2,4", "movementType" to "NONE", "productionUnits" to if (t2) "heavyBattleship" else "NONE",
+            "placementFootprint" to "-2,-1,2,4", "movementType" to "NONE", "productionUnits" to if (t2) "heavyBattleship,attackSubmarine" else "attackSubmarine",
             "price" to if (t2) "3000" else "1000", "buildSpeed" to "0.0007", "fogOfWarSightRange" to "15")) only(key, value)
         if (!t2) {
             only("upgradeTo", "seaFactoryT2"); only("upgradePrice", "2000"); only("upgradeBuildSpeed", "0.0004")
@@ -158,7 +158,7 @@ internal object FactoryContentReader {
             MovementProfile(MovementType.NONE, 0.0, 0.0, 0.0, 0.0, 0.0, false, false), emptySet(), 15,
             durability = DurabilityProfile(1000.0, image("image_dead")),
             building = BuildingProfile(BuildingFootprint(-1, -1, 1, 2), placementFootprint = BuildingFootprint(-2, -1, 2, 4)),
-            production = ProductionProfile(if (t2) listOf("heavyBattleship") else emptyList(), FactoryExitProfile.NATIVE_SEA),
+            production = ProductionProfile(if (t2) listOf("heavyBattleship", "attackSubmarine") else listOf("attackSubmarine"), FactoryExitProfile.NATIVE_SEA),
             build = BuildProfile(if (t2) 3000L else 1000L, .0007f), construction = ConstructionProfile(if (t2) 3000L else 1000L, .0007f),
             upgrades = if (t2) null else UpgradeProfile(listOf(UpgradeActionProfile("upgrade_t2", "seaFactoryT2", 2000L, .0004f))),
             directHitTargetKind = DirectHitTargetKind.NATIVE_BUILDING)

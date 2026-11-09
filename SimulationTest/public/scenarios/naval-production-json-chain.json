@@ -18,13 +18,13 @@
       {
         "id": "seaFactory",
         "path": "../inputs/naval-production/json/production-package/units/seaFactory.json",
-        "sha256": "6b7832fa12a32afbf131291b1215c152935be2444c771b66b1df13cc8d6fc5d9",
+        "sha256": "a0f24c507418f38b9c3204f37def41f05f7de1a7c3ec5463059fa6213b106c1e",
         "loader": "factory"
       },
       {
         "id": "seaFactoryT2",
         "path": "../inputs/naval-production/json/production-package/units/seaFactoryT2.json",
-        "sha256": "4679fa659ec96c319da23348f7ae7ffeed58fdbe97ec3716e13fc053ec104183",
+        "sha256": "531e5ae00ad954d47f8cb576eb53be5c43fecd7dbe826e3fe0365632a61b594c",
         "loader": "factory"
       },
       {
@@ -50,6 +50,12 @@
         "path": "../inputs/naval-production/json/production-package/units/naval/underwaterTarget.json",
         "sha256": "0e97a0ab19c3ef833664a8e67c43feddae745ba986c6694e6b67dc3125cfef1d",
         "loader": "underwater-target"
+      },
+      {
+        "id": "attackSubmarine",
+        "path": "../inputs/naval-production/json/production-package/units/submarine/submarine.json",
+        "sha256": "b8b12b9ba92285b2ffde11527065e108a22ac1b4b1a3f789b6140ed38c0f31ed",
+        "loader": "submarine"
       }
     ],
     "dependencies": [
@@ -152,6 +158,16 @@
         "id": "naval-terrain",
         "path": "../inputs/naval-production/json/assets/naval-ground.png",
         "sha256": "9c32ebad05ee1c22011d8639a9f1674704967b0ed225b384726d11c654ed6cde"
+      },
+      {
+        "id": "submarine-image-0",
+        "path": "../inputs/naval-production/json/production-package/units/submarine/body.png",
+        "sha256": "d61fd88c779e1209fee1400b3e21fe79cfef45729b31aea4d3a476593e794892"
+      },
+      {
+        "id": "submarine-image-1",
+        "path": "../inputs/naval-production/json/production-package/units/submarine/dead.png",
+        "sha256": "fed1c2fca42a6e8b4a815b4146e2371a66786a0a03a000652c4bf67ad23a7506"
       }
     ]
   },

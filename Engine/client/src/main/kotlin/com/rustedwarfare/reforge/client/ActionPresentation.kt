@@ -17,7 +17,7 @@ internal class ActionCatalogue(private val definitions: Map<String, UnitDefiniti
         "mechFactoryT2" to Names("Mech factory T2"), "mechHeavyMissile" to Names("Heavy missile mech"),
         "airFactory" to Names("Air factory"), "helicopter" to Names("Helicopter"),
         "seaFactory" to Names("Sea factory"), "seaFactoryT2" to Names("Sea factory T2"),
-        "heavyBattleship" to Names("Heavy battleship"),
+        "heavyBattleship" to Names("Heavy battleship"), "attackSubmarine" to Names("Submarine"),
         "extractorT1" to Names("Extractor T1", "Extractor"), "extractorT2" to Names("Extractor T2", "Unit"),
         "extractorT3" to Names("Extractor T3", "Unit"), "fabricatorT1" to Names("Fabricator T1", "Fabricator"),
         "fabricatorT2" to Names("Fabricator T2", "Unit"), "fabricatorT3" to Names("Fabricator T3", "Unit"),
@@ -69,6 +69,11 @@ internal class ActionCatalogue(private val definitions: Map<String, UnitDefiniti
         val selected = view.units.singleOrNull { it.unitId == primary }
         fun controllable(unit: UnitObservation) = localControl && unit.alive && unit.ownerPlayerId == view.playerId
         val ownSingle = selected?.takeIf { ids.size == 1 && controllable(it) }
+        val depthAction = ownSingle?.takeIf { it.constructionProgress >= 1f }?.submarine?.surfaceIntent?.let { intent ->
+            val surface = !intent
+            SubmarineDepthActionView(surface, if (surface) "Surface" else "Dive",
+                if (surface) "Rise to the surface\nMovement orders continue" else "Dive underwater\nMovement orders continue")
+        }
         val factory = ownSingle?.let { unit -> view.factoryQueues.firstOrNull { it.factoryId == unit.unitId } }
         val profiles = ownSingle?.takeUnless { it.constructionProgress < 1f &&
             definitions.getValue(it.typeId).className == "AuthoredBuilding" }
@@ -105,6 +110,8 @@ internal class ActionCatalogue(private val definitions: Map<String, UnitDefiniti
         val info = if (ids.isEmpty()) null else if (ids.size > 1) workerText else selected?.let { unit ->
             "${unit.health?.toInt() ?: 0} / ${unit.maxHealth?.toInt() ?: 0}" +
                 (unit.shield?.let { "\nShield ${it.current.toInt()} / ${it.maximum.toInt()}" } ?: "") +
+                (unit.submarine?.let { String.format(Locale.ROOT, "\n%s\nDepth %.2f\nSpeed %.2f\nRange %.0f",
+                    if (it.underwater) "Underwater" else "Surface", unit.height, it.maximumSpeed, it.attackRange) } ?: "") +
                 (nominalIncome(unit.typeId)?.let { "\n+\$${it.toInt()}" } ?: "") +
                 (if (unit.constructionProgress < 1f) "\nBuilding ${(unit.constructionProgress * 100f).toInt()}%"
                     else if (unit.typeId.startsWith("extractorT") || unit.typeId.startsWith("fabricatorT")) "\nActive" else "") +
@@ -120,7 +127,7 @@ internal class ActionCatalogue(private val definitions: Map<String, UnitDefiniti
                 val name = if (upgrades.any { it.kind == UpgradePresentationKind.FACTORY && it.actionKey == item.actionKey })
                     title(item.targetTypeId, panel = true) else if (item.actionKey == "upgrade_gun") "Gun" else "Art"
                 "  $name ${(item.progress * 100f).toInt()}%"
-            }.orEmpty(), view.balance)
+            }.orEmpty(), view.balance, depthAction)
     }
 
     private fun workerText(workers: List<UnitObservation>, view: PlayerObservation): String {
@@ -155,7 +162,9 @@ data class ActionMenuView(val credits: Double? = null, val production: List<Prod
     val factoryQueue: FactoryQueueObservation? = null, val upgradeQueue: UpgradeQueueObservation? = null,
     val canMaintain: Boolean = false, val workerQueueText: String? = null, val selectedUnitInfo: String? = null,
     val selectedTitle: String? = null, val totalNominalIncome: Float = 0f, val upgradeQueueText: String = "",
-    val balance: Long? = null) {
+    val balance: Long? = null, val depthAction: SubmarineDepthActionView? = null) {
     val reclaimTooltip: String get() = if (canMaintain)
         "Reclaim own building\nCredits returned on completion\nLeft: choose target\nEsc / right: cancel" else ""
 }
+
+data class SubmarineDepthActionView(val surface: Boolean, val title: String, val tooltip: String)

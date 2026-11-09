@@ -57,6 +57,14 @@ class MapDefinition(
         return GroundRules.liquid(tileSets, gid)
     }
 
+    /** Native cJ: static OVER_CLIFF blocked minus WATER blocked; excludes dynamic obstacles. */
+    internal fun isOverWater(col: Int, row: Int): Boolean {
+        if (col !in 0 until widthTiles || row !in 0 until heightTiles) return true
+        val gid = gids[row * widthTiles + col]
+        return GroundRules.blocked(tileSets, gid, MovementType.OVER_CLIFF) &&
+            !GroundRules.blocked(tileSets, gid, MovementType.WATER)
+    }
+
     internal fun isCliff(col: Int, row: Int): Boolean {
         if (col !in 0 until widthTiles || row !in 0 until heightTiles) return true
         return GroundRules.cliff(tileSets, gids[row * widthTiles + col])

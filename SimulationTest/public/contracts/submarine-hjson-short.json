@@ -1,0 +1,70 @@
+{
+  "schemaVersion": 1,
+  "kind": "behavior-contract",
+  "contractId": "public.submarine-hjson.short.contract.v1",
+  "scope": "self-behavior",
+  "scenarioIds": [
+    "p009-submarine-production"
+  ],
+  "comparison": {
+    "numberMode": "declared-per-field",
+    "tolerances": {}
+  },
+  "approval": {
+    "status": "tool-fixture-only",
+    "source": "ENG-P009-005 fixed native depth facts; owned self-behavior, no original execution claim"
+  },
+  "exclusions": [
+    "original-compatibility",
+    "platform-input",
+    "performance"
+  ],
+  "rules": [
+    {
+      "ruleId": "surface-settled",
+      "when": {
+        "phase": "after-advance",
+        "stepIndex": 259
+      },
+      "assertions": [
+        {
+          "path": "units.sub.height",
+          "operator": "equals",
+          "value": 1
+        }
+      ]
+    },
+    {
+      "ruleId": "dive-settled",
+      "when": {
+        "phase": "after-advance",
+        "stepIndex": 519
+      },
+      "assertions": [
+        {
+          "path": "units.sub.height",
+          "operator": "equals",
+          "value": -8
+        }
+      ]
+    },
+    {
+      "ruleId": "stopped-underwater",
+      "when": {
+        "phase": "after-advance",
+        "stepIndex": 859
+      },
+      "assertions": [
+        {
+          "path": "units.sub.moveTarget",
+          "operator": "absent-or-null"
+        },
+        {
+          "path": "units.sub.submarine.underwater",
+          "operator": "equals",
+          "value": true
+        }
+      ]
+    }
+  ]
+}

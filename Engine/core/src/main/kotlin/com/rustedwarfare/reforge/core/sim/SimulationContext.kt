@@ -636,7 +636,7 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
         }.firstOrNull { it.unitId == action.targetUnitId }
         val enemy = target != null && target.ownerPlayerId != attacker.ownerPlayerId &&
             (team == null || input.players.single { it.playerId == target.ownerPlayerId }.teamId != team)
-        return if (target == null || !enemy || target.health == null || !CombatTargetQuery.canAttackAirCategory(attacker, target)) {
+        return if (target == null || !enemy || target.health == null || !CombatTargetQuery.canAttackAirCategory(attacker, target, input.map)) {
             SimulationError("invalid-attack-target", "Attack target is not available")
         } else null
     }
@@ -666,6 +666,17 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
             return reject(action, "immobile-unit", "Unit cannot move")
         }
         val result = when (action) {
+            is SubmarineDepthAction -> {
+                if (unit.definition.submarine == null)
+                    return reject(action, "unsupported-submarine-action", "Unit has no submarine depth capability")
+                if (!BuildingWork.isReady(unit))
+                    return reject(action, "inactive-unit", "Unfinished units cannot change depth intent")
+                if (unit.submarineSurfaceIntent == action.surface)
+                    return reject(action, "submarine-state-unchanged", "Requested depth intent is already active")
+                unit.submarineSurfaceIntent = action.surface
+                ActionResult.Accepted(action.actionId, listOf(Event(
+                    if (action.surface) "submarine-surface-requested" else "submarine-dive-requested", unit.unitId)))
+            }
             is RepairBuildingAction, is ReclaimBuildingAction, is ResumeConstructionAction -> {
                 buildingWork.requestTarget(action, unit, currentScenario, units,
                     automaticVisionSnapshots?.getValue(unit.ownerPlayerId))?.let { return reject(action, it.code, it.message) }
@@ -1016,6 +1027,7 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
                 if (!fourLegged) updateUnit(unit, currentScenario.map, step.delta, step.stepIndex, candidate.motionSamples)
                 FlightMotion.advancePose(unit, step.delta)
                 HoverMotion.advancePose(unit, step.delta)
+                if (SubmarineMotion.advance(unit, step.delta)) pendingEvents += Event("submarine-threshold-crossed", unit.unitId)
                 MechGait.advance(unit, step.delta)
                 MechMotion.requireFinitePose(unit)
                 unit.finishMovementRequest()
@@ -1198,6 +1210,9 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
             if (definition.shield?.let { !it.isValid() || definition.maximumHealth == null } == true)
                 return SimulationError("unsupported-shield", "Expected finite positive shield capacity and nonnegative regeneration on a durable unit")
             val m = definition.movement
+            val submarine = definition.submarine != null
+            if (submarine && !SubmarineMotion.supports(definition))
+                return SimulationError("unsupported-submarine", "Expected the finite native submarine capability")
             val air = m.type == MovementType.AIR
             val hovering = m.type == MovementType.HOVER && m.hover != null
             if (m.hover != null && (!hovering || !m.hover.isValid() || m.flight != null ||
@@ -1217,7 +1232,7 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
                     !m.slidingMode || !m.ignoringBody || m.reverseSpeedPercentage != .1 || definition.mech != null) ||
                 !air && (m.flight != null || definition.rotor != null))
                 return SimulationError("unsupported-flight", "Expected a finite AIR profile and a single finite rotor")
-            if (!m.reverseSpeedPercentage.isFinite() || !air && (m.reverseSpeedPercentage !in setOf(0.0, 1.0) ||
+            if (!m.reverseSpeedPercentage.isFinite() || !air && !submarine && (m.reverseSpeedPercentage !in setOf(0.0, 1.0) ||
                 m.reverseSpeedPercentage != 0.0 && definition.mech == null && m.type != MovementType.WATER) ||
                 definition.mech?.let { !it.isValid() || m.type != (if (it.kind == com.rustedwarfare.reforge.core.content.MechKind.FOUR_LEGGED) MovementType.OVER_CLIFF else MovementType.LAND) } == true)
                 return SimulationError("unsupported-mech", "Expected the finite supported mech locomotion category")
@@ -1397,7 +1412,8 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
                 } == true
                 val invalidBallistic = combat.projectile.ballistic?.let {
                     !it.delayMoveHeight.isFinite() || it.delayMoveHeight < 0f || !it.apex.isFinite() ||
-                        it.apex < it.delayMoveHeight || it.verticalSpeed != -1f || combat.projectile.instant ||
+                        it.apex < it.delayMoveHeight || (it.verticalSpeed != -1f &&
+                            !(submarine && it == com.rustedwarfare.reforge.core.content.CustomBallisticProfile(40f, 60f, 2f))) || combat.projectile.instant ||
                         combat.projectile.ground != null || combat.projectile.missile != null ||
                         listOf(combat.attackRange, combat.projectile.life, combat.projectile.speed).any { !it.toFloat().isFinite() } ||
                         !(combat.projectile.speed.toFloat() * combat.projectile.speed.toFloat()).isFinite() ||
@@ -1531,7 +1547,7 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
             if (multiple || enemy == null) return
         }
         if (enemy != null) {
-            val stopRange = checkNotNull(unit.definition.combat).attackRange.toFloat() - 1f
+            val stopRange = SubmarineCombat.range(unit).toFloat() - 1f
             if (CombatTargetQuery.patrolDistanceSquared(unit, enemy) < stopRange * stopRange) {
                 unit.cancelRoute()
                 return
@@ -1560,13 +1576,13 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
 
     private fun updateAttackRoute(unit: MutableUnit, map: MapDefinition, executionStep: Long) {
         var command = unit.attackCommand ?: return
-        val weapon = unit.definition.combat ?: return
+        val weapon = SubmarineCombat.profile(unit) ?: return
         val input = checkNotNull(scenario)
         fun eligible(target: MutableUnit) = CombatTargetQuery.isEnemy(unit, target, input.players) &&
-            CombatTargetQuery.canAttackAirCategory(unit, target)
+            CombatTargetQuery.canAttackAirCategory(unit, target, input.map)
         var target = units[command.targetUnitId]?.takeIf(::eligible)
         if (target == null) {
-            target = CombatTargetQuery.nearestEnemy(unit, orderedUnits(), input.players, policies.coordinates)
+            target = CombatTargetQuery.nearestEnemy(unit, orderedUnits(), input.players, policies.coordinates, input.map)
             unit.cancelRoute()
             if (target == null) {
                 unit.attackCommand = null
@@ -1626,9 +1642,9 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
         val oldId = unit.primaryCombatTargetId ?: return null
         val input = checkNotNull(scenario)
         val target = units[oldId]?.takeIf {
-            CombatTargetQuery.isEnemy(unit, it, input.players) && CombatTargetQuery.canAttackAirCategory(unit, it) &&
+            CombatTargetQuery.isEnemy(unit, it, input.players) && CombatTargetQuery.canAttackAirCategory(unit, it, input.map) &&
                 isVisibleTo(unit.ownerPlayerId, it.position) }
-        val range = maxOf(checkNotNull(unit.definition.combat).attackRange.toFloat() + 110f, 190f)
+        val range = maxOf(SubmarineCombat.range(unit).toFloat() + 110f, 190f)
         if (target != null && CombatTargetQuery.patrolDistanceSquared(unit, target) < range * range) return target
         unit.primaryCombatTargetId = null
         unit.cancelRoute()
@@ -1637,7 +1653,7 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
     }
 
     private fun acquirePatrolTarget(unit: MutableUnit): MutableUnit? =
-        CombatTargetQuery.patrolEnemy(unit, orderedUnits(), checkNotNull(scenario).players, ::isVisibleTo)
+        CombatTargetQuery.patrolEnemy(unit, orderedUnits(), checkNotNull(scenario).players, ::isVisibleTo, checkNotNull(scenario).map)
 
     private fun updateWeapon(unit: MutableUnit, delta: Double) {
         if (unit.namedWeapons != null) {
@@ -1645,13 +1661,13 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
             return
         }
         val state = unit.combat ?: return
-        val weapon = checkNotNull(unit.definition.combat)
+        val weapon = checkNotNull(SubmarineCombat.profile(unit))
         val input = checkNotNull(scenario)
         val contract = checkNotNull(input.combatContract)
         val actorId = checkNotNull(unit.objectId)
         OrdinaryWeapon.idle(contract.worldSeed, combatFrame, actorId, unit, delta)
         fun eligible(target: MutableUnit) = CombatTargetQuery.isEnemy(unit, target, input.players) &&
-            CombatTargetQuery.canAttackAirCategory(unit, target)
+            CombatTargetQuery.canAttackAirCategory(unit, target, input.map)
         fun inRange(target: MutableUnit) = policies.coordinates.distanceSquared(unit.position, target.position) <
             weapon.attackRange * weapon.attackRange
         val manual = unit.attackCommand
@@ -1671,7 +1687,7 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
             }
             if (retained != null && state.patrolDispatchTimer == 0f) state.patrolDispatchTimer = interval
             retained?.takeIf(::inRange)
-        } else manualTarget ?: units[state.targetId]?.takeIf { eligible(it) && inRange(it) } ?: CombatTargetQuery.nearestEnemy(unit, orderedUnits(), input.players, policies.coordinates)
+        } else manualTarget ?: units[state.targetId]?.takeIf { eligible(it) && inRange(it) } ?: CombatTargetQuery.nearestEnemy(unit, orderedUnits(), input.players, policies.coordinates, input.map)
         if (target == null) {
             if (!patrol) state.targetId = null
             return
@@ -1693,9 +1709,9 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
         val input = checkNotNull(scenario)
         val contract = checkNotNull(input.combatContract)
         val candidates = orderedUnits()
-        val globalRange = checkNotNull(unit.definition.combat).attackRange
+        val globalRange = SubmarineCombat.range(unit)
         fun globalEligible(target: MutableUnit) = CombatTargetQuery.isEnemy(unit, target, input.players) &&
-            CombatTargetQuery.canAttackAirCategory(unit, target) &&
+            CombatTargetQuery.canAttackAirCategory(unit, target, input.map) &&
             policies.coordinates.distanceSquared(unit.position, target.position) < globalRange * globalRange
         val manual = unit.attackCommand?.let { units[it.targetUnitId]?.takeIf(::globalEligible) }
         val patrol = unit.tasks.firstOrNull()?.kind == UnitTaskKind.PATROL
@@ -1716,7 +1732,7 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
             retained?.takeIf(::globalEligible)
         } else {
             (manual ?: units[unit.sharedWeaponTargetId]?.takeIf(::globalEligible) ?:
-                CombatTargetQuery.nearestEnemy(unit, candidates, input.players, policies.coordinates)).also {
+                CombatTargetQuery.nearestEnemy(unit, candidates, input.players, policies.coordinates, input.map)).also {
                     unit.sharedWeaponTargetId = it?.unitId
                 }
         }
@@ -1770,7 +1786,10 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
             nonDeflectable = weapon.projectile.nonDeflectable, ground = ground, verticalSpeed = ground?.profile?.initialVerticalSpeed ?: 0f,
             sourceWeaponName = definition?.name, acceleration = weapon.projectile.acceleration,
             splash = weapon.projectile.splash, retargetOnDeath = weapon.projectile.retargetOnDeath,
-            ballistic = weapon.projectile.ballistic)
+            ballistic = weapon.projectile.ballistic,
+            appearance = if (unit.definition.submarine == null) ProjectileAppearance.STANDARD
+                else if (SubmarineMotion.submerged(unit)) ProjectileAppearance.SUBMARINE_TORPEDO
+                else ProjectileAppearance.SUBMARINE_MISSILE)
         projectiles += projectile
         pendingProjectileEvents += ProjectileEventObservation("born", projectileObservation(projectile))
         weapon.fireSound?.let { steps.current.pendingSoundTriggers += SoundTriggerObservation(it.eventId, position, it.volume, it.pitch) }
@@ -1893,7 +1912,7 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
         var nearest = 120.0 * 120.0
         var chosen: MutableUnit? = null
         for (candidate in orderedUnits()) {
-            if (!CombatTargetQuery.canAttackAirCategory(source, candidate) ||
+            if (!CombatTargetQuery.canAttackAirCategory(source, candidate, checkNotNull(scenario).map) ||
                 !NamedWeaponRuntime.qualifies(source, candidate, weapon, players, policies.coordinates, checkRange = false) ||
                 weapon.attachedTo?.let { parent -> !NamedWeaponRuntime.qualifies(source, candidate,
                     catalog.byName.getValue(parent), players, policies.coordinates, checkRange = false) } == true) continue
@@ -2005,7 +2024,7 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
 
     private fun updateUnit(unit: MutableUnit, map: MapDefinition, delta: Double, executionStep: Long,
                            motionSamples: MutableList<MotionStepSample>?) {
-        val movement = unit.definition.movement
+        val movement = SubmarineMotion.movement(unit)
         val maximumSpeed = movement.moveSpeed * unit.terrainSpeedMultiplier
         val air = movement.type == MovementType.AIR
         val sliding = movement.slidingMode
@@ -2027,7 +2046,7 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
         var speedTarget = 0.0
         val attackTarget = unit.attackCommand?.targetUnitId?.let { units[it] }
         val approachingBuilding = attackTarget?.alive == true && attackTarget.definition.building != null &&
-            unit.definition.combat?.let { weapon ->
+            SubmarineCombat.profile(unit)?.let { weapon ->
                 policies.coordinates.distanceSquared(unit.position, attackTarget.position) >= weapon.attackRange * weapon.attackRange
             } == true
         val workTask = unit.tasks.firstOrNull()?.takeIf {
@@ -2193,7 +2212,8 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
                 projectile.groundDistanceSquared) }, projectile.missile?.let {
             MissileObservation(projectile.speed.toFloat(), projectile.missileReachedApex, projectile.missileRawAz) },
         projectile.expansion?.let { AreaExpansionObservation(it.remaining, it.radius, it.hitUnitIds) }, projectile.sourceWeaponName,
-        projectile.ballistic?.let { BallisticObservation(projectile.speed.toFloat(), projectile.ballisticReachedApex, projectile.ballisticRawAz) })
+        projectile.ballistic?.let { BallisticObservation(projectile.speed.toFloat(), projectile.ballisticReachedApex, projectile.ballisticRawAz) },
+        projectile.appearance)
 
     private fun makeObservation(observedStep: Long, observedTime: Double, advanced: Boolean, observedRevision: Long): Observation {
         val currentScenario = checkNotNull(scenario)
@@ -2218,6 +2238,9 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
                     health = unit.health,
                     maxHealth = unit.definition.maximumHealth,
                     shield = unit.definition.shield?.let { ShieldObservation(unit.shield, it.maximum, unit.shieldDisplayDamage) },
+                    submarine = unit.definition.submarine?.let { SubmarineObservation(unit.submarineSurfaceIntent,
+                        unit.submarineVerticalSpeed, SubmarineMotion.submerged(unit), unit.submarineSurfacePresentation,
+                        SubmarineMotion.movement(unit).moveSpeed, SubmarineCombat.range(unit)) },
                     alive = unit.alive,
                     attackTargetId = if (unit.tasks.firstOrNull()?.kind == UnitTaskKind.PATROL) unit.primaryCombatTargetId
                         else unit.attackCommand?.targetUnitId,
