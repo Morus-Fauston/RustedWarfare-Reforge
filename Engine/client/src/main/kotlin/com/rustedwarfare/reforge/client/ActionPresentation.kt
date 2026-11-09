@@ -15,7 +15,8 @@ internal class ActionCatalogue(private val definitions: Map<String, UnitDefiniti
         "hoverTank" to Names("Hover tank"),
         "mechFactory" to Names("Mech factory"), "mechGun" to Names("Gun mech"),
         "mechFactoryT2" to Names("Mech factory T2"), "mechHeavyMissile" to Names("Heavy missile mech"),
-        "airFactory" to Names("Air factory"), "helicopter" to Names("Helicopter"),
+        "airFactory" to Names("Air factory"), "airFactoryT2" to Names("Air factory T2"),
+        "helicopter" to Names("Helicopter"), "amphibiousJet" to Names("Amphibious jet"),
         "seaFactory" to Names("Sea factory"), "seaFactoryT2" to Names("Sea factory T2"),
         "heavyBattleship" to Names("Heavy battleship"), "attackSubmarine" to Names("Submarine"),
         "extractorT1" to Names("Extractor T1", "Extractor"), "extractorT2" to Names("Extractor T2", "Unit"),
@@ -74,6 +75,16 @@ internal class ActionCatalogue(private val definitions: Map<String, UnitDefiniti
             SubmarineDepthActionView(surface, if (surface) "Surface" else "Dive",
                 if (surface) "Rise to the surface\nMovement orders continue" else "Dive underwater\nMovement orders continue")
         }
+        val flightAction = ownSingle?.takeIf { it.constructionProgress >= 1f }?.amphibiousJet?.let { state ->
+            state.flyingIntent?.let { intent ->
+                val flying = !intent
+                val available = flying || state.canDive == true
+                AmphibiousFlightActionView(flying, if (flying) "Fly" else "Dive",
+                    if (flying) "Return to flight\nMovement orders continue"
+                    else if (available) "Dive underwater\nMovement orders continue"
+                    else "Dive requires water below the aircraft", available)
+            }
+        }
         val factory = ownSingle?.let { unit -> view.factoryQueues.firstOrNull { it.factoryId == unit.unitId } }
         val profiles = ownSingle?.takeUnless { it.constructionProgress < 1f &&
             definitions.getValue(it.typeId).className == "AuthoredBuilding" }
@@ -82,7 +93,7 @@ internal class ActionCatalogue(private val definitions: Map<String, UnitDefiniti
         val upgrades = immutable(profiles.map { profile ->
             val item = upgradeQueue?.items?.firstOrNull { it.actionKey == profile.actionKey }
             val seconds = nominalSeconds[selected?.typeId]
-            val authored = selected?.let { definitions.getValue(it.typeId).className == "AuthoredBuilding" } == true
+            val authored = selected?.let { definitions.getValue(it.typeId).production != null } == true
             val kind = if (authored) UpgradePresentationKind.FACTORY
                 else if (seconds != null) UpgradePresentationKind.ECONOMIC else UpgradePresentationKind.DEFENSE
             val title = if (kind == UpgradePresentationKind.ECONOMIC) "Upgrade - T${profile.targetTypeId.last()}"
@@ -112,6 +123,9 @@ internal class ActionCatalogue(private val definitions: Map<String, UnitDefiniti
                 (unit.shield?.let { "\nShield ${it.current.toInt()} / ${it.maximum.toInt()}" } ?: "") +
                 (unit.submarine?.let { String.format(Locale.ROOT, "\n%s\nDepth %.2f\nSpeed %.2f\nRange %.0f",
                     if (it.underwater) "Underwater" else "Surface", unit.height, it.maximumSpeed, it.attackRange) } ?: "") +
+                (unit.amphibiousJet?.let { String.format(Locale.ROOT, "\n%s / %s\nHeight %.2f\nSpeed %.2f\nRange %.0f",
+                    if (it.underwater) "Underwater" else "Above water", it.movementType.name,
+                    unit.height, it.maximumSpeed, it.attackRange) } ?: "") +
                 (nominalIncome(unit.typeId)?.let { "\n+\$${it.toInt()}" } ?: "") +
                 (if (unit.constructionProgress < 1f) "\nBuilding ${(unit.constructionProgress * 100f).toInt()}%"
                     else if (unit.typeId.startsWith("extractorT") || unit.typeId.startsWith("fabricatorT")) "\nActive" else "") +
@@ -127,7 +141,7 @@ internal class ActionCatalogue(private val definitions: Map<String, UnitDefiniti
                 val name = if (upgrades.any { it.kind == UpgradePresentationKind.FACTORY && it.actionKey == item.actionKey })
                     title(item.targetTypeId, panel = true) else if (item.actionKey == "upgrade_gun") "Gun" else "Art"
                 "  $name ${(item.progress * 100f).toInt()}%"
-            }.orEmpty(), view.balance, depthAction)
+            }.orEmpty(), view.balance, depthAction, flightAction)
     }
 
     private fun workerText(workers: List<UnitObservation>, view: PlayerObservation): String {
@@ -162,9 +176,11 @@ data class ActionMenuView(val credits: Double? = null, val production: List<Prod
     val factoryQueue: FactoryQueueObservation? = null, val upgradeQueue: UpgradeQueueObservation? = null,
     val canMaintain: Boolean = false, val workerQueueText: String? = null, val selectedUnitInfo: String? = null,
     val selectedTitle: String? = null, val totalNominalIncome: Float = 0f, val upgradeQueueText: String = "",
-    val balance: Long? = null, val depthAction: SubmarineDepthActionView? = null) {
+    val balance: Long? = null, val depthAction: SubmarineDepthActionView? = null,
+    val flightAction: AmphibiousFlightActionView? = null) {
     val reclaimTooltip: String get() = if (canMaintain)
         "Reclaim own building\nCredits returned on completion\nLeft: choose target\nEsc / right: cancel" else ""
 }
 
 data class SubmarineDepthActionView(val surface: Boolean, val title: String, val tooltip: String)
+data class AmphibiousFlightActionView(val flying: Boolean, val title: String, val tooltip: String, val available: Boolean)

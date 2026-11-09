@@ -1,0 +1,177 @@
+{
+  "schemaVersion": 1,
+  "scenarioId": "amphibious-hjson-production-chain",
+  "rules": [
+    {
+      "intentId": "select-center"
+    },
+    {
+      "intentId": "produce-worker"
+    },
+    {
+      "intentId": "leave-center"
+    },
+    {
+      "intentId": "select-worker"
+    },
+    {
+      "intentId": "build-t1"
+    },
+    {
+      "intentId": "finish-t1"
+    },
+    {
+      "intentId": "upgrade-t2"
+    },
+    {
+      "intentId": "wait-upgrade-1"
+    },
+    {
+      "intentId": "wait-upgrade-2"
+    },
+    {
+      "intentId": "wait-upgrade-3"
+    },
+    {
+      "intentId": "finish-upgrade"
+    },
+    {
+      "intentId": "produce-jet"
+    },
+    {
+      "intentId": "finish-jet"
+    },
+    {
+      "intentId": "select-jet"
+    },
+    {
+      "intentId": "fly-water"
+    },
+    {
+      "intentId": "dive"
+    },
+    {
+      "intentId": "move-shore"
+    },
+    {
+      "intentId": "fly"
+    },
+    {
+      "intentId": "cross-shore"
+    },
+    {
+      "intentId": "stop-flight"
+    },
+    {
+      "intentId": "attack-air"
+    },
+    {
+      "intentId": "move-water-again"
+    },
+    {
+      "intentId": "dive-again"
+    },
+    {
+      "intentId": "attack-underwater"
+    },
+    {
+      "intentId": "stop-final"
+    }
+  ],
+  "history": {
+    "initialBalance": 10000,
+    "ownerPlayerId": "p1",
+    "initialOwnedTypes": [
+      "commandCenter"
+    ],
+    "initialIncome": {
+      "unitId": "a",
+      "typeId": "commandCenter",
+      "period": 10,
+      "credits": 4.5
+    },
+    "productionOrder": [
+      "builder",
+      "amphibiousJet"
+    ],
+    "completedUpgradeTypes": [
+      "airFactoryT2"
+    ],
+    "projectileBirthsRequired": true,
+    "spend": [
+      {
+        "intentId": "produce-worker",
+        "amount": 500,
+        "at": "action"
+      },
+      {
+        "intentId": "build-t1",
+        "amount": 1000,
+        "at": "construction-created"
+      },
+      {
+        "intentId": "upgrade-t2",
+        "amount": 1500,
+        "at": "action"
+      },
+      {
+        "intentId": "produce-jet",
+        "amount": 2000,
+        "at": "action"
+      }
+    ],
+    "minimumBirths": [
+      {
+        "ownerPlayerId": "p1",
+        "typeId": "amphibiousJet",
+        "weaponNames": [
+          "left",
+          "right"
+        ],
+        "targetUnitId": "c"
+      },
+      {
+        "ownerPlayerId": "p1",
+        "typeId": "amphibiousJet",
+        "weaponNames": [
+          "left",
+          "right"
+        ],
+        "targetUnitId": "d"
+      }
+    ],
+    "finalUnits": [
+      {
+        "ownerPlayerId": "p1",
+        "typeId": "commandCenter",
+        "fields": {
+          "alive": true
+        }
+      },
+      {
+        "ownerPlayerId": "p1",
+        "typeId": "builder",
+        "fields": {
+          "alive": true
+        }
+      },
+      {
+        "ownerPlayerId": "p1",
+        "typeId": "airFactoryT2",
+        "fields": {
+          "alive": true
+        }
+      },
+      {
+        "ownerPlayerId": "p1",
+        "typeId": "amphibiousJet",
+        "fields": {
+          "alive": true,
+          "maxHealth": 530,
+          "height": -8,
+          "moveTarget": null
+        }
+      }
+    ]
+  }
+}

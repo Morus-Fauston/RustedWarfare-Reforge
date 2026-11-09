@@ -31,6 +31,12 @@ object GroundRules {
         return gid - tileSet.firstGid in tileSet.waterTileIds
     }
 
+    internal fun nativeLiquid(tileSets: List<TileSetDefinition>, gid: Int): Boolean {
+        val tileSet = owner(tileSets, gid) ?: return false
+        val local = gid - tileSet.firstGid
+        return local in tileSet.waterTileIds || local in tileSet.lavaTileIds
+    }
+
     fun resourcePool(tileSets: List<TileSetDefinition>, gid: Int): Boolean {
         val tileSet = owner(tileSets, gid) ?: return false
         return gid - tileSet.firstGid in tileSet.resourcePoolTileIds

@@ -106,7 +106,7 @@ internal object ContentPackReader {
             val field = "units[$index]"
             val spec = objectFields(entry, setOf("type", "file"), manifest, field)
             val capability = string(spec.get("type"), "$field.type")
-            if (capability !in setOf("tank", "hover-tank", "mech", "mech-heavy", "mech-factory", "builder", "constructor", "factory", "helicopter", "air-factory", "battleship", "water-combat", "sea-factory", "underwater-target", "submarine", "command-center", "land-factory"))
+            if (capability !in setOf("tank", "hover-tank", "mech", "mech-heavy", "mech-factory", "builder", "constructor", "factory", "helicopter", "amphibious-jet", "air-factory", "battleship", "water-combat", "sea-factory", "underwater-target", "submarine", "command-center", "land-factory"))
                 reject(ContentErrorCode.UNSUPPORTED_FEATURE, manifest, field = "$field.type", reason = "Expected an implemented finite combat, mech, factory or builder capability")
             val reference = string(spec.get("file"), "$field.file")
             val pieces = reference.split('/')
@@ -122,6 +122,7 @@ internal object ContentPackReader {
             if (!files.add(input)) reject(ContentErrorCode.IDENTITY_CONFLICT, manifest, field = "$field.file", ref = reference,
                 reason = "Duplicate package entry")
             val loaded = when (capability) {
+                "amphibious-jet" -> AmphibiousJetContentReader.readWithSources(input) { requireOrdinary(root, it) }
                 "submarine" -> SubmarineContentReader.readWithSources(input) { requireOrdinary(root, it) }
                 "hover-tank" -> CombatContentReader.readHoverTankWithSources(input) { requireOrdinary(root, it) }
                 "command-center" -> CommandCenterContentReader.readWithSources(input) { requireOrdinary(root, it) }
@@ -166,7 +167,9 @@ internal object ContentPackReader {
                 "image_wreak" to (definition.durability?.deadImagePath ?: combat?.deadImagePath),
                 "image_back" to definition.building?.backImagePath,
                 "image_end" to definition.rotor?.imagePath, "image_shadow" to definition.shadowImagePath,
-                "image_shield" to definition.shieldImagePath) + definition.mech?.legs.orEmpty().flatMap {
+                "image_shield" to definition.shieldImagePath,
+                "image_wing_left" to definition.amphibiousJet?.leftWingImagePath,
+                "image_wing_right" to definition.amphibiousJet?.rightWingImagePath) + definition.mech?.legs.orEmpty().flatMap {
                     listOf("image_leg" to it.legImage, "image_foot" to it.footImage) } +
                 combat?.namedWeapons?.ordered.orEmpty().map { "turret_${it.name}.image" to it.imagePath }
             for ((slot, image) in images) {

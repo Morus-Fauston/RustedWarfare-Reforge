@@ -310,6 +310,7 @@ object TraceComparator {
                         units.forEach { validateUnitSample(it, scenario, initial = row["phase"] == s("initial")) }
                         validateBallisticSamples(observation, scenario, units)
                         validateSubmarineProjectiles(observation, scenario, units)
+                        validateAmphibiousProjectiles(observation, scenario, units)
                         if (hasConstruction(scenario)) validateConstructionSample(scenario, observation, units, built)
                         val incomeTypes = typesLoadedBy(scenario, setOf("command-center", "economy", "economy-upgrades"))
                         if (incomeTypes.isNotEmpty()) {
@@ -479,6 +480,9 @@ object TraceComparator {
         if (unit.id("typeId") in typesLoadedBy(scenario, setOf("submarine"))) validateSubmarine(unit, observer, initial)
         else if (unit["submarine"] != null && unit["submarine"] != JsonNull)
             throw Incomplete("submarine-state", "Submarine state on an unsupported unit")
+        if (unit.id("typeId") in typesLoadedBy(scenario, setOf("amphibious-jet"))) validateAmphibious(unit, observer)
+        else if (unit["amphibiousJet"] != null && unit["amphibiousJet"] != JsonNull)
+            throw Incomplete("amphibious-state", "Amphibious state on an unsupported unit")
         if (unit.id("typeId") in typesLoadedBy(scenario, setOf("battleship", "water-combat", "submarine"))) validateWaterPose(unit)
         if (unit.id("typeId") in typesLoadedBy(scenario, setOf("underwater-target"))) {
             val height = unit["height"] as? JsonPrimitive
@@ -519,6 +523,79 @@ object TraceComparator {
         }
     }
 
+    private fun validateAmphibious(unit: JsonObject, observer: String?) {
+        fun invalid(reason: String): Nothing = throw Incomplete("amphibious-state", reason)
+        val state = unit["amphibiousJet"] as? JsonObject ?: invalid("Missing native amphibious state")
+        if (state.keys != setOf("flyingIntent", "verticalSpeed", "underwater", "surfacePresentation", "movementType",
+                "maximumSpeed", "attackRange", "wingFold", "phase", "sinkSpeed", "settled", "canDive"))
+            invalid("Incomplete or unapproved amphibious fields")
+        fun number(value: JsonElement?, name: String): Double {
+            val literal = value as? JsonPrimitive
+            val result = literal?.doubleOrNull
+            if (literal == null || literal.isString || result == null || !result.isFinite() || !result.toFloat().isFinite())
+                invalid("Invalid amphibious $name")
+            return result
+        }
+        val height = number(unit["height"], "height")
+        val underwater = height < -1.0
+        if (state["underwater"] != b(underwater)) invalid("Underwater category differs from actual height")
+        for (key in listOf("surfacePresentation", "settled"))
+            if (state[key] !in setOf(b(true), b(false))) invalid("Invalid $key boolean")
+        if (number(state["wingFold"], "wingFold") !in 0.0..1.0 ||
+            number(state["phase"], "phase") !in 0.0..360.0 || number(state["sinkSpeed"], "sinkSpeed") < 0.0)
+            invalid("Invalid amphibious motion state")
+        val water = state["movementType"] == s("WATER")
+        if (state["movementType"] !in setOf(s("AIR"), s("WATER"))) invalid("Invalid amphibious movement type")
+        if (number(state["maximumSpeed"], "maximumSpeed") != (if (underwater) .4 else 1.4) ||
+            number(state["attackRange"], "attackRange") != (if (water) 100.0 else 170.0))
+            invalid("Speed or range differs from actual physical state")
+        if (listOf("flightPose", "waterPose", "submarine").any { unit[it] != null && unit[it] != JsonNull })
+            invalid("Incompatible locomotion pose")
+        if (observer == null || observer == unit.id("ownerPlayerId")) {
+            if (state["flyingIntent"] !in setOf(b(true), b(false)) || state["canDive"] !in setOf(b(true), b(false)))
+                invalid("Missing owner intent or dive eligibility")
+            if (number(state["verticalSpeed"], "verticalSpeed") !in 0.0..0.6) invalid("Invalid vertical speed")
+            if (water != (state["flyingIntent"] == b(false) || height < 0.0)) invalid("Movement differs from height and intent")
+            if (state["canDive"] == b(true) && (state["flyingIntent"] != b(true) || unit["alive"] != b(true) || unit.number("constructionProgress") < 1.0))
+                invalid("Invalid dive eligibility")
+        } else if (listOf("flyingIntent", "verticalSpeed", "canDive").any { state[it] != JsonNull })
+            invalid("Enemy amphibious controls must be redacted")
+    }
+
+    private fun validateAmphibiousProjectiles(sample: JsonObject, scenario: JsonObject, units: List<JsonObject>, player: Boolean = false) {
+        val types = typesLoadedBy(scenario, setOf("amphibious-jet"))
+        if (types.isEmpty()) return
+        fun invalid(reason: String): Nothing = throw Incomplete("amphibious-projectile", reason)
+        fun finite(value: JsonElement?): Boolean {
+            val literal = value as? JsonPrimitive ?: return false
+            return !literal.isString && literal.doubleOrNull?.let { it.isFinite() && it.toFloat().isFinite() } == true
+        }
+        fun validate(shot: JsonObject) {
+            val source = shot["sourceUnitId"]?.jsonPrimitive?.contentOrNull
+            val sourceUnit = units.singleOrNull { it["unitId"] == source?.let(::s) }
+            val expected = sourceUnit?.id("typeId") in types
+            val style = shot["appearance"]
+            val line = shot["lightning"]
+            if (style != s("AMPHIBIOUS_LIGHTNING")) {
+                if (expected || line != null && line != JsonNull) invalid("Invalid native lightning appearance")
+                return
+            }
+            if (sourceUnit != null && !expected) invalid("Lightning on an unsupported source")
+            val segment = line as? JsonObject ?: invalid("Missing lightning geometry")
+            if (segment.keys != setOf("end", "endHeight")) invalid("Unapproved lightning geometry fields")
+            val end = segment["end"] as? JsonObject ?: invalid("Missing lightning endpoint")
+            if (end.keys != setOf("x", "y") || !finite(end["x"]) || !finite(end["y"]) || !finite(segment["endHeight"]))
+                invalid("Invalid lightning endpoint")
+            if (!player && (shot["sourceWeaponName"] !in setOf(s("left"), s("right")) ||
+                listOf("ground", "missile", "ballistic", "areaExpansion").any { shot[it] != null && shot[it] != JsonNull }))
+                invalid("Invalid lightning launch profile")
+        }
+        sample.arrayAt("projectiles").forEach { validate(it.jsonObject) }
+        sample.arrayAt("projectileEvents").forEach {
+            validate(if (player) it.jsonObject else it.jsonObject.objectAt("projectile"))
+        }
+    }
+
     private fun validateSubmarine(unit: JsonObject, observer: String?, initial: Boolean) {
         fun invalid(reason: String): Nothing = throw Incomplete("submarine-state", reason)
         val state = unit["submarine"] as? JsonObject ?: invalid("Missing native submarine state")
@@ -550,6 +627,12 @@ object TraceComparator {
             invalid("Enemy submarine control state must be redacted")
     }
 
+    private val submarineLaunchAppearances = setOf("SUBMARINE_MISSILE", "SUBMARINE_TORPEDO")
+
+    private fun submarineCoexistingAppearances(scenario: JsonObject): Set<String> =
+        submarineLaunchAppearances + "STANDARD" +
+            if (typesLoadedBy(scenario, setOf("amphibious-jet")).isNotEmpty()) setOf("AMPHIBIOUS_LIGHTNING") else emptySet()
+
     private fun validateSubmarineProjectiles(observation: JsonObject, scenario: JsonObject, units: List<JsonObject>) {
         val types = typesLoadedBy(scenario, setOf("submarine"))
         if (types.isEmpty()) return
@@ -558,14 +641,14 @@ object TraceComparator {
         fun validate(shot: JsonObject) {
             val source = (shot["sourceUnitId"] as? JsonPrimitive)?.content
             val appearance = shot["appearance"] as? JsonPrimitive
-            if (appearance?.isString != true || appearance.content !in setOf("STANDARD", "SUBMARINE_MISSILE", "SUBMARINE_TORPEDO"))
+            if (appearance?.isString != true || appearance.content !in submarineCoexistingAppearances(scenario))
                 invalid("Missing or unknown launch appearance")
             if (source !in sources) {
-                if (appearance.content != "STANDARD") invalid("Submarine launch appearance on an unsupported source")
+                if (appearance.content in submarineLaunchAppearances) invalid("Submarine launch appearance on an unsupported source")
                 return
             }
             // The existing native single-weapon channel exports null, unlike authored named-weapon channels.
-            if (shot["sourceWeaponName"] != JsonNull || appearance.content == "STANDARD") invalid("Invalid native submarine launch identity")
+            if (shot["sourceWeaponName"] != JsonNull || appearance.content !in submarineLaunchAppearances) invalid("Invalid native submarine launch identity")
             if (listOf("ground", "missile").any { shot[it] != null && shot[it] != JsonNull }) invalid("Incompatible submarine projectile profile")
             val ballistic = shot["ballistic"]
             if (appearance.content == "SUBMARINE_TORPEDO") {
@@ -725,17 +808,18 @@ object TraceComparator {
                 if (units.map { it.id("unitId") }.toSet() != visible.toSet() || units.size != visible.size)
                     throw Incomplete("player-units", "Incomplete visible unit samples")
                 units.forEach { validateUnitSample(it, scenario, id, observation.number("simulationTime") == 0.0) }
+                validateAmphibiousProjectiles(player, scenario, units, player = true)
                 if (typesLoadedBy(scenario, setOf("submarine")).isNotEmpty()) {
                     for (field in listOf("projectiles", "projectileEvents")) for (element in player.arrayAt(field)) {
                         val shot = element.jsonObject
                         val style = shot["appearance"] as? JsonPrimitive
-                        if (style?.isString != true || style.content !in setOf("STANDARD", "SUBMARINE_MISSILE", "SUBMARINE_TORPEDO"))
+                        if (style?.isString != true || style.content !in submarineCoexistingAppearances(scenario))
                             throw Incomplete("submarine-projectile", "Missing or unknown authorized launch appearance")
                         // Public projectile rows deliberately omit hidden source identity; never infer it from depth.
                         val source = (shot["sourceUnitId"] as? JsonPrimitive)?.content
                         if (source != null) {
                             val unit = units.singleOrNull { it["unitId"] == s(source) }
-                            if (unit != null && (unit.id("typeId") in typesLoadedBy(scenario, setOf("submarine"))) != (style.content != "STANDARD"))
+                            if (unit != null && (unit.id("typeId") in typesLoadedBy(scenario, setOf("submarine"))) != (style.content in submarineLaunchAppearances))
                                 throw Incomplete("submarine-projectile", "Authorized source and launch appearance differ")
                         }
                     }

@@ -53,7 +53,10 @@ def validate_windows_plan(plan,contract):
                     not 0<segment.get('stallSeconds',0)<=segment.get('maximumWallSeconds',0)<=60):
                 raise PlatformError('input-contract','Invalid declared waiting segment',1)
     action_types={'select':'SelectAction','move':'MoveAction','build':'BuildAction','upgrade':'UpgradeAction',
-                  'produce':'ProduceAction','attack':'AttackAction','stop':'StopAction','submarine-depth':'SubmarineDepthAction'}
+                  'produce':'ProduceAction','attack':'AttackAction','stop':'StopAction','submarine-depth':'SubmarineDepthAction',
+                  'amphibious-flight':'AmphibiousFlightAction'}
+    if any(i.get('kind')=='amphibious-flight' and type(i.get('flying')) is not bool for i in intents):
+        raise PlatformError('input-contract','Amphibious intention requires a strict flying boolean',1)
     if any(i.get('kind')=='submarine-depth' and type(i.get('surface')) is not bool for i in intents):
         raise PlatformError('input-contract','Submarine intention requires a strict surface boolean',1)
     if history:
@@ -334,6 +337,8 @@ def run_windows(scenario, contract, distribution, output, size, java='java', rat
                     click_action('stop')
                 elif kind == 'submarine-depth':
                     click_action('submarine-surface' if intent['surface'] else 'submarine-dive')
+                elif kind == 'amphibious-flight':
+                    click_action('amphibious-fly' if intent['flying'] else 'amphibious-dive')
                 elif kind == 'produce':
                     click_action('produce:'+intent['typeId'])
                 elif kind == 'cancelProduction':

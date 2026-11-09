@@ -19,7 +19,7 @@
         "id": "airFactory",
         "loader": "factory",
         "path": "../inputs/helicopter-production/json/production-package/units/airFactory.json",
-        "sha256": "513480ef4f460eb7c2a4b3f5922998a82a9f9b1e7e1564f78936c3a787176f7e"
+        "sha256": "8b332a3845ffedd71169f2c59c0f4c2cd9deb25a61f076a8907d576b0da59888"
       },
       {
         "id": "builder",

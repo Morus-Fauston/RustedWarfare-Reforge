@@ -64,6 +64,7 @@ internal object TsxReader {
         val resourcePools = mutableSetOf<Int>()
         val water = mutableSetOf<Int>()
         val bridges = mutableSetOf<Int>()
+        val lava = mutableSetOf<Int>()
         for (tile in children.filter { it.tagName == "tile" }) {
             attributes(tile, path, setOf("id"))
             val id = integer(tile, path, "id", 0)
@@ -88,6 +89,7 @@ internal object TsxReader {
                     "water-bridge" -> bridges.add(id)
                     else -> blocked.add(id)
                 }
+                if (propertyName == "lava" || propertyName == "lava-cliff") lava.add(id)
                 if (propertyName in setOf("trees", "large-rock", "large-cliff", "lava", "lava-cliff", "block-land"))
                     hoverBlocked.add(id)
                 if (propertyName in setOf("trees", "large-rock", "lava", "lava-cliff", "block-land"))
@@ -95,7 +97,7 @@ internal object TsxReader {
             }
         }
         return TileSetDefinition(firstGid, name, width, height, imagePath, blocked, tileCount, columns, spacing, margin,
-            image.getAttribute("trans").takeIf { image.hasAttribute("trans") }, resourcePools, water, bridges, hoverBlocked, overCliffBlocked)
+            image.getAttribute("trans").takeIf { image.hasAttribute("trans") }, resourcePools, water, bridges, hoverBlocked, overCliffBlocked, lava)
     }
 
     private fun verifyPngDimensions(image: Path, file: Path, source: String, width: Int, height: Int) {

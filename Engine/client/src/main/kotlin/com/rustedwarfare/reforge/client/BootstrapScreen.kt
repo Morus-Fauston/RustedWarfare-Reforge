@@ -61,6 +61,7 @@ class BootstrapScreen(
     private lateinit var patrolButton: TextButton
     private lateinit var depthButton: TextButton
     private lateinit var depthInput: SubmarineDepthButtonInput
+    private lateinit var flightInput: AmphibiousFlightButtonInput
     private val rateButtons = linkedMapOf<OfflineRate, TextButton>()
     private lateinit var simulationPauseButton: TextButton
     private lateinit var pacingLabel: Label
@@ -94,6 +95,7 @@ class BootstrapScreen(
     private lateinit var reclaimText: Label
     private lateinit var reclaimInput: ReclaimButtonInput
     private var reclaimHover = false
+    private var flightHover = false
     private var nativeSelection: Set<String> = emptySet()
     private val nativePanel: Boolean get() = NativeActionPanel.supports(session?.observation?.scenarioId) ||
         session?.hasConstructorDefinitions == true || session?.hasProductionDefinitions == true
@@ -328,6 +330,17 @@ class BootstrapScreen(
             depthInput = SubmarineDepthButtonInput({ session }, { !paused && !loading && session?.isOpen == true },
                 { lastHudState = null; updateHud() })
             actor.addListener(depthInput)
+            flightInput = AmphibiousFlightButtonInput({ session }, { !paused && !loading && session?.isOpen == true },
+                { lastHudState = null; updateHud() })
+            actor.addListener(flightInput)
+            actor.addListener(object : InputListener() {
+                override fun enter(event: InputEvent, x: Float, y: Float, pointer: Int, fromActor: Actor?) {
+                    if (pointer == -1) { flightHover = true; lastHudState = null }
+                }
+                override fun exit(event: InputEvent, x: Float, y: Float, pointer: Int, toActor: Actor?) {
+                    if (pointer == -1) { flightHover = false; lastHudState = null }
+                }
+            })
             stage.addActor(actor)
         }
         exitButton = button("Exit match", 752f, 72f, 176f) { leaveMatch() }
@@ -712,7 +725,8 @@ class BootstrapScreen(
                 constructionHover != null && session?.constructionActions?.any { it.typeId == constructionHover } == true ||
                 economicUpgradeHover && economicUpgradeCard.isVisible || reclaimHover && reclaimCard.isVisible ||
                 upgradeHover != null && session?.selectedUpgrades?.any { it.actionKey == upgradeHover } == true ||
-                factoryUpgradeHover != null && session?.selectedUpgrades?.any { it.actionKey == factoryUpgradeHover } == true)
+                factoryUpgradeHover != null && session?.selectedUpgrades?.any { it.actionKey == factoryUpgradeHover } == true ||
+                flightHover && session?.actionMenu?.flightAction != null)
         if (nativeTooltip.isVisible) nativeTooltip.toFront()
         Gdx.gl.glClear(GL20.GL_COLOR_BUFFER_BIT)
         viewport.apply()
@@ -785,7 +799,8 @@ class BootstrapScreen(
             enabled = commandConsoleOpen && current?.canDeploy == true)
         packPanel?.let { entries += it.drawnActions() }
         button("stop", stopButton); button("choose-patrol", patrolButton)
-        button(if (menu?.depthAction?.surface == false) "submarine-dive" else "submarine-surface", depthButton)
+        button(menu?.flightAction?.let { if (it.flying) "amphibious-fly" else "amphibious-dive" }
+            ?: if (menu?.depthAction?.surface == false) "submarine-dive" else "submarine-surface", depthButton)
         val nativeActive = nativePanel && !paused && current?.isOpen == true
         for ((type, card) in productionCards) {
             if (card.table.parent === productionContent && !productionCardExposed(card.table)) continue
@@ -1117,6 +1132,8 @@ class BootstrapScreen(
             economicUpgradeInput.cancel()
             upgradeInputs.forEach { it.cancel() }
             depthInput.cancel()
+            flightInput.cancel()
+            flightHover = false
             upgradeHover = null
             reclaimInput.cancel()
             constructionCards.values.forEach { it.input.cancel() }
@@ -1130,7 +1147,7 @@ class BootstrapScreen(
             selectedLabel.setText(if (selected == null) "None" else if (state.selectedIds.size > 1)
                 "${state.selectedIds.size} selected" else "${menu?.selectedTitle} x1")
             setUnitIcon(nativeIcon, selected?.typeId)
-            nativeInfo.setFontScale(if (state.workerQueueText != null) .7f else if (selected?.submarine != null) .8f else 1f)
+            nativeInfo.setFontScale(if (state.workerQueueText != null) .7f else if (selected?.submarine != null || selected?.amphibiousJet != null) .8f else 1f)
             nativeInfo.setText(selectedInfo ?: "")
             menu?.production?.firstOrNull { it.typeId == productionHover }?.let { action ->
                 setUnitIcon(nativeTooltipIcon, action.typeId)
@@ -1199,9 +1216,13 @@ class BootstrapScreen(
             buttons.second.isDisabled = action?.progress == null
         }
         stopButton.isDisabled = selected == null
-        depthButton.isVisible = menu?.depthAction != null
-        depthButton.isDisabled = menu?.depthAction == null
-        depthButton.setText(menu?.depthAction?.title ?: "Surface")
+        depthButton.isVisible = menu?.depthAction != null || menu?.flightAction != null
+        depthButton.isDisabled = menu?.depthAction == null && menu?.flightAction?.available != true
+        depthButton.setText(menu?.depthAction?.title ?: menu?.flightAction?.title ?: "Surface")
+        if (flightHover) menu?.flightAction?.let { action ->
+            setUnitIcon(nativeTooltipIcon, selected?.typeId)
+            nativeTooltipText.setText(action.tooltip)
+        }
         val economicPanel = nativePanel && (current?.hasEconomicConstruction == true || constructionCards.size > 4 || productionCards.size + factoryUpgradeCards.size > 4)
         stopButton.setY(if (economicPanel) 112f else if (nativePanel) 144f else 168f)
         patrolButton.setY(if (economicPanel) 112f else if (nativePanel) 144f else 168f)

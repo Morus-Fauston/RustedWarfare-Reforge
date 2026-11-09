@@ -100,6 +100,9 @@ object ContentLoader {
     fun loadSubmarineWithSources(path: Path): ContentResult<LoadedUnitContent> =
         load(path) { com.rustedwarfare.reforge.core.content.internal.SubmarineContentReader.readWithSources(it) {} }
 
+    fun loadAmphibiousJetWithSources(path: Path): ContentResult<LoadedUnitContent> =
+        load(path) { com.rustedwarfare.reforge.core.content.internal.AmphibiousJetContentReader.readWithSources(it) {} }
+
     fun loadDeclaredTankWithSources(path: Path): ContentResult<LoadedUnitContent> =
         load(path) { CombatContentReader.readDeclaredWithSources(it) }
 

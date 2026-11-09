@@ -160,7 +160,7 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
         val rules = checkNotNull(knowledgeRules)
         val oldStores = checkNotNull(knowledgeStores)
         val groundGids = input.map.groundGids
-        val groundTypes = input.unitDefinitions.values.map { it.movement.type }
+        val groundTypes = input.unitDefinitions.values.flatMap { if (it.amphibiousJet != null) listOf(it.movement.type, MovementType.WATER) else listOf(it.movement.type) }
             .filter { it != MovementType.LAND && it != MovementType.AIR }.distinct()
         val vision = AutomaticVision.project(steps.current.automaticVisionState, world.id, (automaticVisionSnapshots?.values?.firstOrNull()?.epoch ?: -1L) + 1,
             input.map.widthTiles, input.map.heightTiles, input.map.tileWidth, input.map.tileHeight, input.players,
@@ -292,7 +292,7 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
         store.accept(world, visibleTerrain)
         val after = store.snapshot(world)
         val input = checkNotNull(scenario)
-        val groundTypes = input.unitDefinitions.values.map { it.movement.type }
+        val groundTypes = input.unitDefinitions.values.flatMap { if (it.amphibiousJet != null) listOf(it.movement.type, MovementType.WATER) else listOf(it.movement.type) }
             .filter { it != MovementType.LAND && it != MovementType.AIR }.distinct()
         for (row in 0 until after.height) for (column in 0 until after.width) {
             if ((!before.planningBlocked(column, row) && after.planningBlocked(column, row)) ||
@@ -448,8 +448,8 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
 
     /** Ground follows the configured source; dynamic buildings always follow owner visibility. */
     private fun planningTerrainFor(unit: MutableUnit, map: MapDefinition): PlanningTerrain {
-        val movementType = unit.definition.movement.type
-        if (unit.definition.movement.type == MovementType.AIR)
+        val movementType = UnitLocomotion.movement(unit).type
+        if (UnitLocomotion.movement(unit).type == MovementType.AIR)
             return PlanningTerrain(map.widthTiles, map.heightTiles, map.tileWidth, map.tileHeight,
                 BooleanArray(map.widthTiles * map.heightTiles))
         val ownerBuildings = buildingKnowledge[unit.ownerPlayerId]?.cells
@@ -529,7 +529,7 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
     private fun replanForKnowledge(map: MapDefinition, executionStep: Long) {
         if (pendingKnowledgeDiscoveries.isEmpty() && pendingBuildingDiscoveries.isEmpty()) return
         for (unit in orderedUnits()) {
-            if (unit.definition.movement.type == MovementType.AIR) continue
+            if (UnitLocomotion.movement(unit).type == MovementType.AIR) continue
             if (unit.birthRemaining > 0f) continue
             val target = unit.moveTarget ?: continue
             val snapshot = knowledgeStores?.get(unit.ownerPlayerId)?.snapshot(world)
@@ -538,7 +538,7 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
             val affectedGround = ground.any { (cell, discoveredAt) ->
                 knowledgeRules?.pathSource == PathInformationSource.PLAYER_KNOWLEDGE &&
                     discoveredAt > unit.lastPlannedKnowledgeRevision && checkNotNull(snapshot)
-                        .movementBlocked(cell.first, cell.second, unit.definition.movement.type, map.tileSets) &&
+                        .movementBlocked(cell.first, cell.second, UnitLocomotion.movement(unit).type, map.tileSets) &&
                     KnowledgePathImpact.affectsCenter(unit.position, unit.pathPoints, target,
                         cell.first, cell.second, map.tileWidth, map.tileHeight)
             }
@@ -581,7 +581,17 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
 
     private fun repairInvalidConnections(map: MapDefinition, executionStep: Long) {
         for (unit in orderedUnits()) {
-            if (unit.definition.movement.type == MovementType.AIR) continue
+            if (unit.amphibiousState?.terrainPausedMove == true && UnitLocomotion.movement(unit).type == MovementType.AIR) {
+                val task = unit.tasks.firstOrNull()?.takeIf { it.kind == UnitTaskKind.MOVE }
+                if (unit.alive && unit.moveTarget == null && task?.target != null) {
+                    unit.moveTarget = task.target
+                    unit.originMoveId = task.actionId
+                    unit.originAtStep = task.atStep
+                    resumeProductionRoute(unit, map, executionStep)
+                }
+                unit.amphibiousState = checkNotNull(unit.amphibiousState).copy(terrainPausedMove = false)
+            }
+            if (UnitLocomotion.movement(unit).type == MovementType.AIR) continue
             if (unit.birthRemaining > 0f) continue
             val target = unit.moveTarget ?: continue
             val first = unit.pathPoints.firstOrNull() ?: continue
@@ -619,6 +629,8 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
             if (path == null) {
                 if (unit.tasks.firstOrNull()?.kind == UnitTaskKind.BUILD) unit.pauseRoute()
                 else unit.cancelRoute()
+                unit.amphibiousState = unit.amphibiousState?.copy(terrainPausedMove =
+                    unit.tasks.firstOrNull()?.kind == UnitTaskKind.MOVE)
                 pendingEvents += Event("movement-cancelled", unit.unitId)
                 pendingEvents += Event("path-unreachable", unit.unitId)
             } else {
@@ -666,6 +678,18 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
             return reject(action, "immobile-unit", "Unit cannot move")
         }
         val result = when (action) {
+            is AmphibiousFlightAction -> {
+                val state = unit.amphibiousState
+                    ?: return reject(action, "unsupported-amphibious-action", "Unit has no native amphibious flight capability")
+                if (!BuildingWork.isReady(unit)) return reject(action, "inactive-unit", "Unfinished units cannot change flight intent")
+                if (state.flyingIntent == action.flying)
+                    return reject(action, "amphibious-state-unchanged", "Requested flight intent is already active")
+                if (!action.flying && !AmphibiousJetMotion.overWater(unit, currentScenario.map))
+                    return reject(action, "dive-requires-water", "Diving requires the current tile to be water")
+                unit.amphibiousState = state.copy(flyingIntent = action.flying)
+                ActionResult.Accepted(action.actionId, listOf(Event(
+                    if (action.flying) "amphibious-fly-requested" else "amphibious-dive-requested", unit.unitId)))
+            }
             is SubmarineDepthAction -> {
                 if (unit.definition.submarine == null)
                     return reject(action, "unsupported-submarine-action", "Unit has no submarine depth capability")
@@ -917,7 +941,7 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
                 BuildingTerrain.placementCells(input.map, definition, command.position, buildingTerrain?.cells.orEmpty())
             } catch (failure: BuildingInitializationException) { return rejected("invalid-placement") }
             if (orderedUnits().any { unit ->
-                    unit.alive && unit.definition.building == null && unit.definition.movement.type != MovementType.AIR &&
+                    unit.alive && unit.definition.building == null && UnitLocomotion.movement(unit).type != MovementType.AIR &&
                         (MapBounds.cell(unit.position.x, input.map.tileWidth, input.map.widthTiles) to
                             MapBounds.cell(unit.position.y, input.map.tileHeight, input.map.heightTiles)) in cells
                 }) return rejected("invalid-placement")
@@ -971,6 +995,7 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
             repairInvalidConnections(currentScenario.map, step.stepIndex)
             for (unit in orderedUnits().toList()) {
                 if (!unit.alive) {
+                    AmphibiousJetMotion.advanceCorpse(unit, currentScenario.map, step.delta)
                     WaterBody.advanceCorpse(unit, currentScenario.map, step.delta)
                     HoverMotion.advanceCorpse(unit, currentScenario.map, step.delta)
                     continue
@@ -1028,6 +1053,8 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
                 FlightMotion.advancePose(unit, step.delta)
                 HoverMotion.advancePose(unit, step.delta)
                 if (SubmarineMotion.advance(unit, step.delta)) pendingEvents += Event("submarine-threshold-crossed", unit.unitId)
+                if (AmphibiousJetMotion.advance(unit, currentScenario.map, step.delta))
+                    pendingEvents += Event("amphibious-threshold-crossed", unit.unitId)
                 MechGait.advance(unit, step.delta)
                 MechMotion.requireFinitePose(unit)
                 unit.finishMovementRequest()
@@ -1211,6 +1238,9 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
                 return SimulationError("unsupported-shield", "Expected finite positive shield capacity and nonnegative regeneration on a durable unit")
             val m = definition.movement
             val submarine = definition.submarine != null
+            val amphibious = definition.amphibiousJet != null
+            if (amphibious && !AmphibiousJetMotion.supports(definition))
+                return SimulationError("unsupported-amphibious-jet", "Expected the finite native amphibious jet capability")
             if (submarine && !SubmarineMotion.supports(definition))
                 return SimulationError("unsupported-submarine", "Expected the finite native submarine capability")
             val air = m.type == MovementType.AIR
@@ -1228,7 +1258,7 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
                     definition.deathExplosion != null || definition.pointDefense != null || definition.maximumHealth == null)
                     return SimulationError("unsupported-underwater-target", "Expected the finite fixed-depth unarmed WATER target")
             }
-            if (air && (m.flight?.isValid() != true || definition.rotor?.spinRate?.isFinite() != true ||
+            if (air && !amphibious && (m.flight?.isValid() != true || definition.rotor?.spinRate?.isFinite() != true ||
                     !m.slidingMode || !m.ignoringBody || m.reverseSpeedPercentage != .1 || definition.mech != null) ||
                 !air && (m.flight != null || definition.rotor != null))
                 return SimulationError("unsupported-flight", "Expected a finite AIR profile and a single finite rotor")
@@ -1387,6 +1417,8 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
                 listOf(base) + base.namedWeapons?.ordered.orEmpty().map { NamedWeaponRuntime.profile(base, it) }
             }.orEmpty()
             for (combat in combatProfiles) {
+                if ((combat.projectile.lightning || combat.projectile.damageModifiers != com.rustedwarfare.reforge.core.content.ProjectileDamageModifiers()) && !amphibious)
+                    return SimulationError("unsupported-combat", "Lightning requires the qualified native amphibious capability")
                 combat.projectile.missile?.let { missile ->
                     if (listOf(missile.targetSpeed, missile.acceleration, missile.climbThreshold, missile.apex,
                             missile.verticalSpeed, missile.retargetForward).any { !it.isFinite() || it < 0f } ||
@@ -1440,6 +1472,7 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
                     it.randomDelayExclusive <= 0 } == true
                 if (positive.any { !it.isFinite() || it <= 0.0 } || nonnegative.any { !it.isFinite() || it < 0.0 } ||
                     signed.any { !it.isFinite() } || invalidIdle || invalidGround || invalidSplash || invalidAcceleration || invalidBallistic ||
+                    (combat.turretTurnDeceleration?.let { !it.isFinite() || it <= 0.0 } == true) ||
                     !combat.projectile.deflectionHealth.isFinite() || combat.projectile.deflectionHealth <= 0f)
                     return SimulationError("unsupported-combat", "Ordinary combat numbers must be finite and in range")
             }
@@ -1547,7 +1580,7 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
             if (multiple || enemy == null) return
         }
         if (enemy != null) {
-            val stopRange = SubmarineCombat.range(unit).toFloat() - 1f
+            val stopRange = UnitCombat.range(unit).toFloat() - 1f
             if (CombatTargetQuery.patrolDistanceSquared(unit, enemy) < stopRange * stopRange) {
                 unit.cancelRoute()
                 return
@@ -1576,7 +1609,7 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
 
     private fun updateAttackRoute(unit: MutableUnit, map: MapDefinition, executionStep: Long) {
         var command = unit.attackCommand ?: return
-        val weapon = SubmarineCombat.profile(unit) ?: return
+        val weapon = UnitCombat.profile(unit) ?: return
         val input = checkNotNull(scenario)
         fun eligible(target: MutableUnit) = CombatTargetQuery.isEnemy(unit, target, input.players) &&
             CombatTargetQuery.canAttackAirCategory(unit, target, input.map)
@@ -1603,7 +1636,7 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
         }
         val compositeRange = unit.definition.mech?.kind == com.rustedwarfare.reforge.core.content.MechKind.FOUR_LEGGED
         if (policies.coordinates.distanceSquared(unit.position, target.position) < weapon.attackRange * weapon.attackRange &&
-            (!compositeRange || NamedWeaponRuntime.inRange(unit, target, input.players, policies.coordinates))) {
+            (!compositeRange || NamedWeaponRuntime.inRange(unit, target, input.players, policies.coordinates, input.map))) {
             if (unit.moveTarget != null) unit.cancelRoute()
             return
         }
@@ -1644,7 +1677,7 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
         val target = units[oldId]?.takeIf {
             CombatTargetQuery.isEnemy(unit, it, input.players) && CombatTargetQuery.canAttackAirCategory(unit, it, input.map) &&
                 isVisibleTo(unit.ownerPlayerId, it.position) }
-        val range = maxOf(SubmarineCombat.range(unit).toFloat() + 110f, 190f)
+        val range = maxOf(UnitCombat.range(unit).toFloat() + 110f, 190f)
         if (target != null && CombatTargetQuery.patrolDistanceSquared(unit, target) < range * range) return target
         unit.primaryCombatTargetId = null
         unit.cancelRoute()
@@ -1661,7 +1694,7 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
             return
         }
         val state = unit.combat ?: return
-        val weapon = checkNotNull(SubmarineCombat.profile(unit))
+        val weapon = checkNotNull(UnitCombat.profile(unit))
         val input = checkNotNull(scenario)
         val contract = checkNotNull(input.combatContract)
         val actorId = checkNotNull(unit.objectId)
@@ -1709,7 +1742,7 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
         val input = checkNotNull(scenario)
         val contract = checkNotNull(input.combatContract)
         val candidates = orderedUnits()
-        val globalRange = SubmarineCombat.range(unit)
+        val globalRange = UnitCombat.range(unit)
         fun globalEligible(target: MutableUnit) = CombatTargetQuery.isEnemy(unit, target, input.players) &&
             CombatTargetQuery.canAttackAirCategory(unit, target, input.map) &&
             policies.coordinates.distanceSquared(unit.position, target.position) < globalRange * globalRange
@@ -1739,7 +1772,7 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
         val weaponCandidates = if (!patrol) candidates else if (unit.primaryCombatTargetId == null) emptyList()
             else candidates.filter { isVisibleTo(unit.ownerPlayerId, it.position) }
         NamedWeaponRuntime.advance(unit, NamedWeaponFrame(contract.worldSeed, combatFrame, delta,
-            input.players, policies.coordinates, units, weaponCandidates, primary, manual)) { target, state, weapon, delay, definition ->
+            input.players, policies.coordinates, units, weaponCandidates, primary, manual, input.map)) { target, state, weapon, delay, definition ->
             fireWeapon(unit, target, state, weapon, delay, definition)
         }
     }
@@ -1786,8 +1819,11 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
             nonDeflectable = weapon.projectile.nonDeflectable, ground = ground, verticalSpeed = ground?.profile?.initialVerticalSpeed ?: 0f,
             sourceWeaponName = definition?.name, acceleration = weapon.projectile.acceleration,
             splash = weapon.projectile.splash, retargetOnDeath = weapon.projectile.retargetOnDeath,
-            ballistic = weapon.projectile.ballistic,
-            appearance = if (unit.definition.submarine == null) ProjectileAppearance.STANDARD
+            ballistic = weapon.projectile.ballistic, lightning = weapon.projectile.lightning,
+            damageModifiers = weapon.projectile.damageModifiers,
+            lightningSegment = if (weapon.projectile.lightning) LightningSegment(target.position, target.height) else null,
+            appearance = if (weapon.projectile.lightning) ProjectileAppearance.AMPHIBIOUS_LIGHTNING
+                else if (unit.definition.submarine == null) ProjectileAppearance.STANDARD
                 else if (SubmarineMotion.submerged(unit)) ProjectileAppearance.SUBMARINE_TORPEDO
                 else ProjectileAppearance.SUBMARINE_MISSILE)
         projectiles += projectile
@@ -1813,6 +1849,15 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
 
     private fun updateProjectileBatch(delta: Double, batch: List<MutableProjectile>) {
         for (projectile in batch) {
+            if (projectile.lightning && projectile.hitApplied) {
+                projectile.age += delta.toFloat()
+                projectile.remainingLife = maxOf(0.0, projectile.remainingLife - delta)
+                if (projectile.remainingLife == 0.0) {
+                    pendingProjectileEvents += ProjectileEventObservation("expired", projectileObservation(projectile))
+                    projectiles.remove(projectile)
+                }
+                continue
+            }
             if (projectile.expansion != null) {
                 updateDeathExplosion(projectile, delta)
                 continue
@@ -1826,17 +1871,21 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
                 projectiles.remove(projectile)
                 continue
             }
-            val hit = if (projectile.ground != null) GroundWeapon.move(projectile, delta)
+            val hit = if (projectile.instant && projectile.ground == null) {
+                projectile.remainingLife = maxOf(0.0, projectile.remainingLife - delta)
+                true
+            } else if (projectile.ground != null) GroundWeapon.move(projectile, delta)
                 else if (projectile.missile != null) NativeMissile.move(projectile, checkNotNull(target), delta)
                 else if (projectile.ballistic != null) BallisticFlight.move(projectile, checkNotNull(target), delta)
                 else OrdinaryWeapon.move(projectile, checkNotNull(target), delta)
             projectile.age += delta.toFloat()
             if (hit) {
                 if (projectile.ground != null) applyAreaDamage(projectile)
-                val appliedDamage = if (projectile.ground == null) applyDamage(checkNotNull(target), projectile.damage) else null
+                val appliedDamage = if (projectile.ground == null) applyDamage(checkNotNull(target), projectile.damage, projectile.damageModifiers) else null
                 if (projectile.splash != null) applyOrdinarySplash(projectile)
                 pendingProjectileEvents += ProjectileEventObservation("impact", projectileObservation(projectile), appliedDamage)
-                projectiles.remove(projectile)
+                projectile.hitApplied = true
+                if (!projectile.lightning) projectiles.remove(projectile)
             } else if (projectile.remainingLife == 0.0) {
                 pendingProjectileEvents += ProjectileEventObservation("expired", projectileObservation(projectile))
                 projectiles.remove(projectile)
@@ -1913,9 +1962,9 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
         var chosen: MutableUnit? = null
         for (candidate in orderedUnits()) {
             if (!CombatTargetQuery.canAttackAirCategory(source, candidate, checkNotNull(scenario).map) ||
-                !NamedWeaponRuntime.qualifies(source, candidate, weapon, players, policies.coordinates, checkRange = false) ||
+                !NamedWeaponRuntime.qualifies(source, candidate, weapon, players, policies.coordinates, checkNotNull(scenario).map, checkRange = false) ||
                 weapon.attachedTo?.let { parent -> !NamedWeaponRuntime.qualifies(source, candidate,
-                    catalog.byName.getValue(parent), players, policies.coordinates, checkRange = false) } == true) continue
+                    catalog.byName.getValue(parent), players, policies.coordinates, checkNotNull(scenario).map, checkRange = false) } == true) continue
             val distance = policies.coordinates.distanceSquared(center, candidate.position)
             require(distance.isFinite()) { "Ordinary missile search distance must remain finite" }
             if (distance >= 120.0 * 120.0) continue
@@ -1974,20 +2023,28 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
     }
 
     /** Direct and area hits share damage, death, queue refunds and later building-layer removal. */
-    private fun applyDamage(target: MutableUnit, damage: Double): Double {
+    private fun applyDamage(target: MutableUnit, damage: Double,
+                            modifiers: com.rustedwarfare.reforge.core.content.ProjectileDamageModifiers =
+                                com.rustedwarfare.reforge.core.content.ProjectileDamageModifiers()): Double {
         if (!target.alive || target.health == null) return 0.0
         require(damage.isFinite() && damage >= 0.0) { "Damage must remain finite and nonnegative" }
         val before = checkNotNull(target.health)
-        val constructionDamage = if (target.constructionProgress < 1f) damage * 1.75 else damage
+        val targetDamage = damage * if (target.definition.building != null ||
+            target.definition.directHitTargetKind == DirectHitTargetKind.NATIVE_BUILDING) modifiers.building else 1.0
+        val constructionDamage = if (target.constructionProgress < 1f) targetDamage * 1.75 else targetDamage
         require(constructionDamage.isFinite()) { "Construction damage must remain finite" }
         val applied = target.definition.durability?.maxDamagePerHit?.let { minOf(constructionDamage, it) } ?: constructionDamage
-        val absorbed = minOf(target.shield.toDouble(), applied)
+        val shieldBefore = target.shield.toDouble()
+        val shieldCost = applied * modifiers.shieldDamage
+        val absorbed = minOf(shieldBefore, shieldCost)
+        val deflected = if (shieldBefore <= 0.0) 0.0 else
+            (if (shieldBefore < shieldCost) shieldBefore else applied) * modifiers.shieldDeflection
         target.shield = (target.shield - absorbed).toFloat()
         if (absorbed > 0.0) {
             target.shieldDisplayDamage += absorbed.toFloat()
             pendingEvents += Event("shield-damaged", target.unitId)
         }
-        target.health = maxOf(0.0, before - (applied - absorbed))
+        target.health = maxOf(0.0, before - maxOf(0.0, applied - deflected))
         pendingEvents += Event("unit-damaged", target.unitId)
         if (!target.alive) {
             missileTargets = missileTargets?.remove(target.unitId)
@@ -2005,7 +2062,7 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
             target.cancelRoute()
             target.speed = 0.0
             target.flightVelocity = Position(0.0, 0.0)
-            if (target.definition.movement.type == MovementType.AIR) target.height = 0.0
+            if (target.definition.movement.type == MovementType.AIR && target.amphibiousState == null) target.height = 0.0
             target.angularVelocity = 0.0
             target.clearWeaponTargets()
             pendingEvents += Event("unit-died", target.unitId)
@@ -2024,7 +2081,7 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
 
     private fun updateUnit(unit: MutableUnit, map: MapDefinition, delta: Double, executionStep: Long,
                            motionSamples: MutableList<MotionStepSample>?) {
-        val movement = SubmarineMotion.movement(unit)
+        val movement = UnitLocomotion.movement(unit)
         val maximumSpeed = movement.moveSpeed * unit.terrainSpeedMultiplier
         val air = movement.type == MovementType.AIR
         val sliding = movement.slidingMode
@@ -2046,7 +2103,7 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
         var speedTarget = 0.0
         val attackTarget = unit.attackCommand?.targetUnitId?.let { units[it] }
         val approachingBuilding = attackTarget?.alive == true && attackTarget.definition.building != null &&
-            SubmarineCombat.profile(unit)?.let { weapon ->
+            UnitCombat.profile(unit)?.let { weapon ->
                 policies.coordinates.distanceSquared(unit.position, attackTarget.position) >= weapon.attackRange * weapon.attackRange
             } == true
         val workTask = unit.tasks.firstOrNull()?.takeIf {
@@ -2075,8 +2132,13 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
         if (target != null && air) {
             unit.requestMovement(logicalRouteTarget(unit, target))
             val d2 = policies.coordinates.distanceSquared(unit.position, target)
-            val difference = policies.steering.turn(unit, target, delta, policies.coordinates)
-            requestedFraction = policies.propulsion.targetFraction(movement, unit.speed, d2, 0.0, true, contract.targetRadius)
+            val difference = if (unit.amphibiousState != null)
+                BodyMotion.turnOrdinary(unit, target, delta, policies.steering, policies.coordinates)
+                else policies.steering.turn(unit, target, delta, policies.coordinates)
+            val fraction = policies.propulsion.targetFraction(movement, unit.speed, d2,
+                if (unit.amphibiousState != null) difference else 0.0, true, contract.targetRadius)
+            requestedFraction = if (unit.amphibiousState != null && unit.reversing)
+                -fraction * movement.reverseSpeedPercentage else fraction
             speedTarget = maximumSpeed * requestedFraction
             aimForSample = target
             finalForSample = true
@@ -2213,7 +2275,7 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
             MissileObservation(projectile.speed.toFloat(), projectile.missileReachedApex, projectile.missileRawAz) },
         projectile.expansion?.let { AreaExpansionObservation(it.remaining, it.radius, it.hitUnitIds) }, projectile.sourceWeaponName,
         projectile.ballistic?.let { BallisticObservation(projectile.speed.toFloat(), projectile.ballisticReachedApex, projectile.ballisticRawAz) },
-        projectile.appearance)
+        projectile.appearance, projectile.lightningSegment)
 
     private fun makeObservation(observedStep: Long, observedTime: Double, advanced: Boolean, observedRevision: Long): Observation {
         val currentScenario = checkNotNull(scenario)
@@ -2240,7 +2302,8 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
                     shield = unit.definition.shield?.let { ShieldObservation(unit.shield, it.maximum, unit.shieldDisplayDamage) },
                     submarine = unit.definition.submarine?.let { SubmarineObservation(unit.submarineSurfaceIntent,
                         unit.submarineVerticalSpeed, SubmarineMotion.submerged(unit), unit.submarineSurfacePresentation,
-                        SubmarineMotion.movement(unit).moveSpeed, SubmarineCombat.range(unit)) },
+                        SubmarineMotion.movement(unit).moveSpeed, UnitCombat.range(unit)) },
+                    amphibiousJet = AmphibiousJetMotion.observation(unit, currentScenario.map),
                     alive = unit.alive,
                     attackTargetId = if (unit.tasks.firstOrNull()?.kind == UnitTaskKind.PATROL) unit.primaryCombatTargetId
                         else unit.attackCommand?.targetUnitId,
@@ -2254,7 +2317,7 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
                     waterPose = if (unit.definition.movement.type == MovementType.WATER && unit.definition.fixedUnderwaterTarget == null)
                         WaterPose(unit.bodyReversing, unit.sinkSpeed, unit.waterSettled) else null,
                     hoverPose = if (unit.definition.movement.hover != null) HoverPose(unit.flightVelocity, unit.heightPhase) else null,
-                    flightPose = if (unit.definition.movement.type == MovementType.AIR) FlightPose(
+                    flightPose = if (unit.definition.movement.type == MovementType.AIR && unit.amphibiousState == null) FlightPose(
                         unit.flightVelocity, unit.height, unit.heightPhase, unit.rotorPhase,
                         policies.coordinates.normalize(unit.heading + unit.rotorPhase), unit.rotorHeightOffset) else null,
                     constructionTargetId = unit.tasks.firstOrNull()?.takeIf {

@@ -35,6 +35,7 @@ class UnitDefinition(
     val shield: ShieldProfile? = null,
     val shieldImagePath: Path? = null,
     val submarine: SubmarineProfile? = null,
+    val amphibiousJet: AmphibiousJetProfile? = null,
 ) {
     val retainedUnconsumed: Set<String> = Collections.unmodifiableSet(LinkedHashSet(retainedUnconsumed))
     val maximumHealth: Double? get() = durability?.maxHp ?: combat?.maxHp
@@ -78,6 +79,9 @@ data class FixedUnderwaterTargetProfile(val height: Double = -8.0)
 
 /** Explicit native capability; depth alone does not make an ordinary unit a submarine. */
 enum class SubmarineProfile { NATIVE }
+
+/** Native capability and the two folding side images; independent from rotor flight. */
+data class AmphibiousJetProfile(val leftWingImagePath: Path, val rightWingImagePath: Path)
 
 /** Trusted original target class; a building or an unarmed life profile does not imply native membership. */
 enum class DirectHitTargetKind { ORDINARY, NATIVE_BUILDING }
@@ -154,6 +158,7 @@ data class CombatProfile(
     val namedWeapons: WeaponCatalog? = null,
     val multiTargeting: Boolean = false,
     val rotateWithBody: Boolean = false,
+    val turretTurnDeceleration: Double? = null,
 ) {
     /** Bound to this actual immutable definition; replacements never reuse an old unit ID's layout. */
     val weaponAssembly: WeaponAssembly by lazy(LazyThreadSafetyMode.PUBLICATION) { WeaponAssembly.compile(this) }
@@ -188,7 +193,7 @@ data class NamedWeaponDefinition(val name: String, val projectileName: String,
     val idleDirection: Double = 0.0,
     val barrelX: Double? = null, val oddShotOffset: Double? = null,
     val invisible: Boolean = false, val imageOffsetX: Double = 0.0, val imageOffsetY: Double = 0.0,
-    val idleDirectionReversing: Double? = null)
+    val idleDirectionReversing: Double? = null, val turnDeceleration: Double? = null)
 
 /** Gameplay trigger identity, never an audio filename or resource-pack decision. */
 enum class FireSoundProfile(val eventId: String, val volume: Float, val pitch: Float = 1f) {
@@ -197,6 +202,7 @@ enum class FireSoundProfile(val eventId: String, val volume: Float, val pitch: F
     NAVAL_MAIN("reforge:events/naval-main-fire", .3f),
     NAVAL_MISSILE("reforge:events/naval-missile-fire", .1f),
     SUBMARINE_MISSILE("reforge:events/naval-missile-fire", .8f),
+    AMPHIBIOUS_LIGHTNING("reforge:events/amphibious-lightning-fire", .2f),
 }
 
 data class TurretMount(val localX: Double = 0.0, val localY: Double = 0.0)
@@ -209,7 +215,12 @@ data class ProjectileProfile(val directDamage: Double, val life: Double, val spe
     val ground: GroundProjectileProfile? = null, val missile: NativeMissileProfile? = null,
     val acceleration: LinearProjectileAcceleration? = null,
     val splash: OrdinarySplashProfile? = null, val retargetOnDeath: Boolean = false,
-    val ballistic: CustomBallisticProfile? = null)
+    val ballistic: CustomBallisticProfile? = null, val lightning: Boolean = false,
+    val damageModifiers: ProjectileDamageModifiers = ProjectileDamageModifiers())
+
+/** Shield expenditure and damage deflection are separate native projectile properties. */
+data class ProjectileDamageModifiers(val shieldDamage: Double = 1.0, val shieldDeflection: Double = 1.0,
+    val building: Double = 1.0)
 
 /** A verticalSpeed of -1 uses the current custom projectile speed. */
 data class CustomBallisticProfile(val delayMoveHeight: Float, val apex: Float, val verticalSpeed: Float = -1f)

@@ -27,6 +27,12 @@ internal object UpgradeRules {
                     !FactoryExit.supportsSeaFactory(target) || target.id != "seaFactoryT2") return invalid()
                 continue
             }
+            if (source.id == "airFactory") {
+                val target = input.unitDefinitions["airFactoryT2"] ?: return invalid()
+                if (input.economyContract == null || key != source.id || !FactoryExit.supportsAirFactory(source) ||
+                    !FactoryExit.supportsAirFactory(target) || target.id != "airFactoryT2") return invalid()
+                continue
+            }
             if (source.id == "mechFactory") {
                 val target = input.unitDefinitions["mechFactoryT2"] ?: return invalid()
                 if (input.economyContract == null || key != source.id || !FactoryExit.supportsMechFactory(source) ||

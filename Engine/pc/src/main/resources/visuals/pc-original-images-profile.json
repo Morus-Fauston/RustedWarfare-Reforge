@@ -6216,11 +6216,18 @@
     "hover-shadow": "res/drawable/hover_tank_shadow.png",
     "heavy-shield": "res/drawable/shield_mid.png",
     "submarine-body": "res/drawable/attack_submarine.png",
-    "submarine-dead": "res/drawable/attack_submarine_dead.png"
+    "submarine-dead": "res/drawable/attack_submarine_dead.png",
+    "jet-body": "res/drawable/amphibious_jet.png",
+    "jet-dead": "res/drawable/amphibious_jet_dead.png",
+    "jet-shadow": "res/drawable/amphibious_jet_shadow.png",
+    "jet-left": "res/drawable/amphibious_jet_p2.png",
+    "jet-right": "res/drawable/amphibious_jet_p1.png",
+    "air-factory-t2": "res/drawable/air_factory_t2.png",
+    "air-factory-t2-dead": "res/drawable/air_factory_t2_dead.png"
   },
   "mappingBasis": {
     "androidProfileSha256": "e273280ab37b1a24714e6b15d8e1cb14fdd395e228ea7c71a62dd2f24d334780",
-    "scope": "Qualified PC image snapshot and reviewed finite mappings, including native submarine body/dead at 12x40; PC-only additions do not assert an Android source or original gameplay execution. The complete source inventory is unchanged."
+    "scope": "Qualified PC finite mappings include native amphibious body/dead/shadow, independent p2 left and p1 right wings rotated into the client north basis, and T2 air factory first animation frame. No Android source or original gameplay execution claim."
   },
   "mappingSources": [
     {
@@ -6270,6 +6277,62 @@
       "width": 12,
       "height": 40,
       "id": "submarine-dead"
+    },
+    {
+      "id": "jet-body",
+      "path": "res/drawable/amphibious_jet.png",
+      "bytes": 645,
+      "sha256": "5cce262cb78f41f09646564f4f522bf643b63634bf2eaca9b369041fee533c57",
+      "width": 26,
+      "height": 15
+    },
+    {
+      "id": "jet-dead",
+      "path": "res/drawable/amphibious_jet_dead.png",
+      "bytes": 506,
+      "sha256": "81f0ae708b756b2422c851d2d39c0f5a9e30172a7df20c523a1683b1c7a31487",
+      "width": 26,
+      "height": 15
+    },
+    {
+      "id": "jet-shadow",
+      "path": "res/drawable/amphibious_jet_shadow.png",
+      "bytes": 164,
+      "sha256": "efb61700fc7565a82471cae56f6fc885b3b4b86bec33e148b7ab8f8ea518a9ec",
+      "width": 26,
+      "height": 15
+    },
+    {
+      "id": "jet-left",
+      "path": "res/drawable/amphibious_jet_p2.png",
+      "bytes": 430,
+      "sha256": "185f3830bcb86fd980deedfb81d4a3569102cc80b4fc44518e17be00c511d0f5",
+      "width": 14,
+      "height": 30
+    },
+    {
+      "id": "jet-right",
+      "path": "res/drawable/amphibious_jet_p1.png",
+      "bytes": 405,
+      "sha256": "dc8cd272a0a2bbe8228975721932c8aae60f0c7b6448a44ca9d88262310fcc16",
+      "width": 14,
+      "height": 30
+    },
+    {
+      "id": "air-factory-t2",
+      "path": "res/drawable/air_factory_t2.png",
+      "bytes": 4658,
+      "sha256": "552405dff6fe43a9814244f45532d332dfce1c8045bab88e47043124dc818b38",
+      "width": 200,
+      "height": 63
+    },
+    {
+      "id": "air-factory-t2-dead",
+      "path": "res/drawable/air_factory_t2_dead.png",
+      "bytes": 2603,
+      "sha256": "ba03e4a06bc08e23f1534ca92fa2d2711d600549f79ba51c5b83b5ef1e36167c",
+      "width": 40,
+      "height": 61
     }
   ],
   "mappingUnitOutputs": {
@@ -6368,6 +6431,123 @@
         40
       ],
       "frames": 1
+    },
+    "jet-body": {
+      "file": "units/jet-body.png",
+      "operation": "crop",
+      "source": "jet-body",
+      "rect": [
+        0,
+        0,
+        26,
+        15
+      ],
+      "target": [
+        15,
+        26
+      ],
+      "frames": 1,
+      "rotate": 90
+    },
+    "jet-dead": {
+      "file": "units/jet-dead.png",
+      "operation": "crop",
+      "source": "jet-dead",
+      "rect": [
+        0,
+        0,
+        26,
+        15
+      ],
+      "target": [
+        15,
+        26
+      ],
+      "frames": 1,
+      "rotate": 90
+    },
+    "jet-shadow": {
+      "file": "units/jet-shadow.png",
+      "operation": "crop",
+      "source": "jet-shadow",
+      "rect": [
+        0,
+        0,
+        26,
+        15
+      ],
+      "target": [
+        15,
+        26
+      ],
+      "frames": 1,
+      "rotate": 90
+    },
+    "jet-left": {
+      "file": "units/jet-left.png",
+      "operation": "crop",
+      "source": "jet-left",
+      "rect": [
+        0,
+        0,
+        14,
+        30
+      ],
+      "target": [
+        30,
+        14
+      ],
+      "frames": 1,
+      "rotate": 90
+    },
+    "jet-right": {
+      "file": "units/jet-right.png",
+      "operation": "crop",
+      "source": "jet-right",
+      "rect": [
+        0,
+        0,
+        14,
+        30
+      ],
+      "target": [
+        30,
+        14
+      ],
+      "frames": 1,
+      "rotate": 90
+    },
+    "air-factory-t2": {
+      "file": "units/air-factory-t2.png",
+      "operation": "crop",
+      "source": "air-factory-t2",
+      "rect": [
+        0,
+        0,
+        40,
+        63
+      ],
+      "target": [
+        40,
+        63
+      ],
+      "frames": 1
+    },
+    "air-factory-t2-dead": {
+      "file": "units/air-factory-t2-dead.png",
+      "operation": "crop",
+      "source": "air-factory-t2-dead",
+      "rect": [
+        0,
+        0,
+        40,
+        61
+      ],
+      "target": [
+        40,
+        61
+      ],
+      "frames": 1
     }
   },
   "mappingUnitBindings": {
@@ -6389,6 +6569,17 @@
     "attackSubmarine": {
       "body": "submarine-body",
       "dead": "submarine-dead"
+    },
+    "amphibiousJet": {
+      "body": "jet-body",
+      "dead": "jet-dead",
+      "shadow": "jet-shadow",
+      "leftWing": "jet-left",
+      "rightWing": "jet-right"
+    },
+    "airFactoryT2": {
+      "body": "air-factory-t2",
+      "dead": "air-factory-t2-dead"
     }
   }
 }

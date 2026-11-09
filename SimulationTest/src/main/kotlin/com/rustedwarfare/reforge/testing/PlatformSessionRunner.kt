@@ -80,6 +80,10 @@ object PlatformSessionRunner {
                             if (intent.required("surface") !in setOf(b(true), b(false))) throw InputError("Expected submarine surface boolean")
                             session.submarineDepth(intent.required("surface").jsonPrimitive.boolean)
                         }
+                        "amphibious-flight" -> {
+                            if (intent.required("flying") !in setOf(b(true), b(false))) throw InputError("Expected amphibious flying boolean")
+                            session.amphibiousFlight(intent.required("flying").jsonPrimitive.boolean)
+                        }
                         "attack" -> session.command(intent.objectAt("position").let { Position(it.number("x"), it.number("y")) })
                         "build" -> session.build(intent.id("typeId"),
                             intent.objectAt("position").let { Position(it.number("x"), it.number("y")) })

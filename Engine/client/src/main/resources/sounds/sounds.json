@@ -23,6 +23,9 @@
     },
     "reforge:events/naval-missile-fire": {
       "sound": "reforge:sounds/naval-missile-fire"
+    },
+    "reforge:events/amphibious-lightning-fire": {
+      "sound": "reforge:sounds/tank-fire"
     }
   }
 }

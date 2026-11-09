@@ -57,6 +57,13 @@ class MapDefinition(
         return GroundRules.liquid(tileSets, gid)
     }
 
+    /** Native cK includes water/lava properties and the static cJ passability difference. */
+    internal fun isLiquid(col: Int, row: Int): Boolean {
+        if (col !in 0 until widthTiles || row !in 0 until heightTiles) return false
+        val gid = gids[row * widthTiles + col]
+        return GroundRules.nativeLiquid(tileSets, gid) || isOverWater(col, row)
+    }
+
     /** Native cJ: static OVER_CLIFF blocked minus WATER blocked; excludes dynamic obstacles. */
     internal fun isOverWater(col: Int, row: Int): Boolean {
         if (col !in 0 until widthTiles || row !in 0 until heightTiles) return true
@@ -97,6 +104,7 @@ class TileSetDefinition internal constructor(
     waterBridgeTileIds: Set<Int> = emptySet(),
     hoverBlockedTileIds: Set<Int> = blockedTileIds,
     overCliffBlockedTileIds: Set<Int> = blockedTileIds,
+    lavaTileIds: Set<Int> = emptySet(),
 ) {
     val blockedTileIds: Set<Int> = Collections.unmodifiableSet(LinkedHashSet(blockedTileIds))
     val resourcePoolTileIds: Set<Int> = Collections.unmodifiableSet(LinkedHashSet(resourcePoolTileIds))
@@ -104,6 +112,7 @@ class TileSetDefinition internal constructor(
     val waterBridgeTileIds: Set<Int> = Collections.unmodifiableSet(LinkedHashSet(waterBridgeTileIds))
     val hoverBlockedTileIds: Set<Int> = Collections.unmodifiableSet(LinkedHashSet(hoverBlockedTileIds))
     val overCliffBlockedTileIds: Set<Int> = Collections.unmodifiableSet(LinkedHashSet(overCliffBlockedTileIds))
+    val lavaTileIds: Set<Int> = Collections.unmodifiableSet(LinkedHashSet(lavaTileIds))
 
     constructor(
         firstGid: Int,

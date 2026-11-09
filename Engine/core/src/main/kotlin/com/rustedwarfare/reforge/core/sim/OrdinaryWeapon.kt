@@ -97,10 +97,19 @@ internal object OrdinaryWeapon {
         if (abs(diff) >= .01) {
             val acceleration = weapon.turretTurnAcceleration
             val sign = if (diff < 0) -1.0 else 1.0
-            val rate = if (acceleration > 0.0 && abs(diff) < abs(state.angularVelocity) / acceleration)
-                acceleration else weapon.turretTurnSpeed
-            state.angularVelocity = if (acceleration == 0.0) sign * rate else
-                approach(state.angularVelocity, sign * rate, acceleration * delta)
+            val braking = weapon.turretTurnDeceleration
+            if (braking != null && acceleration > 0.0) {
+                val slowing = abs(diff) < abs(state.angularVelocity) / braking &&
+                    (diff > 0.0) == (state.angularVelocity > 0.0)
+                state.angularVelocity = approach(state.angularVelocity,
+                    sign * if (slowing) braking else weapon.turretTurnSpeed,
+                    (if (slowing) braking else acceleration) * delta)
+            } else {
+                val rate = if (acceleration > 0.0 && abs(diff) < abs(state.angularVelocity) / acceleration)
+                    acceleration else weapon.turretTurnSpeed
+                state.angularVelocity = if (acceleration == 0.0) sign * rate else
+                    approach(state.angularVelocity, sign * rate, acceleration * delta)
+            }
             val turn = state.angularVelocity * delta
             val applied = if (abs(turn) > abs(diff)) {
                 state.angularVelocity = 0.0

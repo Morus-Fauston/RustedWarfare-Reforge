@@ -301,6 +301,11 @@ class SandboxSession(scenario: Scenario, private val evidence: ClientEvidence = 
         apply(SubmarineDepthAction("click-${++actionNumber}", "p1", checkNotNull(selectedId), surface, context.world))
     }
 
+    fun amphibiousFlight(flying: Boolean): ActionResult? = actionMenu.flightAction
+        ?.takeIf { it.flying == flying && it.available }?.let {
+            apply(AmphibiousFlightAction("click-${++actionNumber}", "p1", checkNotNull(selectedId), flying, context.world))
+        }
+
     private fun dispatch(selectionAtPress: Set<String> = selectedIds, action: (String) -> Action): ActionResult? {
         val members = selectionAtPress.sorted()
         val revision = selectionRevision
@@ -443,7 +448,8 @@ class SandboxSession(scenario: Scenario, private val evidence: ClientEvidence = 
                 is RepairBuildingAction -> action.targetUnitId; is ReclaimBuildingAction -> action.targetUnitId; else -> null },
             "upgradeId" to when (action) { is UpgradeAction -> action.upgradeId; is CancelUpgradeAction -> action.upgradeId; else -> null },
             "result" to result.fields()) + (if (action is BuildAction) mapOf("buildingTypeId" to action.buildingTypeId) else emptyMap()) +
-            (if (action is SubmarineDepthAction) mapOf("surface" to action.surface) else emptyMap()) }
+            (if (action is SubmarineDepthAction) mapOf("surface" to action.surface) else emptyMap()) +
+            (if (action is AmphibiousFlightAction) mapOf("flying" to action.flying) else emptyMap()) }
         capture("after-action")
         return result
     }

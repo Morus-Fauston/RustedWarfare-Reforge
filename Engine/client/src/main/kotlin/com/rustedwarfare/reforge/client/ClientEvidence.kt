@@ -106,6 +106,12 @@ internal fun ClientEvidence.recordFailure(kind: String, primary: Throwable) {
 }
 
 internal fun Position.fields(): Map<String, Any?> = mapOf("x" to x, "y" to y)
+internal fun LightningSegment.fields(): Map<String, Any?> = mapOf("end" to end.fields(), "endHeight" to endHeight)
+private fun projectileVisualFields(appearance: ProjectileAppearance, lightning: LightningSegment?): Map<String, Any?> =
+    buildMap {
+        if (appearance != ProjectileAppearance.STANDARD) put("appearance", appearance.name)
+        if (lightning != null) put("lightning", lightning.fields())
+    }
 internal fun FlightPose.fields(): Map<String, Any?> = mapOf(
     "velocity" to velocity.fields(), "height" to height, "heightPhase" to heightPhase,
     "rotorPhase" to rotorPhase, "rotorHeading" to rotorHeading, "rotorHeightOffset" to rotorHeightOffset)
@@ -146,6 +152,11 @@ internal fun UnitObservation.fields(): Map<String, Any?> {
         "verticalSpeed" to it.verticalSpeed, "underwater" to it.underwater, "surfacePresentation" to it.surfacePresentation,
         "maximumSpeed" to it.maximumSpeed, "attackRange" to it.attackRange) }
     unit.flightPose?.let { values["flightPose"] = it.fields() }
+    unit.amphibiousJet?.let { values["amphibiousJet"] = mapOf("flyingIntent" to it.flyingIntent,
+        "verticalSpeed" to it.verticalSpeed, "underwater" to it.underwater, "surfacePresentation" to it.surfacePresentation,
+        "movementType" to it.movementType.name, "maximumSpeed" to it.maximumSpeed, "attackRange" to it.attackRange,
+        "wingFold" to it.wingFold, "phase" to it.phase, "sinkSpeed" to it.sinkSpeed, "settled" to it.settled,
+        "canDive" to it.canDive) }
     unit.hoverPose?.let { values["hoverPose"] = mapOf("velocity" to it.velocity.fields(), "heightPhase" to it.heightPhase) }
     unit.waterPose?.let { values["waterPose"] = mapOf(
         "reversing" to it.reversing, "sinkSpeed" to it.sinkSpeed, "settled" to it.settled) }
@@ -173,17 +184,17 @@ internal fun PlayerObservation.fields(includeKnowledge: Boolean = true): Map<Str
     Observation(sampleId, worldId, scenarioId, stepIndex, simulationTime, units, events, actionResults).fields() + mapOf(
         "playerId" to playerId,
         "visionEpoch" to vision?.epoch,
-        "projectiles" to projectiles.map { mapOf("token" to it.token, "multiplicity" to it.multiplicity,
+        "projectiles" to projectiles.map { mapOf<String, Any?>("token" to it.token, "multiplicity" to it.multiplicity,
             "position" to it.position.fields(), "heading" to it.heading, "height" to it.height, "parentToken" to it.parentToken) +
                 (it.areaRadius?.let { radius -> mapOf("areaRadius" to radius) } ?: emptyMap()) +
-                (if (it.appearance != ProjectileAppearance.STANDARD) mapOf("appearance" to it.appearance.name) else emptyMap()) },
-        "projectileEvents" to projectileEvents.map { mapOf("token" to it.token, "kind" to it.kind,
+                projectileVisualFields(it.appearance, it.lightning) },
+        "projectileEvents" to projectileEvents.map { mapOf<String, Any?>("token" to it.token, "kind" to it.kind,
             "occurrences" to it.occurrences, "position" to it.position.fields(), "heading" to it.heading,
             "height" to it.height, "sourceUnitId" to it.sourceUnitId, "targetUnitId" to it.targetUnitId,
             "damage" to it.damage, "parentToken" to it.parentToken, "interceptorUnitId" to it.interceptorUnitId) +
                 (it.areaRadius?.let { radius -> mapOf("areaRadius" to radius) } ?: emptyMap()) +
                 (it.sourceWeaponName?.let { name -> mapOf("sourceWeaponName" to name) } ?: emptyMap()) +
-                (if (it.appearance != ProjectileAppearance.STANDARD) mapOf("appearance" to it.appearance.name) else emptyMap()) },
+                projectileVisualFields(it.appearance, it.lightning) },
         "knowledge" to (if (includeKnowledge) knowledge?.cells?.map { mapOf("visible" to it.visible,
             "blocked" to it.lastKnownBlocked, "gid" to it.lastKnownGroundGid) } else null),
     ) + (balance?.let { mapOf("balance" to it, "factoryQueues" to factoryQueues.map { factory ->

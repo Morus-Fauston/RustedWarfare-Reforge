@@ -22,6 +22,8 @@ internal data class TurretDrawing(val weaponName: String?, val imagePath: Path, 
         (logicalSize?.width ?: pixelWidth) * imageScale, (logicalSize?.height ?: pixelHeight) * imageScale)
 }
 
+internal data class WingDrawing(val slot: UnitImageSlot, val imagePath: Path, val center: Position, val heading: Double)
+
 data class UnitAppearance(val displayRadius: Double, val imagePath: Path, val imageScale: Double, val totalFrames: Int,
     val turretImagePath: Path? = null, val deadImagePath: Path? = null, val turretImageScale: Double = 1.0,
     val backImagePath: Path? = null, val turretMount: TurretMount = TurretMount(),
@@ -30,7 +32,18 @@ data class UnitAppearance(val displayRadius: Double, val imagePath: Path, val im
     val weaponImages: Map<String, WeaponAppearance> = emptyMap(),
     val legImagePath: Path? = null, val footImagePath: Path? = null, val rotorImagePath: Path? = null,
     val mechKind: com.rustedwarfare.reforge.core.content.MechKind? = null, val shadowImagePath: Path? = null,
-    val shieldImagePath: Path? = null, val shieldRadius: Double = 0.0) {
+    val shieldImagePath: Path? = null, val shieldRadius: Double = 0.0,
+    val leftWingImagePath: Path? = null, val rightWingImagePath: Path? = null) {
+    internal fun amphibiousWings(unit: UnitObservation, weapons: List<VisibleUnitWeapon>): List<WingDrawing> {
+        if (!unit.alive || unit.amphibiousJet == null) return emptyList()
+        val poses = weapons.filter { it.unitId == unit.unitId }.associateBy { it.weaponName }
+        val heading = requireNotNull(poses["body"]) { "Amphibious body requires an authorized pose" }.turretHeading
+        return listOf(Triple(UnitImageSlot.LEFT_WING, leftWingImagePath, "left"),
+            Triple(UnitImageSlot.RIGHT_WING, rightWingImagePath, "right")).map { (slot, path, name) ->
+            val pivot = requireNotNull(poses[name]).pivot
+            WingDrawing(slot, requireNotNull(path), Position(pivot.x, pivot.y - unit.height), heading)
+        }
+    }
     internal fun turretDrawings(unit: UnitObservation, weapons: List<VisibleUnitWeapon>): List<TurretDrawing> {
         if (!unit.alive) return emptyList()
         if (weapons.isNotEmpty()) {
@@ -148,7 +161,8 @@ class SandboxRenderResources private constructor(
                         .associate { it.name to WeaponAppearance(it.imagePath, it.imageScale, it.invisible, it.imageOffsetX, it.imageOffsetY) }),
                     legImagePath = images.leg, footImagePath = images.foot,
                     rotorImagePath = images.rotor, mechKind = unit.mech?.kind, shadowImagePath = images.shadow,
-                    shieldImagePath = images.shield, shieldRadius = unit.radius)
+                    shieldImagePath = images.shield, shieldRadius = unit.radius,
+                    leftWingImagePath = images.leftWing, rightWingImagePath = images.rightWing)
             }), Collections.unmodifiableMap(scenario.players.associate { it.playerId to it.teamId }))
     }
 }

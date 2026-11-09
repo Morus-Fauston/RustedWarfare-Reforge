@@ -1,6 +1,7 @@
 # Self-owned commented helicopter/native content
 {
-  format: "rw-reforge.native-air-factory.v1",
+  "techLevel": 1,
+  format: "rw-reforge.native-air-factory.v2",
   "name": "airFactory",
   "maxHp": 1000,
   "radius": 30,

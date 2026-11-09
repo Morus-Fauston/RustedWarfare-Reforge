@@ -102,6 +102,7 @@ internal object ScenarioReader {
                 "hover-tank" -> checkedAuthor(ContentLoader.loadHoverTankWithSources(ref.path))
                 "battleship" -> ContentLoader.loadBattleshipUnit(ref.path)
                 "submarine" -> checkedAuthor(ContentLoader.loadSubmarineWithSources(ref.path))
+                "amphibious-jet" -> checkedAuthor(ContentLoader.loadAmphibiousJetWithSources(ref.path))
                 "water-combat" -> checkedAuthor(ContentLoader.loadAuthorWaterUnitWithSources(ref.path))
                 "constructor" -> checkedAuthor(ContentLoader.loadAuthorConstructorWithSources(ref.path))
                 "author-factory" -> checkedAuthor(ContentLoader.loadAuthorBuildingWithSources(ref.path), false, false)

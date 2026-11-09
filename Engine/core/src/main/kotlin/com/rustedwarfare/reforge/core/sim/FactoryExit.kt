@@ -30,13 +30,17 @@ internal object FactoryExit {
 
     fun supportsAirFactory(definition: UnitDefinition): Boolean {
         val building = definition.building ?: return false
-        return definition.id == "airFactory" && definition.production?.exitProfile == FactoryExitProfile.NATIVE_AIR &&
-            definition.production.unitTypeIds == listOf("helicopter") &&
-            definition.build == BuildProfile(1000L, .001f) && definition.construction == ConstructionProfile(1000L, .001f) &&
+        val t2 = definition.id == "airFactoryT2"
+        return definition.id in setOf("airFactory", "airFactoryT2") && definition.production?.exitProfile == FactoryExitProfile.NATIVE_AIR &&
+            definition.production.unitTypeIds == (if (t2) listOf("helicopter", "amphibiousJet") else listOf("helicopter")) &&
+            definition.build == BuildProfile(if (t2) 2500L else 1000L, .001f) &&
+            definition.construction == ConstructionProfile(if (t2) 2500L else 1000L, .001f) &&
             definition.radius == 30.0 && definition.maximumHealth == 1000.0 &&
             definition.movement.type == MovementType.NONE && definition.fogOfWarSightRange == 15 &&
             definition.combat == null && definition.mech == null && definition.builder == null && definition.income == null &&
-            definition.pointDefense == null && definition.upgrades == null && definition.deathExplosion == null && definition.rotor == null &&
+            definition.pointDefense == null && (definition.upgrades == null || !t2 && definition.upgrades.actions ==
+                listOf(UpgradeActionProfile("upgrade_t2", "airFactoryT2", 1500L, .0004f))) &&
+            definition.deathExplosion == null && definition.rotor == null &&
             definition.directHitTargetKind == DirectHitTargetKind.NATIVE_BUILDING && definition.durability?.maxDamagePerHit == null &&
             building.footprint == BuildingFootprint(-1, -1, 1, 1) &&
             building.placementFootprint == BuildingFootprint(-1, -1, 1, 2) && building.backImagePath == null &&

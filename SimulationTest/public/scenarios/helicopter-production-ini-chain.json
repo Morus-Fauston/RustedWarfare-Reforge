@@ -19,7 +19,7 @@
         "id": "airFactory",
         "loader": "factory",
         "path": "../inputs/helicopter-production/ini/production-package/units/airFactory.ini",
-        "sha256": "cbb1ce718279656210b86ba7d69c54fcff4539febe42bed121204d720b15f9d0"
+        "sha256": "b52fe4fddfba58b0dc747390f6a7d1a21d81672a95d6ffdbff0e505b242aa6d0"
       },
       {
         "id": "builder",

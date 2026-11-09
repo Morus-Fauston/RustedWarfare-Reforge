@@ -165,7 +165,28 @@
       "com.rustedwarfare.reforge.core.sim.SubmarineSpeedTest",
       "com.rustedwarfare.reforge.core.sim.SubmarineTargetTest",
       "com.rustedwarfare.reforge.core.sim.SubmarineTransactionTest",
-      "com.rustedwarfare.reforge.core.sim.SubmarineWeaponTest"
+      "com.rustedwarfare.reforge.core.sim.SubmarineWeaponTest",
+      "com.rustedwarfare.reforge.core.content.AirFactoryUpgradeContentTest",
+      "com.rustedwarfare.reforge.core.content.AmphibiousContentFailureTest",
+      "com.rustedwarfare.reforge.core.content.AmphibiousJetContentTest",
+      "com.rustedwarfare.reforge.core.sim.AmphibiousDefinitionValidationTest",
+      "com.rustedwarfare.reforge.core.sim.AmphibiousFactoryFailureTest",
+      "com.rustedwarfare.reforge.core.sim.AmphibiousJetActionTest",
+      "com.rustedwarfare.reforge.core.sim.AmphibiousJetDamageTest",
+      "com.rustedwarfare.reforge.core.sim.AmphibiousJetDeathTest",
+      "com.rustedwarfare.reforge.core.sim.AmphibiousJetHeightTest",
+      "com.rustedwarfare.reforge.core.sim.AmphibiousJetLightningTest",
+      "com.rustedwarfare.reforge.core.sim.AmphibiousJetLightningVisibilityTest",
+      "com.rustedwarfare.reforge.core.sim.AmphibiousJetMountTest",
+      "com.rustedwarfare.reforge.core.sim.AmphibiousJetMovementTest",
+      "com.rustedwarfare.reforge.core.sim.AmphibiousJetProductionTest",
+      "com.rustedwarfare.reforge.core.sim.AmphibiousJetProjectionTest",
+      "com.rustedwarfare.reforge.core.sim.AmphibiousJetRangeTest",
+      "com.rustedwarfare.reforge.core.sim.AmphibiousJetRecoveryTest",
+      "com.rustedwarfare.reforge.core.sim.AmphibiousJetReverseTest",
+      "com.rustedwarfare.reforge.core.sim.AmphibiousJetTargetTest",
+      "com.rustedwarfare.reforge.core.sim.AmphibiousJetTransactionTest",
+      "com.rustedwarfare.reforge.core.sim.AmphibiousJetTurretTest"
     ],
     "client": [
       "com.rustedwarfare.reforge.client.CombatActorEvidenceTest",
@@ -207,7 +228,13 @@
       "com.rustedwarfare.reforge.client.SubmarineDepthInputTest",
       "com.rustedwarfare.reforge.client.SubmarineEvidenceTest",
       "com.rustedwarfare.reforge.client.SubmarinePairedSceneTest",
-      "com.rustedwarfare.reforge.client.SubmarineProductionSandboxTest"
+      "com.rustedwarfare.reforge.client.SubmarineProductionSandboxTest",
+      "com.rustedwarfare.reforge.client.AmphibiousEvidenceTest",
+      "com.rustedwarfare.reforge.client.AmphibiousFlightInputTest",
+      "com.rustedwarfare.reforge.client.AmphibiousFlightMenuTest",
+      "com.rustedwarfare.reforge.client.AmphibiousPresentationTest",
+      "com.rustedwarfare.reforge.client.AmphibiousProductionSandboxTest",
+      "com.rustedwarfare.reforge.client.AmphibiousResourceBindingTest"
     ],
     "pc": [
       "com.rustedwarfare.reforge.pc.PatrolJsonlPairingTest",
@@ -222,7 +249,8 @@
       "com.rustedwarfare.reforge.pc.NavalTerrainAppearanceTest",
       "com.rustedwarfare.reforge.pc.HoverOriginalProfileTest",
       "com.rustedwarfare.reforge.pc.ShieldOriginalProfileTest",
-      "com.rustedwarfare.reforge.pc.SubmarineOriginalProfileTest"
+      "com.rustedwarfare.reforge.pc.SubmarineOriginalProfileTest",
+      "com.rustedwarfare.reforge.pc.AmphibiousOriginalProfileTest"
     ],
     "tools": [
       "com.rustedwarfare.reforge.testing.ProductionCombatScenarioTest",
@@ -259,7 +287,12 @@
       "com.rustedwarfare.reforge.testing.SubmarineCoreAdapterTest",
       "com.rustedwarfare.reforge.testing.SubmarinePlayerArchiveTest",
       "com.rustedwarfare.reforge.testing.SubmarineProductionSessionTest",
-      "com.rustedwarfare.reforge.testing.SubmarinePublicScenarioTest"
+      "com.rustedwarfare.reforge.testing.SubmarinePublicScenarioTest",
+      "com.rustedwarfare.reforge.testing.AmphibiousArchiveTest",
+      "com.rustedwarfare.reforge.testing.AmphibiousCoreAdapterTest",
+      "com.rustedwarfare.reforge.testing.AmphibiousLightningArchiveTest",
+      "com.rustedwarfare.reforge.testing.AmphibiousProductionSessionTest",
+      "com.rustedwarfare.reforge.testing.AmphibiousPublicScenarioTest"
     ]
   },
   "short": [
@@ -743,6 +776,42 @@
       "backend": "session",
       "scenario": "scenarios/submarine-hjson-short.json",
       "contract": "platform/contracts/submarine-hjson-paired-short.json"
+    },
+    {
+      "id": "amphibious-ini-short",
+      "backend": "core",
+      "scenario": "scenarios/amphibious-ini-short.json",
+      "contract": "contracts/amphibious-ini-short.json"
+    },
+    {
+      "id": "amphibious-ini-production-chain",
+      "backend": "session",
+      "scenario": "platform/scenarios/amphibious-ini-production-chain.json",
+      "contract": "platform/contracts/amphibious-ini-production-chain.json"
+    },
+    {
+      "id": "amphibious-json-short",
+      "backend": "core",
+      "scenario": "scenarios/amphibious-json-short.json",
+      "contract": "contracts/amphibious-json-short.json"
+    },
+    {
+      "id": "amphibious-json-production-chain",
+      "backend": "session",
+      "scenario": "platform/scenarios/amphibious-json-production-chain.json",
+      "contract": "platform/contracts/amphibious-json-production-chain.json"
+    },
+    {
+      "id": "amphibious-hjson-short",
+      "backend": "core",
+      "scenario": "scenarios/amphibious-hjson-short.json",
+      "contract": "contracts/amphibious-hjson-short.json"
+    },
+    {
+      "id": "amphibious-hjson-production-chain",
+      "backend": "session",
+      "scenario": "platform/scenarios/amphibious-hjson-production-chain.json",
+      "contract": "platform/contracts/amphibious-hjson-production-chain.json"
     }
   ],
   "long": [
@@ -884,6 +953,7 @@
     }
   ],
   "pythonTests": [
-    "SimulationTest/tools/test_submarine_platform.py"
+    "SimulationTest/tools/test_submarine_platform.py",
+    "SimulationTest/tools/test_amphibious_platform.py"
   ]
 }

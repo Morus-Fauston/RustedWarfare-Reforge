@@ -1,6 +1,6 @@
 package com.rustedwarfare.reforge.client
 
-enum class UnitImageSlot { BODY, BACK, TURRET, DEAD, LEG, FOOT, ROTOR, SHADOW, SHIELD }
+enum class UnitImageSlot { BODY, BACK, TURRET, DEAD, LEG, FOOT, ROTOR, SHADOW, SHIELD, LEFT_WING, RIGHT_WING }
 
 data class ImageLogicalSize(val width: Int, val height: Int) {
     init { require(width > 0 && height > 0) { "Expected positive logical image dimensions" } }
@@ -12,7 +12,7 @@ data class UnitImageLogicalSizes(val body: ImageLogicalSize, val back: ImageLogi
     val turret: ImageLogicalSize? = null, val dead: ImageLogicalSize? = null,
     val leg: ImageLogicalSize? = null, val foot: ImageLogicalSize? = null, val rotor: ImageLogicalSize? = null,
     val weaponTurrets: Map<String, ImageLogicalSize> = emptyMap(), val shadow: ImageLogicalSize? = null,
-    val shield: ImageLogicalSize? = null) {
+    val shield: ImageLogicalSize? = null, val leftWing: ImageLogicalSize? = null, val rightWing: ImageLogicalSize? = null) {
     fun forSlot(slot: UnitImageSlot): ImageLogicalSize? = when (slot) {
         UnitImageSlot.BODY -> body
         UnitImageSlot.BACK -> back
@@ -23,5 +23,7 @@ data class UnitImageLogicalSizes(val body: ImageLogicalSize, val back: ImageLogi
         UnitImageSlot.ROTOR -> rotor
         UnitImageSlot.SHADOW -> shadow
         UnitImageSlot.SHIELD -> shield
+        UnitImageSlot.LEFT_WING -> leftWing
+        UnitImageSlot.RIGHT_WING -> rightWing
     }
 }

@@ -81,8 +81,8 @@ internal object ContentPackComposer {
                         !AuthorFactoryRules.accepts(production.exitProfile, product)))
                     bad(target, "productionUnits", "Author factory foundation and product capabilities must match the selected existing exit")
                 if (production.exitProfile == FactoryExitProfile.NATIVE_AIR &&
-                    (product.movement.type != MovementType.AIR || product.rotor == null || product.combat == null))
-                    bad(target, "productionUnits", "Air factory targets require an armed AIR unit with the finite rotor capability")
+                    (product.movement.type != MovementType.AIR || product.rotor == null && product.amphibiousJet == null || product.combat == null))
+                    bad(target, "productionUnits", "Air factory targets require an armed AIR unit with a supported flight capability")
                 if (production.exitProfile == FactoryExitProfile.CUSTOM_MECH &&
                     (target == "builder" && product.builder == null || target == "mechGun" && product.mech == null))
                     bad(target, "productionUnits", "Mech factory targets require the corresponding builder or two-legged mech capability")

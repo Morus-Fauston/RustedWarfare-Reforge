@@ -102,9 +102,9 @@ internal class OrdinaryUpgrades private constructor(private val definitions: Map
             it.actionKey == completed.actionKey && it.targetTypeId == definition.id } == true)
         val oldMaximum = checkNotNull(unit.definition.maximumHealth).toFloat()
         val nextMaximum = checkNotNull(definition.maximumHealth).toFloat()
-        // Native sea tier conversion changes its menu/appearance only; its setter never writes HP.
-        val nativeSea = FactoryExit.supportsSeaFactory(unit.definition)
-        val health = if (nativeSea) checkNotNull(unit.health)
+        // Native sea/air tier setters change their menu/appearance without writing HP.
+        val nativeTier = FactoryExit.supportsSeaFactory(unit.definition) || FactoryExit.supportsAirFactory(unit.definition)
+        val health = if (nativeTier) checkNotNull(unit.health)
             else (checkNotNull(unit.health).toFloat() / oldMaximum * nextMaximum).toDouble()
         require(health.isFinite() && health in 0.0..nextMaximum.toDouble()) { "Converted health must remain finite and bounded" }
         unit.typeId = definition.id

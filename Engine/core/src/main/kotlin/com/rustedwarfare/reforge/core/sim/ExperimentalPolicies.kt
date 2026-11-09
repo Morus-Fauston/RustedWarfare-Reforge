@@ -47,7 +47,7 @@ internal fun interface SteeringPolicy {
 
 internal object AcceleratedSteering : SteeringPolicy {
     override fun turn(unit: MutableUnit, target: Position, delta: Double, coordinates: CoordinatePolicy): Double {
-        val movement = unit.definition.movement
+        val movement = UnitLocomotion.movement(unit)
         val diff = coordinates.difference(coordinates.desired(unit.position, target), unit.heading)
         if (abs(diff) < 0.01) return 0.0
         val direction = if (diff < 0.0) -1.0 else 1.0

@@ -28,6 +28,7 @@ class WeaponAssembly private constructor(slots: List<AssembledWeapon>, val usesN
                 AssembledWeapon(weapon, base.copy(
                     projectile = weapon.projectile, shootDelay = weapon.shootDelay, turretSize = weapon.turretSize,
                     turretTurnSpeed = weapon.turnSpeed, turretTurnAcceleration = weapon.turnAcceleration,
+                    turretTurnDeceleration = weapon.turnDeceleration ?: base.turretTurnDeceleration,
                     mount = weapon.mount, turretImagePath = weapon.imagePath, turretImageScale = weapon.imageScale,
                     recoil = weapon.recoil, fireSound = weapon.fireSound, namedWeapons = null,
                     barrelX = weapon.barrelX ?: if (index == 0) base.barrelX else 0.0,

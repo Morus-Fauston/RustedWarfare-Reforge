@@ -86,15 +86,16 @@ internal object ScenarioDeclaration {
             ?: content.arrayAt("unitVariants").map { it.jsonObject }
         if (units.isEmpty()) throw InputError("Empty content units")
         units.forEach { if ((it["loader"]?.jsonPrimitive?.content ?: "variant") !in
-            setOf("variant", "combat", "declared-tank", "mech", "mech-heavy", "helicopter", "hover-tank", "battleship", "submarine", "water-combat", "constructor", "author-factory", "author-producer", "author-upgrading-producer", "underwater-target", "factory", "builder", "command-center", "turret", "turret-upgrades", "turret-construction", "point-defense", "point-defense-construction", "economy", "economy-upgrades"))
+            setOf("variant", "combat", "declared-tank", "mech", "mech-heavy", "helicopter", "hover-tank", "battleship", "submarine", "amphibious-jet", "water-combat", "constructor", "author-factory", "author-producer", "author-upgrading-producer", "underwater-target", "factory", "builder", "command-center", "turret", "turret-upgrades", "turret-construction", "point-defense", "point-defense-construction", "economy", "economy-upgrades"))
             throw InputError("Unsupported content loader") }
         if (units.any { it["loader"]?.jsonPrimitive?.content == "underwater-target" && it.id("id") != "navalUnderwaterTarget" })
             throw InputError("The finite underwater target loader requires its declared native identity")
         return units
     }
-    val actionKinds = setOf("select", "move", "stop", "produce", "cancel-production", "attack", "patrol", "upgrade", "cancel-upgrade", "build", "repair", "reclaim", "resume-construction", "submarine-depth")
+    val actionKinds = setOf("select", "move", "stop", "produce", "cancel-production", "attack", "patrol", "upgrade", "cancel-upgrade", "build", "repair", "reclaim", "resume-construction", "submarine-depth", "amphibious-flight")
     fun validateAction(action: JsonObject) {
         when (action.text("kind")) {
+            "amphibious-flight" -> if (action.required("flying") !in setOf(b(true), b(false))) throw InputError("Expected amphibious flying boolean")
             "submarine-depth" -> if (action.required("surface") !in setOf(b(true), b(false))) throw InputError("Expected submarine surface boolean")
             "move" -> point(action.objectAt("target"))
             "build" -> {
