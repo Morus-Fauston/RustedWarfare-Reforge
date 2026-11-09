@@ -34,7 +34,8 @@ data class UnitAppearance(val displayRadius: Double, val imagePath: Path, val im
     val mechKind: com.rustedwarfare.reforge.core.content.MechKind? = null, val shadowImagePath: Path? = null,
     val shieldImagePath: Path? = null, val shieldRadius: Double = 0.0,
     val leftWingImagePath: Path? = null, val rightWingImagePath: Path? = null,
-    val beamImagePath: Path? = null, val beamStartImagePath: Path? = null, val beamEndImagePath: Path? = null) {
+    val beamImagePath: Path? = null, val beamStartImagePath: Path? = null, val beamEndImagePath: Path? = null,
+    val afterburnTrailImagePath: Path? = null) {
     internal fun amphibiousWings(unit: UnitObservation, weapons: List<VisibleUnitWeapon>): List<WingDrawing> {
         if (!unit.alive || unit.amphibiousJet == null) return emptyList()
         val poses = weapons.filter { it.unitId == unit.unitId }.associateBy { it.weaponName }
@@ -165,7 +166,8 @@ class SandboxRenderResources private constructor(
                     rotorImagePath = images.rotor, mechKind = unit.mech?.kind, shadowImagePath = images.shadow,
                     shieldImagePath = images.shield, shieldRadius = unit.radius,
                     leftWingImagePath = images.leftWing, rightWingImagePath = images.rightWing,
-                    beamImagePath = images.beam, beamStartImagePath = images.beamStart, beamEndImagePath = images.beamEnd)
+                    beamImagePath = images.beam, beamStartImagePath = images.beamStart, beamEndImagePath = images.beamEnd,
+                    afterburnTrailImagePath = images.afterburnTrail)
             }), Collections.unmodifiableMap(scenario.players.associate { it.playerId to it.teamId }))
     }
 }

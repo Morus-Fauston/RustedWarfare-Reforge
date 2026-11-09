@@ -42,6 +42,10 @@
     {
       "type": "aa-beam-gunship",
       "file": "units/aaBeamGunship.ini"
+    },
+    {
+      "type": "aa-beam-gunship",
+      "file": "units/aaBeamGunship_afterburn.ini"
     }
   ]
 }

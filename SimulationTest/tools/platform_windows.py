@@ -10,7 +10,7 @@ import subprocess
 import tempfile
 import time
 
-from platform_scenario import PlatformError, compare_archive, read, save, sha, tree, validate_intent_contract
+from platform_scenario import PlatformError, compare_archive, read, save, sha, tree, validate_intent_contract, validate_unit_action_intent
 from diagnostic_reader import DiagnosticReader
 from platform_wait import WaitSegment
 from action_layout import wait_layout
@@ -60,7 +60,9 @@ def validate_windows_plan(plan,contract):
                 raise PlatformError('input-contract','Invalid declared waiting segment',1)
     action_types={'select':'SelectAction','move':'MoveAction','build':'BuildAction','upgrade':'UpgradeAction',
                   'produce':'ProduceAction','attack':'AttackAction','stop':'StopAction','submarine-depth':'SubmarineDepthAction',
-                  'amphibious-flight':'AmphibiousFlightAction','load':'LoadAction','unload':'UnloadAction'}
+                  'amphibious-flight':'AmphibiousFlightAction','load':'LoadAction','unload':'UnloadAction','unit-action':'UnitAction'}
+    for intent in intents:
+        if intent.get('kind')=='unit-action':validate_unit_action_intent(intent)
     if any(i.get('kind')=='load' and i.get('direction') not in ('INTO','UP') for i in intents):
         raise PlatformError('input-contract','Load intention requires INTO or UP',1)
     if any(i.get('kind')=='unload' and type(i.get('unloading')) is not bool for i in intents):
@@ -359,6 +361,8 @@ def run_windows(scenario, contract, distribution, output, size, java='java', rat
                     guard.click(*world(intent['position']), button='right')
                 elif kind == 'stop':
                     click_action('stop')
+                elif kind == 'unit-action':
+                    click_action('unit-action:'+intent['actionName'])
                 elif kind == 'submarine-depth':
                     click_action('submarine-surface' if intent['surface'] else 'submarine-dive')
                 elif kind == 'amphibious-flight':

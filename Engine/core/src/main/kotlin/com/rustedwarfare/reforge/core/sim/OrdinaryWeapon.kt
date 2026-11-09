@@ -130,6 +130,7 @@ internal object OrdinaryWeapon {
              state: MutableCombat = checkNotNull(unit.combat),
              weapon: CombatProfile = checkNotNull(unit.definition.combat)) {
         val profile = weapon.idleSweep ?: return
+        if (profile.angle == 0.0) return
         val elapsed = delta.toFloat()
         if (state.idleHold != 0f) {
             state.idleHold = maxOf(0f, state.idleHold - elapsed)

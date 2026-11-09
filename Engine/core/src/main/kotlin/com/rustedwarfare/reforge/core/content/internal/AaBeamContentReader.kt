@@ -6,16 +6,73 @@ import java.util.concurrent.CancellationException
 
 /** Fixed, qualified custom AA representative; not the unrelated native continuous beam. */
 internal object AaBeamContentReader {
-    private val schema = UnitContentSchema.native(setOf("format", "name", "maxHp", "radius", "price", "buildSpeed",
-        "image", "image_dead", "image_shadow", "image_turret", "beam_image", "beam_image_start", "beam_image_end"),
-        setOf("rw-reforge.aa-beam-gunship.v1"))
+    private val actionFields = setOf("buildSpeed", "convertTo", "resourceAmount", "resourceAmount_setValue",
+        "addActionCooldownTime", "canPlayerCancel", "allowMultipleInQueue")
+    private val schema = UnitContentSchema(mapOf(
+        "core" to setOf("name", "maxHp", "radius", "price", "buildSpeed", "image", "image_dead", "image_shadow",
+            "image_turret", "beam_image", "beam_image_start", "beam_image_end", "energyRegen",
+            "energyRegenWhenRecharging", "energyNeedsToRechargeToFull", "afterburn_trail_image"),
+        "movement" to setOf("moveSpeed", "moveAccelerationSpeed", "moveDecelerationSpeed", "maxTurnSpeed", "turnAcceleration"),
+        "turret_1" to setOf("energyUsage", "idleSweepAngle"),
+        "action_afterBurn" to actionFields, "action_cancelBurn" to actionFields,
+        "hiddenAction_autoSwitchBack" to setOf("autoTrigger", "convertTo", "resourceAmount", "resourceAmount_setValue")),
+        numericFields = setOf("maxHp", "radius", "price", "buildSpeed", "energyRegen", "energyRegenWhenRecharging",
+            "moveSpeed", "moveAccelerationSpeed", "moveDecelerationSpeed", "maxTurnSpeed", "turnAcceleration",
+            "energyUsage", "idleSweepAngle"),
+        booleanFields = setOf("energyNeedsToRechargeToFull", "canPlayerCancel", "allowMultipleInQueue"),
+        textFields = setOf("name", "image", "image_dead", "image_shadow", "image_turret", "beam_image",
+            "beam_image_start", "beam_image_end", "convertTo", "resourceAmount", "autoTrigger", "addActionCooldownTime", "afterburn_trail_image"),
+        dynamicWeapons = false)
 
     fun readWithSources(path: Path, validatePath: (Path) -> Unit): LoadedUnitContent =
         UnitSourceReader(schema, validatePath).load(path) { loaded ->
             val fields = loaded.values.getValue("core")
             fun required(key: String) = requiredContentField(fields[key], path, "core", key, "Required AA beam gunship field")
-            if (required("name") != "aaBeamGunship") reject(ContentErrorCode.UNSUPPORTED_FEATURE, path, "core", "name",
-                reason = "Expected aaBeamGunship")
+            val name = required("name")
+            if (name !in setOf("aaBeamGunship", "aaBeamGunship_afterburn"))
+                reject(ContentErrorCode.UNSUPPORTED_FEATURE, path, "core", "name", reason = "Expected a qualified AA form")
+            val afterburn = name == "aaBeamGunship_afterburn"
+            if (!afterburn && fields.containsKey("afterburn_trail_image"))
+                reject(ContentErrorCode.UNSUPPORTED_FEATURE, path, "core", "afterburn_trail_image", reason = "Only the accelerated form emits trails")
+            fun expected(section: String, key: String, value: String, optional: Boolean = false): String {
+                val actual = loaded.values[section]?.get(key) ?: if (optional) value else
+                    reject(ContentErrorCode.MISSING_REQUIRED_FIELD, path, section, key, reason = "Required AA form field")
+                val same = value.toDoubleOrNull()?.let { actual.toDoubleOrNull()?.let { n -> n.isFinite() && n == it } }
+                    ?: (actual == value)
+                if (!same) reject(ContentErrorCode.UNSUPPORTED_FEATURE, path, section, key, reason = "Expected qualified value $value")
+                return actual
+            }
+            expected("core", "energyRegen", if (afterburn) "-0.02" else "0.01")
+            expected("core", "energyRegenWhenRecharging", "0.05")
+            expected("core", "energyNeedsToRechargeToFull", "true")
+            val movement = if (afterburn) listOf(2.3, .13, .13, 1.5, .1) else listOf(1.0, .015, .015, 1.2, .04)
+            for ((key, value) in listOf("moveSpeed", "moveAccelerationSpeed", "moveDecelerationSpeed", "maxTurnSpeed", "turnAcceleration").zip(movement))
+                expected("movement", key, value.toString(), optional = !afterburn)
+            expected("turret_1", "energyUsage", if (afterburn) "99" else "0.5", optional = !afterburn)
+            expected("turret_1", "idleSweepAngle", if (afterburn) "0" else "20", optional = !afterburn)
+            fun action(section: String, index: Int, target: String, energy: Boolean, cooldown: Boolean,
+                       automatic: AutomaticActionCondition? = null): CustomActionDefinition {
+                expected(section, "convertTo", target)
+                if (automatic == null) {
+                    expected(section, "buildSpeed", "0")
+                    expected(section, "canPlayerCancel", "false")
+                    expected(section, "allowMultipleInQueue", "false")
+                } else expected(section, "autoTrigger", "if self.energy(empty=true)")
+                expected(section, "resourceAmount", if (energy) "energy" else "IGNORE")
+                expected(section, "resourceAmount_setValue", if (energy) "6" else "IGNORE")
+                if (cooldown) expected(section, "addActionCooldownTime", "25s")
+                else if (loaded.values[section]?.containsKey("addActionCooldownTime") == true)
+                    reject(ContentErrorCode.UNSUPPORTED_FEATURE, path, section, "addActionCooldownTime", reason = "No cooldown on this qualified action")
+                return CustomActionDefinition(section.substringAfter('_'), "${target}_$index", target,
+                    if (automatic == null) 1000f else 0f, if (energy) 6f else null, if (cooldown) 25000 else 0,
+                    automatic = automatic)
+            }
+            val actions = mutableListOf(action("action_afterBurn", 0, "aaBeamGunship_afterburn", !afterburn, true))
+            if (afterburn) {
+                actions += action("action_cancelBurn", 1, "aaBeamGunship", true, false)
+                actions += action("hiddenAction_autoSwitchBack", 2, "aaBeamGunship", true, false, AutomaticActionCondition.ENERGY_EMPTY)
+            } else if (loaded.values.keys.any { it in setOf("action_cancelBurn", "hiddenAction_autoSwitchBack") })
+                reject(ContentErrorCode.UNSUPPORTED_FEATURE, path, reason = "Normal AA form does not declare afterburn recovery actions")
             for ((key, expected) in mapOf("maxHp" to 2500.0, "radius" to 22.0, "price" to 6000.0)) {
                 val value = required(key).toDoubleOrNull()?.takeIf { it.isFinite() }
                     ?: reject(ContentErrorCode.MALFORMED_SYNTAX, path, "core", key, reason = "Expected a finite number")
@@ -40,14 +97,16 @@ internal object AaBeamContentReader {
             val turret = image("image_turret", 16, 26)
             val weapon = NamedWeaponDefinition("1", "beam", projectile, TurretMount(0.0, 2.0), 5.0, 16.0,
                 4.2, .3, turret, 1.0, recoil = WeaponRecoil(0.0), canAttackFlyingUnits = true,
-                imageOffsetY = 5.0, energyUsage = .5f)
-            UnitDefinition("aaBeamGunship", "CustomUnitMetadata", 22.0, 22.0, 1, image("image", 33, 52), 1.0,
-                MovementProfile(MovementType.AIR, 1.0, .015, .015, 1.2, .04, true, true, .1, 50,
+                imageOffsetY = 5.0, energyUsage = if (afterburn) 99f else .5f)
+            UnitDefinition(name, "CustomUnitMetadata", 22.0, 22.0, 1, image("image", 33, 52), 1.0,
+                MovementProfile(MovementType.AIR, movement[0], movement[1], movement[2], movement[3], movement[4], true, true, .1, 50,
                     FlightProfile(35.0, 1.0, -1.0, 0.0)), emptySet(),
                 combat = CombatProfile(2500.0, 280.0, 5.0, 16.0, 4.2, .3, projectile,
                     turret, image("image_dead", 33, 52), 1.0, mount = TurretMount(0.0, 2.0),
-                    recoil = WeaponRecoil(0.0), idleSweep = IdleSweepProfile(20.0, 100f, .4f, 5),
+                    recoil = WeaponRecoil(0.0), idleSweep = IdleSweepProfile(if (afterburn) 0.0 else 20.0, 100f, .4f, 5),
                     namedWeapons = WeaponCatalog(listOf(weapon))), build = BuildProfile(6000L, 1f / 2100f),
-                shadowImagePath = image("image_shadow", 33, 52), energy = EnergyProfile(6f, .01f, .05f, true))
+                shadowImagePath = image("image_shadow", 33, 52), energy = EnergyProfile(6f, if (afterburn) -.02f else .01f, .05f, true),
+                customActions = CustomActionsProfile(actions),
+                afterburnTrailImagePath = if (afterburn) image("afterburn_trail_image", 32, 32) else null)
         }
 }

@@ -25,6 +25,7 @@ object MotionDiagnosticCapture {
         }
         require(action !is SubmarineDepthAction) { "Movement diagnostic capture does not support SubmarineDepthAction" }
         require(action !is AmphibiousFlightAction) { "Movement diagnostic capture does not support AmphibiousFlightAction" }
+        require(action !is UnitAction) { "Movement diagnostic capture does not support UnitAction" }
         require(action !is LoadAction && action !is UnloadAction) { "Movement diagnostic capture does not support transport actions" }
         val before=context.observe().json()
         val submitted=context.submit(action)
@@ -33,6 +34,7 @@ object MotionDiagnosticCapture {
             "kind" to s(when(action) { is MoveAction -> "move";is StopAction -> "stop";is SelectAction -> "select"
                 is SubmarineDepthAction -> error("Movement diagnostic capture does not support SubmarineDepthAction")
                 is AmphibiousFlightAction -> error("Movement diagnostic capture does not support AmphibiousFlightAction")
+                is UnitAction -> error("Movement diagnostic capture does not support UnitAction")
                 is LoadAction, is UnloadAction -> error("Movement diagnostic capture does not support transport actions")
                 is AttackAction -> error("Movement diagnostic capture does not support AttackAction")
                 is PatrolAction -> error("Movement diagnostic capture does not support PatrolAction")

@@ -297,6 +297,10 @@ class SandboxSession(scenario: Scenario, private val evidence: ClientEvidence = 
         StopAction("click-${++actionNumber}", "p1", id, context.world)
     }
 
+    fun unitAction(name: String): ActionResult? = actionMenu.unitActions.singleOrNull { it.name == name }?.let {
+        apply(UnitAction("click-${++actionNumber}", "p1", checkNotNull(selectedId), name, context.world))
+    }
+
     fun submarineDepth(surface: Boolean): ActionResult? = actionMenu.depthAction?.takeIf { it.surface == surface }?.let {
         apply(SubmarineDepthAction("click-${++actionNumber}", "p1", checkNotNull(selectedId), surface, context.world))
     }
@@ -462,6 +466,7 @@ class SandboxSession(scenario: Scenario, private val evidence: ClientEvidence = 
             "result" to result.fields()) + (if (action is BuildAction) mapOf("buildingTypeId" to action.buildingTypeId) else emptyMap()) +
             (if (action is SubmarineDepthAction) mapOf("surface" to action.surface) else emptyMap()) +
             (if (action is AmphibiousFlightAction) mapOf("flying" to action.flying) else emptyMap()) +
+            (if (action is UnitAction) mapOf("actionName" to action.actionName, "cancelQueued" to action.cancelQueued) else emptyMap()) +
             (if (action is LoadAction) mapOf("direction" to action.direction.name) else emptyMap()) +
             (if (action is UnloadAction) mapOf("unloading" to action.unloading) else emptyMap()) }
         capture("after-action")

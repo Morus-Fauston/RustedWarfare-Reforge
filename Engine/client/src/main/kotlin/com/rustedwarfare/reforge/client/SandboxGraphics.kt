@@ -33,6 +33,8 @@ class SandboxGraphics private constructor(private val resources: SandboxRenderRe
     private val shields = mutableMapOf<String, TextureRegion>()
     private val wings = mutableMapOf<Pair<String, UnitImageSlot>, TextureRegion>()
     private val beamImages = mutableMapOf<Path, TextureRegion>()
+    private val trailImages = mutableMapOf<Path, TextureRegion>()
+    private val afterburnTrails = AfterburnTrailPresentation()
     fun unitIcon(typeId: String): TextureRegion? = units[typeId]
 
     companion object {
@@ -137,6 +139,7 @@ class SandboxGraphics private constructor(private val resources: SandboxRenderRe
                 beamImages[path] = TextureRegion(texture(path))
             }
             definition.beamImagePath?.let { beamImages.getValue(it).texture.setWrap(Texture.TextureWrap.ClampToEdge, Texture.TextureWrap.Repeat) }
+            definition.afterburnTrailImagePath?.let { trailImages.getOrPut(it) { TextureRegion(texture(it)) } }
         }
     }
 
@@ -150,6 +153,16 @@ class SandboxGraphics private constructor(private val resources: SandboxRenderRe
                 projection.x(cell.column.toDouble() * resources.tileWidth),
                 projection.y((cell.row + 1.0) * resources.tileHeight),
                 (resources.tileWidth * projection.scale).toFloat(), (resources.tileHeight * projection.scale).toFloat())
+        }
+        batch.color = Color.WHITE
+        for (drawing in afterburnTrails.project(frame.observation, resources)) {
+            val region = trailImages.getValue(requireNotNull(drawing.images.afterburnTrailImagePath))
+            val size = drawing.images.drawSize(UnitImageSlot.AFTERBURN_TRAIL, region.regionWidth, region.regionHeight)
+            val width = (size.width * projection.scale * drawing.scale).toFloat()
+            val height = (size.height * projection.scale * drawing.scale).toFloat()
+            batch.setColor(1f, 227f / 255f, 43f / 255f, drawing.alpha)
+            batch.draw(region, projection.x(drawing.center.x) - width / 2, projection.y(drawing.center.y) - height / 2,
+                width / 2, height / 2, width, height, 1f, 1f, -drawing.heading.toFloat())
         }
         batch.color = Color.WHITE
         val visibleWeapons = frame.observation.weapons.groupBy { it.unitId }

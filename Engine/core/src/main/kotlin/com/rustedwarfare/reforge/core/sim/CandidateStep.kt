@@ -29,6 +29,7 @@ internal data class StepState(
     var units: MutableMap<String, MutableUnit> = linkedMapOf(),
     var projectiles: MutableList<MutableProjectile> = mutableListOf(),
     var combatFrame: Int = -1,
+    var actionClock: Int = 0,
     var nextObjectId: Long = 1L,
     var lastBirthSerial: Long = 0L,
     var buildingWork: BuildingWork = BuildingWork.initial(),
@@ -112,6 +113,7 @@ internal data class StepState(
                 } }
             require(unit.birthRemaining.isFinite() && unit.birthRemaining in 0f..birthLimit) { "Invalid birth timer" }
             unit.taskQueue.validateCandidate()
+            CustomUnitActions.validateCandidate(unit)
             require((unit.logicalRequestX == null) == (unit.logicalRequestY == null) &&
                 unit.logicalRequestX?.isFinite() != false && unit.logicalRequestY?.isFinite() != false) {
                 "Logical movement coordinates must be a finite pair"
@@ -127,9 +129,13 @@ internal data class StepState(
             }
             origin?.let { birth ->
                 val producer = units.getValue(birth.producerId)
+                val bornDefinition = input.unitDefinitions.getValue(birth.unitTypeId)
+                val convertedProduct = AaBeamGunship.supports(bornDefinition) && AaBeamGunship.supports(unit.definition) &&
+                    bornDefinition.customActions?.actions?.any { it.targetTypeId == unit.typeId } == true
                 val nonce = unit.unitId.removePrefix("produced:${unit.ownerPlayerId}:")
                 require(producer.ownerPlayerId == unit.ownerPlayerId &&
-                    birthDefinition?.production?.unitTypeIds?.contains(unit.typeId) == true &&
+                    birthDefinition?.production?.unitTypeIds?.contains(birth.unitTypeId) == true &&
+                    (unit.typeId == birth.unitTypeId || convertedProduct) &&
                     (producer.typeId == birthDefinition.id || birthDefinition.upgrades?.actions?.any {
                         it.targetTypeId == producer.typeId } == true) &&
                     Regex("[0-9a-f]{32}").matches(nonce) &&

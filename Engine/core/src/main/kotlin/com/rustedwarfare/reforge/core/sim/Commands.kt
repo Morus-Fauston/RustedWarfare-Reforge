@@ -10,6 +10,17 @@ sealed interface Action {
 
 enum class LoadDirection { INTO, UP }
 
+/** A named content action is queued independently of the unit's movement orders. */
+data class UnitAction(
+    override val actionId: String,
+    override val actorPlayerId: String,
+    override val unitId: String,
+    val actionName: String,
+    override val world: WorldHandle,
+    val cancelQueued: Boolean = false,
+    override val atStep: Long? = null,
+) : Action
+
 data class UnloadAction(
     override val actionId: String,
     override val actorPlayerId: String,

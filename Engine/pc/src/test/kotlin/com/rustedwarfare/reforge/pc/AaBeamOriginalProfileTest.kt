@@ -24,6 +24,14 @@ class AaBeamOriginalProfileTest {
             assertEquals(if (slot == "shadow") "alpha-shadow" else "crop",recipe.getString("operation"))
             assertEquals(0,recipe.getInt("rotate",0))
         }
+        val accelerated = assertNotNull(mapped.json.get("unitBindings").get("aaBeamGunship_afterburn"))
+        assertEquals(bindings.map { it.name }.toSet() + "afterburnTrail", accelerated.map { it.name }.toSet())
+        for ((slot, _, _) in expected) assertEquals(bindings.getString(slot), accelerated.getString(slot))
+        val trail = mapped.recipes.getValue(accelerated.getString("afterburnTrail"))
+        val source = mapped.json.get("sources").single { it.getString("id") == trail.getString("source") }
+        assertEquals("assets/units/shared/glow_sharp.png", source.getString("path"))
+        assertEquals(listOf(32,32), trail.get("target").asIntArray().toList())
+        assertEquals("crop", trail.getString("operation"))
     }
 
     @Test fun auto_shadow_preserves_every_alpha_value_and_replaces_rgb_with_black() {

@@ -31,6 +31,8 @@ class AaBeamSandboxTest {
             assertTrue(loaded.scenario.units.any { it.ownerPlayerId == "p2" && it.typeId == "aaBeamGunship" })
             val images = loaded.renderResources.units.getValue("aaBeamGunship").imageBindings()
             assertTrue(images.images.keys.map { it.suffix }.containsAll(listOf("beam", "beam_start", "beam_end")))
+            val accelerated = loaded.renderResources.units.getValue("aaBeamGunship_afterburn").imageBindings()
+            assertTrue(accelerated.images.keys.any { it.suffix == "afterburn_trail" }, "Accelerated form must bind its actual trail image")
             assertTrue(NativeActionPanel.supports(loaded.scenario.scenarioId))
             SandboxSession(loaded.scenario).use { session ->
                 fun until(limit: Int, ready: () -> Boolean) {
@@ -56,6 +58,20 @@ class AaBeamSandboxTest {
                 assertEquals("AA beam gunship", session.actionMenu.selectedTitle)
                 assertTrue(session.actionMenu.selectedUnitInfo!!.contains("Energy 6.000 / 6.000"))
                 assertEquals(mapOf("current" to 6f, "maximum" to 6f, "recharging" to false), born.fields()["energy"])
+                assertEquals(listOf("afterBurn"), session.actionMenu.unitActions.map { it.name })
+                assertTrue(session.actionMenu.unitActions.single().available)
+                assertIs<ActionResult.Accepted>(session.unitAction("afterBurn"))
+                assertTrue(session.actionMenu.unitActions.single().queued)
+                session.tick()
+                assertEquals("aaBeamGunship_afterburn", session.observation.units.single { it.unitId == born.unitId }.typeId)
+                assertTrue(session.actionMenu.selectedUnitInfo!!.contains("Afterburn"))
+                assertEquals(listOf("afterBurn", "cancelBurn"), session.actionMenu.unitActions.map { it.name })
+                assertFalse(session.actionMenu.unitActions.first().available)
+                assertTrue(session.actionMenu.unitActions.first().tooltip.contains("25.0s"))
+                assertIs<ActionResult.Accepted>(session.unitAction("cancelBurn"))
+                session.tick()
+                assertEquals("aaBeamGunship", session.observation.units.single { it.unitId == born.unitId }.typeId)
+                assertEquals("unit-action-cooldown", assertIs<ActionResult.Rejected>(session.unitAction("afterBurn")).error.code)
             }
         }
     }

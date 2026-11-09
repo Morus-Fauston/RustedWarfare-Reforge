@@ -29,6 +29,18 @@ internal object AaBeamGunship {
     }
 
     fun supports(unit: UnitDefinition): Boolean {
+        val burning = unit.id == "aaBeamGunship_afterburn"
+        if (unit.id != "aaBeamGunship" && !burning) return false
+        if ((unit.afterburnTrailImagePath != null) != burning) return false
+        val actions = unit.customActions ?: return false
+        val expectedActions = mutableListOf(CustomActionDefinition("afterBurn", "aaBeamGunship_afterburn_0",
+            "aaBeamGunship_afterburn", 1000f, if (burning) null else 6f, 25000))
+        if (burning) {
+            expectedActions += CustomActionDefinition("cancelBurn", "aaBeamGunship_1", "aaBeamGunship", 1000f, 6f)
+            expectedActions += CustomActionDefinition("autoSwitchBack", "aaBeamGunship_2", "aaBeamGunship", 0f, 6f,
+                automatic = AutomaticActionCondition.ENERGY_EMPTY)
+        }
+        if (actions.actions != expectedActions || actions.automaticCooldown != 60f) return false
         val weapon = unit.combat ?: return false
         val turret = weapon.namedWeapons?.ordered?.singleOrNull() ?: return false
         val shot = weapon.projectile
@@ -37,16 +49,18 @@ internal object AaBeamGunship {
             damageModifiers = ProjectileDamageModifiers(shieldDamage = .75), beam = beam)
         val expectedTurret = NamedWeaponDefinition("1", "beam", expectedShot, TurretMount(0.0, 2.0),
             5.0, 16.0, 4.2, .3, weapon.turretImagePath, 1.0, recoil = WeaponRecoil(0.0),
-            canAttackFlyingUnits = true, imageOffsetY = 5.0, energyUsage = .5f)
+            canAttackFlyingUnits = true, imageOffsetY = 5.0, energyUsage = if (burning) 99f else .5f)
         val expectedCombat = CombatProfile(2500.0, 280.0, 5.0, 16.0, 4.2, .3, expectedShot,
             weapon.turretImagePath, weapon.deadImagePath, 1.0, mount = TurretMount(0.0, 2.0),
-            recoil = WeaponRecoil(0.0), idleSweep = IdleSweepProfile(20.0, 100f, .4f, 5),
+            recoil = WeaponRecoil(0.0), idleSweep = IdleSweepProfile(if (burning) 0.0 else 20.0, 100f, .4f, 5),
             namedWeapons = WeaponCatalog(listOf(expectedTurret)))
-        return unit.id == "aaBeamGunship" && unit.className == "CustomUnitMetadata" &&
+        return unit.className == "CustomUnitMetadata" &&
             unit.radius == 22.0 && unit.displayRadius == 22.0 && unit.maximumHealth == 2500.0 &&
-            unit.movement == MovementProfile(MovementType.AIR, 1.0, .015, .015, 1.2, .04, true, true, .1, 50,
+            unit.movement == MovementProfile(MovementType.AIR, if (burning) 2.3 else 1.0,
+                if (burning) .13 else .015, if (burning) .13 else .015,
+                if (burning) 1.5 else 1.2, if (burning) .1 else .04, true, true, .1, 50,
                 FlightProfile(35.0, 1.0, -1.0, 0.0)) && unit.rotor == null &&
-            unit.energy == EnergyProfile(6f, .01f, .05f, true) && unit.build == BuildProfile(6000L, 1f / 2100f) &&
+            unit.energy == EnergyProfile(6f, if (burning) -.02f else .01f, .05f, true) && unit.build == BuildProfile(6000L, 1f / 2100f) &&
             unit.building == null && unit.production == null && unit.builder == null && unit.shield == null &&
             unit.transport == null && unit.submarine == null && unit.amphibiousJet == null && unit.pointDefense == null &&
             unit.upgrades == null && unit.income == null && unit.construction == null && unit.deathExplosion == null &&

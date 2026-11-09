@@ -76,6 +76,12 @@ object PlatformSessionRunner {
                         "cancelProduction" -> session.cancelProduction(intent.id("typeId"))
                         "move" -> session.move(intent.objectAt("position").let { Position(it.number("x"), it.number("y")) })
                         "stop" -> session.stop()
+                        "unit-action" -> {
+                            if (intent.keys != setOf("intentId", "kind", "actionName", "waitSteps") ||
+                                intent.id("actionName") !in setOf("afterBurn", "cancelBurn"))
+                                throw InputError("Expected a finite normal unit action and explicit waitSteps")
+                            session.unitAction(intent.id("actionName"))
+                        }
                         "load" -> session.command(intent.objectAt("position").let { Position(it.number("x"), it.number("y")) })
                         "unload" -> {
                             if (intent.required("unloading") !in setOf(b(true), b(false))) throw InputError("Expected unload boolean")

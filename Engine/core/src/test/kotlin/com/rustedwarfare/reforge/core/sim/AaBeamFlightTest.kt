@@ -12,7 +12,9 @@ internal object AaBeamScene {
 
     fun scenario(map: MapDefinition, aa: UnitDefinition, spawns: List<UnitSpawn>): Scenario =
         LandingCraftScene.scenario(map, spawns = spawns).let { base ->
-            base.copy(scenarioId = "aa-beam", unitDefinitions = base.unitDefinitions + (aa.id to aa))
+            val pack = assertIs<ContentResult.Success<LoadedContentPack>>(
+                ContentLoader.loadContentPack(aa.imagePath.parent)).value
+            base.copy(scenarioId = "aa-beam", unitDefinitions = base.unitDefinitions + pack.units + (aa.id to aa))
         }
 
     fun open(input: Scenario): SimulationContext {

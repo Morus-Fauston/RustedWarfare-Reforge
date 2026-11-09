@@ -92,9 +92,13 @@ internal object ScenarioDeclaration {
             throw InputError("The finite underwater target loader requires its declared native identity")
         return units
     }
-    val actionKinds = setOf("select", "move", "stop", "produce", "cancel-production", "attack", "patrol", "upgrade", "cancel-upgrade", "build", "repair", "reclaim", "resume-construction", "submarine-depth", "amphibious-flight", "load", "unload")
+    val actionKinds = setOf("select", "move", "stop", "produce", "cancel-production", "attack", "patrol", "upgrade", "cancel-upgrade", "build", "repair", "reclaim", "resume-construction", "submarine-depth", "amphibious-flight", "load", "unload", "unit-action")
     fun validateAction(action: JsonObject) {
         when (action.text("kind")) {
+            "unit-action" -> {
+                action.id("actionName")
+                if (action.required("cancelQueued") !in setOf(b(true), b(false))) throw InputError("Expected action cancellation boolean")
+            }
             "load" -> {
                 action.id("targetUnitId")
                 if (action.required("direction") !in setOf(s("INTO"), s("UP"))) throw InputError("Expected native loading direction")

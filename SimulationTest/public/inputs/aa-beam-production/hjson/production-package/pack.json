@@ -42,6 +42,10 @@
     {
       "type": "aa-beam-gunship",
       "file": "units/aaBeamGunship.hjson"
+    },
+    {
+      "type": "aa-beam-gunship",
+      "file": "units/aaBeamGunship_afterburn.hjson"
     }
   ]
 }

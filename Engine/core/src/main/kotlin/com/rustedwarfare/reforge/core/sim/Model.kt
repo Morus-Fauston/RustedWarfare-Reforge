@@ -161,9 +161,13 @@ data class UnitObservation(
     val transport: TransportObservation? = null,
     val transportExit: TransportExitObservation? = null,
     val energy: EnergyObservation? = null,
+    val unitActions: UnitActionsObservation? = null,
 )
 
 data class EnergyObservation(val current: Float, val maximum: Float, val recharging: Boolean)
+data class UnitActionObservation(val name: String, val queueIndex: Int?, val progress: Float?,
+    val cooldownRemaining: Int, val available: Boolean)
+data class UnitActionsObservation(val actions: List<UnitActionObservation>, val automaticCooldown: Float)
 
 data class TransportObservation(val passengerIds: List<String>?, val passengerCount: Int,
     val occupiedSlots: Int, val capacity: Int, val unloading: Boolean, val unloadRemaining: Float?,
@@ -390,7 +394,7 @@ sealed interface CloseResult {
 }
 
 /** One immutable origin shared by candidate copies; never a player DTO. */
-internal data class ProducedOrigin(val producerId: String, val factoryTypeId: String)
+internal data class ProducedOrigin(val producerId: String, val factoryTypeId: String, val unitTypeId: String)
 
 internal data class MutableUnit(
     val unitId: String,
@@ -437,6 +441,7 @@ internal data class MutableUnit(
     val updateKey: String = unitId,
     val productionOrigin: ProducedOrigin? = null,
     var birthRemaining: Float = 0f,
+    var customActionState: CustomActionState = CustomActionState(),
     var incomeElapsed: Float = 0f,
     var pointDefense: MutablePointDefense? = definition.pointDefense?.let { MutablePointDefense(it.initialEnergy) },
     var constructionProgress: Float = 1f,

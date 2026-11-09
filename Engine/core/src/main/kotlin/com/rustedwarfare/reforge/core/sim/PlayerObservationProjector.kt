@@ -74,7 +74,7 @@ internal class PlayerObservationProjector(world: WorldHandle, scenario: Scenario
             if (it.ownerPlayerId != playerId) {
                 it.copy(moveTarget = null, pathPoints = emptyList(), attackTargetId = null, cooldown = null, pointDefense = null,
                     tasks = emptyList(), constructionTargetId = null, transportExit = null,
-                    transport = null,
+                    transport = null, unitActions = null,
                     submarine = it.submarine?.copy(surfaceIntent = null, verticalSpeed = null),
                     amphibiousJet = it.amphibiousJet?.copy(flyingIntent = null, verticalSpeed = null, canDive = null))
             } else if (it.attackTargetId != null && it.attackTargetId !in visibleIds) {
@@ -96,7 +96,7 @@ internal class PlayerObservationProjector(world: WorldHandle, scenario: Scenario
             val allowed = events.filter { event -> if (event.kind == "building-reclaimed") {
                 frame.reclaimedOwner(event.unitId) == playerId
             } else event.unitId != null && event.unitId in ids &&
-                (!(event.kind.startsWith("production-") || event.kind.startsWith("upgrade-") ||
+                (!(event.kind.startsWith("production-") || event.kind.startsWith("upgrade-") || event.kind.startsWith("unit-action-") ||
                     event.kind in setOf("construction-unavailable", "construction-insufficient-funds", "construction-queue-full", "maintenance-completed",
                         "submarine-surface-requested", "submarine-dive-requested",
                         "amphibious-fly-requested", "amphibious-dive-requested",

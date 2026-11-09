@@ -39,6 +39,8 @@ class UnitDefinition(
     val transport: TransportProfile? = null,
     val transportSlots: Int = 1,
     val energy: EnergyProfile? = null,
+    val customActions: CustomActionsProfile? = null,
+    val afterburnTrailImagePath: Path? = null,
 ) {
     val retainedUnconsumed: Set<String> = Collections.unmodifiableSet(LinkedHashSet(retainedUnconsumed))
     val maximumHealth: Double? get() = durability?.maxHp ?: combat?.maxHp
@@ -101,6 +103,16 @@ data class ShieldProfile(val maximum: Float, val regeneration: Float) {
 /** Weapon energy is separate from the point-defense module's different exhaustion rule. */
 data class EnergyProfile(val maximum: Float, val regeneration: Float, val rechargingRegeneration: Float,
     val needsFullRecharge: Boolean)
+
+/** The qualified conversion/action subset; no executable text or arbitrary expression interpreter. */
+enum class AutomaticActionCondition { ENERGY_EMPTY }
+data class CustomActionDefinition(val name: String, val actionId: String, val targetTypeId: String,
+    val rate: Float, val energySet: Float?, val cooldown: Int = 0,
+    val canPlayerCancel: Boolean = false, val allowMultipleInQueue: Boolean = false,
+    val automatic: AutomaticActionCondition? = null)
+class CustomActionsProfile(actions: List<CustomActionDefinition>, val automaticCooldown: Float = 60f) {
+    val actions: List<CustomActionDefinition> = Collections.unmodifiableList(ArrayList(actions))
+}
 
 /** Qualified custom AA beam art and reuse; ordinary instant lightning keeps its own lifetime. */
 data class BeamProfile(val image: Path, val startImage: Path, val endImage: Path)

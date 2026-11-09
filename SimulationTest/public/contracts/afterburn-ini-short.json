@@ -1,0 +1,102 @@
+{
+  "schemaVersion": 1,
+  "kind": "behavior-contract",
+  "contractId": "public.afterburn-ini.short.contract.v1",
+  "scope": "self-behavior",
+  "scenarioIds": [
+    "p009-afterburn-actions"
+  ],
+  "comparison": {
+    "numberMode": "declared-per-field",
+    "tolerances": {}
+  },
+  "approval": {
+    "status": "tool-fixture-only",
+    "source": "ENG-P009-010 qualified DEC static action and energy facts; owned self-behavior only"
+  },
+  "exclusions": [
+    "original-compatibility",
+    "platform-input",
+    "performance"
+  ],
+  "rules": [
+    {
+      "ruleId": "queued-conversion",
+      "when": {
+        "phase": "after-advance",
+        "stepIndex": 0
+      },
+      "assertions": [
+        {
+          "path": "units.aa.type",
+          "operator": "equals",
+          "value": "aaBeamGunship_afterburn"
+        },
+        {
+          "path": "units.aa.energy.current",
+          "operator": "equals",
+          "value": 6
+        },
+        {
+          "path": "units.aa.unitActions.actions.afterBurn.cooldownRemaining",
+          "operator": "equals",
+          "value": 25000
+        }
+      ]
+    },
+    {
+      "ruleId": "positive-energy-does-not-recover",
+      "when": {
+        "phase": "after-advance",
+        "stepIndex": 299
+      },
+      "assertions": [
+        {
+          "path": "units.aa.type",
+          "operator": "equals",
+          "value": "aaBeamGunship_afterburn"
+        }
+      ]
+    },
+    {
+      "ruleId": "first-empty-float-update-recovers",
+      "when": {
+        "phase": "after-advance",
+        "stepIndex": 301
+      },
+      "assertions": [
+        {
+          "path": "units.aa.type",
+          "operator": "equals",
+          "value": "aaBeamGunship"
+        },
+        {
+          "path": "units.aa.energy.current",
+          "operator": "equals",
+          "value": 6
+        },
+        {
+          "path": "units.aa.unitActions.automaticCooldown",
+          "operator": "equals",
+          "value": 60
+        }
+      ]
+    }
+  ],
+  "unitActionConversions": [
+    {
+      "unitId": "aa",
+      "actionId": "burn",
+      "sourceTypeId": "aaBeamGunship",
+      "targetTypeId": "aaBeamGunship_afterburn",
+      "completionStepIndex": 0
+    },
+    {
+      "unitId": "aa",
+      "actionId": null,
+      "sourceTypeId": "aaBeamGunship_afterburn",
+      "targetTypeId": "aaBeamGunship",
+      "completionStepIndex": 301
+    }
+  ]
+}

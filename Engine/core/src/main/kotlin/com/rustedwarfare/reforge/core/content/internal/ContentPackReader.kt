@@ -175,7 +175,8 @@ internal object ContentPackReader {
                 "image_wing_right" to definition.amphibiousJet?.rightWingImagePath,
                 "beam_image" to combat?.projectile?.beam?.image,
                 "beam_image_start" to combat?.projectile?.beam?.startImage,
-                "beam_image_end" to combat?.projectile?.beam?.endImage) + definition.mech?.legs.orEmpty().flatMap {
+                "beam_image_end" to combat?.projectile?.beam?.endImage,
+                "afterburn_trail_image" to definition.afterburnTrailImagePath) + definition.mech?.legs.orEmpty().flatMap {
                     listOf("image_leg" to it.legImage, "image_foot" to it.footImage) } +
                 combat?.namedWeapons?.ordered.orEmpty().map { "turret_${it.name}.image" to it.imagePath }
             for ((slot, image) in images) {

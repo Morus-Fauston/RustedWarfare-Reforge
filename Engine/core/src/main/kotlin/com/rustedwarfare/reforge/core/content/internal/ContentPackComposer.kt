@@ -66,6 +66,10 @@ internal object ContentPackComposer {
         for ((id, unit) in units) {
             fun bad(target: String, field: String, reason: String): Nothing = reject(ContentErrorCode.BAD_REFERENCE,
                 provenance.getValue(id).entryPath, field = field, ref = target, reason = reason)
+            unit.customActions?.actions?.forEach { action ->
+                if (units[action.targetTypeId]?.customActions == null)
+                    bad(action.targetTypeId, "convertTo", "Conversion target must exist with its qualified action capability in the final set")
+            }
             unit.builder?.buildingTypeIds?.forEach { target ->
                 if (units[target]?.construction == null) bad(target, "constructionTypes", "Builder target must exist with construction metadata in the final set")
             }

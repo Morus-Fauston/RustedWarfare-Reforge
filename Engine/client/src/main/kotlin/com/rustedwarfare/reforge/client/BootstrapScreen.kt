@@ -63,6 +63,9 @@ class BootstrapScreen(
     private lateinit var depthInput: SubmarineDepthButtonInput
     private lateinit var flightInput: AmphibiousFlightButtonInput
     private lateinit var unloadInput: TransportUnloadButtonInput
+    private val customActionButtons = linkedMapOf<String, TextButton>()
+    private val customActionInputs = mutableListOf<CustomUnitActionButtonInput>()
+    private var customActionHover: String? = null
     private val rateButtons = linkedMapOf<OfflineRate, TextButton>()
     private lateinit var simulationPauseButton: TextButton
     private lateinit var pacingLabel: Label
@@ -345,6 +348,18 @@ class BootstrapScreen(
                     if (pointer == -1) { flightHover = false; lastHudState = null }
                 }
             })
+            stage.addActor(actor)
+        }
+        for ((index, name) in listOf("afterBurn", "cancelBurn").withIndex()) {
+            val actor = TextButton("", skin)
+            actor.setBounds(752f + index * 92f, 188f, 84f, 40f)
+            val input = CustomUnitActionButtonInput({ session }, { !paused && !loading && session?.isOpen == true }, name,
+                changed = { lastHudState = null; updateHud() }, hovered = { entered ->
+                    customActionHover = name.takeIf { entered }; lastHudState = null
+                })
+            actor.addListener(input)
+            customActionInputs += input
+            customActionButtons[name] = actor
             stage.addActor(actor)
         }
         exitButton = button("Exit match", 752f, 72f, 176f) { leaveMatch() }
@@ -730,7 +745,8 @@ class BootstrapScreen(
                 economicUpgradeHover && economicUpgradeCard.isVisible || reclaimHover && reclaimCard.isVisible ||
                 upgradeHover != null && session?.selectedUpgrades?.any { it.actionKey == upgradeHover } == true ||
                 factoryUpgradeHover != null && session?.selectedUpgrades?.any { it.actionKey == factoryUpgradeHover } == true ||
-                flightHover && session?.actionMenu?.flightAction != null)
+                flightHover && session?.actionMenu?.flightAction != null ||
+                session?.actionMenu?.unitActions?.any { it.name == customActionHover } == true)
         if (nativeTooltip.isVisible) nativeTooltip.toFront()
         Gdx.gl.glClear(GL20.GL_COLOR_BUFFER_BIT)
         viewport.apply()
@@ -803,6 +819,7 @@ class BootstrapScreen(
             enabled = commandConsoleOpen && current?.canDeploy == true)
         packPanel?.let { entries += it.drawnActions() }
         button("stop", stopButton); button("choose-patrol", patrolButton)
+        customActionButtons.forEach { (name, actor) -> button("unit-action:$name", actor) }
         button(menu?.transportAction?.let { if (it.unloading) "transport-unload" else "transport-cancel-unload" }
             ?: menu?.flightAction?.let { if (it.flying) "amphibious-fly" else "amphibious-dive" }
             ?: if (menu?.depthAction?.surface == false) "submarine-dive" else "submarine-surface", depthButton)
@@ -1141,6 +1158,8 @@ class BootstrapScreen(
             depthInput.cancel()
             flightInput.cancel()
             unloadInput.cancel()
+            customActionInputs.forEach { it.cancel() }
+            customActionHover = null
             flightHover = false
             upgradeHover = null
             reclaimInput.cancel()
@@ -1227,6 +1246,21 @@ class BootstrapScreen(
         depthButton.isVisible = menu?.depthAction != null || menu?.flightAction != null || menu?.transportAction != null
         depthButton.isDisabled = menu?.depthAction == null && menu?.flightAction?.available != true && menu?.transportAction?.available != true
         depthButton.setText(menu?.depthAction?.title ?: menu?.flightAction?.title ?: menu?.transportAction?.title ?: "Surface")
+        customActionButtons.forEach { (name, actor) ->
+            val action = menu?.unitActions?.singleOrNull { it.name == name }
+            actor.isVisible = current != null && action != null
+            actor.isDisabled = action?.available != true
+            val status = when {
+                action?.queued == true -> "\nQueued"
+                (action?.cooldownRemaining ?: 0) > 0 -> String.format(Locale.ROOT, "\n%.1fs", action!!.cooldownRemaining / 1000f)
+                else -> ""
+            }
+            actor.setText(action?.title.orEmpty() + status)
+        }
+        menu?.unitActions?.singleOrNull { it.name == customActionHover }?.let { action ->
+            setUnitIcon(nativeTooltipIcon, selected?.typeId)
+            nativeTooltipText.setText(action.tooltip)
+        }
         if (flightHover) menu?.flightAction?.let { action ->
             setUnitIcon(nativeTooltipIcon, selected?.typeId)
             nativeTooltipText.setText(action.tooltip)

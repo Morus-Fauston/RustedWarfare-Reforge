@@ -682,6 +682,12 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
             return reject(action, "immobile-unit", "Unit cannot move")
         }
         val result = when (action) {
+            is UnitAction -> {
+                CustomUnitActions.request(unit, action.actionName, action.cancelQueued, steps.current.actionClock)?.let {
+                    return reject(action, it.code, it.message)
+                }
+                ActionResult.Accepted(action.actionId, listOf(Event("unit-action-queued", unit.unitId)))
+            }
             is UnloadAction -> {
                 if (!BuildingWork.isReady(unit)) return reject(action, "inactive-unit", "Unfinished units cannot unload")
                 Transport.requestUnload(unit, action.unloading, currentScenario.map)?.let { return reject(action, it.code, it.message) }
@@ -1003,6 +1009,7 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
         return steps.advance(currentScenario, step, actions,
             { index, time, nextRevision -> makeObservation(index, time, true, nextRevision) }) { candidate ->
             combatFrame += 1
+            steps.current.actionClock = (steps.current.actionClock.toFloat() + step.delta.toFloat() * 16.666666f).toInt()
             deploy()
             buildingWork = buildingWork.advanceClock(step.delta)
             actions.forEach { applyAction(it, step.stepIndex) }
@@ -1090,6 +1097,8 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
                     updateWeapon(unit, step.delta)
                     updatePointDefense(unit, step.delta)
                     WeaponEnergy.advance(unit, step.delta)
+                    if (CustomUnitActions.advanceQueue(unit, currentScenario.unitDefinitions, step.delta, steps.current.actionClock))
+                        pendingEvents += Event("unit-action-completed", unit.unitId)
                 }
                 if (!fourLegged) updateUnit(unit, currentScenario.map, step.delta, step.stepIndex, candidate.motionSamples)
                 FlightMotion.advancePose(unit, step.delta)
@@ -1109,6 +1118,8 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
                     }
                         ?: unit.combat?.let { it.cooldown = maxOf(0.0, it.cooldown - step.delta) }
                     if (!economicBuilding && !factoryWork) advanceUpgrade(unit)
+                    if (CustomUnitActions.advanceAutomatic(unit, currentScenario.unitDefinitions, step.delta))
+                        pendingEvents += Event("unit-action-automatic", unit.unitId)
                 }
             }
             updateProjectiles(step.delta, candidate.existingProjectileIds)
@@ -1192,6 +1203,7 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
         units = linkedMapOf()
         projectiles = mutableListOf()
         combatFrame = nextScenario.combatContract?.initialFrameCounter ?: -1
+        steps.current.actionClock = 0
         nextObjectId = nextScenario.combatContract?.nextObjectId ?: 1L
         lastBirthSerial = 0L
         buildingWork = BuildingWork.initial()
@@ -1293,6 +1305,13 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
                 definition.combat?.namedWeapons?.ordered?.any { it.energyUsage != 0f || it.projectile.beam != null } == true
             if (beamGunship && !AaBeamGunship.supports(definition))
                 return SimulationError("unsupported-aa-beam", "Expected the qualified AA energy and beam representative")
+            if (definition.customActions != null) {
+                if (!AaBeamGunship.supports(definition))
+                    return SimulationError("unsupported-unit-actions", "Expected qualified custom unit actions")
+                if (definition.customActions.actions.any { action ->
+                    input.unitDefinitions[action.targetTypeId]?.let(AaBeamGunship::supports) != true })
+                    return SimulationError("invalid-unit-action-target", "Custom action target must be registered and qualified")
+            }
             if (amphibious && !AmphibiousJetMotion.supports(definition))
                 return SimulationError("unsupported-amphibious-jet", "Expected the finite native amphibious jet capability")
             if (submarine && !SubmarineMotion.supports(definition))
@@ -1524,7 +1543,8 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
                         !(splash.radius * splash.radius).isFinite() || combat.projectile.ground != null ||
                         combat.projectile.missile != null || combat.projectile.instant
                 } == true
-                val invalidIdle = combat.idleSweep?.let { !it.angle.isFinite() || it.angle <= 0.0 ||
+                val invalidIdle = combat.idleSweep?.let { !it.angle.isFinite() || it.angle < 0.0 ||
+                    it.angle == 0.0 && !(beamGunship && AaBeamGunship.supports(definition)) ||
                     !it.delay.isFinite() || it.delay <= 0f || !it.speedFactor.isFinite() || it.speedFactor <= 0f ||
                     it.randomDelayExclusive <= 0 } == true
                 if (positive.any { !it.isFinite() || it <= 0.0 } || nonnegative.any { !it.isFinite() || it < 0.0 } ||
@@ -2408,6 +2428,7 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
                     maxHealth = unit.definition.maximumHealth,
                     shield = unit.definition.shield?.let { ShieldObservation(unit.shield, it.maximum, unit.shieldDisplayDamage) },
                     energy = unit.definition.energy?.let { EnergyObservation(unit.energy, it.maximum, unit.energyRecharging) },
+                    unitActions = CustomUnitActions.observe(unit, steps.current.actionClock),
                     submarine = unit.definition.submarine?.let { SubmarineObservation(unit.submarineSurfaceIntent,
                         unit.submarineVerticalSpeed, SubmarineMotion.submerged(unit), unit.submarineSurfacePresentation,
                         SubmarineMotion.movement(unit).moveSpeed, UnitCombat.range(unit)) },

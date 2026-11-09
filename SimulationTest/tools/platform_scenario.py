@@ -21,6 +21,13 @@ class PlatformError(ValueError):
         self.exit_code = exit_code
 
 
+def validate_unit_action_intent(intent):
+    if (set(intent)!={'intentId','kind','actionName','waitSteps'} or
+            not isinstance(intent.get('actionName'),str) or intent['actionName'] not in ('afterBurn','cancelBurn') or
+            type(intent.get('waitSteps')) is not int or not 0<=intent['waitSteps']<=600):
+        raise PlatformError('input-contract','Expected a finite normal unit action and explicit bounded wait',1)
+
+
 def value_at(sample, path):
     current = sample
     parts = path.split('.')
@@ -368,12 +375,13 @@ def validate_history_poses(units, policy):
     def point(value):
         return isinstance(value, dict) and set(value) == {'x','y'} and all(number(v) for v in value.values())
     for unit in units:
-        if unit.get('typeId')=='aaBeamGunship':
+        if unit.get('typeId') in {'aaBeamGunship','aaBeamGunship_afterburn'}:
             energy=unit.get('energy');pose=unit.get('flightPose')
             if (not isinstance(energy,dict) or set(energy)!={'current','maximum','recharging'} or
                     not number(energy.get('current')) or not 0<=energy['current']<=6 or
                     not number(energy.get('maximum')) or energy['maximum']!=6 or type(energy.get('recharging')) is not bool or
-                    energy['recharging'] and energy['current']>=6 or not energy['recharging'] and energy['current']<.5):
+                    unit['typeId']=='aaBeamGunship' and
+                    (energy['recharging'] and energy['current']>=6 or not energy['recharging'] and energy['current']<.5)):
                 raise PlatformError('history-aa-beam','Missing or inconsistent weapon energy and recharge lock',2)
             if (not isinstance(pose,dict) or set(pose)!={'velocity','height','heightPhase','rotorPhase','rotorHeading','rotorHeightOffset','fall'} or
                     not point(pose.get('velocity')) or any(not number(pose.get(k)) for k in
@@ -387,8 +395,38 @@ def validate_history_poses(units, policy):
                     not fall['landed'] and (fall['landedInWater'] or fall['settled']) or
                     unit.get('alive') is True and (fall['landed'] or fall['speed']!=0)):
                 raise PlatformError('history-aa-beam','Missing or inconsistent fall state',2)
+            state=unit.get('unitActions')
+            if unit.get('ownerPlayerId')!=policy.get('ownerPlayerId','p1'):
+                if state is not None:raise PlatformError('history-unit-action','Enemy action controls must be private',2)
+            else:
+                names={'afterBurn','cancelBurn'} if unit['typeId']=='aaBeamGunship_afterburn' else {'afterBurn'}
+                if (not isinstance(state,dict) or set(state)!={'actions','automaticCooldown'} or
+                        not number(state.get('automaticCooldown')) or not 0<=state['automaticCooldown']<=60 or
+                        not isinstance(state.get('actions'),dict) or set(state['actions'])!=names):
+                    raise PlatformError('history-unit-action','Missing or invalid finite unit actions',2)
+                indexes=[]
+                for name,action in state['actions'].items():
+                    if (not isinstance(action,dict) or set(action)!={'queueIndex','progress','cooldownRemaining','available'} or
+                            type(action.get('cooldownRemaining')) is not int or not 0<=action['cooldownRemaining']<=25000 or
+                            name=='cancelBurn' and action['cooldownRemaining']!=0):
+                        raise PlatformError('history-unit-action','Invalid action cooldown or fields',2)
+                    index=action['queueIndex'];progress=action['progress']
+                    if index is None:
+                        if progress is not None:raise PlatformError('history-unit-action','Unqueued action progress',2)
+                    else:
+                        if type(index) is not int or not 0<=index<=1 or not number(progress) or not 0<=progress<1:
+                            raise PlatformError('history-unit-action','Invalid action queue index or progress',2)
+                        indexes.append(index)
+                    available=(unit.get('alive') is True and unit.get('constructionProgress',0)>=1 and
+                               unit.get('carriedBy') is None and index is None and action['cooldownRemaining']==0)
+                    if type(action['available']) is not bool or action['available']!=available:
+                        raise PlatformError('history-unit-action','Action availability differs from its state',2)
+                if sorted(indexes)!=list(range(len(indexes))):
+                    raise PlatformError('history-unit-action','Action queue indexes must be unique and contiguous',2)
         elif unit.get('energy') is not None:
             raise PlatformError('history-aa-beam','Weapon energy on an unsupported unit',2)
+        elif unit.get('unitActions') is not None:
+            raise PlatformError('history-unit-action','Unit actions on an unsupported type',2)
         if unit.get('carriedBy') is not None:
             raise PlatformError('history-transport','Carried passenger in a player sample',2)
         transport=unit.get('transport')
@@ -507,6 +545,25 @@ def validate_history_action(records, row, intent, geometry=None):
                 kind!='select' and units[0].get('ownerPlayerId')!=actor):
             raise PlatformError('history-action-identity','Formal object is absent, ambiguous, dead or not owned',2)
     fields={}
+    if kind=='unit-action':
+        validate_unit_action_intent(intent)
+        if row.get('actionName')!=intent['actionName'] or row.get('cancelQueued') is not False:
+            raise PlatformError('history-action-fields','Normal unit action name or queue cancellation differs',2)
+        old=next(u for u in left['units'] if u['unitId']==identity)
+        new=next(u for u in right['units'] if u['unitId']==identity)
+        old_actions=(old.get('unitActions') or {}).get('actions',{})
+        new_actions=(new.get('unitActions') or {}).get('actions',{})
+        name=intent['actionName']
+        if (name not in old_actions or name not in new_actions or old_actions[name].get('available') is not True or
+                old_actions[name].get('queueIndex') is not None or
+                new_actions[name].get('queueIndex')!=sum(a.get('queueIndex') is not None for a in old_actions.values()) or
+                new_actions[name].get('progress')!=0 or new_actions[name].get('available') is not False or
+                any(old.get(k)!=new.get(k) for k in old if k!='unitActions') or
+                old['unitActions']['automaticCooldown']!=new['unitActions']['automaticCooldown'] or
+                set(old_actions)!=set(new_actions) or any(
+                    old_actions[k]!=new_actions[k] for k in old_actions if k!=name) or
+                old_actions[name].get('cooldownRemaining')!=new_actions[name].get('cooldownRemaining')):
+            raise PlatformError('history-action-fields','Unit action must append its queue item without synchronous conversion or resource edits',2)
     if kind=='build' and 'typeId' in intent:fields['buildingTypeId']=intent['typeId']
     if 'upgradeId' in intent:fields['upgradeId']=intent['upgradeId']
     if 'targetUnitId' in intent:fields['targetUnitId']=intent['targetUnitId']
@@ -649,11 +706,57 @@ def validate_launch_appearance(shot, units):
     return style
 
 
+def validate_unit_action_history(records, policy):
+    """Independent finite AA command/step protocol, using the fixed normal one-tick schedule."""
+    def f32(value):return struct.unpack('<f',struct.pack('<f',value))[0]
+    owner=policy.get('ownerPlayerId','p1')
+    previous={};pending={};ends={};automatic={};clock=0
+    for row in records:
+        if row.get('kind')=='action' and row.get('type')=='UnitAction':
+            pending.setdefault(row['unitId'],[]).append(row['actionName'])
+        if row.get('kind')!='observation':continue
+        sample=row['sample'];step=row.get('phase')=='step'
+        if step:clock=int(f32(f32(clock)+f32(16.666666)))
+        expected_events=[]
+        for unit in sample.get('units',[]):
+            if unit.get('ownerPlayerId')!=owner or unit.get('typeId') not in ('aaBeamGunship','aaBeamGunship_afterburn'):continue
+            identity=unit['unitId'];old=previous.get(identity);form=old['typeId'] if old else 'aaBeamGunship'
+            timer=automatic.get(identity,0)
+            queue=pending.setdefault(identity,[])
+            if step and old and unit.get('alive') is True:
+                name=queue.pop(0) if queue else None
+                if name is not None:
+                    form='aaBeamGunship_afterburn' if name=='afterBurn' else 'aaBeamGunship'
+                    if name=='afterBurn':ends[identity]=clock+25000
+                    expected_events.append((identity,'unit-action-completed'))
+                if form=='aaBeamGunship_afterburn':
+                    timer=max(0,timer-1)
+                    # Energy updates before ordinary actions; base afterBurn then sets 6.
+                    energy=old['energy'];empty=(old['typeId']=='aaBeamGunship_afterburn' and
+                        energy['recharging'] is False and f32(f32(energy['current'])+f32(-.02))<=0)
+                    if timer==0 and empty:
+                        form='aaBeamGunship';timer=60
+                        expected_events.append((identity,'unit-action-automatic'))
+            if unit['typeId']!=form:
+                raise PlatformError('history-unit-action','Unit form changed outside its normal queue or empty-energy trigger',2)
+            state=unit['unitActions'];action=state['actions']['afterBurn']
+            if action['cooldownRemaining']!=max(0,ends.get(identity,clock)-clock) or state['automaticCooldown']!=timer:
+                raise PlatformError('history-unit-action','Action cooldown differs from accepted commands and the independent clock',2)
+            automatic[identity]=timer
+            previous[identity]=unit
+        if step:
+            actual=sorted((e.get('unitId'),e.get('kind')) for e in sample.get('events',[])
+                          if e.get('kind') in ('unit-action-completed','unit-action-automatic'))
+            if sorted(expected_events)!=actual:
+                raise PlatformError('history-unit-action','Missing, extra or wrong unit action completion event',2)
+    if any(pending.values()):raise PlatformError('history-unit-action','Normal action queue is unfinished',2)
+
+
 def compare_history(records, plan, policy, native_anchors=None, geometry=None):
     """Check a declared ledger at every observation, including call boundaries."""
     allowed={'initialBalance','spend','noActionIntents','projectileBirthsRequired','mechLegs',
              'ownerPlayerId','initialOwnedTypes','finalUnits','minimumBirths',
-             'productionOrder','completedUpgradeTypes','initialIncome','transportStages'}
+             'productionOrder','completedUpgradeTypes','initialIncome','transportStages','unitActionStages'}
     if not isinstance(policy,dict) or set(policy)-allowed:
         raise PlatformError('input-contract', 'Unknown or malformed history obligations', 1)
     balance = policy.get('initialBalance')
@@ -668,6 +771,17 @@ def compare_history(records, plan, policy, native_anchors=None, geometry=None):
     charges = {}
     intents = {i['intentId']: i for i in plan['intents']}
     ids = set(intents)
+    action_stages={}
+    declarations=policy.get('unitActionStages',[])
+    if not isinstance(declarations,list):
+        raise PlatformError('input-contract','Unit action stages must be a fixed list',1)
+    for stage in declarations:
+        if (not isinstance(stage,dict) or set(stage)!={'intentId','typeId','cooldown'} or
+                not isinstance(stage['intentId'],str) or stage['intentId'] not in ids or stage['intentId'] in action_stages or
+                stage['typeId'] not in ('aaBeamGunship','aaBeamGunship_afterburn') or
+                stage['cooldown'] not in ('active','ready')):
+            raise PlatformError('input-contract','Invalid fixed unit action stage',1)
+        action_stages[stage['intentId']]=stage
     transport_stages={}
     declarations=policy.get('transportStages',[])
     if not isinstance(declarations,list):
@@ -761,6 +875,16 @@ def compare_history(records, plan, policy, native_anchors=None, geometry=None):
                         type(x) not in (int,float) or not math.isfinite(x) or
                         not stage.get('minimumX',-math.inf)<=x<=stage.get('maximumX',math.inf)):
                     raise PlatformError('history-transport-stage','Cargo or shore position differs from declared stage',2)
+            stage=action_stages.get(active)
+            if stage is not None:
+                candidates=[u for u in units.values() if u.get('ownerPlayerId')==policy.get('ownerPlayerId','p1') and
+                            u.get('typeId') in ('aaBeamGunship','aaBeamGunship_afterburn')]
+                if len(candidates)!=1 or candidates[0]['typeId']!=stage['typeId']:
+                    raise PlatformError('history-unit-action-stage','Missing, ambiguous or wrong unit form at fixed boundary',2)
+                action=candidates[0]['unitActions']['actions']['afterBurn']
+                if ((action['cooldownRemaining']>0)!=(stage['cooldown']=='active') or
+                        action['available']!=(stage['cooldown']=='ready') or action['queueIndex'] is not None):
+                    raise PlatformError('history-unit-action-stage','Action cooldown or availability differs from fixed boundary',2)
             active = None
             completed += 1
         elif row.get('kind') == 'action':
@@ -773,7 +897,7 @@ def compare_history(records, plan, policy, native_anchors=None, geometry=None):
             expected_type = {'select':'SelectAction', 'build':'BuildAction', 'upgrade':'UpgradeAction',
                 'produce':'ProduceAction', 'move':'MoveAction', 'stop':'StopAction', 'attack':'AttackAction',
                 'submarine-depth':'SubmarineDepthAction','amphibious-flight':'AmphibiousFlightAction',
-                'load':'LoadAction','unload':'UnloadAction'}.get(
+                'load':'LoadAction','unload':'UnloadAction','unit-action':'UnitAction'}.get(
                     intents.get(active, {}).get('kind'))
             if expected_type is None or row.get('type') != expected_type:
                 raise PlatformError('history-action', 'Action type differs from the fixed client intention', 2)
@@ -889,6 +1013,7 @@ def compare_history(records, plan, policy, native_anchors=None, geometry=None):
             if name not in selected[0] or (type(actual) is bool)!=(type(wanted) is bool) or actual!=wanted:
                 raise PlatformError('history-final', 'Terminal unit differs: '+name, 2)
     validate_production_history(records,policy)
+    if 'unitActionStages' in policy:validate_unit_action_history(records,policy)
     if not all(fired):raise PlatformError('history-firing', 'Missing independently required named weapon birth/target', 2)
     return dict(exitCode=0, status='passed', scenarioId=plan['scenarioId'], history=dict(observations=observations, balance=balance))
 

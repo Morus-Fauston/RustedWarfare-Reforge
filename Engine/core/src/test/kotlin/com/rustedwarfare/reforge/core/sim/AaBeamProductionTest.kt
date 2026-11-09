@@ -52,6 +52,14 @@ class AaBeamProductionTest {
                 assertEquals(0.0, birth.height)
                 assertEquals(EnergyObservation(6f, 6f, false), birth.energy)
                 assertEquals(UnitTaskKind.MOVE, birth.tasks.single().kind)
+                assertIs<ActionResult.Accepted>(context.submit(UnitAction("burn", "p1", id, "afterBurn", context.world)))
+                val converted = context.advance(Step(step++, 1.0, "sim-tick")).units.single { it.unitId == id }
+                assertEquals("aaBeamGunship_afterburn", converted.typeId)
+                assertEquals(2500.0, converted.health)
+                assertEquals(1500L, context.observePlayer(context.world, "p1").balance)
+                assertTrue(converted.tasks.any { it.actionId == birth.tasks.single().actionId })
+                assertIs<ActionResult.Accepted>(context.submit(UnitAction("cancel-burn", "p1", id, "cancelBurn", context.world)))
+                assertEquals("aaBeamGunship", context.advance(Step(step++, 1.0, "sim-tick")).units.single { it.unitId == id }.typeId)
             } finally { context.close() }
         }
     }

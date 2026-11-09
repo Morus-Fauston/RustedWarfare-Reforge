@@ -30,7 +30,7 @@ internal object UnitRegistration {
         val reachable = MapBounds.contains(input.map.widthTiles.toDouble() * input.map.tileWidth,
             input.map.heightTiles.toDouble() * input.map.tileHeight, birth.target, definition.radius)
         val born = register(state, input, spawn, identity.objectId, identity.updateKey,
-            ProducedOrigin(factory.unitId, factory.typeId), birth.protection, identity) { unit ->
+            ProducedOrigin(factory.unitId, factory.typeId, completed.typeId), birth.protection, identity) { unit ->
             if (reachable) {
                 unit.moveTarget = birth.target
                 unit.originMoveId = "production-exit:$publicId"

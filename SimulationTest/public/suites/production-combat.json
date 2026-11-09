@@ -230,7 +230,10 @@
       "com.rustedwarfare.reforge.core.sim.AaBeamLifecycleTest",
       "com.rustedwarfare.reforge.core.sim.AaBeamProductionTest",
       "com.rustedwarfare.reforge.core.sim.AaBeamProjectileTest",
-      "com.rustedwarfare.reforge.core.sim.AaBeamTargetTest"
+      "com.rustedwarfare.reforge.core.sim.AaBeamTargetTest",
+      "com.rustedwarfare.reforge.core.content.AfterburnContentTest",
+      "com.rustedwarfare.reforge.core.sim.AfterburnActionTest",
+      "com.rustedwarfare.reforge.core.sim.AfterburnLifecycleTest"
     ],
     "client": [
       "com.rustedwarfare.reforge.client.CombatActorEvidenceTest",
@@ -288,7 +291,9 @@
       "com.rustedwarfare.reforge.client.DropshipProjectionTest",
       "com.rustedwarfare.reforge.client.DropshipUnloadMenuTest",
       "com.rustedwarfare.reforge.client.AaBeamPresentationTest",
-      "com.rustedwarfare.reforge.client.AaBeamSandboxTest"
+      "com.rustedwarfare.reforge.client.AaBeamSandboxTest",
+      "com.rustedwarfare.reforge.client.AfterburnInputTest",
+      "com.rustedwarfare.reforge.client.AfterburnTrailTest"
     ],
     "pc": [
       "com.rustedwarfare.reforge.pc.PatrolJsonlPairingTest",
@@ -361,7 +366,9 @@
       "com.rustedwarfare.reforge.testing.DropshipProductionSessionTest",
       "com.rustedwarfare.reforge.testing.DropshipPublicScenarioTest",
       "com.rustedwarfare.reforge.testing.AaBeamArchiveTest",
-      "com.rustedwarfare.reforge.testing.AaBeamProductionSessionTest"
+      "com.rustedwarfare.reforge.testing.AaBeamProductionSessionTest",
+      "com.rustedwarfare.reforge.testing.AfterburnArchiveTest",
+      "com.rustedwarfare.reforge.testing.AfterburnProductionSessionTest"
     ]
   },
   "short": [
@@ -989,6 +996,42 @@
       "backend": "session",
       "scenario": "platform/scenarios/aa-beam-hjson-production-chain.json",
       "contract": "platform/contracts/aa-beam-hjson-production-chain.json"
+    },
+    {
+      "id": "afterburn-ini-short",
+      "backend": "core",
+      "scenario": "scenarios/afterburn-ini-short.json",
+      "contract": "contracts/afterburn-ini-short.json"
+    },
+    {
+      "id": "afterburn-json-short",
+      "backend": "core",
+      "scenario": "scenarios/afterburn-json-short.json",
+      "contract": "contracts/afterburn-json-short.json"
+    },
+    {
+      "id": "afterburn-hjson-short",
+      "backend": "core",
+      "scenario": "scenarios/afterburn-hjson-short.json",
+      "contract": "contracts/afterburn-hjson-short.json"
+    },
+    {
+      "id": "afterburn-ini-production-chain",
+      "backend": "session",
+      "scenario": "platform/scenarios/afterburn-ini-production-chain.json",
+      "contract": "platform/contracts/afterburn-ini-production-chain.json"
+    },
+    {
+      "id": "afterburn-json-production-chain",
+      "backend": "session",
+      "scenario": "platform/scenarios/afterburn-json-production-chain.json",
+      "contract": "platform/contracts/afterburn-json-production-chain.json"
+    },
+    {
+      "id": "afterburn-hjson-production-chain",
+      "backend": "session",
+      "scenario": "platform/scenarios/afterburn-hjson-production-chain.json",
+      "contract": "platform/contracts/afterburn-hjson-production-chain.json"
     }
   ],
   "long": [
@@ -1133,6 +1176,7 @@
     "SimulationTest/tools/test_submarine_platform.py",
     "SimulationTest/tools/test_amphibious_platform.py",
     "SimulationTest/tools/test_transport_platform.py",
-    "SimulationTest/tools/test_aa_beam_archive.py"
+    "SimulationTest/tools/test_aa_beam_archive.py",
+    "SimulationTest/tools/test_afterburn_platform.py"
   ]
 }

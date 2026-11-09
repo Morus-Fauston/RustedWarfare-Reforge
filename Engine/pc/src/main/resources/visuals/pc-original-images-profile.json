@@ -6235,11 +6235,12 @@
     "aa-beam-turret": "assets/units/aa_beam_gunship/beam_turret.png",
     "aa-beam-beam": "assets/units/shared/beam3.png",
     "aa-beam-beamStart": "assets/units/shared/beam1_start.png",
-    "aa-beam-beamEnd": "assets/units/shared/beam1_end.png"
+    "aa-beam-beamEnd": "assets/units/shared/beam1_end.png",
+    "aa-afterburn-trail": "assets/units/shared/glow_sharp.png"
   },
   "mappingBasis": {
     "androidProfileSha256": "e273280ab37b1a24714e6b15d8e1cb14fdd395e228ea7c71a62dd2f24d334780",
-    "scope": "Qualified PC finite mappings include native amphibious body/dead/shadow, independent p2 left and p1 right wings rotated into the client north basis, and T2 air factory first animation frame. No Android source or original gameplay execution claim. Native landing craft uses the fixed PC 20x32 body/dead/shadow without rotation; native dimensions and loaded drawables follow e.i. Native air transport uses the fixed PC 45x47 body/dead/shadow without rotation; native dimensions and loaded drawables follow e.i. Qualified PC AA custom body/dead/turret and shared three-image beam retain native sizes and north orientation; AUTO shadow preserves body alpha with RGB black. No original gameplay execution claim."
+    "scope": "Qualified PC finite mappings include native amphibious body/dead/shadow, independent p2 left and p1 right wings rotated into the client north basis, and T2 air factory first animation frame. No Android source or original gameplay execution claim. Native landing craft uses the fixed PC 20x32 body/dead/shadow without rotation; native dimensions and loaded drawables follow e.i. Native air transport uses the fixed PC 45x47 body/dead/shadow without rotation; native dimensions and loaded drawables follow e.i. Qualified PC AA custom body/dead/turret and shared three-image beam retain native sizes and north orientation; AUTO shadow preserves body alpha with RGB black. No original gameplay execution claim. Qualified accelerated AA reuses its native seven images plus shared 32x32 glow_sharp movement trails; no original effect code execution or random decoration parity claim."
   },
   "mappingSources": [
     {
@@ -6441,6 +6442,14 @@
       "sha256": "ad4f36c99fc0b962ccc28fcd118a5469123c59a79172c8c071228d7b903d1aa5",
       "width": 20,
       "height": 20
+    },
+    {
+      "id": "aa-afterburn-trail",
+      "path": "assets/units/shared/glow_sharp.png",
+      "bytes": 4030,
+      "sha256": "2074be278066a5c8a72b1b6dfded3d3549144559e92d2bfc7df914e751e6c8b8",
+      "width": 32,
+      "height": 32
     }
   ],
   "mappingUnitOutputs": {
@@ -6864,6 +6873,22 @@
         20
       ],
       "frames": 1
+    },
+    "aa-afterburn-trail": {
+      "file": "units/aa-afterburn-trail.png",
+      "operation": "crop",
+      "source": "aa-afterburn-trail",
+      "rect": [
+        0,
+        0,
+        32,
+        32
+      ],
+      "target": [
+        32,
+        32
+      ],
+      "frames": 1
     }
   },
   "mappingUnitBindings": {
@@ -6915,6 +6940,16 @@
       "beam": "aa-beam-beam",
       "beamStart": "aa-beam-beamStart",
       "beamEnd": "aa-beam-beamEnd"
+    },
+    "aaBeamGunship_afterburn": {
+      "body": "aa-beam-body",
+      "dead": "aa-beam-dead",
+      "shadow": "aa-beam-shadow",
+      "turret": "aa-beam-turret",
+      "beam": "aa-beam-beam",
+      "beamStart": "aa-beam-beamStart",
+      "beamEnd": "aa-beam-beamEnd",
+      "afterburnTrail": "aa-afterburn-trail"
     }
   }
 }

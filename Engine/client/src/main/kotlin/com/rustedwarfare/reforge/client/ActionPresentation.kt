@@ -17,6 +17,7 @@ internal class ActionCatalogue(private val definitions: Map<String, UnitDefiniti
         "mechFactoryT2" to Names("Mech factory T2"), "mechHeavyMissile" to Names("Heavy missile mech"),
         "airFactory" to Names("Air factory"), "airFactoryT2" to Names("Air factory T2"),
         "helicopter" to Names("Helicopter"), "amphibiousJet" to Names("Amphibious jet"), "aaBeamGunship" to Names("AA beam gunship"),
+        "aaBeamGunship_afterburn" to Names("AA beam (Afterburn)", "AA beam gunship (Afterburn)"),
         "seaFactory" to Names("Sea factory"), "seaFactoryT2" to Names("Sea factory T2"),
         "heavyBattleship" to Names("Heavy battleship"), "attackSubmarine" to Names("Submarine"),
         "extractorT1" to Names("Extractor T1", "Extractor"), "extractorT2" to Names("Extractor T2", "Unit"),
@@ -89,6 +90,13 @@ internal class ActionCatalogue(private val definitions: Map<String, UnitDefiniti
         val transportAction = ownSingle?.takeIf { it.constructionProgress >= 1f }?.transport?.let {
             TransportUnloadActionView(!it.unloading, if (it.unloading) "Cancel unload" else "Unload", it.unloading || it.canUnload)
         }
+        val unitActions = immutable(ownSingle?.unitActions?.actions.orEmpty().map { action ->
+            val title = if (action.name == "afterBurn") "Afterburn" else "Cancel burn"
+            val status = if (action.queueIndex != null) "Queued" else if (action.cooldownRemaining > 0)
+                String.format(Locale.ROOT, "Cooling %.1fs", action.cooldownRemaining / 1000f) else "Ready"
+            CustomUnitActionView(action.name, title, "$title\n$status\nMovement orders continue",
+                action.queueIndex != null, action.cooldownRemaining, action.available)
+        })
         val profiles = ownSingle?.takeUnless { it.constructionProgress < 1f &&
             definitions.getValue(it.typeId).className == "AuthoredBuilding" }
             ?.let { definitions.getValue(it.typeId).upgrades?.actions }.orEmpty()
@@ -128,6 +136,7 @@ internal class ActionCatalogue(private val definitions: Map<String, UnitDefiniti
                 (unit.shield?.let { "\nShield ${it.current.toInt()} / ${it.maximum.toInt()}" } ?: "") +
                 (unit.energy?.let { String.format(Locale.ROOT, "\nEnergy %.3f / %.3f%s", it.current, it.maximum,
                     if (it.recharging) " LOCKED" else "") } ?: "") +
+                (if (unit.typeId == "aaBeamGunship_afterburn") "\nAfterburn / weapons disabled" else "") +
                 (unit.submarine?.let { String.format(Locale.ROOT, "\n%s\nDepth %.2f\nSpeed %.2f\nRange %.0f",
                     if (it.underwater) "Underwater" else "Surface", unit.height, it.maximumSpeed, it.attackRange) } ?: "") +
                 (unit.amphibiousJet?.let { String.format(Locale.ROOT, "\n%s / %s\nHeight %.2f\nSpeed %.2f\nRange %.0f",
@@ -148,7 +157,7 @@ internal class ActionCatalogue(private val definitions: Map<String, UnitDefiniti
                 val name = if (upgrades.any { it.kind == UpgradePresentationKind.FACTORY && it.actionKey == item.actionKey })
                     title(item.targetTypeId, panel = true) else if (item.actionKey == "upgrade_gun") "Gun" else "Art"
                 "  $name ${(item.progress * 100f).toInt()}%"
-            }.orEmpty(), view.balance, depthAction, flightAction, transportAction)
+            }.orEmpty(), view.balance, depthAction, flightAction, transportAction, unitActions)
     }
 
     private fun workerText(workers: List<UnitObservation>, view: PlayerObservation): String {
@@ -184,7 +193,8 @@ data class ActionMenuView(val credits: Double? = null, val production: List<Prod
     val canMaintain: Boolean = false, val workerQueueText: String? = null, val selectedUnitInfo: String? = null,
     val selectedTitle: String? = null, val totalNominalIncome: Float = 0f, val upgradeQueueText: String = "",
     val balance: Long? = null, val depthAction: SubmarineDepthActionView? = null,
-    val flightAction: AmphibiousFlightActionView? = null, val transportAction: TransportUnloadActionView? = null) {
+    val flightAction: AmphibiousFlightActionView? = null, val transportAction: TransportUnloadActionView? = null,
+    val unitActions: List<CustomUnitActionView> = emptyList()) {
     val reclaimTooltip: String get() = if (canMaintain)
         "Reclaim own building\nCredits returned on completion\nLeft: choose target\nEsc / right: cancel" else ""
 }
@@ -193,3 +203,5 @@ data class SubmarineDepthActionView(val surface: Boolean, val title: String, val
 data class AmphibiousFlightActionView(val flying: Boolean, val title: String, val tooltip: String, val available: Boolean)
 
 data class TransportUnloadActionView(val unloading: Boolean, val title: String, val available: Boolean)
+data class CustomUnitActionView(val name: String, val title: String, val tooltip: String,
+    val queued: Boolean, val cooldownRemaining: Int, val available: Boolean)

@@ -66,7 +66,13 @@
       {
         "id": "aaBeamGunship",
         "path": "../inputs/aa-beam-production/hjson/production-package/units/aaBeamGunship.hjson",
-        "sha256": "d23a1353b2d2474b69343371bdcdd2628a894e87d588fbcc0b353d120fcfb0b1",
+        "sha256": "bfe410eaade527000fa50315db9f6e34f9a61fe3ec89db13ebfea4645163aac1",
+        "loader": "aa-beam-gunship"
+      },
+      {
+        "id": "aaBeamGunship_afterburn",
+        "path": "../inputs/aa-beam-production/hjson/production-package/units/aaBeamGunship_afterburn.hjson",
+        "sha256": "958a54eab553d6bd7b8ec08f439199bbc32286f216a2f78c815d24f1c380719e",
         "loader": "aa-beam-gunship"
       }
     ],
@@ -79,7 +85,7 @@
       {
         "id": "dep-2",
         "path": "../inputs/aa-beam-production/hjson/production-package/pack.json",
-        "sha256": "21e8e795ef0b6f8218387d555532b0f2a8a05c3c8acb5a463732b38384d13647"
+        "sha256": "be60b4f4f35b93b55f21072cc1e2b6ba3f0330f4a863eab2cfff0cc4b09749ea"
       },
       {
         "id": "dep-3",
@@ -230,6 +236,11 @@
         "id": "dep-42",
         "path": "../inputs/aa-beam-production/hjson/production-package/units/rotor.png",
         "sha256": "3bec04ec0daa8dcea012e8447d4ee0a58e392850da8e366d30d8e512829fd9af"
+      },
+      {
+        "id": "afterburn-trail",
+        "path": "../inputs/aa-beam-production/hjson/production-package/units/aa_trail.png",
+        "sha256": "81584313c94d76a4a1f0a8288810ba75c07bd57ae4959dced652b8648955a00e"
       }
     ]
   },
@@ -1617,16 +1628,19 @@
     "summary": "Owned air-only paid instant beam, visible reuse and full energy recharge; production is separate.",
     "files": {
       "assets/naval-ground.png": "9c32ebad05ee1c22011d8639a9f1674704967b0ed225b384726d11c654ed6cde",
+      "maps/afterburn-actions.tmx": "262dce1751c17337f46115e9fde0fe917fa93bc161ca39afbc25bef00b8ee45d",
       "maps/naval-shore.tmx": "efd248a14bc7e60406045e3cc631249286f795b07b4ace64aafc2ab1c629ef48",
-      "production-package/pack.json": "21e8e795ef0b6f8218387d555532b0f2a8a05c3c8acb5a463732b38384d13647",
+      "production-package/pack.json": "be60b4f4f35b93b55f21072cc1e2b6ba3f0330f4a863eab2cfff0cc4b09749ea",
       "production-package/units/aa.png": "14412b91d518487ea5ed05ee7ad043b879df9689eecc4bc6c29dd169d82d0af7",
       "production-package/units/aa_beam.png": "a7524383a4317023e464935457c63495d96af7eb4a8527aa736c8b5af24186f1",
       "production-package/units/aa_beam_end.png": "bd154d7e34621f51bdfcc68d69cc122271f0a58f22af401e569f84db47623d03",
       "production-package/units/aa_beam_start.png": "bd154d7e34621f51bdfcc68d69cc122271f0a58f22af401e569f84db47623d03",
       "production-package/units/aa_dead.png": "a28b3071bc0c2faf579c1fee0fc21adc0be069dd7805e73a27a994c081f99ce8",
       "production-package/units/aa_shadow.png": "da2646db128fe4e3047fe42c25707440619567e791526b29e44266a966cf77e0",
+      "production-package/units/aa_trail.png": "81584313c94d76a4a1f0a8288810ba75c07bd57ae4959dced652b8648955a00e",
       "production-package/units/aa_turret.png": "0b9f36b2d623711b1f49cf41fbe70eb6c23e921ea3cb10ff9e24a15f08e017a8",
-      "production-package/units/aaBeamGunship.hjson": "d23a1353b2d2474b69343371bdcdd2628a894e87d588fbcc0b353d120fcfb0b1",
+      "production-package/units/aaBeamGunship.hjson": "bfe410eaade527000fa50315db9f6e34f9a61fe3ec89db13ebfea4645163aac1",
+      "production-package/units/aaBeamGunship_afterburn.hjson": "958a54eab553d6bd7b8ec08f439199bbc32286f216a2f78c815d24f1c380719e",
       "production-package/units/air_factory.png": "03a28e02c3dd5d032d4f7587451122440cfdc8367f40603a008ed0162a92ea4e",
       "production-package/units/air_factory_dead.png": "a9e4f7aceacbbeac7d34fa75a67eb885218bdc0971b6facc14da4e3b864e7a7d",
       "production-package/units/air_factory_t2.png": "7759a4a82006893505d7b8d4b83a83f79bdbf7d0258c2ecf66a8dfb3d8fd46d6",
