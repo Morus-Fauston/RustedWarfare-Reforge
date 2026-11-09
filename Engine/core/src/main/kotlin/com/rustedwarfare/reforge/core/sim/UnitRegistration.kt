@@ -124,6 +124,7 @@ internal object UnitRegistration {
         val upgrades = state.ordinaryUpgrades?.register(unit.unitId, unit.definition)
         val terrain = if (unit.definition.building == null) state.buildingTerrain else
             BuildingTerrain.fromLive(input.map, state.units.values + unit, state.buildingTerrain)
+        Transport.refreshTerrain(unit, input.map)
         state.units[unit.unitId] = unit
         state.productionLedger = ledger
         state.ordinaryUpgrades = upgrades

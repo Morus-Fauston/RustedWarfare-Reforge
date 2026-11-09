@@ -1,0 +1,174 @@
+{
+  "schemaVersion": 1,
+  "scenarioId": "transport-ini-production-chain",
+  "rules": [
+    {
+      "intentId": "select-center"
+    },
+    {
+      "intentId": "produce-worker"
+    },
+    {
+      "intentId": "leave-center"
+    },
+    {
+      "intentId": "select-worker"
+    },
+    {
+      "intentId": "move-worker-shore"
+    },
+    {
+      "intentId": "stop-worker"
+    },
+    {
+      "intentId": "build-factory"
+    },
+    {
+      "intentId": "wait-factory"
+    },
+    {
+      "intentId": "finish-factory"
+    },
+    {
+      "intentId": "select-factory"
+    },
+    {
+      "intentId": "produce-craft"
+    },
+    {
+      "intentId": "select-craft"
+    },
+    {
+      "intentId": "approach-worker"
+    },
+    {
+      "intentId": "stop-shore"
+    },
+    {
+      "intentId": "board"
+    },
+    {
+      "intentId": "cross-water"
+    },
+    {
+      "intentId": "return-land"
+    },
+    {
+      "intentId": "stop-land"
+    },
+    {
+      "intentId": "start-unload"
+    },
+    {
+      "intentId": "cancel-unload"
+    },
+    {
+      "intentId": "resume-unload"
+    }
+  ],
+  "history": {
+    "initialBalance": 10000,
+    "ownerPlayerId": "p1",
+    "initialOwnedTypes": [
+      "commandCenter"
+    ],
+    "initialIncome": {
+      "unitId": "a",
+      "typeId": "commandCenter",
+      "period": 10,
+      "credits": 4.5
+    },
+    "productionOrder": [
+      "builder",
+      "hovercraft"
+    ],
+    "projectileBirthsRequired": false,
+    "spend": [
+      {
+        "intentId": "produce-worker",
+        "amount": 500,
+        "at": "action"
+      },
+      {
+        "intentId": "build-factory",
+        "amount": 1000,
+        "at": "construction-created"
+      },
+      {
+        "intentId": "produce-craft",
+        "amount": 600,
+        "at": "action"
+      }
+    ],
+    "finalUnits": [
+      {
+        "ownerPlayerId": "p1",
+        "typeId": "commandCenter",
+        "fields": {
+          "alive": true
+        }
+      },
+      {
+        "ownerPlayerId": "p1",
+        "typeId": "builder",
+        "fields": {
+          "alive": true
+        }
+      },
+      {
+        "ownerPlayerId": "p1",
+        "typeId": "seaFactory",
+        "fields": {
+          "alive": true
+        }
+      },
+      {
+        "ownerPlayerId": "p1",
+        "typeId": "hovercraft",
+        "fields": {
+          "alive": true
+        }
+      }
+    ],
+    "transportStages": [
+      {
+        "intentId": "board",
+        "passengerCount": 1,
+        "unloading": false
+      },
+      {
+        "intentId": "cross-water",
+        "passengerCount": 1,
+        "unloading": false,
+        "minimumX": 400
+      },
+      {
+        "intentId": "return-land",
+        "passengerCount": 1,
+        "unloading": false,
+        "maximumX": 350
+      },
+      {
+        "intentId": "stop-land",
+        "passengerCount": 1,
+        "unloading": false,
+        "maximumX": 350
+      },
+      {
+        "intentId": "start-unload",
+        "passengerCount": 1,
+        "unloading": true
+      },
+      {
+        "intentId": "cancel-unload",
+        "passengerCount": 1,
+        "unloading": false
+      },
+      {
+        "intentId": "resume-unload",
+        "passengerCount": 0,
+        "unloading": false
+      }
+    ]
+  }
+}

@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "suiteId": "public.production-combat.v1",
   "inputScope": "public",
-  "fixture": "inputs/content-movement-knowledge/P001-\u79fb\u52a8\u6c99\u76d2\u8f93\u5165",
+  "fixture": "inputs/content-movement-knowledge/P001-移动沙盒输入",
   "tests": {
     "core": [
       "com.rustedwarfare.reforge.core.content.CombatContentLoadTest",
@@ -186,7 +186,27 @@
       "com.rustedwarfare.reforge.core.sim.AmphibiousJetReverseTest",
       "com.rustedwarfare.reforge.core.sim.AmphibiousJetTargetTest",
       "com.rustedwarfare.reforge.core.sim.AmphibiousJetTransactionTest",
-      "com.rustedwarfare.reforge.core.sim.AmphibiousJetTurretTest"
+      "com.rustedwarfare.reforge.core.sim.AmphibiousJetTurretTest",
+      "com.rustedwarfare.reforge.core.content.LandingCraftContentTest",
+      "com.rustedwarfare.reforge.core.sim.LandingCraftActivityTest",
+      "com.rustedwarfare.reforge.core.sim.LandingCraftAdmissionTest",
+      "com.rustedwarfare.reforge.core.sim.LandingCraftApproachTest",
+      "com.rustedwarfare.reforge.core.sim.LandingCraftAreaEligibilityTest",
+      "com.rustedwarfare.reforge.core.sim.LandingCraftBlockedUnloadTest",
+      "com.rustedwarfare.reforge.core.sim.LandingCraftCapacityTest",
+      "com.rustedwarfare.reforge.core.sim.LandingCraftDeathTest",
+      "com.rustedwarfare.reforge.core.sim.LandingCraftDefinitionTest",
+      "com.rustedwarfare.reforge.core.sim.LandingCraftExitStateTest",
+      "com.rustedwarfare.reforge.core.sim.LandingCraftLoadingTest",
+      "com.rustedwarfare.reforge.core.sim.LandingCraftMapEdgeTest",
+      "com.rustedwarfare.reforge.core.sim.LandingCraftMovementTest",
+      "com.rustedwarfare.reforge.core.sim.LandingCraftProductionTest",
+      "com.rustedwarfare.reforge.core.sim.LandingCraftProjectionTest",
+      "com.rustedwarfare.reforge.core.sim.LandingCraftReboardingTest",
+      "com.rustedwarfare.reforge.core.sim.LandingCraftShoreLoadingTest",
+      "com.rustedwarfare.reforge.core.sim.LandingCraftTransactionTest",
+      "com.rustedwarfare.reforge.core.sim.LandingCraftUnloadGateTest",
+      "com.rustedwarfare.reforge.core.sim.LandingCraftUnloadingTest"
     ],
     "client": [
       "com.rustedwarfare.reforge.client.CombatActorEvidenceTest",
@@ -234,7 +254,12 @@
       "com.rustedwarfare.reforge.client.AmphibiousFlightMenuTest",
       "com.rustedwarfare.reforge.client.AmphibiousPresentationTest",
       "com.rustedwarfare.reforge.client.AmphibiousProductionSandboxTest",
-      "com.rustedwarfare.reforge.client.AmphibiousResourceBindingTest"
+      "com.rustedwarfare.reforge.client.AmphibiousResourceBindingTest",
+      "com.rustedwarfare.reforge.client.LandingCraftCommandTest",
+      "com.rustedwarfare.reforge.client.LandingCraftEvidenceTest",
+      "com.rustedwarfare.reforge.client.LandingCraftProductionSandboxTest",
+      "com.rustedwarfare.reforge.client.LandingCraftUnloadInputTest",
+      "com.rustedwarfare.reforge.client.LandingCraftUnloadMenuTest"
     ],
     "pc": [
       "com.rustedwarfare.reforge.pc.PatrolJsonlPairingTest",
@@ -250,7 +275,8 @@
       "com.rustedwarfare.reforge.pc.HoverOriginalProfileTest",
       "com.rustedwarfare.reforge.pc.ShieldOriginalProfileTest",
       "com.rustedwarfare.reforge.pc.SubmarineOriginalProfileTest",
-      "com.rustedwarfare.reforge.pc.AmphibiousOriginalProfileTest"
+      "com.rustedwarfare.reforge.pc.AmphibiousOriginalProfileTest",
+      "com.rustedwarfare.reforge.pc.LandingCraftOriginalProfileTest"
     ],
     "tools": [
       "com.rustedwarfare.reforge.testing.ProductionCombatScenarioTest",
@@ -292,7 +318,12 @@
       "com.rustedwarfare.reforge.testing.AmphibiousCoreAdapterTest",
       "com.rustedwarfare.reforge.testing.AmphibiousLightningArchiveTest",
       "com.rustedwarfare.reforge.testing.AmphibiousProductionSessionTest",
-      "com.rustedwarfare.reforge.testing.AmphibiousPublicScenarioTest"
+      "com.rustedwarfare.reforge.testing.AmphibiousPublicScenarioTest",
+      "com.rustedwarfare.reforge.testing.LandingCraftArchiveTest",
+      "com.rustedwarfare.reforge.testing.LandingCraftPairedSessionTest",
+      "com.rustedwarfare.reforge.testing.LandingCraftPlayerArchiveTest",
+      "com.rustedwarfare.reforge.testing.LandingCraftProductionSessionTest",
+      "com.rustedwarfare.reforge.testing.LandingCraftPublicScenarioTest"
     ]
   },
   "short": [
@@ -812,6 +843,42 @@
       "backend": "session",
       "scenario": "platform/scenarios/amphibious-hjson-production-chain.json",
       "contract": "platform/contracts/amphibious-hjson-production-chain.json"
+    },
+    {
+      "id": "transport-ini-short",
+      "backend": "core",
+      "scenario": "scenarios/transport-ini-short.json",
+      "contract": "contracts/transport-ini-short.json"
+    },
+    {
+      "id": "transport-ini-production-chain",
+      "backend": "session",
+      "scenario": "platform/scenarios/transport-ini-production-chain.json",
+      "contract": "platform/contracts/transport-ini-production-chain.json"
+    },
+    {
+      "id": "transport-json-short",
+      "backend": "core",
+      "scenario": "scenarios/transport-json-short.json",
+      "contract": "contracts/transport-json-short.json"
+    },
+    {
+      "id": "transport-json-production-chain",
+      "backend": "session",
+      "scenario": "platform/scenarios/transport-json-production-chain.json",
+      "contract": "platform/contracts/transport-json-production-chain.json"
+    },
+    {
+      "id": "transport-hjson-short",
+      "backend": "core",
+      "scenario": "scenarios/transport-hjson-short.json",
+      "contract": "contracts/transport-hjson-short.json"
+    },
+    {
+      "id": "transport-hjson-production-chain",
+      "backend": "session",
+      "scenario": "platform/scenarios/transport-hjson-production-chain.json",
+      "contract": "platform/contracts/transport-hjson-production-chain.json"
     }
   ],
   "long": [
@@ -954,6 +1021,7 @@
   ],
   "pythonTests": [
     "SimulationTest/tools/test_submarine_platform.py",
-    "SimulationTest/tools/test_amphibious_platform.py"
+    "SimulationTest/tools/test_amphibious_platform.py",
+    "SimulationTest/tools/test_transport_platform.py"
   ]
 }

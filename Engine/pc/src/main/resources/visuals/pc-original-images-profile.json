@@ -6223,11 +6223,14 @@
     "jet-left": "res/drawable/amphibious_jet_p2.png",
     "jet-right": "res/drawable/amphibious_jet_p1.png",
     "air-factory-t2": "res/drawable/air_factory_t2.png",
-    "air-factory-t2-dead": "res/drawable/air_factory_t2_dead.png"
+    "air-factory-t2-dead": "res/drawable/air_factory_t2_dead.png",
+    "landing-craft-body": "res/drawable/hovercraft.png",
+    "landing-craft-dead": "res/drawable/hovercraft_dead.png",
+    "landing-craft-shadow": "res/drawable/hovercraft_shadow.png"
   },
   "mappingBasis": {
     "androidProfileSha256": "e273280ab37b1a24714e6b15d8e1cb14fdd395e228ea7c71a62dd2f24d334780",
-    "scope": "Qualified PC finite mappings include native amphibious body/dead/shadow, independent p2 left and p1 right wings rotated into the client north basis, and T2 air factory first animation frame. No Android source or original gameplay execution claim."
+    "scope": "Qualified PC finite mappings include native amphibious body/dead/shadow, independent p2 left and p1 right wings rotated into the client north basis, and T2 air factory first animation frame. No Android source or original gameplay execution claim. Native landing craft uses the fixed PC 20x32 body/dead/shadow without rotation; native dimensions and loaded drawables follow e.i."
   },
   "mappingSources": [
     {
@@ -6333,6 +6336,30 @@
       "sha256": "ba03e4a06bc08e23f1534ca92fa2d2711d600549f79ba51c5b83b5ef1e36167c",
       "width": 40,
       "height": 61
+    },
+    {
+      "id": "landing-craft-body",
+      "path": "res/drawable/hovercraft.png",
+      "bytes": 593,
+      "sha256": "67dfc6996ccf1b7babc656b58e5fa99b8b88a11498e4cbd92824411ad150f401",
+      "width": 20,
+      "height": 32
+    },
+    {
+      "id": "landing-craft-dead",
+      "path": "res/drawable/hovercraft_dead.png",
+      "bytes": 985,
+      "sha256": "b6474a9b81f2f3a8814df87be5bcb78cb449c853e598c2b437eb6ae648a5ec84",
+      "width": 20,
+      "height": 32
+    },
+    {
+      "id": "landing-craft-shadow",
+      "path": "res/drawable/hovercraft_shadow.png",
+      "bytes": 128,
+      "sha256": "42ecbec90736551f715071273600e0ac287f58353a8773cfcc6632faa272cef1",
+      "width": 20,
+      "height": 32
     }
   ],
   "mappingUnitOutputs": {
@@ -6548,6 +6575,54 @@
         61
       ],
       "frames": 1
+    },
+    "landing-craft-body": {
+      "file": "units/landing-craft-body.png",
+      "operation": "crop",
+      "source": "landing-craft-body",
+      "rect": [
+        0,
+        0,
+        20,
+        32
+      ],
+      "target": [
+        20,
+        32
+      ],
+      "frames": 1
+    },
+    "landing-craft-dead": {
+      "file": "units/landing-craft-dead.png",
+      "operation": "crop",
+      "source": "landing-craft-dead",
+      "rect": [
+        0,
+        0,
+        20,
+        32
+      ],
+      "target": [
+        20,
+        32
+      ],
+      "frames": 1
+    },
+    "landing-craft-shadow": {
+      "file": "units/landing-craft-shadow.png",
+      "operation": "crop",
+      "source": "landing-craft-shadow",
+      "rect": [
+        0,
+        0,
+        20,
+        32
+      ],
+      "target": [
+        20,
+        32
+      ],
+      "frames": 1
     }
   },
   "mappingUnitBindings": {
@@ -6580,6 +6655,11 @@
     "airFactoryT2": {
       "body": "air-factory-t2",
       "dead": "air-factory-t2-dead"
+    },
+    "hovercraft": {
+      "body": "landing-craft-body",
+      "dead": "landing-craft-dead",
+      "shadow": "landing-craft-shadow"
     }
   }
 }

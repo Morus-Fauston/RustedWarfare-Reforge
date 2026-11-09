@@ -164,7 +164,7 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
             .filter { it != MovementType.LAND && it != MovementType.AIR }.distinct()
         val vision = AutomaticVision.project(steps.current.automaticVisionState, world.id, (automaticVisionSnapshots?.values?.firstOrNull()?.epoch ?: -1L) + 1,
             input.map.widthTiles, input.map.heightTiles, input.map.tileWidth, input.map.tileHeight, input.players,
-            units.values.filter { it.alive }.map { VisionSource(it.ownerPlayerId, it.position, it.definition.fogOfWarSightRange) }, rules.shareAlliedVision)
+            units.values.filter { it.alive && it.carriedBy == null }.map { VisionSource(it.ownerPlayerId, it.position, it.definition.fogOfWarSightRange) }, rules.shareAlliedVision)
         val views = vision.views
         val nextStores = linkedMapOf<String, PlayerTerrainKnowledge>()
         val discoveries = linkedMapOf<String, MutableMap<Pair<Int, Int>, Long>>()
@@ -375,6 +375,7 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
             is CommandActor.Denied -> return reject(action, access.error.code, access.error.message)
         }
         if (!unit.alive) return reject(action, "inactive-unit", "Unit is not active")
+        if (unit.carriedBy != null) return reject(action, "unit-unavailable", "Unit is not available")
         if ((action is MoveAction || action is PatrolAction) && unit.definition.movement.type == MovementType.NONE) {
             return reject(action, "immobile-unit", "Unit cannot move")
         }
@@ -427,7 +428,7 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
             if (input.players.none { it.playerId == owner }) return unavailable()
             if (action is SelectAction) {
                 val unit = orderedUnits().firstOrNull {
-                    it.unitId == action.unitId && isVisibleTo(actor.playerId, it.position)
+                    it.unitId == action.unitId && isVisibleTo(actor.playerId, it.position, it.nativeTransportPlacement)
                 } ?: return unavailable()
                 return CommandActor.Available(unit)
             }
@@ -441,7 +442,7 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
             return denied("not-owner", "Player '${action.actorPlayerId}' does not own '${action.unitId}'")
         if (action !is SelectAction && actor.control != PlayerControl.LOCAL)
             return denied("actor-not-controlled", "Player has no local control")
-        if (action is SelectAction && !isVisibleTo(actor.playerId, unit.position))
+        if (action is SelectAction && !isVisibleTo(actor.playerId, unit.position, unit.nativeTransportPlacement))
             return denied("not-visible", "Unit is outside the player's current vision")
         return CommandActor.Available(unit)
     }
@@ -502,7 +503,7 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
             preparationFinished = true
             searchStart = System.nanoTime()
             searchEntered = true
-            val path = policies.path.findPath(terrain, start, target, unit.definition.radius, counters, targetRange)
+            val path = policies.path.findPath(terrain, Transport.queryPosition(unit, start), target, Transport.boundaryRadius(unit), counters, targetRange)
             outcome = if (path == null) PathSearchOutcome.UNREACHABLE else PathSearchOutcome.FOUND
             pathPointCount = path?.size ?: 0
             return path
@@ -529,6 +530,7 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
     private fun replanForKnowledge(map: MapDefinition, executionStep: Long) {
         if (pendingKnowledgeDiscoveries.isEmpty() && pendingBuildingDiscoveries.isEmpty()) return
         for (unit in orderedUnits()) {
+            if (unit.carriedBy != null) continue
             if (UnitLocomotion.movement(unit).type == MovementType.AIR) continue
             if (unit.birthRemaining > 0f) continue
             val target = unit.moveTarget ?: continue
@@ -555,12 +557,12 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
             val prefix = mutableListOf<Position>()
             var from = unit.position
             for (point in oldPath) {
-                if (!PlanningSegmentClearance.allows(terrain, from, point, unit.definition.radius)) break
+                if (!PlanningSegmentClearance.allows(terrain, Transport.queryPosition(unit, from), point, Transport.boundaryRadius(unit))) break
                 prefix += point
                 from = point
             }
             fun search(start: Position, preserved: Int = 0): List<Position>? =
-                if (samples == null) policies.path.findPath(terrain, start, target, unit.definition.radius)
+                if (samples == null) policies.path.findPath(terrain, Transport.queryPosition(unit, start), target, Transport.boundaryRadius(unit))
                 else findPathWithDiagnostics(checkNotNull(unit.originMoveId), unit.originAtStep, target, unit, map, samples,
                     PathSearchReason.KNOWLEDGE_REPLAN, executionStep, start, preserved)
             val path = if (prefix.isNotEmpty() && prefix.size < oldPath.size) {
@@ -581,6 +583,7 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
 
     private fun repairInvalidConnections(map: MapDefinition, executionStep: Long) {
         for (unit in orderedUnits()) {
+            if (unit.carriedBy != null) continue
             if (unit.amphibiousState?.terrainPausedMove == true && UnitLocomotion.movement(unit).type == MovementType.AIR) {
                 val task = unit.tasks.firstOrNull()?.takeIf { it.kind == UnitTaskKind.MOVE }
                 if (unit.alive && unit.moveTarget == null && task?.target != null) {
@@ -597,25 +600,25 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
             val first = unit.pathPoints.firstOrNull() ?: continue
             val terrain = planningTerrainFor(unit, map)
             val local = unit.ensureLocalMotion()
-            val firstConnectionClear = PlanningSegmentClearance.allows(terrain, unit.position, first, unit.definition.radius)
-            val localConnectionClear = PlanningSegmentClearance.allows(terrain, unit.position, local.aim, unit.definition.radius)
+            val firstConnectionClear = PlanningSegmentClearance.allows(terrain, Transport.queryPosition(unit), first, Transport.boundaryRadius(unit))
+            val localConnectionClear = PlanningSegmentClearance.allows(terrain, Transport.queryPosition(unit), local.aim, Transport.boundaryRadius(unit))
             val nextLocal = local.next()
             val localCornerStall = nextLocal != null &&
                 policies.coordinates.distanceSquared(unit.position, local.aim) < 9.0 &&
-                !PlanningSegmentClearance.allows(terrain, unit.position, nextLocal.aim, unit.definition.radius)
+                !PlanningSegmentClearance.allows(terrain, Transport.queryPosition(unit), nextLocal.aim, Transport.boundaryRadius(unit))
             val nearCornerStall = unit.pathPoints.size > 1 &&
                 policies.coordinates.distanceSquared(unit.position, first) < 9.0 &&
-                !PlanningSegmentClearance.allows(terrain, unit.position, unit.pathPoints[1], unit.definition.radius)
+                !PlanningSegmentClearance.allows(terrain, Transport.queryPosition(unit), unit.pathPoints[1], Transport.boundaryRadius(unit))
             if (firstConnectionClear && localConnectionClear && !nearCornerStall && !localCornerStall) continue
             if (unit.attackCommand != null) unit.lastAttackPathAttemptStep = executionStep
             val samples = pathDiagnostics
             fun search(destination: Position): List<Position>? =
-                if (samples == null) policies.path.findPath(terrain, unit.position, destination, unit.definition.radius)
+                if (samples == null) policies.path.findPath(terrain, Transport.queryPosition(unit), destination, Transport.boundaryRadius(unit))
                 else findPathWithDiagnostics(checkNotNull(unit.originMoveId), unit.originAtStep, destination, unit, map, samples,
                     PathSearchReason.ROUTE_REPAIR, executionStep)
             val oldPath = unit.pathPoints.toList()
             val tailIsClear = oldPath.size > 1 && oldPath.zipWithNext().all { (a, b) ->
-                PlanningSegmentClearance.allows(terrain, a, b, unit.definition.radius)
+                PlanningSegmentClearance.allows(terrain, a, b, Transport.boundaryRadius(unit))
             }
             val path = if (nearCornerStall || localCornerStall || (firstConnectionClear && !localConnectionClear)) {
                 // The local propulsion gate cannot close the last <3 units,
@@ -644,7 +647,7 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
         val input = checkNotNull(scenario)
         val team = input.players.single { it.playerId == attacker.ownerPlayerId }.teamId
         val target = orderedUnits().asSequence().filter {
-            it.alive && isVisibleTo(action.actorPlayerId, it.position)
+            it.alive && isVisibleTo(action.actorPlayerId, it.position, it.nativeTransportPlacement)
         }.firstOrNull { it.unitId == action.targetUnitId }
         val enemy = target != null && target.ownerPlayerId != attacker.ownerPlayerId &&
             (team == null || input.players.single { it.playerId == target.ownerPlayerId }.teamId != team)
@@ -662,6 +665,7 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
             is CommandActor.Denied -> return reject(action, access.error.code, access.error.message)
         }
         if (!unit.alive) return reject(action, "inactive-unit", "Unit is not active")
+        if (unit.carriedBy != null) return reject(action, "unit-unavailable", "Unit is not available")
         BuildingWork.validateEnvelope(action)?.let { return reject(action, it.code, it.message) }
         val constructionQueueFull = constructionAppend(action) == true && unit.taskQueue.size == 29
         if (constructionAppend(action) == false) {
@@ -678,6 +682,19 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
             return reject(action, "immobile-unit", "Unit cannot move")
         }
         val result = when (action) {
+            is UnloadAction -> {
+                if (!BuildingWork.isReady(unit)) return reject(action, "inactive-unit", "Unfinished units cannot unload")
+                Transport.requestUnload(unit, action.unloading, currentScenario.map)?.let { return reject(action, it.code, it.message) }
+                ActionResult.Accepted(action.actionId, listOf(Event(if (action.unloading) "unload-started" else "unload-cancelled", unit.unitId)))
+            }
+            is LoadAction -> {
+                val target = units[action.targetUnitId]?.takeIf { it.carriedBy == null && !it.reclaimed &&
+                    isVisibleTo(action.actorPlayerId, it.position, it.nativeTransportPlacement) }
+                    ?: return reject(action, "target-unavailable", "Loading target is not available")
+                val change = Transport.request(action, unit, target, units)
+                change.error?.let { return reject(action, it.code, it.message) }
+                ActionResult.Accepted(action.actionId, listOfNotNull(change.event))
+            }
             is AmphibiousFlightAction -> {
                 val state = unit.amphibiousState
                     ?: return reject(action, "unsupported-amphibious-action", "Unit has no native amphibious flight capability")
@@ -747,7 +764,7 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
                 ActionResult.Accepted(action.actionId, listOf(Event("attack-started", unit.unitId)))
             }
             is SelectAction -> {
-                if (!isVisibleTo(action.actorPlayerId, unit.position)) return reject(action, "not-visible", "Unit is outside the player's current vision")
+                if (!isVisibleTo(action.actorPlayerId, unit.position, unit.nativeTransportPlacement)) return reject(action, "not-visible", "Unit is outside the player's current vision")
                 ActionResult.Accepted(action.actionId)
             }
             is StopAction -> {
@@ -766,9 +783,9 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
                 val path = if (unit.birthRemaining > 0f) {
                     if (MapBounds.contains(currentScenario.map.widthTiles.toDouble() * currentScenario.map.tileWidth,
                             currentScenario.map.heightTiles.toDouble() * currentScenario.map.tileHeight,
-                            action.target, unit.definition.radius)) listOf(action.target) else null
+                            action.target, Transport.boundaryRadius(unit))) listOf(action.target) else null
                 } else if (samples == null) {
-                    policies.path.findPath(planningTerrainFor(unit, currentScenario.map), unit.position, action.target, unit.definition.radius)
+                    policies.path.findPath(planningTerrainFor(unit, currentScenario.map), Transport.queryPosition(unit), action.target, Transport.boundaryRadius(unit))
                 } else {
                     findPathWithDiagnostics(action.actionId, action.atStep, action.target, unit, currentScenario.map, samples,
                         executionStep = executionStep)
@@ -820,8 +837,8 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
             val map = checkNotNull(scenario).map
             val samples = pathDiagnostics
             val path = if (worker.birthRemaining > 0f) listOf(target)
-                else if (samples == null) policies.path.findPath(planningTerrainFor(worker, map), worker.position, target,
-                    worker.definition.radius, targetRange = range)
+                else if (samples == null) policies.path.findPath(planningTerrainFor(worker, map), Transport.queryPosition(worker), target,
+                    Transport.boundaryRadius(worker), targetRange = range)
                 else findPathWithDiagnostics(task.actionId, task.atStep, target, worker, map, samples,
                     reason = PathSearchReason.CONSTRUCTION_APPROACH, executionStep = step, targetRange = range)
             return path?.let { BuildingRoute(it, plannedKnowledgeRevision(worker), plannedBuildingRevision(worker)) }
@@ -989,17 +1006,22 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
             deploy()
             buildingWork = buildingWork.advanceClock(step.delta)
             actions.forEach { applyAction(it, step.stepIndex) }
-            for (unit in orderedUnits()) if (unit.alive && unit.tasks.firstOrNull()?.kind == UnitTaskKind.PATROL)
+            for (unit in orderedUnits()) if (unit.alive && unit.carriedBy == null && unit.tasks.firstOrNull()?.kind == UnitTaskKind.PATROL)
                 retainedPatrolTarget(unit)
             replanForKnowledge(currentScenario.map, step.stepIndex)
             repairInvalidConnections(currentScenario.map, step.stepIndex)
             for (unit in orderedUnits().toList()) {
+                if (unit.deathPending) {
+                    unit.deathPending = false
+                    processDeath(unit)
+                }
                 if (!unit.alive) {
                     AmphibiousJetMotion.advanceCorpse(unit, currentScenario.map, step.delta)
                     WaterBody.advanceCorpse(unit, currentScenario.map, step.delta)
                     HoverMotion.advanceCorpse(unit, currentScenario.map, step.delta)
                     continue
                 }
+                if (unit.carriedBy != null) continue
                 unit.definition.shield?.let { profile ->
                     val restored = unit.shield + profile.regeneration * step.delta.toFloat()
                     require(restored.isFinite()) { "Shield regeneration must remain finite" }
@@ -1019,6 +1041,23 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
                         else resumeProductionRoute(unit, currentScenario.map, step.stepIndex)
                     }
                 }
+                val loading = Transport.advanceLoading(unit, units)
+                loading?.event?.let { pendingEvents += it }
+                loading?.approach?.let { target ->
+                    unit.requestMovement(target)
+                    val endpoint = unit.moveTarget
+                    if (endpoint == null || ScreenPlane.distanceSquared(endpoint, target) >= 441.0 || unit.pathPoints.isEmpty()) {
+                        val path = policies.path.findPath(planningTerrainFor(unit, currentScenario.map), Transport.queryPosition(unit), target,
+                            Transport.boundaryRadius(unit), targetRange = 21.0)
+                        if (path == null) unit.cancelRoute() else {
+                            unit.moveTarget = path.last()
+                            unit.originMoveId = unit.tasks.first().actionId
+                            unit.originAtStep = unit.tasks.first().atStep
+                            unit.adoptRoute(path, path.last(), plannedKnowledgeRevision(unit), plannedBuildingRevision(unit))
+                        }
+                    }
+                }
+                if (unit.carriedBy != null) continue
                 unit.qBeforeDispatch = unit.singleNodePathCount
                 unit.consumedPathNodeCounts = emptyList()
                 if (unit.definition.builder != null) updateConstruction(unit, currentScenario, step)
@@ -1051,7 +1090,9 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
                 }
                 if (!fourLegged) updateUnit(unit, currentScenario.map, step.delta, step.stepIndex, candidate.motionSamples)
                 FlightMotion.advancePose(unit, step.delta)
-                HoverMotion.advancePose(unit, step.delta)
+                Transport.refreshTerrain(unit, currentScenario.map)
+                pendingEvents += Transport.advance(unit, units, currentScenario.map, step.delta)
+                if (unit.transportState == null) HoverMotion.advancePose(unit, step.delta)
                 if (SubmarineMotion.advance(unit, step.delta)) pendingEvents += Event("submarine-threshold-crossed", unit.unitId)
                 if (AmphibiousJetMotion.advance(unit, currentScenario.map, step.delta))
                     pendingEvents += Event("amphibious-threshold-crossed", unit.unitId)
@@ -1079,7 +1120,8 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
         return latestObservation ?: recordObservation()
     }
 
-    private fun isVisibleTo(playerId: String, position: Position): Boolean {
+    private fun isVisibleTo(playerId: String, storedPosition: Position, nativeTransportPlacement: Boolean = false): Boolean {
+        val position = Transport.queryPosition(storedPosition, nativeTransportPlacement)
         val view = automaticVisionSnapshots?.getValue(playerId) ?: return true
         val map = checkNotNull(scenario).map
         if (!MapBounds.contains(map.widthTiles.toDouble() * map.tileWidth,
@@ -1101,7 +1143,8 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
         val frame = PlayerObservationFrame(observation, committedObservation,
             automaticVisionSnapshots?.getValue(playerId), knowledgeStores?.getValue(playerId)?.snapshot(world),
             playerActionRevisions[playerId] ?: 0L, hasAdvanced, owners,
-            units.values.filter { it.reclaimed }.associate { it.unitId to it.ownerPlayerId })
+            units.values.filter { it.reclaimed }.associate { it.unitId to it.ownerPlayerId },
+            units.values.filter { it.nativeTransportPlacement }.mapTo(mutableSetOf()) { it.unitId })
         return playerObservationProjectors.getOrPut(playerId) {
             PlayerObservationProjector(world, input, playerId)
         }.observe(frame)
@@ -1234,6 +1277,9 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
             return SimulationError("invalid-contract", "Capture radii must be finite and positive")
         }
         for (definition in input.unitDefinitions.values) {
+            if (definition.transport != null && !Transport.supports(definition))
+                return SimulationError("unsupported-transport", "Expected the finite native landing craft capability")
+            if (definition.transportSlots < 0) return SimulationError("invalid-transport-slots", "Transport slots must be a nonnegative integer")
             if (definition.shield?.let { !it.isValid() || definition.maximumHealth == null } == true)
                 return SimulationError("unsupported-shield", "Expected finite positive shield capacity and nonnegative regeneration on a durable unit")
             val m = definition.movement
@@ -1246,7 +1292,7 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
             val air = m.type == MovementType.AIR
             val hovering = m.type == MovementType.HOVER && m.hover != null
             if (m.hover != null && (!hovering || !m.hover.isValid() || m.flight != null ||
-                    !m.slidingMode || !m.ignoringBody || m.reverseSpeedPercentage != 0.0 || definition.mech != null))
+                    (definition.transport == null && (!m.slidingMode || !m.ignoringBody)) || m.reverseSpeedPercentage != 0.0 || definition.mech != null))
                 return SimulationError("unsupported-hover", "Expected a finite sliding HOVER height profile")
             definition.fixedUnderwaterTarget?.let { fixed ->
                 if (fixed.height != -8.0 || m.type != MovementType.WATER ||
@@ -1553,7 +1599,7 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
         val target = unit.moveTarget ?: return
         val samples = pathDiagnostics
         val path = if (samples == null)
-            policies.path.findPath(planningTerrainFor(unit, map), unit.position, target, unit.definition.radius)
+            policies.path.findPath(planningTerrainFor(unit, map), Transport.queryPosition(unit), target, Transport.boundaryRadius(unit))
         else findPathWithDiagnostics(checkNotNull(unit.originMoveId), unit.originAtStep, target, unit, map,
             samples, PathSearchReason.ROUTE_REPAIR, executionStep)
         if (unit.attackCommand != null) unit.lastAttackPathAttemptStep = executionStep
@@ -1592,9 +1638,9 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
         val samples = pathDiagnostics
         val path = if (unit.birthRemaining > 0f) {
             if (MapBounds.contains(map.widthTiles.toDouble() * map.tileWidth,
-                    map.heightTiles.toDouble() * map.tileHeight, target, unit.definition.radius)) listOf(target) else null
+                    map.heightTiles.toDouble() * map.tileHeight, target, Transport.boundaryRadius(unit))) listOf(target) else null
         } else if (samples == null)
-            policies.path.findPath(planningTerrainFor(unit, map), unit.position, target, unit.definition.radius)
+            policies.path.findPath(planningTerrainFor(unit, map), Transport.queryPosition(unit), target, Transport.boundaryRadius(unit))
         else findPathWithDiagnostics(task.actionId, task.atStep, target, unit, map, samples,
             reason = if (enemy == null) PathSearchReason.USER_MOVE else PathSearchReason.ATTACK_PURSUIT,
             executionStep = executionStep)
@@ -1646,16 +1692,16 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
         val reusable = routeEnd != null && unit.pathPoints.isNotEmpty() &&
             if (targetRange == 0.0 || unit.birthRemaining > 0f) routeEnd == target.position
             else policies.coordinates.distanceSquared(routeEnd, target.position) < targetRange * targetRange &&
-                !PlanningCenterTerrain.intersects(planningTerrainFor(unit, map), routeEnd, unit.definition.radius)
+                !PlanningCenterTerrain.intersects(planningTerrainFor(unit, map), routeEnd, Transport.boundaryRadius(unit))
         if (unit.lastAttackPathAttemptStep == executionStep || reusable) return
         unit.lastAttackPathAttemptStep = executionStep
         val samples = pathDiagnostics
         val path = if (unit.birthRemaining > 0f) {
             if (MapBounds.contains(map.widthTiles.toDouble() * map.tileWidth,
-                    map.heightTiles.toDouble() * map.tileHeight, target.position, unit.definition.radius))
+                    map.heightTiles.toDouble() * map.tileHeight, target.position, Transport.boundaryRadius(unit)))
                 listOf(target.position) else null
         } else if (samples == null) {
-            policies.path.findPath(planningTerrainFor(unit, map), unit.position, target.position, unit.definition.radius,
+            policies.path.findPath(planningTerrainFor(unit, map), Transport.queryPosition(unit), target.position, Transport.boundaryRadius(unit),
                 targetRange = targetRange)
         } else findPathWithDiagnostics(command.actionId, command.atStep, target.position, unit, map, samples,
             reason = PathSearchReason.ATTACK_PURSUIT, executionStep = executionStep, targetRange = targetRange)
@@ -1676,7 +1722,7 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
         val input = checkNotNull(scenario)
         val target = units[oldId]?.takeIf {
             CombatTargetQuery.isEnemy(unit, it, input.players) && CombatTargetQuery.canAttackAirCategory(unit, it, input.map) &&
-                isVisibleTo(unit.ownerPlayerId, it.position) }
+                isVisibleTo(unit.ownerPlayerId, it.position, it.nativeTransportPlacement) }
         val range = maxOf(UnitCombat.range(unit).toFloat() + 110f, 190f)
         if (target != null && CombatTargetQuery.patrolDistanceSquared(unit, target) < range * range) return target
         unit.primaryCombatTargetId = null
@@ -1770,7 +1816,7 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
                 }
         }
         val weaponCandidates = if (!patrol) candidates else if (unit.primaryCombatTargetId == null) emptyList()
-            else candidates.filter { isVisibleTo(unit.ownerPlayerId, it.position) }
+            else candidates.filter { isVisibleTo(unit.ownerPlayerId, it.position, it.nativeTransportPlacement) }
         NamedWeaponRuntime.advance(unit, NamedWeaponFrame(contract.worldSeed, combatFrame, delta,
             input.players, policies.coordinates, units, weaponCandidates, primary, manual, input.map)) { target, state, weapon, delay, definition ->
             fireWeapon(unit, target, state, weapon, delay, definition)
@@ -1906,7 +1952,7 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
         val players = checkNotNull(scenario).players
         val team = players.single { it.playerId == source.ownerPlayerId }.teamId
         for (target in orderedUnits()) {
-            if (!target.alive || target.health == null || target.unitId in area.hitUnitIds || target.height.toFloat() < -5f ||
+            if (!target.alive || target.carriedBy != null || target.health == null || target.unitId in area.hitUnitIds || target.height.toFloat() < -5f ||
                 target.ownerPlayerId != source.ownerPlayerId && team != null &&
                     players.single { it.playerId == target.ownerPlayerId }.teamId == team) continue
             val squared = GroundMath.square(projectile.position.x.toFloat(), projectile.position.y.toFloat(),
@@ -1937,7 +1983,7 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
         var nearest = profile.retargetRadius * profile.retargetRadius
         var chosen: MutableUnit? = null
         for (candidate in checkNotNull(missileTargets).candidates(x, y, profile.retargetRadius, units)) {
-            if (!candidate.alive || candidate.health == null || candidate.ownerPlayerId == source.ownerPlayerId ||
+            if (!candidate.alive || candidate.carriedBy != null || candidate.health == null || candidate.ownerPlayerId == source.ownerPlayerId ||
                 teams[source.ownerPlayerId]?.let { it == teams[candidate.ownerPlayerId] } == true) continue
             val distance = GroundMath.square(x, y, candidate.position.x.toFloat(), candidate.position.y.toFloat())
             require(distance.isFinite()) { "Missile candidate distance must remain finite" }
@@ -1985,7 +2031,7 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
         val y = projectile.position.y.toFloat()
         val height = projectile.height.toFloat()
         for (target in orderedUnits()) {
-            if (!target.alive || target.health == null || target.ownerPlayerId == source.ownerPlayerId ||
+            if (!target.alive || target.carriedBy != null || target.health == null || target.ownerPlayerId == source.ownerPlayerId ||
                 team != null && players.single { it.playerId == target.ownerPlayerId }.teamId == team) continue
             if (CombatTargetQuery.isFlying(target) != (height >= 5f) ||
                 target.height.toFloat() < -5f && height >= -2f) continue
@@ -2008,7 +2054,7 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
         val y = projectile.position.y.toFloat()
         val height = projectile.height.toFloat()
         for (target in orderedUnits()) {
-            if (!target.alive || target.health == null || target.ownerPlayerId == source.ownerPlayerId ||
+            if (!target.alive || target.carriedBy != null || target.health == null || target.ownerPlayerId == source.ownerPlayerId ||
                 team != null && players.single { it.playerId == target.ownerPlayerId }.teamId == team) continue
             if (CombatTargetQuery.isFlying(target) != (height >= 5f) ||
                 target.height.toFloat() < -5f && height >= -2f) continue
@@ -2026,7 +2072,7 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
     private fun applyDamage(target: MutableUnit, damage: Double,
                             modifiers: com.rustedwarfare.reforge.core.content.ProjectileDamageModifiers =
                                 com.rustedwarfare.reforge.core.content.ProjectileDamageModifiers()): Double {
-        if (!target.alive || target.health == null) return 0.0
+        if (!target.alive || target.deathPending || target.health == null) return 0.0
         require(damage.isFinite() && damage >= 0.0) { "Damage must remain finite and nonnegative" }
         val before = checkNotNull(target.health)
         val targetDamage = damage * if (target.definition.building != null ||
@@ -2046,7 +2092,12 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
         }
         target.health = maxOf(0.0, before - maxOf(0.0, applied - deflected))
         pendingEvents += Event("unit-damaged", target.unitId)
-        if (!target.alive) {
+        if (!target.alive) processDeath(target)
+        return before - checkNotNull(target.health)
+    }
+
+    private fun processDeath(target: MutableUnit) {
+            Transport.onDeath(target, units, checkNotNull(scenario).map)
             missileTargets = missileTargets?.remove(target.unitId)
             if (target.definition.production != null) {
                 if (checkNotNull(productionLedger).upgradeQueue(target.unitId).isNotEmpty())
@@ -2075,8 +2126,6 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
                 projectiles += explosion
                 pendingProjectileEvents += ProjectileEventObservation("born", projectileObservation(explosion))
             }
-        }
-        return before - checkNotNull(target.health)
     }
 
     private fun updateUnit(unit: MutableUnit, map: MapDefinition, delta: Double, executionStep: Long,
@@ -2113,7 +2162,8 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
         val approachingWork = workTarget != null && unit.definition.builder?.let { builder ->
             policies.coordinates.distanceSquared(unit.position, workTarget) > builder.range.toDouble() * builder.range
         } == true
-        if (target != null && unit.tasks.firstOrNull()?.kind != UnitTaskKind.PATROL) {
+        val approachingLoad = unit.tasks.firstOrNull()?.kind in setOf(UnitTaskKind.LOAD_INTO, UnitTaskKind.LOAD_UP)
+        if (target != null && !approachingLoad && unit.tasks.firstOrNull()?.kind != UnitTaskKind.PATROL) {
             val commandDistanceSquared = policies.coordinates.distanceSquared(unit.position, target)
             if (commandDistanceSquared < 1681.0) unit.nearTargetTime += delta
             val completionRadius = when {
@@ -2156,7 +2206,7 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
                 movement.type == MovementType.WATER -> BodyMotion.turnOrdinary(unit, steeringTarget, delta, policies.steering, policies.coordinates)
                 else -> policies.steering.turn(unit, steeringTarget, delta, policies.coordinates)
             }
-            val propulsionDistance = if ((approachingBuilding || approachingWork) && finalPoint) maxOf(d2, 16.0) else d2
+            val propulsionDistance = if ((approachingBuilding || approachingWork || approachingLoad) && finalPoint) maxOf(d2, 16.0) else d2
             val fraction = policies.propulsion.targetFraction(movement, unit.speed, propulsionDistance,
                 if (movement.ignoringBody) 0.0 else diff, finalPoint, contract.targetRadius)
             aimForSample = steeringTarget
@@ -2168,8 +2218,8 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
                 // cn supplies the command aim directly, without normal route-node lookahead.
             } else if (unit.pathPoints.size > 1 && policies.capture.inside(
                     policies.coordinates.distanceSquared(unit.position, unit.pathPoints.first()), contract.pathPointRadius) &&
-                PlanningSegmentClearance.allows(planningTerrainFor(unit, map), unit.position,
-                    unit.pathPoints[1], unit.definition.radius)) {
+                PlanningSegmentClearance.allows(planningTerrainFor(unit, map), Transport.queryPosition(unit),
+                    unit.pathPoints[1], Transport.boundaryRadius(unit))) {
                 unit.pathPoints.removeAt(0)
                 unit.localMotion = null
                 unit.localProgressTime = 0.0
@@ -2178,13 +2228,14 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
                 val progress = LocalMotionMaintenance.advance(checkNotNull(local), unit.localProgressTime, delta, fraction > 0.0,
                     d2, !finalPoint && policies.capture.inside(d2, 16.0), unit.terrainCorrectionTime,
                     { policies.coordinates.distanceSquared(unit.position, it) },
-                    { PlanningSegmentClearance.allows(terrain, unit.position, it, unit.definition.radius) })
+                    { PlanningSegmentClearance.allows(terrain, Transport.queryPosition(unit), it, Transport.boundaryRadius(unit)) })
                 unit.localMotion = progress.segment
                 unit.localProgressTime = progress.activeTime
             }
         }
 
         unit.mechState = unit.mechState?.copy(hadMotionAim = aimForSample != null)
+        Transport.recordMotionGate(unit, aimForSample != null)
         val displacement = if (sliding) {
             val desiredVelocity = aimForSample?.let {
                 policies.coordinates.displacement(policies.coordinates.desired(unit.position, it), speedTarget)
@@ -2213,17 +2264,15 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
         if (!candidate.x.isFinite() || !candidate.y.isFinite()) {
             throw ArithmeticException("Non-finite movement candidate for ${unit.unitId}")
         }
-        if (!MapBounds.contains(map.widthTiles.toDouble() * map.tileWidth,
-                map.heightTiles.toDouble() * map.tileHeight, candidate, unit.definition.radius)) {
+        if (!Transport.containsPosition(unit, map, candidate)) {
             blockAtMapBoundary(unit)
             recordMotion(null, MotionTerrainDisposition.CANDIDATE_OUTSIDE_MAP)
             return
         }
         val resolved = if (air) candidate else if (unit.birthRemaining > 0f) TerrainMotion.resolve(map, unit.position, candidate, movementType = movement.type)
             else TerrainMotion.resolve(buildingTerrain?.collisionMap ?: map, unit.position, candidate,
-                map.takeIf { buildingTerrain != null }, movement.type)
-        if (!MapBounds.contains(map.widthTiles.toDouble() * map.tileWidth,
-                map.heightTiles.toDouble() * map.tileHeight, resolved, unit.definition.radius)) {
+                map.takeIf { buildingTerrain != null }, movement.type, unit.nativeTransportPlacement)
+        if (!Transport.containsPosition(unit, map, resolved)) {
             blockAtMapBoundary(unit)
             recordMotion(resolved, MotionTerrainDisposition.RESOLVED_OUTSIDE_MAP)
             return
@@ -2304,6 +2353,7 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
                         unit.submarineVerticalSpeed, SubmarineMotion.submerged(unit), unit.submarineSurfacePresentation,
                         SubmarineMotion.movement(unit).moveSpeed, UnitCombat.range(unit)) },
                     amphibiousJet = AmphibiousJetMotion.observation(unit, currentScenario.map),
+                    carriedBy = unit.carriedBy, transport = Transport.observe(unit, units), transportExit = unit.transportExit,
                     alive = unit.alive,
                     attackTargetId = if (unit.tasks.firstOrNull()?.kind == UnitTaskKind.PATROL) unit.primaryCombatTargetId
                         else unit.attackCommand?.targetUnitId,

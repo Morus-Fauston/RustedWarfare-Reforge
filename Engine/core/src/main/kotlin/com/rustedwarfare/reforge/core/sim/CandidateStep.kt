@@ -87,6 +87,7 @@ internal data class StepState(
     )
 
     fun validate(input: Scenario) {
+        Transport.validate(units)
         val objectIds = mutableSetOf<Long>()
         var previousKey: String? = null
         for (unit in units.values) {
@@ -134,12 +135,12 @@ internal data class StepState(
                     "Invalid produced unit identity"
                 }
             }
-            require(MapBounds.contains(input.map.widthTiles.toDouble() * input.map.tileWidth,
-                input.map.heightTiles.toDouble() * input.map.tileHeight, unit.position, unit.definition.radius)) {
+            require(Transport.containsPosition(unit, input.map, unit.position)) {
                 "Unit collision circle must remain within the map"
             }
-            unit.health?.let { require(it >= 0.0 && it <= checkNotNull(unit.definition.maximumHealth) &&
-                unit.alive == (it > 0.0)) { "Invalid unit life state" } }
+            unit.health?.let { require((it >= 0.0 || it == -1.0) && it <= checkNotNull(unit.definition.maximumHealth) &&
+                (!unit.deathPending || it == -1.0 && unit.carriedBy == null) &&
+                unit.alive == (it > 0.0 || unit.deathPending)) { "Invalid unit life state" } }
             for (state in unit.namedWeapons?.values ?: listOfNotNull(unit.combat)) {
                 require(listOf(state.turretHeading, state.angularVelocity, state.cooldown, state.offset.x, state.offset.y,
                     state.idleBaseHeading, state.idleOffset, state.warmup)

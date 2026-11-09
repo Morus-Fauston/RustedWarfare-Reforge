@@ -13,6 +13,7 @@ internal object MotionV2CoreTraceJson {
         "kind" to s(when(it) { is MoveAction->"move";is StopAction->"stop";is SelectAction->"select"
             is SubmarineDepthAction->error("Movement v2 trace does not support SubmarineDepthAction")
             is AmphibiousFlightAction->error("Movement v2 trace does not support AmphibiousFlightAction")
+            is LoadAction,is UnloadAction->error("Movement v2 trace does not support transport actions")
             is AttackAction->error("Movement v2 trace does not support AttackAction")
             is PatrolAction->error("Movement v2 trace does not support PatrolAction")
             is BuildAction,is ResumeConstructionAction,is RepairBuildingAction,is ReclaimBuildingAction->

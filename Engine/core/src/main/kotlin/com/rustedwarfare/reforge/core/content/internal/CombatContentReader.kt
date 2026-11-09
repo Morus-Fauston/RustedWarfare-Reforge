@@ -9,7 +9,7 @@ import java.io.IOException
 internal object CombatContentReader {
     private val fields = mapOf(
         "core" to setOf("name", "overrideAndReplace", "class", "price", "maxHp", "mass", "techLevel",
-            "buildSpeed", "radius", "displayRadius", "isBio", "softCollisionOnAll", "displayLocaleKey", "fogOfWarSightRange"),
+            "buildSpeed", "radius", "displayRadius", "isBio", "softCollisionOnAll", "displayLocaleKey", "fogOfWarSightRange", "transportSlotsNeeded"),
         "graphics" to setOf("total_frames", "image", "image_wreak", "image_turret", "imageScale", "turretImageScale",
             "image_shadow", "shadowOffsetX", "shadowOffsetY", "animation_moving_start", "animation_moving_end",
             "animation_moving_speed", "dustEffect"),
@@ -35,7 +35,7 @@ internal object CombatContentReader {
         "turret_1" to setOf("shoot_sound", "shoot_sound_vol", "shoot_flame", "shoot_light"),
         "projectile_1" to setOf("frame", "drawSize"),
     )
-    private val numericFields = setOf("price", "buildSpeed", "maxHp", "radius", "displayRadius",
+    private val numericFields = setOf("transportSlotsNeeded", "price", "buildSpeed", "maxHp", "radius", "displayRadius",
         "softCollisionOnAll", "fogOfWarSightRange", "total_frames", "imageScale", "turretImageScale",
         "turretSize", "turretTurnSpeed", "maxAttackRange", "shootDelay", "x", "y", "turnSpeedAcceleration",
         "directDamage", "life", "speed", "moveSpeed", "moveAccelerationSpeed", "moveDecelerationSpeed",
@@ -331,10 +331,11 @@ internal object CombatContentReader {
                 number("movement", "turnAcceleration"), helicopter || heavy || hover, helicopter || heavy || hover, reverse,
                 if (helicopter || heavy) integer("movement", "moveSlidingDir") else -1, flight?.first,
                 if (hover) HoverProfile() else null),
-            sections.flatMap { (s, values) -> values.keys.filter { it in retained[sectionKind(s)].orEmpty() || water && s == "core" && it == "transportSlotsNeeded" } }.toSet(), sight, profile,
+            sections.flatMap { (s, values) -> values.keys.filter { it in retained[sectionKind(s)].orEmpty() } }.toSet(), sight, profile,
             build = BuildProfile(price, buildRate), mech = gait, rotor = flight?.second,
             authoredWaterCombat = authorWater, shadowImagePath = if (hover) image("image_shadow") else null,
-            shield = shield, shieldImagePath = if (heavy) image("image_shield") else null)
+            shield = shield, shieldImagePath = if (heavy) image("image_shield") else null,
+            transportSlots = if ("transportSlotsNeeded" in sections.getValue("core")) integer("core", "transportSlotsNeeded") else 1)
         definition
     }
 }

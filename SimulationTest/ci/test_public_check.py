@@ -351,6 +351,11 @@ class PublicSelectionTest(unittest.TestCase):
         self.assertTrue('SimulationTest/tools/action_layout.py' in names,'Drawn action locator missing')
         self.assertTrue('SimulationTest/tools/test_action_layout.py' in names,'Drawn action contract missing')
 
+    def test_transport_contract_survives_an_isolated_source_copy(self):
+        from public_check import REPO,source_files
+        names={p.relative_to(REPO).as_posix() for p in source_files(REPO)}
+        self.assertIn('SimulationTest/tools/test_transport_platform.py',names)
+
     def test_the_shared_live_reader_and_its_contract_survive_an_isolated_source_copy(self):
         from public_check import REPO,source_files
         names={p.relative_to(REPO).as_posix() for p in source_files(REPO)}

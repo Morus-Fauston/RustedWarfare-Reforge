@@ -36,6 +36,12 @@ def validate_windows_plan(plan,contract):
         raise PlatformError('input-contract','Windows requires matching intents and a paired scene or normal content menu for history',1)
     if len({i.get('intentId') for i in intents})!=len(intents):
         raise PlatformError('input-contract','Duplicate Windows intention identity',1)
+    paused=plan.get('windowsPausedIntents',[])
+    if (not isinstance(paused,list) or any(not isinstance(identity,str) for identity in paused) or
+            len(paused)!=len(set(paused)) or paused and not history or
+            any(not any(i.get('intentId')==identity and type(i.get('waitSteps')) is int and
+                        i['waitSteps']==0 for i in intents) for identity in paused)):
+        raise PlatformError('input-contract','Paused Windows intentions must be unique known zero-wait history intentions',1)
     if not history:
         for intent,rule in zip(intents,rules):validate_intent_contract(intent,rule)
     else:
@@ -54,7 +60,11 @@ def validate_windows_plan(plan,contract):
                 raise PlatformError('input-contract','Invalid declared waiting segment',1)
     action_types={'select':'SelectAction','move':'MoveAction','build':'BuildAction','upgrade':'UpgradeAction',
                   'produce':'ProduceAction','attack':'AttackAction','stop':'StopAction','submarine-depth':'SubmarineDepthAction',
-                  'amphibious-flight':'AmphibiousFlightAction'}
+                  'amphibious-flight':'AmphibiousFlightAction','load':'LoadAction','unload':'UnloadAction'}
+    if any(i.get('kind')=='load' and i.get('direction') not in ('INTO','UP') for i in intents):
+        raise PlatformError('input-contract','Load intention requires INTO or UP',1)
+    if any(i.get('kind')=='unload' and type(i.get('unloading')) is not bool for i in intents):
+        raise PlatformError('input-contract','Unload intention requires a strict boolean',1)
     if any(i.get('kind')=='amphibious-flight' and type(i.get('flying')) is not bool for i in intents):
         raise PlatformError('input-contract','Amphibious intention requires a strict flying boolean',1)
     if any(i.get('kind')=='submarine-depth' and type(i.get('surface')) is not bool for i in intents):
@@ -208,6 +218,15 @@ def run_windows(scenario, contract, distribution, output, size, java='java', rat
         ack=next(r for r in reversed(rows) if r.get('kind')=='simulation-control' and r['sequence']>boundary)
         record(dict(kind='verified-speed',requestedRate=rate,receipt=ack))
         return ack
+    def set_paused(paused):
+        boundary=reader.cursor
+        click_action('pause-simulation')
+        def matching(rows):
+            return next((r for r in reversed(rows) if r.get('kind')=='simulation-control' and
+                r.get('generation')==current_generation and r['sequence']>boundary and
+                r.get('action')=='pause' and r.get('paused') is paused),None)
+        rows=wait('current pause receipt '+str(paused),lambda rows:matching(rows) is not None,deadline=3)
+        record(dict(kind='verified-pause',requestedPaused=paused,receipt=matching(rows)))
     def wait_segment(intent,action,immediate):
         declaration=plan.get('windowsWaits',{}).get(intent['intentId'])
         rate=4 if declaration and rate_profile=='segmented' else 1
@@ -320,8 +339,13 @@ def run_windows(scenario, contract, distribution, output, size, java='java', rat
                  after_sequence=load_boundary)
             guard.capture(output/'first-world.png')
             if history:set_speed(1)
+            clock_paused=False
             for intent, rule in zip(plan['intents'], rules):
                 guard.check()
+                requested_pause=intent['intentId'] in plan.get('windowsPausedIntents',[])
+                if requested_pause!=clock_paused:
+                    set_paused(requested_pause)
+                    clock_paused=requested_pause
                 if anchors:
                     # The comparator requires distinct dispatch boundaries. A quick capture may
                     # finish before another diagnostic is emitted; wait for a real record.
@@ -331,7 +355,7 @@ def run_windows(scenario, contract, distribution, output, size, java='java', rat
                 kind = intent['kind']
                 if kind == 'select':
                     guard.click(*world(intent['position']))
-                elif kind in ('move', 'attack'):
+                elif kind in ('move', 'attack', 'load'):
                     guard.click(*world(intent['position']), button='right')
                 elif kind == 'stop':
                     click_action('stop')
@@ -339,6 +363,8 @@ def run_windows(scenario, contract, distribution, output, size, java='java', rat
                     click_action('submarine-surface' if intent['surface'] else 'submarine-dive')
                 elif kind == 'amphibious-flight':
                     click_action('amphibious-fly' if intent['flying'] else 'amphibious-dive')
+                elif kind == 'unload':
+                    click_action('transport-unload' if intent['unloading'] else 'transport-cancel-unload')
                 elif kind == 'produce':
                     click_action('produce:'+intent['typeId'])
                 elif kind == 'cancelProduction':
@@ -367,6 +393,7 @@ def run_windows(scenario, contract, distribution, output, size, java='java', rat
                                     row['sequence'] > action['sequence'] and row['sample']['stepIndex'] >= immediate['stepIndex']+steps for row in rows))
                 anchors.append(dict(intentId=intent['intentId'], afterSequence=start, endSequence=reader.cursor))
                 guard.capture(output/(intent['intentId']+'.png'))
+            if clock_paused:set_paused(False)
             if history:save_segments()
             guard.close_owned()
             result['processExitCode'] = proc.wait(timeout=20)

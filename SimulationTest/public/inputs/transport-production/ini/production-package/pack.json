@@ -1,0 +1,47 @@
+{
+  "format": "rw-reforge.content-pack.v1",
+  "id": "p009-transport-ini",
+  "name": "Owned landing craft transport content",
+  "units": [
+    {
+      "type": "battleship",
+      "file": "units/naval/heavyBattleship.ini"
+    },
+    {
+      "type": "sea-factory",
+      "file": "units/seaFactory.ini"
+    },
+    {
+      "type": "sea-factory",
+      "file": "units/seaFactoryT2.ini"
+    },
+    {
+      "type": "underwater-target",
+      "file": "units/naval/underwaterTarget.ini"
+    },
+    {
+      "type": "builder",
+      "file": "units/builder.ini"
+    },
+    {
+      "type": "tank",
+      "file": "units/land/tank.ini"
+    },
+    {
+      "type": "helicopter",
+      "file": "units/air/helicopter.ini"
+    },
+    {
+      "type": "submarine",
+      "file": "units/submarine/submarine.ini"
+    },
+    {
+      "type": "hovercraft",
+      "file": "units/hovercraft.ini"
+    },
+    {
+      "type": "command-center",
+      "file": "units/commandCenter/commandCenter.ini"
+    }
+  ]
+}

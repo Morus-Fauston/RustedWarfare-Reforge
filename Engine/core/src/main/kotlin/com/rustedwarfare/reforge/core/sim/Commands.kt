@@ -8,6 +8,28 @@ sealed interface Action {
     val atStep: Long?
 }
 
+enum class LoadDirection { INTO, UP }
+
+data class UnloadAction(
+    override val actionId: String,
+    override val actorPlayerId: String,
+    override val unitId: String,
+    val unloading: Boolean,
+    override val world: WorldHandle,
+    override val atStep: Long? = null,
+) : Action
+
+/** INTO orders the passenger; UP orders the carrier. Both use ordinary owner permissions. */
+data class LoadAction(
+    override val actionId: String,
+    override val actorPlayerId: String,
+    override val unitId: String,
+    val targetUnitId: String,
+    val direction: LoadDirection,
+    override val world: WorldHandle,
+    override val atStep: Long? = null,
+) : Action
+
 /** Native Fly/Dive intent; physical altitude and passage category change independently. */
 data class AmphibiousFlightAction(
     override val actionId: String,

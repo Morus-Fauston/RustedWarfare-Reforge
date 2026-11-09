@@ -76,6 +76,11 @@ object PlatformSessionRunner {
                         "cancelProduction" -> session.cancelProduction(intent.id("typeId"))
                         "move" -> session.move(intent.objectAt("position").let { Position(it.number("x"), it.number("y")) })
                         "stop" -> session.stop()
+                        "load" -> session.command(intent.objectAt("position").let { Position(it.number("x"), it.number("y")) })
+                        "unload" -> {
+                            if (intent.required("unloading") !in setOf(b(true), b(false))) throw InputError("Expected unload boolean")
+                            session.unload(intent.required("unloading").jsonPrimitive.boolean)
+                        }
                         "submarine-depth" -> {
                             if (intent.required("surface") !in setOf(b(true), b(false))) throw InputError("Expected submarine surface boolean")
                             session.submarineDepth(intent.required("surface").jsonPrimitive.boolean)

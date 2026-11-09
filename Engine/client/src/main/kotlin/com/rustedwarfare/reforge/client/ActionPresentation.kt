@@ -12,7 +12,7 @@ internal class ActionCatalogue(private val definitions: Map<String, UnitDefiniti
     private val names = mapOf(
         "commandCenter" to Names("Command", "Command center"), "builder" to Names("Builder"),
         "c_tank" to Names("Tank"), "landFactory" to Names("Factory", "Land factory"),
-        "hoverTank" to Names("Hover tank"),
+        "hoverTank" to Names("Hover tank"), "hovercraft" to Names("Landing craft"),
         "mechFactory" to Names("Mech factory"), "mechGun" to Names("Gun mech"),
         "mechFactoryT2" to Names("Mech factory T2"), "mechHeavyMissile" to Names("Heavy missile mech"),
         "airFactory" to Names("Air factory"), "airFactoryT2" to Names("Air factory T2"),
@@ -86,6 +86,9 @@ internal class ActionCatalogue(private val definitions: Map<String, UnitDefiniti
             }
         }
         val factory = ownSingle?.let { unit -> view.factoryQueues.firstOrNull { it.factoryId == unit.unitId } }
+        val transportAction = ownSingle?.takeIf { it.constructionProgress >= 1f }?.transport?.let {
+            TransportUnloadActionView(!it.unloading, if (it.unloading) "Cancel unload" else "Unload", it.unloading || it.canUnload)
+        }
         val profiles = ownSingle?.takeUnless { it.constructionProgress < 1f &&
             definitions.getValue(it.typeId).className == "AuthoredBuilding" }
             ?.let { definitions.getValue(it.typeId).upgrades?.actions }.orEmpty()
@@ -120,6 +123,7 @@ internal class ActionCatalogue(private val definitions: Map<String, UnitDefiniti
         val workerText = if (buildings.isEmpty()) null else workerText(workers.sortedBy { it.unitId }, view)
         val info = if (ids.isEmpty()) null else if (ids.size > 1) workerText else selected?.let { unit ->
             "${unit.health?.toInt() ?: 0} / ${unit.maxHealth?.toInt() ?: 0}" +
+                (unit.transport?.let { "\nCargo ${it.occupiedSlots} / ${it.capacity}\nPassengers ${it.passengerCount}" } ?: "") +
                 (unit.shield?.let { "\nShield ${it.current.toInt()} / ${it.maximum.toInt()}" } ?: "") +
                 (unit.submarine?.let { String.format(Locale.ROOT, "\n%s\nDepth %.2f\nSpeed %.2f\nRange %.0f",
                     if (it.underwater) "Underwater" else "Surface", unit.height, it.maximumSpeed, it.attackRange) } ?: "") +
@@ -141,7 +145,7 @@ internal class ActionCatalogue(private val definitions: Map<String, UnitDefiniti
                 val name = if (upgrades.any { it.kind == UpgradePresentationKind.FACTORY && it.actionKey == item.actionKey })
                     title(item.targetTypeId, panel = true) else if (item.actionKey == "upgrade_gun") "Gun" else "Art"
                 "  $name ${(item.progress * 100f).toInt()}%"
-            }.orEmpty(), view.balance, depthAction, flightAction)
+            }.orEmpty(), view.balance, depthAction, flightAction, transportAction)
     }
 
     private fun workerText(workers: List<UnitObservation>, view: PlayerObservation): String {
@@ -177,10 +181,12 @@ data class ActionMenuView(val credits: Double? = null, val production: List<Prod
     val canMaintain: Boolean = false, val workerQueueText: String? = null, val selectedUnitInfo: String? = null,
     val selectedTitle: String? = null, val totalNominalIncome: Float = 0f, val upgradeQueueText: String = "",
     val balance: Long? = null, val depthAction: SubmarineDepthActionView? = null,
-    val flightAction: AmphibiousFlightActionView? = null) {
+    val flightAction: AmphibiousFlightActionView? = null, val transportAction: TransportUnloadActionView? = null) {
     val reclaimTooltip: String get() = if (canMaintain)
         "Reclaim own building\nCredits returned on completion\nLeft: choose target\nEsc / right: cancel" else ""
 }
 
 data class SubmarineDepthActionView(val surface: Boolean, val title: String, val tooltip: String)
 data class AmphibiousFlightActionView(val flying: Boolean, val title: String, val tooltip: String, val available: Boolean)
+
+data class TransportUnloadActionView(val unloading: Boolean, val title: String, val available: Boolean)

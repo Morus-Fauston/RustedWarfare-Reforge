@@ -1,0 +1,103 @@
+{
+  "schemaVersion": 1,
+  "kind": "behavior-contract",
+  "contractId": "public.transport-json.short.contract.v1",
+  "scope": "self-behavior",
+  "scenarioIds": [
+    "p009-transport-production"
+  ],
+  "comparison": {
+    "numberMode": "declared-per-field",
+    "tolerances": {}
+  },
+  "approval": {
+    "status": "tool-fixture-only",
+    "source": "ENG-P009-007 fixed native static facts; owned self-behavior only"
+  },
+  "exclusions": [
+    "original-compatibility",
+    "platform-input",
+    "performance"
+  ],
+  "rules": [
+    {
+      "ruleId": "boarded",
+      "when": {
+        "phase": "after-advance",
+        "stepIndex": 0
+      },
+      "assertions": [
+        {
+          "path": "units.a-passenger.carriedBy",
+          "operator": "equals",
+          "value": "craft"
+        },
+        {
+          "path": "units.craft.transport.passengerCount",
+          "operator": "equals",
+          "value": 1
+        },
+        {
+          "path": "units.craft.transport.occupiedSlots",
+          "operator": "equals",
+          "value": 1
+        }
+      ]
+    },
+    {
+      "ruleId": "cancel-preserves",
+      "when": {
+        "phase": "after-advance",
+        "stepIndex": 20
+      },
+      "assertions": [
+        {
+          "path": "units.a-passenger.carriedBy",
+          "operator": "equals",
+          "value": "craft"
+        },
+        {
+          "path": "units.craft.transport.unloading",
+          "operator": "equals",
+          "value": false
+        }
+      ]
+    },
+    {
+      "ruleId": "released",
+      "when": {
+        "phase": "after-advance",
+        "stepIndex": 50
+      },
+      "assertions": [
+        {
+          "path": "units.a-passenger.carriedBy",
+          "operator": "absent-or-null"
+        },
+        {
+          "path": "units.craft.transport.passengerCount",
+          "operator": "equals",
+          "value": 0
+        },
+        {
+          "path": "units.a-passenger.transportExit.remaining",
+          "operator": "equals",
+          "value": 45
+        }
+      ]
+    },
+    {
+      "ruleId": "exit-reference-cleared",
+      "when": {
+        "phase": "after-advance",
+        "stepIndex": 95
+      },
+      "assertions": [
+        {
+          "path": "units.a-passenger.transportExit",
+          "operator": "absent-or-null"
+        }
+      ]
+    }
+  ]
+}

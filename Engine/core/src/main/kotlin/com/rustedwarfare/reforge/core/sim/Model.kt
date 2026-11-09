@@ -119,7 +119,7 @@ data class Step(val stepIndex: Long, val delta: Double, val deltaUnit: String)
 
 enum class MovementState { IDLE, MOVING, DECELERATING, BLOCKED }
 
-enum class UnitTaskKind { MOVE, ATTACK, PATROL, BUILD, CONSTRUCT, RECLAIM }
+enum class UnitTaskKind { MOVE, ATTACK, PATROL, BUILD, CONSTRUCT, RECLAIM, LOAD_INTO, LOAD_UP }
 
 /** Owner control intent; temporary combat targets never become stored patrol points. */
 data class UnitTask(val kind: UnitTaskKind, val actionId: String, val target: Position? = null,
@@ -156,7 +156,17 @@ data class UnitObservation(
     val shield: ShieldObservation? = null,
     val submarine: SubmarineObservation? = null,
     val amphibiousJet: AmphibiousJetObservation? = null,
+    /** Trusted-host relation. Carried bodies are excluded from player world observations. */
+    val carriedBy: String? = null,
+    val transport: TransportObservation? = null,
+    val transportExit: TransportExitObservation? = null,
 )
+
+data class TransportObservation(val passengerIds: List<String>?, val passengerCount: Int,
+    val occupiedSlots: Int, val capacity: Int, val unloading: Boolean, val unloadRemaining: Float?,
+    val canUnload: Boolean = false)
+
+data class TransportExitObservation(val previousCarrierId: String, val remaining: Float)
 
 /** Actual visible form; future flight intent and the integrator are owner-only. */
 data class AmphibiousJetObservation(val flyingIntent: Boolean?, val verticalSpeed: Float?,
@@ -440,10 +450,17 @@ internal data class MutableUnit(
     var productionSide: Boolean = false,
     /** Custom instance j; retained when the normal locomotion-aim gate is closed. */
     var terrainSpeedMultiplier: Double = 1.0,
+    var carriedBy: String? = null,
+    var transportState: TransportState? = if (definition.transport != null) TransportState() else null,
+    var transportExit: TransportExitObservation? = null,
+    /** Native placement tests a terrain cell; retain its legal center until the body reenters the ordinary map inset. */
+    var nativeTransportPlacement: Boolean = false,
+    /** Native cj writes health first; the subsequent base health update dispatches death. */
+    var deathPending: Boolean = false,
 ) {
     val producerId: String? get() = productionOrigin?.producerId
     val reversing: Boolean get() = mechState?.reversing ?: bodyReversing
-    val alive: Boolean get() = health == null || checkNotNull(health) > 0.0
+    val alive: Boolean get() = deathPending || health == null || checkNotNull(health) > 0.0
     val tasks: List<UnitTask> get() = taskQueue.tasks
     var primaryCombatTargetId: String?
         get() = if (namedWeapons != null) sharedWeaponTargetId else combat?.targetId

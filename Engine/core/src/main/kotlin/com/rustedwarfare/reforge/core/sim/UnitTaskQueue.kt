@@ -36,7 +36,7 @@ internal class UnitTaskQueue private constructor(private val slots: List<UnitTas
                 UnitTaskKind.MOVE, UnitTaskKind.PATROL -> require(task.target?.let {
                     it.x.isFinite() && it.y.isFinite()
                 } == true && task.targetUnitId == null) { "Invalid point task" }
-                UnitTaskKind.ATTACK -> require(task.target == null && !task.targetUnitId.isNullOrEmpty()) {
+                UnitTaskKind.ATTACK, UnitTaskKind.LOAD_INTO, UnitTaskKind.LOAD_UP -> require(task.target == null && !task.targetUnitId.isNullOrEmpty()) {
                     "Invalid attack task"
                 }
                 UnitTaskKind.BUILD -> require(task.target?.let { it.x.isFinite() && it.y.isFinite() } == true &&

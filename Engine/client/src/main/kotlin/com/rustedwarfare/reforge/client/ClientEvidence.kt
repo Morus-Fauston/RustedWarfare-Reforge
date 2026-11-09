@@ -160,6 +160,11 @@ internal fun UnitObservation.fields(): Map<String, Any?> {
     unit.hoverPose?.let { values["hoverPose"] = mapOf("velocity" to it.velocity.fields(), "heightPhase" to it.heightPhase) }
     unit.waterPose?.let { values["waterPose"] = mapOf(
         "reversing" to it.reversing, "sinkSpeed" to it.sinkSpeed, "settled" to it.settled) }
+    unit.carriedBy?.let { values["carriedBy"] = it }
+    unit.transport?.let { values["transport"] = mapOf("passengerIds" to it.passengerIds,
+        "passengerCount" to it.passengerCount, "occupiedSlots" to it.occupiedSlots, "capacity" to it.capacity,
+        "unloading" to it.unloading, "unloadRemaining" to it.unloadRemaining, "canUnload" to it.canUnload) }
+    unit.transportExit?.let { values["transportExit"] = mapOf("previousCarrierId" to it.previousCarrierId, "remaining" to it.remaining) }
     return values
 }
 

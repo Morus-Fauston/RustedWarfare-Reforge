@@ -1,0 +1,913 @@
+{
+  "schemaVersion": 1,
+  "kind": "scenario",
+  "scenarioId": "p009-transport-production",
+  "content": {
+    "map": {
+      "id": "map",
+      "path": "../inputs/transport-production/hjson/maps/naval-shore.tmx",
+      "sha256": "efd248a14bc7e60406045e3cc631249286f795b07b4ace64aafc2ab1c629ef48"
+    },
+    "unitVariants": [
+      {
+        "id": "heavyBattleship",
+        "path": "../inputs/transport-production/hjson/production-package/units/naval/heavyBattleship.hjson",
+        "sha256": "db11829a3845971f85498b10ffe6dc31c6a337e51ad6cb38cd5940d844c107f6",
+        "loader": "battleship"
+      },
+      {
+        "id": "seaFactory",
+        "path": "../inputs/transport-production/hjson/production-package/units/seaFactory.hjson",
+        "sha256": "f88f084b6a26929d6bbe2b63d253a364e1e733981b06ffe21994631e491edf5f",
+        "loader": "factory"
+      },
+      {
+        "id": "seaFactoryT2",
+        "path": "../inputs/transport-production/hjson/production-package/units/seaFactoryT2.hjson",
+        "sha256": "4ceabf590abc8338a97a5fd4ae913b32b55a163ec1f18e519713eef33522b487",
+        "loader": "factory"
+      },
+      {
+        "id": "navalUnderwaterTarget",
+        "path": "../inputs/transport-production/hjson/production-package/units/naval/underwaterTarget.hjson",
+        "sha256": "0e97a0ab19c3ef833664a8e67c43feddae745ba986c6694e6b67dc3125cfef1d",
+        "loader": "underwater-target"
+      },
+      {
+        "id": "builder",
+        "path": "../inputs/transport-production/hjson/production-package/units/builder.hjson",
+        "sha256": "31e25b1c15e7c3f3e6f3ee2b2e3b5f6e352ef603e443518d06eeffc42547e551",
+        "loader": "builder"
+      },
+      {
+        "id": "c_tank",
+        "path": "../inputs/transport-production/hjson/production-package/units/land/tank.hjson",
+        "sha256": "eb16e1f3ec49b0b7534df7805edd0dbd920d6ce14be7a5e12d1806068462c262",
+        "loader": "declared-tank"
+      },
+      {
+        "id": "helicopter",
+        "path": "../inputs/transport-production/hjson/production-package/units/air/helicopter.hjson",
+        "sha256": "906243ee0d3083203381d5a116df173fa0399cd73385f2994455145a2a21a849",
+        "loader": "helicopter"
+      },
+      {
+        "id": "attackSubmarine",
+        "path": "../inputs/transport-production/hjson/production-package/units/submarine/submarine.hjson",
+        "sha256": "b8b12b9ba92285b2ffde11527065e108a22ac1b4b1a3f789b6140ed38c0f31ed",
+        "loader": "submarine"
+      },
+      {
+        "id": "hovercraft",
+        "path": "../inputs/transport-production/hjson/production-package/units/hovercraft.hjson",
+        "sha256": "9a34ed485c64b74babf5d483eff04e00948facdb1df134fb1a0505eb013ea575",
+        "loader": "hovercraft"
+      },
+      {
+        "id": "commandCenter",
+        "path": "../inputs/transport-production/hjson/production-package/units/commandCenter/commandCenter.hjson",
+        "sha256": "42cf28c27350fe51923acc75216ae6d473c4c1eb5b504945159200308679f98c",
+        "loader": "command-center"
+      }
+    ],
+    "dependencies": [
+      {
+        "id": "dep-0",
+        "path": "../inputs/transport-production/hjson/assets/ground.png",
+        "sha256": "1dcf1489ef8e618ac2905588b5124dc72479275d1313100808098d16ffe7f540"
+      },
+      {
+        "id": "dep-1",
+        "path": "../inputs/transport-production/hjson/assets/naval-ground.png",
+        "sha256": "9c32ebad05ee1c22011d8639a9f1674704967b0ed225b384726d11c654ed6cde"
+      },
+      {
+        "id": "dep-3",
+        "path": "../inputs/transport-production/hjson/production-package/pack.json",
+        "sha256": "699bdbd983fc1bc582480d92f030dab46ba07764e94d586904f159469ee345d3"
+      },
+      {
+        "id": "dep-4",
+        "path": "../inputs/transport-production/hjson/production-package/units/air/body.png",
+        "sha256": "f2f5836caec9a3078885b8ab00654f27800d38f17352b3be4358c3afc6a42b90"
+      },
+      {
+        "id": "dep-5",
+        "path": "../inputs/transport-production/hjson/production-package/units/air/dead.png",
+        "sha256": "78e0d0b9a4eb88801361721035f5b84d141fb745f094192891496c4b63916976"
+      },
+      {
+        "id": "dep-7",
+        "path": "../inputs/transport-production/hjson/production-package/units/air/rotor.png",
+        "sha256": "3bec04ec0daa8dcea012e8447d4ee0a58e392850da8e366d30d8e512829fd9af"
+      },
+      {
+        "id": "dep-9",
+        "path": "../inputs/transport-production/hjson/production-package/units/builder.png",
+        "sha256": "15060aa3fb36bffd4414e803beb8f5d9b2982ed14bb497fbca6cadd3de18cc1b"
+      },
+      {
+        "id": "dep-10",
+        "path": "../inputs/transport-production/hjson/production-package/units/builder_dead.png",
+        "sha256": "15060aa3fb36bffd4414e803beb8f5d9b2982ed14bb497fbca6cadd3de18cc1b"
+      },
+      {
+        "id": "dep-11",
+        "path": "../inputs/transport-production/hjson/production-package/units/commandCenter/base.png",
+        "sha256": "8095d081de1407fe59e9ff99f5a5822e03275f87ffbd0f2a09ac736f8f6b3695"
+      },
+      {
+        "id": "dep-12",
+        "path": "../inputs/transport-production/hjson/production-package/units/commandCenter/base_back.png",
+        "sha256": "07e2e3d786bf88d6d1dfe57add1b732e84a9bd2d6313732cc4f86ec8c4da2885"
+      },
+      {
+        "id": "dep-13",
+        "path": "../inputs/transport-production/hjson/production-package/units/commandCenter/base_dead.png",
+        "sha256": "940b030d8a9c0161c69b1831041186c97409e85d404aa5c5f6ec58fa5d831b16"
+      },
+      {
+        "id": "dep-16",
+        "path": "../inputs/transport-production/hjson/production-package/units/hovercraft.png",
+        "sha256": "d515f58aa5726cc44880b6b05c48b2af10a02118a164449a2388d6dcae534b8b"
+      },
+      {
+        "id": "dep-17",
+        "path": "../inputs/transport-production/hjson/production-package/units/hovercraft_dead.png",
+        "sha256": "60a36a41dc022e27b3fe20b5f0e530493648afb02ee90987bf45774f3ba0cfb0"
+      },
+      {
+        "id": "dep-19",
+        "path": "../inputs/transport-production/hjson/production-package/units/land/tank.png",
+        "sha256": "898fa8d12d89e73c988c258c3522a23660b2fdc500b4c8588fd2d8cf5fe4b605"
+      },
+      {
+        "id": "dep-20",
+        "path": "../inputs/transport-production/hjson/production-package/units/land/tank_dead.png",
+        "sha256": "cbab7f92fa0cbef203e94823e2cbdc3e0116df3dab205f2ce0296e399a1a4ffa"
+      },
+      {
+        "id": "dep-21",
+        "path": "../inputs/transport-production/hjson/production-package/units/land/tank_turret.png",
+        "sha256": "20dfaa2a45dd5bb635e83425fb64a6d3d3f9fef48d1b0a3b573fe5b9b67c4985"
+      },
+      {
+        "id": "dep-22",
+        "path": "../inputs/transport-production/hjson/production-package/units/naval/heavy_battleship.png",
+        "sha256": "fed347e885f6b394f48ebb3f82a3c7deb86ce6cd73e1035715b2be69fdb87a1f"
+      },
+      {
+        "id": "dep-23",
+        "path": "../inputs/transport-production/hjson/production-package/units/naval/heavy_battleship_dead.png",
+        "sha256": "b3b38d14f12c1cc7dada9e25ac1ee1c5a126472ec36f561c37d0949fbdc256a7"
+      },
+      {
+        "id": "dep-25",
+        "path": "../inputs/transport-production/hjson/production-package/units/naval/large_turret.png",
+        "sha256": "786ebb3167e16227585aa46f179ccc0fb21136deec159be7d9cf82708918550b"
+      },
+      {
+        "id": "dep-26",
+        "path": "../inputs/transport-production/hjson/production-package/units/naval/underwater_target.png",
+        "sha256": "bc8f3bf04c77313d277018f3da1296e7c85cc255086ff26d6fe23ef7113b8a6b"
+      },
+      {
+        "id": "dep-28",
+        "path": "../inputs/transport-production/hjson/production-package/units/sea_factory.png",
+        "sha256": "39e691989d04437422f25d66b50dbaa9cd9cf4af91a6a3f5e3a4ba754f84acdb"
+      },
+      {
+        "id": "dep-29",
+        "path": "../inputs/transport-production/hjson/production-package/units/sea_factory_dead.png",
+        "sha256": "da6613bbcce31da57a87f91b54bbb99fd6ce800eb6bcf5efa9245f71cda45a3a"
+      },
+      {
+        "id": "dep-30",
+        "path": "../inputs/transport-production/hjson/production-package/units/sea_factory_t2.png",
+        "sha256": "168c093386f735aca6a71bdedaddfd6d70697e056ab833a4ec93a04db1f5d3bf"
+      },
+      {
+        "id": "dep-33",
+        "path": "../inputs/transport-production/hjson/production-package/units/submarine/body.png",
+        "sha256": "d61fd88c779e1209fee1400b3e21fe79cfef45729b31aea4d3a476593e794892"
+      },
+      {
+        "id": "dep-34",
+        "path": "../inputs/transport-production/hjson/production-package/units/submarine/dead.png",
+        "sha256": "fed1c2fca42a6e8b4a815b4146e2371a66786a0a03a000652c4bf67ad23a7506"
+      }
+    ]
+  },
+  "coordinateModel": {
+    "id": "public.coordinate.v1",
+    "space": "2d",
+    "xAxis": "x-right",
+    "yAxis": "y-down",
+    "origin": "top-left",
+    "unit": "world-unit",
+    "valueType": "double",
+    "precision": "ieee754-binary64"
+  },
+  "timeModel": {
+    "id": "public.time.v1",
+    "deltaUnit": "sim-tick",
+    "stepRule": "fixed-explicit-delta",
+    "precision": "ieee754-binary64"
+  },
+  "angleUnit": "degree-clockwise-zero-up",
+  "movementContract": {
+    "pathPointRadius": 16,
+    "targetRadius": 4
+  },
+  "players": [
+    {
+      "playerId": "p1",
+      "control": "local",
+      "teamId": "one"
+    },
+    {
+      "playerId": "p2",
+      "control": "none",
+      "teamId": "two"
+    }
+  ],
+  "units": [
+    {
+      "unitId": "a-passenger",
+      "owner": "p1",
+      "type": "builder",
+      "position": {
+        "x": 360,
+        "y": 150
+      },
+      "heading": 90
+    },
+    {
+      "unitId": "craft",
+      "owner": "p1",
+      "type": "hovercraft",
+      "position": {
+        "x": 375,
+        "y": 150
+      },
+      "heading": 90
+    }
+  ],
+  "actions": [
+    {
+      "actionId": "board",
+      "atStep": 0,
+      "kind": "load",
+      "actor": "p1",
+      "unitId": "a-passenger",
+      "targetUnitId": "craft",
+      "direction": "INTO"
+    },
+    {
+      "actionId": "unload",
+      "atStep": 1,
+      "kind": "unload",
+      "actor": "p1",
+      "unitId": "craft",
+      "unloading": true
+    },
+    {
+      "actionId": "cancel",
+      "atStep": 11,
+      "kind": "unload",
+      "actor": "p1",
+      "unitId": "craft",
+      "unloading": false
+    },
+    {
+      "actionId": "resume",
+      "atStep": 21,
+      "kind": "unload",
+      "actor": "p1",
+      "unitId": "craft",
+      "unloading": true
+    }
+  ],
+  "termination": {
+    "kind": "explicit-steps",
+    "required": true,
+    "steps": [
+      {
+        "stepIndex": 0,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 1,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 2,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 3,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 4,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 5,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 6,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 7,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 8,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 9,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 10,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 11,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 12,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 13,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 14,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 15,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 16,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 17,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 18,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 19,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 20,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 21,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 22,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 23,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 24,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 25,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 26,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 27,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 28,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 29,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 30,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 31,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 32,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 33,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 34,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 35,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 36,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 37,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 38,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 39,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 40,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 41,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 42,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 43,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 44,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 45,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 46,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 47,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 48,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 49,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 50,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 51,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 52,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 53,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 54,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 55,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 56,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 57,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 58,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 59,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 60,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 61,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 62,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 63,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 64,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 65,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 66,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 67,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 68,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 69,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 70,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 71,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 72,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 73,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 74,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 75,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 76,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 77,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 78,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 79,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 80,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 81,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 82,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 83,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 84,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 85,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 86,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 87,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 88,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 89,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 90,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 91,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 92,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 93,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 94,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 95,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 96,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 97,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 98,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 99,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      }
+    ]
+  },
+  "combatContract": {
+    "worldSeed": 12345,
+    "initialFrameCounter": -1,
+    "unitObjectIds": {
+      "a-passenger": 8,
+      "craft": 9
+    },
+    "nextObjectId": 10
+  },
+  "economyContract": {
+    "initialBalances": {
+      "p1": 12000,
+      "p2": 0
+    }
+  },
+  "inputs": "../inputs/transport-production/hjson",
+  "contentPack": {
+    "directory": "production-package",
+    "unitId": "commandCenter"
+  },
+  "intents": [
+    {
+      "intentId": "select-worker",
+      "kind": "select",
+      "position": {
+        "x": 360,
+        "y": 150
+      },
+      "waitSteps": 0
+    },
+    {
+      "intentId": "board",
+      "coreActionId": "board",
+      "kind": "load",
+      "direction": "INTO",
+      "targetUnitId": "craft",
+      "position": {
+        "x": 375,
+        "y": 150
+      },
+      "waitSteps": 1
+    },
+    {
+      "intentId": "select-craft",
+      "kind": "select",
+      "position": {
+        "x": 375,
+        "y": 150
+      },
+      "waitSteps": 0
+    },
+    {
+      "intentId": "unload",
+      "coreActionId": "unload",
+      "kind": "unload",
+      "unloading": true,
+      "waitSteps": 10
+    },
+    {
+      "intentId": "cancel",
+      "coreActionId": "cancel",
+      "kind": "unload",
+      "unloading": false,
+      "waitSteps": 10
+    },
+    {
+      "intentId": "resume",
+      "coreActionId": "resume",
+      "kind": "unload",
+      "unloading": true,
+      "waitSteps": 79
+    }
+  ],
+  "testScene": {
+    "formatVersion": 1,
+    "displayName": "Landing craft transport (hjson)",
+    "summary": "Owned short transport admission, cancellation and timed release; normal production is a separate session.",
+    "files": {
+      "assets/ground.png": "1dcf1489ef8e618ac2905588b5124dc72479275d1313100808098d16ffe7f540",
+      "assets/naval-ground.png": "9c32ebad05ee1c22011d8639a9f1674704967b0ed225b384726d11c654ed6cde",
+      "maps/naval-shore.tmx": "efd248a14bc7e60406045e3cc631249286f795b07b4ace64aafc2ab1c629ef48",
+      "production-package/pack.json": "699bdbd983fc1bc582480d92f030dab46ba07764e94d586904f159469ee345d3",
+      "production-package/units/air/body.png": "f2f5836caec9a3078885b8ab00654f27800d38f17352b3be4358c3afc6a42b90",
+      "production-package/units/air/dead.png": "78e0d0b9a4eb88801361721035f5b84d141fb745f094192891496c4b63916976",
+      "production-package/units/air/helicopter.hjson": "906243ee0d3083203381d5a116df173fa0399cd73385f2994455145a2a21a849",
+      "production-package/units/air/rotor.png": "3bec04ec0daa8dcea012e8447d4ee0a58e392850da8e366d30d8e512829fd9af",
+      "production-package/units/builder.hjson": "31e25b1c15e7c3f3e6f3ee2b2e3b5f6e352ef603e443518d06eeffc42547e551",
+      "production-package/units/builder.png": "15060aa3fb36bffd4414e803beb8f5d9b2982ed14bb497fbca6cadd3de18cc1b",
+      "production-package/units/builder_dead.png": "15060aa3fb36bffd4414e803beb8f5d9b2982ed14bb497fbca6cadd3de18cc1b",
+      "production-package/units/commandCenter/base.png": "8095d081de1407fe59e9ff99f5a5822e03275f87ffbd0f2a09ac736f8f6b3695",
+      "production-package/units/commandCenter/base_back.png": "07e2e3d786bf88d6d1dfe57add1b732e84a9bd2d6313732cc4f86ec8c4da2885",
+      "production-package/units/commandCenter/base_dead.png": "940b030d8a9c0161c69b1831041186c97409e85d404aa5c5f6ec58fa5d831b16",
+      "production-package/units/commandCenter/commandCenter.hjson": "42cf28c27350fe51923acc75216ae6d473c4c1eb5b504945159200308679f98c",
+      "production-package/units/hovercraft.hjson": "9a34ed485c64b74babf5d483eff04e00948facdb1df134fb1a0505eb013ea575",
+      "production-package/units/hovercraft.png": "d515f58aa5726cc44880b6b05c48b2af10a02118a164449a2388d6dcae534b8b",
+      "production-package/units/hovercraft_dead.png": "60a36a41dc022e27b3fe20b5f0e530493648afb02ee90987bf45774f3ba0cfb0",
+      "production-package/units/land/tank.hjson": "eb16e1f3ec49b0b7534df7805edd0dbd920d6ce14be7a5e12d1806068462c262",
+      "production-package/units/land/tank.png": "898fa8d12d89e73c988c258c3522a23660b2fdc500b4c8588fd2d8cf5fe4b605",
+      "production-package/units/land/tank_dead.png": "cbab7f92fa0cbef203e94823e2cbdc3e0116df3dab205f2ce0296e399a1a4ffa",
+      "production-package/units/land/tank_turret.png": "20dfaa2a45dd5bb635e83425fb64a6d3d3f9fef48d1b0a3b573fe5b9b67c4985",
+      "production-package/units/naval/heavy_battleship.png": "fed347e885f6b394f48ebb3f82a3c7deb86ce6cd73e1035715b2be69fdb87a1f",
+      "production-package/units/naval/heavy_battleship_dead.png": "b3b38d14f12c1cc7dada9e25ac1ee1c5a126472ec36f561c37d0949fbdc256a7",
+      "production-package/units/naval/heavyBattleship.hjson": "db11829a3845971f85498b10ffe6dc31c6a337e51ad6cb38cd5940d844c107f6",
+      "production-package/units/naval/large_turret.png": "786ebb3167e16227585aa46f179ccc0fb21136deec159be7d9cf82708918550b",
+      "production-package/units/naval/underwater_target.png": "bc8f3bf04c77313d277018f3da1296e7c85cc255086ff26d6fe23ef7113b8a6b",
+      "production-package/units/naval/underwaterTarget.hjson": "0e97a0ab19c3ef833664a8e67c43feddae745ba986c6694e6b67dc3125cfef1d",
+      "production-package/units/sea_factory.png": "39e691989d04437422f25d66b50dbaa9cd9cf4af91a6a3f5e3a4ba754f84acdb",
+      "production-package/units/sea_factory_dead.png": "da6613bbcce31da57a87f91b54bbb99fd6ce800eb6bcf5efa9245f71cda45a3a",
+      "production-package/units/sea_factory_t2.png": "168c093386f735aca6a71bdedaddfd6d70697e056ab833a4ec93a04db1f5d3bf",
+      "production-package/units/seaFactory.hjson": "f88f084b6a26929d6bbe2b63d253a364e1e733981b06ffe21994631e491edf5f",
+      "production-package/units/seaFactoryT2.hjson": "4ceabf590abc8338a97a5fd4ae913b32b55a163ec1f18e519713eef33522b487",
+      "production-package/units/submarine/body.png": "d61fd88c779e1209fee1400b3e21fe79cfef45729b31aea4d3a476593e794892",
+      "production-package/units/submarine/dead.png": "fed1c2fca42a6e8b4a815b4146e2371a66786a0a03a000652c4bf67ad23a7506",
+      "production-package/units/submarine/submarine.hjson": "b8b12b9ba92285b2ffde11527065e108a22ac1b4b1a3f789b6140ed38c0f31ed"
+    }
+  }
+}

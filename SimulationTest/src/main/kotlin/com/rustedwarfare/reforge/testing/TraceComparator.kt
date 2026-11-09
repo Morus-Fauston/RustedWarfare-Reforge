@@ -308,6 +308,7 @@ object TraceComparator {
                                 throw Incomplete("conversion-identity", "Converted unit differs from its accepted ordinary upgrade")
                         }
                         units.forEach { validateUnitSample(it, scenario, initial = row["phase"] == s("initial")) }
+                        validateTransportSamples(units, scenario)
                         validateBallisticSamples(observation, scenario, units)
                         validateSubmarineProjectiles(observation, scenario, units)
                         validateAmphibiousProjectiles(observation, scenario, units)
@@ -433,6 +434,68 @@ object TraceComparator {
     private fun typesLoadedBy(scenario: JsonObject, loaders: Set<String>) =
         ScenarioDeclaration.unitReferences(scenario.objectAt("content")).filter { it["loader"]?.jsonPrimitive?.content in loaders }
             .map { it.id("id") }.toSet()
+
+    private fun validateTransportSamples(units: List<JsonObject>, scenario: JsonObject) {
+        val types = typesLoadedBy(scenario, setOf("hovercraft"))
+        if (types.isEmpty()) return
+        fun invalid(reason: String): Nothing = throw Incomplete("transport-state", reason)
+        fun number(value: JsonElement?, name: String): Double {
+            val literal = value as? JsonPrimitive
+            val result = literal?.doubleOrNull
+            if (literal == null || literal.isString || result == null || !result.isFinite() || !result.toFloat().isFinite())
+                invalid("Invalid transport $name")
+            return result
+        }
+        fun id(value: JsonElement?): String {
+            val literal = value as? JsonPrimitive
+            if (literal == null || !literal.isString || literal.content.isBlank()) invalid("Invalid transport unit reference")
+            return literal.content
+        }
+        val byId = units.associateBy { it.id("unitId") }
+        val carried = mutableSetOf<String>()
+        for (unit in units) {
+            if (!unit.containsKey("carriedBy") || !unit.containsKey("transportExit")) invalid("Missing transport relation fields")
+            val state = unit["transport"]
+            if (unit.id("typeId") !in types) {
+                if (state != null && state != JsonNull) invalid("Transport state on unsupported unit")
+            } else {
+                val cargo = state as? JsonObject ?: invalid("Missing carrier state")
+                if (cargo.keys != setOf("passengerIds", "passengerCount", "occupiedSlots", "capacity", "unloading", "unloadRemaining", "canUnload"))
+                    invalid("Incomplete or unapproved carrier fields")
+                number(unit["height"], "height")
+                val manifest = cargo["passengerIds"] as? JsonArray ?: invalid("Missing manifest")
+                val passengers = manifest.map(::id)
+                if (passengers.distinct().size != passengers.size || cargo["passengerCount"] != n(passengers.size) || cargo["capacity"] != n(4))
+                    invalid("Invalid manifest count or capacity")
+                val slots = number(cargo["occupiedSlots"], "occupiedSlots")
+                if (slots !in 0.0..4.0 || slots % 1.0 != 0.0 || passengers.isEmpty() && slots != 0.0)
+                    invalid("Invalid occupied slots")
+                if (cargo["unloading"] !in setOf(b(true), b(false)) || cargo["canUnload"] !in setOf(b(true), b(false)) ||
+                    number(cargo["unloadRemaining"], "unloadRemaining") !in 0.0..30.0) invalid("Invalid unload controls")
+                if (cargo["canUnload"] == b(true) && (passengers.isEmpty() || cargo["unloading"] == b(true) || unit["alive"] != b(true)))
+                    invalid("Impossible unload eligibility")
+                for (passengerId in passengers) {
+                    val passenger = byId[passengerId] ?: invalid("Unknown passenger")
+                    if (!carried.add(passengerId) || passengerId == unit.id("unitId") || passenger["carriedBy"] != unit["unitId"] ||
+                        passenger["ownerPlayerId"] != unit["ownerPlayerId"] || passenger.id("typeId") in types)
+                        invalid("Inconsistent passenger relation")
+                }
+            }
+            val exit = unit["transportExit"]
+            if (exit != JsonNull) {
+                val fields = exit as? JsonObject ?: invalid("Invalid exit state")
+                if (fields.keys != setOf("previousCarrierId", "remaining") || number(fields["remaining"], "remaining") !in Double.MIN_VALUE..45.0 ||
+                    byId[id(fields["previousCarrierId"])]?.id("typeId") !in types)
+                    invalid("Invalid exit reference or lifetime")
+            }
+        }
+        for (unit in units) {
+            val parent = unit["carriedBy"]
+            if (parent != JsonNull) {
+                if (id(parent) !in byId || unit.id("unitId") !in carried) invalid("Orphan passenger")
+            } else if (unit.id("unitId") in carried) invalid("Missing passenger parent")
+        }
+    }
 
     private fun validateBallisticSamples(observation: JsonObject, scenario: JsonObject, units: List<JsonObject>) {
         val types = typesLoadedBy(scenario, setOf("battleship"))
@@ -807,6 +870,20 @@ object TraceComparator {
                 val units = player.arrayAt("units").map { it.jsonObject }
                 if (units.map { it.id("unitId") }.toSet() != visible.toSet() || units.size != visible.size)
                     throw Incomplete("player-units", "Incomplete visible unit samples")
+                if (typesLoadedBy(scenario, setOf("hovercraft")).isNotEmpty()) {
+                    val authoritative = observation.arrayAt("units").map { it.jsonObject }.associateBy { it.id("unitId") }
+                    for (unit in units) {
+                        val host = authoritative[unit.id("unitId")]
+                            ?: throw Incomplete("transport-player", "Unknown projected passenger or carrier")
+                        if (host["carriedBy"] != JsonNull || unit["carriedBy"] != JsonNull)
+                            throw Incomplete("transport-player", "Carried passenger in player units")
+                        if (unit.id("ownerPlayerId") == id) {
+                            if (unit["transport"] != host["transport"] || unit["transportExit"] != host["transportExit"])
+                                throw Incomplete("transport-player", "Missing or altered owner transport state")
+                        } else if (listOf("transport", "transportExit").any { unit[it] != null && unit[it] != JsonNull })
+                            throw Incomplete("transport-player", "Enemy transport controls must be redacted")
+                    }
+                }
                 units.forEach { validateUnitSample(it, scenario, id, observation.number("simulationTime") == 0.0) }
                 validateAmphibiousProjectiles(player, scenario, units, player = true)
                 if (typesLoadedBy(scenario, setOf("submarine")).isNotEmpty()) {

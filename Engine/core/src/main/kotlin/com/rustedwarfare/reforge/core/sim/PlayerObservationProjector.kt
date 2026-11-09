@@ -15,10 +15,12 @@ internal class PlayerObservationFrame(
     val hasAdvanced: Boolean,
     resultOwners: Map<ActionResult, String>,
     reclaimedOwners: Map<String, String>,
+    nativeTransportPlacements: Set<String> = emptySet(),
 ) {
     // Copy by reference identity: equal rejected results can belong to different actors.
     private val owners = IdentityHashMap<ActionResult, String>().also { it.putAll(resultOwners) }
     private val reclaimed = Collections.unmodifiableMap(LinkedHashMap(reclaimedOwners))
+    val nativeTransportPlacements: Set<String> = Collections.unmodifiableSet(HashSet(nativeTransportPlacements))
     fun resultOwner(result: ActionResult): String? = owners[result]
     fun reclaimedOwner(unitId: String?): String? = reclaimed[unitId]
 }
@@ -62,7 +64,8 @@ internal class PlayerObservationProjector(world: WorldHandle, scenario: Scenario
         if (cached?.source === observation && cached.key.epoch == vision?.epoch &&
             cached.key.knowledgeRevision == knowledge?.revision &&
             cached.key.actionRevision == frame.actionRevision) return cached.observation
-        val visibleUnits = observation.units.filter { isVisible(vision, it.position) }
+        val visibleUnits = observation.units.filter { it.carriedBy == null && isVisible(vision,
+            Transport.queryPosition(it.position, it.unitId in frame.nativeTransportPlacements)) }
         val visibleIds = visibleUnits.map { it.unitId }.toSet()
         val visible = visibleUnits.map {
             val ownerTasks = immutable(it.tasks.map { task ->
@@ -70,7 +73,8 @@ internal class PlayerObservationProjector(world: WorldHandle, scenario: Scenario
             })
             if (it.ownerPlayerId != playerId) {
                 it.copy(moveTarget = null, pathPoints = emptyList(), attackTargetId = null, cooldown = null, pointDefense = null,
-                    tasks = emptyList(), constructionTargetId = null,
+                    tasks = emptyList(), constructionTargetId = null, transportExit = null,
+                    transport = null,
                     submarine = it.submarine?.copy(surfaceIntent = null, verticalSpeed = null),
                     amphibiousJet = it.amphibiousJet?.copy(flyingIntent = null, verticalSpeed = null, canDive = null))
             } else if (it.attackTargetId != null && it.attackTargetId !in visibleIds) {
@@ -95,7 +99,8 @@ internal class PlayerObservationProjector(world: WorldHandle, scenario: Scenario
                 (!(event.kind.startsWith("production-") || event.kind.startsWith("upgrade-") ||
                     event.kind in setOf("construction-unavailable", "construction-insufficient-funds", "construction-queue-full", "maintenance-completed",
                         "submarine-surface-requested", "submarine-dive-requested",
-                        "amphibious-fly-requested", "amphibious-dive-requested")) ||
+                        "amphibious-fly-requested", "amphibious-dive-requested",
+                        "unit-loaded", "unload-started", "unload-cancelled", "loading-cancelled", "unload-blocked")) ||
                     visible.any { it.unitId == event.unitId && it.ownerPlayerId == playerId }) }
             val combatKinds = setOf("projectile-fired", "unit-damaged", "shield-damaged", "unit-died",
                 "production-queued", "production-cancelled", "production-refunded", "unit-produced",

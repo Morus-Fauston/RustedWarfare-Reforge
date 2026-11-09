@@ -36,10 +36,14 @@ class UnitDefinition(
     val shieldImagePath: Path? = null,
     val submarine: SubmarineProfile? = null,
     val amphibiousJet: AmphibiousJetProfile? = null,
+    val transport: TransportProfile? = null,
+    val transportSlots: Int = 1,
 ) {
     val retainedUnconsumed: Set<String> = Collections.unmodifiableSet(LinkedHashSet(retainedUnconsumed))
     val maximumHealth: Double? get() = durability?.maxHp ?: combat?.maxHp
 }
+
+enum class TransportProfile { NATIVE_HOVERCRAFT }
 
 data class MovementProfile(
     val type: MovementType,

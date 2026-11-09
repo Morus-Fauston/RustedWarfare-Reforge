@@ -62,6 +62,7 @@ class BootstrapScreen(
     private lateinit var depthButton: TextButton
     private lateinit var depthInput: SubmarineDepthButtonInput
     private lateinit var flightInput: AmphibiousFlightButtonInput
+    private lateinit var unloadInput: TransportUnloadButtonInput
     private val rateButtons = linkedMapOf<OfflineRate, TextButton>()
     private lateinit var simulationPauseButton: TextButton
     private lateinit var pacingLabel: Label
@@ -333,6 +334,9 @@ class BootstrapScreen(
             flightInput = AmphibiousFlightButtonInput({ session }, { !paused && !loading && session?.isOpen == true },
                 { lastHudState = null; updateHud() })
             actor.addListener(flightInput)
+            unloadInput = TransportUnloadButtonInput({ session }, { !paused && !loading && session?.isOpen == true },
+                { lastHudState = null; updateHud() })
+            actor.addListener(unloadInput)
             actor.addListener(object : InputListener() {
                 override fun enter(event: InputEvent, x: Float, y: Float, pointer: Int, fromActor: Actor?) {
                     if (pointer == -1) { flightHover = true; lastHudState = null }
@@ -799,7 +803,8 @@ class BootstrapScreen(
             enabled = commandConsoleOpen && current?.canDeploy == true)
         packPanel?.let { entries += it.drawnActions() }
         button("stop", stopButton); button("choose-patrol", patrolButton)
-        button(menu?.flightAction?.let { if (it.flying) "amphibious-fly" else "amphibious-dive" }
+        button(menu?.transportAction?.let { if (it.unloading) "transport-unload" else "transport-cancel-unload" }
+            ?: menu?.flightAction?.let { if (it.flying) "amphibious-fly" else "amphibious-dive" }
             ?: if (menu?.depthAction?.surface == false) "submarine-dive" else "submarine-surface", depthButton)
         val nativeActive = nativePanel && !paused && current?.isOpen == true
         for ((type, card) in productionCards) {
@@ -1133,6 +1138,7 @@ class BootstrapScreen(
             upgradeInputs.forEach { it.cancel() }
             depthInput.cancel()
             flightInput.cancel()
+            unloadInput.cancel()
             flightHover = false
             upgradeHover = null
             reclaimInput.cancel()
@@ -1216,9 +1222,9 @@ class BootstrapScreen(
             buttons.second.isDisabled = action?.progress == null
         }
         stopButton.isDisabled = selected == null
-        depthButton.isVisible = menu?.depthAction != null || menu?.flightAction != null
-        depthButton.isDisabled = menu?.depthAction == null && menu?.flightAction?.available != true
-        depthButton.setText(menu?.depthAction?.title ?: menu?.flightAction?.title ?: "Surface")
+        depthButton.isVisible = menu?.depthAction != null || menu?.flightAction != null || menu?.transportAction != null
+        depthButton.isDisabled = menu?.depthAction == null && menu?.flightAction?.available != true && menu?.transportAction?.available != true
+        depthButton.setText(menu?.depthAction?.title ?: menu?.flightAction?.title ?: menu?.transportAction?.title ?: "Surface")
         if (flightHover) menu?.flightAction?.let { action ->
             setUnitIcon(nativeTooltipIcon, selected?.typeId)
             nativeTooltipText.setText(action.tooltip)

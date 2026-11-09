@@ -368,6 +368,31 @@ def validate_history_poses(units, policy):
     def point(value):
         return isinstance(value, dict) and set(value) == {'x','y'} and all(number(v) for v in value.values())
     for unit in units:
+        if unit.get('carriedBy') is not None:
+            raise PlatformError('history-transport','Carried passenger in a player sample',2)
+        transport=unit.get('transport')
+        if unit.get('typeId')=='hovercraft' and unit.get('ownerPlayerId')==policy.get('ownerPlayerId','p1'):
+            if (not isinstance(transport,dict) or set(transport)!={'passengerIds','passengerCount','occupiedSlots','capacity','unloading','unloadRemaining','canUnload'} or
+                    not number(unit.get('height'))):
+                raise PlatformError('history-transport','Missing or unapproved owner cargo fields',2)
+            passengers=transport['passengerIds']
+            if (not isinstance(passengers,list) or any(not isinstance(p,str) or not p for p in passengers) or
+                    len(passengers)!=len(set(passengers)) or any(p==u.get('unitId') for p in passengers for u in units) or
+                    type(transport['passengerCount']) is not int or transport['passengerCount']!=len(passengers) or
+                    type(transport['occupiedSlots']) is not int or not 0<=transport['occupiedSlots']<=4 or
+                    (not passengers and transport['occupiedSlots']!=0) or type(transport['capacity']) is not int or transport['capacity']!=4 or
+                    type(transport['unloading']) is not bool or type(transport['canUnload']) is not bool or
+                    not number(transport['unloadRemaining']) or not 0<=transport['unloadRemaining']<=30 or
+                    transport['canUnload'] and (not passengers or transport['unloading'] or unit.get('alive') is not True)):
+                raise PlatformError('history-transport','Invalid cargo count, capacity or unload state',2)
+        elif transport is not None:
+            raise PlatformError('history-transport','Enemy or unsupported cargo state',2)
+        exit_state=unit.get('transportExit')
+        if exit_state is not None and (unit.get('ownerPlayerId')!=policy.get('ownerPlayerId','p1') or
+                not isinstance(exit_state,dict) or set(exit_state)!={'previousCarrierId','remaining'} or
+                not isinstance(exit_state['previousCarrierId'],str) or not exit_state['previousCarrierId'] or
+                not number(exit_state['remaining']) or not 0<exit_state['remaining']<=45):
+            raise PlatformError('history-transport','Invalid exit reference or lifetime',2)
         if unit.get('typeId')=='amphibiousJet':
             state=unit.get('amphibiousJet');height=unit.get('height')
             fields={'flyingIntent','verticalSpeed','underwater','surfacePresentation','movementType',
@@ -453,6 +478,10 @@ def validate_history_action(records, row, intent, geometry=None):
         raise PlatformError('history-action-identity','Formal actor or unit differs from the fixed intention',2)
     for sample in (left,right):
         units=[u for u in sample.get('units',[]) if u.get('unitId')==identity]
+        if (sample is right and not units and kind=='load' and intent.get('direction')=='INTO' and
+                any(u.get('unitId')==row.get('targetUnitId') and identity in (u.get('transport') or {}).get('passengerIds',[])
+                    for u in sample.get('units',[]))):
+            continue
         if (len(units)!=1 or units[0].get('alive') is not True or
                 kind!='select' and units[0].get('ownerPlayerId')!=actor):
             raise PlatformError('history-action-identity','Formal object is absent, ambiguous, dead or not owned',2)
@@ -462,6 +491,10 @@ def validate_history_action(records, row, intent, geometry=None):
     if 'targetUnitId' in intent:fields['targetUnitId']=intent['targetUnitId']
     if any(row.get(key)!=value for key,value in fields.items()):
         raise PlatformError('history-action-fields','Formal action parameters differ from the fixed intention',2)
+    if kind=='load' and (intent.get('direction') not in ('INTO','UP') or row.get('direction')!=intent['direction']):
+        raise PlatformError('history-action-fields','Load direction differs from fixed intention',2)
+    if kind=='unload' and (type(intent.get('unloading')) is not bool or type(row.get('unloading')) is not bool or row['unloading']!=intent['unloading']):
+        raise PlatformError('history-action-fields','Unload action differs from strict fixed boolean',2)
     if kind=='amphibious-flight':
         if type(intent.get('flying')) is not bool or type(row.get('flying')) is not bool or row['flying']!=intent['flying']:
             raise PlatformError('history-action-fields','Flight action differs from the fixed flying boolean',2)
@@ -585,7 +618,7 @@ def compare_history(records, plan, policy, native_anchors=None, geometry=None):
     """Check a declared ledger at every observation, including call boundaries."""
     allowed={'initialBalance','spend','noActionIntents','projectileBirthsRequired','mechLegs',
              'ownerPlayerId','initialOwnedTypes','finalUnits','minimumBirths',
-             'productionOrder','completedUpgradeTypes','initialIncome'}
+             'productionOrder','completedUpgradeTypes','initialIncome','transportStages'}
     if not isinstance(policy,dict) or set(policy)-allowed:
         raise PlatformError('input-contract', 'Unknown or malformed history obligations', 1)
     balance = policy.get('initialBalance')
@@ -600,6 +633,19 @@ def compare_history(records, plan, policy, native_anchors=None, geometry=None):
     charges = {}
     intents = {i['intentId']: i for i in plan['intents']}
     ids = set(intents)
+    transport_stages={}
+    declarations=policy.get('transportStages',[])
+    if not isinstance(declarations,list):
+        raise PlatformError('input-contract','Transport stages must be a fixed list',1)
+    for stage in declarations:
+        if (not isinstance(stage,dict) or set(stage)-{'intentId','passengerCount','unloading','minimumX','maximumX'} or
+                not {'intentId','passengerCount','unloading'}<=set(stage) or stage['intentId'] not in ids or
+                stage['intentId'] in transport_stages or type(stage['passengerCount']) is not int or stage['passengerCount']<0 or
+                type(stage['unloading']) is not bool or any(type(stage[k]) not in (int,float) or not math.isfinite(stage[k])
+                    for k in ('minimumX','maximumX') if k in stage) or
+                stage.get('minimumX',-math.inf)>stage.get('maximumX',math.inf)):
+            raise PlatformError('input-contract','Invalid fixed transport stage',1)
+        transport_stages[stage['intentId']]=stage
     no_actions = policy.get('noActionIntents', [])
     if (not isinstance(no_actions, list) or len(no_actions) != len(set(no_actions)) or
             any(i not in ids or intents[i].get('kind') != 'select' for i in no_actions)):
@@ -668,6 +714,16 @@ def compare_history(records, plan, policy, native_anchors=None, geometry=None):
                      else intent_steps != intents[active].get('waitSteps', 0)) or
                     action_count != (0 if active in no_actions else 1)):
                 raise PlatformError('history-intent', 'Unfinished intention or wrong explicit step count')
+            stage=transport_stages.get(active)
+            if stage is not None:
+                carriers=[u for u in units.values() if u.get('typeId')=='hovercraft' and u.get('ownerPlayerId')==policy.get('ownerPlayerId','p1')]
+                if len(carriers)!=1:
+                    raise PlatformError('history-transport-stage','Missing or ambiguous stage carrier',2)
+                carrier=carriers[0];cargo=carrier.get('transport') or {};x=(carrier.get('position') or {}).get('x')
+                if (cargo.get('passengerCount')!=stage['passengerCount'] or cargo.get('unloading') is not stage['unloading'] or
+                        type(x) not in (int,float) or not math.isfinite(x) or
+                        not stage.get('minimumX',-math.inf)<=x<=stage.get('maximumX',math.inf)):
+                    raise PlatformError('history-transport-stage','Cargo or shore position differs from declared stage',2)
             active = None
             completed += 1
         elif row.get('kind') == 'action':
@@ -679,7 +735,8 @@ def compare_history(records, plan, policy, native_anchors=None, geometry=None):
             action_ids.add(action_id); action_count += 1
             expected_type = {'select':'SelectAction', 'build':'BuildAction', 'upgrade':'UpgradeAction',
                 'produce':'ProduceAction', 'move':'MoveAction', 'stop':'StopAction', 'attack':'AttackAction',
-                'submarine-depth':'SubmarineDepthAction','amphibious-flight':'AmphibiousFlightAction'}.get(
+                'submarine-depth':'SubmarineDepthAction','amphibious-flight':'AmphibiousFlightAction',
+                'load':'LoadAction','unload':'UnloadAction'}.get(
                     intents.get(active, {}).get('kind'))
             if expected_type is None or row.get('type') != expected_type:
                 raise PlatformError('history-action', 'Action type differs from the fixed client intention', 2)

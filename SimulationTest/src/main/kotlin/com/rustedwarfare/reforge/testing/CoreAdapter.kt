@@ -25,6 +25,8 @@ internal class CoreAdapter(private val input: LoadedScenario) : AutoCloseable {
         val unit = value.id("unitId")
         // Submit at the current explicit boundary; preserve file order and the core's permission checks.
         val action = when (value.text("kind")) {
+            "load" -> LoadAction(id, actor, unit, value.id("targetUnitId"), LoadDirection.valueOf(value.text("direction")), context.world)
+            "unload" -> UnloadAction(id, actor, unit, value.required("unloading").jsonPrimitive.boolean, context.world)
             "submarine-depth" -> SubmarineDepthAction(id, actor, unit, value.required("surface").jsonPrimitive.boolean, context.world)
             "amphibious-flight" -> AmphibiousFlightAction(id, actor, unit, value.required("flying").jsonPrimitive.boolean, context.world)
             "move" -> MoveAction(id, actor, unit, position(value.objectAt("target")), context.world)
@@ -179,11 +181,17 @@ internal fun UnitObservation.json(capabilities: Boolean): JsonObject = JsonObjec
     "angularVelocity" to n(angularVelocity), "moveTarget" to moveTarget?.json(),
     "pathPoints" to array(pathPoints.map { it.json() }), "movementState" to s(movementState.name),
     "constructionProgress" to n(constructionProgress), "constructionTargetId" to constructionTargetId?.let(::s),
+    "carriedBy" to carriedBy?.let(::s),
+    "transportExit" to transportExit?.let { obj("previousCarrierId" to s(it.previousCarrierId), "remaining" to n(it.remaining)) },
     "tasks" to array(tasks.map { obj("kind" to s(it.kind.name), "actionId" to s(it.actionId),
         "target" to it.target?.json(), "targetUnitId" to it.targetUnitId?.let(::s),
         "atStep" to it.atStep?.let(::n), "buildingTypeId" to it.buildingTypeId?.let(::s),
         "buildingNonce" to it.buildingNonce?.let(::s)) }),
 ).toMutableMap().apply {
+    transport?.let { put("height", n(height)); put("transport", obj(
+        "passengerIds" to it.passengerIds?.let { ids -> array(ids.map(::s)) }, "passengerCount" to n(it.passengerCount),
+        "occupiedSlots" to n(it.occupiedSlots), "capacity" to n(it.capacity), "unloading" to b(it.unloading),
+        "unloadRemaining" to it.unloadRemaining?.let(::n), "canUnload" to b(it.canUnload))) }
     shield?.let { put("shield", obj("current" to n(it.current), "maximum" to n(it.maximum),
         "displayDamage" to n(it.displayDamage))) }
     mechPose?.let { put("mechPose", it.json()) }

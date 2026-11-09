@@ -306,6 +306,11 @@ class SandboxSession(scenario: Scenario, private val evidence: ClientEvidence = 
             apply(AmphibiousFlightAction("click-${++actionNumber}", "p1", checkNotNull(selectedId), flying, context.world))
         }
 
+    fun unload(unloading: Boolean): ActionResult? = actionMenu.transportAction
+        ?.takeIf { it.available && it.unloading == unloading }?.let {
+            apply(UnloadAction("click-${++actionNumber}", "p1", checkNotNull(selectedId), unloading, context.world))
+        }
+
     private fun dispatch(selectionAtPress: Set<String> = selectedIds, action: (String) -> Action): ActionResult? {
         val members = selectionAtPress.sorted()
         val revision = selectionRevision
@@ -343,6 +348,12 @@ class SandboxSession(scenario: Scenario, private val evidence: ClientEvidence = 
     fun command(position: Position, append: Boolean = false): ActionResult? {
         val targetId = unitAt(position)
         val target = observation.units.firstOrNull { it.unitId == targetId }
+        if (target != null && target.ownerPlayerId == "p1") {
+            if (target.transport != null && selectedIds.any { it != target.unitId })
+                return dispatch { actor -> LoadAction("click-${++actionNumber}", "p1", actor, target.unitId, LoadDirection.INTO, context.world) }
+            if (observation.units.any { it.unitId in selectedIds && controllable(it) && it.transport != null })
+                return dispatch { actor -> LoadAction("click-${++actionNumber}", "p1", actor, target.unitId, LoadDirection.UP, context.world) }
+        }
         if (hasSelectedMaintainer() && target != null && target.ownerPlayerId == "p1" &&
             target.typeId in checkNotNull(scenario.maintenanceContract).basePrices &&
             (target.constructionProgress < 1f || target.health!! < target.maxHealth!!))
@@ -445,11 +456,14 @@ class SandboxSession(scenario: Scenario, private val evidence: ClientEvidence = 
                 is ResumeConstructionAction -> action.append; is RepairBuildingAction -> action.append;
                 is ReclaimBuildingAction -> action.append; else -> null },
             "targetUnitId" to when (action) { is AttackAction -> action.targetUnitId; is ResumeConstructionAction -> action.targetUnitId;
-                is RepairBuildingAction -> action.targetUnitId; is ReclaimBuildingAction -> action.targetUnitId; else -> null },
+                is RepairBuildingAction -> action.targetUnitId; is ReclaimBuildingAction -> action.targetUnitId;
+                is LoadAction -> action.targetUnitId; else -> null },
             "upgradeId" to when (action) { is UpgradeAction -> action.upgradeId; is CancelUpgradeAction -> action.upgradeId; else -> null },
             "result" to result.fields()) + (if (action is BuildAction) mapOf("buildingTypeId" to action.buildingTypeId) else emptyMap()) +
             (if (action is SubmarineDepthAction) mapOf("surface" to action.surface) else emptyMap()) +
-            (if (action is AmphibiousFlightAction) mapOf("flying" to action.flying) else emptyMap()) }
+            (if (action is AmphibiousFlightAction) mapOf("flying" to action.flying) else emptyMap()) +
+            (if (action is LoadAction) mapOf("direction" to action.direction.name) else emptyMap()) +
+            (if (action is UnloadAction) mapOf("unloading" to action.unloading) else emptyMap()) }
         capture("after-action")
         return result
     }
