@@ -60,9 +60,11 @@ internal object FactoryContentReader {
             } else {
                 val products = required("productionUnits").split(',')
                 val baseProducts = if (t2) listOf("builder", "mechGun", "mechHeavyMissile") else listOf("builder", "mechGun")
-                if (products != baseProducts && products != baseProducts + "mechBunker")
+                val additions = (if ("mechBunker" in products) listOf("mechBunker") else emptyList()) +
+                    (if (t2 && "mechEngineer" in products) listOf("mechEngineer") else emptyList())
+                if (products != baseProducts + additions)
                     reject(ContentErrorCode.UNSUPPORTED_FEATURE, path, field = "productionUnits",
-                        reason = "Expected the qualified mech tier products with an optional bunker representative")
+                        reason = "Expected the qualified tier products, optional bunker and T2 engineer")
             }
             only("placementFootprint", "-1,-1,1,3")
             only("price", when { t2 -> "5000"; mech -> "1000"; else -> "700" })
@@ -118,7 +120,8 @@ internal object FactoryContentReader {
             build = if (construction) BuildProfile(positive("price").toLong(), positive("buildSpeed").toFloat()) else null,
             construction = if (construction) ConstructionProfile(positive("price").toLong(), positive("buildSpeed").toFloat()) else null,
             upgrades = if (mechV2 && !t2) UpgradeProfile(listOf(UpgradeActionProfile("upgrade_t2", "mechFactoryT2", 4000L, .0004f))) else null,
-            directHitTargetKind = if (mech) DirectHitTargetKind.ORDINARY else DirectHitTargetKind.NATIVE_BUILDING)
+            directHitTargetKind = if (mech) DirectHitTargetKind.ORDINARY else DirectHitTargetKind.NATIVE_BUILDING,
+            techLevel = if (t2) 2 else 1)
     }
 
     private fun airDefinition(path: Path, values: Map<String, String>, validatePath: (Path) -> Unit): UnitDefinition {
@@ -167,6 +170,7 @@ internal object FactoryContentReader {
             building = BuildingProfile(BuildingFootprint(-1, -1, 1, 1), placementFootprint = BuildingFootprint(-1, -1, 1, 2)),
             production = ProductionProfile(products, FactoryExitProfile.NATIVE_AIR),
             build = BuildProfile(if (t2) 2500L else 1000L, .001f), construction = ConstructionProfile(if (t2) 2500L else 1000L, .001f),
+            techLevel = if (t2) 2 else 1,
             upgrades = if (upgrade) UpgradeProfile(listOf(UpgradeActionProfile("upgrade_t2", "airFactoryT2", 1500L, .0004f))) else null,
             directHitTargetKind = DirectHitTargetKind.NATIVE_BUILDING)
     }
@@ -217,6 +221,7 @@ internal object FactoryContentReader {
             building = BuildingProfile(BuildingFootprint(-1, -1, 1, 2), placementFootprint = BuildingFootprint(-2, -1, 2, 4)),
             production = ProductionProfile(products, FactoryExitProfile.NATIVE_SEA),
             build = BuildProfile(if (t2) 3000L else 1000L, .0007f), construction = ConstructionProfile(if (t2) 3000L else 1000L, .0007f),
+            techLevel = if (t2) 2 else 1,
             upgrades = if (t2) null else UpgradeProfile(listOf(UpgradeActionProfile("upgrade_t2", "seaFactoryT2", 2000L, .0004f))),
             directHitTargetKind = DirectHitTargetKind.NATIVE_BUILDING)
     }

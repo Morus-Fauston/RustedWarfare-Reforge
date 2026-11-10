@@ -35,7 +35,9 @@ class SandboxGraphics private constructor(private val resources: SandboxRenderRe
     private val beamImages = mutableMapOf<Path, TextureRegion>()
     private val trailImages = mutableMapOf<Path, TextureRegion>()
     private val afterburnTrails = AfterburnTrailPresentation()
-    fun unitIcon(typeId: String): TextureRegion? = units[typeId]
+    fun unitIcon(typeId: String): TextureRegion? = resources.units[typeId]?.iconWeaponName?.let {
+        namedTurrets[typeId to it]
+    } ?: units[typeId]
 
     companion object {
         fun load(resources: SandboxRenderResources, root: Path): SandboxGraphics =
@@ -220,8 +222,8 @@ class SandboxGraphics private constructor(private val resources: SandboxRenderRe
                     if (vertical.sourceHeight > 0) {
                         val crop = TextureRegion(shaft)
                         val span = shaft.v2 - shaft.v
-                        crop.setRegion(shaft.u, shaft.v + span * vertical.sourceY / 68f,
-                            shaft.u2, shaft.v + span * (vertical.sourceY + vertical.sourceHeight) / 68f)
+                        crop.setRegion(shaft.u, shaft.v + span * vertical.sourceY / vertical.sourceImageHeight,
+                            shaft.u2, shaft.v + span * (vertical.sourceY + vertical.sourceHeight) / vertical.sourceImageHeight)
                         batch.draw(crop, vertical.x - vertical.width / 2, vertical.y - vertical.height / 2,
                             vertical.width / 2, vertical.height / 2, vertical.width, vertical.height, 1f, 1f, vertical.rotation)
                     }
@@ -458,6 +460,10 @@ class SandboxGraphics private constructor(private val resources: SandboxRenderRe
         }
         shapes.color = Color.CYAN
         for (beam in resources.defenseBeams(frame.observation)) {
+            shapes.line(projection.x(beam.start.x), projection.y(beam.start.y), projection.x(beam.end.x), projection.y(beam.end.y))
+        }
+        shapes.color = Color.GREEN
+        for (beam in resources.nanoBeams(frame.observation)) {
             shapes.line(projection.x(beam.start.x), projection.y(beam.start.y), projection.x(beam.end.x), projection.y(beam.end.y))
         }
         box?.let { (start, end) ->

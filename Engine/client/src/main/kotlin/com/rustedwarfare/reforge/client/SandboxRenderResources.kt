@@ -35,7 +35,9 @@ data class UnitAppearance(val displayRadius: Double, val imagePath: Path, val im
     val shieldImagePath: Path? = null, val shieldRadius: Double = 0.0,
     val leftWingImagePath: Path? = null, val rightWingImagePath: Path? = null,
     val beamImagePath: Path? = null, val beamStartImagePath: Path? = null, val beamEndImagePath: Path? = null,
-    val afterburnTrailImagePath: Path? = null, val repairRange: Double? = null) {
+    val afterburnTrailImagePath: Path? = null, val repairRange: Double? = null,
+    val iconWeaponName: String? = null, val nanoWeaponName: String? = null,
+    val nativeLegSize: ImageLogicalSize? = null) {
     internal fun amphibiousWings(unit: UnitObservation, weapons: List<VisibleUnitWeapon>): List<WingDrawing> {
         if (!unit.alive || unit.amphibiousJet == null) return emptyList()
         val poses = weapons.filter { it.unitId == unit.unitId }.associateBy { it.weaponName }
@@ -139,6 +141,18 @@ class SandboxRenderResources private constructor(
         DefenseBeam(Position(tower.position.x + offset.x, tower.position.y + offset.y), event.position)
     }
 
+    /** Work state and both visible endpoints come from the authorized player observation. */
+    internal fun nanoBeams(observation: PlayerObservation): List<DefenseBeam> = observation.units.mapNotNull { worker ->
+        if (!worker.alive || worker.carriedBy != null || worker.constructionProgress < 1f) return@mapNotNull null
+        val name = units[worker.typeId]?.nanoWeaponName ?: return@mapNotNull null
+        val target = observation.units.singleOrNull { it.unitId == worker.constructionTargetId && it.alive && it.carriedBy == null }
+            ?: return@mapNotNull null
+        val weapon = observation.weapons.singleOrNull { it.unitId == worker.unitId && it.weaponName == name }
+            ?: return@mapNotNull null
+        DefenseBeam(Position(weapon.muzzle.x, weapon.muzzle.y - worker.height),
+            Position(target.position.x, target.position.y - target.height))
+    }
+
     fun unitCircleColor(viewerPlayerId: String, ownerPlayerId: String): Color {
         require(viewerPlayerId in playerTeams && ownerPlayerId in playerTeams)
         val viewerTeam = playerTeams[viewerPlayerId]
@@ -168,7 +182,12 @@ class SandboxRenderResources private constructor(
                     leftWingImagePath = images.leftWing, rightWingImagePath = images.rightWing,
                     beamImagePath = images.beam, beamStartImagePath = images.beamStart, beamEndImagePath = images.beamEnd,
                     afterburnTrailImagePath = images.afterburnTrail,
-                    repairRange = if (unit.maintenance != null) 230.0 else null)
+                    repairRange = if (unit.maintenance != null) unit.builder?.range?.toDouble() ?: 230.0 else null,
+                    iconWeaponName = if (unit.maintenance == com.rustedwarfare.reforge.core.content.MaintenanceProfile.MECH_ENGINEER) "body" else null,
+                    nanoWeaponName = unit.builder?.mainNanoTurret,
+                    nativeLegSize = if (unit.mech?.kind == com.rustedwarfare.reforge.core.content.MechKind.FOUR_LEGGED)
+                        if (unit.maintenance == com.rustedwarfare.reforge.core.content.MaintenanceProfile.MECH_ENGINEER)
+                            ImageLogicalSize(19, 82) else ImageLogicalSize(16, 68) else null)
             }), Collections.unmodifiableMap(scenario.players.associate { it.playerId to it.teamId }))
     }
 }

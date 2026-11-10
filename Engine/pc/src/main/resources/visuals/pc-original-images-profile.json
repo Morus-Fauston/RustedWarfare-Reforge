@@ -6242,7 +6242,13 @@
     "bunker-leg": "assets/units/mechs_large/leg.png",
     "bunker-foot": "assets/units/mechs_large/foot_small.png",
     "repairbay-body": "res/drawable/repair_bay.png",
-    "repairbay-dead": "res/drawable/repair_bay_dead.png"
+    "repairbay-dead": "res/drawable/repair_bay_dead.png",
+    "engineer-body": "assets/units/shared/blank.png",
+    "engineer-turret": "assets/units/mech_engineer/body.png",
+    "engineer-dead": "assets/units/mech_engineer/body_dead.png",
+    "engineer-leg": "assets/units/mech_engineer/leg.png",
+    "engineer-foot": "assets/units/mech_engineer/foot.png",
+    "engineer-nanoTurret": "assets/units/mech_engineer/cannon.png"
   },
   "mappingBasis": {
     "androidProfileSha256": "e273280ab37b1a24714e6b15d8e1cb14fdd395e228ea7c71a62dd2f24d334780",
@@ -6504,6 +6510,54 @@
       "sha256": "40f30c1da9eda59f3b47361e972c010618296d88b8b034647589663ef07601f6",
       "width": 60,
       "height": 76
+    },
+    {
+      "id": "engineer-body",
+      "path": "assets/units/shared/blank.png",
+      "bytes": 126,
+      "sha256": "1c177fc5a1943c525afcd0d8c35dfdaee0fbb6db6233beb01a6a397273635cee",
+      "width": 1,
+      "height": 1
+    },
+    {
+      "id": "engineer-turret",
+      "path": "assets/units/mech_engineer/body.png",
+      "bytes": 4126,
+      "sha256": "efa5ab8d95a641b834bab6a32cc18cf32483959afd7c6b4280192a99dc82c3f1",
+      "width": 40,
+      "height": 44
+    },
+    {
+      "id": "engineer-dead",
+      "path": "assets/units/mech_engineer/body_dead.png",
+      "bytes": 4062,
+      "sha256": "7c71dde75fa052715708691fa3fe882382d116b642baeb7ef6ad38d1519cf03b",
+      "width": 38,
+      "height": 44
+    },
+    {
+      "id": "engineer-leg",
+      "path": "assets/units/mech_engineer/leg.png",
+      "bytes": 3528,
+      "sha256": "ba50ab102c21fea8b5c0601cc2aa69c535bbdc666994412bb152b99d1b262840",
+      "width": 19,
+      "height": 82
+    },
+    {
+      "id": "engineer-foot",
+      "path": "assets/units/mech_engineer/foot.png",
+      "bytes": 3249,
+      "sha256": "6175b4718d43f27edc27906c8e515137c0969ea552ca370dc58bd30d158f1a00",
+      "width": 26,
+      "height": 33
+    },
+    {
+      "id": "engineer-nanoTurret",
+      "path": "assets/units/mech_engineer/cannon.png",
+      "bytes": 3649,
+      "sha256": "c664cc3f51feb84dd8e79c13c54da9b240a6eef37fb4c3227f6ec2b4326d20fd",
+      "width": 28,
+      "height": 35
     }
   ],
   "mappingUnitOutputs": {
@@ -7055,6 +7109,102 @@
         76
       ],
       "frames": 1
+    },
+    "engineer-body": {
+      "file": "units/engineer-body.png",
+      "operation": "crop",
+      "source": "engineer-body",
+      "rect": [
+        0,
+        0,
+        1,
+        1
+      ],
+      "target": [
+        1,
+        1
+      ],
+      "frames": 1
+    },
+    "engineer-turret": {
+      "file": "units/engineer-turret.png",
+      "operation": "crop",
+      "source": "engineer-turret",
+      "rect": [
+        0,
+        0,
+        40,
+        44
+      ],
+      "target": [
+        40,
+        44
+      ],
+      "frames": 1
+    },
+    "engineer-dead": {
+      "file": "units/engineer-dead.png",
+      "operation": "crop",
+      "source": "engineer-dead",
+      "rect": [
+        0,
+        0,
+        38,
+        44
+      ],
+      "target": [
+        38,
+        44
+      ],
+      "frames": 1
+    },
+    "engineer-leg": {
+      "file": "units/engineer-leg.png",
+      "operation": "crop",
+      "source": "engineer-leg",
+      "rect": [
+        0,
+        0,
+        19,
+        82
+      ],
+      "target": [
+        19,
+        82
+      ],
+      "frames": 1
+    },
+    "engineer-foot": {
+      "file": "units/engineer-foot.png",
+      "operation": "crop",
+      "source": "engineer-foot",
+      "rect": [
+        0,
+        0,
+        26,
+        33
+      ],
+      "target": [
+        26,
+        33
+      ],
+      "frames": 1
+    },
+    "engineer-nanoTurret": {
+      "file": "units/engineer-nanoTurret.png",
+      "operation": "crop",
+      "source": "engineer-nanoTurret",
+      "rect": [
+        0,
+        0,
+        28,
+        35
+      ],
+      "target": [
+        28,
+        35
+      ],
+      "frames": 1
     }
   },
   "mappingUnitBindings": {
@@ -7139,6 +7289,16 @@
     "repairbay": {
       "body": "repairbay-body",
       "dead": "repairbay-dead"
+    },
+    "mechEngineer": {
+      "body": "engineer-body",
+      "turret": "engineer-turret",
+      "dead": "engineer-dead",
+      "leg": "engineer-leg",
+      "foot": "engineer-foot",
+      "weaponTurrets": {
+        "nanoTurret": "engineer-nanoTurret"
+      }
     }
   }
 }

@@ -1297,7 +1297,8 @@ class BootstrapScreen(
             setUnitIcon(nativeTooltipIcon, selected?.typeId)
             nativeTooltipText.setText(action.tooltip)
         }
-        val economicPanel = nativePanel && (current?.hasEconomicConstruction == true || constructionCards.size > 4 || productionCards.size + factoryUpgradeCards.size > 4)
+        val economicPanel = nativePanel && (current?.hasEconomicConstruction == true || constructionCards.size > 4 ||
+            menu?.canMaintain == true && constructionCards.size > 2 || productionCards.size + factoryUpgradeCards.size > 4)
         stopButton.setY(if (economicPanel) 112f else if (nativePanel) 144f else 168f)
         patrolButton.setY(if (economicPanel) 112f else if (nativePanel) 144f else 168f)
         startButton.setY(if (economicPanel) 64f else if (nativePanel) 96f else 120f)

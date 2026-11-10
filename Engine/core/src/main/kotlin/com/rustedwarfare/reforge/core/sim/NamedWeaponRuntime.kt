@@ -52,6 +52,11 @@ internal object NamedWeaponRuntime {
                 state.idleBaseHeading = ScreenPlane.normalize(base + definition.idleDirection)
             }
             OrdinaryWeapon.idle(frame.worldSeed, frame.counter, actorId, unit, frame.delta, state, weapon)
+            if (definition.name == unit.definition.builder?.mainNanoTurret) {
+                state.targetId = null
+                idle(unit, definition, state, frame.delta)
+                continue
+            }
             if (definition.slave) continue
             val target = NamedWeaponRuntime.target(unit, definition, state, frame.primary, frame.candidates, frame.players, frame.coordinates, frame.map)
             if (state.targetId != target?.unitId) {

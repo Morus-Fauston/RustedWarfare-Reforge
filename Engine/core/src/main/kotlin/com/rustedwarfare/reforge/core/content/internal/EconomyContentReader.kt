@@ -237,7 +237,7 @@ internal object EconomyContentReader {
                 FootprintAnchor(10f, 10f), requiresResourcePool = extractor),
             construction = ConstructionProfile(number("core", "price", (if (extractor) listOf(700.0, 2100.0, 6100.0) else listOf(2200.0, 6600.0, 14100.0))[tier - 1]).toLong(),
                 number("core", "buildSpeed", if (extractor) .001 else listOf(.0005, .0004, .0003)[tier - 1]).toFloat()),
-            income = IncomeProfile(40f, income.toFloat()),
+            income = IncomeProfile(40f, income.toFloat()), techLevel = if (extractor) tier else minOf(tier, 2),
             upgrades = if (enableUpgrades && tier < 3) UpgradeProfile(listOf(checkNotNull(upgrade).action)) else null,
             deathExplosion = if (extractor) null else DeathExplosionProfile(listOf(350f, 450f, 850f)[tier - 1], 90f, 35f))
     }

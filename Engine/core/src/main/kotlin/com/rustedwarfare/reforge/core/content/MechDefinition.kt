@@ -65,12 +65,14 @@ data class MechLegDefinition(
     val targetHeight: Double = 0.0,
     val hardLimit: Double = 50.0,
     val favourOppositeSideNeighbours: Boolean = false,
+    val maximumMovingLegs: Int = 3,
+    val endDirectionOffset: Double = 0.0,
 ) {
     internal fun isValid(): Boolean =
         listOf(x, y, attachX, attachY, moveSpeed, warmUp, rotateSpeed, heightSpeed,
             holdMinimum, holdWithMovingNeighbour, predictionMultiplier, resetAngle,
-            liftOffset, targetHeight, hardLimit).all { it.isFinite() } &&
+            liftOffset, targetHeight, hardLimit, endDirectionOffset).all { it.isFinite() } &&
             moveSpeed > 0.0 && warmUp >= 0.0 && rotateSpeed >= 0.0 && heightSpeed > 0.0 &&
             holdMinimum >= 0.0 && holdWithMovingNeighbour >= holdMinimum && predictionMultiplier >= 0.0 &&
-            liftOffset >= 0.0 && targetHeight == 0.0 && hardLimit > 0.0
+            liftOffset >= 0.0 && targetHeight == 0.0 && hardLimit > 0.0 && maximumMovingLegs in 1..4
 }

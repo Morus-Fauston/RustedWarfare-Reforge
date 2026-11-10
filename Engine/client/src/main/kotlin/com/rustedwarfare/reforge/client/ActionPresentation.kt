@@ -13,7 +13,7 @@ internal class ActionCatalogue(private val definitions: Map<String, UnitDefiniti
         "commandCenter" to Names("Command", "Command center"), "builder" to Names("Builder"),
         "c_tank" to Names("Tank"), "landFactory" to Names("Factory", "Land factory"), "repairbay" to Names("Repair bay"),
         "hoverTank" to Names("Hover tank"), "hovercraft" to Names("Landing craft"), "dropship" to Names("Transport", "Air transport"),
-        "mechFactory" to Names("Mech factory"), "mechGun" to Names("Gun mech"),
+        "mechFactory" to Names("Mech factory"), "mechGun" to Names("Gun mech"), "mechEngineer" to Names("Engineer mech"),
         "mechFactoryT2" to Names("Mech factory T2"), "mechHeavyMissile" to Names("Heavy missile mech"),
         "mechBunker" to Names("Mobile turret"), "mechBunkerDeployed" to Names("Deployed turret"),
         "airFactory" to Names("Air factory"), "airFactoryT2" to Names("Air factory T2"),
@@ -42,7 +42,10 @@ internal class ActionCatalogue(private val definitions: Map<String, UnitDefiniti
                 (nominalIncome(d.id)?.let { "Income +\$${it.toInt()}\n" } ?: "") + "Left: choose site\nEsc / right: cancel")
     } }
     private val production = definitions.mapValues { (_, definition) -> definition.build?.let { build ->
-        ProductionActionView(definition.id, title(definition.id), definition.imagePath, definition.totalFrames,
+        val engineer = definition.maintenance == com.rustedwarfare.reforge.core.content.MaintenanceProfile.MECH_ENGINEER
+        ProductionActionView(definition.id, title(definition.id),
+            if (engineer) checkNotNull(definition.combat?.turretImagePath) else definition.imagePath,
+            if (engineer) 1 else definition.totalFrames,
             build.price, build.rate, definition.maximumHealth, definition.movement.moveSpeed, 0, null, false)
     } }
 
@@ -164,7 +167,8 @@ internal class ActionCatalogue(private val definitions: Map<String, UnitDefiniti
                 val name = if (upgrades.any { it.kind == UpgradePresentationKind.FACTORY && it.actionKey == item.actionKey })
                     title(item.targetTypeId, panel = true) else if (item.actionKey == "upgrade_gun") "Gun" else "Art"
                 "  $name ${(item.progress * 100f).toInt()}%"
-            }.orEmpty(), view.balance, depthAction, flightAction, transportAction, unitActions, nativeMaintenance)
+            }.orEmpty(), view.balance, depthAction, flightAction, transportAction, unitActions, nativeMaintenance,
+            if (nativeMaintenance) workers.minOf { definitions.getValue(it.typeId).builder?.range?.toDouble() ?: 230.0 } else null)
     }
 
     private fun workerText(workers: List<UnitObservation>, view: PlayerObservation): String {
@@ -207,11 +211,12 @@ data class ActionMenuView(val credits: Double? = null, val production: List<Prod
     val selectedTitle: String? = null, val totalNominalIncome: Float = 0f, val upgradeQueueText: String = "",
     val balance: Long? = null, val depthAction: SubmarineDepthActionView? = null,
     val flightAction: AmphibiousFlightActionView? = null, val transportAction: TransportUnloadActionView? = null,
-    val unitActions: List<CustomUnitActionView> = emptyList(), val canRepair: Boolean = false) {
+    val unitActions: List<CustomUnitActionView> = emptyList(), val canRepair: Boolean = false,
+    val repairRange: Double? = null) {
     val reclaimTooltip: String get() = if (canMaintain)
         "Reclaim own ${if (canRepair) "unit" else "building"}\nCredits returned on completion\nLeft: choose target\nEsc / right: cancel" else ""
     val repairTooltip: String get() = if (canRepair)
-        "Repair unit\nNo credit cost\nRange 230\nLeft: choose target\nEsc / right: cancel" else ""
+        "Repair unit\nNo credit cost\nRange ${(repairRange ?: 230.0).toInt()}\nLeft: choose target\nEsc / right: cancel" else ""
 }
 
 data class SubmarineDepthActionView(val surface: Boolean, val title: String, val tooltip: String)

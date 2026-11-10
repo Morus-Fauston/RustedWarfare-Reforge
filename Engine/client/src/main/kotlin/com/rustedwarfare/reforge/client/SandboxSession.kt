@@ -267,7 +267,7 @@ class SandboxSession(scenario: Scenario, private val evidence: ClientEvidence = 
             scenario.maintenanceContract?.basePrices?.containsKey(target.typeId) == true
     }
 
-    /** Uses only the player's published terrain and visible buildings, never placement truth. */
+    /** Uses only the player's published terrain and visible units, never placement truth. */
     fun previewConstruction(typeId: String, order: Position): ConstructionPreview? {
         if (constructionActions.none { it.typeId == typeId } || !order.x.isFinite() || !order.y.isFinite()) return null
         val map = scenario.map
@@ -279,7 +279,8 @@ class SandboxSession(scenario: Scenario, private val evidence: ClientEvidence = 
                     point, building.placementFootprint, building.anchor).cells
             } catch (_: IllegalArgumentException) { emptyList() }
         }
-        val building = checkNotNull(definition.building)
+        val building = definition.building ?: com.rustedwarfare.reforge.core.content.BuildingProfile(
+            com.rustedwarfare.reforge.core.content.BuildingFootprint(0, 0, 0, 0))
         val candidate = cells(position, building)
         var blocked = candidate.isEmpty() || !ConstructionPlacement.contains(map.widthTiles, map.heightTiles,
             map.tileWidth, map.tileHeight, position, definition.radius)
@@ -299,6 +300,15 @@ class SandboxSession(scenario: Scenario, private val evidence: ClientEvidence = 
         if (observation.units.any { unit -> unit.alive && scenario.unitDefinitions.getValue(unit.typeId).building?.let {
                 cells(unit.position, it).any { cell -> cell in candidate }
             } == true }) blocked = true
+        if (definition.building == null) {
+            val constructors = observation.units.filter { it.unitId in selectedIds && controllable(it) &&
+                typeId in scenario.unitDefinitions.getValue(it.typeId).builder?.buildingTypeIds.orEmpty() }
+            if (constructors.all { creator -> observation.units.any { other ->
+                val shape = scenario.unitDefinitions.getValue(other.typeId)
+                other.unitId != creator.unitId && other.alive && other.carriedBy == null &&
+                    ConstructionPlacement.mobileOverlaps(position, definition.radius, other.position, shape.radius, shape.building != null)
+            } }) blocked = true
+        }
         return ConstructionPreview(typeId, position, when {
             blocked -> PlacementState.BLOCKED
             unknown -> PlacementState.UNEXPLORED

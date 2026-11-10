@@ -59,7 +59,9 @@ internal object FactoryExit {
         return definition.id in setOf("mechFactory", "mechFactoryT2") && definition.production?.exitProfile == FactoryExitProfile.CUSTOM_MECH &&
             definition.production.unitTypeIds.let { products ->
                 val base = if (t2) listOf("builder", "mechGun", "mechHeavyMissile") else listOf("builder", "mechGun")
-                products == base || products == base + "mechBunker"
+                val additions = (if ("mechBunker" in products) listOf("mechBunker") else emptyList()) +
+                    (if (t2 && "mechEngineer" in products) listOf("mechEngineer") else emptyList())
+                products == base + additions
             } &&
             definition.build == BuildProfile(if (t2) 5000L else 1000L, if (t2) .0005f else .001f) &&
             definition.construction == ConstructionProfile(if (t2) 5000L else 1000L, if (t2) .0005f else .001f) &&

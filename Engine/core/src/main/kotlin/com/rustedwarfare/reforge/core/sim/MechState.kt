@@ -45,7 +45,7 @@ internal object MechMotion {
 
     fun initial(definition: UnitDefinition, position: Position, heading: Double): MechState? = definition.mech?.let { mech ->
         MechState(sourceHeading(heading) + mech.body.idleDirection, sourceHeading(heading), feet = immutable(mech.legs.map {
-            MechFootState(offset(position, heading, it.x, it.y), sourceHeading(heading))
+            MechFootState(offset(position, heading, it.x, it.y), sourceHeading(heading) + it.endDirectionOffset)
         })).also { requireFinitePose(definition, position, heading, it) }
     }
 

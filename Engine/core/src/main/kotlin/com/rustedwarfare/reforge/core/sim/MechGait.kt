@@ -51,7 +51,8 @@ internal object MechGait {
                     target.x + (foot.position.x - target.x) / distance * definition.hardLimit,
                     target.y + (foot.position.y - target.y) / distance * definition.hardLimit), moving = true)
             }
-            if (!foot.moving && foot.height <= definition.targetHeight + 0.1 && movingCount < 3 && index == furthest) {
+            if (!foot.moving && foot.height <= definition.targetHeight + 0.1 &&
+                movingCount < definition.maximumMovingLegs && index == furthest) {
                 val neighbourMoving = mech.neighbours[index].any { feet[it].moving }
                 val threshold = if (neighbourMoving) definition.holdWithMovingNeighbour else definition.holdMinimum
                 if (oldDistance > threshold * threshold) {
@@ -71,7 +72,7 @@ internal object MechGait {
                     val angle = atan2(target.y - foot.position.y, target.x - foot.position.x)
                     val position = if (reached) target else Position(
                         foot.position.x + cos(angle) * step, foot.position.y + sin(angle) * step)
-                    val turn = MechMotion.angleDifference(previous.motionAngle, foot.heading)
+                    val turn = MechMotion.angleDifference(previous.motionAngle + definition.endDirectionOffset, foot.heading)
                         .coerceIn(-definition.rotateSpeed * delta, definition.rotateSpeed * delta)
                     foot.copy(position = position, heading = foot.heading + turn,
                         moving = !reached, phase = MechLegPhase.SWINGING)

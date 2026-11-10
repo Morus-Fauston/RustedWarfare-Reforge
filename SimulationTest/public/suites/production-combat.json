@@ -246,7 +246,14 @@
       "com.rustedwarfare.reforge.core.content.RepairBayContentTest",
       "com.rustedwarfare.reforge.core.sim.RepairBayAdmissionTest",
       "com.rustedwarfare.reforge.core.sim.RepairBayConstructionTest",
-      "com.rustedwarfare.reforge.core.sim.RepairBayWorkTest"
+      "com.rustedwarfare.reforge.core.sim.RepairBayWorkTest",
+      "com.rustedwarfare.reforge.core.content.MechEngineerContentTest",
+      "com.rustedwarfare.reforge.core.sim.MechEngineerAdmissionTest",
+      "com.rustedwarfare.reforge.core.sim.MechEngineerCombatTest",
+      "com.rustedwarfare.reforge.core.sim.MechEngineerProductionTest",
+      "com.rustedwarfare.reforge.core.sim.MechEngineerTransactionTest",
+      "com.rustedwarfare.reforge.core.sim.MechEngineerWorkTest",
+      "com.rustedwarfare.reforge.core.sim.SelfRegenerationTest"
     ],
     "client": [
       "com.rustedwarfare.reforge.client.CombatActorEvidenceTest",
@@ -309,7 +316,8 @@
       "com.rustedwarfare.reforge.client.AfterburnTrailTest",
       "com.rustedwarfare.reforge.client.BunkerProjectionTest",
       "com.rustedwarfare.reforge.client.BunkerSandboxTest",
-      "com.rustedwarfare.reforge.client.RepairBaySandboxTest"
+      "com.rustedwarfare.reforge.client.RepairBaySandboxTest",
+      "com.rustedwarfare.reforge.client.MechEngineerSandboxTest"
     ],
     "pc": [
       "com.rustedwarfare.reforge.pc.PatrolJsonlPairingTest",
@@ -330,7 +338,8 @@
       "com.rustedwarfare.reforge.pc.DropshipOriginalProfileTest",
       "com.rustedwarfare.reforge.pc.AaBeamOriginalProfileTest",
       "com.rustedwarfare.reforge.pc.BunkerOriginalProfileTest",
-      "com.rustedwarfare.reforge.pc.RepairBayOriginalProfileTest"
+      "com.rustedwarfare.reforge.pc.RepairBayOriginalProfileTest",
+      "com.rustedwarfare.reforge.pc.MechEngineerOriginalProfileTest"
     ],
     "tools": [
       "com.rustedwarfare.reforge.testing.ProductionCombatScenarioTest",
@@ -390,7 +399,9 @@
       "com.rustedwarfare.reforge.testing.BunkerArchiveTest",
       "com.rustedwarfare.reforge.testing.BunkerProductionSessionTest",
       "com.rustedwarfare.reforge.testing.RepairBayArchiveTest",
-      "com.rustedwarfare.reforge.testing.RepairBayProductionSessionTest"
+      "com.rustedwarfare.reforge.testing.RepairBayProductionSessionTest",
+      "com.rustedwarfare.reforge.testing.MechEngineerArchiveTest",
+      "com.rustedwarfare.reforge.testing.MechEngineerProductionSessionTest"
     ]
   },
   "short": [
@@ -1123,6 +1134,39 @@
       "backend": "session",
       "scenario": "platform/scenarios/repairbay-hjson-production-chain.json",
       "contract": "platform/contracts/repairbay-hjson-production-chain.json"
+    },
+    {
+      "id": "engineer-ini-short",
+      "scenario": "scenarios/engineer-ini-short.json",
+      "contract": "contracts/engineer-ini-short.json"
+    },
+    {
+      "id": "engineer-ini-production-chain",
+      "backend": "session",
+      "scenario": "platform/scenarios/engineer-ini-production-chain.json",
+      "contract": "platform/contracts/engineer-ini-production-chain.json"
+    },
+    {
+      "id": "engineer-json-short",
+      "scenario": "scenarios/engineer-json-short.json",
+      "contract": "contracts/engineer-json-short.json"
+    },
+    {
+      "id": "engineer-json-production-chain",
+      "backend": "session",
+      "scenario": "platform/scenarios/engineer-json-production-chain.json",
+      "contract": "platform/contracts/engineer-json-production-chain.json"
+    },
+    {
+      "id": "engineer-hjson-short",
+      "scenario": "scenarios/engineer-hjson-short.json",
+      "contract": "contracts/engineer-hjson-short.json"
+    },
+    {
+      "id": "engineer-hjson-production-chain",
+      "backend": "session",
+      "scenario": "platform/scenarios/engineer-hjson-production-chain.json",
+      "contract": "platform/contracts/engineer-hjson-production-chain.json"
     }
   ],
   "long": [
@@ -1270,6 +1314,7 @@
     "SimulationTest/tools/test_aa_beam_archive.py",
     "SimulationTest/tools/test_afterburn_platform.py",
     "SimulationTest/tools/test_bunker_platform.py",
-    "SimulationTest/tools/test_repairbay_platform.py"
+    "SimulationTest/tools/test_repairbay_platform.py",
+    "SimulationTest/tools/test_mech_engineer_platform.py"
   ]
 }

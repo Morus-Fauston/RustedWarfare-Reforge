@@ -1074,7 +1074,8 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
                 if (unit.definition.builder != null || unit.definition.maintenance != null && BuildingWork.isReady(unit))
                     updateConstruction(unit, currentScenario, step)
                 buildingWork.advanceAutomatic(unit, currentScenario, step.delta) {
-                    checkNotNull(missileTargets).repairCandidates(unit.position.x.toFloat(), unit.position.y.toFloat(), 230f, units)
+                    checkNotNull(missileTargets).repairCandidates(unit.position.x.toFloat(), unit.position.y.toFloat(),
+                        BuildingWork.automaticRange(unit), units)
                 }
                 val factoryWork = unit.definition.production != null
                 if (factoryWork && BuildingWork.isReady(unit)) {
@@ -1135,6 +1136,12 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
                     if (!economicBuilding && !factoryWork) advanceUpgrade(unit)
                     if (CustomUnitActions.advanceAutomatic(unit, currentScenario.unitDefinitions, step.delta))
                         pendingEvents += Event("unit-action-automatic", unit.unitId)
+                    val regeneration = unit.definition.selfRegenRate
+                    if (regeneration != 0f && checkNotNull(unit.health) < checkNotNull(unit.definition.maximumHealth)) {
+                        val restored = checkNotNull(unit.health).toFloat() + regeneration * step.delta.toFloat()
+                        require(restored.isFinite()) { "HP regeneration must remain finite" }
+                        unit.health = minOf(checkNotNull(unit.definition.maximumHealth).toFloat(), restored).toDouble()
+                    }
                 }
             }
             updateProjectiles(step.delta, candidate.existingProjectileIds)
@@ -1307,6 +1314,13 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
             return SimulationError("invalid-contract", "Capture radii must be finite and positive")
         }
         for (definition in input.unitDefinitions.values) {
+            if (definition.techLevel !in 1..3)
+                return SimulationError("unsupported-tech-level", "Expected a supported construction tech level from 1 to 3")
+            val maximumHealth = definition.maximumHealth
+            if (!definition.selfRegenRate.isFinite() || definition.selfRegenRate < 0f ||
+                definition.selfRegenRate != 0f && (maximumHealth == null ||
+                    !maximumHealth.toFloat().isFinite() || maximumHealth <= 0.0))
+                return SimulationError("unsupported-self-regeneration", "Expected nonnegative finite HP regeneration on a durable unit")
             if (definition.transport != null && !Transport.supports(definition))
                 return SimulationError("unsupported-transport", "Expected a finite native transport capability")
             if (definition.transportSlots < 0) return SimulationError("invalid-transport-slots", "Transport slots must be a nonnegative integer")
@@ -1317,6 +1331,7 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
             val amphibious = definition.amphibiousJet != null
             val dropship = definition.transport == com.rustedwarfare.reforge.core.content.TransportProfile.NATIVE_DROPSHIP
             val bunker = Bunker.supports(definition)
+            val engineer = MechEngineer.supports(definition)
             if (definition.groundHeight != null && !bunker)
                 return SimulationError("unsupported-unit-actions", "Ground height requires the qualified bunker forms")
             val beamGunship = definition.energy != null || definition.combat?.projectile?.beam != null ||
@@ -1353,16 +1368,18 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
                     !m.slidingMode || !m.ignoringBody || m.reverseSpeedPercentage != .1 || definition.mech != null) ||
                 !air && (m.flight != null || definition.rotor != null))
                 return SimulationError("unsupported-flight", "Expected a finite AIR profile and a single finite rotor")
-            if (!m.reverseSpeedPercentage.isFinite() || !air && !submarine && (m.reverseSpeedPercentage !in setOf(0.0, 1.0) ||
+            if (!m.reverseSpeedPercentage.isFinite() || !air && !submarine && !engineer && (m.reverseSpeedPercentage !in setOf(0.0, 1.0) ||
                 m.reverseSpeedPercentage != 0.0 && definition.mech == null && m.type != MovementType.WATER) ||
                 definition.mech?.let { !it.isValid() || !bunker && m.type != (if (it.kind == com.rustedwarfare.reforge.core.content.MechKind.FOUR_LEGGED) MovementType.OVER_CLIFF else MovementType.LAND) } == true)
                 return SimulationError("unsupported-mech", "Expected the finite supported mech locomotion category")
-            if (definition.maintenance != null && !RepairBay.supports(definition))
+            if (definition.maintenance != null && !RepairBay.supports(definition) && !engineer)
                 return SimulationError("unsupported-repair-bay", "Expected the complete finite native repair bay capability")
             if (definition.reclaimPrice != null && definition.reclaimPrice < 0L)
                 return SimulationError("invalid-reclaim-price", "Explicit reclaim price must be nonnegative")
             definition.builder?.let { builder ->
-                if (definition.fogOfWarSightRange < 15 || m.type != MovementType.LAND || m.moveSpeed > .8 ||
+                if (definition.fogOfWarSightRange < 15 || !engineer && (m.type != MovementType.LAND || m.moveSpeed > .8 ||
+                    builder.range != 85f || builder.preparation != 30f || builder.decay != 1.3f ||
+                    builder.repairRate != .2f || builder.buildSpeedMultiplier != 1f || builder.mainNanoTurret != null) ||
                     builder.buildingTypeIds.isEmpty() || builder.buildingTypeIds.distinct().size != builder.buildingTypeIds.size ||
                     builder.buildingTypeIds.any { input.unitDefinitions[it]?.construction == null })
                     return SimulationError("unsupported-construction", "Finite construction requires supported sight, movement and building targets")
@@ -1397,8 +1414,13 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
                 val repairBay = RepairBay.supports(definition)
                 val supportedPlacement = if (definition.id in setOf("c_turret_t1", "c_turret_t2_gun", "c_turret_t1_artillery", "laserDefence"))
                     defense else factory || airFactory || seaFactory || extractor || fabricator || repairBay
-                if (building == null || construction.price < 0L || !construction.rate.isFinite() || construction.rate <= 0f ||
-                    !supportedPlacement || definition.radius > 30.0 && !(factory && mechFactory) && !seaFactory)
+                val mobileNano = definition.id == "mechGun" && definition.building == null &&
+                    definition.mech?.kind == com.rustedwarfare.reforge.core.content.MechKind.TWO_LEGGED &&
+                    definition.build == com.rustedwarfare.reforge.core.content.BuildProfile(600L, .0012f) &&
+                    construction == com.rustedwarfare.reforge.core.content.ConstructionProfile(600L, .0012f) &&
+                    m.type == MovementType.LAND
+                if ((!mobileNano && building == null) || construction.price < 0L || !construction.rate.isFinite() || construction.rate <= 0f ||
+                    !supportedPlacement && !mobileNano || definition.radius > 30.0 && !(factory && mechFactory) && !seaFactory)
                     return SimulationError("unsupported-construction", "Expected finite construction metadata within the supported placement envelope")
             }
             definition.pointDefense?.let { profile ->
@@ -2229,6 +2251,7 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
 
     private fun updateUnit(unit: MutableUnit, map: MapDefinition, delta: Double, executionStep: Long,
                            motionSamples: MutableList<MotionStepSample>?) {
+        if (!BuildingWork.isReady(unit)) return
         val movement = UnitLocomotion.movement(unit)
         if (CustomUnitActions.movementLocked(unit) || movement.type == MovementType.NONE) {
             unit.speed = 0.0

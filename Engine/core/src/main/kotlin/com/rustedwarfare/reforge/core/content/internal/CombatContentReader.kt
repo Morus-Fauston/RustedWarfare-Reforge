@@ -29,7 +29,7 @@ internal object CombatContentReader {
             "maxTurnSpeed", "turnAcceleration", "moveSlidingMode", "moveIgnoringBody"),
     )
     private val retained = mapOf(
-        "core" to setOf("mass", "techLevel", "isBio", "softCollisionOnAll", "displayLocaleKey"),
+        "core" to setOf("mass", "isBio", "softCollisionOnAll", "displayLocaleKey"),
         "graphics" to setOf("image_shadow", "shadowOffsetX", "shadowOffsetY", "animation_moving_start",
             "animation_moving_end", "animation_moving_speed", "dustEffect"),
         "turret_1" to setOf("shoot_sound", "shoot_sound_vol", "shoot_flame", "shoot_light"),
@@ -189,6 +189,10 @@ internal object CombatContentReader {
         val buildRate = required("core", "buildSpeed").toFloatOrNull()?.takeIf { it.isFinite() && it > 0f }
             ?: invalid(ContentErrorCode.MALFORMED_SYNTAX, "core", "buildSpeed", reason = "Expected finite positive binary32 build rate")
         val identity = required("core", "name")
+        val techLevel = sections["core"]?.get("techLevel")?.let { text ->
+            text.toIntOrNull()?.takeIf { it in 1..3 } ?: invalid(ContentErrorCode.MALFORMED_SYNTAX,
+                "core", "techLevel", reason = "Expected a tech level from one through three")
+        } ?: 1
         if (declared) {
             if (when { hover -> identity != "hoverTank"; naval -> identity != "heavyBattleship"; mech -> identity != "mechGun"; heavy -> identity != "mechHeavyMissile"
                     else -> !identity.matches(Regex("[a-z][a-z0-9_.-]*")) })
@@ -337,6 +341,7 @@ internal object CombatContentReader {
                 if (hover) HoverProfile() else null),
             sections.flatMap { (s, values) -> values.keys.filter { it in retained[sectionKind(s)].orEmpty() } }.toSet(), sight, profile,
             build = BuildProfile(price, buildRate), mech = gait, rotor = flight?.second, reclaimPrice = reclaimPrice,
+            construction = if (mech) ConstructionProfile(price, buildRate) else null, techLevel = techLevel,
             authoredWaterCombat = authorWater, shadowImagePath = if (hover) image("image_shadow") else null,
             shield = shield, shieldImagePath = if (heavy) image("image_shield") else null,
             transportSlots = if ("transportSlotsNeeded" in sections.getValue("core")) integer("core", "transportSlotsNeeded") else 1)

@@ -45,6 +45,9 @@ class UnitDefinition(
     val maintenance: MaintenanceProfile? = null,
     /** Null uses the ordinary terminal fraction; an explicit zero remains a zero price. */
     val reclaimPrice: Long? = null,
+    /** Positive custom HP regeneration per simulation delta; separate from helping a target. */
+    val selfRegenRate: Float = 0f,
+    val techLevel: Int = 1,
 ) {
     val retainedUnconsumed: Set<String> = Collections.unmodifiableSet(LinkedHashSet(retainedUnconsumed))
     val maximumHealth: Double? get() = durability?.maxHp ?: combat?.maxHp
@@ -53,7 +56,7 @@ class UnitDefinition(
 enum class TransportProfile { NATIVE_HOVERCRAFT, NATIVE_DROPSHIP }
 
 /** Native work capability, independent of the ordinary builder's construction menu. */
-enum class MaintenanceProfile { NATIVE_REPAIR_BAY }
+enum class MaintenanceProfile { NATIVE_REPAIR_BAY, MECH_ENGINEER }
 
 data class MovementProfile(
     val type: MovementType,
@@ -133,12 +136,10 @@ data class BuildingProfile(val footprint: BuildingFootprint, val backImagePath: 
     val anchor: FootprintAnchor? = null, val placementFootprint: BuildingFootprint = footprint,
     val requiresResourcePool: Boolean = false,
     val foundationMovementType: MovementType? = null)
-class BuilderProfile(buildingTypeIds: List<String>) {
+class BuilderProfile(buildingTypeIds: List<String>, val range: Float = 85f,
+    val preparation: Float = 30f, val decay: Float = 1.3f, val repairRate: Float = .2f,
+    val buildSpeedMultiplier: Float = 1f, val mainNanoTurret: String? = null) {
     val buildingTypeIds: List<String> = Collections.unmodifiableList(ArrayList(buildingTypeIds))
-    val range: Float = 85f
-    val preparation: Float = 30f
-    val decay: Float = 1.3f
-    val repairRate: Float = .2f
 }
 data class ConstructionProfile(val price: Long, val rate: Float)
 enum class FactoryExitProfile { NATIVE_LAND, CUSTOM_MECH, NATIVE_AIR, NATIVE_SEA }
@@ -238,6 +239,7 @@ enum class FireSoundProfile(val eventId: String, val volume: Float, val pitch: F
     NAVAL_MAIN("reforge:events/naval-main-fire", .3f),
     NAVAL_MISSILE("reforge:events/naval-missile-fire", .1f),
     SUBMARINE_MISSILE("reforge:events/naval-missile-fire", .8f),
+    ENGINEER_MISSILE("reforge:events/naval-missile-fire", .2f),
     AMPHIBIOUS_LIGHTNING("reforge:events/amphibious-lightning-fire", .2f),
 }
 

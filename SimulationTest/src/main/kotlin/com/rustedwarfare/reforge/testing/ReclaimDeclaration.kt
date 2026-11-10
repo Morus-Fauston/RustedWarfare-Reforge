@@ -7,7 +7,7 @@ internal object ReclaimDeclaration {
     fun removals(scenario: JsonObject, contract: JsonObject): List<JsonObject> {
         val removed = contract["reclaimedUnits"]?.jsonArray?.map { it.jsonObject } ?: return emptyList()
         val definitions = ScenarioDeclaration.unitReferences(scenario.objectAt("content")).associateBy { it.id("id") }
-        if (!scenario.containsKey("maintenanceContract") && definitions.values.none { it["loader"] == s("repair-bay") } &&
+        if (!scenario.containsKey("maintenanceContract") && definitions.values.none { it["loader"] in setOf(s("repair-bay"), s("mech-engineer")) } &&
             removed.isNotEmpty()) throw InputError("Reclaim requires maintenance")
         val (products, buildings) = DynamicUnitDeclaration.validate(scenario, contract)
         val all = scenario.arrayAt("units").map { it.jsonObject } + products + buildings
@@ -20,7 +20,7 @@ internal object ReclaimDeclaration {
             val target = all.singleOrNull { it.id("unitId") == change.id("unitId") } ?: throw InputError("Unknown reclaimed target")
             val worker = all.singleOrNull { it.id("unitId") == change.id("workerId") } ?: throw InputError("Unknown reclaim worker")
             fun type(unit: JsonObject) = (unit["typeId"] ?: unit.required("type")).jsonPrimitive.content
-            val native = definitions[type(worker)]?.get("loader") == s("repair-bay")
+            val native = definitions[type(worker)]?.get("loader") in setOf(s("repair-bay"), s("mech-engineer"))
             val registered = scenario["maintenanceContract"]?.jsonObject?.objectAt("basePrices")?.containsKey(type(target)) == true
             val step = change.integer("removalStepIndex")
             if (action.text("kind") != "reclaim" || action.id("targetUnitId") != target.id("unitId") ||

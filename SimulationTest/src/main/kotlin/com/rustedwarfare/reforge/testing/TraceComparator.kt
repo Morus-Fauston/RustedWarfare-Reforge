@@ -373,7 +373,7 @@ object TraceComparator {
                         validateAmphibiousProjectiles(observation, scenario, units)
                         validateAaBeamProjectiles(observation, scenario, units)
                         if (hasConstruction(scenario)) validateConstructionSample(scenario, observation, units, built)
-                        val incomeTypes = typesLoadedBy(scenario, setOf("command-center", "economy", "economy-upgrades"))
+                        val incomeTypes = typesLoadedBy(scenario, setOf("command-center", "economy", "economy-upgrades", "mech-engineer"))
                         if (incomeTypes.isNotEmpty()) {
                             val incomes = observation.arrayAt("incomeStates").map { it.jsonObject }
                             // Income phases belong to registered objects, including reclaimed ones.
@@ -455,7 +455,7 @@ object TraceComparator {
         typesLoadedBy(scenario, setOf("author-upgrading-producer"))
 
     private fun hasConstruction(scenario: JsonObject) = scenario.containsKey("maintenanceContract") ||
-        typesLoadedBy(scenario, setOf("repair-bay")).isNotEmpty() ||
+        typesLoadedBy(scenario, setOf("repair-bay", "mech-engineer")).isNotEmpty() ||
         scenario.arrayAt("actions").any { it.jsonObject.text("kind") == "build" }
 
     private fun validateConstructionSample(scenario: JsonObject, observation: JsonObject, units: List<JsonObject>, built: List<JsonObject>) {
@@ -468,7 +468,7 @@ object TraceComparator {
             val building = element.jsonObject
             building.id("unitId"); building.integer("objectId"); building.text("updateKey"); building.number("progress")
         }
-        val builderTypes = typesLoadedBy(scenario, setOf("builder", "constructor", "repair-bay"))
+        val builderTypes = typesLoadedBy(scenario, setOf("builder", "constructor", "repair-bay", "mech-engineer"))
         val expectedWorkers = units.filter { it.id("typeId") in builderTypes }.map { it.id("unitId") }.toSet()
         val workers = construction.arrayAt("workers").map { it.jsonObject }
         if (workers.size != expectedWorkers.size || workers.map { it.id("unitId") }.toSet() != expectedWorkers)
@@ -595,7 +595,7 @@ object TraceComparator {
         unit.arrayAt("pathPoints").forEach { point(it.jsonObject) }
         val mechLegCount = when (unit.id("typeId")) {
             in typesLoadedBy(scenario, setOf("mech")) -> 2
-            in typesLoadedBy(scenario, setOf("mech-heavy", "mech-bunker")) -> 4
+            in typesLoadedBy(scenario, setOf("mech-heavy", "mech-bunker", "mech-engineer")) -> 4
             else -> null
         }
         if (mechLegCount != null) validateMechPose(unit.objectAt("mechPose"), mechLegCount)

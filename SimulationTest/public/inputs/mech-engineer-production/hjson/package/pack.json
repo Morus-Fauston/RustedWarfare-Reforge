@@ -1,0 +1,15 @@
+{
+  "format": "rw-reforge.content-pack.v1",
+  "id": "owned-mech-engineer-hjson",
+  "name": "Owned mechanic engineer",
+  "units": [
+    {
+      "type": "mech-engineer",
+      "file": "engineer.hjson"
+    },
+    {
+      "type": "repair-bay",
+      "file": "repairbay/repairbay.hjson"
+    }
+  ]
+}

@@ -8,7 +8,7 @@ import kotlin.math.sqrt
 import com.rustedwarfare.reforge.core.content.MechKind
 
 data class MechShaftFrame(val sourceY: Int, val sourceHeight: Int, val width: Float, val height: Float,
-    val x: Float, val y: Float, val rotation: Float)
+    val x: Float, val y: Float, val rotation: Float, val sourceImageHeight: Int)
 
 data class MechLegFrame(val index: Int, val anchorX: Float, val anchorY: Float,
     val footX: Float, val footY: Float, val length: Float, val rotation: Float, val footRotation: Float,
@@ -40,10 +40,13 @@ object MechPresentation {
                     val sy = leg.anchor.y - leg.foot.y
                     val squared = sx * sx + sy * sy
                     require(squared.isFinite()) { "Non-finite four-leg shaft separation" }
-                    val half = if (squared < 1024.0) Math.round(sqrt(squared.toInt().toDouble())).toInt() else 34
-                    MechShaftFrame(34 - half, half * 2, finite(16.0 * appearance.imageScale * projection.scale),
+                    val size = requireNotNull(appearance.logicalImages?.leg ?: appearance.nativeLegSize)
+                    val halfHeight = size.height / 2f
+                    val threshold = (halfHeight - 2f) * (halfHeight - 2f)
+                    val half = if (squared < threshold) Math.round(sqrt(squared.toInt().toDouble())).toInt() else halfHeight.toInt()
+                    MechShaftFrame((halfHeight - half).toInt(), half * 2, finite((size.width / 2 * 2.0) * appearance.imageScale * projection.scale),
                         finite(half * 2.0 * appearance.imageScale * projection.scale), fx, fy,
-                        finite(Math.toDegrees(atan2(-sy, sx)) - 90.0))
+                        finite(Math.toDegrees(atan2(-sy, sx)) - 90.0), size.height)
                 } else null
                 MechLegFrame(leg.index, ax, ay, fx, fy, finite(hypot(dx, dy)),
                     finite(Math.toDegrees(atan2(dy, dx))), finite(-leg.heading), shaft)

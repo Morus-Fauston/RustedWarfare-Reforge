@@ -654,14 +654,16 @@ def validate_history_action(records, row, intent, geometry=None):
             raise PlatformError('history-action-fields','Attack target differs from the fixed visible target/point',2)
     if kind in ('repair','reclaim'):
         targets=[u for u in left.get('units',[]) if u.get('unitId')==row.get('targetUnitId')]
-        # The finite normal tank has displayRadius 11. A map click selects its body, not its exact center.
+        # Qualified normal bodies: tank and basic mech both have displayRadius 11.
+        # Bind the click to those finite body shapes independently of the runtime hit test.
         point=intent.get('position');target=targets[0] if len(targets)==1 else {}
         body=target.get('position',{});footprint=input_footprint(geometry)
-        hit=(point is None or target.get('typeId')=='c_tank' and
+        radius={'c_tank':11, 'mechGun':11}.get(target.get('typeId'))
+        hit=(point is None or radius is not None and
              isinstance(point,dict) and set(point)=={'x','y'} and isinstance(body,dict) and set(body)=={'x','y'} and
              all(type(p[k]) in (int,float) and math.isfinite(p[k]) for p in (point,body) for k in ('x','y')) and
              math.hypot(max(0,abs(body['x']-point['x'])-footprint['x']),
-                        max(0,abs(body['y']-point['y'])-footprint['y']))<=11)
+                        max(0,abs(body['y']-point['y'])-footprint['y']))<=radius)
         if (len(targets)!=1 or targets[0].get('alive') is not True or targets[0].get('carriedBy') is not None or
                 row.get('targetUnitId')==identity or kind=='reclaim' and targets[0].get('ownerPlayerId')!=actor or
                 not hit):
@@ -831,7 +833,7 @@ def compare_history(records, plan, policy, native_anchors=None, geometry=None):
     """Check a declared ledger at every observation, including call boundaries."""
     allowed={'initialBalance','spend','noActionIntents','projectileBirthsRequired','mechLegs',
              'ownerPlayerId','initialOwnedTypes','finalUnits','minimumBirths',
-             'productionOrder','completedUpgradeTypes','initialIncome','transportStages','unitActionStages','bunkerStages','reclaimRefunds'}
+             'productionOrder','completedUpgradeTypes','initialIncome','producedIncome','transportStages','unitActionStages','bunkerStages','reclaimRefunds'}
     if not isinstance(policy,dict) or set(policy)-allowed:
         raise PlatformError('input-contract', 'Unknown or malformed history obligations', 1)
     balance = policy.get('initialBalance')
@@ -843,6 +845,15 @@ def compare_history(records, plan, policy, native_anchors=None, geometry=None):
             type(income['period']) is not int or income['period']<=0 or
             type(income['credits']) not in (int,float) or not math.isfinite(income['credits']) or income['credits']<=0):
         raise PlatformError('input-contract', 'Expected a fixed initial income source, positive integer period and finite credits', 1)
+    produced_income=policy.get('producedIncome',[])
+    if (not isinstance(produced_income,list) or any(not isinstance(source,dict) or
+            set(source)!={'typeId','period','credits'} or not isinstance(source['typeId'],str) or not source['typeId'] or
+            type(source['period']) is not int or source['period']<=0 or
+            type(source['credits']) not in (int,float) or not math.isfinite(source['credits']) or source['credits']<=0
+            for source in produced_income) or len({source['typeId'] for source in produced_income})!=len(produced_income)):
+        raise PlatformError('input-contract','Expected unique fixed produced income types with finite positive coefficients',1)
+    income_types={source['typeId']:source for source in produced_income}
+    income_phases={};income_seen=set()
     charges = {}
     intents = {i['intentId']: i for i in plan['intents']}
     ids = set(intents)
@@ -1041,6 +1052,26 @@ def compare_history(records, plan, policy, native_anchors=None, geometry=None):
             if type(simulation_time) not in (int, float) or simulation_time != steps:
                 raise PlatformError('history-step', 'Simulation time differs from explicit steps')
             units = {u['unitId']: u for u in row['sample'].get('units', [])}
+            if income_types:
+                if len(units)!=len(sample.get('units',[])):
+                    raise PlatformError('history-income','Repeated unit identity in income evidence',2)
+                if row.get('phase')=='step':
+                    for event in sample.get('events',[]):
+                        if event.get('kind')!='unit-produced':continue
+                        unit=units.get(event.get('unitId'),{})
+                        if unit.get('typeId') not in income_types or unit.get('ownerPlayerId')!=policy.get('ownerPlayerId','p1'):continue
+                        identity=unit['unitId']
+                        if identity in income_phases:
+                            raise PlatformError('history-income','Repeated produced income birth',2)
+                        income_phases[identity]=dict(typeId=unit['typeId'],birth=index,elapsed=0)
+                        income_seen.add(unit['typeId'])
+                for identity,state in income_phases.items():
+                    unit=units.get(identity)
+                    if unit is None or unit.get('typeId')!=state['typeId'] or unit.get('ownerPlayerId')!=policy.get('ownerPlayerId','p1'):
+                        raise PlatformError('history-income','Produced income source identity disappeared or changed',2)
+                if any(u.get('ownerPlayerId')==policy.get('ownerPlayerId','p1') and u.get('typeId') in income_types and
+                        u.get('unitId') not in income_phases for u in units.values()):
+                    raise PlatformError('history-income','Produced income requires its observed fresh birth',2)
             if income is not None:
                 sources=[u for u in sample.get('units',[]) if u.get('unitId')==income['unitId']]
                 if (len(sources)!=1 or sources[0].get('typeId')!=income['typeId'] or
@@ -1084,6 +1115,14 @@ def compare_history(records, plan, policy, native_anchors=None, geometry=None):
             if row.get('phase') == 'step':
                 balance -= pending; pending = 0
                 if income is not None and steps % income['period']==0:balance+=income['credits']
+                for identity,state in income_phases.items():
+                    source=units[identity]
+                    if (index>state['birth'] and source.get('alive') is True and source.get('constructionProgress')==1 and
+                            source.get('carriedBy') is None):
+                        state['elapsed']+=1
+                        profile=income_types[state['typeId']]
+                        if state['elapsed']==profile['period']:
+                            state['elapsed']=0;balance+=profile['credits']
                 events=sample.get('events',[])
                 removals=[e.get('unitId') for e in events if e.get('kind')=='building-reclaimed']
                 if len(removals)!=len(set(removals)) or any(target not in pending_refunds for target in removals):
@@ -1107,14 +1146,16 @@ def compare_history(records, plan, policy, native_anchors=None, geometry=None):
                             raise PlatformError('history-construction', 'Construction charge is not bound to one new owned site in its build intention', 2)
                         balance-=entry['charge']['amount'];construction_ids.add(matches[0]);del construction_charges[identity]
             observed = row['sample'].get('balance')
-            expected_balance=math.trunc(balance) if income is not None else balance
+            expected_balance=math.trunc(balance) if income is not None or income_types else balance
             if type(observed) not in (int, float) or not math.isfinite(observed) or observed != expected_balance:
                 raise PlatformError('history-ledger', 'Balance differs at observation '+str(row['sequence']), 2)
-            if income is not None and (type(sample.get('credits')) not in (int,float) or
+            if (income is not None or income_types) and (type(sample.get('credits')) not in (int,float) or
                     not math.isfinite(sample['credits']) or sample['credits']!=balance):
                 raise PlatformError('history-ledger', 'Precise credits differ at observation '+str(row['sequence']), 2)
             observations += 1
             seen_units.update(units)
+    if income_seen!=set(income_types):
+        raise PlatformError('history-income','A declared produced income type never completed a real birth',2)
     if not observations or pending or construction_charges or pending_refunds or active is not None or completed != len(plan['intents']):
         raise PlatformError('incomplete-run', 'Missing history observations or a pending first-step charge')
     for expected in policy.get('finalUnits',[]):
