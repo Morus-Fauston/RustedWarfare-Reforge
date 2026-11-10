@@ -23,7 +23,7 @@ class PlatformError(ValueError):
 
 def validate_unit_action_intent(intent):
     if (set(intent)!={'intentId','kind','actionName','waitSteps'} or
-            not isinstance(intent.get('actionName'),str) or intent['actionName'] not in ('afterBurn','cancelBurn') or
+            not isinstance(intent.get('actionName'),str) or intent['actionName'] not in ('afterBurn','cancelBurn','deploy','undeploy') or
             type(intent.get('waitSteps')) is not int or not 0<=intent['waitSteps']<=600):
         raise PlatformError('input-contract','Expected a finite normal unit action and explicit bounded wait',1)
 
@@ -423,6 +423,8 @@ def validate_history_poses(units, policy):
                         raise PlatformError('history-unit-action','Action availability differs from its state',2)
                 if sorted(indexes)!=list(range(len(indexes))):
                     raise PlatformError('history-unit-action','Action queue indexes must be unique and contiguous',2)
+        elif unit.get('typeId') in ('mechBunker','mechBunkerDeployed'):
+            validate_bunker_state(unit, policy.get('ownerPlayerId','p1'))
         elif unit.get('energy') is not None:
             raise PlatformError('history-aa-beam','Weapon energy on an unsupported unit',2)
         elif unit.get('unitActions') is not None:
@@ -511,6 +513,28 @@ def validate_history_poses(units, policy):
                     not number(leg.get('height')) or not number(leg.get('heading')) or
                     leg.get('phase') not in ('PLANTED','WARMING_UP','LIFTING','SWINGING','LOWERING')):
                 raise PlatformError('history-pose', 'Missing, duplicate or invalid mech leg', 2)
+
+
+def validate_bunker_state(unit, owner):
+    def invalid(message):raise PlatformError('history-bunker',message,2)
+    if unit.get('energy') is not None:invalid('Bunker cannot expose weapon energy')
+    state=unit.get('unitActions')
+    if unit.get('ownerPlayerId')!=owner:
+        if state is not None:invalid('Enemy action controls must remain private')
+        return
+    name='deploy' if unit['typeId']=='mechBunker' else 'undeploy'
+    if (not isinstance(state,dict) or set(state)!={'actions','automaticCooldown'} or state['automaticCooldown']!=0 or
+            not isinstance(state['actions'],dict) or set(state['actions'])!={name}):invalid('Invalid finite bunker action state')
+    action=state['actions'][name]
+    if (not isinstance(action,dict) or set(action)!={'queueIndex','progress','cooldownRemaining','available'} or
+            type(action['cooldownRemaining']) is not int or action['cooldownRemaining']!=0):invalid('Invalid bunker action fields')
+    index=action['queueIndex'];progress=action['progress']
+    if index is None:
+        if progress is not None:invalid('Unqueued progress')
+    elif type(index) is not int or index!=0 or type(progress) not in (float,int) or not 0<=progress<1:
+        invalid('Invalid queued progress')
+    available=(unit.get('alive') is True and unit.get('constructionProgress',0)>=1 and unit.get('carriedBy') is None and index is None)
+    if type(action['available']) is not bool or action['available']!=available:invalid('Invalid bunker action availability')
 
 
 def validate_history_action(records, row, intent, geometry=None):
@@ -752,11 +776,48 @@ def validate_unit_action_history(records, policy):
     if any(pending.values()):raise PlatformError('history-unit-action','Normal action queue is unfinished',2)
 
 
+def validate_bunker_history(records, policy):
+    """Replay accepted commands with the fixed binary32 167/101-step queue contract."""
+    def f32(value):return struct.unpack('<f',struct.pack('<f',value))[0]
+    previous={};pending={};owner=policy.get('ownerPlayerId','p1')
+    def fail(message):raise PlatformError('history-bunker',message,2)
+    for row in records:
+        if row.get('kind')=='action' and row.get('type')=='UnitAction':
+            identity=row['unitId'];name=row.get('actionName')
+            old=previous.get(identity)
+            if (old is None or name!=('deploy' if old['typeId']=='mechBunker' else 'undeploy') or
+                    identity in pending or row.get('cancelQueued') is not False):fail('Invalid accepted bunker command')
+            pending[identity]=(name,0.0)
+        if row.get('kind')!='observation':continue
+        sample=row['sample'];step=row.get('phase')=='step';expected=[]
+        for unit in sample.get('units',[]):
+            if unit.get('ownerPlayerId')!=owner or unit.get('typeId') not in ('mechBunker','mechBunkerDeployed'):continue
+            identity=unit['unitId'];old=previous.get(identity);form=old['typeId'] if old else unit['typeId']
+            if step and identity in pending:
+                name,progress=pending[identity];progress=f32(progress+f32(.006 if name=='deploy' else .010))
+                if progress>=1:
+                    form='mechBunkerDeployed' if name=='deploy' else 'mechBunker'
+                    del pending[identity];expected.append((identity,'unit-action-completed'))
+                else:pending[identity]=(name,progress)
+            if form!=unit['typeId']:fail('Premature, missing or unsupported bunker conversion')
+            state=unit['unitActions'];name='deploy' if form=='mechBunker' else 'undeploy';action=state['actions'][name]
+            queue=pending.get(identity)
+            if queue is None:
+                if action['queueIndex'] is not None or action['progress'] is not None:fail('Undeclared bunker queue')
+            elif action['queueIndex']!=0 or f32(action['progress'])!=queue[1]:fail('Bunker queue differs from fixed schedule')
+            previous[identity]=unit
+        if step:
+            actual=sorted((e.get('unitId'),e.get('kind')) for e in sample.get('events',[])
+                          if e.get('kind') in ('unit-action-completed','unit-action-automatic'))
+            if actual!=sorted(expected):fail('Missing, extra or wrong bunker action completion event')
+    if pending:fail('Bunker action queue is unfinished')
+
+
 def compare_history(records, plan, policy, native_anchors=None, geometry=None):
     """Check a declared ledger at every observation, including call boundaries."""
     allowed={'initialBalance','spend','noActionIntents','projectileBirthsRequired','mechLegs',
              'ownerPlayerId','initialOwnedTypes','finalUnits','minimumBirths',
-             'productionOrder','completedUpgradeTypes','initialIncome','transportStages','unitActionStages'}
+             'productionOrder','completedUpgradeTypes','initialIncome','transportStages','unitActionStages','bunkerStages'}
     if not isinstance(policy,dict) or set(policy)-allowed:
         raise PlatformError('input-contract', 'Unknown or malformed history obligations', 1)
     balance = policy.get('initialBalance')
@@ -772,6 +833,15 @@ def compare_history(records, plan, policy, native_anchors=None, geometry=None):
     intents = {i['intentId']: i for i in plan['intents']}
     ids = set(intents)
     action_stages={}
+    bunker_stages={}
+    declarations=policy.get('bunkerStages',[])
+    if not isinstance(declarations,list):raise PlatformError('input-contract','Expected fixed bunker stages',1)
+    for stage in declarations:
+        if (not isinstance(stage,dict) or set(stage)!={'intentId','typeId'} or
+                not isinstance(stage['intentId'],str) or stage['intentId'] not in ids or stage['intentId'] in bunker_stages or
+                stage['typeId'] not in ('mechBunker','mechBunkerDeployed')):
+            raise PlatformError('input-contract','Invalid fixed bunker stage',1)
+        bunker_stages[stage['intentId']]=stage
     declarations=policy.get('unitActionStages',[])
     if not isinstance(declarations,list):
         raise PlatformError('input-contract','Unit action stages must be a fixed list',1)
@@ -865,6 +935,12 @@ def compare_history(records, plan, policy, native_anchors=None, geometry=None):
                      else intent_steps != intents[active].get('waitSteps', 0)) or
                     action_count != (0 if active in no_actions else 1)):
                 raise PlatformError('history-intent', 'Unfinished intention or wrong explicit step count')
+            stage=bunker_stages.get(active)
+            if stage is not None:
+                candidates=[u for u in units.values() if u.get('ownerPlayerId')==policy.get('ownerPlayerId','p1') and
+                            u.get('typeId') in ('mechBunker','mechBunkerDeployed')]
+                if len(candidates)!=1 or candidates[0]['typeId']!=stage['typeId']:
+                    raise PlatformError('history-bunker','Missing or wrong form at fixed stage',2)
             stage=transport_stages.get(active)
             if stage is not None:
                 carriers=[u for u in units.values() if u.get('typeId')==stage.get('typeId','hovercraft') and u.get('ownerPlayerId')==policy.get('ownerPlayerId','p1')]
@@ -1014,6 +1090,7 @@ def compare_history(records, plan, policy, native_anchors=None, geometry=None):
                 raise PlatformError('history-final', 'Terminal unit differs: '+name, 2)
     validate_production_history(records,policy)
     if 'unitActionStages' in policy:validate_unit_action_history(records,policy)
+    if 'bunkerStages' in policy:validate_bunker_history(records,policy)
     if not all(fired):raise PlatformError('history-firing', 'Missing independently required named weapon birth/target', 2)
     return dict(exitCode=0, status='passed', scenarioId=plan['scenarioId'], history=dict(observations=observations, balance=balance))
 

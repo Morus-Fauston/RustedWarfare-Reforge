@@ -205,6 +205,13 @@ class SandboxGraphics private constructor(private val resources: SandboxRenderRe
                 batch.draw(shadow, projection.x(unit.position.x) - sw / 2, projection.y(unit.position.y) - sh / 2,
                     sw / 2, sh / 2, sw, sh, 1f, 1f, -requireNotNull(jetHeading).toFloat())
             }
+            if (mech?.drawShadow == true) shadows[unit.typeId]?.let { shadow ->
+                val size = definition.drawSize(UnitImageSlot.SHADOW, shadow.regionWidth, shadow.regionHeight)
+                val sw = (size.width * projection.scale).toFloat()
+                val sh = (size.height * projection.scale).toFloat()
+                batch.draw(shadow, mech.shadowX - sw / 2, mech.shadowY - sh / 2,
+                    sw / 2, sh / 2, sw, sh, 1f, 1f, mech.rotation)
+            }
             mech?.legs?.forEach { leg ->
                 val shaft = legs.getValue(unit.typeId)
                 val foot = feet.getValue(unit.typeId)

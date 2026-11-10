@@ -15,6 +15,7 @@ internal class ActionCatalogue(private val definitions: Map<String, UnitDefiniti
         "hoverTank" to Names("Hover tank"), "hovercraft" to Names("Landing craft"), "dropship" to Names("Transport", "Air transport"),
         "mechFactory" to Names("Mech factory"), "mechGun" to Names("Gun mech"),
         "mechFactoryT2" to Names("Mech factory T2"), "mechHeavyMissile" to Names("Heavy missile mech"),
+        "mechBunker" to Names("Mobile turret"), "mechBunkerDeployed" to Names("Deployed turret"),
         "airFactory" to Names("Air factory"), "airFactoryT2" to Names("Air factory T2"),
         "helicopter" to Names("Helicopter"), "amphibiousJet" to Names("Amphibious jet"), "aaBeamGunship" to Names("AA beam gunship"),
         "aaBeamGunship_afterburn" to Names("AA beam (Afterburn)", "AA beam gunship (Afterburn)"),
@@ -91,11 +92,14 @@ internal class ActionCatalogue(private val definitions: Map<String, UnitDefiniti
             TransportUnloadActionView(!it.unloading, if (it.unloading) "Cancel unload" else "Unload", it.unloading || it.canUnload)
         }
         val unitActions = immutable(ownSingle?.unitActions?.actions.orEmpty().map { action ->
-            val title = if (action.name == "afterBurn") "Afterburn" else "Cancel burn"
-            val status = if (action.queueIndex != null) "Queued" else if (action.cooldownRemaining > 0)
+            val title = when (action.name) { "afterBurn" -> "Afterburn"; "cancelBurn" -> "Cancel burn"
+                "deploy" -> "Deploy"; "undeploy" -> "Undeploy"; else -> action.name }
+            val status = if (action.queueIndex != null) "Queued ${(action.progress!! * 100f).toInt()}%" else if (action.cooldownRemaining > 0)
                 String.format(Locale.ROOT, "Cooling %.1fs", action.cooldownRemaining / 1000f) else "Ready"
-            CustomUnitActionView(action.name, title, "$title\n$status\nMovement orders continue",
-                action.queueIndex != null, action.cooldownRemaining, action.available)
+            val motion = when (action.name) { "deploy" -> "Movement locked while deploying\nCannot cancel"
+                "undeploy" -> "Fixed until undeployed\nCannot cancel"; else -> "Movement orders continue" }
+            CustomUnitActionView(action.name, title, "$title\n$status\n$motion",
+                action.queueIndex != null, action.cooldownRemaining, action.available, action.progress)
         })
         val profiles = ownSingle?.takeUnless { it.constructionProgress < 1f &&
             definitions.getValue(it.typeId).className == "AuthoredBuilding" }
@@ -204,4 +208,4 @@ data class AmphibiousFlightActionView(val flying: Boolean, val title: String, va
 
 data class TransportUnloadActionView(val unloading: Boolean, val title: String, val available: Boolean)
 data class CustomUnitActionView(val name: String, val title: String, val tooltip: String,
-    val queued: Boolean, val cooldownRemaining: Int, val available: Boolean)
+    val queued: Boolean, val cooldownRemaining: Int, val available: Boolean, val progress: Float? = null)

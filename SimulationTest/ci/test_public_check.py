@@ -401,6 +401,26 @@ class PublicSelectionTest(unittest.TestCase):
         names={p.relative_to(REPO).as_posix() for p in source_files(REPO)}
         self.assertIn('SimulationTest/tools/afterburn_scenarios.py',names)
 
+    def test_bunker_registers_three_format_core_and_normal_session_chains_and_independent_checks(self):
+        from public_check import REPO,plan_suite,source_files
+        plan=plan_suite(REPO,'production-combat','pr')
+        for module,names in {
+            'core':['core.content.BunkerContentTest','core.sim.BunkerActionTest','core.sim.BunkerWeaponTest',
+                    'core.sim.BunkerFootprintTest','core.sim.BunkerHeightTest','core.sim.BunkerLifecycleTest',
+                    'core.sim.BunkerProductionTest','core.sim.BunkerTransactionTest','core.sim.BunkerValidationTest'],
+            'client':['client.BunkerProjectionTest','client.BunkerSandboxTest'],
+            'pc':['pc.BunkerOriginalProfileTest'],
+            'tools':['testing.BunkerArchiveTest','testing.BunkerProductionSessionTest']}.items():
+            for name in names:self.assertIn('com.rustedwarfare.reforge.'+name,plan['tests'][module])
+        cases={row['id']:row for row in plan['scenarios']}
+        for fmt in ('ini','json','hjson'):
+            self.assertEqual('core',cases['bunker-'+fmt+'-short']['backend'])
+            self.assertEqual('session',cases['bunker-'+fmt+'-production-chain']['backend'])
+        self.assertIn('SimulationTest/tools/test_bunker_platform.py',plan['pythonTests'])
+        names={p.relative_to(REPO).as_posix() for p in source_files(REPO)}
+        for name in ('bunker_fixture.py','bunker_scenarios.py','test_bunker_platform.py'):
+            self.assertIn('SimulationTest/tools/'+name,names)
+
     def test_the_shared_live_reader_and_its_contract_survive_an_isolated_source_copy(self):
         from public_check import REPO,source_files
         names={p.relative_to(REPO).as_posix() for p in source_files(REPO)}

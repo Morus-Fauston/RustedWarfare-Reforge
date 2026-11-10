@@ -343,6 +343,10 @@ object TraceComparator {
                             val completed = ProductionDeclaration.born(changes, row, "completionStepIndex")
                             if (completed.any { it["actionId"] != JsonNull && it.id("actionId") !in acceptedActions })
                                 throw Incomplete("unit-action-identity", "Conversion has no accepted unit action")
+                            if (initialType.startsWith("mechBunker")) {
+                                validateBunkerQueue(unit, declaredActions, acceptedActions, changes, step, initial)
+                                continue
+                            }
                             val now = if (initial) 0 else actionClocks[step.toInt()]
                             val cooldownEnd = completed.filter { change -> change["actionId"] != JsonNull &&
                                 declaredActions.single { it["actionId"] == change["actionId"] }["actionName"] == s("afterBurn") }
@@ -590,14 +594,19 @@ object TraceComparator {
         unit.arrayAt("pathPoints").forEach { point(it.jsonObject) }
         val mechLegCount = when (unit.id("typeId")) {
             in typesLoadedBy(scenario, setOf("mech")) -> 2
-            in typesLoadedBy(scenario, setOf("mech-heavy")) -> 4
+            in typesLoadedBy(scenario, setOf("mech-heavy", "mech-bunker")) -> 4
             else -> null
         }
         if (mechLegCount != null) validateMechPose(unit.objectAt("mechPose"), mechLegCount)
-        validateShieldSample(unit, unit.id("typeId") in typesLoadedBy(scenario, setOf("mech-heavy")))
+        validateShieldSample(unit, unit.id("typeId") in typesLoadedBy(scenario, setOf("mech-heavy")) || unit.id("typeId") == "mechBunkerDeployed")
         if (unit.id("typeId") in typesLoadedBy(scenario, setOf("helicopter", "dropship"))) validateFlightPose(unit)
         val aaBeam = unit.id("typeId") in typesLoadedBy(scenario, setOf("aa-beam-gunship"))
         if (aaBeam) { validateAaBeamUnit(unit); validateUnitActions(unit, observer) }
+        else if (unit.id("typeId") in typesLoadedBy(scenario, setOf("mech-bunker"))) {
+            validateUnitActions(unit, observer)
+            if (unit["energy"] != null && unit["energy"] != JsonNull)
+                throw Incomplete("unit-action-state", "Bunker cannot expose weapon energy")
+        }
         else {
             if (unit["energy"] != null && unit["energy"] != JsonNull)
                 throw Incomplete("aa-beam-state", "Weapon energy on an unsupported unit")
@@ -731,6 +740,29 @@ object TraceComparator {
         return number
     }
 
+    private fun validateBunkerQueue(unit: JsonObject, actions: List<JsonObject>, accepted: Set<String>,
+                                   changes: List<JsonObject>, step: Long, initial: Boolean) {
+        val pending = if (initial) null else actions.singleOrNull { action ->
+            action["kind"] == s("unit-action") && action.id("unitId") == unit.id("unitId") &&
+                action.id("actionId") in accepted && action.integer("atStep") <= step &&
+                changes.none { it["actionId"] == action["actionId"] && it.integer("completionStepIndex") <= step }
+        }
+        val state = unit.objectAt("unitActions")
+        if (state.number("automaticCooldown") != 0.0) throw Incomplete("bunker-queue", "Bunker has no automatic action timer")
+        val name = if (unit.id("typeId") == "mechBunker") "deploy" else "undeploy"
+        val entry = state.objectAt("actions").objectAt(name)
+        if (entry.integer("cooldownRemaining") != 0L) throw Incomplete("bunker-queue", "Bunker has no action cooldown")
+        if (pending == null) {
+            if (entry["progress"] != JsonNull || entry["queueIndex"] != JsonNull)
+                throw Incomplete("bunker-queue", "Queue without an accepted pending command")
+        } else {
+            var progress = 0f
+            repeat((step - pending.integer("atStep") + 1).toInt()) { progress += if (name == "deploy") .006f else .010f }
+            if (entry["queueIndex"] != n(0) || entry.number("progress") != JsonPrimitive(progress).double)
+                throw Incomplete("bunker-queue", "Progress differs from accepted command and independent float schedule")
+        }
+    }
+
     private fun validateUnitActions(unit: JsonObject, observer: String?) {
         fun invalid(reason: String): Nothing = throw Incomplete("unit-action-state", reason)
         val raw = unit["unitActions"]
@@ -742,7 +774,12 @@ object TraceComparator {
         if (state.keys != setOf("actions", "automaticCooldown") || aaNumber(state["automaticCooldown"]) !in 0.0..60.0)
             invalid("Invalid automatic action cooldown")
         val actions = state["actions"] as? JsonObject ?: invalid("Missing action entries")
-        val names = if (unit.id("typeId") == "aaBeamGunship_afterburn") setOf("afterBurn", "cancelBurn") else setOf("afterBurn")
+        val names = when (unit.id("typeId")) {
+            "mechBunker" -> setOf("deploy")
+            "mechBunkerDeployed" -> setOf("undeploy")
+            "aaBeamGunship_afterburn" -> setOf("afterBurn", "cancelBurn")
+            else -> setOf("afterBurn")
+        }
         if (actions.keys != names) invalid("Missing or unapproved player action")
         val indexes = mutableListOf<Long>()
         for ((name, rawAction) in actions) {
@@ -1056,7 +1093,7 @@ object TraceComparator {
                     }
                 }
                 units.forEach { validateUnitSample(it, scenario, id, observation.number("simulationTime") == 0.0) }
-                if (typesLoadedBy(scenario, setOf("aa-beam-gunship")).isNotEmpty()) {
+                if (typesLoadedBy(scenario, setOf("aa-beam-gunship", "mech-bunker")).isNotEmpty()) {
                     val hosts = observation.arrayAt("units").map { it.jsonObject }.associateBy { it.id("unitId") }
                     for (unit in units) {
                         val host = hosts.getValue(unit.id("unitId"))

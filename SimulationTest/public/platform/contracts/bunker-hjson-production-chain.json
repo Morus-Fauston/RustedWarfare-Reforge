@@ -1,0 +1,154 @@
+{
+  "schemaVersion": 1,
+  "scenarioId": "bunker-hjson-production-chain",
+  "rules": [
+    {
+      "intentId": "select-center"
+    },
+    {
+      "intentId": "produce-worker"
+    },
+    {
+      "intentId": "leave-center"
+    },
+    {
+      "intentId": "select-worker"
+    },
+    {
+      "intentId": "place-worker"
+    },
+    {
+      "intentId": "stop-worker"
+    },
+    {
+      "intentId": "build-t1"
+    },
+    {
+      "intentId": "finish-t1"
+    },
+    {
+      "intentId": "produce-bunker"
+    },
+    {
+      "intentId": "wait-bunker-1"
+    },
+    {
+      "intentId": "wait-bunker-2"
+    },
+    {
+      "intentId": "select-bunker"
+    },
+    {
+      "intentId": "approach"
+    },
+    {
+      "intentId": "stop-mobile"
+    },
+    {
+      "intentId": "deploy"
+    },
+    {
+      "intentId": "attack"
+    },
+    {
+      "intentId": "stop-fixed"
+    },
+    {
+      "intentId": "undeploy"
+    },
+    {
+      "intentId": "return"
+    },
+    {
+      "intentId": "final-stop"
+    }
+  ],
+  "history": {
+    "initialBalance": 16000,
+    "ownerPlayerId": "p1",
+    "initialOwnedTypes": [
+      "commandCenter"
+    ],
+    "initialIncome": {
+      "unitId": "a",
+      "typeId": "commandCenter",
+      "period": 10,
+      "credits": 4.5
+    },
+    "productionOrder": [
+      "builder",
+      "mechBunker"
+    ],
+    "projectileBirthsRequired": true,
+    "mechLegs": {
+      "mechGun": 2,
+      "mechBunker": 4,
+      "mechBunkerDeployed": 4
+    },
+    "spend": [
+      {
+        "intentId": "produce-worker",
+        "amount": 500,
+        "at": "action"
+      },
+      {
+        "intentId": "build-t1",
+        "amount": 1000,
+        "at": "construction-created"
+      },
+      {
+        "intentId": "produce-bunker",
+        "amount": 4500,
+        "at": "action"
+      }
+    ],
+    "finalUnits": [
+      {
+        "ownerPlayerId": "p1",
+        "typeId": "commandCenter",
+        "fields": {
+          "alive": true
+        }
+      },
+      {
+        "ownerPlayerId": "p1",
+        "typeId": "builder",
+        "fields": {
+          "alive": true
+        }
+      },
+      {
+        "ownerPlayerId": "p1",
+        "typeId": "mechFactory",
+        "fields": {
+          "alive": true
+        }
+      },
+      {
+        "ownerPlayerId": "p1",
+        "typeId": "mechBunker",
+        "fields": {
+          "alive": true
+        }
+      }
+    ],
+    "bunkerStages": [
+      {
+        "intentId": "deploy",
+        "typeId": "mechBunkerDeployed"
+      },
+      {
+        "intentId": "attack",
+        "typeId": "mechBunkerDeployed"
+      },
+      {
+        "intentId": "undeploy",
+        "typeId": "mechBunker"
+      },
+      {
+        "intentId": "final-stop",
+        "typeId": "mechBunker"
+      }
+    ]
+  }
+}

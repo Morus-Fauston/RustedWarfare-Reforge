@@ -69,6 +69,13 @@ fun contentPackVisuals(visuals: PreparedVisualAssets, choice: ContentPackChoice)
 
 /** Reuses the existing controlled combat layout, not a new map or spawn-file interpreter. */
 internal fun contentPackScenario(root: Path, choice: ContentPackChoice): Scenario {
+    val bunker = choice.unitId in setOf("commandCenter", "builder", "mechFactory", "mechFactoryT2", "mechBunker", "mechBunkerDeployed") &&
+        choice.content.units["mechBunker"]?.groundHeight != null &&
+        choice.content.units["mechBunkerDeployed"]?.building != null &&
+        choice.content.units["commandCenter"]?.production?.unitTypeIds == listOf("builder") &&
+        choice.content.units["builder"]?.builder?.buildingTypeIds == listOf("mechFactory") &&
+        choice.content.units["mechFactory"]?.production?.unitTypeIds?.contains("mechBunker") == true &&
+        choice.content.units["mechFactoryT2"]?.production?.unitTypeIds?.contains("mechBunker") == true
     val aaBeam = choice.unitId in setOf("commandCenter", "builder", "airFactory", "airFactoryT2", "helicopter", "amphibiousJet", "dropship", "aaBeamGunship") &&
         choice.content.units["aaBeamGunship"]?.energy != null &&
         choice.content.units["commandCenter"]?.production?.unitTypeIds == listOf("builder") &&
@@ -113,6 +120,16 @@ internal fun contentPackScenario(root: Path, choice: ContentPackChoice): Scenari
     require(map.widthTiles * map.tileWidth >= 600 && map.heightTiles * map.tileHeight >= 400) {
         "The existing controlled combat layout requires a map at least 600 by 400 world units"
     }
+    if (bunker) return Scenario("p009-bunker-production", map, choice.content.units,
+        listOf(Player("p1", PlayerControl.LOCAL, "one"), Player("p2", PlayerControl.NONE, "two")),
+        listOf(UnitSpawn("a", "p1", "commandCenter", Position(130.0, 130.0), 0.0),
+            UnitSpawn("b", "p2", "mechGun", Position(500.0, 310.0), 270.0),
+            UnitSpawn("c", "p2", "mechGun", Position(330.0, 386.0), 0.0),
+            UnitSpawn("d", "p2", "mechGun", Position(250.0, 386.0), 0.0)),
+        CoordinateModel("p001.coordinate.v1", "2d", "x-right", "y-down", "top-left", "world-unit", "double", "ieee754-binary64"),
+        TimeModel("p001.time.v1", "sim-tick", "ieee754-binary64", "fixed-explicit-delta"), MovementContract(16.0, 4.0),
+        combatContract = CombatContract(12345, -1, mapOf("a" to 8L, "b" to 9L, "c" to 10L, "d" to 11L), 12L),
+        economyContract = EconomyContract(mapOf("p1" to 16000L, "p2" to 0L)))
     if (aaBeam) return Scenario("p009-aa-beam-production", map, choice.content.units,
         listOf(Player("p1", PlayerControl.LOCAL, "one"), Player("p2", PlayerControl.NONE, "two")),
         listOf(UnitSpawn("a", "p1", "commandCenter", Position(130.0, 130.0), 0.0),

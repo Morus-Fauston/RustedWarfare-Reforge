@@ -4,7 +4,7 @@ import kotlinx.serialization.json.*
 
 /** Independent finite AA action transitions, never inferred from a recorded type. */
 internal object UnitActionDeclaration {
-    val types = setOf("aaBeamGunship", "aaBeamGunship_afterburn")
+    val types = setOf("aaBeamGunship", "aaBeamGunship_afterburn", "mechBunker", "mechBunkerDeployed")
 
     fun conversions(scenario: JsonObject, contract: JsonObject): List<JsonObject> {
         val declarations = contract["unitActionConversions"]?.jsonArray?.map { it.jsonObject } ?: return emptyList()
@@ -22,7 +22,8 @@ internal object UnitActionDeclaration {
             val source = change.id("sourceTypeId"); val target = change.id("targetTypeId")
             val completion = change.integer("completionStepIndex")
             if (source !in types || target !in types || current[id] != source ||
-                listOf(source, target).any { definitions[it]?.get("loader") != s("aa-beam-gunship") } ||
+                listOf(source, target).any { definitions[it]?.get("loader") != s(
+                    if (source.startsWith("mechBunker")) "mech-bunker" else "aa-beam-gunship") } ||
                 completion <= boundaries.getValue(id) || completion >= scenario.objectAt("termination").arrayAt("steps").size)
                 throw InputError("Unit action conversion differs from its finite type or boundary")
             if (change.required("actionId") == JsonNull) {
@@ -38,6 +39,8 @@ internal object UnitActionDeclaration {
                     when (action.id("actionName")) {
                         "afterBurn" -> target != "aaBeamGunship_afterburn"
                         "cancelBurn" -> source != "aaBeamGunship_afterburn" || target != "aaBeamGunship"
+                        "deploy" -> source != "mechBunker" || target != "mechBunkerDeployed" || completion != action.integer("atStep") + 166
+                        "undeploy" -> source != "mechBunkerDeployed" || target != "mechBunker" || completion != action.integer("atStep") + 100
                         else -> true
                     }) throw InputError("Unit conversion differs from its normal action")
             }

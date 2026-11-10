@@ -131,12 +131,13 @@ internal object OrdinaryWeapon {
              weapon: CombatProfile = checkNotNull(unit.definition.combat)) {
         val profile = weapon.idleSweep ?: return
         if (profile.angle == 0.0) return
+        if (profile.onlyWhenStationary && moving(unit)) return
         val elapsed = delta.toFloat()
         if (state.idleHold != 0f) {
             state.idleHold = maxOf(0f, state.idleHold - elapsed)
             return
         }
-        unit.mechState?.takeIf { it.hadMotionAim }?.let { motion ->
+        unit.mechState?.takeIf { it.hadMotionAim && state === unit.combat }?.let { motion ->
             val body = checkNotNull(unit.definition.mech).body
             val base = motion.motionAngle + if (motion.reversing && unit.definition.movement.reverseSpeedPercentage > .95)
                 body.reverseIdleDirection else body.idleDirection
@@ -162,6 +163,9 @@ internal object OrdinaryWeapon {
             state.idleReached = false
         }
     }
+
+    fun moving(unit: MutableUnit): Boolean = unit.speed != 0.0 ||
+        unit.flightVelocity.x != 0.0 || unit.flightVelocity.y != 0.0
 
     /** Cached pre-plane distance is retained unless the ordinary plane step overshoots. */
     fun move(projectile: MutableProjectile, target: MutableUnit, delta: Double): Boolean {

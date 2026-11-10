@@ -34,7 +34,7 @@ internal class BuildingTerrain private constructor(map: MapDefinition, occupied:
 
         fun initial(input: Scenario): BuildingTerrain? {
             val buildings = input.units.filter { input.unitDefinitions.getValue(it.typeId).building != null }
-            if (buildings.isEmpty() && input.unitDefinitions.values.none { it.builder != null }) return null
+            if (buildings.isEmpty() && input.unitDefinitions.values.none { it.builder != null || it.groundHeight != null }) return null
             val cells = linkedSetOf<Pair<Int, Int>>()
             for (unit in buildings) {
                 val definition = input.unitDefinitions.getValue(unit.typeId)

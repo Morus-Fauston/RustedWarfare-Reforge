@@ -57,7 +57,13 @@ internal object FactoryContentReader {
                     products.any { it !in setOf("builder", "c_tank", "hoverTank") })
                     reject(ContentErrorCode.UNSUPPORTED_FEATURE, path, field = "productionUnits",
                         reason = "Expected a nonempty unique native land factory product list")
-            } else only("productionUnits", if (t2) "builder,mechGun,mechHeavyMissile" else "builder,mechGun")
+            } else {
+                val products = required("productionUnits").split(',')
+                val baseProducts = if (t2) listOf("builder", "mechGun", "mechHeavyMissile") else listOf("builder", "mechGun")
+                if (products != baseProducts && products != baseProducts + "mechBunker")
+                    reject(ContentErrorCode.UNSUPPORTED_FEATURE, path, field = "productionUnits",
+                        reason = "Expected the qualified mech tier products with an optional bunker representative")
+            }
             only("placementFootprint", "-1,-1,1,3")
             only("price", when { t2 -> "5000"; mech -> "1000"; else -> "700" })
             only("buildSpeed", if (t2) "0.0005" else "0.001")
@@ -107,7 +113,7 @@ internal object FactoryContentReader {
             building = BuildingProfile(BuildingFootprint(-1, -1, 1, 1),
                 image("image_back"), placementFootprint = if (construction) BuildingFootprint(-1, -1, 1, 3)
                     else BuildingFootprint(-1, -1, 1, 1)),
-            production = ProductionProfile(if (t2) listOf("builder", "mechGun", "mechHeavyMissile") else if (mech) listOf("builder", "mechGun") else if (construction) required("productionUnits").split(',') else listOf("c_tank"),
+            production = ProductionProfile(if (construction) required("productionUnits").split(',') else listOf("c_tank"),
                 if (mech) FactoryExitProfile.CUSTOM_MECH else FactoryExitProfile.NATIVE_LAND),
             build = if (construction) BuildProfile(positive("price").toLong(), positive("buildSpeed").toFloat()) else null,
             construction = if (construction) ConstructionProfile(positive("price").toLong(), positive("buildSpeed").toFloat()) else null,

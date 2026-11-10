@@ -13,6 +13,8 @@ import java.io.IOException
 import java.nio.file.Path
 
 object ContentLoader {
+    fun loadBunkerWithSources(path: Path): ContentResult<LoadedUnitContent> =
+        load(path) { com.rustedwarfare.reforge.core.content.internal.BunkerContentReader.readWithSources(it) {} }
     fun loadAaBeamWithSources(path: Path): ContentResult<LoadedUnitContent> =
         load(path) { com.rustedwarfare.reforge.core.content.internal.AaBeamContentReader.readWithSources(it) {} }
     fun loadDropshipWithSources(path: Path): ContentResult<LoadedUnitContent> =

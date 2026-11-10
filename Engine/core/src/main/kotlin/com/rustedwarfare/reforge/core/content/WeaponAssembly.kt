@@ -31,6 +31,7 @@ class WeaponAssembly private constructor(slots: List<AssembledWeapon>, val usesN
                     turretTurnDeceleration = weapon.turnDeceleration ?: base.turretTurnDeceleration,
                     mount = weapon.mount, turretImagePath = weapon.imagePath, turretImageScale = weapon.imageScale,
                     recoil = weapon.recoil, fireSound = weapon.fireSound, namedWeapons = null,
+                    idleSweep = weapon.idleSweep ?: base.idleSweep,
                     barrelX = weapon.barrelX ?: if (index == 0) base.barrelX else 0.0,
                     oddShotOffset = weapon.oddShotOffset ?: if (index == 0) base.oddShotOffset else 0.0))
             }, requiresNamedState(base))

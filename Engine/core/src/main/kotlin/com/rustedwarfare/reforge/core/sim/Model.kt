@@ -419,7 +419,7 @@ internal data class MutableUnit(
     var terrainCorrectionTime: Double = 0.0,
     var terrainClearSteps: Int = 0,
     var health: Double? = definition.maximumHealth,
-    var shield: Float = definition.shield?.maximum ?: 0f,
+    var shield: Float = definition.shield?.takeUnless { it.startAtZero }?.maximum ?: 0f,
     var shieldDisplayDamage: Float = 0f,
     var attackCommand: ManualAttackCommand? = null,
     var taskQueue: UnitTaskQueue = UnitTaskQueue(),

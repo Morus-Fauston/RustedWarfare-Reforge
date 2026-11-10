@@ -1,0 +1,43 @@
+{
+  "format": "rw-reforge.content-pack.v1",
+  "id": "owned-bunker-production-hjson",
+  "name": "Owned normal T1 bunker production",
+  "units": [
+    {
+      "type": "mech",
+      "file": "units/mech.hjson"
+    },
+    {
+      "type": "mech-factory",
+      "file": "units/mechFactory.hjson"
+    },
+    {
+      "type": "builder",
+      "file": "units/builder.hjson"
+    },
+    {
+      "type": "mech-heavy",
+      "file": "units/heavy/heavy.hjson"
+    },
+    {
+      "type": "mech-factory",
+      "file": "units/mechFactoryT2.hjson"
+    },
+    {
+      "type": "helicopter",
+      "file": "units/air/helicopter.hjson"
+    },
+    {
+      "type": "mech-bunker",
+      "file": "units/bunker/bunker.hjson"
+    },
+    {
+      "type": "mech-bunker",
+      "file": "units/bunker/deployed.hjson"
+    },
+    {
+      "type": "command-center",
+      "file": "units/commandCenter/commandCenter.hjson"
+    }
+  ]
+}

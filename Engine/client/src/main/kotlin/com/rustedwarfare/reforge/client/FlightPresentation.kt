@@ -7,7 +7,7 @@ import java.util.Collections
 
 /** Caller supplies an authorized visible unit; this is also the click and box-selection center. */
 internal fun UnitObservation.displayedBodyPosition(): Position =
-    if (flightPose != null || waterPose != null || hoverPose != null || amphibiousJet != null)
+    if (flightPose != null || waterPose != null || hoverPose != null || amphibiousJet != null || mechPose != null)
         Position(position.x, position.y - height) else position
 
 data class FlightUnitFrame(val unitId: String, val bodyX: Float, val bodyY: Float, val bodyRotation: Float,

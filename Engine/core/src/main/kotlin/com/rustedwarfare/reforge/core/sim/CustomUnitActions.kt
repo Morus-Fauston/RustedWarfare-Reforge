@@ -11,9 +11,33 @@ internal data class CustomActionState(val queue: List<PendingUnitAction> = empty
 
 /** Finite custom conversion actions; movement orders and same-name weapon state stay on the object. */
 internal object CustomUnitActions {
+    fun supports(definition: UnitDefinition): Boolean = AaBeamGunship.supports(definition) || Bunker.supports(definition)
+
+    fun movementLocked(unit: MutableUnit): Boolean = unit.customActionState.queue.firstOrNull()?.let {
+        it.progress > 0f && it.action.cannotMove
+    } == true
+
+    /** Runs after the base movement and the queue: submission itself never changes motion. */
+    fun constrain(unit: MutableUnit, delta: Double, steering: SteeringPolicy, coordinates: CoordinatePolicy) {
+        val action = unit.customActionState.queue.firstOrNull()?.action ?: return
+        if (action.cannotMove) {
+            unit.speed = 0.0
+            unit.flightVelocity = Position(0.0, 0.0)
+        }
+        action.rotateTo?.let { sourceAngle ->
+            var heading = coordinates.normalize(sourceAngle + 90.0)
+            if (action.rotateToOrBackwards && kotlin.math.abs(coordinates.difference(heading, unit.heading)) > 90.0)
+                heading = coordinates.normalize(heading + 180.0)
+            val offset = coordinates.displacement(heading, 100.0)
+            val target = Position(unit.position.x + offset.x, unit.position.y + offset.y)
+            if (unit.mechState != null) MechMotion.turn(unit, target, delta, steering, coordinates)
+            else BodyMotion.turnOrdinary(unit, target, delta, steering, coordinates)
+        }
+    }
+
     fun observe(unit: MutableUnit, now: Int): UnitActionsObservation? {
         val profile = unit.definition.customActions ?: return null
-        val actions = profile.actions.filter { it.automatic == null }.map { action ->
+        val actions = profile.actions.filter { it.automatic == null && it.visible }.map { action ->
             val index = unit.customActionState.queue.indexOfFirst { it.action.actionId == action.actionId }
             val remaining = maxOf(0, (unit.customActionState.cooldownEnds[action.actionId] ?: now) - now)
             UnitActionObservation(action.name, index.takeIf { it >= 0 },
@@ -24,7 +48,7 @@ internal object CustomUnitActions {
     }
 
     fun request(unit: MutableUnit, name: String, cancel: Boolean, now: Int): SimulationError? {
-        val action = unit.definition.customActions?.actions?.singleOrNull { it.name == name && it.automatic == null }
+        val action = unit.definition.customActions?.actions?.singleOrNull { it.name == name && it.automatic == null && it.visible }
             ?: return SimulationError("unsupported-unit-action", "Unit does not expose this action")
         if (!BuildingWork.isReady(unit)) return SimulationError("unit-incomplete", "Unit is not complete")
         if (cancel) return SimulationError("unit-action-not-cancellable", "This action cannot be cancelled")
@@ -56,15 +80,22 @@ internal object CustomUnitActions {
     }
 
     private fun convert(unit: MutableUnit, target: UnitDefinition) {
-        check(AaBeamGunship.supports(unit.definition) && AaBeamGunship.supports(target))
+        check(supports(unit.definition) && supports(target))
+        val old = unit.definition
         val health = (checkNotNull(unit.health).toFloat() / checkNotNull(unit.definition.maximumHealth).toFloat() *
             checkNotNull(target.maximumHealth).toFloat()).toDouble()
-        val energy = unit.energy / checkNotNull(unit.definition.energy).maximum * checkNotNull(target.energy).maximum
-        require(health.isFinite() && energy.isFinite()) { "Converted resources must remain finite" }
+        val energy = target.energy?.let { unit.energy / checkNotNull(old.energy).maximum * it.maximum } ?: 0f
+        val shield = target.shield?.let { next ->
+            if (next.startAtZero) unit.shield.coerceIn(0f, next.maximum)
+            else old.shield?.let { unit.shield / it.maximum * next.maximum } ?: next.maximum
+        } ?: 0f
+        require(health.isFinite() && energy.isFinite() && shield.isFinite()) { "Converted resources must remain finite" }
         unit.typeId = target.id
         unit.definition = target
         unit.health = health
         unit.energy = energy
+        unit.shield = shield
+        if (old.movement.type != target.movement.type) unit.cancelRoute()
         val retainedIds = checkNotNull(target.customActions).actions.filter { it.automatic == null }.map { it.actionId }.toSet()
         unit.customActionState = unit.customActionState.copy(queue = unit.customActionState.queue.filter {
             it.action.actionId in retainedIds })

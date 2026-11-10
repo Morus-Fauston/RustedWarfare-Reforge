@@ -6236,7 +6236,11 @@
     "aa-beam-beam": "assets/units/shared/beam3.png",
     "aa-beam-beamStart": "assets/units/shared/beam1_start.png",
     "aa-beam-beamEnd": "assets/units/shared/beam1_end.png",
-    "aa-afterburn-trail": "assets/units/shared/glow_sharp.png"
+    "aa-afterburn-trail": "assets/units/shared/glow_sharp.png",
+    "bunker-body": "assets/units/mechs_large/topBunker.png",
+    "bunker-turret": "assets/units/mechs_large/bunkerTurret.png",
+    "bunker-leg": "assets/units/mechs_large/leg.png",
+    "bunker-foot": "assets/units/mechs_large/foot_small.png"
   },
   "mappingBasis": {
     "androidProfileSha256": "e273280ab37b1a24714e6b15d8e1cb14fdd395e228ea7c71a62dd2f24d334780",
@@ -6450,6 +6454,38 @@
       "sha256": "2074be278066a5c8a72b1b6dfded3d3549144559e92d2bfc7df914e751e6c8b8",
       "width": 32,
       "height": 32
+    },
+    {
+      "id": "bunker-body",
+      "path": "assets/units/mechs_large/topBunker.png",
+      "bytes": 3267,
+      "sha256": "cb0933528531e63c3f227e3f7631cb42da30c46f09c8e058e26ffb00478e3bba",
+      "width": 39,
+      "height": 49
+    },
+    {
+      "id": "bunker-turret",
+      "path": "assets/units/mechs_large/bunkerTurret.png",
+      "bytes": 508,
+      "sha256": "a1ff7f2cc90b9e89dae9a13eef32a41a84ab289251c3d6fe1764d5cbd56bad11",
+      "width": 14,
+      "height": 57
+    },
+    {
+      "id": "bunker-leg",
+      "path": "assets/units/mechs_large/leg.png",
+      "bytes": 339,
+      "sha256": "b1a80d2e224b3592e0375d47ee5e72d060a09bbb1f92fcf0b16716b39f12b742",
+      "width": 16,
+      "height": 68
+    },
+    {
+      "id": "bunker-foot",
+      "path": "assets/units/mechs_large/foot_small.png",
+      "bytes": 184,
+      "sha256": "ae00a7c117cb3c3d8cc1225458ffe79c078ae88ef8304912558696f750ea25d5",
+      "width": 17,
+      "height": 36
     }
   ],
   "mappingUnitOutputs": {
@@ -6889,6 +6925,86 @@
         32
       ],
       "frames": 1
+    },
+    "bunker-body": {
+      "file": "units/bunker-body.png",
+      "operation": "crop",
+      "source": "bunker-body",
+      "rect": [
+        0,
+        0,
+        39,
+        49
+      ],
+      "target": [
+        39,
+        49
+      ],
+      "frames": 1
+    },
+    "bunker-turret": {
+      "file": "units/bunker-turret.png",
+      "operation": "crop",
+      "source": "bunker-turret",
+      "rect": [
+        0,
+        0,
+        14,
+        57
+      ],
+      "target": [
+        14,
+        57
+      ],
+      "frames": 1
+    },
+    "bunker-leg": {
+      "file": "units/bunker-leg.png",
+      "operation": "crop",
+      "source": "bunker-leg",
+      "rect": [
+        0,
+        0,
+        16,
+        68
+      ],
+      "target": [
+        16,
+        68
+      ],
+      "frames": 1
+    },
+    "bunker-foot": {
+      "file": "units/bunker-foot.png",
+      "operation": "crop",
+      "source": "bunker-foot",
+      "rect": [
+        0,
+        0,
+        17,
+        36
+      ],
+      "target": [
+        17,
+        36
+      ],
+      "frames": 1
+    },
+    "bunker-shadow": {
+      "file": "units/bunker-shadow.png",
+      "operation": "alpha-shadow",
+      "source": "bunker-body",
+      "rect": [
+        0,
+        0,
+        39,
+        49
+      ],
+      "target": [
+        39,
+        49
+      ],
+      "frames": 1
     }
   },
   "mappingUnitBindings": {
@@ -6950,6 +7066,25 @@
       "beamStart": "aa-beam-beamStart",
       "beamEnd": "aa-beam-beamEnd",
       "afterburnTrail": "aa-afterburn-trail"
+    },
+    "mechBunker": {
+      "body": "bunker-body",
+      "leg": "bunker-leg",
+      "foot": "bunker-foot",
+      "shadow": "bunker-shadow",
+      "weaponTurrets": {
+        "2": "bunker-turret"
+      }
+    },
+    "mechBunkerDeployed": {
+      "body": "bunker-body",
+      "leg": "bunker-leg",
+      "foot": "bunker-foot",
+      "shadow": "bunker-shadow",
+      "weaponTurrets": {
+        "2": "bunker-turret"
+      },
+      "shield": "heavy-shield"
     }
   }
 }

@@ -199,7 +199,7 @@ internal fun UnitObservation.json(capabilities: Boolean): JsonObject = JsonObjec
         "displayDamage" to n(it.displayDamage))) }
     energy?.let { put("energy", obj("current" to n(it.current), "maximum" to n(it.maximum), "recharging" to b(it.recharging))) }
     unitActions?.let { put("unitActions", it.json()) }
-    mechPose?.let { put("mechPose", it.json()) }
+    mechPose?.let { put("height", n(height)); put("mechPose", it.json()) }
     flightPose?.let { put("height", n(height)); put("flightPose", it.json()) }
     waterPose?.let { put("height", n(height)); put("waterPose", obj(
         "reversing" to b(it.reversing), "sinkSpeed" to n(it.sinkSpeed), "settled" to b(it.settled))) }

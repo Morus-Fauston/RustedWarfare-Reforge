@@ -1038,6 +1038,7 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
                     val faded = unit.shieldDisplayDamage - unit.shieldDisplayDamage * .02f * step.delta.toFloat()
                     unit.shieldDisplayDamage = maxOf(0f, faded - 4f * step.delta.toFloat()).coerceAtMost(50f)
                 }
+                Bunker.advanceHeight(unit, step.delta)
                 if (unit.combat == null) MechBody.advance(unit, step.delta)
                 val previousRequest = unit.movementRequested
                 unit.movementRequested = false
@@ -1092,6 +1093,14 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
                     else updateAttackRoute(unit, currentScenario.map, step.stepIndex)
                 }
                 val fourLegged = unit.definition.mech?.kind == com.rustedwarfare.reforge.core.content.MechKind.FOUR_LEGGED
+                if (unit.definition.groundHeight != null && unit.definition.movement.type != MovementType.NONE && unit.moveTarget == null) {
+                    unit.tasks.firstOrNull()?.takeIf { it.kind == UnitTaskKind.MOVE }?.let { task ->
+                        unit.moveTarget = task.target
+                        unit.originMoveId = task.actionId
+                        unit.originAtStep = task.atStep
+                        resumeProductionRoute(unit, currentScenario.map, step.stepIndex)
+                    }
+                }
                 if (fourLegged) updateUnit(unit, currentScenario.map, step.delta, step.stepIndex, candidate.motionSamples)
                 if (BuildingWork.isReady(unit)) {
                     updateWeapon(unit, step.delta)
@@ -1099,6 +1108,7 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
                     WeaponEnergy.advance(unit, step.delta)
                     if (CustomUnitActions.advanceQueue(unit, currentScenario.unitDefinitions, step.delta, steps.current.actionClock))
                         pendingEvents += Event("unit-action-completed", unit.unitId)
+                    CustomUnitActions.constrain(unit, step.delta, policies.steering, policies.coordinates)
                 }
                 if (!fourLegged) updateUnit(unit, currentScenario.map, step.delta, step.stepIndex, candidate.motionSamples)
                 FlightMotion.advancePose(unit, step.delta)
@@ -1301,15 +1311,18 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
             val submarine = definition.submarine != null
             val amphibious = definition.amphibiousJet != null
             val dropship = definition.transport == com.rustedwarfare.reforge.core.content.TransportProfile.NATIVE_DROPSHIP
+            val bunker = Bunker.supports(definition)
+            if (definition.groundHeight != null && !bunker)
+                return SimulationError("unsupported-unit-actions", "Ground height requires the qualified bunker forms")
             val beamGunship = definition.energy != null || definition.combat?.projectile?.beam != null ||
                 definition.combat?.namedWeapons?.ordered?.any { it.energyUsage != 0f || it.projectile.beam != null } == true
             if (beamGunship && !AaBeamGunship.supports(definition))
                 return SimulationError("unsupported-aa-beam", "Expected the qualified AA energy and beam representative")
             if (definition.customActions != null) {
-                if (!AaBeamGunship.supports(definition))
+                if (!CustomUnitActions.supports(definition))
                     return SimulationError("unsupported-unit-actions", "Expected qualified custom unit actions")
                 if (definition.customActions.actions.any { action ->
-                    input.unitDefinitions[action.targetTypeId]?.let(AaBeamGunship::supports) != true })
+                    input.unitDefinitions[action.targetTypeId]?.let(CustomUnitActions::supports) != true })
                     return SimulationError("invalid-unit-action-target", "Custom action target must be registered and qualified")
             }
             if (amphibious && !AmphibiousJetMotion.supports(definition))
@@ -1337,7 +1350,7 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
                 return SimulationError("unsupported-flight", "Expected a finite AIR profile and a single finite rotor")
             if (!m.reverseSpeedPercentage.isFinite() || !air && !submarine && (m.reverseSpeedPercentage !in setOf(0.0, 1.0) ||
                 m.reverseSpeedPercentage != 0.0 && definition.mech == null && m.type != MovementType.WATER) ||
-                definition.mech?.let { !it.isValid() || m.type != (if (it.kind == com.rustedwarfare.reforge.core.content.MechKind.FOUR_LEGGED) MovementType.OVER_CLIFF else MovementType.LAND) } == true)
+                definition.mech?.let { !it.isValid() || !bunker && m.type != (if (it.kind == com.rustedwarfare.reforge.core.content.MechKind.FOUR_LEGGED) MovementType.OVER_CLIFF else MovementType.LAND) } == true)
                 return SimulationError("unsupported-mech", "Expected the finite supported mech locomotion category")
             definition.builder?.let { builder ->
                 if (definition.fogOfWarSightRange < 15 || m.type != MovementType.LAND || m.moveSpeed > .8 ||
@@ -1449,12 +1462,12 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
                     definition.directHitTargetKind != DirectHitTargetKind.ORDINARY))
                 return SimulationError("unsupported-unit", "Expected finite authored surface combat without unsupported capability combinations")
             if (numbers.any { !it.isFinite() || it < 0.0 } ||
-                (definition.building == null && definition.radius >= input.map.tileWidth && !(fourLegged && definition.radius == 22.0) && !navalHull && !authoredSurface && !dropship && !beamGunship) ||
+                (definition.building == null && definition.radius >= input.map.tileWidth && !(fourLegged && definition.radius == 22.0) && !navalHull && !authoredSurface && !dropship && !beamGunship && !bunker) ||
                 m.type != MovementType.AIR && !fourLegged && !hovering && (m.slidingMode || m.ignoringBody) ||
-                fourLegged && (m.type != MovementType.OVER_CLIFF || !m.slidingMode || !m.ignoringBody)) {
+                fourLegged && !bunker && (m.type != MovementType.OVER_CLIFF || !m.slidingMode || !m.ignoringBody)) {
                 return SimulationError("unsupported-unit", "Expected finite movement and the supported representative's radius and locomotion")
             }
-            if (m.type == MovementType.NONE && numbers.drop(1).any { it != 0.0 })
+            if (m.type == MovementType.NONE && !bunker && numbers.drop(1).any { it != 0.0 })
                 return SimulationError("unsupported-unit", "Immobile definitions require zero movement parameters")
             definition.durability?.let { durability ->
                 if (!durability.maxHp.isFinite() || durability.maxHp <= 0.0 ||
@@ -2207,6 +2220,12 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
     private fun updateUnit(unit: MutableUnit, map: MapDefinition, delta: Double, executionStep: Long,
                            motionSamples: MutableList<MotionStepSample>?) {
         val movement = UnitLocomotion.movement(unit)
+        if (CustomUnitActions.movementLocked(unit) || movement.type == MovementType.NONE) {
+            unit.speed = 0.0
+            unit.flightVelocity = Position(0.0, 0.0)
+            unit.movementState = MovementState.IDLE
+            return
+        }
         val maximumSpeed = movement.moveSpeed * unit.terrainSpeedMultiplier
         val air = movement.type == MovementType.AIR
         val sliding = movement.slidingMode
@@ -2316,7 +2335,9 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
         Transport.recordMotionGate(unit, aimForSample != null)
         val displacement = if (sliding) {
             val desiredVelocity = aimForSample?.let {
-                policies.coordinates.displacement(policies.coordinates.desired(unit.position, it), speedTarget)
+                // Sliding already aims at the route; reversing changes body orientation,
+                // while a signed speed is needed only for body-directed propulsion below.
+                policies.coordinates.displacement(policies.coordinates.desired(unit.position, it), kotlin.math.abs(speedTarget))
             } ?: Position(0.0, 0.0)
             unit.flightVelocity = FlightMotion.velocity(movement, unit.flightVelocity, desiredVelocity, requestedFraction, delta, maximumSpeed)
             unit.speed = kotlin.math.hypot(unit.flightVelocity.x, unit.flightVelocity.y)

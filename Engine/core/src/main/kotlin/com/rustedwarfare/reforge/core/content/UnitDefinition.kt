@@ -41,6 +41,7 @@ class UnitDefinition(
     val energy: EnergyProfile? = null,
     val customActions: CustomActionsProfile? = null,
     val afterburnTrailImagePath: Path? = null,
+    val groundHeight: GroundHeightProfile? = null,
 ) {
     val retainedUnconsumed: Set<String> = Collections.unmodifiableSet(LinkedHashSet(retainedUnconsumed))
     val maximumHealth: Double? get() = durability?.maxHp ?: combat?.maxHp
@@ -96,7 +97,7 @@ enum class DirectHitTargetKind { ORDINARY, NATIVE_BUILDING }
 data class DurabilityProfile(val maxHp: Double, val deadImagePath: Path?, val maxDamagePerHit: Double? = null)
 
 /** Actual shield capacity and per-simulation-time regeneration, separate from hit display. */
-data class ShieldProfile(val maximum: Float, val regeneration: Float) {
+data class ShieldProfile(val maximum: Float, val regeneration: Float, val startAtZero: Boolean = false) {
     fun isValid(): Boolean = maximum.isFinite() && maximum > 0f && regeneration.isFinite() && regeneration >= 0f
 }
 
@@ -104,12 +105,16 @@ data class ShieldProfile(val maximum: Float, val regeneration: Float) {
 data class EnergyProfile(val maximum: Float, val regeneration: Float, val rechargingRegeneration: Float,
     val needsFullRecharge: Boolean)
 
+/** Finite custom ground body's physical height; it does not grant flight movement. */
+data class GroundHeightProfile(val target: Float)
+
 /** The qualified conversion/action subset; no executable text or arbitrary expression interpreter. */
 enum class AutomaticActionCondition { ENERGY_EMPTY }
 data class CustomActionDefinition(val name: String, val actionId: String, val targetTypeId: String,
     val rate: Float, val energySet: Float?, val cooldown: Int = 0,
     val canPlayerCancel: Boolean = false, val allowMultipleInQueue: Boolean = false,
-    val automatic: AutomaticActionCondition? = null)
+    val automatic: AutomaticActionCondition? = null, val visible: Boolean = true,
+    val cannotMove: Boolean = false, val rotateTo: Double? = null, val rotateToOrBackwards: Boolean = false)
 class CustomActionsProfile(actions: List<CustomActionDefinition>, val automaticCooldown: Float = 60f) {
     val actions: List<CustomActionDefinition> = Collections.unmodifiableList(ArrayList(actions))
 }
@@ -218,7 +223,7 @@ data class NamedWeaponDefinition(val name: String, val projectileName: String,
     val barrelX: Double? = null, val oddShotOffset: Double? = null,
     val invisible: Boolean = false, val imageOffsetX: Double = 0.0, val imageOffsetY: Double = 0.0,
     val idleDirectionReversing: Double? = null, val turnDeceleration: Double? = null,
-    val energyUsage: Float = 0f)
+    val energyUsage: Float = 0f, val idleSweep: IdleSweepProfile? = null, val resetTurret: Boolean = true)
 
 /** Gameplay trigger identity, never an audio filename or resource-pack decision. */
 enum class FireSoundProfile(val eventId: String, val volume: Float, val pitch: Float = 1f) {
@@ -233,7 +238,7 @@ enum class FireSoundProfile(val eventId: String, val volume: Float, val pitch: F
 data class TurretMount(val localX: Double = 0.0, val localY: Double = 0.0)
 data class WeaponRecoil(val offset: Double = -2.0, val outTime: Double = 4.0, val returnTime: Double = 7.0)
 data class IdleSweepProfile(val angle: Double, val delay: Float, val speedFactor: Float,
-    val randomDelayExclusive: Int)
+    val randomDelayExclusive: Int, val onlyWhenStationary: Boolean = false)
 
 data class ProjectileProfile(val directDamage: Double, val life: Double, val speed: Double,
     val instant: Boolean = false, val nonDeflectable: Boolean = false, val deflectionHealth: Float = 1f,

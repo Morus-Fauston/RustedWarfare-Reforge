@@ -59,7 +59,7 @@ data class UnitAppearance(val displayRadius: Double, val imagePath: Path, val im
                 val side = Math.toRadians(pose.turretHeading + 90.0)
                 val pivot = Position(pose.pivot.x + sin(forward) * image.offsetY + sin(side) * image.offsetX,
                     pose.pivot.y - cos(forward) * image.offsetY - cos(side) * image.offsetX -
-                        if (unit.energy != null) unit.height else 0.0)
+                        if (unit.energy != null || unit.mechPose != null) unit.height else 0.0)
                 TurretDrawing(name, path, image.imageScale, pivot, pose.turretHeading,
                     image.logicalSize ?: logicalImages?.turret?.takeIf { path == turretImagePath })
             } }

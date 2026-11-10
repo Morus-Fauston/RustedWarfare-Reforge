@@ -130,7 +130,7 @@ internal data class StepState(
             origin?.let { birth ->
                 val producer = units.getValue(birth.producerId)
                 val bornDefinition = input.unitDefinitions.getValue(birth.unitTypeId)
-                val convertedProduct = AaBeamGunship.supports(bornDefinition) && AaBeamGunship.supports(unit.definition) &&
+                val convertedProduct = CustomUnitActions.supports(bornDefinition) && CustomUnitActions.supports(unit.definition) &&
                     bornDefinition.customActions?.actions?.any { it.targetTypeId == unit.typeId } == true
                 val nonce = unit.unitId.removePrefix("produced:${unit.ownerPlayerId}:")
                 require(producer.ownerPlayerId == unit.ownerPlayerId &&

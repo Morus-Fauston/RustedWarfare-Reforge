@@ -350,9 +350,9 @@ class BootstrapScreen(
             })
             stage.addActor(actor)
         }
-        for ((index, name) in listOf("afterBurn", "cancelBurn").withIndex()) {
+        for ((index, name) in listOf("afterBurn", "cancelBurn", "deploy", "undeploy").withIndex()) {
             val actor = TextButton("", skin)
-            actor.setBounds(752f + index * 92f, 188f, 84f, 40f)
+            actor.setBounds(752f + index % 2 * 92f, 188f, 84f, 40f)
             val input = CustomUnitActionButtonInput({ session }, { !paused && !loading && session?.isOpen == true }, name,
                 changed = { lastHudState = null; updateHud() }, hovered = { entered ->
                     customActionHover = name.takeIf { entered }; lastHudState = null
@@ -1251,7 +1251,7 @@ class BootstrapScreen(
             actor.isVisible = current != null && action != null
             actor.isDisabled = action?.available != true
             val status = when {
-                action?.queued == true -> "\nQueued"
+                action?.queued == true -> "\n${((action.progress ?: 0f) * 100f).toInt()}%"
                 (action?.cooldownRemaining ?: 0) > 0 -> String.format(Locale.ROOT, "\n%.1fs", action!!.cooldownRemaining / 1000f)
                 else -> ""
             }

@@ -47,6 +47,10 @@ internal object NamedWeaponRuntime {
             val state = states.getValue(definition.name)
             state.aimReady = false
             val weapon = slot.profile
+            if (definition.idleSweep != null && definition.resetTurret) {
+                val base = definition.attachedTo?.let { states.getValue(it).turretHeading } ?: unit.heading
+                state.idleBaseHeading = ScreenPlane.normalize(base + definition.idleDirection)
+            }
             OrdinaryWeapon.idle(frame.worldSeed, frame.counter, actorId, unit, frame.delta, state, weapon)
             if (definition.slave) continue
             val target = NamedWeaponRuntime.target(unit, definition, state, frame.primary, frame.candidates, frame.players, frame.coordinates, frame.map)
@@ -212,6 +216,11 @@ internal object NamedWeaponRuntime {
 
     /** Finite ordinary idle direction, separate from the legacy mech sweep/body animation. */
     fun idle(unit: MutableUnit, weapon: NamedWeaponDefinition, state: MutableCombat, delta: Double) {
+        weapon.idleSweep?.let { sweep ->
+            if (sweep.onlyWhenStationary && OrdinaryWeapon.moving(unit) && weapon.resetTurret)
+                OrdinaryWeapon.turnTo(unit, state.idleBaseHeading, delta, state, profile(unit, weapon))
+            return
+        }
         val reverseIdle = weapon.idleDirectionReversing ?: return
         if (state.idleHold != 0f) {
             state.idleHold = maxOf(0f, state.idleHold - delta.toFloat())
