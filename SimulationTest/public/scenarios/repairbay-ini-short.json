@@ -1,0 +1,1361 @@
+{
+  "schemaVersion": 1,
+  "kind": "scenario",
+  "scenarioId": "p009-repairbay-work",
+  "content": {
+    "map": {
+      "id": "map",
+      "path": "../inputs/repairbay-production/ini/maps/p001-controlled.tmx",
+      "sha256": "4b4ca42e2cb8b7a58170244541bf240418e789d27158c86b8f7c43d5066cf067"
+    },
+    "unitVariants": [
+      {
+        "id": "repairbay",
+        "path": "../inputs/repairbay-production/ini/production-package/repairbay.ini",
+        "sha256": "aee2a216d7707b353f043a9a74c2605ccd3ef17f91fa1bd33b15833023b3cbac",
+        "loader": "repair-bay"
+      },
+      {
+        "id": "builder",
+        "path": "../inputs/repairbay-production/ini/production-package/builder.ini",
+        "sha256": "9073e949e67c08d8864a019d98f0c5169cc1ee3571c4f3cd4314261becc4021b",
+        "loader": "builder"
+      }
+    ],
+    "dependencies": [
+      {
+        "id": "dep-0",
+        "path": "../inputs/repairbay-production/ini/assets/terrain.png",
+        "sha256": "1b47e4821cdbfc66460f690322cf641afc1fc782a3ed6985df8b9e773ed98ff0"
+      },
+      {
+        "id": "dep-1",
+        "path": "../inputs/repairbay-production/ini/production-package/body.png",
+        "sha256": "6ccf44446a0c4fbaa70a9ff1105257943feb5d622f07caca5e24b23cfc5b771e"
+      },
+      {
+        "id": "dep-2",
+        "path": "../inputs/repairbay-production/ini/production-package/builder.png",
+        "sha256": "503405e0f7eae6285ba03bb9b80fa5a4290fab927ee8985e2d6e5ab5e4c3135c"
+      },
+      {
+        "id": "dep-3",
+        "path": "../inputs/repairbay-production/ini/production-package/builder_dead.png",
+        "sha256": "503405e0f7eae6285ba03bb9b80fa5a4290fab927ee8985e2d6e5ab5e4c3135c"
+      },
+      {
+        "id": "dep-4",
+        "path": "../inputs/repairbay-production/ini/production-package/dead.png",
+        "sha256": "cc321255a36fa9aed77068b995249114e569ce76688c9ebc21794a8cf420f8dd"
+      },
+      {
+        "id": "dep-5",
+        "path": "../inputs/repairbay-production/ini/production-package/pack.json",
+        "sha256": "8ca5b6af5f93f674b37493ce63ef4ec2ec4aa7d1710171408980176bf281f10a"
+      }
+    ]
+  },
+  "coordinateModel": {
+    "id": "public.coordinate.v1",
+    "space": "2d",
+    "xAxis": "x-right",
+    "yAxis": "y-down",
+    "origin": "top-left",
+    "unit": "world-unit",
+    "valueType": "double",
+    "precision": "ieee754-binary64"
+  },
+  "timeModel": {
+    "id": "public.time.v1",
+    "deltaUnit": "sim-tick",
+    "stepRule": "fixed-explicit-delta",
+    "precision": "ieee754-binary64"
+  },
+  "angleUnit": "degree-clockwise-zero-up",
+  "movementContract": {
+    "pathPointRadius": 16,
+    "targetRadius": 4
+  },
+  "players": [
+    {
+      "playerId": "p1",
+      "control": "local"
+    },
+    {
+      "playerId": "p2",
+      "control": "none"
+    }
+  ],
+  "units": [
+    {
+      "unitId": "bay",
+      "owner": "p1",
+      "type": "repairbay",
+      "position": {
+        "x": 110,
+        "y": 210
+      },
+      "heading": 270
+    },
+    {
+      "unitId": "worker",
+      "owner": "p1",
+      "type": "builder",
+      "position": {
+        "x": 170,
+        "y": 210
+      },
+      "heading": 270
+    },
+    {
+      "unitId": "worker2",
+      "owner": "p1",
+      "type": "builder",
+      "position": {
+        "x": 110,
+        "y": 270
+      },
+      "heading": 270
+    }
+  ],
+  "actions": [
+    {
+      "actionId": "terminal",
+      "atStep": 0,
+      "kind": "reclaim",
+      "actor": "p1",
+      "unitId": "bay",
+      "targetUnitId": "worker",
+      "append": false
+    },
+    {
+      "actionId": "after-terminal",
+      "atStep": 182,
+      "kind": "stop",
+      "actor": "p1",
+      "unitId": "bay"
+    },
+    {
+      "actionId": "weaken",
+      "atStep": 183,
+      "kind": "reclaim",
+      "actor": "p1",
+      "unitId": "bay",
+      "targetUnitId": "worker2",
+      "append": false
+    },
+    {
+      "actionId": "pause",
+      "atStep": 184,
+      "kind": "stop",
+      "actor": "p1",
+      "unitId": "bay"
+    },
+    {
+      "actionId": "manual",
+      "atStep": 185,
+      "kind": "repair",
+      "actor": "p1",
+      "unitId": "bay",
+      "targetUnitId": "worker2",
+      "append": false
+    },
+    {
+      "actionId": "stop-repair",
+      "atStep": 186,
+      "kind": "stop",
+      "actor": "p1",
+      "unitId": "bay"
+    }
+  ],
+  "termination": {
+    "kind": "explicit-steps",
+    "required": true,
+    "steps": [
+      {
+        "stepIndex": 0,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 1,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 2,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 3,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 4,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 5,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 6,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 7,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 8,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 9,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 10,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 11,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 12,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 13,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 14,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 15,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 16,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 17,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 18,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 19,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 20,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 21,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 22,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 23,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 24,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 25,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 26,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 27,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 28,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 29,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 30,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 31,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 32,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 33,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 34,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 35,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 36,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 37,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 38,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 39,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 40,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 41,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 42,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 43,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 44,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 45,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 46,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 47,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 48,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 49,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 50,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 51,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 52,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 53,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 54,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 55,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 56,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 57,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 58,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 59,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 60,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 61,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 62,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 63,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 64,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 65,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 66,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 67,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 68,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 69,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 70,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 71,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 72,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 73,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 74,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 75,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 76,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 77,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 78,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 79,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 80,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 81,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 82,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 83,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 84,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 85,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 86,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 87,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 88,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 89,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 90,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 91,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 92,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 93,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 94,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 95,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 96,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 97,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 98,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 99,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 100,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 101,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 102,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 103,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 104,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 105,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 106,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 107,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 108,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 109,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 110,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 111,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 112,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 113,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 114,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 115,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 116,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 117,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 118,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 119,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 120,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 121,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 122,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 123,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 124,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 125,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 126,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 127,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 128,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 129,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 130,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 131,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 132,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 133,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 134,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 135,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 136,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 137,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 138,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 139,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 140,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 141,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 142,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 143,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 144,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 145,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 146,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 147,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 148,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 149,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 150,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 151,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 152,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 153,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 154,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 155,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 156,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 157,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 158,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 159,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 160,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 161,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 162,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 163,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 164,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 165,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 166,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 167,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 168,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 169,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 170,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 171,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 172,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 173,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 174,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 175,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 176,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 177,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 178,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 179,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 180,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 181,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 182,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 183,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 184,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 185,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 186,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 187,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 188,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 189,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 190,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 191,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 192,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 193,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 194,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 195,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 196,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 197,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 198,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 199,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 200,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 201,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 202,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 203,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 204,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 205,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 206,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 207,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 208,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 209,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 210,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 211,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 212,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 213,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 214,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 215,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 216,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 217,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 218,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 219,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 220,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 221,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 222,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 223,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 224,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 225,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 226,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 227,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 228,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 229,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      }
+    ]
+  },
+  "combatContract": {
+    "worldSeed": 12345,
+    "initialFrameCounter": -1,
+    "unitObjectIds": {
+      "bay": 1,
+      "worker": 2,
+      "worker2": 3
+    },
+    "nextObjectId": 4
+  },
+  "automaticVision": {
+    "retention": "MEMORY",
+    "pathSource": "PLAYER_KNOWLEDGE",
+    "shareAlliedVision": false,
+    "observers": [
+      "p1",
+      "p2"
+    ],
+    "grid": {
+      "width": 30,
+      "height": 20
+    }
+  },
+  "economyContract": {
+    "initialBalances": {
+      "p1": 16000,
+      "p2": 0
+    }
+  },
+  "maintenanceContract": {
+    "basePrices": {
+      "repairbay": 1500
+    }
+  }
+}

@@ -115,6 +115,7 @@ internal object ScenarioReader {
                 "underwater-target" -> ContentLoader.loadUnderwaterTargetUnit(ref.path)
                 "factory" -> ContentLoader.loadFactory(ref.path)
                 "builder" -> ContentLoader.loadBuilder(ref.path)
+                "repair-bay" -> checkedAuthor(ContentLoader.loadRepairBayWithSources(ref.path))
                 "command-center" -> ContentLoader.loadCommandCenter(ref.path)
                 "turret" -> ContentLoader.loadTurretUnit(ref.path)
                 "turret-upgrades" -> ContentLoader.loadTurretUnit(ref.path, true)

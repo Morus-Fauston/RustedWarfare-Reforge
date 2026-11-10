@@ -42,12 +42,18 @@ class UnitDefinition(
     val customActions: CustomActionsProfile? = null,
     val afterburnTrailImagePath: Path? = null,
     val groundHeight: GroundHeightProfile? = null,
+    val maintenance: MaintenanceProfile? = null,
+    /** Null uses the ordinary terminal fraction; an explicit zero remains a zero price. */
+    val reclaimPrice: Long? = null,
 ) {
     val retainedUnconsumed: Set<String> = Collections.unmodifiableSet(LinkedHashSet(retainedUnconsumed))
     val maximumHealth: Double? get() = durability?.maxHp ?: combat?.maxHp
 }
 
 enum class TransportProfile { NATIVE_HOVERCRAFT, NATIVE_DROPSHIP }
+
+/** Native work capability, independent of the ordinary builder's construction menu. */
+enum class MaintenanceProfile { NATIVE_REPAIR_BAY }
 
 data class MovementProfile(
     val type: MovementType,

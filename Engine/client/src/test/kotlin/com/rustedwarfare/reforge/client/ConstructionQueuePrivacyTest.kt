@@ -75,7 +75,7 @@ class ConstructionQueuePrivacyTest {
                 assertEquals(if (mode == SandboxMode.MEMORY) false else null,
                     contexts[0].observePlayer(contexts[0].world, "p1").knowledge!!.cell(35, 17).lastKnownBlocked)
                 for (target in listOf("factory", "missing")) {
-                    val results = contexts.map { c -> c.submit(RepairBuildingAction("probe-$target", "p1", "observer", target, c.world, append = true)) }
+                    val results = contexts.map { c -> c.submit(RepairUnitAction("probe-$target", "p1", "observer", target, c.world, append = true)) }
                     assertEquals(results[0], results[1])
                     assertEquals("invalid-maintenance-target", assertIs<ActionResult.Rejected>(results[1]).error.code)
                     sample("lost-sight probe $target")

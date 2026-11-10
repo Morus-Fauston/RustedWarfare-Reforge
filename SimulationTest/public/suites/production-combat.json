@@ -242,7 +242,11 @@
       "com.rustedwarfare.reforge.core.sim.BunkerProductionTest",
       "com.rustedwarfare.reforge.core.sim.BunkerTransactionTest",
       "com.rustedwarfare.reforge.core.sim.BunkerValidationTest",
-      "com.rustedwarfare.reforge.core.sim.BunkerWeaponTest"
+      "com.rustedwarfare.reforge.core.sim.BunkerWeaponTest",
+      "com.rustedwarfare.reforge.core.content.RepairBayContentTest",
+      "com.rustedwarfare.reforge.core.sim.RepairBayAdmissionTest",
+      "com.rustedwarfare.reforge.core.sim.RepairBayConstructionTest",
+      "com.rustedwarfare.reforge.core.sim.RepairBayWorkTest"
     ],
     "client": [
       "com.rustedwarfare.reforge.client.CombatActorEvidenceTest",
@@ -304,7 +308,8 @@
       "com.rustedwarfare.reforge.client.AfterburnInputTest",
       "com.rustedwarfare.reforge.client.AfterburnTrailTest",
       "com.rustedwarfare.reforge.client.BunkerProjectionTest",
-      "com.rustedwarfare.reforge.client.BunkerSandboxTest"
+      "com.rustedwarfare.reforge.client.BunkerSandboxTest",
+      "com.rustedwarfare.reforge.client.RepairBaySandboxTest"
     ],
     "pc": [
       "com.rustedwarfare.reforge.pc.PatrolJsonlPairingTest",
@@ -324,7 +329,8 @@
       "com.rustedwarfare.reforge.pc.LandingCraftOriginalProfileTest",
       "com.rustedwarfare.reforge.pc.DropshipOriginalProfileTest",
       "com.rustedwarfare.reforge.pc.AaBeamOriginalProfileTest",
-      "com.rustedwarfare.reforge.pc.BunkerOriginalProfileTest"
+      "com.rustedwarfare.reforge.pc.BunkerOriginalProfileTest",
+      "com.rustedwarfare.reforge.pc.RepairBayOriginalProfileTest"
     ],
     "tools": [
       "com.rustedwarfare.reforge.testing.ProductionCombatScenarioTest",
@@ -382,7 +388,9 @@
       "com.rustedwarfare.reforge.testing.AfterburnArchiveTest",
       "com.rustedwarfare.reforge.testing.AfterburnProductionSessionTest",
       "com.rustedwarfare.reforge.testing.BunkerArchiveTest",
-      "com.rustedwarfare.reforge.testing.BunkerProductionSessionTest"
+      "com.rustedwarfare.reforge.testing.BunkerProductionSessionTest",
+      "com.rustedwarfare.reforge.testing.RepairBayArchiveTest",
+      "com.rustedwarfare.reforge.testing.RepairBayProductionSessionTest"
     ]
   },
   "short": [
@@ -1082,6 +1090,39 @@
       "backend": "session",
       "scenario": "platform/scenarios/bunker-hjson-production-chain.json",
       "contract": "platform/contracts/bunker-hjson-production-chain.json"
+    },
+    {
+      "id": "repairbay-ini-short",
+      "scenario": "scenarios/repairbay-ini-short.json",
+      "contract": "contracts/repairbay-ini-short.json"
+    },
+    {
+      "id": "repairbay-ini-production-chain",
+      "backend": "session",
+      "scenario": "platform/scenarios/repairbay-ini-production-chain.json",
+      "contract": "platform/contracts/repairbay-ini-production-chain.json"
+    },
+    {
+      "id": "repairbay-json-short",
+      "scenario": "scenarios/repairbay-json-short.json",
+      "contract": "contracts/repairbay-json-short.json"
+    },
+    {
+      "id": "repairbay-json-production-chain",
+      "backend": "session",
+      "scenario": "platform/scenarios/repairbay-json-production-chain.json",
+      "contract": "platform/contracts/repairbay-json-production-chain.json"
+    },
+    {
+      "id": "repairbay-hjson-short",
+      "scenario": "scenarios/repairbay-hjson-short.json",
+      "contract": "contracts/repairbay-hjson-short.json"
+    },
+    {
+      "id": "repairbay-hjson-production-chain",
+      "backend": "session",
+      "scenario": "platform/scenarios/repairbay-hjson-production-chain.json",
+      "contract": "platform/contracts/repairbay-hjson-production-chain.json"
     }
   ],
   "long": [
@@ -1228,6 +1269,7 @@
     "SimulationTest/tools/test_transport_platform.py",
     "SimulationTest/tools/test_aa_beam_archive.py",
     "SimulationTest/tools/test_afterburn_platform.py",
-    "SimulationTest/tools/test_bunker_platform.py"
+    "SimulationTest/tools/test_bunker_platform.py",
+    "SimulationTest/tools/test_repairbay_platform.py"
   ]
 }

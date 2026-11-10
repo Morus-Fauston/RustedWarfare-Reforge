@@ -14,7 +14,7 @@ class MaintenanceBoundaryTest {
                 combatContract = CombatContract(1, -1, mapOf("worker" to 1L, "factory" to 2L), 3L))
             val c = assertIs<InitResult.Accepted>(SimulationContext.initialize(scene)).context
             try {
-                assertIs<ActionResult.Accepted>(c.submit(ReclaimBuildingAction("reclaim", "p1", "worker", "factory", c.world)))
+                assertIs<ActionResult.Accepted>(c.submit(ReclaimUnitAction("reclaim", "p1", "worker", "factory", c.world)))
                 val view = c.advance(Step(0, 1.0, "sim-tick"))
                 assertEquals(working, view.construction!!.workers.single().working)
                 assertEquals(1f, view.construction!!.workers.single().elapsed)
@@ -43,7 +43,7 @@ class MaintenanceBoundaryTest {
                 assertEquals(expected, hp())
                 assertTrue(c.observe().projectiles.none { it.targetUnitId == "factory" })
                 assertIs<ActionResult.Accepted>(c.submit(AttackAction("redirect", "p2", "gun", "sink", c.world)))
-                assertIs<ActionResult.Accepted>(c.submit(ReclaimBuildingAction("reclaim", "p1", "worker", "factory", c.world)))
+                assertIs<ActionResult.Accepted>(c.submit(ReclaimUnitAction("reclaim", "p1", "worker", "factory", c.world)))
                 var firstDamage: Double? = null
                 for (v in 1..99) {
                     val view = tick()
@@ -82,8 +82,8 @@ class MaintenanceBoundaryTest {
             fun progress() = c.observe().units.single { it.unitId == target }.constructionProgress
             fun changes(reclaim: Boolean, count: Int) {
                 val id = "work-${++action}"
-                val order = if (reclaim) ReclaimBuildingAction(id, "p1", "worker", target, c.world)
-                    else RepairBuildingAction(id, "p1", "worker", target, c.world)
+                val order = if (reclaim) ReclaimUnitAction(id, "p1", "worker", target, c.world)
+                    else RepairUnitAction(id, "p1", "worker", target, c.world)
                 assertIs<ActionResult.Accepted>(c.submit(order))
                 var before = progress()
                 var seen = 0
@@ -99,7 +99,7 @@ class MaintenanceBoundaryTest {
             changes(false, 460)
             assertEquals(0x3f000000, progress().toRawBits())
             assertEquals(1200.0, c.observe().units.single { it.unitId == target }.health)
-            assertIs<ActionResult.Accepted>(c.submit(ReclaimBuildingAction("half", "p1", "worker", target, c.world)))
+            assertIs<ActionResult.Accepted>(c.submit(ReclaimUnitAction("half", "p1", "worker", target, c.world)))
             tick()
             val first = progress()
             assertTrue(first < .5f, "Exactly half progress is eligible before V100")
@@ -124,7 +124,7 @@ class MaintenanceBoundaryTest {
                 combatContract = CombatContract(1, -1, mapOf("worker" to 1L, "factory" to 2L), 3L))
             val c = assertIs<InitResult.Accepted>(SimulationContext.initialize(scene)).context
             try {
-                assertIs<ActionResult.Accepted>(c.submit(ReclaimBuildingAction("start", "p1", "worker", "factory", c.world)))
+                assertIs<ActionResult.Accepted>(c.submit(ReclaimUnitAction("start", "p1", "worker", "factory", c.world)))
                 val first = c.advance(Step(0, 1.0, "sim-tick"))
                 assertEquals(distance == 85.0, first.construction!!.workers.single().working)
                 assertEquals(1f, first.construction!!.workers.single().elapsed)
@@ -132,7 +132,7 @@ class MaintenanceBoundaryTest {
                     for (step in 1L..35L) c.advance(Step(step, 1.0, "sim-tick"))
                     assertEquals(30f, c.observe().construction!!.workers.single().preparation)
                     assertTrue(c.observe().units.single { it.unitId == "factory" }.health!! < 1200.0)
-                    assertIs<ActionResult.Accepted>(c.submit(RepairBuildingAction("new-order", "p1", "worker", "factory", c.world)))
+                    assertIs<ActionResult.Accepted>(c.submit(RepairUnitAction("new-order", "p1", "worker", "factory", c.world)))
                     assertEquals(0f, c.observe().construction!!.workers.single().elapsed)
                     assertEquals(30f, c.observe().construction!!.workers.single().preparation)
                     assertIs<ActionResult.Accepted>(c.submit(StopAction("stop", "p1", "worker", c.world)))

@@ -455,6 +455,7 @@ object TraceComparator {
         typesLoadedBy(scenario, setOf("author-upgrading-producer"))
 
     private fun hasConstruction(scenario: JsonObject) = scenario.containsKey("maintenanceContract") ||
+        typesLoadedBy(scenario, setOf("repair-bay")).isNotEmpty() ||
         scenario.arrayAt("actions").any { it.jsonObject.text("kind") == "build" }
 
     private fun validateConstructionSample(scenario: JsonObject, observation: JsonObject, units: List<JsonObject>, built: List<JsonObject>) {
@@ -467,7 +468,7 @@ object TraceComparator {
             val building = element.jsonObject
             building.id("unitId"); building.integer("objectId"); building.text("updateKey"); building.number("progress")
         }
-        val builderTypes = typesLoadedBy(scenario, setOf("builder", "constructor"))
+        val builderTypes = typesLoadedBy(scenario, setOf("builder", "constructor", "repair-bay"))
         val expectedWorkers = units.filter { it.id("typeId") in builderTypes }.map { it.id("unitId") }.toSet()
         val workers = construction.arrayAt("workers").map { it.jsonObject }
         if (workers.size != expectedWorkers.size || workers.map { it.id("unitId") }.toSet() != expectedWorkers)
@@ -635,10 +636,15 @@ object TraceComparator {
             if (tasks.size > 29 || tasks.map { it.id("actionId") }.distinct().size != tasks.size)
                 throw Incomplete("maintenance-tasks", "Invalid worker task queue")
             tasks.forEach { task ->
-                if (task.keys != setOf("kind", "actionId", "target", "targetUnitId", "atStep", "buildingTypeId", "buildingNonce") ||
+                if (task.keys != setOf("kind", "actionId", "target", "targetUnitId", "atStep", "buildingTypeId", "buildingNonce",
+                        "automaticRepair", "extraWorkRange") ||
                     task.text("kind") !in setOf("MOVE", "ATTACK", "PATROL", "BUILD", "CONSTRUCT", "RECLAIM"))
                     throw Incomplete("maintenance-tasks", "Missing or invalid task fields")
                 task.id("actionId")
+                booleanField(task, "automaticRepair")
+                if (task.number("extraWorkRange") != 0.0 ||
+                    task.required("automaticRepair").jsonPrimitive.boolean && task.text("kind") != "CONSTRUCT")
+                    throw Incomplete("maintenance-tasks", "Invalid automatic repair task")
                 task.required("target").let { if (it != JsonNull) point(it.jsonObject) }
                 task.required("atStep").let { if (it != JsonNull) task.integer("atStep") }
                 listOf("targetUnitId", "buildingTypeId", "buildingNonce").forEach { field ->

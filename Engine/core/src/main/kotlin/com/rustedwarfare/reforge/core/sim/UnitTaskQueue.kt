@@ -29,6 +29,9 @@ internal class UnitTaskQueue private constructor(private val slots: List<UnitTas
         }
         // Include the inactive capacity slot: it is written by a full append and later shifted.
         for (task in slots.filterNotNull()) {
+            require(task.extraWorkRange == 0f && (!task.automaticRepair || task.kind == UnitTaskKind.CONSTRUCT)) {
+                "Invalid automatic repair task"
+            }
             require(task.actionId.isNotEmpty() && (task.atStep == null || task.atStep >= 0)) {
                 "Invalid task identity"
             }

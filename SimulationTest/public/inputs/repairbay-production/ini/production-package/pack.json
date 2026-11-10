@@ -1,0 +1,15 @@
+{
+  "format": "rw-reforge.content-pack.v1",
+  "id": "owned-repairbay-production-ini",
+  "name": "Owned repair bay construction",
+  "units": [
+    {
+      "type": "repair-bay",
+      "file": "repairbay.ini"
+    },
+    {
+      "type": "builder",
+      "file": "builder.ini"
+    }
+  ]
+}

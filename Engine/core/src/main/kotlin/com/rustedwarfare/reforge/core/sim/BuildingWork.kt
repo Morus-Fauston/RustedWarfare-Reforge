@@ -20,6 +20,10 @@ internal data class BuildingPreparation(val ready: Boolean, val events: List<Eve
 /** Immutable building-work state; complete worker activity lives on the candidate unit. */
 internal class BuildingWork private constructor(val clock: Int, val nonces: Map<String, Set<String>>) {
     companion object {
+        private fun nativeBay(worker: MutableUnit) = worker.definition.maintenance ==
+            com.rustedwarfare.reforge.core.content.MaintenanceProfile.NATIVE_REPAIR_BAY
+
+        private fun repairRate(worker: MutableUnit) = if (nativeBay(worker)) .2f else checkNotNull(worker.definition.builder).repairRate
         fun initial() = BuildingWork(0, emptyMap())
 
         fun isReady(unit: MutableUnit): Boolean = unit.constructionProgress >= 1f
@@ -29,11 +33,13 @@ internal class BuildingWork private constructor(val clock: Int, val nonces: Map<
                 it.kind == UnitTaskKind.CONSTRUCT || it.kind == UnitTaskKind.RECLAIM }?.targetUnitId?.let { units[it] }
             val active = worker.constructionWorking && target?.alive == true
             if (!worker.previousWorkTargetActive || !active) worker.constructionPreparation =
-                maxOf(0f, worker.constructionPreparation - checkNotNull(worker.definition.builder).decay * delta.toFloat())
+                maxOf(0f, worker.constructionPreparation - (if (nativeBay(worker)) 4f else
+                    checkNotNull(worker.definition.builder).decay) * delta.toFloat())
             worker.previousWorkTargetActive = active
         }
 
         private fun canContinue(worker: MutableUnit, target: MutableUnit, input: Scenario): Boolean {
+            if (nativeBay(worker)) return target !== worker && target.alive && target.carriedBy == null && target.health != null
             if (input.maintenanceContract?.basePrices?.containsKey(target.typeId) == true &&
                 worker.typeId == "builder" && target.definition.building != null) return true
             val types = checkNotNull(worker.definition.builder).buildingTypeIds
@@ -54,6 +60,31 @@ internal class BuildingWork private constructor(val clock: Int, val nonces: Map<
 
     fun advanceClock(delta: Double) = BuildingWork((clock.toFloat() + delta.toFloat() * 16.666666f).toInt(), nonces)
 
+    /** Native post-parent update: selecting a task does not execute repair in this call. */
+    fun advanceAutomatic(worker: MutableUnit, input: Scenario, delta: Double, candidates: () -> List<MutableUnit>) {
+        if (!nativeBay(worker) || !worker.alive || worker.carriedBy != null || !isReady(worker)) return
+        worker.repairScanElapsed += delta.toFloat()
+        require(worker.repairScanElapsed.isFinite()) { "Repair scan timer must remain finite" }
+        if (worker.repairScanElapsed <= 40f || worker.tasks.isNotEmpty()) return
+        worker.repairScanElapsed = 0f
+        val team = input.players.single { it.playerId == worker.ownerPlayerId }.teamId
+        var chosen: MutableUnit? = null
+        var bestHealth = -1f
+        for (target in candidates()) {
+            if (!canContinue(worker, target, input) || target.health == null ||
+                isReady(target) && target.health!! >= checkNotNull(target.definition.maximumHealth)) continue
+            if (target.ownerPlayerId != worker.ownerPlayerId &&
+                (team == null || input.players.single { it.playerId == target.ownerPlayerId }.teamId != team)) continue
+            val dx = worker.position.x.toFloat() - target.position.x.toFloat()
+            val dy = worker.position.y.toFloat() - target.position.y.toFloat()
+            if (dx * dx + dy * dy >= 230f * 230f) continue
+            val health = checkNotNull(target.health).toFloat()
+            if (bestHealth == -1f || health < bestHealth) { chosen = target; bestHealth = health }
+        }
+        chosen?.let { worker.taskQueue = worker.taskQueue.append(UnitTask(UnitTaskKind.CONSTRUCT,
+            "automatic-repair:${worker.unitId}", targetUnitId = it.unitId, automaticRepair = true)) }
+    }
+
     private fun recordBirth(owner: String, nonce: String) = BuildingWork(clock, Collections.unmodifiableMap(
         nonces + (owner to Collections.unmodifiableSet(LinkedHashSet(nonces[owner].orEmpty() + nonce)))))
 
@@ -67,12 +98,16 @@ internal class BuildingWork private constructor(val clock: Int, val nonces: Map<
     }
 
     private fun validateMaintenance(worker: MutableUnit, target: MutableUnit?, input: Scenario,
-                                    view: VisionSnapshot?): SimulationError? {
+                                    view: VisionSnapshot?, reclaim: Boolean = false): SimulationError? {
         val contract = input.maintenanceContract
-        if (contract == null || worker.typeId != "builder" || worker.definition.builder == null)
+        if (!nativeBay(worker) && (contract == null || worker.typeId != "builder" || worker.definition.builder == null))
             return SimulationError("cannot-maintain", "Unit cannot maintain buildings")
-        if (target == null || target === worker || !target.alive || target.ownerPlayerId != worker.ownerPlayerId ||
-            target.definition.building == null || target.typeId !in contract.basePrices || !visible(target, input, view))
+        if (target == null || target === worker || !target.alive || target.carriedBy != null || target.health == null ||
+            (reclaim || !nativeBay(worker)) && target.ownerPlayerId != worker.ownerPlayerId ||
+            !nativeBay(worker) && (target.definition.building == null || target.typeId !in checkNotNull(contract).basePrices) ||
+            reclaim && target.definition.reclaimPrice == null && target.definition.build == null &&
+                target.definition.construction == null && contract?.basePrices?.containsKey(target.typeId) != true ||
+            !visible(target, input, view))
             return SimulationError("invalid-maintenance-target", "Maintenance target is not available")
         return null
     }
@@ -84,8 +119,8 @@ internal class BuildingWork private constructor(val clock: Int, val nonces: Map<
         val kind: UnitTaskKind
         when (action) {
             is ResumeConstructionAction -> { targetId = action.targetUnitId; append = action.append; kind = UnitTaskKind.CONSTRUCT }
-            is RepairBuildingAction -> { targetId = action.targetUnitId; append = action.append; kind = UnitTaskKind.CONSTRUCT }
-            is ReclaimBuildingAction -> { targetId = action.targetUnitId; append = action.append; kind = UnitTaskKind.RECLAIM }
+            is RepairUnitAction -> { targetId = action.targetUnitId; append = action.append; kind = UnitTaskKind.CONSTRUCT }
+            is ReclaimUnitAction -> { targetId = action.targetUnitId; append = action.append; kind = UnitTaskKind.RECLAIM }
             else -> error("Expected a building continuation or maintenance action")
         }
         val target = units[targetId]
@@ -94,7 +129,7 @@ internal class BuildingWork private constructor(val clock: Int, val nonces: Map<
             if (target == null || !target.alive || target.ownerPlayerId != worker.ownerPlayerId ||
                 target.typeId !in builder.buildingTypeIds || isReady(target) || !visible(target, input, view))
                 return SimulationError("invalid-construction-target", "Construction target is not available")
-        } else validateMaintenance(worker, target, input, view)?.let { return it }
+        } else validateMaintenance(worker, target, input, view, action is ReclaimUnitAction)?.let { return it }
         if (!append || worker.tasks.isEmpty()) {
             worker.attackCommand = null
             worker.cancelRoute()
@@ -109,6 +144,22 @@ internal class BuildingWork private constructor(val clock: Int, val nonces: Map<
     /** Shared approach and preparation for construction, repair and reclaim. */
     fun prepareTarget(worker: MutableUnit, target: MutableUnit, wasWorking: Boolean,
                       frame: BuildingWorkFrame): BuildingPreparation {
+        if (nativeBay(worker)) {
+            // Native sea-factory type a(worker) returns 110; this is independent of its radius.
+            val bonus = if (target.definition.production?.exitProfile ==
+                com.rustedwarfare.reforge.core.content.FactoryExitProfile.NATIVE_SEA) 110.0 else 0.0
+            val range = 230.0 + bonus + if (wasWorking) 5.0 else 0.0
+            if (frame.coordinates.distanceSquared(worker.position, target.position) > range * range) {
+                worker.taskQueue = worker.taskQueue.pop()
+                worker.constructionElapsed = 0f
+                worker.cancelRoute()
+                return BuildingPreparation(false)
+            }
+            worker.cancelRoute()
+            worker.constructionWorking = true
+            worker.constructionPreparation = 0f
+            return BuildingPreparation(true)
+        }
         val profile = checkNotNull(worker.definition.builder)
         val range = if (wasWorking) 90.0 else profile.range.toDouble()
         if (frame.coordinates.distanceSquared(worker.position, target.position) > range * range)
@@ -153,9 +204,17 @@ internal class BuildingWork private constructor(val clock: Int, val nonces: Map<
         val wasWorking = worker.constructionWorking
         worker.constructionWorking = false
         try {
-            val kind = worker.tasks.firstOrNull()?.kind
-            return if (kind == UnitTaskKind.BUILD || kind == UnitTaskKind.CONSTRUCT || kind == UnitTaskKind.RECLAIM)
+            val head = worker.tasks.firstOrNull()
+            val kind = head?.kind
+            val change = if (kind == UnitTaskKind.BUILD || kind == UnitTaskKind.CONSTRUCT || kind == UnitTaskKind.RECLAIM)
                 dispatch(worker, frame, wasWorking, ledger, upgrades) else BuildingWorkChange(this, ledger, upgrades)
+            if (head?.automaticRepair == true && worker.tasks.firstOrNull() === head && worker.tasks.size > 1 &&
+                worker.tasks[1].kind != UnitTaskKind.PATROL) {
+                worker.taskQueue = worker.taskQueue.pop()
+                worker.constructionElapsed = 0f
+                worker.cancelRoute()
+            }
+            return change
         } finally { finishActivity(worker, frame.units, frame.step.delta) }
     }
 
@@ -169,7 +228,8 @@ internal class BuildingWork private constructor(val clock: Int, val nonces: Map<
         if (task.kind == UnitTaskKind.RECLAIM) return reclaim(worker, frame, wasWorking, ledger, upgrades)
         if (task.kind == UnitTaskKind.CONSTRUCT) {
             val target = frame.units[task.targetUnitId]
-            if (target == null || !target.alive || target.ownerPlayerId != worker.ownerPlayerId ||
+            if (target == null || !target.alive || target.carriedBy != null ||
+                !nativeBay(worker) && target.ownerPlayerId != worker.ownerPlayerId ||
                 !canContinue(worker, target, input) ||
                 isReady(target) && checkNotNull(target.health) >= checkNotNull(target.definition.maximumHealth)) {
                 worker.taskQueue = worker.taskQueue.pop()
@@ -185,7 +245,7 @@ internal class BuildingWork private constructor(val clock: Int, val nonces: Map<
                 return BuildingWorkChange(this, ledger, upgrades, events =
                     if (isReady(target)) listOf(Event("construction-completed", target.unitId)) else emptyList())
             }
-            val health = checkNotNull(target.health).toFloat() + checkNotNull(worker.definition.builder).repairRate * delta.toFloat()
+            val health = checkNotNull(target.health).toFloat() + repairRate(worker) * delta.toFloat()
             val maximum = checkNotNull(target.definition.maximumHealth).toFloat()
             target.health = minOf(maximum, health).toDouble()
             if (health > maximum) {
@@ -269,7 +329,7 @@ internal class BuildingWork private constructor(val clock: Int, val nonces: Map<
                         ledger: ProductionLedger, upgrades: OrdinaryUpgrades?): BuildingWorkChange {
         val target = frame.units[checkNotNull(worker.tasks.firstOrNull()).targetUnitId]
         if (target == null || !target.alive || target.ownerPlayerId != worker.ownerPlayerId ||
-            validateMaintenance(worker, target, frame.input, frame.view) != null) {
+            validateMaintenance(worker, target, frame.input, frame.view, reclaim = true) != null) {
             worker.taskQueue = worker.taskQueue.pop()
             worker.constructionElapsed = 0f
             worker.cancelRoute()
@@ -289,8 +349,13 @@ internal class BuildingWork private constructor(val clock: Int, val nonces: Map<
             checkNotNull(target.health) <= 0.0
         }
         if (!finished) return BuildingWorkChange(this, ledger, upgrades)
-        val price = checkNotNull(frame.input.maintenanceContract).basePrices.getValue(target.typeId)
-        var paid = ledger.creditReclaim(worker.ownerPlayerId, price.toDouble() * .8f.toDouble())
+        val terminalPrice = target.definition.reclaimPrice?.toDouble() ?: run {
+            val price = if (nativeBay(worker)) target.definition.build?.price ?: target.definition.construction?.price ?:
+                checkNotNull(frame.input.maintenanceContract).basePrices.getValue(target.typeId)
+                else checkNotNull(frame.input.maintenanceContract).basePrices.getValue(target.typeId)
+            price.toDouble() * .8f.toDouble()
+        }
+        var paid = ledger.creditReclaim(worker.ownerPlayerId, terminalPrice)
         if (target.definition.production != null) paid = paid.destroyFactory(target.unitId)
         val discarded = upgrades?.discard(target, paid)
         paid = discarded?.ledger ?: paid
@@ -302,8 +367,11 @@ internal class BuildingWork private constructor(val clock: Int, val nonces: Map<
         target.movementRequested = false
         target.constructionWorking = false
         target.clearWeaponTargets()
-        worker.taskQueue = worker.taskQueue.pop()
-        worker.constructionElapsed = 0f
+        // Native ci removes the target now; its worker discovers the invalid target at the next entry.
+        if (!nativeBay(worker)) {
+            worker.taskQueue = worker.taskQueue.pop()
+            worker.constructionElapsed = 0f
+        }
         worker.constructionWorking = false
         worker.cancelRoute()
         return BuildingWorkChange(this, paid, discarded?.upgrades ?: upgrades,

@@ -20,12 +20,12 @@ class MaintenanceSourceTest {
         try {
             var step = 0L
             fun tick() = c.advance(Step(step++, 1.0, "sim-tick"))
-            assertIs<ActionResult.Accepted>(c.submit(ReclaimBuildingAction("weaken", "p1", "a-worker", "m-center", c.world)))
+            assertIs<ActionResult.Accepted>(c.submit(ReclaimUnitAction("weaken", "p1", "a-worker", "m-center", c.world)))
             while (c.observe().units.single { it.unitId == "m-center" }.health!! > 1.02 && step < 4200) tick()
             assertTrue(c.observe().units.single { it.unitId == "m-center" }.health!! in 0.0..1.02)
             assertTrue(c.observe().projectiles.isEmpty())
             assertIs<ActionResult.Accepted>(c.submit(StopAction("pause", "p1", "a-worker", c.world)))
-            assertIs<ActionResult.Accepted>(c.submit(ReclaimBuildingAction("terminal", "p1", "a-worker", "m-center", c.world)))
+            assertIs<ActionResult.Accepted>(c.submit(ReclaimUnitAction("terminal", "p1", "a-worker", "m-center", c.world)))
             repeat(75) { tick() }
             assertIs<ActionResult.Accepted>(c.submit(MoveAction("approach", "p2", "z-enemy", Position(350.0, 170.0), c.world)))
             repeat(24) { tick() }

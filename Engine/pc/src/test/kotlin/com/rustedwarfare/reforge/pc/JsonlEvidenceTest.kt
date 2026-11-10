@@ -274,7 +274,7 @@ class JsonlEvidenceTest {
             assertTrue(host.all { it.getBoolean("hostOnly") })
             assertEquals(0, host[1].getInt("singleNodePathCount"))
             assertTrue(host[1].get("logicalRequestX").isNull && host[1].get("logicalRequestY").isNull)
-            val actionTypes = setOf("BuildAction", "RepairBuildingAction", "ReclaimBuildingAction", "ResumeConstructionAction")
+            val actionTypes = setOf("BuildAction", "RepairUnitAction", "ReclaimUnitAction", "ResumeConstructionAction")
             val actions = rows.filter { it.getString("kind") == "action" && it.getString("type") in actionTypes }
             assertEquals(actionTypes, actions.map { it.getString("type") }.toSet())
             assertTrue(actions.all { it.getBoolean("append") })

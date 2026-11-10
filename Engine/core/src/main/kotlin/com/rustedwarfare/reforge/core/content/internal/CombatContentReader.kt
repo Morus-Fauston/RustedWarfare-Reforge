@@ -8,7 +8,7 @@ import java.io.IOException
 /** Explicit ordinary c_tank subset. This does not register global replacements or load game code. */
 internal object CombatContentReader {
     private val fields = mapOf(
-        "core" to setOf("name", "overrideAndReplace", "class", "price", "maxHp", "mass", "techLevel",
+        "core" to setOf("name", "overrideAndReplace", "class", "price", "reclaimPrice", "maxHp", "mass", "techLevel",
             "buildSpeed", "radius", "displayRadius", "isBio", "softCollisionOnAll", "displayLocaleKey", "fogOfWarSightRange", "transportSlotsNeeded"),
         "graphics" to setOf("total_frames", "image", "image_wreak", "image_turret", "imageScale", "turretImageScale",
             "image_shadow", "shadowOffsetX", "shadowOffsetY", "animation_moving_start", "animation_moving_end",
@@ -35,7 +35,7 @@ internal object CombatContentReader {
         "turret_1" to setOf("shoot_sound", "shoot_sound_vol", "shoot_flame", "shoot_light"),
         "projectile_1" to setOf("frame", "drawSize"),
     )
-    private val numericFields = setOf("transportSlotsNeeded", "price", "buildSpeed", "maxHp", "radius", "displayRadius",
+    private val numericFields = setOf("transportSlotsNeeded", "price", "reclaimPrice", "buildSpeed", "maxHp", "radius", "displayRadius",
         "softCollisionOnAll", "fogOfWarSightRange", "total_frames", "imageScale", "turretImageScale",
         "turretSize", "turretTurnSpeed", "maxAttackRange", "shootDelay", "x", "y", "turnSpeedAcceleration",
         "directDamage", "life", "speed", "moveSpeed", "moveAccelerationSpeed", "moveDecelerationSpeed",
@@ -182,6 +182,10 @@ internal object CombatContentReader {
         }
         val price = required("core", "price").toLongOrNull()?.takeIf { it >= 0L }
             ?: invalid(ContentErrorCode.MALFORMED_SYNTAX, "core", "price", reason = "Expected nonnegative integer cost")
+        val reclaimPrice = sections.getValue("core")["reclaimPrice"]?.let { text ->
+            text.toLongOrNull()?.takeIf { it >= 0L } ?: invalid(ContentErrorCode.MALFORMED_SYNTAX,
+                "core", "reclaimPrice", reason = "Expected nonnegative integer reclaim cost")
+        }
         val buildRate = required("core", "buildSpeed").toFloatOrNull()?.takeIf { it.isFinite() && it > 0f }
             ?: invalid(ContentErrorCode.MALFORMED_SYNTAX, "core", "buildSpeed", reason = "Expected finite positive binary32 build rate")
         val identity = required("core", "name")
@@ -332,7 +336,7 @@ internal object CombatContentReader {
                 if (helicopter || heavy) integer("movement", "moveSlidingDir") else -1, flight?.first,
                 if (hover) HoverProfile() else null),
             sections.flatMap { (s, values) -> values.keys.filter { it in retained[sectionKind(s)].orEmpty() } }.toSet(), sight, profile,
-            build = BuildProfile(price, buildRate), mech = gait, rotor = flight?.second,
+            build = BuildProfile(price, buildRate), mech = gait, rotor = flight?.second, reclaimPrice = reclaimPrice,
             authoredWaterCombat = authorWater, shadowImagePath = if (hover) image("image_shadow") else null,
             shield = shield, shieldImagePath = if (heavy) image("image_shield") else null,
             transportSlots = if ("transportSlotsNeeded" in sections.getValue("core")) integer("core", "transportSlotsNeeded") else 1)

@@ -407,7 +407,8 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
 
     /** Namespace is a fixed public content capability, never a query of live factories or queues. */
     private fun productionNamespaceEnabled(input: Scenario): Boolean = input.unitDefinitions.values.any { it.production != null }
-    private fun constructionNamespaceEnabled(input: Scenario): Boolean = input.unitDefinitions.values.any { it.builder != null }
+    private fun constructionNamespaceEnabled(input: Scenario): Boolean = input.unitDefinitions.values.any {
+        it.builder != null || it.maintenance != null }
 
     private fun resolveCommandActor(action: Action, actor: Player): CommandActor {
         fun denied(code: String, message: String) = CommandActor.Denied(SimulationError(code, message))
@@ -724,7 +725,7 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
                 ActionResult.Accepted(action.actionId, listOf(Event(
                     if (action.surface) "submarine-surface-requested" else "submarine-dive-requested", unit.unitId)))
             }
-            is RepairBuildingAction, is ReclaimBuildingAction, is ResumeConstructionAction -> {
+            is RepairUnitAction, is ReclaimUnitAction, is ResumeConstructionAction -> {
                 buildingWork.requestTarget(action, unit, currentScenario, units,
                     automaticVisionSnapshots?.getValue(unit.ownerPlayerId))?.let { return reject(action, it.code, it.message) }
                 ActionResult.Accepted(action.actionId)
@@ -832,8 +833,8 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
 
     private fun constructionAppend(action: Action): Boolean? = when (action) {
         is BuildAction -> action.append
-        is RepairBuildingAction -> action.append
-        is ReclaimBuildingAction -> action.append
+        is RepairUnitAction -> action.append
+        is ReclaimUnitAction -> action.append
         is ResumeConstructionAction -> action.append
         else -> null
     }
@@ -1042,7 +1043,7 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
                 if (unit.combat == null) MechBody.advance(unit, step.delta)
                 val previousRequest = unit.movementRequested
                 unit.movementRequested = false
-                val constructionActivity = unit.definition.builder != null &&
+                val constructionActivity = (unit.definition.builder != null || unit.definition.maintenance != null) &&
                     unit.tasks.firstOrNull()?.kind in setOf(UnitTaskKind.BUILD, UnitTaskKind.CONSTRUCT, UnitTaskKind.RECLAIM)
                 if (unit.birthRemaining > 0f) {
                     unit.birthRemaining = maxOf(0f, unit.birthRemaining - 1f)
@@ -1070,7 +1071,11 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
                 if (unit.carriedBy != null) continue
                 unit.qBeforeDispatch = unit.singleNodePathCount
                 unit.consumedPathNodeCounts = emptyList()
-                if (unit.definition.builder != null) updateConstruction(unit, currentScenario, step)
+                if (unit.definition.builder != null || unit.definition.maintenance != null && BuildingWork.isReady(unit))
+                    updateConstruction(unit, currentScenario, step)
+                buildingWork.advanceAutomatic(unit, currentScenario, step.delta) {
+                    checkNotNull(missileTargets).repairCandidates(unit.position.x.toFloat(), unit.position.y.toFloat(), 230f, units)
+                }
                 val factoryWork = unit.definition.production != null
                 if (factoryWork && BuildingWork.isReady(unit)) {
                     if (checkNotNull(productionLedger).upgradeAtHead(unit.unitId)) advanceUpgrade(unit)
@@ -1193,7 +1198,7 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
         }
         val initialLedger = nextScenario.economyContract?.let { economy ->
             ProductionLedger.initial(economy.initialBalances, emptyMap(),
-                nextScenario.unitDefinitions.values.any { it.income != null } || nextScenario.maintenanceContract != null)
+                nextScenario.unitDefinitions.values.any { it.income != null || it.maintenance != null } || nextScenario.maintenanceContract != null)
         }
         val initialUpgrades = OrdinaryUpgrades.prepare(nextScenario)
         worldGeneration += 1
@@ -1220,7 +1225,7 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
         nextScenario.units.sortedBy { it.unitId }.forEach { spawn ->
             UnitRegistration.initial(steps.current, nextScenario, spawn, policies.coordinates)
         }
-        missileTargets = if (nextScenario.unitDefinitions.values.any { it.combat?.projectile?.missile != null })
+        missileTargets = if (nextScenario.unitDefinitions.values.any { it.combat?.projectile?.missile != null || it.maintenance != null })
             MissileTargetIndex.initial(nextScenario.map, orderedUnits()) else null
         closed = false
         stepIndex = 0
@@ -1352,6 +1357,10 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
                 m.reverseSpeedPercentage != 0.0 && definition.mech == null && m.type != MovementType.WATER) ||
                 definition.mech?.let { !it.isValid() || !bunker && m.type != (if (it.kind == com.rustedwarfare.reforge.core.content.MechKind.FOUR_LEGGED) MovementType.OVER_CLIFF else MovementType.LAND) } == true)
                 return SimulationError("unsupported-mech", "Expected the finite supported mech locomotion category")
+            if (definition.maintenance != null && !RepairBay.supports(definition))
+                return SimulationError("unsupported-repair-bay", "Expected the complete finite native repair bay capability")
+            if (definition.reclaimPrice != null && definition.reclaimPrice < 0L)
+                return SimulationError("invalid-reclaim-price", "Explicit reclaim price must be nonnegative")
             definition.builder?.let { builder ->
                 if (definition.fogOfWarSightRange < 15 || m.type != MovementType.LAND || m.moveSpeed > .8 ||
                     builder.buildingTypeIds.isEmpty() || builder.buildingTypeIds.distinct().size != builder.buildingTypeIds.size ||
@@ -1385,8 +1394,9 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
                             definition.pointDefense == com.rustedwarfare.reforge.core.content.PointDefenseProfile()
                         else -> false
                     }
+                val repairBay = RepairBay.supports(definition)
                 val supportedPlacement = if (definition.id in setOf("c_turret_t1", "c_turret_t2_gun", "c_turret_t1_artillery", "laserDefence"))
-                    defense else factory || airFactory || seaFactory || extractor || fabricator
+                    defense else factory || airFactory || seaFactory || extractor || fabricator || repairBay
                 if (building == null || construction.price < 0L || !construction.rate.isFinite() || construction.rate <= 0f ||
                     !supportedPlacement || definition.radius > 30.0 && !(factory && mechFactory) && !seaFactory)
                     return SimulationError("unsupported-construction", "Expected finite construction metadata within the supported placement envelope")
@@ -2480,8 +2490,9 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
                 )
             },
             events = pendingEvents,
-            reclaimedUnitIds = currentScenario.maintenanceContract?.let {
-                orderedUnits().filter { unit -> unit.reclaimed }.map { unit -> unit.unitId }.sorted() },
+            reclaimedUnitIds = if (currentScenario.maintenanceContract != null ||
+                currentScenario.unitDefinitions.values.any { it.maintenance != null })
+                orderedUnits().filter { unit -> unit.reclaimed }.map { unit -> unit.unitId }.sorted() else null,
             actionResults = pendingActionResults,
             projectiles = projectiles.map(::projectileObservation),
             projectileEvents = pendingProjectileEvents,
@@ -2493,7 +2504,7 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
             construction = if (constructionNamespaceEnabled(currentScenario)) ConstructionObservation(buildingWork.clock,
                 orderedUnits().filter { it.unitId.startsWith(CONSTRUCTED_UNIT_PREFIX) }.map {
                     ConstructedBuildingObservation(it.unitId, checkNotNull(it.objectId), it.updateKey, it.constructionProgress) },
-                orderedUnits().filter { it.definition.builder != null }.map {
+                orderedUnits().filter { !it.reclaimed && (it.definition.builder != null || it.definition.maintenance != null) }.map {
                     ConstructionWorkerObservation(it.unitId, it.constructionElapsed, it.constructionRetryTime,
                         it.constructionPreparation, it.constructionWorking, it.previousWorkTargetActive,
                         it.singleNodePathCount, it.logicalRequestX, it.logicalRequestY, it.movementRequested,

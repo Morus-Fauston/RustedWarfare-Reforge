@@ -20,16 +20,16 @@ class MaintenanceQueueRangeTest {
                 var step = 0L
                 fun tick() = context.advance(Step(step++, 1.0, "sim-tick"))
                 fun hp(id: String) = context.observe().units.single { it.unitId == id }.health!!
-                assertIs<ActionResult.Accepted>(context.submit(ReclaimBuildingAction("damage-next", "p1", "damager", "next", context.world)))
-                if (warm) assertIs<ActionResult.Accepted>(context.submit(ReclaimBuildingAction("damage-first", "p1", "worker", "first", context.world)))
+                assertIs<ActionResult.Accepted>(context.submit(ReclaimUnitAction("damage-next", "p1", "damager", "next", context.world)))
+                if (warm) assertIs<ActionResult.Accepted>(context.submit(ReclaimUnitAction("damage-first", "p1", "worker", "first", context.world)))
                 while (hp("next") == 1200.0 && step < 100L) tick()
                 assertEquals(1198.97998046875, hp("next"))
                 assertIs<ActionResult.Accepted>(context.submit(StopAction("stop-damager", "p1", "damager", context.world)))
                 if (warm) {
                     assertEquals(798.97998046875, hp("first"))
                     assertIs<ActionResult.Accepted>(context.submit(StopAction("stop-worker", "p1", "worker", context.world)))
-                    assertIs<ActionResult.Accepted>(context.submit(RepairBuildingAction("repair-first", "p1", "worker", "first", context.world)))
-                    assertIs<ActionResult.Accepted>(context.submit(RepairBuildingAction("repair-next", "p1", "worker", "next", context.world, append = true)))
+                    assertIs<ActionResult.Accepted>(context.submit(RepairUnitAction("repair-first", "p1", "worker", "first", context.world)))
+                    assertIs<ActionResult.Accepted>(context.submit(RepairUnitAction("repair-next", "p1", "worker", "next", context.world, append = true)))
                     var pop: Observation? = null
                     repeat(20) {
                         if (pop == null) {
@@ -42,7 +42,7 @@ class MaintenanceQueueRangeTest {
                     assertEquals(1198.97998046875, hp("next"), "The first repair pop frame cannot also repair the next target")
                     assertTrue(frame.construction!!.workers.single { it.unitId == "worker" }.working)
                     assertEquals(Position(160.0, 290.0), frame.units.single { it.unitId == "worker" }.position)
-                } else assertIs<ActionResult.Accepted>(context.submit(RepairBuildingAction("repair-next", "p1", "worker", "next", context.world)))
+                } else assertIs<ActionResult.Accepted>(context.submit(RepairUnitAction("repair-next", "p1", "worker", "next", context.world)))
                 val before = hp("next")
                 val frame = tick()
                 val worker = frame.units.single { it.unitId == "worker" }
@@ -72,15 +72,15 @@ class MaintenanceQueueRangeTest {
                 var step = 0L
                 fun tick() = c.advance(Step(step++, 1.0, "sim-tick"))
                 if (injured) {
-                    c.submit(ReclaimBuildingAction("damage", "p1", "worker", "first", c.world))
+                    c.submit(ReclaimUnitAction("damage", "p1", "worker", "first", c.world))
                     while (c.observe().units.single { it.unitId == "first" }.health == 800.0 && step < 100L) tick()
                     assertEquals(798.97998046875, c.observe().units.single { it.unitId == "first" }.health)
                     c.submit(StopAction("stop", "p1", "worker", c.world))
                 }
-                assertIs<ActionResult.Accepted>(c.submit(RepairBuildingAction("repair", "p1", "worker", "first", c.world)))
+                assertIs<ActionResult.Accepted>(c.submit(RepairUnitAction("repair", "p1", "worker", "first", c.world)))
                 val point = if (near) Position(160.0, 290.0) else Position(450.0, 290.0)
                 assertIs<ActionResult.Accepted>(c.submit(PatrolAction("patrol", "p1", "worker", point, true, c.world)))
-                assertIs<ActionResult.Accepted>(c.submit(ReclaimBuildingAction("extra", "p1", "worker", "first", c.world,
+                assertIs<ActionResult.Accepted>(c.submit(ReclaimUnitAction("extra", "p1", "worker", "first", c.world,
                     append = true)))
                 var popped: Observation? = null
                 repeat(40) {
@@ -123,12 +123,12 @@ class MaintenanceQueueRangeTest {
                     fun tick() = c.advance(Step(step++, 1.0, "sim-tick"))
                     fun hp(id: String) = c.observe().units.single { it.unitId == id }.health!!
                     if (warm) {
-                        assertIs<ActionResult.Accepted>(c.submit(ReclaimBuildingAction("damage", "p1", "worker", "first", c.world)))
+                        assertIs<ActionResult.Accepted>(c.submit(ReclaimUnitAction("damage", "p1", "worker", "first", c.world)))
                         while (hp("first") == 800.0 && step < 100L) tick()
                         assertEquals(798.97998046875, hp("first"), "One actual ordinary reclaim work tick")
                         assertIs<ActionResult.Accepted>(c.submit(StopAction("stop", "p1", "worker", c.world)))
-                        assertIs<ActionResult.Accepted>(c.submit(RepairBuildingAction("repair", "p1", "worker", "first", c.world)))
-                        assertIs<ActionResult.Accepted>(c.submit(ReclaimBuildingAction("next-order", "p1", "worker", "next", c.world,
+                        assertIs<ActionResult.Accepted>(c.submit(RepairUnitAction("repair", "p1", "worker", "first", c.world)))
+                        assertIs<ActionResult.Accepted>(c.submit(ReclaimUnitAction("next-order", "p1", "worker", "next", c.world,
                             append = true)))
                         var overflow: Observation? = null
                         repeat(20) {
@@ -144,7 +144,7 @@ class MaintenanceQueueRangeTest {
                         assertTrue(popped.construction!!.workers.single().working)
                         assertEquals(Position(160.0, 290.0), popped.units.single { it.unitId == "worker" }.position)
                     } else {
-                        assertIs<ActionResult.Accepted>(c.submit(ReclaimBuildingAction("next-order", "p1", "worker", "next", c.world)))
+                        assertIs<ActionResult.Accepted>(c.submit(ReclaimUnitAction("next-order", "p1", "worker", "next", c.world)))
                     }
                     val before = hp("next")
                     val next = tick()

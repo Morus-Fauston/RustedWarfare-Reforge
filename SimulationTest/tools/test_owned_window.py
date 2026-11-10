@@ -10,6 +10,33 @@ from owned_window import Guard,GuardFailure,Win32,focus_owned_once
 
 
 class OwnedCaptureTest(unittest.TestCase):
+    def test_initial_focus_can_use_an_exposed_header_without_clicking_an_occluder(self):
+        base=dict(pid=11,startTicks=22,path='owned-java',hwnd=33,title='owned',windowThreadId=44,
+            alive=True,visible=True,foreground=99,width=1200,height=800,x=1271,y=85,
+            keyboardLayout=0x12340409,qualifiedKeyboardLayout=0x12340409,keyboardLanguage=0x409)
+        for fault in ('none','all-occluded','reoccluded'):
+            with self.subTest(fault=fault):
+                state=dict(base);point=[0,0];sent=[];moves=[]
+                def exposed(x,y):
+                    return fault!='all-occluded' and x>1714 and not (fault=='reoccluded' and moves)
+                def move(x,y):
+                    moves.append((x,y));point[:]=[x,y]
+                def send(kind,value,up):
+                    self.assertTrue(exposed(*point))
+                    sent.append((kind,value,up))
+                    if up:state['foreground']=33
+                api=types.SimpleNamespace(snapshot=lambda:dict(state),point_owned=exposed,
+                    pressed=lambda kind,value:False,move=move,cursor=lambda:tuple(point),send=send)
+                if fault=='none':
+                    focus_owned_once(api,base,lambda row:None,sleep=lambda n:None)
+                    self.assertEqual(moves,[(1871,93)])
+                    self.assertEqual(sent,[('mouse','left',False),('mouse','left',True)])
+                else:
+                    with self.assertRaises(GuardFailure):
+                        focus_owned_once(api,base,lambda row:None,sleep=lambda n:None)
+                    self.assertEqual(sent,[])
+                    self.assertEqual(len(moves),0 if fault=='all-occluded' else 1)
+
     def test_initial_activation_layout_change_is_requalified_before_gameplay(self):
         base=dict(pid=11,startTicks=22,path='owned-java',hwnd=33,title='owned',windowThreadId=44,
             alive=True,visible=True,foreground=99,width=100,height=80,x=10,y=20,

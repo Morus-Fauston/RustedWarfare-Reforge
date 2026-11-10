@@ -652,6 +652,20 @@ def validate_history_action(records, row, intent, geometry=None):
         if (len(targets)!=1 or targets[0].get('alive') is not True or targets[0].get('ownerPlayerId')==actor or
                 fixed_position is not None and not same_point(targets[0].get('position'),fixed_position)):
             raise PlatformError('history-action-fields','Attack target differs from the fixed visible target/point',2)
+    if kind in ('repair','reclaim'):
+        targets=[u for u in left.get('units',[]) if u.get('unitId')==row.get('targetUnitId')]
+        # The finite normal tank has displayRadius 11. A map click selects its body, not its exact center.
+        point=intent.get('position');target=targets[0] if len(targets)==1 else {}
+        body=target.get('position',{});footprint=input_footprint(geometry)
+        hit=(point is None or target.get('typeId')=='c_tank' and
+             isinstance(point,dict) and set(point)=={'x','y'} and isinstance(body,dict) and set(body)=={'x','y'} and
+             all(type(p[k]) in (int,float) and math.isfinite(p[k]) for p in (point,body) for k in ('x','y')) and
+             math.hypot(max(0,abs(body['x']-point['x'])-footprint['x']),
+                        max(0,abs(body['y']-point['y'])-footprint['y']))<=11)
+        if (len(targets)!=1 or targets[0].get('alive') is not True or targets[0].get('carriedBy') is not None or
+                row.get('targetUnitId')==identity or kind=='reclaim' and targets[0].get('ownerPlayerId')!=actor or
+                not hit):
+            raise PlatformError('history-action-fields','Maintenance target differs from the fixed visible unit and point',2)
     if kind=='produce' and 'typeId' in intent:
         queues=[]
         for sample in (left,right):
@@ -817,7 +831,7 @@ def compare_history(records, plan, policy, native_anchors=None, geometry=None):
     """Check a declared ledger at every observation, including call boundaries."""
     allowed={'initialBalance','spend','noActionIntents','projectileBirthsRequired','mechLegs',
              'ownerPlayerId','initialOwnedTypes','finalUnits','minimumBirths',
-             'productionOrder','completedUpgradeTypes','initialIncome','transportStages','unitActionStages','bunkerStages'}
+             'productionOrder','completedUpgradeTypes','initialIncome','transportStages','unitActionStages','bunkerStages','reclaimRefunds'}
     if not isinstance(policy,dict) or set(policy)-allowed:
         raise PlatformError('input-contract', 'Unknown or malformed history obligations', 1)
     balance = policy.get('initialBalance')
@@ -832,6 +846,17 @@ def compare_history(records, plan, policy, native_anchors=None, geometry=None):
     charges = {}
     intents = {i['intentId']: i for i in plan['intents']}
     ids = set(intents)
+    refunds={}
+    declarations=policy.get('reclaimRefunds',[])
+    if not isinstance(declarations,list):raise PlatformError('input-contract','Expected fixed reclaim refund declarations',1)
+    for refund in declarations:
+        if (not isinstance(refund,dict) or set(refund)!={'intentId','typeId','price'} or
+                not isinstance(refund['intentId'],str) or refund['intentId'] not in ids or refund['intentId'] in refunds or
+                intents[refund['intentId']].get('kind')!='reclaim' or not isinstance(refund['typeId'],str) or not refund['typeId'] or
+                type(refund['price']) is not int or refund['price']<0):
+            raise PlatformError('input-contract','Invalid fixed native reclaim refund',1)
+        refunds[refund['intentId']]=refund
+    pending_refunds={};refunded=set()
     action_stages={}
     bunker_stages={}
     declarations=policy.get('bunkerStages',[])
@@ -973,7 +998,7 @@ def compare_history(records, plan, policy, native_anchors=None, geometry=None):
             expected_type = {'select':'SelectAction', 'build':'BuildAction', 'upgrade':'UpgradeAction',
                 'produce':'ProduceAction', 'move':'MoveAction', 'stop':'StopAction', 'attack':'AttackAction',
                 'submarine-depth':'SubmarineDepthAction','amphibious-flight':'AmphibiousFlightAction',
-                'load':'LoadAction','unload':'UnloadAction','unit-action':'UnitAction'}.get(
+                'load':'LoadAction','unload':'UnloadAction','unit-action':'UnitAction','repair':'RepairUnitAction','reclaim':'ReclaimUnitAction'}.get(
                     intents.get(active, {}).get('kind'))
             if expected_type is None or row.get('type') != expected_type:
                 raise PlatformError('history-action', 'Action type differs from the fixed client intention', 2)
@@ -983,6 +1008,14 @@ def compare_history(records, plan, policy, native_anchors=None, geometry=None):
                 if viewport is None:raise PlatformError('input-geometry','History lacks a formal viewport')
                 context=dict(geometry,viewport=viewport)
             validate_history_action(records,row,intents[active],context)
+            if active in refunds:
+                target=row.get('targetUnitId')
+                before=records[row['sequence']-1]['sample']
+                matches=[u for u in before.get('units',[]) if u.get('unitId')==target and
+                         u.get('typeId')==refunds[active]['typeId'] and u.get('ownerPlayerId')==row.get('actorPlayerId')]
+                if len(matches)!=1 or target in pending_refunds or target in refunded:
+                    raise PlatformError('history-reclaim','Refund must bind one fresh owned target',2)
+                pending_refunds[target]=refunds[active]
             charge = charges.get(active)
             if charge:
                 if charge['at'] == 'action': balance -= charge['amount']
@@ -1052,6 +1085,15 @@ def compare_history(records, plan, policy, native_anchors=None, geometry=None):
                 balance -= pending; pending = 0
                 if income is not None and steps % income['period']==0:balance+=income['credits']
                 events=sample.get('events',[])
+                removals=[e.get('unitId') for e in events if e.get('kind')=='building-reclaimed']
+                if len(removals)!=len(set(removals)) or any(target not in pending_refunds for target in removals):
+                    raise PlatformError('history-reclaim','Missing or repeated target-bound reclaim',2)
+                for target in removals:
+                    if target in units or any(e.get('kind')=='unit-died' and e.get('unitId')==target for e in events):
+                        raise PlatformError('history-reclaim','Native reclaim must remove its target without combat death',2)
+                    # Native default is Double(price) * Double(Float(.8)), not a rounded percentage.
+                    balance+=pending_refunds.pop(target)['price']*0.800000011920929
+                    refunded.add(target)
                 if construction_ids and any(event.get('kind')=='construction-created' and event.get('unitId') in construction_ids for event in events):
                     raise PlatformError('history-construction', 'A charged construction site was created again', 2)
                 for identity, entry in list(construction_charges.items()):
@@ -1073,7 +1115,7 @@ def compare_history(records, plan, policy, native_anchors=None, geometry=None):
                 raise PlatformError('history-ledger', 'Precise credits differ at observation '+str(row['sequence']), 2)
             observations += 1
             seen_units.update(units)
-    if not observations or pending or construction_charges or active is not None or completed != len(plan['intents']):
+    if not observations or pending or construction_charges or pending_refunds or active is not None or completed != len(plan['intents']):
         raise PlatformError('incomplete-run', 'Missing history observations or a pending first-step charge')
     for expected in policy.get('finalUnits',[]):
         if not isinstance(expected,dict) or not isinstance(expected.get('fields'),dict) or not expected['fields']:

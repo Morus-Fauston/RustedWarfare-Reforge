@@ -45,6 +45,8 @@ object ContentLoader {
     fun loadCommandCenter(path: Path): ContentResult<UnitDefinition> = load(path, CommandCenterContentReader::read)
     fun loadCommandCenterWithSources(path: Path): ContentResult<LoadedUnitContent> = load(path, CommandCenterContentReader::readWithSources)
     fun loadBuilder(path: Path): ContentResult<UnitDefinition> = load(path, BuilderContentReader::read)
+    fun loadRepairBayWithSources(path: Path): ContentResult<LoadedUnitContent> =
+        load(path) { com.rustedwarfare.reforge.core.content.internal.RepairBayContentReader.readWithSources(it) }
     fun loadBuilderWithSources(path: Path): ContentResult<LoadedUnitContent> = load(path, BuilderContentReader::readWithSources)
 
     fun loadPointDefense(path: Path): ContentResult<UnitDefinition> = load(path, PointDefenseContentReader::read)

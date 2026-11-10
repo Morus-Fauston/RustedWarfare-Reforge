@@ -41,18 +41,25 @@ class SandboxInput(
         return current === owner.session && current.isOpen && current.selectionRevision == owner.revision &&
             current.selectedIds == owner.members
     }
-    private data class ReclaimOwner(val session: SandboxSession, val worker: String, val revision: Long)
+    private data class ReclaimOwner(val session: SandboxSession, val worker: String, val revision: Long, val repair: Boolean)
     private data class ReclaimPress(val owner: ReclaimOwner, val targetId: String?, val append: Boolean)
     private var reclaimOwner: ReclaimOwner? = null
     private var reclaimPress: ReclaimPress? = null
-    val reclaimMode: Boolean
+    private val maintenanceMode: Boolean
         get() {
             val owner = reclaimOwner ?: return false
             val current = session()
-            if (!active() || current !== owner.session || !current.canMaintain ||
+            if (!active() || current !== owner.session || !current.isOpen ||
+                (if (owner.repair) !current.canRepair else !current.canMaintain) ||
                 current.selectedId != owner.worker || current.selectionRevision != owner.revision) endReclaim()
             return reclaimOwner != null
         }
+    val reclaimMode: Boolean get() = maintenanceMode && reclaimOwner?.repair == false
+    val repairMode: Boolean get() = maintenanceMode && reclaimOwner?.repair == true
+    private fun maintenanceTargetAt(current: SandboxSession, world: Position): String? =
+        if (reclaimOwner?.repair == true) current.repairTargetAt(world) else current.reclaimTargetAt(world)
+    private fun submitMaintenance(current: SandboxSession, target: String, append: Boolean) =
+        if (reclaimOwner?.repair == true) current.repair(target, append) else current.reclaim(target, append)
     val constructionPreview: ConstructionPreview?
         get() {
             val type = constructionTypeId ?: return null
@@ -73,7 +80,7 @@ class SandboxInput(
 
     override fun touchDown(screenX: Int, screenY: Int, pointer: Int, button: Int): Boolean {
         if (!active() || pointer != 0 || !insideViewport(screenX, screenY)) return false
-        val reclaimActive = reclaimMode
+        val reclaimActive = maintenanceMode
         if (ownerButton != null) return false
         val current = session() ?: return false
         if (reclaimActive && button == Input.Buttons.RIGHT) { endReclaim(); changed(); return true }
@@ -94,7 +101,7 @@ class SandboxInput(
             "uiX" to ui.x, "uiY" to ui.y, "world" to world.fields(), "button" to button,
             "selectionRevision" to current.selectionRevision, "selectionAtPress" to current.selectedIds.sorted(),
             "append" to append, "mode" to when {
-                reclaimActive -> "reclaim"
+                reclaimActive -> if (reclaimOwner?.repair == true) "repair" else "reclaim"
                 constructionTypeId != null -> "construction"
                 patrolMode -> "patrol"
                 kind == MapButton.COMMAND -> "command"
@@ -102,7 +109,7 @@ class SandboxInput(
                 else -> "select"
             }, "typeId" to constructionTypeId, "targetUnitId" to current.commandTargetAt(world)) }
         if (reclaimActive && button == Input.Buttons.LEFT) {
-            reclaimPress = ReclaimPress(checkNotNull(reclaimOwner), current.reclaimTargetAt(world), append)
+            reclaimPress = ReclaimPress(checkNotNull(reclaimOwner), maintenanceTargetAt(current, world), append)
             ownerButton = button
             changed(); return true
         }
@@ -146,20 +153,21 @@ class SandboxInput(
         return true
     }
     override fun touchUp(screenX: Int, screenY: Int, pointer: Int, button: Int): Boolean {
-        if (reclaimOwner != null && !reclaimMode) return false
+        if (reclaimOwner != null && !maintenanceMode) return false
         if (pointer != 0 || ownerButton != button) return false
         val current = session()
         val ui = uiPoint(screenX, screenY)
         if (!active() || current == null || ui == null) { cancel(); return true }
         reclaimPress?.let { press ->
             val world = if (insideViewport(screenX, screenY)) projection()?.toWorld(ui.x, ui.y) else null
-            if (world != null && reclaimOwner == press.owner && current === press.owner.session && current.canMaintain &&
+            if (world != null && reclaimOwner == press.owner && current === press.owner.session &&
+                (if (press.owner.repair) current.canRepair else current.canMaintain) &&
                 current.selectedId == press.owner.worker && current.selectionRevision == press.owner.revision) {
-                if (press.targetId == null) current.reclaim("", press.append)
-                else if (current.reclaimTargetAt(world) == press.targetId) {
-                    current.reclaim(press.targetId, press.append)
+                if (press.targetId == null) submitMaintenance(current, "", press.append)
+                else if (maintenanceTargetAt(current, world) == press.targetId) {
+                    submitMaintenance(current, press.targetId, press.append)
                     if ((current.lastCommandBatch?.added ?: 0) > 0) endReclaim()
-                } else if (current.observation.units.none { it.unitId == press.targetId }) current.reclaim(press.targetId, press.append)
+                } else if (current.observation.units.none { it.unitId == press.targetId }) submitMaintenance(current, press.targetId, press.append)
             }
             cancelGesture(); changed(); return true
         }
@@ -250,7 +258,7 @@ class SandboxInput(
             changed()
             return true
         }
-        if (keycode == Input.Keys.ESCAPE && reclaimMode) { endReclaim(); changed(); return true }
+        if (keycode == Input.Keys.ESCAPE && maintenanceMode) { endReclaim(); changed(); return true }
         if (keycode == Input.Keys.ESCAPE && constructionTypeId != null) { endConstruction(); changed(); return true }
         if (keycode == Input.Keys.P) {
             if (pHeld) return true
@@ -297,18 +305,21 @@ class SandboxInput(
             "selectionAtPress" to current.selectedIds.sorted()) }
         changed(); return true
     }
-    fun beginReclaim(): Boolean {
+    fun beginReclaim(): Boolean = beginMaintenance(false)
+    fun beginRepair(): Boolean = beginMaintenance(true)
+    private fun beginMaintenance(repair: Boolean): Boolean {
         val current = session() ?: return false
-        if (!active() || editing() || touchControls || !current.canMaintain) return false
-        endConstruction(); endPatrol(); cancelGesture()
-        reclaimOwner = ReclaimOwner(current, checkNotNull(current.selectedId), current.selectionRevision)
+        if (!active() || editing() || touchControls || !current.isOpen ||
+            (if (repair) !current.canRepair else !current.canMaintain)) return false
+        endReclaim(); endConstruction(); endPatrol(); cancelGesture()
+        reclaimOwner = ReclaimOwner(current, checkNotNull(current.selectedId), current.selectionRevision, repair)
         modeRevision++
-        evidence.record("reclaim-mode", mapOf("active" to true))
+        evidence.record(if (repair) "repair-mode" else "reclaim-mode", mapOf("active" to true))
         changed(); return true
     }
     private fun endReclaim() {
         if (reclaimOwner != null) modeRevision++
-        if (reclaimOwner != null) evidence.record("reclaim-mode", mapOf("active" to false))
+        if (reclaimOwner != null) evidence.record(if (reclaimOwner?.repair == true) "repair-mode" else "reclaim-mode", mapOf("active" to false))
         reclaimOwner = null
         cancelGesture()
     }

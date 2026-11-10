@@ -1,0 +1,27 @@
+{
+  "format": "rw-reforge.content-pack.v1",
+  "id": "owned-repairbay-normal-json",
+  "name": "Owned normal repair bay production",
+  "units": [
+    {
+      "type": "repair-bay",
+      "file": "repairbay.json"
+    },
+    {
+      "type": "builder",
+      "file": "builder.json"
+    },
+    {
+      "type": "command-center",
+      "file": "units/commandCenter/commandCenter.json"
+    },
+    {
+      "type": "land-factory",
+      "file": "units/landFactory/landFactory.json"
+    },
+    {
+      "type": "tank",
+      "file": "units/c_tank/tank.json"
+    }
+  ]
+}

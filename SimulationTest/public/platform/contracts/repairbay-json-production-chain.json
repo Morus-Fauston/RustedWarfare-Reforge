@@ -1,0 +1,155 @@
+{
+  "schemaVersion": 1,
+  "scenarioId": "repairbay-json-production-chain",
+  "rules": [
+    {
+      "intentId": "select-center"
+    },
+    {
+      "intentId": "produce-worker"
+    },
+    {
+      "intentId": "wait-worker-exit"
+    },
+    {
+      "intentId": "select-worker"
+    },
+    {
+      "intentId": "place-worker"
+    },
+    {
+      "intentId": "stop-worker"
+    },
+    {
+      "intentId": "build-bay"
+    },
+    {
+      "intentId": "finish-bay"
+    },
+    {
+      "intentId": "select-worker-again"
+    },
+    {
+      "intentId": "build-factory"
+    },
+    {
+      "intentId": "finish-factory"
+    },
+    {
+      "intentId": "produce-tank"
+    },
+    {
+      "intentId": "wait-tank-exit"
+    },
+    {
+      "intentId": "select-tank"
+    },
+    {
+      "intentId": "approach-enemy"
+    },
+    {
+      "intentId": "return-to-bay"
+    },
+    {
+      "intentId": "stop-tank"
+    },
+    {
+      "intentId": "select-bay"
+    },
+    {
+      "intentId": "reclaim-partial"
+    },
+    {
+      "intentId": "stop-reclaim"
+    },
+    {
+      "intentId": "repair-mobile"
+    },
+    {
+      "intentId": "stop-repair"
+    },
+    {
+      "intentId": "automatic-repair"
+    },
+    {
+      "intentId": "reclaim-terminal"
+    }
+  ],
+  "history": {
+    "initialBalance": 16000,
+    "ownerPlayerId": "p1",
+    "initialOwnedTypes": [
+      "commandCenter"
+    ],
+    "initialIncome": {
+      "unitId": "a",
+      "typeId": "commandCenter",
+      "period": 10,
+      "credits": 4.5
+    },
+    "productionOrder": [
+      "builder",
+      "c_tank"
+    ],
+    "projectileBirthsRequired": true,
+    "spend": [
+      {
+        "intentId": "produce-worker",
+        "amount": 500,
+        "at": "action"
+      },
+      {
+        "intentId": "build-bay",
+        "amount": 1500,
+        "at": "construction-created"
+      },
+      {
+        "intentId": "build-factory",
+        "amount": 700,
+        "at": "construction-created"
+      },
+      {
+        "intentId": "produce-tank",
+        "amount": 350,
+        "at": "action"
+      }
+    ],
+    "reclaimRefunds": [
+      {
+        "intentId": "reclaim-terminal",
+        "typeId": "c_tank",
+        "price": 350
+      }
+    ],
+    "finalUnits": [
+      {
+        "ownerPlayerId": "p1",
+        "typeId": "commandCenter",
+        "fields": {
+          "alive": true
+        }
+      },
+      {
+        "ownerPlayerId": "p1",
+        "typeId": "builder",
+        "fields": {
+          "alive": true
+        }
+      },
+      {
+        "ownerPlayerId": "p1",
+        "typeId": "repairbay",
+        "fields": {
+          "alive": true
+        }
+      },
+      {
+        "ownerPlayerId": "p1",
+        "typeId": "landFactory",
+        "fields": {
+          "alive": true
+        }
+      }
+    ]
+  }
+}

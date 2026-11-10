@@ -59,8 +59,8 @@ class ConstructionReplacementTest {
                 val order = when (kind) {
                     "build" -> BuildAction("invalid", "p1", "worker", "unavailable-type", Position(190.0, 170.0),
                         "1".repeat(32), c.world, append = append)
-                    "repair" -> RepairBuildingAction("invalid", "p1", "worker", "missing", c.world, append = append)
-                    "reclaim" -> ReclaimBuildingAction("invalid", "p1", "worker", "missing", c.world, append = append)
+                    "repair" -> RepairUnitAction("invalid", "p1", "worker", "missing", c.world, append = append)
+                    "reclaim" -> ReclaimUnitAction("invalid", "p1", "worker", "missing", c.world, append = append)
                     else -> ResumeConstructionAction("invalid", "p1", "worker", "missing", c.world, append = append)
                 }
                 val result = assertIs<ActionResult.Rejected>(c.submit(order))

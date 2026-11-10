@@ -181,14 +181,14 @@ class SandboxSession(scenario: Scenario, private val evidence: ClientEvidence = 
 
     val constructionActions: List<ConstructionActionView> get() = actionMenu.construction
     val canMaintain: Boolean get() = actionMenu.canMaintain
+    val canRepair: Boolean get() = actionMenu.canRepair
     /** Owner-only queue copy, derived with the rest of the selected menu. */
     val selectedWorkerQueueText: String? get() = actionMenu.workerQueueText
 
     fun reclaimTargetAt(position: Position): String? {
         if (!hasSelectedMaintainer()) return null
         val id = unitAt(position)
-        return observation.units.singleOrNull { it.unitId == id && it.alive && it.ownerPlayerId == "p1" &&
-            it.typeId in checkNotNull(scenario.maintenanceContract).basePrices }?.unitId
+        return observation.units.singleOrNull { it.unitId == id && maintenanceTarget(it, reclaim = true) }?.unitId
     }
 
     fun reclaim(position: Position, append: Boolean = false): ActionResult? = reclaim(reclaimTargetAt(position) ?: "", append)
@@ -196,14 +196,31 @@ class SandboxSession(scenario: Scenario, private val evidence: ClientEvidence = 
     fun reclaim(targetUnitId: String, append: Boolean = false): ActionResult? {
         lastCommandBatch = null
         if (!hasSelectedMaintainer()) return null
-        val target = observation.units.singleOrNull { it.unitId == targetUnitId && it.alive && it.ownerPlayerId == "p1" &&
-            it.typeId in checkNotNull(scenario.maintenanceContract).basePrices }
+        val target = observation.units.singleOrNull { it.unitId == targetUnitId && maintenanceTarget(it, reclaim = true) }
         if (target == null) {
-            feedback = "Select own building"
+            feedback = if (hasSelectedNativeMaintainer()) "Select own unit" else "Select own building"
             rejectedFeedback = false
             return null
         }
-        return dispatch { worker -> ReclaimBuildingAction("click-${++actionNumber}", "p1", worker, target.unitId, context.world, append = append) }
+        return dispatch { worker -> ReclaimUnitAction("click-${++actionNumber}", "p1", worker, target.unitId, context.world, append = append) }
+    }
+
+    fun repairTargetAt(position: Position): String? {
+        if (!canRepair) return null
+        val id = unitAt(position)
+        return observation.units.singleOrNull { it.unitId == id && it.unitId !in selectedIds &&
+            maintenanceTarget(it, reclaim = false, explicit = true) }?.unitId
+    }
+
+    fun repair(targetUnitId: String, append: Boolean = false): ActionResult? {
+        lastCommandBatch = null
+        if (!canRepair) return null
+        val target = observation.units.singleOrNull { it.unitId == targetUnitId && it.unitId !in selectedIds &&
+            maintenanceTarget(it, reclaim = false, explicit = true) }
+        if (target == null) {
+            feedback = "Select repairable unit"; rejectedFeedback = false; return null
+        }
+        return dispatch { worker -> RepairUnitAction("click-${++actionNumber}", "p1", worker, target.unitId, context.world, append = append) }
     }
 
     fun build(typeId: String, position: Position, append: Boolean = false): ActionResult? {
@@ -226,9 +243,29 @@ class SandboxSession(scenario: Scenario, private val evidence: ClientEvidence = 
             typeId in scenario.unitDefinitions.getValue(unit.typeId).builder?.buildingTypeIds.orEmpty()
     }
 
-    private fun hasSelectedMaintainer(): Boolean = isOpen && scenario.maintenanceContract != null &&
-        observation.units.any { unit -> unit.unitId in selectedIds && controllable(unit) && unit.typeId == "builder" &&
-            scenario.unitDefinitions.getValue(unit.typeId).builder != null }
+    private fun hasSelectedNativeMaintainer(): Boolean = isOpen && observation.units.any { unit ->
+        unit.unitId in selectedIds && controllable(unit) && scenario.unitDefinitions.getValue(unit.typeId).maintenance != null }
+
+    private fun hasSelectedMaintainer(): Boolean = hasSelectedNativeMaintainer() ||
+        isOpen && scenario.maintenanceContract != null && observation.units.any { unit ->
+            unit.unitId in selectedIds && controllable(unit) && unit.typeId == "builder" &&
+                scenario.unitDefinitions.getValue(unit.typeId).builder != null }
+
+    private fun maintenanceTarget(target: UnitObservation, reclaim: Boolean, explicit: Boolean = false): Boolean {
+        if (!target.alive || target.carriedBy != null || target.health == null) return false
+        val definition = scenario.unitDefinitions.getValue(target.typeId)
+        if (hasSelectedNativeMaintainer()) {
+            if (reclaim) return target.ownerPlayerId == "p1" && (definition.build != null ||
+                definition.construction != null || definition.reclaimPrice != null ||
+                scenario.maintenanceContract?.basePrices?.containsKey(target.typeId) == true)
+            if (explicit) return true
+            val ownTeam = scenario.players.single { it.playerId == "p1" }.teamId
+            return target.ownerPlayerId == "p1" || ownTeam != null &&
+                scenario.players.single { it.playerId == target.ownerPlayerId }.teamId == ownTeam
+        }
+        return target.ownerPlayerId == "p1" && definition.building != null &&
+            scenario.maintenanceContract?.basePrices?.containsKey(target.typeId) == true
+    }
 
     /** Uses only the player's published terrain and visible buildings, never placement truth. */
     fun previewConstruction(typeId: String, order: Position): ConstructionPreview? {
@@ -358,10 +395,9 @@ class SandboxSession(scenario: Scenario, private val evidence: ClientEvidence = 
             if (observation.units.any { it.unitId in selectedIds && controllable(it) && it.transport != null })
                 return dispatch { actor -> LoadAction("click-${++actionNumber}", "p1", actor, target.unitId, LoadDirection.UP, context.world) }
         }
-        if (hasSelectedMaintainer() && target != null && target.ownerPlayerId == "p1" &&
-            target.typeId in checkNotNull(scenario.maintenanceContract).basePrices &&
+        if (hasSelectedMaintainer() && target != null && maintenanceTarget(target, reclaim = false) &&
             (target.constructionProgress < 1f || target.health!! < target.maxHealth!!))
-            return dispatch { worker -> RepairBuildingAction("click-${++actionNumber}", "p1", worker, target.unitId, context.world, append = append) }
+            return dispatch { worker -> RepairUnitAction("click-${++actionNumber}", "p1", worker, target.unitId, context.world, append = append) }
         if (target != null && target.ownerPlayerId == "p1" && target.constructionProgress < 1f &&
             hasSelectedConstructor(target.typeId))
             return dispatch { worker -> ResumeConstructionAction("click-${++actionNumber}", "p1", worker, target.unitId, context.world, append = append) }
@@ -457,10 +493,10 @@ class SandboxSession(scenario: Scenario, private val evidence: ClientEvidence = 
             "actorPlayerId" to action.actorPlayerId, "unitId" to action.unitId,
             "target" to when (action) { is MoveAction -> action.target.fields(); is PatrolAction -> action.target.fields(); is BuildAction -> action.target.fields(); else -> null },
             "append" to when (action) { is PatrolAction -> action.append; is BuildAction -> action.append;
-                is ResumeConstructionAction -> action.append; is RepairBuildingAction -> action.append;
-                is ReclaimBuildingAction -> action.append; else -> null },
+                is ResumeConstructionAction -> action.append; is RepairUnitAction -> action.append;
+                is ReclaimUnitAction -> action.append; else -> null },
             "targetUnitId" to when (action) { is AttackAction -> action.targetUnitId; is ResumeConstructionAction -> action.targetUnitId;
-                is RepairBuildingAction -> action.targetUnitId; is ReclaimBuildingAction -> action.targetUnitId;
+                is RepairUnitAction -> action.targetUnitId; is ReclaimUnitAction -> action.targetUnitId;
                 is LoadAction -> action.targetUnitId; else -> null },
             "upgradeId" to when (action) { is UpgradeAction -> action.upgradeId; is CancelUpgradeAction -> action.upgradeId; else -> null },
             "result" to result.fields()) + (if (action is BuildAction) mapOf("buildingTypeId" to action.buildingTypeId) else emptyMap()) +

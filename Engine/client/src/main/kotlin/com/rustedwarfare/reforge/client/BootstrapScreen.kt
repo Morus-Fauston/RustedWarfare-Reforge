@@ -99,6 +99,10 @@ class BootstrapScreen(
     private lateinit var reclaimText: Label
     private lateinit var reclaimInput: ReclaimButtonInput
     private var reclaimHover = false
+    private lateinit var repairCard: Table
+    private lateinit var repairText: Label
+    private lateinit var repairInput: OwnedActionInput
+    private var repairHover = false
     private var flightHover = false
     private var nativeSelection: Set<String> = emptySet()
     private val nativePanel: Boolean get() = NativeActionPanel.supports(session?.observation?.scenarioId) ||
@@ -156,7 +160,8 @@ class BootstrapScreen(
         val selectedIds: Set<String>, val groups: List<Int>, val feedback: String?, val step: Long?, val canEdit: Boolean,
         val loading: Boolean, val preparationStatus: String?, val error: String?, val hasSession: Boolean,
         val balance: Long?, val queue: com.rustedwarfare.reforge.core.sim.FactoryQueueObservation?,
-        val patrolMode: Boolean, val patrolPoints: Int, val reclaimMode: Boolean, val workerQueueText: String?, val menu: ActionMenuView?)
+        val patrolMode: Boolean, val patrolPoints: Int, val reclaimMode: Boolean, val repairMode: Boolean,
+        val workerQueueText: String?, val menu: ActionMenuView?)
     private var lastHudState: HudState? = null
     private val drawnActionLayout = DrawnActionLayout()
 
@@ -273,6 +278,18 @@ class BootstrapScreen(
                 { mapInput.beginReclaim() }, { lastHudState = null; updateHud() },
                 { reclaimHover = it; lastHudState = null }, modeRevision = { mapInput.modeRevision })
             table.addListener(reclaimInput)
+            stage.addActor(table)
+        }
+        repairCard = Table(skin).also { table ->
+            table.touchable = Touchable.enabled
+            table.setBounds(844f, 280f, 84f, 54f)
+            repairText = Label("Repair", skin).apply { setAlignment(Align.center); touchable = Touchable.disabled }
+            table.add(repairText)
+            repairInput = OwnedActionInput({ session }, { nativePanel && !paused }, setOf(Input.Buttons.LEFT), true,
+                identity = { current -> InputActionIdentity("repair", mapInput.modeRevision).takeIf { current.canRepair } },
+                submit = { _, _, _ -> mapInput.beginRepair() }, changed = { lastHudState = null; updateHud() },
+                hovered = { repairHover = it; lastHudState = null }, notifyDragCancel = true)
+            table.addListener(repairInput)
             stage.addActor(table)
         }
         economicUpgradeIcon = Image().apply { touchable = Touchable.disabled }
@@ -743,6 +760,7 @@ class BootstrapScreen(
             (productionHover != null && session?.productionActions?.any { it.typeId == productionHover } == true ||
                 constructionHover != null && session?.constructionActions?.any { it.typeId == constructionHover } == true ||
                 economicUpgradeHover && economicUpgradeCard.isVisible || reclaimHover && reclaimCard.isVisible ||
+                repairHover && repairCard.isVisible ||
                 upgradeHover != null && session?.selectedUpgrades?.any { it.actionKey == upgradeHover } == true ||
                 factoryUpgradeHover != null && session?.selectedUpgrades?.any { it.actionKey == factoryUpgradeHover } == true ||
                 flightHover && session?.actionMenu?.flightAction != null ||
@@ -849,6 +867,7 @@ class BootstrapScreen(
                 enabled = nativeActive && menu?.construction?.any { it.typeId == type } == true)
         }
         entries += DrawnAction("choose-reclaim", reclaimCard, reclaimText.text.toString(), enabled = nativeActive && menu?.canMaintain == true)
+        entries += DrawnAction("choose-repair", repairCard, repairText.text.toString(), enabled = nativeActive && menu?.canRepair == true)
         menu?.upgrades?.singleOrNull()?.takeIf { it.kind == UpgradePresentationKind.ECONOMIC }?.let { action ->
             entries += DrawnAction("upgrade:${action.actionKey}", economicUpgradeCard,
                 economicUpgradeText.text.toString(), enabled = nativeActive)
@@ -1026,7 +1045,7 @@ class BootstrapScreen(
             productionCorner.y + table.height <= productionScroll.y + productionScroll.height
     }
 
-    private fun syncConstructionCards(actions: List<ConstructionActionView>, economic: Boolean) {
+    private fun syncConstructionCards(actions: List<ConstructionActionView>, economic: Boolean, maintenance: Boolean) {
         val stale = constructionCards.iterator()
         while (stale.hasNext()) {
             val (type, card) = stale.next()
@@ -1036,10 +1055,13 @@ class BootstrapScreen(
                 stale.remove()
             }
         }
-        val overflow = actions.size > 6
+        // Maintenance owns the row at y280. Keep construction below that row,
+        // including the ScrollPane's clipping rectangle, so every drawn card can receive input.
+        val overflow = actions.size > if (maintenance) 4 else 6
         val legacy = economic && actions.all { it.typeId in setOf("extractorT1", "landFactory",
             "mechFactory", "airFactory", "seaFactory", "fabricatorT1", "c_turret_t1", "laserDefence") }
         constructionScroll.isVisible = nativePanel && overflow
+        constructionScroll.setBounds(752f, 160f, 184f, if (maintenance) 114f else 174f)
         if (!constructionScroll.isVisible && stage.scrollFocus === constructionScroll) stage.scrollFocus = null
         val rows = (actions.size + 1) / 2
         if (overflow) constructionContent.setSize(176f, rows * 60f)
@@ -1076,6 +1098,7 @@ class BootstrapScreen(
                     if (type in setOf("extractorT1", "c_turret_t1", "laserDefence")) 844f else 752f,
                     when (type) { "extractorT1" -> 280f; "landFactory", "c_turret_t1" -> 220f; else -> 160f },
                     84f, 54f)
+                maintenance -> card.table.setBounds(752f + (index % 2) * 92f, 220f - (index / 2) * 60f, 84f, 54f)
                 actions.size > 4 -> card.table.setBounds(752f + (index % 2) * 92f, 280f - (index / 2) * 60f, 84f, 54f)
                 else -> card.table.setBounds(752f + (index % 2) * 92f, 256f - (index / 2) * 68f, 84f, 64f)
             }
@@ -1105,7 +1128,7 @@ class BootstrapScreen(
         val selected = current?.observation?.units?.find { it.unitId == current.selectedId }
         val state = HudState(selected, current?.selectedIds ?: emptySet(), (1..3).map { current?.groupCount(it) ?: 0 }, current?.feedback, current?.observation?.stepIndex,
             launch.canEdit, loading, visualState?.preparationStatus, loadError, current != null, menu?.balance, menu?.factoryQueue,
-            mapInput.patrolMode, mapInput.patrolPointCount, mapInput.reclaimMode, menu?.workerQueueText, menu)
+            mapInput.patrolMode, mapInput.patrolPointCount, mapInput.reclaimMode, mapInput.repairMode, menu?.workerQueueText, menu)
         if (state == lastHudState) return
         if (state.preparationStatus != null && state.preparationStatus != lastHudState?.preparationStatus) {
             evidence.record("resource-preparation-stage", mapOf("generation" to generation, "stage" to state.preparationStatus,
@@ -1144,7 +1167,10 @@ class BootstrapScreen(
         reclaimCard.isVisible = nativePanel && menu?.canMaintain == true
         reclaimCard.background = skin.newDrawable("white", if (reclaimInput.pressed || state.reclaimMode)
             Color(.37f, .48f, .4f, 1f) else Color(.23f, .28f, .26f, 1f))
-        syncConstructionCards(menu?.construction.orEmpty(), current?.hasEconomicConstruction == true)
+        repairCard.isVisible = nativePanel && menu?.canRepair == true
+        repairCard.background = skin.newDrawable("white", if (repairInput.pressed || state.repairMode)
+            Color(.37f, .48f, .4f, 1f) else Color(.23f, .28f, .26f, 1f))
+        syncConstructionCards(menu?.construction.orEmpty(), current?.hasEconomicConstruction == true, menu?.canMaintain == true)
         val selectedInfo = menu?.selectedUnitInfo
         nativeInfo.isVisible = nativePanel && selectedInfo != null
         nativeIcon.isVisible = nativePanel && selected != null && state.selectedIds.size == 1
@@ -1163,6 +1189,7 @@ class BootstrapScreen(
             flightHover = false
             upgradeHover = null
             reclaimInput.cancel()
+            repairInput.cancel()
             constructionCards.values.forEach { it.input.cancel() }
             constructionHover = null
             nativeSelection = state.selectedIds.toSet()
@@ -1208,6 +1235,11 @@ class BootstrapScreen(
             nativeTooltipIcon.userObject = null
             nativeTooltipIcon.drawable = null
             nativeTooltipText.setText(menu?.reclaimTooltip.orEmpty())
+        }
+        if (repairHover && repairCard.isVisible) {
+            nativeTooltipIcon.userObject = null
+            nativeTooltipIcon.drawable = null
+            nativeTooltipText.setText(menu?.repairTooltip.orEmpty())
         }
         val economicUpgrade = upgrades.singleOrNull()?.takeIf { it.kind == UpgradePresentationKind.ECONOMIC }
         economicUpgradeCard.isVisible = nativePanel && economicUpgrade != null
@@ -1275,13 +1307,14 @@ class BootstrapScreen(
         patrolButton.isDisabled = current?.canPatrol != true
         patrolLabel.isVisible = current != null && !touchControls
         val taskText = selected?.tasks?.firstOrNull()?.let { head ->
-                "Tasks ${selected.tasks.size}: ${head.kind.name.lowercase()}" +
+                "Tasks ${selected.tasks.size}: ${taskLabel(head, current.observation).lowercase()}" +
                     (head.target?.let { String.format(Locale.ROOT, "\nPoint %.0f, %.0f", it.x, it.y) } ?: "")
             } ?: "Tasks 0"
         patrolLabel.setText(if (state.patrolMode) "Sent points ${state.patrolPoints}\n$taskText\nLeft: point / Esc: finish"
             else if (selected?.tasks?.isNotEmpty() == true) taskText else "P: set patrol points")
         // Factories cannot receive Patrol; keep this hint clear of the production controls.
-        if (queue != null || upgrades.isNotEmpty() || menu?.construction?.isNotEmpty() == true) patrolLabel.isVisible = false
+        if (queue != null || upgrades.isNotEmpty() || menu?.construction?.isNotEmpty() == true || menu?.canMaintain == true)
+            patrolLabel.isVisible = false
         selectedLabel.isVisible = current != null
         listOf<Actor>(contentLabel, rootField, modeBox, shareBox).forEach { it.isVisible = launch.canEdit }
         groupButtons.forEachIndexed { index, button -> button.setText("${index + 1} (${state.groups[index]})"); button.isDisabled = current == null }
@@ -1311,7 +1344,8 @@ class BootstrapScreen(
             it.setStatus(if (loading) state.preparationStatus ?: "Preparing scene..." else loadError)
         }
         statusLabel.setText(when {
-            state.reclaimMode -> "Select building to reclaim (Esc / right: cancel)"
+            state.reclaimMode -> "Select ${if (menu?.canRepair == true) "unit" else "building"} to reclaim (Esc / right: cancel)"
+            state.repairMode -> "Select unit to repair (Esc / right: cancel)"
             loading -> state.preparationStatus ?: "Preparing scene..."
             state.preparationStatus != null -> state.preparationStatus
             loadError != null -> if (visualRecoveryFailed) "Visual cache failed. Reopen or exit match to prepare again." else "Load failed"
@@ -1427,6 +1461,8 @@ class BootstrapScreen(
         upgradeHover = null
         upgradeInputs.forEach { it.cancel() }
         reclaimHover = false
+        repairHover = false
+        if (::repairInput.isInitialized) repairInput.cancel()
         if (::reclaimInput.isInitialized) reclaimInput.cancel()
         constructionCards.values.forEach { it.input.cancel() }
         productionHover = null

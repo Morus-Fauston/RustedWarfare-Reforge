@@ -14,8 +14,8 @@ class MaintenancePrivacyTest {
         val c = assertIs<InitResult.Accepted>(SimulationContext.initialize(base.copy(units = spawns,
             combatContract = CombatContract(1, -1, spawns.mapIndexed { i, s -> s.unitId to i + 1L }.toMap(), 4L)))).context
         try {
-            assertIs<ActionResult.Accepted>(c.submit(RepairBuildingAction("late", "p1", "b", "factory", c.world, 1500L)))
-            assertIs<ActionResult.Accepted>(c.submit(ReclaimBuildingAction("remove", "p1", "a", "factory", c.world)))
+            assertIs<ActionResult.Accepted>(c.submit(RepairUnitAction("late", "p1", "b", "factory", c.world, 1500L)))
+            assertIs<ActionResult.Accepted>(c.submit(ReclaimUnitAction("remove", "p1", "a", "factory", c.world)))
             for (step in 0L..1499L) c.advance(Step(step, 1.0, "sim-tick"))
             assertTrue(c.observe().units.none { it.unitId == "factory" })
             val view = c.advance(Step(1500, 1.0, "sim-tick"))
@@ -41,9 +41,9 @@ class MaintenancePrivacyTest {
             assertFalse(c.observe().units.single { it.unitId == "factory" }.alive)
             assertEquals(emptyList(), c.observe().reclaimedUnitIds)
             assertEquals("invalid-maintenance-target", assertIs<ActionResult.Rejected>(c.submit(
-                RepairBuildingAction("repair-dead", "p1", "worker", "factory", c.world))).error.code)
+                RepairUnitAction("repair-dead", "p1", "worker", "factory", c.world))).error.code)
             assertEquals("invalid-maintenance-target", assertIs<ActionResult.Rejected>(c.submit(
-                ReclaimBuildingAction("reclaim-dead", "p1", "worker", "factory", c.world))).error.code)
+                ReclaimUnitAction("reclaim-dead", "p1", "worker", "factory", c.world))).error.code)
             assertEquals(1750.0, c.observePlayer(c.world, "p1").credits)
         } finally { c.close() }
     }
@@ -66,15 +66,15 @@ class MaintenancePrivacyTest {
                 val before = c.observe()
                 for (repair in listOf(false, true)) {
                     val id = "reject-$i-$repair"
-                    val order = if (repair) RepairBuildingAction(id, "p1", "worker", target, c.world)
-                        else ReclaimBuildingAction(id, "p1", "worker", target, c.world)
+                    val order = if (repair) RepairUnitAction(id, "p1", "worker", target, c.world)
+                        else ReclaimUnitAction(id, "p1", "worker", target, c.world)
                     assertEquals("invalid-maintenance-target", assertIs<ActionResult.Rejected>(c.submit(order)).error.code)
                     assertEquals(before.units, c.observe().units)
                     assertEquals(before.economy!!.preciseBalances, c.observe().economy!!.preciseBalances)
                 }
             }
             assertEquals("cannot-maintain", assertIs<ActionResult.Rejected>(c.submit(
-                ReclaimBuildingAction("not-worker", "p1", "own", "own", c.world))).error.code)
+                ReclaimUnitAction("not-worker", "p1", "own", "own", c.world))).error.code)
         } finally { c.close() }
     }
 
@@ -105,7 +105,7 @@ class MaintenancePrivacyTest {
                     assertTrue(c.observePlayer(c.world, "p1").units.none { it.unitId == "factory" })
                 }
                 assertPayloadEqual("$mode initial")
-                assertIs<ActionResult.Accepted>(contexts[1].submit(ReclaimBuildingAction("hidden-reclaim", "p2", "worker", "factory", contexts[1].world)))
+                assertIs<ActionResult.Accepted>(contexts[1].submit(ReclaimUnitAction("hidden-reclaim", "p2", "worker", "factory", contexts[1].world)))
                 var terminal = false
                 for (step in 0L..1499L) {
                     contexts.forEach { it.advance(Step(step, 1.0, "sim-tick")) }
@@ -121,7 +121,7 @@ class MaintenancePrivacyTest {
                 assertTrue(terminal)
                 assertTrue(contexts[0].observe().units.any { it.unitId == "factory" && it.alive })
                 for ((index, target) in listOf("factory", "nonexistent").withIndex()) {
-                    val results = contexts.map { c -> c.submit(ReclaimBuildingAction("probe-$index", "p1", "observer", target, c.world)) }
+                    val results = contexts.map { c -> c.submit(ReclaimUnitAction("probe-$index", "p1", "observer", target, c.world)) }
                     assertEquals(results[0], results[1])
                     assertEquals("invalid-maintenance-target", assertIs<ActionResult.Rejected>(results[1]).error.code)
                     assertPayloadEqual("$mode rejected target $index")

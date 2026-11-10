@@ -175,14 +175,14 @@ class MaintenanceInputQueueTest {
                 assertEquals(listOf(UnitTaskKind.PATROL, UnitTaskKind.CONSTRUCT), worker.tasks.map { it.kind })
                 assertEquals("factory", worker.tasks.last().targetUnitId)
             }
-            assertEquals(listOf(true, true), actions.filter { it["type"] == "RepairBuildingAction" }.map { it["append"] })
+            assertEquals(listOf(true, true), actions.filter { it["type"] == "RepairUnitAction" }.map { it["append"] })
             assertTrue(input.touchDown(x, y, 0, Input.Buttons.RIGHT))
             shift = true
             assertTrue(input.touchUp(x, y, 0, Input.Buttons.RIGHT))
             assertTrue(session.observation.units.filter { it.typeId == "builder" }.all {
                 it.tasks.single().kind == UnitTaskKind.CONSTRUCT && it.tasks.single().targetUnitId == "factory"
             })
-            assertEquals(listOf(true, true, false, false), actions.filter { it["type"] == "RepairBuildingAction" }.map { it["append"] })
+            assertEquals(listOf(true, true, false, false), actions.filter { it["type"] == "RepairUnitAction" }.map { it["append"] })
         }
     }
 
@@ -210,12 +210,12 @@ class MaintenanceInputQueueTest {
                 assertEquals(listOf(UnitTaskKind.PATROL, UnitTaskKind.RECLAIM), worker.tasks.map { it.kind })
                 assertEquals("factory", worker.tasks.last().targetUnitId)
             }
-            assertEquals(listOf(true, true), actions.filter { it["type"] == "ReclaimBuildingAction" }.map { it["append"] })
+            assertEquals(listOf(true, true), actions.filter { it["type"] == "ReclaimUnitAction" }.map { it["append"] })
             click(false)
             assertTrue(session.observation.units.filter { it.typeId == "builder" }.all {
                 it.tasks.single().kind == UnitTaskKind.RECLAIM && it.tasks.single().targetUnitId == "factory"
             })
-            assertEquals(listOf(true, true, false, false), actions.filter { it["type"] == "ReclaimBuildingAction" }.map { it["append"] })
+            assertEquals(listOf(true, true, false, false), actions.filter { it["type"] == "ReclaimUnitAction" }.map { it["append"] })
             assertEquals(1750.0, session.observation.credits)
         }
     }

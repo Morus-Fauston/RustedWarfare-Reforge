@@ -42,9 +42,9 @@ internal class CoreAdapter(private val input: LoadedScenario) : AutoCloseable {
             "patrol" -> PatrolAction(id, actor, unit, position(value.objectAt("target")), value.required("append").jsonPrimitive.boolean, context.world)
             "upgrade" -> UpgradeAction(id, actor, unit, value.id("upgradeId"), context.world)
             "cancel-upgrade" -> CancelUpgradeAction(id, actor, unit, value.id("upgradeId"), context.world)
-            "repair" -> RepairBuildingAction(id, actor, unit, value.id("targetUnitId"), context.world,
+            "repair" -> RepairUnitAction(id, actor, unit, value.id("targetUnitId"), context.world,
                 append = value.required("append").jsonPrimitive.boolean)
-            "reclaim" -> ReclaimBuildingAction(id, actor, unit, value.id("targetUnitId"), context.world,
+            "reclaim" -> ReclaimUnitAction(id, actor, unit, value.id("targetUnitId"), context.world,
                 append = value.required("append").jsonPrimitive.boolean)
             "resume-construction" -> ResumeConstructionAction(id, actor, unit, value.id("targetUnitId"), context.world,
                 append = value.required("append").jsonPrimitive.boolean)
@@ -189,7 +189,8 @@ internal fun UnitObservation.json(capabilities: Boolean): JsonObject = JsonObjec
     "tasks" to array(tasks.map { obj("kind" to s(it.kind.name), "actionId" to s(it.actionId),
         "target" to it.target?.json(), "targetUnitId" to it.targetUnitId?.let(::s),
         "atStep" to it.atStep?.let(::n), "buildingTypeId" to it.buildingTypeId?.let(::s),
-        "buildingNonce" to it.buildingNonce?.let(::s)) }),
+        "buildingNonce" to it.buildingNonce?.let(::s), "automaticRepair" to b(it.automaticRepair),
+        "extraWorkRange" to n(it.extraWorkRange)) }),
 ).toMutableMap().apply {
     transport?.let { put("height", n(height)); put("transport", obj(
         "passengerIds" to it.passengerIds?.let { ids -> array(ids.map(::s)) }, "passengerCount" to n(it.passengerCount),

@@ -69,6 +69,11 @@ fun contentPackVisuals(visuals: PreparedVisualAssets, choice: ContentPackChoice)
 
 /** Reuses the existing controlled combat layout, not a new map or spawn-file interpreter. */
 internal fun contentPackScenario(root: Path, choice: ContentPackChoice): Scenario {
+    val repairBay = choice.unitId in setOf("commandCenter", "builder", "landFactory", "c_tank", "repairbay") &&
+        choice.content.units["repairbay"]?.maintenance == MaintenanceProfile.NATIVE_REPAIR_BAY &&
+        choice.content.units["commandCenter"]?.production?.unitTypeIds == listOf("builder") &&
+        choice.content.units["builder"]?.builder?.buildingTypeIds?.toSet() == setOf("landFactory", "repairbay") &&
+        choice.content.units["landFactory"]?.production?.unitTypeIds?.contains("c_tank") == true
     val bunker = choice.unitId in setOf("commandCenter", "builder", "mechFactory", "mechFactoryT2", "mechBunker", "mechBunkerDeployed") &&
         choice.content.units["mechBunker"]?.groundHeight != null &&
         choice.content.units["mechBunkerDeployed"]?.building != null &&
@@ -120,6 +125,15 @@ internal fun contentPackScenario(root: Path, choice: ContentPackChoice): Scenari
     require(map.widthTiles * map.tileWidth >= 600 && map.heightTiles * map.tileHeight >= 400) {
         "The existing controlled combat layout requires a map at least 600 by 400 world units"
     }
+    if (repairBay) return Scenario("p009-repairbay-production", map, choice.content.units,
+        listOf(Player("p1", PlayerControl.LOCAL, "one"), Player("p2", PlayerControl.NONE, "two")),
+        listOf(UnitSpawn("a", "p1", "commandCenter", Position(130.0, 130.0), 0.0),
+            UnitSpawn("b", "p2", "c_tank", Position(500.0, 310.0), 270.0)),
+        CoordinateModel("p001.coordinate.v1", "2d", "x-right", "y-down", "top-left", "world-unit", "double", "ieee754-binary64"),
+        TimeModel("p001.time.v1", "sim-tick", "ieee754-binary64", "fixed-explicit-delta"), MovementContract(16.0, 4.0),
+        combatContract = CombatContract(12345, -1, mapOf("a" to 8L, "b" to 9L), 10L),
+        economyContract = EconomyContract(mapOf("p1" to 16000L, "p2" to 0L)),
+        maintenanceContract = MaintenanceContract(mapOf("commandCenter" to 3000L, "landFactory" to 700L, "repairbay" to 1500L)))
     if (bunker) return Scenario("p009-bunker-production", map, choice.content.units,
         listOf(Player("p1", PlayerControl.LOCAL, "one"), Player("p2", PlayerControl.NONE, "two")),
         listOf(UnitSpawn("a", "p1", "commandCenter", Position(130.0, 130.0), 0.0),

@@ -86,7 +86,7 @@ internal object ScenarioDeclaration {
             ?: content.arrayAt("unitVariants").map { it.jsonObject }
         if (units.isEmpty()) throw InputError("Empty content units")
         units.forEach { if ((it["loader"]?.jsonPrimitive?.content ?: "variant") !in
-            setOf("variant", "combat", "declared-tank", "mech", "mech-heavy", "mech-bunker", "helicopter", "hover-tank", "hovercraft", "dropship", "aa-beam-gunship", "battleship", "submarine", "amphibious-jet", "water-combat", "constructor", "author-factory", "author-producer", "author-upgrading-producer", "underwater-target", "factory", "builder", "command-center", "turret", "turret-upgrades", "turret-construction", "point-defense", "point-defense-construction", "economy", "economy-upgrades"))
+            setOf("variant", "combat", "declared-tank", "mech", "mech-heavy", "mech-bunker", "helicopter", "hover-tank", "hovercraft", "dropship", "aa-beam-gunship", "battleship", "submarine", "amphibious-jet", "water-combat", "constructor", "author-factory", "author-producer", "author-upgrading-producer", "underwater-target", "factory", "builder", "repair-bay", "command-center", "turret", "turret-upgrades", "turret-construction", "point-defense", "point-defense-construction", "economy", "economy-upgrades"))
             throw InputError("Unsupported content loader") }
         if (units.any { it["loader"]?.jsonPrimitive?.content == "underwater-target" && it.id("id") != "navalUnderwaterTarget" })
             throw InputError("The finite underwater target loader requires its declared native identity")

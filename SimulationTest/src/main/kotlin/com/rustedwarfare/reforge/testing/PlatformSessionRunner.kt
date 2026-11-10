@@ -100,7 +100,14 @@ object PlatformSessionRunner {
                             intent.objectAt("position").let { Position(it.number("x"), it.number("y")) })
                         "upgrade" -> session.upgrade(intent.id("upgradeId"))
                         "cancelUpgrade" -> session.cancelUpgrade(intent.id("upgradeId"))
-                        "reclaim" -> session.reclaim(intent.id("targetUnitId"))
+                        "reclaim", "repair" -> {
+                            val repair = intent.text("kind") == "repair"
+                            val target = if ("targetUnitId" in intent) intent.id("targetUnitId") else {
+                                val point = intent.objectAt("position").let { Position(it.number("x"), it.number("y")) }
+                                (if (repair) session.repairTargetAt(point) else session.reclaimTargetAt(point)) ?: ""
+                            }
+                            if (repair) session.repair(target) else session.reclaim(target)
+                        }
                         else -> throw InputError("Unsupported platform intent: ${intent.text("kind")}")
                     }
                     val waitSteps = if ("waitSteps" in intent) intent.integer("waitSteps") else 0L

@@ -16,13 +16,13 @@ class MaintenanceOrderingTest {
             try {
                 var step = 0L
                 fun tick() = c.advance(Step(step++, 1.0, "sim-tick"))
-                assertIs<ActionResult.Accepted>(c.submit(ReclaimBuildingAction("weaken", "p1", worker, "m-target", c.world)))
+                assertIs<ActionResult.Accepted>(c.submit(ReclaimUnitAction("weaken", "p1", worker, "m-target", c.world)))
                 while (c.observe().units.single { it.unitId == "m-target" }.health!! > 1.02 && step < 1500) tick()
                 assertTrue(c.observe().units.single { it.unitId == "m-target" }.health!! in 0.0..1.02)
                 assertIs<ActionResult.Accepted>(c.submit(StopAction("pause", "p1", worker, c.world)))
                 assertIs<ActionResult.Accepted>(c.submit(ProduceAction("produce", "p1", "m-target", "builder", "1".repeat(32), c.world)))
                 repeat(401) { tick() }
-                assertIs<ActionResult.Accepted>(c.submit(ReclaimBuildingAction("terminal", "p1", worker, "m-target", c.world)))
+                assertIs<ActionResult.Accepted>(c.submit(ReclaimUnitAction("terminal", "p1", worker, "m-target", c.world)))
                 repeat(99) { tick() }
                 assertEquals(99f, c.observe().construction!!.workers.single().elapsed)
                 val view = tick()
@@ -53,14 +53,14 @@ class MaintenanceOrderingTest {
             try {
                 var step = 0L
                 fun tick() = c.advance(Step(step++, 1.0, "sim-tick"))
-                assertIs<ActionResult.Accepted>(c.submit(ReclaimBuildingAction("weaken", "p1", worker, "m-target", c.world)))
+                assertIs<ActionResult.Accepted>(c.submit(ReclaimUnitAction("weaken", "p1", worker, "m-target", c.world)))
                 while (c.observe().units.single { it.unitId == "m-target" }.health!! > 1.02 && step < 1200) tick()
                 // This actual ordinary T1 damage history leaves less than .8 HP, so even proportional T2 conversion remains terminal.
                 assertTrue(c.observe().units.single { it.unitId == "m-target" }.health!! in 0.0..<.8)
                 assertIs<ActionResult.Accepted>(c.submit(StopAction("pause", "p1", worker, c.world)))
                 assertIs<ActionResult.Accepted>(c.submit(UpgradeAction("upgrade", "p1", "m-target", "upgrade_t2", c.world)))
                 repeat(1567) { tick() }
-                assertIs<ActionResult.Accepted>(c.submit(ReclaimBuildingAction("terminal", "p1", worker, "m-target", c.world)))
+                assertIs<ActionResult.Accepted>(c.submit(ReclaimUnitAction("terminal", "p1", worker, "m-target", c.world)))
                 repeat(99) { tick() }
                 assertEquals(99f, c.observe().construction!!.workers.single().elapsed)
                 assertTrue(c.observe().incomeStates.single { it.unitId == "m-target" }.elapsed < 39f)

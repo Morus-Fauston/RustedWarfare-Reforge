@@ -6240,7 +6240,9 @@
     "bunker-body": "assets/units/mechs_large/topBunker.png",
     "bunker-turret": "assets/units/mechs_large/bunkerTurret.png",
     "bunker-leg": "assets/units/mechs_large/leg.png",
-    "bunker-foot": "assets/units/mechs_large/foot_small.png"
+    "bunker-foot": "assets/units/mechs_large/foot_small.png",
+    "repairbay-body": "res/drawable/repair_bay.png",
+    "repairbay-dead": "res/drawable/repair_bay_dead.png"
   },
   "mappingBasis": {
     "androidProfileSha256": "e273280ab37b1a24714e6b15d8e1cb14fdd395e228ea7c71a62dd2f24d334780",
@@ -6486,6 +6488,22 @@
       "sha256": "ae00a7c117cb3c3d8cc1225458ffe79c078ae88ef8304912558696f750ea25d5",
       "width": 17,
       "height": 36
+    },
+    {
+      "id": "repairbay-body",
+      "path": "res/drawable/repair_bay.png",
+      "bytes": 6129,
+      "sha256": "798eacf947184cd9fabe05b458dcfbf73c5ff95eefa03e9b1bc4b102933f9f75",
+      "width": 62,
+      "height": 76
+    },
+    {
+      "id": "repairbay-dead",
+      "path": "res/drawable/repair_bay_dead.png",
+      "bytes": 5653,
+      "sha256": "40f30c1da9eda59f3b47361e972c010618296d88b8b034647589663ef07601f6",
+      "width": 60,
+      "height": 76
     }
   ],
   "mappingUnitOutputs": {
@@ -7005,6 +7023,38 @@
         49
       ],
       "frames": 1
+    },
+    "repairbay-body": {
+      "file": "units/repairbay-body.png",
+      "operation": "crop",
+      "source": "repairbay-body",
+      "rect": [
+        0,
+        0,
+        62,
+        76
+      ],
+      "target": [
+        62,
+        76
+      ],
+      "frames": 1
+    },
+    "repairbay-dead": {
+      "file": "units/repairbay-dead.png",
+      "operation": "crop",
+      "source": "repairbay-dead",
+      "rect": [
+        0,
+        0,
+        60,
+        76
+      ],
+      "target": [
+        60,
+        76
+      ],
+      "frames": 1
     }
   },
   "mappingUnitBindings": {
@@ -7085,6 +7135,10 @@
         "2": "bunker-turret"
       },
       "shield": "heavy-shield"
+    },
+    "repairbay": {
+      "body": "repairbay-body",
+      "dead": "repairbay-dead"
     }
   }
 }

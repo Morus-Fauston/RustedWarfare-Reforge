@@ -19,7 +19,7 @@ class MaintenanceLifecycleTest {
             var step = 0L
             fun tick() = c.advance(Step(step++, 1.0, "sim-tick"))
             assertIs<ActionResult.Accepted>(c.submit(AttackAction("kill-worker", "p2", "gun", "a", c.world)))
-            assertIs<ActionResult.Accepted>(c.submit(ReclaimBuildingAction("reclaim", "p1", "a", "factory", c.world)))
+            assertIs<ActionResult.Accepted>(c.submit(ReclaimUnitAction("reclaim", "p1", "a", "factory", c.world)))
             while (c.observe().units.single { it.unitId == "a" }.alive && step < 700) tick()
             assertFalse(c.observe().units.single { it.unitId == "a" }.alive)
             val damaged = c.observe().units.single { it.unitId == "factory" }.health!!
@@ -27,7 +27,7 @@ class MaintenanceLifecycleTest {
             repeat(20) { tick() }
             assertEquals(damaged, c.observe().units.single { it.unitId == "factory" }.health)
             assertEquals(1750.0, c.observePlayer(c.world, "p1").credits)
-            assertIs<ActionResult.Accepted>(c.submit(RepairBuildingAction("take-over", "p1", "b", "factory", c.world)))
+            assertIs<ActionResult.Accepted>(c.submit(RepairUnitAction("take-over", "p1", "b", "factory", c.world)))
             while (c.observe().units.single { it.unitId == "factory" }.health!! < 1200.0 && step < 3700) tick()
             assertEquals(1200.0, c.observe().units.single { it.unitId == "factory" }.health)
             assertEquals(1750.0, c.observePlayer(c.world, "p1").credits)
@@ -49,10 +49,10 @@ class MaintenanceLifecycleTest {
             val c = assertIs<InitResult.Accepted>(SimulationContext.initialize(base.copy(units = spawns,
                 combatContract = CombatContract(1, -1, mapOf("a-worker" to 1L, "z-target" to 2L), 3L)))).context
             try {
-                assertIs<ActionResult.Accepted>(c.submit(RepairBuildingAction("full", "p1", "a-worker", "z-target", c.world)))
+                assertIs<ActionResult.Accepted>(c.submit(RepairUnitAction("full", "p1", "a-worker", "z-target", c.world)))
                 c.advance(Step(0, 1.0, "sim-tick"))
                 assertTrue(c.observe().units.single { it.unitId == "a-worker" }.tasks.isEmpty())
-                assertIs<ActionResult.Accepted>(c.submit(ReclaimBuildingAction("reclaim", "p1", "a-worker", "z-target", c.world)))
+                assertIs<ActionResult.Accepted>(c.submit(ReclaimUnitAction("reclaim", "p1", "a-worker", "z-target", c.world)))
                 var terminal = false
                 for (step in 1L..10000L) {
                     val before = c.observePlayer(c.world, "p1").credits!!
@@ -84,7 +84,7 @@ class MaintenanceLifecycleTest {
             val produced = c.observe().production!!.units.single().unitId
             assertEquals(1250.0, c.observePlayer(c.world, "p1").credits)
             assertIs<ActionResult.Accepted>(c.submit(MoveAction("clear-exit", "p1", produced, Position(310.0, 170.0), c.world)))
-            assertIs<ActionResult.Accepted>(c.submit(ReclaimBuildingAction("reclaim", "p1", "a-worker", "z-factory", c.world)))
+            assertIs<ActionResult.Accepted>(c.submit(ReclaimUnitAction("reclaim", "p1", "a-worker", "z-factory", c.world)))
             repeat(1000) { tick() }
             assertTrue(c.observe().units.single { it.unitId == "z-factory" }.health!! in 1.0..<250.0)
             assertIs<ActionResult.Accepted>(c.submit(ProduceAction("pending-builder", "p1", "z-factory", "builder", "2".repeat(32), c.world)))
@@ -116,7 +116,7 @@ class MaintenanceLifecycleTest {
         try {
             assertIs<ActionResult.Accepted>(c.submit(UpgradeAction("pending", "p1", "z-extractor", "upgrade_t3", c.world)))
             assertEquals(6000.0, c.observePlayer(c.world, "p1").credits)
-            assertIs<ActionResult.Accepted>(c.submit(ReclaimBuildingAction("reclaim", "p1", "a-worker", "z-extractor", c.world)))
+            assertIs<ActionResult.Accepted>(c.submit(ReclaimUnitAction("reclaim", "p1", "a-worker", "z-extractor", c.world)))
             var terminal = false
             for (step in 0L..2500L) {
                 val before = c.observePlayer(c.world, "p1").credits!!

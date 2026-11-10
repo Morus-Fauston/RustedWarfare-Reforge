@@ -78,9 +78,9 @@ class BuildingMaintenanceTest {
             combatContract = CombatContract(1, -1, mapOf("worker" to 1L, "factory" to 2L), 3L))
         val legacy = assertIs<InitResult.Accepted>(SimulationContext.initialize(legacyScene)).context
         try {
-            assertEquals("cannot-maintain", assertIs<ActionResult.Rejected>(legacy.submit(ReclaimBuildingAction(
+            assertEquals("cannot-maintain", assertIs<ActionResult.Rejected>(legacy.submit(ReclaimUnitAction(
                 "disabled", "p1", "worker", "factory", legacy.world))).error.code)
-            assertEquals("cannot-maintain", assertIs<ActionResult.Rejected>(legacy.submit(RepairBuildingAction(
+            assertEquals("cannot-maintain", assertIs<ActionResult.Rejected>(legacy.submit(RepairUnitAction(
                 "disabled-repair", "p1", "worker", "factory", legacy.world))).error.code)
         } finally { legacy.close() }
     }
@@ -101,7 +101,7 @@ class BuildingMaintenanceTest {
             val initialized = SimulationContext.initialize(scene)
             val c = assertIs<InitResult.Accepted>(initialized, initialized.toString()).context
             try {
-                assertIs<ActionResult.Accepted>(c.submit(ReclaimBuildingAction("reclaim", "p1", "worker", "factory", c.world)))
+                assertIs<ActionResult.Accepted>(c.submit(ReclaimUnitAction("reclaim", "p1", "worker", "factory", c.world)))
                 var terminal = false
                 for (step in 0L..1499L) {
                     c.advance(Step(step, 1.0, "sim-tick"))
@@ -125,7 +125,7 @@ class BuildingMaintenanceTest {
         try {
             val before = context.observe()
             assertEquals(emptyList(), before.reclaimedUnitIds)
-            assertIs<ActionResult.Accepted>(context.submit(ReclaimBuildingAction("reclaim", "p1", "worker", "factory", context.world)))
+            assertIs<ActionResult.Accepted>(context.submit(ReclaimUnitAction("reclaim", "p1", "worker", "factory", context.world)))
             repeat(1500) { context.advance(Step(it.toLong(), 1.0, "sim-tick")) }
             val after = context.observe()
             assertEquals(listOf("factory"), after.reclaimedUnitIds)
@@ -215,12 +215,12 @@ class BuildingMaintenanceTest {
             session.stop()
             assertTrue(session.observation.units.single { it.unitId == "factory" }.health!! < 1200.0)
             assertIs<ActionResult.Accepted>(session.command(Position(190.0, 170.0)))
-            assertEquals("RepairBuildingAction", actions.last()["type"])
+            assertEquals("RepairUnitAction", actions.last()["type"])
             assertEquals("factory", actions.last()["targetUnitId"])
             repeat(1200) { session.tick() }
             assertEquals(1200.0, session.observation.units.single { it.unitId == "factory" }.health)
             assertIs<ActionResult.Accepted>(session.reclaim(Position(190.0, 170.0)))
-            assertEquals("ReclaimBuildingAction", actions.last()["type"])
+            assertEquals("ReclaimUnitAction", actions.last()["type"])
             assertEquals("factory", actions.last()["targetUnitId"])
             repeat(1500) { session.tick() }
             assertEquals("worker", session.selectedId)
@@ -244,18 +244,18 @@ class BuildingMaintenanceTest {
             var step = 0L
             fun tick() = context.advance(Step(step++, 1.0, "sim-tick"))
             fun factory() = context.observe().units.single { it.unitId == "factory" }
-            assertIs<ActionResult.Accepted>(context.submit(ReclaimBuildingAction("damage", "p1", "a", "factory", context.world)))
+            assertIs<ActionResult.Accepted>(context.submit(ReclaimUnitAction("damage", "p1", "a", "factory", context.world)))
             repeat(100) { tick() }
             assertIs<ActionResult.Accepted>(context.submit(StopAction("stop-reclaim", "p1", "a", context.world)))
             val damage = factory().health!!
             assertTrue(damage in 1.0..<1200.0)
             assertEquals(1750.0, context.observePlayer(context.world, "p1").credits)
-            assertIs<ActionResult.Accepted>(context.submit(RepairBuildingAction("repair", "p1", "b", "factory", context.world)))
+            assertIs<ActionResult.Accepted>(context.submit(RepairUnitAction("repair", "p1", "b", "factory", context.world)))
             repeat(1200) { tick() }
             assertEquals(1200.0, factory().health)
             assertTrue(context.observe().units.single { it.unitId == "b" }.tasks.isEmpty())
             assertEquals(1750.0, context.observePlayer(context.world, "p1").credits)
-            assertIs<ActionResult.Accepted>(context.submit(RepairBuildingAction("already-full", "p1", "b", "factory", context.world)))
+            assertIs<ActionResult.Accepted>(context.submit(RepairUnitAction("already-full", "p1", "b", "factory", context.world)))
             tick()
             assertTrue(context.observe().units.single { it.unitId == "b" }.tasks.isEmpty())
             assertIs<ActionResult.Accepted>(context.submit(BuildAction("new-extractor", "p1", "a", "extractorT1",
@@ -266,7 +266,7 @@ class BuildingMaintenanceTest {
             assertIs<ActionResult.Accepted>(context.submit(StopAction("pause-extractor", "p1", "a", context.world)))
             assertEquals(800.0, context.observe().units.single { it.unitId == target }.health)
             assertTrue(context.observe().units.single { it.unitId == target }.constructionProgress < 1f)
-            assertIs<ActionResult.Accepted>(context.submit(RepairBuildingAction("resume-full-hp", "p1", "b", target, context.world)))
+            assertIs<ActionResult.Accepted>(context.submit(RepairUnitAction("resume-full-hp", "p1", "b", target, context.world)))
             repeat(1500) { tick() }
             assertEquals(1f, context.observe().units.single { it.unitId == target }.constructionProgress)
             assertTrue(context.observe().units.single { it.unitId == "b" }.tasks.isEmpty())
@@ -290,7 +290,7 @@ class BuildingMaintenanceTest {
             val before = context.observePlayer(context.world, "p1")
             assertEquals(1050.0, before.credits)
             assertTrue(before.units.single { it.unitId == target }.constructionProgress in .1f..<1f)
-            assertIs<ActionResult.Accepted>(context.submit(ReclaimBuildingAction("reclaim", "p1", "worker", target, context.world)))
+            assertIs<ActionResult.Accepted>(context.submit(ReclaimUnitAction("reclaim", "p1", "worker", target, context.world)))
             assertEquals(before.credits, context.observePlayer(context.world, "p1").credits)
             var removed = false
             repeat(500) {
@@ -310,7 +310,7 @@ class BuildingMaintenanceTest {
             }
             assertTrue(removed, "The actual unfinished project must reach its reclaim terminal")
             assertEquals("invalid-maintenance-target", assertIs<ActionResult.Rejected>(context.submit(
-                ReclaimBuildingAction("repeat", "p1", "worker", target, context.world))).error.code)
+                ReclaimUnitAction("repeat", "p1", "worker", target, context.world))).error.code)
             repeat(20) { tick() }
             assertEquals(1610.0000083446503, context.observePlayer(context.world, "p1").credits)
             assertTrue(before.units.any { it.unitId == target && it.alive })

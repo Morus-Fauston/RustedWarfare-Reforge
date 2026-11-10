@@ -392,6 +392,12 @@ class SandboxGraphics private constructor(private val resources: SandboxRenderRe
             }
             if (unit.unitId in selectedIds) {
                 shapes.circle(x, y, radius + 6f, 32)
+                if (unit.alive && unit.constructionProgress >= 1f && unit.ownerPlayerId == frame.observation.playerId)
+                    resources.units.getValue(unit.typeId).repairRange?.let { range ->
+                        shapes.color = Color(.25f, .65f, .45f, 1f)
+                        shapes.circle(projection.x(unit.position.x), projection.y(unit.position.y),
+                            (range * projection.scale).toFloat(), 96)
+                    }
                 if (unit.ownerPlayerId == frame.observation.playerId) {
                     shapes.color = Color.CYAN
                     var stored: Position? = null

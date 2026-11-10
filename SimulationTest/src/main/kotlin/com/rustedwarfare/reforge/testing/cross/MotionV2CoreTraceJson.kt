@@ -17,7 +17,7 @@ internal object MotionV2CoreTraceJson {
             is LoadAction,is UnloadAction->error("Movement v2 trace does not support transport actions")
             is AttackAction->error("Movement v2 trace does not support AttackAction")
             is PatrolAction->error("Movement v2 trace does not support PatrolAction")
-            is BuildAction,is ResumeConstructionAction,is RepairBuildingAction,is ReclaimBuildingAction->
+            is BuildAction,is ResumeConstructionAction,is RepairUnitAction,is ReclaimUnitAction->
                 error("Movement v2 trace does not support construction actions")
             is ProduceAction,is CancelProductionAction,is UpgradeAction,is CancelUpgradeAction->error("Movement v2 trace does not support economy actions") }),
         "target" to (it as? MoveAction)?.target?.json()) } ?: JsonNull

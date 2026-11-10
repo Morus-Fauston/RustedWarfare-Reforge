@@ -124,7 +124,8 @@ enum class UnitTaskKind { MOVE, ATTACK, PATROL, BUILD, CONSTRUCT, RECLAIM, LOAD_
 /** Owner control intent; temporary combat targets never become stored patrol points. */
 data class UnitTask(val kind: UnitTaskKind, val actionId: String, val target: Position? = null,
     val targetUnitId: String? = null, val atStep: Long? = null,
-    val buildingTypeId: String? = null, val buildingNonce: String? = null)
+    val buildingTypeId: String? = null, val buildingNonce: String? = null,
+    val automaticRepair: Boolean = false, val extraWorkRange: Float = 0f)
 
 data class UnitObservation(
     val unitId: String,
@@ -450,6 +451,8 @@ internal data class MutableUnit(
     var constructionPreparation: Float = 0f,
     var constructionWorking: Boolean = false,
     var previousWorkTargetActive: Boolean = false,
+    /** Native r.d is independent of the work preparation and Stop fields. */
+    var repairScanElapsed: Float = 0f,
     var reclaimed: Boolean = false,
     var singleNodePathCount: Byte = 0,
     var logicalRequestX: Float? = null,

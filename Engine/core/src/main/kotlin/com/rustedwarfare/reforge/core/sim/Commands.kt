@@ -73,7 +73,7 @@ data class BuildAction(
     val append: Boolean = false,
 ) : Action
 
-data class RepairBuildingAction(
+data class RepairUnitAction(
     override val actionId: String,
     override val actorPlayerId: String,
     override val unitId: String,
@@ -83,7 +83,7 @@ data class RepairBuildingAction(
     val append: Boolean = false,
 ) : Action
 
-data class ReclaimBuildingAction(
+data class ReclaimUnitAction(
     override val actionId: String,
     override val actorPlayerId: String,
     override val unitId: String,

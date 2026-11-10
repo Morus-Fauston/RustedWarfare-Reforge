@@ -1,0 +1,15 @@
+{
+  "format": "rw-reforge.content-pack.v1",
+  "id": "owned-repairbay-production-json",
+  "name": "Owned repair bay construction",
+  "units": [
+    {
+      "type": "repair-bay",
+      "file": "repairbay.json"
+    },
+    {
+      "type": "builder",
+      "file": "builder.json"
+    }
+  ]
+}

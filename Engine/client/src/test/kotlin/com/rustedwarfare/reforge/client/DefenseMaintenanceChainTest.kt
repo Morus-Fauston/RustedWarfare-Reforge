@@ -42,18 +42,18 @@ class DefenseMaintenanceChainTest {
             assertEquals(50.0, c.observePlayer(c.world, "p1").credits, "Resuming the existing shield is free")
             assertIs<ActionResult.Accepted>(c.submit(StopAction("stop-b", "p1", "b", c.world)))
 
-            assertIs<ActionResult.Accepted>(c.submit(ReclaimBuildingAction("weaken-turret", "p1", "a", turret.unitId, c.world)))
+            assertIs<ActionResult.Accepted>(c.submit(ReclaimUnitAction("weaken-turret", "p1", "a", turret.unitId, c.world)))
             while (c.observe().units.single { it.unitId == turret.unitId }.health!! > 689.8 && step < 5000L) tick()
             val damaged = c.observe().units.single { it.unitId == turret.unitId }.health!!
             assertTrue(damaged in 0.0..689.8)
             assertIs<ActionResult.Accepted>(c.submit(StopAction("stop-weaken", "p1", "a", c.world)))
-            assertIs<ActionResult.Accepted>(c.submit(RepairBuildingAction("repair-turret", "p1", "a", turret.unitId, c.world)))
+            assertIs<ActionResult.Accepted>(c.submit(RepairUnitAction("repair-turret", "p1", "a", turret.unitId, c.world)))
             while (c.observe().units.single { it.unitId == turret.unitId }.health!! < 700.0 && step < 6000L) tick()
             assertEquals(700.0, c.observe().units.single { it.unitId == turret.unitId }.health)
             assertEquals(50.0, c.observePlayer(c.world, "p1").credits)
             assertIs<ActionResult.Accepted>(c.submit(StopAction("stop-a", "p1", "a", c.world)))
 
-            assertIs<ActionResult.Accepted>(c.submit(ReclaimBuildingAction("reclaim-shield", "p1", "b", shield.unitId, c.world)))
+            assertIs<ActionResult.Accepted>(c.submit(ReclaimUnitAction("reclaim-shield", "p1", "b", shield.unitId, c.world)))
             var reclaimEvents = 0
             while (c.observe().units.any { it.unitId == shield.unitId } && step < 7500L) {
                 reclaimEvents += tick().events.count { it.kind == "building-reclaimed" && it.unitId == shield.unitId }
@@ -62,7 +62,7 @@ class DefenseMaintenanceChainTest {
             assertEquals(1, reclaimEvents)
             assertEquals(1010.0000143051147, c.observePlayer(c.world, "p1").credits)
             assertEquals("invalid-maintenance-target", assertIs<ActionResult.Rejected>(c.submit(
-                ReclaimBuildingAction("no-second-refund", "p1", "a", shield.unitId, c.world))).error.code)
+                ReclaimUnitAction("no-second-refund", "p1", "a", shield.unitId, c.world))).error.code)
             repeat(30) { tick() }
             assertEquals(1010.0000143051147, c.observePlayer(c.world, "p1").credits)
             assertIs<ActionResult.Accepted>(c.submit(BuildAction("reuse-released-footprint", "p1", "a", "c_turret_t1",

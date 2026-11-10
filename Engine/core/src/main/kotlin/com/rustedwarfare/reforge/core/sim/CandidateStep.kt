@@ -113,6 +113,7 @@ internal data class StepState(
                 } }
             require(unit.birthRemaining.isFinite() && unit.birthRemaining in 0f..birthLimit) { "Invalid birth timer" }
             unit.taskQueue.validateCandidate()
+            require(unit.repairScanElapsed.isFinite() && unit.repairScanElapsed >= 0f) { "Invalid repair scan timer" }
             CustomUnitActions.validateCandidate(unit)
             require((unit.logicalRequestX == null) == (unit.logicalRequestY == null) &&
                 unit.logicalRequestX?.isFinite() != false && unit.logicalRequestY?.isFinite() != false) {

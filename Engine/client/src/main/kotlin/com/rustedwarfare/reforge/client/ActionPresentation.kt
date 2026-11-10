@@ -11,7 +11,7 @@ internal class ActionCatalogue(private val definitions: Map<String, UnitDefiniti
     private data class Names(val panel: String, val full: String = panel)
     private val names = mapOf(
         "commandCenter" to Names("Command", "Command center"), "builder" to Names("Builder"),
-        "c_tank" to Names("Tank"), "landFactory" to Names("Factory", "Land factory"),
+        "c_tank" to Names("Tank"), "landFactory" to Names("Factory", "Land factory"), "repairbay" to Names("Repair bay"),
         "hoverTank" to Names("Hover tank"), "hovercraft" to Names("Landing craft"), "dropship" to Names("Transport", "Air transport"),
         "mechFactory" to Names("Mech factory"), "mechGun" to Names("Gun mech"),
         "mechFactoryT2" to Names("Mech factory T2"), "mechHeavyMissile" to Names("Heavy missile mech"),
@@ -132,7 +132,9 @@ internal class ActionCatalogue(private val definitions: Map<String, UnitDefiniti
         val buildings = if (!validWorkers || workers.any { it.typeId != workers.first().typeId }) emptyList()
             else immutable(definitions.getValue(workers.first().typeId).builder?.buildingTypeIds.orEmpty()
                 .map { checkNotNull(construction[it]) })
-        val workerText = if (buildings.isEmpty()) null else workerText(workers.sortedBy { it.unitId }, view)
+        val nativeMaintenance = validWorkers && workers.all { it.constructionProgress >= 1f && it.carriedBy == null &&
+            definitions.getValue(it.typeId).maintenance != null }
+        val workerText = if (buildings.isEmpty() && !nativeMaintenance) null else workerText(workers.sortedBy { it.unitId }, view)
         val info = if (ids.isEmpty()) null else if (ids.size > 1) workerText else selected?.let { unit ->
             "${unit.health?.toInt() ?: 0} / ${unit.maxHealth?.toInt() ?: 0}" +
                 (unit.transport?.let { "\nCargo ${it.occupiedSlots} / ${it.capacity}\nPassengers ${it.passengerCount}" } ?: "") +
@@ -153,7 +155,8 @@ internal class ActionCatalogue(private val definitions: Map<String, UnitDefiniti
                     if (it.exhausted) " LOCKED" else "") } ?: "") + (workerText?.let { "\n$it" } ?: "")
         }
         return ActionMenuView(view.credits, production(view, factory), buildings, upgrades, factory, upgradeQueue,
-            maintenance && validWorkers && workers.all { it.typeId == "builder" && definitions.getValue(it.typeId).builder != null },
+            validWorkers && workers.all { definitions.getValue(it.typeId).maintenance != null ||
+                maintenance && it.typeId == "builder" && definitions.getValue(it.typeId).builder != null },
             workerText, info, selected?.let { title(it.typeId, panel = true) },
             view.units.filter { it.alive && it.ownerPlayerId == view.playerId && it.constructionProgress >= 1f }
                 .sumOf { nominalIncome(it.typeId)?.toDouble() ?: 0.0 }.toFloat(),
@@ -161,25 +164,31 @@ internal class ActionCatalogue(private val definitions: Map<String, UnitDefiniti
                 val name = if (upgrades.any { it.kind == UpgradePresentationKind.FACTORY && it.actionKey == item.actionKey })
                     title(item.targetTypeId, panel = true) else if (item.actionKey == "upgrade_gun") "Gun" else "Art"
                 "  $name ${(item.progress * 100f).toInt()}%"
-            }.orEmpty(), view.balance, depthAction, flightAction, transportAction, unitActions)
+            }.orEmpty(), view.balance, depthAction, flightAction, transportAction, unitActions, nativeMaintenance)
     }
 
     private fun workerText(workers: List<UnitObservation>, view: PlayerObservation): String {
         if (workers.size == 1) {
             val tasks = workers.single().tasks; val head = tasks.firstOrNull()
             val type = head?.buildingTypeId ?: head?.targetUnitId?.let { id -> view.units.firstOrNull { it.unitId == id }?.typeId }
-            return "Tasks ${tasks.size}\n" + (head?.kind?.name?.lowercase()?.replaceFirstChar { it.uppercase() } ?: "Idle") +
+            return "Tasks ${tasks.size}\n" + taskLabel(head, view) +
                 (type?.let { " ${title(it)}" } ?: "")
         }
         val low = workers.minOf { it.tasks.size }; val high = workers.maxOf { it.tasks.size }
         val range = if (low == high) "$low" else "$low-$high"
-        val kinds = workers.groupingBy { it.tasks.firstOrNull()?.kind }.eachCount().entries
-            .sortedBy { it.key?.ordinal ?: -1 }.joinToString("\n") { (kind, count) ->
-                "${kind?.name?.lowercase()?.replaceFirstChar { it.uppercase() } ?: "Idle"} x$count"
+        val kinds = workers.groupingBy { it.tasks.firstOrNull().let { task -> task?.kind to taskLabel(task, view) } }
+            .eachCount().entries.sortedBy { it.key.first?.ordinal ?: -1 }.joinToString("\n") { (kind, count) ->
+                "${kind.second} x$count"
             }
         return "Tasks $range each\n$kinds"
     }
 }
+
+/** The shared construction task also repairs completed units; show the player's current operation. */
+internal fun taskLabel(task: UnitTask?, view: PlayerObservation): String =
+    if (task?.kind == UnitTaskKind.CONSTRUCT && view.units.any {
+        it.unitId == task.targetUnitId && it.constructionProgress >= 1f
+    }) "Repair" else task?.kind?.name?.lowercase()?.replaceFirstChar { it.uppercase() } ?: "Idle"
 
 private fun <T> immutable(items: List<T>): List<T> = Collections.unmodifiableList(ArrayList(items))
 
@@ -198,9 +207,11 @@ data class ActionMenuView(val credits: Double? = null, val production: List<Prod
     val selectedTitle: String? = null, val totalNominalIncome: Float = 0f, val upgradeQueueText: String = "",
     val balance: Long? = null, val depthAction: SubmarineDepthActionView? = null,
     val flightAction: AmphibiousFlightActionView? = null, val transportAction: TransportUnloadActionView? = null,
-    val unitActions: List<CustomUnitActionView> = emptyList()) {
+    val unitActions: List<CustomUnitActionView> = emptyList(), val canRepair: Boolean = false) {
     val reclaimTooltip: String get() = if (canMaintain)
-        "Reclaim own building\nCredits returned on completion\nLeft: choose target\nEsc / right: cancel" else ""
+        "Reclaim own ${if (canRepair) "unit" else "building"}\nCredits returned on completion\nLeft: choose target\nEsc / right: cancel" else ""
+    val repairTooltip: String get() = if (canRepair)
+        "Repair unit\nNo credit cost\nRange 230\nLeft: choose target\nEsc / right: cancel" else ""
 }
 
 data class SubmarineDepthActionView(val surface: Boolean, val title: String, val tooltip: String)

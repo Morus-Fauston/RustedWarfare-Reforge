@@ -59,7 +59,7 @@ def validate_windows_plan(plan,contract):
                     not 0<segment.get('stallSeconds',0)<=segment.get('maximumWallSeconds',0)<=60):
                 raise PlatformError('input-contract','Invalid declared waiting segment',1)
     action_types={'select':'SelectAction','move':'MoveAction','build':'BuildAction','upgrade':'UpgradeAction',
-                  'produce':'ProduceAction','attack':'AttackAction','stop':'StopAction','submarine-depth':'SubmarineDepthAction',
+                  'produce':'ProduceAction','attack':'AttackAction','repair':'RepairUnitAction','reclaim':'ReclaimUnitAction','stop':'StopAction','submarine-depth':'SubmarineDepthAction',
                   'amphibious-flight':'AmphibiousFlightAction','load':'LoadAction','unload':'UnloadAction','unit-action':'UnitAction'}
     for intent in intents:
         if intent.get('kind')=='unit-action':validate_unit_action_intent(intent)
@@ -377,8 +377,8 @@ def run_windows(scenario, contract, distribution, output, size, java='java', rat
                     click_action('upgrade:'+intent['upgradeId'])
                 elif kind == 'cancelUpgrade':
                     click_action('cancel-upgrade:'+intent['upgradeId'])
-                elif kind == 'reclaim':
-                    click_action('choose-reclaim')
+                elif kind in ('reclaim','repair'):
+                    click_action('choose-'+kind)
                     guard.click(*world(intent['position']))
                 elif kind == 'build':
                     click_action('choose-construction:'+intent['typeId'])
