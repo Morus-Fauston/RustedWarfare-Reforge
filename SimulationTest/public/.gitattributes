@@ -23,6 +23,7 @@ inputs/mech-production/** -text whitespace=blank-at-eol,blank-at-eof,space-befor
 inputs/helicopter-production/** -text whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol
 inputs/heavy-mech-production/** -text whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol
 inputs/naval-production/** -text whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol
+inputs/nautilus-production/** -text whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol
 inputs/transport-production/** -text whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol
 inputs/air-transport-production/** -text whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol
 inputs/hover-production/** -text whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol

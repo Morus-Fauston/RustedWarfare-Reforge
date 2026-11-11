@@ -684,10 +684,12 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
         }
         val result = when (action) {
             is UnitAction -> {
-                CustomUnitActions.request(unit, action.actionName, action.cancelQueued, steps.current.actionClock)?.let {
+                withUnitActionQueue(unit) {
+                    CustomUnitActions.request(unit, action.actionName, action.cancelQueued, steps.current.actionClock, currentScenario.map)
+                }?.let {
                     return reject(action, it.code, it.message)
                 }
-                ActionResult.Accepted(action.actionId, listOf(Event("unit-action-queued", unit.unitId)))
+                ActionResult.Accepted(action.actionId, listOf(Event(if (action.cancelQueued) "unit-action-cancelled" else "unit-action-queued", unit.unitId)))
             }
             is UnloadAction -> {
                 if (!BuildingWork.isReady(unit)) return reject(action, "inactive-unit", "Unfinished units cannot unload")
@@ -943,6 +945,25 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
         }
     }
 
+    private fun unitActionQueue(unit: MutableUnit): List<PendingUnitAction> =
+        if (unit.definition.production != null) checkNotNull(productionLedger).actionQueue(unit.unitId)
+        else unit.customActionState.queue
+
+    private fun unitActionHead(unit: MutableUnit): PendingUnitAction? =
+        if (unit.definition.production != null) checkNotNull(productionLedger).actionAtHead(unit.unitId)
+        else unit.customActionState.queue.firstOrNull()
+
+    /** Only the factory ledger persists work order; the action executor borrows its projection inside this candidate. */
+    private inline fun <T> withUnitActionQueue(unit: MutableUnit, operation: () -> T): T {
+        if (unit.definition.production == null) return operation()
+        check(unit.customActionState.queue.isEmpty())
+        unit.customActionState = unit.customActionState.copy(queue = unitActionQueue(unit))
+        val result = operation()
+        productionLedger = checkNotNull(productionLedger).replaceActions(unit.unitId, unit.customActionState.queue)
+        unit.customActionState = unit.customActionState.copy(queue = emptyList())
+        return result
+    }
+
     internal fun isCurrentSandboxWorld(handle: WorldHandle): Boolean = !closed && activeWorld === handle
 
     internal fun validateSandboxSpawn(command: SandboxCommand.Spawn, generation: Long, sequence: Long): SimulationError? {
@@ -1029,6 +1050,7 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
                     WaterBody.advanceCorpse(unit, currentScenario.map, step.delta)
                     HoverMotion.advanceCorpse(unit, currentScenario.map, step.delta)
                     Transport.advanceCorpse(unit, currentScenario.map, step.delta)
+                    NautilusMotion.advanceCorpse(unit, units, currentScenario.map, step.delta)
                     AaBeamGunship.advanceCorpse(unit, currentScenario.map, step.delta)
                     continue
                 }
@@ -1079,7 +1101,8 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
                         BuildingWork.automaticRange(unit), units)
                 }
                 val factoryWork = unit.definition.production != null
-                if (factoryWork && BuildingWork.isReady(unit)) {
+                val factoryActionAtHead = factoryWork && unitActionHead(unit) != null
+                if (factoryWork && !factoryActionAtHead && BuildingWork.isReady(unit)) {
                     if (checkNotNull(productionLedger).upgradeAtHead(unit.unitId)) advanceUpgrade(unit)
                     else advanceProduction(unit, currentScenario)
                 }
@@ -1100,7 +1123,8 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
                     else updateAttackRoute(unit, currentScenario.map, step.stepIndex)
                 }
                 val fourLegged = unit.definition.mech?.kind == com.rustedwarfare.reforge.core.content.MechKind.FOUR_LEGGED
-                if (unit.definition.groundHeight != null && unit.definition.movement.type != MovementType.NONE && unit.moveTarget == null) {
+                if ((unit.definition.groundHeight != null || com.rustedwarfare.reforge.core.content.NautilusRules.supports(unit.definition)) &&
+                    unit.definition.movement.type != MovementType.NONE && unit.moveTarget == null) {
                     unit.tasks.firstOrNull()?.takeIf { it.kind == UnitTaskKind.MOVE }?.let { task ->
                         unit.moveTarget = task.target
                         unit.originMoveId = task.actionId
@@ -1113,9 +1137,11 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
                     updateWeapon(unit, step.delta)
                     updatePointDefense(unit, step.delta)
                     WeaponEnergy.advance(unit, step.delta)
-                    if (CustomUnitActions.advanceQueue(unit, currentScenario.unitDefinitions, step.delta, steps.current.actionClock))
+                    if ((!factoryWork || factoryActionAtHead) && withUnitActionQueue(unit) {
+                            CustomUnitActions.advanceQueue(unit, currentScenario.unitDefinitions, step.delta, steps.current.actionClock)
+                        })
                         pendingEvents += Event("unit-action-completed", unit.unitId)
-                    CustomUnitActions.constrain(unit, step.delta, policies.steering, policies.coordinates)
+                    CustomUnitActions.constrain(unit, step.delta, policies.steering, policies.coordinates, unitActionHead(unit))
                 }
                 if (!fourLegged) updateUnit(unit, currentScenario.map, step.delta, step.stepIndex, candidate.motionSamples)
                 FlightMotion.advancePose(unit, step.delta)
@@ -1136,7 +1162,9 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
                     }
                         ?: unit.combat?.let { it.cooldown = maxOf(0.0, it.cooldown - step.delta) }
                     if (!economicBuilding && !factoryWork) advanceUpgrade(unit)
-                    if (CustomUnitActions.advanceAutomatic(unit, currentScenario.unitDefinitions, step.delta))
+                    if (withUnitActionQueue(unit) {
+                            CustomUnitActions.advanceAutomatic(unit, currentScenario.unitDefinitions, currentScenario.map, step.delta)
+                        })
                         pendingEvents += Event("unit-action-automatic", unit.unitId)
                     val regeneration = unit.definition.selfRegenRate
                     if (regeneration != 0f && checkNotNull(unit.health) < checkNotNull(unit.definition.maximumHealth)) {
@@ -1337,8 +1365,8 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
             val nautilus = com.rustedwarfare.reforge.core.content.NautilusRules.supports(definition)
             if (definition.groundHeight != null && !bunker)
                 return SimulationError("unsupported-unit-actions", "Ground height requires the qualified bunker forms")
-            val beamGunship = definition.energy != null && !nautilus || definition.combat?.projectile?.beam != null ||
-                definition.combat?.namedWeapons?.ordered?.any { it.energyUsage != 0f || it.projectile.beam != null } == true
+            val beamGunship = !nautilus && (definition.energy != null || definition.combat?.projectile?.beam != null ||
+                definition.combat?.namedWeapons?.ordered?.any { it.energyUsage != 0f || it.projectile.beam != null } == true)
             if (beamGunship && !AaBeamGunship.supports(definition))
                 return SimulationError("unsupported-aa-beam", "Expected the qualified AA energy and beam representative")
             if (definition.customActions != null) {
@@ -1373,7 +1401,7 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
                 return SimulationError("unsupported-flight", "Expected a finite AIR profile and a single finite rotor")
             if (!m.reverseSpeedPercentage.isFinite() || !air && !submarine && !engineer && !nautilus && (m.reverseSpeedPercentage !in setOf(0.0, 1.0) ||
                 m.reverseSpeedPercentage != 0.0 && definition.mech == null && m.type != MovementType.WATER) ||
-                definition.mech?.let { !it.isValid() || !bunker && m.type != (if (it.kind == com.rustedwarfare.reforge.core.content.MechKind.FOUR_LEGGED) MovementType.OVER_CLIFF else MovementType.LAND) } == true)
+                definition.mech?.let { !it.isValid() || !bunker && !nautilus && m.type != (if (it.kind == com.rustedwarfare.reforge.core.content.MechKind.FOUR_LEGGED) MovementType.OVER_CLIFF else MovementType.LAND) } == true)
                 return SimulationError("unsupported-mech", "Expected the finite supported mech locomotion category")
             if (definition.maintenance != null && !RepairBay.supports(definition) && !engineer)
                 return SimulationError("unsupported-repair-bay", "Expected the complete finite native repair bay capability")
@@ -1392,6 +1420,7 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
                 val mechFactory = FactoryExit.supportsMechFactory(definition)
                 val airFactory = FactoryExit.supportsAirFactory(definition)
                 val seaFactory = FactoryExit.supportsSeaFactory(definition)
+                val experimentalFactory = com.rustedwarfare.reforge.core.content.ExperimentalFactoryRules.supports(definition)
                 val factory = building?.placementFootprint == com.rustedwarfare.reforge.core.content.BuildingFootprint(-1, -1, 1, 3) &&
                     building.footprint == com.rustedwarfare.reforge.core.content.BuildingFootprint(-1, -1, 1, 1) &&
                     building.anchor == null && !building.requiresResourcePool
@@ -1416,14 +1445,14 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
                     }
                 val repairBay = RepairBay.supports(definition)
                 val supportedPlacement = if (definition.id in setOf("c_turret_t1", "c_turret_t2_gun", "c_turret_t1_artillery", "laserDefence"))
-                    defense else factory || airFactory || seaFactory || extractor || fabricator || repairBay
+                    defense else factory || airFactory || seaFactory || experimentalFactory || extractor || fabricator || repairBay
                 val mobileNano = definition.id == "mechGun" && definition.building == null &&
                     definition.mech?.kind == com.rustedwarfare.reforge.core.content.MechKind.TWO_LEGGED &&
                     definition.build == com.rustedwarfare.reforge.core.content.BuildProfile(600L, .0012f) &&
                     construction == com.rustedwarfare.reforge.core.content.ConstructionProfile(600L, .0012f) &&
                     m.type == MovementType.LAND
                 if ((!mobileNano && building == null) || construction.price < 0L || !construction.rate.isFinite() || construction.rate <= 0f ||
-                    !supportedPlacement && !mobileNano || definition.radius > 30.0 && !(factory && mechFactory) && !seaFactory)
+                    !supportedPlacement && !mobileNano || definition.radius > 30.0 && !(factory && mechFactory) && !seaFactory && !experimentalFactory)
                     return SimulationError("unsupported-construction", "Expected finite construction metadata within the supported placement envelope")
             }
             definition.pointDefense?.let { profile ->
@@ -1448,6 +1477,10 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
                     production.exitProfile == com.rustedwarfare.reforge.core.content.FactoryExitProfile.CUSTOM_NAUTILUS && !nautilus)
                     return SimulationError("unsupported-production", "Expected qualified current factory speed and exit")
                 val authoredFactory = com.rustedwarfare.reforge.core.content.AuthorFactoryRules.supports(definition, input.unitDefinitions)
+                if (production.exitProfile == com.rustedwarfare.reforge.core.content.FactoryExitProfile.NATIVE_EXPERIMENTAL &&
+                    (!com.rustedwarfare.reforge.core.content.ExperimentalFactoryRules.supports(definition) ||
+                        input.unitDefinitions["nautilusSubmarineLand"]?.let(com.rustedwarfare.reforge.core.content.NautilusRules::supports) != true))
+                    return SimulationError("unsupported-production", "Experimental factory requires the qualified native body and land Nautilus product")
                 if (!authoredFactory && production.exitProfile == com.rustedwarfare.reforge.core.content.FactoryExitProfile.NATIVE_SEA &&
                     (!FactoryExit.supportsSeaFactory(definition) || input.unitDefinitions["heavyBattleship"]?.movement?.type != MovementType.WATER ||
                         input.unitDefinitions["heavyBattleship"]?.combat == null))
@@ -1544,7 +1577,7 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
                         listOf(named.warmup, named.warmupCallDownRate, named.warmupShootDelayTransfer, named.aimMaxAngle)
                             .any { !it.isFinite() || it < 0.0 }
                     } == true) return SimulationError("unsupported-combat", "Named weapon ranges and clocks must be finite and nonnegative")
-                listOf(base) + base.namedWeapons?.ordered.orEmpty().map { NamedWeaponRuntime.profile(base, it) }
+                listOf(base) + base.namedWeapons?.ordered.orEmpty().filter { it.canShoot }.map { NamedWeaponRuntime.profile(base, it) }
             }.orEmpty()
             for (combat in combatProfiles) {
                 if ((combat.projectile.lightning || combat.projectile.damageModifiers != com.rustedwarfare.reforge.core.content.ProjectileDamageModifiers()) && !amphibious && !beamGunship)
@@ -1574,7 +1607,7 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
                 } == true
                 val invalidBallistic = combat.projectile.ballistic?.let {
                     !it.delayMoveHeight.isFinite() || it.delayMoveHeight < 0f || !it.apex.isFinite() ||
-                        it.apex < it.delayMoveHeight || (it.verticalSpeed != -1f &&
+                        it.apex < it.delayMoveHeight && !nautilus || (it.verticalSpeed != -1f &&
                             !(submarine && it == com.rustedwarfare.reforge.core.content.CustomBallisticProfile(40f, 60f, 2f))) || combat.projectile.instant ||
                         combat.projectile.ground != null || combat.projectile.missile != null ||
                         listOf(combat.attackRange, combat.projectile.life, combat.projectile.speed).any { !it.toFloat().isFinite() } ||
@@ -2223,7 +2256,7 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
     }
 
     private fun processDeath(target: MutableUnit) {
-            Transport.onDeath(target, units, checkNotNull(scenario).map)
+            Transport.onDeath(target, units, checkNotNull(scenario).map, deferCargo = NautilusMotion.slowDeath(target))
             missileTargets = missileTargets?.remove(target.unitId)
             if (target.definition.production != null) {
                 if (checkNotNull(productionLedger).upgradeQueue(target.unitId).isNotEmpty())
@@ -2237,7 +2270,8 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
             target.taskQueue = UnitTaskQueue()
             target.movementRequested = false
             target.cancelRoute()
-            if (target.definition.energy == null || target.definition.movement.type != MovementType.AIR) {
+            if (!NautilusMotion.slowDeath(target) &&
+                (target.definition.energy == null || target.definition.movement.type != MovementType.AIR)) {
                 target.speed = 0.0
                 target.flightVelocity = Position(0.0, 0.0)
             }
@@ -2262,7 +2296,7 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
                            motionSamples: MutableList<MotionStepSample>?) {
         if (!BuildingWork.isReady(unit)) return
         val movement = UnitLocomotion.movement(unit)
-        if (CustomUnitActions.movementLocked(unit) || movement.type == MovementType.NONE) {
+        if (CustomUnitActions.movementLocked(unit, unitActionHead(unit)) || movement.type == MovementType.NONE) {
             unit.speed = 0.0
             unit.flightVelocity = Position(0.0, 0.0)
             unit.movementState = MovementState.IDLE
@@ -2491,7 +2525,7 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
                     maxHealth = unit.definition.maximumHealth,
                     shield = unit.definition.shield?.let { ShieldObservation(unit.shield, it.maximum, unit.shieldDisplayDamage) },
                     energy = unit.definition.energy?.let { EnergyObservation(unit.energy, it.maximum, unit.energyRecharging) },
-                    unitActions = CustomUnitActions.observe(unit, steps.current.actionClock),
+                    unitActions = CustomUnitActions.observe(unit, steps.current.actionClock, currentScenario.map, unitActionQueue(unit)),
                     submarine = unit.definition.submarine?.let { SubmarineObservation(unit.submarineSurfaceIntent,
                         unit.submarineVerticalSpeed, SubmarineMotion.submerged(unit), unit.submarineSurfacePresentation,
                         SubmarineMotion.movement(unit).moveSpeed, UnitCombat.range(unit)) },

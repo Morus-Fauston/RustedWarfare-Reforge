@@ -44,8 +44,20 @@
       "file": "nautilus/hover/hover.ini"
     },
     {
+      "type": "nautilus",
+      "file": "nautilus/nautilusSurface.ini"
+    },
+    {
+      "type": "nautilus",
+      "file": "nautilus/nautilusLand.ini"
+    },
+    {
       "type": "command-center",
       "file": "units/commandCenter/commandCenter.ini"
+    },
+    {
+      "type": "experimental-factory",
+      "file": "units/experimentalFactory.ini"
     }
   ]
 }

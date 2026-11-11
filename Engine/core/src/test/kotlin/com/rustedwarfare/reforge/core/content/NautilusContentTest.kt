@@ -69,7 +69,7 @@ class NautilusContentTest {
             assertEquals("CUSTOM_NAUTILUS", unit.production.exitProfile.name)
             assertEquals("NAUTILUS_SUBMERGED", unit.transport!!.name)
             assertEquals(EnergyProfile(6f, .01f, .01f, true), unit.energy)
-            assertNull(unit.combat) // Weapons are the subsequent 015 slice.
+            assertNotNull(unit.combat)
             assertIs<ContentResult.Success<Unit>>(pack.verifyStable())
         }
     }

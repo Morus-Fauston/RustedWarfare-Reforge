@@ -15,5 +15,5 @@
   "fogOfWarSightRange": 15,
   "image": "builder.png",
   "image_dead": "builder_dead.png",
-  "constructionTypes": "seaFactory"
+  "constructionTypes": "seaFactory,experimentalLandFactory"
 }

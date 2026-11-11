@@ -6250,7 +6250,12 @@
     "engineer-foot": "assets/units/mech_engineer/foot.png",
     "engineer-nanoTurret": "assets/units/mech_engineer/cannon.png",
     "nautilus-body": "assets/units/nautilus/body.png",
-    "nautilus-dead": "assets/units/nautilus/body_dead.png"
+    "nautilus-dead": "assets/units/nautilus/body_dead.png",
+    "nautilus-leg": "assets/units/nautilus/leg.png",
+    "nautilus-foot": "assets/units/nautilus/foot.png",
+    "experimental-factory-body": "res/drawable/experimental_unit_factory_front.png",
+    "experimental-factory-back": "res/drawable/experimental_unit_factory_base.png",
+    "experimental-factory-dead": "res/drawable/experimental_unit_factory_dead.png"
   },
   "mappingBasis": {
     "androidProfileSha256": "e273280ab37b1a24714e6b15d8e1cb14fdd395e228ea7c71a62dd2f24d334780",
@@ -6576,6 +6581,46 @@
       "sha256": "bb38dae1a3f0ad19c66109a1a8d02a9fef8d6a51c84de195be4a013a80b8ad94",
       "width": 42,
       "height": 90
+    },
+    {
+      "id": "nautilus-leg",
+      "path": "assets/units/nautilus/leg.png",
+      "bytes": 2889,
+      "sha256": "995f7a930e07f89cdda2552c1f162b474bdd5e2a8b1556395ef3929cf3503c85",
+      "width": 16,
+      "height": 68
+    },
+    {
+      "id": "nautilus-foot",
+      "path": "assets/units/nautilus/foot.png",
+      "bytes": 2813,
+      "sha256": "5e57c42c4bbd33c107f6060b4936883bb568592373bbcce1e9fc8fcf0b15ef96",
+      "width": 17,
+      "height": 36
+    },
+    {
+      "id": "experimental-factory-body",
+      "path": "res/drawable/experimental_unit_factory_front.png",
+      "bytes": 7740,
+      "sha256": "79a13ed20c5a622408e862cee6d4e7932e21c9598fab4342568e4079c045dfb7",
+      "width": 100,
+      "height": 115
+    },
+    {
+      "id": "experimental-factory-back",
+      "path": "res/drawable/experimental_unit_factory_base.png",
+      "bytes": 7763,
+      "sha256": "7a2383c78f426ca3261d3503d82d76dfd78b67afc66afe94d8fe50486bf89277",
+      "width": 100,
+      "height": 115
+    },
+    {
+      "id": "experimental-factory-dead",
+      "path": "res/drawable/experimental_unit_factory_dead.png",
+      "bytes": 8699,
+      "sha256": "99c8556551d2f1b7ee99f46fc056080e7ed0fbef9f36ab9d158ceef743a319f7",
+      "width": 100,
+      "height": 115
     }
   ],
   "mappingUnitOutputs": {
@@ -7255,6 +7300,86 @@
         90
       ],
       "frames": 1
+    },
+    "nautilus-leg": {
+      "file": "units/nautilus-leg.png",
+      "operation": "crop",
+      "source": "nautilus-leg",
+      "rect": [
+        0,
+        0,
+        16,
+        68
+      ],
+      "target": [
+        16,
+        68
+      ],
+      "frames": 1
+    },
+    "nautilus-foot": {
+      "file": "units/nautilus-foot.png",
+      "operation": "crop",
+      "source": "nautilus-foot",
+      "rect": [
+        0,
+        0,
+        17,
+        36
+      ],
+      "target": [
+        17,
+        36
+      ],
+      "frames": 1
+    },
+    "experimental-factory-body": {
+      "file": "units/experimental-factory-body.png",
+      "operation": "crop",
+      "source": "experimental-factory-body",
+      "rect": [
+        0,
+        0,
+        100,
+        115
+      ],
+      "target": [
+        100,
+        115
+      ],
+      "frames": 1
+    },
+    "experimental-factory-back": {
+      "file": "units/experimental-factory-back.png",
+      "operation": "crop",
+      "source": "experimental-factory-back",
+      "rect": [
+        0,
+        0,
+        100,
+        115
+      ],
+      "target": [
+        100,
+        115
+      ],
+      "frames": 1
+    },
+    "experimental-factory-dead": {
+      "file": "units/experimental-factory-dead.png",
+      "operation": "crop",
+      "source": "experimental-factory-dead",
+      "rect": [
+        0,
+        0,
+        100,
+        115
+      ],
+      "target": [
+        100,
+        115
+      ],
+      "frames": 1
     }
   },
   "mappingUnitBindings": {
@@ -7353,6 +7478,23 @@
     "nautilusSubmarine": {
       "body": "nautilus-body",
       "dead": "nautilus-dead"
+    },
+    "nautilusSubmarineSurface": {
+      "body": "nautilus-body",
+      "dead": "nautilus-dead",
+      "leg": "nautilus-leg",
+      "foot": "nautilus-foot"
+    },
+    "nautilusSubmarineLand": {
+      "body": "nautilus-body",
+      "dead": "nautilus-dead",
+      "leg": "nautilus-leg",
+      "foot": "nautilus-foot"
+    },
+    "experimentalLandFactory": {
+      "body": "experimental-factory-body",
+      "back": "experimental-factory-back",
+      "dead": "experimental-factory-dead"
     }
   }
 }

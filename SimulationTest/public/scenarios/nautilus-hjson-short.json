@@ -12,7 +12,19 @@
       {
         "id": "nautilusSubmarine",
         "path": "../inputs/nautilus-production/hjson/package/nautilus.hjson",
-        "sha256": "d9241b177805c9e63335070e5db9b625e0a57b2bc31b7bc25dc32742a438798b",
+        "sha256": "cb0682cb4de0af638ce26cbe1222c4ce974570898cdbad43dd14035ed465c4d0",
+        "loader": "nautilus"
+      },
+      {
+        "id": "nautilusSubmarineSurface",
+        "path": "../inputs/nautilus-production/hjson/package/nautilusSurface.hjson",
+        "sha256": "213073ea2ffc3238cd5c25a92b6938880628fe0b178587442e1c34cec5b38181",
+        "loader": "nautilus"
+      },
+      {
+        "id": "nautilusSubmarineLand",
+        "path": "../inputs/nautilus-production/hjson/package/nautilusLand.hjson",
+        "sha256": "14984fd825be12b4e959e153c94e11f4bd6c91fedaad85c3dea5548a48c8b5fa",
         "loader": "nautilus"
       },
       {
@@ -45,23 +57,33 @@
       },
       {
         "id": "dep-4",
+        "path": "../inputs/nautilus-production/hjson/package/foot.png",
+        "sha256": "05931f6c90ccac2921ae9c616932ab422ff1b6ac41c474980850b517b6626dfb"
+      },
+      {
+        "id": "dep-5",
         "path": "../inputs/nautilus-production/hjson/package/hover/shadow.png",
         "sha256": "05994cff1434fb85e8e37527c034a535b6f1de4431aa3c50ac8b5370a1aef997"
       },
       {
-        "id": "dep-5",
+        "id": "dep-6",
         "path": "../inputs/nautilus-production/hjson/package/hover/tank.png",
         "sha256": "71ebc6f6e73814573a90eaebadcdae40b53abe8a287cefbc5a8a06b6bab04ab0"
       },
       {
-        "id": "dep-6",
+        "id": "dep-7",
         "path": "../inputs/nautilus-production/hjson/package/hover/tank_dead.png",
         "sha256": "3eab0f9914393445a2b3424643341ab33e55016b1fec645fd1a91f1a755643c8"
       },
       {
-        "id": "dep-7",
+        "id": "dep-8",
+        "path": "../inputs/nautilus-production/hjson/package/leg.png",
+        "sha256": "f53a804b044605a29c4bb72a19a89c5fd971413ca3987dde49975832bf479efb"
+      },
+      {
+        "id": "dep-9",
         "path": "../inputs/nautilus-production/hjson/package/pack.json",
-        "sha256": "0a0dfc91126dbd1722d15e1e63901f7f434c912052e33373f40f8746c1143ef3"
+        "sha256": "7af021d2c9f34c8ac7dc09ee4622852155c24a84c7def48c36035f56e779cd61"
       }
     ]
   },

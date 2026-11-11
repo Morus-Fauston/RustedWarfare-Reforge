@@ -73,7 +73,7 @@ data class MovementProfile(
     val hover: HoverProfile? = null,
 )
 
-enum class MovementType { LAND, NONE, AIR, WATER, HOVER, OVER_CLIFF }
+enum class MovementType { LAND, NONE, AIR, WATER, HOVER, OVER_CLIFF, OVER_CLIFF_WATER }
 
 data class HoverProfile(val targetHeight: Double = 4.0, val heightDrift: Double = 1.5,
     val phaseSpeed: Double = 3.0, val heightChangeRate: Double = .1) {
@@ -118,12 +118,13 @@ data class EnergyProfile(val maximum: Float, val regeneration: Float, val rechar
 data class GroundHeightProfile(val target: Float)
 
 /** The qualified conversion/action subset; no executable text or arbitrary expression interpreter. */
-enum class AutomaticActionCondition { ENERGY_EMPTY }
+enum class AutomaticActionCondition { ENERGY_EMPTY, OVER_WATER, NOT_OVER_WATER }
 data class CustomActionDefinition(val name: String, val actionId: String, val targetTypeId: String,
     val rate: Float, val energySet: Float?, val cooldown: Int = 0,
     val canPlayerCancel: Boolean = false, val allowMultipleInQueue: Boolean = false,
     val automatic: AutomaticActionCondition? = null, val visible: Boolean = true,
-    val cannotMove: Boolean = false, val rotateTo: Double? = null, val rotateToOrBackwards: Boolean = false)
+    val cannotMove: Boolean = false, val rotateTo: Double? = null, val rotateToOrBackwards: Boolean = false,
+    val highPriority: Boolean = false, val requiresOverWater: Boolean = false)
 class CustomActionsProfile(actions: List<CustomActionDefinition>, val automaticCooldown: Float = 60f) {
     val actions: List<CustomActionDefinition> = Collections.unmodifiableList(ArrayList(actions))
 }
@@ -142,7 +143,7 @@ class BuilderProfile(buildingTypeIds: List<String>, val range: Float = 85f,
     val buildingTypeIds: List<String> = Collections.unmodifiableList(ArrayList(buildingTypeIds))
 }
 data class ConstructionProfile(val price: Long, val rate: Float)
-enum class FactoryExitProfile { NATIVE_LAND, CUSTOM_MECH, NATIVE_AIR, NATIVE_SEA, CUSTOM_NAUTILUS }
+enum class FactoryExitProfile { NATIVE_LAND, CUSTOM_MECH, NATIVE_AIR, NATIVE_SEA, CUSTOM_NAUTILUS, NATIVE_EXPERIMENTAL }
 
 /** Author buildings declare their terrain class; native sea factories retain their existing water fallback. */
 val UnitDefinition.foundationMovementType: MovementType

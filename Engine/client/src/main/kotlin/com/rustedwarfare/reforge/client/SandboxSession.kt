@@ -344,8 +344,8 @@ class SandboxSession(scenario: Scenario, private val evidence: ClientEvidence = 
         StopAction("click-${++actionNumber}", "p1", id, context.world)
     }
 
-    fun unitAction(name: String): ActionResult? = actionMenu.unitActions.singleOrNull { it.name == name }?.let {
-        apply(UnitAction("click-${++actionNumber}", "p1", checkNotNull(selectedId), name, context.world))
+    fun unitAction(name: String, cancelQueued: Boolean = false): ActionResult? = actionMenu.unitActions.singleOrNull { it.name == name }?.let {
+        apply(UnitAction("click-${++actionNumber}", "p1", checkNotNull(selectedId), name, context.world, cancelQueued))
     }
 
     fun submarineDepth(surface: Boolean): ActionResult? = actionMenu.depthAction?.takeIf { it.surface == surface }?.let {

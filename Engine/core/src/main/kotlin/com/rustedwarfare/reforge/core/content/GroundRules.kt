@@ -14,6 +14,7 @@ object GroundRules {
         val local = gid - tileSet.firstGid
         if (type == MovementType.HOVER) return local in tileSet.hoverBlockedTileIds
         if (type == MovementType.OVER_CLIFF) return local in tileSet.overCliffBlockedTileIds || local in tileSet.waterTileIds
+        if (type == MovementType.OVER_CLIFF_WATER) return local in tileSet.overCliffBlockedTileIds
         return local in tileSet.blockedTileIds || if (type == MovementType.WATER)
             local !in tileSet.waterTileIds && local !in tileSet.waterBridgeTileIds
         else local in tileSet.waterTileIds

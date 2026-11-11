@@ -23,7 +23,7 @@ class PlatformError(ValueError):
 
 def validate_unit_action_intent(intent):
     if (set(intent)!={'intentId','kind','actionName','waitSteps'} or
-            not isinstance(intent.get('actionName'),str) or intent['actionName'] not in ('afterBurn','cancelBurn','deploy','undeploy') or
+            not isinstance(intent.get('actionName'),str) or intent['actionName'] not in ('afterBurn','cancelBurn','deploy','undeploy','surface','dive') or
             type(intent.get('waitSteps')) is not int or not 0<=intent['waitSteps']<=600):
         raise PlatformError('input-contract','Expected a finite normal unit action and explicit bounded wait',1)
 
@@ -425,13 +425,8 @@ def validate_history_poses(units, policy):
                     raise PlatformError('history-unit-action','Action queue indexes must be unique and contiguous',2)
         elif unit.get('typeId') in ('mechBunker','mechBunkerDeployed'):
             validate_bunker_state(unit, policy.get('ownerPlayerId','p1'))
-        elif unit.get('typeId')=='nautilusSubmarine':
-            energy=unit.get('energy')
-            if (not isinstance(energy,dict) or set(energy)!={'current','maximum','recharging'} or
-                    not number(energy['current']) or energy['current']!=6 or
-                    not number(energy['maximum']) or energy['maximum']!=6 or energy['recharging'] is not False or
-                    unit.get('unitActions') is not None or unit.get('flightPose') is not None):
-                raise PlatformError('history-nautilus','Invalid submerged production energy or form',2)
+        elif unit.get('typeId') in {'nautilusSubmarine','nautilusSubmarineSurface','nautilusSubmarineLand'}:
+            validate_nautilus_state(unit,policy.get('ownerPlayerId','p1'))
         elif unit.get('energy') is not None:
             raise PlatformError('history-aa-beam','Weapon energy on an unsupported unit',2)
         elif unit.get('unitActions') is not None:
@@ -439,8 +434,8 @@ def validate_history_poses(units, policy):
         if unit.get('carriedBy') is not None:
             raise PlatformError('history-transport','Carried passenger in a player sample',2)
         transport=unit.get('transport')
-        if unit.get('typeId') in {'hovercraft','dropship','nautilusSubmarine'} and unit.get('ownerPlayerId')==policy.get('ownerPlayerId','p1'):
-            nautilus=unit['typeId']=='nautilusSubmarine'
+        if unit.get('typeId') in {'hovercraft','dropship','nautilusSubmarine','nautilusSubmarineSurface','nautilusSubmarineLand'} and unit.get('ownerPlayerId')==policy.get('ownerPlayerId','p1'):
+            nautilus=unit['typeId'] in {'nautilusSubmarine','nautilusSubmarineSurface','nautilusSubmarineLand'}
             if (not isinstance(transport,dict) or set(transport)!={'passengerIds','passengerCount','occupiedSlots','capacity','unloading','unloadRemaining','canUnload'} or
                     not number(unit.get('height'))):
                 raise PlatformError('history-transport','Missing or unapproved owner cargo fields',2)
@@ -454,8 +449,8 @@ def validate_history_poses(units, policy):
                     not number(transport['unloadRemaining']) or not 0<=transport['unloadRemaining']<=30 or
                     transport['canUnload'] and (not passengers or transport['unloading'] or unit.get('alive') is not True)):
                 raise PlatformError('history-transport','Invalid cargo count, capacity or unload state',2)
-            if nautilus and (transport['occupiedSlots']!=len(passengers) or transport['unloading'] or
-                    transport['canUnload'] or transport['unloadRemaining']!=0):
+            if nautilus and (transport['occupiedSlots']!=len(passengers) or unit['typeId']!='nautilusSubmarineSurface' and (transport['unloading'] or
+                    transport['canUnload'])):
                 raise PlatformError('history-nautilus','Submerged production must retain its single-slot products',2)
         elif transport is not None:
             raise PlatformError('history-transport','Enemy or unsupported cargo state',2)
@@ -524,6 +519,35 @@ def validate_history_poses(units, policy):
                     not number(leg.get('height')) or not number(leg.get('heading')) or
                     leg.get('phase') not in ('PLANTED','WARMING_UP','LIFTING','SWINGING','LOWERING')):
                 raise PlatformError('history-pose', 'Missing, duplicate or invalid mech leg', 2)
+
+
+def validate_nautilus_state(unit,owner):
+    def invalid(message):raise PlatformError('history-nautilus',message,2)
+    def number(value):return type(value) in (int,float) and math.isfinite(value)
+    energy=unit.get('energy')
+    if (not isinstance(energy,dict) or set(energy)!={'current','maximum','recharging'} or
+            not number(energy['current']) or not 0<=energy['current']<=6 or
+            not number(energy['maximum']) or energy['maximum']!=6 or type(energy['recharging']) is not bool or
+            energy['recharging'] and energy['current']>=6 or not energy['recharging'] and energy['current']<1 or
+            unit.get('flightPose') is not None):invalid('Invalid energy or recharge lock')
+    state=unit.get('unitActions')
+    if unit.get('ownerPlayerId')!=owner:
+        if state is not None:invalid('Enemy action state must remain private')
+        return
+    names={'nautilusSubmarine':{'surface'},'nautilusSubmarineSurface':{'dive'},'nautilusSubmarineLand':set()}[unit['typeId']]
+    if (not isinstance(state,dict) or set(state)!={'actions','automaticCooldown'} or
+            not number(state['automaticCooldown']) or not 0<=state['automaticCooldown']<=60 or
+            not isinstance(state['actions'],dict) or set(state['actions'])!=names):invalid('Invalid player action set')
+    for name,action in state['actions'].items():
+        if (not isinstance(action,dict) or set(action)!={'queueIndex','progress','cooldownRemaining','available'} or
+                type(action['cooldownRemaining']) is not int or action['cooldownRemaining']!=0 or
+                type(action['available']) is not bool):invalid('Invalid action fields')
+        index=action['queueIndex'];progress=action['progress']
+        if index is None:
+            if progress is not None:invalid('Unqueued progress')
+        elif type(index) is not int or index!=0 or not number(progress) or not 0<=progress<1:invalid('Invalid queued conversion')
+        available=(unit.get('alive') is True and unit.get('constructionProgress',0)>=1 and unit.get('carriedBy') is None and index is None)
+        if action['available']!=available and not (name=='dive' and action['available'] is False):invalid('Invalid action availability')
 
 
 def validate_bunker_state(unit, owner):
@@ -840,11 +864,66 @@ def validate_bunker_history(records, policy):
     if pending:fail('Bunker action queue is unfinished')
 
 
+def validate_nautilus_history(records,policy):
+    """Independent finite action queue and fixed-map water predicates for all intermediate samples."""
+    def fail(message):raise PlatformError('history-nautilus-transition',message,2)
+    def f32(value):return struct.unpack('f',struct.pack('f',value))[0]
+    terrain=policy['nautilusTerrain']
+    if (not isinstance(terrain,dict) or set(terrain)!={'width','height','tileWidth','tileHeight','waterCells'} or
+            any(type(terrain[k]) is not int or terrain[k]<=0 for k in ('width','height','tileWidth','tileHeight')) or
+            not isinstance(terrain['waterCells'],list) or len(set(terrain['waterCells']))!=len(terrain['waterCells']) or
+            any(type(i) is not int or not 0<=i<terrain['width']*terrain['height'] for i in terrain['waterCells'])):
+        raise PlatformError('input-contract','Invalid fixed Nautilus water cells',1)
+    water=set(terrain['waterCells']);states={};owner=policy.get('ownerPlayerId','p1')
+    forms={'nautilusSubmarine','nautilusSubmarineSurface','nautilusSubmarineLand'}
+    for row in records:
+        if row.get('kind')=='action' and row.get('type')=='UnitAction' and row.get('unitId') in states:
+            state=states[row['unitId']];name=row.get('actionName')
+            if (row.get('actorPlayerId')!=owner or row.get('result',{}).get('accepted') is not True or
+                    name!={'nautilusSubmarine':'surface','nautilusSubmarineSurface':'dive'}.get(state['form']) or
+                    row.get('cancelQueued') is not False or state['pending'] is not None):fail('Action does not bind the exposed empty queue')
+            state.update(pending=name,progress=0)
+        if row.get('kind')!='observation':continue
+        sample=row['sample'];expected=[]
+        for unit in sample.get('units',[]):
+            if unit.get('ownerPlayerId')!=owner or unit.get('typeId') not in forms and unit.get('unitId') not in states:continue
+            if unit.get('typeId') not in forms:fail('Known mother changed to an unsupported form')
+            identity=unit['unitId'];first=identity not in states
+            state=states.setdefault(identity,dict(form=unit['typeId'],timer=0,pending=None,progress=0))
+            if not first and row.get('phase')=='step' and unit.get('alive') is True and unit.get('constructionProgress')==1:
+                name=state['pending']
+                if name:
+                    state['progress']=f32(state['progress']+(2000 if name=='surface' else f32(f32(1/270)*2)))
+                    if state['progress']>=1:
+                        state.update(form='nautilusSubmarineSurface' if name=='surface' else 'nautilusSubmarine',pending=None,progress=0)
+                        expected.append((identity,'unit-action-completed'))
+                state['timer']=max(0,state['timer']-1)
+                x=int(f32(unit['position']['x'])/terrain['tileWidth']);y=int(f32(unit['position']['y'])/terrain['tileHeight'])
+                if not 0<=x<terrain['width'] or not 0<=y<terrain['height']:fail('Position outside fixed water grid')
+                wet=y*terrain['width']+x in water
+                if state['timer']==0 and (not wet or state['form']=='nautilusSubmarineLand'):
+                    state.update(form='nautilusSubmarineSurface' if wet else 'nautilusSubmarineLand',timer=60,pending=None,progress=0)
+                    expected.append((identity,'unit-action-automatic'))
+            if unit['typeId']!=state['form']:fail('Form differs from accepted queue and fixed terrain')
+            actions=unit.get('unitActions') or {}
+            if actions.get('automaticCooldown')!=state['timer']:fail('Automatic clock differs')
+            names={'nautilusSubmarine':{'surface'},'nautilusSubmarineSurface':{'dive'},'nautilusSubmarineLand':set()}[state['form']]
+            if set(actions.get('actions',{}))!=names:fail('Action set differs from form')
+            for name,entry in actions['actions'].items():
+                if (entry.get('cooldownRemaining')!=0 or entry.get('queueIndex')!=(0 if state['pending']==name else None) or
+                        (type(entry.get('progress')) not in (int,float) or f32(entry['progress'])!=state['progress']
+                         if state['pending']==name else entry.get('progress') is not None)):fail('Queue differs from accepted action and float clock')
+        if row.get('phase')=='step':
+            actual=[(e.get('unitId'),e.get('kind')) for e in sample.get('events',[]) if e.get('unitId') in states and
+                    e.get('kind') in ('unit-action-completed','unit-action-automatic')]
+            if sorted(actual)!=sorted(expected):fail('Missing, premature or extra conversion event')
+
+
 def compare_history(records, plan, policy, native_anchors=None, geometry=None):
     """Check a declared ledger at every observation, including call boundaries."""
     allowed={'initialBalance','spend','noActionIntents','projectileBirthsRequired','mechLegs',
              'ownerPlayerId','initialOwnedTypes','finalUnits','minimumBirths',
-             'productionOrder','completedUpgradeTypes','initialIncome','producedIncome','transportStages','unitActionStages','bunkerStages','reclaimRefunds'}
+             'productionOrder','completedUpgradeTypes','initialIncome','producedIncome','transportStages','unitActionStages','bunkerStages','reclaimRefunds','nautilusTerrain'}
     if not isinstance(policy,dict) or set(policy)-allowed:
         raise PlatformError('input-contract', 'Unknown or malformed history obligations', 1)
     balance = policy.get('initialBalance')
@@ -907,7 +986,7 @@ def compare_history(records, plan, policy, native_anchors=None, geometry=None):
         if (not isinstance(stage,dict) or set(stage)-{'intentId','typeId','passengerCount','unloading','minimumX','maximumX'} or
                 not {'intentId','passengerCount','unloading'}<=set(stage) or stage['intentId'] not in ids or
                 not isinstance(stage.get('typeId','hovercraft'),str) or
-                stage.get('typeId','hovercraft') not in {'hovercraft','dropship','nautilusSubmarine'} or
+                stage.get('typeId','hovercraft') not in {'hovercraft','dropship','nautilusSubmarine','nautilusSubmarineSurface','nautilusSubmarineLand'} or
                 stage['intentId'] in transport_stages or type(stage['passengerCount']) is not int or stage['passengerCount']<0 or
                 type(stage['unloading']) is not bool or any(type(stage[k]) not in (int,float) or not math.isfinite(stage[k])
                     for k in ('minimumX','maximumX') if k in stage) or
@@ -1185,6 +1264,7 @@ def compare_history(records, plan, policy, native_anchors=None, geometry=None):
     validate_production_history(records,policy)
     if 'unitActionStages' in policy:validate_unit_action_history(records,policy)
     if 'bunkerStages' in policy:validate_bunker_history(records,policy)
+    if 'nautilusTerrain' in policy:validate_nautilus_history(records,policy)
     if not all(fired):raise PlatformError('history-firing', 'Missing independently required named weapon birth/target', 2)
     return dict(exitCode=0, status='passed', scenarioId=plan['scenarioId'], history=dict(observations=observations, balance=balance))
 

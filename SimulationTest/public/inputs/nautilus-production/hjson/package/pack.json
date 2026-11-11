@@ -10,6 +10,14 @@
     {
       "type": "hover-tank",
       "file": "hover/hover.hjson"
+    },
+    {
+      "type": "nautilus",
+      "file": "nautilusSurface.hjson"
+    },
+    {
+      "type": "nautilus",
+      "file": "nautilusLand.hjson"
     }
   ]
 }

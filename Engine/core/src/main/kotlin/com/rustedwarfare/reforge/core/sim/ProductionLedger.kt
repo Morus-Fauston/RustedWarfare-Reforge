@@ -93,6 +93,25 @@ internal class ProductionLedger private constructor(
     fun queue(factoryId: String): List<PendingProduction> = immutable(work(factoryId).filterIsInstance<PendingProduction>())
     fun upgradeQueue(factoryId: String): List<PendingUpgrade> = immutable(work(factoryId).filterIsInstance<PendingUpgrade>())
     fun upgradeAtHead(factoryId: String): Boolean = work(factoryId).firstOrNull() is PendingUpgrade
+    fun actionQueue(factoryId: String): List<PendingUnitAction> = immutable(work(factoryId).filterIsInstance<PendingUnitAction>())
+    fun actionAtHead(factoryId: String): PendingUnitAction? = work(factoryId).firstOrNull() as? PendingUnitAction
+
+    /** Reconcile an action projection without reordering existing production or losing saved progress. */
+    fun replaceActions(factoryId: String, actions: List<PendingUnitAction>): ProductionLedger {
+        require(isActive(factoryId) && actions.map { it.action.actionId }.distinct().size == actions.size)
+        val byId = actions.associateBy { it.action.actionId }
+        val previousIds = actionQueue(factoryId).mapTo(mutableSetOf()) { it.action.actionId }
+        val updated = work(factoryId).mapNotNull { item ->
+            if (item is PendingUnitAction) byId[item.action.actionId] else item
+        }.toMutableList()
+        for (item in actions.filter { it.action.actionId !in previousIds }) {
+            val index = if (item.action.highPriority) updated.indexOfFirst {
+                it !is PendingUnitAction || !it.action.highPriority
+            }.takeIf { it >= 0 } ?: updated.size else updated.size
+            updated.add(index, item)
+        }
+        return copy(queues = changedQueue(factoryId, updated))
+    }
     fun enqueueUpgrade(factoryId: String, action: com.rustedwarfare.reforge.core.content.UpgradeActionProfile): ProductionLedger {
         require(isActive(factoryId) && action in factories.getValue(factoryId).upgradeActions &&
             upgradeQueue(factoryId).none { it.actionKey == action.actionKey })
@@ -125,6 +144,11 @@ internal class ProductionLedger private constructor(
             val unit = units.getValue(id)
             val action = unit.definition.upgrades?.actions?.singleOrNull { it.actionKey == item.actionKey }
             require(unit.alive && action != null && item.targetTypeId == action.targetTypeId && item.cost == action.price && item.rate == action.rate)
+        }
+        for ((id, _) in queues) for (item in actionQueue(id)) {
+            val unit = units.getValue(id)
+            require(unit.alive && unit.customActionState.queue.isEmpty() &&
+                unit.definition.customActions?.actions?.any { it.automatic == null && it == item.action } == true)
         }
     }
     fun replaceFactory(factoryId: String, spec: FactoryProductionSpec): ProductionLedger {

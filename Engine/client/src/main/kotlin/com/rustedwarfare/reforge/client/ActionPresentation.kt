@@ -20,8 +20,11 @@ internal class ActionCatalogue(private val definitions: Map<String, UnitDefiniti
         "helicopter" to Names("Helicopter"), "amphibiousJet" to Names("Amphibious jet"), "aaBeamGunship" to Names("AA beam gunship"),
         "aaBeamGunship_afterburn" to Names("AA beam (Afterburn)", "AA beam gunship (Afterburn)"),
         "seaFactory" to Names("Sea factory"), "seaFactoryT2" to Names("Sea factory T2"),
+        "experimentalLandFactory" to Names("Experimental", "Experimental factory"),
         "heavyBattleship" to Names("Heavy battleship"), "attackSubmarine" to Names("Submarine"),
         "nautilusSubmarine" to Names("Nautilus"),
+        "nautilusSubmarineSurface" to Names("Nautilus (Surface)"),
+        "nautilusSubmarineLand" to Names("Nautilus (Land)"),
         "extractorT1" to Names("Extractor T1", "Extractor"), "extractorT2" to Names("Extractor T2", "Unit"),
         "extractorT3" to Names("Extractor T3", "Unit"), "fabricatorT1" to Names("Fabricator T1", "Fabricator"),
         "fabricatorT2" to Names("Fabricator T2", "Unit"), "fabricatorT3" to Names("Fabricator T3", "Unit"),
@@ -95,18 +98,24 @@ internal class ActionCatalogue(private val definitions: Map<String, UnitDefiniti
         }
         val factory = ownSingle?.let { unit -> view.factoryQueues.firstOrNull { it.factoryId == unit.unitId } }
         val transportAction = ownSingle?.takeIf { it.constructionProgress >= 1f &&
-            definitions.getValue(it.typeId).transport != com.rustedwarfare.reforge.core.content.TransportProfile.NAUTILUS_SUBMERGED }?.transport?.let {
+            (definitions.getValue(it.typeId).transport != com.rustedwarfare.reforge.core.content.TransportProfile.NAUTILUS_SUBMERGED ||
+                it.typeId == "nautilusSubmarineSurface") }?.transport?.let {
             TransportUnloadActionView(!it.unloading, if (it.unloading) "Cancel unload" else "Unload", it.unloading || it.canUnload)
         }
         val unitActions = immutable(ownSingle?.unitActions?.actions.orEmpty().map { action ->
             val title = when (action.name) { "afterBurn" -> "Afterburn"; "cancelBurn" -> "Cancel burn"
-                "deploy" -> "Deploy"; "undeploy" -> "Undeploy"; else -> action.name }
+                "deploy" -> "Deploy"; "undeploy" -> "Undeploy"; "surface" -> "Surface"; "dive" -> "Dive"; else -> action.name }
             val status = if (action.queueIndex != null) "Queued ${(action.progress!! * 100f).toInt()}%" else if (action.cooldownRemaining > 0)
                 String.format(Locale.ROOT, "Cooling %.1fs", action.cooldownRemaining / 1000f) else "Ready"
             val motion = when (action.name) { "deploy" -> "Movement locked while deploying\nCannot cancel"
-                "undeploy" -> "Fixed until undeployed\nCannot cancel"; else -> "Movement orders continue" }
+                "undeploy" -> "Fixed until undeployed\nCannot cancel"
+                "surface", "dive" -> "Movement locked while converting\nRight: cancel"; else -> "Movement orders continue" }
             CustomUnitActionView(action.name, title, "$title\n$status\n$motion",
-                action.queueIndex != null, action.cooldownRemaining, action.available, action.progress)
+                action.queueIndex != null, action.cooldownRemaining, action.available,
+                action.queueIndex != null && ownSingle?.let { selected ->
+                    definitions.getValue(selected.typeId).customActions?.actions?.singleOrNull { it.name == action.name }
+                        ?.canPlayerCancel == true
+                } == true, action.progress)
         })
         val profiles = ownSingle?.takeUnless { it.constructionProgress < 1f &&
             definitions.getValue(it.typeId).className == "AuthoredBuilding" }
@@ -231,4 +240,5 @@ data class AmphibiousFlightActionView(val flying: Boolean, val title: String, va
 
 data class TransportUnloadActionView(val unloading: Boolean, val title: String, val available: Boolean)
 data class CustomUnitActionView(val name: String, val title: String, val tooltip: String,
-    val queued: Boolean, val cooldownRemaining: Int, val available: Boolean, val progress: Float? = null)
+    val queued: Boolean, val cooldownRemaining: Int, val available: Boolean, val cancellable: Boolean,
+    val progress: Float? = null)

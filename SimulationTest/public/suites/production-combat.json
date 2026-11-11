@@ -263,7 +263,29 @@
       "com.rustedwarfare.reforge.core.sim.NautilusHeightTest",
       "com.rustedwarfare.reforge.core.sim.NautilusPermissionsTest",
       "com.rustedwarfare.reforge.core.sim.NautilusProductionTest",
-      "com.rustedwarfare.reforge.core.sim.NautilusTransactionTest"
+      "com.rustedwarfare.reforge.core.sim.NautilusTransactionTest",
+      "com.rustedwarfare.reforge.core.content.NautilusFormsContentTest",
+      "com.rustedwarfare.reforge.core.content.NautilusLandFactoryContentTest",
+      "com.rustedwarfare.reforge.core.content.NautilusLegContentTest",
+      "com.rustedwarfare.reforge.core.content.NautilusWeaponContentTest",
+      "com.rustedwarfare.reforge.core.content.OverCliffWaterTerrainTest",
+      "com.rustedwarfare.reforge.core.sim.NautilusActionAdmissionTest",
+      "com.rustedwarfare.reforge.core.sim.NautilusAutomaticConversionTest",
+      "com.rustedwarfare.reforge.core.sim.NautilusConversionTest",
+      "com.rustedwarfare.reforge.core.sim.NautilusEnergyLifecycleTest",
+      "com.rustedwarfare.reforge.core.sim.NautilusFormsAdmissionTest",
+      "com.rustedwarfare.reforge.core.sim.NautilusFormsHeightTest",
+      "com.rustedwarfare.reforge.core.sim.NautilusLandDeathTest",
+      "com.rustedwarfare.reforge.core.sim.NautilusLandFactoryProductionTest",
+      "com.rustedwarfare.reforge.core.sim.NautilusLegPoseTest",
+      "com.rustedwarfare.reforge.core.sim.NautilusLockedLegTest",
+      "com.rustedwarfare.reforge.core.sim.NautilusSharedQueueTest",
+      "com.rustedwarfare.reforge.core.sim.NautilusShoreRouteTest",
+      "com.rustedwarfare.reforge.core.sim.NautilusSurfaceLoadingTest",
+      "com.rustedwarfare.reforge.core.sim.NautilusSurfaceProductionTest",
+      "com.rustedwarfare.reforge.core.sim.NautilusSurfaceUnloadTest",
+      "com.rustedwarfare.reforge.core.sim.NautilusTargetCategoryTest",
+      "com.rustedwarfare.reforge.core.sim.NautilusTorpedoTest"
     ],
     "client": [
       "com.rustedwarfare.reforge.client.CombatActorEvidenceTest",
@@ -329,7 +351,10 @@
       "com.rustedwarfare.reforge.client.RepairBaySandboxTest",
       "com.rustedwarfare.reforge.client.MechEngineerSandboxTest",
       "com.rustedwarfare.reforge.client.NautilusSandboxTest",
-      "com.rustedwarfare.reforge.client.NautilusMenuTest"
+      "com.rustedwarfare.reforge.client.NautilusMenuTest",
+      "com.rustedwarfare.reforge.client.NautilusFormsMenuTest",
+      "com.rustedwarfare.reforge.client.NautilusNativePanelTest",
+      "com.rustedwarfare.reforge.client.NautilusLandSandboxTest"
     ],
     "pc": [
       "com.rustedwarfare.reforge.pc.PatrolJsonlPairingTest",
@@ -1215,6 +1240,39 @@
       "backend": "session",
       "scenario": "platform/scenarios/nautilus-hjson-production-chain.json",
       "contract": "platform/contracts/nautilus-hjson-production-chain.json"
+    },
+    {
+      "id": "nautilus-ini-forms",
+      "scenario": "scenarios/nautilus-ini-forms.json",
+      "contract": "contracts/nautilus-ini-forms.json"
+    },
+    {
+      "id": "nautilus-ini-land-forms",
+      "scenario": "platform/scenarios/nautilus-ini-land-forms.json",
+      "contract": "platform/contracts/nautilus-ini-land-forms.json",
+      "backend": "session"
+    },
+    {
+      "id": "nautilus-json-forms",
+      "scenario": "scenarios/nautilus-json-forms.json",
+      "contract": "contracts/nautilus-json-forms.json"
+    },
+    {
+      "id": "nautilus-json-land-forms",
+      "scenario": "platform/scenarios/nautilus-json-land-forms.json",
+      "contract": "platform/contracts/nautilus-json-land-forms.json",
+      "backend": "session"
+    },
+    {
+      "id": "nautilus-hjson-forms",
+      "scenario": "scenarios/nautilus-hjson-forms.json",
+      "contract": "contracts/nautilus-hjson-forms.json"
+    },
+    {
+      "id": "nautilus-hjson-land-forms",
+      "scenario": "platform/scenarios/nautilus-hjson-land-forms.json",
+      "contract": "platform/contracts/nautilus-hjson-land-forms.json",
+      "backend": "session"
     }
   ],
   "long": [

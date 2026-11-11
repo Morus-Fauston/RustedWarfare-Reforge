@@ -69,10 +69,12 @@ fun contentPackVisuals(visuals: PreparedVisualAssets, choice: ContentPackChoice)
 
 /** Reuses the existing controlled combat layout, not a new map or spawn-file interpreter. */
 internal fun contentPackScenario(root: Path, choice: ContentPackChoice): Scenario {
-    val nautilus = choice.unitId in setOf("commandCenter", "builder", "seaFactory", "seaFactoryT2", "nautilusSubmarine", "hoverTank") &&
+    val nautilus = choice.unitId in setOf("commandCenter", "builder", "seaFactory", "seaFactoryT2", "experimentalLandFactory",
+        "nautilusSubmarine", "nautilusSubmarineSurface", "nautilusSubmarineLand", "hoverTank") &&
         choice.content.units["nautilusSubmarine"]?.transport == TransportProfile.NAUTILUS_SUBMERGED &&
         choice.content.units["commandCenter"]?.production?.unitTypeIds == listOf("builder") &&
-        choice.content.units["builder"]?.builder?.buildingTypeIds == listOf("seaFactory") &&
+        choice.content.units["builder"]?.builder?.buildingTypeIds?.let { it == listOf("seaFactory") ||
+            it == listOf("seaFactory", "experimentalLandFactory") } == true &&
         choice.content.units["seaFactory"]?.upgrades?.actions?.singleOrNull()?.targetTypeId == "seaFactoryT2" &&
         choice.content.units["seaFactoryT2"]?.production?.unitTypeIds?.contains("nautilusSubmarine") == true
     val repairBay = choice.unitId in setOf("commandCenter", "builder", "landFactory", "c_tank", "repairbay") &&

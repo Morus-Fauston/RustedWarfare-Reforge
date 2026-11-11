@@ -218,6 +218,9 @@ object TraceComparator {
             val buildings = ConstructionDeclaration.buildings(scenario, contract)
             val conversions = UpgradeDeclaration.conversions(scenario, contract)
             val unitConversions = UnitActionDeclaration.conversions(scenario, contract)
+            val nautilusTransitions = NautilusTraceValidator.validate(scenario, contract, rows) {
+                throw Incomplete("nautilus-transition", it)
+            }
             val actionClocks = steps.runningFold(0) { now, declared ->
                 (now.toFloat() + declared.number("delta").toFloat() * 16.666666f).toInt()
             }.drop(1)
@@ -362,6 +365,7 @@ object TraceComparator {
                             it.integer("completionStepIndex") == step }.map {
                             it.id("unitId") to if (it["actionId"] == JsonNull) "unit-action-automatic" else "unit-action-completed" }
                         val actualActionEvents = observation.arrayAt("events").map { it.jsonObject }.filter {
+                            it["unitId"]?.jsonPrimitive?.content !in nautilusTransitions &&
                             it["kind"] in setOf(s("unit-action-completed"), s("unit-action-automatic")) }.map {
                             it.id("unitId") to it.text("kind") }
                         if (expectedActionEvents.sortedBy { it.first } != actualActionEvents.sortedBy { it.first })
@@ -533,8 +537,9 @@ object TraceComparator {
                 val slots = number(cargo["occupiedSlots"], "occupiedSlots")
                 if (slots !in 0.0..4.0 || slots % 1.0 != 0.0 || passengers.isEmpty() && slots != 0.0)
                     invalid("Invalid occupied slots")
-                if (nautilus && (slots != passengers.size.toDouble() || cargo["unloading"] != b(false) ||
-                    cargo["canUnload"] != b(false) || number(cargo["unloadRemaining"], "unloadRemaining") != 0.0))
+                if (nautilus && (slots != passengers.size.toDouble() || unit.id("typeId") != "nautilusSubmarineSurface" && (cargo["unloading"] != b(false) ||
+                    cargo["canUnload"] != b(false)))
+                    )
                     invalid("Submerged production must retain its single-slot products")
                 if (cargo["unloading"] !in setOf(b(true), b(false)) || cargo["canUnload"] !in setOf(b(true), b(false)) ||
                     number(cargo["unloadRemaining"], "unloadRemaining") !in 0.0..30.0) invalid("Invalid unload controls")
@@ -603,6 +608,7 @@ object TraceComparator {
         val mechLegCount = when (unit.id("typeId")) {
             in typesLoadedBy(scenario, setOf("mech")) -> 2
             in typesLoadedBy(scenario, setOf("mech-heavy", "mech-bunker", "mech-engineer")) -> 4
+            "nautilusSubmarineSurface", "nautilusSubmarineLand" -> 6
             else -> null
         }
         if (mechLegCount != null) validateMechPose(unit.objectAt("mechPose"), mechLegCount)
@@ -617,10 +623,13 @@ object TraceComparator {
         }
         else if (unit.id("typeId") in typesLoadedBy(scenario, setOf("nautilus"))) {
             val energy = unit["energy"] as? JsonObject ?: throw Incomplete("nautilus-state", "Missing Nautilus energy")
-            if (energy.keys != setOf("current", "maximum", "recharging") || aaNumber(energy["current"]) != 6.0 ||
-                aaNumber(energy["maximum"]) != 6.0 || energy["recharging"] != b(false) ||
-                listOf("unitActions", "flightPose").any { unit[it] != null && unit[it] != JsonNull })
-                throw Incomplete("nautilus-state", "Invalid submerged production energy or form")
+            val current = aaNumber(energy["current"])
+            if (energy.keys != setOf("current", "maximum", "recharging") || current !in 0.0..6.0 ||
+                aaNumber(energy["maximum"]) != 6.0 || energy["recharging"] !in setOf(b(true), b(false)) ||
+                energy["recharging"] == b(true) && current >= 6.0 || energy["recharging"] == b(false) && current < 1.0 ||
+                unit["flightPose"] != null && unit["flightPose"] != JsonNull)
+                throw Incomplete("nautilus-state", "Invalid Nautilus energy or recharge lock")
+            validateUnitActions(unit, observer)
         }
         else {
             if (unit["energy"] != null && unit["energy"] != JsonNull)
@@ -798,6 +807,9 @@ object TraceComparator {
             "mechBunker" -> setOf("deploy")
             "mechBunkerDeployed" -> setOf("undeploy")
             "aaBeamGunship_afterburn" -> setOf("afterBurn", "cancelBurn")
+            "nautilusSubmarine" -> setOf("surface")
+            "nautilusSubmarineSurface" -> setOf("dive")
+            "nautilusSubmarineLand" -> emptySet()
             else -> setOf("afterBurn")
         }
         if (actions.keys != names) invalid("Missing or unapproved player action")
@@ -821,7 +833,9 @@ object TraceComparator {
             }
             val available = unit["alive"] == b(true) && unit.number("constructionProgress") >= 1.0 &&
                 (unit["carriedBy"] == null || unit["carriedBy"] == JsonNull) && index == JsonNull && remaining == 0L
-            if (action["available"] != b(available)) invalid("Action availability differs from its public state")
+            if (name == "dive") {
+                if (action["available"] !in setOf(b(false), b(available))) invalid("Invalid Dive availability")
+            } else if (action["available"] != b(available)) invalid("Action availability differs from its public state")
         }
         if (indexes.sorted() != indexes.indices.map { it.toLong() }) invalid("Queue indexes must be unique and contiguous")
     }

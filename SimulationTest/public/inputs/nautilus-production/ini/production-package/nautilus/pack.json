@@ -10,6 +10,14 @@
     {
       "type": "hover-tank",
       "file": "hover/hover.ini"
+    },
+    {
+      "type": "nautilus",
+      "file": "nautilusSurface.ini"
+    },
+    {
+      "type": "nautilus",
+      "file": "nautilusLand.ini"
     }
   ]
 }

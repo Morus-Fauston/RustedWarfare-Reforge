@@ -12,6 +12,7 @@ internal object CombatTargetQuery {
 
     fun isUnderwater(target: MutableUnit): Boolean =
         SubmarineMotion.submerged(target) || target.amphibiousState != null && target.height < -1.0 ||
+            target.definition.transport == com.rustedwarfare.reforge.core.content.TransportProfile.NAUTILUS_SUBMERGED && target.height < -1.0 ||
             target.definition.fixedUnderwaterTarget != null && target.height <= -1.0
 
     /** Physical flying takes precedence; negative ordinary heights do not grant underwater capability. */
@@ -27,6 +28,13 @@ internal object CombatTargetQuery {
         if (actor.definition.maintenance == com.rustedwarfare.reforge.core.content.MaintenanceProfile.MECH_ENGINEER)
             return isFlying(target)
         if (actor.definition.combat?.projectile?.beam != null) return isFlying(target)
+        if (actor.definition.transport == com.rustedwarfare.reforge.core.content.TransportProfile.NAUTILUS_SUBMERGED) {
+            val sub = actor.typeId == "nautilusSubmarine"
+            if (isFlying(target)) return !sub
+            if (isUnderwater(target)) return sub
+            return !sub || target.height <= 2.0 && map.isOverWater(
+                (target.position.x.toFloat() / map.tileWidth).toInt(), (target.position.y.toFloat() / map.tileHeight).toInt())
+        }
         if (actor.definition.submarine != null || actor.amphibiousState != null) {
             val submerged = if (actor.amphibiousState != null) actor.height < -1.0 else SubmarineMotion.submerged(actor)
             if (isFlying(target)) return !submerged

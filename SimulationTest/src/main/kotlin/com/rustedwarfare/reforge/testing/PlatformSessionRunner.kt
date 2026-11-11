@@ -78,7 +78,7 @@ object PlatformSessionRunner {
                         "stop" -> session.stop()
                         "unit-action" -> {
                             if (intent.keys != setOf("intentId", "kind", "actionName", "waitSteps") ||
-                                intent.id("actionName") !in setOf("afterBurn", "cancelBurn", "deploy", "undeploy"))
+                                intent.id("actionName") !in setOf("afterBurn", "cancelBurn", "deploy", "undeploy", "surface", "dive"))
                                 throw InputError("Expected a finite normal unit action and explicit waitSteps")
                             session.unitAction(intent.id("actionName"))
                         }

@@ -39,8 +39,16 @@ class MapDefinition(
         })
     }
 
+    val overCliffWaterBlocking: BlockingGrid by lazy {
+        BlockingGrid(widthTiles, heightTiles, BooleanArray(widthTiles * heightTiles) { index ->
+            (index % widthTiles to index / widthTiles) in this.waterObstacles ||
+                GroundRules.blocked(this.tileSets, gids.getOrNull(index) ?: 0, MovementType.OVER_CLIFF_WATER)
+        })
+    }
+
     internal fun blockingFor(type: MovementType): BlockingGrid = when (type) {
         MovementType.OVER_CLIFF -> overCliffBlocking
+        MovementType.OVER_CLIFF_WATER -> overCliffWaterBlocking
         MovementType.WATER -> waterBlocking
         MovementType.HOVER -> hoverBlocking
         else -> blocking

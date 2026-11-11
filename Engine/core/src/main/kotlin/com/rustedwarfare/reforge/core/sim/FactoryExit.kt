@@ -77,6 +77,13 @@ internal object FactoryExit {
     }
 
     fun birth(factory: MutableUnit, product: UnitDefinition, map: MapDefinition): FactoryBirth {
+        if (factory.definition.production?.exitProfile == FactoryExitProfile.NATIVE_EXPERIMENTAL) {
+            val speed = product.movement.moveSpeed.toFloat()
+            val protection = 70f + (if (speed < .75f) 30f else 0f) + (if (speed < .55f) 20f else 0f)
+            return FactoryBirth(Position(factory.position.x, maxOf(factory.position.y + 5.0,
+                factory.position.y - 100.0 + product.radius)), 180.0,
+                Position(factory.position.x - 1.0, factory.position.y + factory.definition.radius * 3.0), protection)
+        }
         if (factory.definition.production?.exitProfile == FactoryExitProfile.CUSTOM_NAUTILUS) {
             // Original custom F first writes world-axis offsets, then the general exit helper.
             val angle = factory.heading.toFloat() - 90f

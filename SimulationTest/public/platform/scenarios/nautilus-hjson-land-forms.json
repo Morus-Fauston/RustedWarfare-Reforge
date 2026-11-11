@@ -1,0 +1,484 @@
+{
+  "schemaVersion": 1,
+  "scenarioId": "nautilus-hjson-land-forms",
+  "inputs": "../../inputs/nautilus-production/hjson",
+  "contentPack": {
+    "directory": "production-package",
+    "unitId": "commandCenter"
+  },
+  "intents": [
+    {
+      "intentId": "select-center",
+      "kind": "select",
+      "waitSteps": 0,
+      "position": {
+        "x": 130,
+        "y": 130
+      }
+    },
+    {
+      "intentId": "produce-worker",
+      "kind": "produce",
+      "waitSteps": 600,
+      "typeId": "builder"
+    },
+    {
+      "intentId": "leave-center",
+      "kind": "select",
+      "waitSteps": 100,
+      "position": {
+        "x": 130,
+        "y": 130
+      }
+    },
+    {
+      "intentId": "select-worker",
+      "kind": "select",
+      "waitSteps": 0,
+      "position": {
+        "x": 129,
+        "y": 220
+      }
+    },
+    {
+      "intentId": "build-experimental",
+      "kind": "build",
+      "waitSteps": 600,
+      "position": {
+        "x": 210,
+        "y": 310
+      },
+      "typeId": "experimentalLandFactory"
+    },
+    {
+      "intentId": "construct-experimental-0",
+      "kind": "select",
+      "waitSteps": 600,
+      "position": {
+        "x": 210,
+        "y": 310
+      }
+    },
+    {
+      "intentId": "construct-experimental-1",
+      "kind": "select",
+      "waitSteps": 600,
+      "position": {
+        "x": 210,
+        "y": 310
+      }
+    },
+    {
+      "intentId": "construct-experimental-2",
+      "kind": "select",
+      "waitSteps": 600,
+      "position": {
+        "x": 210,
+        "y": 310
+      }
+    },
+    {
+      "intentId": "construct-experimental-3",
+      "kind": "select",
+      "waitSteps": 600,
+      "position": {
+        "x": 210,
+        "y": 310
+      }
+    },
+    {
+      "intentId": "construct-experimental-4",
+      "kind": "select",
+      "waitSteps": 600,
+      "position": {
+        "x": 210,
+        "y": 310
+      }
+    },
+    {
+      "intentId": "construct-experimental-5",
+      "kind": "select",
+      "waitSteps": 600,
+      "position": {
+        "x": 210,
+        "y": 310
+      }
+    },
+    {
+      "intentId": "construct-experimental-6",
+      "kind": "select",
+      "waitSteps": 600,
+      "position": {
+        "x": 210,
+        "y": 310
+      }
+    },
+    {
+      "intentId": "construct-experimental-7",
+      "kind": "select",
+      "waitSteps": 600,
+      "position": {
+        "x": 210,
+        "y": 310
+      }
+    },
+    {
+      "intentId": "construct-experimental-8",
+      "kind": "select",
+      "waitSteps": 600,
+      "position": {
+        "x": 210,
+        "y": 310
+      }
+    },
+    {
+      "intentId": "construct-experimental-9",
+      "kind": "select",
+      "waitSteps": 600,
+      "position": {
+        "x": 210,
+        "y": 310
+      }
+    },
+    {
+      "intentId": "construct-experimental-10",
+      "kind": "select",
+      "waitSteps": 400,
+      "position": {
+        "x": 210,
+        "y": 310
+      }
+    },
+    {
+      "intentId": "select-experimental",
+      "kind": "select",
+      "waitSteps": 0,
+      "position": {
+        "x": 210,
+        "y": 310
+      }
+    },
+    {
+      "intentId": "produce-mother",
+      "kind": "produce",
+      "waitSteps": 600,
+      "typeId": "nautilusSubmarineLand"
+    },
+    {
+      "intentId": "wait-mother-0",
+      "kind": "select",
+      "waitSteps": 600,
+      "position": {
+        "x": 210,
+        "y": 310
+      }
+    },
+    {
+      "intentId": "wait-mother-1",
+      "kind": "select",
+      "waitSteps": 600,
+      "position": {
+        "x": 210,
+        "y": 310
+      }
+    },
+    {
+      "intentId": "wait-mother-2",
+      "kind": "select",
+      "waitSteps": 600,
+      "position": {
+        "x": 210,
+        "y": 310
+      }
+    },
+    {
+      "intentId": "wait-mother-3",
+      "kind": "select",
+      "waitSteps": 600,
+      "position": {
+        "x": 210,
+        "y": 310
+      }
+    },
+    {
+      "intentId": "wait-mother-4",
+      "kind": "select",
+      "waitSteps": 600,
+      "position": {
+        "x": 210,
+        "y": 310
+      }
+    },
+    {
+      "intentId": "wait-mother-5",
+      "kind": "select",
+      "waitSteps": 400,
+      "position": {
+        "x": 210,
+        "y": 310
+      }
+    },
+    {
+      "intentId": "select-mother",
+      "kind": "select",
+      "waitSteps": 0,
+      "position": {
+        "x": 209,
+        "y": 475
+      }
+    },
+    {
+      "intentId": "queue-hover",
+      "kind": "produce",
+      "waitSteps": 260,
+      "typeId": "hoverTank"
+    },
+    {
+      "intentId": "enter-water",
+      "kind": "move",
+      "waitSteps": 600,
+      "position": {
+        "x": 500,
+        "y": 400
+      }
+    },
+    {
+      "intentId": "reach-water-0",
+      "kind": "select",
+      "waitSteps": 600,
+      "position": {
+        "x": 210,
+        "y": 310
+      }
+    },
+    {
+      "intentId": "reach-water-1",
+      "kind": "select",
+      "waitSteps": 600,
+      "position": {
+        "x": 210,
+        "y": 310
+      }
+    },
+    {
+      "intentId": "reach-water-2",
+      "kind": "select",
+      "waitSteps": 200,
+      "position": {
+        "x": 210,
+        "y": 310
+      }
+    },
+    {
+      "intentId": "select-surface",
+      "kind": "select",
+      "waitSteps": 0,
+      "position": {
+        "x": 500,
+        "y": 400
+      }
+    },
+    {
+      "intentId": "stop-surface",
+      "kind": "stop",
+      "waitSteps": 60
+    },
+    {
+      "intentId": "dive",
+      "kind": "unit-action",
+      "waitSteps": 140,
+      "actionName": "dive"
+    },
+    {
+      "intentId": "surface",
+      "kind": "unit-action",
+      "waitSteps": 1,
+      "actionName": "surface"
+    },
+    {
+      "intentId": "release",
+      "kind": "unload",
+      "waitSteps": 150,
+      "unloading": true
+    },
+    {
+      "intentId": "return-shore",
+      "kind": "move",
+      "waitSteps": 600,
+      "position": {
+        "x": 250,
+        "y": 400
+      }
+    },
+    {
+      "intentId": "reach-shore-0",
+      "kind": "select",
+      "waitSteps": 600,
+      "position": {
+        "x": 210,
+        "y": 310
+      }
+    },
+    {
+      "intentId": "reach-shore-1",
+      "kind": "select",
+      "waitSteps": 600,
+      "position": {
+        "x": 210,
+        "y": 310
+      }
+    },
+    {
+      "intentId": "select-land",
+      "kind": "select",
+      "waitSteps": 0,
+      "position": {
+        "x": 250,
+        "y": 400
+      }
+    },
+    {
+      "intentId": "stop-land",
+      "kind": "stop",
+      "waitSteps": 60
+    }
+  ],
+  "waitPlan": {
+    "produce-worker": {
+      "minimumSteps": 600,
+      "timeoutSeconds": 240
+    },
+    "leave-center": {
+      "minimumSteps": 100,
+      "timeoutSeconds": 240
+    },
+    "build-experimental": {
+      "minimumSteps": 600,
+      "timeoutSeconds": 240
+    },
+    "construct-experimental-0": {
+      "minimumSteps": 600,
+      "timeoutSeconds": 240
+    },
+    "construct-experimental-1": {
+      "minimumSteps": 600,
+      "timeoutSeconds": 240
+    },
+    "construct-experimental-2": {
+      "minimumSteps": 600,
+      "timeoutSeconds": 240
+    },
+    "construct-experimental-3": {
+      "minimumSteps": 600,
+      "timeoutSeconds": 240
+    },
+    "construct-experimental-4": {
+      "minimumSteps": 600,
+      "timeoutSeconds": 240
+    },
+    "construct-experimental-5": {
+      "minimumSteps": 600,
+      "timeoutSeconds": 240
+    },
+    "construct-experimental-6": {
+      "minimumSteps": 600,
+      "timeoutSeconds": 240
+    },
+    "construct-experimental-7": {
+      "minimumSteps": 600,
+      "timeoutSeconds": 240
+    },
+    "construct-experimental-8": {
+      "minimumSteps": 600,
+      "timeoutSeconds": 240
+    },
+    "construct-experimental-9": {
+      "minimumSteps": 600,
+      "timeoutSeconds": 240
+    },
+    "construct-experimental-10": {
+      "minimumSteps": 400,
+      "timeoutSeconds": 240
+    },
+    "produce-mother": {
+      "minimumSteps": 600,
+      "timeoutSeconds": 240
+    },
+    "wait-mother-0": {
+      "minimumSteps": 600,
+      "timeoutSeconds": 240
+    },
+    "wait-mother-1": {
+      "minimumSteps": 600,
+      "timeoutSeconds": 240
+    },
+    "wait-mother-2": {
+      "minimumSteps": 600,
+      "timeoutSeconds": 240
+    },
+    "wait-mother-3": {
+      "minimumSteps": 600,
+      "timeoutSeconds": 240
+    },
+    "wait-mother-4": {
+      "minimumSteps": 600,
+      "timeoutSeconds": 240
+    },
+    "wait-mother-5": {
+      "minimumSteps": 400,
+      "timeoutSeconds": 240
+    },
+    "queue-hover": {
+      "minimumSteps": 260,
+      "timeoutSeconds": 240
+    },
+    "enter-water": {
+      "minimumSteps": 600,
+      "timeoutSeconds": 240
+    },
+    "reach-water-0": {
+      "minimumSteps": 600,
+      "timeoutSeconds": 240
+    },
+    "reach-water-1": {
+      "minimumSteps": 600,
+      "timeoutSeconds": 240
+    },
+    "reach-water-2": {
+      "minimumSteps": 200,
+      "timeoutSeconds": 240
+    },
+    "stop-surface": {
+      "minimumSteps": 60,
+      "timeoutSeconds": 240
+    },
+    "dive": {
+      "minimumSteps": 140,
+      "timeoutSeconds": 240
+    },
+    "surface": {
+      "minimumSteps": 1,
+      "timeoutSeconds": 240
+    },
+    "release": {
+      "minimumSteps": 150,
+      "timeoutSeconds": 240
+    },
+    "return-shore": {
+      "minimumSteps": 600,
+      "timeoutSeconds": 240
+    },
+    "reach-shore-0": {
+      "minimumSteps": 600,
+      "timeoutSeconds": 240
+    },
+    "reach-shore-1": {
+      "minimumSteps": 600,
+      "timeoutSeconds": 240
+    },
+    "stop-land": {
+      "minimumSteps": 60,
+      "timeoutSeconds": 240
+    }
+  }
+}

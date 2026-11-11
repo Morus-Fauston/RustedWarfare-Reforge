@@ -44,8 +44,20 @@
       "file": "nautilus/hover/hover.json"
     },
     {
+      "type": "nautilus",
+      "file": "nautilus/nautilusSurface.json"
+    },
+    {
+      "type": "nautilus",
+      "file": "nautilus/nautilusLand.json"
+    },
+    {
       "type": "command-center",
       "file": "units/commandCenter/commandCenter.json"
+    },
+    {
+      "type": "experimental-factory",
+      "file": "units/experimentalFactory.json"
     }
   ]
 }

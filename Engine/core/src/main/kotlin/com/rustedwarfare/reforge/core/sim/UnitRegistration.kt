@@ -47,8 +47,10 @@ internal object UnitRegistration {
         }
         if (customProducer) {
             factory.productionSide = !factory.productionSide
-            Transport.retainProduced(factory, born)
-            state.pendingEvents += Event("unit-loaded", factory.unitId)
+            if (factory.typeId != "nautilusSubmarineSurface" || birth.fallback) {
+                Transport.retainProduced(factory, born)
+                state.pendingEvents += Event("unit-loaded", factory.unitId)
+            }
             if (birth.fallback) state.pendingEvents += Event("production-exit-fallback", publicId)
         }
         if (!reachable) {

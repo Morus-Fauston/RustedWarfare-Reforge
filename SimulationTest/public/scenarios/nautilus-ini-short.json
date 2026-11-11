@@ -12,7 +12,19 @@
       {
         "id": "nautilusSubmarine",
         "path": "../inputs/nautilus-production/ini/package/nautilus.ini",
-        "sha256": "17cacc1d06c68e8802b4865a3c195c2e5f61d9172a72c033fa5be5bd6dac5cd3",
+        "sha256": "b561d07762b76d2a285ef21e44f34d021610e0fd84883dc132698992750b50c6",
+        "loader": "nautilus"
+      },
+      {
+        "id": "nautilusSubmarineSurface",
+        "path": "../inputs/nautilus-production/ini/package/nautilusSurface.ini",
+        "sha256": "6b4a6ceaadeddde43cbb3ff459a7af687086d4a1f152ebd082f3a83c3e1e864c",
+        "loader": "nautilus"
+      },
+      {
+        "id": "nautilusSubmarineLand",
+        "path": "../inputs/nautilus-production/ini/package/nautilusLand.ini",
+        "sha256": "ef54fdc8fed16104f0b2a4d72c435256e793352e8c3629c53b4bd06ee022f1d0",
         "loader": "nautilus"
       },
       {
@@ -45,23 +57,33 @@
       },
       {
         "id": "dep-4",
+        "path": "../inputs/nautilus-production/ini/package/foot.png",
+        "sha256": "05931f6c90ccac2921ae9c616932ab422ff1b6ac41c474980850b517b6626dfb"
+      },
+      {
+        "id": "dep-5",
         "path": "../inputs/nautilus-production/ini/package/hover/shadow.png",
         "sha256": "05994cff1434fb85e8e37527c034a535b6f1de4431aa3c50ac8b5370a1aef997"
       },
       {
-        "id": "dep-5",
+        "id": "dep-6",
         "path": "../inputs/nautilus-production/ini/package/hover/tank.png",
         "sha256": "71ebc6f6e73814573a90eaebadcdae40b53abe8a287cefbc5a8a06b6bab04ab0"
       },
       {
-        "id": "dep-6",
+        "id": "dep-7",
         "path": "../inputs/nautilus-production/ini/package/hover/tank_dead.png",
         "sha256": "3eab0f9914393445a2b3424643341ab33e55016b1fec645fd1a91f1a755643c8"
       },
       {
-        "id": "dep-7",
+        "id": "dep-8",
+        "path": "../inputs/nautilus-production/ini/package/leg.png",
+        "sha256": "f53a804b044605a29c4bb72a19a89c5fd971413ca3987dde49975832bf479efb"
+      },
+      {
+        "id": "dep-9",
         "path": "../inputs/nautilus-production/ini/package/pack.json",
-        "sha256": "df00e35c26e19293ada5de127a0ec44934f6d61def1bac6a14901cd8deecd7f2"
+        "sha256": "f389e255e3d264a131050a7f5d81d2504bcbd22a6af576bfc4a36ef258eec78e"
       }
     ]
   },

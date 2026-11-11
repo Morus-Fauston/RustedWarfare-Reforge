@@ -118,7 +118,7 @@ internal object Transport {
     }
 
     /** Native f(true): release relations and write cj's negative health, retaining corpse processing. */
-    fun onDeath(unit: MutableUnit, units: Map<String, MutableUnit>, map: MapDefinition) {
+    fun onDeath(unit: MutableUnit, units: Map<String, MutableUnit>, map: MapDefinition, deferCargo: Boolean = false) {
         unit.carriedBy?.let { id ->
             val parent = units[id]
             parent?.transportState?.let { state ->
@@ -127,6 +127,7 @@ internal object Transport {
         }
         unit.carriedBy = null
         unit.transportExit = null
+        if (deferCargo) return
         val state = unit.transportState ?: return
         val angle = unit.heading.toFloat() - 270f
         val position = Position((unit.position.x.toFloat() + GroundMath.cos(angle) * 9f).toDouble(),
@@ -145,10 +146,11 @@ internal object Transport {
 
     fun requestUnload(carrier: MutableUnit, unloading: Boolean, map: MapDefinition): SimulationError? {
         val state = carrier.transportState ?: return SimulationError("not-carrier", "Unit has no transport capability")
-        if (carrier.definition.transport == TransportProfile.NAUTILUS_SUBMERGED)
+        val nautilus = carrier.definition.transport == TransportProfile.NAUTILUS_SUBMERGED
+        if (nautilus && carrier.typeId != "nautilusSubmarineSurface" && unloading)
             return SimulationError("cannot-unload", "This form retains its produced units")
         if (unloading) {
-            if (state.unloading || state.passengerIds.isEmpty() || liquid(carrier, map))
+            if (state.unloading || state.passengerIds.isEmpty() || (if (nautilus) !liquid(carrier, map) else liquid(carrier, map)))
                 return SimulationError("cannot-unload", "Carrier cannot start unloading here")
             carrier.transportState = state.copy(unloading = true, unloadRemaining = 30f)
         } else {
@@ -171,9 +173,11 @@ internal object Transport {
             unit.transportExit = if (remaining == 0f) null else it.copy(remaining = remaining)
         }
         var state = unit.transportState ?: return emptyList()
-        if (unit.definition.transport == TransportProfile.NAUTILUS_SUBMERGED) return emptyList()
+        val nautilus = unit.definition.transport == TransportProfile.NAUTILUS_SUBMERGED
         val events = mutableListOf<Event>()
-        if (state.unloading && !liquid(unit, map) && !state.motionGate &&
+        val canProgress = if (nautilus) unit.typeId == "nautilusSubmarineSurface" && liquid(unit, map)
+            else !liquid(unit, map) && !state.motionGate
+        if (state.unloading && canProgress &&
             (unit.definition.transport != TransportProfile.NATIVE_DROPSHIP || unit.height.toFloat() < 4f)) {
             state = state.copy(unloadRemaining = maxOf(0f, state.unloadRemaining - delta.toFloat()))
             if (state.unloadRemaining == 0f) {
@@ -191,12 +195,17 @@ internal object Transport {
                         passenger.position = point
                         passenger.nativeTransportPlacement = !MapBounds.contains(map.widthTiles.toDouble() * map.tileWidth,
                             map.heightTiles.toDouble() * map.tileHeight, point, passenger.definition.radius)
-                        passenger.heading = ScreenPlane.normalize(unit.heading - 180.0)
+                        passenger.heading = ScreenPlane.normalize(if (nautilus) unit.heading else unit.heading - 180.0)
+                        if (nautilus) passenger.height = unit.height
                         passenger.transportExit = TransportExitObservation(unit.unitId, 45f)
                         passenger.attackCommand = null
                         passenger.clearWeaponTargets()
                         passenger.cancelRoute()
-                        val target = if (unit.definition.transport == TransportProfile.NATIVE_DROPSHIP) {
+                        val target = if (nautilus) {
+                            val angle = unit.heading.toFloat() - 90f + if (negativeSide) -7f else 7f
+                            Position((point.x.toFloat() + GroundMath.cos(angle) * 110f).toDouble(),
+                                (point.y.toFloat() + GroundMath.sin(angle) * 110f).toDouble())
+                        } else if (unit.definition.transport == TransportProfile.NATIVE_DROPSHIP) {
                             val angle = unit.heading.toFloat() - 90f
                             Position((unit.position.x.toFloat() + GroundMath.cos(angle) * -66f).toDouble(),
                                 (unit.position.y.toFloat() + GroundMath.sin(angle) * -66f).toDouble())
@@ -217,6 +226,7 @@ internal object Transport {
             }
         }
         unit.transportState = state
+        if (nautilus) return events
         if (unit.definition.transport == TransportProfile.NATIVE_DROPSHIP) {
             var phase = unit.heightPhase.toFloat() + 2f * delta.toFloat()
             if (phase > 360f) phase -= 360f
@@ -246,7 +256,12 @@ internal object Transport {
         val side = if (negativeSide) -9f else 9f
         val x: Float
         val y: Float
-        if (carrier.definition.transport == TransportProfile.NATIVE_DROPSHIP) {
+        if (carrier.definition.transport == TransportProfile.NAUTILUS_SUBMERGED) {
+            val angle = carrier.heading.toFloat() - 90f
+            val customSide = if (negativeSide) -7f else 7f
+            x = carrier.position.x.toFloat() + GroundMath.cos(angle) * 30f + GroundMath.cos(angle + 90f) * customSide
+            y = carrier.position.y.toFloat() + GroundMath.sin(angle) * 30f + GroundMath.sin(angle + 90f) * customSide
+        } else if (carrier.definition.transport == TransportProfile.NATIVE_DROPSHIP) {
             val angle = carrier.heading.toFloat() - 90f
             val airSide = if (negativeSide) -7f else 7f
             x = carrier.position.x.toFloat() + GroundMath.cos(angle) * -9f +
@@ -311,15 +326,18 @@ internal object Transport {
     private fun admission(carrier: MutableUnit, passenger: MutableUnit, units: Map<String, MutableUnit>): SimulationError? {
         val state = carrier.transportState
             ?: return SimulationError("not-carrier", "Target has no transport capability")
-        if (carrier.definition.transport == TransportProfile.NAUTILUS_SUBMERGED)
+        val nautilus = carrier.definition.transport == TransportProfile.NAUTILUS_SUBMERGED
+        if (nautilus && carrier.typeId != "nautilusSubmarineSurface")
             return SimulationError("invalid-passenger", "Passenger does not meet this form's ordinary load requirements")
         if (!carrier.alive || !passenger.alive || carrier.constructionProgress < 1f || passenger.constructionProgress < 1f ||
             carrier.carriedBy != null || passenger.carriedBy != null || carrier === passenger ||
             carrier.ownerPlayerId != passenger.ownerPlayerId || passenger.transportState != null ||
-            passenger.definition.building != null || passenger.definition.movement.type in setOf(MovementType.AIR, MovementType.WATER, MovementType.NONE))
+            passenger.definition.building != null ||
+            (if (nautilus) passenger.definition.movement.type !in setOf(MovementType.WATER, MovementType.HOVER, MovementType.OVER_CLIFF_WATER)
+                else passenger.definition.movement.type in setOf(MovementType.AIR, MovementType.WATER, MovementType.NONE)))
             return SimulationError("invalid-passenger", "Unit cannot board this carrier")
         if (state.unloading) return SimulationError("transport-unloading", "Carrier is unloading")
-        if (state.passengerIds.sumOf { units.getValue(it).definition.transportSlots.toLong() } + passenger.definition.transportSlots.toLong() > 4L)
+        if (state.passengerIds.sumOf { units.getValue(it).definition.transportSlots.toLong() } + passenger.definition.transportSlots.toLong() > if (nautilus) 3L else 4L)
             return SimulationError("transport-full", "Carrier has no capacity for this passenger")
         return null
     }
@@ -328,7 +346,8 @@ internal object Transport {
         TransportObservation(immutable(it.passengerIds), it.passengerIds.size,
             it.passengerIds.sumOf { id -> units.getValue(id).definition.transportSlots.toLong() }.toInt(),
             if (carrier.definition.transport == TransportProfile.NAUTILUS_SUBMERGED) 3 else 4, it.unloading, it.unloadRemaining,
-            carrier.definition.transport != TransportProfile.NAUTILUS_SUBMERGED &&
-                carrier.alive && carrier.constructionProgress >= 1f && !it.liquid && !it.unloading && it.passengerIds.isNotEmpty())
+            (if (carrier.definition.transport == TransportProfile.NAUTILUS_SUBMERGED)
+                carrier.typeId == "nautilusSubmarineSurface" && it.liquid else !it.liquid) &&
+                carrier.alive && carrier.constructionProgress >= 1f && !it.unloading && it.passengerIds.isNotEmpty())
     }
 }

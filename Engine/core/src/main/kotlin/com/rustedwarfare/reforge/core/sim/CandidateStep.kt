@@ -109,6 +109,7 @@ internal data class StepState(
                 .let { when (it) {
                     com.rustedwarfare.reforge.core.content.FactoryExitProfile.CUSTOM_MECH,
                     com.rustedwarfare.reforge.core.content.FactoryExitProfile.CUSTOM_NAUTILUS -> 45f
+                    com.rustedwarfare.reforge.core.content.FactoryExitProfile.NATIVE_EXPERIMENTAL -> 120f
                     com.rustedwarfare.reforge.core.content.FactoryExitProfile.NATIVE_SEA -> 80f
                     else -> 30f
                 } }
@@ -139,7 +140,9 @@ internal data class StepState(
                     birthDefinition?.production?.unitTypeIds?.contains(birth.unitTypeId) == true &&
                     (unit.typeId == birth.unitTypeId || convertedProduct) &&
                     (producer.typeId == birthDefinition.id || birthDefinition.upgrades?.actions?.any {
-                        it.targetTypeId == producer.typeId } == true) &&
+                        it.targetTypeId == producer.typeId } == true ||
+                        com.rustedwarfare.reforge.core.content.NautilusRules.supports(birthDefinition) &&
+                        com.rustedwarfare.reforge.core.content.NautilusRules.supports(producer.definition)) &&
                     Regex("[0-9a-f]{32}").matches(nonce) &&
                     unit.updateKey.startsWith("~produced/") &&
                     unit.updateKey.removePrefix("~produced/").toLong() in 1L..lastBirthSerial) {

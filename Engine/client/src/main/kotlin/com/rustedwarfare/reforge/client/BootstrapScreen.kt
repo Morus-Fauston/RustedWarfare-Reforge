@@ -367,9 +367,9 @@ class BootstrapScreen(
             })
             stage.addActor(actor)
         }
-        for ((index, name) in listOf("afterBurn", "cancelBurn", "deploy", "undeploy").withIndex()) {
+        for ((name, bounds) in NativeActionPanel.customActions) {
             val actor = TextButton("", skin)
-            actor.setBounds(752f + index % 2 * 92f, 188f, 84f, 40f)
+            actor.setBounds(bounds.x, bounds.y, bounds.width, bounds.height)
             val input = CustomUnitActionButtonInput({ session }, { !paused && !loading && session?.isOpen == true }, name,
                 changed = { lastHudState = null; updateHud() }, hovered = { entered ->
                     customActionHover = name.takeIf { entered }; lastHudState = null
@@ -837,7 +837,12 @@ class BootstrapScreen(
             enabled = commandConsoleOpen && current?.canDeploy == true)
         packPanel?.let { entries += it.drawnActions() }
         button("stop", stopButton); button("choose-patrol", patrolButton)
-        customActionButtons.forEach { (name, actor) -> button("unit-action:$name", actor) }
+        customActionButtons.forEach { (name, actor) ->
+            val action = menu?.unitActions?.singleOrNull { it.name == name }
+            entries += DrawnAction("unit-action:$name", actor, actor.text.toString(), enabled = action?.available == true)
+            if (action?.cancellable == true) entries += DrawnAction("cancel-unit-action:$name", actor,
+                actor.text.toString(), button = "right", enabled = true)
+        }
         button(menu?.transportAction?.let { if (it.unloading) "transport-unload" else "transport-cancel-unload" }
             ?: menu?.flightAction?.let { if (it.flying) "amphibious-fly" else "amphibious-dive" }
             ?: if (menu?.depthAction?.surface == false) "submarine-dive" else "submarine-surface", depthButton)
@@ -1276,12 +1281,14 @@ class BootstrapScreen(
         }
         stopButton.isDisabled = selected == null
         depthButton.isVisible = menu?.depthAction != null || menu?.flightAction != null || menu?.transportAction != null
+        depthButton.width = if (menu?.transportAction != null && menu.unitActions.isNotEmpty())
+            NativeActionPanel.transportWithCustomAction.width else 176f
         depthButton.isDisabled = menu?.depthAction == null && menu?.flightAction?.available != true && menu?.transportAction?.available != true
         depthButton.setText(menu?.depthAction?.title ?: menu?.flightAction?.title ?: menu?.transportAction?.title ?: "Surface")
         customActionButtons.forEach { (name, actor) ->
             val action = menu?.unitActions?.singleOrNull { it.name == name }
             actor.isVisible = current != null && action != null
-            actor.isDisabled = action?.available != true
+            actor.isDisabled = action?.available != true && action?.cancellable != true
             val status = when {
                 action?.queued == true -> "\n${((action.progress ?: 0f) * 100f).toInt()}%"
                 (action?.cooldownRemaining ?: 0) > 0 -> String.format(Locale.ROOT, "\n%.1fs", action!!.cooldownRemaining / 1000f)

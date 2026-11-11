@@ -10,7 +10,7 @@ import kotlin.math.sign
 internal object MechBody {
     fun advance(unit: MutableUnit, delta: Double) {
         val old = unit.mechState ?: return
-        if (unit.definition.mech?.kind == MechKind.FOUR_LEGGED) return
+        if (unit.definition.mech?.kind != MechKind.TWO_LEGGED) return
         val definition = checkNotNull(unit.definition.mech).body
         if (old.hold != 0.0) {
             unit.mechState = old.copy(hold = approach(old.hold, 0.0, delta))
