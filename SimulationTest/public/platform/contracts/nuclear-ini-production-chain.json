@@ -1,0 +1,99 @@
+{
+  "schemaVersion": 1,
+  "scenarioId": "nuclear-ini-production-chain",
+  "rules": [
+    {
+      "intentId": "select-center"
+    },
+    {
+      "intentId": "produce-worker"
+    },
+    {
+      "intentId": "leave-center"
+    },
+    {
+      "intentId": "select-worker"
+    },
+    {
+      "intentId": "build-silo"
+    },
+    {
+      "intentId": "finish-silo"
+    },
+    {
+      "intentId": "build-round"
+    },
+    {
+      "intentId": "wait-round-0"
+    },
+    {
+      "intentId": "wait-round-1"
+    },
+    {
+      "intentId": "wait-round-2"
+    },
+    {
+      "intentId": "wait-round-3"
+    },
+    {
+      "intentId": "wait-round-4"
+    },
+    {
+      "intentId": "launch-round"
+    },
+    {
+      "intentId": "finish-impact"
+    }
+  ],
+  "history": {
+    "initialBalance": 70000,
+    "ownerPlayerId": "p1",
+    "initialOwnedTypes": [
+      "commandCenter"
+    ],
+    "initialIncome": {
+      "unitId": "a",
+      "typeId": "commandCenter",
+      "period": 10,
+      "credits": 4.5
+    },
+    "productionOrder": [
+      "builder"
+    ],
+    "spend": [
+      {
+        "intentId": "produce-worker",
+        "amount": 500,
+        "at": "action"
+      },
+      {
+        "intentId": "build-silo",
+        "amount": 45000,
+        "at": "construction-created"
+      },
+      {
+        "intentId": "build-round",
+        "amount": 11000,
+        "at": "action"
+      }
+    ],
+    "nuclearHistory": true,
+    "projectileBirthsRequired": true,
+    "finalUnits": [
+      {
+        "ownerPlayerId": "p1",
+        "typeId": "nukeLauncherC",
+        "fields": {
+          "alive": true
+        }
+      },
+      {
+        "ownerPlayerId": "p2",
+        "typeId": "commandCenter",
+        "fields": {
+          "health": 1500
+        }
+      }
+    ]
+  }
+}

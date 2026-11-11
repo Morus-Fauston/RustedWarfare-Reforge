@@ -285,7 +285,10 @@
       "com.rustedwarfare.reforge.core.sim.NautilusSurfaceProductionTest",
       "com.rustedwarfare.reforge.core.sim.NautilusSurfaceUnloadTest",
       "com.rustedwarfare.reforge.core.sim.NautilusTargetCategoryTest",
-      "com.rustedwarfare.reforge.core.sim.NautilusTorpedoTest"
+      "com.rustedwarfare.reforge.core.sim.NautilusTorpedoTest",
+      "com.rustedwarfare.reforge.core.content.NuclearSiloContentTest",
+      "com.rustedwarfare.reforge.core.sim.NuclearSiloTest",
+      "com.rustedwarfare.reforge.core.sim.NuclearSiloSafetyTest"
     ],
     "client": [
       "com.rustedwarfare.reforge.client.CombatActorEvidenceTest",
@@ -354,7 +357,9 @@
       "com.rustedwarfare.reforge.client.NautilusMenuTest",
       "com.rustedwarfare.reforge.client.NautilusFormsMenuTest",
       "com.rustedwarfare.reforge.client.NautilusNativePanelTest",
-      "com.rustedwarfare.reforge.client.NautilusLandSandboxTest"
+      "com.rustedwarfare.reforge.client.NautilusLandSandboxTest",
+      "com.rustedwarfare.reforge.client.NuclearSiloSandboxTest",
+      "com.rustedwarfare.reforge.client.NuclearPresentationTest"
     ],
     "pc": [
       "com.rustedwarfare.reforge.pc.PatrolJsonlPairingTest",
@@ -377,7 +382,9 @@
       "com.rustedwarfare.reforge.pc.BunkerOriginalProfileTest",
       "com.rustedwarfare.reforge.pc.RepairBayOriginalProfileTest",
       "com.rustedwarfare.reforge.pc.MechEngineerOriginalProfileTest",
-      "com.rustedwarfare.reforge.pc.NautilusOriginalProfileTest"
+      "com.rustedwarfare.reforge.pc.NautilusOriginalProfileTest",
+      "com.rustedwarfare.reforge.pc.NuclearOriginalProfileTest",
+      "com.rustedwarfare.reforge.pc.NuclearBaseSoundTest"
     ],
     "tools": [
       "com.rustedwarfare.reforge.testing.ProductionCombatScenarioTest",
@@ -441,7 +448,9 @@
       "com.rustedwarfare.reforge.testing.MechEngineerArchiveTest",
       "com.rustedwarfare.reforge.testing.MechEngineerProductionSessionTest",
       "com.rustedwarfare.reforge.testing.NautilusArchiveTest",
-      "com.rustedwarfare.reforge.testing.NautilusProductionSessionTest"
+      "com.rustedwarfare.reforge.testing.NautilusProductionSessionTest",
+      "com.rustedwarfare.reforge.testing.NuclearSiloArchiveTest",
+      "com.rustedwarfare.reforge.testing.NuclearSiloProductionSessionTest"
     ]
   },
   "short": [
@@ -1273,6 +1282,39 @@
       "scenario": "platform/scenarios/nautilus-hjson-land-forms.json",
       "contract": "platform/contracts/nautilus-hjson-land-forms.json",
       "backend": "session"
+    },
+    {
+      "id": "nuclear-ini-short",
+      "scenario": "scenarios/nuclear-ini-short.json",
+      "contract": "contracts/nuclear-ini-short.json"
+    },
+    {
+      "id": "nuclear-ini-production-chain",
+      "backend": "session",
+      "scenario": "platform/scenarios/nuclear-ini-production-chain.json",
+      "contract": "platform/contracts/nuclear-ini-production-chain.json"
+    },
+    {
+      "id": "nuclear-json-short",
+      "scenario": "scenarios/nuclear-json-short.json",
+      "contract": "contracts/nuclear-json-short.json"
+    },
+    {
+      "id": "nuclear-json-production-chain",
+      "backend": "session",
+      "scenario": "platform/scenarios/nuclear-json-production-chain.json",
+      "contract": "platform/contracts/nuclear-json-production-chain.json"
+    },
+    {
+      "id": "nuclear-hjson-short",
+      "scenario": "scenarios/nuclear-hjson-short.json",
+      "contract": "contracts/nuclear-hjson-short.json"
+    },
+    {
+      "id": "nuclear-hjson-production-chain",
+      "backend": "session",
+      "scenario": "platform/scenarios/nuclear-hjson-production-chain.json",
+      "contract": "platform/contracts/nuclear-hjson-production-chain.json"
     }
   ],
   "long": [
@@ -1422,6 +1464,7 @@
     "SimulationTest/tools/test_bunker_platform.py",
     "SimulationTest/tools/test_repairbay_platform.py",
     "SimulationTest/tools/test_mech_engineer_platform.py",
-    "SimulationTest/tools/test_nautilus_platform.py"
+    "SimulationTest/tools/test_nautilus_platform.py",
+    "SimulationTest/tools/test_nuclear_platform.py"
   ]
 }

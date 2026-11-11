@@ -164,7 +164,8 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
             .filter { it != MovementType.LAND && it != MovementType.AIR }.distinct()
         val vision = AutomaticVision.project(steps.current.automaticVisionState, world.id, (automaticVisionSnapshots?.values?.firstOrNull()?.epoch ?: -1L) + 1,
             input.map.widthTiles, input.map.heightTiles, input.map.tileWidth, input.map.tileHeight, input.players,
-            units.values.filter { it.alive && it.carriedBy == null }.map { VisionSource(it.ownerPlayerId, it.position, it.definition.fogOfWarSightRange) }, rules.shareAlliedVision)
+            units.values.filter { it.alive && it.carriedBy == null }.map { VisionSource(it.ownerPlayerId, it.position, it.definition.fogOfWarSightRange) } +
+                steps.current.temporaryVision.map { VisionSource(it.owner, it.position, 15) }, rules.shareAlliedVision)
         val views = vision.views
         val nextStores = linkedMapOf<String, PlayerTerrainKnowledge>()
         val discoveries = linkedMapOf<String, MutableMap<Pair<Int, Int>, Long>>()
@@ -346,6 +347,7 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
         pendingBuildingDiscoveries = emptyMap()
         units = linkedMapOf()
         projectiles.clear()
+        steps.current.temporaryVision = emptyList()
         pendingEvents.clear()
         pendingProjectileEvents.clear()
         steps.current.pendingSoundTriggers.clear()
@@ -684,9 +686,15 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
         }
         val result = when (action) {
             is UnitAction -> {
-                withUnitActionQueue(unit) {
+                val error = if (unit.definition.nuclearSilo != null) {
+                    val change = NuclearOrdnance.request(unit, action.actionName, action.cancelQueued, checkNotNull(productionLedger), action.target)
+                    productionLedger = change.ledger
+                    change.error
+                } else if (action.target != null) SimulationError("unexpected-action-target", "This action does not accept a ground target")
+                else withUnitActionQueue(unit) {
                     CustomUnitActions.request(unit, action.actionName, action.cancelQueued, steps.current.actionClock, currentScenario.map)
-                }?.let {
+                }
+                error?.let {
                     return reject(action, it.code, it.message)
                 }
                 ActionResult.Accepted(action.actionId, listOf(Event(if (action.cancelQueued) "unit-action-cancelled" else "unit-action-queued", unit.unitId)))
@@ -1135,6 +1143,18 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
                 if (fourLegged) updateUnit(unit, currentScenario.map, step.delta, step.stepIndex, candidate.motionSamples)
                 if (BuildingWork.isReady(unit)) {
                     updateWeapon(unit, step.delta)
+                    if (unit.definition.nuclearSilo != null) NuclearOrdnance.advance(unit, step.delta)?.let { work ->
+                        pendingEvents += Event("unit-action-completed", unit.unitId)
+                        if (work.name == "launchNuke") {
+                            val id = nextObjectId
+                            nextObjectId = Math.addExact(id, 1L)
+                            val shot = NuclearOrdnance.projectile(unit, work, id)
+                            projectiles += shot
+                            pendingProjectileEvents += ProjectileEventObservation("born", projectileObservation(shot))
+                            pendingEvents += Event("projectile-fired", unit.unitId)
+                            steps.current.pendingSoundTriggers += SoundTriggerObservation("reforge:events/nuke-launch", shot.position, .27f)
+                        }
+                    }
                     updatePointDefense(unit, step.delta)
                     WeaponEnergy.advance(unit, step.delta)
                     if ((!factoryWork || factoryActionAtHead) && withUnitActionQueue(unit) {
@@ -1254,6 +1274,7 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
         buildingTerrain = initialBuildings
         units = linkedMapOf()
         projectiles = mutableListOf()
+        steps.current.temporaryVision = emptyList()
         combatFrame = nextScenario.combatContract?.initialFrameCounter ?: -1
         steps.current.actionClock = 0
         nextObjectId = nextScenario.combatContract?.nextObjectId ?: 1L
@@ -1344,6 +1365,8 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
             return SimulationError("invalid-contract", "Capture radii must be finite and positive")
         }
         for (definition in input.unitDefinitions.values) {
+            if (definition.nuclearSilo != null && !NuclearOrdnance.supports(definition))
+                return SimulationError("unsupported-nuclear-silo", "Expected the complete finite effective nuclear silo")
             if (definition.techLevel !in 1..3)
                 return SimulationError("unsupported-tech-level", "Expected a supported construction tech level from 1 to 3")
             val maximumHealth = definition.maximumHealth
@@ -1445,14 +1468,14 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
                     }
                 val repairBay = RepairBay.supports(definition)
                 val supportedPlacement = if (definition.id in setOf("c_turret_t1", "c_turret_t2_gun", "c_turret_t1_artillery", "laserDefence"))
-                    defense else factory || airFactory || seaFactory || experimentalFactory || extractor || fabricator || repairBay
+                    defense else factory || airFactory || seaFactory || experimentalFactory || extractor || fabricator || repairBay || NuclearOrdnance.supports(definition)
                 val mobileNano = definition.id == "mechGun" && definition.building == null &&
                     definition.mech?.kind == com.rustedwarfare.reforge.core.content.MechKind.TWO_LEGGED &&
                     definition.build == com.rustedwarfare.reforge.core.content.BuildProfile(600L, .0012f) &&
                     construction == com.rustedwarfare.reforge.core.content.ConstructionProfile(600L, .0012f) &&
                     m.type == MovementType.LAND
                 if ((!mobileNano && building == null) || construction.price < 0L || !construction.rate.isFinite() || construction.rate <= 0f ||
-                    !supportedPlacement && !mobileNano || definition.radius > 30.0 && !(factory && mechFactory) && !seaFactory && !experimentalFactory)
+                    !supportedPlacement && !mobileNano || definition.radius > 30.0 && !(factory && mechFactory) && !seaFactory && !experimentalFactory && !NuclearOrdnance.supports(definition))
                     return SimulationError("unsupported-construction", "Expected finite construction metadata within the supported placement envelope")
             }
             definition.pointDefense?.let { profile ->
@@ -1541,7 +1564,7 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
                 fourLegged && !bunker && (m.type != MovementType.OVER_CLIFF || !m.slidingMode || !m.ignoringBody)) {
                 return SimulationError("unsupported-unit", "Expected finite movement and the supported representative's radius and locomotion")
             }
-            if (m.type == MovementType.NONE && !bunker && numbers.drop(1).any { it != 0.0 })
+            if (m.type == MovementType.NONE && !bunker && !NuclearOrdnance.supports(definition) && numbers.drop(1).any { it != 0.0 })
                 return SimulationError("unsupported-unit", "Immobile definitions require zero movement parameters")
             definition.durability?.let { durability ->
                 if (!durability.maxHp.isFinite() || durability.maxHp <= 0.0 ||
@@ -1641,7 +1664,7 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
                     return SimulationError("unsupported-combat", "Ordinary combat numbers must be finite and in range")
             }
         }
-        if (input.unitDefinitions.values.any { it.combat != null || it.deathExplosion != null } && input.combatContract == null)
+        if (input.unitDefinitions.values.any { it.combat != null || it.deathExplosion != null || it.nuclearSilo != null } && input.combatContract == null)
             return SimulationError("missing-combat-contract", "Combat scenes require an explicit identity and seed contract")
         input.combatContract?.let { combat ->
             val values = combat.unitObjectIds.values
@@ -2033,6 +2056,8 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
     }
 
     private fun updateProjectiles(delta: Double, existingIds: Set<Long>) {
+        steps.current.temporaryVision = steps.current.temporaryVision.map { it.copy(remaining = it.remaining - delta.toFloat()) }
+            .filter { it.remaining >= 0f }
         updateProjectileBatch(delta, projectiles.filter { it.objectId in existingIds }.sortedBy { it.objectId })
         updateProjectileBatch(delta, projectiles.filter { it.objectId !in existingIds }.sortedBy { it.objectId })
     }
@@ -2070,13 +2095,14 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
             if (projectile.missile != null && units[projectile.targetUnitId]?.alive == false) retargetMissile(projectile)
             if (projectile.retargetOnDeath && units[projectile.targetUnitId]?.alive == false) retargetOrdinaryMissile(projectile)
             val target = units[projectile.targetUnitId]
-            if (target == null && projectile.ground == null) {
+            if (target == null && projectile.ground == null && projectile.nuclearTarget == null) {
                 projectile.age += delta.toFloat()
                 pendingProjectileEvents += ProjectileEventObservation("target-ended", projectileObservation(projectile))
                 projectiles.remove(projectile)
                 continue
             }
-            val hit = if (projectile.instant && projectile.ground == null) {
+            val hit = if (projectile.nuclearTarget != null) BallisticFlight.move(projectile, projectile.nuclearTarget, 0f, delta)
+            else if (projectile.instant && projectile.ground == null) {
                 projectile.remainingLife = maxOf(0.0, projectile.remainingLife - delta)
                 true
             } else if (projectile.ground != null) GroundWeapon.move(projectile, delta)
@@ -2084,7 +2110,22 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
                 else if (projectile.ballistic != null) BallisticFlight.move(projectile, checkNotNull(target), delta)
                 else OrdinaryWeapon.move(projectile, checkNotNull(target), delta)
             projectile.age += delta.toFloat()
+            if (projectile.revealFogPending && (hit || projectile.ballisticReachedApex && projectile.height < 30.0)) {
+                val source = checkNotNull(units[projectile.sourceUnitId])
+                projectile.revealFogPending = false
+                steps.current.temporaryVision = steps.current.temporaryVision + TemporaryVision(source.ownerPlayerId, projectile.position)
+            }
             if (hit) {
+                if (projectile.nuclearTarget != null) {
+                    projectile.position = projectile.nuclearTarget
+                    projectile.height = 0.0
+                    projectile.expansion = AreaExpansion(com.rustedwarfare.reforge.core.content.DeathExplosionProfile(5400f, 250f, 75f), 75f)
+                    projectile.hitApplied = true
+                    pendingProjectileEvents += ProjectileEventObservation("impact", projectileObservation(projectile))
+                    steps.current.pendingSoundTriggers += SoundTriggerObservation("reforge:events/nuke-explode", projectile.position, 1f)
+                    updateDeathExplosion(projectile, delta)
+                    continue
+                }
                 if (projectile.ground != null) applyAreaDamage(projectile)
                 val appliedDamage = if (projectile.ground == null) applyDamage(checkNotNull(target), projectile.damage, projectile.damageModifiers) else null
                 if (projectile.splash != null) applyOrdinarySplash(projectile)
@@ -2111,8 +2152,9 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
         val players = checkNotNull(scenario).players
         val team = players.single { it.playerId == source.ownerPlayerId }.teamId
         for (target in orderedUnits()) {
-            if (!target.alive || target.carriedBy != null || target.health == null || target.unitId in area.hitUnitIds || target.height.toFloat() < -5f ||
-                target.ownerPlayerId != source.ownerPlayerId && team != null &&
+            if (!target.alive || target.carriedBy != null || target.health == null || target.unitId in area.hitUnitIds ||
+                target.height.toFloat() < -5f && projectile.height.toFloat() >= -2f ||
+                projectile.nuclearTarget == null && target.ownerPlayerId != source.ownerPlayerId && team != null &&
                     players.single { it.playerId == target.ownerPlayerId }.teamId == team) continue
             val squared = GroundMath.square(projectile.position.x.toFloat(), projectile.position.y.toFloat(),
                 target.position.x.toFloat(), target.position.y.toFloat())
@@ -2125,7 +2167,7 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
             applyDamage(target, (area.profile.damage * falloff).toDouble())
         }
         if (area.remaining == 0f) {
-            pendingProjectileEvents += ProjectileEventObservation("impact", projectileObservation(projectile))
+            pendingProjectileEvents += ProjectileEventObservation(if (projectile.nuclearTarget == null) "impact" else "area-ended", projectileObservation(projectile))
             projectiles.remove(projectile)
         }
     }
@@ -2256,6 +2298,10 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
     }
 
     private fun processDeath(target: MutableUnit) {
+            if (target.definition.nuclearSilo != null) {
+                if (target.ordnance.queue.isNotEmpty()) pendingEvents += Event("unit-action-refunded", target.unitId)
+                productionLedger = NuclearOrdnance.discard(target, checkNotNull(productionLedger))
+            }
             Transport.onDeath(target, units, checkNotNull(scenario).map, deferCargo = NautilusMotion.slowDeath(target))
             missileTargets = missileTargets?.remove(target.unitId)
             if (target.definition.production != null) {
@@ -2495,11 +2541,12 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
         projectile.remainingLife, projectile.offset, projectile.scatter, projectile.height, projectile.age,
         projectile.deflectionHealth, projectile.intercepted, projectile.ground?.let {
             GroundProjectileObservation(Position(it.x.toDouble(), it.y.toDouble()), it.height, projectile.verticalSpeed,
-                projectile.groundDistanceSquared) }, projectile.missile?.let {
+                projectile.groundDistanceSquared) } ?: projectile.nuclearTarget?.let {
+            GroundProjectileObservation(it, 0f, projectile.speed.toFloat()) }, projectile.missile?.let {
             MissileObservation(projectile.speed.toFloat(), projectile.missileReachedApex, projectile.missileRawAz) },
         projectile.expansion?.let { AreaExpansionObservation(it.remaining, it.radius, it.hitUnitIds) }, projectile.sourceWeaponName,
         projectile.ballistic?.let { BallisticObservation(projectile.speed.toFloat(), projectile.ballisticReachedApex, projectile.ballisticRawAz) },
-        projectile.appearance, projectile.lightningSegment, projectile.beamSegment?.copy(textureOffset = projectile.age * 2f))
+        projectile.appearance, projectile.lightningSegment, projectile.beamSegment?.copy(textureOffset = projectile.age * 2f), projectile.alwaysVisibleInFog)
 
     private fun makeObservation(observedStep: Long, observedTime: Double, advanced: Boolean, observedRevision: Long): Observation {
         val currentScenario = checkNotNull(scenario)
@@ -2525,7 +2572,8 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
                     maxHealth = unit.definition.maximumHealth,
                     shield = unit.definition.shield?.let { ShieldObservation(unit.shield, it.maximum, unit.shieldDisplayDamage) },
                     energy = unit.definition.energy?.let { EnergyObservation(unit.energy, it.maximum, unit.energyRecharging) },
-                    unitActions = CustomUnitActions.observe(unit, steps.current.actionClock, currentScenario.map, unitActionQueue(unit)),
+                    unitActions = NuclearOrdnance.observe(unit) ?: CustomUnitActions.observe(unit, steps.current.actionClock, currentScenario.map, unitActionQueue(unit)),
+                    nuclearDoors = unit.definition.nuclearSilo?.let { unit.ordnance.doors },
                     submarine = unit.definition.submarine?.let { SubmarineObservation(unit.submarineSurfaceIntent,
                         unit.submarineVerticalSpeed, SubmarineMotion.submerged(unit), unit.submarineSurfacePresentation,
                         SubmarineMotion.movement(unit).moveSpeed, UnitCombat.range(unit)) },

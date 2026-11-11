@@ -28,6 +28,7 @@ internal data class BuildingCommit(val truth: BuildingTerrain,
 internal data class StepState(
     var units: MutableMap<String, MutableUnit> = linkedMapOf(),
     var projectiles: MutableList<MutableProjectile> = mutableListOf(),
+    var temporaryVision: List<TemporaryVision> = emptyList(),
     var combatFrame: Int = -1,
     var actionClock: Int = 0,
     var nextObjectId: Long = 1L,
@@ -88,6 +89,8 @@ internal data class StepState(
     )
 
     fun validate(input: Scenario) {
+        require(temporaryVision.all { it.owner in input.players.map { p -> p.playerId } &&
+            it.position.x.isFinite() && it.position.y.isFinite() && it.remaining.isFinite() && it.remaining >= 0f })
         Transport.validate(units)
         val objectIds = mutableSetOf<Long>()
         var previousKey: String? = null
@@ -117,6 +120,7 @@ internal data class StepState(
             unit.taskQueue.validateCandidate()
             require(unit.repairScanElapsed.isFinite() && unit.repairScanElapsed >= 0f) { "Invalid repair scan timer" }
             CustomUnitActions.validateCandidate(unit)
+            NuclearOrdnance.validate(unit)
             require((unit.logicalRequestX == null) == (unit.logicalRequestY == null) &&
                 unit.logicalRequestX?.isFinite() != false && unit.logicalRequestY?.isFinite() != false) {
                 "Logical movement coordinates must be a finite pair"

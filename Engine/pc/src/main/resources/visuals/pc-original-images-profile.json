@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "profileId": "rw.pc.steam.9902063.images.v6",
+  "profileId": "rw.pc.steam.9902063.images.v7",
   "identity": {
     "jarPath": "game-lib.jar",
     "jarBytes": 2639503,
@@ -6255,7 +6255,12 @@
     "nautilus-foot": "assets/units/nautilus/foot.png",
     "experimental-factory-body": "res/drawable/experimental_unit_factory_front.png",
     "experimental-factory-back": "res/drawable/experimental_unit_factory_base.png",
-    "experimental-factory-dead": "res/drawable/experimental_unit_factory_dead.png"
+    "experimental-factory-dead": "res/drawable/experimental_unit_factory_dead.png",
+    "nuclear-silo-body": "assets/units/nukes/nuke_launcher_front.png",
+    "nuclear-silo-back": "assets/units/nukes/nuke_launcher_back.png",
+    "nuclear-silo-dead": "assets/units/nukes/nuke_launcher_dead.png",
+    "nuclear-silo-arm1": "assets/units/nukes/nuke_launcher_door_r.png",
+    "nuclear-silo-arm2": "assets/units/nukes/nuke_launcher_door_l.png"
   },
   "mappingBasis": {
     "androidProfileSha256": "e273280ab37b1a24714e6b15d8e1cb14fdd395e228ea7c71a62dd2f24d334780",
@@ -6621,6 +6626,46 @@
       "sha256": "99c8556551d2f1b7ee99f46fc056080e7ed0fbef9f36ab9d158ceef743a319f7",
       "width": 100,
       "height": 115
+    },
+    {
+      "id": "nuclear-silo-body",
+      "path": "assets/units/nukes/nuke_launcher_front.png",
+      "bytes": 6859,
+      "sha256": "d124fe2a665676a88ce3cde8666abf123a0235fe85bc54390f93afb54e651237",
+      "width": 84,
+      "height": 70
+    },
+    {
+      "id": "nuclear-silo-back",
+      "path": "assets/units/nukes/nuke_launcher_back.png",
+      "bytes": 7424,
+      "sha256": "8edc5e8cd285c0a252a7cd0ac3554ee994fed81337d1a35f94d0f594b4d3fa5c",
+      "width": 84,
+      "height": 70
+    },
+    {
+      "id": "nuclear-silo-dead",
+      "path": "assets/units/nukes/nuke_launcher_dead.png",
+      "bytes": 3800,
+      "sha256": "c31a9595d8ec54d29ba489f89930b3af4603b35539fd77b5b782d7603c62e77f",
+      "width": 84,
+      "height": 70
+    },
+    {
+      "id": "nuclear-silo-arm1",
+      "path": "assets/units/nukes/nuke_launcher_door_r.png",
+      "bytes": 3140,
+      "sha256": "8e0ec9cedccc9c2de20ef29904e3860d0ae019bcdf167ea1e4bd0edf893f10ff",
+      "width": 38,
+      "height": 29
+    },
+    {
+      "id": "nuclear-silo-arm2",
+      "path": "assets/units/nukes/nuke_launcher_door_l.png",
+      "bytes": 3180,
+      "sha256": "73d273fba6571bce7505a93b5217d0e3145025ed19d0c53c24bbf9ee26878061",
+      "width": 42,
+      "height": 29
     }
   ],
   "mappingUnitOutputs": {
@@ -7380,6 +7425,86 @@
         115
       ],
       "frames": 1
+    },
+    "nuclear-silo-body": {
+      "file": "units/nuclear-silo-body.png",
+      "operation": "crop",
+      "source": "nuclear-silo-body",
+      "rect": [
+        0,
+        0,
+        84,
+        70
+      ],
+      "target": [
+        84,
+        70
+      ],
+      "frames": 1
+    },
+    "nuclear-silo-back": {
+      "file": "units/nuclear-silo-back.png",
+      "operation": "crop",
+      "source": "nuclear-silo-back",
+      "rect": [
+        0,
+        0,
+        84,
+        70
+      ],
+      "target": [
+        84,
+        70
+      ],
+      "frames": 1
+    },
+    "nuclear-silo-dead": {
+      "file": "units/nuclear-silo-dead.png",
+      "operation": "crop",
+      "source": "nuclear-silo-dead",
+      "rect": [
+        0,
+        0,
+        84,
+        70
+      ],
+      "target": [
+        84,
+        70
+      ],
+      "frames": 1
+    },
+    "nuclear-silo-arm1": {
+      "file": "units/nuclear-silo-arm1.png",
+      "operation": "crop",
+      "source": "nuclear-silo-arm1",
+      "rect": [
+        0,
+        0,
+        38,
+        29
+      ],
+      "target": [
+        38,
+        29
+      ],
+      "frames": 1
+    },
+    "nuclear-silo-arm2": {
+      "file": "units/nuclear-silo-arm2.png",
+      "operation": "crop",
+      "source": "nuclear-silo-arm2",
+      "rect": [
+        0,
+        0,
+        42,
+        29
+      ],
+      "target": [
+        42,
+        29
+      ],
+      "frames": 1
     }
   },
   "mappingUnitBindings": {
@@ -7495,6 +7620,13 @@
       "body": "experimental-factory-body",
       "back": "experimental-factory-back",
       "dead": "experimental-factory-dead"
+    },
+    "nukeLauncherC": {
+      "body": "nuclear-silo-body",
+      "back": "nuclear-silo-back",
+      "dead": "nuclear-silo-dead",
+      "arm1": "nuclear-silo-arm1",
+      "arm2": "nuclear-silo-arm2"
     }
   }
 }

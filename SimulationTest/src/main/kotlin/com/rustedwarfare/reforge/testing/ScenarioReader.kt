@@ -109,6 +109,7 @@ internal object ScenarioReader {
                 "mech-bunker" -> checkedAuthor(ContentLoader.loadBunkerWithSources(ref.path))
                 "mech-engineer" -> checkedAuthor(ContentLoader.loadMechEngineerWithSources(ref.path))
                 "nautilus" -> checkedAuthor(ContentLoader.loadNautilusWithSources(ref.path))
+                "nuclear-silo" -> checkedAuthor(ContentLoader.loadNuclearSiloWithSources(ref.path))
                 "water-combat" -> checkedAuthor(ContentLoader.loadAuthorWaterUnitWithSources(ref.path))
                 "constructor" -> checkedAuthor(ContentLoader.loadAuthorConstructorWithSources(ref.path))
                 "author-factory" -> checkedAuthor(ContentLoader.loadAuthorBuildingWithSources(ref.path), false, false)
@@ -130,7 +131,8 @@ internal object ScenarioReader {
             })
             if (content.containsKey("unitVariants") && ref.id != unit.id) throw InputError("Content type ID differs from loaded definition")
             val images = listOfNotNull(unit.imagePath, unit.combat?.turretImagePath, unit.combat?.deadImagePath,
-                unit.durability?.deadImagePath, unit.building?.backImagePath, unit.rotor?.imagePath, unit.shadowImagePath) +
+                unit.durability?.deadImagePath, unit.building?.backImagePath, unit.rotor?.imagePath, unit.shadowImagePath,
+                unit.nuclearSilo?.arm1ImagePath, unit.nuclearSilo?.arm2ImagePath) +
                 unit.mech?.legs.orEmpty().flatMap { listOf(it.legImage, it.footImage) } +
                 unit.combat?.namedWeapons?.ordered.orEmpty().mapNotNull { it.imagePath } +
                 (listOfNotNull(unit.combat?.projectile) + unit.combat?.namedWeapons?.ordered.orEmpty().map { it.projectile })

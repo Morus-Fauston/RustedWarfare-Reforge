@@ -1,0 +1,95 @@
+{
+  "schemaVersion": 1,
+  "kind": "behavior-contract",
+  "contractId": "public.nuclear-json.short.v1",
+  "scope": "self-behavior",
+  "scenarioIds": [
+    "p009-nuclear-silo"
+  ],
+  "comparison": {
+    "numberMode": "declared-per-field",
+    "tolerances": {}
+  },
+  "approval": {
+    "status": "tool-fixture-only",
+    "source": "ENG-P009-016 fixed DEC009 source contract; owned self behavior"
+  },
+  "exclusions": [
+    "original-compatibility",
+    "platform-input",
+    "performance"
+  ],
+  "rules": [
+    {
+      "ruleId": "prepaid",
+      "when": {
+        "phase": "after-advance",
+        "stepIndex": 0
+      },
+      "assertions": [
+        {
+          "path": "economy.balances.p1",
+          "operator": "equals",
+          "value": 33000
+        },
+        {
+          "path": "units.silo.unitActions.stockpile",
+          "operator": "equals",
+          "value": 0
+        }
+      ]
+    },
+    {
+      "ruleId": "built-round",
+      "when": {
+        "phase": "after-advance",
+        "stepIndex": 3339
+      },
+      "assertions": [
+        {
+          "path": "units.silo.unitActions.stockpile",
+          "operator": "equals",
+          "value": 1
+        }
+      ]
+    },
+    {
+      "ruleId": "prepaid-launch",
+      "when": {
+        "phase": "after-advance",
+        "stepIndex": 3340
+      },
+      "assertions": [
+        {
+          "path": "units.silo.unitActions.stockpile",
+          "operator": "equals",
+          "value": 0
+        }
+      ]
+    },
+    {
+      "ruleId": "real-point-impact",
+      "when": {
+        "phase": "after-advance",
+        "stepIndex": 4099
+      },
+      "assertions": [
+        {
+          "path": "units.target.health",
+          "operator": "equals",
+          "value": 1500
+        },
+        {
+          "path": "units.silo.unitActions.stockpile",
+          "operator": "equals",
+          "value": 0
+        },
+        {
+          "path": "units.silo.unitActions.queue",
+          "operator": "equals",
+          "value": []
+        }
+      ]
+    }
+  ]
+}

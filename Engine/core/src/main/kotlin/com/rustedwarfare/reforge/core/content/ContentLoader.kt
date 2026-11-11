@@ -13,6 +13,8 @@ import java.io.IOException
 import java.nio.file.Path
 
 object ContentLoader {
+    fun loadNuclearSiloWithSources(path: Path): ContentResult<LoadedUnitContent> =
+        load(path) { com.rustedwarfare.reforge.core.content.internal.NuclearSiloContentReader.readWithSources(it) }
     fun loadNautilusWithSources(path: Path): ContentResult<LoadedUnitContent> =
         load(path) { com.rustedwarfare.reforge.core.content.internal.NautilusContentReader.readWithSources(it) {} }
     fun loadMechEngineerWithSources(path: Path): ContentResult<LoadedUnitContent> =

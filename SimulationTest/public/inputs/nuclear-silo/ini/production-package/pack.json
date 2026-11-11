@@ -1,0 +1,15 @@
+{
+  "format": "rw-reforge.content-pack.v1",
+  "id": "owned-nuclear-production-ini",
+  "name": "Owned nuclear silo construction",
+  "units": [
+    {
+      "type": "nuclear-silo",
+      "file": "nukeLauncherC.ini"
+    },
+    {
+      "type": "builder",
+      "file": "builder.ini"
+    }
+  ]
+}

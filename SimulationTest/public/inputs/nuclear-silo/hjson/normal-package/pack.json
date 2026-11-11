@@ -1,0 +1,19 @@
+{
+  "format": "rw-reforge.content-pack.v1",
+  "id": "owned-nuclear-normal-hjson",
+  "name": "Owned normal command-center nuclear chain",
+  "units": [
+    {
+      "type": "nuclear-silo",
+      "file": "nukeLauncherC.hjson"
+    },
+    {
+      "type": "builder",
+      "file": "builder.hjson"
+    },
+    {
+      "type": "command-center",
+      "file": "commandCenter/commandCenter.hjson"
+    }
+  ]
+}

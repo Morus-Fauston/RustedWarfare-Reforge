@@ -19,6 +19,7 @@ data class UnitAction(
     override val world: WorldHandle,
     val cancelQueued: Boolean = false,
     override val atStep: Long? = null,
+    val target: Position? = null,
 ) : Action
 
 data class UnloadAction(

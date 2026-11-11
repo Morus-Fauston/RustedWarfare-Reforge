@@ -1,0 +1,15 @@
+{
+  "format": "rw-reforge.content-pack.v1",
+  "id": "owned-nuclear-production-json",
+  "name": "Owned nuclear silo construction",
+  "units": [
+    {
+      "type": "nuclear-silo",
+      "file": "nukeLauncherC.json"
+    },
+    {
+      "type": "builder",
+      "file": "builder.json"
+    }
+  ]
+}

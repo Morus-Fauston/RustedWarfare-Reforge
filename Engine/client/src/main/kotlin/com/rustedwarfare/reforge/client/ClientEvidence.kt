@@ -155,9 +155,12 @@ internal fun UnitObservation.fields(): Map<String, Any?> {
     unit.mechPose?.let { values["mechPose"] = it.fields() }
     unit.shield?.let { values["shield"] = mapOf("current" to it.current, "maximum" to it.maximum, "displayDamage" to it.displayDamage) }
     unit.energy?.let { values["energy"] = mapOf("current" to it.current, "maximum" to it.maximum, "recharging" to it.recharging) }
+    unit.nuclearDoors?.let { values["nuclearDoors"] = it }
     unit.unitActions?.let { state -> values["unitActions"] = mapOf("automaticCooldown" to state.automaticCooldown,
         "actions" to state.actions.associate { action -> action.name to mapOf("queueIndex" to action.queueIndex,
-            "progress" to action.progress, "cooldownRemaining" to action.cooldownRemaining, "available" to action.available) }) }
+            "progress" to action.progress, "cooldownRemaining" to action.cooldownRemaining, "available" to action.available) }) +
+        (if (state.stockpile != null) mapOf("stockpile" to state.stockpile, "queue" to state.queue.map {
+            mapOf("name" to it.name, "progress" to it.progress, "target" to it.target?.fields()) }) else emptyMap()) }
     unit.submarine?.let { values["submarine"] = mapOf("surfaceIntent" to it.surfaceIntent,
         "verticalSpeed" to it.verticalSpeed, "underwater" to it.underwater, "surfacePresentation" to it.surfacePresentation,
         "maximumSpeed" to it.maximumSpeed, "attackRange" to it.attackRange) }

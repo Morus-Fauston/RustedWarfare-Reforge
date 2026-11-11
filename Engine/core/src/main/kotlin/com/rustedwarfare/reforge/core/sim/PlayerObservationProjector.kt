@@ -118,7 +118,7 @@ internal class PlayerObservationProjector(world: WorldHandle, scenario: Scenario
             if (it is ActionResult.Accepted) ActionResult.Accepted(it.actionId, visibleEvents(it.events), it.queuedForStep) else it
         }
         val rawProjectileEvents = committed?.projectileEvents.orEmpty() + observation.projectileEvents
-        val projectedEvents = rawProjectileEvents.filter { isVisible(vision, it.projectile.position) &&
+        val projectedEvents = rawProjectileEvents.filter { (it.projectile.alwaysVisibleInFog || isVisible(vision, it.projectile.position)) &&
             (it.projectile.lightning?.let { line -> isVisible(vision, line.end) } ?: true) &&
             (it.projectile.beam?.let { line -> isVisible(vision, line.end) } ?: true) &&
             (it.interceptorUnitId == null || it.interceptorUnitId in ids) }.map { event ->
@@ -130,7 +130,7 @@ internal class PlayerObservationProjector(world: WorldHandle, scenario: Scenario
                 value.areaExpansion?.radius, value.sourceWeaponName?.takeIf { source != null }, value.appearance, value.lightning, value.beam)
         }
         val projection = projectileProjection.project(
-            observation.projectiles.filter { isVisible(vision, it.position) &&
+            observation.projectiles.filter { (it.alwaysVisibleInFog || isVisible(vision, it.position)) &&
                 (it.lightning?.let { line -> isVisible(vision, line.end) } ?: true) &&
                 (it.beam?.let { line -> isVisible(vision, line.end) } ?: true) }, projectedEvents,
             observation.projectiles.mapTo(mutableSetOf()) { it.objectId }.also { retained ->

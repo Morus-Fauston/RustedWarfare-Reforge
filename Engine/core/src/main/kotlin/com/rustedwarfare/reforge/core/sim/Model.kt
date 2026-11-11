@@ -63,6 +63,7 @@ data class Scenario(
     val combatContract: CombatContract? = null,
     val economyContract: EconomyContract? = null,
     val maintenanceContract: MaintenanceContract? = null,
+    val nukesEnabled: Boolean = true,
 )
 
 data class EconomyContract(val initialBalances: Map<String, Long>)
@@ -163,12 +164,15 @@ data class UnitObservation(
     val transportExit: TransportExitObservation? = null,
     val energy: EnergyObservation? = null,
     val unitActions: UnitActionsObservation? = null,
+    val nuclearDoors: Float? = null,
 )
 
 data class EnergyObservation(val current: Float, val maximum: Float, val recharging: Boolean)
 data class UnitActionObservation(val name: String, val queueIndex: Int?, val progress: Float?,
     val cooldownRemaining: Int, val available: Boolean)
-data class UnitActionsObservation(val actions: List<UnitActionObservation>, val automaticCooldown: Float)
+data class QueuedUnitActionObservation(val name: String, val progress: Float, val target: Position?)
+data class UnitActionsObservation(val actions: List<UnitActionObservation>, val automaticCooldown: Float,
+    val stockpile: Int? = null, val queue: List<QueuedUnitActionObservation> = emptyList())
 
 data class TransportObservation(val passengerIds: List<String>?, val passengerCount: Int,
     val occupiedSlots: Int, val capacity: Int, val unloading: Boolean, val unloadRemaining: Float?,
@@ -211,7 +215,7 @@ data class ProjectileObservation(val objectId: Long, val sourceUnitId: String, v
     val missile: MissileObservation? = null, val areaExpansion: AreaExpansionObservation? = null,
     val sourceWeaponName: String? = null, val ballistic: BallisticObservation? = null,
     val appearance: ProjectileAppearance = ProjectileAppearance.STANDARD, val lightning: LightningSegment? = null,
-    val beam: BeamSegment? = null)
+    val beam: BeamSegment? = null, val alwaysVisibleInFog: Boolean = false)
 
 /** Captured endpoint of a visible instant discharge; no host object or hidden future target. */
 data class LightningSegment(val end: Position, val endHeight: Double)
@@ -222,7 +226,7 @@ data class BeamSegment(val end: Position, val endHeight: Double, val textureOffs
 /** Public launch appearance, independent of hidden source identity or its subsequent depth. */
 enum class ProjectileAppearance(val red: Int, val green: Int, val blue: Int, val drawSize: Float) {
     STANDARD(255, 255, 0, 2f), SUBMARINE_MISSILE(230, 230, 50, 2f), SUBMARINE_TORPEDO(30, 30, 150, 1f),
-    AMPHIBIOUS_LIGHTNING(247, 212, 129, 2f), AA_BEAM(255, 255, 255, 2f)
+    AMPHIBIOUS_LIGHTNING(247, 212, 129, 2f), AA_BEAM(255, 255, 255, 2f), NUCLEAR(255, 238, 160, 3f)
 }
 
 class AreaExpansionObservation(val remaining: Float, val radius: Float, hitUnitIds: Set<String>) {
@@ -443,6 +447,7 @@ internal data class MutableUnit(
     val productionOrigin: ProducedOrigin? = null,
     var birthRemaining: Float = 0f,
     var customActionState: CustomActionState = CustomActionState(),
+    var ordnance: OrdnanceState = OrdnanceState(),
     var incomeElapsed: Float = 0f,
     var pointDefense: MutablePointDefense? = definition.pointDefense?.let { MutablePointDefense(it.initialEnergy) },
     var constructionProgress: Float = 1f,
@@ -591,7 +596,8 @@ internal data class MutableProjectile(val objectId: Long, val sourceUnitId: Stri
     val instant: Boolean = false, val nonDeflectable: Boolean = false,
     val ground: GroundShot? = null, var verticalSpeed: Float = 0f, var groundDistanceSquared: Float? = null,
     val missile: NativeMissileProfile? = null, var missileReachedApex: Boolean = false, var missileRawAz: Float = 0f,
-    val expansion: AreaExpansion? = null, val sourceWeaponName: String? = null,
+    var expansion: AreaExpansion? = null, val sourceWeaponName: String? = null,
+    val nuclearTarget: Position? = null,
     val acceleration: com.rustedwarfare.reforge.core.content.LinearProjectileAcceleration? = null,
     val splash: com.rustedwarfare.reforge.core.content.OrdinarySplashProfile? = null,
     val retargetOnDeath: Boolean = false,
@@ -600,7 +606,8 @@ internal data class MutableProjectile(val objectId: Long, val sourceUnitId: Stri
     val lightning: Boolean = false, var hitApplied: Boolean = false, val lightningSegment: LightningSegment? = null,
     val damageModifiers: com.rustedwarfare.reforge.core.content.ProjectileDamageModifiers =
         com.rustedwarfare.reforge.core.content.ProjectileDamageModifiers(),
-    val beam: Boolean = false, var beamSegment: BeamSegment? = null)
+    val beam: Boolean = false, var beamSegment: BeamSegment? = null,
+    val alwaysVisibleInFog: Boolean = false, var revealFogPending: Boolean = nuclearTarget != null)
 
 internal data class AreaExpansion(val profile: DeathExplosionProfile, var remaining: Float,
     var radius: Float = 0f, val hitUnitIds: MutableSet<String> = linkedSetOf())

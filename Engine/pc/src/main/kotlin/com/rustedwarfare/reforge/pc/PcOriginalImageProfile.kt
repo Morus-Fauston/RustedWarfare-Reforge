@@ -16,7 +16,7 @@ internal class PcOriginalImageProfile(val id: String, val jarBytes: Int, val jar
 
     companion object {
         /** Fixed qualification and unchanged reviewed recipes, not an arbitrary profile input. */
-        fun bundled(): PcOriginalImageProfile = readBundled(6)
+        fun bundled(): PcOriginalImageProfile = readBundled(7)
         fun versionOne(): PcOriginalImageProfile = readBundled(1)
         fun versionTwo(): PcOriginalImageProfile = readBundled(2)
         fun versionThree(): PcOriginalImageProfile = readBundled(3)
@@ -25,7 +25,7 @@ internal class PcOriginalImageProfile(val id: String, val jarBytes: Int, val jar
         fun forPackage(pack: PreparedImagePack): PcOriginalImageProfile = PcOriginalProfileVersions.images(pack.manifest, null)
 
         private fun readBundled(version: Int): PcOriginalImageProfile {
-            val path = "/visuals/pc-original-images-profile${if (version == 6) "" else "-v$version"}.json"
+            val path = "/visuals/pc-original-images-profile${if (version == 7) "" else "-v$version"}.json"
             val bytes = requireNotNull(PcOriginalImageProfile::class.java.getResourceAsStream(path)) { "Missing bundled PC image qualification" }.use { it.readBytes() }
             val root = JsonReader().parse(bytes.toString(Charsets.UTF_8))
             require(root.getInt("schemaVersion") == 1)

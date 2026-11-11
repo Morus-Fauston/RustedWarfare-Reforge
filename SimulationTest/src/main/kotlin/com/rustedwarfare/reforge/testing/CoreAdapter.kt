@@ -26,7 +26,7 @@ internal class CoreAdapter(private val input: LoadedScenario) : AutoCloseable {
         // Submit at the current explicit boundary; preserve file order and the core's permission checks.
         val action = when (value.text("kind")) {
             "unit-action" -> UnitAction(id, actor, unit, value.id("actionName"), context.world,
-                value.required("cancelQueued").jsonPrimitive.boolean)
+                value.required("cancelQueued").jsonPrimitive.boolean, target = value["target"]?.let { position(it.jsonObject) })
             "load" -> LoadAction(id, actor, unit, value.id("targetUnitId"), LoadDirection.valueOf(value.text("direction")), context.world)
             "unload" -> UnloadAction(id, actor, unit, value.required("unloading").jsonPrimitive.boolean, context.world)
             "submarine-depth" -> SubmarineDepthAction(id, actor, unit, value.required("surface").jsonPrimitive.boolean, context.world)
@@ -200,6 +200,7 @@ internal fun UnitObservation.json(capabilities: Boolean): JsonObject = JsonObjec
         "displayDamage" to n(it.displayDamage))) }
     energy?.let { put("energy", obj("current" to n(it.current), "maximum" to n(it.maximum), "recharging" to b(it.recharging))) }
     unitActions?.let { put("unitActions", it.json()) }
+    nuclearDoors?.let { put("nuclearDoors", n(it)) }
     mechPose?.let { put("height", n(height)); put("mechPose", it.json()) }
     flightPose?.let { put("height", n(height)); put("flightPose", it.json()) }
     waterPose?.let { put("height", n(height)); put("waterPose", obj(
@@ -223,7 +224,10 @@ internal fun UnitActionsObservation.json(): JsonObject = obj(
     "automaticCooldown" to n(automaticCooldown), "actions" to JsonObject(actions.associate { action ->
         action.name to obj("queueIndex" to (action.queueIndex?.let(::n) ?: JsonNull),
             "progress" to (action.progress?.let(::n) ?: JsonNull),
-            "cooldownRemaining" to n(action.cooldownRemaining), "available" to b(action.available)) }))
+            "cooldownRemaining" to n(action.cooldownRemaining), "available" to b(action.available)) })).let { fields ->
+    JsonObject(fields + (stockpile?.let { mapOf("stockpile" to n(it), "queue" to array(queue.map { item ->
+        obj("name" to s(item.name), "progress" to n(item.progress), "target" to item.target?.json()) })) } ?: emptyMap()))
+}
 
 internal fun MechPose.json(): JsonObject = obj(
     "forwardHeading" to n(forwardHeading), "angularVelocity" to n(angularVelocity), "reversing" to b(reversing),

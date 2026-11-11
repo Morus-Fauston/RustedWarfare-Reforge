@@ -35,6 +35,7 @@ class SandboxGraphics private constructor(private val resources: SandboxRenderRe
     private val beamImages = mutableMapOf<Path, TextureRegion>()
     private val trailImages = mutableMapOf<Path, TextureRegion>()
     private val afterburnTrails = AfterburnTrailPresentation()
+    private val nuclearPresentation = NuclearPresentation()
     fun unitIcon(typeId: String): TextureRegion? = resources.units[typeId]?.iconWeaponName?.let {
         namedTurrets[typeId to it]
     } ?: units[typeId]
@@ -137,6 +138,8 @@ class SandboxGraphics private constructor(private val resources: SandboxRenderRe
             definition.shieldImagePath?.let { shields[id] = TextureRegion(texture(it)) }
             definition.leftWingImagePath?.let { wings[id to UnitImageSlot.LEFT_WING] = TextureRegion(texture(it)) }
             definition.rightWingImagePath?.let { wings[id to UnitImageSlot.RIGHT_WING] = TextureRegion(texture(it)) }
+            definition.arm1ImagePath?.let { wings[id to UnitImageSlot.ARM1] = TextureRegion(texture(it)) }
+            definition.arm2ImagePath?.let { wings[id to UnitImageSlot.ARM2] = TextureRegion(texture(it)) }
             for (path in listOfNotNull(definition.beamImagePath, definition.beamStartImagePath, definition.beamEndImagePath)) {
                 beamImages[path] = TextureRegion(texture(path))
             }
@@ -254,7 +257,7 @@ class SandboxGraphics private constructor(private val resources: SandboxRenderRe
             batch.draw(region, (flight?.bodyX ?: mech?.bodyX ?: water?.bodyX ?: hover?.bodyX ?: projection.x(jetCenter?.x ?: unit.position.x)) - w / 2,
                 (flight?.bodyY ?: mech?.bodyY ?: water?.bodyY ?: hover?.bodyY ?: projection.y(jetCenter?.y ?: unit.position.y)) - h / 2,
                 w / 2, h / 2, w, h, 1f, 1f, flight?.bodyRotation ?: mech?.rotation ?: water?.bodyRotation ?: hover?.rotation ?: -(jetHeading ?: unit.heading).toFloat())
-            for (drawing in definition.amphibiousWings(unit, visibleWeapons[unit.unitId].orEmpty())) {
+            for (drawing in definition.amphibiousWings(unit, visibleWeapons[unit.unitId].orEmpty()) + definition.nuclearDoors(unit)) {
                 val wing = wings.getValue(unit.typeId to drawing.slot)
                 val size = definition.drawSize(drawing.slot, wing.regionWidth, wing.regionHeight)
                 val ww = (size.width * projection.scale).toFloat()
@@ -338,7 +341,7 @@ class SandboxGraphics private constructor(private val resources: SandboxRenderRe
     }
 
     fun drawOverlay(shapes: ShapeRenderer, frame: SandboxFrame, selectedIds: Set<String>, box: Pair<Position, Position>? = null,
-                    construction: ConstructionPreview? = null) {
+                    construction: ConstructionPreview? = null, groundAction: GroundActionPreview? = null) {
         shapes.color = Color(0.45f, 0.5f, 0.47f, 1f)
         shapes.rect(projection.left.toFloat(), projection.bottom.toFloat(), projection.width.toFloat(), projection.height.toFloat())
         for (unit in frame.observation.units) {
@@ -432,6 +435,42 @@ class SandboxGraphics private constructor(private val resources: SandboxRenderRe
             for ((col, row) in preview.cells) shapes.rect(projection.x(col * 20.0), projection.y((row + 1) * 20.0),
                 (20 * projection.scale).toFloat(), (20 * projection.scale).toFloat())
         }
+        groundAction?.let { preview ->
+            shapes.color = if (preview.valid) Color.ORANGE else Color.RED
+            val sourceX = projection.x(preview.source.x); val sourceY = projection.y(preview.source.y)
+            shapes.circle(sourceX, sourceY, (preview.minimumRange * projection.scale).toFloat(), 96)
+            shapes.circle(sourceX, sourceY, (preview.maximumRange * projection.scale).toFloat(), 192)
+            val x = projection.x(preview.position.x); val y = projection.y(preview.position.y)
+            shapes.circle(x, y, (preview.areaRadius * projection.scale).toFloat(), 96)
+            shapes.circle(x, y, ((preview.areaRadius - 30.0) * projection.scale).toFloat(), 96)
+            shapes.line(x - 7f, y, x + 7f, y); shapes.line(x, y - 7f, x, y + 7f)
+        }
+        for (effect in nuclearPresentation.project(frame.observation)) {
+            val x=projection.x(effect.center.x)
+            val y=projection.y(effect.center.y)+(effect.height*projection.scale).toFloat()
+            val radius=(effect.radius*projection.scale).toFloat()
+            when (effect.kind) {
+                NuclearEffectKind.TRAIL -> {
+                    shapes.setColor(.55f,.52f,.44f,effect.alpha)
+                    shapes.circle(x,y,radius,12)
+                }
+                NuclearEffectKind.LAUNCH -> {
+                    shapes.setColor(1f,.72f,.2f,effect.alpha)
+                    shapes.circle(x,y,radius,32)
+                    shapes.line(x-radius,y,x+radius,y);shapes.line(x,y-radius,x,y+radius)
+                }
+                NuclearEffectKind.EXPLOSION -> {
+                    shapes.setColor(1f,.88f,.48f,effect.alpha)
+                    shapes.circle(x,y,radius,64)
+                    shapes.circle(x,y,radius*.65f,48)
+                    for (i in 0..7) {
+                        val a=i*Math.PI/4
+                        val dx=(kotlin.math.cos(a)*radius).toFloat();val dy=(kotlin.math.sin(a)*radius).toFloat()
+                        shapes.line(x+dx*.25f,y+dy*.25f,x+dx,y+dy)
+                    }
+                }
+            }
+        }
         shapes.color = Color.YELLOW
         for (projectile in frame.observation.projectiles) {
             if (projectile.beam != null) continue
@@ -439,6 +478,12 @@ class SandboxGraphics private constructor(private val resources: SandboxRenderRe
             val y = projection.y(projectile.position.y) + (projectile.height * projection.scale).toFloat()
             val areaRadius = projectile.areaRadius
             val appearance = projectile.appearance
+            if (appearance == com.rustedwarfare.reforge.core.sim.ProjectileAppearance.NUCLEAR && areaRadius == null) {
+                shapes.color = Color.DARK_GRAY
+                shapes.ellipse(x - 5f, projection.y(projectile.position.y) - 2f, 10f, 4f, 16)
+                shapes.color = Color.LIGHT_GRAY
+                shapes.line(x, y - 4f, x, y + 5f)
+            }
             shapes.setColor(appearance.red / 255f, appearance.green / 255f, appearance.blue / 255f, 1f)
             val lightning = projectile.lightning
             if (lightning != null) shapes.line(x, y, projection.x(lightning.end.x),

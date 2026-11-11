@@ -8,7 +8,7 @@ internal object MaintenanceRules {
         "c_turret_t1" to 500L, "c_turret_t2_gun" to 1500L, "c_turret_t1_artillery" to 2100L,
         "extractorT1" to 700L, "extractorT2" to 2100L, "extractorT3" to 6100L,
         "fabricatorT1" to 2200L, "fabricatorT2" to 6600L, "fabricatorT3" to 14100L, "repairbay" to 1500L,
-        "seaFactory" to 1000L, "seaFactoryT2" to 3000L)
+        "seaFactory" to 1000L, "seaFactoryT2" to 3000L, "nukeLauncherC" to 45000L)
 
     fun validate(input: Scenario): SimulationError? {
         val contract = input.maintenanceContract ?: return null

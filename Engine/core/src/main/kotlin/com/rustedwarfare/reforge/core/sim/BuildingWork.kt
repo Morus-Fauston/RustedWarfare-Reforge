@@ -297,6 +297,7 @@ internal class BuildingWork private constructor(val clock: Int, val nonces: Map<
         val nonce = checkNotNull(task.buildingNonce)
         if (nonce in nonces[worker.ownerPlayerId].orEmpty()) return unavailable(worker, ledger, upgrades)
         val definition = input.unitDefinitions.getValue(checkNotNull(task.buildingTypeId))
+        if (definition.nuclearSilo != null && !input.nukesEnabled) return unavailable(worker, ledger, upgrades)
         // A force-nano mobile project uses the ordinary one-cell placement anchor, without becoming a building.
         val building = definition.building ?: com.rustedwarfare.reforge.core.content.BuildingProfile(
             com.rustedwarfare.reforge.core.content.BuildingFootprint(0, 0, 0, 0))
@@ -387,6 +388,7 @@ internal class BuildingWork private constructor(val clock: Int, val nonces: Map<
             price.toDouble() * .8f.toDouble()
         }
         var paid = ledger.creditReclaim(worker.ownerPlayerId, terminalPrice)
+        if (target.definition.nuclearSilo != null) paid = NuclearOrdnance.discard(target, paid)
         if (target.definition.production != null) paid = paid.destroyFactory(target.unitId)
         val discarded = upgrades?.discard(target, paid)
         paid = discarded?.ledger ?: paid
@@ -418,6 +420,8 @@ internal class BuildingWork private constructor(val clock: Int, val nonces: Map<
 
     fun request(action: BuildAction, worker: MutableUnit, input: Scenario): SimulationError? {
         val builder = worker.definition.builder ?: return SimulationError("cannot-build", "Unit cannot construct buildings")
+        if (!input.nukesEnabled && input.unitDefinitions[action.buildingTypeId]?.nuclearSilo != null)
+            return SimulationError("nukes-disabled", "Nuclear construction is disabled for this game")
         if (action.buildingTypeId !in builder.buildingTypeIds || input.unitDefinitions[action.buildingTypeId]?.construction == null)
             return SimulationError("unsupported-construction-type", "Unit cannot construct this type")
         if (!MapBounds.contains(input.map.widthTiles.toDouble() * input.map.tileWidth,

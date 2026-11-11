@@ -37,7 +37,18 @@ data class UnitAppearance(val displayRadius: Double, val imagePath: Path, val im
     val beamImagePath: Path? = null, val beamStartImagePath: Path? = null, val beamEndImagePath: Path? = null,
     val afterburnTrailImagePath: Path? = null, val repairRange: Double? = null,
     val iconWeaponName: String? = null, val nanoWeaponName: String? = null,
-    val nativeLegSize: ImageLogicalSize? = null) {
+    val nativeLegSize: ImageLogicalSize? = null, val arm1ImagePath: Path? = null, val arm2ImagePath: Path? = null) {
+    internal fun nuclearDoors(unit: UnitObservation): List<WingDrawing> {
+        val amount = unit.nuclearDoors ?: return emptyList()
+        if (!unit.alive) return emptyList()
+        val forward = Math.toRadians(unit.heading); val side = Math.toRadians(unit.heading + 90.0)
+        return listOf(Triple(UnitImageSlot.ARM1, arm1ImagePath, Position(3.0 + 10f * amount, -1.0 - 8f * amount)),
+            Triple(UnitImageSlot.ARM2, arm2ImagePath, Position(-5.0 - 9f * amount, 9.0 + 5f * amount))).map { (slot, path, offset) ->
+            WingDrawing(slot, requireNotNull(path), Position(
+                unit.position.x + sin(forward) * offset.y + sin(side) * offset.x,
+                unit.position.y - cos(forward) * offset.y - cos(side) * offset.x), unit.heading)
+        }
+    }
     internal fun amphibiousWings(unit: UnitObservation, weapons: List<VisibleUnitWeapon>): List<WingDrawing> {
         if (!unit.alive || unit.amphibiousJet == null) return emptyList()
         val poses = weapons.filter { it.unitId == unit.unitId }.associateBy { it.weaponName }
@@ -182,6 +193,7 @@ class SandboxRenderResources private constructor(
                     leftWingImagePath = images.leftWing, rightWingImagePath = images.rightWing,
                     beamImagePath = images.beam, beamStartImagePath = images.beamStart, beamEndImagePath = images.beamEnd,
                     afterburnTrailImagePath = images.afterburnTrail,
+                    arm1ImagePath = images.arm1, arm2ImagePath = images.arm2,
                     repairRange = if (unit.maintenance != null) unit.builder?.range?.toDouble() ?: 230.0 else null,
                     iconWeaponName = if (unit.maintenance == com.rustedwarfare.reforge.core.content.MaintenanceProfile.MECH_ENGINEER) "body" else null,
                     nanoWeaponName = unit.builder?.mainNanoTurret,

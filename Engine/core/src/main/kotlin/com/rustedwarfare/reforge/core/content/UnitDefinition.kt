@@ -48,6 +48,7 @@ class UnitDefinition(
     /** Positive custom HP regeneration per simulation delta; separate from helping a target. */
     val selfRegenRate: Float = 0f,
     val techLevel: Int = 1,
+    val nuclearSilo: NuclearSiloProfile? = null,
 ) {
     val retainedUnconsumed: Set<String> = Collections.unmodifiableSet(LinkedHashSet(retainedUnconsumed))
     val maximumHealth: Double? get() = durability?.maxHp ?: combat?.maxHp
@@ -57,6 +58,9 @@ enum class TransportProfile { NATIVE_HOVERCRAFT, NATIVE_DROPSHIP, NAUTILUS_SUBME
 
 /** Native work capability, independent of the ordinary builder's construction menu. */
 enum class MaintenanceProfile { NATIVE_REPAIR_BAY, MECH_ENGINEER }
+
+/** Finite effective custom silo; ammo, commands and ballistics are independent core semantics. */
+data class NuclearSiloProfile(val arm1ImagePath: Path, val arm2ImagePath: Path)
 
 data class MovementProfile(
     val type: MovementType,

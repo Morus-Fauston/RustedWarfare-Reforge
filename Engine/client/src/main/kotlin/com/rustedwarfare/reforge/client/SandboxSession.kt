@@ -17,6 +17,8 @@ data class ConstructionActionView(val typeId: String, val title: String, val ima
 enum class PlacementState { CLEAR, BLOCKED, UNEXPLORED }
 data class ConstructionPreview(val typeId: String, val position: Position, val state: PlacementState,
     val cells: List<Pair<Int, Int>>)
+data class GroundActionPreview(val source: Position, val position: Position, val valid: Boolean,
+    val minimumRange: Double = 260.0, val maximumRange: Double = 9999.0, val areaRadius: Double = 250.0)
 
 class SandboxSession(scenario: Scenario, private val evidence: ClientEvidence = ClientEvidence.NONE,
                      val options: SandboxOptions = SandboxOptions(),
@@ -25,7 +27,7 @@ class SandboxSession(scenario: Scenario, private val evidence: ClientEvidence = 
     constructor(scenario: Scenario, evidence: ClientEvidence, options: SandboxOptions, clockMillis: () -> Long) :
         this(scenario, evidence, options, clockMillis, 1L)
 
-    private val scenario: Scenario = scenario.copy(automaticVision = options.knowledgeRules())
+    private val scenario: Scenario = scenario.copy(automaticVision = options.knowledgeRules(), nukesEnabled = options.nukesEnabled)
     val hasConstructorDefinitions: Boolean = this.scenario.unitDefinitions.values.any { it.builder != null }
     val hasProductionDefinitions: Boolean = this.scenario.unitDefinitions.values.any { it.production != null }
     val renderResources: SandboxRenderResources = SandboxRenderResources.from(this.scenario)
@@ -74,7 +76,7 @@ class SandboxSession(scenario: Scenario, private val evidence: ClientEvidence = 
     private var latestFrame: SandboxFrame? = null
     val frame: SandboxFrame get() = checkNotNull(latestFrame) { "Match is closed" }
     val observation: PlayerObservation get() = frame.observation
-    private val actionCatalogue = ActionCatalogue(this.scenario.unitDefinitions)
+    private val actionCatalogue = ActionCatalogue(this.scenario.unitDefinitions, this.scenario.nukesEnabled)
     private var menuObservation: PlayerObservation? = null
     private var menuSelectionRevision = -1L
     private var menu: ActionMenuView? = null
@@ -238,7 +240,7 @@ class SandboxSession(scenario: Scenario, private val evidence: ClientEvidence = 
     }
 
     /** Dispatch eligibility is independent of the deliberately limited mixed-selection menu. */
-    private fun hasSelectedConstructor(typeId: String): Boolean = isOpen && observation.units.any { unit ->
+    private fun hasSelectedConstructor(typeId: String): Boolean = isOpen && (typeId != "nukeLauncherC" || scenario.nukesEnabled) && observation.units.any { unit ->
         unit.unitId in selectedIds && controllable(unit) &&
             typeId in scenario.unitDefinitions.getValue(unit.typeId).builder?.buildingTypeIds.orEmpty()
     }
@@ -344,8 +346,18 @@ class SandboxSession(scenario: Scenario, private val evidence: ClientEvidence = 
         StopAction("click-${++actionNumber}", "p1", id, context.world)
     }
 
-    fun unitAction(name: String, cancelQueued: Boolean = false): ActionResult? = actionMenu.unitActions.singleOrNull { it.name == name }?.let {
-        apply(UnitAction("click-${++actionNumber}", "p1", checkNotNull(selectedId), name, context.world, cancelQueued))
+    fun unitAction(name: String, cancelQueued: Boolean = false, target: Position? = null): ActionResult? = actionMenu.unitActions.singleOrNull { it.name == name }?.let {
+        val member = if (name == "launchNuke") nuclearLaunchMember(observation, selectedIds, cancelQueued)?.unitId else selectedId
+        member?.let { id -> apply(UnitAction("click-${++actionNumber}", "p1", id, name, context.world, cancelQueued, target = target)) }
+    }
+
+    fun previewGroundAction(name: String, target: Position): GroundActionPreview? {
+        if (!isOpen || name != "launchNuke" || actionMenu.unitActions.none { it.name == name && it.available }) return null
+        val source = nuclearLaunchMember(observation, selectedIds)?.position ?: return null
+        val x = target.x.toFloat() - source.x.toFloat(); val y = target.y.toFloat() - source.y.toFloat()
+        val squared = x * x + y * y
+        return GroundActionPreview(source, target, target.x.isFinite() && target.y.isFinite() && squared.isFinite() &&
+            squared >= 260f * 260f && squared <= 9999f * 9999f)
     }
 
     fun submarineDepth(surface: Boolean): ActionResult? = actionMenu.depthAction?.takeIf { it.surface == surface }?.let {
@@ -501,7 +513,7 @@ class SandboxSession(scenario: Scenario, private val evidence: ClientEvidence = 
         rejectedFeedback = result is ActionResult.Rejected
         evidence.recordWhenEnabled("action") { mapOf("type" to action.javaClass.simpleName,
             "actorPlayerId" to action.actorPlayerId, "unitId" to action.unitId,
-            "target" to when (action) { is MoveAction -> action.target.fields(); is PatrolAction -> action.target.fields(); is BuildAction -> action.target.fields(); else -> null },
+            "target" to when (action) { is MoveAction -> action.target.fields(); is PatrolAction -> action.target.fields(); is BuildAction -> action.target.fields(); is UnitAction -> action.target?.fields(); else -> null },
             "append" to when (action) { is PatrolAction -> action.append; is BuildAction -> action.append;
                 is ResumeConstructionAction -> action.append; is RepairUnitAction -> action.append;
                 is ReclaimUnitAction -> action.append; else -> null },

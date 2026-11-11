@@ -36,6 +36,23 @@ class SandboxInput(
     private data class ConstructionPress(val owner: ConstructionOwner, val append: Boolean)
     private var constructionOwner: ConstructionOwner? = null
     private var constructionPress: ConstructionPress? = null
+    private data class GroundActionOwner(val session: SandboxSession, val revision: Long, val members: Set<String>, val name: String)
+    private var groundActionOwner: GroundActionOwner? = null
+    private var groundActionPress: GroundActionOwner? = null
+    private fun ownsGroundAction(current: SandboxSession?): Boolean = groundActionOwner?.let { owner ->
+        active() && current === owner.session && current.isOpen && current.selectionRevision == owner.revision &&
+            current.selectedIds == owner.members && current.actionMenu.unitActions.any { it.name == owner.name && it.available }
+    } == true
+    val groundActionName: String? get() {
+        if (groundActionOwner != null && !ownsGroundAction(session())) endGroundAction()
+        return groundActionOwner?.name
+    }
+    val groundActionPreview: GroundActionPreview? get() {
+        val name = groundActionName ?: return null
+        val ui = pointerPosition ?: return null
+        val world = projection()?.toWorld(ui.x, ui.y) ?: return null
+        return session()?.previewGroundAction(name, world)
+    }
     private fun ownsConstruction(current: SandboxSession?): Boolean {
         val owner = constructionOwner ?: return false
         return current === owner.session && current.isOpen && current.selectionRevision == owner.revision &&
@@ -81,11 +98,13 @@ class SandboxInput(
     override fun touchDown(screenX: Int, screenY: Int, pointer: Int, button: Int): Boolean {
         if (!active() || pointer != 0 || !insideViewport(screenX, screenY)) return false
         val reclaimActive = maintenanceMode
+        val groundActive = groundActionName != null
         if (ownerButton != null) return false
         val current = session() ?: return false
         if (reclaimActive && button == Input.Buttons.RIGHT) { endReclaim(); changed(); return true }
         if (constructionTypeId != null && button == Input.Buttons.RIGHT) { endConstruction(); changed(); return true }
         if (patrolMode && button == Input.Buttons.RIGHT) { endPatrol(); changed(); return true }
+        if (groundActive && button == Input.Buttons.RIGHT) { endGroundAction(); changed(); return true }
         val map = projection() ?: return false
         val ui = uiPoint(screenX, screenY) ?: return false
         val world = map.toWorld(ui.x, ui.y) ?: return false
@@ -96,6 +115,11 @@ class SandboxInput(
             else -> return false
         }
         pointerPosition = ui
+        if (groundActive && button == Input.Buttons.LEFT) {
+            groundActionPress = groundActionOwner
+            ownerButton = button
+            changed(); return true
+        }
         val append = shift()
         evidence.recordWhenEnabled("pointer") { mapOf("screenX" to screenX, "screenY" to screenY,
             "uiX" to ui.x, "uiY" to ui.y, "world" to world.fields(), "button" to button,
@@ -138,7 +162,7 @@ class SandboxInput(
     override fun touchDragged(screenX: Int, screenY: Int, pointer: Int): Boolean {
         if (pointer != 0 || ownerButton == null) return false
         if (!active() || (ownerButton == Input.Buttons.MIDDLE && editing())) { cancel(); return true }
-        val ownsPoint = constructionPress != null || reclaimPress != null || commandPress != null
+        val ownsPoint = constructionPress != null || reclaimPress != null || commandPress != null || groundActionPress != null
         if (ownsPoint && !insideViewport(screenX, screenY)) { cancelGesture(); changed(); return true }
         val ui = uiPoint(screenX, screenY) ?: run {
             if (ownsPoint) cancelGesture()
@@ -158,6 +182,18 @@ class SandboxInput(
         val current = session()
         val ui = uiPoint(screenX, screenY)
         if (!active() || current == null || ui == null) { cancel(); return true }
+        groundActionPress?.let { press ->
+            val point = if (insideViewport(screenX, screenY)) projection()?.toWorld(ui.x, ui.y) else null
+            if (point != null && groundActionOwner == press && ownsGroundAction(current)) {
+                pointerPosition = ui
+                val preview = current.previewGroundAction(press.name, point)
+                if (preview?.valid == true) {
+                    val result = current.unitAction(press.name, target = point)
+                    if (result is com.rustedwarfare.reforge.core.sim.ActionResult.Accepted) endGroundAction()
+                }
+            }
+            cancelGesture(); changed(); return true
+        }
         reclaimPress?.let { press ->
             val world = if (insideViewport(screenX, screenY)) projection()?.toWorld(ui.x, ui.y) else null
             if (world != null && reclaimOwner == press.owner && current === press.owner.session &&
@@ -235,6 +271,7 @@ class SandboxInput(
     override fun keyDown(keycode: Int): Boolean {
         if (!active() || editing() || touchControls) return false
         val current = session() ?: return false
+        if (keycode == Input.Keys.ESCAPE && groundActionName != null) { endGroundAction(); changed(); return true }
         val buildType = when (keycode) {
             Input.Keys.X -> "c_turret_t1"
             Input.Keys.J -> "laserDefence"
@@ -286,6 +323,7 @@ class SandboxInput(
     fun beginPatrol(): Boolean {
         if (!active() || editing() || session()?.canPatrol != true) return false
         endReclaim()
+        endGroundAction()
         endConstruction()
         cancelGesture(); patrolMode = true; patrolPointCount = 0
         modeRevision++
@@ -296,6 +334,7 @@ class SandboxInput(
         val current = session() ?: return false
         if (!active() || editing() || touchControls || current.constructionActions.none { it.typeId == typeId }) return false
         endReclaim()
+        endGroundAction()
         endPatrol()
         constructionTypeId = typeId
         modeRevision++
@@ -311,7 +350,7 @@ class SandboxInput(
         val current = session() ?: return false
         if (!active() || editing() || touchControls || !current.isOpen ||
             (if (repair) !current.canRepair else !current.canMaintain)) return false
-        endReclaim(); endConstruction(); endPatrol(); cancelGesture()
+        endReclaim(); endConstruction(); endPatrol(); endGroundAction(); cancelGesture()
         reclaimOwner = ReclaimOwner(current, checkNotNull(current.selectedId), current.selectionRevision, repair)
         modeRevision++
         evidence.record(if (repair) "repair-mode" else "reclaim-mode", mapOf("active" to true))
@@ -321,6 +360,24 @@ class SandboxInput(
         if (reclaimOwner != null) modeRevision++
         if (reclaimOwner != null) evidence.record(if (reclaimOwner?.repair == true) "repair-mode" else "reclaim-mode", mapOf("active" to false))
         reclaimOwner = null
+        cancelGesture()
+    }
+    fun beginGroundAction(name: String): Boolean {
+        val current = session() ?: return false
+        if (!active() || editing() || touchControls || name != "launchNuke" || !current.isOpen ||
+            current.actionMenu.unitActions.none { it.name == name && it.available }) return false
+        cancel()
+        groundActionOwner = GroundActionOwner(current, current.selectionRevision, current.selectedIds.toSet(), name)
+        modeRevision++
+        evidence.record("ground-action-mode", mapOf("active" to true, "actionName" to name))
+        changed(); return true
+    }
+    private fun endGroundAction() {
+        if (groundActionOwner != null) {
+            modeRevision++
+            evidence.record("ground-action-mode", mapOf("active" to false, "actionName" to groundActionOwner?.name))
+        }
+        groundActionOwner = null
         cancelGesture()
     }
     private fun endConstruction() {
@@ -342,7 +399,7 @@ class SandboxInput(
         if (control()) current.saveGroup(index) else current.recallGroup(index, shift())?.let {
             projection()?.centerOn(it); recordCamera("group")
         }
-        if (current.selectedIds != previousSelection) { endConstruction(); endReclaim() }
+        if (current.selectedIds != previousSelection) { endConstruction(); endReclaim(); endGroundAction() }
         changed()
     }
     private fun recordCamera(reason: String) {
@@ -350,7 +407,7 @@ class SandboxInput(
         evidence.record("camera", mapOf("reason" to reason, "center" to map.camera.center.fields(), "zoom" to map.camera.zoom))
     }
     private fun cancelGesture() {
-        gesture?.cancel(); gesture = null; patrolPress = null; commandPress = null; constructionPress = null; reclaimPress = null; ownerButton = null; pointerPosition = null
+        gesture?.cancel(); gesture = null; patrolPress = null; commandPress = null; constructionPress = null; reclaimPress = null; groundActionPress = null; ownerButton = null; pointerPosition = null
     }
-    fun cancel() { endConstruction(); endPatrol(); endReclaim(); pHeld = false; upgradeHeld = false; constructionHeld.clear() }
+    fun cancel() { endConstruction(); endPatrol(); endReclaim(); endGroundAction(); pHeld = false; upgradeHeld = false; constructionHeld.clear() }
 }

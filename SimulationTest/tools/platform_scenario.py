@@ -22,8 +22,15 @@ class PlatformError(ValueError):
 
 
 def validate_unit_action_intent(intent):
-    if (set(intent)!={'intentId','kind','actionName','waitSteps'} or
-            not isinstance(intent.get('actionName'),str) or intent['actionName'] not in ('afterBurn','cancelBurn','deploy','undeploy','surface','dive') or
+    name=intent.get('actionName');nuclear=name in ('buildNuke','launchNuke');cancel=intent.get('cancelQueued',False)
+    keys={'intentId','kind','actionName','waitSteps'}
+    if nuclear and 'cancelQueued' in intent:keys.add('cancelQueued')
+    if name=='launchNuke' and cancel is False:keys.add('target')
+    target=intent.get('target')
+    if (set(intent)!=keys or type(cancel) is not bool or
+            name=='launchNuke' and not cancel and (not isinstance(target,dict) or set(target)!={'x','y'} or
+                any(type(v) not in (int,float) or not math.isfinite(v) for v in target.values())) or
+            not isinstance(name,str) or name not in ('afterBurn','cancelBurn','deploy','undeploy','surface','dive','buildNuke','launchNuke') or
             type(intent.get('waitSteps')) is not int or not 0<=intent['waitSteps']<=600):
         raise PlatformError('input-contract','Expected a finite normal unit action and explicit bounded wait',1)
 
@@ -427,6 +434,9 @@ def validate_history_poses(units, policy):
             validate_bunker_state(unit, policy.get('ownerPlayerId','p1'))
         elif unit.get('typeId') in {'nautilusSubmarine','nautilusSubmarineSurface','nautilusSubmarineLand'}:
             validate_nautilus_state(unit,policy.get('ownerPlayerId','p1'))
+        elif unit.get('typeId')=='nukeLauncherC':
+            from nuclear_platform import validate_nuclear_state
+            validate_nuclear_state(unit,policy.get('ownerPlayerId','p1'))
         elif unit.get('energy') is not None:
             raise PlatformError('history-aa-beam','Weapon energy on an unsupported unit',2)
         elif unit.get('unitActions') is not None:
@@ -606,6 +616,11 @@ def validate_history_action(records, row, intent, geometry=None):
     fields={}
     if kind=='unit-action':
         validate_unit_action_intent(intent)
+        if intent['actionName'] in ('buildNuke','launchNuke'):
+            from nuclear_platform import validate_nuclear_call
+            validate_nuclear_call(next(u for u in left['units'] if u['unitId']==identity),
+                next(u for u in right['units'] if u['unitId']==identity),row,intent,input_footprint(geometry))
+            return
         if row.get('actionName')!=intent['actionName'] or row.get('cancelQueued') is not False:
             raise PlatformError('history-action-fields','Normal unit action name or queue cancellation differs',2)
         old=next(u for u in left['units'] if u['unitId']==identity)
@@ -749,8 +764,8 @@ def validate_launch_appearance(shot, units):
     source=units.get(shot.get('sourceUnitId'),{})
     style=shot.get('appearance','STANDARD')
     expected={'attackSubmarine':('SUBMARINE_MISSILE','SUBMARINE_TORPEDO'),
-              'amphibiousJet':('AMPHIBIOUS_LIGHTNING',),'aaBeamGunship':('AA_BEAM',)}.get(source.get('typeId'),('STANDARD',))
-    if (style not in ('STANDARD','SUBMARINE_MISSILE','SUBMARINE_TORPEDO','AMPHIBIOUS_LIGHTNING','AA_BEAM') or
+              'amphibiousJet':('AMPHIBIOUS_LIGHTNING',),'aaBeamGunship':('AA_BEAM',),'nukeLauncherC':('NUCLEAR',)}.get(source.get('typeId'),('STANDARD',))
+    if (style not in ('STANDARD','SUBMARINE_MISSILE','SUBMARINE_TORPEDO','AMPHIBIOUS_LIGHTNING','AA_BEAM','NUCLEAR') or
             source and style not in expected):
         raise PlatformError('history-projectile','Invalid native launch appearance or source',2)
     line=shot.get('lightning')
@@ -923,7 +938,7 @@ def compare_history(records, plan, policy, native_anchors=None, geometry=None):
     """Check a declared ledger at every observation, including call boundaries."""
     allowed={'initialBalance','spend','noActionIntents','projectileBirthsRequired','mechLegs',
              'ownerPlayerId','initialOwnedTypes','finalUnits','minimumBirths',
-             'productionOrder','completedUpgradeTypes','initialIncome','producedIncome','transportStages','unitActionStages','bunkerStages','reclaimRefunds','nautilusTerrain'}
+             'productionOrder','completedUpgradeTypes','initialIncome','producedIncome','transportStages','unitActionStages','bunkerStages','reclaimRefunds','nautilusTerrain','nuclearHistory'}
     if not isinstance(policy,dict) or set(policy)-allowed:
         raise PlatformError('input-contract', 'Unknown or malformed history obligations', 1)
     balance = policy.get('initialBalance')
@@ -1265,6 +1280,10 @@ def compare_history(records, plan, policy, native_anchors=None, geometry=None):
     if 'unitActionStages' in policy:validate_unit_action_history(records,policy)
     if 'bunkerStages' in policy:validate_bunker_history(records,policy)
     if 'nautilusTerrain' in policy:validate_nautilus_history(records,policy)
+    if 'nuclearHistory' in policy:
+        if type(policy['nuclearHistory']) is not bool:raise PlatformError('input-contract','Expected explicit nuclear history flag',1)
+        from nuclear_platform import validate_nuclear_history
+        validate_nuclear_history(records,policy)
     if not all(fired):raise PlatformError('history-firing', 'Missing independently required named weapon birth/target', 2)
     return dict(exitCode=0, status='passed', scenarioId=plan['scenarioId'], history=dict(observations=observations, balance=balance))
 

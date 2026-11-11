@@ -38,3 +38,4 @@ inputs/author-water/*/** -text whitespace=blank-at-eol,blank-at-eof,space-before
 # XML whitespace is part of their frozen SHA; do not rewrite it during staging.
 inputs/resource-sound-packs/portrait-sandbox/maps/p001-controlled.tmx -whitespace
 inputs/resource-sound-packs/sandbox/maps/portrait.tmx -whitespace
+inputs/nuclear-silo/** -text whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol

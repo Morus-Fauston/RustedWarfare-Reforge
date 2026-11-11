@@ -221,6 +221,9 @@ object TraceComparator {
             val nautilusTransitions = NautilusTraceValidator.validate(scenario, contract, rows) {
                 throw Incomplete("nautilus-transition", it)
             }
+            val nuclearTransitions = NuclearTraceValidator.validate(scenario, contract, rows) {
+                throw Incomplete("nuclear-history", it)
+            }
             val actionClocks = steps.runningFold(0) { now, declared ->
                 (now.toFloat() + declared.number("delta").toFloat() * 16.666666f).toInt()
             }.drop(1)
@@ -365,7 +368,7 @@ object TraceComparator {
                             it.integer("completionStepIndex") == step }.map {
                             it.id("unitId") to if (it["actionId"] == JsonNull) "unit-action-automatic" else "unit-action-completed" }
                         val actualActionEvents = observation.arrayAt("events").map { it.jsonObject }.filter {
-                            it["unitId"]?.jsonPrimitive?.content !in nautilusTransitions &&
+                            it["unitId"]?.jsonPrimitive?.content !in nautilusTransitions + nuclearTransitions &&
                             it["kind"] in setOf(s("unit-action-completed"), s("unit-action-automatic")) }.map {
                             it.id("unitId") to it.text("kind") }
                         if (expectedActionEvents.sortedBy { it.first } != actualActionEvents.sortedBy { it.first })
@@ -630,6 +633,12 @@ object TraceComparator {
                 unit["flightPose"] != null && unit["flightPose"] != JsonNull)
                 throw Incomplete("nautilus-state", "Invalid Nautilus energy or recharge lock")
             validateUnitActions(unit, observer)
+        }
+        else if (unit.id("typeId") in typesLoadedBy(scenario, setOf("nuclear-silo"))) {
+            if (observer != null && unit.id("ownerPlayerId") != observer && unit["unitActions"] != null && unit["unitActions"] != JsonNull)
+                throw Incomplete("nuclear-state", "Enemy stock and queue must remain private")
+            if (unit.number("nuclearDoors") !in 0.0..1.0)
+                throw Incomplete("nuclear-state", "Invalid door pose")
         }
         else {
             if (unit["energy"] != null && unit["energy"] != JsonNull)
@@ -936,7 +945,8 @@ object TraceComparator {
     private fun submarineCoexistingAppearances(scenario: JsonObject): Set<String> =
         submarineLaunchAppearances + "STANDARD" +
             (if (typesLoadedBy(scenario, setOf("amphibious-jet")).isNotEmpty()) setOf("AMPHIBIOUS_LIGHTNING") else emptySet()) +
-            (if (typesLoadedBy(scenario, setOf("aa-beam-gunship")).isNotEmpty()) setOf("AA_BEAM") else emptySet())
+            (if (typesLoadedBy(scenario, setOf("aa-beam-gunship")).isNotEmpty()) setOf("AA_BEAM") else emptySet()) +
+            (if (typesLoadedBy(scenario, setOf("nuclear-silo")).isNotEmpty()) setOf("NUCLEAR") else emptySet())
 
     private fun validateSubmarineProjectiles(observation: JsonObject, scenario: JsonObject, units: List<JsonObject>) {
         val types = typesLoadedBy(scenario, setOf("submarine"))

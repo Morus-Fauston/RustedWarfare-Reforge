@@ -9,6 +9,12 @@
     },
     "reforge:sounds/naval-missile-fire": {
       "file": "naval-missile-fire.wav"
+    },
+    "reforge:sounds/nuke-launch": {
+      "file": "nuke-launch.wav"
+    },
+    "reforge:sounds/nuke-explode": {
+      "file": "nuke-explode.wav"
     }
   },
   "events": {
@@ -26,6 +32,12 @@
     },
     "reforge:events/amphibious-lightning-fire": {
       "sound": "reforge:sounds/tank-fire"
+    },
+    "reforge:events/nuke-launch": {
+      "sound": "reforge:sounds/nuke-launch"
+    },
+    "reforge:events/nuke-explode": {
+      "sound": "reforge:sounds/nuke-explode"
     }
   }
 }

@@ -77,10 +77,22 @@ object PlatformSessionRunner {
                         "move" -> session.move(intent.objectAt("position").let { Position(it.number("x"), it.number("y")) })
                         "stop" -> session.stop()
                         "unit-action" -> {
-                            if (intent.keys != setOf("intentId", "kind", "actionName", "waitSteps") ||
-                                intent.id("actionName") !in setOf("afterBurn", "cancelBurn", "deploy", "undeploy", "surface", "dive"))
+                            val name = intent.id("actionName")
+                            val nuclear = name in setOf("buildNuke", "launchNuke")
+                            val cancel = intent["cancelQueued"]?.let { value ->
+                                value.jsonPrimitive.booleanOrNull ?: throw InputError("Expected action cancellation boolean")
+                            } ?: false
+                            val keys = setOf("intentId", "kind", "actionName", "waitSteps") +
+                                (if ("cancelQueued" in intent && nuclear) setOf("cancelQueued") else emptySet()) +
+                                (if (name == "launchNuke" && !cancel) setOf("target") else emptySet())
+                            if (intent.keys != keys ||
+                                name !in setOf("afterBurn", "cancelBurn", "deploy", "undeploy", "surface", "dive", "buildNuke", "launchNuke"))
                                 throw InputError("Expected a finite normal unit action and explicit waitSteps")
-                            session.unitAction(intent.id("actionName"))
+                            val point = intent["target"]?.jsonObject?.let {
+                                if (it.keys != setOf("x", "y")) throw InputError("Expected finite ground point")
+                                Position(it.number("x"), it.number("y"))
+                            }
+                            session.unitAction(name, cancel, point)
                         }
                         "load" -> session.command(intent.objectAt("position").let { Position(it.number("x"), it.number("y")) })
                         "unload" -> {

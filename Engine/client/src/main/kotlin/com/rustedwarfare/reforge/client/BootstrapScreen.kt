@@ -46,6 +46,7 @@ class BootstrapScreen(
     private var graphics: SandboxGraphics? = null
     private var sounds: SoundPlayback? = null
     private lateinit var deploymentBox: CheckBox
+    private lateinit var noNukesBox: CheckBox
     private lateinit var commandField: TextField
     private lateinit var commandFeedbackLabel: Label
     private lateinit var commandHintLabel: Label
@@ -373,7 +374,7 @@ class BootstrapScreen(
             val input = CustomUnitActionButtonInput({ session }, { !paused && !loading && session?.isOpen == true }, name,
                 changed = { lastHudState = null; updateHud() }, hovered = { entered ->
                     customActionHover = name.takeIf { entered }; lastHudState = null
-                })
+                }, beginTargeting = { mapInput.beginGroundAction(it) })
             actor.addListener(input)
             customActionInputs += input
             customActionButtons[name] = actor
@@ -420,7 +421,18 @@ class BootstrapScreen(
             })
             stage.addActor(it)
         }
-        startButton = button("Start", 752f, 120f, 176f) { requestLoad() }
+        noNukesBox = CheckBox(" No nukes", skin).also {
+            it.isChecked = !launch.configuration.options.nukesEnabled
+            it.setBounds(752f, 136f, 176f, 36f)
+            it.addListener(object : ChangeListener() {
+                override fun changed(event: ChangeEvent, actor: Actor) {
+                    if (launch.canEdit) launch.configure(launch.configuration.copy(options =
+                        launch.configuration.options.copy(nukesEnabled = !noNukesBox.isChecked)))
+                }
+            })
+            stage.addActor(it)
+        }
+        startButton = button("Start", 752f, 96f, 176f) { requestLoad() }
         visualPanel = visualState?.let { state -> VisualAssetSettingsPanel(state, skin, visualSettings?.let { it::createUiFont },
             contentChoice = { testScenes.choice?.content ?: packState.choice() }) {
             evidence.recordVisualAssetMenu(state)
@@ -629,6 +641,7 @@ class BootstrapScreen(
                 "mode" to request.configuration.options.mode.name,
                 "shareAlliedVision" to request.configuration.options.shareAlliedVision,
                 "deploymentEnabled" to request.configuration.options.deploymentEnabled,
+                "nukesEnabled" to request.configuration.options.nukesEnabled,
                 "testScenarioId" to request.configuration.testScenario?.id, "testScenarioSeed" to request.configuration.testScenario?.seed?.toString()))
             val contentPack = request.configuration.contentPack
             val prepare = visualState?.prepareForLoad(contentPack)
@@ -783,7 +796,7 @@ class BootstrapScreen(
             if (ScissorStack.pushScissors(clip)) try {
                 batch.begin(); graphics?.draw(batch, current.frame, mapInput.constructionPreview); batch.end()
                 shapes.begin(ShapeRenderer.ShapeType.Line)
-                graphics?.drawOverlay(shapes, current.frame, current.selectedIds, mapInput.box, mapInput.constructionPreview)
+                graphics?.drawOverlay(shapes, current.frame, current.selectedIds, mapInput.box, mapInput.constructionPreview, mapInput.groundActionPreview)
                 shapes.end()
             } finally { ScissorStack.popScissors() }
             graphics?.drawMinimap(shapes, current.frame)
@@ -833,6 +846,7 @@ class BootstrapScreen(
         visualPanel?.let { entries += it.drawnActions() }
         entries += DrawnAction("sandbox-deployment", deploymentBox, deploymentBox.text.toString(),
             enabled = !deploymentBox.isDisabled)
+        entries += DrawnAction("no-nukes", noNukesBox, noNukesBox.text.toString(), enabled = !noNukesBox.isDisabled)
         entries += DrawnAction("sandbox-command-input", commandField, commandField.text,
             enabled = commandConsoleOpen && current?.canDeploy == true)
         packPanel?.let { entries += it.drawnActions() }
@@ -1308,7 +1322,7 @@ class BootstrapScreen(
             menu?.canMaintain == true && constructionCards.size > 2 || productionCards.size + factoryUpgradeCards.size > 4)
         stopButton.setY(if (economicPanel) 112f else if (nativePanel) 144f else 168f)
         patrolButton.setY(if (economicPanel) 112f else if (nativePanel) 144f else 168f)
-        startButton.setY(if (economicPanel) 64f else if (nativePanel) 96f else 120f)
+        startButton.setY(if (economicPanel) 64f else if (nativePanel || launch.canEdit) 96f else 120f)
         exitButton.setY(if (economicPanel) 16f else if (nativePanel) 48f else 72f)
         stopButton.isVisible = current != null
         patrolButton.isVisible = current != null && !touchControls
@@ -1320,8 +1334,9 @@ class BootstrapScreen(
             } ?: "Tasks 0"
         patrolLabel.setText(if (state.patrolMode) "Sent points ${state.patrolPoints}\n$taskText\nLeft: point / Esc: finish"
             else if (selected?.tasks?.isNotEmpty() == true) taskText else "P: set patrol points")
-        // Factories cannot receive Patrol; keep this hint clear of the production controls.
-        if (queue != null || upgrades.isNotEmpty() || menu?.construction?.isNotEmpty() == true || menu?.canMaintain == true)
+        // Stationary production controls already explain their actions; keep the patrol hint clear.
+        if (queue != null || upgrades.isNotEmpty() || menu?.construction?.isNotEmpty() == true || menu?.canMaintain == true ||
+            menu?.unitActions?.any { it.name == "buildNuke" } == true)
             patrolLabel.isVisible = false
         selectedLabel.isVisible = current != null
         listOf<Actor>(contentLabel, rootField, modeBox, shareBox).forEach { it.isVisible = launch.canEdit }
@@ -1331,6 +1346,8 @@ class BootstrapScreen(
         shareBox.isDisabled = !launch.canEdit
         deploymentBox.isVisible = launch.canEdit && !touchControls
         deploymentBox.isDisabled = loading || !launch.canEdit || touchControls
+        noNukesBox.isVisible = launch.canEdit
+        noNukesBox.isDisabled = loading || !launch.canEdit
         startButton.setText(if (launch.canEdit) "Start" else "Reopen")
         startButton.isDisabled = loading || launch.canEdit && (visualState?.canStart == false || !testScenes.canStart || !testScenes.selected && !packState.canStart)
         visualsTab.isVisible = current == null && visualPanel != null

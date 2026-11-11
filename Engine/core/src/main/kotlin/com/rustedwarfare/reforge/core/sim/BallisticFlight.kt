@@ -12,6 +12,13 @@ internal object BallisticFlight {
     }
 
     fun move(shot: MutableProjectile, target: MutableUnit, delta: Double): Boolean {
+        val radius = if (target.definition.directHitTargetKind == DirectHitTargetKind.NATIVE_BUILDING)
+            maxOf(6f, target.definition.radius.toFloat() * .8f) else 6f
+        return move(shot, target.position, target.height.toFloat(), delta, radius)
+    }
+
+    /** Fixed points retain the same ordered flight without manufacturing a target unit. */
+    fun move(shot: MutableProjectile, target: Position, targetHeight: Float, delta: Double, radius: Float = 6f): Boolean {
         val native = shot.missile
         val custom = shot.ballistic
         require((native != null) != (custom != null)) { "Expected one ballistic flight profile" }
@@ -28,9 +35,9 @@ internal object BallisticFlight {
         var x = shot.position.x.toFloat()
         var y = shot.position.y.toFloat()
         var height = shot.height.toFloat()
-        val destinationX = target.position.x.toFloat() + shot.offset.x.toFloat()
-        val destinationY = target.position.y.toFloat() + shot.offset.y.toFloat()
-        val heightDifference = target.height.toFloat() - height
+        val destinationX = target.x.toFloat() + shot.offset.x.toFloat()
+        val destinationY = target.y.toFloat() + shot.offset.y.toFloat()
+        val heightDifference = targetHeight - height
         var distanceSquared = GroundMath.square(x, y, destinationX, destinationY)
         require(listOf(x, y, height, destinationX, destinationY, heightDifference, distanceSquared).all { it.isFinite() }) {
             "Missile geometry must remain finite"
@@ -48,7 +55,7 @@ internal object BallisticFlight {
         if (!reached) {
             height = towards(height, apex, vertical * elapsed)
             if (height >= apex) reached = true
-        } else if (distanceSquared < 400f) height = towards(height, target.height.toFloat(), vertical * elapsed)
+        } else if (distanceSquared < 400f) height = towards(height, targetHeight, vertical * elapsed)
         // Original custom aL<0 marks local13 even on a vertical-only first step.
         if ((planeMoved || usesCurrentSpeed) && targetSpeed > 0f)
             shot.speed = towards(shot.speed.toFloat(), targetSpeed, acceleration * elapsed).toDouble()
@@ -64,8 +71,6 @@ internal object BallisticFlight {
             shot.missileReachedApex = reached
             shot.missileRawAz = angle
         }
-        val radius = if (target.definition.directHitTargetKind == DirectHitTargetKind.NATIVE_BUILDING)
-            maxOf(6f, target.definition.radius.toFloat() * .8f) else 6f
         return distanceSquared < radius * radius && abs(heightDifference) < 3f
     }
 }

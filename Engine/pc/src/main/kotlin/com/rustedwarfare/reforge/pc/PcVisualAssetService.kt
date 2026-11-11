@@ -35,7 +35,8 @@ internal class PcVisualAssetService(private val cacheRoot: Path,
                 profile.recipes.getValue(binding.getString("body")).getInt("frames", 1), leg = slot("leg"), foot = slot("foot"), rotor = slot("rotor"),
                 weaponTurrets = binding.get("weaponTurrets")?.associate { it.name to prepared.outputs.getValue(it.asString()) }.orEmpty(),
                 shadow = slot("shadow"), shield = slot("shield"), leftWing = slot("leftWing"), rightWing = slot("rightWing"),
-                beam = slot("beam"), beamStart = slot("beamStart"), beamEnd = slot("beamEnd"), afterburnTrail = slot("afterburnTrail"))
+                beam = slot("beam"), beamStart = slot("beamStart"), beamEnd = slot("beamEnd"), afterburnTrail = slot("afterburnTrail"),
+                arm1 = slot("arm1"), arm2 = slot("arm2"))
         }
         val terrain = profile.json.get("terrainOutputs").associate { it.name to prepared.outputs.getValue(it.name) }
         return PreparedVisualAssets(selection.copy(originalDirectory = root), profile.id,

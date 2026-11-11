@@ -7,7 +7,7 @@ import java.util.Collections
 import java.util.Locale
 
 /** One fixed catalogue per match. Short panel labels and full feedback labels keep their existing roles. */
-internal class ActionCatalogue(private val definitions: Map<String, UnitDefinition>) {
+internal class ActionCatalogue(private val definitions: Map<String, UnitDefinition>, private val nukesEnabled: Boolean = true) {
     private data class Names(val panel: String, val full: String = panel)
     private val names = mapOf(
         "commandCenter" to Names("Command", "Command center"), "builder" to Names("Builder"),
@@ -22,7 +22,7 @@ internal class ActionCatalogue(private val definitions: Map<String, UnitDefiniti
         "seaFactory" to Names("Sea factory"), "seaFactoryT2" to Names("Sea factory T2"),
         "experimentalLandFactory" to Names("Experimental", "Experimental factory"),
         "heavyBattleship" to Names("Heavy battleship"), "attackSubmarine" to Names("Submarine"),
-        "nautilusSubmarine" to Names("Nautilus"),
+        "nautilusSubmarine" to Names("Nautilus"), "nukeLauncherC" to Names("Nuclear silo"),
         "nautilusSubmarineSurface" to Names("Nautilus (Surface)"),
         "nautilusSubmarineLand" to Names("Nautilus (Land)"),
         "extractorT1" to Names("Extractor T1", "Extractor"), "extractorT2" to Names("Extractor T2", "Unit"),
@@ -102,18 +102,32 @@ internal class ActionCatalogue(private val definitions: Map<String, UnitDefiniti
                 it.typeId == "nautilusSubmarineSurface") }?.transport?.let {
             TransportUnloadActionView(!it.unloading, if (it.unloading) "Cancel unload" else "Unload", it.unloading || it.canUnload)
         }
-        val unitActions = immutable(ownSingle?.unitActions?.actions.orEmpty().map { action ->
+        val actionUnit = ownSingle ?: if (localControl) nuclearLaunchMember(view, ids) else null
+        val unitActions = immutable(actionUnit?.unitActions?.actions.orEmpty()
+            .filter { ownSingle != null || it.name == "launchNuke" }.map { action ->
+            val nuclear = action.name in setOf("buildNuke", "launchNuke")
+            val cancelUnit = if (ownSingle == null && action.name == "launchNuke")
+                nuclearLaunchMember(view, ids, cancelling = true) else actionUnit
+            val cancelAction = cancelUnit?.unitActions?.actions?.singleOrNull { it.name == action.name }
             val title = when (action.name) { "afterBurn" -> "Afterburn"; "cancelBurn" -> "Cancel burn"
-                "deploy" -> "Deploy"; "undeploy" -> "Undeploy"; "surface" -> "Surface"; "dive" -> "Dive"; else -> action.name }
+                "deploy" -> "Deploy"; "undeploy" -> "Undeploy"; "surface" -> "Surface"; "dive" -> "Dive"
+                "buildNuke" -> "Build nuke"; "launchNuke" -> "Launch nuke"; else -> action.name }
             val status = if (action.queueIndex != null) "Queued ${(action.progress!! * 100f).toInt()}%" else if (action.cooldownRemaining > 0)
                 String.format(Locale.ROOT, "Cooling %.1fs", action.cooldownRemaining / 1000f) else "Ready"
             val motion = when (action.name) { "deploy" -> "Movement locked while deploying\nCannot cancel"
                 "undeploy" -> "Fixed until undeployed\nCannot cancel"
                 "surface", "dive" -> "Movement locked while converting\nRight: cancel"; else -> "Movement orders continue" }
-            CustomUnitActionView(action.name, title, "$title\n$status\n$motion",
-                action.queueIndex != null, action.cooldownRemaining, action.available,
-                action.queueIndex != null && ownSingle?.let { selected ->
-                    definitions.getValue(selected.typeId).customActions?.actions?.singleOrNull { it.name == action.name }
+            val tooltip = if (!nuclear) "$title\n$status\n$motion" else
+                "$title\nAmmo ${actionUnit?.unitActions?.stockpile ?: 0}\n$status\n" +
+                    (if (action.name == "buildNuke") "\$11000 / 55.6s\n" +
+                        (if (affordable(view, 11000L)) "Left: produce" else "Insufficient funds")
+                    else "3.5s\nRange 260 - 9999 / blast 250\nLeft: choose ground point\nEsc / right: cancel selection") +
+                    "\nRight on card: cancel one queued"
+            CustomUnitActionView(action.name, title, tooltip,
+                action.queueIndex != null, action.cooldownRemaining, action.available &&
+                    (action.name != "buildNuke" || affordable(view, 11000L)),
+                cancelAction?.queueIndex != null && cancelUnit?.let { selected ->
+                    nuclear || definitions.getValue(selected.typeId).customActions?.actions?.singleOrNull { it.name == action.name }
                         ?.canPlayerCancel == true
                 } == true, action.progress)
         })
@@ -147,12 +161,14 @@ internal class ActionCatalogue(private val definitions: Map<String, UnitDefiniti
         val validWorkers = workers.isNotEmpty() && workers.size == ids.size && workers.all { controllable(it) }
         val buildings = if (!validWorkers || workers.any { it.typeId != workers.first().typeId }) emptyList()
             else immutable(definitions.getValue(workers.first().typeId).builder?.buildingTypeIds.orEmpty()
+                .filter { it != "nukeLauncherC" || nukesEnabled }
                 .map { checkNotNull(construction[it]) })
         val nativeMaintenance = validWorkers && workers.all { it.constructionProgress >= 1f && it.carriedBy == null &&
             definitions.getValue(it.typeId).maintenance != null }
         val workerText = if (buildings.isEmpty() && !nativeMaintenance) null else workerText(workers.sortedBy { it.unitId }, view)
         val info = if (ids.isEmpty()) null else if (ids.size > 1) workerText else selected?.let { unit ->
             "${unit.health?.toInt() ?: 0} / ${unit.maxHealth?.toInt() ?: 0}" +
+                (unit.unitActions?.let { state -> state.stockpile?.let { "\nAmmo $it\nQueue ${state.queue.size}" } } ?: "") +
                 (unit.transport?.let { "\nCargo ${it.occupiedSlots} / ${it.capacity}\nPassengers ${it.passengerCount}" } ?: "") +
                 (if (definitions.getValue(unit.typeId).transport == com.rustedwarfare.reforge.core.content.TransportProfile.NAUTILUS_SUBMERGED &&
                     unit.transport?.let { it.occupiedSlots > it.capacity } == true && factory?.items?.firstOrNull()?.progress == 1f)
@@ -242,3 +258,13 @@ data class TransportUnloadActionView(val unloading: Boolean, val title: String, 
 data class CustomUnitActionView(val name: String, val title: String, val tooltip: String,
     val queued: Boolean, val cooldownRemaining: Int, val available: Boolean, val cancellable: Boolean,
     val progress: Float? = null)
+
+/** The native onlyOneUnitAtATime launch flag selects one eligible member per command. */
+internal fun nuclearLaunchMember(view: PlayerObservation, ids: Set<String>, cancelling: Boolean = false): UnitObservation? =
+    view.units.filter { it.unitId in ids && it.alive && it.ownerPlayerId == view.playerId &&
+        it.typeId == "nukeLauncherC" && it.constructionProgress >= 1f && it.carriedBy == null }
+        .sortedBy { it.unitId }.let { members ->
+            members.firstOrNull { unit -> unit.unitActions?.actions?.any {
+                it.name == "launchNuke" && if (cancelling) it.queueIndex != null else it.available
+            } == true } ?: members.firstOrNull()
+        }
