@@ -34,7 +34,9 @@ internal object Transport {
     fun queryPosition(unit: MutableUnit, position: Position = unit.position): Position =
         queryPosition(position, unit.nativeTransportPlacement)
 
-    fun supports(definition: UnitDefinition): Boolean = when (definition.transport) {
+    fun supports(definition: UnitDefinition): Boolean {
+        if (definition.transport == TransportProfile.NAUTILUS_SUBMERGED) return NautilusRules.supports(definition)
+        return when (definition.transport) {
         TransportProfile.NATIVE_HOVERCRAFT -> definition.id == "hovercraft" && definition.className == "NativeHovercraft" &&
             definition.radius == 15.0 && definition.displayRadius == 15.0 &&
             definition.movement == MovementProfile(MovementType.HOVER, .9, .03, .05, 1.4, .1, false, false,
@@ -44,7 +46,7 @@ internal object Transport {
             definition.radius == 20.0 && definition.displayRadius == 20.0 &&
             definition.movement == MovementProfile(MovementType.AIR, 2.3, .03, .05, 1.4, 0.0, false, false, .6) &&
             definition.maximumHealth == 500.0 && definition.build == BuildProfile(800L, .001f) && definition.shadowImagePath != null
-        null -> false
+        TransportProfile.NAUTILUS_SUBMERGED, null -> false
     } && definition.totalFrames == 1 && definition.imageScale == 1.0 && definition.fogOfWarSightRange == 15 &&
         definition.durability?.deadImagePath != null && definition.durability.maxDamagePerHit == null &&
         definition.transportSlots == 1 &&
@@ -54,6 +56,21 @@ internal object Transport {
         definition.mech == null && definition.rotor == null && definition.fixedUnderwaterTarget == null &&
         definition.submarine == null && definition.amphibiousJet == null && definition.shield == null &&
         !definition.authoredWaterCombat && definition.directHitTargetKind == DirectHitTargetKind.ORDINARY
+    }
+
+    /** Internal creation bypasses ordinary load admission, while sharing the one owned manifest. */
+    fun retainProduced(carrier: MutableUnit, passenger: MutableUnit) {
+        check(carrier.definition.transport == TransportProfile.NAUTILUS_SUBMERGED && passenger.carriedBy == null)
+        val state = checkNotNull(carrier.transportState)
+        check(passenger.unitId !in state.passengerIds && passenger.producerId == carrier.unitId)
+        carrier.transportState = state.copy(passengerIds = immutable(state.passengerIds + passenger.unitId))
+        passenger.carriedBy = carrier.unitId
+    }
+
+    /** Custom dA uses strict excess; normal load admission still checks the incoming cost. */
+    fun allowsProductionCompletion(carrier: MutableUnit, units: Map<String, MutableUnit>): Boolean =
+        carrier.definition.transport != TransportProfile.NAUTILUS_SUBMERGED ||
+            checkNotNull(carrier.transportState).passengerIds.sumOf { units.getValue(it).definition.transportSlots.toLong() } <= 3L
 
     fun validate(units: Map<String, MutableUnit>) {
         val carried = mutableSetOf<String>()
@@ -67,7 +84,7 @@ internal object Transport {
                     passenger.ownerPlayerId == carrier.ownerPlayerId && passenger.definition.transportSlots >= 0)
                 slots += passenger.definition.transportSlots
             }
-            require(slots <= 4L)
+            require(carrier.definition.transport == TransportProfile.NAUTILUS_SUBMERGED || slots <= 4L)
         }
         for (passenger in units.values) {
             require((passenger.carriedBy != null) == (passenger.unitId in carried))
@@ -128,6 +145,8 @@ internal object Transport {
 
     fun requestUnload(carrier: MutableUnit, unloading: Boolean, map: MapDefinition): SimulationError? {
         val state = carrier.transportState ?: return SimulationError("not-carrier", "Unit has no transport capability")
+        if (carrier.definition.transport == TransportProfile.NAUTILUS_SUBMERGED)
+            return SimulationError("cannot-unload", "This form retains its produced units")
         if (unloading) {
             if (state.unloading || state.passengerIds.isEmpty() || liquid(carrier, map))
                 return SimulationError("cannot-unload", "Carrier cannot start unloading here")
@@ -152,6 +171,7 @@ internal object Transport {
             unit.transportExit = if (remaining == 0f) null else it.copy(remaining = remaining)
         }
         var state = unit.transportState ?: return emptyList()
+        if (unit.definition.transport == TransportProfile.NAUTILUS_SUBMERGED) return emptyList()
         val events = mutableListOf<Event>()
         if (state.unloading && !liquid(unit, map) && !state.motionGate &&
             (unit.definition.transport != TransportProfile.NATIVE_DROPSHIP || unit.height.toFloat() < 4f)) {
@@ -291,6 +311,8 @@ internal object Transport {
     private fun admission(carrier: MutableUnit, passenger: MutableUnit, units: Map<String, MutableUnit>): SimulationError? {
         val state = carrier.transportState
             ?: return SimulationError("not-carrier", "Target has no transport capability")
+        if (carrier.definition.transport == TransportProfile.NAUTILUS_SUBMERGED)
+            return SimulationError("invalid-passenger", "Passenger does not meet this form's ordinary load requirements")
         if (!carrier.alive || !passenger.alive || carrier.constructionProgress < 1f || passenger.constructionProgress < 1f ||
             carrier.carriedBy != null || passenger.carriedBy != null || carrier === passenger ||
             carrier.ownerPlayerId != passenger.ownerPlayerId || passenger.transportState != null ||
@@ -304,7 +326,9 @@ internal object Transport {
 
     fun observe(carrier: MutableUnit, units: Map<String, MutableUnit>): TransportObservation? = carrier.transportState?.let {
         TransportObservation(immutable(it.passengerIds), it.passengerIds.size,
-            it.passengerIds.sumOf { id -> units.getValue(id).definition.transportSlots.toLong() }.toInt(), 4, it.unloading, it.unloadRemaining,
-            carrier.alive && carrier.constructionProgress >= 1f && !it.liquid && !it.unloading && it.passengerIds.isNotEmpty())
+            it.passengerIds.sumOf { id -> units.getValue(id).definition.transportSlots.toLong() }.toInt(),
+            if (carrier.definition.transport == TransportProfile.NAUTILUS_SUBMERGED) 3 else 4, it.unloading, it.unloadRemaining,
+            carrier.definition.transport != TransportProfile.NAUTILUS_SUBMERGED &&
+                carrier.alive && carrier.constructionProgress >= 1f && !it.liquid && !it.unloading && it.passengerIds.isNotEmpty())
     }
 }

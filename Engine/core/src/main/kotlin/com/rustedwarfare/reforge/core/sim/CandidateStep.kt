@@ -107,7 +107,8 @@ internal data class StepState(
             val birthDefinition = origin?.let { input.unitDefinitions[it.factoryTypeId] }
             val birthLimit = birthDefinition?.production?.exitProfile
                 .let { when (it) {
-                    com.rustedwarfare.reforge.core.content.FactoryExitProfile.CUSTOM_MECH -> 45f
+                    com.rustedwarfare.reforge.core.content.FactoryExitProfile.CUSTOM_MECH,
+                    com.rustedwarfare.reforge.core.content.FactoryExitProfile.CUSTOM_NAUTILUS -> 45f
                     com.rustedwarfare.reforge.core.content.FactoryExitProfile.NATIVE_SEA -> 80f
                     else -> 30f
                 } }

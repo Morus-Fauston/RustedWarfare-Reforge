@@ -21,6 +21,7 @@ internal class ActionCatalogue(private val definitions: Map<String, UnitDefiniti
         "aaBeamGunship_afterburn" to Names("AA beam (Afterburn)", "AA beam gunship (Afterburn)"),
         "seaFactory" to Names("Sea factory"), "seaFactoryT2" to Names("Sea factory T2"),
         "heavyBattleship" to Names("Heavy battleship"), "attackSubmarine" to Names("Submarine"),
+        "nautilusSubmarine" to Names("Nautilus"),
         "extractorT1" to Names("Extractor T1", "Extractor"), "extractorT2" to Names("Extractor T2", "Unit"),
         "extractorT3" to Names("Extractor T3", "Unit"), "fabricatorT1" to Names("Fabricator T1", "Fabricator"),
         "fabricatorT2" to Names("Fabricator T2", "Unit"), "fabricatorT3" to Names("Fabricator T3", "Unit"),
@@ -56,7 +57,9 @@ internal class ActionCatalogue(private val definitions: Map<String, UnitDefiniti
             com.rustedwarfare.reforge.core.content.FactoryExitProfile.CUSTOM_MECH,
             com.rustedwarfare.reforge.core.content.FactoryExitProfile.NATIVE_AIR))) return emptyList()
         return immutable(definitions.getValue(factory.typeId).production?.unitTypeIds.orEmpty().map { type ->
-            val action = checkNotNull(production[type]); val items = checkNotNull(queue).items
+            val base = checkNotNull(production[type])
+            val action = base.copy(rate = base.rate * checkNotNull(definition.production).speedMultiplier)
+            val items = checkNotNull(queue).items
             val affordable = affordable(view, action.price)
             action.copy(count = items.count { it.typeId == type },
                 progress = items.firstOrNull()?.takeIf { it.typeId == type }?.progress,
@@ -91,7 +94,8 @@ internal class ActionCatalogue(private val definitions: Map<String, UnitDefiniti
             }
         }
         val factory = ownSingle?.let { unit -> view.factoryQueues.firstOrNull { it.factoryId == unit.unitId } }
-        val transportAction = ownSingle?.takeIf { it.constructionProgress >= 1f }?.transport?.let {
+        val transportAction = ownSingle?.takeIf { it.constructionProgress >= 1f &&
+            definitions.getValue(it.typeId).transport != com.rustedwarfare.reforge.core.content.TransportProfile.NAUTILUS_SUBMERGED }?.transport?.let {
             TransportUnloadActionView(!it.unloading, if (it.unloading) "Cancel unload" else "Unload", it.unloading || it.canUnload)
         }
         val unitActions = immutable(ownSingle?.unitActions?.actions.orEmpty().map { action ->
@@ -141,6 +145,9 @@ internal class ActionCatalogue(private val definitions: Map<String, UnitDefiniti
         val info = if (ids.isEmpty()) null else if (ids.size > 1) workerText else selected?.let { unit ->
             "${unit.health?.toInt() ?: 0} / ${unit.maxHealth?.toInt() ?: 0}" +
                 (unit.transport?.let { "\nCargo ${it.occupiedSlots} / ${it.capacity}\nPassengers ${it.passengerCount}" } ?: "") +
+                (if (definitions.getValue(unit.typeId).transport == com.rustedwarfare.reforge.core.content.TransportProfile.NAUTILUS_SUBMERGED &&
+                    unit.transport?.let { it.occupiedSlots > it.capacity } == true && factory?.items?.firstOrNull()?.progress == 1f)
+                    "\nProduction waiting: cargo full" else "") +
                 (if (unit.transport != null && unit.flightPose != null) String.format(Locale.ROOT, "\nHeight %.2f", unit.height) else "") +
                 (unit.shield?.let { "\nShield ${it.current.toInt()} / ${it.maximum.toInt()}" } ?: "") +
                 (unit.energy?.let { String.format(Locale.ROOT, "\nEnergy %.3f / %.3f%s", it.current, it.maximum,

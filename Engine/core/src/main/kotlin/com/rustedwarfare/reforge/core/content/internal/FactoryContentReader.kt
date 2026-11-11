@@ -188,7 +188,7 @@ internal object FactoryContentReader {
         val t2 = tier == "2"
         val id = if (t2) "seaFactoryT2" else "seaFactory"
         val products = required("productionUnits").split(',')
-        val available = if (t2) setOf("heavyBattleship", "attackSubmarine", "hovercraft") else setOf("attackSubmarine", "hovercraft")
+        val available = if (t2) setOf("heavyBattleship", "attackSubmarine", "hovercraft", "nautilusSubmarine") else setOf("attackSubmarine", "hovercraft")
         if (products.isEmpty() || products.distinct().size != products.size || products.any { it !in available })
             reject(ContentErrorCode.UNSUPPORTED_FEATURE, path, field = "productionUnits", reason = "Expected unique supported native sea factory products")
         val upgradeFields = setOf("upgradeTo", "upgradePrice", "upgradeBuildSpeed")

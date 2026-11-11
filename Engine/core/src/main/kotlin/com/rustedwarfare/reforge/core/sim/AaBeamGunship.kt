@@ -5,7 +5,7 @@ import com.rustedwarfare.reforge.core.content.*
 /** Admission of the one qualified AA representative, not arbitrary custom energy weapons. */
 internal object AaBeamGunship {
     fun advanceCorpse(unit: MutableUnit, map: MapDefinition, delta: Double) {
-        if (unit.definition.energy == null || unit.waterSettled) return
+        if (unit.definition.energy == null || unit.definition.movement.type != MovementType.AIR || unit.waterSettled) return
         val elapsed = delta.toFloat()
         if (unit.height > 0.0) {
             val moving = unit.speed != 0.0 || unit.flightVelocity.x != 0.0 || unit.flightVelocity.y != 0.0

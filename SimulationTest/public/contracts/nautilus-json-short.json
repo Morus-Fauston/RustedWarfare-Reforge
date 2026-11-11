@@ -1,0 +1,175 @@
+{
+  "schemaVersion": 1,
+  "kind": "behavior-contract",
+  "contractId": "public.nautilus-json.short.v1",
+  "scope": "self-behavior",
+  "scenarioIds": [
+    "p009-nautilus-mobile-production"
+  ],
+  "comparison": {
+    "numberMode": "declared-per-field",
+    "tolerances": {}
+  },
+  "approval": {
+    "status": "tool-fixture-only",
+    "source": "ENG-P009-014 qualified DEC005: .002 base x2, strict used>3 completion gate; owned self behavior"
+  },
+  "exclusions": [
+    "original-compatibility",
+    "platform-input",
+    "performance"
+  ],
+  "producedUnits": [
+    {
+      "unitId": "produced:p1:00000000000000000000000000000001",
+      "productionActionId": "queue-1",
+      "producerId": "mother",
+      "owner": "p1",
+      "typeId": "hoverTank",
+      "unitNonce": "00000000000000000000000000000001",
+      "birthStepIndex": 249
+    },
+    {
+      "unitId": "produced:p1:00000000000000000000000000000002",
+      "productionActionId": "queue-2",
+      "producerId": "mother",
+      "owner": "p1",
+      "typeId": "hoverTank",
+      "unitNonce": "00000000000000000000000000000002",
+      "birthStepIndex": 499
+    },
+    {
+      "unitId": "produced:p1:00000000000000000000000000000003",
+      "productionActionId": "queue-3",
+      "producerId": "mother",
+      "owner": "p1",
+      "typeId": "hoverTank",
+      "unitNonce": "00000000000000000000000000000003",
+      "birthStepIndex": 749
+    },
+    {
+      "unitId": "produced:p1:00000000000000000000000000000004",
+      "productionActionId": "queue-4",
+      "producerId": "mother",
+      "owner": "p1",
+      "typeId": "hoverTank",
+      "unitNonce": "00000000000000000000000000000004",
+      "birthStepIndex": 999
+    }
+  ],
+  "rules": [
+    {
+      "ruleId": "first-internal-completion",
+      "when": {
+        "phase": "after-advance",
+        "stepIndex": 249
+      },
+      "assertions": [
+        {
+          "path": "units.mother.transport.passengerCount",
+          "operator": "equals",
+          "value": 1
+        },
+        {
+          "path": "units.mother.transport.capacity",
+          "operator": "equals",
+          "value": 3
+        },
+        {
+          "path": "units.mother.transport.canUnload",
+          "operator": "equals",
+          "value": false
+        }
+      ]
+    },
+    {
+      "ruleId": "exactly-three",
+      "when": {
+        "phase": "after-advance",
+        "stepIndex": 749
+      },
+      "assertions": [
+        {
+          "path": "units.mother.transport.occupiedSlots",
+          "operator": "equals",
+          "value": 3
+        }
+      ]
+    },
+    {
+      "ruleId": "fourth-completion",
+      "when": {
+        "phase": "after-advance",
+        "stepIndex": 999
+      },
+      "assertions": [
+        {
+          "path": "units.mother.transport.occupiedSlots",
+          "operator": "equals",
+          "value": 4
+        }
+      ]
+    },
+    {
+      "ruleId": "head-waits-without-new-identity",
+      "when": {
+        "phase": "after-advance",
+        "stepIndex": 1259
+      },
+      "assertions": [
+        {
+          "path": "units.mother.transport.passengerCount",
+          "operator": "equals",
+          "value": 4
+        },
+        {
+          "path": "production.lastBirthSerial",
+          "operator": "equals",
+          "value": 4
+        },
+        {
+          "path": "economy.balances.p1",
+          "operator": "equals",
+          "value": 2750
+        },
+        {
+          "path": "economy.queues.mother",
+          "operator": "equals",
+          "value": [
+            {
+              "typeId": "hoverTank",
+              "unitNonce": "00000000000000000000000000000005",
+              "progress": 1,
+              "cost": 450,
+              "rate": 0.002
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "ruleId": "full-price-cancel",
+      "when": {
+        "phase": "after-advance",
+        "stepIndex": 1260
+      },
+      "assertions": [
+        {
+          "path": "economy.balances.p1",
+          "operator": "equals",
+          "value": 3200
+        },
+        {
+          "path": "production.lastBirthSerial",
+          "operator": "equals",
+          "value": 4
+        },
+        {
+          "path": "units.mother.transport.passengerCount",
+          "operator": "equals",
+          "value": 4
+        }
+      ]
+    }
+  ]
+}

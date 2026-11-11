@@ -425,6 +425,13 @@ def validate_history_poses(units, policy):
                     raise PlatformError('history-unit-action','Action queue indexes must be unique and contiguous',2)
         elif unit.get('typeId') in ('mechBunker','mechBunkerDeployed'):
             validate_bunker_state(unit, policy.get('ownerPlayerId','p1'))
+        elif unit.get('typeId')=='nautilusSubmarine':
+            energy=unit.get('energy')
+            if (not isinstance(energy,dict) or set(energy)!={'current','maximum','recharging'} or
+                    not number(energy['current']) or energy['current']!=6 or
+                    not number(energy['maximum']) or energy['maximum']!=6 or energy['recharging'] is not False or
+                    unit.get('unitActions') is not None or unit.get('flightPose') is not None):
+                raise PlatformError('history-nautilus','Invalid submerged production energy or form',2)
         elif unit.get('energy') is not None:
             raise PlatformError('history-aa-beam','Weapon energy on an unsupported unit',2)
         elif unit.get('unitActions') is not None:
@@ -432,7 +439,8 @@ def validate_history_poses(units, policy):
         if unit.get('carriedBy') is not None:
             raise PlatformError('history-transport','Carried passenger in a player sample',2)
         transport=unit.get('transport')
-        if unit.get('typeId') in {'hovercraft','dropship'} and unit.get('ownerPlayerId')==policy.get('ownerPlayerId','p1'):
+        if unit.get('typeId') in {'hovercraft','dropship','nautilusSubmarine'} and unit.get('ownerPlayerId')==policy.get('ownerPlayerId','p1'):
+            nautilus=unit['typeId']=='nautilusSubmarine'
             if (not isinstance(transport,dict) or set(transport)!={'passengerIds','passengerCount','occupiedSlots','capacity','unloading','unloadRemaining','canUnload'} or
                     not number(unit.get('height'))):
                 raise PlatformError('history-transport','Missing or unapproved owner cargo fields',2)
@@ -441,11 +449,14 @@ def validate_history_poses(units, policy):
                     len(passengers)!=len(set(passengers)) or any(p==u.get('unitId') for p in passengers for u in units) or
                     type(transport['passengerCount']) is not int or transport['passengerCount']!=len(passengers) or
                     type(transport['occupiedSlots']) is not int or not 0<=transport['occupiedSlots']<=4 or
-                    (not passengers and transport['occupiedSlots']!=0) or type(transport['capacity']) is not int or transport['capacity']!=4 or
+                    (not passengers and transport['occupiedSlots']!=0) or type(transport['capacity']) is not int or transport['capacity']!=(3 if nautilus else 4) or
                     type(transport['unloading']) is not bool or type(transport['canUnload']) is not bool or
                     not number(transport['unloadRemaining']) or not 0<=transport['unloadRemaining']<=30 or
                     transport['canUnload'] and (not passengers or transport['unloading'] or unit.get('alive') is not True)):
                 raise PlatformError('history-transport','Invalid cargo count, capacity or unload state',2)
+            if nautilus and (transport['occupiedSlots']!=len(passengers) or transport['unloading'] or
+                    transport['canUnload'] or transport['unloadRemaining']!=0):
+                raise PlatformError('history-nautilus','Submerged production must retain its single-slot products',2)
         elif transport is not None:
             raise PlatformError('history-transport','Enemy or unsupported cargo state',2)
         exit_state=unit.get('transportExit')
@@ -896,7 +907,7 @@ def compare_history(records, plan, policy, native_anchors=None, geometry=None):
         if (not isinstance(stage,dict) or set(stage)-{'intentId','typeId','passengerCount','unloading','minimumX','maximumX'} or
                 not {'intentId','passengerCount','unloading'}<=set(stage) or stage['intentId'] not in ids or
                 not isinstance(stage.get('typeId','hovercraft'),str) or
-                stage.get('typeId','hovercraft') not in {'hovercraft','dropship'} or
+                stage.get('typeId','hovercraft') not in {'hovercraft','dropship','nautilusSubmarine'} or
                 stage['intentId'] in transport_stages or type(stage['passengerCount']) is not int or stage['passengerCount']<0 or
                 type(stage['unloading']) is not bool or any(type(stage[k]) not in (int,float) or not math.isfinite(stage[k])
                     for k in ('minimumX','maximumX') if k in stage) or

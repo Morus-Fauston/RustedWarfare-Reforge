@@ -53,7 +53,7 @@ class UnitDefinition(
     val maximumHealth: Double? get() = durability?.maxHp ?: combat?.maxHp
 }
 
-enum class TransportProfile { NATIVE_HOVERCRAFT, NATIVE_DROPSHIP }
+enum class TransportProfile { NATIVE_HOVERCRAFT, NATIVE_DROPSHIP, NAUTILUS_SUBMERGED }
 
 /** Native work capability, independent of the ordinary builder's construction menu. */
 enum class MaintenanceProfile { NATIVE_REPAIR_BAY, MECH_ENGINEER }
@@ -142,20 +142,21 @@ class BuilderProfile(buildingTypeIds: List<String>, val range: Float = 85f,
     val buildingTypeIds: List<String> = Collections.unmodifiableList(ArrayList(buildingTypeIds))
 }
 data class ConstructionProfile(val price: Long, val rate: Float)
-enum class FactoryExitProfile { NATIVE_LAND, CUSTOM_MECH, NATIVE_AIR, NATIVE_SEA }
+enum class FactoryExitProfile { NATIVE_LAND, CUSTOM_MECH, NATIVE_AIR, NATIVE_SEA, CUSTOM_NAUTILUS }
 
 /** Author buildings declare their terrain class; native sea factories retain their existing water fallback. */
 val UnitDefinition.foundationMovementType: MovementType
     get() = building?.foundationMovementType
         ?: if (production?.exitProfile == FactoryExitProfile.NATIVE_SEA) MovementType.WATER else movement.type
 
-class ProductionProfile(unitTypeIds: List<String>, val exitProfile: FactoryExitProfile = FactoryExitProfile.NATIVE_LAND) {
+class ProductionProfile(unitTypeIds: List<String>, val exitProfile: FactoryExitProfile = FactoryExitProfile.NATIVE_LAND,
+    val speedMultiplier: Float = 1f) {
     constructor(unitTypeId: String) : this(listOf(unitTypeId))
     val unitTypeIds: List<String> = Collections.unmodifiableList(ArrayList(unitTypeIds))
     val unitTypeId: String get() = unitTypeIds.first()
-    override fun equals(other: Any?): Boolean = other is ProductionProfile && unitTypeIds == other.unitTypeIds && exitProfile == other.exitProfile
-    override fun hashCode(): Int = 31 * unitTypeIds.hashCode() + exitProfile.hashCode()
-    override fun toString(): String = "ProductionProfile(unitTypeIds=$unitTypeIds, exitProfile=$exitProfile)"
+    override fun equals(other: Any?): Boolean = other is ProductionProfile && unitTypeIds == other.unitTypeIds && exitProfile == other.exitProfile && speedMultiplier == other.speedMultiplier
+    override fun hashCode(): Int = 31 * (31 * unitTypeIds.hashCode() + exitProfile.hashCode()) + speedMultiplier.hashCode()
+    override fun toString(): String = "ProductionProfile(unitTypeIds=$unitTypeIds, exitProfile=$exitProfile, speedMultiplier=$speedMultiplier)"
 }
 data class BuildProfile(val price: Long, val rate: Float)
 data class IncomeProfile(val period: Float, val credits: Float)

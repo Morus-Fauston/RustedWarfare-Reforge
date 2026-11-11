@@ -179,7 +179,8 @@ internal class ProductionLedger private constructor(
             val factory = factories.getValue(factoryId)
             require(factoryId !in inactive || queue.isEmpty()) { "Inactive factory must not retain pending work" }
             require(queue.filterIsInstance<PendingUpgrade>().map { it.actionKey }.toSet().size == queue.count { it is PendingUpgrade })
-            for (item in queue) require(item.cost >= 0L && item.progress.isFinite() && item.progress in 0f..<1f &&
+            for (item in queue) require(item.cost >= 0L && item.progress.isFinite() &&
+                (if (item is PendingProduction) item.progress in 0f..1f else item.progress in 0f..<1f) &&
                 item.rate.isFinite() && item.rate > 0f &&
                 (item !is PendingProduction || item.typeId in factory.products && item.unitNonce in nonces[factory.ownerPlayerId].orEmpty())) {
                 "Invalid factory work candidate"
@@ -213,16 +214,19 @@ internal class ProductionLedger private constructor(
     }
 
     /** One fixed sim-tick, one head; excess progress is never transferred to another item. */
-    fun advance(factoryId: String): ProductionTick {
+    fun advance(factoryId: String, speedMultiplier: Float = 1f, completionAllowed: Boolean = true): ProductionTick {
+        require(speedMultiplier.isFinite() && speedMultiplier > 0f)
         if (!isActive(factoryId)) return ProductionTick(this)
         val queue = work(factoryId)
         val head = queue.firstOrNull() as? PendingProduction ?: return ProductionTick(this)
-        val progress = head.progress + head.rate
+        val progress = head.progress + head.rate * speedMultiplier
         require(progress.isFinite()) { "Production progress must remain finite" }
         if (progress < 1f) {
             return ProductionTick(copy(
                 queues = changedQueue(factoryId, listOf(head.copy(progress = progress)) + queue.drop(1))))
         }
+        if (!completionAllowed) return ProductionTick(copy(
+            queues = changedQueue(factoryId, listOf(head.copy(progress = 1f)) + queue.drop(1))))
         val completed = ProductionCompletion(factoryId, factories.getValue(factoryId).ownerPlayerId, head.typeId, head.unitNonce)
         return ProductionTick(copy(queues = changedQueue(factoryId, queue.drop(1))), completed)
     }

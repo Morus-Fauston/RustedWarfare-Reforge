@@ -1,0 +1,51 @@
+{
+  "format": "rw-reforge.content-pack.v1",
+  "id": "owned-nautilus-production-json",
+  "name": "Owned normal sea-factory Nautilus chain",
+  "units": [
+    {
+      "type": "battleship",
+      "file": "units/naval/heavyBattleship.json"
+    },
+    {
+      "type": "sea-factory",
+      "file": "units/seaFactory.json"
+    },
+    {
+      "type": "sea-factory",
+      "file": "units/seaFactoryT2.json"
+    },
+    {
+      "type": "underwater-target",
+      "file": "units/naval/underwaterTarget.json"
+    },
+    {
+      "type": "builder",
+      "file": "units/builder.json"
+    },
+    {
+      "type": "tank",
+      "file": "units/land/tank.json"
+    },
+    {
+      "type": "helicopter",
+      "file": "units/air/helicopter.json"
+    },
+    {
+      "type": "submarine",
+      "file": "units/submarine/submarine.json"
+    },
+    {
+      "type": "nautilus",
+      "file": "nautilus/nautilus.json"
+    },
+    {
+      "type": "hover-tank",
+      "file": "nautilus/hover/hover.json"
+    },
+    {
+      "type": "command-center",
+      "file": "units/commandCenter/commandCenter.json"
+    }
+  ]
+}

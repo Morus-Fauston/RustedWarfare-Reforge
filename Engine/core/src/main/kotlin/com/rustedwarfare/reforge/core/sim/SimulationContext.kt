@@ -935,7 +935,8 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
     }
 
     private fun advanceProduction(factory: MutableUnit, input: Scenario) {
-        val tick = checkNotNull(productionLedger).advance(factory.unitId)
+        val tick = checkNotNull(productionLedger).advance(factory.unitId,
+            checkNotNull(factory.definition.production).speedMultiplier, Transport.allowsProductionCompletion(factory, units))
         productionLedger = tick.ledger
         tick.completed?.let { completed ->
             UnitRegistration.produced(steps.current, input, factory, completed)
@@ -1118,6 +1119,7 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
                 }
                 if (!fourLegged) updateUnit(unit, currentScenario.map, step.delta, step.stepIndex, candidate.motionSamples)
                 FlightMotion.advancePose(unit, step.delta)
+                NautilusMotion.advance(unit, step.delta)
                 Transport.refreshTerrain(unit, currentScenario.map)
                 pendingEvents += Transport.advance(unit, units, currentScenario.map, step.delta)
                 if (unit.transportState == null) HoverMotion.advancePose(unit, step.delta)
@@ -1332,9 +1334,10 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
             val dropship = definition.transport == com.rustedwarfare.reforge.core.content.TransportProfile.NATIVE_DROPSHIP
             val bunker = Bunker.supports(definition)
             val engineer = MechEngineer.supports(definition)
+            val nautilus = com.rustedwarfare.reforge.core.content.NautilusRules.supports(definition)
             if (definition.groundHeight != null && !bunker)
                 return SimulationError("unsupported-unit-actions", "Ground height requires the qualified bunker forms")
-            val beamGunship = definition.energy != null || definition.combat?.projectile?.beam != null ||
+            val beamGunship = definition.energy != null && !nautilus || definition.combat?.projectile?.beam != null ||
                 definition.combat?.namedWeapons?.ordered?.any { it.energyUsage != 0f || it.projectile.beam != null } == true
             if (beamGunship && !AaBeamGunship.supports(definition))
                 return SimulationError("unsupported-aa-beam", "Expected the qualified AA energy and beam representative")
@@ -1368,7 +1371,7 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
                     !m.slidingMode || !m.ignoringBody || m.reverseSpeedPercentage != .1 || definition.mech != null) ||
                 !air && (m.flight != null || definition.rotor != null))
                 return SimulationError("unsupported-flight", "Expected a finite AIR profile and a single finite rotor")
-            if (!m.reverseSpeedPercentage.isFinite() || !air && !submarine && !engineer && (m.reverseSpeedPercentage !in setOf(0.0, 1.0) ||
+            if (!m.reverseSpeedPercentage.isFinite() || !air && !submarine && !engineer && !nautilus && (m.reverseSpeedPercentage !in setOf(0.0, 1.0) ||
                 m.reverseSpeedPercentage != 0.0 && definition.mech == null && m.type != MovementType.WATER) ||
                 definition.mech?.let { !it.isValid() || !bunker && m.type != (if (it.kind == com.rustedwarfare.reforge.core.content.MechKind.FOUR_LEGGED) MovementType.OVER_CLIFF else MovementType.LAND) } == true)
                 return SimulationError("unsupported-mech", "Expected the finite supported mech locomotion category")
@@ -1438,6 +1441,12 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
                     return SimulationError("unsupported-death-explosion", "Expected a durable immobile building and finite death area")
             }
             definition.production?.let { production ->
+                if (nautilus && production.unitTypeIds.any { id ->
+                        input.unitDefinitions[id]?.let(com.rustedwarfare.reforge.core.content.NautilusRules::acceptsProduct) != true })
+                    return SimulationError("unsupported-production", "Nautilus requires the qualified product price, rate and capability")
+                if (production.speedMultiplier != (if (nautilus) 2f else 1f) ||
+                    production.exitProfile == com.rustedwarfare.reforge.core.content.FactoryExitProfile.CUSTOM_NAUTILUS && !nautilus)
+                    return SimulationError("unsupported-production", "Expected qualified current factory speed and exit")
                 val authoredFactory = com.rustedwarfare.reforge.core.content.AuthorFactoryRules.supports(definition, input.unitDefinitions)
                 if (!authoredFactory && production.exitProfile == com.rustedwarfare.reforge.core.content.FactoryExitProfile.NATIVE_SEA &&
                     (!FactoryExit.supportsSeaFactory(definition) || input.unitDefinitions["heavyBattleship"]?.movement?.type != MovementType.WATER ||
@@ -1454,7 +1463,7 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
                     (!FactoryExit.supportsMechFactory(definition) || input.unitDefinitions["builder"]?.builder == null ||
                         input.unitDefinitions["mechGun"]?.mech == null))
                     return SimulationError("unsupported-production", "Custom mech exits require the complete finite L1 factory and product capabilities")
-                if (definition.building == null || production.unitTypeIds.isEmpty() &&
+                if (definition.building == null && !nautilus || production.unitTypeIds.isEmpty() &&
                     !(FactoryExit.supportsSeaFactory(definition) && definition.id == "seaFactory") ||
                     production.unitTypeIds.distinct().size != production.unitTypeIds.size || production.unitTypeIds.any {
                         val build = input.unitDefinitions[it]?.build
@@ -1494,7 +1503,7 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
                     definition.directHitTargetKind != DirectHitTargetKind.ORDINARY))
                 return SimulationError("unsupported-unit", "Expected finite authored surface combat without unsupported capability combinations")
             if (numbers.any { !it.isFinite() || it < 0.0 } ||
-                (definition.building == null && definition.radius >= input.map.tileWidth && !(fourLegged && definition.radius == 22.0) && !navalHull && !authoredSurface && !dropship && !beamGunship && !bunker) ||
+                (definition.building == null && definition.radius >= input.map.tileWidth && !(fourLegged && definition.radius == 22.0) && !navalHull && !authoredSurface && !dropship && !beamGunship && !bunker && !nautilus) ||
                 m.type != MovementType.AIR && !fourLegged && !hovering && (m.slidingMode || m.ignoringBody) ||
                 fourLegged && !bunker && (m.type != MovementType.OVER_CLIFF || !m.slidingMode || !m.ignoringBody)) {
                 return SimulationError("unsupported-unit", "Expected finite movement and the supported representative's radius and locomotion")
@@ -2228,7 +2237,7 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
             target.taskQueue = UnitTaskQueue()
             target.movementRequested = false
             target.cancelRoute()
-            if (target.definition.energy == null) {
+            if (target.definition.energy == null || target.definition.movement.type != MovementType.AIR) {
                 target.speed = 0.0
                 target.flightVelocity = Position(0.0, 0.0)
             }

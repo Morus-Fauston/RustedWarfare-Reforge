@@ -1,0 +1,15 @@
+{
+  "format": "rw-reforge.content-pack.v1",
+  "id": "owned-nautilus-ini",
+  "name": "Owned Nautilus mobile production",
+  "units": [
+    {
+      "type": "nautilus",
+      "file": "nautilus.ini"
+    },
+    {
+      "type": "hover-tank",
+      "file": "hover/hover.ini"
+    }
+  ]
+}

@@ -81,6 +81,8 @@ internal object ContentPackComposer {
             unit.production?.let { production -> production.unitTypeIds.forEach { target ->
                 val product = units[target]
                 if (product?.build == null) bad(target, "productionUnits", "Production target must exist with build metadata in the final set")
+                if (production.exitProfile == FactoryExitProfile.CUSTOM_NAUTILUS && !NautilusRules.acceptsProduct(product))
+                    bad(target, "productionUnits", "Nautilus requires the qualified product price, rate and capability")
                 if (unit.className == "AuthoredBuilding" && (!AuthorFactoryRules.body(unit) ||
                         !AuthorFactoryRules.accepts(production.exitProfile, product)))
                     bad(target, "productionUnits", "Author factory foundation and product capabilities must match the selected existing exit")

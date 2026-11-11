@@ -20,17 +20,19 @@ internal object UnitRegistration {
         val publicId = "produced:${factory.ownerPlayerId}:${completed.unitNonce}"
         check(publicId !in state.units) { "A paid production nonce must identify a new unit" }
         val birth = FactoryExit.birth(factory, definition, input.map)
-        require(MapBounds.contains(input.map.widthTiles.toDouble() * input.map.tileWidth,
+        val customProducer = factory.definition.production?.exitProfile == FactoryExitProfile.CUSTOM_NAUTILUS
+        require(customProducer || MapBounds.contains(input.map.widthTiles.toDouble() * input.map.tileWidth,
             input.map.heightTiles.toDouble() * input.map.tileHeight, birth.position, definition.radius)) {
             "Produced unit collision circle must remain within the map"
         }
         val identity = nextIdentity(state)
         val spawn = UnitSpawn(publicId, factory.ownerPlayerId, completed.typeId, birth.position, birth.heading,
-            definition.movement.flight?.startingHeightOffset ?: 0.0)
+            if (customProducer) factory.height else definition.movement.flight?.startingHeightOffset ?: 0.0)
         val reachable = MapBounds.contains(input.map.widthTiles.toDouble() * input.map.tileWidth,
             input.map.heightTiles.toDouble() * input.map.tileHeight, birth.target, definition.radius)
         val born = register(state, input, spawn, identity.objectId, identity.updateKey,
             ProducedOrigin(factory.unitId, factory.typeId, completed.typeId), birth.protection, identity) { unit ->
+            if (customProducer) unit.nativeTransportPlacement = true
             if (reachable) {
                 unit.moveTarget = birth.target
                 unit.originMoveId = "production-exit:$publicId"
@@ -41,6 +43,12 @@ internal object UnitRegistration {
         }
         if (factory.definition.production?.exitProfile == FactoryExitProfile.CUSTOM_MECH) {
             factory.productionSide = !factory.productionSide
+            if (birth.fallback) state.pendingEvents += Event("production-exit-fallback", publicId)
+        }
+        if (customProducer) {
+            factory.productionSide = !factory.productionSide
+            Transport.retainProduced(factory, born)
+            state.pendingEvents += Event("unit-loaded", factory.unitId)
             if (birth.fallback) state.pendingEvents += Event("production-exit-fallback", publicId)
         }
         if (!reachable) {

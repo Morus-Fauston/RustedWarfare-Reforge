@@ -6248,7 +6248,9 @@
     "engineer-dead": "assets/units/mech_engineer/body_dead.png",
     "engineer-leg": "assets/units/mech_engineer/leg.png",
     "engineer-foot": "assets/units/mech_engineer/foot.png",
-    "engineer-nanoTurret": "assets/units/mech_engineer/cannon.png"
+    "engineer-nanoTurret": "assets/units/mech_engineer/cannon.png",
+    "nautilus-body": "assets/units/nautilus/body.png",
+    "nautilus-dead": "assets/units/nautilus/body_dead.png"
   },
   "mappingBasis": {
     "androidProfileSha256": "e273280ab37b1a24714e6b15d8e1cb14fdd395e228ea7c71a62dd2f24d334780",
@@ -6558,6 +6560,22 @@
       "sha256": "c664cc3f51feb84dd8e79c13c54da9b240a6eef37fb4c3227f6ec2b4326d20fd",
       "width": 28,
       "height": 35
+    },
+    {
+      "id": "nautilus-body",
+      "path": "assets/units/nautilus/body.png",
+      "bytes": 4731,
+      "sha256": "836a4ca466cd40a17132d021f41538d012193e9b2118a2fbc7038da05be5c040",
+      "width": 42,
+      "height": 90
+    },
+    {
+      "id": "nautilus-dead",
+      "path": "assets/units/nautilus/body_dead.png",
+      "bytes": 5653,
+      "sha256": "bb38dae1a3f0ad19c66109a1a8d02a9fef8d6a51c84de195be4a013a80b8ad94",
+      "width": 42,
+      "height": 90
     }
   ],
   "mappingUnitOutputs": {
@@ -7205,6 +7223,38 @@
         35
       ],
       "frames": 1
+    },
+    "nautilus-body": {
+      "file": "units/nautilus-body.png",
+      "operation": "crop",
+      "source": "nautilus-body",
+      "rect": [
+        0,
+        0,
+        42,
+        90
+      ],
+      "target": [
+        42,
+        90
+      ],
+      "frames": 1
+    },
+    "nautilus-dead": {
+      "file": "units/nautilus-dead.png",
+      "operation": "crop",
+      "source": "nautilus-dead",
+      "rect": [
+        0,
+        0,
+        42,
+        90
+      ],
+      "target": [
+        42,
+        90
+      ],
+      "frames": 1
     }
   },
   "mappingUnitBindings": {
@@ -7299,6 +7349,10 @@
       "weaponTurrets": {
         "nanoTurret": "engineer-nanoTurret"
       }
+    },
+    "nautilusSubmarine": {
+      "body": "nautilus-body",
+      "dead": "nautilus-dead"
     }
   }
 }

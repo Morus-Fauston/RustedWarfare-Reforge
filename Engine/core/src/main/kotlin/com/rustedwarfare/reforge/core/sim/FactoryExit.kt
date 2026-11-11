@@ -15,7 +15,7 @@ internal object FactoryExit {
         return definition.id in setOf("seaFactory", "seaFactoryT2") &&
             definition.production?.let { it.exitProfile == FactoryExitProfile.NATIVE_SEA &&
                 it.unitTypeIds.isNotEmpty() && it.unitTypeIds.distinct().size == it.unitTypeIds.size &&
-                it.unitTypeIds.all { id -> id in (if (t2) setOf("heavyBattleship", "attackSubmarine", "hovercraft") else setOf("attackSubmarine", "hovercraft")) } } == true &&
+                it.unitTypeIds.all { id -> id in (if (t2) setOf("heavyBattleship", "attackSubmarine", "hovercraft", "nautilusSubmarine") else setOf("attackSubmarine", "hovercraft")) } } == true &&
             definition.build == BuildProfile(if (t2) 3000L else 1000L, .0007f) &&
             definition.construction == ConstructionProfile(if (t2) 3000L else 1000L, .0007f) &&
             definition.radius == 45.0 && definition.maximumHealth == 1000.0 &&
@@ -77,6 +77,25 @@ internal object FactoryExit {
     }
 
     fun birth(factory: MutableUnit, product: UnitDefinition, map: MapDefinition): FactoryBirth {
+        if (factory.definition.production?.exitProfile == FactoryExitProfile.CUSTOM_NAUTILUS) {
+            // Original custom F first writes world-axis offsets, then the general exit helper.
+            val angle = factory.heading.toFloat() - 90f
+            val side = if (factory.productionSide) -7f else 7f
+            val x = factory.position.x.toFloat() + GroundMath.cos(angle) * 30f + GroundMath.cos(angle + 90f) * side
+            val y = factory.position.y.toFloat() + GroundMath.sin(angle) * 30f + GroundMath.sin(angle + 90f) * side
+            val candidates = listOf(x to y, x + 10f to y, x - 10f to y, x - 20f to y + 10f, x - 20f to y - 10f)
+            val blocking = map.blockingFor(product.movement.type)
+            val chosen = candidates.firstOrNull { (px, py) ->
+                val column = (px / map.tileWidth).toInt(); val row = (py / map.tileHeight).toInt()
+                column in 0 until map.widthTiles && row in 0 until map.heightTiles && !blocking.isBlocked(column, row)
+            } ?: return FactoryBirth(Position(factory.position.x, factory.position.y + 30.0), 180.0,
+                Position(factory.position.x - 1.0, factory.position.y + 90.0), 30f, true)
+            val point = Position(chosen.first.toDouble(), chosen.second.toDouble())
+            val away = angle + side
+            return FactoryBirth(point, factory.heading,
+                Position((chosen.first + GroundMath.cos(away) * 110f).toDouble(),
+                    (chosen.second + GroundMath.sin(away) * 110f).toDouble()), 45f)
+        }
         if (factory.definition.production?.exitProfile == FactoryExitProfile.NATIVE_SEA) {
             val speed = product.movement.moveSpeed.toFloat()
             val protection = 30f + (if (speed < .75f) 30f else 0f) + (if (speed < .55f) 20f else 0f)

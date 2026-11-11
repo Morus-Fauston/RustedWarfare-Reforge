@@ -1,0 +1,42 @@
+{
+  "format": "rw-reforge.unit.v1",
+  "core": {
+    "name": "nautilusSubmarine",
+    "maxHp": 4000,
+    "radius": 36,
+    "price": 18000,
+    "buildSpeed": 0.0003,
+    "techLevel": 2,
+    "fogOfWarSightRange": 24,
+    "selfRegenRate": 0.1,
+    "nanoFactorySpeed": 2,
+    "productionUnits": "hoverTank",
+    "energyMax": 6,
+    "energyRegen": 0.01,
+    "energyNeedsToRechargeToFull": true,
+    "maxTransportingUnits": 3,
+    "transportUnitsRequireMovementType": "WATER,HOVER,OVER_CLIFF_WATER",
+    "transportUnitsCanUnloadUnits": false,
+    "transportUnitsRequireTag": "nonexistent",
+    "transportUnitsKeepBuiltUnits": true,
+    "exit_x": 0,
+    "exit_y": 30,
+    "exit_dirOffset": 0,
+    "exit_moveAwayAmount": 110,
+    "exit_heightOffset": 0,
+    "image": "body.png",
+    "image_dead": "dead.png"
+  },
+  "movement": {
+    "movementType": "WATER",
+    "moveSpeed": 0.45,
+    "moveAccelerationSpeed": 0.015,
+    "moveDecelerationSpeed": 0.05,
+    "reverseSpeedPercentage": 0.6,
+    "maxTurnSpeed": 0.8,
+    "turnAcceleration": 0.05,
+    "targetHeight": -8,
+    "targetHeightDrift": 0.1,
+    "heightChangeRate": 0.005
+  }
+}

@@ -108,6 +108,7 @@ internal object ScenarioReader {
                 "aa-beam-gunship" -> checkedAuthor(ContentLoader.loadAaBeamWithSources(ref.path))
                 "mech-bunker" -> checkedAuthor(ContentLoader.loadBunkerWithSources(ref.path))
                 "mech-engineer" -> checkedAuthor(ContentLoader.loadMechEngineerWithSources(ref.path))
+                "nautilus" -> checkedAuthor(ContentLoader.loadNautilusWithSources(ref.path))
                 "water-combat" -> checkedAuthor(ContentLoader.loadAuthorWaterUnitWithSources(ref.path))
                 "constructor" -> checkedAuthor(ContentLoader.loadAuthorConstructorWithSources(ref.path))
                 "author-factory" -> checkedAuthor(ContentLoader.loadAuthorBuildingWithSources(ref.path), false, false)

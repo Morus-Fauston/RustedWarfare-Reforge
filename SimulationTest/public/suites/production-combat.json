@@ -253,7 +253,17 @@
       "com.rustedwarfare.reforge.core.sim.MechEngineerProductionTest",
       "com.rustedwarfare.reforge.core.sim.MechEngineerTransactionTest",
       "com.rustedwarfare.reforge.core.sim.MechEngineerWorkTest",
-      "com.rustedwarfare.reforge.core.sim.SelfRegenerationTest"
+      "com.rustedwarfare.reforge.core.sim.SelfRegenerationTest",
+      "com.rustedwarfare.reforge.core.content.NautilusContentTest",
+      "com.rustedwarfare.reforge.core.sim.NautilusAdmissionTest",
+      "com.rustedwarfare.reforge.core.sim.NautilusAcquisitionTest",
+      "com.rustedwarfare.reforge.core.sim.NautilusCapacityTest",
+      "com.rustedwarfare.reforge.core.sim.NautilusDeathTest",
+      "com.rustedwarfare.reforge.core.sim.NautilusExitTest",
+      "com.rustedwarfare.reforge.core.sim.NautilusHeightTest",
+      "com.rustedwarfare.reforge.core.sim.NautilusPermissionsTest",
+      "com.rustedwarfare.reforge.core.sim.NautilusProductionTest",
+      "com.rustedwarfare.reforge.core.sim.NautilusTransactionTest"
     ],
     "client": [
       "com.rustedwarfare.reforge.client.CombatActorEvidenceTest",
@@ -317,7 +327,9 @@
       "com.rustedwarfare.reforge.client.BunkerProjectionTest",
       "com.rustedwarfare.reforge.client.BunkerSandboxTest",
       "com.rustedwarfare.reforge.client.RepairBaySandboxTest",
-      "com.rustedwarfare.reforge.client.MechEngineerSandboxTest"
+      "com.rustedwarfare.reforge.client.MechEngineerSandboxTest",
+      "com.rustedwarfare.reforge.client.NautilusSandboxTest",
+      "com.rustedwarfare.reforge.client.NautilusMenuTest"
     ],
     "pc": [
       "com.rustedwarfare.reforge.pc.PatrolJsonlPairingTest",
@@ -339,7 +351,8 @@
       "com.rustedwarfare.reforge.pc.AaBeamOriginalProfileTest",
       "com.rustedwarfare.reforge.pc.BunkerOriginalProfileTest",
       "com.rustedwarfare.reforge.pc.RepairBayOriginalProfileTest",
-      "com.rustedwarfare.reforge.pc.MechEngineerOriginalProfileTest"
+      "com.rustedwarfare.reforge.pc.MechEngineerOriginalProfileTest",
+      "com.rustedwarfare.reforge.pc.NautilusOriginalProfileTest"
     ],
     "tools": [
       "com.rustedwarfare.reforge.testing.ProductionCombatScenarioTest",
@@ -401,7 +414,9 @@
       "com.rustedwarfare.reforge.testing.RepairBayArchiveTest",
       "com.rustedwarfare.reforge.testing.RepairBayProductionSessionTest",
       "com.rustedwarfare.reforge.testing.MechEngineerArchiveTest",
-      "com.rustedwarfare.reforge.testing.MechEngineerProductionSessionTest"
+      "com.rustedwarfare.reforge.testing.MechEngineerProductionSessionTest",
+      "com.rustedwarfare.reforge.testing.NautilusArchiveTest",
+      "com.rustedwarfare.reforge.testing.NautilusProductionSessionTest"
     ]
   },
   "short": [
@@ -1167,6 +1182,39 @@
       "backend": "session",
       "scenario": "platform/scenarios/engineer-hjson-production-chain.json",
       "contract": "platform/contracts/engineer-hjson-production-chain.json"
+    },
+    {
+      "id": "nautilus-ini-short",
+      "scenario": "scenarios/nautilus-ini-short.json",
+      "contract": "contracts/nautilus-ini-short.json"
+    },
+    {
+      "id": "nautilus-ini-production-chain",
+      "backend": "session",
+      "scenario": "platform/scenarios/nautilus-ini-production-chain.json",
+      "contract": "platform/contracts/nautilus-ini-production-chain.json"
+    },
+    {
+      "id": "nautilus-json-short",
+      "scenario": "scenarios/nautilus-json-short.json",
+      "contract": "contracts/nautilus-json-short.json"
+    },
+    {
+      "id": "nautilus-json-production-chain",
+      "backend": "session",
+      "scenario": "platform/scenarios/nautilus-json-production-chain.json",
+      "contract": "platform/contracts/nautilus-json-production-chain.json"
+    },
+    {
+      "id": "nautilus-hjson-short",
+      "scenario": "scenarios/nautilus-hjson-short.json",
+      "contract": "contracts/nautilus-hjson-short.json"
+    },
+    {
+      "id": "nautilus-hjson-production-chain",
+      "backend": "session",
+      "scenario": "platform/scenarios/nautilus-hjson-production-chain.json",
+      "contract": "platform/contracts/nautilus-hjson-production-chain.json"
     }
   ],
   "long": [
@@ -1315,6 +1363,7 @@
     "SimulationTest/tools/test_afterburn_platform.py",
     "SimulationTest/tools/test_bunker_platform.py",
     "SimulationTest/tools/test_repairbay_platform.py",
-    "SimulationTest/tools/test_mech_engineer_platform.py"
+    "SimulationTest/tools/test_mech_engineer_platform.py",
+    "SimulationTest/tools/test_nautilus_platform.py"
   ]
 }

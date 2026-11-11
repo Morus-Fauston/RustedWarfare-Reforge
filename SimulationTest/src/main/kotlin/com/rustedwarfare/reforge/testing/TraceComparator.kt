@@ -410,7 +410,7 @@ object TraceComparator {
                                 precise.keys.forEach { precise.number(it) }
                             }
                             val queues = state.objectAt("queues")
-                            val factoryTypes = typesLoadedBy(scenario, setOf("factory", "command-center", "author-producer", "author-upgrading-producer"))
+                            val factoryTypes = typesLoadedBy(scenario, setOf("factory", "command-center", "author-producer", "author-upgrading-producer", "nautilus"))
                             val registeredFactories = (scenario.arrayAt("units").map { it.jsonObject }.filter { it.id("type") in factoryTypes }.map { it.id("unitId") } +
                                 (born + built).filter { it.id("typeId") in factoryTypes }.map { it.id("unitId") }).toSet()
                             if (queues.keys != registeredFactories) throw Incomplete("missing-economy", "Missing or extra registered factory queue")
@@ -497,7 +497,8 @@ object TraceComparator {
             .map { it.id("id") }.toSet()
 
     private fun validateTransportSamples(units: List<JsonObject>, scenario: JsonObject) {
-        val types = typesLoadedBy(scenario, setOf("hovercraft", "dropship"))
+        val nautilusTypes = typesLoadedBy(scenario, setOf("nautilus"))
+        val types = typesLoadedBy(scenario, setOf("hovercraft", "dropship")) + nautilusTypes
         if (types.isEmpty()) return
         fun invalid(reason: String): Nothing = throw Incomplete("transport-state", reason)
         fun number(value: JsonElement?, name: String): Double {
@@ -526,11 +527,15 @@ object TraceComparator {
                 number(unit["height"], "height")
                 val manifest = cargo["passengerIds"] as? JsonArray ?: invalid("Missing manifest")
                 val passengers = manifest.map(::id)
-                if (passengers.distinct().size != passengers.size || cargo["passengerCount"] != n(passengers.size) || cargo["capacity"] != n(4))
+                val nautilus = unit.id("typeId") in nautilusTypes
+                if (passengers.distinct().size != passengers.size || cargo["passengerCount"] != n(passengers.size) || cargo["capacity"] != n(if (nautilus) 3 else 4))
                     invalid("Invalid manifest count or capacity")
                 val slots = number(cargo["occupiedSlots"], "occupiedSlots")
                 if (slots !in 0.0..4.0 || slots % 1.0 != 0.0 || passengers.isEmpty() && slots != 0.0)
                     invalid("Invalid occupied slots")
+                if (nautilus && (slots != passengers.size.toDouble() || cargo["unloading"] != b(false) ||
+                    cargo["canUnload"] != b(false) || number(cargo["unloadRemaining"], "unloadRemaining") != 0.0))
+                    invalid("Submerged production must retain its single-slot products")
                 if (cargo["unloading"] !in setOf(b(true), b(false)) || cargo["canUnload"] !in setOf(b(true), b(false)) ||
                     number(cargo["unloadRemaining"], "unloadRemaining") !in 0.0..30.0) invalid("Invalid unload controls")
                 if (cargo["canUnload"] == b(true) && (passengers.isEmpty() || cargo["unloading"] == b(true) || unit["alive"] != b(true)))
@@ -540,6 +545,8 @@ object TraceComparator {
                     if (!carried.add(passengerId) || passengerId == unit.id("unitId") || passenger["carriedBy"] != unit["unitId"] ||
                         passenger["ownerPlayerId"] != unit["ownerPlayerId"] || passenger.id("typeId") in types)
                         invalid("Inconsistent passenger relation")
+                    if (nautilus && passenger.id("typeId") !in typesLoadedBy(scenario, setOf("hover-tank")))
+                        invalid("Unqualified Nautilus product")
                 }
             }
             val exit = unit["transportExit"]
@@ -607,6 +614,13 @@ object TraceComparator {
             validateUnitActions(unit, observer)
             if (unit["energy"] != null && unit["energy"] != JsonNull)
                 throw Incomplete("unit-action-state", "Bunker cannot expose weapon energy")
+        }
+        else if (unit.id("typeId") in typesLoadedBy(scenario, setOf("nautilus"))) {
+            val energy = unit["energy"] as? JsonObject ?: throw Incomplete("nautilus-state", "Missing Nautilus energy")
+            if (energy.keys != setOf("current", "maximum", "recharging") || aaNumber(energy["current"]) != 6.0 ||
+                aaNumber(energy["maximum"]) != 6.0 || energy["recharging"] != b(false) ||
+                listOf("unitActions", "flightPose").any { unit[it] != null && unit[it] != JsonNull })
+                throw Incomplete("nautilus-state", "Invalid submerged production energy or form")
         }
         else {
             if (unit["energy"] != null && unit["energy"] != JsonNull)
@@ -1084,7 +1098,7 @@ object TraceComparator {
                 val units = player.arrayAt("units").map { it.jsonObject }
                 if (units.map { it.id("unitId") }.toSet() != visible.toSet() || units.size != visible.size)
                     throw Incomplete("player-units", "Incomplete visible unit samples")
-                if (typesLoadedBy(scenario, setOf("hovercraft", "dropship")).isNotEmpty()) {
+                if (typesLoadedBy(scenario, setOf("hovercraft", "dropship", "nautilus")).isNotEmpty()) {
                     val authoritative = observation.arrayAt("units").map { it.jsonObject }.associateBy { it.id("unitId") }
                     for (unit in units) {
                         val host = authoritative[unit.id("unitId")]
@@ -1127,7 +1141,7 @@ object TraceComparator {
                     }
                 }
                 val local = scenario.arrayAt("players").map { it.jsonObject }.single { it.id("playerId") == id }.text("control") == "local"
-                val factoryTypes = typesLoadedBy(scenario, setOf("factory", "command-center", "author-producer", "author-upgrading-producer"))
+                val factoryTypes = typesLoadedBy(scenario, setOf("factory", "command-center", "author-producer", "author-upgrading-producer", "nautilus"))
                 val factories = units.filter { local && it.id("ownerPlayerId") == id && it["alive"] == b(true) && it.id("typeId") in factoryTypes }
                     .map { it.id("unitId") }.toSet()
                 if (factoryQueues.keys != factories) throw Incomplete("player-queues", "Missing or extra authorized factory queue")
