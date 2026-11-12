@@ -2,6 +2,7 @@ package com.rustedwarfare.reforge.client
 
 import com.badlogic.gdx.Gdx
 import com.badlogic.gdx.graphics.Color
+import com.badlogic.gdx.graphics.GL20
 import com.badlogic.gdx.graphics.Pixmap
 import com.badlogic.gdx.graphics.Texture
 import com.badlogic.gdx.graphics.g2d.SpriteBatch
@@ -25,6 +26,8 @@ class SandboxGraphics private constructor(private val resources: SandboxRenderRe
     private val namedTurrets = mutableMapOf<Pair<String, String>, TextureRegion>()
     private data class Impact(val position: Position, val height: Double, val started: Long, val large: Boolean)
     private val impacts = mutableMapOf<String, Impact>()
+    private data class FlameParticle(val position: Position, val height: Double, val started: Long, val smoke: Boolean)
+    private val flameParticles = mutableMapOf<String, FlameParticle>()
     private var impactSample: String? = null
     private val corpses = mutableMapOf<String, TextureRegion>()
     private val backs = mutableMapOf<String, TextureRegion>()
@@ -488,6 +491,7 @@ class SandboxGraphics private constructor(private val resources: SandboxRenderRe
             val y = projection.y(projectile.position.y) + (projectile.height * projection.scale).toFloat()
             val areaRadius = projectile.areaRadius
             val appearance = projectile.appearance
+            if (appearance == ProjectileAppearance.MECH_FLAME) continue
             if (appearance == ProjectileAppearance.NUCLEAR && areaRadius == null) {
                 shapes.color = Color.DARK_GRAY
                 shapes.ellipse(x - 5f, projection.y(projectile.position.y) - 2f, 10f, 4f, 16)
@@ -504,7 +508,14 @@ class SandboxGraphics private constructor(private val resources: SandboxRenderRe
         val now = System.nanoTime()
         if (impactSample != frame.observation.sampleId) {
             impactSample = frame.observation.sampleId
-            for (event in frame.observation.projectileEvents) if (event.kind == "impact" && event.beam == null) {
+            for (event in frame.observation.projectileEvents) {
+                if (event.appearance == ProjectileAppearance.MECH_FLAME) {
+                    val smoke = event.kind == "born" && (event.token.hashCode() and Int.MAX_VALUE) % 10 < 3
+                    if (smoke || event.kind == "impact")
+                        flameParticles[event.token + event.kind] = FlameParticle(event.position, event.height, now, smoke)
+                    continue
+                }
+                if (event.kind != "impact" || event.beam != null) continue
                 val large = event.appearance == ProjectileAppearance.BOMBER_BOMB
                 val height = if (large || event.appearance == ProjectileAppearance.BOMBER_DEPTH_CHARGE) event.height else 0.0
                 impacts[event.token] = Impact(event.position, height, now, large)
@@ -532,6 +543,42 @@ class SandboxGraphics private constructor(private val resources: SandboxRenderRe
             val y1 = projection.y(start.y); val y2 = projection.y(end.y)
             shapes.color = Color(0.45f, 0.91f, 0.65f, 1f)
             shapes.rect(minOf(x1, x2), minOf(y1, y2), abs(x1 - x2), abs(y1 - y2))
+        }
+    }
+
+    fun drawFlameEffects(shapes: ShapeRenderer, frame: SandboxFrame) {
+        val now = System.nanoTime()
+        flameParticles.values.removeAll { now - it.started > 350_000_000L }
+        val shots = frame.observation.projectiles.filter { it.appearance == ProjectileAppearance.MECH_FLAME }
+        if (shots.isEmpty() && flameParticles.isEmpty()) return
+        val scale = projection.scale.toFloat()
+        val gl = Gdx.gl
+        val wasBlending = gl.glIsEnabled(GL20.GL_BLEND)
+        gl.glEnable(GL20.GL_BLEND)
+        gl.glBlendFunc(GL20.GL_SRC_ALPHA, GL20.GL_ONE_MINUS_SRC_ALPHA)
+        shapes.begin(ShapeRenderer.ShapeType.Filled)
+        try {
+            for (shot in shots) {
+                val x = projection.x(shot.position.x)
+                val y = projection.y(shot.position.y) + shot.height.toFloat() * scale
+                shapes.setColor(.92f, .25f, .035f, .64f)
+                shapes.circle(x, y, 4.1f * scale, 12)
+                shapes.setColor(1f, .67f, .18f, .94f)
+                shapes.circle(x, y, 2.5f * scale, 10)
+                shapes.setColor(1f, .94f, .64f, 1f)
+                shapes.circle(x, y, 1.1f * scale, 8)
+            }
+            for (particle in flameParticles.values) {
+                val age = ((now - particle.started).toDouble() / 350_000_000L).toFloat()
+                val x = projection.x(particle.position.x)
+                val y = projection.y(particle.position.y) + (particle.height.toFloat() + 6f * age) * scale
+                if (particle.smoke) shapes.setColor(.36f, .29f, .24f, .65f * (1f - age))
+                else shapes.setColor(1f, .44f + .25f * (1f - age), .1f, 1f - age)
+                shapes.circle(x, y, (3f + age * 6f) * scale, 12)
+            }
+        } finally {
+            shapes.end()
+            if (!wasBlending) gl.glDisable(GL20.GL_BLEND)
         }
     }
 

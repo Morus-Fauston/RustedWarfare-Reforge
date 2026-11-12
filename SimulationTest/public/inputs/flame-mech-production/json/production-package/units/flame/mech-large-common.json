@@ -1,0 +1,38 @@
+{
+  "format": "rw-reforge.unit.v1",
+  "core": {
+    "dont_load": true
+  },
+  "graphics": {
+    "total_frames": 1,
+    "lock_body_rotation_with_main_turret": true
+  },
+  "leg_1": {
+    "x": -20,
+    "y": 0,
+    "attach_x": -13,
+    "attach_y": 0,
+    "moveSpeed": 1.9,
+    "moveWarmUp": "0.1s",
+    "rotateSpeed": 7,
+    "heightSpeed": 0.7,
+    "resetAngle": 25,
+    "holdDisMin": 22,
+    "holdDisMax": 42,
+    "image_leg": "leg.png",
+    "image_foot": "foot.png"
+  },
+  "leg_2": {
+    "copyFromSections": [
+      "leg_1"
+    ],
+    "x": 20,
+    "attach_x": 13
+  },
+  "movement": {
+    "movementType": "OVER_CLIFF",
+    "moveSlidingMode": false,
+    "moveIgnoringBody": false,
+    "reverseSpeedPercentage": 1
+  }
+}

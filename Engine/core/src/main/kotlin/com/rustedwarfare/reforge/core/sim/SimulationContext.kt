@@ -2,6 +2,7 @@ package com.rustedwarfare.reforge.core.sim
 
 import com.rustedwarfare.reforge.core.content.MapDefinition
 import com.rustedwarfare.reforge.core.content.BomberRules
+import com.rustedwarfare.reforge.core.content.MechFlameRules
 import com.rustedwarfare.reforge.core.content.MovementType
 import com.rustedwarfare.reforge.core.content.foundationMovementType
 import com.rustedwarfare.reforge.core.content.DirectHitTargetKind
@@ -1416,6 +1417,9 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
             val engineer = MechEngineer.supports(definition)
             val nautilus = com.rustedwarfare.reforge.core.content.NautilusRules.supports(definition)
             val scout = ScoutBotRules.supports(definition)
+            val flameMech = definition.id == MechFlameRules.ID
+            if (flameMech && !MechFlameRules.supports(definition))
+                return SimulationError("unsupported-flame-mech", "Expected the qualified flame mech")
             val bomber = definition.id == BomberRules.ID
             if (bomber && !BomberRules.supports(definition))
                 return SimulationError("unsupported-bomber", "Expected the qualified two-weapon bomber")
@@ -1462,7 +1466,7 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
                 return SimulationError("unsupported-flight", "Expected a finite AIR profile and a single finite rotor")
             if (!m.reverseSpeedPercentage.isFinite() || !air && !submarine && !engineer && !nautilus && (m.reverseSpeedPercentage !in setOf(0.0, 1.0) ||
                 m.reverseSpeedPercentage != 0.0 && definition.mech == null && m.type != MovementType.WATER) ||
-                definition.mech?.let { !it.isValid() || !bunker && !nautilus && !scout && m.type != (if (it.kind == com.rustedwarfare.reforge.core.content.MechKind.FOUR_LEGGED) MovementType.OVER_CLIFF else MovementType.LAND) } == true)
+                definition.mech?.let { !it.isValid() || !bunker && !nautilus && !scout && !flameMech && m.type != (if (it.kind == com.rustedwarfare.reforge.core.content.MechKind.FOUR_LEGGED) MovementType.OVER_CLIFF else MovementType.LAND) } == true)
                 return SimulationError("unsupported-mech", "Expected the finite supported mech locomotion category")
             if (definition.maintenance != null && !RepairBay.supports(definition) && !engineer && !scout)
                 return SimulationError("unsupported-repair-bay", "Expected the complete finite native repair bay capability")
@@ -1597,7 +1601,7 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
                     definition.directHitTargetKind != DirectHitTargetKind.ORDINARY))
                 return SimulationError("unsupported-unit", "Expected finite authored surface combat without unsupported capability combinations")
             if (numbers.any { !it.isFinite() || it < 0.0 } ||
-                (definition.building == null && definition.radius >= input.map.tileWidth && !(fourLegged && definition.radius == 22.0) && !navalHull && !authoredSurface && !dropship && !beamGunship && !bunker && !nautilus) ||
+                (definition.building == null && definition.radius >= input.map.tileWidth && !(fourLegged && definition.radius == 22.0) && !navalHull && !authoredSurface && !dropship && !beamGunship && !bunker && !nautilus && !flameMech) ||
                 m.type != MovementType.AIR && !fourLegged && !hovering && (m.slidingMode || m.ignoringBody) ||
                 fourLegged && !bunker && (m.type != MovementType.OVER_CLIFF || !m.slidingMode || !m.ignoringBody)) {
                 return SimulationError("unsupported-unit", "Expected finite movement and the supported representative's radius and locomotion")
@@ -1607,6 +1611,7 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
             definition.durability?.let { durability ->
                 if (!durability.maxHp.isFinite() || durability.maxHp <= 0.0 ||
                     durability.maxDamagePerHit?.let { !it.isFinite() || it <= 0.0 } == true ||
+                    durability.armor?.isValid() == false ||
                     (definition.combat != null && durability.maxHp != definition.combat.maxHp)) {
                     return SimulationError("unsupported-durability", "Expected finite positive health consistent with the combat definition")
                 }
@@ -1664,7 +1669,7 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
                     (if (zeroRecoil) listOf(combat.recoil.outTime, combat.recoil.returnTime) else emptyList())
                 val invalidAcceleration = combat.projectile.acceleration?.let {
                     !it.targetSpeed.isFinite() || it.targetSpeed <= 0.0 || !it.acceleration.isFinite() || it.acceleration <= 0.0 ||
-                        combat.projectile.instant || combat.projectile.ground != null && !bomber || combat.projectile.missile != null
+                        combat.projectile.instant || combat.projectile.ground != null && !bomber && !flameMech || combat.projectile.missile != null
                 } == true
                 val invalidBallistic = combat.projectile.ballistic?.let {
                     !it.delayMoveHeight.isFinite() || it.delayMoveHeight < 0f || !it.apex.isFinite() ||
@@ -1684,6 +1689,7 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
                     !ground.areaRadius.isFinite() || ground.areaRadius <= 0f || !(ground.areaRadius * ground.areaRadius).isFinite() ||
                     !ground.spread.isFinite() || ground.spread < 0f || !ground.initialVerticalSpeed.isFinite() ||
                     !ground.gravity.isFinite() || ground.gravity < 0f || !ground.trueGravity.isFinite() || ground.trueGravity < 0f ||
+                    !flameMech && (ground.speedSpread != 0f || ground.resolveAtSnapshot) ||
                     listOf(combat.attackRange, combat.projectile.life, combat.projectile.speed).any { !it.toFloat().isFinite() }
                 } == true
                 val invalidSplash = combat.projectile.splash?.let { splash ->
@@ -2058,16 +2064,22 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
             pendingEvents += Event("projectile-fired", unit.unitId)
             return
         }
-        state.randomCounter = (state.randomCounter.toLong() + 1L + actorId).toInt()
+        val flameMech = unit.typeId == MechFlameRules.ID
+        // Both flame nozzles advance the source's counter before release.
+        val randomState = if (flameMech) checkNotNull(unit.combat) else state
+        randomState.randomCounter = (randomState.randomCounter.toLong() + 1L + actorId).toInt()
         val id = nextObjectId
         nextObjectId = Math.addExact(nextObjectId, 1L)
-        val scatter = OrdinaryWeapon.sample(contract.worldSeed, combatFrame, actorId, unit, state.randomCounter, 0, 1000, state) * .001f
-        state.randomCounter += 1
-        val ground = weapon.projectile.ground?.let { GroundWeapon.snapshot(unit, target, muzzle, contract.worldSeed, combatFrame, actorId, state, weapon) }
+        val scatter = if (flameMech) 0f else OrdinaryWeapon.sample(contract.worldSeed, combatFrame, actorId, unit,
+            state.randomCounter, 0, 1000, state).also { state.randomCounter++ } * .001f
+        val ground = weapon.projectile.ground?.let {
+            GroundWeapon.snapshot(unit, target, muzzle, contract.worldSeed, combatFrame, actorId, randomState, weapon)
+        }
+        val speed = GroundWeapon.initialSpeed(weapon.projectile, unit, contract.worldSeed, combatFrame, actorId, randomState)
         val position = if (ground == null && weapon.projectile.ballistic == null) muzzle
             else Position(muzzle.x.toFloat().toDouble(), muzzle.y.toFloat().toDouble())
         val projectile = MutableProjectile(id, unit.unitId, if (ground == null) target.unitId else null, position, state.turretHeading,
-            weapon.projectile.life, capturedOffset, scatter, weapon.projectile.speed, weapon.projectile.directDamage,
+            weapon.projectile.life, capturedOffset, scatter, speed, weapon.projectile.directDamage,
             if (ground == null) unit.height else unit.height.toFloat().toDouble(),
             deflectionHealth = weapon.projectile.deflectionHealth, instant = weapon.projectile.instant,
             nonDeflectable = weapon.projectile.nonDeflectable, ground = ground, verticalSpeed = ground?.profile?.initialVerticalSpeed ?: 0f,
@@ -2076,7 +2088,8 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
             ballistic = weapon.projectile.ballistic, lightning = weapon.projectile.lightning,
             damageModifiers = weapon.projectile.damageModifiers,
             lightningSegment = if (weapon.projectile.lightning) LightningSegment(target.position, target.height) else null,
-            appearance = if (unit.typeId == BomberRules.ID) {
+            appearance = if (flameMech) ProjectileAppearance.MECH_FLAME
+            else if (unit.typeId == BomberRules.ID) {
                 if (ground == null) ProjectileAppearance.BOMBER_DEPTH_CHARGE else ProjectileAppearance.BOMBER_BOMB
             } else if (weapon.projectile.lightning) ProjectileAppearance.AMPHIBIOUS_LIGHTNING
                 else if (unit.definition.submarine == null) ProjectileAppearance.STANDARD
@@ -2399,9 +2412,11 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
     }
 
     private fun applyAreaDamage(projectile: MutableProjectile) {
-        val profile = checkNotNull(projectile.ground).profile
-        applyGroundArea(projectile.sourceUnitId, projectile.position, projectile.height.toFloat(),
-            profile.areaDamage, profile.areaRadius, profile.areaRadius)
+        val ground = checkNotNull(projectile.ground)
+        val profile = ground.profile
+        val center = if (profile.resolveAtSnapshot) Position(ground.x.toDouble(), ground.y.toDouble()) else projectile.position
+        val height = if (profile.resolveAtSnapshot) ground.height else projectile.height.toFloat()
+        applyGroundArea(projectile.sourceUnitId, center, height, profile.areaDamage, profile.areaRadius, profile.areaRadius)
     }
 
     private fun applyGroundArea(sourceId: String, center: Position, height: Float, damage: Float, radius: Float, currentRadius: Float) {
@@ -2434,7 +2449,10 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
         val before = checkNotNull(target.health)
         val targetDamage = damage * if (target.definition.building != null ||
             target.definition.directHitTargetKind == DirectHitTargetKind.NATIVE_BUILDING) modifiers.building else 1.0
-        val constructionDamage = if (target.constructionProgress < 1f) targetDamage * 1.75 else targetDamage
+        val armor = target.definition.durability?.armor
+        val armoredDamage = if (armor != null && armor.reduction > 0.0 && targetDamage > armor.minimumDamage)
+            maxOf(armor.minimumDamage, targetDamage - armor.reduction) else targetDamage
+        val constructionDamage = if (target.constructionProgress < 1f) armoredDamage * 1.75 else armoredDamage
         require(constructionDamage.isFinite()) { "Construction damage must remain finite" }
         val applied = target.definition.durability?.maxDamagePerHit?.let { minOf(constructionDamage, it) } ?: constructionDamage
         val shieldBefore = target.shield.toDouble()

@@ -833,16 +833,19 @@ def validate_launch_appearance(shot, units):
     style=shot.get('appearance','STANDARD')
     expected={'attackSubmarine':('SUBMARINE_MISSILE','SUBMARINE_TORPEDO'),
               'amphibiousJet':('AMPHIBIOUS_LIGHTNING',),'aaBeamGunship':('AA_BEAM',),'nukeLauncherC':('NUCLEAR',),
-              'antiNukeLauncherC':('INTERCEPTOR',)}.get(source.get('typeId'),('STANDARD',))
+              'antiNukeLauncherC':('INTERCEPTOR',),'mechFlame':('MECH_FLAME',)}.get(source.get('typeId'),('STANDARD',))
     if source.get('typeId') in NAUTILUS_ACTIONS:
         expected={'botTurret':('SCOUT_PAYLOAD',),'antiNuke':('INTERCEPTOR',)}.get(shot.get('sourceWeaponName'),expected)
     bomber_appearances = {'1': 'BOMBER_BOMB', '2': 'BOMBER_DEPTH_CHARGE'}
     if source.get('typeId') == 'bomber':
         expected = (bomber_appearances.get(shot.get('sourceWeaponName')),) if 'kind' in shot else tuple(bomber_appearances.values())
     if (style not in ('STANDARD','SUBMARINE_MISSILE','SUBMARINE_TORPEDO','AMPHIBIOUS_LIGHTNING','AA_BEAM','NUCLEAR',
-                     'INTERCEPTOR','SCOUT_PAYLOAD', *bomber_appearances.values()) or
+                     'INTERCEPTOR','SCOUT_PAYLOAD','MECH_FLAME', *bomber_appearances.values()) or
             source and style not in expected):
         raise PlatformError('history-projectile','Invalid native launch appearance or source',2)
+    if style=='MECH_FLAME' and 'kind' in shot and (
+            source and shot.get('sourceWeaponName') not in ('2','3') or shot.get('targetUnitId') is not None):
+        raise PlatformError('history-projectile','Flame launch has no homing unit reference and uses a side nozzle',2)
     line=shot.get('lightning')
     if style=='AMPHIBIOUS_LIGHTNING':
         def finite(value):return type(value) in (int,float) and math.isfinite(value)

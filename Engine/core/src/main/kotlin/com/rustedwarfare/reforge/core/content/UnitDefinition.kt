@@ -121,7 +121,13 @@ data class AmphibiousJetProfile(val leftWingImagePath: Path, val rightWingImageP
 /** Trusted original target class; a building or an unarmed life profile does not imply native membership. */
 enum class DirectHitTargetKind { ORDINARY, NATIVE_BUILDING }
 
-data class DurabilityProfile(val maxHp: Double, val deadImagePath: Path?, val maxDamagePerHit: Double? = null)
+data class DurabilityProfile(val maxHp: Double, val deadImagePath: Path?, val maxDamagePerHit: Double? = null,
+    val armor: ArmorProfile? = null)
+
+data class ArmorProfile(val reduction: Double, val minimumDamage: Double = 1.0) {
+    internal fun isValid(): Boolean = reduction.isFinite() && reduction >= 0.0 &&
+        minimumDamage.isFinite() && minimumDamage >= 0.0
+}
 
 /** Actual shield capacity and per-simulation-time regeneration, separate from hit display. */
 data class ShieldProfile(val maximum: Float, val regeneration: Float, val startAtZero: Boolean = false) {
@@ -308,4 +314,5 @@ data class NativeMissileProfile(val targetSpeed: Float = 5f, val acceleration: F
 
 /** Finite first artillery branch; these values describe a fixed ground snapshot shot. */
 data class GroundProjectileProfile(val areaDamage: Float, val areaRadius: Float, val spread: Float,
-    val initialVerticalSpeed: Float, val gravity: Float, val trueGravity: Float = 0f)
+    val initialVerticalSpeed: Float, val gravity: Float, val trueGravity: Float = 0f,
+    val speedSpread: Float = 0f, val resolveAtSnapshot: Boolean = false)

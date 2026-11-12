@@ -1,7 +1,18 @@
 package com.rustedwarfare.reforge.core.sim
 
+import com.rustedwarfare.reforge.core.content.ProjectileProfile
+
 /** Finite ground snapshot entry; ordinary weapons retain their existing Double mathematics. */
 internal object GroundWeapon {
+    fun initialSpeed(projectile: ProjectileProfile, unit: MutableUnit, seed: Int, frame: Int, objectId: Long,
+                     randomState: MutableCombat): Double {
+        val spread = projectile.ground?.speedSpread ?: 0f
+        if (spread == 0f) return projectile.speed
+        val bound = (spread * 100f).toInt()
+        val offset = OrdinaryWeapon.sample(seed, frame, objectId, unit, 1, -bound, bound, randomState).toFloat() / 100f
+        return (projectile.speed.toFloat() + offset).toDouble()
+    }
+
     /** Ordered binary32 flight of the finite, non-ballistic ground profile. */
     fun move(projectile: MutableProjectile, delta: Double): Boolean {
         val shot = checkNotNull(projectile.ground)

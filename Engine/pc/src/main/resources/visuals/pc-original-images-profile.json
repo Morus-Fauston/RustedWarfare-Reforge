@@ -6239,6 +6239,8 @@
     "aa-afterburn-trail": "assets/units/shared/glow_sharp.png",
     "bomber-body": "assets/units/bomber/base.png",
     "bomber-dead": "assets/units/bomber/base_dead.png",
+    "flame-mech-body": "assets/units/mechs_large/topFlame.png",
+    "flame-mech-foot": "assets/units/mechs_large/foot.png",
     "bunker-body": "assets/units/mechs_large/topBunker.png",
     "bunker-turret": "assets/units/mechs_large/bunkerTurret.png",
     "bunker-leg": "assets/units/mechs_large/leg.png",
@@ -6501,6 +6503,22 @@
       "sha256": "2074be278066a5c8a72b1b6dfded3d3549144559e92d2bfc7df914e751e6c8b8",
       "width": 32,
       "height": 32
+    },
+    {
+      "id": "flame-mech-body",
+      "path": "assets/units/mechs_large/topFlame.png",
+      "bytes": 3750,
+      "sha256": "d9daa4e9fbb1dbd28908949eb7322e2e2ccbc75bfd971b3b7191ade7f76bfd7b",
+      "width": 45,
+      "height": 87
+    },
+    {
+      "id": "flame-mech-foot",
+      "path": "assets/units/mechs_large/foot.png",
+      "bytes": 457,
+      "sha256": "b88caf30194355755d53ce3f9dc49501d7f92f84ebeead44733e8229e46469d2",
+      "width": 17,
+      "height": 36
     },
     {
       "id": "bunker-body",
@@ -7229,6 +7247,30 @@
       ],
       "frames": 1
     },
+    "flame-mech-body": {
+      "file": "units/flame-mech-body.png",
+      "operation": "crop",
+      "source": "flame-mech-body",
+      "rect": [0, 0, 45, 87],
+      "target": [45, 87],
+      "frames": 1
+    },
+    "flame-mech-shadow": {
+      "file": "units/flame-mech-shadow.png",
+      "operation": "alpha-shadow",
+      "source": "flame-mech-body",
+      "rect": [0, 0, 45, 87],
+      "target": [45, 87],
+      "frames": 1
+    },
+    "flame-mech-foot": {
+      "file": "units/flame-mech-foot.png",
+      "operation": "crop",
+      "source": "flame-mech-foot",
+      "rect": [0, 0, 17, 36],
+      "target": [17, 36],
+      "frames": 1
+    },
     "bunker-body": {
       "file": "units/bunker-body.png",
       "operation": "crop",
@@ -7814,6 +7856,12 @@
       "body": "air-transport-body",
       "dead": "air-transport-dead",
       "shadow": "air-transport-shadow"
+    },
+    "mechFlame": {
+      "body": "flame-mech-body",
+      "shadow": "flame-mech-shadow",
+      "leg": "heavy-mech-leg",
+      "foot": "flame-mech-foot"
     },
     "bomber": {
       "body": "bomber-body",

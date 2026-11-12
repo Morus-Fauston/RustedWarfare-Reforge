@@ -229,7 +229,7 @@ enum class ProjectileAppearance(val red: Int, val green: Int, val blue: Int, val
     STANDARD(255, 255, 0, 2f), SUBMARINE_MISSILE(230, 230, 50, 2f), SUBMARINE_TORPEDO(30, 30, 150, 1f),
     AMPHIBIOUS_LIGHTNING(247, 212, 129, 2f), AA_BEAM(255, 255, 255, 2f), NUCLEAR(255, 238, 160, 3f),
     INTERCEPTOR(238, 238, 0, 2f), SCOUT_PAYLOAD(238, 238, 0, .9f),
-    BOMBER_BOMB(0, 0, 0, 1f), BOMBER_DEPTH_CHARGE(0, 0, 0, 1f)
+    BOMBER_BOMB(0, 0, 0, 1f), BOMBER_DEPTH_CHARGE(0, 0, 0, 1f), MECH_FLAME(255, 165, 69, .3f)
 }
 
 class AreaExpansionObservation(val remaining: Float, val radius: Float, hitUnitIds: Set<String>) {

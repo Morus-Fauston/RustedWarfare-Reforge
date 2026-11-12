@@ -59,12 +59,9 @@ internal object FactoryContentReader {
                         reason = "Expected a nonempty unique native land factory product list")
             } else {
                 val products = required("productionUnits").split(',')
-                val baseProducts = if (t2) listOf("builder", "mechGun", "mechHeavyMissile") else listOf("builder", "mechGun")
-                val additions = (if ("mechBunker" in products) listOf("mechBunker") else emptyList()) +
-                    (if (t2 && "mechEngineer" in products) listOf("mechEngineer") else emptyList())
-                if (products != baseProducts + additions)
+                if (!MechFactoryProducts.qualifies(products, t2))
                     reject(ContentErrorCode.UNSUPPORTED_FEATURE, path, field = "productionUnits",
-                        reason = "Expected the qualified tier products, optional bunker and T2 engineer")
+                        reason = "Expected the qualified products for the declared mech factory tier")
             }
             only("placementFootprint", "-1,-1,1,3")
             only("price", when { t2 -> "5000"; mech -> "1000"; else -> "700" })

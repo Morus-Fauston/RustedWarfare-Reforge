@@ -39,7 +39,7 @@ data class UnitAppearance(val displayRadius: Double, val imagePath: Path, val im
     val afterburnTrailImagePath: Path? = null, val repairRange: Double? = null,
     val iconWeaponName: String? = null, val nanoWeaponName: String? = null,
     val nativeLegSize: ImageLogicalSize? = null, val arm1ImagePath: Path? = null, val arm2ImagePath: Path? = null,
-    val nuclearSiloKind: NuclearSiloKind? = null) {
+    val nuclearSiloKind: NuclearSiloKind? = null, val shadowOffset: Position? = null) {
     internal fun nuclearDoors(unit: UnitObservation): List<WingDrawing> {
         val amount = unit.nuclearDoors ?: return emptyList()
         if (!unit.alive) return emptyList()
@@ -202,10 +202,11 @@ class SandboxRenderResources private constructor(
                     repairRange = if (unit.maintenance != null) unit.builder?.range?.toDouble() ?: 230.0 else null,
                     iconWeaponName = if (unit.maintenance == com.rustedwarfare.reforge.core.content.MaintenanceProfile.MECH_ENGINEER) "body" else null,
                     nanoWeaponName = unit.builder?.mainNanoTurret,
+                    shadowOffset = if (unit.id == "mechFlame") Position(2.0, 2.0) else null,
                     nativeLegSize = when {
                         unit.maintenance == com.rustedwarfare.reforge.core.content.MaintenanceProfile.SCOUT_BOT -> ImageLogicalSize(24, 102)
                         unit.maintenance == com.rustedwarfare.reforge.core.content.MaintenanceProfile.MECH_ENGINEER -> ImageLogicalSize(19, 82)
-                        unit.mech?.kind == com.rustedwarfare.reforge.core.content.MechKind.FOUR_LEGGED -> ImageLogicalSize(16, 68)
+                        unit.id == "mechFlame" || unit.mech?.kind == com.rustedwarfare.reforge.core.content.MechKind.FOUR_LEGGED -> ImageLogicalSize(16, 68)
                         else -> null
                     })
             }), Collections.unmodifiableMap(scenario.players.associate { it.playerId to it.teamId }))

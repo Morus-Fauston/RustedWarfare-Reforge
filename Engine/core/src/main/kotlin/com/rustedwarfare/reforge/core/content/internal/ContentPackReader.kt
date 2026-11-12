@@ -106,7 +106,7 @@ internal object ContentPackReader {
             val field = "units[$index]"
             val spec = objectFields(entry, setOf("type", "file"), manifest, field)
             val capability = string(spec.get("type"), "$field.type")
-            if (capability !in setOf("nuclear-silo", "experimental-factory", "nautilus", "scout-bot", "mech-engineer", "repair-bay", "tank", "hover-tank", "hovercraft", "dropship", "aa-beam-gunship", "bomber", "mech-bunker", "mech", "mech-heavy", "mech-factory", "builder", "constructor", "factory", "helicopter", "amphibious-jet", "air-factory", "battleship", "water-combat", "sea-factory", "underwater-target", "submarine", "command-center", "land-factory"))
+            if (capability !in setOf("nuclear-silo", "experimental-factory", "nautilus", "scout-bot", "mech-engineer", "repair-bay", "tank", "hover-tank", "hovercraft", "dropship", "aa-beam-gunship", "bomber", "mech-bunker", "mech-flame", "mech", "mech-heavy", "mech-factory", "builder", "constructor", "factory", "helicopter", "amphibious-jet", "air-factory", "battleship", "water-combat", "sea-factory", "underwater-target", "submarine", "command-center", "land-factory"))
                 reject(ContentErrorCode.UNSUPPORTED_FEATURE, manifest, field = "$field.type", reason = "Expected an implemented finite combat, mech, factory or builder capability")
             val reference = string(spec.get("file"), "$field.file")
             val pieces = reference.split('/')
@@ -153,6 +153,7 @@ internal object ContentPackReader {
                         reject(ContentErrorCode.UNSUPPORTED_FEATURE, input, field = "format", reason = "Expected the finite native air factory profile")
                 }
                 "mech" -> CombatContentReader.readMechWithSources(input) { requireOrdinary(root, it) }
+                "mech-flame" -> MechFlameContentReader.readWithSources(input) { requireOrdinary(root, it) }
                 "mech-heavy" -> CombatContentReader.readHeavyMechWithSources(input) { requireOrdinary(root, it) }
                 "mech-factory" -> FactoryContentReader.readWithSources(input) { requireOrdinary(root, it) }.also {
                     if (it.definition.production?.exitProfile != FactoryExitProfile.CUSTOM_MECH)

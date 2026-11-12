@@ -27,6 +27,7 @@ object MechPresentation {
             val weapon = mainBodies[unit.unitId]
             val origin = weapon?.pivot ?: unit.position
             val bodyX = projection.x(origin.x); val bodyY = projection.y(origin.y - unit.height)
+            val shadowOffset = appearance?.shadowOffset
             require(bodyX.isFinite() && bodyY.isFinite()) { "Non-finite projected mech body" }
             MechUnitFrame(unit.unitId, finite(-(weapon?.turretHeading ?: pose.forwardHeading)), frozen(pose.legs.map { leg ->
                 val ax = projection.x(leg.anchor.x); val ay = projection.y(leg.anchor.y - unit.height)
@@ -49,7 +50,9 @@ object MechPresentation {
                 }
                 MechLegFrame(leg.index, ax, ay, fx, fy, finite(hypot(dx, dy)),
                     finite(Math.toDegrees(atan2(dy, dx))), finite(-leg.heading), shaft)
-            }), bodyX, bodyY, unit.height > 0.0, projection.x(unit.position.x), projection.y(unit.position.y))
+            }), bodyX, bodyY, unit.height > 0.0 || shadowOffset != null,
+                projection.x(unit.position.x + (shadowOffset?.x ?: 0.0)),
+                projection.y(unit.position.y + (shadowOffset?.y ?: 0.0)))
         } })
     }
 

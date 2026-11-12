@@ -19,7 +19,7 @@ internal class ActionCatalogue(private val definitions: Map<String, UnitDefiniti
         "airFactory" to Names("Air factory"), "airFactoryT2" to Names("Air factory T2"),
         "helicopter" to Names("Helicopter"), "amphibiousJet" to Names("Amphibious jet"), "aaBeamGunship" to Names("AA beam gunship"),
         "aaBeamGunship_afterburn" to Names("AA beam (Afterburn)", "AA beam gunship (Afterburn)"),
-        "bomber" to Names("Bomber"),
+        "bomber" to Names("Bomber"), "mechFlame" to Names("Flame mech"),
         "seaFactory" to Names("Sea factory"), "seaFactoryT2" to Names("Sea factory T2"),
         "experimentalLandFactory" to Names("Experimental", "Experimental factory"),
         "heavyBattleship" to Names("Heavy battleship"), "attackSubmarine" to Names("Submarine"),

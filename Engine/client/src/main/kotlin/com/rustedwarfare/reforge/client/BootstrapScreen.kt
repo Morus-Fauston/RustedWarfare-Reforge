@@ -798,6 +798,7 @@ class BootstrapScreen(
                 shapes.begin(ShapeRenderer.ShapeType.Line)
                 graphics?.drawOverlay(shapes, current.frame, current.selectedIds, mapInput.box, mapInput.constructionPreview, mapInput.groundActionPreview)
                 shapes.end()
+                graphics?.drawFlameEffects(shapes, current.frame)
             } finally { ScissorStack.popScissors() }
             graphics?.drawMinimap(shapes, current.frame)
         }

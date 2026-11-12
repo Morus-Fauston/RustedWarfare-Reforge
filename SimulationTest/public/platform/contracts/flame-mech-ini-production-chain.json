@@ -1,0 +1,133 @@
+{
+  "schemaVersion": 1,
+  "scenarioId": "flame-mech-ini-production-chain",
+  "history": {
+    "ownerPlayerId": "p1",
+    "initialBalance": 18000,
+    "initialOwnedTypes": [
+      "builder"
+    ],
+    "spend": [
+      {
+        "intentId": "build-t1",
+        "amount": 1000,
+        "at": "construction-created"
+      },
+      {
+        "intentId": "upgrade-t2",
+        "amount": 4000,
+        "at": "action"
+      },
+      {
+        "intentId": "produce-flame",
+        "amount": 12000,
+        "at": "action"
+      }
+    ],
+    "mechLegs": {
+      "mechFlame": 2,
+      "mechHeavyMissile": 4
+    },
+    "productionOrder": [
+      "mechFlame"
+    ],
+    "completedUpgradeTypes": [
+      "mechFactoryT2"
+    ],
+    "projectileBirthsRequired": true,
+    "minimumBirths": [
+      {
+        "ownerPlayerId": "p1",
+        "typeId": "mechFlame",
+        "weaponNames": [
+          "2"
+        ],
+        "targetUnitId": null
+      },
+      {
+        "ownerPlayerId": "p1",
+        "typeId": "mechFlame",
+        "weaponNames": [
+          "3"
+        ],
+        "targetUnitId": null
+      }
+    ],
+    "finalUnits": [
+      {
+        "ownerPlayerId": "p1",
+        "typeId": "builder",
+        "fields": {
+          "alive": true
+        }
+      },
+      {
+        "ownerPlayerId": "p1",
+        "typeId": "mechFactoryT2",
+        "fields": {
+          "alive": true
+        }
+      },
+      {
+        "ownerPlayerId": "p1",
+        "typeId": "mechFlame",
+        "fields": {
+          "alive": true
+        }
+      }
+    ]
+  },
+  "rules": [
+    {
+      "intentId": "select-builder"
+    },
+    {
+      "intentId": "build-t1"
+    },
+    {
+      "intentId": "finish-t1"
+    },
+    {
+      "intentId": "upgrade-t2"
+    },
+    {
+      "intentId": "wait-upgrade-0"
+    },
+    {
+      "intentId": "wait-upgrade-1"
+    },
+    {
+      "intentId": "wait-upgrade-2"
+    },
+    {
+      "intentId": "finish-upgrade"
+    },
+    {
+      "intentId": "produce-flame"
+    },
+    {
+      "intentId": "wait-flame-0"
+    },
+    {
+      "intentId": "wait-flame-1"
+    },
+    {
+      "intentId": "leave-factory"
+    },
+    {
+      "intentId": "select-flame"
+    },
+    {
+      "intentId": "move-flame"
+    },
+    {
+      "intentId": "attack-ground"
+    },
+    {
+      "intentId": "return-cliff"
+    },
+    {
+      "intentId": "stop-flame"
+    }
+  ]
+}
