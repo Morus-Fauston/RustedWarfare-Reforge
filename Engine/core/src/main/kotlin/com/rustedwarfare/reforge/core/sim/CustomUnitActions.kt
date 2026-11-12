@@ -9,9 +9,9 @@ import com.rustedwarfare.reforge.core.content.GroundLaunchProfile
 import com.rustedwarfare.reforge.core.content.ScoutBotRules
 
 /** Immutable queue values participate in the same candidate transaction as the unit. */
-internal data class PendingUnitAction(val action: CustomActionDefinition, override val progress: Float = 0f,
+internal data class PendingUnitAction(val action: CustomActionDefinition, val orderId: String, override val progress: Float = 0f,
     val target: Position? = null) : PendingFactoryWork {
-    override val cost: Long get() = action.groundLaunch?.price ?: 0L
+    override val cost: Long get() = action.groundLaunch?.price ?: action.ammoProduction?.price ?: 0L
     override val rate: Float get() = action.rate
 
     fun matches(current: CustomActionDefinition): Boolean = action == current &&
@@ -50,7 +50,7 @@ internal object CustomUnitActions {
         }
     }
 
-    fun observe(unit: MutableUnit, now: Int, map: MapDefinition,
+    fun observe(unit: MutableUnit, now: Int, input: Scenario,
                 queue: List<PendingUnitAction> = unit.customActionState.queue): UnitActionsObservation? {
         val profile = unit.definition.customActions ?: return null
         val actions = profile.actions.filter { it.automatic == null && it.visible }.map { action ->
@@ -58,14 +58,22 @@ internal object CustomUnitActions {
             val remaining = maxOf(0, (unit.customActionState.cooldownEnds[action.actionId] ?: now) - now)
             UnitActionObservation(action.name, index.takeIf { it >= 0 },
                 queue.getOrNull(index)?.progress, remaining,
-                unit.alive && unit.carriedBy == null && BuildingWork.isReady(unit) && remaining == 0 && index < 0 &&
-                    (!action.requiresOverWater || overWater(unit, map)))
+                unit.alive && unit.carriedBy == null && BuildingWork.isReady(unit) && remaining == 0 &&
+                    (index < 0 || action.allowMultipleInQueue) &&
+                    (!action.requiresOverWater || overWater(unit, input.map)) &&
+                    (action.ammoProduction == null || input.nukesEnabled && hasAmmoQueueRoom(unit, action, queue)))
         }
-        return UnitActionsObservation(immutable(actions), unit.customActionState.automaticCooldown,
-            queue = immutable(queue.filter { it.target != null }.map { QueuedUnitActionObservation(it.action.name, it.progress, it.target) }))
+        val stockpile = unit.ordnance.ammo.takeIf { profile.actions.any { it.ammoProduction != null } }
+        return UnitActionsObservation(immutable(actions), unit.customActionState.automaticCooldown, stockpile,
+            immutable(queue.filter { it.target != null || it.action.ammoProduction != null }
+                .map { QueuedUnitActionObservation(it.action.name, it.progress, it.target) }))
     }
 
-    fun request(unit: MutableUnit, command: UnitAction, now: Int, map: MapDefinition, collisionMap: MapDefinition,
+    private fun hasAmmoQueueRoom(unit: MutableUnit, action: CustomActionDefinition, queue: List<PendingUnitAction>): Boolean =
+        unit.ordnance.ammo.toLong() + queue.count { it.action.actionId == action.actionId } <
+            checkNotNull(action.ammoProduction).queueLimit
+
+    fun request(unit: MutableUnit, command: UnitAction, now: Int, input: Scenario, collisionMap: MapDefinition,
                 ledger: ProductionLedger?): CustomActionChange {
         fun reject(code: String, message: String) = CustomActionChange(ledger, SimulationError(code, message))
         val action = unit.definition.customActions?.actions?.singleOrNull {
@@ -86,30 +94,38 @@ internal object CustomUnitActions {
             unit.customActionState = unit.customActionState.copy(queue = unit.customActionState.queue.filterIndexed { i, _ -> i != index })
             return CustomActionChange(refunded)
         }
-        if (action.requiresOverWater && !overWater(unit, map))
+        if (action.requiresOverWater && !overWater(unit, input.map))
             return reject("unit-action-requires-water", "This action requires water")
         if ((unit.customActionState.cooldownEnds[action.actionId] ?: now) > now)
             return reject("unit-action-cooldown", "This action is cooling down")
         if (!action.allowMultipleInQueue && unit.customActionState.queue.any { it.action.actionId == action.actionId })
             return reject("duplicate-unit-action", "This action is already queued")
-        val paid = if (launch == null) ledger else {
+        if (action.ammoProduction != null) {
+            if (!input.nukesEnabled) return reject("nukes-disabled", "Nuclear ammunition production is locked")
+            if (!hasAmmoQueueRoom(unit, action, unit.customActionState.queue))
+                return reject("ammo-queue-limit", "The ammunition queue is full")
+        }
+        if (launch != null) {
             if (target == null) return reject("missing-action-target", "Select a ground point")
             if (!target.x.toFloat().isFinite() || !target.y.toFloat().isFinite())
                 return reject("invalid-action-target", "Ground target must be finite")
             val distance = GroundMath.square(unit.position.x.toFloat(), unit.position.y.toFloat(), target.x.toFloat(), target.y.toFloat())
             if (distance > launch.range * launch.range)
                 return reject("action-target-out-of-range", "Ground target is beyond launch range")
-            val x = kotlin.math.floor(target.x / map.tileWidth).toInt()
-            val y = kotlin.math.floor(target.y / map.tileHeight).toInt()
-            if (x !in 0 until map.widthTiles || y !in 0 until map.heightTiles ||
+            val x = kotlin.math.floor(target.x / input.map.tileWidth).toInt()
+            val y = kotlin.math.floor(target.y / input.map.tileHeight).toInt()
+            if (x !in 0 until input.map.widthTiles || y !in 0 until input.map.heightTiles ||
                 collisionMap.blockingFor(launch.movementType).isBlocked(x, y))
                 return reject("action-target-impassable", "Ground target is blocked for this launch")
-            checkNotNull(ledger).charge(unit.ownerPlayerId, launch.price)
+        }
+        val item = PendingUnitAction(action, command.actionId, target = target)
+        val paid = if (item.cost == 0L) ledger else {
+            checkNotNull(ledger).charge(unit.ownerPlayerId, item.cost)
                 ?: return reject("insufficient-funds", "Not enough credits to queue this action")
         }
         val queue = unit.customActionState.queue.toMutableList()
         val index = if (action.highPriority) queue.indexOfFirst { !it.action.highPriority }.takeIf { it >= 0 } ?: queue.size else queue.size
-        queue.add(index, PendingUnitAction(action, target = target))
+        queue.add(index, item)
         unit.customActionState = unit.customActionState.copy(queue = queue.toList())
         return CustomActionChange(paid)
     }
@@ -129,8 +145,11 @@ internal object CustomUnitActions {
         unit.customActionState = state.copy(queue = state.queue.drop(1))
         action.energySet?.let { unit.energy = it }
         val launch = action.groundLaunch
-        if (launch == null) convert(unit, definitions.getValue(checkNotNull(action.targetTypeId)))
-        else fireAtGround(launch, checkNotNull(head.target))
+        when {
+            launch != null -> fireAtGround(launch, checkNotNull(head.target))
+            action.ammoProduction != null -> unit.ordnance = unit.ordnance.copy(ammo = Math.addExact(unit.ordnance.ammo, 1))
+            else -> convert(unit, definitions.getValue(checkNotNull(action.targetTypeId)))
+        }
         if (action.cooldown > 0) unit.customActionState = unit.customActionState.copy(
             cooldownEnds = state.cooldownEnds + (action.actionId to (now + action.cooldown)))
         return true
@@ -197,7 +216,7 @@ internal object CustomUnitActions {
         val actions = unit.definition.customActions?.actions.orEmpty().filter { it.automatic == null }
         val byId = actions.associateBy { it.actionId }
         require(state.automaticCooldown.isFinite() && state.automaticCooldown in 0f..60f &&
-            state.queue.size <= actions.size && state.queue.map { it.action.actionId }.distinct().size == state.queue.size &&
+            state.queue.map { it.orderId }.distinct().size == state.queue.size &&
             state.queue.all { item -> byId[item.action.actionId]?.let(item::matches) == true && item.progress in 0f..<1f } &&
             state.cooldownEnds.keys.all { (byId[it]?.cooldown ?: 0) > 0 } &&
             (unit.definition.customActions != null || state == CustomActionState())) {

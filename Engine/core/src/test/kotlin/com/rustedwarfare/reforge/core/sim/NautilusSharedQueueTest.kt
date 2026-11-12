@@ -3,6 +3,59 @@ package com.rustedwarfare.reforge.core.sim
 import kotlin.test.*
 
 class NautilusSharedQueueTest {
+    @Test fun naval_interceptor_rounds_share_the_moving_factory_queue_and_refund_the_last_order() = WaterTestScene.withMap { map ->
+        val scenario = NautilusScene.scenario(map).copy(economyContract = EconomyContract(mapOf("p1" to 30000L, "p2" to 0L)))
+        val c = NautilusScene.open(scenario)
+        try {
+            fun queue(id: String, cancel: Boolean = false) =
+                c.submit(UnitAction(id, "p1", "mother", "buildAntiNuke", c.world, cancelQueued = cancel))
+            fun unit() = c.observe().units.single { it.unitId == "mother" }
+            fun rounds() = unit().unitActions!!.queue.filter { it.name == "buildAntiNuke" }
+
+            assertIs<ActionResult.Accepted>(queue("round-1"))
+            assertIs<ActionResult.Accepted>(c.submit(ProduceAction("produce", "p1", "mother", "hoverTank", "a".repeat(32), c.world)))
+            for (index in 2..4) assertIs<ActionResult.Accepted>(queue("round-$index"))
+            assertEquals(4, rounds().size)
+            assertEquals(5550L, c.observePlayer(c.world, "p1").balance)
+            assertEquals("ammo-queue-limit", assertIs<ActionResult.Rejected>(queue("over-capacity")).error.code)
+            assertIs<ActionResult.Accepted>(queue("cancel-last", cancel = true))
+            assertEquals(11550L, c.observePlayer(c.world, "p1").balance)
+
+            assertIs<ActionResult.Accepted>(c.submit(MoveAction("move", "p1", "mother", Position(650.0, 180.0), c.world)))
+            val origin = unit().position
+            for (step in 0L..29L) c.advance(Step(step, 1.0, "sim-tick"))
+            assertNotEquals(origin, unit().position)
+            assertEquals(3, rounds().size)
+            assertEquals(.015f, rounds().first().progress, .000001f)
+            assertTrue(rounds().drop(1).all { it.progress == 0f })
+
+            assertIs<ActionResult.Accepted>(c.submit(UnitAction("surface", "p1", "mother", "surface", c.world)))
+            c.advance(Step(30L, 1.0, "sim-tick"))
+            assertEquals("nautilusSubmarineSurface", unit().typeId)
+            assertEquals(.015f, rounds().first().progress, .000001f)
+            assertEquals(0, unit().unitActions!!.stockpile)
+            for (step in 31L..2050L) c.advance(Step(step, 1.0, "sim-tick"))
+            assertEquals(1, unit().unitActions!!.stockpile)
+            assertTrue(c.observe().economy!!.queuedProduction.getValue("mother").single().progress > 0f)
+            assertEquals(2, rounds().size)
+            assertTrue(rounds().all { it.progress == 0f })
+        } finally { c.close() }
+    }
+
+    @Test fun no_nukes_locks_naval_ammunition_without_disabling_other_actions() = WaterTestScene.withMap { map ->
+        val scene = NautilusScene.scenario(map).copy(nukesEnabled = false,
+            economyContract = EconomyContract(mapOf("p1" to 6000L, "p2" to 0L)))
+        val c = NautilusScene.open(scene)
+        try {
+            val result = c.submit(UnitAction("blocked", "p1", "mother", "buildAntiNuke", c.world))
+            assertEquals("nukes-disabled", assertIs<ActionResult.Rejected>(result).error.code)
+            assertEquals(6000L, c.observePlayer(c.world, "p1").balance)
+            val actions = c.observe().units.single().unitActions!!.actions
+            assertFalse(actions.single { it.name == "buildAntiNuke" }.available)
+            assertTrue(actions.single { it.name == "surface" }.available)
+        } finally { c.close() }
+    }
+
     @Test fun completed_scout_launch_expires_the_mother_shot_and_bears_independent_split_shots() = WaterTestScene.withMap { map ->
         val c = NautilusScene.open(NautilusScene.scenario(map))
         try {

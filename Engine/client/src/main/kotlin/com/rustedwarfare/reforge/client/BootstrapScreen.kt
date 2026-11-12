@@ -976,17 +976,18 @@ class BootstrapScreen(
         return FactoryActionCard(table, icon, text, count, input)
     }
 
-    private fun placeFactoryCard(card: FactoryActionCard, index: Int, total: Int, title: String) {
+    private fun placeFactoryCard(card: FactoryActionCard, index: Int, total: Int, title: String, naval: Boolean = false) {
         val overflow = total > 6
         val parent = if (overflow) productionContent else productionLayer
         if (card.table.parent !== parent) { card.input.cancel(); parent.addActor(card.table) }
         card.table.isVisible = nativePanel
         when {
             overflow -> card.table.setBounds((index % 2) * 92f, ((total + 1) / 2 - 1 - index / 2) * 60f, 84f, 54f)
+            naval -> NativeActionPanel.navalProduction.let { card.table.setBounds(it.x, it.y, it.width, it.height) }
             total <= 3 -> NativeActionPanel.production[index].let { card.table.setBounds(it.x, it.y, it.width, it.height) }
             else -> card.table.setBounds(752f + (index % 2) * 92f, 280f - (index / 2) * 60f, 84f, 54f)
         }
-        val compact = total > 3
+        val compact = total > 3 || naval
         if (card.compact != compact) {
             card.table.getCell(card.icon).size(if (compact) 24f else 28f)
             card.table.getCell(card.text).height(if (compact) 12f else 16f)
@@ -1000,7 +1001,7 @@ class BootstrapScreen(
             Color(.37f, .48f, .4f, 1f) else Color(.23f, .28f, .26f, 1f))
     }
 
-    private fun syncProductionCards(actions: List<ProductionActionView>, upgrades: List<UpgradeActionView>) {
+    private fun syncProductionCards(actions: List<ProductionActionView>, upgrades: List<UpgradeActionView>, naval: Boolean) {
         val stale = productionCards.iterator()
         while (stale.hasNext()) {
             val (type, card) = stale.next()
@@ -1032,7 +1033,7 @@ class BootstrapScreen(
                     }, { type }))
             }
             val title = if (type == "mechHeavyMissile") "Heavy mech" else action.title
-            placeFactoryCard(card, index, total, title)
+            placeFactoryCard(card, index, total, title, naval && total == 1)
             if (type == "mechHeavyMissile") card.text.setFontScale(.7f)
             setUnitIcon(card.icon, type)
             card.count.setText(if (action.count > 0) "(${action.count})" else "")
@@ -1145,6 +1146,7 @@ class BootstrapScreen(
         commandHintLabel.isVisible = current?.canDeploy == true && !showConsole && !touchControls
         val menu = current?.actionMenu
         val selected = current?.observation?.units?.find { it.unitId == current.selectedId }
+        val naval = selected?.transport != null && menu?.unitActions?.any { it.name == "buildAntiNuke" } == true
         val state = HudState(selected, current?.selectedIds ?: emptySet(), (1..3).map { current?.groupCount(it) ?: 0 }, current?.feedback, current?.observation?.stepIndex,
             launch.canEdit, loading, visualState?.preparationStatus, loadError, current != null, menu?.balance, menu?.factoryQueue,
             mapInput.patrolMode, mapInput.patrolPointCount, mapInput.reclaimMode, mapInput.repairMode, menu?.workerQueueText, menu)
@@ -1182,7 +1184,7 @@ class BootstrapScreen(
         produceButton.isDisabled = menu?.production?.firstOrNull()?.price == null
         produceButton.setText(menu?.production?.firstOrNull()?.price?.let { "Produce $it" } ?: "Produce")
         cancelProductionButton.isDisabled = queue?.items?.isEmpty() != false
-        syncProductionCards(menu?.production.orEmpty(), menu?.upgrades.orEmpty().filter { it.kind == UpgradePresentationKind.FACTORY })
+        syncProductionCards(menu?.production.orEmpty(), menu?.upgrades.orEmpty().filter { it.kind == UpgradePresentationKind.FACTORY }, naval)
         reclaimCard.isVisible = nativePanel && menu?.canMaintain == true
         reclaimCard.background = skin.newDrawable("white", if (reclaimInput.pressed || state.reclaimMode)
             Color(.37f, .48f, .4f, 1f) else Color(.23f, .28f, .26f, 1f))
@@ -1220,7 +1222,8 @@ class BootstrapScreen(
             selectedLabel.setText(if (selected == null) "None" else if (state.selectedIds.size > 1)
                 "${state.selectedIds.size} selected" else "${menu?.selectedTitle} x1")
             setUnitIcon(nativeIcon, selected?.typeId)
-            nativeInfo.setFontScale(if (state.workerQueueText != null) .7f else if (selected?.submarine != null || selected?.amphibiousJet != null) .8f else 1f)
+            nativeInfo.setFontScale(if (state.workerQueueText != null) .7f
+                else if (naval || selected?.submarine != null || selected?.amphibiousJet != null) .8f else 1f)
             nativeInfo.setText(selectedInfo ?: "")
             menu?.production?.firstOrNull { it.typeId == productionHover }?.let { action ->
                 setUnitIcon(nativeTooltipIcon, action.typeId)
@@ -1295,12 +1298,16 @@ class BootstrapScreen(
         }
         stopButton.isDisabled = selected == null
         depthButton.isVisible = menu?.depthAction != null || menu?.flightAction != null || menu?.transportAction != null
-        depthButton.width = if (menu?.transportAction != null && menu.unitActions.isNotEmpty())
-            NativeActionPanel.transportWithCustomAction.width else 176f
+        val unloadBounds = if (naval) NativeActionPanel.navalUnload
+            else if (menu?.transportAction != null && menu.unitActions.isNotEmpty()) NativeActionPanel.transportWithCustomAction
+            else NativeCardBounds(752f, 188f, 176f, 40f)
+        depthButton.setBounds(unloadBounds.x, unloadBounds.y, unloadBounds.width, unloadBounds.height)
         depthButton.isDisabled = menu?.depthAction == null && menu?.flightAction?.available != true && menu?.transportAction?.available != true
         depthButton.setText(menu?.depthAction?.title ?: menu?.flightAction?.title ?: menu?.transportAction?.title ?: "Surface")
         customActionButtons.forEach { (name, actor) ->
             val action = menu?.unitActions?.singleOrNull { it.name == name }
+            val bounds = NativeActionPanel.customBounds(name, naval)
+            actor.setBounds(bounds.x, bounds.y, bounds.width, bounds.height)
             actor.isVisible = current != null && action != null
             actor.isDisabled = action?.available != true && action?.cancellable != true
             val status = when {

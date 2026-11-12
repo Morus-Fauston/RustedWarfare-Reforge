@@ -693,7 +693,7 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
                     productionLedger = change.ledger
                     change.error
                 } else withUnitActionQueue(unit) {
-                    val change = CustomUnitActions.request(unit, action, steps.current.actionClock, currentScenario.map,
+                    val change = CustomUnitActions.request(unit, action, steps.current.actionClock, currentScenario,
                         buildingTerrain?.collisionMap ?: currentScenario.map, productionLedger)
                     productionLedger = change.ledger
                     change.error
@@ -1410,6 +1410,8 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
             val engineer = MechEngineer.supports(definition)
             val nautilus = com.rustedwarfare.reforge.core.content.NautilusRules.supports(definition)
             val scout = ScoutBotRules.supports(definition)
+            if (!nautilus && definition.combat?.namedWeapons?.ordered?.any { it.interception != null } == true)
+                return SimulationError("unsupported-naval-interception", "Expected the qualified Nautilus interception weapon")
             if (definition.groundHeight != null && !bunker && !scout)
                 return SimulationError("unsupported-unit-actions", "Ground height requires a qualified custom form")
             val beamGunship = !nautilus && !scout && (definition.energy != null || definition.combat?.projectile?.beam != null ||
@@ -2713,7 +2715,7 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
                     maxHealth = unit.definition.maximumHealth,
                     shield = unit.definition.shield?.let { ShieldObservation(unit.shield, it.maximum, unit.shieldDisplayDamage) },
                     energy = unit.definition.energy?.let { EnergyObservation(unit.energy, it.maximum, unit.energyRecharging) },
-                    unitActions = NuclearOrdnance.observe(unit) ?: CustomUnitActions.observe(unit, steps.current.actionClock, currentScenario.map, unitActionQueue(unit)),
+                    unitActions = NuclearOrdnance.observe(unit) ?: CustomUnitActions.observe(unit, steps.current.actionClock, currentScenario, unitActionQueue(unit)),
                     nuclearDoors = unit.definition.nuclearSilo?.let { unit.ordnance.doors },
                     submarine = unit.definition.submarine?.let { SubmarineObservation(unit.submarineSurfaceIntent,
                         unit.submarineVerticalSpeed, SubmarineMotion.submerged(unit), unit.submarineSurfacePresentation,

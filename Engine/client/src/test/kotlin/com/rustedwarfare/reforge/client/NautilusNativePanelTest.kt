@@ -7,6 +7,49 @@ import com.rustedwarfare.reforge.core.sim.*
 import kotlin.test.*
 
 class NautilusNativePanelTest {
+    @Test fun surface_cards_have_distinct_bounds_for_production_scouts_ammo_conversion_and_unload() {
+        val cards = listOf(NativeActionPanel.navalProduction, NativeActionPanel.navalUnload) +
+            listOf("launchScoutBot", "buildAntiNuke", "dive").map { NativeActionPanel.customBounds(it, naval = true) }
+        for ((index, a) in cards.withIndex()) for (b in cards.drop(index + 1)) {
+            assertFalse(a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height)
+        }
+        assertEquals(NativeActionPanel.customActions.getValue("buildAntiNuke"),
+            NativeActionPanel.customBounds("buildAntiNuke", naval = false))
+    }
+
+    @Test fun naval_interceptor_card_uses_the_current_paid_price_and_displays_the_no_nukes_lock() {
+        val base = NautilusSandboxScene.scenario()
+        val point = Position(500.0, 300.0)
+        val scene = base.copy(units = listOf(UnitSpawn("mother", "p1", "nautilusSubmarineSurface", point, 90.0)),
+            economyContract = EconomyContract(mapOf("p1" to 6000L, "p2" to 0L)),
+            combatContract = CombatContract(12345, -1, mapOf("mother" to 8L), 9L))
+        val name = "buildAntiNuke"
+        SandboxSession(scene).use { session ->
+            session.select(point)
+            fun view() = session.actionMenu.unitActions.single { it.name == name }
+            assertTrue(view().available)
+            assertTrue(view().tooltip.contains("$6000"))
+            assertTrue(view().tooltip.contains("33.3s"))
+            assertTrue(view().tooltip.contains("Ammo 0"))
+            val actor = Actor().apply {
+                setBounds(0f, 0f, 176f, 44f)
+                addListener(CustomUnitActionButtonInput({ session }, { true }, name))
+            }
+            press(actor, true); press(actor, false)
+            assertEquals(0L, session.observation.balance)
+            assertTrue(view().cancellable)
+            press(actor, true, Input.Buttons.RIGHT); press(actor, false, Input.Buttons.RIGHT)
+            assertEquals(6000L, session.observation.balance)
+            assertFalse(view().queued)
+        }
+        SandboxSession(scene, options = SandboxOptions(nukesEnabled = false)).use { session ->
+            session.select(point)
+            val locked = session.actionMenu.unitActions.single { it.name == name }
+            assertFalse(locked.available)
+            assertTrue(locked.tooltip.contains("Nukes disabled"))
+        }
+    }
+
     @Test fun native_scout_leg_regions_follow_the_world_joint_span_in_both_forms() {
         val base = NautilusSandboxScene.scenario()
         for ((type, point) in listOf("robotCrab" to Position(270.0, 300.0), "robotCrabWater" to Position(500.0, 300.0))) {
@@ -171,11 +214,11 @@ class NautilusNativePanelTest {
             }
             val surface = card("surface")
             press(surface, false)
-            assertFalse(session.actionMenu.unitActions.single().queued)
+            assertFalse(session.actionMenu.unitActions.single { it.name == "surface" }.queued)
             press(surface, true)
-            assertFalse(session.actionMenu.unitActions.single().queued)
+            assertFalse(session.actionMenu.unitActions.single { it.name == "surface" }.queued)
             press(surface, false)
-            assertTrue(session.actionMenu.unitActions.single().queued)
+            assertTrue(session.actionMenu.unitActions.single { it.name == "surface" }.queued)
             session.tick()
             assertEquals("nautilusSubmarineSurface", session.observation.units.single().typeId)
             val dive = card("dive")

@@ -101,13 +101,13 @@ internal class ProductionLedger private constructor(
 
     /** Reconcile an action projection without reordering existing production or losing saved progress. */
     fun replaceActions(factoryId: String, actions: List<PendingUnitAction>): ProductionLedger {
-        require(isActive(factoryId) && actions.map { it.action.actionId }.distinct().size == actions.size)
-        val byId = actions.associateBy { it.action.actionId }
-        val previousIds = actionQueue(factoryId).mapTo(mutableSetOf()) { it.action.actionId }
+        require(isActive(factoryId) && actions.map { it.orderId }.distinct().size == actions.size)
+        val byOrder = actions.associateBy { it.orderId }
+        val previousOrders = actionQueue(factoryId).mapTo(mutableSetOf()) { it.orderId }
         val updated = work(factoryId).mapNotNull { item ->
-            if (item is PendingUnitAction) byId[item.action.actionId] else item
+            if (item is PendingUnitAction) byOrder[item.orderId] else item
         }.toMutableList()
-        for (item in actions.filter { it.action.actionId !in previousIds }) {
+        for (item in actions.filter { it.orderId !in previousOrders }) {
             val index = if (item.action.highPriority) updated.indexOfFirst {
                 it !is PendingUnitAction || !it.action.highPriority
             }.takeIf { it >= 0 } ?: updated.size else updated.size

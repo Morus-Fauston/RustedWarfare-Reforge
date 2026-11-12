@@ -25,7 +25,8 @@ internal object NautilusContentReader {
     private val texts = setOf("name", "productionUnits", "transportUnitsRequireMovementType", "transportUnitsRequireTag",
         "movementType", "image", "image_dead", "image_leg", "image_foot", "convertTo", "autoTrigger", "isActive", "projectile",
         "linkDelayWithTurret", "id", "fireTurretXAtGround", "fireTurretXAtGround_onlyOverPassableTileOf",
-        "spawnProjectilesOnEndOfLife", "spawnUnit")
+        "spawnProjectilesOnEndOfLife", "spawnUnit", "addResources", "isLocked", "interceptProjectiles_withTags",
+        "resourceUsage", "shoot_sound")
     private val cores = mapOf("nautilusSubmarine" to core,
         "nautilusSubmarineSurface" to (core + mapOf("name" to "nautilusSubmarineSurface",
             "transportUnitsCanUnloadUnits" to "if self.isOverLiquid()", "transportUnitsRequireTag" to "",
@@ -47,6 +48,9 @@ internal object NautilusContentReader {
             "fireTurretXAtGround" to "botTurret", "fireTurretXAtGround_onlyOverPassableTileOf" to "HOVER",
             "addActionCooldownTime" to "30s", "allowMultipleInQueue" to "false",
             "whenBuilding_cannotMove" to "true", "isVisible" to (id != "nautilusSubmarine").toString()),
+        "action_buildAntiNuke" to mapOf("id" to "buildAntiNuke", "price" to "6000", "buildSpeed" to "0.00025",
+            "isActive" to "if self.ammoIncludingQueued(lessThan=4)", "addResources" to "ammo=1",
+            "isLocked" to "if not game.nukesEnabled()"),
         "hiddenAction_trigger_onLand" to mapOf("autoTrigger" to "if not self.overWater()", "convertTo" to "nautilusSubmarineLand")) +
         if (id == "nautilusSubmarineLand") mapOf("action_trigger_onWater" to mapOf("autoTrigger" to "if self.overWater()",
             "convertTo" to "nautilusSubmarineSurface", "buildSpeed" to "0", "isVisible" to "false")) else emptyMap()

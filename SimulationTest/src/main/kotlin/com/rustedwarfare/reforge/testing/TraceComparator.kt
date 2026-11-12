@@ -817,8 +817,8 @@ object TraceComparator {
         }
         val state = raw as? JsonObject ?: invalid("Missing owner custom action state")
         val mother = unit.id("typeId") in setOf("nautilusSubmarine", "nautilusSubmarineSurface", "nautilusSubmarineLand")
-        val queue = state["queue"]
-        if (state.keys != setOf("actions", "automaticCooldown") + (if (mother && queue != null) setOf("queue") else emptySet()) ||
+        val queueFields = if (mother) setOf("queue", "stockpile") else emptySet()
+        if (state.keys != setOf("actions", "automaticCooldown") + queueFields ||
             aaNumber(state["automaticCooldown"]) !in 0.0..60.0)
             invalid("Invalid automatic action cooldown")
         val actions = state["actions"] as? JsonObject ?: invalid("Missing action entries")
@@ -826,23 +826,39 @@ object TraceComparator {
             "mechBunker" -> setOf("deploy")
             "mechBunkerDeployed" -> setOf("undeploy")
             "aaBeamGunship_afterburn" -> setOf("afterBurn", "cancelBurn")
-            "nautilusSubmarine" -> setOf("surface")
-            "nautilusSubmarineSurface" -> setOf("dive", "launchScoutBot")
-            "nautilusSubmarineLand" -> setOf("launchScoutBot")
+            "nautilusSubmarine" -> setOf("surface", "buildAntiNuke")
+            "nautilusSubmarineSurface" -> setOf("dive", "launchScoutBot", "buildAntiNuke")
+            "nautilusSubmarineLand" -> setOf("launchScoutBot", "buildAntiNuke")
             "robotCrab", "robotCrabWater" -> emptySet()
             else -> setOf("afterBurn")
         }
         if (actions.keys != names) invalid("Missing or unapproved player action")
-        val scout = actions["launchScoutBot"] as? JsonObject
-        val queuedScout = queue?.let { (it as? JsonArray)?.singleOrNull() as? JsonObject
-            ?: invalid("Expected one queued scout launch") }
-        if (queuedScout != null) {
-            if (queuedScout.keys != setOf("name", "progress", "target") || queuedScout["name"] != s("launchScoutBot") ||
-                aaNumber(queuedScout["progress"]) !in 0.0..<1.0 ||
-                scout != null && (scout["progress"] != queuedScout["progress"] || scout["queueIndex"] == JsonNull))
-                invalid("Invalid scout launch queue")
-            point(queuedScout.objectAt("target"))
-        } else if (scout?.get("queueIndex")?.let { it != JsonNull } == true) invalid("Missing queued scout launch")
+        val queued = if (mother) state.arrayAt("queue").map { rawItem ->
+            val item = rawItem as? JsonObject ?: invalid("Invalid paid queue item")
+            if (aaNumber(item["progress"]) !in 0.0..<1.0) invalid("Invalid paid progress")
+            when (item["name"]) {
+                s("launchScoutBot") -> {
+                    if (item.keys != setOf("name", "progress", "target")) invalid("Invalid scout launch queue")
+                    point(item.objectAt("target"))
+                }
+                s("buildAntiNuke") -> if (item.keys - "target" != setOf("name", "progress") ||
+                    item["target"]?.let { it != JsonNull } == true) invalid("Invalid interceptor production queue")
+                else -> invalid("Unknown paid queue item")
+            }
+            item
+        } else emptyList()
+        val ammunition = queued.filter { it["name"] == s("buildAntiNuke") }
+        val scouts = queued.filter { it["name"] == s("launchScoutBot") }
+        val stockpile = if (mother) state.integer("stockpile") else 0L
+        if (stockpile !in 0L..4L || stockpile + ammunition.size > 4 || scouts.size > 1)
+            invalid("Invalid stockpile or paid queue limit")
+        for ((name, items) in listOf("buildAntiNuke" to ammunition, "launchScoutBot" to scouts)) {
+            val entry = actions[name] as? JsonObject ?: continue
+            val first = items.firstOrNull()
+            if (first == null && entry["queueIndex"] != JsonNull ||
+                first != null && (entry["progress"] != first["progress"] || entry["queueIndex"] == JsonNull))
+                invalid("Paid queue does not match its first action entry")
+        }
         val indexes = mutableListOf<Long>()
         for ((name, rawAction) in actions) {
             val action = rawAction as? JsonObject ?: invalid("Invalid action entry")
@@ -858,17 +874,20 @@ object TraceComparator {
             } else {
                 val literal = index as? JsonPrimitive ?: invalid("Invalid queue index")
                 val number = literal.longOrNull
-                if (literal.isString || number == null || number !in 0L..1L || aaNumber(action["progress"]) !in 0.0..<1.0)
+                val maximumIndex = if (mother) queued.size.toLong() else 1L
+                if (literal.isString || number == null || number !in 0L..maximumIndex || aaNumber(action["progress"]) !in 0.0..<1.0)
                     invalid("Invalid queued progress")
                 indexes += number
             }
             val available = unit["alive"] == b(true) && unit.number("constructionProgress") >= 1.0 &&
-                (unit["carriedBy"] == null || unit["carriedBy"] == JsonNull) && index == JsonNull && remaining == 0L
-            if (name == "dive") {
-                if (action["available"] !in setOf(b(false), b(available))) invalid("Invalid Dive availability")
+                (unit["carriedBy"] == null || unit["carriedBy"] == JsonNull) && remaining == 0L &&
+                (if (name == "buildAntiNuke") stockpile + ammunition.size < 4 else index == JsonNull)
+            if (name in setOf("dive", "buildAntiNuke")) {
+                if (action["available"] !in setOf(b(false), b(available))) invalid("Invalid conditional action availability")
             } else if (action["available"] != b(available)) invalid("Action availability differs from its public state")
         }
-        if (indexes.sorted() != indexes.indices.map { it.toLong() }) invalid("Queue indexes must be unique and contiguous")
+        if (indexes.size != indexes.toSet().size || !mother && indexes.sorted() != indexes.indices.map { it.toLong() })
+            invalid("Invalid first queue indexes")
     }
 
     private fun validateAaBeamUnit(unit: JsonObject) {
@@ -969,7 +988,7 @@ object TraceComparator {
             (if (typesLoadedBy(scenario, setOf("amphibious-jet")).isNotEmpty()) setOf("AMPHIBIOUS_LIGHTNING") else emptySet()) +
             (if (typesLoadedBy(scenario, setOf("aa-beam-gunship")).isNotEmpty()) setOf("AA_BEAM") else emptySet()) +
             (if (typesLoadedBy(scenario, setOf("nuclear-silo")).isNotEmpty()) setOf("NUCLEAR", "INTERCEPTOR") else emptySet()) +
-            (if (typesLoadedBy(scenario, setOf("nautilus")).isNotEmpty()) setOf("SCOUT_PAYLOAD") else emptySet())
+            (if (typesLoadedBy(scenario, setOf("nautilus")).isNotEmpty()) setOf("SCOUT_PAYLOAD", "INTERCEPTOR") else emptySet())
 
     private fun validateSubmarineProjectiles(observation: JsonObject, scenario: JsonObject, units: List<JsonObject>) {
         val types = typesLoadedBy(scenario, setOf("submarine"))

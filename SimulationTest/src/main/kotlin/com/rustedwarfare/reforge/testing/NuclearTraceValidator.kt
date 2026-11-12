@@ -16,6 +16,8 @@ internal object NuclearTraceValidator {
         val ids = launchers + interceptors
         if (ids.isEmpty()) return emptySet()
         val states = mutableMapOf<String,Stock>()
+        val navalSources = mutableSetOf<String>()
+        val navalForms = setOf("nautilusSubmarine", "nautilusSubmarineSurface", "nautilusSubmarineLand")
         for (row in rows) {
             if (row["kind"] == s("action-result") && row.objectAt("result")["status"] == s("accepted")) {
                 val action = row.objectAt("action")
@@ -46,6 +48,8 @@ internal object NuclearTraceValidator {
             }
             if (row["kind"] != s("observation")) continue
             val sample = row.objectAt("observation")
+            sample.arrayAt("units").map { it.jsonObject }.filter { it.id("typeId") in navalForms }
+                .mapTo(navalSources) { it.id("unitId") }
             val completions = mutableListOf<String>()
             val shots = sample.arrayAt("projectileEvents").map { it.jsonObject }
             for (unit in sample.arrayAt("units").map { it.jsonObject }.filter { it.id("unitId") in ids }) {
@@ -107,9 +111,11 @@ internal object NuclearTraceValidator {
             fun projectile(shot: JsonObject) {
                 if (shot["appearance"] == s("INTERCEPTOR")) {
                     val speed = shot.objectAt("ballistic").number("speed")
-                    if (shot["sourceUnitId"]?.jsonPrimitive?.content !in interceptors ||
-                        shot["sourceWeaponName"] != s("silo") || shot["targetUnitId"] != JsonNull ||
-                        speed !in .2..6.5 || shot.number("height") !in 0.0..110.0)
+                    val source = shot["sourceUnitId"]?.jsonPrimitive?.content
+                    val naval = source in navalSources
+                    if (!naval && source !in interceptors || shot["sourceWeaponName"] != s(if (naval) "antiNuke" else "silo") ||
+                        shot["targetUnitId"] != JsonNull || speed !in .2..6.5 ||
+                        shot.number("height") !in (if (naval) -8.0 else 0.0)..110.0)
                         invalid("Invalid interceptor identity or flight profile")
                     return
                 }

@@ -40,8 +40,9 @@ class NautilusPlatformTest(unittest.TestCase):
     def test_owned_submerged_manifest_allows_the_fourth_internal_single_slot_product_but_no_unload(self):
         mother = dict(unitId='mother', ownerPlayerId='p1', typeId='nautilusSubmarine', alive=True,
             height=-8, energy=dict(current=6, maximum=6, recharging=False),
-            constructionProgress=1, unitActions=dict(automaticCooldown=0, actions=dict(surface=dict(
-                queueIndex=None, progress=None, cooldownRemaining=0, available=True))),
+            constructionProgress=1, unitActions=dict(automaticCooldown=0, stockpile=0, queue=[], actions={
+                name:dict(queueIndex=None,progress=None,cooldownRemaining=0,available=True)
+                for name in platform_scenario.NAUTILUS_ACTIONS['nautilusSubmarine']}),
             transport=dict(passengerIds=['one','two','three','four'], passengerCount=4,
                 occupiedSlots=4, capacity=3, unloading=False, unloadRemaining=0, canUnload=False))
         validate_history_poses([mother], {})
@@ -66,7 +67,7 @@ class NautilusPlatformTest(unittest.TestCase):
         legs = [dict(index=i, anchor=dict(x=0,y=0),foot=dict(x=0,y=0),height=0,heading=0,phase='PLANTED') for i in range(6)]
         mother = dict(unitId='mother', ownerPlayerId='p1', typeId='nautilusSubmarineSurface', alive=True,
             constructionProgress=1, height=.1, energy=dict(current=.4,maximum=6,recharging=True),
-            unitActions=dict(automaticCooldown=0,actions={
+            unitActions=dict(automaticCooldown=0,stockpile=0,queue=[],actions={
                 name:dict(queueIndex=None,progress=None,cooldownRemaining=0,available=True)
                 for name in platform_scenario.NAUTILUS_ACTIONS['nautilusSubmarineSurface']}),
             transport=dict(passengerIds=['one'],passengerCount=1,occupiedSlots=1,capacity=3,unloading=False,unloadRemaining=0,canUnload=True),
@@ -83,6 +84,23 @@ class NautilusPlatformTest(unittest.TestCase):
             else: changed['ownerPlayerId']='p2'
             with self.subTest(fault=fault),self.assertRaises(PlatformError):
                 validate_history_poses([changed],dict(mechLegs=dict(nautilusSubmarineSurface=6,nautilusSubmarineLand=6)))
+
+    def test_naval_queue_accepts_two_distinct_paid_orders_and_rejects_stock_target_and_privacy_faults(self):
+        action=dict(queueIndex=None,progress=None,cooldownRemaining=0,available=True)
+        unit=dict(unitId='mother',typeId='nautilusSubmarine',ownerPlayerId='p1',alive=True,constructionProgress=1,
+            energy=dict(current=6,maximum=6,recharging=False),unitActions=dict(automaticCooldown=0,stockpile=1,
+                queue=[dict(name='buildAntiNuke',progress=p,target=None) for p in (.5,0)],
+                actions=dict(surface=action,buildAntiNuke=dict(action,queueIndex=0,progress=.5))))
+        platform_scenario.validate_nautilus_state(unit,'p1')
+        for fault in ('stock','target','progress','private'):
+            changed=copy.deepcopy(unit)
+            state=changed['unitActions']
+            if fault=='stock':state['stockpile']=3
+            elif fault=='target':state['queue'][0]['target']=dict(x=1,y=1)
+            elif fault=='progress':state['actions']['buildAntiNuke']['progress']=0
+            else:changed['ownerPlayerId']='p2'
+            with self.subTest(fault=fault),self.assertRaises(PlatformError):
+                platform_scenario.validate_nautilus_state(changed,'p1')
 
 
 if __name__ == '__main__':

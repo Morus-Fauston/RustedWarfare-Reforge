@@ -31,6 +31,15 @@ internal object NautilusWeapons {
         }
         result["turret_botTurret"] = mapOf("x" to "10", "y" to "22", "idleDir" to "0", "invisible" to "true",
             "canShoot" to "false", "projectile" to "scoutBotProjectile", "size" to "1", "turnSpeed" to "40", "limitingRange" to "500")
+        result["turret_antiNuke"] = mapOf("x" to "7", "y" to "20", "idleDir" to "0", "invisible" to "true",
+            "canShoot" to "false", "projectile" to "antiNukeMissile", "size" to "1", "turnSpeed" to "40",
+            "interceptProjectiles_withTags" to "nuke", "interceptProjectiles_andTargetingGroundUnderDistance" to "500",
+            "interceptProjectiles_andUnderDistance" to "1100", "interceptProjectiles_andOverHeight" to "50",
+            "resourceUsage" to "ammo=1", "shoot_sound" to "nuke_launch", "shoot_sound_vol" to "0.15")
+        result["projectile_antiNukeMissile"] = mapOf("directDamage" to "600", "life" to "99999", "speed" to "0.2",
+            "targetSpeed" to "6.5", "targetSpeedAcceleration" to "0.05", "ballistic" to "true",
+            "ballistic_delaymove_height" to "80", "ballistic_height" to "110", "targetGround" to "true",
+            "areaDamage" to "100", "areaRadius" to "60", "areaExpandTime" to "75", "deflectionPower" to "-1")
         result["projectile_2"] = mapOf("directDamage" to "50", "life" to "250", "speed" to "0.15", "targetSpeed" to "1.2",
             "ballistic" to "true", "ballistic_delaymove_height" to "40", "ballistic_height" to "-2", "autoTargetingOnDeadTarget" to "true")
         result["projectile_3"] = mapOf("directDamage" to "35", "life" to "240", "speed" to "0.3", "targetSpeed" to "6",
@@ -60,6 +69,8 @@ internal object NautilusWeapons {
             splash = if (sub) null else OrdinarySplashProfile(180f, 55f), retargetOnDeath = true)
         // Default V=-1 uses constant limited turning; zero is the compiled no-acceleration branch.
         val disabled = ProjectileProfile(0.0, 0.0, 5.0)
+        val interceptor = ProjectileProfile(600.0, 99999.0, .2, nonDeflectable = true,
+            acceleration = LinearProjectileAcceleration(6.5, .05), ballistic = CustomBallisticProfile(80f, 110f))
         val weapons = listOf(NamedWeaponDefinition("1", "scoutBotProjectile", disabled, TurretMount(0.0, 27.0),
             300.0, 20.0, 1.8, 0.0, null, 1.0, recoil = WeaponRecoil(0.0), canShoot = false, invisible = true)) +
             mounts.mapIndexed { index, mount ->
@@ -68,8 +79,12 @@ internal object NautilusWeapons {
                     recoil = WeaponRecoil(0.0), fireSound = if (sub) null else FireSoundProfile.NAVAL_MISSILE,
                     canAttackFlyingUnits = !sub, canAttackUnderwaterUnits = sub, warmup = (index * 20).toDouble(),
                     linkDelayWithTurret = if (index == 0) null else "2", invisible = true, energyUsage = 1f)
-            } + NamedWeaponDefinition("botTurret", "scoutBotProjectile", disabled, TurretMount(10.0, 22.0),
-                300.0, 1.0, 40.0, 0.0, null, 1.0, recoil = WeaponRecoil(0.0), canShoot = false, invisible = true)
+            } + listOf(
+                NamedWeaponDefinition("botTurret", "scoutBotProjectile", disabled, TurretMount(10.0, 22.0),
+                    300.0, 1.0, 40.0, 0.0, null, 1.0, recoil = WeaponRecoil(0.0), canShoot = false, invisible = true),
+                NamedWeaponDefinition("antiNuke", "antiNukeMissile", interceptor, TurretMount(7.0, 20.0),
+                    300.0, 1.0, 40.0, 0.0, null, 1.0, recoil = WeaponRecoil(0.0), canShoot = false, invisible = true,
+                    interception = ProjectileInterceptionProfile(500f, 1100f, 50f)))
         return CombatProfile(4000.0, 240.0, 300.0, 20.0, 1.8, 0.0, projectile, null, dead, 1.0,
             recoil = WeaponRecoil(0.0), namedWeapons = WeaponCatalog(weapons))
     }

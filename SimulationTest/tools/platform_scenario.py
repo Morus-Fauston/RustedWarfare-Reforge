@@ -21,8 +21,11 @@ class PlatformError(ValueError):
         self.exit_code = exit_code
 
 
-NAUTILUS_ACTIONS = {'nautilusSubmarine': {'surface'}, 'nautilusSubmarineSurface': {'dive', 'launchScoutBot'},
-                    'nautilusSubmarineLand': {'launchScoutBot'}}
+NAVAL_AMMO = 'buildAntiNuke'
+SCOUT_LAUNCH = 'launchScoutBot'
+NAUTILUS_ACTIONS = {'nautilusSubmarine': {'surface', NAVAL_AMMO},
+                    'nautilusSubmarineSurface': {'dive', SCOUT_LAUNCH, NAVAL_AMMO},
+                    'nautilusSubmarineLand': {SCOUT_LAUNCH, NAVAL_AMMO}}
 
 
 def validate_unit_action_intent(intent):
@@ -563,9 +566,24 @@ def validate_nautilus_state(unit,owner):
         if state is not None:invalid('Enemy action state must remain private')
         return
     names=NAUTILUS_ACTIONS[unit['typeId']]
-    if (not isinstance(state,dict) or not {'actions','automaticCooldown'}<=set(state)<={'actions','automaticCooldown','queue'} or
+    if (not isinstance(state,dict) or set(state)!={'actions','automaticCooldown','queue','stockpile'} or
             not number(state['automaticCooldown']) or not 0<=state['automaticCooldown']<=60 or
             not isinstance(state['actions'],dict) or set(state['actions'])!=names):invalid('Invalid player action set')
+    queue=state['queue'];stock=state['stockpile']
+    if not isinstance(queue,list) or type(stock) is not int or not 0<=stock<=4:invalid('Invalid paid queue or stockpile')
+    paid={NAVAL_AMMO:[],SCOUT_LAUNCH:[]}
+    for item in queue:
+        if (not isinstance(item,dict) or set(item)!={'name','progress','target'} or
+                not isinstance(item['name'],str) or item['name'] not in paid or
+                not number(item['progress']) or not 0<=item['progress']<1):
+            invalid('Invalid paid queue item')
+        target=item['target']
+        if (item['name']==NAVAL_AMMO and target is not None or item['name']==SCOUT_LAUNCH and
+                (not isinstance(target,dict) or set(target)!={'x','y'} or not all(number(v) for v in target.values()))):
+            invalid('Invalid paid queue target')
+        paid[item['name']].append(item)
+    if stock+len(paid[NAVAL_AMMO])>4 or len(paid[SCOUT_LAUNCH])>1:invalid('Invalid paid queue limit')
+    indexes=set()
     for name,action in state['actions'].items():
         if (not isinstance(action,dict) or set(action)!={'queueIndex','progress','cooldownRemaining','available'} or
                 type(action['cooldownRemaining']) is not int or not 0<=action['cooldownRemaining']<=(29999 if name=='launchScoutBot' else 0) or
@@ -573,22 +591,16 @@ def validate_nautilus_state(unit,owner):
         index=action['queueIndex'];progress=action['progress']
         if index is None:
             if progress is not None:invalid('Unqueued progress')
-        elif type(index) is not int or not 0<=index<=1 or not number(progress) or not 0<=progress<1:invalid('Invalid queued action')
+        elif (type(index) is not int or not 0<=index<=len(queue) or index in indexes or
+                not number(progress) or not 0<=progress<1):invalid('Invalid queued action')
+        else:indexes.add(index)
+        if name in paid and (bool(paid[name])!=(index is not None) or paid[name] and progress!=paid[name][0]['progress']):
+            invalid('First paid action does not match its queue')
+        has_room=stock+len(paid[NAVAL_AMMO])<4 if name==NAVAL_AMMO else index is None
         available=(unit.get('alive') is True and unit.get('constructionProgress',0)>=1 and unit.get('carriedBy') is None and
-                   index is None and action['cooldownRemaining']==0)
-        if action['available']!=available and not (name=='dive' and action['available'] is False):invalid('Invalid action availability')
-    queue=state.get('queue')
-    scout=state['actions'].get('launchScoutBot')
-    if queue is not None:
-        if not isinstance(queue,list) or len(queue)!=1 or not isinstance(queue[0],dict):invalid('Invalid scout queue')
-        item=queue[0]
-        target=item.get('target')
-        if (set(item)!={'name','progress','target'} or item['name']!='launchScoutBot' or not number(item['progress']) or
-                not 0<=item['progress']<1 or not isinstance(target,dict) or set(target)!={'x','y'} or
-                not all(number(v) for v in target.values()) or scout is not None and scout['progress']!=item['progress']):
-            invalid('Invalid paid scout launch state')
-    elif scout is not None and scout['queueIndex'] is not None:
-        invalid('Missing paid scout launch target')
+                   has_room and action['cooldownRemaining']==0)
+        if action['available']!=available and not (name in ('dive',NAVAL_AMMO) and action['available'] is False):
+            invalid('Invalid action availability')
 
 
 def validate_bunker_state(unit, owner):
@@ -647,30 +659,34 @@ def validate_history_action(records, row, intent, geometry=None):
     fields={}
     if kind=='unit-action':
         validate_unit_action_intent(intent)
-        if intent['actionName'] in ('buildNuke','launchNuke','buildAntiNuke'):
+        old=next(u for u in left['units'] if u['unitId']==identity)
+        new=next(u for u in right['units'] if u['unitId']==identity)
+        name=intent['actionName']
+        naval_ammo=name==NAVAL_AMMO and old.get('typeId') in NAUTILUS_ACTIONS
+        if name in ('buildNuke','launchNuke','buildAntiNuke') and not naval_ammo:
             from nuclear_platform import validate_nuclear_call
-            validate_nuclear_call(next(u for u in left['units'] if u['unitId']==identity),
-                next(u for u in right['units'] if u['unitId']==identity),row,intent,input_footprint(geometry))
+            validate_nuclear_call(old,new,row,intent,input_footprint(geometry))
             return
-        if intent['actionName']=='launchScoutBot':
-            old=next(u for u in left['units'] if u['unitId']==identity)
-            new=next(u for u in right['units'] if u['unitId']==identity)
+        if naval_ammo or name==SCOUT_LAUNCH:
             actual=row.get('target'); expected=intent.get('target')
             cancel=intent.get('cancelQueued',False);limits=input_footprint(geometry)
             matches=(actual is None and expected is None or isinstance(actual,dict) and isinstance(expected,dict) and
                      set(actual)==set(expected)=={'x','y'} and all(type(actual[k]) in (int,float) and math.isfinite(actual[k]) and
                          abs(actual[k]-expected[k])<=limits[k] for k in ('x','y')))
-            before=old['unitActions'].get('queue',[])
-            after=new['unitActions'].get('queue',[])
-            if (row.get('actionName')!='launchScoutBot' or row.get('cancelQueued') is not cancel or not matches or
+            before=old['unitActions']['queue']
+            after=new['unitActions']['queue']
+            indexes=[i for i,item in enumerate(before) if item['name']==name]
+            expected_queue=(before[:indexes[-1]]+before[indexes[-1]+1:] if indexes else None) if cancel else [
+                *before,dict(name=name,progress=0,target=actual)]
+            if (row.get('actionName')!=name or row.get('cancelQueued') is not cancel or not matches or
                     any(old.get(k)!=new.get(k) for k in set(old)|set(new) if k!='unitActions') or
-                    (not before or after if cancel else before or after!=[dict(name='launchScoutBot',progress=0,target=actual)])):
-                raise PlatformError('history-action-fields','Scout launch or cancellation differs from its exact queue receipt',2)
+                    old['unitActions']['stockpile']!=new['unitActions']['stockpile'] or
+                    not cancel and old['unitActions']['actions'].get(name,{}).get('available') is not True or
+                    after!=expected_queue):
+                raise PlatformError('history-action-fields','Paid action or cancellation differs from its exact queue receipt',2)
             return
         if row.get('actionName')!=intent['actionName'] or row.get('cancelQueued') is not False:
             raise PlatformError('history-action-fields','Normal unit action name or queue cancellation differs',2)
-        old=next(u for u in left['units'] if u['unitId']==identity)
-        new=next(u for u in right['units'] if u['unitId']==identity)
         old_actions=(old.get('unitActions') or {}).get('actions',{})
         new_actions=(new.get('unitActions') or {}).get('actions',{})
         name=intent['actionName']
@@ -812,8 +828,8 @@ def validate_launch_appearance(shot, units):
     expected={'attackSubmarine':('SUBMARINE_MISSILE','SUBMARINE_TORPEDO'),
               'amphibiousJet':('AMPHIBIOUS_LIGHTNING',),'aaBeamGunship':('AA_BEAM',),'nukeLauncherC':('NUCLEAR',),
               'antiNukeLauncherC':('INTERCEPTOR',)}.get(source.get('typeId'),('STANDARD',))
-    if source.get('typeId') in NAUTILUS_ACTIONS and shot.get('sourceWeaponName')=='botTurret':
-        expected=('SCOUT_PAYLOAD',)
+    if source.get('typeId') in NAUTILUS_ACTIONS:
+        expected={'botTurret':('SCOUT_PAYLOAD',),'antiNuke':('INTERCEPTOR',)}.get(shot.get('sourceWeaponName'),expected)
     if (style not in ('STANDARD','SUBMARINE_MISSILE','SUBMARINE_TORPEDO','AMPHIBIOUS_LIGHTNING','AA_BEAM','NUCLEAR','INTERCEPTOR','SCOUT_PAYLOAD') or
             source and style not in expected):
         raise PlatformError('history-projectile','Invalid native launch appearance or source',2)
@@ -983,11 +999,58 @@ def validate_nautilus_history(records,policy):
             if sorted(actual)!=sorted(expected):fail('Missing, premature or extra conversion event')
 
 
+def validate_naval_ammo_history(records, owner):
+    """Replay the naval-only paid chain on its independent binary32 clock."""
+    def fail(message):raise PlatformError('history-naval-ammo',message,2)
+    def f32(value):return struct.unpack('!f',struct.pack('!f',value))[0]
+    states={}
+    for row in records:
+        identity=row.get('unitId')
+        if row.get('kind')=='action' and row.get('type')=='UnitAction' and identity in states:
+            if row.get('actionName')!=NAVAL_AMMO:fail('Naval ammo contract requires an isolated paid action chain')
+            state=states[identity];queue=state['queue']
+            if row.get('cancelQueued') is True:
+                if not queue:fail('Cancellation has no paid order')
+                queue.pop()
+            else:
+                if len(queue)+state['stock']>=4:fail('Accepted over-limit paid order')
+                queue.append(0.0)
+        if row.get('kind')!='observation':continue
+        sample=row['sample']
+        for unit in sample.get('units',[]):
+            if unit.get('typeId') not in NAUTILUS_ACTIONS or unit.get('ownerPlayerId')!=owner:continue
+            identity=unit['unitId']
+            state=states.setdefault(identity,dict(stock=0,queue=[]))
+            if unit.get('alive') is False:
+                state['queue'].clear()
+            elif row.get('phase')=='step' and unit.get('constructionProgress')==1 and unit.get('carriedBy') is None:
+                completed=False
+                if state['queue']:
+                    state['queue'][0]=f32(state['queue'][0]+f32(.0005))
+                    if state['queue'][0]>=1:
+                        state['queue'].pop(0)
+                        state['stock']+=1
+                        completed=True
+                events=sample.get('events',[])
+                if sum(e.get('kind')=='unit-action-completed' and e.get('unitId')==identity for e in events)!=int(completed):
+                    fail('Missing, premature or extra naval production completion')
+                state['stock']-=sum(e['occurrences'] for e in sample.get('projectileEvents',[]) if
+                    e.get('kind')=='born' and e.get('appearance')=='INTERCEPTOR' and e.get('sourceUnitId')==identity)
+            actual=unit['unitActions']
+            if (state['stock']<0 or actual['stockpile']!=state['stock'] or
+                    any(item['name']!=NAVAL_AMMO for item in actual['queue']) or
+                    [f32(item['progress']) for item in actual['queue']]!=state['queue'] or
+                    any(q.get('factoryId')==identity and q.get('items') for q in sample.get('factoryQueues',[]))):
+                fail('Stockpile or queue differs from paid orders and the independent clock')
+    if not states:fail('No owned Nautilus observed')
+
+
 def compare_history(records, plan, policy, native_anchors=None, geometry=None):
     """Check a declared ledger at every observation, including call boundaries."""
     allowed={'initialBalance','spend','noActionIntents','projectileBirthsRequired','mechLegs',
              'ownerPlayerId','initialOwnedTypes','finalUnits','minimumBirths',
-             'productionOrder','completedUpgradeTypes','initialIncome','producedIncome','transportStages','unitActionStages','bunkerStages','reclaimRefunds','nautilusTerrain','nuclearHistory'}
+             'productionOrder','completedUpgradeTypes','initialIncome','producedIncome','transportStages','unitActionStages',
+             'bunkerStages','reclaimRefunds','nautilusTerrain','nuclearHistory','navalAmmoHistory'}
     if not isinstance(policy,dict) or set(policy)-allowed:
         raise PlatformError('input-contract', 'Unknown or malformed history obligations', 1)
     balance = policy.get('initialBalance')
@@ -1084,7 +1147,7 @@ def compare_history(records, plan, policy, native_anchors=None, geometry=None):
                 not math.isfinite(amount) or amount <= 0 or charge.get('at') not in ('action', 'first-step', 'construction-created') or
                 charge.get('at')=='construction-created' and intents[identity].get('kind')!='build'):
             raise PlatformError('input-contract', 'Invalid or duplicate fixed history charge', 1)
-        if intents[identity].get('actionName')=='launchScoutBot' and (amount!=250 or charge['at']!='action'):
+        if intents[identity].get('actionName')==SCOUT_LAUNCH and (amount!=250 or charge['at']!='action'):
             raise PlatformError('input-contract', 'Scout launch reserves or refunds 250 credits at the action', 1)
         charges[identity] = charge
         if charge['at']=='construction-created':
@@ -1184,10 +1247,14 @@ def compare_history(records, plan, policy, native_anchors=None, geometry=None):
                     raise PlatformError('history-reclaim','Refund must bind one fresh owned target',2)
                 pending_refunds[target]=refunds[active]
             charge = charges.get(active)
+            name=intents[active].get('actionName')
+            naval_ammo=name==NAVAL_AMMO and any(u.get('unitId')==row.get('unitId') and
+                u.get('typeId') in NAUTILUS_ACTIONS for u in records[row['sequence']-1]['sample'].get('units',[]))
+            if naval_ammo and (charge is None or charge['amount']!=6000 or charge['at']!='action'):
+                raise PlatformError('input-contract','Naval ammunition reserves or refunds 6000 credits at the action',1)
             if charge:
                 if charge['at'] == 'action':
-                    intent=intents[active]
-                    refund=intent.get('actionName')=='launchScoutBot' and intent.get('cancelQueued') is True
+                    refund=(name==SCOUT_LAUNCH or naval_ammo) and intents[active].get('cancelQueued') is True
                     balance += charge['amount'] if refund else -charge['amount']
                 elif charge['at'] == 'first-step': pending += charge['amount']
                 else: construction_charges[active] = dict(charge=charge, action=row)
@@ -1334,6 +1401,9 @@ def compare_history(records, plan, policy, native_anchors=None, geometry=None):
     if 'unitActionStages' in policy:validate_unit_action_history(records,policy)
     if 'bunkerStages' in policy:validate_bunker_history(records,policy)
     if 'nautilusTerrain' in policy:validate_nautilus_history(records,policy)
+    if 'navalAmmoHistory' in policy:
+        if policy['navalAmmoHistory'] is not True:raise PlatformError('input-contract','Expected an explicit naval ammo contract',1)
+        validate_naval_ammo_history(records,policy.get('ownerPlayerId','p1'))
     if 'nuclearHistory' in policy:
         if type(policy['nuclearHistory']) is not bool:raise PlatformError('input-contract','Expected explicit nuclear history flag',1)
         from nuclear_platform import validate_nuclear_history

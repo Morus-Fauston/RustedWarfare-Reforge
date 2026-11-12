@@ -10,7 +10,7 @@ class NautilusFormsMenuTest {
             combatContract = CombatContract(12345, -1, mapOf("mother" to 8L), 9L))
         SandboxSession(scene).use { s ->
             s.select(Position(500.0, 300.0))
-            val surface = s.actionMenu.unitActions.single()
+            val surface = s.actionMenu.unitActions.single { it.name == "surface" }
             assertEquals("Surface", surface.title)
             assertTrue(surface.tooltip.contains("Movement locked"))
             assertIs<ActionResult.Accepted>(s.unitAction("surface"))

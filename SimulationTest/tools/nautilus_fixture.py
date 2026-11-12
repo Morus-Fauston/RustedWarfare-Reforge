@@ -21,6 +21,13 @@ def weapons(sub):
             energyUsage=1, warmup=index*20, **({'linkDelayWithTurret': '2'} if index else {}))
     result['turret_botTurret'] = dict(x=10, y=22, idleDir=0, invisible=True, canShoot=False,
         projectile='scoutBotProjectile', size=1, turnSpeed=40, limitingRange=500)
+    result['turret_antiNuke'] = dict(x=7, y=20, idleDir=0, invisible=True, canShoot=False,
+        projectile='antiNukeMissile', size=1, turnSpeed=40, interceptProjectiles_withTags='nuke',
+        interceptProjectiles_andTargetingGroundUnderDistance=500, interceptProjectiles_andUnderDistance=1100,
+        interceptProjectiles_andOverHeight=50, resourceUsage='ammo=1', shoot_sound='nuke_launch', shoot_sound_vol=.15)
+    result['projectile_antiNukeMissile'] = dict(directDamage=600, life=99999, speed=.2, targetSpeed=6.5,
+        targetSpeedAcceleration=.05, ballistic=True, ballistic_delaymove_height=80, ballistic_height=110,
+        targetGround=True, areaDamage=100, areaRadius=60, areaExpandTime=75, deflectionPower=-1)
     result['projectile_2'] = dict(directDamage=50, life=250, speed=.15, targetSpeed=1.2,
         ballistic=True, ballistic_delaymove_height=40, ballistic_height=-2, autoTargetingOnDeadTarget=True)
     result['projectile_3'] = dict(directDamage=35, life=240, speed=.3, targetSpeed=6,
@@ -90,6 +97,9 @@ def generate():
                 fireTurretXAtGround='botTurret', fireTurretXAtGround_onlyOverPassableTileOf='HOVER',
                 addActionCooldownTime='30s', allowMultipleInQueue=False,
                 whenBuilding_cannotMove=True, isVisible=False),
+            action_buildAntiNuke=dict(id='buildAntiNuke', price=6000, buildSpeed=.00025,
+                isActive='if self.ammoIncludingQueued(lessThan=4)', addResources='ammo=1',
+                isLocked='if not game.nukesEnabled()'),
             hiddenAction_trigger_onLand=dict(autoTrigger='if not self.overWater()', convertTo='nautilusSubmarineLand'))
         (pack / f'nautilus.{fmt}').write_text(render(dict(core=core, movement=movement, **actions, **weapons(True)), fmt), encoding='utf8', newline='\n')
         surface_core = dict(core, name='nautilusSubmarineSurface', transportUnitsCanUnloadUnits='if self.isOverLiquid()',

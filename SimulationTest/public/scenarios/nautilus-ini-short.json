@@ -12,19 +12,19 @@
       {
         "id": "nautilusSubmarine",
         "path": "../inputs/nautilus-production/ini/package/nautilus.ini",
-        "sha256": "5d0b8318ea1fdeb4fae04df5bfb93327deb2527d47f48328b018a3c23afc04dd",
+        "sha256": "e4641e28313c8def71bb0fd0985e9d73f8df1540eb00d95d56a2e53853488ff2",
         "loader": "nautilus"
       },
       {
         "id": "nautilusSubmarineSurface",
         "path": "../inputs/nautilus-production/ini/package/nautilusSurface.ini",
-        "sha256": "28875cc649354d74f8606c0c93eeec4bf614f86d81edee27d6da441b592bd96b",
+        "sha256": "6393382f2599ddc6738ab3db66bd8c509fed855a91c4aebe5e3025661db90018",
         "loader": "nautilus"
       },
       {
         "id": "nautilusSubmarineLand",
         "path": "../inputs/nautilus-production/ini/package/nautilusLand.ini",
-        "sha256": "080d8090413bc5cb3bd903a9ffdf59fbca91177335026cdfbf29d79eccf5570b",
+        "sha256": "8c4796190240f14413073c8daa4cd002ef045ff67798bfebbe706c4ab367b8a5",
         "loader": "nautilus"
       },
       {

@@ -222,9 +222,38 @@ def generate_scout():
         save(PUBLIC / f'platform/scenarios/nautilus-{fmt}-scout-launch.json', plan)
 
 
+def generate_naval_ammo():
+    for fmt in ('ini', 'json', 'hjson'):
+        plan = json.loads((PUBLIC / f'platform/scenarios/nautilus-{fmt}-production-chain.json').read_text(encoding='utf8'))
+        contract = json.loads((PUBLIC / f'platform/contracts/nautilus-{fmt}-production-chain.json').read_text(encoding='utf8'))
+        select_mother = next(i for i, intent in enumerate(plan['intents']) if intent['intentId'] == 'select-mother')
+        plan['scenarioId'] = contract['scenarioId'] = f'nautilus-{fmt}-naval-ammo'
+        ammo = dict(kind='unit-action', actionName='buildAntiNuke')
+        plan['intents'] = plan['intents'][:select_mother + 1] + [
+            dict(intentId='queue-ammo', waitSteps=15, **ammo),
+            dict(intentId='cancel-ammo', waitSteps=0, cancelQueued=True, **ammo),
+            dict(intentId='requeue-ammo', waitSteps=0, **ammo),
+            dict(intentId='move-with-ammo', kind='move', position=dict(x=600, y=385), waitSteps=600),
+            *[dict(intentId=f'finish-ammo-{i}', kind='stop', waitSteps=600) for i in range(3)],
+        ]
+        plan['waitPlan'] = {intent['intentId']: dict(minimumSteps=intent['waitSteps'], timeoutSeconds=240)
+                            for intent in plan['intents'] if intent['waitSteps']}
+        contract['rules'] = [dict(intentId=intent['intentId']) for intent in plan['intents']]
+        history = contract['history']
+        history['spend'] = [entry for entry in history['spend'] if not entry['intentId'].startswith('queue-hover-')]
+        history['spend'] += [dict(intentId=name, amount=6000, at='action')
+                             for name in ('queue-ammo', 'cancel-ammo', 'requeue-ammo')]
+        history['navalAmmoHistory'] = True
+        history['transportStages'] = [dict(intentId='move-with-ammo', typeId='nautilusSubmarine',
+            passengerCount=0, unloading=False, minimumX=500)]
+        save(PUBLIC / f'platform/scenarios/nautilus-{fmt}-naval-ammo.json', plan)
+        save(PUBLIC / f'platform/contracts/nautilus-{fmt}-naval-ammo.json', contract)
+
+
 if __name__ == '__main__':
     generate()
     generate_platform()
     generate_forms()
     generate_land_platform()
     generate_scout()
+    generate_naval_ammo()

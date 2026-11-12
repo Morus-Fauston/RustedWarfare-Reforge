@@ -139,15 +139,17 @@ data class GroundHeightProfile(val target: Float)
 enum class AutomaticActionCondition { ENERGY_EMPTY, OVER_WATER, NOT_OVER_WATER }
 data class GroundLaunchProfile(val turretName: String, val price: Long, val range: Double,
     val movementType: MovementType, val payloadUnitTypeId: String)
+data class AmmoProductionProfile(val price: Long, val queueLimit: Int)
 data class CustomActionDefinition(val name: String, val actionId: String, val targetTypeId: String?,
     val rate: Float, val energySet: Float?, val cooldown: Int = 0,
     val canPlayerCancel: Boolean = false, val allowMultipleInQueue: Boolean = false,
     val automatic: AutomaticActionCondition? = null, val visible: Boolean = true,
     val cannotMove: Boolean = false, val rotateTo: Double? = null, val rotateToOrBackwards: Boolean = false,
-    val highPriority: Boolean = false, val requiresOverWater: Boolean = false, val groundLaunch: GroundLaunchProfile? = null) {
+    val highPriority: Boolean = false, val requiresOverWater: Boolean = false, val groundLaunch: GroundLaunchProfile? = null,
+    val ammoProduction: AmmoProductionProfile? = null) {
     init {
-        require((targetTypeId == null) != (groundLaunch == null))
-        require(automatic == null || groundLaunch == null)
+        require(listOfNotNull(targetTypeId, groundLaunch, ammoProduction).size == 1)
+        require(automatic == null || targetTypeId != null)
     }
 }
 class CustomActionsProfile(actions: List<CustomActionDefinition>, val automaticCooldown: Float = 60f) {
@@ -257,7 +259,10 @@ data class NamedWeaponDefinition(val name: String, val projectileName: String,
     val barrelX: Double? = null, val oddShotOffset: Double? = null,
     val invisible: Boolean = false, val imageOffsetX: Double = 0.0, val imageOffsetY: Double = 0.0,
     val idleDirectionReversing: Double? = null, val turnDeceleration: Double? = null,
-    val energyUsage: Float = 0f, val idleSweep: IdleSweepProfile? = null, val resetTurret: Boolean = true)
+    val energyUsage: Float = 0f, val idleSweep: IdleSweepProfile? = null, val resetTurret: Boolean = true,
+    val interception: ProjectileInterceptionProfile? = null)
+
+data class ProjectileInterceptionProfile(val landingRange: Float, val trackingRange: Float, val minimumHeight: Float)
 
 /** Gameplay trigger identity, never an audio filename or resource-pack decision. */
 enum class FireSoundProfile(val eventId: String, val volume: Float, val pitch: Float = 1f) {

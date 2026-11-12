@@ -4,6 +4,24 @@ import java.nio.file.Path
 import kotlin.test.*
 
 class NautilusFormsContentTest {
+    @Test fun naval_interceptor_production_is_visible_with_one_id_in_all_three_forms_and_formats() {
+        val fixtures = Path.of(checkNotNull(System.getProperty("public.fixtures.dir")))
+        for (syntax in listOf("ini", "json", "hjson")) {
+            val loaded = ContentLoader.loadContentPack(fixtures.resolve("nautilus-production/$syntax/package"))
+            val pack = assertIs<ContentResult.Success<LoadedContentPack>>(loaded, loaded.toString()).value
+            for (id in listOf("nautilusSubmarine", "nautilusSubmarineSurface", "nautilusSubmarineLand")) {
+                val actions = checkNotNull(pack.units.getValue(id).customActions).actions
+                val action = assertNotNull(actions.singleOrNull { it.name == "buildAntiNuke" }, "$syntax $id")
+                assertEquals("cbuildAntiNuke", action.actionId)
+                assertEquals(.00025f, action.rate)
+                assertTrue(action.visible)
+                assertTrue(action.canPlayerCancel)
+                assertTrue(action.allowMultipleInQueue)
+                assertFalse(action.cannotMove)
+            }
+        }
+    }
+
     @Test fun scout_bot_launch_keeps_one_action_identity_across_the_three_forms() {
         val fixtures = Path.of(checkNotNull(System.getProperty("public.fixtures.dir")))
         val forms = mapOf("nautilusSubmarine" to false, "nautilusSubmarineSurface" to true,

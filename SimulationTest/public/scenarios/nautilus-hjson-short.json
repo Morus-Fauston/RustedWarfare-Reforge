@@ -12,19 +12,19 @@
       {
         "id": "nautilusSubmarine",
         "path": "../inputs/nautilus-production/hjson/package/nautilus.hjson",
-        "sha256": "8d6d56c560e6a4511a295982eb3468784d4a000f517627a1cff0956e77915dbf",
+        "sha256": "dd6fea280ad92501d496172c471fc6a1cc83f30640aa1c65d592b57152231a4d",
         "loader": "nautilus"
       },
       {
         "id": "nautilusSubmarineSurface",
         "path": "../inputs/nautilus-production/hjson/package/nautilusSurface.hjson",
-        "sha256": "bc67c40f7dd1e0e96df3d4e32f1d3db1028bffb42db72ead5160db4c00c9b6d8",
+        "sha256": "7f0251311e3defc80c94a03efc8fb733a7b1f6945b0694af6b11f38d152a5287",
         "loader": "nautilus"
       },
       {
         "id": "nautilusSubmarineLand",
         "path": "../inputs/nautilus-production/hjson/package/nautilusLand.hjson",
-        "sha256": "2526cc3bfd9288bc44a997460780b694231604eaf81f645f1ca259b86e26e24a",
+        "sha256": "88d7920d3dbacec1de1ca4fa2ca01f3960475a7d6634c2076aa1bc204bdaa5b3",
         "loader": "nautilus"
       },
       {

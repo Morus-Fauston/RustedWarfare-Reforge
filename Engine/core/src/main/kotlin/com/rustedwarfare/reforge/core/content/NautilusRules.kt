@@ -35,7 +35,9 @@ internal object NautilusRules {
                 highPriority = true, requiresOverWater = true),
             CustomActionDefinition("launchScoutBot", "claunchScoutBot", null, 1f / 210f, null, cooldown = 29999,
                 canPlayerCancel = true, visible = !sub, cannotMove = true,
-                groundLaunch = GroundLaunchProfile("botTurret", 250L, 500.0, MovementType.HOVER, ScoutBotRules.LAND))) +
+                groundLaunch = GroundLaunchProfile("botTurret", 250L, 500.0, MovementType.HOVER, ScoutBotRules.LAND)),
+            CustomActionDefinition("buildAntiNuke", "cbuildAntiNuke", null, .00025f, null,
+                canPlayerCancel = true, allowMultipleInQueue = true, ammoProduction = AmmoProductionProfile(6000L, 4))) +
             (if (land) listOf(CustomActionDefinition("trigger_onWater", "nautilusSubmarineSurface_8", "nautilusSubmarineSurface",
                 1000f, null, automatic = AutomaticActionCondition.OVER_WATER, visible = false)) else emptyList()) +
             CustomActionDefinition("trigger_onLand", "nautilusSubmarineLand_${if (land) 12 else 11}", "nautilusSubmarineLand",

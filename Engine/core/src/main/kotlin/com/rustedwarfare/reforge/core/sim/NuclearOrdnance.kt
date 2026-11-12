@@ -141,7 +141,8 @@ internal object NuclearOrdnance {
     fun validate(unit: MutableUnit) {
         val state = unit.ordnance
         val kind = unit.definition.nuclearSilo?.kind
-        require(state.ammo >= 0 && state.turretHeading?.isFinite() != false && (kind != null || state == OrdnanceState()) &&
+        val mobileAmmo = state.ammo.takeIf { unit.definition.customActions?.actions?.any { it.ammoProduction != null } == true } ?: 0
+        require(state.ammo >= 0 && state.turretHeading?.isFinite() != false && (kind != null || state == OrdnanceState(ammo = mobileAmmo)) &&
             state.doors.isFinite() && state.doors in 0f..1f && state.doorBlendBase.isFinite() &&
             state.doorBlendBase in 0f..1f && state.doorBlendWeight.isFinite() && state.doorBlendWeight <= 1f &&
             state.interceptorFireAge?.let { kind == NuclearSiloKind.INTERCEPTOR && it in 0f..<282f } != false &&

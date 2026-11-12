@@ -107,9 +107,11 @@ internal class ActionCatalogue(private val definitions: Map<String, UnitDefiniti
         val actionUnit = ownSingle ?: if (localControl) nuclearLaunchMember(view, ids) else null
         val unitActions = immutable(actionUnit?.unitActions?.actions.orEmpty()
             .filter { ownSingle != null || it.name == "launchNuke" }.map { action ->
-            val definition = actionUnit?.let { definitions.getValue(it.typeId).customActions?.actions?.singleOrNull { d -> d.name == action.name } }
+            val unitDefinition = actionUnit?.let { definitions.getValue(it.typeId) }
+            val definition = unitDefinition?.customActions?.actions?.singleOrNull { it.name == action.name }
             val launch = definition?.groundLaunch
-            val ammoPrice = when (action.name) {
+            val navalAmmo = definition?.ammoProduction
+            val ammoPrice = navalAmmo?.price ?: when (action.name) {
                 "buildNuke" -> 11000L
                 "buildAntiNuke" -> 4000L
                 else -> null
@@ -117,6 +119,8 @@ internal class ActionCatalogue(private val definitions: Map<String, UnitDefiniti
             val nuclear = ammoPrice != null || action.name == "launchNuke"
             val price = launch?.price ?: ammoPrice
             val affordable = price == null || affordable(view, price)
+            val stockpile = actionUnit?.unitActions?.stockpile ?: 0
+            val ammoQueued = actionUnit?.unitActions?.queue.orEmpty().count { it.name == action.name }
             val cancelUnit = if (ownSingle == null && action.name == "launchNuke")
                 nuclearLaunchMember(view, ids, cancelling = true) else actionUnit
             val cancelAction = cancelUnit?.unitActions?.actions?.singleOrNull { it.name == action.name }
@@ -134,8 +138,18 @@ internal class ActionCatalogue(private val definitions: Map<String, UnitDefiniti
                 "Launch scout bot\n$status\n\$${launch.price} / Range ${launch.range.toInt()}\n" +
                     (if (affordable) "Left: choose ground point\nEsc / right: cancel selection" else "Insufficient funds") +
                     "\nMovement locked while building\nRight on card: cancel one queued"
-            else if (!nuclear) "$title\n$status\n$motion" else
-                "$title\nAmmo ${actionUnit?.unitActions?.stockpile ?: 0}\n$status\n" +
+            else if (navalAmmo != null) {
+                val speed = checkNotNull(unitDefinition.production).speedMultiplier
+                val duration = String.format(Locale.ROOT, "%.1fs", 1.0 / (definition.rate * speed * 60.0))
+                val admission = when {
+                    !nukesEnabled -> "Nukes disabled"
+                    stockpile + ammoQueued >= navalAmmo.queueLimit -> "Stockpile limit reached"
+                    !affordable -> "Insufficient funds"
+                    else -> "Left: produce"
+                }
+                "$title\nAmmo $stockpile / Queued $ammoQueued\n$status\n\$${navalAmmo.price} / $duration\n$admission\nRight on card: cancel one queued"
+            } else if (!nuclear) "$title\n$status\n$motion" else
+                "$title\nAmmo $stockpile\n$status\n" +
                     (if (ammoPrice != null) "\$$ammoPrice / ${if (action.name == "buildNuke") "55.6" else "23.8"}s\n" +
                         (if (affordable) "Left: produce" else "Insufficient funds")
                     else "3.5s\nRange 260 - 9999 / blast 250\nLeft: choose ground point\nEsc / right: cancel selection") +

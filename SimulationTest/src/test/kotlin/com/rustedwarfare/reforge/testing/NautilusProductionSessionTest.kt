@@ -6,6 +6,52 @@ import kotlinx.serialization.json.*
 import kotlin.test.*
 
 class NautilusProductionSessionTest {
+    @Test fun normally_built_mother_pays_refunds_requeues_and_completes_ammo_while_using_movement_in_three_formats() {
+        val public = Path.of(System.getProperty("repo.root")).resolve("SimulationTest/public")
+        for (format in listOf("ini", "json", "hjson")) {
+            val output = TestArchives.directory("RWR_NAUTILUS_SESSION_ROOT", javaClass, "naval-ammo-$format").resolve("run")
+            PlatformSessionRunner.run(public.resolve("inputs/nautilus-production/$format"),
+                public.resolve("platform/scenarios/nautilus-$format-naval-ammo.json"), output)
+            val payments = mutableListOf<Double>()
+            var previousBalance = 0.0
+            var paidAction: JsonObject? = null
+            var mother: JsonObject? = null
+            var initialX: Double? = null
+            var progressedInMotion = false
+            Files.newBufferedReader(output.resolve("client-diagnostic.jsonl")).use { reader ->
+                reader.lineSequence().forEach { line ->
+                    val row = json.parseToJsonElement(line).jsonObject
+                    if (row["kind"] == s("action") && row["actionName"] == s("buildAntiNuke")) {
+                        assertEquals(b(true), row.objectAt("result")["accepted"], "$format $row")
+                        paidAction = row
+                    }
+                    if (row["kind"] != s("observation")) return@forEach
+                    val sample = row.objectAt("sample")
+                    val balance = sample.number("credits")
+                    if (paidAction != null) {
+                        assertEquals(s("after-action"), row["phase"])
+                        payments.add(balance - previousBalance)
+                        paidAction = null
+                    }
+                    previousBalance = balance
+                    val unit = sample.arrayAt("units").map { it.jsonObject }
+                        .singleOrNull { it["typeId"] == s("nautilusSubmarine") } ?: return@forEach
+                    mother = unit
+                    val x = unit.objectAt("position").number("x")
+                    val start = initialX ?: x.also { initialX = it }
+                    val first = unit.objectAt("unitActions").arrayAt("queue").firstOrNull()?.jsonObject
+                    progressedInMotion = progressedInMotion ||
+                        x > start + 20 && first?.number("progress")?.let { it in .01..<1.0 } == true
+                }
+            }
+            assertEquals(listOf(-6000.0, 6000.0, -6000.0), payments, format)
+            assertTrue(progressedInMotion, format)
+            val actions = assertNotNull(mother, format).objectAt("unitActions")
+            assertEquals(n(1), actions["stockpile"], format)
+            assertTrue(actions.arrayAt("queue").isEmpty(), format)
+        }
+    }
+
     @Test fun normally_built_land_nautilus_cancels_and_requeues_a_paid_scout_then_registers_owned_units_in_three_formats() {
         val public = Path.of(System.getProperty("repo.root")).resolve("SimulationTest/public")
         for (format in listOf("ini", "json", "hjson")) {

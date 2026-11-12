@@ -70,6 +70,15 @@
       "allowMultipleInQueue": false,
       "whenBuilding_cannotMove": true,
       "isVisible": false
+    },
+    {
+      "name": "buildAntiNuke",
+      "id": "buildAntiNuke",
+      "price": 6000,
+      "buildSpeed": 0.00025,
+      "isActive": "if self.ammoIncludingQueued(lessThan=4)",
+      "addResources": "ammo=1",
+      "isLocked": "if not game.nukesEnabled()"
     }
   ],
   "hiddenAction_trigger_onLand": {
@@ -208,9 +217,43 @@
       "size": 1,
       "turnSpeed": 40,
       "limitingRange": 500
+    },
+    {
+      "name": "antiNuke",
+      "x": 7,
+      "y": 20,
+      "idleDir": 0,
+      "invisible": true,
+      "canShoot": false,
+      "projectile": "antiNukeMissile",
+      "size": 1,
+      "turnSpeed": 40,
+      "interceptProjectiles_withTags": "nuke",
+      "interceptProjectiles_andTargetingGroundUnderDistance": 500,
+      "interceptProjectiles_andUnderDistance": 1100,
+      "interceptProjectiles_andOverHeight": 50,
+      "resourceUsage": "ammo=1",
+      "shoot_sound": "nuke_launch",
+      "shoot_sound_vol": 0.15
     }
   ],
   "projectiles": [
+    {
+      "name": "antiNukeMissile",
+      "directDamage": 600,
+      "life": 99999,
+      "speed": 0.2,
+      "targetSpeed": 6.5,
+      "targetSpeedAcceleration": 0.05,
+      "ballistic": true,
+      "ballistic_delaymove_height": 80,
+      "ballistic_height": 110,
+      "targetGround": true,
+      "areaDamage": 100,
+      "areaRadius": 60,
+      "areaExpandTime": 75,
+      "deflectionPower": -1
+    },
     {
       "name": "2",
       "directDamage": 50,
