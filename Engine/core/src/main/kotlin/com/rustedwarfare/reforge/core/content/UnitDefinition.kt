@@ -49,6 +49,8 @@ class UnitDefinition(
     val selfRegenRate: Float = 0f,
     val techLevel: Int = 1,
     val nuclearSilo: NuclearSiloProfile? = null,
+    val attachmentLayout: AttachmentLayout? = null,
+    val attachmentModule: AttachmentModuleProfile? = null,
 ) {
     val retainedUnconsumed: Set<String> = Collections.unmodifiableSet(LinkedHashSet(retainedUnconsumed))
     val maximumHealth: Double? get() = durability?.maxHp ?: combat?.maxHp
@@ -277,6 +279,7 @@ enum class FireSoundProfile(val eventId: String, val volume: Float, val pitch: F
     NAVAL_MAIN("reforge:events/naval-main-fire", .3f),
     NAVAL_MISSILE("reforge:events/naval-missile-fire", .1f),
     SCOUT_PLASMA("reforge:events/scout-plasma-fire", .05f),
+    SPIDER_GUN("reforge:events/spider-gun-fire", .3f),
     SUBMARINE_MISSILE("reforge:events/naval-missile-fire", .8f),
     ENGINEER_MISSILE("reforge:events/naval-missile-fire", .2f),
     AMPHIBIOUS_LIGHTNING("reforge:events/amphibious-lightning-fire", .2f),

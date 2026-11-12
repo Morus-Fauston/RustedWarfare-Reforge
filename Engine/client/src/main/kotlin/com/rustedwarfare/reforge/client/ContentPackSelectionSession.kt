@@ -33,7 +33,7 @@ class ContentPackSelectionSession(
     val busy: Boolean get() = pending != null
     val canEnable: Boolean get() = !busy && !dirty && error == null && checked != null
     val availableUnits: Set<String> get() = (if (enabledManifests.isEmpty()) checked?.units else composition?.units)
-        ?.filterValues { it.fixedUnderwaterTarget == null }?.keys.orEmpty()
+        ?.filterValues { it.fixedUnderwaterTarget == null && it.attachmentModule == null }?.keys.orEmpty()
     val canSelect: Boolean get() = !busy && !dirty && error == null && availableUnits.isNotEmpty()
     val canStart: Boolean get() = !busy && (enabledManifests.isEmpty() ||
         !dirty && error == null && composition != null && selectedUnitId in availableUnits)

@@ -382,6 +382,7 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
         }
         if (!unit.alive) return reject(action, "inactive-unit", "Unit is not active")
         if (unit.carriedBy != null) return reject(action, "unit-unavailable", "Unit is not available")
+        if (unit.attachment != null) return reject(action, "attached-unit", "Use the chassis to control its slot")
         if ((action is MoveAction || action is PatrolAction) && unit.definition.movement.type == MovementType.NONE) {
             return reject(action, "immobile-unit", "Unit cannot move")
         }
@@ -691,7 +692,9 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
         }
         val result = when (action) {
             is UnitAction -> {
-                val error = if (unit.definition.nuclearSilo != null) {
+                val error = if (unit.definition.attachmentLayout != null) {
+                    UnitAttachments.request(steps.current, unit, action)
+                } else if (unit.definition.nuclearSilo != null) {
                     val change = NuclearOrdnance.request(unit, action.actionName, action.cancelQueued, checkNotNull(productionLedger), action.target)
                     productionLedger = change.ledger
                     change.error
@@ -712,7 +715,7 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
                 ActionResult.Accepted(action.actionId, listOf(Event(if (action.unloading) "unload-started" else "unload-cancelled", unit.unitId)))
             }
             is LoadAction -> {
-                val target = units[action.targetUnitId]?.takeIf { it.carriedBy == null && !it.reclaimed &&
+                val target = units[action.targetUnitId]?.takeIf { it.carriedBy == null && it.attachment == null && !it.reclaimed &&
                     isVisibleTo(action.actorPlayerId, it.position, it.nativeTransportPlacement) }
                     ?: return reject(action, "target-unavailable", "Loading target is not available")
                 val change = Transport.request(action, unit, target, units)
@@ -743,6 +746,13 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
                     if (action.surface) "submarine-surface-requested" else "submarine-dive-requested", unit.unitId)))
             }
             is RepairUnitAction, is ReclaimUnitAction, is ResumeConstructionAction -> {
+                if (units[when (action) {
+                        is RepairUnitAction -> action.targetUnitId
+                        is ReclaimUnitAction -> action.targetUnitId
+                        is ResumeConstructionAction -> action.targetUnitId
+                        else -> error("Expected a construction target action")
+                    }]?.attachment != null)
+                    return reject(action, "attached-unit", "Use the chassis slot actions")
                 buildingWork.requestTarget(action, unit, currentScenario, units,
                     automaticVisionSnapshots?.getValue(unit.ownerPlayerId))?.let { return reject(action, it.code, it.message) }
                 ActionResult.Accepted(action.actionId)
@@ -989,6 +999,8 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
         val input = checkNotNull(scenario)
         fun rejected(code: String) = SimulationError(code, "Sandbox spawn rejected: $code")
         val definition = input.unitDefinitions[command.typeId] ?: return rejected("unknown-type")
+        if (definition.attachmentLayout != null || definition.attachmentModule != null)
+            return rejected("opening-only-type")
         if (UnitRegistration.sandboxId(command.ownerPlayerId, generation, sequence) in units)
             return rejected("duplicate-unit-id")
         if (input.players.none { it.playerId == command.ownerPlayerId }) return rejected("unknown-owner")
@@ -1060,6 +1072,19 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
             replanForKnowledge(currentScenario.map, step.stepIndex)
             repairInvalidConnections(currentScenario.map, step.stepIndex)
             for (unit in orderedUnits().toList()) {
+                val attachment = unit.attachment
+                if (attachment != null) {
+                    val parent = units[attachment.parentId]?.takeIf { it.alive && it.carriedBy == null && !it.reclaimed } ?: continue
+                    UnitAttachments.synchronize(parent, unit, attachment.slot)
+                    UnitAttachments.advance(steps.current, currentScenario, parent, unit, step.delta.toFloat())
+                    if (BuildingWork.isReady(unit)) {
+                        val preferredTarget = units[parent.attackCommand?.targetUnitId ?: parent.primaryCombatTargetId]
+                        updateWeapon(unit, step.delta, preferredTarget)
+                        advanceWeaponCooldown(unit, step.delta)
+                        regenerateHealth(unit, step.delta.toFloat())
+                    }
+                    continue
+                }
                 if (unit.deathPending) {
                     unit.deathPending = false
                     processDeath(unit)
@@ -1074,6 +1099,7 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
                     continue
                 }
                 if (unit.carriedBy != null) continue
+                UnitAttachments.advanceOpeningFall(unit, step.delta.toFloat())
                 if (unit.definition.energy?.dieOnZero == true && BuildingWork.isReady(unit)) {
                     WeaponEnergy.advance(unit, step.delta)
                     if (unit.energy <= 0f) {
@@ -1206,25 +1232,17 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
                 MechMotion.requireFinitePose(unit)
                 unit.finishMovementRequest()
                 if (BuildingWork.isReady(unit)) {
-                    unit.namedWeapons?.values?.forEach {
-                        it.cooldown = if (it.cooldown >= 0.0) maxOf(0.0, it.cooldown - step.delta)
-                            else minOf(0.0, it.cooldown + step.delta)
-                    }
-                        ?: unit.combat?.let { it.cooldown = maxOf(0.0, it.cooldown - step.delta) }
+                    advanceWeaponCooldown(unit, step.delta)
                     if (!economicBuilding && !factoryWork) advanceUpgrade(unit)
                     if (withUnitActionQueue(unit) {
                             CustomUnitActions.advanceAutomatic(unit, currentScenario.unitDefinitions, currentScenario.map, step.delta)
                         })
                         pendingEvents += Event("unit-action-automatic", unit.unitId)
-                    val regeneration = unit.definition.selfRegenRate
-                    if (regeneration != 0f && checkNotNull(unit.health) < checkNotNull(unit.definition.maximumHealth)) {
-                        val restored = checkNotNull(unit.health).toFloat() + regeneration * step.delta.toFloat()
-                        require(restored.isFinite()) { "HP regeneration must remain finite" }
-                        unit.health = minOf(checkNotNull(unit.definition.maximumHealth).toFloat(), restored).toDouble()
-                    }
+                    regenerateHealth(unit, step.delta.toFloat())
                 }
             }
             updateProjectiles(step.delta, candidate.existingProjectileIds)
+            UnitAttachments.settleLifecycle(steps.current, currentScenario)
             missileTargets = missileTargets?.refresh(orderedUnits())
             candidate.stageKnowledge(prepareAutomaticKnowledge())
             candidate.stageBuildings(prepareBuildings(candidate.vision))
@@ -1313,6 +1331,7 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
         nextScenario.units.sortedBy { it.unitId }.forEach { spawn ->
             UnitRegistration.initial(steps.current, nextScenario, spawn, policies.coordinates)
         }
+        units.values.toList().forEach { UnitAttachments.initialize(steps.current, nextScenario, it) }
         missileTargets = if (nextScenario.unitDefinitions.values.any { it.combat?.projectile?.missile != null || it.maintenance != null })
             MissileTargetIndex.initial(nextScenario.map, orderedUnits()) else null
         closed = false
@@ -1371,6 +1390,10 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
         }
         if (input.units.any { it.ownerPlayerId !in players }) return SimulationError("bad-reference", "Unit owner is not a declared player")
         if (input.units.any { it.typeId !in input.unitDefinitions }) return SimulationError("bad-reference", "Unit type is not declared")
+        if (input.unitDefinitions.values.any { it.attachmentLayout != null } &&
+            input.units.any { it.unitId.startsWith(UnitAttachments.UNIT_PREFIX) })
+            return SimulationError("reserved-unit-id", "Attached units reserve their own unit namespace")
+        UnitAttachments.validateDefinitions(input)?.let { return it }
         MaintenanceRules.validate(input)?.let { return it }
         OrdinaryUpgrades.validate(input)?.let { return it }
         if (input.map.widthTiles <= 0 || input.map.heightTiles <= 0) return SimulationError("invalid-map", "Map dimensions must be positive")
@@ -1410,6 +1433,7 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
             if (definition.shield?.let { !it.isValid() || definition.maximumHealth == null } == true)
                 return SimulationError("unsupported-shield", "Expected finite positive shield capacity and nonnegative regeneration on a durable unit")
             val m = definition.movement
+            val attachedProfile = definition.attachmentLayout != null || definition.attachmentModule != null
             val submarine = definition.submarine != null
             val amphibious = definition.amphibiousJet != null
             val dropship = definition.transport == com.rustedwarfare.reforge.core.content.TransportProfile.NATIVE_DROPSHIP
@@ -1466,7 +1490,7 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
                 return SimulationError("unsupported-flight", "Expected a finite AIR profile and a single finite rotor")
             if (!m.reverseSpeedPercentage.isFinite() || !air && !submarine && !engineer && !nautilus && (m.reverseSpeedPercentage !in setOf(0.0, 1.0) ||
                 m.reverseSpeedPercentage != 0.0 && definition.mech == null && m.type != MovementType.WATER) ||
-                definition.mech?.let { !it.isValid() || !bunker && !nautilus && !scout && !flameMech && m.type != (if (it.kind == com.rustedwarfare.reforge.core.content.MechKind.FOUR_LEGGED) MovementType.OVER_CLIFF else MovementType.LAND) } == true)
+                definition.mech?.let { !it.isValid() || !bunker && !nautilus && !scout && !flameMech && !attachedProfile && m.type != (if (it.kind == com.rustedwarfare.reforge.core.content.MechKind.FOUR_LEGGED) MovementType.OVER_CLIFF else MovementType.LAND) } == true)
                 return SimulationError("unsupported-mech", "Expected the finite supported mech locomotion category")
             if (definition.maintenance != null && !RepairBay.supports(definition) && !engineer && !scout)
                 return SimulationError("unsupported-repair-bay", "Expected the complete finite native repair bay capability")
@@ -1601,7 +1625,7 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
                     definition.directHitTargetKind != DirectHitTargetKind.ORDINARY))
                 return SimulationError("unsupported-unit", "Expected finite authored surface combat without unsupported capability combinations")
             if (numbers.any { !it.isFinite() || it < 0.0 } ||
-                (definition.building == null && definition.radius >= input.map.tileWidth && !(fourLegged && definition.radius == 22.0) && !navalHull && !authoredSurface && !dropship && !beamGunship && !bunker && !nautilus && !flameMech) ||
+                (definition.building == null && definition.radius >= input.map.tileWidth && !(fourLegged && definition.radius == 22.0) && !navalHull && !authoredSurface && !dropship && !beamGunship && !bunker && !nautilus && !flameMech && !attachedProfile) ||
                 m.type != MovementType.AIR && !fourLegged && !hovering && (m.slidingMode || m.ignoringBody) ||
                 fourLegged && !bunker && (m.type != MovementType.OVER_CLIFF || !m.slidingMode || !m.ignoringBody)) {
                 return SimulationError("unsupported-unit", "Expected finite movement and the supported representative's radius and locomotion")
@@ -1922,9 +1946,27 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
     private fun acquirePatrolTarget(unit: MutableUnit): MutableUnit? =
         CombatTargetQuery.patrolEnemy(unit, orderedUnits(), checkNotNull(scenario).players, ::isVisibleTo, checkNotNull(scenario).map)
 
-    private fun updateWeapon(unit: MutableUnit, delta: Double) {
+    private fun advanceWeaponCooldown(unit: MutableUnit, delta: Double) {
+        unit.namedWeapons?.values?.forEach {
+            it.cooldown = if (it.cooldown >= 0.0) maxOf(0.0, it.cooldown - delta)
+                else minOf(0.0, it.cooldown + delta)
+        } ?: unit.combat?.let { it.cooldown = maxOf(0.0, it.cooldown - delta) }
+    }
+
+    private fun regenerateHealth(unit: MutableUnit, delta: Float) {
+        val regeneration = unit.definition.selfRegenRate
+        if (regeneration == 0f) return
+        val maximum = checkNotNull(unit.definition.maximumHealth)
+        val health = checkNotNull(unit.health)
+        if (health >= maximum) return
+        val restored = health.toFloat() + regeneration * delta
+        require(restored.isFinite()) { "HP regeneration must remain finite" }
+        unit.health = minOf(maximum.toFloat(), restored).toDouble()
+    }
+
+    private fun updateWeapon(unit: MutableUnit, delta: Double, preferredTarget: MutableUnit? = null) {
         if (unit.namedWeapons != null) {
-            updateNamedWeapons(unit, delta)
+            updateNamedWeapons(unit, delta, preferredTarget)
             return
         }
         val state = unit.combat ?: return
@@ -1972,7 +2014,7 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
         fireWeapon(unit, target, state, weapon)
     }
 
-    private fun updateNamedWeapons(unit: MutableUnit, delta: Double) {
+    private fun updateNamedWeapons(unit: MutableUnit, delta: Double, preferredTarget: MutableUnit?) {
         val input = checkNotNull(scenario)
         val contract = checkNotNull(input.combatContract)
         val candidates = orderedUnits()
@@ -1981,6 +2023,7 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
             CombatTargetQuery.canAttackAirCategory(unit, target, input.map) &&
             policies.coordinates.distanceSquared(unit.position, target.position) < globalRange * globalRange
         val manual = unit.attackCommand?.let { units[it.targetUnitId]?.takeIf(::globalEligible) }
+            ?: preferredTarget?.takeIf(::globalEligible)
         val patrol = unit.tasks.firstOrNull()?.kind == UnitTaskKind.PATROL
         val primary = if (patrol) {
             val clock = checkNotNull(unit.combat)
@@ -2446,8 +2489,15 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
                                 com.rustedwarfare.reforge.core.content.ProjectileDamageModifiers()): Double {
         if (!target.alive || target.deathPending || target.health == null) return 0.0
         require(damage.isFinite() && damage >= 0.0) { "Damage must remain finite and nonnegative" }
+        val attachment = target.attachment
+        val incoming = if (attachment != null) {
+            val parent = units[attachment.parentId]?.takeIf { it.alive && !it.reclaimed } ?: return 0.0
+            val remainder = damageAfterShield(parent, damage, modifiers)
+            if (target.definition.attachmentModule?.empty == true) return 0.0
+            remainder
+        } else damage
         val before = checkNotNull(target.health)
-        val targetDamage = damage * if (target.definition.building != null ||
+        val targetDamage = incoming * if (target.definition.building != null ||
             target.definition.directHitTargetKind == DirectHitTargetKind.NATIVE_BUILDING) modifiers.building else 1.0
         val armor = target.definition.durability?.armor
         val armoredDamage = if (armor != null && armor.reduction > 0.0 && targetDamage > armor.minimumDamage)
@@ -2455,6 +2505,14 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
         val constructionDamage = if (target.constructionProgress < 1f) armoredDamage * 1.75 else armoredDamage
         require(constructionDamage.isFinite()) { "Construction damage must remain finite" }
         val applied = target.definition.durability?.maxDamagePerHit?.let { minOf(constructionDamage, it) } ?: constructionDamage
+        target.health = maxOf(0.0, before - damageAfterShield(target, applied, modifiers))
+        pendingEvents += Event("unit-damaged", target.unitId)
+        if (!target.alive && attachment == null) processDeath(target)
+        return before - checkNotNull(target.health)
+    }
+
+    private fun damageAfterShield(target: MutableUnit, applied: Double,
+        modifiers: com.rustedwarfare.reforge.core.content.ProjectileDamageModifiers): Double {
         val shieldBefore = target.shield.toDouble()
         val shieldCost = applied * modifiers.shieldDamage
         val absorbed = minOf(shieldBefore, shieldCost)
@@ -2465,10 +2523,7 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
             target.shieldDisplayDamage += absorbed.toFloat()
             pendingEvents += Event("shield-damaged", target.unitId)
         }
-        target.health = maxOf(0.0, before - maxOf(0.0, applied - deflected))
-        pendingEvents += Event("unit-damaged", target.unitId)
-        if (!target.alive) processDeath(target)
-        return before - checkNotNull(target.health)
+        return maxOf(0.0, applied - deflected)
     }
 
     private fun processDeath(target: MutableUnit) {
@@ -2739,6 +2794,7 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
             stepIndex = observedStep,
             simulationTime = observedTime,
             units = orderedUnits().filter { !it.reclaimed }.sortedBy { it.unitId }.map { unit ->
+                val attachments = UnitAttachments.overview(steps.current, unit)
                 UnitObservation(
                     unitId = unit.unitId,
                     ownerPlayerId = unit.ownerPlayerId,
@@ -2754,8 +2810,13 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
                     maxHealth = unit.definition.maximumHealth,
                     shield = unit.definition.shield?.let { ShieldObservation(unit.shield, it.maximum, unit.shieldDisplayDamage) },
                     energy = unit.definition.energy?.let { EnergyObservation(unit.energy, it.maximum, unit.energyRecharging) },
-                    unitActions = NuclearOrdnance.observe(unit) ?: CustomUnitActions.observe(unit, steps.current.actionClock, currentScenario, unitActionQueue(unit)),
+                    unitActions = attachments?.let { UnitAttachments.observe(steps.current, unit, it) }
+                        ?: NuclearOrdnance.observe(unit) ?: CustomUnitActions.observe(unit, steps.current.actionClock, currentScenario, unitActionQueue(unit)),
                     nuclearDoors = unit.definition.nuclearSilo?.let { unit.ordnance.doors },
+                    attachment = unit.attachment?.let {
+                        AttachedUnitObservation(it.parentId, it.slot.number, checkNotNull(unit.definition.attachmentModule).empty)
+                    },
+                    attachmentOverview = attachments,
                     submarine = unit.definition.submarine?.let { SubmarineObservation(unit.submarineSurfaceIntent,
                         unit.submarineVerticalSpeed, SubmarineMotion.submerged(unit), unit.submarineSurfacePresentation,
                         SubmarineMotion.movement(unit).moveSpeed, UnitCombat.range(unit)) },

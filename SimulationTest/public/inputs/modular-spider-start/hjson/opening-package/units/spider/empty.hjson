@@ -1,0 +1,26 @@
+{
+  "format": "rw-reforge.unit.v1",
+  "core": {
+    "name": "modularSpider_emptySlot",
+    "class": "CustomUnitMetadata",
+    "price": 1000,
+    "maxHp": 3000,
+    "radius": 20,
+    "selfRegenRate": 3000,
+    "isUnselectable": true,
+    "canNotBeDirectlyAttacked": true
+  },
+  "graphics": {
+    "image": "empty.png",
+    "total_frames": 1
+  },
+  "actions": [
+    {
+      "name": "buildGun",
+      "convertTo": "modularSpider_gunturret",
+      "price": 2000,
+      "buildSpeed": 0,
+      "setBuilt": 0
+    }
+  ]
+}

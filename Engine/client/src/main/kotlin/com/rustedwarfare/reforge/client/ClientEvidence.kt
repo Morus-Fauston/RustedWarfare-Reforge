@@ -156,6 +156,14 @@ internal fun UnitObservation.fields(): Map<String, Any?> {
     unit.shield?.let { values["shield"] = mapOf("current" to it.current, "maximum" to it.maximum, "displayDamage" to it.displayDamage) }
     unit.energy?.let { values["energy"] = mapOf("current" to it.current, "maximum" to it.maximum, "recharging" to it.recharging) }
     unit.nuclearDoors?.let { values["nuclearDoors"] = it }
+    unit.attachment?.let {
+        values["attachment"] = mapOf("parentUnitId" to it.parentUnitId, "slot" to it.slot, "empty" to it.empty)
+    }
+    unit.attachmentOverview?.let { overview ->
+        values["attachmentOverview"] = mapOf("selectedSlot" to overview.selectedSlot, "slots" to overview.slots.map {
+            mapOf("number" to it.number, "unitId" to it.unitId, "typeId" to it.typeId, "progress" to it.progress)
+        })
+    }
     unit.unitActions?.let { state -> values["unitActions"] = mapOf("automaticCooldown" to state.automaticCooldown,
         "actions" to state.actions.associate { action -> action.name to mapOf("queueIndex" to action.queueIndex,
             "progress" to action.progress, "cooldownRemaining" to action.cooldownRemaining, "available" to action.available) }) +

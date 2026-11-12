@@ -6239,6 +6239,12 @@
     "aa-afterburn-trail": "assets/units/shared/glow_sharp.png",
     "bomber-body": "assets/units/bomber/base.png",
     "bomber-dead": "assets/units/bomber/base_dead.png",
+    "modular-spider-body": "assets/units/modular_spider/body.png",
+    "modular-spider-dead": "assets/units/modular_spider/body_dead.png",
+    "modular-spider-overlay": "assets/units/modular_spider/body_ui.png",
+    "modular-spider-leg": "assets/units/modular_spider/leg.png",
+    "modular-spider-foot": "assets/units/experimental_spider/foot.png",
+    "modular-spider-nano": "assets/units/shared/nano_turret.png",
     "flame-mech-body": "assets/units/mechs_large/topFlame.png",
     "flame-mech-foot": "assets/units/mechs_large/foot.png",
     "bunker-body": "assets/units/mechs_large/topBunker.png",
@@ -6503,6 +6509,54 @@
       "sha256": "2074be278066a5c8a72b1b6dfded3d3549144559e92d2bfc7df914e751e6c8b8",
       "width": 32,
       "height": 32
+    },
+    {
+      "id": "modular-spider-body",
+      "path": "assets/units/modular_spider/body.png",
+      "bytes": 3209,
+      "sha256": "39070b4213ce4c114c21177a2d4318e757231cea5dc7b54c051f5477833ea4fe",
+      "width": 81,
+      "height": 113
+    },
+    {
+      "id": "modular-spider-dead",
+      "path": "assets/units/modular_spider/body_dead.png",
+      "bytes": 3801,
+      "sha256": "4fd0bf11dda19d7e989a3f6951225b53275fb44102040050162a6f14ef9fdd2e",
+      "width": 70,
+      "height": 90
+    },
+    {
+      "id": "modular-spider-overlay",
+      "path": "assets/units/modular_spider/body_ui.png",
+      "bytes": 698,
+      "sha256": "60cf2f823a45a89be3c76aa9edf0d2b19938a4e0234cc1b12f71a477755a5834",
+      "width": 82,
+      "height": 114
+    },
+    {
+      "id": "modular-spider-leg",
+      "path": "assets/units/modular_spider/leg.png",
+      "bytes": 429,
+      "sha256": "6b01227ec6b50d99a1d20a7ca9cbe0c54f4e39086da36592b93fadf90f89bdbc",
+      "width": 10,
+      "height": 84
+    },
+    {
+      "id": "modular-spider-foot",
+      "path": "assets/units/experimental_spider/foot.png",
+      "bytes": 423,
+      "sha256": "90fc84da03ae0c4a9c9d5b6567c81df19c240f4e12163e75c688daed60cb9dd4",
+      "width": 17,
+      "height": 22
+    },
+    {
+      "id": "modular-spider-nano",
+      "path": "assets/units/shared/nano_turret.png",
+      "bytes": 306,
+      "sha256": "72fa3fbea4af4d1b34d33c009d76a207f3905ae73853ea3982fbdb929e0c6c58",
+      "width": 11,
+      "height": 19
     },
     {
       "id": "flame-mech-body",
@@ -7247,6 +7301,118 @@
       ],
       "frames": 1
     },
+    "modular-spider-body": {
+      "file": "units/modular-spider-body.png",
+      "operation": "crop",
+      "source": "modular-spider-body",
+      "rect": [
+        0,
+        0,
+        81,
+        113
+      ],
+      "target": [
+        81,
+        113
+      ],
+      "frames": 1
+    },
+    "modular-spider-dead": {
+      "file": "units/modular-spider-dead.png",
+      "operation": "crop",
+      "source": "modular-spider-dead",
+      "rect": [
+        0,
+        0,
+        70,
+        90
+      ],
+      "target": [
+        70,
+        90
+      ],
+      "frames": 1
+    },
+    "modular-spider-overlay": {
+      "file": "units/modular-spider-overlay.png",
+      "operation": "crop",
+      "source": "modular-spider-overlay",
+      "rect": [
+        0,
+        0,
+        82,
+        114
+      ],
+      "target": [
+        82,
+        114
+      ],
+      "frames": 1
+    },
+    "modular-spider-leg": {
+      "file": "units/modular-spider-leg.png",
+      "operation": "crop",
+      "source": "modular-spider-leg",
+      "rect": [
+        0,
+        0,
+        10,
+        84
+      ],
+      "target": [
+        10,
+        84
+      ],
+      "frames": 1
+    },
+    "modular-spider-foot": {
+      "file": "units/modular-spider-foot.png",
+      "operation": "crop",
+      "source": "modular-spider-foot",
+      "rect": [
+        0,
+        0,
+        17,
+        22
+      ],
+      "target": [
+        17,
+        22
+      ],
+      "frames": 1
+    },
+    "modular-spider-nano": {
+      "file": "units/modular-spider-nano.png",
+      "operation": "crop",
+      "source": "modular-spider-nano",
+      "rect": [
+        0,
+        0,
+        11,
+        19
+      ],
+      "target": [
+        11,
+        19
+      ],
+      "frames": 1
+    },
+    "modular-spider-shadow": {
+      "file": "units/modular-spider-shadow.png",
+      "operation": "alpha-shadow",
+      "source": "modular-spider-body",
+      "rect": [
+        0,
+        0,
+        81,
+        113
+      ],
+      "target": [
+        81,
+        113
+      ],
+      "frames": 1
+    },
     "flame-mech-body": {
       "file": "units/flame-mech-body.png",
       "operation": "crop",
@@ -7856,6 +8022,22 @@
       "body": "air-transport-body",
       "dead": "air-transport-dead",
       "shadow": "air-transport-shadow"
+    },
+    "modularSpider": {
+      "body": "modular-spider-body",
+      "dead": "modular-spider-dead",
+      "turret": "modular-spider-nano",
+      "shadow": "modular-spider-shadow",
+      "leg": "modular-spider-leg",
+      "foot": "modular-spider-foot",
+      "slotOverlay": "modular-spider-overlay"
+    },
+    "modularSpider_emptySlot": {
+      "body": "engineer-body"
+    },
+    "modularSpider_gunturret": {
+      "body": "engineer-body",
+      "turret": "turret-gun"
     },
     "mechFlame": {
       "body": "flame-mech-body",

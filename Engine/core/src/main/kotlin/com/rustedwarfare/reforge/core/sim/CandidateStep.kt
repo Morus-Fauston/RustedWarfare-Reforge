@@ -97,6 +97,7 @@ internal data class StepState(
         val objectIds = mutableSetOf<Long>()
         var previousKey: String? = null
         for (unit in units.values) {
+            UnitAttachments.validateCandidateUnit(this, unit)
             require(input.unitDefinitions[unit.typeId] === unit.definition) { "Unit definition must remain registered" }
             require(listOf(unit.position.x, unit.position.y, unit.heading, unit.speed, unit.angularVelocity, unit.height)
                 .all { it.isFinite() } && (unit.health?.isFinite() != false)) { "Unit candidate must remain finite" }

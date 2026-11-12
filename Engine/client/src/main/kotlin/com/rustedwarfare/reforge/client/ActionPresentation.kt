@@ -20,6 +20,8 @@ internal class ActionCatalogue(private val definitions: Map<String, UnitDefiniti
         "helicopter" to Names("Helicopter"), "amphibiousJet" to Names("Amphibious jet"), "aaBeamGunship" to Names("AA beam gunship"),
         "aaBeamGunship_afterburn" to Names("AA beam (Afterburn)", "AA beam gunship (Afterburn)"),
         "bomber" to Names("Bomber"), "mechFlame" to Names("Flame mech"),
+        "modularSpider" to Names("Modular Spider"), "modularSpider_emptySlot" to Names("Empty"),
+        "modularSpider_gunturret" to Names("Gun T1"),
         "seaFactory" to Names("Sea factory"), "seaFactoryT2" to Names("Sea factory T2"),
         "experimentalLandFactory" to Names("Experimental", "Experimental factory"),
         "heavyBattleship" to Names("Heavy battleship"), "attackSubmarine" to Names("Submarine"),
@@ -35,6 +37,36 @@ internal class ActionCatalogue(private val definitions: Map<String, UnitDefiniti
         "c_turret_t1_artillery" to Names("Artillery", "Unit"), "laserDefence" to Names("Laser Shield"))
     fun title(type: String, panel: Boolean = false): String = names[type]?.let { if (panel) it.panel else it.full }
         ?: type
+
+    private fun attachmentAction(action: UnitActionObservation, overview: AttachmentOverview): CustomUnitActionView {
+        val slot = overview.slots.firstOrNull { action.name == "selectSlot${it.number}" }
+        if (slot != null) {
+            val label = "Slot ${slot.number}"
+            val status = if (slot.progress < 1f) " · ${(slot.progress * 100f).toInt()}%" else ""
+            return CustomUnitActionView(action.name, label, "$label · ${title(slot.typeId)}$status",
+                false, 0, action.available, false)
+        }
+        if (action.name == "selectSlotBuild")
+            return CustomUnitActionView(action.name, "Build", "Return to chassis actions", false, 0, action.available, false)
+
+        val selected = overview.slots.single { it.number == overview.selectedSlot }
+        val module = checkNotNull(definitions.getValue(selected.typeId).attachmentModule)
+        val install = module.installs.singleOrNull { it.action == action.name }
+        val name = when {
+            install != null -> "Add ${title(install.targetTypeId)}"
+            action.name == "cancel" -> "Cancel"
+            else -> "Reclaim Slot"
+        }
+        val status = when {
+            action.cooldownRemaining > 0 -> String.format(Locale.ROOT, "Cooling %.1fs", action.cooldownRemaining / 1000f)
+            install != null -> "Cost ${install.cost}"
+            action.name == "cancel" -> "Refund ${module.cancel?.refund}"
+            else -> "Refund ${module.reclaim?.refund}"
+        }
+        return CustomUnitActionView(action.name, name, "$name\nSlot ${selected.number}\n$status",
+            action.queueIndex != null, action.cooldownRemaining, action.available, action.queueIndex != null,
+            action.progress, iconTypeId = install?.targetTypeId)
+    }
     fun nominalIncome(type: String): Float? = definitions[type]?.income?.let { it.credits * 40f / it.period }
     private val nominalSeconds = mapOf("extractorT1" to "27.7", "extractorT2" to "55.5",
         "fabricatorT1" to "65.6", "fabricatorT2" to "93.3")
@@ -108,6 +140,7 @@ internal class ActionCatalogue(private val definitions: Map<String, UnitDefiniti
         val actionUnit = ownSingle ?: if (localControl) nuclearLaunchMember(view, ids) else null
         val unitActions = immutable(actionUnit?.unitActions?.actions.orEmpty()
             .filter { ownSingle != null || it.name == "launchNuke" }.map { action ->
+            actionUnit?.attachmentOverview?.let { return@map attachmentAction(action, it) }
             val unitDefinition = actionUnit?.let { definitions.getValue(it.typeId) }
             val definition = unitDefinition?.customActions?.actions?.singleOrNull { it.name == action.name }
             val launch = definition?.groundLaunch

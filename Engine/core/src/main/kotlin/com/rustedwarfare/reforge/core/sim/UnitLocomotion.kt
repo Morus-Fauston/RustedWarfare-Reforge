@@ -7,6 +7,7 @@ import com.rustedwarfare.reforge.core.content.TransportProfile
 /** The current physical locomotion profile, shared by planning, steering and displacement. */
 internal object UnitLocomotion {
     fun movement(unit: MutableUnit): MovementProfile {
+        unit.attachmentMoveSpeed?.let { return unit.definition.movement.copy(moveSpeed = it) }
         unit.transportState?.let { state ->
             if (unit.definition.transport == TransportProfile.NATIVE_HOVERCRAFT)
                 return unit.definition.movement.copy(moveSpeed = if (state.liquid) 1.2 else .9,

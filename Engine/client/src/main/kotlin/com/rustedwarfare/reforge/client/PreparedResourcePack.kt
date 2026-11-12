@@ -10,7 +10,7 @@ data class VisualUnitResourceIds(val body: ResourceId, val back: ResourceId?, va
     val weaponTurrets: Map<String, ResourceId> = emptyMap(), val shadow: ResourceId? = null, val shield: ResourceId? = null,
     val leftWing: ResourceId? = null, val rightWing: ResourceId? = null,
     val beam: ResourceId? = null, val beamStart: ResourceId? = null, val beamEnd: ResourceId? = null, val afterburnTrail: ResourceId? = null,
-    val arm1: ResourceId? = null, val arm2: ResourceId? = null)
+    val arm1: ResourceId? = null, val arm2: ResourceId? = null, val slotOverlay: ResourceId? = null)
 
 /** Immutable logical bindings for an already prepared generation; lookup never performs IO. */
 class PreparedResourcePack private constructor(val metadata: ResourcePackMetadata, resources: Map<ResourceId, Path>,

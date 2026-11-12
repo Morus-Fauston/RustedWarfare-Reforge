@@ -1,0 +1,23 @@
+{
+  "format": "rw-reforge.content-pack.v1",
+  "id": "owned-modular-spider-start-hjson",
+  "name": "Owned Modular Spider opening",
+  "units": [
+    {
+      "type": "mech",
+      "file": "units/mech.hjson"
+    },
+    {
+      "type": "modular-spider",
+      "file": "units/spider/spider.hjson"
+    },
+    {
+      "type": "modular-spider",
+      "file": "units/spider/empty.hjson"
+    },
+    {
+      "type": "modular-spider",
+      "file": "units/spider/gun.hjson"
+    }
+  ]
+}

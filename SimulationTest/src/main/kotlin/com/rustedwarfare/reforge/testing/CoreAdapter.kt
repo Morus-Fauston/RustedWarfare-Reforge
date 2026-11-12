@@ -201,6 +201,15 @@ internal fun UnitObservation.json(capabilities: Boolean): JsonObject = JsonObjec
     energy?.let { put("energy", obj("current" to n(it.current), "maximum" to n(it.maximum), "recharging" to b(it.recharging))) }
     unitActions?.let { put("unitActions", it.json()) }
     nuclearDoors?.let { put("nuclearDoors", n(it)) }
+    attachment?.let {
+        put("attachment", obj("parentUnitId" to s(it.parentUnitId), "slot" to n(it.slot), "empty" to b(it.empty)))
+        put("height", n(height))
+    }
+    attachmentOverview?.let { layout ->
+        put("attachmentOverview", obj("selectedSlot" to layout.selectedSlot?.let(::n), "slots" to array(layout.slots.map {
+            obj("number" to n(it.number), "unitId" to s(it.unitId), "typeId" to s(it.typeId), "progress" to n(it.progress))
+        })))
+    }
     mechPose?.let { put("height", n(height)); put("mechPose", it.json()) }
     flightPose?.let { put("height", n(height)); put("flightPose", it.json()) }
     waterPose?.let { put("height", n(height)); put("waterPose", obj(

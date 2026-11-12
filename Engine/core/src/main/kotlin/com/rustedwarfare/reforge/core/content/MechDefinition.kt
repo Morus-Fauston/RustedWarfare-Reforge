@@ -4,7 +4,9 @@ import java.nio.file.Path
 import java.util.Collections
 import kotlin.math.sqrt
 
-enum class MechKind { TWO_LEGGED, FOUR_LEGGED, SIX_LEGGED }
+enum class MechKind(val legCount: Int, internal val movingLegLimit: Int) {
+    TWO_LEGGED(2, 4), FOUR_LEGGED(4, 4), SIX_LEGGED(6, 6), EIGHT_LEGGED(8, 8)
+}
 
 /** Finite LAND gait metadata; the kind distinguishes the two qualified representatives. */
 class MechDefinition(val body: MechBodyDefinition, legs: List<MechLegDefinition>,
@@ -23,12 +25,8 @@ class MechDefinition(val body: MechBodyDefinition, legs: List<MechLegDefinition>
         }
     }
 
-    internal fun isValid(): Boolean = legs.size == when (kind) {
-        MechKind.TWO_LEGGED -> 2
-        MechKind.FOUR_LEGGED -> 4
-        MechKind.SIX_LEGGED -> 6
-    } &&
-        body.isValid() && legs.all { it.isValid(if (kind == MechKind.SIX_LEGGED) 6 else 4) } &&
+    internal fun isValid(): Boolean = legs.size == kind.legCount &&
+        body.isValid() && legs.all { it.isValid(kind.movingLegLimit) } &&
         legs.all { it.legImage == legs[0].legImage && it.footImage == legs[0].footImage }
 }
 

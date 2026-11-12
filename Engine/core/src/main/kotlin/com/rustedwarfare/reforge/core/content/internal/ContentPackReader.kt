@@ -106,7 +106,7 @@ internal object ContentPackReader {
             val field = "units[$index]"
             val spec = objectFields(entry, setOf("type", "file"), manifest, field)
             val capability = string(spec.get("type"), "$field.type")
-            if (capability !in setOf("nuclear-silo", "experimental-factory", "nautilus", "scout-bot", "mech-engineer", "repair-bay", "tank", "hover-tank", "hovercraft", "dropship", "aa-beam-gunship", "bomber", "mech-bunker", "mech-flame", "mech", "mech-heavy", "mech-factory", "builder", "constructor", "factory", "helicopter", "amphibious-jet", "air-factory", "battleship", "water-combat", "sea-factory", "underwater-target", "submarine", "command-center", "land-factory"))
+            if (capability !in setOf("modular-spider", "nuclear-silo", "experimental-factory", "nautilus", "scout-bot", "mech-engineer", "repair-bay", "tank", "hover-tank", "hovercraft", "dropship", "aa-beam-gunship", "bomber", "mech-bunker", "mech-flame", "mech", "mech-heavy", "mech-factory", "builder", "constructor", "factory", "helicopter", "amphibious-jet", "air-factory", "battleship", "water-combat", "sea-factory", "underwater-target", "submarine", "command-center", "land-factory"))
                 reject(ContentErrorCode.UNSUPPORTED_FEATURE, manifest, field = "$field.type", reason = "Expected an implemented finite combat, mech, factory or builder capability")
             val reference = string(spec.get("file"), "$field.file")
             val pieces = reference.split('/')
@@ -122,6 +122,7 @@ internal object ContentPackReader {
             if (!files.add(input)) reject(ContentErrorCode.IDENTITY_CONFLICT, manifest, field = "$field.file", ref = reference,
                 reason = "Duplicate package entry")
             val loaded = when (capability) {
+                "modular-spider" -> ModularSpiderContentReader.readWithSources(input) { requireOrdinary(root, it) }
                 "nuclear-silo" -> NuclearSiloContentReader.readWithSources(input) { requireOrdinary(root, it) }
                 "nautilus" -> NautilusContentReader.readWithSources(input) { requireOrdinary(root, it) }
                 "scout-bot" -> ScoutBotContentReader.readWithSources(input) { requireOrdinary(root, it) }
@@ -187,7 +188,8 @@ internal object ContentPackReader {
                 "beam_image_end" to combat?.projectile?.beam?.endImage,
                 "afterburn_trail_image" to definition.afterburnTrailImagePath,
                 "image_arm1" to definition.nuclearSilo?.arm1ImagePath,
-                "image_arm2" to definition.nuclearSilo?.arm2ImagePath) + definition.mech?.legs.orEmpty().flatMap {
+                "image_arm2" to definition.nuclearSilo?.arm2ImagePath,
+                "image_slotUi" to definition.attachmentLayout?.slotImagePath) + definition.mech?.legs.orEmpty().flatMap {
                     listOf("image_leg" to it.legImage, "image_foot" to it.footImage) } +
                 combat?.namedWeapons?.ordered.orEmpty().map { "turret_${it.name}.image" to it.imagePath }
             for ((slot, image) in images) {
@@ -209,6 +211,12 @@ internal object ContentPackReader {
         for (contentId in replacements.keys) if (contentId !in units)
             reject(ContentErrorCode.BAD_REFERENCE, manifest, field = "replacements", ref = contentId,
                 reason = "Replacement content is not declared by this package")
+        if (dependencies.isEmpty()) for ((id, unit) in units) {
+            ModularSpiderRules.missingReference(unit, units)?.let { (field, target) ->
+                reject(ContentErrorCode.BAD_REFERENCE, unitFiles.getValue(id), field = field, ref = target,
+                    reason = "Expected the referenced qualified attachment form in the content package")
+            }
+        }
         val loaded = LoadedContentPack(root, manifest, id, name, units, sources.values.toList(), dependencies, replacements, unitFiles)
         when (val stable = loaded.verifyStable()) {
             is ContentResult.Failure -> throw ContentReadException(stable.error)

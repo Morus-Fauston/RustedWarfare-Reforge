@@ -24,7 +24,7 @@ internal object CombatTargetQuery {
 
     /** Common target category envelope for manual intent and gameplay candidate selection. */
     fun canAttackAirCategory(actor: MutableUnit, target: MutableUnit, map: MapDefinition): Boolean {
-        if (target.carriedBy != null) return false
+        if (target.carriedBy != null || target.definition.attachmentModule?.empty == true) return false
         if (actor.definition.maintenance == com.rustedwarfare.reforge.core.content.MaintenanceProfile.MECH_ENGINEER)
             return isFlying(target)
         if (actor.definition.combat?.projectile?.beam != null) return isFlying(target)

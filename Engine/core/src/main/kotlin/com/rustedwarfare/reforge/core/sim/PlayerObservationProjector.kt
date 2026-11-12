@@ -75,7 +75,8 @@ internal class PlayerObservationProjector(world: WorldHandle, scenario: Scenario
             if (it.ownerPlayerId != playerId) {
                 it.copy(moveTarget = null, pathPoints = emptyList(), attackTargetId = null, cooldown = null, pointDefense = null,
                     tasks = emptyList(), constructionTargetId = null, transportExit = null,
-                    transport = null, unitActions = null,
+                    transport = null, unitActions = null, attachmentOverview = null,
+                    attachment = it.attachment?.takeIf { relation -> relation.parentUnitId in visibleIds },
                     submarine = it.submarine?.copy(surfaceIntent = null, verticalSpeed = null),
                     amphibiousJet = it.amphibiousJet?.copy(flyingIntent = null, verticalSpeed = null, canDive = null))
             } else if (it.attackTargetId != null && it.attackTargetId !in visibleIds) {

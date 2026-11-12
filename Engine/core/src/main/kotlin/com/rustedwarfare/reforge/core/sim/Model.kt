@@ -166,7 +166,13 @@ data class UnitObservation(
     val energy: EnergyObservation? = null,
     val unitActions: UnitActionsObservation? = null,
     val nuclearDoors: Float? = null,
+    val attachment: AttachedUnitObservation? = null,
+    val attachmentOverview: AttachmentOverview? = null,
 )
+
+data class AttachedUnitObservation(val parentUnitId: String, val slot: Int, val empty: Boolean)
+data class AttachmentSlotObservation(val number: Int, val unitId: String, val typeId: String, val progress: Float)
+data class AttachmentOverview(val selectedSlot: Int?, val slots: List<AttachmentSlotObservation>)
 
 data class EnergyObservation(val current: Float, val maximum: Float, val recharging: Boolean)
 data class UnitActionObservation(val name: String, val queueIndex: Int?, val progress: Float?,
@@ -492,6 +498,13 @@ internal data class MutableUnit(
     var deathPending: Boolean = false,
     var energy: Float = definition.energy?.maximum ?: 0f,
     var energyRecharging: Boolean = false,
+    var attachment: AttachmentBinding? = null,
+    var attachmentIds: Map<Int, String> = emptyMap(),
+    var openingFallSpeed: Float = 0f,
+    var selectedAttachmentSlot: Int? = null,
+    var attachmentMoveSpeed: Double? = null,
+    var attachmentOrder: AttachmentOrder? = null,
+    var attachmentCooldown: Float = 0f,
 ) {
     val producerId: String? get() = productionOrigin?.producerId
     val reversing: Boolean get() = mechState?.reversing ?: bodyReversing

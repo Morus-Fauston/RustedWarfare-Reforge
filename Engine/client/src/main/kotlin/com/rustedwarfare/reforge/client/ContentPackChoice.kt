@@ -15,6 +15,7 @@ data class ContentPackChoice(val content: LoadedContentSet, val unitId: String) 
     init {
         require(unitId in content.units) { "Unknown package unit: $unitId" }
         require(content.units.getValue(unitId).fixedUnderwaterTarget == null) { "A fixed evidence target cannot be a player start choice" }
+        require(content.units.getValue(unitId).attachmentModule == null) { "Select the chassis to start with its slots" }
     }
     /** The selected unit's effective author; all validation uses the complete set. */
     val pack: LoadedContentPack get() = content.packages.single { it.id == content.provenance.getValue(unitId).packageId }
@@ -251,6 +252,16 @@ internal fun contentPackScenario(root: Path, choice: ContentPackChoice): Scenari
         CoordinateModel("p001.coordinate.v1", "2d", "x-right", "y-down", "top-left", "world-unit", "double", "ieee754-binary64"),
         TimeModel("p001.time.v1", "sim-tick", "ieee754-binary64", "fixed-explicit-delta"), MovementContract(16.0, 4.0),
         combatContract = CombatContract(12345, -1, mapOf("a" to 8L, "b" to 9L), 10L))
+    if (choice.content.units.getValue(choice.unitId).attachmentLayout != null) {
+        val opening = listOfNotNull(UnitSpawn("a", "p1", choice.unitId, Position(190.0, 150.0), 90.0),
+            choice.content.units["mechGun"]?.let { UnitSpawn("b", "p2", it.id, Position(465.0, 150.0), 270.0) })
+        return Scenario("p009-modular-spider-start", map, choice.content.units,
+            listOf(Player("p1", PlayerControl.LOCAL, "one"), Player("p2", PlayerControl.NONE, "two")), opening,
+            CoordinateModel("p001.coordinate.v1", "2d", "x-right", "y-down", "top-left", "world-unit", "double", "ieee754-binary64"),
+            TimeModel("p001.time.v1", "sim-tick", "ieee754-binary64", "fixed-explicit-delta"), MovementContract(16.0, 4.0),
+            combatContract = CombatContract(12345, -1, opening.mapIndexed { index, unit -> unit.unitId to (8L + index) }.toMap(), 8L + opening.size),
+            economyContract = EconomyContract(mapOf("p1" to 5000L, "p2" to 0L)))
+    }
     val flameMech = choice.content.units["mechFlame"]?.mech?.kind == MechKind.TWO_LEGGED &&
         choice.content.units["mechFactoryT2"]?.production?.unitTypeIds?.contains("mechFlame") == true
     val largeMechChoices = setOf("builder", "mechFactory", "mechFactoryT2", "mechHeavyMissile")
@@ -296,6 +307,6 @@ internal fun contentPackScenario(root: Path, choice: ContentPackChoice): Scenari
         CoordinateModel("p001.coordinate.v1", "2d", "x-right", "y-down", "top-left", "world-unit", "double", "ieee754-binary64"),
         TimeModel("p001.time.v1", "sim-tick", "ieee754-binary64", "fixed-explicit-delta"), MovementContract(16.0, 4.0),
         combatContract = CombatContract(12345, -1, mapOf("a" to 8L, "b" to 9L, "c" to 10L), 11L),
-        economyContract = if (choice.content.units.values.any { it.production != null || it.builder != null || it.construction != null })
+        economyContract = if (choice.content.units.values.any { it.production != null || it.builder != null || it.construction != null || it.income != null })
             EconomyContract(mapOf("p1" to 3000L, "p2" to 0L)) else null)
 }

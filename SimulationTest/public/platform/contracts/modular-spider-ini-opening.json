@@ -1,0 +1,99 @@
+{
+  "schemaVersion": 1,
+  "scenarioId": "modular-spider-ini-opening",
+  "history": {
+    "ownerPlayerId": "p1",
+    "initialBalance": 5000,
+    "noActionIntents": [
+      "settle-opening"
+    ],
+    "initialOwnedTypes": [
+      "modularSpider",
+      "modularSpider_emptySlot",
+      "modularSpider_emptySlot",
+      "modularSpider_emptySlot",
+      "modularSpider_emptySlot",
+      "modularSpider_emptySlot",
+      "modularSpider_emptySlot"
+    ],
+    "initialIncome": {
+      "unitId": "a",
+      "typeId": "modularSpider",
+      "period": 40,
+      "credits": 30
+    },
+    "spend": [
+      {
+        "intentId": "buy-gun",
+        "amount": 2000,
+        "at": "action"
+      },
+      {
+        "intentId": "rebuild-gun",
+        "amount": 2000,
+        "at": "action"
+      }
+    ],
+    "mechLegs": {
+      "modularSpider": 8,
+      "mechGun": 2
+    },
+    "spiderOpening": true,
+    "projectileBirthsRequired": true,
+    "minimumBirths": [
+      {
+        "ownerPlayerId": "p1",
+        "typeId": "modularSpider_gunturret",
+        "weaponNames": [
+          "1"
+        ],
+        "targetUnitId": "b"
+      }
+    ],
+    "finalUnits": [
+      {
+        "ownerPlayerId": "p1",
+        "typeId": "modularSpider",
+        "fields": {
+          "alive": true
+        }
+      },
+      {
+        "ownerPlayerId": "p1",
+        "typeId": "modularSpider_gunturret",
+        "fields": {
+          "alive": true
+        }
+      }
+    ]
+  },
+  "rules": [
+    {
+      "intentId": "settle-opening"
+    },
+    {
+      "intentId": "select-spider"
+    },
+    {
+      "intentId": "select-slot-1"
+    },
+    {
+      "intentId": "buy-gun"
+    },
+    {
+      "intentId": "cancel-gun"
+    },
+    {
+      "intentId": "rebuild-gun"
+    },
+    {
+      "intentId": "attack-ground"
+    },
+    {
+      "intentId": "move-spider"
+    },
+    {
+      "intentId": "stop-spider"
+    }
+  ]
+}

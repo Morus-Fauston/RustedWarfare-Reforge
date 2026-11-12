@@ -421,7 +421,7 @@ class SandboxSession(scenario: Scenario, private val evidence: ClientEvidence = 
         return results.lastOrNull()?.result
     }
 
-    private fun controllable(unit: UnitObservation): Boolean = unit.alive && unit.ownerPlayerId == "p1" &&
+    private fun controllable(unit: UnitObservation): Boolean = unit.alive && unit.attachment == null && unit.ownerPlayerId == "p1" &&
         scenario.players.any { it.playerId == "p1" && it.control == PlayerControl.LOCAL }
     /** Read-only hit identity from this player's published observation. */
     fun commandTargetAt(position: Position): String? = unitAt(position)
@@ -470,7 +470,7 @@ class SandboxSession(scenario: Scenario, private val evidence: ClientEvidence = 
 
     fun select(position: Position, mode: SelectionMode = SelectionMode.REPLACE) {
         rejectedFeedback = false
-        val id = unitAt(position)
+        val id = unitAt(position, selectionOnly = true)
         if (id != null) {
             if (apply(SelectAction("click-${++actionNumber}", "p1", id, context.world)) is ActionResult.Accepted)
                 selection.select(listOf(id), mode)
@@ -481,7 +481,7 @@ class SandboxSession(scenario: Scenario, private val evidence: ClientEvidence = 
     }
 
     fun tap(position: Position) {
-        if (unitAt(position) != null) select(position) else move(position)
+        if (unitAt(position, selectionOnly = true) != null) select(position) else move(position)
     }
 
     fun selectBox(start: Position, end: Position, mode: SelectionMode = SelectionMode.REPLACE,
@@ -505,8 +505,9 @@ class SandboxSession(scenario: Scenario, private val evidence: ClientEvidence = 
             "start" to start.fields(), "end" to end.fields(), "mode" to mode.name) }
     }
 
-    private fun unitAt(position: Position): String? = observation.units.asSequence()
-        .filter { it.alive }
+    private fun unitAt(position: Position, selectionOnly: Boolean = false): String? = observation.units.asSequence()
+        .filter { unit -> unit.alive && scenario.unitDefinitions.getValue(unit.typeId).attachmentModule
+            ?.let { !selectionOnly && !it.empty } != false }
         .map { unit ->
             val center = unit.displayedBodyPosition()
             val dx = center.x - position.x

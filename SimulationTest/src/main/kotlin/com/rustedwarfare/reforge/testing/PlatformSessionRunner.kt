@@ -80,6 +80,8 @@ object PlatformSessionRunner {
                             val name = intent.id("actionName")
                             val nuclear = name in setOf("buildNuke", "launchNuke", "buildAntiNuke")
                             val targeted = name == "launchNuke" || name == "launchScoutBot"
+                            val spider = name in setOf("selectSlotBuild", "buildGun", "cancel", "reclaim") ||
+                                name.matches(Regex("selectSlot[1-6]"))
                             val cancel = intent["cancelQueued"]?.let { value ->
                                 value.jsonPrimitive.booleanOrNull ?: throw InputError("Expected action cancellation boolean")
                             } ?: false
@@ -87,7 +89,8 @@ object PlatformSessionRunner {
                                 (if ("cancelQueued" in intent && (nuclear || targeted)) setOf("cancelQueued") else emptySet()) +
                                 (if (targeted && !cancel) setOf("target") else emptySet())
                             if (intent.keys != keys ||
-                                !nuclear && !targeted && name !in setOf("afterBurn", "cancelBurn", "deploy", "undeploy", "surface", "dive"))
+                                !nuclear && !targeted && !spider &&
+                                    name !in setOf("afterBurn", "cancelBurn", "deploy", "undeploy", "surface", "dive"))
                                 throw InputError("Expected a finite normal unit action and explicit waitSteps")
                             val point = intent["target"]?.jsonObject?.let {
                                 if (it.keys != setOf("x", "y")) throw InputError("Expected finite ground point")

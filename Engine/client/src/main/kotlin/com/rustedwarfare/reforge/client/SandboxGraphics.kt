@@ -145,6 +145,7 @@ class SandboxGraphics private constructor(private val resources: SandboxRenderRe
             definition.rightWingImagePath?.let { wings[id to UnitImageSlot.RIGHT_WING] = TextureRegion(texture(it)) }
             definition.arm1ImagePath?.let { wings[id to UnitImageSlot.ARM1] = TextureRegion(texture(it)) }
             definition.arm2ImagePath?.let { wings[id to UnitImageSlot.ARM2] = TextureRegion(texture(it)) }
+            definition.slotOverlayImagePath?.let { wings[id to UnitImageSlot.SLOT_OVERLAY] = TextureRegion(texture(it)) }
             for (path in listOfNotNull(definition.beamImagePath, definition.beamStartImagePath, definition.beamEndImagePath)) {
                 beamImages[path] = TextureRegion(texture(path))
             }
@@ -153,7 +154,8 @@ class SandboxGraphics private constructor(private val resources: SandboxRenderRe
         }
     }
 
-    fun draw(batch: SpriteBatch, frame: SandboxFrame, construction: ConstructionPreview? = null) {
+    fun draw(batch: SpriteBatch, frame: SandboxFrame, construction: ConstructionPreview? = null,
+        selectedIds: Set<String> = emptySet()) {
         for (cell in frame.terrain) {
             val gid = cell.gid ?: continue
             if (gid == 0) continue
@@ -179,7 +181,10 @@ class SandboxGraphics private constructor(private val resources: SandboxRenderRe
         val mechFrames = MechPresentation.project(frame.observation, projection, resources).associateBy { it.unitId }
         val flightFrames = FlightPresentation.project(frame.observation, projection).associateBy { it.unitId }
         val waterFrames = WaterPresentation.project(frame.observation, projection).associateBy { it.unitId }
-        for (unit in frame.observation.units) {
+        val observedUnits = frame.observation.units
+        val drawOrder = if (observedUnits.any { it.attachment != null }) observedUnits.sortedBy { it.attachment != null }
+            else observedUnits
+        for (unit in drawOrder) {
             val definition = resources.units.getValue(unit.typeId)
             if (!definition.isDrawn(unit)) continue
             batch.setColor(1f, 1f, 1f, if (unit.alive && unit.constructionProgress < 1f) .45f else 1f)
@@ -187,7 +192,7 @@ class SandboxGraphics private constructor(private val resources: SandboxRenderRe
             val flight = flightFrames[unit.unitId]
             val water = waterFrames[unit.unitId]
             val hover = HoverPresentation.project(unit, projection)
-            val jetCenter = unit.amphibiousJet?.let { unit.displayedBodyPosition() }
+            val heightAdjustedCenter = unit.takeIf { it.amphibiousJet != null || it.attachment != null }?.displayedBodyPosition()
             val jetHeading = unit.amphibiousJet?.let {
                 visibleWeapons[unit.unitId]?.singleOrNull { it.weaponName == "body" }?.turretHeading ?: unit.heading
             }
@@ -259,9 +264,21 @@ class SandboxGraphics private constructor(private val resources: SandboxRenderRe
             val size = definition.drawSize(if (corpse != null) UnitImageSlot.DEAD else UnitImageSlot.BODY, region.regionWidth, region.regionHeight)
             val w = (size.width * projection.scale).toFloat()
             val h = (size.height * projection.scale).toFloat()
-            batch.draw(region, (flight?.bodyX ?: mech?.bodyX ?: water?.bodyX ?: hover?.bodyX ?: projection.x(jetCenter?.x ?: unit.position.x)) - w / 2,
-                (flight?.bodyY ?: mech?.bodyY ?: water?.bodyY ?: hover?.bodyY ?: projection.y(jetCenter?.y ?: unit.position.y)) - h / 2,
+            batch.draw(region, (flight?.bodyX ?: mech?.bodyX ?: water?.bodyX ?: hover?.bodyX ?: projection.x(heightAdjustedCenter?.x ?: unit.position.x)) - w / 2,
+                (flight?.bodyY ?: mech?.bodyY ?: water?.bodyY ?: hover?.bodyY ?: projection.y(heightAdjustedCenter?.y ?: unit.position.y)) - h / 2,
                 w / 2, h / 2, w, h, 1f, 1f, flight?.bodyRotation ?: mech?.rotation ?: water?.bodyRotation ?: hover?.rotation ?: -(jetHeading ?: unit.heading).toFloat())
+            if (unit.alive && unit.unitId in selectedIds) {
+                wings[unit.typeId to UnitImageSlot.SLOT_OVERLAY]?.let { overlay ->
+                    val size = definition.drawSize(UnitImageSlot.SLOT_OVERLAY, overlay.regionWidth, overlay.regionHeight)
+                    val width = (size.width * projection.scale).toFloat()
+                    val height = (size.height * projection.scale).toFloat()
+                    val center = unit.displayedBodyPosition()
+                    batch.setColor(1f, 1f, 1f, .55f)
+                    batch.draw(overlay, projection.x(center.x) - width / 2, projection.y(center.y) - height / 2,
+                        width / 2, height / 2, width, height, 1f, 1f, -unit.heading.toFloat())
+                    batch.color = Color.WHITE
+                }
+            }
             for (drawing in definition.amphibiousWings(unit, visibleWeapons[unit.unitId].orEmpty()) + definition.nuclearDoors(unit)) {
                 val wing = wings.getValue(unit.typeId to drawing.slot)
                 val size = definition.drawSize(drawing.slot, wing.regionWidth, wing.regionHeight)
@@ -349,8 +366,13 @@ class SandboxGraphics private constructor(private val resources: SandboxRenderRe
                     construction: ConstructionPreview? = null, groundAction: GroundActionPreview? = null) {
         shapes.color = Color(0.45f, 0.5f, 0.47f, 1f)
         shapes.rect(projection.left.toFloat(), projection.bottom.toFloat(), projection.width.toFloat(), projection.height.toFloat())
+        val selectedSlots = frame.observation.units.asSequence().filter { it.unitId in selectedIds }
+            .associate { it.unitId to it.attachmentOverview?.selectedSlot }
         for (unit in frame.observation.units) {
             if (!resources.units.getValue(unit.typeId).isDrawn(unit)) continue
+            val attachment = unit.attachment
+            val showSlot = attachment != null && attachment.parentUnitId in selectedSlots
+            if (attachment?.empty == true && !showSlot) continue
             shapes.color = if (unit.alive) resources.unitCircleColor(frame.observation.playerId, unit.ownerPlayerId) else Color.DARK_GRAY
             val radius = (resources.units.getValue(unit.typeId).displayRadius * projection.scale).toFloat()
             val center = unit.displayedBodyPosition()
@@ -365,10 +387,14 @@ class SandboxGraphics private constructor(private val resources: SandboxRenderRe
                     shapes.color = resources.unitCircleColor(frame.observation.playerId, unit.ownerPlayerId)
                 }
             }
-            shapes.circle(x, y, radius + if (unit.unitId in selectedIds) 4f else 1f, 32)
+            if (showSlot) {
+                val active = selectedSlots[attachment?.parentUnitId] == attachment?.slot
+                shapes.color = if (active) Color.CYAN else Color.WHITE
+                shapes.circle(x, y, (if (active) 8f else 6f) * projection.scale.toFloat(), 16)
+            } else if (attachment == null) shapes.circle(x, y, radius + if (unit.unitId in selectedIds) 4f else 1f, 32)
             val health = unit.health
             val maximum = unit.maxHealth
-            if (unit.alive && health != null && maximum != null) {
+            if (unit.alive && attachment?.empty != true && health != null && maximum != null) {
                 shapes.line(x - radius, y + radius + 4f, x - radius + 2f * radius * (health / maximum).toFloat(), y + radius + 4f)
             }
             if (unit.alive) unit.shield?.let { shield ->

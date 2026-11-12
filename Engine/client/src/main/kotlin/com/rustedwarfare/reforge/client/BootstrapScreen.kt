@@ -794,7 +794,7 @@ class BootstrapScreen(
             val clip = Rectangle()
             stage.calculateScissors(Rectangle(16f, 64f, 704f, 512f), clip)
             if (ScissorStack.pushScissors(clip)) try {
-                batch.begin(); graphics?.draw(batch, current.frame, mapInput.constructionPreview); batch.end()
+                batch.begin(); graphics?.draw(batch, current.frame, mapInput.constructionPreview, current.selectedIds); batch.end()
                 shapes.begin(ShapeRenderer.ShapeType.Line)
                 graphics?.drawOverlay(shapes, current.frame, current.selectedIds, mapInput.box, mapInput.constructionPreview, mapInput.groundActionPreview)
                 shapes.end()
@@ -1342,9 +1342,9 @@ class BootstrapScreen(
             } ?: "Tasks 0"
         patrolLabel.setText(if (state.patrolMode) "Sent points ${state.patrolPoints}\n$taskText\nLeft: point / Esc: finish"
             else if (selected?.tasks?.isNotEmpty() == true) taskText else "P: set patrol points")
-        // Stationary production controls already explain their actions; keep the patrol hint clear.
+        // Dense action panels already explain their controls and use the patrol hint area.
         if (queue != null || upgrades.isNotEmpty() || menu?.construction?.isNotEmpty() == true || menu?.canMaintain == true ||
-            selected?.unitActions?.stockpile != null)
+            selected?.unitActions?.stockpile != null || selected?.attachmentOverview != null)
             patrolLabel.isVisible = false
         selectedLabel.isVisible = current != null
         listOf<Actor>(contentLabel, rootField, modeBox, shareBox).forEach { it.isVisible = launch.canEdit }

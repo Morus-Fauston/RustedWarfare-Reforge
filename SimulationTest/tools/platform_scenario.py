@@ -12,6 +12,7 @@ import sys
 import time
 import tempfile
 import xml.etree.ElementTree as ET
+import spider_platform
 
 
 class PlatformError(ValueError):
@@ -38,7 +39,8 @@ def validate_unit_action_intent(intent):
     if (set(intent)!=keys or type(cancel) is not bool or
             targeted and not cancel and (not isinstance(target,dict) or set(target)!={'x','y'} or
                 any(type(v) not in (int,float) or not math.isfinite(v) for v in target.values())) or
-            not isinstance(name,str) or not nuclear and not targeted and name not in ('afterBurn','cancelBurn','deploy','undeploy','surface','dive') or
+            not isinstance(name,str) or not nuclear and not targeted and name not in (
+                'afterBurn','cancelBurn','deploy','undeploy','surface','dive',*spider_platform.ACTIONS) or
             type(intent.get('waitSteps')) is not int or not 0<=intent['waitSteps']<=600):
         raise PlatformError('input-contract','Expected a finite normal unit action and explicit bounded wait',1)
 
@@ -444,6 +446,8 @@ def validate_history_poses(units, policy):
                         raise PlatformError('history-unit-action','Action availability differs from its state',2)
                 if sorted(indexes)!=list(range(len(indexes))):
                     raise PlatformError('history-unit-action','Action queue indexes must be unique and contiguous',2)
+        elif unit.get('typeId') == spider_platform.CHASSIS:
+            spider_platform.validate_state(unit, policy.get('ownerPlayerId','p1'))
         elif unit.get('typeId') in ('mechBunker','mechBunkerDeployed'):
             validate_bunker_state(unit, policy.get('ownerPlayerId','p1'))
         elif unit.get('typeId') in {'nautilusSubmarine','nautilusSubmarineSurface','nautilusSubmarineLand'}:
@@ -668,6 +672,9 @@ def validate_history_action(records, row, intent, geometry=None):
         old=next(u for u in left['units'] if u['unitId']==identity)
         new=next(u for u in right['units'] if u['unitId']==identity)
         name=intent['actionName']
+        if old.get('typeId') == spider_platform.CHASSIS:
+            spider_platform.validate_call(old, new, row, intent)
+            return
         naval_ammo=name==NAVAL_AMMO and old.get('typeId') in NAUTILUS_ACTIONS
         if name in ('buildNuke','launchNuke','buildAntiNuke') and not naval_ammo:
             from nuclear_platform import validate_nuclear_call
@@ -1063,12 +1070,15 @@ def compare_history(records, plan, policy, native_anchors=None, geometry=None):
     allowed={'initialBalance','spend','noActionIntents','projectileBirthsRequired','mechLegs',
              'ownerPlayerId','initialOwnedTypes','finalUnits','minimumBirths',
              'productionOrder','completedUpgradeTypes','initialIncome','producedIncome','transportStages','unitActionStages',
-             'bunkerStages','reclaimRefunds','nautilusTerrain','nuclearHistory','navalAmmoHistory'}
+             'bunkerStages','reclaimRefunds','nautilusTerrain','nuclearHistory','navalAmmoHistory','spiderOpening'}
     if not isinstance(policy,dict) or set(policy)-allowed:
         raise PlatformError('input-contract', 'Unknown or malformed history obligations', 1)
     balance = policy.get('initialBalance')
     if type(balance) not in (int, float) or not math.isfinite(balance):
         raise PlatformError('input-contract', 'History requires a finite initial balance', 1)
+    if 'spiderOpening' in policy and policy['spiderOpening'] is not True:
+        raise PlatformError('input-contract', 'Expected the explicit Modular Spider opening contract', 1)
+    slot_refunds = spider_platform.opening_refunds(records) if policy.get('spiderOpening') else {}
     income=policy.get('initialIncome')
     if income is not None and (not isinstance(income,dict) or set(income)!={'unitId','typeId','period','credits'} or
             any(not isinstance(income[k],str) or not income[k] for k in ('unitId','typeId')) or
@@ -1353,6 +1363,7 @@ def compare_history(records, plan, policy, native_anchors=None, geometry=None):
                     raise PlatformError('history-weapons', 'An absent or dead unit retains a weapon observation', 2)
             if row.get('phase') == 'step':
                 balance -= pending; pending = 0
+                balance += slot_refunds.get(row['sequence'], 0)
                 if income is not None and steps % income['period']==0:balance+=income['credits']
                 for identity,state in income_phases.items():
                     source=units[identity]

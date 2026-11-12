@@ -1,0 +1,77 @@
+{
+  "schemaVersion": 1,
+  "scenarioId": "modular-spider-hjson-opening",
+  "inputs": "../../inputs/modular-spider-start/hjson",
+  "contentPack": {
+    "directory": "opening-package",
+    "unitId": "modularSpider"
+  },
+  "intents": [
+    {
+      "intentId": "settle-opening",
+      "kind": "select",
+      "waitSteps": 100,
+      "position": {
+        "x": 40,
+        "y": 40
+      }
+    },
+    {
+      "intentId": "select-spider",
+      "kind": "select",
+      "waitSteps": 0,
+      "position": {
+        "x": 190,
+        "y": 150
+      }
+    },
+    {
+      "intentId": "select-slot-1",
+      "kind": "unit-action",
+      "waitSteps": 0,
+      "actionName": "selectSlot1"
+    },
+    {
+      "intentId": "buy-gun",
+      "kind": "unit-action",
+      "waitSteps": 12,
+      "actionName": "buildGun"
+    },
+    {
+      "intentId": "cancel-gun",
+      "kind": "unit-action",
+      "waitSteps": 130,
+      "actionName": "cancel"
+    },
+    {
+      "intentId": "rebuild-gun",
+      "kind": "unit-action",
+      "waitSteps": 600,
+      "actionName": "buildGun"
+    },
+    {
+      "intentId": "attack-ground",
+      "kind": "attack",
+      "waitSteps": 450,
+      "position": {
+        "x": 465,
+        "y": 150
+      },
+      "targetUnitId": "b"
+    },
+    {
+      "intentId": "move-spider",
+      "kind": "move",
+      "waitSteps": 280,
+      "position": {
+        "x": 285,
+        "y": 150
+      }
+    },
+    {
+      "intentId": "stop-spider",
+      "kind": "stop",
+      "waitSteps": 20
+    }
+  ]
+}

@@ -1,7 +1,9 @@
 package com.rustedwarfare.reforge.core.sim
 
 import com.rustedwarfare.reforge.core.content.FactoryExitProfile
+import com.rustedwarfare.reforge.core.content.AttachmentSlotDefinition
 import com.rustedwarfare.reforge.core.content.ScoutBotRules
+import java.util.UUID
 
 internal data class ConstructionRegistration(val unit: MutableUnit, val ledger: ProductionLedger,
     val upgrades: OrdinaryUpgrades?)
@@ -10,9 +12,21 @@ internal data class ConstructionRegistration(val unit: MutableUnit, val ledger: 
 internal object UnitRegistration {
     fun initial(state: StepState, input: Scenario, spawn: UnitSpawn, coordinates: CoordinatePolicy): MutableUnit {
         val definition = input.unitDefinitions.getValue(spawn.typeId)
-        return register(state, input, spawn.copy(heading = coordinates.normalize(spawn.heading),
-            height = definition.movement.flight?.startingHeightOffset ?: spawn.height),
+        val chassis = definition.attachmentLayout != null
+        return register(state, input, spawn.copy(heading = if (chassis) 90.0 else coordinates.normalize(spawn.heading),
+            height = if (chassis) UnitAttachments.OPENING_HEIGHT else definition.movement.flight?.startingHeightOffset ?: spawn.height),
             input.combatContract?.unitObjectIds?.getValue(spawn.unitId))
+    }
+
+    fun attached(state: StepState, input: Scenario, parent: MutableUnit, slot: AttachmentSlotDefinition): MutableUnit {
+        val identity = nextIdentity(state)
+        // The public handle stays stable through conversion without encoding the chassis or slot.
+        val token = UUID.nameUUIDFromBytes("reforge:attachment:${input.combatContract?.worldSeed}:${identity.objectId}".encodeToByteArray())
+        val spawn = UnitSpawn(UnitAttachments.UNIT_PREFIX + token, parent.ownerPlayerId,
+            slot.initialTypeId, UnitAttachments.position(parent, slot), UnitAttachments.heading(parent, slot), parent.height)
+        return register(state, input, spawn, identity.objectId, identity.updateKey, identity = identity) { child ->
+            child.attachment = AttachmentBinding(parent.unitId, slot)
+        }
     }
 
     fun produced(state: StepState, input: Scenario, factory: MutableUnit, completed: ProductionCompletion): MutableUnit {

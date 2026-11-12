@@ -39,7 +39,8 @@ data class UnitAppearance(val displayRadius: Double, val imagePath: Path, val im
     val afterburnTrailImagePath: Path? = null, val repairRange: Double? = null,
     val iconWeaponName: String? = null, val nanoWeaponName: String? = null,
     val nativeLegSize: ImageLogicalSize? = null, val arm1ImagePath: Path? = null, val arm2ImagePath: Path? = null,
-    val nuclearSiloKind: NuclearSiloKind? = null, val shadowOffset: Position? = null) {
+    val nuclearSiloKind: NuclearSiloKind? = null, val shadowOffset: Position? = null,
+    val slotOverlayImagePath: Path? = null) {
     internal fun nuclearDoors(unit: UnitObservation): List<WingDrawing> {
         val amount = unit.nuclearDoors ?: return emptyList()
         if (!unit.alive) return emptyList()
@@ -77,7 +78,7 @@ data class UnitAppearance(val displayRadius: Double, val imagePath: Path, val im
                 val side = Math.toRadians(pose.turretHeading + 90.0)
                 val pivot = Position(pose.pivot.x + sin(forward) * image.offsetY + sin(side) * image.offsetX,
                     pose.pivot.y - cos(forward) * image.offsetY - cos(side) * image.offsetX -
-                        if (unit.energy != null || unit.mechPose != null) unit.height else 0.0)
+                        if (unit.energy != null || unit.mechPose != null || unit.attachment != null) unit.height else 0.0)
                 TurretDrawing(name, path, image.imageScale, pivot, pose.turretHeading,
                     image.logicalSize ?: logicalImages?.turret?.takeIf { path == turretImagePath })
             } }
@@ -199,11 +200,17 @@ class SandboxRenderResources private constructor(
                     beamImagePath = images.beam, beamStartImagePath = images.beamStart, beamEndImagePath = images.beamEnd,
                     afterburnTrailImagePath = images.afterburnTrail,
                     arm1ImagePath = images.arm1, arm2ImagePath = images.arm2, nuclearSiloKind = unit.nuclearSilo?.kind,
+                    slotOverlayImagePath = images.slotOverlay,
                     repairRange = if (unit.maintenance != null) unit.builder?.range?.toDouble() ?: 230.0 else null,
-                    iconWeaponName = if (unit.maintenance == com.rustedwarfare.reforge.core.content.MaintenanceProfile.MECH_ENGINEER) "body" else null,
+                    iconWeaponName = when {
+                        unit.maintenance == com.rustedwarfare.reforge.core.content.MaintenanceProfile.MECH_ENGINEER -> "body"
+                        unit.attachmentModule?.empty == false -> unit.combat?.namedWeapons?.ordered?.firstOrNull()?.name
+                        else -> null
+                    },
                     nanoWeaponName = unit.builder?.mainNanoTurret,
                     shadowOffset = if (unit.id == "mechFlame") Position(2.0, 2.0) else null,
                     nativeLegSize = when {
+                        unit.attachmentLayout != null -> ImageLogicalSize(10, 84)
                         unit.maintenance == com.rustedwarfare.reforge.core.content.MaintenanceProfile.SCOUT_BOT -> ImageLogicalSize(24, 102)
                         unit.maintenance == com.rustedwarfare.reforge.core.content.MaintenanceProfile.MECH_ENGINEER -> ImageLogicalSize(19, 82)
                         unit.id == "mechFlame" || unit.mech?.kind == com.rustedwarfare.reforge.core.content.MechKind.FOUR_LEGGED -> ImageLogicalSize(16, 68)
