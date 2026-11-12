@@ -2121,6 +2121,10 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
         val speed = GroundWeapon.initialSpeed(weapon.projectile, unit, contract.worldSeed, combatFrame, actorId, randomState)
         val position = if (ground == null && weapon.projectile.ballistic == null) muzzle
             else Position(muzzle.x.toFloat().toDouble(), muzzle.y.toFloat().toDouble())
+        val attachmentRetargetMount = if (definition != null && unit.attachment != null && weapon.projectile.retargetOnDeath) {
+            val mounts = checkNotNull(unit.definition.combat?.namedWeapons).ordered
+            AttachmentRetargetMount(mounts.indexOf(definition).also { check(it >= 0) }, definition)
+        } else null
         val projectile = MutableProjectile(id, unit.unitId, if (ground == null) target.unitId else null, position, state.turretHeading,
             weapon.projectile.life, capturedOffset, scatter, speed, weapon.projectile.directDamage,
             if (ground == null) unit.height else unit.height.toFloat().toDouble(),
@@ -2130,6 +2134,8 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
             splash = weapon.projectile.splash, retargetOnDeath = weapon.projectile.retargetOnDeath,
             ballistic = weapon.projectile.ballistic, lightning = weapon.projectile.lightning,
             damageModifiers = weapon.projectile.damageModifiers,
+            sourceOwnerId = unit.ownerPlayerId,
+            attachmentRetargetMount = attachmentRetargetMount,
             lightningSegment = if (weapon.projectile.lightning) LightningSegment(target.position, target.height) else null,
             appearance = if (flameMech) ProjectileAppearance.MECH_FLAME
             else if (unit.typeId == BomberRules.ID) {
@@ -2405,21 +2411,37 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
     }
 
     private fun retargetOrdinaryMissile(shot: MutableProjectile) {
-        val source = units[shot.sourceUnitId]?.takeIf { it.alive } ?: return
-        val catalog = source.definition.combat?.namedWeapons ?: return
-        val weapon = catalog.byName[shot.sourceWeaponName] ?: return
-        val players = checkNotNull(scenario).players
+        val source = units[shot.sourceUnitId]?.takeIf { it.alive }
+        val catalog = source?.definition?.combat?.namedWeapons
+        val attachmentMount = shot.attachmentRetargetMount
+        val weapon = if (attachmentMount != null) catalog?.ordered?.getOrNull(attachmentMount.index)
+            else catalog?.byName?.get(shot.sourceWeaponName) ?: return
+        val input = checkNotNull(scenario)
+        val owner = source?.ownerPlayerId ?: checkNotNull(shot.sourceOwnerId)
         val forward = policies.coordinates.displacement(shot.heading, 15.0)
         val center = Position(shot.position.x + forward.x, shot.position.y + forward.y)
         require(center.x.isFinite() && center.y.isFinite()) { "Ordinary missile search center must remain finite" }
-        val preferred = units[source.primaryCombatTargetId]
+        val preferred = units[source?.primaryCombatTargetId]
         var nearest = 120.0 * 120.0
         var chosen: MutableUnit? = null
         for (candidate in orderedUnits()) {
-            if (!CombatTargetQuery.canAttackAirCategory(source, candidate, checkNotNull(scenario).map) ||
-                !NamedWeaponRuntime.qualifies(source, candidate, weapon, players, policies.coordinates, checkNotNull(scenario).map, checkRange = false) ||
-                weapon.attachedTo?.let { parent -> !NamedWeaponRuntime.qualifies(source, candidate,
-                    catalog.byName.getValue(parent), players, policies.coordinates, checkNotNull(scenario).map, checkRange = false) } == true) continue
+            if (source == null) {
+                if (!CombatTargetQuery.isEnemy(owner, candidate, input.players) ||
+                    !CombatTargetQuery.weaponAllows(candidate, checkNotNull(attachmentMount).weapon)) continue
+            } else {
+                val eligible = if (source.definition.attachmentModule?.empty == true) {
+                    candidate.definition.attachmentModule?.empty != true && !CombatTargetQuery.isUnderwater(candidate)
+                } else CombatTargetQuery.canAttackAirCategory(source, candidate, input.map)
+                if (!eligible) continue
+                if (weapon == null) {
+                    // The old mount index can fall outside the source's new form after a conversion.
+                    if (!CombatTargetQuery.isEnemy(source, candidate, input.players)) continue
+                } else if (!NamedWeaponRuntime.qualifies(source, candidate, weapon, input.players, policies.coordinates,
+                        input.map, checkRange = false) || weapon.attachedTo?.let { parent ->
+                        NamedWeaponRuntime.qualifies(source, candidate, checkNotNull(catalog).byName.getValue(parent),
+                            input.players, policies.coordinates, input.map, checkRange = false)
+                    } == false) continue
+            }
             val distance = policies.coordinates.distanceSquared(center, candidate.position)
             require(distance.isFinite()) { "Ordinary missile search distance must remain finite" }
             if (distance >= 120.0 * 120.0) continue
@@ -2433,14 +2455,14 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
 
     private fun applyOrdinarySplash(projectile: MutableProjectile) {
         val profile = checkNotNull(projectile.splash)
-        val source = checkNotNull(units[projectile.sourceUnitId])
+        val owner = checkNotNull(projectile.sourceOwnerId)
         val players = checkNotNull(scenario).players
-        val team = players.single { it.playerId == source.ownerPlayerId }.teamId
+        val team = players.single { it.playerId == owner }.teamId
         val x = projectile.position.x.toFloat()
         val y = projectile.position.y.toFloat()
         val height = projectile.height.toFloat()
         for (target in orderedUnits()) {
-            if (!target.alive || target.carriedBy != null || target.health == null || target.ownerPlayerId == source.ownerPlayerId ||
+            if (!target.alive || target.carriedBy != null || target.health == null || target.ownerPlayerId == owner ||
                 team != null && players.single { it.playerId == target.ownerPlayerId }.teamId == team) continue
             if (CombatTargetQuery.isFlying(target) != (height >= 5f) ||
                 target.height.toFloat() < -5f && height >= -2f) continue

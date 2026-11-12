@@ -280,6 +280,8 @@ enum class FireSoundProfile(val eventId: String, val volume: Float, val pitch: F
     NAVAL_MISSILE("reforge:events/naval-missile-fire", .1f),
     SCOUT_PLASMA("reforge:events/scout-plasma-fire", .05f),
     SPIDER_GUN("reforge:events/spider-gun-fire", .3f),
+    SPIDER_GUN_T2("reforge:events/spider-gun-fire", .15f),
+    SPIDER_AA_MISSILE("reforge:events/naval-missile-fire", .3f),
     SUBMARINE_MISSILE("reforge:events/naval-missile-fire", .8f),
     ENGINEER_MISSILE("reforge:events/naval-missile-fire", .2f),
     AMPHIBIOUS_LIGHTNING("reforge:events/amphibious-lightning-fire", .2f),

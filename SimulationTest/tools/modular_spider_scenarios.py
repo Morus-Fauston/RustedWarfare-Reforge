@@ -1,4 +1,5 @@
-"""Generate the same fixed normal spider opening for all supported formats."""
+"""Generate the fixed normal spider scenarios for all supported formats."""
+import argparse
 import json
 from pathlib import Path
 
@@ -10,9 +11,10 @@ def intent(identity, kind, wait, **fields):
     return dict(intentId=identity, kind=kind, waitSteps=wait, **fields)
 
 
-def generate():
+def generate(weapon_modules=False, destination=PLATFORM):
     for form in ('ini', 'json', 'hjson'):
-        identity = f'modular-spider-{form}-opening'
+        case = 'weapon-modules' if weapon_modules else 'opening'
+        identity = f'modular-spider-{form}-{case}'
         steps = [
             intent('settle-opening', 'select', 100, position=dict(x=40, y=40)),
             intent('select-spider', 'select', 0, position=dict(x=190, y=150)),
@@ -36,13 +38,36 @@ def generate():
             finalUnits=[dict(ownerPlayerId='p1', typeId=unit, fields=dict(alive=True))
                         for unit in ('modularSpider', 'modularSpider_gunturret')],
         )
+        if weapon_modules:
+            steps[3:] = [
+                intent('buy-aa', 'unit-action', 12, actionName='buildAntiair'),
+                intent('cancel-aa', 'unit-action', 130, actionName='cancel'),
+                intent('buy-laser', 'unit-action', 12, actionName='buildSmallLaser'),
+                intent('queue-first-upgrade', 'unit-action', 24, actionName='upgradeT2'),
+                intent('withdraw-upgrade', 'unit-action', 6, actionName='upgradeT2', cancelQueued=True),
+                intent('queue-laser-t2', 'unit-action', 600, actionName='upgradeT2'),
+                intent('move-out-of-range', 'move', 600, position=dict(x=104, y=150)),
+                intent('stop-to-finish-construction', 'stop', 600),
+                intent('stop-to-finish-upgrade', 'stop', 180),
+                intent('attack-ground', 'attack', 510, position=dict(x=465, y=150), targetUnitId='b'),
+            ]
+            history.pop('spiderOpening')
+            history.update(spiderWeaponModules=True, spend=[
+                dict(intentId=buy, amount=amount, at='action')
+                for buy, amount in (('buy-aa', 2000), ('buy-laser', 700), ('queue-first-upgrade', 3000),
+                                    ('withdraw-upgrade', 3000), ('queue-laser-t2', 3000))
+            ], minimumBirths=[dict(ownerPlayerId='p1', typeId='modularSpider_smallgunturretT2',
+                weaponNames=['smallLaser1'], targetUnitId='b')])
+            history['finalUnits'][1]['typeId'] = 'modularSpider_smallgunturretT2'
         contract = dict(schemaVersion=1, scenarioId=identity, history=history,
                         rules=[dict(intentId=item['intentId']) for item in steps])
         for group, document in [('scenarios', scenario), ('contracts', contract)]:
-            with (PLATFORM / group / f'{identity}.json').open('x', encoding='utf8', newline='\n') as out:
+            with (destination / group / f'{identity}.json').open('x', encoding='utf8', newline='\n') as out:
                 json.dump(document, out, indent=2)
                 out.write('\n')
 
 
 if __name__ == '__main__':
-    generate()
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--weapon-modules', action='store_true')
+    generate(parser.parse_args().weapon_modules)

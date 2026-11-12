@@ -52,7 +52,8 @@ internal class SoundAuthority {
                 val distance = sqrt(distanceSquared)
                 val attenuation = if (distance <= listener.halfWidth) 1f else 1f - (distance - listener.halfWidth) / listener.halfWidth
                 val amplitude = attenuation * base
-                if (amplitude <= .05f) return@mapNotNull null
+                // The PC source widens the computed Float before comparing to the Double threshold.
+                if (amplitude.toDouble() <= .05) return@mapNotNull null
                 // Presentation randomness is independent of the simulator's deterministic counters.
                 AuthorizedSound(trigger.eventId, minOf(amplitude, 1f) * listener.masterVolume * listener.gameVolume,
                     trigger.pitch + (Random.Default.nextFloat() * .14f - .07f))

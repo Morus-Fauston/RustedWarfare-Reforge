@@ -101,6 +101,7 @@ internal object ContentPackReader {
         val files = mutableSetOf<Path>()
         val units = linkedMapOf<String, UnitDefinition>()
         val unitFiles = linkedMapOf<String, Path>()
+        val unitFieldOrigins = linkedMapOf<String, Map<Pair<String, String>, UnitSourceReader.Origin>>()
         for ((index, entry) in entries.asArray().withIndex()) {
             if (Thread.currentThread().isInterrupted) throw CancellationException("Package validation cancelled")
             val field = "units[$index]"
@@ -170,6 +171,7 @@ internal object ContentPackReader {
             if (units.putIfAbsent(definition.id, definition) != null)
                 reject(ContentErrorCode.IDENTITY_CONFLICT, input, "core", "name", definition.id, "Duplicate logical content ID inside package $id")
             unitFiles[definition.id] = input
+            if (loaded.fieldOrigins.isNotEmpty()) unitFieldOrigins[definition.id] = loaded.fieldOrigins
             for (source in loaded.sources) {
                 val previous = sources.putIfAbsent(source.path, source)
                 if (previous != null && previous != source)
@@ -212,17 +214,27 @@ internal object ContentPackReader {
             reject(ContentErrorCode.BAD_REFERENCE, manifest, field = "replacements", ref = contentId,
                 reason = "Replacement content is not declared by this package")
         if (dependencies.isEmpty()) for ((id, unit) in units) {
-            ModularSpiderRules.missingReference(unit, units)?.let { (field, target) ->
-                reject(ContentErrorCode.BAD_REFERENCE, unitFiles.getValue(id), field = field, ref = target,
-                    reason = "Expected the referenced qualified attachment form in the content package")
+            ModularSpiderRules.missingReference(unit, units)?.let { reference ->
+                rejectMissingAttachmentReference(unitFiles.getValue(id), unitFieldOrigins[id].orEmpty(), reference,
+                    "Expected the referenced qualified attachment form in the content package")
             }
         }
-        val loaded = LoadedContentPack(root, manifest, id, name, units, sources.values.toList(), dependencies, replacements, unitFiles)
+        val loaded = LoadedContentPack(root, manifest, id, name, units, sources.values.toList(), dependencies, replacements,
+            unitFiles, unitFieldOrigins)
         when (val stable = loaded.verifyStable()) {
             is ContentResult.Failure -> throw ContentReadException(stable.error)
             is ContentResult.Success -> Unit
         }
         return loaded
+    }
+
+    internal fun rejectMissingAttachmentReference(
+        entry: Path, origins: Map<Pair<String, String>, UnitSourceReader.Origin>,
+        reference: ModularSpiderRules.Reference, reason: String,
+    ): Nothing {
+        val (section, field, target) = reference
+        val error = ContentError(ContentErrorCode.BAD_REFERENCE, entry.toString(), section, field, target, reason)
+        throw ContentReadException(origins[section to field]?.locate(error, "[$section].$field") ?: error)
     }
 
     private fun objectFields(value: JsonValue, allowed: Set<String>, file: Path, field: String? = null): JsonObject {

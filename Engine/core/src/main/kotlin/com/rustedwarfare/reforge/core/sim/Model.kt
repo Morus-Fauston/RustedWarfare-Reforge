@@ -631,7 +631,12 @@ internal data class MutableProjectile(val objectId: Long, val sourceUnitId: Stri
     val beam: Boolean = false, var beamSegment: BeamSegment? = null,
     val alwaysVisibleInFog: Boolean = false, var revealFogPending: Boolean = nuclearTarget != null,
     val nukeTagged: Boolean = false, var interception: InterceptionCourse? = null,
-    val scoutPayload: ScoutPayload? = null)
+    val scoutPayload: ScoutPayload? = null,
+    val sourceOwnerId: String? = null,
+    val attachmentRetargetMount: AttachmentRetargetMount? = null)
+
+internal data class AttachmentRetargetMount(val index: Int,
+    val weapon: com.rustedwarfare.reforge.core.content.NamedWeaponDefinition)
 
 internal data class ScoutPayload(val target: Position, val stage: ScoutPayloadStage)
 

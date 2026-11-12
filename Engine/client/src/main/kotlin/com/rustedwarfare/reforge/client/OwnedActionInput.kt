@@ -5,7 +5,8 @@ import com.badlogic.gdx.scenes.scene2d.InputEvent
 import com.badlogic.gdx.scenes.scene2d.InputListener
 
 /** The adapter supplies action eligibility; this identity never grants simulation authority. */
-data class InputActionIdentity(val key: String, val modeRevision: Long = 0L)
+data class InputActionIdentity(val key: String, val modeRevision: Long = 0L,
+    val attachmentContext: Pair<String, String>? = null)
 
 /** Scene2D owns event delivery. This listener owns one project action across that delivery. */
 open class OwnedActionInput(

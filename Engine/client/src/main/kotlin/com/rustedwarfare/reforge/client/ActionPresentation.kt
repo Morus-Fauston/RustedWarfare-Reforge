@@ -21,7 +21,12 @@ internal class ActionCatalogue(private val definitions: Map<String, UnitDefiniti
         "aaBeamGunship_afterburn" to Names("AA beam (Afterburn)", "AA beam gunship (Afterburn)"),
         "bomber" to Names("Bomber"), "mechFlame" to Names("Flame mech"),
         "modularSpider" to Names("Modular Spider"), "modularSpider_emptySlot" to Names("Empty"),
-        "modularSpider_gunturret" to Names("Gun T1"),
+        "modularSpider_gunturret" to Names("Gun T1"), "modularSpider_gunturretT2" to Names("Gun T2"),
+        "modularSpider_smallgunturret" to Names("Laser", "Small Laser T1"),
+        "modularSpider_smallgunturretT2" to Names("Laser T2", "Small Laser T2"),
+        "modularSpider_antiair" to Names("AA", "Anti-air T1"),
+        "modularSpider_antiairT2" to Names("AA T2", "Anti-air T2"),
+        "modularSpider_antiairFlak" to Names("Flak"),
         "seaFactory" to Names("Sea factory"), "seaFactoryT2" to Names("Sea factory T2"),
         "experimentalLandFactory" to Names("Experimental", "Experimental factory"),
         "heavyBattleship" to Names("Heavy battleship"), "attackSubmarine" to Names("Submarine"),
@@ -52,20 +57,31 @@ internal class ActionCatalogue(private val definitions: Map<String, UnitDefiniti
         val selected = overview.slots.single { it.number == overview.selectedSlot }
         val module = checkNotNull(definitions.getValue(selected.typeId).attachmentModule)
         val install = module.installs.singleOrNull { it.action == action.name }
+        val upgrade = module.upgrades.singleOrNull { it.action == action.name }
         val name = when {
-            install != null -> "Add ${title(install.targetTypeId)}"
+            install != null -> "Add ${title(install.targetTypeId, panel = true)}"
+            upgrade != null -> title(upgrade.targetTypeId, panel = true)
             action.name == "cancel" -> "Cancel"
-            else -> "Reclaim Slot"
+            else -> "Reclaim"
         }
-        val status = when {
+        val details = when {
             action.cooldownRemaining > 0 -> String.format(Locale.ROOT, "Cooling %.1fs", action.cooldownRemaining / 1000f)
             install != null -> "Cost ${install.cost}"
+            upgrade != null -> "Cost ${upgrade.cost} / ${(upgrade.ticks / 60f).toInt()}s"
             action.name == "cancel" -> "Refund ${module.cancel?.refund}"
             else -> "Refund ${module.reclaim?.refund}"
         }
-        return CustomUnitActionView(action.name, name, "$name\nSlot ${selected.number}\n$status",
-            action.queueIndex != null, action.cooldownRemaining, action.available, action.queueIndex != null,
-            action.progress, iconTypeId = install?.targetTypeId)
+        val queued = action.queueIndex != null
+        val label = if (upgrade == null) name else "Upgrade to ${title(upgrade.targetTypeId)}"
+        val progress = if (queued) {
+            val status = if (upgrade != null && selected.progress < 1f) "Waiting for construction"
+                else "Queued ${((action.progress ?: 0f) * 100f).toInt()}%"
+            "\n$status\nRight-click to cancel"
+        } else ""
+        return CustomUnitActionView(action.name, name, "$label\nSlot ${selected.number}\n$details$progress",
+            queued, action.cooldownRemaining, action.available, queued,
+            action.progress, iconTypeId = install?.targetTypeId ?: upgrade?.targetTypeId ?: selected.typeId,
+            attachmentContext = selected.unitId to selected.typeId)
     }
     fun nominalIncome(type: String): Float? = definitions[type]?.income?.let { it.credits * 40f / it.period }
     private val nominalSeconds = mapOf("extractorT1" to "27.7", "extractorT2" to "55.5",
@@ -322,7 +338,8 @@ data class AmphibiousFlightActionView(val flying: Boolean, val title: String, va
 data class TransportUnloadActionView(val unloading: Boolean, val title: String, val available: Boolean)
 data class CustomUnitActionView(val name: String, val title: String, val tooltip: String,
     val queued: Boolean, val cooldownRemaining: Int, val available: Boolean, val cancellable: Boolean,
-    val progress: Float? = null, val groundTargeted: Boolean = false, val iconTypeId: String? = null)
+    val progress: Float? = null, val groundTargeted: Boolean = false, val iconTypeId: String? = null,
+    val attachmentContext: Pair<String, String>? = null)
 
 /** The native onlyOneUnitAtATime launch flag selects one eligible member per command. */
 internal fun nuclearLaunchMember(view: PlayerObservation, ids: Set<String>, cancelling: Boolean = false): UnitObservation? =

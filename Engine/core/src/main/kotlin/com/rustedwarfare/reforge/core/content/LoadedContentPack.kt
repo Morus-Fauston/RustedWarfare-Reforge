@@ -1,6 +1,7 @@
 package com.rustedwarfare.reforge.core.content
 
 import com.rustedwarfare.reforge.core.content.internal.ContentPackReader
+import com.rustedwarfare.reforge.core.content.internal.UnitSourceReader.Origin
 import java.io.IOException
 import java.nio.file.Path
 import java.util.Collections
@@ -11,12 +12,15 @@ class LoadedContentPack internal constructor(
     units: Map<String, UnitDefinition>, sources: List<ContentSourceIdentity>,
     dependencies: List<String> = emptyList(), replacements: Map<String, ContentReplacement> = emptyMap(),
     unitFiles: Map<String, Path> = emptyMap(),
+    unitFieldOrigins: Map<String, Map<Pair<String, String>, Origin>> = emptyMap(),
 ) {
     val units: Map<String, UnitDefinition> = Collections.unmodifiableMap(LinkedHashMap(units))
     val sources: List<ContentSourceIdentity> = Collections.unmodifiableList(ArrayList(sources))
     val dependencies: List<String> = Collections.unmodifiableList(ArrayList(dependencies))
     val replacements: Map<String, ContentReplacement> = Collections.unmodifiableMap(LinkedHashMap(replacements))
     val unitFiles: Map<String, Path> = Collections.unmodifiableMap(LinkedHashMap(unitFiles))
+    internal val unitFieldOrigins: Map<String, Map<Pair<String, String>, Origin>> =
+        Collections.unmodifiableMap(LinkedHashMap(unitFieldOrigins))
 
     fun verifyStable(): ContentResult<Unit> {
         for (source in sources) {

@@ -6,9 +6,18 @@ internal data class NativeCardBounds(val x: Float, val y: Float, val width: Floa
 internal object NativeActionPanel {
     private val spiderSlotActions = (1..6).associate { number ->
         val index = number - 1
-        "selectSlot$number" to NativeCardBounds(752f + index % 3 * 60f, 278f - index / 3 * 44f, 56f, 40f)
+        "selectSlot$number" to NativeCardBounds(752f + index % 3 * 60f, 284f - index / 3 * 38f, 56f, 34f)
     }
-    private val spiderModuleAction = NativeCardBounds(812f, 190f, 116f, 40f)
+    private val spiderModuleActions = mapOf(
+        "selectSlotBuild" to NativeCardBounds(752f, 215f, 84f, 28f),
+        "buildGun" to NativeCardBounds(844f, 215f, 84f, 28f),
+        "buildSmallLaser" to NativeCardBounds(752f, 184f, 84f, 28f),
+        "buildAntiair" to NativeCardBounds(844f, 184f, 84f, 28f),
+        "upgradeT2" to NativeCardBounds(844f, 215f, 84f, 28f),
+        "upgradeFlak" to NativeCardBounds(752f, 184f, 84f, 28f),
+        "cancel" to NativeCardBounds(844f, 184f, 84f, 28f),
+        "reclaim" to NativeCardBounds(844f, 184f, 84f, 28f),
+    )
 
     val customActions = listOf("afterBurn", "cancelBurn", "deploy", "undeploy").mapIndexed { index, name ->
         name to NativeCardBounds(752f + index % 2 * 92f, 188f, 84f, 40f)
@@ -17,9 +26,7 @@ internal object NativeActionPanel {
         "launchScoutBot" to NativeCardBounds(844f, 256f, 84f, 52f),
         "buildNuke" to NativeCardBounds(752f, 256f, 84f, 52f),
         "launchNuke" to NativeCardBounds(844f, 256f, 84f, 52f),
-        "buildAntiNuke" to NativeCardBounds(752f, 256f, 176f, 52f)) + spiderSlotActions +
-        ("selectSlotBuild" to NativeCardBounds(752f, 190f, 56f, 40f)) +
-        listOf("buildGun", "cancel", "reclaim").associateWith { spiderModuleAction }
+        "buildAntiNuke" to NativeCardBounds(752f, 256f, 176f, 52f)) + spiderSlotActions + spiderModuleActions
     val navalProduction = NativeCardBounds(752f, 270f, 84f, 50f)
     val navalUnload = NativeCardBounds(752f, 188f, 84f, 34f)
     private val navalActions = mapOf(

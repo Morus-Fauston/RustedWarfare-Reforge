@@ -5,8 +5,13 @@ import math
 CHASSIS = 'modularSpider'
 EMPTY = 'modularSpider_emptySlot'
 GUN = 'modularSpider_gunturret'
+LASER = 'modularSpider_smallgunturret'
+LASER_T2 = 'modularSpider_smallgunturretT2'
+AA = 'modularSpider_antiair'
 SLOTS = ('selectSlotBuild', *(f'selectSlot{i}' for i in range(1, 7)))
-ACTIONS = (*SLOTS, 'buildGun', 'cancel', 'reclaim')
+PAID = ('buildGun', 'buildSmallLaser', 'buildAntiair', 'upgradeT2', 'upgradeFlak')
+CANCELLABLE = (*PAID, 'reclaim')
+ACTIONS = (*SLOTS, *CANCELLABLE, 'cancel')
 OFFSETS = ((-11, 32, 0), (11, 32, 0), (-11, 6, -90), (11, 6, 90), (-10, -20, 180), (11, -20, 180))
 
 
@@ -38,12 +43,20 @@ def validate_state(unit, owner):
 
 def validate_call(old, new, row, intent):
     name = intent['actionName']
-    check(name in ACTIONS and row.get('actionName') == name and row.get('cancelQueued') is False and row.get('target') is None,
+    cancelling = intent.get('cancelQueued', False)
+    check(name in ACTIONS and row.get('actionName') == name and row.get('cancelQueued') is cancelling and row.get('target') is None,
           'Chassis call does not match the declared normal slot action')
     left = old['attachmentOverview']
     right = new['attachmentOverview']
     check(left['slots'] == right['slots'], 'The call synchronously changed slot identities or construction')
     old_action = old['unitActions']['actions'].get(name)
+    if cancelling:
+        new_action = new['unitActions']['actions'].get(name)
+        check(name in CANCELLABLE and left['selectedSlot'] is not None and right['selectedSlot'] == left['selectedSlot'] and
+              old_action is not None and old_action.get('queueIndex') == 0 and
+              new_action is not None and new_action.get('queueIndex') is None and new_action.get('progress') is None,
+              'Right-click must remove the matching order from the same selected slot')
+        return
     check(old_action is not None and old_action.get('available') is True, 'The requested slot action was unavailable')
     if name in SLOTS:
         expected = None if name == 'selectSlotBuild' else int(name.removeprefix('selectSlot'))
@@ -57,13 +70,26 @@ def validate_call(old, new, row, intent):
         check(new_action.get('queueIndex') == 0 and new_action.get('progress') == 0, 'Module order did not enter its slot queue')
 
 
-def opening_refunds(records):
+def opening_refunds(records, weapon_modules=False):
+    opening_type, settled_type = (LASER, LASER_T2) if weapon_modules else (GUN, GUN)
+    cancelled_type, refund = (AA, 1000) if weapon_modules else (GUN, 2000)
+    install_started = 'attachment-install-started'
+    install_completed = 'attachment-install-completed'
+    emptied = 'attachment-slot-emptied'
+    upgraded = 'attachment-upgrade-completed'
+    expected = [
+        (install_started, cancelled_type, 0), (emptied, EMPTY, 1),
+        (install_started, opening_type, 0), (install_completed, opening_type, 1),
+    ]
+    if weapon_modules:
+        expected.append((upgraded, settled_type, 1))
     stages = []
     refunds = {}
     identities = None
     opening_height = None
     moved = False
     fired = False
+    waited = False
     origin = None
     for row in records:
         if row.get('kind') != 'observation':
@@ -92,7 +118,8 @@ def opening_refunds(records):
         angle = math.radians(parent['heading'])
         for slot, (x, y, heading) in zip(slots, OFFSETS):
             child = units.get(slot['unitId'])
-            check(child is not None and child['typeId'] in (EMPTY, GUN) and child['ownerPlayerId'] == 'p1' and
+            check(child is not None and child['typeId'] in (EMPTY, cancelled_type, opening_type, settled_type) and
+                  child['ownerPlayerId'] == 'p1' and
                   child['typeId'] == slot['typeId'] and child['constructionProgress'] == slot['progress'] and
                   child.get('attachment') == dict(parentUnitId=parent['unitId'], slot=slot['number'],
                                                    empty=child['typeId'] == EMPTY) and
@@ -109,31 +136,32 @@ def opening_refunds(records):
         if opening_height == 170:
             check(abs(parent['height'] - 168.47) < .001, 'Opening drop does not use the fixed first update')
         opening_height = parent['height']
+        first = units[identities[0]]
+        if weapon_modules and first['typeId'] == LASER and first['constructionProgress'] < 1:
+            queued = parent['unitActions']['actions'].get('upgradeT2')
+            if queued and queued['queueIndex'] is not None:
+                check(queued['progress'] == 0 and not queued['available'], 'Paid upgrade ran before its module was built')
+                waited = True
         for event in sample['events']:
-            if event.get('kind') not in ('attachment-install-started', 'attachment-slot-emptied', 'attachment-install-completed'):
+            if event.get('kind') not in (install_started, emptied, install_completed, upgraded):
                 continue
             check(event.get('unitId') == identities[0], 'The observed order ran on a different slot')
             stage = event['kind']
-            stages.append(stage)
-            first = units[identities[0]]
-            if stage == 'attachment-slot-emptied':
-                check(first['typeId'] == EMPTY and first['constructionProgress'] == 1 and
-                      parent['unitActions']['actions']['buildGun']['cooldownRemaining'] == 2000,
-                      'Cancelled Gun T1 did not return the same slot to empty with the fixed cooldown')
-                refunds[row['sequence']] = 2000
-            else:
-                check(first['typeId'] == GUN and first['constructionProgress'] ==
-                      (1 if stage == 'attachment-install-completed' else 0), 'Gun installation stage differs')
+            stages.append((stage, first['typeId'], first['constructionProgress']))
+            if stage == emptied:
+                check(parent['unitActions']['actions']['buildGun']['cooldownRemaining'] == 2000,
+                      'Cancelled module did not return the same slot to empty with the fixed cooldown')
+                refunds[row['sequence']] = refund
         for event in sample.get('projectileEvents', []):
             if event.get('kind') != 'born':
                 continue
-            check(event.get('sourceUnitId') != parent['unitId'], 'The chassis fired instead of its Gun T1')
+            check(event.get('sourceUnitId') != parent['unitId'], 'The chassis fired instead of its module')
             if event.get('sourceUnitId') == identities[0]:
-                check(units[identities[0]]['constructionProgress'] == 1 and event.get('sourceWeaponName') == '1',
+                check(first['constructionProgress'] == 1 and
+                      event.get('sourceWeaponName') == ('smallLaser1' if weapon_modules else '1'),
                       'An unfinished module fired or used a different weapon')
-                fired = True
-    check(stages == ['attachment-install-started', 'attachment-slot-emptied',
-                     'attachment-install-started', 'attachment-install-completed'] and
-          len(refunds) == 1 and fired and moved and opening_height == 0,
-          'Opening must settle, buy, cancel, rebuild, move and fire from the same real slot')
+                fired |= first['typeId'] == settled_type
+    check(stages == expected and len(refunds) == 1 and fired and moved and opening_height == 0 and
+          (not weapon_modules or waited),
+          'Opening must settle, buy, cancel, replace and fire from the same real slot')
     return refunds

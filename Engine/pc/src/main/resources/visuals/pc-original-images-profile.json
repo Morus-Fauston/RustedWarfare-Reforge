@@ -6239,6 +6239,12 @@
     "aa-afterburn-trail": "assets/units/shared/glow_sharp.png",
     "bomber-body": "assets/units/bomber/base.png",
     "bomber-dead": "assets/units/bomber/base_dead.png",
+    "spider-laser": "assets/units/shared/turret_small.png",
+    "spider-laser-t2": "assets/units/shared/small_laser_turretT2.png",
+    "spider-gun-t2": "assets/units/turrets/turret_top_l3.png",
+    "spider-aa": "assets/units/turrets/anti_air_top.png",
+    "spider-aa-t2": "assets/units/turrets/anti_air_top_l3.png",
+    "spider-flak": "assets/units/turrets/anti_air_top_flakgun.png",
     "modular-spider-body": "assets/units/modular_spider/body.png",
     "modular-spider-dead": "assets/units/modular_spider/body_dead.png",
     "modular-spider-overlay": "assets/units/modular_spider/body_ui.png",
@@ -6508,6 +6514,54 @@
       "bytes": 4030,
       "sha256": "2074be278066a5c8a72b1b6dfded3d3549144559e92d2bfc7df914e751e6c8b8",
       "width": 32,
+      "height": 32
+    },
+    {
+      "id": "spider-laser",
+      "path": "assets/units/shared/turret_small.png",
+      "bytes": 346,
+      "sha256": "32b6b9f973fcde57c240464be7cc055125b077efdce0c2c3ff998beb54da9b49",
+      "width": 8,
+      "height": 34
+    },
+    {
+      "id": "spider-laser-t2",
+      "path": "assets/units/shared/small_laser_turretT2.png",
+      "bytes": 549,
+      "sha256": "fe94cc6a32aa84dedb8fb82ea30fc35b71cac87cd3e8c4c1119017863c7aebdc",
+      "width": 14,
+      "height": 24
+    },
+    {
+      "id": "spider-gun-t2",
+      "path": "assets/units/turrets/turret_top_l3.png",
+      "bytes": 688,
+      "sha256": "2d1eb9b0832ce4ad50ddef27a297d1bc6165311c552864950dcd8ceb5b54b1ad",
+      "width": 16,
+      "height": 46
+    },
+    {
+      "id": "spider-aa",
+      "path": "assets/units/turrets/anti_air_top.png",
+      "bytes": 354,
+      "sha256": "6dc58ab8c9aa250ce971f7f4777b9eccf73e9d8d3097d22219076a179b26b217",
+      "width": 16,
+      "height": 26
+    },
+    {
+      "id": "spider-aa-t2",
+      "path": "assets/units/turrets/anti_air_top_l3.png",
+      "bytes": 777,
+      "sha256": "575a6aecd33bf1328d04bc7b73515520970cf2f194efffaa71c8b6dada2ff08f",
+      "width": 25,
+      "height": 24
+    },
+    {
+      "id": "spider-flak",
+      "path": "assets/units/turrets/anti_air_top_flakgun.png",
+      "bytes": 943,
+      "sha256": "ed264a9cd6d7b76fb16e03e89cec2eaeb5e7f4bc7fc6a5639f2b0cdc7b2327a9",
+      "width": 29,
       "height": 32
     },
     {
@@ -7301,6 +7355,102 @@
       ],
       "frames": 1
     },
+    "spider-laser": {
+      "file": "units/spider-laser.png",
+      "operation": "crop",
+      "source": "spider-laser",
+      "rect": [
+        0,
+        0,
+        8,
+        34
+      ],
+      "target": [
+        8,
+        34
+      ],
+      "frames": 1
+    },
+    "spider-laser-t2": {
+      "file": "units/spider-laser-t2.png",
+      "operation": "crop",
+      "source": "spider-laser-t2",
+      "rect": [
+        0,
+        0,
+        14,
+        24
+      ],
+      "target": [
+        14,
+        24
+      ],
+      "frames": 1
+    },
+    "spider-gun-t2": {
+      "file": "units/spider-gun-t2.png",
+      "operation": "crop",
+      "source": "spider-gun-t2",
+      "rect": [
+        0,
+        0,
+        16,
+        46
+      ],
+      "target": [
+        16,
+        46
+      ],
+      "frames": 1
+    },
+    "spider-aa": {
+      "file": "units/spider-aa.png",
+      "operation": "crop",
+      "source": "spider-aa",
+      "rect": [
+        0,
+        0,
+        16,
+        26
+      ],
+      "target": [
+        16,
+        26
+      ],
+      "frames": 1
+    },
+    "spider-aa-t2": {
+      "file": "units/spider-aa-t2.png",
+      "operation": "crop",
+      "source": "spider-aa-t2",
+      "rect": [
+        0,
+        0,
+        25,
+        24
+      ],
+      "target": [
+        25,
+        24
+      ],
+      "frames": 1
+    },
+    "spider-flak": {
+      "file": "units/spider-flak.png",
+      "operation": "crop",
+      "source": "spider-flak",
+      "rect": [
+        0,
+        0,
+        29,
+        32
+      ],
+      "target": [
+        29,
+        32
+      ],
+      "frames": 1
+    },
     "modular-spider-body": {
       "file": "units/modular-spider-body.png",
       "operation": "crop",
@@ -8034,6 +8184,30 @@
     },
     "modularSpider_emptySlot": {
       "body": "engineer-body"
+    },
+    "modularSpider_smallgunturret": {
+      "body": "engineer-body",
+      "turret": "spider-laser"
+    },
+    "modularSpider_smallgunturretT2": {
+      "body": "engineer-body",
+      "turret": "spider-laser-t2"
+    },
+    "modularSpider_gunturretT2": {
+      "body": "engineer-body",
+      "turret": "spider-gun-t2"
+    },
+    "modularSpider_antiair": {
+      "body": "engineer-body",
+      "turret": "spider-aa"
+    },
+    "modularSpider_antiairT2": {
+      "body": "engineer-body",
+      "turret": "spider-aa-t2"
+    },
+    "modularSpider_antiairFlak": {
+      "body": "engineer-body",
+      "turret": "spider-flak"
     },
     "modularSpider_gunturret": {
       "body": "engineer-body",

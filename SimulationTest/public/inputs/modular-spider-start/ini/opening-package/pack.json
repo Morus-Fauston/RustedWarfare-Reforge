@@ -18,6 +18,30 @@
     {
       "type": "modular-spider",
       "file": "units/spider/gun.ini"
+    },
+    {
+      "type": "modular-spider",
+      "file": "units/spider/small-laser.ini"
+    },
+    {
+      "type": "modular-spider",
+      "file": "units/spider/small-laser-t2.ini"
+    },
+    {
+      "type": "modular-spider",
+      "file": "units/spider/gun-t2.ini"
+    },
+    {
+      "type": "modular-spider",
+      "file": "units/spider/aa.ini"
+    },
+    {
+      "type": "modular-spider",
+      "file": "units/spider/aa-t2.ini"
+    },
+    {
+      "type": "modular-spider",
+      "file": "units/spider/flak.ini"
     }
   ]
 }

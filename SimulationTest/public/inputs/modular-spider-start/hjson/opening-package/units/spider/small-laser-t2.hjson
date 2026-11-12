@@ -1,0 +1,71 @@
+{
+  "format": "rw-reforge.unit.v1",
+  "core": {
+    "name": "modularSpider_smallgunturretT2",
+    "class": "CustomUnitMetadata",
+    "price": 3700,
+    "maxHp": 2000,
+    "radius": 15,
+    "displayRadius": 12,
+    "isUnselectable": true,
+    "canNotBeDirectlyAttacked": false,
+    "selfBuildRate": 0.001,
+    "selfRegenRate": 0.2
+  },
+  "graphics": {
+    "image": "empty.png",
+    "image_turret": "small-laser-t2.png",
+    "total_frames": 1
+  },
+  "attack": {
+    "canAttackFlyingUnits": true,
+    "canAttackLandUnits": true,
+    "canAttackUnderwaterUnits": false,
+    "maxAttackRange": 290,
+    "turretSize": 30,
+    "turretTurnSpeed": 2,
+    "shootDelay": 42
+  },
+  "actions": [
+    {
+      "name": "cancel",
+      "convertTo": "modularSpider_emptySlot",
+      "refundCredits": 3700,
+      "addAllActionCooldownsTime": 120
+    },
+    {
+      "name": "reclaim",
+      "convertTo": "modularSpider_emptySlot",
+      "refundCredits": 1850,
+      "buildSpeed": 180
+    }
+  ],
+  "weapons": [
+    {
+      "name": "smallLaser1",
+      "x": 0,
+      "y": 0,
+      "projectile": "laserShot",
+      "delay": 30,
+      "size": 17,
+      "turnSpeed": 5,
+      "turnSpeedAcceleration": 0.2,
+      "shoot_sound": "plasma_fire",
+      "shoot_sound_vol": 0.05,
+      "recoilOffset": -1,
+      "recoilOutTime": 3,
+      "recoilReturnTime": 4,
+      "barrelX": -3,
+      "barrelOffsetX_onOddShots": 6,
+      "image_drawOffsetY": 5
+    }
+  ],
+  "projectiles": [
+    {
+      "name": "laserShot",
+      "directDamage": 70,
+      "speed": 9,
+      "life": 70
+    }
+  ]
+}

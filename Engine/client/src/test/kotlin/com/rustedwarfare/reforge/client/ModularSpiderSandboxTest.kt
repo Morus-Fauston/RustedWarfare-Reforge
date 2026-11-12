@@ -51,6 +51,8 @@ class ModularSpiderSandboxTest {
             }
             bounds()
             click("selectSlot1")
+            assertEquals(listOf("Add Gun T1", "Add Laser", "Add AA"), session.actionMenu.unitActions
+                .filter { it.name.startsWith("build") }.map { it.title })
             bounds()
             val balance = checkNotNull(session.observation.balance)
             click("buildGun")
@@ -62,6 +64,23 @@ class ModularSpiderSandboxTest {
             assertEquals(balance, session.observation.balance)
             click("selectSlotBuild")
             assertTrue(session.actionMenu.unitActions.none { it.name == "buildGun" })
+        }
+    }
+
+    @Test fun releasing_a_module_card_after_switching_slots_does_not_spend_on_the_new_slot() {
+        val (root, pack) = source("ini")
+        SandboxSession(contentPackScenario(root, ContentPackChoice(pack, "modularSpider"))).use { session ->
+            repeat(100) { session.tick() }
+            session.select(session.observation.units.single { it.typeId == "modularSpider" }.position)
+            assertIs<ActionResult.Accepted>(session.unitAction("selectSlot1"))
+            val before = session.observation.balance
+            val actor = Actor().apply { setSize(84f, 28f) }
+            val event = InputEvent().also { it.listenerActor = actor }
+            val input = CustomUnitActionButtonInput({ session }, { true }, "buildSmallLaser")
+            assertTrue(input.touchDown(event, 12f, 12f, 0, Input.Buttons.LEFT))
+            assertIs<ActionResult.Accepted>(session.unitAction("selectSlot2"))
+            input.touchUp(event, 12f, 12f, 0, Input.Buttons.LEFT)
+            assertEquals(before, session.observation.balance)
         }
     }
 

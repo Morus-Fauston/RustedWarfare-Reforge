@@ -18,6 +18,30 @@
     {
       "type": "modular-spider",
       "file": "units/spider/gun.json"
+    },
+    {
+      "type": "modular-spider",
+      "file": "units/spider/small-laser.json"
+    },
+    {
+      "type": "modular-spider",
+      "file": "units/spider/small-laser-t2.json"
+    },
+    {
+      "type": "modular-spider",
+      "file": "units/spider/gun-t2.json"
+    },
+    {
+      "type": "modular-spider",
+      "file": "units/spider/aa.json"
+    },
+    {
+      "type": "modular-spider",
+      "file": "units/spider/aa-t2.json"
+    },
+    {
+      "type": "modular-spider",
+      "file": "units/spider/flak.json"
     }
   ]
 }

@@ -33,7 +33,7 @@ def validate_unit_action_intent(intent):
     name=intent.get('actionName');nuclear=name in ('buildNuke','launchNuke','buildAntiNuke');cancel=intent.get('cancelQueued',False)
     targeted=name in ('launchNuke','launchScoutBot')
     keys={'intentId','kind','actionName','waitSteps'}
-    if (nuclear or targeted) and 'cancelQueued' in intent:keys.add('cancelQueued')
+    if (nuclear or targeted or name in spider_platform.CANCELLABLE) and 'cancelQueued' in intent:keys.add('cancelQueued')
     if targeted and cancel is False:keys.add('target')
     target=intent.get('target')
     if (set(intent)!=keys or type(cancel) is not bool or
@@ -1070,15 +1070,16 @@ def compare_history(records, plan, policy, native_anchors=None, geometry=None):
     allowed={'initialBalance','spend','noActionIntents','projectileBirthsRequired','mechLegs',
              'ownerPlayerId','initialOwnedTypes','finalUnits','minimumBirths',
              'productionOrder','completedUpgradeTypes','initialIncome','producedIncome','transportStages','unitActionStages',
-             'bunkerStages','reclaimRefunds','nautilusTerrain','nuclearHistory','navalAmmoHistory','spiderOpening'}
+             'bunkerStages','reclaimRefunds','nautilusTerrain','nuclearHistory','navalAmmoHistory','spiderOpening','spiderWeaponModules'}
     if not isinstance(policy,dict) or set(policy)-allowed:
         raise PlatformError('input-contract', 'Unknown or malformed history obligations', 1)
     balance = policy.get('initialBalance')
     if type(balance) not in (int, float) or not math.isfinite(balance):
         raise PlatformError('input-contract', 'History requires a finite initial balance', 1)
-    if 'spiderOpening' in policy and policy['spiderOpening'] is not True:
-        raise PlatformError('input-contract', 'Expected the explicit Modular Spider opening contract', 1)
-    slot_refunds = spider_platform.opening_refunds(records) if policy.get('spiderOpening') else {}
+    spider_checks = {field for field in ('spiderOpening', 'spiderWeaponModules') if field in policy}
+    if len(spider_checks) > 1 or any(policy[field] is not True for field in spider_checks):
+        raise PlatformError('input-contract', 'Expected one explicit Modular Spider history contract', 1)
+    slot_refunds = spider_platform.opening_refunds(records, 'spiderWeaponModules' in spider_checks) if spider_checks else {}
     income=policy.get('initialIncome')
     if income is not None and (not isinstance(income,dict) or set(income)!={'unitId','typeId','period','credits'} or
             any(not isinstance(income[k],str) or not income[k] for k in ('unitId','typeId')) or
@@ -1273,11 +1274,13 @@ def compare_history(records, plan, policy, native_anchors=None, geometry=None):
             name=intents[active].get('actionName')
             naval_ammo=name==NAVAL_AMMO and any(u.get('unitId')==row.get('unitId') and
                 u.get('typeId') in NAUTILUS_ACTIONS for u in records[row['sequence']-1]['sample'].get('units',[]))
+            spider_paid=name in spider_platform.PAID and any(u.get('unitId')==row.get('unitId') and
+                u.get('typeId')==spider_platform.CHASSIS for u in records[row['sequence']-1]['sample'].get('units',[]))
             if naval_ammo and (charge is None or charge['amount']!=6000 or charge['at']!='action'):
                 raise PlatformError('input-contract','Naval ammunition reserves or refunds 6000 credits at the action',1)
             if charge:
                 if charge['at'] == 'action':
-                    refund=(name==SCOUT_LAUNCH or naval_ammo) and intents[active].get('cancelQueued') is True
+                    refund=(name==SCOUT_LAUNCH or naval_ammo or spider_paid) and intents[active].get('cancelQueued') is True
                     balance += charge['amount'] if refund else -charge['amount']
                 elif charge['at'] == 'first-step': pending += charge['amount']
                 else: construction_charges[active] = dict(charge=charge, action=row)

@@ -31,4 +31,28 @@ class ModularSpiderOriginalProfileTest {
             mapped.json.get("sources").single { it.getString("id") == turretSource }.getString("path"))
         assertEquals("res/raw/firing3.ogg", resources.events["reforge:events/spider-gun-fire"])
     }
+
+    @Test fun every_new_weapon_module_resolves_the_qualified_pc_turret_and_sound_sources() {
+        val resources = PcOriginalResourceProfile.bundled()
+        val mapped = assertNotNull(resources.images.mappedImages)
+        val expected = mapOf(
+            "smallgunturret" to ("shared/turret_small.png" to listOf(8, 34)),
+            "smallgunturretT2" to ("shared/small_laser_turretT2.png" to listOf(14, 24)),
+            "gunturretT2" to ("turrets/turret_top_l3.png" to listOf(16, 46)),
+            "antiair" to ("turrets/anti_air_top.png" to listOf(16, 26)),
+            "antiairT2" to ("turrets/anti_air_top_l3.png" to listOf(25, 24)),
+            "antiairFlak" to ("turrets/anti_air_top_flakgun.png" to listOf(29, 32)),
+        )
+        for ((suffix, expectedSource) in expected) {
+            val (path, dimensions) = expectedSource
+            val binding = assertNotNull(mapped.json.get("unitBindings").get("modularSpider_$suffix"), suffix)
+            val recipe = mapped.recipes.getValue(binding.getString("turret"))
+            val source = mapped.json.get("sources").single { it.getString("id") == recipe.getString("source") }
+            assertEquals("assets/units/$path", source.getString("path"))
+            assertEquals(dimensions, recipe.get("target").asIntArray().toList())
+        }
+        assertEquals("res/raw/plasma_fire.ogg", resources.events["reforge:events/scout-plasma-fire"])
+        assertEquals("res/raw/missile_fire.ogg", resources.events["reforge:events/naval-missile-fire"])
+        assertEquals("res/raw/large_gun_fire2.ogg", resources.events["reforge:events/naval-main-fire"])
+    }
 }

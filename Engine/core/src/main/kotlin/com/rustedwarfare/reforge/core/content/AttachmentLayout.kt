@@ -12,6 +12,8 @@ class AttachmentLayout(slots: List<AttachmentSlotDefinition>, val slotImagePath:
 
 data class AttachmentInstall(val action: String, val targetTypeId: String, val cost: Long)
 
+data class AttachmentUpgrade(val action: String, val targetTypeId: String, val cost: Long, val ticks: Float)
+
 data class AttachmentRemoval(val targetTypeId: String, val refund: Long, val ticks: Float)
 
 class AttachmentModuleProfile(
@@ -20,14 +22,23 @@ class AttachmentModuleProfile(
     installs: List<AttachmentInstall> = emptyList(),
     val cancel: AttachmentRemoval? = null,
     val reclaim: AttachmentRemoval? = null,
+    upgrades: List<AttachmentUpgrade> = emptyList(),
 ) {
     val installs: List<AttachmentInstall> = Collections.unmodifiableList(ArrayList(installs))
+    val upgrades: List<AttachmentUpgrade> = Collections.unmodifiableList(ArrayList(upgrades))
 }
 
 internal object ModularSpiderRules {
     const val ID = "modularSpider"
     const val EMPTY = "modularSpider_emptySlot"
     const val GUN = "modularSpider_gunturret"
+    const val LASER = "modularSpider_smallgunturret"
+    const val ANTI_AIR = "modularSpider_antiair"
+    val installs = listOf(
+        AttachmentInstall("buildGun", GUN, 2000L),
+        AttachmentInstall("buildSmallLaser", LASER, 700L),
+        AttachmentInstall("buildAntiair", ANTI_AIR, 2000L),
+    )
     val slots = listOf(
         AttachmentSlotDefinition(1, -11.0, 32.0, 0.0, EMPTY),
         AttachmentSlotDefinition(2, 11.0, 32.0, 0.0, EMPTY),
@@ -46,30 +57,36 @@ internal object ModularSpiderRules {
     fun supportsModule(unit: UnitDefinition): Boolean {
         val module = unit.attachmentModule ?: return false
         if (unit.movement != slotMovement || unit.attachmentLayout != null || unit.transport != null) return false
-        return when (unit.id) {
-            EMPTY -> module.empty && unit.radius == 20.0 && unit.maximumHealth == 3000.0 &&
-                unit.combat == null && module.installs == listOf(AttachmentInstall("buildGun", GUN, 2000L)) &&
-                module.selfBuildRate == 0f && module.cancel == null && module.reclaim == null
-            GUN -> !module.empty && unit.radius == 15.0 && unit.maximumHealth == 2000.0 &&
-                unit.combat?.let { it.attackRange == 290.0 && it.projectile == ProjectileProfile(44.0, 60.0, 6.0) } == true &&
-                module.installs.isEmpty() && module.selfBuildRate == .001f &&
-                module.cancel == AttachmentRemoval(EMPTY, 2000L, 120f) &&
-                module.reclaim == AttachmentRemoval(EMPTY, 1000L, 180f)
-            else -> false
-        }
+        if (unit.id == EMPTY) return module.empty && unit.radius == 20.0 && unit.maximumHealth == 3000.0 &&
+            unit.combat == null && module.installs == installs && module.upgrades.isEmpty() &&
+            module.selfBuildRate == 0f && module.cancel == null && module.reclaim == null
+        val form = ModularSpiderWeaponForms.byId[unit.id] ?: return false
+        val combat = unit.combat ?: return false
+        val expected = form.module
+        return !module.empty && unit.radius == 15.0 && unit.maximumHealth == form.health &&
+            combat.turretImagePath?.let { combat == form.combat(it) } == true &&
+            module.installs.isEmpty() && module.selfBuildRate == expected.selfBuildRate &&
+            module.cancel == expected.cancel && module.reclaim == expected.reclaim && module.upgrades == expected.upgrades
     }
 
+    fun isModuleId(id: String): Boolean = id == EMPTY || id in ModularSpiderWeaponForms.byId
+
     /** Check after all declarations are available, including cross-package replacements. */
-    fun missingReference(unit: UnitDefinition, units: Map<String, UnitDefinition>): Pair<String, String>? {
+    data class Reference(val section: String, val field: String, val target: String)
+
+    fun missingReference(unit: UnitDefinition, units: Map<String, UnitDefinition>): Reference? {
         fun available(id: String, empty: Boolean): Boolean = units[id]?.let {
             supportsModule(it) && it.attachmentModule?.empty == empty
         } == true
         val spawn = unit.attachmentLayout?.slots?.firstOrNull { !available(it.initialTypeId, empty = true) }
-        if (spawn != null) return "onCreateSpawnUnitOf" to spawn.initialTypeId
+        if (spawn != null) return Reference("attachment_slot${spawn.number}", "onCreateSpawnUnitOf", spawn.initialTypeId)
         val module = unit.attachmentModule ?: return null
-        val install = module.installs.firstOrNull { !available(it.targetTypeId, empty = false) }
-        if (install != null) return "convertTo" to install.targetTypeId
-        val removal = listOfNotNull(module.cancel, module.reclaim).firstOrNull { !available(it.targetTypeId, empty = true) }
-        return removal?.let { "convertTo" to it.targetTypeId }
+        val conversions = module.installs.map { Reference("action_${it.action}", "convertTo", it.targetTypeId) } +
+            module.upgrades.map { Reference("action_${it.action}", "convertTo", it.targetTypeId) }
+        return conversions.firstOrNull { !available(it.target, empty = false) }
+            ?: listOf("cancel" to module.cancel, "reclaim" to module.reclaim).firstNotNullOfOrNull { (action, removal) ->
+                removal?.takeUnless { available(it.targetTypeId, empty = true) }
+                    ?.let { Reference("action_$action", "convertTo", it.targetTypeId) }
+            }
     }
 }

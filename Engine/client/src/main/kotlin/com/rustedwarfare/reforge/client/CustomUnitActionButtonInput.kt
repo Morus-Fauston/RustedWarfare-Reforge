@@ -7,7 +7,7 @@ class CustomUnitActionButtonInput(session: () -> SandboxSession?, active: () -> 
     name: String, changed: () -> Unit = {}, hovered: (Boolean) -> Unit = {}, beginTargeting: (String) -> Boolean = { false }) : OwnedActionInput(
     session, active, setOf(Input.Buttons.LEFT, Input.Buttons.RIGHT), true,
     identity = { current -> current.actionMenu.unitActions.singleOrNull { it.name == name && (it.available || it.cancellable) }
-        ?.let { InputActionIdentity(it.name, if (it.queued) 1L else 0L) } }, submit = { current, action, button ->
+        ?.let { InputActionIdentity(it.name, if (it.queued) 1L else 0L, it.attachmentContext) } }, submit = { current, action, button ->
         val view = current.actionMenu.unitActions.singleOrNull { it.name == action.key }
         if (button == Input.Buttons.RIGHT && view?.cancellable == true) current.unitAction(action.key, cancelQueued = true)
         else if (button == Input.Buttons.LEFT && view?.available == true) {

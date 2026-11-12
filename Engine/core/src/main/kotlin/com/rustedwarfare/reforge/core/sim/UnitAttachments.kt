@@ -3,13 +3,26 @@ package com.rustedwarfare.reforge.core.sim
 import com.rustedwarfare.reforge.core.content.AttachmentSlotDefinition
 import com.rustedwarfare.reforge.core.content.AttachmentInstall
 import com.rustedwarfare.reforge.core.content.AttachmentRemoval
+import com.rustedwarfare.reforge.core.content.AttachmentUpgrade
 import com.rustedwarfare.reforge.core.content.ModularSpiderRules
 
 internal data class AttachmentBinding(val parentId: String, val slot: AttachmentSlotDefinition)
 
 internal sealed interface AttachmentOrder {
-    data class Install(val action: AttachmentInstall) : AttachmentOrder
-    data class Cancel(val action: AttachmentRemoval) : AttachmentOrder
+    sealed interface Paid : AttachmentOrder {
+        val name: String
+        val cost: Long
+    }
+    data class Install(val action: AttachmentInstall) : Paid {
+        override val name get() = action.action
+        override val cost get() = action.cost
+    }
+    data class Upgrade(val action: AttachmentUpgrade, val remaining: Float) : Paid {
+        override val name get() = action.action
+        override val cost get() = action.cost
+        val progress get() = (action.ticks - remaining) / action.ticks
+    }
+    data class Cancel(val action: AttachmentRemoval, val displacedUpgrade: Upgrade?) : AttachmentOrder
     data class Reclaim(val action: AttachmentRemoval, val remaining: Float) : AttachmentOrder
 }
 
@@ -80,14 +93,20 @@ internal object UnitAttachments {
             val order = child.attachmentOrder
             val cooldown = kotlin.math.ceil(child.attachmentCooldown * 1000.0 / 60.0).toInt()
             val ready = order == null && cooldown == 0
+            val balance = checkNotNull(state.productionLedger).balances.getValue(child.ownerPlayerId)
             for (install in profile.installs) {
                 val queued = (order as? AttachmentOrder.Install)?.action == install
-                val balance = checkNotNull(state.productionLedger).balances.getValue(child.ownerPlayerId)
                 actions += UnitActionObservation(install.action, 0.takeIf { queued }, 0f.takeIf { queued },
                     cooldown, ready && balance >= install.cost)
             }
+            for (upgrade in profile.upgrades) {
+                val queued = (order as? AttachmentOrder.Upgrade)?.takeIf { it.action == upgrade }
+                actions += UnitActionObservation(upgrade.action, 0.takeIf { queued != null }, queued?.progress,
+                    cooldown, ready && balance >= upgrade.cost)
+            }
             if (!BuildingWork.isReady(child) && profile.cancel != null) {
-                actions += UnitActionObservation("cancel", null, child.constructionProgress, cooldown, ready)
+                val available = cooldown == 0 && (order == null || order is AttachmentOrder.Upgrade)
+                actions += UnitActionObservation("cancel", null, child.constructionProgress, cooldown, available)
             }
             if (BuildingWork.isReady(child) && profile.reclaim != null) {
                 val queued = order as? AttachmentOrder.Reclaim
@@ -117,59 +136,66 @@ internal object UnitAttachments {
             ?: return SimulationError("attachment-slot-required", "Select an attachment slot first")
         val child = state.units[childId(parent, selected)]?.takeIf { it.alive }
             ?: return SimulationError("attachment-slot-unavailable", "The selected slot is unavailable")
-        val ledger = checkNotNull(state.productionLedger)
         val profile = checkNotNull(child.definition.attachmentModule)
         val order = child.attachmentOrder
         if (action.cancelQueued) {
             when {
-                order is AttachmentOrder.Install && name == order.action.action ->
-                    state.productionLedger = ledger.refund(child.ownerPlayerId, order.action.cost)
+                order is AttachmentOrder.Paid && name == order.name -> refundPayment(state, child)
                 order is AttachmentOrder.Reclaim && name == "reclaim" -> Unit
                 else -> return SimulationError("attachment-order-absent", "No matching cancellable slot order")
             }
             child.attachmentOrder = null
             return null
         }
-        if (order != null) return SimulationError("attachment-slot-busy", "The slot already has an order")
         if (child.attachmentCooldown > 0f)
             return SimulationError("attachment-slot-cooldown", "The slot is cooling down")
+        if (name == "cancel" && !BuildingWork.isReady(child) && profile.cancel != null &&
+            (order == null || order is AttachmentOrder.Upgrade)) {
+            child.attachmentOrder = AttachmentOrder.Cancel(profile.cancel, order)
+            return null
+        }
+        if (order != null) return SimulationError("attachment-slot-busy", "The slot already has an order")
         val install = profile.installs.singleOrNull { it.action == name }
-        child.attachmentOrder = when {
-            install != null -> {
-                state.productionLedger = ledger.charge(child.ownerPlayerId, install.cost)
-                    ?: return SimulationError("insufficient-funds", "The slot requires ${install.cost} credits")
-                AttachmentOrder.Install(install)
-            }
-            name == "cancel" && !BuildingWork.isReady(child) && profile.cancel != null ->
-                AttachmentOrder.Cancel(profile.cancel)
+        val upgrade = profile.upgrades.singleOrNull { it.action == name }
+        val next = when {
+            install != null -> AttachmentOrder.Install(install)
+            upgrade != null -> AttachmentOrder.Upgrade(upgrade, upgrade.ticks)
             name == "reclaim" && BuildingWork.isReady(child) && profile.reclaim != null ->
                 AttachmentOrder.Reclaim(profile.reclaim, profile.reclaim.ticks)
             else -> return SimulationError("unsupported-attachment-action", "This action is unavailable for the selected slot")
         }
+        if (next is AttachmentOrder.Paid) {
+            state.productionLedger = checkNotNull(state.productionLedger).charge(child.ownerPlayerId, next.cost)
+                ?: return SimulationError("insufficient-funds", "The slot requires ${next.cost} credits")
+        }
+        child.attachmentOrder = next
         return null
     }
 
     fun advance(state: StepState, input: Scenario, parent: MutableUnit, child: MutableUnit, delta: Float) {
         child.attachmentCooldown = maxOf(0f, child.attachmentCooldown - delta)
+        if (!BuildingWork.isReady(child)) {
+            val rate = checkNotNull(child.definition.attachmentModule).selfBuildRate
+            child.constructionProgress = minOf(1f, child.constructionProgress + rate * delta)
+            if (BuildingWork.isReady(child)) state.pendingEvents += Event("attachment-install-completed", child.unitId)
+        }
         when (val order = child.attachmentOrder) {
             is AttachmentOrder.Install -> {
                 convert(input, child, order.action.targetTypeId, 0f)
                 completed(state, parent, child, "attachment-install-started")
             }
-            is AttachmentOrder.Cancel -> {
-                remove(state, input, parent, child, order.action)
-                child.attachmentCooldown = order.action.ticks
+            is AttachmentOrder.Upgrade -> {
+                if (!BuildingWork.isReady(child)) return
+                if (order.remaining <= delta) {
+                    convert(input, child, order.action.targetTypeId, child.constructionProgress)
+                    completed(state, parent, child, "attachment-upgrade-completed")
+                } else child.attachmentOrder = order.copy(remaining = order.remaining - delta)
             }
             is AttachmentOrder.Reclaim -> {
                 if (order.remaining <= delta) remove(state, input, parent, child, order.action)
                 else child.attachmentOrder = order.copy(remaining = order.remaining - delta)
             }
-            null -> {
-                if (BuildingWork.isReady(child)) return
-                val rate = checkNotNull(child.definition.attachmentModule).selfBuildRate
-                child.constructionProgress = minOf(1f, child.constructionProgress + rate * delta)
-                if (BuildingWork.isReady(child)) state.pendingEvents += Event("attachment-install-completed", child.unitId)
-            }
+            is AttachmentOrder.Cancel, null -> Unit
         }
     }
 
@@ -179,9 +205,19 @@ internal object UnitAttachments {
         completed(state, parent, child, "attachment-slot-emptied")
     }
 
+    private fun refundPayment(state: StepState, child: MutableUnit) {
+        val paid = when (val order = child.attachmentOrder) {
+            is AttachmentOrder.Paid -> order
+            is AttachmentOrder.Cancel -> order.displacedUpgrade
+            else -> null
+        } ?: return
+        state.productionLedger = checkNotNull(state.productionLedger).refund(child.ownerPlayerId, paid.cost)
+    }
+
     private fun convert(input: Scenario, child: MutableUnit, targetTypeId: String, progress: Float) {
         val previousMaximum = checkNotNull(child.definition.maximumHealth)
         val fraction = (checkNotNull(child.health) / previousMaximum).coerceIn(0.0, 1.0)
+        val previousWeapons = child.namedWeapons
         val next = input.unitDefinitions.getValue(targetTypeId)
         child.definition = next
         child.typeId = next.id
@@ -189,7 +225,18 @@ internal object UnitAttachments {
         child.constructionProgress = progress
         child.combat = next.combat?.let { MutableCombat(child.heading) }
         child.namedWeapons = NamedWeaponRuntime.initialStates(next.combat, child.heading, child.combat)
-        child.clearWeaponTargets()
+        val currentWeapons = child.namedWeapons
+        if (previousWeapons != null && currentWeapons != null) {
+            val assembly = checkNotNull(next.combat).weaponAssembly
+            for (slot in assembly.slots) {
+                val mount = slot.definition
+                val retained = previousWeapons[mount.name] ?: continue
+                retained.cooldown = minOf(retained.cooldown, mount.shootDelay)
+                retained.warmup = minOf(retained.warmup, mount.warmup)
+                currentWeapons[mount.name] = retained
+            }
+            child.combat = currentWeapons.getValue(assembly.slots.first().definition.name)
+        } else child.clearWeaponTargets()
         child.attachmentOrder = null
     }
 
@@ -206,15 +253,19 @@ internal object UnitAttachments {
         for (child in state.units.values) {
             val binding = child.attachment ?: continue
             val parent = state.units[binding.parentId]
+            val cancel = child.attachmentOrder as? AttachmentOrder.Cancel
             if (parent == null || !parent.alive || parent.reclaimed) {
-                val install = child.attachmentOrder as? AttachmentOrder.Install
-                if (install != null) state.productionLedger =
-                    checkNotNull(state.productionLedger).refund(child.ownerPlayerId, install.action.cost)
+                refundPayment(state, child)
                 child.reclaimed = true
                 state.pendingEvents += Event("attachment-removed", child.unitId)
             } else if (checkNotNull(child.health) < 1.0 && child.definition.attachmentModule?.empty == false) {
+                refundPayment(state, child)
                 convert(input, child, binding.slot.initialTypeId, 1f)
                 completed(state, parent, child, "attachment-slot-destroyed")
+            } else if (cancel != null) {
+                refundPayment(state, child)
+                remove(state, input, parent, child, cancel.action)
+                child.attachmentCooldown = cancel.action.ticks
             }
         }
         state.units.entries.removeIf { (_, unit) -> unit.attachment != null && unit.reclaimed }
@@ -239,7 +290,7 @@ internal object UnitAttachments {
                     !ModularSpiderRules.supportsChassis(definition)
             }) return SimulationError("unsupported-attachment-layout", "Expected the qualified Modular Spider chassis")
         for (definition in input.unitDefinitions.values) {
-            if ((definition.attachmentModule != null || definition.id in setOf(ModularSpiderRules.EMPTY, ModularSpiderRules.GUN)) &&
+            if ((definition.attachmentModule != null || ModularSpiderRules.isModuleId(definition.id)) &&
                 !ModularSpiderRules.supportsModule(definition)) {
                 return SimulationError("unsupported-attachment-module", "Expected a qualified attachment module")
             }

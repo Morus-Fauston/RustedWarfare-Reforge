@@ -1,5 +1,6 @@
 package com.rustedwarfare.reforge.core.content
 
+import com.rustedwarfare.reforge.core.content.internal.UnitSourceReader.Origin
 import java.io.IOException
 import java.nio.file.Files
 import java.nio.file.Path
@@ -26,8 +27,12 @@ data class ContentSourceIdentity(val path: Path, val bytes: Long, val sha256: St
     }
 }
 
-class LoadedUnitContent internal constructor(val definition: UnitDefinition, sources: List<ContentSourceIdentity>) {
+class LoadedUnitContent internal constructor(
+    val definition: UnitDefinition, sources: List<ContentSourceIdentity>,
+    fieldOrigins: Map<Pair<String, String>, Origin> = emptyMap(),
+) {
     val sources: List<ContentSourceIdentity> = Collections.unmodifiableList(ArrayList(sources))
+    internal val fieldOrigins: Map<Pair<String, String>, Origin> = Collections.unmodifiableMap(LinkedHashMap(fieldOrigins))
 
     fun verifyStable(): ContentResult<Unit> {
         for (source in sources) when (val result = source.verifyStable()) {

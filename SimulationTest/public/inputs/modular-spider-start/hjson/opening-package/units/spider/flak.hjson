@@ -1,0 +1,96 @@
+{
+  "format": "rw-reforge.unit.v1",
+  "core": {
+    "name": "modularSpider_antiairFlak",
+    "class": "CustomUnitMetadata",
+    "price": 12000,
+    "maxHp": 3000,
+    "radius": 15,
+    "displayRadius": 12,
+    "isUnselectable": true,
+    "canNotBeDirectlyAttacked": false,
+    "selfBuildRate": 0.001,
+    "selfRegenRate": 0.2
+  },
+  "graphics": {
+    "image": "empty.png",
+    "image_turret": "flak.png",
+    "total_frames": 1
+  },
+  "attack": {
+    "canAttackFlyingUnits": true,
+    "canAttackLandUnits": false,
+    "canAttackUnderwaterUnits": false,
+    "maxAttackRange": 200,
+    "turretSize": 27,
+    "turretTurnSpeed": 6,
+    "shootDelay": 160
+  },
+  "actions": [
+    {
+      "name": "cancel",
+      "convertTo": "modularSpider_emptySlot",
+      "refundCredits": 12000,
+      "addAllActionCooldownsTime": 120
+    },
+    {
+      "name": "reclaim",
+      "convertTo": "modularSpider_emptySlot",
+      "refundCredits": 6000,
+      "buildSpeed": 180
+    }
+  ],
+  "weapons": [
+    {
+      "name": "1",
+      "x": 0,
+      "y": 0,
+      "projectile": "1",
+      "canShoot": false,
+      "recoilOffset": -3,
+      "recoilOutTime": 6,
+      "recoilReturnTime": 12,
+      "idleSweepAngle": 45,
+      "idleSweepDelay": 90,
+      "idleSweepSpeed": 0.3
+    },
+    {
+      "name": "2",
+      "x": 7,
+      "y": 14,
+      "projectile": "1",
+      "attachedTo": "1",
+      "slave": true,
+      "invisible": true,
+      "warmup": 0,
+      "shoot_sound": "large_gun_fire2",
+      "shoot_sound_vol": 0.3,
+      "size": 0
+    },
+    {
+      "name": "3",
+      "x": -7,
+      "y": 14,
+      "projectile": "1",
+      "attachedTo": "1",
+      "slave": true,
+      "invisible": true,
+      "warmup": 55,
+      "shoot_sound": "large_gun_fire2",
+      "shoot_sound_vol": 0.3,
+      "size": 0,
+      "linkDelayWithTurret": "2"
+    }
+  ],
+  "projectiles": [
+    {
+      "name": "1",
+      "directDamage": 0,
+      "speed": 20,
+      "areaDamage": 100,
+      "areaRadius": 70,
+      "life": 240,
+      "autoTargetingOnDeadTarget": true
+    }
+  ]
+}

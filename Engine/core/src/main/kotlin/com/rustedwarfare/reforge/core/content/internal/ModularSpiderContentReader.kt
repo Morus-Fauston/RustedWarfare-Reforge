@@ -4,9 +4,8 @@ import com.rustedwarfare.reforge.core.content.*
 import java.nio.file.Path
 import java.util.concurrent.CancellationException
 
-/** Reads the effective opening chassis and its first module through the shared source coordinator. */
+/** Reads the effective opening chassis and qualified weapon forms through the shared source coordinator. */
 internal object ModularSpiderContentReader {
-    private val gun = ModularSpiderRules.GUN
     private val empty = ModularSpiderRules.EMPTY
     private val legOffsets = listOf(
         listOf(-50, 20, -25, 10), listOf(50, 20, 15, 10), listOf(-35, 60, -15, 25), listOf(35, 60, 15, 25),
@@ -39,49 +38,38 @@ internal object ModularSpiderContentReader {
         "core" to core + mapOf("name" to empty, "price" to "1000", "maxHp" to "3000", "radius" to "20", "selfRegenRate" to "3000",
             "isUnselectable" to "true", "canNotBeDirectlyAttacked" to "true"),
         "graphics" to mapOf("total_frames" to "1"),
-        "action_buildGun" to mapOf("convertTo" to gun, "price" to "2000", "buildSpeed" to "0", "setBuilt" to "0"),
-    )
-    private val weapon = mapOf(
-        "core" to core + mapOf("name" to gun, "price" to "2000", "maxHp" to "2000", "radius" to "15",
-            "displayRadius" to "12", "isUnselectable" to "true", "canNotBeDirectlyAttacked" to "false",
-            "selfBuildRate" to "0.001", "selfRegenRate" to "0.2"),
-        "graphics" to mapOf("total_frames" to "1"),
-        "attack" to mapOf("canAttackFlyingUnits" to "false", "canAttackLandUnits" to "true", "canAttackUnderwaterUnits" to "false",
-            "maxAttackRange" to "290", "turretSize" to "22", "turretTurnSpeed" to "2", "shootDelay" to "20"),
-        "turret_1" to mapOf("x" to "0", "y" to "0", "barrelX" to "-3", "barrelOffsetX_onOddShots" to "6",
-            "projectile" to "1", "shoot_sound" to "firing3", "shoot_sound_vol" to "0.3", "recoilOffset" to "-0.5",
-            "recoilOutTime" to "6", "recoilReturnTime" to "12", "idleSweepAngle" to "20", "idleSweepDelay" to "120",
-            "idleSweepSpeed" to "0.2"),
-        "projectile_1" to mapOf("directDamage" to "44", "life" to "60", "speed" to "6"),
-        "action_cancel" to mapOf("convertTo" to empty, "refundCredits" to "2000", "addAllActionCooldownsTime" to "120"),
-        "action_reclaim" to mapOf("convertTo" to empty, "refundCredits" to "1000", "buildSpeed" to "180"),
-    )
+    ) + ModularSpiderRules.installs.associate { install ->
+        "action_${install.action}" to mapOf("convertTo" to install.targetTypeId, "price" to install.cost.toString(),
+            "buildSpeed" to "0", "setBuilt" to "0")
+    }
+    private val profiles = listOf(chassis, emptySlot) + ModularSpiderWeaponForms.byId.values.map { it.sections }
     private val images = mapOf("graphics" to setOf("image", "image_shadow", "image_wreak", "image_turret", "image_slotUi")) +
         legs.keys.associateWith { setOf("image_leg", "image_foot") }
-    private val fields = listOf(chassis, emptySlot, weapon).flatMap { it.entries }.groupBy({ it.key }, { it.value.keys })
+    private val fields = profiles.flatMap { it.entries }.groupBy({ it.key }, { it.value.keys })
         .mapValues { (section, declared) -> declared.flatten().toSet() + images[section].orEmpty() }
-    private val text = setOf("name", "class", "movementType", "onCreateSpawnUnitOf", "convertTo", "projectile", "shoot_sound") +
-        images.values.flatten()
-    private val flags = listOf(chassis, emptySlot, weapon).flatMap { it.values }.flatMap { it.entries }
+    private val references = setOf("onCreateSpawnUnitOf", "convertTo", "projectile", "attachedTo", "linkDelayWithTurret")
+    private val text = setOf("name", "class", "movementType", "shoot_sound") + references + images.values.flatten()
+    private val flags = profiles.flatMap { it.values }.flatMap { it.entries }
         .filter { it.value == "true" || it.value == "false" }.map { it.key }.toSet()
     private val schema = UnitContentSchema(fields, fields.values.flatten().toSet() - text - flags,
         flags, text, dynamicWeapons = false)
 
     fun readWithSources(path: Path, validatePath: (Path) -> Unit): LoadedUnitContent =
-        UnitSourceReader(schema, validatePath).load(path) { content ->
+        UnitSourceReader(schema, validatePath).load(path, setOf("onCreateSpawnUnitOf", "convertTo")) { content ->
             fun value(section: String, field: String) = requiredContentField(content.values[section]?.get(field),
                 path, section, field, "Required modular spider field")
             val name = value("core", "name")
+            val form = ModularSpiderWeaponForms.byId[name]
             val expected = when (name) {
                 ModularSpiderRules.ID -> chassis
                 empty -> emptySlot
-                gun -> weapon
-                else -> reject(ContentErrorCode.UNSUPPORTED_FEATURE, path, "core", "name", name, "Unknown modular spider form")
+                else -> form?.sections ?: reject(ContentErrorCode.UNSUPPORTED_FEATURE, path, "core", "name", name,
+                    "Unknown modular spider form")
             }
             val graphicFields = when (name) {
                 ModularSpiderRules.ID -> images.getValue("graphics")
-                gun -> setOf("image", "image_turret")
-                else -> setOf("image")
+                empty -> setOf("image")
+                else -> setOf("image", "image_turret")
             }
             for ((section, values) in content.values) {
                 val permitted = expected[section]?.keys.orEmpty() +
@@ -93,7 +81,7 @@ internal object ModularSpiderContentReader {
                 val actual = value(section, field)
                 val matches = if (field in schema.numericFields) actual.toDoubleOrNull() == required.toDouble()
                     else actual == required
-                if (!matches) reject(if (field in setOf("onCreateSpawnUnitOf", "convertTo", "projectile")) ContentErrorCode.BAD_REFERENCE
+                if (!matches) reject(if (field in references) ContentErrorCode.BAD_REFERENCE
                     else ContentErrorCode.UNSUPPORTED_FEATURE, path, section, field, actual, "Expected qualified value $required")
             }
             fun image(section: String, field: String, width: Int, height: Int): Path {
@@ -138,22 +126,13 @@ internal object ModularSpiderContentReader {
                 empty -> UnitDefinition(name, "CustomUnitMetadata", 20.0, 20.0, 1, image("graphics", "image", 1, 1),
                     1.0, ModularSpiderRules.slotMovement, emptySet(), fogOfWarSightRange = 5,
                     durability = DurabilityProfile(3000.0, null), selfRegenRate = 3000f,
-                    attachmentModule = AttachmentModuleProfile(empty = true,
-                        installs = listOf(AttachmentInstall("buildGun", gun, 2000L))))
+                    attachmentModule = AttachmentModuleProfile(empty = true, installs = ModularSpiderRules.installs))
                 else -> {
-                    val turret = image("graphics", "image_turret", 14, 46)
-                    val projectile = ProjectileProfile(44.0, 60.0, 6.0)
-                    val sweep = IdleSweepProfile(20.0, 120f, .2f, randomDelayExclusive = 5)
-                    val recoil = WeaponRecoil(-.5, 6.0, 12.0)
-                    val mount = NamedWeaponDefinition("1", "1", projectile, TurretMount(),
-                        20.0, 22.0, 2.0, 1.0, turret, 1.0, recoil, FireSoundProfile.SPIDER_GUN,
-                        barrelX = -3.0, oddShotOffset = 6.0, idleSweep = sweep)
-                    val combat = CombatProfile(2000.0, 290.0, 20.0, 22.0, 2.0, 1.0, projectile, turret, null, 1.0,
-                        recoil = recoil, idleSweep = sweep, namedWeapons = WeaponCatalog(listOf(mount)))
+                    checkNotNull(form)
+                    val turret = image("graphics", "image_turret", form.width, form.height)
                     UnitDefinition(name, "CustomUnitMetadata", 15.0, 12.0, 1, image("graphics", "image", 1, 1),
-                        1.0, ModularSpiderRules.slotMovement, emptySet(), fogOfWarSightRange = 5, combat = combat,
-                        selfRegenRate = .2f, attachmentModule = AttachmentModuleProfile(empty = false, selfBuildRate = .001f,
-                            cancel = AttachmentRemoval(empty, 2000L, 120f), reclaim = AttachmentRemoval(empty, 1000L, 180f)))
+                        1.0, ModularSpiderRules.slotMovement, emptySet(), fogOfWarSightRange = 5, combat = form.combat(turret),
+                        selfRegenRate = .2f, attachmentModule = form.module)
                 }
             }
         }

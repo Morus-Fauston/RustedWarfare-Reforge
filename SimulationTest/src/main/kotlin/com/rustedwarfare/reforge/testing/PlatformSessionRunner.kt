@@ -80,13 +80,14 @@ object PlatformSessionRunner {
                             val name = intent.id("actionName")
                             val nuclear = name in setOf("buildNuke", "launchNuke", "buildAntiNuke")
                             val targeted = name == "launchNuke" || name == "launchScoutBot"
-                            val spider = name in setOf("selectSlotBuild", "buildGun", "cancel", "reclaim") ||
+                            val slotOrder = name in setOf("buildGun", "buildSmallLaser", "buildAntiair", "upgradeT2", "upgradeFlak", "reclaim")
+                            val spider = slotOrder || name in setOf("selectSlotBuild", "cancel") ||
                                 name.matches(Regex("selectSlot[1-6]"))
                             val cancel = intent["cancelQueued"]?.let { value ->
                                 value.jsonPrimitive.booleanOrNull ?: throw InputError("Expected action cancellation boolean")
                             } ?: false
                             val keys = setOf("intentId", "kind", "actionName", "waitSteps") +
-                                (if ("cancelQueued" in intent && (nuclear || targeted)) setOf("cancelQueued") else emptySet()) +
+                                (if ("cancelQueued" in intent && (nuclear || targeted || slotOrder)) setOf("cancelQueued") else emptySet()) +
                                 (if (targeted && !cancel) setOf("target") else emptySet())
                             if (intent.keys != keys ||
                                 !nuclear && !targeted && !spider &&

@@ -64,10 +64,13 @@ internal object ContentPackComposer {
             }
         }
         for ((id, unit) in units) {
+            val source = provenance.getValue(id)
             fun bad(target: String, field: String, reason: String): Nothing = reject(ContentErrorCode.BAD_REFERENCE,
-                provenance.getValue(id).entryPath, field = field, ref = target, reason = reason)
-            ModularSpiderRules.missingReference(unit, units)?.let { (field, target) ->
-                bad(target, field, "Expected the referenced qualified attachment form in the final set")
+                source.entryPath, field = field, ref = target, reason = reason)
+            ModularSpiderRules.missingReference(unit, units)?.let { reference ->
+                val origins = byId.getValue(source.packageId).unitFieldOrigins[id].orEmpty()
+                ContentPackReader.rejectMissingAttachmentReference(source.entryPath, origins, reference,
+                    "Expected the referenced qualified attachment form in the final set")
             }
             unit.customActions?.actions?.forEach { action ->
                 action.targetTypeId?.let { target ->
