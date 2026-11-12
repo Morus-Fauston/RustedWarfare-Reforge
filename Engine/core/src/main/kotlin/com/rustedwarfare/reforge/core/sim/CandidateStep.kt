@@ -185,6 +185,11 @@ internal data class StepState(
                 projectile.age.isFinite() && projectile.age >= 0f && projectile.deflectionHealth.isFinite() &&
                 projectile.verticalSpeed.isFinite() && projectile.groundDistanceSquared?.isFinite() != false &&
                 projectile.ballisticRawAz.isFinite() && !(projectile.ballistic != null && projectile.missile != null) &&
+                projectile.interception?.let { course ->
+                    course.targetId in 1L..<projectile.objectId && course.height.isFinite() &&
+                        course.position.x.isFinite() && course.position.y.isFinite() &&
+                        course.launchTarget.x.isFinite() && course.launchTarget.y.isFinite()
+                } != false &&
                 projectile.ground?.let { it.x.isFinite() && it.y.isFinite() && it.height.isFinite() } != false &&
                 (projectile.missile == null || projectile.speed.toFloat().let { it.isFinite() && it >= 0f } && projectile.missileRawAz.isFinite())) {
                 "Projectile candidate must remain finite"

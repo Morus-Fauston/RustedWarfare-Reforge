@@ -15,7 +15,7 @@ internal class PcOriginalResourceProfile(val id: String, val images: PcOriginalI
     val events: Map<String, String> = Collections.unmodifiableMap(LinkedHashMap(events))
 
     companion object {
-        fun bundled(): PcOriginalResourceProfile = readBundled(7)
+        fun bundled(): PcOriginalResourceProfile = readBundled(PcOriginalProfileVersions.CURRENT_VERSION)
         fun versionOne(): PcOriginalResourceProfile = readBundled(1)
         fun versionTwo(): PcOriginalResourceProfile = readBundled(2)
         fun versionThree(): PcOriginalResourceProfile = readBundled(3)
@@ -27,7 +27,7 @@ internal class PcOriginalResourceProfile(val id: String, val images: PcOriginalI
             fun resource(name: String) = requireNotNull(PcOriginalResourceProfile::class.java.getResourceAsStream("/visuals/$name")) {
                 "Missing bundled PC resource qualification"
             }.use { it.readNBytes(PcmAudioDecoder.MAX_BYTES + 1) }.also { require(it.size <= PcmAudioDecoder.MAX_BYTES) }
-            val suffix = if (version == 7) "" else "-v$version"
+            val suffix = if (version == PcOriginalProfileVersions.CURRENT_VERSION) "" else "-v$version"
             val root = JsonReader().parse(resource("pc-original-resources-profile$suffix.json").toString(Charsets.UTF_8))
             require(root.getInt("schemaVersion") == 1)
             require(root.getString("imageQualificationSha256") == visualHash(resource("pc-original-images-profile$suffix.json"))) {

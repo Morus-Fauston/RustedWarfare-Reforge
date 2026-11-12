@@ -459,6 +459,11 @@ class SandboxGraphics private constructor(private val resources: SandboxRenderRe
                     shapes.circle(x,y,radius,32)
                     shapes.line(x-radius,y,x+radius,y);shapes.line(x,y-radius,x,y+radius)
                 }
+                NuclearEffectKind.INTERCEPTION -> {
+                    shapes.setColor(1f, .94f, .7f, effect.alpha)
+                    shapes.circle(x, y, radius, 24)
+                    shapes.circle(x, y, radius * .5f, 16)
+                }
                 NuclearEffectKind.EXPLOSION -> {
                     shapes.setColor(1f,.88f,.48f,effect.alpha)
                     shapes.circle(x,y,radius,64)

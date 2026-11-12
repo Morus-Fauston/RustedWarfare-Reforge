@@ -23,6 +23,7 @@ internal class ActionCatalogue(private val definitions: Map<String, UnitDefiniti
         "experimentalLandFactory" to Names("Experimental", "Experimental factory"),
         "heavyBattleship" to Names("Heavy battleship"), "attackSubmarine" to Names("Submarine"),
         "nautilusSubmarine" to Names("Nautilus"), "nukeLauncherC" to Names("Nuclear silo"),
+        "antiNukeLauncherC" to Names("Anti-nuke silo"),
         "nautilusSubmarineSurface" to Names("Nautilus (Surface)"),
         "nautilusSubmarineLand" to Names("Nautilus (Land)"),
         "extractorT1" to Names("Extractor T1", "Extractor"), "extractorT2" to Names("Extractor T2", "Unit"),
@@ -105,13 +106,20 @@ internal class ActionCatalogue(private val definitions: Map<String, UnitDefiniti
         val actionUnit = ownSingle ?: if (localControl) nuclearLaunchMember(view, ids) else null
         val unitActions = immutable(actionUnit?.unitActions?.actions.orEmpty()
             .filter { ownSingle != null || it.name == "launchNuke" }.map { action ->
-            val nuclear = action.name in setOf("buildNuke", "launchNuke")
+            val ammoPrice = when (action.name) {
+                "buildNuke" -> 11000L
+                "buildAntiNuke" -> 4000L
+                else -> null
+            }
+            val nuclear = ammoPrice != null || action.name == "launchNuke"
+            val affordable = ammoPrice == null || affordable(view, ammoPrice)
             val cancelUnit = if (ownSingle == null && action.name == "launchNuke")
                 nuclearLaunchMember(view, ids, cancelling = true) else actionUnit
             val cancelAction = cancelUnit?.unitActions?.actions?.singleOrNull { it.name == action.name }
             val title = when (action.name) { "afterBurn" -> "Afterburn"; "cancelBurn" -> "Cancel burn"
                 "deploy" -> "Deploy"; "undeploy" -> "Undeploy"; "surface" -> "Surface"; "dive" -> "Dive"
-                "buildNuke" -> "Build nuke"; "launchNuke" -> "Launch nuke"; else -> action.name }
+                "buildNuke" -> "Build nuke"; "launchNuke" -> "Launch nuke"
+                "buildAntiNuke" -> "Build interceptor"; else -> action.name }
             val status = if (action.queueIndex != null) "Queued ${(action.progress!! * 100f).toInt()}%" else if (action.cooldownRemaining > 0)
                 String.format(Locale.ROOT, "Cooling %.1fs", action.cooldownRemaining / 1000f) else "Ready"
             val motion = when (action.name) { "deploy" -> "Movement locked while deploying\nCannot cancel"
@@ -119,13 +127,12 @@ internal class ActionCatalogue(private val definitions: Map<String, UnitDefiniti
                 "surface", "dive" -> "Movement locked while converting\nRight: cancel"; else -> "Movement orders continue" }
             val tooltip = if (!nuclear) "$title\n$status\n$motion" else
                 "$title\nAmmo ${actionUnit?.unitActions?.stockpile ?: 0}\n$status\n" +
-                    (if (action.name == "buildNuke") "\$11000 / 55.6s\n" +
-                        (if (affordable(view, 11000L)) "Left: produce" else "Insufficient funds")
+                    (if (ammoPrice != null) "\$$ammoPrice / ${if (action.name == "buildNuke") "55.6" else "23.8"}s\n" +
+                        (if (affordable) "Left: produce" else "Insufficient funds")
                     else "3.5s\nRange 260 - 9999 / blast 250\nLeft: choose ground point\nEsc / right: cancel selection") +
                     "\nRight on card: cancel one queued"
             CustomUnitActionView(action.name, title, tooltip,
-                action.queueIndex != null, action.cooldownRemaining, action.available &&
-                    (action.name != "buildNuke" || affordable(view, 11000L)),
+                action.queueIndex != null, action.cooldownRemaining, action.available && affordable,
                 cancelAction?.queueIndex != null && cancelUnit?.let { selected ->
                     nuclear || definitions.getValue(selected.typeId).customActions?.actions?.singleOrNull { it.name == action.name }
                         ?.canPlayerCancel == true
@@ -161,7 +168,7 @@ internal class ActionCatalogue(private val definitions: Map<String, UnitDefiniti
         val validWorkers = workers.isNotEmpty() && workers.size == ids.size && workers.all { controllable(it) }
         val buildings = if (!validWorkers || workers.any { it.typeId != workers.first().typeId }) emptyList()
             else immutable(definitions.getValue(workers.first().typeId).builder?.buildingTypeIds.orEmpty()
-                .filter { it != "nukeLauncherC" || nukesEnabled }
+                .filter { nukesEnabled || definitions.getValue(it).nuclearSilo == null }
                 .map { checkNotNull(construction[it]) })
         val nativeMaintenance = validWorkers && workers.all { it.constructionProgress >= 1f && it.carriedBy == null &&
             definitions.getValue(it.typeId).maintenance != null }

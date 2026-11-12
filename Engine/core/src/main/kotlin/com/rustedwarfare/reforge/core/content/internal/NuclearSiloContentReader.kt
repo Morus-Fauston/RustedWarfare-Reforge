@@ -24,21 +24,26 @@ internal object NuclearSiloContentReader {
                     reason = "Expected effective nuclear silo value $expected")
             }
             only("format", "rw-reforge.nuclear-silo.v1")
-            only("name", "nukeLauncherC")
+            val id = required("name")
+            val kind = NuclearSiloKind.entries.firstOrNull { it.unitId == id }
+                ?: reject(ContentErrorCode.UNSUPPORTED_FEATURE, path, "core", "name",
+                    reason = "Expected an effective nuclear silo or ground interceptor")
             only("movementType", "NONE")
             only("footprint", "-1,-1,1,1")
-            only("constructionFootprint", "-2,-1,2,2")
-            number("maxHp", 1500.0)
+            val placement = kind.placementFootprint
+            only("constructionFootprint", "${placement.left},${placement.top},${placement.right},${placement.bottom}")
+            number("maxHp", kind.maxHp)
             number("radius", 35.0)
-            number("price", 45000.0)
+            number("price", kind.constructionPrice.toDouble())
             number("buildSpeed", .001)
             fun image(key: String) = resolveReference(path, required(key), "graphics", key).also(validatePath)
-            UnitDefinition("nukeLauncherC", "CustomUnitMetadata", 35.0, 35.0, 1, image("image"), 1.0,
+            UnitDefinition(id, "CustomUnitMetadata", 35.0, 35.0, 1, image("image"), 1.0,
                 MovementProfile(MovementType.NONE, 0.0, .01, .01, 0.0, .1, false, false), emptySet(),
-                durability = DurabilityProfile(1500.0, image("image_dead")),
+                durability = DurabilityProfile(kind.maxHp, image("image_dead")),
                 building = BuildingProfile(BuildingFootprint(-1, -1, 1, 1), image("image_back"),
-                    placementFootprint = BuildingFootprint(-2, -1, 2, 2)),
-                build = BuildProfile(45000L, .001f), construction = ConstructionProfile(45000L, .001f),
-                nuclearSilo = NuclearSiloProfile(image("image_arm1"), image("image_arm2")))
+                    placementFootprint = placement),
+                build = BuildProfile(kind.constructionPrice, .001f),
+                construction = ConstructionProfile(kind.constructionPrice, .001f),
+                nuclearSilo = NuclearSiloProfile(image("image_arm1"), image("image_arm2"), kind))
         }
 }

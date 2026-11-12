@@ -10,7 +10,10 @@ internal object NuclearTraceValidator {
 
     fun validate(scenario: JsonObject, contract: JsonObject, rows: List<JsonObject>, invalid: (String) -> Nothing): Set<String> {
         val declarations = scenario.arrayAt("units").map { it.jsonObject } + ConstructionDeclaration.buildings(scenario,contract)
-        val ids = declarations.filter { (it["typeId"] ?: it["type"]) == s("nukeLauncherC") }.map { it.id("unitId") }.toSet()
+        fun declared(type: String) = declarations.filter { (it["typeId"] ?: it["type"]) == s(type) }.map { it.id("unitId") }.toSet()
+        val launchers = declared("nukeLauncherC")
+        val interceptors = declared("antiNukeLauncherC")
+        val ids = launchers + interceptors
         if (ids.isEmpty()) return emptySet()
         val states = mutableMapOf<String,Stock>()
         for (row in rows) {
@@ -19,14 +22,17 @@ internal object NuclearTraceValidator {
                 if (action["kind"] == s("unit-action") && action.id("unitId") in ids) {
                     val state = states[action.id("unitId")] ?: invalid("Action precedes silo registration")
                     val name = action.id("actionName")
-                    if (name !in setOf("buildNuke","launchNuke")) invalid("Unapproved nuclear action")
+                    val interceptor = action.id("unitId") in interceptors
+                    val build = if (interceptor) "buildAntiNuke" else "buildNuke"
+                    val limit = if (interceptor) 12 else 4
+                    if (name != build && (interceptor || name != "launchNuke")) invalid("Unapproved nuclear action")
                     if (action["cancelQueued"] == b(true)) {
                         val index = state.queue.indexOfLast { it.name == name }
                         if (index < 0) invalid("Cancelled nuclear work was not queued")
                         state.queue.removeAt(index)
                         if (name == "launchNuke") state.ammo++
-                    } else if (name == "buildNuke") {
-                        if (state.ammo + state.queue.count { it.name == name } >= 4) invalid("Accepted over-limit ammunition order")
+                    } else if (name == build) {
+                        if (state.ammo + state.queue.count { it.name == name } >= limit) invalid("Accepted over-limit ammunition order")
                         state.queue += Work(name)
                     } else {
                         if (state.ammo <= 0) invalid("Accepted launch has no paid ammunition")
@@ -41,8 +47,12 @@ internal object NuclearTraceValidator {
             if (row["kind"] != s("observation")) continue
             val sample = row.objectAt("observation")
             val completions = mutableListOf<String>()
+            val shots = sample.arrayAt("projectileEvents").map { it.jsonObject }
             for (unit in sample.arrayAt("units").map { it.jsonObject }.filter { it.id("unitId") in ids }) {
                 val id = unit.id("unitId")
+                val interceptor = id in interceptors
+                val build = if (interceptor) "buildAntiNuke" else "buildNuke"
+                val limit = if (interceptor) 12 else 4
                 val state = states.getOrPut(id) { Stock() }
                 val ready = unit["alive"] == b(true) && unit.number("constructionProgress") >= 1 && unit["carriedBy"] == JsonNull
                 if (unit["alive"] == b(false)) { state.ammo=0; state.queue.clear(); state.doors=0f }
@@ -53,12 +63,23 @@ internal object NuclearTraceValidator {
                     val desired = if (open) 1f else 0f
                     state.doors = if (state.weight > 0f) desired*(1f-state.weight)+state.base*state.weight else desired
                     state.queue.firstOrNull()?.let { head ->
-                        head.progress += if (head.name == "buildNuke") .0003f else 1f/210f
+                        head.progress += when (head.name) {
+                            "buildAntiNuke" -> .0007f
+                            "buildNuke" -> .0003f
+                            else -> 1f / 210f
+                        }
                         if (head.progress >= 1f) {
                             state.queue.removeAt(0)
-                            if (head.name == "buildNuke") state.ammo++
+                            if (head.name == build) state.ammo++
                             completions += id
                         }
+                    }
+                    if (interceptor) {
+                        state.ammo -= shots.count {
+                            it["kind"] == s("born") && it.objectAt("projectile")["appearance"] == s("INTERCEPTOR") &&
+                                it.objectAt("projectile")["sourceUnitId"] == s(id)
+                        }
+                        if (state.ammo < 0) invalid("Interceptor launched without ammunition")
                     }
                 }
                 val actual = unit.objectAt("unitActions")
@@ -67,13 +88,13 @@ internal object NuclearTraceValidator {
                     invalid("Stockpile differs from paid commands and queue completions")
                 val queue = array(state.queue.map { obj("name" to s(it.name),"progress" to JsonPrimitive(it.progress),"target" to it.target) })
                 if (actual["queue"] != queue) invalid("Nuclear queue target, priority or independent progress differs at ${sample["stepIndex"]}: ${actual["queue"]} expected $queue")
-                if (unit["nuclearDoors"] != JsonPrimitive(state.doors)) invalid("Door pose differs from the launch queue clock")
+                if (!interceptor && unit["nuclearDoors"] != JsonPrimitive(state.doors)) invalid("Door pose differs from the launch queue clock")
                 val actions = actual.objectAt("actions")
-                if (actions.keys != setOf("buildNuke","launchNuke")) invalid("Missing nuclear controls")
+                if (actions.keys != if (interceptor) setOf(build) else setOf(build,"launchNuke")) invalid("Missing nuclear controls")
                 for ((name,value) in actions) {
                     val entry = value.jsonObject
                     val index = state.queue.indexOfFirst { it.name == name }
-                    val available = ready && if (name == "launchNuke") state.ammo > 0 else state.ammo+state.queue.count { it.name == "buildNuke" } < 4
+                    val available = ready && if (name == "launchNuke") state.ammo > 0 else state.ammo+state.queue.count { it.name == build } < limit
                     if (entry.keys != setOf("queueIndex","progress","cooldownRemaining","available") ||
                         entry["queueIndex"] != (if (index < 0) JsonNull else n(index)) || entry["cooldownRemaining"] != n(0) ||
                         entry["progress"] != (if (index < 0) JsonNull else JsonPrimitive(state.queue[index].progress)) ||
@@ -84,8 +105,16 @@ internal object NuclearTraceValidator {
                 it["unitId"]?.jsonPrimitive?.content in ids && it["kind"] == s("unit-action-completed") }.map { it.id("unitId") }
             if (events.sorted() != completions.sorted()) invalid("Missing or premature nuclear completion")
             fun projectile(shot: JsonObject) {
+                if (shot["appearance"] == s("INTERCEPTOR")) {
+                    val speed = shot.objectAt("ballistic").number("speed")
+                    if (shot["sourceUnitId"]?.jsonPrimitive?.content !in interceptors ||
+                        shot["sourceWeaponName"] != s("silo") || shot["targetUnitId"] != JsonNull ||
+                        speed !in .2..6.5 || shot.number("height") !in 0.0..110.0)
+                        invalid("Invalid interceptor identity or flight profile")
+                    return
+                }
                 if (shot["appearance"] != s("NUCLEAR")) return
-                if (shot["sourceUnitId"]?.jsonPrimitive?.content !in ids || shot["sourceWeaponName"] != s("siloTop") ||
+                if (shot["sourceUnitId"]?.jsonPrimitive?.content !in launchers || shot["sourceWeaponName"] != s("siloTop") ||
                     shot["targetUnitId"] != JsonNull || shot["missile"] != JsonNull) invalid("Invalid nuclear projectile identity")
                 val flight = shot.objectAt("ballistic")
                 if (flight.keys != setOf("speed","reachedApex","rawAz") || flight.number("speed") !in .1..2.700001 ||

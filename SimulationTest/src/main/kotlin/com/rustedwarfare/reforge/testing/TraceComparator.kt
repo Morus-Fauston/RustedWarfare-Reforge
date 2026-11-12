@@ -946,7 +946,7 @@ object TraceComparator {
         submarineLaunchAppearances + "STANDARD" +
             (if (typesLoadedBy(scenario, setOf("amphibious-jet")).isNotEmpty()) setOf("AMPHIBIOUS_LIGHTNING") else emptySet()) +
             (if (typesLoadedBy(scenario, setOf("aa-beam-gunship")).isNotEmpty()) setOf("AA_BEAM") else emptySet()) +
-            (if (typesLoadedBy(scenario, setOf("nuclear-silo")).isNotEmpty()) setOf("NUCLEAR") else emptySet())
+            (if (typesLoadedBy(scenario, setOf("nuclear-silo")).isNotEmpty()) setOf("NUCLEAR", "INTERCEPTOR") else emptySet())
 
     private fun validateSubmarineProjectiles(observation: JsonObject, scenario: JsonObject, units: List<JsonObject>) {
         val types = typesLoadedBy(scenario, setOf("submarine"))

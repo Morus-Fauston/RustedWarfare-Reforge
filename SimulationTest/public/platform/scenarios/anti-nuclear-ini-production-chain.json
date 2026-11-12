@@ -1,0 +1,117 @@
+{
+  "schemaVersion": 1,
+  "scenarioId": "anti-nuclear-ini-production-chain",
+  "inputs": "../../inputs/nuclear-silo/ini",
+  "contentPack": {
+    "directory": "interception-package",
+    "unitId": "commandCenter"
+  },
+  "intents": [
+    {
+      "intentId": "select-center",
+      "kind": "select",
+      "waitSteps": 0,
+      "position": {
+        "x": 130,
+        "y": 130
+      }
+    },
+    {
+      "intentId": "produce-worker",
+      "kind": "produce",
+      "waitSteps": 600,
+      "typeId": "builder"
+    },
+    {
+      "intentId": "leave-center",
+      "kind": "select",
+      "waitSteps": 100,
+      "position": {
+        "x": 130,
+        "y": 130
+      }
+    },
+    {
+      "intentId": "select-worker",
+      "kind": "select",
+      "waitSteps": 0,
+      "position": {
+        "x": 129,
+        "y": 220
+      }
+    },
+    {
+      "intentId": "build-silo",
+      "kind": "build",
+      "waitSteps": 600,
+      "position": {
+        "x": 250,
+        "y": 150
+      },
+      "typeId": "antiNukeLauncherC"
+    },
+    {
+      "intentId": "finish-silo",
+      "kind": "select",
+      "waitSteps": 600,
+      "position": {
+        "x": 250,
+        "y": 150
+      }
+    },
+    {
+      "intentId": "build-round",
+      "kind": "unit-action",
+      "waitSteps": 600,
+      "actionName": "buildAntiNuke"
+    },
+    {
+      "intentId": "wait-round-0",
+      "kind": "select",
+      "waitSteps": 600,
+      "position": {
+        "x": 250,
+        "y": 150
+      }
+    },
+    {
+      "intentId": "wait-round-1",
+      "kind": "select",
+      "waitSteps": 600,
+      "position": {
+        "x": 250,
+        "y": 150
+      }
+    }
+  ],
+  "waitPlan": {
+    "produce-worker": {
+      "minimumSteps": 600,
+      "timeoutSeconds": 180
+    },
+    "leave-center": {
+      "minimumSteps": 100,
+      "timeoutSeconds": 180
+    },
+    "build-silo": {
+      "minimumSteps": 600,
+      "timeoutSeconds": 180
+    },
+    "finish-silo": {
+      "minimumSteps": 600,
+      "timeoutSeconds": 180
+    },
+    "build-round": {
+      "minimumSteps": 600,
+      "timeoutSeconds": 180
+    },
+    "wait-round-0": {
+      "minimumSteps": 600,
+      "timeoutSeconds": 180
+    },
+    "wait-round-1": {
+      "minimumSteps": 600,
+      "timeoutSeconds": 180
+    }
+  }
+}

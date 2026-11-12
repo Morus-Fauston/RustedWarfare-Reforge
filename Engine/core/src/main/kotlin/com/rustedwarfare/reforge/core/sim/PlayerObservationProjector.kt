@@ -118,15 +118,19 @@ internal class PlayerObservationProjector(world: WorldHandle, scenario: Scenario
             if (it is ActionResult.Accepted) ActionResult.Accepted(it.actionId, visibleEvents(it.events), it.queuedForStep) else it
         }
         val rawProjectileEvents = committed?.projectileEvents.orEmpty() + observation.projectileEvents
-        val projectedEvents = rawProjectileEvents.filter { (it.projectile.alwaysVisibleInFog || isVisible(vision, it.projectile.position)) &&
-            (it.projectile.lightning?.let { line -> isVisible(vision, line.end) } ?: true) &&
-            (it.projectile.beam?.let { line -> isVisible(vision, line.end) } ?: true) &&
-            (it.interceptorUnitId == null || it.interceptorUnitId in ids) }.map { event ->
+        val projectedEvents = rawProjectileEvents.mapNotNull { event ->
             val value = event.projectile
+            if ((!value.alwaysVisibleInFog && !isVisible(vision, value.position)) ||
+                value.lightning?.let { !isVisible(vision, it.end) } == true ||
+                value.beam?.let { !isVisible(vision, it.end) } == true) return@mapNotNull null
+            val interceptor = event.interceptorUnitId.takeIf { it in ids }
+            val publicInterception = event.kind == "intercepted" &&
+                value.appearance == ProjectileAppearance.NUCLEAR && value.alwaysVisibleInFog
+            if (event.interceptorUnitId != null && interceptor == null && !publicInterception) return@mapNotNull null
             val target = value.targetUnitId.takeIf { it in ids }
             val source = value.sourceUnitId.takeIf { it in ids }
             ProjectedProjectileEvent(value.objectId, event.kind, value.position, value.heading, value.height,
-                source, target, event.damage.takeIf { target != null }, event.interceptorUnitId,
+                source, target, event.damage.takeIf { target != null }, interceptor,
                 value.areaExpansion?.radius, value.sourceWeaponName?.takeIf { source != null }, value.appearance, value.lightning, value.beam)
         }
         val projection = projectileProjection.project(

@@ -59,8 +59,22 @@ enum class TransportProfile { NATIVE_HOVERCRAFT, NATIVE_DROPSHIP, NAUTILUS_SUBME
 /** Native work capability, independent of the ordinary builder's construction menu. */
 enum class MaintenanceProfile { NATIVE_REPAIR_BAY, MECH_ENGINEER }
 
-/** Finite effective custom silo; ammo, commands and ballistics are independent core semantics. */
-data class NuclearSiloProfile(val arm1ImagePath: Path, val arm2ImagePath: Path)
+/** Finite effective custom silos share their content and presentation slots. */
+data class NuclearSiloProfile(
+    val arm1ImagePath: Path,
+    val arm2ImagePath: Path,
+    val kind: NuclearSiloKind = NuclearSiloKind.LAUNCHER,
+)
+
+enum class NuclearSiloKind(
+    val unitId: String,
+    val maxHp: Double,
+    val constructionPrice: Long,
+    val placementFootprint: BuildingFootprint,
+) {
+    LAUNCHER("nukeLauncherC", 1500.0, 45000L, BuildingFootprint(-2, -1, 2, 2)),
+    INTERCEPTOR("antiNukeLauncherC", 2800.0, 15000L, BuildingFootprint(-1, -1, 1, 1)),
+}
 
 data class MovementProfile(
     val type: MovementType,

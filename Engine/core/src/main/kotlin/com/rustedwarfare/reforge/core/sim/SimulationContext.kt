@@ -1145,7 +1145,7 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
                     updateWeapon(unit, step.delta)
                     if (unit.definition.nuclearSilo != null) NuclearOrdnance.advance(unit, step.delta)?.let { work ->
                         pendingEvents += Event("unit-action-completed", unit.unitId)
-                        if (work.name == "launchNuke") {
+                        if (work.action == OrdnanceAction.LAUNCH) {
                             val id = nextObjectId
                             nextObjectId = Math.addExact(id, 1L)
                             val shot = NuclearOrdnance.projectile(unit, work, id)
@@ -1156,6 +1156,15 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
                         }
                     }
                     updatePointDefense(unit, step.delta)
+                    ProjectileInterception.target(unit, projectiles, units, currentScenario.players)?.let { target ->
+                        val id = nextObjectId
+                        nextObjectId = Math.addExact(id, 1L)
+                        val shot = ProjectileInterception.launch(unit, target, id)
+                        projectiles += shot
+                        pendingProjectileEvents += ProjectileEventObservation("born", projectileObservation(shot))
+                        pendingEvents += Event("projectile-fired", unit.unitId)
+                        steps.current.pendingSoundTriggers += SoundTriggerObservation("reforge:events/nuke-launch", shot.position, .15f)
+                    }
                     WeaponEnergy.advance(unit, step.delta)
                     if ((!factoryWork || factoryActionAtHead) && withUnitActionQueue(unit) {
                             CustomUnitActions.advanceQueue(unit, currentScenario.unitDefinitions, step.delta, steps.current.actionClock)
@@ -2058,12 +2067,19 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
     private fun updateProjectiles(delta: Double, existingIds: Set<Long>) {
         steps.current.temporaryVision = steps.current.temporaryVision.map { it.copy(remaining = it.remaining - delta.toFloat()) }
             .filter { it.remaining >= 0f }
-        updateProjectileBatch(delta, projectiles.filter { it.objectId in existingIds }.sortedBy { it.objectId })
-        updateProjectileBatch(delta, projectiles.filter { it.objectId !in existingIds }.sortedBy { it.objectId })
+        // Retain targets through this step so that a removed target's final pose remains available.
+        val trackedTargets = if (projectiles.any { it.interception != null }) projectiles.associateBy { it.objectId } else emptyMap()
+        updateProjectileBatch(delta, projectiles.filter { it.objectId in existingIds }.sortedBy { it.objectId }, trackedTargets)
+        updateProjectileBatch(delta, projectiles.filter { it.objectId !in existingIds }.sortedBy { it.objectId }, trackedTargets)
     }
 
-    private fun updateProjectileBatch(delta: Double, batch: List<MutableProjectile>) {
+    private fun updateProjectileBatch(delta: Double, batch: List<MutableProjectile>, trackedTargets: Map<Long, MutableProjectile>) {
         for (projectile in batch) {
+            val course = projectile.interception
+            if (course != null) {
+                updateInterceptor(projectile, course, trackedTargets[course.targetId], delta)
+                continue
+            }
             if (projectile.beam) {
                 units[projectile.sourceUnitId]?.takeIf { it.alive }?.let { source ->
                     val name = checkNotNull(projectile.sourceWeaponName)
@@ -2139,6 +2155,29 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
                 pendingProjectileEvents += ProjectileEventObservation("intercepted", projectileObservation(projectile))
                 projectiles.remove(projectile)
             }
+        }
+    }
+
+    private fun updateInterceptor(shot: MutableProjectile, course: InterceptionCourse, target: MutableProjectile?, delta: Double) {
+        val track = target?.let { course.copy(position = it.position, height = it.height.toFloat()) } ?: course
+        shot.interception = track
+        val hit = BallisticFlight.move(shot, track.position, track.height, delta)
+        shot.age += delta.toFloat()
+        if (hit) {
+            if (target != null && ProjectileInterception.isInFlight(target) && projectiles.remove(target)) {
+                target.intercepted = true
+                pendingProjectileEvents += ProjectileEventObservation("intercepted", projectileObservation(target),
+                    interceptorUnitId = shot.sourceUnitId)
+                steps.current.pendingSoundTriggers += SoundTriggerObservation("reforge:events/nuke-intercept", target.position, .8f)
+            }
+            // The impact call can apply its own expanding area before removal. It has no later area ticks.
+            val remaining = maxOf(0f, 75f - delta.toFloat())
+            applyGroundArea(shot.sourceUnitId, track.launchTarget, 0f, 100f, 60f, 60f * (1f - remaining / 75f))
+            pendingProjectileEvents += ProjectileEventObservation("impact", projectileObservation(shot))
+            projectiles.remove(shot)
+        } else if (shot.remainingLife == 0.0) {
+            pendingProjectileEvents += ProjectileEventObservation("expired", projectileObservation(shot))
+            projectiles.remove(shot)
         }
     }
 
@@ -2248,12 +2287,16 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
 
     private fun applyAreaDamage(projectile: MutableProjectile) {
         val profile = checkNotNull(projectile.ground).profile
-        val source = checkNotNull(units[projectile.sourceUnitId])
+        applyGroundArea(projectile.sourceUnitId, projectile.position, projectile.height.toFloat(),
+            profile.areaDamage, profile.areaRadius, profile.areaRadius)
+    }
+
+    private fun applyGroundArea(sourceId: String, center: Position, height: Float, damage: Float, radius: Float, currentRadius: Float) {
+        val source = checkNotNull(units[sourceId])
         val players = checkNotNull(scenario).players
         val team = players.single { it.playerId == source.ownerPlayerId }.teamId
-        val x = projectile.position.x.toFloat()
-        val y = projectile.position.y.toFloat()
-        val height = projectile.height.toFloat()
+        val x = center.x.toFloat()
+        val y = center.y.toFloat()
         for (target in orderedUnits()) {
             if (!target.alive || target.carriedBy != null || target.health == null || target.ownerPlayerId == source.ownerPlayerId ||
                 team != null && players.single { it.playerId == target.ownerPlayerId }.teamId == team) continue
@@ -2261,11 +2304,11 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
                 target.height.toFloat() < -5f && height >= -2f) continue
             val distanceSquared = GroundMath.square(x, y, target.position.x.toFloat(), target.position.y.toFloat())
             require(distanceSquared.isFinite()) { "Area geometry must remain finite" }
-            if (distanceSquared > profile.areaRadius * profile.areaRadius) continue
+            if (distanceSquared > currentRadius * currentRadius) continue
             val distance = GroundMath.sqrt(distanceSquared)
-            if (distance > profile.areaRadius) continue
-            val falloff = minOf(1f, ((1f - distance / profile.areaRadius).toDouble() + .1).toFloat())
-            applyDamage(target, (profile.areaDamage * falloff).toDouble())
+            if (distance > currentRadius) continue
+            val falloff = minOf(1f, ((1f - distance / radius).toDouble() + .1).toFloat())
+            applyDamage(target, (damage * falloff).toDouble())
         }
     }
 
@@ -2541,7 +2584,8 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
         projectile.remainingLife, projectile.offset, projectile.scatter, projectile.height, projectile.age,
         projectile.deflectionHealth, projectile.intercepted, projectile.ground?.let {
             GroundProjectileObservation(Position(it.x.toDouble(), it.y.toDouble()), it.height, projectile.verticalSpeed,
-                projectile.groundDistanceSquared) } ?: projectile.nuclearTarget?.let {
+                projectile.groundDistanceSquared) } ?: projectile.interception?.let {
+            GroundProjectileObservation(it.launchTarget, 0f, projectile.speed.toFloat()) } ?: projectile.nuclearTarget?.let {
             GroundProjectileObservation(it, 0f, projectile.speed.toFloat()) }, projectile.missile?.let {
             MissileObservation(projectile.speed.toFloat(), projectile.missileReachedApex, projectile.missileRawAz) },
         projectile.expansion?.let { AreaExpansionObservation(it.remaining, it.radius, it.hitUnitIds) }, projectile.sourceWeaponName,

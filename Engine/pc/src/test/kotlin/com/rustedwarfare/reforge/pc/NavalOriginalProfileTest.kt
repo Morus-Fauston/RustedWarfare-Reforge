@@ -23,7 +23,7 @@ class NavalOriginalProfileTest {
     @Test fun current_profile_has_finite_naval_body_dead_shared_turret_and_distinct_original_sound_events() {
         val profile = VisualAssetProfile.bundled()
         assertEquals("rw.android.1.15.176.visual.v5", profile.id)
-        assertEquals("rw.pc.steam.9902063.images.v7", PcOriginalImageProfile.bundled().id)
+        assertEquals("rw.pc.steam.9902063.images.v8", PcOriginalImageProfile.bundled().id)
         val bindings = profile.json.get("unitBindings")
         val ship = assertNotNull(bindings.get("heavyBattleship"))
         assertEquals(setOf("body", "dead", "turret"), ship.map { it.name }.toSet())
@@ -39,7 +39,7 @@ class NavalOriginalProfileTest {
         }
         assertEquals(t1.getString("dead"), t2.getString("dead"))
         val sounds = PcOriginalResourceProfile.bundled()
-        assertEquals("rw.pc.steam.9902063.resources.v7", sounds.id)
+        assertEquals("rw.pc.steam.9902063.resources.v8", sounds.id)
         assertEquals("res/raw/large_gun_fire2.ogg", sounds.events["reforge:events/naval-main-fire"])
         assertEquals("res/raw/missile_fire.ogg", sounds.events["reforge:events/naval-missile-fire"])
     }

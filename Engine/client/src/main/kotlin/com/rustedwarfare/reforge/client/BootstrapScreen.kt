@@ -1336,7 +1336,7 @@ class BootstrapScreen(
             else if (selected?.tasks?.isNotEmpty() == true) taskText else "P: set patrol points")
         // Stationary production controls already explain their actions; keep the patrol hint clear.
         if (queue != null || upgrades.isNotEmpty() || menu?.construction?.isNotEmpty() == true || menu?.canMaintain == true ||
-            menu?.unitActions?.any { it.name == "buildNuke" } == true)
+            selected?.unitActions?.stockpile != null)
             patrolLabel.isVisible = false
         selectedLabel.isVisible = current != null
         listOf<Actor>(contentLabel, rootField, modeBox, shareBox).forEach { it.isVisible = launch.canEdit }

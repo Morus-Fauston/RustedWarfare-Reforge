@@ -1,0 +1,23 @@
+{
+  "format": "rw-reforge.content-pack.v1",
+  "id": "owned-nuclear-interception-json",
+  "name": "Owned ground nuclear interception",
+  "units": [
+    {
+      "type": "nuclear-silo",
+      "file": "nukeLauncherC.json"
+    },
+    {
+      "type": "builder",
+      "file": "builder.json"
+    },
+    {
+      "type": "command-center",
+      "file": "commandCenter/commandCenter.json"
+    },
+    {
+      "type": "nuclear-silo",
+      "file": "antiNukeLauncherC.json"
+    }
+  ]
+}

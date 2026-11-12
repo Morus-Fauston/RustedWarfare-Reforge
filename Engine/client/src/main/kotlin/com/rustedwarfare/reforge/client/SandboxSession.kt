@@ -240,7 +240,8 @@ class SandboxSession(scenario: Scenario, private val evidence: ClientEvidence = 
     }
 
     /** Dispatch eligibility is independent of the deliberately limited mixed-selection menu. */
-    private fun hasSelectedConstructor(typeId: String): Boolean = isOpen && (typeId != "nukeLauncherC" || scenario.nukesEnabled) && observation.units.any { unit ->
+    private fun hasSelectedConstructor(typeId: String): Boolean = isOpen &&
+        (scenario.nukesEnabled || scenario.unitDefinitions[typeId]?.nuclearSilo == null) && observation.units.any { unit ->
         unit.unitId in selectedIds && controllable(unit) &&
             typeId in scenario.unitDefinitions.getValue(unit.typeId).builder?.buildingTypeIds.orEmpty()
     }

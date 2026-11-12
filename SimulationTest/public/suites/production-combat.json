@@ -286,6 +286,8 @@
       "com.rustedwarfare.reforge.core.sim.NautilusSurfaceUnloadTest",
       "com.rustedwarfare.reforge.core.sim.NautilusTargetCategoryTest",
       "com.rustedwarfare.reforge.core.sim.NautilusTorpedoTest",
+      "com.rustedwarfare.reforge.core.content.AntiNuclearSiloContentTest",
+      "com.rustedwarfare.reforge.core.sim.AntiNuclearSiloTest",
       "com.rustedwarfare.reforge.core.content.NuclearSiloContentTest",
       "com.rustedwarfare.reforge.core.sim.NuclearSiloTest",
       "com.rustedwarfare.reforge.core.sim.NuclearSiloSafetyTest"
@@ -358,6 +360,7 @@
       "com.rustedwarfare.reforge.client.NautilusFormsMenuTest",
       "com.rustedwarfare.reforge.client.NautilusNativePanelTest",
       "com.rustedwarfare.reforge.client.NautilusLandSandboxTest",
+      "com.rustedwarfare.reforge.client.AntiNuclearSiloSandboxTest",
       "com.rustedwarfare.reforge.client.NuclearSiloSandboxTest",
       "com.rustedwarfare.reforge.client.NuclearPresentationTest"
     ],
@@ -1282,6 +1285,39 @@
       "scenario": "platform/scenarios/nautilus-hjson-land-forms.json",
       "contract": "platform/contracts/nautilus-hjson-land-forms.json",
       "backend": "session"
+    },
+    {
+      "id": "anti-nuclear-ini-short",
+      "scenario": "scenarios/anti-nuclear-ini-short.json",
+      "contract": "contracts/anti-nuclear-ini-short.json"
+    },
+    {
+      "id": "anti-nuclear-ini-production-chain",
+      "backend": "session",
+      "scenario": "platform/scenarios/anti-nuclear-ini-production-chain.json",
+      "contract": "platform/contracts/anti-nuclear-ini-production-chain.json"
+    },
+    {
+      "id": "anti-nuclear-json-short",
+      "scenario": "scenarios/anti-nuclear-json-short.json",
+      "contract": "contracts/anti-nuclear-json-short.json"
+    },
+    {
+      "id": "anti-nuclear-json-production-chain",
+      "backend": "session",
+      "scenario": "platform/scenarios/anti-nuclear-json-production-chain.json",
+      "contract": "platform/contracts/anti-nuclear-json-production-chain.json"
+    },
+    {
+      "id": "anti-nuclear-hjson-short",
+      "scenario": "scenarios/anti-nuclear-hjson-short.json",
+      "contract": "contracts/anti-nuclear-hjson-short.json"
+    },
+    {
+      "id": "anti-nuclear-hjson-production-chain",
+      "backend": "session",
+      "scenario": "platform/scenarios/anti-nuclear-hjson-production-chain.json",
+      "contract": "platform/contracts/anti-nuclear-hjson-production-chain.json"
     },
     {
       "id": "nuclear-ini-short",

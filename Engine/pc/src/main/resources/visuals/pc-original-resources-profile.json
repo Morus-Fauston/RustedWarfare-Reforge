@@ -1,8 +1,8 @@
 {
   "schemaVersion": 1,
-  "profileId": "rw.pc.steam.9902063.resources.v7",
-  "imageProfileId": "rw.pc.steam.9902063.images.v7",
-  "imageQualificationSha256": "b96c844226606c676ae74d6a2bf1cbedd7c06f53e5defa5a36752199c281b978",
+  "profileId": "rw.pc.steam.9902063.resources.v8",
+  "imageProfileId": "rw.pc.steam.9902063.images.v8",
+  "imageQualificationSha256": "0ee36cc6dc0a1e785e913322264b34101ec6b41246b6d8949f836a86dcfae2fb",
   "identity": {
     "bytes": 2639503,
     "sha256": "8a550a37e2d8a5430866090d4e7d5892f9010b47f52a5a09350fc66c620deec9"
@@ -277,6 +277,10 @@
     {
       "eventId": "reforge:events/nuke-explode",
       "sourcePath": "res/raw/nuke_explode.ogg"
+    },
+    {
+      "eventId": "reforge:events/nuke-intercept",
+      "sourcePath": "res/raw/buiding_explode.ogg"
     }
   ],
   "excludedMusicDomain": "assets/music/",

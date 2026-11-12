@@ -22,7 +22,7 @@ class PlatformError(ValueError):
 
 
 def validate_unit_action_intent(intent):
-    name=intent.get('actionName');nuclear=name in ('buildNuke','launchNuke');cancel=intent.get('cancelQueued',False)
+    name=intent.get('actionName');nuclear=name in ('buildNuke','launchNuke','buildAntiNuke');cancel=intent.get('cancelQueued',False)
     keys={'intentId','kind','actionName','waitSteps'}
     if nuclear and 'cancelQueued' in intent:keys.add('cancelQueued')
     if name=='launchNuke' and cancel is False:keys.add('target')
@@ -30,7 +30,7 @@ def validate_unit_action_intent(intent):
     if (set(intent)!=keys or type(cancel) is not bool or
             name=='launchNuke' and not cancel and (not isinstance(target,dict) or set(target)!={'x','y'} or
                 any(type(v) not in (int,float) or not math.isfinite(v) for v in target.values())) or
-            not isinstance(name,str) or name not in ('afterBurn','cancelBurn','deploy','undeploy','surface','dive','buildNuke','launchNuke') or
+            not isinstance(name,str) or not nuclear and name not in ('afterBurn','cancelBurn','deploy','undeploy','surface','dive') or
             type(intent.get('waitSteps')) is not int or not 0<=intent['waitSteps']<=600):
         raise PlatformError('input-contract','Expected a finite normal unit action and explicit bounded wait',1)
 
@@ -434,7 +434,7 @@ def validate_history_poses(units, policy):
             validate_bunker_state(unit, policy.get('ownerPlayerId','p1'))
         elif unit.get('typeId') in {'nautilusSubmarine','nautilusSubmarineSurface','nautilusSubmarineLand'}:
             validate_nautilus_state(unit,policy.get('ownerPlayerId','p1'))
-        elif unit.get('typeId')=='nukeLauncherC':
+        elif unit.get('typeId') in ('nukeLauncherC','antiNukeLauncherC'):
             from nuclear_platform import validate_nuclear_state
             validate_nuclear_state(unit,policy.get('ownerPlayerId','p1'))
         elif unit.get('energy') is not None:
@@ -616,7 +616,7 @@ def validate_history_action(records, row, intent, geometry=None):
     fields={}
     if kind=='unit-action':
         validate_unit_action_intent(intent)
-        if intent['actionName'] in ('buildNuke','launchNuke'):
+        if intent['actionName'] in ('buildNuke','launchNuke','buildAntiNuke'):
             from nuclear_platform import validate_nuclear_call
             validate_nuclear_call(next(u for u in left['units'] if u['unitId']==identity),
                 next(u for u in right['units'] if u['unitId']==identity),row,intent,input_footprint(geometry))
@@ -764,8 +764,9 @@ def validate_launch_appearance(shot, units):
     source=units.get(shot.get('sourceUnitId'),{})
     style=shot.get('appearance','STANDARD')
     expected={'attackSubmarine':('SUBMARINE_MISSILE','SUBMARINE_TORPEDO'),
-              'amphibiousJet':('AMPHIBIOUS_LIGHTNING',),'aaBeamGunship':('AA_BEAM',),'nukeLauncherC':('NUCLEAR',)}.get(source.get('typeId'),('STANDARD',))
-    if (style not in ('STANDARD','SUBMARINE_MISSILE','SUBMARINE_TORPEDO','AMPHIBIOUS_LIGHTNING','AA_BEAM','NUCLEAR') or
+              'amphibiousJet':('AMPHIBIOUS_LIGHTNING',),'aaBeamGunship':('AA_BEAM',),'nukeLauncherC':('NUCLEAR',),
+              'antiNukeLauncherC':('INTERCEPTOR',)}.get(source.get('typeId'),('STANDARD',))
+    if (style not in ('STANDARD','SUBMARINE_MISSILE','SUBMARINE_TORPEDO','AMPHIBIOUS_LIGHTNING','AA_BEAM','NUCLEAR','INTERCEPTOR') or
             source and style not in expected):
         raise PlatformError('history-projectile','Invalid native launch appearance or source',2)
     line=shot.get('lightning')
@@ -1284,6 +1285,9 @@ def compare_history(records, plan, policy, native_anchors=None, geometry=None):
         if type(policy['nuclearHistory']) is not bool:raise PlatformError('input-contract','Expected explicit nuclear history flag',1)
         from nuclear_platform import validate_nuclear_history
         validate_nuclear_history(records,policy)
+    if any(intent.get('actionName')=='buildAntiNuke' for intent in plan['intents']):
+        from nuclear_platform import validate_interceptor_history
+        validate_interceptor_history(records,policy)
     if not all(fired):raise PlatformError('history-firing', 'Missing independently required named weapon birth/target', 2)
     return dict(exitCode=0, status='passed', scenarioId=plan['scenarioId'], history=dict(observations=observations, balance=balance))
 

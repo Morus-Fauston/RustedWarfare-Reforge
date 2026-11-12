@@ -226,7 +226,8 @@ data class BeamSegment(val end: Position, val endHeight: Double, val textureOffs
 /** Public launch appearance, independent of hidden source identity or its subsequent depth. */
 enum class ProjectileAppearance(val red: Int, val green: Int, val blue: Int, val drawSize: Float) {
     STANDARD(255, 255, 0, 2f), SUBMARINE_MISSILE(230, 230, 50, 2f), SUBMARINE_TORPEDO(30, 30, 150, 1f),
-    AMPHIBIOUS_LIGHTNING(247, 212, 129, 2f), AA_BEAM(255, 255, 255, 2f), NUCLEAR(255, 238, 160, 3f)
+    AMPHIBIOUS_LIGHTNING(247, 212, 129, 2f), AA_BEAM(255, 255, 255, 2f), NUCLEAR(255, 238, 160, 3f),
+    INTERCEPTOR(238, 238, 0, 2f)
 }
 
 class AreaExpansionObservation(val remaining: Float, val radius: Float, hitUnitIds: Set<String>) {
@@ -607,7 +608,8 @@ internal data class MutableProjectile(val objectId: Long, val sourceUnitId: Stri
     val damageModifiers: com.rustedwarfare.reforge.core.content.ProjectileDamageModifiers =
         com.rustedwarfare.reforge.core.content.ProjectileDamageModifiers(),
     val beam: Boolean = false, var beamSegment: BeamSegment? = null,
-    val alwaysVisibleInFog: Boolean = false, var revealFogPending: Boolean = nuclearTarget != null)
+    val alwaysVisibleInFog: Boolean = false, var revealFogPending: Boolean = nuclearTarget != null,
+    val nukeTagged: Boolean = false, var interception: InterceptionCourse? = null)
 
 internal data class AreaExpansion(val profile: DeathExplosionProfile, var remaining: Float,
     var radius: Float = 0f, val hitUnitIds: MutableSet<String> = linkedSetOf())

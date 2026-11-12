@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "profileId": "rw.pc.steam.9902063.images.v7",
+  "profileId": "rw.pc.steam.9902063.images.v8",
   "identity": {
     "jarPath": "game-lib.jar",
     "jarBytes": 2639503,
@@ -6260,7 +6260,12 @@
     "nuclear-silo-back": "assets/units/nukes/nuke_launcher_back.png",
     "nuclear-silo-dead": "assets/units/nukes/nuke_launcher_dead.png",
     "nuclear-silo-arm1": "assets/units/nukes/nuke_launcher_door_r.png",
-    "nuclear-silo-arm2": "assets/units/nukes/nuke_launcher_door_l.png"
+    "nuclear-silo-arm2": "assets/units/nukes/nuke_launcher_door_l.png",
+    "anti-nuclear-silo-body": "assets/units/nukes/antinuke_launcher_front.png",
+    "anti-nuclear-silo-back": "assets/units/nukes/antinuke_launcher_back.png",
+    "anti-nuclear-silo-dead": "assets/units/nukes/antinuke_launcher_dead.png",
+    "anti-nuclear-silo-arm1": "assets/units/nukes/antinuke_launcher_door_r.png",
+    "anti-nuclear-silo-arm2": "assets/units/nukes/antinuke_launcher_door_l.png"
   },
   "mappingBasis": {
     "androidProfileSha256": "e273280ab37b1a24714e6b15d8e1cb14fdd395e228ea7c71a62dd2f24d334780",
@@ -6666,6 +6671,46 @@
       "sha256": "73d273fba6571bce7505a93b5217d0e3145025ed19d0c53c24bbf9ee26878061",
       "width": 42,
       "height": 29
+    },
+    {
+      "id": "anti-nuclear-silo-body",
+      "path": "assets/units/nukes/antinuke_launcher_front.png",
+      "bytes": 1639,
+      "sha256": "e960698c4a161a8fe76ab12ce9e76c742e6ddc099f18a86cb0d8421f4ceae21f",
+      "width": 40,
+      "height": 48
+    },
+    {
+      "id": "anti-nuclear-silo-back",
+      "path": "assets/units/nukes/antinuke_launcher_back.png",
+      "bytes": 1658,
+      "sha256": "faca42c49d34fb10971ea1fe6b1fc360ab15b8bf142af17e54396acc73ca6831",
+      "width": 40,
+      "height": 48
+    },
+    {
+      "id": "anti-nuclear-silo-dead",
+      "path": "assets/units/nukes/antinuke_launcher_dead.png",
+      "bytes": 2190,
+      "sha256": "5632cfa7ebacd1965d4800a1ce75ed1a04669e817ebd40c96384795a054c3581",
+      "width": 40,
+      "height": 48
+    },
+    {
+      "id": "anti-nuclear-silo-arm1",
+      "path": "assets/units/nukes/antinuke_launcher_door_r.png",
+      "bytes": 242,
+      "sha256": "93a6eddc03644a03f79c1a4e769803545f7ae947800b0ed3eb4271b23dfc6541",
+      "width": 13,
+      "height": 11
+    },
+    {
+      "id": "anti-nuclear-silo-arm2",
+      "path": "assets/units/nukes/antinuke_launcher_door_l.png",
+      "bytes": 196,
+      "sha256": "3f1c6431bbfd9eb5daeab158ae34f5ffce92629133cd753842768e61cb69d0b2",
+      "width": 12,
+      "height": 11
     }
   ],
   "mappingUnitOutputs": {
@@ -7505,6 +7550,86 @@
         29
       ],
       "frames": 1
+    },
+    "anti-nuclear-silo-body": {
+      "file": "units/anti-nuclear-silo-body.png",
+      "operation": "crop",
+      "source": "anti-nuclear-silo-body",
+      "rect": [
+        0,
+        0,
+        40,
+        48
+      ],
+      "target": [
+        40,
+        48
+      ],
+      "frames": 1
+    },
+    "anti-nuclear-silo-back": {
+      "file": "units/anti-nuclear-silo-back.png",
+      "operation": "crop",
+      "source": "anti-nuclear-silo-back",
+      "rect": [
+        0,
+        0,
+        40,
+        48
+      ],
+      "target": [
+        40,
+        48
+      ],
+      "frames": 1
+    },
+    "anti-nuclear-silo-dead": {
+      "file": "units/anti-nuclear-silo-dead.png",
+      "operation": "crop",
+      "source": "anti-nuclear-silo-dead",
+      "rect": [
+        0,
+        0,
+        40,
+        48
+      ],
+      "target": [
+        40,
+        48
+      ],
+      "frames": 1
+    },
+    "anti-nuclear-silo-arm1": {
+      "file": "units/anti-nuclear-silo-arm1.png",
+      "operation": "crop",
+      "source": "anti-nuclear-silo-arm1",
+      "rect": [
+        0,
+        0,
+        13,
+        11
+      ],
+      "target": [
+        13,
+        11
+      ],
+      "frames": 1
+    },
+    "anti-nuclear-silo-arm2": {
+      "file": "units/anti-nuclear-silo-arm2.png",
+      "operation": "crop",
+      "source": "anti-nuclear-silo-arm2",
+      "rect": [
+        0,
+        0,
+        12,
+        11
+      ],
+      "target": [
+        12,
+        11
+      ],
+      "frames": 1
     }
   },
   "mappingUnitBindings": {
@@ -7627,6 +7752,13 @@
       "dead": "nuclear-silo-dead",
       "arm1": "nuclear-silo-arm1",
       "arm2": "nuclear-silo-arm2"
+    },
+    "antiNukeLauncherC": {
+      "body": "anti-nuclear-silo-body",
+      "back": "anti-nuclear-silo-back",
+      "dead": "anti-nuclear-silo-dead",
+      "arm1": "anti-nuclear-silo-arm1",
+      "arm2": "anti-nuclear-silo-arm2"
     }
   }
 }

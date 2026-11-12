@@ -15,22 +15,26 @@ def validate_nuclear_state(unit,owner):
     doors=unit.get('nuclearDoors')
     if not finite(doors) or not 0<=doors<=1:bad('Invalid nuclear door pose')
     state=unit.get('unitActions')
+    interceptor=unit.get('typeId')=='antiNukeLauncherC'
+    ammo_action='buildAntiNuke' if interceptor else 'buildNuke'
+    actions={ammo_action} if interceptor else {ammo_action,'launchNuke'}
     if unit.get('ownerPlayerId')!=owner:
         if state is not None:bad('Enemy nuclear stock and queue must remain private')
         return
     if (not isinstance(state,dict) or set(state)!={'automaticCooldown','actions','stockpile','queue'} or
             not finite(state['automaticCooldown']) or state['automaticCooldown']!=0 or
             type(state['stockpile']) is not int or state['stockpile']<0 or not isinstance(state['queue'],list) or
-            not isinstance(state['actions'],dict) or set(state['actions'])!={'buildNuke','launchNuke'}):bad('Invalid nuclear stock or action fields')
+            not isinstance(state['actions'],dict) or set(state['actions'])!=actions):bad('Invalid nuclear stock or action fields')
     queue=state['queue']
     for item in queue:
-        if (not isinstance(item,dict) or set(item)!={'name','progress','target'} or item['name'] not in ('buildNuke','launchNuke') or
+        if (not isinstance(item,dict) or set(item)!={'name','progress','target'} or item['name'] not in actions or
                 not finite(item['progress']) or not 0<=item['progress']<1 or
-                (item['target'] is not None if item['name']=='buildNuke' else not point(item['target']))):bad('Invalid nuclear queue item')
+                (item['target'] is not None if item['name']==ammo_action else not point(item['target']))):bad('Invalid nuclear queue item')
     ready=unit.get('alive') is True and unit.get('constructionProgress',0)>=1 and unit.get('carriedBy') is None
     for name,action in state['actions'].items():
         index=next((i for i,item in enumerate(queue) if item['name']==name),None)
-        available=ready and (state['stockpile']>0 if name=='launchNuke' else state['stockpile']+sum(i['name']=='buildNuke' for i in queue)<4)
+        limit=12 if interceptor else 4
+        available=ready and (state['stockpile']>0 if name=='launchNuke' else state['stockpile']+sum(i['name']==ammo_action for i in queue)<limit)
         if (not isinstance(action,dict) or set(action)!={'queueIndex','progress','cooldownRemaining','available'} or
                 action['queueIndex']!=index or index is not None and type(action['queueIndex']) is not int or
                 action['progress']!=(None if index is None else queue[index]['progress']) or
@@ -38,16 +42,18 @@ def validate_nuclear_state(unit,owner):
                 type(action['available']) is not bool or action['available']!=available):bad('Nuclear controls differ from stock and queue')
 
 
-def command(state,row):
+def command(state,row,interceptor=False):
     name=row.get('actionName');cancel=row.get('cancelQueued',False);queue=state['queue']
-    if name not in ('buildNuke','launchNuke') or type(cancel) is not bool:bad('Invalid nuclear command')
+    ammo_action='buildAntiNuke' if interceptor else 'buildNuke'
+    allowed={ammo_action} if interceptor else {ammo_action,'launchNuke'}
+    if name not in allowed or type(cancel) is not bool:bad('Invalid nuclear command')
     if cancel:
         indexes=[i for i,item in enumerate(queue) if item['name']==name]
         if not indexes:bad('Cancellation has no pending work')
         queue.pop(indexes[-1])
         if name=='launchNuke':state['ammo']+=1
-    elif name=='buildNuke':
-        if state['ammo']+sum(i['name']=='buildNuke' for i in queue)>=4:bad('Accepted over-limit ammunition')
+    elif name==ammo_action:
+        if state['ammo']+sum(i['name']==ammo_action for i in queue)>=(12 if interceptor else 4):bad('Accepted over-limit ammunition')
         queue.append(dict(name=name,progress=0,target=None))
     else:
         if state['ammo']<=0 or not point(row.get('target')):bad('Launch has no round or ground point')
@@ -65,7 +71,7 @@ def validate_nuclear_call(old,new,row,intent,footprint=None):
             not matches):bad('Nuclear command differs from fixed intent')
     if any(old.get(k)!=new.get(k) for k in set(old)|set(new) if k!='unitActions'):bad('Nuclear call edited physical state')
     state=dict(ammo=old['unitActions']['stockpile'],queue=copy.deepcopy(old['unitActions']['queue']))
-    command(state,row)
+    command(state,row,old.get('typeId')=='antiNukeLauncherC')
     if new['unitActions']['stockpile']!=state['ammo'] or new['unitActions']['queue']!=state['queue']:bad('Nuclear reservation or cancellation differs')
 
 
@@ -111,3 +117,30 @@ def validate_nuclear_history(records,policy):
             if born!=launches:bad('Nuclear launch completion has no corresponding visible birth')
             births+=born;impacts+=sum(e.get('occurrences',0) for e in visible if e.get('kind')=='impact')
     if policy.get('nuclearHistory') is True and (births<1 or impacts<1):bad('Normal nuclear history needs a real launch and impact')
+
+
+def validate_interceptor_history(records,policy):
+    owner=policy.get('ownerPlayerId','p1')
+    states={}
+    for row in records:
+        if row.get('kind')=='action' and row.get('type')=='UnitAction' and row.get('unitId') in states:
+            if row.get('result',{}).get('accepted') is True:
+                command(states[row['unitId']],row,interceptor=True)
+        if row.get('kind')!='observation':continue
+        sample=row['sample']
+        born=[event for event in sample.get('projectileEvents',[]) if event.get('kind')=='born' and
+              event.get('appearance')=='INTERCEPTOR']
+        for unit in sample.get('units',[]):
+            if unit.get('typeId')!='antiNukeLauncherC' or unit.get('ownerPlayerId')!=owner:continue
+            state=states.setdefault(unit['unitId'],dict(ammo=0,queue=[]))
+            if unit.get('alive') is False:state.update(ammo=0,queue=[])
+            elif row.get('phase')=='step' and unit.get('constructionProgress',0)>=1:
+                if state['queue']:
+                    head=state['queue'][0]
+                    head['progress']=f32(head['progress']+f32(.0007))
+                    if head['progress']>=1:state['queue'].pop(0);state['ammo']+=1
+                state['ammo']-=sum(event['occurrences'] for event in born if event.get('sourceUnitId')==unit['unitId'])
+            actual=unit['unitActions']
+            queue=[dict(item,progress=f32(item['progress'])) for item in actual['queue']]
+            if state['ammo']<0 or actual['stockpile']!=state['ammo'] or queue!=state['queue']:
+                bad('Interceptor stock or queue differs from paid commands, clock and launches')

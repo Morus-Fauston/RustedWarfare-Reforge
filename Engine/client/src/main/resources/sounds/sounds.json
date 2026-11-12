@@ -38,6 +38,9 @@
     },
     "reforge:events/nuke-explode": {
       "sound": "reforge:sounds/nuke-explode"
+    },
+    "reforge:events/nuke-intercept": {
+      "sound": "reforge:sounds/naval-missile-fire"
     }
   }
 }
