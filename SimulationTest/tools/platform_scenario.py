@@ -1080,16 +1080,21 @@ def compare_history(records, plan, policy, native_anchors=None, geometry=None):
     allowed={'initialBalance','spend','noActionIntents','projectileBirthsRequired','mechLegs',
              'ownerPlayerId','initialOwnedTypes','finalUnits','minimumBirths',
              'productionOrder','completedUpgradeTypes','initialIncome','producedIncome','transportStages','unitActionStages',
-             'bunkerStages','reclaimRefunds','nautilusTerrain','nuclearHistory','navalAmmoHistory','spiderOpening','spiderWeaponModules'}
+             'bunkerStages','reclaimRefunds','nautilusTerrain','nuclearHistory','navalAmmoHistory',
+             'spiderOpening','spiderWeaponModules','spiderUtilityModules'}
     if not isinstance(policy,dict) or set(policy)-allowed:
         raise PlatformError('input-contract', 'Unknown or malformed history obligations', 1)
     balance = policy.get('initialBalance')
     if type(balance) not in (int, float) or not math.isfinite(balance):
         raise PlatformError('input-contract', 'History requires a finite initial balance', 1)
-    spider_checks = {field for field in ('spiderOpening', 'spiderWeaponModules') if field in policy}
+    spider_checks = {field for field in ('spiderOpening', 'spiderWeaponModules', 'spiderUtilityModules') if field in policy}
     if len(spider_checks) > 1 or any(policy[field] is not True for field in spider_checks):
         raise PlatformError('input-contract', 'Expected one explicit Modular Spider history contract', 1)
-    slot_refunds = spider_platform.opening_refunds(records, 'spiderWeaponModules' in spider_checks) if spider_checks else {}
+    slot_credits = {}
+    if 'spiderUtilityModules' in spider_checks:
+        slot_credits = spider_platform.utility_adjustments(records)
+    elif spider_checks:
+        slot_credits = spider_platform.opening_refunds(records, 'spiderWeaponModules' in spider_checks)
     income=policy.get('initialIncome')
     if income is not None and (not isinstance(income,dict) or set(income)!={'unitId','typeId','period','credits'} or
             any(not isinstance(income[k],str) or not income[k] for k in ('unitId','typeId')) or
@@ -1394,7 +1399,7 @@ def compare_history(records, plan, policy, native_anchors=None, geometry=None):
                     raise PlatformError('history-weapons', 'An absent or dead unit retains a weapon observation', 2)
             if row.get('phase') == 'step':
                 balance -= pending; pending = 0
-                balance += slot_refunds.get(row['sequence'], 0)
+                balance += slot_credits.get(row['sequence'], 0)
                 if income is not None and steps % income['period']==0:balance+=income['credits']
                 for identity,state in income_phases.items():
                     source=units[identity]

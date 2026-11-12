@@ -6248,6 +6248,10 @@
     "spider-lightning": "assets/units/turrets/turret_top_lightning.png",
     "spider-artillery": "assets/units/experimental_spider/experimental_tank_turret2.png",
     "spider-artillery-base": "assets/units/experimental_spider/spider_turret_base.png",
+    "spider-fabricator": "assets/units/modular_spider/fabricatorT1.png",
+    "spider-fabricator-t2": "assets/units/modular_spider/fabricatorT2.png",
+    "spider-shield": "assets/units/modular_spider/shieldGen.png",
+    "spider-speed": "assets/units/modular_spider/speed.png",
     "modular-spider-body": "assets/units/modular_spider/body.png",
     "modular-spider-dead": "assets/units/modular_spider/body_dead.png",
     "modular-spider-overlay": "assets/units/modular_spider/body_ui.png",
@@ -6590,6 +6594,38 @@
       "sha256": "abd56bae4fc7fb502d1f4d46f6b72555f712c210f4e1969c21576f49b266555a",
       "width": 20,
       "height": 19
+    },
+    {
+      "id": "spider-fabricator",
+      "path": "assets/units/modular_spider/fabricatorT1.png",
+      "bytes": 508,
+      "sha256": "a002c3ed8c17ce7fa4088fcbd489e696ebcc96e15b87effc150733c6e831c10b",
+      "width": 20,
+      "height": 19
+    },
+    {
+      "id": "spider-fabricator-t2",
+      "path": "assets/units/modular_spider/fabricatorT2.png",
+      "bytes": 523,
+      "sha256": "c1553d153f0696f332ad6733878db1db456a13e96037640ee8efb25fc0bc5b05",
+      "width": 20,
+      "height": 19
+    },
+    {
+      "id": "spider-shield",
+      "path": "assets/units/modular_spider/shieldGen.png",
+      "bytes": 590,
+      "sha256": "71ed5db04b19cb2d6c0ee0bd4810439935a78532231b182c8a0ffeb265afb481",
+      "width": 22,
+      "height": 21
+    },
+    {
+      "id": "spider-speed",
+      "path": "assets/units/modular_spider/speed.png",
+      "bytes": 712,
+      "sha256": "c2319a23b1b6416c810b534fa9ecfc421cbe5b21783c0d50283c83d88d07fb4c",
+      "width": 22,
+      "height": 21
     },
     {
       "id": "modular-spider-body",
@@ -7502,6 +7538,38 @@
       "target": [20, 19],
       "frames": 1
     },
+    "spider-fabricator": {
+      "file": "units/spider-fabricator.png",
+      "operation": "crop",
+      "source": "spider-fabricator",
+      "rect": [0, 0, 20, 19],
+      "target": [20, 19],
+      "frames": 1
+    },
+    "spider-fabricator-t2": {
+      "file": "units/spider-fabricator-t2.png",
+      "operation": "crop",
+      "source": "spider-fabricator-t2",
+      "rect": [0, 0, 20, 19],
+      "target": [20, 19],
+      "frames": 1
+    },
+    "spider-shield": {
+      "file": "units/spider-shield.png",
+      "operation": "crop",
+      "source": "spider-shield",
+      "rect": [0, 0, 22, 21],
+      "target": [22, 21],
+      "frames": 1
+    },
+    "spider-speed": {
+      "file": "units/spider-speed.png",
+      "operation": "crop",
+      "source": "spider-speed",
+      "rect": [0, 0, 22, 21],
+      "target": [22, 21],
+      "frames": 1
+    },
     "modular-spider-body": {
       "file": "units/modular-spider-body.png",
       "operation": "crop",
@@ -8270,6 +8338,21 @@
       "weaponTurrets": {
         "mainCannonBase": "spider-artillery-base"
       }
+    },
+    "modularSpider_fabricator": {
+      "body": "spider-fabricator"
+    },
+    "modularSpider_fabricatorT2": {
+      "body": "spider-fabricator-t2"
+    },
+    "modularSpider_shieldGen": {
+      "body": "spider-shield"
+    },
+    "modularSpider_speedIncomplete": {
+      "body": "spider-speed"
+    },
+    "modularSpider_speed": {
+      "body": "spider-speed"
     },
     "modularSpider_gunturret": {
       "body": "engineer-body",

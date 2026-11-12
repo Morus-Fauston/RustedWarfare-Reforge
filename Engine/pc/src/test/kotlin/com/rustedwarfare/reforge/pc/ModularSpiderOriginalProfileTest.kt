@@ -3,6 +3,26 @@ package com.rustedwarfare.reforge.pc
 import kotlin.test.*
 
 class ModularSpiderOriginalProfileTest {
+    @Test fun utility_modules_resolve_to_their_qualified_original_bodies() {
+        val mapped = assertNotNull(PcOriginalResourceProfile.bundled().images.mappedImages)
+        val bindings = mapped.json.get("unitBindings")
+        val pictures = mapOf(
+            "fabricator" to ("fabricatorT1.png" to listOf(20, 19)),
+            "fabricatorT2" to ("fabricatorT2.png" to listOf(20, 19)),
+            "shieldGen" to ("shieldGen.png" to listOf(22, 21)),
+            "speedIncomplete" to ("speed.png" to listOf(22, 21)),
+            "speed" to ("speed.png" to listOf(22, 21)),
+        )
+        for ((form, expected) in pictures) {
+            val binding = assertNotNull(bindings.get("modularSpider_$form"))
+            assertEquals(setOf("body"), binding.map { it.name }.toSet())
+            val recipe = mapped.recipes.getValue(binding.getString("body"))
+            val source = mapped.json.get("sources").single { it.getString("id") == recipe.getString("source") }
+            assertEquals("assets/units/modular_spider/${expected.first}", source.getString("path"))
+            assertEquals(expected.second, recipe.get("target").asIntArray().toList())
+        }
+    }
+
     @Test fun the_spider_chassis_gun_and_slot_overlay_resolve_to_qualified_pc_resources() {
         val resources = PcOriginalResourceProfile.bundled()
         val mapped = assertNotNull(resources.images.mappedImages)

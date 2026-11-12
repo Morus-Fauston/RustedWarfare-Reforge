@@ -16,6 +16,11 @@ data class AttachmentUpgrade(val action: String, val targetTypeId: String, val c
 
 data class AttachmentRemoval(val targetTypeId: String, val refund: Long, val ticks: Float)
 
+sealed interface AttachmentAutomaticAction {
+    data class RestoreParentShield(val amount: Float) : AttachmentAutomaticAction
+    data class ConvertWhenBuilt(val targetTypeId: String) : AttachmentAutomaticAction
+}
+
 class AttachmentModuleProfile(
     val empty: Boolean,
     val selfBuildRate: Float = 0f,
@@ -23,6 +28,7 @@ class AttachmentModuleProfile(
     val cancel: AttachmentRemoval? = null,
     val reclaim: AttachmentRemoval? = null,
     upgrades: List<AttachmentUpgrade> = emptyList(),
+    val automaticAction: AttachmentAutomaticAction? = null,
 ) {
     val installs: List<AttachmentInstall> = Collections.unmodifiableList(ArrayList(installs))
     val upgrades: List<AttachmentUpgrade> = Collections.unmodifiableList(ArrayList(upgrades))
@@ -36,12 +42,20 @@ internal object ModularSpiderRules {
     const val ANTI_AIR = "modularSpider_antiair"
     const val LIGHTNING = "modularSpider_lightning"
     const val ARTILLERY = "modularSpider_artillery"
+    const val FABRICATOR = "modularSpider_fabricator"
+    const val FABRICATOR_T2 = "modularSpider_fabricatorT2"
+    const val SHIELD = "modularSpider_shieldGen"
+    const val SPEED_INCOMPLETE = "modularSpider_speedIncomplete"
+    const val SPEED = "modularSpider_speed"
     val installs = listOf(
         AttachmentInstall("buildGun", GUN, 2000L),
         AttachmentInstall("buildSmallLaser", LASER, 700L),
         AttachmentInstall("buildAntiair", ANTI_AIR, 2000L),
         AttachmentInstall("buildLightning", LIGHTNING, 6000L),
         AttachmentInstall("buildArtillery", ARTILLERY, 5000L),
+        AttachmentInstall("buildFabricator", FABRICATOR, 3000L),
+        AttachmentInstall("buildShieldGen", SHIELD, 6000L),
+        AttachmentInstall("buildSpeed", SPEED_INCOMPLETE, 6000L),
     )
     val slots = listOf(
         AttachmentSlotDefinition(1, -11.0, 32.0, 0.0, EMPTY),
@@ -62,21 +76,30 @@ internal object ModularSpiderRules {
         val module = unit.attachmentModule ?: return false
         if (unit.movement != slotMovement || unit.attachmentLayout != null || unit.transport != null) return false
         if (unit.id == EMPTY) return module.empty && unit.radius == 20.0 && unit.maximumHealth == 3000.0 &&
-            unit.combat == null && module.installs == installs && module.upgrades.isEmpty() &&
+            unit.combat == null && unit.income == null && module.automaticAction == null &&
+            module.installs == installs && module.upgrades.isEmpty() &&
             module.selfBuildRate == 0f && module.cancel == null && module.reclaim == null
+        val utility = ModularSpiderUtilityForms.byId[unit.id]
+        if (utility != null) return unit.radius == 15.0 && unit.maximumHealth == 3000.0 &&
+            unit.combat == null && unit.shield == null && unit.income == utility.income &&
+            matches(module, utility.module)
         val form = ModularSpiderWeaponForms.byId[unit.id] ?: return false
         val combat = unit.combat ?: return false
-        val expected = form.module
         val extraImages = form.additionalTurretDimensions.keys.associateWith { name ->
             combat.namedWeapons?.byName?.get(name)?.imagePath ?: return false
         }
-        return !module.empty && unit.radius == 15.0 && unit.maximumHealth == form.health &&
+        return unit.radius == 15.0 && unit.maximumHealth == form.health && unit.income == null &&
             combat.turretImagePath?.let { combat == form.combat(it, extraImages) } == true &&
-            module.installs.isEmpty() && module.selfBuildRate == expected.selfBuildRate &&
-            module.cancel == expected.cancel && module.reclaim == expected.reclaim && module.upgrades == expected.upgrades
+            matches(module, form.module)
     }
 
-    fun isModuleId(id: String): Boolean = id == EMPTY || id in ModularSpiderWeaponForms.byId
+    private fun matches(module: AttachmentModuleProfile, expected: AttachmentModuleProfile): Boolean =
+        !module.empty && module.installs.isEmpty() && module.selfBuildRate == expected.selfBuildRate &&
+            module.cancel == expected.cancel && module.reclaim == expected.reclaim &&
+            module.upgrades == expected.upgrades && module.automaticAction == expected.automaticAction
+
+    fun isModuleId(id: String): Boolean = id == EMPTY || id in ModularSpiderWeaponForms.byId ||
+        id in ModularSpiderUtilityForms.byId
 
     /** Check after all declarations are available, including cross-package replacements. */
     data class Reference(val section: String, val field: String, val target: String)
@@ -89,7 +112,10 @@ internal object ModularSpiderRules {
         if (spawn != null) return Reference("attachment_slot${spawn.number}", "onCreateSpawnUnitOf", spawn.initialTypeId)
         val module = unit.attachmentModule ?: return null
         val conversions = module.installs.map { Reference("action_${it.action}", "convertTo", it.targetTypeId) } +
-            module.upgrades.map { Reference("action_${it.action}", "convertTo", it.targetTypeId) }
+            module.upgrades.map { Reference("action_${it.action}", "convertTo", it.targetTypeId) } +
+            listOfNotNull((module.automaticAction as? AttachmentAutomaticAction.ConvertWhenBuilt)?.let {
+                Reference("hiddenAction_speedFinished", "convertTo", it.targetTypeId)
+            })
         return conversions.firstOrNull { !available(it.target, empty = false) }
             ?: listOf("cancel" to module.cancel, "reclaim" to module.reclaim).firstNotNullOfOrNull { (action, removal) ->
                 removal?.takeUnless { available(it.targetTypeId, empty = true) }

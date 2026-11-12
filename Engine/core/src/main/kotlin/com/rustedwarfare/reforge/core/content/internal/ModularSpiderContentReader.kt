@@ -4,7 +4,7 @@ import com.rustedwarfare.reforge.core.content.*
 import java.nio.file.Path
 import java.util.concurrent.CancellationException
 
-/** Reads the effective opening chassis and qualified weapon forms through the shared source coordinator. */
+/** Reads the effective opening chassis and qualified modules through the shared source coordinator. */
 internal object ModularSpiderContentReader {
     private val empty = ModularSpiderRules.EMPTY
     private val legOffsets = listOf(
@@ -42,7 +42,8 @@ internal object ModularSpiderContentReader {
         "action_${install.action}" to mapOf("convertTo" to install.targetTypeId, "price" to install.cost.toString(),
             "buildSpeed" to "0", "setBuilt" to "0")
     }
-    private val profiles = listOf(chassis, emptySlot) + ModularSpiderWeaponForms.byId.values.map { it.sections }
+    private val profiles = listOf(chassis, emptySlot) + ModularSpiderWeaponForms.byId.values.map { it.sections } +
+        ModularSpiderUtilityForms.byId.values.map { it.sections }
     private val images = mapOf("graphics" to setOf("image", "image_shadow", "image_wreak", "image_turret", "image_slotUi")) +
         legs.keys.associateWith { setOf("image_leg", "image_foot") } +
         ModularSpiderWeaponForms.byId.values.flatMap { it.additionalTurretDimensions.keys }
@@ -50,9 +51,10 @@ internal object ModularSpiderContentReader {
     private val fields = profiles.flatMap { it.entries }.groupBy({ it.key }, { it.value.keys })
         .mapValues { (section, declared) -> declared.flatten().toSet() + images[section].orEmpty() }
     private val references = setOf("onCreateSpawnUnitOf", "convertTo", "projectile", "attachedTo", "linkDelayWithTurret")
-    private val text = setOf("name", "class", "movementType", "shoot_sound") + references + images.values.flatten()
+    private val text = setOf("name", "class", "movementType", "shoot_sound", "autoTrigger", "takeResources") +
+        references + images.values.flatten()
     private val flags = profiles.flatMap { it.values }.flatMap { it.entries }
-        .filter { it.value == "true" || it.value == "false" }.map { it.key }.toSet()
+        .filter { it.key !in text && (it.value == "true" || it.value == "false") }.map { it.key }.toSet()
     private val schema = UnitContentSchema(fields, fields.values.flatten().toSet() - text - flags,
         flags, text, dynamicWeapons = false, timeFieldLocations = setOf("attack" to "shootDelay"))
 
@@ -62,16 +64,17 @@ internal object ModularSpiderContentReader {
                 path, section, field, "Required modular spider field")
             val name = value("core", "name")
             val form = ModularSpiderWeaponForms.byId[name]
+            val utility = ModularSpiderUtilityForms.byId[name]
             val expected = when (name) {
                 ModularSpiderRules.ID -> chassis
                 empty -> emptySlot
-                else -> form?.sections ?: reject(ContentErrorCode.UNSUPPORTED_FEATURE, path, "core", "name", name,
+                else -> form?.sections ?: utility?.sections ?: reject(ContentErrorCode.UNSUPPORTED_FEATURE, path, "core", "name", name,
                     "Unknown modular spider form")
             }
-            val graphicFields = when (name) {
-                ModularSpiderRules.ID -> images.getValue("graphics")
-                empty -> setOf("image")
-                else -> setOf("image", "image_turret")
+            val graphicFields = when {
+                name == ModularSpiderRules.ID -> images.getValue("graphics")
+                form != null -> setOf("image", "image_turret")
+                else -> setOf("image")
             }
             for ((section, values) in content.values) {
                 val permitted = expected[section]?.keys.orEmpty() +
@@ -103,8 +106,8 @@ internal object ModularSpiderContentReader {
                 }
                 return png
             }
-            when (name) {
-                ModularSpiderRules.ID -> {
+            when {
+                name == ModularSpiderRules.ID -> {
                     val legs = legOffsets.mapIndexed { index, (x, y, attachX, attachY) ->
                         val section = "leg_${index + 1}"
                         MechLegDefinition(x.toDouble(), y.toDouble(), attachX.toDouble(), attachY.toDouble(),
@@ -129,10 +132,14 @@ internal object ModularSpiderContentReader {
                         transportSlots = 14, shadowImagePath = image("graphics", "image_shadow", 81, 113),
                         attachmentLayout = AttachmentLayout(ModularSpiderRules.slots, image("graphics", "image_slotUi", 82, 114)))
                 }
-                empty -> UnitDefinition(name, "CustomUnitMetadata", 20.0, 20.0, 1, image("graphics", "image", 1, 1),
+                name == empty -> UnitDefinition(name, "CustomUnitMetadata", 20.0, 20.0, 1, image("graphics", "image", 1, 1),
                     1.0, ModularSpiderRules.slotMovement, emptySet(), fogOfWarSightRange = 5,
                     durability = DurabilityProfile(3000.0, null), selfRegenRate = 3000f,
                     attachmentModule = AttachmentModuleProfile(empty = true, installs = ModularSpiderRules.installs))
+                utility != null -> UnitDefinition(name, "CustomUnitMetadata", 15.0, 12.0, 1,
+                    image("graphics", "image", utility.width, utility.height), 1.0, ModularSpiderRules.slotMovement,
+                    emptySet(), fogOfWarSightRange = 5, durability = DurabilityProfile(3000.0, null),
+                    selfRegenRate = .2f, income = utility.income, attachmentModule = utility.module)
                 else -> {
                     checkNotNull(form)
                     val turret = image("graphics", "image_turret", form.width, form.height)

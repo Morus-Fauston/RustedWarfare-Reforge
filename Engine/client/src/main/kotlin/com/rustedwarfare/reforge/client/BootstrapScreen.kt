@@ -1305,9 +1305,10 @@ class BootstrapScreen(
         depthButton.setBounds(unloadBounds.x, unloadBounds.y, unloadBounds.width, unloadBounds.height)
         depthButton.isDisabled = menu?.depthAction == null && menu?.flightAction?.available != true && menu?.transportAction?.available != true
         depthButton.setText(menu?.depthAction?.title ?: menu?.flightAction?.title ?: menu?.transportAction?.title ?: "Surface")
+        val spiderPurchaseMenu = menu?.unitActions?.any { it.name == "buildFabricator" } == true
         customActionButtons.forEach { (name, actor) ->
             val action = menu?.unitActions?.singleOrNull { it.name == name }
-            val bounds = NativeActionPanel.customBounds(name, naval)
+            val bounds = NativeActionPanel.customBounds(name, naval, spiderPurchaseMenu)
             actor.setBounds(bounds.x, bounds.y, bounds.width, bounds.height)
             actor.isVisible = current != null && action != null
             actor.isDisabled = action?.available != true && action?.cancellable != true
@@ -1316,7 +1317,10 @@ class BootstrapScreen(
                 (action?.cooldownRemaining ?: 0) > 0 -> String.format(Locale.ROOT, "\n%.1fs", action!!.cooldownRemaining / 1000f)
                 else -> ""
             }
-            actor.setText(action?.title.orEmpty() + status)
+            val title = action?.title.orEmpty()
+            val compact = spiderPurchaseMenu && bounds.height == 24f
+            actor.label.setFontScale(if (compact && status.isNotEmpty()) .8f else 1f)
+            actor.setText((if (compact) title.removePrefix("Add ") else title) + status)
         }
         menu?.unitActions?.singleOrNull { it.name == customActionHover }?.let { action ->
             setUnitIcon(nativeTooltipIcon, action.iconTypeId ?: selected?.typeId)
@@ -1328,12 +1332,20 @@ class BootstrapScreen(
         }
         val economicPanel = nativePanel && (current?.hasEconomicConstruction == true || constructionCards.size > 4 ||
             menu?.canMaintain == true && constructionCards.size > 2 || productionCards.size + factoryUpgradeCards.size > 4)
-        val extendedSlots = menu?.unitActions?.any { it.name == "buildArtillery" } == true
-        val densePanel = economicPanel || extendedSlots
-        stopButton.setY(if (densePanel) 112f else if (nativePanel) 144f else 168f)
-        patrolButton.setY(if (densePanel) 112f else if (nativePanel) 144f else 168f)
-        startButton.setY(if (densePanel) 64f else if (nativePanel || launch.canEdit) 96f else 120f)
-        exitButton.setY(if (densePanel) 16f else if (nativePanel) 48f else 72f)
+        val stopY = when {
+            spiderPurchaseMenu -> NativeActionPanel.spiderPurchaseStopY
+            economicPanel -> 112f
+            nativePanel -> 144f
+            else -> 168f
+        }
+        stopButton.setY(stopY)
+        patrolButton.setY(stopY)
+        val reopenBounds = if (spiderPurchaseMenu) NativeActionPanel.spiderPurchaseReopen
+            else NativeCardBounds(752f, if (economicPanel) 64f else if (nativePanel || launch.canEdit) 96f else 120f, 176f, 40f)
+        val exitBounds = if (spiderPurchaseMenu) NativeActionPanel.spiderPurchaseExit
+            else NativeCardBounds(752f, if (economicPanel) 16f else if (nativePanel) 48f else 72f, 176f, 40f)
+        startButton.setBounds(reopenBounds.x, reopenBounds.y, reopenBounds.width, reopenBounds.height)
+        exitButton.setBounds(exitBounds.x, exitBounds.y, exitBounds.width, exitBounds.height)
         stopButton.isVisible = current != null
         patrolButton.isVisible = current != null && !touchControls
         patrolButton.isDisabled = current?.canPatrol != true

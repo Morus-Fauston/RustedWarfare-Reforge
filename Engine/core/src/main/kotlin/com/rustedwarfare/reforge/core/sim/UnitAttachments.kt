@@ -1,10 +1,12 @@
 package com.rustedwarfare.reforge.core.sim
 
+import com.rustedwarfare.reforge.core.content.AttachmentAutomaticAction
 import com.rustedwarfare.reforge.core.content.AttachmentSlotDefinition
 import com.rustedwarfare.reforge.core.content.AttachmentInstall
 import com.rustedwarfare.reforge.core.content.AttachmentRemoval
 import com.rustedwarfare.reforge.core.content.AttachmentUpgrade
 import com.rustedwarfare.reforge.core.content.ModularSpiderRules
+import com.rustedwarfare.reforge.core.content.ModularSpiderWeaponForms
 
 internal data class AttachmentBinding(val parentId: String, val slot: AttachmentSlotDefinition)
 
@@ -28,6 +30,7 @@ internal sealed interface AttachmentOrder {
 
 /** Initial creation and pose synchronization for real units attached to a chassis. */
 internal object UnitAttachments {
+    private const val AUTOMATIC_COOLDOWN = 60f
     const val UNIT_PREFIX = "attached:"
     const val OPENING_HEIGHT = 170.0
     private const val OPENING_FALL_SPEED = 1.5f
@@ -199,6 +202,27 @@ internal object UnitAttachments {
         }
     }
 
+    fun advanceAutomatic(state: StepState, input: Scenario, parent: MutableUnit, child: MutableUnit, delta: Float) {
+        val action = child.definition.attachmentModule?.automaticAction ?: return
+        child.attachmentAutomaticCooldown = maxOf(0f, child.attachmentAutomaticCooldown - delta)
+        if (child.attachmentAutomaticCooldown > 0f) return
+        child.attachmentAutomaticCooldown = AUTOMATIC_COOLDOWN
+        when (action) {
+            is AttachmentAutomaticAction.RestoreParentShield -> {
+                val shield = checkNotNull(parent.definition.shield)
+                parent.shield = minOf(shield.maximum, parent.shield + action.amount)
+            }
+            is AttachmentAutomaticAction.ConvertWhenBuilt -> {
+                val reclaim = child.attachmentOrder as? AttachmentOrder.Reclaim
+                convert(input, child, action.targetTypeId, child.constructionProgress)
+                if (reclaim != null && child.definition.attachmentModule?.reclaim == reclaim.action) {
+                    child.attachmentOrder = reclaim
+                }
+                completed(state, parent, child, "attachment-module-activated")
+            }
+        }
+    }
+
     private fun remove(state: StepState, input: Scenario, parent: MutableUnit, child: MutableUnit, action: AttachmentRemoval) {
         state.productionLedger = checkNotNull(state.productionLedger).refund(child.ownerPlayerId, action.refund)
         convert(input, child, action.targetTypeId, 1f)
@@ -242,8 +266,13 @@ internal object UnitAttachments {
 
     private fun completed(state: StepState, parent: MutableUnit, child: MutableUnit, event: String) {
         val layout = checkNotNull(parent.definition.attachmentLayout)
-        parent.attachmentMoveSpeed = .4.takeIf {
-            layout.slots.any { slot -> state.units[childId(parent, slot.number)]?.definition?.combat != null }
+        fun attached(slot: AttachmentSlotDefinition): MutableUnit? = state.units[childId(parent, slot.number)]
+        parent.attachmentMoveSpeed = when {
+            layout.slots.any { slot -> attached(slot)?.let {
+                it.typeId == ModularSpiderRules.SPEED && BuildingWork.isReady(it)
+            } == true } -> .7
+            layout.slots.any { slot -> attached(slot)?.typeId in ModularSpiderWeaponForms.byId } -> .4
+            else -> null
         }
         state.pendingEvents += Event(event, child.unitId)
     }

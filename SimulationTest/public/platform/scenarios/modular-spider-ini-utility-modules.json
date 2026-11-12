@@ -1,0 +1,456 @@
+{
+  "schemaVersion": 1,
+  "scenarioId": "modular-spider-ini-utility-modules",
+  "inputs": "../../inputs/modular-spider-start/ini",
+  "contentPack": {
+    "directory": "opening-package",
+    "unitId": "modularSpider"
+  },
+  "intents": [
+    {
+      "intentId": "settle-opening",
+      "kind": "select",
+      "waitSteps": 100,
+      "position": {
+        "x": 40,
+        "y": 40
+      }
+    },
+    {
+      "intentId": "select-spider",
+      "kind": "select",
+      "waitSteps": 0,
+      "position": {
+        "x": 190,
+        "y": 150
+      }
+    },
+    {
+      "intentId": "leave-enemy-range",
+      "kind": "move",
+      "waitSteps": 240,
+      "position": {
+        "x": 80,
+        "y": 150
+      }
+    },
+    {
+      "intentId": "select-fabricator",
+      "kind": "unit-action",
+      "waitSteps": 0,
+      "actionName": "selectSlot1"
+    },
+    {
+      "intentId": "buy-fabricator",
+      "kind": "unit-action",
+      "waitSteps": 1,
+      "actionName": "buildFabricator"
+    },
+    {
+      "intentId": "select-weapon",
+      "kind": "unit-action",
+      "waitSteps": 0,
+      "actionName": "selectSlot3"
+    },
+    {
+      "intentId": "buy-gun",
+      "kind": "unit-action",
+      "waitSteps": 12,
+      "actionName": "buildGun"
+    },
+    {
+      "intentId": "cancel-gun",
+      "kind": "unit-action",
+      "waitSteps": 130,
+      "actionName": "cancel"
+    },
+    {
+      "intentId": "earn-second-fabricator-1",
+      "kind": "stop",
+      "waitSteps": 600
+    },
+    {
+      "intentId": "earn-second-fabricator-2",
+      "kind": "stop",
+      "waitSteps": 600
+    },
+    {
+      "intentId": "select-second-fabricator",
+      "kind": "unit-action",
+      "waitSteps": 0,
+      "actionName": "selectSlot2"
+    },
+    {
+      "intentId": "buy-second-fabricator",
+      "kind": "unit-action",
+      "waitSteps": 1,
+      "actionName": "buildFabricator"
+    },
+    {
+      "intentId": "earn-upgrade-1",
+      "kind": "stop",
+      "waitSteps": 600
+    },
+    {
+      "intentId": "earn-upgrade-2",
+      "kind": "stop",
+      "waitSteps": 600
+    },
+    {
+      "intentId": "earn-upgrade-3",
+      "kind": "stop",
+      "waitSteps": 600
+    },
+    {
+      "intentId": "earn-upgrade-4",
+      "kind": "stop",
+      "waitSteps": 600
+    },
+    {
+      "intentId": "earn-upgrade-5",
+      "kind": "stop",
+      "waitSteps": 600
+    },
+    {
+      "intentId": "earn-upgrade-6",
+      "kind": "stop",
+      "waitSteps": 600
+    },
+    {
+      "intentId": "earn-upgrade-7",
+      "kind": "stop",
+      "waitSteps": 600
+    },
+    {
+      "intentId": "earn-upgrade-8",
+      "kind": "stop",
+      "waitSteps": 600
+    },
+    {
+      "intentId": "earn-upgrade-9",
+      "kind": "stop",
+      "waitSteps": 600
+    },
+    {
+      "intentId": "reselect-fabricator",
+      "kind": "unit-action",
+      "waitSteps": 0,
+      "actionName": "selectSlot1"
+    },
+    {
+      "intentId": "upgrade-fabricator",
+      "kind": "unit-action",
+      "waitSteps": 600,
+      "actionName": "upgradeT2"
+    },
+    {
+      "intentId": "earn-shield-1",
+      "kind": "stop",
+      "waitSteps": 600
+    },
+    {
+      "intentId": "earn-shield-2",
+      "kind": "stop",
+      "waitSteps": 600
+    },
+    {
+      "intentId": "earn-shield-3",
+      "kind": "stop",
+      "waitSteps": 600
+    },
+    {
+      "intentId": "earn-shield-4",
+      "kind": "stop",
+      "waitSteps": 600
+    },
+    {
+      "intentId": "earn-shield-5",
+      "kind": "stop",
+      "waitSteps": 600
+    },
+    {
+      "intentId": "earn-shield-6",
+      "kind": "stop",
+      "waitSteps": 600
+    },
+    {
+      "intentId": "earn-shield-7",
+      "kind": "stop",
+      "waitSteps": 600
+    },
+    {
+      "intentId": "earn-shield-8",
+      "kind": "stop",
+      "waitSteps": 600
+    },
+    {
+      "intentId": "select-shield",
+      "kind": "unit-action",
+      "waitSteps": 0,
+      "actionName": "selectSlot4"
+    },
+    {
+      "intentId": "buy-shield",
+      "kind": "unit-action",
+      "waitSteps": 600,
+      "actionName": "buildShieldGen"
+    },
+    {
+      "intentId": "finish-shield",
+      "kind": "stop",
+      "waitSteps": 450
+    },
+    {
+      "intentId": "enter-enemy-range",
+      "kind": "move",
+      "waitSteps": 600,
+      "position": {
+        "x": 395,
+        "y": 150
+      }
+    },
+    {
+      "intentId": "sustain-shield-damage",
+      "kind": "stop",
+      "waitSteps": 120
+    },
+    {
+      "intentId": "leave-enemy-fire",
+      "kind": "move",
+      "waitSteps": 600,
+      "position": {
+        "x": 124,
+        "y": 150
+      }
+    },
+    {
+      "intentId": "settle-outside-fire",
+      "kind": "stop",
+      "waitSteps": 20
+    },
+    {
+      "intentId": "reselect-weapon",
+      "kind": "unit-action",
+      "waitSteps": 0,
+      "actionName": "selectSlot3"
+    },
+    {
+      "intentId": "buy-laser",
+      "kind": "unit-action",
+      "waitSteps": 120,
+      "actionName": "buildSmallLaser"
+    },
+    {
+      "intentId": "move-with-weapon",
+      "kind": "move",
+      "waitSteps": 480,
+      "position": {
+        "x": 250,
+        "y": 150
+      }
+    },
+    {
+      "intentId": "earn-first-speed-1",
+      "kind": "stop",
+      "waitSteps": 600
+    },
+    {
+      "intentId": "earn-first-speed-2",
+      "kind": "stop",
+      "waitSteps": 600
+    },
+    {
+      "intentId": "earn-first-speed-3",
+      "kind": "stop",
+      "waitSteps": 600
+    },
+    {
+      "intentId": "earn-first-speed-4",
+      "kind": "stop",
+      "waitSteps": 600
+    },
+    {
+      "intentId": "earn-first-speed-5",
+      "kind": "stop",
+      "waitSteps": 600
+    },
+    {
+      "intentId": "earn-first-speed-6",
+      "kind": "stop",
+      "waitSteps": 600
+    },
+    {
+      "intentId": "select-first-speed",
+      "kind": "unit-action",
+      "waitSteps": 0,
+      "actionName": "selectSlot5"
+    },
+    {
+      "intentId": "buy-first-speed",
+      "kind": "unit-action",
+      "waitSteps": 600,
+      "actionName": "buildSpeed"
+    },
+    {
+      "intentId": "finish-first-speed",
+      "kind": "stop",
+      "waitSteps": 450
+    },
+    {
+      "intentId": "move-with-one-speed",
+      "kind": "move",
+      "waitSteps": 380,
+      "position": {
+        "x": 70,
+        "y": 150
+      }
+    },
+    {
+      "intentId": "earn-second-speed-1",
+      "kind": "stop",
+      "waitSteps": 600
+    },
+    {
+      "intentId": "earn-second-speed-2",
+      "kind": "stop",
+      "waitSteps": 600
+    },
+    {
+      "intentId": "earn-second-speed-3",
+      "kind": "stop",
+      "waitSteps": 600
+    },
+    {
+      "intentId": "earn-second-speed-4",
+      "kind": "stop",
+      "waitSteps": 600
+    },
+    {
+      "intentId": "earn-second-speed-5",
+      "kind": "stop",
+      "waitSteps": 600
+    },
+    {
+      "intentId": "earn-second-speed-6",
+      "kind": "stop",
+      "waitSteps": 600
+    },
+    {
+      "intentId": "earn-second-speed-7",
+      "kind": "stop",
+      "waitSteps": 600
+    },
+    {
+      "intentId": "earn-second-speed-8",
+      "kind": "stop",
+      "waitSteps": 600
+    },
+    {
+      "intentId": "select-second-speed",
+      "kind": "unit-action",
+      "waitSteps": 0,
+      "actionName": "selectSlot6"
+    },
+    {
+      "intentId": "buy-second-speed",
+      "kind": "unit-action",
+      "waitSteps": 600,
+      "actionName": "buildSpeed"
+    },
+    {
+      "intentId": "finish-second-speed",
+      "kind": "stop",
+      "waitSteps": 450
+    },
+    {
+      "intentId": "move-with-two-speeds",
+      "kind": "move",
+      "waitSteps": 380,
+      "position": {
+        "x": 245,
+        "y": 150
+      }
+    },
+    {
+      "intentId": "reclaim-second-speed",
+      "kind": "unit-action",
+      "waitSteps": 180,
+      "actionName": "reclaim"
+    },
+    {
+      "intentId": "move-with-remaining-speed",
+      "kind": "move",
+      "waitSteps": 380,
+      "position": {
+        "x": 75,
+        "y": 150
+      }
+    },
+    {
+      "intentId": "reselect-first-speed",
+      "kind": "unit-action",
+      "waitSteps": 0,
+      "actionName": "selectSlot5"
+    },
+    {
+      "intentId": "reclaim-first-speed",
+      "kind": "unit-action",
+      "waitSteps": 180,
+      "actionName": "reclaim"
+    },
+    {
+      "intentId": "move-after-last-speed",
+      "kind": "move",
+      "waitSteps": 480,
+      "position": {
+        "x": 240,
+        "y": 150
+      }
+    },
+    {
+      "intentId": "select-laser-for-reclaim",
+      "kind": "unit-action",
+      "waitSteps": 0,
+      "actionName": "selectSlot3"
+    },
+    {
+      "intentId": "reclaim-laser",
+      "kind": "unit-action",
+      "waitSteps": 180,
+      "actionName": "reclaim"
+    },
+    {
+      "intentId": "move-without-speed-or-weapon",
+      "kind": "move",
+      "waitSteps": 350,
+      "position": {
+        "x": 124,
+        "y": 150
+      }
+    },
+    {
+      "intentId": "select-shield-for-reclaim",
+      "kind": "unit-action",
+      "waitSteps": 0,
+      "actionName": "selectSlot4"
+    },
+    {
+      "intentId": "reclaim-shield",
+      "kind": "unit-action",
+      "waitSteps": 180,
+      "actionName": "reclaim"
+    },
+    {
+      "intentId": "select-fabricator-for-reclaim",
+      "kind": "unit-action",
+      "waitSteps": 0,
+      "actionName": "selectSlot1"
+    },
+    {
+      "intentId": "reclaim-fabricator",
+      "kind": "unit-action",
+      "waitSteps": 220,
+      "actionName": "reclaim"
+    }
+  ]
+}

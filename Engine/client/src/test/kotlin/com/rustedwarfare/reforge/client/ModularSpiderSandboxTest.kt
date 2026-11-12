@@ -33,16 +33,27 @@ class ModularSpiderSandboxTest {
         SandboxSession(scene).use { session ->
             repeat(100) { session.tick() }
             session.select(session.observation.units.single { it.typeId == "modularSpider" }.position)
+            fun purchaseMenu() = session.actionMenu.unitActions.any { it.name == "buildFabricator" }
             fun bounds() {
-                val cards = session.actionMenu.unitActions.map { NativeActionPanel.customBounds(it.name, naval = false) }
-                assertTrue(cards.all { it.x >= 752f && it.x + it.width <= 928f && it.y >= 153f && it.y + it.height <= 340f })
+                val cards = session.actionMenu.unitActions.map {
+                    NativeActionPanel.customBounds(it.name, naval = false, spiderPurchaseMenu = purchaseMenu())
+                }
+                assertTrue(cards.all { it.x >= 752f && it.x + it.width <= 928f && it.y >= 111f && it.y + it.height <= 340f })
+                if (purchaseMenu()) {
+                    assertTrue(cards.all { it.y >= NativeActionPanel.spiderPurchaseStopY + 40f })
+                    val reopen = NativeActionPanel.spiderPurchaseReopen
+                    val exit = NativeActionPanel.spiderPurchaseExit
+                    assertTrue(reopen.y + reopen.height <= NativeActionPanel.spiderPurchaseStopY)
+                    assertTrue(exit.y + exit.height <= NativeActionPanel.spiderPurchaseStopY)
+                    assertTrue(reopen.x + reopen.width <= exit.x)
+                }
                 for ((index, a) in cards.withIndex()) for (b in cards.drop(index + 1)) {
                     assertTrue(a.x + a.width <= b.x || b.x + b.width <= a.x ||
                         a.y + a.height <= b.y || b.y + b.height <= a.y, "Overlapping attachment cards: $a and $b")
                 }
             }
             fun click(name: String) {
-                val bounds = NativeActionPanel.customActions.getValue(name)
+                val bounds = NativeActionPanel.customBounds(name, naval = false, spiderPurchaseMenu = purchaseMenu())
                 val actor = Actor().apply { setSize(bounds.width, bounds.height) }
                 val event = InputEvent().also { it.listenerActor = actor }
                 val input = CustomUnitActionButtonInput({ session }, { true }, name)
@@ -51,11 +62,14 @@ class ModularSpiderSandboxTest {
             }
             bounds()
             click("selectSlot1")
-            assertEquals(listOf("Add Gun T1", "Add Laser", "Add AA", "Add Lightning", "Add Artillery"), session.actionMenu.unitActions
+            assertEquals(listOf("Add Gun T1", "Add Laser", "Add AA", "Add Lightning", "Add Artillery",
+                "Add Fabricator", "Add Shield", "Add Speed"), session.actionMenu.unitActions
                 .filter { it.name.startsWith("build") }.map { it.title })
             bounds()
             val balance = checkNotNull(session.observation.balance)
             assertFalse(session.actionMenu.unitActions.single { it.name == "buildLightning" }.available)
+            assertFalse(session.actionMenu.unitActions.single { it.name == "buildShieldGen" }.available)
+            assertFalse(session.actionMenu.unitActions.single { it.name == "buildSpeed" }.available)
             click("buildArtillery")
             assertEquals(balance - 5000, session.observation.balance)
             session.tick()
@@ -65,6 +79,14 @@ class ModularSpiderSandboxTest {
             assertEquals(balance, session.observation.balance)
             click("selectSlotBuild")
             assertTrue(session.actionMenu.unitActions.none { it.name == "buildArtillery" })
+            click("selectSlot2")
+            click("buildFabricator")
+            assertEquals(balance - 3000, session.observation.balance)
+            session.tick()
+            val upgrade = session.actionMenu.unitActions.single { it.name == "upgradeT2" }
+            assertEquals("Fab T2", upgrade.title)
+            assertTrue(upgrade.tooltip.contains("Fabricator T2") && upgrade.tooltip.contains("Cost 5000 / 8s"))
+            assertEquals("modularSpider_fabricatorT2", upgrade.iconTypeId)
         }
     }
 

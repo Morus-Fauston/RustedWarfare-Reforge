@@ -50,6 +50,26 @@
     {
       "type": "modular-spider",
       "file": "units/spider/artillery.ini"
+    },
+    {
+      "type": "modular-spider",
+      "file": "units/spider/fabricator.ini"
+    },
+    {
+      "type": "modular-spider",
+      "file": "units/spider/fabricator-t2.ini"
+    },
+    {
+      "type": "modular-spider",
+      "file": "units/spider/shield.ini"
+    },
+    {
+      "type": "modular-spider",
+      "file": "units/spider/speed-incomplete.ini"
+    },
+    {
+      "type": "modular-spider",
+      "file": "units/spider/speed.ini"
     }
   ]
 }

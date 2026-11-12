@@ -50,6 +50,26 @@
     {
       "type": "modular-spider",
       "file": "units/spider/artillery.hjson"
+    },
+    {
+      "type": "modular-spider",
+      "file": "units/spider/fabricator.hjson"
+    },
+    {
+      "type": "modular-spider",
+      "file": "units/spider/fabricator-t2.hjson"
+    },
+    {
+      "type": "modular-spider",
+      "file": "units/spider/shield.hjson"
+    },
+    {
+      "type": "modular-spider",
+      "file": "units/spider/speed-incomplete.hjson"
+    },
+    {
+      "type": "modular-spider",
+      "file": "units/spider/speed.hjson"
     }
   ]
 }

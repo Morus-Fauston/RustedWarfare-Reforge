@@ -9,6 +9,29 @@ import tempfile
 
 
 class PlatformIntentTest(unittest.TestCase):
+    def test_spider_fabricator_income_follows_completion_conversion_and_same_slot_phase(self):
+        import spider_platform
+
+        def slot(identity, form, ready):
+            return dict(unitId=identity, typeId="modularSpider_" + form, progress=1 if ready else .75)
+
+        phases = {}
+        first = slot("first", "fabricator", True)
+        unfinished = slot("second", "fabricator", False)
+        for _ in range(39):
+            self.assertEqual(0, spider_platform.utility_income([first, unfinished], phases))
+        upgraded = slot("first", "fabricatorT2", True)
+        second = slot("second", "fabricator", True)
+        self.assertEqual(10, spider_platform.utility_income([upgraded, second], phases))
+        self.assertEqual(0, spider_platform.utility_income([upgraded, second], phases))
+        empty = slot("first", "emptySlot", True)
+        for _ in range(37):
+            self.assertEqual(0, spider_platform.utility_income([empty, second], phases))
+        self.assertEqual(5, spider_platform.utility_income([empty, second], phases))
+        self.assertEqual(1, phases["first"])
+        self.assertEqual(0, spider_platform.utility_income([first, second], phases))
+        self.assertEqual(2, phases["first"])
+
     def test_spider_lightning_requires_its_own_source_mount_and_geometry(self):
         source = {"slot": dict(typeId="modularSpider_lightning")}
         geometry = dict(end=dict(x=5, y=10), endHeight=0)

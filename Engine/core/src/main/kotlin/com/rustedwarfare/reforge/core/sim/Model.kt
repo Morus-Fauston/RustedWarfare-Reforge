@@ -506,6 +506,7 @@ internal data class MutableUnit(
     var attachmentMoveSpeed: Double? = null,
     var attachmentOrder: AttachmentOrder? = null,
     var attachmentCooldown: Float = 0f,
+    var attachmentAutomaticCooldown: Float = 0f,
 ) {
     val producerId: String? get() = productionOrigin?.producerId
     val reversing: Boolean get() = mechState?.reversing ?: bodyReversing

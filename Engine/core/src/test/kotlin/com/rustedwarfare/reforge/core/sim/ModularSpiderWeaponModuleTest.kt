@@ -43,7 +43,8 @@ class ModularSpiderWeaponModuleTest {
             val expectedHealth = mapOf("smallgunturret" to 1000.0, "smallgunturretT2" to 2000.0,
                 "gunturretT2" to 3000.0, "antiair" to 2000.0, "antiairT2" to 3000.0, "antiairFlak" to 3000.0)
             for ((name, health) in expectedHealth) assertEquals(health, unit(name).maximumHealth, name)
-            assertEquals(listOf("buildGun", "buildSmallLaser", "buildAntiair", "buildLightning", "buildArtillery"),
+            assertEquals(listOf("buildGun", "buildSmallLaser", "buildAntiair", "buildLightning", "buildArtillery",
+                "buildFabricator", "buildShieldGen", "buildSpeed"),
                 unit("emptySlot").attachmentModule?.installs?.map { it.action })
             assertEquals(1000L, unit("antiair").attachmentModule?.cancel?.refund)
             assertEquals(500L, unit("antiair").attachmentModule?.reclaim?.refund)
@@ -92,6 +93,274 @@ class ModularSpiderWeaponModuleTest {
                 assertTrue(pack.sources.any { it.path.fileName.toString() == "$file.$format" }, file)
         }
     }
+
+    @Test fun paid_fabricators_keep_independent_income_and_upgrade_the_same_slot_without_resetting_its_phase() =
+        withBattle(26000) { battle ->
+            val first = battle.slot(1).unitId
+            val second = battle.slot(2).unitId
+            fun phase(id: String) = battle.context.observe().incomeStates.singleOrNull { it.unitId == id }?.elapsed
+            battle.click("selectSlot1")
+            battle.click("buildFabricator")
+            assertEquals(23000L, battle.balance())
+            battle.tick()
+            battle.click("upgradeT2")
+            assertEquals(18000L, battle.balance())
+            repeat(6) { battle.tick() }
+            battle.click("selectSlot2")
+            battle.click("buildFabricator")
+            assertEquals(15000L, battle.balance())
+            battle.tick()
+            assertEquals(0f, phase(first))
+            assertEquals(0f, phase(second))
+            battle.until { battle.slot(1).progress == 1f }
+            assertEquals(1f, phase(first))
+            assertEquals(0f, phase(second))
+            var firstT1Payouts = 0
+            var secondT1Payouts = 0
+            repeat(479) {
+                val before = battle.balance()
+                val firstDue = phase(first) == 39f
+                val secondDue = phase(second) == 39f
+                val baseDue = phase("spider") == 39f
+                battle.tick()
+                val firstT2 = battle.slot(1).typeId == "modularSpider_fabricatorT2"
+                assertEquals(it == 478, firstT2)
+                val firstCredits = if (firstDue) (if (firstT2) 10L else 5L) else 0L
+                val secondCredits = if (secondDue) 5L else 0L
+                assertEquals(firstCredits + secondCredits + if (baseDue) 30L else 0L, battle.balance() - before)
+                if (firstT2) assertTrue(firstDue)
+                if (firstDue && !firstT2) firstT1Payouts++
+                if (secondDue) secondT1Payouts++
+            }
+            assertTrue(firstT1Payouts > 0 && secondT1Payouts > 0)
+            assertEquals(first, battle.slot(1).unitId)
+            assertEquals(0f, phase(first))
+            assertEquals(33f, phase(second))
+            assertEquals(500L, assertNotNull(battle.context.observe().economy).balances.getValue("p2"))
+            battle.click("selectSlot1")
+            battle.click("reclaim")
+            repeat(179) { battle.tick() }
+            assertEquals("modularSpider_fabricatorT2", battle.slot(1).typeId)
+            val beforeReclaim = battle.balance()
+            val basePayout = if (phase("spider") == 39f) 30L else 0L
+            val remainingPayout = if (phase(second) == 39f) 5L else 0L
+            battle.tick()
+            assertEquals(3500L + basePayout + remainingPayout, battle.balance() - beforeReclaim)
+            assertEquals(first, battle.slot(1).unitId)
+            assertNull(phase(first))
+            assertEquals("modularSpider_fabricator", battle.slot(2).typeId)
+        }
+
+    @Test fun shield_generators_pulse_independently_cap_the_parent_and_stop_after_reclaim() =
+        withBattle(26000, hostileShot = HostileShot(Position(312.0, 149.0), 270.0, 500.0)) { battle ->
+            fun shield() = assertNotNull(battle.unit("spider").shield).current
+            battle.click("selectSlot1")
+            battle.click("buildShieldGen")
+            assertEquals(20000L, battle.balance())
+            repeat(7) { battle.tick() }
+            battle.click("selectSlot2")
+            battle.click("buildShieldGen")
+            battle.tick()
+            assertEquals("modularSpider_shieldGen", battle.slot(2).typeId)
+            battle.until { battle.slot(2).progress == 1f }
+            assertEquals(5000f, shield())
+            assertNull(battle.unit(battle.slot(1).unitId).shield)
+            assertNull(battle.unit(battle.slot(2).unitId).shield)
+            assertIs<ActionResult.Accepted>(battle.context.submit(
+                MoveAction("enter-shield-range", "p2", "sniper", Position(278.0, 149.0), battle.context.world)))
+            battle.until(maxSteps = 100) { shield() < 4800f }
+            fun pulses(steps: Int): List<Int> = buildList {
+                repeat(steps) { step ->
+                    val before = shield()
+                    battle.tick()
+                    val gain = shield() - before
+                    if (gain > 20f) {
+                        assertEquals(30.3f, gain, .002f)
+                        add(step)
+                    }
+                    assertTrue(shield() <= 5000f)
+                }
+            }
+            val both = pulses(120)
+            assertTrue(both.zipWithNext().any { (a, b) -> b - a == 7 }, "$both")
+            assertTrue(both.any { it + 60 in both }, "$both")
+            battle.click("reclaim")
+            battle.until(maxSteps = 180) { battle.slot(2).typeId == "modularSpider_emptySlot" }
+            val remaining = pulses(120)
+            assertTrue(remaining.isNotEmpty())
+            assertTrue(remaining.zipWithNext().all { (a, b) -> (b - a) % 60 == 0 }, "$remaining")
+            battle.click("selectSlot1")
+            battle.click("reclaim")
+            battle.until(maxSteps = 180) { battle.slot(1).typeId == "modularSpider_emptySlot" }
+            assertEquals(emptyList(), pulses(120))
+        }
+
+    @Test fun a_destroyed_shield_module_keeps_its_slot_and_only_the_chassis_regeneration_remains() =
+        withBattle(15000, hostileShot = HostileShot(Position(312.0, 149.0), 270.0, 500.0),
+            secondHostileShot = HostileShot(Position(312.0, 125.0), 270.0, 9000.0)) { battle ->
+            fun shield() = assertNotNull(battle.unit("spider").shield).current
+            battle.click("selectSlot1")
+            val identity = battle.slot(1).unitId
+            battle.click("buildShieldGen")
+            battle.tick()
+            assertEquals("modularSpider_shieldGen", battle.slot(1).typeId)
+            battle.until { battle.slot(1).progress == 1f }
+            assertEquals(5000f, shield())
+            assertIs<ActionResult.Accepted>(battle.context.submit(
+                MoveAction("damage-parent-shield", "p2", "sniper", Position(278.0, 149.0), battle.context.world)))
+            battle.until(maxSteps = 100) { shield() < 4800f }
+            var pulsed = false
+            repeat(60) {
+                val before = shield()
+                battle.tick()
+                if (shield() - before > 20f) {
+                    assertEquals(30.3f, shield() - before, .002f)
+                    pulsed = true
+                }
+            }
+            assertTrue(pulsed, "The module must replenish the damaged shield before it is destroyed")
+            assertIs<ActionResult.Accepted>(battle.context.submit(
+                MoveAction("leave-shield-range", "p2", "sniper", Position(312.0, 149.0), battle.context.world)))
+            repeat(40) { battle.tick() }
+            assertTrue(shield() > 0f)
+            assertIs<ActionResult.Accepted>(battle.context.submit(
+                MoveAction("strike-shield-slot", "p2", "secondSniper", Position(278.0, 149.0), battle.context.world)))
+            var destroyed = false
+            repeat(100) {
+                if (!destroyed) {
+                    val before = battle.balance()
+                    val frame = battle.tick()
+                    if (frame.events.any { it.kind == "attachment-slot-destroyed" && it.unitId == identity }) {
+                        assertTrue(frame.events.any { it.kind == "shield-damaged" && it.unitId == "spider" })
+                        assertTrue(frame.projectileEvents.any {
+                            it.kind == "impact" && it.projectile.sourceUnitId == "secondSniper" &&
+                                it.projectile.targetUnitId == identity
+                        })
+                        assertTrue(battle.balance() - before in listOf(0L, 30L))
+                        destroyed = true
+                    }
+                }
+            }
+            assertTrue(destroyed)
+            assertEquals(0f, shield())
+            assertEquals("modularSpider_emptySlot", battle.slot(1).typeId)
+            assertEquals(identity, battle.slot(1).unitId)
+            assertTrue(battle.unit("spider").alive)
+            repeat(121) {
+                val before = shield()
+                battle.tick()
+                assertEquals(.3f, shield() - before, .0001f)
+            }
+        }
+
+    @Test fun movement_reads_completed_speed_once_and_recomputes_from_the_remaining_weapon_and_speed_slots() =
+        withBattle(36000) { battle ->
+            var move = 0
+            fun travel(targetX: Double, expected: Double) {
+                assertIs<ActionResult.Accepted>(battle.context.submit(MoveAction("speed-${move++}", "p1",
+                    "spider", Position(targetX, 160.0), battle.context.world)))
+                battle.until(maxSteps = 300) {
+                    kotlin.math.abs(kotlin.math.abs(battle.unit("spider").speed) - expected) < .0001
+                }
+                val position = battle.unit("spider").position
+                battle.tick()
+                val next = battle.unit("spider").position
+                assertEquals(expected, kotlin.math.hypot(next.x - position.x, next.y - position.y), .02)
+            }
+            travel(700.0, .6)
+            battle.click("selectSlot1")
+            battle.click("buildGun")
+            battle.tick()
+            travel(700.0, .4)
+            assertTrue(battle.slot(1).progress < 1f)
+            battle.click("selectSlot2")
+            val id = battle.slot(2).unitId
+            battle.click("buildSpeed")
+            battle.tick()
+            assertEquals("modularSpider_speedIncomplete", battle.slot(2).typeId)
+            travel(700.0, .4)
+            battle.click("selectSlot3")
+            battle.click("buildSpeed")
+            battle.tick()
+            battle.until { battle.slot(3).typeId == "modularSpider_speed" }
+            assertEquals("modularSpider_speed", battle.slot(2).typeId)
+            assertEquals(id, battle.slot(2).unitId)
+            travel(160.0, .7)
+            battle.click("reclaim")
+            battle.until(maxSteps = 180) { battle.slot(3).typeId == "modularSpider_emptySlot" }
+            travel(700.0, .7)
+            battle.click("selectSlot2")
+            battle.click("reclaim")
+            battle.until(maxSteps = 180) { battle.slot(2).typeId == "modularSpider_emptySlot" }
+            travel(160.0, .4)
+            battle.click("selectSlot1")
+            battle.click("reclaim")
+            battle.until(maxSteps = 180) { battle.slot(1).typeId == "modularSpider_emptySlot" }
+            travel(700.0, .6)
+        }
+
+    @Test fun destroying_a_completed_speed_module_restores_base_movement_without_refunding_its_price() =
+        withBattle(15000, hostileShot = HostileShot(Position(312.0, 149.0), 270.0, 9000.0)) { battle ->
+            battle.click("selectSlot1")
+            val identity = battle.slot(1).unitId
+            battle.click("buildSpeed")
+            battle.until { battle.slot(1).typeId == "modularSpider_speed" }
+            assertIs<ActionResult.Accepted>(battle.context.submit(
+                MoveAction("strike-speed-slot", "p2", "sniper", Position(278.0, 149.0), battle.context.world)))
+            var destruction: Observation? = null
+            repeat(100) {
+                if (destruction == null) {
+                    val before = battle.balance()
+                    val frame = battle.tick()
+                    if (frame.events.any { it.kind == "attachment-slot-destroyed" && it.unitId == identity }) {
+                        assertTrue(battle.balance() - before in listOf(0L, 30L))
+                        destruction = frame
+                    }
+                }
+            }
+            assertNotNull(destruction)
+            assertEquals(identity, battle.slot(1).unitId)
+            assertEquals("modularSpider_emptySlot", battle.slot(1).typeId)
+            assertIs<ActionResult.Accepted>(battle.context.submit(
+                MoveAction("depart-with-base-speed", "p1", "spider", Position(54.0, 160.0), battle.context.world)))
+            battle.until(maxSteps = 300) { kotlin.math.abs(kotlin.math.abs(battle.unit("spider").speed) - .6) < .0001 }
+            assertTrue(battle.unit("spider").alive)
+        }
+
+    @Test fun reinstalling_speed_preserves_an_in_flight_reclaim_through_the_automatic_same_slot_conversion() =
+        withBattle(24000) { battle ->
+            battle.click("selectSlot1")
+            val identity = battle.slot(1).unitId
+            battle.click("buildSpeed")
+            battle.until { battle.slot(1).typeId == "modularSpider_speed" }
+            battle.click("reclaim")
+            repeat(180) { battle.tick() }
+            assertEquals("modularSpider_emptySlot", battle.slot(1).typeId)
+
+            battle.click("buildSpeed")
+            battle.tick()
+            battle.until { battle.slot(1).progress == 1f }
+            assertEquals("modularSpider_speedIncomplete", battle.slot(1).typeId)
+            assertTrue(battle.action("reclaim").available)
+            battle.click("reclaim")
+            var activationStep = 0
+            repeat(179) { index ->
+                val frame = battle.tick()
+                if (frame.events.any { it.kind == "attachment-module-activated" && it.unitId == identity }) {
+                    activationStep = index + 1
+                    assertEquals("modularSpider_speed", battle.slot(1).typeId)
+                    assertEquals(0, battle.action("reclaim").queueIndex)
+                    assertEquals(activationStep / 180f, assertNotNull(battle.action("reclaim").progress), .000001f)
+                }
+            }
+            assertTrue(activationStep in 1..60)
+            val before = battle.balance()
+            val reclaimed = battle.tick()
+            assertTrue(reclaimed.events.any { it.kind == "attachment-slot-emptied" && it.unitId == identity })
+            assertTrue(battle.balance() - before in listOf(3000L, 3030L))
+            assertEquals("modularSpider_emptySlot", battle.slot(1).typeId)
+            assertEquals(identity, battle.slot(1).unitId)
+        }
 
     @Test fun paid_early_upgrade_waits_for_self_build_and_survives_page_and_stop_commands() =
         withBattle(26000) { battle ->
@@ -602,6 +871,36 @@ class ModularSpiderWeaponModuleTest {
         }
     }
 
+    @Test fun utility_forms_validate_fixed_effects_and_report_missing_automatic_destinations_at_the_source() {
+        for (format in listOf("ini", "json", "hjson")) {
+            val copy = copyPack(format)
+            val shield = copy.resolve("units/spider/shield.$format")
+            val original = Files.readString(shield)
+            assertTrue("shield=-30" in original)
+            Files.writeString(shield, original.replace("shield=-30", "shield=-31"))
+            val invalid = assertIs<ContentResult.Failure>(ContentLoader.loadContentPack(copy)).error
+            assertEquals(ContentErrorCode.UNSUPPORTED_FEATURE, invalid.code, invalid.describe())
+            assertEquals("hiddenAction_regen", invalid.section)
+            assertEquals("takeResources", invalid.field)
+            assertEquals(shield.toString(), invalid.file)
+            Files.writeString(shield, original)
+
+            val manifest = copy.resolve("pack.json")
+            val pack = JsonValue.readHjson(Files.readString(manifest)).asObject()
+            val entries = JsonArray()
+            for (entry in pack.get("units").asArray()) {
+                if (entry.asObject().getString("file", "") != "units/spider/speed.$format") entries.add(entry)
+            }
+            pack.set("units", entries)
+            Files.writeString(manifest, pack.toString())
+            val missing = assertIs<ContentResult.Failure>(ContentLoader.loadContentPack(copy)).error
+            assertEquals(ContentErrorCode.BAD_REFERENCE, missing.code, missing.describe())
+            assertEquals("hiddenAction_speedFinished", missing.section)
+            assertEquals("convertTo", missing.field)
+            assertEquals(copy.resolve("units/spider/speed-incomplete.$format").toString(), missing.file)
+        }
+    }
+
     private fun copyPack(format: String): Path {
         val source = fixtures.resolve("modular-spider-start/$format/opening-package")
         val copy = workspace.resolve(format)
@@ -619,6 +918,7 @@ class ModularSpiderWeaponModuleTest {
     private fun withBattle(credits: Long, witnesses: Boolean = false, hostileShot: HostileShot? = null,
                            airX: Double = 350.0, firstAirHealth: Double = 20000.0, groundX: Double = 347.0,
                            shieldedBuilding: Boolean = false, nearGroundOffset: Double? = null, groundHealth: Double = 20000.0,
+                           secondHostileShot: HostileShot? = null,
                            test: (Battle) -> Unit) =
         WaterTestScene.withMap { map ->
             val spider = pack("ini").units
@@ -638,11 +938,14 @@ class ModularSpiderWeaponModuleTest {
             }
             val targets = if (witnesses) listOf(passive("airTarget", true, firstAirHealth), passive("nearAirTarget", true),
                 passive("groundTarget", false, groundHealth)) else emptyList()
-            val sniper = hostileShot?.let {
-                UnitDefinition("sniperType", "CustomUnitMetadata", 6.0, 6.0, 1, spider.getValue("mechGun").imagePath,
+            val snipers = listOf("sniper" to hostileShot, "secondSniper" to secondHostileShot).mapNotNull { (id, shot) ->
+                shot?.let { id to it }
+            }
+            val sniperTypes = snipers.map { (id, shot) ->
+                UnitDefinition("${id}Type", "CustomUnitMetadata", 6.0, 6.0, 1, spider.getValue("mechGun").imagePath,
                     1.0, WaterTestScene.unit(MovementType.LAND).movement.copy(moveSpeed = 2.0, moveAccelerationSpeed = 2.0),
                     emptySet(), combat = CombatProfile(20000.0, 89.0, 80.0, 0.0, 8.0, 2.0,
-                        ProjectileProfile(it.damage, 80.0, 15.0, instant = true), null, null, 1.0))
+                        ProjectileProfile(shot.damage, 80.0, 15.0, instant = true), null, null, 1.0))
             }
             val witnessesSpawns = if (witnesses) listOf(
                     UnitSpawn("air", "p2", "airTarget", Position(airX, 150.0), 270.0),
@@ -652,8 +955,8 @@ class ModularSpiderWeaponModuleTest {
                     UnitSpawn("nearGround", "p2", "groundTarget", Position(groundX + it, 156.0), 270.0)
                 }) else emptyList()
             val spawns = listOf(UnitSpawn("spider", "p1", "modularSpider", origin, 90.0)) + witnessesSpawns +
-                listOfNotNull(hostileShot?.let { UnitSpawn("sniper", "p2", "sniperType", it.position, it.heading) })
-            val scenario = base.copy(unitDefinitions = spider + (targets + listOfNotNull(sniper)).associateBy { it.id },
+                snipers.map { (id, shot) -> UnitSpawn(id, "p2", "${id}Type", shot.position, shot.heading) }
+            val scenario = base.copy(unitDefinitions = spider + (targets + sniperTypes).associateBy { it.id },
                 players = base.players.map { it.copy(control = PlayerControl.LOCAL) },
                 units = spawns, economyContract = EconomyContract(mapOf("p1" to credits, "p2" to 500L)),
                 combatContract = CombatContract(173, -1,

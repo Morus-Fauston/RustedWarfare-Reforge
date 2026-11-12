@@ -927,6 +927,16 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
         return change.events
     }
 
+    private fun advanceIncome(unit: MutableUnit, delta: Float) {
+        val income = unit.definition.income ?: return
+        unit.incomeElapsed += delta
+        require(unit.incomeElapsed.isFinite()) { "Income elapsed time must remain finite" }
+        if (unit.incomeElapsed > income.period - .1f) {
+            unit.incomeElapsed -= income.period
+            productionLedger = checkNotNull(productionLedger).creditIncome(unit.ownerPlayerId, income.credits)
+        }
+    }
+
     private fun advanceUpgrade(unit: MutableUnit) {
         val upgrades = ordinaryUpgrades ?: return
         pendingEvents += applyUpgradeChange(upgrades.advance(unit, checkNotNull(productionLedger)))
@@ -1079,6 +1089,8 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
                     UnitAttachments.synchronize(parent, unit, attachment.slot)
                     UnitAttachments.advance(steps.current, currentScenario, parent, unit, step.delta.toFloat())
                     if (BuildingWork.isReady(unit)) {
+                        advanceIncome(unit, step.delta.toFloat())
+                        UnitAttachments.advanceAutomatic(steps.current, currentScenario, parent, unit, step.delta.toFloat())
                         val preferredTarget = units[parent.attackCommand?.targetUnitId ?: parent.primaryCombatTargetId]
                         updateWeapon(unit, step.delta, preferredTarget)
                         advanceWeaponCooldown(unit, step.delta)
@@ -1162,14 +1174,7 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
                 }
                 val economicBuilding = unit.definition.income != null && unit.definition.construction != null
                 if (economicBuilding && BuildingWork.isReady(unit)) advanceUpgrade(unit)
-                unit.definition.income?.takeIf { BuildingWork.isReady(unit) }?.let { income ->
-                    unit.incomeElapsed += step.delta.toFloat()
-                    require(unit.incomeElapsed.isFinite()) { "Income elapsed time must remain finite" }
-                    if (unit.incomeElapsed > income.period - .1f) {
-                        unit.incomeElapsed -= income.period
-                        productionLedger = checkNotNull(productionLedger).creditIncome(unit.ownerPlayerId, income.credits)
-                    }
-                }
+                if (BuildingWork.isReady(unit)) advanceIncome(unit, step.delta.toFloat())
                 // A construction pop releases the next activity for the next update only.
                 if (!constructionActivity) {
                     if (unit.tasks.firstOrNull()?.kind == UnitTaskKind.PATROL)

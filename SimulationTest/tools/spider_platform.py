@@ -8,8 +8,14 @@ GUN = 'modularSpider_gunturret'
 LASER = 'modularSpider_smallgunturret'
 LASER_T2 = 'modularSpider_smallgunturretT2'
 AA = 'modularSpider_antiair'
+FABRICATOR = 'modularSpider_fabricator'
+FABRICATOR_T2 = 'modularSpider_fabricatorT2'
+SHIELD = 'modularSpider_shieldGen'
+SPEED_INCOMPLETE = 'modularSpider_speedIncomplete'
+SPEED = 'modularSpider_speed'
 SLOTS = ('selectSlotBuild', *(f'selectSlot{i}' for i in range(1, 7)))
-PAID = ('buildGun', 'buildSmallLaser', 'buildAntiair', 'buildLightning', 'buildArtillery', 'upgradeT2', 'upgradeFlak')
+PAID = ('buildGun', 'buildSmallLaser', 'buildAntiair', 'buildLightning', 'buildArtillery',
+        'buildFabricator', 'buildShieldGen', 'buildSpeed', 'upgradeT2', 'upgradeFlak')
 CANCELLABLE = (*PAID, 'reclaim')
 ACTIONS = (*SLOTS, *CANCELLABLE, 'cancel')
 OFFSETS = ((-11, 32, 0), (11, 32, 0), (-11, 6, -90), (11, 6, 90), (-10, -20, 180), (11, -20, 180))
@@ -165,3 +171,97 @@ def opening_refunds(records, weapon_modules=False):
           (not weapon_modules or waited),
           'Opening must settle, buy, cancel, replace and fire from the same real slot')
     return refunds
+
+
+def utility_income(slots, phases):
+    rates = {FABRICATOR: 5, FABRICATOR_T2: 10}
+    payout = 0
+    for slot in slots:
+        rate = rates.get(slot['typeId'])
+        if rate is None or slot['progress'] != 1:
+            continue
+        identity = slot['unitId']
+        phases[identity] = (phases.get(identity, 0) + 1) % 40
+        if phases[identity] == 0:
+            payout += rate
+    return payout
+
+
+def utility_adjustments(records):
+    """Check the fixed six-slot composition and independently replay its balance changes."""
+    empty = (EMPTY, True)
+    expected = [
+        [empty, (FABRICATOR, False), (FABRICATOR, True), (FABRICATOR_T2, True), empty],
+        [empty, (FABRICATOR, False), (FABRICATOR, True)],
+        [empty, (GUN, False), empty, (LASER, False), (LASER, True), empty],
+        [empty, (SHIELD, False), (SHIELD, True), empty],
+        [empty, (SPEED_INCOMPLETE, False), (SPEED, True), empty],
+        [empty, (SPEED_INCOMPLETE, False), (SPEED, True), empty],
+    ]
+    refund_by_form = {GUN: 2000, FABRICATOR_T2: 3500, LASER: 350, SHIELD: 3000, SPEED: 3000}
+    stages = [[] for _ in expected]
+    phases, adjustments, moving = {}, {}, set()
+    previous_parent = previous_profile = identities = None
+    shield_pulses = 0
+    for row in records:
+        if row.get('kind') != 'observation' or row.get('phase') not in ('initial', 'step'):
+            continue
+        sample = row['sample']
+        units = {unit['unitId']: unit for unit in sample['units']}
+        parent = units.get('a')
+        check(parent and parent['typeId'] == CHASSIS and parent['ownerPlayerId'] == 'p1' and parent['alive'],
+              'The owned Modular Spider chassis disappeared')
+        slots = parent['attachmentOverview']['slots']
+        slot_ids = [slot['unitId'] for slot in slots]
+        if identities is None:
+            identities = slot_ids
+        check(len(set(slot_ids)) == 6 and slot_ids == identities and
+              [slot['number'] for slot in slots] == list(range(1, 7)), 'Six stable numbered slots are required')
+        refunds = 0
+        emptied = [event['unitId'] for event in sample['events'] if event['kind'] == 'attachment-slot-emptied']
+        expected_emptied = []
+        for index, slot in enumerate(slots):
+            identity, form, progress = slot['unitId'], slot['typeId'], slot['progress']
+            child = units.get(identity)
+            check(child and child['ownerPlayerId'] == 'p1' and child['alive'] and child['typeId'] == form and
+                  child['constructionProgress'] == progress and
+                  child.get('attachment') == dict(parentUnitId='a', slot=index + 1, empty=form == EMPTY) and
+                  'shield' not in child, 'A utility slot must match its own live attached entity')
+            stage = (form, progress == 1)
+            prior = stages[index]
+            if not prior or stage != prior[-1]:
+                check(len(prior) < len(expected[index]) and stage == expected[index][len(prior)],
+                      f'Unexpected state in utility slot {index + 1}: {stage}')
+                if prior and stage == empty:
+                    expected_emptied.append(identity)
+                    refunds += refund_by_form[prior[-1][0]]
+                prior.append(stage)
+        check(sorted(emptied) == sorted(expected_emptied), 'Removal must identify the converted slot')
+        shield = parent['shield']
+        check(shield['maximum'] == 5000 and 0 <= shield['current'] <= 5000, 'Parent shield left its bounds')
+        speed_count = sum(slot['typeId'] == SPEED and slot['progress'] == 1 for slot in slots)
+        weapon = any(slot['typeId'] in (GUN, LASER) for slot in slots)
+        profile = (speed_count, weapon)
+        cap = .7 if speed_count else .4 if weapon else .6
+        if previous_parent is not None:
+            if previous_profile == profile:
+                actual_speed = abs(parent['speed'])
+                check(actual_speed <= cap + .001, 'Chassis speed exceeded its active module limit')
+                left, right = previous_parent['position'], parent['position']
+                distance = math.hypot(right['x'] - left['x'], right['y'] - left['y'])
+                if abs(actual_speed - cap) < .001 and abs(distance - cap) < .02:
+                    moving.add(profile)
+            gain = shield['current'] - previous_parent['shield']['current']
+            if gain > .302:
+                check((SHIELD, True) == stages[3][-1] and
+                      abs(shield['current'] - min(5000, previous_parent['shield']['current'] + 30.3)) < .002,
+                      'Only a completed generator may add a capped shield pulse')
+                shield_pulses += 1
+        previous_parent, previous_profile = parent, profile
+        if row['phase'] == 'step':
+            credits = refunds + utility_income(slots, phases)
+            if credits:
+                adjustments[row['sequence']] = credits
+    check(stages == expected and shield_pulses > 0 and moving >= {(0, False), (0, True), (1, True), (2, True)},
+          f'Incomplete utility composition, shield pulses or measured movement: pulses={shield_pulses}, movement={moving}')
+    return adjustments

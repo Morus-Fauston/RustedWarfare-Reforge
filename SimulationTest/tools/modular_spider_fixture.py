@@ -51,6 +51,9 @@ def empty_slot():
         "action_buildAntiair": {"convertTo": "modularSpider_antiair", "price": 2000, "buildSpeed": 0, "setBuilt": 0},
         "action_buildLightning": {"convertTo": "modularSpider_lightning", "price": 6000, "buildSpeed": 0, "setBuilt": 0},
         "action_buildArtillery": {"convertTo": "modularSpider_artillery", "price": 5000, "buildSpeed": 0, "setBuilt": 0},
+        "action_buildFabricator": {"convertTo": "modularSpider_fabricator", "price": 3000, "buildSpeed": 0, "setBuilt": 0},
+        "action_buildShieldGen": {"convertTo": "modularSpider_shieldGen", "price": 6000, "buildSpeed": 0, "setBuilt": 0},
+        "action_buildSpeed": {"convertTo": "modularSpider_speedIncomplete", "price": 6000, "buildSpeed": 0, "setBuilt": 0},
     }
 
 
@@ -172,6 +175,41 @@ def artillery():
     return form
 
 
+def utility(name, price, sprite):
+    return {
+        "core": {"name": "modularSpider_" + name, "class": "CustomUnitMetadata", "price": price,
+                 "maxHp": 3000, "radius": 15, "displayRadius": 12, "isUnselectable": True,
+                 "canNotBeDirectlyAttacked": False, "selfBuildRate": .001, "selfRegenRate": .2},
+        "graphics": {"image": sprite + ".png", "total_frames": 1},
+        "action_cancel": {"convertTo": "modularSpider_emptySlot", "refundCredits": price,
+                          "addAllActionCooldownsTime": 120},
+        "action_reclaim": {"convertTo": "modularSpider_emptySlot", "refundCredits": price // 2, "buildSpeed": 180},
+    }
+
+
+def fabricator(upgraded):
+    name = "fabricatorT2" if upgraded else "fabricator"
+    form = utility(name, 7000 if upgraded else 3000, "fabricator-t2" if upgraded else "fabricator")
+    form["core"].update(generation_credits=10 if upgraded else 5, generation_delay=40)
+    if not upgraded:
+        form["action_upgradeT2"] = dict(upgrade("fabricatorT2", 5000), buildSpeed=480)
+    return form
+
+
+def shield_generator():
+    form = utility("shieldGen", 6000, "shield")
+    form["hiddenAction_regen"] = dict(autoTrigger="true", takeResources="shield=-30",
+                                     takeResources_includeParent=True, takeResources_discardCollected=True)
+    return form
+
+
+def speed(incomplete):
+    form = utility("speedIncomplete" if incomplete else "speed", 6000, "speed")
+    if incomplete:
+        form["hiddenAction_speedFinished"] = dict(autoTrigger="if self.completed", convertTo="modularSpider_speed")
+    return form
+
+
 def generate(destination=DESTINATION):
     assert not destination.exists(), "Existing owned input tree"
     for fmt in ("ini", "json", "hjson"):
@@ -191,6 +229,8 @@ def generate(destination=DESTINATION):
             ("small-laser", small_laser(False)), ("small-laser-t2", small_laser(True)), ("gun-t2", gun_t2()),
             ("aa", anti_air()), ("aa-t2", advanced_anti_air(False)), ("flak", advanced_anti_air(True)),
             ("lightning", lightning()), ("artillery", artillery()),
+            ("fabricator", fabricator(False)), ("fabricator-t2", fabricator(True)),
+            ("shield", shield_generator()), ("speed-incomplete", speed(True)), ("speed", speed(False)),
         )
         for name, sections in forms:
             (spider / f"{name}.{fmt}").write_text(render(sections, fmt), encoding="utf8")
@@ -201,6 +241,8 @@ def generate(destination=DESTINATION):
             ("small-laser", "turret", 8, 34), ("small-laser-t2", "turret", 14, 24), ("gun-t2", "turret", 16, 46),
             ("aa", "turret", 16, 26), ("aa-t2", "turret", 25, 24), ("flak", "turret", 29, 32),
             ("lightning", "turret", 22, 31), ("artillery", "turret", 7, 35), ("artillery-base", "body", 20, 19),
+            ("fabricator", "body", 20, 19), ("fabricator-t2", "dead", 20, 19),
+            ("shield", "shadow", 22, 21), ("speed", "turret", 22, 21),
         ):
             (spider / f"{filename}.png").write_bytes(png(kind, width, height))
         entries = [{"type": "mech", "file": f"units/mech.{fmt}"}]

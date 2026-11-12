@@ -49,6 +49,27 @@
       "price": 5000,
       "buildSpeed": 0,
       "setBuilt": 0
+    },
+    {
+      "name": "buildFabricator",
+      "convertTo": "modularSpider_fabricator",
+      "price": 3000,
+      "buildSpeed": 0,
+      "setBuilt": 0
+    },
+    {
+      "name": "buildShieldGen",
+      "convertTo": "modularSpider_shieldGen",
+      "price": 6000,
+      "buildSpeed": 0,
+      "setBuilt": 0
+    },
+    {
+      "name": "buildSpeed",
+      "convertTo": "modularSpider_speedIncomplete",
+      "price": 6000,
+      "buildSpeed": 0,
+      "setBuilt": 0
     }
   ]
 }

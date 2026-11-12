@@ -11,9 +11,69 @@ def intent(identity, kind, wait, **fields):
     return dict(intentId=identity, kind=kind, waitSteps=wait, **fields)
 
 
-def generate(weapon_modules=False, destination=PLATFORM, *, special_weapons=False):
+def utility_intents():
+    def action(name, command, wait=0):
+        return intent(name, 'unit-action', wait, actionName=command)
+
+    def earn(name, segments):
+        return [intent(f'{name}-{index}', 'stop', 600) for index in range(1, segments + 1)]
+
+    def move(name, x, wait):
+        return intent(name, 'move', wait, position=dict(x=x, y=150))
+
+    return [
+        move('leave-enemy-range', 80, 240),
+        action('select-fabricator', 'selectSlot1'),
+        action('buy-fabricator', 'buildFabricator', 1),
+        action('select-weapon', 'selectSlot3'),
+        action('buy-gun', 'buildGun', 12),
+        action('cancel-gun', 'cancel', 130),
+        *earn('earn-second-fabricator', 2),
+        action('select-second-fabricator', 'selectSlot2'),
+        action('buy-second-fabricator', 'buildFabricator', 1),
+        *earn('earn-upgrade', 9),
+        action('reselect-fabricator', 'selectSlot1'),
+        action('upgrade-fabricator', 'upgradeT2', 600),
+        *earn('earn-shield', 8),
+        action('select-shield', 'selectSlot4'),
+        action('buy-shield', 'buildShieldGen', 600),
+        intent('finish-shield', 'stop', 450),
+        move('enter-enemy-range', 395, 600),
+        intent('sustain-shield-damage', 'stop', 120),
+        move('leave-enemy-fire', 124, 600),
+        intent('settle-outside-fire', 'stop', 20),
+        action('reselect-weapon', 'selectSlot3'),
+        action('buy-laser', 'buildSmallLaser', 120),
+        move('move-with-weapon', 250, 480),
+        *earn('earn-first-speed', 6),
+        action('select-first-speed', 'selectSlot5'),
+        action('buy-first-speed', 'buildSpeed', 600),
+        intent('finish-first-speed', 'stop', 450),
+        move('move-with-one-speed', 70, 380),
+        *earn('earn-second-speed', 8),
+        action('select-second-speed', 'selectSlot6'),
+        action('buy-second-speed', 'buildSpeed', 600),
+        intent('finish-second-speed', 'stop', 450),
+        move('move-with-two-speeds', 245, 380),
+        action('reclaim-second-speed', 'reclaim', 180),
+        move('move-with-remaining-speed', 75, 380),
+        action('reselect-first-speed', 'selectSlot5'),
+        action('reclaim-first-speed', 'reclaim', 180),
+        move('move-after-last-speed', 240, 480),
+        action('select-laser-for-reclaim', 'selectSlot3'),
+        action('reclaim-laser', 'reclaim', 180),
+        move('move-without-speed-or-weapon', 124, 350),
+        action('select-shield-for-reclaim', 'selectSlot4'),
+        action('reclaim-shield', 'reclaim', 180),
+        action('select-fabricator-for-reclaim', 'selectSlot1'),
+        action('reclaim-fabricator', 'reclaim', 220),
+    ]
+
+
+def generate(weapon_modules=False, destination=PLATFORM, *, special_weapons=False, utility_modules=False):
     for form in ('ini', 'json', 'hjson'):
-        case = 'special-weapons' if special_weapons else 'weapon-modules' if weapon_modules else 'opening'
+        case = ('utility-modules' if utility_modules else 'special-weapons' if special_weapons
+                else 'weapon-modules' if weapon_modules else 'opening')
         identity = f'modular-spider-{form}-{case}'
         steps = [
             intent('settle-opening', 'select', 100, position=dict(x=40, y=40)),
@@ -38,7 +98,21 @@ def generate(weapon_modules=False, destination=PLATFORM, *, special_weapons=Fals
             finalUnits=[dict(ownerPlayerId='p1', typeId=unit, fields=dict(alive=True))
                         for unit in ('modularSpider', 'modularSpider_gunturret')],
         )
-        if special_weapons:
+        if utility_modules:
+            steps[2:] = utility_intents()
+            history.pop('spiderOpening')
+            history.update(
+                spiderUtilityModules=True,
+                spend=[dict(intentId=name, amount=amount, at='action') for name, amount in (
+                    ('buy-fabricator', 3000), ('buy-gun', 2000), ('buy-second-fabricator', 3000),
+                    ('upgrade-fabricator', 5000), ('buy-shield', 6000), ('buy-laser', 700),
+                    ('buy-first-speed', 6000), ('buy-second-speed', 6000),
+                )],
+                minimumBirths=[],
+                finalUnits=[dict(ownerPlayerId='p1', typeId=unit, fields=dict(alive=True, constructionProgress=1))
+                            for unit in ('modularSpider', 'modularSpider_fabricator')],
+            )
+        elif special_weapons:
             steps[2:] = [
                 intent('leave-weapon-range', 'move', 500, position=dict(x=54, y=170)),
                 intent('select-slot-1', 'unit-action', 0, actionName='selectSlot1'),
@@ -95,5 +169,6 @@ if __name__ == '__main__':
     cases = parser.add_mutually_exclusive_group()
     cases.add_argument('--weapon-modules', action='store_true')
     cases.add_argument('--special-weapons', action='store_true')
+    cases.add_argument('--utility-modules', action='store_true')
     arguments = parser.parse_args()
-    generate(arguments.weapon_modules, special_weapons=arguments.special_weapons)
+    generate(arguments.weapon_modules, special_weapons=arguments.special_weapons, utility_modules=arguments.utility_modules)

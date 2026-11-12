@@ -8,13 +8,13 @@ internal object NativeActionPanel {
         val index = number - 1
         "selectSlot$number" to NativeCardBounds(752f + index % 3 * 60f, 284f - index / 3 * 38f, 56f, 34f)
     }
-    private val spiderModuleActions = mapOf(
+    private val spiderPurchases = listOf("selectSlotBuild", "buildGun", "buildSmallLaser", "buildAntiair",
+        "buildLightning", "buildArtillery", "buildFabricator", "buildShieldGen", "buildSpeed")
+        .mapIndexed { index, name ->
+            name to NativeCardBounds(752f + index % 2 * 92f, 219f - index / 2 * 27f, 84f, 24f)
+        }.toMap()
+    private val spiderModuleActions = spiderPurchases + mapOf(
         "selectSlotBuild" to NativeCardBounds(752f, 215f, 84f, 28f),
-        "buildGun" to NativeCardBounds(844f, 215f, 84f, 28f),
-        "buildSmallLaser" to NativeCardBounds(752f, 184f, 84f, 28f),
-        "buildAntiair" to NativeCardBounds(844f, 184f, 84f, 28f),
-        "buildLightning" to NativeCardBounds(752f, 153f, 84f, 28f),
-        "buildArtillery" to NativeCardBounds(844f, 153f, 84f, 28f),
         "upgradeT2" to NativeCardBounds(844f, 215f, 84f, 28f),
         "upgradeFlak" to NativeCardBounds(752f, 184f, 84f, 28f),
         "cancel" to NativeCardBounds(844f, 184f, 84f, 28f),
@@ -36,8 +36,15 @@ internal object NativeActionPanel {
         "dive" to NativeCardBounds(844f, 188f, 84f, 34f),
         "launchScoutBot" to NativeCardBounds(844f, 270f, 84f, 50f),
         "buildAntiNuke" to NativeCardBounds(752f, 224f, 176f, 44f))
-    fun customBounds(name: String, naval: Boolean): NativeCardBounds =
-        if (naval) navalActions[name] ?: customActions.getValue(name) else customActions.getValue(name)
+    fun customBounds(name: String, naval: Boolean, spiderPurchaseMenu: Boolean = false): NativeCardBounds =
+        when {
+            naval -> navalActions[name] ?: customActions.getValue(name)
+            spiderPurchaseMenu -> spiderPurchases[name] ?: customActions.getValue(name)
+            else -> customActions.getValue(name)
+        }
+    val spiderPurchaseStopY = 68f
+    val spiderPurchaseReopen = NativeCardBounds(752f, 20f, 84f, 40f)
+    val spiderPurchaseExit = NativeCardBounds(844f, 20f, 84f, 40f)
     val transportWithCustomAction = NativeCardBounds(752f, 188f, 84f, 40f)
     fun supports(scenarioId: String?) = scenarioId in setOf("p009-nuclear-production", "p006-construction", "p008-mech-production", "p008-helicopter-production", "p008-heavy-mech-production", "p008-naval-production", "p009-hover-production", "p009-submarine-production", "p009-amphibious-production", "p009-transport-production", "p009-air-transport-production", "p009-aa-beam-production", "p009-bomber-production", "p009-bunker-production", "p009-repairbay-production", "p009-engineer-production", "p009-nautilus-production", "p009-modular-spider-start")
     val production = listOf(NativeCardBounds(752f, 256f, 84f, 64f), NativeCardBounds(752f, 188f, 84f, 64f), NativeCardBounds(844f, 256f, 84f, 64f))
