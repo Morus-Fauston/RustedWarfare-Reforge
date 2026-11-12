@@ -33,14 +33,17 @@ internal class PcBaseSoundResources(private val cacheRoot: Path) {
             "nuke-explode" to "1a72aa4a39f33a415c9c5a950bf7a94890ad374d253043a81f245f7a31d9a132")
         fun soundId(name: String) = ResourceId.parse("reforge:sounds/$name")
         fun eventId(name: String) = ResourceId.parse("reforge:events/$name")
+        // These owned placeholders can be replaced by independently qualified private recordings.
+        val aliases = mapOf("hover-fire" to "tank-fire", "amphibious-lightning-fire" to "tank-fire",
+            "scout-plasma-fire" to "tank-fire", "nuke-intercept" to "naval-missile-fire",
+            "bomber-impact" to "naval-missile-fire")
         require(declarations.sounds.keys == expected.keys.map(::soundId).toSet() &&
-            declarations.events.keys == expected.keys.map(::eventId).toSet() +
-                setOf(eventId("hover-fire"), eventId("amphibious-lightning-fire"), eventId("nuke-intercept"), eventId("scout-plasma-fire")))
-        // Public owned placeholder; private original packs bind the native plasma recording.
-        require(declarations.events.getValue(eventId("hover-fire")).sound == soundId("tank-fire"))
-        require(declarations.events.getValue(eventId("amphibious-lightning-fire")).sound == soundId("tank-fire"))
-        require(declarations.events.getValue(eventId("scout-plasma-fire")).sound == soundId("tank-fire"))
-        require(declarations.events.getValue(eventId("nuke-intercept")).sound == soundId("naval-missile-fire"))
+            declarations.events.keys == (expected.keys + aliases.keys).map(::eventId).toSet()) {
+            "PREPARE_FAILED: bundled sound event or resource declarations differ"
+        }
+        for ((event, sound) in aliases) require(declarations.events.getValue(eventId(event)).sound == soundId(sound)) {
+            "PREPARE_FAILED: bundled sound alias $event differs"
+        }
         val decoded = expected.mapValues { (name, hash) ->
             require(declarations.sounds.getValue(soundId(name)).file == "$name.wav" &&
                 declarations.events.getValue(eventId(name)).sound == soundId(name))

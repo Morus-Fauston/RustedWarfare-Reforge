@@ -1489,6 +1489,24 @@
       "backend": "session",
       "scenario": "platform/scenarios/submarine-hjson-production-chain.json",
       "contract": "platform/contracts/submarine-hjson-production-chain.json"
+    },
+    {
+      "id": "bomber-ini-production-chain",
+      "backend": "session",
+      "scenario": "platform/scenarios/bomber-ini-production-chain.json",
+      "contract": "platform/contracts/bomber-ini-production-chain.json"
+    },
+    {
+      "id": "bomber-json-production-chain",
+      "backend": "session",
+      "scenario": "platform/scenarios/bomber-json-production-chain.json",
+      "contract": "platform/contracts/bomber-json-production-chain.json"
+    },
+    {
+      "id": "bomber-hjson-production-chain",
+      "backend": "session",
+      "scenario": "platform/scenarios/bomber-hjson-production-chain.json",
+      "contract": "platform/contracts/bomber-hjson-production-chain.json"
     }
   ],
   "pythonTests": [

@@ -25,6 +25,8 @@ object ContentLoader {
         load(path) { com.rustedwarfare.reforge.core.content.internal.BunkerContentReader.readWithSources(it) {} }
     fun loadAaBeamWithSources(path: Path): ContentResult<LoadedUnitContent> =
         load(path) { com.rustedwarfare.reforge.core.content.internal.AaBeamContentReader.readWithSources(it) {} }
+    fun loadBomberWithSources(path: Path): ContentResult<LoadedUnitContent> =
+        load(path) { com.rustedwarfare.reforge.core.content.internal.BomberContentReader.readWithSources(it) {} }
     fun loadDropshipWithSources(path: Path): ContentResult<LoadedUnitContent> =
         load(path) { com.rustedwarfare.reforge.core.content.internal.DropshipContentReader.readWithSources(it) {} }
     /** Composes checked immutable declarations without touching the filesystem or renderer. */

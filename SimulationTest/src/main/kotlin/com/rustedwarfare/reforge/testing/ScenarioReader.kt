@@ -105,6 +105,7 @@ internal object ScenarioReader {
                 "amphibious-jet" -> checkedAuthor(ContentLoader.loadAmphibiousJetWithSources(ref.path))
                 "hovercraft" -> checkedAuthor(ContentLoader.loadHovercraftWithSources(ref.path))
                 "dropship" -> checkedAuthor(ContentLoader.loadDropshipWithSources(ref.path))
+                "bomber" -> checkedAuthor(ContentLoader.loadBomberWithSources(ref.path))
                 "aa-beam-gunship" -> checkedAuthor(ContentLoader.loadAaBeamWithSources(ref.path))
                 "mech-bunker" -> checkedAuthor(ContentLoader.loadBunkerWithSources(ref.path))
                 "mech-engineer" -> checkedAuthor(ContentLoader.loadMechEngineerWithSources(ref.path))

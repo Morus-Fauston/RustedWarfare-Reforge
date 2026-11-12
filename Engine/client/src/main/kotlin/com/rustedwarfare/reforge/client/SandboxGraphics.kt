@@ -11,6 +11,7 @@ import com.badlogic.gdx.utils.XmlReader
 import com.rustedwarfare.reforge.core.sim.Scenario
 import java.nio.file.Path
 import com.rustedwarfare.reforge.core.sim.Position
+import com.rustedwarfare.reforge.core.sim.ProjectileAppearance
 import kotlin.math.abs
 
 class SandboxGraphics private constructor(private val resources: SandboxRenderResources) : AutoCloseable {
@@ -22,7 +23,8 @@ class SandboxGraphics private constructor(private val resources: SandboxRenderRe
     private val units = mutableMapOf<String, TextureRegion>()
     private val turrets = mutableMapOf<String, TextureRegion>()
     private val namedTurrets = mutableMapOf<Pair<String, String>, TextureRegion>()
-    private val impacts = mutableMapOf<String, Pair<Position, Long>>()
+    private data class Impact(val position: Position, val height: Double, val started: Long, val large: Boolean)
+    private val impacts = mutableMapOf<String, Impact>()
     private var impactSample: String? = null
     private val corpses = mutableMapOf<String, TextureRegion>()
     private val backs = mutableMapOf<String, TextureRegion>()
@@ -486,7 +488,7 @@ class SandboxGraphics private constructor(private val resources: SandboxRenderRe
             val y = projection.y(projectile.position.y) + (projectile.height * projection.scale).toFloat()
             val areaRadius = projectile.areaRadius
             val appearance = projectile.appearance
-            if (appearance == com.rustedwarfare.reforge.core.sim.ProjectileAppearance.NUCLEAR && areaRadius == null) {
+            if (appearance == ProjectileAppearance.NUCLEAR && areaRadius == null) {
                 shapes.color = Color.DARK_GRAY
                 shapes.ellipse(x - 5f, projection.y(projectile.position.y) - 2f, 10f, 4f, 16)
                 shapes.color = Color.LIGHT_GRAY
@@ -502,14 +504,20 @@ class SandboxGraphics private constructor(private val resources: SandboxRenderRe
         val now = System.nanoTime()
         if (impactSample != frame.observation.sampleId) {
             impactSample = frame.observation.sampleId
-            for (event in frame.observation.projectileEvents) if (event.kind == "impact" && event.beam == null)
-                impacts[event.token] = event.position to now
+            for (event in frame.observation.projectileEvents) if (event.kind == "impact" && event.beam == null) {
+                val large = event.appearance == ProjectileAppearance.BOMBER_BOMB
+                val height = if (large || event.appearance == ProjectileAppearance.BOMBER_DEPTH_CHARGE) event.height else 0.0
+                impacts[event.token] = Impact(event.position, height, now, large)
+            }
         }
-        impacts.entries.removeAll { now - it.value.second > 180_000_000L }
+        fun duration(impact: Impact) = if (impact.large) 400_000_000L else 180_000_000L
+        impacts.entries.removeAll { now - it.value.started > duration(it.value) }
         shapes.color = Color.ORANGE
-        for ((position, started) in impacts.values) {
-            val fraction = (now - started).toDouble() / 180_000_000.0
-            shapes.circle(projection.x(position.x), projection.y(position.y), (3.0 + 9.0 * fraction).toFloat(), 16)
+        for (impact in impacts.values) {
+            val fraction = (now - impact.started).toDouble() / duration(impact)
+            val radius = (3.0 + 9.0 * fraction) * if (impact.large) 2.6 * projection.scale else 1.0
+            shapes.circle(projection.x(impact.position.x), projection.y(impact.position.y) + (impact.height * projection.scale).toFloat(),
+                radius.toFloat(), 16)
         }
         shapes.color = Color.CYAN
         for (beam in resources.defenseBeams(frame.observation)) {

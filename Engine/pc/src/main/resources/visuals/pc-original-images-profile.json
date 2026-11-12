@@ -6237,6 +6237,8 @@
     "aa-beam-beamStart": "assets/units/shared/beam1_start.png",
     "aa-beam-beamEnd": "assets/units/shared/beam1_end.png",
     "aa-afterburn-trail": "assets/units/shared/glow_sharp.png",
+    "bomber-body": "assets/units/bomber/base.png",
+    "bomber-dead": "assets/units/bomber/base_dead.png",
     "bunker-body": "assets/units/mechs_large/topBunker.png",
     "bunker-turret": "assets/units/mechs_large/bunkerTurret.png",
     "bunker-leg": "assets/units/mechs_large/leg.png",
@@ -6425,6 +6427,22 @@
       "path": "res/drawable/dropship_shadow.png",
       "bytes": 314,
       "sha256": "265277904340af97301c751d92bcbb2cf20817fffa24b2b1c3dda3f979945004",
+      "width": 45,
+      "height": 47
+    },
+    {
+      "id": "bomber-body",
+      "path": "assets/units/bomber/base.png",
+      "bytes": 3833,
+      "sha256": "611d1a7c99f93b1d2ac3c86a779a0db9765e48aa5801eb5acfcd5e4c5018f777",
+      "width": 45,
+      "height": 47
+    },
+    {
+      "id": "bomber-dead",
+      "path": "assets/units/bomber/base_dead.png",
+      "bytes": 3956,
+      "sha256": "d75d69d27653882addd4db7a3bf64769d9e3be4095fecfe1abde7cb68c5f753c",
       "width": 45,
       "height": 47
     },
@@ -7057,6 +7075,30 @@
         45,
         47
       ],
+      "frames": 1
+    },
+    "bomber-body": {
+      "file": "units/bomber-body.png",
+      "operation": "crop",
+      "source": "bomber-body",
+      "rect": [0, 0, 45, 47],
+      "target": [45, 47],
+      "frames": 1
+    },
+    "bomber-dead": {
+      "file": "units/bomber-dead.png",
+      "operation": "crop",
+      "source": "bomber-dead",
+      "rect": [0, 0, 45, 47],
+      "target": [45, 47],
+      "frames": 1
+    },
+    "bomber-shadow": {
+      "file": "units/bomber-shadow.png",
+      "operation": "alpha-shadow",
+      "source": "bomber-body",
+      "rect": [0, 0, 45, 47],
+      "target": [45, 47],
       "frames": 1
     },
     "aa-beam-body": {
@@ -7772,6 +7814,11 @@
       "body": "air-transport-body",
       "dead": "air-transport-dead",
       "shadow": "air-transport-shadow"
+    },
+    "bomber": {
+      "body": "bomber-body",
+      "dead": "bomber-dead",
+      "shadow": "bomber-shadow"
     },
     "aaBeamGunship": {
       "body": "aa-beam-body",

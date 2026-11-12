@@ -147,7 +147,7 @@ internal object FactoryContentReader {
             "placementFootprint" to "-1,-1,1,2", "movementType" to "NONE",
             "price" to if (t2) "2500" else "1000", "buildSpeed" to "0.001", "fogOfWarSightRange" to "15")) only(key, value)
         val products = required("productionUnits").split(',')
-        val supported = if (t2) setOf("helicopter", "amphibiousJet", "dropship", "aaBeamGunship") else setOf("helicopter")
+        val supported = if (t2) setOf("helicopter", "amphibiousJet", "dropship", "aaBeamGunship", "bomber") else setOf("helicopter")
         if (products.isEmpty() || products.distinct().size != products.size || products.any { it !in supported })
             reject(ContentErrorCode.UNSUPPORTED_FEATURE, path, "core", "productionUnits",
                 reason = "Expected a nonempty unique menu of implemented native air products for tier $tier")

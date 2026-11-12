@@ -51,7 +51,7 @@ def source_files(repo):
               'SimulationTest/gradlew', 'SimulationTest/gradlew.bat']]
     paths += [repo / 'SimulationTest/tools' / name for name in
               ['nuclear_silo_fixture.py', 'nuclear_silo_scenarios.py', 'nuclear_sound_fixture.py', 'nuclear_platform.py', 'test_nuclear_platform.py', 'nautilus_fixture.py', 'nautilus_scenarios.py', 'test_nautilus_platform.py', 'mech_engineer_fixture.py', 'mech_engineer_scenarios.py', 'test_mech_engineer_platform.py', 'repairbay_fixture.py', 'repairbay_scenarios.py', 'test_repairbay_platform.py', 'bunker_fixture.py', 'bunker_scenarios.py', 'test_bunker_platform.py', 'afterburn_scenarios.py', 'test_afterburn_platform.py', 'aa_beam_fixture.py', 'aa_beam_scenarios.py', 'test_aa_beam_archive.py', 'air_transport_fixture.py', 'air_transport_scenarios.py', 'platform_scenario.py', 'test_platform_scenario.py', 'platform_wait.py', 'test_platform_wait.py', 'test_platform_session_cli.py', 'test_named_weapon_platform.py', 'test_submarine_platform.py', 'test_amphibious_platform.py', 'test_transport_platform.py',
-               'workflow_scenarios.py', 'test_workflow_scenarios.py',
+               'bomber_fixture.py', 'bomber_scenarios.py', 'workflow_scenarios.py', 'test_workflow_scenarios.py',
                'diagnostic_reader.py', 'test_diagnostic_reader.py',
                'action_layout.py', 'test_action_layout.py',
                'platform_windows.py', 'owned_window.py', 'test_owned_window.py',

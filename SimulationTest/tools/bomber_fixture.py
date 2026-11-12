@@ -1,0 +1,88 @@
+"""Generate owned bomber declarations and geometry for public tests."""
+import json
+from pathlib import Path
+from shutil import copyfile
+
+from aa_beam_fixture import png
+
+
+DEST = Path(__file__).resolve().parents[1] / 'public/inputs/bomber-production'
+AIR_TRANSPORT = DEST.with_name('air-transport-production')
+FORMS = ('ini', 'json', 'hjson')
+
+
+def write_bomber(folder, form):
+    for kind in ('body', 'dead', 'shadow'):
+        (folder / f'bomber_{kind}.png').write_bytes(png(kind, 45, 47))
+    turret = dict(x=0, y=0, size=1.1, turnSpeed=20, energyUsage=1, invisible=True)
+    shot = dict(life=250, speed=.3, targetSpeed=1.7, deflectionPower=3, drawSize=1, color='#000000', trailEffect=False)
+    sections = dict(
+        core=dict(name='bomber', maxHp=3000, radius=16, displayRadius=19, price=4000, techLevel=2,
+                  buildSpeed=.00025, selfRegenRate=.1, energyMax=3, energyRegen=.002,
+                  energyNeedsToRechargeToFull=True),
+        graphics=dict(total_frames=1, image='bomber_body.png', image_dead='bomber_dead.png', image_shadow='bomber_shadow.png'),
+        movement=dict(movementType='AIR', moveSpeed=.85, moveAccelerationSpeed=.01, moveDecelerationSpeed=.01,
+                      maxTurnSpeed=1.2, turnAcceleration=.04, moveSlidingMode=False, moveIgnoringBody=False,
+                      moveSlidingDir=25, landOnGround='onlyIdle', slowDeathFall=True),
+        attack=dict(canAttack=True, canAttackFlyingUnits=False, canAttackLandUnits=True, canAttackUnderwaterUnits=True,
+                    maxAttackRange=45, shootDelay=30, attackMovement='bomber'),
+        turret_1=dict(turret, projectile='1', canAttackFlyingUnits=False, canAttackLandUnits=True, canAttackUnderwaterUnits=False),
+        turret_2=dict(turret, projectile='2', canAttackFlyingUnits=False, canAttackLandUnits=False, canAttackUnderwaterUnits=True),
+        projectile_1=dict(shot, targetGround=True, areaDamage=370, areaRadius=65, largeHitEffect=True),
+        projectile_2=dict(shot, targetGround=False, directDamage=70, largeHitEffect=False))
+    if form == 'ini':
+        def literal(value):
+            return str(value).lower() if isinstance(value, bool) else str(value)
+        text = '\n\n'.join(f'[{section}]\n' + '\n'.join(f'{k}: {literal(v)}' for k, v in fields.items())
+                           for section, fields in sections.items()) + '\n'
+    else:
+        content = {'format': 'rw-reforge.unit.v1'}
+        for section, fields in sections.items():
+            if section.startswith('turret_'):
+                content.setdefault('weapons', []).append(dict(name=section.removeprefix('turret_'), **fields))
+            elif section.startswith('projectile_'):
+                content.setdefault('projectiles', []).append(dict(name=section.removeprefix('projectile_'), **fields))
+            else:
+                content[section] = fields
+        text = json.dumps(content, indent=2) + '\n'
+    (folder / f'bomber.{form}').write_text(text, encoding='utf8', newline='\n')
+
+
+def generate():
+    for form in FORMS:
+        folder = DEST / form / 'package'
+        folder.mkdir(parents=True, exist_ok=True)
+        write_bomber(folder, form)
+        source = AIR_TRANSPORT / form
+        source_pack = source / 'production-package'
+        entries = json.loads((source_pack / 'pack.json').read_text(encoding='utf8'))['units']
+        entries = [entry for entry in entries if entry['type'] in
+                   ('helicopter', 'air-factory', 'builder', 'command-center', 'underwater-target')]
+        for relative in ('maps/naval-shore.tmx', 'assets/naval-ground.png'):
+            target = DEST / form / relative
+            target.parent.mkdir(parents=True, exist_ok=True)
+            copyfile(source / relative, target)
+        assets = ('body', 'dead', 'rotor', 'air_factory', 'air_factory_t2', 'air_factory_dead', 'builder', 'builder_dead',
+                  'commandCenter/base', 'commandCenter/base_back', 'commandCenter/base_dead', 'naval/underwater_target')
+        for relative in [entry['file'] for entry in entries] + [f'units/{name}.png' for name in assets]:
+            target = folder / relative
+            target.parent.mkdir(parents=True, exist_ok=True)
+            copyfile(source_pack / relative, target)
+        factory = folder / 'units' / f'airFactoryT2.{form}'
+        text = factory.read_text(encoding='utf8')
+        old_menu = 'helicopter,amphibiousJet,dropship'
+        assert text.count(old_menu) == 1
+        factory.write_text(text.replace(old_menu, 'helicopter,bomber'), encoding='utf8', newline='\n')
+        entries.append(dict(type='bomber', file=f'bomber.{form}'))
+        pack = dict(format='rw-reforge.content-pack.v1', id=f'p009-bomber-{form}', name='Owned bomber production',
+                    units=entries)
+        (folder / 'pack.json').write_text(json.dumps(pack, indent=2) + '\n', encoding='utf8', newline='\n')
+    (DEST / 'README.md').write_text(
+        '# Owned bomber inputs\n\nGenerated by SimulationTest/tools/bomber_fixture.py. '
+        'Reuses owned command center, builder, factory, helicopter, underwater witness and shoreline inputs '
+        'from the air transport fixture. The bomber images use the public geometric PNG generator. '
+        'The package contains self-authored declarations and graphics.\n', encoding='utf8', newline='\n')
+
+
+if __name__ == '__main__':
+    generate()

@@ -618,7 +618,15 @@ object TraceComparator {
         validateShieldSample(unit, unit.id("typeId") in typesLoadedBy(scenario, setOf("mech-heavy")) || unit.id("typeId") == "mechBunkerDeployed")
         if (unit.id("typeId") in typesLoadedBy(scenario, setOf("helicopter", "dropship"))) validateFlightPose(unit)
         val aaBeam = unit.id("typeId") in typesLoadedBy(scenario, setOf("aa-beam-gunship"))
-        if (aaBeam) { validateAaBeamUnit(unit); validateUnitActions(unit, observer) }
+        if (aaBeam) {
+            validateRotorlessFlight(unit, 6.0, if (unit.id("typeId") == "aaBeamGunship") .5 else null, "aa-beam-state")
+            validateUnitActions(unit, observer)
+        }
+        else if (unit.id("typeId") in typesLoadedBy(scenario, setOf("bomber"))) {
+            validateRotorlessFlight(unit, 3.0, 1.0, "bomber-state")
+            if (unit["unitActions"] != null && unit["unitActions"] != JsonNull)
+                throw Incomplete("unit-action-state", "Bomber has no unit actions")
+        }
         else if (unit.id("typeId") in typesLoadedBy(scenario, setOf("mech-bunker"))) {
             validateUnitActions(unit, observer)
             if (unit["energy"] != null && unit["energy"] != JsonNull)
@@ -890,29 +898,30 @@ object TraceComparator {
             invalid("Invalid first queue indexes")
     }
 
-    private fun validateAaBeamUnit(unit: JsonObject) {
-        fun invalid(reason: String): Nothing = throw Incomplete("aa-beam-state", reason)
+    private fun validateRotorlessFlight(unit: JsonObject, maximum: Double, shotCost: Double?, category: String) {
+        fun invalid(reason: String): Nothing = throw Incomplete(category, reason)
         val energy = unit["energy"] as? JsonObject ?: invalid("Missing weapon energy")
-        if (energy.keys != setOf("current", "maximum", "recharging") || aaNumber(energy["maximum"]) != 6.0 ||
-            aaNumber(energy["current"]) !in 0.0..6.0 || energy["recharging"] !in setOf(b(true), b(false)) ||
-            unit.id("typeId") == "aaBeamGunship" && (energy["recharging"] == b(true) && aaNumber(energy["current"]) >= 6.0 ||
-                energy["recharging"] == b(false) && aaNumber(energy["current"]) < .5))
+        val current = aaNumber(energy["current"])
+        if (energy.keys != setOf("current", "maximum", "recharging") || aaNumber(energy["maximum"]) != maximum ||
+            current !in 0.0..maximum || energy["recharging"] !in setOf(b(true), b(false)) ||
+            shotCost != null && (energy["recharging"] == b(true) && current >= maximum ||
+                energy["recharging"] == b(false) && current < shotCost))
             invalid("Invalid weapon energy or recharge lock")
         val pose = unit["flightPose"] as? JsonObject ?: invalid("Missing rotorless flight pose")
         if (pose.keys != setOf("velocity", "height", "heightPhase", "rotorPhase", "rotorHeading", "rotorHeightOffset", "fall"))
-            invalid("Incomplete AA flight pose")
+            invalid("Incomplete rotorless flight pose")
         val velocity = pose["velocity"] as? JsonObject ?: invalid("Missing flight velocity")
         if (velocity.keys != setOf("x", "y")) invalid("Invalid flight velocity")
         velocity.values.forEach(::aaNumber)
         for (key in listOf("height", "heightPhase", "rotorPhase", "rotorHeading", "rotorHeightOffset")) aaNumber(pose[key])
         if (aaNumber(unit["height"]) != aaNumber(pose["height"]) || aaNumber(pose["rotorHeightOffset"]) != 0.0)
-            invalid("AA physical height or rotorless pose differs")
+            invalid("Physical height or rotorless pose differs")
         val fall = pose["fall"] as? JsonObject ?: invalid("Missing AA fall state")
         if (fall.keys != setOf("speed", "landed", "landedInWater", "settled") || aaNumber(fall["speed"]) < 0.0 ||
             listOf("landed", "landedInWater", "settled").any { fall[it] !in setOf(b(true), b(false)) } ||
             fall["landed"] == b(false) && (fall["landedInWater"] == b(true) || fall["settled"] == b(true)) ||
             unit["alive"] == b(true) && (fall["landed"] != b(false) || aaNumber(fall["speed"]) != 0.0))
-            invalid("Invalid AA fall state")
+            invalid("Invalid rotorless fall state")
     }
 
     private fun validateAaBeamProjectiles(sample: JsonObject, scenario: JsonObject, units: List<JsonObject>, player: Boolean = false) {
@@ -987,6 +996,7 @@ object TraceComparator {
         submarineLaunchAppearances + "STANDARD" +
             (if (typesLoadedBy(scenario, setOf("amphibious-jet")).isNotEmpty()) setOf("AMPHIBIOUS_LIGHTNING") else emptySet()) +
             (if (typesLoadedBy(scenario, setOf("aa-beam-gunship")).isNotEmpty()) setOf("AA_BEAM") else emptySet()) +
+            (if (typesLoadedBy(scenario, setOf("bomber")).isNotEmpty()) setOf("BOMBER_BOMB", "BOMBER_DEPTH_CHARGE") else emptySet()) +
             (if (typesLoadedBy(scenario, setOf("nuclear-silo")).isNotEmpty()) setOf("NUCLEAR", "INTERCEPTOR") else emptySet()) +
             (if (typesLoadedBy(scenario, setOf("nautilus")).isNotEmpty()) setOf("SCOUT_PAYLOAD", "INTERCEPTOR") else emptySet())
 

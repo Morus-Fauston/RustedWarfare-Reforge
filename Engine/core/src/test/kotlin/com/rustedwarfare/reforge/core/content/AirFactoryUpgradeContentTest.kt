@@ -20,7 +20,7 @@ class AirFactoryUpgradeContentTest {
                     "name" to if (tier == 1) "airFactory" else "airFactoryT2", "techLevel" to "$tier",
                     "maxHp" to "1000", "radius" to "30", "footprint" to "-1,-1,1,1",
                     "placementFootprint" to "-1,-1,1,2", "movementType" to "NONE",
-                    "productionUnits" to if (tier == 1) "helicopter" else "helicopter,amphibiousJet",
+                    "productionUnits" to if (tier == 1) "helicopter" else "helicopter,amphibiousJet,bomber",
                     "price" to if (tier == 1) "1000" else "2500", "buildSpeed" to "0.001",
                     "fogOfWarSightRange" to "15", "image" to if (tier == 1) "air_factory.png" else "air_factory_t2.png", "image_dead" to "air_factory_dead.png")
                 if (tier == 1) fields.putAll(mapOf("upgradeTo" to "airFactoryT2", "upgradePrice" to "1500",
@@ -36,7 +36,8 @@ class AirFactoryUpgradeContentTest {
                 assertEquals(if (tier == 1) "airFactory" else "airFactoryT2", factory.id)
                 assertEquals(1000.0, factory.maximumHealth)
                 assertEquals(FactoryExitProfile.NATIVE_AIR, factory.production!!.exitProfile)
-                assertEquals(if (tier == 1) listOf("helicopter") else listOf("helicopter", "amphibiousJet"), factory.production.unitTypeIds)
+                val expectedProducts = if (tier == 1) listOf("helicopter") else listOf("helicopter", "amphibiousJet", "bomber")
+                assertEquals(expectedProducts, factory.production.unitTypeIds)
                 assertEquals(BuildProfile(if (tier == 1) 1000 else 2500, .001f), factory.build)
                 assertEquals(if (tier == 1) listOf(UpgradeActionProfile("upgrade_t2", "airFactoryT2", 1500, .0004f))
                     else emptyList(), factory.upgrades?.actions.orEmpty())

@@ -1,6 +1,7 @@
 package com.rustedwarfare.reforge.core.sim
 
 import com.rustedwarfare.reforge.core.content.MapDefinition
+import com.rustedwarfare.reforge.core.content.BomberRules
 import com.rustedwarfare.reforge.core.content.MovementType
 import com.rustedwarfare.reforge.core.content.foundationMovementType
 import com.rustedwarfare.reforge.core.content.DirectHitTargetKind
@@ -678,6 +679,7 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
             // Scheduled orders arrive here only at execution; reservation never clears the current activity.
             unit.taskQueue = UnitTaskQueue()
             unit.attackCommand = null
+            unit.bomberApproach = null
             unit.cancelRoute()
             unit.movementRequested = false
             unit.constructionElapsed = 0f
@@ -754,6 +756,7 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
                 val task = UnitTask(UnitTaskKind.PATROL, action.actionId, action.target, atStep = action.atStep)
                 if (!action.append || unit.tasks.isEmpty()) {
                     unit.attackCommand = null
+                    unit.bomberApproach = null
                     unit.cancelRoute()
                 }
                 unit.taskQueue = (if (action.append) unit.taskQueue else UnitTaskQueue()).append(task)
@@ -781,6 +784,7 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
                 unit.taskQueue = UnitTaskQueue().append(UnitTask(UnitTaskKind.ATTACK, action.actionId,
                     targetUnitId = action.targetUnitId, atStep = action.atStep))
                 unit.attackCommand = ManualAttackCommand(action.targetUnitId, action.actionId, action.atStep)
+                unit.bomberApproach = null
                 unit.lastAttackPathAttemptStep = null
                 ActionResult.Accepted(action.actionId, listOf(Event("attack-started", unit.unitId)))
             }
@@ -790,6 +794,7 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
             }
             is StopAction -> {
                 unit.attackCommand = null
+                unit.bomberApproach = null
                 unit.taskQueue = UnitTaskQueue()
                 unit.movementRequested = false
                 unit.clearWeaponTargets()
@@ -812,6 +817,7 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
                         executionStep = executionStep)
                 }
                 unit.attackCommand = null
+                unit.bomberApproach = null
                 if (path == null) {
                     unit.taskQueue = UnitTaskQueue()
                     unit.cancelRoute()
@@ -1187,7 +1193,7 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
                     CustomUnitActions.constrain(unit, step.delta, policies.steering, policies.coordinates, unitActionHead(unit))
                 }
                 if (!fourLegged) updateUnit(unit, currentScenario.map, step.delta, step.stepIndex, candidate.motionSamples)
-                FlightMotion.advancePose(unit, step.delta)
+                FlightMotion.advancePose(unit, currentScenario.map, step.delta)
                 NautilusMotion.advance(unit, step.delta)
                 Transport.refreshTerrain(unit, currentScenario.map)
                 pendingEvents += Transport.advance(unit, units, currentScenario.map, step.delta)
@@ -1410,11 +1416,14 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
             val engineer = MechEngineer.supports(definition)
             val nautilus = com.rustedwarfare.reforge.core.content.NautilusRules.supports(definition)
             val scout = ScoutBotRules.supports(definition)
+            val bomber = definition.id == BomberRules.ID
+            if (bomber && !BomberRules.supports(definition))
+                return SimulationError("unsupported-bomber", "Expected the qualified two-weapon bomber")
             if (!nautilus && definition.combat?.namedWeapons?.ordered?.any { it.interception != null } == true)
                 return SimulationError("unsupported-naval-interception", "Expected the qualified Nautilus interception weapon")
             if (definition.groundHeight != null && !bunker && !scout)
                 return SimulationError("unsupported-unit-actions", "Ground height requires a qualified custom form")
-            val beamGunship = !nautilus && !scout && (definition.energy != null || definition.combat?.projectile?.beam != null ||
+            val beamGunship = !nautilus && !scout && !bomber && (definition.energy != null || definition.combat?.projectile?.beam != null ||
                 definition.combat?.namedWeapons?.ordered?.any { it.energyUsage != 0f || it.projectile.beam != null } == true)
             if (beamGunship && !AaBeamGunship.supports(definition))
                 return SimulationError("unsupported-aa-beam", "Expected the qualified AA energy and beam representative")
@@ -1447,7 +1456,7 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
                     definition.deathExplosion != null || definition.pointDefense != null || definition.maximumHealth == null)
                     return SimulationError("unsupported-underwater-target", "Expected the finite fixed-depth unarmed WATER target")
             }
-            if (air && !amphibious && !dropship && !beamGunship && (m.flight?.isValid() != true || definition.rotor?.spinRate?.isFinite() != true ||
+            if (air && !amphibious && !dropship && !beamGunship && !bomber && (m.flight?.isValid() != true || definition.rotor?.spinRate?.isFinite() != true ||
                     !m.slidingMode || !m.ignoringBody || m.reverseSpeedPercentage != .1 || definition.mech != null) ||
                 !air && (m.flight != null || definition.rotor != null))
                 return SimulationError("unsupported-flight", "Expected a finite AIR profile and a single finite rotor")
@@ -1655,7 +1664,7 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
                     (if (zeroRecoil) listOf(combat.recoil.outTime, combat.recoil.returnTime) else emptyList())
                 val invalidAcceleration = combat.projectile.acceleration?.let {
                     !it.targetSpeed.isFinite() || it.targetSpeed <= 0.0 || !it.acceleration.isFinite() || it.acceleration <= 0.0 ||
-                        combat.projectile.instant || combat.projectile.ground != null || combat.projectile.missile != null
+                        combat.projectile.instant || combat.projectile.ground != null && !bomber || combat.projectile.missile != null
                 } == true
                 val invalidBallistic = combat.projectile.ballistic?.let {
                     !it.delayMoveHeight.isFinite() || it.delayMoveHeight < 0f || !it.apex.isFinite() ||
@@ -1833,6 +1842,7 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
         if (target == null) {
             target = CombatTargetQuery.nearestEnemy(unit, orderedUnits(), input.players, policies.coordinates, input.map)
             unit.cancelRoute()
+            unit.bomberApproach = null
             if (target == null) {
                 unit.attackCommand = null
                 if (unit.tasks.firstOrNull()?.kind == UnitTaskKind.ATTACK) unit.taskQueue = unit.taskQueue.pop()
@@ -1851,29 +1861,31 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
             return
         }
         val compositeRange = unit.definition.mech?.kind == com.rustedwarfare.reforge.core.content.MechKind.FOUR_LEGGED
-        if (policies.coordinates.distanceSquared(unit.position, target.position) < weapon.attackRange * weapon.attackRange &&
+        val bomber = unit.typeId == BomberRules.ID
+        if (!bomber && policies.coordinates.distanceSquared(unit.position, target.position) < weapon.attackRange * weapon.attackRange &&
             (!compositeRange || NamedWeaponRuntime.inRange(unit, target, input.players, policies.coordinates, input.map))) {
             if (unit.moveTarget != null) unit.cancelRoute()
             return
         }
-        unit.requestMovement(target.position)
-        val targetRange = if (target.definition.building == null) 0.0 else weapon.attackRange
+        val destination = if (bomber) FlightMotion.bomberAttackDestination(unit, target.position, map) else target.position
+        unit.requestMovement(destination)
+        val targetRange = if (bomber || target.definition.building == null) 0.0 else weapon.attackRange
         val routeEnd = unit.moveTarget
         val reusable = routeEnd != null && unit.pathPoints.isNotEmpty() &&
-            if (targetRange == 0.0 || unit.birthRemaining > 0f) routeEnd == target.position
-            else policies.coordinates.distanceSquared(routeEnd, target.position) < targetRange * targetRange &&
+            if (targetRange == 0.0 || unit.birthRemaining > 0f) routeEnd == destination
+            else policies.coordinates.distanceSquared(routeEnd, destination) < targetRange * targetRange &&
                 !PlanningCenterTerrain.intersects(planningTerrainFor(unit, map), routeEnd, Transport.boundaryRadius(unit))
         if (unit.lastAttackPathAttemptStep == executionStep || reusable) return
         unit.lastAttackPathAttemptStep = executionStep
         val samples = pathDiagnostics
         val path = if (unit.birthRemaining > 0f) {
             if (MapBounds.contains(map.widthTiles.toDouble() * map.tileWidth,
-                    map.heightTiles.toDouble() * map.tileHeight, target.position, Transport.boundaryRadius(unit)))
-                listOf(target.position) else null
+                    map.heightTiles.toDouble() * map.tileHeight, destination, Transport.boundaryRadius(unit)))
+                listOf(destination) else null
         } else if (samples == null) {
-            policies.path.findPath(planningTerrainFor(unit, map), Transport.queryPosition(unit, map), target.position, Transport.boundaryRadius(unit),
+            policies.path.findPath(planningTerrainFor(unit, map), Transport.queryPosition(unit, map), destination, Transport.boundaryRadius(unit),
                 targetRange = targetRange)
-        } else findPathWithDiagnostics(command.actionId, command.atStep, target.position, unit, map, samples,
+        } else findPathWithDiagnostics(command.actionId, command.atStep, destination, unit, map, samples,
             reason = PathSearchReason.ATTACK_PURSUIT, executionStep = executionStep, targetRange = targetRange)
         if (path == null) {
             unit.cancelRoute()
@@ -2003,7 +2015,7 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
         definition?.let { WeaponEnergy.consume(unit, it.energyUsage) }
         state.cooldown = effectiveDelay
         definition?.let { NamedWeaponRuntime.fired(unit, it) }
-        val capturedOffset = state.offset
+        val capturedOffset = if (unit.typeId == BomberRules.ID) Position(0.0, 0.0) else state.offset
         weapon.projectile.missile?.let { missile ->
             val id = nextObjectId
             nextObjectId = Math.addExact(nextObjectId, 1L)
@@ -2064,7 +2076,9 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
             ballistic = weapon.projectile.ballistic, lightning = weapon.projectile.lightning,
             damageModifiers = weapon.projectile.damageModifiers,
             lightningSegment = if (weapon.projectile.lightning) LightningSegment(target.position, target.height) else null,
-            appearance = if (weapon.projectile.lightning) ProjectileAppearance.AMPHIBIOUS_LIGHTNING
+            appearance = if (unit.typeId == BomberRules.ID) {
+                if (ground == null) ProjectileAppearance.BOMBER_DEPTH_CHARGE else ProjectileAppearance.BOMBER_BOMB
+            } else if (weapon.projectile.lightning) ProjectileAppearance.AMPHIBIOUS_LIGHTNING
                 else if (unit.definition.submarine == null) ProjectileAppearance.STANDARD
                 else if (SubmarineMotion.submerged(unit)) ProjectileAppearance.SUBMARINE_TORPEDO
                 else ProjectileAppearance.SUBMARINE_MISSILE)
@@ -2241,6 +2255,9 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
                 if (projectile.ground != null) applyAreaDamage(projectile)
                 val appliedDamage = if (projectile.ground == null) applyDamage(checkNotNull(target), projectile.damage, projectile.damageModifiers) else null
                 if (projectile.splash != null) applyOrdinarySplash(projectile)
+                if (projectile.appearance == ProjectileAppearance.BOMBER_BOMB) {
+                    steps.current.pendingSoundTriggers += SoundTriggerObservation("reforge:events/bomber-impact", projectile.position, .5f)
+                }
                 pendingProjectileEvents += ProjectileEventObservation("impact", projectileObservation(projectile), appliedDamage)
                 projectile.hitApplied = true
                 if (!projectile.lightning && !projectile.beam) projectiles.remove(projectile)
@@ -2454,6 +2471,7 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
             }
             refundUpgrades(target)
             target.attackCommand = null
+            target.bomberApproach = null
             target.taskQueue = UnitTaskQueue()
             target.movementRequested = false
             target.cancelRoute()
@@ -2540,7 +2558,7 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
         if (target != null && air) {
             unit.requestMovement(logicalRouteTarget(unit, target))
             val d2 = policies.coordinates.distanceSquared(unit.position, target)
-            val ordinaryBody = unit.amphibiousState != null ||
+            val ordinaryBody = unit.typeId == BomberRules.ID || unit.amphibiousState != null ||
                 unit.definition.transport == com.rustedwarfare.reforge.core.content.TransportProfile.NATIVE_DROPSHIP
             val difference = if (ordinaryBody)
                 BodyMotion.turnOrdinary(unit, target, delta, policies.steering, policies.coordinates)
@@ -2609,7 +2627,10 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
             val rate = if (unit.speed < speedTarget) movement.moveAccelerationSpeed else movement.moveDecelerationSpeed
             // Non-sliding LAND B/C advance the propulsion proportion.
             unit.speed = approach(unit.speed, speedTarget, rate * maximumSpeed * delta)
-            policies.coordinates.displacement(unit.heading, unit.speed * delta)
+            if (unit.typeId == BomberRules.ID) {
+                unit.flightVelocity = policies.coordinates.displacement(unit.heading, unit.speed)
+                Position(unit.flightVelocity.x * delta, unit.flightVelocity.y * delta)
+            } else policies.coordinates.displacement(unit.heading, unit.speed * delta)
         }
         val candidate = Position(unit.position.x + displacement.x, unit.position.y + displacement.y)
         val integratedHeading = unit.heading

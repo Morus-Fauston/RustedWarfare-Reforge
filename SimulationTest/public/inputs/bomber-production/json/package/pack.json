@@ -1,0 +1,35 @@
+{
+  "format": "rw-reforge.content-pack.v1",
+  "id": "p009-bomber-json",
+  "name": "Owned bomber production",
+  "units": [
+    {
+      "type": "helicopter",
+      "file": "units/helicopter.json"
+    },
+    {
+      "type": "air-factory",
+      "file": "units/airFactory.json"
+    },
+    {
+      "type": "builder",
+      "file": "units/builder.json"
+    },
+    {
+      "type": "air-factory",
+      "file": "units/airFactoryT2.json"
+    },
+    {
+      "type": "command-center",
+      "file": "units/commandCenter/commandCenter.json"
+    },
+    {
+      "type": "underwater-target",
+      "file": "units/naval/underwaterTarget.json"
+    },
+    {
+      "type": "bomber",
+      "file": "bomber.json"
+    }
+  ]
+}

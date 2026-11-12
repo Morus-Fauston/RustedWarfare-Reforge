@@ -390,28 +390,34 @@ def validate_history_poses(units, policy):
     def point(value):
         return isinstance(value, dict) and set(value) == {'x','y'} and all(number(v) for v in value.values())
     for unit in units:
-        if unit.get('typeId') in {'aaBeamGunship','aaBeamGunship_afterburn'}:
+        if unit.get('typeId') in {'aaBeamGunship','aaBeamGunship_afterburn','bomber'}:
+            bomber = unit['typeId'] == 'bomber'
+            category = 'history-bomber' if bomber else 'history-aa-beam'
+            maximum = 3 if bomber else 6
+            shot_cost = 1 if bomber else .5
             energy=unit.get('energy');pose=unit.get('flightPose')
             if (not isinstance(energy,dict) or set(energy)!={'current','maximum','recharging'} or
-                    not number(energy.get('current')) or not 0<=energy['current']<=6 or
-                    not number(energy.get('maximum')) or energy['maximum']!=6 or type(energy.get('recharging')) is not bool or
-                    unit['typeId']=='aaBeamGunship' and
-                    (energy['recharging'] and energy['current']>=6 or not energy['recharging'] and energy['current']<.5)):
-                raise PlatformError('history-aa-beam','Missing or inconsistent weapon energy and recharge lock',2)
+                    not number(energy.get('current')) or not 0<=energy['current']<=maximum or
+                    not number(energy.get('maximum')) or energy['maximum']!=maximum or type(energy.get('recharging')) is not bool or
+                    unit['typeId']!='aaBeamGunship_afterburn' and
+                    (energy['recharging'] and energy['current']>=maximum or not energy['recharging'] and energy['current']<shot_cost)):
+                raise PlatformError(category,'Missing or inconsistent weapon energy and recharge lock',2)
             if (not isinstance(pose,dict) or set(pose)!={'velocity','height','heightPhase','rotorPhase','rotorHeading','rotorHeightOffset','fall'} or
                     not point(pose.get('velocity')) or any(not number(pose.get(k)) for k in
                         ('height','heightPhase','rotorPhase','rotorHeading','rotorHeightOffset')) or
                     not number(unit.get('height')) or pose['height']!=unit['height'] or pose['rotorHeightOffset']!=0):
-                raise PlatformError('history-aa-beam','Missing or invalid rotorless flight pose',2)
+                raise PlatformError(category,'Missing or invalid rotorless flight pose',2)
             fall=pose['fall']
             if (not isinstance(fall,dict) or set(fall)!={'speed','landed','landedInWater','settled'} or
                     not number(fall.get('speed')) or fall['speed']<0 or
                     any(type(fall.get(k)) is not bool for k in ('landed','landedInWater','settled')) or
                     not fall['landed'] and (fall['landedInWater'] or fall['settled']) or
                     unit.get('alive') is True and (fall['landed'] or fall['speed']!=0)):
-                raise PlatformError('history-aa-beam','Missing or inconsistent fall state',2)
+                raise PlatformError(category,'Missing or inconsistent fall state',2)
             state=unit.get('unitActions')
-            if unit.get('ownerPlayerId')!=policy.get('ownerPlayerId','p1'):
+            if bomber:
+                if state is not None: raise PlatformError('history-unit-action','Bomber has no unit actions',2)
+            elif unit.get('ownerPlayerId')!=policy.get('ownerPlayerId','p1'):
                 if state is not None:raise PlatformError('history-unit-action','Enemy action controls must be private',2)
             else:
                 names={'afterBurn','cancelBurn'} if unit['typeId']=='aaBeamGunship_afterburn' else {'afterBurn'}
@@ -830,7 +836,11 @@ def validate_launch_appearance(shot, units):
               'antiNukeLauncherC':('INTERCEPTOR',)}.get(source.get('typeId'),('STANDARD',))
     if source.get('typeId') in NAUTILUS_ACTIONS:
         expected={'botTurret':('SCOUT_PAYLOAD',),'antiNuke':('INTERCEPTOR',)}.get(shot.get('sourceWeaponName'),expected)
-    if (style not in ('STANDARD','SUBMARINE_MISSILE','SUBMARINE_TORPEDO','AMPHIBIOUS_LIGHTNING','AA_BEAM','NUCLEAR','INTERCEPTOR','SCOUT_PAYLOAD') or
+    bomber_appearances = {'1': 'BOMBER_BOMB', '2': 'BOMBER_DEPTH_CHARGE'}
+    if source.get('typeId') == 'bomber':
+        expected = (bomber_appearances.get(shot.get('sourceWeaponName')),) if 'kind' in shot else tuple(bomber_appearances.values())
+    if (style not in ('STANDARD','SUBMARINE_MISSILE','SUBMARINE_TORPEDO','AMPHIBIOUS_LIGHTNING','AA_BEAM','NUCLEAR',
+                     'INTERCEPTOR','SCOUT_PAYLOAD', *bomber_appearances.values()) or
             source and style not in expected):
         raise PlatformError('history-projectile','Invalid native launch appearance or source',2)
     line=shot.get('lightning')

@@ -44,6 +44,9 @@
     },
     "reforge:events/nuke-intercept": {
       "sound": "reforge:sounds/naval-missile-fire"
+    },
+    "reforge:events/bomber-impact": {
+      "sound": "reforge:sounds/naval-missile-fire"
     }
   }
 }

@@ -104,6 +104,9 @@ internal data class StepState(
             unit.definition.energy?.let { profile ->
                 require(unit.energy.isFinite() && unit.energy in 0f..profile.maximum) { "Weapon energy candidate must be bounded" }
             }
+            require(unit.flightIdleTime in 0f..4f && unit.bomberApproach?.angle?.isFinite() != false) {
+                "Flight timers and approach must remain finite"
+            }
             require(unit.sinkSpeed.isFinite() && unit.sinkSpeed >= 0f) { "Water-body sink state must remain finite" }
             require(unit.submarineVerticalSpeed.isFinite() && unit.submarineVerticalSpeed in 0f..0.08f) {
                 "Submarine vertical speed must remain finite and bounded"

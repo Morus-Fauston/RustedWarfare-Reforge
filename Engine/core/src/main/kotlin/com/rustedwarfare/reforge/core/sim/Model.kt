@@ -228,7 +228,8 @@ data class BeamSegment(val end: Position, val endHeight: Double, val textureOffs
 enum class ProjectileAppearance(val red: Int, val green: Int, val blue: Int, val drawSize: Float) {
     STANDARD(255, 255, 0, 2f), SUBMARINE_MISSILE(230, 230, 50, 2f), SUBMARINE_TORPEDO(30, 30, 150, 1f),
     AMPHIBIOUS_LIGHTNING(247, 212, 129, 2f), AA_BEAM(255, 255, 255, 2f), NUCLEAR(255, 238, 160, 3f),
-    INTERCEPTOR(238, 238, 0, 2f), SCOUT_PAYLOAD(238, 238, 0, .9f)
+    INTERCEPTOR(238, 238, 0, 2f), SCOUT_PAYLOAD(238, 238, 0, .9f),
+    BOMBER_BOMB(0, 0, 0, 1f), BOMBER_DEPTH_CHARGE(0, 0, 0, 1f)
 }
 
 class AreaExpansionObservation(val remaining: Float, val radius: Float, hitUnitIds: Set<String>) {
@@ -441,6 +442,8 @@ internal data class MutableUnit(
     var submarineSurfacePresentation: Boolean = true,
     var amphibiousState: AmphibiousJetState? = if (definition.amphibiousJet != null) AmphibiousJetState() else null,
     var heightPhase: Double = 0.0,
+    var flightIdleTime: Float = 0f,
+    var bomberApproach: BomberApproach? = null,
     var flightVelocity: Position = Position(0.0, 0.0),
     var rotorPhase: Double = 0.0,
     var rotorHeightOffset: Double = if (definition.rotor == null) 0.0 else .1,
@@ -584,6 +587,8 @@ internal data class MutableUnit(
 }
 
 internal data class ManualAttackCommand(val targetUnitId: String, val actionId: String, val atStep: Long?)
+
+internal data class BomberApproach(val angle: Float, val breakingAway: Boolean)
 
 internal data class MutableCombat(var turretHeading: Double, var angularVelocity: Double = 0.0,
     var cooldown: Double = 0.0, var targetId: String? = null, var offset: Position = Position(0.0, 0.0),

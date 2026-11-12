@@ -93,6 +93,7 @@ internal object ContentPackComposer {
                         !AuthorFactoryRules.accepts(production.exitProfile, product)))
                     bad(target, "productionUnits", "Author factory foundation and product capabilities must match the selected existing exit")
                 if (production.exitProfile == FactoryExitProfile.NATIVE_AIR &&
+                    !BomberRules.supports(product) &&
                     (product.movement.type != MovementType.AIR ||
                         product.transport != TransportProfile.NATIVE_DROPSHIP &&
                         (product.rotor == null && product.amphibiousJet == null && product.combat?.projectile?.beam == null || product.combat == null)))

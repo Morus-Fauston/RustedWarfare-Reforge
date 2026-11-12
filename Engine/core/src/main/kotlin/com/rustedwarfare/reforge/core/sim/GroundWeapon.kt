@@ -39,6 +39,10 @@ internal object GroundWeapon {
         projectile.heading = ScreenPlane.normalize(angle.toDouble() + 90.0)
         projectile.verticalSpeed = w
         projectile.groundDistanceSquared = distance
+        projectile.acceleration?.let { acceleration ->
+            projectile.speed = approach(speed.toDouble(), acceleration.targetSpeed.toFloat().toDouble(),
+                (acceleration.acceleration.toFloat() * dt).toDouble()).toFloat().toDouble()
+        }
         var gate = 3f
         if (w != 0f || profile.gravity != 0f)
             gate = 3f + (kotlin.math.abs(w * dt) + kotlin.math.abs(profile.gravity * dt))
@@ -50,7 +54,9 @@ internal object GroundWeapon {
                  weapon: com.rustedwarfare.reforge.core.content.CombatProfile = checkNotNull(unit.definition.combat)): GroundShot {
         val profile = checkNotNull(weapon.projectile.ground)
         val predicted = GroundMath.predict(muzzle.x.toFloat(), muzzle.y.toFloat(), target,
-            weapon.projectile.speed.toFloat(), weapon.projectile.life.toFloat(), weapon.attackRange.toFloat())
+            (weapon.projectile.acceleration?.targetSpeed ?: weapon.projectile.speed).toFloat(),
+            weapon.projectile.life.toFloat(), weapon.attackRange.toFloat(),
+            useSlidingVelocity = weapon.projectile.acceleration != null)
         val bound = (profile.spread * 100f).toInt()
         require(bound in 0..Int.MAX_VALUE / 2) { "Ground spread must fit the finite integer sampler" }
         fun scatter(salt: Int) = if (bound == 0) 0f
