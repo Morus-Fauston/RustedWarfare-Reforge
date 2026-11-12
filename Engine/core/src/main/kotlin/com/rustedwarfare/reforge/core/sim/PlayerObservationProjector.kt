@@ -32,6 +32,7 @@ internal class PlayerObservationProjector(world: WorldHandle, scenario: Scenario
     private val localControl = scenario.players.first { it.playerId == playerId }.control == PlayerControl.LOCAL
     private val factoryTypes = scenario.unitDefinitions.filterValues { it.production != null }.keys.toSet()
     private val upgradeTypes = scenario.unitDefinitions.filterValues { it.upgrades != null }.keys.toSet()
+    private val map = scenario.map
     private val widthTiles = scenario.map.widthTiles
     private val heightTiles = scenario.map.heightTiles
     private val tileWidth = scenario.map.tileWidth
@@ -65,7 +66,7 @@ internal class PlayerObservationProjector(world: WorldHandle, scenario: Scenario
             cached.key.knowledgeRevision == knowledge?.revision &&
             cached.key.actionRevision == frame.actionRevision) return cached.observation
         val visibleUnits = observation.units.filter { it.carriedBy == null && isVisible(vision,
-            Transport.queryPosition(it.position, it.unitId in frame.nativeTransportPlacements)) }
+            Transport.queryPosition(it.position, it.unitId in frame.nativeTransportPlacements, map)) }
         val visibleIds = visibleUnits.map { it.unitId }.toSet()
         val visible = visibleUnits.map {
             val ownerTasks = immutable(it.tasks.map { task ->

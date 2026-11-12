@@ -21,18 +21,24 @@ internal object Transport {
         if (MapBounds.contains(map.widthTiles.toDouble() * map.tileWidth,
                 map.heightTiles.toDouble() * map.tileHeight, position, boundaryRadius(unit))) return true
         if (!unit.nativeTransportPlacement || !position.x.isFinite() || !position.y.isFinite()) return false
+        if (unit.scoutOrigin != null) {
+            // A spread impact may be outside the map. Keep the observed birth pose and permit a route back inside.
+            val start = MapBounds.clamp(map, unit.position)
+            val end = MapBounds.clamp(map, position)
+            return kotlin.math.abs(position.x - end.x) <= kotlin.math.abs(unit.position.x - start.x) &&
+                kotlin.math.abs(position.y - end.y) <= kotlin.math.abs(unit.position.y - start.y)
+        }
         val column = (position.x.toFloat() / map.tileWidth).toInt()
         val row = (position.y.toFloat() / map.tileHeight).toInt()
         return column in 0 until map.widthTiles && row in 0 until map.heightTiles
     }
 
     /** Adapt only the routing/vision query, never the native stored placement. */
-    fun queryPosition(position: Position, nativePlacement: Boolean): Position =
-        if (nativePlacement && (position.x < 0.0 || position.y < 0.0))
-            Position(maxOf(0.0, position.x), maxOf(0.0, position.y)) else position
+    fun queryPosition(position: Position, nativePlacement: Boolean, map: MapDefinition): Position =
+        if (nativePlacement) MapBounds.clamp(map, position) else position
 
-    fun queryPosition(unit: MutableUnit, position: Position = unit.position): Position =
-        queryPosition(position, unit.nativeTransportPlacement)
+    fun queryPosition(unit: MutableUnit, map: MapDefinition, position: Position = unit.position): Position =
+        queryPosition(position, unit.nativeTransportPlacement, map)
 
     fun supports(definition: UnitDefinition): Boolean {
         if (definition.transport == TransportProfile.NAUTILUS_SUBMERGED) return NautilusRules.supports(definition)

@@ -1311,7 +1311,7 @@ class BootstrapScreen(
             actor.setText(action?.title.orEmpty() + status)
         }
         menu?.unitActions?.singleOrNull { it.name == customActionHover }?.let { action ->
-            setUnitIcon(nativeTooltipIcon, selected?.typeId)
+            setUnitIcon(nativeTooltipIcon, action.iconTypeId ?: selected?.typeId)
             nativeTooltipText.setText(action.tooltip)
         }
         if (flightHover) menu?.flightAction?.let { action ->

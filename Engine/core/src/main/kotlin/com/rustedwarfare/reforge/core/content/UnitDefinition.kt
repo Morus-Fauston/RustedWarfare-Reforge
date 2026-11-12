@@ -57,7 +57,7 @@ class UnitDefinition(
 enum class TransportProfile { NATIVE_HOVERCRAFT, NATIVE_DROPSHIP, NAUTILUS_SUBMERGED }
 
 /** Native work capability, independent of the ordinary builder's construction menu. */
-enum class MaintenanceProfile { NATIVE_REPAIR_BAY, MECH_ENGINEER }
+enum class MaintenanceProfile { NATIVE_REPAIR_BAY, MECH_ENGINEER, SCOUT_BOT }
 
 /** Finite effective custom silos share their content and presentation slots. */
 data class NuclearSiloProfile(
@@ -130,19 +130,26 @@ data class ShieldProfile(val maximum: Float, val regeneration: Float, val startA
 
 /** Weapon energy is separate from the point-defense module's different exhaustion rule. */
 data class EnergyProfile(val maximum: Float, val regeneration: Float, val rechargingRegeneration: Float,
-    val needsFullRecharge: Boolean)
+    val needsFullRecharge: Boolean, val dieOnZero: Boolean = false)
 
 /** Finite custom ground body's physical height; it does not grant flight movement. */
 data class GroundHeightProfile(val target: Float)
 
 /** The qualified conversion/action subset; no executable text or arbitrary expression interpreter. */
 enum class AutomaticActionCondition { ENERGY_EMPTY, OVER_WATER, NOT_OVER_WATER }
-data class CustomActionDefinition(val name: String, val actionId: String, val targetTypeId: String,
+data class GroundLaunchProfile(val turretName: String, val price: Long, val range: Double,
+    val movementType: MovementType, val payloadUnitTypeId: String)
+data class CustomActionDefinition(val name: String, val actionId: String, val targetTypeId: String?,
     val rate: Float, val energySet: Float?, val cooldown: Int = 0,
     val canPlayerCancel: Boolean = false, val allowMultipleInQueue: Boolean = false,
     val automatic: AutomaticActionCondition? = null, val visible: Boolean = true,
     val cannotMove: Boolean = false, val rotateTo: Double? = null, val rotateToOrBackwards: Boolean = false,
-    val highPriority: Boolean = false, val requiresOverWater: Boolean = false)
+    val highPriority: Boolean = false, val requiresOverWater: Boolean = false, val groundLaunch: GroundLaunchProfile? = null) {
+    init {
+        require((targetTypeId == null) != (groundLaunch == null))
+        require(automatic == null || groundLaunch == null)
+    }
+}
 class CustomActionsProfile(actions: List<CustomActionDefinition>, val automaticCooldown: Float = 60f) {
     val actions: List<CustomActionDefinition> = Collections.unmodifiableList(ArrayList(actions))
 }
@@ -258,6 +265,7 @@ enum class FireSoundProfile(val eventId: String, val volume: Float, val pitch: F
     HOVER("reforge:events/hover-fire", .3f, 1.3f),
     NAVAL_MAIN("reforge:events/naval-main-fire", .3f),
     NAVAL_MISSILE("reforge:events/naval-missile-fire", .1f),
+    SCOUT_PLASMA("reforge:events/scout-plasma-fire", .05f),
     SUBMARINE_MISSILE("reforge:events/naval-missile-fire", .8f),
     ENGINEER_MISSILE("reforge:events/naval-missile-fire", .2f),
     AMPHIBIOUS_LIGHTNING("reforge:events/amphibious-lightning-fire", .2f),

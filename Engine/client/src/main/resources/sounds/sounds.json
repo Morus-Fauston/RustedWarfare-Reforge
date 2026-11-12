@@ -33,6 +33,9 @@
     "reforge:events/amphibious-lightning-fire": {
       "sound": "reforge:sounds/tank-fire"
     },
+    "reforge:events/scout-plasma-fire": {
+      "sound": "reforge:sounds/tank-fire"
+    },
     "reforge:events/nuke-launch": {
       "sound": "reforge:sounds/nuke-launch"
     },

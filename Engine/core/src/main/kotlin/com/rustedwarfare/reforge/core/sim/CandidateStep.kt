@@ -1,6 +1,8 @@
 package com.rustedwarfare.reforge.core.sim
 
 import com.rustedwarfare.reforge.core.content.MapDefinition
+import com.rustedwarfare.reforge.core.content.NautilusRules
+import com.rustedwarfare.reforge.core.content.ScoutBotRules
 import com.rustedwarfare.reforge.core.path.PlanningTerrain
 import com.rustedwarfare.reforge.core.path.PathSearchSample
 import com.rustedwarfare.reforge.core.knowledge.*
@@ -153,6 +155,13 @@ internal data class StepState(
                     "Invalid produced unit identity"
                 }
             }
+            unit.scoutOrigin?.let { birth ->
+                val source = units.getValue(birth.sourceUnitId)
+                require(unit.definition.id in ScoutBotRules.ids && NautilusRules.supports(source.definition) &&
+                    unit.productionOrigin == null && birth.projectileId in 1L..<checkNotNull(unit.objectId) &&
+                    unit.unitId == "scout:${unit.ownerPlayerId}:${birth.projectileId}" &&
+                    unit.updateKey.startsWith("~produced/")) { "Invalid scout bot birth identity" }
+            }
             require(Transport.containsPosition(unit, input.map, unit.position)) {
                 "Unit collision circle must remain within the map"
             }
@@ -191,6 +200,9 @@ internal data class StepState(
                         course.launchTarget.x.isFinite() && course.launchTarget.y.isFinite()
                 } != false &&
                 projectile.ground?.let { it.x.isFinite() && it.y.isFinite() && it.height.isFinite() } != false &&
+                projectile.scoutPayload?.let { it.target.x.isFinite() && it.target.y.isFinite() &&
+                    it.stage.guided && projectile.ballistic != null && projectile.nonDeflectable &&
+                    projectile.remainingLife > 0.0 && projectile.remainingLife <= it.stage.life } != false &&
                 (projectile.missile == null || projectile.speed.toFloat().let { it.isFinite() && it >= 0f } && projectile.missileRawAz.isFinite())) {
                 "Projectile candidate must remain finite"
             }

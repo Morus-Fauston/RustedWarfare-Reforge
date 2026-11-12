@@ -438,11 +438,14 @@ class SandboxGraphics private constructor(private val resources: SandboxRenderRe
         groundAction?.let { preview ->
             shapes.color = if (preview.valid) Color.ORANGE else Color.RED
             val sourceX = projection.x(preview.source.x); val sourceY = projection.y(preview.source.y)
-            shapes.circle(sourceX, sourceY, (preview.minimumRange * projection.scale).toFloat(), 96)
+            if (preview.minimumRange > 0.0)
+                shapes.circle(sourceX, sourceY, (preview.minimumRange * projection.scale).toFloat(), 96)
             shapes.circle(sourceX, sourceY, (preview.maximumRange * projection.scale).toFloat(), 192)
             val x = projection.x(preview.position.x); val y = projection.y(preview.position.y)
-            shapes.circle(x, y, (preview.areaRadius * projection.scale).toFloat(), 96)
-            shapes.circle(x, y, ((preview.areaRadius - 30.0) * projection.scale).toFloat(), 96)
+            if (preview.areaRadius > 0.0) {
+                shapes.circle(x, y, (preview.areaRadius * projection.scale).toFloat(), 96)
+                shapes.circle(x, y, ((preview.areaRadius - 30.0) * projection.scale).toFloat(), 96)
+            }
             shapes.line(x - 7f, y, x + 7f, y); shapes.line(x, y - 7f, x, y + 7f)
         }
         for (effect in nuclearPresentation.project(frame.observation)) {

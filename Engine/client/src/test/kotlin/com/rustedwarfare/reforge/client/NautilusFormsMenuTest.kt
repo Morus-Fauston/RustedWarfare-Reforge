@@ -16,7 +16,7 @@ class NautilusFormsMenuTest {
             assertIs<ActionResult.Accepted>(s.unitAction("surface"))
             s.tick()
             assertEquals("Nautilus (Surface)", s.actionMenu.selectedTitle)
-            assertEquals("Dive", s.actionMenu.unitActions.single().title)
+            assertEquals("Dive", s.actionMenu.unitActions.single { it.name == "dive" }.title)
             assertNotNull(s.actionMenu.transportAction)
             assertIs<ActionResult.Accepted>(s.produce("hoverTank"))
             repeat(255) { s.tick() }

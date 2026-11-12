@@ -52,6 +52,14 @@
       "file": "nautilus/nautilusLand.json"
     },
     {
+      "type": "scout-bot",
+      "file": "nautilus/scout/robotCrab.json"
+    },
+    {
+      "type": "scout-bot",
+      "file": "nautilus/scout/robotCrabWater.json"
+    },
+    {
       "type": "command-center",
       "file": "units/commandCenter/commandCenter.json"
     },

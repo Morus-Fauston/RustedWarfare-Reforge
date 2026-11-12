@@ -26,6 +26,7 @@ internal class ActionCatalogue(private val definitions: Map<String, UnitDefiniti
         "antiNukeLauncherC" to Names("Anti-nuke silo"),
         "nautilusSubmarineSurface" to Names("Nautilus (Surface)"),
         "nautilusSubmarineLand" to Names("Nautilus (Land)"),
+        "robotCrab" to Names("Scout bot"), "robotCrabWater" to Names("Scout bot"),
         "extractorT1" to Names("Extractor T1", "Extractor"), "extractorT2" to Names("Extractor T2", "Unit"),
         "extractorT3" to Names("Extractor T3", "Unit"), "fabricatorT1" to Names("Fabricator T1", "Fabricator"),
         "fabricatorT2" to Names("Fabricator T2", "Unit"), "fabricatorT3" to Names("Fabricator T3", "Unit"),
@@ -106,26 +107,34 @@ internal class ActionCatalogue(private val definitions: Map<String, UnitDefiniti
         val actionUnit = ownSingle ?: if (localControl) nuclearLaunchMember(view, ids) else null
         val unitActions = immutable(actionUnit?.unitActions?.actions.orEmpty()
             .filter { ownSingle != null || it.name == "launchNuke" }.map { action ->
+            val definition = actionUnit?.let { definitions.getValue(it.typeId).customActions?.actions?.singleOrNull { d -> d.name == action.name } }
+            val launch = definition?.groundLaunch
             val ammoPrice = when (action.name) {
                 "buildNuke" -> 11000L
                 "buildAntiNuke" -> 4000L
                 else -> null
             }
             val nuclear = ammoPrice != null || action.name == "launchNuke"
-            val affordable = ammoPrice == null || affordable(view, ammoPrice)
+            val price = launch?.price ?: ammoPrice
+            val affordable = price == null || affordable(view, price)
             val cancelUnit = if (ownSingle == null && action.name == "launchNuke")
                 nuclearLaunchMember(view, ids, cancelling = true) else actionUnit
             val cancelAction = cancelUnit?.unitActions?.actions?.singleOrNull { it.name == action.name }
             val title = when (action.name) { "afterBurn" -> "Afterburn"; "cancelBurn" -> "Cancel burn"
                 "deploy" -> "Deploy"; "undeploy" -> "Undeploy"; "surface" -> "Surface"; "dive" -> "Dive"
                 "buildNuke" -> "Build nuke"; "launchNuke" -> "Launch nuke"
+                "launchScoutBot" -> "Scout bot"
                 "buildAntiNuke" -> "Build interceptor"; else -> action.name }
             val status = if (action.queueIndex != null) "Queued ${(action.progress!! * 100f).toInt()}%" else if (action.cooldownRemaining > 0)
                 String.format(Locale.ROOT, "Cooling %.1fs", action.cooldownRemaining / 1000f) else "Ready"
             val motion = when (action.name) { "deploy" -> "Movement locked while deploying\nCannot cancel"
                 "undeploy" -> "Fixed until undeployed\nCannot cancel"
                 "surface", "dive" -> "Movement locked while converting\nRight: cancel"; else -> "Movement orders continue" }
-            val tooltip = if (!nuclear) "$title\n$status\n$motion" else
+            val tooltip = if (launch != null)
+                "Launch scout bot\n$status\n\$${launch.price} / Range ${launch.range.toInt()}\n" +
+                    (if (affordable) "Left: choose ground point\nEsc / right: cancel selection" else "Insufficient funds") +
+                    "\nMovement locked while building\nRight on card: cancel one queued"
+            else if (!nuclear) "$title\n$status\n$motion" else
                 "$title\nAmmo ${actionUnit?.unitActions?.stockpile ?: 0}\n$status\n" +
                     (if (ammoPrice != null) "\$$ammoPrice / ${if (action.name == "buildNuke") "55.6" else "23.8"}s\n" +
                         (if (affordable) "Left: produce" else "Insufficient funds")
@@ -136,7 +145,8 @@ internal class ActionCatalogue(private val definitions: Map<String, UnitDefiniti
                 cancelAction?.queueIndex != null && cancelUnit?.let { selected ->
                     nuclear || definitions.getValue(selected.typeId).customActions?.actions?.singleOrNull { it.name == action.name }
                         ?.canPlayerCancel == true
-                } == true, action.progress)
+                } == true, action.progress, groundTargeted = launch != null || action.name == "launchNuke",
+                iconTypeId = launch?.payloadUnitTypeId)
         })
         val profiles = ownSingle?.takeUnless { it.constructionProgress < 1f &&
             definitions.getValue(it.typeId).className == "AuthoredBuilding" }
@@ -264,7 +274,7 @@ data class AmphibiousFlightActionView(val flying: Boolean, val title: String, va
 data class TransportUnloadActionView(val unloading: Boolean, val title: String, val available: Boolean)
 data class CustomUnitActionView(val name: String, val title: String, val tooltip: String,
     val queued: Boolean, val cooldownRemaining: Int, val available: Boolean, val cancellable: Boolean,
-    val progress: Float? = null)
+    val progress: Float? = null, val groundTargeted: Boolean = false, val iconTypeId: String? = null)
 
 /** The native onlyOneUnitAtATime launch flag selects one eligible member per command. */
 internal fun nuclearLaunchMember(view: PlayerObservation, ids: Set<String>, cancelling: Boolean = false): UnitObservation? =

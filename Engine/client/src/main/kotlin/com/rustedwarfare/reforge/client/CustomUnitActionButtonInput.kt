@@ -11,7 +11,7 @@ class CustomUnitActionButtonInput(session: () -> SandboxSession?, active: () -> 
         val view = current.actionMenu.unitActions.singleOrNull { it.name == action.key }
         if (button == Input.Buttons.RIGHT && view?.cancellable == true) current.unitAction(action.key, cancelQueued = true)
         else if (button == Input.Buttons.LEFT && view?.available == true) {
-            if (action.key == "launchNuke") beginTargeting(action.key) else current.unitAction(action.key)
+            if (view.groundTargeted) beginTargeting(action.key) else current.unitAction(action.key)
         }
     },
     changed = changed, hovered = hovered)

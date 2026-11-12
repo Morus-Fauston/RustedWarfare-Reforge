@@ -6265,7 +6265,11 @@
     "anti-nuclear-silo-back": "assets/units/nukes/antinuke_launcher_back.png",
     "anti-nuclear-silo-dead": "assets/units/nukes/antinuke_launcher_dead.png",
     "anti-nuclear-silo-arm1": "assets/units/nukes/antinuke_launcher_door_r.png",
-    "anti-nuclear-silo-arm2": "assets/units/nukes/antinuke_launcher_door_l.png"
+    "anti-nuclear-silo-arm2": "assets/units/nukes/antinuke_launcher_door_l.png",
+    "scout-bot-body": "assets/units/nautilus/robotCrab/base.png",
+    "scout-bot-dead": "assets/units/nautilus/robotCrab/base_dead.png",
+    "scout-bot-turret": "assets/units/nautilus/robotCrab/turret.png",
+    "scout-bot-leg": "assets/units/nautilus/robotCrab/leg.png"
   },
   "mappingBasis": {
     "androidProfileSha256": "e273280ab37b1a24714e6b15d8e1cb14fdd395e228ea7c71a62dd2f24d334780",
@@ -6711,6 +6715,38 @@
       "sha256": "3f1c6431bbfd9eb5daeab158ae34f5ffce92629133cd753842768e61cb69d0b2",
       "width": 12,
       "height": 11
+    },
+    {
+      "id": "scout-bot-body",
+      "path": "assets/units/nautilus/robotCrab/base.png",
+      "bytes": 3105,
+      "sha256": "6d3fa1f508427b0baebfa4e7f6da34d72b80dec29de6a099f93bfc82458c5c96",
+      "width": 24,
+      "height": 21
+    },
+    {
+      "id": "scout-bot-dead",
+      "path": "assets/units/nautilus/robotCrab/base_dead.png",
+      "bytes": 3259,
+      "sha256": "238ad98eacada5cdf446549f77a53866bb52edfda9d63b317f41427d2466618f",
+      "width": 24,
+      "height": 21
+    },
+    {
+      "id": "scout-bot-turret",
+      "path": "assets/units/nautilus/robotCrab/turret.png",
+      "bytes": 2816,
+      "sha256": "53481ba7a0701cca825582f7d55e71478405bf352923ce2235acbfd15e9c2e59",
+      "width": 8,
+      "height": 15
+    },
+    {
+      "id": "scout-bot-leg",
+      "path": "assets/units/nautilus/robotCrab/leg.png",
+      "bytes": 2830,
+      "sha256": "2b8c40692119fc456429861d3278984a8a8a82864aec13e2f192e2aefc2a225c",
+      "width": 24,
+      "height": 102
     }
   ],
   "mappingUnitOutputs": {
@@ -7630,6 +7666,70 @@
         11
       ],
       "frames": 1
+    },
+    "scout-bot-body": {
+      "file": "units/scout-bot-body.png",
+      "operation": "crop",
+      "source": "scout-bot-body",
+      "rect": [
+        0,
+        0,
+        24,
+        21
+      ],
+      "target": [
+        24,
+        21
+      ],
+      "frames": 1
+    },
+    "scout-bot-dead": {
+      "file": "units/scout-bot-dead.png",
+      "operation": "crop",
+      "source": "scout-bot-dead",
+      "rect": [
+        0,
+        0,
+        24,
+        21
+      ],
+      "target": [
+        24,
+        21
+      ],
+      "frames": 1
+    },
+    "scout-bot-turret": {
+      "file": "units/scout-bot-turret.png",
+      "operation": "crop",
+      "source": "scout-bot-turret",
+      "rect": [
+        0,
+        0,
+        8,
+        15
+      ],
+      "target": [
+        8,
+        15
+      ],
+      "frames": 1
+    },
+    "scout-bot-leg": {
+      "file": "units/scout-bot-leg.png",
+      "operation": "crop",
+      "source": "scout-bot-leg",
+      "rect": [
+        0,
+        0,
+        24,
+        102
+      ],
+      "target": [
+        24,
+        102
+      ],
+      "frames": 1
     }
   },
   "mappingUnitBindings": {
@@ -7759,6 +7859,18 @@
       "dead": "anti-nuclear-silo-dead",
       "arm1": "anti-nuclear-silo-arm1",
       "arm2": "anti-nuclear-silo-arm2"
+    },
+    "robotCrab": {
+      "body": "scout-bot-body",
+      "dead": "scout-bot-dead",
+      "turret": "scout-bot-turret",
+      "leg": "scout-bot-leg"
+    },
+    "robotCrabWater": {
+      "body": "scout-bot-body",
+      "dead": "scout-bot-dead",
+      "turret": "scout-bot-turret",
+      "leg": "scout-bot-leg"
     }
   }
 }

@@ -1,0 +1,352 @@
+{
+  "schemaVersion": 1,
+  "scenarioId": "nautilus-json-scout-launch",
+  "inputs": "../../inputs/nautilus-production/json",
+  "contentPack": {
+    "directory": "production-package",
+    "unitId": "commandCenter"
+  },
+  "intents": [
+    {
+      "intentId": "select-center",
+      "kind": "select",
+      "waitSteps": 0,
+      "position": {
+        "x": 130,
+        "y": 130
+      }
+    },
+    {
+      "intentId": "produce-worker",
+      "kind": "produce",
+      "waitSteps": 600,
+      "typeId": "builder"
+    },
+    {
+      "intentId": "leave-center",
+      "kind": "select",
+      "waitSteps": 100,
+      "position": {
+        "x": 130,
+        "y": 130
+      }
+    },
+    {
+      "intentId": "select-worker",
+      "kind": "select",
+      "waitSteps": 0,
+      "position": {
+        "x": 129,
+        "y": 220
+      }
+    },
+    {
+      "intentId": "build-experimental",
+      "kind": "build",
+      "waitSteps": 600,
+      "position": {
+        "x": 210,
+        "y": 310
+      },
+      "typeId": "experimentalLandFactory"
+    },
+    {
+      "intentId": "construct-experimental-0",
+      "kind": "select",
+      "waitSteps": 600,
+      "position": {
+        "x": 210,
+        "y": 310
+      }
+    },
+    {
+      "intentId": "construct-experimental-1",
+      "kind": "select",
+      "waitSteps": 600,
+      "position": {
+        "x": 210,
+        "y": 310
+      }
+    },
+    {
+      "intentId": "construct-experimental-2",
+      "kind": "select",
+      "waitSteps": 600,
+      "position": {
+        "x": 210,
+        "y": 310
+      }
+    },
+    {
+      "intentId": "construct-experimental-3",
+      "kind": "select",
+      "waitSteps": 600,
+      "position": {
+        "x": 210,
+        "y": 310
+      }
+    },
+    {
+      "intentId": "construct-experimental-4",
+      "kind": "select",
+      "waitSteps": 600,
+      "position": {
+        "x": 210,
+        "y": 310
+      }
+    },
+    {
+      "intentId": "construct-experimental-5",
+      "kind": "select",
+      "waitSteps": 600,
+      "position": {
+        "x": 210,
+        "y": 310
+      }
+    },
+    {
+      "intentId": "construct-experimental-6",
+      "kind": "select",
+      "waitSteps": 600,
+      "position": {
+        "x": 210,
+        "y": 310
+      }
+    },
+    {
+      "intentId": "construct-experimental-7",
+      "kind": "select",
+      "waitSteps": 600,
+      "position": {
+        "x": 210,
+        "y": 310
+      }
+    },
+    {
+      "intentId": "construct-experimental-8",
+      "kind": "select",
+      "waitSteps": 600,
+      "position": {
+        "x": 210,
+        "y": 310
+      }
+    },
+    {
+      "intentId": "construct-experimental-9",
+      "kind": "select",
+      "waitSteps": 600,
+      "position": {
+        "x": 210,
+        "y": 310
+      }
+    },
+    {
+      "intentId": "construct-experimental-10",
+      "kind": "select",
+      "waitSteps": 400,
+      "position": {
+        "x": 210,
+        "y": 310
+      }
+    },
+    {
+      "intentId": "select-experimental",
+      "kind": "select",
+      "waitSteps": 0,
+      "position": {
+        "x": 210,
+        "y": 310
+      }
+    },
+    {
+      "intentId": "produce-mother",
+      "kind": "produce",
+      "waitSteps": 600,
+      "typeId": "nautilusSubmarineLand"
+    },
+    {
+      "intentId": "wait-mother-0",
+      "kind": "select",
+      "waitSteps": 600,
+      "position": {
+        "x": 210,
+        "y": 310
+      }
+    },
+    {
+      "intentId": "wait-mother-1",
+      "kind": "select",
+      "waitSteps": 600,
+      "position": {
+        "x": 210,
+        "y": 310
+      }
+    },
+    {
+      "intentId": "wait-mother-2",
+      "kind": "select",
+      "waitSteps": 600,
+      "position": {
+        "x": 210,
+        "y": 310
+      }
+    },
+    {
+      "intentId": "wait-mother-3",
+      "kind": "select",
+      "waitSteps": 600,
+      "position": {
+        "x": 210,
+        "y": 310
+      }
+    },
+    {
+      "intentId": "wait-mother-4",
+      "kind": "select",
+      "waitSteps": 600,
+      "position": {
+        "x": 210,
+        "y": 310
+      }
+    },
+    {
+      "intentId": "wait-mother-5",
+      "kind": "select",
+      "waitSteps": 400,
+      "position": {
+        "x": 210,
+        "y": 310
+      }
+    },
+    {
+      "intentId": "select-mother",
+      "kind": "select",
+      "waitSteps": 0,
+      "position": {
+        "x": 209,
+        "y": 475
+      }
+    },
+    {
+      "intentId": "queue-scout",
+      "kind": "unit-action",
+      "waitSteps": 15,
+      "actionName": "launchScoutBot",
+      "target": {
+        "x": 270,
+        "y": 475
+      }
+    },
+    {
+      "intentId": "cancel-scout",
+      "kind": "unit-action",
+      "waitSteps": 0,
+      "actionName": "launchScoutBot",
+      "cancelQueued": true
+    },
+    {
+      "intentId": "launch-scout",
+      "kind": "unit-action",
+      "waitSteps": 380,
+      "actionName": "launchScoutBot",
+      "target": {
+        "x": 270,
+        "y": 475
+      }
+    }
+  ],
+  "waitPlan": {
+    "produce-worker": {
+      "minimumSteps": 600,
+      "timeoutSeconds": 240
+    },
+    "leave-center": {
+      "minimumSteps": 100,
+      "timeoutSeconds": 240
+    },
+    "build-experimental": {
+      "minimumSteps": 600,
+      "timeoutSeconds": 240
+    },
+    "construct-experimental-0": {
+      "minimumSteps": 600,
+      "timeoutSeconds": 240
+    },
+    "construct-experimental-1": {
+      "minimumSteps": 600,
+      "timeoutSeconds": 240
+    },
+    "construct-experimental-2": {
+      "minimumSteps": 600,
+      "timeoutSeconds": 240
+    },
+    "construct-experimental-3": {
+      "minimumSteps": 600,
+      "timeoutSeconds": 240
+    },
+    "construct-experimental-4": {
+      "minimumSteps": 600,
+      "timeoutSeconds": 240
+    },
+    "construct-experimental-5": {
+      "minimumSteps": 600,
+      "timeoutSeconds": 240
+    },
+    "construct-experimental-6": {
+      "minimumSteps": 600,
+      "timeoutSeconds": 240
+    },
+    "construct-experimental-7": {
+      "minimumSteps": 600,
+      "timeoutSeconds": 240
+    },
+    "construct-experimental-8": {
+      "minimumSteps": 600,
+      "timeoutSeconds": 240
+    },
+    "construct-experimental-9": {
+      "minimumSteps": 600,
+      "timeoutSeconds": 240
+    },
+    "construct-experimental-10": {
+      "minimumSteps": 400,
+      "timeoutSeconds": 240
+    },
+    "produce-mother": {
+      "minimumSteps": 600,
+      "timeoutSeconds": 240
+    },
+    "wait-mother-0": {
+      "minimumSteps": 600,
+      "timeoutSeconds": 240
+    },
+    "wait-mother-1": {
+      "minimumSteps": 600,
+      "timeoutSeconds": 240
+    },
+    "wait-mother-2": {
+      "minimumSteps": 600,
+      "timeoutSeconds": 240
+    },
+    "wait-mother-3": {
+      "minimumSteps": 600,
+      "timeoutSeconds": 240
+    },
+    "wait-mother-4": {
+      "minimumSteps": 600,
+      "timeoutSeconds": 240
+    },
+    "wait-mother-5": {
+      "minimumSteps": 400,
+      "timeoutSeconds": 240
+    },
+    "queue-scout": {
+      "minimumSteps": 15,
+      "timeoutSeconds": 240
+    },
+    "launch-scout": {
+      "minimumSteps": 380,
+      "timeoutSeconds": 240
+    }
+  }
+}

@@ -18,6 +18,14 @@
     {
       "type": "nautilus",
       "file": "nautilusLand.ini"
+    },
+    {
+      "type": "scout-bot",
+      "file": "scout/robotCrab.ini"
+    },
+    {
+      "type": "scout-bot",
+      "file": "scout/robotCrabWater.ini"
     }
   ]
 }

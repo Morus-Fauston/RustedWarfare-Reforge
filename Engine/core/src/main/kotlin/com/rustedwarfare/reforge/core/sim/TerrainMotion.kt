@@ -11,8 +11,8 @@ internal object TerrainMotion {
         val a = Position(start.x / map.tileWidth, start.y / map.tileHeight)
         val b = Position(candidate.x / map.tileWidth, candidate.y / map.tileHeight)
         // D-083 retains the map's closed outer edge for zero-radius units.
-        fun cell(value: Double, size: Int, count: Int): Int =
-            if (nativeTransportPlacement && value < 0.0) (value.toFloat() / size).toInt() else MapBounds.cell(value, size, count)
+        fun cell(value: Double, size: Int, count: Int): Int = MapBounds.cell(
+            if (nativeTransportPlacement) value.coerceIn(0.0, count.toDouble() * size) else value, size, count)
         val oldX = cell(start.x, map.tileWidth, map.widthTiles)
         val oldY = cell(start.y, map.tileHeight, map.heightTiles)
         val newX = cell(candidate.x, map.tileWidth, map.widthTiles)

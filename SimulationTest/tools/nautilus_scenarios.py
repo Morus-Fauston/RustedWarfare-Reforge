@@ -37,6 +37,8 @@ def generate():
         paths = [(pack / f'nautilus.{fmt}', 'nautilusSubmarine', 'nautilus'),
                  (pack / f'nautilusSurface.{fmt}', 'nautilusSubmarineSurface', 'nautilus'),
                  (pack / f'nautilusLand.{fmt}', 'nautilusSubmarineLand', 'nautilus'),
+                 (pack / f'scout/robotCrab.{fmt}', 'robotCrab', 'scout-bot'),
+                 (pack / f'scout/robotCrabWater.{fmt}', 'robotCrabWater', 'scout-bot'),
                  (pack / f'hover/hover.{fmt}', 'hoverTank', 'hover-tank')]
         used = {p for p, _, _ in paths}
         scene.update(scenarioId='p009-nautilus-mobile-production')
@@ -203,8 +205,26 @@ def generate_forms():
         save(PUBLIC/f'contracts/nautilus-{fmt}-forms.json',contract)
 
 
+def generate_scout():
+    for fmt in ('ini', 'json', 'hjson'):
+        plan = json.loads((PUBLIC / f'platform/scenarios/nautilus-{fmt}-land-forms.json').read_text(encoding='utf8'))
+        select_mother = next(i for i, intent in enumerate(plan['intents']) if intent['intentId'] == 'select-mother')
+        plan['scenarioId'] = f'nautilus-{fmt}-scout-launch'
+        plan['intents'] = plan['intents'][:select_mother + 1]
+        target = dict(x=270, y=475)
+        plan['intents'] += [
+            dict(intentId='queue-scout', kind='unit-action', waitSteps=15, actionName='launchScoutBot', target=target),
+            dict(intentId='cancel-scout', kind='unit-action', waitSteps=0, actionName='launchScoutBot', cancelQueued=True),
+            dict(intentId='launch-scout', kind='unit-action', waitSteps=380, actionName='launchScoutBot', target=target),
+        ]
+        plan['waitPlan'] = {intent['intentId']: dict(minimumSteps=intent['waitSteps'], timeoutSeconds=240)
+                            for intent in plan['intents'] if intent['waitSteps']}
+        save(PUBLIC / f'platform/scenarios/nautilus-{fmt}-scout-launch.json', plan)
+
+
 if __name__ == '__main__':
     generate()
     generate_platform()
     generate_forms()
     generate_land_platform()
+    generate_scout()

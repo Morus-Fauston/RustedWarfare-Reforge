@@ -8,6 +8,7 @@ internal object NativeActionPanel {
         name to NativeCardBounds(752f + index % 2 * 92f, 188f, 84f, 40f)
     }.toMap() + mapOf("surface" to NativeCardBounds(844f, 188f, 84f, 40f),
         "dive" to NativeCardBounds(844f, 188f, 84f, 40f),
+        "launchScoutBot" to NativeCardBounds(844f, 256f, 84f, 52f),
         "buildNuke" to NativeCardBounds(752f, 256f, 84f, 52f),
         "launchNuke" to NativeCardBounds(844f, 256f, 84f, 52f),
         "buildAntiNuke" to NativeCardBounds(752f, 256f, 176f, 52f))

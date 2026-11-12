@@ -5,19 +5,27 @@ import com.rustedwarfare.reforge.core.content.AutomaticActionCondition
 import com.rustedwarfare.reforge.core.content.UnitDefinition
 import com.rustedwarfare.reforge.core.content.NautilusRules
 import com.rustedwarfare.reforge.core.content.MapDefinition
+import com.rustedwarfare.reforge.core.content.GroundLaunchProfile
+import com.rustedwarfare.reforge.core.content.ScoutBotRules
 
 /** Immutable queue values participate in the same candidate transaction as the unit. */
-internal data class PendingUnitAction(val action: CustomActionDefinition, override val progress: Float = 0f) : PendingFactoryWork {
-    override val cost: Long get() = 0L
+internal data class PendingUnitAction(val action: CustomActionDefinition, override val progress: Float = 0f,
+    val target: Position? = null) : PendingFactoryWork {
+    override val cost: Long get() = action.groundLaunch?.price ?: 0L
     override val rate: Float get() = action.rate
+
+    fun matches(current: CustomActionDefinition): Boolean = action == current &&
+        (target != null) == (action.groundLaunch != null) &&
+        target?.let { it.x.isFinite() && it.y.isFinite() } != false
 }
+internal data class CustomActionChange(val ledger: ProductionLedger?, val error: SimulationError? = null)
 internal data class CustomActionState(val queue: List<PendingUnitAction> = emptyList(),
     val cooldownEnds: Map<String, Int> = emptyMap(), val automaticCooldown: Float = 0f)
 
 /** Finite custom conversion actions; movement orders and same-name weapon state stay on the object. */
 internal object CustomUnitActions {
     fun supports(definition: UnitDefinition): Boolean = AaBeamGunship.supports(definition) || Bunker.supports(definition) ||
-        NautilusRules.supports(definition)
+        NautilusRules.supports(definition) || ScoutBotRules.supports(definition)
 
     fun movementLocked(unit: MutableUnit, head: PendingUnitAction? = unit.customActionState.queue.firstOrNull()): Boolean = head?.let {
         it.progress > 0f && it.action.cannotMove
@@ -27,7 +35,7 @@ internal object CustomUnitActions {
     fun constrain(unit: MutableUnit, delta: Double, steering: SteeringPolicy, coordinates: CoordinatePolicy,
                   head: PendingUnitAction? = unit.customActionState.queue.firstOrNull()) {
         val action = head?.action ?: return
-        if (action.cannotMove) {
+        if (action.cannotMove && (action.groundLaunch == null || head.progress > 0f)) {
             unit.speed = 0.0
             unit.flightVelocity = Position(0.0, 0.0)
         }
@@ -53,35 +61,61 @@ internal object CustomUnitActions {
                 unit.alive && unit.carriedBy == null && BuildingWork.isReady(unit) && remaining == 0 && index < 0 &&
                     (!action.requiresOverWater || overWater(unit, map)))
         }
-        return UnitActionsObservation(immutable(actions), unit.customActionState.automaticCooldown)
+        return UnitActionsObservation(immutable(actions), unit.customActionState.automaticCooldown,
+            queue = immutable(queue.filter { it.target != null }.map { QueuedUnitActionObservation(it.action.name, it.progress, it.target) }))
     }
 
-    fun request(unit: MutableUnit, name: String, cancel: Boolean, now: Int, map: MapDefinition): SimulationError? {
-        val action = unit.definition.customActions?.actions?.singleOrNull { it.name == name && it.automatic == null && it.visible }
-            ?: return SimulationError("unsupported-unit-action", "Unit does not expose this action")
-        if (!BuildingWork.isReady(unit)) return SimulationError("unit-incomplete", "Unit is not complete")
-        if (cancel) {
+    fun request(unit: MutableUnit, command: UnitAction, now: Int, map: MapDefinition, collisionMap: MapDefinition,
+                ledger: ProductionLedger?): CustomActionChange {
+        fun reject(code: String, message: String) = CustomActionChange(ledger, SimulationError(code, message))
+        val action = unit.definition.customActions?.actions?.singleOrNull {
+            it.name == command.actionName && it.automatic == null && it.visible
+        } ?: return reject("unsupported-unit-action", "Unit does not expose this action")
+        if (!BuildingWork.isReady(unit)) return reject("unit-incomplete", "Unit is not complete")
+        val launch = action.groundLaunch
+        val target = command.target
+        if (target != null && (command.cancelQueued || launch == null))
+            return reject("unexpected-action-target", "This action does not accept a ground target")
+        if (command.cancelQueued) {
             if (!action.canPlayerCancel)
-                return SimulationError("unit-action-not-cancellable", "This action cannot be cancelled")
+                return reject("unit-action-not-cancellable", "This action cannot be cancelled")
             val index = unit.customActionState.queue.indexOfLast { it.action.actionId == action.actionId }
-            if (index < 0) return SimulationError("unit-action-not-queued", "This action is not queued")
+            if (index < 0) return reject("unit-action-not-queued", "This action is not queued")
+            val item = unit.customActionState.queue[index]
+            val refunded = if (item.cost == 0L) ledger else checkNotNull(ledger).refund(unit.ownerPlayerId, item.cost)
             unit.customActionState = unit.customActionState.copy(queue = unit.customActionState.queue.filterIndexed { i, _ -> i != index })
-            return null
+            return CustomActionChange(refunded)
         }
         if (action.requiresOverWater && !overWater(unit, map))
-            return SimulationError("unit-action-requires-water", "This action requires water")
+            return reject("unit-action-requires-water", "This action requires water")
         if ((unit.customActionState.cooldownEnds[action.actionId] ?: now) > now)
-            return SimulationError("unit-action-cooldown", "This action is cooling down")
+            return reject("unit-action-cooldown", "This action is cooling down")
         if (!action.allowMultipleInQueue && unit.customActionState.queue.any { it.action.actionId == action.actionId })
-            return SimulationError("duplicate-unit-action", "This action is already queued")
+            return reject("duplicate-unit-action", "This action is already queued")
+        val paid = if (launch == null) ledger else {
+            if (target == null) return reject("missing-action-target", "Select a ground point")
+            if (!target.x.toFloat().isFinite() || !target.y.toFloat().isFinite())
+                return reject("invalid-action-target", "Ground target must be finite")
+            val distance = GroundMath.square(unit.position.x.toFloat(), unit.position.y.toFloat(), target.x.toFloat(), target.y.toFloat())
+            if (distance > launch.range * launch.range)
+                return reject("action-target-out-of-range", "Ground target is beyond launch range")
+            val x = kotlin.math.floor(target.x / map.tileWidth).toInt()
+            val y = kotlin.math.floor(target.y / map.tileHeight).toInt()
+            if (x !in 0 until map.widthTiles || y !in 0 until map.heightTiles ||
+                collisionMap.blockingFor(launch.movementType).isBlocked(x, y))
+                return reject("action-target-impassable", "Ground target is blocked for this launch")
+            checkNotNull(ledger).charge(unit.ownerPlayerId, launch.price)
+                ?: return reject("insufficient-funds", "Not enough credits to queue this action")
+        }
         val queue = unit.customActionState.queue.toMutableList()
         val index = if (action.highPriority) queue.indexOfFirst { !it.action.highPriority }.takeIf { it >= 0 } ?: queue.size else queue.size
-        queue.add(index, PendingUnitAction(action))
+        queue.add(index, PendingUnitAction(action, target = target))
         unit.customActionState = unit.customActionState.copy(queue = queue.toList())
-        return null
+        return CustomActionChange(paid)
     }
 
-    fun advanceQueue(unit: MutableUnit, definitions: Map<String, UnitDefinition>, delta: Double, now: Int): Boolean {
+    fun advanceQueue(unit: MutableUnit, definitions: Map<String, UnitDefinition>, delta: Double, now: Int,
+                     fireAtGround: (GroundLaunchProfile, Position) -> Unit): Boolean {
         val state = unit.customActionState
         val head = state.queue.firstOrNull() ?: return false
         val action = checkNotNull(unit.definition.customActions?.actions?.singleOrNull {
@@ -94,9 +128,11 @@ internal object CustomUnitActions {
         }
         unit.customActionState = state.copy(queue = state.queue.drop(1))
         action.energySet?.let { unit.energy = it }
+        val launch = action.groundLaunch
+        if (launch == null) convert(unit, definitions.getValue(checkNotNull(action.targetTypeId)))
+        else fireAtGround(launch, checkNotNull(head.target))
         if (action.cooldown > 0) unit.customActionState = unit.customActionState.copy(
             cooldownEnds = state.cooldownEnds + (action.actionId to (now + action.cooldown)))
-        convert(unit, definitions.getValue(action.targetTypeId))
         return true
     }
 
@@ -122,9 +158,10 @@ internal object CustomUnitActions {
             else -> MechMotion.initial(target, unit.position, unit.heading)
         }
         if (old.movement.type != target.movement.type) unit.cancelRoute()
-        val retainedIds = checkNotNull(target.customActions).actions.filter { it.automatic == null }.map { it.actionId }.toSet()
-        unit.customActionState = unit.customActionState.copy(queue = unit.customActionState.queue.filter {
-            it.action.actionId in retainedIds })
+        val retained = checkNotNull(target.customActions).actions.filter { it.automatic == null }.associateBy { it.actionId }
+        unit.customActionState = unit.customActionState.copy(queue = unit.customActionState.queue.mapNotNull { item ->
+            retained[item.action.actionId]?.let { item.copy(action = it) }
+        })
     }
 
     private fun overWater(unit: MutableUnit, map: MapDefinition): Boolean = map.isOverWater(
@@ -146,7 +183,7 @@ internal object CustomUnitActions {
             }
             if (!ready) continue
             action.energySet?.let { unit.energy = it }
-            convert(unit, definitions.getValue(action.targetTypeId))
+            convert(unit, definitions.getValue(checkNotNull(action.targetTypeId)))
             // Original setter reads the definition AFTER the conversion.
             unit.customActionState = unit.customActionState.copy(
                 automaticCooldown = checkNotNull(unit.definition.customActions).automaticCooldown)
@@ -158,11 +195,11 @@ internal object CustomUnitActions {
     fun validateCandidate(unit: MutableUnit) {
         val state = unit.customActionState
         val actions = unit.definition.customActions?.actions.orEmpty().filter { it.automatic == null }
-        val ids = actions.map { it.actionId }.toSet()
+        val byId = actions.associateBy { it.actionId }
         require(state.automaticCooldown.isFinite() && state.automaticCooldown in 0f..60f &&
             state.queue.size <= actions.size && state.queue.map { it.action.actionId }.distinct().size == state.queue.size &&
-            state.queue.all { it.action.actionId in ids && it.progress.isFinite() && it.progress in 0f..<1f } &&
-            state.cooldownEnds.keys.all { it == "aaBeamGunship_afterburn_0" } &&
+            state.queue.all { item -> byId[item.action.actionId]?.let(item::matches) == true && item.progress in 0f..<1f } &&
+            state.cooldownEnds.keys.all { (byId[it]?.cooldown ?: 0) > 0 } &&
             (unit.definition.customActions != null || state == CustomActionState())) {
             "Invalid custom unit action candidate"
         }

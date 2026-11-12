@@ -42,7 +42,13 @@ internal object BallisticFlight {
         require(listOf(x, y, height, destinationX, destinationY, heightDifference, distanceSquared).all { it.isFinite() }) {
             "Missile geometry must remain finite"
         }
-        val angle = GroundMath.angle(x, y, destinationX, destinationY)
+        val desired = GroundMath.angle(x, y, destinationX, destinationY)
+        val scout = shot.scoutPayload
+        val angle = if (scout == null || distanceSquared < 225f) desired else {
+            val turn = scout.stage.turnSpeed * elapsed
+            val old = shot.heading - 90.0
+            (old + ScreenPlane.difference(desired.toDouble(), old).coerceIn(-turn.toDouble(), turn.toDouble())).toFloat()
+        }
         shot.heading = angle.toDouble() + 90.0
         val planeMoved = height > threshold || reached
         if (planeMoved) {
@@ -59,6 +65,11 @@ internal object BallisticFlight {
         // Original custom aL<0 marks local13 even on a vertical-only first step.
         if ((planeMoved || usesCurrentSpeed) && targetSpeed > 0f)
             shot.speed = towards(shot.speed.toFloat(), targetSpeed, acceleration * elapsed).toDouble()
+        if (scout != null) {
+            val drift = GroundMath.sin((shot.age * 360f / 60f + 360f * shot.scatter) % 360f) * elapsed
+            x += GroundMath.cos(angle + 90f) * drift
+            y += GroundMath.sin(angle + 90f) * drift
+        }
         require(listOf(x, y, height, angle, shot.speed.toFloat()).all { it.isFinite() }) {
             "Missile candidate must remain finite"
         }

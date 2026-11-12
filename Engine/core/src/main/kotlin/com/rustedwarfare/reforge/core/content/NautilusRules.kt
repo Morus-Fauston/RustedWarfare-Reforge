@@ -32,7 +32,10 @@ internal object NautilusRules {
                 1000f, null, canPlayerCancel = true, visible = sub, cannotMove = true, highPriority = true),
             CustomActionDefinition("dive", "nautilusSubmarine_${if (sub) 6 else 7}", "nautilusSubmarine",
                 1f / 270f, null, canPlayerCancel = true, visible = !sub && !land, cannotMove = true,
-                highPriority = true, requiresOverWater = true)) +
+                highPriority = true, requiresOverWater = true),
+            CustomActionDefinition("launchScoutBot", "claunchScoutBot", null, 1f / 210f, null, cooldown = 29999,
+                canPlayerCancel = true, visible = !sub, cannotMove = true,
+                groundLaunch = GroundLaunchProfile("botTurret", 250L, 500.0, MovementType.HOVER, ScoutBotRules.LAND))) +
             (if (land) listOf(CustomActionDefinition("trigger_onWater", "nautilusSubmarineSurface_8", "nautilusSubmarineSurface",
                 1000f, null, automatic = AutomaticActionCondition.OVER_WATER, visible = false)) else emptyList()) +
             CustomActionDefinition("trigger_onLand", "nautilusSubmarineLand_${if (land) 12 else 11}", "nautilusSubmarineLand",

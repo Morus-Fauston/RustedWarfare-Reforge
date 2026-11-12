@@ -202,9 +202,12 @@ class SandboxRenderResources private constructor(
                     repairRange = if (unit.maintenance != null) unit.builder?.range?.toDouble() ?: 230.0 else null,
                     iconWeaponName = if (unit.maintenance == com.rustedwarfare.reforge.core.content.MaintenanceProfile.MECH_ENGINEER) "body" else null,
                     nanoWeaponName = unit.builder?.mainNanoTurret,
-                    nativeLegSize = if (unit.mech?.kind == com.rustedwarfare.reforge.core.content.MechKind.FOUR_LEGGED)
-                        if (unit.maintenance == com.rustedwarfare.reforge.core.content.MaintenanceProfile.MECH_ENGINEER)
-                            ImageLogicalSize(19, 82) else ImageLogicalSize(16, 68) else null)
+                    nativeLegSize = when {
+                        unit.maintenance == com.rustedwarfare.reforge.core.content.MaintenanceProfile.SCOUT_BOT -> ImageLogicalSize(24, 102)
+                        unit.maintenance == com.rustedwarfare.reforge.core.content.MaintenanceProfile.MECH_ENGINEER -> ImageLogicalSize(19, 82)
+                        unit.mech?.kind == com.rustedwarfare.reforge.core.content.MechKind.FOUR_LEGGED -> ImageLogicalSize(16, 68)
+                        else -> null
+                    })
             }), Collections.unmodifiableMap(scenario.players.associate { it.playerId to it.teamId }))
     }
 }

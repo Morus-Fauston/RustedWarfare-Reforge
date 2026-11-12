@@ -364,8 +364,8 @@ class SandboxInput(
     }
     fun beginGroundAction(name: String): Boolean {
         val current = session() ?: return false
-        if (!active() || editing() || touchControls || name != "launchNuke" || !current.isOpen ||
-            current.actionMenu.unitActions.none { it.name == name && it.available }) return false
+        if (!active() || editing() || touchControls || !current.isOpen ||
+            current.actionMenu.unitActions.none { it.name == name && it.available && it.groundTargeted }) return false
         cancel()
         groundActionOwner = GroundActionOwner(current, current.selectionRevision, current.selectedIds.toSet(), name)
         modeRevision++

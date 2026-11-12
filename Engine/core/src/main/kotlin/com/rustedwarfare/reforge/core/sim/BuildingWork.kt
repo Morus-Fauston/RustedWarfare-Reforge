@@ -2,6 +2,7 @@ package com.rustedwarfare.reforge.core.sim
 
 import com.rustedwarfare.reforge.core.knowledge.VisionSnapshot
 import com.rustedwarfare.reforge.core.content.foundationMovementType
+import com.rustedwarfare.reforge.core.content.MaintenanceProfile
 import java.util.Collections
 
 internal data class BuildingRoute(val points: List<Position>, val knowledgeRevision: Long, val buildingRevision: Long)
@@ -66,7 +67,8 @@ internal class BuildingWork private constructor(val clock: Int, val nonces: Map<
 
     /** Native post-parent update: selecting a task does not execute repair in this call. */
     fun advanceAutomatic(worker: MutableUnit, input: Scenario, delta: Double, candidates: () -> List<MutableUnit>) {
-        if (!unitMaintenance(worker) || !worker.alive || worker.carriedBy != null || !isReady(worker)) return
+        if (!unitMaintenance(worker) || worker.definition.maintenance == MaintenanceProfile.SCOUT_BOT ||
+            !worker.alive || worker.carriedBy != null || !isReady(worker)) return
         worker.repairScanElapsed += delta.toFloat()
         require(worker.repairScanElapsed.isFinite()) { "Repair scan timer must remain finite" }
         if (worker.repairScanElapsed <= 40f || worker.tasks.isNotEmpty()) return

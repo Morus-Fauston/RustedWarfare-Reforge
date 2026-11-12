@@ -16,7 +16,10 @@ def png(kind, width, height):
     for y in range(height):
         row = bytearray([0])
         for x in range(width):
-            if kind=='trail':
+            if kind == 'empty':
+                visible = False
+                color = (0, 0, 0, 0)
+            elif kind=='trail':
                 radius=abs((x+.5)/width*2-1)+abs((y+.5)/height*2-1)
                 visible=radius<1
                 color=(255,255,255,round(255*max(0,1-radius)**2))

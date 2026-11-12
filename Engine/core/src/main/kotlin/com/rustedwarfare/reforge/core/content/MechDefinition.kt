@@ -28,7 +28,7 @@ class MechDefinition(val body: MechBodyDefinition, legs: List<MechLegDefinition>
         MechKind.FOUR_LEGGED -> 4
         MechKind.SIX_LEGGED -> 6
     } &&
-        body.isValid() && legs.all { it.isValid() } &&
+        body.isValid() && legs.all { it.isValid(if (kind == MechKind.SIX_LEGGED) 6 else 4) } &&
         legs.all { it.legImage == legs[0].legImage && it.footImage == legs[0].footImage }
 }
 
@@ -73,11 +73,11 @@ data class MechLegDefinition(
     val endDirectionOffset: Double = 0.0,
     val lockMovement: Boolean = false,
 ) {
-    internal fun isValid(): Boolean =
+    internal fun isValid(movingLegLimit: Int = 4): Boolean =
         listOf(x, y, attachX, attachY, moveSpeed, warmUp, rotateSpeed, heightSpeed,
             holdMinimum, holdWithMovingNeighbour, predictionMultiplier, resetAngle,
             liftOffset, targetHeight, hardLimit, endDirectionOffset).all { it.isFinite() } &&
             moveSpeed > 0.0 && warmUp >= 0.0 && rotateSpeed >= 0.0 && heightSpeed > 0.0 &&
             holdMinimum >= 0.0 && holdWithMovingNeighbour >= holdMinimum && predictionMultiplier >= 0.0 &&
-            liftOffset >= 0.0 && targetHeight == 0.0 && hardLimit > 0.0 && maximumMovingLegs in 1..4
+            liftOffset >= 0.0 && targetHeight == 0.0 && hardLimit > 0.0 && maximumMovingLegs in 1..movingLegLimit
 }

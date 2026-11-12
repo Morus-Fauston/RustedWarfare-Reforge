@@ -18,6 +18,14 @@
     {
       "type": "nautilus",
       "file": "nautilusLand.json"
+    },
+    {
+      "type": "scout-bot",
+      "file": "scout/robotCrab.json"
+    },
+    {
+      "type": "scout-bot",
+      "file": "scout/robotCrabWater.json"
     }
   ]
 }

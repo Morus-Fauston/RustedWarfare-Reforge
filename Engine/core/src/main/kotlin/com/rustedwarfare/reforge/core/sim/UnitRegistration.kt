@@ -1,6 +1,7 @@
 package com.rustedwarfare.reforge.core.sim
 
 import com.rustedwarfare.reforge.core.content.FactoryExitProfile
+import com.rustedwarfare.reforge.core.content.ScoutBotRules
 
 internal data class ConstructionRegistration(val unit: MutableUnit, val ledger: ProductionLedger,
     val upgrades: OrdinaryUpgrades?)
@@ -64,6 +65,29 @@ internal object UnitRegistration {
     fun sandboxId(ownerPlayerId: String, generation: Long, sequence: Long): String =
         "sandbox:$ownerPlayerId:$generation:$sequence"
 
+    fun scout(state: StepState, input: Scenario, source: MutableUnit, impact: MutableProjectile) {
+        check(impact.sourceUnitId == source.unitId)
+        val owner = source.ownerPlayerId
+        val pending = state.productionLedger?.queuedUnitCount(owner) ?: 0
+        var counted = pending
+        var total = pending
+        for (unit in state.units.values) {
+            if (unit.ownerPlayerId != owner || !unit.alive || unit.reclaimed) continue
+            total++
+            if (unit.definition.building == null) counted++
+        }
+        if (counted > ScoutBotRules.OFFLINE_UNIT_CAP + 300 || total > ScoutBotRules.OFFLINE_UNIT_CAP + 25000) return
+        val identity = nextIdentity(state)
+        val id = "scout:$owner:${impact.objectId}"
+        val origin = ScoutOrigin(source.unitId, impact.objectId)
+        val unit = create(input, UnitSpawn(id, owner, ScoutBotRules.LAND, impact.position,
+            ScreenPlane.normalize(impact.heading), 0.0), identity.objectId, identity.updateKey, scoutOrigin = origin)
+        unit.nativeTransportPlacement = !MapBounds.contains(input.map.widthTiles.toDouble() * input.map.tileWidth,
+            input.map.heightTiles.toDouble() * input.map.tileHeight, unit.position, unit.definition.radius)
+        registerUnit(state, input, unit, identity)
+        state.pendingEvents += Event("scout-bot-spawned", id)
+    }
+
     fun sandbox(state: StepState, input: Scenario, command: SandboxCommand.Spawn,
                 generation: Long, sequence: Long, coordinates: CoordinatePolicy): MutableUnit {
         val definition = input.unitDefinitions.getValue(command.typeId)
@@ -106,11 +130,11 @@ internal object UnitRegistration {
 
     private fun create(input: Scenario, spawn: UnitSpawn, objectId: Long?, updateKey: String = spawn.unitId,
                        origin: ProducedOrigin? = null, birthRemaining: Float = 0f,
-                       constructionProgress: Float = 1f): MutableUnit =
+                       constructionProgress: Float = 1f, scoutOrigin: ScoutOrigin? = null): MutableUnit =
         MutableUnit(spawn.unitId, spawn.ownerPlayerId, spawn.typeId,
             input.unitDefinitions.getValue(spawn.typeId), spawn.position, spawn.heading,
             height = spawn.height, objectId = objectId, updateKey = updateKey,
-            productionOrigin = origin,
+            productionOrigin = origin, scoutOrigin = scoutOrigin,
             birthRemaining = birthRemaining, constructionProgress = constructionProgress)
 
     private fun register(state: StepState, input: Scenario, spawn: UnitSpawn, objectId: Long?,

@@ -12,20 +12,32 @@
       {
         "id": "nautilusSubmarine",
         "path": "../inputs/nautilus-production/ini/package/nautilus.ini",
-        "sha256": "b561d07762b76d2a285ef21e44f34d021610e0fd84883dc132698992750b50c6",
+        "sha256": "5d0b8318ea1fdeb4fae04df5bfb93327deb2527d47f48328b018a3c23afc04dd",
         "loader": "nautilus"
       },
       {
         "id": "nautilusSubmarineSurface",
         "path": "../inputs/nautilus-production/ini/package/nautilusSurface.ini",
-        "sha256": "6b4a6ceaadeddde43cbb3ff459a7af687086d4a1f152ebd082f3a83c3e1e864c",
+        "sha256": "28875cc649354d74f8606c0c93eeec4bf614f86d81edee27d6da441b592bd96b",
         "loader": "nautilus"
       },
       {
         "id": "nautilusSubmarineLand",
         "path": "../inputs/nautilus-production/ini/package/nautilusLand.ini",
-        "sha256": "ef54fdc8fed16104f0b2a4d72c435256e793352e8c3629c53b4bd06ee022f1d0",
+        "sha256": "080d8090413bc5cb3bd903a9ffdf59fbca91177335026cdfbf29d79eccf5570b",
         "loader": "nautilus"
+      },
+      {
+        "id": "robotCrab",
+        "path": "../inputs/nautilus-production/ini/package/scout/robotCrab.ini",
+        "sha256": "464fa07e0e1964b1ae48484c3d709fe4a6b0db19e0f414d922c547d67e228fac",
+        "loader": "scout-bot"
+      },
+      {
+        "id": "robotCrabWater",
+        "path": "../inputs/nautilus-production/ini/package/scout/robotCrabWater.ini",
+        "sha256": "b9dba4aa9c59f7a7567fbb3e54280da5aff00cb879ef26500a4044fd99089ea1",
+        "loader": "scout-bot"
       },
       {
         "id": "hoverTank",
@@ -83,7 +95,32 @@
       {
         "id": "dep-9",
         "path": "../inputs/nautilus-production/ini/package/pack.json",
-        "sha256": "f389e255e3d264a131050a7f5d81d2504bcbd22a6af576bfc4a36ef258eec78e"
+        "sha256": "1ef7039dbb358003b45c1c7404c1c2428a6067105190532bd26f0468a1dc7aae"
+      },
+      {
+        "id": "dep-10",
+        "path": "../inputs/nautilus-production/ini/package/scout/base.png",
+        "sha256": "fcf81fbd8d3249f9fdb67d476dd65472e7ddfac85aae8d8cc41532f3c345e13b"
+      },
+      {
+        "id": "dep-11",
+        "path": "../inputs/nautilus-production/ini/package/scout/dead.png",
+        "sha256": "9015bd7b81af4007052dec7ba2348f4df812d7468a59ed0252befb2a65ef495c"
+      },
+      {
+        "id": "dep-12",
+        "path": "../inputs/nautilus-production/ini/package/scout/foot.png",
+        "sha256": "f7384f4a77fcb038a8e41d555cb28cdb5170d0427a11932d3e8c5c7e66df71f3"
+      },
+      {
+        "id": "dep-13",
+        "path": "../inputs/nautilus-production/ini/package/scout/leg.png",
+        "sha256": "e214187f8708d0043085c145fed9c065da8d417574ba01b0fb9189a99aab59f9"
+      },
+      {
+        "id": "dep-14",
+        "path": "../inputs/nautilus-production/ini/package/scout/turret.png",
+        "sha256": "32806335dcc85ca90f465074222035356464739b1ea602f29337d3e50bff4983"
       }
     ]
   },

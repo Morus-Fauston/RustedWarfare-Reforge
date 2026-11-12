@@ -52,6 +52,14 @@
       "file": "nautilus/nautilusLand.ini"
     },
     {
+      "type": "scout-bot",
+      "file": "nautilus/scout/robotCrab.ini"
+    },
+    {
+      "type": "scout-bot",
+      "file": "nautilus/scout/robotCrabWater.ini"
+    },
+    {
       "type": "command-center",
       "file": "units/commandCenter/commandCenter.ini"
     },

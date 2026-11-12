@@ -8,10 +8,10 @@ class NautilusActionAdmissionTest {
             UnitSpawn("mother", "p1", "nautilusSubmarineSurface", Position(200.0, 180.0), 90.0)))
         val c = NautilusScene.open(scenario)
         try {
-            assertFalse(c.observe().units.single().unitActions!!.actions.single().available)
+            assertFalse(c.observe().units.single().unitActions!!.actions.single { it.name == "dive" }.available)
             val denied = assertIs<ActionResult.Rejected>(c.submit(UnitAction("dive", "p1", "mother", "dive", c.world)))
             assertEquals("unit-action-requires-water", denied.error.code)
-            assertNull(c.observe().units.single().unitActions!!.actions.single().queueIndex)
+            assertNull(c.observe().units.single().unitActions!!.actions.single { it.name == "dive" }.queueIndex)
         } finally { c.close() }
     }
 
@@ -25,8 +25,9 @@ class NautilusActionAdmissionTest {
             assertIs<ActionResult.Accepted>(c.submit(UnitAction("cancel", "p1", "mother", "dive", c.world, cancelQueued = true)))
             val next = c.advance(Step(2, 1.0, "sim-tick")).units.single()
             assertEquals("nautilusSubmarineSurface", next.typeId)
-            assertNull(next.unitActions!!.actions.single().queueIndex)
-            assertTrue(next.unitActions!!.actions.single().available)
+            val dive = next.unitActions!!.actions.single { it.name == "dive" }
+            assertNull(dive.queueIndex)
+            assertTrue(dive.available)
             assertEquals(EnergyObservation(6f, 6f, false), next.energy)
         } finally { c.close() }
     }

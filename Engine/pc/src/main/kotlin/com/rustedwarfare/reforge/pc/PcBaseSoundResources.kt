@@ -35,10 +35,11 @@ internal class PcBaseSoundResources(private val cacheRoot: Path) {
         fun eventId(name: String) = ResourceId.parse("reforge:events/$name")
         require(declarations.sounds.keys == expected.keys.map(::soundId).toSet() &&
             declarations.events.keys == expected.keys.map(::eventId).toSet() +
-                setOf(eventId("hover-fire"), eventId("amphibious-lightning-fire"), eventId("nuke-intercept")))
+                setOf(eventId("hover-fire"), eventId("amphibious-lightning-fire"), eventId("nuke-intercept"), eventId("scout-plasma-fire")))
         // Public owned placeholder; private original packs bind the native plasma recording.
         require(declarations.events.getValue(eventId("hover-fire")).sound == soundId("tank-fire"))
         require(declarations.events.getValue(eventId("amphibious-lightning-fire")).sound == soundId("tank-fire"))
+        require(declarations.events.getValue(eventId("scout-plasma-fire")).sound == soundId("tank-fire"))
         require(declarations.events.getValue(eventId("nuke-intercept")).sound == soundId("naval-missile-fire"))
         val decoded = expected.mapValues { (name, hash) ->
             require(declarations.sounds.getValue(soundId(name)).file == "$name.wav" &&

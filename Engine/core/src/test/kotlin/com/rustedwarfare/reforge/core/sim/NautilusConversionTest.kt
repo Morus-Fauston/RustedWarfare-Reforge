@@ -16,7 +16,7 @@ class NautilusConversionTest {
             for (step in 1L..134L) c.advance(Step(step, 1.0, "sim-tick"))
             val before = c.observe().units.single()
             assertEquals("nautilusSubmarineSurface", before.typeId)
-            assertTrue(checkNotNull(before.unitActions!!.actions.single().progress) < 1f)
+            assertTrue(checkNotNull(before.unitActions!!.actions.single { it.name == "dive" }.progress) < 1f)
             val sub = c.advance(Step(135, 1.0, "sim-tick")).units.single()
             assertEquals("nautilusSubmarine", sub.typeId)
             assertEquals("mother", sub.unitId)

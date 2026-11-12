@@ -106,7 +106,7 @@ internal object ContentPackReader {
             val field = "units[$index]"
             val spec = objectFields(entry, setOf("type", "file"), manifest, field)
             val capability = string(spec.get("type"), "$field.type")
-            if (capability !in setOf("nuclear-silo", "experimental-factory", "nautilus", "mech-engineer", "repair-bay", "tank", "hover-tank", "hovercraft", "dropship", "aa-beam-gunship", "mech-bunker", "mech", "mech-heavy", "mech-factory", "builder", "constructor", "factory", "helicopter", "amphibious-jet", "air-factory", "battleship", "water-combat", "sea-factory", "underwater-target", "submarine", "command-center", "land-factory"))
+            if (capability !in setOf("nuclear-silo", "experimental-factory", "nautilus", "scout-bot", "mech-engineer", "repair-bay", "tank", "hover-tank", "hovercraft", "dropship", "aa-beam-gunship", "mech-bunker", "mech", "mech-heavy", "mech-factory", "builder", "constructor", "factory", "helicopter", "amphibious-jet", "air-factory", "battleship", "water-combat", "sea-factory", "underwater-target", "submarine", "command-center", "land-factory"))
                 reject(ContentErrorCode.UNSUPPORTED_FEATURE, manifest, field = "$field.type", reason = "Expected an implemented finite combat, mech, factory or builder capability")
             val reference = string(spec.get("file"), "$field.file")
             val pieces = reference.split('/')
@@ -124,6 +124,7 @@ internal object ContentPackReader {
             val loaded = when (capability) {
                 "nuclear-silo" -> NuclearSiloContentReader.readWithSources(input) { requireOrdinary(root, it) }
                 "nautilus" -> NautilusContentReader.readWithSources(input) { requireOrdinary(root, it) }
+                "scout-bot" -> ScoutBotContentReader.readWithSources(input) { requireOrdinary(root, it) }
                 "mech-engineer" -> MechEngineerContentReader.readWithSources(input) { requireOrdinary(root, it) }
                 "repair-bay" -> RepairBayContentReader.readWithSources(input) { requireOrdinary(root, it) }
                 "mech-bunker" -> BunkerContentReader.readWithSources(input) { requireOrdinary(root, it) }

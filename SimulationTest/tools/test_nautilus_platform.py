@@ -6,12 +6,23 @@ import platform_scenario
 
 
 class NautilusPlatformTest(unittest.TestCase):
+    def test_scout_ground_target_is_required_and_paid_queue_can_be_cancelled(self):
+        intent=dict(intentId='launch',kind='unit-action',actionName='launchScoutBot',waitSteps=0,target=dict(x=32,y=48))
+        platform_scenario.validate_unit_action_intent(intent)
+        cancel={k:v for k,v in intent.items() if k!='target'} | {'cancelQueued':True}
+        platform_scenario.validate_unit_action_intent(cancel)
+        for invalid in (dict(intent,target=dict(x=32,y=float('nan'))),dict(intent,cancelQueued=True),
+                        {k:v for k,v in intent.items() if k!='target'}):
+            with self.assertRaises(PlatformError):
+                platform_scenario.validate_unit_action_intent(invalid)
+
     def test_three_form_history_rejects_a_forged_intermediate_form_clock_queue_or_event(self):
         terrain=dict(width=2,height=1,tileWidth=20,tileHeight=20,waterCells=[1])
         def unit(form='nautilusSubmarineLand',timer=0,x=10):
             return dict(unitId='mother',typeId=form,ownerPlayerId='p1',alive=True,constructionProgress=1,
-                position=dict(x=x,y=10),unitActions=dict(automaticCooldown=timer,actions={} if form.endswith('Land') else
-                    dict(dive=dict(queueIndex=None,progress=None,cooldownRemaining=0,available=True))))
+                position=dict(x=x,y=10),unitActions=dict(automaticCooldown=timer,actions={
+                    name:dict(queueIndex=None,progress=None,cooldownRemaining=0,available=True)
+                    for name in platform_scenario.NAUTILUS_ACTIONS[form]}))
         rows=[dict(kind='observation',phase='initial',sample=dict(units=[unit()],events=[])),
               dict(kind='observation',phase='step',sample=dict(units=[unit(timer=60)],
                    events=[dict(unitId='mother',kind='unit-action-automatic')])),
@@ -55,7 +66,9 @@ class NautilusPlatformTest(unittest.TestCase):
         legs = [dict(index=i, anchor=dict(x=0,y=0),foot=dict(x=0,y=0),height=0,heading=0,phase='PLANTED') for i in range(6)]
         mother = dict(unitId='mother', ownerPlayerId='p1', typeId='nautilusSubmarineSurface', alive=True,
             constructionProgress=1, height=.1, energy=dict(current=.4,maximum=6,recharging=True),
-            unitActions=dict(automaticCooldown=0,actions=dict(dive=dict(queueIndex=None,progress=None,cooldownRemaining=0,available=True))),
+            unitActions=dict(automaticCooldown=0,actions={
+                name:dict(queueIndex=None,progress=None,cooldownRemaining=0,available=True)
+                for name in platform_scenario.NAUTILUS_ACTIONS['nautilusSubmarineSurface']}),
             transport=dict(passengerIds=['one'],passengerCount=1,occupiedSlots=1,capacity=3,unloading=False,unloadRemaining=0,canUnload=True),
             mechPose=dict(forwardHeading=0,angularVelocity=0,reversing=False,legs=legs))
         validate_history_poses([mother],dict(mechLegs=dict(nautilusSubmarineSurface=6)))
@@ -64,7 +77,9 @@ class NautilusPlatformTest(unittest.TestCase):
             if fault=='unlocked-low-energy': changed['energy']['recharging']=False
             elif fault=='locked-full-energy': changed['energy']['current']=6
             elif fault=='missing-action': changed['unitActions']['actions']={}
-            elif fault=='land-unload': changed['typeId']='nautilusSubmarineLand'; changed['unitActions']['actions']={}
+            elif fault=='land-unload':
+                changed['typeId']='nautilusSubmarineLand'
+                del changed['unitActions']['actions']['dive']
             else: changed['ownerPlayerId']='p2'
             with self.subTest(fault=fault),self.assertRaises(PlatformError):
                 validate_history_poses([changed],dict(mechLegs=dict(nautilusSubmarineSurface=6,nautilusSubmarineLand=6)))

@@ -21,9 +21,11 @@ internal object NautilusContentReader {
     private val flags = setOf("energyNeedsToRechargeToFull", "transportUnitsKeepBuiltUnits", "slowDeathFall",
         "whenBuilding_cannotMove", "highPriorityQueue", "isVisible", "lockMovement", "canAttack", "canShoot", "invisible",
         "canAttackFlyingUnits", "canAttackLandUnits", "canAttackUnderwaterUnits", "canAttackNotTouchingWaterUnits",
-        "ballistic", "autoTargetingOnDeadTarget")
+        "ballistic", "autoTargetingOnDeadTarget", "allowMultipleInQueue", "targetGround")
     private val texts = setOf("name", "productionUnits", "transportUnitsRequireMovementType", "transportUnitsRequireTag",
-        "movementType", "image", "image_dead", "image_leg", "image_foot", "convertTo", "autoTrigger", "isActive", "projectile", "linkDelayWithTurret")
+        "movementType", "image", "image_dead", "image_leg", "image_foot", "convertTo", "autoTrigger", "isActive", "projectile",
+        "linkDelayWithTurret", "id", "fireTurretXAtGround", "fireTurretXAtGround_onlyOverPassableTileOf",
+        "spawnProjectilesOnEndOfLife", "spawnUnit")
     private val cores = mapOf("nautilusSubmarine" to core,
         "nautilusSubmarineSurface" to (core + mapOf("name" to "nautilusSubmarineSurface",
             "transportUnitsCanUnloadUnits" to "if self.isOverLiquid()", "transportUnitsRequireTag" to "",
@@ -41,6 +43,10 @@ internal object NautilusContentReader {
         "action_dive" to mapOf("convertTo" to "nautilusSubmarine", "price" to "0", "buildSpeed" to "4.5s",
             "whenBuilding_cannotMove" to "true", "highPriorityQueue" to "true", "isVisible" to (id == "nautilusSubmarineSurface").toString(),
             "isActive" to "if self.isOverwater"),
+        "action_launchScoutBot" to mapOf("id" to "launchScoutBot", "price" to "250", "buildSpeed" to "3.5s",
+            "fireTurretXAtGround" to "botTurret", "fireTurretXAtGround_onlyOverPassableTileOf" to "HOVER",
+            "addActionCooldownTime" to "30s", "allowMultipleInQueue" to "false",
+            "whenBuilding_cannotMove" to "true", "isVisible" to (id != "nautilusSubmarine").toString()),
         "hiddenAction_trigger_onLand" to mapOf("autoTrigger" to "if not self.overWater()", "convertTo" to "nautilusSubmarineLand")) +
         if (id == "nautilusSubmarineLand") mapOf("action_trigger_onWater" to mapOf("autoTrigger" to "if self.overWater()",
             "convertTo" to "nautilusSubmarineSurface", "buildSpeed" to "0", "isVisible" to "false")) else emptyMap()
@@ -62,7 +68,8 @@ internal object NautilusContentReader {
         "movement" to movementKeys) + actionSchema + legSchema + weaponSchema,
         numericFields = (core.keys + movementKeys + actionSchema.values.flatten() + legSchema.values.flatten() + weaponSchema.values.flatten()) - flags - texts - "transportUnitsCanUnloadUnits",
         booleanFields = flags, textFields = texts, dynamicWeapons = false,
-        timeFieldLocations = setOf("action_dive" to "buildSpeed"))
+        timeFieldLocations = setOf("action_dive" to "buildSpeed", "action_launchScoutBot" to "buildSpeed",
+            "action_launchScoutBot" to "addActionCooldownTime"))
 
     fun readWithSources(path: Path, validatePath: (Path) -> Unit): LoadedUnitContent =
         UnitSourceReader(schema, validatePath).load(path) { loaded ->

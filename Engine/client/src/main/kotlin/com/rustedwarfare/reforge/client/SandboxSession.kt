@@ -353,12 +353,29 @@ class SandboxSession(scenario: Scenario, private val evidence: ClientEvidence = 
     }
 
     fun previewGroundAction(name: String, target: Position): GroundActionPreview? {
-        if (!isOpen || name != "launchNuke" || actionMenu.unitActions.none { it.name == name && it.available }) return null
-        val source = nuclearLaunchMember(observation, selectedIds)?.position ?: return null
+        if (!isOpen || actionMenu.unitActions.none { it.name == name && it.available && it.groundTargeted }) return null
+        val selected = if (name == "launchNuke") nuclearLaunchMember(observation, selectedIds)
+            else observation.units.singleOrNull { it.unitId == selectedId }
+        val source = selected?.position ?: return null
         val x = target.x.toFloat() - source.x.toFloat(); val y = target.y.toFloat() - source.y.toFloat()
         val squared = x * x + y * y
-        return GroundActionPreview(source, target, target.x.isFinite() && target.y.isFinite() && squared.isFinite() &&
+        if (name == "launchNuke") return GroundActionPreview(source, target, squared.isFinite() &&
             squared >= 260f * 260f && squared <= 9999f * 9999f)
+        val launch = scenario.unitDefinitions.getValue(selected.typeId).customActions?.actions
+            ?.singleOrNull { it.name == name }?.groundLaunch ?: return null
+        val map = scenario.map
+        val column = kotlin.math.floor(target.x / map.tileWidth).toInt()
+        val row = kotlin.math.floor(target.y / map.tileHeight).toInt()
+        val openGround = squared.isFinite() && squared <= launch.range * launch.range &&
+            column in 0 until map.widthTiles && row in 0 until map.heightTiles && !map.hoverBlocking.isBlocked(column, row)
+        // Use the live collision footprint of observed buildings without revealing hidden units.
+        val occupied = openGround && observation.units.any { unit ->
+            unit.alive && scenario.unitDefinitions.getValue(unit.typeId).building?.let { building ->
+                (column to row) in ConstructionPlacement.footprint(map.widthTiles, map.heightTiles, map.tileWidth,
+                    map.tileHeight, unit.position, building.footprint, building.anchor).cells
+            } == true
+        }
+        return GroundActionPreview(source, target, openGround && !occupied, 0.0, launch.range, 0.0)
     }
 
     fun submarineDepth(surface: Boolean): ActionResult? = actionMenu.depthAction?.takeIf { it.surface == surface }?.let {

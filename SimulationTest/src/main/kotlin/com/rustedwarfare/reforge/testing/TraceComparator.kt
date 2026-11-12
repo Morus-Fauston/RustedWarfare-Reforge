@@ -611,7 +611,7 @@ object TraceComparator {
         val mechLegCount = when (unit.id("typeId")) {
             in typesLoadedBy(scenario, setOf("mech")) -> 2
             in typesLoadedBy(scenario, setOf("mech-heavy", "mech-bunker", "mech-engineer")) -> 4
-            "nautilusSubmarineSurface", "nautilusSubmarineLand" -> 6
+            "nautilusSubmarineSurface", "nautilusSubmarineLand", "robotCrab", "robotCrabWater" -> 6
             else -> null
         }
         if (mechLegCount != null) validateMechPose(unit.objectAt("mechPose"), mechLegCount)
@@ -632,6 +632,13 @@ object TraceComparator {
                 energy["recharging"] == b(true) && current >= 6.0 || energy["recharging"] == b(false) && current < 1.0 ||
                 unit["flightPose"] != null && unit["flightPose"] != JsonNull)
                 throw Incomplete("nautilus-state", "Invalid Nautilus energy or recharge lock")
+            validateUnitActions(unit, observer)
+        }
+        else if (unit.id("typeId") in typesLoadedBy(scenario, setOf("scout-bot"))) {
+            val energy = unit["energy"] as? JsonObject ?: throw Incomplete("scout-state", "Missing scout energy")
+            if (energy.keys != setOf("current", "maximum", "recharging") || aaNumber(energy["maximum"]) != 1.0 ||
+                aaNumber(energy["current"]) !in 0.0..1.0 || energy["recharging"] != b(false))
+                throw Incomplete("scout-state", "Invalid scout energy")
             validateUnitActions(unit, observer)
         }
         else if (unit.id("typeId") in typesLoadedBy(scenario, setOf("nuclear-silo"))) {
@@ -809,7 +816,10 @@ object TraceComparator {
             return
         }
         val state = raw as? JsonObject ?: invalid("Missing owner custom action state")
-        if (state.keys != setOf("actions", "automaticCooldown") || aaNumber(state["automaticCooldown"]) !in 0.0..60.0)
+        val mother = unit.id("typeId") in setOf("nautilusSubmarine", "nautilusSubmarineSurface", "nautilusSubmarineLand")
+        val queue = state["queue"]
+        if (state.keys != setOf("actions", "automaticCooldown") + (if (mother && queue != null) setOf("queue") else emptySet()) ||
+            aaNumber(state["automaticCooldown"]) !in 0.0..60.0)
             invalid("Invalid automatic action cooldown")
         val actions = state["actions"] as? JsonObject ?: invalid("Missing action entries")
         val names = when (unit.id("typeId")) {
@@ -817,18 +827,30 @@ object TraceComparator {
             "mechBunkerDeployed" -> setOf("undeploy")
             "aaBeamGunship_afterburn" -> setOf("afterBurn", "cancelBurn")
             "nautilusSubmarine" -> setOf("surface")
-            "nautilusSubmarineSurface" -> setOf("dive")
-            "nautilusSubmarineLand" -> emptySet()
+            "nautilusSubmarineSurface" -> setOf("dive", "launchScoutBot")
+            "nautilusSubmarineLand" -> setOf("launchScoutBot")
+            "robotCrab", "robotCrabWater" -> emptySet()
             else -> setOf("afterBurn")
         }
         if (actions.keys != names) invalid("Missing or unapproved player action")
+        val scout = actions["launchScoutBot"] as? JsonObject
+        val queuedScout = queue?.let { (it as? JsonArray)?.singleOrNull() as? JsonObject
+            ?: invalid("Expected one queued scout launch") }
+        if (queuedScout != null) {
+            if (queuedScout.keys != setOf("name", "progress", "target") || queuedScout["name"] != s("launchScoutBot") ||
+                aaNumber(queuedScout["progress"]) !in 0.0..<1.0 ||
+                scout != null && (scout["progress"] != queuedScout["progress"] || scout["queueIndex"] == JsonNull))
+                invalid("Invalid scout launch queue")
+            point(queuedScout.objectAt("target"))
+        } else if (scout?.get("queueIndex")?.let { it != JsonNull } == true) invalid("Missing queued scout launch")
         val indexes = mutableListOf<Long>()
         for ((name, rawAction) in actions) {
             val action = rawAction as? JsonObject ?: invalid("Invalid action entry")
             if (action.keys != setOf("queueIndex", "progress", "cooldownRemaining", "available")) invalid("Invalid action fields")
             val cooldown = action["cooldownRemaining"] as? JsonPrimitive ?: invalid("Missing cooldown")
             val remaining = cooldown.longOrNull
-            if (cooldown.isString || remaining == null || remaining !in 0L..25000L || name == "cancelBurn" && remaining != 0L)
+            val maximumCooldown = when (name) { "launchScoutBot" -> 29999L; "afterBurn" -> 25000L; else -> 0L }
+            if (cooldown.isString || remaining == null || remaining !in 0L..maximumCooldown)
                 invalid("Invalid matching action cooldown")
             val index = action["queueIndex"]
             if (index == JsonNull) {
@@ -946,7 +968,8 @@ object TraceComparator {
         submarineLaunchAppearances + "STANDARD" +
             (if (typesLoadedBy(scenario, setOf("amphibious-jet")).isNotEmpty()) setOf("AMPHIBIOUS_LIGHTNING") else emptySet()) +
             (if (typesLoadedBy(scenario, setOf("aa-beam-gunship")).isNotEmpty()) setOf("AA_BEAM") else emptySet()) +
-            (if (typesLoadedBy(scenario, setOf("nuclear-silo")).isNotEmpty()) setOf("NUCLEAR", "INTERCEPTOR") else emptySet())
+            (if (typesLoadedBy(scenario, setOf("nuclear-silo")).isNotEmpty()) setOf("NUCLEAR", "INTERCEPTOR") else emptySet()) +
+            (if (typesLoadedBy(scenario, setOf("nautilus")).isNotEmpty()) setOf("SCOUT_PAYLOAD") else emptySet())
 
     private fun validateSubmarineProjectiles(observation: JsonObject, scenario: JsonObject, units: List<JsonObject>) {
         val types = typesLoadedBy(scenario, setOf("submarine"))

@@ -17,6 +17,8 @@ object ContentLoader {
         load(path) { com.rustedwarfare.reforge.core.content.internal.NuclearSiloContentReader.readWithSources(it) }
     fun loadNautilusWithSources(path: Path): ContentResult<LoadedUnitContent> =
         load(path) { com.rustedwarfare.reforge.core.content.internal.NautilusContentReader.readWithSources(it) {} }
+    fun loadScoutBotWithSources(path: Path): ContentResult<LoadedUnitContent> =
+        load(path) { com.rustedwarfare.reforge.core.content.internal.ScoutBotContentReader.readWithSources(it) {} }
     fun loadMechEngineerWithSources(path: Path): ContentResult<LoadedUnitContent> =
         load(path) { com.rustedwarfare.reforge.core.content.internal.MechEngineerContentReader.readWithSources(it) {} }
     fun loadBunkerWithSources(path: Path): ContentResult<LoadedUnitContent> =

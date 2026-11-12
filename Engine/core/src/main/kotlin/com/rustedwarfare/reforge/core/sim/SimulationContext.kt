@@ -4,6 +4,8 @@ import com.rustedwarfare.reforge.core.content.MapDefinition
 import com.rustedwarfare.reforge.core.content.MovementType
 import com.rustedwarfare.reforge.core.content.foundationMovementType
 import com.rustedwarfare.reforge.core.content.DirectHitTargetKind
+import com.rustedwarfare.reforge.core.content.ScoutBotRules
+import com.rustedwarfare.reforge.core.content.ScoutPayloadStage
 import com.rustedwarfare.reforge.core.path.PlanningTerrain
 import com.rustedwarfare.reforge.core.path.PlanningSegmentClearance
 import com.rustedwarfare.reforge.core.path.PathDiagnosticsException
@@ -506,7 +508,7 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
             preparationFinished = true
             searchStart = System.nanoTime()
             searchEntered = true
-            val path = policies.path.findPath(terrain, Transport.queryPosition(unit, start), target, Transport.boundaryRadius(unit), counters, targetRange)
+            val path = policies.path.findPath(terrain, Transport.queryPosition(unit, map, start), target, Transport.boundaryRadius(unit), counters, targetRange)
             outcome = if (path == null) PathSearchOutcome.UNREACHABLE else PathSearchOutcome.FOUND
             pathPointCount = path?.size ?: 0
             return path
@@ -560,12 +562,12 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
             val prefix = mutableListOf<Position>()
             var from = unit.position
             for (point in oldPath) {
-                if (!PlanningSegmentClearance.allows(terrain, Transport.queryPosition(unit, from), point, Transport.boundaryRadius(unit))) break
+                if (!PlanningSegmentClearance.allows(terrain, Transport.queryPosition(unit, map, from), point, Transport.boundaryRadius(unit))) break
                 prefix += point
                 from = point
             }
             fun search(start: Position, preserved: Int = 0): List<Position>? =
-                if (samples == null) policies.path.findPath(terrain, Transport.queryPosition(unit, start), target, Transport.boundaryRadius(unit))
+                if (samples == null) policies.path.findPath(terrain, Transport.queryPosition(unit, map, start), target, Transport.boundaryRadius(unit))
                 else findPathWithDiagnostics(checkNotNull(unit.originMoveId), unit.originAtStep, target, unit, map, samples,
                     PathSearchReason.KNOWLEDGE_REPLAN, executionStep, start, preserved)
             val path = if (prefix.isNotEmpty() && prefix.size < oldPath.size) {
@@ -603,20 +605,20 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
             val first = unit.pathPoints.firstOrNull() ?: continue
             val terrain = planningTerrainFor(unit, map)
             val local = unit.ensureLocalMotion()
-            val firstConnectionClear = PlanningSegmentClearance.allows(terrain, Transport.queryPosition(unit), first, Transport.boundaryRadius(unit))
-            val localConnectionClear = PlanningSegmentClearance.allows(terrain, Transport.queryPosition(unit), local.aim, Transport.boundaryRadius(unit))
+            val firstConnectionClear = PlanningSegmentClearance.allows(terrain, Transport.queryPosition(unit, map), first, Transport.boundaryRadius(unit))
+            val localConnectionClear = PlanningSegmentClearance.allows(terrain, Transport.queryPosition(unit, map), local.aim, Transport.boundaryRadius(unit))
             val nextLocal = local.next()
             val localCornerStall = nextLocal != null &&
                 policies.coordinates.distanceSquared(unit.position, local.aim) < 9.0 &&
-                !PlanningSegmentClearance.allows(terrain, Transport.queryPosition(unit), nextLocal.aim, Transport.boundaryRadius(unit))
+                !PlanningSegmentClearance.allows(terrain, Transport.queryPosition(unit, map), nextLocal.aim, Transport.boundaryRadius(unit))
             val nearCornerStall = unit.pathPoints.size > 1 &&
                 policies.coordinates.distanceSquared(unit.position, first) < 9.0 &&
-                !PlanningSegmentClearance.allows(terrain, Transport.queryPosition(unit), unit.pathPoints[1], Transport.boundaryRadius(unit))
+                !PlanningSegmentClearance.allows(terrain, Transport.queryPosition(unit, map), unit.pathPoints[1], Transport.boundaryRadius(unit))
             if (firstConnectionClear && localConnectionClear && !nearCornerStall && !localCornerStall) continue
             if (unit.attackCommand != null) unit.lastAttackPathAttemptStep = executionStep
             val samples = pathDiagnostics
             fun search(destination: Position): List<Position>? =
-                if (samples == null) policies.path.findPath(terrain, Transport.queryPosition(unit), destination, Transport.boundaryRadius(unit))
+                if (samples == null) policies.path.findPath(terrain, Transport.queryPosition(unit, map), destination, Transport.boundaryRadius(unit))
                 else findPathWithDiagnostics(checkNotNull(unit.originMoveId), unit.originAtStep, destination, unit, map, samples,
                     PathSearchReason.ROUTE_REPAIR, executionStep)
             val oldPath = unit.pathPoints.toList()
@@ -690,9 +692,11 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
                     val change = NuclearOrdnance.request(unit, action.actionName, action.cancelQueued, checkNotNull(productionLedger), action.target)
                     productionLedger = change.ledger
                     change.error
-                } else if (action.target != null) SimulationError("unexpected-action-target", "This action does not accept a ground target")
-                else withUnitActionQueue(unit) {
-                    CustomUnitActions.request(unit, action.actionName, action.cancelQueued, steps.current.actionClock, currentScenario.map)
+                } else withUnitActionQueue(unit) {
+                    val change = CustomUnitActions.request(unit, action, steps.current.actionClock, currentScenario.map,
+                        buildingTerrain?.collisionMap ?: currentScenario.map, productionLedger)
+                    productionLedger = change.ledger
+                    change.error
                 }
                 error?.let {
                     return reject(action, it.code, it.message)
@@ -802,7 +806,7 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
                             currentScenario.map.heightTiles.toDouble() * currentScenario.map.tileHeight,
                             action.target, Transport.boundaryRadius(unit))) listOf(action.target) else null
                 } else if (samples == null) {
-                    policies.path.findPath(planningTerrainFor(unit, currentScenario.map), Transport.queryPosition(unit), action.target, Transport.boundaryRadius(unit))
+                    policies.path.findPath(planningTerrainFor(unit, currentScenario.map), Transport.queryPosition(unit, currentScenario.map), action.target, Transport.boundaryRadius(unit))
                 } else {
                     findPathWithDiagnostics(action.actionId, action.atStep, action.target, unit, currentScenario.map, samples,
                         executionStep = executionStep)
@@ -854,7 +858,7 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
             val map = checkNotNull(scenario).map
             val samples = pathDiagnostics
             val path = if (worker.birthRemaining > 0f) listOf(target)
-                else if (samples == null) policies.path.findPath(planningTerrainFor(worker, map), Transport.queryPosition(worker), target,
+                else if (samples == null) policies.path.findPath(planningTerrainFor(worker, map), Transport.queryPosition(worker, map), target,
                     Transport.boundaryRadius(worker), targetRange = range)
                 else findPathWithDiagnostics(task.actionId, task.atStep, target, worker, map, samples,
                     reason = PathSearchReason.CONSTRUCTION_APPROACH, executionStep = step, targetRange = range)
@@ -1063,6 +1067,14 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
                     continue
                 }
                 if (unit.carriedBy != null) continue
+                if (unit.definition.energy?.dieOnZero == true && BuildingWork.isReady(unit)) {
+                    WeaponEnergy.advance(unit, step.delta)
+                    if (unit.energy <= 0f) {
+                        unit.health = 0.0
+                        processDeath(unit)
+                        continue
+                    }
+                }
                 unit.definition.shield?.let { profile ->
                     val restored = unit.shield + profile.regeneration * step.delta.toFloat()
                     require(restored.isFinite()) { "Shield regeneration must remain finite" }
@@ -1089,7 +1101,7 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
                     unit.requestMovement(target)
                     val endpoint = unit.moveTarget
                     if (endpoint == null || ScreenPlane.distanceSquared(endpoint, target) >= 441.0 || unit.pathPoints.isEmpty()) {
-                        val path = policies.path.findPath(planningTerrainFor(unit, currentScenario.map), Transport.queryPosition(unit), target,
+                        val path = policies.path.findPath(planningTerrainFor(unit, currentScenario.map), Transport.queryPosition(unit, currentScenario.map), target,
                             Transport.boundaryRadius(unit), targetRange = 21.0)
                         if (path == null) unit.cancelRoute() else {
                             unit.moveTarget = path.last()
@@ -1165,9 +1177,11 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
                         pendingEvents += Event("projectile-fired", unit.unitId)
                         steps.current.pendingSoundTriggers += SoundTriggerObservation("reforge:events/nuke-launch", shot.position, .15f)
                     }
-                    WeaponEnergy.advance(unit, step.delta)
+                    if (unit.definition.energy?.dieOnZero != true) WeaponEnergy.advance(unit, step.delta)
                     if ((!factoryWork || factoryActionAtHead) && withUnitActionQueue(unit) {
-                            CustomUnitActions.advanceQueue(unit, currentScenario.unitDefinitions, step.delta, steps.current.actionClock)
+                            CustomUnitActions.advanceQueue(unit, currentScenario.unitDefinitions, step.delta, steps.current.actionClock) { launch, target ->
+                                launchScoutPayload(unit, launch.turretName, target)
+                            }
                         })
                         pendingEvents += Event("unit-action-completed", unit.unitId)
                     CustomUnitActions.constrain(unit, step.delta, policies.steering, policies.coordinates, unitActionHead(unit))
@@ -1216,9 +1230,9 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
     }
 
     private fun isVisibleTo(playerId: String, storedPosition: Position, nativeTransportPlacement: Boolean = false): Boolean {
-        val position = Transport.queryPosition(storedPosition, nativeTransportPlacement)
         val view = automaticVisionSnapshots?.getValue(playerId) ?: return true
         val map = checkNotNull(scenario).map
+        val position = Transport.queryPosition(storedPosition, nativeTransportPlacement, map)
         if (!MapBounds.contains(map.widthTiles.toDouble() * map.tileWidth,
                 map.heightTiles.toDouble() * map.tileHeight, position, 0.0)) return false
         val column = MapBounds.cell(position.x, map.tileWidth, map.widthTiles)
@@ -1395,9 +1409,10 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
             val bunker = Bunker.supports(definition)
             val engineer = MechEngineer.supports(definition)
             val nautilus = com.rustedwarfare.reforge.core.content.NautilusRules.supports(definition)
-            if (definition.groundHeight != null && !bunker)
-                return SimulationError("unsupported-unit-actions", "Ground height requires the qualified bunker forms")
-            val beamGunship = !nautilus && (definition.energy != null || definition.combat?.projectile?.beam != null ||
+            val scout = ScoutBotRules.supports(definition)
+            if (definition.groundHeight != null && !bunker && !scout)
+                return SimulationError("unsupported-unit-actions", "Ground height requires a qualified custom form")
+            val beamGunship = !nautilus && !scout && (definition.energy != null || definition.combat?.projectile?.beam != null ||
                 definition.combat?.namedWeapons?.ordered?.any { it.energyUsage != 0f || it.projectile.beam != null } == true)
             if (beamGunship && !AaBeamGunship.supports(definition))
                 return SimulationError("unsupported-aa-beam", "Expected the qualified AA energy and beam representative")
@@ -1405,7 +1420,10 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
                 if (!CustomUnitActions.supports(definition))
                     return SimulationError("unsupported-unit-actions", "Expected qualified custom unit actions")
                 if (definition.customActions.actions.any { action ->
-                    input.unitDefinitions[action.targetTypeId]?.let(CustomUnitActions::supports) != true })
+                    action.targetTypeId?.let { input.unitDefinitions[it]?.let(CustomUnitActions::supports) != true } == true ||
+                    action.groundLaunch?.let { launch ->
+                        input.unitDefinitions[launch.payloadUnitTypeId]?.let(ScoutBotRules::supports) != true
+                    } == true })
                     return SimulationError("invalid-unit-action-target", "Custom action target must be registered and qualified")
             }
             if (amphibious && !AmphibiousJetMotion.supports(definition))
@@ -1433,13 +1451,13 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
                 return SimulationError("unsupported-flight", "Expected a finite AIR profile and a single finite rotor")
             if (!m.reverseSpeedPercentage.isFinite() || !air && !submarine && !engineer && !nautilus && (m.reverseSpeedPercentage !in setOf(0.0, 1.0) ||
                 m.reverseSpeedPercentage != 0.0 && definition.mech == null && m.type != MovementType.WATER) ||
-                definition.mech?.let { !it.isValid() || !bunker && !nautilus && m.type != (if (it.kind == com.rustedwarfare.reforge.core.content.MechKind.FOUR_LEGGED) MovementType.OVER_CLIFF else MovementType.LAND) } == true)
+                definition.mech?.let { !it.isValid() || !bunker && !nautilus && !scout && m.type != (if (it.kind == com.rustedwarfare.reforge.core.content.MechKind.FOUR_LEGGED) MovementType.OVER_CLIFF else MovementType.LAND) } == true)
                 return SimulationError("unsupported-mech", "Expected the finite supported mech locomotion category")
-            if (definition.maintenance != null && !RepairBay.supports(definition) && !engineer)
+            if (definition.maintenance != null && !RepairBay.supports(definition) && !engineer && !scout)
                 return SimulationError("unsupported-repair-bay", "Expected the complete finite native repair bay capability")
             if (definition.reclaimPrice != null && definition.reclaimPrice < 0L)
                 return SimulationError("invalid-reclaim-price", "Explicit reclaim price must be nonnegative")
-            definition.builder?.let { builder ->
+            definition.builder?.takeUnless { scout }?.let { builder ->
                 if (definition.fogOfWarSightRange < 15 || !engineer && (m.type != MovementType.LAND || m.moveSpeed > .8 ||
                     builder.range != 85f || builder.preparation != 30f || builder.decay != 1.3f ||
                     builder.repairRate != .2f || builder.buildSpeedMultiplier != 1f || builder.mainNanoTurret != null) ||
@@ -1749,7 +1767,7 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
         val target = unit.moveTarget ?: return
         val samples = pathDiagnostics
         val path = if (samples == null)
-            policies.path.findPath(planningTerrainFor(unit, map), Transport.queryPosition(unit), target, Transport.boundaryRadius(unit))
+            policies.path.findPath(planningTerrainFor(unit, map), Transport.queryPosition(unit, map), target, Transport.boundaryRadius(unit))
         else findPathWithDiagnostics(checkNotNull(unit.originMoveId), unit.originAtStep, target, unit, map,
             samples, PathSearchReason.ROUTE_REPAIR, executionStep)
         if (unit.attackCommand != null) unit.lastAttackPathAttemptStep = executionStep
@@ -1790,7 +1808,7 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
             if (MapBounds.contains(map.widthTiles.toDouble() * map.tileWidth,
                     map.heightTiles.toDouble() * map.tileHeight, target, Transport.boundaryRadius(unit))) listOf(target) else null
         } else if (samples == null)
-            policies.path.findPath(planningTerrainFor(unit, map), Transport.queryPosition(unit), target, Transport.boundaryRadius(unit))
+            policies.path.findPath(planningTerrainFor(unit, map), Transport.queryPosition(unit, map), target, Transport.boundaryRadius(unit))
         else findPathWithDiagnostics(task.actionId, task.atStep, target, unit, map, samples,
             reason = if (enemy == null) PathSearchReason.USER_MOVE else PathSearchReason.ATTACK_PURSUIT,
             executionStep = executionStep)
@@ -1851,7 +1869,7 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
                     map.heightTiles.toDouble() * map.tileHeight, target.position, Transport.boundaryRadius(unit)))
                 listOf(target.position) else null
         } else if (samples == null) {
-            policies.path.findPath(planningTerrainFor(unit, map), Transport.queryPosition(unit), target.position, Transport.boundaryRadius(unit),
+            policies.path.findPath(planningTerrainFor(unit, map), Transport.queryPosition(unit, map), target.position, Transport.boundaryRadius(unit),
                 targetRange = targetRange)
         } else findPathWithDiagnostics(command.actionId, command.atStep, target.position, unit, map, samples,
             reason = PathSearchReason.ATTACK_PURSUIT, executionStep = executionStep, targetRange = targetRange)
@@ -2056,6 +2074,74 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
         pendingEvents += Event("projectile-fired", unit.unitId)
     }
 
+    private fun launchScoutPayload(unit: MutableUnit, turretName: String, target: Position) {
+        val turret = checkNotNull(unit.definition.combat?.namedWeapons).byName.getValue(turretName)
+        val weapon = checkNotNull(unit.namedWeapons).getValue(turretName)
+        val muzzle = NamedWeaponRuntime.muzzle(unit, turret, weapon).let { Position(it.x.toFloat().toDouble(), it.y.toFloat().toDouble()) }
+        addScoutPayload(unit, turretName, muzzle, unit.height.toFloat().toDouble(), weapon.turretHeading,
+            Position(target.x.toFloat().toDouble(), target.y.toFloat().toDouble()), ScoutPayloadStage.MOTHER)
+        pendingEvents += Event("projectile-fired", unit.unitId)
+        val sound = com.rustedwarfare.reforge.core.content.FireSoundProfile.NAVAL_MISSILE
+        steps.current.pendingSoundTriggers += SoundTriggerObservation(sound.eventId, muzzle, 1f, sound.pitch)
+    }
+
+    private fun addScoutPayload(source: MutableUnit, weaponName: String, position: Position, height: Double,
+                                heading: Double, target: Position, stage: ScoutPayloadStage) {
+        val state = checkNotNull(source.namedWeapons).getValue(weaponName)
+        val contract = checkNotNull(scenario?.combatContract)
+        val objectId = checkNotNull(source.objectId)
+        val phase = OrdinaryWeapon.sample(contract.worldSeed, combatFrame, objectId, source, state.randomCounter, 0, 1000, state) * .001f
+        state.randomCounter++
+        fun spread(axis: Double, salt: Int): Double {
+            val value = axis.toFloat() + OrdinaryWeapon.sample(contract.worldSeed, combatFrame, objectId, source,
+                salt, -500, 500, state) / 100f
+            state.randomCounter = (state.randomCounter.toFloat() + value).toInt()
+            return value.toDouble()
+        }
+        val guided = stage.guided
+        val destination = if (guided) Position(spread(target.x, 2), spread(target.y, 3)) else target
+        val id = nextObjectId
+        nextObjectId = Math.addExact(id, 1L)
+        val shot = MutableProjectile(id, source.unitId, null, position, ScreenPlane.normalize(heading), stage.life,
+            Position(0.0, 0.0), phase, stage.speed, if (guided) 123.0 else 0.0, height, nonDeflectable = guided,
+            sourceWeaponName = weaponName,
+            acceleration = if (guided) com.rustedwarfare.reforge.core.content.LinearProjectileAcceleration(6.0, .05) else null,
+            ballistic = if (guided) com.rustedwarfare.reforge.core.content.CustomBallisticProfile(20f, 50f) else null,
+            appearance = ProjectileAppearance.SCOUT_PAYLOAD, scoutPayload = ScoutPayload(destination, stage))
+        projectiles += shot
+        pendingProjectileEvents += ProjectileEventObservation("born", projectileObservation(shot))
+    }
+
+    private fun updateScoutPayload(shot: MutableProjectile, payload: ScoutPayload, delta: Double) {
+        if (shot.intercepted) {
+            pendingProjectileEvents += ProjectileEventObservation("intercepted", projectileObservation(shot))
+            projectiles.remove(shot)
+            return
+        }
+        val hit = payload.stage.guided && BallisticFlight.move(shot, payload.target, 0f, delta)
+        shot.age += delta.toFloat()
+        if (hit) {
+            pendingProjectileEvents += ProjectileEventObservation("impact", projectileObservation(shot))
+            units[shot.sourceUnitId]?.let { UnitRegistration.scout(steps.current, checkNotNull(scenario), it, shot) }
+        }
+        val expired = shot.remainingLife == 0.0
+        if (expired) {
+            pendingProjectileEvents += ProjectileEventObservation("expired", projectileObservation(shot))
+            units[shot.sourceUnitId]?.let { source ->
+                val weapon = checkNotNull(shot.sourceWeaponName)
+                when (payload.stage) {
+                    ScoutPayloadStage.MOTHER -> for (offset in listOf(15.0, -180.0)) {
+                        addScoutPayload(source, weapon, shot.position, shot.height, shot.heading + offset, payload.target, ScoutPayloadStage.SPLIT)
+                    }
+                    ScoutPayloadStage.SPLIT ->
+                        addScoutPayload(source, weapon, shot.position, shot.height, shot.heading, payload.target, ScoutPayloadStage.FAST_TURN)
+                    ScoutPayloadStage.FAST_TURN -> Unit
+                }
+            }
+        }
+        if (hit || expired) projectiles.remove(shot)
+    }
+
     private fun updatePointDefense(unit: MutableUnit, delta: Double) {
         if (unit.pointDefense == null) return
         val teams = checkNotNull(scenario).players.associate { it.playerId to it.teamId }
@@ -2069,12 +2155,20 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
             .filter { it.remaining >= 0f }
         // Retain targets through this step so that a removed target's final pose remains available.
         val trackedTargets = if (projectiles.any { it.interception != null }) projectiles.associateBy { it.objectId } else emptyMap()
+        val projectileUpdateLimit = nextObjectId
         updateProjectileBatch(delta, projectiles.filter { it.objectId in existingIds }.sortedBy { it.objectId }, trackedTargets)
-        updateProjectileBatch(delta, projectiles.filter { it.objectId !in existingIds }.sortedBy { it.objectId }, trackedTargets)
+        updateProjectileBatch(delta, projectiles.filter {
+            it.objectId !in existingIds && (it.scoutPayload == null || it.objectId < projectileUpdateLimit)
+        }.sortedBy { it.objectId }, trackedTargets)
     }
 
     private fun updateProjectileBatch(delta: Double, batch: List<MutableProjectile>, trackedTargets: Map<Long, MutableProjectile>) {
         for (projectile in batch) {
+            val scout = projectile.scoutPayload
+            if (scout != null) {
+                updateScoutPayload(projectile, scout, delta)
+                continue
+            }
             val course = projectile.interception
             if (course != null) {
                 updateInterceptor(projectile, course, trackedTargets[course.targetId], delta)
@@ -2352,6 +2446,8 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
                     pendingEvents += Event("upgrade-refunded", target.unitId)
                 if (checkNotNull(productionLedger).queue(target.unitId).isNotEmpty())
                     pendingEvents += Event("production-refunded", target.unitId)
+                if (checkNotNull(productionLedger).actionQueue(target.unitId).any { it.cost > 0 })
+                    pendingEvents += Event("unit-action-refunded", target.unitId)
                 productionLedger = checkNotNull(productionLedger).destroyFactory(target.unitId)
             }
             refundUpgrades(target)
@@ -2480,7 +2576,7 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
                 // cn supplies the command aim directly, without normal route-node lookahead.
             } else if (unit.pathPoints.size > 1 && policies.capture.inside(
                     policies.coordinates.distanceSquared(unit.position, unit.pathPoints.first()), contract.pathPointRadius) &&
-                PlanningSegmentClearance.allows(planningTerrainFor(unit, map), Transport.queryPosition(unit),
+                PlanningSegmentClearance.allows(planningTerrainFor(unit, map), Transport.queryPosition(unit, map),
                     unit.pathPoints[1], Transport.boundaryRadius(unit))) {
                 unit.pathPoints.removeAt(0)
                 unit.localMotion = null
@@ -2490,7 +2586,7 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
                 val progress = LocalMotionMaintenance.advance(checkNotNull(local), unit.localProgressTime, delta, fraction > 0.0,
                     d2, !finalPoint && policies.capture.inside(d2, 16.0), unit.terrainCorrectionTime,
                     { policies.coordinates.distanceSquared(unit.position, it) },
-                    { PlanningSegmentClearance.allows(terrain, Transport.queryPosition(unit), it, Transport.boundaryRadius(unit)) })
+                    { PlanningSegmentClearance.allows(terrain, Transport.queryPosition(unit, map), it, Transport.boundaryRadius(unit)) })
                 unit.localMotion = progress.segment
                 unit.localProgressTime = progress.activeTime
             }
@@ -2586,7 +2682,8 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
             GroundProjectileObservation(Position(it.x.toDouble(), it.y.toDouble()), it.height, projectile.verticalSpeed,
                 projectile.groundDistanceSquared) } ?: projectile.interception?.let {
             GroundProjectileObservation(it.launchTarget, 0f, projectile.speed.toFloat()) } ?: projectile.nuclearTarget?.let {
-            GroundProjectileObservation(it, 0f, projectile.speed.toFloat()) }, projectile.missile?.let {
+            GroundProjectileObservation(it, 0f, projectile.speed.toFloat()) } ?: projectile.scoutPayload?.let {
+            GroundProjectileObservation(it.target, 0f, projectile.speed.toFloat()) }, projectile.missile?.let {
             MissileObservation(projectile.speed.toFloat(), projectile.missileReachedApex, projectile.missileRawAz) },
         projectile.expansion?.let { AreaExpansionObservation(it.remaining, it.radius, it.hitUnitIds) }, projectile.sourceWeaponName,
         projectile.ballistic?.let { BallisticObservation(projectile.speed.toFloat(), projectile.ballisticReachedApex, projectile.ballisticRawAz) },

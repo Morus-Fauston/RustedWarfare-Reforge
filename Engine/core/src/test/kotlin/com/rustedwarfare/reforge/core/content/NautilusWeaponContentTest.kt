@@ -11,7 +11,12 @@ class NautilusWeaponContentTest {
                 val sub = id == "nautilusSubmarine"
                 val combat = assertNotNull(definitions.getValue(id).combat)
                 assertEquals(240.0, combat.attackRange)
-                val weapons = combat.namedWeapons!!.ordered
+                val catalog = combat.namedWeapons!!
+                val launcher = catalog.ordered.last()
+                assertEquals("botTurret", launcher.name)
+                assertEquals(TurretMount(10.0, 22.0), launcher.mount)
+                assertFalse(launcher.canShoot)
+                val weapons = catalog.ordered.dropLast(1)
                 assertEquals(listOf("1", "2", "3", "4", "5", "6", "7"), weapons.map { it.name })
                 assertFalse(weapons.first().canShoot)
                 assertEquals("scoutBotProjectile", weapons.first().projectileName)

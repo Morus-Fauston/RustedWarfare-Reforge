@@ -4,6 +4,27 @@ import java.nio.file.Path
 import kotlin.test.*
 
 class NautilusFormsContentTest {
+    @Test fun scout_bot_launch_keeps_one_action_identity_across_the_three_forms() {
+        val fixtures = Path.of(checkNotNull(System.getProperty("public.fixtures.dir")))
+        val forms = mapOf("nautilusSubmarine" to false, "nautilusSubmarineSurface" to true,
+            "nautilusSubmarineLand" to true)
+        for (syntax in listOf("ini", "json", "hjson")) {
+            val loaded = ContentLoader.loadContentPack(fixtures.resolve("nautilus-production/$syntax/package"))
+            val pack = assertIs<ContentResult.Success<LoadedContentPack>>(loaded, loaded.toString()).value
+            for ((id, visible) in forms) {
+                val actions = checkNotNull(pack.units.getValue(id).customActions).actions
+                val launch = assertNotNull(actions.singleOrNull { it.name == "launchScoutBot" }, "$syntax $id")
+                assertEquals("claunchScoutBot", launch.actionId)
+                assertEquals(visible, launch.visible)
+                assertEquals(1f / 210f, launch.rate)
+                assertEquals(29999, launch.cooldown)
+                assertTrue(launch.cannotMove)
+                assertTrue(launch.canPlayerCancel)
+                assertFalse(launch.allowMultipleInQueue)
+            }
+        }
+    }
+
     @Test fun inherited_conversion_actions_retain_their_original_ids_rates_visibility_and_cancellation_defaults() {
         val fixtures = Path.of(checkNotNull(System.getProperty("public.fixtures.dir")))
         for (syntax in listOf("ini", "json", "hjson")) {

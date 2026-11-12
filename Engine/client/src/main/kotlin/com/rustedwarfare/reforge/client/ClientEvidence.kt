@@ -159,7 +159,8 @@ internal fun UnitObservation.fields(): Map<String, Any?> {
     unit.unitActions?.let { state -> values["unitActions"] = mapOf("automaticCooldown" to state.automaticCooldown,
         "actions" to state.actions.associate { action -> action.name to mapOf("queueIndex" to action.queueIndex,
             "progress" to action.progress, "cooldownRemaining" to action.cooldownRemaining, "available" to action.available) }) +
-        (if (state.stockpile != null) mapOf("stockpile" to state.stockpile, "queue" to state.queue.map {
+        (state.stockpile?.let { mapOf("stockpile" to it) } ?: emptyMap()) +
+        (if (state.stockpile != null || state.queue.isNotEmpty()) mapOf("queue" to state.queue.map {
             mapOf("name" to it.name, "progress" to it.progress, "target" to it.target?.fields()) }) else emptyMap()) }
     unit.submarine?.let { values["submarine"] = mapOf("surfaceIntent" to it.surfaceIntent,
         "verticalSpeed" to it.verticalSpeed, "underwater" to it.underwater, "surfacePresentation" to it.surfacePresentation,

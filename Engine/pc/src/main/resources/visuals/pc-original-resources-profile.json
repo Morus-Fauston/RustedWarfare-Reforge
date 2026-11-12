@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "profileId": "rw.pc.steam.9902063.resources.v8",
   "imageProfileId": "rw.pc.steam.9902063.images.v8",
-  "imageQualificationSha256": "0ee36cc6dc0a1e785e913322264b34101ec6b41246b6d8949f836a86dcfae2fb",
+  "imageQualificationSha256": "82ca9bf283a5bfc91c36438c0c1a4288150a59f431001fef6cc5e8f52d318afd",
   "identity": {
     "bytes": 2639503,
     "sha256": "8a550a37e2d8a5430866090d4e7d5892f9010b47f52a5a09350fc66c620deec9"
@@ -281,6 +281,10 @@
     {
       "eventId": "reforge:events/nuke-intercept",
       "sourcePath": "res/raw/buiding_explode.ogg"
+    },
+    {
+      "eventId": "reforge:events/scout-plasma-fire",
+      "sourcePath": "res/raw/plasma_fire.ogg"
     }
   ],
   "excludedMusicDomain": "assets/music/",

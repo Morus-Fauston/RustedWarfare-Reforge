@@ -58,6 +58,18 @@
       "highPriorityQueue": true,
       "isVisible": true,
       "isActive": "if self.isOverwater"
+    },
+    {
+      "name": "launchScoutBot",
+      "id": "launchScoutBot",
+      "price": 250,
+      "buildSpeed": "3.5s",
+      "fireTurretXAtGround": "botTurret",
+      "fireTurretXAtGround_onlyOverPassableTileOf": "HOVER",
+      "addActionCooldownTime": "30s",
+      "allowMultipleInQueue": false,
+      "whenBuilding_cannotMove": true,
+      "isVisible": true
     }
   ],
   "hiddenAction_trigger_onLand": {
@@ -262,6 +274,18 @@
       "energyUsage": 1,
       "warmup": 100,
       "linkDelayWithTurret": "2"
+    },
+    {
+      "name": "botTurret",
+      "x": 10,
+      "y": 22,
+      "idleDir": 0,
+      "invisible": true,
+      "canShoot": false,
+      "projectile": "scoutBotProjectile",
+      "size": 1,
+      "turnSpeed": 40,
+      "limitingRange": 500
     }
   ],
   "projectiles": [
@@ -288,6 +312,50 @@
       "autoTargetingOnDeadTarget": true,
       "areaDamage": 180,
       "areaRadius": 55
+    },
+    {
+      "name": "scoutBotProjectile",
+      "life": 0,
+      "directDamage": 0,
+      "spawnProjectilesOnEndOfLife": "scoutBotProjectileSplit(offsetDir=15), scoutBotProjectileSplit(offsetDir=-180)"
+    },
+    {
+      "name": "scoutBotProjectileSplit",
+      "life": 90,
+      "speed": 0.3,
+      "turnSpeed": 4,
+      "directDamage": 123,
+      "spawnUnit": "robotCrab",
+      "targetSpeed": 6,
+      "targetSpeedAcceleration": 0.05,
+      "ballistic": true,
+      "ballistic_delaymove_height": 20,
+      "ballistic_height": 50,
+      "targetGround": true,
+      "deflectionPower": -1,
+      "wobbleAmplitude": 1,
+      "wobbleFrequency": 60,
+      "targetGroundSpread": 5,
+      "spawnProjectilesOnEndOfLife": "scoutBotProjectileSplitFastTurn"
+    },
+    {
+      "name": "scoutBotProjectileSplitFastTurn",
+      "life": 150,
+      "speed": 2,
+      "turnSpeed": 9,
+      "directDamage": 123,
+      "spawnUnit": "robotCrab",
+      "targetSpeed": 6,
+      "targetSpeedAcceleration": 0.05,
+      "ballistic": true,
+      "ballistic_delaymove_height": 20,
+      "ballistic_height": 50,
+      "targetGround": true,
+      "deflectionPower": -1,
+      "wobbleAmplitude": 1,
+      "wobbleFrequency": 60,
+      "targetGroundSpread": 5,
+      "spawnProjectilesOnEndOfLife": "NONE"
     }
   ]
 }

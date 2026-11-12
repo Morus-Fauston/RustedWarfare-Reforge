@@ -91,6 +91,9 @@ internal class ProductionLedger private constructor(
     private fun work(factoryId: String): List<PendingFactoryWork> = queues[factoryId].orEmpty()
     /** Classification projections never determine advancement order. */
     fun queue(factoryId: String): List<PendingProduction> = immutable(work(factoryId).filterIsInstance<PendingProduction>())
+    fun queuedUnitCount(owner: String): Int = queues.entries.sumOf { (factoryId, items) ->
+        if (factories.getValue(factoryId).ownerPlayerId == owner) items.count { it is PendingProduction } else 0
+    }
     fun upgradeQueue(factoryId: String): List<PendingUpgrade> = immutable(work(factoryId).filterIsInstance<PendingUpgrade>())
     fun upgradeAtHead(factoryId: String): Boolean = work(factoryId).firstOrNull() is PendingUpgrade
     fun actionQueue(factoryId: String): List<PendingUnitAction> = immutable(work(factoryId).filterIsInstance<PendingUnitAction>())
@@ -148,7 +151,7 @@ internal class ProductionLedger private constructor(
         for ((id, _) in queues) for (item in actionQueue(id)) {
             val unit = units.getValue(id)
             require(unit.alive && unit.customActionState.queue.isEmpty() &&
-                unit.definition.customActions?.actions?.any { it.automatic == null && it == item.action } == true)
+                unit.definition.customActions?.actions?.any { it.automatic == null && item.matches(it) } == true)
         }
     }
     fun replaceFactory(factoryId: String, spec: FactoryProductionSpec): ProductionLedger {
