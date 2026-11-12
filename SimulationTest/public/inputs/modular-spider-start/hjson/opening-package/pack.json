@@ -42,6 +42,14 @@
     {
       "type": "modular-spider",
       "file": "units/spider/flak.hjson"
+    },
+    {
+      "type": "modular-spider",
+      "file": "units/spider/lightning.hjson"
+    },
+    {
+      "type": "modular-spider",
+      "file": "units/spider/artillery.hjson"
     }
   ]
 }

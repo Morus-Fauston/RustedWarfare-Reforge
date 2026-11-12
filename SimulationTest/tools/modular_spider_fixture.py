@@ -49,6 +49,8 @@ def empty_slot():
         "action_buildGun": {"convertTo": "modularSpider_gunturret", "price": 2000, "buildSpeed": 0, "setBuilt": 0},
         "action_buildSmallLaser": {"convertTo": "modularSpider_smallgunturret", "price": 700, "buildSpeed": 0, "setBuilt": 0},
         "action_buildAntiair": {"convertTo": "modularSpider_antiair", "price": 2000, "buildSpeed": 0, "setBuilt": 0},
+        "action_buildLightning": {"convertTo": "modularSpider_lightning", "price": 6000, "buildSpeed": 0, "setBuilt": 0},
+        "action_buildArtillery": {"convertTo": "modularSpider_artillery", "price": 5000, "buildSpeed": 0, "setBuilt": 0},
     }
 
 
@@ -147,6 +149,29 @@ def advanced_anti_air(flak):
     return form
 
 
+def lightning():
+    form = module("lightning", 6000, 2000, "lightning", 290, "2.00s", 30, 2, land=True, air=False)
+    form["turret_1"] = {"x": 0, "y": 0, "projectile": "1", "size": 20, "image_drawOffsetY": 9,
+                       "shoot_sound": "lighting_burst", "shoot_sound_vol": .3, "canShoot": True, "warmup": 30,
+                       "recoilOffset": -1.5, "recoilOutTime": 3, "recoilReturnTime": 17}
+    form["projectile_1"] = {"directDamage": 130, "life": 25, "speed": 0, "instant": True, "lightingEffect": True,
+                            "shieldDamageMultiplier": 1, "shieldDefectionMultiplier": .1, "buildingDamageMultiplier": .5}
+    return form
+
+
+def artillery():
+    form = module("artillery", 5000, 3000, "artillery", 350, 85, 30, 2, land=True, air=False)
+    timing = {"projectile": "plasma", "delay": 110, "warmup": 20, "turnSpeedAcceleration": .1,
+              "recoilOutTime": 3, "recoilReturnTime": 38}
+    form["turret_mainCannon"] = dict(timing, x=-.5, y=20, size=16, turnSpeed=0, attachedTo="mainCannonBase",
+                                    slave=True, shoot_sound="large_gun_fire2", shoot_sound_vol=.3, recoilOffset=-5)
+    form["turret_mainCannonBase"] = dict(timing, x=0, y=0, size=40, turnSpeed=2, canShoot=False,
+                                        recoilOffset=-1, image="artillery-base.png")
+    form["projectile_plasma"] = {"directDamage": 190, "life": 80, "speed": 16, "targetSpeed": 16,
+                                "targetSpeedAcceleration": .7}
+    return form
+
+
 def generate(destination=DESTINATION):
     assert not destination.exists(), "Existing owned input tree"
     for fmt in ("ini", "json", "hjson"):
@@ -165,6 +190,7 @@ def generate(destination=DESTINATION):
             ("spider", opening()), ("empty", empty_slot()), ("gun", gun()),
             ("small-laser", small_laser(False)), ("small-laser-t2", small_laser(True)), ("gun-t2", gun_t2()),
             ("aa", anti_air()), ("aa-t2", advanced_anti_air(False)), ("flak", advanced_anti_air(True)),
+            ("lightning", lightning()), ("artillery", artillery()),
         )
         for name, sections in forms:
             (spider / f"{name}.{fmt}").write_text(render(sections, fmt), encoding="utf8")
@@ -174,6 +200,7 @@ def generate(destination=DESTINATION):
             ("nano", "turret", 11, 19), ("gun", "turret", 14, 46), ("empty", "empty", 1, 1),
             ("small-laser", "turret", 8, 34), ("small-laser-t2", "turret", 14, 24), ("gun-t2", "turret", 16, 46),
             ("aa", "turret", 16, 26), ("aa-t2", "turret", 25, 24), ("flak", "turret", 29, 32),
+            ("lightning", "turret", 22, 31), ("artillery", "turret", 7, 35), ("artillery-base", "body", 20, 19),
         ):
             (spider / f"{filename}.png").write_bytes(png(kind, width, height))
         entries = [{"type": "mech", "file": f"units/mech.{fmt}"}]

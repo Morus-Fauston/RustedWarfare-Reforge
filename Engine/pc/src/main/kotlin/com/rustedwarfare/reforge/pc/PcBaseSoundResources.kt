@@ -35,6 +35,7 @@ internal class PcBaseSoundResources(private val cacheRoot: Path) {
         fun eventId(name: String) = ResourceId.parse("reforge:events/$name")
         // These owned placeholders can be replaced by independently qualified private recordings.
         val aliases = mapOf("hover-fire" to "tank-fire", "amphibious-lightning-fire" to "tank-fire",
+            "spider-lightning-fire" to "tank-fire",
             "scout-plasma-fire" to "tank-fire", "nuke-intercept" to "naval-missile-fire",
             "bomber-impact" to "naval-missile-fire")
         require(declarations.sounds.keys == expected.keys.map(::soundId).toSet() &&

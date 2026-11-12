@@ -1,15 +1,18 @@
 package com.rustedwarfare.reforge.core.sim
 
 import com.rustedwarfare.reforge.core.content.ContentLoader
+import com.rustedwarfare.reforge.core.content.ArmorProfile
 import com.rustedwarfare.reforge.core.content.ContentErrorCode
 import com.rustedwarfare.reforge.core.content.ContentResult
 import com.rustedwarfare.reforge.core.content.CombatProfile
 import com.rustedwarfare.reforge.core.content.LoadedContentPack
 import com.rustedwarfare.reforge.core.content.DurabilityProfile
+import com.rustedwarfare.reforge.core.content.DirectHitTargetKind
 import com.rustedwarfare.reforge.core.content.FlightProfile
 import com.rustedwarfare.reforge.core.content.MovementType
 import com.rustedwarfare.reforge.core.content.OrdinarySplashProfile
 import com.rustedwarfare.reforge.core.content.ProjectileProfile
+import com.rustedwarfare.reforge.core.content.ShieldProfile
 import com.rustedwarfare.reforge.core.content.UnitDefinition
 import java.nio.file.Files
 import java.nio.file.Path
@@ -40,7 +43,7 @@ class ModularSpiderWeaponModuleTest {
             val expectedHealth = mapOf("smallgunturret" to 1000.0, "smallgunturretT2" to 2000.0,
                 "gunturretT2" to 3000.0, "antiair" to 2000.0, "antiairT2" to 3000.0, "antiairFlak" to 3000.0)
             for ((name, health) in expectedHealth) assertEquals(health, unit(name).maximumHealth, name)
-            assertEquals(listOf("buildGun", "buildSmallLaser", "buildAntiair"),
+            assertEquals(listOf("buildGun", "buildSmallLaser", "buildAntiair", "buildLightning", "buildArtillery"),
                 unit("emptySlot").attachmentModule?.installs?.map { it.action })
             assertEquals(1000L, unit("antiair").attachmentModule?.cancel?.refund)
             assertEquals(500L, unit("antiair").attachmentModule?.reclaim?.refund)
@@ -68,7 +71,24 @@ class ModularSpiderWeaponModuleTest {
             assertEquals(25.0, antiAir.last().warmup)
             assertEquals(55.0, flak.last().warmup)
             assertEquals(OrdinarySplashProfile(100f, 70f), flak.last().projectile.splash)
-            for (file in listOf("small-laser", "small-laser-t2", "gun-t2", "aa", "aa-t2", "flak"))
+            val lightning = mounts("lightning").single()
+            assertEquals(120.0, lightning.shootDelay)
+            assertEquals(30.0, lightning.warmup)
+            assertTrue(lightning.projectile.instant && lightning.projectile.lightning)
+            assertEquals(0.5, lightning.projectile.damageModifiers.building)
+            assertEquals(0.1, lightning.projectile.damageModifiers.shieldDeflection)
+            val (cannon, base) = mounts("artillery")
+            assertEquals("mainCannon", cannon.name)
+            assertEquals(base.name, cannon.attachedTo)
+            assertTrue(cannon.slave && cannon.canShoot && !base.canShoot)
+            assertNotNull(base.imagePath)
+            assertEquals("plasma", cannon.projectileName)
+            assertEquals(110.0, cannon.shootDelay)
+            assertEquals(20.0, cannon.warmup)
+            assertEquals(.7, cannon.projectile.acceleration?.acceleration)
+            assertNull(cannon.projectile.ground)
+            assertNull(cannon.projectile.splash)
+            for (file in listOf("small-laser", "small-laser-t2", "gun-t2", "aa", "aa-t2", "flak", "lightning", "artillery"))
                 assertTrue(pack.sources.any { it.path.fileName.toString() == "$file.$format" }, file)
         }
     }
@@ -403,8 +423,10 @@ class ModularSpiderWeaponModuleTest {
             val manifest = copy.resolve("pack.json")
             val metadata = JsonValue.readJSON(Files.readString(manifest)).asObject()
             val units = metadata.get("units").asArray()
-            assertEquals("units/spider/flak.$format", units[units.size() - 1].asObject().get("file").asString())
-            units.remove(units.size() - 1)
+            val flakIndex = (0 until units.size()).single {
+                units[it].asObject().get("file").asString() == "units/spider/flak.$format"
+            }
+            units.remove(flakIndex)
             Files.writeString(manifest, metadata.toString())
 
             val dependency = assertIs<ContentResult.Success<LoadedContentPack>>(ContentLoader.loadContentPack(
@@ -459,6 +481,127 @@ class ModularSpiderWeaponModuleTest {
             assertEquals(id, battle.slot(1).unitId)
         }
 
+    @Test fun a_normal_lightning_module_applies_building_armor_and_shield_once_to_its_own_target() =
+        withBattle(16000, witnesses = true, shieldedBuilding = true, nearGroundOffset = 18.0) { battle ->
+            val id = battle.slot(1).unitId
+            battle.click("selectSlot1")
+            battle.click("buildLightning")
+            assertEquals(10000L, battle.balance())
+            battle.tick()
+            assertEquals("modularSpider_lightning", battle.slot(1).typeId)
+            repeat(80) {
+                assertTrue(battle.tick().projectileEvents.none { it.projectile.sourceUnitId == id })
+            }
+            battle.until { battle.slot(1).progress == 1f }
+            val frames = List(100) { battle.tick() }
+            val events = frames.flatMap { it.projectileEvents }.filter { it.projectile.sourceUnitId == id }
+            val birth = events.single { it.kind == "born" }
+            val impact = events.single { it.kind == "impact" }
+            assertEquals(birth.projectile.objectId, impact.projectile.objectId)
+            assertEquals("1", birth.projectile.sourceWeaponName)
+            assertEquals("ground", impact.projectile.targetUnitId)
+            assertEquals(45.0, impact.damage)
+            assertEquals(19955.0, battle.unit("ground").health)
+            assertEquals(450f, battle.unit("ground").shield?.current)
+            assertEquals(20000.0, battle.unit("nearGround").health)
+            assertEquals(500f, battle.unit("nearGround").shield?.current)
+            assertEquals(20000.0, battle.unit("air").health)
+            assertNotNull(birth.projectile.lightning)
+            assertTrue(events.any { it.kind == "expired" && it.projectile.objectId == birth.projectile.objectId })
+            assertTrue(frames.any { it.soundTriggers.any { sound -> sound.volume == .3f &&
+                sound.eventId == "reforge:events/spider-lightning-fire" } })
+            assertEquals(id, battle.slot(1).unitId)
+        }
+
+    @Test fun a_normal_artillery_module_uses_its_slave_plasma_mount_at_the_current_ground_target() =
+        withBattle(16000, witnesses = true, airX = 425.0, groundX = 570.0, nearGroundOffset = 16.0) { battle ->
+            val id = battle.slot(1).unitId
+            battle.click("selectSlot1")
+            battle.click("buildArtillery")
+            assertEquals(11000L, battle.balance())
+            battle.tick()
+            assertEquals("modularSpider_artillery", battle.slot(1).typeId)
+            battle.until { battle.slot(1).progress == 1f }
+            repeat(100) {
+                assertTrue(battle.tick().projectileEvents.none { it.projectile.sourceUnitId == id })
+            }
+            assertIs<ActionResult.Rejected>(battle.context.submit(
+                UnitAction("commented-out", "p1", "spider", "fireArtillery", battle.context.world,
+                    target = Position(560.0, 155.0))))
+            assertIs<ActionResult.Accepted>(battle.context.submit(
+                MoveAction("enter-artillery-range", "p1", "spider", Position(226.0, 160.0), battle.context.world)))
+            val frames = List(165) { battle.tick() }
+            val firingFrame = frames.first { frame ->
+                frame.projectileEvents.any { it.kind == "born" && it.projectile.sourceUnitId == id }
+            }
+            val birth = firingFrame.projectileEvents.single { it.kind == "born" && it.projectile.sourceUnitId == id }
+            assertEquals("mainCannon", birth.projectile.sourceWeaponName)
+            val mounts = assertNotNull(firingFrame.combat).weapons.filter { it.unitId == id }.associateBy { it.weaponName }
+            assertEquals(mounts.getValue("mainCannonBase").turretHeading, mounts.getValue("mainCannon").turretHeading)
+            assertNotEquals(mounts.getValue("mainCannonBase").pivot, mounts.getValue("mainCannon").pivot)
+            assertTrue(frames.any { frame -> frame.projectileEvents.any {
+                it.kind == "impact" && it.projectile.objectId == birth.projectile.objectId &&
+                    it.projectile.targetUnitId == "ground" && it.damage == 190.0
+            } })
+            assertTrue(battle.unit("spider").position.x > 180.0)
+            assertEquals(20000.0, battle.unit("nearGround").health)
+            assertEquals(20000.0, battle.unit("air").health)
+            assertEquals(id, battle.slot(1).unitId)
+        }
+
+    @Test fun co_installed_special_modules_keep_independent_release_and_the_old_plasma_does_not_retarget() =
+        withBattle(16000, witnesses = true, groundX = 470.0, groundHealth = 100.0, nearGroundOffset = 18.0) { battle ->
+            val lightningId = battle.slot(1).unitId
+            val cannonId = battle.slot(2).unitId
+            battle.click("selectSlot1")
+            assertIs<ActionResult.Rejected>(battle.context.submit(
+                UnitAction("foreign-slot", "p2", "spider", "buildLightning", battle.context.world)))
+            battle.click("buildLightning")
+            battle.click("selectSlot2")
+            battle.click("buildArtillery")
+            assertEquals(5000L, battle.balance())
+            battle.tick()
+            assertEquals("modularSpider_lightning", battle.slot(1).typeId)
+            assertEquals("modularSpider_artillery", battle.slot(2).typeId)
+            battle.until { battle.slot(1).progress == 1f && battle.slot(2).progress == 1f }
+            val frames = List(100) { battle.tick() }
+            val events = frames.flatMap { it.projectileEvents }
+            val lightning = events.single { it.kind == "born" && it.projectile.sourceUnitId == lightningId }.projectile
+            val plasma = events.single { it.kind == "born" && it.projectile.sourceUnitId == cannonId }.projectile
+            assertEquals("ground", lightning.targetUnitId)
+            assertEquals("ground", plasma.targetUnitId)
+            val hitStep = frames.first { frame ->
+                frame.projectileEvents.any { it.kind == "impact" && it.projectile.objectId == lightning.objectId }
+            }.stepIndex
+            val plasmaBirthStep = frames.first { frame ->
+                frame.projectileEvents.any { it.kind == "born" && it.projectile.objectId == plasma.objectId }
+            }.stepIndex
+            assertTrue(plasmaBirthStep < hitStep)
+            assertTrue(frames.filter { it.stepIndex >= hitStep }.any { frame ->
+                frame.projectiles.any { it.objectId == plasma.objectId && it.targetUnitId == "ground" }
+            })
+            assertFalse(battle.unit("ground").alive)
+            assertEquals(100.0, battle.unit("nearGround").health)
+            assertTrue(events.filter { it.projectile.objectId == plasma.objectId }.all { it.projectile.targetUnitId == "ground" })
+        }
+
+    @Test fun all_formats_reject_an_attempt_to_bind_the_inactive_artillery_projectile() {
+        for (format in listOf("ini", "json", "hjson")) {
+            val copy = copyPack(format)
+            val artillery = copy.resolve("units/spider/artillery.$format")
+            val original = Files.readString(artillery)
+            val reference = if (format == "ini") "projectile: plasma" else "\"projectile\": \"plasma\""
+            val forged = original.replaceFirst(reference, reference.replace("plasma", "cannonShot"))
+            assertNotEquals(original, forged)
+            Files.writeString(artillery, forged)
+            val error = assertIs<ContentResult.Failure>(ContentLoader.loadContentPack(copy)).error
+            assertEquals(ContentErrorCode.BAD_REFERENCE, error.code, error.describe())
+            assertEquals("turret_mainCannon", error.section)
+            assertEquals("projectile", error.field)
+            assertEquals(artillery.toString(), error.file)
+        }
+    }
+
     private fun copyPack(format: String): Path {
         val source = fixtures.resolve("modular-spider-start/$format/opening-package")
         val copy = workspace.resolve(format)
@@ -475,6 +618,7 @@ class ModularSpiderWeaponModuleTest {
 
     private fun withBattle(credits: Long, witnesses: Boolean = false, hostileShot: HostileShot? = null,
                            airX: Double = 350.0, firstAirHealth: Double = 20000.0, groundX: Double = 347.0,
+                           shieldedBuilding: Boolean = false, nearGroundOffset: Double? = null, groundHealth: Double = 20000.0,
                            test: (Battle) -> Unit) =
         WaterTestScene.withMap { map ->
             val spider = pack("ini").units
@@ -484,12 +628,16 @@ class ModularSpiderWeaponModuleTest {
                 val aircraft = if (flying) HelicopterCombatScene.unit() else null
                 val movement = aircraft?.movement?.copy(
                     flight = FlightProfile(20.0, 0.0, 0.0, 20.0)) ?: WaterTestScene.unit(MovementType.HOVER).movement
+                val building = !flying && shieldedBuilding
                 return UnitDefinition(id, "CustomUnitMetadata", 6.0, 6.0, 1, spider.getValue("mechGun").imagePath,
-                    1.0, movement, emptySet(), durability = DurabilityProfile(health, null),
-                    rotor = aircraft?.rotor)
+                    1.0, movement, emptySet(),
+                    durability = DurabilityProfile(health, null, armor = if (building) ArmorProfile(15.0) else null),
+                    shield = if (building) ShieldProfile(500f, 0f) else null,
+                    rotor = aircraft?.rotor, directHitTargetKind =
+                        if (building) DirectHitTargetKind.NATIVE_BUILDING else DirectHitTargetKind.ORDINARY)
             }
             val targets = if (witnesses) listOf(passive("airTarget", true, firstAirHealth), passive("nearAirTarget", true),
-                passive("groundTarget", false)) else emptyList()
+                passive("groundTarget", false, groundHealth)) else emptyList()
             val sniper = hostileShot?.let {
                 UnitDefinition("sniperType", "CustomUnitMetadata", 6.0, 6.0, 1, spider.getValue("mechGun").imagePath,
                     1.0, WaterTestScene.unit(MovementType.LAND).movement.copy(moveSpeed = 2.0, moveAccelerationSpeed = 2.0),
@@ -500,7 +648,9 @@ class ModularSpiderWeaponModuleTest {
                     UnitSpawn("air", "p2", "airTarget", Position(airX, 150.0), 270.0),
                     UnitSpawn("nearAir", "p2", "nearAirTarget", Position(airX + 16.0, 150.0), 270.0),
                     UnitSpawn("ground", "p2", "groundTarget", Position(groundX, 156.0), 270.0),
-                ) else emptyList()
+                ) + listOfNotNull(nearGroundOffset?.let {
+                    UnitSpawn("nearGround", "p2", "groundTarget", Position(groundX + it, 156.0), 270.0)
+                }) else emptyList()
             val spawns = listOf(UnitSpawn("spider", "p1", "modularSpider", origin, 90.0)) + witnessesSpawns +
                 listOfNotNull(hostileShot?.let { UnitSpawn("sniper", "p2", "sniperType", it.position, it.heading) })
             val scenario = base.copy(unitDefinitions = spider + (targets + listOfNotNull(sniper)).associateBy { it.id },

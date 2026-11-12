@@ -20,6 +20,7 @@ internal object ModularSpiderWeaponForms {
         private val shot: Map<String, String>,
         private val mounts: Map<String, Map<String, String>>,
         upgrades: List<AttachmentUpgrade> = emptyList(),
+        val additionalTurretDimensions: Map<String, Pair<Int, Int>> = emptyMap(),
     ) {
         val module = AttachmentModuleProfile(empty = false, selfBuildRate = .001f,
             cancel = AttachmentRemoval(empty, price, 120f), reclaim = AttachmentRemoval(empty, price / 2, 180f),
@@ -45,9 +46,15 @@ internal object ModularSpiderWeaponForms {
         private val turnSpeed = attack.getValue("turretTurnSpeed").toDouble()
         private val projectile = ProjectileProfile(shot.getValue("directDamage").toDouble(),
             shot.getValue("life").toDouble(), shot.getValue("speed").toDouble(),
-            acceleration = shot["targetSpeed"]?.let { LinearProjectileAcceleration(it.toDouble(), .1) },
+            instant = shot["instant"] == "true",
+            acceleration = shot["targetSpeed"]?.let {
+                LinearProjectileAcceleration(it.toDouble(), shot["targetSpeedAcceleration"]?.toDouble() ?: .1)
+            },
             splash = shot["areaDamage"]?.let { OrdinarySplashProfile(it.toFloat(), shot.getValue("areaRadius").toFloat()) },
-            retargetOnDeath = shot["autoTargetingOnDeadTarget"] == "true")
+            retargetOnDeath = shot["autoTargetingOnDeadTarget"] == "true",
+            lightning = shot["lightingEffect"] == "true",
+            damageModifiers = ProjectileDamageModifiers(shot["shieldDamageMultiplier"]?.toDouble() ?: 1.0,
+                shot["shieldDefectionMultiplier"]?.toDouble() ?: 1.0, shot["buildingDamageMultiplier"]?.toDouble() ?: 1.0))
 
         private val weapons = mounts.map { (name, source) ->
             fun number(key: String, default: Double) = source[key]?.toDouble() ?: default
@@ -57,6 +64,7 @@ internal object ModularSpiderWeaponForms {
                 "plasma_fire" -> FireSoundProfile.SCOUT_PLASMA
                 "missile_fire" -> FireSoundProfile.SPIDER_AA_MISSILE
                 "large_gun_fire2" -> FireSoundProfile.NAVAL_MAIN
+                "lighting_burst" -> FireSoundProfile.SPIDER_LIGHTNING
                 null -> null
                 else -> error("Unknown modular spider sound")
             }
@@ -79,9 +87,11 @@ internal object ModularSpiderWeaponForms {
                 idleSweep = sweep)
         }
 
-        fun combat(turret: Path): CombatProfile {
+        fun combat(turret: Path, additionalTurrets: Map<String, Path>): CombatProfile {
             val primary = weapons.first()
-            val catalog = WeaponCatalog(listOf(primary.copy(imagePath = turret)) + weapons.drop(1))
+            val catalog = WeaponCatalog(weapons.mapIndexed { index, weapon ->
+                weapon.copy(imagePath = if (index == 0) turret else additionalTurrets[weapon.name])
+            })
             return CombatProfile(health, range, delay, size, turnSpeed, primary.turnAcceleration, projectile, turret,
                 null, 1.0, recoil = primary.recoil, idleSweep = primary.idleSweep, namedWeapons = catalog)
         }
@@ -149,6 +159,33 @@ internal object ModularSpiderWeaponForms {
             "1", shot, mapOf("1" to pivot, "2" to left, "3" to right))
     }
 
-    val byId = listOf(gun(false), gun(true), laser(false), laser(true), antiAir(), advancedAntiAir(false), advancedAntiAir(true))
+    private fun lightning(): Form {
+        val mount = fields("x" to 0, "y" to 0, "projectile" to "1", "size" to 20, "image_drawOffsetY" to 9,
+            "shoot_sound" to "lighting_burst", "shoot_sound_vol" to .3, "canShoot" to true, "warmup" to 30,
+            "recoilOffset" to -1.5, "recoilOutTime" to 3, "recoilReturnTime" to 17)
+        return Form(ModularSpiderRules.LIGHTNING, 6000, 2000.0, 22, 31,
+            attack(290, 120, 30, 2, land = true, air = false), "1",
+            fields("directDamage" to 130, "life" to 25, "speed" to 0, "instant" to true, "lightingEffect" to true,
+                "shieldDamageMultiplier" to 1, "shieldDefectionMultiplier" to .1, "buildingDamageMultiplier" to .5),
+            mapOf("1" to mount))
+    }
+
+    private fun artillery(): Form {
+        val timing = fields("projectile" to "plasma", "delay" to 110, "warmup" to 20, "turnSpeedAcceleration" to .1,
+            "recoilOutTime" to 3, "recoilReturnTime" to 38)
+        val cannon = timing + fields("x" to -.5, "y" to 20, "size" to 16, "turnSpeed" to 0,
+            "attachedTo" to "mainCannonBase", "slave" to true, "shoot_sound" to "large_gun_fire2",
+            "shoot_sound_vol" to .3, "recoilOffset" to -5)
+        val base = timing + fields("x" to 0, "y" to 0, "size" to 40, "turnSpeed" to 2, "canShoot" to false,
+            "recoilOffset" to -1)
+        return Form(ModularSpiderRules.ARTILLERY, 5000, 3000.0, 7, 35,
+            attack(350, 85, 30, 2, land = true, air = false), "plasma",
+            fields("directDamage" to 190, "life" to 80, "speed" to 16, "targetSpeed" to 16,
+                "targetSpeedAcceleration" to .7), mapOf("mainCannon" to cannon, "mainCannonBase" to base),
+            additionalTurretDimensions = mapOf("mainCannonBase" to (20 to 19)))
+    }
+
+    val byId = listOf(gun(false), gun(true), laser(false), laser(true), antiAir(), advancedAntiAir(false), advancedAntiAir(true),
+        lightning(), artillery())
         .associateBy { it.id }
 }

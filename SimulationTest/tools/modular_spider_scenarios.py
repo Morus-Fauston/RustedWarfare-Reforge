@@ -11,9 +11,9 @@ def intent(identity, kind, wait, **fields):
     return dict(intentId=identity, kind=kind, waitSteps=wait, **fields)
 
 
-def generate(weapon_modules=False, destination=PLATFORM):
+def generate(weapon_modules=False, destination=PLATFORM, *, special_weapons=False):
     for form in ('ini', 'json', 'hjson'):
-        case = 'weapon-modules' if weapon_modules else 'opening'
+        case = 'special-weapons' if special_weapons else 'weapon-modules' if weapon_modules else 'opening'
         identity = f'modular-spider-{form}-{case}'
         steps = [
             intent('settle-opening', 'select', 100, position=dict(x=40, y=40)),
@@ -38,7 +38,30 @@ def generate(weapon_modules=False, destination=PLATFORM):
             finalUnits=[dict(ownerPlayerId='p1', typeId=unit, fields=dict(alive=True))
                         for unit in ('modularSpider', 'modularSpider_gunturret')],
         )
-        if weapon_modules:
+        if special_weapons:
+            steps[2:] = [
+                intent('leave-weapon-range', 'move', 500, position=dict(x=54, y=170)),
+                intent('select-slot-1', 'unit-action', 0, actionName='selectSlot1'),
+                intent('buy-artillery', 'unit-action', 600, actionName='buildArtillery'),
+                *(intent(f'earn-lightning-{index}', 'stop', 600) for index in range(1, 13)),
+                intent('select-slot-2', 'unit-action', 0, actionName='selectSlot2'),
+                intent('buy-lightning', 'unit-action', 600, actionName='buildLightning'),
+                intent('finish-lightning', 'stop', 450),
+                intent('bring-both-mounts-into-range', 'move', 450, position=dict(x=190, y=150)),
+                intent('hold-fire-position', 'stop', 180),
+            ]
+            history.pop('spiderOpening')
+            history.update(
+                spend=[dict(intentId='buy-artillery', amount=5000, at='action'),
+                       dict(intentId='buy-lightning', amount=6000, at='action')],
+                minimumBirths=[
+                    dict(ownerPlayerId='p1', typeId='modularSpider_artillery', weaponNames=['mainCannon'], targetUnitId='b'),
+                    dict(ownerPlayerId='p1', typeId='modularSpider_lightning', weaponNames=['1'], targetUnitId='b'),
+                ],
+                finalUnits=[dict(ownerPlayerId='p1', typeId=unit, fields=dict(alive=True, constructionProgress=1))
+                            for unit in ('modularSpider', 'modularSpider_artillery', 'modularSpider_lightning')],
+            )
+        elif weapon_modules:
             steps[3:] = [
                 intent('buy-aa', 'unit-action', 12, actionName='buildAntiair'),
                 intent('cancel-aa', 'unit-action', 130, actionName='cancel'),
@@ -69,5 +92,8 @@ def generate(weapon_modules=False, destination=PLATFORM):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--weapon-modules', action='store_true')
-    generate(parser.parse_args().weapon_modules)
+    cases = parser.add_mutually_exclusive_group()
+    cases.add_argument('--weapon-modules', action='store_true')
+    cases.add_argument('--special-weapons', action='store_true')
+    arguments = parser.parse_args()
+    generate(arguments.weapon_modules, special_weapons=arguments.special_weapons)

@@ -285,6 +285,7 @@ enum class FireSoundProfile(val eventId: String, val volume: Float, val pitch: F
     SUBMARINE_MISSILE("reforge:events/naval-missile-fire", .8f),
     ENGINEER_MISSILE("reforge:events/naval-missile-fire", .2f),
     AMPHIBIOUS_LIGHTNING("reforge:events/amphibious-lightning-fire", .2f),
+    SPIDER_LIGHTNING("reforge:events/spider-lightning-fire", .3f),
 }
 
 data class TurretMount(val localX: Double = 0.0, val localY: Double = 0.0)

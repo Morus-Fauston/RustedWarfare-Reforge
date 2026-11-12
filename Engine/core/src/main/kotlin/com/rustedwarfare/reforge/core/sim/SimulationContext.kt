@@ -3,6 +3,7 @@ package com.rustedwarfare.reforge.core.sim
 import com.rustedwarfare.reforge.core.content.MapDefinition
 import com.rustedwarfare.reforge.core.content.BomberRules
 import com.rustedwarfare.reforge.core.content.MechFlameRules
+import com.rustedwarfare.reforge.core.content.ModularSpiderRules
 import com.rustedwarfare.reforge.core.content.MovementType
 import com.rustedwarfare.reforge.core.content.foundationMovementType
 import com.rustedwarfare.reforge.core.content.DirectHitTargetKind
@@ -1434,6 +1435,7 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
                 return SimulationError("unsupported-shield", "Expected finite positive shield capacity and nonnegative regeneration on a durable unit")
             val m = definition.movement
             val attachedProfile = definition.attachmentLayout != null || definition.attachmentModule != null
+            val spiderLightning = attachedProfile && definition.id == ModularSpiderRules.LIGHTNING
             val submarine = definition.submarine != null
             val amphibious = definition.amphibiousJet != null
             val dropship = definition.transport == com.rustedwarfare.reforge.core.content.TransportProfile.NATIVE_DROPSHIP
@@ -1670,8 +1672,9 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
                 listOf(base) + base.namedWeapons?.ordered.orEmpty().filter { it.canShoot }.map { NamedWeaponRuntime.profile(base, it) }
             }.orEmpty()
             for (combat in combatProfiles) {
-                if ((combat.projectile.lightning || combat.projectile.damageModifiers != com.rustedwarfare.reforge.core.content.ProjectileDamageModifiers()) && !amphibious && !beamGunship)
-                    return SimulationError("unsupported-combat", "Lightning requires the qualified native amphibious capability")
+                if ((combat.projectile.lightning || combat.projectile.damageModifiers != com.rustedwarfare.reforge.core.content.ProjectileDamageModifiers()) &&
+                    !amphibious && !beamGunship && !spiderLightning)
+                    return SimulationError("unsupported-combat", "Special projectile damage requires a qualified capability")
                 combat.projectile.missile?.let { missile ->
                     if (listOf(missile.targetSpeed, missile.acceleration, missile.climbThreshold, missile.apex,
                             missile.verticalSpeed, missile.retargetForward).any { !it.isFinite() || it < 0f } ||
@@ -1687,7 +1690,7 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
                 val zeroRecoil = m.type == MovementType.AIR && combat.recoil.offset == 0.0
                 val positive = listOf(combat.maxHp, combat.attackRange, combat.shootDelay, combat.projectile.life) +
                     (if (zeroRecoil) emptyList() else listOf(combat.recoil.outTime, combat.recoil.returnTime)) +
-                    if (combat.projectile.acceleration == null) listOf(combat.projectile.speed) else emptyList()
+                    if (combat.projectile.acceleration == null && !spiderLightning) listOf(combat.projectile.speed) else emptyList()
                 val nonnegative = listOf(combat.turretSize, combat.turretTurnSpeed, combat.turretTurnAcceleration,
                     combat.projectile.directDamage, combat.projectile.speed) +
                     (if (zeroRecoil) listOf(combat.recoil.outTime, combat.recoil.returnTime) else emptyList())
@@ -2140,7 +2143,8 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
             appearance = if (flameMech) ProjectileAppearance.MECH_FLAME
             else if (unit.typeId == BomberRules.ID) {
                 if (ground == null) ProjectileAppearance.BOMBER_DEPTH_CHARGE else ProjectileAppearance.BOMBER_BOMB
-            } else if (weapon.projectile.lightning) ProjectileAppearance.AMPHIBIOUS_LIGHTNING
+            } else if (unit.typeId == ModularSpiderRules.LIGHTNING) ProjectileAppearance.SPIDER_LIGHTNING
+                else if (weapon.projectile.lightning) ProjectileAppearance.AMPHIBIOUS_LIGHTNING
                 else if (unit.definition.submarine == null) ProjectileAppearance.STANDARD
                 else if (SubmarineMotion.submerged(unit)) ProjectileAppearance.SUBMARINE_TORPEDO
                 else ProjectileAppearance.SUBMARINE_MISSILE)

@@ -835,31 +835,41 @@ def validate_production_history(records, policy):
             raise PlatformError('history-production','Missing or reordered completion: '+name,2)
 
 
-def validate_launch_appearance(shot, units):
+def validate_launch_appearance(shot, units, verified_spider_source=None):
     source=units.get(shot.get('sourceUnitId'),{})
+    weapon=shot.get('sourceWeaponName')
     style=shot.get('appearance','STANDARD')
     expected={'attackSubmarine':('SUBMARINE_MISSILE','SUBMARINE_TORPEDO'),
-              'amphibiousJet':('AMPHIBIOUS_LIGHTNING',),'aaBeamGunship':('AA_BEAM',),'nukeLauncherC':('NUCLEAR',),
+              'amphibiousJet':('AMPHIBIOUS_LIGHTNING',),'modularSpider_lightning':('SPIDER_LIGHTNING',),
+              'aaBeamGunship':('AA_BEAM',),'nukeLauncherC':('NUCLEAR',),
               'antiNukeLauncherC':('INTERCEPTOR',),'mechFlame':('MECH_FLAME',)}.get(source.get('typeId'),('STANDARD',))
+    if verified_spider_source is not None:
+        disclosed = shot.get('sourceUnitId'), weapon
+        if disclosed not in (verified_spider_source, (None, None)):
+            raise PlatformError('history-projectile','Spider lightning changed its verified launch source or weapon',2)
+        expected = ('SPIDER_LIGHTNING',)
+        weapon = verified_spider_source[1]
     if source.get('typeId') in NAUTILUS_ACTIONS:
         expected={'botTurret':('SCOUT_PAYLOAD',),'antiNuke':('INTERCEPTOR',)}.get(shot.get('sourceWeaponName'),expected)
     bomber_appearances = {'1': 'BOMBER_BOMB', '2': 'BOMBER_DEPTH_CHARGE'}
     if source.get('typeId') == 'bomber':
         expected = (bomber_appearances.get(shot.get('sourceWeaponName')),) if 'kind' in shot else tuple(bomber_appearances.values())
-    if (style not in ('STANDARD','SUBMARINE_MISSILE','SUBMARINE_TORPEDO','AMPHIBIOUS_LIGHTNING','AA_BEAM','NUCLEAR',
+    lightning_weapons = {'AMPHIBIOUS_LIGHTNING': ('left', 'right'), 'SPIDER_LIGHTNING': ('1',)}
+    if (style not in ('STANDARD','SUBMARINE_MISSILE','SUBMARINE_TORPEDO','AA_BEAM','NUCLEAR',
+                     *lightning_weapons,
                      'INTERCEPTOR','SCOUT_PAYLOAD','MECH_FLAME', *bomber_appearances.values()) or
-            source and style not in expected):
+            (source or verified_spider_source is not None) and style not in expected):
         raise PlatformError('history-projectile','Invalid native launch appearance or source',2)
     if style=='MECH_FLAME' and 'kind' in shot and (
             source and shot.get('sourceWeaponName') not in ('2','3') or shot.get('targetUnitId') is not None):
         raise PlatformError('history-projectile','Flame launch has no homing unit reference and uses a side nozzle',2)
     line=shot.get('lightning')
-    if style=='AMPHIBIOUS_LIGHTNING':
+    if style in lightning_weapons:
         def finite(value):return type(value) in (int,float) and math.isfinite(value)
         if (not isinstance(line,dict) or set(line)!={'end','endHeight'} or
                 not isinstance(line.get('end'),dict) or set(line['end'])!={'x','y'} or
                 any(not finite(v) for v in line['end'].values()) or not finite(line['endHeight']) or
-                ('kind' in shot or source) and shot.get('sourceWeaponName') not in ('left','right') or
+                ('kind' in shot or source) and weapon not in lightning_weapons[style] or
                 any(shot.get(k) is not None for k in ('ground','missile','ballistic','areaExpansion'))):
             raise PlatformError('history-projectile','Missing or invalid native lightning geometry',2)
     elif line is not None:
@@ -1153,6 +1163,8 @@ def compare_history(records, plan, policy, native_anchors=None, geometry=None):
         raise PlatformError('input-contract', 'Projectile birth coverage must be explicitly boolean', 1)
     known_projectiles = set()
     launch_appearances = {}
+    spider_lightning_births = {}
+    units = {}
     births=policy.get('minimumBirths',[])
     if (not isinstance(births,list) or any(not isinstance(b,dict) or
             set(b)!={'ownerPlayerId','typeId','weaponNames','targetUnitId'} or
@@ -1303,7 +1315,8 @@ def compare_history(records, plan, policy, native_anchors=None, geometry=None):
                 raise PlatformError('history-step', 'Call observation differs from its simulation boundary')
             if type(simulation_time) not in (int, float) or simulation_time != steps:
                 raise PlatformError('history-step', 'Simulation time differs from explicit steps')
-            units = {u['unitId']: u for u in row['sample'].get('units', [])}
+            previous_units = units
+            units = {u['unitId']: u for u in sample.get('units', [])}
             if income_types:
                 if len(units)!=len(sample.get('units',[])):
                     raise PlatformError('history-income','Repeated unit identity in income evidence',2)
@@ -1331,14 +1344,29 @@ def compare_history(records, plan, policy, native_anchors=None, geometry=None):
                         sources[0].get('alive') is not True or sources[0].get('constructionProgress')!=1):
                     raise PlatformError('history-income', 'Fixed initial income source changed or is not a live completed owned unit', 2)
             validate_history_poses(units.values(), policy)
+            destroyed_slots = {event.get('unitId') for event in sample.get('events', [])
+                               if event.get('kind') == 'attachment-slot-destroyed'}
             for event in sample.get('projectileEvents',[]):
-                source=units.get(event.get('sourceUnitId'),{})
-                style=validate_launch_appearance(event,units)
                 token=event.get('token')
-                if event.get('kind')=='born':
+                source_id=event.get('sourceUnitId')
+                born=event.get('kind')=='born'
+                launch_units=units
+                proof=spider_lightning_births.get(token)
+                if proof is not None and born and index!=proof[0]:
+                    raise PlatformError('history-projectile','Spider lightning birth moved to a different step',2)
+                if (born and proof is None and event.get('appearance')=='SPIDER_LIGHTNING' and
+                        source_id in destroyed_slots and units.get(source_id,{}).get('typeId')=='modularSpider_emptySlot' and
+                        previous_units.get(source_id,{}).get('constructionProgress')==1):
+                    # The same committed step can publish the shot and the source's conversion.
+                    launch_units=previous_units
+                source=launch_units.get(source_id,{})
+                style=validate_launch_appearance(event,launch_units,proof[1] if proof else None)
+                if born:
                     if token in launch_appearances and launch_appearances[token]!=style:
                         raise PlatformError('history-projectile','Repeated birth changed launch appearance',2)
                     launch_appearances[token]=style
+                    if style=='SPIDER_LIGHTNING' and source:
+                        spider_lightning_births[token]=(index,(source_id,event.get('sourceWeaponName')))
                 elif token in launch_appearances and launch_appearances[token]!=style:
                     raise PlatformError('history-projectile','Projectile event changed launch appearance',2)
                 for i,expected in enumerate(births):

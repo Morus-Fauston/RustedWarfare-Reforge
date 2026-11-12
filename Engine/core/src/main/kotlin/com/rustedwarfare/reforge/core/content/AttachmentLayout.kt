@@ -34,10 +34,14 @@ internal object ModularSpiderRules {
     const val GUN = "modularSpider_gunturret"
     const val LASER = "modularSpider_smallgunturret"
     const val ANTI_AIR = "modularSpider_antiair"
+    const val LIGHTNING = "modularSpider_lightning"
+    const val ARTILLERY = "modularSpider_artillery"
     val installs = listOf(
         AttachmentInstall("buildGun", GUN, 2000L),
         AttachmentInstall("buildSmallLaser", LASER, 700L),
         AttachmentInstall("buildAntiair", ANTI_AIR, 2000L),
+        AttachmentInstall("buildLightning", LIGHTNING, 6000L),
+        AttachmentInstall("buildArtillery", ARTILLERY, 5000L),
     )
     val slots = listOf(
         AttachmentSlotDefinition(1, -11.0, 32.0, 0.0, EMPTY),
@@ -63,8 +67,11 @@ internal object ModularSpiderRules {
         val form = ModularSpiderWeaponForms.byId[unit.id] ?: return false
         val combat = unit.combat ?: return false
         val expected = form.module
+        val extraImages = form.additionalTurretDimensions.keys.associateWith { name ->
+            combat.namedWeapons?.byName?.get(name)?.imagePath ?: return false
+        }
         return !module.empty && unit.radius == 15.0 && unit.maximumHealth == form.health &&
-            combat.turretImagePath?.let { combat == form.combat(it) } == true &&
+            combat.turretImagePath?.let { combat == form.combat(it, extraImages) } == true &&
             module.installs.isEmpty() && module.selfBuildRate == expected.selfBuildRate &&
             module.cancel == expected.cancel && module.reclaim == expected.reclaim && module.upgrades == expected.upgrades
     }

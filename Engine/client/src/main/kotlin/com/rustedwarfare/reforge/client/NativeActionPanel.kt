@@ -13,6 +13,8 @@ internal object NativeActionPanel {
         "buildGun" to NativeCardBounds(844f, 215f, 84f, 28f),
         "buildSmallLaser" to NativeCardBounds(752f, 184f, 84f, 28f),
         "buildAntiair" to NativeCardBounds(844f, 184f, 84f, 28f),
+        "buildLightning" to NativeCardBounds(752f, 153f, 84f, 28f),
+        "buildArtillery" to NativeCardBounds(844f, 153f, 84f, 28f),
         "upgradeT2" to NativeCardBounds(844f, 215f, 84f, 28f),
         "upgradeFlak" to NativeCardBounds(752f, 184f, 84f, 28f),
         "cancel" to NativeCardBounds(844f, 184f, 84f, 28f),

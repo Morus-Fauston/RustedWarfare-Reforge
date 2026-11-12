@@ -80,7 +80,8 @@ object PlatformSessionRunner {
                             val name = intent.id("actionName")
                             val nuclear = name in setOf("buildNuke", "launchNuke", "buildAntiNuke")
                             val targeted = name == "launchNuke" || name == "launchScoutBot"
-                            val slotOrder = name in setOf("buildGun", "buildSmallLaser", "buildAntiair", "upgradeT2", "upgradeFlak", "reclaim")
+                            val slotOrder = name in setOf("buildGun", "buildSmallLaser", "buildAntiair", "buildLightning",
+                                "buildArtillery", "upgradeT2", "upgradeFlak", "reclaim")
                             val spider = slotOrder || name in setOf("selectSlotBuild", "cancel") ||
                                 name.matches(Regex("selectSlot[1-6]"))
                             val cancel = intent["cancelQueued"]?.let { value ->

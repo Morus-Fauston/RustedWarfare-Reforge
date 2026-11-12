@@ -6245,6 +6245,9 @@
     "spider-aa": "assets/units/turrets/anti_air_top.png",
     "spider-aa-t2": "assets/units/turrets/anti_air_top_l3.png",
     "spider-flak": "assets/units/turrets/anti_air_top_flakgun.png",
+    "spider-lightning": "assets/units/turrets/turret_top_lightning.png",
+    "spider-artillery": "assets/units/experimental_spider/experimental_tank_turret2.png",
+    "spider-artillery-base": "assets/units/experimental_spider/spider_turret_base.png",
     "modular-spider-body": "assets/units/modular_spider/body.png",
     "modular-spider-dead": "assets/units/modular_spider/body_dead.png",
     "modular-spider-overlay": "assets/units/modular_spider/body_ui.png",
@@ -6563,6 +6566,30 @@
       "sha256": "ed264a9cd6d7b76fb16e03e89cec2eaeb5e7f4bc7fc6a5639f2b0cdc7b2327a9",
       "width": 29,
       "height": 32
+    },
+    {
+      "id": "spider-lightning",
+      "path": "assets/units/turrets/turret_top_lightning.png",
+      "bytes": 721,
+      "sha256": "ad0a79203e1d9dbc7432354798c6e1fe65008ae21270a2208030c2cc1bb1088c",
+      "width": 22,
+      "height": 31
+    },
+    {
+      "id": "spider-artillery",
+      "path": "assets/units/experimental_spider/experimental_tank_turret2.png",
+      "bytes": 3014,
+      "sha256": "795bb721e5ae54dcb4968ef01e76f2b04da6eaa23d2f2678e9e02bd644d9717e",
+      "width": 7,
+      "height": 35
+    },
+    {
+      "id": "spider-artillery-base",
+      "path": "assets/units/experimental_spider/spider_turret_base.png",
+      "bytes": 765,
+      "sha256": "abd56bae4fc7fb502d1f4d46f6b72555f712c210f4e1969c21576f49b266555a",
+      "width": 20,
+      "height": 19
     },
     {
       "id": "modular-spider-body",
@@ -7451,6 +7478,30 @@
       ],
       "frames": 1
     },
+    "spider-lightning": {
+      "file": "units/spider-lightning.png",
+      "operation": "crop",
+      "source": "spider-lightning",
+      "rect": [0, 0, 22, 31],
+      "target": [22, 31],
+      "frames": 1
+    },
+    "spider-artillery": {
+      "file": "units/spider-artillery.png",
+      "operation": "crop",
+      "source": "spider-artillery",
+      "rect": [0, 0, 7, 35],
+      "target": [7, 35],
+      "frames": 1
+    },
+    "spider-artillery-base": {
+      "file": "units/spider-artillery-base.png",
+      "operation": "crop",
+      "source": "spider-artillery-base",
+      "rect": [0, 0, 20, 19],
+      "target": [20, 19],
+      "frames": 1
+    },
     "modular-spider-body": {
       "file": "units/modular-spider-body.png",
       "operation": "crop",
@@ -8208,6 +8259,17 @@
     "modularSpider_antiairFlak": {
       "body": "engineer-body",
       "turret": "spider-flak"
+    },
+    "modularSpider_lightning": {
+      "body": "engineer-body",
+      "turret": "spider-lightning"
+    },
+    "modularSpider_artillery": {
+      "body": "engineer-body",
+      "turret": "spider-artillery",
+      "weaponTurrets": {
+        "mainCannonBase": "spider-artillery-base"
+      }
     },
     "modularSpider_gunturret": {
       "body": "engineer-body",

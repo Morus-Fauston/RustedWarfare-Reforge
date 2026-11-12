@@ -1328,10 +1328,12 @@ class BootstrapScreen(
         }
         val economicPanel = nativePanel && (current?.hasEconomicConstruction == true || constructionCards.size > 4 ||
             menu?.canMaintain == true && constructionCards.size > 2 || productionCards.size + factoryUpgradeCards.size > 4)
-        stopButton.setY(if (economicPanel) 112f else if (nativePanel) 144f else 168f)
-        patrolButton.setY(if (economicPanel) 112f else if (nativePanel) 144f else 168f)
-        startButton.setY(if (economicPanel) 64f else if (nativePanel || launch.canEdit) 96f else 120f)
-        exitButton.setY(if (economicPanel) 16f else if (nativePanel) 48f else 72f)
+        val extendedSlots = menu?.unitActions?.any { it.name == "buildArtillery" } == true
+        val densePanel = economicPanel || extendedSlots
+        stopButton.setY(if (densePanel) 112f else if (nativePanel) 144f else 168f)
+        patrolButton.setY(if (densePanel) 112f else if (nativePanel) 144f else 168f)
+        startButton.setY(if (densePanel) 64f else if (nativePanel || launch.canEdit) 96f else 120f)
+        exitButton.setY(if (densePanel) 16f else if (nativePanel) 48f else 72f)
         stopButton.isVisible = current != null
         patrolButton.isVisible = current != null && !touchControls
         patrolButton.isDisabled = current?.canPatrol != true

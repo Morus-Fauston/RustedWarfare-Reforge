@@ -35,7 +35,7 @@ class ModularSpiderSandboxTest {
             session.select(session.observation.units.single { it.typeId == "modularSpider" }.position)
             fun bounds() {
                 val cards = session.actionMenu.unitActions.map { NativeActionPanel.customBounds(it.name, naval = false) }
-                assertTrue(cards.all { it.x >= 752f && it.x + it.width <= 928f && it.y >= 184f && it.y + it.height <= 340f })
+                assertTrue(cards.all { it.x >= 752f && it.x + it.width <= 928f && it.y >= 153f && it.y + it.height <= 340f })
                 for ((index, a) in cards.withIndex()) for (b in cards.drop(index + 1)) {
                     assertTrue(a.x + a.width <= b.x || b.x + b.width <= a.x ||
                         a.y + a.height <= b.y || b.y + b.height <= a.y, "Overlapping attachment cards: $a and $b")
@@ -51,19 +51,20 @@ class ModularSpiderSandboxTest {
             }
             bounds()
             click("selectSlot1")
-            assertEquals(listOf("Add Gun T1", "Add Laser", "Add AA"), session.actionMenu.unitActions
+            assertEquals(listOf("Add Gun T1", "Add Laser", "Add AA", "Add Lightning", "Add Artillery"), session.actionMenu.unitActions
                 .filter { it.name.startsWith("build") }.map { it.title })
             bounds()
             val balance = checkNotNull(session.observation.balance)
-            click("buildGun")
-            assertEquals(balance - 2000, session.observation.balance)
+            assertFalse(session.actionMenu.unitActions.single { it.name == "buildLightning" }.available)
+            click("buildArtillery")
+            assertEquals(balance - 5000, session.observation.balance)
             session.tick()
             bounds()
             click("cancel")
             session.tick()
             assertEquals(balance, session.observation.balance)
             click("selectSlotBuild")
-            assertTrue(session.actionMenu.unitActions.none { it.name == "buildGun" })
+            assertTrue(session.actionMenu.unitActions.none { it.name == "buildArtillery" })
         }
     }
 

@@ -2,13 +2,62 @@
 import unittest
 import copy
 
-from platform_scenario import compare_intent, compare_run, PlatformError
+from platform_scenario import compare_history, compare_intent, compare_run, PlatformError, validate_launch_appearance
 import json
 from pathlib import Path
 import tempfile
 
 
 class PlatformIntentTest(unittest.TestCase):
+    def test_spider_lightning_requires_its_own_source_mount_and_geometry(self):
+        source = {"slot": dict(typeId="modularSpider_lightning")}
+        geometry = dict(end=dict(x=5, y=10), endHeight=0)
+        shot = dict(kind="born", appearance="SPIDER_LIGHTNING", lightning=geometry,
+                    sourceUnitId="slot", sourceWeaponName="1")
+        self.assertEqual("SPIDER_LIGHTNING", validate_launch_appearance(shot, source))
+        for change in (dict(sourceWeaponName="left"), dict(lightning=None), dict(appearance="STANDARD")):
+            with self.subTest(change=change), self.assertRaises(PlatformError):
+                validate_launch_appearance(dict(shot, **change), source)
+        with self.assertRaises(PlatformError):
+            validate_launch_appearance(shot, {"slot": dict(typeId="modularSpider_artillery")})
+
+    def test_spider_lightning_expiration_uses_the_verified_birth_after_slot_conversion_or_redaction(self):
+        lightning = dict(unitId="slot", typeId="modularSpider_lightning", ownerPlayerId="p1",
+                         alive=True, constructionProgress=1)
+        geometry = dict(end=dict(x=5, y=10), endHeight=0)
+        birth = dict(kind="born", token="bolt", appearance="SPIDER_LIGHTNING", lightning=geometry,
+                     sourceUnitId="slot", sourceWeaponName="1")
+        plan = dict(scenarioId="expiry", intents=[dict(intentId="watch", kind="select", waitSteps=2)])
+        policy = dict(initialBalance=0, noActionIntents=["watch"], projectileBirthsRequired=True)
+
+        def observe(sequence, phase, index, units, projectiles, events=()):
+            return dict(sequence=sequence, kind="observation", phase=phase, sample=dict(
+                stepIndex=index, simulationTime=index + 1, balance=0, units=units,
+                projectileEvents=projectiles, events=events))
+
+        def verify(units, expiration, *, born_units=None, born_events=()):
+            rows = [
+                observe(0, "initial", -1, [lightning], []),
+                dict(kind="intent-start", intentId="watch"),
+                observe(2, "step", 0, [lightning] if born_units is None else born_units, [birth], born_events),
+                observe(3, "step", 1, units, [expiration]),
+                dict(kind="intent-end", intentId="watch"),
+            ]
+            return compare_history(rows, plan, policy)["status"]
+
+        empty = dict(lightning, typeId="modularSpider_emptySlot")
+        expiration = dict(birth, kind="expired")
+        self.assertEqual("passed", verify([empty], expiration))
+        self.assertEqual("passed", verify([], dict(expiration, sourceUnitId=None, sourceWeaponName=None)))
+        self.assertEqual("passed", verify([empty], expiration, born_units=[empty],
+            born_events=[dict(kind="attachment-slot-destroyed", unitId="slot")]))
+        with self.assertRaises(PlatformError):
+            verify([empty], expiration, born_units=[empty])
+        for change in (dict(sourceWeaponName="left"), dict(sourceUnitId="other"), dict(kind="born"),
+                       dict(lightning=None), dict(appearance="STANDARD", lightning=None)):
+            with self.subTest(change=change), self.assertRaises(PlatformError):
+                verify([empty], dict(expiration, **change))
+
     def test_windows_empty_release_binds_through_the_real_generation_filtered_reader(self):
         from platform_windows import wait_for_input
         from diagnostic_reader import DiagnosticReader

@@ -185,13 +185,15 @@ class SandboxRenderResources private constructor(
             Collections.unmodifiableList(scenario.map.tileSets.map(VisualTileAtlas::from)),
             Collections.unmodifiableMap(scenario.unitDefinitions.mapValues { (_, unit) ->
                 val images = unit.imageBindings().visualImages()
+                val mounts = unit.combat?.namedWeapons?.ordered.orEmpty()
+                val drawingOrder = if (unit.attachmentModule != null) mounts.sortedBy { it.attachedTo != null } else mounts
                 UnitAppearance(unit.displayRadius, images.body, unit.imageScale, images.totalFrames,
                     images.turret, images.dead, unit.combat?.turretImageScale ?: 1.0, images.back,
                     unit.combat?.mount ?: TurretMount(),
                     unit.pointDefense?.let { Position(it.muzzleOffsetX, it.muzzleOffsetY) },
                     unit.combat?.recoil, unit.combat?.shootDelay ?: 0.0,
                     economicBuilding = unit.income != null && unit.construction != null,
-                    weaponImages = Collections.unmodifiableMap(unit.combat?.namedWeapons?.ordered.orEmpty()
+                    weaponImages = Collections.unmodifiableMap(drawingOrder
                         .associate { it.name to WeaponAppearance(it.imagePath, it.imageScale, it.invisible, it.imageOffsetX, it.imageOffsetY) }),
                     legImagePath = images.leg, footImagePath = images.foot,
                     rotorImagePath = images.rotor, mechKind = unit.mech?.kind, shadowImagePath = images.shadow,
@@ -204,7 +206,7 @@ class SandboxRenderResources private constructor(
                     repairRange = if (unit.maintenance != null) unit.builder?.range?.toDouble() ?: 230.0 else null,
                     iconWeaponName = when {
                         unit.maintenance == com.rustedwarfare.reforge.core.content.MaintenanceProfile.MECH_ENGINEER -> "body"
-                        unit.attachmentModule?.empty == false -> unit.combat?.namedWeapons?.ordered?.firstOrNull()?.name
+                        unit.attachmentModule?.empty == false -> mounts.firstOrNull()?.name
                         else -> null
                     },
                     nanoWeaponName = unit.builder?.mainNanoTurret,

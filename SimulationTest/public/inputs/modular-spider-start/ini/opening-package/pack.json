@@ -42,6 +42,14 @@
     {
       "type": "modular-spider",
       "file": "units/spider/flak.ini"
+    },
+    {
+      "type": "modular-spider",
+      "file": "units/spider/lightning.ini"
+    },
+    {
+      "type": "modular-spider",
+      "file": "units/spider/artillery.ini"
     }
   ]
 }

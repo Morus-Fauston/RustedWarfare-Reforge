@@ -27,6 +27,8 @@ internal class ActionCatalogue(private val definitions: Map<String, UnitDefiniti
         "modularSpider_antiair" to Names("AA", "Anti-air T1"),
         "modularSpider_antiairT2" to Names("AA T2", "Anti-air T2"),
         "modularSpider_antiairFlak" to Names("Flak"),
+        "modularSpider_lightning" to Names("Lightning"),
+        "modularSpider_artillery" to Names("Artillery"),
         "seaFactory" to Names("Sea factory"), "seaFactoryT2" to Names("Sea factory T2"),
         "experimentalLandFactory" to Names("Experimental", "Experimental factory"),
         "heavyBattleship" to Names("Heavy battleship"), "attackSubmarine" to Names("Submarine"),

@@ -44,7 +44,9 @@ internal object ModularSpiderContentReader {
     }
     private val profiles = listOf(chassis, emptySlot) + ModularSpiderWeaponForms.byId.values.map { it.sections }
     private val images = mapOf("graphics" to setOf("image", "image_shadow", "image_wreak", "image_turret", "image_slotUi")) +
-        legs.keys.associateWith { setOf("image_leg", "image_foot") }
+        legs.keys.associateWith { setOf("image_leg", "image_foot") } +
+        ModularSpiderWeaponForms.byId.values.flatMap { it.additionalTurretDimensions.keys }
+            .associate { "turret_$it" to setOf("image") }
     private val fields = profiles.flatMap { it.entries }.groupBy({ it.key }, { it.value.keys })
         .mapValues { (section, declared) -> declared.flatten().toSet() + images[section].orEmpty() }
     private val references = setOf("onCreateSpawnUnitOf", "convertTo", "projectile", "attachedTo", "linkDelayWithTurret")
@@ -52,7 +54,7 @@ internal object ModularSpiderContentReader {
     private val flags = profiles.flatMap { it.values }.flatMap { it.entries }
         .filter { it.value == "true" || it.value == "false" }.map { it.key }.toSet()
     private val schema = UnitContentSchema(fields, fields.values.flatten().toSet() - text - flags,
-        flags, text, dynamicWeapons = false)
+        flags, text, dynamicWeapons = false, timeFieldLocations = setOf("attack" to "shootDelay"))
 
     fun readWithSources(path: Path, validatePath: (Path) -> Unit): LoadedUnitContent =
         UnitSourceReader(schema, validatePath).load(path, setOf("onCreateSpawnUnitOf", "convertTo")) { content ->
@@ -79,8 +81,12 @@ internal object ModularSpiderContentReader {
             }
             for ((section, fields) in expected) for ((field, required) in fields) {
                 val actual = value(section, field)
-                val matches = if (field in schema.numericFields) actual.toDoubleOrNull() == required.toDouble()
-                    else actual == required
+                val matches = when {
+                    (section to field) in schema.timeFieldLocations && actual.endsWith('s') ->
+                        actual.dropLast(1).toDoubleOrNull()?.times(60.0) == required.toDouble()
+                    field in schema.numericFields -> actual.toDoubleOrNull() == required.toDouble()
+                    else -> actual == required
+                }
                 if (!matches) reject(if (field in references) ContentErrorCode.BAD_REFERENCE
                     else ContentErrorCode.UNSUPPORTED_FEATURE, path, section, field, actual, "Expected qualified value $required")
             }
@@ -130,8 +136,12 @@ internal object ModularSpiderContentReader {
                 else -> {
                     checkNotNull(form)
                     val turret = image("graphics", "image_turret", form.width, form.height)
+                    val additionalTurrets = form.additionalTurretDimensions.mapValues { (name, dimensions) ->
+                        image("turret_$name", "image", dimensions.first, dimensions.second)
+                    }
                     UnitDefinition(name, "CustomUnitMetadata", 15.0, 12.0, 1, image("graphics", "image", 1, 1),
-                        1.0, ModularSpiderRules.slotMovement, emptySet(), fogOfWarSightRange = 5, combat = form.combat(turret),
+                        1.0, ModularSpiderRules.slotMovement, emptySet(), fogOfWarSightRange = 5,
+                        combat = form.combat(turret, additionalTurrets),
                         selfRegenRate = .2f, attachmentModule = form.module)
                 }
             }
