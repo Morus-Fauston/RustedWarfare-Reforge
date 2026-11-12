@@ -70,6 +70,14 @@
     {
       "type": "modular-spider",
       "file": "units/spider/speed.ini"
+    },
+    {
+      "type": "modular-spider",
+      "file": "units/spider/laser-defense.ini"
+    },
+    {
+      "type": "modular-spider",
+      "file": "units/spider/anti-nuke.ini"
     }
   ]
 }

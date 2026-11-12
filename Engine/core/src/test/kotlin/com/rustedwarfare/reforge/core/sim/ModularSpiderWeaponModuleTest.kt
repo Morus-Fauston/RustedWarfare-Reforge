@@ -44,7 +44,7 @@ class ModularSpiderWeaponModuleTest {
                 "gunturretT2" to 3000.0, "antiair" to 2000.0, "antiairT2" to 3000.0, "antiairFlak" to 3000.0)
             for ((name, health) in expectedHealth) assertEquals(health, unit(name).maximumHealth, name)
             assertEquals(listOf("buildGun", "buildSmallLaser", "buildAntiair", "buildLightning", "buildArtillery",
-                "buildFabricator", "buildShieldGen", "buildSpeed"),
+                "buildFabricator", "buildShieldGen", "buildSpeed", "buildLaserdefense", "buildAntinuke"),
                 unit("emptySlot").attachmentModule?.installs?.map { it.action })
             assertEquals(1000L, unit("antiair").attachmentModule?.cancel?.refund)
             assertEquals(500L, unit("antiair").attachmentModule?.reclaim?.refund)

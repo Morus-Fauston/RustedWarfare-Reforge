@@ -38,7 +38,7 @@ class ModularSpiderSandboxTest {
                 val cards = session.actionMenu.unitActions.map {
                     NativeActionPanel.customBounds(it.name, naval = false, spiderPurchaseMenu = purchaseMenu())
                 }
-                assertTrue(cards.all { it.x >= 752f && it.x + it.width <= 928f && it.y >= 111f && it.y + it.height <= 340f })
+                assertTrue(cards.all { it.x >= 752f && it.x + it.width <= 928f && it.y >= 84f && it.y + it.height <= 340f })
                 if (purchaseMenu()) {
                     assertTrue(cards.all { it.y >= NativeActionPanel.spiderPurchaseStopY + 40f })
                     val reopen = NativeActionPanel.spiderPurchaseReopen
@@ -63,7 +63,7 @@ class ModularSpiderSandboxTest {
             bounds()
             click("selectSlot1")
             assertEquals(listOf("Add Gun T1", "Add Laser", "Add AA", "Add Lightning", "Add Artillery",
-                "Add Fabricator", "Add Shield", "Add Speed"), session.actionMenu.unitActions
+                "Add Fabricator", "Add Shield", "Add Speed", "Add Laser guard", "Add Anti-nuke"), session.actionMenu.unitActions
                 .filter { it.name.startsWith("build") }.map { it.title })
             bounds()
             val balance = checkNotNull(session.observation.balance)
@@ -104,6 +104,33 @@ class ModularSpiderSandboxTest {
             assertIs<ActionResult.Accepted>(session.unitAction("selectSlot2"))
             input.touchUp(event, 12f, 12f, 0, Input.Buttons.LEFT)
             assertEquals(before, session.observation.balance)
+        }
+    }
+
+    @Test fun the_interceptor_card_exposes_its_own_stock_and_non_cancellable_switch_on_a_distinct_row() {
+        val (root, pack) = source("ini")
+        val scene = contentPackScenario(root, ContentPackChoice(pack, "modularSpider"))
+        SandboxSession(scene).use { session ->
+            repeat(2800) { session.tick() }
+            session.select(session.observation.units.single { it.typeId == "modularSpider" }.position)
+            assertIs<ActionResult.Accepted>(session.unitAction("selectSlot2"))
+            assertIs<ActionResult.Accepted>(session.unitAction("buildAntinuke"))
+            session.tick()
+            val menu = session.actionMenu
+            val ammo = menu.unitActions.single { it.name == "buildAntiNuke" }
+            val switch = menu.unitActions.single { it.name == "isEnabled" }
+            assertEquals("Ammo 0", ammo.title)
+            assertEquals("Disable", switch.title)
+            assertTrue(ammo.tooltip.contains("Online") && ammo.tooltip.contains("Cost 3000"))
+            assertFalse(switch.cancellable)
+            val cards = menu.unitActions.map {
+                NativeActionPanel.customBounds(it.name, naval = false, spiderInterceptor = true)
+            }
+            assertTrue(cards.all { it.y >= 184f }, "Interceptor cards must clear the Stop and Patrol controls")
+            for ((index, a) in cards.withIndex()) for (b in cards.drop(index + 1)) {
+                assertTrue(a.x + a.width <= b.x || b.x + b.width <= a.x ||
+                    a.y + a.height <= b.y || b.y + b.height <= a.y, "Overlapping interceptor cards: $a and $b")
+            }
         }
     }
 

@@ -235,6 +235,7 @@ internal fun UnitActionsObservation.json(): JsonObject = obj(
             "progress" to (action.progress?.let(::n) ?: JsonNull),
             "cooldownRemaining" to n(action.cooldownRemaining), "available" to b(action.available)) })).let { fields ->
     JsonObject(fields + (stockpile?.let { mapOf("stockpile" to n(it)) } ?: emptyMap()) +
+        (interceptorOnline?.let { mapOf("interceptorOnline" to b(it)) } ?: emptyMap()) +
         (if (stockpile != null || queue.isNotEmpty()) mapOf("queue" to array(queue.map { item ->
             obj("name" to s(item.name), "progress" to n(item.progress), "target" to item.target?.json()) })) else emptyMap()))
 }

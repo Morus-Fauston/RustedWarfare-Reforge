@@ -91,12 +91,21 @@ internal object UnitAttachments {
         }
         actions += UnitActionObservation("selectSlotBuild", null, null, 0, overview.selectedSlot != null)
         val child = overview.selectedSlot?.let { state.units[childId(parent, it)] }
+        var ammo: Int? = null
+        var online: Boolean? = null
+        var ammoQueue: List<QueuedUnitActionObservation> = emptyList()
         if (child != null) {
             val profile = checkNotNull(child.definition.attachmentModule)
             val order = child.attachmentOrder
             val cooldown = kotlin.math.ceil(child.attachmentCooldown * 1000.0 / 60.0).toInt()
             val ready = order == null && cooldown == 0
             val balance = checkNotNull(state.productionLedger).balances.getValue(child.ownerPlayerId)
+            if (child.typeId == ModularSpiderRules.ANTI_NUKE) {
+                actions += AttachmentInterceptor.actions(child, balance)
+                ammo = child.attachmentInterceptor.ammo
+                online = !child.attachmentInterceptor.offline
+                ammoQueue = AttachmentInterceptor.queue(child)
+            }
             for (install in profile.installs) {
                 val queued = (order as? AttachmentOrder.Install)?.action == install
                 actions += UnitActionObservation(install.action, 0.takeIf { queued }, 0f.takeIf { queued },
@@ -113,11 +122,13 @@ internal object UnitAttachments {
             }
             if (BuildingWork.isReady(child) && profile.reclaim != null) {
                 val queued = order as? AttachmentOrder.Reclaim
-                actions += UnitActionObservation("reclaim", 0.takeIf { queued != null },
-                    queued?.let { 1f - it.remaining / it.action.ticks }, cooldown, ready)
+                val index = if (online == null) 0 else ammoQueue.indexOfFirst { it.name == "reclaim" }
+                actions += UnitActionObservation("reclaim", index.takeIf { queued != null },
+                    queued?.let { 1f - it.remaining / it.action.ticks }, cooldown,
+                    ready)
             }
         }
-        return UnitActionsObservation(immutable(actions), 0f)
+        return UnitActionsObservation(immutable(actions), 0f, ammo, immutable(ammoQueue), online)
     }
 
     fun request(state: StepState, parent: MutableUnit, action: UnitAction): SimulationError? {
@@ -141,10 +152,14 @@ internal object UnitAttachments {
             ?: return SimulationError("attachment-slot-unavailable", "The selected slot is unavailable")
         val profile = checkNotNull(child.definition.attachmentModule)
         val order = child.attachmentOrder
+        if (child.typeId == ModularSpiderRules.ANTI_NUKE && AttachmentInterceptor.handles(name)) {
+            return AttachmentInterceptor.request(state, child, name, action.cancelQueued)
+        }
         if (action.cancelQueued) {
             when {
                 order is AttachmentOrder.Paid && name == order.name -> refundPayment(state, child)
-                order is AttachmentOrder.Reclaim && name == "reclaim" -> Unit
+                order is AttachmentOrder.Reclaim && name == "reclaim" ->
+                    child.attachmentInterceptor = child.attachmentInterceptor.copy(roundsAheadOfReclaim = 0)
                 else -> return SimulationError("attachment-order-absent", "No matching cancellable slot order")
             }
             child.attachmentOrder = null
@@ -171,6 +186,10 @@ internal object UnitAttachments {
             state.productionLedger = checkNotNull(state.productionLedger).charge(child.ownerPlayerId, next.cost)
                 ?: return SimulationError("insufficient-funds", "The slot requires ${next.cost} credits")
         }
+        if (next is AttachmentOrder.Reclaim && child.typeId == ModularSpiderRules.ANTI_NUKE) {
+            child.attachmentInterceptor = child.attachmentInterceptor.copy(
+                roundsAheadOfReclaim = child.attachmentInterceptor.rounds.size)
+        }
         child.attachmentOrder = next
         return null
     }
@@ -195,6 +214,7 @@ internal object UnitAttachments {
                 } else child.attachmentOrder = order.copy(remaining = order.remaining - delta)
             }
             is AttachmentOrder.Reclaim -> {
+                if (child.attachmentInterceptor.switchPending || child.attachmentInterceptor.roundsAheadOfReclaim != 0) return
                 if (order.remaining <= delta) remove(state, input, parent, child, order.action)
                 else child.attachmentOrder = order.copy(remaining = order.remaining - delta)
             }
@@ -224,6 +244,7 @@ internal object UnitAttachments {
     }
 
     private fun remove(state: StepState, input: Scenario, parent: MutableUnit, child: MutableUnit, action: AttachmentRemoval) {
+        if (child.typeId == ModularSpiderRules.ANTI_NUKE) AttachmentInterceptor.discardQueue(state, child)
         state.productionLedger = checkNotNull(state.productionLedger).refund(child.ownerPlayerId, action.refund)
         convert(input, child, action.targetTypeId, 1f)
         completed(state, parent, child, "attachment-slot-emptied")
@@ -245,6 +266,7 @@ internal object UnitAttachments {
         val next = input.unitDefinitions.getValue(targetTypeId)
         child.definition = next
         child.typeId = next.id
+        child.pointDefense = next.pointDefense?.let { MutablePointDefense(it.initialEnergy, child.attachmentLaserExhausted) }
         child.health = maxOf(1.0, checkNotNull(next.maximumHealth) * fraction)
         child.constructionProgress = progress
         child.combat = next.combat?.let { MutableCombat(child.heading) }
@@ -285,10 +307,12 @@ internal object UnitAttachments {
             val cancel = child.attachmentOrder as? AttachmentOrder.Cancel
             if (parent == null || !parent.alive || parent.reclaimed) {
                 refundPayment(state, child)
+                AttachmentInterceptor.discardQueue(state, child)
                 child.reclaimed = true
                 state.pendingEvents += Event("attachment-removed", child.unitId)
             } else if (checkNotNull(child.health) < 1.0 && child.definition.attachmentModule?.empty == false) {
                 refundPayment(state, child)
+                AttachmentInterceptor.discardQueue(state, child)
                 convert(input, child, binding.slot.initialTypeId, 1f)
                 completed(state, parent, child, "attachment-slot-destroyed")
             } else if (cancel != null) {
@@ -307,6 +331,12 @@ internal object UnitAttachments {
             require(parent != null && parent.alive && !parent.reclaimed && parent.ownerPlayerId == unit.ownerPlayerId &&
                 binding.slot in checkNotNull(parent.definition.attachmentLayout).slots && unit.carriedBy == null &&
                 unit.definition.attachmentModule != null && unit.unitId == childId(parent, binding.slot.number))
+            val defense = unit.attachmentInterceptor
+            require(defense.ammo >= 0 && defense.ammo + defense.rounds.size <= 12 &&
+                defense.rounds.all { it.isFinite() && it in 0f..<1f } &&
+                defense.roundsAheadOfReclaim in 0..defense.rounds.size &&
+                (defense.roundsAheadOfReclaim == 0 || unit.attachmentOrder is AttachmentOrder.Reclaim) &&
+                (unit.typeId == ModularSpiderRules.ANTI_NUKE || defense.rounds.isEmpty() && !defense.switchPending))
         } else require(unit.definition.attachmentModule == null)
         if (unit.alive && !unit.reclaimed) unit.definition.attachmentLayout?.let { layout ->
             require(layout.slots.all { slot -> state.units[childId(unit, slot.number)]?.attachment == AttachmentBinding(unit.unitId, slot) })

@@ -13,11 +13,16 @@ FABRICATOR_T2 = 'modularSpider_fabricatorT2'
 SHIELD = 'modularSpider_shieldGen'
 SPEED_INCOMPLETE = 'modularSpider_speedIncomplete'
 SPEED = 'modularSpider_speed'
+LASER_DEFENSE = 'modularSpider_laserdefense'
+INTERCEPTOR = 'modularSpider_antinuke'
+AMMO = 'buildAntiNuke'
+SWITCHES = ('isEnabled', 'isDisabled')
 SLOTS = ('selectSlotBuild', *(f'selectSlot{i}' for i in range(1, 7)))
 PAID = ('buildGun', 'buildSmallLaser', 'buildAntiair', 'buildLightning', 'buildArtillery',
-        'buildFabricator', 'buildShieldGen', 'buildSpeed', 'upgradeT2', 'upgradeFlak')
+        'buildFabricator', 'buildShieldGen', 'buildSpeed', 'upgradeT2', 'upgradeFlak',
+        'buildLaserdefense', 'buildAntinuke', AMMO)
 CANCELLABLE = (*PAID, 'reclaim')
-ACTIONS = (*SLOTS, *CANCELLABLE, 'cancel')
+ACTIONS = (*SLOTS, *CANCELLABLE, 'cancel', *SWITCHES)
 OFFSETS = ((-11, 32, 0), (11, 32, 0), (-11, 6, -90), (11, 6, 90), (-10, -20, 180), (11, -20, 180))
 
 
@@ -36,13 +41,31 @@ def validate_state(unit, owner):
     check(isinstance(layout, dict) and set(layout) == {'selectedSlot', 'slots'}, 'Missing chassis slot overview')
     check(layout['selectedSlot'] is None or type(layout['selectedSlot']) is int and 1 <= layout['selectedSlot'] <= 6,
           'Invalid selected slot')
-    check(isinstance(actions, dict) and set(actions) == {'actions', 'automaticCooldown'} and
+    selected = next((slot for slot in layout['slots'] if slot['number'] == layout['selectedSlot']), None)
+    interceptor = selected is not None and selected['typeId'] == INTERCEPTOR
+    fields = {'actions', 'automaticCooldown'}
+    if interceptor:
+        fields |= {'stockpile', 'queue', 'interceptorOnline'}
+    check(isinstance(actions, dict) and set(actions) == fields and
           actions['automaticCooldown'] == 0 and isinstance(actions['actions'], dict), 'Invalid slot controls')
     check(set(SLOTS) <= set(actions['actions']) <= set(ACTIONS), 'Unknown or missing slot controls')
+    if interceptor:
+        stock, queue, online = actions['stockpile'], actions['queue'], actions['interceptorOnline']
+        check(type(stock) is int and 0 <= stock <= 12 and isinstance(queue, list) and type(online) is bool,
+              'Invalid module stock, queue or switch')
+        switch = 'isEnabled' if online else 'isDisabled'
+        check(AMMO in actions['actions'] and set(SWITCHES) & actions['actions'].keys() == {switch},
+              'Current module switch and ammo cards must match its state')
+        check(all(isinstance(item, dict) and set(item) == {'name', 'progress', 'target'} and
+                  item['target'] is None and item['name'] in (AMMO, 'reclaim', switch) and
+                  type(item['progress']) in (int, float) and 0 <= item['progress'] < 1 for item in queue) and
+              stock + sum(item['name'] == AMMO for item in queue) <= 12, 'Invalid ordered module queue')
     for name, action in actions['actions'].items():
         check(isinstance(action, dict) and set(action) == {'queueIndex', 'progress', 'cooldownRemaining', 'available'} and
               type(action['available']) is bool and type(action['cooldownRemaining']) is int and
-              0 <= action['cooldownRemaining'] <= 2000 and action['queueIndex'] in (None, 0) and
+              0 <= action['cooldownRemaining'] <= 2000 and
+              (action['queueIndex'] is None or type(action['queueIndex']) is int and
+               0 <= action['queueIndex'] <= (len(queue) - 1 if interceptor else 0)) and
               (action['progress'] is None or type(action['progress']) in (int, float) and 0 <= action['progress'] <= 1),
               f'Invalid slot action state for {name}')
 
@@ -56,6 +79,21 @@ def validate_call(old, new, row, intent):
     right = new['attachmentOverview']
     check(left['slots'] == right['slots'], 'The call synchronously changed slot identities or construction')
     old_action = old['unitActions']['actions'].get(name)
+    if name in (AMMO, *SWITCHES) or name == 'reclaim' and 'interceptorOnline' in old['unitActions']:
+        before, after = old['unitActions'], new['unitActions']
+        check(left['selectedSlot'] is not None and left['selectedSlot'] == right['selectedSlot'] and
+              before['stockpile'] == after['stockpile'] and before['interceptorOnline'] == after['interceptorOnline'],
+              'An interceptor command changed inventory or left its selected slot at submission')
+        expected = list(before['queue'])
+        if cancelling:
+            check(name not in SWITCHES and any(item['name'] == name for item in expected),
+                  'Only a matching paid round or reclaim may be cancelled')
+            del expected[max(i for i, item in enumerate(expected) if item['name'] == name)]
+        else:
+            check(old_action and old_action['available'], 'Interceptor command was unavailable')
+            expected.insert(0 if name in SWITCHES else len(expected), dict(name=name, progress=0, target=None))
+        check(after['queue'] == expected, 'The interceptor command did not update the matching queue item')
+        return
     if cancelling:
         new_action = new['unitActions']['actions'].get(name)
         check(name in CANCELLABLE and left['selectedSlot'] is not None and right['selectedSlot'] == left['selectedSlot'] and
@@ -185,6 +223,77 @@ def utility_income(slots, phases):
         if phases[identity] == 0:
             payout += rate
     return payout
+
+
+def defense_adjustments(records):
+    """Check the normal fixed defense composition and its independently calculated slot income."""
+    from nuclear_platform import f32
+
+    expected = [FABRICATOR, LASER_DEFENSE, INTERCEPTOR, EMPTY, EMPTY, EMPTY]
+    slot_ids = None
+    phases, credits = {}, {}
+    previous = None
+    ammo_progress = None
+    last_state = None
+    deflections = moving_deflections = 0
+    births = {}
+    toggles = []
+    saw_production_while_offline = False
+    for row in records:
+        if row.get('kind') != 'observation':
+            continue
+        sample = row['sample']
+        units = {unit['unitId']: unit for unit in sample['units']}
+        parent = units.get('a')
+        check(parent and parent['alive'] and parent['typeId'] == CHASSIS, 'Defense replay lost its own chassis')
+        layout = parent['attachmentOverview']
+        slots = layout['slots']
+        ids = [slot['unitId'] for slot in slots]
+        if slot_ids is None:
+            check(len(set(ids)) == 6 and all(slot['typeId'] == EMPTY for slot in slots), 'Expected six original empty slots')
+            slot_ids = ids
+        check(ids == slot_ids, 'A defense module left its original slot')
+        for slot, qualified in zip(slots, expected):
+            child = units[slot['unitId']]
+            check(slot['typeId'] in (EMPTY, qualified) and child['typeId'] == slot['typeId'] and
+                  child['constructionProgress'] == slot['progress'] and child['ownerPlayerId'] == 'p1',
+                  'An attachment does not match its fixed defense slot')
+        if row['phase'] == 'step':
+            payout = utility_income(slots, phases)
+            if payout:
+                credits[row['sequence']] = payout
+            laser = units[slot_ids[1]]
+            for event in sample['projectileEvents']:
+                if event['kind'] == 'born':
+                    births[event['token']] = sample['stepIndex']
+            matches = [event for event in sample['projectileEvents'] if event['kind'] == 'deflected']
+            if matches:
+                check(len(matches) == 1 and matches[0]['interceptorUnitId'] == slot_ids[1] and
+                      matches[0]['sourceUnitId'] == 'b' and laser['typeId'] == LASER_DEFENSE and
+                      laser['constructionProgress'] == 1 and matches[0]['token'] in births and
+                      sample['stepIndex'] - births[matches[0]['token']] >= 8,
+                      'Ordinary fire must be deflected by the ready owned laser module')
+                deflections += 1
+                moving_deflections += abs(parent['speed']) > .05
+            state = parent.get('unitActions', {})
+            if layout['selectedSlot'] == 3 and slots[2]['typeId'] == INTERCEPTOR:
+                online = state['interceptorOnline']
+                if last_state is None or online != last_state:
+                    toggles.append(online)
+                last_state = online
+                rounds = [item['progress'] for item in state['queue'] if item['name'] == AMMO]
+                if rounds and not online and 0 < rounds[0] < 1 and previous is not None:
+                    if ammo_progress is not None and rounds[0] > ammo_progress:
+                        check(abs(rounds[0] - f32(f32(ammo_progress) + f32(.0007))) < .000001,
+                              'Paid offline round differs from the independent production rate')
+                    saw_production_while_offline |= abs(parent['speed']) > .05
+                ammo_progress = rounds[0] if rounds else None
+            previous = parent
+    check([slot['typeId'] for slot in slots] == expected and all(slot['progress'] == 1 for slot in slots) and
+          deflections > 0 and moving_deflections > 0 and toggles == [True, False, True] and
+          saw_production_while_offline and state['stockpile'] == 1 and not state['queue'],
+          f'Incomplete defense replay: deflections={deflections}, moving={moving_deflections}, toggles={toggles}')
+    return credits
 
 
 def utility_adjustments(records):

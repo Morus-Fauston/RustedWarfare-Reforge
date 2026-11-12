@@ -1087,8 +1087,14 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
                 if (attachment != null) {
                     val parent = units[attachment.parentId]?.takeIf { it.alive && it.carriedBy == null && !it.reclaimed } ?: continue
                     UnitAttachments.synchronize(parent, unit, attachment.slot)
+                    if (BuildingWork.isReady(unit)) {
+                        updatePointDefense(unit, step.delta)
+                        updateProjectileInterception(unit, currentScenario)
+                    }
                     UnitAttachments.advance(steps.current, currentScenario, parent, unit, step.delta.toFloat())
                     if (BuildingWork.isReady(unit)) {
+                        if (unit.typeId == ModularSpiderRules.ANTI_NUKE)
+                            AttachmentInterceptor.advance(steps.current, unit, step.delta.toFloat())
                         advanceIncome(unit, step.delta.toFloat())
                         UnitAttachments.advanceAutomatic(steps.current, currentScenario, parent, unit, step.delta.toFloat())
                         val preferredTarget = units[parent.attackCommand?.targetUnitId ?: parent.primaryCombatTargetId]
@@ -1207,15 +1213,7 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
                         }
                     }
                     updatePointDefense(unit, step.delta)
-                    ProjectileInterception.target(unit, projectiles, units, currentScenario.players)?.let { target ->
-                        val id = nextObjectId
-                        nextObjectId = Math.addExact(id, 1L)
-                        val shot = ProjectileInterception.launch(unit, target, id)
-                        projectiles += shot
-                        pendingProjectileEvents += ProjectileEventObservation("born", projectileObservation(shot))
-                        pendingEvents += Event("projectile-fired", unit.unitId)
-                        steps.current.pendingSoundTriggers += SoundTriggerObservation("reforge:events/nuke-launch", shot.position, .15f)
-                    }
+                    updateProjectileInterception(unit, currentScenario)
                     if (unit.definition.energy?.dieOnZero != true) WeaponEnergy.advance(unit, step.delta)
                     if ((!factoryWork || factoryActionAtHead) && withUnitActionQueue(unit) {
                             CustomUnitActions.advanceQueue(unit, currentScenario.unitDefinitions, step.delta, steps.current.actionClock) { launch, target ->
@@ -1552,12 +1550,15 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
                     return SimulationError("unsupported-construction", "Expected finite construction metadata within the supported placement envelope")
             }
             definition.pointDefense?.let { profile ->
-                if (definition.building == null || definition.combat != null || m.type != MovementType.NONE ||
+                val attachedDefense = definition.id == ModularSpiderRules.LASER_DEFENSE &&
+                    ModularSpiderRules.supportsModule(definition)
+                if (!attachedDefense && (definition.building == null || definition.combat != null ||
+                        m.type != MovementType.NONE || profile.attachedBarrel != null) ||
                     !profile.range.isFinite() || profile.range <= 0.0 || !(profile.range * profile.range).isFinite() ||
                     !profile.muzzleOffsetX.isFinite() || !profile.muzzleOffsetY.isFinite() ||
                     !profile.recharge.isFinite() || profile.recharge < 0f || !profile.cost.isFinite() || profile.cost < 0f ||
                     !profile.initialEnergy.isFinite() || profile.initialEnergy !in 0f..1f)
-                    return SimulationError("unsupported-point-defense", "Expected a finite immobile defense building and valid energy profile")
+                    return SimulationError("unsupported-point-defense", "Expected a qualified defense and valid energy profile")
             }
             definition.deathExplosion?.let { profile ->
                 if (definition.building == null || definition.durability == null || m.type != MovementType.NONE ||
@@ -2237,6 +2238,17 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
             interceptorUnitId = unit.unitId)
     }
 
+    private fun updateProjectileInterception(unit: MutableUnit, input: Scenario) {
+        val target = ProjectileInterception.target(unit, projectiles, units, input.players) ?: return
+        val id = nextObjectId
+        nextObjectId = Math.addExact(id, 1L)
+        val shot = ProjectileInterception.launch(unit, target, id)
+        projectiles += shot
+        pendingProjectileEvents += ProjectileEventObservation("born", projectileObservation(shot))
+        pendingEvents += Event("projectile-fired", unit.unitId)
+        steps.current.pendingSoundTriggers += SoundTriggerObservation("reforge:events/nuke-launch", shot.position, .15f)
+    }
+
     private fun updateProjectiles(delta: Double, existingIds: Set<Long>) {
         steps.current.temporaryVision = steps.current.temporaryVision.map { it.copy(remaining = it.remaining - delta.toFloat()) }
             .filter { it.remaining >= 0f }
@@ -2356,7 +2368,8 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
             }
             // The impact call can apply its own expanding area before removal. It has no later area ticks.
             val remaining = maxOf(0f, 75f - delta.toFloat())
-            applyGroundArea(shot.sourceUnitId, track.launchTarget, 0f, 100f, 60f, 60f * (1f - remaining / 75f))
+            applyGroundArea(checkNotNull(shot.sourceOwnerId), track.launchTarget, 0f, 100f, 60f,
+                60f * (1f - remaining / 75f))
             pendingProjectileEvents += ProjectileEventObservation("impact", projectileObservation(shot))
             projectiles.remove(shot)
         } else if (shot.remainingLife == 0.0) {
@@ -2490,17 +2503,17 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
         val profile = ground.profile
         val center = if (profile.resolveAtSnapshot) Position(ground.x.toDouble(), ground.y.toDouble()) else projectile.position
         val height = if (profile.resolveAtSnapshot) ground.height else projectile.height.toFloat()
-        applyGroundArea(projectile.sourceUnitId, center, height, profile.areaDamage, profile.areaRadius, profile.areaRadius)
+        val owner = checkNotNull(units[projectile.sourceUnitId]).ownerPlayerId
+        applyGroundArea(owner, center, height, profile.areaDamage, profile.areaRadius, profile.areaRadius)
     }
 
-    private fun applyGroundArea(sourceId: String, center: Position, height: Float, damage: Float, radius: Float, currentRadius: Float) {
-        val source = checkNotNull(units[sourceId])
+    private fun applyGroundArea(owner: String, center: Position, height: Float, damage: Float, radius: Float, currentRadius: Float) {
         val players = checkNotNull(scenario).players
-        val team = players.single { it.playerId == source.ownerPlayerId }.teamId
+        val team = players.single { it.playerId == owner }.teamId
         val x = center.x.toFloat()
         val y = center.y.toFloat()
         for (target in orderedUnits()) {
-            if (!target.alive || target.carriedBy != null || target.health == null || target.ownerPlayerId == source.ownerPlayerId ||
+            if (!target.alive || target.carriedBy != null || target.health == null || target.ownerPlayerId == owner ||
                 team != null && players.single { it.playerId == target.ownerPlayerId }.teamId == team) continue
             if (CombatTargetQuery.isFlying(target) != (height >= 5f) ||
                 target.height.toFloat() < -5f && height >= -2f) continue

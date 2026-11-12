@@ -2,6 +2,8 @@ package com.rustedwarfare.reforge.core.sim
 
 import com.rustedwarfare.reforge.core.content.CustomBallisticProfile
 import com.rustedwarfare.reforge.core.content.LinearProjectileAcceleration
+import com.rustedwarfare.reforge.core.content.ModularSpiderRules
+import com.rustedwarfare.reforge.core.content.ModularSpiderUtilityForms
 import com.rustedwarfare.reforge.core.content.NuclearSiloKind
 import com.rustedwarfare.reforge.core.content.ProjectileInterceptionProfile
 import com.rustedwarfare.reforge.core.content.ProjectileProfile
@@ -24,9 +26,14 @@ internal object ProjectileInterception {
 
     fun target(unit: MutableUnit, projectiles: List<MutableProjectile>, units: Map<String, MutableUnit>,
                players: List<Player>): MutableProjectile? {
-        if (unit.ordnance.ammo == 0) return null
-        val profile = if (unit.definition.nuclearSilo?.kind == NuclearSiloKind.INTERCEPTOR) groundRanges
-            else navalWeapon(unit)?.interception ?: return null
+        val module = unit.typeId == ModularSpiderRules.ANTI_NUKE
+        val stock = if (module) unit.attachmentInterceptor.ammo else unit.ordnance.ammo
+        if (stock == 0 || module && unit.attachmentInterceptor.offline) return null
+        val profile = when {
+            module -> ModularSpiderUtilityForms.antiNukeRanges
+            unit.definition.nuclearSilo?.kind == NuclearSiloKind.INTERCEPTOR -> groundRanges
+            else -> navalWeapon(unit)?.interception ?: return null
+        }
         val reservations = projectiles.mapNotNullTo(hashSetOf()) { it.interception?.targetId }
         val team = players.single { it.playerId == unit.ownerPlayerId }.teamId
         val x = unit.position.x.toFloat()
@@ -47,21 +54,25 @@ internal object ProjectileInterception {
         shot.nukeTagged && !shot.hitApplied && !shot.intercepted && shot.remainingLife > 0.0
 
     fun launch(unit: MutableUnit, target: MutableProjectile, id: Long): MutableProjectile {
+        val module = unit.typeId == ModularSpiderRules.ANTI_NUKE
         val naval = navalWeapon(unit)
         val round = naval?.projectile ?: groundRound
         val muzzle = if (naval == null) {
-            val offset = ScreenPlane.displacement(unit.heading, 11.0)
+            val offset = ScreenPlane.displacement(unit.heading, if (module) 1.0 else 11.0)
             Position(unit.position.x + offset.x, unit.position.y + offset.y)
         } else NamedWeaponRuntime.muzzle(unit, naval, checkNotNull(unit.namedWeapons).getValue(naval.name))
         val heading = ScreenPlane.desired(muzzle, target.position)
         val state = unit.ordnance
-        unit.ordnance = if (naval == null) state.copy(ammo = state.ammo - 1, interceptorFireAge = 0f, doorBlendBase = state.doors)
-            else state.copy(ammo = state.ammo - 1)
+        if (module) unit.attachmentInterceptor = unit.attachmentInterceptor.copy(ammo = unit.attachmentInterceptor.ammo - 1)
+        else unit.ordnance = if (naval == null)
+            state.copy(ammo = state.ammo - 1, interceptorFireAge = 0f, doorBlendBase = state.doors)
+        else state.copy(ammo = state.ammo - 1)
         return MutableProjectile(id, unit.unitId, null, muzzle, heading,
             round.life, Position(0.0, 0.0), 0f, round.speed, round.directDamage, height = unit.height,
             nonDeflectable = round.nonDeflectable, sourceWeaponName = naval?.name ?: "silo", acceleration = round.acceleration,
             ballistic = round.ballistic, appearance = ProjectileAppearance.INTERCEPTOR,
             alwaysVisibleInFog = true, interception = InterceptionCourse(
-                target.objectId, target.position, target.position, target.height.toFloat()))
+                target.objectId, target.position, target.position, target.height.toFloat()),
+            sourceOwnerId = unit.ownerPlayerId)
     }
 }

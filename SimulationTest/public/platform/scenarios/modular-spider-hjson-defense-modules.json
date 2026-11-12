@@ -1,0 +1,282 @@
+{
+  "schemaVersion": 1,
+  "scenarioId": "modular-spider-hjson-defense-modules",
+  "inputs": "../../inputs/modular-spider-start/hjson",
+  "contentPack": {
+    "directory": "opening-package",
+    "unitId": "modularSpider"
+  },
+  "intents": [
+    {
+      "intentId": "settle-opening",
+      "kind": "select",
+      "waitSteps": 100,
+      "position": {
+        "x": 40,
+        "y": 40
+      }
+    },
+    {
+      "intentId": "select-spider",
+      "kind": "select",
+      "waitSteps": 0,
+      "position": {
+        "x": 190,
+        "y": 150
+      }
+    },
+    {
+      "intentId": "leave-enemy-range",
+      "kind": "move",
+      "waitSteps": 260,
+      "position": {
+        "x": 80,
+        "y": 150
+      }
+    },
+    {
+      "intentId": "select-fabricator",
+      "kind": "unit-action",
+      "waitSteps": 0,
+      "actionName": "selectSlot1"
+    },
+    {
+      "intentId": "buy-fabricator",
+      "kind": "unit-action",
+      "waitSteps": 1,
+      "actionName": "buildFabricator"
+    },
+    {
+      "intentId": "earn-laser-1",
+      "kind": "stop",
+      "waitSteps": 600
+    },
+    {
+      "intentId": "earn-laser-2",
+      "kind": "stop",
+      "waitSteps": 600
+    },
+    {
+      "intentId": "select-laser-guard",
+      "kind": "unit-action",
+      "waitSteps": 0,
+      "actionName": "selectSlot2"
+    },
+    {
+      "intentId": "buy-laser-guard",
+      "kind": "unit-action",
+      "waitSteps": 600,
+      "actionName": "buildLaserdefense"
+    },
+    {
+      "intentId": "finish-laser-guard",
+      "kind": "stop",
+      "waitSteps": 450
+    },
+    {
+      "intentId": "move-into-projectile-range",
+      "kind": "move",
+      "waitSteps": 600,
+      "position": {
+        "x": 395,
+        "y": 150
+      }
+    },
+    {
+      "intentId": "hold-against-ordinary-rounds",
+      "kind": "stop",
+      "waitSteps": 240
+    },
+    {
+      "intentId": "leave-enemy-fire",
+      "kind": "move",
+      "waitSteps": 600,
+      "position": {
+        "x": 124,
+        "y": 150
+      }
+    },
+    {
+      "intentId": "earn-anti-nuke-1",
+      "kind": "stop",
+      "waitSteps": 600
+    },
+    {
+      "intentId": "earn-anti-nuke-2",
+      "kind": "stop",
+      "waitSteps": 600
+    },
+    {
+      "intentId": "earn-anti-nuke-3",
+      "kind": "stop",
+      "waitSteps": 600
+    },
+    {
+      "intentId": "earn-anti-nuke-4",
+      "kind": "stop",
+      "waitSteps": 600
+    },
+    {
+      "intentId": "earn-anti-nuke-5",
+      "kind": "stop",
+      "waitSteps": 600
+    },
+    {
+      "intentId": "earn-anti-nuke-6",
+      "kind": "stop",
+      "waitSteps": 600
+    },
+    {
+      "intentId": "earn-anti-nuke-7",
+      "kind": "stop",
+      "waitSteps": 600
+    },
+    {
+      "intentId": "earn-anti-nuke-8",
+      "kind": "stop",
+      "waitSteps": 600
+    },
+    {
+      "intentId": "earn-anti-nuke-9",
+      "kind": "stop",
+      "waitSteps": 600
+    },
+    {
+      "intentId": "earn-anti-nuke-10",
+      "kind": "stop",
+      "waitSteps": 600
+    },
+    {
+      "intentId": "earn-anti-nuke-11",
+      "kind": "stop",
+      "waitSteps": 600
+    },
+    {
+      "intentId": "earn-anti-nuke-12",
+      "kind": "stop",
+      "waitSteps": 600
+    },
+    {
+      "intentId": "earn-anti-nuke-13",
+      "kind": "stop",
+      "waitSteps": 600
+    },
+    {
+      "intentId": "select-anti-nuke",
+      "kind": "unit-action",
+      "waitSteps": 0,
+      "actionName": "selectSlot3"
+    },
+    {
+      "intentId": "buy-anti-nuke",
+      "kind": "unit-action",
+      "waitSteps": 600,
+      "actionName": "buildAntinuke"
+    },
+    {
+      "intentId": "finish-anti-nuke",
+      "kind": "stop",
+      "waitSteps": 450
+    },
+    {
+      "intentId": "turn-off-interception",
+      "kind": "unit-action",
+      "waitSteps": 1,
+      "actionName": "isEnabled"
+    },
+    {
+      "intentId": "earn-rounds-1",
+      "kind": "stop",
+      "waitSteps": 600
+    },
+    {
+      "intentId": "earn-rounds-2",
+      "kind": "stop",
+      "waitSteps": 600
+    },
+    {
+      "intentId": "earn-rounds-3",
+      "kind": "stop",
+      "waitSteps": 600
+    },
+    {
+      "intentId": "earn-rounds-4",
+      "kind": "stop",
+      "waitSteps": 600
+    },
+    {
+      "intentId": "earn-rounds-5",
+      "kind": "stop",
+      "waitSteps": 600
+    },
+    {
+      "intentId": "earn-rounds-6",
+      "kind": "stop",
+      "waitSteps": 600
+    },
+    {
+      "intentId": "earn-rounds-7",
+      "kind": "stop",
+      "waitSteps": 600
+    },
+    {
+      "intentId": "earn-rounds-8",
+      "kind": "stop",
+      "waitSteps": 600
+    },
+    {
+      "intentId": "earn-rounds-9",
+      "kind": "stop",
+      "waitSteps": 600
+    },
+    {
+      "intentId": "earn-rounds-10",
+      "kind": "stop",
+      "waitSteps": 600
+    },
+    {
+      "intentId": "buy-round",
+      "kind": "unit-action",
+      "waitSteps": 20,
+      "actionName": "buildAntiNuke"
+    },
+    {
+      "intentId": "buy-spare-round",
+      "kind": "unit-action",
+      "waitSteps": 10,
+      "actionName": "buildAntiNuke"
+    },
+    {
+      "intentId": "cancel-spare-round",
+      "kind": "unit-action",
+      "waitSteps": 1,
+      "actionName": "buildAntiNuke",
+      "cancelQueued": true
+    },
+    {
+      "intentId": "move-while-offline-producing",
+      "kind": "move",
+      "waitSteps": 320,
+      "position": {
+        "x": 244,
+        "y": 150
+      }
+    },
+    {
+      "intentId": "finish-round-1",
+      "kind": "stop",
+      "waitSteps": 600
+    },
+    {
+      "intentId": "finish-round-2",
+      "kind": "stop",
+      "waitSteps": 600
+    },
+    {
+      "intentId": "turn-on-interception",
+      "kind": "unit-action",
+      "waitSteps": 1,
+      "actionName": "isDisabled"
+    }
+  ]
+}

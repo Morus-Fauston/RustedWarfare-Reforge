@@ -1,5 +1,7 @@
 package com.rustedwarfare.reforge.core.content
 
+import com.rustedwarfare.reforge.core.sim.Position
+import com.rustedwarfare.reforge.core.sim.ScreenPlane
 import java.nio.file.Path
 import java.util.Collections
 
@@ -205,10 +207,15 @@ class UpgradeProfile(actions: List<UpgradeActionProfile>) {
     val actions: List<UpgradeActionProfile> = Collections.unmodifiableList(ArrayList(actions))
 }
 
-/** Finite native level-one defense fixture; no ordinary offensive weapon. */
+/** Finite point defense; an attached barrel follows the current module heading. */
 data class PointDefenseProfile(val range: Double = 160.0, val muzzleOffsetX: Double = 0.0,
     val muzzleOffsetY: Double = -13.0, val recharge: Float = .0004f, val cost: Float = .11f,
-    val initialEnergy: Float = 1f)
+    val initialEnergy: Float = 1f, val attachedBarrel: Double? = null) {
+    fun muzzle(position: Position, heading: Double): Position {
+        val offset = attachedBarrel?.let { ScreenPlane.displacement(heading, it) } ?: Position(muzzleOffsetX, muzzleOffsetY)
+        return Position(position.x + offset.x, position.y + offset.y)
+    }
+}
 
 /** Explicit ordinary combat content; absent on legacy movement-only variants. */
 data class CombatProfile(

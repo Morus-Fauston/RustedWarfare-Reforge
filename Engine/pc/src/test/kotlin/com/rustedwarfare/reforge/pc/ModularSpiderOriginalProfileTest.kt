@@ -3,6 +3,22 @@ package com.rustedwarfare.reforge.pc
 import kotlin.test.*
 
 class ModularSpiderOriginalProfileTest {
+    @Test fun the_spider_defense_modules_bind_qualified_bodies_and_share_the_interceptor_audio() {
+        val resources = PcOriginalResourceProfile.bundled()
+        val mapped = assertNotNull(resources.images.mappedImages)
+        val bindings = mapped.json.get("unitBindings")
+        for ((form, expected) in mapOf("laserdefense" to ("laser_defense.png" to listOf(20, 19)),
+                "antinuke" to ("antinuke.png" to listOf(22, 21)))) {
+            val body = assertNotNull(bindings.get("modularSpider_$form")).getString("body")
+            val recipe = mapped.recipes.getValue(body)
+            val source = mapped.json.get("sources").single { it.getString("id") == recipe.getString("source") }
+            assertEquals("assets/units/modular_spider/${expected.first}", source.getString("path"))
+            assertEquals(expected.second, recipe.get("target").asIntArray().toList())
+        }
+        assertEquals("res/raw/nuke_launch.ogg", resources.events["reforge:events/nuke-launch"])
+        assertEquals("res/raw/buiding_explode.ogg", resources.events["reforge:events/nuke-intercept"])
+    }
+
     @Test fun utility_modules_resolve_to_their_qualified_original_bodies() {
         val mapped = assertNotNull(PcOriginalResourceProfile.bundled().images.mappedImages)
         val bindings = mapped.json.get("unitBindings")

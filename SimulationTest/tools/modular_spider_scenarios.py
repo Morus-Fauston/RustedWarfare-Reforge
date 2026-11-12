@@ -70,9 +70,43 @@ def utility_intents():
     ]
 
 
-def generate(weapon_modules=False, destination=PLATFORM, *, special_weapons=False, utility_modules=False):
+def defense_intents():
+    def action(name, command, wait=0, **fields):
+        return intent(name, 'unit-action', wait, actionName=command, **fields)
+
+    def wait(name, segments):
+        return [intent(f'{name}-{index}', 'stop', 600) for index in range(1, segments + 1)]
+
+    return [
+        intent('leave-enemy-range', 'move', 260, position=dict(x=80, y=150)),
+        action('select-fabricator', 'selectSlot1'),
+        action('buy-fabricator', 'buildFabricator', 1),
+        *wait('earn-laser', 2),
+        action('select-laser-guard', 'selectSlot2'),
+        action('buy-laser-guard', 'buildLaserdefense', 600),
+        intent('finish-laser-guard', 'stop', 450),
+        intent('move-into-projectile-range', 'move', 600, position=dict(x=395, y=150)),
+        intent('hold-against-ordinary-rounds', 'stop', 240),
+        intent('leave-enemy-fire', 'move', 600, position=dict(x=124, y=150)),
+        *wait('earn-anti-nuke', 13),
+        action('select-anti-nuke', 'selectSlot3'),
+        action('buy-anti-nuke', 'buildAntinuke', 600),
+        intent('finish-anti-nuke', 'stop', 450),
+        action('turn-off-interception', 'isEnabled', 1),
+        *wait('earn-rounds', 10),
+        action('buy-round', 'buildAntiNuke', 20),
+        action('buy-spare-round', 'buildAntiNuke', 10),
+        action('cancel-spare-round', 'buildAntiNuke', 1, cancelQueued=True),
+        intent('move-while-offline-producing', 'move', 320, position=dict(x=244, y=150)),
+        *wait('finish-round', 2),
+        action('turn-on-interception', 'isDisabled', 1),
+    ]
+
+
+def generate(weapon_modules=False, destination=PLATFORM, *, special_weapons=False, utility_modules=False,
+             defense_modules=False):
     for form in ('ini', 'json', 'hjson'):
-        case = ('utility-modules' if utility_modules else 'special-weapons' if special_weapons
+        case = ('defense-modules' if defense_modules else 'utility-modules' if utility_modules else 'special-weapons' if special_weapons
                 else 'weapon-modules' if weapon_modules else 'opening')
         identity = f'modular-spider-{form}-{case}'
         steps = [
@@ -98,7 +132,20 @@ def generate(weapon_modules=False, destination=PLATFORM, *, special_weapons=Fals
             finalUnits=[dict(ownerPlayerId='p1', typeId=unit, fields=dict(alive=True))
                         for unit in ('modularSpider', 'modularSpider_gunturret')],
         )
-        if utility_modules:
+        if defense_modules:
+            steps[2:] = defense_intents()
+            history.pop('spiderOpening')
+            history.update(
+                spiderDefenseModules=True,
+                spend=[dict(intentId=name, amount=amount, at='action') for name, amount in (
+                    ('buy-fabricator', 3000), ('buy-laser-guard', 3000), ('buy-anti-nuke', 7000),
+                    ('buy-round', 3000), ('buy-spare-round', 3000), ('cancel-spare-round', 3000),
+                )],
+                minimumBirths=[],
+                finalUnits=[dict(ownerPlayerId='p1', typeId=unit, fields=dict(alive=True, constructionProgress=1))
+                            for unit in ('modularSpider', 'modularSpider_laserdefense', 'modularSpider_antinuke')],
+            )
+        elif utility_modules:
             steps[2:] = utility_intents()
             history.pop('spiderOpening')
             history.update(
@@ -170,5 +217,7 @@ if __name__ == '__main__':
     cases.add_argument('--weapon-modules', action='store_true')
     cases.add_argument('--special-weapons', action='store_true')
     cases.add_argument('--utility-modules', action='store_true')
+    cases.add_argument('--defense-modules', action='store_true')
     arguments = parser.parse_args()
-    generate(arguments.weapon_modules, special_weapons=arguments.special_weapons, utility_modules=arguments.utility_modules)
+    generate(arguments.weapon_modules, special_weapons=arguments.special_weapons, utility_modules=arguments.utility_modules,
+             defense_modules=arguments.defense_modules)

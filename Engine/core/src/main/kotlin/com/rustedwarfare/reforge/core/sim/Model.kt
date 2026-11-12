@@ -179,7 +179,8 @@ data class UnitActionObservation(val name: String, val queueIndex: Int?, val pro
     val cooldownRemaining: Int, val available: Boolean)
 data class QueuedUnitActionObservation(val name: String, val progress: Float, val target: Position?)
 data class UnitActionsObservation(val actions: List<UnitActionObservation>, val automaticCooldown: Float,
-    val stockpile: Int? = null, val queue: List<QueuedUnitActionObservation> = emptyList())
+    val stockpile: Int? = null, val queue: List<QueuedUnitActionObservation> = emptyList(),
+    val interceptorOnline: Boolean? = null)
 
 data class TransportObservation(val passengerIds: List<String>?, val passengerCount: Int,
     val occupiedSlots: Int, val capacity: Int, val unloading: Boolean, val unloadRemaining: Float?,
@@ -507,6 +508,8 @@ internal data class MutableUnit(
     var attachmentOrder: AttachmentOrder? = null,
     var attachmentCooldown: Float = 0f,
     var attachmentAutomaticCooldown: Float = 0f,
+    var attachmentLaserExhausted: Boolean = false,
+    var attachmentInterceptor: AttachmentInterceptorState = AttachmentInterceptorState(),
 ) {
     val producerId: String? get() = productionOrigin?.producerId
     val reversing: Boolean get() = mechState?.reversing ?: bodyReversing

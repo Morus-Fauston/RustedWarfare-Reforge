@@ -1306,9 +1306,10 @@ class BootstrapScreen(
         depthButton.isDisabled = menu?.depthAction == null && menu?.flightAction?.available != true && menu?.transportAction?.available != true
         depthButton.setText(menu?.depthAction?.title ?: menu?.flightAction?.title ?: menu?.transportAction?.title ?: "Surface")
         val spiderPurchaseMenu = menu?.unitActions?.any { it.name == "buildFabricator" } == true
+        val spiderInterceptor = selected?.attachmentOverview != null && selected.unitActions?.interceptorOnline != null
         customActionButtons.forEach { (name, actor) ->
             val action = menu?.unitActions?.singleOrNull { it.name == name }
-            val bounds = NativeActionPanel.customBounds(name, naval, spiderPurchaseMenu)
+            val bounds = NativeActionPanel.customBounds(name, naval, spiderPurchaseMenu, spiderInterceptor)
             actor.setBounds(bounds.x, bounds.y, bounds.width, bounds.height)
             actor.isVisible = current != null && action != null
             actor.isDisabled = action?.available != true && action?.cancellable != true

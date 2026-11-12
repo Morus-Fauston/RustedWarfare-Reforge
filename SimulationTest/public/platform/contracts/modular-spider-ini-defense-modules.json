@@ -1,0 +1,234 @@
+{
+  "schemaVersion": 1,
+  "scenarioId": "modular-spider-ini-defense-modules",
+  "history": {
+    "ownerPlayerId": "p1",
+    "initialBalance": 5000,
+    "noActionIntents": [
+      "settle-opening"
+    ],
+    "initialOwnedTypes": [
+      "modularSpider",
+      "modularSpider_emptySlot",
+      "modularSpider_emptySlot",
+      "modularSpider_emptySlot",
+      "modularSpider_emptySlot",
+      "modularSpider_emptySlot",
+      "modularSpider_emptySlot"
+    ],
+    "initialIncome": {
+      "unitId": "a",
+      "typeId": "modularSpider",
+      "period": 40,
+      "credits": 30
+    },
+    "spend": [
+      {
+        "intentId": "buy-fabricator",
+        "amount": 3000,
+        "at": "action"
+      },
+      {
+        "intentId": "buy-laser-guard",
+        "amount": 3000,
+        "at": "action"
+      },
+      {
+        "intentId": "buy-anti-nuke",
+        "amount": 7000,
+        "at": "action"
+      },
+      {
+        "intentId": "buy-round",
+        "amount": 3000,
+        "at": "action"
+      },
+      {
+        "intentId": "buy-spare-round",
+        "amount": 3000,
+        "at": "action"
+      },
+      {
+        "intentId": "cancel-spare-round",
+        "amount": 3000,
+        "at": "action"
+      }
+    ],
+    "mechLegs": {
+      "modularSpider": 8,
+      "mechGun": 2
+    },
+    "projectileBirthsRequired": true,
+    "minimumBirths": [],
+    "finalUnits": [
+      {
+        "ownerPlayerId": "p1",
+        "typeId": "modularSpider",
+        "fields": {
+          "alive": true,
+          "constructionProgress": 1
+        }
+      },
+      {
+        "ownerPlayerId": "p1",
+        "typeId": "modularSpider_laserdefense",
+        "fields": {
+          "alive": true,
+          "constructionProgress": 1
+        }
+      },
+      {
+        "ownerPlayerId": "p1",
+        "typeId": "modularSpider_antinuke",
+        "fields": {
+          "alive": true,
+          "constructionProgress": 1
+        }
+      }
+    ],
+    "spiderDefenseModules": true
+  },
+  "rules": [
+    {
+      "intentId": "settle-opening"
+    },
+    {
+      "intentId": "select-spider"
+    },
+    {
+      "intentId": "leave-enemy-range"
+    },
+    {
+      "intentId": "select-fabricator"
+    },
+    {
+      "intentId": "buy-fabricator"
+    },
+    {
+      "intentId": "earn-laser-1"
+    },
+    {
+      "intentId": "earn-laser-2"
+    },
+    {
+      "intentId": "select-laser-guard"
+    },
+    {
+      "intentId": "buy-laser-guard"
+    },
+    {
+      "intentId": "finish-laser-guard"
+    },
+    {
+      "intentId": "move-into-projectile-range"
+    },
+    {
+      "intentId": "hold-against-ordinary-rounds"
+    },
+    {
+      "intentId": "leave-enemy-fire"
+    },
+    {
+      "intentId": "earn-anti-nuke-1"
+    },
+    {
+      "intentId": "earn-anti-nuke-2"
+    },
+    {
+      "intentId": "earn-anti-nuke-3"
+    },
+    {
+      "intentId": "earn-anti-nuke-4"
+    },
+    {
+      "intentId": "earn-anti-nuke-5"
+    },
+    {
+      "intentId": "earn-anti-nuke-6"
+    },
+    {
+      "intentId": "earn-anti-nuke-7"
+    },
+    {
+      "intentId": "earn-anti-nuke-8"
+    },
+    {
+      "intentId": "earn-anti-nuke-9"
+    },
+    {
+      "intentId": "earn-anti-nuke-10"
+    },
+    {
+      "intentId": "earn-anti-nuke-11"
+    },
+    {
+      "intentId": "earn-anti-nuke-12"
+    },
+    {
+      "intentId": "earn-anti-nuke-13"
+    },
+    {
+      "intentId": "select-anti-nuke"
+    },
+    {
+      "intentId": "buy-anti-nuke"
+    },
+    {
+      "intentId": "finish-anti-nuke"
+    },
+    {
+      "intentId": "turn-off-interception"
+    },
+    {
+      "intentId": "earn-rounds-1"
+    },
+    {
+      "intentId": "earn-rounds-2"
+    },
+    {
+      "intentId": "earn-rounds-3"
+    },
+    {
+      "intentId": "earn-rounds-4"
+    },
+    {
+      "intentId": "earn-rounds-5"
+    },
+    {
+      "intentId": "earn-rounds-6"
+    },
+    {
+      "intentId": "earn-rounds-7"
+    },
+    {
+      "intentId": "earn-rounds-8"
+    },
+    {
+      "intentId": "earn-rounds-9"
+    },
+    {
+      "intentId": "earn-rounds-10"
+    },
+    {
+      "intentId": "buy-round"
+    },
+    {
+      "intentId": "buy-spare-round"
+    },
+    {
+      "intentId": "cancel-spare-round"
+    },
+    {
+      "intentId": "move-while-offline-producing"
+    },
+    {
+      "intentId": "finish-round-1"
+    },
+    {
+      "intentId": "finish-round-2"
+    },
+    {
+      "intentId": "turn-on-interception"
+    }
+  ]
+}

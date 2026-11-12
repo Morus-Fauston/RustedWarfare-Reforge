@@ -54,6 +54,8 @@ def empty_slot():
         "action_buildFabricator": {"convertTo": "modularSpider_fabricator", "price": 3000, "buildSpeed": 0, "setBuilt": 0},
         "action_buildShieldGen": {"convertTo": "modularSpider_shieldGen", "price": 6000, "buildSpeed": 0, "setBuilt": 0},
         "action_buildSpeed": {"convertTo": "modularSpider_speedIncomplete", "price": 6000, "buildSpeed": 0, "setBuilt": 0},
+        "action_buildLaserdefense": {"convertTo": "modularSpider_laserdefense", "price": 3000, "buildSpeed": 0, "setBuilt": 0},
+        "action_buildAntinuke": {"convertTo": "modularSpider_antinuke", "price": 7000, "buildSpeed": 0, "setBuilt": 0},
     }
 
 
@@ -210,6 +212,27 @@ def speed(incomplete):
     return form
 
 
+def laser_defense():
+    form = utility("laserdefense", 3000, "laser-defense")
+    form["defenseEnergy"] = dict(energyMax=1, energyRegen=.0003)
+    form["turret_laserDefence"] = dict(x=0, y=0, invisible=True, canShoot=False,
+                                       laserDefenceEnergyUse=.05, limitingRange=160, size=1)
+    return form
+
+
+def anti_nuke():
+    form = utility("antinuke", 7000, "anti-nuke")
+    form["action_buildAntiNuke"] = dict(price=3000, buildSpeed=.0007, ammoLimit=12, addResources="ammo=1")
+    form["action_isEnabled"] = dict(buildSpeed=0, addResources="setFlag=1", highPriorityQueue=True,
+                                    canPlayerCancel=False, allowMultipleInQueue=False)
+    form["action_isDisabled"] = dict(form["action_isEnabled"], addResources="unsetFlag=1")
+    form["turret_silo"] = dict(x=0, y=0, size=1, invisible=True, interceptProjectiles_withTags="nuke",
+        interceptProjectiles_andTargetingGroundUnderDistance=1000, interceptProjectiles_andUnderDistance=1500,
+        interceptProjectiles_andOverHeight=50, resourceUsage="ammo=1, hasMissingFlag=1",
+        shoot_sound="nuke_launch", shoot_sound_vol=.15)
+    return form
+
+
 def generate(destination=DESTINATION):
     assert not destination.exists(), "Existing owned input tree"
     for fmt in ("ini", "json", "hjson"):
@@ -231,6 +254,7 @@ def generate(destination=DESTINATION):
             ("lightning", lightning()), ("artillery", artillery()),
             ("fabricator", fabricator(False)), ("fabricator-t2", fabricator(True)),
             ("shield", shield_generator()), ("speed-incomplete", speed(True)), ("speed", speed(False)),
+            ("laser-defense", laser_defense()), ("anti-nuke", anti_nuke()),
         )
         for name, sections in forms:
             (spider / f"{name}.{fmt}").write_text(render(sections, fmt), encoding="utf8")
@@ -243,6 +267,7 @@ def generate(destination=DESTINATION):
             ("lightning", "turret", 22, 31), ("artillery", "turret", 7, 35), ("artillery-base", "body", 20, 19),
             ("fabricator", "body", 20, 19), ("fabricator-t2", "dead", 20, 19),
             ("shield", "shadow", 22, 21), ("speed", "turret", 22, 21),
+            ("laser-defense", "body", 20, 19), ("anti-nuke", "dead", 22, 21),
         ):
             (spider / f"{filename}.png").write_bytes(png(kind, width, height))
         entries = [{"type": "mech", "file": f"units/mech.{fmt}"}]

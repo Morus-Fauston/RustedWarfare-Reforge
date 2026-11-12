@@ -82,8 +82,8 @@ object PlatformSessionRunner {
                             val targeted = name == "launchNuke" || name == "launchScoutBot"
                             val slotOrder = name in setOf("buildGun", "buildSmallLaser", "buildAntiair", "buildLightning",
                                 "buildArtillery", "buildFabricator", "buildShieldGen", "buildSpeed", "upgradeT2", "upgradeFlak",
-                                "reclaim")
-                            val spider = slotOrder || name in setOf("selectSlotBuild", "cancel") ||
+                                "buildLaserdefense", "buildAntinuke", "reclaim")
+                            val spider = slotOrder || name in setOf("selectSlotBuild", "cancel", "isEnabled", "isDisabled") ||
                                 name.matches(Regex("selectSlot[1-6]"))
                             val cancel = intent["cancelQueued"]?.let { value ->
                                 value.jsonPrimitive.booleanOrNull ?: throw InputError("Expected action cancellation boolean")

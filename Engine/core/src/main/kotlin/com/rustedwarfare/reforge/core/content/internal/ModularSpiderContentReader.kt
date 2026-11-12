@@ -51,7 +51,8 @@ internal object ModularSpiderContentReader {
     private val fields = profiles.flatMap { it.entries }.groupBy({ it.key }, { it.value.keys })
         .mapValues { (section, declared) -> declared.flatten().toSet() + images[section].orEmpty() }
     private val references = setOf("onCreateSpawnUnitOf", "convertTo", "projectile", "attachedTo", "linkDelayWithTurret")
-    private val text = setOf("name", "class", "movementType", "shoot_sound", "autoTrigger", "takeResources") +
+    private val text = setOf("name", "class", "movementType", "shoot_sound", "autoTrigger", "takeResources",
+        "addResources", "interceptProjectiles_withTags", "resourceUsage") +
         references + images.values.flatten()
     private val flags = profiles.flatMap { it.values }.flatMap { it.entries }
         .filter { it.key !in text && (it.value == "true" || it.value == "false") }.map { it.key }.toSet()
@@ -139,7 +140,8 @@ internal object ModularSpiderContentReader {
                 utility != null -> UnitDefinition(name, "CustomUnitMetadata", 15.0, 12.0, 1,
                     image("graphics", "image", utility.width, utility.height), 1.0, ModularSpiderRules.slotMovement,
                     emptySet(), fogOfWarSightRange = 5, durability = DurabilityProfile(3000.0, null),
-                    selfRegenRate = .2f, income = utility.income, attachmentModule = utility.module)
+                    selfRegenRate = .2f, income = utility.income, attachmentModule = utility.module,
+                    pointDefense = ModularSpiderUtilityForms.laserDefense.takeIf { name == ModularSpiderRules.LASER_DEFENSE })
                 else -> {
                     checkNotNull(form)
                     val turret = image("graphics", "image_turret", form.width, form.height)

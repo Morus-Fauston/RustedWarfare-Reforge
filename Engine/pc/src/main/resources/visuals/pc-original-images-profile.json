@@ -6252,6 +6252,8 @@
     "spider-fabricator-t2": "assets/units/modular_spider/fabricatorT2.png",
     "spider-shield": "assets/units/modular_spider/shieldGen.png",
     "spider-speed": "assets/units/modular_spider/speed.png",
+    "spider-laser-defense": "assets/units/modular_spider/laser_defense.png",
+    "spider-anti-nuke": "assets/units/modular_spider/antinuke.png",
     "modular-spider-body": "assets/units/modular_spider/body.png",
     "modular-spider-dead": "assets/units/modular_spider/body_dead.png",
     "modular-spider-overlay": "assets/units/modular_spider/body_ui.png",
@@ -6624,6 +6626,22 @@
       "path": "assets/units/modular_spider/speed.png",
       "bytes": 712,
       "sha256": "c2319a23b1b6416c810b534fa9ecfc421cbe5b21783c0d50283c83d88d07fb4c",
+      "width": 22,
+      "height": 21
+    },
+    {
+      "id": "spider-laser-defense",
+      "path": "assets/units/modular_spider/laser_defense.png",
+      "bytes": 662,
+      "sha256": "28e1daf1f2dbed1d3795e87e1da6551680c6e5a09873943efcaa511c8ab42ce3",
+      "width": 20,
+      "height": 19
+    },
+    {
+      "id": "spider-anti-nuke",
+      "path": "assets/units/modular_spider/antinuke.png",
+      "bytes": 523,
+      "sha256": "9cd04d7198367cf1d671aac683b65b74bef889e730c76d27ed01352e323705f6",
       "width": 22,
       "height": 21
     },
@@ -7570,6 +7588,22 @@
       "target": [22, 21],
       "frames": 1
     },
+    "spider-laser-defense": {
+      "file": "units/spider-laser-defense.png",
+      "operation": "crop",
+      "source": "spider-laser-defense",
+      "rect": [0, 0, 20, 19],
+      "target": [20, 19],
+      "frames": 1
+    },
+    "spider-anti-nuke": {
+      "file": "units/spider-anti-nuke.png",
+      "operation": "crop",
+      "source": "spider-anti-nuke",
+      "rect": [0, 0, 22, 21],
+      "target": [22, 21],
+      "frames": 1
+    },
     "modular-spider-body": {
       "file": "units/modular-spider-body.png",
       "operation": "crop",
@@ -8353,6 +8387,12 @@
     },
     "modularSpider_speed": {
       "body": "spider-speed"
+    },
+    "modularSpider_laserdefense": {
+      "body": "spider-laser-defense"
+    },
+    "modularSpider_antinuke": {
+      "body": "spider-anti-nuke"
     },
     "modularSpider_gunturret": {
       "body": "engineer-body",

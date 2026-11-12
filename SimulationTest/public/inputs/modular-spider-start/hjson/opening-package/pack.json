@@ -70,6 +70,14 @@
     {
       "type": "modular-spider",
       "file": "units/spider/speed.hjson"
+    },
+    {
+      "type": "modular-spider",
+      "file": "units/spider/laser-defense.hjson"
+    },
+    {
+      "type": "modular-spider",
+      "file": "units/spider/anti-nuke.hjson"
     }
   ]
 }

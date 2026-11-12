@@ -40,7 +40,8 @@ data class UnitAppearance(val displayRadius: Double, val imagePath: Path, val im
     val iconWeaponName: String? = null, val nanoWeaponName: String? = null,
     val nativeLegSize: ImageLogicalSize? = null, val arm1ImagePath: Path? = null, val arm2ImagePath: Path? = null,
     val nuclearSiloKind: NuclearSiloKind? = null, val shadowOffset: Position? = null,
-    val slotOverlayImagePath: Path? = null) {
+    val slotOverlayImagePath: Path? = null,
+    val pointDefense: com.rustedwarfare.reforge.core.content.PointDefenseProfile? = null) {
     internal fun nuclearDoors(unit: UnitObservation): List<WingDrawing> {
         val amount = unit.nuclearDoors ?: return emptyList()
         if (!unit.alive) return emptyList()
@@ -154,8 +155,11 @@ class SandboxRenderResources private constructor(
     internal fun defenseBeams(observation: PlayerObservation): List<DefenseBeam> = observation.projectileEvents.mapNotNull { event ->
         if (event.kind != "deflected") return@mapNotNull null
         val tower = observation.units.find { it.unitId == event.interceptorUnitId } ?: return@mapNotNull null
-        val offset = units[tower.typeId]?.defenseMuzzleOffset ?: return@mapNotNull null
-        DefenseBeam(Position(tower.position.x + offset.x, tower.position.y + offset.y), event.position)
+        val appearance = units[tower.typeId] ?: return@mapNotNull null
+        val muzzle = appearance.pointDefense?.muzzle(tower.position, tower.heading)
+            ?: appearance.defenseMuzzleOffset?.let { Position(tower.position.x + it.x, tower.position.y + it.y) }
+            ?: return@mapNotNull null
+        DefenseBeam(muzzle, event.position)
     }
 
     /** Work state and both visible endpoints come from the authorized player observation. */
@@ -203,6 +207,7 @@ class SandboxRenderResources private constructor(
                     afterburnTrailImagePath = images.afterburnTrail,
                     arm1ImagePath = images.arm1, arm2ImagePath = images.arm2, nuclearSiloKind = unit.nuclearSilo?.kind,
                     slotOverlayImagePath = images.slotOverlay,
+                    pointDefense = unit.pointDefense,
                     repairRange = if (unit.maintenance != null) unit.builder?.range?.toDouble() ?: 230.0 else null,
                     iconWeaponName = when {
                         unit.maintenance == com.rustedwarfare.reforge.core.content.MaintenanceProfile.MECH_ENGINEER -> "body"

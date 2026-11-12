@@ -81,6 +81,47 @@ class PlatformIntentTest(unittest.TestCase):
             with self.subTest(change=change), self.assertRaises(PlatformError):
                 verify([empty], dict(expiration, **change))
 
+    def test_spider_interceptor_impact_keeps_verified_launch_identity_after_slot_conversion(self):
+        module = dict(unitId="slot", typeId="modularSpider_antinuke", ownerPlayerId="p1",
+                      alive=True, constructionProgress=1)
+        empty = dict(module, typeId="modularSpider_emptySlot")
+        birth = dict(kind="born", token="round", appearance="INTERCEPTOR",
+                     sourceUnitId="slot", sourceWeaponName="silo")
+        impact = dict(birth, kind="impact")
+        plan = dict(scenarioId="interceptor", intents=[dict(intentId="watch", kind="select", waitSteps=2)])
+        policy = dict(initialBalance=0, noActionIntents=["watch"], projectileBirthsRequired=True)
+
+        def observe(sequence, phase, index, units, projectiles, events=()):
+            return dict(sequence=sequence, kind="observation", phase=phase, sample=dict(
+                stepIndex=index, simulationTime=index + 1, balance=0, units=units,
+                projectileEvents=projectiles, events=events))
+
+        def verify(terminal, *, before=module, at_birth=module, after=empty, born=birth, events=()):
+            rows = [observe(0, "initial", -1, [before], []),
+                    dict(kind="intent-start", intentId="watch"),
+                    observe(2, "step", 0, [at_birth], [born], events),
+                    observe(3, "step", 1, [after] if after else [], [terminal]),
+                    dict(kind="intent-end", intentId="watch")]
+            return compare_history(rows, plan, policy)["status"]
+
+        self.assertEqual("passed", verify(impact))
+        self.assertEqual("passed", verify(dict(impact, sourceUnitId=None, sourceWeaponName=None), after=None))
+        self.assertEqual("passed", verify(impact, at_birth=empty,
+            events=[dict(kind="attachment-slot-destroyed", unitId="slot")]))
+        self.assertEqual("passed", verify(impact, at_birth=empty,
+            events=[dict(kind="attachment-slot-emptied", unitId="slot")]))
+        for fault in (dict(sourceUnitId="other"), dict(sourceWeaponName="antiNuke"), dict(kind="born"),
+                      dict(appearance="STANDARD")):
+            with self.subTest(fault=fault), self.assertRaises(PlatformError):
+                verify(dict(impact, **fault))
+        with self.assertRaises(PlatformError):
+            verify(impact, at_birth=empty)
+        with self.assertRaises(PlatformError):
+            verify(impact, before=dict(module, constructionProgress=.9), at_birth=empty,
+                events=[dict(kind="attachment-slot-emptied", unitId="slot")])
+        with self.assertRaises(PlatformError):
+            verify(impact, born=dict(birth, sourceWeaponName="antiNuke"))
+
     def test_windows_empty_release_binds_through_the_real_generation_filtered_reader(self):
         from platform_windows import wait_for_input
         from diagnostic_reader import DiagnosticReader

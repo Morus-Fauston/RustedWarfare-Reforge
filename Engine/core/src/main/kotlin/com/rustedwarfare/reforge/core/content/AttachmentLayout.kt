@@ -47,6 +47,8 @@ internal object ModularSpiderRules {
     const val SHIELD = "modularSpider_shieldGen"
     const val SPEED_INCOMPLETE = "modularSpider_speedIncomplete"
     const val SPEED = "modularSpider_speed"
+    const val LASER_DEFENSE = "modularSpider_laserdefense"
+    const val ANTI_NUKE = "modularSpider_antinuke"
     val installs = listOf(
         AttachmentInstall("buildGun", GUN, 2000L),
         AttachmentInstall("buildSmallLaser", LASER, 700L),
@@ -56,6 +58,8 @@ internal object ModularSpiderRules {
         AttachmentInstall("buildFabricator", FABRICATOR, 3000L),
         AttachmentInstall("buildShieldGen", SHIELD, 6000L),
         AttachmentInstall("buildSpeed", SPEED_INCOMPLETE, 6000L),
+        AttachmentInstall("buildLaserdefense", LASER_DEFENSE, 3000L),
+        AttachmentInstall("buildAntinuke", ANTI_NUKE, 7000L),
     )
     val slots = listOf(
         AttachmentSlotDefinition(1, -11.0, 32.0, 0.0, EMPTY),
@@ -75,6 +79,7 @@ internal object ModularSpiderRules {
     fun supportsModule(unit: UnitDefinition): Boolean {
         val module = unit.attachmentModule ?: return false
         if (unit.movement != slotMovement || unit.attachmentLayout != null || unit.transport != null) return false
+        if (unit.pointDefense != (if (unit.id == LASER_DEFENSE) ModularSpiderUtilityForms.laserDefense else null)) return false
         if (unit.id == EMPTY) return module.empty && unit.radius == 20.0 && unit.maximumHealth == 3000.0 &&
             unit.combat == null && unit.income == null && module.automaticAction == null &&
             module.installs == installs && module.upgrades.isEmpty() &&

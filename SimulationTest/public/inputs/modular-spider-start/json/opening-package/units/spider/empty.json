@@ -70,6 +70,20 @@
       "price": 6000,
       "buildSpeed": 0,
       "setBuilt": 0
+    },
+    {
+      "name": "buildLaserdefense",
+      "convertTo": "modularSpider_laserdefense",
+      "price": 3000,
+      "buildSpeed": 0,
+      "setBuilt": 0
+    },
+    {
+      "name": "buildAntinuke",
+      "convertTo": "modularSpider_antinuke",
+      "price": 7000,
+      "buildSpeed": 0,
+      "setBuilt": 0
     }
   ]
 }
