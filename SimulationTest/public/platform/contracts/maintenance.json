@@ -117,7 +117,9 @@
             {
               "kind": "reclaim",
               "target": null,
-              "targetUnitId": "extractor"
+              "targetUnitId": "extractor",
+              "automaticRepair": false,
+              "extraWorkRange": 0.0
             }
           ]
         },
