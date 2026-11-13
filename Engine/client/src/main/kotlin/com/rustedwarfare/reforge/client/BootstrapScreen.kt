@@ -1066,7 +1066,8 @@ class BootstrapScreen(
             productionCorner.y + table.height <= productionScroll.y + productionScroll.height
     }
 
-    private fun syncConstructionCards(actions: List<ConstructionActionView>, economic: Boolean, maintenance: Boolean) {
+    private fun syncConstructionCards(actions: List<ConstructionActionView>, economic: Boolean, maintenance: Boolean,
+                                      spider: Boolean) {
         val stale = constructionCards.iterator()
         while (stale.hasNext()) {
             val (type, card) = stale.next()
@@ -1078,14 +1079,17 @@ class BootstrapScreen(
         }
         // Maintenance owns the row at y280. Keep construction below that row,
         // including the ScrollPane's clipping rectangle, so every drawn card can receive input.
-        val overflow = actions.size > if (maintenance) 4 else 6
+        val overflow = actions.size > if (maintenance || spider) 4 else 6
         val legacy = economic && actions.all { it.typeId in setOf("extractorT1", "landFactory",
             "mechFactory", "airFactory", "seaFactory", "fabricatorT1", "c_turret_t1", "laserDefence") }
         constructionScroll.isVisible = nativePanel && overflow
-        constructionScroll.setBounds(752f, 160f, 184f, if (maintenance) 114f else 174f)
+        val pitch = if (spider) 44f else 60f
+        val height = if (spider) 42f else 54f
+        constructionScroll.setBounds(752f, if (spider) 154f else 160f, 184f,
+            if (spider) 90f else if (maintenance) 114f else 174f)
         if (!constructionScroll.isVisible && stage.scrollFocus === constructionScroll) stage.scrollFocus = null
         val rows = (actions.size + 1) / 2
-        if (overflow) constructionContent.setSize(176f, rows * 60f)
+        if (overflow) constructionContent.setSize(176f, rows * pitch)
         actions.forEachIndexed { index, action ->
             val type = action.typeId
             val card = constructionCards.getOrPut(type) {
@@ -1095,8 +1099,8 @@ class BootstrapScreen(
                 }
                 val table = Table(skin).apply {
                     touchable = Touchable.enabled
-                    add(icon).size(28f, 28f).padTop(3f).row()
-                    add(text).width(80f).height(21f)
+                    add(icon).padTop(3f).row()
+                    add(text).width(80f)
                     background = skin.newDrawable("white", Color(.23f, .28f, .26f, 1f))
                 }
                 val input = ConstructionButtonInput({ session }, { nativePanel && !paused }, type,
@@ -1107,6 +1111,10 @@ class BootstrapScreen(
                 table.addListener(input)
                 ConstructionCard(table, icon, text, input)
             }
+            val iconSize = if (spider) 16f else 28f
+            card.table.getCell(card.icon).size(iconSize)
+            card.table.getCell(card.text).height(if (spider) 22f else 21f)
+            card.table.invalidate()
             val parent = if (overflow) constructionContent else constructionLayer
             if (card.table.parent !== parent) {
                 card.input.cancel()
@@ -1114,7 +1122,8 @@ class BootstrapScreen(
             }
             card.table.isVisible = nativePanel
             when {
-                overflow -> card.table.setBounds((index % 2) * 92f, (rows - 1 - index / 2) * 60f, 84f, 54f)
+                overflow -> card.table.setBounds((index % 2) * 92f, (rows - 1 - index / 2) * pitch, 84f, height)
+                spider -> card.table.setBounds(752f + index % 2 * 92f, 200f - index / 2 * pitch, 84f, height)
                 legacy -> card.table.setBounds(
                     if (type in setOf("extractorT1", "c_turret_t1", "laserDefence")) 844f else 752f,
                     when (type) { "extractorT1" -> 280f; "landFactory", "c_turret_t1" -> 220f; else -> 160f },
@@ -1186,13 +1195,18 @@ class BootstrapScreen(
         produceButton.setText(menu?.production?.firstOrNull()?.price?.let { "Produce $it" } ?: "Produce")
         cancelProductionButton.isDisabled = queue?.items?.isEmpty() != false
         syncProductionCards(menu?.production.orEmpty(), menu?.upgrades.orEmpty().filter { it.kind == UpgradePresentationKind.FACTORY }, naval)
+        val spider = selected?.attachmentOverview != null
+        val maintenanceY = if (spider) 322f else 280f
+        val maintenanceHeight = if (spider) 27f else 54f
+        reclaimCard.setBounds(752f, maintenanceY, 84f, maintenanceHeight)
+        repairCard.setBounds(844f, maintenanceY, 84f, maintenanceHeight)
         reclaimCard.isVisible = nativePanel && menu?.canMaintain == true
         reclaimCard.background = skin.newDrawable("white", if (reclaimInput.pressed || state.reclaimMode)
             Color(.37f, .48f, .4f, 1f) else Color(.23f, .28f, .26f, 1f))
         repairCard.isVisible = nativePanel && menu?.canRepair == true
         repairCard.background = skin.newDrawable("white", if (repairInput.pressed || state.repairMode)
             Color(.37f, .48f, .4f, 1f) else Color(.23f, .28f, .26f, 1f))
-        syncConstructionCards(menu?.construction.orEmpty(), current?.hasEconomicConstruction == true, menu?.canMaintain == true)
+        syncConstructionCards(menu?.construction.orEmpty(), current?.hasEconomicConstruction == true, menu?.canMaintain == true, spider)
         val selectedInfo = menu?.selectedUnitInfo
         nativeInfo.isVisible = nativePanel && selectedInfo != null
         nativeIcon.isVisible = nativePanel && selected != null && state.selectedIds.size == 1
@@ -1219,7 +1233,7 @@ class BootstrapScreen(
         if (nativePanel) {
             produceButton.isVisible = false
             cancelProductionButton.isVisible = false
-            selectedLabel.setBounds(752f, 340f, 88f, 46f)
+            selectedLabel.setBounds(752f, if (spider) 350f else 340f, 88f, if (spider) 36f else 46f)
             selectedLabel.setText(if (selected == null) "None" else if (state.selectedIds.size > 1)
                 "${state.selectedIds.size} selected" else "${menu?.selectedTitle} x1")
             setUnitIcon(nativeIcon, selected?.typeId)
@@ -1311,7 +1325,8 @@ class BootstrapScreen(
             val action = menu?.unitActions?.singleOrNull { it.name == name }
             val bounds = NativeActionPanel.customBounds(name, naval, spiderPurchaseMenu, spiderInterceptor)
             actor.setBounds(bounds.x, bounds.y, bounds.width, bounds.height)
-            actor.isVisible = current != null && action != null
+            actor.isVisible = current != null && action != null && !(name == "selectSlotBuild" &&
+                selected?.attachmentOverview?.selectedSlot == null)
             actor.isDisabled = action?.available != true && action?.cancellable != true
             val status = when {
                 action?.queued == true -> "\n${((action.progress ?: 0f) * 100f).toInt()}%"
@@ -1335,6 +1350,7 @@ class BootstrapScreen(
             menu?.canMaintain == true && constructionCards.size > 2 || productionCards.size + factoryUpgradeCards.size > 4)
         val stopY = when {
             spiderPurchaseMenu -> NativeActionPanel.spiderPurchaseStopY
+            spider -> 112f
             economicPanel -> 112f
             nativePanel -> 144f
             else -> 168f

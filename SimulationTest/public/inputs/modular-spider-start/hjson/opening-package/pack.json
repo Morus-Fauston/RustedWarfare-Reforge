@@ -8,6 +8,114 @@
       "file": "units/mech.hjson"
     },
     {
+      "type": "economic-building",
+      "file": "units/economy/extractor.hjson"
+    },
+    {
+      "type": "economic-building",
+      "file": "units/economy/extractorT2.hjson"
+    },
+    {
+      "type": "economic-building",
+      "file": "units/economy/extractorT3.hjson"
+    },
+    {
+      "type": "economic-building",
+      "file": "units/economy/fabricatorT1.hjson"
+    },
+    {
+      "type": "economic-building",
+      "file": "units/economy/fabricatorT2.hjson"
+    },
+    {
+      "type": "economic-building",
+      "file": "units/economy/fabricatorT3.hjson"
+    },
+    {
+      "type": "land-factory",
+      "file": "units/economy/landFactory.hjson"
+    },
+    {
+      "type": "point-defense",
+      "file": "units/economy/laserDefence.hjson"
+    },
+    {
+      "type": "ground-turret",
+      "file": "units/economy/turret_t1.hjson"
+    },
+    {
+      "type": "ground-turret",
+      "file": "units/economy/turret_t2_gun.hjson"
+    },
+    {
+      "type": "ground-turret",
+      "file": "units/economy/turret_t1_artillery.hjson"
+    },
+    {
+      "type": "builder",
+      "file": "units/mech-factory/builder.hjson"
+    },
+    {
+      "type": "mech-factory",
+      "file": "units/mech-factory/mechFactory.hjson"
+    },
+    {
+      "type": "mech-factory",
+      "file": "units/mech-factory/mechFactoryT2.hjson"
+    },
+    {
+      "type": "mech-heavy",
+      "file": "units/mech-factory/heavy/heavy.hjson"
+    },
+    {
+      "type": "mech-engineer",
+      "file": "units/mech-factory/engineer/engineer.hjson"
+    },
+    {
+      "type": "air-factory",
+      "file": "units/air-factory/units/airFactory.hjson"
+    },
+    {
+      "type": "air-factory",
+      "file": "units/air-factory/units/airFactoryT2.hjson"
+    },
+    {
+      "type": "helicopter",
+      "file": "units/air-factory/units/helicopter.hjson"
+    },
+    {
+      "type": "bomber",
+      "file": "units/air-factory/bomber.hjson"
+    },
+    {
+      "type": "sea-factory",
+      "file": "units/sea-factory/seaFactory.hjson"
+    },
+    {
+      "type": "sea-factory",
+      "file": "units/sea-factory/seaFactoryT2.hjson"
+    },
+    {
+      "type": "hovercraft",
+      "file": "units/sea-factory/hovercraft.hjson"
+    },
+    {
+      "type": "tank",
+      "file": "units/sea-factory/land/tank.hjson"
+    },
+    {
+      "type": "submarine",
+      "file": "units/sea-factory/submarine/submarine.hjson"
+    },
+    {
+      "type": "battleship",
+      "file": "units/sea-factory/naval/heavyBattleship.hjson"
+    },
+    {
+      "type": "repair-bay",
+      "file": "units/repairbay/repairbay.hjson"
+    },
+    {
       "type": "modular-spider",
       "file": "units/spider/spider.hjson"
     },

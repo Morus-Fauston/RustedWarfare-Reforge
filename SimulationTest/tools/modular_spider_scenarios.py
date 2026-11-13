@@ -121,10 +121,30 @@ def blink_intents():
     ]
 
 
+def chassis_intents():
+    def point(name, kind, wait, x, y, **fields):
+        return intent(name, kind, wait, position=dict(x=x, y=y), **fields)
+
+    return [
+        point('build-land-factory', 'build', 550, 270, 250, typeId='landFactory'),
+        point('select-land-factory', 'select', 0, 270, 250),
+        intent('produce-tank', 'produce', 600, typeId='c_tank'),
+        point('select-spider-after-factory', 'select', 0, 190, 150),
+        point('build-repair-bay', 'build', 350, 70, 250, typeId='repairbay'),
+        point('select-spider-after-bay', 'select', 0, 190, 150),
+        point('nano-build-worker', 'build', 250, 110, 110, typeId='builder'),
+        point('select-spider-for-maintenance', 'select', 0, 190, 150),
+        point('partially-reclaim-worker', 'reclaim', 50, 110, 110),
+        intent('stop-and-auto-repair', 'stop', 220),
+        point('move-spider-across-cliff', 'move', 550, 412, 175),
+        intent('stop-chassis', 'stop', 10),
+    ]
+
+
 def generate(weapon_modules=False, destination=PLATFORM, *, special_weapons=False, utility_modules=False,
-             defense_modules=False, blink_module=False):
+             defense_modules=False, blink_module=False, chassis=False):
     for form in ('ini', 'json', 'hjson'):
-        case = ('blink-module' if blink_module else 'defense-modules' if defense_modules else 'utility-modules' if utility_modules else 'special-weapons' if special_weapons
+        case = ('chassis' if chassis else 'blink-module' if blink_module else 'defense-modules' if defense_modules else 'utility-modules' if utility_modules else 'special-weapons' if special_weapons
                 else 'weapon-modules' if weapon_modules else 'opening')
         identity = f'modular-spider-{form}-{case}'
         steps = [
@@ -150,7 +170,20 @@ def generate(weapon_modules=False, destination=PLATFORM, *, special_weapons=Fals
             finalUnits=[dict(ownerPlayerId='p1', typeId=unit, fields=dict(alive=True))
                         for unit in ('modularSpider', 'modularSpider_gunturret')],
         )
-        if blink_module:
+        if chassis:
+            steps[2:] = chassis_intents()
+            history.pop('spiderOpening')
+            history.update(
+                spend=[dict(intentId=name, amount=price, at='construction-created') for name, price in (
+                    ('build-land-factory', 700), ('build-repair-bay', 1500), ('nano-build-worker', 500),
+                )] + [dict(intentId='produce-tank', amount=350, at='action')],
+                minimumBirths=[],
+                productionOrder=['c_tank'],
+                finalUnits=[dict(ownerPlayerId='p1', typeId=unit, fields=dict(alive=True, constructionProgress=1))
+                            for unit in ('modularSpider', 'landFactory', 'repairbay', 'builder', 'c_tank')],
+            )
+            history['finalUnits'][3]['fields']['health'] = 170
+        elif blink_module:
             steps[2:] = blink_intents()
             history.pop('spiderOpening')
             history.update(
@@ -247,6 +280,7 @@ if __name__ == '__main__':
     cases.add_argument('--utility-modules', action='store_true')
     cases.add_argument('--defense-modules', action='store_true')
     cases.add_argument('--blink-module', action='store_true')
+    cases.add_argument('--chassis', action='store_true')
     arguments = parser.parse_args()
     generate(arguments.weapon_modules, special_weapons=arguments.special_weapons, utility_modules=arguments.utility_modules,
-             defense_modules=arguments.defense_modules, blink_module=arguments.blink_module)
+             defense_modules=arguments.defense_modules, blink_module=arguments.blink_module, chassis=arguments.chassis)

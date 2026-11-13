@@ -333,6 +333,7 @@ internal object UnitAttachments {
                 refundPayment(state, child)
                 AttachmentInterceptor.discardQueue(state, child)
                 child.reclaimed = true
+                state.missileTargets = state.missileTargets?.remove(child.unitId)
                 state.pendingEvents += Event("attachment-removed", child.unitId)
             } else if (checkNotNull(child.health) < 1.0 && child.definition.attachmentModule?.empty == false) {
                 refundPayment(state, child)

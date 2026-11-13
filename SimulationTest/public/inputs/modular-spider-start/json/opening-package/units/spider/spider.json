@@ -4,6 +4,7 @@
     "name": "modularSpider",
     "class": "CustomUnitMetadata",
     "price": 90000,
+    "buildSpeed": 0.0002,
     "maxHp": 10000,
     "radius": 49,
     "fogOfWarSightRange": 19,
@@ -13,6 +14,16 @@
     "maxShield": 5000,
     "shieldRegen": 0.3,
     "selfRegenRate": 0.1,
+    "canRepairBuildings": true,
+    "canRepairUnits": true,
+    "autoRepair": true,
+    "nanoRange": 220,
+    "nanoRepairSpeed": 0.4,
+    "nanoBuildSpeed": 8,
+    "nukeOnDeath": true,
+    "nukeOnDeathRange": 200,
+    "nukeOnDeathDamage": 4400,
+    "nukeOnDeathDisableWhenNoNuke": true,
     "generation_credits": 30,
     "generation_delay": 40
   },
@@ -33,6 +44,17 @@
     "turnAcceleration": 0.1,
     "reverseSpeedPercentage": 1
   },
+  "canBuild_chassis": {
+    "constructionTypes": "builder,hovercraft,c_turret_t1,c_turret_t1_artillery,extractorT1,fabricatorT1,landFactory,mechFactory,airFactory,seaFactory,laserDefence,repairbay,bomber",
+    "forceNano": true
+  },
+  "weapons": [
+    {
+      "name": "nanoTurret",
+      "warmup": 30,
+      "isMainNanoTurret": true
+    }
+  ],
   "actions": [
     {
       "name": "blinkQueued",

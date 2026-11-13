@@ -7,6 +7,7 @@ import com.rustedwarfare.reforge.core.content.ContentLoader
 import com.rustedwarfare.reforge.core.content.ContentResult
 import com.rustedwarfare.reforge.core.content.LoadedContentPack
 import com.rustedwarfare.reforge.core.sim.ActionResult
+import com.rustedwarfare.reforge.core.sim.Position
 import java.nio.file.Path
 import kotlin.test.*
 
@@ -18,6 +19,27 @@ class ModularSpiderSandboxTest {
         val root = fixtures.resolve("modular-spider-start/$format")
         val result = ContentLoader.loadContentPack(root.resolve("opening-package"))
         return root to assertIs<ContentResult.Success<LoadedContentPack>>(result).value
+    }
+
+    @Test fun the_build_page_exposes_normal_site_work_and_yields_to_a_slot_page() {
+        for (format in listOf("ini", "json", "hjson")) {
+            val (root, pack) = source(format)
+            val scene = contentPackScenario(root, ContentPackChoice(pack, "modularSpider"))
+            SandboxSession(scene).use { session ->
+                repeat(100) { session.tick() }
+                session.select(Position(190.0, 150.0))
+                val build = session.constructionActions.associateBy { it.typeId }
+                assertEquals(setOf("builder", "hovercraft", "c_turret_t1", "c_turret_t1_artillery", "extractorT1",
+                    "fabricatorT1", "landFactory", "mechFactory", "airFactory", "seaFactory", "laserDefence",
+                    "repairbay", "bomber"), build.keys)
+                assertEquals(500L, build.getValue("builder").price)
+                assertTrue(session.canRepair)
+                assertIs<ActionResult.Accepted>(session.unitAction("selectSlot1"))
+                assertTrue(session.constructionActions.isEmpty())
+                assertIs<ActionResult.Accepted>(session.unitAction("selectSlotBuild"))
+                assertIs<ActionResult.Accepted>(session.build("builder", Position(260.0, 200.0)))
+            }
+        }
     }
 
     @Test fun a_slot_module_cannot_be_chosen_as_an_independent_starting_unit() {

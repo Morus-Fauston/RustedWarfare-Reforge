@@ -83,6 +83,7 @@ internal object Transport {
         for (carrier in units.values) carrier.transportState?.let { state ->
             require(carrier.definition.transport != null && state.unloadRemaining.isFinite() && state.unloadRemaining in 0f..30f)
             require(state.passengerIds.distinct().size == state.passengerIds.size)
+            require(!carrier.reclaimed || state.passengerIds.isEmpty())
             var slots = 0L
             for (id in state.passengerIds) {
                 val passenger = units.getValue(id)
@@ -123,8 +124,15 @@ internal object Transport {
         require(unit.sinkSpeed.isFinite() && unit.height.isFinite()) { "Air transport corpse must remain finite" }
     }
 
-    /** Native f(true): release relations and write cj's negative health, retaining corpse processing. */
-    fun onDeath(unit: MutableUnit, units: Map<String, MutableUnit>, map: MapDefinition, deferCargo: Boolean = false) {
+    /** Native removal invokes f(true) without the carrier's ordinary death callback. */
+    fun onRemoved(unit: MutableUnit, units: Map<String, MutableUnit>, map: MapDefinition) =
+        clearRelations(unit, units, map, deferCargo = false)
+
+    fun onDeath(unit: MutableUnit, units: Map<String, MutableUnit>, map: MapDefinition, deferCargo: Boolean = false) =
+        clearRelations(unit, units, map, deferCargo)
+
+    /** Native f(true): release relations and write cj's negative health, retaining passenger death processing. */
+    private fun clearRelations(unit: MutableUnit, units: Map<String, MutableUnit>, map: MapDefinition, deferCargo: Boolean) {
         unit.carriedBy?.let { id ->
             val parent = units[id]
             parent?.transportState?.let { state ->

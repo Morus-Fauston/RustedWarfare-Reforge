@@ -3,6 +3,7 @@ package com.rustedwarfare.reforge.core.sim
 import com.rustedwarfare.reforge.core.knowledge.VisionSnapshot
 import com.rustedwarfare.reforge.core.content.foundationMovementType
 import com.rustedwarfare.reforge.core.content.MaintenanceProfile
+import com.rustedwarfare.reforge.core.content.siteConstruction
 import java.util.Collections
 
 internal data class BuildingRoute(val points: List<Position>, val knowledgeRevision: Long, val buildingRevision: Long)
@@ -44,7 +45,8 @@ internal class BuildingWork private constructor(val clock: Int, val nonces: Map<
         }
 
         private fun canContinue(worker: MutableUnit, target: MutableUnit, input: Scenario): Boolean {
-            if (unitMaintenance(worker)) return target !== worker && target.alive && target.carriedBy == null && target.health != null
+            if (unitMaintenance(worker)) return target !== worker && target.alive && target.carriedBy == null &&
+                target.attachment == null && target.health != null && (isReady(target) || target.definition.siteConstruction != null)
             if (input.maintenanceContract?.basePrices?.containsKey(target.typeId) == true &&
                 worker.typeId == "builder" && target.definition.building != null) return true
             val types = checkNotNull(worker.definition.builder).buildingTypeIds
@@ -266,7 +268,7 @@ internal class BuildingWork private constructor(val clock: Int, val nonces: Map<
             if (!preparation.ready) return BuildingWorkChange(this, ledger, upgrades, events = preparation.events)
             if (!isReady(target)) {
                 target.constructionProgress = minOf(1f, target.constructionProgress +
-                    checkNotNull(target.definition.construction).rate *
+                    checkNotNull(target.definition.siteConstruction).rate *
                     (when (target.definition.techLevel) { 2 -> .5f; 3 -> .25f; else -> 1f }) *
                     (worker.definition.builder?.buildSpeedMultiplier ?: 1f) * delta.toFloat())
                 return BuildingWorkChange(this, ledger, upgrades, events =
@@ -314,7 +316,7 @@ internal class BuildingWork private constructor(val clock: Int, val nonces: Map<
         val terrainBlocked = if (building.requiresResourcePool) !poolAtCenter else
             cells.any { input.map.isFoundationBlocked(it.first, it.second, definition.foundationMovementType) }
         val mobileContact = definition.building == null && frame.units.values.any { other ->
-            other !== worker && other.alive && other.carriedBy == null && ConstructionPlacement.mobileOverlaps(
+            other !== worker && other.alive && other.carriedBy == null && other.attachment == null && ConstructionPlacement.mobileOverlaps(
                 position, definition.radius, other.position, other.definition.radius, other.definition.building != null)
         }
         val blocked = cells.isEmpty() || !ConstructionPlacement.contains(input.map.widthTiles, input.map.heightTiles,
@@ -334,7 +336,7 @@ internal class BuildingWork private constructor(val clock: Int, val nonces: Map<
         var registered = upgrades
         var created: MutableUnit? = null
         val target = reused ?: run {
-            val charged = ledger.charge(worker.ownerPlayerId, checkNotNull(definition.construction).price)
+            val charged = ledger.charge(worker.ownerPlayerId, checkNotNull(definition.siteConstruction).price)
             if (charged == null) {
                 worker.constructionRetryTime = clock
                 if (worker.constructionElapsed >= 1000f) {
@@ -424,7 +426,10 @@ internal class BuildingWork private constructor(val clock: Int, val nonces: Map<
         val builder = worker.definition.builder ?: return SimulationError("cannot-build", "Unit cannot construct buildings")
         if (!input.nukesEnabled && input.unitDefinitions[action.buildingTypeId]?.nuclearSilo != null)
             return SimulationError("nukes-disabled", "Nuclear construction is disabled for this game")
-        if (action.buildingTypeId !in builder.buildingTypeIds || input.unitDefinitions[action.buildingTypeId]?.construction == null)
+        val target = input.unitDefinitions[action.buildingTypeId]
+        if (action.buildingTypeId !in builder.buildingTypeIds || target == null ||
+            (if (worker.definition.maintenance == MaintenanceProfile.MODULAR_SPIDER) target.siteConstruction
+             else target.construction) == null)
             return SimulationError("unsupported-construction-type", "Unit cannot construct this type")
         if (!MapBounds.contains(input.map.widthTiles.toDouble() * input.map.tileWidth,
                 input.map.heightTiles.toDouble() * input.map.tileHeight, action.target, 0.0))

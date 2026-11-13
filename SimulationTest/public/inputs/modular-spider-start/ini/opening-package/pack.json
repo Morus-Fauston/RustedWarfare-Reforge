@@ -8,6 +8,114 @@
       "file": "units/mech.ini"
     },
     {
+      "type": "economic-building",
+      "file": "units/economy/extractor.ini"
+    },
+    {
+      "type": "economic-building",
+      "file": "units/economy/extractorT2.ini"
+    },
+    {
+      "type": "economic-building",
+      "file": "units/economy/extractorT3.ini"
+    },
+    {
+      "type": "economic-building",
+      "file": "units/economy/fabricatorT1.ini"
+    },
+    {
+      "type": "economic-building",
+      "file": "units/economy/fabricatorT2.ini"
+    },
+    {
+      "type": "economic-building",
+      "file": "units/economy/fabricatorT3.ini"
+    },
+    {
+      "type": "land-factory",
+      "file": "units/economy/landFactory.ini"
+    },
+    {
+      "type": "point-defense",
+      "file": "units/economy/laserDefence.ini"
+    },
+    {
+      "type": "ground-turret",
+      "file": "units/economy/turret_t1.ini"
+    },
+    {
+      "type": "ground-turret",
+      "file": "units/economy/turret_t2_gun.ini"
+    },
+    {
+      "type": "ground-turret",
+      "file": "units/economy/turret_t1_artillery.ini"
+    },
+    {
+      "type": "builder",
+      "file": "units/mech-factory/builder.ini"
+    },
+    {
+      "type": "mech-factory",
+      "file": "units/mech-factory/mechFactory.ini"
+    },
+    {
+      "type": "mech-factory",
+      "file": "units/mech-factory/mechFactoryT2.ini"
+    },
+    {
+      "type": "mech-heavy",
+      "file": "units/mech-factory/heavy/heavy.ini"
+    },
+    {
+      "type": "mech-engineer",
+      "file": "units/mech-factory/engineer/engineer.ini"
+    },
+    {
+      "type": "air-factory",
+      "file": "units/air-factory/units/airFactory.ini"
+    },
+    {
+      "type": "air-factory",
+      "file": "units/air-factory/units/airFactoryT2.ini"
+    },
+    {
+      "type": "helicopter",
+      "file": "units/air-factory/units/helicopter.ini"
+    },
+    {
+      "type": "bomber",
+      "file": "units/air-factory/bomber.ini"
+    },
+    {
+      "type": "sea-factory",
+      "file": "units/sea-factory/seaFactory.ini"
+    },
+    {
+      "type": "sea-factory",
+      "file": "units/sea-factory/seaFactoryT2.ini"
+    },
+    {
+      "type": "hovercraft",
+      "file": "units/sea-factory/hovercraft.ini"
+    },
+    {
+      "type": "tank",
+      "file": "units/sea-factory/land/tank.ini"
+    },
+    {
+      "type": "submarine",
+      "file": "units/sea-factory/submarine/submarine.ini"
+    },
+    {
+      "type": "battleship",
+      "file": "units/sea-factory/naval/heavyBattleship.ini"
+    },
+    {
+      "type": "repair-bay",
+      "file": "units/repairbay/repairbay.ini"
+    },
+    {
       "type": "modular-spider",
       "file": "units/spider/spider.ini"
     },

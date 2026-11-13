@@ -2,6 +2,7 @@
 import json
 from pathlib import Path
 import shutil
+import xml.etree.ElementTree as ET
 
 from aa_beam_fixture import png
 from bunker_fixture import render
@@ -13,20 +14,29 @@ DESTINATION = INPUTS / "modular-spider-start"
 SLOTS = ((-11, 32, 0), (11, 32, 0), (-11, 6, -90), (11, 6, 90), (-10, -20, 180), (11, -20, 180))
 LEGS = ((-50, 20, -25, 10), (50, 20, 15, 10), (-35, 60, -15, 25), (35, 60, 15, 25),
         (-50, -30, -15, -25), (50, -30, 15, -25), (-35, -60, -15, -35), (35, -60, 15, -35))
+CHASSIS_BUILD_TYPES = ("builder", "hovercraft", "c_turret_t1", "c_turret_t1_artillery", "extractorT1",
+                       "fabricatorT1", "landFactory", "mechFactory", "airFactory", "seaFactory",
+                       "laserDefence", "repairbay", "bomber")
 
 
 def opening():
     sections = {
-        "core": {"name": "modularSpider", "class": "CustomUnitMetadata", "price": 90000,
+        "core": {"name": "modularSpider", "class": "CustomUnitMetadata", "price": 90000, "buildSpeed": .0002,
                  "maxHp": 10000, "radius": 49, "fogOfWarSightRange": 19, "transportSlotsNeeded": 14,
                  "isPickableStartingUnit": True, "startFallingWhenStartingUnit": True,
                  "maxShield": 5000, "shieldRegen": .3, "selfRegenRate": .1,
+                 "canRepairBuildings": True, "canRepairUnits": True, "autoRepair": True,
+                 "nanoRange": 220, "nanoRepairSpeed": .4, "nanoBuildSpeed": 8,
+                 "nukeOnDeath": True, "nukeOnDeathRange": 200, "nukeOnDeathDamage": 4400,
+                 "nukeOnDeathDisableWhenNoNuke": True,
                  "generation_credits": 30, "generation_delay": 40},
         "graphics": {"image": "body.png", "image_shadow": "shadow.png", "image_wreak": "dead.png",
                      "image_turret": "nano.png", "image_slotUi": "slot-ui.png", "total_frames": 1},
         "movement": {"movementType": "OVER_CLIFF_WATER", "moveSpeed": .6, "moveAccelerationSpeed": .015,
                      "moveDecelerationSpeed": .015, "maxTurnSpeed": .4, "turnAcceleration": .1,
                      "reverseSpeedPercentage": 1},
+        "canBuild_chassis": dict(constructionTypes=",".join(CHASSIS_BUILD_TYPES), forceNano=True),
+        "turret_nanoTurret": dict(warmup=30, isMainNanoTurret=True),
         "action_blinkQueued": dict(tags="blink", buildSpeed=210, allowMultipleInQueue=False,
                                    canPlayerCancel=False, isActive=False, highPriorityQueue=True,
                                    whenBuilding_cannotMove=True),
@@ -251,6 +261,84 @@ def blink():
     return form
 
 
+def chassis_support(pack, fmt):
+    """Copy the existing owned definition and its local dependencies into the opening pack."""
+    groups = (
+        ("economy", INPUTS / "three-format-economy/construction" / fmt / "units",
+         {"extractor": "economic-building", "extractorT2": "economic-building", "extractorT3": "economic-building",
+          "fabricatorT1": "economic-building", "fabricatorT2": "economic-building", "fabricatorT3": "economic-building",
+          "landFactory": "land-factory", "laserDefence": "point-defense",
+          "turret_t1": "ground-turret", "turret_t2_gun": "ground-turret", "turret_t1_artillery": "ground-turret"},
+         {"extractor_common", "turret_common_land"}),
+        ("mech-factory", INPUTS / "mech-engineer-production" / fmt / "production-package/units",
+         {"builder": "builder", "mechFactory": "mech-factory", "mechFactoryT2": "mech-factory",
+          "heavy/heavy": "mech-heavy", "engineer/engineer": "mech-engineer"}, set()),
+        ("air-factory", INPUTS / "bomber-production" / fmt / "package",
+         {"units/airFactory": "air-factory", "units/airFactoryT2": "air-factory",
+          "units/helicopter": "helicopter", "bomber": "bomber"}, set()),
+        ("sea-factory", INPUTS / "transport-production" / fmt / "production-package/units",
+         {"seaFactory": "sea-factory", "seaFactoryT2": "sea-factory", "hovercraft": "hovercraft", "land/tank": "tank",
+          "submarine/submarine": "submarine", "naval/heavyBattleship": "battleship"}, set()),
+        ("repairbay", INPUTS / "repairbay-production" / fmt / "production-package",
+         {"repairbay": "repair-bay"}, set()),
+    )
+    entries = []
+    for group, source, units, templates in groups:
+        target = pack / "units" / group
+        for stem in (*units, *sorted(templates)):
+            local = Path(f"{stem}.{fmt}")
+            original = source / local
+            destination = target / local
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            data = original.read_bytes()
+            if stem in ("turret_t1_artillery", "turret_t2_gun"):
+                health, price = (1000, 2100) if stem == "turret_t1_artillery" else (1100, 1500)
+                before, after = ((f"maxHp: {health}", f"maxHp: {health}\nprice: {price}\nbuildSpeed: 0.0008")
+                                 if fmt == "ini" else (f'"maxHp":{health}', f'"maxHp":{health},"price":{price},"buildSpeed":0.0008'))
+                text = data.decode("utf8")
+                if before not in text and fmt != "ini":
+                    before, after = f'"maxHp": {health}', f'"maxHp": {health}, "price": {price}, "buildSpeed": 0.0008'
+                assert before in text
+                data = text.replace(before, after, 1).encode("utf8")
+            destination.write_bytes(data)
+            for image in original.parent.glob("*.png"):
+                if image.name.encode("utf8") in data:
+                    shutil.copyfile(image, destination.parent / image.name)
+            if stem in units:
+                entries.append({"type": units[stem], "file": destination.relative_to(pack).as_posix()})
+    return entries
+
+
+def add_construction_sites(root, fmt):
+    map_path = root / "maps/p001-controlled.tmx"
+    scene = ET.parse(map_path)
+    document = scene.getroot()
+    layer = document.find("layer")
+    shore = INPUTS / "transport-production" / fmt / "assets/naval-ground.png"
+    shutil.copyfile(shore, root / "assets" / shore.name)
+    tileset = ET.Element("tileset", firstgid="38", name="naval-ground", tilewidth="20", tileheight="20")
+    ET.SubElement(tileset, "image", source="../assets/naval-ground.png", width="100", height="160")
+    ET.SubElement(ET.SubElement(ET.SubElement(tileset, "tile", id="1"), "properties"), "property", name="water", value="")
+    document.insert(list(document).index(layer), tileset)
+    economy = INPUTS / "three-format-economy/construction" / fmt / "assets/terrain.png"
+    shutil.copyfile(economy, root / "assets/foundation.png")
+    foundations = ET.Element("tileset", firstgid="78", name="owned-foundations", tilewidth="20", tileheight="20")
+    ET.SubElement(foundations, "image", source="../assets/foundation.png", width="100", height="20")
+    for tile_id, property_name in ((1, "trees"), (2, "cliff"), (4, "res_pool")):
+        tile = ET.SubElement(foundations, "tile", id=str(tile_id))
+        ET.SubElement(ET.SubElement(tile, "properties"), "property", name=property_name, value="")
+    document.insert(list(document).index(layer), foundations)
+    data = layer.find("data")
+    cells = data.text.strip().split(",")
+    width = int(layer.get("width"))
+    height = int(layer.get("height"))
+    for row in range(height):
+        cells[row * width + width - 5:(row + 1) * width] = ["39"] * 5
+    cells[11 * width + 5] = "82"
+    data.text = ",".join(cells)
+    scene.write(map_path, encoding="utf-8")
+
+
 def generate(destination=DESTINATION):
     assert not destination.exists(), "Existing owned input tree"
     for fmt in ("ini", "json", "hjson"):
@@ -262,6 +350,7 @@ def generate(destination=DESTINATION):
         spider.mkdir(parents=True)
         for folder in ("maps", "assets"):
             shutil.copytree(source / folder, root / folder)
+        add_construction_sites(root, fmt)
         shutil.copyfile(source / "combat.properties", root / "combat.properties")
         for name in (f"mech.{fmt}", "body.png", "leg.png", "foot.png"):
             shutil.copyfile(source / "production-package/units" / name, units / name)
@@ -289,6 +378,7 @@ def generate(destination=DESTINATION):
         ):
             (spider / f"{filename}.png").write_bytes(png(kind, width, height))
         entries = [{"type": "mech", "file": f"units/mech.{fmt}"}]
+        entries.extend(chassis_support(pack, fmt))
         entries.extend({"type": "modular-spider", "file": f"units/spider/{name}.{fmt}"} for name, _ in forms)
         manifest = dict(format="rw-reforge.content-pack.v1", id=f"owned-modular-spider-start-{fmt}",
                         name="Owned Modular Spider opening", units=entries)

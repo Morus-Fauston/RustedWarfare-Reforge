@@ -25,11 +25,17 @@ internal object ModularSpiderContentReader {
     }
     private val core = mapOf("class" to "CustomUnitMetadata")
     private val chassis = mapOf(
-        "core" to core + mapOf("name" to ModularSpiderRules.ID, "price" to "90000", "maxHp" to "10000",
+        "core" to core + mapOf("name" to ModularSpiderRules.ID, "price" to "90000", "buildSpeed" to "0.0002", "maxHp" to "10000",
             "radius" to "49", "fogOfWarSightRange" to "19", "transportSlotsNeeded" to "14", "maxShield" to "5000",
             "shieldRegen" to "0.3", "selfRegenRate" to "0.1", "generation_credits" to "30", "generation_delay" to "40",
+            "canRepairBuildings" to "true", "canRepairUnits" to "true", "autoRepair" to "true",
+            "nanoRange" to "220", "nanoRepairSpeed" to "0.4", "nanoBuildSpeed" to "8",
+            "nukeOnDeath" to "true", "nukeOnDeathRange" to "200", "nukeOnDeathDamage" to "4400",
+            "nukeOnDeathDisableWhenNoNuke" to "true",
             "isPickableStartingUnit" to "true", "startFallingWhenStartingUnit" to "true"),
         "graphics" to mapOf("total_frames" to "1"),
+        "canBuild_chassis" to mapOf("constructionTypes" to "repairbay", "forceNano" to "true"),
+        "turret_nanoTurret" to mapOf("warmup" to "30", "isMainNanoTurret" to "true"),
         "movement" to mapOf("movementType" to "OVER_CLIFF_WATER", "moveSpeed" to "0.6",
             "moveAccelerationSpeed" to "0.015", "moveDecelerationSpeed" to "0.015", "maxTurnSpeed" to "0.4",
             "turnAcceleration" to "0.1", "reverseSpeedPercentage" to "1"),
@@ -59,7 +65,7 @@ internal object ModularSpiderContentReader {
     private val text = setOf("name", "class", "movementType", "shoot_sound", "autoTrigger", "takeResources",
         "addResources", "interceptProjectiles_withTags", "resourceUsage", "tags", "sendMessageTo",
         "sendMessageWithTags", "sendMessageWithData", "fireTurretXAtGround_onlyOverPassableTileOf",
-        "fireTurretXAtGround", "fireTurretXAtGround_withProjectile") +
+        "fireTurretXAtGround", "fireTurretXAtGround_withProjectile", "constructionTypes") +
         references + images.values.flatten()
     private val flags = profiles.flatMap { it.values }.flatMap { it.entries }
         .filter { it.key !in text && (it.value == "true" || it.value == "false") }.map { it.key }.toSet()
@@ -67,7 +73,7 @@ internal object ModularSpiderContentReader {
         flags, text, dynamicWeapons = false, timeFieldLocations = setOf("attack" to "shootDelay"))
 
     fun readWithSources(path: Path, validatePath: (Path) -> Unit): LoadedUnitContent =
-        UnitSourceReader(schema, validatePath).load(path, setOf("onCreateSpawnUnitOf", "convertTo")) { content ->
+        UnitSourceReader(schema, validatePath).load(path, setOf("onCreateSpawnUnitOf", "convertTo", "constructionTypes")) { content ->
             fun value(section: String, field: String) = requiredContentField(content.values[section]?.get(field),
                 path, section, field, "Required modular spider field")
             val name = value("core", "name")
@@ -93,6 +99,9 @@ internal object ModularSpiderContentReader {
             for ((section, fields) in expected) for ((field, required) in fields) {
                 val actual = value(section, field)
                 val matches = when {
+                    field == "constructionTypes" -> actual.split(',').map(String::trim).let { types ->
+                        types.distinct().size == types.size && ModularSpiderRules.constructionTypes.containsAll(types)
+                    }
                     (section to field) in schema.timeFieldLocations && actual.endsWith('s') ->
                         actual.dropLast(1).toDoubleOrNull()?.times(60.0) == required.toDouble()
                     field in schema.numericFields -> actual.toDoubleOrNull() == required.toDouble()
@@ -131,13 +140,16 @@ internal object ModularSpiderContentReader {
                     val nano = image("graphics", "image_turret", 11, 19)
                     val inert = ProjectileProfile(0.0, 1.0, 1.0)
                     val mount = NamedWeaponDefinition("nanoTurret", "inert", inert, TurretMount(0.0, 18.0),
-                        85.0, 8.0, 4.0, 1.0, nano, 1.0, canAttackLandUnits = false, canShoot = false)
+                        85.0, 8.0, 4.0, 1.0, nano, 1.0, canAttackLandUnits = false, canShoot = false, warmup = 30.0)
                     UnitDefinition(name, "CustomUnitMetadata", 49.0, 49.0, 1, image("graphics", "image", 81, 113),
                         1.0, ModularSpiderRules.movement, emptySet(), fogOfWarSightRange = 19, mech = mech,
                         combat = CombatProfile(10000.0, 290.0, 85.0, 8.0, 4.0, 1.0, inert, nano, null, 1.0,
                             namedWeapons = WeaponCatalog(listOf(mount))),
                         durability = DurabilityProfile(10000.0, image("graphics", "image_wreak", 70, 90)),
                         shield = ShieldProfile(5000f, .3f), selfRegenRate = .1f, income = IncomeProfile(40f, 30f),
+                        build = ModularSpiderRules.build,
+                        builder = ModularSpiderRules.builder(value("canBuild_chassis", "constructionTypes").split(',').map(String::trim)),
+                        maintenance = MaintenanceProfile.MODULAR_SPIDER, deathExplosion = ModularSpiderRules.deathExplosion,
                         transportSlots = 14, shadowImagePath = image("graphics", "image_shadow", 81, 113),
                         attachmentLayout = AttachmentLayout(ModularSpiderRules.slots, image("graphics", "image_slotUi", 82, 114)))
                 }

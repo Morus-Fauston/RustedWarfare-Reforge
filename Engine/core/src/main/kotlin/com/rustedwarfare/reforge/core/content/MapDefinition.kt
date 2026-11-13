@@ -56,7 +56,8 @@ class MapDefinition(
 
     /** Authoritative ordinary foundation cell; resource-required buildings check their center separately. */
     fun isFoundationBlocked(col: Int, row: Int, type: MovementType): Boolean =
-        blockingFor(type).isBlocked(col, row) || isResourcePool(col, row)
+        (if (type == MovementType.AIR) col !in 0 until widthTiles || row !in 0 until heightTiles
+         else blockingFor(type).isBlocked(col, row)) || isResourcePool(col, row)
 
     /** Current liquid truth for the finite water content; bridge presence alone is not liquid. */
     internal fun isWater(col: Int, row: Int): Boolean {

@@ -83,7 +83,9 @@ internal object ContentPackComposer {
                 }
             }
             unit.builder?.buildingTypeIds?.forEach { target ->
-                if (units[target]?.construction == null) bad(target, "constructionTypes", "Builder target must exist with construction metadata in the final set")
+                val definition = units[target]
+                val construction = if (unit.id == ModularSpiderRules.ID) definition?.siteConstruction else definition?.construction
+                if (construction == null) bad(target, "constructionTypes", "Builder target must exist with construction metadata in the final set")
             }
             if (unit.className == "AuthoredBuilding") unit.upgrades?.let { profile ->
                 val target = profile.actions.singleOrNull()?.targetTypeId

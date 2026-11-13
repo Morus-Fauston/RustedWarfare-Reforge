@@ -73,6 +73,38 @@ internal object ModularSpiderRules {
     )
     val movement = MovementProfile(MovementType.OVER_CLIFF_WATER, .6, .015, .015, .4, .1, false, false, 1.0)
     val slotMovement = MovementProfile(MovementType.OVER_CLIFF_WATER, 0.0, 0.0, 0.0, 0.0, 0.0, false, false, 0.0)
+    val build = BuildProfile(90000L, .0002f)
+    val deathExplosion = DeathExplosionProfile(4400f, 200f, 75f, nuclear = true)
+    val constructionTypes = listOf("builder", "hovercraft", "c_turret_t1", "c_turret_t1_artillery",
+        "extractorT1", "fabricatorT1", "landFactory", "mechFactory", "airFactory", "seaFactory",
+        "laserDefence", "repairbay", "bomber")
+
+    fun mobileConstruction(unit: UnitDefinition): ConstructionProfile? {
+        val build = unit.build ?: return null
+        val qualified = when (unit.id) {
+            "builder" -> unit.className == "NativeBuilderFixture" && build == BuildProfile(500L, .002f)
+            "hovercraft" -> unit.transport == TransportProfile.NATIVE_HOVERCRAFT && build == BuildProfile(600L, .003f)
+            "bomber" -> BomberRules.supports(unit)
+            else -> false
+        }
+        return if (qualified) ConstructionProfile(build.price, build.rate) else null
+    }
+
+    fun builder(types: List<String>) = BuilderProfile(types, range = 220f, preparation = 30f,
+        decay = 4f, repairRate = .4f, buildSpeedMultiplier = 8f, mainNanoTurret = "nanoTurret")
+
+    fun supportsWork(unit: UnitDefinition): Boolean {
+        val work = unit.builder ?: return false
+        val expected = builder(work.buildingTypeIds)
+        return supportsChassis(unit) && unit.maintenance == MaintenanceProfile.MODULAR_SPIDER &&
+            unit.build == build && unit.deathExplosion == deathExplosion && unit.transport == null &&
+            work.buildingTypeIds.isNotEmpty() && work.buildingTypeIds.distinct().size == work.buildingTypeIds.size &&
+            constructionTypes.containsAll(work.buildingTypeIds) && work.range == expected.range &&
+            work.preparation == expected.preparation && work.decay == expected.decay &&
+            work.repairRate == expected.repairRate && work.buildSpeedMultiplier == expected.buildSpeedMultiplier &&
+            work.mainNanoTurret == expected.mainNanoTurret &&
+            unit.combat?.namedWeapons?.byName?.get("nanoTurret")?.let { !it.canShoot && it.warmup == 30.0 } == true
+    }
 
     fun supportsChassis(unit: UnitDefinition): Boolean = unit.id == ID && unit.attachmentLayout?.slots == slots &&
         unit.movement == movement && unit.maximumHealth == 10000.0 && unit.shield == ShieldProfile(5000f, .3f) &&
@@ -117,6 +149,11 @@ internal object ModularSpiderRules {
         } == true
         val spawn = unit.attachmentLayout?.slots?.firstOrNull { !available(it.initialTypeId, empty = true) }
         if (spawn != null) return Reference("attachment_slot${spawn.number}", "onCreateSpawnUnitOf", spawn.initialTypeId)
+        if (unit.id == ID) unit.builder?.buildingTypeIds?.firstOrNull {
+                units[it]?.let { target -> target.construction ?: mobileConstruction(target) } == null
+            }?.let {
+            return Reference("canBuild_chassis", "constructionTypes", it)
+        }
         val module = unit.attachmentModule ?: return null
         val conversions = module.installs.map { Reference("action_${it.action}", "convertTo", it.targetTypeId) } +
             module.upgrades.map { Reference("action_${it.action}", "convertTo", it.targetTypeId) } +

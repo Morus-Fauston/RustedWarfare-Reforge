@@ -701,7 +701,13 @@ class ModularSpiderWeaponModuleTest {
             val dependency = assertIs<ContentResult.Success<LoadedContentPack>>(ContentLoader.loadContentPack(
                 fixtures.resolve("flame-mech-production/$format/production-package"))).value
             val local = ContentLoader.loadContentPack(copy)
-            units.remove(0) // The dependency already owns mechGun.
+            val standalone = assertIs<ContentResult.Success<LoadedContentPack>>(ContentLoader.loadContentPack(
+                fixtures.resolve("modular-spider-start/$format/opening-package"))).value
+            val overlaps = standalone.unitFiles.filterKeys { it in dependency.units }.values
+                .map { standalone.root.relativize(it).joinToString("/") }.toSet()
+            for (index in (0 until units.size()).reversed()) {
+                if (units[index].asObject().get("file").asString() in overlaps) units.remove(index)
+            }
             metadata.add("dependencies", JsonArray().add(dependency.id))
             Files.writeString(manifest, metadata.toString())
             val deferred = assertIs<ContentResult.Success<LoadedContentPack>>(ContentLoader.loadContentPack(copy)).value
@@ -922,6 +928,39 @@ class ModularSpiderWeaponModuleTest {
                 assertEquals(field, error.field)
                 assertEquals(blink.toString(), error.file)
             }
+        }
+    }
+
+    @Test fun chassis_work_rejects_missing_targets_and_unsupported_nano_parameters_at_the_source() {
+        for (format in listOf("ini", "json", "hjson")) {
+            val copy = copyPack(format)
+            val chassis = copy.resolve("units/spider/spider.$format")
+            val manifest = copy.resolve("pack.json")
+            val originalManifest = Files.readString(manifest)
+            val pack = JsonValue.readHjson(originalManifest).asObject()
+            val entries = JsonArray()
+            for (entry in pack.get("units").asArray()) {
+                if (entry.asObject().getString("type", "") != "repair-bay") entries.add(entry)
+            }
+            pack.set("units", entries)
+            Files.writeString(manifest, pack.toString())
+            val missing = assertIs<ContentResult.Failure>(ContentLoader.loadContentPack(copy)).error
+            assertEquals(ContentErrorCode.BAD_REFERENCE, missing.code, missing.describe())
+            assertEquals("canBuild_chassis", missing.section)
+            assertEquals("constructionTypes", missing.field)
+            assertEquals("repairbay", missing.objectRef)
+            assertEquals(chassis.toString(), missing.file)
+            Files.writeString(manifest, originalManifest)
+
+            val original = Files.readString(chassis)
+            val field = if (format == "ini") "nanoRange: 220" else "\"nanoRange\": 220"
+            assertTrue(field in original)
+            Files.writeString(chassis, original.replaceFirst(field, field.replace("220", "219")))
+            val unsupported = assertIs<ContentResult.Failure>(ContentLoader.loadContentPack(copy)).error
+            assertEquals(ContentErrorCode.UNSUPPORTED_FEATURE, unsupported.code, unsupported.describe())
+            assertEquals("core", unsupported.section)
+            assertEquals("nanoRange", unsupported.field)
+            assertEquals(chassis.toString(), unsupported.file)
         }
     }
 

@@ -6,6 +6,7 @@ import com.rustedwarfare.reforge.core.content.MechFlameRules
 import com.rustedwarfare.reforge.core.content.ModularSpiderRules
 import com.rustedwarfare.reforge.core.content.MovementType
 import com.rustedwarfare.reforge.core.content.foundationMovementType
+import com.rustedwarfare.reforge.core.content.siteConstruction
 import com.rustedwarfare.reforge.core.content.DirectHitTargetKind
 import com.rustedwarfare.reforge.core.content.ScoutBotRules
 import com.rustedwarfare.reforge.core.content.ScoutPayloadStage
@@ -895,9 +896,11 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
         buildingWork = change.work
         productionLedger = change.ledger
         ordinaryUpgrades = change.upgrades
-        change.reclaimedUnitId?.let { missileTargets = missileTargets?.remove(it) }
-        if (change.reclaimedUnitId != null)
+        change.reclaimedUnitId?.let { id ->
+            Transport.onRemoved(units.getValue(id), units, input.map)
+            missileTargets = missileTargets?.remove(id)
             buildingTerrain = BuildingTerrain.fromLive(input.map, units.values, checkNotNull(buildingTerrain))
+        }
         pendingEvents += change.events
     }
 
@@ -1168,7 +1171,7 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
                 if (unit.carriedBy != null) continue
                 unit.qBeforeDispatch = unit.singleNodePathCount
                 unit.consumedPathNodeCounts = emptyList()
-                if (unit.definition.builder != null || unit.definition.maintenance != null && BuildingWork.isReady(unit))
+                if ((unit.definition.builder != null || unit.definition.maintenance != null) && BuildingWork.isReady(unit))
                     updateConstruction(unit, currentScenario, step)
                 buildingWork.advanceAutomatic(unit, currentScenario, step.delta) {
                     checkNotNull(missileTargets).repairCandidates(unit.position.x.toFloat(), unit.position.y.toFloat(),
@@ -1445,6 +1448,7 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
                 return SimulationError("unsupported-shield", "Expected finite positive shield capacity and nonnegative regeneration on a durable unit")
             val m = definition.movement
             val attachedProfile = definition.attachmentLayout != null || definition.attachmentModule != null
+            val spiderWork = ModularSpiderRules.supportsWork(definition)
             val spiderLightning = attachedProfile && definition.id == ModularSpiderRules.LIGHTNING
             val submarine = definition.submarine != null
             val amphibious = definition.amphibiousJet != null
@@ -1504,16 +1508,18 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
                 m.reverseSpeedPercentage != 0.0 && definition.mech == null && m.type != MovementType.WATER) ||
                 definition.mech?.let { !it.isValid() || !bunker && !nautilus && !scout && !flameMech && !attachedProfile && m.type != (if (it.kind == com.rustedwarfare.reforge.core.content.MechKind.FOUR_LEGGED) MovementType.OVER_CLIFF else MovementType.LAND) } == true)
                 return SimulationError("unsupported-mech", "Expected the finite supported mech locomotion category")
-            if (definition.maintenance != null && !RepairBay.supports(definition) && !engineer && !scout)
+            if (definition.maintenance != null && !RepairBay.supports(definition) && !engineer && !scout && !spiderWork)
                 return SimulationError("unsupported-repair-bay", "Expected the complete finite native repair bay capability")
             if (definition.reclaimPrice != null && definition.reclaimPrice < 0L)
                 return SimulationError("invalid-reclaim-price", "Explicit reclaim price must be nonnegative")
             definition.builder?.takeUnless { scout }?.let { builder ->
-                if (definition.fogOfWarSightRange < 15 || !engineer && (m.type != MovementType.LAND || m.moveSpeed > .8 ||
+                if (definition.fogOfWarSightRange < 15 || !engineer && !spiderWork && (m.type != MovementType.LAND || m.moveSpeed > .8 ||
                     builder.range != 85f || builder.preparation != 30f || builder.decay != 1.3f ||
                     builder.repairRate != .2f || builder.buildSpeedMultiplier != 1f || builder.mainNanoTurret != null) ||
                     builder.buildingTypeIds.isEmpty() || builder.buildingTypeIds.distinct().size != builder.buildingTypeIds.size ||
-                    builder.buildingTypeIds.any { input.unitDefinitions[it]?.construction == null })
+                    builder.buildingTypeIds.any { id ->
+                        input.unitDefinitions[id]?.let { if (spiderWork) it.siteConstruction else it.construction } == null
+                    })
                     return SimulationError("unsupported-construction", "Finite construction requires supported sight, movement and building targets")
             }
             definition.construction?.let { construction ->
@@ -1539,6 +1545,9 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
                     when (definition.id) {
                         "c_turret_t1" -> construction == com.rustedwarfare.reforge.core.content.ConstructionProfile(500L, .0008f) &&
                             definition.radius == 16.0 && definition.maximumHealth == 700.0 && definition.combat != null && definition.pointDefense == null
+                        "c_turret_t1_artillery" -> construction == com.rustedwarfare.reforge.core.content.ConstructionProfile(2100L, .0008f) &&
+                            definition.radius == 16.0 && definition.maximumHealth == 1000.0 && definition.techLevel == 2 &&
+                            definition.combat?.projectile?.ground != null && definition.pointDefense == null
                         "laserDefence" -> construction == com.rustedwarfare.reforge.core.content.ConstructionProfile(1200L, .001f) &&
                             definition.radius == 19.0 && definition.maximumHealth == 500.0 && definition.combat == null &&
                             definition.pointDefense == com.rustedwarfare.reforge.core.content.PointDefenseProfile()
@@ -1568,7 +1577,8 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
                     return SimulationError("unsupported-point-defense", "Expected a qualified defense and valid energy profile")
             }
             definition.deathExplosion?.let { profile ->
-                if (definition.building == null || definition.durability == null || m.type != MovementType.NONE ||
+                if ((if (profile.nuclear) !spiderWork else definition.building == null || m.type != MovementType.NONE) ||
+                    definition.durability == null ||
                     !profile.damage.isFinite() || profile.damage < 0f || !profile.radius.isFinite() || profile.radius <= 0f ||
                     !(profile.radius * profile.radius).isFinite() || !profile.expandTime.isFinite() || profile.expandTime <= 0f)
                     return SimulationError("unsupported-death-explosion", "Expected a durable immobile building and finite death area")
@@ -2327,15 +2337,13 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
                 else OrdinaryWeapon.move(projectile, checkNotNull(target), delta)
             projectile.age += delta.toFloat()
             if (projectile.revealFogPending && (hit || projectile.ballisticReachedApex && projectile.height < 30.0)) {
-                val source = checkNotNull(units[projectile.sourceUnitId])
-                projectile.revealFogPending = false
-                steps.current.temporaryVision = steps.current.temporaryVision + TemporaryVision(source.ownerPlayerId, projectile.position)
+                revealNuclearFog(projectile)
             }
             if (hit) {
                 if (projectile.nuclearTarget != null) {
                     projectile.position = projectile.nuclearTarget
                     projectile.height = 0.0
-                    projectile.expansion = AreaExpansion(com.rustedwarfare.reforge.core.content.DeathExplosionProfile(5400f, 250f, 75f), 75f)
+                    projectile.expansion = AreaExpansion(com.rustedwarfare.reforge.core.content.DeathExplosionProfile(5400f, 250f, 75f, nuclear = true), 75f)
                     projectile.hitApplied = true
                     pendingProjectileEvents += ProjectileEventObservation("impact", projectileObservation(projectile))
                     steps.current.pendingSoundTriggers += SoundTriggerObservation("reforge:events/nuke-explode", projectile.position, 1f)
@@ -2385,8 +2393,20 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
         }
     }
 
+    private fun revealNuclearFog(projectile: MutableProjectile) {
+        val source = units.getValue(projectile.sourceUnitId)
+        projectile.revealFogPending = false
+        steps.current.temporaryVision = steps.current.temporaryVision + TemporaryVision(source.ownerPlayerId, projectile.position)
+    }
+
     private fun updateDeathExplosion(projectile: MutableProjectile, delta: Double) {
         val area = checkNotNull(projectile.expansion)
+        if (area.profile.nuclear && !projectile.hitApplied) {
+            if (projectile.revealFogPending) revealNuclearFog(projectile)
+            projectile.hitApplied = true
+            pendingProjectileEvents += ProjectileEventObservation("impact", projectileObservation(projectile))
+            steps.current.pendingSoundTriggers += SoundTriggerObservation("reforge:events/nuke-explode", projectile.position, 1f)
+        }
         area.remaining = maxOf(0f, area.remaining - delta.toFloat())
         area.radius = area.profile.radius * (1f - area.remaining / area.profile.expandTime)
         projectile.age += delta.toFloat()
@@ -2397,7 +2417,7 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
         for (target in orderedUnits()) {
             if (!target.alive || target.carriedBy != null || target.health == null || target.unitId in area.hitUnitIds ||
                 target.height.toFloat() < -5f && projectile.height.toFloat() >= -2f ||
-                projectile.nuclearTarget == null && target.ownerPlayerId != source.ownerPlayerId && team != null &&
+                !area.profile.nuclear && target.ownerPlayerId != source.ownerPlayerId && team != null &&
                     players.single { it.playerId == target.ownerPlayerId }.teamId == team) continue
             val squared = GroundMath.square(projectile.position.x.toFloat(), projectile.position.y.toFloat(),
                 target.position.x.toFloat(), target.position.y.toFloat())
@@ -2410,7 +2430,7 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
             applyDamage(target, (area.profile.damage * falloff).toDouble())
         }
         if (area.remaining == 0f) {
-            pendingProjectileEvents += ProjectileEventObservation(if (projectile.nuclearTarget == null) "impact" else "area-ended", projectileObservation(projectile))
+            pendingProjectileEvents += ProjectileEventObservation(if (area.profile.nuclear) "area-ended" else "impact", projectileObservation(projectile))
             projectiles.remove(projectile)
         }
     }
@@ -2611,12 +2631,16 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
             target.angularVelocity = 0.0
             target.clearWeaponTargets()
             pendingEvents += Event("unit-died", target.unitId)
-            target.definition.deathExplosion?.takeIf { target.constructionProgress >= 1f }?.let { profile ->
+            target.definition.deathExplosion?.takeIf {
+                target.constructionProgress >= 1f && (!it.nuclear || checkNotNull(scenario).nukesEnabled)
+            }?.let { profile ->
                 val id = nextObjectId
                 nextObjectId = Math.addExact(nextObjectId, 1L)
                 val explosion = MutableProjectile(id, target.unitId, null, target.position, 0.0, 99.0,
                     Position(0.0, 0.0), 0f, 0.0, 0.0, instant = true, nonDeflectable = true,
-                    expansion = AreaExpansion(profile, profile.expandTime))
+                    expansion = AreaExpansion(profile, profile.expandTime),
+                    appearance = if (profile.nuclear) ProjectileAppearance.NUCLEAR else ProjectileAppearance.STANDARD,
+                    alwaysVisibleInFog = profile.nuclear, revealFogPending = profile.nuclear)
                 projectiles += explosion
                 pendingProjectileEvents += ProjectileEventObservation("born", projectileObservation(explosion))
             }

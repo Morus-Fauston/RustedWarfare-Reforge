@@ -61,7 +61,7 @@ class UnitDefinition(
 enum class TransportProfile { NATIVE_HOVERCRAFT, NATIVE_DROPSHIP, NAUTILUS_SUBMERGED }
 
 /** Native work capability, independent of the ordinary builder's construction menu. */
-enum class MaintenanceProfile { NATIVE_REPAIR_BAY, MECH_ENGINEER, SCOUT_BOT }
+enum class MaintenanceProfile { NATIVE_REPAIR_BAY, MECH_ENGINEER, SCOUT_BOT, MODULAR_SPIDER }
 
 /** Finite effective custom silos share their content and presentation slots. */
 data class NuclearSiloProfile(
@@ -180,6 +180,10 @@ class BuilderProfile(buildingTypeIds: List<String>, val range: Float = 85f,
     val buildingTypeIds: List<String> = Collections.unmodifiableList(ArrayList(buildingTypeIds))
 }
 data class ConstructionProfile(val price: Long, val rate: Float)
+
+/** Site work can construct these finite mobile products through the chassis nano turret. */
+val UnitDefinition.siteConstruction: ConstructionProfile?
+    get() = construction ?: ModularSpiderRules.mobileConstruction(this)
 enum class FactoryExitProfile { NATIVE_LAND, CUSTOM_MECH, NATIVE_AIR, NATIVE_SEA, CUSTOM_NAUTILUS, NATIVE_EXPERIMENTAL }
 
 /** Author buildings declare their terrain class; native sea factories retain their existing water fallback. */
@@ -199,7 +203,8 @@ class ProductionProfile(unitTypeIds: List<String>, val exitProfile: FactoryExitP
 data class BuildProfile(val price: Long, val rate: Float)
 data class IncomeProfile(val period: Float, val credits: Float)
 
-data class DeathExplosionProfile(val damage: Float, val radius: Float, val expandTime: Float)
+data class DeathExplosionProfile(val damage: Float, val radius: Float, val expandTime: Float,
+    val nuclear: Boolean = false)
 
 data class UpgradeActionProfile(val actionKey: String, val targetTypeId: String, val price: Long, val rate: Float)
 

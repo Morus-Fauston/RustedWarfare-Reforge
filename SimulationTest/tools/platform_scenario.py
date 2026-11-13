@@ -783,7 +783,7 @@ def validate_history_action(records, row, intent, geometry=None):
         # Bind the click to those finite body shapes independently of the runtime hit test.
         point=intent.get('position');target=targets[0] if len(targets)==1 else {}
         body=target.get('position',{});footprint=input_footprint(geometry)
-        radius={'c_tank':11, 'mechGun':11}.get(target.get('typeId'))
+        radius={'c_tank':11, 'mechGun':11, 'builder':12}.get(target.get('typeId'))
         hit=(point is None or radius is not None and
              isinstance(point,dict) and set(point)=={'x','y'} and isinstance(body,dict) and set(body)=={'x','y'} and
              all(type(p[k]) in (int,float) and math.isfinite(p[k]) for p in (point,body) for k in ('x','y')) and
@@ -847,7 +847,7 @@ def validate_launch_appearance(shot, units, verified_attachment_birth=None):
     style=shot.get('appearance','STANDARD')
     expected={'attackSubmarine':('SUBMARINE_MISSILE','SUBMARINE_TORPEDO'),
               'amphibiousJet':('AMPHIBIOUS_LIGHTNING',),'modularSpider_lightning':('SPIDER_LIGHTNING',),
-              'aaBeamGunship':('AA_BEAM',),'nukeLauncherC':('NUCLEAR',),
+              'aaBeamGunship':('AA_BEAM',),'nukeLauncherC':('NUCLEAR',),'modularSpider':('NUCLEAR',),
               'antiNukeLauncherC':('INTERCEPTOR',),'modularSpider_antinuke':('INTERCEPTOR',),
               'mechFlame':('MECH_FLAME',)}.get(source.get('typeId'),('STANDARD',))
     if verified_attachment_birth is not None:

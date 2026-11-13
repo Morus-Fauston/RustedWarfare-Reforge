@@ -3,7 +3,7 @@ package com.rustedwarfare.reforge.client
 import com.rustedwarfare.reforge.core.sim.*
 import com.rustedwarfare.reforge.core.content.MovementType
 import com.rustedwarfare.reforge.core.content.foundationMovementType
-import com.rustedwarfare.reforge.core.content.waterBlocked
+import com.rustedwarfare.reforge.core.content.GroundRules
 import java.util.UUID
 import java.nio.file.Path
 
@@ -259,7 +259,7 @@ class SandboxSession(scenario: Scenario, private val evidence: ClientEvidence = 
                 scenario.unitDefinitions.getValue(unit.typeId).builder != null }
 
     private fun maintenanceTarget(target: UnitObservation, reclaim: Boolean, explicit: Boolean = false): Boolean {
-        if (!target.alive || target.carriedBy != null || target.health == null) return false
+        if (!target.alive || target.carriedBy != null || target.attachment != null || target.health == null) return false
         val definition = scenario.unitDefinitions.getValue(target.typeId)
         if (hasSelectedNativeMaintainer()) {
             if (reclaim) return target.ownerPlayerId == "p1" && (definition.build != null ||
@@ -300,9 +300,8 @@ class SandboxSession(scenario: Scenario, private val evidence: ClientEvidence = 
             val tile = gid - tileset.firstGid
             if (building.requiresResourcePool) {
                 if (tile !in tileset.resourcePoolTileIds) blocked = true
-            } else if (tile in tileset.resourcePoolTileIds ||
-                if (definition.foundationMovementType == MovementType.WATER) map.tileSets.waterBlocked(gid)
-                else tile in tileset.blockedTileIds || tile in tileset.waterTileIds) blocked = true
+            } else if (tile in tileset.resourcePoolTileIds || definition.foundationMovementType != MovementType.AIR &&
+                GroundRules.blocked(map.tileSets, gid, definition.foundationMovementType)) blocked = true
         }
         if (observation.units.any { unit -> unit.alive && scenario.unitDefinitions.getValue(unit.typeId).building?.let {
                 cells(unit.position, it).any { cell -> cell in candidate }
@@ -312,7 +311,7 @@ class SandboxSession(scenario: Scenario, private val evidence: ClientEvidence = 
                 typeId in scenario.unitDefinitions.getValue(it.typeId).builder?.buildingTypeIds.orEmpty() }
             if (constructors.all { creator -> observation.units.any { other ->
                 val shape = scenario.unitDefinitions.getValue(other.typeId)
-                other.unitId != creator.unitId && other.alive && other.carriedBy == null &&
+                other.unitId != creator.unitId && other.alive && other.carriedBy == null && other.attachment == null &&
                     ConstructionPlacement.mobileOverlaps(position, definition.radius, other.position, shape.radius, shape.building != null)
             } }) blocked = true
         }

@@ -42,7 +42,8 @@ internal class NuclearPresentation {
             }
             for (event in view.projectileEvents) {
                 val kind = when {
-                    event.kind == "born" && event.appearance in setOf(ProjectileAppearance.NUCLEAR, ProjectileAppearance.INTERCEPTOR) ->
+                    event.kind == "born" && event.areaRadius == null &&
+                        event.appearance in setOf(ProjectileAppearance.NUCLEAR, ProjectileAppearance.INTERCEPTOR) ->
                         NuclearEffectKind.LAUNCH
                     event.kind == "intercepted" && event.appearance == ProjectileAppearance.NUCLEAR -> NuclearEffectKind.INTERCEPTION
                     event.kind == "impact" && event.appearance == ProjectileAppearance.NUCLEAR -> NuclearEffectKind.EXPLOSION

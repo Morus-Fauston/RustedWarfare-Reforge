@@ -2,6 +2,7 @@ package com.rustedwarfare.reforge.client
 
 import com.rustedwarfare.reforge.core.content.UnitDefinition
 import com.rustedwarfare.reforge.core.content.UpgradeActionProfile
+import com.rustedwarfare.reforge.core.content.siteConstruction
 import com.rustedwarfare.reforge.core.sim.*
 import java.util.Collections
 import java.util.Locale
@@ -118,7 +119,7 @@ internal class ActionCatalogue(private val definitions: Map<String, UnitDefiniti
     fun nominalIncome(type: String): Float? = definitions[type]?.income?.let { it.credits * 40f / it.period }
     private val nominalSeconds = mapOf("extractorT1" to "27.7", "extractorT2" to "55.5",
         "fabricatorT1" to "65.6", "fabricatorT2" to "93.3")
-    private val construction = definitions.mapValues { (_, d) -> d.construction?.let { build ->
+    private val construction = definitions.mapValues { (_, d) -> d.siteConstruction?.let { build ->
         ConstructionActionView(d.id, title(d.id), d.imagePath, build.price, checkNotNull(d.maximumHealth), build.rate,
             when (d.id) {
                 "c_turret_t1" -> "X ${title(d.id, panel = true)}"
@@ -272,7 +273,8 @@ internal class ActionCatalogue(private val definitions: Map<String, UnitDefiniti
         })
         val workers = view.units.filter { it.unitId in ids }
         val validWorkers = workers.isNotEmpty() && workers.size == ids.size && workers.all { controllable(it) }
-        val buildings = if (!validWorkers || workers.any { it.typeId != workers.first().typeId }) emptyList()
+        val slotPage = ownSingle?.attachmentOverview?.selectedSlot != null
+        val buildings = if (!validWorkers || slotPage || workers.any { it.typeId != workers.first().typeId }) emptyList()
             else immutable(definitions.getValue(workers.first().typeId).builder?.buildingTypeIds.orEmpty()
                 .filter { nukesEnabled || definitions.getValue(it).nuclearSilo == null }
                 .map { checkNotNull(construction[it]) })
