@@ -107,6 +107,7 @@ internal object UnitAttachments {
             val cooldown = kotlin.math.ceil(child.attachmentCooldown * 1000.0 / 60.0).toInt()
             val ready = order == null && cooldown == 0
             val balance = checkNotNull(state.productionLedger).balances.getValue(child.ownerPlayerId)
+            val slotOrderIndex = queue.size
             if (child.typeId == ModularSpiderRules.ANTI_NUKE) {
                 ammo = child.attachmentInterceptor.ammo
                 online = !child.attachmentInterceptor.offline
@@ -125,12 +126,12 @@ internal object UnitAttachments {
             }
             for (install in profile.installs) {
                 val queued = (order as? AttachmentOrder.Install)?.action == install
-                actions += UnitActionObservation(install.action, queue.size.takeIf { queued }, 0f.takeIf { queued },
+                actions += UnitActionObservation(install.action, slotOrderIndex.takeIf { queued }, 0f.takeIf { queued },
                     cooldown, ready && balance >= install.cost)
             }
             for (upgrade in profile.upgrades) {
                 val queued = (order as? AttachmentOrder.Upgrade)?.takeIf { it.action == upgrade }
-                actions += UnitActionObservation(upgrade.action, queue.size.takeIf { queued != null }, queued?.progress,
+                actions += UnitActionObservation(upgrade.action, slotOrderIndex.takeIf { queued != null }, queued?.progress,
                     cooldown, ready && balance >= upgrade.cost)
             }
             if (!BuildingWork.isReady(child) && profile.cancel != null) {
@@ -144,6 +145,14 @@ internal object UnitAttachments {
                     queued?.let { 1f - it.remaining / it.action.ticks }, cooldown,
                     ready)
             }
+            val queuedSlotOrder = when (order) {
+                is AttachmentOrder.Install -> QueuedUnitActionObservation(order.name, 0f, null)
+                is AttachmentOrder.Upgrade -> QueuedUnitActionObservation(order.name, order.progress, null)
+                is AttachmentOrder.Reclaim -> if (online == null)
+                    QueuedUnitActionObservation("reclaim", 1f - order.remaining / order.action.ticks, null) else null
+                else -> null
+            }
+            if (queuedSlotOrder != null) queue += queuedSlotOrder
         }
         return UnitActionsObservation(immutable(actions), 0f, ammo, immutable(queue), online)
     }

@@ -93,11 +93,11 @@ class ModularSpiderOpeningTest {
             assertEquals("unknownSlotRotation", unknown.field)
             Files.writeString(chassis, original)
 
-            Files.writeString(pack.resolve("pack.json"), """
-                {"format":"rw-reforge.content-pack.v1","id":"owned-missing-gun-$format","name":"Owned missing module",
-                 "units":[{"type":"modular-spider","file":"units/spider/spider.$format"},
-                          {"type":"modular-spider","file":"units/spider/empty.$format"}]}
-            """.trimIndent())
+            val manifest = pack.resolve("pack.json")
+            val gunEntry = Regex(""",\s*\{\s*"type":\s*"modular-spider",\s*"file":\s*"units/spider/gun\.$format"\s*}""")
+            val complete = Files.readString(manifest)
+            assertEquals(1, gunEntry.findAll(complete).count())
+            Files.writeString(manifest, complete.replace(gunEntry, ""))
             val absent = assertIs<ContentResult.Failure>(ContentLoader.loadContentPack(pack)).error
             assertEquals(ContentErrorCode.BAD_REFERENCE, absent.code, absent.describe())
             assertEquals("convertTo", absent.field)

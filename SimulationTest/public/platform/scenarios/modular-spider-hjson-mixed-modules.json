@@ -1,0 +1,305 @@
+{
+  "schemaVersion": 1,
+  "scenarioId": "modular-spider-hjson-mixed-modules",
+  "inputs": "../../inputs/modular-spider-start/hjson",
+  "contentPack": {
+    "directory": "opening-package",
+    "unitId": "modularSpider"
+  },
+  "intents": [
+    {
+      "intentId": "settle-opening",
+      "kind": "select",
+      "waitSteps": 100,
+      "position": {
+        "x": 40,
+        "y": 40
+      }
+    },
+    {
+      "intentId": "select-spider",
+      "kind": "select",
+      "waitSteps": 0,
+      "position": {
+        "x": 190,
+        "y": 150
+      }
+    },
+    {
+      "intentId": "leave-enemy-range",
+      "kind": "move",
+      "waitSteps": 260,
+      "position": {
+        "x": 80,
+        "y": 150
+      }
+    },
+    {
+      "intentId": "select-primary-slot",
+      "kind": "unit-action",
+      "waitSteps": 0,
+      "actionName": "selectSlot1"
+    },
+    {
+      "intentId": "buy-small-laser",
+      "kind": "unit-action",
+      "waitSteps": 10,
+      "actionName": "buildSmallLaser"
+    },
+    {
+      "intentId": "select-defense-slot",
+      "kind": "unit-action",
+      "waitSteps": 0,
+      "actionName": "selectSlot2"
+    },
+    {
+      "intentId": "buy-point-defense",
+      "kind": "unit-action",
+      "waitSteps": 600,
+      "actionName": "buildLaserdefense"
+    },
+    {
+      "intentId": "earn-mixed-1",
+      "kind": "stop",
+      "waitSteps": 600
+    },
+    {
+      "intentId": "earn-mixed-2",
+      "kind": "stop",
+      "waitSteps": 600
+    },
+    {
+      "intentId": "earn-mixed-3",
+      "kind": "stop",
+      "waitSteps": 600
+    },
+    {
+      "intentId": "earn-mixed-4",
+      "kind": "stop",
+      "waitSteps": 600
+    },
+    {
+      "intentId": "earn-mixed-5",
+      "kind": "stop",
+      "waitSteps": 600
+    },
+    {
+      "intentId": "earn-mixed-6",
+      "kind": "stop",
+      "waitSteps": 600
+    },
+    {
+      "intentId": "earn-mixed-7",
+      "kind": "stop",
+      "waitSteps": 600
+    },
+    {
+      "intentId": "earn-mixed-8",
+      "kind": "stop",
+      "waitSteps": 600
+    },
+    {
+      "intentId": "earn-mixed-9",
+      "kind": "stop",
+      "waitSteps": 600
+    },
+    {
+      "intentId": "earn-mixed-10",
+      "kind": "stop",
+      "waitSteps": 600
+    },
+    {
+      "intentId": "earn-mixed-11",
+      "kind": "stop",
+      "waitSteps": 600
+    },
+    {
+      "intentId": "earn-mixed-12",
+      "kind": "stop",
+      "waitSteps": 600
+    },
+    {
+      "intentId": "earn-mixed-13",
+      "kind": "stop",
+      "waitSteps": 600
+    },
+    {
+      "intentId": "earn-mixed-14",
+      "kind": "stop",
+      "waitSteps": 600
+    },
+    {
+      "intentId": "earn-mixed-15",
+      "kind": "stop",
+      "waitSteps": 600
+    },
+    {
+      "intentId": "earn-mixed-16",
+      "kind": "stop",
+      "waitSteps": 600
+    },
+    {
+      "intentId": "earn-mixed-17",
+      "kind": "stop",
+      "waitSteps": 600
+    },
+    {
+      "intentId": "earn-mixed-18",
+      "kind": "stop",
+      "waitSteps": 600
+    },
+    {
+      "intentId": "earn-mixed-19",
+      "kind": "stop",
+      "waitSteps": 600
+    },
+    {
+      "intentId": "earn-mixed-20",
+      "kind": "stop",
+      "waitSteps": 600
+    },
+    {
+      "intentId": "earn-mixed-21",
+      "kind": "stop",
+      "waitSteps": 600
+    },
+    {
+      "intentId": "earn-mixed-22",
+      "kind": "stop",
+      "waitSteps": 600
+    },
+    {
+      "intentId": "earn-mixed-23",
+      "kind": "stop",
+      "waitSteps": 600
+    },
+    {
+      "intentId": "earn-mixed-24",
+      "kind": "stop",
+      "waitSteps": 600
+    },
+    {
+      "intentId": "earn-mixed-25",
+      "kind": "stop",
+      "waitSteps": 600
+    },
+    {
+      "intentId": "earn-mixed-26",
+      "kind": "stop",
+      "waitSteps": 600
+    },
+    {
+      "intentId": "earn-mixed-27",
+      "kind": "stop",
+      "waitSteps": 600
+    },
+    {
+      "intentId": "earn-mixed-28",
+      "kind": "stop",
+      "waitSteps": 600
+    },
+    {
+      "intentId": "earn-mixed-29",
+      "kind": "stop",
+      "waitSteps": 600
+    },
+    {
+      "intentId": "earn-mixed-30",
+      "kind": "stop",
+      "waitSteps": 600
+    },
+    {
+      "intentId": "earn-mixed-31",
+      "kind": "stop",
+      "waitSteps": 600
+    },
+    {
+      "intentId": "earn-mixed-32",
+      "kind": "stop",
+      "waitSteps": 600
+    },
+    {
+      "intentId": "earn-mixed-33",
+      "kind": "stop",
+      "waitSteps": 600
+    },
+    {
+      "intentId": "earn-mixed-34",
+      "kind": "stop",
+      "waitSteps": 600
+    },
+    {
+      "intentId": "earn-mixed-35",
+      "kind": "stop",
+      "waitSteps": 600
+    },
+    {
+      "intentId": "earn-mixed-36",
+      "kind": "stop",
+      "waitSteps": 600
+    },
+    {
+      "intentId": "select-transport-slot",
+      "kind": "unit-action",
+      "waitSteps": 0,
+      "actionName": "selectSlot3"
+    },
+    {
+      "intentId": "buy-mobility",
+      "kind": "unit-action",
+      "waitSteps": 600,
+      "actionName": "buildBlink"
+    },
+    {
+      "intentId": "finish-mobility",
+      "kind": "stop",
+      "waitSteps": 450
+    },
+    {
+      "intentId": "blink-mixed-loadout",
+      "kind": "unit-action",
+      "waitSteps": 4,
+      "actionName": "blink",
+      "target": {
+        "x": 175,
+        "y": 185
+      }
+    },
+    {
+      "intentId": "select-primary-during-blink",
+      "kind": "unit-action",
+      "waitSteps": 0,
+      "actionName": "selectSlot1"
+    },
+    {
+      "intentId": "queue-upgrade-during-blink",
+      "kind": "unit-action",
+      "waitSteps": 6,
+      "actionName": "upgradeT2"
+    },
+    {
+      "intentId": "cancel-upgrade-during-blink",
+      "kind": "unit-action",
+      "waitSteps": 225,
+      "actionName": "upgradeT2",
+      "cancelQueued": true
+    },
+    {
+      "intentId": "reclaim-primary",
+      "kind": "unit-action",
+      "waitSteps": 185,
+      "actionName": "reclaim"
+    },
+    {
+      "intentId": "replace-primary",
+      "kind": "unit-action",
+      "waitSteps": 600,
+      "actionName": "buildGun"
+    },
+    {
+      "intentId": "finish-replacement",
+      "kind": "stop",
+      "waitSteps": 450
+    }
+  ]
+}

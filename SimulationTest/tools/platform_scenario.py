@@ -1091,14 +1091,15 @@ def compare_history(records, plan, policy, native_anchors=None, geometry=None):
              'ownerPlayerId','initialOwnedTypes','finalUnits','minimumBirths',
              'productionOrder','completedUpgradeTypes','initialIncome','producedIncome','transportStages','unitActionStages',
              'bunkerStages','reclaimRefunds','nautilusTerrain','nuclearHistory','navalAmmoHistory',
-             'spiderOpening','spiderWeaponModules','spiderUtilityModules','spiderDefenseModules','spiderBlink'}
+             'spiderOpening','spiderWeaponModules','spiderUtilityModules','spiderDefenseModules','spiderBlink',
+             'spiderMixedModules'}
     if not isinstance(policy,dict) or set(policy)-allowed:
         raise PlatformError('input-contract', 'Unknown or malformed history obligations', 1)
     balance = policy.get('initialBalance')
     if type(balance) not in (int, float) or not math.isfinite(balance):
         raise PlatformError('input-contract', 'History requires a finite initial balance', 1)
     spider_checks = {field for field in ('spiderOpening', 'spiderWeaponModules', 'spiderUtilityModules',
-                                        'spiderDefenseModules', 'spiderBlink') if field in policy}
+                                        'spiderDefenseModules', 'spiderBlink', 'spiderMixedModules') if field in policy}
     if len(spider_checks) > 1 or any(policy[field] is not True for field in spider_checks):
         raise PlatformError('input-contract', 'Expected one explicit Modular Spider history contract', 1)
     slot_credits = {}
@@ -1108,6 +1109,8 @@ def compare_history(records, plan, policy, native_anchors=None, geometry=None):
         slot_credits = spider_platform.defense_adjustments(records)
     elif 'spiderBlink' in spider_checks:
         spider_platform.validate_blink_history(records)
+    elif 'spiderMixedModules' in spider_checks:
+        slot_credits = spider_platform.mixed_adjustments(records)
     elif spider_checks:
         slot_credits = spider_platform.opening_refunds(records, 'spiderWeaponModules' in spider_checks)
     income=policy.get('initialIncome')

@@ -18,7 +18,8 @@ class PlatformIntentTest(unittest.TestCase):
 
         def observe(parent_queue, index):
             action = dict(available=index is None, queueIndex=index, progress=0 if index is not None else None)
-            return dict(attachmentOverview=layout, unitActions=dict(queue=parent_queue, actions={name: action}))
+            queue = parent_queue if index is None else [*parent_queue, dict(name=name, progress=0, target=None)]
+            return dict(attachmentOverview=layout, unitActions=dict(queue=queue, actions={name: action}))
 
         def compare(old, new, cancel):
             intent = dict(actionName=name, cancelQueued=cancel)
@@ -36,9 +37,51 @@ class PlatformIntentTest(unittest.TestCase):
                     compare(available, wrong_index, False)
                 with self.assertRaises(PlatformError):
                     compare(wrong_index, available, True)
+                missing = copy.deepcopy(queued)
+                missing["unitActions"]["queue"].pop()
+                with self.assertRaises(PlatformError):
+                    compare(available, missing, False)
         replaced = observe([dict(charge, target=dict(x=300, y=250))], 1)
         with self.assertRaises(PlatformError):
             compare(observe([charge], None), replaced, False)
+
+    def test_spider_blink_inserts_before_reclaim_and_keeps_its_cancellable_index(self):
+        from spider_platform import validate_call
+
+        layout = dict(selectedSlot=1, slots=[dict(number=1, typeId="modularSpider_blink")])
+        target = dict(x=130, y=190)
+        reclaim = dict(name="reclaim", progress=.2, target=None)
+        blink = dict(name="blink", progress=0, target=target)
+
+        def state(queue, reclaim_index):
+            actions = dict(blink=dict(available=blink not in queue),
+                           reclaim=dict(queueIndex=reclaim_index, progress=.2 if reclaim in queue else None))
+            return dict(attachmentOverview=layout, unitActions=dict(actions=actions, queue=queue))
+
+        before = state([reclaim], 0)
+        after = state([blink, reclaim], 1)
+        intent = dict(actionName="blink", target=target, cancelQueued=False)
+        validate_call(before, after, intent, intent, dict(x=0, y=0))
+        with self.assertRaises(PlatformError):
+            validate_call(before, state([reclaim, blink], 0), intent, intent, dict(x=0, y=0))
+        intent = dict(actionName="reclaim", cancelQueued=True)
+        validate_call(after, state([blink], None), dict(intent, target=None), intent, {})
+
+    def test_spider_rejects_a_frozen_queue_progress_against_its_advancing_action_card(self):
+        from spider_platform import SLOTS, validate_state
+
+        actions = {name: dict(available=True, queueIndex=None, progress=None, cooldownRemaining=0) for name in SLOTS}
+        actions['blinkQueued'] = dict(available=False, queueIndex=0, progress=.25, cooldownRemaining=0)
+        actions['upgradeT2'] = dict(available=False, queueIndex=1, progress=.125, cooldownRemaining=0)
+        queue = [dict(name='blinkQueued', progress=.25, target=dict(x=175, y=185)),
+                 dict(name='upgradeT2', progress=.125, target=None)]
+        unit = dict(ownerPlayerId='p1', alive=True,
+                    attachmentOverview=dict(selectedSlot=1, slots=[dict(number=1, typeId='modularSpider_smallgunturret')]),
+                    unitActions=dict(actions=actions, queue=queue, automaticCooldown=0))
+        validate_state(unit, 'p1')
+        queue[1]['progress'] = 0
+        with self.assertRaises(PlatformError):
+            validate_state(unit, 'p1')
 
     def test_spider_fabricator_income_follows_completion_conversion_and_same_slot_phase(self):
         import spider_platform

@@ -1,0 +1,260 @@
+{
+  "schemaVersion": 1,
+  "scenarioId": "modular-spider-json-mixed-modules",
+  "history": {
+    "ownerPlayerId": "p1",
+    "initialBalance": 5000,
+    "noActionIntents": [
+      "settle-opening"
+    ],
+    "initialOwnedTypes": [
+      "modularSpider",
+      "modularSpider_emptySlot",
+      "modularSpider_emptySlot",
+      "modularSpider_emptySlot",
+      "modularSpider_emptySlot",
+      "modularSpider_emptySlot",
+      "modularSpider_emptySlot"
+    ],
+    "initialIncome": {
+      "unitId": "a",
+      "typeId": "modularSpider",
+      "period": 40,
+      "credits": 30
+    },
+    "spend": [
+      {
+        "intentId": "buy-small-laser",
+        "amount": 700,
+        "at": "action"
+      },
+      {
+        "intentId": "buy-point-defense",
+        "amount": 3000,
+        "at": "action"
+      },
+      {
+        "intentId": "buy-mobility",
+        "amount": 15000,
+        "at": "action"
+      },
+      {
+        "intentId": "queue-upgrade-during-blink",
+        "amount": 3000,
+        "at": "action"
+      },
+      {
+        "intentId": "cancel-upgrade-during-blink",
+        "amount": 3000,
+        "at": "action"
+      },
+      {
+        "intentId": "replace-primary",
+        "amount": 2000,
+        "at": "action"
+      }
+    ],
+    "mechLegs": {
+      "modularSpider": 8,
+      "mechGun": 2
+    },
+    "projectileBirthsRequired": true,
+    "minimumBirths": [],
+    "finalUnits": [
+      {
+        "ownerPlayerId": "p1",
+        "typeId": "modularSpider",
+        "fields": {
+          "alive": true,
+          "constructionProgress": 1
+        }
+      },
+      {
+        "ownerPlayerId": "p1",
+        "typeId": "modularSpider_gunturret",
+        "fields": {
+          "alive": true,
+          "constructionProgress": 1
+        }
+      },
+      {
+        "ownerPlayerId": "p1",
+        "typeId": "modularSpider_laserdefense",
+        "fields": {
+          "alive": true,
+          "constructionProgress": 1
+        }
+      },
+      {
+        "ownerPlayerId": "p1",
+        "typeId": "modularSpider_blink",
+        "fields": {
+          "alive": true,
+          "constructionProgress": 1
+        }
+      }
+    ],
+    "spiderMixedModules": true
+  },
+  "rules": [
+    {
+      "intentId": "settle-opening"
+    },
+    {
+      "intentId": "select-spider"
+    },
+    {
+      "intentId": "leave-enemy-range"
+    },
+    {
+      "intentId": "select-primary-slot"
+    },
+    {
+      "intentId": "buy-small-laser"
+    },
+    {
+      "intentId": "select-defense-slot"
+    },
+    {
+      "intentId": "buy-point-defense"
+    },
+    {
+      "intentId": "earn-mixed-1"
+    },
+    {
+      "intentId": "earn-mixed-2"
+    },
+    {
+      "intentId": "earn-mixed-3"
+    },
+    {
+      "intentId": "earn-mixed-4"
+    },
+    {
+      "intentId": "earn-mixed-5"
+    },
+    {
+      "intentId": "earn-mixed-6"
+    },
+    {
+      "intentId": "earn-mixed-7"
+    },
+    {
+      "intentId": "earn-mixed-8"
+    },
+    {
+      "intentId": "earn-mixed-9"
+    },
+    {
+      "intentId": "earn-mixed-10"
+    },
+    {
+      "intentId": "earn-mixed-11"
+    },
+    {
+      "intentId": "earn-mixed-12"
+    },
+    {
+      "intentId": "earn-mixed-13"
+    },
+    {
+      "intentId": "earn-mixed-14"
+    },
+    {
+      "intentId": "earn-mixed-15"
+    },
+    {
+      "intentId": "earn-mixed-16"
+    },
+    {
+      "intentId": "earn-mixed-17"
+    },
+    {
+      "intentId": "earn-mixed-18"
+    },
+    {
+      "intentId": "earn-mixed-19"
+    },
+    {
+      "intentId": "earn-mixed-20"
+    },
+    {
+      "intentId": "earn-mixed-21"
+    },
+    {
+      "intentId": "earn-mixed-22"
+    },
+    {
+      "intentId": "earn-mixed-23"
+    },
+    {
+      "intentId": "earn-mixed-24"
+    },
+    {
+      "intentId": "earn-mixed-25"
+    },
+    {
+      "intentId": "earn-mixed-26"
+    },
+    {
+      "intentId": "earn-mixed-27"
+    },
+    {
+      "intentId": "earn-mixed-28"
+    },
+    {
+      "intentId": "earn-mixed-29"
+    },
+    {
+      "intentId": "earn-mixed-30"
+    },
+    {
+      "intentId": "earn-mixed-31"
+    },
+    {
+      "intentId": "earn-mixed-32"
+    },
+    {
+      "intentId": "earn-mixed-33"
+    },
+    {
+      "intentId": "earn-mixed-34"
+    },
+    {
+      "intentId": "earn-mixed-35"
+    },
+    {
+      "intentId": "earn-mixed-36"
+    },
+    {
+      "intentId": "select-transport-slot"
+    },
+    {
+      "intentId": "buy-mobility"
+    },
+    {
+      "intentId": "finish-mobility"
+    },
+    {
+      "intentId": "blink-mixed-loadout"
+    },
+    {
+      "intentId": "select-primary-during-blink"
+    },
+    {
+      "intentId": "queue-upgrade-during-blink"
+    },
+    {
+      "intentId": "cancel-upgrade-during-blink"
+    },
+    {
+      "intentId": "reclaim-primary"
+    },
+    {
+      "intentId": "replace-primary"
+    },
+    {
+      "intentId": "finish-replacement"
+    }
+  ]
+}

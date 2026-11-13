@@ -121,6 +121,30 @@ def blink_intents():
     ]
 
 
+def mixed_intents():
+    def action(name, command, wait=0, **fields):
+        return intent(name, 'unit-action', wait, actionName=command, **fields)
+
+    return [
+        intent('leave-enemy-range', 'move', 260, position=dict(x=80, y=150)),
+        action('select-primary-slot', 'selectSlot1'),
+        action('buy-small-laser', 'buildSmallLaser', 10),
+        action('select-defense-slot', 'selectSlot2'),
+        action('buy-point-defense', 'buildLaserdefense', 600),
+        *(intent(f'earn-mixed-{index}', 'stop', 600) for index in range(1, 37)),
+        action('select-transport-slot', 'selectSlot3'),
+        action('buy-mobility', 'buildBlink', 600),
+        intent('finish-mobility', 'stop', 450),
+        action('blink-mixed-loadout', 'blink', 4, target=dict(x=175, y=185)),
+        action('select-primary-during-blink', 'selectSlot1'),
+        action('queue-upgrade-during-blink', 'upgradeT2', 6),
+        action('cancel-upgrade-during-blink', 'upgradeT2', 225, cancelQueued=True),
+        action('reclaim-primary', 'reclaim', 185),
+        action('replace-primary', 'buildGun', 600),
+        intent('finish-replacement', 'stop', 450),
+    ]
+
+
 def chassis_intents():
     def point(name, kind, wait, x, y, **fields):
         return intent(name, kind, wait, position=dict(x=x, y=y), **fields)
@@ -142,9 +166,9 @@ def chassis_intents():
 
 
 def generate(weapon_modules=False, destination=PLATFORM, *, special_weapons=False, utility_modules=False,
-             defense_modules=False, blink_module=False, chassis=False):
+             defense_modules=False, blink_module=False, chassis=False, mixed_modules=False):
     for form in ('ini', 'json', 'hjson'):
-        case = ('chassis' if chassis else 'blink-module' if blink_module else 'defense-modules' if defense_modules else 'utility-modules' if utility_modules else 'special-weapons' if special_weapons
+        case = ('mixed-modules' if mixed_modules else 'chassis' if chassis else 'blink-module' if blink_module else 'defense-modules' if defense_modules else 'utility-modules' if utility_modules else 'special-weapons' if special_weapons
                 else 'weapon-modules' if weapon_modules else 'opening')
         identity = f'modular-spider-{form}-{case}'
         steps = [
@@ -170,7 +194,22 @@ def generate(weapon_modules=False, destination=PLATFORM, *, special_weapons=Fals
             finalUnits=[dict(ownerPlayerId='p1', typeId=unit, fields=dict(alive=True))
                         for unit in ('modularSpider', 'modularSpider_gunturret')],
         )
-        if chassis:
+        if mixed_modules:
+            steps[2:] = mixed_intents()
+            history.pop('spiderOpening')
+            history.update(
+                spiderMixedModules=True,
+                spend=[dict(intentId=name, amount=price, at='action') for name, price in (
+                    ('buy-small-laser', 700), ('buy-point-defense', 3000), ('buy-mobility', 15000),
+                    ('queue-upgrade-during-blink', 3000), ('cancel-upgrade-during-blink', 3000),
+                    ('replace-primary', 2000),
+                )],
+                minimumBirths=[],
+                finalUnits=[dict(ownerPlayerId='p1', typeId=unit, fields=dict(alive=True, constructionProgress=1))
+                            for unit in ('modularSpider', 'modularSpider_gunturret',
+                                         'modularSpider_laserdefense', 'modularSpider_blink')],
+            )
+        elif chassis:
             steps[2:] = chassis_intents()
             history.pop('spiderOpening')
             history.update(
@@ -281,6 +320,8 @@ if __name__ == '__main__':
     cases.add_argument('--defense-modules', action='store_true')
     cases.add_argument('--blink-module', action='store_true')
     cases.add_argument('--chassis', action='store_true')
+    cases.add_argument('--mixed-modules', action='store_true')
     arguments = parser.parse_args()
     generate(arguments.weapon_modules, special_weapons=arguments.special_weapons, utility_modules=arguments.utility_modules,
-             defense_modules=arguments.defense_modules, blink_module=arguments.blink_module, chassis=arguments.chassis)
+             defense_modules=arguments.defense_modules, blink_module=arguments.blink_module, chassis=arguments.chassis,
+             mixed_modules=arguments.mixed_modules)
