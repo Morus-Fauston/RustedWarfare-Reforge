@@ -39,3 +39,8 @@ inputs/author-water/*/** -text whitespace=blank-at-eol,blank-at-eof,space-before
 inputs/resource-sound-packs/portrait-sandbox/maps/p001-controlled.tmx -whitespace
 inputs/resource-sound-packs/sandbox/maps/portrait.tmx -whitespace
 inputs/nuclear-silo/** -text whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol
+inputs/aa-beam-production/** -text whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol
+inputs/amphibious-production/** -text whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol
+inputs/bunker-production/** -text whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol
+inputs/mech-engineer-production/** -text whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol
+inputs/repairbay-production/** -text whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol
