@@ -3,10 +3,18 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
+    inputs:
+      pr:
+        description: PR number for fixed candidate verification
+        type: string
+      qualification:
+        description: Public PR workflow run ID with three complete attempts
+        type: string
 permissions:
   contents: read
 jobs:
   public-long:
+    if: github.event_name == 'push' || (inputs.pr == '' && inputs.qualification == '')
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -25,4 +33,56 @@ jobs:
         with:
           name: public-long-evidence
           path: SimulationTest/build/public-long
+          if-no-files-found: error
+
+  public-final-candidate:
+    if: github.event_name == 'workflow_dispatch' && (inputs.pr != '' || inputs.qualification != '')
+    concurrency:
+      group: public-final-${{ github.run_id }}
+      cancel-in-progress: false
+    permissions:
+      contents: read
+      pull-requests: read
+      actions: read
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - name: Resolve the fixed merge checkout
+        id: candidate
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ inputs.pr }}
+          QUALIFICATION: ${{ inputs.qualification }}
+        run: |
+          [[ "$PR" =~ ^[1-9][0-9]*$ && "$QUALIFICATION" =~ ^[1-9][0-9]*$ ]]
+          data=$(gh api "repos/$GITHUB_REPOSITORY/pulls/$PR")
+          head=$(jq -er '.head.sha' <<< "$data")
+          checkout=$(jq -er '.merge_commit_sha | select(test("^[0-9a-f]{40}$"))' <<< "$data")
+          [[ "$head" == "$GITHUB_SHA" ]]
+          printf 'checkout=%s\n' "$checkout" >> "$GITHUB_OUTPUT"
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ steps.candidate.outputs.checkout }}
+          fetch-depth: 2
+          persist-credentials: false
+      - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6
+        with:
+          distribution: temurin
+          java-version: '25'
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7
+        with:
+          python-version: '3.13'
+      - name: Verify qualified PR, complete technology and continuous long layer
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ inputs.pr }}
+          QUALIFICATION: ${{ inputs.qualification }}
+        run: >-
+          python -B SimulationTest/ci/public_final_candidate.py --pr "$PR" --run "$QUALIFICATION"
+          --output SimulationTest/build/public-final-candidate
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always()
+        with:
+          name: public-final-candidate-${{ github.run_attempt }}
+          path: SimulationTest/build/public-final-candidate
           if-no-files-found: error

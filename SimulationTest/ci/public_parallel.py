@@ -32,7 +32,7 @@ PRODUCTION = ('production-1', 'production-2', 'production-3')
 SCENARIOS = (*PRODUCTION, 'other-short', 'content-three-formats')
 COLD_BUILD_TIMEOUT = 900
 COMMAND_TIMEOUT = 600
-FORKS = 2
+FORKS = 4
 WORKERS = 4
 
 
