@@ -79,6 +79,8 @@ def generate_platform():
         contract=json.loads((PUBLIC/f'platform/contracts/aa-beam-{fmt}-production-chain.json').read_text(encoding='utf8'))
         contract['scenarioId']=plan['scenarioId']
         contract['rules']=[dict(intentId=i['intentId']) for i in plan['intents']]
+        contract['history']['unitsAfterIntents'] = {'stop-home': contract['history']['finalUnits']}
+        contract['history']['productionSession'] = 'aa-afterburn'
         # Each boundary is fixed before execution; compare_history must consume it.
         contract['history']['unitActionStages']=[
             dict(intentId='burn-first',typeId='aaBeamGunship_afterburn',cooldown='active'),

@@ -431,11 +431,13 @@ class PublicSelectionTest(unittest.TestCase):
         self.assertIn('com.rustedwarfare.reforge.core.content.DropshipContentFailureTest',plan['tests']['core'])
         self.assertIn('com.rustedwarfare.reforge.client.DropshipProductionSandboxTest',plan['tests']['client'])
         self.assertIn('com.rustedwarfare.reforge.pc.DropshipOriginalProfileTest',plan['tests']['pc'])
-        self.assertIn('com.rustedwarfare.reforge.testing.DropshipProductionSessionTest',plan['tests']['tools'])
+        self.assertNotIn('com.rustedwarfare.reforge.testing.DropshipProductionSessionTest',plan['tests']['tools'])
         cases={row['id']:row for row in plan['scenarios']}
         for fmt in ('ini','json','hjson'):
             self.assertEqual('core',cases['air-transport-'+fmt+'-short']['backend'])
             self.assertEqual('session',cases['air-transport-'+fmt+'-production-chain']['backend'])
+            contract = REPO/'SimulationTest/public'/cases['air-transport-'+fmt+'-production-chain']['contract']
+            self.assertEqual('air-transport', json.loads(contract.read_bytes())['history']['productionSession'])
         names={p.relative_to(REPO).as_posix() for p in source_files(REPO)}
         for name in ('air_transport_fixture.py','air_transport_scenarios.py'):
             self.assertIn('SimulationTest/tools/'+name,names)
@@ -444,12 +446,30 @@ class PublicSelectionTest(unittest.TestCase):
         from public_check import REPO,plan_suite,source_files
         plan=plan_suite(REPO,'production-combat','pr')
         for module,name in [('core','core.sim.AaBeamAdmissionTest'),('client','client.AaBeamPresentationTest'),
-                            ('pc','pc.AaBeamOriginalProfileTest'),('tools','testing.AaBeamArchiveTest')]:
+                            ('pc','pc.AaBeamOriginalProfileTest')]:
             self.assertIn('com.rustedwarfare.reforge.'+name,plan['tests'][module])
         cases={row['id']:row for row in plan['scenarios']}
+        for family, test in [('aa-beam', 'AaBeam'), ('air-transport', 'Dropship'), ('transport', 'LandingCraft')]:
+            self.assertNotIn('com.rustedwarfare.reforge.testing.'+test+'ArchiveTest', plan['tests']['tools'])
+            self.assertEqual(family, cases[family+'-json-short']['archiveAssertions'])
         for fmt in ('ini','json','hjson'):
             self.assertEqual('core',cases['aa-beam-'+fmt+'-short']['backend'])
-            self.assertEqual('session',cases['aa-beam-'+fmt+'-production-chain']['backend'])
+            self.assertIs(cases['aa-beam-'+fmt+'-short']['recompare'], True)
+            aa = 'aa-beam-'+fmt+'-production-chain'
+            afterburn = cases['afterburn-'+fmt+'-production-chain']
+            self.assertNotIn(aa, cases)
+            public = REPO/'SimulationTest/public'
+            old = json.loads((public/'platform/scenarios'/(aa+'.json')).read_bytes())
+            new = json.loads((public/afterburn['scenario']).read_bytes())
+            self.assertEqual(23, len(old['intents']))
+            self.assertEqual(old['intents'], new['intents'][:23])
+            self.assertEqual(old['inputs'], new['inputs'])
+            self.assertEqual(old['waitPlan'], {name: new['waitPlan'][name] for name in old['waitPlan']})
+            old_contract = json.loads((public/'platform/contracts'/(aa+'.json')).read_bytes())
+            new_contract = json.loads((public/afterburn['contract']).read_bytes())
+            self.assertEqual(old_contract['rules'], new_contract['rules'][:23])
+            self.assertEqual(old_contract['history']['finalUnits'],
+                             new_contract['history']['unitsAfterIntents']['stop-home'])
         names={p.relative_to(REPO).as_posix() for p in source_files(REPO)}
         for name in ('aa_beam_fixture.py','aa_beam_scenarios.py','test_aa_beam_archive.py'):
             self.assertIn('SimulationTest/tools/'+name,names)
@@ -460,12 +480,14 @@ class PublicSelectionTest(unittest.TestCase):
         for module,names in {
             'core':['core.content.AfterburnContentTest','core.sim.AfterburnActionTest','core.sim.AfterburnLifecycleTest'],
             'client':['client.AfterburnInputTest','client.AfterburnTrailTest'],
-            'tools':['testing.AfterburnArchiveTest','testing.AfterburnProductionSessionTest']}.items():
+            'tools':['testing.AfterburnArchiveTest']}.items():
             for name in names:self.assertIn('com.rustedwarfare.reforge.'+name,plan['tests'][module])
         cases={row['id']:row for row in plan['scenarios']}
         for fmt in ('ini','json','hjson'):
             self.assertEqual('core',cases['afterburn-'+fmt+'-short']['backend'])
             self.assertEqual('session',cases['afterburn-'+fmt+'-production-chain']['backend'])
+            contract = REPO/'SimulationTest/public'/cases['afterburn-'+fmt+'-production-chain']['contract']
+            self.assertEqual('aa-afterburn', json.loads(contract.read_bytes())['history']['productionSession'])
         self.assertIn('SimulationTest/tools/test_afterburn_platform.py',plan['pythonTests'])
         names={p.relative_to(REPO).as_posix() for p in source_files(REPO)}
         self.assertIn('SimulationTest/tools/afterburn_scenarios.py',names)

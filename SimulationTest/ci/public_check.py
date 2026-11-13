@@ -56,6 +56,7 @@ def source_files(repo):
               ['nuclear_silo_fixture.py', 'nuclear_silo_scenarios.py', 'nuclear_sound_fixture.py', 'nuclear_platform.py', 'test_nuclear_platform.py', 'nautilus_fixture.py', 'nautilus_scenarios.py', 'test_nautilus_platform.py', 'mech_engineer_fixture.py', 'mech_engineer_scenarios.py', 'test_mech_engineer_platform.py', 'repairbay_fixture.py', 'repairbay_scenarios.py', 'test_repairbay_platform.py', 'bunker_fixture.py', 'bunker_scenarios.py', 'test_bunker_platform.py', 'afterburn_scenarios.py', 'test_afterburn_platform.py', 'aa_beam_fixture.py', 'aa_beam_scenarios.py', 'test_aa_beam_archive.py', 'air_transport_fixture.py', 'air_transport_scenarios.py', 'platform_scenario.py', 'test_platform_scenario.py', 'platform_wait.py', 'test_platform_wait.py', 'test_platform_session_cli.py', 'test_named_weapon_platform.py', 'test_submarine_platform.py', 'test_amphibious_platform.py', 'test_transport_platform.py',
                'bomber_fixture.py', 'bomber_scenarios.py', 'workflow_scenarios.py', 'test_workflow_scenarios.py',
                'spider_platform.py', 'modular_spider_fixture.py', 'modular_spider_scenarios.py',
+               'production_session_assertions.py',
                'phase_six_a_fixture.py',
                'diagnostic_reader.py', 'test_diagnostic_reader.py',
                'action_layout.py', 'test_action_layout.py',
@@ -98,7 +99,8 @@ def verify_scenario_sources(repo, case, expected):
     check(public/case['contract'])
     document = json.loads(data)
     if case.get('backend') == 'session':
-        for name in ('platform_scenario.py', 'spider_platform.py', 'nuclear_platform.py'):
+        for name in ('platform_scenario.py', 'spider_platform.py', 'nuclear_platform.py',
+                     'production_session_assertions.py'):
             script = repo/'SimulationTest/tools'/name
             if digest(script) != expected.get(script.relative_to(repo).as_posix()):
                 raise ValueError('Public Session comparator changed: '+name)
@@ -147,7 +149,7 @@ def scenario_concurrency(workers):
     return dict(requested=workers, maxWorkers=workers, phase='after-build-and-tests')
 
 
-def plan_suite(repo, name, kind):
+def plan_suite(repo, name, kind, public_sources=None):
     if not re.fullmatch(r'[a-z0-9][a-z0-9-]*', name):
         raise ValueError('Suite name must be a public registry name, not a path')
     path = repo / 'SimulationTest/public/suites' / (name + '.json')
@@ -167,7 +169,8 @@ def plan_suite(repo, name, kind):
            for module, classes in tests.items()):
         raise ValueError('Invalid module or fixed JUnit class selection')
     python_tests = suite.get('pythonTests', []) if kind in ['mechanism', 'pr', 'all'] else []
-    public_sources = {p.relative_to(repo).as_posix() for p in source_files(repo)}
+    if public_sources is None:
+        public_sources = {p.relative_to(repo).as_posix() for p in source_files(repo)}
     if (not isinstance(python_tests, list) or any(not isinstance(p, str) or p not in public_sources or
             not re.fullmatch(r'(SimulationTest/(tools|ci)|Decompile/tools(/p003)?)/test_[a-z0-9_]+\.py', p)
             for p in python_tests) or len(python_tests) != len(set(python_tests))):
@@ -182,6 +185,11 @@ def plan_suite(repo, name, kind):
         for case in cases:
             if case.get('backend', 'core') not in ('core', 'session'):
                 raise ValueError('Public CI supports only core or headless session scenarios')
+            if 'recompare' in case and (case.get('backend', 'core') != 'core' or case['recompare'] is not True):
+                raise ValueError('Additional archive recompare must be enabled explicitly on a Core scenario')
+            if 'archiveAssertions' in case and (case.get('recompare') is not True or
+                    case['archiveAssertions'] not in ('aa-beam', 'transport', 'air-transport')):
+                raise ValueError('Archive assertions require an admitted Core archive and a known family')
             if not re.fullmatch(r'[a-z0-9][a-z0-9-]*', case['id']):
                 raise ValueError('Invalid scenario ID')
             for field in ['scenario', 'contract']:

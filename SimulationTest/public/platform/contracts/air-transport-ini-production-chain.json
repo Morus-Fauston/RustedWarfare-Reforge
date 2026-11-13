@@ -202,6 +202,7 @@
         "passengerCount": 0,
         "unloading": false
       }
-    ]
+    ],
+    "productionSession": "air-transport"
   }
 }

@@ -25,9 +25,10 @@ LAYERS = {
 
 def plan_layer(repo, kind):
     rows = []
+    public_sources = {p.relative_to(repo).as_posix() for p in source_files(repo)}
     for name in LAYERS[kind]:
         selected_kind = 'mechanism' if name == 'tooling' and kind == 'pr' else kind
-        plan = plan_suite(repo, name, selected_kind)
+        plan = plan_suite(repo, name, selected_kind, public_sources)
         if plan['inputScope'] != 'public':
             raise ValueError('Public layer contains private suite: ' + name)
         rows.append(dict(name=name, plan=plan))

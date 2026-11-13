@@ -169,6 +169,7 @@
         "passengerCount": 0,
         "unloading": false
       }
-    ]
+    ],
+    "productionSession": "transport"
   }
 }

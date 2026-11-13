@@ -430,22 +430,11 @@
       "com.rustedwarfare.reforge.testing.AmphibiousArchiveTest",
       "com.rustedwarfare.reforge.testing.AmphibiousCoreAdapterTest",
       "com.rustedwarfare.reforge.testing.AmphibiousLightningArchiveTest",
-      "com.rustedwarfare.reforge.testing.AmphibiousProductionSessionTest",
-      "com.rustedwarfare.reforge.testing.AmphibiousPublicScenarioTest",
-      "com.rustedwarfare.reforge.testing.LandingCraftArchiveTest",
       "com.rustedwarfare.reforge.testing.LandingCraftPairedSessionTest",
       "com.rustedwarfare.reforge.testing.LandingCraftPlayerArchiveTest",
-      "com.rustedwarfare.reforge.testing.LandingCraftProductionSessionTest",
-      "com.rustedwarfare.reforge.testing.LandingCraftPublicScenarioTest",
-      "com.rustedwarfare.reforge.testing.DropshipArchiveTest",
       "com.rustedwarfare.reforge.testing.DropshipPairedSessionTest",
       "com.rustedwarfare.reforge.testing.DropshipPlayerArchiveTest",
-      "com.rustedwarfare.reforge.testing.DropshipProductionSessionTest",
-      "com.rustedwarfare.reforge.testing.DropshipPublicScenarioTest",
-      "com.rustedwarfare.reforge.testing.AaBeamArchiveTest",
-      "com.rustedwarfare.reforge.testing.AaBeamProductionSessionTest",
       "com.rustedwarfare.reforge.testing.AfterburnArchiveTest",
-      "com.rustedwarfare.reforge.testing.AfterburnProductionSessionTest",
       "com.rustedwarfare.reforge.testing.BunkerArchiveTest",
       "com.rustedwarfare.reforge.testing.BunkerProductionSessionTest",
       "com.rustedwarfare.reforge.testing.RepairBayArchiveTest",
@@ -955,6 +944,7 @@
     {
       "id": "amphibious-ini-short",
       "backend": "core",
+      "recompare": true,
       "scenario": "scenarios/amphibious-ini-short.json",
       "contract": "contracts/amphibious-ini-short.json"
     },
@@ -967,6 +957,7 @@
     {
       "id": "amphibious-json-short",
       "backend": "core",
+      "recompare": true,
       "scenario": "scenarios/amphibious-json-short.json",
       "contract": "contracts/amphibious-json-short.json"
     },
@@ -979,6 +970,7 @@
     {
       "id": "amphibious-hjson-short",
       "backend": "core",
+      "recompare": true,
       "scenario": "scenarios/amphibious-hjson-short.json",
       "contract": "contracts/amphibious-hjson-short.json"
     },
@@ -991,6 +983,7 @@
     {
       "id": "transport-ini-short",
       "backend": "core",
+      "recompare": true,
       "scenario": "scenarios/transport-ini-short.json",
       "contract": "contracts/transport-ini-short.json"
     },
@@ -1002,7 +995,9 @@
     },
     {
       "id": "transport-json-short",
+      "archiveAssertions": "transport",
       "backend": "core",
+      "recompare": true,
       "scenario": "scenarios/transport-json-short.json",
       "contract": "contracts/transport-json-short.json"
     },
@@ -1015,6 +1010,7 @@
     {
       "id": "transport-hjson-short",
       "backend": "core",
+      "recompare": true,
       "scenario": "scenarios/transport-hjson-short.json",
       "contract": "contracts/transport-hjson-short.json"
     },
@@ -1027,6 +1023,7 @@
     {
       "id": "air-transport-ini-short",
       "backend": "core",
+      "recompare": true,
       "scenario": "scenarios/air-transport-ini-short.json",
       "contract": "contracts/air-transport-ini-short.json"
     },
@@ -1038,7 +1035,9 @@
     },
     {
       "id": "air-transport-json-short",
+      "archiveAssertions": "air-transport",
       "backend": "core",
+      "recompare": true,
       "scenario": "scenarios/air-transport-json-short.json",
       "contract": "contracts/air-transport-json-short.json"
     },
@@ -1051,6 +1050,7 @@
     {
       "id": "air-transport-hjson-short",
       "backend": "core",
+      "recompare": true,
       "scenario": "scenarios/air-transport-hjson-short.json",
       "contract": "contracts/air-transport-hjson-short.json"
     },
@@ -1063,38 +1063,24 @@
     {
       "id": "aa-beam-ini-short",
       "backend": "core",
+      "recompare": true,
       "scenario": "scenarios/aa-beam-ini-short.json",
       "contract": "contracts/aa-beam-ini-short.json"
     },
     {
-      "id": "aa-beam-ini-production-chain",
-      "backend": "session",
-      "scenario": "platform/scenarios/aa-beam-ini-production-chain.json",
-      "contract": "platform/contracts/aa-beam-ini-production-chain.json"
-    },
-    {
       "id": "aa-beam-json-short",
+      "archiveAssertions": "aa-beam",
       "backend": "core",
+      "recompare": true,
       "scenario": "scenarios/aa-beam-json-short.json",
       "contract": "contracts/aa-beam-json-short.json"
     },
     {
-      "id": "aa-beam-json-production-chain",
-      "backend": "session",
-      "scenario": "platform/scenarios/aa-beam-json-production-chain.json",
-      "contract": "platform/contracts/aa-beam-json-production-chain.json"
-    },
-    {
       "id": "aa-beam-hjson-short",
       "backend": "core",
+      "recompare": true,
       "scenario": "scenarios/aa-beam-hjson-short.json",
       "contract": "contracts/aa-beam-hjson-short.json"
-    },
-    {
-      "id": "aa-beam-hjson-production-chain",
-      "backend": "session",
-      "scenario": "platform/scenarios/aa-beam-hjson-production-chain.json",
-      "contract": "platform/contracts/aa-beam-hjson-production-chain.json"
     },
     {
       "id": "afterburn-ini-short",
