@@ -107,6 +107,8 @@ class PublicBatchTest(unittest.TestCase):
                 self.assertFalse(output.exists())
 
     def test_child_build_failure_preserves_receipts_and_does_not_run_later_suites(self):
+        from public_check import REPO, source_files
+
         with tempfile.TemporaryDirectory(prefix='reforge-layer-failure-') as tmp:
             repo = Path(tmp)
             ci = repo/'SimulationTest/ci'
@@ -119,30 +121,17 @@ class PublicBatchTest(unittest.TestCase):
                          'maintenance-defense', 'platform-basics', 'content-three-formats', 'tooling']:
                 (public/'suites'/(name+'.json')).write_text(json.dumps(dict(schemaVersion=1,
                     suiteId=name, inputScope='public', tests={'tools': ['ProbeTest']})), encoding='utf8')
-            for relative in ['Engine/core/build.gradle.kts', 'Engine/client/build.gradle.kts',
-                'Engine/pc/build.gradle.kts', 'SimulationTest/build.gradle.kts',
-                'SimulationTest/settings.gradle.kts', 'SimulationTest/gradle.properties']:
-                p=repo/relative
-                p.parent.mkdir(parents=True, exist_ok=True)
-                p.write_text('', encoding='utf8')
+            for name in ['workflow.py','workflow_inputs.py']:
+                target = repo/'SimulationTest/tools'/name
+                target.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copyfile(REPO/'SimulationTest/tools'/name, target)
+            # Populate the required files using the production selector on this fixture.
+            for path in source_files(repo):
+                if not path.exists():
+                    path.parent.mkdir(parents=True, exist_ok=True)
+                    path.touch()
             (repo/'SimulationTest/gradlew').write_text('#!/bin/sh\nexit 9\n', encoding='utf8')
             (repo/'SimulationTest/gradlew.bat').write_text('@exit /b 9\n', encoding='utf8')
-            # These are source identity members; no imported helper is faked or replaced.
-            for relative in ['platform_scenario.py', 'test_platform_scenario.py', 'test_platform_session_cli.py', 'test_named_weapon_platform.py',
-                'workflow.py', 'workflow_scenarios.py', 'test_workflow_scenarios.py', 'platform_wait.py', 'test_platform_wait.py', 'diagnostic_reader.py', 'test_diagnostic_reader.py',
-                'platform_windows.py', 'owned_window.py', 'test_owned_window.py', 'action_layout.py', 'test_action_layout.py', 'workflow_inputs.py', 'workflow_device.py', 'workflow_windows.py',
-                'workflow_reuse.py', 'perf_report.py', 'platform_perf.py', 'test_workflow.py',
-                'test_workflow_device.py', 'test_workflow_windows.py', 'test_workflow_reuse.py',
-                'test_perf_analysis.py', 'specialist_check.py', 'test_specialist_check.py']:
-                p=repo/'SimulationTest/tools'/relative
-                p.parent.mkdir(parents=True, exist_ok=True)
-                p.write_text('', encoding='utf8')
-            for name in ['workflow.py','workflow_inputs.py']:
-                shutil.copyfile(Path(__file__).parents[1]/'tools'/name,repo/'SimulationTest/tools'/name)
-            for relative in ['verify_dec_evidence.py', 'test_verify_dec_evidence.py']:
-                p=repo/'Decompile/tools'/relative
-                p.parent.mkdir(parents=True, exist_ok=True)
-                p.write_text('', encoding='utf8')
             output=repo/'batch'
             result=subprocess.run([sys.executable, '-B', str(ci/'public_batch.py'),
                 '--kind', 'mechanism', '--output', str(output)], capture_output=True, text=True, timeout=30)
