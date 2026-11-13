@@ -38,6 +38,13 @@ if spec.get('child'):
 time.sleep(spec.get('delay',.1))
 row['ended']=time.time();(out/'lifecycle.json').write_text(json.dumps(row))
 if spec.get('mutate'): pathlib.Path(__file__).with_name('changed-package.txt').write_text('owned mutation')
+if spec.get('mutateContract'):
+ target=pathlib.Path(value('--contract')); timestamps=target.stat()
+ target.write_bytes(b'[]')
+ import os
+ os.utime(target, ns=(timestamps.st_atime_ns, timestamps.st_mtime_ns))
+if spec.get('mutateComparator'):
+ pathlib.Path(__file__).with_name('spider_platform.py').write_text('changed', encoding='utf8')
 if spec.get('fail'): raise SystemExit(7)
 if spec.get('noarchive'): raise SystemExit(0)
 if args[0]=='session': (out/'result.json').write_text(json.dumps({'status':'passed','exitCode':0}))
@@ -134,7 +141,7 @@ class PublicSelectionTest(unittest.TestCase):
             signals = SimpleNamespace(Lock=threading.Lock, Event=StopSignal)
             with patch.object(public_scenarios, 'threading', signals), \
                     patch.object(public_scenarios, 'ThreadPoolExecutor', DelayedAcceptancePool):
-                result = public_scenarios.run_scenarios(output, output, cases, output, 2, 5, lambda: None, execute)
+                result = public_scenarios.run_scenarios(output, output, cases, output, 2, 5, lambda case: None, execute)
             self.assertEqual(['failed', 'not-started'], [r['status'] for r in result['items']])
             self.assertEqual(['first'], calls)
             self.assertEqual([], late_submissions, 'An executor accepted work after the first failure was recorded')
@@ -255,6 +262,68 @@ class PublicSelectionTest(unittest.TestCase):
             self.assertIn('members or dependency bytes',result['scenarioExecution']['firstError']['error'])
             self.assertEqual('not-started',result['scenarioExecution']['items'][2]['status'])
             self.assertFalse((output/'owned-2').exists())
+
+    def test_scenario_receipt_measures_identity_checks_and_archive_work(self):
+        from public_check import run
+        with owned_scenario_processes([{'backend': 'session'}]) as (repo, plan, prepared):
+            output = repo/'timed'
+            self.assertEqual(0, run(repo, output, plan, prepared, 10, 1, 1))
+            result = json.loads((output/'result.json').read_text(encoding='utf8'))
+            self.assertGreater(result['identityChecks']['scenario']['count'], 0)
+            self.assertGreaterEqual(result['identityChecks']['scenario']['elapsedSeconds'], 0)
+            queue = result['scenarioExecution']
+            self.assertGreater(queue['elapsedSeconds'], 0)
+            row, = queue['items']
+            self.assertGreaterEqual(row['archiveSeconds'], 0)
+            self.assertGreater(row['commands'][1]['elapsedSeconds'], 0)
+
+    def test_same_length_and_timestamp_contract_drift_stops_next_scenario(self):
+        from public_check import run
+        with owned_scenario_processes([{'mutateContract': True}, {}]) as (repo, plan, prepared):
+            output = repo/'changed'
+            self.assertEqual(1, run(repo, output, plan, prepared, 10, 1, 1))
+            result = json.loads((output/'result.json').read_text(encoding='utf8'))
+            queue = result['scenarioExecution']
+            self.assertIn('Public scenario input changed', queue['firstError']['error'])
+            self.assertEqual(['failed', 'not-started'], [row['status'] for row in queue['items']])
+            self.assertEqual(0, queue['items'][0]['commands'][0]['exitCode'])
+
+    def test_changed_session_comparator_dependency_prevents_independent_recompare(self):
+        from public_check import run
+        with owned_scenario_processes([{'backend': 'session', 'mutateComparator': True}, {}]) as (repo, plan, prepared):
+            output = repo/'changed'
+            self.assertEqual(1, run(repo, output, plan, prepared, 10, 1, 1))
+            queue = json.loads((output/'scenario-execution.json').read_text(encoding='utf8'))
+            self.assertIn('Public Session comparator changed: spider_platform.py', queue['firstError']['error'])
+            self.assertEqual(['failed', 'not-started'], [row['status'] for row in queue['items']])
+            self.assertEqual(['owned-0'], [command['name'] for command in queue['items'][0]['commands']])
+
+    def test_standalone_package_drift_after_build_prevents_first_dispatch(self):
+        import shutil
+        from public_check import run
+        with owned_scenario_processes([{}]) as (repo, plan, _):
+            project = repo/'SimulationTest'
+            package = project/'build/install/simulation-test'
+            shutil.copytree(repo/'package', package)
+            package_member = package/'bin/fixture.py'
+            python_case = project/'ci/test_replace_package.py'
+            python_case.parent.mkdir()
+            python_case.write_text(
+                'import unittest\nfrom pathlib import Path\n'
+                'class ReplacePackage(unittest.TestCase):\n'
+                f' def test_publish_replacement(self): Path({str(package_member)!r}).write_bytes(b"replacement")\n',
+                encoding='utf8')
+            from public_check import REPO
+            shutil.copyfile(REPO/'SimulationTest/ci/python_check.py', project/'ci/python_check.py')
+            (project/'gradlew').write_text('#!/bin/sh\nexit 0\n', encoding='utf8')
+            (project/'gradlew.bat').write_text('@exit /b 0\n', encoding='utf8')
+            plan['pythonTests'] = ['SimulationTest/ci/test_replace_package.py']
+            output = repo/'changed'
+            self.assertEqual(1, run(repo, output, plan, None, 10, 1, 1))
+            queue = json.loads((output/'scenario-execution.json').read_text(encoding='utf8'))
+            self.assertIn('Scenario distribution changed', queue['firstError']['error'])
+            self.assertEqual('not-started', queue['items'][0]['status'])
+            self.assertEqual([], queue['items'][0]['commands'])
 
     def test_scenario_failure_stops_dispatch_preserves_inflight_success_and_original_exit(self):
         from public_check import run

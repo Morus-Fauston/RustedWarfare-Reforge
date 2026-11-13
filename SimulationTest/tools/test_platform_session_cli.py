@@ -17,7 +17,8 @@ class PlatformSessionCliTest(unittest.TestCase):
             result=run_session(public/'scenarios/production.json',public/'contracts/production.json',
                                root/'SimulationTest/build/install/simulation-test',base)
             self.assertEqual(0,result['exitCode'],result)
-            for fault in ('empty','duplicate','omit-diagnostic','missing-manifest','missing-input',
+            for fault in ('empty','duplicate','omit-diagnostic','missing-manifest','missing-input','extra-file',
+                          'same-length-input',
                           'rebound-scenario','rebound-contract','rebound-input','backend'):
                 with self.subTest(fault=fault):
                     altered=Path(folder)/fault
@@ -28,6 +29,14 @@ class PlatformSessionCliTest(unittest.TestCase):
                     elif fault=='omit-diagnostic': archive['files']=[r for r in archive['files'] if r['path']!='session/client-diagnostic.jsonl']
                     elif fault=='missing-manifest':(altered/'manifest.json').unlink()
                     elif fault=='missing-input':(altered/'inputSnapshot/production.properties').unlink()
+                    elif fault=='extra-file':(altered/'extra.txt').write_bytes(b'extra')
+                    elif fault=='same-length-input':
+                        import os
+                        path = altered/'inputSnapshot/production.properties'
+                        times = path.stat()
+                        data = path.read_bytes()
+                        path.write_bytes(bytes([data[0] ^ 1]) + data[1:])
+                        os.utime(path, ns=(times.st_atime_ns, times.st_mtime_ns))
                     elif fault=='backend':archive['backend']='invented'
                     else:
                         manifest=json.loads((altered/'manifest.json').read_text())

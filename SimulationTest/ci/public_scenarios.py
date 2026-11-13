@@ -10,11 +10,17 @@ import time
 
 
 def run_scenarios(repo, output, cases, distribution, workers, timeout, admit, execute_command):
+    started = time.monotonic()
     rows = [dict(id=c['id'], kind=c['kind'], status='not-started', commands=[]) for c in cases]
     result = dict(schemaVersion=1, status='execution-failed', requestedWorkers=workers,
                   peakRunning=0, items=rows, firstError=None)
     lock, stopped = threading.Lock(), threading.Event()
     active = 0
+
+    def finish():
+        result['elapsedSeconds'] = time.monotonic() - started
+        (output/'scenario-execution.json').write_text(json.dumps(result, ensure_ascii=True, indent=2), encoding='utf8')
+        return result
 
     def fail(index, error, first_error=None):
         with lock:
@@ -38,8 +44,7 @@ def run_scenarios(repo, output, cases, distribution, workers, timeout, admit, ex
             raise ValueError('Scenario outputs conflict or already exist')
     except Exception as error:
         result['firstError'] = dict(error=str(error), cause=dict(kind='scenario-preflight', message=str(error)))
-        (output/'scenario-execution.json').write_text(json.dumps(result, ensure_ascii=True, indent=2), encoding='utf8')
-        return result
+        return finish()
 
     project = repo/'SimulationTest'
     launcher = distribution/'bin'/('simulation-test.bat' if os.name == 'nt' else 'simulation-test')
@@ -55,9 +60,10 @@ def run_scenarios(repo, output, cases, distribution, workers, timeout, admit, ex
             result['peakRunning'] = max(result['peakRunning'], active)
             row.update(status='running', startedUnix=time.time())
         cause = None
+        archive_seconds = 0
         def command(name, argv):
             nonlocal cause
-            admit()
+            admit(case)
             measured = execute_command(output, name, argv, project, timeout)
             row['commands'].append(dict(name=name, argv=measured['argv'], exitCode=measured['exitCode'],
                 elapsedSeconds=measured['elapsedSeconds'], receipt=name+'-process/result.json',
@@ -65,14 +71,16 @@ def run_scenarios(repo, output, cases, distribution, workers, timeout, admit, ex
             if not measured['passed']:
                 cause = measured['firstError']
                 raise RuntimeError(name+': scenario command failed')
-            admit()
+            admit(case)
         try:
             folder = output/case['id']
             if case.get('backend') == 'session':
                 command(case['id'], [sys.executable, '-B', str(project/'tools/platform_scenario.py'),
                     'session', '--scenario', str(project/'public'/case['scenario']),
                     '--contract', str(project/'public'/case['contract']), '--distribution', str(distribution), '--output', str(folder)])
+                archive_started = time.monotonic()
                 judgment = json.loads((folder/'result.json').read_text(encoding='utf8'))
+                archive_seconds = time.monotonic() - archive_started
                 if judgment['exitCode'] != 0 or judgment['status'] != 'passed':
                     raise RuntimeError('Session evidence is not complete/pass: '+case['id'])
                 command(case['id']+'-recompare', [sys.executable, '-B', str(project/'tools/platform_scenario.py'),
@@ -81,11 +89,13 @@ def run_scenarios(repo, output, cases, distribution, workers, timeout, admit, ex
             else:
                 command(case['id'], cli+['run', '--scenario', str(project/'public'/case['scenario']),
                     '--contract', str(project/'public'/case['contract']), '--output', str(folder), '--mode', 'self'])
+                archive_started = time.monotonic()
                 batches = list(folder.glob('run-*'))
                 if len(batches) != 1:
                     raise RuntimeError('Expected exactly one scenario-run archive')
                 judgment = json.loads((batches[0]/'comparison/result.json').read_text(encoding='utf8'))
                 manifest = json.loads((batches[0]/'manifest.json').read_text(encoding='utf8'))
+                archive_seconds = time.monotonic() - archive_started
                 if judgment['exitCode'] != 0 or not manifest['complete']:
                     raise RuntimeError('Scenario evidence is not complete/pass: '+case['id'])
                 archive = dict(id=case['id'], kind=case['kind'], path=str(batches[0]))
@@ -96,6 +106,7 @@ def run_scenarios(repo, output, cases, distribution, workers, timeout, admit, ex
         finally:
             with lock:
                 row['endedUnix'] = time.time()
+                row['archiveSeconds'] = archive_seconds
                 active -= 1
 
     next_index, running = 0, {}
@@ -103,7 +114,7 @@ def run_scenarios(repo, output, cases, distribution, workers, timeout, admit, ex
         while running or (next_index < len(cases) and not stopped.is_set()):
             while next_index < len(cases) and len(running) < workers and not stopped.is_set():
                 try:
-                    admit()
+                    admit(cases[next_index])
                 except Exception as error:
                     fail(next_index, error)
                     break
@@ -118,5 +129,4 @@ def run_scenarios(repo, output, cases, distribution, workers, timeout, admit, ex
                     future.result()
                     del running[future]
     result['status'] = 'passed' if all(r['status'] == 'passed' for r in rows) else 'execution-failed'
-    (output/'scenario-execution.json').write_text(json.dumps(result, ensure_ascii=True, indent=2), encoding='utf8')
-    return result
+    return finish()

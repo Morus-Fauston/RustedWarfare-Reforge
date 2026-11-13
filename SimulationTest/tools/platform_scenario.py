@@ -4,6 +4,7 @@ import hashlib
 import json
 import math
 import os
+from fnmatch import fnmatch
 from pathlib import Path
 import shutil
 import subprocess
@@ -1662,18 +1663,26 @@ def save(path, document):
 
 
 def read(path):
-    document = json.loads(Path(path).read_text(encoding='utf8'))
+    return read_document(Path(path).read_text(encoding='utf8'))
+
+
+def read_document(data):
+    document = json.loads(data)
     if isinstance(document, dict) and document.get('kind') == 'behavior-contract' and 'platform' in document:
         return document['platform']
     return document
 
 
-def tree(root):
+def tree_paths(root):
     root = Path(root)
     paths = sorted(root.rglob('*'), key=lambda path: path.relative_to(root).as_posix())
     if any(path.is_symlink() for path in paths) or root.is_symlink():
         raise PlatformError('input-identity', 'Symbolic links are not fixed input files', 1)
-    return [dict(path=path.relative_to(root).as_posix(), sha256=sha(path)) for path in paths if path.is_file()]
+    return {path.relative_to(root).as_posix(): path for path in paths if path.is_file()}
+
+
+def tree(root):
+    return [dict(path=name, sha256=sha(path)) for name, path in tree_paths(root).items()]
 
 
 def session_anchors(records):
@@ -1689,14 +1698,18 @@ def session_anchors(records):
     return anchors
 
 
-def windows_geometry(output,records):
+def windows_geometry(output, records, maps=None):
     graphics=[r for r in records if r.get('kind')=='load-graphics-ready']
     ready=[r for r in records if r.get('kind')=='load-ready']
     if not graphics:
         # Preserve pre-instrumentation short archives without inventing a new map choice.
-        path=Path(output)/'inputSnapshot/maps/p001-controlled.tmx'
-        if not path.is_file():raise PlatformError('input-geometry','Legacy archive has no fixed controlled map')
-        root=ET.parse(path).getroot()
+        maps = maps if maps is not None else {
+            path.name: path.read_bytes() for path in (Path(output)/'inputSnapshot/maps').glob('*.tmx')
+        }
+        legacy = next((data for name, data in maps.items() if Path(name) == Path('p001-controlled.tmx')), None)
+        if legacy is None:
+            raise PlatformError('input-geometry','Legacy archive has no fixed controlled map')
+        root = ET.fromstring(legacy)
         return dict(worldWidth=int(root.get('width'))*int(root.get('tilewidth')),
                     worldHeight=int(root.get('height'))*int(root.get('tileheight')))
     if len(graphics)!=1 or len(ready)!=1 or graphics[0].get('generation')!=ready[0].get('generation'):
@@ -1705,8 +1718,11 @@ def windows_geometry(output,records):
     width,height=g.get('worldWidth'),g.get('worldHeight')
     if any(type(v) not in (int,float) or not math.isfinite(v) or v<=0 for v in (width,height)):
         raise PlatformError('input-geometry','Finite positive loaded map dimensions required')
-    for path in sorted((Path(output)/'inputSnapshot/maps').glob('*.tmx')):
-        root=ET.parse(path).getroot()
+    maps = maps if maps is not None else {
+        path.name: path.read_bytes() for path in (Path(output)/'inputSnapshot/maps').glob('*.tmx')
+    }
+    for name in sorted(maps):
+        root = ET.fromstring(maps[name])
         if (int(root.get('width'))==r.get('mapWidth') and int(root.get('height'))==r.get('mapHeight') and
                 int(root.get('width'))*int(root.get('tilewidth'))==width and
                 int(root.get('height'))*int(root.get('tileheight'))==height):
@@ -1728,30 +1744,52 @@ def compare_archive(output):
     names = [item['path'] for item in files]
     required = {'manifest.json', 'scenario.json', 'contract.json', 'intents.json',
                 'session/client-diagnostic.jsonl', 'stdout.log', 'stderr.log'}
-    actual = {item['path'] for item in tree(output)} - {'archive.json', 'result.json'}
-    if len(names) != len(set(names)) or set(names) != actual or not required <= set(names):
+    actual = tree_paths(output)
+    actual.pop('archive.json', None)
+    actual.pop('result.json', None)
+    if len(names) != len(set(names)) or set(names) != actual.keys() or not required <= actual.keys():
         raise PlatformError('archive-identity', 'Archive file closure is incomplete or duplicated')
+    consume = {'manifest.json', 'scenario.json', 'contract.json', 'intents.json', 'session/client-diagnostic.jsonl'}
+    maps = {}
+    if backend == 'windows-input':
+        consume.update(('input.jsonl', 'runtime/reforge/client-diagnostic.jsonl'))
+        maps = {name: Path(name).name for name in actual
+                if Path(name).parent == Path('inputSnapshot/maps') and fnmatch(Path(name).name, '*.tmx')}
+        consume.update(maps)
+    captured, digests = {}, {}
+    resolved_output = output.resolve()
     for item in files:
-        path = (output / item['path']).resolve()
-        if (not path.is_relative_to(output.resolve()) or path.relative_to(output.resolve()).as_posix() != item['path'] or
-                not path.is_file() or sha(path) != item['sha256']):
-            raise PlatformError('archive-identity', 'Archived evidence differs: '+item['path'])
-    manifest = read(output/'manifest.json')
+        name = item['path']
+        path = actual[name].resolve()
+        if not path.is_relative_to(resolved_output) or path.relative_to(resolved_output).as_posix() != name:
+            raise PlatformError('archive-identity', 'Archived evidence differs: '+name)
+        if name in consume:
+            captured[name] = path.read_bytes()
+            digest = hashlib.sha256(captured[name]).hexdigest()
+        else:
+            with path.open('rb') as stream:
+                digest = hashlib.file_digest(stream, 'sha256').hexdigest()
+        if digest != item['sha256']:
+            raise PlatformError('archive-identity', 'Archived evidence differs: '+name)
+        digests[name] = digest
+    inputs = [dict(path=name.removeprefix('inputSnapshot/'), sha256=digests[name])
+              for name in sorted(digests) if name.startswith('inputSnapshot/')]
+    manifest = read_document(captured['manifest.json'])
     if (manifest.get('backend') != backend or not manifest.get('packageFiles') or
-            manifest.get('scenarioSha256') != sha(output/'scenario.json') or
-            manifest.get('contractSha256') != sha(output/'contract.json') or
+            manifest.get('scenarioSha256') != digests['scenario.json'] or
+            manifest.get('contractSha256') != digests['contract.json'] or
             not manifest.get('inputFiles') or
-            sorted(manifest['inputFiles'], key=lambda item: item['path']) != tree(output/'inputSnapshot')):
+            sorted(manifest['inputFiles'], key=lambda item: item['path']) != inputs):
         raise PlatformError('archive-identity', 'Manifest, fixed inputs, scenario or contract identity differs')
-    plan = read(output/'scenario.json')
+    plan = read_document(captured['scenario.json'])
     if backend == 'windows-input':
         pictures = {intent['intentId']+'.png' for intent in plan['intents']}
         pictures |= {intent['intentId']+'-preview.png' for intent in plan['intents'] if intent['kind'] == 'build'}
         if not {'input.jsonl', 'runtime/reforge/client-diagnostic.jsonl', *pictures} <= set(names):
             raise PlatformError('archive-identity', 'Windows input, screenshots or runtime diagnostic is missing')
-        if (output/'runtime/reforge/client-diagnostic.jsonl').read_bytes() != (output/'session/client-diagnostic.jsonl').read_bytes():
+        if captured['runtime/reforge/client-diagnostic.jsonl'] != captured['session/client-diagnostic.jsonl']:
             raise PlatformError('archive-identity', 'Runtime and compared diagnostic differ')
-        input_rows = [json.loads(line) for line in (output/'input.jsonl').read_text(encoding='utf8').splitlines()]
+        input_rows = [json.loads(line) for line in captured['input.jsonl'].decode('utf8').splitlines()]
         if [r.get('intentId') for r in input_rows if r.get('kind') == 'intent-dispatch'] != [i['intentId'] for i in plan['intents']]:
             raise PlatformError('archive-identity', 'Actual input delivery records differ from the fixed intents')
         captures = {Path(r['path']).name for r in input_rows if r.get('kind') == 'captured-owned-no-activation'}
@@ -1760,14 +1798,15 @@ def compare_archive(output):
         restored = [r for r in input_rows if r.get('kind') == 'foreground-restoration']
         if len(restored) != 1 or restored[0].get('restored') is False:
             raise PlatformError('closing-tail', 'Missing or failed foreground restoration')
-    raw = (output / 'session/client-diagnostic.jsonl').read_bytes()
+    raw = captured['session/client-diagnostic.jsonl']
     if not raw.endswith(b'\n'):
         raise PlatformError('incomplete-run', 'Diagnostic final line is truncated')
     records = [json.loads(line) for line in raw.splitlines()]
     geometry = None
     if backend == 'windows-input':
-        geometry = windows_geometry(output,records)
-    return compare_run(records, plan, read(output/'contract.json'), read(output/'intents.json'), geometry)
+        geometry = windows_geometry(output, records, {name: captured[path] for path, name in maps.items()})
+    return compare_run(records, plan, read_document(captured['contract.json']),
+                       read_document(captured['intents.json']), geometry)
 
 
 def run_session(scenario, contract, distribution, output, java='java', timeout=60):
