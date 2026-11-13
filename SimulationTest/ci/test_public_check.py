@@ -70,6 +70,30 @@ else:
 
 
 class PublicSelectionTest(unittest.TestCase):
+    def test_long_and_missing_representative_cannot_remove_scenario_coverage(self):
+        from public_check import plan_suite
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            public = root/'SimulationTest/public'
+            (public/'suites').mkdir(parents=True)
+            (public/'scenario.json').write_text('{}', encoding='utf8')
+            (public/'contract.json').write_text('{}', encoding='utf8')
+            (public/'scenario-equivalence.json').write_text('{"families":[]}', encoding='utf8')
+            case = dict(id='example', scenario='scenario.json', contract='contract.json')
+            for kind in ('long', 'short'):
+                cases = [dict(case, equivalentTo='representative')]
+                if kind == 'long':
+                    cases.append(dict(case, id='representative'))
+                suite = dict(schemaVersion=1, suiteId='owned', **{kind: cases})
+                (public/'suites/owned.json').write_text(json.dumps(suite), encoding='utf8')
+                with self.subTest(kind=kind), self.assertRaisesRegex(ValueError, 'Invalid Core short'):
+                    plan_suite(root, 'owned', kind, set())
+            suite['short'].append(dict(case, id='representative'))
+            (public/'suites/owned.json').write_text(json.dumps(suite), encoding='utf8')
+            with self.assertRaisesRegex(ValueError, 'Unregistered Core short'):
+                plan_suite(root, 'owned', 'short', set())
+
     def test_failure_and_dispatch_share_a_boundary_and_queued_work_does_not_start_after_failure(self):
         import threading
         import time
@@ -504,8 +528,12 @@ class PublicSelectionTest(unittest.TestCase):
             'tools':['testing.BunkerArchiveTest','testing.BunkerProductionSessionTest']}.items():
             for name in names:self.assertIn('com.rustedwarfare.reforge.'+name,plan['tests'][module])
         cases={row['id']:row for row in plan['scenarios']}
+        equivalence = json.loads((REPO/'SimulationTest/public/scenario-equivalence.json').read_bytes())
+        bunker = next(row for row in equivalence['families'] if row['name'] == 'bunker-short')
+        self.assertEqual('core', cases['bunker-json-short']['backend'])
+        self.assertEqual(['bunker-json-short', 'bunker-ini-short', 'bunker-hjson-short'],
+                         [member['id'] for member in bunker['members']])
         for fmt in ('ini','json','hjson'):
-            self.assertEqual('core',cases['bunker-'+fmt+'-short']['backend'])
             self.assertEqual('session',cases['bunker-'+fmt+'-production-chain']['backend'])
         self.assertIn('SimulationTest/tools/test_bunker_platform.py',plan['pythonTests'])
         names={p.relative_to(REPO).as_posix() for p in source_files(REPO)}

@@ -182,7 +182,29 @@ def plan_suite(repo, name, kind, public_sources=None):
         cases = suite.get(category, [])
         if isinstance(cases, dict):
             cases = [dict(id='short', **cases)]
+        case_ids = {case['id']: case for case in cases}
+        if len(case_ids) != len(cases):
+            raise ValueError('Duplicate scenario ID')
+        declared_equivalence = {}
+        if any('equivalentTo' in case for case in cases):
+            manifest = json.loads((repo/'SimulationTest/public/scenario-equivalence.json').read_bytes())
+            for family in manifest['families']:
+                if family['suite'] == name:
+                    representative, *aliases = family['members']
+                    for alias in aliases:
+                        if alias['id'] in declared_equivalence:
+                            raise ValueError('Duplicate scenario equivalence')
+                        declared_equivalence[alias['id']] = (alias, representative)
         for case in cases:
+            if 'equivalentTo' in case:
+                representative = case_ids.get(case['equivalentTo'])
+                if (category != 'short' or representative is None or 'equivalentTo' in representative
+                        or case.get('backend', 'core') != 'core' or representative.get('backend', 'core') != 'core'
+                        or case.get('recompare') or case.get('archiveAssertions')):
+                    raise ValueError('Invalid Core short scenario equivalence')
+                if declared_equivalence.get(case['id']) != (
+                        {key: value for key, value in case.items() if key != 'equivalentTo'}, representative):
+                    raise ValueError('Unregistered Core short scenario equivalence')
             if case.get('backend', 'core') not in ('core', 'session'):
                 raise ValueError('Public CI supports only core or headless session scenarios')
             if 'recompare' in case and (case.get('backend', 'core') != 'core' or case['recompare'] is not True):
@@ -197,7 +219,8 @@ def plan_suite(repo, name, kind, public_sources=None):
                 if (not (root / case[field]).resolve().is_relative_to(root) or
                         not (root / case[field]).is_file()):
                     raise ValueError('Scenario/contract must exist inside public input directory')
-            scenarios.append(dict(case, kind=category))
+            if 'equivalentTo' not in case:
+                scenarios.append(dict(case, kind=category))
     if not tests and not scenarios and not python_tests:
         raise ValueError('Selected suite/kind is empty')
     if len({case['id'] for case in scenarios}) != len(scenarios):

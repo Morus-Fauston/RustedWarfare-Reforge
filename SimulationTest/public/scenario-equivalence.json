@@ -1,0 +1,532 @@
+{
+  "families": [
+    {
+      "name": "content-three-formats-production-combat-short",
+      "suite": "content-three-formats",
+      "members": [
+        {
+          "id": "content-three-formats-production-combat-short-json",
+          "scenario": "scenarios/content-three-formats-production-combat-short-json.json",
+          "contract": "contracts/content-three-formats-production-combat-short-json.json"
+        },
+        {
+          "id": "content-three-formats-production-combat-short-ini",
+          "scenario": "scenarios/content-three-formats-production-combat-short-ini.json",
+          "contract": "contracts/content-three-formats-production-combat-short-ini.json"
+        },
+        {
+          "id": "content-three-formats-production-combat-short-hjson",
+          "scenario": "scenarios/content-three-formats-production-combat-short-hjson.json",
+          "contract": "contracts/content-three-formats-production-combat-short-hjson.json"
+        }
+      ]
+    },
+    {
+      "name": "content-three-formats-upgrade-cancel-short",
+      "suite": "content-three-formats",
+      "members": [
+        {
+          "id": "content-three-formats-upgrade-cancel-short-json",
+          "scenario": "scenarios/content-three-formats-upgrade-cancel-short-json.json",
+          "contract": "contracts/content-three-formats-upgrade-cancel-short-json.json"
+        },
+        {
+          "id": "content-three-formats-upgrade-cancel-short-ini",
+          "scenario": "scenarios/content-three-formats-upgrade-cancel-short-ini.json",
+          "contract": "contracts/content-three-formats-upgrade-cancel-short-ini.json"
+        },
+        {
+          "id": "content-three-formats-upgrade-cancel-short-hjson",
+          "scenario": "scenarios/content-three-formats-upgrade-cancel-short-hjson.json",
+          "contract": "contracts/content-three-formats-upgrade-cancel-short-hjson.json"
+        }
+      ]
+    },
+    {
+      "name": "content-three-formats-point-defense-short",
+      "suite": "content-three-formats",
+      "members": [
+        {
+          "id": "content-three-formats-point-defense-short-json",
+          "scenario": "scenarios/content-three-formats-point-defense-short-json.json",
+          "contract": "contracts/content-three-formats-point-defense-short-json.json"
+        },
+        {
+          "id": "content-three-formats-point-defense-short-ini",
+          "scenario": "scenarios/content-three-formats-point-defense-short-ini.json",
+          "contract": "contracts/content-three-formats-point-defense-short-ini.json"
+        },
+        {
+          "id": "content-three-formats-point-defense-short-hjson",
+          "scenario": "scenarios/content-three-formats-point-defense-short-hjson.json",
+          "contract": "contracts/content-three-formats-point-defense-short-hjson.json"
+        }
+      ]
+    },
+    {
+      "name": "content-three-formats-build-economy-short",
+      "suite": "content-three-formats",
+      "members": [
+        {
+          "id": "content-three-formats-build-economy-short-json",
+          "scenario": "scenarios/content-three-formats-build-economy-short-json.json",
+          "contract": "contracts/content-three-formats-build-economy-short-json.json"
+        },
+        {
+          "id": "content-three-formats-build-economy-short-ini",
+          "scenario": "scenarios/content-three-formats-build-economy-short-ini.json",
+          "contract": "contracts/content-three-formats-build-economy-short-ini.json"
+        },
+        {
+          "id": "content-three-formats-build-economy-short-hjson",
+          "scenario": "scenarios/content-three-formats-build-economy-short-hjson.json",
+          "contract": "contracts/content-three-formats-build-economy-short-hjson.json"
+        }
+      ]
+    },
+    {
+      "name": "content-three-formats-economy-build-economy-short",
+      "suite": "content-three-formats",
+      "members": [
+        {
+          "id": "content-three-formats-economy-build-economy-short-json",
+          "scenario": "scenarios/content-three-formats-economy-build-economy-short-json.json",
+          "contract": "contracts/content-three-formats-economy-build-economy-short-json.json"
+        },
+        {
+          "id": "content-three-formats-economy-build-economy-short-ini",
+          "scenario": "scenarios/content-three-formats-economy-build-economy-short-ini.json",
+          "contract": "contracts/content-three-formats-economy-build-economy-short-ini.json"
+        },
+        {
+          "id": "content-three-formats-economy-build-economy-short-hjson",
+          "scenario": "scenarios/content-three-formats-economy-build-economy-short-hjson.json",
+          "contract": "contracts/content-three-formats-economy-build-economy-short-hjson.json"
+        }
+      ]
+    },
+    {
+      "name": "content-three-formats-economy-build-failure-short",
+      "suite": "content-three-formats",
+      "members": [
+        {
+          "id": "content-three-formats-economy-build-failure-short-json",
+          "scenario": "scenarios/content-three-formats-economy-build-failure-short-json.json",
+          "contract": "contracts/content-three-formats-economy-build-failure-short-json.json"
+        },
+        {
+          "id": "content-three-formats-economy-build-failure-short-ini",
+          "scenario": "scenarios/content-three-formats-economy-build-failure-short-ini.json",
+          "contract": "contracts/content-three-formats-economy-build-failure-short-ini.json"
+        },
+        {
+          "id": "content-three-formats-economy-build-failure-short-hjson",
+          "scenario": "scenarios/content-three-formats-economy-build-failure-short-hjson.json",
+          "contract": "contracts/content-three-formats-economy-build-failure-short-hjson.json"
+        }
+      ]
+    },
+    {
+      "name": "content-three-formats-economy-maintenance-repair-short",
+      "suite": "content-three-formats",
+      "members": [
+        {
+          "id": "content-three-formats-economy-maintenance-repair-short-json",
+          "scenario": "scenarios/content-three-formats-economy-maintenance-repair-short-json.json",
+          "contract": "contracts/content-three-formats-economy-maintenance-repair-short-json.json"
+        },
+        {
+          "id": "content-three-formats-economy-maintenance-repair-short-ini",
+          "scenario": "scenarios/content-three-formats-economy-maintenance-repair-short-ini.json",
+          "contract": "contracts/content-three-formats-economy-maintenance-repair-short-ini.json"
+        },
+        {
+          "id": "content-three-formats-economy-maintenance-repair-short-hjson",
+          "scenario": "scenarios/content-three-formats-economy-maintenance-repair-short-hjson.json",
+          "contract": "contracts/content-three-formats-economy-maintenance-repair-short-hjson.json"
+        }
+      ]
+    },
+    {
+      "name": "content-three-formats-economy-maintenance-queue-short",
+      "suite": "content-three-formats",
+      "members": [
+        {
+          "id": "content-three-formats-economy-maintenance-queue-short-json",
+          "scenario": "scenarios/content-three-formats-economy-maintenance-queue-short-json.json",
+          "contract": "contracts/content-three-formats-economy-maintenance-queue-short-json.json"
+        },
+        {
+          "id": "content-three-formats-economy-maintenance-queue-short-ini",
+          "scenario": "scenarios/content-three-formats-economy-maintenance-queue-short-ini.json",
+          "contract": "contracts/content-three-formats-economy-maintenance-queue-short-ini.json"
+        },
+        {
+          "id": "content-three-formats-economy-maintenance-queue-short-hjson",
+          "scenario": "scenarios/content-three-formats-economy-maintenance-queue-short-hjson.json",
+          "contract": "contracts/content-three-formats-economy-maintenance-queue-short-hjson.json"
+        }
+      ]
+    },
+    {
+      "name": "content-three-formats-economy-maintenance-privacy-short",
+      "suite": "content-three-formats",
+      "members": [
+        {
+          "id": "content-three-formats-economy-maintenance-privacy-short-json",
+          "scenario": "scenarios/content-three-formats-economy-maintenance-privacy-short-json.json",
+          "contract": "contracts/content-three-formats-economy-maintenance-privacy-short-json.json"
+        },
+        {
+          "id": "content-three-formats-economy-maintenance-privacy-short-ini",
+          "scenario": "scenarios/content-three-formats-economy-maintenance-privacy-short-ini.json",
+          "contract": "contracts/content-three-formats-economy-maintenance-privacy-short-ini.json"
+        },
+        {
+          "id": "content-three-formats-economy-maintenance-privacy-short-hjson",
+          "scenario": "scenarios/content-three-formats-economy-maintenance-privacy-short-hjson.json",
+          "contract": "contracts/content-three-formats-economy-maintenance-privacy-short-hjson.json"
+        }
+      ]
+    },
+    {
+      "name": "mech-short",
+      "suite": "production-combat",
+      "members": [
+        {
+          "id": "mech-json-short",
+          "scenario": "scenarios/mech-json-short.json",
+          "contract": "contracts/mech-json-short.json"
+        },
+        {
+          "id": "mech-ini-short",
+          "scenario": "scenarios/mech-ini-short.json",
+          "contract": "contracts/mech-ini-short.json"
+        },
+        {
+          "id": "mech-hjson-short",
+          "scenario": "scenarios/mech-hjson-short.json",
+          "contract": "contracts/mech-hjson-short.json"
+        }
+      ]
+    },
+    {
+      "name": "helicopter-short",
+      "suite": "production-combat",
+      "members": [
+        {
+          "id": "helicopter-json-short",
+          "scenario": "scenarios/helicopter-json-short.json",
+          "contract": "contracts/helicopter-json-short.json"
+        },
+        {
+          "id": "helicopter-ini-short",
+          "scenario": "scenarios/helicopter-ini-short.json",
+          "contract": "contracts/helicopter-ini-short.json"
+        },
+        {
+          "id": "helicopter-hjson-short",
+          "scenario": "scenarios/helicopter-hjson-short.json",
+          "contract": "contracts/helicopter-hjson-short.json"
+        }
+      ]
+    },
+    {
+      "name": "heavy-mech-short",
+      "suite": "production-combat",
+      "members": [
+        {
+          "id": "heavy-mech-json-short",
+          "scenario": "scenarios/heavy-mech-json-short.json",
+          "contract": "contracts/heavy-mech-json-short.json"
+        },
+        {
+          "id": "heavy-mech-ini-short",
+          "scenario": "scenarios/heavy-mech-ini-short.json",
+          "contract": "contracts/heavy-mech-ini-short.json"
+        },
+        {
+          "id": "heavy-mech-hjson-short",
+          "scenario": "scenarios/heavy-mech-hjson-short.json",
+          "contract": "contracts/heavy-mech-hjson-short.json"
+        }
+      ]
+    },
+    {
+      "name": "author-water-core",
+      "suite": "production-combat",
+      "members": [
+        {
+          "id": "author-water-json-core",
+          "scenario": "scenarios/author-water-json.json",
+          "contract": "contracts/author-water-json.json"
+        },
+        {
+          "id": "author-water-ini-core",
+          "scenario": "scenarios/author-water-ini.json",
+          "contract": "contracts/author-water-ini.json"
+        },
+        {
+          "id": "author-water-hjson-core",
+          "scenario": "scenarios/author-water-hjson.json",
+          "contract": "contracts/author-water-hjson.json"
+        }
+      ]
+    },
+    {
+      "name": "author-construction-core",
+      "suite": "production-combat",
+      "members": [
+        {
+          "id": "author-construction-json-core",
+          "scenario": "scenarios/author-construction-json.json",
+          "contract": "contracts/author-construction-json.json"
+        },
+        {
+          "id": "author-construction-ini-core",
+          "scenario": "scenarios/author-construction-ini.json",
+          "contract": "contracts/author-construction-ini.json"
+        },
+        {
+          "id": "author-construction-hjson-core",
+          "scenario": "scenarios/author-construction-hjson.json",
+          "contract": "contracts/author-construction-hjson.json"
+        }
+      ]
+    },
+    {
+      "name": "author-production-core",
+      "suite": "production-combat",
+      "members": [
+        {
+          "id": "author-production-json-core",
+          "scenario": "scenarios/author-production-json.json",
+          "contract": "contracts/author-production-json.json"
+        },
+        {
+          "id": "author-production-ini-core",
+          "scenario": "scenarios/author-production-ini.json",
+          "contract": "contracts/author-production-ini.json"
+        },
+        {
+          "id": "author-production-hjson-core",
+          "scenario": "scenarios/author-production-hjson.json",
+          "contract": "contracts/author-production-hjson.json"
+        }
+      ]
+    },
+    {
+      "name": "author-upgrade",
+      "suite": "production-combat",
+      "members": [
+        {
+          "id": "author-upgrade-json",
+          "scenario": "scenarios/author-upgrade-json.json",
+          "contract": "contracts/author-upgrade-json.json"
+        },
+        {
+          "id": "author-upgrade-ini",
+          "scenario": "scenarios/author-upgrade-ini.json",
+          "contract": "contracts/author-upgrade-ini.json"
+        },
+        {
+          "id": "author-upgrade-hjson",
+          "scenario": "scenarios/author-upgrade-hjson.json",
+          "contract": "contracts/author-upgrade-hjson.json"
+        }
+      ]
+    },
+    {
+      "name": "author-shore-core",
+      "suite": "production-combat",
+      "members": [
+        {
+          "id": "author-shore-core-json",
+          "scenario": "scenarios/author-shore-json.json",
+          "contract": "contracts/author-shore-json.json"
+        },
+        {
+          "id": "author-shore-core-ini",
+          "scenario": "scenarios/author-shore-ini.json",
+          "contract": "contracts/author-shore-ini.json"
+        },
+        {
+          "id": "author-shore-core-hjson",
+          "scenario": "scenarios/author-shore-hjson.json",
+          "contract": "contracts/author-shore-hjson.json"
+        }
+      ]
+    },
+    {
+      "name": "author-naval-chain-core",
+      "suite": "production-combat",
+      "members": [
+        {
+          "id": "author-naval-chain-core-json",
+          "scenario": "scenarios/author-naval-chain-json.json",
+          "contract": "contracts/author-naval-chain-json.json"
+        },
+        {
+          "id": "author-naval-chain-core-ini",
+          "scenario": "scenarios/author-naval-chain-ini.json",
+          "contract": "contracts/author-naval-chain-ini.json"
+        },
+        {
+          "id": "author-naval-chain-core-hjson",
+          "scenario": "scenarios/author-naval-chain-hjson.json",
+          "contract": "contracts/author-naval-chain-hjson.json"
+        }
+      ]
+    },
+    {
+      "name": "bunker-short",
+      "suite": "production-combat",
+      "members": [
+        {
+          "id": "bunker-json-short",
+          "backend": "core",
+          "scenario": "scenarios/bunker-json-short.json",
+          "contract": "contracts/bunker-json-short.json"
+        },
+        {
+          "id": "bunker-ini-short",
+          "backend": "core",
+          "scenario": "scenarios/bunker-ini-short.json",
+          "contract": "contracts/bunker-ini-short.json"
+        },
+        {
+          "id": "bunker-hjson-short",
+          "backend": "core",
+          "scenario": "scenarios/bunker-hjson-short.json",
+          "contract": "contracts/bunker-hjson-short.json"
+        }
+      ]
+    },
+    {
+      "name": "repairbay-short",
+      "suite": "production-combat",
+      "members": [
+        {
+          "id": "repairbay-json-short",
+          "scenario": "scenarios/repairbay-json-short.json",
+          "contract": "contracts/repairbay-json-short.json"
+        },
+        {
+          "id": "repairbay-ini-short",
+          "scenario": "scenarios/repairbay-ini-short.json",
+          "contract": "contracts/repairbay-ini-short.json"
+        },
+        {
+          "id": "repairbay-hjson-short",
+          "scenario": "scenarios/repairbay-hjson-short.json",
+          "contract": "contracts/repairbay-hjson-short.json"
+        }
+      ]
+    },
+    {
+      "name": "engineer-short",
+      "suite": "production-combat",
+      "members": [
+        {
+          "id": "engineer-json-short",
+          "scenario": "scenarios/engineer-json-short.json",
+          "contract": "contracts/engineer-json-short.json"
+        },
+        {
+          "id": "engineer-ini-short",
+          "scenario": "scenarios/engineer-ini-short.json",
+          "contract": "contracts/engineer-ini-short.json"
+        },
+        {
+          "id": "engineer-hjson-short",
+          "scenario": "scenarios/engineer-hjson-short.json",
+          "contract": "contracts/engineer-hjson-short.json"
+        }
+      ]
+    },
+    {
+      "name": "nautilus-short",
+      "suite": "production-combat",
+      "members": [
+        {
+          "id": "nautilus-json-short",
+          "scenario": "scenarios/nautilus-json-short.json",
+          "contract": "contracts/nautilus-json-short.json"
+        },
+        {
+          "id": "nautilus-ini-short",
+          "scenario": "scenarios/nautilus-ini-short.json",
+          "contract": "contracts/nautilus-ini-short.json"
+        },
+        {
+          "id": "nautilus-hjson-short",
+          "scenario": "scenarios/nautilus-hjson-short.json",
+          "contract": "contracts/nautilus-hjson-short.json"
+        }
+      ]
+    },
+    {
+      "name": "nautilus-forms",
+      "suite": "production-combat",
+      "members": [
+        {
+          "id": "nautilus-json-forms",
+          "scenario": "scenarios/nautilus-json-forms.json",
+          "contract": "contracts/nautilus-json-forms.json"
+        },
+        {
+          "id": "nautilus-ini-forms",
+          "scenario": "scenarios/nautilus-ini-forms.json",
+          "contract": "contracts/nautilus-ini-forms.json"
+        },
+        {
+          "id": "nautilus-hjson-forms",
+          "scenario": "scenarios/nautilus-hjson-forms.json",
+          "contract": "contracts/nautilus-hjson-forms.json"
+        }
+      ]
+    },
+    {
+      "name": "anti-nuclear-short",
+      "suite": "production-combat",
+      "members": [
+        {
+          "id": "anti-nuclear-json-short",
+          "scenario": "scenarios/anti-nuclear-json-short.json",
+          "contract": "contracts/anti-nuclear-json-short.json"
+        },
+        {
+          "id": "anti-nuclear-ini-short",
+          "scenario": "scenarios/anti-nuclear-ini-short.json",
+          "contract": "contracts/anti-nuclear-ini-short.json"
+        },
+        {
+          "id": "anti-nuclear-hjson-short",
+          "scenario": "scenarios/anti-nuclear-hjson-short.json",
+          "contract": "contracts/anti-nuclear-hjson-short.json"
+        }
+      ]
+    },
+    {
+      "name": "nuclear-short",
+      "suite": "production-combat",
+      "members": [
+        {
+          "id": "nuclear-json-short",
+          "scenario": "scenarios/nuclear-json-short.json",
+          "contract": "contracts/nuclear-json-short.json"
+        },
+        {
+          "id": "nuclear-ini-short",
+          "scenario": "scenarios/nuclear-ini-short.json",
+          "contract": "contracts/nuclear-ini-short.json"
+        },
+        {
+          "id": "nuclear-hjson-short",
+          "scenario": "scenarios/nuclear-hjson-short.json",
+          "contract": "contracts/nuclear-hjson-short.json"
+        }
+      ]
+    }
+  ]
+}
