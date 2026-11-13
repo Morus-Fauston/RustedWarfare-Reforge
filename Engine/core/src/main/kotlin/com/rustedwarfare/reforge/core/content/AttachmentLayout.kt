@@ -49,6 +49,7 @@ internal object ModularSpiderRules {
     const val SPEED = "modularSpider_speed"
     const val LASER_DEFENSE = "modularSpider_laserdefense"
     const val ANTI_NUKE = "modularSpider_antinuke"
+    const val BLINK = "modularSpider_blink"
     val installs = listOf(
         AttachmentInstall("buildGun", GUN, 2000L),
         AttachmentInstall("buildSmallLaser", LASER, 700L),
@@ -60,6 +61,7 @@ internal object ModularSpiderRules {
         AttachmentInstall("buildSpeed", SPEED_INCOMPLETE, 6000L),
         AttachmentInstall("buildLaserdefense", LASER_DEFENSE, 3000L),
         AttachmentInstall("buildAntinuke", ANTI_NUKE, 7000L),
+        AttachmentInstall("buildBlink", BLINK, 15000L),
     )
     val slots = listOf(
         AttachmentSlotDefinition(1, -11.0, 32.0, 0.0, EMPTY),

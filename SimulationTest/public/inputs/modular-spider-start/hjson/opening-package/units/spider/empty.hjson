@@ -84,6 +84,13 @@
       "price": 7000,
       "buildSpeed": 0,
       "setBuilt": 0
+    },
+    {
+      "name": "buildBlink",
+      "convertTo": "modularSpider_blink",
+      "price": 15000,
+      "buildSpeed": 0,
+      "setBuilt": 0
     }
   ]
 }

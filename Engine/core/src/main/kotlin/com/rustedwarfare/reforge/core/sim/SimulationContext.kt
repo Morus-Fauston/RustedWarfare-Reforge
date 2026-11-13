@@ -694,7 +694,8 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
         val result = when (action) {
             is UnitAction -> {
                 val error = if (unit.definition.attachmentLayout != null) {
-                    UnitAttachments.request(steps.current, unit, action)
+                    UnitAttachments.request(steps.current, unit, action,
+                        buildingTerrain?.collisionMap ?: currentScenario.map)
                 } else if (unit.definition.nuclearSilo != null) {
                     val change = NuclearOrdnance.request(unit, action.actionName, action.cancelQueued, checkNotNull(productionLedger), action.target)
                     productionLedger = change.ledger
@@ -1093,6 +1094,7 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
                     }
                     UnitAttachments.advance(steps.current, currentScenario, parent, unit, step.delta.toFloat())
                     if (BuildingWork.isReady(unit)) {
+                        AttachmentBlink.finishSlot(steps.current, step, parent, unit)
                         if (unit.typeId == ModularSpiderRules.ANTI_NUKE)
                             AttachmentInterceptor.advance(steps.current, unit, step.delta.toFloat())
                         advanceIncome(unit, step.delta.toFloat())
@@ -1246,6 +1248,11 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
                 }
             }
             updateProjectiles(step.delta, candidate.existingProjectileIds)
+            for (parent in orderedUnits()) {
+                val pending = parent.spiderBlink ?: continue
+                if (parent.alive && !parent.reclaimed && parent.carriedBy == null && pending.queuedAt < step.stepIndex)
+                    AttachmentBlink.advanceParent(steps.current, parent, pending)
+            }
             UnitAttachments.settleLifecycle(steps.current, currentScenario)
             missileTargets = missileTargets?.refresh(orderedUnits())
             candidate.stageKnowledge(prepareAutomaticKnowledge())
@@ -2571,6 +2578,7 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
     }
 
     private fun processDeath(target: MutableUnit) {
+            target.spiderBlink = null
             if (target.definition.nuclearSilo != null) {
                 if (target.ordnance.queue.isNotEmpty()) pendingEvents += Event("unit-action-refunded", target.unitId)
                 productionLedger = NuclearOrdnance.discard(target, checkNotNull(productionLedger))
@@ -2618,7 +2626,8 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
                            motionSamples: MutableList<MotionStepSample>?) {
         if (!BuildingWork.isReady(unit)) return
         val movement = UnitLocomotion.movement(unit)
-        if (CustomUnitActions.movementLocked(unit, unitActionHead(unit)) || movement.type == MovementType.NONE) {
+        if (unit.spiderBlink != null || CustomUnitActions.movementLocked(unit, unitActionHead(unit)) ||
+            movement.type == MovementType.NONE) {
             unit.speed = 0.0
             unit.flightVelocity = Position(0.0, 0.0)
             unit.movementState = MovementState.IDLE
@@ -2854,7 +2863,7 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
                     maxHealth = unit.definition.maximumHealth,
                     shield = unit.definition.shield?.let { ShieldObservation(unit.shield, it.maximum, unit.shieldDisplayDamage) },
                     energy = unit.definition.energy?.let { EnergyObservation(unit.energy, it.maximum, unit.energyRecharging) },
-                    unitActions = attachments?.let { UnitAttachments.observe(steps.current, unit, it) }
+                    unitActions = attachments?.let { UnitAttachments.observe(steps.current, unit, it, observedTime) }
                         ?: NuclearOrdnance.observe(unit) ?: CustomUnitActions.observe(unit, steps.current.actionClock, currentScenario, unitActionQueue(unit)),
                     nuclearDoors = unit.definition.nuclearSilo?.let { unit.ordnance.doors },
                     attachment = unit.attachment?.let {

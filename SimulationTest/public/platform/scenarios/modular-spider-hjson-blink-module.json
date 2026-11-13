@@ -1,0 +1,202 @@
+{
+  "schemaVersion": 1,
+  "scenarioId": "modular-spider-hjson-blink-module",
+  "inputs": "../../inputs/modular-spider-start/hjson",
+  "contentPack": {
+    "directory": "opening-package",
+    "unitId": "modularSpider"
+  },
+  "intents": [
+    {
+      "intentId": "settle-opening",
+      "kind": "select",
+      "waitSteps": 100,
+      "position": {
+        "x": 40,
+        "y": 40
+      }
+    },
+    {
+      "intentId": "select-spider",
+      "kind": "select",
+      "waitSteps": 0,
+      "position": {
+        "x": 190,
+        "y": 150
+      }
+    },
+    {
+      "intentId": "leave-enemy-range",
+      "kind": "move",
+      "waitSteps": 260,
+      "position": {
+        "x": 80,
+        "y": 150
+      }
+    },
+    {
+      "intentId": "earn-blink-1",
+      "kind": "stop",
+      "waitSteps": 600
+    },
+    {
+      "intentId": "earn-blink-2",
+      "kind": "stop",
+      "waitSteps": 600
+    },
+    {
+      "intentId": "earn-blink-3",
+      "kind": "stop",
+      "waitSteps": 600
+    },
+    {
+      "intentId": "earn-blink-4",
+      "kind": "stop",
+      "waitSteps": 600
+    },
+    {
+      "intentId": "earn-blink-5",
+      "kind": "stop",
+      "waitSteps": 600
+    },
+    {
+      "intentId": "earn-blink-6",
+      "kind": "stop",
+      "waitSteps": 600
+    },
+    {
+      "intentId": "earn-blink-7",
+      "kind": "stop",
+      "waitSteps": 600
+    },
+    {
+      "intentId": "earn-blink-8",
+      "kind": "stop",
+      "waitSteps": 600
+    },
+    {
+      "intentId": "earn-blink-9",
+      "kind": "stop",
+      "waitSteps": 600
+    },
+    {
+      "intentId": "earn-blink-10",
+      "kind": "stop",
+      "waitSteps": 600
+    },
+    {
+      "intentId": "earn-blink-11",
+      "kind": "stop",
+      "waitSteps": 600
+    },
+    {
+      "intentId": "earn-blink-12",
+      "kind": "stop",
+      "waitSteps": 600
+    },
+    {
+      "intentId": "earn-blink-13",
+      "kind": "stop",
+      "waitSteps": 600
+    },
+    {
+      "intentId": "earn-blink-14",
+      "kind": "stop",
+      "waitSteps": 600
+    },
+    {
+      "intentId": "earn-blink-15",
+      "kind": "stop",
+      "waitSteps": 600
+    },
+    {
+      "intentId": "earn-blink-16",
+      "kind": "stop",
+      "waitSteps": 600
+    },
+    {
+      "intentId": "earn-blink-17",
+      "kind": "stop",
+      "waitSteps": 600
+    },
+    {
+      "intentId": "earn-blink-18",
+      "kind": "stop",
+      "waitSteps": 600
+    },
+    {
+      "intentId": "earn-blink-19",
+      "kind": "stop",
+      "waitSteps": 600
+    },
+    {
+      "intentId": "earn-blink-20",
+      "kind": "stop",
+      "waitSteps": 600
+    },
+    {
+      "intentId": "earn-blink-21",
+      "kind": "stop",
+      "waitSteps": 600
+    },
+    {
+      "intentId": "earn-blink-22",
+      "kind": "stop",
+      "waitSteps": 600
+    },
+    {
+      "intentId": "select-blink-slot",
+      "kind": "unit-action",
+      "waitSteps": 0,
+      "actionName": "selectSlot2"
+    },
+    {
+      "intentId": "buy-blink",
+      "kind": "unit-action",
+      "waitSteps": 30,
+      "actionName": "buildBlink"
+    },
+    {
+      "intentId": "queue-during-construction",
+      "kind": "unit-action",
+      "waitSteps": 10,
+      "actionName": "blink",
+      "target": {
+        "x": 212,
+        "y": 200
+      }
+    },
+    {
+      "intentId": "cancel-pending-blink",
+      "kind": "unit-action",
+      "waitSteps": 1,
+      "actionName": "blink",
+      "cancelQueued": true
+    },
+    {
+      "intentId": "finish-blink-1",
+      "kind": "stop",
+      "waitSteps": 600
+    },
+    {
+      "intentId": "finish-blink-2",
+      "kind": "stop",
+      "waitSteps": 420
+    },
+    {
+      "intentId": "blink-to-open-ground",
+      "kind": "unit-action",
+      "waitSteps": 40,
+      "actionName": "blink",
+      "target": {
+        "x": 239,
+        "y": 221
+      }
+    },
+    {
+      "intentId": "stop-during-charge",
+      "kind": "stop",
+      "waitSteps": 230
+    }
+  ]
+}

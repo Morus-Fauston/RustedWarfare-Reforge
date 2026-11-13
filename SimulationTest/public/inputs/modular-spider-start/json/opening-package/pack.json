@@ -78,6 +78,10 @@
     {
       "type": "modular-spider",
       "file": "units/spider/anti-nuke.json"
+    },
+    {
+      "type": "modular-spider",
+      "file": "units/spider/blink.json"
     }
   ]
 }

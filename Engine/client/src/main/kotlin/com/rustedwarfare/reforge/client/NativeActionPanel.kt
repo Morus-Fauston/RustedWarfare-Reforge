@@ -10,7 +10,7 @@ internal object NativeActionPanel {
     }
     private val spiderPurchases = listOf("selectSlotBuild", "buildGun", "buildSmallLaser", "buildAntiair",
         "buildLightning", "buildArtillery", "buildFabricator", "buildShieldGen", "buildSpeed",
-        "buildLaserdefense", "buildAntinuke")
+        "buildLaserdefense", "buildAntinuke", "buildBlink")
         .mapIndexed { index, name ->
             name to NativeCardBounds(752f + index % 2 * 92f, 219f - index / 2 * 27f, 84f, 24f)
         }.toMap()
@@ -22,6 +22,8 @@ internal object NativeActionPanel {
         "isDisabled" to NativeCardBounds(844f, 215f, 84f, 28f),
         "cancel" to NativeCardBounds(844f, 184f, 84f, 28f),
         "reclaim" to NativeCardBounds(844f, 184f, 84f, 28f),
+        "blink" to NativeCardBounds(844f, 215f, 84f, 28f),
+        "blinkQueued" to NativeCardBounds(16f, 76f, 128f, 36f),
     )
 
     val customActions = listOf("afterBurn", "cancelBurn", "deploy", "undeploy").mapIndexed { index, name ->

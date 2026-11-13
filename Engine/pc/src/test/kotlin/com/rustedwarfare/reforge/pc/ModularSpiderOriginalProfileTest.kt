@@ -28,6 +28,7 @@ class ModularSpiderOriginalProfileTest {
             "shieldGen" to ("shieldGen.png" to listOf(22, 21)),
             "speedIncomplete" to ("speed.png" to listOf(22, 21)),
             "speed" to ("speed.png" to listOf(22, 21)),
+            "blink" to ("blink.png" to listOf(22, 21)),
         )
         for ((form, expected) in pictures) {
             val binding = assertNotNull(bindings.get("modularSpider_$form"))

@@ -6254,6 +6254,7 @@
     "spider-speed": "assets/units/modular_spider/speed.png",
     "spider-laser-defense": "assets/units/modular_spider/laser_defense.png",
     "spider-anti-nuke": "assets/units/modular_spider/antinuke.png",
+    "spider-blink": "assets/units/modular_spider/blink.png",
     "modular-spider-body": "assets/units/modular_spider/body.png",
     "modular-spider-dead": "assets/units/modular_spider/body_dead.png",
     "modular-spider-overlay": "assets/units/modular_spider/body_ui.png",
@@ -6642,6 +6643,14 @@
       "path": "assets/units/modular_spider/antinuke.png",
       "bytes": 523,
       "sha256": "9cd04d7198367cf1d671aac683b65b74bef889e730c76d27ed01352e323705f6",
+      "width": 22,
+      "height": 21
+    },
+    {
+      "id": "spider-blink",
+      "path": "assets/units/modular_spider/blink.png",
+      "bytes": 773,
+      "sha256": "34d4fea132378688f8f7b66b9038882d3d4dd9ebe6a953afb4ba436a145b8071",
       "width": 22,
       "height": 21
     },
@@ -7604,6 +7613,14 @@
       "target": [22, 21],
       "frames": 1
     },
+    "spider-blink": {
+      "file": "units/spider-blink.png",
+      "operation": "crop",
+      "source": "spider-blink",
+      "rect": [0, 0, 22, 21],
+      "target": [22, 21],
+      "frames": 1
+    },
     "modular-spider-body": {
       "file": "units/modular-spider-body.png",
       "operation": "crop",
@@ -8393,6 +8410,9 @@
     },
     "modularSpider_antinuke": {
       "body": "spider-anti-nuke"
+    },
+    "modularSpider_blink": {
+      "body": "spider-blink"
     },
     "modularSpider_gunturret": {
       "body": "engineer-body",

@@ -510,6 +510,9 @@ internal data class MutableUnit(
     var attachmentAutomaticCooldown: Float = 0f,
     var attachmentLaserExhausted: Boolean = false,
     var attachmentInterceptor: AttachmentInterceptorState = AttachmentInterceptorState(),
+    var blinkRequest: Position? = null,
+    var blinkCooldownUntil: Double = 0.0,
+    var spiderBlink: SpiderBlink? = null,
 ) {
     val producerId: String? get() = productionOrigin?.producerId
     val reversing: Boolean get() = mechState?.reversing ?: bodyReversing

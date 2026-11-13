@@ -78,6 +78,10 @@
     {
       "type": "modular-spider",
       "file": "units/spider/anti-nuke.ini"
+    },
+    {
+      "type": "modular-spider",
+      "file": "units/spider/blink.ini"
     }
   ]
 }

@@ -44,7 +44,7 @@ class ModularSpiderWeaponModuleTest {
                 "gunturretT2" to 3000.0, "antiair" to 2000.0, "antiairT2" to 3000.0, "antiairFlak" to 3000.0)
             for ((name, health) in expectedHealth) assertEquals(health, unit(name).maximumHealth, name)
             assertEquals(listOf("buildGun", "buildSmallLaser", "buildAntiair", "buildLightning", "buildArtillery",
-                "buildFabricator", "buildShieldGen", "buildSpeed", "buildLaserdefense", "buildAntinuke"),
+                "buildFabricator", "buildShieldGen", "buildSpeed", "buildLaserdefense", "buildAntinuke", "buildBlink"),
                 unit("emptySlot").attachmentModule?.installs?.map { it.action })
             assertEquals(1000L, unit("antiair").attachmentModule?.cancel?.refund)
             assertEquals(500L, unit("antiair").attachmentModule?.reclaim?.refund)
@@ -898,6 +898,30 @@ class ModularSpiderWeaponModuleTest {
             assertEquals("hiddenAction_speedFinished", missing.section)
             assertEquals("convertTo", missing.field)
             assertEquals(copy.resolve("units/spider/speed-incomplete.$format").toString(), missing.file)
+        }
+    }
+
+    @Test fun blink_bad_references_and_unsupported_terrain_report_the_actual_declaration_in_all_formats() {
+        for (format in listOf("ini", "json", "hjson")) {
+            val copy = copyPack(format)
+            val blink = copy.resolve("units/spider/blink.$format")
+            val original = Files.readString(blink)
+            val invalidFields = listOf(
+                Triple("fireTurretXAtGround_withProjectile", "dummyBlink" to "missingBlink", ContentErrorCode.BAD_REFERENCE),
+                Triple("fireTurretXAtGround_onlyOverPassableTileOf", "HOVER" to "LAND", ContentErrorCode.UNSUPPORTED_FEATURE),
+            )
+            for ((field, values, expected) in invalidFields) {
+                val (before, after) = values
+                val declaration = if (format == "ini") "$field: $before" else "\"$field\": \"$before\""
+                val modified = original.replaceFirst(declaration, declaration.replace(before, after))
+                assertNotEquals(original, modified)
+                Files.writeString(blink, modified)
+                val error = assertIs<ContentResult.Failure>(ContentLoader.loadContentPack(copy)).error
+                assertEquals(expected, error.code, error.describe())
+                assertEquals("action_blink", error.section)
+                assertEquals(field, error.field)
+                assertEquals(blink.toString(), error.file)
+            }
         }
     }
 

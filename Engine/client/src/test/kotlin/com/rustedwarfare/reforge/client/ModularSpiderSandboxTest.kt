@@ -63,7 +63,7 @@ class ModularSpiderSandboxTest {
             bounds()
             click("selectSlot1")
             assertEquals(listOf("Add Gun T1", "Add Laser", "Add AA", "Add Lightning", "Add Artillery",
-                "Add Fabricator", "Add Shield", "Add Speed", "Add Laser guard", "Add Anti-nuke"), session.actionMenu.unitActions
+                "Add Fabricator", "Add Shield", "Add Speed", "Add Laser guard", "Add Anti-nuke", "Add Blink"), session.actionMenu.unitActions
                 .filter { it.name.startsWith("build") }.map { it.title })
             bounds()
             val balance = checkNotNull(session.observation.balance)
@@ -131,6 +131,29 @@ class ModularSpiderSandboxTest {
                 assertTrue(a.x + a.width <= b.x || b.x + b.width <= a.x ||
                     a.y + a.height <= b.y || b.y + b.height <= a.y, "Overlapping interceptor cards: $a and $b")
             }
+        }
+    }
+
+    @Test fun blink_preview_uses_the_selected_slot_and_rejects_range_and_map_edges() {
+        val (root, pack) = source("ini")
+        val scene = contentPackScenario(root, ContentPackChoice(pack, "modularSpider"))
+        SandboxSession(scene).use { session ->
+            repeat(14900) { session.tick() }
+            val parent = session.observation.units.single { it.typeId == "modularSpider" }
+            session.select(parent.position)
+            assertIs<ActionResult.Accepted>(session.unitAction("selectSlot2"))
+            assertIs<ActionResult.Accepted>(session.unitAction("buildBlink"))
+            session.tick()
+            val view = session.actionMenu.unitActions.single { it.name == "blink" }
+            assertTrue(view.groundTargeted && view.available)
+            val slot = session.observation.units.single { it.unitId == view.attachmentContext?.first }
+            val legal = assertNotNull(session.previewGroundAction("blink", slot.position))
+            assertEquals(slot.position, legal.source)
+            assertTrue(legal.valid)
+            assertEquals("action-target-out-of-range", session.previewGroundAction("blink",
+                com.rustedwarfare.reforge.core.sim.Position(slot.position.x + 701.0, slot.position.y))?.rejection)
+            assertEquals("action-target-impassable", session.previewGroundAction("blink",
+                com.rustedwarfare.reforge.core.sim.Position(-1.0, slot.position.y))?.rejection)
         }
     }
 

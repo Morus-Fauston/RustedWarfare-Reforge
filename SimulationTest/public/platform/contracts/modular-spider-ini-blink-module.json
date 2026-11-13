@@ -1,0 +1,159 @@
+{
+  "schemaVersion": 1,
+  "scenarioId": "modular-spider-ini-blink-module",
+  "history": {
+    "ownerPlayerId": "p1",
+    "initialBalance": 5000,
+    "noActionIntents": [
+      "settle-opening"
+    ],
+    "initialOwnedTypes": [
+      "modularSpider",
+      "modularSpider_emptySlot",
+      "modularSpider_emptySlot",
+      "modularSpider_emptySlot",
+      "modularSpider_emptySlot",
+      "modularSpider_emptySlot",
+      "modularSpider_emptySlot"
+    ],
+    "initialIncome": {
+      "unitId": "a",
+      "typeId": "modularSpider",
+      "period": 40,
+      "credits": 30
+    },
+    "spend": [
+      {
+        "intentId": "buy-blink",
+        "amount": 15000,
+        "at": "action"
+      }
+    ],
+    "mechLegs": {
+      "modularSpider": 8,
+      "mechGun": 2
+    },
+    "projectileBirthsRequired": true,
+    "minimumBirths": [],
+    "finalUnits": [
+      {
+        "ownerPlayerId": "p1",
+        "typeId": "modularSpider",
+        "fields": {
+          "alive": true,
+          "constructionProgress": 1
+        }
+      },
+      {
+        "ownerPlayerId": "p1",
+        "typeId": "modularSpider_blink",
+        "fields": {
+          "alive": true,
+          "constructionProgress": 1
+        }
+      }
+    ],
+    "spiderBlink": true
+  },
+  "rules": [
+    {
+      "intentId": "settle-opening"
+    },
+    {
+      "intentId": "select-spider"
+    },
+    {
+      "intentId": "leave-enemy-range"
+    },
+    {
+      "intentId": "earn-blink-1"
+    },
+    {
+      "intentId": "earn-blink-2"
+    },
+    {
+      "intentId": "earn-blink-3"
+    },
+    {
+      "intentId": "earn-blink-4"
+    },
+    {
+      "intentId": "earn-blink-5"
+    },
+    {
+      "intentId": "earn-blink-6"
+    },
+    {
+      "intentId": "earn-blink-7"
+    },
+    {
+      "intentId": "earn-blink-8"
+    },
+    {
+      "intentId": "earn-blink-9"
+    },
+    {
+      "intentId": "earn-blink-10"
+    },
+    {
+      "intentId": "earn-blink-11"
+    },
+    {
+      "intentId": "earn-blink-12"
+    },
+    {
+      "intentId": "earn-blink-13"
+    },
+    {
+      "intentId": "earn-blink-14"
+    },
+    {
+      "intentId": "earn-blink-15"
+    },
+    {
+      "intentId": "earn-blink-16"
+    },
+    {
+      "intentId": "earn-blink-17"
+    },
+    {
+      "intentId": "earn-blink-18"
+    },
+    {
+      "intentId": "earn-blink-19"
+    },
+    {
+      "intentId": "earn-blink-20"
+    },
+    {
+      "intentId": "earn-blink-21"
+    },
+    {
+      "intentId": "earn-blink-22"
+    },
+    {
+      "intentId": "select-blink-slot"
+    },
+    {
+      "intentId": "buy-blink"
+    },
+    {
+      "intentId": "queue-during-construction"
+    },
+    {
+      "intentId": "cancel-pending-blink"
+    },
+    {
+      "intentId": "finish-blink-1"
+    },
+    {
+      "intentId": "finish-blink-2"
+    },
+    {
+      "intentId": "blink-to-open-ground"
+    },
+    {
+      "intentId": "stop-during-charge"
+    }
+  ]
+}

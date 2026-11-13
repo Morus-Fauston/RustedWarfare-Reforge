@@ -33,6 +33,28 @@
     "turnAcceleration": 0.1,
     "reverseSpeedPercentage": 1
   },
+  "actions": [
+    {
+      "name": "blinkQueued",
+      "tags": "blink",
+      "buildSpeed": 210,
+      "allowMultipleInQueue": false,
+      "canPlayerCancel": false,
+      "isActive": false,
+      "highPriorityQueue": true,
+      "whenBuilding_cannotMove": true
+    }
+  ],
+  "projectiles": [
+    {
+      "name": "blink",
+      "teleportSource": true,
+      "instant": true,
+      "directDamage": 0,
+      "targetGround": true,
+      "shouldRevealFog": true
+    }
+  ],
   "attachment_slot1": {
     "x": -11,
     "y": 32,

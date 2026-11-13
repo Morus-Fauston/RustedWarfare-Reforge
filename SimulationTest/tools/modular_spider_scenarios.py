@@ -103,10 +103,28 @@ def defense_intents():
     ]
 
 
+def blink_intents():
+    def action(name, command, wait=0, **fields):
+        return intent(name, 'unit-action', wait, actionName=command, **fields)
+
+    return [
+        intent('leave-enemy-range', 'move', 260, position=dict(x=80, y=150)),
+        *(intent(f'earn-blink-{index}', 'stop', 600) for index in range(1, 23)),
+        action('select-blink-slot', 'selectSlot2'),
+        action('buy-blink', 'buildBlink', 30),
+        action('queue-during-construction', 'blink', 10, target=dict(x=212, y=200)),
+        action('cancel-pending-blink', 'blink', 1, cancelQueued=True),
+        intent('finish-blink-1', 'stop', 600),
+        intent('finish-blink-2', 'stop', 420),
+        action('blink-to-open-ground', 'blink', 40, target=dict(x=239, y=221)),
+        intent('stop-during-charge', 'stop', 230),
+    ]
+
+
 def generate(weapon_modules=False, destination=PLATFORM, *, special_weapons=False, utility_modules=False,
-             defense_modules=False):
+             defense_modules=False, blink_module=False):
     for form in ('ini', 'json', 'hjson'):
-        case = ('defense-modules' if defense_modules else 'utility-modules' if utility_modules else 'special-weapons' if special_weapons
+        case = ('blink-module' if blink_module else 'defense-modules' if defense_modules else 'utility-modules' if utility_modules else 'special-weapons' if special_weapons
                 else 'weapon-modules' if weapon_modules else 'opening')
         identity = f'modular-spider-{form}-{case}'
         steps = [
@@ -132,7 +150,17 @@ def generate(weapon_modules=False, destination=PLATFORM, *, special_weapons=Fals
             finalUnits=[dict(ownerPlayerId='p1', typeId=unit, fields=dict(alive=True))
                         for unit in ('modularSpider', 'modularSpider_gunturret')],
         )
-        if defense_modules:
+        if blink_module:
+            steps[2:] = blink_intents()
+            history.pop('spiderOpening')
+            history.update(
+                spiderBlink=True,
+                spend=[dict(intentId='buy-blink', amount=15000, at='action')],
+                minimumBirths=[],
+                finalUnits=[dict(ownerPlayerId='p1', typeId=unit, fields=dict(alive=True, constructionProgress=1))
+                            for unit in ('modularSpider', 'modularSpider_blink')],
+            )
+        elif defense_modules:
             steps[2:] = defense_intents()
             history.pop('spiderOpening')
             history.update(
@@ -218,6 +246,7 @@ if __name__ == '__main__':
     cases.add_argument('--special-weapons', action='store_true')
     cases.add_argument('--utility-modules', action='store_true')
     cases.add_argument('--defense-modules', action='store_true')
+    cases.add_argument('--blink-module', action='store_true')
     arguments = parser.parse_args()
     generate(arguments.weapon_modules, special_weapons=arguments.special_weapons, utility_modules=arguments.utility_modules,
-             defense_modules=arguments.defense_modules)
+             defense_modules=arguments.defense_modules, blink_module=arguments.blink_module)

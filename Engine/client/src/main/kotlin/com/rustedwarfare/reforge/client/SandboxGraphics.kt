@@ -9,6 +9,7 @@ import com.badlogic.gdx.graphics.g2d.SpriteBatch
 import com.badlogic.gdx.graphics.g2d.TextureRegion
 import com.badlogic.gdx.graphics.glutils.ShapeRenderer
 import com.badlogic.gdx.utils.XmlReader
+import com.rustedwarfare.reforge.core.sim.PlayerObservation
 import com.rustedwarfare.reforge.core.sim.Scenario
 import java.nio.file.Path
 import com.rustedwarfare.reforge.core.sim.Position
@@ -41,6 +42,10 @@ class SandboxGraphics private constructor(private val resources: SandboxRenderRe
     private val trailImages = mutableMapOf<Path, TextureRegion>()
     private val afterburnTrails = AfterburnTrailPresentation()
     private val nuclearPresentation = NuclearPresentation()
+    private data class BlinkFlash(val from: Position, val to: Position, val step: Long)
+    private val blinkOrigins = mutableMapOf<String, Position>()
+    private val blinkFlashes = mutableMapOf<String, BlinkFlash>()
+    private var blinkSample: String? = null
     fun unitIcon(typeId: String): TextureRegion? = resources.units[typeId]?.iconWeaponName?.let {
         namedTurrets[typeId to it]
     } ?: units[typeId]
@@ -479,6 +484,7 @@ class SandboxGraphics private constructor(private val resources: SandboxRenderRe
             }
             shapes.line(x - 7f, y, x + 7f, y); shapes.line(x, y - 7f, x, y + 7f)
         }
+        drawBlink(shapes, frame.observation)
         for (effect in nuclearPresentation.project(frame.observation)) {
             val x=projection.x(effect.center.x)
             val y=projection.y(effect.center.y)+(effect.height*projection.scale).toFloat()
@@ -635,6 +641,42 @@ class SandboxGraphics private constructor(private val resources: SandboxRenderRe
         shapes.rect(minimap.x(topLeft.x), minimap.y(bottomRight.y),
             minimap.x(bottomRight.x) - minimap.x(topLeft.x), minimap.y(topLeft.y) - minimap.y(bottomRight.y))
         shapes.end()
+    }
+
+    private fun drawBlink(shapes: ShapeRenderer, observation: PlayerObservation) {
+        val step = observation.stepIndex
+        if (observation.sampleId != blinkSample) {
+            blinkSample = observation.sampleId
+            for (unit in observation.units) {
+                if (unit.typeId != "modularSpider") continue
+                val charge = unit.unitActions?.queue?.any { it.name == "blinkQueued" } == true
+                if (charge) blinkOrigins[unit.unitId] = unit.position
+                if (observation.events.any { it.kind == "teleported" && it.unitId == unit.unitId } &&
+                    blinkFlashes[unit.unitId]?.step != step) {
+                    val origin = blinkOrigins.remove(unit.unitId) ?: unit.position
+                    blinkFlashes[unit.unitId] = BlinkFlash(origin, unit.position, step)
+                }
+            }
+            val known = observation.units.filter { it.alive }.mapTo(hashSetOf()) { it.unitId }
+            blinkOrigins.keys.retainAll(known)
+            blinkFlashes.values.removeAll { step - it.step >= 36 }
+        }
+        shapes.setColor(.07f, .93f, .95f, 1f)
+        for (unit in observation.units) {
+            val charge = unit.unitActions?.queue?.firstOrNull { it.name == "blinkQueued" } ?: continue
+            val radius = (24 + charge.progress * 25) * projection.scale.toFloat()
+            val x = projection.x(unit.position.x)
+            val y = projection.y(unit.position.y)
+            shapes.circle(x, y, radius, 40)
+            shapes.circle(x, y, radius * .78f, 32)
+        }
+        for (flash in blinkFlashes.values) {
+            val progress = (step - flash.step) / 36f
+            shapes.setColor(.07f, .93f, .95f, 1f - progress)
+            val radius = (20 + 38 * progress) * projection.scale.toFloat()
+            for (point in listOf(flash.from, flash.to))
+                shapes.circle(projection.x(point.x), projection.y(point.y), radius, 40)
+        }
     }
 
     override fun close() {

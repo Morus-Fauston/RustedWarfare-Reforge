@@ -1,5 +1,6 @@
 """Independent replay checks for the normal Modular Spider opening."""
 import math
+import struct
 
 
 CHASSIS = 'modularSpider'
@@ -15,14 +16,15 @@ SPEED_INCOMPLETE = 'modularSpider_speedIncomplete'
 SPEED = 'modularSpider_speed'
 LASER_DEFENSE = 'modularSpider_laserdefense'
 INTERCEPTOR = 'modularSpider_antinuke'
+BLINK = 'modularSpider_blink'
 AMMO = 'buildAntiNuke'
 SWITCHES = ('isEnabled', 'isDisabled')
 SLOTS = ('selectSlotBuild', *(f'selectSlot{i}' for i in range(1, 7)))
 PAID = ('buildGun', 'buildSmallLaser', 'buildAntiair', 'buildLightning', 'buildArtillery',
         'buildFabricator', 'buildShieldGen', 'buildSpeed', 'upgradeT2', 'upgradeFlak',
-        'buildLaserdefense', 'buildAntinuke', AMMO)
-CANCELLABLE = (*PAID, 'reclaim')
-ACTIONS = (*SLOTS, *CANCELLABLE, 'cancel', *SWITCHES)
+        'buildLaserdefense', 'buildAntinuke', 'buildBlink', AMMO)
+CANCELLABLE = (*PAID, 'reclaim', 'blink')
+ACTIONS = (*SLOTS, *CANCELLABLE, 'cancel', 'blinkQueued', *SWITCHES)
 OFFSETS = ((-11, 32, 0), (11, 32, 0), (-11, 6, -90), (11, 6, 90), (-10, -20, 180), (11, -20, 180))
 
 
@@ -30,6 +32,10 @@ def check(condition, message):
     if not condition:
         from platform_scenario import PlatformError
         raise PlatformError('history-spider', message, 2)
+
+
+def blink_point(point):
+    return {axis: struct.unpack('f', struct.pack('f', value))[0] for axis, value in point.items()}
 
 
 def validate_state(unit, owner):
@@ -43,12 +49,24 @@ def validate_state(unit, owner):
           'Invalid selected slot')
     selected = next((slot for slot in layout['slots'] if slot['number'] == layout['selectedSlot']), None)
     interceptor = selected is not None and selected['typeId'] == INTERCEPTOR
+    check(isinstance(actions, dict), 'Invalid slot controls')
+    queue = actions.get('queue', [])
     fields = {'actions', 'automaticCooldown'}
     if interceptor:
         fields |= {'stockpile', 'queue', 'interceptorOnline'}
-    check(isinstance(actions, dict) and set(actions) == fields and
+    if queue:
+        fields.add('queue')
+    check(set(actions) == fields and isinstance(queue, list) and
           actions['automaticCooldown'] == 0 and isinstance(actions['actions'], dict), 'Invalid slot controls')
     check(set(SLOTS) <= set(actions['actions']) <= set(ACTIONS), 'Unknown or missing slot controls')
+    for item in queue:
+        check(isinstance(item, dict) and set(item) == {'name', 'progress', 'target'} and
+              type(item['progress']) in (int, float) and 0 <= item['progress'] < 1, 'Invalid slot order')
+        if item['name'] in ('blink', 'blinkQueued'):
+            point = item['target']
+            check(isinstance(point, dict) and set(point) == {'x', 'y'} and
+                  all(type(value) in (int, float) and math.isfinite(value) for value in point.values()),
+                  'Invalid Blink target')
     if interceptor:
         stock, queue, online = actions['stockpile'], actions['queue'], actions['interceptorOnline']
         check(type(stock) is int and 0 <= stock <= 12 and isinstance(queue, list) and type(online) is bool,
@@ -56,29 +74,47 @@ def validate_state(unit, owner):
         switch = 'isEnabled' if online else 'isDisabled'
         check(AMMO in actions['actions'] and set(SWITCHES) & actions['actions'].keys() == {switch},
               'Current module switch and ammo cards must match its state')
-        check(all(isinstance(item, dict) and set(item) == {'name', 'progress', 'target'} and
-                  item['target'] is None and item['name'] in (AMMO, 'reclaim', switch) and
-                  type(item['progress']) in (int, float) and 0 <= item['progress'] < 1 for item in queue) and
+        check(all(item['target'] is None and item['name'] in (AMMO, 'reclaim', switch) or
+                  item['name'] == 'blinkQueued' for item in queue) and
               stock + sum(item['name'] == AMMO for item in queue) <= 12, 'Invalid ordered module queue')
     for name, action in actions['actions'].items():
         check(isinstance(action, dict) and set(action) == {'queueIndex', 'progress', 'cooldownRemaining', 'available'} and
               type(action['available']) is bool and type(action['cooldownRemaining']) is int and
-              0 <= action['cooldownRemaining'] <= 2000 and
+              0 <= action['cooldownRemaining'] <= (30000 if name == 'blink' else 2000) and
               (action['queueIndex'] is None or type(action['queueIndex']) is int and
-               0 <= action['queueIndex'] <= (len(queue) - 1 if interceptor else 0)) and
+               0 <= action['queueIndex'] <= (max(0, len(queue) - 1) if interceptor or name in ('blink', 'blinkQueued')
+                                            else len(queue))) and
               (action['progress'] is None or type(action['progress']) in (int, float) and 0 <= action['progress'] <= 1),
               f'Invalid slot action state for {name}')
 
 
-def validate_call(old, new, row, intent):
+def validate_call(old, new, row, intent, input_limits):
     name = intent['actionName']
     cancelling = intent.get('cancelQueued', False)
-    check(name in ACTIONS and row.get('actionName') == name and row.get('cancelQueued') is cancelling and row.get('target') is None,
+    point = row.get('target')
+    expected = intent.get('target')
+    target_matches = point is None and expected is None or name == 'blink' and not cancelling and (
+        isinstance(point, dict) and set(point) == {'x', 'y'} and
+        all(type(point[axis]) in (int, float) and math.isfinite(point[axis]) and
+            abs(point[axis] - expected[axis]) <= input_limits[axis] for axis in ('x', 'y')))
+    check(name in ACTIONS and row.get('actionName') == name and row.get('cancelQueued') is cancelling and target_matches,
           'Chassis call does not match the declared normal slot action')
     left = old['attachmentOverview']
     right = new['attachmentOverview']
     check(left['slots'] == right['slots'], 'The call synchronously changed slot identities or construction')
     old_action = old['unitActions']['actions'].get(name)
+    if name == 'blink':
+        before, after = old['unitActions'].get('queue', []), new['unitActions'].get('queue', [])
+        check(left['selectedSlot'] is not None and left['selectedSlot'] == right['selectedSlot'] and
+              left['slots'][left['selectedSlot'] - 1]['typeId'] == BLINK, 'Blink was not issued by the selected module')
+        if cancelling:
+            check(any(item['name'] == name for item in before) and
+                  after == [item for item in before if item['name'] != name], 'Blink did not cancel the queued target')
+        else:
+            check(old_action and old_action['available'] and point is not None and
+                  after == [*before, dict(name=name, progress=0, target=blink_point(point))],
+                  'Blink did not queue its accepted target')
+        return
     if name in (AMMO, *SWITCHES) or name == 'reclaim' and 'interceptorOnline' in old['unitActions']:
         before, after = old['unitActions'], new['unitActions']
         check(left['selectedSlot'] is not None and left['selectedSlot'] == right['selectedSlot'] and
@@ -91,13 +127,18 @@ def validate_call(old, new, row, intent):
             del expected[max(i for i, item in enumerate(expected) if item['name'] == name)]
         else:
             check(old_action and old_action['available'], 'Interceptor command was unavailable')
-            expected.insert(0 if name in SWITCHES else len(expected), dict(name=name, progress=0, target=None))
+            first_slot_item = int(bool(expected and expected[0]['name'] == 'blinkQueued'))
+            expected.insert(first_slot_item if name in SWITCHES else len(expected), dict(name=name, progress=0, target=None))
         check(after['queue'] == expected, 'The interceptor command did not update the matching queue item')
         return
+    before_parent = [item for item in old['unitActions'].get('queue', []) if item['name'] == 'blinkQueued']
+    after_parent = [item for item in new['unitActions'].get('queue', []) if item['name'] == 'blinkQueued']
+    check(before_parent == after_parent, 'A slot call changed the pending chassis Blink')
+    slot_index = len(before_parent)
     if cancelling:
         new_action = new['unitActions']['actions'].get(name)
         check(name in CANCELLABLE and left['selectedSlot'] is not None and right['selectedSlot'] == left['selectedSlot'] and
-              old_action is not None and old_action.get('queueIndex') == 0 and
+              old_action is not None and old_action.get('queueIndex') == slot_index and
               new_action is not None and new_action.get('queueIndex') is None and new_action.get('progress') is None,
               'Right-click must remove the matching order from the same selected slot')
         return
@@ -111,7 +152,52 @@ def validate_call(old, new, row, intent):
     new_action = new['unitActions']['actions'].get(name)
     check(new_action is not None and new_action.get('available') is False, 'The module order was not admitted')
     if name != 'cancel':
-        check(new_action.get('queueIndex') == 0 and new_action.get('progress') == 0, 'Module order did not enter its slot queue')
+        check(new_action.get('queueIndex') == slot_index and new_action.get('progress') == 0,
+              'Module order did not enter its slot queue')
+
+
+def validate_blink_history(records):
+    slots = origin = target = queued_at = None
+    teleports = 0
+    for row in records:
+        if row.get('kind') == 'action' and row.get('actionName') == 'blink' and not row['cancelQueued']:
+            target = blink_point(row['target'])
+        if row.get('kind') != 'observation' or row.get('phase') not in ('initial', 'step'):
+            continue
+        sample = row['sample']
+        units = {unit['unitId']: unit for unit in sample['units']}
+        parent = units['a']
+        overview = parent['attachmentOverview']
+        actions = parent['unitActions']
+        identities = [slot['unitId'] for slot in overview['slots']]
+        if slots is None:
+            slots = identities
+            check(len(slots) == len(set(slots)) == 6, 'Expected six independent Blink attachment slots')
+        check(identities == slots, 'Blink changed a slot identity')
+        event = any(event['kind'] == 'teleported' and event['unitId'] == 'a' for event in sample['events'])
+        charge = next((item for item in actions.get('queue', []) if item['name'] == 'blinkQueued'), None)
+        if charge:
+            if queued_at is None:
+                origin = parent['position']
+                queued_at = sample['stepIndex']
+                check(charge['progress'] == 0 and charge['target'] == target, 'Chassis did not keep the child target')
+            check(parent['position'] == origin and not event and
+                  abs(charge['progress'] - (sample['stepIndex'] - queued_at) / 210) < 1e-6,
+                  'Charging moved the chassis or used a different independent clock')
+        if event:
+            teleports += 1
+            check(queued_at is not None and sample['stepIndex'] - queued_at == 210 and charge is None and
+                  parent['position'] == target and parent['position'] != origin,
+                  'Blink completion must write the accepted point after 210 steps')
+            angle = math.radians(parent['heading'])
+            for identity, (x, y, rotation) in zip(slots, OFFSETS, strict=True):
+                child = units[identity]
+                point = child['position']
+                check(abs(point['x'] - (target['x'] + math.sin(angle) * y + math.cos(angle) * x)) < 1e-6 and
+                      abs(point['y'] - (target['y'] - math.cos(angle) * y + math.sin(angle) * x)) < 1e-6 and
+                      child['height'] == parent['height'] and abs((child['heading'] - parent['heading'] - rotation + 180) % 360 - 180) < 1e-6,
+                      'Blink did not move the six existing slots with the chassis')
+    check(teleports == 1, 'Expected one real Blink after cancelling the construction request')
 
 
 def opening_refunds(records, weapon_modules=False):

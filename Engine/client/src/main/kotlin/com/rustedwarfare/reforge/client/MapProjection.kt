@@ -46,12 +46,16 @@ class MapProjection(val worldWidth: Double, val worldHeight: Double,
             position.y.coerceIn(halfHeight, worldHeight - halfHeight))
     }
     fun toWorld(uiX: Double, uiY: Double): Position? {
+        val point = groundPoint(uiX, uiY) ?: return null
+        return point.takeIf { it.x >= 0 && it.x < worldWidth && it.y >= 0 && it.y < worldHeight }
+    }
+
+    internal fun groundPoint(uiX: Double, uiY: Double): Position? {
         if (uiX < mapArea.left || uiX >= mapArea.left + mapArea.width ||
             uiY <= mapArea.bottom || uiY > mapArea.bottom + mapArea.height) return null
         val x = (uiX - left) / scale
         val y = worldHeight - (uiY - bottom) / scale
-        return if (x.isFinite() && y.isFinite() && x >= 0 && x < worldWidth && y >= 0 && y < worldHeight)
-            Position(x, y) else null
+        return if (x.isFinite() && y.isFinite()) Position(x, y) else null
     }
     /** A map-owned drag may end outside its viewport; clip only that endpoint. */
     fun clippedWorld(uiX: Double, uiY: Double): Position? {

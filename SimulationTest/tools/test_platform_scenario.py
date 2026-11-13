@@ -9,6 +9,37 @@ import tempfile
 
 
 class PlatformIntentTest(unittest.TestCase):
+    def test_spider_ordinary_slot_order_follows_and_preserves_the_parent_blink(self):
+        from spider_platform import validate_call
+
+        layout = dict(selectedSlot=1, slots=[dict(number=1, typeId="modularSpider_emptySlot")])
+        charge = dict(name="blinkQueued", progress=.5, target=dict(x=620, y=200))
+        name = "buildGun"
+
+        def observe(parent_queue, index):
+            action = dict(available=index is None, queueIndex=index, progress=0 if index is not None else None)
+            return dict(attachmentOverview=layout, unitActions=dict(queue=parent_queue, actions={name: action}))
+
+        def compare(old, new, cancel):
+            intent = dict(actionName=name, cancelQueued=cancel)
+            validate_call(old, new, dict(intent, target=None), intent, {})
+
+        for parent_queue in ([], [charge]):
+            index = len(parent_queue)
+            available = observe(parent_queue, None)
+            queued = observe(parent_queue, index)
+            wrong_index = observe(parent_queue, 1 - index)
+            with self.subTest(charging=bool(parent_queue)):
+                compare(available, queued, False)
+                compare(queued, available, True)
+                with self.assertRaises(PlatformError):
+                    compare(available, wrong_index, False)
+                with self.assertRaises(PlatformError):
+                    compare(wrong_index, available, True)
+        replaced = observe([dict(charge, target=dict(x=300, y=250))], 1)
+        with self.assertRaises(PlatformError):
+            compare(observe([charge], None), replaced, False)
+
     def test_spider_fabricator_income_follows_completion_conversion_and_same_slot_phase(self):
         import spider_platform
 

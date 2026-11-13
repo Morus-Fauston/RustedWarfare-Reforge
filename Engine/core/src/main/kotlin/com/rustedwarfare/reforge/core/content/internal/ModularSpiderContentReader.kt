@@ -33,6 +33,11 @@ internal object ModularSpiderContentReader {
         "movement" to mapOf("movementType" to "OVER_CLIFF_WATER", "moveSpeed" to "0.6",
             "moveAccelerationSpeed" to "0.015", "moveDecelerationSpeed" to "0.015", "maxTurnSpeed" to "0.4",
             "turnAcceleration" to "0.1", "reverseSpeedPercentage" to "1"),
+        "action_blinkQueued" to mapOf("tags" to "blink", "buildSpeed" to ModularSpiderUtilityForms.BLINK_DURATION.toString(),
+            "allowMultipleInQueue" to "false", "canPlayerCancel" to "false", "isActive" to "false",
+            "highPriorityQueue" to "true", "whenBuilding_cannotMove" to "true"),
+        "projectile_blink" to mapOf("teleportSource" to "true", "instant" to "true",
+            "directDamage" to "0", "targetGround" to "true", "shouldRevealFog" to "true"),
     ) + slots + legs
     private val emptySlot = mapOf(
         "core" to core + mapOf("name" to empty, "price" to "1000", "maxHp" to "3000", "radius" to "20", "selfRegenRate" to "3000",
@@ -52,7 +57,9 @@ internal object ModularSpiderContentReader {
         .mapValues { (section, declared) -> declared.flatten().toSet() + images[section].orEmpty() }
     private val references = setOf("onCreateSpawnUnitOf", "convertTo", "projectile", "attachedTo", "linkDelayWithTurret")
     private val text = setOf("name", "class", "movementType", "shoot_sound", "autoTrigger", "takeResources",
-        "addResources", "interceptProjectiles_withTags", "resourceUsage") +
+        "addResources", "interceptProjectiles_withTags", "resourceUsage", "tags", "sendMessageTo",
+        "sendMessageWithTags", "sendMessageWithData", "fireTurretXAtGround_onlyOverPassableTileOf",
+        "fireTurretXAtGround", "fireTurretXAtGround_withProjectile") +
         references + images.values.flatten()
     private val flags = profiles.flatMap { it.values }.flatMap { it.entries }
         .filter { it.key !in text && (it.value == "true" || it.value == "false") }.map { it.key }.toSet()
@@ -91,7 +98,8 @@ internal object ModularSpiderContentReader {
                     field in schema.numericFields -> actual.toDoubleOrNull() == required.toDouble()
                     else -> actual == required
                 }
-                if (!matches) reject(if (field in references) ContentErrorCode.BAD_REFERENCE
+                if (!matches) reject(if (field in references || field in setOf("fireTurretXAtGround",
+                    "fireTurretXAtGround_withProjectile")) ContentErrorCode.BAD_REFERENCE
                     else ContentErrorCode.UNSUPPORTED_FEATURE, path, section, field, actual, "Expected qualified value $required")
             }
             fun image(section: String, field: String, width: Int, height: Int): Path {

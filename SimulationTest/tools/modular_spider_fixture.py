@@ -27,6 +27,11 @@ def opening():
         "movement": {"movementType": "OVER_CLIFF_WATER", "moveSpeed": .6, "moveAccelerationSpeed": .015,
                      "moveDecelerationSpeed": .015, "maxTurnSpeed": .4, "turnAcceleration": .1,
                      "reverseSpeedPercentage": 1},
+        "action_blinkQueued": dict(tags="blink", buildSpeed=210, allowMultipleInQueue=False,
+                                   canPlayerCancel=False, isActive=False, highPriorityQueue=True,
+                                   whenBuilding_cannotMove=True),
+        "projectile_blink": dict(teleportSource=True, instant=True, directDamage=0,
+                                 targetGround=True, shouldRevealFog=True),
     }
     for i, (x, y, heading) in enumerate(SLOTS, 1):
         sections[f"attachment_slot{i}"] = dict(x=x, y=y, idleDir=heading, idleDirReversing=heading,
@@ -56,6 +61,7 @@ def empty_slot():
         "action_buildSpeed": {"convertTo": "modularSpider_speedIncomplete", "price": 6000, "buildSpeed": 0, "setBuilt": 0},
         "action_buildLaserdefense": {"convertTo": "modularSpider_laserdefense", "price": 3000, "buildSpeed": 0, "setBuilt": 0},
         "action_buildAntinuke": {"convertTo": "modularSpider_antinuke", "price": 7000, "buildSpeed": 0, "setBuilt": 0},
+        "action_buildBlink": {"convertTo": "modularSpider_blink", "price": 15000, "buildSpeed": 0, "setBuilt": 0},
     }
 
 
@@ -233,6 +239,18 @@ def anti_nuke():
     return form
 
 
+def blink():
+    form = utility("blink", 15000, "blink")
+    form["action_blink"] = dict(buildSpeed=0, allowMultipleInQueue=False,
+        fireTurretXAtGround="dummyBlink", fireTurretXAtGround_withProjectile="dummyBlink",
+        fireTurretXAtGround_onlyOverPassableTileOf="HOVER", addActionCooldownTime=1800,
+        highPriorityQueue=True, whenBuilding_cannotMove=True, sendMessageTo="parent",
+        sendMessageWithTags="blink", sendMessageWithData="blinkTarget=thisActionTarget")
+    form["turret_dummyBlink"] = dict(x=0, y=0, invisible=True, canShoot=False, limitingRange=700, size=1)
+    form["projectile_dummyBlink"] = dict(instant=True, directDamage=0, targetGround=True)
+    return form
+
+
 def generate(destination=DESTINATION):
     assert not destination.exists(), "Existing owned input tree"
     for fmt in ("ini", "json", "hjson"):
@@ -254,7 +272,7 @@ def generate(destination=DESTINATION):
             ("lightning", lightning()), ("artillery", artillery()),
             ("fabricator", fabricator(False)), ("fabricator-t2", fabricator(True)),
             ("shield", shield_generator()), ("speed-incomplete", speed(True)), ("speed", speed(False)),
-            ("laser-defense", laser_defense()), ("anti-nuke", anti_nuke()),
+            ("laser-defense", laser_defense()), ("anti-nuke", anti_nuke()), ("blink", blink()),
         )
         for name, sections in forms:
             (spider / f"{name}.{fmt}").write_text(render(sections, fmt), encoding="utf8")
@@ -267,7 +285,7 @@ def generate(destination=DESTINATION):
             ("lightning", "turret", 22, 31), ("artillery", "turret", 7, 35), ("artillery-base", "body", 20, 19),
             ("fabricator", "body", 20, 19), ("fabricator-t2", "dead", 20, 19),
             ("shield", "shadow", 22, 21), ("speed", "turret", 22, 21),
-            ("laser-defense", "body", 20, 19), ("anti-nuke", "dead", 22, 21),
+            ("laser-defense", "body", 20, 19), ("anti-nuke", "dead", 22, 21), ("blink", "shadow", 22, 21),
         ):
             (spider / f"{filename}.png").write_bytes(png(kind, width, height))
         entries = [{"type": "mech", "file": f"units/mech.{fmt}"}]

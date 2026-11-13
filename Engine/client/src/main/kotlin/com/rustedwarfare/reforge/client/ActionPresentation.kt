@@ -36,6 +36,7 @@ internal class ActionCatalogue(private val definitions: Map<String, UnitDefiniti
         "modularSpider_speed" to Names("Speed", "Speed module"),
         "modularSpider_laserdefense" to Names("Laser guard", "Laser defense"),
         "modularSpider_antinuke" to Names("Anti-nuke", "Anti-nuke module"),
+        "modularSpider_blink" to Names("Blink", "Blink module"),
         "seaFactory" to Names("Sea factory"), "seaFactoryT2" to Names("Sea factory T2"),
         "experimentalLandFactory" to Names("Experimental", "Experimental factory"),
         "heavyBattleship" to Names("Heavy battleship"), "attackSubmarine" to Names("Submarine"),
@@ -63,9 +64,17 @@ internal class ActionCatalogue(private val definitions: Map<String, UnitDefiniti
         }
         if (action.name == "selectSlotBuild")
             return CustomUnitActionView(action.name, "Build", "Return to chassis actions", false, 0, action.available, false)
+        if (action.name == "blinkQueued")
+            return CustomUnitActionView(action.name, "Charging", "Chassis is charging Blink", true, 0,
+                false, false, action.progress)
 
         val selected = overview.slots.single { it.number == overview.selectedSlot }
         val module = checkNotNull(definitions.getValue(selected.typeId).attachmentModule)
+        if (action.name == "blink")
+            return CustomUnitActionView(action.name, "Blink", "Select a HOVER-passable point within 700 of this slot.",
+                action.queueIndex != null, action.cooldownRemaining, action.available, action.queueIndex != null,
+                action.progress, groundTargeted = true, iconTypeId = selected.typeId,
+                attachmentContext = selected.unitId to selected.typeId)
         if (selected.typeId == "modularSpider_antinuke" && action.name in setOf("buildAntiNuke", "isEnabled", "isDisabled")) {
             val ammo = checkNotNull(state.stockpile)
             val online = checkNotNull(state.interceptorOnline)

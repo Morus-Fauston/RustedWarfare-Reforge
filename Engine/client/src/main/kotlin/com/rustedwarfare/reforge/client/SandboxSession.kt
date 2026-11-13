@@ -18,7 +18,8 @@ enum class PlacementState { CLEAR, BLOCKED, UNEXPLORED }
 data class ConstructionPreview(val typeId: String, val position: Position, val state: PlacementState,
     val cells: List<Pair<Int, Int>>)
 data class GroundActionPreview(val source: Position, val position: Position, val valid: Boolean,
-    val minimumRange: Double = 260.0, val maximumRange: Double = 9999.0, val areaRadius: Double = 250.0)
+    val minimumRange: Double = 260.0, val maximumRange: Double = 9999.0, val areaRadius: Double = 250.0,
+    val rejection: String? = null)
 
 class SandboxSession(scenario: Scenario, private val evidence: ClientEvidence = ClientEvidence.NONE,
                      val options: SandboxOptions = SandboxOptions(),
@@ -146,6 +147,9 @@ class SandboxSession(scenario: Scenario, private val evidence: ClientEvidence = 
             feedback == "production-cancelled" -> "Production cancelled; funds returned"
             feedback == "empty-production-queue" -> "Production queue is empty"
             feedback == "path-unreachable" -> "Destination is unreachable"
+            feedback == "action-target-out-of-range" -> "Location too far"
+            feedback == "action-target-impassable" -> "Invalid map location (must be passable by HOVER)"
+            feedback == "unit-action-cooldown" -> "Action is cooling down"
             feedback == "unit-produced" -> "Unit created"
             feedback == "unit-damaged" -> "Unit under attack"
             feedback == "unit-died" -> "Unit destroyed"
@@ -356,17 +360,23 @@ class SandboxSession(scenario: Scenario, private val evidence: ClientEvidence = 
         if (!isOpen || actionMenu.unitActions.none { it.name == name && it.available && it.groundTargeted }) return null
         val selected = if (name == "launchNuke") nuclearLaunchMember(observation, selectedIds)
             else observation.units.singleOrNull { it.unitId == selectedId }
-        val source = selected?.position ?: return null
+        val source = if (name == "blink") {
+            val overview = selected?.attachmentOverview ?: return null
+            val slot = overview.slots.singleOrNull { it.number == overview.selectedSlot } ?: return null
+            observation.units.singleOrNull { it.unitId == slot.unitId }?.position ?: return null
+        } else selected?.position ?: return null
         val x = target.x.toFloat() - source.x.toFloat(); val y = target.y.toFloat() - source.y.toFloat()
         val squared = x * x + y * y
         if (name == "launchNuke") return GroundActionPreview(source, target, squared.isFinite() &&
             squared >= 260f * 260f && squared <= 9999f * 9999f)
-        val launch = scenario.unitDefinitions.getValue(selected.typeId).customActions?.actions
-            ?.singleOrNull { it.name == name }?.groundLaunch ?: return null
+        val blink = name == "blink"
+        val range = if (blink) 700.0 else scenario.unitDefinitions.getValue(checkNotNull(selected).typeId).customActions
+            ?.actions?.singleOrNull { it.name == name }?.groundLaunch?.range ?: return null
         val map = scenario.map
         val column = kotlin.math.floor(target.x / map.tileWidth).toInt()
         val row = kotlin.math.floor(target.y / map.tileHeight).toInt()
-        val openGround = squared.isFinite() && squared <= launch.range * launch.range &&
+        val inRange = squared.isFinite() && squared <= range * range
+        val openGround = inRange &&
             column in 0 until map.widthTiles && row in 0 until map.heightTiles && !map.hoverBlocking.isBlocked(column, row)
         // Use the live collision footprint of observed buildings without revealing hidden units.
         val occupied = openGround && observation.units.any { unit ->
@@ -375,7 +385,14 @@ class SandboxSession(scenario: Scenario, private val evidence: ClientEvidence = 
                     map.tileHeight, unit.position, building.footprint, building.anchor).cells
             } == true
         }
-        return GroundActionPreview(source, target, openGround && !occupied, 0.0, launch.range, 0.0)
+        val valid = openGround && !occupied
+        return GroundActionPreview(source, target, valid, 0.0, range, 0.0,
+            if (valid || !blink) null else if (inRange) "action-target-impassable" else "action-target-out-of-range")
+    }
+
+    internal fun groundTargetRejected(reason: String) {
+        feedback = reason
+        rejectedFeedback = true
     }
 
     fun submarineDepth(surface: Boolean): ActionResult? = actionMenu.depthAction?.takeIf { it.surface == surface }?.let {

@@ -5,7 +5,9 @@ import com.rustedwarfare.reforge.core.content.AttachmentSlotDefinition
 import com.rustedwarfare.reforge.core.content.AttachmentInstall
 import com.rustedwarfare.reforge.core.content.AttachmentRemoval
 import com.rustedwarfare.reforge.core.content.AttachmentUpgrade
+import com.rustedwarfare.reforge.core.content.MapDefinition
 import com.rustedwarfare.reforge.core.content.ModularSpiderRules
+import com.rustedwarfare.reforge.core.content.ModularSpiderUtilityForms.BLINK_DURATION
 import com.rustedwarfare.reforge.core.content.ModularSpiderWeaponForms
 
 internal data class AttachmentBinding(val parentId: String, val slot: AttachmentSlotDefinition)
@@ -85,7 +87,7 @@ internal object UnitAttachments {
         return AttachmentOverview(parent.selectedAttachmentSlot, immutable(slots))
     }
 
-    fun observe(state: StepState, parent: MutableUnit, overview: AttachmentOverview): UnitActionsObservation {
+    fun observe(state: StepState, parent: MutableUnit, overview: AttachmentOverview, time: Double): UnitActionsObservation {
         val actions = overview.slots.mapTo(mutableListOf()) { slot ->
             UnitActionObservation("selectSlot${slot.number}", null, null, 0, true)
         }
@@ -93,7 +95,12 @@ internal object UnitAttachments {
         val child = overview.selectedSlot?.let { state.units[childId(parent, it)] }
         var ammo: Int? = null
         var online: Boolean? = null
-        var ammoQueue: List<QueuedUnitActionObservation> = emptyList()
+        var queue: List<QueuedUnitActionObservation> = emptyList()
+        parent.spiderBlink?.let { pending ->
+            val progress = AttachmentBlink.progress(pending)
+            actions += UnitActionObservation(AttachmentBlink.QUEUED, 0, progress, 0, false)
+            queue = listOf(QueuedUnitActionObservation(AttachmentBlink.QUEUED, progress, pending.target))
+        }
         if (child != null) {
             val profile = checkNotNull(child.definition.attachmentModule)
             val order = child.attachmentOrder
@@ -101,19 +108,29 @@ internal object UnitAttachments {
             val ready = order == null && cooldown == 0
             val balance = checkNotNull(state.productionLedger).balances.getValue(child.ownerPlayerId)
             if (child.typeId == ModularSpiderRules.ANTI_NUKE) {
-                actions += AttachmentInterceptor.actions(child, balance)
                 ammo = child.attachmentInterceptor.ammo
                 online = !child.attachmentInterceptor.offline
-                ammoQueue = AttachmentInterceptor.queue(child)
+                val offset = queue.size
+                actions += AttachmentInterceptor.actions(child, balance).map { action ->
+                    action.copy(queueIndex = action.queueIndex?.plus(offset))
+                }
+                queue += AttachmentInterceptor.queue(child)
+            }
+            if (child.typeId == ModularSpiderRules.BLINK) {
+                val blink = child.blinkRequest
+                val blinkCooldown = maxOf(cooldown, AttachmentBlink.cooldown(time, child))
+                actions += UnitActionObservation(AttachmentBlink.REQUEST, queue.size.takeIf { blink != null },
+                    0f.takeIf { blink != null }, blinkCooldown, blink == null && blinkCooldown == 0)
+                if (blink != null) queue += QueuedUnitActionObservation(AttachmentBlink.REQUEST, 0f, blink)
             }
             for (install in profile.installs) {
                 val queued = (order as? AttachmentOrder.Install)?.action == install
-                actions += UnitActionObservation(install.action, 0.takeIf { queued }, 0f.takeIf { queued },
+                actions += UnitActionObservation(install.action, queue.size.takeIf { queued }, 0f.takeIf { queued },
                     cooldown, ready && balance >= install.cost)
             }
             for (upgrade in profile.upgrades) {
                 val queued = (order as? AttachmentOrder.Upgrade)?.takeIf { it.action == upgrade }
-                actions += UnitActionObservation(upgrade.action, 0.takeIf { queued != null }, queued?.progress,
+                actions += UnitActionObservation(upgrade.action, queue.size.takeIf { queued != null }, queued?.progress,
                     cooldown, ready && balance >= upgrade.cost)
             }
             if (!BuildingWork.isReady(child) && profile.cancel != null) {
@@ -122,19 +139,22 @@ internal object UnitAttachments {
             }
             if (BuildingWork.isReady(child) && profile.reclaim != null) {
                 val queued = order as? AttachmentOrder.Reclaim
-                val index = if (online == null) 0 else ammoQueue.indexOfFirst { it.name == "reclaim" }
+                val index = if (online == null) queue.size else queue.indexOfFirst { it.name == "reclaim" }
                 actions += UnitActionObservation("reclaim", index.takeIf { queued != null },
                     queued?.let { 1f - it.remaining / it.action.ticks }, cooldown,
                     ready)
             }
         }
-        return UnitActionsObservation(immutable(actions), 0f, ammo, immutable(ammoQueue), online)
+        return UnitActionsObservation(immutable(actions), 0f, ammo, immutable(queue), online)
     }
 
-    fun request(state: StepState, parent: MutableUnit, action: UnitAction): SimulationError? {
+    fun request(state: StepState, parent: MutableUnit, action: UnitAction, collision: MapDefinition): SimulationError? {
         val layout = checkNotNull(parent.definition.attachmentLayout)
-        if (action.target != null) return SimulationError("invalid-target", "Slot controls take no ground target")
         val name = action.actionName
+        if (name == AttachmentBlink.QUEUED)
+            return SimulationError("unit-action-not-cancellable", "The chassis Blink is internal and cannot be cancelled")
+        if (name != AttachmentBlink.REQUEST && action.target != null)
+            return SimulationError("invalid-target", "Slot controls take no ground target")
         if (name.startsWith("selectSlot")) {
             if (action.cancelQueued) return SimulationError("invalid-slot-action", "Selection cannot be cancelled")
             if (name == "selectSlotBuild") {
@@ -152,6 +172,8 @@ internal object UnitAttachments {
             ?: return SimulationError("attachment-slot-unavailable", "The selected slot is unavailable")
         val profile = checkNotNull(child.definition.attachmentModule)
         val order = child.attachmentOrder
+        if (name == AttachmentBlink.REQUEST && child.typeId == ModularSpiderRules.BLINK)
+            return AttachmentBlink.request(state.simulationTime, child, action, collision)
         if (child.typeId == ModularSpiderRules.ANTI_NUKE && AttachmentInterceptor.handles(name)) {
             return AttachmentInterceptor.request(state, child, name, action.cancelQueued)
         }
@@ -214,7 +236,8 @@ internal object UnitAttachments {
                 } else child.attachmentOrder = order.copy(remaining = order.remaining - delta)
             }
             is AttachmentOrder.Reclaim -> {
-                if (child.attachmentInterceptor.switchPending || child.attachmentInterceptor.roundsAheadOfReclaim != 0) return
+                if (child.blinkRequest != null || child.attachmentInterceptor.switchPending ||
+                    child.attachmentInterceptor.roundsAheadOfReclaim != 0) return
                 if (order.remaining <= delta) remove(state, input, parent, child, order.action)
                 else child.attachmentOrder = order.copy(remaining = order.remaining - delta)
             }
@@ -266,6 +289,7 @@ internal object UnitAttachments {
         val next = input.unitDefinitions.getValue(targetTypeId)
         child.definition = next
         child.typeId = next.id
+        child.blinkRequest = null
         child.pointDefense = next.pointDefense?.let { MutablePointDefense(it.initialEnergy, child.attachmentLaserExhausted) }
         child.health = maxOf(1.0, checkNotNull(next.maximumHealth) * fraction)
         child.constructionProgress = progress
@@ -337,7 +361,14 @@ internal object UnitAttachments {
                 defense.roundsAheadOfReclaim in 0..defense.rounds.size &&
                 (defense.roundsAheadOfReclaim == 0 || unit.attachmentOrder is AttachmentOrder.Reclaim) &&
                 (unit.typeId == ModularSpiderRules.ANTI_NUKE || defense.rounds.isEmpty() && !defense.switchPending))
+            require(unit.blinkCooldownUntil.isFinite() && unit.blinkCooldownUntil >= 0.0 && unit.blinkRequest?.let {
+                unit.typeId == ModularSpiderRules.BLINK && it.x.isFinite() && it.y.isFinite()
+            } != false)
         } else require(unit.definition.attachmentModule == null)
+        unit.spiderBlink?.let { pending ->
+            require(unit.definition.attachmentLayout != null && pending.target.x.isFinite() && pending.target.y.isFinite() &&
+                pending.remaining in 1..BLINK_DURATION)
+        }
         if (unit.alive && !unit.reclaimed) unit.definition.attachmentLayout?.let { layout ->
             require(layout.slots.all { slot -> state.units[childId(unit, slot.number)]?.attachment == AttachmentBinding(unit.unitId, slot) })
         }

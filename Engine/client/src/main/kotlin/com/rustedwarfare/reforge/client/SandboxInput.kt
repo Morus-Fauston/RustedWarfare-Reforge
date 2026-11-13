@@ -36,12 +36,15 @@ class SandboxInput(
     private data class ConstructionPress(val owner: ConstructionOwner, val append: Boolean)
     private var constructionOwner: ConstructionOwner? = null
     private var constructionPress: ConstructionPress? = null
-    private data class GroundActionOwner(val session: SandboxSession, val revision: Long, val members: Set<String>, val name: String)
+    private data class GroundActionOwner(val session: SandboxSession, val revision: Long, val members: Set<String>,
+        val name: String, val attachment: Pair<String, String>?)
     private var groundActionOwner: GroundActionOwner? = null
     private var groundActionPress: GroundActionOwner? = null
     private fun ownsGroundAction(current: SandboxSession?): Boolean = groundActionOwner?.let { owner ->
         active() && current === owner.session && current.isOpen && current.selectionRevision == owner.revision &&
-            current.selectedIds == owner.members && current.actionMenu.unitActions.any { it.name == owner.name && it.available }
+            current.selectedIds == owner.members && current.actionMenu.unitActions.any {
+                it.name == owner.name && it.available && it.attachmentContext == owner.attachment
+            }
     } == true
     val groundActionName: String? get() {
         if (groundActionOwner != null && !ownsGroundAction(session())) endGroundAction()
@@ -50,7 +53,8 @@ class SandboxInput(
     val groundActionPreview: GroundActionPreview? get() {
         val name = groundActionName ?: return null
         val ui = pointerPosition ?: return null
-        val world = projection()?.toWorld(ui.x, ui.y) ?: return null
+        val map = projection() ?: return null
+        val world = (if (name == "blink") map.groundPoint(ui.x, ui.y) else map.toWorld(ui.x, ui.y)) ?: return null
         return session()?.previewGroundAction(name, world)
     }
     private fun ownsConstruction(current: SandboxSession?): Boolean {
@@ -107,6 +111,13 @@ class SandboxInput(
         if (groundActive && button == Input.Buttons.RIGHT) { endGroundAction(); changed(); return true }
         val map = projection() ?: return false
         val ui = uiPoint(screenX, screenY) ?: return false
+        if (groundActionName == "blink" && button == Input.Buttons.LEFT && map.groundPoint(ui.x, ui.y) != null) {
+            pointerPosition = ui
+            groundActionPress = groundActionOwner
+            ownerButton = button
+            changed()
+            return true
+        }
         val world = map.toWorld(ui.x, ui.y) ?: return false
         val kind = when (button) {
             Input.Buttons.LEFT -> MapButton.SELECT
@@ -183,13 +194,19 @@ class SandboxInput(
         val ui = uiPoint(screenX, screenY)
         if (!active() || current == null || ui == null) { cancel(); return true }
         groundActionPress?.let { press ->
-            val point = if (insideViewport(screenX, screenY)) projection()?.toWorld(ui.x, ui.y) else null
+            val point = if (insideViewport(screenX, screenY)) projection()?.let { map ->
+                if (press.name == "blink") map.groundPoint(ui.x, ui.y) else map.toWorld(ui.x, ui.y)
+            } else null
             if (point != null && groundActionOwner == press && ownsGroundAction(current)) {
                 pointerPosition = ui
                 val preview = current.previewGroundAction(press.name, point)
                 if (preview?.valid == true) {
                     val result = current.unitAction(press.name, target = point)
                     if (result is com.rustedwarfare.reforge.core.sim.ActionResult.Accepted) endGroundAction()
+                } else preview?.rejection?.let { reason ->
+                    current.groundTargetRejected(reason)
+                    evidence.record("ground-action-rejected", mapOf("actionName" to press.name,
+                        "position" to point.fields(), "reason" to reason))
                 }
             }
             cancelGesture(); changed(); return true
@@ -364,10 +381,13 @@ class SandboxInput(
     }
     fun beginGroundAction(name: String): Boolean {
         val current = session() ?: return false
-        if (!active() || editing() || touchControls || !current.isOpen ||
-            current.actionMenu.unitActions.none { it.name == name && it.available && it.groundTargeted }) return false
+        if (!active() || editing() || touchControls || !current.isOpen) return false
+        val action = current.actionMenu.unitActions.singleOrNull {
+            it.name == name && it.available && it.groundTargeted
+        } ?: return false
         cancel()
-        groundActionOwner = GroundActionOwner(current, current.selectionRevision, current.selectedIds.toSet(), name)
+        groundActionOwner = GroundActionOwner(current, current.selectionRevision, current.selectedIds.toSet(), name,
+            action.attachmentContext)
         modeRevision++
         evidence.record("ground-action-mode", mapOf("active" to true, "actionName" to name))
         changed(); return true

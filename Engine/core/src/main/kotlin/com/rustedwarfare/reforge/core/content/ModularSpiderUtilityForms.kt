@@ -7,6 +7,9 @@ internal object ModularSpiderUtilityForms {
     const val ANTI_NUKE_AMMO_RATE = .0007f
     const val ANTI_NUKE_AMMO_LIMIT = 12
     val antiNukeRanges = ProjectileInterceptionProfile(1000f, 1500f, 50f)
+    const val BLINK_RANGE = 700.0
+    const val BLINK_COOLDOWN = 1800
+    const val BLINK_DURATION = 210
 
     class Form(
         val id: String,
@@ -76,6 +79,18 @@ internal object ModularSpiderUtilityForms {
                 "interceptProjectiles_andUnderDistance" to antiNukeRanges.trackingRange.toString(),
                 "interceptProjectiles_andOverHeight" to antiNukeRanges.minimumHeight.toString(),
                 "resourceUsage" to "ammo=1, hasMissingFlag=1", "shoot_sound" to "nuke_launch", "shoot_sound_vol" to "0.15"),
+        )),
+        Form(ModularSpiderRules.BLINK, 15000, 22, 21, additionalSections = mapOf(
+            "action_blink" to mapOf("buildSpeed" to "0", "allowMultipleInQueue" to "false",
+                "fireTurretXAtGround" to "dummyBlink", "fireTurretXAtGround_withProjectile" to "dummyBlink",
+                "fireTurretXAtGround_onlyOverPassableTileOf" to "HOVER",
+                "addActionCooldownTime" to BLINK_COOLDOWN.toString(),
+                "highPriorityQueue" to "true", "whenBuilding_cannotMove" to "true",
+                "sendMessageTo" to "parent", "sendMessageWithTags" to "blink",
+                "sendMessageWithData" to "blinkTarget=thisActionTarget"),
+            "turret_dummyBlink" to mapOf("x" to "0", "y" to "0", "invisible" to "true",
+                "canShoot" to "false", "limitingRange" to BLINK_RANGE.toString(), "size" to "1"),
+            "projectile_dummyBlink" to mapOf("instant" to "true", "directDamage" to "0", "targetGround" to "true"),
         )),
     ).associateBy { it.id }
 }
