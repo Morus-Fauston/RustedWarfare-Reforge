@@ -98,7 +98,7 @@ def run_layer(repo, output, plan, isolated, command_timeout_seconds=600, forks=1
             def admit_mechanisms():
                 verify(*pin, identities(repo), kind='pr', plan=plan['suites'][0]['plan'], repo=repo)
             code = run_development(repo, proof_directory, mechanisms, False, forks, command_timeout_seconds,
-                                   admit=admit_mechanisms)
+                                   admit=admit_mechanisms, prepared=True)
             result['mechanisms'] = dict(result='mechanisms/result.json', exitCode=code)
             if code:
                 raise RuntimeError('Current batch mechanisms failed')

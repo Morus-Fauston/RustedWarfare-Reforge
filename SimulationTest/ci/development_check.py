@@ -141,7 +141,7 @@ def method_owners(group, tests):
     ]
 
 
-def run_development(repo, output, plan, cold, forks=1, timeout=600, *, admit=None):
+def run_development(repo, output, plan, cold, forks=1, timeout=600, *, admit=None, prepared=False):
     output.mkdir(parents=True, exist_ok=False)
     started = time.monotonic()
     initial = identities(repo)
@@ -166,7 +166,7 @@ def run_development(repo, output, plan, cold, forks=1, timeout=600, *, admit=Non
             if not record['command']['passed'] or record['tests']['status'] != 'passed':
                 raise RuntimeError('Current test execution did not pass: '+folder.name)
             tasks = {MODULES[module][0] for module in group['tests']}
-            if admit is not None and any(row.get('didWork') for row in record['tests']['tasks'] if row['task'] not in tasks):
+            if prepared and any(row.get('didWork') for row in record['tests']['tasks'] if row['task'] not in tasks):
                 raise RuntimeError('Prepared compilation or packaging executed again')
             record['methodOwners'] = method_owners(group, record['tests'])
         for index, path in enumerate(plan['pythonTests']):

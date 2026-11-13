@@ -2,10 +2,20 @@ name: Public mechanism and short tests
 on:
   pull_request:
   workflow_dispatch:
+    inputs:
+      execution:
+        description: Public PR execution
+        type: choice
+        options: [parallel, serial]
+        default: parallel
+concurrency:
+  group: public-pr-${{ github.event_name }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 permissions:
   contents: read
 jobs:
   public-first-loop:
+    if: github.event_name == 'pull_request' || inputs.execution == 'serial'
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
@@ -68,4 +78,203 @@ jobs:
           path: |
             SimulationTest/build/public-pr/result.json
             SimulationTest/build/public-pr/*.log
+          if-no-files-found: error
+  public-prepare:
+    if: github.event_name == 'workflow_dispatch' && inputs.execution == 'parallel'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    outputs:
+      plan_sha: ${{ steps.prepare.outputs.plan_sha }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6
+        with:
+          distribution: temurin
+          java-version: '25'
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7
+        with:
+          python-version: '3.13'
+      - name: Freeze coverage and build the portable distribution
+        id: prepare
+        run: python -B SimulationTest/ci/public_parallel.py prepare --output SimulationTest/build/public-parallel
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: public-plan-${{ github.run_attempt }}
+          path: SimulationTest/build/public-parallel/transfer/plan.json
+          if-no-files-found: error
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: public-distribution-${{ github.run_attempt }}
+          path: SimulationTest/build/public-parallel/transfer/distribution.tar
+          if-no-files-found: error
+          compression-level: 0
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always()
+        with:
+          name: public-prepare-evidence-${{ github.run_attempt }}
+          path: |
+            SimulationTest/build/public-parallel/build
+            SimulationTest/build/public-parallel/preparation.json
+            SimulationTest/build/public-parallel/gradle-version*
+            !SimulationTest/build/public-parallel/build/package/**
+          if-no-files-found: error
+  public-mechanisms:
+    needs: public-prepare
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    outputs:
+      mechanisms: ${{ steps.run.outputs.mechanisms }}
+      mechanisms_artifact: ${{ steps.evidence.outputs.artifact-digest }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6
+        with:
+          distribution: temurin
+          java-version: '25'
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7
+        with:
+          python-version: '3.13'
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: public-plan-${{ github.run_attempt }}
+          path: SimulationTest/build/public-transfer
+      - name: Run current JVM methods and Python scripts
+        id: run
+        env:
+          PUBLIC_PLAN_SHA: ${{ needs.public-prepare.outputs.plan_sha }}
+        run: >-
+          python -B SimulationTest/ci/public_parallel.py shard
+          --transfer SimulationTest/build/public-transfer --shard mechanisms
+          --output SimulationTest/build/public-mechanisms
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always()
+        with:
+          name: public-receipt-${{ github.run_attempt }}-mechanisms
+          path: SimulationTest/build/public-mechanisms/receipt.json
+          if-no-files-found: error
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        id: evidence
+        if: always()
+        with:
+          name: public-raw-${{ github.run_attempt }}-mechanisms
+          path: |
+            SimulationTest/build/public-mechanisms/mechanisms
+            SimulationTest/build/public-mechanisms/gradle-version*
+          if-no-files-found: error
+  public-scenarios:
+    needs: public-prepare
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [production-1, production-2, production-3, other-short, content-three-formats]
+    outputs:
+      production_1: ${{ steps.run.outputs.production_1 }}
+      production_1_artifact: ${{ steps.names.outputs.production_1_artifact }}
+      production_2: ${{ steps.run.outputs.production_2 }}
+      production_2_artifact: ${{ steps.names.outputs.production_2_artifact }}
+      production_3: ${{ steps.run.outputs.production_3 }}
+      production_3_artifact: ${{ steps.names.outputs.production_3_artifact }}
+      other_short: ${{ steps.run.outputs.other_short }}
+      other_short_artifact: ${{ steps.names.outputs.other_short_artifact }}
+      content_three_formats: ${{ steps.run.outputs.content_three_formats }}
+      content_three_formats_artifact: ${{ steps.names.outputs.content_three_formats_artifact }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6
+        with:
+          distribution: temurin
+          java-version: '25'
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7
+        with:
+          python-version: '3.13'
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: public-plan-${{ github.run_attempt }}
+          path: SimulationTest/build/public-transfer
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: public-distribution-${{ github.run_attempt }}
+          path: SimulationTest/build/public-transfer
+      - name: Run assigned scenarios with the relocated distribution
+        id: run
+        env:
+          PUBLIC_PLAN_SHA: ${{ needs.public-prepare.outputs.plan_sha }}
+          SHARD: ${{ matrix.shard }}
+        run: >-
+          python -B SimulationTest/ci/public_parallel.py shard
+          --transfer SimulationTest/build/public-transfer --shard "$SHARD"
+          --output SimulationTest/build/public-shard
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always()
+        with:
+          name: public-receipt-${{ github.run_attempt }}-${{ matrix.shard }}
+          path: SimulationTest/build/public-shard/receipt.json
+          if-no-files-found: error
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        id: evidence
+        if: always()
+        with:
+          name: public-raw-${{ github.run_attempt }}-${{ matrix.shard }}
+          path: SimulationTest/build/public-shard/scenarios
+          if-no-files-found: error
+      - name: Pin the raw shard artifact
+        id: names
+        if: always()
+        env:
+          SHARD: ${{ matrix.shard }}
+          ARTIFACT_DIGEST: ${{ steps.evidence.outputs.artifact-digest }}
+        run: printf '%s_artifact=%s\n' "${SHARD//-/_}" "$ARTIFACT_DIGEST" >> "$GITHUB_OUTPUT"
+  public-coverage:
+    if: always() && github.event_name == 'workflow_dispatch' && inputs.execution == 'parallel'
+    needs: [public-prepare, public-mechanisms, public-scenarios]
+    permissions:
+      contents: read
+      actions: read
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7
+        with:
+          python-version: '3.13'
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        if: always()
+        with:
+          name: public-plan-${{ github.run_attempt }}
+          path: SimulationTest/build/public-transfer
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        if: always()
+        with:
+          pattern: public-receipt-${{ github.run_attempt }}-*
+          path: SimulationTest/build/public-receipts
+      - name: Verify complete current attempt coverage
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PUBLIC_PLAN_SHA: ${{ needs.public-prepare.outputs.plan_sha }}
+          PUBLIC_JOBS: >-
+            {"prepare":"${{ needs.public-prepare.result }}","mechanism":"${{ needs.public-mechanisms.result }}","scenarios":"${{ needs.public-scenarios.result }}"}
+          PUBLIC_PINS: >-
+            {"mechanisms":"${{ needs.public-mechanisms.outputs.mechanisms }}","production-1":"${{ needs.public-scenarios.outputs.production_1 }}","production-2":"${{ needs.public-scenarios.outputs.production_2 }}","production-3":"${{ needs.public-scenarios.outputs.production_3 }}","other-short":"${{ needs.public-scenarios.outputs.other_short }}","content-three-formats":"${{ needs.public-scenarios.outputs.content_three_formats }}"}
+          PUBLIC_ARTIFACTS: >-
+            {"mechanisms":"${{ needs.public-mechanisms.outputs.mechanisms_artifact }}","production-1":"${{ needs.public-scenarios.outputs.production_1_artifact }}","production-2":"${{ needs.public-scenarios.outputs.production_2_artifact }}","production-3":"${{ needs.public-scenarios.outputs.production_3_artifact }}","other-short":"${{ needs.public-scenarios.outputs.other_short_artifact }}","content-three-formats":"${{ needs.public-scenarios.outputs.content_three_formats_artifact }}"}
+        run: >-
+          python -B SimulationTest/ci/public_parallel.py summary
+          --transfer SimulationTest/build/public-transfer --receipts SimulationTest/build/public-receipts
+          --output SimulationTest/build/public-coverage
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always()
+        with:
+          name: public-coverage-${{ github.run_attempt }}
+          path: SimulationTest/build/public-coverage
           if-no-files-found: error
