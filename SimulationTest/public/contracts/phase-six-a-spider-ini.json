@@ -1,0 +1,62 @@
+{
+  "schemaVersion": 1,
+  "scenarioId": "public.phase-six-a-spider-ini.v1",
+  "rules": [
+    {
+      "intentId": "settle-spider"
+    },
+    {
+      "intentId": "select-spider"
+    },
+    {
+      "intentId": "select-slot"
+    },
+    {
+      "intentId": "buy-gun"
+    },
+    {
+      "intentId": "finish-gun"
+    }
+  ],
+  "history": {
+    "initialBalance": 5000,
+    "initialOwnedTypes": [
+      "modularSpider",
+      "modularSpider_emptySlot",
+      "modularSpider_emptySlot",
+      "modularSpider_emptySlot",
+      "modularSpider_emptySlot",
+      "modularSpider_emptySlot",
+      "modularSpider_emptySlot"
+    ],
+    "mechLegs": {
+      "modularSpider": 8
+    },
+    "noActionIntents": [
+      "settle-spider"
+    ],
+    "initialIncome": {
+      "unitId": "center",
+      "typeId": "modularSpider",
+      "period": 40,
+      "credits": 30
+    },
+    "spend": [
+      {
+        "intentId": "buy-gun",
+        "amount": 2000,
+        "at": "action"
+      }
+    ],
+    "finalUnits": [
+      {
+        "typeId": "modularSpider_gunturret",
+        "ownerPlayerId": "p1",
+        "fields": {
+          "alive": true,
+          "constructionProgress": 1
+        }
+      }
+    ]
+  }
+}

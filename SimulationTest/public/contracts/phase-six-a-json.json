@@ -1,0 +1,115 @@
+{
+  "schemaVersion": 1,
+  "scenarioId": "public.phase-six-a-command-json.v1",
+  "rules": [
+    {
+      "intentId": "select-center"
+    },
+    {
+      "intentId": "produce-builder"
+    },
+    {
+      "intentId": "wait-1"
+    },
+    {
+      "intentId": "select-builder-land"
+    },
+    {
+      "intentId": "approach-land"
+    },
+    {
+      "intentId": "approach-land-face-build"
+    },
+    {
+      "intentId": "builder-build-land"
+    },
+    {
+      "intentId": "build-land"
+    },
+    {
+      "intentId": "wait-2"
+    },
+    {
+      "intentId": "select-land"
+    },
+    {
+      "intentId": "produce-tank"
+    },
+    {
+      "intentId": "produce-hover"
+    }
+  ],
+  "history": {
+    "initialBalance": 30000,
+    "initialOwnedTypes": [
+      "commandCenter"
+    ],
+    "initialIncome": {
+      "unitId": "center",
+      "typeId": "commandCenter",
+      "period": 10,
+      "credits": 4.5
+    },
+    "spend": [
+      {
+        "intentId": "produce-builder",
+        "amount": 500,
+        "at": "action"
+      },
+      {
+        "intentId": "build-land",
+        "amount": 700,
+        "at": "construction-created"
+      },
+      {
+        "intentId": "produce-tank",
+        "amount": 350,
+        "at": "action"
+      },
+      {
+        "intentId": "produce-hover",
+        "amount": 450,
+        "at": "action"
+      }
+    ],
+    "productionOrder": [
+      "builder",
+      "c_tank",
+      "hoverTank"
+    ],
+    "finalUnits": [
+      {
+        "typeId": "commandCenter",
+        "ownerPlayerId": "p1",
+        "fields": {
+          "alive": true,
+          "constructionProgress": 1
+        }
+      },
+      {
+        "typeId": "landFactory",
+        "ownerPlayerId": "p1",
+        "fields": {
+          "alive": true,
+          "constructionProgress": 1
+        }
+      },
+      {
+        "typeId": "c_tank",
+        "ownerPlayerId": "p1",
+        "fields": {
+          "alive": true,
+          "constructionProgress": 1
+        }
+      },
+      {
+        "typeId": "hoverTank",
+        "ownerPlayerId": "p1",
+        "fields": {
+          "alive": true,
+          "constructionProgress": 1
+        }
+      }
+    ]
+  }
+}

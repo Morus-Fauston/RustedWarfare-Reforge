@@ -72,6 +72,12 @@ data class EconomyContract(val initialBalances: Map<String, Long>)
 /** Explicit finite maintenance capability; caller-owned maps cannot change a live world's prices. */
 class MaintenanceContract(basePrices: Map<String, Long>) {
     val basePrices: Map<String, Long> = Collections.unmodifiableMap(LinkedHashMap(basePrices))
+
+    companion object {
+        /** A deployed mobile bunker occupies a footprint but is still a combat unit. */
+        fun requiredBuildingTypeIds(definitions: Map<String, UnitDefinition>): Set<String> =
+            definitions.filterValues { it.building != null && !Bunker.supports(it) }.keys
+    }
 }
 
 /** Trusted host queue state. Nonces and payment details never enter player queue DTOs. */

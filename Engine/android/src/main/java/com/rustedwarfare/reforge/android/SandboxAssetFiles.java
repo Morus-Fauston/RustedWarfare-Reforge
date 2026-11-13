@@ -23,18 +23,16 @@ public final class SandboxAssetFiles {
         Set<String> names = new HashSet<>();
         for (String phase : new String[] {"P001-移动沙盒输入", "P002-知识沙盒输入"})
             for (String name : new String[] {"maps/p001-controlled.tmx", "tilesets/p001-ground.tsx",
-                    "tilesets/p001-rock.tsx", "units/weaponless_tank.ini"})
+                    "tilesets/p001-rock.tsx", "units/weaponless_tank.ini", "assets/ground.png",
+                    "assets/rock.png", "assets/unit.png"})
                 names.add("TestLab/local/" + phase + "/" + name);
         names.add("TestLab/local/P002-知识沙盒输入/sandbox.properties");
-        names.add("Rusted Warfare/assets/tilesets/bitmaps/longgrass.png");
-        names.add("Rusted Warfare/assets/tilesets/bitmaps/mountain.png");
-        names.add("Rusted Warfare/assets/units/tanks/tank.png");
         return Collections.unmodifiableSet(names);
     }
 
     public static void install(Path destination, Map<String, byte[]> payload) throws IOException {
         if (!payload.keySet().equals(paths()))
-            throw new IllegalArgumentException("Expected the exact twelve sandbox assets");
+            throw new IllegalArgumentException("Expected the exact owned sandbox assets");
         if (!destination.isAbsolute() || !destination.normalize().equals(destination))
             throw new IllegalArgumentException("Expected an absolute normalized destination");
         Map<Path, byte[]> files = new LinkedHashMap<>();

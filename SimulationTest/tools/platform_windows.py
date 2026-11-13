@@ -16,14 +16,23 @@ from platform_wait import WaitSegment
 from action_layout import wait_layout
 
 TITLE = 'RustedWarfare-Reforge | P002 Windows sandbox'
+DEFAULT_STARTS = {
+    'public.phase-six-a-command-json.v1': ('phase-six-a-json.json', False),
+    'public.phase-six-a-spider-json.v1': ('phase-six-a-spider-json.json', True),
+}
 
 
 def startup_arguments(plan,snapshot,evidence):
     default=plan.get('windowsDefaultStart',False)
     if type(default) is not bool or default and 'testScene' not in plan:
         raise PlatformError('input-contract','Default Windows startup requires an explicit paired scene',1)
+    if default:
+        selection = DEFAULT_STARTS.get(plan.get('scenarioId'))
+        if selection is None or plan.get('windowsSpiderStart', False) is not selection[1]:
+            raise PlatformError('input-contract', 'Installed Windows Start supports the two Phase VI A JSON seeds', 1)
     tail=['--evidence',str(evidence),'--visuals','placeholder']
-    if default:return tail,'RustedWarfare-Reforge | Phase V sandbox'
+    if default:
+        return tail,'RustedWarfare-Reforge | Phase VI A sandbox'
     return ['--mode','sandbox','--inputs',str(snapshot)]+tail,TITLE
 
 
@@ -62,7 +71,7 @@ def validate_windows_plan(plan,contract):
                   'produce':'ProduceAction','attack':'AttackAction','repair':'RepairUnitAction','reclaim':'ReclaimUnitAction','stop':'StopAction','submarine-depth':'SubmarineDepthAction',
                   'amphibious-flight':'AmphibiousFlightAction','load':'LoadAction','unload':'UnloadAction','unit-action':'UnitAction'}
     for intent in intents:
-        if intent.get('kind')=='unit-action':validate_unit_action_intent(intent)
+        if intent.get('kind')=='unit-action':validate_unit_action_intent(intent, paired='testScene' in plan)
     if any(i.get('kind')=='load' and i.get('direction') not in ('INTO','UP') for i in intents):
         raise PlatformError('input-contract','Load intention requires INTO or UP',1)
     if any(i.get('kind')=='unload' and type(i.get('unloading')) is not bool for i in intents):
@@ -126,6 +135,7 @@ def run_windows(scenario, contract, distribution, output, size, java='java', rat
     java = str(Path(shutil.which(java) or java).resolve())
     plan, contract_data = read(scenario), read(contract)
     rules=validate_windows_plan(plan,contract_data)
+    arguments,title=startup_arguments(plan,output/'inputSnapshot',output/'runtime')
     if rate_profile not in ('normal','segmented') or rate_profile=='segmented' and not plan.get('windowsWaits'):
         raise PlatformError('input-contract','Segmented profile requires declared waiting segments',1)
     history='history' in contract_data
@@ -262,9 +272,6 @@ def run_windows(scenario, contract, distribution, output, size, java='java', rat
     u.GetWindowThreadProcessId.argtypes = [W.HWND, ctypes.POINTER(W.DWORD)]
     u.IsWindow.argtypes = [W.HWND]
     u.SetForegroundWindow.argtypes = [W.HWND]
-    previous = int(u.GetForegroundWindow() or 0)
-    previous_pid = W.DWORD()
-    previous_thread = int(u.GetWindowThreadProcessId(previous, ctypes.byref(previous_pid))) if previous else 0
     lease=ExitStack()
     try:lease.enter_context(resources(['windows:interactive:rustedwarfare-reforge']))
     except Exception as error:
@@ -272,13 +279,15 @@ def run_windows(scenario, contract, distribution, output, size, java='java', rat
         save(output/'result.json',result)
         return result
     with lease:
+        previous = int(u.GetForegroundWindow() or 0)
+        previous_pid = W.DWORD()
+        previous_thread = int(u.GetWindowThreadProcessId(previous, ctypes.byref(previous_pid))) if previous else 0
         try:
             shutil.copyfile(scenario, output/'scenario.json')
             shutil.copyfile(contract, output/'contract.json')
             shutil.copytree(inputs, output/'inputSnapshot')
             if tree(output/'inputSnapshot') != input_before or tree(inputs) != input_before:
                 raise PlatformError('input-identity', 'Input snapshot changed while freezing')
-            arguments,title=startup_arguments(plan,output/'inputSnapshot',output/'runtime')
             command = [java, '--enable-native-access=ALL-UNNAMED', '-cp', os.pathsep.join(map(str, jars)),
                        'com.rustedwarfare.reforge.pc.WindowsLauncherKt']+arguments
             save(output/'manifest.json', dict(backend='windows-input', command=command, size=list(size),
@@ -314,14 +323,25 @@ def run_windows(scenario, contract, distribution, output, size, java='java', rat
             layout();guard.capture(output/'startup-menu.png')
             if 'testScene' in plan:
                 default=plan.get('windowsDefaultStart',False)
-                packaged=distribution/'test-scenarios/scenarios'/('phase-five-json.json' if default else 'dual-ship-production.json')
+                if default:
+                    seed, spider_start = DEFAULT_STARTS[plan['scenarioId']]
+                else:
+                    seed = 'dual-ship-production.json'
+                packaged=distribution/'test-scenarios/scenarios'/seed
                 if sha(packaged)!=sha(scenario):raise PlatformError('input-identity','Packaged and dispatched seed differ',1)
                 if default:
                     installed_inputs=(packaged.parent/plan['inputs']).resolve()
                     if (not installed_inputs.is_relative_to(distribution/'test-scenarios/inputs') or
                             tree(installed_inputs)!=input_before):
                         raise PlatformError('input-identity','Default installed input closure differs from the fixed scene',1)
-                    record(dict(kind='default-start-ready',seed=str(packaged),inputRoot=str(installed_inputs),menuChoiceClicks=0))
+                    record(dict(kind='default-start-ready',seed=str(packaged),inputRoot=str(installed_inputs),
+                                menuChoiceClicks=2 if spider_start else 0))
+                    if spider_start:
+                        click_action('test-scenes-tab')
+                        click_action('test-scene-spider')
+                        wait('ordinary Modular Spider start selected', lambda rows: any(
+                            row.get('kind') == 'test-scenario-choice' and row.get('id') == plan['scenarioId']
+                            and row.get('error') is None for row in rows))
                 else:
                     click_action('test-scenes-tab');click_action('test-scene-use')
                     wait('paired scene selected',lambda rows:any(r.get('kind')=='test-scenario-choice' and r.get('id')==plan['scenarioId'] and r.get('error') is None for r in rows))
@@ -414,26 +434,35 @@ def run_windows(scenario, contract, distribution, output, size, java='java', rat
             if getattr(error,'record',None) is not None:result['diagnosticFailure']=error.record
             if getattr(error,'secondary',None):result['diagnosticSecondary']=error.secondary
         finally:
-            if proc is not None and proc.poll() is None and api is not None and api.bound_state is not None:
-                try:
-                    if guard is not None:
-                        guard.release_owned()
-                        guard.close_owned()
-                    else:
-                        from owned_window import validate_identity
-                        validate_identity(api.bound_state, api.snapshot(), foreground=False)
-                        api.close_message()
-                    result['cleanupExitCode'] = proc.wait(timeout=20)
-                except Exception as error:
-                    result.setdefault('cleanupErrors', []).append(str(error))
+            if proc is not None and proc.poll() is None:
+                if api is not None and api.bound_state is not None:
+                    try:
+                        if guard is not None:
+                            guard.release_owned()
+                            guard.close_owned()
+                        else:
+                            from owned_window import validate_identity
+                            validate_identity(api.bound_state, api.snapshot(), foreground=False)
+                            api.close_message()
+                        result['cleanupExitCode'] = proc.wait(timeout=20)
+                    except Exception as error:
+                        result.setdefault('cleanupErrors', []).append(str(error))
+                if proc.poll() is None:
+                    # The original Popen handle still identifies this child before any HWND binds.
+                    try:
+                        proc.terminate()
+                    except OSError as error:
+                        result.setdefault('cleanupErrors', []).append(str(error))
+                    result['cleanupExitCode'] = proc.wait()
             if api is not None:
                 api.release_handle()
             observed_pid = W.DWORD()
             observed_thread = int(u.GetWindowThreadProcessId(previous, ctypes.byref(observed_pid))) if previous and u.IsWindow(previous) else 0
-            if previous and previous_thread == observed_thread and previous_pid.value == observed_pid.value:
-                restored = bool(u.SetForegroundWindow(previous))
-                time.sleep(.1)
-                result['foregroundRestored'] = restored and int(u.GetForegroundWindow() or 0) == previous
+            if proc is not None and previous and previous_thread == observed_thread and previous_pid.value == observed_pid.value:
+                if int(u.GetForegroundWindow() or 0) != previous:
+                    u.SetForegroundWindow(previous)
+                    time.sleep(.1)
+                result['foregroundRestored'] = int(u.GetForegroundWindow() or 0) == previous
             else:
                 result['foregroundRestored'] = None
                 result['foregroundRestoreReason'] = 'Previous window no longer has its recorded identity'

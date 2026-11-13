@@ -89,6 +89,7 @@ object PlatformSessionRunner {
                                 value.jsonPrimitive.booleanOrNull ?: throw InputError("Expected action cancellation boolean")
                             } ?: false
                             val keys = setOf("intentId", "kind", "actionName", "waitSteps") +
+                                (if ("testScene" in document) setOf("coreActionId") else emptySet()) +
                                 (if ("cancelQueued" in intent && (nuclear || targeted || slotOrder)) setOf("cancelQueued") else emptySet()) +
                                 (if (targeted && !cancel) setOf("target") else emptySet())
                             if (intent.keys != keys ||

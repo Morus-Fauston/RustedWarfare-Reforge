@@ -56,15 +56,14 @@ abstract class StageSandboxAssets : DefaultTask() {
         get() = buildList {
             for (phase in listOf("P001-移动沙盒输入", "P002-知识沙盒输入")) {
                 for (name in listOf("maps/p001-controlled.tmx", "tilesets/p001-ground.tsx",
-                    "tilesets/p001-rock.tsx", "units/weaponless_tank.ini")) {
-                    add("TestLab/local/$phase/$name")
+                    "tilesets/p001-rock.tsx", "units/weaponless_tank.ini", "assets/ground.png", "assets/rock.png", "assets/unit.png")) {
+                    add("$fixtureRoot/$phase/$name")
                 }
             }
-            add("TestLab/local/P002-知识沙盒输入/sandbox.properties")
-            add("Rusted Warfare/assets/tilesets/bitmaps/longgrass.png")
-            add("Rusted Warfare/assets/tilesets/bitmaps/mountain.png")
-            add("Rusted Warfare/assets/units/tanks/tank.png")
+            add("$fixtureRoot/P002-知识沙盒输入/sandbox.properties")
         }
+
+    private val fixtureRoot = "SimulationTest/public/inputs/content-movement-knowledge"
 
     @get:InputFiles
     abstract val inputFiles: ConfigurableFileCollection
@@ -76,13 +75,13 @@ abstract class StageSandboxAssets : DefaultTask() {
         val repository = project.rootProject.projectDir.parentFile.toPath().toRealPath()
         val sources = relativePaths.map { repository.resolve(it) }.toSet()
         require(inputFiles.files.map { it.toPath().toAbsolutePath().normalize() }.toSet() == sources) {
-            "Expected the exact twelve sandbox assets"
+            "Expected the exact owned sandbox assets"
         }
         val root = outputDirectory.get().asFile.toPath().toAbsolutePath().normalize()
         val files = sources.associate { source ->
             checkPath(source)
             require(Files.isRegularFile(source, LinkOption.NOFOLLOW_LINKS)) { "Missing sandbox asset: $source" }
-            root.resolve("p001").resolve(repository.relativize(source)) to Files.readAllBytes(source)
+            root.resolve("p001/TestLab/local").resolve(repository.resolve(fixtureRoot).relativize(source)) to Files.readAllBytes(source)
         }
         val directories = mutableSetOf(root)
         files.keys.forEach { target ->
@@ -169,10 +168,10 @@ val extractGdxAndroidNatives by tasks.registering(ExtractGdxAndroidNatives::clas
     outputDirectory.set(layout.buildDirectory.dir("gdx-natives"))
 }
 
-// Private test assets only. Keep source bytes and relative references intact.
+// Use the same authored movement and knowledge fixtures as public host verification.
 val stageSandboxAssets by tasks.registering(StageSandboxAssets::class) {
     inputFiles.from(relativePaths.map { rootProject.projectDir.parentFile.resolve(it) })
-    outputDirectory.set(layout.buildDirectory.dir("sandbox-assets"))
+    outputDirectory.set(layout.buildDirectory.dir("owned-sandbox-assets"))
     outputs.upToDateWhen { false }
 }
 

@@ -1,0 +1,33 @@
+{
+  "format": "rw-reforge.unit.v1",
+  "core": {
+    "name": "modularSpider_speed",
+    "class": "CustomUnitMetadata",
+    "price": 6000,
+    "maxHp": 3000,
+    "radius": 15,
+    "displayRadius": 12,
+    "isUnselectable": true,
+    "canNotBeDirectlyAttacked": false,
+    "selfBuildRate": 0.001,
+    "selfRegenRate": 0.2
+  },
+  "graphics": {
+    "image": "speed.png",
+    "total_frames": 1
+  },
+  "actions": [
+    {
+      "name": "cancel",
+      "convertTo": "modularSpider_emptySlot",
+      "refundCredits": 6000,
+      "addAllActionCooldownsTime": 120
+    },
+    {
+      "name": "reclaim",
+      "convertTo": "modularSpider_emptySlot",
+      "refundCredits": 3000,
+      "buildSpeed": 180
+    }
+  ]
+}

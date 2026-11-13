@@ -109,8 +109,13 @@
         "samples": 3,
         "assertions": [
           {
-            "path": "units.b.health",
+            "path": "units.b.shield.current",
             "operator": "lessThan",
+            "value": 500
+          },
+          {
+            "path": "units.b.health",
+            "operator": "equals",
             "value": 2500
           }
         ]

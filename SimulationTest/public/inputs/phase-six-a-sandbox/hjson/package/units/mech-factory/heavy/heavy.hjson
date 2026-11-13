@@ -1,0 +1,176 @@
+# Self-owned finite heavy mech with Hjson comments
+{
+  format: "rw-reforge.unit.v1",
+  core: {
+    "name": "mechHeavyMissile",
+    "class": "CustomUnitMetadata",
+    "price": 8500,
+    "maxHp": 2500,
+    "maxShield": 500,
+    "shieldRegen": 0.08,
+    "mass": 3000,
+    "techLevel": 2,
+    "buildSpeed": 0.0006,
+    "radius": 22,
+    "displayRadius": 19,
+    "isBio": false,
+    "softCollisionOnAll": 0,
+    "fogOfWarSightRange": 15
+  },
+  "graphics": {
+    "image_shield": "shield.png",
+    "total_frames": 1,
+    "image": "body.png",
+    "image_turret": "turret.png",
+    "image_wreak": "NONE",
+    "imageScale": 1.1,
+    "turretImageScale": 1,
+    "lock_body_rotation_with_main_turret": false,
+    "lock_leg_rotation_with_main_turret": false
+  },
+  "attack": {
+    "canAttack": true,
+    "canAttackFlyingUnits": true,
+    "canAttackLandUnits": true,
+    "canAttackUnderwaterUnits": false,
+    "turretSize": 20,
+    "turretTurnSpeed": 3,
+    "maxAttackRange": 310,
+    "shootDelay": 130,
+    "turretMultiTargeting": true,
+    "turretRotateWithBody": true
+  },
+  "weapons": [
+    {
+      "name": "smallLaser",
+      "x": 5,
+      "y": 13,
+      "idleDir": -90,
+      "canAttackFlyingUnits": false,
+      "canAttackLandUnits": true,
+      "projectile": "smallLaser",
+      "delay": 90,
+      "limitingRange": 170,
+      "image": "small_turret.png",
+      "image_drawOffsetY": 5,
+      "recoilOffset": -1,
+      "recoilOutTime": 4,
+      "recoilReturnTime": 6
+    },
+    {
+      "name": "1",
+      "x": 0,
+      "y": -12,
+      "idleDir": 0,
+      "turnSpeed": 4.5,
+      "turnSpeedAcceleration": 0.3,
+      "canShoot": false,
+      "canAttackFlyingUnits": true,
+      "canAttackLandUnits": false,
+      "canAttackUnderwaterUnits": false,
+      "projectile": "1",
+      "recoilOffset": -2,
+      "recoilOutTime": 6,
+      "recoilReturnTime": 12
+    },
+    {
+      "name": "2",
+      "x": 13,
+      "y": 15,
+      "canAttackFlyingUnits": true,
+      "canAttackLandUnits": false,
+      "attachedTo": "1",
+      "slave": true,
+      "projectile": "1",
+      "invisible": true,
+      "turnSpeed": 4,
+      "turnSpeedAcceleration": 1,
+      "warmup": 2,
+      "canShoot": true,
+      "size": 0
+    },
+    {
+      "name": "3",
+      "copyFromSections": [
+        "turret_2"
+      ],
+      "x": -13,
+      "y": 15,
+      "warmup": 20,
+      "linkDelayWithTurret": "2"
+    }
+  ],
+  "projectiles": [
+    {
+      "name": "1",
+      "directDamage": 200,
+      "life": 240,
+      "speed": 0.6,
+      "targetSpeed": 8,
+      "areaDamage": 40,
+      "areaRadius": 35,
+      "autoTargetingOnDeadTarget": true
+    },
+    {
+      "name": "smallLaser",
+      "directDamage": 35,
+      "life": 70,
+      "speed": 7
+    }
+  ],
+  "movement": {
+    "movementType": "OVER_CLIFF",
+    "moveSpeed": 0.61,
+    "moveAccelerationSpeed": 0.07,
+    "moveDecelerationSpeed": 0.17,
+    "maxTurnSpeed": 1,
+    "turnAcceleration": 0.5,
+    "moveSlidingMode": true,
+    "moveIgnoringBody": true,
+    "moveSlidingDir": 181
+  },
+  "leg_1": {
+    "x": -18,
+    "y": 15,
+    "attach_x": -5,
+    "attach_y": 10,
+    "moveSpeed": 2.9,
+    "rotateSpeed": 7,
+    "heightSpeed": 0.3,
+    "resetAngle": 25,
+    "image_leg": "leg.png",
+    "image_foot": "foot.png",
+    "dust_effect": false,
+    "holdDisMin": 5,
+    "holdDisMax": 19,
+    "favourOppositeSideNeighbours": true,
+    "estimatingPositionMultiplier": 0.7
+  },
+  "leg_2": {
+    "copyFromSections": [
+      "leg_1"
+    ],
+    "x": 18,
+    "y": 15,
+    "attach_x": 5,
+    "attach_y": 10
+  },
+  "leg_3": {
+    "copyFromSections": [
+      "leg_1"
+    ],
+    "x": -18,
+    "y": -15,
+    "attach_x": -5,
+    "attach_y": -10
+  },
+  "leg_4": {
+    "copyFromSections": [
+      "leg_1"
+    ],
+    "x": 18,
+    "y": -15,
+    "attach_x": 5,
+    "attach_y": -10
+  }
+}

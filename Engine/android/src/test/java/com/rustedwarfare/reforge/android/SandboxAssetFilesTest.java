@@ -14,15 +14,12 @@ public final class SandboxAssetFilesTest {
         Map<String, byte[]> files = new LinkedHashMap<>();
         for (String phase : new String[] {"P001-移动沙盒输入", "P002-知识沙盒输入"}) {
             for (String name : new String[] {"maps/p001-controlled.tmx", "tilesets/p001-ground.tsx",
-                    "tilesets/p001-rock.tsx", "units/weaponless_tank.ini"}) {
+                    "tilesets/p001-rock.tsx", "units/weaponless_tank.ini", "assets/ground.png", "assets/rock.png", "assets/unit.png"}) {
                 String path = "TestLab/local/" + phase + "/" + name;
                 files.put(path, ("owned fixture " + path).getBytes(java.nio.charset.StandardCharsets.UTF_8));
             }
         }
         files.put("TestLab/local/P002-知识沙盒输入/sandbox.properties", new byte[] {1, 2});
-        files.put("Rusted Warfare/assets/tilesets/bitmaps/longgrass.png", new byte[] {3});
-        files.put("Rusted Warfare/assets/tilesets/bitmaps/mountain.png", new byte[] {4});
-        files.put("Rusted Warfare/assets/units/tanks/tank.png", new byte[] {5});
         return files;
     }
 
@@ -78,7 +75,7 @@ public final class SandboxAssetFilesTest {
             if (mode.equals("unknown-directory")) Files.createDirectory(bad);
             else Files.write(bad, new byte[] {42});
             rejected(destination, payload);
-            require(!Files.exists(destination.resolve("Rusted Warfare")), "Rejected tree was modified");
+            require(!Files.exists(destination.resolve("TestLab/local/P002-知识沙盒输入")), "Rejected tree was modified");
             require(Files.exists(bad), "Existing data removed");
         }
         for (String mode : new String[] {"root-link", "parent-link", "leaf-link"}) {
@@ -100,7 +97,7 @@ public final class SandboxAssetFilesTest {
                 Files.createSymbolicLink(leaf, foreignFile);
             }
             rejected(destination, payload);
-            require(!Files.exists(foreign.resolve("Rusted Warfare")), "Wrote through link");
+            require(!Files.exists(foreign.resolve("TestLab")), "Wrote through link");
         }
         System.out.println("PASS " + checks + " fixed-asset host checks; no Android runtime");
     }

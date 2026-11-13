@@ -20,7 +20,7 @@ class PatrolSandboxSessionTest {
             val tasks = actor["tasks"] as List<*>
             assertEquals(1, tasks.size)
             assertEquals(mapOf("kind" to "patrol", "target" to mapOf("x" to 30.0, "y" to 330.0),
-                "targetUnitId" to null), tasks.single())
+                "targetUnitId" to null, "automaticRepair" to false, "extraWorkRange" to 0f), tasks.single())
             s.stop()
             val stopped = rows.last { it.first == "observation" }.second["sample"] as Map<*, *>
             assertTrue(((stopped["units"] as List<*>).map { it as Map<*, *> }.single { it["unitId"] == "a" }["tasks"] as List<*>).isEmpty())

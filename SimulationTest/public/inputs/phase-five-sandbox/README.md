@@ -1,6 +1,6 @@
 # Owned Phase V sandbox
 
-These INI, JSON, Hjson and mixed-format packages combine existing self-owned public fixtures. They contain no extracted original-game content. The default installed PC scene is `scenarios/phase-five-json.json`; its map, complete content closure and independent contract travel with the application.
+These INI, JSON, Hjson and mixed-format packages combine existing self-owned public fixtures. The Phase V map, content closure and independent contracts remain available to the Core and Session regressions. The installed PC Start now uses the Phase VI A JSON scene.
 
 The 1200 by 800 controlled map has dry land left of x=600 and water to the right. Player one starts with only a command center and 30000 credits. Its ordinary production creates the builder; the builder constructs land, mech, air and sea factories. Paid mech and sea upgrades retain their factory identities. Normal production obtains c_tank, mechGun, the OVER_CLIFF movement slice mechHeavyMissile, helicopter and heavyBattleship. All five coexist at tick 15000, followed by normal Move, Stop and Attack calls and mixed ground/air/sea combat through tick 22000.
 

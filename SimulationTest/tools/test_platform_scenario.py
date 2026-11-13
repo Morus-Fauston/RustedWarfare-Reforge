@@ -273,14 +273,16 @@ class PlatformIntentTest(unittest.TestCase):
     def test_default_windows_startup_uses_no_content_override_and_keeps_evidence_isolated(self):
         from platform_windows import startup_arguments
         snapshot=Path('owned-snapshot');evidence=Path('owned-evidence')
-        args,title=startup_arguments(dict(testScene={},windowsDefaultStart=True),snapshot,evidence)
+        plan = dict(testScene={}, windowsDefaultStart=True, scenarioId='public.phase-six-a-command-json.v1')
+        args,title=startup_arguments(plan,snapshot,evidence)
         self.assertEqual(['--evidence',str(evidence),'--visuals','placeholder'],args)
-        self.assertEqual('RustedWarfare-Reforge | Phase V sandbox',title)
+        self.assertEqual('RustedWarfare-Reforge | Phase VI A sandbox',title)
         explicit,title=startup_arguments({},snapshot,evidence)
         self.assertEqual(['--mode','sandbox','--inputs',str(snapshot),'--evidence',str(evidence),'--visuals','placeholder'],explicit)
         self.assertEqual('RustedWarfare-Reforge | P002 Windows sandbox',title)
-        for plan in (dict(windowsDefaultStart='true',testScene={}),dict(windowsDefaultStart=True)):
-            with self.subTest(plan=plan),self.assertRaises(PlatformError):startup_arguments(plan,snapshot,evidence)
+        for invalid in (dict(plan, windowsDefaultStart='true'),dict(windowsDefaultStart=True),
+                        dict(plan, scenarioId='public.phase-five-sandbox.v1'), dict(plan, windowsSpiderStart=True)):
+            with self.subTest(plan=invalid),self.assertRaises(PlatformError):startup_arguments(invalid,snapshot,evidence)
 
     def test_progress_only_four_times_wait_is_explicit_and_keeps_all_existing_bounds(self):
         from platform_windows import validate_windows_plan

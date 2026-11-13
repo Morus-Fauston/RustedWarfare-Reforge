@@ -38,7 +38,8 @@ class BattleshipContentTest {
             assertEquals(LinearProjectileAcceleration(3.0, .1), weapons[3].projectile.acceleration)
             assertEquals(CustomBallisticProfile(0f, 4f), weapons[3].projectile.ballistic)
             assertFalse(weapons[3].projectile.retargetOnDeath)
-            assertTrue("transportSlotsNeeded" in ship.retainedUnconsumed)
+            assertEquals(3, ship.transportSlots)
+            assertFalse("transportSlotsNeeded" in ship.retainedUnconsumed)
             assertIs<ContentResult.Success<Unit>>(pack.verifyStable())
         }
     }

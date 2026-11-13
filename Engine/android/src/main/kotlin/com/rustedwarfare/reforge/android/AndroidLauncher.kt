@@ -15,7 +15,7 @@ class AndroidLauncher : AndroidApplication() {
         val run = AndroidEvidence(File(getExternalFilesDir(null) ?: filesDir, "runs"))
         evidence = run
         try {
-            val content = File(filesDir.canonicalFile, "p001")
+            val content = File(filesDir.canonicalFile, "owned-sandbox-v1")
             SandboxAssets.copy(assets, content)
             run.record("launch", mapOf("package" to packageName, "sdk" to android.os.Build.VERSION.SDK_INT,
                 "abis" to android.os.Build.SUPPORTED_ABIS.toList(), "content" to content.absolutePath,

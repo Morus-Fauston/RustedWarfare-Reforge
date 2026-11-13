@@ -29,10 +29,12 @@ NAUTILUS_ACTIONS = {'nautilusSubmarine': {'surface', NAVAL_AMMO},
                     'nautilusSubmarineLand': {SCOUT_LAUNCH, NAVAL_AMMO}}
 
 
-def validate_unit_action_intent(intent):
+def validate_unit_action_intent(intent, paired=False):
     name=intent.get('actionName');nuclear=name in ('buildNuke','launchNuke','buildAntiNuke');cancel=intent.get('cancelQueued',False)
     targeted=name in ('launchNuke','launchScoutBot','blink')
     keys={'intentId','kind','actionName','waitSteps'}
+    if paired and isinstance(intent.get('coreActionId'), str) and intent['coreActionId']:
+        keys.add('coreActionId')
     if (nuclear or targeted or name in spider_platform.CANCELLABLE) and 'cancelQueued' in intent:keys.add('cancelQueued')
     if targeted and cancel is False:keys.add('target')
     target=intent.get('target')
@@ -43,6 +45,74 @@ def validate_unit_action_intent(intent):
                 'afterBurn','cancelBurn','deploy','undeploy','surface','dive',*spider_platform.ACTIONS) or
             type(intent.get('waitSteps')) is not int or not 0<=intent['waitSteps']<=600):
         raise PlatformError('input-contract','Expected a finite normal unit action and explicit bounded wait',1)
+
+
+def validate_paired_schedule(plan):
+    """Check the same finite core schedule that the normal scene menu consumes."""
+    def require(condition, location):
+        if not condition:
+            raise PlatformError('input-contract', 'Paired core schedule differs: ' + location, 1)
+
+    def point(value):
+        return (isinstance(value, dict) and set(value) == {'x', 'y'} and
+                all(type(v) in (int, float) and math.isfinite(v) for v in value.values()))
+
+    fields = {
+        'move': (('position', 'target'),), 'build': (('position', 'target'), ('typeId', 'buildingTypeId')),
+        'attack': (('targetUnitId', 'targetUnitId'),), 'produce': (('typeId', 'productionTypeId'),),
+        'upgrade': (('upgradeId', 'upgradeId'),), 'stop': (),
+        'submarine-depth': (('surface', 'surface'),),
+        'load': (('direction', 'direction'), ('targetUnitId', 'targetUnitId')),
+        'unload': (('unloading', 'unloading'),),
+        'unit-action': (('actionName', 'actionName'),),
+    }
+    actions = plan.get('actions')
+    require(isinstance(actions, list), 'actions')
+    by_id = {}
+    for action in actions:
+        require(isinstance(action, dict), 'action')
+        identifier = action.get('actionId')
+        require(isinstance(identifier, str) and identifier and identifier not in by_id, 'actionId')
+        by_id[identifier] = action
+    used, step = set(), 0
+    for intent in plan['intents']:
+        location = intent['intentId']
+        kind = intent.get('kind')
+        wait = intent.get('waitSteps', 0)
+        require(type(wait) is int and 0 <= wait <= 600, location + '.waitSteps')
+        if kind == 'select':
+            require('coreActionId' not in intent, location + '.coreActionId')
+        else:
+            identifier = intent.get('coreActionId')
+            require(kind in fields and isinstance(identifier, str) and identifier in by_id and identifier not in used,
+                    location + '.coreActionId')
+            action = by_id[identifier]
+            used.add(identifier)
+            require(action.get('kind') == kind and action.get('actor') == intent.get('actor', 'p1') and
+                    type(action.get('atStep')) is int and action['atStep'] == step, location + '.schedule')
+            for left, right in fields[kind]:
+                first, second = intent.get(left), action.get(right)
+                if left == 'position':
+                    valid = point(first) and point(second)
+                elif left in ('surface', 'unloading'):
+                    valid = type(first) is bool and type(second) is bool
+                else:
+                    valid = isinstance(first, str) and bool(first) and isinstance(second, str)
+                require(valid and first == second, location + '.' + left)
+            if kind == 'load':
+                require(intent['direction'] in ('INTO', 'UP'), location + '.direction')
+            if kind == 'unit-action':
+                validate_unit_action_intent(intent, paired=True)
+                cancel = intent.get('cancelQueued', False)
+                require(type(action.get('cancelQueued')) is bool and action['cancelQueued'] == cancel,
+                        location + '.cancelQueued')
+                first, second = intent.get('target'), action.get('target')
+                require((first is None and second is None) or (point(first) and point(second) and first == second),
+                        location + '.target')
+        step += wait
+    termination = plan.get('termination')
+    steps = termination.get('steps') if isinstance(termination, dict) else None
+    require(used == by_id.keys() and isinstance(steps, list) and len(steps) == step, 'coverage')
 
 
 def value_at(sample, path):
@@ -635,7 +705,7 @@ def validate_bunker_state(unit, owner):
     if type(action['available']) is not bool or action['available']!=available:invalid('Invalid bunker action availability')
 
 
-def validate_history_action(records, row, intent, geometry=None):
+def validate_history_action(records, row, intent, geometry=None, paired=False):
     """Bind a fixed intention to its existing exported call and owned object."""
     index=row['sequence']
     if not 0 < index < len(records)-1:
@@ -668,7 +738,7 @@ def validate_history_action(records, row, intent, geometry=None):
             raise PlatformError('history-action-identity','Formal object is absent, ambiguous, dead or not owned',2)
     fields={}
     if kind=='unit-action':
-        validate_unit_action_intent(intent)
+        validate_unit_action_intent(intent, paired)
         old=next(u for u in left['units'] if u['unitId']==identity)
         new=next(u for u in right['units'] if u['unitId']==identity)
         name=intent['actionName']
@@ -1296,7 +1366,7 @@ def compare_history(records, plan, policy, native_anchors=None, geometry=None):
                 viewport=next((r for r in reversed(records) if r.get('kind')=='resize' and r['sequence']<row['sequence']),None)
                 if viewport is None:raise PlatformError('input-geometry','History lacks a formal viewport')
                 context=dict(geometry,viewport=viewport)
-            validate_history_action(records,row,intents[active],context)
+            validate_history_action(records,row,intents[active],context,paired='testScene' in plan)
             if active in refunds:
                 target=row.get('targetUnitId')
                 before=records[row['sequence']-1]['sample']
@@ -1509,6 +1579,8 @@ def compare_run(records, plan, contract, anchors, geometry=None):
             [anchor['intentId'] for anchor in anchors] != ids or
             plan.get('scenarioId') != contract.get('scenarioId')):
         raise PlatformError('input-contract', 'Plan, contract, and intent boundaries differ', 1)
+    if 'testScene' in plan:
+        validate_paired_schedule(plan)
     if [row.get('sequence') for row in records] != list(range(len(records))):
         raise PlatformError('record-sequence', 'Diagnostic records are truncated or out of order')
     # Old Session archives did not label observations. Keep that reader, but a

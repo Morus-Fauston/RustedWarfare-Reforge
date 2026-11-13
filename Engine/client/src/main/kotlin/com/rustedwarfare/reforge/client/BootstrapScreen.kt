@@ -35,6 +35,7 @@ class BootstrapScreen(
     private val soundFactory: PlaybackSoundFactory = GdxPlaybackSoundFactory,
     private val testScenarioSeed: Path? = null,
     private val selectDefaultTestScenario: Boolean = false,
+    private val alternateStartSeed: Path? = null,
 ) : ApplicationAdapter() {
     private lateinit var batch: SpriteBatch
     private lateinit var shapes: ShapeRenderer
@@ -458,10 +459,11 @@ class BootstrapScreen(
             showTestScenarios = false; testScenes.useCustomContent()
             showContentPack = true; lastHudState = null; updateHud()
         }
-        testSceneTab = button("Test scenes", 424f, 568f, 176f) {
+        testSceneTab = button(if (alternateStartSeed == null) "Test scenes" else "Starting units", 424f, 568f, 176f) {
             showTestScenarios = true; lastHudState = null; updateHud()
         }
-        testScenePanel = TestScenarioPanel(testScenes, testScenarioSeed, skin, visualSettings?.let { it::createUiFont }) {
+        testScenePanel = TestScenarioPanel(testScenes, testScenarioSeed, alternateStartSeed, skin,
+            visualSettings?.let { it::createUiFont }) {
             if (visualState?.busy == true) visualState.cancel()
             if (testScenes.selected) {
                 if (!rootField.isDisabled) customRootText = rootField.text
@@ -1391,7 +1393,7 @@ class BootstrapScreen(
         startButton.isDisabled = loading || launch.canEdit && (visualState?.canStart == false || !testScenes.canStart || !testScenes.selected && !packState.canStart)
         visualsTab.isVisible = current == null && visualPanel != null
         packTab.isVisible = current == null
-        testSceneTab.isVisible = current == null && testScenarioSeed != null && !touchControls
+        testSceneTab.isVisible = current == null && testScenarioSeed != null && (!touchControls || alternateStartSeed != null)
         testScenePanel?.let {
             it.isVisible = current == null && showTestScenarios
             it.setEditable(launch.canEdit && !loading)

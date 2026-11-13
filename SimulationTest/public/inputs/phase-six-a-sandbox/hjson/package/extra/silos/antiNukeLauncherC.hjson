@@ -1,0 +1,16 @@
+{
+  "format": "rw-reforge.nuclear-silo.v1",
+  "name": "antiNukeLauncherC",
+  "maxHp": 2800,
+  "radius": 35,
+  "footprint": "-1,-1,1,1",
+  "constructionFootprint": "-1,-1,1,1",
+  "movementType": "NONE",
+  "price": 15000,
+  "buildSpeed": 0.001,
+  "image": "anti-body.png",
+  "image_back": "anti-back.png",
+  "image_dead": "anti-dead.png",
+  "image_arm1": "anti-arm1.png",
+  "image_arm2": "anti-arm2.png"
+}

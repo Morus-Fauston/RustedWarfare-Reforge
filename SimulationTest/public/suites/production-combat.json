@@ -62,6 +62,7 @@
       "com.rustedwarfare.reforge.core.content.MechInputFailureTest",
       "com.rustedwarfare.reforge.core.sim.ArmedMechCombatTest",
       "com.rustedwarfare.reforge.core.sim.MechBodyTest",
+      "com.rustedwarfare.reforge.core.sim.ModularSpiderBlinkTest",
       "com.rustedwarfare.reforge.core.sim.MechFactoryFailureTest",
       "com.rustedwarfare.reforge.core.sim.MechFactoryDirectHitTest",
       "com.rustedwarfare.reforge.core.sim.MechFactoryProductionTest",
@@ -325,6 +326,7 @@
       "com.rustedwarfare.reforge.client.AuthorShoreSandboxTest",
       "com.rustedwarfare.reforge.client.AuthorNavalChainSandboxTest",
       "com.rustedwarfare.reforge.client.PhaseFiveSandboxTest",
+      "com.rustedwarfare.reforge.client.PhaseSixASandboxTest",
       "com.rustedwarfare.reforge.client.HoverProjectionTest",
       "com.rustedwarfare.reforge.client.HoverProductionSandboxTest",
       "com.rustedwarfare.reforge.client.ShieldPresentationTest",
@@ -457,6 +459,18 @@
     ]
   },
   "short": [
+    {
+      "id": "phase-six-a-default",
+      "backend": "session",
+      "scenario": "scenarios/phase-six-a-json.json",
+      "contract": "contracts/phase-six-a-json.json"
+    },
+    {
+      "id": "phase-six-a-spider",
+      "backend": "session",
+      "scenario": "scenarios/phase-six-a-spider-json.json",
+      "contract": "contracts/phase-six-a-spider-json.json"
+    },
     {
       "id": "production-combat-short",
       "scenario": "scenarios/production-combat-short.json",
@@ -1354,6 +1368,12 @@
     }
   ],
   "long": [
+    {
+      "id": "modular-spider-mixed-modules",
+      "backend": "session",
+      "scenario": "platform/scenarios/modular-spider-json-mixed-modules.json",
+      "contract": "platform/contracts/modular-spider-json-mixed-modules.json"
+    },
     {
       "id": "production-combat-chain",
       "scenario": "scenarios/production-combat-chain.json",
