@@ -142,6 +142,10 @@ jobs:
         with:
           name: public-plan-${{ github.run_attempt }}
           path: SimulationTest/build/public-transfer
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: public-distribution-${{ github.run_attempt }}
+          path: SimulationTest/build/public-transfer
       - name: Run current JVM methods and Python scripts
         id: run
         env:

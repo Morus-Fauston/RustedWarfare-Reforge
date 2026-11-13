@@ -277,6 +277,13 @@ def run_shard(repo, bundle, plan_sha, shard, archive, output):
         if receipt['toolchain'] != bundle['toolchain']:
             raise ValueError('Shard toolchain differs')
         cases = bundle['shards'][shard]
+        distribution = verify_distribution(archive, bundle['archiveSha256'], output/'package', bundle['files'])
+        receipt['archiveSha256'] = bundle['archiveSha256']
+
+        def admit_distribution():
+            if package_files(distribution) != bundle['files']:
+                raise ValueError('Relocated distribution changed during verification')
+
         if shard == 'mechanisms':
             folder = output/'mechanisms'
             plan = bundle['mechanisms']
@@ -284,19 +291,18 @@ def run_shard(repo, bundle, plan_sha, shard, archive, output):
             if receipt['gradle'] != bundle['gradle']:
                 raise ValueError('Actual Gradle distribution differs')
             def admit_mechanisms():
+                admit_distribution()
                 if identities(repo) != sources or candidate(repo) != bundle['identity'] or toolchain(repo) != receipt['toolchain']:
                     raise ValueError('Authored input, checkout or toolchain changed during mechanisms')
-            if run_development(repo, folder, plan, False, FORKS, COLD_BUILD_TIMEOUT, admit=admit_mechanisms):
+            if run_development(repo, folder, plan, False, FORKS, COLD_BUILD_TIMEOUT,
+                               admit=admit_mechanisms, session_distribution=distribution):
                 raise ValueError('Fresh mechanisms failed')
             receipt['coverage'] = mechanism_coverage(verify_mechanism_receipt(repo, folder, plan, sources))
         else:
-            distribution = verify_distribution(archive, bundle['archiveSha256'], output/'package', bundle['files'])
-            receipt['archiveSha256'] = bundle['archiveSha256']
             expected = {row['path']: row['sha256'] for row in sources}
             def admit(case):
                 verify_scenario_sources(repo, case, expected)
-                if package_files(distribution) != bundle['files']:
-                    raise ValueError('Relocated distribution changed during verification')
+                admit_distribution()
             folder = output/'scenarios'
             folder.mkdir()
             execution = run_scenarios(repo, folder, cases, distribution, WORKERS, COMMAND_TIMEOUT, admit, execute_command)
@@ -434,7 +440,7 @@ def aggregate(bundle, plan_sha, folder, pins, jobs, artifacts, admit_raw):
             row = checked_json(path, pins[shard])
             if row != receipts[shard]:
                 raise ValueError('Receipt changed during summary')
-            package = bundle['archiveSha256'] if shard != 'mechanisms' else None
+            package = bundle['archiveSha256']
             if (row['identity'] != bundle['identity'] or row['toolchain'] != bundle['toolchain']
                     or row['planSha256'] != plan_sha or row['archiveSha256'] != package or row['status'] != 'passed'
                     or row['gradle'] != (bundle['gradle'] if shard == 'mechanisms' else None)):

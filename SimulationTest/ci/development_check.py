@@ -141,7 +141,7 @@ def method_owners(group, tests):
     ]
 
 
-def run_development(repo, output, plan, cold, forks=1, timeout=600, *, admit=None, prepared=False):
+def run_development(repo, output, plan, cold, forks=1, timeout=600, *, admit=None, prepared=False, session_distribution=None):
     output.mkdir(parents=True, exist_ok=False)
     started = time.monotonic()
     initial = identities(repo)
@@ -173,8 +173,12 @@ def run_development(repo, output, plan, cold, forks=1, timeout=600, *, admit=Non
             summary = output/('python-'+str(index)+'.json')
             if admit is not None:
                 admit()
-            command = execute_step([sys.executable, '-B', str(repo/'SimulationTest/ci/python_check.py'),
-                '--test', str(repo/path), '--output', str(summary)], repo, output/('python-'+str(index)), timeout=timeout)
+            argv = [sys.executable, '-B', str(repo/'SimulationTest/ci/python_check.py'),
+                    '--test', str(repo/path), '--output', str(summary)]
+            env = None
+            if session_distribution is not None and path == 'SimulationTest/tools/test_platform_session_cli.py':
+                env = dict(os.environ, REFORGE_SESSION_TEST_DISTRIBUTION=str(session_distribution))
+            command = execute_step(argv, repo, output/('python-'+str(index)), timeout=timeout, env=env)
             measured = json.loads(summary.read_text(encoding='utf8'))
             result['pythonCoverage'].append(dict(path=path, command=command, result=measured,
                                                  suites=plan['pythonOwners'][path]))

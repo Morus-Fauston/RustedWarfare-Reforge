@@ -73,7 +73,7 @@ OS: Linux
     def test_mechanism_input_drift_stops_before_the_next_operation(self):
         identity, tools = {'event':'local'}, {'python': '3.13'}
         plan = dict(identity=identity, source=[{'path':'input','sha256':'a'}],
-                    toolchain=tools, gradle={'version':'9.3.1'},
+                    toolchain=tools, gradle={'version':'9.3.1'}, archiveSha256='d'*64, files=[],
                     shards={'mechanisms':[]}, mechanisms={})
         source = plan['source']
         group = dict(fixture=None, tests={'core':['Probe']},
@@ -88,6 +88,8 @@ OS: Linux
               patch('public_parallel.identities', return_value=source) as identity_check,
               patch('development_check.identities', return_value=source),
               patch('public_parallel.measure_gradle', return_value=plan['gradle']),
+              patch('public_parallel.verify_distribution', return_value=Path(tmp)/'portable'),
+              patch('public_parallel.package_files', return_value=[]),
               patch('public_parallel.verify_mechanism_receipt', return_value=process),
               patch('development_check.resources', side_effect=lambda names: nullcontext()),
               patch('development_check.execute_test_group', side_effect=lambda *args, **kwargs: deepcopy(result)) as execute):
@@ -145,7 +147,7 @@ OS: Linux
         scenario = dict(suite='production-combat', id='a', kind='short', status='passed',
                         elapsedSeconds=10, commands=['a'], archive=dict(id='a', kind='short'))
         good = {shard: dict(identity=identity, planSha256=plan_sha, toolchain=bundle['toolchain'],
-                            archiveSha256=bundle['archiveSha256'] if cases else None, status='passed',
+                            archiveSha256=bundle['archiveSha256'], status='passed',
                             gradle=None if cases else bundle['gradle'],
                             shard=shard, coverage=dict(scenarios=[scenario]) if cases else mechanism)
                 for shard, cases in bundle['shards'].items()}

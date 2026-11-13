@@ -1,4 +1,5 @@
 """Installed real JVM adapter checks; run after :installDist, never substitute synthetic rows."""
+import os
 import tempfile
 import unittest
 from pathlib import Path
@@ -8,6 +9,10 @@ import hashlib
 
 
 class PlatformSessionCliTest(unittest.TestCase):
+    def distribution(self, root):
+        directory = os.environ.get('REFORGE_SESSION_TEST_DISTRIBUTION')
+        return Path(directory) if directory else root/'SimulationTest/build/install/simulation-test'
+
     def test_partial_or_rebound_real_session_archive_is_rejected(self):
         from platform_scenario import run_session, compare_archive, PlatformError
         root=Path(__file__).resolve().parents[2]
@@ -15,7 +20,7 @@ class PlatformSessionCliTest(unittest.TestCase):
         with tempfile.TemporaryDirectory(prefix='platform-archive-negative-') as folder:
             base=Path(folder)/'positive'
             result=run_session(public/'scenarios/production.json',public/'contracts/production.json',
-                               root/'SimulationTest/build/install/simulation-test',base)
+                               self.distribution(root),base)
             self.assertEqual(0,result['exitCode'],result)
             for fault in ('empty','duplicate','omit-diagnostic','missing-manifest','missing-input','extra-file',
                           'same-length-input',
@@ -23,7 +28,7 @@ class PlatformSessionCliTest(unittest.TestCase):
                 with self.subTest(fault=fault):
                     altered=Path(folder)/fault
                     shutil.copytree(base,altered)
-                    archive=json.loads((altered/'archive.json').read_text())
+                    archive=json.loads((altered/'archive.json').read_bytes())
                     if fault=='empty': archive['files']=[]
                     elif fault=='duplicate': archive['files'].append(archive['files'][0])
                     elif fault=='omit-diagnostic': archive['files']=[r for r in archive['files'] if r['path']!='session/client-diagnostic.jsonl']
@@ -31,7 +36,6 @@ class PlatformSessionCliTest(unittest.TestCase):
                     elif fault=='missing-input':(altered/'inputSnapshot/production.properties').unlink()
                     elif fault=='extra-file':(altered/'extra.txt').write_bytes(b'extra')
                     elif fault=='same-length-input':
-                        import os
                         path = altered/'inputSnapshot/production.properties'
                         times = path.stat()
                         data = path.read_bytes()
@@ -39,12 +43,12 @@ class PlatformSessionCliTest(unittest.TestCase):
                         os.utime(path, ns=(times.st_atime_ns, times.st_mtime_ns))
                     elif fault=='backend':archive['backend']='invented'
                     else:
-                        manifest=json.loads((altered/'manifest.json').read_text())
+                        manifest=json.loads((altered/'manifest.json').read_bytes())
                         if fault=='rebound-input':manifest['inputFiles'][0]['sha256']='0'*64
                         else:manifest[('scenario' if fault=='rebound-scenario' else 'contract')+'Sha256']='0'*64
-                        (altered/'manifest.json').write_text(json.dumps(manifest))
+                        (altered/'manifest.json').write_text(json.dumps(manifest), encoding='utf8')
                         next(r for r in archive['files'] if r['path']=='manifest.json')['sha256']=hashlib.sha256((altered/'manifest.json').read_bytes()).hexdigest()
-                    (altered/'archive.json').write_text(json.dumps(archive))
+                    (altered/'archive.json').write_text(json.dumps(archive), encoding='utf8')
                     with self.assertRaises(PlatformError):compare_archive(altered)
 
     def test_installed_adapter_freezes_inputs_and_compares_real_production_calls(self):
@@ -54,7 +58,7 @@ class PlatformSessionCliTest(unittest.TestCase):
         with tempfile.TemporaryDirectory(prefix='platform-cli-') as folder:
             output = Path(folder) / 'run'
             result = run_session(public / 'scenarios/production.json', public / 'contracts/production.json',
-                                 root / 'SimulationTest/build/install/simulation-test', output)
+                                 self.distribution(root), output)
             self.assertEqual(0, result['exitCode'], result)
             self.assertEqual(7, len(result['judgments']))
             self.assertTrue((output / 'inputSnapshot/production.properties').is_file())
