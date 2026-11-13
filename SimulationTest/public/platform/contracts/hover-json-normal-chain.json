@@ -1,0 +1,141 @@
+{
+  "schemaVersion": 1,
+  "scenarioId": "p009-hover-normal-chain",
+  "rules": [
+    {
+      "intentId": "select-center",
+      "actionType": "SelectAction"
+    },
+    {
+      "intentId": "produce-builder",
+      "actionType": "ProduceAction"
+    },
+    {
+      "intentId": "wait-worker-exit",
+      "actionType": "SelectAction"
+    },
+    {
+      "intentId": "select-builder",
+      "actionType": "SelectAction"
+    },
+    {
+      "intentId": "approach-factory",
+      "actionType": "MoveAction"
+    },
+    {
+      "intentId": "build-factory",
+      "actionType": "BuildAction"
+    },
+    {
+      "intentId": "wait-factory",
+      "actionType": "SelectAction"
+    },
+    {
+      "intentId": "select-factory",
+      "actionType": "SelectAction"
+    },
+    {
+      "intentId": "produce-hover",
+      "actionType": "ProduceAction"
+    },
+    {
+      "intentId": "wait-hover-exit",
+      "actionType": "SelectAction"
+    },
+    {
+      "intentId": "select-hover",
+      "actionType": "SelectAction"
+    },
+    {
+      "intentId": "cross-water",
+      "actionType": "MoveAction"
+    },
+    {
+      "intentId": "return-land",
+      "actionType": "MoveAction"
+    },
+    {
+      "intentId": "stop-hover",
+      "actionType": "StopAction"
+    },
+    {
+      "intentId": "attack-ground",
+      "actionType": "AttackAction"
+    }
+  ],
+  "history": {
+    "initialBalance": 5000,
+    "initialOwnedTypes": [
+      "commandCenter"
+    ],
+    "ownerPlayerId": "p1",
+    "initialIncome": {
+      "unitId": "a",
+      "typeId": "commandCenter",
+      "period": 10,
+      "credits": 4.5
+    },
+    "projectileBirthsRequired": true,
+    "productionOrder": [
+      "builder",
+      "hoverTank"
+    ],
+    "minimumBirths": [
+      {
+        "ownerPlayerId": "p1",
+        "typeId": "hoverTank",
+        "weaponNames": [
+          null
+        ],
+        "targetUnitId": "b"
+      }
+    ],
+    "spend": [
+      {
+        "intentId": "produce-builder",
+        "amount": 500,
+        "at": "action"
+      },
+      {
+        "intentId": "build-factory",
+        "amount": 700,
+        "at": "construction-created"
+      },
+      {
+        "intentId": "produce-hover",
+        "amount": 450,
+        "at": "action"
+      }
+    ],
+    "finalUnits": [
+      {
+        "ownerPlayerId": "p1",
+        "typeId": "commandCenter",
+        "fields": {
+          "alive": true
+        }
+      },
+      {
+        "ownerPlayerId": "p1",
+        "typeId": "builder",
+        "fields": {
+          "alive": true
+        }
+      },
+      {
+        "ownerPlayerId": "p1",
+        "typeId": "landFactory",
+        "fields": {
+          "alive": true
+        }
+      },
+      {
+        "ownerPlayerId": "p1",
+        "typeId": "hoverTank",
+        "fields": {
+          "alive": true
+        }
+      }
+    ]
+  }
+}

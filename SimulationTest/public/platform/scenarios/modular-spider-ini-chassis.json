@@ -1,0 +1,129 @@
+{
+  "schemaVersion": 1,
+  "scenarioId": "modular-spider-ini-chassis",
+  "inputs": "../../inputs/modular-spider-start/ini",
+  "contentPack": {
+    "directory": "opening-package",
+    "unitId": "modularSpider"
+  },
+  "intents": [
+    {
+      "intentId": "settle-opening",
+      "kind": "select",
+      "waitSteps": 100,
+      "position": {
+        "x": 40,
+        "y": 40
+      }
+    },
+    {
+      "intentId": "select-spider",
+      "kind": "select",
+      "waitSteps": 0,
+      "position": {
+        "x": 190,
+        "y": 150
+      }
+    },
+    {
+      "intentId": "build-land-factory",
+      "kind": "build",
+      "waitSteps": 550,
+      "position": {
+        "x": 270,
+        "y": 250
+      },
+      "typeId": "landFactory"
+    },
+    {
+      "intentId": "select-land-factory",
+      "kind": "select",
+      "waitSteps": 0,
+      "position": {
+        "x": 270,
+        "y": 250
+      }
+    },
+    {
+      "intentId": "produce-tank",
+      "kind": "produce",
+      "waitSteps": 600,
+      "typeId": "c_tank"
+    },
+    {
+      "intentId": "select-spider-after-factory",
+      "kind": "select",
+      "waitSteps": 0,
+      "position": {
+        "x": 190,
+        "y": 150
+      }
+    },
+    {
+      "intentId": "build-repair-bay",
+      "kind": "build",
+      "waitSteps": 350,
+      "position": {
+        "x": 70,
+        "y": 250
+      },
+      "typeId": "repairbay"
+    },
+    {
+      "intentId": "select-spider-after-bay",
+      "kind": "select",
+      "waitSteps": 0,
+      "position": {
+        "x": 190,
+        "y": 150
+      }
+    },
+    {
+      "intentId": "nano-build-worker",
+      "kind": "build",
+      "waitSteps": 250,
+      "position": {
+        "x": 110,
+        "y": 110
+      },
+      "typeId": "builder"
+    },
+    {
+      "intentId": "select-spider-for-maintenance",
+      "kind": "select",
+      "waitSteps": 0,
+      "position": {
+        "x": 190,
+        "y": 150
+      }
+    },
+    {
+      "intentId": "partially-reclaim-worker",
+      "kind": "reclaim",
+      "waitSteps": 50,
+      "position": {
+        "x": 110,
+        "y": 110
+      }
+    },
+    {
+      "intentId": "stop-and-auto-repair",
+      "kind": "stop",
+      "waitSteps": 220
+    },
+    {
+      "intentId": "move-spider-across-cliff",
+      "kind": "move",
+      "waitSteps": 550,
+      "position": {
+        "x": 412,
+        "y": 175
+      }
+    },
+    {
+      "intentId": "stop-chassis",
+      "kind": "stop",
+      "waitSteps": 10
+    }
+  ]
+}

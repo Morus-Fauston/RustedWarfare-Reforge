@@ -1,0 +1,15 @@
+{
+  "format": "rw-reforge.content-pack.v1",
+  "id": "owned-bunker-json",
+  "name": "Owned normal bunker forms",
+  "units": [
+    {
+      "type": "mech-bunker",
+      "file": "bunker.json"
+    },
+    {
+      "type": "mech-bunker",
+      "file": "deployed.json"
+    }
+  ]
+}

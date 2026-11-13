@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "profileId": "rw.pc.steam.9902063.images.v5",
+  "profileId": "rw.pc.steam.9902063.images.v8",
   "identity": {
     "jarPath": "game-lib.jar",
     "jarBytes": 2639503,
@@ -6210,10 +6210,2323 @@
     "naval-large-turret": "assets/units/shared/large_turret.png",
     "sea-factory": "res/drawable/sea_factory.png",
     "sea-factory-t2": "res/drawable/sea_factory_t2.png",
-    "sea-factory-dead": "res/drawable/sea_factory_dead.png"
+    "sea-factory-dead": "res/drawable/sea_factory_dead.png",
+    "hover-body": "res/drawable/hover_tank.png",
+    "hover-dead": "res/drawable/hover_tank_dead.png",
+    "hover-shadow": "res/drawable/hover_tank_shadow.png",
+    "heavy-shield": "res/drawable/shield_mid.png",
+    "submarine-body": "res/drawable/attack_submarine.png",
+    "submarine-dead": "res/drawable/attack_submarine_dead.png",
+    "jet-body": "res/drawable/amphibious_jet.png",
+    "jet-dead": "res/drawable/amphibious_jet_dead.png",
+    "jet-shadow": "res/drawable/amphibious_jet_shadow.png",
+    "jet-left": "res/drawable/amphibious_jet_p2.png",
+    "jet-right": "res/drawable/amphibious_jet_p1.png",
+    "air-factory-t2": "res/drawable/air_factory_t2.png",
+    "air-factory-t2-dead": "res/drawable/air_factory_t2_dead.png",
+    "landing-craft-body": "res/drawable/hovercraft.png",
+    "landing-craft-dead": "res/drawable/hovercraft_dead.png",
+    "landing-craft-shadow": "res/drawable/hovercraft_shadow.png",
+    "air-transport-body": "res/drawable/dropship.png",
+    "air-transport-dead": "res/drawable/dropship_dead.png",
+    "air-transport-shadow": "res/drawable/dropship_shadow.png",
+    "aa-beam-body": "assets/units/aa_beam_gunship/base3.png",
+    "aa-beam-dead": "assets/units/aa_beam_gunship/base3_dead.png",
+    "aa-beam-turret": "assets/units/aa_beam_gunship/beam_turret.png",
+    "aa-beam-beam": "assets/units/shared/beam3.png",
+    "aa-beam-beamStart": "assets/units/shared/beam1_start.png",
+    "aa-beam-beamEnd": "assets/units/shared/beam1_end.png",
+    "aa-afterburn-trail": "assets/units/shared/glow_sharp.png",
+    "bomber-body": "assets/units/bomber/base.png",
+    "bomber-dead": "assets/units/bomber/base_dead.png",
+    "spider-laser": "assets/units/shared/turret_small.png",
+    "spider-laser-t2": "assets/units/shared/small_laser_turretT2.png",
+    "spider-gun-t2": "assets/units/turrets/turret_top_l3.png",
+    "spider-aa": "assets/units/turrets/anti_air_top.png",
+    "spider-aa-t2": "assets/units/turrets/anti_air_top_l3.png",
+    "spider-flak": "assets/units/turrets/anti_air_top_flakgun.png",
+    "spider-lightning": "assets/units/turrets/turret_top_lightning.png",
+    "spider-artillery": "assets/units/experimental_spider/experimental_tank_turret2.png",
+    "spider-artillery-base": "assets/units/experimental_spider/spider_turret_base.png",
+    "spider-fabricator": "assets/units/modular_spider/fabricatorT1.png",
+    "spider-fabricator-t2": "assets/units/modular_spider/fabricatorT2.png",
+    "spider-shield": "assets/units/modular_spider/shieldGen.png",
+    "spider-speed": "assets/units/modular_spider/speed.png",
+    "spider-laser-defense": "assets/units/modular_spider/laser_defense.png",
+    "spider-anti-nuke": "assets/units/modular_spider/antinuke.png",
+    "spider-blink": "assets/units/modular_spider/blink.png",
+    "modular-spider-body": "assets/units/modular_spider/body.png",
+    "modular-spider-dead": "assets/units/modular_spider/body_dead.png",
+    "modular-spider-overlay": "assets/units/modular_spider/body_ui.png",
+    "modular-spider-leg": "assets/units/modular_spider/leg.png",
+    "modular-spider-foot": "assets/units/experimental_spider/foot.png",
+    "modular-spider-nano": "assets/units/shared/nano_turret.png",
+    "flame-mech-body": "assets/units/mechs_large/topFlame.png",
+    "flame-mech-foot": "assets/units/mechs_large/foot.png",
+    "bunker-body": "assets/units/mechs_large/topBunker.png",
+    "bunker-turret": "assets/units/mechs_large/bunkerTurret.png",
+    "bunker-leg": "assets/units/mechs_large/leg.png",
+    "bunker-foot": "assets/units/mechs_large/foot_small.png",
+    "repairbay-body": "res/drawable/repair_bay.png",
+    "repairbay-dead": "res/drawable/repair_bay_dead.png",
+    "engineer-body": "assets/units/shared/blank.png",
+    "engineer-turret": "assets/units/mech_engineer/body.png",
+    "engineer-dead": "assets/units/mech_engineer/body_dead.png",
+    "engineer-leg": "assets/units/mech_engineer/leg.png",
+    "engineer-foot": "assets/units/mech_engineer/foot.png",
+    "engineer-nanoTurret": "assets/units/mech_engineer/cannon.png",
+    "nautilus-body": "assets/units/nautilus/body.png",
+    "nautilus-dead": "assets/units/nautilus/body_dead.png",
+    "nautilus-leg": "assets/units/nautilus/leg.png",
+    "nautilus-foot": "assets/units/nautilus/foot.png",
+    "experimental-factory-body": "res/drawable/experimental_unit_factory_front.png",
+    "experimental-factory-back": "res/drawable/experimental_unit_factory_base.png",
+    "experimental-factory-dead": "res/drawable/experimental_unit_factory_dead.png",
+    "nuclear-silo-body": "assets/units/nukes/nuke_launcher_front.png",
+    "nuclear-silo-back": "assets/units/nukes/nuke_launcher_back.png",
+    "nuclear-silo-dead": "assets/units/nukes/nuke_launcher_dead.png",
+    "nuclear-silo-arm1": "assets/units/nukes/nuke_launcher_door_r.png",
+    "nuclear-silo-arm2": "assets/units/nukes/nuke_launcher_door_l.png",
+    "anti-nuclear-silo-body": "assets/units/nukes/antinuke_launcher_front.png",
+    "anti-nuclear-silo-back": "assets/units/nukes/antinuke_launcher_back.png",
+    "anti-nuclear-silo-dead": "assets/units/nukes/antinuke_launcher_dead.png",
+    "anti-nuclear-silo-arm1": "assets/units/nukes/antinuke_launcher_door_r.png",
+    "anti-nuclear-silo-arm2": "assets/units/nukes/antinuke_launcher_door_l.png",
+    "scout-bot-body": "assets/units/nautilus/robotCrab/base.png",
+    "scout-bot-dead": "assets/units/nautilus/robotCrab/base_dead.png",
+    "scout-bot-turret": "assets/units/nautilus/robotCrab/turret.png",
+    "scout-bot-leg": "assets/units/nautilus/robotCrab/leg.png"
   },
   "mappingBasis": {
     "androidProfileSha256": "e273280ab37b1a24714e6b15d8e1cb14fdd395e228ea7c71a62dd2f24d334780",
-    "scope": "Fifty-three qualified source images; six new naval image recipes and seven aliases for stock heavy battleship and Sea T1/T2. Shared turret serves the two visible main turrets; missile launchers stay invisible. T2 dead reuses T1. All prior recipes and the complete original source collection remain unchanged. Static mapping, no original gameplay execution or all-image rendering claim."
+    "scope": "Qualified PC finite mappings include native amphibious body/dead/shadow, independent p2 left and p1 right wings rotated into the client north basis, and T2 air factory first animation frame. No Android source or original gameplay execution claim. Native landing craft uses the fixed PC 20x32 body/dead/shadow without rotation; native dimensions and loaded drawables follow e.i. Native air transport uses the fixed PC 45x47 body/dead/shadow without rotation; native dimensions and loaded drawables follow e.i. Qualified PC AA custom body/dead/turret and shared three-image beam retain native sizes and north orientation; AUTO shadow preserves body alpha with RGB black. No original gameplay execution claim. Qualified accelerated AA reuses its native seven images plus shared 32x32 glow_sharp movement trails; no original effect code execution or random decoration parity claim."
+  },
+  "mappingSources": [
+    {
+      "id": "hover-body",
+      "path": "res/drawable/hover_tank.png",
+      "bytes": 399,
+      "sha256": "6fad0e7b1f507d4eef7a26c17a6aa18c27ca1260d769aa88f7185b33b5ae30a1",
+      "width": 17,
+      "height": 24
+    },
+    {
+      "id": "hover-dead",
+      "path": "res/drawable/hover_tank_dead.png",
+      "bytes": 452,
+      "sha256": "5301e378cef067899af319c3e361bb71b19272b45b6c8b2af650bc367a3799ca",
+      "width": 17,
+      "height": 24
+    },
+    {
+      "id": "hover-shadow",
+      "path": "res/drawable/hover_tank_shadow.png",
+      "bytes": 164,
+      "sha256": "f7f80f8ae08e89839030061b3fd9c64c6fa7da7187f246f037677a42dc85944c",
+      "width": 17,
+      "height": 24
+    },
+    {
+      "path": "res/drawable/shield_mid.png",
+      "bytes": 2961,
+      "sha256": "9d5fa70ddd3475b261f588db2e38625bbe6804952b57a887530edb902f9d3bab",
+      "width": 92,
+      "height": 92,
+      "id": "heavy-shield"
+    },
+    {
+      "path": "res/drawable/attack_submarine.png",
+      "bytes": 776,
+      "sha256": "781ec1b35171d07ccb4d8c217ea2ca653e78237b0296486c99eea54251f9d85d",
+      "width": 12,
+      "height": 40,
+      "id": "submarine-body"
+    },
+    {
+      "path": "res/drawable/attack_submarine_dead.png",
+      "bytes": 495,
+      "sha256": "71b370c9186510e3cfd04a97fb0e1abb4d94a704af9d7b3b61e3067682f4bfd2",
+      "width": 12,
+      "height": 40,
+      "id": "submarine-dead"
+    },
+    {
+      "id": "jet-body",
+      "path": "res/drawable/amphibious_jet.png",
+      "bytes": 645,
+      "sha256": "5cce262cb78f41f09646564f4f522bf643b63634bf2eaca9b369041fee533c57",
+      "width": 26,
+      "height": 15
+    },
+    {
+      "id": "jet-dead",
+      "path": "res/drawable/amphibious_jet_dead.png",
+      "bytes": 506,
+      "sha256": "81f0ae708b756b2422c851d2d39c0f5a9e30172a7df20c523a1683b1c7a31487",
+      "width": 26,
+      "height": 15
+    },
+    {
+      "id": "jet-shadow",
+      "path": "res/drawable/amphibious_jet_shadow.png",
+      "bytes": 164,
+      "sha256": "efb61700fc7565a82471cae56f6fc885b3b4b86bec33e148b7ab8f8ea518a9ec",
+      "width": 26,
+      "height": 15
+    },
+    {
+      "id": "jet-left",
+      "path": "res/drawable/amphibious_jet_p2.png",
+      "bytes": 430,
+      "sha256": "185f3830bcb86fd980deedfb81d4a3569102cc80b4fc44518e17be00c511d0f5",
+      "width": 14,
+      "height": 30
+    },
+    {
+      "id": "jet-right",
+      "path": "res/drawable/amphibious_jet_p1.png",
+      "bytes": 405,
+      "sha256": "dc8cd272a0a2bbe8228975721932c8aae60f0c7b6448a44ca9d88262310fcc16",
+      "width": 14,
+      "height": 30
+    },
+    {
+      "id": "air-factory-t2",
+      "path": "res/drawable/air_factory_t2.png",
+      "bytes": 4658,
+      "sha256": "552405dff6fe43a9814244f45532d332dfce1c8045bab88e47043124dc818b38",
+      "width": 200,
+      "height": 63
+    },
+    {
+      "id": "air-factory-t2-dead",
+      "path": "res/drawable/air_factory_t2_dead.png",
+      "bytes": 2603,
+      "sha256": "ba03e4a06bc08e23f1534ca92fa2d2711d600549f79ba51c5b83b5ef1e36167c",
+      "width": 40,
+      "height": 61
+    },
+    {
+      "id": "landing-craft-body",
+      "path": "res/drawable/hovercraft.png",
+      "bytes": 593,
+      "sha256": "67dfc6996ccf1b7babc656b58e5fa99b8b88a11498e4cbd92824411ad150f401",
+      "width": 20,
+      "height": 32
+    },
+    {
+      "id": "landing-craft-dead",
+      "path": "res/drawable/hovercraft_dead.png",
+      "bytes": 985,
+      "sha256": "b6474a9b81f2f3a8814df87be5bcb78cb449c853e598c2b437eb6ae648a5ec84",
+      "width": 20,
+      "height": 32
+    },
+    {
+      "id": "landing-craft-shadow",
+      "path": "res/drawable/hovercraft_shadow.png",
+      "bytes": 128,
+      "sha256": "42ecbec90736551f715071273600e0ac287f58353a8773cfcc6632faa272cef1",
+      "width": 20,
+      "height": 32
+    },
+    {
+      "id": "air-transport-body",
+      "path": "res/drawable/dropship.png",
+      "bytes": 1700,
+      "sha256": "a9b1718c6b55aed84cd0debe43fb30fbcdba8cc860c518786f1f23cf3c3608f0",
+      "width": 45,
+      "height": 47
+    },
+    {
+      "id": "air-transport-dead",
+      "path": "res/drawable/dropship_dead.png",
+      "bytes": 1832,
+      "sha256": "94d9d3521dbfce0d64006e61fd58304d696d0b9c3a91094b999f29c0fbd16f92",
+      "width": 45,
+      "height": 47
+    },
+    {
+      "id": "air-transport-shadow",
+      "path": "res/drawable/dropship_shadow.png",
+      "bytes": 314,
+      "sha256": "265277904340af97301c751d92bcbb2cf20817fffa24b2b1c3dda3f979945004",
+      "width": 45,
+      "height": 47
+    },
+    {
+      "id": "bomber-body",
+      "path": "assets/units/bomber/base.png",
+      "bytes": 3833,
+      "sha256": "611d1a7c99f93b1d2ac3c86a779a0db9765e48aa5801eb5acfcd5e4c5018f777",
+      "width": 45,
+      "height": 47
+    },
+    {
+      "id": "bomber-dead",
+      "path": "assets/units/bomber/base_dead.png",
+      "bytes": 3956,
+      "sha256": "d75d69d27653882addd4db7a3bf64769d9e3be4095fecfe1abde7cb68c5f753c",
+      "width": 45,
+      "height": 47
+    },
+    {
+      "id": "aa-beam-body",
+      "path": "assets/units/aa_beam_gunship/base3.png",
+      "bytes": 4532,
+      "sha256": "579d7b04f4154d0ec888b3a75ada1cee14ec692a80a5c036a17ea34fa2d4bcdf",
+      "width": 33,
+      "height": 52
+    },
+    {
+      "id": "aa-beam-dead",
+      "path": "assets/units/aa_beam_gunship/base3_dead.png",
+      "bytes": 4952,
+      "sha256": "e575bf2dcdb075701e60e48f233d8d7673d589a7dc74f4f64e129700b1dcaa1a",
+      "width": 33,
+      "height": 52
+    },
+    {
+      "id": "aa-beam-turret",
+      "path": "assets/units/aa_beam_gunship/beam_turret.png",
+      "bytes": 3227,
+      "sha256": "31ba693ff32af22268050a4553b4e5a0716ec368272e1173994f65683f1f72ca",
+      "width": 16,
+      "height": 26
+    },
+    {
+      "id": "aa-beam-beam",
+      "path": "assets/units/shared/beam3.png",
+      "bytes": 336,
+      "sha256": "198ea5ef412ca9bb3a3333fe5f5a3d40f0d5f18764ff5bca179dea8885add6f0",
+      "width": 13,
+      "height": 20
+    },
+    {
+      "id": "aa-beam-beamStart",
+      "path": "assets/units/shared/beam1_start.png",
+      "bytes": 350,
+      "sha256": "78d95ff0ce0ed5f6f7b8f1ec29253996f36d197bdb54d0ee7f0c802fd3385181",
+      "width": 20,
+      "height": 20
+    },
+    {
+      "id": "aa-beam-beamEnd",
+      "path": "assets/units/shared/beam1_end.png",
+      "bytes": 637,
+      "sha256": "ad4f36c99fc0b962ccc28fcd118a5469123c59a79172c8c071228d7b903d1aa5",
+      "width": 20,
+      "height": 20
+    },
+    {
+      "id": "aa-afterburn-trail",
+      "path": "assets/units/shared/glow_sharp.png",
+      "bytes": 4030,
+      "sha256": "2074be278066a5c8a72b1b6dfded3d3549144559e92d2bfc7df914e751e6c8b8",
+      "width": 32,
+      "height": 32
+    },
+    {
+      "id": "spider-laser",
+      "path": "assets/units/shared/turret_small.png",
+      "bytes": 346,
+      "sha256": "32b6b9f973fcde57c240464be7cc055125b077efdce0c2c3ff998beb54da9b49",
+      "width": 8,
+      "height": 34
+    },
+    {
+      "id": "spider-laser-t2",
+      "path": "assets/units/shared/small_laser_turretT2.png",
+      "bytes": 549,
+      "sha256": "fe94cc6a32aa84dedb8fb82ea30fc35b71cac87cd3e8c4c1119017863c7aebdc",
+      "width": 14,
+      "height": 24
+    },
+    {
+      "id": "spider-gun-t2",
+      "path": "assets/units/turrets/turret_top_l3.png",
+      "bytes": 688,
+      "sha256": "2d1eb9b0832ce4ad50ddef27a297d1bc6165311c552864950dcd8ceb5b54b1ad",
+      "width": 16,
+      "height": 46
+    },
+    {
+      "id": "spider-aa",
+      "path": "assets/units/turrets/anti_air_top.png",
+      "bytes": 354,
+      "sha256": "6dc58ab8c9aa250ce971f7f4777b9eccf73e9d8d3097d22219076a179b26b217",
+      "width": 16,
+      "height": 26
+    },
+    {
+      "id": "spider-aa-t2",
+      "path": "assets/units/turrets/anti_air_top_l3.png",
+      "bytes": 777,
+      "sha256": "575a6aecd33bf1328d04bc7b73515520970cf2f194efffaa71c8b6dada2ff08f",
+      "width": 25,
+      "height": 24
+    },
+    {
+      "id": "spider-flak",
+      "path": "assets/units/turrets/anti_air_top_flakgun.png",
+      "bytes": 943,
+      "sha256": "ed264a9cd6d7b76fb16e03e89cec2eaeb5e7f4bc7fc6a5639f2b0cdc7b2327a9",
+      "width": 29,
+      "height": 32
+    },
+    {
+      "id": "spider-lightning",
+      "path": "assets/units/turrets/turret_top_lightning.png",
+      "bytes": 721,
+      "sha256": "ad0a79203e1d9dbc7432354798c6e1fe65008ae21270a2208030c2cc1bb1088c",
+      "width": 22,
+      "height": 31
+    },
+    {
+      "id": "spider-artillery",
+      "path": "assets/units/experimental_spider/experimental_tank_turret2.png",
+      "bytes": 3014,
+      "sha256": "795bb721e5ae54dcb4968ef01e76f2b04da6eaa23d2f2678e9e02bd644d9717e",
+      "width": 7,
+      "height": 35
+    },
+    {
+      "id": "spider-artillery-base",
+      "path": "assets/units/experimental_spider/spider_turret_base.png",
+      "bytes": 765,
+      "sha256": "abd56bae4fc7fb502d1f4d46f6b72555f712c210f4e1969c21576f49b266555a",
+      "width": 20,
+      "height": 19
+    },
+    {
+      "id": "spider-fabricator",
+      "path": "assets/units/modular_spider/fabricatorT1.png",
+      "bytes": 508,
+      "sha256": "a002c3ed8c17ce7fa4088fcbd489e696ebcc96e15b87effc150733c6e831c10b",
+      "width": 20,
+      "height": 19
+    },
+    {
+      "id": "spider-fabricator-t2",
+      "path": "assets/units/modular_spider/fabricatorT2.png",
+      "bytes": 523,
+      "sha256": "c1553d153f0696f332ad6733878db1db456a13e96037640ee8efb25fc0bc5b05",
+      "width": 20,
+      "height": 19
+    },
+    {
+      "id": "spider-shield",
+      "path": "assets/units/modular_spider/shieldGen.png",
+      "bytes": 590,
+      "sha256": "71ed5db04b19cb2d6c0ee0bd4810439935a78532231b182c8a0ffeb265afb481",
+      "width": 22,
+      "height": 21
+    },
+    {
+      "id": "spider-speed",
+      "path": "assets/units/modular_spider/speed.png",
+      "bytes": 712,
+      "sha256": "c2319a23b1b6416c810b534fa9ecfc421cbe5b21783c0d50283c83d88d07fb4c",
+      "width": 22,
+      "height": 21
+    },
+    {
+      "id": "spider-laser-defense",
+      "path": "assets/units/modular_spider/laser_defense.png",
+      "bytes": 662,
+      "sha256": "28e1daf1f2dbed1d3795e87e1da6551680c6e5a09873943efcaa511c8ab42ce3",
+      "width": 20,
+      "height": 19
+    },
+    {
+      "id": "spider-anti-nuke",
+      "path": "assets/units/modular_spider/antinuke.png",
+      "bytes": 523,
+      "sha256": "9cd04d7198367cf1d671aac683b65b74bef889e730c76d27ed01352e323705f6",
+      "width": 22,
+      "height": 21
+    },
+    {
+      "id": "spider-blink",
+      "path": "assets/units/modular_spider/blink.png",
+      "bytes": 773,
+      "sha256": "34d4fea132378688f8f7b66b9038882d3d4dd9ebe6a953afb4ba436a145b8071",
+      "width": 22,
+      "height": 21
+    },
+    {
+      "id": "modular-spider-body",
+      "path": "assets/units/modular_spider/body.png",
+      "bytes": 3209,
+      "sha256": "39070b4213ce4c114c21177a2d4318e757231cea5dc7b54c051f5477833ea4fe",
+      "width": 81,
+      "height": 113
+    },
+    {
+      "id": "modular-spider-dead",
+      "path": "assets/units/modular_spider/body_dead.png",
+      "bytes": 3801,
+      "sha256": "4fd0bf11dda19d7e989a3f6951225b53275fb44102040050162a6f14ef9fdd2e",
+      "width": 70,
+      "height": 90
+    },
+    {
+      "id": "modular-spider-overlay",
+      "path": "assets/units/modular_spider/body_ui.png",
+      "bytes": 698,
+      "sha256": "60cf2f823a45a89be3c76aa9edf0d2b19938a4e0234cc1b12f71a477755a5834",
+      "width": 82,
+      "height": 114
+    },
+    {
+      "id": "modular-spider-leg",
+      "path": "assets/units/modular_spider/leg.png",
+      "bytes": 429,
+      "sha256": "6b01227ec6b50d99a1d20a7ca9cbe0c54f4e39086da36592b93fadf90f89bdbc",
+      "width": 10,
+      "height": 84
+    },
+    {
+      "id": "modular-spider-foot",
+      "path": "assets/units/experimental_spider/foot.png",
+      "bytes": 423,
+      "sha256": "90fc84da03ae0c4a9c9d5b6567c81df19c240f4e12163e75c688daed60cb9dd4",
+      "width": 17,
+      "height": 22
+    },
+    {
+      "id": "modular-spider-nano",
+      "path": "assets/units/shared/nano_turret.png",
+      "bytes": 306,
+      "sha256": "72fa3fbea4af4d1b34d33c009d76a207f3905ae73853ea3982fbdb929e0c6c58",
+      "width": 11,
+      "height": 19
+    },
+    {
+      "id": "flame-mech-body",
+      "path": "assets/units/mechs_large/topFlame.png",
+      "bytes": 3750,
+      "sha256": "d9daa4e9fbb1dbd28908949eb7322e2e2ccbc75bfd971b3b7191ade7f76bfd7b",
+      "width": 45,
+      "height": 87
+    },
+    {
+      "id": "flame-mech-foot",
+      "path": "assets/units/mechs_large/foot.png",
+      "bytes": 457,
+      "sha256": "b88caf30194355755d53ce3f9dc49501d7f92f84ebeead44733e8229e46469d2",
+      "width": 17,
+      "height": 36
+    },
+    {
+      "id": "bunker-body",
+      "path": "assets/units/mechs_large/topBunker.png",
+      "bytes": 3267,
+      "sha256": "cb0933528531e63c3f227e3f7631cb42da30c46f09c8e058e26ffb00478e3bba",
+      "width": 39,
+      "height": 49
+    },
+    {
+      "id": "bunker-turret",
+      "path": "assets/units/mechs_large/bunkerTurret.png",
+      "bytes": 508,
+      "sha256": "a1ff7f2cc90b9e89dae9a13eef32a41a84ab289251c3d6fe1764d5cbd56bad11",
+      "width": 14,
+      "height": 57
+    },
+    {
+      "id": "bunker-leg",
+      "path": "assets/units/mechs_large/leg.png",
+      "bytes": 339,
+      "sha256": "b1a80d2e224b3592e0375d47ee5e72d060a09bbb1f92fcf0b16716b39f12b742",
+      "width": 16,
+      "height": 68
+    },
+    {
+      "id": "bunker-foot",
+      "path": "assets/units/mechs_large/foot_small.png",
+      "bytes": 184,
+      "sha256": "ae00a7c117cb3c3d8cc1225458ffe79c078ae88ef8304912558696f750ea25d5",
+      "width": 17,
+      "height": 36
+    },
+    {
+      "id": "repairbay-body",
+      "path": "res/drawable/repair_bay.png",
+      "bytes": 6129,
+      "sha256": "798eacf947184cd9fabe05b458dcfbf73c5ff95eefa03e9b1bc4b102933f9f75",
+      "width": 62,
+      "height": 76
+    },
+    {
+      "id": "repairbay-dead",
+      "path": "res/drawable/repair_bay_dead.png",
+      "bytes": 5653,
+      "sha256": "40f30c1da9eda59f3b47361e972c010618296d88b8b034647589663ef07601f6",
+      "width": 60,
+      "height": 76
+    },
+    {
+      "id": "engineer-body",
+      "path": "assets/units/shared/blank.png",
+      "bytes": 126,
+      "sha256": "1c177fc5a1943c525afcd0d8c35dfdaee0fbb6db6233beb01a6a397273635cee",
+      "width": 1,
+      "height": 1
+    },
+    {
+      "id": "engineer-turret",
+      "path": "assets/units/mech_engineer/body.png",
+      "bytes": 4126,
+      "sha256": "efa5ab8d95a641b834bab6a32cc18cf32483959afd7c6b4280192a99dc82c3f1",
+      "width": 40,
+      "height": 44
+    },
+    {
+      "id": "engineer-dead",
+      "path": "assets/units/mech_engineer/body_dead.png",
+      "bytes": 4062,
+      "sha256": "7c71dde75fa052715708691fa3fe882382d116b642baeb7ef6ad38d1519cf03b",
+      "width": 38,
+      "height": 44
+    },
+    {
+      "id": "engineer-leg",
+      "path": "assets/units/mech_engineer/leg.png",
+      "bytes": 3528,
+      "sha256": "ba50ab102c21fea8b5c0601cc2aa69c535bbdc666994412bb152b99d1b262840",
+      "width": 19,
+      "height": 82
+    },
+    {
+      "id": "engineer-foot",
+      "path": "assets/units/mech_engineer/foot.png",
+      "bytes": 3249,
+      "sha256": "6175b4718d43f27edc27906c8e515137c0969ea552ca370dc58bd30d158f1a00",
+      "width": 26,
+      "height": 33
+    },
+    {
+      "id": "engineer-nanoTurret",
+      "path": "assets/units/mech_engineer/cannon.png",
+      "bytes": 3649,
+      "sha256": "c664cc3f51feb84dd8e79c13c54da9b240a6eef37fb4c3227f6ec2b4326d20fd",
+      "width": 28,
+      "height": 35
+    },
+    {
+      "id": "nautilus-body",
+      "path": "assets/units/nautilus/body.png",
+      "bytes": 4731,
+      "sha256": "836a4ca466cd40a17132d021f41538d012193e9b2118a2fbc7038da05be5c040",
+      "width": 42,
+      "height": 90
+    },
+    {
+      "id": "nautilus-dead",
+      "path": "assets/units/nautilus/body_dead.png",
+      "bytes": 5653,
+      "sha256": "bb38dae1a3f0ad19c66109a1a8d02a9fef8d6a51c84de195be4a013a80b8ad94",
+      "width": 42,
+      "height": 90
+    },
+    {
+      "id": "nautilus-leg",
+      "path": "assets/units/nautilus/leg.png",
+      "bytes": 2889,
+      "sha256": "995f7a930e07f89cdda2552c1f162b474bdd5e2a8b1556395ef3929cf3503c85",
+      "width": 16,
+      "height": 68
+    },
+    {
+      "id": "nautilus-foot",
+      "path": "assets/units/nautilus/foot.png",
+      "bytes": 2813,
+      "sha256": "5e57c42c4bbd33c107f6060b4936883bb568592373bbcce1e9fc8fcf0b15ef96",
+      "width": 17,
+      "height": 36
+    },
+    {
+      "id": "experimental-factory-body",
+      "path": "res/drawable/experimental_unit_factory_front.png",
+      "bytes": 7740,
+      "sha256": "79a13ed20c5a622408e862cee6d4e7932e21c9598fab4342568e4079c045dfb7",
+      "width": 100,
+      "height": 115
+    },
+    {
+      "id": "experimental-factory-back",
+      "path": "res/drawable/experimental_unit_factory_base.png",
+      "bytes": 7763,
+      "sha256": "7a2383c78f426ca3261d3503d82d76dfd78b67afc66afe94d8fe50486bf89277",
+      "width": 100,
+      "height": 115
+    },
+    {
+      "id": "experimental-factory-dead",
+      "path": "res/drawable/experimental_unit_factory_dead.png",
+      "bytes": 8699,
+      "sha256": "99c8556551d2f1b7ee99f46fc056080e7ed0fbef9f36ab9d158ceef743a319f7",
+      "width": 100,
+      "height": 115
+    },
+    {
+      "id": "nuclear-silo-body",
+      "path": "assets/units/nukes/nuke_launcher_front.png",
+      "bytes": 6859,
+      "sha256": "d124fe2a665676a88ce3cde8666abf123a0235fe85bc54390f93afb54e651237",
+      "width": 84,
+      "height": 70
+    },
+    {
+      "id": "nuclear-silo-back",
+      "path": "assets/units/nukes/nuke_launcher_back.png",
+      "bytes": 7424,
+      "sha256": "8edc5e8cd285c0a252a7cd0ac3554ee994fed81337d1a35f94d0f594b4d3fa5c",
+      "width": 84,
+      "height": 70
+    },
+    {
+      "id": "nuclear-silo-dead",
+      "path": "assets/units/nukes/nuke_launcher_dead.png",
+      "bytes": 3800,
+      "sha256": "c31a9595d8ec54d29ba489f89930b3af4603b35539fd77b5b782d7603c62e77f",
+      "width": 84,
+      "height": 70
+    },
+    {
+      "id": "nuclear-silo-arm1",
+      "path": "assets/units/nukes/nuke_launcher_door_r.png",
+      "bytes": 3140,
+      "sha256": "8e0ec9cedccc9c2de20ef29904e3860d0ae019bcdf167ea1e4bd0edf893f10ff",
+      "width": 38,
+      "height": 29
+    },
+    {
+      "id": "nuclear-silo-arm2",
+      "path": "assets/units/nukes/nuke_launcher_door_l.png",
+      "bytes": 3180,
+      "sha256": "73d273fba6571bce7505a93b5217d0e3145025ed19d0c53c24bbf9ee26878061",
+      "width": 42,
+      "height": 29
+    },
+    {
+      "id": "anti-nuclear-silo-body",
+      "path": "assets/units/nukes/antinuke_launcher_front.png",
+      "bytes": 1639,
+      "sha256": "e960698c4a161a8fe76ab12ce9e76c742e6ddc099f18a86cb0d8421f4ceae21f",
+      "width": 40,
+      "height": 48
+    },
+    {
+      "id": "anti-nuclear-silo-back",
+      "path": "assets/units/nukes/antinuke_launcher_back.png",
+      "bytes": 1658,
+      "sha256": "faca42c49d34fb10971ea1fe6b1fc360ab15b8bf142af17e54396acc73ca6831",
+      "width": 40,
+      "height": 48
+    },
+    {
+      "id": "anti-nuclear-silo-dead",
+      "path": "assets/units/nukes/antinuke_launcher_dead.png",
+      "bytes": 2190,
+      "sha256": "5632cfa7ebacd1965d4800a1ce75ed1a04669e817ebd40c96384795a054c3581",
+      "width": 40,
+      "height": 48
+    },
+    {
+      "id": "anti-nuclear-silo-arm1",
+      "path": "assets/units/nukes/antinuke_launcher_door_r.png",
+      "bytes": 242,
+      "sha256": "93a6eddc03644a03f79c1a4e769803545f7ae947800b0ed3eb4271b23dfc6541",
+      "width": 13,
+      "height": 11
+    },
+    {
+      "id": "anti-nuclear-silo-arm2",
+      "path": "assets/units/nukes/antinuke_launcher_door_l.png",
+      "bytes": 196,
+      "sha256": "3f1c6431bbfd9eb5daeab158ae34f5ffce92629133cd753842768e61cb69d0b2",
+      "width": 12,
+      "height": 11
+    },
+    {
+      "id": "scout-bot-body",
+      "path": "assets/units/nautilus/robotCrab/base.png",
+      "bytes": 3105,
+      "sha256": "6d3fa1f508427b0baebfa4e7f6da34d72b80dec29de6a099f93bfc82458c5c96",
+      "width": 24,
+      "height": 21
+    },
+    {
+      "id": "scout-bot-dead",
+      "path": "assets/units/nautilus/robotCrab/base_dead.png",
+      "bytes": 3259,
+      "sha256": "238ad98eacada5cdf446549f77a53866bb52edfda9d63b317f41427d2466618f",
+      "width": 24,
+      "height": 21
+    },
+    {
+      "id": "scout-bot-turret",
+      "path": "assets/units/nautilus/robotCrab/turret.png",
+      "bytes": 2816,
+      "sha256": "53481ba7a0701cca825582f7d55e71478405bf352923ce2235acbfd15e9c2e59",
+      "width": 8,
+      "height": 15
+    },
+    {
+      "id": "scout-bot-leg",
+      "path": "assets/units/nautilus/robotCrab/leg.png",
+      "bytes": 2830,
+      "sha256": "2b8c40692119fc456429861d3278984a8a8a82864aec13e2f192e2aefc2a225c",
+      "width": 24,
+      "height": 102
+    }
+  ],
+  "mappingUnitOutputs": {
+    "hover-body": {
+      "file": "units/hover-body.png",
+      "operation": "crop",
+      "source": "hover-body",
+      "rect": [
+        0,
+        0,
+        17,
+        24
+      ],
+      "target": [
+        17,
+        24
+      ],
+      "frames": 1
+    },
+    "hover-dead": {
+      "file": "units/hover-dead.png",
+      "operation": "crop",
+      "source": "hover-dead",
+      "rect": [
+        0,
+        0,
+        17,
+        24
+      ],
+      "target": [
+        17,
+        24
+      ],
+      "frames": 1
+    },
+    "hover-shadow": {
+      "file": "units/hover-shadow.png",
+      "operation": "crop",
+      "source": "hover-shadow",
+      "rect": [
+        0,
+        0,
+        17,
+        24
+      ],
+      "target": [
+        17,
+        24
+      ],
+      "frames": 1
+    },
+    "heavy-shield": {
+      "file": "units/heavy-shield.png",
+      "operation": "crop",
+      "source": "heavy-shield",
+      "rect": [
+        0,
+        0,
+        92,
+        92
+      ],
+      "target": [
+        92,
+        92
+      ],
+      "frames": 1
+    },
+    "submarine-body": {
+      "file": "units/submarine-body.png",
+      "operation": "crop",
+      "source": "submarine-body",
+      "rect": [
+        0,
+        0,
+        12,
+        40
+      ],
+      "target": [
+        12,
+        40
+      ],
+      "frames": 1
+    },
+    "submarine-dead": {
+      "file": "units/submarine-dead.png",
+      "operation": "crop",
+      "source": "submarine-dead",
+      "rect": [
+        0,
+        0,
+        12,
+        40
+      ],
+      "target": [
+        12,
+        40
+      ],
+      "frames": 1
+    },
+    "jet-body": {
+      "file": "units/jet-body.png",
+      "operation": "crop",
+      "source": "jet-body",
+      "rect": [
+        0,
+        0,
+        26,
+        15
+      ],
+      "target": [
+        15,
+        26
+      ],
+      "frames": 1,
+      "rotate": 90
+    },
+    "jet-dead": {
+      "file": "units/jet-dead.png",
+      "operation": "crop",
+      "source": "jet-dead",
+      "rect": [
+        0,
+        0,
+        26,
+        15
+      ],
+      "target": [
+        15,
+        26
+      ],
+      "frames": 1,
+      "rotate": 90
+    },
+    "jet-shadow": {
+      "file": "units/jet-shadow.png",
+      "operation": "crop",
+      "source": "jet-shadow",
+      "rect": [
+        0,
+        0,
+        26,
+        15
+      ],
+      "target": [
+        15,
+        26
+      ],
+      "frames": 1,
+      "rotate": 90
+    },
+    "jet-left": {
+      "file": "units/jet-left.png",
+      "operation": "crop",
+      "source": "jet-left",
+      "rect": [
+        0,
+        0,
+        14,
+        30
+      ],
+      "target": [
+        30,
+        14
+      ],
+      "frames": 1,
+      "rotate": 90
+    },
+    "jet-right": {
+      "file": "units/jet-right.png",
+      "operation": "crop",
+      "source": "jet-right",
+      "rect": [
+        0,
+        0,
+        14,
+        30
+      ],
+      "target": [
+        30,
+        14
+      ],
+      "frames": 1,
+      "rotate": 90
+    },
+    "air-factory-t2": {
+      "file": "units/air-factory-t2.png",
+      "operation": "crop",
+      "source": "air-factory-t2",
+      "rect": [
+        0,
+        0,
+        40,
+        63
+      ],
+      "target": [
+        40,
+        63
+      ],
+      "frames": 1
+    },
+    "air-factory-t2-dead": {
+      "file": "units/air-factory-t2-dead.png",
+      "operation": "crop",
+      "source": "air-factory-t2-dead",
+      "rect": [
+        0,
+        0,
+        40,
+        61
+      ],
+      "target": [
+        40,
+        61
+      ],
+      "frames": 1
+    },
+    "landing-craft-body": {
+      "file": "units/landing-craft-body.png",
+      "operation": "crop",
+      "source": "landing-craft-body",
+      "rect": [
+        0,
+        0,
+        20,
+        32
+      ],
+      "target": [
+        20,
+        32
+      ],
+      "frames": 1
+    },
+    "landing-craft-dead": {
+      "file": "units/landing-craft-dead.png",
+      "operation": "crop",
+      "source": "landing-craft-dead",
+      "rect": [
+        0,
+        0,
+        20,
+        32
+      ],
+      "target": [
+        20,
+        32
+      ],
+      "frames": 1
+    },
+    "landing-craft-shadow": {
+      "file": "units/landing-craft-shadow.png",
+      "operation": "crop",
+      "source": "landing-craft-shadow",
+      "rect": [
+        0,
+        0,
+        20,
+        32
+      ],
+      "target": [
+        20,
+        32
+      ],
+      "frames": 1
+    },
+    "air-transport-body": {
+      "file": "units/air-transport-body.png",
+      "operation": "crop",
+      "source": "air-transport-body",
+      "rect": [
+        0,
+        0,
+        45,
+        47
+      ],
+      "target": [
+        45,
+        47
+      ],
+      "frames": 1
+    },
+    "air-transport-dead": {
+      "file": "units/air-transport-dead.png",
+      "operation": "crop",
+      "source": "air-transport-dead",
+      "rect": [
+        0,
+        0,
+        45,
+        47
+      ],
+      "target": [
+        45,
+        47
+      ],
+      "frames": 1
+    },
+    "air-transport-shadow": {
+      "file": "units/air-transport-shadow.png",
+      "operation": "crop",
+      "source": "air-transport-shadow",
+      "rect": [
+        0,
+        0,
+        45,
+        47
+      ],
+      "target": [
+        45,
+        47
+      ],
+      "frames": 1
+    },
+    "bomber-body": {
+      "file": "units/bomber-body.png",
+      "operation": "crop",
+      "source": "bomber-body",
+      "rect": [0, 0, 45, 47],
+      "target": [45, 47],
+      "frames": 1
+    },
+    "bomber-dead": {
+      "file": "units/bomber-dead.png",
+      "operation": "crop",
+      "source": "bomber-dead",
+      "rect": [0, 0, 45, 47],
+      "target": [45, 47],
+      "frames": 1
+    },
+    "bomber-shadow": {
+      "file": "units/bomber-shadow.png",
+      "operation": "alpha-shadow",
+      "source": "bomber-body",
+      "rect": [0, 0, 45, 47],
+      "target": [45, 47],
+      "frames": 1
+    },
+    "aa-beam-body": {
+      "file": "units/aa-beam-body.png",
+      "operation": "crop",
+      "source": "aa-beam-body",
+      "rect": [
+        0,
+        0,
+        33,
+        52
+      ],
+      "target": [
+        33,
+        52
+      ],
+      "frames": 1
+    },
+    "aa-beam-dead": {
+      "file": "units/aa-beam-dead.png",
+      "operation": "crop",
+      "source": "aa-beam-dead",
+      "rect": [
+        0,
+        0,
+        33,
+        52
+      ],
+      "target": [
+        33,
+        52
+      ],
+      "frames": 1
+    },
+    "aa-beam-shadow": {
+      "file": "units/aa-beam-shadow.png",
+      "operation": "alpha-shadow",
+      "source": "aa-beam-body",
+      "rect": [
+        0,
+        0,
+        33,
+        52
+      ],
+      "target": [
+        33,
+        52
+      ],
+      "frames": 1
+    },
+    "aa-beam-turret": {
+      "file": "units/aa-beam-turret.png",
+      "operation": "crop",
+      "source": "aa-beam-turret",
+      "rect": [
+        0,
+        0,
+        16,
+        26
+      ],
+      "target": [
+        16,
+        26
+      ],
+      "frames": 1
+    },
+    "aa-beam-beam": {
+      "file": "units/aa-beam-beam.png",
+      "operation": "crop",
+      "source": "aa-beam-beam",
+      "rect": [
+        0,
+        0,
+        13,
+        20
+      ],
+      "target": [
+        13,
+        20
+      ],
+      "frames": 1
+    },
+    "aa-beam-beamStart": {
+      "file": "units/aa-beam-beamStart.png",
+      "operation": "crop",
+      "source": "aa-beam-beamStart",
+      "rect": [
+        0,
+        0,
+        20,
+        20
+      ],
+      "target": [
+        20,
+        20
+      ],
+      "frames": 1
+    },
+    "aa-beam-beamEnd": {
+      "file": "units/aa-beam-beamEnd.png",
+      "operation": "crop",
+      "source": "aa-beam-beamEnd",
+      "rect": [
+        0,
+        0,
+        20,
+        20
+      ],
+      "target": [
+        20,
+        20
+      ],
+      "frames": 1
+    },
+    "aa-afterburn-trail": {
+      "file": "units/aa-afterburn-trail.png",
+      "operation": "crop",
+      "source": "aa-afterburn-trail",
+      "rect": [
+        0,
+        0,
+        32,
+        32
+      ],
+      "target": [
+        32,
+        32
+      ],
+      "frames": 1
+    },
+    "spider-laser": {
+      "file": "units/spider-laser.png",
+      "operation": "crop",
+      "source": "spider-laser",
+      "rect": [
+        0,
+        0,
+        8,
+        34
+      ],
+      "target": [
+        8,
+        34
+      ],
+      "frames": 1
+    },
+    "spider-laser-t2": {
+      "file": "units/spider-laser-t2.png",
+      "operation": "crop",
+      "source": "spider-laser-t2",
+      "rect": [
+        0,
+        0,
+        14,
+        24
+      ],
+      "target": [
+        14,
+        24
+      ],
+      "frames": 1
+    },
+    "spider-gun-t2": {
+      "file": "units/spider-gun-t2.png",
+      "operation": "crop",
+      "source": "spider-gun-t2",
+      "rect": [
+        0,
+        0,
+        16,
+        46
+      ],
+      "target": [
+        16,
+        46
+      ],
+      "frames": 1
+    },
+    "spider-aa": {
+      "file": "units/spider-aa.png",
+      "operation": "crop",
+      "source": "spider-aa",
+      "rect": [
+        0,
+        0,
+        16,
+        26
+      ],
+      "target": [
+        16,
+        26
+      ],
+      "frames": 1
+    },
+    "spider-aa-t2": {
+      "file": "units/spider-aa-t2.png",
+      "operation": "crop",
+      "source": "spider-aa-t2",
+      "rect": [
+        0,
+        0,
+        25,
+        24
+      ],
+      "target": [
+        25,
+        24
+      ],
+      "frames": 1
+    },
+    "spider-flak": {
+      "file": "units/spider-flak.png",
+      "operation": "crop",
+      "source": "spider-flak",
+      "rect": [
+        0,
+        0,
+        29,
+        32
+      ],
+      "target": [
+        29,
+        32
+      ],
+      "frames": 1
+    },
+    "spider-lightning": {
+      "file": "units/spider-lightning.png",
+      "operation": "crop",
+      "source": "spider-lightning",
+      "rect": [0, 0, 22, 31],
+      "target": [22, 31],
+      "frames": 1
+    },
+    "spider-artillery": {
+      "file": "units/spider-artillery.png",
+      "operation": "crop",
+      "source": "spider-artillery",
+      "rect": [0, 0, 7, 35],
+      "target": [7, 35],
+      "frames": 1
+    },
+    "spider-artillery-base": {
+      "file": "units/spider-artillery-base.png",
+      "operation": "crop",
+      "source": "spider-artillery-base",
+      "rect": [0, 0, 20, 19],
+      "target": [20, 19],
+      "frames": 1
+    },
+    "spider-fabricator": {
+      "file": "units/spider-fabricator.png",
+      "operation": "crop",
+      "source": "spider-fabricator",
+      "rect": [0, 0, 20, 19],
+      "target": [20, 19],
+      "frames": 1
+    },
+    "spider-fabricator-t2": {
+      "file": "units/spider-fabricator-t2.png",
+      "operation": "crop",
+      "source": "spider-fabricator-t2",
+      "rect": [0, 0, 20, 19],
+      "target": [20, 19],
+      "frames": 1
+    },
+    "spider-shield": {
+      "file": "units/spider-shield.png",
+      "operation": "crop",
+      "source": "spider-shield",
+      "rect": [0, 0, 22, 21],
+      "target": [22, 21],
+      "frames": 1
+    },
+    "spider-speed": {
+      "file": "units/spider-speed.png",
+      "operation": "crop",
+      "source": "spider-speed",
+      "rect": [0, 0, 22, 21],
+      "target": [22, 21],
+      "frames": 1
+    },
+    "spider-laser-defense": {
+      "file": "units/spider-laser-defense.png",
+      "operation": "crop",
+      "source": "spider-laser-defense",
+      "rect": [0, 0, 20, 19],
+      "target": [20, 19],
+      "frames": 1
+    },
+    "spider-anti-nuke": {
+      "file": "units/spider-anti-nuke.png",
+      "operation": "crop",
+      "source": "spider-anti-nuke",
+      "rect": [0, 0, 22, 21],
+      "target": [22, 21],
+      "frames": 1
+    },
+    "spider-blink": {
+      "file": "units/spider-blink.png",
+      "operation": "crop",
+      "source": "spider-blink",
+      "rect": [0, 0, 22, 21],
+      "target": [22, 21],
+      "frames": 1
+    },
+    "modular-spider-body": {
+      "file": "units/modular-spider-body.png",
+      "operation": "crop",
+      "source": "modular-spider-body",
+      "rect": [
+        0,
+        0,
+        81,
+        113
+      ],
+      "target": [
+        81,
+        113
+      ],
+      "frames": 1
+    },
+    "modular-spider-dead": {
+      "file": "units/modular-spider-dead.png",
+      "operation": "crop",
+      "source": "modular-spider-dead",
+      "rect": [
+        0,
+        0,
+        70,
+        90
+      ],
+      "target": [
+        70,
+        90
+      ],
+      "frames": 1
+    },
+    "modular-spider-overlay": {
+      "file": "units/modular-spider-overlay.png",
+      "operation": "crop",
+      "source": "modular-spider-overlay",
+      "rect": [
+        0,
+        0,
+        82,
+        114
+      ],
+      "target": [
+        82,
+        114
+      ],
+      "frames": 1
+    },
+    "modular-spider-leg": {
+      "file": "units/modular-spider-leg.png",
+      "operation": "crop",
+      "source": "modular-spider-leg",
+      "rect": [
+        0,
+        0,
+        10,
+        84
+      ],
+      "target": [
+        10,
+        84
+      ],
+      "frames": 1
+    },
+    "modular-spider-foot": {
+      "file": "units/modular-spider-foot.png",
+      "operation": "crop",
+      "source": "modular-spider-foot",
+      "rect": [
+        0,
+        0,
+        17,
+        22
+      ],
+      "target": [
+        17,
+        22
+      ],
+      "frames": 1
+    },
+    "modular-spider-nano": {
+      "file": "units/modular-spider-nano.png",
+      "operation": "crop",
+      "source": "modular-spider-nano",
+      "rect": [
+        0,
+        0,
+        11,
+        19
+      ],
+      "target": [
+        11,
+        19
+      ],
+      "frames": 1
+    },
+    "modular-spider-shadow": {
+      "file": "units/modular-spider-shadow.png",
+      "operation": "alpha-shadow",
+      "source": "modular-spider-body",
+      "rect": [
+        0,
+        0,
+        81,
+        113
+      ],
+      "target": [
+        81,
+        113
+      ],
+      "frames": 1
+    },
+    "flame-mech-body": {
+      "file": "units/flame-mech-body.png",
+      "operation": "crop",
+      "source": "flame-mech-body",
+      "rect": [0, 0, 45, 87],
+      "target": [45, 87],
+      "frames": 1
+    },
+    "flame-mech-shadow": {
+      "file": "units/flame-mech-shadow.png",
+      "operation": "alpha-shadow",
+      "source": "flame-mech-body",
+      "rect": [0, 0, 45, 87],
+      "target": [45, 87],
+      "frames": 1
+    },
+    "flame-mech-foot": {
+      "file": "units/flame-mech-foot.png",
+      "operation": "crop",
+      "source": "flame-mech-foot",
+      "rect": [0, 0, 17, 36],
+      "target": [17, 36],
+      "frames": 1
+    },
+    "bunker-body": {
+      "file": "units/bunker-body.png",
+      "operation": "crop",
+      "source": "bunker-body",
+      "rect": [
+        0,
+        0,
+        39,
+        49
+      ],
+      "target": [
+        39,
+        49
+      ],
+      "frames": 1
+    },
+    "bunker-turret": {
+      "file": "units/bunker-turret.png",
+      "operation": "crop",
+      "source": "bunker-turret",
+      "rect": [
+        0,
+        0,
+        14,
+        57
+      ],
+      "target": [
+        14,
+        57
+      ],
+      "frames": 1
+    },
+    "bunker-leg": {
+      "file": "units/bunker-leg.png",
+      "operation": "crop",
+      "source": "bunker-leg",
+      "rect": [
+        0,
+        0,
+        16,
+        68
+      ],
+      "target": [
+        16,
+        68
+      ],
+      "frames": 1
+    },
+    "bunker-foot": {
+      "file": "units/bunker-foot.png",
+      "operation": "crop",
+      "source": "bunker-foot",
+      "rect": [
+        0,
+        0,
+        17,
+        36
+      ],
+      "target": [
+        17,
+        36
+      ],
+      "frames": 1
+    },
+    "bunker-shadow": {
+      "file": "units/bunker-shadow.png",
+      "operation": "alpha-shadow",
+      "source": "bunker-body",
+      "rect": [
+        0,
+        0,
+        39,
+        49
+      ],
+      "target": [
+        39,
+        49
+      ],
+      "frames": 1
+    },
+    "repairbay-body": {
+      "file": "units/repairbay-body.png",
+      "operation": "crop",
+      "source": "repairbay-body",
+      "rect": [
+        0,
+        0,
+        62,
+        76
+      ],
+      "target": [
+        62,
+        76
+      ],
+      "frames": 1
+    },
+    "repairbay-dead": {
+      "file": "units/repairbay-dead.png",
+      "operation": "crop",
+      "source": "repairbay-dead",
+      "rect": [
+        0,
+        0,
+        60,
+        76
+      ],
+      "target": [
+        60,
+        76
+      ],
+      "frames": 1
+    },
+    "engineer-body": {
+      "file": "units/engineer-body.png",
+      "operation": "crop",
+      "source": "engineer-body",
+      "rect": [
+        0,
+        0,
+        1,
+        1
+      ],
+      "target": [
+        1,
+        1
+      ],
+      "frames": 1
+    },
+    "engineer-turret": {
+      "file": "units/engineer-turret.png",
+      "operation": "crop",
+      "source": "engineer-turret",
+      "rect": [
+        0,
+        0,
+        40,
+        44
+      ],
+      "target": [
+        40,
+        44
+      ],
+      "frames": 1
+    },
+    "engineer-dead": {
+      "file": "units/engineer-dead.png",
+      "operation": "crop",
+      "source": "engineer-dead",
+      "rect": [
+        0,
+        0,
+        38,
+        44
+      ],
+      "target": [
+        38,
+        44
+      ],
+      "frames": 1
+    },
+    "engineer-leg": {
+      "file": "units/engineer-leg.png",
+      "operation": "crop",
+      "source": "engineer-leg",
+      "rect": [
+        0,
+        0,
+        19,
+        82
+      ],
+      "target": [
+        19,
+        82
+      ],
+      "frames": 1
+    },
+    "engineer-foot": {
+      "file": "units/engineer-foot.png",
+      "operation": "crop",
+      "source": "engineer-foot",
+      "rect": [
+        0,
+        0,
+        26,
+        33
+      ],
+      "target": [
+        26,
+        33
+      ],
+      "frames": 1
+    },
+    "engineer-nanoTurret": {
+      "file": "units/engineer-nanoTurret.png",
+      "operation": "crop",
+      "source": "engineer-nanoTurret",
+      "rect": [
+        0,
+        0,
+        28,
+        35
+      ],
+      "target": [
+        28,
+        35
+      ],
+      "frames": 1
+    },
+    "nautilus-body": {
+      "file": "units/nautilus-body.png",
+      "operation": "crop",
+      "source": "nautilus-body",
+      "rect": [
+        0,
+        0,
+        42,
+        90
+      ],
+      "target": [
+        42,
+        90
+      ],
+      "frames": 1
+    },
+    "nautilus-dead": {
+      "file": "units/nautilus-dead.png",
+      "operation": "crop",
+      "source": "nautilus-dead",
+      "rect": [
+        0,
+        0,
+        42,
+        90
+      ],
+      "target": [
+        42,
+        90
+      ],
+      "frames": 1
+    },
+    "nautilus-leg": {
+      "file": "units/nautilus-leg.png",
+      "operation": "crop",
+      "source": "nautilus-leg",
+      "rect": [
+        0,
+        0,
+        16,
+        68
+      ],
+      "target": [
+        16,
+        68
+      ],
+      "frames": 1
+    },
+    "nautilus-foot": {
+      "file": "units/nautilus-foot.png",
+      "operation": "crop",
+      "source": "nautilus-foot",
+      "rect": [
+        0,
+        0,
+        17,
+        36
+      ],
+      "target": [
+        17,
+        36
+      ],
+      "frames": 1
+    },
+    "experimental-factory-body": {
+      "file": "units/experimental-factory-body.png",
+      "operation": "crop",
+      "source": "experimental-factory-body",
+      "rect": [
+        0,
+        0,
+        100,
+        115
+      ],
+      "target": [
+        100,
+        115
+      ],
+      "frames": 1
+    },
+    "experimental-factory-back": {
+      "file": "units/experimental-factory-back.png",
+      "operation": "crop",
+      "source": "experimental-factory-back",
+      "rect": [
+        0,
+        0,
+        100,
+        115
+      ],
+      "target": [
+        100,
+        115
+      ],
+      "frames": 1
+    },
+    "experimental-factory-dead": {
+      "file": "units/experimental-factory-dead.png",
+      "operation": "crop",
+      "source": "experimental-factory-dead",
+      "rect": [
+        0,
+        0,
+        100,
+        115
+      ],
+      "target": [
+        100,
+        115
+      ],
+      "frames": 1
+    },
+    "nuclear-silo-body": {
+      "file": "units/nuclear-silo-body.png",
+      "operation": "crop",
+      "source": "nuclear-silo-body",
+      "rect": [
+        0,
+        0,
+        84,
+        70
+      ],
+      "target": [
+        84,
+        70
+      ],
+      "frames": 1
+    },
+    "nuclear-silo-back": {
+      "file": "units/nuclear-silo-back.png",
+      "operation": "crop",
+      "source": "nuclear-silo-back",
+      "rect": [
+        0,
+        0,
+        84,
+        70
+      ],
+      "target": [
+        84,
+        70
+      ],
+      "frames": 1
+    },
+    "nuclear-silo-dead": {
+      "file": "units/nuclear-silo-dead.png",
+      "operation": "crop",
+      "source": "nuclear-silo-dead",
+      "rect": [
+        0,
+        0,
+        84,
+        70
+      ],
+      "target": [
+        84,
+        70
+      ],
+      "frames": 1
+    },
+    "nuclear-silo-arm1": {
+      "file": "units/nuclear-silo-arm1.png",
+      "operation": "crop",
+      "source": "nuclear-silo-arm1",
+      "rect": [
+        0,
+        0,
+        38,
+        29
+      ],
+      "target": [
+        38,
+        29
+      ],
+      "frames": 1
+    },
+    "nuclear-silo-arm2": {
+      "file": "units/nuclear-silo-arm2.png",
+      "operation": "crop",
+      "source": "nuclear-silo-arm2",
+      "rect": [
+        0,
+        0,
+        42,
+        29
+      ],
+      "target": [
+        42,
+        29
+      ],
+      "frames": 1
+    },
+    "anti-nuclear-silo-body": {
+      "file": "units/anti-nuclear-silo-body.png",
+      "operation": "crop",
+      "source": "anti-nuclear-silo-body",
+      "rect": [
+        0,
+        0,
+        40,
+        48
+      ],
+      "target": [
+        40,
+        48
+      ],
+      "frames": 1
+    },
+    "anti-nuclear-silo-back": {
+      "file": "units/anti-nuclear-silo-back.png",
+      "operation": "crop",
+      "source": "anti-nuclear-silo-back",
+      "rect": [
+        0,
+        0,
+        40,
+        48
+      ],
+      "target": [
+        40,
+        48
+      ],
+      "frames": 1
+    },
+    "anti-nuclear-silo-dead": {
+      "file": "units/anti-nuclear-silo-dead.png",
+      "operation": "crop",
+      "source": "anti-nuclear-silo-dead",
+      "rect": [
+        0,
+        0,
+        40,
+        48
+      ],
+      "target": [
+        40,
+        48
+      ],
+      "frames": 1
+    },
+    "anti-nuclear-silo-arm1": {
+      "file": "units/anti-nuclear-silo-arm1.png",
+      "operation": "crop",
+      "source": "anti-nuclear-silo-arm1",
+      "rect": [
+        0,
+        0,
+        13,
+        11
+      ],
+      "target": [
+        13,
+        11
+      ],
+      "frames": 1
+    },
+    "anti-nuclear-silo-arm2": {
+      "file": "units/anti-nuclear-silo-arm2.png",
+      "operation": "crop",
+      "source": "anti-nuclear-silo-arm2",
+      "rect": [
+        0,
+        0,
+        12,
+        11
+      ],
+      "target": [
+        12,
+        11
+      ],
+      "frames": 1
+    },
+    "scout-bot-body": {
+      "file": "units/scout-bot-body.png",
+      "operation": "crop",
+      "source": "scout-bot-body",
+      "rect": [
+        0,
+        0,
+        24,
+        21
+      ],
+      "target": [
+        24,
+        21
+      ],
+      "frames": 1
+    },
+    "scout-bot-dead": {
+      "file": "units/scout-bot-dead.png",
+      "operation": "crop",
+      "source": "scout-bot-dead",
+      "rect": [
+        0,
+        0,
+        24,
+        21
+      ],
+      "target": [
+        24,
+        21
+      ],
+      "frames": 1
+    },
+    "scout-bot-turret": {
+      "file": "units/scout-bot-turret.png",
+      "operation": "crop",
+      "source": "scout-bot-turret",
+      "rect": [
+        0,
+        0,
+        8,
+        15
+      ],
+      "target": [
+        8,
+        15
+      ],
+      "frames": 1
+    },
+    "scout-bot-leg": {
+      "file": "units/scout-bot-leg.png",
+      "operation": "crop",
+      "source": "scout-bot-leg",
+      "rect": [
+        0,
+        0,
+        24,
+        102
+      ],
+      "target": [
+        24,
+        102
+      ],
+      "frames": 1
+    }
+  },
+  "mappingUnitBindings": {
+    "hoverTank": {
+      "body": "hover-body",
+      "dead": "hover-dead",
+      "shadow": "hover-shadow"
+    },
+    "mechHeavyMissile": {
+      "body": "heavy-mech",
+      "turret": "heavy-mech-turret",
+      "leg": "heavy-mech-leg",
+      "foot": "heavy-mech-foot",
+      "weaponTurrets": {
+        "smallLaser": "heavy-mech-small-turret"
+      },
+      "shield": "heavy-shield"
+    },
+    "attackSubmarine": {
+      "body": "submarine-body",
+      "dead": "submarine-dead"
+    },
+    "amphibiousJet": {
+      "body": "jet-body",
+      "dead": "jet-dead",
+      "shadow": "jet-shadow",
+      "leftWing": "jet-left",
+      "rightWing": "jet-right"
+    },
+    "airFactoryT2": {
+      "body": "air-factory-t2",
+      "dead": "air-factory-t2-dead"
+    },
+    "hovercraft": {
+      "body": "landing-craft-body",
+      "dead": "landing-craft-dead",
+      "shadow": "landing-craft-shadow"
+    },
+    "dropship": {
+      "body": "air-transport-body",
+      "dead": "air-transport-dead",
+      "shadow": "air-transport-shadow"
+    },
+    "modularSpider": {
+      "body": "modular-spider-body",
+      "dead": "modular-spider-dead",
+      "turret": "modular-spider-nano",
+      "shadow": "modular-spider-shadow",
+      "leg": "modular-spider-leg",
+      "foot": "modular-spider-foot",
+      "slotOverlay": "modular-spider-overlay"
+    },
+    "modularSpider_emptySlot": {
+      "body": "engineer-body"
+    },
+    "modularSpider_smallgunturret": {
+      "body": "engineer-body",
+      "turret": "spider-laser"
+    },
+    "modularSpider_smallgunturretT2": {
+      "body": "engineer-body",
+      "turret": "spider-laser-t2"
+    },
+    "modularSpider_gunturretT2": {
+      "body": "engineer-body",
+      "turret": "spider-gun-t2"
+    },
+    "modularSpider_antiair": {
+      "body": "engineer-body",
+      "turret": "spider-aa"
+    },
+    "modularSpider_antiairT2": {
+      "body": "engineer-body",
+      "turret": "spider-aa-t2"
+    },
+    "modularSpider_antiairFlak": {
+      "body": "engineer-body",
+      "turret": "spider-flak"
+    },
+    "modularSpider_lightning": {
+      "body": "engineer-body",
+      "turret": "spider-lightning"
+    },
+    "modularSpider_artillery": {
+      "body": "engineer-body",
+      "turret": "spider-artillery",
+      "weaponTurrets": {
+        "mainCannonBase": "spider-artillery-base"
+      }
+    },
+    "modularSpider_fabricator": {
+      "body": "spider-fabricator"
+    },
+    "modularSpider_fabricatorT2": {
+      "body": "spider-fabricator-t2"
+    },
+    "modularSpider_shieldGen": {
+      "body": "spider-shield"
+    },
+    "modularSpider_speedIncomplete": {
+      "body": "spider-speed"
+    },
+    "modularSpider_speed": {
+      "body": "spider-speed"
+    },
+    "modularSpider_laserdefense": {
+      "body": "spider-laser-defense"
+    },
+    "modularSpider_antinuke": {
+      "body": "spider-anti-nuke"
+    },
+    "modularSpider_blink": {
+      "body": "spider-blink"
+    },
+    "modularSpider_gunturret": {
+      "body": "engineer-body",
+      "turret": "turret-gun"
+    },
+    "mechFlame": {
+      "body": "flame-mech-body",
+      "shadow": "flame-mech-shadow",
+      "leg": "heavy-mech-leg",
+      "foot": "flame-mech-foot"
+    },
+    "bomber": {
+      "body": "bomber-body",
+      "dead": "bomber-dead",
+      "shadow": "bomber-shadow"
+    },
+    "aaBeamGunship": {
+      "body": "aa-beam-body",
+      "dead": "aa-beam-dead",
+      "shadow": "aa-beam-shadow",
+      "turret": "aa-beam-turret",
+      "beam": "aa-beam-beam",
+      "beamStart": "aa-beam-beamStart",
+      "beamEnd": "aa-beam-beamEnd"
+    },
+    "aaBeamGunship_afterburn": {
+      "body": "aa-beam-body",
+      "dead": "aa-beam-dead",
+      "shadow": "aa-beam-shadow",
+      "turret": "aa-beam-turret",
+      "beam": "aa-beam-beam",
+      "beamStart": "aa-beam-beamStart",
+      "beamEnd": "aa-beam-beamEnd",
+      "afterburnTrail": "aa-afterburn-trail"
+    },
+    "mechBunker": {
+      "body": "bunker-body",
+      "leg": "bunker-leg",
+      "foot": "bunker-foot",
+      "shadow": "bunker-shadow",
+      "weaponTurrets": {
+        "2": "bunker-turret"
+      }
+    },
+    "mechBunkerDeployed": {
+      "body": "bunker-body",
+      "leg": "bunker-leg",
+      "foot": "bunker-foot",
+      "shadow": "bunker-shadow",
+      "weaponTurrets": {
+        "2": "bunker-turret"
+      },
+      "shield": "heavy-shield"
+    },
+    "repairbay": {
+      "body": "repairbay-body",
+      "dead": "repairbay-dead"
+    },
+    "mechEngineer": {
+      "body": "engineer-body",
+      "turret": "engineer-turret",
+      "dead": "engineer-dead",
+      "leg": "engineer-leg",
+      "foot": "engineer-foot",
+      "weaponTurrets": {
+        "nanoTurret": "engineer-nanoTurret"
+      }
+    },
+    "nautilusSubmarine": {
+      "body": "nautilus-body",
+      "dead": "nautilus-dead"
+    },
+    "nautilusSubmarineSurface": {
+      "body": "nautilus-body",
+      "dead": "nautilus-dead",
+      "leg": "nautilus-leg",
+      "foot": "nautilus-foot"
+    },
+    "nautilusSubmarineLand": {
+      "body": "nautilus-body",
+      "dead": "nautilus-dead",
+      "leg": "nautilus-leg",
+      "foot": "nautilus-foot"
+    },
+    "experimentalLandFactory": {
+      "body": "experimental-factory-body",
+      "back": "experimental-factory-back",
+      "dead": "experimental-factory-dead"
+    },
+    "nukeLauncherC": {
+      "body": "nuclear-silo-body",
+      "back": "nuclear-silo-back",
+      "dead": "nuclear-silo-dead",
+      "arm1": "nuclear-silo-arm1",
+      "arm2": "nuclear-silo-arm2"
+    },
+    "antiNukeLauncherC": {
+      "body": "anti-nuclear-silo-body",
+      "back": "anti-nuclear-silo-back",
+      "dead": "anti-nuclear-silo-dead",
+      "arm1": "anti-nuclear-silo-arm1",
+      "arm2": "anti-nuclear-silo-arm2"
+    },
+    "robotCrab": {
+      "body": "scout-bot-body",
+      "dead": "scout-bot-dead",
+      "turret": "scout-bot-turret",
+      "leg": "scout-bot-leg"
+    },
+    "robotCrabWater": {
+      "body": "scout-bot-body",
+      "dead": "scout-bot-dead",
+      "turret": "scout-bot-turret",
+      "leg": "scout-bot-leg"
+    }
   }
 }

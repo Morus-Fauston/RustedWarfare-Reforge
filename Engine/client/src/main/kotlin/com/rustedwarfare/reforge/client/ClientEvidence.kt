@@ -106,9 +106,20 @@ internal fun ClientEvidence.recordFailure(kind: String, primary: Throwable) {
 }
 
 internal fun Position.fields(): Map<String, Any?> = mapOf("x" to x, "y" to y)
+internal fun LightningSegment.fields(): Map<String, Any?> = mapOf("end" to end.fields(), "endHeight" to endHeight)
+internal fun BeamSegment.fields(): Map<String, Any?> = mapOf("end" to end.fields(), "endHeight" to endHeight,
+    "textureOffset" to textureOffset)
+private fun projectileVisualFields(appearance: ProjectileAppearance, lightning: LightningSegment?, beam: BeamSegment?): Map<String, Any?> =
+    buildMap {
+        if (appearance != ProjectileAppearance.STANDARD) put("appearance", appearance.name)
+        if (lightning != null) put("lightning", lightning.fields())
+        if (beam != null) put("beam", beam.fields())
+    }
 internal fun FlightPose.fields(): Map<String, Any?> = mapOf(
     "velocity" to velocity.fields(), "height" to height, "heightPhase" to heightPhase,
-    "rotorPhase" to rotorPhase, "rotorHeading" to rotorHeading, "rotorHeightOffset" to rotorHeightOffset)
+    "rotorPhase" to rotorPhase, "rotorHeading" to rotorHeading, "rotorHeightOffset" to rotorHeightOffset) +
+    (fall?.let { mapOf("fall" to mapOf("speed" to it.speed, "landed" to it.landed,
+        "landedInWater" to it.landedInWater, "settled" to it.settled)) } ?: emptyMap())
 internal fun MechPose.fields(): Map<String, Any?> = mapOf(
     "forwardHeading" to forwardHeading, "angularVelocity" to angularVelocity, "reversing" to reversing,
     "legs" to legs.map { leg -> mapOf("index" to leg.index, "anchor" to leg.anchor.fields(),
@@ -137,13 +148,46 @@ internal fun UnitObservation.fields(): Map<String, Any?> {
         "height" to unit.height,
         "pointDefense" to unit.pointDefense?.let { mapOf("energy" to it.energy, "exhausted" to it.exhausted) },
         "tasks" to unit.tasks.map { task -> mapOf("kind" to task.kind.name.lowercase(),
-            "target" to task.target?.fields(), "targetUnitId" to task.targetUnitId) +
+            "target" to task.target?.fields(), "targetUnitId" to task.targetUnitId,
+            "automaticRepair" to task.automaticRepair, "extraWorkRange" to task.extraWorkRange) +
                 (task.buildingTypeId?.let { mapOf("buildingTypeId" to it) } ?: emptyMap()) },
     )
     unit.mechPose?.let { values["mechPose"] = it.fields() }
+    unit.shield?.let { values["shield"] = mapOf("current" to it.current, "maximum" to it.maximum, "displayDamage" to it.displayDamage) }
+    unit.energy?.let { values["energy"] = mapOf("current" to it.current, "maximum" to it.maximum, "recharging" to it.recharging) }
+    unit.nuclearDoors?.let { values["nuclearDoors"] = it }
+    unit.attachment?.let {
+        values["attachment"] = mapOf("parentUnitId" to it.parentUnitId, "slot" to it.slot, "empty" to it.empty)
+    }
+    unit.attachmentOverview?.let { overview ->
+        values["attachmentOverview"] = mapOf("selectedSlot" to overview.selectedSlot, "slots" to overview.slots.map {
+            mapOf("number" to it.number, "unitId" to it.unitId, "typeId" to it.typeId, "progress" to it.progress)
+        })
+    }
+    unit.unitActions?.let { state -> values["unitActions"] = mapOf("automaticCooldown" to state.automaticCooldown,
+        "actions" to state.actions.associate { action -> action.name to mapOf("queueIndex" to action.queueIndex,
+            "progress" to action.progress, "cooldownRemaining" to action.cooldownRemaining, "available" to action.available) }) +
+        (state.stockpile?.let { mapOf("stockpile" to it) } ?: emptyMap()) +
+        (state.interceptorOnline?.let { mapOf("interceptorOnline" to it) } ?: emptyMap()) +
+        (if (state.stockpile != null || state.queue.isNotEmpty()) mapOf("queue" to state.queue.map {
+            mapOf("name" to it.name, "progress" to it.progress, "target" to it.target?.fields()) }) else emptyMap()) }
+    unit.submarine?.let { values["submarine"] = mapOf("surfaceIntent" to it.surfaceIntent,
+        "verticalSpeed" to it.verticalSpeed, "underwater" to it.underwater, "surfacePresentation" to it.surfacePresentation,
+        "maximumSpeed" to it.maximumSpeed, "attackRange" to it.attackRange) }
     unit.flightPose?.let { values["flightPose"] = it.fields() }
+    unit.amphibiousJet?.let { values["amphibiousJet"] = mapOf("flyingIntent" to it.flyingIntent,
+        "verticalSpeed" to it.verticalSpeed, "underwater" to it.underwater, "surfacePresentation" to it.surfacePresentation,
+        "movementType" to it.movementType.name, "maximumSpeed" to it.maximumSpeed, "attackRange" to it.attackRange,
+        "wingFold" to it.wingFold, "phase" to it.phase, "sinkSpeed" to it.sinkSpeed, "settled" to it.settled,
+        "canDive" to it.canDive) }
+    unit.hoverPose?.let { values["hoverPose"] = mapOf("velocity" to it.velocity.fields(), "heightPhase" to it.heightPhase) }
     unit.waterPose?.let { values["waterPose"] = mapOf(
         "reversing" to it.reversing, "sinkSpeed" to it.sinkSpeed, "settled" to it.settled) }
+    unit.carriedBy?.let { values["carriedBy"] = it }
+    unit.transport?.let { values["transport"] = mapOf("passengerIds" to it.passengerIds,
+        "passengerCount" to it.passengerCount, "occupiedSlots" to it.occupiedSlots, "capacity" to it.capacity,
+        "unloading" to it.unloading, "unloadRemaining" to it.unloadRemaining, "canUnload" to it.canUnload) }
+    unit.transportExit?.let { values["transportExit"] = mapOf("previousCarrierId" to it.previousCarrierId, "remaining" to it.remaining) }
     return values
 }
 
@@ -168,15 +212,17 @@ internal fun PlayerObservation.fields(includeKnowledge: Boolean = true): Map<Str
     Observation(sampleId, worldId, scenarioId, stepIndex, simulationTime, units, events, actionResults).fields() + mapOf(
         "playerId" to playerId,
         "visionEpoch" to vision?.epoch,
-        "projectiles" to projectiles.map { mapOf("token" to it.token, "multiplicity" to it.multiplicity,
+        "projectiles" to projectiles.map { mapOf<String, Any?>("token" to it.token, "multiplicity" to it.multiplicity,
             "position" to it.position.fields(), "heading" to it.heading, "height" to it.height, "parentToken" to it.parentToken) +
-                (it.areaRadius?.let { radius -> mapOf("areaRadius" to radius) } ?: emptyMap()) },
-        "projectileEvents" to projectileEvents.map { mapOf("token" to it.token, "kind" to it.kind,
+                (it.areaRadius?.let { radius -> mapOf("areaRadius" to radius) } ?: emptyMap()) +
+                projectileVisualFields(it.appearance, it.lightning, it.beam) },
+        "projectileEvents" to projectileEvents.map { mapOf<String, Any?>("token" to it.token, "kind" to it.kind,
             "occurrences" to it.occurrences, "position" to it.position.fields(), "heading" to it.heading,
             "height" to it.height, "sourceUnitId" to it.sourceUnitId, "targetUnitId" to it.targetUnitId,
             "damage" to it.damage, "parentToken" to it.parentToken, "interceptorUnitId" to it.interceptorUnitId) +
                 (it.areaRadius?.let { radius -> mapOf("areaRadius" to radius) } ?: emptyMap()) +
-                (it.sourceWeaponName?.let { name -> mapOf("sourceWeaponName" to name) } ?: emptyMap()) },
+                (it.sourceWeaponName?.let { name -> mapOf("sourceWeaponName" to name) } ?: emptyMap()) +
+                projectileVisualFields(it.appearance, it.lightning, it.beam) },
         "knowledge" to (if (includeKnowledge) knowledge?.cells?.map { mapOf("visible" to it.visible,
             "blocked" to it.lastKnownBlocked, "gid" to it.lastKnownGroundGid) } else null),
     ) + (balance?.let { mapOf("balance" to it, "factoryQueues" to factoryQueues.map { factory ->

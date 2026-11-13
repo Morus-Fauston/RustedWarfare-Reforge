@@ -1,0 +1,273 @@
+{
+  "schemaVersion": 1,
+  "scenarioId": "repairbay-hjson-production-chain",
+  "inputs": "../../inputs/repairbay-production/hjson",
+  "contentPack": {
+    "directory": "normal-package",
+    "unitId": "commandCenter"
+  },
+  "intents": [
+    {
+      "intentId": "select-center",
+      "kind": "select",
+      "waitSteps": 0,
+      "position": {
+        "x": 130,
+        "y": 130
+      }
+    },
+    {
+      "intentId": "produce-worker",
+      "kind": "produce",
+      "waitSteps": 600,
+      "typeId": "builder"
+    },
+    {
+      "intentId": "wait-worker-exit",
+      "kind": "select",
+      "waitSteps": 100,
+      "position": {
+        "x": 130,
+        "y": 130
+      }
+    },
+    {
+      "intentId": "select-worker",
+      "kind": "select",
+      "waitSteps": 0,
+      "position": {
+        "x": 129,
+        "y": 220
+      }
+    },
+    {
+      "intentId": "place-worker",
+      "kind": "move",
+      "waitSteps": 300,
+      "position": {
+        "x": 230,
+        "y": 200
+      }
+    },
+    {
+      "intentId": "stop-worker",
+      "kind": "stop",
+      "waitSteps": 0
+    },
+    {
+      "intentId": "build-bay",
+      "kind": "build",
+      "waitSteps": 600,
+      "position": {
+        "x": 270,
+        "y": 150
+      },
+      "typeId": "repairbay"
+    },
+    {
+      "intentId": "finish-bay",
+      "kind": "select",
+      "waitSteps": 600,
+      "position": {
+        "x": 270,
+        "y": 150
+      }
+    },
+    {
+      "intentId": "select-worker-again",
+      "kind": "select",
+      "waitSteps": 0,
+      "position": {
+        "x": 230,
+        "y": 200
+      }
+    },
+    {
+      "intentId": "build-factory",
+      "kind": "build",
+      "waitSteps": 600,
+      "position": {
+        "x": 270,
+        "y": 250
+      },
+      "typeId": "landFactory"
+    },
+    {
+      "intentId": "finish-factory",
+      "kind": "select",
+      "waitSteps": 600,
+      "position": {
+        "x": 270,
+        "y": 250
+      }
+    },
+    {
+      "intentId": "produce-tank",
+      "kind": "produce",
+      "waitSteps": 600,
+      "typeId": "c_tank"
+    },
+    {
+      "intentId": "wait-tank-exit",
+      "kind": "select",
+      "waitSteps": 100,
+      "position": {
+        "x": 270,
+        "y": 250
+      }
+    },
+    {
+      "intentId": "select-tank",
+      "kind": "select",
+      "waitSteps": 0,
+      "position": {
+        "x": 269,
+        "y": 337
+      }
+    },
+    {
+      "intentId": "approach-enemy",
+      "kind": "move",
+      "waitSteps": 160,
+      "position": {
+        "x": 400,
+        "y": 300
+      }
+    },
+    {
+      "intentId": "return-to-bay",
+      "kind": "move",
+      "waitSteps": 250,
+      "position": {
+        "x": 190,
+        "y": 290
+      }
+    },
+    {
+      "intentId": "stop-tank",
+      "kind": "stop",
+      "waitSteps": 40
+    },
+    {
+      "intentId": "select-bay",
+      "kind": "select",
+      "waitSteps": 0,
+      "position": {
+        "x": 270,
+        "y": 150
+      }
+    },
+    {
+      "intentId": "reclaim-partial",
+      "kind": "reclaim",
+      "waitSteps": 10,
+      "position": {
+        "x": 190,
+        "y": 290
+      }
+    },
+    {
+      "intentId": "stop-reclaim",
+      "kind": "stop",
+      "waitSteps": 0
+    },
+    {
+      "intentId": "repair-mobile",
+      "kind": "repair",
+      "waitSteps": 1,
+      "position": {
+        "x": 190,
+        "y": 290
+      }
+    },
+    {
+      "intentId": "stop-repair",
+      "kind": "stop",
+      "waitSteps": 0
+    },
+    {
+      "intentId": "automatic-repair",
+      "kind": "select",
+      "waitSteps": 60,
+      "position": {
+        "x": 270,
+        "y": 150
+      }
+    },
+    {
+      "intentId": "reclaim-terminal",
+      "kind": "reclaim",
+      "waitSteps": 600,
+      "position": {
+        "x": 190,
+        "y": 290
+      }
+    }
+  ],
+  "waitPlan": {
+    "produce-worker": {
+      "minimumSteps": 600,
+      "timeoutSeconds": 240
+    },
+    "wait-worker-exit": {
+      "minimumSteps": 100,
+      "timeoutSeconds": 240
+    },
+    "place-worker": {
+      "minimumSteps": 300,
+      "timeoutSeconds": 240
+    },
+    "build-bay": {
+      "minimumSteps": 600,
+      "timeoutSeconds": 240
+    },
+    "finish-bay": {
+      "minimumSteps": 600,
+      "timeoutSeconds": 240
+    },
+    "build-factory": {
+      "minimumSteps": 600,
+      "timeoutSeconds": 240
+    },
+    "finish-factory": {
+      "minimumSteps": 600,
+      "timeoutSeconds": 240
+    },
+    "produce-tank": {
+      "minimumSteps": 600,
+      "timeoutSeconds": 240
+    },
+    "wait-tank-exit": {
+      "minimumSteps": 100,
+      "timeoutSeconds": 240
+    },
+    "approach-enemy": {
+      "minimumSteps": 160,
+      "timeoutSeconds": 240
+    },
+    "return-to-bay": {
+      "minimumSteps": 250,
+      "timeoutSeconds": 240
+    },
+    "stop-tank": {
+      "minimumSteps": 40,
+      "timeoutSeconds": 240
+    },
+    "reclaim-partial": {
+      "minimumSteps": 10,
+      "timeoutSeconds": 240
+    },
+    "repair-mobile": {
+      "minimumSteps": 1,
+      "timeoutSeconds": 240
+    },
+    "automatic-repair": {
+      "minimumSteps": 60,
+      "timeoutSeconds": 240
+    },
+    "reclaim-terminal": {
+      "minimumSteps": 600,
+      "timeoutSeconds": 240
+    }
+  }
+}

@@ -1,0 +1,1508 @@
+{
+  "schemaVersion": 1,
+  "kind": "scenario",
+  "scenarioId": "p009-engineer-work",
+  "content": {
+    "map": {
+      "id": "map",
+      "path": "../inputs/mech-engineer-production/ini/maps/p001-controlled.tmx",
+      "sha256": "6532de9226a4446656fe02384b884c0146baab362d0ab49736cc739bf5c7d016"
+    },
+    "unitVariants": [
+      {
+        "id": "mechGun",
+        "path": "../inputs/mech-engineer-production/ini/production-package/units/mech.ini",
+        "sha256": "9b5c4b473c8f3ce5c744c8ed94843ac3222d9d1c28e965ba5bc3c5c383858477",
+        "loader": "mech"
+      },
+      {
+        "id": "mechFactory",
+        "path": "../inputs/mech-engineer-production/ini/production-package/units/mechFactory.ini",
+        "sha256": "88f4188706b3557c56db3b043676ee0bca28961f79572f64e75588ca6dc34904",
+        "loader": "factory"
+      },
+      {
+        "id": "builder",
+        "path": "../inputs/mech-engineer-production/ini/production-package/units/builder.ini",
+        "sha256": "312d3069044605d2a78c64f8898751ebdcfd60c52f9ed34710ebd00948852334",
+        "loader": "builder"
+      },
+      {
+        "id": "mechHeavyMissile",
+        "path": "../inputs/mech-engineer-production/ini/production-package/units/heavy/heavy.ini",
+        "sha256": "8e264dd985bcd199a34607d58aa2fc019ed11d220df42c6c8865ff6415cd16fa",
+        "loader": "mech-heavy"
+      },
+      {
+        "id": "mechFactoryT2",
+        "path": "../inputs/mech-engineer-production/ini/production-package/units/mechFactoryT2.ini",
+        "sha256": "6e0f52a37e0faca2f5f562d86a79976cc19f1baeadaf7db0fb7f81edb4234754",
+        "loader": "factory"
+      },
+      {
+        "id": "helicopter",
+        "path": "../inputs/mech-engineer-production/ini/production-package/units/air/helicopter.ini",
+        "sha256": "efc7d4fe4a1dff8c58b703c5b7d688b6609946c45b41d2ca680f40b6cd166c5a",
+        "loader": "helicopter"
+      },
+      {
+        "id": "mechEngineer",
+        "path": "../inputs/mech-engineer-production/ini/production-package/units/engineer/engineer.ini",
+        "sha256": "14b8063c92b6469cd16ee7ed7dda282f8d3d0e2daa9a99f65f961466c8f4e7a1",
+        "loader": "mech-engineer"
+      },
+      {
+        "id": "repairbay",
+        "path": "../inputs/mech-engineer-production/ini/production-package/units/engineer/repairbay/repairbay.ini",
+        "sha256": "aee2a216d7707b353f043a9a74c2605ccd3ef17f91fa1bd33b15833023b3cbac",
+        "loader": "repair-bay"
+      },
+      {
+        "id": "commandCenter",
+        "path": "../inputs/mech-engineer-production/ini/production-package/units/commandCenter/commandCenter.ini",
+        "sha256": "935cd8c4dc4df0c51a43851059f19ae635e746e349bb50c1fc1a3b0a06f37224",
+        "loader": "command-center"
+      }
+    ],
+    "dependencies": [
+      {
+        "id": "dep-0",
+        "path": "../inputs/mech-engineer-production/ini/assets/cliff.png",
+        "sha256": "8ad644d4001c288a7a67484befde6ef25d5748d9f7e3ad2f3fdaf72142e94661"
+      },
+      {
+        "id": "dep-1",
+        "path": "../inputs/mech-engineer-production/ini/assets/terrain.png",
+        "sha256": "1b47e4821cdbfc66460f690322cf641afc1fc782a3ed6985df8b9e773ed98ff0"
+      },
+      {
+        "id": "dep-2",
+        "path": "../inputs/mech-engineer-production/ini/production-package/pack.json",
+        "sha256": "5e57b7ea6ca0183ba5b47e9bb6730dd90ef1f95864f242c661bbb930e92ffef1"
+      },
+      {
+        "id": "dep-3",
+        "path": "../inputs/mech-engineer-production/ini/production-package/units/air/body.png",
+        "sha256": "f2f5836caec9a3078885b8ab00654f27800d38f17352b3be4358c3afc6a42b90"
+      },
+      {
+        "id": "dep-4",
+        "path": "../inputs/mech-engineer-production/ini/production-package/units/air/dead.png",
+        "sha256": "78e0d0b9a4eb88801361721035f5b84d141fb745f094192891496c4b63916976"
+      },
+      {
+        "id": "dep-5",
+        "path": "../inputs/mech-engineer-production/ini/production-package/units/air/rotor.png",
+        "sha256": "3bec04ec0daa8dcea012e8447d4ee0a58e392850da8e366d30d8e512829fd9af"
+      },
+      {
+        "id": "dep-6",
+        "path": "../inputs/mech-engineer-production/ini/production-package/units/body.png",
+        "sha256": "07d1b87466e2b51b5800452a5ad32cce939e5f17dabfd793cb2f0f05f7b07c07"
+      },
+      {
+        "id": "dep-7",
+        "path": "../inputs/mech-engineer-production/ini/production-package/units/builder.png",
+        "sha256": "15060aa3fb36bffd4414e803beb8f5d9b2982ed14bb497fbca6cadd3de18cc1b"
+      },
+      {
+        "id": "dep-8",
+        "path": "../inputs/mech-engineer-production/ini/production-package/units/builder_dead.png",
+        "sha256": "15060aa3fb36bffd4414e803beb8f5d9b2982ed14bb497fbca6cadd3de18cc1b"
+      },
+      {
+        "id": "dep-9",
+        "path": "../inputs/mech-engineer-production/ini/production-package/units/commandCenter/base.png",
+        "sha256": "8095d081de1407fe59e9ff99f5a5822e03275f87ffbd0f2a09ac736f8f6b3695"
+      },
+      {
+        "id": "dep-10",
+        "path": "../inputs/mech-engineer-production/ini/production-package/units/commandCenter/base_back.png",
+        "sha256": "07e2e3d786bf88d6d1dfe57add1b732e84a9bd2d6313732cc4f86ec8c4da2885"
+      },
+      {
+        "id": "dep-11",
+        "path": "../inputs/mech-engineer-production/ini/production-package/units/commandCenter/base_dead.png",
+        "sha256": "940b030d8a9c0161c69b1831041186c97409e85d404aa5c5f6ec58fa5d831b16"
+      },
+      {
+        "id": "dep-12",
+        "path": "../inputs/mech-engineer-production/ini/production-package/units/commandCenter/builder.png",
+        "sha256": "15060aa3fb36bffd4414e803beb8f5d9b2982ed14bb497fbca6cadd3de18cc1b"
+      },
+      {
+        "id": "dep-13",
+        "path": "../inputs/mech-engineer-production/ini/production-package/units/commandCenter/builder_dead.png",
+        "sha256": "15060aa3fb36bffd4414e803beb8f5d9b2982ed14bb497fbca6cadd3de18cc1b"
+      },
+      {
+        "id": "dep-14",
+        "path": "../inputs/mech-engineer-production/ini/production-package/units/commandCenter/extractor_back.png",
+        "sha256": "b7450a978080da75d5e52484ed62f4fe18d294c1c1e918e5c7f0abea608bea80"
+      },
+      {
+        "id": "dep-15",
+        "path": "../inputs/mech-engineer-production/ini/production-package/units/commandCenter/extractor_t1.png",
+        "sha256": "96f912275ca7d1bc07fce8aa3c9343c8be1900bd35b56367e4fc165febf56ca6"
+      },
+      {
+        "id": "dep-16",
+        "path": "../inputs/mech-engineer-production/ini/production-package/units/commandCenter/extractor_t2.png",
+        "sha256": "9e7ea8588ec440427424ff5daf7c628199e8e2579f783dfce0c413f135313467"
+      },
+      {
+        "id": "dep-17",
+        "path": "../inputs/mech-engineer-production/ini/production-package/units/commandCenter/extractor_t3.png",
+        "sha256": "21883c595db746c2ae40b55276469ccf82d74931004841c1ad1b62ed3c6317c7"
+      },
+      {
+        "id": "dep-18",
+        "path": "../inputs/mech-engineer-production/ini/production-package/units/commandCenter/fabricator_dead.png",
+        "sha256": "55883ff610cb74713449cc980d2da5d04ce6a9bd57ed4fd6c29b1a3900722855"
+      },
+      {
+        "id": "dep-19",
+        "path": "../inputs/mech-engineer-production/ini/production-package/units/commandCenter/fabricatorT1.png",
+        "sha256": "7ed97be7ee48026f65fbd0053a7c8c5139a650ee8b341bf404b706b3d9b6ce11"
+      },
+      {
+        "id": "dep-20",
+        "path": "../inputs/mech-engineer-production/ini/production-package/units/commandCenter/fabricatorT2.png",
+        "sha256": "2b36cf34274f6682d069d7f0bdb449fcf9fc89628f9825c2ee5287d1e4177224"
+      },
+      {
+        "id": "dep-21",
+        "path": "../inputs/mech-engineer-production/ini/production-package/units/commandCenter/fabricatorT3.png",
+        "sha256": "347901f6bab85bbd1c44b5cf3460e7755138e8b70d773fecb6b2a4a26b7c40fc"
+      },
+      {
+        "id": "dep-22",
+        "path": "../inputs/mech-engineer-production/ini/production-package/units/commandCenter/factory.png",
+        "sha256": "f5fbe7d6c121670ef027714323b193a17734d63cae69bfc1ff317c5068e29e64"
+      },
+      {
+        "id": "dep-23",
+        "path": "../inputs/mech-engineer-production/ini/production-package/units/commandCenter/factory_back.png",
+        "sha256": "f5fbe7d6c121670ef027714323b193a17734d63cae69bfc1ff317c5068e29e64"
+      },
+      {
+        "id": "dep-24",
+        "path": "../inputs/mech-engineer-production/ini/production-package/units/commandCenter/factory_dead.png",
+        "sha256": "f833d96e5b74fa0d68a2331a36338518727636a48e56b2a9e5278ab20bd4ae83"
+      },
+      {
+        "id": "dep-25",
+        "path": "../inputs/mech-engineer-production/ini/production-package/units/commandCenter/laser_defence.png",
+        "sha256": "38ccdaa0f597da9b5fc756d28ba255f673c8d71775826accabd2ee4d46105b10"
+      },
+      {
+        "id": "dep-26",
+        "path": "../inputs/mech-engineer-production/ini/production-package/units/commandCenter/laser_defence_dead.png",
+        "sha256": "27a58b2d63f8ab80a51744f90b615c635d75605c1859bfc0766a62469f880456"
+      },
+      {
+        "id": "dep-27",
+        "path": "../inputs/mech-engineer-production/ini/production-package/units/commandCenter/tank.png",
+        "sha256": "898fa8d12d89e73c988c258c3522a23660b2fdc500b4c8588fd2d8cf5fe4b605"
+      },
+      {
+        "id": "dep-28",
+        "path": "../inputs/mech-engineer-production/ini/production-package/units/commandCenter/tank_dead.png",
+        "sha256": "cbab7f92fa0cbef203e94823e2cbdc3e0116df3dab205f2ce0296e399a1a4ffa"
+      },
+      {
+        "id": "dep-29",
+        "path": "../inputs/mech-engineer-production/ini/production-package/units/commandCenter/tank_turret.png",
+        "sha256": "20dfaa2a45dd5bb635e83425fb64a6d3d3f9fef48d1b0a3b573fe5b9b67c4985"
+      },
+      {
+        "id": "dep-30",
+        "path": "../inputs/mech-engineer-production/ini/production-package/units/commandCenter/turret.png",
+        "sha256": "907d5bdfcaf8d04cd5f7cfde00bb6b77bf1973cd1191db26b8dd5f408392106a"
+      },
+      {
+        "id": "dep-31",
+        "path": "../inputs/mech-engineer-production/ini/production-package/units/commandCenter/turret_base2.png",
+        "sha256": "c7a05ab3c3edb89b81a698c08d60077f3b9771924a58f35fa1265f00c6d421c6"
+      },
+      {
+        "id": "dep-32",
+        "path": "../inputs/mech-engineer-production/ini/production-package/units/commandCenter/turret_dead.png",
+        "sha256": "907d5bdfcaf8d04cd5f7cfde00bb6b77bf1973cd1191db26b8dd5f408392106a"
+      },
+      {
+        "id": "dep-33",
+        "path": "../inputs/mech-engineer-production/ini/production-package/units/commandCenter/turret_top.png",
+        "sha256": "907d5bdfcaf8d04cd5f7cfde00bb6b77bf1973cd1191db26b8dd5f408392106a"
+      },
+      {
+        "id": "dep-34",
+        "path": "../inputs/mech-engineer-production/ini/production-package/units/commandCenter/turret_top_artillery.png",
+        "sha256": "c7a05ab3c3edb89b81a698c08d60077f3b9771924a58f35fa1265f00c6d421c6"
+      },
+      {
+        "id": "dep-35",
+        "path": "../inputs/mech-engineer-production/ini/production-package/units/commandCenter/turret_top_l2.png",
+        "sha256": "c7a05ab3c3edb89b81a698c08d60077f3b9771924a58f35fa1265f00c6d421c6"
+      },
+      {
+        "id": "dep-36",
+        "path": "../inputs/mech-engineer-production/ini/production-package/units/engineer/blank.png",
+        "sha256": "43739c566e26fd7cb88f69d3864ea34740372f5ee99acac169e090beffbce5c6"
+      },
+      {
+        "id": "dep-37",
+        "path": "../inputs/mech-engineer-production/ini/production-package/units/engineer/body.png",
+        "sha256": "341a8f2d09ebedf676e91d6dafe831494920179c720b2496f17bf3a0bec0012a"
+      },
+      {
+        "id": "dep-38",
+        "path": "../inputs/mech-engineer-production/ini/production-package/units/engineer/cannon.png",
+        "sha256": "9cecbcb5dc066fb59f4d8da20dbb4e66799a4f0f05d2c04c8d107ccc73d0cd1f"
+      },
+      {
+        "id": "dep-39",
+        "path": "../inputs/mech-engineer-production/ini/production-package/units/engineer/dead.png",
+        "sha256": "ec48e59071fbd6f9fa1d038cc5601740a3173904046f7cc56445f0ae3b0f054c"
+      },
+      {
+        "id": "dep-40",
+        "path": "../inputs/mech-engineer-production/ini/production-package/units/engineer/foot.png",
+        "sha256": "f2e96fe3894acb933a8a00e6f07692855af9cc004643cdd2028d1321c1c3f633"
+      },
+      {
+        "id": "dep-41",
+        "path": "../inputs/mech-engineer-production/ini/production-package/units/engineer/leg.png",
+        "sha256": "8e9f14534122311e078ac4795c3706e7be80077107d7ac3fb9233d653189ef73"
+      },
+      {
+        "id": "dep-42",
+        "path": "../inputs/mech-engineer-production/ini/production-package/units/engineer/pack.json",
+        "sha256": "4a8f93baf0fc3157f826b7261b4d14d564055f6850d6cf2c7ae80190d3616934"
+      },
+      {
+        "id": "dep-43",
+        "path": "../inputs/mech-engineer-production/ini/production-package/units/engineer/repairbay/body.png",
+        "sha256": "6ccf44446a0c4fbaa70a9ff1105257943feb5d622f07caca5e24b23cfc5b771e"
+      },
+      {
+        "id": "dep-44",
+        "path": "../inputs/mech-engineer-production/ini/production-package/units/engineer/repairbay/dead.png",
+        "sha256": "cc321255a36fa9aed77068b995249114e569ce76688c9ebc21794a8cf420f8dd"
+      },
+      {
+        "id": "dep-45",
+        "path": "../inputs/mech-engineer-production/ini/production-package/units/engineer/repairbay/pack.json",
+        "sha256": "457ddd9f5a0d2ec2c744112db4cabc1a5fe75eafc35721362f193b126ce9662d"
+      },
+      {
+        "id": "dep-46",
+        "path": "../inputs/mech-engineer-production/ini/production-package/units/factory.png",
+        "sha256": "b0a9fa6f0ef2f4b9f240978e90e1925440f9814639826df97d4a582a9c3a7ec2"
+      },
+      {
+        "id": "dep-47",
+        "path": "../inputs/mech-engineer-production/ini/production-package/units/factory_back.png",
+        "sha256": "29be54180eb59bd03fccf25d6a34ca086e5e69c5d70a4494acc55bc1ba275e9d"
+      },
+      {
+        "id": "dep-48",
+        "path": "../inputs/mech-engineer-production/ini/production-package/units/factory_dead.png",
+        "sha256": "aaaf0f11abb7ca74725c8ee7edf8985c912410d8b77fd3316eca21d52a7c846a"
+      },
+      {
+        "id": "dep-49",
+        "path": "../inputs/mech-engineer-production/ini/production-package/units/factory_t2.png",
+        "sha256": "b0a9fa6f0ef2f4b9f240978e90e1925440f9814639826df97d4a582a9c3a7ec2"
+      },
+      {
+        "id": "dep-50",
+        "path": "../inputs/mech-engineer-production/ini/production-package/units/foot.png",
+        "sha256": "aa467f0cf16491a8ee42e826459d42f141dbe0dbde0ac4063d84cdad163775e7"
+      },
+      {
+        "id": "dep-51",
+        "path": "../inputs/mech-engineer-production/ini/production-package/units/heavy/body.png",
+        "sha256": "3edca2ba33a02f5d813e6042597b7fda8c0e3c6b15d1224706ed7688334887a6"
+      },
+      {
+        "id": "dep-52",
+        "path": "../inputs/mech-engineer-production/ini/production-package/units/heavy/foot.png",
+        "sha256": "4ade28f090688ac6e73ae8f4df1f2d0b6dae5f3c8b03b81850e50a57e37669bc"
+      },
+      {
+        "id": "dep-53",
+        "path": "../inputs/mech-engineer-production/ini/production-package/units/heavy/leg.png",
+        "sha256": "e623dcab437823824ef4527b8b7de770b27005a1c60d06c985efbd0d45a3159f"
+      },
+      {
+        "id": "dep-54",
+        "path": "../inputs/mech-engineer-production/ini/production-package/units/heavy/shield.png",
+        "sha256": "78f7f5c331d0235c56db25d364ae43bf01f8deb021bfceadf60353a9e6384179"
+      },
+      {
+        "id": "dep-55",
+        "path": "../inputs/mech-engineer-production/ini/production-package/units/heavy/small_turret.png",
+        "sha256": "c09d30972c99f2d9a45bef0a77a3f3e56ba78aab6a09fc6b01a444616a66e9d6"
+      },
+      {
+        "id": "dep-56",
+        "path": "../inputs/mech-engineer-production/ini/production-package/units/heavy/turret.png",
+        "sha256": "80c8457ced89d6bc2920dc250e35cb11b3d7933d1dfa4e98d8ba4c13bb1e5c6f"
+      },
+      {
+        "id": "dep-57",
+        "path": "../inputs/mech-engineer-production/ini/production-package/units/leg.png",
+        "sha256": "4ec9be2fef0a297abe341f3dbd5201dd66c5454a0bb190cc1dd4a5d2252c5819"
+      }
+    ]
+  },
+  "coordinateModel": {
+    "id": "public.coordinate.v1",
+    "space": "2d",
+    "xAxis": "x-right",
+    "yAxis": "y-down",
+    "origin": "top-left",
+    "unit": "world-unit",
+    "valueType": "double",
+    "precision": "ieee754-binary64"
+  },
+  "timeModel": {
+    "id": "public.time.v1",
+    "deltaUnit": "sim-tick",
+    "stepRule": "fixed-explicit-delta",
+    "precision": "ieee754-binary64"
+  },
+  "angleUnit": "degree-clockwise-zero-up",
+  "movementContract": {
+    "pathPointRadius": 16,
+    "targetRadius": 4
+  },
+  "players": [
+    {
+      "playerId": "p1",
+      "control": "local"
+    },
+    {
+      "playerId": "p2",
+      "control": "none"
+    }
+  ],
+  "units": [
+    {
+      "unitId": "engineer",
+      "owner": "p1",
+      "type": "mechEngineer",
+      "position": {
+        "x": 110,
+        "y": 210
+      },
+      "heading": 90
+    },
+    {
+      "unitId": "worker",
+      "owner": "p1",
+      "type": "builder",
+      "position": {
+        "x": 170,
+        "y": 210
+      },
+      "heading": 90
+    },
+    {
+      "unitId": "worker2",
+      "owner": "p1",
+      "type": "builder",
+      "position": {
+        "x": 210,
+        "y": 210
+      },
+      "heading": 90
+    }
+  ],
+  "actions": [
+    {
+      "actionId": "terminal",
+      "atStep": 0,
+      "kind": "reclaim",
+      "actor": "p1",
+      "unitId": "engineer",
+      "targetUnitId": "worker",
+      "append": false
+    },
+    {
+      "actionId": "after-terminal",
+      "atStep": 155,
+      "kind": "stop",
+      "actor": "p1",
+      "unitId": "engineer"
+    },
+    {
+      "actionId": "weaken",
+      "atStep": 157,
+      "kind": "reclaim",
+      "actor": "p1",
+      "unitId": "engineer",
+      "targetUnitId": "worker2",
+      "append": false
+    },
+    {
+      "actionId": "pause",
+      "atStep": 158,
+      "kind": "stop",
+      "actor": "p1",
+      "unitId": "engineer"
+    },
+    {
+      "actionId": "manual",
+      "atStep": 159,
+      "kind": "repair",
+      "actor": "p1",
+      "unitId": "engineer",
+      "targetUnitId": "worker2",
+      "append": false
+    },
+    {
+      "actionId": "stop-repair",
+      "atStep": 160,
+      "kind": "stop",
+      "actor": "p1",
+      "unitId": "engineer"
+    }
+  ],
+  "termination": {
+    "kind": "explicit-steps",
+    "required": true,
+    "steps": [
+      {
+        "stepIndex": 0,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 1,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 2,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 3,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 4,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 5,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 6,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 7,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 8,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 9,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 10,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 11,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 12,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 13,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 14,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 15,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 16,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 17,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 18,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 19,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 20,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 21,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 22,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 23,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 24,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 25,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 26,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 27,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 28,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 29,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 30,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 31,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 32,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 33,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 34,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 35,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 36,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 37,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 38,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 39,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 40,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 41,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 42,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 43,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 44,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 45,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 46,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 47,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 48,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 49,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 50,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 51,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 52,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 53,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 54,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 55,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 56,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 57,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 58,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 59,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 60,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 61,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 62,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 63,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 64,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 65,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 66,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 67,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 68,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 69,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 70,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 71,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 72,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 73,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 74,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 75,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 76,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 77,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 78,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 79,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 80,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 81,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 82,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 83,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 84,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 85,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 86,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 87,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 88,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 89,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 90,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 91,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 92,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 93,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 94,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 95,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 96,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 97,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 98,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 99,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 100,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 101,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 102,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 103,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 104,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 105,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 106,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 107,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 108,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 109,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 110,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 111,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 112,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 113,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 114,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 115,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 116,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 117,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 118,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 119,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 120,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 121,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 122,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 123,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 124,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 125,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 126,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 127,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 128,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 129,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 130,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 131,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 132,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 133,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 134,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 135,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 136,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 137,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 138,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 139,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 140,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 141,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 142,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 143,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 144,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 145,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 146,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 147,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 148,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 149,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 150,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 151,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 152,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 153,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 154,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 155,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 156,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 157,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 158,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 159,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 160,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 161,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 162,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 163,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 164,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 165,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 166,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 167,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 168,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 169,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 170,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 171,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 172,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 173,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 174,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 175,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 176,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 177,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 178,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 179,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 180,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 181,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 182,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 183,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 184,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 185,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 186,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 187,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 188,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 189,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 190,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 191,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 192,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 193,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 194,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 195,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 196,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 197,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 198,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 199,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      }
+    ]
+  },
+  "combatContract": {
+    "worldSeed": 12345,
+    "initialFrameCounter": -1,
+    "unitObjectIds": {
+      "engineer": 1,
+      "worker": 2,
+      "worker2": 3
+    },
+    "nextObjectId": 4
+  },
+  "automaticVision": {
+    "retention": "MEMORY",
+    "pathSource": "PLAYER_KNOWLEDGE",
+    "shareAlliedVision": false,
+    "observers": [
+      "p1",
+      "p2"
+    ],
+    "grid": {
+      "width": 30,
+      "height": 20
+    }
+  },
+  "economyContract": {
+    "initialBalances": {
+      "p1": 16000,
+      "p2": 0
+    }
+  }
+}

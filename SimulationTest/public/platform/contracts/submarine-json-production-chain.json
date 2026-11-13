@@ -1,0 +1,103 @@
+{
+  "schemaVersion": 1,
+  "scenarioId": "submarine-json-production-chain",
+  "rules": [
+    {
+      "intentId": "select-builder"
+    },
+    {
+      "intentId": "build-t1"
+    },
+    {
+      "intentId": "wait-t1"
+    },
+    {
+      "intentId": "finish-t1"
+    },
+    {
+      "intentId": "produce-submarine"
+    },
+    {
+      "intentId": "wait-submarine"
+    },
+    {
+      "intentId": "leave-factory"
+    },
+    {
+      "intentId": "select-submarine"
+    },
+    {
+      "intentId": "move-underwater"
+    },
+    {
+      "intentId": "stop-underwater"
+    },
+    {
+      "intentId": "surface"
+    },
+    {
+      "intentId": "attack-air"
+    },
+    {
+      "intentId": "dive"
+    },
+    {
+      "intentId": "attack-underwater"
+    },
+    {
+      "intentId": "stop-final"
+    }
+  ],
+  "history": {
+    "initialBalance": 12000,
+    "initialOwnedTypes": [
+      "builder"
+    ],
+    "productionOrder": [
+      "attackSubmarine"
+    ],
+    "projectileBirthsRequired": true,
+    "spend": [
+      {
+        "intentId": "build-t1",
+        "amount": 1000,
+        "at": "first-step"
+      },
+      {
+        "intentId": "produce-submarine",
+        "amount": 800,
+        "at": "action"
+      }
+    ],
+    "minimumBirths": [
+      {
+        "ownerPlayerId": "p1",
+        "typeId": "attackSubmarine",
+        "weaponNames": [
+          null
+        ],
+        "targetUnitId": "c"
+      },
+      {
+        "ownerPlayerId": "p1",
+        "typeId": "attackSubmarine",
+        "weaponNames": [
+          null
+        ],
+        "targetUnitId": "d"
+      }
+    ],
+    "finalUnits": [
+      {
+        "ownerPlayerId": "p1",
+        "typeId": "attackSubmarine",
+        "fields": {
+          "alive": true,
+          "maxHealth": 260,
+          "height": -8,
+          "moveTarget": null
+        }
+      }
+    ]
+  }
+}

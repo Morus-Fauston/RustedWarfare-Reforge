@@ -1,0 +1,145 @@
+{
+  "schemaVersion": 1,
+  "scenarioId": "aa-beam-hjson-production-chain",
+  "rules": [
+    {
+      "intentId": "select-center"
+    },
+    {
+      "intentId": "produce-worker"
+    },
+    {
+      "intentId": "leave-center"
+    },
+    {
+      "intentId": "select-worker"
+    },
+    {
+      "intentId": "place-worker"
+    },
+    {
+      "intentId": "stop-worker"
+    },
+    {
+      "intentId": "build-t1"
+    },
+    {
+      "intentId": "finish-t1"
+    },
+    {
+      "intentId": "upgrade-t2"
+    },
+    {
+      "intentId": "wait-upgrade-1"
+    },
+    {
+      "intentId": "wait-upgrade-2"
+    },
+    {
+      "intentId": "wait-upgrade-3"
+    },
+    {
+      "intentId": "finish-upgrade"
+    },
+    {
+      "intentId": "produce-air"
+    },
+    {
+      "intentId": "wait-air-1"
+    },
+    {
+      "intentId": "wait-air-2"
+    },
+    {
+      "intentId": "wait-air-3"
+    },
+    {
+      "intentId": "select-air"
+    },
+    {
+      "intentId": "approach-air"
+    },
+    {
+      "intentId": "stop-air"
+    },
+    {
+      "intentId": "attack-air"
+    },
+    {
+      "intentId": "return-home"
+    },
+    {
+      "intentId": "stop-home"
+    }
+  ],
+  "history": {
+    "initialBalance": 10000,
+    "ownerPlayerId": "p1",
+    "initialOwnedTypes": [
+      "commandCenter"
+    ],
+    "initialIncome": {
+      "unitId": "a",
+      "typeId": "commandCenter",
+      "period": 10,
+      "credits": 4.5
+    },
+    "productionOrder": [
+      "builder",
+      "aaBeamGunship"
+    ],
+    "projectileBirthsRequired": true,
+    "spend": [
+      {
+        "intentId": "produce-worker",
+        "amount": 500,
+        "at": "action"
+      },
+      {
+        "intentId": "build-t1",
+        "amount": 1000,
+        "at": "construction-created"
+      },
+      {
+        "intentId": "upgrade-t2",
+        "amount": 1500,
+        "at": "action"
+      },
+      {
+        "intentId": "produce-air",
+        "amount": 6000,
+        "at": "action"
+      }
+    ],
+    "finalUnits": [
+      {
+        "ownerPlayerId": "p1",
+        "typeId": "commandCenter",
+        "fields": {
+          "alive": true
+        }
+      },
+      {
+        "ownerPlayerId": "p1",
+        "typeId": "builder",
+        "fields": {
+          "alive": true
+        }
+      },
+      {
+        "ownerPlayerId": "p1",
+        "typeId": "airFactoryT2",
+        "fields": {
+          "alive": true
+        }
+      },
+      {
+        "ownerPlayerId": "p1",
+        "typeId": "aaBeamGunship",
+        "fields": {
+          "alive": true
+        }
+      }
+    ]
+  }
+}

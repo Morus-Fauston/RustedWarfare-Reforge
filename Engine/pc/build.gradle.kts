@@ -51,13 +51,18 @@ distributions {
         contents {
             from(rootProject.projectDir.parentFile.resolve("SimulationTest/public/scenarios")) {
                 include("phase-five-*.json")
+                include("phase-six-a-*.json")
                 into("test-scenarios/scenarios")
             }
             from(rootProject.projectDir.parentFile.resolve("SimulationTest/public/inputs/phase-five-sandbox")) {
                 into("test-scenarios/inputs/phase-five-sandbox")
             }
+            from(rootProject.projectDir.parentFile.resolve("SimulationTest/public/inputs/phase-six-a-sandbox")) {
+                into("test-scenarios/inputs/phase-six-a-sandbox")
+            }
             from(rootProject.projectDir.parentFile.resolve("SimulationTest/public/contracts")) {
                 include("phase-five-*.json")
+                include("phase-six-a-*.json")
                 into("test-scenarios/contracts")
             }
             from(rootProject.projectDir.parentFile.resolve("SimulationTest/public/scenarios/dual-ship-production.json")) {

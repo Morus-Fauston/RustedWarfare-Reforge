@@ -44,7 +44,7 @@ internal class UnitSourceReader(
     private val booleanFields = schema.booleanFields
     private val textFields = schema.textFields
 
-    fun load(path: Path, build: (EffectiveSections) -> UnitDefinition): LoadedUnitContent {
+    fun load(path: Path, retainedFields: Set<String> = emptySet(), build: (EffectiveSections) -> UnitDefinition): LoadedUnitContent {
         val sources = linkedMapOf<Path, ContentSourceIdentity>()
         fun text(source: Path): String {
             if (Thread.currentThread().isInterrupted) throw CancellationException("Content load cancelled")
@@ -66,12 +66,11 @@ internal class UnitSourceReader(
             val original = key?.let { loaded.origins[section to it]
                 ?: if (schema.nativeFormats.isNotEmpty()) loaded.origins["core" to it] else null }
             if (original == null || error.file !in setOf(path.toString(), original.path.toString())) throw failure
-            val context = if ((original.chain.size > 1 || original.section != error.section) && "inheritance=" !in error.reason)
-                "; inheritance=${original.chain.joinToString(" -> ")}; consumer=${if (schema.nativeFormats.isNotEmpty()) key else "[$section].$key"}" else ""
-            throw ContentReadException(error.copy(file = original.path.toString(), section = original.section,
-                field = original.field, reason = error.reason + context))
+            val consumer = if (schema.nativeFormats.isNotEmpty()) key else "[$section].$key"
+            throw ContentReadException(original.locate(error, consumer))
         }
-        val result = LoadedUnitContent(definition, sources.values.toList())
+        val origins = if (retainedFields.isEmpty()) emptyMap() else loaded.origins.filterKeys { it.second in retainedFields }
+        val result = LoadedUnitContent(definition, sources.values.toList(), origins)
         when (val stable = result.verifyStable()) {
             is ContentResult.Failure -> throw ContentReadException(stable.error)
             is ContentResult.Success -> Unit
@@ -120,7 +119,13 @@ internal class UnitSourceReader(
         val declaredControls: Set<String> = emptySet(),
     )
 
-    internal data class Origin(val path: Path, val section: String?, val field: String, val chain: List<Path> = listOf(path))
+    internal data class Origin(val path: Path, val section: String?, val field: String, val chain: List<Path> = listOf(path)) {
+        fun locate(error: ContentError, consumer: String): ContentError {
+            val context = if ((chain.size > 1 || section != error.section) && "inheritance=" !in error.reason)
+                "; inheritance=${chain.joinToString(" -> ")}; consumer=$consumer" else ""
+            return error.copy(file = path.toString(), section = section, field = field, reason = error.reason + context)
+        }
+    }
     private fun origin(path: Path, input: Input, section: String, key: String, chain: List<Path> = listOf(path)): Origin {
         val field = if (input.structured) when (key) {
             "@copyFromSection" -> "copyFromSections"

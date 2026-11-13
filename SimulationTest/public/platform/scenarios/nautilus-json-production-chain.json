@@ -1,0 +1,345 @@
+{
+  "schemaVersion": 1,
+  "scenarioId": "nautilus-json-production-chain",
+  "inputs": "../../inputs/nautilus-production/json",
+  "contentPack": {
+    "directory": "production-package",
+    "unitId": "commandCenter"
+  },
+  "intents": [
+    {
+      "intentId": "select-center",
+      "kind": "select",
+      "waitSteps": 0,
+      "position": {
+        "x": 130,
+        "y": 130
+      }
+    },
+    {
+      "intentId": "produce-worker",
+      "kind": "produce",
+      "waitSteps": 600,
+      "typeId": "builder"
+    },
+    {
+      "intentId": "leave-center",
+      "kind": "select",
+      "waitSteps": 100,
+      "position": {
+        "x": 130,
+        "y": 130
+      }
+    },
+    {
+      "intentId": "select-worker",
+      "kind": "select",
+      "waitSteps": 0,
+      "position": {
+        "x": 129,
+        "y": 220
+      }
+    },
+    {
+      "intentId": "move-worker-shore",
+      "kind": "move",
+      "waitSteps": 600,
+      "position": {
+        "x": 380,
+        "y": 250
+      }
+    },
+    {
+      "intentId": "stop-worker",
+      "kind": "stop",
+      "waitSteps": 40
+    },
+    {
+      "intentId": "build-factory",
+      "kind": "build",
+      "waitSteps": 600,
+      "position": {
+        "x": 450,
+        "y": 250
+      },
+      "typeId": "seaFactory"
+    },
+    {
+      "intentId": "wait-factory",
+      "kind": "select",
+      "waitSteps": 600,
+      "position": {
+        "x": 380,
+        "y": 250
+      }
+    },
+    {
+      "intentId": "finish-factory",
+      "kind": "select",
+      "waitSteps": 600,
+      "position": {
+        "x": 380,
+        "y": 250
+      }
+    },
+    {
+      "intentId": "select-factory",
+      "kind": "select",
+      "waitSteps": 0,
+      "position": {
+        "x": 450,
+        "y": 250
+      }
+    },
+    {
+      "intentId": "upgrade-t2",
+      "kind": "upgrade",
+      "waitSteps": 600,
+      "upgradeId": "upgrade_t2"
+    },
+    {
+      "intentId": "wait-upgrade-0",
+      "kind": "select",
+      "waitSteps": 600,
+      "position": {
+        "x": 450,
+        "y": 250
+      }
+    },
+    {
+      "intentId": "wait-upgrade-1",
+      "kind": "select",
+      "waitSteps": 600,
+      "position": {
+        "x": 450,
+        "y": 250
+      }
+    },
+    {
+      "intentId": "wait-upgrade-2",
+      "kind": "select",
+      "waitSteps": 600,
+      "position": {
+        "x": 450,
+        "y": 250
+      }
+    },
+    {
+      "intentId": "finish-upgrade",
+      "kind": "select",
+      "waitSteps": 200,
+      "position": {
+        "x": 450,
+        "y": 250
+      }
+    },
+    {
+      "intentId": "produce-mother",
+      "kind": "produce",
+      "waitSteps": 600,
+      "typeId": "nautilusSubmarine"
+    },
+    {
+      "intentId": "wait-mother-0",
+      "kind": "select",
+      "waitSteps": 600,
+      "position": {
+        "x": 450,
+        "y": 250
+      }
+    },
+    {
+      "intentId": "wait-mother-1",
+      "kind": "select",
+      "waitSteps": 600,
+      "position": {
+        "x": 450,
+        "y": 250
+      }
+    },
+    {
+      "intentId": "wait-mother-2",
+      "kind": "select",
+      "waitSteps": 600,
+      "position": {
+        "x": 450,
+        "y": 250
+      }
+    },
+    {
+      "intentId": "wait-mother-3",
+      "kind": "select",
+      "waitSteps": 600,
+      "position": {
+        "x": 450,
+        "y": 250
+      }
+    },
+    {
+      "intentId": "wait-mother-4",
+      "kind": "select",
+      "waitSteps": 600,
+      "position": {
+        "x": 450,
+        "y": 250
+      }
+    },
+    {
+      "intentId": "leave-shipyard",
+      "kind": "select",
+      "waitSteps": 600,
+      "position": {
+        "x": 450,
+        "y": 250
+      }
+    },
+    {
+      "intentId": "select-mother",
+      "kind": "select",
+      "waitSteps": 0,
+      "position": {
+        "x": 449,
+        "y": 385
+      }
+    },
+    {
+      "intentId": "queue-hover-1",
+      "kind": "produce",
+      "waitSteps": 0,
+      "typeId": "hoverTank"
+    },
+    {
+      "intentId": "queue-hover-2",
+      "kind": "produce",
+      "waitSteps": 0,
+      "typeId": "hoverTank"
+    },
+    {
+      "intentId": "queue-hover-3",
+      "kind": "produce",
+      "waitSteps": 0,
+      "typeId": "hoverTank"
+    },
+    {
+      "intentId": "queue-hover-4",
+      "kind": "produce",
+      "waitSteps": 0,
+      "typeId": "hoverTank"
+    },
+    {
+      "intentId": "queue-hover-5",
+      "kind": "produce",
+      "waitSteps": 0,
+      "typeId": "hoverTank"
+    },
+    {
+      "intentId": "mobile-production",
+      "kind": "move",
+      "waitSteps": 600,
+      "position": {
+        "x": 600,
+        "y": 385
+      }
+    },
+    {
+      "intentId": "stop-mother",
+      "kind": "stop",
+      "waitSteps": 600
+    },
+    {
+      "intentId": "wait-full-head",
+      "kind": "stop",
+      "waitSteps": 100
+    }
+  ],
+  "waitPlan": {
+    "produce-worker": {
+      "minimumSteps": 600,
+      "timeoutSeconds": 240
+    },
+    "leave-center": {
+      "minimumSteps": 100,
+      "timeoutSeconds": 240
+    },
+    "move-worker-shore": {
+      "minimumSteps": 600,
+      "timeoutSeconds": 240
+    },
+    "stop-worker": {
+      "minimumSteps": 40,
+      "timeoutSeconds": 240
+    },
+    "build-factory": {
+      "minimumSteps": 600,
+      "timeoutSeconds": 240
+    },
+    "wait-factory": {
+      "minimumSteps": 600,
+      "timeoutSeconds": 240
+    },
+    "finish-factory": {
+      "minimumSteps": 600,
+      "timeoutSeconds": 240
+    },
+    "upgrade-t2": {
+      "minimumSteps": 600,
+      "timeoutSeconds": 240
+    },
+    "wait-upgrade-0": {
+      "minimumSteps": 600,
+      "timeoutSeconds": 240
+    },
+    "wait-upgrade-1": {
+      "minimumSteps": 600,
+      "timeoutSeconds": 240
+    },
+    "wait-upgrade-2": {
+      "minimumSteps": 600,
+      "timeoutSeconds": 240
+    },
+    "finish-upgrade": {
+      "minimumSteps": 200,
+      "timeoutSeconds": 240
+    },
+    "produce-mother": {
+      "minimumSteps": 600,
+      "timeoutSeconds": 240
+    },
+    "wait-mother-0": {
+      "minimumSteps": 600,
+      "timeoutSeconds": 240
+    },
+    "wait-mother-1": {
+      "minimumSteps": 600,
+      "timeoutSeconds": 240
+    },
+    "wait-mother-2": {
+      "minimumSteps": 600,
+      "timeoutSeconds": 240
+    },
+    "wait-mother-3": {
+      "minimumSteps": 600,
+      "timeoutSeconds": 240
+    },
+    "wait-mother-4": {
+      "minimumSteps": 600,
+      "timeoutSeconds": 240
+    },
+    "leave-shipyard": {
+      "minimumSteps": 600,
+      "timeoutSeconds": 240
+    },
+    "mobile-production": {
+      "minimumSteps": 600,
+      "timeoutSeconds": 240
+    },
+    "stop-mother": {
+      "minimumSteps": 600,
+      "timeoutSeconds": 240
+    },
+    "wait-full-head": {
+      "minimumSteps": 100,
+      "timeoutSeconds": 240
+    }
+  }
+}

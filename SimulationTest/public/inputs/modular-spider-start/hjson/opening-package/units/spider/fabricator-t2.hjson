@@ -1,0 +1,35 @@
+{
+  "format": "rw-reforge.unit.v1",
+  "core": {
+    "name": "modularSpider_fabricatorT2",
+    "class": "CustomUnitMetadata",
+    "price": 7000,
+    "maxHp": 3000,
+    "radius": 15,
+    "displayRadius": 12,
+    "isUnselectable": true,
+    "canNotBeDirectlyAttacked": false,
+    "selfBuildRate": 0.001,
+    "selfRegenRate": 0.2,
+    "generation_credits": 10,
+    "generation_delay": 40
+  },
+  "graphics": {
+    "image": "fabricator-t2.png",
+    "total_frames": 1
+  },
+  "actions": [
+    {
+      "name": "cancel",
+      "convertTo": "modularSpider_emptySlot",
+      "refundCredits": 7000,
+      "addAllActionCooldownsTime": 120
+    },
+    {
+      "name": "reclaim",
+      "convertTo": "modularSpider_emptySlot",
+      "refundCredits": 3500,
+      "buildSpeed": 180
+    }
+  ]
+}

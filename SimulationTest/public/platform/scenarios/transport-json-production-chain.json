@@ -1,0 +1,286 @@
+{
+  "schemaVersion": 1,
+  "scenarioId": "transport-json-production-chain",
+  "inputs": "../../inputs/transport-production/json",
+  "contentPack": {
+    "directory": "production-package",
+    "unitId": "commandCenter"
+  },
+  "intents": [
+    {
+      "intentId": "select-center",
+      "kind": "select",
+      "waitSteps": 0,
+      "position": {
+        "x": 130,
+        "y": 130
+      }
+    },
+    {
+      "intentId": "produce-worker",
+      "kind": "produce",
+      "waitSteps": 600,
+      "typeId": "builder"
+    },
+    {
+      "intentId": "leave-center",
+      "kind": "select",
+      "waitSteps": 100,
+      "position": {
+        "x": 130,
+        "y": 130
+      }
+    },
+    {
+      "intentId": "select-worker",
+      "kind": "select",
+      "waitSteps": 0,
+      "position": {
+        "x": 129,
+        "y": 220
+      }
+    },
+    {
+      "intentId": "move-worker-shore",
+      "kind": "move",
+      "waitSteps": 600,
+      "position": {
+        "x": 380,
+        "y": 250
+      }
+    },
+    {
+      "intentId": "stop-worker",
+      "kind": "stop",
+      "waitSteps": 40
+    },
+    {
+      "intentId": "build-factory",
+      "kind": "build",
+      "waitSteps": 600,
+      "position": {
+        "x": 450,
+        "y": 250
+      },
+      "typeId": "seaFactory"
+    },
+    {
+      "intentId": "wait-factory",
+      "kind": "select",
+      "waitSteps": 600,
+      "position": {
+        "x": 380,
+        "y": 250
+      }
+    },
+    {
+      "intentId": "finish-factory",
+      "kind": "select",
+      "waitSteps": 600,
+      "position": {
+        "x": 380,
+        "y": 250
+      }
+    },
+    {
+      "intentId": "select-factory",
+      "kind": "select",
+      "waitSteps": 0,
+      "position": {
+        "x": 450,
+        "y": 250
+      }
+    },
+    {
+      "intentId": "produce-craft",
+      "kind": "produce",
+      "waitSteps": 600,
+      "typeId": "hovercraft"
+    },
+    {
+      "intentId": "select-craft",
+      "kind": "select",
+      "waitSteps": 0,
+      "position": {
+        "x": 449,
+        "y": 385
+      }
+    },
+    {
+      "intentId": "approach-worker",
+      "kind": "move",
+      "waitSteps": 600,
+      "position": {
+        "x": 380,
+        "y": 230
+      }
+    },
+    {
+      "intentId": "stop-shore",
+      "kind": "stop",
+      "waitSteps": 40
+    },
+    {
+      "intentId": "board",
+      "kind": "load",
+      "waitSteps": 400,
+      "position": {
+        "x": 380,
+        "y": 250
+      },
+      "direction": "UP"
+    },
+    {
+      "intentId": "cross-water",
+      "kind": "move",
+      "waitSteps": 600,
+      "position": {
+        "x": 520,
+        "y": 400
+      }
+    },
+    {
+      "intentId": "return-land",
+      "kind": "move",
+      "waitSteps": 600,
+      "position": {
+        "x": 300,
+        "y": 250
+      }
+    },
+    {
+      "intentId": "stop-land",
+      "kind": "stop",
+      "waitSteps": 40
+    },
+    {
+      "intentId": "start-unload",
+      "kind": "unload",
+      "waitSteps": 0,
+      "unloading": true
+    },
+    {
+      "intentId": "cancel-unload",
+      "kind": "unload",
+      "waitSteps": 0,
+      "unloading": false
+    },
+    {
+      "intentId": "resume-unload",
+      "kind": "unload",
+      "waitSteps": 100,
+      "unloading": true
+    }
+  ],
+  "windowsPausedIntents": [
+    "start-unload",
+    "cancel-unload"
+  ],
+  "windowsWaits": {
+    "produce-worker": {
+      "rate": 4,
+      "progressOnly": true,
+      "maximumSimulationSteps": 780,
+      "stallSeconds": 20,
+      "maximumWallSeconds": 60
+    },
+    "leave-center": {
+      "rate": 4,
+      "progressOnly": true,
+      "maximumSimulationSteps": 280,
+      "stallSeconds": 20,
+      "maximumWallSeconds": 60
+    },
+    "move-worker-shore": {
+      "rate": 4,
+      "progressOnly": true,
+      "maximumSimulationSteps": 780,
+      "stallSeconds": 20,
+      "maximumWallSeconds": 60
+    },
+    "stop-worker": {
+      "rate": 4,
+      "progressOnly": true,
+      "maximumSimulationSteps": 220,
+      "stallSeconds": 20,
+      "maximumWallSeconds": 60
+    },
+    "build-factory": {
+      "rate": 4,
+      "progressOnly": true,
+      "maximumSimulationSteps": 780,
+      "stallSeconds": 20,
+      "maximumWallSeconds": 60
+    },
+    "wait-factory": {
+      "rate": 4,
+      "progressOnly": true,
+      "maximumSimulationSteps": 780,
+      "stallSeconds": 20,
+      "maximumWallSeconds": 60
+    },
+    "finish-factory": {
+      "rate": 4,
+      "progressOnly": true,
+      "maximumSimulationSteps": 780,
+      "stallSeconds": 20,
+      "maximumWallSeconds": 60
+    },
+    "produce-craft": {
+      "rate": 4,
+      "progressOnly": true,
+      "maximumSimulationSteps": 780,
+      "stallSeconds": 20,
+      "maximumWallSeconds": 60
+    },
+    "approach-worker": {
+      "rate": 4,
+      "progressOnly": true,
+      "maximumSimulationSteps": 780,
+      "stallSeconds": 20,
+      "maximumWallSeconds": 60
+    },
+    "stop-shore": {
+      "rate": 4,
+      "progressOnly": true,
+      "maximumSimulationSteps": 220,
+      "stallSeconds": 20,
+      "maximumWallSeconds": 60
+    },
+    "board": {
+      "rate": 4,
+      "progressOnly": true,
+      "maximumSimulationSteps": 580,
+      "stallSeconds": 20,
+      "maximumWallSeconds": 60
+    },
+    "cross-water": {
+      "rate": 4,
+      "progressOnly": true,
+      "maximumSimulationSteps": 780,
+      "stallSeconds": 20,
+      "maximumWallSeconds": 60
+    },
+    "return-land": {
+      "rate": 4,
+      "progressOnly": true,
+      "maximumSimulationSteps": 780,
+      "stallSeconds": 20,
+      "maximumWallSeconds": 60
+    },
+    "stop-land": {
+      "rate": 4,
+      "progressOnly": true,
+      "maximumSimulationSteps": 220,
+      "stallSeconds": 20,
+      "maximumWallSeconds": 60
+    },
+    "resume-unload": {
+      "rate": 4,
+      "progressOnly": true,
+      "maximumSimulationSteps": 280,
+      "stallSeconds": 20,
+      "maximumWallSeconds": 60
+    }
+  }
+}

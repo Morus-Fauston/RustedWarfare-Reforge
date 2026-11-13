@@ -1,0 +1,135 @@
+{
+  "schemaVersion": 1,
+  "kind": "behavior-contract",
+  "contractId": "public.bunker-json.short.contract.v1",
+  "scope": "self-behavior",
+  "scenarioIds": [
+    "p009-bunker-actions"
+  ],
+  "comparison": {
+    "numberMode": "declared-per-field",
+    "tolerances": {}
+  },
+  "approval": {
+    "status": "tool-fixture-only",
+    "source": "ENG-P009-011 qualified static normal action facts; owned self-behavior only"
+  },
+  "exclusions": [
+    "original-compatibility",
+    "platform-input",
+    "performance"
+  ],
+  "rules": [
+    {
+      "ruleId": "first-progress",
+      "when": {
+        "phase": "after-advance",
+        "stepIndex": 0
+      },
+      "assertions": [
+        {
+          "path": "units.a.type",
+          "operator": "equals",
+          "value": "mechBunker"
+        },
+        {
+          "path": "units.a.unitActions.actions.deploy.progress",
+          "operator": "equals",
+          "value": 0.006
+        }
+      ]
+    },
+    {
+      "ruleId": "not-yet-fixed",
+      "when": {
+        "phase": "after-advance",
+        "stepIndex": 165
+      },
+      "assertions": [
+        {
+          "path": "units.a.type",
+          "operator": "equals",
+          "value": "mechBunker"
+        }
+      ]
+    },
+    {
+      "ruleId": "fixed",
+      "when": {
+        "phase": "after-advance",
+        "stepIndex": 166
+      },
+      "assertions": [
+        {
+          "path": "units.a.type",
+          "operator": "equals",
+          "value": "mechBunkerDeployed"
+        },
+        {
+          "path": "units.a.shield.current",
+          "operator": "equals",
+          "value": 0
+        },
+        {
+          "path": "units.a.health",
+          "operator": "equals",
+          "value": 800
+        }
+      ]
+    },
+    {
+      "ruleId": "not-yet-mobile",
+      "when": {
+        "phase": "after-advance",
+        "stepIndex": 299
+      },
+      "assertions": [
+        {
+          "path": "units.a.type",
+          "operator": "equals",
+          "value": "mechBunkerDeployed"
+        }
+      ]
+    },
+    {
+      "ruleId": "mobile",
+      "when": {
+        "phase": "after-advance",
+        "stepIndex": 300
+      },
+      "assertions": [
+        {
+          "path": "units.a.type",
+          "operator": "equals",
+          "value": "mechBunker"
+        },
+        {
+          "path": "units.a.shield",
+          "operator": "absent-or-null",
+          "value": null
+        },
+        {
+          "path": "units.a.health",
+          "operator": "equals",
+          "value": 800
+        }
+      ]
+    }
+  ],
+  "unitActionConversions": [
+    {
+      "unitId": "a",
+      "actionId": "deploy",
+      "sourceTypeId": "mechBunker",
+      "targetTypeId": "mechBunkerDeployed",
+      "completionStepIndex": 166
+    },
+    {
+      "unitId": "a",
+      "actionId": "undeploy",
+      "sourceTypeId": "mechBunkerDeployed",
+      "targetTypeId": "mechBunker",
+      "completionStepIndex": 300
+    }
+  ]
+}

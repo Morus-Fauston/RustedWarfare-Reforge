@@ -88,7 +88,7 @@ class DefensePrivacyTest {
                 assertEquals(1f, changed.observePlayer(changed.world, "p2").units.single { it.unitId == shield }.pointDefense!!.energy)
                 val balance = changed.observePlayer(changed.world, "p2").credits!!
                 fun reclaim(target: String, index: Int) {
-                    assertIs<ActionResult.Accepted>(changed.submit(ReclaimBuildingAction("hidden-reclaim-$index", "p2", "worker", target, changed.world)))
+                    assertIs<ActionResult.Accepted>(changed.submit(ReclaimUnitAction("hidden-reclaim-$index", "p2", "worker", target, changed.world)))
                     compare()
                     var terminalEvents = 0
                     var ticks = 0

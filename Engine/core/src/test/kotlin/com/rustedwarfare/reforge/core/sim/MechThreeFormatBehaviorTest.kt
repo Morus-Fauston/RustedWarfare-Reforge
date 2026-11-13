@@ -17,7 +17,8 @@ class MechThreeFormatBehaviorTest {
                 unitDefinitions = mapOf("mech" to mech),
                 units = listOf(UnitSpawn("u1", "p1", "mech", Position(100.0, 100.0), 90.0),
                     UnitSpawn("u2", "p2", "mech", Position(200.0, 100.0), 270.0)),
-                combatContract = CombatContract(12345, -1, mapOf("u1" to 8L, "u2" to 9L), 10L))
+                combatContract = CombatContract(12345, -1, mapOf("u1" to 8L, "u2" to 9L), 10L),
+                economyContract = EconomyContract(mapOf("p1" to 0L, "p2" to 0L)))
             val context = assertIs<InitResult.Accepted>(SimulationContext.initialize(scene), format).context
             try {
                 var born = false

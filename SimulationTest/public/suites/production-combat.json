@@ -62,6 +62,7 @@
       "com.rustedwarfare.reforge.core.content.MechInputFailureTest",
       "com.rustedwarfare.reforge.core.sim.ArmedMechCombatTest",
       "com.rustedwarfare.reforge.core.sim.MechBodyTest",
+      "com.rustedwarfare.reforge.core.sim.ModularSpiderBlinkTest",
       "com.rustedwarfare.reforge.core.sim.MechFactoryFailureTest",
       "com.rustedwarfare.reforge.core.sim.MechFactoryDirectHitTest",
       "com.rustedwarfare.reforge.core.sim.MechFactoryProductionTest",
@@ -135,7 +136,162 @@
       "com.rustedwarfare.reforge.core.content.AuthorUpgradeContentTest",
       "com.rustedwarfare.reforge.core.sim.AuthorFactoryUpgradeTest",
       "com.rustedwarfare.reforge.core.sim.AuthorUpgradeLifecycleTest",
-      "com.rustedwarfare.reforge.core.sim.AuthorShoreConstructionTest"
+      "com.rustedwarfare.reforge.core.sim.AuthorShoreConstructionTest",
+      "com.rustedwarfare.reforge.core.content.HoverContentTest",
+      "com.rustedwarfare.reforge.core.content.HoverTerrainTest",
+      "com.rustedwarfare.reforge.core.content.OverCliffTerrainTest",
+      "com.rustedwarfare.reforge.core.sim.OverCliffMotionTest",
+      "com.rustedwarfare.reforge.core.sim.OverCliffKnowledgeTest",
+      "com.rustedwarfare.reforge.core.sim.HoverKnowledgeTest",
+      "com.rustedwarfare.reforge.core.sim.HoverMotionTest",
+      "com.rustedwarfare.reforge.core.sim.HoverProductionTest",
+      "com.rustedwarfare.reforge.core.sim.HoverSoundTest",
+      "com.rustedwarfare.reforge.core.sim.HoverSinkingTest",
+      "com.rustedwarfare.reforge.core.sim.HoverBoundaryTest",
+      "com.rustedwarfare.reforge.core.sim.HoverTargetTest",
+      "com.rustedwarfare.reforge.core.sim.ShieldCombatTest",
+      "com.rustedwarfare.reforge.core.sim.ShieldLifecycleTest",
+      "com.rustedwarfare.reforge.core.sim.ShieldValidationTest",
+      "com.rustedwarfare.reforge.core.sim.ShieldVisibilityTest",
+      "com.rustedwarfare.reforge.core.content.SubmarineContentTest",
+      "com.rustedwarfare.reforge.core.sim.SubmarineActionTest",
+      "com.rustedwarfare.reforge.core.sim.SubmarineCombatLifecycleTest",
+      "com.rustedwarfare.reforge.core.sim.SubmarineDeathTest",
+      "com.rustedwarfare.reforge.core.sim.SubmarineDefinitionValidationTest",
+      "com.rustedwarfare.reforge.core.sim.SubmarineFailureTest",
+      "com.rustedwarfare.reforge.core.sim.SubmarineMotionTest",
+      "com.rustedwarfare.reforge.core.sim.SubmarineProductionTest",
+      "com.rustedwarfare.reforge.core.sim.SubmarineProjectilePresentationTest",
+      "com.rustedwarfare.reforge.core.sim.SubmarineProjectionTest",
+      "com.rustedwarfare.reforge.core.sim.SubmarineSpeedTest",
+      "com.rustedwarfare.reforge.core.sim.SubmarineTargetTest",
+      "com.rustedwarfare.reforge.core.sim.SubmarineTransactionTest",
+      "com.rustedwarfare.reforge.core.sim.SubmarineWeaponTest",
+      "com.rustedwarfare.reforge.core.content.AirFactoryUpgradeContentTest",
+      "com.rustedwarfare.reforge.core.content.AmphibiousContentFailureTest",
+      "com.rustedwarfare.reforge.core.content.AmphibiousJetContentTest",
+      "com.rustedwarfare.reforge.core.sim.AmphibiousDefinitionValidationTest",
+      "com.rustedwarfare.reforge.core.sim.AmphibiousFactoryFailureTest",
+      "com.rustedwarfare.reforge.core.sim.AmphibiousJetActionTest",
+      "com.rustedwarfare.reforge.core.sim.AmphibiousJetDamageTest",
+      "com.rustedwarfare.reforge.core.sim.AmphibiousJetDeathTest",
+      "com.rustedwarfare.reforge.core.sim.AmphibiousJetHeightTest",
+      "com.rustedwarfare.reforge.core.sim.AmphibiousJetLightningTest",
+      "com.rustedwarfare.reforge.core.sim.AmphibiousJetLightningVisibilityTest",
+      "com.rustedwarfare.reforge.core.sim.AmphibiousJetMountTest",
+      "com.rustedwarfare.reforge.core.sim.AmphibiousJetMovementTest",
+      "com.rustedwarfare.reforge.core.sim.AmphibiousJetProductionTest",
+      "com.rustedwarfare.reforge.core.sim.AmphibiousJetProjectionTest",
+      "com.rustedwarfare.reforge.core.sim.AmphibiousJetRangeTest",
+      "com.rustedwarfare.reforge.core.sim.AmphibiousJetRecoveryTest",
+      "com.rustedwarfare.reforge.core.sim.AmphibiousJetReverseTest",
+      "com.rustedwarfare.reforge.core.sim.AmphibiousJetTargetTest",
+      "com.rustedwarfare.reforge.core.sim.AmphibiousJetTransactionTest",
+      "com.rustedwarfare.reforge.core.sim.AmphibiousJetTurretTest",
+      "com.rustedwarfare.reforge.core.content.LandingCraftContentTest",
+      "com.rustedwarfare.reforge.core.sim.LandingCraftActivityTest",
+      "com.rustedwarfare.reforge.core.sim.LandingCraftAdmissionTest",
+      "com.rustedwarfare.reforge.core.sim.LandingCraftApproachTest",
+      "com.rustedwarfare.reforge.core.sim.LandingCraftAreaEligibilityTest",
+      "com.rustedwarfare.reforge.core.sim.LandingCraftBlockedUnloadTest",
+      "com.rustedwarfare.reforge.core.sim.LandingCraftCapacityTest",
+      "com.rustedwarfare.reforge.core.sim.LandingCraftDeathTest",
+      "com.rustedwarfare.reforge.core.sim.LandingCraftDefinitionTest",
+      "com.rustedwarfare.reforge.core.sim.LandingCraftExitStateTest",
+      "com.rustedwarfare.reforge.core.sim.LandingCraftLoadingTest",
+      "com.rustedwarfare.reforge.core.sim.LandingCraftMapEdgeTest",
+      "com.rustedwarfare.reforge.core.sim.LandingCraftMovementTest",
+      "com.rustedwarfare.reforge.core.sim.LandingCraftProductionTest",
+      "com.rustedwarfare.reforge.core.sim.LandingCraftProjectionTest",
+      "com.rustedwarfare.reforge.core.sim.LandingCraftReboardingTest",
+      "com.rustedwarfare.reforge.core.sim.LandingCraftShoreLoadingTest",
+      "com.rustedwarfare.reforge.core.sim.LandingCraftTransactionTest",
+      "com.rustedwarfare.reforge.core.sim.LandingCraftUnloadGateTest",
+      "com.rustedwarfare.reforge.core.sim.LandingCraftUnloadingTest",
+      "com.rustedwarfare.reforge.core.content.DropshipContentFailureTest",
+      "com.rustedwarfare.reforge.core.content.DropshipContentTest",
+      "com.rustedwarfare.reforge.core.content.DropshipPackContentTest",
+      "com.rustedwarfare.reforge.core.sim.DropshipBlockedUnloadTest",
+      "com.rustedwarfare.reforge.core.sim.DropshipDeathTest",
+      "com.rustedwarfare.reforge.core.sim.DropshipEnvironmentTest",
+      "com.rustedwarfare.reforge.core.sim.DropshipExitTest",
+      "com.rustedwarfare.reforge.core.sim.DropshipHeightTest",
+      "com.rustedwarfare.reforge.core.sim.DropshipMovementTest",
+      "com.rustedwarfare.reforge.core.sim.DropshipPlayerProjectionTest",
+      "com.rustedwarfare.reforge.core.sim.DropshipProductionTest",
+      "com.rustedwarfare.reforge.core.sim.DropshipTransactionTest",
+      "com.rustedwarfare.reforge.core.sim.DropshipUnloadingTest",
+      "com.rustedwarfare.reforge.core.content.DropshipFactoryFailureTest",
+      "com.rustedwarfare.reforge.core.content.AaBeamContentTest",
+      "com.rustedwarfare.reforge.core.sim.AaBeamAdmissionTest",
+      "com.rustedwarfare.reforge.core.sim.AaBeamDamageBoundaryTest",
+      "com.rustedwarfare.reforge.core.sim.AaBeamDeathTest",
+      "com.rustedwarfare.reforge.core.sim.AaBeamEnergyTest",
+      "com.rustedwarfare.reforge.core.sim.AaBeamFlightTest",
+      "com.rustedwarfare.reforge.core.sim.AaBeamLifecycleTest",
+      "com.rustedwarfare.reforge.core.sim.AaBeamProductionTest",
+      "com.rustedwarfare.reforge.core.sim.AaBeamProjectileTest",
+      "com.rustedwarfare.reforge.core.sim.AaBeamTargetTest",
+      "com.rustedwarfare.reforge.core.content.AfterburnContentTest",
+      "com.rustedwarfare.reforge.core.sim.AfterburnActionTest",
+      "com.rustedwarfare.reforge.core.sim.AfterburnLifecycleTest",
+      "com.rustedwarfare.reforge.core.content.BunkerContentTest",
+      "com.rustedwarfare.reforge.core.sim.BunkerActionTest",
+      "com.rustedwarfare.reforge.core.sim.BunkerFootprintTest",
+      "com.rustedwarfare.reforge.core.sim.BunkerHeightTest",
+      "com.rustedwarfare.reforge.core.sim.BunkerLifecycleTest",
+      "com.rustedwarfare.reforge.core.sim.BunkerProductionTest",
+      "com.rustedwarfare.reforge.core.sim.BunkerTransactionTest",
+      "com.rustedwarfare.reforge.core.sim.BunkerValidationTest",
+      "com.rustedwarfare.reforge.core.sim.BunkerWeaponTest",
+      "com.rustedwarfare.reforge.core.content.RepairBayContentTest",
+      "com.rustedwarfare.reforge.core.sim.RepairBayAdmissionTest",
+      "com.rustedwarfare.reforge.core.sim.RepairBayConstructionTest",
+      "com.rustedwarfare.reforge.core.sim.RepairBayWorkTest",
+      "com.rustedwarfare.reforge.core.content.MechEngineerContentTest",
+      "com.rustedwarfare.reforge.core.sim.MechEngineerAdmissionTest",
+      "com.rustedwarfare.reforge.core.sim.MechEngineerCombatTest",
+      "com.rustedwarfare.reforge.core.sim.MechEngineerProductionTest",
+      "com.rustedwarfare.reforge.core.sim.MechEngineerTransactionTest",
+      "com.rustedwarfare.reforge.core.sim.MechEngineerWorkTest",
+      "com.rustedwarfare.reforge.core.sim.SelfRegenerationTest",
+      "com.rustedwarfare.reforge.core.content.NautilusContentTest",
+      "com.rustedwarfare.reforge.core.sim.NautilusAdmissionTest",
+      "com.rustedwarfare.reforge.core.sim.NautilusAcquisitionTest",
+      "com.rustedwarfare.reforge.core.sim.NautilusCapacityTest",
+      "com.rustedwarfare.reforge.core.sim.NautilusDeathTest",
+      "com.rustedwarfare.reforge.core.sim.NautilusExitTest",
+      "com.rustedwarfare.reforge.core.sim.NautilusHeightTest",
+      "com.rustedwarfare.reforge.core.sim.NautilusPermissionsTest",
+      "com.rustedwarfare.reforge.core.sim.NautilusProductionTest",
+      "com.rustedwarfare.reforge.core.sim.NautilusTransactionTest",
+      "com.rustedwarfare.reforge.core.content.NautilusFormsContentTest",
+      "com.rustedwarfare.reforge.core.content.NautilusLandFactoryContentTest",
+      "com.rustedwarfare.reforge.core.content.NautilusLegContentTest",
+      "com.rustedwarfare.reforge.core.content.NautilusWeaponContentTest",
+      "com.rustedwarfare.reforge.core.content.OverCliffWaterTerrainTest",
+      "com.rustedwarfare.reforge.core.sim.NautilusActionAdmissionTest",
+      "com.rustedwarfare.reforge.core.sim.NautilusAutomaticConversionTest",
+      "com.rustedwarfare.reforge.core.sim.NautilusConversionTest",
+      "com.rustedwarfare.reforge.core.sim.NautilusEnergyLifecycleTest",
+      "com.rustedwarfare.reforge.core.sim.NautilusFormsAdmissionTest",
+      "com.rustedwarfare.reforge.core.sim.NautilusFormsHeightTest",
+      "com.rustedwarfare.reforge.core.sim.NautilusLandDeathTest",
+      "com.rustedwarfare.reforge.core.sim.NautilusLandFactoryProductionTest",
+      "com.rustedwarfare.reforge.core.sim.NautilusLegPoseTest",
+      "com.rustedwarfare.reforge.core.sim.NautilusLockedLegTest",
+      "com.rustedwarfare.reforge.core.sim.NautilusSharedQueueTest",
+      "com.rustedwarfare.reforge.core.sim.NautilusShoreRouteTest",
+      "com.rustedwarfare.reforge.core.sim.NautilusSurfaceLoadingTest",
+      "com.rustedwarfare.reforge.core.sim.NautilusSurfaceProductionTest",
+      "com.rustedwarfare.reforge.core.sim.NautilusSurfaceUnloadTest",
+      "com.rustedwarfare.reforge.core.sim.NautilusTargetCategoryTest",
+      "com.rustedwarfare.reforge.core.sim.NautilusTorpedoTest",
+      "com.rustedwarfare.reforge.core.content.AntiNuclearSiloContentTest",
+      "com.rustedwarfare.reforge.core.sim.AntiNuclearSiloTest",
+      "com.rustedwarfare.reforge.core.content.NuclearSiloContentTest",
+      "com.rustedwarfare.reforge.core.sim.NuclearSiloTest",
+      "com.rustedwarfare.reforge.core.sim.NuclearSiloSafetyTest"
     ],
     "client": [
       "com.rustedwarfare.reforge.client.CombatActorEvidenceTest",
@@ -169,7 +325,46 @@
       "com.rustedwarfare.reforge.client.AuthorUpgradeSandboxTest",
       "com.rustedwarfare.reforge.client.AuthorShoreSandboxTest",
       "com.rustedwarfare.reforge.client.AuthorNavalChainSandboxTest",
-      "com.rustedwarfare.reforge.client.PhaseFiveSandboxTest"
+      "com.rustedwarfare.reforge.client.PhaseFiveSandboxTest",
+      "com.rustedwarfare.reforge.client.PhaseSixASandboxTest",
+      "com.rustedwarfare.reforge.client.HoverProjectionTest",
+      "com.rustedwarfare.reforge.client.HoverProductionSandboxTest",
+      "com.rustedwarfare.reforge.client.ShieldPresentationTest",
+      "com.rustedwarfare.reforge.client.ShieldResourceBindingTest",
+      "com.rustedwarfare.reforge.client.SubmarineDepthInputTest",
+      "com.rustedwarfare.reforge.client.SubmarineEvidenceTest",
+      "com.rustedwarfare.reforge.client.SubmarinePairedSceneTest",
+      "com.rustedwarfare.reforge.client.SubmarineProductionSandboxTest",
+      "com.rustedwarfare.reforge.client.AmphibiousEvidenceTest",
+      "com.rustedwarfare.reforge.client.AmphibiousFlightInputTest",
+      "com.rustedwarfare.reforge.client.AmphibiousFlightMenuTest",
+      "com.rustedwarfare.reforge.client.AmphibiousPresentationTest",
+      "com.rustedwarfare.reforge.client.AmphibiousProductionSandboxTest",
+      "com.rustedwarfare.reforge.client.AmphibiousResourceBindingTest",
+      "com.rustedwarfare.reforge.client.LandingCraftCommandTest",
+      "com.rustedwarfare.reforge.client.LandingCraftEvidenceTest",
+      "com.rustedwarfare.reforge.client.LandingCraftProductionSandboxTest",
+      "com.rustedwarfare.reforge.client.LandingCraftUnloadInputTest",
+      "com.rustedwarfare.reforge.client.LandingCraftUnloadMenuTest",
+      "com.rustedwarfare.reforge.client.DropshipProductionSandboxTest",
+      "com.rustedwarfare.reforge.client.DropshipProjectionTest",
+      "com.rustedwarfare.reforge.client.DropshipUnloadMenuTest",
+      "com.rustedwarfare.reforge.client.AaBeamPresentationTest",
+      "com.rustedwarfare.reforge.client.AaBeamSandboxTest",
+      "com.rustedwarfare.reforge.client.AfterburnInputTest",
+      "com.rustedwarfare.reforge.client.AfterburnTrailTest",
+      "com.rustedwarfare.reforge.client.BunkerProjectionTest",
+      "com.rustedwarfare.reforge.client.BunkerSandboxTest",
+      "com.rustedwarfare.reforge.client.RepairBaySandboxTest",
+      "com.rustedwarfare.reforge.client.MechEngineerSandboxTest",
+      "com.rustedwarfare.reforge.client.NautilusSandboxTest",
+      "com.rustedwarfare.reforge.client.NautilusMenuTest",
+      "com.rustedwarfare.reforge.client.NautilusFormsMenuTest",
+      "com.rustedwarfare.reforge.client.NautilusNativePanelTest",
+      "com.rustedwarfare.reforge.client.NautilusLandSandboxTest",
+      "com.rustedwarfare.reforge.client.AntiNuclearSiloSandboxTest",
+      "com.rustedwarfare.reforge.client.NuclearSiloSandboxTest",
+      "com.rustedwarfare.reforge.client.NuclearPresentationTest"
     ],
     "pc": [
       "com.rustedwarfare.reforge.pc.PatrolJsonlPairingTest",
@@ -181,7 +376,20 @@
       "com.rustedwarfare.reforge.pc.HeavyMechResourceApplicationTest",
       "com.rustedwarfare.reforge.pc.NavalBaseSoundTest",
       "com.rustedwarfare.reforge.pc.NavalOriginalProfileTest",
-      "com.rustedwarfare.reforge.pc.NavalTerrainAppearanceTest"
+      "com.rustedwarfare.reforge.pc.NavalTerrainAppearanceTest",
+      "com.rustedwarfare.reforge.pc.HoverOriginalProfileTest",
+      "com.rustedwarfare.reforge.pc.ShieldOriginalProfileTest",
+      "com.rustedwarfare.reforge.pc.SubmarineOriginalProfileTest",
+      "com.rustedwarfare.reforge.pc.AmphibiousOriginalProfileTest",
+      "com.rustedwarfare.reforge.pc.LandingCraftOriginalProfileTest",
+      "com.rustedwarfare.reforge.pc.DropshipOriginalProfileTest",
+      "com.rustedwarfare.reforge.pc.AaBeamOriginalProfileTest",
+      "com.rustedwarfare.reforge.pc.BunkerOriginalProfileTest",
+      "com.rustedwarfare.reforge.pc.RepairBayOriginalProfileTest",
+      "com.rustedwarfare.reforge.pc.MechEngineerOriginalProfileTest",
+      "com.rustedwarfare.reforge.pc.NautilusOriginalProfileTest",
+      "com.rustedwarfare.reforge.pc.NuclearOriginalProfileTest",
+      "com.rustedwarfare.reforge.pc.NuclearBaseSoundTest"
     ],
     "tools": [
       "com.rustedwarfare.reforge.testing.ProductionCombatScenarioTest",
@@ -211,10 +419,58 @@
       "com.rustedwarfare.reforge.testing.AuthorNavalChainSessionTest",
       "com.rustedwarfare.reforge.testing.RunnerToolCostTest",
       "com.rustedwarfare.reforge.testing.perf.WholeChainToolCostTest",
-      "com.rustedwarfare.reforge.testing.PhaseFiveArchiveTest"
+      "com.rustedwarfare.reforge.testing.PhaseFiveArchiveTest",
+      "com.rustedwarfare.reforge.testing.HoverArchiveTest",
+      "com.rustedwarfare.reforge.testing.ShieldArchiveTest",
+      "com.rustedwarfare.reforge.testing.SubmarineArchiveTest",
+      "com.rustedwarfare.reforge.testing.SubmarineCoreAdapterTest",
+      "com.rustedwarfare.reforge.testing.SubmarinePlayerArchiveTest",
+      "com.rustedwarfare.reforge.testing.SubmarineProductionSessionTest",
+      "com.rustedwarfare.reforge.testing.SubmarinePublicScenarioTest",
+      "com.rustedwarfare.reforge.testing.AmphibiousArchiveTest",
+      "com.rustedwarfare.reforge.testing.AmphibiousCoreAdapterTest",
+      "com.rustedwarfare.reforge.testing.AmphibiousLightningArchiveTest",
+      "com.rustedwarfare.reforge.testing.AmphibiousProductionSessionTest",
+      "com.rustedwarfare.reforge.testing.AmphibiousPublicScenarioTest",
+      "com.rustedwarfare.reforge.testing.LandingCraftArchiveTest",
+      "com.rustedwarfare.reforge.testing.LandingCraftPairedSessionTest",
+      "com.rustedwarfare.reforge.testing.LandingCraftPlayerArchiveTest",
+      "com.rustedwarfare.reforge.testing.LandingCraftProductionSessionTest",
+      "com.rustedwarfare.reforge.testing.LandingCraftPublicScenarioTest",
+      "com.rustedwarfare.reforge.testing.DropshipArchiveTest",
+      "com.rustedwarfare.reforge.testing.DropshipPairedSessionTest",
+      "com.rustedwarfare.reforge.testing.DropshipPlayerArchiveTest",
+      "com.rustedwarfare.reforge.testing.DropshipProductionSessionTest",
+      "com.rustedwarfare.reforge.testing.DropshipPublicScenarioTest",
+      "com.rustedwarfare.reforge.testing.AaBeamArchiveTest",
+      "com.rustedwarfare.reforge.testing.AaBeamProductionSessionTest",
+      "com.rustedwarfare.reforge.testing.AfterburnArchiveTest",
+      "com.rustedwarfare.reforge.testing.AfterburnProductionSessionTest",
+      "com.rustedwarfare.reforge.testing.BunkerArchiveTest",
+      "com.rustedwarfare.reforge.testing.BunkerProductionSessionTest",
+      "com.rustedwarfare.reforge.testing.RepairBayArchiveTest",
+      "com.rustedwarfare.reforge.testing.RepairBayProductionSessionTest",
+      "com.rustedwarfare.reforge.testing.MechEngineerArchiveTest",
+      "com.rustedwarfare.reforge.testing.MechEngineerProductionSessionTest",
+      "com.rustedwarfare.reforge.testing.NautilusArchiveTest",
+      "com.rustedwarfare.reforge.testing.NautilusProductionSessionTest",
+      "com.rustedwarfare.reforge.testing.NuclearSiloArchiveTest",
+      "com.rustedwarfare.reforge.testing.NuclearSiloProductionSessionTest"
     ]
   },
   "short": [
+    {
+      "id": "phase-six-a-default",
+      "backend": "session",
+      "scenario": "scenarios/phase-six-a-json.json",
+      "contract": "contracts/phase-six-a-json.json"
+    },
+    {
+      "id": "phase-six-a-spider",
+      "backend": "session",
+      "scenario": "scenarios/phase-six-a-spider-json.json",
+      "contract": "contracts/phase-six-a-spider-json.json"
+    },
     {
       "id": "production-combat-short",
       "scenario": "scenarios/production-combat-short.json",
@@ -659,9 +915,465 @@
       "id": "phase-five-mixed-start-short",
       "scenario": "scenarios/phase-five-mixed-start-short.json",
       "contract": "contracts/phase-five-mixed-start-short.json"
+    },
+    {
+      "id": "submarine-ini-core-short",
+      "backend": "core",
+      "scenario": "scenarios/submarine-ini-short.json",
+      "contract": "contracts/submarine-ini-short.json"
+    },
+    {
+      "id": "submarine-ini-session-short",
+      "backend": "session",
+      "scenario": "scenarios/submarine-ini-short.json",
+      "contract": "platform/contracts/submarine-ini-paired-short.json"
+    },
+    {
+      "id": "submarine-json-core-short",
+      "backend": "core",
+      "scenario": "scenarios/submarine-json-short.json",
+      "contract": "contracts/submarine-json-short.json"
+    },
+    {
+      "id": "submarine-json-session-short",
+      "backend": "session",
+      "scenario": "scenarios/submarine-json-short.json",
+      "contract": "platform/contracts/submarine-json-paired-short.json"
+    },
+    {
+      "id": "submarine-hjson-core-short",
+      "backend": "core",
+      "scenario": "scenarios/submarine-hjson-short.json",
+      "contract": "contracts/submarine-hjson-short.json"
+    },
+    {
+      "id": "submarine-hjson-session-short",
+      "backend": "session",
+      "scenario": "scenarios/submarine-hjson-short.json",
+      "contract": "platform/contracts/submarine-hjson-paired-short.json"
+    },
+    {
+      "id": "amphibious-ini-short",
+      "backend": "core",
+      "scenario": "scenarios/amphibious-ini-short.json",
+      "contract": "contracts/amphibious-ini-short.json"
+    },
+    {
+      "id": "amphibious-ini-production-chain",
+      "backend": "session",
+      "scenario": "platform/scenarios/amphibious-ini-production-chain.json",
+      "contract": "platform/contracts/amphibious-ini-production-chain.json"
+    },
+    {
+      "id": "amphibious-json-short",
+      "backend": "core",
+      "scenario": "scenarios/amphibious-json-short.json",
+      "contract": "contracts/amphibious-json-short.json"
+    },
+    {
+      "id": "amphibious-json-production-chain",
+      "backend": "session",
+      "scenario": "platform/scenarios/amphibious-json-production-chain.json",
+      "contract": "platform/contracts/amphibious-json-production-chain.json"
+    },
+    {
+      "id": "amphibious-hjson-short",
+      "backend": "core",
+      "scenario": "scenarios/amphibious-hjson-short.json",
+      "contract": "contracts/amphibious-hjson-short.json"
+    },
+    {
+      "id": "amphibious-hjson-production-chain",
+      "backend": "session",
+      "scenario": "platform/scenarios/amphibious-hjson-production-chain.json",
+      "contract": "platform/contracts/amphibious-hjson-production-chain.json"
+    },
+    {
+      "id": "transport-ini-short",
+      "backend": "core",
+      "scenario": "scenarios/transport-ini-short.json",
+      "contract": "contracts/transport-ini-short.json"
+    },
+    {
+      "id": "transport-ini-production-chain",
+      "backend": "session",
+      "scenario": "platform/scenarios/transport-ini-production-chain.json",
+      "contract": "platform/contracts/transport-ini-production-chain.json"
+    },
+    {
+      "id": "transport-json-short",
+      "backend": "core",
+      "scenario": "scenarios/transport-json-short.json",
+      "contract": "contracts/transport-json-short.json"
+    },
+    {
+      "id": "transport-json-production-chain",
+      "backend": "session",
+      "scenario": "platform/scenarios/transport-json-production-chain.json",
+      "contract": "platform/contracts/transport-json-production-chain.json"
+    },
+    {
+      "id": "transport-hjson-short",
+      "backend": "core",
+      "scenario": "scenarios/transport-hjson-short.json",
+      "contract": "contracts/transport-hjson-short.json"
+    },
+    {
+      "id": "transport-hjson-production-chain",
+      "backend": "session",
+      "scenario": "platform/scenarios/transport-hjson-production-chain.json",
+      "contract": "platform/contracts/transport-hjson-production-chain.json"
+    },
+    {
+      "id": "air-transport-ini-short",
+      "backend": "core",
+      "scenario": "scenarios/air-transport-ini-short.json",
+      "contract": "contracts/air-transport-ini-short.json"
+    },
+    {
+      "id": "air-transport-ini-production-chain",
+      "backend": "session",
+      "scenario": "platform/scenarios/air-transport-ini-production-chain.json",
+      "contract": "platform/contracts/air-transport-ini-production-chain.json"
+    },
+    {
+      "id": "air-transport-json-short",
+      "backend": "core",
+      "scenario": "scenarios/air-transport-json-short.json",
+      "contract": "contracts/air-transport-json-short.json"
+    },
+    {
+      "id": "air-transport-json-production-chain",
+      "backend": "session",
+      "scenario": "platform/scenarios/air-transport-json-production-chain.json",
+      "contract": "platform/contracts/air-transport-json-production-chain.json"
+    },
+    {
+      "id": "air-transport-hjson-short",
+      "backend": "core",
+      "scenario": "scenarios/air-transport-hjson-short.json",
+      "contract": "contracts/air-transport-hjson-short.json"
+    },
+    {
+      "id": "air-transport-hjson-production-chain",
+      "backend": "session",
+      "scenario": "platform/scenarios/air-transport-hjson-production-chain.json",
+      "contract": "platform/contracts/air-transport-hjson-production-chain.json"
+    },
+    {
+      "id": "aa-beam-ini-short",
+      "backend": "core",
+      "scenario": "scenarios/aa-beam-ini-short.json",
+      "contract": "contracts/aa-beam-ini-short.json"
+    },
+    {
+      "id": "aa-beam-ini-production-chain",
+      "backend": "session",
+      "scenario": "platform/scenarios/aa-beam-ini-production-chain.json",
+      "contract": "platform/contracts/aa-beam-ini-production-chain.json"
+    },
+    {
+      "id": "aa-beam-json-short",
+      "backend": "core",
+      "scenario": "scenarios/aa-beam-json-short.json",
+      "contract": "contracts/aa-beam-json-short.json"
+    },
+    {
+      "id": "aa-beam-json-production-chain",
+      "backend": "session",
+      "scenario": "platform/scenarios/aa-beam-json-production-chain.json",
+      "contract": "platform/contracts/aa-beam-json-production-chain.json"
+    },
+    {
+      "id": "aa-beam-hjson-short",
+      "backend": "core",
+      "scenario": "scenarios/aa-beam-hjson-short.json",
+      "contract": "contracts/aa-beam-hjson-short.json"
+    },
+    {
+      "id": "aa-beam-hjson-production-chain",
+      "backend": "session",
+      "scenario": "platform/scenarios/aa-beam-hjson-production-chain.json",
+      "contract": "platform/contracts/aa-beam-hjson-production-chain.json"
+    },
+    {
+      "id": "afterburn-ini-short",
+      "backend": "core",
+      "scenario": "scenarios/afterburn-ini-short.json",
+      "contract": "contracts/afterburn-ini-short.json"
+    },
+    {
+      "id": "afterburn-json-short",
+      "backend": "core",
+      "scenario": "scenarios/afterburn-json-short.json",
+      "contract": "contracts/afterburn-json-short.json"
+    },
+    {
+      "id": "afterburn-hjson-short",
+      "backend": "core",
+      "scenario": "scenarios/afterburn-hjson-short.json",
+      "contract": "contracts/afterburn-hjson-short.json"
+    },
+    {
+      "id": "afterburn-ini-production-chain",
+      "backend": "session",
+      "scenario": "platform/scenarios/afterburn-ini-production-chain.json",
+      "contract": "platform/contracts/afterburn-ini-production-chain.json"
+    },
+    {
+      "id": "afterburn-json-production-chain",
+      "backend": "session",
+      "scenario": "platform/scenarios/afterburn-json-production-chain.json",
+      "contract": "platform/contracts/afterburn-json-production-chain.json"
+    },
+    {
+      "id": "afterburn-hjson-production-chain",
+      "backend": "session",
+      "scenario": "platform/scenarios/afterburn-hjson-production-chain.json",
+      "contract": "platform/contracts/afterburn-hjson-production-chain.json"
+    },
+    {
+      "id": "bunker-ini-short",
+      "backend": "core",
+      "scenario": "scenarios/bunker-ini-short.json",
+      "contract": "contracts/bunker-ini-short.json"
+    },
+    {
+      "id": "bunker-ini-production-chain",
+      "backend": "session",
+      "scenario": "platform/scenarios/bunker-ini-production-chain.json",
+      "contract": "platform/contracts/bunker-ini-production-chain.json"
+    },
+    {
+      "id": "bunker-json-short",
+      "backend": "core",
+      "scenario": "scenarios/bunker-json-short.json",
+      "contract": "contracts/bunker-json-short.json"
+    },
+    {
+      "id": "bunker-json-production-chain",
+      "backend": "session",
+      "scenario": "platform/scenarios/bunker-json-production-chain.json",
+      "contract": "platform/contracts/bunker-json-production-chain.json"
+    },
+    {
+      "id": "bunker-hjson-short",
+      "backend": "core",
+      "scenario": "scenarios/bunker-hjson-short.json",
+      "contract": "contracts/bunker-hjson-short.json"
+    },
+    {
+      "id": "bunker-hjson-production-chain",
+      "backend": "session",
+      "scenario": "platform/scenarios/bunker-hjson-production-chain.json",
+      "contract": "platform/contracts/bunker-hjson-production-chain.json"
+    },
+    {
+      "id": "repairbay-ini-short",
+      "scenario": "scenarios/repairbay-ini-short.json",
+      "contract": "contracts/repairbay-ini-short.json"
+    },
+    {
+      "id": "repairbay-ini-production-chain",
+      "backend": "session",
+      "scenario": "platform/scenarios/repairbay-ini-production-chain.json",
+      "contract": "platform/contracts/repairbay-ini-production-chain.json"
+    },
+    {
+      "id": "repairbay-json-short",
+      "scenario": "scenarios/repairbay-json-short.json",
+      "contract": "contracts/repairbay-json-short.json"
+    },
+    {
+      "id": "repairbay-json-production-chain",
+      "backend": "session",
+      "scenario": "platform/scenarios/repairbay-json-production-chain.json",
+      "contract": "platform/contracts/repairbay-json-production-chain.json"
+    },
+    {
+      "id": "repairbay-hjson-short",
+      "scenario": "scenarios/repairbay-hjson-short.json",
+      "contract": "contracts/repairbay-hjson-short.json"
+    },
+    {
+      "id": "repairbay-hjson-production-chain",
+      "backend": "session",
+      "scenario": "platform/scenarios/repairbay-hjson-production-chain.json",
+      "contract": "platform/contracts/repairbay-hjson-production-chain.json"
+    },
+    {
+      "id": "engineer-ini-short",
+      "scenario": "scenarios/engineer-ini-short.json",
+      "contract": "contracts/engineer-ini-short.json"
+    },
+    {
+      "id": "engineer-ini-production-chain",
+      "backend": "session",
+      "scenario": "platform/scenarios/engineer-ini-production-chain.json",
+      "contract": "platform/contracts/engineer-ini-production-chain.json"
+    },
+    {
+      "id": "engineer-json-short",
+      "scenario": "scenarios/engineer-json-short.json",
+      "contract": "contracts/engineer-json-short.json"
+    },
+    {
+      "id": "engineer-json-production-chain",
+      "backend": "session",
+      "scenario": "platform/scenarios/engineer-json-production-chain.json",
+      "contract": "platform/contracts/engineer-json-production-chain.json"
+    },
+    {
+      "id": "engineer-hjson-short",
+      "scenario": "scenarios/engineer-hjson-short.json",
+      "contract": "contracts/engineer-hjson-short.json"
+    },
+    {
+      "id": "engineer-hjson-production-chain",
+      "backend": "session",
+      "scenario": "platform/scenarios/engineer-hjson-production-chain.json",
+      "contract": "platform/contracts/engineer-hjson-production-chain.json"
+    },
+    {
+      "id": "nautilus-ini-short",
+      "scenario": "scenarios/nautilus-ini-short.json",
+      "contract": "contracts/nautilus-ini-short.json"
+    },
+    {
+      "id": "nautilus-ini-production-chain",
+      "backend": "session",
+      "scenario": "platform/scenarios/nautilus-ini-production-chain.json",
+      "contract": "platform/contracts/nautilus-ini-production-chain.json"
+    },
+    {
+      "id": "nautilus-json-short",
+      "scenario": "scenarios/nautilus-json-short.json",
+      "contract": "contracts/nautilus-json-short.json"
+    },
+    {
+      "id": "nautilus-json-production-chain",
+      "backend": "session",
+      "scenario": "platform/scenarios/nautilus-json-production-chain.json",
+      "contract": "platform/contracts/nautilus-json-production-chain.json"
+    },
+    {
+      "id": "nautilus-hjson-short",
+      "scenario": "scenarios/nautilus-hjson-short.json",
+      "contract": "contracts/nautilus-hjson-short.json"
+    },
+    {
+      "id": "nautilus-hjson-production-chain",
+      "backend": "session",
+      "scenario": "platform/scenarios/nautilus-hjson-production-chain.json",
+      "contract": "platform/contracts/nautilus-hjson-production-chain.json"
+    },
+    {
+      "id": "nautilus-ini-forms",
+      "scenario": "scenarios/nautilus-ini-forms.json",
+      "contract": "contracts/nautilus-ini-forms.json"
+    },
+    {
+      "id": "nautilus-ini-land-forms",
+      "scenario": "platform/scenarios/nautilus-ini-land-forms.json",
+      "contract": "platform/contracts/nautilus-ini-land-forms.json",
+      "backend": "session"
+    },
+    {
+      "id": "nautilus-json-forms",
+      "scenario": "scenarios/nautilus-json-forms.json",
+      "contract": "contracts/nautilus-json-forms.json"
+    },
+    {
+      "id": "nautilus-json-land-forms",
+      "scenario": "platform/scenarios/nautilus-json-land-forms.json",
+      "contract": "platform/contracts/nautilus-json-land-forms.json",
+      "backend": "session"
+    },
+    {
+      "id": "nautilus-hjson-forms",
+      "scenario": "scenarios/nautilus-hjson-forms.json",
+      "contract": "contracts/nautilus-hjson-forms.json"
+    },
+    {
+      "id": "nautilus-hjson-land-forms",
+      "scenario": "platform/scenarios/nautilus-hjson-land-forms.json",
+      "contract": "platform/contracts/nautilus-hjson-land-forms.json",
+      "backend": "session"
+    },
+    {
+      "id": "anti-nuclear-ini-short",
+      "scenario": "scenarios/anti-nuclear-ini-short.json",
+      "contract": "contracts/anti-nuclear-ini-short.json"
+    },
+    {
+      "id": "anti-nuclear-ini-production-chain",
+      "backend": "session",
+      "scenario": "platform/scenarios/anti-nuclear-ini-production-chain.json",
+      "contract": "platform/contracts/anti-nuclear-ini-production-chain.json"
+    },
+    {
+      "id": "anti-nuclear-json-short",
+      "scenario": "scenarios/anti-nuclear-json-short.json",
+      "contract": "contracts/anti-nuclear-json-short.json"
+    },
+    {
+      "id": "anti-nuclear-json-production-chain",
+      "backend": "session",
+      "scenario": "platform/scenarios/anti-nuclear-json-production-chain.json",
+      "contract": "platform/contracts/anti-nuclear-json-production-chain.json"
+    },
+    {
+      "id": "anti-nuclear-hjson-short",
+      "scenario": "scenarios/anti-nuclear-hjson-short.json",
+      "contract": "contracts/anti-nuclear-hjson-short.json"
+    },
+    {
+      "id": "anti-nuclear-hjson-production-chain",
+      "backend": "session",
+      "scenario": "platform/scenarios/anti-nuclear-hjson-production-chain.json",
+      "contract": "platform/contracts/anti-nuclear-hjson-production-chain.json"
+    },
+    {
+      "id": "nuclear-ini-short",
+      "scenario": "scenarios/nuclear-ini-short.json",
+      "contract": "contracts/nuclear-ini-short.json"
+    },
+    {
+      "id": "nuclear-ini-production-chain",
+      "backend": "session",
+      "scenario": "platform/scenarios/nuclear-ini-production-chain.json",
+      "contract": "platform/contracts/nuclear-ini-production-chain.json"
+    },
+    {
+      "id": "nuclear-json-short",
+      "scenario": "scenarios/nuclear-json-short.json",
+      "contract": "contracts/nuclear-json-short.json"
+    },
+    {
+      "id": "nuclear-json-production-chain",
+      "backend": "session",
+      "scenario": "platform/scenarios/nuclear-json-production-chain.json",
+      "contract": "platform/contracts/nuclear-json-production-chain.json"
+    },
+    {
+      "id": "nuclear-hjson-short",
+      "scenario": "scenarios/nuclear-hjson-short.json",
+      "contract": "contracts/nuclear-hjson-short.json"
+    },
+    {
+      "id": "nuclear-hjson-production-chain",
+      "backend": "session",
+      "scenario": "platform/scenarios/nuclear-hjson-production-chain.json",
+      "contract": "platform/contracts/nuclear-hjson-production-chain.json"
     }
   ],
   "long": [
+    {
+      "id": "modular-spider-mixed-modules",
+      "backend": "session",
+      "scenario": "platform/scenarios/modular-spider-json-mixed-modules.json",
+      "contract": "platform/contracts/modular-spider-json-mixed-modules.json"
+    },
     {
       "id": "production-combat-chain",
       "scenario": "scenarios/production-combat-chain.json",
@@ -774,6 +1486,59 @@
       "backend": "session",
       "scenario": "scenarios/phase-five-mixed.json",
       "contract": "contracts/phase-five-mixed.json"
+    },
+    {
+      "id": "hover-production-json-chain",
+      "scenario": "scenarios/hover-production-json-chain.json",
+      "contract": "contracts/hover-production-json-chain.json"
+    },
+    {
+      "id": "submarine-ini-production-chain",
+      "backend": "session",
+      "scenario": "platform/scenarios/submarine-ini-production-chain.json",
+      "contract": "platform/contracts/submarine-ini-production-chain.json"
+    },
+    {
+      "id": "submarine-json-production-chain",
+      "backend": "session",
+      "scenario": "platform/scenarios/submarine-json-production-chain.json",
+      "contract": "platform/contracts/submarine-json-production-chain.json"
+    },
+    {
+      "id": "submarine-hjson-production-chain",
+      "backend": "session",
+      "scenario": "platform/scenarios/submarine-hjson-production-chain.json",
+      "contract": "platform/contracts/submarine-hjson-production-chain.json"
+    },
+    {
+      "id": "bomber-ini-production-chain",
+      "backend": "session",
+      "scenario": "platform/scenarios/bomber-ini-production-chain.json",
+      "contract": "platform/contracts/bomber-ini-production-chain.json"
+    },
+    {
+      "id": "bomber-json-production-chain",
+      "backend": "session",
+      "scenario": "platform/scenarios/bomber-json-production-chain.json",
+      "contract": "platform/contracts/bomber-json-production-chain.json"
+    },
+    {
+      "id": "bomber-hjson-production-chain",
+      "backend": "session",
+      "scenario": "platform/scenarios/bomber-hjson-production-chain.json",
+      "contract": "platform/contracts/bomber-hjson-production-chain.json"
     }
+  ],
+  "pythonTests": [
+    "SimulationTest/tools/test_submarine_platform.py",
+    "SimulationTest/tools/test_amphibious_platform.py",
+    "SimulationTest/tools/test_transport_platform.py",
+    "SimulationTest/tools/test_aa_beam_archive.py",
+    "SimulationTest/tools/test_afterburn_platform.py",
+    "SimulationTest/tools/test_bunker_platform.py",
+    "SimulationTest/tools/test_repairbay_platform.py",
+    "SimulationTest/tools/test_mech_engineer_platform.py",
+    "SimulationTest/tools/test_nautilus_platform.py",
+    "SimulationTest/tools/test_nuclear_platform.py"
   ]
 }

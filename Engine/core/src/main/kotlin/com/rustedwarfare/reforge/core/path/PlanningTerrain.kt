@@ -4,6 +4,7 @@ import com.rustedwarfare.reforge.core.content.MapDefinition
 import com.rustedwarfare.reforge.core.content.MovementType
 import com.rustedwarfare.reforge.core.content.TileSetDefinition
 import com.rustedwarfare.reforge.core.content.waterBlocked
+import com.rustedwarfare.reforge.core.content.GroundRules
 import com.rustedwarfare.reforge.core.knowledge.KnowledgeSnapshot
 import com.rustedwarfare.reforge.core.knowledge.CellKnowledge
 
@@ -75,4 +76,6 @@ internal fun KnowledgeSnapshot.movementBlocked(column: Int, row: Int, type: Move
 
 internal fun CellKnowledge.movementBlocked(type: MovementType, tileSets: List<TileSetDefinition>): Boolean =
     if (type == MovementType.WATER) lastKnownGroundGid?.let { tileSets.waterBlocked(it) } ?: false
+    else if (type in setOf(MovementType.HOVER, MovementType.OVER_CLIFF, MovementType.OVER_CLIFF_WATER))
+        lastKnownGroundGid?.let { GroundRules.blocked(tileSets, it, type) } ?: false
     else lastKnownBlocked ?: false

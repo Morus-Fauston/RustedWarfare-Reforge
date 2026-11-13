@@ -38,7 +38,7 @@ class MaintenanceTransactionTest {
             assertEquals(Long.MAX_VALUE, contexts[0].observe().combat!!.nextObjectId)
             val existingProduct = contexts[0].observe().production!!.units.single().unitId
             command { MoveAction("clear-product", "p1", existingProduct, Position(510.0, 290.0), it.world) }
-            command { ReclaimBuildingAction("weaken", "p1", "a-worker", "m-target", it.world) }
+            command { ReclaimUnitAction("weaken", "p1", "a-worker", "m-target", it.world) }
             val weakenDeadline = step + 1500
             while (contexts[0].observe().units.single { it.unitId == "m-target" }.health!! > 1.02 && step < weakenDeadline) tickBoth()
             assertTrue(contexts[0].observe().units.single { it.unitId == "m-target" }.health!! in 0.0..1.02)
@@ -48,14 +48,14 @@ class MaintenanceTransactionTest {
             assertTrue(contexts[0].observePlayer(contexts[0].world, "p1").factoryQueues
                 .single { it.factoryId == "z-factory" }.items.single().progress in .801f.. .803f)
             for (worker in listOf("a-worker", "b-worker")) {
-                command { ReclaimBuildingAction("terminal-$worker", "p1", worker, "m-target", it.world) }
+                command { ReclaimUnitAction("terminal-$worker", "p1", worker, "m-target", it.world) }
                 repeat(28) { tail -> command { PatrolAction("tail-$worker-$tail", "p1", worker, Position(450.0, 290.0), true, it.world) } }
             }
             repeat(99) { tickBoth() }
             for (worker in listOf("a-worker", "b-worker")) {
                 assertEquals(99f, contexts[0].observe().construction!!.workers.single { it.unitId == worker }.elapsed)
                 assertEquals(29, contexts[0].observe().units.single { it.unitId == worker }.tasks.size)
-                command { ReclaimBuildingAction("future-full-$worker", "p1", worker, "m-target", it.world, step, true) }
+                command { ReclaimUnitAction("future-full-$worker", "p1", worker, "m-target", it.world, step, true) }
             }
             command { ProduceAction("future-refund-pending", "p1", "m-target", "builder", "2".repeat(32), it.world, step) }
             val reuseNonce = "3".repeat(32)
@@ -134,7 +134,7 @@ class MaintenanceTransactionTest {
             val existingProduct = contexts[0].observe().production!!.units.single().unitId
             command { MoveAction("clear-first-product", "p1", existingProduct, Position(510.0, 290.0), it.world) }
             val weakenDeadline = step + 1500
-            command { ReclaimBuildingAction("weaken", "p1", "a-worker", "m-target", it.world) }
+            command { ReclaimUnitAction("weaken", "p1", "a-worker", "m-target", it.world) }
             while (contexts[0].observe().units.single { it.unitId == "m-target" }.health!! > 1.02 && step < weakenDeadline) tickBoth()
             assertTrue(contexts[0].observe().units.single { it.unitId == "m-target" }.health!! in 0.0..1.02)
             command { StopAction("pause", "p1", "a-worker", it.world) }
@@ -143,7 +143,7 @@ class MaintenanceTransactionTest {
             val head = contexts[0].observePlayer(contexts[0].world, "p1").factoryQueues.single { it.factoryId == "z-factory" }.items.single()
             assertTrue(head.progress in .801f.. .803f)
             command { ProduceAction("refund-pending", "p1", "m-target", "builder", "2".repeat(32), it.world) }
-            command { ReclaimBuildingAction("terminal", "p1", "a-worker", "m-target", it.world) }
+            command { ReclaimUnitAction("terminal", "p1", "a-worker", "m-target", it.world) }
             repeat(99) { tickBoth() }
             assertEquals(99f, contexts[0].observe().construction!!.workers.single { it.unitId == "a-worker" }.elapsed)
             assertEquals(250.0, contexts[0].observePlayer(contexts[0].world, "p1").credits)

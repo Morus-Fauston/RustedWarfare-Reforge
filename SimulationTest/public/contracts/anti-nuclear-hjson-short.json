@@ -1,0 +1,86 @@
+{
+  "schemaVersion": 1,
+  "kind": "behavior-contract",
+  "contractId": "public.anti-nuclear-hjson.short.v1",
+  "scope": "self-behavior",
+  "scenarioIds": [
+    "p009-ground-interception"
+  ],
+  "comparison": {
+    "numberMode": "declared-per-field",
+    "tolerances": {}
+  },
+  "approval": {
+    "status": "tool-fixture-only",
+    "source": "ENG-P009-017 fixed DEC009 ground interceptor contract"
+  },
+  "exclusions": [
+    "original-compatibility",
+    "platform-input",
+    "performance"
+  ],
+  "rules": [
+    {
+      "ruleId": "pay-once",
+      "when": {
+        "phase": "after-advance",
+        "stepIndex": 0
+      },
+      "assertions": [
+        {
+          "path": "economy.balances.p1",
+          "operator": "equals",
+          "value": 0
+        },
+        {
+          "path": "economy.balances.p2",
+          "operator": "equals",
+          "value": 0
+        },
+        {
+          "path": "units.defense.unitActions.stockpile",
+          "operator": "equals",
+          "value": 0
+        }
+      ]
+    },
+    {
+      "ruleId": "stocked",
+      "when": {
+        "phase": "after-advance",
+        "stepIndex": 1428
+      },
+      "assertions": [
+        {
+          "path": "units.defense.unitActions.stockpile",
+          "operator": "equals",
+          "value": 1
+        }
+      ]
+    },
+    {
+      "ruleId": "nuclear-hit-prevented",
+      "when": {
+        "phase": "after-advance",
+        "stepIndex": 4099
+      },
+      "assertions": [
+        {
+          "path": "units.defense.health",
+          "operator": "equals",
+          "value": 2800
+        },
+        {
+          "path": "units.defense.unitActions.stockpile",
+          "operator": "equals",
+          "value": 0
+        },
+        {
+          "path": "projectiles",
+          "operator": "equals",
+          "value": []
+        }
+      ]
+    }
+  ]
+}

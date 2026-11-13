@@ -41,6 +41,18 @@ def validate(expected, state, foreground=True, size=True):
     return state
 
 
+def exposed_header_point(api,state,record):
+    """Read-only finite search of the client's noninteractive top eight pixels."""
+    if state['width']<16 or state['height']<16:raise GuardFailure('initial-owned-header-unavailable')
+    offsets=dict.fromkeys((8,state['width']//2,3*state['width']//4,state['width']-8))
+    for offset in offsets:
+        point=(state['x']+offset,state['y']+8)
+        owned=bool(api.point_owned(*point))
+        record(dict(kind='owned-header-exposure-candidate',point=point,owned=owned))
+        if owned:return point
+    raise GuardFailure('initial-owned-header-occluded')
+
+
 def focus_owned_once(api,expected,record,sleep=time.sleep):
     """One ordinary click in this client's noninteractive header, with no activation fallback."""
     state=validate(expected,api.snapshot(),foreground=False)
@@ -49,8 +61,7 @@ def focus_owned_once(api,expected,record,sleep=time.sleep):
         if (any(api.pressed('mouse',v) for v in ('left','right')) or
                 any(api.pressed('key',v) for v in (16,17,18,32))):
             raise GuardFailure('initial-unowned-input-held')
-    idle();point=(state['x']+8,state['y']+8)
-    if not api.point_owned(*point):raise GuardFailure('initial-owned-header-occluded')
+    idle();point=exposed_header_point(api,state,record)
     api.move(*point)
     after=validate(expected,api.snapshot(),foreground=False)
     if (after['x'],after['y'])!=(state['x'],state['y']):raise GuardFailure('initial-owned-client-moved')

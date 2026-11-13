@@ -99,7 +99,19 @@ internal object ScenarioReader {
                 "mech" -> ContentLoader.loadMechUnit(ref.path)
                 "mech-heavy" -> ContentLoader.loadHeavyMechUnit(ref.path)
                 "helicopter" -> ContentLoader.loadHelicopterUnit(ref.path)
+                "hover-tank" -> checkedAuthor(ContentLoader.loadHoverTankWithSources(ref.path))
                 "battleship" -> ContentLoader.loadBattleshipUnit(ref.path)
+                "submarine" -> checkedAuthor(ContentLoader.loadSubmarineWithSources(ref.path))
+                "amphibious-jet" -> checkedAuthor(ContentLoader.loadAmphibiousJetWithSources(ref.path))
+                "hovercraft" -> checkedAuthor(ContentLoader.loadHovercraftWithSources(ref.path))
+                "dropship" -> checkedAuthor(ContentLoader.loadDropshipWithSources(ref.path))
+                "bomber" -> checkedAuthor(ContentLoader.loadBomberWithSources(ref.path))
+                "aa-beam-gunship" -> checkedAuthor(ContentLoader.loadAaBeamWithSources(ref.path))
+                "mech-bunker" -> checkedAuthor(ContentLoader.loadBunkerWithSources(ref.path))
+                "mech-engineer" -> checkedAuthor(ContentLoader.loadMechEngineerWithSources(ref.path))
+                "nautilus" -> checkedAuthor(ContentLoader.loadNautilusWithSources(ref.path))
+                "scout-bot" -> checkedAuthor(ContentLoader.loadScoutBotWithSources(ref.path))
+                "nuclear-silo" -> checkedAuthor(ContentLoader.loadNuclearSiloWithSources(ref.path))
                 "water-combat" -> checkedAuthor(ContentLoader.loadAuthorWaterUnitWithSources(ref.path))
                 "constructor" -> checkedAuthor(ContentLoader.loadAuthorConstructorWithSources(ref.path))
                 "author-factory" -> checkedAuthor(ContentLoader.loadAuthorBuildingWithSources(ref.path), false, false)
@@ -108,6 +120,7 @@ internal object ScenarioReader {
                 "underwater-target" -> ContentLoader.loadUnderwaterTargetUnit(ref.path)
                 "factory" -> ContentLoader.loadFactory(ref.path)
                 "builder" -> ContentLoader.loadBuilder(ref.path)
+                "repair-bay" -> checkedAuthor(ContentLoader.loadRepairBayWithSources(ref.path))
                 "command-center" -> ContentLoader.loadCommandCenter(ref.path)
                 "turret" -> ContentLoader.loadTurretUnit(ref.path)
                 "turret-upgrades" -> ContentLoader.loadTurretUnit(ref.path, true)
@@ -120,9 +133,12 @@ internal object ScenarioReader {
             })
             if (content.containsKey("unitVariants") && ref.id != unit.id) throw InputError("Content type ID differs from loaded definition")
             val images = listOfNotNull(unit.imagePath, unit.combat?.turretImagePath, unit.combat?.deadImagePath,
-                unit.durability?.deadImagePath, unit.building?.backImagePath, unit.rotor?.imagePath) +
+                unit.durability?.deadImagePath, unit.building?.backImagePath, unit.rotor?.imagePath, unit.shadowImagePath,
+                unit.nuclearSilo?.arm1ImagePath, unit.nuclearSilo?.arm2ImagePath) +
                 unit.mech?.legs.orEmpty().flatMap { listOf(it.legImage, it.footImage) } +
-                unit.combat?.namedWeapons?.ordered.orEmpty().mapNotNull { it.imagePath }
+                unit.combat?.namedWeapons?.ordered.orEmpty().mapNotNull { it.imagePath } +
+                (listOfNotNull(unit.combat?.projectile) + unit.combat?.namedWeapons?.ordered.orEmpty().map { it.projectile })
+                    .flatMap { it.beam?.let { beam -> listOf(beam.image, beam.startImage, beam.endImage) }.orEmpty() }
             if (images.any { it.toRealPath() !in paths }) throw InputError("A loaded image dependency has no declared identity")
             ref.id to unit
         }

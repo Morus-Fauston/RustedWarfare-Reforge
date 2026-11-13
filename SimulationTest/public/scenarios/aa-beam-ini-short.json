@@ -1,0 +1,1690 @@
+{
+  "schemaVersion": 1,
+  "kind": "scenario",
+  "scenarioId": "p009-aa-beam-combat",
+  "content": {
+    "map": {
+      "id": "map",
+      "path": "../inputs/aa-beam-production/ini/maps/naval-shore.tmx",
+      "sha256": "efd248a14bc7e60406045e3cc631249286f795b07b4ace64aafc2ab1c629ef48"
+    },
+    "unitVariants": [
+      {
+        "id": "helicopter",
+        "path": "../inputs/aa-beam-production/ini/production-package/units/helicopter.ini",
+        "sha256": "efc7d4fe4a1dff8c58b703c5b7d688b6609946c45b41d2ca680f40b6cd166c5a",
+        "loader": "helicopter"
+      },
+      {
+        "id": "airFactory",
+        "path": "../inputs/aa-beam-production/ini/production-package/units/airFactory.ini",
+        "sha256": "68cdd627a129ff1a701b8979dc046bc7037ac868c53b61952ba99da647ca3982",
+        "loader": "factory"
+      },
+      {
+        "id": "builder",
+        "path": "../inputs/aa-beam-production/ini/production-package/units/builder.ini",
+        "sha256": "f8cf9509cf23f6582f236bb357f8f32f9d5db75df4664f61a1c8010214f1782c",
+        "loader": "builder"
+      },
+      {
+        "id": "airFactoryT2",
+        "path": "../inputs/aa-beam-production/ini/production-package/units/airFactoryT2.ini",
+        "sha256": "1181fc4766351872236ec8d84d9ed7cd95014c4f23ed0c30b70d7ef750d60ed3",
+        "loader": "factory"
+      },
+      {
+        "id": "amphibiousJet",
+        "path": "../inputs/aa-beam-production/ini/production-package/units/amphibiousJet.ini",
+        "sha256": "a89f6e0bdd1d9e8a5896968e178e53702d362cc36a5b390ea71c84518e0469ce",
+        "loader": "amphibious-jet"
+      },
+      {
+        "id": "commandCenter",
+        "path": "../inputs/aa-beam-production/ini/production-package/units/commandCenter/commandCenter.ini",
+        "sha256": "ba61e3f9276f2e23acd41e2d483a5eb68a552b434b1ec781764d1e1b14cdf556",
+        "loader": "command-center"
+      },
+      {
+        "id": "c_tank",
+        "path": "../inputs/aa-beam-production/ini/production-package/units/land/tank.ini",
+        "sha256": "425d0bd828d0fa40c0acefe35e078bd9d9f6eef2cc2645241f26849301f5dd3f",
+        "loader": "declared-tank"
+      },
+      {
+        "id": "navalUnderwaterTarget",
+        "path": "../inputs/aa-beam-production/ini/production-package/units/naval/underwaterTarget.ini",
+        "sha256": "0283ff50809b75d4dc758a91295d5fd25ac70f50b04d31bed084c657e8ad7dc2",
+        "loader": "underwater-target"
+      },
+      {
+        "id": "dropship",
+        "path": "../inputs/aa-beam-production/ini/production-package/units/dropship.ini",
+        "sha256": "a696cadb7aa961449ca9fdcf570c69e7e885da541374cc0eef2ff1eb3fadd332",
+        "loader": "dropship"
+      },
+      {
+        "id": "aaBeamGunship",
+        "path": "../inputs/aa-beam-production/ini/production-package/units/aaBeamGunship.ini",
+        "sha256": "64354515382bd4369a11e6727151f4af96741ece607ac7e96defd8e852f97fb8",
+        "loader": "aa-beam-gunship"
+      },
+      {
+        "id": "aaBeamGunship_afterburn",
+        "path": "../inputs/aa-beam-production/ini/production-package/units/aaBeamGunship_afterburn.ini",
+        "sha256": "4e0e953f274c37344e0f65346a7823e5f26ced61604c74864c263d60cc0e9a9a",
+        "loader": "aa-beam-gunship"
+      }
+    ],
+    "dependencies": [
+      {
+        "id": "dep-0",
+        "path": "../inputs/aa-beam-production/ini/assets/naval-ground.png",
+        "sha256": "9c32ebad05ee1c22011d8639a9f1674704967b0ed225b384726d11c654ed6cde"
+      },
+      {
+        "id": "dep-2",
+        "path": "../inputs/aa-beam-production/ini/production-package/pack.json",
+        "sha256": "fb8b2d52e4e0d1a16126da6971b4199f7dcb14aae5b385e95fafb72aea3a0aa7"
+      },
+      {
+        "id": "dep-3",
+        "path": "../inputs/aa-beam-production/ini/production-package/units/aa.png",
+        "sha256": "14412b91d518487ea5ed05ee7ad043b879df9689eecc4bc6c29dd169d82d0af7"
+      },
+      {
+        "id": "dep-4",
+        "path": "../inputs/aa-beam-production/ini/production-package/units/aa_beam.png",
+        "sha256": "a7524383a4317023e464935457c63495d96af7eb4a8527aa736c8b5af24186f1"
+      },
+      {
+        "id": "dep-5",
+        "path": "../inputs/aa-beam-production/ini/production-package/units/aa_beam_end.png",
+        "sha256": "bd154d7e34621f51bdfcc68d69cc122271f0a58f22af401e569f84db47623d03"
+      },
+      {
+        "id": "dep-6",
+        "path": "../inputs/aa-beam-production/ini/production-package/units/aa_beam_start.png",
+        "sha256": "bd154d7e34621f51bdfcc68d69cc122271f0a58f22af401e569f84db47623d03"
+      },
+      {
+        "id": "dep-7",
+        "path": "../inputs/aa-beam-production/ini/production-package/units/aa_dead.png",
+        "sha256": "a28b3071bc0c2faf579c1fee0fc21adc0be069dd7805e73a27a994c081f99ce8"
+      },
+      {
+        "id": "dep-8",
+        "path": "../inputs/aa-beam-production/ini/production-package/units/aa_shadow.png",
+        "sha256": "da2646db128fe4e3047fe42c25707440619567e791526b29e44266a966cf77e0"
+      },
+      {
+        "id": "dep-9",
+        "path": "../inputs/aa-beam-production/ini/production-package/units/aa_turret.png",
+        "sha256": "0b9f36b2d623711b1f49cf41fbe70eb6c23e921ea3cb10ff9e24a15f08e017a8"
+      },
+      {
+        "id": "dep-11",
+        "path": "../inputs/aa-beam-production/ini/production-package/units/air_factory.png",
+        "sha256": "03a28e02c3dd5d032d4f7587451122440cfdc8367f40603a008ed0162a92ea4e"
+      },
+      {
+        "id": "dep-12",
+        "path": "../inputs/aa-beam-production/ini/production-package/units/air_factory_dead.png",
+        "sha256": "a9e4f7aceacbbeac7d34fa75a67eb885218bdc0971b6facc14da4e3b864e7a7d"
+      },
+      {
+        "id": "dep-13",
+        "path": "../inputs/aa-beam-production/ini/production-package/units/air_factory_t2.png",
+        "sha256": "7759a4a82006893505d7b8d4b83a83f79bdbf7d0258c2ecf66a8dfb3d8fd46d6"
+      },
+      {
+        "id": "dep-17",
+        "path": "../inputs/aa-beam-production/ini/production-package/units/body.png",
+        "sha256": "f2f5836caec9a3078885b8ab00654f27800d38f17352b3be4358c3afc6a42b90"
+      },
+      {
+        "id": "dep-19",
+        "path": "../inputs/aa-beam-production/ini/production-package/units/builder.png",
+        "sha256": "15060aa3fb36bffd4414e803beb8f5d9b2982ed14bb497fbca6cadd3de18cc1b"
+      },
+      {
+        "id": "dep-20",
+        "path": "../inputs/aa-beam-production/ini/production-package/units/builder_dead.png",
+        "sha256": "15060aa3fb36bffd4414e803beb8f5d9b2982ed14bb497fbca6cadd3de18cc1b"
+      },
+      {
+        "id": "dep-21",
+        "path": "../inputs/aa-beam-production/ini/production-package/units/commandCenter/base.png",
+        "sha256": "8095d081de1407fe59e9ff99f5a5822e03275f87ffbd0f2a09ac736f8f6b3695"
+      },
+      {
+        "id": "dep-22",
+        "path": "../inputs/aa-beam-production/ini/production-package/units/commandCenter/base_back.png",
+        "sha256": "07e2e3d786bf88d6d1dfe57add1b732e84a9bd2d6313732cc4f86ec8c4da2885"
+      },
+      {
+        "id": "dep-23",
+        "path": "../inputs/aa-beam-production/ini/production-package/units/commandCenter/base_dead.png",
+        "sha256": "940b030d8a9c0161c69b1831041186c97409e85d404aa5c5f6ec58fa5d831b16"
+      },
+      {
+        "id": "dep-25",
+        "path": "../inputs/aa-beam-production/ini/production-package/units/dead.png",
+        "sha256": "78e0d0b9a4eb88801361721035f5b84d141fb745f094192891496c4b63916976"
+      },
+      {
+        "id": "dep-27",
+        "path": "../inputs/aa-beam-production/ini/production-package/units/dropship.png",
+        "sha256": "0e44f9bfdc9e760f6cd59df6e0a7aa973d5c08c0611e5fec1f94d569ec4a5e44"
+      },
+      {
+        "id": "dep-28",
+        "path": "../inputs/aa-beam-production/ini/production-package/units/dropship_dead.png",
+        "sha256": "604d1acc5abe2f32a5429262f7e6b6f28922e36be789b93ddb55f04f6a874f06"
+      },
+      {
+        "id": "dep-29",
+        "path": "../inputs/aa-beam-production/ini/production-package/units/dropship_shadow.png",
+        "sha256": "11b26ac87143306dfa7547ee0db124241ce6c02a3cb3df5e71407f3544150be3"
+      },
+      {
+        "id": "dep-31",
+        "path": "../inputs/aa-beam-production/ini/production-package/units/jet.png",
+        "sha256": "e77b83ec26b7a366346f25ccff339b8388fa1cf18f3c8fc5bd7b1312ab25d7d5"
+      },
+      {
+        "id": "dep-32",
+        "path": "../inputs/aa-beam-production/ini/production-package/units/jet_dead.png",
+        "sha256": "89bd67555244fdc282cce375ce314aa56c4cc9f479ad0965d33e61b25e2a28dd"
+      },
+      {
+        "id": "dep-33",
+        "path": "../inputs/aa-beam-production/ini/production-package/units/jet_left.png",
+        "sha256": "717e4192943b371bba6a1f75b951f45f35e791757bb4295c5d97ecef2a07101c"
+      },
+      {
+        "id": "dep-34",
+        "path": "../inputs/aa-beam-production/ini/production-package/units/jet_right.png",
+        "sha256": "717e4192943b371bba6a1f75b951f45f35e791757bb4295c5d97ecef2a07101c"
+      },
+      {
+        "id": "dep-35",
+        "path": "../inputs/aa-beam-production/ini/production-package/units/jet_shadow.png",
+        "sha256": "1b64b8ec6b2f88cd7b5d97ac115dcdee35395ed08e02ec086a14c34e053fc7eb"
+      },
+      {
+        "id": "dep-37",
+        "path": "../inputs/aa-beam-production/ini/production-package/units/land/tank.png",
+        "sha256": "898fa8d12d89e73c988c258c3522a23660b2fdc500b4c8588fd2d8cf5fe4b605"
+      },
+      {
+        "id": "dep-38",
+        "path": "../inputs/aa-beam-production/ini/production-package/units/land/tank_dead.png",
+        "sha256": "cbab7f92fa0cbef203e94823e2cbdc3e0116df3dab205f2ce0296e399a1a4ffa"
+      },
+      {
+        "id": "dep-39",
+        "path": "../inputs/aa-beam-production/ini/production-package/units/land/tank_turret.png",
+        "sha256": "20dfaa2a45dd5bb635e83425fb64a6d3d3f9fef48d1b0a3b573fe5b9b67c4985"
+      },
+      {
+        "id": "dep-40",
+        "path": "../inputs/aa-beam-production/ini/production-package/units/naval/underwater_target.png",
+        "sha256": "bc8f3bf04c77313d277018f3da1296e7c85cc255086ff26d6fe23ef7113b8a6b"
+      },
+      {
+        "id": "dep-42",
+        "path": "../inputs/aa-beam-production/ini/production-package/units/rotor.png",
+        "sha256": "3bec04ec0daa8dcea012e8447d4ee0a58e392850da8e366d30d8e512829fd9af"
+      },
+      {
+        "id": "afterburn-trail",
+        "path": "../inputs/aa-beam-production/ini/production-package/units/aa_trail.png",
+        "sha256": "81584313c94d76a4a1f0a8288810ba75c07bd57ae4959dced652b8648955a00e"
+      }
+    ]
+  },
+  "coordinateModel": {
+    "id": "public.coordinate.v1",
+    "space": "2d",
+    "xAxis": "x-right",
+    "yAxis": "y-down",
+    "origin": "top-left",
+    "unit": "world-unit",
+    "valueType": "double",
+    "precision": "ieee754-binary64"
+  },
+  "timeModel": {
+    "id": "public.time.v1",
+    "deltaUnit": "sim-tick",
+    "stepRule": "fixed-explicit-delta",
+    "precision": "ieee754-binary64"
+  },
+  "angleUnit": "degree-clockwise-zero-up",
+  "movementContract": {
+    "pathPointRadius": 16,
+    "targetRadius": 4
+  },
+  "players": [
+    {
+      "playerId": "p1",
+      "control": "local",
+      "teamId": "one"
+    },
+    {
+      "playerId": "p2",
+      "control": "none",
+      "teamId": "two"
+    }
+  ],
+  "units": [
+    {
+      "unitId": "aa",
+      "owner": "p1",
+      "type": "aaBeamGunship",
+      "position": {
+        "x": 150,
+        "y": 150
+      },
+      "heading": 90
+    },
+    {
+      "unitId": "enemy",
+      "owner": "p2",
+      "type": "aaBeamGunship",
+      "position": {
+        "x": 350,
+        "y": 150
+      },
+      "heading": 270
+    }
+  ],
+  "actions": [],
+  "termination": {
+    "kind": "explicit-steps",
+    "required": true,
+    "steps": [
+      {
+        "stepIndex": 0,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 1,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 2,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 3,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 4,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 5,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 6,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 7,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 8,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 9,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 10,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 11,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 12,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 13,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 14,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 15,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 16,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 17,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 18,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 19,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 20,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 21,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 22,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 23,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 24,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 25,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 26,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 27,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 28,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 29,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 30,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 31,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 32,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 33,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 34,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 35,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 36,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 37,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 38,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 39,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 40,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 41,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 42,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 43,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 44,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 45,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 46,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 47,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 48,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 49,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 50,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 51,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 52,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 53,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 54,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 55,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 56,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 57,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 58,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 59,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 60,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 61,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 62,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 63,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 64,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 65,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 66,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 67,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 68,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 69,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 70,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 71,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 72,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 73,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 74,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 75,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 76,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 77,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 78,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 79,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 80,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 81,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 82,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 83,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 84,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 85,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 86,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 87,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 88,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 89,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 90,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 91,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 92,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 93,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 94,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 95,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 96,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 97,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 98,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 99,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 100,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 101,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 102,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 103,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 104,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 105,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 106,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 107,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 108,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 109,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 110,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 111,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 112,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 113,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 114,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 115,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 116,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 117,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 118,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 119,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 120,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 121,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 122,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 123,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 124,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 125,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 126,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 127,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 128,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 129,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 130,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 131,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 132,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 133,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 134,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 135,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 136,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 137,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 138,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 139,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 140,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 141,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 142,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 143,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 144,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 145,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 146,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 147,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 148,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 149,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 150,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 151,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 152,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 153,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 154,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 155,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 156,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 157,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 158,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 159,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 160,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 161,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 162,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 163,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 164,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 165,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 166,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 167,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 168,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 169,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 170,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 171,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 172,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 173,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 174,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 175,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 176,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 177,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 178,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 179,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 180,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 181,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 182,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 183,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 184,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 185,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 186,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 187,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 188,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 189,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 190,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 191,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 192,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 193,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 194,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 195,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 196,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 197,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 198,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 199,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 200,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 201,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 202,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 203,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 204,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 205,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 206,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 207,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 208,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 209,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 210,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 211,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 212,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 213,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 214,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 215,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 216,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 217,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 218,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 219,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 220,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 221,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 222,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 223,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 224,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 225,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 226,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 227,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 228,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 229,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 230,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 231,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 232,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 233,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 234,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 235,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 236,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 237,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 238,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 239,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 240,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 241,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 242,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 243,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 244,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 245,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 246,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 247,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 248,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 249,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 250,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 251,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 252,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 253,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 254,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 255,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 256,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 257,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 258,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      },
+      {
+        "stepIndex": 259,
+        "delta": 1,
+        "deltaUnit": "sim-tick"
+      }
+    ]
+  },
+  "combatContract": {
+    "worldSeed": 12345,
+    "initialFrameCounter": -1,
+    "unitObjectIds": {
+      "aa": 8,
+      "enemy": 9
+    },
+    "nextObjectId": 10
+  },
+  "economyContract": {
+    "initialBalances": {
+      "p1": 12000,
+      "p2": 0
+    }
+  },
+  "inputs": "../inputs/aa-beam-production/ini",
+  "testScene": {
+    "formatVersion": 1,
+    "displayName": "AA beam combat (ini)",
+    "summary": "Owned air-only paid instant beam, visible reuse and full energy recharge; production is separate.",
+    "files": {
+      "assets/naval-ground.png": "9c32ebad05ee1c22011d8639a9f1674704967b0ed225b384726d11c654ed6cde",
+      "maps/afterburn-actions.tmx": "262dce1751c17337f46115e9fde0fe917fa93bc161ca39afbc25bef00b8ee45d",
+      "maps/naval-shore.tmx": "efd248a14bc7e60406045e3cc631249286f795b07b4ace64aafc2ab1c629ef48",
+      "production-package/pack.json": "fb8b2d52e4e0d1a16126da6971b4199f7dcb14aae5b385e95fafb72aea3a0aa7",
+      "production-package/units/aa.png": "14412b91d518487ea5ed05ee7ad043b879df9689eecc4bc6c29dd169d82d0af7",
+      "production-package/units/aa_beam.png": "a7524383a4317023e464935457c63495d96af7eb4a8527aa736c8b5af24186f1",
+      "production-package/units/aa_beam_end.png": "bd154d7e34621f51bdfcc68d69cc122271f0a58f22af401e569f84db47623d03",
+      "production-package/units/aa_beam_start.png": "bd154d7e34621f51bdfcc68d69cc122271f0a58f22af401e569f84db47623d03",
+      "production-package/units/aa_dead.png": "a28b3071bc0c2faf579c1fee0fc21adc0be069dd7805e73a27a994c081f99ce8",
+      "production-package/units/aa_shadow.png": "da2646db128fe4e3047fe42c25707440619567e791526b29e44266a966cf77e0",
+      "production-package/units/aa_trail.png": "81584313c94d76a4a1f0a8288810ba75c07bd57ae4959dced652b8648955a00e",
+      "production-package/units/aa_turret.png": "0b9f36b2d623711b1f49cf41fbe70eb6c23e921ea3cb10ff9e24a15f08e017a8",
+      "production-package/units/aaBeamGunship.ini": "64354515382bd4369a11e6727151f4af96741ece607ac7e96defd8e852f97fb8",
+      "production-package/units/aaBeamGunship_afterburn.ini": "4e0e953f274c37344e0f65346a7823e5f26ced61604c74864c263d60cc0e9a9a",
+      "production-package/units/air_factory.png": "03a28e02c3dd5d032d4f7587451122440cfdc8367f40603a008ed0162a92ea4e",
+      "production-package/units/air_factory_dead.png": "a9e4f7aceacbbeac7d34fa75a67eb885218bdc0971b6facc14da4e3b864e7a7d",
+      "production-package/units/air_factory_t2.png": "7759a4a82006893505d7b8d4b83a83f79bdbf7d0258c2ecf66a8dfb3d8fd46d6",
+      "production-package/units/airFactory.ini": "68cdd627a129ff1a701b8979dc046bc7037ac868c53b61952ba99da647ca3982",
+      "production-package/units/airFactoryT2.ini": "1181fc4766351872236ec8d84d9ed7cd95014c4f23ed0c30b70d7ef750d60ed3",
+      "production-package/units/amphibiousJet.ini": "a89f6e0bdd1d9e8a5896968e178e53702d362cc36a5b390ea71c84518e0469ce",
+      "production-package/units/body.png": "f2f5836caec9a3078885b8ab00654f27800d38f17352b3be4358c3afc6a42b90",
+      "production-package/units/builder.ini": "f8cf9509cf23f6582f236bb357f8f32f9d5db75df4664f61a1c8010214f1782c",
+      "production-package/units/builder.png": "15060aa3fb36bffd4414e803beb8f5d9b2982ed14bb497fbca6cadd3de18cc1b",
+      "production-package/units/builder_dead.png": "15060aa3fb36bffd4414e803beb8f5d9b2982ed14bb497fbca6cadd3de18cc1b",
+      "production-package/units/commandCenter/base.png": "8095d081de1407fe59e9ff99f5a5822e03275f87ffbd0f2a09ac736f8f6b3695",
+      "production-package/units/commandCenter/base_back.png": "07e2e3d786bf88d6d1dfe57add1b732e84a9bd2d6313732cc4f86ec8c4da2885",
+      "production-package/units/commandCenter/base_dead.png": "940b030d8a9c0161c69b1831041186c97409e85d404aa5c5f6ec58fa5d831b16",
+      "production-package/units/commandCenter/commandCenter.ini": "ba61e3f9276f2e23acd41e2d483a5eb68a552b434b1ec781764d1e1b14cdf556",
+      "production-package/units/dead.png": "78e0d0b9a4eb88801361721035f5b84d141fb745f094192891496c4b63916976",
+      "production-package/units/dropship.ini": "a696cadb7aa961449ca9fdcf570c69e7e885da541374cc0eef2ff1eb3fadd332",
+      "production-package/units/dropship.png": "0e44f9bfdc9e760f6cd59df6e0a7aa973d5c08c0611e5fec1f94d569ec4a5e44",
+      "production-package/units/dropship_dead.png": "604d1acc5abe2f32a5429262f7e6b6f28922e36be789b93ddb55f04f6a874f06",
+      "production-package/units/dropship_shadow.png": "11b26ac87143306dfa7547ee0db124241ce6c02a3cb3df5e71407f3544150be3",
+      "production-package/units/helicopter.ini": "efc7d4fe4a1dff8c58b703c5b7d688b6609946c45b41d2ca680f40b6cd166c5a",
+      "production-package/units/jet.png": "e77b83ec26b7a366346f25ccff339b8388fa1cf18f3c8fc5bd7b1312ab25d7d5",
+      "production-package/units/jet_dead.png": "89bd67555244fdc282cce375ce314aa56c4cc9f479ad0965d33e61b25e2a28dd",
+      "production-package/units/jet_left.png": "717e4192943b371bba6a1f75b951f45f35e791757bb4295c5d97ecef2a07101c",
+      "production-package/units/jet_right.png": "717e4192943b371bba6a1f75b951f45f35e791757bb4295c5d97ecef2a07101c",
+      "production-package/units/jet_shadow.png": "1b64b8ec6b2f88cd7b5d97ac115dcdee35395ed08e02ec086a14c34e053fc7eb",
+      "production-package/units/land/tank.ini": "425d0bd828d0fa40c0acefe35e078bd9d9f6eef2cc2645241f26849301f5dd3f",
+      "production-package/units/land/tank.png": "898fa8d12d89e73c988c258c3522a23660b2fdc500b4c8588fd2d8cf5fe4b605",
+      "production-package/units/land/tank_dead.png": "cbab7f92fa0cbef203e94823e2cbdc3e0116df3dab205f2ce0296e399a1a4ffa",
+      "production-package/units/land/tank_turret.png": "20dfaa2a45dd5bb635e83425fb64a6d3d3f9fef48d1b0a3b573fe5b9b67c4985",
+      "production-package/units/naval/underwater_target.png": "bc8f3bf04c77313d277018f3da1296e7c85cc255086ff26d6fe23ef7113b8a6b",
+      "production-package/units/naval/underwaterTarget.ini": "0283ff50809b75d4dc758a91295d5fd25ac70f50b04d31bed084c657e8ad7dc2",
+      "production-package/units/rotor.png": "3bec04ec0daa8dcea012e8447d4ee0a58e392850da8e366d30d8e512829fd9af"
+    }
+  },
+  "automaticVision": {
+    "retention": "MEMORY",
+    "pathSource": "PLAYER_KNOWLEDGE",
+    "shareAlliedVision": false,
+    "observers": [
+      "p1"
+    ],
+    "grid": {
+      "width": 40,
+      "height": 30
+    }
+  }
+}

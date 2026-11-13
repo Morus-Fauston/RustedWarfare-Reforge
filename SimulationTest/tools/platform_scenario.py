@@ -12,6 +12,7 @@ import sys
 import time
 import tempfile
 import xml.etree.ElementTree as ET
+import spider_platform
 
 
 class PlatformError(ValueError):
@@ -19,6 +20,99 @@ class PlatformError(ValueError):
         super().__init__(message)
         self.category = category
         self.exit_code = exit_code
+
+
+NAVAL_AMMO = 'buildAntiNuke'
+SCOUT_LAUNCH = 'launchScoutBot'
+NAUTILUS_ACTIONS = {'nautilusSubmarine': {'surface', NAVAL_AMMO},
+                    'nautilusSubmarineSurface': {'dive', SCOUT_LAUNCH, NAVAL_AMMO},
+                    'nautilusSubmarineLand': {SCOUT_LAUNCH, NAVAL_AMMO}}
+
+
+def validate_unit_action_intent(intent, paired=False):
+    name=intent.get('actionName');nuclear=name in ('buildNuke','launchNuke','buildAntiNuke');cancel=intent.get('cancelQueued',False)
+    targeted=name in ('launchNuke','launchScoutBot','blink')
+    keys={'intentId','kind','actionName','waitSteps'}
+    if paired and isinstance(intent.get('coreActionId'), str) and intent['coreActionId']:
+        keys.add('coreActionId')
+    if (nuclear or targeted or name in spider_platform.CANCELLABLE) and 'cancelQueued' in intent:keys.add('cancelQueued')
+    if targeted and cancel is False:keys.add('target')
+    target=intent.get('target')
+    if (set(intent)!=keys or type(cancel) is not bool or
+            targeted and not cancel and (not isinstance(target,dict) or set(target)!={'x','y'} or
+                any(type(v) not in (int,float) or not math.isfinite(v) for v in target.values())) or
+            not isinstance(name,str) or not nuclear and not targeted and name not in (
+                'afterBurn','cancelBurn','deploy','undeploy','surface','dive',*spider_platform.ACTIONS) or
+            type(intent.get('waitSteps')) is not int or not 0<=intent['waitSteps']<=600):
+        raise PlatformError('input-contract','Expected a finite normal unit action and explicit bounded wait',1)
+
+
+def validate_paired_schedule(plan):
+    """Check the same finite core schedule that the normal scene menu consumes."""
+    def require(condition, location):
+        if not condition:
+            raise PlatformError('input-contract', 'Paired core schedule differs: ' + location, 1)
+
+    def point(value):
+        return (isinstance(value, dict) and set(value) == {'x', 'y'} and
+                all(type(v) in (int, float) and math.isfinite(v) for v in value.values()))
+
+    fields = {
+        'move': (('position', 'target'),), 'build': (('position', 'target'), ('typeId', 'buildingTypeId')),
+        'attack': (('targetUnitId', 'targetUnitId'),), 'produce': (('typeId', 'productionTypeId'),),
+        'upgrade': (('upgradeId', 'upgradeId'),), 'stop': (),
+        'submarine-depth': (('surface', 'surface'),),
+        'load': (('direction', 'direction'), ('targetUnitId', 'targetUnitId')),
+        'unload': (('unloading', 'unloading'),),
+        'unit-action': (('actionName', 'actionName'),),
+    }
+    actions = plan.get('actions')
+    require(isinstance(actions, list), 'actions')
+    by_id = {}
+    for action in actions:
+        require(isinstance(action, dict), 'action')
+        identifier = action.get('actionId')
+        require(isinstance(identifier, str) and identifier and identifier not in by_id, 'actionId')
+        by_id[identifier] = action
+    used, step = set(), 0
+    for intent in plan['intents']:
+        location = intent['intentId']
+        kind = intent.get('kind')
+        wait = intent.get('waitSteps', 0)
+        require(type(wait) is int and 0 <= wait <= 600, location + '.waitSteps')
+        if kind == 'select':
+            require('coreActionId' not in intent, location + '.coreActionId')
+        else:
+            identifier = intent.get('coreActionId')
+            require(kind in fields and isinstance(identifier, str) and identifier in by_id and identifier not in used,
+                    location + '.coreActionId')
+            action = by_id[identifier]
+            used.add(identifier)
+            require(action.get('kind') == kind and action.get('actor') == intent.get('actor', 'p1') and
+                    type(action.get('atStep')) is int and action['atStep'] == step, location + '.schedule')
+            for left, right in fields[kind]:
+                first, second = intent.get(left), action.get(right)
+                if left == 'position':
+                    valid = point(first) and point(second)
+                elif left in ('surface', 'unloading'):
+                    valid = type(first) is bool and type(second) is bool
+                else:
+                    valid = isinstance(first, str) and bool(first) and isinstance(second, str)
+                require(valid and first == second, location + '.' + left)
+            if kind == 'load':
+                require(intent['direction'] in ('INTO', 'UP'), location + '.direction')
+            if kind == 'unit-action':
+                validate_unit_action_intent(intent, paired=True)
+                cancel = intent.get('cancelQueued', False)
+                require(type(action.get('cancelQueued')) is bool and action['cancelQueued'] == cancel,
+                        location + '.cancelQueued')
+                first, second = intent.get('target'), action.get('target')
+                require((first is None and second is None) or (point(first) and point(second) and first == second),
+                        location + '.target')
+        step += wait
+    termination = plan.get('termination')
+    steps = termination.get('steps') if isinstance(termination, dict) else None
+    require(used == by_id.keys() and isinstance(steps, list) and len(steps) == step, 'coverage')
 
 
 def value_at(sample, path):
@@ -368,6 +462,156 @@ def validate_history_poses(units, policy):
     def point(value):
         return isinstance(value, dict) and set(value) == {'x','y'} and all(number(v) for v in value.values())
     for unit in units:
+        if unit.get('typeId') in {'aaBeamGunship','aaBeamGunship_afterburn','bomber'}:
+            bomber = unit['typeId'] == 'bomber'
+            category = 'history-bomber' if bomber else 'history-aa-beam'
+            maximum = 3 if bomber else 6
+            shot_cost = 1 if bomber else .5
+            energy=unit.get('energy');pose=unit.get('flightPose')
+            if (not isinstance(energy,dict) or set(energy)!={'current','maximum','recharging'} or
+                    not number(energy.get('current')) or not 0<=energy['current']<=maximum or
+                    not number(energy.get('maximum')) or energy['maximum']!=maximum or type(energy.get('recharging')) is not bool or
+                    unit['typeId']!='aaBeamGunship_afterburn' and
+                    (energy['recharging'] and energy['current']>=maximum or not energy['recharging'] and energy['current']<shot_cost)):
+                raise PlatformError(category,'Missing or inconsistent weapon energy and recharge lock',2)
+            if (not isinstance(pose,dict) or set(pose)!={'velocity','height','heightPhase','rotorPhase','rotorHeading','rotorHeightOffset','fall'} or
+                    not point(pose.get('velocity')) or any(not number(pose.get(k)) for k in
+                        ('height','heightPhase','rotorPhase','rotorHeading','rotorHeightOffset')) or
+                    not number(unit.get('height')) or pose['height']!=unit['height'] or pose['rotorHeightOffset']!=0):
+                raise PlatformError(category,'Missing or invalid rotorless flight pose',2)
+            fall=pose['fall']
+            if (not isinstance(fall,dict) or set(fall)!={'speed','landed','landedInWater','settled'} or
+                    not number(fall.get('speed')) or fall['speed']<0 or
+                    any(type(fall.get(k)) is not bool for k in ('landed','landedInWater','settled')) or
+                    not fall['landed'] and (fall['landedInWater'] or fall['settled']) or
+                    unit.get('alive') is True and (fall['landed'] or fall['speed']!=0)):
+                raise PlatformError(category,'Missing or inconsistent fall state',2)
+            state=unit.get('unitActions')
+            if bomber:
+                if state is not None: raise PlatformError('history-unit-action','Bomber has no unit actions',2)
+            elif unit.get('ownerPlayerId')!=policy.get('ownerPlayerId','p1'):
+                if state is not None:raise PlatformError('history-unit-action','Enemy action controls must be private',2)
+            else:
+                names={'afterBurn','cancelBurn'} if unit['typeId']=='aaBeamGunship_afterburn' else {'afterBurn'}
+                if (not isinstance(state,dict) or set(state)!={'actions','automaticCooldown'} or
+                        not number(state.get('automaticCooldown')) or not 0<=state['automaticCooldown']<=60 or
+                        not isinstance(state.get('actions'),dict) or set(state['actions'])!=names):
+                    raise PlatformError('history-unit-action','Missing or invalid finite unit actions',2)
+                indexes=[]
+                for name,action in state['actions'].items():
+                    if (not isinstance(action,dict) or set(action)!={'queueIndex','progress','cooldownRemaining','available'} or
+                            type(action.get('cooldownRemaining')) is not int or not 0<=action['cooldownRemaining']<=25000 or
+                            name=='cancelBurn' and action['cooldownRemaining']!=0):
+                        raise PlatformError('history-unit-action','Invalid action cooldown or fields',2)
+                    index=action['queueIndex'];progress=action['progress']
+                    if index is None:
+                        if progress is not None:raise PlatformError('history-unit-action','Unqueued action progress',2)
+                    else:
+                        if type(index) is not int or not 0<=index<=1 or not number(progress) or not 0<=progress<1:
+                            raise PlatformError('history-unit-action','Invalid action queue index or progress',2)
+                        indexes.append(index)
+                    available=(unit.get('alive') is True and unit.get('constructionProgress',0)>=1 and
+                               unit.get('carriedBy') is None and index is None and action['cooldownRemaining']==0)
+                    if type(action['available']) is not bool or action['available']!=available:
+                        raise PlatformError('history-unit-action','Action availability differs from its state',2)
+                if sorted(indexes)!=list(range(len(indexes))):
+                    raise PlatformError('history-unit-action','Action queue indexes must be unique and contiguous',2)
+        elif unit.get('typeId') == spider_platform.CHASSIS:
+            spider_platform.validate_state(unit, policy.get('ownerPlayerId','p1'))
+        elif unit.get('typeId') in ('mechBunker','mechBunkerDeployed'):
+            validate_bunker_state(unit, policy.get('ownerPlayerId','p1'))
+        elif unit.get('typeId') in {'nautilusSubmarine','nautilusSubmarineSurface','nautilusSubmarineLand'}:
+            validate_nautilus_state(unit,policy.get('ownerPlayerId','p1'))
+        elif unit.get('typeId') in ('robotCrab','robotCrabWater'):
+            energy=unit.get('energy')
+            if (not isinstance(energy,dict) or set(energy)!={'current','maximum','recharging'} or
+                    not number(energy['current']) or not 0<=energy['current']<=1 or
+                    energy['maximum']!=1 or energy['recharging'] is not False):
+                raise PlatformError('history-scout','Invalid scout lifetime energy',2)
+            state=unit.get('unitActions')
+            if unit.get('ownerPlayerId')==policy.get('ownerPlayerId','p1'):
+                if (not isinstance(state,dict) or set(state)!={'actions','automaticCooldown'} or state['actions'] or
+                        not number(state['automaticCooldown']) or not 0<=state['automaticCooldown']<=60):
+                    raise PlatformError('history-scout','Invalid scout conversion state',2)
+            elif state is not None:
+                raise PlatformError('history-scout','Enemy scout action state must remain private',2)
+        elif unit.get('typeId') in ('nukeLauncherC','antiNukeLauncherC'):
+            from nuclear_platform import validate_nuclear_state
+            validate_nuclear_state(unit,policy.get('ownerPlayerId','p1'))
+        elif unit.get('energy') is not None:
+            raise PlatformError('history-aa-beam','Weapon energy on an unsupported unit',2)
+        elif unit.get('unitActions') is not None:
+            raise PlatformError('history-unit-action','Unit actions on an unsupported type',2)
+        if unit.get('carriedBy') is not None:
+            raise PlatformError('history-transport','Carried passenger in a player sample',2)
+        transport=unit.get('transport')
+        if unit.get('typeId') in {'hovercraft','dropship','nautilusSubmarine','nautilusSubmarineSurface','nautilusSubmarineLand'} and unit.get('ownerPlayerId')==policy.get('ownerPlayerId','p1'):
+            nautilus=unit['typeId'] in {'nautilusSubmarine','nautilusSubmarineSurface','nautilusSubmarineLand'}
+            if (not isinstance(transport,dict) or set(transport)!={'passengerIds','passengerCount','occupiedSlots','capacity','unloading','unloadRemaining','canUnload'} or
+                    not number(unit.get('height'))):
+                raise PlatformError('history-transport','Missing or unapproved owner cargo fields',2)
+            passengers=transport['passengerIds']
+            if (not isinstance(passengers,list) or any(not isinstance(p,str) or not p for p in passengers) or
+                    len(passengers)!=len(set(passengers)) or any(p==u.get('unitId') for p in passengers for u in units) or
+                    type(transport['passengerCount']) is not int or transport['passengerCount']!=len(passengers) or
+                    type(transport['occupiedSlots']) is not int or not 0<=transport['occupiedSlots']<=4 or
+                    (not passengers and transport['occupiedSlots']!=0) or type(transport['capacity']) is not int or transport['capacity']!=(3 if nautilus else 4) or
+                    type(transport['unloading']) is not bool or type(transport['canUnload']) is not bool or
+                    not number(transport['unloadRemaining']) or not 0<=transport['unloadRemaining']<=30 or
+                    transport['canUnload'] and (not passengers or transport['unloading'] or unit.get('alive') is not True)):
+                raise PlatformError('history-transport','Invalid cargo count, capacity or unload state',2)
+            if nautilus and (transport['occupiedSlots']!=len(passengers) or unit['typeId']!='nautilusSubmarineSurface' and (transport['unloading'] or
+                    transport['canUnload'])):
+                raise PlatformError('history-nautilus','Submerged production must retain its single-slot products',2)
+        elif transport is not None:
+            raise PlatformError('history-transport','Enemy or unsupported cargo state',2)
+        exit_state=unit.get('transportExit')
+        if exit_state is not None and (unit.get('ownerPlayerId')!=policy.get('ownerPlayerId','p1') or
+                not isinstance(exit_state,dict) or set(exit_state)!={'previousCarrierId','remaining'} or
+                not isinstance(exit_state['previousCarrierId'],str) or not exit_state['previousCarrierId'] or
+                not number(exit_state['remaining']) or not 0<exit_state['remaining']<=45):
+            raise PlatformError('history-transport','Invalid exit reference or lifetime',2)
+        if unit.get('typeId')=='amphibiousJet':
+            state=unit.get('amphibiousJet');height=unit.get('height')
+            fields={'flyingIntent','verticalSpeed','underwater','surfacePresentation','movementType',
+                    'maximumSpeed','attackRange','wingFold','phase','sinkSpeed','settled','canDive'}
+            if (not isinstance(state,dict) or set(state)!=fields or not number(height) or
+                    type(state.get('underwater')) is not bool or state['underwater']!=(height < -1) or
+                    any(type(state.get(k)) is not bool for k in ('surfacePresentation','settled')) or
+                    state.get('movementType') not in ('AIR','WATER') or
+                    not number(state.get('maximumSpeed')) or state['maximumSpeed']!=(.4 if height < -1 else 1.4) or
+                    not number(state.get('attackRange')) or state['attackRange']!=(100 if state['movementType']=='WATER' else 170) or
+                    any(not number(state.get(k)) for k in ('wingFold','phase','sinkSpeed')) or
+                    not 0<=state['wingFold']<=1 or not 0<=state['phase']<=360 or state['sinkSpeed']<0 or
+                    any(unit.get(k) is not None for k in ('flightPose','waterPose','submarine'))):
+                raise PlatformError('history-amphibious','Missing or inconsistent physical amphibious state',2)
+            if unit.get('ownerPlayerId')==policy.get('ownerPlayerId','p1'):
+                if (any(type(state.get(k)) is not bool for k in ('flyingIntent','canDive')) or
+                        not number(state.get('verticalSpeed')) or not 0<=state['verticalSpeed']<=.6 or
+                        (state['movementType']=='WATER')!=(not state['flyingIntent'] or height<0) or
+                        state['canDive'] and (not state['flyingIntent'] or unit.get('alive') is not True or
+                                             not number(unit.get('constructionProgress')) or unit['constructionProgress']<1)):
+                    raise PlatformError('history-amphibious','Missing or inconsistent owner amphibious controls',2)
+            elif any(state.get(k) is not None for k in ('flyingIntent','verticalSpeed','canDive')):
+                raise PlatformError('history-amphibious','Enemy amphibious controls must be redacted',2)
+        elif unit.get('amphibiousJet') is not None:
+            raise PlatformError('history-amphibious','Unsupported amphibious capability in the archive',2)
+        if unit.get('typeId')=='attackSubmarine':
+            state=unit.get('submarine');height=unit.get('height')
+            if (not isinstance(state,dict) or set(state)!={'surfaceIntent','verticalSpeed','underwater','surfacePresentation','maximumSpeed','attackRange'} or
+                    not number(height) or type(state.get('underwater')) is not bool or state['underwater']!=(height < -1) or
+                    type(state.get('surfacePresentation')) is not bool or
+                    not number(state.get('maximumSpeed')) or state['maximumSpeed']!=(.45 if height < -1 else .8) or
+                    not number(state.get('attackRange')) or state['attackRange']!=(180 if height < -1 else 250)):
+                raise PlatformError('history-submarine','Missing or inconsistent physical submarine state',2)
+            if unit.get('ownerPlayerId')==policy.get('ownerPlayerId','p1'):
+                if (type(state.get('surfaceIntent')) is not bool or not number(state.get('verticalSpeed')) or
+                        not 0<=state['verticalSpeed']<=.08):
+                    raise PlatformError('history-submarine','Missing or invalid owner submarine control state',2)
+            elif state['surfaceIntent'] is not None or state['verticalSpeed'] is not None:
+                raise PlatformError('history-submarine','Enemy submarine control state must be redacted',2)
+        elif unit.get('submarine') is not None:
+            raise PlatformError('history-submarine','Unsupported submarine capability in the archive',2)
         expected = counts.get(unit.get('typeId'))
         if expected is None:
             if 'mechPose' in unit:
@@ -388,7 +632,80 @@ def validate_history_poses(units, policy):
                 raise PlatformError('history-pose', 'Missing, duplicate or invalid mech leg', 2)
 
 
-def validate_history_action(records, row, intent, geometry=None):
+def validate_nautilus_state(unit,owner):
+    def invalid(message):raise PlatformError('history-nautilus',message,2)
+    def number(value):return type(value) in (int,float) and math.isfinite(value)
+    energy=unit.get('energy')
+    if (not isinstance(energy,dict) or set(energy)!={'current','maximum','recharging'} or
+            not number(energy['current']) or not 0<=energy['current']<=6 or
+            not number(energy['maximum']) or energy['maximum']!=6 or type(energy['recharging']) is not bool or
+            energy['recharging'] and energy['current']>=6 or not energy['recharging'] and energy['current']<1 or
+            unit.get('flightPose') is not None):invalid('Invalid energy or recharge lock')
+    state=unit.get('unitActions')
+    if unit.get('ownerPlayerId')!=owner:
+        if state is not None:invalid('Enemy action state must remain private')
+        return
+    names=NAUTILUS_ACTIONS[unit['typeId']]
+    if (not isinstance(state,dict) or set(state)!={'actions','automaticCooldown','queue','stockpile'} or
+            not number(state['automaticCooldown']) or not 0<=state['automaticCooldown']<=60 or
+            not isinstance(state['actions'],dict) or set(state['actions'])!=names):invalid('Invalid player action set')
+    queue=state['queue'];stock=state['stockpile']
+    if not isinstance(queue,list) or type(stock) is not int or not 0<=stock<=4:invalid('Invalid paid queue or stockpile')
+    paid={NAVAL_AMMO:[],SCOUT_LAUNCH:[]}
+    for item in queue:
+        if (not isinstance(item,dict) or set(item)!={'name','progress','target'} or
+                not isinstance(item['name'],str) or item['name'] not in paid or
+                not number(item['progress']) or not 0<=item['progress']<1):
+            invalid('Invalid paid queue item')
+        target=item['target']
+        if (item['name']==NAVAL_AMMO and target is not None or item['name']==SCOUT_LAUNCH and
+                (not isinstance(target,dict) or set(target)!={'x','y'} or not all(number(v) for v in target.values()))):
+            invalid('Invalid paid queue target')
+        paid[item['name']].append(item)
+    if stock+len(paid[NAVAL_AMMO])>4 or len(paid[SCOUT_LAUNCH])>1:invalid('Invalid paid queue limit')
+    indexes=set()
+    for name,action in state['actions'].items():
+        if (not isinstance(action,dict) or set(action)!={'queueIndex','progress','cooldownRemaining','available'} or
+                type(action['cooldownRemaining']) is not int or not 0<=action['cooldownRemaining']<=(29999 if name=='launchScoutBot' else 0) or
+                type(action['available']) is not bool):invalid('Invalid action fields')
+        index=action['queueIndex'];progress=action['progress']
+        if index is None:
+            if progress is not None:invalid('Unqueued progress')
+        elif (type(index) is not int or not 0<=index<=len(queue) or index in indexes or
+                not number(progress) or not 0<=progress<1):invalid('Invalid queued action')
+        else:indexes.add(index)
+        if name in paid and (bool(paid[name])!=(index is not None) or paid[name] and progress!=paid[name][0]['progress']):
+            invalid('First paid action does not match its queue')
+        has_room=stock+len(paid[NAVAL_AMMO])<4 if name==NAVAL_AMMO else index is None
+        available=(unit.get('alive') is True and unit.get('constructionProgress',0)>=1 and unit.get('carriedBy') is None and
+                   has_room and action['cooldownRemaining']==0)
+        if action['available']!=available and not (name in ('dive',NAVAL_AMMO) and action['available'] is False):
+            invalid('Invalid action availability')
+
+
+def validate_bunker_state(unit, owner):
+    def invalid(message):raise PlatformError('history-bunker',message,2)
+    if unit.get('energy') is not None:invalid('Bunker cannot expose weapon energy')
+    state=unit.get('unitActions')
+    if unit.get('ownerPlayerId')!=owner:
+        if state is not None:invalid('Enemy action controls must remain private')
+        return
+    name='deploy' if unit['typeId']=='mechBunker' else 'undeploy'
+    if (not isinstance(state,dict) or set(state)!={'actions','automaticCooldown'} or state['automaticCooldown']!=0 or
+            not isinstance(state['actions'],dict) or set(state['actions'])!={name}):invalid('Invalid finite bunker action state')
+    action=state['actions'][name]
+    if (not isinstance(action,dict) or set(action)!={'queueIndex','progress','cooldownRemaining','available'} or
+            type(action['cooldownRemaining']) is not int or action['cooldownRemaining']!=0):invalid('Invalid bunker action fields')
+    index=action['queueIndex'];progress=action['progress']
+    if index is None:
+        if progress is not None:invalid('Unqueued progress')
+    elif type(index) is not int or index!=0 or type(progress) not in (float,int) or not 0<=progress<1:
+        invalid('Invalid queued progress')
+    available=(unit.get('alive') is True and unit.get('constructionProgress',0)>=1 and unit.get('carriedBy') is None and index is None)
+    if type(action['available']) is not bool or action['available']!=available:invalid('Invalid bunker action availability')
+
+
+def validate_history_action(records, row, intent, geometry=None, paired=False):
     """Bind a fixed intention to its existing exported call and owned object."""
     index=row['sequence']
     if not 0 < index < len(records)-1:
@@ -412,15 +729,97 @@ def validate_history_action(records, row, intent, geometry=None):
         raise PlatformError('history-action-identity','Formal actor or unit differs from the fixed intention',2)
     for sample in (left,right):
         units=[u for u in sample.get('units',[]) if u.get('unitId')==identity]
+        if (sample is right and not units and kind=='load' and intent.get('direction')=='INTO' and
+                any(u.get('unitId')==row.get('targetUnitId') and identity in (u.get('transport') or {}).get('passengerIds',[])
+                    for u in sample.get('units',[]))):
+            continue
         if (len(units)!=1 or units[0].get('alive') is not True or
                 kind!='select' and units[0].get('ownerPlayerId')!=actor):
             raise PlatformError('history-action-identity','Formal object is absent, ambiguous, dead or not owned',2)
     fields={}
+    if kind=='unit-action':
+        validate_unit_action_intent(intent, paired)
+        old=next(u for u in left['units'] if u['unitId']==identity)
+        new=next(u for u in right['units'] if u['unitId']==identity)
+        name=intent['actionName']
+        if old.get('typeId') == spider_platform.CHASSIS:
+            spider_platform.validate_call(old, new, row, intent, input_footprint(geometry))
+            return
+        naval_ammo=name==NAVAL_AMMO and old.get('typeId') in NAUTILUS_ACTIONS
+        if name in ('buildNuke','launchNuke','buildAntiNuke') and not naval_ammo:
+            from nuclear_platform import validate_nuclear_call
+            validate_nuclear_call(old,new,row,intent,input_footprint(geometry))
+            return
+        if naval_ammo or name==SCOUT_LAUNCH:
+            actual=row.get('target'); expected=intent.get('target')
+            cancel=intent.get('cancelQueued',False);limits=input_footprint(geometry)
+            matches=(actual is None and expected is None or isinstance(actual,dict) and isinstance(expected,dict) and
+                     set(actual)==set(expected)=={'x','y'} and all(type(actual[k]) in (int,float) and math.isfinite(actual[k]) and
+                         abs(actual[k]-expected[k])<=limits[k] for k in ('x','y')))
+            before=old['unitActions']['queue']
+            after=new['unitActions']['queue']
+            indexes=[i for i,item in enumerate(before) if item['name']==name]
+            expected_queue=(before[:indexes[-1]]+before[indexes[-1]+1:] if indexes else None) if cancel else [
+                *before,dict(name=name,progress=0,target=actual)]
+            if (row.get('actionName')!=name or row.get('cancelQueued') is not cancel or not matches or
+                    any(old.get(k)!=new.get(k) for k in set(old)|set(new) if k!='unitActions') or
+                    old['unitActions']['stockpile']!=new['unitActions']['stockpile'] or
+                    not cancel and old['unitActions']['actions'].get(name,{}).get('available') is not True or
+                    after!=expected_queue):
+                raise PlatformError('history-action-fields','Paid action or cancellation differs from its exact queue receipt',2)
+            return
+        if row.get('actionName')!=intent['actionName'] or row.get('cancelQueued') is not False:
+            raise PlatformError('history-action-fields','Normal unit action name or queue cancellation differs',2)
+        old_actions=(old.get('unitActions') or {}).get('actions',{})
+        new_actions=(new.get('unitActions') or {}).get('actions',{})
+        name=intent['actionName']
+        if (name not in old_actions or name not in new_actions or old_actions[name].get('available') is not True or
+                old_actions[name].get('queueIndex') is not None or
+                new_actions[name].get('queueIndex')!=sum(a.get('queueIndex') is not None for a in old_actions.values()) or
+                new_actions[name].get('progress')!=0 or new_actions[name].get('available') is not False or
+                any(old.get(k)!=new.get(k) for k in old if k!='unitActions') or
+                old['unitActions']['automaticCooldown']!=new['unitActions']['automaticCooldown'] or
+                set(old_actions)!=set(new_actions) or any(
+                    old_actions[k]!=new_actions[k] for k in old_actions if k!=name) or
+                old_actions[name].get('cooldownRemaining')!=new_actions[name].get('cooldownRemaining')):
+            raise PlatformError('history-action-fields','Unit action must append its queue item without synchronous conversion or resource edits',2)
     if kind=='build' and 'typeId' in intent:fields['buildingTypeId']=intent['typeId']
     if 'upgradeId' in intent:fields['upgradeId']=intent['upgradeId']
     if 'targetUnitId' in intent:fields['targetUnitId']=intent['targetUnitId']
     if any(row.get(key)!=value for key,value in fields.items()):
         raise PlatformError('history-action-fields','Formal action parameters differ from the fixed intention',2)
+    if kind=='load' and (intent.get('direction') not in ('INTO','UP') or row.get('direction')!=intent['direction']):
+        raise PlatformError('history-action-fields','Load direction differs from fixed intention',2)
+    if kind=='unload' and (type(intent.get('unloading')) is not bool or type(row.get('unloading')) is not bool or row['unloading']!=intent['unloading']):
+        raise PlatformError('history-action-fields','Unload action differs from strict fixed boolean',2)
+    if kind=='amphibious-flight':
+        if type(intent.get('flying')) is not bool or type(row.get('flying')) is not bool or row['flying']!=intent['flying']:
+            raise PlatformError('history-action-fields','Flight action differs from the fixed flying boolean',2)
+        old=next(u for u in left['units'] if u['unitId']==identity)
+        new=next(u for u in right['units'] if u['unitId']==identity)
+        state_old,state_new=old.get('amphibiousJet'),new.get('amphibiousJet')
+        if (old.get('typeId')!='amphibiousJet' or not isinstance(state_old,dict) or not isinstance(state_new,dict) or
+                type(state_old.get('flyingIntent')) is not bool or state_old['flyingIntent']==intent['flying'] or
+                type(state_new.get('flyingIntent')) is not bool or state_new['flyingIntent']!=intent['flying'] or
+                set(state_old)!=set(state_new) or
+                any(state_old[k]!=state_new[k] for k in state_old if k not in ('flyingIntent','movementType','attackRange','canDive')) or
+                state_new.get('movementType')!=('WATER' if not intent['flying'] or old.get('height',0)<0 else 'AIR') or
+                state_new.get('attackRange')!=(100 if state_new.get('movementType')=='WATER' else 170) or
+                any(k not in old or k not in new or old[k]!=new[k] for k in ('height','position','moveTarget','tasks'))):
+            raise PlatformError('history-action-fields','Flight intention must preserve physical state and the existing route',2)
+    if kind=='submarine-depth':
+        if type(intent.get('surface')) is not bool or type(row.get('surface')) is not bool or row['surface']!=intent['surface']:
+            raise PlatformError('history-action-fields','Submarine action differs from the fixed surface boolean',2)
+        old=next(u for u in left['units'] if u['unitId']==identity)
+        new=next(u for u in right['units'] if u['unitId']==identity)
+        state_old,state_new=old.get('submarine'),new.get('submarine')
+        if (old.get('typeId')!='attackSubmarine' or not isinstance(state_old,dict) or not isinstance(state_new,dict) or
+                type(state_old.get('surfaceIntent')) is not bool or state_old['surfaceIntent']==intent['surface'] or
+                type(state_new.get('surfaceIntent')) is not bool or state_new['surfaceIntent']!=intent['surface'] or
+                set(state_old)!=set(state_new) or
+                any(state_old[k]!=state_new[k] for k in state_old if k!='surfaceIntent') or
+                any(k not in old or k not in new or old[k]!=new[k] for k in ('height','position','moveTarget','tasks'))):
+            raise PlatformError('history-action-fields','Depth intention must preserve physical state and the existing route',2)
     def same_point(actual,expected,limits=None):
         return all(isinstance(p,dict) and set(p)=={'x','y'} and all(
             type(p[k]) in (int,float) and math.isfinite(p[k]) for k in ('x','y'))
@@ -429,7 +828,15 @@ def validate_history_action(records, row, intent, geometry=None):
         raise PlatformError('history-action-fields','Formal destination differs from the fixed Session point',2)
     if kind=='move':
         unit=next(u for u in right['units'] if u.get('unitId')==identity)
-        if not same_point(unit.get('moveTarget'),row.get('target')):
+        if 'pathUnreachable' in intent and type(intent['pathUnreachable']) is not bool:
+            raise PlatformError('input-contract','Expected strict unreachable-path boolean',1)
+        if intent.get('pathUnreachable') is True:
+            events=row.get('result',{}).get('events',[])
+            if (unit.get('moveTarget') is not None or unit.get('tasks')!=[] or
+                    any(sum(e.get('kind')==kind and e.get('unitId')==identity for e in events)!=1
+                        for kind in ('movement-cancelled','path-unreachable'))):
+                raise PlatformError('history-action-fields','Unreachable Move must cancel its route with explicit receipts',2)
+        elif not same_point(unit.get('moveTarget'),row.get('target')):
             raise PlatformError('history-action-fields','Move target did not exactly match the accepted formal destination',2)
     if kind=='attack':
         targets=[u for u in left.get('units',[]) if u.get('unitId')==row.get('targetUnitId')]
@@ -440,6 +847,22 @@ def validate_history_action(records, row, intent, geometry=None):
         if (len(targets)!=1 or targets[0].get('alive') is not True or targets[0].get('ownerPlayerId')==actor or
                 fixed_position is not None and not same_point(targets[0].get('position'),fixed_position)):
             raise PlatformError('history-action-fields','Attack target differs from the fixed visible target/point',2)
+    if kind in ('repair','reclaim'):
+        targets=[u for u in left.get('units',[]) if u.get('unitId')==row.get('targetUnitId')]
+        # Qualified normal bodies: tank and basic mech both have displayRadius 11.
+        # Bind the click to those finite body shapes independently of the runtime hit test.
+        point=intent.get('position');target=targets[0] if len(targets)==1 else {}
+        body=target.get('position',{});footprint=input_footprint(geometry)
+        radius={'c_tank':11, 'mechGun':11, 'builder':12}.get(target.get('typeId'))
+        hit=(point is None or radius is not None and
+             isinstance(point,dict) and set(point)=={'x','y'} and isinstance(body,dict) and set(body)=={'x','y'} and
+             all(type(p[k]) in (int,float) and math.isfinite(p[k]) for p in (point,body) for k in ('x','y')) and
+             math.hypot(max(0,abs(body['x']-point['x'])-footprint['x']),
+                        max(0,abs(body['y']-point['y'])-footprint['y']))<=radius)
+        if (len(targets)!=1 or targets[0].get('alive') is not True or targets[0].get('carriedBy') is not None or
+                row.get('targetUnitId')==identity or kind=='reclaim' and targets[0].get('ownerPlayerId')!=actor or
+                not hit):
+            raise PlatformError('history-action-fields','Maintenance target differs from the fixed visible unit and point',2)
     if kind=='produce' and 'typeId' in intent:
         queues=[]
         for sample in (left,right):
@@ -482,25 +905,348 @@ def validate_production_history(records, policy):
             raise PlatformError('history-production','Missing or reordered completion: '+name,2)
 
 
+SPIDER_LAUNCH_SOURCES = {
+    'SPIDER_LIGHTNING': ('modularSpider_lightning', '1'),
+    'INTERCEPTOR': ('modularSpider_antinuke', 'silo'),
+}
+
+
+def validate_launch_appearance(shot, units, verified_attachment_birth=None):
+    source=units.get(shot.get('sourceUnitId'),{})
+    weapon=shot.get('sourceWeaponName')
+    style=shot.get('appearance','STANDARD')
+    expected={'attackSubmarine':('SUBMARINE_MISSILE','SUBMARINE_TORPEDO'),
+              'amphibiousJet':('AMPHIBIOUS_LIGHTNING',),'modularSpider_lightning':('SPIDER_LIGHTNING',),
+              'aaBeamGunship':('AA_BEAM',),'nukeLauncherC':('NUCLEAR',),'modularSpider':('NUCLEAR',),
+              'antiNukeLauncherC':('INTERCEPTOR',),'modularSpider_antinuke':('INTERCEPTOR',),
+              'mechFlame':('MECH_FLAME',)}.get(source.get('typeId'),('STANDARD',))
+    if verified_attachment_birth is not None:
+        verified_style, verified_source = verified_attachment_birth
+        disclosed = shot.get('sourceUnitId'), weapon
+        if disclosed not in (verified_source, (None, None)):
+            raise PlatformError('history-projectile','Spider projectile changed its verified launch source or weapon',2)
+        expected = (verified_style,)
+        weapon = verified_source[1]
+    elif source.get('typeId') == 'modularSpider_antinuke' and 'kind' in shot and weapon != 'silo':
+        raise PlatformError('history-projectile','Spider interceptor requires its own launch mount',2)
+    if source.get('typeId') in NAUTILUS_ACTIONS:
+        expected={'botTurret':('SCOUT_PAYLOAD',),'antiNuke':('INTERCEPTOR',)}.get(shot.get('sourceWeaponName'),expected)
+    bomber_appearances = {'1': 'BOMBER_BOMB', '2': 'BOMBER_DEPTH_CHARGE'}
+    if source.get('typeId') == 'bomber':
+        expected = (bomber_appearances.get(shot.get('sourceWeaponName')),) if 'kind' in shot else tuple(bomber_appearances.values())
+    lightning_weapons = {'AMPHIBIOUS_LIGHTNING': ('left', 'right'), 'SPIDER_LIGHTNING': ('1',)}
+    if (style not in ('STANDARD','SUBMARINE_MISSILE','SUBMARINE_TORPEDO','AA_BEAM','NUCLEAR',
+                     *lightning_weapons,
+                     'INTERCEPTOR','SCOUT_PAYLOAD','MECH_FLAME', *bomber_appearances.values()) or
+            (source or verified_attachment_birth is not None) and style not in expected):
+        raise PlatformError('history-projectile','Invalid native launch appearance or source',2)
+    if style=='MECH_FLAME' and 'kind' in shot and (
+            source and shot.get('sourceWeaponName') not in ('2','3') or shot.get('targetUnitId') is not None):
+        raise PlatformError('history-projectile','Flame launch has no homing unit reference and uses a side nozzle',2)
+    line=shot.get('lightning')
+    if style in lightning_weapons:
+        def finite(value):return type(value) in (int,float) and math.isfinite(value)
+        if (not isinstance(line,dict) or set(line)!={'end','endHeight'} or
+                not isinstance(line.get('end'),dict) or set(line['end'])!={'x','y'} or
+                any(not finite(v) for v in line['end'].values()) or not finite(line['endHeight']) or
+                ('kind' in shot or source) and weapon not in lightning_weapons[style] or
+                any(shot.get(k) is not None for k in ('ground','missile','ballistic','areaExpansion'))):
+            raise PlatformError('history-projectile','Missing or invalid native lightning geometry',2)
+    elif line is not None:
+        raise PlatformError('history-projectile','Lightning geometry on an unsupported launch appearance',2)
+    beam=shot.get('beam')
+    if style=='AA_BEAM':
+        def finite(value):return type(value) in (int,float) and math.isfinite(value)
+        if (not isinstance(beam,dict) or set(beam)!={'end','endHeight','textureOffset'} or
+                not isinstance(beam.get('end'),dict) or set(beam['end'])!={'x','y'} or
+                any(not finite(v) for v in beam['end'].values()) or not finite(beam.get('endHeight')) or
+                not finite(beam.get('textureOffset')) or beam['textureOffset']<0 or
+                ('kind' in shot or source) and shot.get('sourceWeaponName')!='1' or
+                any(shot.get(k) is not None for k in ('ground','missile','ballistic','areaExpansion','lightning'))):
+            raise PlatformError('history-aa-beam','Missing or invalid authorized beam geometry',2)
+        if 'kind' in shot and shot['kind'] not in ('born','rearmed','impact','expired','target-ended'):
+            raise PlatformError('history-aa-beam','Unknown beam lifecycle event',2)
+    elif beam is not None:
+        raise PlatformError('history-aa-beam','Beam geometry on an unsupported launch appearance',2)
+    return style
+
+
+def validate_unit_action_history(records, policy):
+    """Independent finite AA command/step protocol, using the fixed normal one-tick schedule."""
+    def f32(value):return struct.unpack('<f',struct.pack('<f',value))[0]
+    owner=policy.get('ownerPlayerId','p1')
+    previous={};pending={};ends={};automatic={};clock=0
+    for row in records:
+        if row.get('kind')=='action' and row.get('type')=='UnitAction':
+            pending.setdefault(row['unitId'],[]).append(row['actionName'])
+        if row.get('kind')!='observation':continue
+        sample=row['sample'];step=row.get('phase')=='step'
+        if step:clock=int(f32(f32(clock)+f32(16.666666)))
+        expected_events=[]
+        for unit in sample.get('units',[]):
+            if unit.get('ownerPlayerId')!=owner or unit.get('typeId') not in ('aaBeamGunship','aaBeamGunship_afterburn'):continue
+            identity=unit['unitId'];old=previous.get(identity);form=old['typeId'] if old else 'aaBeamGunship'
+            timer=automatic.get(identity,0)
+            queue=pending.setdefault(identity,[])
+            if step and old and unit.get('alive') is True:
+                name=queue.pop(0) if queue else None
+                if name is not None:
+                    form='aaBeamGunship_afterburn' if name=='afterBurn' else 'aaBeamGunship'
+                    if name=='afterBurn':ends[identity]=clock+25000
+                    expected_events.append((identity,'unit-action-completed'))
+                if form=='aaBeamGunship_afterburn':
+                    timer=max(0,timer-1)
+                    # Energy updates before ordinary actions; base afterBurn then sets 6.
+                    energy=old['energy'];empty=(old['typeId']=='aaBeamGunship_afterburn' and
+                        energy['recharging'] is False and f32(f32(energy['current'])+f32(-.02))<=0)
+                    if timer==0 and empty:
+                        form='aaBeamGunship';timer=60
+                        expected_events.append((identity,'unit-action-automatic'))
+            if unit['typeId']!=form:
+                raise PlatformError('history-unit-action','Unit form changed outside its normal queue or empty-energy trigger',2)
+            state=unit['unitActions'];action=state['actions']['afterBurn']
+            if action['cooldownRemaining']!=max(0,ends.get(identity,clock)-clock) or state['automaticCooldown']!=timer:
+                raise PlatformError('history-unit-action','Action cooldown differs from accepted commands and the independent clock',2)
+            automatic[identity]=timer
+            previous[identity]=unit
+        if step:
+            actual=sorted((e.get('unitId'),e.get('kind')) for e in sample.get('events',[])
+                          if e.get('kind') in ('unit-action-completed','unit-action-automatic'))
+            if sorted(expected_events)!=actual:
+                raise PlatformError('history-unit-action','Missing, extra or wrong unit action completion event',2)
+    if any(pending.values()):raise PlatformError('history-unit-action','Normal action queue is unfinished',2)
+
+
+def validate_bunker_history(records, policy):
+    """Replay accepted commands with the fixed binary32 167/101-step queue contract."""
+    def f32(value):return struct.unpack('<f',struct.pack('<f',value))[0]
+    previous={};pending={};owner=policy.get('ownerPlayerId','p1')
+    def fail(message):raise PlatformError('history-bunker',message,2)
+    for row in records:
+        if row.get('kind')=='action' and row.get('type')=='UnitAction':
+            identity=row['unitId'];name=row.get('actionName')
+            old=previous.get(identity)
+            if (old is None or name!=('deploy' if old['typeId']=='mechBunker' else 'undeploy') or
+                    identity in pending or row.get('cancelQueued') is not False):fail('Invalid accepted bunker command')
+            pending[identity]=(name,0.0)
+        if row.get('kind')!='observation':continue
+        sample=row['sample'];step=row.get('phase')=='step';expected=[]
+        for unit in sample.get('units',[]):
+            if unit.get('ownerPlayerId')!=owner or unit.get('typeId') not in ('mechBunker','mechBunkerDeployed'):continue
+            identity=unit['unitId'];old=previous.get(identity);form=old['typeId'] if old else unit['typeId']
+            if step and identity in pending:
+                name,progress=pending[identity];progress=f32(progress+f32(.006 if name=='deploy' else .010))
+                if progress>=1:
+                    form='mechBunkerDeployed' if name=='deploy' else 'mechBunker'
+                    del pending[identity];expected.append((identity,'unit-action-completed'))
+                else:pending[identity]=(name,progress)
+            if form!=unit['typeId']:fail('Premature, missing or unsupported bunker conversion')
+            state=unit['unitActions'];name='deploy' if form=='mechBunker' else 'undeploy';action=state['actions'][name]
+            queue=pending.get(identity)
+            if queue is None:
+                if action['queueIndex'] is not None or action['progress'] is not None:fail('Undeclared bunker queue')
+            elif action['queueIndex']!=0 or f32(action['progress'])!=queue[1]:fail('Bunker queue differs from fixed schedule')
+            previous[identity]=unit
+        if step:
+            actual=sorted((e.get('unitId'),e.get('kind')) for e in sample.get('events',[])
+                          if e.get('kind') in ('unit-action-completed','unit-action-automatic'))
+            if actual!=sorted(expected):fail('Missing, extra or wrong bunker action completion event')
+    if pending:fail('Bunker action queue is unfinished')
+
+
+def validate_nautilus_history(records,policy):
+    """Independent finite action queue and fixed-map water predicates for all intermediate samples."""
+    def fail(message):raise PlatformError('history-nautilus-transition',message,2)
+    def f32(value):return struct.unpack('f',struct.pack('f',value))[0]
+    terrain=policy['nautilusTerrain']
+    if (not isinstance(terrain,dict) or set(terrain)!={'width','height','tileWidth','tileHeight','waterCells'} or
+            any(type(terrain[k]) is not int or terrain[k]<=0 for k in ('width','height','tileWidth','tileHeight')) or
+            not isinstance(terrain['waterCells'],list) or len(set(terrain['waterCells']))!=len(terrain['waterCells']) or
+            any(type(i) is not int or not 0<=i<terrain['width']*terrain['height'] for i in terrain['waterCells'])):
+        raise PlatformError('input-contract','Invalid fixed Nautilus water cells',1)
+    water=set(terrain['waterCells']);states={};owner=policy.get('ownerPlayerId','p1')
+    forms={'nautilusSubmarine','nautilusSubmarineSurface','nautilusSubmarineLand'}
+    for row in records:
+        if row.get('kind')=='action' and row.get('type')=='UnitAction' and row.get('unitId') in states:
+            state=states[row['unitId']];name=row.get('actionName')
+            if (row.get('actorPlayerId')!=owner or row.get('result',{}).get('accepted') is not True or
+                    name!={'nautilusSubmarine':'surface','nautilusSubmarineSurface':'dive'}.get(state['form']) or
+                    row.get('cancelQueued') is not False or state['pending'] is not None):fail('Action does not bind the exposed empty queue')
+            state.update(pending=name,progress=0)
+        if row.get('kind')!='observation':continue
+        sample=row['sample'];expected=[]
+        for unit in sample.get('units',[]):
+            if unit.get('ownerPlayerId')!=owner or unit.get('typeId') not in forms and unit.get('unitId') not in states:continue
+            if unit.get('typeId') not in forms:fail('Known mother changed to an unsupported form')
+            identity=unit['unitId'];first=identity not in states
+            state=states.setdefault(identity,dict(form=unit['typeId'],timer=0,pending=None,progress=0))
+            if not first and row.get('phase')=='step' and unit.get('alive') is True and unit.get('constructionProgress')==1:
+                name=state['pending']
+                if name:
+                    state['progress']=f32(state['progress']+(2000 if name=='surface' else f32(f32(1/270)*2)))
+                    if state['progress']>=1:
+                        state.update(form='nautilusSubmarineSurface' if name=='surface' else 'nautilusSubmarine',pending=None,progress=0)
+                        expected.append((identity,'unit-action-completed'))
+                state['timer']=max(0,state['timer']-1)
+                x=int(f32(unit['position']['x'])/terrain['tileWidth']);y=int(f32(unit['position']['y'])/terrain['tileHeight'])
+                if not 0<=x<terrain['width'] or not 0<=y<terrain['height']:fail('Position outside fixed water grid')
+                wet=y*terrain['width']+x in water
+                if state['timer']==0 and (not wet or state['form']=='nautilusSubmarineLand'):
+                    state.update(form='nautilusSubmarineSurface' if wet else 'nautilusSubmarineLand',timer=60,pending=None,progress=0)
+                    expected.append((identity,'unit-action-automatic'))
+            if unit['typeId']!=state['form']:fail('Form differs from accepted queue and fixed terrain')
+            actions=unit.get('unitActions') or {}
+            if actions.get('automaticCooldown')!=state['timer']:fail('Automatic clock differs')
+            names=NAUTILUS_ACTIONS[state['form']]
+            if set(actions.get('actions',{}))!=names:fail('Action set differs from form')
+            for name,entry in actions['actions'].items():
+                if (entry.get('cooldownRemaining')!=0 or entry.get('queueIndex')!=(0 if state['pending']==name else None) or
+                        (type(entry.get('progress')) not in (int,float) or f32(entry['progress'])!=state['progress']
+                         if state['pending']==name else entry.get('progress') is not None)):fail('Queue differs from accepted action and float clock')
+        if row.get('phase')=='step':
+            actual=[(e.get('unitId'),e.get('kind')) for e in sample.get('events',[]) if e.get('unitId') in states and
+                    e.get('kind') in ('unit-action-completed','unit-action-automatic')]
+            if sorted(actual)!=sorted(expected):fail('Missing, premature or extra conversion event')
+
+
+def validate_naval_ammo_history(records, owner):
+    """Replay the naval-only paid chain on its independent binary32 clock."""
+    def fail(message):raise PlatformError('history-naval-ammo',message,2)
+    def f32(value):return struct.unpack('!f',struct.pack('!f',value))[0]
+    states={}
+    for row in records:
+        identity=row.get('unitId')
+        if row.get('kind')=='action' and row.get('type')=='UnitAction' and identity in states:
+            if row.get('actionName')!=NAVAL_AMMO:fail('Naval ammo contract requires an isolated paid action chain')
+            state=states[identity];queue=state['queue']
+            if row.get('cancelQueued') is True:
+                if not queue:fail('Cancellation has no paid order')
+                queue.pop()
+            else:
+                if len(queue)+state['stock']>=4:fail('Accepted over-limit paid order')
+                queue.append(0.0)
+        if row.get('kind')!='observation':continue
+        sample=row['sample']
+        for unit in sample.get('units',[]):
+            if unit.get('typeId') not in NAUTILUS_ACTIONS or unit.get('ownerPlayerId')!=owner:continue
+            identity=unit['unitId']
+            state=states.setdefault(identity,dict(stock=0,queue=[]))
+            if unit.get('alive') is False:
+                state['queue'].clear()
+            elif row.get('phase')=='step' and unit.get('constructionProgress')==1 and unit.get('carriedBy') is None:
+                completed=False
+                if state['queue']:
+                    state['queue'][0]=f32(state['queue'][0]+f32(.0005))
+                    if state['queue'][0]>=1:
+                        state['queue'].pop(0)
+                        state['stock']+=1
+                        completed=True
+                events=sample.get('events',[])
+                if sum(e.get('kind')=='unit-action-completed' and e.get('unitId')==identity for e in events)!=int(completed):
+                    fail('Missing, premature or extra naval production completion')
+                state['stock']-=sum(e['occurrences'] for e in sample.get('projectileEvents',[]) if
+                    e.get('kind')=='born' and e.get('appearance')=='INTERCEPTOR' and e.get('sourceUnitId')==identity)
+            actual=unit['unitActions']
+            if (state['stock']<0 or actual['stockpile']!=state['stock'] or
+                    any(item['name']!=NAVAL_AMMO for item in actual['queue']) or
+                    [f32(item['progress']) for item in actual['queue']]!=state['queue'] or
+                    any(q.get('factoryId')==identity and q.get('items') for q in sample.get('factoryQueues',[]))):
+                fail('Stockpile or queue differs from paid orders and the independent clock')
+    if not states:fail('No owned Nautilus observed')
+
+
 def compare_history(records, plan, policy, native_anchors=None, geometry=None):
     """Check a declared ledger at every observation, including call boundaries."""
     allowed={'initialBalance','spend','noActionIntents','projectileBirthsRequired','mechLegs',
              'ownerPlayerId','initialOwnedTypes','finalUnits','minimumBirths',
-             'productionOrder','completedUpgradeTypes','initialIncome'}
+             'productionOrder','completedUpgradeTypes','initialIncome','producedIncome','transportStages','unitActionStages',
+             'bunkerStages','reclaimRefunds','nautilusTerrain','nuclearHistory','navalAmmoHistory',
+             'spiderOpening','spiderWeaponModules','spiderUtilityModules','spiderDefenseModules','spiderBlink',
+             'spiderMixedModules'}
     if not isinstance(policy,dict) or set(policy)-allowed:
         raise PlatformError('input-contract', 'Unknown or malformed history obligations', 1)
     balance = policy.get('initialBalance')
     if type(balance) not in (int, float) or not math.isfinite(balance):
         raise PlatformError('input-contract', 'History requires a finite initial balance', 1)
+    spider_checks = {field for field in ('spiderOpening', 'spiderWeaponModules', 'spiderUtilityModules',
+                                        'spiderDefenseModules', 'spiderBlink', 'spiderMixedModules') if field in policy}
+    if len(spider_checks) > 1 or any(policy[field] is not True for field in spider_checks):
+        raise PlatformError('input-contract', 'Expected one explicit Modular Spider history contract', 1)
+    slot_credits = {}
+    if 'spiderUtilityModules' in spider_checks:
+        slot_credits = spider_platform.utility_adjustments(records)
+    elif 'spiderDefenseModules' in spider_checks:
+        slot_credits = spider_platform.defense_adjustments(records)
+    elif 'spiderBlink' in spider_checks:
+        spider_platform.validate_blink_history(records)
+    elif 'spiderMixedModules' in spider_checks:
+        slot_credits = spider_platform.mixed_adjustments(records)
+    elif spider_checks:
+        slot_credits = spider_platform.opening_refunds(records, 'spiderWeaponModules' in spider_checks)
     income=policy.get('initialIncome')
     if income is not None and (not isinstance(income,dict) or set(income)!={'unitId','typeId','period','credits'} or
             any(not isinstance(income[k],str) or not income[k] for k in ('unitId','typeId')) or
             type(income['period']) is not int or income['period']<=0 or
             type(income['credits']) not in (int,float) or not math.isfinite(income['credits']) or income['credits']<=0):
         raise PlatformError('input-contract', 'Expected a fixed initial income source, positive integer period and finite credits', 1)
+    produced_income=policy.get('producedIncome',[])
+    if (not isinstance(produced_income,list) or any(not isinstance(source,dict) or
+            set(source)!={'typeId','period','credits'} or not isinstance(source['typeId'],str) or not source['typeId'] or
+            type(source['period']) is not int or source['period']<=0 or
+            type(source['credits']) not in (int,float) or not math.isfinite(source['credits']) or source['credits']<=0
+            for source in produced_income) or len({source['typeId'] for source in produced_income})!=len(produced_income)):
+        raise PlatformError('input-contract','Expected unique fixed produced income types with finite positive coefficients',1)
+    income_types={source['typeId']:source for source in produced_income}
+    income_phases={};income_seen=set()
     charges = {}
     intents = {i['intentId']: i for i in plan['intents']}
     ids = set(intents)
+    refunds={}
+    declarations=policy.get('reclaimRefunds',[])
+    if not isinstance(declarations,list):raise PlatformError('input-contract','Expected fixed reclaim refund declarations',1)
+    for refund in declarations:
+        if (not isinstance(refund,dict) or set(refund)!={'intentId','typeId','price'} or
+                not isinstance(refund['intentId'],str) or refund['intentId'] not in ids or refund['intentId'] in refunds or
+                intents[refund['intentId']].get('kind')!='reclaim' or not isinstance(refund['typeId'],str) or not refund['typeId'] or
+                type(refund['price']) is not int or refund['price']<0):
+            raise PlatformError('input-contract','Invalid fixed native reclaim refund',1)
+        refunds[refund['intentId']]=refund
+    pending_refunds={};refunded=set()
+    action_stages={}
+    bunker_stages={}
+    declarations=policy.get('bunkerStages',[])
+    if not isinstance(declarations,list):raise PlatformError('input-contract','Expected fixed bunker stages',1)
+    for stage in declarations:
+        if (not isinstance(stage,dict) or set(stage)!={'intentId','typeId'} or
+                not isinstance(stage['intentId'],str) or stage['intentId'] not in ids or stage['intentId'] in bunker_stages or
+                stage['typeId'] not in ('mechBunker','mechBunkerDeployed')):
+            raise PlatformError('input-contract','Invalid fixed bunker stage',1)
+        bunker_stages[stage['intentId']]=stage
+    declarations=policy.get('unitActionStages',[])
+    if not isinstance(declarations,list):
+        raise PlatformError('input-contract','Unit action stages must be a fixed list',1)
+    for stage in declarations:
+        if (not isinstance(stage,dict) or set(stage)!={'intentId','typeId','cooldown'} or
+                not isinstance(stage['intentId'],str) or stage['intentId'] not in ids or stage['intentId'] in action_stages or
+                stage['typeId'] not in ('aaBeamGunship','aaBeamGunship_afterburn') or
+                stage['cooldown'] not in ('active','ready')):
+            raise PlatformError('input-contract','Invalid fixed unit action stage',1)
+        action_stages[stage['intentId']]=stage
+    transport_stages={}
+    declarations=policy.get('transportStages',[])
+    if not isinstance(declarations,list):
+        raise PlatformError('input-contract','Transport stages must be a fixed list',1)
+    for stage in declarations:
+        if (not isinstance(stage,dict) or set(stage)-{'intentId','typeId','passengerCount','unloading','minimumX','maximumX'} or
+                not {'intentId','passengerCount','unloading'}<=set(stage) or stage['intentId'] not in ids or
+                not isinstance(stage.get('typeId','hovercraft'),str) or
+                stage.get('typeId','hovercraft') not in {'hovercraft','dropship','nautilusSubmarine','nautilusSubmarineSurface','nautilusSubmarineLand'} or
+                stage['intentId'] in transport_stages or type(stage['passengerCount']) is not int or stage['passengerCount']<0 or
+                type(stage['unloading']) is not bool or any(type(stage[k]) not in (int,float) or not math.isfinite(stage[k])
+                    for k in ('minimumX','maximumX') if k in stage) or
+                stage.get('minimumX',-math.inf)>stage.get('maximumX',math.inf)):
+            raise PlatformError('input-contract','Invalid fixed transport stage',1)
+        transport_stages[stage['intentId']]=stage
     no_actions = policy.get('noActionIntents', [])
     if (not isinstance(no_actions, list) or len(no_actions) != len(set(no_actions)) or
             any(i not in ids or intents[i].get('kind') != 'select' for i in no_actions)):
@@ -509,6 +1255,9 @@ def compare_history(records, plan, policy, native_anchors=None, geometry=None):
     if type(require_births) is not bool:
         raise PlatformError('input-contract', 'Projectile birth coverage must be explicitly boolean', 1)
     known_projectiles = set()
+    launch_appearances = {}
+    spider_births = {}
+    units = {}
     births=policy.get('minimumBirths',[])
     if (not isinstance(births,list) or any(not isinstance(b,dict) or
             set(b)!={'ownerPlayerId','typeId','weaponNames','targetUnitId'} or
@@ -527,6 +1276,8 @@ def compare_history(records, plan, policy, native_anchors=None, geometry=None):
                 not math.isfinite(amount) or amount <= 0 or charge.get('at') not in ('action', 'first-step', 'construction-created') or
                 charge.get('at')=='construction-created' and intents[identity].get('kind')!='build'):
             raise PlatformError('input-contract', 'Invalid or duplicate fixed history charge', 1)
+        if intents[identity].get('actionName')==SCOUT_LAUNCH and (amount!=250 or charge['at']!='action'):
+            raise PlatformError('input-contract', 'Scout launch reserves or refunds 250 credits at the action', 1)
         charges[identity] = charge
         if charge['at']=='construction-created':
             target=intents[identity].get('position')
@@ -568,6 +1319,32 @@ def compare_history(records, plan, policy, native_anchors=None, geometry=None):
                      else intent_steps != intents[active].get('waitSteps', 0)) or
                     action_count != (0 if active in no_actions else 1)):
                 raise PlatformError('history-intent', 'Unfinished intention or wrong explicit step count')
+            stage=bunker_stages.get(active)
+            if stage is not None:
+                candidates=[u for u in units.values() if u.get('ownerPlayerId')==policy.get('ownerPlayerId','p1') and
+                            u.get('typeId') in ('mechBunker','mechBunkerDeployed')]
+                if len(candidates)!=1 or candidates[0]['typeId']!=stage['typeId']:
+                    raise PlatformError('history-bunker','Missing or wrong form at fixed stage',2)
+            stage=transport_stages.get(active)
+            if stage is not None:
+                carriers=[u for u in units.values() if u.get('typeId')==stage.get('typeId','hovercraft') and u.get('ownerPlayerId')==policy.get('ownerPlayerId','p1')]
+                if len(carriers)!=1:
+                    raise PlatformError('history-transport-stage','Missing or ambiguous stage carrier',2)
+                carrier=carriers[0];cargo=carrier.get('transport') or {};x=(carrier.get('position') or {}).get('x')
+                if (cargo.get('passengerCount')!=stage['passengerCount'] or cargo.get('unloading') is not stage['unloading'] or
+                        type(x) not in (int,float) or not math.isfinite(x) or
+                        not stage.get('minimumX',-math.inf)<=x<=stage.get('maximumX',math.inf)):
+                    raise PlatformError('history-transport-stage','Cargo or shore position differs from declared stage',2)
+            stage=action_stages.get(active)
+            if stage is not None:
+                candidates=[u for u in units.values() if u.get('ownerPlayerId')==policy.get('ownerPlayerId','p1') and
+                            u.get('typeId') in ('aaBeamGunship','aaBeamGunship_afterburn')]
+                if len(candidates)!=1 or candidates[0]['typeId']!=stage['typeId']:
+                    raise PlatformError('history-unit-action-stage','Missing, ambiguous or wrong unit form at fixed boundary',2)
+                action=candidates[0]['unitActions']['actions']['afterBurn']
+                if ((action['cooldownRemaining']>0)!=(stage['cooldown']=='active') or
+                        action['available']!=(stage['cooldown']=='ready') or action['queueIndex'] is not None):
+                    raise PlatformError('history-unit-action-stage','Action cooldown or availability differs from fixed boundary',2)
             active = None
             completed += 1
         elif row.get('kind') == 'action':
@@ -578,7 +1355,9 @@ def compare_history(records, plan, policy, native_anchors=None, geometry=None):
                 raise PlatformError('history-action', 'Missing, rejected or reused formal action', 2)
             action_ids.add(action_id); action_count += 1
             expected_type = {'select':'SelectAction', 'build':'BuildAction', 'upgrade':'UpgradeAction',
-                'produce':'ProduceAction', 'move':'MoveAction', 'stop':'StopAction', 'attack':'AttackAction'}.get(
+                'produce':'ProduceAction', 'move':'MoveAction', 'stop':'StopAction', 'attack':'AttackAction',
+                'submarine-depth':'SubmarineDepthAction','amphibious-flight':'AmphibiousFlightAction',
+                'load':'LoadAction','unload':'UnloadAction','unit-action':'UnitAction','repair':'RepairUnitAction','reclaim':'ReclaimUnitAction'}.get(
                     intents.get(active, {}).get('kind'))
             if expected_type is None or row.get('type') != expected_type:
                 raise PlatformError('history-action', 'Action type differs from the fixed client intention', 2)
@@ -587,10 +1366,27 @@ def compare_history(records, plan, policy, native_anchors=None, geometry=None):
                 viewport=next((r for r in reversed(records) if r.get('kind')=='resize' and r['sequence']<row['sequence']),None)
                 if viewport is None:raise PlatformError('input-geometry','History lacks a formal viewport')
                 context=dict(geometry,viewport=viewport)
-            validate_history_action(records,row,intents[active],context)
+            validate_history_action(records,row,intents[active],context,paired='testScene' in plan)
+            if active in refunds:
+                target=row.get('targetUnitId')
+                before=records[row['sequence']-1]['sample']
+                matches=[u for u in before.get('units',[]) if u.get('unitId')==target and
+                         u.get('typeId')==refunds[active]['typeId'] and u.get('ownerPlayerId')==row.get('actorPlayerId')]
+                if len(matches)!=1 or target in pending_refunds or target in refunded:
+                    raise PlatformError('history-reclaim','Refund must bind one fresh owned target',2)
+                pending_refunds[target]=refunds[active]
             charge = charges.get(active)
+            name=intents[active].get('actionName')
+            naval_ammo=name==NAVAL_AMMO and any(u.get('unitId')==row.get('unitId') and
+                u.get('typeId') in NAUTILUS_ACTIONS for u in records[row['sequence']-1]['sample'].get('units',[]))
+            spider_paid=name in spider_platform.PAID and any(u.get('unitId')==row.get('unitId') and
+                u.get('typeId')==spider_platform.CHASSIS for u in records[row['sequence']-1]['sample'].get('units',[]))
+            if naval_ammo and (charge is None or charge['amount']!=6000 or charge['at']!='action'):
+                raise PlatformError('input-contract','Naval ammunition reserves or refunds 6000 credits at the action',1)
             if charge:
-                if charge['at'] == 'action': balance -= charge['amount']
+                if charge['at'] == 'action':
+                    refund=(name==SCOUT_LAUNCH or naval_ammo or spider_paid) and intents[active].get('cancelQueued') is True
+                    balance += charge['amount'] if refund else -charge['amount']
                 elif charge['at'] == 'first-step': pending += charge['amount']
                 else: construction_charges[active] = dict(charge=charge, action=row)
         elif row.get('kind') == 'observation':
@@ -612,7 +1408,28 @@ def compare_history(records, plan, policy, native_anchors=None, geometry=None):
                 raise PlatformError('history-step', 'Call observation differs from its simulation boundary')
             if type(simulation_time) not in (int, float) or simulation_time != steps:
                 raise PlatformError('history-step', 'Simulation time differs from explicit steps')
-            units = {u['unitId']: u for u in row['sample'].get('units', [])}
+            previous_units = units
+            units = {u['unitId']: u for u in sample.get('units', [])}
+            if income_types:
+                if len(units)!=len(sample.get('units',[])):
+                    raise PlatformError('history-income','Repeated unit identity in income evidence',2)
+                if row.get('phase')=='step':
+                    for event in sample.get('events',[]):
+                        if event.get('kind')!='unit-produced':continue
+                        unit=units.get(event.get('unitId'),{})
+                        if unit.get('typeId') not in income_types or unit.get('ownerPlayerId')!=policy.get('ownerPlayerId','p1'):continue
+                        identity=unit['unitId']
+                        if identity in income_phases:
+                            raise PlatformError('history-income','Repeated produced income birth',2)
+                        income_phases[identity]=dict(typeId=unit['typeId'],birth=index,elapsed=0)
+                        income_seen.add(unit['typeId'])
+                for identity,state in income_phases.items():
+                    unit=units.get(identity)
+                    if unit is None or unit.get('typeId')!=state['typeId'] or unit.get('ownerPlayerId')!=policy.get('ownerPlayerId','p1'):
+                        raise PlatformError('history-income','Produced income source identity disappeared or changed',2)
+                if any(u.get('ownerPlayerId')==policy.get('ownerPlayerId','p1') and u.get('typeId') in income_types and
+                        u.get('unitId') not in income_phases for u in units.values()):
+                    raise PlatformError('history-income','Produced income requires its observed fresh birth',2)
             if income is not None:
                 sources=[u for u in sample.get('units',[]) if u.get('unitId')==income['unitId']]
                 if (len(sources)!=1 or sources[0].get('typeId')!=income['typeId'] or
@@ -620,12 +1437,46 @@ def compare_history(records, plan, policy, native_anchors=None, geometry=None):
                         sources[0].get('alive') is not True or sources[0].get('constructionProgress')!=1):
                     raise PlatformError('history-income', 'Fixed initial income source changed or is not a live completed owned unit', 2)
             validate_history_poses(units.values(), policy)
+            destroyed_slots = {event.get('unitId') for event in sample.get('events', [])
+                               if event.get('kind') == 'attachment-slot-destroyed'}
+            reclaimed_slots = {event.get('unitId') for event in sample.get('events', [])
+                               if event.get('kind') == 'attachment-slot-emptied'}
             for event in sample.get('projectileEvents',[]):
-                source=units.get(event.get('sourceUnitId'),{})
+                token=event.get('token')
+                source_id=event.get('sourceUnitId')
+                born=event.get('kind')=='born'
+                launch_units=units
+                proof=spider_births.get(token)
+                if proof is not None and born and index!=proof[0]:
+                    raise PlatformError('history-projectile','Spider projectile birth moved to a different step',2)
+                source_profile=SPIDER_LAUNCH_SOURCES.get(event.get('appearance'))
+                emptied = source_id in destroyed_slots or (
+                    event.get('appearance') == 'INTERCEPTOR' and source_id in reclaimed_slots)
+                if (born and proof is None and source_profile and
+                        emptied and units.get(source_id,{}).get('typeId')=='modularSpider_emptySlot' and
+                        previous_units.get(source_id,{}).get('typeId')==source_profile[0] and
+                        previous_units.get(source_id,{}).get('constructionProgress')==1):
+                    # The module scans before lifecycle conversion and can launch before its reclaim completes.
+                    launch_units=previous_units
+                source=launch_units.get(source_id,{})
+                style=validate_launch_appearance(event,launch_units,proof[1] if proof else None)
+                if born:
+                    if token in launch_appearances and launch_appearances[token]!=style:
+                        raise PlatformError('history-projectile','Repeated birth changed launch appearance',2)
+                    launch_appearances[token]=style
+                    if source_profile and source.get('typeId')==source_profile[0]:
+                        spider_births[token]=(index,(style,(source_id,source_profile[1])))
+                elif token in launch_appearances and launch_appearances[token]!=style:
+                    raise PlatformError('history-projectile','Projectile event changed launch appearance',2)
                 for i,expected in enumerate(births):
                     if (event.get('kind')=='born' and source.get('ownerPlayerId')==expected['ownerPlayerId'] and
                             source.get('typeId')==expected['typeId'] and event.get('sourceWeaponName') in expected['weaponNames'] and
                             event.get('targetUnitId')==expected['targetUnitId']):fired[i]=True
+            for projectile in sample.get('projectiles',[]):
+                style=validate_launch_appearance(projectile,units)
+                token=projectile.get('token')
+                if token in launch_appearances and launch_appearances[token]!=style:
+                    raise PlatformError('history-projectile','Observed projectile changed launch appearance',2)
             if require_births:
                 for event in sample.get('projectileEvents', []):
                     if event.get('kind') == 'born':
@@ -642,8 +1493,26 @@ def compare_history(records, plan, policy, native_anchors=None, geometry=None):
                     raise PlatformError('history-weapons', 'An absent or dead unit retains a weapon observation', 2)
             if row.get('phase') == 'step':
                 balance -= pending; pending = 0
+                balance += slot_credits.get(row['sequence'], 0)
                 if income is not None and steps % income['period']==0:balance+=income['credits']
+                for identity,state in income_phases.items():
+                    source=units[identity]
+                    if (index>state['birth'] and source.get('alive') is True and source.get('constructionProgress')==1 and
+                            source.get('carriedBy') is None):
+                        state['elapsed']+=1
+                        profile=income_types[state['typeId']]
+                        if state['elapsed']==profile['period']:
+                            state['elapsed']=0;balance+=profile['credits']
                 events=sample.get('events',[])
+                removals=[e.get('unitId') for e in events if e.get('kind')=='building-reclaimed']
+                if len(removals)!=len(set(removals)) or any(target not in pending_refunds for target in removals):
+                    raise PlatformError('history-reclaim','Missing or repeated target-bound reclaim',2)
+                for target in removals:
+                    if target in units or any(e.get('kind')=='unit-died' and e.get('unitId')==target for e in events):
+                        raise PlatformError('history-reclaim','Native reclaim must remove its target without combat death',2)
+                    # Native default is Double(price) * Double(Float(.8)), not a rounded percentage.
+                    balance+=pending_refunds.pop(target)['price']*0.800000011920929
+                    refunded.add(target)
                 if construction_ids and any(event.get('kind')=='construction-created' and event.get('unitId') in construction_ids for event in events):
                     raise PlatformError('history-construction', 'A charged construction site was created again', 2)
                 for identity, entry in list(construction_charges.items()):
@@ -657,15 +1526,17 @@ def compare_history(records, plan, policy, native_anchors=None, geometry=None):
                             raise PlatformError('history-construction', 'Construction charge is not bound to one new owned site in its build intention', 2)
                         balance-=entry['charge']['amount'];construction_ids.add(matches[0]);del construction_charges[identity]
             observed = row['sample'].get('balance')
-            expected_balance=math.trunc(balance) if income is not None else balance
+            expected_balance=math.trunc(balance) if income is not None or income_types else balance
             if type(observed) not in (int, float) or not math.isfinite(observed) or observed != expected_balance:
                 raise PlatformError('history-ledger', 'Balance differs at observation '+str(row['sequence']), 2)
-            if income is not None and (type(sample.get('credits')) not in (int,float) or
+            if (income is not None or income_types) and (type(sample.get('credits')) not in (int,float) or
                     not math.isfinite(sample['credits']) or sample['credits']!=balance):
                 raise PlatformError('history-ledger', 'Precise credits differ at observation '+str(row['sequence']), 2)
             observations += 1
             seen_units.update(units)
-    if not observations or pending or construction_charges or active is not None or completed != len(plan['intents']):
+    if income_seen!=set(income_types):
+        raise PlatformError('history-income','A declared produced income type never completed a real birth',2)
+    if not observations or pending or construction_charges or pending_refunds or active is not None or completed != len(plan['intents']):
         raise PlatformError('incomplete-run', 'Missing history observations or a pending first-step charge')
     for expected in policy.get('finalUnits',[]):
         if not isinstance(expected,dict) or not isinstance(expected.get('fields'),dict) or not expected['fields']:
@@ -681,6 +1552,19 @@ def compare_history(records, plan, policy, native_anchors=None, geometry=None):
             if name not in selected[0] or (type(actual) is bool)!=(type(wanted) is bool) or actual!=wanted:
                 raise PlatformError('history-final', 'Terminal unit differs: '+name, 2)
     validate_production_history(records,policy)
+    if 'unitActionStages' in policy:validate_unit_action_history(records,policy)
+    if 'bunkerStages' in policy:validate_bunker_history(records,policy)
+    if 'nautilusTerrain' in policy:validate_nautilus_history(records,policy)
+    if 'navalAmmoHistory' in policy:
+        if policy['navalAmmoHistory'] is not True:raise PlatformError('input-contract','Expected an explicit naval ammo contract',1)
+        validate_naval_ammo_history(records,policy.get('ownerPlayerId','p1'))
+    if 'nuclearHistory' in policy:
+        if type(policy['nuclearHistory']) is not bool:raise PlatformError('input-contract','Expected explicit nuclear history flag',1)
+        from nuclear_platform import validate_nuclear_history
+        validate_nuclear_history(records,policy)
+    if any(intent.get('actionName')=='buildAntiNuke' for intent in plan['intents']):
+        from nuclear_platform import validate_interceptor_history
+        validate_interceptor_history(records,policy)
     if not all(fired):raise PlatformError('history-firing', 'Missing independently required named weapon birth/target', 2)
     return dict(exitCode=0, status='passed', scenarioId=plan['scenarioId'], history=dict(observations=observations, balance=balance))
 
@@ -695,6 +1579,8 @@ def compare_run(records, plan, contract, anchors, geometry=None):
             [anchor['intentId'] for anchor in anchors] != ids or
             plan.get('scenarioId') != contract.get('scenarioId')):
         raise PlatformError('input-contract', 'Plan, contract, and intent boundaries differ', 1)
+    if 'testScene' in plan:
+        validate_paired_schedule(plan)
     if [row.get('sequence') for row in records] != list(range(len(records))):
         raise PlatformError('record-sequence', 'Diagnostic records are truncated or out of order')
     # Old Session archives did not label observations. Keep that reader, but a

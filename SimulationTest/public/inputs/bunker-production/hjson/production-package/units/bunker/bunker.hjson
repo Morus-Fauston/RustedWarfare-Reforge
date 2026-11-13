@@ -1,0 +1,147 @@
+{
+  "format": "rw-reforge.unit.v1",
+  "core": {
+    "name": "mechBunker",
+    "class": "CustomUnitMetadata",
+    "price": 4500,
+    "maxHp": 800,
+    "radius": 29,
+    "fogOfWarSightRange": 20,
+    "buildSpeed": 0.0006
+  },
+  "graphics": {
+    "total_frames": 1,
+    "image": "body.png",
+    "image_wreak": "NONE",
+    "image_turret": "NONE",
+    "image_shadow": "shadow.png",
+    "lock_body_rotation_with_main_turret": false,
+    "lock_leg_rotation_with_main_turret": false
+  },
+  "attack": {
+    "canAttack": true,
+    "canAttackFlyingUnits": false,
+    "canAttackLandUnits": true,
+    "canAttackUnderwaterUnits": false,
+    "turretSize": 20,
+    "turretTurnSpeed": 2,
+    "maxAttackRange": 200,
+    "shootDelay": 70,
+    "turretRotateWithBody": true
+  },
+  "weapons": [
+    {
+      "name": "1",
+      "x": 0,
+      "y": 0,
+      "idleDir": 0,
+      "turnSpeed": 2.9,
+      "turnSpeedAcceleration": 0.07,
+      "canShoot": false,
+      "projectile": "1"
+    },
+    {
+      "name": "2",
+      "x": 0,
+      "y": 0,
+      "image": "turret.png",
+      "projectile": "1",
+      "turnSpeed": 3.9,
+      "turnSpeedAcceleration": 0.2,
+      "canShoot": true,
+      "size": 25,
+      "shoot_sound": "large_gun_fire2",
+      "shoot_sound_vol": 0.3,
+      "recoilOffset": -3,
+      "recoilOutTime": 6,
+      "recoilReturnTime": 7,
+      "idleSweepAngle": 20,
+      "idleSweepSpeed": 0.2,
+      "idleSweepDelay": 210,
+      "idleSweepAddRandomDelay": 50,
+      "idleSweepCondition": "if not self.isMoving()"
+    }
+  ],
+  "projectiles": [
+    {
+      "name": "1",
+      "life": 150,
+      "speed": 4,
+      "targetGround": true,
+      "areaDamage": 110,
+      "areaRadius": 45
+    }
+  ],
+  "movement": {
+    "movementType": "OVER_CLIFF",
+    "moveSpeed": 0.4,
+    "moveAccelerationSpeed": 0.07,
+    "moveDecelerationSpeed": 0.17,
+    "maxTurnSpeed": 1,
+    "turnAcceleration": 0.5,
+    "targetHeight": 3,
+    "moveSlidingMode": true,
+    "moveIgnoringBody": true,
+    "moveSlidingDir": 181,
+    "reverseSpeedPercentage": 1
+  },
+  "actions": [
+    {
+      "name": "deploy",
+      "isVisible": true,
+      "convertTo": "mechBunkerDeployed",
+      "price": 0,
+      "buildSpeed": 0.006,
+      "whenBuilding_cannotMove": true,
+      "whenBuilding_rotateTo": 0,
+      "whenBuilding_rotateTo_orBackwards": true,
+      "canPlayerCancel": false,
+      "allowMultipleInQueue": false
+    }
+  ],
+  "leg_1": {
+    "x": -22,
+    "y": 15,
+    "attach_x": -5,
+    "attach_y": 10,
+    "moveSpeed": 1.9,
+    "rotateSpeed": 7,
+    "heightSpeed": 0.3,
+    "moveWarmUp": "0.1s",
+    "resetAngle": 25,
+    "image_leg": "leg.png",
+    "image_foot": "foot.png",
+    "dust_effect": false,
+    "holdDisMin": 5,
+    "holdDisMax": 19,
+    "favourOppositeSideNeighbours": true,
+    "estimatingPositionMultiplier": 0.7
+  },
+  "leg_2": {
+    "copyFromSections": [
+      "leg_1"
+    ],
+    "x": 22,
+    "y": 15,
+    "attach_x": 5,
+    "attach_y": 10
+  },
+  "leg_3": {
+    "copyFromSections": [
+      "leg_1"
+    ],
+    "x": -22,
+    "y": -15,
+    "attach_x": -5,
+    "attach_y": -10
+  },
+  "leg_4": {
+    "copyFromSections": [
+      "leg_1"
+    ],
+    "x": 22,
+    "y": -15,
+    "attach_x": 5,
+    "attach_y": -10
+  }
+}

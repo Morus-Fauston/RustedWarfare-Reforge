@@ -133,8 +133,8 @@ class MotionV2CoreInputsTest {
         try {
             val actions = listOf(BuildAction("build", "p1", "u1", "landFactory", Position(50.0,10.0), "0".repeat(32), context.world),
                 ResumeConstructionAction("resume", "p1", "u1", "target", context.world),
-                RepairBuildingAction("repair", "p1", "u1", "target", context.world),
-                ReclaimBuildingAction("reclaim", "p1", "u1", "target", context.world))
+                RepairUnitAction("repair", "p1", "u1", "target", context.world),
+                ReclaimUnitAction("reclaim", "p1", "u1", "target", context.world))
             for (action in actions) {
                 val before = context.observe(); val attempts = mutableListOf<JsonElement>()
                 assertContains(assertFailsWith<IllegalArgumentException> {

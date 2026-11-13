@@ -49,7 +49,8 @@ internal object BuilderContentReader {
         val economy = defense || required("format") == "rw-reforge.native-builder.v3"
         val construction = naval || air || mech || economy || required("format") == "rw-reforge.native-builder.v2"
         val targets = if (naval || mech || air) required("constructionTypes").split(',').also { targets ->
-            val allowed = if (naval) setOf("landFactory", "mechFactory", "airFactory", "seaFactory")
+            val allowed = if (naval) setOf("landFactory", "mechFactory", "airFactory", "seaFactory", "repairbay", "experimentalLandFactory",
+                "extractorT1", "fabricatorT1", "c_turret_t1", "laserDefence") + NuclearSiloKind.entries.map { it.unitId }
                 else if (air) setOf("landFactory", "mechFactory", "airFactory") else setOf("landFactory", "mechFactory")
             if (targets.isEmpty() || targets.distinct().size != targets.size || targets.any { it !in allowed })
                 reject(ContentErrorCode.UNSUPPORTED_FEATURE, path, field = "constructionTypes", reason = "Expected a nonempty unique subset of ${allowed.joinToString(",")}")

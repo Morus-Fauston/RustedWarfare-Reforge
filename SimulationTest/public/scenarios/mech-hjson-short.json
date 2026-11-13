@@ -175,5 +175,11 @@
       "a": 8
     },
     "nextObjectId": 9
+  },
+  "economyContract": {
+    "initialBalances": {
+      "p1": 0,
+      "p2": 0
+    }
   }
 }

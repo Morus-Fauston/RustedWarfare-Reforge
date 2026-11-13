@@ -28,8 +28,10 @@ class WeaponAssembly private constructor(slots: List<AssembledWeapon>, val usesN
                 AssembledWeapon(weapon, base.copy(
                     projectile = weapon.projectile, shootDelay = weapon.shootDelay, turretSize = weapon.turretSize,
                     turretTurnSpeed = weapon.turnSpeed, turretTurnAcceleration = weapon.turnAcceleration,
+                    turretTurnDeceleration = weapon.turnDeceleration ?: base.turretTurnDeceleration,
                     mount = weapon.mount, turretImagePath = weapon.imagePath, turretImageScale = weapon.imageScale,
                     recoil = weapon.recoil, fireSound = weapon.fireSound, namedWeapons = null,
+                    idleSweep = weapon.idleSweep ?: base.idleSweep,
                     barrelX = weapon.barrelX ?: if (index == 0) base.barrelX else 0.0,
                     oddShotOffset = weapon.oddShotOffset ?: if (index == 0) base.oddShotOffset else 0.0))
             }, requiresNamedState(base))
@@ -42,7 +44,7 @@ class WeaponAssembly private constructor(slots: List<AssembledWeapon>, val usesN
                     weapon.warmupShootDelayTransfer != 0.0 || !weapon.canShoot || weapon.aimMaxAngle != 5.0 ||
                     weapon.attachedTo != null || weapon.slave || weapon.linkDelayWithTurret != null ||
                     weapon.limitingAngle?.let { it != -1.0 } == true || weapon.idleDirection != 0.0 ||
-                    weapon.barrelX != null || weapon.oddShotOffset != null
+                    weapon.barrelX != null || weapon.oddShotOffset != null || weapon.energyUsage != 0f
             }
         } == true
     }

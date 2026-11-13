@@ -25,13 +25,11 @@ internal class OrdinaryUpgrades private constructor(private val definitions: Map
         fun validate(input: Scenario, registration: UpgradeRegistration = UpgradeRegistration()): SimulationError? =
             UpgradeRules.validate(input, registration)
 
-        fun initial(input: Scenario, registration: UpgradeRegistration = UpgradeRegistration()): OrdinaryUpgrades? {
+        fun prepare(input: Scenario, registration: UpgradeRegistration = UpgradeRegistration()): OrdinaryUpgrades? {
             check(validate(input, registration) == null) { "Invalid ordinary upgrade registration" }
             if (input.unitDefinitions.values.none { it.upgrades != null }) return null
             return OrdinaryUpgrades(Collections.unmodifiableMap(LinkedHashMap(input.unitDefinitions)),
-                UpgradeQueues.initial(input.units.filter { input.unitDefinitions.getValue(it.typeId).let { definition ->
-                    definition.upgrades != null && definition.production == null } }
-                    .mapTo(mutableSetOf()) { it.unitId }))
+                UpgradeQueues.initial(emptySet()))
         }
 
         fun baseTypeId(typeId: String): String? = OrdinaryUpgradeContent.baseTypeId(typeId)
@@ -104,9 +102,9 @@ internal class OrdinaryUpgrades private constructor(private val definitions: Map
             it.actionKey == completed.actionKey && it.targetTypeId == definition.id } == true)
         val oldMaximum = checkNotNull(unit.definition.maximumHealth).toFloat()
         val nextMaximum = checkNotNull(definition.maximumHealth).toFloat()
-        // Native sea tier conversion changes its menu/appearance only; its setter never writes HP.
-        val nativeSea = FactoryExit.supportsSeaFactory(unit.definition)
-        val health = if (nativeSea) checkNotNull(unit.health)
+        // Native sea/air tier setters change their menu/appearance without writing HP.
+        val nativeTier = FactoryExit.supportsSeaFactory(unit.definition) || FactoryExit.supportsAirFactory(unit.definition)
+        val health = if (nativeTier) checkNotNull(unit.health)
             else (checkNotNull(unit.health).toFloat() / oldMaximum * nextMaximum).toDouble()
         require(health.isFinite() && health in 0.0..nextMaximum.toDouble()) { "Converted health must remain finite and bounded" }
         unit.typeId = definition.id

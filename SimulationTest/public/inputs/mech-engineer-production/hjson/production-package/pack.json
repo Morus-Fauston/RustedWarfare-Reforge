@@ -1,0 +1,43 @@
+{
+  "format": "rw-reforge.content-pack.v1",
+  "id": "owned-engineer-production-hjson",
+  "name": "Owned normal T2 engineer production",
+  "units": [
+    {
+      "type": "mech",
+      "file": "units/mech.hjson"
+    },
+    {
+      "type": "mech-factory",
+      "file": "units/mechFactory.hjson"
+    },
+    {
+      "type": "builder",
+      "file": "units/builder.hjson"
+    },
+    {
+      "type": "mech-heavy",
+      "file": "units/heavy/heavy.hjson"
+    },
+    {
+      "type": "mech-factory",
+      "file": "units/mechFactoryT2.hjson"
+    },
+    {
+      "type": "helicopter",
+      "file": "units/air/helicopter.hjson"
+    },
+    {
+      "type": "mech-engineer",
+      "file": "units/engineer/engineer.hjson"
+    },
+    {
+      "type": "repair-bay",
+      "file": "units/engineer/repairbay/repairbay.hjson"
+    },
+    {
+      "type": "command-center",
+      "file": "units/commandCenter/commandCenter.hjson"
+    }
+  ]
+}

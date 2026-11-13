@@ -1,0 +1,27 @@
+{
+  "format": "rw-reforge.content-pack.v1",
+  "id": "hover.production",
+  "name": "Owned hover production",
+  "units": [
+    {
+      "type": "command-center",
+      "file": "units/commandCenter/commandCenter.json"
+    },
+    {
+      "type": "builder",
+      "file": "units/builder/builder.json"
+    },
+    {
+      "type": "land-factory",
+      "file": "units/landFactory/landFactory.json"
+    },
+    {
+      "type": "tank",
+      "file": "units/c_tank/tank.json"
+    },
+    {
+      "type": "hover-tank",
+      "file": "units/hoverTank/hover.json"
+    }
+  ]
+}

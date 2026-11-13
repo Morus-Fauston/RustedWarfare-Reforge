@@ -1,0 +1,96 @@
+{
+  "format": "rw-reforge.unit.v1",
+  "core": {
+    "name": "modularSpider_emptySlot",
+    "class": "CustomUnitMetadata",
+    "price": 1000,
+    "maxHp": 3000,
+    "radius": 20,
+    "selfRegenRate": 3000,
+    "isUnselectable": true,
+    "canNotBeDirectlyAttacked": true
+  },
+  "graphics": {
+    "image": "empty.png",
+    "total_frames": 1
+  },
+  "actions": [
+    {
+      "name": "buildGun",
+      "convertTo": "modularSpider_gunturret",
+      "price": 2000,
+      "buildSpeed": 0,
+      "setBuilt": 0
+    },
+    {
+      "name": "buildSmallLaser",
+      "convertTo": "modularSpider_smallgunturret",
+      "price": 700,
+      "buildSpeed": 0,
+      "setBuilt": 0
+    },
+    {
+      "name": "buildAntiair",
+      "convertTo": "modularSpider_antiair",
+      "price": 2000,
+      "buildSpeed": 0,
+      "setBuilt": 0
+    },
+    {
+      "name": "buildLightning",
+      "convertTo": "modularSpider_lightning",
+      "price": 6000,
+      "buildSpeed": 0,
+      "setBuilt": 0
+    },
+    {
+      "name": "buildArtillery",
+      "convertTo": "modularSpider_artillery",
+      "price": 5000,
+      "buildSpeed": 0,
+      "setBuilt": 0
+    },
+    {
+      "name": "buildFabricator",
+      "convertTo": "modularSpider_fabricator",
+      "price": 3000,
+      "buildSpeed": 0,
+      "setBuilt": 0
+    },
+    {
+      "name": "buildShieldGen",
+      "convertTo": "modularSpider_shieldGen",
+      "price": 6000,
+      "buildSpeed": 0,
+      "setBuilt": 0
+    },
+    {
+      "name": "buildSpeed",
+      "convertTo": "modularSpider_speedIncomplete",
+      "price": 6000,
+      "buildSpeed": 0,
+      "setBuilt": 0
+    },
+    {
+      "name": "buildLaserdefense",
+      "convertTo": "modularSpider_laserdefense",
+      "price": 3000,
+      "buildSpeed": 0,
+      "setBuilt": 0
+    },
+    {
+      "name": "buildAntinuke",
+      "convertTo": "modularSpider_antinuke",
+      "price": 7000,
+      "buildSpeed": 0,
+      "setBuilt": 0
+    },
+    {
+      "name": "buildBlink",
+      "convertTo": "modularSpider_blink",
+      "price": 15000,
+      "buildSpeed": 0,
+      "setBuilt": 0
+    }
+  ]
+}

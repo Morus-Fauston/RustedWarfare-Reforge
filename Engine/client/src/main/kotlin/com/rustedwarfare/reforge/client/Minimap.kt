@@ -11,7 +11,7 @@ class Minimap(val worldWidth: Double, val worldHeight: Double,
               val area: MapArea = MapArea(752.0, 456.0, 176.0, 112.0)) {
     fun frame(frame: SandboxFrame): MinimapFrame = MinimapFrame(
         Collections.unmodifiableList(ArrayList(frame.terrain)),
-        Collections.unmodifiableList(frame.observation.units.filter { it.alive }.map {
+        Collections.unmodifiableList(frame.observation.units.filter { it.alive && it.attachment == null }.map {
             MinimapUnit(it.unitId, it.ownerPlayerId, it.position)
         }))
     fun locate(x: Double, y: Double, dragging: Boolean = false): Position? {

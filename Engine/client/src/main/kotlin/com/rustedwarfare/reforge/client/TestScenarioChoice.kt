@@ -83,10 +83,32 @@ class TestScenarioChoice private constructor(val seed: Path, val root: Path, val
                 MovementContract(movement.getDouble("pathPointRadius"), movement.getDouble("targetRadius")),
                 combatContract = CombatContract(combat.getInt("worldSeed"), combat.getInt("initialFrameCounter"),
                     combat.get("unitObjectIds").associate { it.name to it.asLong() }, combat.getLong("nextObjectId")),
-                economyContract = EconomyContract(document.get("economyContract").get("initialBalances").associate { it.name to it.asLong() }))
+                economyContract = EconomyContract(document.get("economyContract").get("initialBalances").associate { it.name to it.asLong() }),
+                maintenanceContract = readMaintenance(document, choice.content.units))
             val result = TestScenarioChoice(seed, root, scene.scenarioId, document.get("testScene").getString("displayName"), choice, scene, identities)
             result.verifyStable()
             return result
+        }
+
+        private fun readMaintenance(document: JsonValue, definitions: Map<String, UnitDefinition>): MaintenanceContract? {
+            val contract = document.get("maintenanceContract") ?: return null
+            val prices = contract.get("basePrices")
+            require(contract.isObject && contract.size == 1 && prices?.isObject == true && prices.size > 0) {
+                "TEST_SCENE_INVALID: maintenanceContract.basePrices must be a nonempty object"
+            }
+            val parsed = linkedMapOf<String, Long>()
+            for (price in prices) {
+                require(price.isLong && price.asLong() > 0 && price.name !in parsed) {
+                    "TEST_SCENE_INVALID: maintenanceContract.basePrices.${price.name} must be a unique positive integer"
+                }
+                parsed[price.name] = price.asLong()
+            }
+            val expected = MaintenanceContract.requiredBuildingTypeIds(definitions)
+            val different = (expected - parsed.keys) + (parsed.keys - expected)
+            require(different.isEmpty()) {
+                "TEST_SCENE_INVALID: maintenanceContract.basePrices.${different.first()} has no matching building price"
+            }
+            return MaintenanceContract(parsed)
         }
 
         private fun verifyIntents(document: JsonValue) {
@@ -106,14 +128,29 @@ class TestScenarioChoice private constructor(val seed: Path, val root: Path, val
                         action.getString("kind") == kind && action.getString("actor") == intent.getString("actor", "p1"))
                     fun position() = intent.get("position")
                     when (kind) {
+                        "load" -> matching(intent.getString("direction") in setOf("INTO", "UP") &&
+                            intent.getString("direction") == action.getString("direction") &&
+                            intent.getString("targetUnitId") == action.getString("targetUnitId"))
+                        "unload" -> matching(intent.get("unloading")?.isBoolean == true && action.get("unloading")?.isBoolean == true &&
+                            intent.getBoolean("unloading") == action.getBoolean("unloading"))
+                        "submarine-depth" -> matching(intent.get("surface")?.isBoolean == true && action.get("surface")?.isBoolean == true &&
+                            intent.getBoolean("surface") == action.getBoolean("surface"))
                         "move", "build" -> matching(position().getDouble("x") == action.get("target").getDouble("x") && position().getDouble("y") == action.get("target").getDouble("y"))
                         "attack" -> matching(intent.getString("targetUnitId") == action.getString("targetUnitId"))
+                        "unit-action" -> {
+                            matching(intent.getString("actionName") == action.getString("actionName") &&
+                                action.get("cancelQueued").isBoolean &&
+                                intent.getBoolean("cancelQueued", false) == action.getBoolean("cancelQueued"))
+                            val first = intent.get("target"); val second = action.get("target")
+                            matching(first == null && second == null || first != null && second != null &&
+                                first.getDouble("x") == second.getDouble("x") && first.getDouble("y") == second.getDouble("y"))
+                        }
                     }
                     when (kind) {
                         "build" -> matching(intent.getString("typeId") == action.getString("buildingTypeId"))
                         "produce" -> matching(intent.getString("typeId") == action.getString("productionTypeId"))
                         "upgrade" -> matching(intent.getString("upgradeId") == action.getString("upgradeId"))
-                        "move", "attack", "stop" -> Unit
+                        "move", "attack", "stop", "submarine-depth", "load", "unload", "unit-action" -> Unit
                         else -> matching(false)
                     }
                 }

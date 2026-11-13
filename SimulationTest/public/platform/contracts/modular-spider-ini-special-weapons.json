@@ -1,0 +1,155 @@
+{
+  "schemaVersion": 1,
+  "scenarioId": "modular-spider-ini-special-weapons",
+  "history": {
+    "ownerPlayerId": "p1",
+    "initialBalance": 5000,
+    "noActionIntents": [
+      "settle-opening"
+    ],
+    "initialOwnedTypes": [
+      "modularSpider",
+      "modularSpider_emptySlot",
+      "modularSpider_emptySlot",
+      "modularSpider_emptySlot",
+      "modularSpider_emptySlot",
+      "modularSpider_emptySlot",
+      "modularSpider_emptySlot"
+    ],
+    "initialIncome": {
+      "unitId": "a",
+      "typeId": "modularSpider",
+      "period": 40,
+      "credits": 30
+    },
+    "spend": [
+      {
+        "intentId": "buy-artillery",
+        "amount": 5000,
+        "at": "action"
+      },
+      {
+        "intentId": "buy-lightning",
+        "amount": 6000,
+        "at": "action"
+      }
+    ],
+    "mechLegs": {
+      "modularSpider": 8,
+      "mechGun": 2
+    },
+    "projectileBirthsRequired": true,
+    "minimumBirths": [
+      {
+        "ownerPlayerId": "p1",
+        "typeId": "modularSpider_artillery",
+        "weaponNames": [
+          "mainCannon"
+        ],
+        "targetUnitId": "b"
+      },
+      {
+        "ownerPlayerId": "p1",
+        "typeId": "modularSpider_lightning",
+        "weaponNames": [
+          "1"
+        ],
+        "targetUnitId": "b"
+      }
+    ],
+    "finalUnits": [
+      {
+        "ownerPlayerId": "p1",
+        "typeId": "modularSpider",
+        "fields": {
+          "alive": true,
+          "constructionProgress": 1
+        }
+      },
+      {
+        "ownerPlayerId": "p1",
+        "typeId": "modularSpider_artillery",
+        "fields": {
+          "alive": true,
+          "constructionProgress": 1
+        }
+      },
+      {
+        "ownerPlayerId": "p1",
+        "typeId": "modularSpider_lightning",
+        "fields": {
+          "alive": true,
+          "constructionProgress": 1
+        }
+      }
+    ]
+  },
+  "rules": [
+    {
+      "intentId": "settle-opening"
+    },
+    {
+      "intentId": "select-spider"
+    },
+    {
+      "intentId": "leave-weapon-range"
+    },
+    {
+      "intentId": "select-slot-1"
+    },
+    {
+      "intentId": "buy-artillery"
+    },
+    {
+      "intentId": "earn-lightning-1"
+    },
+    {
+      "intentId": "earn-lightning-2"
+    },
+    {
+      "intentId": "earn-lightning-3"
+    },
+    {
+      "intentId": "earn-lightning-4"
+    },
+    {
+      "intentId": "earn-lightning-5"
+    },
+    {
+      "intentId": "earn-lightning-6"
+    },
+    {
+      "intentId": "earn-lightning-7"
+    },
+    {
+      "intentId": "earn-lightning-8"
+    },
+    {
+      "intentId": "earn-lightning-9"
+    },
+    {
+      "intentId": "earn-lightning-10"
+    },
+    {
+      "intentId": "earn-lightning-11"
+    },
+    {
+      "intentId": "earn-lightning-12"
+    },
+    {
+      "intentId": "select-slot-2"
+    },
+    {
+      "intentId": "buy-lightning"
+    },
+    {
+      "intentId": "finish-lightning"
+    },
+    {
+      "intentId": "bring-both-mounts-into-range"
+    },
+    {
+      "intentId": "hold-fire-position"
+    }
+  ]
+}

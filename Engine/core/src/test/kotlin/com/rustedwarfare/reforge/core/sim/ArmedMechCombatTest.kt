@@ -6,6 +6,8 @@ import kotlin.math.hypot
 import kotlin.test.*
 
 class ArmedMechCombatTest {
+    private val economy = EconomyContract(mapOf("p1" to 0L, "p2" to 0L))
+
     @Test
     fun armed_reverse_keeps_the_real_main_body_for_twenty_five_later_updates_then_turns_in_the_positive_half_turn_direction() {
         val fixtures = System.getProperty("public.fixtures.dir")?.let(Path::of)
@@ -13,7 +15,7 @@ class ArmedMechCombatTest {
         val mech = assertIs<ContentResult.Success<LoadedContentPack>>(ContentLoader.loadContentPack(
             fixtures.resolve("mech-production/ini/package"))).value.units.getValue("mechGun")
         val scene = MechTestScene.scenario(position = Position(400.0, 100.0)).copy(unitDefinitions = mapOf("mech" to mech),
-            combatContract = CombatContract(12345, -1, mapOf("u1" to 8L), 9L))
+            combatContract = CombatContract(12345, -1, mapOf("u1" to 8L), 9L), economyContract = economy)
         val context = assertIs<InitResult.Accepted>(SimulationContext.initialize(scene)).context
         try {
             assertIs<ActionResult.Accepted>(context.submit(MoveAction("reverse", "p1", "u1", Position(50.0, 100.0), context.world)))
@@ -37,7 +39,7 @@ class ArmedMechCombatTest {
         val mech = assertIs<ContentResult.Success<LoadedContentPack>>(ContentLoader.loadContentPack(
             fixtures.resolve("mech-production/ini/package"))).value.units.getValue("mechGun")
         val scene = MechTestScene.scenario(heading = 0.0).copy(unitDefinitions = mapOf("mech" to mech),
-            combatContract = CombatContract(12345, -1, mapOf("u1" to 8L), 9L))
+            combatContract = CombatContract(12345, -1, mapOf("u1" to 8L), 9L), economyContract = economy)
         val context = assertIs<InitResult.Accepted>(SimulationContext.initialize(scene)).context
         try {
             assertIs<ActionResult.Accepted>(context.submit(MoveAction("east", "p1", "u1", Position(500.0, 100.0), context.world)))
@@ -68,7 +70,7 @@ class ArmedMechCombatTest {
         val scene = MechTestScene.scenario().copy(unitDefinitions = mapOf("mech" to mech, "quiet" to quiet),
             units = listOf(UnitSpawn("u1", "p1", "mech", Position(100.0, 100.0), 90.0),
                 UnitSpawn("u2", "p2", "quiet", Position(200.0, 100.0), 270.0)),
-            combatContract = CombatContract(12345, -1, mapOf("u1" to 8L, "u2" to 9L), 10L))
+            combatContract = CombatContract(12345, -1, mapOf("u1" to 8L, "u2" to 9L), 10L), economyContract = economy)
         val context = assertIs<InitResult.Accepted>(SimulationContext.initialize(scene)).context
         try {
             var shot: ProjectileObservation? = null

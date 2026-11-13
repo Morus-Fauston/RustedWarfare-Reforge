@@ -35,57 +35,95 @@ internal class UnitImageBindings<T>(images: Map<UnitImagePart, BoundUnitImage<T>
         UnitImageLogicalSizes(size, this[UnitImageSlot.BACK]?.logicalSize, this[UnitImageSlot.TURRET]?.logicalSize,
             this[UnitImageSlot.DEAD]?.logicalSize, this[UnitImageSlot.LEG]?.logicalSize,
             this[UnitImageSlot.FOOT]?.logicalSize, this[UnitImageSlot.ROTOR]?.logicalSize,
-            Collections.unmodifiableMap(weapons.mapNotNull { (name, image) -> image.logicalSize?.let { name to it } }.toMap()))
+            Collections.unmodifiableMap(weapons.mapNotNull { (name, image) -> image.logicalSize?.let { name to it } }.toMap()),
+            this[UnitImageSlot.SHADOW]?.logicalSize, this[UnitImageSlot.SHIELD]?.logicalSize,
+            this[UnitImageSlot.LEFT_WING]?.logicalSize, this[UnitImageSlot.RIGHT_WING]?.logicalSize,
+            this[UnitImageSlot.BEAM]?.logicalSize, this[UnitImageSlot.BEAM_START]?.logicalSize, this[UnitImageSlot.BEAM_END]?.logicalSize,
+            this[UnitImageSlot.AFTERBURN_TRAIL]?.logicalSize, this[UnitImageSlot.ARM1]?.logicalSize,
+            this[UnitImageSlot.ARM2]?.logicalSize, this[UnitImageSlot.SLOT_OVERLAY]?.logicalSize)
     }
 }
 
 /** Compatibility adapters are the only place that enumerates the existing field-based interfaces. */
 private fun <T> unitImageBindings(body: T, back: T?, turret: T?, dead: T?, totalFrames: Int,
-    logical: UnitImageLogicalSizes?, leg: T?, foot: T?, rotor: T?, weapons: Map<String, T>): UnitImageBindings<T> {
+    logical: UnitImageLogicalSizes?, leg: T?, foot: T?, rotor: T?, weapons: Map<String, T>, shadow: T? = null,
+    shield: T? = null, leftWing: T? = null, rightWing: T? = null,
+    beam: T? = null, beamStart: T? = null, beamEnd: T? = null, afterburnTrail: T? = null, arm1: T? = null,
+    arm2: T? = null, slotOverlay: T? = null): UnitImageBindings<T> {
     val parts = linkedMapOf<UnitImagePart, BoundUnitImage<T>>()
     fun add(slot: UnitImageSlot, value: T?) {
         if (value != null) parts[UnitImagePart(slot)] = BoundUnitImage(value, logical?.forSlot(slot),
             if (slot == UnitImageSlot.BODY) totalFrames else 1)
     }
     add(UnitImageSlot.BODY, body); add(UnitImageSlot.BACK, back); add(UnitImageSlot.TURRET, turret)
-    add(UnitImageSlot.DEAD, dead); add(UnitImageSlot.LEG, leg); add(UnitImageSlot.FOOT, foot); add(UnitImageSlot.ROTOR, rotor)
+    add(UnitImageSlot.DEAD, dead); add(UnitImageSlot.LEG, leg); add(UnitImageSlot.FOOT, foot); add(UnitImageSlot.ROTOR, rotor); add(UnitImageSlot.SHADOW, shadow)
+    add(UnitImageSlot.SHIELD, shield)
+    add(UnitImageSlot.LEFT_WING, leftWing); add(UnitImageSlot.RIGHT_WING, rightWing)
+    add(UnitImageSlot.BEAM, beam); add(UnitImageSlot.BEAM_START, beamStart); add(UnitImageSlot.BEAM_END, beamEnd)
+    add(UnitImageSlot.AFTERBURN_TRAIL, afterburnTrail)
+    add(UnitImageSlot.ARM1, arm1); add(UnitImageSlot.ARM2, arm2)
+    add(UnitImageSlot.SLOT_OVERLAY, slotOverlay)
     weapons.forEach { (name, value) -> parts[UnitImagePart(UnitImageSlot.TURRET, name)] =
         BoundUnitImage(value, logical?.weaponTurrets?.get(name)) }
     return UnitImageBindings(parts)
 }
 
 internal fun VisualUnitImages.bindings() = unitImageBindings(body, back, turret, dead, totalFrames,
-    logicalImages, leg, foot, rotor, weaponTurrets)
+    logicalImages, leg, foot, rotor, weaponTurrets, shadow, shield, leftWing, rightWing, beam, beamStart, beamEnd, afterburnTrail,
+    arm1, arm2, slotOverlay)
 
 internal fun VisualUnitResourceIds.bindings() = unitImageBindings(body, back, turret, dead, totalFrames,
-    logicalImages, leg, foot, rotor, weaponTurrets)
+    logicalImages, leg, foot, rotor, weaponTurrets, shadow, shield, leftWing, rightWing, beam, beamStart, beamEnd, afterburnTrail,
+    arm1, arm2, slotOverlay)
 
 internal fun UnitImageBindings<Path>.visualImages() = VisualUnitImages(body.resource,
     this[UnitImageSlot.BACK]?.resource, this[UnitImageSlot.TURRET]?.resource, this[UnitImageSlot.DEAD]?.resource,
     body.totalFrames, logicalSizes(), this[UnitImageSlot.LEG]?.resource, this[UnitImageSlot.FOOT]?.resource,
-    this[UnitImageSlot.ROTOR]?.resource, Collections.unmodifiableMap(weapons.mapValues { it.value.resource }))
+    this[UnitImageSlot.ROTOR]?.resource, Collections.unmodifiableMap(weapons.mapValues { it.value.resource }), this[UnitImageSlot.SHADOW]?.resource,
+    this[UnitImageSlot.SHIELD]?.resource, this[UnitImageSlot.LEFT_WING]?.resource, this[UnitImageSlot.RIGHT_WING]?.resource,
+    this[UnitImageSlot.BEAM]?.resource, this[UnitImageSlot.BEAM_START]?.resource, this[UnitImageSlot.BEAM_END]?.resource,
+    this[UnitImageSlot.AFTERBURN_TRAIL]?.resource, this[UnitImageSlot.ARM1]?.resource,
+    this[UnitImageSlot.ARM2]?.resource, this[UnitImageSlot.SLOT_OVERLAY]?.resource)
 
 internal fun UnitImageBindings<ResourceId>.resourceIds() = VisualUnitResourceIds(body.resource,
     this[UnitImageSlot.BACK]?.resource, this[UnitImageSlot.TURRET]?.resource, this[UnitImageSlot.DEAD]?.resource,
     body.totalFrames, logicalSizes(), this[UnitImageSlot.LEG]?.resource, this[UnitImageSlot.FOOT]?.resource,
-    this[UnitImageSlot.ROTOR]?.resource, Collections.unmodifiableMap(weapons.mapValues { it.value.resource }))
+    this[UnitImageSlot.ROTOR]?.resource, Collections.unmodifiableMap(weapons.mapValues { it.value.resource }), this[UnitImageSlot.SHADOW]?.resource,
+    this[UnitImageSlot.SHIELD]?.resource, this[UnitImageSlot.LEFT_WING]?.resource, this[UnitImageSlot.RIGHT_WING]?.resource,
+    this[UnitImageSlot.BEAM]?.resource, this[UnitImageSlot.BEAM_START]?.resource, this[UnitImageSlot.BEAM_END]?.resource,
+    this[UnitImageSlot.AFTERBURN_TRAIL]?.resource, this[UnitImageSlot.ARM1]?.resource,
+    this[UnitImageSlot.ARM2]?.resource, this[UnitImageSlot.SLOT_OVERLAY]?.resource)
 
 internal fun UnitDefinition.imageBindings(): UnitImageBindings<Path> = unitImageBindings(imagePath,
     building?.backImagePath, combat?.turretImagePath, durability?.deadImagePath ?: combat?.deadImagePath,
     totalFrames, null, mech?.legs?.first()?.legImage, mech?.legs?.first()?.footImage, rotor?.imagePath,
     combat?.namedWeapons?.ordered.orEmpty().filter { it.imagePath != null && it.imagePath != combat?.turretImagePath }
-        .associate { it.name to requireNotNull(it.imagePath) })
+        .associate { it.name to requireNotNull(it.imagePath) }, shadowImagePath, shieldImagePath,
+    amphibiousJet?.leftWingImagePath, amphibiousJet?.rightWingImagePath,
+    combat?.projectile?.beam?.image, combat?.projectile?.beam?.startImage, combat?.projectile?.beam?.endImage, afterburnTrailImagePath,
+    nuclearSilo?.arm1ImagePath, nuclearSilo?.arm2ImagePath, attachmentLayout?.slotImagePath)
 
 internal fun UnitAppearance.imageBindings(): UnitImageBindings<Path> = unitImageBindings(imagePath,
     backImagePath, turretImagePath, deadImagePath, totalFrames, logicalImages, legImagePath, footImagePath, rotorImagePath,
     weaponImages.filterValues { it.imagePath != null && it.imagePath != turretImagePath }
-        .mapValues { requireNotNull(it.value.imagePath) })
+        .mapValues { requireNotNull(it.value.imagePath) }, shadowImagePath, shieldImagePath, leftWingImagePath, rightWingImagePath,
+    beamImagePath, beamStartImagePath, beamEndImagePath, afterburnTrailImagePath, arm1ImagePath, arm2ImagePath, slotOverlayImagePath)
 
 internal fun UnitAppearance.withImages(images: UnitImageBindings<Path>): UnitAppearance = copy(
     imagePath = images.body.resource, totalFrames = images.body.totalFrames, logicalImages = images.logicalSizes(),
     backImagePath = images[UnitImageSlot.BACK]?.resource, turretImagePath = images[UnitImageSlot.TURRET]?.resource,
     deadImagePath = images[UnitImageSlot.DEAD]?.resource, legImagePath = images[UnitImageSlot.LEG]?.resource,
     footImagePath = images[UnitImageSlot.FOOT]?.resource, rotorImagePath = images[UnitImageSlot.ROTOR]?.resource,
+    shadowImagePath = images[UnitImageSlot.SHADOW]?.resource,
+    shieldImagePath = images[UnitImageSlot.SHIELD]?.resource,
+    leftWingImagePath = images[UnitImageSlot.LEFT_WING]?.resource,
+    rightWingImagePath = images[UnitImageSlot.RIGHT_WING]?.resource,
+    beamImagePath = images[UnitImageSlot.BEAM]?.resource,
+    beamStartImagePath = images[UnitImageSlot.BEAM_START]?.resource,
+    beamEndImagePath = images[UnitImageSlot.BEAM_END]?.resource,
+    afterburnTrailImagePath = images[UnitImageSlot.AFTERBURN_TRAIL]?.resource,
+    arm1ImagePath = images[UnitImageSlot.ARM1]?.resource, arm2ImagePath = images[UnitImageSlot.ARM2]?.resource,
+    slotOverlayImagePath = images[UnitImageSlot.SLOT_OVERLAY]?.resource,
     weaponImages = Collections.unmodifiableMap(weaponImages.mapValues { (name, weapon) ->
         if (weapon.imagePath == null) weapon else {
             val part = UnitImagePart(UnitImageSlot.TURRET, name.takeUnless { weapon.imagePath == turretImagePath })

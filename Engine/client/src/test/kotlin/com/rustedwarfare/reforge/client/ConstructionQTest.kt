@@ -72,13 +72,13 @@ class ConstructionQTest {
             repeat(30) { tick() }
             assertEquals(0f, context.observe().production!!.units.single().birthRemaining)
             assertEquals(Position(110.0, 295.0), context.observe().units.single { it.unitId == workerId }.position)
-            assertIs<ActionResult.Accepted>(context.submit(ReclaimBuildingAction("weaken", "p1", "r", "f", context.world)))
+            assertIs<ActionResult.Accepted>(context.submit(ReclaimUnitAction("weaken", "p1", "r", "f", context.world)))
             val deadline = step + 2000
             while (context.observe().units.single { it.unitId == "f" }.health!! > 1.02 && step < deadline) tick()
             val weakHealth = context.observe().units.single { it.unitId == "f" }.health!!
             assertTrue(weakHealth > 0.0 && weakHealth <= 1.02, "Real reclaim must leave one final hit, without setting health")
             assertIs<ActionResult.Accepted>(context.submit(StopAction("pause-reclaim", "p1", "r", context.world)))
-            assertIs<ActionResult.Accepted>(context.submit(ReclaimBuildingAction("last-reclaim", "p1", "r", "f", context.world)))
+            assertIs<ActionResult.Accepted>(context.submit(ReclaimUnitAction("last-reclaim", "p1", "r", "f", context.world)))
             repeat(96) { tick() }
             assertEquals(96f, context.observe().construction!!.workers.single { it.unitId == "r" }.elapsed)
             assertEquals(weakHealth, context.observe().units.single { it.unitId == "f" }.health)

@@ -27,7 +27,7 @@ internal object NavalSandboxScene {
 class NavalProductionSandboxTest {
     @Test fun the_fixed_underwater_evidence_target_stays_in_content_but_cannot_be_a_player_start_choice() {
         val root = System.getProperty("public.fixtures.dir")?.let(Path::of) ?: Path.of("../../SimulationTest/public/inputs")
-        val playable = setOf("builder", "seaFactory", "seaFactoryT2", "heavyBattleship", "c_tank", "helicopter")
+        val playable = setOf("builder", "seaFactory", "seaFactoryT2", "heavyBattleship", "c_tank", "helicopter", "attackSubmarine")
         for (format in listOf("ini", "json", "hjson")) ContentPackSelectionSession().use { state ->
             state.edit(root.resolve("naval-production/$format/production-package")); state.checkPackage()
             val deadline = System.nanoTime() + 5_000_000_000L

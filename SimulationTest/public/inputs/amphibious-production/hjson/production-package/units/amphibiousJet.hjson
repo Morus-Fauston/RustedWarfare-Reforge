@@ -1,0 +1,13 @@
+{
+  "format": "rw-reforge.native-amphibious-jet.v1",
+  "name": "amphibiousJet",
+  "maxHp": 530,
+  "radius": 12,
+  "price": 2000,
+  "buildSpeed": 0.001,
+  "image": "jet.png",
+  "image_dead": "jet_dead.png",
+  "image_shadow": "jet_shadow.png",
+  "image_wing_left": "jet_left.png",
+  "image_wing_right": "jet_right.png"
+}

@@ -4,7 +4,7 @@ import kotlin.math.sqrt
 import kotlin.random.Random
 
 /** Frozen trusted-host event; never part of PlayerObservation or a playback packet. */
-data class SoundTriggerObservation(val eventId: String, val position: Position, val volume: Float)
+data class SoundTriggerObservation(val eventId: String, val position: Position, val volume: Float, val pitch: Float = 1f)
 
 data class SoundListener(val center: Position, val halfWidth: Float, val zoom: Float = 1f,
     val masterVolume: Float = 1f, val gameVolume: Float = 1f, val enabled: Boolean = true) {
@@ -52,10 +52,11 @@ internal class SoundAuthority {
                 val distance = sqrt(distanceSquared)
                 val attenuation = if (distance <= listener.halfWidth) 1f else 1f - (distance - listener.halfWidth) / listener.halfWidth
                 val amplitude = attenuation * base
-                if (amplitude <= .05f) return@mapNotNull null
+                // The PC source widens the computed Float before comparing to the Double threshold.
+                if (amplitude.toDouble() <= .05) return@mapNotNull null
                 // Presentation randomness is independent of the simulator's deterministic counters.
                 AuthorizedSound(trigger.eventId, minOf(amplitude, 1f) * listener.masterVolume * listener.gameVolume,
-                    1f + (Random.Default.nextFloat() * .14f - .07f))
+                    trigger.pitch + (Random.Default.nextFloat() * .14f - .07f))
             }
         return AuthorizedSoundBatch(currentWorld, step, serial, sounds)
     }

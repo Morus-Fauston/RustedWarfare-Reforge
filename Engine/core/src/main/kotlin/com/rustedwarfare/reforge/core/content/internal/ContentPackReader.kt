@@ -101,12 +101,14 @@ internal object ContentPackReader {
         val files = mutableSetOf<Path>()
         val units = linkedMapOf<String, UnitDefinition>()
         val unitFiles = linkedMapOf<String, Path>()
+        val unitFieldOrigins = linkedMapOf<String, Map<Pair<String, String>, UnitSourceReader.Origin>>()
         for ((index, entry) in entries.asArray().withIndex()) {
             if (Thread.currentThread().isInterrupted) throw CancellationException("Package validation cancelled")
             val field = "units[$index]"
             val spec = objectFields(entry, setOf("type", "file"), manifest, field)
             val capability = string(spec.get("type"), "$field.type")
-            if (capability !in setOf("tank", "mech", "mech-heavy", "mech-factory", "builder", "constructor", "factory", "helicopter", "air-factory", "battleship", "water-combat", "sea-factory", "underwater-target", "command-center", "land-factory"))
+            if (capability !in setOf("modular-spider", "nuclear-silo", "experimental-factory", "nautilus", "scout-bot", "mech-engineer", "repair-bay", "tank", "hover-tank", "hovercraft", "dropship", "aa-beam-gunship", "bomber", "mech-bunker", "mech-flame", "mech", "mech-heavy", "mech-factory", "builder", "constructor", "factory", "helicopter", "amphibious-jet", "air-factory", "battleship", "water-combat", "sea-factory", "underwater-target", "submarine", "command-center", "land-factory",
+                    "economic-building", "ground-turret", "point-defense"))
                 reject(ContentErrorCode.UNSUPPORTED_FEATURE, manifest, field = "$field.type", reason = "Expected an implemented finite combat, mech, factory or builder capability")
             val reference = string(spec.get("file"), "$field.file")
             val pieces = reference.split('/')
@@ -122,6 +124,20 @@ internal object ContentPackReader {
             if (!files.add(input)) reject(ContentErrorCode.IDENTITY_CONFLICT, manifest, field = "$field.file", ref = reference,
                 reason = "Duplicate package entry")
             val loaded = when (capability) {
+                "modular-spider" -> ModularSpiderContentReader.readWithSources(input) { requireOrdinary(root, it) }
+                "nuclear-silo" -> NuclearSiloContentReader.readWithSources(input) { requireOrdinary(root, it) }
+                "nautilus" -> NautilusContentReader.readWithSources(input) { requireOrdinary(root, it) }
+                "scout-bot" -> ScoutBotContentReader.readWithSources(input) { requireOrdinary(root, it) }
+                "mech-engineer" -> MechEngineerContentReader.readWithSources(input) { requireOrdinary(root, it) }
+                "repair-bay" -> RepairBayContentReader.readWithSources(input) { requireOrdinary(root, it) }
+                "mech-bunker" -> BunkerContentReader.readWithSources(input) { requireOrdinary(root, it) }
+                "bomber" -> BomberContentReader.readWithSources(input) { requireOrdinary(root, it) }
+                "aa-beam-gunship" -> AaBeamContentReader.readWithSources(input) { requireOrdinary(root, it) }
+                "hovercraft" -> HovercraftContentReader.readWithSources(input) { requireOrdinary(root, it) }
+                "dropship" -> DropshipContentReader.readWithSources(input) { requireOrdinary(root, it) }
+                "amphibious-jet" -> AmphibiousJetContentReader.readWithSources(input) { requireOrdinary(root, it) }
+                "submarine" -> SubmarineContentReader.readWithSources(input) { requireOrdinary(root, it) }
+                "hover-tank" -> CombatContentReader.readHoverTankWithSources(input) { requireOrdinary(root, it) }
                 "command-center" -> CommandCenterContentReader.readWithSources(input) { requireOrdinary(root, it) }
                 "land-factory" -> FactoryContentReader.readWithSources(input) { requireOrdinary(root, it) }.also {
                     if (it.definition.production?.exitProfile != FactoryExitProfile.NATIVE_LAND)
@@ -140,20 +156,28 @@ internal object ContentPackReader {
                         reject(ContentErrorCode.UNSUPPORTED_FEATURE, input, field = "format", reason = "Expected the finite native air factory profile")
                 }
                 "mech" -> CombatContentReader.readMechWithSources(input) { requireOrdinary(root, it) }
+                "mech-flame" -> MechFlameContentReader.readWithSources(input) { requireOrdinary(root, it) }
                 "mech-heavy" -> CombatContentReader.readHeavyMechWithSources(input) { requireOrdinary(root, it) }
                 "mech-factory" -> FactoryContentReader.readWithSources(input) { requireOrdinary(root, it) }.also {
                     if (it.definition.production?.exitProfile != FactoryExitProfile.CUSTOM_MECH)
                         reject(ContentErrorCode.UNSUPPORTED_FEATURE, input, field = "format", reason = "Expected the finite mech factory profile")
                 }
+                "experimental-factory" -> ExperimentalFactoryContentReader.readWithSources(input) { requireOrdinary(root, it) }
                 "builder" -> BuilderContentReader.readWithSources(input) { requireOrdinary(root, it) }
+                "economic-building" -> EconomyContentReader.readWithSources(input, enableUpgrades = true) { requireOrdinary(root, it) }
+                "ground-turret" -> TurretContentReader.readWithSources(input, enableUpgrades = true,
+                    enableConstruction = true) { requireOrdinary(root, it) }
+                "point-defense" -> PointDefenseContentReader.readWithSources(input, enableConstruction = true) { requireOrdinary(root, it) }
                 "constructor" -> AuthorConstructionContentReader.readConstructorWithSources(input) { requireOrdinary(root, it) }
                 "factory" -> AuthorConstructionContentReader.readBuildingWithSources(input) { requireOrdinary(root, it) }
                 else -> CombatContentReader.readDeclaredWithSources(input) { requireOrdinary(root, it) }
             }
             val definition = loaded.definition
+            for (source in loaded.sources) requireOrdinary(root, source.path)
             if (units.putIfAbsent(definition.id, definition) != null)
                 reject(ContentErrorCode.IDENTITY_CONFLICT, input, "core", "name", definition.id, "Duplicate logical content ID inside package $id")
             unitFiles[definition.id] = input
+            if (loaded.fieldOrigins.isNotEmpty()) unitFieldOrigins[definition.id] = loaded.fieldOrigins
             for (source in loaded.sources) {
                 val previous = sources.putIfAbsent(source.path, source)
                 if (previous != null && previous != source)
@@ -163,7 +187,17 @@ internal object ContentPackReader {
             val images = listOf("image" to definition.imagePath, "image_turret" to combat?.turretImagePath,
                 "image_wreak" to (definition.durability?.deadImagePath ?: combat?.deadImagePath),
                 "image_back" to definition.building?.backImagePath,
-                "image_end" to definition.rotor?.imagePath) + definition.mech?.legs.orEmpty().flatMap {
+                "image_end" to definition.rotor?.imagePath, "image_shadow" to definition.shadowImagePath,
+                "image_shield" to definition.shieldImagePath,
+                "image_wing_left" to definition.amphibiousJet?.leftWingImagePath,
+                "image_wing_right" to definition.amphibiousJet?.rightWingImagePath,
+                "beam_image" to combat?.projectile?.beam?.image,
+                "beam_image_start" to combat?.projectile?.beam?.startImage,
+                "beam_image_end" to combat?.projectile?.beam?.endImage,
+                "afterburn_trail_image" to definition.afterburnTrailImagePath,
+                "image_arm1" to definition.nuclearSilo?.arm1ImagePath,
+                "image_arm2" to definition.nuclearSilo?.arm2ImagePath,
+                "image_slotUi" to definition.attachmentLayout?.slotImagePath) + definition.mech?.legs.orEmpty().flatMap {
                     listOf("image_leg" to it.legImage, "image_foot" to it.footImage) } +
                 combat?.namedWeapons?.ordered.orEmpty().map { "turret_${it.name}.image" to it.imagePath }
             for ((slot, image) in images) {
@@ -185,12 +219,28 @@ internal object ContentPackReader {
         for (contentId in replacements.keys) if (contentId !in units)
             reject(ContentErrorCode.BAD_REFERENCE, manifest, field = "replacements", ref = contentId,
                 reason = "Replacement content is not declared by this package")
-        val loaded = LoadedContentPack(root, manifest, id, name, units, sources.values.toList(), dependencies, replacements, unitFiles)
+        if (dependencies.isEmpty()) for ((id, unit) in units) {
+            ModularSpiderRules.missingReference(unit, units)?.let { reference ->
+                rejectMissingAttachmentReference(unitFiles.getValue(id), unitFieldOrigins[id].orEmpty(), reference,
+                    "Expected the referenced qualified attachment form in the content package")
+            }
+        }
+        val loaded = LoadedContentPack(root, manifest, id, name, units, sources.values.toList(), dependencies, replacements,
+            unitFiles, unitFieldOrigins)
         when (val stable = loaded.verifyStable()) {
             is ContentResult.Failure -> throw ContentReadException(stable.error)
             is ContentResult.Success -> Unit
         }
         return loaded
+    }
+
+    internal fun rejectMissingAttachmentReference(
+        entry: Path, origins: Map<Pair<String, String>, UnitSourceReader.Origin>,
+        reference: ModularSpiderRules.Reference, reason: String,
+    ): Nothing {
+        val (section, field, target) = reference
+        val error = ContentError(ContentErrorCode.BAD_REFERENCE, entry.toString(), section, field, target, reason)
+        throw ContentReadException(origins[section to field]?.locate(error, "[$section].$field") ?: error)
     }
 
     private fun objectFields(value: JsonValue, allowed: Set<String>, file: Path, field: String? = null): JsonObject {

@@ -6,6 +6,17 @@ import java.nio.file.Path
 import kotlin.test.*
 
 class HeavyMechProductionSandboxTest {
+    @Test fun the_large_cliff_band_uses_the_existing_rock_atlas_instead_of_the_tree_strip() {
+        for (format in listOf("ini", "json", "hjson")) {
+            val loaded = load(format, "builder")
+            val map = loaded.scenario.map
+            val cliffs = map.groundGids.filter { GroundRules.cliff(map.tileSets, it) }.distinct()
+            assertTrue(cliffs.isNotEmpty())
+            for (gid in cliffs) assertEquals("controlled-rock-35",
+                loaded.renderResources.tileSets.last { it.firstGid <= gid }.supportedLayout())
+        }
+    }
+
     @Test
     fun checked_heavy_choices_open_the_same_builder_first_scene_without_a_free_factory_or_hero() {
         for (format in listOf("ini", "json", "hjson")) for (choice in listOf("builder", "mechFactory", "mechFactoryT2", "mechHeavyMissile")) {
@@ -60,7 +71,17 @@ class HeavyMechProductionSandboxTest {
                 session.select(product.position)
                 assertEquals(product.unitId, session.selectedId)
                 assertIs<ActionResult.Accepted>(session.move(Position(410.0, 270.0)))
-                repeat(15) { session.tick() }
+                var cliffSpeed = false
+                repeat(400) {
+                    session.tick()
+                    val moving = session.observation.units.single { it.unitId == product.unitId }
+                    if (moving.position.x in 342.0..378.0 && kotlin.math.abs(moving.speed - .427) < 1e-10) cliffSpeed = true
+                }
+                assertTrue(cliffSpeed, "Normal produced heavy must use the reviewed large-cliff speed")
+                assertTrue(session.observation.units.single { it.unitId == product.unitId }.position.x > 400.0)
+                assertIs<ActionResult.Accepted>(session.move(Position(270.0, 270.0)))
+                repeat(400) { session.tick() }
+                assertTrue(session.observation.units.single { it.unitId == product.unitId }.position.x < 300.0)
                 assertIs<ActionResult.Accepted>(session.stop())
                 assertNull(session.observation.units.single { it.unitId == product.unitId }.moveTarget)
             }

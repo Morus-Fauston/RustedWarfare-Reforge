@@ -1,0 +1,70 @@
+{
+  "format": "rw-reforge.unit.v1",
+  "copyFrom": [
+    "bunker.json"
+  ],
+  "core": {
+    "name": "mechBunkerDeployed",
+    "radius": 23,
+    "maxShield": 500,
+    "shieldRegen": 0.15,
+    "startShieldAtZero": true,
+    "isBuilding": true,
+    "footprint": "-1,-1,1,1",
+    "constructionFootprint": "-1,-1,1,1"
+  },
+  "graphics": {
+    "image_shield": "shield.png"
+  },
+  "attack": {
+    "maxAttackRange": 240,
+    "shootDelay": 50
+  },
+  "weapons": [
+    {
+      "name": "2",
+      "shouldResetTurret": false
+    }
+  ],
+  "movement": {
+    "movementType": "NONE",
+    "moveSpeed": 0,
+    "targetHeight": 0,
+    "moveSlidingMode": false,
+    "moveIgnoringBody": false
+  },
+  "actions": [
+    {
+      "name": "deploy",
+      "isVisible": false
+    },
+    {
+      "name": "undeploy",
+      "isVisible": true,
+      "convertTo": "mechBunker",
+      "price": 0,
+      "buildSpeed": 0.01,
+      "canPlayerCancel": false,
+      "allowMultipleInQueue": false
+    }
+  ],
+  "leg_1": {
+    "x": -3,
+    "y": 3,
+    "moveSpeed": 1,
+    "heightSpeed": 0.4,
+    "holdDisMax": 15
+  },
+  "leg_2": {
+    "x": 3,
+    "y": 3
+  },
+  "leg_3": {
+    "x": -3,
+    "y": -3
+  },
+  "leg_4": {
+    "x": 3,
+    "y": -3
+  }
+}

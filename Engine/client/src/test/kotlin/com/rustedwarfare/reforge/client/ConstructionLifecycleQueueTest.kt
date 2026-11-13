@@ -22,7 +22,7 @@ class ConstructionLifecycleQueueTest {
             while (c.observe().units.single { it.unitId == "factory" }.health!! >= 1190.0 && step < 300) tick()
             assertTrue(c.observe().units.single { it.unitId == "factory" }.health!! in 1.0..<1190.0)
             for (worker in listOf("a", "b")) {
-                assertIs<ActionResult.Accepted>(c.submit(RepairBuildingAction("repair-$worker", "p1", worker, "factory", c.world)))
+                assertIs<ActionResult.Accepted>(c.submit(RepairUnitAction("repair-$worker", "p1", worker, "factory", c.world)))
                 assertIs<ActionResult.Accepted>(c.submit(PatrolAction("tail-$worker", "p1", worker, Position(650.0, 350.0), true, c.world)))
             }
             while (c.observe().units.single { it.unitId == "factory" }.alive && step < 2400) tick()

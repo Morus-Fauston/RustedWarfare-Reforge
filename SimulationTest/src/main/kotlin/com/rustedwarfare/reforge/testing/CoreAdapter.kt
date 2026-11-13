@@ -25,6 +25,12 @@ internal class CoreAdapter(private val input: LoadedScenario) : AutoCloseable {
         val unit = value.id("unitId")
         // Submit at the current explicit boundary; preserve file order and the core's permission checks.
         val action = when (value.text("kind")) {
+            "unit-action" -> UnitAction(id, actor, unit, value.id("actionName"), context.world,
+                value.required("cancelQueued").jsonPrimitive.boolean, target = value["target"]?.let { position(it.jsonObject) })
+            "load" -> LoadAction(id, actor, unit, value.id("targetUnitId"), LoadDirection.valueOf(value.text("direction")), context.world)
+            "unload" -> UnloadAction(id, actor, unit, value.required("unloading").jsonPrimitive.boolean, context.world)
+            "submarine-depth" -> SubmarineDepthAction(id, actor, unit, value.required("surface").jsonPrimitive.boolean, context.world)
+            "amphibious-flight" -> AmphibiousFlightAction(id, actor, unit, value.required("flying").jsonPrimitive.boolean, context.world)
             "move" -> MoveAction(id, actor, unit, position(value.objectAt("target")), context.world)
             "build" -> BuildAction(id, actor, unit, value.id("buildingTypeId"), position(value.objectAt("target")),
                 value.id("buildingNonce"), context.world, append = value.required("append").jsonPrimitive.boolean)
@@ -36,9 +42,9 @@ internal class CoreAdapter(private val input: LoadedScenario) : AutoCloseable {
             "patrol" -> PatrolAction(id, actor, unit, position(value.objectAt("target")), value.required("append").jsonPrimitive.boolean, context.world)
             "upgrade" -> UpgradeAction(id, actor, unit, value.id("upgradeId"), context.world)
             "cancel-upgrade" -> CancelUpgradeAction(id, actor, unit, value.id("upgradeId"), context.world)
-            "repair" -> RepairBuildingAction(id, actor, unit, value.id("targetUnitId"), context.world,
+            "repair" -> RepairUnitAction(id, actor, unit, value.id("targetUnitId"), context.world,
                 append = value.required("append").jsonPrimitive.boolean)
-            "reclaim" -> ReclaimBuildingAction(id, actor, unit, value.id("targetUnitId"), context.world,
+            "reclaim" -> ReclaimUnitAction(id, actor, unit, value.id("targetUnitId"), context.world,
                 append = value.required("append").jsonPrimitive.boolean)
             "resume-construction" -> ResumeConstructionAction(id, actor, unit, value.id("targetUnitId"), context.world,
                 append = value.required("append").jsonPrimitive.boolean)
@@ -63,8 +69,10 @@ internal class CoreAdapter(private val input: LoadedScenario) : AutoCloseable {
             val namedWeapons = mapOf(
                 "weapons" to array(view.weapons.map { it.json() }),
                 "projectiles" to array(view.projectiles.map { obj("token" to s(it.token), "multiplicity" to n(it.multiplicity),
+                    "appearance" to s(it.appearance.name),
                     "position" to it.position.json(), "heading" to n(it.heading), "height" to n(it.height),
-                    "parentToken" to it.parentToken?.let(::s), "areaRadius" to it.areaRadius?.let(::n)) }),
+                    "parentToken" to it.parentToken?.let(::s), "areaRadius" to it.areaRadius?.let(::n),
+                    "lightning" to it.lightning?.json(), "beam" to it.beam?.json()) }),
                 "projectileEvents" to array(view.projectileEvents.map { it.json() }))
             id to JsonObject(obj("playerId" to s(view.playerId), "worldId" to s(view.worldId),
                 "stepIndex" to n(view.stepIndex), "simulationTime" to n(view.simulationTime),
@@ -94,6 +102,7 @@ internal class CoreAdapter(private val input: LoadedScenario) : AutoCloseable {
 }
 
 internal fun Position.json() = obj("x" to n(x), "y" to n(y))
+internal fun LightningSegment.json() = obj("end" to end.json(), "endHeight" to n(endHeight))
 internal fun Event.json() = obj("kind" to s(kind), "unitId" to unitId?.let(::s))
 internal fun ActionResult.json(): JsonObject = when (this) {
     is ActionResult.Accepted -> obj("actionId" to s(actionId), "status" to s("accepted"),
@@ -147,6 +156,7 @@ internal fun UnitWeaponObservation.json() = obj("unitId" to s(unitId), "weaponNa
     "idle" to idle?.let { obj("baseHeading" to n(it.baseHeading), "timer" to n(it.timer),
         "offset" to n(it.offset), "direction" to n(it.direction), "reached" to b(it.reached), "hold" to n(it.hold)) })
 internal fun ProjectileObservation.json() = obj("objectId" to n(objectId), "sourceUnitId" to s(sourceUnitId),
+    "appearance" to s(appearance.name),
     "sourceWeaponName" to sourceWeaponName?.let(::s), "targetUnitId" to targetUnitId?.let(::s),
     "position" to position.json(), "heading" to n(heading), "remainingLife" to n(remainingLife),
     "offset" to offset.json(), "scatter" to n(scatter), "height" to n(height), "age" to n(age),
@@ -156,35 +166,79 @@ internal fun ProjectileObservation.json() = obj("objectId" to n(objectId), "sour
     "missile" to missile?.let { obj("speed" to n(it.speed), "reachedApex" to b(it.reachedApex), "rawAz" to n(it.rawAz)) },
     "areaExpansion" to areaExpansion?.let { obj("remaining" to n(it.remaining), "radius" to n(it.radius),
         "hitUnitIds" to array(it.hitUnitIds.map(::s))) }).let { fields ->
-        ballistic?.let { JsonObject(fields + ("ballistic" to obj("speed" to n(it.speed),
-            "reachedApex" to b(it.reachedApex), "rawAz" to n(it.rawAz)))) } ?: fields
+        JsonObject((ballistic?.let { fields + ("ballistic" to obj("speed" to n(it.speed),
+            "reachedApex" to b(it.reachedApex), "rawAz" to n(it.rawAz))) } ?: fields) +
+            (lightning?.let { mapOf("lightning" to it.json()) } ?: emptyMap()) +
+            (beam?.let { mapOf("beam" to it.json()) } ?: emptyMap()))
     }
 internal fun VisibleProjectileEvent.json() = obj("token" to s(token), "kind" to s(kind), "occurrences" to n(occurrences),
+    "appearance" to s(appearance.name),
     "position" to position.json(), "heading" to n(heading), "height" to n(height),
     "sourceUnitId" to sourceUnitId?.let(::s), "sourceWeaponName" to sourceWeaponName?.let(::s),
     "targetUnitId" to targetUnitId?.let(::s), "damage" to damage?.let(::n),
     "parentToken" to parentToken?.let(::s), "interceptorUnitId" to interceptorUnitId?.let(::s),
-    "areaRadius" to areaRadius?.let(::n))
+    "areaRadius" to areaRadius?.let(::n), "lightning" to lightning?.json(), "beam" to beam?.json())
 internal fun UnitObservation.json(capabilities: Boolean): JsonObject = JsonObject(obj(
     "unitId" to s(unitId), "ownerPlayerId" to s(ownerPlayerId), "typeId" to s(typeId),
     "position" to position.json(), "heading" to n(heading), "speed" to n(speed),
     "angularVelocity" to n(angularVelocity), "moveTarget" to moveTarget?.json(),
     "pathPoints" to array(pathPoints.map { it.json() }), "movementState" to s(movementState.name),
     "constructionProgress" to n(constructionProgress), "constructionTargetId" to constructionTargetId?.let(::s),
+    "carriedBy" to carriedBy?.let(::s),
+    "transportExit" to transportExit?.let { obj("previousCarrierId" to s(it.previousCarrierId), "remaining" to n(it.remaining)) },
     "tasks" to array(tasks.map { obj("kind" to s(it.kind.name), "actionId" to s(it.actionId),
         "target" to it.target?.json(), "targetUnitId" to it.targetUnitId?.let(::s),
         "atStep" to it.atStep?.let(::n), "buildingTypeId" to it.buildingTypeId?.let(::s),
-        "buildingNonce" to it.buildingNonce?.let(::s)) }),
+        "buildingNonce" to it.buildingNonce?.let(::s), "automaticRepair" to b(it.automaticRepair),
+        "extraWorkRange" to n(it.extraWorkRange)) }),
 ).toMutableMap().apply {
-    mechPose?.let { put("mechPose", it.json()) }
+    transport?.let { put("height", n(height)); put("transport", obj(
+        "passengerIds" to it.passengerIds?.let { ids -> array(ids.map(::s)) }, "passengerCount" to n(it.passengerCount),
+        "occupiedSlots" to n(it.occupiedSlots), "capacity" to n(it.capacity), "unloading" to b(it.unloading),
+        "unloadRemaining" to it.unloadRemaining?.let(::n), "canUnload" to b(it.canUnload))) }
+    shield?.let { put("shield", obj("current" to n(it.current), "maximum" to n(it.maximum),
+        "displayDamage" to n(it.displayDamage))) }
+    energy?.let { put("energy", obj("current" to n(it.current), "maximum" to n(it.maximum), "recharging" to b(it.recharging))) }
+    unitActions?.let { put("unitActions", it.json()) }
+    nuclearDoors?.let { put("nuclearDoors", n(it)) }
+    attachment?.let {
+        put("attachment", obj("parentUnitId" to s(it.parentUnitId), "slot" to n(it.slot), "empty" to b(it.empty)))
+        put("height", n(height))
+    }
+    attachmentOverview?.let { layout ->
+        put("attachmentOverview", obj("selectedSlot" to layout.selectedSlot?.let(::n), "slots" to array(layout.slots.map {
+            obj("number" to n(it.number), "unitId" to s(it.unitId), "typeId" to s(it.typeId), "progress" to n(it.progress))
+        })))
+    }
+    mechPose?.let { put("height", n(height)); put("mechPose", it.json()) }
     flightPose?.let { put("height", n(height)); put("flightPose", it.json()) }
     waterPose?.let { put("height", n(height)); put("waterPose", obj(
         "reversing" to b(it.reversing), "sinkSpeed" to n(it.sinkSpeed), "settled" to b(it.settled))) }
+    submarine?.let { put("height", n(height)); put("submarine", obj("surfaceIntent" to it.surfaceIntent?.let(::b),
+        "verticalSpeed" to it.verticalSpeed?.let(::n), "underwater" to b(it.underwater),
+        "surfacePresentation" to b(it.surfacePresentation), "maximumSpeed" to n(it.maximumSpeed), "attackRange" to n(it.attackRange))) }
+    amphibiousJet?.let { put("height", n(height)); put("amphibiousJet", obj(
+        "flyingIntent" to it.flyingIntent?.let(::b), "verticalSpeed" to it.verticalSpeed?.let(::n),
+        "underwater" to b(it.underwater), "surfacePresentation" to b(it.surfacePresentation),
+        "movementType" to s(it.movementType.name), "maximumSpeed" to n(it.maximumSpeed), "attackRange" to n(it.attackRange),
+        "wingFold" to n(it.wingFold), "phase" to n(it.phase), "sinkSpeed" to n(it.sinkSpeed), "settled" to b(it.settled),
+        "canDive" to it.canDive?.let(::b))) }
     // This finite loader requires matching declared/source identity, including singular declarations.
     if (typeId == "navalUnderwaterTarget") put("height", n(height))
     if (capabilities) putAll(mapOf("health" to (health?.let(::n) ?: JsonNull),
     "maxHealth" to (maxHealth?.let(::n) ?: JsonNull), "alive" to b(alive), "attackTargetId" to (attackTargetId?.let(::s) ?: JsonNull),
     "pointDefense" to (pointDefense?.let { obj("energy" to n(it.energy), "exhausted" to b(it.exhausted)) } ?: JsonNull))) })
+
+internal fun UnitActionsObservation.json(): JsonObject = obj(
+    "automaticCooldown" to n(automaticCooldown), "actions" to JsonObject(actions.associate { action ->
+        action.name to obj("queueIndex" to (action.queueIndex?.let(::n) ?: JsonNull),
+            "progress" to (action.progress?.let(::n) ?: JsonNull),
+            "cooldownRemaining" to n(action.cooldownRemaining), "available" to b(action.available)) })).let { fields ->
+    JsonObject(fields + (stockpile?.let { mapOf("stockpile" to n(it)) } ?: emptyMap()) +
+        (interceptorOnline?.let { mapOf("interceptorOnline" to b(it)) } ?: emptyMap()) +
+        (if (stockpile != null || queue.isNotEmpty()) mapOf("queue" to array(queue.map { item ->
+            obj("name" to s(item.name), "progress" to n(item.progress), "target" to item.target?.json()) })) else emptyMap()))
+}
 
 internal fun MechPose.json(): JsonObject = obj(
     "forwardHeading" to n(forwardHeading), "angularVelocity" to n(angularVelocity), "reversing" to b(reversing),
@@ -193,4 +247,8 @@ internal fun MechPose.json(): JsonObject = obj(
 
 internal fun FlightPose.json(): JsonObject = obj("velocity" to velocity.json(), "height" to n(height),
     "heightPhase" to n(heightPhase), "rotorPhase" to n(rotorPhase), "rotorHeading" to n(rotorHeading),
-    "rotorHeightOffset" to n(rotorHeightOffset))
+    "rotorHeightOffset" to n(rotorHeightOffset)).let { fields -> JsonObject(fields +
+        (fall?.let { mapOf("fall" to obj("speed" to n(it.speed), "landed" to b(it.landed),
+            "landedInWater" to b(it.landedInWater), "settled" to b(it.settled))) } ?: emptyMap())) }
+
+internal fun BeamSegment.json(): JsonObject = obj("end" to end.json(), "endHeight" to n(endHeight), "textureOffset" to n(textureOffset))

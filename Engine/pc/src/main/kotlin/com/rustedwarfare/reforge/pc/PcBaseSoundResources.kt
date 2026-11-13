@@ -28,11 +28,23 @@ internal class PcBaseSoundResources(private val cacheRoot: Path) {
         val expected = linkedMapOf(
             "tank-fire" to "39c5dcfa85477207ebbbba6bcb51b15c6fcd961acc1bab76e588ca8348dcd8b2",
             "naval-main-fire" to "959fe8f1f1f783b0e2cdf2710b8ce0606f3ca8ae756a3722111015e4f665550c",
-            "naval-missile-fire" to "eaa2dedbc783b55c0cc87c33c14dac99d9f6a9c0eb0eb4a2a93bc449f005f837")
+            "naval-missile-fire" to "eaa2dedbc783b55c0cc87c33c14dac99d9f6a9c0eb0eb4a2a93bc449f005f837",
+            "nuke-launch" to "c81c07337c473bc26bf6c18893515af93ce395bec8409c49c784f9a8538ef585",
+            "nuke-explode" to "1a72aa4a39f33a415c9c5a950bf7a94890ad374d253043a81f245f7a31d9a132")
         fun soundId(name: String) = ResourceId.parse("reforge:sounds/$name")
         fun eventId(name: String) = ResourceId.parse("reforge:events/$name")
+        // These owned placeholders can be replaced by independently qualified private recordings.
+        val aliases = mapOf("hover-fire" to "tank-fire", "amphibious-lightning-fire" to "tank-fire",
+            "spider-lightning-fire" to "tank-fire",
+            "scout-plasma-fire" to "tank-fire", "nuke-intercept" to "naval-missile-fire",
+            "bomber-impact" to "naval-missile-fire")
         require(declarations.sounds.keys == expected.keys.map(::soundId).toSet() &&
-            declarations.events.keys == expected.keys.map(::eventId).toSet())
+            declarations.events.keys == (expected.keys + aliases.keys).map(::eventId).toSet()) {
+            "PREPARE_FAILED: bundled sound event or resource declarations differ"
+        }
+        for ((event, sound) in aliases) require(declarations.events.getValue(eventId(event)).sound == soundId(sound)) {
+            "PREPARE_FAILED: bundled sound alias $event differs"
+        }
         val decoded = expected.mapValues { (name, hash) ->
             require(declarations.sounds.getValue(soundId(name)).file == "$name.wav" &&
                 declarations.events.getValue(eventId(name)).sound == soundId(name))

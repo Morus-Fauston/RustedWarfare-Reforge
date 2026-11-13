@@ -2,24 +2,287 @@
 import unittest
 import copy
 
-from platform_scenario import compare_intent, compare_run, PlatformError
+from platform_scenario import compare_history, compare_intent, compare_run, PlatformError, validate_launch_appearance
 import json
 from pathlib import Path
 import tempfile
 
 
 class PlatformIntentTest(unittest.TestCase):
+    def test_spider_ordinary_slot_order_follows_and_preserves_the_parent_blink(self):
+        from spider_platform import validate_call
+
+        layout = dict(selectedSlot=1, slots=[dict(number=1, typeId="modularSpider_emptySlot")])
+        charge = dict(name="blinkQueued", progress=.5, target=dict(x=620, y=200))
+        name = "buildGun"
+
+        def observe(parent_queue, index):
+            action = dict(available=index is None, queueIndex=index, progress=0 if index is not None else None)
+            queue = parent_queue if index is None else [*parent_queue, dict(name=name, progress=0, target=None)]
+            return dict(attachmentOverview=layout, unitActions=dict(queue=queue, actions={name: action}))
+
+        def compare(old, new, cancel):
+            intent = dict(actionName=name, cancelQueued=cancel)
+            validate_call(old, new, dict(intent, target=None), intent, {})
+
+        for parent_queue in ([], [charge]):
+            index = len(parent_queue)
+            available = observe(parent_queue, None)
+            queued = observe(parent_queue, index)
+            wrong_index = observe(parent_queue, 1 - index)
+            with self.subTest(charging=bool(parent_queue)):
+                compare(available, queued, False)
+                compare(queued, available, True)
+                with self.assertRaises(PlatformError):
+                    compare(available, wrong_index, False)
+                with self.assertRaises(PlatformError):
+                    compare(wrong_index, available, True)
+                missing = copy.deepcopy(queued)
+                missing["unitActions"]["queue"].pop()
+                with self.assertRaises(PlatformError):
+                    compare(available, missing, False)
+        replaced = observe([dict(charge, target=dict(x=300, y=250))], 1)
+        with self.assertRaises(PlatformError):
+            compare(observe([charge], None), replaced, False)
+
+    def test_spider_blink_inserts_before_reclaim_and_keeps_its_cancellable_index(self):
+        from spider_platform import validate_call
+
+        layout = dict(selectedSlot=1, slots=[dict(number=1, typeId="modularSpider_blink")])
+        target = dict(x=130, y=190)
+        reclaim = dict(name="reclaim", progress=.2, target=None)
+        blink = dict(name="blink", progress=0, target=target)
+
+        def state(queue, reclaim_index):
+            actions = dict(blink=dict(available=blink not in queue),
+                           reclaim=dict(queueIndex=reclaim_index, progress=.2 if reclaim in queue else None))
+            return dict(attachmentOverview=layout, unitActions=dict(actions=actions, queue=queue))
+
+        before = state([reclaim], 0)
+        after = state([blink, reclaim], 1)
+        intent = dict(actionName="blink", target=target, cancelQueued=False)
+        validate_call(before, after, intent, intent, dict(x=0, y=0))
+        with self.assertRaises(PlatformError):
+            validate_call(before, state([reclaim, blink], 0), intent, intent, dict(x=0, y=0))
+        intent = dict(actionName="reclaim", cancelQueued=True)
+        validate_call(after, state([blink], None), dict(intent, target=None), intent, {})
+
+    def test_spider_rejects_a_frozen_queue_progress_against_its_advancing_action_card(self):
+        from spider_platform import SLOTS, validate_state
+
+        actions = {name: dict(available=True, queueIndex=None, progress=None, cooldownRemaining=0) for name in SLOTS}
+        actions['blinkQueued'] = dict(available=False, queueIndex=0, progress=.25, cooldownRemaining=0)
+        actions['upgradeT2'] = dict(available=False, queueIndex=1, progress=.125, cooldownRemaining=0)
+        queue = [dict(name='blinkQueued', progress=.25, target=dict(x=175, y=185)),
+                 dict(name='upgradeT2', progress=.125, target=None)]
+        unit = dict(ownerPlayerId='p1', alive=True,
+                    attachmentOverview=dict(selectedSlot=1, slots=[dict(number=1, typeId='modularSpider_smallgunturret')]),
+                    unitActions=dict(actions=actions, queue=queue, automaticCooldown=0))
+        validate_state(unit, 'p1')
+        queue[1]['progress'] = 0
+        with self.assertRaises(PlatformError):
+            validate_state(unit, 'p1')
+
+    def test_spider_fabricator_income_follows_completion_conversion_and_same_slot_phase(self):
+        import spider_platform
+
+        def slot(identity, form, ready):
+            return dict(unitId=identity, typeId="modularSpider_" + form, progress=1 if ready else .75)
+
+        phases = {}
+        first = slot("first", "fabricator", True)
+        unfinished = slot("second", "fabricator", False)
+        for _ in range(39):
+            self.assertEqual(0, spider_platform.utility_income([first, unfinished], phases))
+        upgraded = slot("first", "fabricatorT2", True)
+        second = slot("second", "fabricator", True)
+        self.assertEqual(10, spider_platform.utility_income([upgraded, second], phases))
+        self.assertEqual(0, spider_platform.utility_income([upgraded, second], phases))
+        empty = slot("first", "emptySlot", True)
+        for _ in range(37):
+            self.assertEqual(0, spider_platform.utility_income([empty, second], phases))
+        self.assertEqual(5, spider_platform.utility_income([empty, second], phases))
+        self.assertEqual(1, phases["first"])
+        self.assertEqual(0, spider_platform.utility_income([first, second], phases))
+        self.assertEqual(2, phases["first"])
+
+    def test_spider_lightning_requires_its_own_source_mount_and_geometry(self):
+        source = {"slot": dict(typeId="modularSpider_lightning")}
+        geometry = dict(end=dict(x=5, y=10), endHeight=0)
+        shot = dict(kind="born", appearance="SPIDER_LIGHTNING", lightning=geometry,
+                    sourceUnitId="slot", sourceWeaponName="1")
+        self.assertEqual("SPIDER_LIGHTNING", validate_launch_appearance(shot, source))
+        for change in (dict(sourceWeaponName="left"), dict(lightning=None), dict(appearance="STANDARD")):
+            with self.subTest(change=change), self.assertRaises(PlatformError):
+                validate_launch_appearance(dict(shot, **change), source)
+        with self.assertRaises(PlatformError):
+            validate_launch_appearance(shot, {"slot": dict(typeId="modularSpider_artillery")})
+
+    def test_spider_lightning_expiration_uses_the_verified_birth_after_slot_conversion_or_redaction(self):
+        lightning = dict(unitId="slot", typeId="modularSpider_lightning", ownerPlayerId="p1",
+                         alive=True, constructionProgress=1)
+        geometry = dict(end=dict(x=5, y=10), endHeight=0)
+        birth = dict(kind="born", token="bolt", appearance="SPIDER_LIGHTNING", lightning=geometry,
+                     sourceUnitId="slot", sourceWeaponName="1")
+        plan = dict(scenarioId="expiry", intents=[dict(intentId="watch", kind="select", waitSteps=2)])
+        policy = dict(initialBalance=0, noActionIntents=["watch"], projectileBirthsRequired=True)
+
+        def observe(sequence, phase, index, units, projectiles, events=()):
+            return dict(sequence=sequence, kind="observation", phase=phase, sample=dict(
+                stepIndex=index, simulationTime=index + 1, balance=0, units=units,
+                projectileEvents=projectiles, events=events))
+
+        def verify(units, expiration, *, born_units=None, born_events=()):
+            rows = [
+                observe(0, "initial", -1, [lightning], []),
+                dict(kind="intent-start", intentId="watch"),
+                observe(2, "step", 0, [lightning] if born_units is None else born_units, [birth], born_events),
+                observe(3, "step", 1, units, [expiration]),
+                dict(kind="intent-end", intentId="watch"),
+            ]
+            return compare_history(rows, plan, policy)["status"]
+
+        empty = dict(lightning, typeId="modularSpider_emptySlot")
+        expiration = dict(birth, kind="expired")
+        self.assertEqual("passed", verify([empty], expiration))
+        self.assertEqual("passed", verify([], dict(expiration, sourceUnitId=None, sourceWeaponName=None)))
+        self.assertEqual("passed", verify([empty], expiration, born_units=[empty],
+            born_events=[dict(kind="attachment-slot-destroyed", unitId="slot")]))
+        with self.assertRaises(PlatformError):
+            verify([empty], expiration, born_units=[empty])
+        for change in (dict(sourceWeaponName="left"), dict(sourceUnitId="other"), dict(kind="born"),
+                       dict(lightning=None), dict(appearance="STANDARD", lightning=None)):
+            with self.subTest(change=change), self.assertRaises(PlatformError):
+                verify([empty], dict(expiration, **change))
+
+    def test_spider_interceptor_impact_keeps_verified_launch_identity_after_slot_conversion(self):
+        module = dict(unitId="slot", typeId="modularSpider_antinuke", ownerPlayerId="p1",
+                      alive=True, constructionProgress=1)
+        empty = dict(module, typeId="modularSpider_emptySlot")
+        birth = dict(kind="born", token="round", appearance="INTERCEPTOR",
+                     sourceUnitId="slot", sourceWeaponName="silo")
+        impact = dict(birth, kind="impact")
+        plan = dict(scenarioId="interceptor", intents=[dict(intentId="watch", kind="select", waitSteps=2)])
+        policy = dict(initialBalance=0, noActionIntents=["watch"], projectileBirthsRequired=True)
+
+        def observe(sequence, phase, index, units, projectiles, events=()):
+            return dict(sequence=sequence, kind="observation", phase=phase, sample=dict(
+                stepIndex=index, simulationTime=index + 1, balance=0, units=units,
+                projectileEvents=projectiles, events=events))
+
+        def verify(terminal, *, before=module, at_birth=module, after=empty, born=birth, events=()):
+            rows = [observe(0, "initial", -1, [before], []),
+                    dict(kind="intent-start", intentId="watch"),
+                    observe(2, "step", 0, [at_birth], [born], events),
+                    observe(3, "step", 1, [after] if after else [], [terminal]),
+                    dict(kind="intent-end", intentId="watch")]
+            return compare_history(rows, plan, policy)["status"]
+
+        self.assertEqual("passed", verify(impact))
+        self.assertEqual("passed", verify(dict(impact, sourceUnitId=None, sourceWeaponName=None), after=None))
+        self.assertEqual("passed", verify(impact, at_birth=empty,
+            events=[dict(kind="attachment-slot-destroyed", unitId="slot")]))
+        self.assertEqual("passed", verify(impact, at_birth=empty,
+            events=[dict(kind="attachment-slot-emptied", unitId="slot")]))
+        for fault in (dict(sourceUnitId="other"), dict(sourceWeaponName="antiNuke"), dict(kind="born"),
+                      dict(appearance="STANDARD")):
+            with self.subTest(fault=fault), self.assertRaises(PlatformError):
+                verify(dict(impact, **fault))
+        with self.assertRaises(PlatformError):
+            verify(impact, at_birth=empty)
+        with self.assertRaises(PlatformError):
+            verify(impact, before=dict(module, constructionProgress=.9), at_birth=empty,
+                events=[dict(kind="attachment-slot-emptied", unitId="slot")])
+        with self.assertRaises(PlatformError):
+            verify(impact, born=dict(birth, sourceWeaponName="antiNuke"))
+
+    def test_windows_empty_release_binds_through_the_real_generation_filtered_reader(self):
+        from platform_windows import wait_for_input
+        from diagnostic_reader import DiagnosticReader
+        sample=dict(worldId='w',stepIndex=100)
+        events=[dict(kind='selection',generation=1,selectedId=None,selectedIds=[]),
+            dict(kind='map-release',button=0,intent='Click',selectedIds=[]),
+            dict(kind='observation',generation=1,phase='step',sample=sample)]
+        with tempfile.TemporaryDirectory() as folder:
+            path=Path(folder)/'diagnostic.jsonl'
+            records=[dict(format='p001.windows-diagnostic.v1',runId='r',sequence=i,**r) for i,r in enumerate(events)]
+            path.write_text(''.join(json.dumps(r)+'\n' for r in records),encoding='utf8')
+            reader=DiagnosticReader(path)
+            class Process:
+                def poll(self):return None
+            def wait(label,predicate):
+                return reader.wait(label,predicate,Process(),generation=1,timeout=.1,sleep=lambda _:None)
+            release,observed=wait_for_input(wait,reader,'empty',dict(noFormalAction=True),-1)
+            self.assertEqual(records[1],release)
+            self.assertEqual(sample,observed)
+
+    def test_windows_empty_selection_wait_keeps_the_explicit_no_action_contract(self):
+        from platform_windows import validate_windows_plan
+        plan=dict(scenarioId='s',contentPack={},intents=[dict(intentId='empty',kind='select',waitSteps=600)])
+        contract=dict(scenarioId='s',rules=[dict(intentId='empty')],
+            history=dict(initialBalance=100,noActionIntents=['empty']))
+        self.assertEqual([dict(intentId='empty',actionType='SelectAction',noFormalAction=True)],
+            validate_windows_plan(plan,contract))
+        for fault in ('unknown','duplicate','not-select','not-list'):
+            p=copy.deepcopy(plan);c=copy.deepcopy(contract)
+            if fault=='unknown':c['history']['noActionIntents']=['other']
+            elif fault=='duplicate':c['history']['noActionIntents']=['empty','empty']
+            elif fault=='not-select':p['intents'][0]['kind']='stop'
+            else:c['history']['noActionIntents']='empty'
+            with self.subTest(fault=fault),self.assertRaises(PlatformError):validate_windows_plan(p,c)
+
+    def test_windows_empty_selection_requires_the_current_release_and_observation_without_any_formal_action(self):
+        from platform_windows import input_receipt
+        rule=dict(actionType='SelectAction',noFormalAction=True)
+        sample=dict(worldId='w',stepIndex=100)
+        rows=[dict(sequence=20,kind='selection',selectedId=None,selectedIds=[]),
+            dict(sequence=21,kind='map-release',button=0,intent='Click',selectedIds=[]),
+            dict(sequence=22,kind='observation',phase='step',sample=sample)]
+        self.assertEqual((rows[1],sample),input_receipt(rows,rule,19))
+        self.assertIsNone(input_receipt(rows,rule,22))
+        for missing in (0,1,2):
+            with self.subTest(missing=missing):self.assertIsNone(input_receipt(rows[:missing]+rows[missing+1:],rule,19))
+        for fault in ('formal-action','selected-unit','wrong-button'):
+            changed=copy.deepcopy(rows)
+            if fault=='formal-action':changed.append(dict(sequence=23,kind='action',type='SelectAction'))
+            elif fault=='selected-unit':changed[0].update(selectedId='a',selectedIds=['a'])
+            else:changed[1]['button']=1
+            if fault=='wrong-button':self.assertIsNone(input_receipt(changed,rule,19))
+            else:
+                with self.subTest(fault=fault),self.assertRaises(PlatformError):input_receipt(changed,rule,19)
+        formal=[dict(sequence=30,kind='action',type='StopAction'),
+            dict(sequence=31,kind='observation',phase='after-action',sample=sample)]
+        self.assertEqual((formal[0],sample),input_receipt(formal,dict(actionType='StopAction'),29))
+        self.assertIsNone(input_receipt(formal,dict(actionType='StopAction'),30))
+
+    def test_windows_history_accepts_normal_content_menu_and_keeps_wait_bounds(self):
+        from platform_windows import validate_windows_plan
+        plan=dict(scenarioId='hover',contentPack=dict(directory='package',unitId='commandCenter'),
+            intents=[dict(intentId='worker',kind='produce',typeId='builder',waitSteps=600)],
+            windowsWaits=dict(worker=dict(rate=4,progressOnly=True,maximumSimulationSteps=720,
+                maximumWallSeconds=10,stallSeconds=4)))
+        contract=dict(scenarioId='hover',rules=[dict(intentId='worker')],history=dict(initialBalance=5000))
+        self.assertEqual([dict(intentId='worker',actionType='ProduceAction')],validate_windows_plan(plan,contract))
+        for fault in ('no-entry','wait-bound','unknown-action'):
+            changed=copy.deepcopy(plan)
+            if fault=='no-entry':changed.pop('contentPack')
+            elif fault=='wait-bound':changed['windowsWaits']['worker']['maximumSimulationSteps']=1201
+            else:changed['intents'][0]['kind']='invented'
+            with self.subTest(fault=fault),self.assertRaises(PlatformError):validate_windows_plan(changed,contract)
+
     def test_default_windows_startup_uses_no_content_override_and_keeps_evidence_isolated(self):
         from platform_windows import startup_arguments
         snapshot=Path('owned-snapshot');evidence=Path('owned-evidence')
-        args,title=startup_arguments(dict(testScene={},windowsDefaultStart=True),snapshot,evidence)
+        plan = dict(testScene={}, windowsDefaultStart=True, scenarioId='public.phase-six-a-command-json.v1')
+        args,title=startup_arguments(plan,snapshot,evidence)
         self.assertEqual(['--evidence',str(evidence),'--visuals','placeholder'],args)
-        self.assertEqual('RustedWarfare-Reforge | Phase V sandbox',title)
+        self.assertEqual('RustedWarfare-Reforge | Phase VI A sandbox',title)
         explicit,title=startup_arguments({},snapshot,evidence)
         self.assertEqual(['--mode','sandbox','--inputs',str(snapshot),'--evidence',str(evidence),'--visuals','placeholder'],explicit)
         self.assertEqual('RustedWarfare-Reforge | P002 Windows sandbox',title)
-        for plan in (dict(windowsDefaultStart='true',testScene={}),dict(windowsDefaultStart=True)):
-            with self.subTest(plan=plan),self.assertRaises(PlatformError):startup_arguments(plan,snapshot,evidence)
+        for invalid in (dict(plan, windowsDefaultStart='true'),dict(windowsDefaultStart=True),
+                        dict(plan, scenarioId='public.phase-five-sandbox.v1'), dict(plan, windowsSpiderStart=True)):
+            with self.subTest(plan=invalid),self.assertRaises(PlatformError):startup_arguments(invalid,snapshot,evidence)
 
     def test_progress_only_four_times_wait_is_explicit_and_keeps_all_existing_bounds(self):
         from platform_windows import validate_windows_plan

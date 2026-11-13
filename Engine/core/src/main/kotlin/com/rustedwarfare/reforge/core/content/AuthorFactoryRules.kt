@@ -27,6 +27,7 @@ internal object AuthorFactoryRules {
             FactoryExitProfile.NATIVE_LAND, FactoryExitProfile.CUSTOM_MECH -> product.movement.type == MovementType.LAND
             FactoryExitProfile.NATIVE_AIR -> product.movement.type == MovementType.AIR && product.rotor != null && product.combat != null
             FactoryExitProfile.NATIVE_SEA -> product.movement.type == MovementType.WATER && product.combat != null
+            FactoryExitProfile.CUSTOM_NAUTILUS, FactoryExitProfile.NATIVE_EXPERIMENTAL -> false
         }
     }
 

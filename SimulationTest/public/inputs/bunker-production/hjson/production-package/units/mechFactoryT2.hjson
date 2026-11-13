@@ -1,0 +1,20 @@
+{
+  "format": "rw-reforge.mech-factory.v2",
+  "name": "mechFactoryT2",
+  "maxHp": 3100,
+  "radius": 35,
+  "footprint": "-1,-1,1,1",
+  "placementFootprint": "-1,-1,1,3",
+  "movementType": "NONE",
+  "productionUnits": "builder,mechGun,mechHeavyMissile,mechBunker",
+  "price": 5000,
+  "buildSpeed": 0.0005,
+  "fogOfWarSightRange": 15,
+  "exitX": 0,
+  "exitY": -1,
+  "exitDistance": 120,
+  "image": "factory_t2.png",
+  "image_back": "factory_back.png",
+  "image_dead": "factory_dead.png",
+  "techLevel": 2
+}

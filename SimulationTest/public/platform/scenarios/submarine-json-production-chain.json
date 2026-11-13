@@ -1,0 +1,215 @@
+{
+  "schemaVersion": 1,
+  "scenarioId": "submarine-json-production-chain",
+  "inputs": "../../inputs/naval-production/json",
+  "contentPack": {
+    "directory": "production-package",
+    "unitId": "attackSubmarine"
+  },
+  "intents": [
+    {
+      "intentId": "select-builder",
+      "kind": "select",
+      "position": {
+        "x": 390,
+        "y": 150
+      },
+      "waitSteps": 0
+    },
+    {
+      "intentId": "build-t1",
+      "kind": "build",
+      "typeId": "seaFactory",
+      "position": {
+        "x": 450,
+        "y": 150
+      },
+      "waitSteps": 600
+    },
+    {
+      "intentId": "wait-t1",
+      "kind": "select",
+      "position": {
+        "x": 450,
+        "y": 150
+      },
+      "waitSteps": 600
+    },
+    {
+      "intentId": "finish-t1",
+      "kind": "select",
+      "position": {
+        "x": 450,
+        "y": 150
+      },
+      "waitSteps": 400
+    },
+    {
+      "intentId": "produce-submarine",
+      "kind": "produce",
+      "typeId": "attackSubmarine",
+      "waitSteps": 600
+    },
+    {
+      "intentId": "wait-submarine",
+      "kind": "select",
+      "position": {
+        "x": 450,
+        "y": 150
+      },
+      "waitSteps": 600
+    },
+    {
+      "intentId": "leave-factory",
+      "kind": "select",
+      "position": {
+        "x": 450,
+        "y": 150
+      },
+      "waitSteps": 300
+    },
+    {
+      "intentId": "select-submarine",
+      "kind": "select",
+      "position": {
+        "x": 449,
+        "y": 285
+      },
+      "waitSteps": 0
+    },
+    {
+      "intentId": "move-underwater",
+      "kind": "move",
+      "position": {
+        "x": 500,
+        "y": 400
+      },
+      "waitSteps": 400
+    },
+    {
+      "intentId": "stop-underwater",
+      "kind": "stop",
+      "waitSteps": 40
+    },
+    {
+      "intentId": "surface",
+      "kind": "submarine-depth",
+      "surface": true,
+      "waitSteps": 260
+    },
+    {
+      "intentId": "attack-air",
+      "kind": "attack",
+      "targetUnitId": "c",
+      "position": {
+        "x": 650,
+        "y": 130
+      },
+      "waitSteps": 400,
+      "targetGroundPosition": {
+        "x": 650,
+        "y": 150
+      }
+    },
+    {
+      "intentId": "dive",
+      "kind": "submarine-depth",
+      "surface": false,
+      "waitSteps": 260
+    },
+    {
+      "intentId": "attack-underwater",
+      "kind": "attack",
+      "targetUnitId": "d",
+      "position": {
+        "x": 600,
+        "y": 300
+      },
+      "waitSteps": 400
+    },
+    {
+      "intentId": "stop-final",
+      "kind": "stop",
+      "waitSteps": 40
+    }
+  ],
+  "windowsWaits": {
+    "build-t1": {
+      "rate": 4,
+      "progressOnly": true,
+      "maximumSimulationSteps": 780,
+      "maximumWallSeconds": 35,
+      "stallSeconds": 10
+    },
+    "wait-t1": {
+      "rate": 4,
+      "progressOnly": true,
+      "maximumSimulationSteps": 780,
+      "maximumWallSeconds": 35,
+      "stallSeconds": 10
+    },
+    "finish-t1": {
+      "rate": 4,
+      "progressOnly": true,
+      "maximumSimulationSteps": 580,
+      "maximumWallSeconds": 35,
+      "stallSeconds": 10
+    },
+    "produce-submarine": {
+      "rate": 4,
+      "progressOnly": true,
+      "maximumSimulationSteps": 780,
+      "maximumWallSeconds": 35,
+      "stallSeconds": 10
+    },
+    "wait-submarine": {
+      "rate": 4,
+      "progressOnly": true,
+      "maximumSimulationSteps": 780,
+      "maximumWallSeconds": 35,
+      "stallSeconds": 10
+    },
+    "leave-factory": {
+      "rate": 4,
+      "progressOnly": true,
+      "maximumSimulationSteps": 480,
+      "maximumWallSeconds": 35,
+      "stallSeconds": 10
+    },
+    "move-underwater": {
+      "rate": 4,
+      "progressOnly": true,
+      "maximumSimulationSteps": 580,
+      "maximumWallSeconds": 35,
+      "stallSeconds": 10
+    },
+    "surface": {
+      "rate": 4,
+      "progressOnly": true,
+      "maximumSimulationSteps": 440,
+      "maximumWallSeconds": 35,
+      "stallSeconds": 10
+    },
+    "attack-air": {
+      "rate": 4,
+      "progressOnly": true,
+      "maximumSimulationSteps": 580,
+      "maximumWallSeconds": 35,
+      "stallSeconds": 10
+    },
+    "dive": {
+      "rate": 4,
+      "progressOnly": true,
+      "maximumSimulationSteps": 440,
+      "maximumWallSeconds": 35,
+      "stallSeconds": 10
+    },
+    "attack-underwater": {
+      "rate": 4,
+      "progressOnly": true,
+      "maximumSimulationSteps": 580,
+      "maximumWallSeconds": 35,
+      "stallSeconds": 10
+    }
+  }
+}

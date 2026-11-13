@@ -1,0 +1,51 @@
+{
+  "format": "rw-reforge.content-pack.v1",
+  "id": "p009-aa-beam-production-ini",
+  "name": "Owned AA beam production",
+  "units": [
+    {
+      "type": "helicopter",
+      "file": "units/helicopter.ini"
+    },
+    {
+      "type": "air-factory",
+      "file": "units/airFactory.ini"
+    },
+    {
+      "type": "builder",
+      "file": "units/builder.ini"
+    },
+    {
+      "type": "air-factory",
+      "file": "units/airFactoryT2.ini"
+    },
+    {
+      "type": "amphibious-jet",
+      "file": "units/amphibiousJet.ini"
+    },
+    {
+      "type": "command-center",
+      "file": "units/commandCenter/commandCenter.ini"
+    },
+    {
+      "type": "tank",
+      "file": "units/land/tank.ini"
+    },
+    {
+      "type": "underwater-target",
+      "file": "units/naval/underwaterTarget.ini"
+    },
+    {
+      "type": "dropship",
+      "file": "units/dropship.ini"
+    },
+    {
+      "type": "aa-beam-gunship",
+      "file": "units/aaBeamGunship.ini"
+    },
+    {
+      "type": "aa-beam-gunship",
+      "file": "units/aaBeamGunship_afterburn.ini"
+    }
+  ]
+}

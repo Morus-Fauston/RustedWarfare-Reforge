@@ -1,0 +1,285 @@
+{
+  "schemaVersion": 1,
+  "scenarioId": "aa-beam-ini-production-chain",
+  "inputs": "../../inputs/aa-beam-production/ini",
+  "contentPack": {
+    "directory": "production-package",
+    "unitId": "commandCenter"
+  },
+  "intents": [
+    {
+      "intentId": "select-center",
+      "kind": "select",
+      "waitSteps": 0,
+      "position": {
+        "x": 130,
+        "y": 130
+      }
+    },
+    {
+      "intentId": "produce-worker",
+      "kind": "produce",
+      "waitSteps": 600,
+      "typeId": "builder"
+    },
+    {
+      "intentId": "leave-center",
+      "kind": "select",
+      "waitSteps": 100,
+      "position": {
+        "x": 130,
+        "y": 130
+      }
+    },
+    {
+      "intentId": "select-worker",
+      "kind": "select",
+      "waitSteps": 0,
+      "position": {
+        "x": 129,
+        "y": 220
+      }
+    },
+    {
+      "intentId": "place-worker",
+      "kind": "move",
+      "waitSteps": 600,
+      "position": {
+        "x": 230,
+        "y": 200
+      }
+    },
+    {
+      "intentId": "stop-worker",
+      "kind": "stop",
+      "waitSteps": 40
+    },
+    {
+      "intentId": "build-t1",
+      "kind": "build",
+      "waitSteps": 600,
+      "position": {
+        "x": 270,
+        "y": 150
+      },
+      "typeId": "airFactory"
+    },
+    {
+      "intentId": "finish-t1",
+      "kind": "select",
+      "waitSteps": 600,
+      "position": {
+        "x": 270,
+        "y": 150
+      }
+    },
+    {
+      "intentId": "upgrade-t2",
+      "kind": "upgrade",
+      "waitSteps": 600,
+      "upgradeId": "upgrade_t2"
+    },
+    {
+      "intentId": "wait-upgrade-1",
+      "kind": "select",
+      "waitSteps": 600,
+      "position": {
+        "x": 270,
+        "y": 150
+      }
+    },
+    {
+      "intentId": "wait-upgrade-2",
+      "kind": "select",
+      "waitSteps": 600,
+      "position": {
+        "x": 270,
+        "y": 150
+      }
+    },
+    {
+      "intentId": "wait-upgrade-3",
+      "kind": "select",
+      "waitSteps": 600,
+      "position": {
+        "x": 270,
+        "y": 150
+      }
+    },
+    {
+      "intentId": "finish-upgrade",
+      "kind": "select",
+      "waitSteps": 200,
+      "position": {
+        "x": 270,
+        "y": 150
+      }
+    },
+    {
+      "intentId": "produce-air",
+      "kind": "produce",
+      "waitSteps": 600,
+      "typeId": "aaBeamGunship"
+    },
+    {
+      "intentId": "wait-air-1",
+      "kind": "select",
+      "waitSteps": 600,
+      "position": {
+        "x": 270,
+        "y": 150
+      }
+    },
+    {
+      "intentId": "wait-air-2",
+      "kind": "select",
+      "waitSteps": 600,
+      "position": {
+        "x": 270,
+        "y": 150
+      }
+    },
+    {
+      "intentId": "wait-air-3",
+      "kind": "select",
+      "waitSteps": 600,
+      "position": {
+        "x": 270,
+        "y": 150
+      }
+    },
+    {
+      "intentId": "select-air",
+      "kind": "select",
+      "waitSteps": 0,
+      "position": {
+        "x": 269,
+        "y": 203
+      }
+    },
+    {
+      "intentId": "approach-air",
+      "kind": "move",
+      "waitSteps": 400,
+      "position": {
+        "x": 440,
+        "y": 300
+      }
+    },
+    {
+      "intentId": "stop-air",
+      "kind": "stop",
+      "waitSteps": 40
+    },
+    {
+      "intentId": "attack-air",
+      "kind": "attack",
+      "waitSteps": 260,
+      "position": {
+        "x": 580,
+        "y": 265
+      },
+      "targetUnitId": "b",
+      "targetGroundPosition": {
+        "x": 580,
+        "y": 300
+      }
+    },
+    {
+      "intentId": "return-home",
+      "kind": "move",
+      "waitSteps": 400,
+      "position": {
+        "x": 300,
+        "y": 250
+      }
+    },
+    {
+      "intentId": "stop-home",
+      "kind": "stop",
+      "waitSteps": 40
+    }
+  ],
+  "waitPlan": {
+    "produce-worker": {
+      "minimumSteps": 600,
+      "timeoutSeconds": 240
+    },
+    "leave-center": {
+      "minimumSteps": 100,
+      "timeoutSeconds": 240
+    },
+    "place-worker": {
+      "minimumSteps": 600,
+      "timeoutSeconds": 240
+    },
+    "stop-worker": {
+      "minimumSteps": 40,
+      "timeoutSeconds": 240
+    },
+    "build-t1": {
+      "minimumSteps": 600,
+      "timeoutSeconds": 240
+    },
+    "finish-t1": {
+      "minimumSteps": 600,
+      "timeoutSeconds": 240
+    },
+    "upgrade-t2": {
+      "minimumSteps": 600,
+      "timeoutSeconds": 240
+    },
+    "wait-upgrade-1": {
+      "minimumSteps": 600,
+      "timeoutSeconds": 240
+    },
+    "wait-upgrade-2": {
+      "minimumSteps": 600,
+      "timeoutSeconds": 240
+    },
+    "wait-upgrade-3": {
+      "minimumSteps": 600,
+      "timeoutSeconds": 240
+    },
+    "finish-upgrade": {
+      "minimumSteps": 200,
+      "timeoutSeconds": 240
+    },
+    "produce-air": {
+      "minimumSteps": 600,
+      "timeoutSeconds": 240
+    },
+    "wait-air-1": {
+      "minimumSteps": 600,
+      "timeoutSeconds": 240
+    },
+    "wait-air-2": {
+      "minimumSteps": 600,
+      "timeoutSeconds": 240
+    },
+    "wait-air-3": {
+      "minimumSteps": 600,
+      "timeoutSeconds": 240
+    },
+    "approach-air": {
+      "minimumSteps": 400,
+      "timeoutSeconds": 240
+    },
+    "stop-air": {
+      "minimumSteps": 40,
+      "timeoutSeconds": 240
+    },
+    "attack-air": {
+      "minimumSteps": 260,
+      "timeoutSeconds": 240
+    },
+    "return-home": {
+      "minimumSteps": 400,
+      "timeoutSeconds": 240
+    },
+    "stop-home": {
+      "minimumSteps": 40,
+      "timeoutSeconds": 240
+    }
+  }
+}

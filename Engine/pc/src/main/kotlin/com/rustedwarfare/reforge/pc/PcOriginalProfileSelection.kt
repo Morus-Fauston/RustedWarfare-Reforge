@@ -29,15 +29,22 @@ internal fun originalCertificateProfile(manifest: Path, name: String, inputs: Pc
 
 /** One frozen image/sound lineage. Hints select its full verifier; they never grant qualification. */
 internal object PcOriginalProfileVersions {
+    const val CURRENT_VERSION = 8
     private val versions = listOf(lazy { PcOriginalResourceProfile.versionOne() }, lazy { PcOriginalResourceProfile.versionTwo() },
-        lazy { PcOriginalResourceProfile.versionThree() }, lazy { PcOriginalResourceProfile.versionFour() }, lazy { PcOriginalResourceProfile.bundled() })
-    fun version(number: Int): PcOriginalResourceProfile { require(number in 1..5); return versions[number - 1].value }
+        lazy { PcOriginalResourceProfile.versionThree() }, lazy { PcOriginalResourceProfile.versionFour() },
+        lazy { PcOriginalResourceProfile.versionFive() }, lazy { PcOriginalResourceProfile.bundled() })
+    val supportedVersions = listOf(1, 2, 3, 4, 5, CURRENT_VERSION)
+    fun version(number: Int): PcOriginalResourceProfile {
+        val index = supportedVersions.indexOf(number)
+        require(index >= 0)
+        return versions[index].value
+    }
     fun resources(manifest: Path, inputs: PcFrozenResourceInputs?): PcOriginalResourceProfile {
         val hint = originalCertificateProfile(manifest, "resource-extraction.json", inputs)
-        return version((1..5).firstOrNull { hint == "rw.pc.steam.9902063.resources.v$it" } ?: 5)
+        return version(supportedVersions.firstOrNull { hint == "rw.pc.steam.9902063.resources.v$it" } ?: CURRENT_VERSION)
     }
     fun images(manifest: Path, inputs: PcFrozenResourceInputs?): PcOriginalImageProfile {
         val hint = originalCertificateProfile(manifest, "extraction.json", inputs)
-        return version((1..5).firstOrNull { hint == "rw.pc.steam.9902063.images.v$it" } ?: 5).images
+        return version(supportedVersions.firstOrNull { hint == "rw.pc.steam.9902063.images.v$it" } ?: CURRENT_VERSION).images
     }
 }

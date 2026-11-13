@@ -8,15 +8,17 @@ internal object PointDefenseContentReader {
     private val fields = setOf("format", "name", "maxHp", "radius", "footprint", "movementType",
         "image", "image_dead", "fogOfWarSightRange")
 
-    private val documents = UnitSourceReader(UnitContentSchema.native(fields, setOf("rw-reforge.native-laser-defence.v1")))
+    private val schema = UnitContentSchema.native(fields, setOf("rw-reforge.native-laser-defence.v1"))
 
     fun read(path: Path, enableConstruction: Boolean = false): UnitDefinition = readWithSources(path, enableConstruction).definition
 
-    fun readWithSources(path: Path, enableConstruction: Boolean = false): LoadedUnitContent = documents.load(path) { loaded ->
-        definition(path, loaded.values.getValue("core"), enableConstruction)
+    fun readWithSources(path: Path, enableConstruction: Boolean = false, validatePath: (Path) -> Unit = {}): LoadedUnitContent =
+        UnitSourceReader(schema, preRead = validatePath).load(path) { loaded ->
+        definition(path, loaded.values.getValue("core"), enableConstruction, validatePath)
     }
 
-    private fun definition(path: Path, values: Map<String, String>, enableConstruction: Boolean): UnitDefinition {
+    private fun definition(path: Path, values: Map<String, String>, enableConstruction: Boolean,
+                           validatePath: (Path) -> Unit): UnitDefinition {
         fun required(key: String): String = requiredContentField(values[key], path, null, key,
             "Required defense field is absent or empty")
         fun only(key: String, expected: String) {
@@ -32,6 +34,7 @@ internal object PointDefenseContentReader {
         }
         fun image(key: String): Path {
             val result = resolveReference(path, required(key), "graphics", key)
+            validatePath(result)
             try { readPngMetadata(result, allowIndexed = true) } catch (failure: Exception) {
                 reject(ContentErrorCode.BAD_REFERENCE, path, "graphics", key, reason = "Invalid PNG: ${failure.message}")
             }

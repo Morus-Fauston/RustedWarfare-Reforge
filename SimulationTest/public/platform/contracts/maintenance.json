@@ -94,7 +94,7 @@
     },
     {
       "intentId": "reclaim-extractor",
-      "actionType": "ReclaimBuildingAction",
+      "actionType": "ReclaimUnitAction",
       "unitId": "worker",
       "accepted": true,
       "actionFields": {
@@ -117,7 +117,9 @@
             {
               "kind": "reclaim",
               "target": null,
-              "targetUnitId": "extractor"
+              "targetUnitId": "extractor",
+              "automaticRepair": false,
+              "extraWorkRange": 0.0
             }
           ]
         },

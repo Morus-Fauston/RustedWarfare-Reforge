@@ -20,17 +20,25 @@ object MotionDiagnosticCapture {
             "Movement diagnostic capture does not support production actions"
         }
         require(action !is BuildAction && action !is ResumeConstructionAction &&
-            action !is RepairBuildingAction && action !is ReclaimBuildingAction) {
+            action !is RepairUnitAction && action !is ReclaimUnitAction) {
             "Movement diagnostic capture does not support construction actions"
         }
+        require(action !is SubmarineDepthAction) { "Movement diagnostic capture does not support SubmarineDepthAction" }
+        require(action !is AmphibiousFlightAction) { "Movement diagnostic capture does not support AmphibiousFlightAction" }
+        require(action !is UnitAction) { "Movement diagnostic capture does not support UnitAction" }
+        require(action !is LoadAction && action !is UnloadAction) { "Movement diagnostic capture does not support transport actions" }
         val before=context.observe().json()
         val submitted=context.submit(action)
         val issued=obj("actionId" to s(action.actionId),"actorPlayerId" to s(action.actorPlayerId),"unitId" to s(action.unitId),
             "worldId" to s(action.world.id),"atStep" to action.atStep?.let(::n),
             "kind" to s(when(action) { is MoveAction -> "move";is StopAction -> "stop";is SelectAction -> "select"
+                is SubmarineDepthAction -> error("Movement diagnostic capture does not support SubmarineDepthAction")
+                is AmphibiousFlightAction -> error("Movement diagnostic capture does not support AmphibiousFlightAction")
+                is UnitAction -> error("Movement diagnostic capture does not support UnitAction")
+                is LoadAction, is UnloadAction -> error("Movement diagnostic capture does not support transport actions")
                 is AttackAction -> error("Movement diagnostic capture does not support AttackAction")
                 is PatrolAction -> error("Movement diagnostic capture does not support PatrolAction")
-                is BuildAction, is ResumeConstructionAction, is RepairBuildingAction, is ReclaimBuildingAction ->
+                is BuildAction, is ResumeConstructionAction, is RepairUnitAction, is ReclaimUnitAction ->
                     error("Movement diagnostic capture does not support construction actions")
                 is ProduceAction, is CancelProductionAction, is UpgradeAction, is CancelUpgradeAction -> error("Movement diagnostic capture does not support economy actions") }),
             "target" to (action as? MoveAction)?.target?.json())

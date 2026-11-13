@@ -15,10 +15,12 @@ internal class PlayerObservationFrame(
     val hasAdvanced: Boolean,
     resultOwners: Map<ActionResult, String>,
     reclaimedOwners: Map<String, String>,
+    nativeTransportPlacements: Set<String> = emptySet(),
 ) {
     // Copy by reference identity: equal rejected results can belong to different actors.
     private val owners = IdentityHashMap<ActionResult, String>().also { it.putAll(resultOwners) }
     private val reclaimed = Collections.unmodifiableMap(LinkedHashMap(reclaimedOwners))
+    val nativeTransportPlacements: Set<String> = Collections.unmodifiableSet(HashSet(nativeTransportPlacements))
     fun resultOwner(result: ActionResult): String? = owners[result]
     fun reclaimedOwner(unitId: String?): String? = reclaimed[unitId]
 }
@@ -30,6 +32,7 @@ internal class PlayerObservationProjector(world: WorldHandle, scenario: Scenario
     private val localControl = scenario.players.first { it.playerId == playerId }.control == PlayerControl.LOCAL
     private val factoryTypes = scenario.unitDefinitions.filterValues { it.production != null }.keys.toSet()
     private val upgradeTypes = scenario.unitDefinitions.filterValues { it.upgrades != null }.keys.toSet()
+    private val map = scenario.map
     private val widthTiles = scenario.map.widthTiles
     private val heightTiles = scenario.map.heightTiles
     private val tileWidth = scenario.map.tileWidth
@@ -62,7 +65,8 @@ internal class PlayerObservationProjector(world: WorldHandle, scenario: Scenario
         if (cached?.source === observation && cached.key.epoch == vision?.epoch &&
             cached.key.knowledgeRevision == knowledge?.revision &&
             cached.key.actionRevision == frame.actionRevision) return cached.observation
-        val visibleUnits = observation.units.filter { isVisible(vision, it.position) }
+        val visibleUnits = observation.units.filter { it.carriedBy == null && isVisible(vision,
+            Transport.queryPosition(it.position, it.unitId in frame.nativeTransportPlacements, map)) }
         val visibleIds = visibleUnits.map { it.unitId }.toSet()
         val visible = visibleUnits.map {
             val ownerTasks = immutable(it.tasks.map { task ->
@@ -70,7 +74,11 @@ internal class PlayerObservationProjector(world: WorldHandle, scenario: Scenario
             })
             if (it.ownerPlayerId != playerId) {
                 it.copy(moveTarget = null, pathPoints = emptyList(), attackTargetId = null, cooldown = null, pointDefense = null,
-                    tasks = emptyList(), constructionTargetId = null)
+                    tasks = emptyList(), constructionTargetId = null, transportExit = null,
+                    transport = null, unitActions = null, attachmentOverview = null,
+                    attachment = it.attachment?.takeIf { relation -> relation.parentUnitId in visibleIds },
+                    submarine = it.submarine?.copy(surfaceIntent = null, verticalSpeed = null),
+                    amphibiousJet = it.amphibiousJet?.copy(flyingIntent = null, verticalSpeed = null, canDive = null))
             } else if (it.attackTargetId != null && it.attackTargetId !in visibleIds) {
                 it.copy(moveTarget = null, pathPoints = emptyList(), attackTargetId = null, tasks = ownerTasks,
                     constructionTargetId = it.constructionTargetId?.takeIf { target -> target in visibleIds })
@@ -90,10 +98,13 @@ internal class PlayerObservationProjector(world: WorldHandle, scenario: Scenario
             val allowed = events.filter { event -> if (event.kind == "building-reclaimed") {
                 frame.reclaimedOwner(event.unitId) == playerId
             } else event.unitId != null && event.unitId in ids &&
-                (!(event.kind.startsWith("production-") || event.kind.startsWith("upgrade-") ||
-                    event.kind in setOf("construction-unavailable", "construction-insufficient-funds", "construction-queue-full", "maintenance-completed")) ||
+                (!(event.kind.startsWith("production-") || event.kind.startsWith("upgrade-") || event.kind.startsWith("unit-action-") ||
+                    event.kind in setOf("construction-unavailable", "construction-insufficient-funds", "construction-queue-full", "maintenance-completed",
+                        "submarine-surface-requested", "submarine-dive-requested",
+                        "amphibious-fly-requested", "amphibious-dive-requested",
+                        "unit-loaded", "unload-started", "unload-cancelled", "loading-cancelled", "unload-blocked")) ||
                     visible.any { it.unitId == event.unitId && it.ownerPlayerId == playerId }) }
-            val combatKinds = setOf("projectile-fired", "unit-damaged", "unit-died",
+            val combatKinds = setOf("projectile-fired", "unit-damaged", "shield-damaged", "unit-died",
                 "production-queued", "production-cancelled", "production-refunded", "unit-produced",
                 "upgrade-queued", "upgrade-cancelled", "upgrade-completed", "upgrade-refunded")
             // S1 command events retain submission order. Combat order is public-value canonical,
@@ -109,17 +120,25 @@ internal class PlayerObservationProjector(world: WorldHandle, scenario: Scenario
             if (it is ActionResult.Accepted) ActionResult.Accepted(it.actionId, visibleEvents(it.events), it.queuedForStep) else it
         }
         val rawProjectileEvents = committed?.projectileEvents.orEmpty() + observation.projectileEvents
-        val projectedEvents = rawProjectileEvents.filter { isVisible(vision, it.projectile.position) &&
-            (it.interceptorUnitId == null || it.interceptorUnitId in ids) }.map { event ->
+        val projectedEvents = rawProjectileEvents.mapNotNull { event ->
             val value = event.projectile
+            if ((!value.alwaysVisibleInFog && !isVisible(vision, value.position)) ||
+                value.lightning?.let { !isVisible(vision, it.end) } == true ||
+                value.beam?.let { !isVisible(vision, it.end) } == true) return@mapNotNull null
+            val interceptor = event.interceptorUnitId.takeIf { it in ids }
+            val publicInterception = event.kind == "intercepted" &&
+                value.appearance == ProjectileAppearance.NUCLEAR && value.alwaysVisibleInFog
+            if (event.interceptorUnitId != null && interceptor == null && !publicInterception) return@mapNotNull null
             val target = value.targetUnitId.takeIf { it in ids }
             val source = value.sourceUnitId.takeIf { it in ids }
             ProjectedProjectileEvent(value.objectId, event.kind, value.position, value.heading, value.height,
-                source, target, event.damage.takeIf { target != null }, event.interceptorUnitId,
-                value.areaExpansion?.radius, value.sourceWeaponName?.takeIf { source != null })
+                source, target, event.damage.takeIf { target != null }, interceptor,
+                value.areaExpansion?.radius, value.sourceWeaponName?.takeIf { source != null }, value.appearance, value.lightning, value.beam)
         }
         val projection = projectileProjection.project(
-            observation.projectiles.filter { isVisible(vision, it.position) }, projectedEvents,
+            observation.projectiles.filter { (it.alwaysVisibleInFog || isVisible(vision, it.position)) &&
+                (it.lightning?.let { line -> isVisible(vision, line.end) } ?: true) &&
+                (it.beam?.let { line -> isVisible(vision, line.end) } ?: true) }, projectedEvents,
             observation.projectiles.mapTo(mutableSetOf()) { it.objectId }.also { retained ->
                 rawProjectileEvents.forEach { retained += it.projectile.objectId }
             })

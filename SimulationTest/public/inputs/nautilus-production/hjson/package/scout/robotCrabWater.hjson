@@ -1,0 +1,57 @@
+{
+  "format": "rw-reforge.unit.v1",
+  "core": {
+    "name": "robotCrabWater",
+    "radius": 11,
+    "displayRadius": 13,
+    "maxHp": 650,
+    "price": 700,
+    "buildSpeed": 0.002,
+    "reclaimPrice": 0,
+    "fogOfWarSightRange": 22,
+    "energyMax": 1,
+    "energyRegen": -0.0005,
+    "energyStartingPercentage": 1,
+    "dieOnZeroEnergy": true,
+    "nanoRange": 110,
+    "nanoRepairSpeed": 0.4,
+    "nanoBuildSpeed": 0.4,
+    "canRepairBuildings": true,
+    "canRepairUnits": true,
+    "canReclaimResources": true,
+    "image": "base.png",
+    "image_dead": "dead.png",
+    "image_turret": "turret.png",
+    "image_leg": "leg.png",
+    "image_foot": "foot.png"
+  },
+  "movement": {
+    "movementType": "OVER_CLIFF_WATER",
+    "moveSpeed": 0.6,
+    "moveAccelerationSpeed": 1,
+    "moveDecelerationSpeed": 1,
+    "maxTurnSpeed": 4,
+    "turnAcceleration": 0.2,
+    "moveSlidingDir": 45,
+    "targetHeight": 0.1
+  },
+  "attack": {
+    "canAttackLandUnits": true,
+    "canAttackFlyingUnits": true,
+    "canAttackUnderwaterUnits": false,
+    "maxAttackRange": 110,
+    "shootDelay": 50
+  },
+  "projectiles": [
+    {
+      "name": "1",
+      "directDamage": 17,
+      "life": 70,
+      "speed": 6
+    }
+  ],
+  "hiddenAction_notOverWater": {
+    "autoTrigger": "if not self.overWater()",
+    "convertTo": "robotCrab"
+  }
+}

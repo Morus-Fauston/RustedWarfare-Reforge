@@ -1,0 +1,47 @@
+{
+  "format": "rw-reforge.unit.v1",
+  "copyFrom": [
+    "aaBeamGunship.json"
+  ],
+  "core": {
+    "name": "aaBeamGunship_afterburn",
+    "energyRegen": -0.02,
+    "afterburn_trail_image": "aa_trail.png"
+  },
+  "movement": {
+    "moveSpeed": 2.3,
+    "moveAccelerationSpeed": 0.13,
+    "moveDecelerationSpeed": 0.13,
+    "maxTurnSpeed": 1.5,
+    "turnAcceleration": 0.1
+  },
+  "weapons": [
+    {
+      "name": "1",
+      "energyUsage": 99,
+      "idleSweepAngle": 0
+    }
+  ],
+  "actions": [
+    {
+      "name": "afterBurn",
+      "resourceAmount": "IGNORE",
+      "resourceAmount_setValue": "IGNORE"
+    },
+    {
+      "name": "cancelBurn",
+      "buildSpeed": 0,
+      "convertTo": "aaBeamGunship",
+      "resourceAmount": "energy",
+      "resourceAmount_setValue": 6,
+      "canPlayerCancel": false,
+      "allowMultipleInQueue": false
+    }
+  ],
+  "hiddenAction_autoSwitchBack": {
+    "autoTrigger": "if self.energy(empty=true)",
+    "convertTo": "aaBeamGunship",
+    "resourceAmount": "energy",
+    "resourceAmount_setValue": 6
+  }
+}

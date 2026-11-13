@@ -1,0 +1,71 @@
+{
+  "format": "rw-reforge.content-pack.v1",
+  "id": "owned-nautilus-production-hjson",
+  "name": "Owned normal sea-factory Nautilus chain",
+  "units": [
+    {
+      "type": "battleship",
+      "file": "units/naval/heavyBattleship.hjson"
+    },
+    {
+      "type": "sea-factory",
+      "file": "units/seaFactory.hjson"
+    },
+    {
+      "type": "sea-factory",
+      "file": "units/seaFactoryT2.hjson"
+    },
+    {
+      "type": "underwater-target",
+      "file": "units/naval/underwaterTarget.hjson"
+    },
+    {
+      "type": "builder",
+      "file": "units/builder.hjson"
+    },
+    {
+      "type": "tank",
+      "file": "units/land/tank.hjson"
+    },
+    {
+      "type": "helicopter",
+      "file": "units/air/helicopter.hjson"
+    },
+    {
+      "type": "submarine",
+      "file": "units/submarine/submarine.hjson"
+    },
+    {
+      "type": "nautilus",
+      "file": "nautilus/nautilus.hjson"
+    },
+    {
+      "type": "hover-tank",
+      "file": "nautilus/hover/hover.hjson"
+    },
+    {
+      "type": "nautilus",
+      "file": "nautilus/nautilusSurface.hjson"
+    },
+    {
+      "type": "nautilus",
+      "file": "nautilus/nautilusLand.hjson"
+    },
+    {
+      "type": "scout-bot",
+      "file": "nautilus/scout/robotCrab.hjson"
+    },
+    {
+      "type": "scout-bot",
+      "file": "nautilus/scout/robotCrabWater.hjson"
+    },
+    {
+      "type": "command-center",
+      "file": "units/commandCenter/commandCenter.hjson"
+    },
+    {
+      "type": "experimental-factory",
+      "file": "units/experimentalFactory.hjson"
+    }
+  ]
+}

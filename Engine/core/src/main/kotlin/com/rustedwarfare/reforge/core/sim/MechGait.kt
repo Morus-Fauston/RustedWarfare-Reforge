@@ -27,16 +27,28 @@ internal object MechGait {
         }
         val targets = definitions.map { definition ->
             val base = MechMotion.offset(unit.position, unit.heading, definition.x, definition.y)
-            Position(base.x + prediction.x * definition.predictionMultiplier,
-                base.y + prediction.y * definition.predictionMultiplier).also { finite(it.x, it.y) }
+            val multiplier = if (definition.lockMovement) 0.0 else definition.predictionMultiplier
+            Position(base.x + prediction.x * multiplier,
+                base.y + prediction.y * multiplier).also { finite(it.x, it.y) }
+        }
+        val bodyTurn = MechMotion.angleDifference(unit.heading, previous.gaitHeading)
+        val radians = Math.toRadians(bodyTurn)
+        val priorFeet = previous.feet.mapIndexed { index, foot ->
+            val origin = previous.gaitPosition
+            if (!definitions[index].lockMovement || origin == null) foot else {
+                val x = foot.position.x - origin.x
+                val y = foot.position.y - origin.y
+                foot.copy(position = Position(unit.position.x + cos(radians) * x - sin(radians) * y,
+                    unit.position.y + sin(radians) * x + cos(radians) * y), heading = foot.heading + bodyTurn)
+            }
         }
         val distances = targets.mapIndexed { index, target ->
-            ScreenPlane.distanceSquared(previous.feet[index].position, target).also { finite(it) }
+            ScreenPlane.distanceSquared(priorFeet[index].position, target).also { finite(it) }
         }
         var furthest = 0
         for (index in 1 until distances.size) if (distances[index] > distances[furthest]) furthest = index
-        var movingCount = previous.feet.count { it.moving }
-        val feet = previous.feet.toMutableList()
+        var movingCount = priorFeet.count { it.moving }
+        val feet = priorFeet.toMutableList()
         for (index in feet.indices) {
             val definition = definitions[index]
             val target = targets[index]
@@ -51,7 +63,8 @@ internal object MechGait {
                     target.x + (foot.position.x - target.x) / distance * definition.hardLimit,
                     target.y + (foot.position.y - target.y) / distance * definition.hardLimit), moving = true)
             }
-            if (!foot.moving && foot.height <= definition.targetHeight + 0.1 && movingCount < 3 && index == furthest) {
+            if (!definition.lockMovement && !foot.moving && foot.height <= definition.targetHeight + 0.1 &&
+                movingCount < definition.maximumMovingLegs && index == furthest) {
                 val neighbourMoving = mech.neighbours[index].any { feet[it].moving }
                 val threshold = if (neighbourMoving) definition.holdWithMovingNeighbour else definition.holdMinimum
                 if (oldDistance > threshold * threshold) {
@@ -59,21 +72,24 @@ internal object MechGait {
                     movingCount++
                 }
             }
+            if (definition.lockMovement) foot = foot.copy(moving = true)
             foot = when {
                 !foot.moving -> {
                     val height = max(definition.targetHeight, foot.height - definition.heightSpeed * delta)
                     foot.copy(height = height, warmUp = 0.0,
                         phase = if (height > definition.targetHeight) MechLegPhase.LOWERING else MechLegPhase.PLANTED)
                 }
-                foot.height > definition.targetHeight + definition.liftOffset -> {
+                definition.lockMovement || foot.height > definition.targetHeight + definition.liftOffset -> {
                     val step = definition.moveSpeed * delta
                     val reached = oldDistance <= step * step
                     val angle = atan2(target.y - foot.position.y, target.x - foot.position.x)
                     val position = if (reached) target else Position(
                         foot.position.x + cos(angle) * step, foot.position.y + sin(angle) * step)
-                    val turn = MechMotion.angleDifference(previous.motionAngle, foot.heading)
+                    val turn = MechMotion.angleDifference(previous.motionAngle + definition.endDirectionOffset, foot.heading)
                         .coerceIn(-definition.rotateSpeed * delta, definition.rotateSpeed * delta)
                     foot.copy(position = position, heading = foot.heading + turn,
+                        height = if (definition.lockMovement) max(definition.targetHeight,
+                            foot.height - definition.heightSpeed * delta) else foot.height,
                         moving = !reached, phase = MechLegPhase.SWINGING)
                 }
                 foot.warmUp < definition.warmUp -> foot.copy(warmUp = foot.warmUp + delta, phase = MechLegPhase.WARMING_UP)
@@ -82,7 +98,7 @@ internal object MechGait {
             finite(foot.position.x, foot.position.y, foot.heading, foot.height, foot.warmUp)
             feet[index] = foot
         }
-        unit.mechState = previous.copy(feet = immutable(feet))
+        unit.mechState = previous.copy(feet = immutable(feet), gaitPosition = unit.position, gaitHeading = unit.heading)
     }
 
     private fun finite(vararg values: Double) {

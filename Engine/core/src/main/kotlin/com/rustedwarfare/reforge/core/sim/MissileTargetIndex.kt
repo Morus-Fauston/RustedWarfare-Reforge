@@ -48,6 +48,21 @@ internal class MissileTargetIndex private constructor(private val inverseX: Floa
         return result
     }
 
+    /** Ordinary repair callbacks traverse columns, rows and cell membership forwards. */
+    fun repairCandidates(x: Float, y: Float, radius: Float, units: Map<String, MutableUnit>): List<MutableUnit> {
+        val left = x - radius; val right = x + radius; val top = y - radius; val bottom = y + radius
+        require(listOf(left, right, top, bottom).all { it.isFinite() }) { "Repair search geometry must remain finite" }
+        val result = mutableListOf<MutableUnit>()
+        for (column in column(left)..column(right)) for (row in row(top)..row(bottom)) {
+            for (id in cells[column * 32 + row].orEmpty()) {
+                val unit = units.getValue(id)
+                val ux = unit.position.x.toFloat(); val uy = unit.position.y.toFloat()
+                if (ux >= left && ux <= right && uy >= top && uy <= bottom) result += unit
+            }
+        }
+        return result
+    }
+
     fun validate(units: Map<String, MutableUnit>) {
         val all = cells.values.flatten()
         require(all.size == all.toSet().size && all.toSet() == membership.keys)

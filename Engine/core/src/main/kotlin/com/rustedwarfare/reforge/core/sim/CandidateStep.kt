@@ -1,6 +1,8 @@
 package com.rustedwarfare.reforge.core.sim
 
 import com.rustedwarfare.reforge.core.content.MapDefinition
+import com.rustedwarfare.reforge.core.content.NautilusRules
+import com.rustedwarfare.reforge.core.content.ScoutBotRules
 import com.rustedwarfare.reforge.core.path.PlanningTerrain
 import com.rustedwarfare.reforge.core.path.PathSearchSample
 import com.rustedwarfare.reforge.core.knowledge.*
@@ -28,7 +30,9 @@ internal data class BuildingCommit(val truth: BuildingTerrain,
 internal data class StepState(
     var units: MutableMap<String, MutableUnit> = linkedMapOf(),
     var projectiles: MutableList<MutableProjectile> = mutableListOf(),
+    var temporaryVision: List<TemporaryVision> = emptyList(),
     var combatFrame: Int = -1,
+    var actionClock: Int = 0,
     var nextObjectId: Long = 1L,
     var lastBirthSerial: Long = 0L,
     var buildingWork: BuildingWork = BuildingWork.initial(),
@@ -87,24 +91,42 @@ internal data class StepState(
     )
 
     fun validate(input: Scenario) {
+        require(temporaryVision.all { it.owner in input.players.map { p -> p.playerId } &&
+            it.position.x.isFinite() && it.position.y.isFinite() && it.remaining.isFinite() && it.remaining >= 0f })
+        Transport.validate(units)
         val objectIds = mutableSetOf<Long>()
         var previousKey: String? = null
         for (unit in units.values) {
+            UnitAttachments.validateCandidateUnit(this, unit)
             require(input.unitDefinitions[unit.typeId] === unit.definition) { "Unit definition must remain registered" }
             require(listOf(unit.position.x, unit.position.y, unit.heading, unit.speed, unit.angularVelocity, unit.height)
                 .all { it.isFinite() } && (unit.health?.isFinite() != false)) { "Unit candidate must remain finite" }
             MechMotion.requireFinitePose(unit)
+            unit.definition.energy?.let { profile ->
+                require(unit.energy.isFinite() && unit.energy in 0f..profile.maximum) { "Weapon energy candidate must be bounded" }
+            }
+            require(unit.flightIdleTime in 0f..4f && unit.bomberApproach?.angle?.isFinite() != false) {
+                "Flight timers and approach must remain finite"
+            }
             require(unit.sinkSpeed.isFinite() && unit.sinkSpeed >= 0f) { "Water-body sink state must remain finite" }
+            require(unit.submarineVerticalSpeed.isFinite() && unit.submarineVerticalSpeed in 0f..0.08f) {
+                "Submarine vertical speed must remain finite and bounded"
+            }
             val origin = unit.productionOrigin
             val birthDefinition = origin?.let { input.unitDefinitions[it.factoryTypeId] }
             val birthLimit = birthDefinition?.production?.exitProfile
                 .let { when (it) {
-                    com.rustedwarfare.reforge.core.content.FactoryExitProfile.CUSTOM_MECH -> 45f
+                    com.rustedwarfare.reforge.core.content.FactoryExitProfile.CUSTOM_MECH,
+                    com.rustedwarfare.reforge.core.content.FactoryExitProfile.CUSTOM_NAUTILUS -> 45f
+                    com.rustedwarfare.reforge.core.content.FactoryExitProfile.NATIVE_EXPERIMENTAL -> 120f
                     com.rustedwarfare.reforge.core.content.FactoryExitProfile.NATIVE_SEA -> 80f
                     else -> 30f
                 } }
             require(unit.birthRemaining.isFinite() && unit.birthRemaining in 0f..birthLimit) { "Invalid birth timer" }
             unit.taskQueue.validateCandidate()
+            require(unit.repairScanElapsed.isFinite() && unit.repairScanElapsed >= 0f) { "Invalid repair scan timer" }
+            CustomUnitActions.validateCandidate(unit)
+            NuclearOrdnance.validate(unit)
             require((unit.logicalRequestX == null) == (unit.logicalRequestY == null) &&
                 unit.logicalRequestX?.isFinite() != false && unit.logicalRequestY?.isFinite() != false) {
                 "Logical movement coordinates must be a finite pair"
@@ -120,23 +142,36 @@ internal data class StepState(
             }
             origin?.let { birth ->
                 val producer = units.getValue(birth.producerId)
+                val bornDefinition = input.unitDefinitions.getValue(birth.unitTypeId)
+                val convertedProduct = CustomUnitActions.supports(bornDefinition) && CustomUnitActions.supports(unit.definition) &&
+                    bornDefinition.customActions?.actions?.any { it.targetTypeId == unit.typeId } == true
                 val nonce = unit.unitId.removePrefix("produced:${unit.ownerPlayerId}:")
                 require(producer.ownerPlayerId == unit.ownerPlayerId &&
-                    birthDefinition?.production?.unitTypeIds?.contains(unit.typeId) == true &&
+                    birthDefinition?.production?.unitTypeIds?.contains(birth.unitTypeId) == true &&
+                    (unit.typeId == birth.unitTypeId || convertedProduct) &&
                     (producer.typeId == birthDefinition.id || birthDefinition.upgrades?.actions?.any {
-                        it.targetTypeId == producer.typeId } == true) &&
+                        it.targetTypeId == producer.typeId } == true ||
+                        com.rustedwarfare.reforge.core.content.NautilusRules.supports(birthDefinition) &&
+                        com.rustedwarfare.reforge.core.content.NautilusRules.supports(producer.definition)) &&
                     Regex("[0-9a-f]{32}").matches(nonce) &&
                     unit.updateKey.startsWith("~produced/") &&
                     unit.updateKey.removePrefix("~produced/").toLong() in 1L..lastBirthSerial) {
                     "Invalid produced unit identity"
                 }
             }
-            require(MapBounds.contains(input.map.widthTiles.toDouble() * input.map.tileWidth,
-                input.map.heightTiles.toDouble() * input.map.tileHeight, unit.position, unit.definition.radius)) {
+            unit.scoutOrigin?.let { birth ->
+                val source = units.getValue(birth.sourceUnitId)
+                require(unit.definition.id in ScoutBotRules.ids && NautilusRules.supports(source.definition) &&
+                    unit.productionOrigin == null && birth.projectileId in 1L..<checkNotNull(unit.objectId) &&
+                    unit.unitId == "scout:${unit.ownerPlayerId}:${birth.projectileId}" &&
+                    unit.updateKey.startsWith("~produced/")) { "Invalid scout bot birth identity" }
+            }
+            require(Transport.containsPosition(unit, input.map, unit.position)) {
                 "Unit collision circle must remain within the map"
             }
-            unit.health?.let { require(it >= 0.0 && it <= checkNotNull(unit.definition.maximumHealth) &&
-                unit.alive == (it > 0.0)) { "Invalid unit life state" } }
+            unit.health?.let { require((it >= 0.0 || it == -1.0) && it <= checkNotNull(unit.definition.maximumHealth) &&
+                (!unit.deathPending || it == -1.0 && unit.carriedBy == null) &&
+                unit.alive == (it > 0.0 || unit.deathPending)) { "Invalid unit life state" } }
             for (state in unit.namedWeapons?.values ?: listOfNotNull(unit.combat)) {
                 require(listOf(state.turretHeading, state.angularVelocity, state.cooldown, state.offset.x, state.offset.y,
                     state.idleBaseHeading, state.idleOffset, state.warmup)
@@ -163,7 +198,15 @@ internal data class StepState(
                 projectile.age.isFinite() && projectile.age >= 0f && projectile.deflectionHealth.isFinite() &&
                 projectile.verticalSpeed.isFinite() && projectile.groundDistanceSquared?.isFinite() != false &&
                 projectile.ballisticRawAz.isFinite() && !(projectile.ballistic != null && projectile.missile != null) &&
+                projectile.interception?.let { course ->
+                    course.targetId in 1L..<projectile.objectId && course.height.isFinite() &&
+                        course.position.x.isFinite() && course.position.y.isFinite() &&
+                        course.launchTarget.x.isFinite() && course.launchTarget.y.isFinite()
+                } != false &&
                 projectile.ground?.let { it.x.isFinite() && it.y.isFinite() && it.height.isFinite() } != false &&
+                projectile.scoutPayload?.let { it.target.x.isFinite() && it.target.y.isFinite() &&
+                    it.stage.guided && projectile.ballistic != null && projectile.nonDeflectable &&
+                    projectile.remainingLife > 0.0 && projectile.remainingLife <= it.stage.life } != false &&
                 (projectile.missile == null || projectile.speed.toFloat().let { it.isFinite() && it >= 0f } && projectile.missileRawAz.isFinite())) {
                 "Projectile candidate must remain finite"
             }

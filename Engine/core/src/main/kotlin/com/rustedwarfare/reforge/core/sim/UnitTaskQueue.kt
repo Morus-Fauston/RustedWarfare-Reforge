@@ -29,6 +29,9 @@ internal class UnitTaskQueue private constructor(private val slots: List<UnitTas
         }
         // Include the inactive capacity slot: it is written by a full append and later shifted.
         for (task in slots.filterNotNull()) {
+            require(task.extraWorkRange == 0f && (!task.automaticRepair || task.kind == UnitTaskKind.CONSTRUCT)) {
+                "Invalid automatic repair task"
+            }
             require(task.actionId.isNotEmpty() && (task.atStep == null || task.atStep >= 0)) {
                 "Invalid task identity"
             }
@@ -36,7 +39,7 @@ internal class UnitTaskQueue private constructor(private val slots: List<UnitTas
                 UnitTaskKind.MOVE, UnitTaskKind.PATROL -> require(task.target?.let {
                     it.x.isFinite() && it.y.isFinite()
                 } == true && task.targetUnitId == null) { "Invalid point task" }
-                UnitTaskKind.ATTACK -> require(task.target == null && !task.targetUnitId.isNullOrEmpty()) {
+                UnitTaskKind.ATTACK, UnitTaskKind.LOAD_INTO, UnitTaskKind.LOAD_UP -> require(task.target == null && !task.targetUnitId.isNullOrEmpty()) {
                     "Invalid attack task"
                 }
                 UnitTaskKind.BUILD -> require(task.target?.let { it.x.isFinite() && it.y.isFinite() } == true &&

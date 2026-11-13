@@ -1,0 +1,11 @@
+{
+  "format": "rw-reforge.content-pack.v1",
+  "id": "owned-nuclear-silo-hjson",
+  "name": "Owned nuclear silo",
+  "units": [
+    {
+      "type": "nuclear-silo",
+      "file": "nukeLauncherC.hjson"
+    }
+  ]
+}

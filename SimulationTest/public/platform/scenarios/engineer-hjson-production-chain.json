@@ -1,0 +1,450 @@
+{
+  "schemaVersion": 1,
+  "scenarioId": "engineer-hjson-production-chain",
+  "inputs": "../../inputs/mech-engineer-production/hjson",
+  "contentPack": {
+    "directory": "production-package",
+    "unitId": "commandCenter"
+  },
+  "intents": [
+    {
+      "intentId": "select-center",
+      "kind": "select",
+      "waitSteps": 0,
+      "position": {
+        "x": 130,
+        "y": 130
+      }
+    },
+    {
+      "intentId": "produce-worker",
+      "kind": "produce",
+      "waitSteps": 600,
+      "typeId": "builder"
+    },
+    {
+      "intentId": "leave-center",
+      "kind": "select",
+      "waitSteps": 100,
+      "position": {
+        "x": 130,
+        "y": 130
+      }
+    },
+    {
+      "intentId": "select-worker",
+      "kind": "select",
+      "waitSteps": 0,
+      "position": {
+        "x": 129,
+        "y": 220
+      }
+    },
+    {
+      "intentId": "place-worker",
+      "kind": "move",
+      "waitSteps": 600,
+      "position": {
+        "x": 230,
+        "y": 200
+      }
+    },
+    {
+      "intentId": "stop-worker",
+      "kind": "stop",
+      "waitSteps": 40
+    },
+    {
+      "intentId": "build-t1",
+      "kind": "build",
+      "waitSteps": 600,
+      "position": {
+        "x": 270,
+        "y": 150
+      },
+      "typeId": "mechFactory"
+    },
+    {
+      "intentId": "finish-t1",
+      "kind": "select",
+      "waitSteps": 600,
+      "position": {
+        "x": 270,
+        "y": 150
+      }
+    },
+    {
+      "intentId": "upgrade-t2",
+      "kind": "upgrade",
+      "waitSteps": 600,
+      "upgradeId": "upgrade_t2"
+    },
+    {
+      "intentId": "wait-upgrade-0",
+      "kind": "select",
+      "waitSteps": 600,
+      "position": {
+        "x": 270,
+        "y": 150
+      }
+    },
+    {
+      "intentId": "wait-upgrade-1",
+      "kind": "select",
+      "waitSteps": 600,
+      "position": {
+        "x": 270,
+        "y": 150
+      }
+    },
+    {
+      "intentId": "wait-upgrade-2",
+      "kind": "select",
+      "waitSteps": 600,
+      "position": {
+        "x": 270,
+        "y": 150
+      }
+    },
+    {
+      "intentId": "finish-upgrade",
+      "kind": "select",
+      "waitSteps": 200,
+      "position": {
+        "x": 270,
+        "y": 150
+      }
+    },
+    {
+      "intentId": "produce-engineer",
+      "kind": "produce",
+      "waitSteps": 600,
+      "typeId": "mechEngineer"
+    },
+    {
+      "intentId": "wait-engineer",
+      "kind": "select",
+      "waitSteps": 600,
+      "position": {
+        "x": 270,
+        "y": 150
+      }
+    },
+    {
+      "intentId": "leave-factory",
+      "kind": "select",
+      "waitSteps": 600,
+      "position": {
+        "x": 270,
+        "y": 150
+      }
+    },
+    {
+      "intentId": "select-engineer",
+      "kind": "select",
+      "waitSteps": 0,
+      "position": {
+        "x": 270,
+        "y": 265
+      }
+    },
+    {
+      "intentId": "cross-cliff-and-fight",
+      "kind": "move",
+      "waitSteps": 400,
+      "position": {
+        "x": 410,
+        "y": 270
+      }
+    },
+    {
+      "intentId": "stop-engineer",
+      "kind": "stop",
+      "waitSteps": 40
+    },
+    {
+      "intentId": "build-mobile",
+      "kind": "build",
+      "waitSteps": 600,
+      "position": {
+        "x": 430,
+        "y": 310
+      },
+      "typeId": "mechGun"
+    },
+    {
+      "intentId": "reselect-after-build",
+      "kind": "select",
+      "waitSteps": 0,
+      "position": {
+        "x": 410,
+        "y": 270
+      }
+    },
+    {
+      "intentId": "clear-engineer-target",
+      "kind": "move",
+      "waitSteps": 200,
+      "position": {
+        "x": 300,
+        "y": 270
+      }
+    },
+    {
+      "intentId": "return-to-mobile",
+      "kind": "move",
+      "waitSteps": 200,
+      "position": {
+        "x": 410,
+        "y": 270
+      }
+    },
+    {
+      "intentId": "stop-at-mobile",
+      "kind": "stop",
+      "waitSteps": 0
+    },
+    {
+      "intentId": "select-mobile",
+      "kind": "select",
+      "waitSteps": 0,
+      "position": {
+        "x": 430,
+        "y": 310
+      }
+    },
+    {
+      "intentId": "mobile-under-fire",
+      "kind": "move",
+      "waitSteps": 60,
+      "position": {
+        "x": 450,
+        "y": 310
+      }
+    },
+    {
+      "intentId": "return-mobile",
+      "kind": "move",
+      "waitSteps": 60,
+      "position": {
+        "x": 430,
+        "y": 310
+      }
+    },
+    {
+      "intentId": "stop-mobile",
+      "kind": "stop",
+      "waitSteps": 10
+    },
+    {
+      "intentId": "secure-worksite",
+      "kind": "select",
+      "waitSteps": 200,
+      "position": {
+        "x": 430,
+        "y": 310
+      }
+    },
+    {
+      "intentId": "select-engineer-again",
+      "kind": "select",
+      "waitSteps": 0,
+      "position": {
+        "x": 410,
+        "y": 270
+      }
+    },
+    {
+      "intentId": "reclaim-partial",
+      "kind": "reclaim",
+      "waitSteps": 60,
+      "position": {
+        "x": 430,
+        "y": 310
+      }
+    },
+    {
+      "intentId": "stop-reclaim",
+      "kind": "stop",
+      "waitSteps": 0
+    },
+    {
+      "intentId": "manual-repair",
+      "kind": "repair",
+      "waitSteps": 1,
+      "position": {
+        "x": 430,
+        "y": 310
+      }
+    },
+    {
+      "intentId": "stop-repair",
+      "kind": "stop",
+      "waitSteps": 0
+    },
+    {
+      "intentId": "automatic-repair",
+      "kind": "select",
+      "waitSteps": 60,
+      "position": {
+        "x": 410,
+        "y": 270
+      }
+    },
+    {
+      "intentId": "reclaim-terminal",
+      "kind": "reclaim",
+      "waitSteps": 600,
+      "position": {
+        "x": 430,
+        "y": 310
+      }
+    },
+    {
+      "intentId": "return-cliff",
+      "kind": "move",
+      "waitSteps": 400,
+      "position": {
+        "x": 300,
+        "y": 270
+      }
+    },
+    {
+      "intentId": "stop-return",
+      "kind": "stop",
+      "waitSteps": 40
+    },
+    {
+      "intentId": "build-bay",
+      "kind": "build",
+      "waitSteps": 600,
+      "position": {
+        "x": 270,
+        "y": 350
+      },
+      "typeId": "repairbay"
+    }
+  ],
+  "waitPlan": {
+    "produce-worker": {
+      "minimumSteps": 600,
+      "timeoutSeconds": 240
+    },
+    "leave-center": {
+      "minimumSteps": 100,
+      "timeoutSeconds": 240
+    },
+    "place-worker": {
+      "minimumSteps": 600,
+      "timeoutSeconds": 240
+    },
+    "stop-worker": {
+      "minimumSteps": 40,
+      "timeoutSeconds": 240
+    },
+    "build-t1": {
+      "minimumSteps": 600,
+      "timeoutSeconds": 240
+    },
+    "finish-t1": {
+      "minimumSteps": 600,
+      "timeoutSeconds": 240
+    },
+    "upgrade-t2": {
+      "minimumSteps": 600,
+      "timeoutSeconds": 240
+    },
+    "wait-upgrade-0": {
+      "minimumSteps": 600,
+      "timeoutSeconds": 240
+    },
+    "wait-upgrade-1": {
+      "minimumSteps": 600,
+      "timeoutSeconds": 240
+    },
+    "wait-upgrade-2": {
+      "minimumSteps": 600,
+      "timeoutSeconds": 240
+    },
+    "finish-upgrade": {
+      "minimumSteps": 200,
+      "timeoutSeconds": 240
+    },
+    "produce-engineer": {
+      "minimumSteps": 600,
+      "timeoutSeconds": 240
+    },
+    "wait-engineer": {
+      "minimumSteps": 600,
+      "timeoutSeconds": 240
+    },
+    "leave-factory": {
+      "minimumSteps": 600,
+      "timeoutSeconds": 240
+    },
+    "cross-cliff-and-fight": {
+      "minimumSteps": 400,
+      "timeoutSeconds": 240
+    },
+    "stop-engineer": {
+      "minimumSteps": 40,
+      "timeoutSeconds": 240
+    },
+    "build-mobile": {
+      "minimumSteps": 600,
+      "timeoutSeconds": 240
+    },
+    "clear-engineer-target": {
+      "minimumSteps": 200,
+      "timeoutSeconds": 240
+    },
+    "return-to-mobile": {
+      "minimumSteps": 200,
+      "timeoutSeconds": 240
+    },
+    "mobile-under-fire": {
+      "minimumSteps": 60,
+      "timeoutSeconds": 240
+    },
+    "return-mobile": {
+      "minimumSteps": 60,
+      "timeoutSeconds": 240
+    },
+    "stop-mobile": {
+      "minimumSteps": 10,
+      "timeoutSeconds": 240
+    },
+    "secure-worksite": {
+      "minimumSteps": 200,
+      "timeoutSeconds": 240
+    },
+    "reclaim-partial": {
+      "minimumSteps": 60,
+      "timeoutSeconds": 240
+    },
+    "manual-repair": {
+      "minimumSteps": 1,
+      "timeoutSeconds": 240
+    },
+    "automatic-repair": {
+      "minimumSteps": 60,
+      "timeoutSeconds": 240
+    },
+    "reclaim-terminal": {
+      "minimumSteps": 600,
+      "timeoutSeconds": 240
+    },
+    "return-cliff": {
+      "minimumSteps": 400,
+      "timeoutSeconds": 240
+    },
+    "stop-return": {
+      "minimumSteps": 40,
+      "timeoutSeconds": 240
+    },
+    "build-bay": {
+      "minimumSteps": 600,
+      "timeoutSeconds": 240
+    }
+  }
+}

@@ -28,7 +28,7 @@ class MultiBuilderConstructionTest {
             while (context.observe().units.single { it.unitId == target }.constructionProgress < 1f && step < 1200L) tick()
             assertEquals(1f, context.observe().units.single { it.unitId == target }.constructionProgress)
             for (worker in listOf("a", "b")) assertIs<ActionResult.Accepted>(context.submit(StopAction("done-$worker", "p1", worker, context.world)))
-            assertIs<ActionResult.Accepted>(context.submit(ReclaimBuildingAction("reclaim", "p1", "a", target, context.world)))
+            assertIs<ActionResult.Accepted>(context.submit(ReclaimUnitAction("reclaim", "p1", "a", target, context.world)))
             assertIs<ActionResult.Accepted>(context.submit(BuildAction("rebuild", "p1", "a", "landFactory", Position(190.0, 170.0),
                 "3".repeat(32), context.world, append = true)))
             assertIs<ActionResult.Accepted>(context.submit(PatrolAction("tail", "p1", "a", Position(450.0, 290.0), true, context.world)))
@@ -69,7 +69,7 @@ class MultiBuilderConstructionTest {
             var completed = first.events.count { it.kind == "construction-completed" }
             var reclaimed = first.events.count { it.kind == "building-reclaimed" }
             for (worker in listOf("a", "b")) {
-                assertIs<ActionResult.Accepted>(context.submit(ReclaimBuildingAction("reclaim-$worker", "p1", worker,
+                assertIs<ActionResult.Accepted>(context.submit(ReclaimUnitAction("reclaim-$worker", "p1", worker,
                     target, context.world, append = true)))
                 assertIs<ActionResult.Accepted>(context.submit(PatrolAction("patrol-$worker", "p1", worker,
                     Position(450.0, 290.0), true, context.world)))

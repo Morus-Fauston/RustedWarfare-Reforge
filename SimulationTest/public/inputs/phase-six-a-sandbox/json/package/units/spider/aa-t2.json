@@ -1,0 +1,93 @@
+{
+  "format": "rw-reforge.unit.v1",
+  "core": {
+    "name": "modularSpider_antiairT2",
+    "class": "CustomUnitMetadata",
+    "price": 18000,
+    "maxHp": 3000,
+    "radius": 15,
+    "displayRadius": 12,
+    "isUnselectable": true,
+    "canNotBeDirectlyAttacked": false,
+    "selfBuildRate": 0.001,
+    "selfRegenRate": 0.2
+  },
+  "graphics": {
+    "image": "empty.png",
+    "image_turret": "aa-t2.png",
+    "total_frames": 1
+  },
+  "attack": {
+    "canAttackFlyingUnits": true,
+    "canAttackLandUnits": false,
+    "canAttackUnderwaterUnits": false,
+    "maxAttackRange": 400,
+    "turretSize": 6,
+    "turretTurnSpeed": 6,
+    "shootDelay": 70
+  },
+  "actions": [
+    {
+      "name": "cancel",
+      "convertTo": "modularSpider_emptySlot",
+      "refundCredits": 18000,
+      "addAllActionCooldownsTime": 120
+    },
+    {
+      "name": "reclaim",
+      "convertTo": "modularSpider_emptySlot",
+      "refundCredits": 9000,
+      "buildSpeed": 180
+    }
+  ],
+  "weapons": [
+    {
+      "name": "1",
+      "x": 0,
+      "y": 0,
+      "projectile": "1",
+      "canShoot": false,
+      "recoilOffset": -3,
+      "recoilOutTime": 6,
+      "recoilReturnTime": 12,
+      "idleSweepAngle": 45,
+      "idleSweepDelay": 110,
+      "idleSweepSpeed": 0.2
+    },
+    {
+      "name": "2",
+      "x": 7,
+      "y": 6,
+      "projectile": "1",
+      "attachedTo": "1",
+      "slave": true,
+      "invisible": true,
+      "warmup": 0,
+      "shoot_sound": "missile_fire",
+      "shoot_sound_vol": 0.3
+    },
+    {
+      "name": "3",
+      "x": -7,
+      "y": 6,
+      "projectile": "1",
+      "attachedTo": "1",
+      "slave": true,
+      "invisible": true,
+      "warmup": 25,
+      "shoot_sound": "missile_fire",
+      "shoot_sound_vol": 0.3,
+      "linkDelayWithTurret": "2"
+    }
+  ],
+  "projectiles": [
+    {
+      "name": "1",
+      "directDamage": 200,
+      "speed": 0.6,
+      "targetSpeed": 8,
+      "life": 240,
+      "autoTargetingOnDeadTarget": true
+    }
+  ]
+}

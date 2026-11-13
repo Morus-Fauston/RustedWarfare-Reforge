@@ -1,0 +1,11 @@
+{
+  "format": "rw-reforge.content-pack.v1",
+  "id": "owned-reclaim-zero-ini",
+  "name": "Owned explicit zero reclaim target",
+  "units": [
+    {
+      "type": "tank",
+      "file": "tank.ini"
+    }
+  ]
+}

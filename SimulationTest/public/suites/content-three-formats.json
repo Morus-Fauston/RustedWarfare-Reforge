@@ -12,7 +12,8 @@
       "com.rustedwarfare.reforge.core.content.ContentPackLoadTest",
       "com.rustedwarfare.reforge.core.content.ContentPackCompositionTest",
       "com.rustedwarfare.reforge.core.sim.SoundAuthorizationTest",
-      "com.rustedwarfare.reforge.core.content.NativeBaseContentPackTest"
+      "com.rustedwarfare.reforge.core.content.NativeBaseContentPackTest",
+      "com.rustedwarfare.reforge.core.content.ShieldContentTest"
     ],
     "client": [
       "com.rustedwarfare.reforge.client.ThreeFormatSandboxTest",

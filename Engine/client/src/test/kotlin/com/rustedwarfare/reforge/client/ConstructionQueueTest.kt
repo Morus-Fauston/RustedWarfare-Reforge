@@ -39,8 +39,8 @@ class ConstructionQueueTest {
                 assertIs<ActionResult.Accepted>(c.submit(PatrolAction("head", "p1", "worker",
                     Position(450.0, 290.0), false, c.world)))
                 fun order(id: String, append: Boolean = false): Action = when (kind) {
-                    "repair" -> RepairBuildingAction(id, "p1", "worker", target, c.world, append = append)
-                    "reclaim" -> ReclaimBuildingAction(id, "p1", "worker", target, c.world, append = append)
+                    "repair" -> RepairUnitAction(id, "p1", "worker", target, c.world, append = append)
+                    "reclaim" -> ReclaimUnitAction(id, "p1", "worker", target, c.world, append = append)
                     else -> ResumeConstructionAction(id, "p1", "worker", target, c.world, append = append)
                 }
                 assertIs<ActionResult.Accepted>(c.submit(order("tail", true)))

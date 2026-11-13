@@ -1,0 +1,73 @@
+{
+  "format": "rw-reforge.unit.v1",
+  "core": {
+    "name": "modularSpider_lightning",
+    "class": "CustomUnitMetadata",
+    "price": 6000,
+    "maxHp": 2000,
+    "radius": 15,
+    "displayRadius": 12,
+    "isUnselectable": true,
+    "canNotBeDirectlyAttacked": false,
+    "selfBuildRate": 0.001,
+    "selfRegenRate": 0.2
+  },
+  "graphics": {
+    "image": "empty.png",
+    "image_turret": "lightning.png",
+    "total_frames": 1
+  },
+  "attack": {
+    "canAttackFlyingUnits": false,
+    "canAttackLandUnits": true,
+    "canAttackUnderwaterUnits": false,
+    "maxAttackRange": 290,
+    "turretSize": 30,
+    "turretTurnSpeed": 2,
+    "shootDelay": "2.00s"
+  },
+  "actions": [
+    {
+      "name": "cancel",
+      "convertTo": "modularSpider_emptySlot",
+      "refundCredits": 6000,
+      "addAllActionCooldownsTime": 120
+    },
+    {
+      "name": "reclaim",
+      "convertTo": "modularSpider_emptySlot",
+      "refundCredits": 3000,
+      "buildSpeed": 180
+    }
+  ],
+  "weapons": [
+    {
+      "name": "1",
+      "x": 0,
+      "y": 0,
+      "projectile": "1",
+      "size": 20,
+      "image_drawOffsetY": 9,
+      "shoot_sound": "lighting_burst",
+      "shoot_sound_vol": 0.3,
+      "canShoot": true,
+      "warmup": 30,
+      "recoilOffset": -1.5,
+      "recoilOutTime": 3,
+      "recoilReturnTime": 17
+    }
+  ],
+  "projectiles": [
+    {
+      "name": "1",
+      "directDamage": 130,
+      "life": 25,
+      "speed": 0,
+      "instant": true,
+      "lightingEffect": true,
+      "shieldDamageMultiplier": 1,
+      "shieldDefectionMultiplier": 0.1,
+      "buildingDamageMultiplier": 0.5
+    }
+  ]
+}

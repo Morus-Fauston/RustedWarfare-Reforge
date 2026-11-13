@@ -1,0 +1,126 @@
+{
+  "schemaVersion": 1,
+  "scenarioId": "modular-spider-hjson-weapon-modules",
+  "history": {
+    "ownerPlayerId": "p1",
+    "initialBalance": 5000,
+    "noActionIntents": [
+      "settle-opening"
+    ],
+    "initialOwnedTypes": [
+      "modularSpider",
+      "modularSpider_emptySlot",
+      "modularSpider_emptySlot",
+      "modularSpider_emptySlot",
+      "modularSpider_emptySlot",
+      "modularSpider_emptySlot",
+      "modularSpider_emptySlot"
+    ],
+    "initialIncome": {
+      "unitId": "a",
+      "typeId": "modularSpider",
+      "period": 40,
+      "credits": 30
+    },
+    "spend": [
+      {
+        "intentId": "buy-aa",
+        "amount": 2000,
+        "at": "action"
+      },
+      {
+        "intentId": "buy-laser",
+        "amount": 700,
+        "at": "action"
+      },
+      {
+        "intentId": "queue-first-upgrade",
+        "amount": 3000,
+        "at": "action"
+      },
+      {
+        "intentId": "withdraw-upgrade",
+        "amount": 3000,
+        "at": "action"
+      },
+      {
+        "intentId": "queue-laser-t2",
+        "amount": 3000,
+        "at": "action"
+      }
+    ],
+    "mechLegs": {
+      "modularSpider": 8,
+      "mechGun": 2
+    },
+    "projectileBirthsRequired": true,
+    "minimumBirths": [
+      {
+        "ownerPlayerId": "p1",
+        "typeId": "modularSpider_smallgunturretT2",
+        "weaponNames": [
+          "smallLaser1"
+        ],
+        "targetUnitId": "b"
+      }
+    ],
+    "finalUnits": [
+      {
+        "ownerPlayerId": "p1",
+        "typeId": "modularSpider",
+        "fields": {
+          "alive": true
+        }
+      },
+      {
+        "ownerPlayerId": "p1",
+        "typeId": "modularSpider_smallgunturretT2",
+        "fields": {
+          "alive": true
+        }
+      }
+    ],
+    "spiderWeaponModules": true
+  },
+  "rules": [
+    {
+      "intentId": "settle-opening"
+    },
+    {
+      "intentId": "select-spider"
+    },
+    {
+      "intentId": "select-slot-1"
+    },
+    {
+      "intentId": "buy-aa"
+    },
+    {
+      "intentId": "cancel-aa"
+    },
+    {
+      "intentId": "buy-laser"
+    },
+    {
+      "intentId": "queue-first-upgrade"
+    },
+    {
+      "intentId": "withdraw-upgrade"
+    },
+    {
+      "intentId": "queue-laser-t2"
+    },
+    {
+      "intentId": "move-out-of-range"
+    },
+    {
+      "intentId": "stop-to-finish-construction"
+    },
+    {
+      "intentId": "stop-to-finish-upgrade"
+    },
+    {
+      "intentId": "attack-ground"
+    }
+  ]
+}

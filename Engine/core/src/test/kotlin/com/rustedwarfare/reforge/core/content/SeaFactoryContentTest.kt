@@ -22,7 +22,7 @@ class SeaFactoryContentTest {
             assertEquals(BuildingFootprint(-2, -1, 2, 4), factory.building!!.placementFootprint)
             assertNull(factory.building!!.backImagePath)
             assertEquals("NATIVE_SEA", factory.production!!.exitProfile.name)
-            assertEquals(if (tier == 1) emptyList() else listOf("heavyBattleship"), factory.production!!.unitTypeIds)
+            assertEquals(if (tier == 1) listOf("attackSubmarine") else listOf("heavyBattleship", "attackSubmarine"), factory.production!!.unitTypeIds)
             assertEquals(if (tier == 1) listOf(UpgradeActionProfile("upgrade_t2", "seaFactoryT2", 2000L, .0004f)) else emptyList(),
                 factory.upgrades?.actions.orEmpty())
             for (image in listOf(factory.imagePath, factory.durability!!.deadImagePath!!)) {

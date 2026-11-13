@@ -1,8 +1,8 @@
 {
   "schemaVersion": 1,
-  "profileId": "rw.pc.steam.9902063.resources.v5",
-  "imageProfileId": "rw.pc.steam.9902063.images.v5",
-  "imageQualificationSha256": "4c7a82a3f643ceb6ecd0966d01bbd980fa9f7a00243c7966eb6dab60cbf0182e",
+  "profileId": "rw.pc.steam.9902063.resources.v8",
+  "imageProfileId": "rw.pc.steam.9902063.images.v8",
+  "imageQualificationSha256": "e5386ef4c851218ebaaaf80cb2662a36080e341699babec156d2205524901ccd",
   "identity": {
     "bytes": 2639503,
     "sha256": "8a550a37e2d8a5430866090d4e7d5892f9010b47f52a5a09350fc66c620deec9"
@@ -251,6 +251,10 @@
   ],
   "events": [
     {
+      "eventId": "reforge:events/spider-gun-fire",
+      "sourcePath": "res/raw/firing3.ogg"
+    },
+    {
       "eventId": "reforge:events/tank-fire",
       "sourcePath": "res/raw/tank_firing.ogg"
     },
@@ -261,6 +265,38 @@
     {
       "eventId": "reforge:events/naval-missile-fire",
       "sourcePath": "res/raw/missile_fire.ogg"
+    },
+    {
+      "eventId": "reforge:events/hover-fire",
+      "sourcePath": "res/raw/plasma_fire2.ogg"
+    },
+    {
+      "eventId": "reforge:events/amphibious-lightning-fire",
+      "sourcePath": "res/raw/lighting_burst.ogg"
+    },
+    {
+      "eventId": "reforge:events/spider-lightning-fire",
+      "sourcePath": "res/raw/lighting_burst.ogg"
+    },
+    {
+      "eventId": "reforge:events/nuke-launch",
+      "sourcePath": "res/raw/nuke_launch.ogg"
+    },
+    {
+      "eventId": "reforge:events/nuke-explode",
+      "sourcePath": "res/raw/nuke_explode.ogg"
+    },
+    {
+      "eventId": "reforge:events/nuke-intercept",
+      "sourcePath": "res/raw/buiding_explode.ogg"
+    },
+    {
+      "eventId": "reforge:events/scout-plasma-fire",
+      "sourcePath": "res/raw/plasma_fire.ogg"
+    },
+    {
+      "eventId": "reforge:events/bomber-impact",
+      "sourcePath": "res/raw/missile_hit.ogg"
     }
   ],
   "excludedMusicDomain": "assets/music/",
@@ -311,5 +347,5 @@
       "sha256": "45bf94723812dcfe146e84312721441872e5a82b3745a07a1311d4449cac0f03"
     }
   ],
-  "boundary": "Owned qualification metadata only. All30 original effects, one already-qualified supported event;9 music entries excluded. No original bytes or runtime, new trigger/permission or full-platform equivalence."
+  "boundary": "Owned PC qualification metadata, with native amphibious jet parts, T2 air factory and lighting_burst sound. No original bytes, gameplay runtime or Android equivalence."
 }

@@ -177,7 +177,7 @@ class PlatformSessionRunnerTest {
             publicRoot.resolve("platform/scenarios/maintenance.json"), output)
         val rows = Files.readAllLines(output.resolve("client-diagnostic.jsonl")).map { json.parseToJsonElement(it).jsonObject }
         val actions = rows.filter { it["kind"] == s("action") }
-        assertEquals(listOf("SelectAction", "UpgradeAction", "CancelUpgradeAction", "SelectAction", "ReclaimBuildingAction"),
+        assertEquals(listOf("SelectAction", "UpgradeAction", "CancelUpgradeAction", "SelectAction", "ReclaimUnitAction"),
             actions.map { it.text("type") })
         assertTrue(actions.all { it.objectAt("result")["accepted"] == b(true) })
         for ((type, delta) in listOf("UpgradeAction" to -1400.0, "CancelUpgradeAction" to 1400.0)) {
@@ -185,7 +185,7 @@ class PlatformSessionRunnerTest {
             assertEquals(s("upgrade_t2"), rows[index]["upgradeId"])
             assertEquals(delta, rows[index+1].objectAt("sample").number("balance") - rows[index-1].objectAt("sample").number("balance"))
         }
-        val reclaim = rows.indexOfFirst { it["type"] == s("ReclaimBuildingAction") }
+        val reclaim = rows.indexOfFirst { it["type"] == s("ReclaimUnitAction") }
         assertEquals(s("extractor"), rows[reclaim]["targetUnitId"])
         val worker = rows[reclaim+1].objectAt("sample").arrayAt("units").single { it.jsonObject["unitId"] == s("worker") }.jsonObject
         assertEquals("reclaim", worker.arrayAt("tasks").single().jsonObject.text("kind"))

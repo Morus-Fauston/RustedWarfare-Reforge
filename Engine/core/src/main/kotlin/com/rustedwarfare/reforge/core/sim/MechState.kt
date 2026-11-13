@@ -15,7 +15,8 @@ internal data class MechState(val bodyAngle: Double, val motionAngle: Double, va
                               val reversing: Boolean = false, val hadMotionAim: Boolean = false,
                               val hold: Double = 0.0, val sweepTime: Double = 0.0,
                               val sweepOffset: Double = 0.0, val sweepReached: Boolean = false,
-                              val sweepCycle: Long = 0, val feet: List<MechFootState>)
+                              val sweepCycle: Long = 0, val feet: List<MechFootState>,
+                              val gaitPosition: Position? = null, val gaitHeading: Double = 0.0)
 
 internal object MechMotion {
     fun sourceHeading(heading: Double): Double = (heading - 90.0).let { if (it > 180.0) it - 360.0 else it }
@@ -45,8 +46,8 @@ internal object MechMotion {
 
     fun initial(definition: UnitDefinition, position: Position, heading: Double): MechState? = definition.mech?.let { mech ->
         MechState(sourceHeading(heading) + mech.body.idleDirection, sourceHeading(heading), feet = immutable(mech.legs.map {
-            MechFootState(offset(position, heading, it.x, it.y), sourceHeading(heading))
-        })).also { requireFinitePose(definition, position, heading, it) }
+            MechFootState(offset(position, heading, it.x, it.y), sourceHeading(heading) + it.endDirectionOffset)
+        }), gaitPosition = position, gaitHeading = heading).also { requireFinitePose(definition, position, heading, it) }
     }
 
     fun requireFinitePose(unit: MutableUnit) {
@@ -65,9 +66,9 @@ internal object MechMotion {
     }
 
     fun pose(unit: MutableUnit): MechPose? = unit.mechState?.let { state ->
-        val fourLegged = unit.definition.mech?.kind == MechKind.FOUR_LEGGED
-        MechPose(if (fourLegged) unit.heading else unit.combat?.turretHeading ?: ScreenPlane.normalize(state.bodyAngle + 90.0),
-            if (fourLegged) unit.angularVelocity else unit.combat?.angularVelocity ?: state.angularVelocity, state.reversing,
+        val bodyAligned = unit.definition.mech?.kind != MechKind.TWO_LEGGED
+        MechPose(if (bodyAligned) unit.heading else unit.combat?.turretHeading ?: ScreenPlane.normalize(state.bodyAngle + 90.0),
+            if (bodyAligned) unit.angularVelocity else unit.combat?.angularVelocity ?: state.angularVelocity, state.reversing,
             checkNotNull(unit.definition.mech).legs.mapIndexed { index, definition ->
                 val foot = state.feet[index]
                 MechLegPose(index, offset(unit.position, unit.heading, definition.attachX, definition.attachY),

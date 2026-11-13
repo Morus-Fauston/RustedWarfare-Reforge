@@ -76,12 +76,58 @@ object PlatformSessionRunner {
                         "cancelProduction" -> session.cancelProduction(intent.id("typeId"))
                         "move" -> session.move(intent.objectAt("position").let { Position(it.number("x"), it.number("y")) })
                         "stop" -> session.stop()
+                        "unit-action" -> {
+                            val name = intent.id("actionName")
+                            val nuclear = name in setOf("buildNuke", "launchNuke", "buildAntiNuke")
+                            val targeted = name in setOf("launchNuke", "launchScoutBot", "blink")
+                            val slotOrder = name in setOf("buildGun", "buildSmallLaser", "buildAntiair", "buildLightning",
+                                "buildArtillery", "buildFabricator", "buildShieldGen", "buildSpeed", "upgradeT2", "upgradeFlak",
+                                "buildLaserdefense", "buildAntinuke", "buildBlink", "reclaim")
+                            val spider = slotOrder || name in setOf("selectSlotBuild", "cancel", "isEnabled", "isDisabled") ||
+                                name.matches(Regex("selectSlot[1-6]"))
+                            val cancel = intent["cancelQueued"]?.let { value ->
+                                value.jsonPrimitive.booleanOrNull ?: throw InputError("Expected action cancellation boolean")
+                            } ?: false
+                            val keys = setOf("intentId", "kind", "actionName", "waitSteps") +
+                                (if ("testScene" in document) setOf("coreActionId") else emptySet()) +
+                                (if ("cancelQueued" in intent && (nuclear || targeted || slotOrder)) setOf("cancelQueued") else emptySet()) +
+                                (if (targeted && !cancel) setOf("target") else emptySet())
+                            if (intent.keys != keys ||
+                                !nuclear && !targeted && !spider &&
+                                    name !in setOf("afterBurn", "cancelBurn", "deploy", "undeploy", "surface", "dive"))
+                                throw InputError("Expected a finite normal unit action and explicit waitSteps")
+                            val point = intent["target"]?.jsonObject?.let {
+                                if (it.keys != setOf("x", "y")) throw InputError("Expected finite ground point")
+                                Position(it.number("x"), it.number("y"))
+                            }
+                            session.unitAction(name, cancel, point)
+                        }
+                        "load" -> session.command(intent.objectAt("position").let { Position(it.number("x"), it.number("y")) })
+                        "unload" -> {
+                            if (intent.required("unloading") !in setOf(b(true), b(false))) throw InputError("Expected unload boolean")
+                            session.unload(intent.required("unloading").jsonPrimitive.boolean)
+                        }
+                        "submarine-depth" -> {
+                            if (intent.required("surface") !in setOf(b(true), b(false))) throw InputError("Expected submarine surface boolean")
+                            session.submarineDepth(intent.required("surface").jsonPrimitive.boolean)
+                        }
+                        "amphibious-flight" -> {
+                            if (intent.required("flying") !in setOf(b(true), b(false))) throw InputError("Expected amphibious flying boolean")
+                            session.amphibiousFlight(intent.required("flying").jsonPrimitive.boolean)
+                        }
                         "attack" -> session.command(intent.objectAt("position").let { Position(it.number("x"), it.number("y")) })
                         "build" -> session.build(intent.id("typeId"),
                             intent.objectAt("position").let { Position(it.number("x"), it.number("y")) })
                         "upgrade" -> session.upgrade(intent.id("upgradeId"))
                         "cancelUpgrade" -> session.cancelUpgrade(intent.id("upgradeId"))
-                        "reclaim" -> session.reclaim(intent.id("targetUnitId"))
+                        "reclaim", "repair" -> {
+                            val repair = intent.text("kind") == "repair"
+                            val target = if ("targetUnitId" in intent) intent.id("targetUnitId") else {
+                                val point = intent.objectAt("position").let { Position(it.number("x"), it.number("y")) }
+                                (if (repair) session.repairTargetAt(point) else session.reclaimTargetAt(point)) ?: ""
+                            }
+                            if (repair) session.repair(target) else session.reclaim(target)
+                        }
                         else -> throw InputError("Unsupported platform intent: ${intent.text("kind")}")
                     }
                     val waitSteps = if ("waitSteps" in intent) intent.integer("waitSteps") else 0L

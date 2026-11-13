@@ -13,6 +13,22 @@ import java.io.IOException
 import java.nio.file.Path
 
 object ContentLoader {
+    fun loadNuclearSiloWithSources(path: Path): ContentResult<LoadedUnitContent> =
+        load(path) { com.rustedwarfare.reforge.core.content.internal.NuclearSiloContentReader.readWithSources(it) }
+    fun loadNautilusWithSources(path: Path): ContentResult<LoadedUnitContent> =
+        load(path) { com.rustedwarfare.reforge.core.content.internal.NautilusContentReader.readWithSources(it) {} }
+    fun loadScoutBotWithSources(path: Path): ContentResult<LoadedUnitContent> =
+        load(path) { com.rustedwarfare.reforge.core.content.internal.ScoutBotContentReader.readWithSources(it) {} }
+    fun loadMechEngineerWithSources(path: Path): ContentResult<LoadedUnitContent> =
+        load(path) { com.rustedwarfare.reforge.core.content.internal.MechEngineerContentReader.readWithSources(it) {} }
+    fun loadBunkerWithSources(path: Path): ContentResult<LoadedUnitContent> =
+        load(path) { com.rustedwarfare.reforge.core.content.internal.BunkerContentReader.readWithSources(it) {} }
+    fun loadAaBeamWithSources(path: Path): ContentResult<LoadedUnitContent> =
+        load(path) { com.rustedwarfare.reforge.core.content.internal.AaBeamContentReader.readWithSources(it) {} }
+    fun loadBomberWithSources(path: Path): ContentResult<LoadedUnitContent> =
+        load(path) { com.rustedwarfare.reforge.core.content.internal.BomberContentReader.readWithSources(it) {} }
+    fun loadDropshipWithSources(path: Path): ContentResult<LoadedUnitContent> =
+        load(path) { com.rustedwarfare.reforge.core.content.internal.DropshipContentReader.readWithSources(it) {} }
     /** Composes checked immutable declarations without touching the filesystem or renderer. */
     fun composeContentPacks(packs: List<LoadedContentPack>): ContentResult<LoadedContentSet> =
         load(packs.firstOrNull()?.manifest ?: Path.of(".")) { errorPath ->
@@ -39,6 +55,8 @@ object ContentLoader {
     fun loadCommandCenter(path: Path): ContentResult<UnitDefinition> = load(path, CommandCenterContentReader::read)
     fun loadCommandCenterWithSources(path: Path): ContentResult<LoadedUnitContent> = load(path, CommandCenterContentReader::readWithSources)
     fun loadBuilder(path: Path): ContentResult<UnitDefinition> = load(path, BuilderContentReader::read)
+    fun loadRepairBayWithSources(path: Path): ContentResult<LoadedUnitContent> =
+        load(path) { com.rustedwarfare.reforge.core.content.internal.RepairBayContentReader.readWithSources(it) }
     fun loadBuilderWithSources(path: Path): ContentResult<LoadedUnitContent> = load(path, BuilderContentReader::readWithSources)
 
     fun loadPointDefense(path: Path): ContentResult<UnitDefinition> = load(path, PointDefenseContentReader::read)
@@ -75,6 +93,9 @@ object ContentLoader {
     fun loadHelicopterUnit(path: Path): ContentResult<UnitDefinition> =
         load(path) { CombatContentReader.readHelicopterWithSources(it).definition }
 
+    fun loadHoverTankWithSources(path: Path): ContentResult<LoadedUnitContent> =
+        load(path) { CombatContentReader.readHoverTankWithSources(it) }
+
     fun loadHeavyMechUnit(path: Path): ContentResult<UnitDefinition> =
         load(path) { CombatContentReader.readHeavyMechWithSources(it).definition }
 
@@ -93,6 +114,15 @@ object ContentLoader {
 
     fun loadUnderwaterTargetUnit(path: Path): ContentResult<UnitDefinition> =
         load(path) { UnderwaterTargetContentReader.readWithSources(it) {}.definition }
+
+    fun loadSubmarineWithSources(path: Path): ContentResult<LoadedUnitContent> =
+        load(path) { com.rustedwarfare.reforge.core.content.internal.SubmarineContentReader.readWithSources(it) {} }
+
+    fun loadAmphibiousJetWithSources(path: Path): ContentResult<LoadedUnitContent> =
+        load(path) { com.rustedwarfare.reforge.core.content.internal.AmphibiousJetContentReader.readWithSources(it) {} }
+
+    fun loadHovercraftWithSources(path: Path): ContentResult<LoadedUnitContent> =
+        load(path) { com.rustedwarfare.reforge.core.content.internal.HovercraftContentReader.readWithSources(it) {} }
 
     fun loadDeclaredTankWithSources(path: Path): ContentResult<LoadedUnitContent> =
         load(path) { CombatContentReader.readDeclaredWithSources(it) }

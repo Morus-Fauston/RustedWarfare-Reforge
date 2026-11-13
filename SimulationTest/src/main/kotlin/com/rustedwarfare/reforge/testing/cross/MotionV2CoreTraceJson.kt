@@ -11,9 +11,13 @@ internal object MotionV2CoreTraceJson {
     private fun action(a:Action?):JsonElement=a?.let { obj("actionId" to s(it.actionId),"actorPlayerId" to s(it.actorPlayerId),
         "unitId" to s(it.unitId),"worldId" to s(it.world.id),"atStep" to it.atStep?.let(::n),
         "kind" to s(when(it) { is MoveAction->"move";is StopAction->"stop";is SelectAction->"select"
+            is SubmarineDepthAction->error("Movement v2 trace does not support SubmarineDepthAction")
+            is AmphibiousFlightAction->error("Movement v2 trace does not support AmphibiousFlightAction")
+            is UnitAction->error("Movement v2 trace does not support UnitAction")
+            is LoadAction,is UnloadAction->error("Movement v2 trace does not support transport actions")
             is AttackAction->error("Movement v2 trace does not support AttackAction")
             is PatrolAction->error("Movement v2 trace does not support PatrolAction")
-            is BuildAction,is ResumeConstructionAction,is RepairBuildingAction,is ReclaimBuildingAction->
+            is BuildAction,is ResumeConstructionAction,is RepairUnitAction,is ReclaimUnitAction->
                 error("Movement v2 trace does not support construction actions")
             is ProduceAction,is CancelProductionAction,is UpgradeAction,is CancelUpgradeAction->error("Movement v2 trace does not support economy actions") }),
         "target" to (it as? MoveAction)?.target?.json()) } ?: JsonNull

@@ -13,7 +13,7 @@ fun main(args: Array<String>) {
         Path.of(""))
     val sceneRoot = applicationRoot.resolve(if (codeLocation.fileName.toString().endsWith(".jar"))
         "test-scenarios/scenarios" else "SimulationTest/public/scenarios")
-    val options = WindowsLaunchOptions.parse(args, Path.of(""), sceneRoot.resolve("phase-five-json.json"))
+    val options = WindowsLaunchOptions.parse(args, Path.of(""), sceneRoot.resolve("phase-six-a-json.json"))
     val runId = options.runId
     val visualSettings = PcVisualAssetSettings(VisualAssetSettingsStore(userBase.resolve("settings.properties")),
         userBase.resolve("cache"), applicationRoot, options)
@@ -56,7 +56,8 @@ fun main(args: Array<String>) {
             Lwjgl3Application(WindowPerfSampling(BootstrapScreen(inputs, evidence,
                 visualSettings = visualSettings, soundFactory = PcPlaybackSoundFactory(),
                 testScenarioSeed = options.testScenarioSeed ?: sceneRoot.resolve("dual-ship-production.json"),
-                selectDefaultTestScenario = options.testScenarioSeed != null), evidence), config)
+                selectDefaultTestScenario = options.testScenarioSeed != null,
+                alternateStartSeed = options.testScenarioSeed?.resolveSibling("phase-six-a-spider-json.json")), evidence), config)
             evidence.record("process-completed", mapOf("status" to "normal"))
         } catch (failure: Throwable) {
             preserveFailure(failure) { evidence.record("process-failed", mapOf("message" to failure.toString())) }

@@ -1,0 +1,144 @@
+{
+  "schemaVersion": 1,
+  "scenarioId": "modular-spider-json-chassis",
+  "history": {
+    "ownerPlayerId": "p1",
+    "initialBalance": 5000,
+    "noActionIntents": [
+      "settle-opening"
+    ],
+    "initialOwnedTypes": [
+      "modularSpider",
+      "modularSpider_emptySlot",
+      "modularSpider_emptySlot",
+      "modularSpider_emptySlot",
+      "modularSpider_emptySlot",
+      "modularSpider_emptySlot",
+      "modularSpider_emptySlot"
+    ],
+    "initialIncome": {
+      "unitId": "a",
+      "typeId": "modularSpider",
+      "period": 40,
+      "credits": 30
+    },
+    "spend": [
+      {
+        "intentId": "build-land-factory",
+        "amount": 700,
+        "at": "construction-created"
+      },
+      {
+        "intentId": "build-repair-bay",
+        "amount": 1500,
+        "at": "construction-created"
+      },
+      {
+        "intentId": "nano-build-worker",
+        "amount": 500,
+        "at": "construction-created"
+      },
+      {
+        "intentId": "produce-tank",
+        "amount": 350,
+        "at": "action"
+      }
+    ],
+    "mechLegs": {
+      "modularSpider": 8,
+      "mechGun": 2
+    },
+    "projectileBirthsRequired": true,
+    "minimumBirths": [],
+    "finalUnits": [
+      {
+        "ownerPlayerId": "p1",
+        "typeId": "modularSpider",
+        "fields": {
+          "alive": true,
+          "constructionProgress": 1
+        }
+      },
+      {
+        "ownerPlayerId": "p1",
+        "typeId": "landFactory",
+        "fields": {
+          "alive": true,
+          "constructionProgress": 1
+        }
+      },
+      {
+        "ownerPlayerId": "p1",
+        "typeId": "repairbay",
+        "fields": {
+          "alive": true,
+          "constructionProgress": 1
+        }
+      },
+      {
+        "ownerPlayerId": "p1",
+        "typeId": "builder",
+        "fields": {
+          "alive": true,
+          "constructionProgress": 1,
+          "health": 170
+        }
+      },
+      {
+        "ownerPlayerId": "p1",
+        "typeId": "c_tank",
+        "fields": {
+          "alive": true,
+          "constructionProgress": 1
+        }
+      }
+    ],
+    "productionOrder": [
+      "c_tank"
+    ]
+  },
+  "rules": [
+    {
+      "intentId": "settle-opening"
+    },
+    {
+      "intentId": "select-spider"
+    },
+    {
+      "intentId": "build-land-factory"
+    },
+    {
+      "intentId": "select-land-factory"
+    },
+    {
+      "intentId": "produce-tank"
+    },
+    {
+      "intentId": "select-spider-after-factory"
+    },
+    {
+      "intentId": "build-repair-bay"
+    },
+    {
+      "intentId": "select-spider-after-bay"
+    },
+    {
+      "intentId": "nano-build-worker"
+    },
+    {
+      "intentId": "select-spider-for-maintenance"
+    },
+    {
+      "intentId": "partially-reclaim-worker"
+    },
+    {
+      "intentId": "stop-and-auto-repair"
+    },
+    {
+      "intentId": "move-spider-across-cliff"
+    },
+    {
+      "intentId": "stop-chassis"
+    }
+  ]
+}

@@ -1,0 +1,32 @@
+{
+  "format": "rw-reforge.unit.v1",
+  "core": {
+    "name": "aaBeamGunship",
+    "maxHp": 2500,
+    "radius": 22,
+    "price": 6000,
+    "buildSpeed": 0.0004761904761904762,
+    "image": "aa.png",
+    "image_dead": "aa_dead.png",
+    "image_shadow": "aa_shadow.png",
+    "image_turret": "aa_turret.png",
+    "beam_image": "aa_beam.png",
+    "beam_image_start": "aa_beam_start.png",
+    "beam_image_end": "aa_beam_end.png",
+    "energyRegen": 0.01,
+    "energyRegenWhenRecharging": 0.05,
+    "energyNeedsToRechargeToFull": true
+  },
+  "actions": [
+    {
+      "name": "afterBurn",
+      "buildSpeed": 0,
+      "convertTo": "aaBeamGunship_afterburn",
+      "resourceAmount": "energy",
+      "resourceAmount_setValue": 6,
+      "addActionCooldownTime": "25s",
+      "canPlayerCancel": false,
+      "allowMultipleInQueue": false
+    }
+  ]
+}

@@ -1,0 +1,31 @@
+{
+  "format": "rw-reforge.content-pack.v1",
+  "id": "owned-nautilus-json",
+  "name": "Owned Nautilus mobile production",
+  "units": [
+    {
+      "type": "nautilus",
+      "file": "nautilus.json"
+    },
+    {
+      "type": "hover-tank",
+      "file": "hover/hover.json"
+    },
+    {
+      "type": "nautilus",
+      "file": "nautilusSurface.json"
+    },
+    {
+      "type": "nautilus",
+      "file": "nautilusLand.json"
+    },
+    {
+      "type": "scout-bot",
+      "file": "scout/robotCrab.json"
+    },
+    {
+      "type": "scout-bot",
+      "file": "scout/robotCrabWater.json"
+    }
+  ]
+}

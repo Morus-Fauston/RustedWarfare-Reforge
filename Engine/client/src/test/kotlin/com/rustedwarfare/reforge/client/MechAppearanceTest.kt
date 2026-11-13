@@ -21,7 +21,8 @@ class MechAppearanceTest {
             unitDefinitions = mapOf("mech" to mech, "target" to target),
             units = listOf(UnitSpawn("a", "p1", "mech", Position(100.0, 100.0), 90.0),
                 UnitSpawn("b", "p2", "target", Position(200.0, 100.0), 270.0)),
-            combatContract = CombatContract(12345, -1, mapOf("a" to 8L, "b" to 9L), 10L))
+            combatContract = CombatContract(12345, -1, mapOf("a" to 8L, "b" to 9L), 10L),
+            economyContract = EconomyContract(mapOf("p1" to 0L, "p2" to 0L)))
         val appearance = SandboxRenderResources.from(scene).units.getValue("target")
         assertNull(appearance.deadImagePath)
         val context = assertIs<InitResult.Accepted>(SimulationContext.initialize(scene)).context

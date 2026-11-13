@@ -25,17 +25,65 @@ class MapDefinition(
         })
     }
 
-    internal fun blockingFor(type: MovementType): BlockingGrid = if (type == MovementType.WATER) waterBlocking else blocking
+    val hoverBlocking: BlockingGrid by lazy {
+        BlockingGrid(widthTiles, heightTiles, BooleanArray(widthTiles * heightTiles) { index ->
+            (index % widthTiles to index / widthTiles) in this.waterObstacles ||
+                GroundRules.blocked(this.tileSets, gids.getOrNull(index) ?: 0, MovementType.HOVER)
+        })
+    }
+
+    val overCliffBlocking: BlockingGrid by lazy {
+        BlockingGrid(widthTiles, heightTiles, BooleanArray(widthTiles * heightTiles) { index ->
+            (index % widthTiles to index / widthTiles) in this.waterObstacles ||
+                GroundRules.blocked(this.tileSets, gids.getOrNull(index) ?: 0, MovementType.OVER_CLIFF)
+        })
+    }
+
+    val overCliffWaterBlocking: BlockingGrid by lazy {
+        BlockingGrid(widthTiles, heightTiles, BooleanArray(widthTiles * heightTiles) { index ->
+            (index % widthTiles to index / widthTiles) in this.waterObstacles ||
+                GroundRules.blocked(this.tileSets, gids.getOrNull(index) ?: 0, MovementType.OVER_CLIFF_WATER)
+        })
+    }
+
+    internal fun blockingFor(type: MovementType): BlockingGrid = when (type) {
+        MovementType.OVER_CLIFF -> overCliffBlocking
+        MovementType.OVER_CLIFF_WATER -> overCliffWaterBlocking
+        MovementType.WATER -> waterBlocking
+        MovementType.HOVER -> hoverBlocking
+        else -> blocking
+    }
 
     /** Authoritative ordinary foundation cell; resource-required buildings check their center separately. */
     fun isFoundationBlocked(col: Int, row: Int, type: MovementType): Boolean =
-        blockingFor(type).isBlocked(col, row) || isResourcePool(col, row)
+        (if (type == MovementType.AIR) col !in 0 until widthTiles || row !in 0 until heightTiles
+         else blockingFor(type).isBlocked(col, row)) || isResourcePool(col, row)
 
     /** Current liquid truth for the finite water content; bridge presence alone is not liquid. */
     internal fun isWater(col: Int, row: Int): Boolean {
         require(col in 0 until widthTiles && row in 0 until heightTiles)
         val gid = gids[row * widthTiles + col]
         return GroundRules.liquid(tileSets, gid)
+    }
+
+    /** Native cK includes water/lava properties and the static cJ passability difference. */
+    internal fun isLiquid(col: Int, row: Int): Boolean {
+        if (col !in 0 until widthTiles || row !in 0 until heightTiles) return false
+        val gid = gids[row * widthTiles + col]
+        return GroundRules.nativeLiquid(tileSets, gid) || isOverWater(col, row)
+    }
+
+    /** Native cJ: static OVER_CLIFF blocked minus WATER blocked; excludes dynamic obstacles. */
+    internal fun isOverWater(col: Int, row: Int): Boolean {
+        if (col !in 0 until widthTiles || row !in 0 until heightTiles) return true
+        val gid = gids[row * widthTiles + col]
+        return GroundRules.blocked(tileSets, gid, MovementType.OVER_CLIFF) &&
+            !GroundRules.blocked(tileSets, gid, MovementType.WATER)
+    }
+
+    internal fun isCliff(col: Int, row: Int): Boolean {
+        if (col !in 0 until widthTiles || row !in 0 until heightTiles) return true
+        return GroundRules.cliff(tileSets, gids[row * widthTiles + col])
     }
 
     fun isResourcePool(col: Int, row: Int): Boolean {
@@ -63,11 +111,17 @@ class TileSetDefinition internal constructor(
     resourcePoolTileIds: Set<Int> = emptySet(),
     waterTileIds: Set<Int> = emptySet(),
     waterBridgeTileIds: Set<Int> = emptySet(),
+    hoverBlockedTileIds: Set<Int> = blockedTileIds,
+    overCliffBlockedTileIds: Set<Int> = blockedTileIds,
+    lavaTileIds: Set<Int> = emptySet(),
 ) {
     val blockedTileIds: Set<Int> = Collections.unmodifiableSet(LinkedHashSet(blockedTileIds))
     val resourcePoolTileIds: Set<Int> = Collections.unmodifiableSet(LinkedHashSet(resourcePoolTileIds))
     val waterTileIds: Set<Int> = Collections.unmodifiableSet(LinkedHashSet(waterTileIds))
     val waterBridgeTileIds: Set<Int> = Collections.unmodifiableSet(LinkedHashSet(waterBridgeTileIds))
+    val hoverBlockedTileIds: Set<Int> = Collections.unmodifiableSet(LinkedHashSet(hoverBlockedTileIds))
+    val overCliffBlockedTileIds: Set<Int> = Collections.unmodifiableSet(LinkedHashSet(overCliffBlockedTileIds))
+    val lavaTileIds: Set<Int> = Collections.unmodifiableSet(LinkedHashSet(lavaTileIds))
 
     constructor(
         firstGid: Int,

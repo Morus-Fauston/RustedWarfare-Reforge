@@ -16,15 +16,16 @@ internal class PcOriginalImageProfile(val id: String, val jarBytes: Int, val jar
 
     companion object {
         /** Fixed qualification and unchanged reviewed recipes, not an arbitrary profile input. */
-        fun bundled(): PcOriginalImageProfile = readBundled(5)
+        fun bundled(): PcOriginalImageProfile = readBundled(PcOriginalProfileVersions.CURRENT_VERSION)
         fun versionOne(): PcOriginalImageProfile = readBundled(1)
         fun versionTwo(): PcOriginalImageProfile = readBundled(2)
         fun versionThree(): PcOriginalImageProfile = readBundled(3)
         fun versionFour(): PcOriginalImageProfile = readBundled(4)
+        fun versionFive(): PcOriginalImageProfile = readBundled(5)
         fun forPackage(pack: PreparedImagePack): PcOriginalImageProfile = PcOriginalProfileVersions.images(pack.manifest, null)
 
         private fun readBundled(version: Int): PcOriginalImageProfile {
-            val path = "/visuals/pc-original-images-profile${if (version == 5) "" else "-v$version"}.json"
+            val path = "/visuals/pc-original-images-profile${if (version == PcOriginalProfileVersions.CURRENT_VERSION) "" else "-v$version"}.json"
             val bytes = requireNotNull(PcOriginalImageProfile::class.java.getResourceAsStream(path)) { "Missing bundled PC image qualification" }.use { it.readBytes() }
             val root = JsonReader().parse(bytes.toString(Charsets.UTF_8))
             require(root.getInt("schemaVersion") == 1)
@@ -48,6 +49,14 @@ internal class PcOriginalImageProfile(val id: String, val jarBytes: Int, val jar
                 value.addChild("scope", JsonValue("Verified PC image snapshot and reviewed static mappings only; no original code loading"))
             })
             val byPath = images.associateBy { it.path }
+            // PC-only additions are qualified against this PC snapshot, not an Android source claim.
+            fun clone(value: JsonValue) = JsonReader().parse(value.toJson(OutputType.json))
+            root.get("mappingSources")?.forEach { mapped.get("sources").addChild(clone(it)) }
+            root.get("mappingUnitOutputs")?.forEach { mapped.get("unitOutputs").addChild(it.name, clone(it)) }
+            root.get("mappingUnitBindings")?.forEach {
+                mapped.get("unitBindings").remove(it.name)
+                mapped.get("unitBindings").addChild(it.name, clone(it))
+            }
             for (source in mapped.get("sources")) {
                 val pathName = root.get("mappedSourceIds").getString(source.getString("id"))
                 require(pathName == source.getString("path"))

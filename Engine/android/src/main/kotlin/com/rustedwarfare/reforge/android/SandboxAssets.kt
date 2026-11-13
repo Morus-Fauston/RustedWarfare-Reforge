@@ -21,7 +21,7 @@ internal object SandboxAssets {
             }
         }
         collect("")
-        check(payload.keys == expected) { "Expected the exact twelve sandbox assets" }
+        check(payload.keys == expected) { "Expected the exact owned sandbox assets" }
         SandboxAssetFiles.install(destination.toPath(), payload)
     }
 }

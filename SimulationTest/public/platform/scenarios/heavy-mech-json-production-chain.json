@@ -124,7 +124,16 @@
         "x": 410,
         "y": 270
       },
-      "waitSteps": 20
+      "waitSteps": 400
+    },
+    {
+      "intentId": "return-cliff",
+      "kind": "move",
+      "position": {
+        "x": 270,
+        "y": 270
+      },
+      "waitSteps": 400
     },
     {
       "intentId": "stop-heavy",
@@ -144,8 +153,8 @@
       "intentId": "wait-combat-0",
       "kind": "select",
       "position": {
-        "x": 0,
-        "y": 0
+        "x": 10,
+        "y": 10
       },
       "waitSteps": 600
     },
@@ -153,10 +162,131 @@
       "intentId": "wait-combat-1",
       "kind": "select",
       "position": {
-        "x": 0,
-        "y": 0
+        "x": 10,
+        "y": 10
       },
       "waitSteps": 600
     }
-  ]
+  ],
+  "windowsWaits": {
+    "build-t1": {
+      "rate": 4,
+      "progressOnly": true,
+      "maximumSimulationSteps": 720,
+      "maximumWallSeconds": 12,
+      "stallSeconds": 4
+    },
+    "finish-t1": {
+      "rate": 4,
+      "progressOnly": true,
+      "maximumSimulationSteps": 720,
+      "maximumWallSeconds": 12,
+      "stallSeconds": 4
+    },
+    "upgrade-t2": {
+      "rate": 4,
+      "progressOnly": true,
+      "maximumSimulationSteps": 720,
+      "maximumWallSeconds": 12,
+      "stallSeconds": 4
+    },
+    "wait-upgrade-0": {
+      "rate": 4,
+      "progressOnly": true,
+      "maximumSimulationSteps": 720,
+      "maximumWallSeconds": 12,
+      "stallSeconds": 4
+    },
+    "wait-upgrade-1": {
+      "rate": 4,
+      "progressOnly": true,
+      "maximumSimulationSteps": 720,
+      "maximumWallSeconds": 12,
+      "stallSeconds": 4
+    },
+    "wait-upgrade-2": {
+      "rate": 4,
+      "progressOnly": true,
+      "maximumSimulationSteps": 720,
+      "maximumWallSeconds": 12,
+      "stallSeconds": 4
+    },
+    "finish-upgrade": {
+      "rate": 4,
+      "progressOnly": true,
+      "maximumSimulationSteps": 320,
+      "maximumWallSeconds": 12,
+      "stallSeconds": 4
+    },
+    "produce-heavy": {
+      "rate": 4,
+      "progressOnly": true,
+      "maximumSimulationSteps": 720,
+      "maximumWallSeconds": 12,
+      "stallSeconds": 4
+    },
+    "wait-heavy-0": {
+      "rate": 4,
+      "progressOnly": true,
+      "maximumSimulationSteps": 720,
+      "maximumWallSeconds": 12,
+      "stallSeconds": 4
+    },
+    "wait-heavy-1": {
+      "rate": 4,
+      "progressOnly": true,
+      "maximumSimulationSteps": 720,
+      "maximumWallSeconds": 12,
+      "stallSeconds": 4
+    },
+    "leave-factory": {
+      "rate": 4,
+      "progressOnly": true,
+      "maximumSimulationSteps": 720,
+      "maximumWallSeconds": 12,
+      "stallSeconds": 4
+    },
+    "move-heavy": {
+      "rate": 4,
+      "progressOnly": true,
+      "maximumSimulationSteps": 520,
+      "maximumWallSeconds": 12,
+      "stallSeconds": 4
+    },
+    "return-cliff": {
+      "rate": 4,
+      "progressOnly": true,
+      "maximumSimulationSteps": 520,
+      "maximumWallSeconds": 12,
+      "stallSeconds": 4
+    },
+    "stop-heavy": {
+      "rate": 4,
+      "progressOnly": true,
+      "maximumSimulationSteps": 160,
+      "maximumWallSeconds": 12,
+      "stallSeconds": 4
+    },
+    "attack-ground": {
+      "rate": 4,
+      "progressOnly": true,
+      "maximumSimulationSteps": 720,
+      "maximumWallSeconds": 12,
+      "stallSeconds": 4
+    },
+    "wait-combat-0": {
+      "rate": 4,
+      "progressOnly": true,
+      "maximumSimulationSteps": 720,
+      "maximumWallSeconds": 12,
+      "stallSeconds": 4
+    },
+    "wait-combat-1": {
+      "rate": 4,
+      "progressOnly": true,
+      "maximumSimulationSteps": 720,
+      "maximumWallSeconds": 12,
+      "stallSeconds": 4
+    }
+  }
 }

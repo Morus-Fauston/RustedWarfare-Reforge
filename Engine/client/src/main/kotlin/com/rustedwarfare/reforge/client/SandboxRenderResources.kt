@@ -4,6 +4,7 @@ import com.rustedwarfare.reforge.core.sim.Scenario
 import com.badlogic.gdx.graphics.Color
 import com.rustedwarfare.reforge.core.content.TurretMount
 import com.rustedwarfare.reforge.core.content.WeaponRecoil
+import com.rustedwarfare.reforge.core.content.NuclearSiloKind
 import com.rustedwarfare.reforge.core.sim.Position
 import com.rustedwarfare.reforge.core.sim.UnitObservation
 import com.rustedwarfare.reforge.core.sim.PlayerObservation
@@ -22,6 +23,8 @@ internal data class TurretDrawing(val weaponName: String?, val imagePath: Path, 
         (logicalSize?.width ?: pixelWidth) * imageScale, (logicalSize?.height ?: pixelHeight) * imageScale)
 }
 
+internal data class WingDrawing(val slot: UnitImageSlot, val imagePath: Path, val center: Position, val heading: Double)
+
 data class UnitAppearance(val displayRadius: Double, val imagePath: Path, val imageScale: Double, val totalFrames: Int,
     val turretImagePath: Path? = null, val deadImagePath: Path? = null, val turretImageScale: Double = 1.0,
     val backImagePath: Path? = null, val turretMount: TurretMount = TurretMount(),
@@ -29,7 +32,40 @@ data class UnitAppearance(val displayRadius: Double, val imagePath: Path, val im
     val economicBuilding: Boolean = false, val logicalImages: UnitImageLogicalSizes? = null,
     val weaponImages: Map<String, WeaponAppearance> = emptyMap(),
     val legImagePath: Path? = null, val footImagePath: Path? = null, val rotorImagePath: Path? = null,
-    val mechKind: com.rustedwarfare.reforge.core.content.MechKind? = null) {
+    val mechKind: com.rustedwarfare.reforge.core.content.MechKind? = null, val shadowImagePath: Path? = null,
+    val shieldImagePath: Path? = null, val shieldRadius: Double = 0.0,
+    val leftWingImagePath: Path? = null, val rightWingImagePath: Path? = null,
+    val beamImagePath: Path? = null, val beamStartImagePath: Path? = null, val beamEndImagePath: Path? = null,
+    val afterburnTrailImagePath: Path? = null, val repairRange: Double? = null,
+    val iconWeaponName: String? = null, val nanoWeaponName: String? = null,
+    val nativeLegSize: ImageLogicalSize? = null, val arm1ImagePath: Path? = null, val arm2ImagePath: Path? = null,
+    val nuclearSiloKind: NuclearSiloKind? = null, val shadowOffset: Position? = null,
+    val slotOverlayImagePath: Path? = null,
+    val pointDefense: com.rustedwarfare.reforge.core.content.PointDefenseProfile? = null) {
+    internal fun nuclearDoors(unit: UnitObservation): List<WingDrawing> {
+        val amount = unit.nuclearDoors ?: return emptyList()
+        if (!unit.alive) return emptyList()
+        val forward = Math.toRadians(unit.heading); val side = Math.toRadians(unit.heading + 90.0)
+        val offsets = if (nuclearSiloKind == NuclearSiloKind.INTERCEPTOR)
+            listOf(Position(1.0 + 5f * amount, 12.0), Position(-2.0 - 5f * amount, 11.0))
+        else listOf(Position(3.0 + 10f * amount, -1.0 - 8f * amount), Position(-5.0 - 9f * amount, 9.0 + 5f * amount))
+        return listOf(Triple(UnitImageSlot.ARM1, arm1ImagePath, offsets[0]),
+            Triple(UnitImageSlot.ARM2, arm2ImagePath, offsets[1])).map { (slot, path, offset) ->
+            WingDrawing(slot, requireNotNull(path), Position(
+                unit.position.x + sin(forward) * offset.y + sin(side) * offset.x,
+                unit.position.y - cos(forward) * offset.y - cos(side) * offset.x), unit.heading)
+        }
+    }
+    internal fun amphibiousWings(unit: UnitObservation, weapons: List<VisibleUnitWeapon>): List<WingDrawing> {
+        if (!unit.alive || unit.amphibiousJet == null) return emptyList()
+        val poses = weapons.filter { it.unitId == unit.unitId }.associateBy { it.weaponName }
+        val heading = requireNotNull(poses["body"]) { "Amphibious body requires an authorized pose" }.turretHeading
+        return listOf(Triple(UnitImageSlot.LEFT_WING, leftWingImagePath, "left"),
+            Triple(UnitImageSlot.RIGHT_WING, rightWingImagePath, "right")).map { (slot, path, name) ->
+            val pivot = requireNotNull(poses[name]).pivot
+            WingDrawing(slot, requireNotNull(path), Position(pivot.x, pivot.y - unit.height), heading)
+        }
+    }
     internal fun turretDrawings(unit: UnitObservation, weapons: List<VisibleUnitWeapon>): List<TurretDrawing> {
         if (!unit.alive) return emptyList()
         if (weapons.isNotEmpty()) {
@@ -42,7 +78,8 @@ data class UnitAppearance(val displayRadius: Double, val imagePath: Path, val im
                 val forward = Math.toRadians(pose.turretHeading)
                 val side = Math.toRadians(pose.turretHeading + 90.0)
                 val pivot = Position(pose.pivot.x + sin(forward) * image.offsetY + sin(side) * image.offsetX,
-                    pose.pivot.y - cos(forward) * image.offsetY - cos(side) * image.offsetX)
+                    pose.pivot.y - cos(forward) * image.offsetY - cos(side) * image.offsetX -
+                        if (unit.energy != null || unit.mechPose != null || unit.attachment != null) unit.height else 0.0)
                 TurretDrawing(name, path, image.imageScale, pivot, pose.turretHeading,
                     image.logicalSize ?: logicalImages?.turret?.takeIf { path == turretImagePath })
             } }
@@ -54,7 +91,11 @@ data class UnitAppearance(val displayRadius: Double, val imagePath: Path, val im
     fun drawSize(slot: UnitImageSlot, pixelWidth: Int, pixelHeight: Int,
                  turretScale: Double = turretImageScale): ImageDrawSize {
         val logical = logicalImages?.forSlot(slot)
-        val scale = if (slot == UnitImageSlot.TURRET) turretScale else imageScale
+        val scale = when (slot) {
+            UnitImageSlot.TURRET -> turretScale
+            UnitImageSlot.SHIELD -> shieldRadius * 2.0 / 87.0 * 1.25
+            else -> imageScale
+        }
         return ImageDrawSize((logical?.width ?: pixelWidth) * scale, (logical?.height ?: pixelHeight) * scale)
     }
     fun isDrawn(unit: UnitObservation): Boolean = unit.alive || (!economicBuilding && unit.mechPose == null) ||
@@ -114,8 +155,23 @@ class SandboxRenderResources private constructor(
     internal fun defenseBeams(observation: PlayerObservation): List<DefenseBeam> = observation.projectileEvents.mapNotNull { event ->
         if (event.kind != "deflected") return@mapNotNull null
         val tower = observation.units.find { it.unitId == event.interceptorUnitId } ?: return@mapNotNull null
-        val offset = units[tower.typeId]?.defenseMuzzleOffset ?: return@mapNotNull null
-        DefenseBeam(Position(tower.position.x + offset.x, tower.position.y + offset.y), event.position)
+        val appearance = units[tower.typeId] ?: return@mapNotNull null
+        val muzzle = appearance.pointDefense?.muzzle(tower.position, tower.heading)
+            ?: appearance.defenseMuzzleOffset?.let { Position(tower.position.x + it.x, tower.position.y + it.y) }
+            ?: return@mapNotNull null
+        DefenseBeam(muzzle, event.position)
+    }
+
+    /** Work state and both visible endpoints come from the authorized player observation. */
+    internal fun nanoBeams(observation: PlayerObservation): List<DefenseBeam> = observation.units.mapNotNull { worker ->
+        if (!worker.alive || worker.carriedBy != null || worker.constructionProgress < 1f) return@mapNotNull null
+        val name = units[worker.typeId]?.nanoWeaponName ?: return@mapNotNull null
+        val target = observation.units.singleOrNull { it.unitId == worker.constructionTargetId && it.alive && it.carriedBy == null }
+            ?: return@mapNotNull null
+        val weapon = observation.weapons.singleOrNull { it.unitId == worker.unitId && it.weaponName == name }
+            ?: return@mapNotNull null
+        DefenseBeam(Position(weapon.muzzle.x, weapon.muzzle.y - worker.height),
+            Position(target.position.x, target.position.y - target.height))
     }
 
     fun unitCircleColor(viewerPlayerId: String, ownerPlayerId: String): Color {
@@ -133,16 +189,40 @@ class SandboxRenderResources private constructor(
             Collections.unmodifiableList(scenario.map.tileSets.map(VisualTileAtlas::from)),
             Collections.unmodifiableMap(scenario.unitDefinitions.mapValues { (_, unit) ->
                 val images = unit.imageBindings().visualImages()
+                val mounts = unit.combat?.namedWeapons?.ordered.orEmpty()
+                val drawingOrder = if (unit.attachmentModule != null) mounts.sortedBy { it.attachedTo != null } else mounts
                 UnitAppearance(unit.displayRadius, images.body, unit.imageScale, images.totalFrames,
                     images.turret, images.dead, unit.combat?.turretImageScale ?: 1.0, images.back,
                     unit.combat?.mount ?: TurretMount(),
                     unit.pointDefense?.let { Position(it.muzzleOffsetX, it.muzzleOffsetY) },
                     unit.combat?.recoil, unit.combat?.shootDelay ?: 0.0,
                     economicBuilding = unit.income != null && unit.construction != null,
-                    weaponImages = Collections.unmodifiableMap(unit.combat?.namedWeapons?.ordered.orEmpty()
+                    weaponImages = Collections.unmodifiableMap(drawingOrder
                         .associate { it.name to WeaponAppearance(it.imagePath, it.imageScale, it.invisible, it.imageOffsetX, it.imageOffsetY) }),
                     legImagePath = images.leg, footImagePath = images.foot,
-                    rotorImagePath = images.rotor, mechKind = unit.mech?.kind)
+                    rotorImagePath = images.rotor, mechKind = unit.mech?.kind, shadowImagePath = images.shadow,
+                    shieldImagePath = images.shield, shieldRadius = unit.radius,
+                    leftWingImagePath = images.leftWing, rightWingImagePath = images.rightWing,
+                    beamImagePath = images.beam, beamStartImagePath = images.beamStart, beamEndImagePath = images.beamEnd,
+                    afterburnTrailImagePath = images.afterburnTrail,
+                    arm1ImagePath = images.arm1, arm2ImagePath = images.arm2, nuclearSiloKind = unit.nuclearSilo?.kind,
+                    slotOverlayImagePath = images.slotOverlay,
+                    pointDefense = unit.pointDefense,
+                    repairRange = if (unit.maintenance != null) unit.builder?.range?.toDouble() ?: 230.0 else null,
+                    iconWeaponName = when {
+                        unit.maintenance == com.rustedwarfare.reforge.core.content.MaintenanceProfile.MECH_ENGINEER -> "body"
+                        unit.attachmentModule?.empty == false -> mounts.firstOrNull()?.name
+                        else -> null
+                    },
+                    nanoWeaponName = unit.builder?.mainNanoTurret,
+                    shadowOffset = if (unit.id == "mechFlame") Position(2.0, 2.0) else null,
+                    nativeLegSize = when {
+                        unit.attachmentLayout != null -> ImageLogicalSize(10, 84)
+                        unit.maintenance == com.rustedwarfare.reforge.core.content.MaintenanceProfile.SCOUT_BOT -> ImageLogicalSize(24, 102)
+                        unit.maintenance == com.rustedwarfare.reforge.core.content.MaintenanceProfile.MECH_ENGINEER -> ImageLogicalSize(19, 82)
+                        unit.id == "mechFlame" || unit.mech?.kind == com.rustedwarfare.reforge.core.content.MechKind.FOUR_LEGGED -> ImageLogicalSize(16, 68)
+                        else -> null
+                    })
             }), Collections.unmodifiableMap(scenario.players.associate { it.playerId to it.teamId }))
     }
 }

@@ -8,6 +8,60 @@ sealed interface Action {
     val atStep: Long?
 }
 
+enum class LoadDirection { INTO, UP }
+
+/** A named content action is queued independently of the unit's movement orders. */
+data class UnitAction(
+    override val actionId: String,
+    override val actorPlayerId: String,
+    override val unitId: String,
+    val actionName: String,
+    override val world: WorldHandle,
+    val cancelQueued: Boolean = false,
+    override val atStep: Long? = null,
+    val target: Position? = null,
+) : Action
+
+data class UnloadAction(
+    override val actionId: String,
+    override val actorPlayerId: String,
+    override val unitId: String,
+    val unloading: Boolean,
+    override val world: WorldHandle,
+    override val atStep: Long? = null,
+) : Action
+
+/** INTO orders the passenger; UP orders the carrier. Both use ordinary owner permissions. */
+data class LoadAction(
+    override val actionId: String,
+    override val actorPlayerId: String,
+    override val unitId: String,
+    val targetUnitId: String,
+    val direction: LoadDirection,
+    override val world: WorldHandle,
+    override val atStep: Long? = null,
+) : Action
+
+/** Native Fly/Dive intent; physical altitude and passage category change independently. */
+data class AmphibiousFlightAction(
+    override val actionId: String,
+    override val actorPlayerId: String,
+    override val unitId: String,
+    val flying: Boolean,
+    override val world: WorldHandle,
+    override val atStep: Long? = null,
+) : Action
+
+/** Native Surface/Dive intent, independent from actual depth and the current movement order. */
+data class SubmarineDepthAction(
+    override val actionId: String,
+    override val actorPlayerId: String,
+    override val unitId: String,
+    val surface: Boolean,
+    override val world: WorldHandle,
+    override val atStep: Long? = null,
+) : Action
+
 data class BuildAction(
     override val actionId: String,
     override val actorPlayerId: String,
@@ -20,7 +74,7 @@ data class BuildAction(
     val append: Boolean = false,
 ) : Action
 
-data class RepairBuildingAction(
+data class RepairUnitAction(
     override val actionId: String,
     override val actorPlayerId: String,
     override val unitId: String,
@@ -30,7 +84,7 @@ data class RepairBuildingAction(
     val append: Boolean = false,
 ) : Action
 
-data class ReclaimBuildingAction(
+data class ReclaimUnitAction(
     override val actionId: String,
     override val actorPlayerId: String,
     override val unitId: String,

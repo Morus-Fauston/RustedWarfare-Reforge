@@ -14,17 +14,20 @@ import com.rustedwarfare.reforge.client.VisualAssetSource
 import kotlin.test.assertIs
 
 class WindowsLaunchOptionsTest {
-    @Test fun a_default_launch_uses_the_paired_five_class_scene_and_a_broken_default_disables_start() {
+    @Test fun a_default_launch_uses_the_paired_phase_six_scene_and_a_broken_default_disables_start() {
         val root = java.nio.file.Path.of(checkNotNull(System.getProperty("public.fixtures.dir"))).parent.parent.parent
         val options = WindowsLaunchOptions.parse(emptyArray(), root)
-        assertEquals("RustedWarfare-Reforge | Phase V sandbox", options.title)
-        val seed = root.resolve("SimulationTest/public/scenarios/phase-five-json.json")
+        assertEquals("RustedWarfare-Reforge | Phase VI A sandbox", options.title)
+        val seed = root.resolve("SimulationTest/public/scenarios/phase-six-a-json.json")
+        assertEquals(seed, options.testScenarioSeed)
         val menu = com.rustedwarfare.reforge.client.TestScenarioMenu()
         menu.choose(seed)
         assertTrue(menu.canStart)
         val choice = requireNotNull(menu.choice)
         assertEquals(choice.root, options.inputs)
         assertEquals("commandCenter", choice.content.unitId)
+        assertTrue(setOf("modularSpider", "mechFlame", "bomber", "nautilusSubmarine", "antiNukeLauncherC")
+            .all(choice.content.content.units::containsKey))
         menu.choose(root.resolve("SimulationTest/public/scenarios/missing-phase-five.json"))
         assertFalse(menu.canStart)
         assertNull(menu.choice)

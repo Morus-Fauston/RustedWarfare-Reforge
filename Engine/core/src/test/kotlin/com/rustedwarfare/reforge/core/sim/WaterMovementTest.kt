@@ -211,13 +211,13 @@ internal object WaterTestScene {
             </map>""") { path -> action(assertIs<ContentResult.Success<MapDefinition>>(ContentLoader.loadMap(path)).value) }
     }
 
-    fun withMap(bridge: Boolean = false, action: (MapDefinition) -> Unit) {
+    fun withMap(bridge: Boolean = false, liquidProperty: String = "water", action: (MapDefinition) -> Unit) {
         val image = tilesetImagePath("p001-ground").toString().replace("&", "&amp;")
         val csv = List(800) { if (bridge && it == 430) "3" else if (it % 40 < 20) "1" else "2" }.joinToString(",")
         com.rustedwarfare.reforge.core.content.withMap("""<map orientation="orthogonal" renderorder="right-down" width="40" height="20" tilewidth="20" tileheight="20">
             <tileset firstgid="1" name="land-water" tilewidth="20" tileheight="20">
               <image source="$image" width="100" height="160"/>
-              <tile id="1"><properties><property name="water" value=""/></properties></tile>
+              <tile id="1"><properties><property name="$liquidProperty" value=""/></properties></tile>
               <tile id="2"><properties><property name="water-bridge" value=""/></properties></tile>
             </tileset>
             <layer name="Ground" width="40" height="20"><data encoding="csv">$csv</data></layer>

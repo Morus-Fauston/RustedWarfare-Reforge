@@ -1,0 +1,263 @@
+{
+  "format": "rw-reforge.content-pack.v1",
+  "id": "phase-six-a.json",
+  "name": "Owned Phase VI A sandbox",
+  "units": [
+    {
+      "type": "mech",
+      "file": "units/mech.json"
+    },
+    {
+      "type": "economic-building",
+      "file": "units/economy/extractor.json"
+    },
+    {
+      "type": "economic-building",
+      "file": "units/economy/extractorT2.json"
+    },
+    {
+      "type": "economic-building",
+      "file": "units/economy/extractorT3.json"
+    },
+    {
+      "type": "economic-building",
+      "file": "units/economy/fabricatorT1.json"
+    },
+    {
+      "type": "economic-building",
+      "file": "units/economy/fabricatorT2.json"
+    },
+    {
+      "type": "economic-building",
+      "file": "units/economy/fabricatorT3.json"
+    },
+    {
+      "type": "land-factory",
+      "file": "units/economy/landFactory.json"
+    },
+    {
+      "type": "point-defense",
+      "file": "units/economy/laserDefence.json"
+    },
+    {
+      "type": "ground-turret",
+      "file": "units/economy/turret_t1.json"
+    },
+    {
+      "type": "ground-turret",
+      "file": "units/economy/turret_t2_gun.json"
+    },
+    {
+      "type": "ground-turret",
+      "file": "units/economy/turret_t1_artillery.json"
+    },
+    {
+      "type": "builder",
+      "file": "units/mech-factory/builder.json"
+    },
+    {
+      "type": "mech-factory",
+      "file": "units/mech-factory/mechFactory.json"
+    },
+    {
+      "type": "mech-factory",
+      "file": "units/mech-factory/mechFactoryT2.json"
+    },
+    {
+      "type": "mech-heavy",
+      "file": "units/mech-factory/heavy/heavy.json"
+    },
+    {
+      "type": "mech-engineer",
+      "file": "units/mech-factory/engineer/engineer.json"
+    },
+    {
+      "type": "air-factory",
+      "file": "units/air-factory/units/airFactory.json"
+    },
+    {
+      "type": "air-factory",
+      "file": "units/air-factory/units/airFactoryT2.json"
+    },
+    {
+      "type": "helicopter",
+      "file": "units/air-factory/units/helicopter.json"
+    },
+    {
+      "type": "bomber",
+      "file": "units/air-factory/bomber.json"
+    },
+    {
+      "type": "sea-factory",
+      "file": "units/sea-factory/seaFactory.json"
+    },
+    {
+      "type": "sea-factory",
+      "file": "units/sea-factory/seaFactoryT2.json"
+    },
+    {
+      "type": "hovercraft",
+      "file": "units/sea-factory/hovercraft.json"
+    },
+    {
+      "type": "tank",
+      "file": "units/sea-factory/land/tank.json"
+    },
+    {
+      "type": "submarine",
+      "file": "units/sea-factory/submarine/submarine.json"
+    },
+    {
+      "type": "battleship",
+      "file": "units/sea-factory/naval/heavyBattleship.json"
+    },
+    {
+      "type": "repair-bay",
+      "file": "units/repairbay/repairbay.json"
+    },
+    {
+      "type": "modular-spider",
+      "file": "units/spider/spider.json"
+    },
+    {
+      "type": "modular-spider",
+      "file": "units/spider/empty.json"
+    },
+    {
+      "type": "modular-spider",
+      "file": "units/spider/gun.json"
+    },
+    {
+      "type": "modular-spider",
+      "file": "units/spider/small-laser.json"
+    },
+    {
+      "type": "modular-spider",
+      "file": "units/spider/small-laser-t2.json"
+    },
+    {
+      "type": "modular-spider",
+      "file": "units/spider/gun-t2.json"
+    },
+    {
+      "type": "modular-spider",
+      "file": "units/spider/aa.json"
+    },
+    {
+      "type": "modular-spider",
+      "file": "units/spider/aa-t2.json"
+    },
+    {
+      "type": "modular-spider",
+      "file": "units/spider/flak.json"
+    },
+    {
+      "type": "modular-spider",
+      "file": "units/spider/lightning.json"
+    },
+    {
+      "type": "modular-spider",
+      "file": "units/spider/artillery.json"
+    },
+    {
+      "type": "modular-spider",
+      "file": "units/spider/fabricator.json"
+    },
+    {
+      "type": "modular-spider",
+      "file": "units/spider/fabricator-t2.json"
+    },
+    {
+      "type": "modular-spider",
+      "file": "units/spider/shield.json"
+    },
+    {
+      "type": "modular-spider",
+      "file": "units/spider/speed-incomplete.json"
+    },
+    {
+      "type": "modular-spider",
+      "file": "units/spider/speed.json"
+    },
+    {
+      "type": "modular-spider",
+      "file": "units/spider/laser-defense.json"
+    },
+    {
+      "type": "modular-spider",
+      "file": "units/spider/anti-nuke.json"
+    },
+    {
+      "type": "modular-spider",
+      "file": "units/spider/blink.json"
+    },
+    {
+      "type": "command-center",
+      "file": "extra/command-center/units/commandCenter/commandCenter.json"
+    },
+    {
+      "type": "amphibious-jet",
+      "file": "extra/air-products/units/amphibiousJet.json"
+    },
+    {
+      "type": "dropship",
+      "file": "extra/air-products/units/dropship.json"
+    },
+    {
+      "type": "aa-beam-gunship",
+      "file": "extra/air-products/units/aaBeamGunship.json"
+    },
+    {
+      "type": "aa-beam-gunship",
+      "file": "extra/air-products/units/aaBeamGunship_afterburn.json"
+    },
+    {
+      "type": "mech-bunker",
+      "file": "extra/bunker/units/bunker/bunker.json"
+    },
+    {
+      "type": "mech-bunker",
+      "file": "extra/bunker/units/bunker/deployed.json"
+    },
+    {
+      "type": "mech-flame",
+      "file": "extra/flame/units/flame/flame.json"
+    },
+    {
+      "type": "nautilus",
+      "file": "extra/nautilus/nautilus/nautilus.json"
+    },
+    {
+      "type": "nautilus",
+      "file": "extra/nautilus/nautilus/nautilusSurface.json"
+    },
+    {
+      "type": "nautilus",
+      "file": "extra/nautilus/nautilus/nautilusLand.json"
+    },
+    {
+      "type": "hover-tank",
+      "file": "extra/nautilus/nautilus/hover/hover.json"
+    },
+    {
+      "type": "scout-bot",
+      "file": "extra/nautilus/nautilus/scout/robotCrab.json"
+    },
+    {
+      "type": "scout-bot",
+      "file": "extra/nautilus/nautilus/scout/robotCrabWater.json"
+    },
+    {
+      "type": "experimental-factory",
+      "file": "extra/nautilus/units/experimentalFactory.json"
+    },
+    {
+      "type": "nuclear-silo",
+      "file": "extra/silos/nukeLauncherC.json"
+    },
+    {
+      "type": "nuclear-silo",
+      "file": "extra/silos/antiNukeLauncherC.json"
+    }
+  ]
+}

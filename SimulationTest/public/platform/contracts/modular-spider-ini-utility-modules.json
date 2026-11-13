@@ -1,0 +1,320 @@
+{
+  "schemaVersion": 1,
+  "scenarioId": "modular-spider-ini-utility-modules",
+  "history": {
+    "ownerPlayerId": "p1",
+    "initialBalance": 5000,
+    "noActionIntents": [
+      "settle-opening"
+    ],
+    "initialOwnedTypes": [
+      "modularSpider",
+      "modularSpider_emptySlot",
+      "modularSpider_emptySlot",
+      "modularSpider_emptySlot",
+      "modularSpider_emptySlot",
+      "modularSpider_emptySlot",
+      "modularSpider_emptySlot"
+    ],
+    "initialIncome": {
+      "unitId": "a",
+      "typeId": "modularSpider",
+      "period": 40,
+      "credits": 30
+    },
+    "spend": [
+      {
+        "intentId": "buy-fabricator",
+        "amount": 3000,
+        "at": "action"
+      },
+      {
+        "intentId": "buy-gun",
+        "amount": 2000,
+        "at": "action"
+      },
+      {
+        "intentId": "buy-second-fabricator",
+        "amount": 3000,
+        "at": "action"
+      },
+      {
+        "intentId": "upgrade-fabricator",
+        "amount": 5000,
+        "at": "action"
+      },
+      {
+        "intentId": "buy-shield",
+        "amount": 6000,
+        "at": "action"
+      },
+      {
+        "intentId": "buy-laser",
+        "amount": 700,
+        "at": "action"
+      },
+      {
+        "intentId": "buy-first-speed",
+        "amount": 6000,
+        "at": "action"
+      },
+      {
+        "intentId": "buy-second-speed",
+        "amount": 6000,
+        "at": "action"
+      }
+    ],
+    "mechLegs": {
+      "modularSpider": 8,
+      "mechGun": 2
+    },
+    "projectileBirthsRequired": true,
+    "minimumBirths": [],
+    "finalUnits": [
+      {
+        "ownerPlayerId": "p1",
+        "typeId": "modularSpider",
+        "fields": {
+          "alive": true,
+          "constructionProgress": 1
+        }
+      },
+      {
+        "ownerPlayerId": "p1",
+        "typeId": "modularSpider_fabricator",
+        "fields": {
+          "alive": true,
+          "constructionProgress": 1
+        }
+      }
+    ],
+    "spiderUtilityModules": true
+  },
+  "rules": [
+    {
+      "intentId": "settle-opening"
+    },
+    {
+      "intentId": "select-spider"
+    },
+    {
+      "intentId": "leave-enemy-range"
+    },
+    {
+      "intentId": "select-fabricator"
+    },
+    {
+      "intentId": "buy-fabricator"
+    },
+    {
+      "intentId": "select-weapon"
+    },
+    {
+      "intentId": "buy-gun"
+    },
+    {
+      "intentId": "cancel-gun"
+    },
+    {
+      "intentId": "earn-second-fabricator-1"
+    },
+    {
+      "intentId": "earn-second-fabricator-2"
+    },
+    {
+      "intentId": "select-second-fabricator"
+    },
+    {
+      "intentId": "buy-second-fabricator"
+    },
+    {
+      "intentId": "earn-upgrade-1"
+    },
+    {
+      "intentId": "earn-upgrade-2"
+    },
+    {
+      "intentId": "earn-upgrade-3"
+    },
+    {
+      "intentId": "earn-upgrade-4"
+    },
+    {
+      "intentId": "earn-upgrade-5"
+    },
+    {
+      "intentId": "earn-upgrade-6"
+    },
+    {
+      "intentId": "earn-upgrade-7"
+    },
+    {
+      "intentId": "earn-upgrade-8"
+    },
+    {
+      "intentId": "earn-upgrade-9"
+    },
+    {
+      "intentId": "reselect-fabricator"
+    },
+    {
+      "intentId": "upgrade-fabricator"
+    },
+    {
+      "intentId": "earn-shield-1"
+    },
+    {
+      "intentId": "earn-shield-2"
+    },
+    {
+      "intentId": "earn-shield-3"
+    },
+    {
+      "intentId": "earn-shield-4"
+    },
+    {
+      "intentId": "earn-shield-5"
+    },
+    {
+      "intentId": "earn-shield-6"
+    },
+    {
+      "intentId": "earn-shield-7"
+    },
+    {
+      "intentId": "earn-shield-8"
+    },
+    {
+      "intentId": "select-shield"
+    },
+    {
+      "intentId": "buy-shield"
+    },
+    {
+      "intentId": "finish-shield"
+    },
+    {
+      "intentId": "enter-enemy-range"
+    },
+    {
+      "intentId": "sustain-shield-damage"
+    },
+    {
+      "intentId": "leave-enemy-fire"
+    },
+    {
+      "intentId": "settle-outside-fire"
+    },
+    {
+      "intentId": "reselect-weapon"
+    },
+    {
+      "intentId": "buy-laser"
+    },
+    {
+      "intentId": "move-with-weapon"
+    },
+    {
+      "intentId": "earn-first-speed-1"
+    },
+    {
+      "intentId": "earn-first-speed-2"
+    },
+    {
+      "intentId": "earn-first-speed-3"
+    },
+    {
+      "intentId": "earn-first-speed-4"
+    },
+    {
+      "intentId": "earn-first-speed-5"
+    },
+    {
+      "intentId": "earn-first-speed-6"
+    },
+    {
+      "intentId": "select-first-speed"
+    },
+    {
+      "intentId": "buy-first-speed"
+    },
+    {
+      "intentId": "finish-first-speed"
+    },
+    {
+      "intentId": "move-with-one-speed"
+    },
+    {
+      "intentId": "earn-second-speed-1"
+    },
+    {
+      "intentId": "earn-second-speed-2"
+    },
+    {
+      "intentId": "earn-second-speed-3"
+    },
+    {
+      "intentId": "earn-second-speed-4"
+    },
+    {
+      "intentId": "earn-second-speed-5"
+    },
+    {
+      "intentId": "earn-second-speed-6"
+    },
+    {
+      "intentId": "earn-second-speed-7"
+    },
+    {
+      "intentId": "earn-second-speed-8"
+    },
+    {
+      "intentId": "select-second-speed"
+    },
+    {
+      "intentId": "buy-second-speed"
+    },
+    {
+      "intentId": "finish-second-speed"
+    },
+    {
+      "intentId": "move-with-two-speeds"
+    },
+    {
+      "intentId": "reclaim-second-speed"
+    },
+    {
+      "intentId": "move-with-remaining-speed"
+    },
+    {
+      "intentId": "reselect-first-speed"
+    },
+    {
+      "intentId": "reclaim-first-speed"
+    },
+    {
+      "intentId": "move-after-last-speed"
+    },
+    {
+      "intentId": "select-laser-for-reclaim"
+    },
+    {
+      "intentId": "reclaim-laser"
+    },
+    {
+      "intentId": "move-without-speed-or-weapon"
+    },
+    {
+      "intentId": "select-shield-for-reclaim"
+    },
+    {
+      "intentId": "reclaim-shield"
+    },
+    {
+      "intentId": "select-fabricator-for-reclaim"
+    },
+    {
+      "intentId": "reclaim-fabricator"
+    }
+  ]
+}

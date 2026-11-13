@@ -15,6 +15,7 @@ data class ContentPackChoice(val content: LoadedContentSet, val unitId: String) 
     init {
         require(unitId in content.units) { "Unknown package unit: $unitId" }
         require(content.units.getValue(unitId).fixedUnderwaterTarget == null) { "A fixed evidence target cannot be a player start choice" }
+        require(content.units.getValue(unitId).attachmentModule == null) { "Select the chassis to start with its slots" }
     }
     /** The selected unit's effective author; all validation uses the complete set. */
     val pack: LoadedContentPack get() = content.packages.single { it.id == content.provenance.getValue(unitId).packageId }
@@ -69,23 +70,172 @@ fun contentPackVisuals(visuals: PreparedVisualAssets, choice: ContentPackChoice)
 
 /** Reuses the existing controlled combat layout, not a new map or spawn-file interpreter. */
 internal fun contentPackScenario(root: Path, choice: ContentPackChoice): Scenario {
-    val naval = choice.unitId in setOf("builder", "seaFactory", "seaFactoryT2", "heavyBattleship", "c_tank", "helicopter") &&
+    val nautilus = choice.unitId in setOf("commandCenter", "builder", "seaFactory", "seaFactoryT2", "experimentalLandFactory",
+        "nautilusSubmarine", "nautilusSubmarineSurface", "nautilusSubmarineLand", "hoverTank") &&
+        choice.content.units["nautilusSubmarine"]?.transport == TransportProfile.NAUTILUS_SUBMERGED &&
+        choice.content.units["commandCenter"]?.production?.unitTypeIds == listOf("builder") &&
+        choice.content.units["builder"]?.builder?.buildingTypeIds?.let { it == listOf("seaFactory") ||
+            it == listOf("seaFactory", "experimentalLandFactory") } == true &&
+        choice.content.units["seaFactory"]?.upgrades?.actions?.singleOrNull()?.targetTypeId == "seaFactoryT2" &&
+        choice.content.units["seaFactoryT2"]?.production?.unitTypeIds?.contains("nautilusSubmarine") == true
+    val repairBay = choice.unitId in setOf("commandCenter", "builder", "landFactory", "c_tank", "repairbay") &&
+        choice.content.units["repairbay"]?.maintenance == MaintenanceProfile.NATIVE_REPAIR_BAY &&
+        choice.content.units["commandCenter"]?.production?.unitTypeIds == listOf("builder") &&
+        choice.content.units["builder"]?.builder?.buildingTypeIds?.toSet() == setOf("landFactory", "repairbay") &&
+        choice.content.units["landFactory"]?.production?.unitTypeIds?.contains("c_tank") == true
+    val bunker = choice.unitId in setOf("commandCenter", "builder", "mechFactory", "mechFactoryT2", "mechBunker", "mechBunkerDeployed") &&
+        choice.content.units["mechBunker"]?.groundHeight != null &&
+        choice.content.units["mechBunkerDeployed"]?.building != null &&
+        choice.content.units["commandCenter"]?.production?.unitTypeIds == listOf("builder") &&
+        choice.content.units["builder"]?.builder?.buildingTypeIds == listOf("mechFactory") &&
+        choice.content.units["mechFactory"]?.production?.unitTypeIds?.contains("mechBunker") == true &&
+        choice.content.units["mechFactoryT2"]?.production?.unitTypeIds?.contains("mechBunker") == true
+    val aaBeam = choice.unitId in setOf("commandCenter", "builder", "airFactory", "airFactoryT2", "helicopter", "amphibiousJet", "dropship", "aaBeamGunship") &&
+        choice.content.units["aaBeamGunship"]?.energy != null &&
+        choice.content.units["commandCenter"]?.production?.unitTypeIds == listOf("builder") &&
+        choice.content.units["builder"]?.builder?.buildingTypeIds == listOf("airFactory") &&
+        choice.content.units["airFactory"]?.upgrades?.actions?.singleOrNull()?.targetTypeId == "airFactoryT2" &&
+        choice.content.units["airFactoryT2"]?.production?.unitTypeIds?.contains("aaBeamGunship") == true
+    val bomber = choice.unitId in setOf("commandCenter", "builder", "airFactory", "airFactoryT2", "helicopter", "bomber") &&
+        choice.content.units["bomber"]?.combat?.namedWeapons != null &&
+        choice.content.units["commandCenter"]?.production?.unitTypeIds == listOf("builder") &&
+        choice.content.units["builder"]?.builder?.buildingTypeIds == listOf("airFactory") &&
+        choice.content.units["airFactory"]?.upgrades?.actions?.singleOrNull()?.targetTypeId == "airFactoryT2" &&
+        choice.content.units["airFactoryT2"]?.production?.unitTypeIds?.contains("bomber") == true
+    val airTransport = choice.unitId in setOf("commandCenter", "builder", "airFactory", "airFactoryT2", "helicopter", "amphibiousJet", "dropship") &&
+        choice.content.units["dropship"]?.transport == TransportProfile.NATIVE_DROPSHIP &&
+        choice.content.units["commandCenter"]?.production?.unitTypeIds == listOf("builder") &&
+        choice.content.units["builder"]?.builder?.buildingTypeIds == listOf("airFactory") &&
+        choice.content.units["airFactory"]?.upgrades?.actions?.singleOrNull()?.targetTypeId == "airFactoryT2" &&
+        choice.content.units["airFactoryT2"]?.production?.unitTypeIds?.contains("dropship") == true &&
+        choice.content.units["c_tank"]?.combat != null
+    val transport = choice.unitId in setOf("commandCenter", "builder", "seaFactory", "seaFactoryT2", "hovercraft") &&
+        choice.content.units["hovercraft"]?.transport == TransportProfile.NATIVE_HOVERCRAFT &&
+        choice.content.units["commandCenter"]?.production?.unitTypeIds == listOf("builder") &&
+        choice.content.units["builder"]?.builder?.buildingTypeIds == listOf("seaFactory") &&
+        choice.content.units["seaFactory"]?.production?.unitTypeIds?.contains("hovercraft") == true &&
+        choice.content.units["seaFactoryT2"]?.production?.unitTypeIds?.contains("hovercraft") == true
+    val amphibious = choice.unitId in setOf("commandCenter", "builder", "airFactory", "airFactoryT2", "amphibiousJet", "helicopter") &&
+        choice.content.units["amphibiousJet"]?.amphibiousJet != null &&
+        choice.content.units["commandCenter"]?.production?.unitTypeIds == listOf("builder") &&
+        choice.content.units["builder"]?.builder?.buildingTypeIds == listOf("airFactory") &&
+        choice.content.units["airFactory"]?.upgrades?.actions?.singleOrNull()?.targetTypeId == "airFactoryT2" &&
+        choice.content.units["airFactoryT2"]?.production?.unitTypeIds == listOf("helicopter", "amphibiousJet") &&
+        choice.content.units["c_tank"]?.combat != null && choice.content.units["helicopter"]?.rotor != null &&
+        choice.content.units["navalUnderwaterTarget"]?.fixedUnderwaterTarget == FixedUnderwaterTargetProfile(-8.0)
+    val naval = choice.unitId in setOf("builder", "seaFactory", "seaFactoryT2", "heavyBattleship", "attackSubmarine", "c_tank", "helicopter") &&
         choice.content.units["heavyBattleship"]?.movement?.type == MovementType.WATER &&
         choice.content.units["seaFactory"]?.production?.exitProfile == FactoryExitProfile.NATIVE_SEA &&
-        choice.content.units["seaFactoryT2"]?.production?.unitTypeIds == listOf("heavyBattleship") &&
+        choice.content.units["seaFactoryT2"]?.production?.unitTypeIds == listOf("heavyBattleship", "attackSubmarine") &&
+        choice.content.units["attackSubmarine"]?.submarine == SubmarineProfile.NATIVE &&
         choice.content.units["builder"]?.builder?.buildingTypeIds == listOf("seaFactory") &&
         choice.content.units["c_tank"]?.movement?.type == MovementType.LAND &&
         choice.content.units["helicopter"]?.rotor != null &&
         choice.content.units["navalUnderwaterTarget"]?.fixedUnderwaterTarget == FixedUnderwaterTargetProfile(-8.0)
     val authorWater = choice.content.units.getValue(choice.unitId).authoredWaterCombat
-    val map = when (val result = ContentLoader.loadMap(root.resolve(if (naval || authorWater) "maps/naval-shore.tmx" else "maps/p001-controlled.tmx"))) {
+    val map = when (val result = ContentLoader.loadMap(root.resolve(if (nautilus || bomber || aaBeam || airTransport || transport || amphibious || naval || authorWater) "maps/naval-shore.tmx" else "maps/p001-controlled.tmx"))) {
         is ContentResult.Failure -> error(result.error.describe())
         is ContentResult.Success -> result.value
     }
     require(map.widthTiles * map.tileWidth >= 600 && map.heightTiles * map.tileHeight >= 400) {
         "The existing controlled combat layout requires a map at least 600 by 400 world units"
     }
-    if (naval) return Scenario("p008-naval-production", map, choice.content.units,
+    val silos = choice.content.units.filterValues { it.nuclearSilo != null }
+    if (silos.isNotEmpty() && choice.unitId in silos.keys + setOf("commandCenter", "builder") &&
+        choice.content.units["commandCenter"]?.production?.unitTypeIds == listOf("builder") &&
+        choice.content.units["builder"]?.builder?.buildingTypeIds?.toSet() == silos.keys)
+        return Scenario("p009-nuclear-production", map, choice.content.units,
+            listOf(Player("p1", PlayerControl.LOCAL, "one"), Player("p2", PlayerControl.NONE, "two")),
+            listOf(UnitSpawn("a", "p1", "commandCenter", Position(130.0, 130.0), 0.0),
+                UnitSpawn("b", "p2", "commandCenter", Position(540.0, 300.0), 0.0)),
+            CoordinateModel("p001.coordinate.v1", "2d", "x-right", "y-down", "top-left", "world-unit", "double", "ieee754-binary64"),
+            TimeModel("p001.time.v1", "sim-tick", "ieee754-binary64", "fixed-explicit-delta"), MovementContract(16.0, 4.0),
+            combatContract = CombatContract(12345, -1, mapOf("a" to 8L, "b" to 9L), 10L),
+            economyContract = EconomyContract(mapOf("p1" to 70000L, "p2" to 0L)),
+            maintenanceContract = MaintenanceContract(mapOf("commandCenter" to 3000L) +
+                silos.mapValues { checkNotNull(it.value.construction).price }))
+    if (nautilus) return Scenario("p009-nautilus-production", map, choice.content.units,
+        listOf(Player("p1", PlayerControl.LOCAL, "one"), Player("p2", PlayerControl.NONE, "two")),
+        listOf(UnitSpawn("a", "p1", "commandCenter", Position(130.0, 130.0), 0.0),
+            UnitSpawn("b", "p2", "c_tank", Position(330.0, 550.0), 270.0)),
+        CoordinateModel("p001.coordinate.v1", "2d", "x-right", "y-down", "top-left", "world-unit", "double", "ieee754-binary64"),
+        TimeModel("p001.time.v1", "sim-tick", "ieee754-binary64", "fixed-explicit-delta"), MovementContract(16.0, 4.0),
+        combatContract = CombatContract(12345, -1, mapOf("a" to 8L, "b" to 9L), 10L),
+        economyContract = EconomyContract(mapOf("p1" to 30000L, "p2" to 0L)))
+    if (choice.unitId in setOf("commandCenter", "builder", "mechFactory", "mechFactoryT2", "mechEngineer", "repairbay", "mechGun") &&
+        choice.content.units["mechEngineer"]?.maintenance == MaintenanceProfile.MECH_ENGINEER &&
+        choice.content.units["commandCenter"]?.production?.unitTypeIds == listOf("builder") &&
+        choice.content.units["builder"]?.builder?.buildingTypeIds == listOf("mechFactory") &&
+        choice.content.units["mechFactoryT2"]?.production?.unitTypeIds?.contains("mechEngineer") == true &&
+        choice.content.units["helicopter"]?.rotor != null) return Scenario("p009-engineer-production", map, choice.content.units,
+        listOf(Player("p1", PlayerControl.LOCAL, "one"), Player("p2", PlayerControl.NONE, "two")),
+        listOf(UnitSpawn("a", "p1", "commandCenter", Position(130.0, 130.0), 0.0),
+            UnitSpawn("b", "p2", "mechGun", Position(500.0, 310.0), 270.0),
+            UnitSpawn("c", "p2", "helicopter", Position(500.0, 110.0), 270.0)),
+        CoordinateModel("p001.coordinate.v1", "2d", "x-right", "y-down", "top-left", "world-unit", "double", "ieee754-binary64"),
+        TimeModel("p001.time.v1", "sim-tick", "ieee754-binary64", "fixed-explicit-delta"), MovementContract(16.0, 4.0),
+        combatContract = CombatContract(12345, -1, mapOf("a" to 8L, "b" to 9L, "c" to 10L), 11L),
+        economyContract = EconomyContract(mapOf("p1" to 16000L, "p2" to 0L)))
+    if (repairBay) return Scenario("p009-repairbay-production", map, choice.content.units,
+        listOf(Player("p1", PlayerControl.LOCAL, "one"), Player("p2", PlayerControl.NONE, "two")),
+        listOf(UnitSpawn("a", "p1", "commandCenter", Position(130.0, 130.0), 0.0),
+            UnitSpawn("b", "p2", "c_tank", Position(500.0, 310.0), 270.0)),
+        CoordinateModel("p001.coordinate.v1", "2d", "x-right", "y-down", "top-left", "world-unit", "double", "ieee754-binary64"),
+        TimeModel("p001.time.v1", "sim-tick", "ieee754-binary64", "fixed-explicit-delta"), MovementContract(16.0, 4.0),
+        combatContract = CombatContract(12345, -1, mapOf("a" to 8L, "b" to 9L), 10L),
+        economyContract = EconomyContract(mapOf("p1" to 16000L, "p2" to 0L)),
+        maintenanceContract = MaintenanceContract(mapOf("commandCenter" to 3000L, "landFactory" to 700L, "repairbay" to 1500L)))
+    if (bunker) return Scenario("p009-bunker-production", map, choice.content.units,
+        listOf(Player("p1", PlayerControl.LOCAL, "one"), Player("p2", PlayerControl.NONE, "two")),
+        listOf(UnitSpawn("a", "p1", "commandCenter", Position(130.0, 130.0), 0.0),
+            UnitSpawn("b", "p2", "mechGun", Position(500.0, 310.0), 270.0),
+            UnitSpawn("c", "p2", "mechGun", Position(330.0, 386.0), 0.0),
+            UnitSpawn("d", "p2", "mechGun", Position(250.0, 386.0), 0.0)),
+        CoordinateModel("p001.coordinate.v1", "2d", "x-right", "y-down", "top-left", "world-unit", "double", "ieee754-binary64"),
+        TimeModel("p001.time.v1", "sim-tick", "ieee754-binary64", "fixed-explicit-delta"), MovementContract(16.0, 4.0),
+        combatContract = CombatContract(12345, -1, mapOf("a" to 8L, "b" to 9L, "c" to 10L, "d" to 11L), 12L),
+        economyContract = EconomyContract(mapOf("p1" to 16000L, "p2" to 0L)))
+    if (bomber || aaBeam) return Scenario(if (bomber) "p009-bomber-production" else "p009-aa-beam-production", map, choice.content.units,
+        listOf(Player("p1", PlayerControl.LOCAL, "one"), Player("p2", PlayerControl.NONE, "two")),
+        listOf(UnitSpawn("a", "p1", "commandCenter", Position(130.0, 130.0), 0.0),
+            if (bomber) UnitSpawn("b", "p2", "commandCenter", Position(350.0, 530.0), 270.0)
+            else UnitSpawn("b", "p2", "aaBeamGunship", Position(580.0, 300.0), 270.0)),
+        CoordinateModel("p001.coordinate.v1", "2d", "x-right", "y-down", "top-left", "world-unit", "double", "ieee754-binary64"),
+        TimeModel("p001.time.v1", "sim-tick", "ieee754-binary64", "fixed-explicit-delta"), MovementContract(16.0, 4.0),
+        combatContract = CombatContract(12345, -1, mapOf("a" to 8L, "b" to 9L), 10L),
+        economyContract = EconomyContract(mapOf("p1" to 10000L, "p2" to 0L)))
+    if (transport || airTransport) return Scenario(if (airTransport) "p009-air-transport-production" else "p009-transport-production", map, choice.content.units,
+        listOf(Player("p1", PlayerControl.LOCAL, "one"), Player("p2", PlayerControl.NONE, "two")),
+        listOf(UnitSpawn("a", "p1", "commandCenter", Position(130.0, 130.0), 0.0),
+            UnitSpawn("b", "p2", "c_tank", Position(330.0, 550.0), 270.0)),
+        CoordinateModel("p001.coordinate.v1", "2d", "x-right", "y-down", "top-left", "world-unit", "double", "ieee754-binary64"),
+        TimeModel("p001.time.v1", "sim-tick", "ieee754-binary64", "fixed-explicit-delta"), MovementContract(16.0, 4.0),
+        combatContract = CombatContract(12345, -1, mapOf("a" to 8L, "b" to 9L), 10L),
+        economyContract = EconomyContract(mapOf("p1" to 10000L, "p2" to 0L)))
+    if (amphibious) return Scenario("p009-amphibious-production", map, choice.content.units,
+        listOf(Player("p1", PlayerControl.LOCAL, "one"), Player("p2", PlayerControl.NONE, "two")),
+        listOf(UnitSpawn("a", "p1", "commandCenter", Position(130.0, 130.0), 0.0),
+            UnitSpawn("b", "p2", "c_tank", Position(330.0, 550.0), 270.0),
+            UnitSpawn("c", "p2", "helicopter", Position(650.0, 150.0), 270.0),
+            UnitSpawn("d", "p2", "navalUnderwaterTarget", Position(600.0, 300.0), 0.0, -8.0)),
+        CoordinateModel("p001.coordinate.v1", "2d", "x-right", "y-down", "top-left", "world-unit", "double", "ieee754-binary64"),
+        TimeModel("p001.time.v1", "sim-tick", "ieee754-binary64", "fixed-explicit-delta"), MovementContract(16.0, 4.0),
+        combatContract = CombatContract(12345, -1, mapOf("a" to 8L, "b" to 9L, "c" to 10L, "d" to 11L), 12L),
+        economyContract = EconomyContract(mapOf("p1" to 10000L, "p2" to 0L)))
+    if (choice.unitId == "commandCenter" &&
+        choice.content.units["hoverTank"]?.movement?.type == MovementType.HOVER &&
+        choice.content.units["landFactory"]?.production?.unitTypeIds?.contains("hoverTank") == true &&
+        choice.content.units["builder"]?.builder?.buildingTypeIds == listOf("landFactory") &&
+        choice.content.units["commandCenter"]?.production?.unitTypeIds == listOf("builder") &&
+        choice.content.units["c_tank"]?.combat != null) return Scenario("p009-hover-production", map, choice.content.units,
+        listOf(Player("p1", PlayerControl.LOCAL, "one"), Player("p2", PlayerControl.NONE, "two")),
+        listOf(UnitSpawn("a", "p1", "commandCenter", Position(130.0, 130.0), 0.0),
+            UnitSpawn("b", "p2", "c_tank", Position(650.0, 350.0), 270.0)),
+        CoordinateModel("p001.coordinate.v1", "2d", "x-right", "y-down", "top-left", "world-unit", "double", "ieee754-binary64"),
+        TimeModel("p001.time.v1", "sim-tick", "ieee754-binary64", "fixed-explicit-delta"), MovementContract(16.0, 4.0),
+        combatContract = CombatContract(12345, -1, mapOf("a" to 8L, "b" to 9L), 10L),
+        economyContract = EconomyContract(mapOf("p1" to 5000L, "p2" to 0L)))
+    if (naval) return Scenario(if (choice.unitId == "attackSubmarine") "p009-submarine-production" else "p008-naval-production", map, choice.content.units,
         listOf(Player("p1", PlayerControl.LOCAL, "one"), Player("p2", PlayerControl.NONE, "two")),
         listOf(UnitSpawn("a", "p1", "builder", Position(390.0, 150.0), 90.0),
             UnitSpawn("b", "p2", "c_tank", Position(330.0, 550.0), 270.0),
@@ -102,20 +252,33 @@ internal fun contentPackScenario(root: Path, choice: ContentPackChoice): Scenari
         CoordinateModel("p001.coordinate.v1", "2d", "x-right", "y-down", "top-left", "world-unit", "double", "ieee754-binary64"),
         TimeModel("p001.time.v1", "sim-tick", "ieee754-binary64", "fixed-explicit-delta"), MovementContract(16.0, 4.0),
         combatContract = CombatContract(12345, -1, mapOf("a" to 8L, "b" to 9L), 10L))
-    if (choice.unitId in setOf("builder", "mechFactory", "mechFactoryT2", "mechHeavyMissile") &&
+    if (choice.content.units.getValue(choice.unitId).attachmentLayout != null) {
+        val opening = listOfNotNull(UnitSpawn("a", "p1", choice.unitId, Position(190.0, 150.0), 90.0),
+            choice.content.units["mechGun"]?.let { UnitSpawn("b", "p2", it.id, Position(465.0, 150.0), 270.0) })
+        return Scenario("p009-modular-spider-start", map, choice.content.units,
+            listOf(Player("p1", PlayerControl.LOCAL, "one"), Player("p2", PlayerControl.NONE, "two")), opening,
+            CoordinateModel("p001.coordinate.v1", "2d", "x-right", "y-down", "top-left", "world-unit", "double", "ieee754-binary64"),
+            TimeModel("p001.time.v1", "sim-tick", "ieee754-binary64", "fixed-explicit-delta"), MovementContract(16.0, 4.0),
+            combatContract = CombatContract(12345, -1, opening.mapIndexed { index, unit -> unit.unitId to (8L + index) }.toMap(), 8L + opening.size),
+            economyContract = EconomyContract(mapOf("p1" to 5000L, "p2" to 0L)))
+    }
+    val flameMech = choice.content.units["mechFlame"]?.mech?.kind == MechKind.TWO_LEGGED &&
+        choice.content.units["mechFactoryT2"]?.production?.unitTypeIds?.contains("mechFlame") == true
+    val largeMechChoices = setOf("builder", "mechFactory", "mechFactoryT2", "mechHeavyMissile")
+    if ((choice.unitId in largeMechChoices || flameMech && choice.unitId == "mechFlame") &&
         choice.content.units["mechHeavyMissile"]?.mech?.kind == MechKind.FOUR_LEGGED &&
         choice.content.units["mechFactoryT2"]?.production?.exitProfile == FactoryExitProfile.CUSTOM_MECH &&
         choice.content.units["builder"]?.builder?.buildingTypeIds == listOf("mechFactory") &&
         choice.content.units["helicopter"]?.rotor != null) {
-        return Scenario("p008-heavy-mech-production", map, choice.content.units,
+        return Scenario(if (flameMech) "p009-flame-mech-production" else "p008-heavy-mech-production", map, choice.content.units,
             listOf(Player("p1", PlayerControl.LOCAL, "one"), Player("p2", PlayerControl.NONE, "two")),
             listOf(UnitSpawn("a", "p1", "builder", Position(190.0, 150.0), 90.0),
-                UnitSpawn("b", "p2", "mechGun", Position(500.0, 310.0), 270.0),
+                UnitSpawn("b", "p2", if (flameMech) "mechHeavyMissile" else "mechGun", Position(500.0, 310.0), 270.0),
                 UnitSpawn("c", "p2", "helicopter", Position(500.0, 110.0), 270.0)),
             CoordinateModel("p001.coordinate.v1", "2d", "x-right", "y-down", "top-left", "world-unit", "double", "ieee754-binary64"),
             TimeModel("p001.time.v1", "sim-tick", "ieee754-binary64", "fixed-explicit-delta"), MovementContract(16.0, 4.0),
             combatContract = CombatContract(12345, -1, mapOf("a" to 8L, "b" to 9L, "c" to 10L), 11L),
-            economyContract = EconomyContract(mapOf("p1" to 16000L, "p2" to 0L)))
+            economyContract = EconomyContract(mapOf("p1" to (if (flameMech) 18000L else 16000L), "p2" to 0L)))
     }
     val productionScene = when {
         choice.unitId in setOf("builder", "airFactory") &&
@@ -144,6 +307,6 @@ internal fun contentPackScenario(root: Path, choice: ContentPackChoice): Scenari
         CoordinateModel("p001.coordinate.v1", "2d", "x-right", "y-down", "top-left", "world-unit", "double", "ieee754-binary64"),
         TimeModel("p001.time.v1", "sim-tick", "ieee754-binary64", "fixed-explicit-delta"), MovementContract(16.0, 4.0),
         combatContract = CombatContract(12345, -1, mapOf("a" to 8L, "b" to 9L, "c" to 10L), 11L),
-        economyContract = if (choice.content.units.values.any { it.production != null || it.builder != null || it.construction != null })
+        economyContract = if (choice.content.units.values.any { it.production != null || it.builder != null || it.construction != null || it.income != null })
             EconomyContract(mapOf("p1" to 3000L, "p2" to 0L)) else null)
 }

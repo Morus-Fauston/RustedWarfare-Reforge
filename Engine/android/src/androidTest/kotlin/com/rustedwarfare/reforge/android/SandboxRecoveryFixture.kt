@@ -10,7 +10,7 @@ import java.security.MessageDigest
 /** Temporarily moves one verified APK-derived reference; never overwrites or deletes original bytes. */
 internal class SandboxRecoveryFixture(context: Context, runName: String) : AutoCloseable {
     private val relative="TestLab/local/P002-知识沙盒输入/tilesets/p001-ground.tsx"
-    private val source=context.filesDir.canonicalFile.toPath().resolve("p001").resolve(relative)
+    private val source=context.filesDir.canonicalFile.toPath().resolve("owned-sandbox-v1").resolve(relative)
     private val cache=context.cacheDir.canonicalFile.toPath().resolve("s04-recovery")
     private val backup=cache.resolve(runName).resolve("p001-ground.tsx")
     private val original=context.assets.open("p001/$relative").use { it.readBytes() }

@@ -1,0 +1,39 @@
+{
+  "format": "rw-reforge.content-pack.v1",
+  "id": "p009-amphibious-production-json",
+  "name": "Owned native amphibious production chain",
+  "units": [
+    {
+      "type": "helicopter",
+      "file": "units/helicopter.json"
+    },
+    {
+      "type": "air-factory",
+      "file": "units/airFactory.json"
+    },
+    {
+      "type": "builder",
+      "file": "units/builder.json"
+    },
+    {
+      "type": "air-factory",
+      "file": "units/airFactoryT2.json"
+    },
+    {
+      "type": "amphibious-jet",
+      "file": "units/amphibiousJet.json"
+    },
+    {
+      "type": "command-center",
+      "file": "units/commandCenter/commandCenter.json"
+    },
+    {
+      "type": "tank",
+      "file": "units/land/tank.json"
+    },
+    {
+      "type": "underwater-target",
+      "file": "units/naval/underwaterTarget.json"
+    }
+  ]
+}

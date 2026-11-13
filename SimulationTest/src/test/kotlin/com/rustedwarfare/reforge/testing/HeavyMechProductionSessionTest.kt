@@ -18,6 +18,9 @@ class HeavyMechProductionSessionTest {
             var count = 0L
             var factoryId: String? = null
             var heavyId: String? = null
+            var activeIntent: String? = null
+            var shieldHits = 0
+            val stopShields = mutableListOf<Float>()
             val fired = mutableSetOf<String>()
             val actions = mutableListOf<JsonObject>()
             val stages = mutableMapOf<String, JsonObject>()
@@ -34,7 +37,17 @@ class HeavyMechProductionSessionTest {
                             if (factoryId == null) factoryId = unit.id("unitId") else assertEquals(factoryId, unit.id("unitId"))
                         }
                         units.firstOrNull { it["typeId"] == s("mechHeavyMissile") && it["ownerPlayerId"] == s("p1") }?.let { unit ->
+                            if (heavyId == null) {
+                                assertEquals(500.0, unit.objectAt("shield").number("current"))
+                                assertEquals(0.0, unit.objectAt("shield").number("displayDamage"))
+                                assertEquals(2500.0, unit.number("health"))
+                            }
                             heavyId = unit.id("unitId")
+                            assertEquals(500.0, unit.objectAt("shield").number("maximum"))
+                            if (current.arrayAt("events").any { it.jsonObject["kind"] == s("shield-damaged") &&
+                                    it.jsonObject["unitId"] == s(heavyId!!) } && row["phase"] == s("step")) shieldHits++
+                            if (activeIntent == "stop-heavy" && row["phase"] == s("step"))
+                                stopShields += unit.objectAt("shield").number("current").toFloat()
                             assertEquals(4, unit.objectAt("mechPose").arrayAt("legs").size)
                             assertEquals(setOf("smallLaser", "1", "2", "3"), current.arrayAt("weapons").map { it.jsonObject }
                                 .filter { it["unitId"] == s(heavyId!!) }.map { it.text("weaponName") }.toSet())
@@ -46,6 +59,7 @@ class HeavyMechProductionSessionTest {
                         }
                     }
                     s("action") -> actions += row
+                    s("intent-start") -> activeIntent = row.text("intentId")
                     s("intent-end") -> sample?.let { stages[row.text("intentId")] = it }
                     else -> Unit
                 }
@@ -63,7 +77,13 @@ class HeavyMechProductionSessionTest {
             assertEquals(3100.0, own("finish-upgrade", "mechFactoryT2").number("maxHealth"))
             assertEquals(2500L, stages.getValue("leave-factory").integer("balance"))
             assertTrue(own("leave-factory", "mechHeavyMissile").objectAt("position").number("y") > 240.0)
+            assertTrue(own("move-heavy", "mechHeavyMissile").objectAt("position").number("x") > 400.0)
+            assertTrue(own("return-cliff", "mechHeavyMissile").objectAt("position").number("x") < 300.0)
             assertEquals(JsonNull, own("stop-heavy", "mechHeavyMissile")["moveTarget"])
+            assertTrue(shieldHits > 0, "$format must archive actual shield damage from normal enemy weapons")
+            assertTrue(stopShields.size > 1 && stopShields.first() < 500f)
+            assertTrue(stopShields.last() > stopShields.first())
+            for ((before, after) in stopShields.zipWithNext()) assertEquals(minOf(500f, before + .08f), after)
             for (type in listOf("BuildAction", "UpgradeAction", "ProduceAction", "MoveAction", "StopAction", "AttackAction"))
                 assertTrue(actions.any { it["type"] == s(type) && it.objectAt("result")["accepted"] == b(true) }, "$format missing $type: $output")
             assertEquals(setOf("ground", "air"), fired)

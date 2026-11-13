@@ -1,0 +1,193 @@
+{
+  "schemaVersion": 1,
+  "scenarioId": "nautilus-json-naval-ammo",
+  "rules": [
+    {
+      "intentId": "select-center"
+    },
+    {
+      "intentId": "produce-worker"
+    },
+    {
+      "intentId": "leave-center"
+    },
+    {
+      "intentId": "select-worker"
+    },
+    {
+      "intentId": "move-worker-shore"
+    },
+    {
+      "intentId": "stop-worker"
+    },
+    {
+      "intentId": "build-factory"
+    },
+    {
+      "intentId": "wait-factory"
+    },
+    {
+      "intentId": "finish-factory"
+    },
+    {
+      "intentId": "select-factory"
+    },
+    {
+      "intentId": "upgrade-t2"
+    },
+    {
+      "intentId": "wait-upgrade-0"
+    },
+    {
+      "intentId": "wait-upgrade-1"
+    },
+    {
+      "intentId": "wait-upgrade-2"
+    },
+    {
+      "intentId": "finish-upgrade"
+    },
+    {
+      "intentId": "produce-mother"
+    },
+    {
+      "intentId": "wait-mother-0"
+    },
+    {
+      "intentId": "wait-mother-1"
+    },
+    {
+      "intentId": "wait-mother-2"
+    },
+    {
+      "intentId": "wait-mother-3"
+    },
+    {
+      "intentId": "wait-mother-4"
+    },
+    {
+      "intentId": "leave-shipyard"
+    },
+    {
+      "intentId": "select-mother"
+    },
+    {
+      "intentId": "queue-ammo"
+    },
+    {
+      "intentId": "cancel-ammo"
+    },
+    {
+      "intentId": "requeue-ammo"
+    },
+    {
+      "intentId": "move-with-ammo"
+    },
+    {
+      "intentId": "finish-ammo-0"
+    },
+    {
+      "intentId": "finish-ammo-1"
+    },
+    {
+      "intentId": "finish-ammo-2"
+    }
+  ],
+  "history": {
+    "initialBalance": 30000,
+    "ownerPlayerId": "p1",
+    "initialOwnedTypes": [
+      "commandCenter"
+    ],
+    "initialIncome": {
+      "unitId": "a",
+      "typeId": "commandCenter",
+      "period": 10,
+      "credits": 4.5
+    },
+    "productionOrder": [
+      "builder",
+      "nautilusSubmarine"
+    ],
+    "completedUpgradeTypes": [
+      "seaFactoryT2"
+    ],
+    "spend": [
+      {
+        "intentId": "produce-worker",
+        "amount": 500,
+        "at": "action"
+      },
+      {
+        "intentId": "build-factory",
+        "amount": 1000,
+        "at": "construction-created"
+      },
+      {
+        "intentId": "upgrade-t2",
+        "amount": 2000,
+        "at": "action"
+      },
+      {
+        "intentId": "produce-mother",
+        "amount": 18000,
+        "at": "action"
+      },
+      {
+        "intentId": "queue-ammo",
+        "amount": 6000,
+        "at": "action"
+      },
+      {
+        "intentId": "cancel-ammo",
+        "amount": 6000,
+        "at": "action"
+      },
+      {
+        "intentId": "requeue-ammo",
+        "amount": 6000,
+        "at": "action"
+      }
+    ],
+    "transportStages": [
+      {
+        "intentId": "move-with-ammo",
+        "typeId": "nautilusSubmarine",
+        "passengerCount": 0,
+        "unloading": false,
+        "minimumX": 500
+      }
+    ],
+    "finalUnits": [
+      {
+        "ownerPlayerId": "p1",
+        "typeId": "commandCenter",
+        "fields": {
+          "alive": true
+        }
+      },
+      {
+        "ownerPlayerId": "p1",
+        "typeId": "builder",
+        "fields": {
+          "alive": true
+        }
+      },
+      {
+        "ownerPlayerId": "p1",
+        "typeId": "seaFactoryT2",
+        "fields": {
+          "alive": true
+        }
+      },
+      {
+        "ownerPlayerId": "p1",
+        "typeId": "nautilusSubmarine",
+        "fields": {
+          "alive": true
+        }
+      }
+    ],
+    "navalAmmoHistory": true
+  }
+}

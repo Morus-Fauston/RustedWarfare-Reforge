@@ -11,6 +11,15 @@ class PlacementFootprint internal constructor(cells: List<Pair<Int, Int>>, val w
 
 /** Shared placement center for the authoritative construction and authorized client preview. */
 object ConstructionPlacement {
+    /** Native mobile nano-site contact test; this is not dynamic movement collision. */
+    fun mobileOverlaps(position: Position, radius: Double, other: Position, otherRadius: Double,
+                       otherIsBuilding: Boolean): Boolean {
+        val dx = position.x.toFloat() - other.x.toFloat()
+        val dy = position.y.toFloat() - other.y.toFloat()
+        val limit = if (otherIsBuilding) 9f else maxOf(11f, radius.toFloat() + otherRadius.toFloat())
+        return dx * dx + dy * dy < limit * limit
+    }
+
     fun snap(order: Position, anchor: FootprintAnchor?): Position {
         fun coordinate(value: Double, offset: Float): Double =
             ((((value.toFloat() - offset) + 1f) * .05f).toInt() * 20f + offset).toDouble()

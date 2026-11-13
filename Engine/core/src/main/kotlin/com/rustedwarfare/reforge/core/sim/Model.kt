@@ -6,6 +6,7 @@ import com.rustedwarfare.reforge.core.content.GroundProjectileProfile
 import com.rustedwarfare.reforge.core.content.NativeMissileProfile
 import com.rustedwarfare.reforge.core.content.CustomBallisticProfile
 import com.rustedwarfare.reforge.core.content.DeathExplosionProfile
+import com.rustedwarfare.reforge.core.content.ScoutPayloadStage
 import java.util.Collections
 import com.rustedwarfare.reforge.core.knowledge.KnowledgeRules
 import com.rustedwarfare.reforge.core.knowledge.KnowledgeSnapshot
@@ -63,6 +64,7 @@ data class Scenario(
     val combatContract: CombatContract? = null,
     val economyContract: EconomyContract? = null,
     val maintenanceContract: MaintenanceContract? = null,
+    val nukesEnabled: Boolean = true,
 )
 
 data class EconomyContract(val initialBalances: Map<String, Long>)
@@ -70,6 +72,12 @@ data class EconomyContract(val initialBalances: Map<String, Long>)
 /** Explicit finite maintenance capability; caller-owned maps cannot change a live world's prices. */
 class MaintenanceContract(basePrices: Map<String, Long>) {
     val basePrices: Map<String, Long> = Collections.unmodifiableMap(LinkedHashMap(basePrices))
+
+    companion object {
+        /** A deployed mobile bunker occupies a footprint but is still a combat unit. */
+        fun requiredBuildingTypeIds(definitions: Map<String, UnitDefinition>): Set<String> =
+            definitions.filterValues { it.building != null && !Bunker.supports(it) }.keys
+    }
 }
 
 /** Trusted host queue state. Nonces and payment details never enter player queue DTOs. */
@@ -119,12 +127,13 @@ data class Step(val stepIndex: Long, val delta: Double, val deltaUnit: String)
 
 enum class MovementState { IDLE, MOVING, DECELERATING, BLOCKED }
 
-enum class UnitTaskKind { MOVE, ATTACK, PATROL, BUILD, CONSTRUCT, RECLAIM }
+enum class UnitTaskKind { MOVE, ATTACK, PATROL, BUILD, CONSTRUCT, RECLAIM, LOAD_INTO, LOAD_UP }
 
 /** Owner control intent; temporary combat targets never become stored patrol points. */
 data class UnitTask(val kind: UnitTaskKind, val actionId: String, val target: Position? = null,
     val targetUnitId: String? = null, val atStep: Long? = null,
-    val buildingTypeId: String? = null, val buildingNonce: String? = null)
+    val buildingTypeId: String? = null, val buildingNonce: String? = null,
+    val automaticRepair: Boolean = false, val extraWorkRange: Float = 0f)
 
 data class UnitObservation(
     val unitId: String,
@@ -152,14 +161,65 @@ data class UnitObservation(
     val mechPose: MechPose? = null,
     val flightPose: FlightPose? = null,
     val waterPose: WaterPose? = null,
+    val hoverPose: HoverPose? = null,
+    val shield: ShieldObservation? = null,
+    val submarine: SubmarineObservation? = null,
+    val amphibiousJet: AmphibiousJetObservation? = null,
+    /** Trusted-host relation. Carried bodies are excluded from player world observations. */
+    val carriedBy: String? = null,
+    val transport: TransportObservation? = null,
+    val transportExit: TransportExitObservation? = null,
+    val energy: EnergyObservation? = null,
+    val unitActions: UnitActionsObservation? = null,
+    val nuclearDoors: Float? = null,
+    val attachment: AttachedUnitObservation? = null,
+    val attachmentOverview: AttachmentOverview? = null,
 )
+
+data class AttachedUnitObservation(val parentUnitId: String, val slot: Int, val empty: Boolean)
+data class AttachmentSlotObservation(val number: Int, val unitId: String, val typeId: String, val progress: Float)
+data class AttachmentOverview(val selectedSlot: Int?, val slots: List<AttachmentSlotObservation>)
+
+data class EnergyObservation(val current: Float, val maximum: Float, val recharging: Boolean)
+data class UnitActionObservation(val name: String, val queueIndex: Int?, val progress: Float?,
+    val cooldownRemaining: Int, val available: Boolean)
+data class QueuedUnitActionObservation(val name: String, val progress: Float, val target: Position?)
+data class UnitActionsObservation(val actions: List<UnitActionObservation>, val automaticCooldown: Float,
+    val stockpile: Int? = null, val queue: List<QueuedUnitActionObservation> = emptyList(),
+    val interceptorOnline: Boolean? = null)
+
+data class TransportObservation(val passengerIds: List<String>?, val passengerCount: Int,
+    val occupiedSlots: Int, val capacity: Int, val unloading: Boolean, val unloadRemaining: Float?,
+    val canUnload: Boolean = false)
+
+data class TransportExitObservation(val previousCarrierId: String, val remaining: Float)
+
+/** Actual visible form; future flight intent and the integrator are owner-only. */
+data class AmphibiousJetObservation(val flyingIntent: Boolean?, val verticalSpeed: Float?,
+    val underwater: Boolean, val surfacePresentation: Boolean,
+    val movementType: com.rustedwarfare.reforge.core.content.MovementType,
+    val maximumSpeed: Double, val attackRange: Double, val wingFold: Float,
+    val phase: Float, val sinkSpeed: Float, val settled: Boolean, val canDive: Boolean? = null)
+
+/** Actual public depth state; control intent and vertical integrator are owner-only. */
+data class SubmarineObservation(val surfaceIntent: Boolean?, val verticalSpeed: Float?, val underwater: Boolean,
+    val surfacePresentation: Boolean, val maximumSpeed: Double, val attackRange: Double)
+
+/** Visible durability state; no source identity or hidden combat scheduling. */
+data class ShieldObservation(val current: Float, val maximum: Float, val displayDamage: Float = 0f)
+
+/** Current visible hover state; its height does not grant the AIR target category. */
+data class HoverPose(val velocity: Position, val heightPhase: Double)
 
 /** Visible ordinary water-body state; it has neither legs nor host identities. */
 data class WaterPose(val reversing: Boolean, val sinkSpeed: Float, val settled: Boolean)
 
 /** Current visible physical flight state, without host identities or future commands. */
 data class FlightPose(val velocity: Position, val height: Double, val heightPhase: Double,
-    val rotorPhase: Double, val rotorHeading: Double, val rotorHeightOffset: Double)
+    val rotorPhase: Double, val rotorHeading: Double, val rotorHeightOffset: Double,
+    val fall: FlightFallPose? = null)
+
+data class FlightFallPose(val speed: Float, val landed: Boolean, val landedInWater: Boolean, val settled: Boolean)
 
 /** Host-only identity/target and arithmetic state. Never copied into player DTOs. */
 data class ProjectileObservation(val objectId: Long, val sourceUnitId: String, val targetUnitId: String?,
@@ -167,7 +227,24 @@ data class ProjectileObservation(val objectId: Long, val sourceUnitId: String, v
     val height: Double = 0.0, val age: Float = 0f, val deflectionHealth: Float = 1f,
     val intercepted: Boolean = false, val ground: GroundProjectileObservation? = null,
     val missile: MissileObservation? = null, val areaExpansion: AreaExpansionObservation? = null,
-    val sourceWeaponName: String? = null, val ballistic: BallisticObservation? = null)
+    val sourceWeaponName: String? = null, val ballistic: BallisticObservation? = null,
+    val appearance: ProjectileAppearance = ProjectileAppearance.STANDARD, val lightning: LightningSegment? = null,
+    val beam: BeamSegment? = null, val alwaysVisibleInFog: Boolean = false)
+
+/** Captured endpoint of a visible instant discharge; no host object or hidden future target. */
+data class LightningSegment(val end: Position, val endHeight: Double)
+
+/** Current visible beam endpoint, captured without a host target identity. */
+data class BeamSegment(val end: Position, val endHeight: Double, val textureOffset: Float = 0f)
+
+/** Public launch appearance, independent of hidden source identity or its subsequent depth. */
+enum class ProjectileAppearance(val red: Int, val green: Int, val blue: Int, val drawSize: Float) {
+    STANDARD(255, 255, 0, 2f), SUBMARINE_MISSILE(230, 230, 50, 2f), SUBMARINE_TORPEDO(30, 30, 150, 1f),
+    AMPHIBIOUS_LIGHTNING(247, 212, 129, 2f), SPIDER_LIGHTNING(204, 238, 238, 2f),
+    AA_BEAM(255, 255, 255, 2f), NUCLEAR(255, 238, 160, 3f),
+    INTERCEPTOR(238, 238, 0, 2f), SCOUT_PAYLOAD(238, 238, 0, .9f),
+    BOMBER_BOMB(0, 0, 0, 1f), BOMBER_DEPTH_CHARGE(0, 0, 0, 1f), MECH_FLAME(255, 165, 69, .3f)
+}
 
 class AreaExpansionObservation(val remaining: Float, val radius: Float, hitUnitIds: Set<String>) {
     val hitUnitIds: Set<String> = Collections.unmodifiableSet(LinkedHashSet(hitUnitIds))
@@ -184,7 +261,9 @@ data class PointDefenseObservation(val energy: Float, val exhausted: Boolean)
 
 /** One public appearance class. Identical newly visible objects have one token and multiplicity. */
 data class VisibleProjectile(val token: String, val multiplicity: Int, val position: Position, val heading: Double,
-    val height: Double = 0.0, val parentToken: String? = null, val areaRadius: Float? = null)
+    val height: Double = 0.0, val parentToken: String? = null, val areaRadius: Float? = null,
+    val appearance: ProjectileAppearance = ProjectileAppearance.STANDARD, val lightning: LightningSegment? = null,
+    val beam: BeamSegment? = null)
 
 data class ProjectileEventObservation(val kind: String, val projectile: ProjectileObservation, val damage: Double? = null,
     val interceptorUnitId: String? = null)
@@ -193,7 +272,8 @@ data class VisibleProjectileEvent(val token: String, val kind: String, val occur
     val position: Position, val heading: Double, val height: Double, val sourceUnitId: String?,
     val targetUnitId: String?, val damage: Double?, val parentToken: String? = null,
     val interceptorUnitId: String? = null, val areaRadius: Float? = null,
-    val sourceWeaponName: String? = null)
+    val sourceWeaponName: String? = null, val appearance: ProjectileAppearance = ProjectileAppearance.STANDARD,
+    val lightning: LightningSegment? = null, val beam: BeamSegment? = null)
 
 /** Trusted-host state for deterministic replay/rollback verification, absent from player observations. */
 class CombatObservation(val frameCounter: Int, val nextObjectId: Long, weapons: List<UnitWeaponObservation>) {
@@ -336,7 +416,8 @@ sealed interface CloseResult {
 }
 
 /** One immutable origin shared by candidate copies; never a player DTO. */
-internal data class ProducedOrigin(val producerId: String, val factoryTypeId: String)
+internal data class ProducedOrigin(val producerId: String, val factoryTypeId: String, val unitTypeId: String)
+internal data class ScoutOrigin(val sourceUnitId: String, val projectileId: Long)
 
 internal data class MutableUnit(
     val unitId: String,
@@ -361,6 +442,8 @@ internal data class MutableUnit(
     var terrainCorrectionTime: Double = 0.0,
     var terrainClearSteps: Int = 0,
     var health: Double? = definition.maximumHealth,
+    var shield: Float = definition.shield?.takeUnless { it.startAtZero }?.maximum ?: 0f,
+    var shieldDisplayDamage: Float = 0f,
     var attackCommand: ManualAttackCommand? = null,
     var taskQueue: UnitTaskQueue = UnitTaskQueue(),
     /** Last activity's logical request, independent of propulsion and path success. */
@@ -368,15 +451,24 @@ internal data class MutableUnit(
     var lastAttackPathAttemptStep: Long? = null,
     var combat: MutableCombat? = definition.combat?.let { MutableCombat(heading) },
     var height: Double = definition.movement.flight?.startingHeightOffset ?: 0.0,
+    var submarineSurfaceIntent: Boolean = false,
+    var submarineVerticalSpeed: Float = 0f,
+    var submarineSurfacePresentation: Boolean = true,
+    var amphibiousState: AmphibiousJetState? = if (definition.amphibiousJet != null) AmphibiousJetState() else null,
     var heightPhase: Double = 0.0,
+    var flightIdleTime: Float = 0f,
+    var bomberApproach: BomberApproach? = null,
     var flightVelocity: Position = Position(0.0, 0.0),
     var rotorPhase: Double = 0.0,
-    var rotorHeightOffset: Double = if (definition.movement.flight == null) 0.0 else .1,
+    var rotorHeightOffset: Double = if (definition.rotor == null) 0.0 else .1,
     /** Host identity and deterministic traversal order, never player DTO fields. */
     val objectId: Long? = null,
     val updateKey: String = unitId,
     val productionOrigin: ProducedOrigin? = null,
+    val scoutOrigin: ScoutOrigin? = null,
     var birthRemaining: Float = 0f,
+    var customActionState: CustomActionState = CustomActionState(),
+    var ordnance: OrdnanceState = OrdnanceState(),
     var incomeElapsed: Float = 0f,
     var pointDefense: MutablePointDefense? = definition.pointDefense?.let { MutablePointDefense(it.initialEnergy) },
     var constructionProgress: Float = 1f,
@@ -385,6 +477,8 @@ internal data class MutableUnit(
     var constructionPreparation: Float = 0f,
     var constructionWorking: Boolean = false,
     var previousWorkTargetActive: Boolean = false,
+    /** Native r.d is independent of the work preparation and Stop fields. */
+    var repairScanElapsed: Float = 0f,
     var reclaimed: Boolean = false,
     var singleNodePathCount: Byte = 0,
     var logicalRequestX: Float? = null,
@@ -398,11 +492,37 @@ internal data class MutableUnit(
     var bodyReversing: Boolean = false,
     var sinkSpeed: Float = 0f,
     var waterSettled: Boolean = false,
+    var flightLanded: Boolean = false,
+    var flightLandedInWater: Boolean = false,
     var productionSide: Boolean = false,
+    /** Custom instance j; retained when the normal locomotion-aim gate is closed. */
+    var terrainSpeedMultiplier: Double = 1.0,
+    var carriedBy: String? = null,
+    var transportState: TransportState? = if (definition.transport != null) TransportState() else null,
+    var transportExit: TransportExitObservation? = null,
+    /** Native placement tests a terrain cell; retain its legal center until the body reenters the ordinary map inset. */
+    var nativeTransportPlacement: Boolean = false,
+    /** Native cj writes health first; the subsequent base health update dispatches death. */
+    var deathPending: Boolean = false,
+    var energy: Float = definition.energy?.maximum ?: 0f,
+    var energyRecharging: Boolean = false,
+    var attachment: AttachmentBinding? = null,
+    var attachmentIds: Map<Int, String> = emptyMap(),
+    var openingFallSpeed: Float = 0f,
+    var selectedAttachmentSlot: Int? = null,
+    var attachmentMoveSpeed: Double? = null,
+    var attachmentOrder: AttachmentOrder? = null,
+    var attachmentCooldown: Float = 0f,
+    var attachmentAutomaticCooldown: Float = 0f,
+    var attachmentLaserExhausted: Boolean = false,
+    var attachmentInterceptor: AttachmentInterceptorState = AttachmentInterceptorState(),
+    var blinkRequest: Position? = null,
+    var blinkCooldownUntil: Double = 0.0,
+    var spiderBlink: SpiderBlink? = null,
 ) {
     val producerId: String? get() = productionOrigin?.producerId
     val reversing: Boolean get() = mechState?.reversing ?: bodyReversing
-    val alive: Boolean get() = health == null || checkNotNull(health) > 0.0
+    val alive: Boolean get() = deathPending || health == null || checkNotNull(health) > 0.0
     val tasks: List<UnitTask> get() = taskQueue.tasks
     var primaryCombatTargetId: String?
         get() = if (namedWeapons != null) sharedWeaponTargetId else combat?.targetId
@@ -419,7 +539,7 @@ internal data class MutableUnit(
     fun ensureLocalMotion(): LocalMotionSegment {
         val first = pathPoints.first()
         return localMotion?.takeIf { it.anchor == first }
-            ?: LocalMotionSegment.create(position, first, definition.movement).also { localMotion = it; localProgressTime = 0.0 }
+            ?: LocalMotionSegment.create(position, first, UnitLocomotion.movement(this)).also { localMotion = it; localProgressTime = 0.0 }
     }
 
     /** End the command while preserving linear/angular speed for the existing coasting rule. */
@@ -495,6 +615,8 @@ internal data class MutableUnit(
 
 internal data class ManualAttackCommand(val targetUnitId: String, val actionId: String, val atStep: Long?)
 
+internal data class BomberApproach(val angle: Float, val breakingAway: Boolean)
+
 internal data class MutableCombat(var turretHeading: Double, var angularVelocity: Double = 0.0,
     var cooldown: Double = 0.0, var targetId: String? = null, var offset: Position = Position(0.0, 0.0),
     var randomCounter: Int = 0, var idleBaseHeading: Double = turretHeading,
@@ -504,17 +626,33 @@ internal data class MutableCombat(var turretHeading: Double, var angularVelocity
     var warmup: Double = 0.0, var aimReady: Boolean = false)
 
 internal data class MutableProjectile(val objectId: Long, val sourceUnitId: String, var targetUnitId: String?,
-    var position: Position, var heading: Double, var remainingLife: Double, val offset: Position,
+    var position: Position, var heading: Double, var remainingLife: Double, var offset: Position,
     val scatter: Float, var speed: Double, val damage: Double, var height: Double = 0.0,
     var age: Float = 0f, var deflectionHealth: Float = 1f, var intercepted: Boolean = false,
     val instant: Boolean = false, val nonDeflectable: Boolean = false,
     val ground: GroundShot? = null, var verticalSpeed: Float = 0f, var groundDistanceSquared: Float? = null,
     val missile: NativeMissileProfile? = null, var missileReachedApex: Boolean = false, var missileRawAz: Float = 0f,
-    val expansion: AreaExpansion? = null, val sourceWeaponName: String? = null,
+    var expansion: AreaExpansion? = null, val sourceWeaponName: String? = null,
+    val nuclearTarget: Position? = null,
     val acceleration: com.rustedwarfare.reforge.core.content.LinearProjectileAcceleration? = null,
     val splash: com.rustedwarfare.reforge.core.content.OrdinarySplashProfile? = null,
     val retargetOnDeath: Boolean = false,
-    val ballistic: CustomBallisticProfile? = null, var ballisticReachedApex: Boolean = false, var ballisticRawAz: Float = 0f)
+    val ballistic: CustomBallisticProfile? = null, var ballisticReachedApex: Boolean = false, var ballisticRawAz: Float = 0f,
+    val appearance: ProjectileAppearance = ProjectileAppearance.STANDARD,
+    val lightning: Boolean = false, var hitApplied: Boolean = false, val lightningSegment: LightningSegment? = null,
+    val damageModifiers: com.rustedwarfare.reforge.core.content.ProjectileDamageModifiers =
+        com.rustedwarfare.reforge.core.content.ProjectileDamageModifiers(),
+    val beam: Boolean = false, var beamSegment: BeamSegment? = null,
+    val alwaysVisibleInFog: Boolean = false, var revealFogPending: Boolean = nuclearTarget != null,
+    val nukeTagged: Boolean = false, var interception: InterceptionCourse? = null,
+    val scoutPayload: ScoutPayload? = null,
+    val sourceOwnerId: String? = null,
+    val attachmentRetargetMount: AttachmentRetargetMount? = null)
+
+internal data class AttachmentRetargetMount(val index: Int,
+    val weapon: com.rustedwarfare.reforge.core.content.NamedWeaponDefinition)
+
+internal data class ScoutPayload(val target: Position, val stage: ScoutPayloadStage)
 
 internal data class AreaExpansion(val profile: DeathExplosionProfile, var remaining: Float,
     var radius: Float = 0f, val hitUnitIds: MutableSet<String> = linkedSetOf())

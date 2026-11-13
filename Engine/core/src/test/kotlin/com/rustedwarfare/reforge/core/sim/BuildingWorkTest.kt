@@ -33,8 +33,9 @@ class BuildingWorkTest {
             override fun path(worker: MutableUnit, target: Position, range: Double, task: UnitTask, step: Long): BuildingRoute? =
                 policies.path.findPath(com.rustedwarfare.reforge.core.path.PlanningTerrain.fromNoFog(scene.map),
                     worker.position, target, worker.definition.radius, targetRange = range)?.let { BuildingRoute(it, -1L, -1L) }
-            override fun prepareConstruction(ownerPlayerId: String, typeId: String, position: Position, nonce: String): MutableUnit =
-                UnitRegistration.prepareConstruction(registration, scene, ownerPlayerId, typeId, position, nonce)
+            override fun construct(ownerPlayerId: String, typeId: String, position: Position, nonce: String,
+                                   paidLedger: ProductionLedger): ConstructionRegistration =
+                UnitRegistration.construction(registration, scene, ownerPlayerId, typeId, position, nonce, paidLedger)
         }
         var work = BuildingWork.initial()
         var ledger = ProductionLedger.initial(mapOf("p1" to 1750L), emptyMap())
@@ -53,7 +54,6 @@ class BuildingWorkTest {
                 policies.coordinates, policies.steering, access)
             val change = work.dispatch(worker, frame, wasWorking, ledger, null)
             work = change.work; ledger = change.ledger
-            change.created?.let { UnitRegistration.registerPrepared(registration, it) }
             events += change.events
             BuildingWork.finishActivity(worker, units, 1.0)
         }
@@ -193,21 +193,21 @@ class BuildingWorkTest {
         } finally { contexts.forEach { it.close() } }
     }
 
-    @Test fun downstream_factory_registration_failure_after_preparation_keeps_the_site_out_of_the_map() {
+    @Test fun factory_registration_failure_preserves_the_site_identity_payment_and_world() {
         val valid = scene()
         // A direct module caller can supply an incomplete catalog; full Context rejects it at initialization.
         val input = valid.copy(unitDefinitions = valid.unitDefinitions - "c_tank")
         val worker = worker(valid)
         val units = linkedMapOf(worker.unitId to worker)
         val registration = StepState(units = units, nextObjectId = 11L)
-        var prepared: MutableUnit? = null
         val policies = ExperimentalPolicies()
         val access = object : BuildingWorkAccess {
             override fun path(worker: MutableUnit, target: Position, range: Double, task: UnitTask, step: Long): BuildingRoute? =
                 policies.path.findPath(com.rustedwarfare.reforge.core.path.PlanningTerrain.fromNoFog(input.map),
                     worker.position, target, worker.definition.radius, targetRange = range)?.let { BuildingRoute(it, -1L, -1L) }
-            override fun prepareConstruction(ownerPlayerId: String, typeId: String, position: Position, nonce: String): MutableUnit =
-                UnitRegistration.prepareConstruction(registration, input, ownerPlayerId, typeId, position, nonce).also { prepared = it }
+            override fun construct(ownerPlayerId: String, typeId: String, position: Position, nonce: String,
+                                   paidLedger: ProductionLedger): ConstructionRegistration =
+                UnitRegistration.construction(registration, input, ownerPlayerId, typeId, position, nonce, paidLedger)
         }
         val work = BuildingWork.initial()
         val ledger = ProductionLedger.initial(mapOf("p1" to 1750L), emptyMap())
@@ -217,16 +217,12 @@ class BuildingWorkTest {
         val frame = BuildingWorkFrame(input, units, Step(0L, 1.0, "sim-tick"), null,
             policies.coordinates, policies.steering, access)
         assertFailsWith<NoSuchElementException> { work.dispatch(worker, frame, false, ledger, null) }
-        val site = assertNotNull(prepared)
-        assertEquals("constructed:p1:$nonce", site.unitId)
-        assertEquals(0f, site.constructionProgress)
         assertEquals(listOf("worker"), units.keys.toList())
         assertEquals(1750L, ledger.balances.getValue("p1"))
         assertTrue(work.nonces.isEmpty())
         assertEquals(UnitTaskKind.BUILD, worker.tasks.single().kind)
-        // These are staged identity reservations, not a claim of module-local counter rollback.
-        assertEquals(12L, registration.nextObjectId)
-        assertEquals(1L, registration.lastBirthSerial)
+        assertEquals(11L, registration.nextObjectId)
+        assertEquals(0L, registration.lastBirthSerial)
         assertTrue(registration.pendingEvents.isEmpty())
     }
 

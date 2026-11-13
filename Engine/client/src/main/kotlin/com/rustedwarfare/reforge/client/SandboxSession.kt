@@ -3,7 +3,7 @@ package com.rustedwarfare.reforge.client
 import com.rustedwarfare.reforge.core.sim.*
 import com.rustedwarfare.reforge.core.content.MovementType
 import com.rustedwarfare.reforge.core.content.foundationMovementType
-import com.rustedwarfare.reforge.core.content.waterBlocked
+import com.rustedwarfare.reforge.core.content.GroundRules
 import java.util.UUID
 import java.nio.file.Path
 
@@ -17,6 +17,9 @@ data class ConstructionActionView(val typeId: String, val title: String, val ima
 enum class PlacementState { CLEAR, BLOCKED, UNEXPLORED }
 data class ConstructionPreview(val typeId: String, val position: Position, val state: PlacementState,
     val cells: List<Pair<Int, Int>>)
+data class GroundActionPreview(val source: Position, val position: Position, val valid: Boolean,
+    val minimumRange: Double = 260.0, val maximumRange: Double = 9999.0, val areaRadius: Double = 250.0,
+    val rejection: String? = null)
 
 class SandboxSession(scenario: Scenario, private val evidence: ClientEvidence = ClientEvidence.NONE,
                      val options: SandboxOptions = SandboxOptions(),
@@ -25,7 +28,7 @@ class SandboxSession(scenario: Scenario, private val evidence: ClientEvidence = 
     constructor(scenario: Scenario, evidence: ClientEvidence, options: SandboxOptions, clockMillis: () -> Long) :
         this(scenario, evidence, options, clockMillis, 1L)
 
-    private val scenario: Scenario = scenario.copy(automaticVision = options.knowledgeRules())
+    private val scenario: Scenario = scenario.copy(automaticVision = options.knowledgeRules(), nukesEnabled = options.nukesEnabled)
     val hasConstructorDefinitions: Boolean = this.scenario.unitDefinitions.values.any { it.builder != null }
     val hasProductionDefinitions: Boolean = this.scenario.unitDefinitions.values.any { it.production != null }
     val renderResources: SandboxRenderResources = SandboxRenderResources.from(this.scenario)
@@ -74,7 +77,7 @@ class SandboxSession(scenario: Scenario, private val evidence: ClientEvidence = 
     private var latestFrame: SandboxFrame? = null
     val frame: SandboxFrame get() = checkNotNull(latestFrame) { "Match is closed" }
     val observation: PlayerObservation get() = frame.observation
-    private val actionCatalogue = ActionCatalogue(this.scenario.unitDefinitions)
+    private val actionCatalogue = ActionCatalogue(this.scenario.unitDefinitions, this.scenario.nukesEnabled)
     private var menuObservation: PlayerObservation? = null
     private var menuSelectionRevision = -1L
     private var menu: ActionMenuView? = null
@@ -144,6 +147,9 @@ class SandboxSession(scenario: Scenario, private val evidence: ClientEvidence = 
             feedback == "production-cancelled" -> "Production cancelled; funds returned"
             feedback == "empty-production-queue" -> "Production queue is empty"
             feedback == "path-unreachable" -> "Destination is unreachable"
+            feedback == "action-target-out-of-range" -> "Location too far"
+            feedback == "action-target-impassable" -> "Invalid map location (must be passable by HOVER)"
+            feedback == "unit-action-cooldown" -> "Action is cooling down"
             feedback == "unit-produced" -> "Unit created"
             feedback == "unit-damaged" -> "Unit under attack"
             feedback == "unit-died" -> "Unit destroyed"
@@ -181,14 +187,14 @@ class SandboxSession(scenario: Scenario, private val evidence: ClientEvidence = 
 
     val constructionActions: List<ConstructionActionView> get() = actionMenu.construction
     val canMaintain: Boolean get() = actionMenu.canMaintain
+    val canRepair: Boolean get() = actionMenu.canRepair
     /** Owner-only queue copy, derived with the rest of the selected menu. */
     val selectedWorkerQueueText: String? get() = actionMenu.workerQueueText
 
     fun reclaimTargetAt(position: Position): String? {
         if (!hasSelectedMaintainer()) return null
         val id = unitAt(position)
-        return observation.units.singleOrNull { it.unitId == id && it.alive && it.ownerPlayerId == "p1" &&
-            it.typeId in checkNotNull(scenario.maintenanceContract).basePrices }?.unitId
+        return observation.units.singleOrNull { it.unitId == id && maintenanceTarget(it, reclaim = true) }?.unitId
     }
 
     fun reclaim(position: Position, append: Boolean = false): ActionResult? = reclaim(reclaimTargetAt(position) ?: "", append)
@@ -196,14 +202,31 @@ class SandboxSession(scenario: Scenario, private val evidence: ClientEvidence = 
     fun reclaim(targetUnitId: String, append: Boolean = false): ActionResult? {
         lastCommandBatch = null
         if (!hasSelectedMaintainer()) return null
-        val target = observation.units.singleOrNull { it.unitId == targetUnitId && it.alive && it.ownerPlayerId == "p1" &&
-            it.typeId in checkNotNull(scenario.maintenanceContract).basePrices }
+        val target = observation.units.singleOrNull { it.unitId == targetUnitId && maintenanceTarget(it, reclaim = true) }
         if (target == null) {
-            feedback = "Select own building"
+            feedback = if (hasSelectedNativeMaintainer()) "Select own unit" else "Select own building"
             rejectedFeedback = false
             return null
         }
-        return dispatch { worker -> ReclaimBuildingAction("click-${++actionNumber}", "p1", worker, target.unitId, context.world, append = append) }
+        return dispatch { worker -> ReclaimUnitAction("click-${++actionNumber}", "p1", worker, target.unitId, context.world, append = append) }
+    }
+
+    fun repairTargetAt(position: Position): String? {
+        if (!canRepair) return null
+        val id = unitAt(position)
+        return observation.units.singleOrNull { it.unitId == id && it.unitId !in selectedIds &&
+            maintenanceTarget(it, reclaim = false, explicit = true) }?.unitId
+    }
+
+    fun repair(targetUnitId: String, append: Boolean = false): ActionResult? {
+        lastCommandBatch = null
+        if (!canRepair) return null
+        val target = observation.units.singleOrNull { it.unitId == targetUnitId && it.unitId !in selectedIds &&
+            maintenanceTarget(it, reclaim = false, explicit = true) }
+        if (target == null) {
+            feedback = "Select repairable unit"; rejectedFeedback = false; return null
+        }
+        return dispatch { worker -> RepairUnitAction("click-${++actionNumber}", "p1", worker, target.unitId, context.world, append = append) }
     }
 
     fun build(typeId: String, position: Position, append: Boolean = false): ActionResult? {
@@ -221,16 +244,37 @@ class SandboxSession(scenario: Scenario, private val evidence: ClientEvidence = 
     }
 
     /** Dispatch eligibility is independent of the deliberately limited mixed-selection menu. */
-    private fun hasSelectedConstructor(typeId: String): Boolean = isOpen && observation.units.any { unit ->
+    private fun hasSelectedConstructor(typeId: String): Boolean = isOpen &&
+        (scenario.nukesEnabled || scenario.unitDefinitions[typeId]?.nuclearSilo == null) && observation.units.any { unit ->
         unit.unitId in selectedIds && controllable(unit) &&
             typeId in scenario.unitDefinitions.getValue(unit.typeId).builder?.buildingTypeIds.orEmpty()
     }
 
-    private fun hasSelectedMaintainer(): Boolean = isOpen && scenario.maintenanceContract != null &&
-        observation.units.any { unit -> unit.unitId in selectedIds && controllable(unit) && unit.typeId == "builder" &&
-            scenario.unitDefinitions.getValue(unit.typeId).builder != null }
+    private fun hasSelectedNativeMaintainer(): Boolean = isOpen && observation.units.any { unit ->
+        unit.unitId in selectedIds && controllable(unit) && scenario.unitDefinitions.getValue(unit.typeId).maintenance != null }
 
-    /** Uses only the player's published terrain and visible buildings, never placement truth. */
+    private fun hasSelectedMaintainer(): Boolean = hasSelectedNativeMaintainer() ||
+        isOpen && scenario.maintenanceContract != null && observation.units.any { unit ->
+            unit.unitId in selectedIds && controllable(unit) && unit.typeId == "builder" &&
+                scenario.unitDefinitions.getValue(unit.typeId).builder != null }
+
+    private fun maintenanceTarget(target: UnitObservation, reclaim: Boolean, explicit: Boolean = false): Boolean {
+        if (!target.alive || target.carriedBy != null || target.attachment != null || target.health == null) return false
+        val definition = scenario.unitDefinitions.getValue(target.typeId)
+        if (hasSelectedNativeMaintainer()) {
+            if (reclaim) return target.ownerPlayerId == "p1" && (definition.build != null ||
+                definition.construction != null || definition.reclaimPrice != null ||
+                scenario.maintenanceContract?.basePrices?.containsKey(target.typeId) == true)
+            if (explicit) return true
+            val ownTeam = scenario.players.single { it.playerId == "p1" }.teamId
+            return target.ownerPlayerId == "p1" || ownTeam != null &&
+                scenario.players.single { it.playerId == target.ownerPlayerId }.teamId == ownTeam
+        }
+        return target.ownerPlayerId == "p1" && definition.building != null &&
+            scenario.maintenanceContract?.basePrices?.containsKey(target.typeId) == true
+    }
+
+    /** Uses only the player's published terrain and visible units, never placement truth. */
     fun previewConstruction(typeId: String, order: Position): ConstructionPreview? {
         if (constructionActions.none { it.typeId == typeId } || !order.x.isFinite() || !order.y.isFinite()) return null
         val map = scenario.map
@@ -242,7 +286,8 @@ class SandboxSession(scenario: Scenario, private val evidence: ClientEvidence = 
                     point, building.placementFootprint, building.anchor).cells
             } catch (_: IllegalArgumentException) { emptyList() }
         }
-        val building = checkNotNull(definition.building)
+        val building = definition.building ?: com.rustedwarfare.reforge.core.content.BuildingProfile(
+            com.rustedwarfare.reforge.core.content.BuildingFootprint(0, 0, 0, 0))
         val candidate = cells(position, building)
         var blocked = candidate.isEmpty() || !ConstructionPlacement.contains(map.widthTiles, map.heightTiles,
             map.tileWidth, map.tileHeight, position, definition.radius)
@@ -255,13 +300,21 @@ class SandboxSession(scenario: Scenario, private val evidence: ClientEvidence = 
             val tile = gid - tileset.firstGid
             if (building.requiresResourcePool) {
                 if (tile !in tileset.resourcePoolTileIds) blocked = true
-            } else if (tile in tileset.resourcePoolTileIds ||
-                if (definition.foundationMovementType == MovementType.WATER) map.tileSets.waterBlocked(gid)
-                else tile in tileset.blockedTileIds || tile in tileset.waterTileIds) blocked = true
+            } else if (tile in tileset.resourcePoolTileIds || definition.foundationMovementType != MovementType.AIR &&
+                GroundRules.blocked(map.tileSets, gid, definition.foundationMovementType)) blocked = true
         }
         if (observation.units.any { unit -> unit.alive && scenario.unitDefinitions.getValue(unit.typeId).building?.let {
                 cells(unit.position, it).any { cell -> cell in candidate }
             } == true }) blocked = true
+        if (definition.building == null) {
+            val constructors = observation.units.filter { it.unitId in selectedIds && controllable(it) &&
+                typeId in scenario.unitDefinitions.getValue(it.typeId).builder?.buildingTypeIds.orEmpty() }
+            if (constructors.all { creator -> observation.units.any { other ->
+                val shape = scenario.unitDefinitions.getValue(other.typeId)
+                other.unitId != creator.unitId && other.alive && other.carriedBy == null && other.attachment == null &&
+                    ConstructionPlacement.mobileOverlaps(position, definition.radius, other.position, shape.radius, shape.building != null)
+            } }) blocked = true
+        }
         return ConstructionPreview(typeId, position, when {
             blocked -> PlacementState.BLOCKED
             unknown -> PlacementState.UNEXPLORED
@@ -297,6 +350,64 @@ class SandboxSession(scenario: Scenario, private val evidence: ClientEvidence = 
         StopAction("click-${++actionNumber}", "p1", id, context.world)
     }
 
+    fun unitAction(name: String, cancelQueued: Boolean = false, target: Position? = null): ActionResult? = actionMenu.unitActions.singleOrNull { it.name == name }?.let {
+        val member = if (name == "launchNuke") nuclearLaunchMember(observation, selectedIds, cancelQueued)?.unitId else selectedId
+        member?.let { id -> apply(UnitAction("click-${++actionNumber}", "p1", id, name, context.world, cancelQueued, target = target)) }
+    }
+
+    fun previewGroundAction(name: String, target: Position): GroundActionPreview? {
+        if (!isOpen || actionMenu.unitActions.none { it.name == name && it.available && it.groundTargeted }) return null
+        val selected = if (name == "launchNuke") nuclearLaunchMember(observation, selectedIds)
+            else observation.units.singleOrNull { it.unitId == selectedId }
+        val source = if (name == "blink") {
+            val overview = selected?.attachmentOverview ?: return null
+            val slot = overview.slots.singleOrNull { it.number == overview.selectedSlot } ?: return null
+            observation.units.singleOrNull { it.unitId == slot.unitId }?.position ?: return null
+        } else selected?.position ?: return null
+        val x = target.x.toFloat() - source.x.toFloat(); val y = target.y.toFloat() - source.y.toFloat()
+        val squared = x * x + y * y
+        if (name == "launchNuke") return GroundActionPreview(source, target, squared.isFinite() &&
+            squared >= 260f * 260f && squared <= 9999f * 9999f)
+        val blink = name == "blink"
+        val range = if (blink) 700.0 else scenario.unitDefinitions.getValue(checkNotNull(selected).typeId).customActions
+            ?.actions?.singleOrNull { it.name == name }?.groundLaunch?.range ?: return null
+        val map = scenario.map
+        val column = kotlin.math.floor(target.x / map.tileWidth).toInt()
+        val row = kotlin.math.floor(target.y / map.tileHeight).toInt()
+        val inRange = squared.isFinite() && squared <= range * range
+        val openGround = inRange &&
+            column in 0 until map.widthTiles && row in 0 until map.heightTiles && !map.hoverBlocking.isBlocked(column, row)
+        // Use the live collision footprint of observed buildings without revealing hidden units.
+        val occupied = openGround && observation.units.any { unit ->
+            unit.alive && scenario.unitDefinitions.getValue(unit.typeId).building?.let { building ->
+                (column to row) in ConstructionPlacement.footprint(map.widthTiles, map.heightTiles, map.tileWidth,
+                    map.tileHeight, unit.position, building.footprint, building.anchor).cells
+            } == true
+        }
+        val valid = openGround && !occupied
+        return GroundActionPreview(source, target, valid, 0.0, range, 0.0,
+            if (valid || !blink) null else if (inRange) "action-target-impassable" else "action-target-out-of-range")
+    }
+
+    internal fun groundTargetRejected(reason: String) {
+        feedback = reason
+        rejectedFeedback = true
+    }
+
+    fun submarineDepth(surface: Boolean): ActionResult? = actionMenu.depthAction?.takeIf { it.surface == surface }?.let {
+        apply(SubmarineDepthAction("click-${++actionNumber}", "p1", checkNotNull(selectedId), surface, context.world))
+    }
+
+    fun amphibiousFlight(flying: Boolean): ActionResult? = actionMenu.flightAction
+        ?.takeIf { it.flying == flying && it.available }?.let {
+            apply(AmphibiousFlightAction("click-${++actionNumber}", "p1", checkNotNull(selectedId), flying, context.world))
+        }
+
+    fun unload(unloading: Boolean): ActionResult? = actionMenu.transportAction
+        ?.takeIf { it.available && it.unloading == unloading }?.let {
+            apply(UnloadAction("click-${++actionNumber}", "p1", checkNotNull(selectedId), unloading, context.world))
+        }
+
     private fun dispatch(selectionAtPress: Set<String> = selectedIds, action: (String) -> Action): ActionResult? {
         val members = selectionAtPress.sorted()
         val revision = selectionRevision
@@ -326,7 +437,7 @@ class SandboxSession(scenario: Scenario, private val evidence: ClientEvidence = 
         return results.lastOrNull()?.result
     }
 
-    private fun controllable(unit: UnitObservation): Boolean = unit.alive && unit.ownerPlayerId == "p1" &&
+    private fun controllable(unit: UnitObservation): Boolean = unit.alive && unit.attachment == null && unit.ownerPlayerId == "p1" &&
         scenario.players.any { it.playerId == "p1" && it.control == PlayerControl.LOCAL }
     /** Read-only hit identity from this player's published observation. */
     fun commandTargetAt(position: Position): String? = unitAt(position)
@@ -334,10 +445,15 @@ class SandboxSession(scenario: Scenario, private val evidence: ClientEvidence = 
     fun command(position: Position, append: Boolean = false): ActionResult? {
         val targetId = unitAt(position)
         val target = observation.units.firstOrNull { it.unitId == targetId }
-        if (hasSelectedMaintainer() && target != null && target.ownerPlayerId == "p1" &&
-            target.typeId in checkNotNull(scenario.maintenanceContract).basePrices &&
+        if (target != null && target.ownerPlayerId == "p1") {
+            if (target.transport != null && selectedIds.any { it != target.unitId })
+                return dispatch { actor -> LoadAction("click-${++actionNumber}", "p1", actor, target.unitId, LoadDirection.INTO, context.world) }
+            if (observation.units.any { it.unitId in selectedIds && controllable(it) && it.transport != null })
+                return dispatch { actor -> LoadAction("click-${++actionNumber}", "p1", actor, target.unitId, LoadDirection.UP, context.world) }
+        }
+        if (hasSelectedMaintainer() && target != null && maintenanceTarget(target, reclaim = false) &&
             (target.constructionProgress < 1f || target.health!! < target.maxHealth!!))
-            return dispatch { worker -> RepairBuildingAction("click-${++actionNumber}", "p1", worker, target.unitId, context.world, append = append) }
+            return dispatch { worker -> RepairUnitAction("click-${++actionNumber}", "p1", worker, target.unitId, context.world, append = append) }
         if (target != null && target.ownerPlayerId == "p1" && target.constructionProgress < 1f &&
             hasSelectedConstructor(target.typeId))
             return dispatch { worker -> ResumeConstructionAction("click-${++actionNumber}", "p1", worker, target.unitId, context.world, append = append) }
@@ -370,7 +486,7 @@ class SandboxSession(scenario: Scenario, private val evidence: ClientEvidence = 
 
     fun select(position: Position, mode: SelectionMode = SelectionMode.REPLACE) {
         rejectedFeedback = false
-        val id = unitAt(position)
+        val id = unitAt(position, selectionOnly = true)
         if (id != null) {
             if (apply(SelectAction("click-${++actionNumber}", "p1", id, context.world)) is ActionResult.Accepted)
                 selection.select(listOf(id), mode)
@@ -381,7 +497,7 @@ class SandboxSession(scenario: Scenario, private val evidence: ClientEvidence = 
     }
 
     fun tap(position: Position) {
-        if (unitAt(position) != null) select(position) else move(position)
+        if (unitAt(position, selectionOnly = true) != null) select(position) else move(position)
     }
 
     fun selectBox(start: Position, end: Position, mode: SelectionMode = SelectionMode.REPLACE,
@@ -405,8 +521,9 @@ class SandboxSession(scenario: Scenario, private val evidence: ClientEvidence = 
             "start" to start.fields(), "end" to end.fields(), "mode" to mode.name) }
     }
 
-    private fun unitAt(position: Position): String? = observation.units.asSequence()
-        .filter { it.alive }
+    private fun unitAt(position: Position, selectionOnly: Boolean = false): String? = observation.units.asSequence()
+        .filter { unit -> unit.alive && scenario.unitDefinitions.getValue(unit.typeId).attachmentModule
+            ?.let { !selectionOnly && !it.empty } != false }
         .map { unit ->
             val center = unit.displayedBodyPosition()
             val dx = center.x - position.x
@@ -431,14 +548,20 @@ class SandboxSession(scenario: Scenario, private val evidence: ClientEvidence = 
         rejectedFeedback = result is ActionResult.Rejected
         evidence.recordWhenEnabled("action") { mapOf("type" to action.javaClass.simpleName,
             "actorPlayerId" to action.actorPlayerId, "unitId" to action.unitId,
-            "target" to when (action) { is MoveAction -> action.target.fields(); is PatrolAction -> action.target.fields(); is BuildAction -> action.target.fields(); else -> null },
+            "target" to when (action) { is MoveAction -> action.target.fields(); is PatrolAction -> action.target.fields(); is BuildAction -> action.target.fields(); is UnitAction -> action.target?.fields(); else -> null },
             "append" to when (action) { is PatrolAction -> action.append; is BuildAction -> action.append;
-                is ResumeConstructionAction -> action.append; is RepairBuildingAction -> action.append;
-                is ReclaimBuildingAction -> action.append; else -> null },
+                is ResumeConstructionAction -> action.append; is RepairUnitAction -> action.append;
+                is ReclaimUnitAction -> action.append; else -> null },
             "targetUnitId" to when (action) { is AttackAction -> action.targetUnitId; is ResumeConstructionAction -> action.targetUnitId;
-                is RepairBuildingAction -> action.targetUnitId; is ReclaimBuildingAction -> action.targetUnitId; else -> null },
+                is RepairUnitAction -> action.targetUnitId; is ReclaimUnitAction -> action.targetUnitId;
+                is LoadAction -> action.targetUnitId; else -> null },
             "upgradeId" to when (action) { is UpgradeAction -> action.upgradeId; is CancelUpgradeAction -> action.upgradeId; else -> null },
-            "result" to result.fields()) + if (action is BuildAction) mapOf("buildingTypeId" to action.buildingTypeId) else emptyMap() }
+            "result" to result.fields()) + (if (action is BuildAction) mapOf("buildingTypeId" to action.buildingTypeId) else emptyMap()) +
+            (if (action is SubmarineDepthAction) mapOf("surface" to action.surface) else emptyMap()) +
+            (if (action is AmphibiousFlightAction) mapOf("flying" to action.flying) else emptyMap()) +
+            (if (action is UnitAction) mapOf("actionName" to action.actionName, "cancelQueued" to action.cancelQueued) else emptyMap()) +
+            (if (action is LoadAction) mapOf("direction" to action.direction.name) else emptyMap()) +
+            (if (action is UnloadAction) mapOf("unloading" to action.unloading) else emptyMap()) }
         capture("after-action")
         return result
     }

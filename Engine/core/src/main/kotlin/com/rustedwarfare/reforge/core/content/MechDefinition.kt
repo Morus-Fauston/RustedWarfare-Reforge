@@ -4,7 +4,9 @@ import java.nio.file.Path
 import java.util.Collections
 import kotlin.math.sqrt
 
-enum class MechKind { TWO_LEGGED, FOUR_LEGGED }
+enum class MechKind(val legCount: Int, internal val movingLegLimit: Int) {
+    TWO_LEGGED(2, 4), FOUR_LEGGED(4, 4), SIX_LEGGED(6, 6), EIGHT_LEGGED(8, 8)
+}
 
 /** Finite LAND gait metadata; the kind distinguishes the two qualified representatives. */
 class MechDefinition(val body: MechBodyDefinition, legs: List<MechLegDefinition>,
@@ -23,8 +25,8 @@ class MechDefinition(val body: MechBodyDefinition, legs: List<MechLegDefinition>
         }
     }
 
-    internal fun isValid(): Boolean = legs.size == (if (kind == MechKind.TWO_LEGGED) 2 else 4) &&
-        body.isValid() && legs.all { it.isValid() } &&
+    internal fun isValid(): Boolean = legs.size == kind.legCount &&
+        body.isValid() && legs.all { it.isValid(kind.movingLegLimit) } &&
         legs.all { it.legImage == legs[0].legImage && it.footImage == legs[0].footImage }
 }
 
@@ -65,12 +67,15 @@ data class MechLegDefinition(
     val targetHeight: Double = 0.0,
     val hardLimit: Double = 50.0,
     val favourOppositeSideNeighbours: Boolean = false,
+    val maximumMovingLegs: Int = 3,
+    val endDirectionOffset: Double = 0.0,
+    val lockMovement: Boolean = false,
 ) {
-    internal fun isValid(): Boolean =
+    internal fun isValid(movingLegLimit: Int = 4): Boolean =
         listOf(x, y, attachX, attachY, moveSpeed, warmUp, rotateSpeed, heightSpeed,
             holdMinimum, holdWithMovingNeighbour, predictionMultiplier, resetAngle,
-            liftOffset, targetHeight, hardLimit).all { it.isFinite() } &&
+            liftOffset, targetHeight, hardLimit, endDirectionOffset).all { it.isFinite() } &&
             moveSpeed > 0.0 && warmUp >= 0.0 && rotateSpeed >= 0.0 && heightSpeed > 0.0 &&
             holdMinimum >= 0.0 && holdWithMovingNeighbour >= holdMinimum && predictionMultiplier >= 0.0 &&
-            liftOffset >= 0.0 && targetHeight == 0.0 && hardLimit > 0.0
+            liftOffset >= 0.0 && targetHeight == 0.0 && hardLimit > 0.0 && maximumMovingLegs in 1..movingLegLimit
 }

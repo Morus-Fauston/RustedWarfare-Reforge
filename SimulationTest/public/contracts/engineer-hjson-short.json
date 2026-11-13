@@ -1,0 +1,146 @@
+{
+  "schemaVersion": 1,
+  "kind": "behavior-contract",
+  "contractId": "public.engineer-hjson.short.v1",
+  "scope": "self-behavior",
+  "scenarioIds": [
+    "p009-engineer-work"
+  ],
+  "comparison": {
+    "numberMode": "declared-per-field",
+    "tolerances": {}
+  },
+  "approval": {
+    "status": "tool-fixture-only",
+    "source": "ENG-P009-013 DEC007 qualified engineer .3 repair, 5.1 reclaim, 1/40 income; owned self behavior"
+  },
+  "exclusions": [
+    "original-compatibility",
+    "platform-input",
+    "performance"
+  ],
+  "reclaimedUnits": [
+    {
+      "unitId": "worker",
+      "reclaimActionId": "terminal",
+      "workerId": "engineer",
+      "owner": "p1",
+      "removalStepIndex": 154
+    }
+  ],
+  "rules": [
+    {
+      "ruleId": "first-reclaim",
+      "when": {
+        "phase": "after-advance",
+        "stepIndex": 0
+      },
+      "assertions": [
+        {
+          "path": "units.worker.health",
+          "operator": "equals",
+          "value": 168.47000122070312
+        }
+      ]
+    },
+    {
+      "ruleId": "terminal-and-three-income-payments",
+      "when": {
+        "phase": "after-advance",
+        "stepIndex": 154
+      },
+      "assertions": [
+        {
+          "path": "economy.preciseBalances.p1",
+          "operator": "equals",
+          "value": 16403.000005960464
+        },
+        {
+          "path": "units.engineer.tasks.terminal.kind",
+          "operator": "equals",
+          "value": "RECLAIM"
+        },
+        {
+          "path": "units.engineer.tasks.terminal.targetUnitId",
+          "operator": "equals",
+          "value": "worker"
+        }
+      ]
+    },
+    {
+      "ruleId": "manual-repair",
+      "when": {
+        "phase": "after-advance",
+        "stepIndex": 159
+      },
+      "assertions": [
+        {
+          "path": "units.worker2.health",
+          "operator": "equals",
+          "value": 168.77000427246094
+        }
+      ]
+    },
+    {
+      "ruleId": "stopped-hp",
+      "when": {
+        "phase": "after-advance",
+        "stepIndex": 194
+      },
+      "assertions": [
+        {
+          "path": "units.worker2.health",
+          "operator": "equals",
+          "value": 168.77000427246094
+        }
+      ]
+    },
+    {
+      "ruleId": "not-yet-automatic-at-195",
+      "when": {
+        "phase": "after-advance",
+        "stepIndex": 195
+      },
+      "assertions": [
+        {
+          "path": "units.engineer.tasks",
+          "operator": "equals",
+          "value": []
+        }
+      ]
+    },
+    {
+      "ruleId": "automatic-selection-only",
+      "when": {
+        "phase": "after-advance",
+        "stepIndex": 196
+      },
+      "assertions": [
+        {
+          "path": "units.worker2.health",
+          "operator": "equals",
+          "value": 168.77000427246094
+        },
+        {
+          "path": "units.engineer.tasks.automatic-repair:engineer.automaticRepair",
+          "operator": "equals",
+          "value": true
+        }
+      ]
+    },
+    {
+      "ruleId": "automatic-work",
+      "when": {
+        "phase": "after-advance",
+        "stepIndex": 197
+      },
+      "assertions": [
+        {
+          "path": "units.worker2.health",
+          "operator": "equals",
+          "value": 169.07000732421875
+        }
+      ]
+    }
+  ]
+}

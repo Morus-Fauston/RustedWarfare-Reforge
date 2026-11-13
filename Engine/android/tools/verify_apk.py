@@ -14,7 +14,8 @@ def verify(apk: Path, aapt2: Path) -> dict:
     )
     if badging.returncode != 0:
         raise RuntimeError(badging.stdout + badging.stderr)
-    with zipfile.ZipFile(apk) as archive:
+    # Android's packager writes UTF-8 asset names without always setting the ZIP UTF-8 flag.
+    with zipfile.ZipFile(apk, metadata_encoding="utf-8") as archive:
         entries = set(archive.namelist())
         dex = b"".join(archive.read(name) for name in entries if name.endswith(".dex"))
         checks = {
@@ -26,6 +27,13 @@ def verify(apk: Path, aapt2: Path) -> dict:
             "font_texture": "com/badlogic/gdx/utils/lsans-15.png" in entries,
             "license_asset": "assets/licenses/Apache-2.0.txt" in entries,
             "third_party_notices": "assets/licenses/THIRD-PARTY-NOTICES.txt" in entries,
+            "owned_sandbox_assets": all(
+                f"assets/p001/TestLab/local/{phase}/{asset}" in entries
+                for phase in ("P001-移动沙盒输入", "P002-知识沙盒输入")
+                for asset in ("maps/p001-controlled.tmx", "assets/ground.png", "assets/rock.png", "assets/unit.png")
+            ),
+            "no_original_sandbox_assets": not any("/Rusted Warfare/" in entry or entry.endswith("/game-lib.jar")
+                                                   for entry in entries),
         }
         for abi in ("armeabi-v7a", "arm64-v8a", "x86", "x86_64"):
             checks[f"native_{abi}"] = f"lib/{abi}/libgdx.so" in entries

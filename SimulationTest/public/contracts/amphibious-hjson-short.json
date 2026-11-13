@@ -1,0 +1,115 @@
+{
+  "schemaVersion": 1,
+  "kind": "behavior-contract",
+  "contractId": "public.amphibious-hjson.short.contract.v1",
+  "scope": "self-behavior",
+  "scenarioIds": [
+    "public.amphibious-hjson.short.v1"
+  ],
+  "comparison": {
+    "numberMode": "declared-per-field",
+    "tolerances": {}
+  },
+  "approval": {
+    "status": "tool-fixture-only",
+    "source": "ENG-P009-006 qualified native facts; owned self-behavior, no original execution claim"
+  },
+  "exclusions": [
+    "original-compatibility",
+    "platform-input",
+    "performance"
+  ],
+  "rules": [
+    {
+      "ruleId": "first-native-step",
+      "when": {
+        "phase": "after-advance",
+        "stepIndex": 0
+      },
+      "assertions": [
+        {
+          "path": "units.jet.height",
+          "operator": "equals",
+          "value": -0.006000000052154064
+        },
+        {
+          "path": "units.jet.amphibiousJet.flyingIntent",
+          "operator": "equals",
+          "value": false
+        }
+      ]
+    },
+    {
+      "ruleId": "settled-underwater",
+      "when": {
+        "phase": "after-advance",
+        "stepIndex": 299
+      },
+      "assertions": [
+        {
+          "path": "units.jet.height",
+          "operator": "equals",
+          "value": -8
+        },
+        {
+          "path": "units.jet.amphibiousJet.underwater",
+          "operator": "equals",
+          "value": true
+        },
+        {
+          "path": "units.jet.amphibiousJet.maximumSpeed",
+          "operator": "equals",
+          "value": 0.4
+        },
+        {
+          "path": "units.jet.amphibiousJet.wingFold",
+          "operator": "equals",
+          "value": 1
+        }
+      ]
+    },
+    {
+      "ruleId": "flight-restored",
+      "when": {
+        "phase": "after-advance",
+        "stepIndex": 649
+      },
+      "assertions": [
+        {
+          "path": "units.jet.alive",
+          "operator": "equals",
+          "value": true
+        },
+        {
+          "path": "units.jet.amphibiousJet.underwater",
+          "operator": "equals",
+          "value": false
+        },
+        {
+          "path": "units.jet.amphibiousJet.movementType",
+          "operator": "equals",
+          "value": "AIR"
+        },
+        {
+          "path": "units.jet.amphibiousJet.maximumSpeed",
+          "operator": "equals",
+          "value": 1.4
+        },
+        {
+          "path": "units.jet.amphibiousJet.attackRange",
+          "operator": "equals",
+          "value": 170
+        },
+        {
+          "path": "units.jet.amphibiousJet.wingFold",
+          "operator": "equals",
+          "value": 0
+        },
+        {
+          "path": "units.jet.moveTarget",
+          "operator": "absent-or-null"
+        }
+      ]
+    }
+  ]
+}

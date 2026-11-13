@@ -1,0 +1,65 @@
+{
+  "format": "rw-reforge.unit.v1",
+  "core": {
+    "name": "hoverTank",
+    "class": "CustomUnitMetadata",
+    "price": 450,
+    "buildSpeed": 0.002,
+    "maxHp": 150,
+    "radius": 7,
+    "displayRadius": 9,
+    "isBio": false,
+    "softCollisionOnAll": 0,
+    "fogOfWarSightRange": 15
+  },
+  "graphics": {
+    "total_frames": 1,
+    "image": "tank.png",
+    "image_wreak": "tank_dead.png",
+    "image_turret": "NONE",
+    "image_shadow": "shadow.png"
+  },
+  "attack": {
+    "canAttack": true,
+    "canAttackFlyingUnits": false,
+    "canAttackLandUnits": true,
+    "canAttackUnderwaterUnits": false,
+    "turretSize": 2,
+    "turretTurnSpeed": 4,
+    "maxAttackRange": 140,
+    "shootDelay": 90
+  },
+  "weapons": [
+    {
+      "name": "1",
+      "x": 0,
+      "y": 0,
+      "canShoot": true,
+      "projectile": "1",
+      "turnSpeedAcceleration": 0.2,
+      "recoilOffset": 0
+    }
+  ],
+  "projectiles": [
+    {
+      "name": "1",
+      "directDamage": 23,
+      "life": 85,
+      "speed": 2,
+      "targetSpeed": 6,
+      "targetSpeedAcceleration": 0.2,
+      "frame": 6,
+      "drawSize": 1
+    }
+  ],
+  "movement": {
+    "movementType": "HOVER",
+    "moveSpeed": 1,
+    "moveAccelerationSpeed": 0.04,
+    "moveDecelerationSpeed": 0.09,
+    "maxTurnSpeed": 180,
+    "turnAcceleration": 0.5,
+    "moveSlidingMode": true,
+    "moveIgnoringBody": true
+  }
+}

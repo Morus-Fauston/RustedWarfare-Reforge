@@ -1,10 +1,16 @@
 package com.rustedwarfare.reforge.core.sim
 
+import com.rustedwarfare.reforge.core.content.MapDefinition
+
 /** Closed map edges allow tangency; obstacle contact uses its separate closed collision rule. */
 internal object MapBounds {
     fun cell(coordinate: Double, tileSize: Int, tileCount: Int): Int =
         if (coordinate == tileCount.toDouble() * tileSize) tileCount - 1
         else kotlin.math.floor(coordinate / tileSize).toInt()
+
+    fun clamp(map: MapDefinition, position: Position): Position = Position(
+        position.x.coerceIn(0.0, map.widthTiles.toDouble() * map.tileWidth),
+        position.y.coerceIn(0.0, map.heightTiles.toDouble() * map.tileHeight))
 
     fun contains(width: Double, height: Double, position: Position, radius: Double): Boolean =
         position.x.isFinite() && position.y.isFinite() && radius.isFinite() && radius >= 0.0 &&

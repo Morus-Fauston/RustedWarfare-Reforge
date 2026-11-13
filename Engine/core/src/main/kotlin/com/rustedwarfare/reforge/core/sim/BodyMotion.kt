@@ -9,7 +9,14 @@ internal object BodyMotion {
     fun turn(unit: MutableUnit, target: Position, delta: Double, steering: SteeringPolicy,
              coordinates: CoordinatePolicy, wasReversing: Boolean): BodyTurn {
         val desired = coordinates.desired(unit.position, target)
-        val reverse = unit.definition.movement.reverseSpeedPercentage > .95 &&
+        // Native jet inherits bc=.6: its ordinary single-unit Move is a group
+        // leader of size one. The source additionally requires 1..2 remaining
+        // nodes and a local aim strictly closer than 100 world units.
+        val shortJetMove = (unit.amphibiousState != null ||
+            unit.definition.transport == com.rustedwarfare.reforge.core.content.TransportProfile.NATIVE_DROPSHIP) && unit.birthRemaining == 0f &&
+            unit.tasks.singleOrNull()?.kind == UnitTaskKind.MOVE && unit.pathPoints.size in 1..2 &&
+            coordinates.distanceSquared(unit.position, target) < 10000.0
+        val reverse = (unit.definition.movement.reverseSpeedPercentage > .95 || shortJetMove) &&
             abs(coordinates.difference(desired, unit.heading)) > 100.0
         if (reverse != wasReversing) unit.combat?.let { it.idleHold = maxOf(25f, it.idleHold) }
         val aim = if (reverse) Position(2.0 * unit.position.x - target.x, 2.0 * unit.position.y - target.y) else target

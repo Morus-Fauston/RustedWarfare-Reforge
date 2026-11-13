@@ -55,8 +55,12 @@ internal object TurretContentReader {
         dynamicWeapons = false, timeFields = setOf("shootDelay"),
     )
 
-    private fun documents(path: Path, enableUpgrades: Boolean, enableConstruction: Boolean) = UnitSourceReader(schema,
-        preRead = { file -> ordinary(file, path, "core", if (file == path) "name" else "copyFrom") },
+    private fun documents(path: Path, enableUpgrades: Boolean, enableConstruction: Boolean,
+                          validatePath: (Path) -> Unit) = UnitSourceReader(schema,
+        preRead = { file ->
+            validatePath(file)
+            ordinary(file, path, "core", if (file == path) "name" else "copyFrom")
+        },
         inputGuard = { file, input, isRoot ->
             if (isRoot) {
                 val child = input.sections
@@ -74,10 +78,11 @@ internal object TurretContentReader {
                     file, "core", "overrideAndReplace", reason = "Missing turret identity")
                 if (override != replacement) reject(ContentErrorCode.UNSUPPORTED_FEATURE, file, "core", "overrideAndReplace",
                     override, "Unsupported turret identity")
-                if (enableUpgrades && id != "c_turret_t1") reject(ContentErrorCode.UNSUPPORTED_FEATURE, file,
+                if (enableUpgrades && !enableConstruction && id != "c_turret_t1") reject(ContentErrorCode.UNSUPPORTED_FEATURE, file,
                     "core", "name", id, "Only the basic turret can enable first upgrades")
-                if (enableConstruction && id != "c_turret_t1") reject(ContentErrorCode.UNSUPPORTED_FEATURE, file,
-                    "core", "name", id, "Only the basic turret can enable construction")
+                if (enableConstruction && !enableUpgrades && id == "c_turret_t2_gun")
+                    reject(ContentErrorCode.UNSUPPORTED_FEATURE, file, "core", "name", id,
+                        "Expected a qualified basic or artillery construction target")
                 if (input.parents.isEmpty()) reject(ContentErrorCode.MISSING_REQUIRED_FIELD, file,
                     "core", "copyFrom", reason = "Missing land template")
                 if (input.parents.size != 1) reject(ContentErrorCode.UNSUPPORTED_FEATURE, file,
@@ -97,8 +102,9 @@ internal object TurretContentReader {
     fun read(path: Path, enableUpgrades: Boolean = false, enableConstruction: Boolean = false): UnitDefinition =
         readWithSources(path, enableUpgrades, enableConstruction).definition
 
-    fun readWithSources(path: Path, enableUpgrades: Boolean = false, enableConstruction: Boolean = false): LoadedUnitContent =
-        documents(path, enableUpgrades, enableConstruction).load(path) { loaded ->
+    fun readWithSources(path: Path, enableUpgrades: Boolean = false, enableConstruction: Boolean = false,
+                        validatePath: (Path) -> Unit = {}): LoadedUnitContent =
+        documents(path, enableUpgrades, enableConstruction, validatePath).load(path) { loaded ->
         val merged = loaded.values
         val id = merged.getValue("core").getValue("name")
         fun origin(s: String, k: String) = loaded.origins[s to k]?.path ?: path
@@ -193,6 +199,7 @@ internal object TurretContentReader {
         fun image(k: String): Path {
             val file = origin("graphics", k)
             val result = reference(file, required("graphics", k), "graphics", k)
+            validatePath(result)
             try { readPngMetadata(result) } catch (failure: Exception) {
                 reject(ContentErrorCode.BAD_REFERENCE, file, "graphics", k, reason = "Invalid PNG: ${failure.message}")
             }
@@ -211,21 +218,26 @@ internal object TurretContentReader {
             TurretMount(number("turret_1", "x", signed = true), number("turret_1", "y", signed = true)), recoil, idle,
             number("turret_1", "barrelX", 0.0, signed = true), number("turret_1", "barrelOffsetX_onOddShots", 0.0, signed = true))
         val consumed = mutableSetOf<String>()
-        val construction = if (enableConstruction) {
+        val siteProfile = if (enableConstruction) {
             val rawPrice = required("core", "price")
             val price = rawPrice.toLongOrNull()
             if (price == null || price <= 0L) reject(ContentErrorCode.MALFORMED_SYNTAX, origin("core", "price"),
                 "core", "price", rawPrice, "Expected a positive credit amount")
             required("core", "buildSpeed")
             val rate = binary32("core", "buildSpeed", true)
-            if (price != 500L) reject(ContentErrorCode.UNSUPPORTED_FEATURE, origin("core", "price"),
-                "core", "price", rawPrice, "Only the fixed basic turret construction price is supported")
+            val expectedPrice = when (id) {
+                "c_turret_t2_gun" -> 1500L
+                "c_turret_t1_artillery" -> 2100L
+                else -> 500L
+            }
+            if (price != expectedPrice) reject(ContentErrorCode.UNSUPPORTED_FEATURE, origin("core", "price"),
+                "core", "price", rawPrice, "Expected the qualified turret construction price")
             if (rate != .0008f) reject(ContentErrorCode.UNSUPPORTED_FEATURE, origin("core", "buildSpeed"),
                 "core", "buildSpeed", reason = "Only the fixed basic turret construction rate is supported")
             consumed += setOf("core.price", "core.buildSpeed")
             ConstructionProfile(price, rate)
         } else null
-        val upgrades = if (enableUpgrades) UpgradeProfile(OrdinaryUpgradeContent.turret.map { (action, relation) ->
+        val upgrades = if (enableUpgrades && id == "c_turret_t1") UpgradeProfile(OrdinaryUpgradeContent.turret.map { (action, relation) ->
             val target = relation.targetTypeId
             val section = "action_$action"
             only(section, "convertTo", target)
@@ -245,7 +257,9 @@ internal object TurretContentReader {
             MovementProfile(MovementType.NONE, 0.0, 0.0, 0.0, 0.0, 0.0, false, false), kept,
             integer("core", "fogOfWarSightRange", 15), weapon, DurabilityProfile(hp, dead),
             BuildingProfile(shape, anchor = FootprintAnchor(binary32("core", "buildingToFootprintOffsetX"), binary32("core", "buildingToFootprintOffsetY"))),
-            upgrades = upgrades, construction = construction)
+            build = siteProfile?.takeIf { id == "c_turret_t2_gun" }?.let { BuildProfile(it.price, it.rate) },
+            upgrades = upgrades, construction = siteProfile?.takeUnless { id == "c_turret_t2_gun" },
+            techLevel = if (enableConstruction && id != "c_turret_t1") 2 else 1)
     }
 
     private fun ordinary(file: Path, source: Path, section: String, field: String) {

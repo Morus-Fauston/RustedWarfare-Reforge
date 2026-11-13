@@ -64,10 +64,28 @@ internal object ContentPackComposer {
             }
         }
         for ((id, unit) in units) {
+            val source = provenance.getValue(id)
             fun bad(target: String, field: String, reason: String): Nothing = reject(ContentErrorCode.BAD_REFERENCE,
-                provenance.getValue(id).entryPath, field = field, ref = target, reason = reason)
+                source.entryPath, field = field, ref = target, reason = reason)
+            ModularSpiderRules.missingReference(unit, units)?.let { reference ->
+                val origins = byId.getValue(source.packageId).unitFieldOrigins[id].orEmpty()
+                ContentPackReader.rejectMissingAttachmentReference(source.entryPath, origins, reference,
+                    "Expected the referenced qualified attachment form in the final set")
+            }
+            unit.customActions?.actions?.forEach { action ->
+                action.targetTypeId?.let { target ->
+                    if (units[target]?.customActions == null)
+                        bad(target, "convertTo", "Conversion target must exist with its qualified action capability in the final set")
+                }
+                action.groundLaunch?.let { launch ->
+                    if (units[launch.payloadUnitTypeId]?.let(ScoutBotRules::supports) != true)
+                        bad(launch.payloadUnitTypeId, "spawnUnit", "Scout payload requires its qualified unit in the final set")
+                }
+            }
             unit.builder?.buildingTypeIds?.forEach { target ->
-                if (units[target]?.construction == null) bad(target, "constructionTypes", "Builder target must exist with construction metadata in the final set")
+                val definition = units[target]
+                val construction = if (unit.id == ModularSpiderRules.ID) definition?.siteConstruction else definition?.construction
+                if (construction == null) bad(target, "constructionTypes", "Builder target must exist with construction metadata in the final set")
             }
             if (unit.className == "AuthoredBuilding") unit.upgrades?.let { profile ->
                 val target = profile.actions.singleOrNull()?.targetTypeId
@@ -77,12 +95,17 @@ internal object ContentPackComposer {
             unit.production?.let { production -> production.unitTypeIds.forEach { target ->
                 val product = units[target]
                 if (product?.build == null) bad(target, "productionUnits", "Production target must exist with build metadata in the final set")
+                if (production.exitProfile == FactoryExitProfile.CUSTOM_NAUTILUS && !NautilusRules.acceptsProduct(product))
+                    bad(target, "productionUnits", "Nautilus requires the qualified product price, rate and capability")
                 if (unit.className == "AuthoredBuilding" && (!AuthorFactoryRules.body(unit) ||
                         !AuthorFactoryRules.accepts(production.exitProfile, product)))
                     bad(target, "productionUnits", "Author factory foundation and product capabilities must match the selected existing exit")
                 if (production.exitProfile == FactoryExitProfile.NATIVE_AIR &&
-                    (product.movement.type != MovementType.AIR || product.rotor == null || product.combat == null))
-                    bad(target, "productionUnits", "Air factory targets require an armed AIR unit with the finite rotor capability")
+                    !BomberRules.supports(product) &&
+                    (product.movement.type != MovementType.AIR ||
+                        product.transport != TransportProfile.NATIVE_DROPSHIP &&
+                        (product.rotor == null && product.amphibiousJet == null && product.combat?.projectile?.beam == null || product.combat == null)))
+                    bad(target, "productionUnits", "Air factory targets require a supported native flight or air transport capability")
                 if (production.exitProfile == FactoryExitProfile.CUSTOM_MECH &&
                     (target == "builder" && product.builder == null || target == "mechGun" && product.mech == null))
                     bad(target, "productionUnits", "Mech factory targets require the corresponding builder or two-legged mech capability")

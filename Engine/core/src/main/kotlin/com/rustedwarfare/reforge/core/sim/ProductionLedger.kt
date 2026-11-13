@@ -91,8 +91,30 @@ internal class ProductionLedger private constructor(
     private fun work(factoryId: String): List<PendingFactoryWork> = queues[factoryId].orEmpty()
     /** Classification projections never determine advancement order. */
     fun queue(factoryId: String): List<PendingProduction> = immutable(work(factoryId).filterIsInstance<PendingProduction>())
+    fun queuedUnitCount(owner: String): Int = queues.entries.sumOf { (factoryId, items) ->
+        if (factories.getValue(factoryId).ownerPlayerId == owner) items.count { it is PendingProduction } else 0
+    }
     fun upgradeQueue(factoryId: String): List<PendingUpgrade> = immutable(work(factoryId).filterIsInstance<PendingUpgrade>())
     fun upgradeAtHead(factoryId: String): Boolean = work(factoryId).firstOrNull() is PendingUpgrade
+    fun actionQueue(factoryId: String): List<PendingUnitAction> = immutable(work(factoryId).filterIsInstance<PendingUnitAction>())
+    fun actionAtHead(factoryId: String): PendingUnitAction? = work(factoryId).firstOrNull() as? PendingUnitAction
+
+    /** Reconcile an action projection without reordering existing production or losing saved progress. */
+    fun replaceActions(factoryId: String, actions: List<PendingUnitAction>): ProductionLedger {
+        require(isActive(factoryId) && actions.map { it.orderId }.distinct().size == actions.size)
+        val byOrder = actions.associateBy { it.orderId }
+        val previousOrders = actionQueue(factoryId).mapTo(mutableSetOf()) { it.orderId }
+        val updated = work(factoryId).mapNotNull { item ->
+            if (item is PendingUnitAction) byOrder[item.orderId] else item
+        }.toMutableList()
+        for (item in actions.filter { it.orderId !in previousOrders }) {
+            val index = if (item.action.highPriority) updated.indexOfFirst {
+                it !is PendingUnitAction || !it.action.highPriority
+            }.takeIf { it >= 0 } ?: updated.size else updated.size
+            updated.add(index, item)
+        }
+        return copy(queues = changedQueue(factoryId, updated))
+    }
     fun enqueueUpgrade(factoryId: String, action: com.rustedwarfare.reforge.core.content.UpgradeActionProfile): ProductionLedger {
         require(isActive(factoryId) && action in factories.getValue(factoryId).upgradeActions &&
             upgradeQueue(factoryId).none { it.actionKey == action.actionKey })
@@ -125,6 +147,11 @@ internal class ProductionLedger private constructor(
             val unit = units.getValue(id)
             val action = unit.definition.upgrades?.actions?.singleOrNull { it.actionKey == item.actionKey }
             require(unit.alive && action != null && item.targetTypeId == action.targetTypeId && item.cost == action.price && item.rate == action.rate)
+        }
+        for ((id, _) in queues) for (item in actionQueue(id)) {
+            val unit = units.getValue(id)
+            require(unit.alive && unit.customActionState.queue.isEmpty() &&
+                unit.definition.customActions?.actions?.any { it.automatic == null && item.matches(it) } == true)
         }
     }
     fun replaceFactory(factoryId: String, spec: FactoryProductionSpec): ProductionLedger {
@@ -179,7 +206,8 @@ internal class ProductionLedger private constructor(
             val factory = factories.getValue(factoryId)
             require(factoryId !in inactive || queue.isEmpty()) { "Inactive factory must not retain pending work" }
             require(queue.filterIsInstance<PendingUpgrade>().map { it.actionKey }.toSet().size == queue.count { it is PendingUpgrade })
-            for (item in queue) require(item.cost >= 0L && item.progress.isFinite() && item.progress in 0f..<1f &&
+            for (item in queue) require(item.cost >= 0L && item.progress.isFinite() &&
+                (if (item is PendingProduction) item.progress in 0f..1f else item.progress in 0f..<1f) &&
                 item.rate.isFinite() && item.rate > 0f &&
                 (item !is PendingProduction || item.typeId in factory.products && item.unitNonce in nonces[factory.ownerPlayerId].orEmpty())) {
                 "Invalid factory work candidate"
@@ -213,16 +241,19 @@ internal class ProductionLedger private constructor(
     }
 
     /** One fixed sim-tick, one head; excess progress is never transferred to another item. */
-    fun advance(factoryId: String): ProductionTick {
+    fun advance(factoryId: String, speedMultiplier: Float = 1f, completionAllowed: Boolean = true): ProductionTick {
+        require(speedMultiplier.isFinite() && speedMultiplier > 0f)
         if (!isActive(factoryId)) return ProductionTick(this)
         val queue = work(factoryId)
         val head = queue.firstOrNull() as? PendingProduction ?: return ProductionTick(this)
-        val progress = head.progress + head.rate
+        val progress = head.progress + head.rate * speedMultiplier
         require(progress.isFinite()) { "Production progress must remain finite" }
         if (progress < 1f) {
             return ProductionTick(copy(
                 queues = changedQueue(factoryId, listOf(head.copy(progress = progress)) + queue.drop(1))))
         }
+        if (!completionAllowed) return ProductionTick(copy(
+            queues = changedQueue(factoryId, listOf(head.copy(progress = 1f)) + queue.drop(1))))
         val completed = ProductionCompletion(factoryId, factories.getValue(factoryId).ownerPlayerId, head.typeId, head.unitNonce)
         return ProductionTick(copy(queues = changedQueue(factoryId, queue.drop(1))), completed)
     }

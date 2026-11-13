@@ -32,6 +32,10 @@ internal object OrdinaryWeapon {
 
     fun refreshOffset(seed: Int, frame: Int, objectId: Long, unit: MutableUnit, target: MutableUnit,
                       state: MutableCombat = checkNotNull(unit.combat)) {
+        if (unit.definition.combat?.projectile?.beam != null) {
+            state.offset = Position(0.0, 0.0)
+            return
+        }
         val bound = (target.definition.radius.toFloat() * .6f).toInt()
         state.offset = if (bound == 0) Position(0.0, 0.0) else Position(
             sample(seed, frame, objectId, unit, 1, -bound, bound, state).toDouble(),
@@ -97,10 +101,19 @@ internal object OrdinaryWeapon {
         if (abs(diff) >= .01) {
             val acceleration = weapon.turretTurnAcceleration
             val sign = if (diff < 0) -1.0 else 1.0
-            val rate = if (acceleration > 0.0 && abs(diff) < abs(state.angularVelocity) / acceleration)
-                acceleration else weapon.turretTurnSpeed
-            state.angularVelocity = if (acceleration == 0.0) sign * rate else
-                approach(state.angularVelocity, sign * rate, acceleration * delta)
+            val braking = weapon.turretTurnDeceleration
+            if (braking != null && acceleration > 0.0) {
+                val slowing = abs(diff) < abs(state.angularVelocity) / braking &&
+                    (diff > 0.0) == (state.angularVelocity > 0.0)
+                state.angularVelocity = approach(state.angularVelocity,
+                    sign * if (slowing) braking else weapon.turretTurnSpeed,
+                    (if (slowing) braking else acceleration) * delta)
+            } else {
+                val rate = if (acceleration > 0.0 && abs(diff) < abs(state.angularVelocity) / acceleration)
+                    acceleration else weapon.turretTurnSpeed
+                state.angularVelocity = if (acceleration == 0.0) sign * rate else
+                    approach(state.angularVelocity, sign * rate, acceleration * delta)
+            }
             val turn = state.angularVelocity * delta
             val applied = if (abs(turn) > abs(diff)) {
                 state.angularVelocity = 0.0
@@ -117,12 +130,14 @@ internal object OrdinaryWeapon {
              state: MutableCombat = checkNotNull(unit.combat),
              weapon: CombatProfile = checkNotNull(unit.definition.combat)) {
         val profile = weapon.idleSweep ?: return
+        if (profile.angle == 0.0) return
+        if (profile.onlyWhenStationary && moving(unit)) return
         val elapsed = delta.toFloat()
         if (state.idleHold != 0f) {
             state.idleHold = maxOf(0f, state.idleHold - elapsed)
             return
         }
-        unit.mechState?.takeIf { it.hadMotionAim }?.let { motion ->
+        unit.mechState?.takeIf { it.hadMotionAim && state === unit.combat }?.let { motion ->
             val body = checkNotNull(unit.definition.mech).body
             val base = motion.motionAngle + if (motion.reversing && unit.definition.movement.reverseSpeedPercentage > .95)
                 body.reverseIdleDirection else body.idleDirection
@@ -148,6 +163,9 @@ internal object OrdinaryWeapon {
             state.idleReached = false
         }
     }
+
+    fun moving(unit: MutableUnit): Boolean = unit.speed != 0.0 ||
+        unit.flightVelocity.x != 0.0 || unit.flightVelocity.y != 0.0
 
     /** Cached pre-plane distance is retained unless the ordinary plane step overshoots. */
     fun move(projectile: MutableProjectile, target: MutableUnit, delta: Double): Boolean {

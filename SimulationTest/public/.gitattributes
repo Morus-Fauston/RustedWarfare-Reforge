@@ -23,6 +23,10 @@ inputs/mech-production/** -text whitespace=blank-at-eol,blank-at-eof,space-befor
 inputs/helicopter-production/** -text whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol
 inputs/heavy-mech-production/** -text whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol
 inputs/naval-production/** -text whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol
+inputs/nautilus-production/** -text whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol
+inputs/transport-production/** -text whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol
+inputs/air-transport-production/** -text whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol
+inputs/hover-production/** -text whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol
 inputs/phase-five-sandbox/** -text whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol
 inputs/author-construction/*/** -text whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol
 inputs/author-naval-chain/*/** -text whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol
@@ -34,3 +38,9 @@ inputs/author-water/*/** -text whitespace=blank-at-eol,blank-at-eof,space-before
 # XML whitespace is part of their frozen SHA; do not rewrite it during staging.
 inputs/resource-sound-packs/portrait-sandbox/maps/p001-controlled.tmx -whitespace
 inputs/resource-sound-packs/sandbox/maps/portrait.tmx -whitespace
+inputs/nuclear-silo/** -text whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol
+inputs/aa-beam-production/** -text whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol
+inputs/amphibious-production/** -text whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol
+inputs/bunker-production/** -text whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol
+inputs/mech-engineer-production/** -text whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol
+inputs/repairbay-production/** -text whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol

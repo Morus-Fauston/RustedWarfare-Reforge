@@ -33,7 +33,10 @@ internal class PcVisualAssetService(private val cacheRoot: Path,
             fun slot(name: String): Path? = binding.getString(name, null)?.let { prepared.outputs.getValue(it) }
             binding.name to VisualUnitImages(requireNotNull(slot("body")), slot("back"), slot("turret"), slot("dead"),
                 profile.recipes.getValue(binding.getString("body")).getInt("frames", 1), leg = slot("leg"), foot = slot("foot"), rotor = slot("rotor"),
-                weaponTurrets = binding.get("weaponTurrets")?.associate { it.name to prepared.outputs.getValue(it.asString()) }.orEmpty())
+                weaponTurrets = binding.get("weaponTurrets")?.associate { it.name to prepared.outputs.getValue(it.asString()) }.orEmpty(),
+                shadow = slot("shadow"), shield = slot("shield"), leftWing = slot("leftWing"), rightWing = slot("rightWing"),
+                beam = slot("beam"), beamStart = slot("beamStart"), beamEnd = slot("beamEnd"), afterburnTrail = slot("afterburnTrail"),
+                arm1 = slot("arm1"), arm2 = slot("arm2"), slotOverlay = slot("slotOverlay"))
         }
         val terrain = profile.json.get("terrainOutputs").associate { it.name to prepared.outputs.getValue(it.name) }
         return PreparedVisualAssets(selection.copy(originalDirectory = root), profile.id,
@@ -131,6 +134,11 @@ internal class PcVisualAssetService(private val cacheRoot: Path,
             val result = BufferedImage(target[0], target[1], BufferedImage.TYPE_INT_ARGB)
             when (recipe.getString("operation")) {
                 "crop" -> paint(result, images, recipe, 0, false)
+                "alpha-shadow" -> {
+                    paint(result, images, recipe, 0, false)
+                    for (y in 0 until result.height) for (x in 0 until result.width)
+                        result.setRGB(x, y, result.getRGB(x, y) and 0xff000000.toInt())
+                }
                 "compose-strip" -> {
                     require(recipe.getString("blend") == "source-over")
                     var x = 0

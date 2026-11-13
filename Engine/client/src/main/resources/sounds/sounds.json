@@ -9,9 +9,18 @@
     },
     "reforge:sounds/naval-missile-fire": {
       "file": "naval-missile-fire.wav"
+    },
+    "reforge:sounds/nuke-launch": {
+      "file": "nuke-launch.wav"
+    },
+    "reforge:sounds/nuke-explode": {
+      "file": "nuke-explode.wav"
     }
   },
   "events": {
+    "reforge:events/hover-fire": {
+      "sound": "reforge:sounds/tank-fire"
+    },
     "reforge:events/tank-fire": {
       "sound": "reforge:sounds/tank-fire"
     },
@@ -19,6 +28,27 @@
       "sound": "reforge:sounds/naval-main-fire"
     },
     "reforge:events/naval-missile-fire": {
+      "sound": "reforge:sounds/naval-missile-fire"
+    },
+    "reforge:events/amphibious-lightning-fire": {
+      "sound": "reforge:sounds/tank-fire"
+    },
+    "reforge:events/spider-lightning-fire": {
+      "sound": "reforge:sounds/tank-fire"
+    },
+    "reforge:events/scout-plasma-fire": {
+      "sound": "reforge:sounds/tank-fire"
+    },
+    "reforge:events/nuke-launch": {
+      "sound": "reforge:sounds/nuke-launch"
+    },
+    "reforge:events/nuke-explode": {
+      "sound": "reforge:sounds/nuke-explode"
+    },
+    "reforge:events/nuke-intercept": {
+      "sound": "reforge:sounds/naval-missile-fire"
+    },
+    "reforge:events/bomber-impact": {
       "sound": "reforge:sounds/naval-missile-fire"
     }
   }

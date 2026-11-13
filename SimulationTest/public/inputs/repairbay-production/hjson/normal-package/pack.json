@@ -1,0 +1,27 @@
+{
+  "format": "rw-reforge.content-pack.v1",
+  "id": "owned-repairbay-normal-hjson",
+  "name": "Owned normal repair bay production",
+  "units": [
+    {
+      "type": "repair-bay",
+      "file": "repairbay.hjson"
+    },
+    {
+      "type": "builder",
+      "file": "builder.hjson"
+    },
+    {
+      "type": "command-center",
+      "file": "units/commandCenter/commandCenter.hjson"
+    },
+    {
+      "type": "land-factory",
+      "file": "units/landFactory/landFactory.hjson"
+    },
+    {
+      "type": "tank",
+      "file": "units/c_tank/tank.hjson"
+    }
+  ]
+}

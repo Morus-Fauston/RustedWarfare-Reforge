@@ -19,9 +19,9 @@ class BuildingMaintenanceWorkTest {
         var ledger = pending
         val work = BuildingWork.initial()
         val world = WorldHandle("module")
-        assertNull(work.requestTarget(ReclaimBuildingAction("reclaim", "p1", "worker", "factory", world),
+        assertNull(work.requestTarget(ReclaimUnitAction("reclaim", "p1", "worker", "factory", world),
             worker, scene, units))
-        assertNull(work.requestTarget(ReclaimBuildingAction("also", "p1", "helper", "factory", world),
+        assertNull(work.requestTarget(ReclaimUnitAction("also", "p1", "helper", "factory", world),
             helper, scene, units))
         worker.taskQueue = worker.taskQueue.append(UnitTask(UnitTaskKind.PATROL, "tail", Position(450.0, 170.0)))
         val policies = ExperimentalPolicies()
@@ -29,7 +29,8 @@ class BuildingMaintenanceWorkTest {
             override fun path(worker: MutableUnit, target: Position, range: Double, task: UnitTask, step: Long): BuildingRoute? =
                 policies.path.findPath(com.rustedwarfare.reforge.core.path.PlanningTerrain.fromNoFog(scene.map),
                     worker.position, target, worker.definition.radius, targetRange = range)?.let { BuildingRoute(it, -1L, -1L) }
-            override fun prepareConstruction(ownerPlayerId: String, typeId: String, position: Position, nonce: String): MutableUnit =
+            override fun construct(ownerPlayerId: String, typeId: String, position: Position, nonce: String,
+                                   paidLedger: ProductionLedger): ConstructionRegistration =
                 error("Maintenance does not create an object")
         }
         fun frame(step: Long) = BuildingWorkFrame(scene, units, Step(step, 1.0, "sim-tick"), null,
@@ -71,13 +72,13 @@ class BuildingMaintenanceWorkTest {
         val world = WorldHandle("module")
         assertEquals("invalid-construction-target", work.requestTarget(ResumeConstructionAction("full", "p1",
             "worker", "factory", world), worker, scene, units)?.code)
-        assertEquals("invalid-maintenance-target", work.requestTarget(RepairBuildingAction("missing", "p1",
+        assertEquals("invalid-maintenance-target", work.requestTarget(RepairUnitAction("missing", "p1",
             "worker", "missing", world), worker, scene, units)?.code)
-        assertEquals("cannot-maintain", work.requestTarget(ReclaimBuildingAction("disabled", "p1", "worker",
+        assertEquals("cannot-maintain", work.requestTarget(ReclaimUnitAction("disabled", "p1", "worker",
             "factory", world), worker, scene.copy(maintenanceContract = null), units)?.code)
-        assertNull(work.requestTarget(RepairBuildingAction("repair", "p1", "worker", "factory", world),
+        assertNull(work.requestTarget(RepairUnitAction("repair", "p1", "worker", "factory", world),
             worker, scene, units))
-        assertNull(work.requestTarget(ReclaimBuildingAction("reclaim", "p1", "worker", "factory", world,
+        assertNull(work.requestTarget(ReclaimUnitAction("reclaim", "p1", "worker", "factory", world,
             append = true), worker, scene, units))
         assertEquals(listOf(UnitTask(UnitTaskKind.CONSTRUCT, "repair", targetUnitId = "factory"),
             UnitTask(UnitTaskKind.RECLAIM, "reclaim", targetUnitId = "factory")), worker.tasks)

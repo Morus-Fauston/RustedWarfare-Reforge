@@ -45,6 +45,9 @@
       "intentId": "move-heavy"
     },
     {
+      "intentId": "return-cliff"
+    },
+    {
       "intentId": "stop-heavy"
     },
     {

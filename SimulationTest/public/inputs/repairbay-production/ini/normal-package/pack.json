@@ -1,0 +1,27 @@
+{
+  "format": "rw-reforge.content-pack.v1",
+  "id": "owned-repairbay-normal-ini",
+  "name": "Owned normal repair bay production",
+  "units": [
+    {
+      "type": "repair-bay",
+      "file": "repairbay.ini"
+    },
+    {
+      "type": "builder",
+      "file": "builder.ini"
+    },
+    {
+      "type": "command-center",
+      "file": "units/commandCenter/commandCenter.ini"
+    },
+    {
+      "type": "land-factory",
+      "file": "units/landFactory/landFactory.ini"
+    },
+    {
+      "type": "tank",
+      "file": "units/c_tank/tank.ini"
+    }
+  ]
+}

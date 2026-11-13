@@ -3,19 +3,22 @@ package com.rustedwarfare.reforge.core.content.internal
 import com.rustedwarfare.reforge.core.content.*
 import java.nio.file.Path
 
-/** Four-legged LAND representative on the existing shared syntax and provenance path. */
+/** Four-legged OVER_CLIFF movement slice on the existing shared syntax and provenance path. */
 internal object HeavyMechContentFields {
     fun schema(base: UnitContentSchema): UnitContentSchema {
         val mech = MechContentFields.schema(base)
         val leg = mech.fields.getValue("leg_1") + setOf("favourOppositeSideNeighbours", "dust_effect")
         return mech.copy(fields = mech.fields + mapOf(
+            "core" to (mech.fields.getValue("core") + setOf("maxShield", "shieldRegen")),
+            "graphics" to (mech.fields.getValue("graphics") + "image_shield"),
             "leg_1" to leg, "leg_2" to leg, "leg_3" to leg, "leg_4" to leg,
             "attack" to (mech.fields.getValue("attack") + "turretRotateWithBody"),
             "movement" to (mech.fields.getValue("movement") + "moveSlidingDir"),
             "turret_1" to (mech.fields.getValue("turret_1") + setOf("image", "invisible", "image_drawOffsetX", "image_drawOffsetY")),
             "projectile_1" to (mech.fields.getValue("projectile_1") + setOf("areaDamage", "areaRadius", "autoTargetingOnDeadTarget"))),
-            numericFields = mech.numericFields + setOf("moveSlidingDir", "image_drawOffsetX", "image_drawOffsetY", "areaDamage", "areaRadius"),
+            numericFields = mech.numericFields + setOf("maxShield", "shieldRegen", "moveSlidingDir", "image_drawOffsetX", "image_drawOffsetY", "areaDamage", "areaRadius"),
             booleanFields = mech.booleanFields + setOf("turretRotateWithBody", "invisible", "autoTargetingOnDeadTarget", "favourOppositeSideNeighbours", "dust_effect"),
+            textFields = mech.textFields + "image_shield",
             timeFieldLocations = mech.timeFieldLocations + (1..4).map { "leg_$it" to "moveWarmUp" })
     }
 

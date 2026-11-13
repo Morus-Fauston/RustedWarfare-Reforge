@@ -46,7 +46,8 @@ class AutomaticVisionDevelopmentTest {
         reject("initial-position-synced",run.rows.mapIndexed { i,r->if(i==0)unit(r,mapOf("position" to buildJsonObject { put("x",51.0);put("y",70.0) }))else r },"fixed spawn")
         reject("queued-submit-motion",run.rows.mapIndexed { i,r->if(i==1)unit(r,mapOf("speed" to JsonPrimitive(0.1)))else r },"fixed spawn")
         for ((field,value) in listOf("constructionProgress" to JsonPrimitive(0.5),
-            "constructionTargetId" to JsonPrimitive("unexpected-building"),
+            "constructionTargetId" to JsonPrimitive("unexpected-building"), "carriedBy" to JsonPrimitive("unexpected-carrier"),
+            "transportExit" to buildJsonObject { put("previousCarrierId","unexpected-carrier");put("remaining",1.0) },
             "tasks" to JsonArray(listOf(buildJsonObject { put("kind","MOVE") })))) {
             reject("initial-$field",run.rows.mapIndexed { i,r->if(i==0)unit(r,mapOf(field to value))else r },"fixed spawn")
         }

@@ -270,7 +270,7 @@ internal class PcVisualAssetSettings @JvmOverloads constructor(private val store
     /** Qualifier and producer identities are distribution-owned; package hints never supply either. */
     private fun originalQualificationBasis(id: String): String? {
         val profile = if (resourceExtractionProfile != null) resourceExtractionProfile.takeIf { it.id == id }
-            else (1..5).asSequence().map(PcOriginalProfileVersions::version).firstOrNull { it.id == id }
+            else PcOriginalProfileVersions.supportedVersions.asSequence().map(PcOriginalProfileVersions::version).firstOrNull { it.id == id }
         return profile?.let { visualHash((PcTrustedOutputIndex.basis(it) + "\u0000" + originalProducerBasis).toByteArray(Charsets.UTF_8)) }
     }
 

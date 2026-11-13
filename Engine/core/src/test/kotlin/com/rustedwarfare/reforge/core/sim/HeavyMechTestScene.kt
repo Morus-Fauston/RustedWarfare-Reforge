@@ -22,8 +22,8 @@ internal object HeavyMechTestScene {
 
     fun scenario(unit: UnitDefinition = unit(), heading: Double = 0.0,
         position: Position = Position(200.0, 200.0), blocked: Set<Pair<Int, Int>> = emptySet()) = Scenario(
-        "heavy-mech-test", MapDefinition(40, 30, 20, 20, emptyList(), IntArray(1200) { 1 },
-            BlockingGrid(40, 30, BooleanArray(1200) { (it % 40 to it / 40) in blocked })),
+        "heavy-mech-test", MapDefinition(40, 30, 20, 20, listOf(TileSetDefinition(1, "test-ground", 20, 20, unit.imagePath, setOf(1))), IntArray(1200) { if (it % 40 to it / 40 in blocked) 2 else 1 },
+            BlockingGrid(40, 30, BooleanArray(1200) { (it % 40 to it / 40) in blocked }), blocked),
         mapOf(unit.id to unit), listOf(Player("p1", PlayerControl.LOCAL), Player("p2", PlayerControl.NONE)),
         listOf(UnitSpawn("heavy", "p1", unit.id, position, heading)),
         CoordinateModel("heavy.coordinates", "2d", "x-right", "y-down", "top-left", "world-unit", "double", "ieee754-binary64"),

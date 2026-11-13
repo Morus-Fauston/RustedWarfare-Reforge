@@ -54,12 +54,16 @@ internal object GroundMath {
         StrictMath.atan2(y.toDouble(), x.toDouble()).toFloat()
     }
 
-    fun predict(originX: Float, originY: Float, target: MutableUnit, speed: Float, life: Float, range: Float): Point {
+    fun predict(originX: Float, originY: Float, target: MutableUnit, speed: Float, life: Float, range: Float,
+                useSlidingVelocity: Boolean = false): Point {
         val x = target.position.x.toFloat()
         val y = target.position.y.toFloat()
         val velocity = target.speed.toFloat()
         val heading = target.heading.toFloat() - 90f
+        val slidingVelocity = target.flightVelocity.takeIf { useSlidingVelocity && UnitLocomotion.movement(target).slidingMode }
         fun position(time: Float): Point {
+            if (slidingVelocity != null) return Point(
+                x + slidingVelocity.x.toFloat() * time, y + slidingVelocity.y.toFloat() * time)
             if (velocity == 0f) return Point(x, y)
             val travel = velocity * time
             return Point(x + cos(heading) * travel, sin(heading) * travel + y)

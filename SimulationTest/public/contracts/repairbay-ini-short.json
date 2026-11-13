@@ -1,0 +1,122 @@
+{
+  "schemaVersion": 1,
+  "kind": "behavior-contract",
+  "contractId": "public.repairbay-ini.short.v1",
+  "scope": "self-behavior",
+  "scenarioIds": [
+    "p009-repairbay-work"
+  ],
+  "comparison": {
+    "numberMode": "declared-per-field",
+    "tolerances": {}
+  },
+  "approval": {
+    "status": "tool-fixture-only",
+    "source": "ENG-P009-012 qualified DEC007 native repair and reclaim coefficients; owned self behavior"
+  },
+  "exclusions": [
+    "original-compatibility",
+    "platform-input",
+    "performance"
+  ],
+  "reclaimedUnits": [
+    {
+      "unitId": "worker",
+      "reclaimActionId": "terminal",
+      "workerId": "bay",
+      "owner": "p1",
+      "removalStepIndex": 181
+    }
+  ],
+  "rules": [
+    {
+      "ruleId": "first-reclaim",
+      "when": {
+        "phase": "after-advance",
+        "stepIndex": 0
+      },
+      "assertions": [
+        {
+          "path": "units.worker.health",
+          "operator": "equals",
+          "value": 168.97999572753906
+        }
+      ]
+    },
+    {
+      "ruleId": "native-terminal-refund",
+      "when": {
+        "phase": "after-advance",
+        "stepIndex": 181
+      },
+      "assertions": [
+        {
+          "path": "economy.preciseBalances.p1",
+          "operator": "equals",
+          "value": 16400.000005960464
+        }
+      ]
+    },
+    {
+      "ruleId": "manual-repair",
+      "when": {
+        "phase": "after-advance",
+        "stepIndex": 185
+      },
+      "assertions": [
+        {
+          "path": "units.worker2.health",
+          "operator": "equals",
+          "value": 169.17999267578125
+        }
+      ]
+    },
+    {
+      "ruleId": "stopped-hp",
+      "when": {
+        "phase": "after-advance",
+        "stepIndex": 222
+      },
+      "assertions": [
+        {
+          "path": "units.worker2.health",
+          "operator": "equals",
+          "value": 169.17999267578125
+        }
+      ]
+    },
+    {
+      "ruleId": "automatic-selection-only",
+      "when": {
+        "phase": "after-advance",
+        "stepIndex": 223
+      },
+      "assertions": [
+        {
+          "path": "units.worker2.health",
+          "operator": "equals",
+          "value": 169.17999267578125
+        },
+        {
+          "path": "units.bay.tasks.automatic-repair:bay.automaticRepair",
+          "operator": "equals",
+          "value": true
+        }
+      ]
+    },
+    {
+      "ruleId": "automatic-work",
+      "when": {
+        "phase": "after-advance",
+        "stepIndex": 224
+      },
+      "assertions": [
+        {
+          "path": "units.worker2.health",
+          "operator": "equals",
+          "value": 169.37998962402344
+        }
+      ]
+    }
+  ]
+}

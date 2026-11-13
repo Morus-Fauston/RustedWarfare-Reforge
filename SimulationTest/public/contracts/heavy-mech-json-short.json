@@ -12,7 +12,7 @@
   },
   "approval": {
     "status": "tool-fixture-only",
-    "source": "ENG-P008-016 owned ordinary LAND development variant: HP2500, four finite legs, existing Move/Stop. No original compatibility claim."
+    "source": "ENG-P009-003/004 owned OVER_CLIFF heavy representative: HP2500, full shield500, regeneration0.08, four finite legs and normal Move/Stop. No original runtime compatibility claim."
   },
   "exclusions": [
     "original-compatibility",
@@ -36,6 +36,21 @@
           "path": "units.a.mechPose.forwardHeading",
           "operator": "equals",
           "value": 90
+        },
+        {
+          "path": "units.a.shield.current",
+          "operator": "equals",
+          "value": 500
+        },
+        {
+          "path": "units.a.shield.maximum",
+          "operator": "equals",
+          "value": 500
+        },
+        {
+          "path": "units.a.shield.displayDamage",
+          "operator": "equals",
+          "value": 0
         }
       ]
     },

@@ -12,7 +12,7 @@
   },
   "approval": {
     "status": "tool-fixture-only",
-    "source": "Frozen016/R1: ordinary LAND variant, real builder16000/T1-1000/T2-4000/heavy-8500. Float32 .0004 gives2500 updates, upgrade1200 completes3699; .0006 gives1667, produce3800 born5466. No original compatibility or dynamic collision claim."
+    "source": "Frozen016/R1: OVER_CLIFF movement slice, real builder16000/T1-1000/T2-4000/heavy-8500. Float32 .0004 gives2500 updates, upgrade1200 completes3699; .0006 gives1667, produce3800 born5466. No original compatibility or dynamic collision claim."
   },
   "exclusions": [
     "original-compatibility",
