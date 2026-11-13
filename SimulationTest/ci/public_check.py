@@ -268,7 +268,8 @@ def build_shared_distribution(repo, output, source, command_timeout_seconds=600,
     return result
 
 
-def run(repo, output, plan, prepared_distribution=None, command_timeout_seconds=600, forks=1, workers=2):
+def run(repo, output, plan, prepared_distribution=None, command_timeout_seconds=600, forks=1, workers=2,
+        *, scenarios_only=False):
     output.mkdir(parents=True, exist_ok=False)
     initial = identities(repo)
     result = dict(schemaVersion=1, suite=plan['suiteId'], selection=plan, status='execution-failed',
@@ -276,6 +277,10 @@ def run(repo, output, plan, prepared_distribution=None, command_timeout_seconds=
                   exclusions=['original-compatibility', 'platform-input', 'historical-snapshot-reexecution'],
                   commandTimeoutSeconds=command_timeout_seconds,
                   testConcurrency=test_concurrency(plan['tests'], forks), scenarioConcurrency=scenario_concurrency(workers))
+    if scenarios_only:
+        if prepared_distribution is None:
+            raise ValueError('Batch scenarios require a prepared distribution')
+        result['mechanismsInBatch'] = True
     if not any(case['kind'] == 'long' for case in plan['scenarios']):
         result['exclusions'].append('continuous-long')
     started = time.monotonic()
@@ -329,7 +334,7 @@ def run(repo, output, plan, prepared_distribution=None, command_timeout_seconds=
             common = ['--no-daemon', '--console=plain', '--max-workers='+str(forks), '--rerun-tasks']
             if plan['fixture']:
                 common += ['-Dpublic.inputs.dir=' + str(project / 'public' / plan['fixture'])]
-            if plan['tests']:
+            if plan['tests'] and not scenarios_only:
                 if prepared_distribution is not None:
                     admit()
                 from development_check import execute_test_group
@@ -356,7 +361,7 @@ def run(repo, output, plan, prepared_distribution=None, command_timeout_seconds=
                 distribution = project/'build/install/simulation-test'
                 fixed_files = measure_check('package', lambda: package_files(distribution)) if plan['scenarios'] else None
         result['pythonCoverage'] = []
-        for index, relative in enumerate(plan.get('pythonTests', [])):
+        for index, relative in enumerate([] if scenarios_only else plan.get('pythonTests', [])):
             name = 'python-' + str(index) + '-' + Path(relative).stem
             summary = output / (name + '.json')
             command(name, [sys.executable, '-B', str(project/'ci/python_check.py'),
