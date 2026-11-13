@@ -123,17 +123,36 @@ class DefenseConstructionContentTest {
         }
     }
 
-    @Test fun construction_never_enables_upgrades_or_high_tier_building_entries() = withTurretCopy { folder ->
-        for (name in listOf("turret_t2_gun.ini", "turret_t1_artillery.ini")) {
-            val path = folder.resolve(name)
-            assertIs<ContentResult.Success<UnitDefinition>>(ContentLoader.loadTurretUnit(path, false, false))
-            for (upgrades in listOf(false, true)) {
-                val error = assertIs<ContentResult.Failure>(ContentLoader.loadTurretUnit(path, upgrades, true)).error
-                assertEquals(ContentErrorCode.UNSUPPORTED_FEATURE, error.code)
-                assertEquals("core", error.section)
-                assertEquals("name", error.field)
-            }
+    @Test fun qualified_artillery_construction_and_upgraded_gun_accounting_are_distinct() = withTurretCopy { folder ->
+        val gun = folder.resolve("turret_t2_gun.ini")
+        val artillery = folder.resolve("turret_t1_artillery.ini")
+        for ((path, price) in listOf(gun to 1500L, artillery to 2100L)) {
+            val passive = assertIs<ContentResult.Success<UnitDefinition>>(ContentLoader.loadTurretUnit(path)).value
+            assertNull(passive.construction)
+            assertNull(passive.build)
+            val missingPrice = assertIs<ContentResult.Failure>(ContentLoader.loadTurretUnit(path, true, true)).error
+            assertEquals(ContentErrorCode.MISSING_REQUIRED_FIELD, missingPrice.code)
+            assertEquals("core", missingPrice.section)
+            assertEquals("price", missingPrice.field)
+            Files.writeString(path, Files.readString(path).replace("[core]", "[core]\nprice: $price\nbuildSpeed: 0.0008"))
         }
+        val rejected = assertIs<ContentResult.Failure>(ContentLoader.loadTurretUnit(gun, false, true)).error
+        assertEquals(ContentErrorCode.UNSUPPORTED_FEATURE, rejected.code)
+        assertEquals("core", rejected.section)
+        assertEquals("name", rejected.field)
+        val upgradedGun = assertIs<ContentResult.Success<UnitDefinition>>(ContentLoader.loadTurretUnit(gun, true, true)).value
+        assertEquals(BuildProfile(1500L, .0008f), upgradedGun.build)
+        assertNull(upgradedGun.construction)
+        assertNull(upgradedGun.upgrades)
+        for (upgrades in listOf(false, true)) {
+            val constructibleArtillery = assertIs<ContentResult.Success<UnitDefinition>>(
+                ContentLoader.loadTurretUnit(artillery, upgrades, true)).value
+            assertEquals(ConstructionProfile(2100L, .0008f), constructibleArtillery.construction)
+            assertNull(constructibleArtillery.upgrades)
+        }
+    }
+
+    @Test fun construction_never_enables_or_bypasses_upgrade_validation() = withTurretCopy { folder ->
         val path = folder.resolve("turret_t1.ini")
         val text = Files.readString(path)
         for ((change, field, code) in listOf(
