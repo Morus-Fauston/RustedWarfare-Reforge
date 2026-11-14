@@ -26,8 +26,7 @@ internal object NuclearOrdnance {
 
     fun supports(d: UnitDefinition): Boolean {
         val kind = d.nuclearSilo?.kind ?: return false
-        return d.id == kind.unitId &&
-        d.className == "CustomUnitMetadata" && d.maximumHealth == kind.maxHp && d.radius == 35.0 && d.displayRadius == 35.0 &&
+        return d.className == "CustomUnitMetadata" && d.maximumHealth == kind.maxHp && d.radius == 35.0 && d.displayRadius == 35.0 &&
         d.totalFrames == 1 && d.imageScale == 1.0 && d.movement == MovementProfile(MovementType.NONE, 0.0, .01, .01, 0.0, .1, false, false) &&
         d.build == BuildProfile(kind.constructionPrice, .001f) && d.construction == ConstructionProfile(kind.constructionPrice, .001f) &&
         d.building?.let { it.footprint == BuildingFootprint(-1, -1, 1, 1) && it.placementFootprint == kind.placementFootprint &&

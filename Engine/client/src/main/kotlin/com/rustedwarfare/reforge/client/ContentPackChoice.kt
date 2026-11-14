@@ -251,7 +251,10 @@ internal fun contentPackScenario(root: Path, choice: ContentPackChoice): Scenari
             UnitSpawn("b", "p2", choice.unitId, Position(650.0, 300.0), 270.0)),
         CoordinateModel("p001.coordinate.v1", "2d", "x-right", "y-down", "top-left", "world-unit", "double", "ieee754-binary64"),
         TimeModel("p001.time.v1", "sim-tick", "ieee754-binary64", "fixed-explicit-delta"), MovementContract(16.0, 4.0),
-        combatContract = CombatContract(12345, -1, mapOf("a" to 8L, "b" to 9L), 10L))
+        combatContract = CombatContract(12345, -1, mapOf("a" to 8L, "b" to 9L), 10L),
+        economyContract = if (choice.content.units.values.any { unit ->
+                unit.customActions?.actions?.any { it.ammoProduction != null } == true
+            }) EconomyContract(mapOf("p1" to 3000L, "p2" to 0L)) else null)
     if (choice.content.units.getValue(choice.unitId).attachmentLayout != null) {
         val opening = listOfNotNull(UnitSpawn("a", "p1", choice.unitId, Position(190.0, 150.0), 90.0),
             choice.content.units["mechGun"]?.let { UnitSpawn("b", "p2", it.id, Position(465.0, 150.0), 270.0) })

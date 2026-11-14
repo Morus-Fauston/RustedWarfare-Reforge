@@ -10,7 +10,8 @@
     "format": { "const": "rw-reforge.unit.v2" },
     "unitType": { "enum": ["tank", "hoverTank"] },
     "abilities": {"type": "array", "items": {"anyOf": [
-      {"$ref": "#/$defs/ShieldAbility"}, {"$ref": "#/$defs/BlinkAbility"}, {"$ref": "#/$defs/TransportAbility"}
+      {"$ref": "#/$defs/ShieldAbility"}, {"$ref": "#/$defs/BlinkAbility"}, {"$ref": "#/$defs/TransportAbility"},
+      {"$ref": "#/$defs/PointDefenseAbility"}
     ]}},
     "removeAbilities": {"type": "array", "uniqueItems": true, "items": {"$ref": "#/$defs/name"}},
     "copyFrom": {
@@ -51,6 +52,28 @@
   }],
   "additionalProperties": false,
   "$defs": {
+    "PointDefenseAbility": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name"],
+      "properties": {
+        "name": {"$ref": "#/$defs/name"},
+        "type": {"const": "pointDefense"},
+        "range": {"type": "number", "exclusiveMinimum": 0},
+        "muzzleOffsetX": {"type": "number"},
+        "muzzleOffsetY": {"type": "number"},
+        "recharge": {"type": "number", "minimum": 0, "maximum": 1},
+        "cost": {"type": "number", "minimum": 0, "maximum": 1},
+        "initialEnergy": {"type": "number", "minimum": 0, "maximum": 1}
+      },
+      "allOf": [{
+        "if": {"not": {"required": ["type"]}},
+        "then": {"anyOf": [
+          {"required": ["range"]}, {"required": ["muzzleOffsetX"]}, {"required": ["muzzleOffsetY"]},
+          {"required": ["recharge"]}, {"required": ["cost"]}, {"required": ["initialEnergy"]}
+        ]}
+      }]
+    },
     "ShieldAbility": {
       "type": "object",
       "required": ["name"],

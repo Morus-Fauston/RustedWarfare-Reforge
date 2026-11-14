@@ -57,3 +57,18 @@ A structured `hover-tank` can carry units by declaring one transport ability. Se
 ~~~
 
 The transport uses the same owner, construction, and cargo checks as the native carriers. The passenger consumes its own `transportSlotsNeeded`. The `unloadTerrain` values are `land`, `liquid`, `either` and `never`. A blocked exit leaves the passenger in the bay for the next attempt.
+
+A structured `hover-tank` accepts one `pointDefense` ability. Supply `range`, `muzzleOffsetX` and `muzzleOffsetY` in world units, `recharge` per simulation tick, `cost` per deflection and `initialEnergy`. Energy parameters are fractions from zero to one. For example:
+
+~~~json
+{"name":"deflector", "type":"pointDefense", "range":160, "muzzleOffsetX":0,
+ "muzzleOffsetY":-13, "recharge":0.0004, "cost":0.11, "initialEnergy":1}
+~~~
+
+A child can inherit this ability and override one parameter with `{"name":"deflector","cost":0.2}`. The loader checks the complete ability after inheritance.
+
+An authored `water-combat` hull can declare one `navalInterception` ability. `weapon` names a mount with `canShoot: false` and a ballistic, accelerating projectile with `deflectionPower: -1`. `landingRange` and `trackingRange` are world distances, and `minimumHeight` is the strict lower height for an incoming round. `ammoPrice` sets the credit cost, `ammoBuildRate` sets progress per simulation tick, and `ammoLimit` limits stock plus queued orders. The owner stocks the interceptor through the normal `buildAntiNuke` action.
+
+An authored modular-spider interceptor can inherit the qualified anti-nuke module, use a lowercase `core.name`, and override the three `interceptProjectiles_and…` fields on its `silo` mount. Set `convertTo` on the empty slot's `buildAntinuke` action to the authored ID. The slot uses the usual paid installation, ammunition queue, and online switch.
+
+The `nuclear-silo` content reader also accepts an authored name with `ordnanceRole` set to `launcher` or `interceptor` in a structured `rw-reforge.nuclear-silo.v1` document. Use the corresponding facility's fixed body, construction and graphics fields. The role determines which stock and launch actions are available. The established INI IDs continue to select their own role.

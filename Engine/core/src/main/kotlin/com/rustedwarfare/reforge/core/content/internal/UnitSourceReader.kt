@@ -29,6 +29,8 @@ internal data class UnitContentSchema(
     val structuredAbilities: Boolean = false,
     val blinkAbility: Boolean = false,
     val transportAbility: Boolean = false,
+    val pointDefenseAbility: Boolean = false,
+    val navalInterceptionAbility: Boolean = false,
 ) {
     companion object {
         fun native(fields: Set<String>, formats: Set<String>): UnitContentSchema {
@@ -121,7 +123,9 @@ internal class UnitSourceReader(
                     setOf("range", "chargeTicks", "cooldownTicks", "unlockCredits", "unlockTicks", "locked", "queueSpeed") else emptySet()
                 val transport = if (schema.transportAbility)
                     setOf("capacity", "passengerMovement", "unloadTerrain", "unloadTicks") else emptySet()
-                it + blink + transport
+                val defense = if (schema.pointDefenseAbility) PointDefenseContent.fields else emptySet()
+                val interception = if (schema.navalInterceptionAbility) NavalInterceptionContent.fields else emptySet()
+                it + blink + transport + defense + interception
             }
             section.startsWith("template_") -> fields.values.flatten().toSet()
             else -> fields[sectionKind(section)]
@@ -394,7 +398,7 @@ internal class UnitSourceReader(
                     key in schema.timeFields || (section to key) in schema.timeFieldLocations ->
                         value.isNumber || value.isString && value.asString().endsWith('s')
                     section.startsWith("ability_") -> when (key) {
-                        "type", "passengerMovement", "unloadTerrain" -> value.isString
+                        "type", "passengerMovement", "unloadTerrain", "weapon" -> value.isString
                         "startAtZero", "locked" -> value.isBoolean
                         else -> value.isNumber
                     }

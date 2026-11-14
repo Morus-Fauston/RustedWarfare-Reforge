@@ -244,7 +244,7 @@ class UpgradeProfile(actions: List<UpgradeActionProfile>) {
 /** Finite point defense; an attached barrel follows the current module heading. */
 data class PointDefenseProfile(val range: Double = 160.0, val muzzleOffsetX: Double = 0.0,
     val muzzleOffsetY: Double = -13.0, val recharge: Float = .0004f, val cost: Float = .11f,
-    val initialEnergy: Float = 1f, val attachedBarrel: Double? = null) {
+    val initialEnergy: Float = 1f, val attachedBarrel: Double? = null, val authored: Boolean = false) {
     fun muzzle(position: Position, heading: Double): Position {
         val offset = attachedBarrel?.let { ScreenPlane.displacement(heading, it) } ?: Position(muzzleOffsetX, muzzleOffsetY)
         return Position(position.x + offset.x, position.y + offset.y)
@@ -311,7 +311,11 @@ data class NamedWeaponDefinition(val name: String, val projectileName: String,
     val energyUsage: Float = 0f, val idleSweep: IdleSweepProfile? = null, val resetTurret: Boolean = true,
     val interception: ProjectileInterceptionProfile? = null)
 
-data class ProjectileInterceptionProfile(val landingRange: Float, val trackingRange: Float, val minimumHeight: Float)
+data class ProjectileInterceptionProfile(val landingRange: Float, val trackingRange: Float, val minimumHeight: Float) {
+    internal fun isValid(): Boolean =
+        listOf(landingRange, trackingRange).all { it > 0f && (it * it).isFinite() } &&
+            minimumHeight.isFinite() && minimumHeight >= 0f
+}
 
 /** Gameplay trigger identity, never an audio filename or resource-pack decision. */
 enum class FireSoundProfile(val eventId: String, val volume: Float, val pitch: Float = 1f) {

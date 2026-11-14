@@ -77,7 +77,7 @@ internal class ActionCatalogue(private val definitions: Map<String, UnitDefiniti
                 action.queueIndex != null, action.cooldownRemaining, action.available, action.queueIndex != null,
                 action.progress, groundTargeted = true, iconTypeId = selected.typeId,
                 attachmentContext = selected.unitId to selected.typeId)
-        if (selected.typeId == "modularSpider_antinuke" && action.name in setOf("buildAntiNuke", "isEnabled", "isDisabled")) {
+        if (module.interception != null && action.name in setOf("buildAntiNuke", "isEnabled", "isDisabled")) {
             val ammo = checkNotNull(state.stockpile)
             val online = checkNotNull(state.interceptorOnline)
             val building = action.name == "buildAntiNuke"
@@ -238,7 +238,7 @@ internal class ActionCatalogue(private val definitions: Map<String, UnitDefiniti
                     (if (affordable) "Left: choose ground point\nEsc / right: cancel selection" else "Insufficient funds") +
                     "\nMovement locked while building\nRight on card: cancel one queued"
             else if (navalAmmo != null) {
-                val speed = checkNotNull(unitDefinition.production).speedMultiplier
+                val speed = unitDefinition.production?.speedMultiplier ?: 1f
                 val duration = String.format(Locale.ROOT, "%.1fs", 1.0 / (definition.rate * speed * 60.0))
                 val admission = when {
                     !nukesEnabled -> "Nukes disabled"
@@ -396,7 +396,8 @@ data class CustomUnitActionView(val name: String, val title: String, val tooltip
 /** The native onlyOneUnitAtATime launch flag selects one eligible member per command. */
 internal fun nuclearLaunchMember(view: PlayerObservation, ids: Set<String>, cancelling: Boolean = false): UnitObservation? =
     view.units.filter { it.unitId in ids && it.alive && it.ownerPlayerId == view.playerId &&
-        it.typeId == "nukeLauncherC" && it.constructionProgress >= 1f && it.carriedBy == null }
+        it.unitActions?.actions?.any { action -> action.name == "launchNuke" } == true &&
+        it.constructionProgress >= 1f && it.carriedBy == null }
         .sortedBy { it.unitId }.let { members ->
             members.firstOrNull { unit -> unit.unitActions?.actions?.any {
                 it.name == "launchNuke" && if (cancelling) it.queueIndex != null else it.available

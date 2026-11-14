@@ -23,11 +23,17 @@ internal object ModularSpiderUtilityForms {
         additionalSections: Map<String, Map<String, String>> = emptyMap(),
         parentSpeed: AttachmentSpeed? = null,
         parentBlink: BlinkProfile? = null,
+        interception: ProjectileInterceptionProfile? = null,
     ) {
         val module = AttachmentModuleProfile(empty = false, selfBuildRate = .001f,
             cancel = AttachmentRemoval(ModularSpiderRules.EMPTY, price, 120f),
             reclaim = AttachmentRemoval(ModularSpiderRules.EMPTY, price / 2, 180f),
-            upgrades = upgrades, automaticAction = automaticAction, parentSpeed = parentSpeed, parentBlink = parentBlink)
+            upgrades = upgrades, automaticAction = automaticAction, parentSpeed = parentSpeed, parentBlink = parentBlink,
+            interception = interception)
+
+        fun moduleWithInterception(ranges: ProjectileInterceptionProfile) = AttachmentModuleProfile(
+            module.empty, module.selfBuildRate, module.installs, module.cancel, module.reclaim, module.upgrades,
+            module.automaticAction, module.parentSpeed, module.parentBlink, ranges)
 
         val sections = mapOf(
             "core" to (mapOf("name" to id, "class" to "CustomUnitMetadata", "price" to price.toString(),
@@ -68,7 +74,7 @@ internal object ModularSpiderUtilityForms {
                 "size" to "1"),
             "defenseEnergy" to mapOf("energyMax" to "1", "energyRegen" to laserDefense.recharge.toString()),
         )),
-        Form(ModularSpiderRules.ANTI_NUKE, 7000, 22, 21, additionalSections = mapOf(
+        Form(ModularSpiderRules.ANTI_NUKE, 7000, 22, 21, interception = antiNukeRanges, additionalSections = mapOf(
             "action_buildAntiNuke" to mapOf("price" to ANTI_NUKE_AMMO_COST.toString(),
                 "buildSpeed" to ANTI_NUKE_AMMO_RATE.toString(), "ammoLimit" to ANTI_NUKE_AMMO_LIMIT.toString(),
                 "addResources" to "ammo=1"),

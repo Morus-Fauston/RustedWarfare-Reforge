@@ -5,6 +5,7 @@ import com.rustedwarfare.reforge.core.content.CustomActionDefinition
 import com.rustedwarfare.reforge.core.content.AutomaticActionCondition
 import com.rustedwarfare.reforge.core.content.UnitDefinition
 import com.rustedwarfare.reforge.core.content.NautilusRules
+import com.rustedwarfare.reforge.core.content.NavalInterceptionRules
 import com.rustedwarfare.reforge.core.content.MapDefinition
 import com.rustedwarfare.reforge.core.content.GroundLaunchProfile
 import com.rustedwarfare.reforge.core.content.ScoutBotRules
@@ -26,7 +27,8 @@ internal data class CustomActionState(val queue: List<PendingUnitAction> = empty
 /** Finite custom conversion actions; movement orders and same-name weapon state stay on the object. */
 internal object CustomUnitActions {
     fun supports(definition: UnitDefinition): Boolean = AaBeamGunship.supports(definition) || Bunker.supports(definition) ||
-        NautilusRules.supports(definition) || ScoutBotRules.supports(definition) || definition.blink != null
+        NautilusRules.supports(definition) || NavalInterceptionRules.supports(definition) ||
+        ScoutBotRules.supports(definition) || definition.blink != null
 
     fun movementLocked(unit: MutableUnit, head: PendingUnitAction? = unit.customActionState.queue.firstOrNull()): Boolean = head?.let {
         it.progress > 0f && it.action.cannotMove
@@ -149,7 +151,7 @@ internal object CustomUnitActions {
         } else target
         val item = PendingUnitAction(action, command.actionId, target = destination)
         val paid = if (item.cost == 0L) ledger else {
-            checkNotNull(ledger).charge(unit.ownerPlayerId, item.cost)
+            ledger?.charge(unit.ownerPlayerId, item.cost)
                 ?: return reject("insufficient-funds", "Not enough credits to queue this action")
         }
         val queue = unit.customActionState.queue.toMutableList()

@@ -107,7 +107,7 @@ internal object UnitAttachments {
             val ready = order == null && cooldown == 0
             val balance = checkNotNull(state.productionLedger).balances.getValue(child.ownerPlayerId)
             val slotOrderIndex = queue.size
-            if (child.typeId == ModularSpiderRules.ANTI_NUKE) {
+            if (child.definition.attachmentModule?.interception != null) {
                 ammo = child.attachmentInterceptor.ammo
                 online = !child.attachmentInterceptor.offline
                 val offset = queue.size
@@ -182,7 +182,7 @@ internal object UnitAttachments {
         val order = child.attachmentOrder
         if (name == AttachmentBlink.REQUEST && child.definition.attachmentModule?.parentBlink != null)
             return AttachmentBlink.request(state.simulationTime, child, action, collision)
-        if (child.typeId == ModularSpiderRules.ANTI_NUKE && AttachmentInterceptor.handles(name)) {
+        if (child.definition.attachmentModule?.interception != null && AttachmentInterceptor.handles(name)) {
             return AttachmentInterceptor.request(state, child, name, action.cancelQueued)
         }
         if (action.cancelQueued) {
@@ -216,7 +216,7 @@ internal object UnitAttachments {
             state.productionLedger = checkNotNull(state.productionLedger).charge(child.ownerPlayerId, next.cost)
                 ?: return SimulationError("insufficient-funds", "The slot requires ${next.cost} credits")
         }
-        if (next is AttachmentOrder.Reclaim && child.typeId == ModularSpiderRules.ANTI_NUKE) {
+        if (next is AttachmentOrder.Reclaim && child.definition.attachmentModule?.interception != null) {
             child.attachmentInterceptor = child.attachmentInterceptor.copy(
                 roundsAheadOfReclaim = child.attachmentInterceptor.rounds.size)
         }
@@ -272,7 +272,7 @@ internal object UnitAttachments {
     }
 
     private fun remove(state: StepState, input: Scenario, parent: MutableUnit, child: MutableUnit, action: AttachmentRemoval) {
-        if (child.typeId == ModularSpiderRules.ANTI_NUKE) AttachmentInterceptor.discardQueue(state, child)
+        if (child.definition.attachmentModule?.interception != null) AttachmentInterceptor.discardQueue(state, child)
         state.productionLedger = checkNotNull(state.productionLedger).refund(child.ownerPlayerId, action.refund)
         convert(input, child, action.targetTypeId, 1f)
         completed(state, parent, child, "attachment-slot-emptied")
@@ -363,7 +363,7 @@ internal object UnitAttachments {
                 defense.rounds.all { it.isFinite() && it in 0f..<1f } &&
                 defense.roundsAheadOfReclaim in 0..defense.rounds.size &&
                 (defense.roundsAheadOfReclaim == 0 || unit.attachmentOrder is AttachmentOrder.Reclaim) &&
-                (unit.typeId == ModularSpiderRules.ANTI_NUKE || defense.rounds.isEmpty() && !defense.switchPending))
+                (unit.definition.attachmentModule?.interception != null || defense.rounds.isEmpty() && !defense.switchPending))
             require(unit.blinkCooldownUntil.isFinite() && unit.blinkCooldownUntil >= 0.0 && unit.blinkRequest?.let {
                 unit.definition.attachmentModule?.parentBlink != null && it.x.isFinite() && it.y.isFinite()
             } != false)

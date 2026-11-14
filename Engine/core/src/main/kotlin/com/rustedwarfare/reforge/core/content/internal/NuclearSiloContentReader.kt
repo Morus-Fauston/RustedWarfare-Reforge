@@ -6,7 +6,7 @@ import java.nio.file.Path
 /** Effective custom replacement through the common syntax and source reader. */
 internal object NuclearSiloContentReader {
     private val fields = setOf("format", "name", "maxHp", "radius", "footprint", "constructionFootprint",
-        "movementType", "price", "buildSpeed", "image", "image_back", "image_dead", "image_arm1", "image_arm2")
+        "movementType", "price", "buildSpeed", "image", "image_back", "image_dead", "image_arm1", "image_arm2", "ordnanceRole")
     private val schema = UnitContentSchema.native(fields, setOf("rw-reforge.nuclear-silo.v1"))
 
     fun readWithSources(path: Path, validatePath: (Path) -> Unit = {}): LoadedUnitContent =
@@ -25,9 +25,15 @@ internal object NuclearSiloContentReader {
             }
             only("format", "rw-reforge.nuclear-silo.v1")
             val id = required("name")
-            val kind = NuclearSiloKind.entries.firstOrNull { it.unitId == id }
-                ?: reject(ContentErrorCode.UNSUPPORTED_FEATURE, path, "core", "name",
-                    reason = "Expected an effective nuclear silo or ground interceptor")
+            val original = NuclearSiloKind.entries.firstOrNull { it.unitId == id }
+            val role = values["ordnanceRole"]
+            val kind = if (role == null) original else NuclearSiloKind.entries.firstOrNull { it.name.lowercase() == role }
+            if (role != null && (!loaded.structured || kind == null || original != null && original != kind))
+                reject(ContentErrorCode.UNSUPPORTED_FEATURE, path, "core", "ordnanceRole", role,
+                    reason = "Expected a structured launcher or interceptor role consistent with the reserved ID")
+            if (kind == null || original == null && !id.matches(Regex("[a-z][a-z0-9_.-]*")))
+                reject(ContentErrorCode.UNSUPPORTED_FEATURE, path, "core", "name", id,
+                    reason = "Expected a qualified native ID or a stable authored ID with a declared ordnance role")
             only("movementType", "NONE")
             only("footprint", "-1,-1,1,1")
             val placement = kind.placementFootprint

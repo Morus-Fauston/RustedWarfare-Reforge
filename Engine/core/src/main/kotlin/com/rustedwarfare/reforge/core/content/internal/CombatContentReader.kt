@@ -91,10 +91,11 @@ internal object CombatContentReader {
                 fields = schema.fields + ("projectile_1" to (schema.fields.getValue("projectile_1") + setOf("targetSpeed", "targetSpeedAcceleration"))),
                 numericFields = schema.numericFields + setOf("targetSpeed", "targetSpeedAcceleration"),
                 movementTemplates = mapOf("hoverTank" to hoverTemplate), structuredAbilities = true,
-                blinkAbility = true, transportAbility = true)
+                blinkAbility = true, transportAbility = true, pointDefenseAbility = true)
             Kind.DECLARED_TANK, Kind.NATIVE_TANK -> schema.copy(movementTemplates = mapOf("tank" to tankTemplate),
                 structuredAbilities = true)
-            Kind.BATTLESHIP, Kind.AUTHOR_WATER -> NavalContentFields.schema(schema)
+            Kind.BATTLESHIP -> NavalContentFields.schema(schema)
+            Kind.AUTHOR_WATER -> NavalContentFields.schema(schema).copy(structuredAbilities = true, navalInterceptionAbility = true)
             Kind.HEAVY_MECH -> HeavyMechContentFields.schema(schema).copy(structuredAbilities = true)
             Kind.MECH -> MechContentFields.schema(schema)
             Kind.HELICOPTER -> HelicopterContentFields.schema(schema)
@@ -110,6 +111,7 @@ internal object CombatContentReader {
         val sections = loaded.values
         val blink = if (hover) BlinkContent.read(path, loaded) else null
         val transport = if (hover) TransportContent.read(path, loaded) else null
+        val defense = if (hover) PointDefenseContent.read(path, loaded) else null
         val deployedBlink = blink?.locked == true && sections["movement"]?.get("movementType") == "NONE"
         fun invalid(code: ContentErrorCode, s: String, key: String, ref: String? = null, reason: String): Nothing {
             val origin = loaded.origins[s to key] ?: UnitSourceReader.Origin(path, s, key)
@@ -210,7 +212,7 @@ internal object CombatContentReader {
         if (declared) {
             if (when { hover -> identity != "hoverTank" &&
                 (if (blink != null) !identity.matches(Regex("[A-Za-z][A-Za-z0-9_.-]*"))
-                else transport == null || !identity.matches(Regex("[a-z][a-z0-9_.-]*")))
+                else transport == null && defense == null || !identity.matches(Regex("[a-z][a-z0-9_.-]*")))
                 naval -> identity != "heavyBattleship"; mech -> identity != "mechGun"; heavy -> identity != "mechHeavyMissile"
                     else -> !identity.matches(Regex("[a-z][a-z0-9_.-]*")) })
                 invalid(ContentErrorCode.MALFORMED_SYNTAX, "core", "name", identity, "Expected a stable lowercase content ID")
@@ -273,7 +275,7 @@ internal object CombatContentReader {
         }
         val turretImage = if ((mech || helicopter || authorWater || hover) && required("graphics", "image_turret") == "NONE") null else image("image_turret")
         val deadImage = if ((mech || heavy) && required("graphics", "image_wreak") == "NONE") null else image("image_wreak")
-        val catalog = WeaponCatalog(weapons.map { weapon ->
+        val mounts = weapons.map { weapon ->
             val projectileName = required(weapon, "projectile")
             NamedWeaponDefinition(weapon.removePrefix("turret_"), projectileName,
                 projectileProfiles.getValue("projectile_$projectileName"),
@@ -330,9 +332,17 @@ internal object CombatContentReader {
                     else if (sections.getValue(weapon)["attachedTo"] != null) 0.0
                     else (if ("idleDir" in sections.getValue(weapon)) signedNumber(weapon, "idleDir") else 0.0) + 180.0
                 } else null)
+        }
+        val interception = if (authorWater) NavalInterceptionContent.read(path, loaded, mounts) else null
+        val catalog = WeaponCatalog(mounts.map {
+            if (it.name == interception?.weapon) it.copy(interception = interception.ranges) else it
         })
         val primary = catalog.ordered.first()
-        val shield = ShieldContent.read(path, loaded, required = heavy, allowOtherAbilities = hover)
+        val shield = ShieldContent.read(path, loaded, required = heavy, otherTypes = when {
+            hover -> setOf("blink", "transport", "pointDefense")
+            authorWater -> setOf("navalInterception")
+            else -> emptySet()
+        })
         val profile = CombatProfile(
             integer("core", "maxHp", true).toDouble(), number("attack", "maxAttackRange", true),
             primary.shootDelay, primary.turretSize, primary.turnSpeed, primary.turnAcceleration,
@@ -357,8 +367,9 @@ internal object CombatContentReader {
             build = BuildProfile(price, buildRate), mech = gait, rotor = flight?.second, reclaimPrice = reclaimPrice,
             construction = if (mech) ConstructionProfile(price, buildRate) else null, techLevel = techLevel,
             authoredWaterCombat = authorWater, shadowImagePath = if (hover) image("image_shadow") else null,
+            pointDefense = defense,
             shield = shield, shieldImagePath = if (heavy) image("image_shield") else null,
-            blink = blink, customActions = blink?.actions(),
+            blink = blink, customActions = blink?.actions() ?: interception?.actions,
             transport = transport?.let { TransportProfile.AUTHORED }, transportSettings = transport,
             transportSlots = if ("transportSlotsNeeded" in sections.getValue("core")) integer("core", "transportSlotsNeeded") else 1)
         definition

@@ -1141,7 +1141,7 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
                     UnitAttachments.advance(steps.current, currentScenario, parent, unit, step.delta.toFloat())
                     if (BuildingWork.isReady(unit)) {
                         AttachmentBlink.finishSlot(steps.current, step, parent, unit)
-                        if (unit.typeId == ModularSpiderRules.ANTI_NUKE)
+                        if (unit.definition.attachmentModule?.interception != null)
                             AttachmentInterceptor.advance(steps.current, unit, step.delta.toFloat())
                         advanceIncome(unit, step.delta.toFloat())
                         UnitAttachments.advanceAutomatic(steps.current, currentScenario, parent, unit, step.delta.toFloat())
@@ -1516,8 +1516,9 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
             val bomber = definition.id == BomberRules.ID
             if (bomber && !BomberRules.supports(definition))
                 return SimulationError("unsupported-bomber", "Expected the qualified two-weapon bomber")
-            if (!nautilus && definition.combat?.namedWeapons?.ordered?.any { it.interception != null } == true)
-                return SimulationError("unsupported-naval-interception", "Expected the qualified Nautilus interception weapon")
+            if (!nautilus && definition.combat?.namedWeapons?.ordered?.any { it.interception != null } == true &&
+                !com.rustedwarfare.reforge.core.content.NavalInterceptionRules.supports(definition))
+                return SimulationError("unsupported-naval-interception", "Expected one qualified naval interception mount and stock action")
             if (definition.groundHeight != null && !bunker && !scout)
                 return SimulationError("unsupported-unit-actions", "Ground height requires a qualified custom form")
             val beamGunship = !nautilus && !scout && !bomber && (definition.energy != null || definition.combat?.projectile?.beam != null ||
@@ -1634,8 +1635,10 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
             definition.pointDefense?.let { profile ->
                 val attachedDefense = definition.id == ModularSpiderRules.LASER_DEFENSE &&
                     ModularSpiderRules.supportsModule(definition)
-                if (!attachedDefense && (definition.building == null || definition.combat != null ||
-                        m.type != MovementType.NONE || profile.attachedBarrel != null) ||
+                val hoverDefense = profile.authored && (m.type == MovementType.HOVER || definition.blink?.locked == true) &&
+                    definition.building == null && definition.combat != null && profile.attachedBarrel == null
+                if (!attachedDefense && !hoverDefense && (definition.building == null || definition.combat != null ||
+                        m.type != MovementType.NONE || profile.attachedBarrel != null || profile.authored) ||
                     !profile.range.isFinite() || profile.range <= 0.0 || !(profile.range * profile.range).isFinite() ||
                     !profile.muzzleOffsetX.isFinite() || !profile.muzzleOffsetY.isFinite() ||
                     !profile.recharge.isFinite() || profile.recharge < 0f || !profile.cost.isFinite() || profile.cost < 0f ||

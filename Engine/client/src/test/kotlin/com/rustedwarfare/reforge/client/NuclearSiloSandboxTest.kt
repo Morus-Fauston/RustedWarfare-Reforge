@@ -2,7 +2,9 @@ package com.rustedwarfare.reforge.client
 
 import com.rustedwarfare.reforge.core.content.*
 import com.rustedwarfare.reforge.core.sim.*
+import java.nio.file.Files
 import java.nio.file.Path
+import org.hjson.JsonValue
 import kotlin.test.*
 
 internal object NuclearSandboxScene {
@@ -135,6 +137,81 @@ class NuclearSiloSandboxTest {
                 until(1000) { s.observation.units.single { it.unitId == "b" }.health == 1500.0 }
                 assertEquals(0, s.observation.units.single { it.typeId == "nukeLauncherC" }.unitActions!!.stockpile)
             }
+        }
+    }
+
+
+    @Test fun an_authored_builder_constructs_an_alternate_launcher_and_the_client_targets_with_its_paid_round() {
+        val root = Path.of(checkNotNull(System.getProperty("public.fixtures.dir"))).resolve("nuclear-silo/json")
+        val packageRoot = root.resolve("normal-package")
+        val temporary = Files.createTempDirectory("authored-silo-sandbox-")
+        Files.walk(packageRoot).use { paths ->
+            paths.forEach { source ->
+                val copy = temporary.resolve(packageRoot.relativize(source))
+                if (!Files.isDirectory(source)) Files.copy(source, copy) else Files.createDirectories(copy)
+            }
+        }
+        val type = "frontier_silo"
+        val silo = temporary.resolve("nukeLauncherC.json")
+        val building = JsonValue.readJSON(Files.readString(silo)).asObject()
+        building.set("name", type).set("ordnanceRole", "launcher")
+        Files.writeString(silo, building.toString())
+        val builder = temporary.resolve("builder.json")
+        val worker = JsonValue.readJSON(Files.readString(builder)).asObject()
+        worker.set("format", "rw-reforge.constructor.v1").set("constructionTypes", type)
+        Files.writeString(builder, worker.toString())
+        val manifest = temporary.resolve("pack.json")
+        Files.writeString(manifest, Files.readString(manifest).replace("\"type\": \"builder\"", "\"type\": \"constructor\""))
+        val loaded = ContentLoader.loadContentPack(temporary)
+        val pack = assertIs<ContentResult.Success<LoadedContentPack>>(loaded, loaded.toString()).value
+        val scene = contentPackScenario(root, ContentPackChoice(pack, "commandCenter"))
+        SandboxSession(scene).use { s ->
+            fun until(limit: Int, ready: () -> Boolean) {
+                repeat(limit) { if (!ready()) s.tick() }
+                assertTrue(ready(), s.feedback)
+            }
+            s.select(Position(130.0, 130.0))
+            assertIs<ActionResult.Accepted>(s.produce("builder"))
+            until(600) { s.observation.units.any { it.typeId == "builder" } }
+            s.select(s.observation.units.single { it.typeId == "builder" }.position)
+            assertEquals(45000L, s.constructionActions.single { it.typeId == type }.price)
+            val location = Position(250.0, 150.0)
+            assertIs<ActionResult.Accepted>(s.build(type, location))
+            until(1800) { s.observation.units.any { it.typeId == type && it.constructionProgress == 1f } }
+            val siloId = s.observation.units.single { it.typeId == type }.unitId
+            s.select(location)
+            fun stock() = s.observation.units.single { it.unitId == siloId }.unitActions?.stockpile
+            val projection = MapProjection(scene.map.widthTiles * 20.0, scene.map.heightTiles * 20.0)
+            val input = SandboxInput({ s }, { projection }, { x, y -> Position(x.toDouble(), y.toDouble()) },
+                { true }, { false }, { false })
+            fun click(name: String) {
+                val actor = com.badlogic.gdx.scenes.scene2d.Actor().also { it.setSize(84f, 40f) }
+                val listener = CustomUnitActionButtonInput({ s }, { true }, name, beginTargeting = input::beginGroundAction)
+                val event = com.badlogic.gdx.scenes.scene2d.InputEvent().also { it.listenerActor = actor }
+                assertTrue(listener.touchDown(event, 10f, 10f, 0, com.badlogic.gdx.Input.Buttons.LEFT))
+                listener.touchUp(event, 10f, 10f, 0, com.badlogic.gdx.Input.Buttons.LEFT)
+            }
+            assertTrue(s.actionMenu.unitActions.single { it.name == "buildNuke" }.available)
+            val balance = checkNotNull(s.observation.balance)
+            click("buildNuke")
+            assertEquals(balance - 11000L, s.observation.balance)
+            until(3400) { stock() == 1 }
+            s.select(Position(130.0, 130.0), SelectionMode.ADD)
+            assertEquals(setOf("a", siloId), s.selectedIds)
+            assertTrue(s.actionMenu.unitActions.single { it.name == "launchNuke" }.groundTargeted)
+            click("launchNuke")
+            val target = Position(540.0, 300.0)
+            val x = projection.x(target.x).toInt()
+            val y = projection.y(target.y).toInt()
+            input.mouseMoved(x, y)
+            assertTrue(input.groundActionPreview!!.valid)
+            assertTrue(input.touchDown(x, y, 0, com.badlogic.gdx.Input.Buttons.LEFT))
+            input.touchUp(x, y, 0, com.badlogic.gdx.Input.Buttons.LEFT)
+            assertEquals(0, stock())
+            val queued = assertNotNull(s.observation.units.single { it.unitId == siloId }.unitActions?.queue?.single()?.target)
+            assertEquals(target.x, queued.x, 2.0)
+            assertEquals(target.y, queued.y, 2.0)
+            until(1000) { s.observation.units.single { it.unitId == "b" }.health == 1500.0 }
         }
     }
 
