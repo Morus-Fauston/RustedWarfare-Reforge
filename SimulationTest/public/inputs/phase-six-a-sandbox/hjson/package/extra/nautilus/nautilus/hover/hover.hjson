@@ -1,6 +1,6 @@
 # Shared hover production content
 {
-  "format": "rw-reforge.unit.v1",
+  "format": "rw-reforge.unit.v2",
   "core": {
     "name": "hoverTank",
     "class": "CustomUnitMetadata",

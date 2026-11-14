@@ -30,19 +30,19 @@
       {
         "id": "heavyBattleship",
         "path": "../inputs/naval-production/hjson/production-package/units/naval/heavyBattleship.hjson",
-        "sha256": "db11829a3845971f85498b10ffe6dc31c6a337e51ad6cb38cd5940d844c107f6",
+        "sha256": "1715554a223111df393b84126e9d5d1fe3c30edcf61820ea027b087d97b952f0",
         "loader": "battleship"
       },
       {
         "id": "c_tank",
         "path": "../inputs/three-format-tanks/hjson/units/tank.hjson",
-        "sha256": "c319b3cf164aeab6934e69529aef0282d17c99d0f9a5471fc466b8c7f19cd035",
+        "sha256": "b821af669b8126448211374d6b2873e19f4581153e54cca8a43f639c9f6dcfb7",
         "loader": "combat"
       },
       {
         "id": "helicopter",
         "path": "../inputs/naval-production/hjson/production-package/units/air/helicopter.hjson",
-        "sha256": "906243ee0d3083203381d5a116df173fa0399cd73385f2994455145a2a21a849",
+        "sha256": "a0f67651c335be1bf46b9793ea74c186437b6172e3be78ad189cd4cd905a3121",
         "loader": "helicopter"
       },
       {

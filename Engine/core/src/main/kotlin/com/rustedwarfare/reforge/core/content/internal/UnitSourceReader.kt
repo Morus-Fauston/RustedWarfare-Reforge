@@ -7,6 +7,7 @@ import java.nio.file.InvalidPathException
 import java.io.IOException
 import java.nio.ByteBuffer
 import java.nio.charset.CharacterCodingException
+import java.security.MessageDigest
 import java.util.concurrent.CancellationException
 import org.hjson.JsonObject
 import org.hjson.JsonValue
@@ -23,6 +24,7 @@ internal data class UnitContentSchema(
     val timeFields: Set<String> = emptySet(),
     val timeFieldLocations: Set<Pair<String, String>> = emptySet(),
     val trimSectionName: Boolean = true,
+    val requiredInlineProjectileFields: Set<String> = emptySet(),
 ) {
     companion object {
         fun native(fields: Set<String>, formats: Set<String>): UnitContentSchema {
@@ -117,6 +119,8 @@ internal class UnitSourceReader(
         val structured: Boolean = false,
         val flat: Boolean = false,
         val declaredControls: Set<String> = emptySet(),
+        val removedWeapons: Set<String> = emptySet(),
+        val inlineProjectileOwners: Map<String, String> = emptyMap(),
     )
 
     internal data class Origin(val path: Path, val section: String?, val field: String, val chain: List<Path> = listOf(path)) {
@@ -132,7 +136,9 @@ internal class UnitSourceReader(
             "@copyFrom_skipThisSection" -> "skipInheritance"
             else -> key
         } else key
-        return Origin(path, section.takeUnless { input.flat && it == "core" }, field, chain)
+        val weapon = input.inlineProjectileOwners[section]
+        return if (weapon != null) Origin(path, weapon, "projectile.$field", chain)
+            else Origin(path, section.takeUnless { input.flat && it == "core" }, field, chain)
     }
     internal data class EffectiveSections(
         val values: MutableMap<String, MutableMap<String, String>>,
@@ -205,11 +211,14 @@ internal class UnitSourceReader(
         val target = root.sections.mapValuesTo(linkedMapOf()) { (_, values) -> values.toMutableMap() }
         val origins = linkedMapOf<Pair<String, String>, Origin>()
         for ((section, values) in target) for (key in values.keys) origins[section to key] = origin(path, root, section, key)
-        fun inherit(source: Path, input: Input, depth: Int, active: Set<Path>, chain: List<Path>) {
+        fun inherit(source: Path, input: Input, depth: Int, active: Set<Path>, chain: List<Path>,
+            excluded: Set<String>): Set<String> {
             fun referenceFailure(name: String?, reason: String, code: ContentErrorCode = ContentErrorCode.BAD_REFERENCE): Nothing =
                 reject(code, source, if (input.structured || input.flat) null else "core", "copyFrom", name,
                     "$reason; inheritance=${chain.joinToString(" -> ")}")
             if (depth > 10) referenceFailure(null, "Inheritance depth exceeds 10")
+            val inheritedWeapons = mutableSetOf<String>()
+            val parentExclusions = excluded + input.removedWeapons
             for (name in input.parents.asReversed()) {
                 if (name.isBlank() || name.contains("..") || name.startsWith("ROOT:") || name.startsWith("CORE:"))
                     referenceFailure(name, "Unsupported parent path", ContentErrorCode.UNSUPPORTED_FEATURE)
@@ -228,17 +237,29 @@ internal class UnitSourceReader(
                             "; inheritance=${(chain + listOf(parent)).joinToString(" -> ")}; consumer=$path"
                         throw ContentReadException(error.copy(reason = error.reason + context))
                     }
+                val parentChain = chain + listOf(parent)
                 for ((section, values) in document.sections) {
+                    if (section in parentExclusions) continue
                     val effective = target.getOrPut(section) { linkedMapOf() }
                     if (effective["@copyFrom_skipThisSection"] == "true") continue
                     for ((key, value) in values) {
-                        if (effective.putIfAbsent(key, value) == null) origins[section to key] = origin(parent, document, section, key, chain + listOf(parent))
+                        if (effective.putIfAbsent(key, value) == null)
+                            origins[section to key] = origin(parent, document, section, key, parentChain)
                     }
                 }
-                inherit(parent, document, depth + 1, active + setOf(actual), chain + listOf(parent))
+                inheritedWeapons += inherit(parent, document, depth + 1, active + setOf(actual), parentChain, parentExclusions)
             }
+            for (section in input.removedWeapons) {
+                if (section !in inheritedWeapons)
+                    reject(ContentErrorCode.BAD_REFERENCE, source, field = "removeWeapons",
+                        reason = "Cannot remove nonexistent inherited weapon ${section.removePrefix("turret_")}; " +
+                            "inheritance=${chain.joinToString(" -> ")}")
+            }
+            inheritedWeapons.removeAll(input.removedWeapons)
+            input.sections.keys.filterTo(inheritedWeapons) { it.startsWith("turret_") }
+            return inheritedWeapons
         }
-        inherit(path, root, 0, setOf(path.toRealPath()), listOf(path))
+        inherit(path, root, 0, setOf(path.toRealPath()), listOf(path), emptySet())
         val declared = target.mapValues { (_, values) -> values.toMap() }
         fun sectionFailure(section: String, ref: String? = null, reason: String): Nothing {
             val origin = origins[section to "@copyFromSection"] ?: Origin(path, section, "@copyFromSection")
@@ -261,6 +282,12 @@ internal class UnitSourceReader(
             }
         }
         for (section in declared.keys) inheritSection(section, section, 0, setOf(section))
+        val activeProjectiles = target.filterKeys { it.startsWith("turret_") }.values
+            .mapNotNull { it["projectile"] }.toSet()
+        val unusedInline = target.keys.filter { it.startsWith("projectile___inline_") &&
+            it.removePrefix("projectile_") !in activeProjectiles }.toSet()
+        target.keys.removeAll(unusedInline)
+        origins.keys.removeIf { it.first in unusedInline }
         for ((section, values) in target) {
             values.remove("@copyFromSection")
             values.remove("@copyFrom_skipThisSection")
@@ -284,7 +311,7 @@ internal class UnitSourceReader(
         if (!parsed.isObject) malformed(reason = "Expected a unit object")
         val root = parsed.asObject()
         val version = root.get("format")
-        val versions = schema.nativeFormats.ifEmpty { setOf("rw-reforge.unit.v1") }
+        val versions = schema.nativeFormats.ifEmpty { setOf("rw-reforge.unit.v2") }
         if (version == null || !version.isString || version.asString() !in versions)
             reject(ContentErrorCode.UNSUPPORTED_FEATURE, path, field = "format", reason = "Expected format in $versions")
         val numericLexemes = try { StructuredNumberLexemes.read(text, parsed) }
@@ -292,16 +319,23 @@ internal class UnitSourceReader(
             reject(ContentErrorCode.MALFORMED_SYNTAX, path, reason = failure.message ?: "Cannot retain numeric source tokens")
         }
         val result = linkedMapOf<String, MutableMap<String, String>>()
+        val inlineProjectileOwners = mutableMapOf<String, String>()
         var parents = emptyList<String>()
-        fun fields(section: String, objectValue: JsonObject, named: Boolean = false): MutableMap<String, String> {
+        fun fields(section: String, objectValue: JsonObject, named: Boolean = false,
+                   inlineWeapon: String? = null): MutableMap<String, String> {
+            val site = inlineWeapon ?: section
+            val prefix = if (inlineWeapon == null) "" else "projectile."
+            fun malformedField(key: String, reason: String): Nothing = malformed(site, prefix + key, reason)
             if (allowedFields(section) == null)
-                reject(ContentErrorCode.UNSUPPORTED_FIELD, path, section, reason = "Unsupported unit section")
+                reject(ContentErrorCode.UNSUPPORTED_FIELD, path, site, inlineWeapon?.let { "projectile" }, reason = "Unsupported unit section")
             val values = linkedMapOf<String, String>()
             val seen = mutableSetOf<String>()
             for (member in objectValue) {
                 val key = member.name
-                if (!seen.add(key)) malformed(section, key, "Duplicate field")
+                if (!seen.add(key)) malformedField(key, "Duplicate field")
                 if (named && key == "name") continue
+                if (inlineWeapon != null && key in setOf("copyFromSections", "skipInheritance"))
+                    malformedField(key, "An inline projectile must be a complete replacement")
                 if (key == "copyFromSections") {
                     if (!member.value.isArray) malformed(section, key, "Expected section name array")
                     values["@copyFromSection"] = member.value.asArray().map { value ->
@@ -316,7 +350,7 @@ internal class UnitSourceReader(
                     continue
                 }
                 if (key !in allowedFields(section).orEmpty() && !(section == "core" && key == "dont_load"))
-                    reject(ContentErrorCode.UNSUPPORTED_FIELD, path, section, key, reason = "Unsupported unit field")
+                    reject(ContentErrorCode.UNSUPPORTED_FIELD, path, site, prefix + key, reason = "Unsupported unit field")
                 val value = member.value
                 val correctType = when {
                     key in schema.timeFields || (section to key) in schema.timeFieldLocations ->
@@ -326,13 +360,17 @@ internal class UnitSourceReader(
                     key in textFields -> value.isString
                     else -> value.isString || value.isNumber || value.isBoolean
                 }
-                if (!correctType) malformed(section, key, "Wrong scalar type for $key")
+                if (!correctType) malformedField(key, "Wrong scalar type for $key")
                 values[key] = when {
                     value.isString -> value.asString()
                     value.isNumber -> numericLexemes.getValue(value)
                     value.isBoolean -> value.toString()
-                    else -> malformed(section, key, "Expected a scalar field")
+                    else -> malformedField(key, "Expected a scalar field")
                 }
+            }
+            if (inlineWeapon != null) for (key in schema.requiredInlineProjectileFields) {
+                if (key !in values) reject(ContentErrorCode.MISSING_REQUIRED_FIELD, path, site, "projectile.$key",
+                    reason = "An inline projectile requires a complete declaration")
             }
             return values
         }
@@ -359,6 +397,7 @@ internal class UnitSourceReader(
                 declaredControls = nativeSeen.intersect(setOf("copyFrom", "dont_load")))
         }
         val seen = mutableSetOf<String>()
+        val removedWeapons = linkedSetOf<String>()
         for (member in root) {
             val key = member.name
             if (!seen.add(key)) malformed(field = key, reason = "Duplicate member")
@@ -369,6 +408,14 @@ internal class UnitSourceReader(
                     parents = member.value.asArray().map { value ->
                         if (!value.isString || value.asString().isBlank()) malformed(field = key, reason = "Expected a parent filename")
                         value.asString()
+                    }
+                }
+                "removeWeapons" -> {
+                    if (!member.value.isArray) malformed(field = key, reason = "Expected an array of inherited weapon names")
+                    for (value in member.value.asArray()) {
+                        if (!value.isString || !validName(value.asString()) ||
+                            !removedWeapons.add("turret_" + value.asString()))
+                            malformed(field = key, reason = "Expected distinct stable weapon names")
                     }
                 }
                 in fields.keys.filter { !it.startsWith("turret_") && !it.startsWith("projectile_") && !it.startsWith("action_") } -> {
@@ -388,7 +435,31 @@ internal class UnitSourceReader(
                         val section = when (key) { "weapons" -> "turret_"; "projectiles" -> "projectile_"; else -> "action_" } + name.asString()
                         if (section in result)
                             reject(ContentErrorCode.IDENTITY_CONFLICT, path, section, "name", name.asString(), "Duplicate name")
-                        result[section] = fields(section, value, true)
+                        if (key == "projectiles" && name.asString().startsWith("__inline_"))
+                            malformed(key, "name", "Reserved projectile name")
+                        val projectile = value.get("projectile").takeIf { key == "weapons" }
+                        if (projectile?.isObject == true) {
+                            val values = fields("projectile_1", projectile.asObject(), inlineWeapon = section)
+                            val identity = values.entries.sortedBy { it.key }.joinToString("") { (key, value) ->
+                                "${key.length}:$key${value.length}:$value"
+                            }
+                            val sourceId = MessageDigest.getInstance("SHA-256")
+                                .digest(identity.toByteArray(Charsets.UTF_8))
+                                .joinToString("") { "%02x".format(it) }
+                            val inlineName = "__inline_${sourceId}_${name.asString()}"
+                            val inlineSection = "projectile_$inlineName"
+                            val weapon = JsonObject()
+                            for (field in value) if (field.name != "projectile") weapon.add(field.name, field.value)
+                            if (value.count { it.name == "projectile" } != 1)
+                                malformed(section, "projectile", "Duplicate field")
+                            result[section] = fields(section, weapon, true).also { it["projectile"] = inlineName }
+                            result[inlineSection] = values
+                            inlineProjectileOwners[inlineSection] = section
+                        } else {
+                            if (key == "weapons" && projectile?.isString == true && projectile.asString().startsWith("__inline_"))
+                                malformed(section, "projectile", "Reserved projectile reference")
+                            result[section] = fields(section, value, true)
+                        }
                     }
                 }
                 "templates" -> {
@@ -408,6 +479,9 @@ internal class UnitSourceReader(
         }
         val controls = result["core"]?.keys.orEmpty().intersect(setOf("copyFrom", "dont_load")) +
             seen.intersect(setOf("copyFrom"))
-        return Input(result, parents, templateOnly(path, result), structured = true, declaredControls = controls)
+        if (removedWeapons.any { it in result })
+            malformed(field = "removeWeapons", reason = "A weapon cannot be declared and removed in the same unit")
+        return Input(result, parents, templateOnly(path, result), structured = true, declaredControls = controls,
+            removedWeapons = removedWeapons, inlineProjectileOwners = inlineProjectileOwners)
     }
 }

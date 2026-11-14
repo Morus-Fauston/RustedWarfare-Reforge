@@ -12,37 +12,37 @@
       {
         "id": "nautilusSubmarine",
         "path": "../inputs/nautilus-production/json/package/nautilus.json",
-        "sha256": "dd6fea280ad92501d496172c471fc6a1cc83f30640aa1c65d592b57152231a4d",
+        "sha256": "06244f9651abd023b81d30c0b2caea32f7a9ca52a014143f02ce55c9d7cec434",
         "loader": "nautilus"
       },
       {
         "id": "nautilusSubmarineSurface",
         "path": "../inputs/nautilus-production/json/package/nautilusSurface.json",
-        "sha256": "7f0251311e3defc80c94a03efc8fb733a7b1f6945b0694af6b11f38d152a5287",
+        "sha256": "e404d0b6fe1d5aef52cdb7ca3ed628779fc7838aa3b6ece7aa3fa564154210e3",
         "loader": "nautilus"
       },
       {
         "id": "nautilusSubmarineLand",
         "path": "../inputs/nautilus-production/json/package/nautilusLand.json",
-        "sha256": "88d7920d3dbacec1de1ca4fa2ca01f3960475a7d6634c2076aa1bc204bdaa5b3",
+        "sha256": "4cc7ca3320ca27cd5a20185cd018d6a40fa58fc77abeccd90f4a2f8613fb5ddc",
         "loader": "nautilus"
       },
       {
         "id": "robotCrab",
         "path": "../inputs/nautilus-production/json/package/scout/robotCrab.json",
-        "sha256": "7e80bd440663693d6a45655d522009f74c320b2aaa41f18545da146a71d8c2e1",
+        "sha256": "897c3cd060abbac65805d84be1dffcb1602915b2f7030069bfac67b0705dbdef",
         "loader": "scout-bot"
       },
       {
         "id": "robotCrabWater",
         "path": "../inputs/nautilus-production/json/package/scout/robotCrabWater.json",
-        "sha256": "e9345d46083c17616e1702b5461b4d27e481a34655d9c4c980c87b407a878e23",
+        "sha256": "7f7f09a26e1e917dc7d8008d89967cc6c089a6b3b2482f276e5c89fb1ece3ba2",
         "loader": "scout-bot"
       },
       {
         "id": "hoverTank",
         "path": "../inputs/nautilus-production/json/package/hover/hover.json",
-        "sha256": "35b450714285fa101e9d2424f14fe51888a77c2f085e54cf3aec0da7bf8b7622",
+        "sha256": "9e1277bacd45c88724a34bba69d56cd8e19d2d6a29f1402094af981fe1461549",
         "loader": "hover-tank"
       }
     ],

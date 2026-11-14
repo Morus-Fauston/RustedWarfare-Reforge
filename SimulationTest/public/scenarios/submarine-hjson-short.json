@@ -30,19 +30,19 @@
       {
         "id": "heavyBattleship",
         "path": "../inputs/naval-production/hjson/production-package/units/naval/heavyBattleship.hjson",
-        "sha256": "db11829a3845971f85498b10ffe6dc31c6a337e51ad6cb38cd5940d844c107f6",
+        "sha256": "1715554a223111df393b84126e9d5d1fe3c30edcf61820ea027b087d97b952f0",
         "loader": "battleship"
       },
       {
         "id": "c_tank",
         "path": "../inputs/naval-production/hjson/production-package/units/land/tank.hjson",
-        "sha256": "eb16e1f3ec49b0b7534df7805edd0dbd920d6ce14be7a5e12d1806068462c262",
+        "sha256": "3ad9c0cca5e3f0d7b51420b56dfc4c527f5a4a0cfd9e07ec3696056365e0e07b",
         "loader": "declared-tank"
       },
       {
         "id": "helicopter",
         "path": "../inputs/naval-production/hjson/production-package/units/air/helicopter.hjson",
-        "sha256": "906243ee0d3083203381d5a116df173fa0399cd73385f2994455145a2a21a849",
+        "sha256": "a0f67651c335be1bf46b9793ea74c186437b6172e3be78ad189cd4cd905a3121",
         "loader": "helicopter"
       },
       {
@@ -4631,18 +4631,18 @@
       "production-package/pack.json": "8d6a8c775c2da81602143a08adb084be8ea4476940433c2a493565c7e4eafc92",
       "production-package/units/air/body.png": "f2f5836caec9a3078885b8ab00654f27800d38f17352b3be4358c3afc6a42b90",
       "production-package/units/air/dead.png": "78e0d0b9a4eb88801361721035f5b84d141fb745f094192891496c4b63916976",
-      "production-package/units/air/helicopter.hjson": "906243ee0d3083203381d5a116df173fa0399cd73385f2994455145a2a21a849",
+      "production-package/units/air/helicopter.hjson": "a0f67651c335be1bf46b9793ea74c186437b6172e3be78ad189cd4cd905a3121",
       "production-package/units/air/rotor.png": "3bec04ec0daa8dcea012e8447d4ee0a58e392850da8e366d30d8e512829fd9af",
       "production-package/units/builder.hjson": "31e25b1c15e7c3f3e6f3ee2b2e3b5f6e352ef603e443518d06eeffc42547e551",
       "production-package/units/builder.png": "15060aa3fb36bffd4414e803beb8f5d9b2982ed14bb497fbca6cadd3de18cc1b",
       "production-package/units/builder_dead.png": "15060aa3fb36bffd4414e803beb8f5d9b2982ed14bb497fbca6cadd3de18cc1b",
-      "production-package/units/land/tank.hjson": "eb16e1f3ec49b0b7534df7805edd0dbd920d6ce14be7a5e12d1806068462c262",
+      "production-package/units/land/tank.hjson": "3ad9c0cca5e3f0d7b51420b56dfc4c527f5a4a0cfd9e07ec3696056365e0e07b",
       "production-package/units/land/tank.png": "898fa8d12d89e73c988c258c3522a23660b2fdc500b4c8588fd2d8cf5fe4b605",
       "production-package/units/land/tank_dead.png": "cbab7f92fa0cbef203e94823e2cbdc3e0116df3dab205f2ce0296e399a1a4ffa",
       "production-package/units/land/tank_turret.png": "20dfaa2a45dd5bb635e83425fb64a6d3d3f9fef48d1b0a3b573fe5b9b67c4985",
       "production-package/units/naval/heavy_battleship.png": "fed347e885f6b394f48ebb3f82a3c7deb86ce6cd73e1035715b2be69fdb87a1f",
       "production-package/units/naval/heavy_battleship_dead.png": "b3b38d14f12c1cc7dada9e25ac1ee1c5a126472ec36f561c37d0949fbdc256a7",
-      "production-package/units/naval/heavyBattleship.hjson": "db11829a3845971f85498b10ffe6dc31c6a337e51ad6cb38cd5940d844c107f6",
+      "production-package/units/naval/heavyBattleship.hjson": "1715554a223111df393b84126e9d5d1fe3c30edcf61820ea027b087d97b952f0",
       "production-package/units/naval/large_turret.png": "786ebb3167e16227585aa46f179ccc0fb21136deec159be7d9cf82708918550b",
       "production-package/units/naval/underwater_target.png": "bc8f3bf04c77313d277018f3da1296e7c85cc255086ff26d6fe23ef7113b8a6b",
       "production-package/units/naval/underwaterTarget.hjson": "0e97a0ab19c3ef833664a8e67c43feddae745ba986c6694e6b67dc3125cfef1d",

@@ -12,7 +12,7 @@
       {
         "id": "helicopter",
         "path": "../inputs/helicopter-production/hjson/package/units/helicopter.hjson",
-        "sha256": "906243ee0d3083203381d5a116df173fa0399cd73385f2994455145a2a21a849",
+        "sha256": "a0f67651c335be1bf46b9793ea74c186437b6172e3be78ad189cd4cd905a3121",
         "loader": "helicopter"
       }
     ],

@@ -1,6 +1,6 @@
 # Self-owned finite heavy mech with Hjson comments
 {
-  format: "rw-reforge.unit.v1",
+  format: "rw-reforge.unit.v2",
   core: {
     "name": "mechHeavyMissile",
     "class": "CustomUnitMetadata",

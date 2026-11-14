@@ -48,7 +48,7 @@ internal object AfterburnContentFixture {
                 "[$name]\n" + (if (name == "core" && parent != null) "copyFrom: $parent\n" else "") +
                     fields.entries.joinToString("\n") { "${it.key}: ${it.value}" }
             } + "\n"
-            val result = JsonObject().add("format", "rw-reforge.unit.v1")
+            val result = JsonObject().add("format", "rw-reforge.unit.v2")
             if (parent != null) result.add("copyFrom", org.hjson.JsonArray().add(parent))
             val actions = org.hjson.JsonArray()
             for ((name, fields) in sections) {

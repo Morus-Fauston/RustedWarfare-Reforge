@@ -12,7 +12,7 @@
       {
         "id": "mechGun",
         "path": "../inputs/mech-engineer-production/hjson/production-package/units/mech.hjson",
-        "sha256": "4acefdc963321a36bbe561da13ca8a07cf1898b04eb8a0b4d7ddef639ebee60b",
+        "sha256": "435864ec3d59ff80c247bb99d1743f346ee1a18eaeeabe5094b2b9fa0cfbb55d",
         "loader": "mech"
       },
       {
@@ -30,7 +30,7 @@
       {
         "id": "mechHeavyMissile",
         "path": "../inputs/mech-engineer-production/hjson/production-package/units/heavy/heavy.hjson",
-        "sha256": "23575def10c8f264552f8adb4f30790038988f70ad281d9dfea5870988f2ac92",
+        "sha256": "cf50c2533856cd5b3c84e6ac4c73e1db0dbed7fa2dd5d3ff41c99a22686c8cbc",
         "loader": "mech-heavy"
       },
       {
@@ -42,13 +42,13 @@
       {
         "id": "helicopter",
         "path": "../inputs/mech-engineer-production/hjson/production-package/units/air/helicopter.hjson",
-        "sha256": "906243ee0d3083203381d5a116df173fa0399cd73385f2994455145a2a21a849",
+        "sha256": "a0f67651c335be1bf46b9793ea74c186437b6172e3be78ad189cd4cd905a3121",
         "loader": "helicopter"
       },
       {
         "id": "mechEngineer",
         "path": "../inputs/mech-engineer-production/hjson/production-package/units/engineer/engineer.hjson",
-        "sha256": "cd25a662dcdc361535537a340b3cab06f196c326414e5a79013ee82e59934217",
+        "sha256": "c3332e7ed4fae423b7fce1eec25785b1e8f50f1cdd894af38c9bfc7723923799",
         "loader": "mech-engineer"
       },
       {

@@ -1,0 +1,523 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Reforge unit v2 for the ordinary tank reader",
+  "description": "JSON and parsed Hjson syntax for a pack entry with type tank. The engine validates the inherited definition and its references.",
+  "type": "object",
+  "required": [
+    "format"
+  ],
+  "properties": {
+    "format": { "const": "rw-reforge.unit.v2" },
+    "copyFrom": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "\\S"
+      }
+    },
+    "core": { "$ref": "#/$defs/core" },
+    "graphics": { "$ref": "#/$defs/graphics" },
+    "attack": { "$ref": "#/$defs/attack" },
+    "movement": { "$ref": "#/$defs/movement" },
+    "templates": {
+      "type": "object",
+      "propertyNames": {
+        "pattern": "^template_(?!\\s)(?!.*\\s$)[^,\\[\\]\\u0000-\\u001F\\u007F-\\u009F]+$"
+      },
+      "additionalProperties": { "$ref": "#/$defs/template" }
+    },
+    "weapons": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/weapon" }
+    },
+    "projectiles": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/namedProjectile" }
+    },
+    "removeWeapons": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/name" },
+      "uniqueItems": true
+    }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "name": {
+      "type": "string",
+      "pattern": "^(?!\\s)(?!.*\\s$)[^,\\[\\]\\u0000-\\u001F\\u007F-\\u009F]+$"
+    },
+    "core": {
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "overrideAndReplace": { "type": "string" },
+        "class": { "type": "string" },
+        "price": { "type": "number" },
+        "reclaimPrice": { "type": "number" },
+        "maxHp": { "type": "number" },
+        "mass": {
+          "type": [
+            "boolean",
+            "number",
+            "string"
+          ]
+        },
+        "techLevel": { "type": "integer", "minimum": 1, "maximum": 3 },
+        "buildSpeed": { "type": "number" },
+        "radius": { "type": "number" },
+        "displayRadius": { "type": "number" },
+        "isBio": { "type": "boolean" },
+        "softCollisionOnAll": { "type": "number" },
+        "displayLocaleKey": { "type": "string" },
+        "fogOfWarSightRange": { "type": "number" },
+        "transportSlotsNeeded": { "type": "number" },
+        "dont_load": { "type": "boolean" },
+        "copyFromSections": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/name" }
+        },
+        "skipInheritance": { "type": "boolean" }
+      },
+      "additionalProperties": false
+    },
+    "graphics": {
+      "type": "object",
+      "properties": {
+        "total_frames": { "type": "number" },
+        "image": { "type": "string" },
+        "image_wreak": { "type": "string" },
+        "image_turret": { "type": "string" },
+        "imageScale": { "type": "number" },
+        "turretImageScale": { "type": "number" },
+        "image_shadow": {
+          "type": [
+            "boolean",
+            "number",
+            "string"
+          ]
+        },
+        "shadowOffsetX": {
+          "type": [
+            "boolean",
+            "number",
+            "string"
+          ]
+        },
+        "shadowOffsetY": {
+          "type": [
+            "boolean",
+            "number",
+            "string"
+          ]
+        },
+        "animation_moving_start": {
+          "type": [
+            "boolean",
+            "number",
+            "string"
+          ]
+        },
+        "animation_moving_end": {
+          "type": [
+            "boolean",
+            "number",
+            "string"
+          ]
+        },
+        "animation_moving_speed": {
+          "type": [
+            "boolean",
+            "number",
+            "string"
+          ]
+        },
+        "dustEffect": {
+          "type": [
+            "boolean",
+            "number",
+            "string"
+          ]
+        },
+        "copyFromSections": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/name" }
+        },
+        "skipInheritance": { "type": "boolean" }
+      },
+      "additionalProperties": false
+    },
+    "attack": {
+      "type": "object",
+      "properties": {
+        "canAttack": { "type": "boolean" },
+        "canAttackFlyingUnits": { "type": "boolean" },
+        "canAttackLandUnits": { "type": "boolean" },
+        "canAttackUnderwaterUnits": { "type": "boolean" },
+        "turretSize": { "type": "number" },
+        "turretTurnSpeed": { "type": "number" },
+        "maxAttackRange": { "type": "number" },
+        "shootDelay": { "type": "number" },
+        "turretMultiTargeting": { "type": "boolean" },
+        "copyFromSections": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/name" }
+        },
+        "skipInheritance": { "type": "boolean" }
+      },
+      "additionalProperties": false
+    },
+    "movement": {
+      "type": "object",
+      "properties": {
+        "movementType": { "type": "string" },
+        "moveSpeed": { "type": "number" },
+        "moveAccelerationSpeed": { "type": "number" },
+        "moveDecelerationSpeed": { "type": "number" },
+        "maxTurnSpeed": { "type": "number" },
+        "turnAcceleration": { "type": "number" },
+        "moveSlidingMode": { "type": "boolean" },
+        "moveIgnoringBody": { "type": "boolean" },
+        "copyFromSections": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/name" }
+        },
+        "skipInheritance": { "type": "boolean" }
+      },
+      "additionalProperties": false
+    },
+    "inlineProjectile": {
+      "type": "object",
+      "required": ["directDamage", "life", "speed"],
+      "properties": {
+        "directDamage": { "type": "number" },
+        "life": { "type": "number" },
+        "speed": { "type": "number" },
+        "frame": {
+          "type": [
+            "boolean",
+            "number",
+            "string"
+          ]
+        },
+        "drawSize": {
+          "type": [
+            "boolean",
+            "number",
+            "string"
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "namedProjectile": {
+      "type": "object",
+      "required": [
+        "name"
+      ],
+      "properties": {
+        "directDamage": { "type": "number" },
+        "life": { "type": "number" },
+        "speed": { "type": "number" },
+        "frame": {
+          "type": [
+            "boolean",
+            "number",
+            "string"
+          ]
+        },
+        "drawSize": {
+          "type": [
+            "boolean",
+            "number",
+            "string"
+          ]
+        },
+        "copyFromSections": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/name" }
+        },
+        "skipInheritance": { "type": "boolean" },
+        "name": {
+          "allOf": [
+            {
+              "$ref": "#/$defs/name"
+            },
+            {
+              "not": {
+                "pattern": "^__inline_"
+              }
+            }
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "weapon": {
+      "type": "object",
+      "required": [
+        "name"
+      ],
+      "properties": {
+        "x": { "type": "number" },
+        "y": { "type": "number" },
+        "projectile": {
+          "oneOf": [
+            {
+              "allOf": [
+                {
+                  "$ref": "#/$defs/name"
+                },
+                {
+                  "not": {
+                    "pattern": "^__inline_"
+                  }
+                }
+              ]
+            },
+            {
+              "$ref": "#/$defs/inlineProjectile"
+            }
+          ]
+        },
+        "delay": { "type": "number" },
+        "limitingRange": { "type": "number" },
+        "limitingMinRange": { "type": "number" },
+        "canAttackLandUnits": { "type": "boolean" },
+        "canAttackFlyingUnits": { "type": "boolean" },
+        "canAttackUnderwaterUnits": { "type": "boolean" },
+        "warmup": { "type": "number" },
+        "warmupCallDownRate": { "type": "number" },
+        "warmupNoReset": { "type": "boolean" },
+        "warmupShootDelayTransfer": { "type": "number" },
+        "canAttack": { "type": "boolean" },
+        "canAttackMaxAngle": { "type": "number" },
+        "turnSpeed": { "type": "number" },
+        "attachedTo": { "type": "string" },
+        "slave": { "type": "boolean" },
+        "linkDelayWithTurret": { "type": "string" },
+        "limitingAngle": { "type": "number" },
+        "idleDir": { "type": "number" },
+        "barrelY": { "type": "number" },
+        "size": { "type": "number" },
+        "barrelX": { "type": "number" },
+        "barrelOffsetX_onOddShots": { "type": "number" },
+        "recoilOutTime": { "type": "number" },
+        "recoilReturnTime": { "type": "number" },
+        "turnSpeedAcceleration": { "type": "number" },
+        "shoot_sound": {
+          "type": [
+            "boolean",
+            "number",
+            "string"
+          ]
+        },
+        "shoot_sound_vol": {
+          "type": [
+            "boolean",
+            "number",
+            "string"
+          ]
+        },
+        "shoot_flame": {
+          "type": [
+            "boolean",
+            "number",
+            "string"
+          ]
+        },
+        "shoot_light": {
+          "type": [
+            "boolean",
+            "number",
+            "string"
+          ]
+        },
+        "canShoot": { "type": "boolean" },
+        "recoilOffset": { "type": "number" },
+        "copyFromSections": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/name" }
+        },
+        "skipInheritance": { "type": "boolean" },
+        "name": { "$ref": "#/$defs/name" }
+      },
+      "additionalProperties": false
+    },
+    "template": {
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "overrideAndReplace": { "type": "string" },
+        "class": { "type": "string" },
+        "price": { "type": "number" },
+        "reclaimPrice": { "type": "number" },
+        "maxHp": { "type": "number" },
+        "mass": {
+          "type": [
+            "boolean",
+            "number",
+            "string"
+          ]
+        },
+        "techLevel": { "type": "integer", "minimum": 1, "maximum": 3 },
+        "buildSpeed": { "type": "number" },
+        "radius": { "type": "number" },
+        "displayRadius": { "type": "number" },
+        "isBio": { "type": "boolean" },
+        "softCollisionOnAll": { "type": "number" },
+        "displayLocaleKey": { "type": "string" },
+        "fogOfWarSightRange": { "type": "number" },
+        "transportSlotsNeeded": { "type": "number" },
+        "total_frames": { "type": "number" },
+        "image": { "type": "string" },
+        "image_wreak": { "type": "string" },
+        "image_turret": { "type": "string" },
+        "imageScale": { "type": "number" },
+        "turretImageScale": { "type": "number" },
+        "image_shadow": {
+          "type": [
+            "boolean",
+            "number",
+            "string"
+          ]
+        },
+        "shadowOffsetX": {
+          "type": [
+            "boolean",
+            "number",
+            "string"
+          ]
+        },
+        "shadowOffsetY": {
+          "type": [
+            "boolean",
+            "number",
+            "string"
+          ]
+        },
+        "animation_moving_start": {
+          "type": [
+            "boolean",
+            "number",
+            "string"
+          ]
+        },
+        "animation_moving_end": {
+          "type": [
+            "boolean",
+            "number",
+            "string"
+          ]
+        },
+        "animation_moving_speed": {
+          "type": [
+            "boolean",
+            "number",
+            "string"
+          ]
+        },
+        "dustEffect": {
+          "type": [
+            "boolean",
+            "number",
+            "string"
+          ]
+        },
+        "canAttack": { "type": "boolean" },
+        "canAttackFlyingUnits": { "type": "boolean" },
+        "canAttackLandUnits": { "type": "boolean" },
+        "canAttackUnderwaterUnits": { "type": "boolean" },
+        "turretSize": { "type": "number" },
+        "turretTurnSpeed": { "type": "number" },
+        "maxAttackRange": { "type": "number" },
+        "shootDelay": { "type": "number" },
+        "turretMultiTargeting": { "type": "boolean" },
+        "x": { "type": "number" },
+        "y": { "type": "number" },
+        "projectile": { "type": "string" },
+        "delay": { "type": "number" },
+        "limitingRange": { "type": "number" },
+        "limitingMinRange": { "type": "number" },
+        "warmup": { "type": "number" },
+        "warmupCallDownRate": { "type": "number" },
+        "warmupNoReset": { "type": "boolean" },
+        "warmupShootDelayTransfer": { "type": "number" },
+        "canAttackMaxAngle": { "type": "number" },
+        "turnSpeed": { "type": "number" },
+        "attachedTo": { "type": "string" },
+        "slave": { "type": "boolean" },
+        "linkDelayWithTurret": { "type": "string" },
+        "limitingAngle": { "type": "number" },
+        "idleDir": { "type": "number" },
+        "barrelY": { "type": "number" },
+        "size": { "type": "number" },
+        "barrelX": { "type": "number" },
+        "barrelOffsetX_onOddShots": { "type": "number" },
+        "recoilOutTime": { "type": "number" },
+        "recoilReturnTime": { "type": "number" },
+        "turnSpeedAcceleration": { "type": "number" },
+        "shoot_sound": {
+          "type": [
+            "boolean",
+            "number",
+            "string"
+          ]
+        },
+        "shoot_sound_vol": {
+          "type": [
+            "boolean",
+            "number",
+            "string"
+          ]
+        },
+        "shoot_flame": {
+          "type": [
+            "boolean",
+            "number",
+            "string"
+          ]
+        },
+        "shoot_light": {
+          "type": [
+            "boolean",
+            "number",
+            "string"
+          ]
+        },
+        "canShoot": { "type": "boolean" },
+        "recoilOffset": { "type": "number" },
+        "directDamage": { "type": "number" },
+        "life": { "type": "number" },
+        "speed": { "type": "number" },
+        "frame": {
+          "type": [
+            "boolean",
+            "number",
+            "string"
+          ]
+        },
+        "drawSize": {
+          "type": [
+            "boolean",
+            "number",
+            "string"
+          ]
+        },
+        "movementType": { "type": "string" },
+        "moveSpeed": { "type": "number" },
+        "moveAccelerationSpeed": { "type": "number" },
+        "moveDecelerationSpeed": { "type": "number" },
+        "maxTurnSpeed": { "type": "number" },
+        "turnAcceleration": { "type": "number" },
+        "moveSlidingMode": { "type": "boolean" },
+        "moveIgnoringBody": { "type": "boolean" },
+        "copyFromSections": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/name" }
+        },
+        "skipInheritance": { "type": "boolean" }
+      },
+      "additionalProperties": false
+    }
+  }
+}

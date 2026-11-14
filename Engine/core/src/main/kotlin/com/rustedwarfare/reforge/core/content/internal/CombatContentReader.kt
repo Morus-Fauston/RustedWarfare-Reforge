@@ -35,7 +35,7 @@ internal object CombatContentReader {
         "turret_1" to setOf("shoot_sound", "shoot_sound_vol", "shoot_flame", "shoot_light"),
         "projectile_1" to setOf("frame", "drawSize"),
     )
-    private val numericFields = setOf("transportSlotsNeeded", "price", "reclaimPrice", "buildSpeed", "maxHp", "radius", "displayRadius",
+    private val numericFields = setOf("transportSlotsNeeded", "price", "reclaimPrice", "buildSpeed", "maxHp", "radius", "displayRadius", "techLevel",
         "softCollisionOnAll", "fogOfWarSightRange", "total_frames", "imageScale", "turretImageScale",
         "turretSize", "turretTurnSpeed", "maxAttackRange", "shootDelay", "x", "y", "turnSpeedAcceleration",
         "directDamage", "life", "speed", "moveSpeed", "moveAccelerationSpeed", "moveDecelerationSpeed",
@@ -55,7 +55,8 @@ internal object CombatContentReader {
         else -> section
     }
 
-    private val schema = UnitContentSchema(fields, numericFields, booleanFields, textFields)
+    private val schema = UnitContentSchema(fields, numericFields, booleanFields, textFields,
+        requiredInlineProjectileFields = setOf("directDamage", "life", "speed"))
 
     fun read(path: Path): UnitDefinition = readWithSources(path).definition
 

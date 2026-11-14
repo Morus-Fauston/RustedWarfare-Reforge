@@ -10,6 +10,113 @@ import kotlin.test.assertTrue
 
 class ThreeFormatCombatContentTest {
     @Test
+    fun v2_reports_invalid_or_incomplete_inline_projectiles_at_the_weapon_declaration() {
+        for (format in listOf("json", "hjson")) for ((projectile, code) in listOf(
+            """{"directDamage":41,"life":1e309,"speed":5}""" to ContentErrorCode.MALFORMED_SYNTAX,
+            """{"directDamage":41,"speed":5}""" to ContentErrorCode.MISSING_REQUIRED_FIELD,
+        )) {
+            withInput("tank.$format", """{"format":"rw-reforge.unit.v2","copyFrom":["parent.$format"]}""") { path ->
+                val parent = path.resolveSibling("parent.$format")
+                Files.writeString(parent, tankJson.replace("\"projectile\":\"1\"", "\"projectile\":$projectile"))
+                val error = assertIs<ContentResult.Failure>(ContentLoader.loadCombatUnit(path)).error
+                assertEquals(code, error.code)
+                assertEquals(parent.toString(), error.file)
+                assertEquals("turret_1", error.section)
+                assertEquals("projectile.life", error.field)
+            }
+        }
+    }
+
+    @Test
+    fun v2_tech_level_requires_the_number_type_in_both_structured_formats() {
+        for (format in listOf("json", "hjson")) {
+            val invalid = tankJson.replace("\"price\":350", "\"price\":350,\"techLevel\":\"2\"")
+            withInput("tank.$format", invalid) { path ->
+                val error = assertIs<ContentResult.Failure>(ContentLoader.loadCombatUnit(path)).error
+                assertEquals(ContentErrorCode.MALFORMED_SYNTAX, error.code)
+                assertEquals("core", error.section)
+                assertEquals("techLevel", error.field)
+            }
+        }
+    }
+
+    @Test
+    fun v2_whole_inline_projectile_replaces_the_inherited_reference_and_keeps_the_mount() {
+        withInput("tank.json", """
+            {"format":"rw-reforge.unit.v2", "copyFrom":["parent.json"],
+             "weapons":[{"name":"1","delay":12,"projectile":{"directDamage":41,"life":50,"speed":8}}]}
+        """.trimIndent()) { path ->
+            val parent = tankJson
+                .replace("\"x\":0, \"y\":0", "\"x\":4, \"y\":0")
+            Files.writeString(path.parent.resolve("parent.json"), parent)
+            val unit = assertIs<ContentResult.Success<UnitDefinition>>(ContentLoader.loadCombatUnit(path)).value
+            val weapon = assertNotNull(assertNotNull(unit.combat).namedWeapons).byName.getValue("1")
+            assertEquals(4.0, weapon.mount.localX)
+            assertEquals(12.0, weapon.shootDelay)
+            assertEquals(41.0, weapon.projectile.directDamage)
+            assertEquals(50.0, weapon.projectile.life)
+            assertEquals(8.0, weapon.projectile.speed)
+        }
+    }
+
+    @Test
+    fun v2_empty_weapon_array_keeps_parent_and_unknown_deletion_is_rejected() {
+        withInput("tank.json", """
+            {"format":"rw-reforge.unit.v2", "copyFrom":["parent.json"], "weapons":[]}
+        """.trimIndent()) { path ->
+            Files.writeString(path.parent.resolve("parent.json"), tankJson)
+            val first = assertIs<ContentResult.Success<UnitDefinition>>(ContentLoader.loadCombatUnit(path)).value
+            assertEquals(25.0, assertNotNull(first.combat).projectile.directDamage)
+            Files.writeString(path, """{"format":"rw-reforge.unit.v2", "copyFrom":["parent.json"],
+              "removeWeapons":["absent"]}""")
+            val invalid = assertIs<ContentResult.Failure>(ContentLoader.loadCombatUnit(path)).error
+            assertEquals(ContentErrorCode.BAD_REFERENCE, invalid.code)
+            assertEquals("removeWeapons", invalid.field)
+        }
+    }
+
+    @Test
+    fun v2_deletion_is_scoped_to_its_inheritance_branch_and_validates_surviving_links() {
+        withInput("tank.json", """
+            {"format":"rw-reforge.unit.v2", "copyFrom":["with-side.json","without-side.json"]}
+        """.trimIndent()) { path ->
+            val parent = tankJson.replace(
+                "\"turnSpeedAcceleration\":1}]",
+                "\"turnSpeedAcceleration\":1},{\"name\":\"side\",\"x\":2,\"y\":0,\"projectile\":\"1\",\"turnSpeedAcceleration\":1}]",
+            )
+            Files.writeString(path.parent.resolve("with-side.json"), parent)
+            Files.writeString(path.parent.resolve("without-side.json"), """
+                {"format":"rw-reforge.unit.v2", "copyFrom":["with-side.json"], "removeWeapons":["side"]}
+            """.trimIndent())
+            fun weapons(): Set<String> {
+                val loaded = ContentLoader.loadCombatUnit(path)
+                val combat = assertNotNull(assertIs<ContentResult.Success<UnitDefinition>>(loaded, loaded.toString()).value.combat)
+                return assertNotNull(combat.namedWeapons).byName.keys
+            }
+            assertEquals(setOf("1", "side"), weapons())
+
+            Files.writeString(path, """{"format":"rw-reforge.unit.v2", "copyFrom":["without-side.json"]}""")
+            assertEquals(setOf("1"), weapons())
+            Files.writeString(path, """
+                {"format":"rw-reforge.unit.v2", "copyFrom":["with-side.json"], "removeWeapons":["side"],
+                 "weapons":[{"name":"1","attachedTo":"side"}]}
+            """.trimIndent())
+            val invalid = assertIs<ContentResult.Failure>(ContentLoader.loadCombatUnit(path)).error
+            assertEquals(ContentErrorCode.BAD_REFERENCE, invalid.code)
+            assertEquals("attachedTo", invalid.field)
+        }
+    }
+
+    @Test
+    fun v2_rejects_obsolete_unit_format_at_the_normal_loader() {
+        withInput("tank.json", tankJson.replace("rw-reforge.unit.v2", "rw-reforge.unit." + "v1")) { path ->
+            val invalid = assertIs<ContentResult.Failure>(ContentLoader.loadCombatUnit(path)).error
+            assertEquals(ContentErrorCode.UNSUPPORTED_FEATURE, invalid.code)
+            assertEquals("format", invalid.field)
+        }
+    }
+
+    @Test
     fun json_tank_loads_existing_combat_values_and_defaults() {
         withInput("tank.json", tankJson) { path ->
             val unit = assertIs<ContentResult.Success<UnitDefinition>>(ContentLoader.loadCombatUnit(path)).value
@@ -58,7 +165,7 @@ class ThreeFormatCombatContentTest {
     @Test
     fun json_unit_inherits_ini_content_and_keeps_local_values() {
         withInput("tank.json", """
-            {"format":"rw-reforge.unit.v1", "copyFrom":["base.ini"], "core":{"maxHp":300}}
+            {"format":"rw-reforge.unit.v2", "copyFrom":["base.ini"], "core":{"maxHp":300}}
         """.trimIndent()) { path ->
             val fixtures = System.getProperty("public.fixtures.dir")?.let(Path::of)
                 ?: Path.of("../../SimulationTest/public/inputs")
@@ -82,7 +189,7 @@ class ThreeFormatCombatContentTest {
             val base = path.parent.resolve("base.json")
             Files.writeString(base, tankJson.replace("\"price\":350", "\"dont_load\":true, \"price\":350"))
             Files.writeString(path.parent.resolve("middle.hjson"), """
-                format: rw-reforge.unit.v1
+                format: rw-reforge.unit.v2
                 copyFrom: ["base.json"]
                 core: {
                   dont_load: true
@@ -101,7 +208,7 @@ class ThreeFormatCombatContentTest {
 
     @Test
     fun invalid_inherited_value_reports_the_declaring_file_and_field() {
-        withInput("tank.hjson", "format: rw-reforge.unit.v1\ncopyFrom: [\"base.ini\"]") { path ->
+        withInput("tank.hjson", "format: rw-reforge.unit.v2\ncopyFrom: [\"base.ini\"]") { path ->
             val fixtures = System.getProperty("public.fixtures.dir")?.let(Path::of)
                 ?: Path.of("../../SimulationTest/public/inputs")
             val parent = path.parent.resolve("base.ini")
@@ -140,8 +247,8 @@ class ThreeFormatCombatContentTest {
             val base = tankJson.replace(
                 "\"weapons\": [{\"name\":\"1\", \"x\":0, \"y\":0, \"canShoot\":true, \"projectile\":\"1\", \"turnSpeedAcceleration\":1}]",
                 "\"weapons\": []",
-            ).replace("\"format\": \"rw-reforge.unit.v1\",", """
-                "format": "rw-reforge.unit.v1",
+            ).replace("\"format\": \"rw-reforge.unit.v2\",", """
+                "format": "rw-reforge.unit.v2",
                 "templates": {"template_gun": {"x":3, "y":0, "canShoot":true, "turnSpeedAcceleration":2}},
             """.trimIndent())
             Files.writeString(path.parent.resolve("base.json"), base)
@@ -155,7 +262,7 @@ class ThreeFormatCombatContentTest {
     fun structured_section_controls_skip_file_inheritance_and_follow_reverse_depth_first_templates() {
         withInput("tank.hjson", """
             {
-              format: rw-reforge.unit.v1
+              format: rw-reforge.unit.v2
               copyFrom: ["base.ini"]
               weapons: [{name:"1", skipInheritance:true, copyFromSections:["template_a","template_b"], x:0}]
               templates: {
@@ -176,7 +283,7 @@ class ThreeFormatCombatContentTest {
 
     @Test
     fun inherited_images_use_the_consumer_directory_and_errors_keep_the_declaration_and_chain() {
-        withInput("tank.json", """{"format":"rw-reforge.unit.v1","copyFrom":["parents/middle.ini"]}""") { path ->
+        withInput("tank.json", """{"format":"rw-reforge.unit.v2","copyFrom":["parents/middle.ini"]}""") { path ->
             val parents = Files.createDirectory(path.parent.resolve("parents"))
             val middle = parents.resolve("middle.ini")
             Files.writeString(middle, "[core]\ncopyFrom: base.ini\ndont_load: true")
@@ -199,7 +306,7 @@ class ThreeFormatCombatContentTest {
 
     @Test
     fun bad_inheritance_references_report_the_actual_author_field_and_consumption_chain() {
-        withInput("tank.json", """{"format":"rw-reforge.unit.v1","copyFrom":["missing.ini"]}""") { path ->
+        withInput("tank.json", """{"format":"rw-reforge.unit.v2","copyFrom":["missing.ini"]}""") { path ->
             val error = assertIs<ContentResult.Failure>(ContentLoader.loadCombatUnit(path)).error
             assertEquals(ContentErrorCode.BAD_REFERENCE, error.code)
             assertEquals(null, error.section)
@@ -208,7 +315,7 @@ class ThreeFormatCombatContentTest {
             assertTrue(error.reason.contains(path.toString()))
         }
         withInput("tank.hjson", """
-            {format:"rw-reforge.unit.v1", weapons:[{name:"1", copyFromSections:["template_missing"]}]}
+            {format:"rw-reforge.unit.v2", weapons:[{name:"1", copyFromSections:["template_missing"]}]}
         """.trimIndent()) { path ->
             val error = assertIs<ContentResult.Failure>(ContentLoader.loadCombatUnit(path)).error
             assertEquals(ContentErrorCode.BAD_REFERENCE, error.code)
@@ -221,9 +328,9 @@ class ThreeFormatCombatContentTest {
 
     @Test
     fun file_inheritance_uses_the_entire_b_branch_first_and_allows_a_shared_ancestor() {
-        withInput("tank.json", """{"format":"rw-reforge.unit.v1","copyFrom":["a.ini","b.hjson"],"core":{"maxHp":300}}""") { path ->
+        withInput("tank.json", """{"format":"rw-reforge.unit.v2","copyFrom":["a.ini","b.hjson"],"core":{"maxHp":300}}""") { path ->
             Files.writeString(path.parent.resolve("a.ini"), "[core]\ncopyFrom: shared.json\nprice: 700\ndisplayRadius: 21")
-            Files.writeString(path.parent.resolve("b.hjson"), "format: rw-reforge.unit.v1\ncopyFrom: [\"shared.json\"]\ncore: {maxHp:550}")
+            Files.writeString(path.parent.resolve("b.hjson"), "format: rw-reforge.unit.v2\ncopyFrom: [\"shared.json\"]\ncore: {maxHp:550}")
             Files.writeString(path.parent.resolve("shared.json"), tankJson)
             val unit = assertIs<ContentResult.Success<UnitDefinition>>(ContentLoader.loadCombatUnit(path)).value
             assertEquals(350L, assertNotNull(unit.build).price)
@@ -262,7 +369,7 @@ class ThreeFormatCombatContentTest {
                 if (depth == last) "\"template_$depth\":{\"x\":0,\"y\":0,\"canShoot\":true,\"projectile\":\"1\",\"turnSpeedAcceleration\":2}"
                 else "\"template_$depth\":{\"copyFromSections\":[\"template_${depth + 1}\"]}"
             }
-            return """{"format":"rw-reforge.unit.v1","copyFrom":["base.json"],"weapons":[{"name":"1","skipInheritance":true,"copyFromSections":["template_1"]}],"templates":{$templates}}"""
+            return """{"format":"rw-reforge.unit.v2","copyFrom":["base.json"],"weapons":[{"name":"1","skipInheritance":true,"copyFromSections":["template_1"]}],"templates":{$templates}}"""
         }
         withInput("tank.json", text(10)) { path ->
             Files.writeString(path.parent.resolve("base.json"), tankJson)
@@ -324,7 +431,7 @@ class ThreeFormatCombatContentTest {
             tankJson.replace("\"life\":60", "\"life\":1e309") to ContentErrorCode.MALFORMED_SYNTAX,
             tankJson.replace("\"maxHp\":210,", "") to ContentErrorCode.MISSING_REQUIRED_FIELD,
             tankJson.replace("tank_dead.png", "missing.png") to ContentErrorCode.BAD_REFERENCE,
-            tankJson.replace("rw-reforge.unit.v1", "rw-reforge.unit.v99") to ContentErrorCode.UNSUPPORTED_FEATURE,
+            tankJson.replace("rw-reforge.unit.v2", "rw-reforge.unit.v99") to ContentErrorCode.UNSUPPORTED_FEATURE,
             tankJson.replace("\"directDamage\":25", "\"targetGround\":true,\"directDamage\":25") to ContentErrorCode.UNSUPPORTED_FIELD,
             tankJson.replace("\"format\":", "\"abilities\":{},\"format\":") to ContentErrorCode.UNSUPPORTED_FIELD,
             tankJson.replace("\"canShoot\":true", "\"skipInheritance\":\"true\",\"canShoot\":true") to ContentErrorCode.MALFORMED_SYNTAX,
@@ -368,7 +475,7 @@ class ThreeFormatCombatContentTest {
 
     @Test
     fun loaded_content_retains_actual_source_bytes_and_detects_changes_without_reparsing() {
-        val text = """{"format":"rw-reforge.unit.v1","copyFrom":["base.ini"]}"""
+        val text = """{"format":"rw-reforge.unit.v2","copyFrom":["base.ini"]}"""
         withInput("tank.json", text) { path ->
             val fixtures = System.getProperty("public.fixtures.dir")?.let(Path::of)
                 ?: Path.of("../../SimulationTest/public/inputs")
@@ -380,7 +487,7 @@ class ThreeFormatCombatContentTest {
             assertEquals(350L, assertNotNull(loaded.definition.build).price)
             assertEquals(listOf(path, base), loaded.sources.map { it.path })
             assertEquals(55L, loaded.sources[0].bytes)
-            assertEquals("ae03d75bc131b4fd56943de1e18e90edac965094967e3bd33a1261b38790a8c2", loaded.sources[0].sha256)
+            assertEquals("fb5aac95b156141918ea415032306818d198c009703cb1ffbd8afe9c9087397a", loaded.sources[0].sha256)
             assertEquals("99aa63a6f6e87662e257af3ca7c4557290153e60e62fcdf74360e15caef612e8", loaded.sources[1].sha256)
             assertIs<ContentResult.Success<Unit>>(loaded.verifyStable())
             Files.writeString(base, original.replace("price: 350", "price: 420"))
@@ -436,7 +543,7 @@ class ThreeFormatCombatContentTest {
 
     private val tankJson = """
         {
-          "format": "rw-reforge.unit.v1",
+          "format": "rw-reforge.unit.v2",
           "core": {"name":"c_tank", "overrideAndReplace":"tank", "class":"CustomUnitMetadata",
             "price":350, "buildSpeed":0.002, "maxHp":210, "radius":11, "displayRadius":11,
             "isBio":false, "softCollisionOnAll":0},

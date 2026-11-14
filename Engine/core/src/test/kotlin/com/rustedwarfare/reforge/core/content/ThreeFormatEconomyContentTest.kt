@@ -273,7 +273,7 @@ class ThreeFormatEconomyContentTest {
                 else -> quote(value)
             }
         }
-        val members = mutableListOf("\"format\":\"rw-reforge.unit.v1\"")
+        val members = mutableListOf("\"format\":\"rw-reforge.unit.v2\"")
         sections["core"]?.remove("copyFrom")?.let {
             members += "\"copyFrom\":[" + quote(it.removeSuffix(".ini") + ".$format") + "]"
         }

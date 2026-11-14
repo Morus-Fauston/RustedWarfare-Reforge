@@ -12,7 +12,7 @@
       {
         "id": "mechGun",
         "path": "../inputs/mech-production/hjson/production-package/units/mech.hjson",
-        "sha256": "4acefdc963321a36bbe561da13ca8a07cf1898b04eb8a0b4d7ddef639ebee60b",
+        "sha256": "435864ec3d59ff80c247bb99d1743f346ee1a18eaeeabe5094b2b9fa0cfbb55d",
         "loader": "mech"
       },
       {

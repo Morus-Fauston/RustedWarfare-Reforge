@@ -63,13 +63,13 @@
       {
         "id": "spcorvette",
         "path": "../inputs/author-naval-chain/hjson/package/units/spcorvette.hjson",
-        "sha256": "b30ba933816d2245e86c39849ad3fca45b72e6a43e8174385e37bef24f4239bb",
+        "sha256": "a19857bce2c8dfb5f14e0d6b006b2919b965a660c02e7288a270910d51a64a57",
         "loader": "water-combat"
       },
       {
         "id": "spfrigate",
         "path": "../inputs/author-naval-chain/hjson/package/units/spfrigate.hjson",
-        "sha256": "5a642d4026af150491327d1dbd0557d062a1f030f1b37491eb6ab444b0ba38c7",
+        "sha256": "2707b3d3ce4128508b66cbbe16b7b36f60e41a6003176ba22a17b285809bb644",
         "loader": "water-combat"
       },
       {

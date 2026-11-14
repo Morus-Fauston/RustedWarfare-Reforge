@@ -14,7 +14,7 @@ def render(sections, fmt, parent=None):
             return str(v).lower() if isinstance(v, bool) else str(v)
         return '\n'.join('['+s+']\n'+(f'copyFrom: {parent}\n' if s == 'core' and parent else '')+
             '\n'.join(f'{k}: {literal(v)}' for k, v in fields.items()) for s, fields in sections.items())+'\n'
-    result = dict(format='rw-reforge.unit.v1')
+    result = dict(format='rw-reforge.unit.v2')
     if parent:
         result['copyFrom'] = [parent]
     for s, fields in sections.items():

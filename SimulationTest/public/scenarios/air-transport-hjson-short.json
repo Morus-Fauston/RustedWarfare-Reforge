@@ -12,7 +12,7 @@
       {
         "id": "helicopter",
         "path": "../inputs/air-transport-production/hjson/production-package/units/helicopter.hjson",
-        "sha256": "906243ee0d3083203381d5a116df173fa0399cd73385f2994455145a2a21a849",
+        "sha256": "a0f67651c335be1bf46b9793ea74c186437b6172e3be78ad189cd4cd905a3121",
         "loader": "helicopter"
       },
       {
@@ -48,7 +48,7 @@
       {
         "id": "c_tank",
         "path": "../inputs/air-transport-production/hjson/production-package/units/land/tank.hjson",
-        "sha256": "eb16e1f3ec49b0b7534df7805edd0dbd920d6ce14be7a5e12d1806068462c262",
+        "sha256": "3ad9c0cca5e3f0d7b51420b56dfc4c527f5a4a0cfd9e07ec3696056365e0e07b",
         "loader": "declared-tank"
       },
       {
@@ -888,13 +888,13 @@
       "production-package/units/dropship.png": "0e44f9bfdc9e760f6cd59df6e0a7aa973d5c08c0611e5fec1f94d569ec4a5e44",
       "production-package/units/dropship_dead.png": "604d1acc5abe2f32a5429262f7e6b6f28922e36be789b93ddb55f04f6a874f06",
       "production-package/units/dropship_shadow.png": "11b26ac87143306dfa7547ee0db124241ce6c02a3cb3df5e71407f3544150be3",
-      "production-package/units/helicopter.hjson": "906243ee0d3083203381d5a116df173fa0399cd73385f2994455145a2a21a849",
+      "production-package/units/helicopter.hjson": "a0f67651c335be1bf46b9793ea74c186437b6172e3be78ad189cd4cd905a3121",
       "production-package/units/jet.png": "e77b83ec26b7a366346f25ccff339b8388fa1cf18f3c8fc5bd7b1312ab25d7d5",
       "production-package/units/jet_dead.png": "89bd67555244fdc282cce375ce314aa56c4cc9f479ad0965d33e61b25e2a28dd",
       "production-package/units/jet_left.png": "717e4192943b371bba6a1f75b951f45f35e791757bb4295c5d97ecef2a07101c",
       "production-package/units/jet_right.png": "717e4192943b371bba6a1f75b951f45f35e791757bb4295c5d97ecef2a07101c",
       "production-package/units/jet_shadow.png": "1b64b8ec6b2f88cd7b5d97ac115dcdee35395ed08e02ec086a14c34e053fc7eb",
-      "production-package/units/land/tank.hjson": "eb16e1f3ec49b0b7534df7805edd0dbd920d6ce14be7a5e12d1806068462c262",
+      "production-package/units/land/tank.hjson": "3ad9c0cca5e3f0d7b51420b56dfc4c527f5a4a0cfd9e07ec3696056365e0e07b",
       "production-package/units/land/tank.png": "898fa8d12d89e73c988c258c3522a23660b2fdc500b4c8588fd2d8cf5fe4b605",
       "production-package/units/land/tank_dead.png": "cbab7f92fa0cbef203e94823e2cbdc3e0116df3dab205f2ce0296e399a1a4ffa",
       "production-package/units/land/tank_turret.png": "20dfaa2a45dd5bb635e83425fb64a6d3d3f9fef48d1b0a3b573fe5b9b67c4985",
