@@ -23,6 +23,10 @@ TOOLS = {
         **POINTER_ARGUMENTS,
         "amount": {"type": "integer", "minimum": -20, "maximum": 20, "not": {"const": 0}},
     }),
+    "client_type": ("Type text through the focused client input processor.", {
+        "generation": POINTER_ARGUMENTS["generation"],
+        "text": {"type": "string", "minLength": 1, "maxLength": 512},
+    }),
     "client_screenshot": ("Read one actual framebuffer as PNG.", {}),
     "client_close": ("Close the owned hidden Windows client.", {}),
 }
@@ -51,6 +55,15 @@ class Client:
         if operation == "client_scroll" and (type(arguments["amount"]) is not int or
                                              not -20 <= arguments["amount"] <= 20 or arguments["amount"] == 0):
             raise ValueError("Expected a nonzero scroll amount between -20 and 20")
+        if operation == "client_type":
+            if type(arguments["generation"]) is not int or arguments["generation"] < 0:
+                raise ValueError("Expected a nonnegative integer generation")
+            value = arguments["text"]
+            if not isinstance(value, str) or not 1 <= len(value.encode("utf-16-le", "surrogatepass")) // 2 <= 512 or any(
+                    (ord(character) < 32 and character != "\b") or
+                    127 <= ord(character) <= 159 or 0xD800 <= ord(character) <= 0xDFFF
+                    for character in value):
+                raise ValueError("Expected 1 to 512 typed characters")
         ready = json.loads((self.bridge / "ready.json").read_bytes())
         if ready["runId"] != self.run_id:
             raise ValueError("Owned client identity no longer matches")
@@ -59,7 +72,8 @@ class Client:
         temporary = request.with_suffix(".tmp")
         try:
             with temporary.open("x", encoding="utf-8") as output:
-                json.dump(dict(arguments, id=request_id, runId=self.run_id, action=operation.removeprefix("client_")), output)
+                json.dump(dict(arguments, id=request_id, runId=self.run_id, action=operation.removeprefix("client_")),
+                          output, ensure_ascii=False)
             temporary.rename(request)
         except OSError:
             self.unavailable = True

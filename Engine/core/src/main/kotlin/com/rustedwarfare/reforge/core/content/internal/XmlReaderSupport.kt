@@ -16,9 +16,9 @@ import org.xml.sax.InputSource
 import org.xml.sax.ext.DefaultHandler2
 import java.io.ByteArrayInputStream
 
-internal fun readXml(path: Path): Element {
+internal fun readXml(path: Path, read: (Path) -> ByteArray): Element {
     return try {
-        val bytes = Files.readAllBytes(path)
+        val bytes = read(path)
         // Android's DOM factory lacks the JDK security feature flags. Validate the
         // exact same bytes with a fail-closed SAX DTD guard before building a DOM.
         val guard = object : DefaultHandler2() {

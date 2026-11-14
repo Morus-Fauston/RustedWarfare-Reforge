@@ -76,6 +76,15 @@ internal class BackgroundClientInput(
                     }
                     mapOf("input" to (mapOf("x" to x, "y" to y) + input))
                 }
+                "type" -> {
+                    require(message.getLong("generation") == currentGeneration()) { "Stale client generation" }
+                    val text = message.getString("text")
+                    require(text.length in 1..512 && text.none { it.isISOControl() && it != '\b' }) { "Expected 1 to 512 typed characters" }
+                    val processor = checkNotNull(Gdx.input.inputProcessor) { "Client is not accepting input" }
+                    var consumed = 0
+                    for (character in text) if (processor.keyTyped(character)) consumed++
+                    mapOf("input" to mapOf("characters" to text.length, "consumed" to consumed))
+                }
                 "screenshot" -> {
                     val name = "frame-$id.png"
                     val pixels = Pixmap.createFromFrameBuffer(0, 0, Gdx.graphics.backBufferWidth, Gdx.graphics.backBufferHeight)

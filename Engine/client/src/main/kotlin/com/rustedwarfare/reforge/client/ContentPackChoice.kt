@@ -68,8 +68,17 @@ fun contentPackVisuals(visuals: PreparedVisualAssets, choice: ContentPackChoice)
     return rebound.withResourceImages(ResourceImageComposer.compose(currentBase, prior.layers.dropLast(1))).withContentBinding(choice)
 }
 
-/** Reuses the existing controlled combat layout, not a new map or spawn-file interpreter. */
 internal fun contentPackScenario(root: Path, choice: ContentPackChoice): Scenario {
+    choice.content.openingPack?.let { pack ->
+        val opening = checkNotNull(pack.opening)
+        val objectIds = opening.units.mapIndexed { index, spawn -> spawn.unitId to (8L + index) }.toMap()
+        return Scenario(pack.id, opening.map, choice.content.units,
+            listOf(Player("p1", PlayerControl.LOCAL, "one"), Player("p2", PlayerControl.NONE, "two")), opening.units,
+            CoordinateModel("p001.coordinate.v1", "2d", "x-right", "y-down", "top-left", "world-unit", "double", "ieee754-binary64"),
+            TimeModel("p001.time.v1", "sim-tick", "ieee754-binary64", "fixed-explicit-delta"), MovementContract(16.0, 4.0),
+            combatContract = CombatContract(12345, -1, objectIds, 8L + opening.units.size),
+            economyContract = EconomyContract(mapOf("p1" to opening.credits, "p2" to opening.opponentCredits)))
+    }
     val nautilus = choice.unitId in setOf("commandCenter", "builder", "seaFactory", "seaFactoryT2", "experimentalLandFactory",
         "nautilusSubmarine", "nautilusSubmarineSurface", "nautilusSubmarineLand", "hoverTank") &&
         choice.content.units["nautilusSubmarine"]?.transport == TransportProfile.NAUTILUS_SUBMERGED &&

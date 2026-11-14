@@ -3,7 +3,7 @@ package com.rustedwarfare.reforge.core.content.internal
 import com.rustedwarfare.reforge.core.content.*
 import java.io.DataInputStream
 import java.io.IOException
-import java.nio.file.Files
+import java.io.InputStream
 import java.nio.file.Path
 import org.w3c.dom.Element
 
@@ -12,13 +12,15 @@ internal object TsxReader {
         "cliff-soft", "lava", "lava-cliff", "block-land")
     private val tilesetAttributes = setOf("name", "tilewidth", "tileheight", "tilecount", "columns", "spacing", "margin")
 
-    fun read(path: Path, firstGid: Int, tileWidth: Int, tileHeight: Int): TileSetDefinition =
-        parse(readXml(path), path, firstGid, tileWidth, tileHeight, false)
+    fun read(path: Path, firstGid: Int, tileWidth: Int, tileHeight: Int, read: (Path) -> ByteArray,
+        openImage: (Path) -> InputStream): TileSetDefinition =
+        parse(readXml(path, read), path, firstGid, tileWidth, tileHeight, false, openImage)
 
-    fun readInline(element: Element, path: Path, firstGid: Int, tileWidth: Int, tileHeight: Int): TileSetDefinition =
-        parse(element, path, firstGid, tileWidth, tileHeight, true)
+    fun readInline(element: Element, path: Path, firstGid: Int, tileWidth: Int, tileHeight: Int,
+        openImage: (Path) -> InputStream): TileSetDefinition = parse(element, path, firstGid, tileWidth, tileHeight, true, openImage)
 
-    private fun parse(element: Element, path: Path, firstGid: Int, mapTileWidth: Int, mapTileHeight: Int, inline: Boolean): TileSetDefinition {
+    private fun parse(element: Element, path: Path, firstGid: Int, mapTileWidth: Int, mapTileHeight: Int, inline: Boolean,
+        openImage: (Path) -> InputStream): TileSetDefinition {
         if (element.tagName != "tileset") reject(ContentErrorCode.MALFORMED_SYNTAX, path, element.tagName, reason = "Expected tileset root")
         attributes(element, path, if (inline) tilesetAttributes + "firstgid" else tilesetAttributes)
         val name = if (inline) element.getAttribute("name") else required(element, path, "name")
@@ -40,7 +42,7 @@ internal object TsxReader {
         val imagePath = resolveReference(path, imageSource, "image", "source")
         val imageWidth = integer(image, path, "width", 1)
         val imageHeight = integer(image, path, "height", 1)
-        verifyPngDimensions(imagePath, path, imageSource, imageWidth, imageHeight)
+        verifyPngDimensions(imagePath, path, imageSource, imageWidth, imageHeight, openImage)
         val spacing = integer(element, path, "spacing", 0, 0)
         val margin = integer(element, path, "margin", 0, 0)
         fun extent(pixels: Int, tileSize: Int, field: String): Int {
@@ -100,10 +102,11 @@ internal object TsxReader {
             image.getAttribute("trans").takeIf { image.hasAttribute("trans") }, resourcePools, water, bridges, hoverBlocked, overCliffBlocked, lava)
     }
 
-    private fun verifyPngDimensions(image: Path, file: Path, source: String, width: Int, height: Int) {
+    private fun verifyPngDimensions(image: Path, file: Path, source: String, width: Int, height: Int,
+        openImage: (Path) -> InputStream) {
         // Read only the PNG IHDR dimensions; no desktop graphics API is required by core.
         try {
-            DataInputStream(Files.newInputStream(image)).use { input ->
+            DataInputStream(openImage(image)).use { input ->
                 if (input.readLong() != 0x89504E470D0A1A0AuL.toLong() || input.readInt() != 13 || input.readInt() != 0x49484452) {
                     reject(ContentErrorCode.UNSUPPORTED_FEATURE, file, "image", "source", source, "Expected PNG atlas with IHDR header")
                 }

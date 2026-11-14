@@ -15,6 +15,12 @@ Windows 使用 LWJGL3 离线启动入口。使用现有 libGDX 1.13.1，字节�
 
 `:pc:run` 自动使用仓库根目录为工作目录。默认进入主菜单。从 Skirmish 打开开局设置，指定可用的内容目录，等待检查通过后按 Start。内容包和资源包各有管理页。加载期间可取消，返回设置后可更改内容，局内 Reopen 复用已冻结的设置。
 
+### 仅引擎安装
+
+在 `Engine` 目录运行 `./gradlew.bat :pc:installEngineOnlyDist`。用 `pc/build/install/reforge-engine/bin/pc.bat` 启动。安装目录含启动脚本和运行库，需要本机 Java。示例内容由使用者单独放置，见[基础包和独立扩展](../../SimulationTest/public/inputs/engine-only-packs/README.md)。
+
+从 Skirmish 进入开局页，打开 Content packs，输入基础包目录，点击 Check package 并勾选 Use next match。返回开局页，等待地图通过检查后点击 Start。需要扩展时，在同一管理页独立检查并启用它。依赖缺失或替换冲突时会显示受影响的包。
+
 `--development true` 打开离线开发设置，允许选择测试场景或启用沙盒布置。随包的六期 A 自有开发场景提供指挥中心或模块蜘蛛开局，开局资源和单位以所选场景为准。
 
 显式 `--inputs CONTENT_DIRECTORY` 仍从工作目录解析相对路径，使用原P002窗口标题；可用 `--inputs TestLab/local/P002-知识沙盒输入` 或 `--inputs TestLab/local/P001-移动沙盒输入` 回归旧私有输入。这些本地资料不随公开克隆或发行目录提供，缺件会加载失败。

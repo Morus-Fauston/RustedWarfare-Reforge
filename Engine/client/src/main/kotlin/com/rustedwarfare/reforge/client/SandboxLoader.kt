@@ -57,7 +57,9 @@ class SandboxLoader internal constructor(private val load: ((Path) -> Scenario)?
             val visuals = prepareVisuals?.invoke()?.let { before -> checked?.let { contentPackVisuals(before, it) } ?: before }
             val visualsPreparedNanos = System.nanoTime()
             val resources = SandboxRenderResources.from(scene)
-            val renderResources = visuals?.let { resources.bindVisuals(it) } ?: resources
+            val renderResources = visuals?.let {
+                resources.bindVisuals(it, useScenarioTerrain = testScenario == null && checked?.content?.openingPack != null)
+            } ?: resources
             prepared.verifyStable()
             checked?.content?.verifyStable()?.let { stable ->
                 if (stable is ContentResult.Failure) error(stable.error.describe())

@@ -41,6 +41,10 @@ internal object ContentPackComposer {
             reject(ContentErrorCode.BAD_REFERENCE, byId.getValue(cyclic.first()).manifest, field = "dependencies",
                 ref = cyclic.joinToString(), reason = "Cyclic enabled package dependencies")
         }
+        val openings = ordered.filter { it.opening != null }
+        if (openings.size > 1)
+            reject(ContentErrorCode.IDENTITY_CONFLICT, openings[1].manifest, field = "opening",
+                ref = openings.joinToString { it.id }, reason = "Enable a single package-owned opening")
         val units = linkedMapOf<String, UnitDefinition>()
         val provenance = linkedMapOf<String, ContentProvenance>()
         val sources = linkedMapOf<Path, ContentSourceIdentity>()

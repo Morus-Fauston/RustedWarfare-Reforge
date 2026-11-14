@@ -35,9 +35,10 @@ class BackgroundMcpTest(unittest.TestCase):
         for id_ in (4, 5, 6):
             self.assertEqual(-32602, responses[id_]["error"]["code"])
         tools = {tool["name"]: tool for tool in responses[7]["result"]["tools"]}
-        self.assertEqual({"client_close", "client_screenshot", "client_status", "client_click", "client_scroll"}, set(tools))
+        self.assertEqual({"client_close", "client_screenshot", "client_status", "client_click", "client_scroll", "client_type"}, set(tools))
         self.assertEqual({"runId", "generation", "x", "y", "amount"},
                          set(tools["client_scroll"]["inputSchema"]["required"]))
+        self.assertEqual({"runId", "generation", "text"}, set(tools["client_type"]["inputSchema"]["required"]))
 
     def test_invalid_scroll_cannot_publish_input(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -46,6 +47,14 @@ class BackgroundMcpTest(unittest.TestCase):
                 with self.subTest(amount=amount), self.assertRaisesRegex(ValueError, "scroll amount"):
                     client.call("client_scroll", {"runId": "sample", "generation": 0, "x": 1, "y": 2,
                                                   "amount": amount})
+            self.assertEqual(0, client.request_id)
+
+    def test_invalid_text_cannot_publish_input(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            client = Client(Path(temporary), "sample")
+            for text in ("", "a" * 513, "\u0000", "\ud800", "\U0001f680" * 257, True):
+                with self.subTest(text=text), self.assertRaisesRegex(ValueError, "typed characters"):
+                    client.call("client_type", {"runId": "sample", "generation": 0, "text": text})
             self.assertEqual(0, client.request_id)
 
     def test_failed_request_publication_closes_the_local_session(self):

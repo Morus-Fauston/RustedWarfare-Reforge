@@ -774,8 +774,9 @@ class BootstrapScreen(
 
     private fun refreshContentQualification() {
         if (!launch.canEdit) return
-        val input = rootField.text.takeIf { !testScenes.selected && packState.canStart && it.isNotBlank() }
-        val content = if (input == null) null else packState.choice()
+        val content = if (!testScenes.selected && packState.canStart) packState.choice() else null
+        val input = content?.content?.openingPack?.root?.toString()
+            ?: rootField.text.takeIf { !testScenes.selected && packState.canStart && it.isNotBlank() }
         if (input != contentInput || content != contentCandidate?.content) {
             contentInput = input
             qualification.cancel()
@@ -1625,7 +1626,9 @@ class BootstrapScreen(
         mapPreview.isVisible = setup
         val prepared = testScenes.choice?.scenario ?: qualifiedContent?.getOrNull()?.scenario
         previewHeading.setText(prepared?.let { scenario ->
-            "${testScenes.choice?.name ?: contentCandidate?.content?.pack?.name ?: "Selected map"}\n" +
+            val choice = contentCandidate?.content
+            val name = testScenes.choice?.name ?: choice?.content?.openingPack?.name ?: choice?.pack?.name ?: "Selected map"
+            "$name\n" +
             "${scenario.map.widthTiles} x ${scenario.map.heightTiles} tiles"
         } ?: "No map selected")
         val startupMessage = when {
@@ -1637,7 +1640,9 @@ class BootstrapScreen(
             qualifiedContent?.isFailure == true -> qualifiedContent?.exceptionOrNull()?.message
             visualState?.canStart == false -> visualState.error ?: "Apply the resource selection before starting."
             contentCandidate != null && qualifiedContent == null -> "Checking map and content..."
-            !canStartMatch() -> "Choose a checked content folder and enable any content packs you want to use."
+            !canStartMatch() -> if (rootField.text.isBlank())
+                "Check and enable a base package in Content packs."
+            else "Choose a checked content folder and enable any content packs you want to use."
             else -> ""
         }.orEmpty()
         startupNotice.isVisible = (loading || setup) && startupMessage.isNotEmpty()
@@ -1645,9 +1650,10 @@ class BootstrapScreen(
             startupStatus.setText(startupMessage)
             startupNotice.scrollY = 0f
         }
-        contentLabel.isVisible = setup
+        val packageOpening = contentCandidate?.content?.content?.openingPack != null
+        contentLabel.isVisible = setup && !packageOpening
         contentLabel.setBounds(488f, 420f, 296f, 24f)
-        rootField.isVisible = setup
+        rootField.isVisible = setup && !packageOpening
         rootField.setBounds(488f, 379f, 296f, 36f)
         rootField.isDisabled = touchControls || !editable || testScenes.selected
         modeBox.isVisible = setup

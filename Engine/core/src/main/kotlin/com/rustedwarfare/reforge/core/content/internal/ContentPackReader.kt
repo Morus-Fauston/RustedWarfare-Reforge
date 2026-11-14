@@ -1,6 +1,9 @@
 package com.rustedwarfare.reforge.core.content.internal
 
 import com.rustedwarfare.reforge.core.content.*
+import com.rustedwarfare.reforge.core.sim.Position
+import com.rustedwarfare.reforge.core.sim.UnitSpawn
+import java.io.ByteArrayOutputStream
 import java.nio.ByteBuffer
 import java.nio.charset.CharacterCodingException
 import java.nio.file.Files
@@ -46,7 +49,7 @@ internal object ContentPackReader {
             reject(ContentErrorCode.MALFORMED_SYNTAX, manifest,
                 reason = "Invalid package metadata at ${failure.line}:${failure.column}: ${failure.message}")
         }
-        val metadata = objectFields(parsed, setOf("format", "id", "name", "units", "dependencies", "replacements"), manifest)
+        val metadata = objectFields(parsed, setOf("format", "id", "name", "units", "dependencies", "replacements", "opening"), manifest)
         fun string(value: JsonValue?, field: String): String {
             if (value == null) reject(ContentErrorCode.MISSING_REQUIRED_FIELD, manifest, field = field, reason = "Required package field")
             if (!value.isString || value.asString().isBlank() || value.asString().any(Char::isISOControl))
@@ -65,6 +68,19 @@ internal object ContentPackReader {
                 reject(ContentErrorCode.MALFORMED_SYNTAX, manifest, field = field, ref = result, reason = "Expected a stable lowercase ID")
             return result
         }
+        fun packagePath(reference: String, field: String): Path {
+            val pieces = reference.split('/')
+            if (reference.any { it == '\\' || it == ':' } || pieces.any { it.isEmpty() || it == "." || it == ".." })
+                reject(ContentErrorCode.BAD_REFERENCE, manifest, field = field, ref = reference,
+                    reason = "Expected a package-relative forward-slash path")
+            val input = try { root.resolve(reference).normalize() }
+            catch (failure: InvalidPathException) {
+                reject(ContentErrorCode.BAD_REFERENCE, manifest, field = field, ref = reference, reason = "Invalid package path")
+            }
+            requireOrdinary(root, input)
+            return input
+        }
+
         fun optionalArray(field: String): List<JsonValue> {
             val value = metadata.get(field) ?: return emptyList()
             if (!value.isArray) reject(ContentErrorCode.MALFORMED_SYNTAX, manifest, field = field, reason = "Expected an array")
@@ -111,14 +127,7 @@ internal object ContentPackReader {
                     "economic-building", "ground-turret", "point-defense"))
                 reject(ContentErrorCode.UNSUPPORTED_FEATURE, manifest, field = "$field.type", reason = "Expected an implemented finite combat, mech, factory or builder capability")
             val reference = string(spec.get("file"), "$field.file")
-            val pieces = reference.split('/')
-            if (reference.any { it == '\\' || it == ':' } || pieces.any { it.isEmpty() || it == "." || it == ".." })
-                reject(ContentErrorCode.BAD_REFERENCE, manifest, field = "$field.file", ref = reference, reason = "Expected a package-relative forward-slash path")
-            val input = try { root.resolve(reference).toAbsolutePath().normalize() }
-            catch (failure: InvalidPathException) {
-                reject(ContentErrorCode.BAD_REFERENCE, manifest, field = "$field.file", ref = reference, reason = "Invalid package path")
-            }
-            requireOrdinary(root, input)
+            val input = packagePath(reference, "$field.file")
             if (input.fileName.toString().substringAfterLast('.') !in setOf("ini", "json", "hjson"))
                 reject(ContentErrorCode.UNSUPPORTED_FEATURE, manifest, field = "$field.file", ref = reference, reason = "Expected INI, JSON or Hjson unit content")
             if (!files.add(input)) reject(ContentErrorCode.IDENTITY_CONFLICT, manifest, field = "$field.file", ref = reference,
@@ -227,8 +236,73 @@ internal object ContentPackReader {
                     "Expected the referenced qualified attachment form in the content package")
             }
         }
+        val opening = metadata.get("opening")?.let { declaration ->
+            if (dependencies.isNotEmpty())
+                reject(ContentErrorCode.BAD_REFERENCE, manifest, field = "opening", reason = "An opening must be declared by a base package")
+            val entry = objectFields(declaration, setOf("map", "credits", "opponentCredits", "units"), manifest, "opening")
+            fun fieldError(field: String, reason: String): Nothing =
+                reject(ContentErrorCode.MALFORMED_SYNTAX, manifest, field = field, reason = reason)
+            fun credits(field: String): Long {
+                val amount = entry.get(field)
+                return amount?.takeIf { it.isNumber }?.toString()?.toLongOrNull()?.takeIf { it >= 0 }
+                    ?: fieldError("opening.$field", "Expected a nonnegative integer credit amount")
+            }
+            val mapReference = string(entry.get("map"), "opening.map")
+            if (!mapReference.endsWith(".tmx"))
+                reject(ContentErrorCode.UNSUPPORTED_FEATURE, manifest, field = "opening.map", ref = mapReference,
+                    reason = "Expected a TMX map")
+            val mapPath = packagePath(mapReference, "opening.map")
+            val map = TmxReader.readPackage(mapPath) { source ->
+                requireOrdinary(root, source)
+                val limit = 16 * 1024 * 1024
+                val bytes = Files.newInputStream(source).use { input ->
+                    val output = ByteArrayOutputStream()
+                    val buffer = ByteArray(8192)
+                    while (true) {
+                        val count = input.read(buffer)
+                        if (count < 0) break
+                        if (output.size() + count > limit)
+                            reject(ContentErrorCode.MALFORMED_SYNTAX, source, field = "opening.map", reason = "Opening source exceeds 16 MiB")
+                        output.write(buffer, 0, count)
+                    }
+                    output.toByteArray()
+                }
+                capture(source, bytes)
+                bytes
+            }
+            val spawns = entry.get("units")
+            if (spawns == null || !spawns.isArray || spawns.asArray().isEmpty)
+                fieldError("opening.units", "Expected a nonempty spawn array")
+            val seen = mutableSetOf<String>()
+            val roster = spawns.asArray().mapIndexed { index, value ->
+                val field = "opening.units[$index]"
+                val spawn = objectFields(value, setOf("id", "owner", "type", "x", "y", "heading"), manifest, field)
+                val spawnId = referenceId(spawn.get("id"), "$field.id")
+                if (!seen.add(spawnId))
+                    reject(ContentErrorCode.IDENTITY_CONFLICT, manifest, field = "$field.id", ref = spawnId, reason = "Duplicate spawn ID")
+                val owner = string(spawn.get("owner"), "$field.owner")
+                if (owner != "p1" && owner != "p2") fieldError("$field.owner", "Expected p1 or p2")
+                val type = string(spawn.get("type"), "$field.type")
+                if (type !in units)
+                    reject(ContentErrorCode.BAD_REFERENCE, manifest, field = "$field.type", ref = type,
+                        reason = "The base package must declare each starting unit")
+                fun number(name: String): Double = spawn.get(name)?.takeIf { it.isNumber }?.asDouble()?.takeIf { it.isFinite() }
+                    ?: fieldError("$field.$name", "Expected a finite number")
+                val x = number("x")
+                val y = number("y")
+                if (x < 0.0 || x >= map.widthTiles.toDouble() * map.tileWidth)
+                    fieldError("$field.x", "Spawn is outside the map")
+                if (y < 0.0 || y >= map.heightTiles.toDouble() * map.tileHeight)
+                    fieldError("$field.y", "Spawn is outside the map")
+                val heading = number("heading")
+                if (heading < 0.0 || heading >= 360.0) fieldError("$field.heading", "Expected degrees in [0, 360)")
+                UnitSpawn(spawnId, owner, type, Position(x, y), heading)
+            }
+            if (roster.none { it.ownerPlayerId == "p1" }) fieldError("opening.units", "Expected at least one local unit")
+            ContentPackOpening(map, credits("credits"), credits("opponentCredits"), roster)
+        }
         val loaded = LoadedContentPack(root, manifest, id, name, units, sources.values.toList(), dependencies, replacements,
-            unitFiles, unitFieldOrigins)
+            unitFiles, unitFieldOrigins, opening)
         when (val stable = loaded.verifyStable()) {
             is ContentResult.Failure -> throw ContentReadException(stable.error)
             is ContentResult.Success -> Unit
