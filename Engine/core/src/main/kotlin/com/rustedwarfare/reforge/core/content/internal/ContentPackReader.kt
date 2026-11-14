@@ -124,7 +124,7 @@ internal object ContentPackReader {
             val spec = objectFields(entry, setOf("type", "file"), manifest, field)
             val capability = string(spec.get("type"), "$field.type")
             if (capability !in setOf("modular-spider", "nuclear-silo", "experimental-factory", "nautilus", "scout-bot", "mech-engineer", "repair-bay", "tank", "hover-tank", "hovercraft", "dropship", "aa-beam-gunship", "bomber", "mech-bunker", "mech-flame", "mech", "mech-heavy", "mech-factory", "builder", "constructor", "factory", "helicopter", "air-combat", "static-combat", "amphibious-jet", "air-factory", "battleship", "water-combat", "sea-factory", "underwater-target", "submarine", "command-center", "land-factory",
-                    "economic-building", "ground-turret", "point-defense"))
+                    "economic-building", "author-economic-building", "ground-turret", "point-defense"))
                 reject(ContentErrorCode.UNSUPPORTED_FEATURE, manifest, field = "$field.type", reason = "Expected an implemented finite combat, mech, factory or builder capability")
             val reference = string(spec.get("file"), "$field.file")
             val input = packagePath(reference, "$field.file")
@@ -176,6 +176,7 @@ internal object ContentPackReader {
                 "experimental-factory" -> ExperimentalFactoryContentReader.readWithSources(input) { requireOrdinary(root, it) }
                 "builder" -> BuilderContentReader.readWithSources(input) { requireOrdinary(root, it) }
                 "economic-building" -> EconomyContentReader.readWithSources(input, enableUpgrades = true) { requireOrdinary(root, it) }
+                "author-economic-building" -> AuthorEconomicContentReader.readWithSources(input) { requireOrdinary(root, it) }
                 "ground-turret" -> TurretContentReader.readWithSources(input, enableUpgrades = true,
                     enableConstruction = true) { requireOrdinary(root, it) }
                 "point-defense" -> PointDefenseContentReader.readWithSources(input, enableConstruction = true) { requireOrdinary(root, it) }

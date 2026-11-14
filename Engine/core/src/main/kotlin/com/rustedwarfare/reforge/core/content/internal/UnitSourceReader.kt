@@ -33,6 +33,7 @@ internal data class UnitContentSchema(
     val navalInterceptionAbility: Boolean = false,
     val deathExplosionAbility: Boolean = false,
     val landAttackCondition: Boolean = false,
+    val dynamicActions: Boolean = false,
 ) {
     companion object {
         fun native(fields: Set<String>, formats: Set<String>): UnitContentSchema {
@@ -112,6 +113,7 @@ internal class UnitSourceReader(
     private fun sectionKind(section: String): String = when {
         schema.dynamicWeapons && section.startsWith("turret_") -> "turret_1"
         schema.dynamicWeapons && section.startsWith("projectile_") -> "projectile_1"
+        schema.dynamicActions && section.startsWith("action_") -> "action_1"
         else -> section
     }
 
@@ -398,7 +400,7 @@ internal class UnitSourceReader(
                     reject(ContentErrorCode.UNSUPPORTED_FIELD, path, site, prefix + key, reason = "Unsupported unit field")
                 val value = member.value
                 val correctType = when {
-                    key in schema.timeFields || (section to key) in schema.timeFieldLocations ->
+                    key in schema.timeFields || (sectionKind(section) to key) in schema.timeFieldLocations ->
                         value.isNumber || value.isString && value.asString().endsWith('s')
                     section.startsWith("ability_") -> when (key) {
                         "type", "passengerMovement", "unloadTerrain", "weapon", "effect" -> value.isString

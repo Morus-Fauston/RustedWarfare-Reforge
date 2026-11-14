@@ -252,7 +252,8 @@ data class IncomeProfile(val period: Float, val credits: Float) {
 data class DeathExplosionProfile(val damage: Float, val radius: Float, val expandTime: Float,
     val nuclear: Boolean = false, val authored: Boolean = false)
 
-data class UpgradeActionProfile(val actionKey: String, val targetTypeId: String, val price: Long, val rate: Float)
+data class UpgradeActionProfile(val actionKey: String, val targetTypeId: String, val price: Long, val rate: Float,
+    val completionCredits: Long = 0L)
 
 class UpgradeProfile(actions: List<UpgradeActionProfile>) {
     val actions: List<UpgradeActionProfile> = Collections.unmodifiableList(ArrayList(actions))

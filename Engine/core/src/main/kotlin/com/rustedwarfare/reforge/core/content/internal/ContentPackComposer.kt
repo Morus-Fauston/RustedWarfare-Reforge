@@ -120,6 +120,17 @@ internal object ContentPackComposer {
                     bad(target, "productionUnits", "Mech factory targets require the corresponding builder or two-legged mech capability")
             } }
         }
+        val economic = units.values.filter { it.className == "AuthoredEconomicBuilding" }
+        for (checkReturn in listOf(false, true)) for (unit in economic) {
+            val invalid = AuthorEconomicRules.invalidAction(unit, units, checkReturn) ?: continue
+            val reportedSource = provenance.getValue(invalid.sourceId)
+            val section = invalid.key?.let { "action_$it" } ?: if (invalid.field == "actions") "actions" else "core"
+            val origin = byId.getValue(reportedSource.packageId).unitFieldOrigins[invalid.sourceId]
+                ?.get(section to invalid.field)
+            val error = ContentError(ContentErrorCode.BAD_REFERENCE, reportedSource.entryPath.toString(), section,
+                invalid.field, invalid.targetId, "Expected compatible resource-pool forms with valid paired conversion actions")
+            throw ContentReadException(origin?.locate(error, "[$section].${invalid.field}") ?: error)
+        }
         return LoadedContentSet(ordered, units, provenance, sources.values.toList())
     }
 }

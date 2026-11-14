@@ -274,19 +274,30 @@ internal class ActionCatalogue(private val definitions: Map<String, UnitDefiniti
         val upgrades = immutable(profiles.map { profile ->
             val item = upgradeQueue?.items?.firstOrNull { it.actionKey == profile.actionKey }
             val seconds = nominalSeconds[selected?.typeId]
-            val authored = selected?.let { definitions.getValue(it.typeId).production != null } == true
-            val kind = if (authored) UpgradePresentationKind.FACTORY
+            val source = selected?.let { definitions.getValue(it.typeId) }
+            val authoredEconomy = source?.className == "AuthoredEconomicBuilding"
+            val kind = if (source?.production != null) UpgradePresentationKind.FACTORY
+                else if (authoredEconomy) UpgradePresentationKind.ECONOMIC_BRANCH
                 else if (seconds != null) UpgradePresentationKind.ECONOMIC else UpgradePresentationKind.DEFENSE
-            val title = if (kind == UpgradePresentationKind.ECONOMIC) "Upgrade - T${profile.targetTypeId.last()}"
-                else title(profile.targetTypeId, panel = true)
+            val title = when (kind) {
+                UpgradePresentationKind.ECONOMIC -> "Upgrade - T${profile.targetTypeId.last()}"
+                UpgradePresentationKind.ECONOMIC_BRANCH -> profile.actionKey.replace('_', ' ').replaceFirstChar { it.titlecase() }
+                else -> title(profile.targetTypeId, panel = true)
+            }
             val affordable = affordable(view, profile.price)
             val cardText = if (kind == UpgradePresentationKind.ECONOMIC)
                 "U $title${if (item != null) " (1)" else ""}\n" +
                     (item?.let { "${(it.progress * 100f).toInt()}%" } ?: "\$${profile.price}")
-                else title + (item?.let { "\n(1) ${(it.progress * 100f).toInt()}%" } ?: "\n\$${profile.price}")
+                else title + (item?.let { "\n(1) ${(it.progress * 100f).toInt()}%" } ?:
+                    if (profile.completionCredits == 0L) "\n\$${profile.price}" else "\n+\$${profile.completionCredits}")
             val tooltip = "$title (\$${profile.price})\n" + if (kind == UpgradePresentationKind.ECONOMIC)
                 "${seconds}s\nIncome +\$${nominalIncome(checkNotNull(selected).typeId)?.toInt() ?: 0} -> +\$${nominalIncome(profile.targetTypeId)?.toInt() ?: 0}\n" +
                     (if (affordable) "Left: upgrade" else "Insufficient funds") + "\nRight: cancel one"
+                else if (kind == UpgradePresentationKind.ECONOMIC_BRANCH)
+                    String.format(Locale.ROOT, "%.1fs\n", 1.0 / profile.rate / 60.0) +
+                        (if (profile.completionCredits > 0L) "Refund +\$${profile.completionCredits} on completion\n"
+                        else "Income +\$${source?.income?.credits?.toInt()} -> +\$${definitions[profile.targetTypeId]?.income?.credits?.toInt()}\n") +
+                        (if (affordable) "Left: queue" else "Insufficient funds") + "\nRight: cancel one"
                 else (if (kind == UpgradePresentationKind.FACTORY)
                     String.format(Locale.ROOT, "%.1fs\n", 1.0 / profile.rate / 60.0) else "") +
                     (item?.let { "Queue 1\n${(it.progress * 100f).toInt()}%\n" } ?: "") +
@@ -338,8 +349,11 @@ internal class ActionCatalogue(private val definitions: Map<String, UnitDefiniti
             view.units.filter { it.alive && it.ownerPlayerId == view.playerId && it.constructionProgress >= 1f }
                 .sumOf { nominalIncome(it.typeId)?.toDouble() ?: 0.0 }.toFloat(),
             upgradeQueue?.items?.joinToString("") { item ->
-                val name = if (upgrades.any { it.kind == UpgradePresentationKind.FACTORY && it.actionKey == item.actionKey })
-                    title(item.targetTypeId, panel = true) else if (item.actionKey == "upgrade_gun") "Gun" else "Art"
+                val action = upgrades.firstOrNull { it.actionKey == item.actionKey }
+                val name = when (action?.kind) {
+                    UpgradePresentationKind.FACTORY, UpgradePresentationKind.ECONOMIC_BRANCH -> action.title
+                    else -> if (item.actionKey == "upgrade_gun") "Gun" else "Art"
+                }
                 "  $name ${(item.progress * 100f).toInt()}%"
             }.orEmpty(), view.balance, depthAction, flightAction, transportAction, unitActions, nativeMaintenance,
             if (nativeMaintenance) workers.minOf { definitions.getValue(it.typeId).builder?.range?.toDouble() ?: 230.0 } else null)
@@ -371,7 +385,7 @@ internal fun taskLabel(task: UnitTask?, view: PlayerObservation): String =
 private fun <T> immutable(items: List<T>): List<T> = Collections.unmodifiableList(ArrayList(items))
 
 /** Published values never retain a mutable work list from a later refresh. */
-enum class UpgradePresentationKind { ECONOMIC, DEFENSE, FACTORY }
+enum class UpgradePresentationKind { ECONOMIC, ECONOMIC_BRANCH, DEFENSE, FACTORY }
 data class UpgradeActionView(val profile: UpgradeActionProfile, val kind: UpgradePresentationKind,
     val title: String, val cardText: String, val tooltip: String, val progress: Float?, val affordable: Boolean) {
     val actionKey: String get() = profile.actionKey

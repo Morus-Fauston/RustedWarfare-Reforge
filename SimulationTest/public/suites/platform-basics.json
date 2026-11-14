@@ -8,6 +8,7 @@
       "com.rustedwarfare.reforge.client.VisualAssetBindingTest",
       "com.rustedwarfare.reforge.client.VisualAssetSelectionTest",
       "com.rustedwarfare.reforge.client.ActionMenuTest",
+      "com.rustedwarfare.reforge.client.EconomicBranchHudTest",
       "com.rustedwarfare.reforge.client.DrawnActionLayoutTest",
       "com.rustedwarfare.reforge.client.OfflineStepClockTest",
       "com.rustedwarfare.reforge.client.CameraProjectionTest",

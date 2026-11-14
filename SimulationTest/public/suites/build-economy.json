@@ -16,6 +16,7 @@
       "com.rustedwarfare.reforge.core.sim.ConstructionNavigationStateTest",
       "com.rustedwarfare.reforge.core.sim.ConstructionRetryRulesTest",
       "com.rustedwarfare.reforge.core.sim.EconomyContractTest",
+      "com.rustedwarfare.reforge.core.sim.EconomicBranchConversionTest",
       "com.rustedwarfare.reforge.core.sim.NativeBuildingHitTest",
       "com.rustedwarfare.reforge.core.sim.UpgradeCommandTest",
       "com.rustedwarfare.reforge.core.sim.UpgradeCompletionTest",
