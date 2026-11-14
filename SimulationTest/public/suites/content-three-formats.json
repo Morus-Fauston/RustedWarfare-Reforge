@@ -31,7 +31,8 @@
       "com.rustedwarfare.reforge.pc.ContentPackCompositionEvidenceTest"
     ],
     "tools": [
-      "com.rustedwarfare.reforge.testing.PlatformSessionRunnerTest"
+      "com.rustedwarfare.reforge.testing.PlatformSessionRunnerTest",
+      "com.rustedwarfare.reforge.testing.ThreeFormatScenarioEquivalenceTest"
     ]
   },
   "short": [
@@ -53,7 +54,8 @@
     {
       "id": "content-three-formats-production-combat-short-ini",
       "scenario": "scenarios/content-three-formats-production-combat-short-ini.json",
-      "contract": "contracts/content-three-formats-production-combat-short-ini.json"
+      "contract": "contracts/content-three-formats-production-combat-short-ini.json",
+      "equivalentTo": "content-three-formats-production-combat-short-json"
     },
     {
       "id": "content-three-formats-production-combat-short-json",
@@ -63,12 +65,14 @@
     {
       "id": "content-three-formats-production-combat-short-hjson",
       "scenario": "scenarios/content-three-formats-production-combat-short-hjson.json",
-      "contract": "contracts/content-three-formats-production-combat-short-hjson.json"
+      "contract": "contracts/content-three-formats-production-combat-short-hjson.json",
+      "equivalentTo": "content-three-formats-production-combat-short-json"
     },
     {
       "id": "content-three-formats-upgrade-cancel-short-ini",
       "scenario": "scenarios/content-three-formats-upgrade-cancel-short-ini.json",
-      "contract": "contracts/content-three-formats-upgrade-cancel-short-ini.json"
+      "contract": "contracts/content-three-formats-upgrade-cancel-short-ini.json",
+      "equivalentTo": "content-three-formats-upgrade-cancel-short-json"
     },
     {
       "id": "content-three-formats-upgrade-cancel-short-json",
@@ -78,12 +82,14 @@
     {
       "id": "content-three-formats-upgrade-cancel-short-hjson",
       "scenario": "scenarios/content-three-formats-upgrade-cancel-short-hjson.json",
-      "contract": "contracts/content-three-formats-upgrade-cancel-short-hjson.json"
+      "contract": "contracts/content-three-formats-upgrade-cancel-short-hjson.json",
+      "equivalentTo": "content-three-formats-upgrade-cancel-short-json"
     },
     {
       "id": "content-three-formats-point-defense-short-ini",
       "scenario": "scenarios/content-three-formats-point-defense-short-ini.json",
-      "contract": "contracts/content-three-formats-point-defense-short-ini.json"
+      "contract": "contracts/content-three-formats-point-defense-short-ini.json",
+      "equivalentTo": "content-three-formats-point-defense-short-json"
     },
     {
       "id": "content-three-formats-point-defense-short-json",
@@ -93,12 +99,14 @@
     {
       "id": "content-three-formats-point-defense-short-hjson",
       "scenario": "scenarios/content-three-formats-point-defense-short-hjson.json",
-      "contract": "contracts/content-three-formats-point-defense-short-hjson.json"
+      "contract": "contracts/content-three-formats-point-defense-short-hjson.json",
+      "equivalentTo": "content-three-formats-point-defense-short-json"
     },
     {
       "id": "content-three-formats-build-economy-short-ini",
       "scenario": "scenarios/content-three-formats-build-economy-short-ini.json",
-      "contract": "contracts/content-three-formats-build-economy-short-ini.json"
+      "contract": "contracts/content-three-formats-build-economy-short-ini.json",
+      "equivalentTo": "content-three-formats-build-economy-short-json"
     },
     {
       "id": "content-three-formats-build-economy-short-json",
@@ -108,12 +116,14 @@
     {
       "id": "content-three-formats-build-economy-short-hjson",
       "scenario": "scenarios/content-three-formats-build-economy-short-hjson.json",
-      "contract": "contracts/content-three-formats-build-economy-short-hjson.json"
+      "contract": "contracts/content-three-formats-build-economy-short-hjson.json",
+      "equivalentTo": "content-three-formats-build-economy-short-json"
     },
     {
       "id": "content-three-formats-economy-build-economy-short-ini",
       "scenario": "scenarios/content-three-formats-economy-build-economy-short-ini.json",
-      "contract": "contracts/content-three-formats-economy-build-economy-short-ini.json"
+      "contract": "contracts/content-three-formats-economy-build-economy-short-ini.json",
+      "equivalentTo": "content-three-formats-economy-build-economy-short-json"
     },
     {
       "id": "content-three-formats-economy-build-economy-short-json",
@@ -123,12 +133,14 @@
     {
       "id": "content-three-formats-economy-build-economy-short-hjson",
       "scenario": "scenarios/content-three-formats-economy-build-economy-short-hjson.json",
-      "contract": "contracts/content-three-formats-economy-build-economy-short-hjson.json"
+      "contract": "contracts/content-three-formats-economy-build-economy-short-hjson.json",
+      "equivalentTo": "content-three-formats-economy-build-economy-short-json"
     },
     {
       "id": "content-three-formats-economy-build-failure-short-ini",
       "scenario": "scenarios/content-three-formats-economy-build-failure-short-ini.json",
-      "contract": "contracts/content-three-formats-economy-build-failure-short-ini.json"
+      "contract": "contracts/content-three-formats-economy-build-failure-short-ini.json",
+      "equivalentTo": "content-three-formats-economy-build-failure-short-json"
     },
     {
       "id": "content-three-formats-economy-build-failure-short-json",
@@ -138,12 +150,14 @@
     {
       "id": "content-three-formats-economy-build-failure-short-hjson",
       "scenario": "scenarios/content-three-formats-economy-build-failure-short-hjson.json",
-      "contract": "contracts/content-three-formats-economy-build-failure-short-hjson.json"
+      "contract": "contracts/content-three-formats-economy-build-failure-short-hjson.json",
+      "equivalentTo": "content-three-formats-economy-build-failure-short-json"
     },
     {
       "id": "content-three-formats-economy-maintenance-repair-short-ini",
       "scenario": "scenarios/content-three-formats-economy-maintenance-repair-short-ini.json",
-      "contract": "contracts/content-three-formats-economy-maintenance-repair-short-ini.json"
+      "contract": "contracts/content-three-formats-economy-maintenance-repair-short-ini.json",
+      "equivalentTo": "content-three-formats-economy-maintenance-repair-short-json"
     },
     {
       "id": "content-three-formats-economy-maintenance-repair-short-json",
@@ -153,12 +167,14 @@
     {
       "id": "content-three-formats-economy-maintenance-repair-short-hjson",
       "scenario": "scenarios/content-three-formats-economy-maintenance-repair-short-hjson.json",
-      "contract": "contracts/content-three-formats-economy-maintenance-repair-short-hjson.json"
+      "contract": "contracts/content-three-formats-economy-maintenance-repair-short-hjson.json",
+      "equivalentTo": "content-three-formats-economy-maintenance-repair-short-json"
     },
     {
       "id": "content-three-formats-economy-maintenance-queue-short-ini",
       "scenario": "scenarios/content-three-formats-economy-maintenance-queue-short-ini.json",
-      "contract": "contracts/content-three-formats-economy-maintenance-queue-short-ini.json"
+      "contract": "contracts/content-three-formats-economy-maintenance-queue-short-ini.json",
+      "equivalentTo": "content-three-formats-economy-maintenance-queue-short-json"
     },
     {
       "id": "content-three-formats-economy-maintenance-queue-short-json",
@@ -168,12 +184,14 @@
     {
       "id": "content-three-formats-economy-maintenance-queue-short-hjson",
       "scenario": "scenarios/content-three-formats-economy-maintenance-queue-short-hjson.json",
-      "contract": "contracts/content-three-formats-economy-maintenance-queue-short-hjson.json"
+      "contract": "contracts/content-three-formats-economy-maintenance-queue-short-hjson.json",
+      "equivalentTo": "content-three-formats-economy-maintenance-queue-short-json"
     },
     {
       "id": "content-three-formats-economy-maintenance-privacy-short-ini",
       "scenario": "scenarios/content-three-formats-economy-maintenance-privacy-short-ini.json",
-      "contract": "contracts/content-three-formats-economy-maintenance-privacy-short-ini.json"
+      "contract": "contracts/content-three-formats-economy-maintenance-privacy-short-ini.json",
+      "equivalentTo": "content-three-formats-economy-maintenance-privacy-short-json"
     },
     {
       "id": "content-three-formats-economy-maintenance-privacy-short-json",
@@ -183,7 +201,8 @@
     {
       "id": "content-three-formats-economy-maintenance-privacy-short-hjson",
       "scenario": "scenarios/content-three-formats-economy-maintenance-privacy-short-hjson.json",
-      "contract": "contracts/content-three-formats-economy-maintenance-privacy-short-hjson.json"
+      "contract": "contracts/content-three-formats-economy-maintenance-privacy-short-hjson.json",
+      "equivalentTo": "content-three-formats-economy-maintenance-privacy-short-json"
     },
     {
       "id": "content-pack-ini-short",

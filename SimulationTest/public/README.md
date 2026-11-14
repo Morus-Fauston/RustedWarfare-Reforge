@@ -26,7 +26,9 @@ PR批次先计算所有选中模块的`testClasses`并集，与`installDist`一�
 
 构建锁覆盖实际构建/Test和场景阶段；Python机制测试阶段释放外层构建锁，由被测workflow入口取得自己的资源，避免真实资格/恢复测试被父检查自锁拒绝。其它持锁者仍会阻止对应构建，不启用跨进程锁绕过或重入。
 
-PR更新通过`public-pr.yml`执行完整`pr`入口，保留七份领域产物及批次收据产物；`main`推送通过`public-long.yml`执行同一`long`入口，阶段收尾可手动触发该工作流或本地运行。CI只执行公开无头验证；真实PC、Android宿主/构建/设备、原版参考与正式性能边界见后文，不随批次绿扩大。配置存在不代表已有真实云端结果，实际源码SHA及产物以对应Actions运行记录为准。
+`public-pr.yml`执行七组公共覆盖。并行模式从同一候选准备一次分发，在独立 runner 运行机制和五个短场景分片。汇总校验同次运行的各片收据和原始制品。手动选择 `execution=serial` 可运行完整串行入口。仓库设置 `PUBLIC_PR_PARALLEL=true` 后普通 PR 使用并行入口，资格分支可先采正式 PR 样本。设为 `false` 可让包括资格分支在内的 PR 更新走串行。采集固定资格 PR 时，等本轮完成后再关闭并重新打开同一个 PR，以触发独立的 `pull_request` 运行。
+
+`public-long.yml` 在每次推送 `main` 后独立执行 `long`。手动传入 `pr` 和 `qualification` 可核对当前 PR 合并候选与最近三次完整的独立 PR 运行。各自保留制品，`qualification` 填最后一次运行 ID。终检随后执行完整科技链和阶段连续长测。手动省略两项仍可单独运行 `long`。CI 只执行公开无头验证。真实 PC、Android 宿主/构建/设备、原版参考与正式性能边界见后文。
 
 旧`pr-first-loop`继续用于首闭环/历史复核；完整层级已由各领域集覆盖相同适用断言，因此不会额外重复选择旧集。`verify-comparison.ps1`和`verify-isolated-comparison.ps1`仍保留原私有比较链及输入要求，不改名成公共干净环境验证。历史冻结脚本与收据保持原版本和失败状态。
 

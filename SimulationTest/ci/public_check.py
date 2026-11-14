@@ -9,6 +9,7 @@ from pathlib import Path
 import shutil
 import sys
 import tempfile
+import threading
 import time
 import uuid
 import xml.etree.ElementTree as ET
@@ -55,6 +56,7 @@ def source_files(repo):
               ['nuclear_silo_fixture.py', 'nuclear_silo_scenarios.py', 'nuclear_sound_fixture.py', 'nuclear_platform.py', 'test_nuclear_platform.py', 'nautilus_fixture.py', 'nautilus_scenarios.py', 'test_nautilus_platform.py', 'mech_engineer_fixture.py', 'mech_engineer_scenarios.py', 'test_mech_engineer_platform.py', 'repairbay_fixture.py', 'repairbay_scenarios.py', 'test_repairbay_platform.py', 'bunker_fixture.py', 'bunker_scenarios.py', 'test_bunker_platform.py', 'afterburn_scenarios.py', 'test_afterburn_platform.py', 'aa_beam_fixture.py', 'aa_beam_scenarios.py', 'test_aa_beam_archive.py', 'air_transport_fixture.py', 'air_transport_scenarios.py', 'platform_scenario.py', 'test_platform_scenario.py', 'platform_wait.py', 'test_platform_wait.py', 'test_platform_session_cli.py', 'test_named_weapon_platform.py', 'test_submarine_platform.py', 'test_amphibious_platform.py', 'test_transport_platform.py',
                'bomber_fixture.py', 'bomber_scenarios.py', 'workflow_scenarios.py', 'test_workflow_scenarios.py',
                'spider_platform.py', 'modular_spider_fixture.py', 'modular_spider_scenarios.py',
+               'production_session_assertions.py',
                'phase_six_a_fixture.py',
                'diagnostic_reader.py', 'test_diagnostic_reader.py',
                'action_layout.py', 'test_action_layout.py',
@@ -69,8 +71,52 @@ def source_files(repo):
 
 
 def identities(repo):
-    return [dict(path=p.relative_to(repo).as_posix(), sha256=hashlib.sha256(p.read_bytes()).hexdigest())
-            for p in source_files(repo)]
+    from public_distribution import digest
+    return [dict(path=p.relative_to(repo).as_posix(), sha256=digest(p)) for p in source_files(repo)]
+
+
+def verify_scenario_sources(repo, case, expected):
+    from public_distribution import digest
+
+    public = (repo/'SimulationTest/public').resolve()
+    scenario = public/case['scenario']
+
+    def relative(path):
+        resolved = path.resolve(strict=True)
+        if not resolved.is_relative_to(public) or resolved != Path(os.path.abspath(path)):
+            raise ValueError('Scenario input escapes or aliases the public tree: '+str(path))
+        return resolved
+
+    def check(path):
+        path = relative(path)
+        if digest(path) != expected.get(path.relative_to(repo).as_posix()):
+            raise ValueError('Public scenario input changed: '+str(path))
+
+    scenario = relative(scenario)
+    data = scenario.read_bytes()
+    if hashlib.sha256(data).hexdigest() != expected.get(scenario.relative_to(repo).as_posix()):
+        raise ValueError('Public scenario input changed: '+str(scenario))
+    check(public/case['contract'])
+    document = json.loads(data)
+    if case.get('backend') == 'session':
+        for name in ('platform_scenario.py', 'spider_platform.py', 'nuclear_platform.py',
+                     'production_session_assertions.py'):
+            script = repo/'SimulationTest/tools'/name
+            if digest(script) != expected.get(script.relative_to(repo).as_posix()):
+                raise ValueError('Public Session comparator changed: '+name)
+    if case.get('backend') == 'session' and 'inputs' in document:
+        inputs = relative(scenario.parent/document['inputs'])
+        current = {path.relative_to(repo).as_posix() for path in inputs.rglob('*') if path.is_file()}
+        prefix = inputs.relative_to(repo).as_posix()+'/'
+        if current != {name for name in expected if name.startswith(prefix)}:
+            raise ValueError('Public scenario input closure changed: '+str(inputs))
+        for name in sorted(current):
+            check(repo/name)
+    elif 'content' in document:
+        content = document['content']
+        units = content.get('unitVariants', [content.get('unitVariant')])
+        for row in [content['map'], *units, *content['dependencies']]:
+            check(scenario.parent/row['path'])
 
 
 MODULES = {'tools': (':test', 'build/test-results/test'),
@@ -103,7 +149,7 @@ def scenario_concurrency(workers):
     return dict(requested=workers, maxWorkers=workers, phase='after-build-and-tests')
 
 
-def plan_suite(repo, name, kind):
+def plan_suite(repo, name, kind, public_sources=None):
     if not re.fullmatch(r'[a-z0-9][a-z0-9-]*', name):
         raise ValueError('Suite name must be a public registry name, not a path')
     path = repo / 'SimulationTest/public/suites' / (name + '.json')
@@ -123,7 +169,8 @@ def plan_suite(repo, name, kind):
            for module, classes in tests.items()):
         raise ValueError('Invalid module or fixed JUnit class selection')
     python_tests = suite.get('pythonTests', []) if kind in ['mechanism', 'pr', 'all'] else []
-    public_sources = {p.relative_to(repo).as_posix() for p in source_files(repo)}
+    if public_sources is None:
+        public_sources = {p.relative_to(repo).as_posix() for p in source_files(repo)}
     if (not isinstance(python_tests, list) or any(not isinstance(p, str) or p not in public_sources or
             not re.fullmatch(r'(SimulationTest/(tools|ci)|Decompile/tools(/p003)?)/test_[a-z0-9_]+\.py', p)
             for p in python_tests) or len(python_tests) != len(set(python_tests))):
@@ -135,9 +182,36 @@ def plan_suite(repo, name, kind):
         cases = suite.get(category, [])
         if isinstance(cases, dict):
             cases = [dict(id='short', **cases)]
+        case_ids = {case['id']: case for case in cases}
+        if len(case_ids) != len(cases):
+            raise ValueError('Duplicate scenario ID')
+        declared_equivalence = {}
+        if any('equivalentTo' in case for case in cases):
+            manifest = json.loads((repo/'SimulationTest/public/scenario-equivalence.json').read_bytes())
+            for family in manifest['families']:
+                if family['suite'] == name:
+                    representative, *aliases = family['members']
+                    for alias in aliases:
+                        if alias['id'] in declared_equivalence:
+                            raise ValueError('Duplicate scenario equivalence')
+                        declared_equivalence[alias['id']] = (alias, representative)
         for case in cases:
+            if 'equivalentTo' in case:
+                representative = case_ids.get(case['equivalentTo'])
+                if (category != 'short' or representative is None or 'equivalentTo' in representative
+                        or case.get('backend', 'core') != 'core' or representative.get('backend', 'core') != 'core'
+                        or case.get('recompare') or case.get('archiveAssertions')):
+                    raise ValueError('Invalid Core short scenario equivalence')
+                if declared_equivalence.get(case['id']) != (
+                        {key: value for key, value in case.items() if key != 'equivalentTo'}, representative):
+                    raise ValueError('Unregistered Core short scenario equivalence')
             if case.get('backend', 'core') not in ('core', 'session'):
                 raise ValueError('Public CI supports only core or headless session scenarios')
+            if 'recompare' in case and (case.get('backend', 'core') != 'core' or case['recompare'] is not True):
+                raise ValueError('Additional archive recompare must be enabled explicitly on a Core scenario')
+            if 'archiveAssertions' in case and (case.get('recompare') is not True or
+                    case['archiveAssertions'] not in ('aa-beam', 'transport', 'air-transport')):
+                raise ValueError('Archive assertions require an admitted Core archive and a known family')
             if not re.fullmatch(r'[a-z0-9][a-z0-9-]*', case['id']):
                 raise ValueError('Invalid scenario ID')
             for field in ['scenario', 'contract']:
@@ -145,7 +219,8 @@ def plan_suite(repo, name, kind):
                 if (not (root / case[field]).resolve().is_relative_to(root) or
                         not (root / case[field]).is_file()):
                     raise ValueError('Scenario/contract must exist inside public input directory')
-            scenarios.append(dict(case, kind=category))
+            if 'equivalentTo' not in case:
+                scenarios.append(dict(case, kind=category))
     if not tests and not scenarios and not python_tests:
         raise ValueError('Selected suite/kind is empty')
     if len({case['id'] for case in scenarios}) != len(scenarios):
@@ -206,8 +281,8 @@ def build_shared_distribution(repo, output, source, command_timeout_seconds=600,
         shutil.copytree(project/'build/install/simulation-test', package)
         receipt = output/'distribution.json'
         pin = seal(package, receipt, source, initial_toolchain, kind=kind, preparation=preparation)
-        for selected in preparation['selection'] if preparation else [None]:
-            verify(receipt, pin, identities(repo), kind=kind, plan=selected, repo=repo)
+        verify(receipt, pin, identities(repo), kind=kind,
+               plan=preparation['selection'][0] if preparation else None, repo=repo)
         result.update(status='passed', receipt=str(receipt), sha256=pin, kind=kind, preparation=preparation)
     except Exception as error:
         result['error'] = str(error)
@@ -216,7 +291,8 @@ def build_shared_distribution(repo, output, source, command_timeout_seconds=600,
     return result
 
 
-def run(repo, output, plan, prepared_distribution=None, command_timeout_seconds=600, forks=1, workers=2):
+def run(repo, output, plan, prepared_distribution=None, command_timeout_seconds=600, forks=1, workers=2,
+        *, scenarios_only=False):
     output.mkdir(parents=True, exist_ok=False)
     initial = identities(repo)
     result = dict(schemaVersion=1, suite=plan['suiteId'], selection=plan, status='execution-failed',
@@ -224,13 +300,36 @@ def run(repo, output, plan, prepared_distribution=None, command_timeout_seconds=
                   exclusions=['original-compatibility', 'platform-input', 'historical-snapshot-reexecution'],
                   commandTimeoutSeconds=command_timeout_seconds,
                   testConcurrency=test_concurrency(plan['tests'], forks), scenarioConcurrency=scenario_concurrency(workers))
+    if scenarios_only:
+        if prepared_distribution is None:
+            raise ValueError('Batch scenarios require a prepared distribution')
+        result['mechanismsInBatch'] = True
     if not any(case['kind'] == 'long' for case in plan['scenarios']):
         result['exclusions'].append('continuous-long')
     started = time.monotonic()
+    measured_checks = {}
+    check_lock = threading.Lock()
+
+    def measure_check(phase, check):
+        before = time.monotonic()
+        try:
+            return check()
+        finally:
+            elapsed = time.monotonic() - before
+            with check_lock:
+                timing = measured_checks.setdefault(phase, dict(count=0, elapsedSeconds=0))
+                timing['count'] += 1
+                timing['elapsedSeconds'] += elapsed
+
+    def verify_source():
+        if identities(repo) != initial:
+            raise ValueError('Public source changed during verification')
+
     def admit():
         from public_distribution import verify
-        return verify(prepared_distribution[0], prepared_distribution[1], identities(repo),
-            kind='long' if plan['kind'] == 'long' else 'pr', plan=plan, repo=repo)
+        return measure_check('preparation', lambda: verify(
+            prepared_distribution[0], prepared_distribution[1], identities(repo),
+            kind='long' if plan['kind'] == 'long' else 'pr', plan=plan, repo=repo))
     def command(name, args, cwd):
         if prepared_distribution is not None:
             admit()
@@ -246,6 +345,7 @@ def run(repo, output, plan, prepared_distribution=None, command_timeout_seconds=
     try:
         sys.path.insert(0, str(REPO/'SimulationTest/tools'))
         from workflow import resources
+        from public_distribution import package_files, read_receipt, verify_members
         with resources(['build:'+str(repo/'Engine'), 'build:'+str(repo/'SimulationTest')]):
             project = repo / 'SimulationTest'
             if prepared_distribution is not None:
@@ -257,7 +357,7 @@ def run(repo, output, plan, prepared_distribution=None, command_timeout_seconds=
             common = ['--no-daemon', '--console=plain', '--max-workers='+str(forks), '--rerun-tasks']
             if plan['fixture']:
                 common += ['-Dpublic.inputs.dir=' + str(project / 'public' / plan['fixture'])]
-            if plan['tests']:
+            if plan['tests'] and not scenarios_only:
                 if prepared_distribution is not None:
                     admit()
                 from development_check import execute_test_group
@@ -282,8 +382,9 @@ def run(repo, output, plan, prepared_distribution=None, command_timeout_seconds=
                 command('tests-and-package', wrapper + [':installDist'] + common, project)
             if prepared_distribution is None:
                 distribution = project/'build/install/simulation-test'
+                fixed_files = measure_check('package', lambda: package_files(distribution)) if plan['scenarios'] else None
         result['pythonCoverage'] = []
-        for index, relative in enumerate(plan.get('pythonTests', [])):
+        for index, relative in enumerate([] if scenarios_only else plan.get('pythonTests', [])):
             name = 'python-' + str(index) + '-' + Path(relative).stem
             summary = output / (name + '.json')
             command(name, [sys.executable, '-B', str(project/'ci/python_check.py'),
@@ -293,32 +394,45 @@ def run(repo, output, plan, prepared_distribution=None, command_timeout_seconds=
                     any(measured[k] for k in ['failures', 'errors', 'skipped']) or not measured['sourceUnchanged']):
                 raise RuntimeError('Python mechanism evidence is incomplete: ' + relative)
             result['pythonCoverage'].append(dict(path=relative, result=name+'.json', **measured))
-        from public_distribution import package_files
         from public_scenarios import run_scenarios
-        fixed_files = package_files(distribution) if plan['scenarios'] else None
-        def scenario_admit():
+        with resources(['build:'+str(repo/'Engine'), 'build:'+str(repo/'SimulationTest')]):
+            # Only the admitted package, source and toolchain are consumed by
+            # scenario commands. Prepared classes stay in the locked build tree.
+            scenario_pin = None
             if prepared_distribution is not None:
                 admit()
-            elif package_files(distribution) != fixed_files:
-                raise ValueError('Scenario distribution changed during verification')
-        with resources(['build:'+str(repo/'Engine'), 'build:'+str(repo/'SimulationTest')]):
+                scenario_pin = read_receipt(*prepared_distribution, initial,
+                    kind='long' if plan['kind'] == 'long' else 'pr', plan=plan, repo=repo)
+
+            expected_source = {row['path']: row['sha256'] for row in initial}
+
+            def verify_scenario_inputs(case):
+                verify_scenario_sources(repo, case, expected_source)
+                if scenario_pin is not None:
+                    current = read_receipt(*prepared_distribution, initial,
+                        kind='long' if plan['kind'] == 'long' else 'pr', plan=plan, repo=repo)
+                    verify_members(prepared_distribution[0], current)
+                elif package_files(distribution) != fixed_files:
+                    raise ValueError('Scenario distribution changed during verification')
+
             scenarios = run_scenarios(repo, output, plan['scenarios'], distribution, workers,
-                                      command_timeout_seconds, scenario_admit, execute_command)
-        result['scenarioExecution'] = scenarios
-        result['commands'].extend(c for item in scenarios['items'] for c in item['commands'])
-        archives = [item['archive'] for item in scenarios['items'] if item['status'] == 'passed']
-        result['archives'] = archives
-        if scenarios['status'] != 'passed':
-            raise RuntimeError('Scenario execution failed: '+str(scenarios['firstError']))
-        if initial != identities(repo):
-            raise RuntimeError('Public source changed during verification')
-        if prepared_distribution is not None:
-            admit()
+                command_timeout_seconds, lambda case: measure_check('scenario', lambda: verify_scenario_inputs(case)),
+                execute_command)
+            result['scenarioExecution'] = scenarios
+            result['commands'].extend(c for item in scenarios['items'] for c in item['commands'])
+            archives = [item['archive'] for item in scenarios['items'] if item['status'] == 'passed']
+            result['archives'] = archives
+            if scenarios['status'] != 'passed':
+                raise RuntimeError('Scenario execution failed: '+str(scenarios['firstError']))
+            measure_check('final-source', verify_source)
+            if prepared_distribution is not None:
+                admit()
         result.update(status='passed', archives=archives)
         if plan['suiteId'] == 'public-pr-first-loop' and archives:
             result['shortArchive'] = archives[0]['path']
     except Exception as error:
         result['error'] = str(error)
+    result['identityChecks'] = measured_checks
     result['elapsedSeconds'] = time.monotonic() - started
     (output / 'result.json').write_text(json.dumps(result, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
     print(json.dumps(dict(status=result['status'], output=str(output), error=result.get('error')), ensure_ascii=False))

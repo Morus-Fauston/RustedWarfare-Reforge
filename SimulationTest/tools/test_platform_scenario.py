@@ -452,7 +452,9 @@ class PlatformIntentTest(unittest.TestCase):
         from platform_scenario import windows_geometry
         with tempfile.TemporaryDirectory() as temporary:
             root=Path(temporary);maps=root/'inputSnapshot/maps';maps.mkdir(parents=True)
-            (maps/'naval-shore.tmx').write_text('<map width="40" height="30" tilewidth="20" tileheight="20"/>')
+            import os
+            filename = 'naval-shore.TMX' if os.name == 'nt' else 'naval-shore.tmx'
+            (maps/filename).write_text('<map width="40" height="30" tilewidth="20" tileheight="20"/>')
             records=[dict(kind='load-graphics-ready',generation=1,worldWidth=800,worldHeight=600),
                      dict(kind='load-ready',generation=1,mapWidth=40,mapHeight=30)]
             self.assertEqual(dict(worldWidth=800,worldHeight=600),windows_geometry(root,records))
@@ -460,6 +462,13 @@ class PlatformIntentTest(unittest.TestCase):
                             [records[0],dict(records[1],generation=2)],
                             [records[0],dict(records[1],mapWidth=41)]):
                 with self.assertRaises(PlatformError):windows_geometry(root,changed)
+
+    def test_legacy_windows_geometry_uses_verified_map_bytes_with_native_path_matching(self):
+        import os
+        from platform_scenario import windows_geometry
+        filename = 'P001-Controlled.TMX' if os.name == 'nt' else 'p001-controlled.tmx'
+        maps = {filename: b'<map width="40" height="30" tilewidth="20" tileheight="20"/>'}
+        self.assertEqual(dict(worldWidth=800, worldHeight=600), windows_geometry(None, [], maps))
 
     def test_attack_history_distinguishes_the_fixed_ground_position_from_the_flight_click_point(self):
         from platform_scenario import validate_history_action
@@ -823,7 +832,27 @@ class PlatformIntentTest(unittest.TestCase):
                 (root/'manifest.json').write_text(json.dumps(manifest),encoding='utf8')
                 (root/'archive.json').write_text(json.dumps(dict(complete=True,backend='session',
                     files=[row for row in tree(root) if row['path']!='archive.json'])),encoding='utf8')
-                self.assertEqual(0,compare_archive(root)['exitCode'])
+                # The independent reader checks the byte identity and consumes the
+                # same captured content. Count real opens at the filesystem boundary.
+                import subprocess
+                import sys
+                check = """
+import collections, pathlib, sys
+from platform_scenario import compare_archive
+root = pathlib.Path(sys.argv[1]).resolve()
+reads = collections.Counter()
+def audit(event, args):
+    if event == 'open' and isinstance(args[0], str):
+        path = pathlib.Path(args[0])
+        if path.is_relative_to(root):
+            reads[path.relative_to(root).as_posix()] += 1
+sys.addaudithook(audit)
+assert compare_archive(root)['exitCode'] == 0
+assert all(count == 1 for count in reads.values()), reads
+"""
+                executed = subprocess.run([sys.executable, '-B', '-c', check, str(root)],
+                                          cwd=Path(__file__).parent, capture_output=True, text=True)
+                self.assertEqual(0, executed.returncode, executed.stderr)
             for identities in (original[:-1],original+[original[0]],
                                [dict(original[0],sha256='changed'),original[1]]):
                 manifest['inputFiles']=identities

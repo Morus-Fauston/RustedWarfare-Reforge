@@ -10,6 +10,21 @@ import os
 
 
 class PublicBatchTest(unittest.TestCase):
+    def test_batch_mechanisms_keep_class_and_script_owners_with_distinct_fixtures(self):
+        from development_check import plan_mechanisms
+
+        selections = [
+            ('one', dict(inputScope='public', fixture='a', tests={'core': ['Shared', 'OnlyOne']}, pythonTests=['first.py'])),
+            ('two', dict(inputScope='public', fixture='a', tests={'core': ['Shared']}, pythonTests=['first.py', 'second.py'])),
+            ('three', dict(inputScope='public', fixture='b', tests={'core': ['Shared']}, pythonTests=['second.py'])),
+        ]
+        plan = plan_mechanisms(selections)
+        self.assertEqual([('a', {'core': ['Shared', 'OnlyOne']}), ('b', {'core': ['Shared']})],
+                         [(group['fixture'], group['tests']) for group in plan['groups']])
+        self.assertEqual({'Shared': ['one', 'two'], 'OnlyOne': ['one']}, plan['groups'][0]['owners']['core'])
+        self.assertEqual({'Shared': ['three']}, plan['groups'][1]['owners']['core'])
+        self.assertEqual({'first.py': ['one', 'two'], 'second.py': ['two', 'three']}, plan['pythonOwners'])
+
     def test_bounded_command_timeout_kills_the_spawned_tree_and_stops_the_batch(self):
         from public_check import REPO,source_files
         with tempfile.TemporaryDirectory(prefix='reforge-layer-timeout-') as tmp:

@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "suiteId": "public.production-combat.v1",
   "inputScope": "public",
-  "fixture": "inputs/content-movement-knowledge/P001-\u79fb\u52a8\u6c99\u76d2\u8f93\u5165",
+  "fixture": "inputs/content-movement-knowledge/P001-移动沙盒输入",
   "tests": {
     "core": [
       "com.rustedwarfare.reforge.core.content.CombatContentLoadTest",
@@ -430,22 +430,11 @@
       "com.rustedwarfare.reforge.testing.AmphibiousArchiveTest",
       "com.rustedwarfare.reforge.testing.AmphibiousCoreAdapterTest",
       "com.rustedwarfare.reforge.testing.AmphibiousLightningArchiveTest",
-      "com.rustedwarfare.reforge.testing.AmphibiousProductionSessionTest",
-      "com.rustedwarfare.reforge.testing.AmphibiousPublicScenarioTest",
-      "com.rustedwarfare.reforge.testing.LandingCraftArchiveTest",
       "com.rustedwarfare.reforge.testing.LandingCraftPairedSessionTest",
       "com.rustedwarfare.reforge.testing.LandingCraftPlayerArchiveTest",
-      "com.rustedwarfare.reforge.testing.LandingCraftProductionSessionTest",
-      "com.rustedwarfare.reforge.testing.LandingCraftPublicScenarioTest",
-      "com.rustedwarfare.reforge.testing.DropshipArchiveTest",
       "com.rustedwarfare.reforge.testing.DropshipPairedSessionTest",
       "com.rustedwarfare.reforge.testing.DropshipPlayerArchiveTest",
-      "com.rustedwarfare.reforge.testing.DropshipProductionSessionTest",
-      "com.rustedwarfare.reforge.testing.DropshipPublicScenarioTest",
-      "com.rustedwarfare.reforge.testing.AaBeamArchiveTest",
-      "com.rustedwarfare.reforge.testing.AaBeamProductionSessionTest",
       "com.rustedwarfare.reforge.testing.AfterburnArchiveTest",
-      "com.rustedwarfare.reforge.testing.AfterburnProductionSessionTest",
       "com.rustedwarfare.reforge.testing.BunkerArchiveTest",
       "com.rustedwarfare.reforge.testing.BunkerProductionSessionTest",
       "com.rustedwarfare.reforge.testing.RepairBayArchiveTest",
@@ -597,7 +586,8 @@
     {
       "id": "mech-ini-short",
       "scenario": "scenarios/mech-ini-short.json",
-      "contract": "contracts/mech-ini-short.json"
+      "contract": "contracts/mech-ini-short.json",
+      "equivalentTo": "mech-json-short"
     },
     {
       "id": "mech-ini-session-short",
@@ -619,7 +609,8 @@
     {
       "id": "mech-hjson-short",
       "scenario": "scenarios/mech-hjson-short.json",
-      "contract": "contracts/mech-hjson-short.json"
+      "contract": "contracts/mech-hjson-short.json",
+      "equivalentTo": "mech-json-short"
     },
     {
       "id": "mech-hjson-session-short",
@@ -630,7 +621,8 @@
     {
       "id": "helicopter-ini-short",
       "scenario": "scenarios/helicopter-ini-short.json",
-      "contract": "contracts/helicopter-ini-short.json"
+      "contract": "contracts/helicopter-ini-short.json",
+      "equivalentTo": "helicopter-json-short"
     },
     {
       "id": "helicopter-ini-session-short",
@@ -652,7 +644,8 @@
     {
       "id": "helicopter-hjson-short",
       "scenario": "scenarios/helicopter-hjson-short.json",
-      "contract": "contracts/helicopter-hjson-short.json"
+      "contract": "contracts/helicopter-hjson-short.json",
+      "equivalentTo": "helicopter-json-short"
     },
     {
       "id": "helicopter-hjson-session-short",
@@ -663,7 +656,8 @@
     {
       "id": "heavy-mech-ini-short",
       "scenario": "scenarios/heavy-mech-ini-short.json",
-      "contract": "contracts/heavy-mech-ini-short.json"
+      "contract": "contracts/heavy-mech-ini-short.json",
+      "equivalentTo": "heavy-mech-json-short"
     },
     {
       "id": "heavy-mech-ini-session-short",
@@ -685,7 +679,8 @@
     {
       "id": "heavy-mech-hjson-short",
       "scenario": "scenarios/heavy-mech-hjson-short.json",
-      "contract": "contracts/heavy-mech-hjson-short.json"
+      "contract": "contracts/heavy-mech-hjson-short.json",
+      "equivalentTo": "heavy-mech-json-short"
     },
     {
       "id": "heavy-mech-hjson-session-short",
@@ -696,7 +691,8 @@
     {
       "id": "author-water-ini-core",
       "scenario": "scenarios/author-water-ini.json",
-      "contract": "contracts/author-water-ini.json"
+      "contract": "contracts/author-water-ini.json",
+      "equivalentTo": "author-water-json-core"
     },
     {
       "id": "author-water-ini-session",
@@ -718,7 +714,8 @@
     {
       "id": "author-water-hjson-core",
       "scenario": "scenarios/author-water-hjson.json",
-      "contract": "contracts/author-water-hjson.json"
+      "contract": "contracts/author-water-hjson.json",
+      "equivalentTo": "author-water-json-core"
     },
     {
       "id": "author-water-hjson-session",
@@ -729,7 +726,8 @@
     {
       "id": "author-construction-ini-core",
       "scenario": "scenarios/author-construction-ini.json",
-      "contract": "contracts/author-construction-ini.json"
+      "contract": "contracts/author-construction-ini.json",
+      "equivalentTo": "author-construction-json-core"
     },
     {
       "id": "author-construction-ini-session",
@@ -751,7 +749,8 @@
     {
       "id": "author-construction-hjson-core",
       "scenario": "scenarios/author-construction-hjson.json",
-      "contract": "contracts/author-construction-hjson.json"
+      "contract": "contracts/author-construction-hjson.json",
+      "equivalentTo": "author-construction-json-core"
     },
     {
       "id": "author-construction-hjson-session",
@@ -762,7 +761,8 @@
     {
       "id": "author-production-ini-core",
       "scenario": "scenarios/author-production-ini.json",
-      "contract": "contracts/author-production-ini.json"
+      "contract": "contracts/author-production-ini.json",
+      "equivalentTo": "author-production-json-core"
     },
     {
       "id": "author-production-ini-session",
@@ -784,7 +784,8 @@
     {
       "id": "author-production-hjson-core",
       "scenario": "scenarios/author-production-hjson.json",
-      "contract": "contracts/author-production-hjson.json"
+      "contract": "contracts/author-production-hjson.json",
+      "equivalentTo": "author-production-json-core"
     },
     {
       "id": "author-production-hjson-session",
@@ -795,7 +796,8 @@
     {
       "id": "author-upgrade-ini",
       "scenario": "scenarios/author-upgrade-ini.json",
-      "contract": "contracts/author-upgrade-ini.json"
+      "contract": "contracts/author-upgrade-ini.json",
+      "equivalentTo": "author-upgrade-json"
     },
     {
       "id": "author-upgrade-session-ini",
@@ -817,7 +819,8 @@
     {
       "id": "author-upgrade-hjson",
       "scenario": "scenarios/author-upgrade-hjson.json",
-      "contract": "contracts/author-upgrade-hjson.json"
+      "contract": "contracts/author-upgrade-hjson.json",
+      "equivalentTo": "author-upgrade-json"
     },
     {
       "id": "author-upgrade-session-hjson",
@@ -833,7 +836,8 @@
     {
       "id": "author-shore-core-ini",
       "scenario": "scenarios/author-shore-ini.json",
-      "contract": "contracts/author-shore-ini.json"
+      "contract": "contracts/author-shore-ini.json",
+      "equivalentTo": "author-shore-core-json"
     },
     {
       "id": "author-shore-session-ini",
@@ -855,7 +859,8 @@
     {
       "id": "author-shore-core-hjson",
       "scenario": "scenarios/author-shore-hjson.json",
-      "contract": "contracts/author-shore-hjson.json"
+      "contract": "contracts/author-shore-hjson.json",
+      "equivalentTo": "author-shore-core-json"
     },
     {
       "id": "author-shore-session-hjson",
@@ -866,7 +871,8 @@
     {
       "id": "author-naval-chain-core-ini",
       "scenario": "scenarios/author-naval-chain-ini.json",
-      "contract": "contracts/author-naval-chain-ini.json"
+      "contract": "contracts/author-naval-chain-ini.json",
+      "equivalentTo": "author-naval-chain-core-json"
     },
     {
       "id": "author-naval-chain-session-ini",
@@ -888,7 +894,8 @@
     {
       "id": "author-naval-chain-core-hjson",
       "scenario": "scenarios/author-naval-chain-hjson.json",
-      "contract": "contracts/author-naval-chain-hjson.json"
+      "contract": "contracts/author-naval-chain-hjson.json",
+      "equivalentTo": "author-naval-chain-core-json"
     },
     {
       "id": "author-naval-chain-session-hjson",
@@ -955,6 +962,7 @@
     {
       "id": "amphibious-ini-short",
       "backend": "core",
+      "recompare": true,
       "scenario": "scenarios/amphibious-ini-short.json",
       "contract": "contracts/amphibious-ini-short.json"
     },
@@ -967,6 +975,7 @@
     {
       "id": "amphibious-json-short",
       "backend": "core",
+      "recompare": true,
       "scenario": "scenarios/amphibious-json-short.json",
       "contract": "contracts/amphibious-json-short.json"
     },
@@ -979,6 +988,7 @@
     {
       "id": "amphibious-hjson-short",
       "backend": "core",
+      "recompare": true,
       "scenario": "scenarios/amphibious-hjson-short.json",
       "contract": "contracts/amphibious-hjson-short.json"
     },
@@ -991,6 +1001,7 @@
     {
       "id": "transport-ini-short",
       "backend": "core",
+      "recompare": true,
       "scenario": "scenarios/transport-ini-short.json",
       "contract": "contracts/transport-ini-short.json"
     },
@@ -1002,7 +1013,9 @@
     },
     {
       "id": "transport-json-short",
+      "archiveAssertions": "transport",
       "backend": "core",
+      "recompare": true,
       "scenario": "scenarios/transport-json-short.json",
       "contract": "contracts/transport-json-short.json"
     },
@@ -1015,6 +1028,7 @@
     {
       "id": "transport-hjson-short",
       "backend": "core",
+      "recompare": true,
       "scenario": "scenarios/transport-hjson-short.json",
       "contract": "contracts/transport-hjson-short.json"
     },
@@ -1027,6 +1041,7 @@
     {
       "id": "air-transport-ini-short",
       "backend": "core",
+      "recompare": true,
       "scenario": "scenarios/air-transport-ini-short.json",
       "contract": "contracts/air-transport-ini-short.json"
     },
@@ -1038,7 +1053,9 @@
     },
     {
       "id": "air-transport-json-short",
+      "archiveAssertions": "air-transport",
       "backend": "core",
+      "recompare": true,
       "scenario": "scenarios/air-transport-json-short.json",
       "contract": "contracts/air-transport-json-short.json"
     },
@@ -1051,6 +1068,7 @@
     {
       "id": "air-transport-hjson-short",
       "backend": "core",
+      "recompare": true,
       "scenario": "scenarios/air-transport-hjson-short.json",
       "contract": "contracts/air-transport-hjson-short.json"
     },
@@ -1063,38 +1081,24 @@
     {
       "id": "aa-beam-ini-short",
       "backend": "core",
+      "recompare": true,
       "scenario": "scenarios/aa-beam-ini-short.json",
       "contract": "contracts/aa-beam-ini-short.json"
     },
     {
-      "id": "aa-beam-ini-production-chain",
-      "backend": "session",
-      "scenario": "platform/scenarios/aa-beam-ini-production-chain.json",
-      "contract": "platform/contracts/aa-beam-ini-production-chain.json"
-    },
-    {
       "id": "aa-beam-json-short",
+      "archiveAssertions": "aa-beam",
       "backend": "core",
+      "recompare": true,
       "scenario": "scenarios/aa-beam-json-short.json",
       "contract": "contracts/aa-beam-json-short.json"
     },
     {
-      "id": "aa-beam-json-production-chain",
-      "backend": "session",
-      "scenario": "platform/scenarios/aa-beam-json-production-chain.json",
-      "contract": "platform/contracts/aa-beam-json-production-chain.json"
-    },
-    {
       "id": "aa-beam-hjson-short",
       "backend": "core",
+      "recompare": true,
       "scenario": "scenarios/aa-beam-hjson-short.json",
       "contract": "contracts/aa-beam-hjson-short.json"
-    },
-    {
-      "id": "aa-beam-hjson-production-chain",
-      "backend": "session",
-      "scenario": "platform/scenarios/aa-beam-hjson-production-chain.json",
-      "contract": "platform/contracts/aa-beam-hjson-production-chain.json"
     },
     {
       "id": "afterburn-ini-short",
@@ -1136,7 +1140,8 @@
       "id": "bunker-ini-short",
       "backend": "core",
       "scenario": "scenarios/bunker-ini-short.json",
-      "contract": "contracts/bunker-ini-short.json"
+      "contract": "contracts/bunker-ini-short.json",
+      "equivalentTo": "bunker-json-short"
     },
     {
       "id": "bunker-ini-production-chain",
@@ -1160,7 +1165,8 @@
       "id": "bunker-hjson-short",
       "backend": "core",
       "scenario": "scenarios/bunker-hjson-short.json",
-      "contract": "contracts/bunker-hjson-short.json"
+      "contract": "contracts/bunker-hjson-short.json",
+      "equivalentTo": "bunker-json-short"
     },
     {
       "id": "bunker-hjson-production-chain",
@@ -1171,7 +1177,8 @@
     {
       "id": "repairbay-ini-short",
       "scenario": "scenarios/repairbay-ini-short.json",
-      "contract": "contracts/repairbay-ini-short.json"
+      "contract": "contracts/repairbay-ini-short.json",
+      "equivalentTo": "repairbay-json-short"
     },
     {
       "id": "repairbay-ini-production-chain",
@@ -1193,7 +1200,8 @@
     {
       "id": "repairbay-hjson-short",
       "scenario": "scenarios/repairbay-hjson-short.json",
-      "contract": "contracts/repairbay-hjson-short.json"
+      "contract": "contracts/repairbay-hjson-short.json",
+      "equivalentTo": "repairbay-json-short"
     },
     {
       "id": "repairbay-hjson-production-chain",
@@ -1204,7 +1212,8 @@
     {
       "id": "engineer-ini-short",
       "scenario": "scenarios/engineer-ini-short.json",
-      "contract": "contracts/engineer-ini-short.json"
+      "contract": "contracts/engineer-ini-short.json",
+      "equivalentTo": "engineer-json-short"
     },
     {
       "id": "engineer-ini-production-chain",
@@ -1226,7 +1235,8 @@
     {
       "id": "engineer-hjson-short",
       "scenario": "scenarios/engineer-hjson-short.json",
-      "contract": "contracts/engineer-hjson-short.json"
+      "contract": "contracts/engineer-hjson-short.json",
+      "equivalentTo": "engineer-json-short"
     },
     {
       "id": "engineer-hjson-production-chain",
@@ -1237,7 +1247,8 @@
     {
       "id": "nautilus-ini-short",
       "scenario": "scenarios/nautilus-ini-short.json",
-      "contract": "contracts/nautilus-ini-short.json"
+      "contract": "contracts/nautilus-ini-short.json",
+      "equivalentTo": "nautilus-json-short"
     },
     {
       "id": "nautilus-ini-production-chain",
@@ -1259,7 +1270,8 @@
     {
       "id": "nautilus-hjson-short",
       "scenario": "scenarios/nautilus-hjson-short.json",
-      "contract": "contracts/nautilus-hjson-short.json"
+      "contract": "contracts/nautilus-hjson-short.json",
+      "equivalentTo": "nautilus-json-short"
     },
     {
       "id": "nautilus-hjson-production-chain",
@@ -1270,7 +1282,8 @@
     {
       "id": "nautilus-ini-forms",
       "scenario": "scenarios/nautilus-ini-forms.json",
-      "contract": "contracts/nautilus-ini-forms.json"
+      "contract": "contracts/nautilus-ini-forms.json",
+      "equivalentTo": "nautilus-json-forms"
     },
     {
       "id": "nautilus-ini-land-forms",
@@ -1292,7 +1305,8 @@
     {
       "id": "nautilus-hjson-forms",
       "scenario": "scenarios/nautilus-hjson-forms.json",
-      "contract": "contracts/nautilus-hjson-forms.json"
+      "contract": "contracts/nautilus-hjson-forms.json",
+      "equivalentTo": "nautilus-json-forms"
     },
     {
       "id": "nautilus-hjson-land-forms",
@@ -1303,7 +1317,8 @@
     {
       "id": "anti-nuclear-ini-short",
       "scenario": "scenarios/anti-nuclear-ini-short.json",
-      "contract": "contracts/anti-nuclear-ini-short.json"
+      "contract": "contracts/anti-nuclear-ini-short.json",
+      "equivalentTo": "anti-nuclear-json-short"
     },
     {
       "id": "anti-nuclear-ini-production-chain",
@@ -1325,7 +1340,8 @@
     {
       "id": "anti-nuclear-hjson-short",
       "scenario": "scenarios/anti-nuclear-hjson-short.json",
-      "contract": "contracts/anti-nuclear-hjson-short.json"
+      "contract": "contracts/anti-nuclear-hjson-short.json",
+      "equivalentTo": "anti-nuclear-json-short"
     },
     {
       "id": "anti-nuclear-hjson-production-chain",
@@ -1336,7 +1352,8 @@
     {
       "id": "nuclear-ini-short",
       "scenario": "scenarios/nuclear-ini-short.json",
-      "contract": "contracts/nuclear-ini-short.json"
+      "contract": "contracts/nuclear-ini-short.json",
+      "equivalentTo": "nuclear-json-short"
     },
     {
       "id": "nuclear-ini-production-chain",
@@ -1358,7 +1375,8 @@
     {
       "id": "nuclear-hjson-short",
       "scenario": "scenarios/nuclear-hjson-short.json",
-      "contract": "contracts/nuclear-hjson-short.json"
+      "contract": "contracts/nuclear-hjson-short.json",
+      "equivalentTo": "nuclear-json-short"
     },
     {
       "id": "nuclear-hjson-production-chain",

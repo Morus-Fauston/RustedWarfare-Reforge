@@ -212,6 +212,39 @@
         "typeId": "aaBeamGunship",
         "cooldown": "active"
       }
-    ]
+    ],
+    "unitsAfterIntents": {
+      "stop-home": [
+        {
+          "ownerPlayerId": "p1",
+          "typeId": "commandCenter",
+          "fields": {
+            "alive": true
+          }
+        },
+        {
+          "ownerPlayerId": "p1",
+          "typeId": "builder",
+          "fields": {
+            "alive": true
+          }
+        },
+        {
+          "ownerPlayerId": "p1",
+          "typeId": "airFactoryT2",
+          "fields": {
+            "alive": true
+          }
+        },
+        {
+          "ownerPlayerId": "p1",
+          "typeId": "aaBeamGunship",
+          "fields": {
+            "alive": true
+          }
+        }
+      ]
+    },
+    "productionSession": "aa-afterburn"
   }
 }

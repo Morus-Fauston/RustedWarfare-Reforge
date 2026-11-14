@@ -38,6 +38,13 @@ if spec.get('child'):
 time.sleep(spec.get('delay',.1))
 row['ended']=time.time();(out/'lifecycle.json').write_text(json.dumps(row))
 if spec.get('mutate'): pathlib.Path(__file__).with_name('changed-package.txt').write_text('owned mutation')
+if spec.get('mutateContract'):
+ target=pathlib.Path(value('--contract')); timestamps=target.stat()
+ target.write_bytes(b'[]')
+ import os
+ os.utime(target, ns=(timestamps.st_atime_ns, timestamps.st_mtime_ns))
+if spec.get('mutateComparator'):
+ pathlib.Path(__file__).with_name('spider_platform.py').write_text('changed', encoding='utf8')
 if spec.get('fail'): raise SystemExit(7)
 if spec.get('noarchive'): raise SystemExit(0)
 if args[0]=='session': (out/'result.json').write_text(json.dumps({'status':'passed','exitCode':0}))
@@ -63,6 +70,30 @@ else:
 
 
 class PublicSelectionTest(unittest.TestCase):
+    def test_long_and_missing_representative_cannot_remove_scenario_coverage(self):
+        from public_check import plan_suite
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            public = root/'SimulationTest/public'
+            (public/'suites').mkdir(parents=True)
+            (public/'scenario.json').write_text('{}', encoding='utf8')
+            (public/'contract.json').write_text('{}', encoding='utf8')
+            (public/'scenario-equivalence.json').write_text('{"families":[]}', encoding='utf8')
+            case = dict(id='example', scenario='scenario.json', contract='contract.json')
+            for kind in ('long', 'short'):
+                cases = [dict(case, equivalentTo='representative')]
+                if kind == 'long':
+                    cases.append(dict(case, id='representative'))
+                suite = dict(schemaVersion=1, suiteId='owned', **{kind: cases})
+                (public/'suites/owned.json').write_text(json.dumps(suite), encoding='utf8')
+                with self.subTest(kind=kind), self.assertRaisesRegex(ValueError, 'Invalid Core short'):
+                    plan_suite(root, 'owned', kind, set())
+            suite['short'].append(dict(case, id='representative'))
+            (public/'suites/owned.json').write_text(json.dumps(suite), encoding='utf8')
+            with self.assertRaisesRegex(ValueError, 'Unregistered Core short'):
+                plan_suite(root, 'owned', 'short', set())
+
     def test_failure_and_dispatch_share_a_boundary_and_queued_work_does_not_start_after_failure(self):
         import threading
         import time
@@ -134,7 +165,7 @@ class PublicSelectionTest(unittest.TestCase):
             signals = SimpleNamespace(Lock=threading.Lock, Event=StopSignal)
             with patch.object(public_scenarios, 'threading', signals), \
                     patch.object(public_scenarios, 'ThreadPoolExecutor', DelayedAcceptancePool):
-                result = public_scenarios.run_scenarios(output, output, cases, output, 2, 5, lambda: None, execute)
+                result = public_scenarios.run_scenarios(output, output, cases, output, 2, 5, lambda case: None, execute)
             self.assertEqual(['failed', 'not-started'], [r['status'] for r in result['items']])
             self.assertEqual(['first'], calls)
             self.assertEqual([], late_submissions, 'An executor accepted work after the first failure was recorded')
@@ -256,6 +287,68 @@ class PublicSelectionTest(unittest.TestCase):
             self.assertEqual('not-started',result['scenarioExecution']['items'][2]['status'])
             self.assertFalse((output/'owned-2').exists())
 
+    def test_scenario_receipt_measures_identity_checks_and_archive_work(self):
+        from public_check import run
+        with owned_scenario_processes([{'backend': 'session'}]) as (repo, plan, prepared):
+            output = repo/'timed'
+            self.assertEqual(0, run(repo, output, plan, prepared, 10, 1, 1))
+            result = json.loads((output/'result.json').read_text(encoding='utf8'))
+            self.assertGreater(result['identityChecks']['scenario']['count'], 0)
+            self.assertGreaterEqual(result['identityChecks']['scenario']['elapsedSeconds'], 0)
+            queue = result['scenarioExecution']
+            self.assertGreater(queue['elapsedSeconds'], 0)
+            row, = queue['items']
+            self.assertGreaterEqual(row['archiveSeconds'], 0)
+            self.assertGreater(row['commands'][1]['elapsedSeconds'], 0)
+
+    def test_same_length_and_timestamp_contract_drift_stops_next_scenario(self):
+        from public_check import run
+        with owned_scenario_processes([{'mutateContract': True}, {}]) as (repo, plan, prepared):
+            output = repo/'changed'
+            self.assertEqual(1, run(repo, output, plan, prepared, 10, 1, 1))
+            result = json.loads((output/'result.json').read_text(encoding='utf8'))
+            queue = result['scenarioExecution']
+            self.assertIn('Public scenario input changed', queue['firstError']['error'])
+            self.assertEqual(['failed', 'not-started'], [row['status'] for row in queue['items']])
+            self.assertEqual(0, queue['items'][0]['commands'][0]['exitCode'])
+
+    def test_changed_session_comparator_dependency_prevents_independent_recompare(self):
+        from public_check import run
+        with owned_scenario_processes([{'backend': 'session', 'mutateComparator': True}, {}]) as (repo, plan, prepared):
+            output = repo/'changed'
+            self.assertEqual(1, run(repo, output, plan, prepared, 10, 1, 1))
+            queue = json.loads((output/'scenario-execution.json').read_text(encoding='utf8'))
+            self.assertIn('Public Session comparator changed: spider_platform.py', queue['firstError']['error'])
+            self.assertEqual(['failed', 'not-started'], [row['status'] for row in queue['items']])
+            self.assertEqual(['owned-0'], [command['name'] for command in queue['items'][0]['commands']])
+
+    def test_standalone_package_drift_after_build_prevents_first_dispatch(self):
+        import shutil
+        from public_check import run
+        with owned_scenario_processes([{}]) as (repo, plan, _):
+            project = repo/'SimulationTest'
+            package = project/'build/install/simulation-test'
+            shutil.copytree(repo/'package', package)
+            package_member = package/'bin/fixture.py'
+            python_case = project/'ci/test_replace_package.py'
+            python_case.parent.mkdir()
+            python_case.write_text(
+                'import unittest\nfrom pathlib import Path\n'
+                'class ReplacePackage(unittest.TestCase):\n'
+                f' def test_publish_replacement(self): Path({str(package_member)!r}).write_bytes(b"replacement")\n',
+                encoding='utf8')
+            from public_check import REPO
+            shutil.copyfile(REPO/'SimulationTest/ci/python_check.py', project/'ci/python_check.py')
+            (project/'gradlew').write_text('#!/bin/sh\nexit 0\n', encoding='utf8')
+            (project/'gradlew.bat').write_text('@exit /b 0\n', encoding='utf8')
+            plan['pythonTests'] = ['SimulationTest/ci/test_replace_package.py']
+            output = repo/'changed'
+            self.assertEqual(1, run(repo, output, plan, None, 10, 1, 1))
+            queue = json.loads((output/'scenario-execution.json').read_text(encoding='utf8'))
+            self.assertIn('Scenario distribution changed', queue['firstError']['error'])
+            self.assertEqual('not-started', queue['items'][0]['status'])
+            self.assertEqual([], queue['items'][0]['commands'])
+
     def test_scenario_failure_stops_dispatch_preserves_inflight_success_and_original_exit(self):
         from public_check import run
         with owned_scenario_processes([{'delay':.05,'fail':True,'barrier':True},
@@ -362,11 +455,13 @@ class PublicSelectionTest(unittest.TestCase):
         self.assertIn('com.rustedwarfare.reforge.core.content.DropshipContentFailureTest',plan['tests']['core'])
         self.assertIn('com.rustedwarfare.reforge.client.DropshipProductionSandboxTest',plan['tests']['client'])
         self.assertIn('com.rustedwarfare.reforge.pc.DropshipOriginalProfileTest',plan['tests']['pc'])
-        self.assertIn('com.rustedwarfare.reforge.testing.DropshipProductionSessionTest',plan['tests']['tools'])
+        self.assertNotIn('com.rustedwarfare.reforge.testing.DropshipProductionSessionTest',plan['tests']['tools'])
         cases={row['id']:row for row in plan['scenarios']}
         for fmt in ('ini','json','hjson'):
             self.assertEqual('core',cases['air-transport-'+fmt+'-short']['backend'])
             self.assertEqual('session',cases['air-transport-'+fmt+'-production-chain']['backend'])
+            contract = REPO/'SimulationTest/public'/cases['air-transport-'+fmt+'-production-chain']['contract']
+            self.assertEqual('air-transport', json.loads(contract.read_bytes())['history']['productionSession'])
         names={p.relative_to(REPO).as_posix() for p in source_files(REPO)}
         for name in ('air_transport_fixture.py','air_transport_scenarios.py'):
             self.assertIn('SimulationTest/tools/'+name,names)
@@ -375,12 +470,30 @@ class PublicSelectionTest(unittest.TestCase):
         from public_check import REPO,plan_suite,source_files
         plan=plan_suite(REPO,'production-combat','pr')
         for module,name in [('core','core.sim.AaBeamAdmissionTest'),('client','client.AaBeamPresentationTest'),
-                            ('pc','pc.AaBeamOriginalProfileTest'),('tools','testing.AaBeamArchiveTest')]:
+                            ('pc','pc.AaBeamOriginalProfileTest')]:
             self.assertIn('com.rustedwarfare.reforge.'+name,plan['tests'][module])
         cases={row['id']:row for row in plan['scenarios']}
+        for family, test in [('aa-beam', 'AaBeam'), ('air-transport', 'Dropship'), ('transport', 'LandingCraft')]:
+            self.assertNotIn('com.rustedwarfare.reforge.testing.'+test+'ArchiveTest', plan['tests']['tools'])
+            self.assertEqual(family, cases[family+'-json-short']['archiveAssertions'])
         for fmt in ('ini','json','hjson'):
             self.assertEqual('core',cases['aa-beam-'+fmt+'-short']['backend'])
-            self.assertEqual('session',cases['aa-beam-'+fmt+'-production-chain']['backend'])
+            self.assertIs(cases['aa-beam-'+fmt+'-short']['recompare'], True)
+            aa = 'aa-beam-'+fmt+'-production-chain'
+            afterburn = cases['afterburn-'+fmt+'-production-chain']
+            self.assertNotIn(aa, cases)
+            public = REPO/'SimulationTest/public'
+            old = json.loads((public/'platform/scenarios'/(aa+'.json')).read_bytes())
+            new = json.loads((public/afterburn['scenario']).read_bytes())
+            self.assertEqual(23, len(old['intents']))
+            self.assertEqual(old['intents'], new['intents'][:23])
+            self.assertEqual(old['inputs'], new['inputs'])
+            self.assertEqual(old['waitPlan'], {name: new['waitPlan'][name] for name in old['waitPlan']})
+            old_contract = json.loads((public/'platform/contracts'/(aa+'.json')).read_bytes())
+            new_contract = json.loads((public/afterburn['contract']).read_bytes())
+            self.assertEqual(old_contract['rules'], new_contract['rules'][:23])
+            self.assertEqual(old_contract['history']['finalUnits'],
+                             new_contract['history']['unitsAfterIntents']['stop-home'])
         names={p.relative_to(REPO).as_posix() for p in source_files(REPO)}
         for name in ('aa_beam_fixture.py','aa_beam_scenarios.py','test_aa_beam_archive.py'):
             self.assertIn('SimulationTest/tools/'+name,names)
@@ -391,12 +504,14 @@ class PublicSelectionTest(unittest.TestCase):
         for module,names in {
             'core':['core.content.AfterburnContentTest','core.sim.AfterburnActionTest','core.sim.AfterburnLifecycleTest'],
             'client':['client.AfterburnInputTest','client.AfterburnTrailTest'],
-            'tools':['testing.AfterburnArchiveTest','testing.AfterburnProductionSessionTest']}.items():
+            'tools':['testing.AfterburnArchiveTest']}.items():
             for name in names:self.assertIn('com.rustedwarfare.reforge.'+name,plan['tests'][module])
         cases={row['id']:row for row in plan['scenarios']}
         for fmt in ('ini','json','hjson'):
             self.assertEqual('core',cases['afterburn-'+fmt+'-short']['backend'])
             self.assertEqual('session',cases['afterburn-'+fmt+'-production-chain']['backend'])
+            contract = REPO/'SimulationTest/public'/cases['afterburn-'+fmt+'-production-chain']['contract']
+            self.assertEqual('aa-afterburn', json.loads(contract.read_bytes())['history']['productionSession'])
         self.assertIn('SimulationTest/tools/test_afterburn_platform.py',plan['pythonTests'])
         names={p.relative_to(REPO).as_posix() for p in source_files(REPO)}
         self.assertIn('SimulationTest/tools/afterburn_scenarios.py',names)
@@ -413,8 +528,12 @@ class PublicSelectionTest(unittest.TestCase):
             'tools':['testing.BunkerArchiveTest','testing.BunkerProductionSessionTest']}.items():
             for name in names:self.assertIn('com.rustedwarfare.reforge.'+name,plan['tests'][module])
         cases={row['id']:row for row in plan['scenarios']}
+        equivalence = json.loads((REPO/'SimulationTest/public/scenario-equivalence.json').read_bytes())
+        bunker = next(row for row in equivalence['families'] if row['name'] == 'bunker-short')
+        self.assertEqual('core', cases['bunker-json-short']['backend'])
+        self.assertEqual(['bunker-json-short', 'bunker-ini-short', 'bunker-hjson-short'],
+                         [member['id'] for member in bunker['members']])
         for fmt in ('ini','json','hjson'):
-            self.assertEqual('core',cases['bunker-'+fmt+'-short']['backend'])
             self.assertEqual('session',cases['bunker-'+fmt+'-production-chain']['backend'])
         self.assertIn('SimulationTest/tools/test_bunker_platform.py',plan['pythonTests'])
         names={p.relative_to(REPO).as_posix() for p in source_files(REPO)}

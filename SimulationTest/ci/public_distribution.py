@@ -7,11 +7,8 @@ import shutil
 
 
 def digest(path):
-    result = hashlib.sha256()
     with Path(path).open('rb') as stream:
-        for chunk in iter(lambda: stream.read(65536), b''):
-            result.update(chunk)
-    return result.hexdigest()
+        return hashlib.file_digest(stream, 'sha256').hexdigest()
 
 
 def package_files(directory):
@@ -92,6 +89,14 @@ def seal(distribution, receipt, source, toolchain=None, *, kind='long', preparat
 
 
 def verify(receipt, expected_sha256, source, toolchain=None, *, kind='long', plan=None, repo=None):
+    record = read_receipt(receipt, expected_sha256, source, toolchain, kind=kind, plan=plan, repo=repo)
+    preparation = record['preparation']
+    if preparation and artifact_identities(r['path'] for r in preparation['artifacts']) != preparation['artifacts']:
+        raise ValueError('Fixed distribution prepared artifacts changed')
+    return verify_members(receipt, record)
+
+
+def read_receipt(receipt, expected_sha256, source, toolchain=None, *, kind='long', plan=None, repo=None):
     receipt = Path(receipt)
     if receipt.is_symlink() or not receipt.is_file() or receipt.stat().st_size > 8*1024*1024:
         raise ValueError('Missing or invalid fixed distribution receipt')
@@ -115,11 +120,13 @@ def verify(receipt, expected_sha256, source, toolchain=None, *, kind='long', pla
         if (not preparation['tasks'] or not preparation['executions'] or not preparation['artifacts'] or
                 any(r.get('failure') for r in preparation['executions'])):
             raise ValueError('Incomplete fixed distribution preparation')
-        if artifact_identities(r['path'] for r in preparation['artifacts']) != preparation['artifacts']:
-            raise ValueError('Fixed distribution prepared artifacts changed')
     elif preparation is not None or (plan and (plan['kind'] != 'long' or plan['tests'] or plan.get('pythonTests'))):
         raise ValueError('A long package cannot replace selected mechanism tests')
+    return record
+
+
+def verify_members(receipt, record):
     distribution = Path(record['distribution'])
-    if distribution.resolve().parent != receipt.resolve().parent or package_files(distribution) != record['files']:
+    if distribution.resolve().parent != Path(receipt).resolve().parent or package_files(distribution) != record['files']:
         raise ValueError('Fixed distribution members or dependency bytes changed')
     return distribution.resolve()

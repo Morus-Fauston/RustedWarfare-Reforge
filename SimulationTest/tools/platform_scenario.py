@@ -4,6 +4,7 @@ import hashlib
 import json
 import math
 import os
+from fnmatch import fnmatch
 from pathlib import Path
 import shutil
 import subprocess
@@ -1155,16 +1156,37 @@ def validate_naval_ammo_history(records, owner):
     if not states:fail('No owned Nautilus observed')
 
 
+def validate_history_units(units, expected_units):
+    for expected in expected_units:
+        if not isinstance(expected,dict) or not isinstance(expected.get('fields'),dict) or not expected['fields']:
+            raise PlatformError('input-contract', 'Expected unique unit selectors and scalar fields', 1)
+        selected=[u for u in units if (u.get('unitId')==expected['unitId'] if 'unitId' in expected else
+            u.get('ownerPlayerId')==expected.get('ownerPlayerId') and u.get('typeId')==expected.get('typeId'))]
+        if len(selected)!=1:
+            raise PlatformError('history-final', 'Missing or ambiguous fixed unit', 2)
+        for name,wanted in expected['fields'].items():
+            actual=selected[0].get(name)
+            if isinstance(wanted,(list,dict)):
+                raise PlatformError('input-contract', 'History fields must be scalar predicates', 1)
+            if name not in selected[0] or (type(actual) is bool)!=(type(wanted) is bool) or actual!=wanted:
+                raise PlatformError('history-final', 'Unit field differs: '+name, 2)
+
+
 def compare_history(records, plan, policy, native_anchors=None, geometry=None):
     """Check a declared ledger at every observation, including call boundaries."""
     allowed={'initialBalance','spend','noActionIntents','projectileBirthsRequired','mechLegs',
-             'ownerPlayerId','initialOwnedTypes','finalUnits','minimumBirths',
+             'ownerPlayerId','initialOwnedTypes','finalUnits','unitsAfterIntents','minimumBirths',
              'productionOrder','completedUpgradeTypes','initialIncome','producedIncome','transportStages','unitActionStages',
              'bunkerStages','reclaimRefunds','nautilusTerrain','nuclearHistory','navalAmmoHistory',
              'spiderOpening','spiderWeaponModules','spiderUtilityModules','spiderDefenseModules','spiderBlink',
-             'spiderMixedModules'}
+             'spiderMixedModules', 'productionSession'}
     if not isinstance(policy,dict) or set(policy)-allowed:
         raise PlatformError('input-contract', 'Unknown or malformed history obligations', 1)
+    unit_checkpoints = policy.get('unitsAfterIntents', {})
+    intent_ids = {intent['intentId'] for intent in plan['intents']}
+    if (not isinstance(unit_checkpoints, dict) or set(unit_checkpoints)-intent_ids or
+            any(not isinstance(rows, list) or not rows for rows in unit_checkpoints.values())):
+        raise PlatformError('input-contract', 'Expected unit checks at declared intent boundaries', 1)
     balance = policy.get('initialBalance')
     if type(balance) not in (int, float) or not math.isfinite(balance):
         raise PlatformError('input-contract', 'History requires a finite initial balance', 1)
@@ -1319,6 +1341,8 @@ def compare_history(records, plan, policy, native_anchors=None, geometry=None):
                      else intent_steps != intents[active].get('waitSteps', 0)) or
                     action_count != (0 if active in no_actions else 1)):
                 raise PlatformError('history-intent', 'Unfinished intention or wrong explicit step count')
+            if active in unit_checkpoints:
+                validate_history_units(units.values(), unit_checkpoints[active])
             stage=bunker_stages.get(active)
             if stage is not None:
                 candidates=[u for u in units.values() if u.get('ownerPlayerId')==policy.get('ownerPlayerId','p1') and
@@ -1538,20 +1562,11 @@ def compare_history(records, plan, policy, native_anchors=None, geometry=None):
         raise PlatformError('history-income','A declared produced income type never completed a real birth',2)
     if not observations or pending or construction_charges or pending_refunds or active is not None or completed != len(plan['intents']):
         raise PlatformError('incomplete-run', 'Missing history observations or a pending first-step charge')
-    for expected in policy.get('finalUnits',[]):
-        if not isinstance(expected,dict) or not isinstance(expected.get('fields'),dict) or not expected['fields']:
-            raise PlatformError('input-contract', 'Expected unique final unit selectors and scalar fields', 1)
-        selected=[u for u in units.values() if (u.get('unitId')==expected['unitId'] if 'unitId' in expected else
-            u.get('ownerPlayerId')==expected.get('ownerPlayerId') and u.get('typeId')==expected.get('typeId'))]
-        if len(selected)!=1:
-            raise PlatformError('history-final', 'Missing or ambiguous fixed terminal unit', 2)
-        for name,wanted in expected['fields'].items():
-            actual=selected[0].get(name)
-            if isinstance(wanted,(list,dict)):
-                raise PlatformError('input-contract', 'Final history fields must be scalar predicates', 1)
-            if name not in selected[0] or (type(actual) is bool)!=(type(wanted) is bool) or actual!=wanted:
-                raise PlatformError('history-final', 'Terminal unit differs: '+name, 2)
+    validate_history_units(units.values(), policy.get('finalUnits', []))
     validate_production_history(records,policy)
+    if 'productionSession' in policy and native_anchors is None:
+        from production_session_assertions import validate_production_session
+        validate_production_session(records, policy['productionSession'], PlatformError)
     if 'unitActionStages' in policy:validate_unit_action_history(records,policy)
     if 'bunkerStages' in policy:validate_bunker_history(records,policy)
     if 'nautilusTerrain' in policy:validate_nautilus_history(records,policy)
@@ -1662,18 +1677,26 @@ def save(path, document):
 
 
 def read(path):
-    document = json.loads(Path(path).read_text(encoding='utf8'))
+    return read_document(Path(path).read_text(encoding='utf8'))
+
+
+def read_document(data):
+    document = json.loads(data)
     if isinstance(document, dict) and document.get('kind') == 'behavior-contract' and 'platform' in document:
         return document['platform']
     return document
 
 
-def tree(root):
+def tree_paths(root):
     root = Path(root)
     paths = sorted(root.rglob('*'), key=lambda path: path.relative_to(root).as_posix())
     if any(path.is_symlink() for path in paths) or root.is_symlink():
         raise PlatformError('input-identity', 'Symbolic links are not fixed input files', 1)
-    return [dict(path=path.relative_to(root).as_posix(), sha256=sha(path)) for path in paths if path.is_file()]
+    return {path.relative_to(root).as_posix(): path for path in paths if path.is_file()}
+
+
+def tree(root):
+    return [dict(path=name, sha256=sha(path)) for name, path in tree_paths(root).items()]
 
 
 def session_anchors(records):
@@ -1689,14 +1712,18 @@ def session_anchors(records):
     return anchors
 
 
-def windows_geometry(output,records):
+def windows_geometry(output, records, maps=None):
     graphics=[r for r in records if r.get('kind')=='load-graphics-ready']
     ready=[r for r in records if r.get('kind')=='load-ready']
     if not graphics:
         # Preserve pre-instrumentation short archives without inventing a new map choice.
-        path=Path(output)/'inputSnapshot/maps/p001-controlled.tmx'
-        if not path.is_file():raise PlatformError('input-geometry','Legacy archive has no fixed controlled map')
-        root=ET.parse(path).getroot()
+        maps = maps if maps is not None else {
+            path.name: path.read_bytes() for path in (Path(output)/'inputSnapshot/maps').glob('*.tmx')
+        }
+        legacy = next((data for name, data in maps.items() if Path(name) == Path('p001-controlled.tmx')), None)
+        if legacy is None:
+            raise PlatformError('input-geometry','Legacy archive has no fixed controlled map')
+        root = ET.fromstring(legacy)
         return dict(worldWidth=int(root.get('width'))*int(root.get('tilewidth')),
                     worldHeight=int(root.get('height'))*int(root.get('tileheight')))
     if len(graphics)!=1 or len(ready)!=1 or graphics[0].get('generation')!=ready[0].get('generation'):
@@ -1705,8 +1732,11 @@ def windows_geometry(output,records):
     width,height=g.get('worldWidth'),g.get('worldHeight')
     if any(type(v) not in (int,float) or not math.isfinite(v) or v<=0 for v in (width,height)):
         raise PlatformError('input-geometry','Finite positive loaded map dimensions required')
-    for path in sorted((Path(output)/'inputSnapshot/maps').glob('*.tmx')):
-        root=ET.parse(path).getroot()
+    maps = maps if maps is not None else {
+        path.name: path.read_bytes() for path in (Path(output)/'inputSnapshot/maps').glob('*.tmx')
+    }
+    for name in sorted(maps):
+        root = ET.fromstring(maps[name])
         if (int(root.get('width'))==r.get('mapWidth') and int(root.get('height'))==r.get('mapHeight') and
                 int(root.get('width'))*int(root.get('tilewidth'))==width and
                 int(root.get('height'))*int(root.get('tileheight'))==height):
@@ -1714,8 +1744,10 @@ def windows_geometry(output,records):
     raise PlatformError('input-geometry','Loaded graphics geometry has no matching frozen input map')
 
 
-def compare_archive(output):
+def compare_archive(output, expected_scenario=None, expected_contract=None, started_after=None):
     output = Path(output)
+    if (expected_scenario is None) != (expected_contract is None):
+        raise PlatformError('input-contract', 'Expected scenario and contract must be supplied together', 1)
     archive = read(output / 'archive.json')
     if archive.get('complete') is not True:
         raise PlatformError('incomplete-run', 'Adapter did not finish normally')
@@ -1728,30 +1760,65 @@ def compare_archive(output):
     names = [item['path'] for item in files]
     required = {'manifest.json', 'scenario.json', 'contract.json', 'intents.json',
                 'session/client-diagnostic.jsonl', 'stdout.log', 'stderr.log'}
-    actual = {item['path'] for item in tree(output)} - {'archive.json', 'result.json'}
-    if len(names) != len(set(names)) or set(names) != actual or not required <= set(names):
+    actual = tree_paths(output)
+    actual.pop('archive.json', None)
+    actual.pop('result.json', None)
+    if len(names) != len(set(names)) or set(names) != actual.keys() or not required <= actual.keys():
         raise PlatformError('archive-identity', 'Archive file closure is incomplete or duplicated')
+    consume = {'manifest.json', 'scenario.json', 'contract.json', 'intents.json', 'session/client-diagnostic.jsonl'}
+    if started_after is not None:
+        if not math.isfinite(started_after):
+            raise PlatformError('input-contract', 'Expected finite current scenario start time', 1)
+        consume.add('execution.json')
+    maps = {}
+    if backend == 'windows-input':
+        consume.update(('input.jsonl', 'runtime/reforge/client-diagnostic.jsonl'))
+        maps = {name: Path(name).name for name in actual
+                if Path(name).parent == Path('inputSnapshot/maps') and fnmatch(Path(name).name, '*.tmx')}
+        consume.update(maps)
+    captured, digests = {}, {}
+    resolved_output = output.resolve()
     for item in files:
-        path = (output / item['path']).resolve()
-        if (not path.is_relative_to(output.resolve()) or path.relative_to(output.resolve()).as_posix() != item['path'] or
-                not path.is_file() or sha(path) != item['sha256']):
-            raise PlatformError('archive-identity', 'Archived evidence differs: '+item['path'])
-    manifest = read(output/'manifest.json')
+        name = item['path']
+        path = actual[name].resolve()
+        if not path.is_relative_to(resolved_output) or path.relative_to(resolved_output).as_posix() != name:
+            raise PlatformError('archive-identity', 'Archived evidence differs: '+name)
+        if name in consume:
+            captured[name] = path.read_bytes()
+            digest = hashlib.sha256(captured[name]).hexdigest()
+        else:
+            with path.open('rb') as stream:
+                digest = hashlib.file_digest(stream, 'sha256').hexdigest()
+        if digest != item['sha256']:
+            raise PlatformError('archive-identity', 'Archived evidence differs: '+name)
+        digests[name] = digest
+    inputs = [dict(path=name.removeprefix('inputSnapshot/'), sha256=digests[name])
+              for name in sorted(digests) if name.startswith('inputSnapshot/')]
+    manifest = read_document(captured['manifest.json'])
     if (manifest.get('backend') != backend or not manifest.get('packageFiles') or
-            manifest.get('scenarioSha256') != sha(output/'scenario.json') or
-            manifest.get('contractSha256') != sha(output/'contract.json') or
+            manifest.get('scenarioSha256') != digests['scenario.json'] or
+            manifest.get('contractSha256') != digests['contract.json'] or
             not manifest.get('inputFiles') or
-            sorted(manifest['inputFiles'], key=lambda item: item['path']) != tree(output/'inputSnapshot')):
+            sorted(manifest['inputFiles'], key=lambda item: item['path']) != inputs):
         raise PlatformError('archive-identity', 'Manifest, fixed inputs, scenario or contract identity differs')
-    plan = read(output/'scenario.json')
+    if expected_scenario is not None and (sha(expected_scenario) != digests['scenario.json']
+            or sha(expected_contract) != digests['contract.json']):
+        raise PlatformError('archive-identity', 'Archive differs from the current scenario or contract')
+    if started_after is not None:
+        execution = read_document(captured.get('execution.json', b'{}'))
+        start = execution.get('startedUnix')
+        if (backend != 'session' or execution.get('status') != 'passed' or execution.get('exitCode') != 0 or
+                type(start) not in (int, float) or not math.isfinite(start) or start < started_after):
+            raise PlatformError('archive-identity', 'Archive execution predates the current scenario command')
+    plan = read_document(captured['scenario.json'])
     if backend == 'windows-input':
         pictures = {intent['intentId']+'.png' for intent in plan['intents']}
         pictures |= {intent['intentId']+'-preview.png' for intent in plan['intents'] if intent['kind'] == 'build'}
         if not {'input.jsonl', 'runtime/reforge/client-diagnostic.jsonl', *pictures} <= set(names):
             raise PlatformError('archive-identity', 'Windows input, screenshots or runtime diagnostic is missing')
-        if (output/'runtime/reforge/client-diagnostic.jsonl').read_bytes() != (output/'session/client-diagnostic.jsonl').read_bytes():
+        if captured['runtime/reforge/client-diagnostic.jsonl'] != captured['session/client-diagnostic.jsonl']:
             raise PlatformError('archive-identity', 'Runtime and compared diagnostic differ')
-        input_rows = [json.loads(line) for line in (output/'input.jsonl').read_text(encoding='utf8').splitlines()]
+        input_rows = [json.loads(line) for line in captured['input.jsonl'].decode('utf8').splitlines()]
         if [r.get('intentId') for r in input_rows if r.get('kind') == 'intent-dispatch'] != [i['intentId'] for i in plan['intents']]:
             raise PlatformError('archive-identity', 'Actual input delivery records differ from the fixed intents')
         captures = {Path(r['path']).name for r in input_rows if r.get('kind') == 'captured-owned-no-activation'}
@@ -1760,14 +1827,16 @@ def compare_archive(output):
         restored = [r for r in input_rows if r.get('kind') == 'foreground-restoration']
         if len(restored) != 1 or restored[0].get('restored') is False:
             raise PlatformError('closing-tail', 'Missing or failed foreground restoration')
-    raw = (output / 'session/client-diagnostic.jsonl').read_bytes()
+    raw = captured['session/client-diagnostic.jsonl']
     if not raw.endswith(b'\n'):
         raise PlatformError('incomplete-run', 'Diagnostic final line is truncated')
     records = [json.loads(line) for line in raw.splitlines()]
     geometry = None
     if backend == 'windows-input':
-        geometry = windows_geometry(output,records)
-    return compare_run(records, plan, read(output/'contract.json'), read(output/'intents.json'), geometry)
+        geometry = windows_geometry(output, records, {name: captured[path] for path, name in maps.items()})
+    contract = read_document(captured['contract.json'])
+    anchors = read_document(captured['intents.json'])
+    return compare_run(records, plan, contract, anchors, geometry)
 
 
 def run_session(scenario, contract, distribution, output, java='java', timeout=60):
@@ -1863,6 +1932,9 @@ def main(argv=None):
     windows.add_argument('--rate-profile', choices=['normal','segmented'], default='normal')
     compare = commands.add_parser('compare')
     compare.add_argument('--run', required=True, type=Path)
+    compare.add_argument('--scenario', type=Path)
+    compare.add_argument('--contract', type=Path)
+    compare.add_argument('--started-after', type=float)
     args = parser.parse_args(argv)
     try:
         if args.command == 'session':
@@ -1872,7 +1944,7 @@ def main(argv=None):
             result = run_windows(args.scenario, args.contract, args.distribution, args.output,
                                  tuple(map(int, args.size.split('x'))), args.java, args.rate_profile)
         else:
-            result = compare_archive(args.run)
+            result = compare_archive(args.run, args.scenario, args.contract, args.started_after)
     except PlatformError as error:
         result = dict(exitCode=error.exit_code, category=error.category, message=str(error))
     except (OSError, ValueError, KeyError, TypeError) as error:

@@ -1,0 +1,11 @@
+{
+  "schemaVersion": 1,
+  "suiteId": "public.final-candidate-technology.v1",
+  "inputScope": "public",
+  "fixture": "inputs/content-movement-knowledge/P001-移动沙盒输入",
+  "tests": {
+    "client": [
+      "com.rustedwarfare.reforge.client.PhaseSixATechnologyChainTest"
+    ]
+  }
+}

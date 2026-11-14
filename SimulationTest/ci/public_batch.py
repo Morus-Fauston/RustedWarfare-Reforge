@@ -1,5 +1,6 @@
 """Run a fixed complete public test layer locally or in CI; keep every child receipt."""
 import argparse
+from contextlib import redirect_stdout
 import json
 import os
 from pathlib import Path
@@ -25,14 +26,45 @@ LAYERS = {
 
 def plan_layer(repo, kind):
     rows = []
+    public_sources = {p.relative_to(repo).as_posix() for p in source_files(repo)}
     for name in LAYERS[kind]:
         selected_kind = 'mechanism' if name == 'tooling' and kind == 'pr' else kind
-        plan = plan_suite(repo, name, selected_kind)
+        plan = plan_suite(repo, name, selected_kind, public_sources)
         if plan['inputScope'] != 'public':
             raise ValueError('Public layer contains private suite: ' + name)
         rows.append(dict(name=name, plan=plan))
     return dict(schemaVersion=1, kind=kind, suites=rows,
                 exclusions=['original-runtime', 'device', 'real-platform-input', 'formal-performance'])
+
+
+def verify_mechanism_receipt(repo, folder, plan, source):
+    from development_check import collect_tests, method_owners
+    from public_distribution import digest
+
+    measured = json.loads((folder/'result.json').read_text(encoding='utf8'))
+    if (measured['status'] != 'passed' or measured['selection'] != plan or measured['source'] != source
+            or len(measured['groups']) != len(plan['groups'])
+            or [row['path'] for row in measured['pythonCoverage']] != plan['pythonTests']):
+        raise ValueError('Current batch mechanisms are incomplete or changed')
+    for index, (group, record) in enumerate(zip(plan['groups'], measured['groups'])):
+        leaf = folder/('group-'+str(index))
+        if record['path'] != leaf.name or record['selection'] != group:
+            raise ValueError('Current batch group selection differs')
+        actual = collect_tests(leaf, group['tests'])
+        process = json.loads((leaf/'command/result.json').read_text(encoding='utf8'))
+        if (not process['passed'] or actual['status'] != 'passed' or actual != record['tests']
+                or method_owners(group, actual) != record['methodOwners']):
+            raise ValueError('Current batch method evidence is incomplete')
+    for index, row in enumerate(measured['pythonCoverage']):
+        receipt = json.loads((folder/('python-'+str(index)+'.json')).read_text(encoding='utf8'))
+        process = json.loads((folder/('python-'+str(index))/'result.json').read_text(encoding='utf8'))
+        script = repo/row['path']
+        if (not process['passed'] or process != row['command']
+                or row['suites'] != plan['pythonOwners'][row['path']] or row['result'] != receipt
+                or receipt['status'] != 'passed' or receipt['tests'] < 1 or not receipt['sourceUnchanged']
+                or receipt['source'] != dict(path=str(script.resolve()), sha256=digest(script))):
+            raise ValueError('Current batch Python evidence is incomplete')
+    return measured
 
 
 def run_layer(repo, output, plan, isolated, command_timeout_seconds=600, forks=1, workers=2):
@@ -57,6 +89,31 @@ def run_layer(repo, output, plan, isolated, command_timeout_seconds=600, forks=1
             result['sharedBuild'] = shared
             if shared['status'] != 'passed':
                 raise RuntimeError(shared.get('error', 'Shared distribution build failed'))
+        if plan['kind'] == 'pr':
+            from development_check import plan_mechanisms, run_development
+            from public_distribution import verify
+            mechanisms = plan_mechanisms((row['name'], row['plan']) for row in plan['suites'])
+            proof_directory = output/'mechanisms'
+            pin = shared['receipt'], shared['sha256']
+            def admit_mechanisms():
+                verify(*pin, identities(repo), kind='pr', plan=plan['suites'][0]['plan'], repo=repo)
+            code = run_development(repo, proof_directory, mechanisms, False, forks, command_timeout_seconds,
+                                   admit=admit_mechanisms, prepared=True)
+            result['mechanisms'] = dict(result='mechanisms/result.json', exitCode=code)
+            if code:
+                raise RuntimeError('Current batch mechanisms failed')
+            measured = verify_mechanism_receipt(repo, proof_directory, mechanisms, source)
+            mechanism_checks = {suite['name']: [] for suite in plan['suites']}
+            for group in measured['groups']:
+                for method in group['methodOwners']:
+                    for suite in method['suites']:
+                        mechanism_checks[suite].append(dict(kind='junit', fixture=group['selection']['fixture'],
+                            module=method['module'], className=method['className'], method=method['method'],
+                            receipt='mechanisms/'+group['path']+'/'+method['module']+'/methods.json'))
+            for index, script in enumerate(measured['pythonCoverage']):
+                for suite in script['suites']:
+                    mechanism_checks[suite].append(dict(kind='python', script=script['path'],
+                        receipt='mechanisms/python-'+str(index)+'.json'))
         for row in plan['suites']:
             name = row['name']
             child = output / name
@@ -68,13 +125,21 @@ def run_layer(repo, output, plan, isolated, command_timeout_seconds=600, forks=1
                 from public_distribution import verify
                 verify(shared['receipt'], shared['sha256'], identities(repo), kind=plan['kind'], plan=row['plan'], repo=repo)
                 argv += ['--distribution-receipt', shared['receipt'], '--distribution-sha256', shared['sha256']]
-            record = dict(name=name, argv=argv, result=name+'/result.json', exitCode=None)
+            record = dict(name=name, result=name+'/result.json', exitCode=None)
+            if plan['kind'] != 'pr':
+                record['argv'] = argv
             result['suites'].append(record)
             with (output/(name+'.log')).open('w', encoding='utf8') as log:
                 # The existing runner bounds each actual command. Do not kill only the
                 # intermediate Python process and leave its Gradle/JVM child running.
-                process = subprocess.run(argv, cwd=repo, stdout=log, stderr=subprocess.STDOUT)
-                record['exitCode'] = process.returncode
+                if plan['kind'] == 'pr':
+                    from public_check import run as run_suite
+                    with redirect_stdout(log):
+                        record['exitCode'] = run_suite(repo, child, row['plan'], pin, command_timeout_seconds,
+                                                       forks, workers, scenarios_only=True)
+                else:
+                    process = subprocess.run(argv, cwd=repo, stdout=log, stderr=subprocess.STDOUT)
+                    record['exitCode'] = process.returncode
             if record['exitCode'] != 0:
                 raise RuntimeError(name + ': child failed; see ' + name + '.log')
             measured = json.loads((child/'result.json').read_text(encoding='utf8'))
@@ -99,19 +164,9 @@ def run_layer(repo, output, plan, isolated, command_timeout_seconds=600, forks=1
             if shared is not None and plan['kind'] == 'pr':
                 if measured.get('preparedDistribution') != dict(receipt=shared['receipt'], sha256=shared['sha256']):
                     raise RuntimeError(name + ': fixed preparation pin differs')
-                if row['plan']['tests']:
-                    from development_check import collect_tests
-                    current = collect_tests(child/'test-execution', row['plan']['tests'])
-                    process = json.loads((child/'test-execution/command/result.json').read_text(encoding='utf8'))
-                    if (current['status'] != 'passed' or not process['passed'] or
-                            current != measured['testExecution']['tests'] or not measured.get('preparationReused')):
-                        raise RuntimeError(name + ': current method evidence is incomplete')
-                for coverage in measured['pythonCoverage']:
-                    current = json.loads((child/coverage['result']).read_text(encoding='utf8'))
-                    if current['status'] != 'passed' or current['tests'] < 1 or not current['sourceUnchanged']:
-                        raise RuntimeError(name + ': current Python evidence is incomplete')
-                if [c['path'] for c in measured['pythonCoverage']] != row['plan']['pythonTests']:
-                    raise RuntimeError(name + ': current Python selection differs')
+                if not measured.get('mechanismsInBatch') or measured['pythonCoverage'] or measured['coverage']:
+                    raise RuntimeError(name + ': expected batch mechanism evidence')
+                record['mechanismCoverage'] = mechanism_checks[name]
             record.update(status='passed', elapsedSeconds=measured['elapsedSeconds'])
             if shared is not None:
                 verify(shared['receipt'], shared['sha256'], identities(repo), kind=plan['kind'], plan=row['plan'], repo=repo)
@@ -158,6 +213,15 @@ def main():
             target = repo/source.relative_to(REPO)
             target.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(source, target)
+        # The batch also imports its executor from the frozen public closure.
+        bootstrap = ('import sys; from pathlib import Path; '
+                     'from public_batch import REPO, plan_layer, run_layer; '
+                     'kind, output, timeout, forks, workers = sys.argv[1:]; '
+                     'raise SystemExit(run_layer(REPO, Path(output), plan_layer(REPO, kind), '
+                     'True, float(timeout), int(forks), int(workers)))')
+        return subprocess.run([sys.executable, '-B', '-c', bootstrap, args.kind, str(output),
+                               str(args.command_timeout), str(args.test_forks), str(args.scenario_workers)],
+                              cwd=repo/'SimulationTest/ci').returncode
     return run_layer(repo, output, plan, args.isolated, args.command_timeout, args.test_forks, args.scenario_workers)
 
 

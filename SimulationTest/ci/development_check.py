@@ -17,31 +17,41 @@ sys.path.insert(0, str(REPO/'SimulationTest/tools'))
 from workflow import execute_step, resources
 
 
-def plan_development(repo, names):
-    groups, deduplicated, python_tests = [], [], []
-    for name in names:
-        selected = plan_suite(repo, name, 'mechanism')
+def plan_mechanisms(selections):
+    groups, deduplicated, python_owners = [], [], {}
+    for name, selected in selections:
         if selected['inputScope'] != 'public':
             raise ValueError('Developer checks require public inputs')
         group = next((g for g in groups if g['fixture'] == selected['fixture']), None)
         if selected['tests'] and group is None:
-            group = dict(fixture=selected['fixture'], tests={}, suites=[])
+            group = dict(fixture=selected['fixture'], tests={}, suites=[], owners={})
             groups.append(group)
         if selected['tests']:
             group['suites'].append(name)
         for module, classes in selected['tests'].items():
             target = group['tests'].setdefault(module, [])
+            owners = group['owners'].setdefault(module, {})
             for cls in classes:
+                claims = owners.setdefault(cls, [])
+                if name not in claims:
+                    claims.append(name)
                 if cls in target:
                     deduplicated.append(dict(suite=name, module=module, testClass=cls,
                                              fixture=selected['fixture']))
                 else:
                     target.append(cls)
         for path in selected['pythonTests']:
-            if path not in python_tests:
-                python_tests.append(path)
-    return dict(schemaVersion=1, suites=names, groups=groups,
-                pythonTests=python_tests, deduplicated=deduplicated)
+            claims = python_owners.setdefault(path, [])
+            if name not in claims:
+                claims.append(name)
+    return dict(groups=groups, pythonTests=list(python_owners),
+                pythonOwners=python_owners, deduplicated=deduplicated)
+
+
+def plan_development(repo, names):
+    sources = {p.relative_to(repo).as_posix() for p in source_files(repo)}
+    return dict(schemaVersion=1, suites=names, **plan_mechanisms(
+        (name, plan_suite(repo, name, 'mechanism', sources)) for name in names))
 
 
 def collect_tests(folder, selected):
@@ -123,7 +133,15 @@ def execute_test_group(repo, folder, group, cold, forks, package=False, timeout=
     return record
 
 
-def run_development(repo, output, plan, cold, forks=1):
+def method_owners(group, tests):
+    return [
+        dict(module=coverage['module'], className=method['className'], method=method['name'],
+             suites=group['owners'][coverage['module']][method['className']])
+        for coverage in tests['coverage'] for method in coverage['methods']
+    ]
+
+
+def run_development(repo, output, plan, cold, forks=1, timeout=600, *, admit=None, prepared=False, session_distribution=None):
     output.mkdir(parents=True, exist_ok=False)
     started = time.monotonic()
     initial = identities(repo)
@@ -138,16 +156,34 @@ def run_development(repo, output, plan, cold, forks=1):
         project = repo/'SimulationTest'
         for index, group in enumerate(plan['groups']):
             folder = output/('group-'+str(index))
-            record = execute_test_group(repo, folder, group, cold, forks)
-            result['groups'].append(record)
+            with resources(['build:'+str(repo/'Engine'), 'build:'+str(repo/'SimulationTest')]):
+                if admit is not None:
+                    admit()
+                record = execute_test_group(repo, folder, group, cold, forks, timeout=timeout)
+                result['groups'].append(record)
+                if admit is not None:
+                    admit()
             if not record['command']['passed'] or record['tests']['status'] != 'passed':
                 raise RuntimeError('Current test execution did not pass: '+folder.name)
+            tasks = {MODULES[module][0] for module in group['tests']}
+            if prepared and any(row.get('didWork') for row in record['tests']['tasks'] if row['task'] not in tasks):
+                raise RuntimeError('Prepared compilation or packaging executed again')
+            record['methodOwners'] = method_owners(group, record['tests'])
         for index, path in enumerate(plan['pythonTests']):
             summary = output/('python-'+str(index)+'.json')
-            command = execute_step([sys.executable, '-B', str(repo/'SimulationTest/ci/python_check.py'),
-                '--test', str(repo/path), '--output', str(summary)], repo, output/('python-'+str(index)))
+            if admit is not None:
+                admit()
+            argv = [sys.executable, '-B', str(repo/'SimulationTest/ci/python_check.py'),
+                    '--test', str(repo/path), '--output', str(summary)]
+            env = None
+            if session_distribution is not None and path == 'SimulationTest/tools/test_platform_session_cli.py':
+                env = dict(os.environ, REFORGE_SESSION_TEST_DISTRIBUTION=str(session_distribution))
+            command = execute_step(argv, repo, output/('python-'+str(index)), timeout=timeout, env=env)
             measured = json.loads(summary.read_text(encoding='utf8'))
-            result['pythonCoverage'].append(dict(path=path, command=command, result=measured))
+            result['pythonCoverage'].append(dict(path=path, command=command, result=measured,
+                                                 suites=plan['pythonOwners'][path]))
+            if admit is not None:
+                admit()
             if not command['passed'] or measured['status'] != 'passed':
                 raise RuntimeError('Python mechanism did not pass: '+path)
         result['toolchainAfter'] = toolchain_identity()
@@ -184,13 +220,12 @@ def main():
     if args.isolated and not args.cold:
         parser.error('--isolated requires --cold; warm checks reuse the current project build')
     repo = REPO
-    with resources(['build:'+str(REPO/'Engine'), 'build:'+str(REPO/'SimulationTest')]):
-        if args.isolated:
-            repo = Path(tempfile.mkdtemp(prefix='reforge-development-cold-'))
-            for path in source_files(REPO):
-                target = repo/path.relative_to(REPO); target.parent.mkdir(parents=True, exist_ok=True)
-                shutil.copy2(path, target)
-        return run_development(repo, args.output.resolve(), plan, args.cold, args.test_forks)
+    if args.isolated:
+        repo = Path(tempfile.mkdtemp(prefix='reforge-development-cold-'))
+        for path in source_files(REPO):
+            target = repo/path.relative_to(REPO); target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(path, target)
+    return run_development(repo, args.output.resolve(), plan, args.cold, args.test_forks)
 
 
 if __name__ == '__main__':
