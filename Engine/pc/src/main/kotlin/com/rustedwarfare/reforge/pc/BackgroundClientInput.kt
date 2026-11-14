@@ -47,23 +47,34 @@ internal class BackgroundClientInput(
             require(message.getString("runId") == runId && message.getLong("id") == id) { "Stale input session" }
             val details = when (message.getString("action")) {
                 "status" -> emptyMap()
-                "click" -> {
+                "click", "scroll" -> {
+                    val action = message.getString("action")
                     require(message.getLong("generation") == currentGeneration()) { "Stale client generation" }
                     val x = message.getInt("x")
                     val y = message.getInt("y")
                     require(x in 0 until Gdx.graphics.width && y in 0 until Gdx.graphics.height) {
-                        "Click is outside the current client viewport"
-                    }
-                    val button = when (message.getString("button")) {
-                        "left" -> Input.Buttons.LEFT
-                        "right" -> Input.Buttons.RIGHT
-                        else -> error("Unknown button")
+                        "Input is outside the current client viewport"
                     }
                     val processor = checkNotNull(Gdx.input.inputProcessor) { "Client is not accepting input" }
-                    val down = processor.touchDown(x, y, 0, button)
-                    val up = processor.touchUp(x, y, 0, button)
-                    mapOf("input" to mapOf("x" to x, "y" to y, "button" to message.getString("button"),
-                        "downConsumed" to down, "upConsumed" to up))
+                    val input = if (action == "scroll") {
+                        val amount = message.get("amount")
+                        require(amount.isLong && amount.asLong() in -20L..20L && amount.asLong() != 0L) {
+                            "Expected a nonzero scroll amount between -20 and 20"
+                        }
+                        processor.mouseMoved(x, y)
+                        mapOf("amount" to amount.asInt(), "consumed" to processor.scrolled(0f, amount.asFloat()))
+                    } else {
+                        val name = message.getString("button")
+                        val button = when (name) {
+                            "left" -> Input.Buttons.LEFT
+                            "right" -> Input.Buttons.RIGHT
+                            else -> error("Unknown button")
+                        }
+                        val down = processor.touchDown(x, y, 0, button)
+                        val up = processor.touchUp(x, y, 0, button)
+                        mapOf("button" to name, "downConsumed" to down, "upConsumed" to up)
+                    }
+                    mapOf("input" to (mapOf("x" to x, "y" to y) + input))
                 }
                 "screenshot" -> {
                     val name = "frame-$id.png"

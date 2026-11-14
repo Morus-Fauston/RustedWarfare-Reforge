@@ -348,14 +348,13 @@ class SandboxSession(scenario: Scenario, private val evidence: ClientEvidence = 
         apply(CancelUpgradeAction("click-${++actionNumber}", "p1", checkNotNull(selectedId), it.actionKey, context.world))
     }
 
-    fun move(position: Position): ActionResult? = dispatch { id ->
+    fun move(position: Position): ActionResult? = dispatch(applicable = ::canMove) { id ->
         MoveAction("click-${++actionNumber}", "p1", id, position, context.world)
     }
-    val canPatrol: Boolean get() = isOpen && observation.units.any {
-        it.unitId in selectedIds && controllable(it) && scenario.unitDefinitions.getValue(it.typeId).movement.type !=
-            com.rustedwarfare.reforge.core.content.MovementType.NONE
-    }
-    fun patrol(position: Position, append: Boolean, members: Set<String> = selectedIds): ActionResult? = dispatch(members) { id ->
+    val canPatrol: Boolean get() = isOpen && observation.units.any { it.unitId in selectedIds && canMove(it) }
+    private fun canMove(unit: UnitObservation): Boolean = controllable(unit) && unit.carriedBy == null &&
+        scenario.unitDefinitions.getValue(unit.typeId).movement.type != com.rustedwarfare.reforge.core.content.MovementType.NONE
+    fun patrol(position: Position, append: Boolean, members: Set<String> = selectedIds): ActionResult? = dispatch(members, ::canMove) { id ->
         PatrolAction("click-${++actionNumber}", "p1", id, position, append, context.world)
     }
     fun stop(): ActionResult? = dispatch { id ->
@@ -420,14 +419,15 @@ class SandboxSession(scenario: Scenario, private val evidence: ClientEvidence = 
             apply(UnloadAction("click-${++actionNumber}", "p1", checkNotNull(selectedId), unloading, context.world))
         }
 
-    private fun dispatch(selectionAtPress: Set<String> = selectedIds, action: (String) -> Action): ActionResult? {
+    private fun dispatch(selectionAtPress: Set<String> = selectedIds, applicable: (UnitObservation) -> Boolean = ::controllable,
+                         action: (String) -> Action): ActionResult? {
         val members = selectionAtPress.sorted()
         val revision = selectionRevision
         val results = mutableListOf<SelectionCommandMember>()
         var skipped = 0
         lastCommandBatch = null
         for (id in members) {
-            if (members.size > 1 && observation.units.none { it.unitId == id && controllable(it) }) { skipped++; continue }
+            if (members.size > 1 && observation.units.none { it.unitId == id && applicable(it) }) { skipped++; continue }
             results += SelectionCommandMember(id, apply(action(id)))
         }
         val batch = SelectionCommandBatch(results, skipped)

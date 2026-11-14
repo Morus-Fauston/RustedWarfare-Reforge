@@ -9,13 +9,19 @@ import sys
 import time
 
 
+POINTER_ARGUMENTS = {name: {"type": "integer", "minimum": 0} for name in ("generation", "x", "y")}
+# Menu clicks can verify a complete local content package synchronously.
+CLICK_ACK_SECONDS = 30
+DEFAULT_ACK_SECONDS = 5
 TOOLS = {
     "client_status": ("Read the owned client's run and framebuffer identity.", {}),
     "client_click": ("Send one click through the current client input processor.", {
-        "generation": {"type": "integer", "minimum": 0},
-        "x": {"type": "integer", "minimum": 0},
-        "y": {"type": "integer", "minimum": 0},
+        **POINTER_ARGUMENTS,
         "button": {"enum": ["left", "right"]},
+    }),
+    "client_scroll": ("Send vertical wheel input through the current client input processor.", {
+        **POINTER_ARGUMENTS,
+        "amount": {"type": "integer", "minimum": -20, "maximum": 20, "not": {"const": 0}},
     }),
     "client_screenshot": ("Read one actual framebuffer as PNG.", {}),
     "client_close": ("Close the owned hidden Windows client.", {}),
@@ -37,10 +43,14 @@ class Client:
         allowed = TOOLS[operation][1]
         if set(arguments) != set(allowed):
             raise ValueError("Unexpected tool arguments")
-        if operation == "client_click" and (any(type(arguments[key]) is not int or arguments[key] < 0
-                                                for key in ("generation", "x", "y"))
-                                            or arguments["button"] not in ("left", "right")):
-            raise ValueError("Expected nonnegative integer x/y and a supported button")
+        if operation in ("client_click", "client_scroll") and any(
+                type(arguments[key]) is not int or arguments[key] < 0 for key in POINTER_ARGUMENTS):
+            raise ValueError("Expected nonnegative integer generation and x/y")
+        if operation == "client_click" and arguments["button"] not in ("left", "right"):
+            raise ValueError("Expected a supported button")
+        if operation == "client_scroll" and (type(arguments["amount"]) is not int or
+                                             not -20 <= arguments["amount"] <= 20 or arguments["amount"] == 0):
+            raise ValueError("Expected a nonzero scroll amount between -20 and 20")
         ready = json.loads((self.bridge / "ready.json").read_bytes())
         if ready["runId"] != self.run_id:
             raise ValueError("Owned client identity no longer matches")
@@ -57,8 +67,9 @@ class Client:
         self.request_id = request_id
         response = self.bridge / f"response-{request_id}.json"
         start = time.monotonic()
+        timeout = CLICK_ACK_SECONDS if operation == "client_click" else DEFAULT_ACK_SECONDS
         while not response.is_file():
-            if time.monotonic() - start >= 5:
+            if time.monotonic() - start >= timeout:
                 self.unavailable = True
                 raise ValueError("Client failed to acknowledge input before the deadline")
             time.sleep(.025)

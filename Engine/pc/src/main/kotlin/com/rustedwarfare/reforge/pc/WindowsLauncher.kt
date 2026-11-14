@@ -43,7 +43,7 @@ fun main(args: Array<String>) {
         val config = Lwjgl3ApplicationConfiguration().apply {
             setTitle(options.title)
             if (options.backgroundInput) {
-                setWindowedMode(1920, 1080)
+                if (options.backgroundCompact) setWindowedMode(960, 640) else setWindowedMode(1920, 1080)
                 setInitialVisible(false)
             } else {
                 setWindowedMode(1200, 800)

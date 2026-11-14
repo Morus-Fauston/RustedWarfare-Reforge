@@ -2,7 +2,8 @@
 import copy
 import unittest
 
-from action_layout import ActionLayout, LayoutError
+from action_layout import ActionLayout, LayoutError, wait_layout
+from platform_windows import scroll_to_action
 
 
 def frame():
@@ -17,6 +18,37 @@ def frame():
 
 
 class LayoutControls(unittest.TestCase):
+    def test_scroll_retries_stale_draws_before_clicking_a_newly_visible_card(self):
+        first=frame()
+        desired=first['actions'].pop()
+        first['actions'].extend(dict(desired,actionId=name,text='at-top')
+                                for name in ('action-list','action-list-scrollbar'))
+        latest=copy.deepcopy(first)
+        latest.update(sequence=13,layoutRevision=5)
+        latest['actions'][1]['text']='at-bottom'
+        latest['actions'].append(desired)
+        commands=[]
+        def wait(label, ready):
+            self.assertFalse(ready([first]), 'A delayed draw must leave the old revision pending')
+            self.assertTrue(ready([first,latest]))
+        def layout(after_revision=None):
+            return wait_layout(wait,3,(1200,800),after_revision)
+        result=scroll_to_action(ActionLayout([first],3,(1200,800)),desired['actionId'],layout,
+                                lambda *args: commands.append(args))
+        self.assertEqual(commands,[(1108,416,1)])
+        self.assertEqual(result.frame['layoutRevision'],5)
+        self.assertEqual(result.action(desired['actionId']),(1108,416,'left'))
+
+    def test_wide_hud_uses_the_drawn_horizontal_scale_for_world_targets(self):
+        f=frame()
+        f['viewport'].update(width=1920,height=1080,screenWidth=1920,screenHeight=1080)
+        f['projection'].update(left=0,bottom=0,scale=.8,scaleX=.675,areaLeft=0,
+                               areaBottom=0,areaWidth=960,areaHeight=640)
+        self.assertEqual(ActionLayout([f],3,(1920,1080)).world(200,240),(270,540))
+        f['projection']['scaleX']=0
+        with self.assertRaisesRegex(LayoutError,'horizontal'):
+            ActionLayout([f],3,(1920,1080)).world(200,240)
+
     def test_reselecting_the_same_identity_does_not_require_a_deduplicated_layout_to_repeat(self):
         for kind in ('selection','group-recall'):
             rows=[frame(),dict(kind=kind,sequence=13,generation=3,selectionRevision=2,selectedIds=['u1'])]

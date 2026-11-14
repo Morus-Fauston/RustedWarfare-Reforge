@@ -14,5 +14,11 @@ class BackgroundLaunchTest {
         assertFailsWith<IllegalArgumentException> {
             WindowsLaunchOptions.parse(arrayOf("--mode", "demo", "--background-input", "true"), root)
         }
+        val hidden = arrayOf("--evidence", "run", "--background-input", "true")
+        assertFalse(WindowsLaunchOptions.parse(hidden, root).backgroundCompact)
+        assertTrue(WindowsLaunchOptions.parse(hidden + arrayOf("--background-size", "960x640"), root).backgroundCompact)
+        assertFailsWith<IllegalArgumentException> {
+            WindowsLaunchOptions.parse(arrayOf("--background-size", "960x640"), root)
+        }
     }
 }

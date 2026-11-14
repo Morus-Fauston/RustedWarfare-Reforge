@@ -17,6 +17,7 @@ data class WindowsLaunchOptions(
     val originalAssets: Path? = null,
     val testScenarioSeed: Path? = null,
     val backgroundInput: Boolean = false,
+    val backgroundCompact: Boolean = false,
 ) {
     val hasVisualOverride: Boolean get() = visualSource != null || originalAssets != null
     companion object {
@@ -29,7 +30,7 @@ data class WindowsLaunchOptions(
                 "Duplicate visual asset option"
             }
             val options = pairs.associate { (key, value) ->
-                require(key in setOf("--mode", "--inputs", "--evidence", "--background-input") + visualKeys) { "Unknown option: $key" }
+                require(key in setOf("--mode", "--inputs", "--evidence", "--background-input", "--background-size") + visualKeys) { "Unknown option: $key" }
                 key to value
             }
             val mode = options["--mode"] ?: "sandbox"
@@ -39,6 +40,12 @@ data class WindowsLaunchOptions(
                     "Expected one --background-input true option"
                 }
                 require(mode == "sandbox" && "--evidence" in options) { "Background input requires sandbox evidence" }
+                true
+            } ?: false
+            val backgroundCompact = options["--background-size"]?.let { value ->
+                require(backgroundInput && value == "960x640" && pairs.count { it[0] == "--background-size" } == 1) {
+                    "Expected one --background-size 960x640 option with background input"
+                }
                 true
             } ?: false
             val runId = "run-" + DateTimeFormatter.ofPattern("yyyyMMdd'T'HHmmssSSS'Z'").withZone(ZoneOffset.UTC).format(Instant.now()) +
@@ -66,7 +73,7 @@ data class WindowsLaunchOptions(
                 resolve(options["--evidence"] ?: "Engine/pc/build/sandbox-runs/$runId"),
                 runId, if (explicitInputs == null) "RustedWarfare-Reforge | Phase VI A sandbox"
                 else "RustedWarfare-Reforge | P002 Windows sandbox", visualSource, originalAssets,
-                if (explicitInputs == null) seed else null, backgroundInput)
+                if (explicitInputs == null) seed else null, backgroundInput, backgroundCompact)
         }
     }
 }

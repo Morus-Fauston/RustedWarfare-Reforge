@@ -16,6 +16,7 @@ class SandboxInput(
     private val evidence: ClientEvidence = ClientEvidence.NONE,
     private val touchControls: Boolean = false,
     private val insideViewport: (Int, Int) -> Boolean = { _, _ -> true },
+    private val battlefieldAt: (Int, Int) -> Boolean = { _, _ -> true },
 ) : InputAdapter() {
     private var gesture: MapGesture? = null
     private var ownerButton: Int? = null
@@ -98,6 +99,7 @@ class SandboxInput(
     private fun control() = pressed(Input.Keys.CONTROL_LEFT) || pressed(Input.Keys.CONTROL_RIGHT)
     private fun shift() = pressed(Input.Keys.SHIFT_LEFT) || pressed(Input.Keys.SHIFT_RIGHT)
     private fun mode() = when { control() -> SelectionMode.TOGGLE; shift() -> SelectionMode.ADD; else -> SelectionMode.REPLACE }
+    private fun canTargetAt(x: Int, y: Int) = insideViewport(x, y) && battlefieldAt(x, y)
 
     override fun touchDown(screenX: Int, screenY: Int, pointer: Int, button: Int): Boolean {
         if (!active() || pointer != 0 || !insideViewport(screenX, screenY)) return false
@@ -174,7 +176,7 @@ class SandboxInput(
         if (pointer != 0 || ownerButton == null) return false
         if (!active() || (ownerButton == Input.Buttons.MIDDLE && editing())) { cancel(); return true }
         val ownsPoint = constructionPress != null || reclaimPress != null || commandPress != null || groundActionPress != null
-        if (ownsPoint && !insideViewport(screenX, screenY)) { cancelGesture(); changed(); return true }
+        if (ownsPoint && !canTargetAt(screenX, screenY)) { cancelGesture(); changed(); return true }
         val ui = uiPoint(screenX, screenY) ?: run {
             if (ownsPoint) cancelGesture()
             return true
@@ -194,7 +196,7 @@ class SandboxInput(
         val ui = uiPoint(screenX, screenY)
         if (!active() || current == null || ui == null) { cancel(); return true }
         groundActionPress?.let { press ->
-            val point = if (insideViewport(screenX, screenY)) projection()?.let { map ->
+            val point = if (canTargetAt(screenX, screenY)) projection()?.let { map ->
                 if (press.name == "blink") map.groundPoint(ui.x, ui.y) else map.toWorld(ui.x, ui.y)
             } else null
             if (point != null && groundActionOwner == press && ownsGroundAction(current)) {
@@ -212,7 +214,7 @@ class SandboxInput(
             cancelGesture(); changed(); return true
         }
         reclaimPress?.let { press ->
-            val world = if (insideViewport(screenX, screenY)) projection()?.toWorld(ui.x, ui.y) else null
+            val world = if (canTargetAt(screenX, screenY)) projection()?.toWorld(ui.x, ui.y) else null
             if (world != null && reclaimOwner == press.owner && current === press.owner.session &&
                 (if (press.owner.repair) current.canRepair else current.canMaintain) &&
                 current.selectedId == press.owner.worker && current.selectionRevision == press.owner.revision) {
@@ -225,7 +227,7 @@ class SandboxInput(
             cancelGesture(); changed(); return true
         }
         constructionPress?.let { press ->
-            val world = if (insideViewport(screenX, screenY)) projection()?.toWorld(ui.x, ui.y) else null
+            val world = if (canTargetAt(screenX, screenY)) projection()?.toWorld(ui.x, ui.y) else null
             val type = constructionTypeId
             pointerPosition = ui
             if (!ownsConstruction(current) || constructionOwner != press.owner) {
@@ -249,7 +251,7 @@ class SandboxInput(
             changed(); return true
         }
         patrolPress?.let { press ->
-            val point = if (insideViewport(screenX, screenY)) projection()?.toWorld(ui.x, ui.y) else null
+            val point = if (canTargetAt(screenX, screenY)) projection()?.toWorld(ui.x, ui.y) else null
             if (point != null && current.patrol(point, press.append, press.members) != null) {
                 patrolPointCount++
                 evidence.record("patrol-point", mapOf("point" to point.fields(), "append" to press.append,
@@ -259,10 +261,10 @@ class SandboxInput(
         }
         val intent = gesture?.release(ui.x, ui.y)
         when (intent) {
-            is MapIntent.Click -> current.select(intent.position, intent.mode)
+            is MapIntent.Click -> if (battlefieldAt(screenX, screenY)) current.select(intent.position, intent.mode) else Unit
             is MapIntent.Box -> current.selectBox(intent.start, intent.end, intent.mode, intent.selectionAtStart)
             is MapIntent.Command -> commandPress?.let { press ->
-                if (insideViewport(screenX, screenY) && current === press.session && current.isOpen &&
+                if (canTargetAt(screenX, screenY) && current === press.session && current.isOpen &&
                     current.selectionRevision == press.revision && current.selectedIds == press.members &&
                     modeRevision == press.modeRevision && current.commandTargetAt(intent.position) == press.targetId)
                     current.command(intent.position, press.append)
@@ -274,7 +276,7 @@ class SandboxInput(
         cancelGesture(); changed(); return true
     }
     override fun mouseMoved(screenX: Int, screenY: Int): Boolean {
-        pointerPosition = if (insideViewport(screenX, screenY)) uiPoint(screenX, screenY) else null
+        pointerPosition = if (canTargetAt(screenX, screenY)) uiPoint(screenX, screenY) else null
         return false
     }
     override fun scrolled(amountX: Float, amountY: Float): Boolean {

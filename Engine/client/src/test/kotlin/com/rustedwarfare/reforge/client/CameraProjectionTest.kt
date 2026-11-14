@@ -4,6 +4,24 @@ import com.rustedwarfare.reforge.core.sim.Position
 import kotlin.test.*
 
 class CameraProjectionTest {
+    @Test fun full_battlefield_projection_covers_the_entire_viewport_and_retains_the_map_center() {
+        val area = MapArea(0.0, 0.0, 960.0, 640.0)
+        val map = MapProjection(640.0, 240.0, area, fillViewport = true)
+        assertEquals(Position(320.0, 120.0), map.toWorld(480.0, 320.0))
+        assertNotNull(map.toWorld(1.0, 1.0))
+        assertNotNull(map.toWorld(959.0, 639.0))
+        map.zoomAt(480.0, 320.0, -1.0)
+        val zoomed = assertNotNull(map.toWorld(480.0, 320.0))
+        assertEquals(320.0, zoomed.x, 1e-9)
+        assertEquals(120.0, zoomed.y, 1e-9)
+        val width = 640.0 * 1920 / 1080
+        map.resizeBattlefield(width)
+        val center = assertNotNull(map.toWorld(width / 2, 320.0))
+        assertEquals(320.0, center.x, 1e-9)
+        assertEquals(120.0, center.y, 1e-9)
+        assertNotNull(map.toWorld(width - 1, 639.0))
+    }
+
     @Test fun area_fit_pointer_anchor_and_clamped_pan_share_one_projection() {
         val map = MapProjection(600.0, 400.0, MapArea(16.0, 64.0, 704.0, 512.0))
         assertEquals(16f, map.x(0.0))

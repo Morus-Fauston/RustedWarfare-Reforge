@@ -175,6 +175,10 @@ def input_footprint(geometry):
             (viewport['width'],viewport['height']) not in ((1200,800),(960,640)) or
             viewport['screenWidth']!=viewport['width'] or viewport['screenHeight']!=viewport['height']):
         raise PlatformError('input-geometry','Missing or unregistered fixed map/viewport geometry')
+    if geometry.get('battlefieldFill', False):
+        pixels_per_world=max(viewport['screenWidth']/geometry['worldWidth'],
+                             viewport['screenHeight']/geometry['worldHeight'])
+        return dict(x=1/pixels_per_world, y=1/pixels_per_world)
     scale=min(704/geometry['worldWidth'],512/geometry['worldHeight'])
     return dict(x=1/(scale*viewport['screenWidth']/960),y=1/(scale*viewport['screenHeight']/640))
 
@@ -1741,7 +1745,10 @@ def windows_geometry(output, records, maps=None):
         if (int(root.get('width'))==r.get('mapWidth') and int(root.get('height'))==r.get('mapHeight') and
                 int(root.get('width'))*int(root.get('tilewidth'))==width and
                 int(root.get('height'))*int(root.get('tileheight'))==height):
-            return dict(worldWidth=width,worldHeight=height)
+            fill=g.get('battlefieldFill',False)
+            if type(fill) is not bool:
+                raise PlatformError('input-geometry','Invalid battlefield projection mode')
+            return dict(worldWidth=width,worldHeight=height,**({'battlefieldFill': True} if fill else {}))
     raise PlatformError('input-geometry','Loaded graphics geometry has no matching frozen input map')
 
 

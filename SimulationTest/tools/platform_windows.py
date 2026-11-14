@@ -22,6 +22,23 @@ DEFAULT_STARTS = {
 }
 
 
+def scroll_to_action(drawn, action_id, layout, scroll):
+    """Traverse the current, rendered list without consuming a stale frame."""
+    for amount in [-20] + [1] * 24:
+        actions = drawn.frame['actions']
+        if any(action['actionId'] == action_id for action in actions):
+            return drawn
+        bar = next((action for action in actions if action['actionId'] == 'action-list-scrollbar'
+                    and action['enabled']), None)
+        if bar is None or amount > 0 and bar['text'] == 'at-bottom':
+            return drawn
+        if amount < 0 and bar['text'] == 'at-top':
+            continue
+        scroll(*drawn.action('action-list')[:2], amount)
+        drawn = layout(after_revision=drawn.frame['layoutRevision'])
+    return drawn
+
+
 def startup_arguments(plan,snapshot,evidence):
     default=plan.get('windowsDefaultStart',False)
     if type(default) is not bool or default and 'testScene' not in plan:
@@ -174,10 +191,13 @@ def run_windows_locked(scenario, contract, distribution, output, size, java, rat
         return reader.wait(label,predicate,proc,after_sequence=after_sequence,
             generation=current_generation if after_generation is None else None,
             after_generation=after_generation,timeout=deadline,check=guard.check if guard is not None else None)
-    def layout():
-        return wait_layout(wait,current_generation,size)
+    def layout(after_revision=None):
+        return wait_layout(wait,current_generation,size,after_revision=after_revision)
     def click_action(action_id):
-        drawn=layout();target=drawn.action(action_id)
+        drawn=layout()
+        if not any(a['actionId']==action_id for a in drawn.frame['actions']):
+            drawn=scroll_to_action(drawn, action_id, layout, guard.scroll)
+        target=drawn.action(action_id)
         record(dict(kind='drawn-action-target',actionId=action_id,layout=drawn.frame,target=target))
         guard.click(*target)
     def world(position):

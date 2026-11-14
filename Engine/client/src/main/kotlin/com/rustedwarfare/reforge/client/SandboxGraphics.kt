@@ -16,10 +16,13 @@ import com.rustedwarfare.reforge.core.sim.Position
 import com.rustedwarfare.reforge.core.sim.ProjectileAppearance
 import kotlin.math.abs
 
-class SandboxGraphics private constructor(private val resources: SandboxRenderResources) : AutoCloseable {
+class SandboxGraphics private constructor(private val resources: SandboxRenderResources, fullBattlefield: Boolean) : AutoCloseable {
     val projection = MapProjection(resources.widthTiles.toDouble() * resources.tileWidth,
-        resources.heightTiles.toDouble() * resources.tileHeight, MapArea(16.0, 64.0, 704.0, 512.0))
-    val minimap = Minimap(projection.worldWidth, projection.worldHeight)
+        resources.heightTiles.toDouble() * resources.tileHeight,
+        if (fullBattlefield) MapArea(0.0, 0.0, 960.0, 640.0) else MapArea(16.0, 64.0, 704.0, 512.0),
+        fillViewport = fullBattlefield)
+    val minimap = if (fullBattlefield) Minimap(projection.worldWidth, projection.worldHeight,
+        DESKTOP_MINIMAP_AREA) else Minimap(projection.worldWidth, projection.worldHeight)
     private val owned = mutableListOf<Texture>()
     private val tiles = mutableMapOf<Int, TextureRegion>()
     private val units = mutableMapOf<String, TextureRegion>()
@@ -51,20 +54,23 @@ class SandboxGraphics private constructor(private val resources: SandboxRenderRe
     } ?: units[typeId]
 
     companion object {
-        fun load(resources: SandboxRenderResources, root: Path): SandboxGraphics =
-            loadPrepared(resources, root, intArrayOf())
+        internal val DESKTOP_MINIMAP_AREA = MapArea(752.0, 512.0, 184.0, 112.0)
+
+        fun load(resources: SandboxRenderResources, root: Path, fullBattlefield: Boolean = false): SandboxGraphics =
+            loadPrepared(resources, root, intArrayOf(), fullBattlefield)
 
         /** Consume worker-bound metadata; GL owns texture upload, completeness checks and release. */
-        fun load(loaded: LoadedSandbox, root: Path): SandboxGraphics =
-            loadPrepared(loaded.renderResources, root, loaded.scenario.map.groundGids)
+        fun load(loaded: LoadedSandbox, root: Path, fullBattlefield: Boolean = false): SandboxGraphics =
+            loadPrepared(loaded.renderResources, root, loaded.scenario.map.groundGids, fullBattlefield)
 
         fun load(scenario: Scenario, root: Path, visuals: PreparedVisualAssets? = null): SandboxGraphics {
             val resources = SandboxRenderResources.from(scenario)
-            return loadPrepared(visuals?.let { resources.withVisuals(it) } ?: resources, root, scenario.map.groundGids)
+            return loadPrepared(visuals?.let { resources.withVisuals(it) } ?: resources, root, scenario.map.groundGids, false)
         }
 
-        private fun loadPrepared(resources: SandboxRenderResources, root: Path, ground: IntArray): SandboxGraphics {
-            val graphics = SandboxGraphics(resources)
+        private fun loadPrepared(resources: SandboxRenderResources, root: Path, ground: IntArray,
+                                 fullBattlefield: Boolean): SandboxGraphics {
+            val graphics = SandboxGraphics(resources, fullBattlefield)
             try {
                 graphics.loadImages(root)
                 for (gid in ground) require(gid == 0 || graphics.tiles.containsKey(gid)) { "Missing tile image for gid=$gid" }
@@ -368,7 +374,8 @@ class SandboxGraphics private constructor(private val resources: SandboxRenderRe
     }
 
     fun drawOverlay(shapes: ShapeRenderer, frame: SandboxFrame, selectedIds: Set<String>, box: Pair<Position, Position>? = null,
-                    construction: ConstructionPreview? = null, groundAction: GroundActionPreview? = null) {
+                    construction: ConstructionPreview? = null, groundAction: GroundActionPreview? = null,
+                    primaryId: String? = null) {
         shapes.color = Color(0.45f, 0.5f, 0.47f, 1f)
         shapes.rect(projection.left.toFloat(), projection.bottom.toFloat(), projection.width.toFloat(), projection.height.toFloat())
         val selectedSlots = frame.observation.units.asSequence().filter { it.unitId in selectedIds }
@@ -396,7 +403,15 @@ class SandboxGraphics private constructor(private val resources: SandboxRenderRe
                 val active = selectedSlots[attachment?.parentUnitId] == attachment?.slot
                 shapes.color = if (active) Color.CYAN else Color.WHITE
                 shapes.circle(x, y, (if (active) 8f else 6f) * projection.scale.toFloat(), 16)
-            } else if (attachment == null) shapes.circle(x, y, radius + if (unit.unitId in selectedIds) 4f else 1f, 32)
+            } else if (attachment == null) {
+                shapes.circle(x, y, radius + if (unit.unitId in selectedIds) 4f else 1f, 32)
+                if (unit.unitId == primaryId && selectedIds.size > 1) {
+                    val teamColor = shapes.color.cpy()
+                    shapes.color = Color.WHITE
+                    shapes.circle(x, y, radius + 7f, 32)
+                    shapes.color = teamColor
+                }
+            }
             val health = unit.health
             val maximum = unit.maxHealth
             if (unit.alive && attachment?.empty != true && health != null && maximum != null) {

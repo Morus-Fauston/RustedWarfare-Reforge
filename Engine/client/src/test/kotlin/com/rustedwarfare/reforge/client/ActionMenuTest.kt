@@ -8,6 +8,67 @@ class ActionMenuTest {
     private fun scene() = ControlledScenario.load(Path.of(checkNotNull(System.getProperty("public.fixtures.dir")))
         .resolve("build-economy/start"))
 
+    @Test fun identical_selected_factories_have_distinct_primary_headings() {
+        val base = scene()
+        val factory = base.units.single { it.position == Position(110.0, 210.0) }
+        val other = factory.copy(unitId = "second-factory", position = Position(190.0, 210.0))
+        val contract = base.combatContract?.let {
+            it.copy(unitObjectIds = it.unitObjectIds + (other.unitId to it.nextObjectId), nextObjectId = it.nextObjectId + 1)
+        }
+        val mixed = base.copy(units = base.units + other, combatContract = contract)
+        SandboxSession(mixed).use { session ->
+            fun heading(primary: UnitSpawn, previous: UnitSpawn): String? {
+                session.select(previous.position)
+                session.select(primary.position, SelectionMode.ADD)
+                assertEquals(setOf(factory.unitId, other.unitId), session.selectedIds)
+                val selected = session.observation.units.single { it.unitId == session.selectedId }
+                return desktopPrimaryHeading(session.actionMenu, selected, session.selectedIds)
+            }
+            assertNotEquals(heading(factory, other), heading(other, factory))
+        }
+    }
+
+    @Test fun unload_card_keeps_authorized_cargo_counts() {
+        val view = ActionMenuView(transportAction = TransportUnloadActionView(true, "Unload", true, 4, 6, 2))
+        val card = view.battleActions().single()
+        assertEquals("transport-unload", card.id)
+        assertContains(card.hint, "Cargo 4 / 6")
+        assertContains(card.hint, "Passengers 2")
+    }
+
+    @Test fun a_mixed_selection_projects_production_only_for_its_own_primary() {
+        val base = scene()
+        val factory = base.units.single { it.position == Position(110.0, 210.0) }
+        SandboxSession(base).use { session ->
+            session.select(factory.position)
+            assertIs<ActionResult.Accepted>(session.produce("builder"))
+            repeat(700) { session.tick() }
+            val worker = session.observation.units.first { it.ownerPlayerId == factory.ownerPlayerId && it.typeId == "builder" }
+            session.select(worker.position)
+            session.select(factory.position, SelectionMode.ADD)
+            assertEquals(setOf(factory.unitId, worker.unitId), session.selectedIds)
+            assertEquals(factory.unitId, session.selectedId)
+            val destination = Position(200.0, 260.0)
+            assertIs<ActionResult.Accepted>(session.move(destination))
+            assertEquals(listOf(worker.unitId), session.lastCommandBatch?.members?.map { it.unitId })
+            assertEquals(1, session.lastCommandBatch?.skipped)
+            assertIs<ActionResult.Accepted>(session.patrol(destination, append = false))
+            assertEquals(listOf(worker.unitId), session.lastCommandBatch?.members?.map { it.unitId })
+            assertEquals(1, session.lastCommandBatch?.skipped)
+            val produce = session.actionMenu.battleActions().single { it.id == "produce:builder" }
+            assertTrue(produce.enabled)
+            assertFalse(produce.cancelEnabled)
+            assertIs<ActionResult.Accepted>(session.produce("builder"))
+            assertTrue(session.actionMenu.battleActions().single { it.id == produce.id }.cancelEnabled)
+
+            session.select(factory.position)
+            session.select(worker.position, SelectionMode.ADD)
+            assertEquals(worker.unitId, session.selectedId)
+            assertFalse(session.actionMenu.battleActions().any { it.id == produce.id })
+            assertNull(session.produce("builder"))
+        }
+    }
+
     @Test fun defense_conversion_enemy_selection_and_a_new_match_cannot_keep_an_old_action_or_queue() {
         val base = ControlledScenario.load(Path.of(checkNotNull(System.getProperty("public.fixtures.dir")))
             .resolve("platform-basics/upgrade"))

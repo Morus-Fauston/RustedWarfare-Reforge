@@ -34,7 +34,19 @@ class BackgroundMcpTest(unittest.TestCase):
         self.assertEqual("2025-11-25", initialized["result"]["protocolVersion"])
         for id_ in (4, 5, 6):
             self.assertEqual(-32602, responses[id_]["error"]["code"])
-        self.assertEqual(4, len(responses[7]["result"]["tools"]))
+        tools = {tool["name"]: tool for tool in responses[7]["result"]["tools"]}
+        self.assertEqual({"client_close", "client_screenshot", "client_status", "client_click", "client_scroll"}, set(tools))
+        self.assertEqual({"runId", "generation", "x", "y", "amount"},
+                         set(tools["client_scroll"]["inputSchema"]["required"]))
+
+    def test_invalid_scroll_cannot_publish_input(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            client = Client(Path(temporary), "sample")
+            for amount in (0, 21, -21, 1.5, True):
+                with self.subTest(amount=amount), self.assertRaisesRegex(ValueError, "scroll amount"):
+                    client.call("client_scroll", {"runId": "sample", "generation": 0, "x": 1, "y": 2,
+                                                  "amount": amount})
+            self.assertEqual(0, client.request_id)
 
     def test_failed_request_publication_closes_the_local_session(self):
         with tempfile.TemporaryDirectory() as temporary:

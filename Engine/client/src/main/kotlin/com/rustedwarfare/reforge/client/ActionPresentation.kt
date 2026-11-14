@@ -164,7 +164,8 @@ internal class ActionCatalogue(private val definitions: Map<String, UnitDefiniti
              maintenance: Boolean): ActionMenuView {
         val selected = view.units.singleOrNull { it.unitId == primary }
         fun controllable(unit: UnitObservation) = localControl && unit.alive && unit.ownerPlayerId == view.playerId
-        val ownSingle = selected?.takeIf { ids.size == 1 && controllable(it) }
+        val ownPrimary = selected?.takeIf(::controllable)
+        val ownSingle = ownPrimary?.takeIf { ids.size == 1 }
         val depthAction = ownSingle?.takeIf { it.constructionProgress >= 1f }?.submarine?.surfaceIntent?.let { intent ->
             val surface = !intent
             SubmarineDepthActionView(surface, if (surface) "Surface" else "Dive",
@@ -180,17 +181,21 @@ internal class ActionCatalogue(private val definitions: Map<String, UnitDefiniti
                     else "Dive requires water below the aircraft", available)
             }
         }
-        val factory = ownSingle?.let { unit -> view.factoryQueues.firstOrNull { it.factoryId == unit.unitId } }
+        val factory = ownPrimary?.let { unit -> view.factoryQueues.firstOrNull { it.factoryId == unit.unitId } }
         val transportAction = ownSingle?.takeIf { it.constructionProgress >= 1f &&
             (definitions.getValue(it.typeId).transport != com.rustedwarfare.reforge.core.content.TransportProfile.NAUTILUS_SUBMERGED ||
                 it.typeId == "nautilusSubmarineSurface") }?.transport?.let {
-            TransportUnloadActionView(!it.unloading, if (it.unloading) "Cancel unload" else "Unload", it.unloading || it.canUnload)
+            TransportUnloadActionView(!it.unloading, if (it.unloading) "Cancel unload" else "Unload", it.unloading || it.canUnload,
+                it.occupiedSlots, it.capacity, it.passengerCount)
         }
-        val actionUnit = ownSingle ?: if (localControl) nuclearLaunchMember(view, ids) else null
-        val unitActions = immutable(actionUnit?.unitActions?.actions.orEmpty()
-            .filter { ownSingle != null || it.name == "launchNuke" }.map { action ->
-            actionUnit?.attachmentOverview?.let { return@map attachmentAction(action, it, checkNotNull(actionUnit.unitActions)) }
-            val unitDefinition = actionUnit?.let { definitions.getValue(it.typeId) }
+        val groupedLauncher = if (localControl && ids.size > 1) nuclearLaunchMember(view, ids) else null
+        val actionOwners = ownPrimary?.unitActions?.actions.orEmpty()
+            .filter { groupedLauncher == null || it.name != "launchNuke" }
+            .map { it to checkNotNull(ownPrimary) } + groupedLauncher?.unitActions?.actions.orEmpty()
+            .filter { it.name == "launchNuke" }.map { it to checkNotNull(groupedLauncher) }
+        val unitActions = immutable(actionOwners.map { (action, actionUnit) ->
+            actionUnit.attachmentOverview?.let { return@map attachmentAction(action, it, checkNotNull(actionUnit.unitActions)) }
+            val unitDefinition = definitions.getValue(actionUnit.typeId)
             val definition = unitDefinition?.customActions?.actions?.singleOrNull { it.name == action.name }
             val launch = definition?.groundLaunch
             val navalAmmo = definition?.ammoProduction
@@ -202,9 +207,9 @@ internal class ActionCatalogue(private val definitions: Map<String, UnitDefiniti
             val nuclear = ammoPrice != null || action.name == "launchNuke"
             val price = launch?.price ?: ammoPrice
             val affordable = price == null || affordable(view, price)
-            val stockpile = actionUnit?.unitActions?.stockpile ?: 0
-            val ammoQueued = actionUnit?.unitActions?.queue.orEmpty().count { it.name == action.name }
-            val cancelUnit = if (ownSingle == null && action.name == "launchNuke")
+            val stockpile = actionUnit.unitActions?.stockpile ?: 0
+            val ammoQueued = actionUnit.unitActions?.queue.orEmpty().count { it.name == action.name }
+            val cancelUnit = if (groupedLauncher != null && action.name == "launchNuke")
                 nuclearLaunchMember(view, ids, cancelling = true) else actionUnit
             val cancelAction = cancelUnit?.unitActions?.actions?.singleOrNull { it.name == action.name }
             val title = when (action.name) { "afterBurn" -> "Afterburn"; "cancelBurn" -> "Cancel burn"
@@ -245,7 +250,7 @@ internal class ActionCatalogue(private val definitions: Map<String, UnitDefiniti
                 } == true, action.progress, groundTargeted = launch != null || action.name == "launchNuke",
                 iconTypeId = launch?.payloadUnitTypeId)
         })
-        val profiles = ownSingle?.takeUnless { it.constructionProgress < 1f &&
+        val profiles = ownPrimary?.takeUnless { it.constructionProgress < 1f &&
             definitions.getValue(it.typeId).className == "AuthoredBuilding" }
             ?.let { definitions.getValue(it.typeId).upgrades?.actions }.orEmpty()
         val upgradeQueue = if (profiles.isEmpty()) null else view.upgradeQueues.firstOrNull { it.unitId == primary }
@@ -273,7 +278,7 @@ internal class ActionCatalogue(private val definitions: Map<String, UnitDefiniti
         })
         val workers = view.units.filter { it.unitId in ids }
         val validWorkers = workers.isNotEmpty() && workers.size == ids.size && workers.all { controllable(it) }
-        val slotPage = ownSingle?.attachmentOverview?.selectedSlot != null
+        val slotPage = ownPrimary?.attachmentOverview?.selectedSlot != null
         val buildings = if (!validWorkers || slotPage || workers.any { it.typeId != workers.first().typeId }) emptyList()
             else immutable(definitions.getValue(workers.first().typeId).builder?.buildingTypeIds.orEmpty()
                 .filter { nukesEnabled || definitions.getValue(it).nuclearSilo == null }
@@ -369,7 +374,8 @@ data class ActionMenuView(val credits: Double? = null, val production: List<Prod
 data class SubmarineDepthActionView(val surface: Boolean, val title: String, val tooltip: String)
 data class AmphibiousFlightActionView(val flying: Boolean, val title: String, val tooltip: String, val available: Boolean)
 
-data class TransportUnloadActionView(val unloading: Boolean, val title: String, val available: Boolean)
+data class TransportUnloadActionView(val unloading: Boolean, val title: String, val available: Boolean,
+                                     val occupiedSlots: Int, val capacity: Int, val passengerCount: Int)
 data class CustomUnitActionView(val name: String, val title: String, val tooltip: String,
     val queued: Boolean, val cooldownRemaining: Int, val available: Boolean, val cancellable: Boolean,
     val progress: Float? = null, val groundTargeted: Boolean = false, val iconTypeId: String? = null,

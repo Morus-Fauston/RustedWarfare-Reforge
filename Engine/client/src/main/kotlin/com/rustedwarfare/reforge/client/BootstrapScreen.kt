@@ -3,6 +3,7 @@ package com.rustedwarfare.reforge.client
 import com.badlogic.gdx.*
 import com.badlogic.gdx.graphics.Color
 import com.badlogic.gdx.graphics.GL20
+import com.badlogic.gdx.graphics.OrthographicCamera
 import com.badlogic.gdx.graphics.Pixmap
 import com.badlogic.gdx.graphics.Texture
 import com.badlogic.gdx.graphics.g2d.BitmapFont
@@ -23,6 +24,7 @@ import com.badlogic.gdx.scenes.scene2d.ui.*
 import com.badlogic.gdx.scenes.scene2d.utils.ChangeListener
 import com.badlogic.gdx.utils.Align
 import com.badlogic.gdx.utils.viewport.FitViewport
+import com.badlogic.gdx.utils.viewport.StretchViewport
 import java.nio.file.Path
 import java.nio.file.Paths
 import java.util.Locale
@@ -41,7 +43,11 @@ class BootstrapScreen(
     private lateinit var shapes: ShapeRenderer
     private lateinit var skin: Skin
     private lateinit var stage: Stage
-    private val viewport = FitViewport(960f, 640f)
+    private lateinit var battleActions: BattleActionList
+    private lateinit var minimapActor: Actor
+    private val viewport = if (touchControls) FitViewport(960f, 640f) else StretchViewport(960f, 640f)
+    private val battlefieldCamera = OrthographicCamera()
+    private val battlefieldWidth: Float get() = if (touchControls) viewport.worldWidth else battlefieldCamera.viewportWidth
     private val loader = SandboxLoader()
     private var session: SandboxSession? = null
     private var graphics: SandboxGraphics? = null
@@ -190,15 +196,15 @@ class BootstrapScreen(
         productionCards.clear()
         factoryUpgradeCards.clear()
         factoryUpgradeHover = null
-        // Consume the whole panel, including empty space, for the full press chain.
-        stage.addActor(Actor().apply {
+        if (touchControls) stage.addActor(Actor().apply {
             setBounds(736f, 0f, 224f, 592f)
             addListener(object : InputListener() {
                 override fun touchDown(event: InputEvent, x: Float, y: Float, pointer: Int, button: Int) = true
             })
         })
         fun label(text: String, x: Float, y: Float, w: Float, h: Float): Label = Label(text, skin).also {
-            it.setBounds(x, y - h, w, h); it.setAlignment(Align.topLeft); it.setWrap(true); stage.addActor(it)
+            it.setBounds(x, y - h, w, h); it.setAlignment(Align.topLeft); it.setWrap(true)
+            it.touchable = Touchable.disabled; stage.addActor(it)
         }
         label("RustedWarfare-Reforge", 16f, 628f, 440f, 28f).setFontScale(1.3f)
         productionLabel = label("", 470f, 628f, 474f, 28f)
@@ -477,36 +483,58 @@ class BootstrapScreen(
             loadError = null; lastHudState = null; updateHud()
         }.also { it.setBounds(40f, 120f, 660f, 440f); stage.addActor(it) }
         mapInput = SandboxInput({ session }, { graphics?.projection }, { x, y ->
-            viewport.unproject(Vector2(x.toFloat(), y.toFloat())).let { Position(it.x.toDouble(), it.y.toDouble()) }
+            viewport.unproject(Vector2(x.toFloat(), y.toFloat())).let {
+                Position(it.x.toDouble() * battlefieldWidth / viewport.worldWidth, it.y.toDouble())
+            }
         }, { !paused && session != null }, { stage.keyboardFocus is TextField },
             { Gdx.input.isKeyPressed(it) }, { updateHud() }, evidence, touchControls, { x, y ->
                 val bottom = Gdx.graphics.height - y
                 x >= viewport.screenX && x < viewport.screenX + viewport.screenWidth &&
                     bottom >= viewport.screenY && bottom < viewport.screenY + viewport.screenHeight
-            })
+            }, battlefieldAt = { x, y -> touchControls || battlefieldAt(x, y) })
         for (index in 1..3) groupButtons += button("$index (0)", 508f + (index - 1) * 72f, 12f, 64f) { mapInput.group(index) }
-        stage.addActor(Actor().apply {
-            setBounds(752f, 456f, 176f, 112f)
+        minimapActor = Actor().apply {
+            val area = if (touchControls) MapArea(752.0, 456.0, 176.0, 112.0) else SandboxGraphics.DESKTOP_MINIMAP_AREA
+            setBounds(area.left.toFloat(), area.bottom.toFloat(), area.width.toFloat(), area.height.toFloat())
             addListener(object : InputListener() {
                 private var owned = false
                 private fun locate(x: Float, y: Float, dragging: Boolean) {
                     if (paused || stage.keyboardFocus is TextField) return
                     val g = graphics ?: return
-                    val target = g.minimap.locate(752.0 + x, 456.0 + y, dragging) ?: return
+                    val area = g.minimap.area
+                    val target = g.minimap.locate(area.left + x, area.bottom + y, dragging) ?: return
                     g.projection.centerOn(target)
                     evidence.record("camera", mapOf("reason" to "minimap",
                         "center" to g.projection.camera.center.fields(), "zoom" to g.projection.camera.zoom))
                 }
                 override fun touchDown(event: InputEvent, x: Float, y: Float, pointer: Int, button: Int): Boolean {
-                    if (pointer != 0 || button != Input.Buttons.LEFT || session == null || paused) return false
-                    owned = true; locate(x, y, false); return true
+                    if (pointer != 0 || session == null || paused) return false
+                    if (button == Input.Buttons.LEFT) { owned = true; locate(x, y, false) }
+                    return true
                 }
                 override fun touchDragged(event: InputEvent, x: Float, y: Float, pointer: Int) {
                     if (owned && pointer == 0) locate(x, y, true)
                 }
                 override fun touchUp(event: InputEvent, x: Float, y: Float, pointer: Int, button: Int) { owned = false }
+                override fun scrolled(event: InputEvent, x: Float, y: Float, amountX: Float, amountY: Float) = true
             })
-        })
+        }.also(stage::addActor)
+        battleActions = BattleActionList(skin, stage, { session }, { graphics?.unitIcon(it) }, { owner, row, cancel ->
+            val key = row.id.substringAfter(':')
+            when (row.id.substringBefore(':')) {
+                "produce" -> if (cancel) owner.cancelProduction(key) else owner.produce(key)
+                "upgrade" -> if (cancel) owner.cancelUpgrade(key) else owner.upgrade(key)
+                "choose-construction" -> mapInput.beginConstruction(key)
+                "unit-action" -> if (row.target && !cancel) mapInput.beginGroundAction(key)
+                    else owner.unitAction(key, cancelQueued = cancel)
+                "submarine-surface", "submarine-dive" -> owner.submarineDepth(row.id == "submarine-surface")
+                "amphibious-fly", "amphibious-dive" -> owner.amphibiousFlight(row.id == "amphibious-fly")
+                "transport-unload", "transport-cancel-unload" -> owner.unload(row.id == "transport-unload")
+                "choose-reclaim" -> mapInput.beginReclaim()
+                "choose-repair" -> mapInput.beginRepair()
+                else -> error("Unsupported HUD action: ${row.id}")
+            }
+        }) { lastHudState = null; updateHud() }
         commandPanel = Table().also {
             it.background = skin.newDrawable("white", Color(.07f, .10f, .09f, 1f))
             it.setBounds(40f, 100f, 660f, 140f)
@@ -522,6 +550,15 @@ class BootstrapScreen(
         commandHintLabel = label("Sandbox: / for commands", 40f, 100f, 660f, 24f)
         commandConsoleOpen = false
         Gdx.input.inputProcessor = InputMultiplexer(object : InputAdapter() {
+            override fun mouseMoved(screenX: Int, screenY: Int): Boolean {
+                if (!touchControls && session != null && !commandConsoleOpen) {
+                    val point = stage.screenToStageCoordinates(Vector2(screenX.toFloat(), screenY.toFloat()))
+                    val hit = stage.hit(point.x, point.y, true)
+                    stage.scrollFocus = battleActions.scrollTarget(hit) ?: minimapActor.takeIf { hit === it }
+                }
+                return false
+            }
+
             override fun keyDown(keycode: Int): Boolean {
                 if (keycode == Input.Keys.SLASH && !commandConsoleOpen && !paused && !loading &&
                     !touchControls && session?.canDeploy == true && stage.keyboardFocus !is TextField) {
@@ -719,9 +756,11 @@ class BootstrapScreen(
                     "visualsPreparedNanos" to timing.visualsPreparedNanos, "completedNanos" to timing.completedNanos,
                     "observedNanos" to System.nanoTime())) }
                 val graphicsStartedNanos = System.nanoTime()
-                pendingGraphics = SandboxGraphics.load(loaded, activeRoot)
+                pendingGraphics = SandboxGraphics.load(loaded, activeRoot, fullBattlefield = !touchControls)
+                pendingGraphics.projection.resizeBattlefield(battlefieldWidth.toDouble())
                 evidence.record("load-graphics-ready", mapOf("generation" to generation,
                     "startedNanos" to graphicsStartedNanos, "completedNanos" to System.nanoTime(),
+                    "battlefieldFill" to !touchControls,
                     "worldWidth" to pendingGraphics.projection.worldWidth, "worldHeight" to pendingGraphics.projection.worldHeight))
                 val runGeneration = generation
                 pendingSession = SandboxSession(scenario, evidence.withGeneration(runGeneration), request.configuration.options, generation = runGeneration)
@@ -786,24 +825,34 @@ class BootstrapScreen(
         viewport.apply()
         batch.projectionMatrix = viewport.camera.combined
         shapes.projectionMatrix = viewport.camera.combined
-        shapes.begin(ShapeRenderer.ShapeType.Filled)
-        shapes.color = Color(0.105f, 0.13f, 0.12f, 1f)
-        shapes.rect(736f, 0f, 224f, 592f)
-        shapes.rect(0f, 592f, 960f, 48f)
-        shapes.color = Color.BLACK
-        shapes.rect(16f, 64f, 704f, 512f)
-        shapes.end()
-        if (current != null) {
+        if (touchControls || current == null) {
+            shapes.begin(ShapeRenderer.ShapeType.Filled)
+            shapes.color = Color(0.105f, 0.13f, 0.12f, 1f)
+            if (touchControls) shapes.rect(736f, 0f, 224f, 592f)
+            shapes.rect(0f, 592f, 960f, 48f)
+            shapes.end()
+        }
+        val graphics = graphics
+        if (current != null && graphics != null) {
             val clip = Rectangle()
-            stage.calculateScissors(Rectangle(16f, 64f, 704f, 512f), clip)
+            val area = graphics.projection.mapArea
+            val stagePerWorldX = viewport.worldWidth / battlefieldWidth
+            stage.calculateScissors(Rectangle((area.left * stagePerWorldX).toFloat(), area.bottom.toFloat(),
+                (area.width * stagePerWorldX).toFloat(), area.height.toFloat()), clip)
+            if (!touchControls) {
+                batch.projectionMatrix = battlefieldCamera.combined
+                shapes.projectionMatrix = battlefieldCamera.combined
+            }
             if (ScissorStack.pushScissors(clip)) try {
-                batch.begin(); graphics?.draw(batch, current.frame, mapInput.constructionPreview, current.selectedIds); batch.end()
+                batch.begin(); graphics.draw(batch, current.frame, mapInput.constructionPreview, current.selectedIds); batch.end()
                 shapes.begin(ShapeRenderer.ShapeType.Line)
-                graphics?.drawOverlay(shapes, current.frame, current.selectedIds, mapInput.box, mapInput.constructionPreview, mapInput.groundActionPreview)
+                graphics.drawOverlay(shapes, current.frame, current.selectedIds, mapInput.box, mapInput.constructionPreview,
+                    mapInput.groundActionPreview, current.selectedId.takeUnless { touchControls })
                 shapes.end()
-                graphics?.drawFlameEffects(shapes, current.frame)
+                graphics.drawFlameEffects(shapes, current.frame)
             } finally { ScissorStack.popScissors() }
-            graphics?.drawMinimap(shapes, current.frame)
+            shapes.projectionMatrix = viewport.camera.combined
+            graphics.drawMinimap(shapes, current.frame)
         }
         stage.act(Gdx.graphics.deltaTime); stage.draw()
         val drawnNanos = System.nanoTime()
@@ -855,6 +904,8 @@ class BootstrapScreen(
             enabled = commandConsoleOpen && current?.canDeploy == true)
         packPanel?.let { entries += it.drawnActions() }
         button("stop", stopButton); button("choose-patrol", patrolButton)
+        entries += DrawnAction("minimap", minimapActor, "Minimap", enabled = current != null)
+        if (!touchControls) entries += battleActions.drawnActions()
         customActionButtons.forEach { (name, actor) ->
             val action = menu?.unitActions?.singleOrNull { it.name == name }
             entries += DrawnAction("unit-action:$name", actor, actor.text.toString(), enabled = action?.available == true)
@@ -905,11 +956,15 @@ class BootstrapScreen(
                 enabled = nativeActive && action?.progress != null && !actors.second.isDisabled)
         }
         val selected = current?.selectedIds.orEmpty()
-        val projection = graphics?.projection?.let { map -> mapOf("worldWidth" to map.worldWidth,
-            "worldHeight" to map.worldHeight, "left" to map.left, "bottom" to map.bottom, "scale" to map.scale,
-            "areaLeft" to map.mapArea.left, "areaBottom" to map.mapArea.bottom,
-            "areaWidth" to map.mapArea.width, "areaHeight" to map.mapArea.height) }
-        val frame = ActionLayoutFrame(generation, current?.selectionRevision ?: 0, selected.toList(),
+        val projection = graphics?.projection?.let { map ->
+            val stagePerWorldX = viewport.worldWidth.toDouble() / battlefieldWidth
+            mapOf("worldWidth" to map.worldWidth, "worldHeight" to map.worldHeight,
+                "left" to map.left * stagePerWorldX, "bottom" to map.bottom,
+                "scale" to map.scale, "scaleX" to map.scale * stagePerWorldX,
+                "areaLeft" to map.mapArea.left * stagePerWorldX, "areaBottom" to map.mapArea.bottom,
+                "areaWidth" to map.mapArea.width * stagePerWorldX, "areaHeight" to map.mapArea.height)
+        }
+        val frame = ActionLayoutFrame(inputGeneration, current?.selectionRevision ?: 0, selected.toList(),
             current?.observation?.units.orEmpty().filter { it.unitId in selected }.associate { it.unitId to it.typeId },
             menuEpoch, mapOf("width" to Gdx.graphics.width, "height" to Gdx.graphics.height,
                 "screenX" to viewport.screenX, "screenY" to viewport.screenY,
@@ -1422,6 +1477,40 @@ class BootstrapScreen(
         })
         messageLabel.isVisible = current == null && visualPanel == null
         messageLabel.setText(if (loading) "Loading" else loadError ?: "Ready")
+        minimapActor.isVisible = current != null
+        val ownerHeading = menu?.let { desktopPrimaryHeading(it, state.selected, state.selectedIds) }
+        battleActions.update(current?.selectedId, ownerHeading,
+            if (current != null && !touchControls && !paused) menu?.battleActions().orEmpty() else emptyList())
+        if (current != null && !touchControls) {
+            produceButton.isVisible = false
+            cancelProductionButton.isVisible = false
+            productionLayer.isVisible = false
+            constructionLayer.isVisible = false
+            reclaimCard.isVisible = false
+            repairCard.isVisible = false
+            economicUpgradeCard.isVisible = false
+            depthButton.isVisible = false
+            upgradeButtons.values.forEach { (first, second) -> first.isVisible = false; second.isVisible = false }
+            customActionButtons.values.forEach { it.isVisible = false }
+            nativeIcon.isVisible = false
+            nativeInfo.isVisible = false
+            selectedLabel.isVisible = false
+            selectionHeading.isVisible = false
+            stopButton.setBounds(752f, 68f, 84f, 36f)
+            patrolButton.setBounds(844f, 68f, 92f, 36f)
+            startButton.setBounds(752f, 20f, 84f, 36f)
+            exitButton.setBounds(844f, 20f, 92f, 36f)
+        } else {
+            productionLayer.isVisible = true
+            constructionLayer.isVisible = true
+        }
+    }
+
+    private fun battlefieldAt(screenX: Int, screenY: Int): Boolean {
+        val point = stage.screenToStageCoordinates(Vector2(screenX.toFloat(), screenY.toFloat()))
+        if (battleActions.containsPoint(point.x, point.y)) return false
+        val hit = stage.hit(point.x, point.y, true)
+        return hit == null || hit === stage.root
     }
 
     /** GL icon identity changes with the loaded presentation, independently from progress/funds refreshes. */
@@ -1435,6 +1524,10 @@ class BootstrapScreen(
     override fun resize(width: Int, height: Int) {
         cancelInput()
         viewport.update(width, height, true)
+        if (!touchControls && width > 0 && height > 0) {
+            battlefieldCamera.setToOrtho(false, viewport.worldHeight * width / height, viewport.worldHeight)
+            graphics?.projection?.resizeBattlefield(battlefieldWidth.toDouble())
+        }
         evidence.record("resize", mapOf("width" to width, "height" to height, "screenX" to viewport.screenX,
             "screenY" to viewport.screenY, "screenWidth" to viewport.screenWidth, "screenHeight" to viewport.screenHeight))
     }
@@ -1470,7 +1563,9 @@ class BootstrapScreen(
         if (touchControls && !presentationReady) {
             try {
                 createPresentation()
-                graphics = session?.let { SandboxGraphics.load(activeVisuals?.let(it.renderResources::withVisuals) ?: it.renderResources, activeRoot) }
+                graphics = session?.let { SandboxGraphics.load(activeVisuals?.let(it.renderResources::withVisuals)
+                    ?: it.renderResources, activeRoot, fullBattlefield = !touchControls) }
+                graphics?.projection?.resizeBattlefield(battlefieldWidth.toDouble())
                 updateHud()
             } catch (failure: Exception) {
                 preserveFailure(failure) { leaveMatch() }
