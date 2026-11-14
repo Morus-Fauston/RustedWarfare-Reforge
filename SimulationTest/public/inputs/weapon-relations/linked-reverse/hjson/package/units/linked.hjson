@@ -1,6 +1,6 @@
 // Owned link/order/control representative.
 {
-  format: "rw-reforge.unit.v1",
+  format: "rw-reforge.unit.v2",
   copyFrom: [
     "base.ini"
   ],

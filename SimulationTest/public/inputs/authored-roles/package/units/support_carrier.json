@@ -1,0 +1,97 @@
+{
+  "format": "rw-reforge.unit.v2",
+  "copyFrom": [
+    "base.ini"
+  ],
+  "core": {
+    "name": "support_carrier",
+    "maxHp": 4000,
+    "radius": 15,
+    "displayRadius": 15
+  },
+  "graphics": {
+    "total_frames": 1,
+    "image": "ship.png",
+    "image_wreak": "ship_dead.png",
+    "image_turret": "cannon.png"
+  },
+  "movement": {
+    "movementType": "WATER",
+    "moveSpeed": 0.8,
+    "moveAccelerationSpeed": 0.03,
+    "moveDecelerationSpeed": 0.08,
+    "maxTurnSpeed": 1.4,
+    "turnAcceleration": 0.05,
+    "reverseSpeedPercentage": 1
+  },
+  "weapons": [
+    {
+      "name": "port",
+      "copyFromSections": [
+        "template_gun"
+      ],
+      "x": -8,
+      "y": 0,
+      "delay": 70,
+      "shoot_sound": "large_gun_fire2",
+      "shoot_sound_vol": 0.3
+    },
+    {
+      "name": "starboard",
+      "copyFromSections": [
+        "template_gun"
+      ],
+      "x": 8,
+      "y": 0,
+      "delay": 100,
+      "shoot_sound": "large_gun_fire2",
+      "shoot_sound_vol": 0.3
+    },
+    {
+      "name": "screen",
+      "x": 7,
+      "y": 20,
+      "canShoot": false,
+      "invisible": true,
+      "projectile": {
+        "directDamage": 600,
+        "life": 99999,
+        "speed": 0.2,
+        "deflectionPower": -1,
+        "targetSpeed": 6.5,
+        "targetSpeedAcceleration": 0.05,
+        "ballistic": true,
+        "ballistic_delaymove_height": 80,
+        "ballistic_height": 110
+      }
+    }
+  ],
+  "attack": {
+    "maxAttackRange": 240
+  },
+  "roles": {
+    "constructionTypes": "field_factory,scout_hull",
+    "canRepairUnits": true,
+    "canRepairBuildings": true,
+    "autoRepair": true,
+    "nanoRange": 240,
+    "nanoRepairSpeed": 0.5,
+    "nanoBuildSpeed": 4,
+    "nanoConstructionTypes": "scout_hull",
+    "productionTypes": "cargo_air",
+    "productionSpeed": 2
+  },
+  "abilities": [
+    {
+      "name": "screen",
+      "type": "navalInterception",
+      "weapon": "screen",
+      "landingRange": 500,
+      "trackingRange": 1600,
+      "minimumHeight": 50,
+      "ammoPrice": 6000,
+      "ammoBuildRate": 0.00025,
+      "ammoLimit": 12
+    }
+  ]
+}

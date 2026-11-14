@@ -1,0 +1,40 @@
+{
+  "schemaVersion": 1,
+  "scenarioId": "deployment-shell-defense",
+  "inputs": "../../inputs/projectile-deployment",
+  "contentPack": {
+    "directory": "deployment-shell-defense",
+    "unitId": "field_tank"
+  },
+  "deploymentEnabled": true,
+  "intents": [
+    {
+      "intentId": "release",
+      "kind": "deploy-projectiles",
+      "entries": [
+        {
+          "alias": "shell",
+          "sourceUnitId": "shooter",
+          "targetUnitId": "target"
+        },
+        {
+          "alias": "control",
+          "sourceUnitId": "immune",
+          "targetUnitId": "target"
+        }
+      ],
+      "waitSteps": 150,
+      "atStep": 8
+    },
+    {
+      "intentId": "reference-shell",
+      "kind": "projectile-alias",
+      "alias": "shell"
+    },
+    {
+      "intentId": "reference-control",
+      "kind": "projectile-alias",
+      "alias": "control"
+    }
+  ]
+}

@@ -11,15 +11,19 @@ import com.badlogic.gdx.graphics.glutils.ShapeRenderer
 import com.badlogic.gdx.utils.XmlReader
 import com.rustedwarfare.reforge.core.sim.PlayerObservation
 import com.rustedwarfare.reforge.core.sim.Scenario
+import com.rustedwarfare.reforge.core.sim.UnitObservation
 import java.nio.file.Path
 import com.rustedwarfare.reforge.core.sim.Position
 import com.rustedwarfare.reforge.core.sim.ProjectileAppearance
 import kotlin.math.abs
 
-class SandboxGraphics private constructor(private val resources: SandboxRenderResources) : AutoCloseable {
+class SandboxGraphics private constructor(private val resources: SandboxRenderResources, fullBattlefield: Boolean) : AutoCloseable {
     val projection = MapProjection(resources.widthTiles.toDouble() * resources.tileWidth,
-        resources.heightTiles.toDouble() * resources.tileHeight, MapArea(16.0, 64.0, 704.0, 512.0))
-    val minimap = Minimap(projection.worldWidth, projection.worldHeight)
+        resources.heightTiles.toDouble() * resources.tileHeight,
+        if (fullBattlefield) MapArea(0.0, 0.0, 960.0, 640.0) else MapArea(16.0, 64.0, 704.0, 512.0),
+        fillViewport = fullBattlefield)
+    val minimap = if (fullBattlefield) Minimap(projection.worldWidth, projection.worldHeight,
+        DESKTOP_MINIMAP_AREA) else Minimap(projection.worldWidth, projection.worldHeight)
     private val owned = mutableListOf<Texture>()
     private val tiles = mutableMapOf<Int, TextureRegion>()
     private val units = mutableMapOf<String, TextureRegion>()
@@ -51,20 +55,23 @@ class SandboxGraphics private constructor(private val resources: SandboxRenderRe
     } ?: units[typeId]
 
     companion object {
-        fun load(resources: SandboxRenderResources, root: Path): SandboxGraphics =
-            loadPrepared(resources, root, intArrayOf())
+        internal val DESKTOP_MINIMAP_AREA = MapArea(752.0, 512.0, 184.0, 112.0)
+
+        fun load(resources: SandboxRenderResources, root: Path, fullBattlefield: Boolean = false): SandboxGraphics =
+            loadPrepared(resources, root, intArrayOf(), fullBattlefield)
 
         /** Consume worker-bound metadata; GL owns texture upload, completeness checks and release. */
-        fun load(loaded: LoadedSandbox, root: Path): SandboxGraphics =
-            loadPrepared(loaded.renderResources, root, loaded.scenario.map.groundGids)
+        fun load(loaded: LoadedSandbox, root: Path, fullBattlefield: Boolean = false): SandboxGraphics =
+            loadPrepared(loaded.renderResources, root, loaded.scenario.map.groundGids, fullBattlefield)
 
         fun load(scenario: Scenario, root: Path, visuals: PreparedVisualAssets? = null): SandboxGraphics {
             val resources = SandboxRenderResources.from(scenario)
-            return loadPrepared(visuals?.let { resources.withVisuals(it) } ?: resources, root, scenario.map.groundGids)
+            return loadPrepared(visuals?.let { resources.withVisuals(it) } ?: resources, root, scenario.map.groundGids, false)
         }
 
-        private fun loadPrepared(resources: SandboxRenderResources, root: Path, ground: IntArray): SandboxGraphics {
-            val graphics = SandboxGraphics(resources)
+        private fun loadPrepared(resources: SandboxRenderResources, root: Path, ground: IntArray,
+                                 fullBattlefield: Boolean): SandboxGraphics {
+            val graphics = SandboxGraphics(resources, fullBattlefield)
             try {
                 graphics.loadImages(root)
                 for (gid in ground) require(gid == 0 || graphics.tiles.containsKey(gid)) { "Missing tile image for gid=$gid" }
@@ -368,9 +375,20 @@ class SandboxGraphics private constructor(private val resources: SandboxRenderRe
     }
 
     fun drawOverlay(shapes: ShapeRenderer, frame: SandboxFrame, selectedIds: Set<String>, box: Pair<Position, Position>? = null,
-                    construction: ConstructionPreview? = null, groundAction: GroundActionPreview? = null) {
+                    construction: ConstructionPreview? = null, groundAction: GroundActionPreview? = null,
+                    primaryId: String? = null) {
         shapes.color = Color(0.45f, 0.5f, 0.47f, 1f)
         shapes.rect(projection.left.toFloat(), projection.bottom.toFloat(), projection.width.toFloat(), projection.height.toFloat())
+        for (factory in frame.observation.factoryQueues.filter { it.factoryId in selectedIds }) {
+            val target = factory.rally ?: continue
+            val unit = frame.observation.units.firstOrNull { it.unitId == factory.factoryId } ?: continue
+            val x = projection.x(target.x); val y = projection.y(target.y)
+            shapes.color = Color.CYAN
+            shapes.line(projection.x(unit.position.x), projection.y(unit.position.y), x, y)
+            shapes.line(x, y - 6f, x, y + 8f)
+            shapes.line(x, y + 8f, x + 9f, y + 4f)
+            shapes.line(x + 9f, y + 4f, x, y + 1f)
+        }
         val selectedSlots = frame.observation.units.asSequence().filter { it.unitId in selectedIds }
             .associate { it.unitId to it.attachmentOverview?.selectedSlot }
         for (unit in frame.observation.units) {
@@ -396,7 +414,15 @@ class SandboxGraphics private constructor(private val resources: SandboxRenderRe
                 val active = selectedSlots[attachment?.parentUnitId] == attachment?.slot
                 shapes.color = if (active) Color.CYAN else Color.WHITE
                 shapes.circle(x, y, (if (active) 8f else 6f) * projection.scale.toFloat(), 16)
-            } else if (attachment == null) shapes.circle(x, y, radius + if (unit.unitId in selectedIds) 4f else 1f, 32)
+            } else if (attachment == null) {
+                shapes.circle(x, y, radius + if (unit.unitId in selectedIds) 4f else 1f, 32)
+                if (unit.unitId == primaryId && selectedIds.size > 1) {
+                    val teamColor = shapes.color.cpy()
+                    shapes.color = Color.WHITE
+                    shapes.circle(x, y, radius + 7f, 32)
+                    shapes.color = teamColor
+                }
+            }
             val health = unit.health
             val maximum = unit.maxHealth
             if (unit.alive && attachment?.empty != true && health != null && maximum != null) {
@@ -476,7 +502,8 @@ class SandboxGraphics private constructor(private val resources: SandboxRenderRe
             val sourceX = projection.x(preview.source.x); val sourceY = projection.y(preview.source.y)
             if (preview.minimumRange > 0.0)
                 shapes.circle(sourceX, sourceY, (preview.minimumRange * projection.scale).toFloat(), 96)
-            shapes.circle(sourceX, sourceY, (preview.maximumRange * projection.scale).toFloat(), 192)
+            if (preview.maximumRange > 0.0)
+                shapes.circle(sourceX, sourceY, (preview.maximumRange * projection.scale).toFloat(), 192)
             val x = projection.x(preview.position.x); val y = projection.y(preview.position.y)
             if (preview.areaRadius > 0.0) {
                 shapes.circle(x, y, (preview.areaRadius * projection.scale).toFloat(), 96)
@@ -645,25 +672,25 @@ class SandboxGraphics private constructor(private val resources: SandboxRenderRe
 
     private fun drawBlink(shapes: ShapeRenderer, observation: PlayerObservation) {
         val step = observation.stepIndex
+        fun charge(unit: UnitObservation) = unit.unitActions?.queue?.firstOrNull { it.name == "blinkQueued" ||
+            it.name == "blink" && unit.attachmentOverview == null }
         if (observation.sampleId != blinkSample) {
             blinkSample = observation.sampleId
             for (unit in observation.units) {
-                if (unit.typeId != "modularSpider") continue
-                val charge = unit.unitActions?.queue?.any { it.name == "blinkQueued" } == true
-                if (charge) blinkOrigins[unit.unitId] = unit.position
+                if (charge(unit) != null) blinkOrigins[unit.unitId] = unit.position
                 if (observation.events.any { it.kind == "teleported" && it.unitId == unit.unitId } &&
                     blinkFlashes[unit.unitId]?.step != step) {
                     val origin = blinkOrigins.remove(unit.unitId) ?: unit.position
                     blinkFlashes[unit.unitId] = BlinkFlash(origin, unit.position, step)
                 }
             }
-            val known = observation.units.filter { it.alive }.mapTo(hashSetOf()) { it.unitId }
-            blinkOrigins.keys.retainAll(known)
+            val charging = observation.units.filter { it.alive && charge(it) != null }.mapTo(hashSetOf()) { it.unitId }
+            blinkOrigins.keys.retainAll(charging)
             blinkFlashes.values.removeAll { step - it.step >= 36 }
         }
         shapes.setColor(.07f, .93f, .95f, 1f)
         for (unit in observation.units) {
-            val charge = unit.unitActions?.queue?.firstOrNull { it.name == "blinkQueued" } ?: continue
+            val charge = charge(unit) ?: continue
             val radius = (24 + charge.progress * 25) * projection.scale.toFloat()
             val x = projection.x(unit.position.x)
             val y = projection.y(unit.position.y)

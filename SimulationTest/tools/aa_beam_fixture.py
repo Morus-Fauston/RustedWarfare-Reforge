@@ -59,7 +59,9 @@ def write_forms(pack, fmt):
                 (f'copyFrom: {parent}\n' if section=='core' and parent else '')+
                 '\n'.join(f'{k}: {literal(v)}' for k,v in fields.items())
                 for section,fields in sections.items())+'\n'
-        result = dict(format='rw-reforge.unit.v1')
+        result = dict(format='rw-reforge.unit.v2')
+        if parent is None:
+            result['afterburn'] = dict(normalForm='aaBeamGunship', boostedForm='aaBeamGunship_afterburn')
         if parent:
             result['copyFrom']=[parent]
         for section,fields in sections.items():

@@ -1,0 +1,58 @@
+{
+  "format": "rw-reforge.unit.v2",
+  "unitType": "tank",
+  "core": {
+    "name": "field_tank",
+    "class": "CustomUnitMetadata",
+    "price": 350,
+    "buildSpeed": 0.002,
+    "maxHp": 210,
+    "radius": 11,
+    "displayRadius": 11,
+    "isBio": false,
+    "softCollisionOnAll": 0,
+    "fogOfWarSightRange": 15
+  },
+  "graphics": {
+    "total_frames": 3,
+    "image": "tank.png",
+    "image_wreak": "tank_dead.png",
+    "image_turret": "tank_turret.png"
+  },
+  "attack": {
+    "canAttack": true,
+    "canAttackFlyingUnits": false,
+    "canAttackLandUnits": true,
+    "canAttackUnderwaterUnits": false,
+    "turretSize": 20,
+    "turretTurnSpeed": 4,
+    "maxAttackRange": 100,
+    "shootDelay": 75
+  },
+  "weapons": [
+    {
+      "name": "1",
+      "x": 0,
+      "y": 0,
+      "canShoot": true,
+      "projectile": "1",
+      "turnSpeedAcceleration": 1
+    }
+  ],
+  "projectiles": [
+    {
+      "name": "1",
+      "directDamage": 25,
+      "life": 140,
+      "speed": 5
+    }
+  ],
+  "abilities": [
+    {
+      "name": "hull_shield",
+      "type": "shield",
+      "maximum": 60,
+      "regeneration": 0.25
+    }
+  ]
+}

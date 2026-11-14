@@ -1,0 +1,58 @@
+{
+  "schemaVersion": 1,
+  "scenarioId": "deployment-nuclear-defense",
+  "inputs": "../../inputs/projectile-deployment",
+  "contentPack": {
+    "directory": "deployment-nuclear-defense",
+    "unitId": "antiNukeLauncherC"
+  },
+  "deploymentEnabled": true,
+  "intents": [
+    {
+      "intentId": "select",
+      "kind": "select",
+      "position": {
+        "x": 110,
+        "y": 190
+      },
+      "waitSteps": 0
+    },
+    {
+      "intentId": "pay",
+      "kind": "unit-action",
+      "actionName": "buildAntiNuke",
+      "waitSteps": 600
+    },
+    {
+      "intentId": "prepare-a",
+      "kind": "select",
+      "position": {
+        "x": 110,
+        "y": 190
+      },
+      "waitSteps": 600
+    },
+    {
+      "intentId": "release",
+      "kind": "deploy-projectiles",
+      "entries": [
+        {
+          "alias": "incoming",
+          "sourceUnitId": "silo",
+          "targetUnitId": "defense"
+        }
+      ],
+      "waitSteps": 600,
+      "afterEvent": {
+        "kind": "unit-action-completed",
+        "unitId": "defense"
+      },
+      "maxWaitSteps": 400
+    },
+    {
+      "intentId": "reference-incoming",
+      "kind": "projectile-alias",
+      "alias": "incoming"
+    }
+  ]
+}

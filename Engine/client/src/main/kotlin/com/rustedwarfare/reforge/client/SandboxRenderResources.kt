@@ -129,7 +129,7 @@ class SandboxRenderResources private constructor(
     }
 
     /** Pure worker binding. The loader verifies the complete descriptor after binding, before publishing it. */
-    internal fun bindVisuals(visuals: PreparedVisualAssets): SandboxRenderResources {
+    internal fun bindVisuals(visuals: PreparedVisualAssets, useScenarioTerrain: Boolean = false): SandboxRenderResources {
         val mappedUnits = units.mapValues { (id, before) ->
             val image = requireNotNull(visuals.units[id]) { "VISUAL_MAPPING_UNSUPPORTED: unit $id" }
             val replacements = image.bindings()
@@ -137,7 +137,7 @@ class SandboxRenderResources private constructor(
                 requireNotNull(replacements.images[part]) { "VISUAL_MAPPING_UNSUPPORTED: unit $id ${part.suffix}" }
             })
         }
-        val mappedTiles = tileSets.map { atlas ->
+        val mappedTiles = if (useScenarioTerrain) tileSets else tileSets.map { atlas ->
             val layout = atlas.supportedLayout()
             val resolved = visuals.resolvedImages?.images?.get(ResourceId.parse("reforge:terrain/$layout"))
             val rows = (atlas.tileCount + atlas.columns - 1) / atlas.columns

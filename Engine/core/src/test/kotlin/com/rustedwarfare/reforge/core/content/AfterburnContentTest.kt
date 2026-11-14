@@ -48,8 +48,9 @@ internal object AfterburnContentFixture {
                 "[$name]\n" + (if (name == "core" && parent != null) "copyFrom: $parent\n" else "") +
                     fields.entries.joinToString("\n") { "${it.key}: ${it.value}" }
             } + "\n"
-            val result = JsonObject().add("format", "rw-reforge.unit.v1")
+            val result = JsonObject().add("format", "rw-reforge.unit.v2")
             if (parent != null) result.add("copyFrom", org.hjson.JsonArray().add(parent))
+            else result.add("afterburn", JsonObject().add("normalForm", "aaBeamGunship").add("boostedForm", "aaBeamGunship_afterburn"))
             val actions = org.hjson.JsonArray()
             for ((name, fields) in sections) {
                 val obj = JsonObject()
@@ -122,6 +123,31 @@ class AfterburnContentTest {
             assertNull(inheritedAction.energySet)
             assertEquals(AutomaticActionCondition.ENERGY_EMPTY, burn.customActions!!.actions.last().automatic)
         }
+    }
+
+    @Test fun an_ini_cannot_override_the_original_pair_with_a_structured_profile_section() {
+        val root = AfterburnContentFixture.write(temporary, "ini")
+        val ini = root.resolve("aa.ini")
+        Files.writeString(ini, Files.readString(ini) +
+            "\n[afterburn]\nnormalForm: aaBeamGunship\nboostedForm: aaBeamGunship_afterburn\n")
+        val error = assertIs<ContentResult.Failure>(ContentLoader.loadContentPack(root)).error
+        assertEquals(ContentErrorCode.UNSUPPORTED_FEATURE, error.code)
+        assertEquals("afterburn", error.section)
+        assertTrue(error.file.endsWith("aa.ini"), error.file)
+    }
+
+    @Test fun an_ini_root_uses_the_original_pair_even_when_a_structured_parent_declares_an_authored_pair() {
+        val root = AfterburnContentFixture.write(temporary, "json")
+        val parent = root.resolve("aa.json")
+        Files.writeString(parent, Files.readString(parent)
+            .replace("aaBeamGunship_afterburn", "escort_boosted").replace("aaBeamGunship", "escort"))
+        val ini = root.resolve("inherited.ini")
+        Files.writeString(ini, "[core]\ncopyFrom: aa.json\n")
+        val result = ContentLoader.loadAaBeamWithSources(ini)
+        val error = assertIs<ContentResult.Failure>(result).error
+        assertEquals(ContentErrorCode.UNSUPPORTED_FEATURE, error.code)
+        assertEquals("name", error.field)
+        assertTrue(error.file.endsWith("aa.json"), error.file)
     }
 
     @Test fun a_missing_conversion_form_is_rejected_in_the_final_enabled_content_set() {

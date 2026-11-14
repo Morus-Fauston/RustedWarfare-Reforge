@@ -50,6 +50,25 @@ class AaBeamArchiveTest(unittest.TestCase):
             with self.subTest(fault=fault), self.assertRaises(PlatformError):
                 validate_history_poses([value], {})
 
+    def test_authored_beam_resources_require_a_matching_public_source(self):
+        pairs = {'escort': 'escort_boosted', 'patrol': 'patrol_boosted'}
+        source = dict(unit(), typeId='escort_boosted')
+        geometry = dict(end=dict(x=300,y=150),endHeight=35,textureOffset=2)
+        active = dict(appearance='AA_BEAM',beam=dict(geometry,resourceUnitType='escort',visibleSourceUnitId='aa'))
+        event = dict(kind='rearmed',appearance='AA_BEAM',sourceUnitId='aa',sourceWeaponName='1',
+                     beam=dict(geometry,resourceUnitType='escort'))
+        for row in (active,event):
+            self.assertEqual('AA_BEAM',validate_launch_appearance(row,{'aa':source},pairs=pairs))
+            with self.assertRaises(PlatformError):
+                validate_launch_appearance(row,{},pairs=pairs)
+            for resource in ('patrol','escort_boosted',None,[]):
+                wrong = dict(row, beam=dict(row['beam'],resourceUnitType=resource))
+                with self.subTest(resource=resource),self.assertRaises(PlatformError):
+                    validate_launch_appearance(wrong,{'aa':source},pairs=pairs)
+        self.assertEqual('AA_BEAM',validate_launch_appearance(dict(active,beam=geometry),{},pairs=pairs))
+        with self.assertRaises(PlatformError):
+            validate_launch_appearance(dict(active,beam=dict(geometry,resourceUnitType='escort')),{},pairs=pairs)
+
     def test_platform_beams_require_authorized_geometry_and_only_the_aa_source(self):
         shot=dict(appearance='AA_BEAM',sourceUnitId='aa',sourceWeaponName='1',kind='born',
                   beam=dict(end=dict(x=300,y=150),endHeight=35,textureOffset=2))

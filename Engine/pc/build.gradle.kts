@@ -47,6 +47,14 @@ tasks.test {
 
 // Self-owned, paired scene inputs travel with the installed PC application.
 distributions {
+    create("engineOnly") {
+        distributionBaseName.set("reforge-engine")
+        contents {
+            from(tasks.named("startScripts")) { into("bin") }
+            from(tasks.named("jar")) { into("lib") }
+            from(configurations.runtimeClasspath) { into("lib") }
+        }
+    }
     main {
         contents {
             from(rootProject.projectDir.parentFile.resolve("SimulationTest/public/scenarios")) {

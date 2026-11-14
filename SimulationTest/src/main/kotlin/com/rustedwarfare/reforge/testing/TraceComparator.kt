@@ -99,6 +99,7 @@ object TraceComparator {
         val buildings = ConstructionDeclaration.buildings(scenario, contract)
         UpgradeDeclaration.conversions(scenario, contract)
         UnitActionDeclaration.conversions(scenario, contract)
+        blinkCompletions(scenario, contract)
         ReclaimDeclaration.removals(scenario, contract)
         if (contract.text("scope") != "self-behavior" || scenario.required("scenarioId") !in contract.arrayAt("scenarioIds")) {
             throw InputError("Only the declared self-behavior scenario can be evaluated")
@@ -218,6 +219,10 @@ object TraceComparator {
             val buildings = ConstructionDeclaration.buildings(scenario, contract)
             val conversions = UpgradeDeclaration.conversions(scenario, contract)
             val unitConversions = UnitActionDeclaration.conversions(scenario, contract)
+            val unitActionTypes = UnitActionDeclaration.types(scenario)
+            val blinkCompletions = blinkCompletions(scenario, contract)
+            val fixedActions = declaredActions.associateBy { it.id("actionId") }
+            val boostedTypes = UnitActionDeclaration.afterburnPairs(scenario).values
             val nautilusTransitions = NautilusTraceValidator.validate(scenario, contract, rows) {
                 throw Incomplete("nautilus-transition", it)
             }
@@ -228,7 +233,7 @@ object TraceComparator {
                 (now.toFloat() + declared.number("delta").toFloat() * 16.666666f).toInt()
             }.drop(1)
             val automaticCooldowns = (scenario.arrayAt("units").map { it.jsonObject } + products + buildings)
-                .filter { (it["typeId"] ?: it["type"])?.jsonPrimitive?.content in UnitActionDeclaration.types }
+                .filter { (it["typeId"] ?: it["type"])?.jsonPrimitive?.content in unitActionTypes }
                 .associate { declared ->
                     val id = declared.id("unitId")
                     var type = (declared["typeId"] ?: declared.required("type")).jsonPrimitive.content
@@ -240,7 +245,7 @@ object TraceComparator {
                         if (index.toLong() > birth) {
                             val change = changes[index.toLong()]
                             if (change != null) type = change.id("targetTypeId")
-                            if (type == "aaBeamGunship_afterburn") remaining = maxOf(0f, remaining - scheduled.number("delta").toFloat())
+                            if (type in boostedTypes) remaining = maxOf(0f, remaining - scheduled.number("delta").toFloat())
                             if (change?.get("actionId") == JsonNull) remaining = 60f
                         }
                         remaining
@@ -338,7 +343,7 @@ object TraceComparator {
                                 throw Incomplete("conversion-identity", "Converted unit differs from its accepted ordinary upgrade")
                         }
                         val actionObjects = (scenario.arrayAt("units").map { it.jsonObject } + born + built)
-                            .filter { (it["typeId"] ?: it["type"])?.jsonPrimitive?.content in UnitActionDeclaration.types }
+                            .filter { (it["typeId"] ?: it["type"])?.jsonPrimitive?.content in unitActionTypes }
                         for (declared in actionObjects) {
                             val unitId = declared.id("unitId")
                             val unit = units.singleOrNull { it.id("unitId") == unitId } ?: continue
@@ -364,9 +369,26 @@ object TraceComparator {
                             if (unit.objectAt("unitActions").number("automaticCooldown") != automatic)
                                 throw Incomplete("unit-action-cooldown", "Automatic cooldown differs from the declared conversion and input schedule")
                         }
-                        val expectedActionEvents = if (initial) emptyList() else unitConversions.filter {
+                        val blinkAtStep = if (initial) emptyList() else blinkCompletions[step].orEmpty()
+                        var expectedActionEvents = if (initial) emptyList() else unitConversions.filter {
                             it.integer("completionStepIndex") == step }.map {
                             it.id("unitId") to if (it["actionId"] == JsonNull) "unit-action-automatic" else "unit-action-completed" }
+                        expectedActionEvents += blinkAtStep.map { it.id("unitId") to "unit-action-completed" }
+                        for (declared in blinkAtStep) {
+                            val actionId = declared.id("actionId")
+                            if (actionId !in acceptedActions)
+                                throw Incomplete("blink-completion", "A Blink completion has no accepted command")
+                            val action = fixedActions.getValue(actionId)
+                            if (action["actionName"] == s("blink")) {
+                                val caster = units.single { it.id("unitId") == action.id("unitId") }
+                                val target = action.objectAt("target")
+                                val location = caster.objectAt("position")
+                                if (listOf("x", "y").any { location.number(it).toFloat() != target.number(it).toFloat() } ||
+                                    observation.arrayAt("events").none {
+                                        it.jsonObject["kind"] == s("teleported") && it.jsonObject["unitId"] == action["unitId"]
+                                    }) throw Incomplete("blink-completion", "The unit did not teleport to the declared ground point")
+                            }
+                        }
                         val actualActionEvents = observation.arrayAt("events").map { it.jsonObject }.filter {
                             it["unitId"]?.jsonPrimitive?.content !in nautilusTransitions + nuclearTransitions &&
                             it["kind"] in setOf(s("unit-action-completed"), s("unit-action-automatic")) }.map {
@@ -505,7 +527,8 @@ object TraceComparator {
 
     private fun validateTransportSamples(units: List<JsonObject>, scenario: JsonObject) {
         val nautilusTypes = typesLoadedBy(scenario, setOf("nautilus"))
-        val types = typesLoadedBy(scenario, setOf("hovercraft", "dropship")) + nautilusTypes
+        val authored = ScenarioDeclaration.transportTypes(scenario)
+        val types = typesLoadedBy(scenario, setOf("hovercraft", "dropship")) + nautilusTypes + authored.keys
         if (types.isEmpty()) return
         fun invalid(reason: String): Nothing = throw Incomplete("transport-state", reason)
         fun number(value: JsonElement?, name: String): Double {
@@ -535,17 +558,21 @@ object TraceComparator {
                 val manifest = cargo["passengerIds"] as? JsonArray ?: invalid("Missing manifest")
                 val passengers = manifest.map(::id)
                 val nautilus = unit.id("typeId") in nautilusTypes
-                if (passengers.distinct().size != passengers.size || cargo["passengerCount"] != n(passengers.size) || cargo["capacity"] != n(if (nautilus) 3 else 4))
+                val settings = authored[unit.id("typeId")]
+                val capacity = settings?.integer("capacity") ?: if (nautilus) 3L else 4L
+                val unloadTicks = settings?.integer("unloadTicks") ?: 30L
+                val slotLimit = if (nautilus) 4L else capacity
+                if (passengers.distinct().size != passengers.size || cargo["passengerCount"] != n(passengers.size) || cargo["capacity"] != n(capacity))
                     invalid("Invalid manifest count or capacity")
                 val slots = number(cargo["occupiedSlots"], "occupiedSlots")
-                if (slots !in 0.0..4.0 || slots % 1.0 != 0.0 || passengers.isEmpty() && slots != 0.0)
+                if (slots !in 0.0..slotLimit.toDouble() || slots % 1.0 != 0.0 || passengers.isEmpty() && slots != 0.0)
                     invalid("Invalid occupied slots")
                 if (nautilus && (slots != passengers.size.toDouble() || unit.id("typeId") != "nautilusSubmarineSurface" && (cargo["unloading"] != b(false) ||
                     cargo["canUnload"] != b(false)))
                     )
                     invalid("Submerged production must retain its single-slot products")
                 if (cargo["unloading"] !in setOf(b(true), b(false)) || cargo["canUnload"] !in setOf(b(true), b(false)) ||
-                    number(cargo["unloadRemaining"], "unloadRemaining") !in 0.0..30.0) invalid("Invalid unload controls")
+                    number(cargo["unloadRemaining"], "unloadRemaining") !in 0.0..unloadTicks.toDouble()) invalid("Invalid unload controls")
                 if (cargo["canUnload"] == b(true) && (passengers.isEmpty() || cargo["unloading"] == b(true) || unit["alive"] != b(true)))
                     invalid("Impossible unload eligibility")
                 for (passengerId in passengers) {
@@ -619,8 +646,9 @@ object TraceComparator {
         if (unit.id("typeId") in typesLoadedBy(scenario, setOf("helicopter", "dropship"))) validateFlightPose(unit)
         val aaBeam = unit.id("typeId") in typesLoadedBy(scenario, setOf("aa-beam-gunship"))
         if (aaBeam) {
-            validateRotorlessFlight(unit, 6.0, if (unit.id("typeId") == "aaBeamGunship") .5 else null, "aa-beam-state")
-            validateUnitActions(unit, observer)
+            val boosted = unit.id("typeId") in UnitActionDeclaration.afterburnPairs(scenario).values
+            validateRotorlessFlight(unit, 6.0, if (boosted) null else .5, "aa-beam-state")
+            validateUnitActions(unit, observer, boosted)
         }
         else if (unit.id("typeId") in typesLoadedBy(scenario, setOf("bomber"))) {
             validateRotorlessFlight(unit, 3.0, 1.0, "bomber-state")
@@ -655,6 +683,7 @@ object TraceComparator {
             if (unit.number("nuclearDoors") !in 0.0..1.0)
                 throw Incomplete("nuclear-state", "Invalid door pose")
         }
+        else if (unit.id("typeId") in ScenarioDeclaration.blinkTypes(scenario)) validateBlinkState(unit, observer)
         else {
             if (unit["energy"] != null && unit["energy"] != JsonNull)
                 throw Incomplete("aa-beam-state", "Weapon energy on an unsupported unit")
@@ -816,7 +845,60 @@ object TraceComparator {
         }
     }
 
-    private fun validateUnitActions(unit: JsonObject, observer: String?) {
+    private fun blinkCompletions(scenario: JsonObject, contract: JsonObject): Map<Long, List<JsonObject>> {
+        val rows = contract["blinkCompletions"]?.jsonArray?.map { it.jsonObject }.orEmpty()
+        if (rows.isEmpty()) return emptyMap()
+        val known = ScenarioDeclaration.blinkTypes(scenario)
+        val spawns = scenario.arrayAt("units").map { it.jsonObject }.associateBy { it.id("unitId") }
+        val commands = scenario.arrayAt("actions").map { it.jsonObject }.associateBy { it.id("actionId") }
+        val used = mutableSetOf<String>()
+        val stepCount = scenario.objectAt("termination").arrayAt("steps").size
+        for (row in rows) {
+            if (row.keys != setOf("actionId", "unitId", "completionStepIndex")) throw InputError("Invalid Blink completion")
+            val id = row.id("actionId")
+            val unitId = row.id("unitId")
+            val spawn = spawns[unitId]
+            val command = commands[id] ?: throw InputError("Missing Blink command")
+            if (!used.add(id) || spawn?.id("type") !in known || command.id("unitId") != unitId ||
+                command.id("actor") != spawn?.id("owner") || command["kind"] != s("unit-action") ||
+                command["actionName"] !in setOf(s("addBlink"), s("blink")) || command["cancelQueued"] != b(false) ||
+                row.integer("completionStepIndex") !in command.integer("atStep") until stepCount.toLong())
+                throw InputError("Invalid Blink command or completion boundary")
+        }
+        return rows.groupBy { it.integer("completionStepIndex") }
+    }
+
+    private fun validateBlinkState(unit: JsonObject, observer: String?) {
+        fun invalid(): Nothing = throw Incomplete("blink-state", "Invalid or undisclosed Blink action state")
+        val value = unit["unitActions"]
+        if (observer != null && observer != unit.id("ownerPlayerId")) {
+            if (value != null && value != JsonNull) invalid()
+            return
+        }
+        val state = value as? JsonObject ?: invalid()
+        val actions = state["actions"] as? JsonObject ?: invalid()
+        val names = setOf("addBlink", "blink")
+        if (state.keys - "queue" != setOf("actions", "automaticCooldown") || state["automaticCooldown"] != n(0f) ||
+            actions.size != 1 || actions.keys.any { it !in names }) invalid()
+        val action = actions.values.single() as? JsonObject ?: invalid()
+        if (action.keys != setOf("queueIndex", "progress", "cooldownRemaining", "available") ||
+            action["available"] !in setOf(b(true), b(false)) ||
+            (action["cooldownRemaining"] as? JsonPrimitive)?.intOrNull?.let { it < 0 } != false) invalid()
+        val queue = state["queue"]?.jsonArray.orEmpty()
+        if (queue.isEmpty()) {
+            if (action["queueIndex"] != JsonNull || action["progress"] != JsonNull) invalid()
+        } else {
+            val item = queue.singleOrNull() as? JsonObject ?: invalid()
+            val name = actions.keys.single()
+            if (item.keys - "target" != setOf("name", "progress") || item["name"] != s(name) ||
+                action["queueIndex"] != n(0) || item["progress"] != action["progress"] ||
+                aaNumber(item["progress"]) !in 0.0..<1.0 || action["available"] != b(false)) invalid()
+            if (name == "blink") point(item["target"] as? JsonObject ?: invalid())
+            else if (item["target"] != null && item["target"] != JsonNull) invalid()
+        }
+    }
+
+    private fun validateUnitActions(unit: JsonObject, observer: String?, boosted: Boolean = false) {
         fun invalid(reason: String): Nothing = throw Incomplete("unit-action-state", reason)
         val raw = unit["unitActions"]
         if (observer != null && unit.id("ownerPlayerId") != observer) {
@@ -830,11 +912,10 @@ object TraceComparator {
             aaNumber(state["automaticCooldown"]) !in 0.0..60.0)
             invalid("Invalid automatic action cooldown")
         val actions = state["actions"] as? JsonObject ?: invalid("Missing action entries")
-        val names = when (unit.id("typeId")) {
+        val names = if (boosted) setOf("afterBurn", "cancelBurn") else when (unit.id("typeId")) {
             "mechBunker" -> setOf("deploy")
             "mechBunkerDeployed" -> setOf("undeploy")
-            "aaBeamGunship_afterburn" -> setOf("afterBurn", "cancelBurn")
-            "nautilusSubmarine" -> setOf("surface", "buildAntiNuke")
+             "nautilusSubmarine" -> setOf("surface", "buildAntiNuke")
             "nautilusSubmarineSurface" -> setOf("dive", "launchScoutBot", "buildAntiNuke")
             "nautilusSubmarineLand" -> setOf("launchScoutBot", "buildAntiNuke")
             "robotCrab", "robotCrabWater" -> emptySet()
@@ -928,18 +1009,33 @@ object TraceComparator {
         val types = typesLoadedBy(scenario, setOf("aa-beam-gunship"))
         if (types.isEmpty()) return
         fun invalid(reason: String): Nothing = throw Incomplete("aa-beam-projectile", reason)
-        fun validate(shot: JsonObject) {
-            val source = (shot["sourceUnitId"] as? JsonPrimitive)?.content
-            val unit = units.singleOrNull { it["unitId"] == source?.let(::s) }
-            val expected = unit?.id("typeId") in types
+        val pairs = UnitActionDeclaration.afterburnPairs(scenario)
+        fun validate(shot: JsonObject, active: Boolean) {
             val beam = shot["beam"]
+            val visibleSource = (beam as? JsonObject)?.get("visibleSourceUnitId")
+            val resource = (beam as? JsonObject)?.get("resourceUnitType")
+            if (visibleSource != null && (!player || !active || resource == null ||
+                    visibleSource !is JsonPrimitive || !visibleSource.isString))
+                invalid("Unexpected active beam source")
+            if (player && active && shot["sourceUnitId"] != null) invalid("Unexpected active projectile source")
+            val source = (shot["sourceUnitId"] as? JsonPrimitive)?.takeUnless { it == JsonNull }
+                ?: (visibleSource as? JsonPrimitive)
+            val unit = units.singleOrNull { it["unitId"] == source }
+            val sourceType = unit?.id("typeId")
+            val normalForm = pairs.entries.firstOrNull { sourceType == it.key || sourceType == it.value }?.key
+            val expected = unit?.id("typeId") in types
             if (shot["appearance"] != s("AA_BEAM")) {
                 if (expected || beam != null && beam != JsonNull) invalid("Missing or invalid beam appearance")
                 return
             }
             if (unit != null && !expected) invalid("AA beam on an unsupported source")
             val segment = beam as? JsonObject ?: invalid("Missing beam geometry")
-            if (segment.keys != setOf("end", "endHeight", "textureOffset")) invalid("Unapproved beam geometry fields")
+            if (segment.keys - setOf("resourceUnitType", "visibleSourceUnitId") != setOf("end", "endHeight", "textureOffset"))
+                invalid("Unapproved beam geometry fields")
+            val expectedResource = normalForm?.takeUnless { it == "aaBeamGunship" }?.let(::s)
+            if (resource != expectedResource && (player || unit != null) ||
+                resource != null && (resource !in pairs.keys.map(::s) || source == null))
+                invalid("Beam resource must identify the published source's normal form")
             val end = segment["end"] as? JsonObject ?: invalid("Missing beam endpoint")
             if (end.keys != setOf("x", "y")) invalid("Invalid beam endpoint")
             end.values.forEach(::aaNumber); aaNumber(segment["endHeight"])
@@ -949,11 +1045,11 @@ object TraceComparator {
             if (!player && (shot["sourceWeaponName"] != s("1") || aaNumber(shot["remainingLife"]) !in 0.0..15.0 ||
                 offset.toFloat() != aaNumber(shot["age"]).toFloat() * 2f)) invalid("Invalid beam lifetime or texture age")
         }
-        sample.arrayAt("projectiles").forEach { validate(it.jsonObject) }
+        sample.arrayAt("projectiles").forEach { validate(it.jsonObject, active = true) }
         sample.arrayAt("projectileEvents").forEach {
             val event = it.jsonObject
             val shot = if (player) event else event.objectAt("projectile")
-            validate(shot)
+            validate(shot, active = false)
             if (shot["appearance"] == s("AA_BEAM") && event["kind"] !in setOf("born", "rearmed", "impact", "expired", "target-ended").map(::s))
                 invalid("Unknown beam lifecycle event")
         }
@@ -1193,7 +1289,7 @@ object TraceComparator {
                     val hosts = observation.arrayAt("units").map { it.jsonObject }.associateBy { it.id("unitId") }
                     for (unit in units) {
                         val host = hosts.getValue(unit.id("unitId"))
-                        if (host.id("typeId") !in UnitActionDeclaration.types) continue
+                        if (host.id("typeId") !in UnitActionDeclaration.types(scenario)) continue
                         if (unit["typeId"] != host["typeId"] ||
                             unit.id("ownerPlayerId") == id && unit["unitActions"] != host["unitActions"])
                             throw Incomplete("unit-action-player", "Projected form or owner action state differs from authority")

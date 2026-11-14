@@ -69,9 +69,10 @@ def _run_windows(plan,config,output):
     def record(row):
         with (output/'input.jsonl').open('a',encoding='utf8') as stream:
             stream.write(json.dumps(dict(unix=time.time(),**row),ensure_ascii=True)+'\n')
-    def layout():return wait_layout(wait,current_generation,size)
+    def layout(enabled_action=None):return wait_layout(wait,current_generation,size,enabled_action=enabled_action)
     def click_action(action_id):
-        drawn=layout();target=drawn.action(action_id)
+        drawn=layout('start-match') if action_id=='start-match' else layout()
+        target=drawn.action(action_id)
         record(dict(kind='drawn-action-target',actionId=action_id,layout=drawn.frame,target=target))
         guard.click(*target)
     def world(x,y):return layout().world(x,y)

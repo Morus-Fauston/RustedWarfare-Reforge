@@ -15,7 +15,7 @@ permissions:
   contents: read
 jobs:
   public-first-loop:
-    if: (github.event_name == 'pull_request' && !(vars.PUBLIC_PR_PARALLEL == 'true' || (vars.PUBLIC_PR_PARALLEL != 'false' && github.event.pull_request.head.repo.full_name == github.repository && github.head_ref == 'codex/phase-six-asp-test' && github.base_ref == 'main'))) || inputs.execution == 'serial'
+    if: (github.event_name == 'pull_request' && !(vars.PUBLIC_PR_PARALLEL == 'true' || (vars.PUBLIC_PR_PARALLEL != 'false' && github.event.pull_request.head.repo.full_name == github.repository && contains(fromJSON('["codex/phase-six-asp-test", "codex/phase-six-asp-formal"]'), github.head_ref) && github.base_ref == 'main'))) || inputs.execution == 'serial'
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
@@ -80,7 +80,7 @@ jobs:
             SimulationTest/build/public-pr/*.log
           if-no-files-found: error
   public-prepare:
-    if: (github.event_name == 'workflow_dispatch' && inputs.execution == 'parallel') || (github.event_name == 'pull_request' && (vars.PUBLIC_PR_PARALLEL == 'true' || (vars.PUBLIC_PR_PARALLEL != 'false' && github.event.pull_request.head.repo.full_name == github.repository && github.head_ref == 'codex/phase-six-asp-test' && github.base_ref == 'main')))
+    if: (github.event_name == 'workflow_dispatch' && inputs.execution == 'parallel') || (github.event_name == 'pull_request' && (vars.PUBLIC_PR_PARALLEL == 'true' || (vars.PUBLIC_PR_PARALLEL != 'false' && github.event.pull_request.head.repo.full_name == github.repository && contains(fromJSON('["codex/phase-six-asp-test", "codex/phase-six-asp-formal"]'), github.head_ref) && github.base_ref == 'main')))
     runs-on: ubuntu-latest
     timeout-minutes: 25
     outputs:
@@ -237,7 +237,7 @@ jobs:
           ARTIFACT_DIGEST: ${{ steps.evidence.outputs.artifact-digest }}
         run: printf '%s_artifact=%s\n' "${SHARD//-/_}" "$ARTIFACT_DIGEST" >> "$GITHUB_OUTPUT"
   public-coverage:
-    if: always() && ((github.event_name == 'workflow_dispatch' && inputs.execution == 'parallel') || (github.event_name == 'pull_request' && (vars.PUBLIC_PR_PARALLEL == 'true' || (vars.PUBLIC_PR_PARALLEL != 'false' && github.event.pull_request.head.repo.full_name == github.repository && github.head_ref == 'codex/phase-six-asp-test' && github.base_ref == 'main'))))
+    if: always() && ((github.event_name == 'workflow_dispatch' && inputs.execution == 'parallel') || (github.event_name == 'pull_request' && (vars.PUBLIC_PR_PARALLEL == 'true' || (vars.PUBLIC_PR_PARALLEL != 'false' && github.event.pull_request.head.repo.full_name == github.repository && contains(fromJSON('["codex/phase-six-asp-test", "codex/phase-six-asp-formal"]'), github.head_ref) && github.base_ref == 'main'))))
     needs: [public-prepare, public-mechanisms, public-scenarios]
     permissions:
       contents: read

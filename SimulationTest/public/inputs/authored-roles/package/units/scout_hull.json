@@ -1,0 +1,25 @@
+{
+  "format": "rw-reforge.unit.v2",
+  "core": {
+    "maxHp": 400,
+    "radius": 15,
+    "displayRadius": 15,
+    "price": 450,
+    "buildSpeed": 0.01,
+    "fogOfWarSightRange": 20,
+    "name": "scout_hull"
+  },
+  "graphics": {
+    "image": "ship.png",
+    "image_wreak": "ship_dead.png"
+  },
+  "movement": {
+    "movementType": "LAND",
+    "moveSpeed": 0.8,
+    "moveAccelerationSpeed": 0.05,
+    "moveDecelerationSpeed": 0.05,
+    "maxTurnSpeed": 1.5,
+    "turnAcceleration": 0.1
+  },
+  "roles": {}
+}

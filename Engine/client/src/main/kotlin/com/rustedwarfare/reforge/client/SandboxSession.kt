@@ -37,15 +37,38 @@ class SandboxSession(scenario: Scenario, private val evidence: ClientEvidence = 
     private val commandWorld = context.world
     private var commandSequence = 0L
     private val pendingSandboxRequests = linkedMapOf<Long, SandboxCommandRequest>()
+    private val bridgeSequences = linkedMapOf<String, Long>()
+    private val deployedProjectileIds = linkedSetOf<Long>()
     var lastSandboxReceipt: SandboxCommandReceipt? = null
         private set
     var sandboxCommandFeedback: String = SandboxCommands.HELP
         private set
     val canDeploy: Boolean get() = isOpen && options.deploymentEnabled
 
-    fun submitSandboxCommand(text: String): SandboxCommandReceipt {
+    fun submitSandboxCommand(text: String): SandboxCommandReceipt = submitSandboxRequest { sequence ->
+        SandboxCommandRequest(sequence, commandWorld, generation, text)
+    }
+
+    fun submitSandboxBatch(batch: SandboxCommand.SpawnBatch): SandboxCommandReceipt = submitSandboxRequest { sequence ->
+        SandboxCommandRequest(sequence, commandWorld, generation, batch)
+    }
+
+    fun submitSandboxProjectiles(batch: SandboxCommand.ProjectileBatch): SandboxCommandReceipt = submitSandboxRequest { sequence ->
+        SandboxCommandRequest(sequence, commandWorld, generation, batch)
+    }
+
+    internal fun submitSandboxProjectiles(requestId: String, batch: SandboxCommand.ProjectileBatch): SandboxCommandReceipt {
+        val sequence = bridgeSequences[requestId]
+        if (sequence != null) return commandHost.submit(SandboxCommandRequest(sequence, commandWorld, generation, batch))
+        val receipt = submitSandboxProjectiles(batch)
+        if (receipt.status == SandboxCommandStatus.QUEUED || commandHost.receipt(receipt.sequence) != null)
+            bridgeSequences[requestId] = receipt.sequence
+        return receipt
+    }
+
+    private fun submitSandboxRequest(requestFor: (Long) -> SandboxCommandRequest): SandboxCommandReceipt {
         commandSequence = Math.incrementExact(commandSequence)
-        val request = SandboxCommandRequest(commandSequence, commandWorld, generation, text)
+        val request = requestFor(commandSequence)
         val result = commandHost.submit(request)
         if (result.status == SandboxCommandStatus.QUEUED) pendingSandboxRequests[result.sequence] = request
         recordSandboxReceipt(request, result)
@@ -54,12 +77,16 @@ class SandboxSession(scenario: Scenario, private val evidence: ClientEvidence = 
 
     private fun recordSandboxReceipt(request: SandboxCommandRequest, result: SandboxCommandReceipt) {
         lastSandboxReceipt = result
+        deployedProjectileIds.addAll(result.projectileIds.values)
         sandboxCommandFeedback = when (result.status) {
             SandboxCommandStatus.HELP -> SandboxCommands.HELP
             SandboxCommandStatus.QUEUED -> "Queued for next simulation step"
-            SandboxCommandStatus.APPLIED -> "Spawned ${checkNotNull(result.unitId)}"
+            SandboxCommandStatus.APPLIED -> if (result.unitId != null) "Spawned ${result.unitId}"
+                else if (result.projectileIds.isNotEmpty()) "Deployed ${result.projectileIds.size} projectiles"
+                else "Spawned ${result.generated.size} units"
             SandboxCommandStatus.REJECTED -> "Rejected: ${result.code}" +
-                (result.errorPosition?.let { " at character $it" } ?: "")
+                (result.errorPosition?.let { " at character $it" } ?: "") +
+                (result.failedEntry?.let { " in entry ${it + 1}" } ?: "")
         }
         evidence.recordWhenEnabled("sandbox-command") {
             val command = result.command as? SandboxCommand.Spawn
@@ -69,9 +96,13 @@ class SandboxSession(scenario: Scenario, private val evidence: ClientEvidence = 
                 "parameters" to command?.let { mapOf("type" to it.typeId, "x" to it.position.x,
                     "y" to it.position.y, "owner" to it.ownerPlayerId, "heading" to it.heading,
                     "state" to it.state.name.lowercase(java.util.Locale.ROOT)) },
-                "unitId" to result.unitId, "code" to result.code, "errorPosition" to result.errorPosition)
+                "unitId" to result.unitId, "generated" to result.generated, "failedEntry" to result.failedEntry,
+                "projectileIds" to result.projectileIds.takeIf { it.isNotEmpty() },
+                "code" to result.code, "errorPosition" to result.errorPosition)
         }
     }
+
+    internal fun sandboxReceipt(sequence: Long): SandboxCommandReceipt? = commandHost.receipt(sequence)
 
     private var terrainKnowledge: List<com.rustedwarfare.reforge.core.knowledge.CellKnowledge>? = null
     private var latestFrame: SandboxFrame? = null
@@ -126,7 +157,8 @@ class SandboxSession(scenario: Scenario, private val evidence: ClientEvidence = 
         private set
 
     private var actionNumber = 0L
-    private var nextStep = 0L
+    var nextStep = 0L
+        private set
     var isOpen = true
         private set
     var feedback = "Ready"
@@ -208,7 +240,7 @@ class SandboxSession(scenario: Scenario, private val evidence: ClientEvidence = 
             rejectedFeedback = false
             return null
         }
-        return dispatch { worker -> ReclaimUnitAction("click-${++actionNumber}", "p1", worker, target.unitId, context.world, append = append) }
+        return dispatch(applicable = { worker -> canMaintainTarget(worker, target, reclaim = true) }) { worker -> ReclaimUnitAction("click-${++actionNumber}", "p1", worker, target.unitId, context.world, append = append) }
     }
 
     fun repairTargetAt(position: Position): String? {
@@ -226,7 +258,9 @@ class SandboxSession(scenario: Scenario, private val evidence: ClientEvidence = 
         if (target == null) {
             feedback = "Select repairable unit"; rejectedFeedback = false; return null
         }
-        return dispatch { worker -> RepairUnitAction("click-${++actionNumber}", "p1", worker, target.unitId, context.world, append = append) }
+        return dispatch(applicable = { worker -> canMaintainTarget(worker, target, reclaim = false, explicit = true) }) { worker ->
+            RepairUnitAction("click-${++actionNumber}", "p1", worker, target.unitId, context.world, append = append)
+        }
     }
 
     fun build(typeId: String, position: Position, append: Boolean = false): ActionResult? {
@@ -258,20 +292,26 @@ class SandboxSession(scenario: Scenario, private val evidence: ClientEvidence = 
             unit.unitId in selectedIds && controllable(unit) && unit.typeId == "builder" &&
                 scenario.unitDefinitions.getValue(unit.typeId).builder != null }
 
-    private fun maintenanceTarget(target: UnitObservation, reclaim: Boolean, explicit: Boolean = false): Boolean {
-        if (!target.alive || target.carriedBy != null || target.attachment != null || target.health == null) return false
-        val definition = scenario.unitDefinitions.getValue(target.typeId)
-        if (hasSelectedNativeMaintainer()) {
-            if (reclaim) return target.ownerPlayerId == "p1" && (definition.build != null ||
-                definition.construction != null || definition.reclaimPrice != null ||
-                scenario.maintenanceContract?.basePrices?.containsKey(target.typeId) == true)
-            if (explicit) return true
-            val ownTeam = scenario.players.single { it.playerId == "p1" }.teamId
-            return target.ownerPlayerId == "p1" || ownTeam != null &&
-                scenario.players.single { it.playerId == target.ownerPlayerId }.teamId == ownTeam
-        }
-        return target.ownerPlayerId == "p1" && definition.building != null &&
-            scenario.maintenanceContract?.basePrices?.containsKey(target.typeId) == true
+    private fun maintenanceTarget(target: UnitObservation, reclaim: Boolean, explicit: Boolean = false): Boolean =
+        observation.units.any { it.unitId in selectedIds && canMaintainTarget(it, target, reclaim, explicit) }
+
+    private fun canMaintainTarget(worker: UnitObservation, target: UnitObservation, reclaim: Boolean, explicit: Boolean = false): Boolean {
+        if (!controllable(worker) || worker.carriedBy != null || worker.constructionProgress < 1f ||
+            worker.unitId == target.unitId || !target.alive || target.carriedBy != null ||
+            target.attachment != null || target.health == null) return false
+        val workerType = scenario.unitDefinitions.getValue(worker.typeId)
+        val targetType = scenario.unitDefinitions.getValue(target.typeId)
+        val stockBuilding = scenario.maintenanceContract?.basePrices?.containsKey(target.typeId) == true
+        if (workerType.maintenance == null)
+            return worker.typeId == "builder" && workerType.builder != null && target.ownerPlayerId == "p1" &&
+                targetType.building != null && stockBuilding
+        val authored = workerType.authoredMaintenance
+        if (reclaim) return authored?.canReclaim != false && target.ownerPlayerId == "p1" &&
+            (targetType.build != null || targetType.construction != null || targetType.reclaimPrice != null || stockBuilding)
+        val ownTeam = scenario.players.single { it.playerId == "p1" }.teamId
+        val friendly = target.ownerPlayerId == "p1" || ownTeam != null &&
+            scenario.players.single { it.playerId == target.ownerPlayerId }.teamId == ownTeam
+        return authored?.let { friendly && it.canRepair(targetType) } ?: (explicit || friendly)
     }
 
     /** Uses only the player's published terrain and visible units, never placement truth. */
@@ -336,14 +376,13 @@ class SandboxSession(scenario: Scenario, private val evidence: ClientEvidence = 
         apply(CancelUpgradeAction("click-${++actionNumber}", "p1", checkNotNull(selectedId), it.actionKey, context.world))
     }
 
-    fun move(position: Position): ActionResult? = dispatch { id ->
+    fun move(position: Position): ActionResult? = dispatch(applicable = ::canMove) { id ->
         MoveAction("click-${++actionNumber}", "p1", id, position, context.world)
     }
-    val canPatrol: Boolean get() = isOpen && observation.units.any {
-        it.unitId in selectedIds && controllable(it) && scenario.unitDefinitions.getValue(it.typeId).movement.type !=
-            com.rustedwarfare.reforge.core.content.MovementType.NONE
-    }
-    fun patrol(position: Position, append: Boolean, members: Set<String> = selectedIds): ActionResult? = dispatch(members) { id ->
+    val canPatrol: Boolean get() = isOpen && observation.units.any { it.unitId in selectedIds && canMove(it) }
+    private fun canMove(unit: UnitObservation): Boolean = controllable(unit) && unit.carriedBy == null &&
+        scenario.unitDefinitions.getValue(unit.typeId).movement.type != com.rustedwarfare.reforge.core.content.MovementType.NONE
+    fun patrol(position: Position, append: Boolean, members: Set<String> = selectedIds): ActionResult? = dispatch(members, ::canMove) { id ->
         PatrolAction("click-${++actionNumber}", "p1", id, position, append, context.world)
     }
     fun stop(): ActionResult? = dispatch { id ->
@@ -359,23 +398,30 @@ class SandboxSession(scenario: Scenario, private val evidence: ClientEvidence = 
         if (!isOpen || actionMenu.unitActions.none { it.name == name && it.available && it.groundTargeted }) return null
         val selected = if (name == "launchNuke") nuclearLaunchMember(observation, selectedIds)
             else observation.units.singleOrNull { it.unitId == selectedId }
-        val source = if (name == "blink") {
-            val overview = selected?.attachmentOverview ?: return null
+        val definition = selected?.let { scenario.unitDefinitions.getValue(it.typeId) }
+        val source = if (name == "blink" && selected?.attachmentOverview != null) {
+            val overview = checkNotNull(selected.attachmentOverview)
             val slot = overview.slots.singleOrNull { it.number == overview.selectedSlot } ?: return null
-            observation.units.singleOrNull { it.unitId == slot.unitId }?.position ?: return null
-        } else selected?.position ?: return null
-        val x = target.x.toFloat() - source.x.toFloat(); val y = target.y.toFloat() - source.y.toFloat()
+            observation.units.singleOrNull { it.unitId == slot.unitId } ?: return null
+        } else selected ?: return null
+        val origin = source.position
+        if (name == "setRally") return GroundActionPreview(origin, target, target.x.isFinite() && target.y.isFinite() &&
+            target.x in 0.0..(scenario.map.widthTiles.toDouble() * scenario.map.tileWidth) &&
+            target.y in 0.0..(scenario.map.heightTiles.toDouble() * scenario.map.tileHeight), 0.0, 0.0, 0.0)
+        val x = target.x.toFloat() - origin.x.toFloat(); val y = target.y.toFloat() - origin.y.toFloat()
         val squared = x * x + y * y
-        if (name == "launchNuke") return GroundActionPreview(source, target, squared.isFinite() &&
+        if (name == "launchNuke") return GroundActionPreview(origin, target, squared.isFinite() &&
             squared >= 260f * 260f && squared <= 9999f * 9999f)
         val blink = name == "blink"
-        val range = if (blink) 700.0 else scenario.unitDefinitions.getValue(checkNotNull(selected).typeId).customActions
-            ?.actions?.singleOrNull { it.name == name }?.groundLaunch?.range ?: return null
+        val sourceDefinition = scenario.unitDefinitions.getValue(source.typeId)
+        val range = if (blink) (sourceDefinition.attachmentModule?.parentBlink ?: sourceDefinition.blink)?.range
+            else definition?.customActions?.actions?.singleOrNull { it.name == name }?.groundLaunch?.range
+        if (range == null) return null
         val map = scenario.map
-        val column = kotlin.math.floor(target.x / map.tileWidth).toInt()
-        val row = kotlin.math.floor(target.y / map.tileHeight).toInt()
-        val inRange = squared.isFinite() && squared <= range * range
-        val openGround = inRange &&
+        val (column, row) = if (blink) BlinkTarget.cell(target, map) else
+            kotlin.math.floor(target.x / map.tileWidth).toInt() to kotlin.math.floor(target.y / map.tileHeight).toInt()
+        val blinkError = if (blink) BlinkTarget.check(origin, target, range, map) else null
+        val openGround = if (blink) blinkError == null else squared.isFinite() && squared <= range * range &&
             column in 0 until map.widthTiles && row in 0 until map.heightTiles && !map.hoverBlocking.isBlocked(column, row)
         // Use the live collision footprint of observed buildings without revealing hidden units.
         val occupied = openGround && observation.units.any { unit ->
@@ -385,8 +431,8 @@ class SandboxSession(scenario: Scenario, private val evidence: ClientEvidence = 
             } == true
         }
         val valid = openGround && !occupied
-        return GroundActionPreview(source, target, valid, 0.0, range, 0.0,
-            if (valid || !blink) null else if (inRange) "action-target-impassable" else "action-target-out-of-range")
+        return GroundActionPreview(origin, target, valid, 0.0, range, 0.0,
+            if (valid || !blink) null else blinkError?.code ?: "action-target-impassable")
     }
 
     internal fun groundTargetRejected(reason: String) {
@@ -408,14 +454,15 @@ class SandboxSession(scenario: Scenario, private val evidence: ClientEvidence = 
             apply(UnloadAction("click-${++actionNumber}", "p1", checkNotNull(selectedId), unloading, context.world))
         }
 
-    private fun dispatch(selectionAtPress: Set<String> = selectedIds, action: (String) -> Action): ActionResult? {
+    private fun dispatch(selectionAtPress: Set<String> = selectedIds, applicable: (UnitObservation) -> Boolean = ::controllable,
+                         action: (String) -> Action): ActionResult? {
         val members = selectionAtPress.sorted()
         val revision = selectionRevision
         val results = mutableListOf<SelectionCommandMember>()
         var skipped = 0
         lastCommandBatch = null
         for (id in members) {
-            if (members.size > 1 && observation.units.none { it.unitId == id && controllable(it) }) { skipped++; continue }
+            if (members.size > 1 && observation.units.none { it.unitId == id && applicable(it) }) { skipped++; continue }
             results += SelectionCommandMember(id, apply(action(id)))
         }
         val batch = SelectionCommandBatch(results, skipped)
@@ -453,7 +500,9 @@ class SandboxSession(scenario: Scenario, private val evidence: ClientEvidence = 
         }
         if (hasSelectedMaintainer() && target != null && maintenanceTarget(target, reclaim = false) &&
             (target.constructionProgress < 1f || target.health!! < target.maxHealth!!))
-            return dispatch { worker -> RepairUnitAction("click-${++actionNumber}", "p1", worker, target.unitId, context.world, append = append) }
+            return dispatch(applicable = { worker -> canMaintainTarget(worker, target, reclaim = false) }) { worker ->
+                RepairUnitAction("click-${++actionNumber}", "p1", worker, target.unitId, context.world, append = append)
+            }
         if (target != null && target.ownerPlayerId == "p1" && target.constructionProgress < 1f &&
             hasSelectedConstructor(target.typeId))
             return dispatch { worker -> ResumeConstructionAction("click-${++actionNumber}", "p1", worker, target.unitId, context.world, append = append) }
@@ -474,6 +523,13 @@ class SandboxSession(scenario: Scenario, private val evidence: ClientEvidence = 
                 pendingSandboxRequests.remove(sequence)
             }
         }
+        if (canDeploy && deployedProjectileIds.isNotEmpty()) evidence.recordWhenEnabled("sandbox-projectile-sample") {
+            val samples = commandHost.projectileEvidence(deployedProjectileIds)
+            deployedProjectileIds.retainAll(samples.filter { it.kind == "live" }.map { it.objectId }.toSet())
+            mapOf("generation" to generation, "stepIndex" to (nextStep - 1),
+                "projectiles" to samples.map { mapOf("objectId" to it.objectId, "kind" to it.kind,
+                    "x" to it.position.x, "y" to it.position.y, "interceptorUnitId" to it.interceptorUnitId) })
+        }
         publishFrame()
         observation.events.lastOrNull { it.kind == "unit-produced" }?.let { event ->
             observation.units.firstOrNull { it.unitId == event.unitId && it.ownerPlayerId == observation.playerId }?.let { unit ->
@@ -485,15 +541,26 @@ class SandboxSession(scenario: Scenario, private val evidence: ClientEvidence = 
     }
 
     fun select(position: Position, mode: SelectionMode = SelectionMode.REPLACE) {
+        selectAt(unitAt(position, selectionOnly = true), mode)
+        evidence.recordWhenEnabled("selection") { mapOf("selectedId" to selectedId, "selectedIds" to selectedIds.sorted(),
+            "selectionRevision" to selectionRevision, "world" to position.fields()) }
+    }
+
+    fun selectDeployedUnit(unitId: String): Boolean {
+        if (!canDeploy || observation.units.none { it.unitId == unitId && controllable(it) }) return false
+        selectAt(unitId, SelectionMode.REPLACE)
+        evidence.recordWhenEnabled("selection") { mapOf("selectedId" to selectedId, "selectedIds" to selectedIds.sorted(),
+            "selectionRevision" to selectionRevision, "source" to "deployment-alias") }
+        return selectedId == unitId
+    }
+
+    private fun selectAt(id: String?, mode: SelectionMode) {
         rejectedFeedback = false
-        val id = unitAt(position, selectionOnly = true)
         if (id != null) {
             if (apply(SelectAction("click-${++actionNumber}", "p1", id, context.world)) is ActionResult.Accepted)
                 selection.select(listOf(id), mode)
         } else if (mode == SelectionMode.REPLACE) selection.select(emptyList())
         feedback = selectedId?.let { "Selected $it" } ?: "No selection"
-        evidence.recordWhenEnabled("selection") { mapOf("selectedId" to selectedId, "selectedIds" to selectedIds.sorted(),
-            "selectionRevision" to selectionRevision, "world" to position.fields()) }
     }
 
     fun tap(position: Position) {

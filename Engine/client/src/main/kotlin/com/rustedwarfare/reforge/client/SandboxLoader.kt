@@ -1,6 +1,8 @@
 package com.rustedwarfare.reforge.client
 
 import com.rustedwarfare.reforge.core.sim.Scenario
+import com.rustedwarfare.reforge.core.sim.InitResult
+import com.rustedwarfare.reforge.core.sim.SimulationContext
 import com.rustedwarfare.reforge.core.content.ContentSourceIdentity
 import com.rustedwarfare.reforge.core.content.ContentResult
 import java.nio.file.Path
@@ -32,7 +34,12 @@ class SandboxLoader internal constructor(private val load: ((Path) -> Scenario)?
         begin(choice.root, choice.content, prepareVisuals, choice)
     }
 
-    private fun begin(root: Path, contentPack: ContentPackChoice?, prepareVisuals: (() -> PreparedVisualAssets)?, testScenario: TestScenarioChoice? = null) {
+    internal fun qualify(root: Path, contentPack: ContentPackChoice?) {
+        begin(root, contentPack, null, qualify = true)
+    }
+
+    private fun begin(root: Path, contentPack: ContentPackChoice?, prepareVisuals: (() -> PreparedVisualAssets)?,
+                      testScenario: TestScenarioChoice? = null, qualify: Boolean = false) {
         cancel()
         pending = executor.submit<Result<LoadedSandbox>> { runCatching {
             val startedNanos = System.nanoTime()
@@ -42,11 +49,17 @@ class SandboxLoader internal constructor(private val load: ((Path) -> Scenario)?
                 else if (checked != null) PreparedControlledScenario(contentPackScenario(root, checked), emptyList())
                 else load?.let { PreparedControlledScenario(it(root), emptyList()) } ?: ControlledScenario.prepare(root)
             val scene = prepared.scenario
+            if (qualify) when (val initialization = SimulationContext.initialize(scene)) {
+                is InitResult.Accepted -> initialization.context.close()
+                is InitResult.Rejected -> error("${initialization.error.code}: ${initialization.error.message}")
+            }
             val scenarioPreparedNanos = System.nanoTime()
             val visuals = prepareVisuals?.invoke()?.let { before -> checked?.let { contentPackVisuals(before, it) } ?: before }
             val visualsPreparedNanos = System.nanoTime()
             val resources = SandboxRenderResources.from(scene)
-            val renderResources = visuals?.let { resources.bindVisuals(it) } ?: resources
+            val renderResources = visuals?.let {
+                resources.bindVisuals(it, useScenarioTerrain = testScenario == null && checked?.content?.openingPack != null)
+            } ?: resources
             prepared.verifyStable()
             checked?.content?.verifyStable()?.let { stable ->
                 if (stable is ContentResult.Failure) error(stable.error.describe())

@@ -107,7 +107,7 @@ class ContentPackLoadTest {
             val unit = JsonValue.readJSON(Files.readString(input)).asObject()
             unit.get("core").asObject().set("dont_load", true)
             Files.writeString(base, "# Reused cross-format parent\n" + unit.toString())
-            Files.writeString(input, """{"format":"rw-reforge.unit.v1","copyFrom":["base.hjson"],"core":{"maxHp":300}}""")
+            Files.writeString(input, """{"format":"rw-reforge.unit.v2","copyFrom":["base.hjson"],"core":{"maxHp":300}}""")
             val loaded = assertIs<ContentResult.Success<LoadedContentPack>>(ContentLoader.loadContentPack(manifest)).value
             assertEquals(300.0, loaded.units.getValue("amber_scout").maximumHealth)
             assertTrue(base in loaded.sources.map { it.path })

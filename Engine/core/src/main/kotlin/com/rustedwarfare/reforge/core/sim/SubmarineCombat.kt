@@ -16,11 +16,11 @@ internal object SubmarineCombat {
     }
 
     fun range(unit: MutableUnit): Double =
-        if (SubmarineMotion.submerged(unit)) 180.0 else checkNotNull(unit.definition.combat).attackRange
+        if (unit.definition.submarine != null && UnitLocomotion.isSubmerged(unit)) 180.0 else checkNotNull(unit.definition.combat).attackRange
 
     fun profile(unit: MutableUnit): CombatProfile? {
         val surface = unit.definition.combat ?: return null
-        return if (SubmarineMotion.submerged(unit)) surface.copy(attackRange = 180.0,
+        return if (unit.definition.submarine != null && UnitLocomotion.isSubmerged(unit)) surface.copy(attackRange = 180.0,
             projectile = ProjectileProfile(42.0, 250.0, 1.3), fireSound = null) else surface
     }
 }

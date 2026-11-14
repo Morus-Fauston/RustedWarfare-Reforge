@@ -14,6 +14,7 @@ class LoadedContentSet internal constructor(packages: List<LoadedContentPack>, u
     val units: Map<String, UnitDefinition> = Collections.unmodifiableMap(LinkedHashMap(units))
     val provenance: Map<String, ContentProvenance> = Collections.unmodifiableMap(LinkedHashMap(provenance))
     val sources: List<ContentSourceIdentity> = Collections.unmodifiableList(ArrayList(sources))
+    val openingPack: LoadedContentPack? = this.packages.singleOrNull { it.opening != null }
 
     fun verifyStable(): ContentResult<Unit> {
         for (pack in packages) when (val result = pack.verifyStable()) {

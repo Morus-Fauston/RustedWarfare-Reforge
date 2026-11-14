@@ -18,7 +18,8 @@ open class OwnedActionInput(
     private val submit: (SandboxSession, InputActionIdentity, Int) -> Unit,
     private val changed: () -> Unit = {},
     private val hovered: (Boolean) -> Unit = {},
-    private val notifyDragCancel: Boolean = false
+    private val notifyDragCancel: Boolean = false,
+    private val hitAt: (InputEvent) -> Boolean = { true }
 ) : InputListener() {
     private data class Press(val session: SandboxSession, val revision: Long, val primary: String?,
         val types: Map<String, String>, val action: InputActionIdentity, val button: Int)
@@ -33,7 +34,7 @@ open class OwnedActionInput(
     }
 
     override fun touchDown(event: InputEvent, x: Float, y: Float, pointer: Int, button: Int): Boolean {
-        if (!active() || pointer != 0 || button !in buttons || press != null) return false
+        if (!active() || pointer != 0 || button !in buttons || press != null || !hitAt(event)) return false
         val current = session()?.takeIf { it.isOpen } ?: return false
         val action = identity(current) ?: return false
         val types = selectedTypes(current) ?: return false
@@ -48,7 +49,7 @@ open class OwnedActionInput(
         event.handle()
         press = null
         val current = session()
-        if (active() && inside(event.listenerActor, x, y) && current === owned.session && current.isOpen &&
+        if (active() && inside(event.listenerActor, x, y) && hitAt(event) && current === owned.session && current.isOpen &&
             current.selectionRevision == owned.revision && current.selectedId == owned.primary &&
             selectedTypes(current) == owned.types && identity(current) == owned.action) {
             submit(current, owned.action, button)
@@ -57,7 +58,7 @@ open class OwnedActionInput(
     }
 
     override fun touchDragged(event: InputEvent, x: Float, y: Float, pointer: Int) {
-        if (cancelOnExit && pointer == 0 && press != null && !inside(event.listenerActor, x, y)) cancelDrag()
+        if (cancelOnExit && pointer == 0 && press != null && (!inside(event.listenerActor, x, y) || !hitAt(event))) cancelDrag()
     }
 
     override fun enter(event: InputEvent, x: Float, y: Float, pointer: Int, fromActor: Actor?) {

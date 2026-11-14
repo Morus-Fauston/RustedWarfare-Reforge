@@ -5,8 +5,10 @@ import java.nio.file.Path
 import kotlin.test.*
 
 class BomberFlightTest {
-    private fun bomber(): UnitDefinition {
+    private fun bomber(authored: Boolean = false): UnitDefinition {
         val fixtures = Path.of(checkNotNull(System.getProperty("public.fixtures.dir")))
+        if (authored) return authoredWeaponsRepresentative(fixtures.resolve("bomber-production/json/package"),
+            "bomber.json", "survey_bomber")
         val loaded = ContentLoader.loadContentPack(fixtures.resolve("bomber-production/ini/package"))
         return assertIs<ContentResult.Success<LoadedContentPack>>(loaded, loaded.toString()).value.units.getValue("bomber")
     }
@@ -42,7 +44,8 @@ class BomberFlightTest {
     }
 
     @Test fun an_airborne_drop_retains_its_ground_point_and_impacts_after_stop() = WaterTestScene.withMap { map ->
-        val bomber = bomber()
+        val bomber = bomber(authored = true)
+        assertEquals("survey_bomber", bomber.id)
         val target = UnitDefinition("ground-witness", "OwnedTarget", 6.0, 6.0, 1, bomber.imagePath, 1.0,
             WaterTestScene.unit(MovementType.LAND).movement, emptySet(), durability = DurabilityProfile(2000.0, null))
         val spawns = listOf(UnitSpawn("bomber", "p1", bomber.id, Position(120.0, 180.0), 90.0),

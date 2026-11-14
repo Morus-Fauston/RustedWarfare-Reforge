@@ -14,9 +14,24 @@ import com.rustedwarfare.reforge.client.VisualAssetSource
 import kotlin.test.assertIs
 
 class WindowsLaunchOptionsTest {
-    @Test fun a_default_launch_uses_the_paired_phase_six_scene_and_a_broken_default_disables_start() {
+    @Test fun ordinary_start_has_no_implicit_development_seed_or_diagnostics() {
         val root = java.nio.file.Path.of(checkNotNull(System.getProperty("public.fixtures.dir"))).parent.parent.parent
         val options = WindowsLaunchOptions.parse(emptyArray(), root)
+        assertNull(options.testScenarioSeed)
+        assertFalse(options.development)
+        assertFalse(options.diagnostics)
+        assertFalse(WindowsLaunchOptions.parse(arrayOf("--inputs", "local"), root).development)
+        assertTrue(WindowsLaunchOptions.parse(arrayOf("--evidence", "local-run"), root).diagnostics)
+        assertFailsWith<IllegalArgumentException> {
+            WindowsLaunchOptions.parse(arrayOf("--development", "false"), root)
+        }
+    }
+
+    @Test fun an_explicit_development_launch_uses_the_paired_scene_and_a_broken_seed_disables_start() {
+        val root = java.nio.file.Path.of(checkNotNull(System.getProperty("public.fixtures.dir"))).parent.parent.parent
+        val options = WindowsLaunchOptions.parse(arrayOf("--development", "true"), root)
+        assertTrue(options.development)
+        assertTrue(options.diagnostics)
         assertEquals("RustedWarfare-Reforge | Phase VI A sandbox", options.title)
         val seed = root.resolve("SimulationTest/public/scenarios/phase-six-a-json.json")
         assertEquals(seed, options.testScenarioSeed)
@@ -56,7 +71,7 @@ class WindowsLaunchOptionsTest {
     }
     @Test fun a_paired_default_can_reopen_with_a_fresh_wallet_and_keeps_its_files() {
         val repository = java.nio.file.Path.of(checkNotNull(System.getProperty("public.fixtures.dir"))).parent.parent.parent
-        val options = WindowsLaunchOptions.parse(emptyArray(), repository)
+        val options = WindowsLaunchOptions.parse(arrayOf("--development", "true"), repository)
         val menu = com.rustedwarfare.reforge.client.TestScenarioMenu()
         menu.choose(requireNotNull(options.testScenarioSeed))
         val choice = requireNotNull(menu.choice)

@@ -11,7 +11,14 @@ internal object UpgradeRules {
     fun validate(input: Scenario, registration: UpgradeRegistration = UpgradeRegistration()): SimulationError? {
         fun invalid() = SimulationError("unsupported-upgrade", "Expected a complete finite ordinary upgrade registration")
         for ((key, source) in input.unitDefinitions) {
+            if (source.className == "AuthoredEconomicBuilding") {
+                if (input.economyContract == null || key != source.id ||
+                    com.rustedwarfare.reforge.core.content.AuthorEconomicRules.invalidAction(source, input.unitDefinitions) != null)
+                    return invalid()
+                continue
+            }
             val profile = source.upgrades ?: continue
+            if (profile.actions.any { it.completionCredits != 0L }) return invalid()
             if (source.className == "AuthoredBuilding") {
                 val target = profile.actions.singleOrNull()?.targetTypeId?.let(input.unitDefinitions::get)
                     ?: return invalid()

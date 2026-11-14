@@ -2,29 +2,57 @@ package com.rustedwarfare.reforge.core.sim
 
 enum class SandboxInitialState { READY, DAMAGED }
 
+/** Host identities for explicitly enabled offline test evidence only. */
+data class SandboxProjectileEvidence(val objectId: Long, val kind: String, val position: Position,
+    val interceptorUnitId: String? = null)
+
 sealed interface SandboxCommand {
     data object Help : SandboxCommand
     data class Spawn(val typeId: String, val position: Position, val ownerPlayerId: String,
                      val heading: Double = 0.0, val state: SandboxInitialState = SandboxInitialState.READY) : SandboxCommand
+    data class Deployment(val alias: String, val spawn: Spawn)
+    data class SpawnBatch(val entries: List<Deployment>) : SandboxCommand
+    data class ProjectileDeployment(val alias: String, val sourceUnitId: String, val targetUnitId: String,
+        val weapon: String?)
+    data class ProjectileBatch(val entries: List<ProjectileDeployment>) : SandboxCommand
 }
 
 sealed interface SandboxParseResult {
     data class Parsed(val command: SandboxCommand) : SandboxParseResult
     /** Character positions are one-based, including a missing argument just beyond the input. */
-    data class Rejected(val code: String, val position: Int) : SandboxParseResult
+    data class Rejected(val code: String, val position: Int, val failedEntry: Int? = null) : SandboxParseResult
 }
 
 /** Finite author commands shared by local UI, headless callers and command replay. */
 object SandboxCommands {
-    const val HELP = "/help\n/spawn <type> <x> <y> <owner> [heading=<angle>] [state=ready|damaged]"
+    const val HELP = "/help\n/spawn <type> <x> <y> <owner> [heading=<angle>] [state=ready|damaged]\n" +
+        "/spawn-batch <alias> <type> <x> <y> <owner> [options] | <alias> …"
+    internal const val MAX_BATCH_SIZE = 32
     private val identifier = Regex("[A-Za-z0-9._:-]+")
     private val token = Regex("\\S+")
 
     fun parse(text: String): SandboxParseResult {
-        fun reject(code: String, position: Int) = SandboxParseResult.Rejected(code, position)
+        fun reject(code: String, position: Int, entry: Int? = null) = SandboxParseResult.Rejected(code, position, entry)
         if (text.length > 512) return reject("input-too-long", 513)
         val lineBreak = text.indexOfFirst { it == '\n' || it == '\r' }
         if (lineBreak >= 0) return reject("single-line-required", lineBreak + 1)
+        val head = token.find(text)
+        if (head?.value == "/spawn-batch") {
+            val entries = mutableListOf<SandboxCommand.Deployment>()
+            var offset = head.range.last + 1
+            for ((index, part) in text.substring(offset).split('|').withIndex()) {
+                val alias = token.find(part) ?: return reject("missing-deployment-entry", offset + 1, index)
+                if (!validAlias(alias.value)) return reject("invalid-alias", offset + alias.range.first + 1, index)
+                val args = part.substring(alias.range.last + 1)
+                val spawn = parse("/spawn$args")
+                if (spawn is SandboxParseResult.Rejected)
+                    return reject(spawn.code, offset + alias.range.last + spawn.position - 5, index)
+                val parsed = (spawn as SandboxParseResult.Parsed).command as SandboxCommand.Spawn
+                entries += SandboxCommand.Deployment(alias.value, parsed)
+                offset += part.length + 1
+            }
+            return SandboxParseResult.Parsed(SandboxCommand.SpawnBatch(entries))
+        }
         val words = token.findAll(text).toList()
         if (words.isEmpty()) return reject("expected-command", 1)
         fun at(index: Int) = words[index].range.first + 1
@@ -57,4 +85,6 @@ object SandboxCommands {
         }
         return SandboxParseResult.Parsed(SandboxCommand.Spawn(words[1].value, Position(x, y), words[4].value, heading, state))
     }
+
+    internal fun validAlias(value: String): Boolean = value.length <= 64 && identifier.matches(value)
 }

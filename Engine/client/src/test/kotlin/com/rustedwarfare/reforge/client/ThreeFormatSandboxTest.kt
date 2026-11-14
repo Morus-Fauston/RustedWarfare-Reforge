@@ -86,7 +86,7 @@ class ThreeFormatSandboxTest {
                 assertTrue(conflict.contains("IDENTITY_CONFLICT") && conflict.contains("tank.json") && conflict.contains("tank.hjson"), conflict)
                 assertNull(loader.pollPrepared())
                 Files.delete(extra)
-                Files.writeString(author, "format: rw-reforge.unit.v1\ncopyFrom: [\"base.ini\"]\ncore: {maxHp:\"bad\"}")
+                Files.writeString(author, "format: rw-reforge.unit.v2\ncopyFrom: [\"base.ini\"]\ncore: {maxHp:\"bad\"}")
                 loader.request(root)
                 val invalid = assertNotNull(await(loader).exceptionOrNull()).message.orEmpty()
                 assertTrue(invalid.contains("MALFORMED_SYNTAX") && invalid.contains("maxHp"), invalid)
@@ -133,8 +133,8 @@ class ThreeFormatSandboxTest {
                 require(original.startsWith(root) && parent.startsWith(root))
                 Files.move(original, parent)
                 Files.writeString(root.resolve("units/tank.$format"), if (format == "json")
-                    """{"format":"rw-reforge.unit.v1","copyFrom":["base.ini"]}"""
-                else "format: rw-reforge.unit.v1\n# Formal Hjson author input\ncopyFrom: [\"base.ini\"]")
+                    """{"format":"rw-reforge.unit.v2","copyFrom":["base.ini"]}"""
+                else "format: rw-reforge.unit.v2\n# Formal Hjson author input\ncopyFrom: [\"base.ini\"]")
             }
             check(root)
         } finally {

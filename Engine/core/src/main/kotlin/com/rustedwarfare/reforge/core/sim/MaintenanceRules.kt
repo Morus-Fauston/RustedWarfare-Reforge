@@ -1,7 +1,6 @@
 package com.rustedwarfare.reforge.core.sim
 
 import com.rustedwarfare.reforge.core.content.MovementType
-import com.rustedwarfare.reforge.core.content.NuclearSiloKind
 
 /** The supported ordinary building set, separate from the builder's new-construction menu. */
 internal object MaintenanceRules {
@@ -10,8 +9,7 @@ internal object MaintenanceRules {
         "extractorT1" to 700L, "extractorT2" to 2100L, "extractorT3" to 6100L,
         "fabricatorT1" to 2200L, "fabricatorT2" to 6600L, "fabricatorT3" to 14100L, "repairbay" to 1500L,
         "seaFactory" to 1000L, "seaFactoryT2" to 3000L, "mechFactory" to 1000L, "mechFactoryT2" to 5000L,
-        "airFactory" to 1000L, "airFactoryT2" to 2500L, "experimentalLandFactory" to 11000L) +
-        NuclearSiloKind.entries.associate { it.unitId to it.constructionPrice }
+        "airFactory" to 1000L, "airFactoryT2" to 2500L, "experimentalLandFactory" to 11000L)
 
     fun validate(input: Scenario): SimulationError? {
         val contract = input.maintenanceContract ?: return null
@@ -22,7 +20,8 @@ internal object MaintenanceRules {
         for (key in buildingIds) {
             val definition = input.unitDefinitions.getValue(key)
             val hp = definition.maximumHealth
-            if (key != definition.id || prices[key] == null || contract.basePrices[key] != prices[key] ||
+            val price = definition.nuclearSilo?.kind?.constructionPrice ?: prices[key]
+            if (key != definition.id || price == null || contract.basePrices[key] != price ||
                 definition.movement.type != MovementType.NONE || hp == null || !hp.isFinite() || hp <= 0.0 ||
                 !hp.toFloat().isFinite()) return invalid()
         }

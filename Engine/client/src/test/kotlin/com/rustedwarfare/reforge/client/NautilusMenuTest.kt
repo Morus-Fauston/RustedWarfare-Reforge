@@ -24,6 +24,8 @@ class NautilusMenuTest {
             val manifest = assertNotNull(observed.transport)
             assertEquals(4, manifest.passengerCount)
             assertEquals(4, manifest.passengerIds!!.size)
+            assertContains(assertNotNull(desktopPrimaryHeading(s.actionMenu, observed, s.selectedIds)),
+                "Cargo ${manifest.occupiedSlots}/${manifest.capacity} · ${manifest.passengerCount}")
             assertEquals(1f, s.productionActions.single().progress)
             assertTrue(s.actionMenu.selectedUnitInfo!!.contains("Cargo 4 / 3"))
             assertTrue(s.actionMenu.selectedUnitInfo!!.contains("Production waiting: cargo full"))

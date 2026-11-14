@@ -1,6 +1,7 @@
 {
   "format": "rw-reforge.native-submarine.v1",
   "name": "attackSubmarine",
+  "locomotion": "water",
   "maxHp": 260,
   "radius": 15,
   "price": 800,

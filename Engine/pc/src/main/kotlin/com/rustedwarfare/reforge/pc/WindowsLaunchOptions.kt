@@ -16,23 +16,46 @@ data class WindowsLaunchOptions(
     val visualSource: VisualAssetSource? = null,
     val originalAssets: Path? = null,
     val testScenarioSeed: Path? = null,
+    val backgroundInput: Boolean = false,
+    val backgroundCompact: Boolean = false,
+    val development: Boolean = false,
+    val diagnostics: Boolean = false,
 ) {
     val hasVisualOverride: Boolean get() = visualSource != null || originalAssets != null
     companion object {
         fun parse(args: Array<String>, repoRoot: Path,
                   defaultScenarioSeed: Path = repoRoot.resolve("SimulationTest/public/scenarios/phase-six-a-json.json")): WindowsLaunchOptions {
-            require(args.size % 2 == 0) { "Usage: [--mode sandbox|demo] [--inputs PATH] [--evidence NEW_RUN_DIRECTORY] [--visuals placeholder|original] [--original-assets PATH]" }
+            require(args.size % 2 == 0) { "Usage: [--mode sandbox|demo] [--inputs PATH] [--development true] [--evidence NEW_RUN_DIRECTORY] [--visuals placeholder|original] [--original-assets PATH]" }
             val visualKeys = setOf("--visuals", "--original-assets")
             val pairs = args.toList().chunked(2)
             require(pairs.filter { it[0] in visualKeys }.map { it[0] }.distinct().size == pairs.count { it[0] in visualKeys }) {
                 "Duplicate visual asset option"
             }
             val options = pairs.associate { (key, value) ->
-                require(key in setOf("--mode", "--inputs", "--evidence") + visualKeys) { "Unknown option: $key" }
+                require(key in setOf("--mode", "--inputs", "--development", "--evidence", "--background-input", "--background-size") + visualKeys) { "Unknown option: $key" }
                 key to value
             }
             val mode = options["--mode"] ?: "sandbox"
             require(mode in setOf("sandbox", "demo")) { "Unknown mode: $mode" }
+            val development = options["--development"]?.let { value ->
+                require(value == "true" && mode == "sandbox" && pairs.count { it[0] == "--development" } == 1) {
+                    "Expected one --development true option in sandbox mode"
+                }
+                true
+            } ?: false
+            val backgroundInput = options["--background-input"]?.let { value ->
+                require(value == "true" && pairs.count { it[0] == "--background-input" } == 1) {
+                    "Expected one --background-input true option"
+                }
+                require(mode == "sandbox" && "--evidence" in options) { "Background input requires sandbox evidence" }
+                true
+            } ?: false
+            val backgroundCompact = options["--background-size"]?.let { value ->
+                require(backgroundInput && value == "960x640" && pairs.count { it[0] == "--background-size" } == 1) {
+                    "Expected one --background-size 960x640 option with background input"
+                }
+                true
+            } ?: false
             val runId = "run-" + DateTimeFormatter.ofPattern("yyyyMMdd'T'HHmmssSSS'Z'").withZone(ZoneOffset.UTC).format(Instant.now()) +
                 "-" + UUID.randomUUID().toString().take(8)
             fun resolve(path: String): Path = repoRoot.resolve(path).toAbsolutePath().normalize()
@@ -56,9 +79,13 @@ data class WindowsLaunchOptions(
             return WindowsLaunchOptions(mode,
                 explicitInputs?.let(::resolve) ?: seed.parent.resolve("../inputs/phase-six-a-sandbox/json").normalize(),
                 resolve(options["--evidence"] ?: "Engine/pc/build/sandbox-runs/$runId"),
-                runId, if (explicitInputs == null) "RustedWarfare-Reforge | Phase VI A sandbox"
-                else "RustedWarfare-Reforge | P002 Windows sandbox", visualSource, originalAssets,
-                if (explicitInputs == null) seed else null)
+                runId, when {
+                    explicitInputs != null -> "RustedWarfare-Reforge | P002 Windows sandbox"
+                    development -> "RustedWarfare-Reforge | Phase VI A sandbox"
+                    else -> "RustedWarfare-Reforge"
+                }, visualSource, originalAssets,
+                if (development && explicitInputs == null) seed else null, backgroundInput, backgroundCompact,
+                development, development || "--evidence" in options)
         }
     }
 }

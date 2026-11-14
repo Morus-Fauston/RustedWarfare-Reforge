@@ -39,14 +39,62 @@ class ModularSpiderBlinkTest {
             assertEquals("unit-action-not-cancellable", battle.reject("blinkQueued", cancel = true))
             assertIs<ActionResult.Accepted>(battle.context.submit(
                 StopAction("stop", "p1", "spider", battle.context.world)))
-            battle.until(215) { battle.parent.position == target }
+            var precedingFeet = checkNotNull(battle.parent.mechPose).legs
+            battle.until(215) {
+                if (battle.parent.position == target) true
+                else { precedingFeet = checkNotNull(battle.parent.mechPose).legs; false }
+            }
             assertEquals(identities, battle.slots.map { it.unitId })
             assertTrue(battle.context.observe().events.any { it.kind == "teleported" && it.unitId == "spider" })
+            val legs = checkNotNull(battle.parent.mechPose).legs
+            assertEquals(precedingFeet.map { it.index }, legs.map { it.index })
+            assertEquals(8, legs.size)
+            legs.zip(precedingFeet).forEach { (current, previous) ->
+                assertEquals(previous.foot.x + target.x - origin.x, current.foot.x, 0.001)
+                assertEquals(previous.foot.y + target.y - origin.y, current.foot.y, 0.001)
+            }
             val attached = battle.context.observe().units.filter { it.attachment?.parentUnitId == "spider" }
             assertEquals(6, attached.size)
             assertEquals(Position(652.0, 211.0), attached.single { it.unitId == identities[1] }.position)
         }
     }
+
+    @Test fun a_destroyed_unfinished_module_never_relays_its_pending_blink() =
+        withSpider(hostileWitness = true) { battle ->
+            battle.action("selectSlot2")
+            battle.action("buildBlink")
+            battle.tick()
+            val module = battle.slots[1].unitId
+            assertTrue(battle.slots[1].progress < 1f)
+            battle.action("blink", Position(620.0, 200.0))
+            assertTrue(battle.actions.queue.any { it.name == "blink" })
+            assertIs<ActionResult.Accepted>(battle.context.submit(
+                AttackAction("destroy-blink-module", "p2", "witness", module, battle.context.world)))
+            battle.until(220) { battle.slots[1].typeId == "modularSpider_emptySlot" }
+            assertTrue(battle.actions.queue.none { it.name in setOf("blink", "blinkQueued") })
+            repeat(215) { assertTrue(battle.tick().events.none { it.kind == "teleported" }) }
+            assertEquals(Position(180.0, 160.0), battle.parent.position)
+        }
+
+    @Test fun chassis_death_during_charge_clears_its_blink_and_attachments() =
+        withSpider(deployWitness = true) { battle ->
+            battle.action("selectSlot2")
+            battle.action("buildBlink")
+            battle.until(1050) { battle.slots[1].typeId == "modularSpider_blink" && battle.slots[1].progress == 1f }
+            val identities = battle.slots.map { it.unitId }
+            battle.action("selectSlot2")
+            battle.action("blink", Position(335.0, 160.0))
+            battle.tick()
+            assertTrue(battle.actions.queue.any { it.name == "blinkQueued" })
+            val witness = battle.deployWitness()
+            assertIs<ActionResult.Accepted>(battle.context.submit(
+                AttackAction("destroy-charging-chassis", "p2", witness, "spider", battle.context.world)))
+            battle.until(190) { !battle.parent.alive }
+            assertNull(battle.parent.attachmentOverview)
+            assertTrue(battle.context.observe().units.none { it.unitId in identities })
+            repeat(215) { assertTrue(battle.tick().events.none { it.kind == "teleported" }) }
+            assertEquals(Position(180.0, 160.0), battle.parent.position)
+        }
 
     @Test fun illegal_points_leave_the_queue_and_cooldown_clear_and_cancellation_does_not_message_parent() =
         withSpider { battle ->
@@ -286,22 +334,23 @@ class ModularSpiderBlinkTest {
         format: String = "ini",
         startingBalance: Long = 45000L,
         hostileWitness: Boolean = false,
+        deployWitness: Boolean = false,
         run: (Battle) -> Unit,
     ) = WaterTestScene.withMap { map ->
         val root = Path.of(checkNotNull(System.getProperty("public.fixtures.dir")))
         val loaded = ContentLoader.loadContentPack(root.resolve("modular-spider-start/$format/opening-package"))
         val definitions = assertIs<ContentResult.Success<LoadedContentPack>>(loaded, loaded.toString()).value.units
         val base = WaterTestScene.scenario(map, MovementType.OVER_CLIFF_WATER, Position(180.0, 160.0))
-        val land = WaterTestScene.unit(MovementType.LAND)
-        val witness = UnitDefinition("witness", "CustomUnitMetadata", 6.0, 6.0, 1, land.imagePath,
-            1.0, land.movement, emptySet(), 15,
+        val body = WaterTestScene.unit(if (deployWitness) MovementType.HOVER else MovementType.LAND)
+        val witness = UnitDefinition("witness", "CustomUnitMetadata", 6.0, 6.0, 1, body.imagePath,
+            1.0, body.movement, emptySet(), 15,
             durability = DurabilityProfile(20000.0, null),
-            combat = CombatProfile(20000.0, 78.0, 20.0, 0.0, 8.0, 2.0,
-                ProjectileProfile(4500.0, 80.0, 12.0), null, null, 1.0))
+            combat = CombatProfile(20000.0, if (deployWitness) 190.0 else 78.0, 20.0, 0.0, 8.0, 2.0,
+                ProjectileProfile(if (deployWitness) 12000.0 else 4500.0, 80.0, 12.0), null, null, 1.0))
         val spawn = UnitSpawn("spider", "p1", "modularSpider", Position(180.0, 160.0), 90.0)
         val scene = base.copy(
-            players = if (hostileWitness) base.players.map { it.copy(control = PlayerControl.LOCAL) } else base.players,
-            unitDefinitions = if (hostileWitness) definitions + (witness.id to witness) else definitions,
+            players = if (hostileWitness || deployWitness) base.players.map { it.copy(control = PlayerControl.LOCAL) } else base.players,
+            unitDefinitions = if (hostileWitness || deployWitness) definitions + (witness.id to witness) else definitions,
             units = if (hostileWitness) listOf(spawn, UnitSpawn("witness", "p2", witness.id, Position(390.0, 160.0), 270.0))
                 else listOf(spawn),
             economyContract = EconomyContract(mapOf("p1" to startingBalance, "p2" to 0L)),
@@ -309,11 +358,12 @@ class ModularSpiderBlinkTest {
                 else CombatContract(1245, -1, mapOf("spider" to 8L), 9L),
             automaticVision = KnowledgeRules(TerrainRetention.MEMORY, PathInformationSource.ORIGINAL_COMPATIBILITY, false),
         )
-        val context = NuclearScene.open(scene)
-        try { run(Battle(context)) } finally { context.close() }
+        val host = OfflineSandboxHost(scene, deploymentEnabled = deployWitness)
+        try { run(Battle(host)) } finally { host.close() }
     }
 
-    private class Battle(val context: SimulationContext) {
+    private class Battle(private val host: OfflineSandboxHost) {
+        val context = host.context
         private var step = 0L
         private var command = 0
         val parent get() = context.observe().units.single { it.unitId == "spider" }
@@ -321,10 +371,20 @@ class ModularSpiderBlinkTest {
         val actions get() = checkNotNull(parent.unitActions)
         val balance get() = checkNotNull(context.observe().economy).balances.getValue("p1")
 
-        fun tick() = context.advance(Step(step++, 1.0, "sim-tick"))
+        fun tick() = host.advance(Step(step++, 1.0, "sim-tick"))
+
+        fun deployWitness(): String {
+            val request = SandboxCommandRequest(1L, context.world, 1L, "/spawn witness 270 160 p2")
+            val queued = host.submit(request)
+            assertEquals(SandboxCommandStatus.QUEUED, queued.status, queued.toString())
+            tick()
+            return assertNotNull(host.receipt(1L)?.unitId)
+        }
         fun skipLabels(count: Long) { step += count }
-        fun action(name: String, target: Position? = null, cancel: Boolean = false) =
-            assertIs<ActionResult.Accepted>(request(name, target, cancel), "Expected $name to be accepted")
+        fun action(name: String, target: Position? = null, cancel: Boolean = false): ActionResult.Accepted {
+            val result = request(name, target, cancel)
+            return assertIs<ActionResult.Accepted>(result, "Expected $name to be accepted, received $result")
+        }
         fun reject(name: String, target: Position? = null, cancel: Boolean = false) =
             assertIs<ActionResult.Rejected>(request(name, target, cancel)).error.code
         private fun request(name: String, target: Position?, cancel: Boolean) =

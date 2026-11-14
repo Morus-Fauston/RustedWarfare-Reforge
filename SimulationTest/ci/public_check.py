@@ -62,6 +62,8 @@ def source_files(repo):
                'action_layout.py', 'test_action_layout.py',
                'platform_windows.py', 'owned_window.py', 'test_owned_window.py',
                'workflow.py', 'workflow_inputs.py', 'workflow_device.py', 'workflow_windows.py',
+               'evidence_compact.py', 'test_evidence_compact.py',
+               'windows_client_mcp.py', 'test_windows_client_mcp.py',
                'workflow_reuse.py', 'perf_report.py', 'platform_perf.py', 'test_workflow.py',
                'test_workflow_device.py', 'test_workflow_windows.py', 'test_workflow_reuse.py', 'test_perf_analysis.py',
                'specialist_check.py', 'test_specialist_check.py']]

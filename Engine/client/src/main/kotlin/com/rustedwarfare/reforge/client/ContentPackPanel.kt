@@ -102,6 +102,7 @@ class ContentPackPanel(private val state: ContentPackSelectionSession, skin: Ski
 
     fun setEditable(value: Boolean) { editable = value; availability() }
     fun setStatus(value: String?) { status = value; availability() }
+    internal fun closeLists() { packages.hideList(); selected.hideList() }
 
     /** Read the same actors and labels as the menu; input still goes through the platform. */
     internal fun drawnActions(): List<DrawnAction> {

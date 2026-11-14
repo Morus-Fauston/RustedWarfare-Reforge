@@ -1,6 +1,7 @@
 {
   "format": "rw-reforge.native-amphibious-jet.v1",
   "name": "amphibiousJet",
+  "locomotion": "air-water",
   "maxHp": 530,
   "radius": 12,
   "price": 2000,

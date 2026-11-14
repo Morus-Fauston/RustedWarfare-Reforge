@@ -41,6 +41,13 @@ internal object Transport {
         queryPosition(position, unit.nativeTransportPlacement, map)
 
     fun supports(definition: UnitDefinition): Boolean {
+        if (definition.transport == TransportProfile.AUTHORED)
+            return definition.transportSettings?.isValid() == true && definition.maximumHealth != null &&
+                (definition.movement.type in setOf(MovementType.HOVER, MovementType.NONE) ||
+                    definition.movement.type == MovementType.AIR && RoleCompositionRules.usesRoles(definition) &&
+                    definition.movement.flight?.isValid() == true) &&
+                definition.attachmentModule == null && definition.attachmentLayout == null
+        if (definition.transportSettings != null) return false
         if (definition.transport == TransportProfile.NAUTILUS_SUBMERGED) return NautilusRules.supports(definition)
         return when (definition.transport) {
         TransportProfile.NATIVE_HOVERCRAFT -> definition.id == "hovercraft" && definition.className == "NativeHovercraft" &&
@@ -52,7 +59,7 @@ internal object Transport {
             definition.radius == 20.0 && definition.displayRadius == 20.0 &&
             definition.movement == MovementProfile(MovementType.AIR, 2.3, .03, .05, 1.4, 0.0, false, false, .6) &&
             definition.maximumHealth == 500.0 && definition.build == BuildProfile(800L, .001f) && definition.shadowImagePath != null
-        TransportProfile.NAUTILUS_SUBMERGED, null -> false
+        TransportProfile.NAUTILUS_SUBMERGED, TransportProfile.AUTHORED, null -> false
     } && definition.totalFrames == 1 && definition.imageScale == 1.0 && definition.fogOfWarSightRange == 15 &&
         definition.durability?.deadImagePath != null && definition.durability.maxDamagePerHit == null &&
         definition.transportSlots == 1 &&
@@ -62,6 +69,20 @@ internal object Transport {
         definition.mech == null && definition.rotor == null && definition.fixedUnderwaterTarget == null &&
         definition.submarine == null && definition.amphibiousJet == null && definition.shield == null &&
         !definition.authoredWaterCombat && definition.directHitTargetKind == DirectHitTargetKind.ORDINARY
+    }
+
+    private fun capacity(unit: MutableUnit): Int =
+        unit.definition.transportSettings?.capacity ?: if (unit.definition.transport == TransportProfile.NAUTILUS_SUBMERGED) 3 else 4
+
+    private fun unloadTicks(unit: MutableUnit): Float = unit.definition.transportSettings?.unloadTicks?.toFloat() ?: 30f
+
+    private fun mayUnload(unit: MutableUnit, liquid: Boolean): Boolean = when (unit.definition.transportSettings?.unloadTerrain) {
+        TransportUnloadTerrain.LAND -> !liquid
+        TransportUnloadTerrain.LIQUID -> liquid
+        TransportUnloadTerrain.EITHER -> true
+        TransportUnloadTerrain.NEVER -> false
+        null -> if (unit.definition.transport == TransportProfile.NAUTILUS_SUBMERGED)
+            unit.typeId == "nautilusSubmarineSurface" && liquid else !liquid
     }
 
     /** Internal creation bypasses ordinary load admission, while sharing the one owned manifest. */
@@ -81,7 +102,8 @@ internal object Transport {
     fun validate(units: Map<String, MutableUnit>) {
         val carried = mutableSetOf<String>()
         for (carrier in units.values) carrier.transportState?.let { state ->
-            require(carrier.definition.transport != null && state.unloadRemaining.isFinite() && state.unloadRemaining in 0f..30f)
+            require(carrier.definition.transport != null && state.unloadRemaining.isFinite() &&
+                state.unloadRemaining in 0f..unloadTicks(carrier))
             require(state.passengerIds.distinct().size == state.passengerIds.size)
             require(!carrier.reclaimed || state.passengerIds.isEmpty())
             var slots = 0L
@@ -91,7 +113,7 @@ internal object Transport {
                     passenger.ownerPlayerId == carrier.ownerPlayerId && passenger.definition.transportSlots >= 0)
                 slots += passenger.definition.transportSlots
             }
-            require(carrier.definition.transport == TransportProfile.NAUTILUS_SUBMERGED || slots <= 4L)
+            require(carrier.definition.transport == TransportProfile.NAUTILUS_SUBMERGED || slots <= capacity(carrier).toLong())
         }
         for (passenger in units.values) {
             require((passenger.carriedBy != null) == (passenger.unitId in carried))
@@ -160,13 +182,12 @@ internal object Transport {
 
     fun requestUnload(carrier: MutableUnit, unloading: Boolean, map: MapDefinition): SimulationError? {
         val state = carrier.transportState ?: return SimulationError("not-carrier", "Unit has no transport capability")
-        val nautilus = carrier.definition.transport == TransportProfile.NAUTILUS_SUBMERGED
-        if (nautilus && carrier.typeId != "nautilusSubmarineSurface" && unloading)
-            return SimulationError("cannot-unload", "This form retains its produced units")
         if (unloading) {
-            if (state.unloading || state.passengerIds.isEmpty() || (if (nautilus) !liquid(carrier, map) else liquid(carrier, map)))
+            if (carrier.definition.transport == TransportProfile.NAUTILUS_SUBMERGED && carrier.typeId != "nautilusSubmarineSurface")
+                return SimulationError("cannot-unload", "This form retains its produced units")
+            if (state.unloading || state.passengerIds.isEmpty() || !mayUnload(carrier, liquid(carrier, map)))
                 return SimulationError("cannot-unload", "Carrier cannot start unloading here")
-            carrier.transportState = state.copy(unloading = true, unloadRemaining = 30f)
+            carrier.transportState = state.copy(unloading = true, unloadRemaining = unloadTicks(carrier))
         } else {
             if (!state.unloading) return SimulationError("not-unloading", "Carrier is not unloading")
             carrier.transportState = state.copy(unloading = false)
@@ -189,13 +210,14 @@ internal object Transport {
         var state = unit.transportState ?: return emptyList()
         val nautilus = unit.definition.transport == TransportProfile.NAUTILUS_SUBMERGED
         val events = mutableListOf<Event>()
-        val canProgress = if (nautilus) unit.typeId == "nautilusSubmarineSurface" && liquid(unit, map)
-            else !liquid(unit, map) && !state.motionGate
+        val stationary = unit.definition.transport == TransportProfile.AUTHORED &&
+            UnitLocomotion.movement(unit).type == MovementType.NONE
+        val canProgress = mayUnload(unit, liquid(unit, map)) && (nautilus || stationary || !state.motionGate)
         if (state.unloading && canProgress &&
             (unit.definition.transport != TransportProfile.NATIVE_DROPSHIP || unit.height.toFloat() < 4f)) {
             state = state.copy(unloadRemaining = maxOf(0f, state.unloadRemaining - delta.toFloat()))
             if (state.unloadRemaining == 0f) {
-                state = state.copy(unloadRemaining = 30f)
+                state = state.copy(unloadRemaining = unloadTicks(unit))
                 val passenger = state.passengerIds.lastOrNull()?.let(units::getValue)
                 if (passenger == null) state = state.copy(unloading = false)
                 else {
@@ -240,7 +262,7 @@ internal object Transport {
             }
         }
         unit.transportState = state
-        if (nautilus) return events
+        if (nautilus || unit.definition.transport == TransportProfile.AUTHORED) return events
         if (unit.definition.transport == TransportProfile.NATIVE_DROPSHIP) {
             var phase = unit.heightPhase.toFloat() + 2f * delta.toFloat()
             if (phase > 360f) phase -= 360f
@@ -341,17 +363,20 @@ internal object Transport {
         val state = carrier.transportState
             ?: return SimulationError("not-carrier", "Target has no transport capability")
         val nautilus = carrier.definition.transport == TransportProfile.NAUTILUS_SUBMERGED
+        val requiredMovement = carrier.definition.transportSettings?.passengerMovement
         if (nautilus && carrier.typeId != "nautilusSubmarineSurface")
             return SimulationError("invalid-passenger", "Passenger does not meet this form's ordinary load requirements")
         if (!carrier.alive || !passenger.alive || carrier.constructionProgress < 1f || passenger.constructionProgress < 1f ||
             carrier.carriedBy != null || passenger.carriedBy != null || carrier === passenger ||
             carrier.ownerPlayerId != passenger.ownerPlayerId || passenger.transportState != null ||
             passenger.definition.building != null ||
-            (if (nautilus) passenger.definition.movement.type !in setOf(MovementType.WATER, MovementType.HOVER, MovementType.OVER_CLIFF_WATER)
+            (if (requiredMovement != null) UnitLocomotion.movement(passenger).type != requiredMovement
+                else if (nautilus) passenger.definition.movement.type !in setOf(MovementType.WATER, MovementType.HOVER, MovementType.OVER_CLIFF_WATER)
                 else passenger.definition.movement.type in setOf(MovementType.AIR, MovementType.WATER, MovementType.NONE)))
             return SimulationError("invalid-passenger", "Unit cannot board this carrier")
         if (state.unloading) return SimulationError("transport-unloading", "Carrier is unloading")
-        if (state.passengerIds.sumOf { units.getValue(it).definition.transportSlots.toLong() } + passenger.definition.transportSlots.toLong() > if (nautilus) 3L else 4L)
+        if (state.passengerIds.sumOf { units.getValue(it).definition.transportSlots.toLong() } +
+                passenger.definition.transportSlots.toLong() > capacity(carrier).toLong())
             return SimulationError("transport-full", "Carrier has no capacity for this passenger")
         return null
     }
@@ -359,9 +384,8 @@ internal object Transport {
     fun observe(carrier: MutableUnit, units: Map<String, MutableUnit>): TransportObservation? = carrier.transportState?.let {
         TransportObservation(immutable(it.passengerIds), it.passengerIds.size,
             it.passengerIds.sumOf { id -> units.getValue(id).definition.transportSlots.toLong() }.toInt(),
-            if (carrier.definition.transport == TransportProfile.NAUTILUS_SUBMERGED) 3 else 4, it.unloading, it.unloadRemaining,
-            (if (carrier.definition.transport == TransportProfile.NAUTILUS_SUBMERGED)
-                carrier.typeId == "nautilusSubmarineSurface" && it.liquid else !it.liquid) &&
+            capacity(carrier), it.unloading, it.unloadRemaining,
+            mayUnload(carrier, it.liquid) &&
                 carrier.alive && carrier.constructionProgress >= 1f && !it.unloading && it.passengerIds.isNotEmpty())
     }
 }

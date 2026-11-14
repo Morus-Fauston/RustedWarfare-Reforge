@@ -1,6 +1,6 @@
 # Own commented two-legged declaration
 {
-  format: "rw-reforge.unit.v1",
+  format: "rw-reforge.unit.v2",
   core: {
     "name": "mechGun",
     "class": "CustomUnitMetadata",

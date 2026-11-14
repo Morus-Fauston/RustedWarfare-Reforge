@@ -45,37 +45,37 @@
       {
         "id": "mechGun",
         "path": "../inputs/phase-six-a-sandbox/hjson/package/units/mech.hjson",
-        "sha256": "43e323b8c352377dbac38f4c9bbd3d90a0c64484b134cc24024c2943c19834fa"
+        "sha256": "39638c6d5e559f4d09301a17c9ec40ba28e94571d74b8dd8de4b13e7758b928b"
       },
       {
         "id": "extractorT1",
         "path": "../inputs/phase-six-a-sandbox/hjson/package/units/economy/extractor.hjson",
-        "sha256": "09b5e49135865f5da33a7fa618299424d25ca547dd76db5c1e4efe46485dd807"
+        "sha256": "2159d6186b49e1b8abce80d63163d5f261c4afb8e4ca71047401f10076651cf9"
       },
       {
         "id": "extractorT2",
         "path": "../inputs/phase-six-a-sandbox/hjson/package/units/economy/extractorT2.hjson",
-        "sha256": "b300b6869505035d9265185888ba8007afe29a964530a970dac394d5844283f3"
+        "sha256": "4988a7cc2ffd3b73aa44ef96a162051c74329d9750416a225b94e8242833260d"
       },
       {
         "id": "extractorT3",
         "path": "../inputs/phase-six-a-sandbox/hjson/package/units/economy/extractorT3.hjson",
-        "sha256": "18f36cede26ae378110e757f2e5a1b2421d80bdca858fa2d501283a62313822e"
+        "sha256": "b1d98fb48c2d75ab02c476b5d9708999586f8a27d9e88520ff0902ab3181dd58"
       },
       {
         "id": "fabricatorT1",
         "path": "../inputs/phase-six-a-sandbox/hjson/package/units/economy/fabricatorT1.hjson",
-        "sha256": "d1f7dbe3ea810e0e6cc7b531ea1acb5bd83aac531d23c2de4d32fbe5159ef9b5"
+        "sha256": "69561e0e08c3c2e2687771163aa4c8be5cbb321f4b93ddf5a6b171a196aa1f13"
       },
       {
         "id": "fabricatorT2",
         "path": "../inputs/phase-six-a-sandbox/hjson/package/units/economy/fabricatorT2.hjson",
-        "sha256": "4b48049b93a605458afa5672b5e56ae8338c7b75709696b4b596c1ba2d9c41bd"
+        "sha256": "3f8fa6b48f7a314b7eddbed95969f1605918a04e77de7ff88063bce291b40a30"
       },
       {
         "id": "fabricatorT3",
         "path": "../inputs/phase-six-a-sandbox/hjson/package/units/economy/fabricatorT3.hjson",
-        "sha256": "6fdad4594fbf7964fc262354f96fbedeec2eb151e003ddd51317998995e0b354"
+        "sha256": "9a566f5c500e122b8c57b661c8b57891958365f5eef6bb917ad33b206a778a34"
       },
       {
         "id": "landFactory",
@@ -90,17 +90,17 @@
       {
         "id": "c_turret_t1",
         "path": "../inputs/phase-six-a-sandbox/hjson/package/units/economy/turret_t1.hjson",
-        "sha256": "e60d5001215b468547dc0c2006c410a3507e04e8e8d551981f18917a0d308799"
+        "sha256": "accb6df21c9e77a20c81cf686fa3d4797a15ebda56a48c1cb98e4324145479c6"
       },
       {
         "id": "c_turret_t2_gun",
         "path": "../inputs/phase-six-a-sandbox/hjson/package/units/economy/turret_t2_gun.hjson",
-        "sha256": "ffe8a38859174abb6e3170c5be0e80dcef1a9a75b92ec268cc8423b53340a7af"
+        "sha256": "8faa893db0ec1e7746bb7ee9600065e73a4f97319fa5739ef3b94a332e7aa5cb"
       },
       {
         "id": "c_turret_t1_artillery",
         "path": "../inputs/phase-six-a-sandbox/hjson/package/units/economy/turret_t1_artillery.hjson",
-        "sha256": "dc81f8fadc98262542a54eb75e4ca160f43b2880085dea6f7c98130027e2b665"
+        "sha256": "2027a9df0e698954d89ecf3640418796349736e02ab826ffbc5d5eedef285b12"
       },
       {
         "id": "builder",
@@ -120,12 +120,12 @@
       {
         "id": "mechHeavyMissile",
         "path": "../inputs/phase-six-a-sandbox/hjson/package/units/mech-factory/heavy/heavy.hjson",
-        "sha256": "23575def10c8f264552f8adb4f30790038988f70ad281d9dfea5870988f2ac92"
+        "sha256": "426864cd2f6021b64b3e3b0e55de5d710027828354605f13a9afc98839c224de"
       },
       {
         "id": "mechEngineer",
         "path": "../inputs/phase-six-a-sandbox/hjson/package/units/mech-factory/engineer/engineer.hjson",
-        "sha256": "a47466adbe143348c4a7f5ee06d24d2c64c060ae0f141812126b9136263e88de"
+        "sha256": "749a1b9ca47ecbcec769db4c7c12cf21b6b4eec954cf42b4043bf5daa131a516"
       },
       {
         "id": "airFactory",
@@ -140,12 +140,12 @@
       {
         "id": "helicopter",
         "path": "../inputs/phase-six-a-sandbox/hjson/package/units/air-factory/units/helicopter.hjson",
-        "sha256": "906243ee0d3083203381d5a116df173fa0399cd73385f2994455145a2a21a849"
+        "sha256": "a0f67651c335be1bf46b9793ea74c186437b6172e3be78ad189cd4cd905a3121"
       },
       {
         "id": "bomber",
         "path": "../inputs/phase-six-a-sandbox/hjson/package/units/air-factory/bomber.hjson",
-        "sha256": "4920f222a717971878cb41c170cc030eb3ee5f22d26eb47c4391698f60628748"
+        "sha256": "7c43a902fcd1fc4413223d433a4fad9f656999a83b0ab05aa814a71f96742693"
       },
       {
         "id": "seaFactory",
@@ -165,17 +165,17 @@
       {
         "id": "c_tank",
         "path": "../inputs/phase-six-a-sandbox/hjson/package/units/sea-factory/land/tank.hjson",
-        "sha256": "44237f340697fbcf43dc28991da9977fd4264324c6f28b310d6300b6104739b8"
+        "sha256": "9b47398bfb49a86661ce3c40417e832702d8a7ac8d7c2a12db42d79060b24b8e"
       },
       {
         "id": "attackSubmarine",
         "path": "../inputs/phase-six-a-sandbox/hjson/package/units/sea-factory/submarine/submarine.hjson",
-        "sha256": "9f7536ddb58af8d821e94d1738c8f73252ad4c99e115802ff1da051e3d86356a"
+        "sha256": "edd35d0ebf15b41119511fb4b0af84fbbe55a80fc2aecb44161940258872e2e1"
       },
       {
         "id": "heavyBattleship",
         "path": "../inputs/phase-six-a-sandbox/hjson/package/units/sea-factory/naval/heavyBattleship.hjson",
-        "sha256": "764670af7d998cbd03d676b883e834f13d31dd3a23c2663a8a6dba6cd631bfa1"
+        "sha256": "497a818dee530d8328785f48b9c04c73801122efdec2fd7b5732106e824e9dbb"
       },
       {
         "id": "repairbay",
@@ -185,97 +185,97 @@
       {
         "id": "modularSpider",
         "path": "../inputs/phase-six-a-sandbox/hjson/package/units/spider/spider.hjson",
-        "sha256": "ba3a9128d10914a5cb24138b39ca26f62515c75e00381813a690614f1a5134b0"
+        "sha256": "60a8c45f9f023748f69d40789f46bfeb00fcb3513d9413549956ae659522988d"
       },
       {
         "id": "modularSpider_emptySlot",
         "path": "../inputs/phase-six-a-sandbox/hjson/package/units/spider/empty.hjson",
-        "sha256": "28009c318bb2e428c289d5096c2ad4d3dbaaf608d8b8d859e50016e2f6563cdc"
+        "sha256": "e827398af53225572b3ea90cf30e7659ae72b1235cf2504773445c7e9db00e50"
       },
       {
         "id": "modularSpider_gunturret",
         "path": "../inputs/phase-six-a-sandbox/hjson/package/units/spider/gun.hjson",
-        "sha256": "63707d7e41200a0d0314e59a61f281bd4b2f0073d1c5758e41b6cc3907489e02"
+        "sha256": "0ca8ad7eaf6c54a60b6a015e1e4a85f9d30af29adb44bf5a46397b7967f477cb"
       },
       {
         "id": "modularSpider_smallgunturret",
         "path": "../inputs/phase-six-a-sandbox/hjson/package/units/spider/small-laser.hjson",
-        "sha256": "2ef9ee8b97a52a351a1e9834829f835328d4bbeb47bb638de503385b0475cb79"
+        "sha256": "3ae2a7b86c2ed775c8a01fa42a39fe9a1b3b2e7f11b1b7219c78e4d612ecd769"
       },
       {
         "id": "modularSpider_smallgunturretT2",
         "path": "../inputs/phase-six-a-sandbox/hjson/package/units/spider/small-laser-t2.hjson",
-        "sha256": "aef3ffa8cece48597d2297d5ba65e668f6f650243fe2cda2a5e077572ef0eada"
+        "sha256": "537a8cc1f802c6b6b38b4e123b6818d5da1e8f00145e41133426a3ee745aa229"
       },
       {
         "id": "modularSpider_gunturretT2",
         "path": "../inputs/phase-six-a-sandbox/hjson/package/units/spider/gun-t2.hjson",
-        "sha256": "e5697915c0cbb2c17209b0455d411b4541de78da5268aa71900e109078c3e26d"
+        "sha256": "da6b7b23e5f1286f2fd8a20107fbe2148ceb5a1d4c6880ca66f1d7b72aae9179"
       },
       {
         "id": "modularSpider_antiair",
         "path": "../inputs/phase-six-a-sandbox/hjson/package/units/spider/aa.hjson",
-        "sha256": "8b1cf25de890a94288377bd2cc138ee33caddcb5066ea25755289720b2f67956"
+        "sha256": "060dbbdfc926c1d5aea6360506588928f66dc4f458b7655165e8102d95f38114"
       },
       {
         "id": "modularSpider_antiairT2",
         "path": "../inputs/phase-six-a-sandbox/hjson/package/units/spider/aa-t2.hjson",
-        "sha256": "1843046edf291861ba499b491fb62f2e1784322a87de686a6c2ca161bcc708b6"
+        "sha256": "d5a2ab84cd49833c98406a2aebed3d2b469a047243afd4b1ab0bae1883134dbd"
       },
       {
         "id": "modularSpider_antiairFlak",
         "path": "../inputs/phase-six-a-sandbox/hjson/package/units/spider/flak.hjson",
-        "sha256": "dbec9643f3dfef9ffea09df072b0ba609ebe04725591e66c63887fcd4092c9a7"
+        "sha256": "e6c1dfee1b1a59be4954b1298c3d543471f4d94624b1dc772a5032c45316dd19"
       },
       {
         "id": "modularSpider_lightning",
         "path": "../inputs/phase-six-a-sandbox/hjson/package/units/spider/lightning.hjson",
-        "sha256": "843bd9935dbfbbd44411318fe80e30e467c446cca5f0fac02f97e8fbf9eee2ff"
+        "sha256": "00fb8962ccb53f1ee7d72fda3ffbbd1875346ebbcc09992913c2538381c7d327"
       },
       {
         "id": "modularSpider_artillery",
         "path": "../inputs/phase-six-a-sandbox/hjson/package/units/spider/artillery.hjson",
-        "sha256": "5f5d25714abb03614f4fcdb259e861fb776595eac3bd631c955b80c6ddb163bf"
+        "sha256": "e3ab3af570338f3ae11620b89c3c5e5fdcd7bef65554eabdb357ecdf8855bfc4"
       },
       {
         "id": "modularSpider_fabricator",
         "path": "../inputs/phase-six-a-sandbox/hjson/package/units/spider/fabricator.hjson",
-        "sha256": "2f618fdd63d527e9e81abb981f7bed39ced8c702ba345dffa75641170408488f"
+        "sha256": "c0b2f9d1a1d88c1127dc955070cdfa187f64a76e5989adbd10f3f0f26cbe8129"
       },
       {
         "id": "modularSpider_fabricatorT2",
         "path": "../inputs/phase-six-a-sandbox/hjson/package/units/spider/fabricator-t2.hjson",
-        "sha256": "52e29760782dda51742aa55438732afd94c35f683b75cfde5d0c957bf23d3e51"
+        "sha256": "7e1a03d50e29c87661977e28553bc430f03bd3ffdc3ddbd1913a36d6efffb658"
       },
       {
         "id": "modularSpider_shieldGen",
         "path": "../inputs/phase-six-a-sandbox/hjson/package/units/spider/shield.hjson",
-        "sha256": "51bf89eaa545097d5909743e268b1de7352ab7811e5a638d4ba0e2d9289d3274"
+        "sha256": "4dd2f922ee920a776d9933ee9cbb00d8914e0250cf28b44fe01241e9f4c7c138"
       },
       {
         "id": "modularSpider_speedIncomplete",
         "path": "../inputs/phase-six-a-sandbox/hjson/package/units/spider/speed-incomplete.hjson",
-        "sha256": "85ea375f2e8d4ed88a2cecd2b82e26f50a8a3dbbe78624b0c3d0166f88853428"
+        "sha256": "4b32d90622f89b604fb93fdd6179569348b0b4efcc95a511b6a3b31a2184a7fe"
       },
       {
         "id": "modularSpider_speed",
         "path": "../inputs/phase-six-a-sandbox/hjson/package/units/spider/speed.hjson",
-        "sha256": "7cd441e6bb7052c52c2736eb1fb91e8ad1e0d5f15757e30e03b2f58aa25f4555"
+        "sha256": "4fa19187bc6c39579a2daf3df950609903f16dcd73620a16af5c773883f06a84"
       },
       {
         "id": "modularSpider_laserdefense",
         "path": "../inputs/phase-six-a-sandbox/hjson/package/units/spider/laser-defense.hjson",
-        "sha256": "a78463ada670da1f32e19148249d5ee2e4becdc552f98523c66733b1a3440b21"
+        "sha256": "fe33ede92f9c8fba1e272e69cb854849d74062af41405612f1bd9f48b696de8a"
       },
       {
         "id": "modularSpider_antinuke",
         "path": "../inputs/phase-six-a-sandbox/hjson/package/units/spider/anti-nuke.hjson",
-        "sha256": "87ec3384fe10f316deedf68a525d06674ce938ca6ece66691ebb1644100b6dc4"
+        "sha256": "25596349c568dba59cb40db2834c5da648ac1431bde035cc3f0ba2729e9ec9e2"
       },
       {
         "id": "modularSpider_blink",
         "path": "../inputs/phase-six-a-sandbox/hjson/package/units/spider/blink.hjson",
-        "sha256": "f931d90e31bf355b1e2b661bdfbb80ac9fa6a8ce4db1a3720d321e58628bd09e"
+        "sha256": "caf29fcc084fd57a6601075e298cc9cb477193dc2085c3fb412be52a37ac03bb"
       },
       {
         "id": "commandCenter",
@@ -285,7 +285,7 @@
       {
         "id": "amphibiousJet",
         "path": "../inputs/phase-six-a-sandbox/hjson/package/extra/air-products/units/amphibiousJet.hjson",
-        "sha256": "68713e7ea5064e26c8ccfcc4bf060cdef0255a44f77deff72168bd729a7fe6de"
+        "sha256": "e5a20203229de670e4912014639c7486e9d7d817b61be268afdb6d63be7181da"
       },
       {
         "id": "dropship",
@@ -295,57 +295,57 @@
       {
         "id": "aaBeamGunship",
         "path": "../inputs/phase-six-a-sandbox/hjson/package/extra/air-products/units/aaBeamGunship.hjson",
-        "sha256": "ae299a32f2bb75834686c0d8b87322d716c2fdc480c5288acc57b66a487baa01"
+        "sha256": "7077163feb43c740161834e56811fa004400df1ba69d8483a9fc66fccc21badf"
       },
       {
         "id": "aaBeamGunship_afterburn",
         "path": "../inputs/phase-six-a-sandbox/hjson/package/extra/air-products/units/aaBeamGunship_afterburn.hjson",
-        "sha256": "aea781f92130d7f9373efc6bf09bb873906b8e02c10175a08adea348e1fe42ca"
+        "sha256": "6d10d392dbec28f45bb69657736f21367f471d41fdfe3806e5ab6fc523a0f70a"
       },
       {
         "id": "mechBunker",
         "path": "../inputs/phase-six-a-sandbox/hjson/package/extra/bunker/units/bunker/bunker.hjson",
-        "sha256": "3e0417893ccf0e9af5833f31792bb49e705bf8a71a72b2db6dd840004a0b2444"
+        "sha256": "c451a6e4bf38f8f376fa4ce3455d29b1fa2388e546ed3853dbc11e19cf55e2ed"
       },
       {
         "id": "mechBunkerDeployed",
         "path": "../inputs/phase-six-a-sandbox/hjson/package/extra/bunker/units/bunker/deployed.hjson",
-        "sha256": "72007e93ad33d40a53af11e06b2ae4e04a364107ae123067a26638632d3405f8"
+        "sha256": "474de6d3b323b189ae9b41088350b6d1642527ba30da22b8865aa28f19cc9778"
       },
       {
         "id": "mechFlame",
         "path": "../inputs/phase-six-a-sandbox/hjson/package/extra/flame/units/flame/flame.hjson",
-        "sha256": "e95f649b901320a7b0920004530ee60f9268f75b38cd3c6d3bb938fae92ff8a9"
+        "sha256": "1feb3fadd1a7e28b9b5be5e968e4696acaebb2e961315d4d3dd2a9bfc9d8f6b7"
       },
       {
         "id": "nautilusSubmarine",
         "path": "../inputs/phase-six-a-sandbox/hjson/package/extra/nautilus/nautilus/nautilus.hjson",
-        "sha256": "dd6fea280ad92501d496172c471fc6a1cc83f30640aa1c65d592b57152231a4d"
+        "sha256": "06244f9651abd023b81d30c0b2caea32f7a9ca52a014143f02ce55c9d7cec434"
       },
       {
         "id": "nautilusSubmarineSurface",
         "path": "../inputs/phase-six-a-sandbox/hjson/package/extra/nautilus/nautilus/nautilusSurface.hjson",
-        "sha256": "7f0251311e3defc80c94a03efc8fb733a7b1f6945b0694af6b11f38d152a5287"
+        "sha256": "e404d0b6fe1d5aef52cdb7ca3ed628779fc7838aa3b6ece7aa3fa564154210e3"
       },
       {
         "id": "nautilusSubmarineLand",
         "path": "../inputs/phase-six-a-sandbox/hjson/package/extra/nautilus/nautilus/nautilusLand.hjson",
-        "sha256": "88d7920d3dbacec1de1ca4fa2ca01f3960475a7d6634c2076aa1bc204bdaa5b3"
+        "sha256": "4cc7ca3320ca27cd5a20185cd018d6a40fa58fc77abeccd90f4a2f8613fb5ddc"
       },
       {
         "id": "hoverTank",
         "path": "../inputs/phase-six-a-sandbox/hjson/package/extra/nautilus/nautilus/hover/hover.hjson",
-        "sha256": "962b149cb0d47141af83af0eb606115217e41f77d2a33242d7154440e8569872"
+        "sha256": "6d59041ff1e9d85257bc8c767ea6db66898672fa16edfab7fcac6674034cb7d7"
       },
       {
         "id": "robotCrab",
         "path": "../inputs/phase-six-a-sandbox/hjson/package/extra/nautilus/nautilus/scout/robotCrab.hjson",
-        "sha256": "7e80bd440663693d6a45655d522009f74c320b2aaa41f18545da146a71d8c2e1"
+        "sha256": "897c3cd060abbac65805d84be1dffcb1602915b2f7030069bfac67b0705dbdef"
       },
       {
         "id": "robotCrabWater",
         "path": "../inputs/phase-six-a-sandbox/hjson/package/extra/nautilus/nautilus/scout/robotCrabWater.hjson",
-        "sha256": "e9345d46083c17616e1702b5461b4d27e481a34655d9c4c980c87b407a878e23"
+        "sha256": "7f7f09a26e1e917dc7d8008d89967cc6c089a6b3b2482f276e5c89fb1ece3ba2"
       },
       {
         "id": "experimentalLandFactory",
@@ -517,7 +517,7 @@
       {
         "id": "dep39",
         "path": "../inputs/phase-six-a-sandbox/hjson/package/extra/flame/units/flame/mech-large-common.hjson",
-        "sha256": "1793b5a8e3ca4309f2333c3b72e6aa003307c94f620367163bdd241cb01370be"
+        "sha256": "bd08d29e13ddebed30bf356c53ff1b72a791c7e6ce7f05866245415cb6125c05"
       },
       {
         "id": "dep40",
@@ -712,7 +712,7 @@
       {
         "id": "dep92",
         "path": "../inputs/phase-six-a-sandbox/hjson/package/units/economy/extractor_common.hjson",
-        "sha256": "d4ccd52500293aac5720a3e07bfd0993c9775c522e0db190b72d4af346dc2e1c"
+        "sha256": "93d31e54fce1631a9039ecdc496f14f82cb28067dd59f4405249f35a69879350"
       },
       {
         "id": "dep93",
@@ -787,7 +787,7 @@
       {
         "id": "dep114",
         "path": "../inputs/phase-six-a-sandbox/hjson/package/units/economy/turret_common_land.hjson",
-        "sha256": "08adf45be9b6547964c155a4fb02cbefa6af2c8e5636994d8e83fc3f0d270b9a"
+        "sha256": "f2c3b0ea7d78de86c06aff5b21795972c370d7387627cf6108417c0b7c48c4ad"
       },
       {
         "id": "dep115",
@@ -18413,9 +18413,9 @@
       "package/extra/air-products/units/aa_shadow.png": "da2646db128fe4e3047fe42c25707440619567e791526b29e44266a966cf77e0",
       "package/extra/air-products/units/aa_trail.png": "81584313c94d76a4a1f0a8288810ba75c07bd57ae4959dced652b8648955a00e",
       "package/extra/air-products/units/aa_turret.png": "0b9f36b2d623711b1f49cf41fbe70eb6c23e921ea3cb10ff9e24a15f08e017a8",
-      "package/extra/air-products/units/aaBeamGunship.hjson": "ae299a32f2bb75834686c0d8b87322d716c2fdc480c5288acc57b66a487baa01",
-      "package/extra/air-products/units/aaBeamGunship_afterburn.hjson": "aea781f92130d7f9373efc6bf09bb873906b8e02c10175a08adea348e1fe42ca",
-      "package/extra/air-products/units/amphibiousJet.hjson": "68713e7ea5064e26c8ccfcc4bf060cdef0255a44f77deff72168bd729a7fe6de",
+      "package/extra/air-products/units/aaBeamGunship.hjson": "7077163feb43c740161834e56811fa004400df1ba69d8483a9fc66fccc21badf",
+      "package/extra/air-products/units/aaBeamGunship_afterburn.hjson": "6d10d392dbec28f45bb69657736f21367f471d41fdfe3806e5ab6fc523a0f70a",
+      "package/extra/air-products/units/amphibiousJet.hjson": "e5a20203229de670e4912014639c7486e9d7d817b61be268afdb6d63be7181da",
       "package/extra/air-products/units/dropship.hjson": "0bc25c62b2cdd1541f2a451fc970da1b600748f8dccb66059655d008d3c06fdd",
       "package/extra/air-products/units/dropship.png": "0e44f9bfdc9e760f6cd59df6e0a7aa973d5c08c0611e5fec1f94d569ec4a5e44",
       "package/extra/air-products/units/dropship_dead.png": "604d1acc5abe2f32a5429262f7e6b6f28922e36be789b93ddb55f04f6a874f06",
@@ -18426,8 +18426,8 @@
       "package/extra/air-products/units/jet_right.png": "717e4192943b371bba6a1f75b951f45f35e791757bb4295c5d97ecef2a07101c",
       "package/extra/air-products/units/jet_shadow.png": "1b64b8ec6b2f88cd7b5d97ac115dcdee35395ed08e02ec086a14c34e053fc7eb",
       "package/extra/bunker/units/bunker/body.png": "0eab7ae064a863202066f910491dfd2e1f9b206086913795d500b26fe7928b71",
-      "package/extra/bunker/units/bunker/bunker.hjson": "3e0417893ccf0e9af5833f31792bb49e705bf8a71a72b2db6dd840004a0b2444",
-      "package/extra/bunker/units/bunker/deployed.hjson": "72007e93ad33d40a53af11e06b2ae4e04a364107ae123067a26638632d3405f8",
+      "package/extra/bunker/units/bunker/bunker.hjson": "c451a6e4bf38f8f376fa4ce3455d29b1fa2388e546ed3853dbc11e19cf55e2ed",
+      "package/extra/bunker/units/bunker/deployed.hjson": "474de6d3b323b189ae9b41088350b6d1642527ba30da22b8865aa28f19cc9778",
       "package/extra/bunker/units/bunker/foot.png": "2a917fabd6c029c91140cd373b569a27846fd7612def12d09ddddeece7d57014",
       "package/extra/bunker/units/bunker/leg.png": "f64290238b9b3058551b013476d86f441b8a496587afc00f6354ffcc21e8bee6",
       "package/extra/bunker/units/bunker/shadow.png": "2b7f2eb5819fd7464f1d046a02a05e7238d8c8be54cb0e0dddf2f1d355486c0a",
@@ -18438,28 +18438,28 @@
       "package/extra/command-center/units/commandCenter/base_dead.png": "940b030d8a9c0161c69b1831041186c97409e85d404aa5c5f6ec58fa5d831b16",
       "package/extra/command-center/units/commandCenter/commandCenter.hjson": "35460e792c428bfae2ec3367cd30a14d2539e9e53f8abfd45fc7426ba41e618d",
       "package/extra/flame/units/flame/body.png": "cb08ce7eef9a4df59ee3e822564ee4125b4bc03866929defac81ba2a01077b09",
-      "package/extra/flame/units/flame/flame.hjson": "e95f649b901320a7b0920004530ee60f9268f75b38cd3c6d3bb938fae92ff8a9",
+      "package/extra/flame/units/flame/flame.hjson": "1feb3fadd1a7e28b9b5be5e968e4696acaebb2e961315d4d3dd2a9bfc9d8f6b7",
       "package/extra/flame/units/flame/foot.png": "2a917fabd6c029c91140cd373b569a27846fd7612def12d09ddddeece7d57014",
       "package/extra/flame/units/flame/leg.png": "e623dcab437823824ef4527b8b7de770b27005a1c60d06c985efbd0d45a3159f",
-      "package/extra/flame/units/flame/mech-large-common.hjson": "1793b5a8e3ca4309f2333c3b72e6aa003307c94f620367163bdd241cb01370be",
+      "package/extra/flame/units/flame/mech-large-common.hjson": "bd08d29e13ddebed30bf356c53ff1b72a791c7e6ce7f05866245415cb6125c05",
       "package/extra/flame/units/flame/shadow.png": "e1391c91a4cc2326c241780777d9dc106477d3c86abdd80b2621dc2e25fb1cee",
       "package/extra/nautilus/nautilus/body.png": "d0a214b3e6e95566a2272b5066ddca894eb70935047c749b882b7349c5a91347",
       "package/extra/nautilus/nautilus/dead.png": "1d30c331e5377cf75134857aa8b2b687ec3179e48acf5fe649a71625cdbd890a",
       "package/extra/nautilus/nautilus/foot.png": "05931f6c90ccac2921ae9c616932ab422ff1b6ac41c474980850b517b6626dfb",
-      "package/extra/nautilus/nautilus/hover/hover.hjson": "962b149cb0d47141af83af0eb606115217e41f77d2a33242d7154440e8569872",
+      "package/extra/nautilus/nautilus/hover/hover.hjson": "6d59041ff1e9d85257bc8c767ea6db66898672fa16edfab7fcac6674034cb7d7",
       "package/extra/nautilus/nautilus/hover/shadow.png": "05994cff1434fb85e8e37527c034a535b6f1de4431aa3c50ac8b5370a1aef997",
       "package/extra/nautilus/nautilus/hover/tank.png": "71ebc6f6e73814573a90eaebadcdae40b53abe8a287cefbc5a8a06b6bab04ab0",
       "package/extra/nautilus/nautilus/hover/tank_dead.png": "3eab0f9914393445a2b3424643341ab33e55016b1fec645fd1a91f1a755643c8",
       "package/extra/nautilus/nautilus/leg.png": "f53a804b044605a29c4bb72a19a89c5fd971413ca3987dde49975832bf479efb",
-      "package/extra/nautilus/nautilus/nautilus.hjson": "dd6fea280ad92501d496172c471fc6a1cc83f30640aa1c65d592b57152231a4d",
-      "package/extra/nautilus/nautilus/nautilusLand.hjson": "88d7920d3dbacec1de1ca4fa2ca01f3960475a7d6634c2076aa1bc204bdaa5b3",
-      "package/extra/nautilus/nautilus/nautilusSurface.hjson": "7f0251311e3defc80c94a03efc8fb733a7b1f6945b0694af6b11f38d152a5287",
+      "package/extra/nautilus/nautilus/nautilus.hjson": "06244f9651abd023b81d30c0b2caea32f7a9ca52a014143f02ce55c9d7cec434",
+      "package/extra/nautilus/nautilus/nautilusLand.hjson": "4cc7ca3320ca27cd5a20185cd018d6a40fa58fc77abeccd90f4a2f8613fb5ddc",
+      "package/extra/nautilus/nautilus/nautilusSurface.hjson": "e404d0b6fe1d5aef52cdb7ca3ed628779fc7838aa3b6ece7aa3fa564154210e3",
       "package/extra/nautilus/nautilus/scout/base.png": "fcf81fbd8d3249f9fdb67d476dd65472e7ddfac85aae8d8cc41532f3c345e13b",
       "package/extra/nautilus/nautilus/scout/dead.png": "9015bd7b81af4007052dec7ba2348f4df812d7468a59ed0252befb2a65ef495c",
       "package/extra/nautilus/nautilus/scout/foot.png": "f7384f4a77fcb038a8e41d555cb28cdb5170d0427a11932d3e8c5c7e66df71f3",
       "package/extra/nautilus/nautilus/scout/leg.png": "e214187f8708d0043085c145fed9c065da8d417574ba01b0fb9189a99aab59f9",
-      "package/extra/nautilus/nautilus/scout/robotCrab.hjson": "7e80bd440663693d6a45655d522009f74c320b2aaa41f18545da146a71d8c2e1",
-      "package/extra/nautilus/nautilus/scout/robotCrabWater.hjson": "e9345d46083c17616e1702b5461b4d27e481a34655d9c4c980c87b407a878e23",
+      "package/extra/nautilus/nautilus/scout/robotCrab.hjson": "897c3cd060abbac65805d84be1dffcb1602915b2f7030069bfac67b0705dbdef",
+      "package/extra/nautilus/nautilus/scout/robotCrabWater.hjson": "7f7f09a26e1e917dc7d8008d89967cc6c089a6b3b2482f276e5c89fb1ece3ba2",
       "package/extra/nautilus/nautilus/scout/turret.png": "32806335dcc85ca90f465074222035356464739b1ea602f29337d3e50bff4983",
       "package/extra/nautilus/units/experimental_back.png": "48ce4976c5a9bca04fafeb721b829a53db1d27e4eed5e738fb95a4782ba78201",
       "package/extra/nautilus/units/experimental_dead.png": "dad915f09a2c62cc160dad0df6952682f652ee980c4b32f66ed42679cae85950",
@@ -18478,7 +18478,7 @@
       "package/extra/silos/dead.png": "e9ddf22d8d33bd87626d664b490813d3c611ee5018534729c86fb57a033eb293",
       "package/extra/silos/nukeLauncherC.hjson": "0d262486fb8703dd9f352666823d8dc940b383edc51d238fe86415411d28bbac",
       "package/pack.json": "f77aff07699e1439f2ef8b0fff4d74586f8667ee11601a6e660f3dbc1e7b4596",
-      "package/units/air-factory/bomber.hjson": "4920f222a717971878cb41c170cc030eb3ee5f22d26eb47c4391698f60628748",
+      "package/units/air-factory/bomber.hjson": "7c43a902fcd1fc4413223d433a4fad9f656999a83b0ab05aa814a71f96742693",
       "package/units/air-factory/bomber_body.png": "8d64bf9486c99b9ea0c3c0dcf72a8ce09c2a3f2a753f68f7e563c23b69027f37",
       "package/units/air-factory/bomber_dead.png": "7dedafa65eede108bc4ed220b29988ac3279cdd4d1c807a230aad531802fd5ae",
       "package/units/air-factory/bomber_shadow.png": "83fa7ac87c69cea7acc295b3398ef3906b9b6459d6c557dc86e02238e47bb77d",
@@ -18489,23 +18489,23 @@
       "package/units/air-factory/units/airFactoryT2.hjson": "6e6d91733c008582ad58393153d66b459cdab73acfbe1c1cd8b24dcb1acf23d3",
       "package/units/air-factory/units/body.png": "f2f5836caec9a3078885b8ab00654f27800d38f17352b3be4358c3afc6a42b90",
       "package/units/air-factory/units/dead.png": "78e0d0b9a4eb88801361721035f5b84d141fb745f094192891496c4b63916976",
-      "package/units/air-factory/units/helicopter.hjson": "906243ee0d3083203381d5a116df173fa0399cd73385f2994455145a2a21a849",
+      "package/units/air-factory/units/helicopter.hjson": "a0f67651c335be1bf46b9793ea74c186437b6172e3be78ad189cd4cd905a3121",
       "package/units/air-factory/units/rotor.png": "3bec04ec0daa8dcea012e8447d4ee0a58e392850da8e366d30d8e512829fd9af",
       "package/units/body.png": "07d1b87466e2b51b5800452a5ad32cce939e5f17dabfd793cb2f0f05f7b07c07",
-      "package/units/economy/extractor.hjson": "09b5e49135865f5da33a7fa618299424d25ca547dd76db5c1e4efe46485dd807",
+      "package/units/economy/extractor.hjson": "2159d6186b49e1b8abce80d63163d5f261c4afb8e4ca71047401f10076651cf9",
       "package/units/economy/extractor_back.png": "b7450a978080da75d5e52484ed62f4fe18d294c1c1e918e5c7f0abea608bea80",
-      "package/units/economy/extractor_common.hjson": "d4ccd52500293aac5720a3e07bfd0993c9775c522e0db190b72d4af346dc2e1c",
+      "package/units/economy/extractor_common.hjson": "93d31e54fce1631a9039ecdc496f14f82cb28067dd59f4405249f35a69879350",
       "package/units/economy/extractor_t1.png": "96f912275ca7d1bc07fce8aa3c9343c8be1900bd35b56367e4fc165febf56ca6",
       "package/units/economy/extractor_t2.png": "9e7ea8588ec440427424ff5daf7c628199e8e2579f783dfce0c413f135313467",
       "package/units/economy/extractor_t3.png": "21883c595db746c2ae40b55276469ccf82d74931004841c1ad1b62ed3c6317c7",
-      "package/units/economy/extractorT2.hjson": "b300b6869505035d9265185888ba8007afe29a964530a970dac394d5844283f3",
-      "package/units/economy/extractorT3.hjson": "18f36cede26ae378110e757f2e5a1b2421d80bdca858fa2d501283a62313822e",
+      "package/units/economy/extractorT2.hjson": "4988a7cc2ffd3b73aa44ef96a162051c74329d9750416a225b94e8242833260d",
+      "package/units/economy/extractorT3.hjson": "b1d98fb48c2d75ab02c476b5d9708999586f8a27d9e88520ff0902ab3181dd58",
       "package/units/economy/fabricator_dead.png": "55883ff610cb74713449cc980d2da5d04ce6a9bd57ed4fd6c29b1a3900722855",
-      "package/units/economy/fabricatorT1.hjson": "d1f7dbe3ea810e0e6cc7b531ea1acb5bd83aac531d23c2de4d32fbe5159ef9b5",
+      "package/units/economy/fabricatorT1.hjson": "69561e0e08c3c2e2687771163aa4c8be5cbb321f4b93ddf5a6b171a196aa1f13",
       "package/units/economy/fabricatorT1.png": "7ed97be7ee48026f65fbd0053a7c8c5139a650ee8b341bf404b706b3d9b6ce11",
-      "package/units/economy/fabricatorT2.hjson": "4b48049b93a605458afa5672b5e56ae8338c7b75709696b4b596c1ba2d9c41bd",
+      "package/units/economy/fabricatorT2.hjson": "3f8fa6b48f7a314b7eddbed95969f1605918a04e77de7ff88063bce291b40a30",
       "package/units/economy/fabricatorT2.png": "2b36cf34274f6682d069d7f0bdb449fcf9fc89628f9825c2ee5287d1e4177224",
-      "package/units/economy/fabricatorT3.hjson": "6fdad4594fbf7964fc262354f96fbedeec2eb151e003ddd51317998995e0b354",
+      "package/units/economy/fabricatorT3.hjson": "9a566f5c500e122b8c57b661c8b57891958365f5eef6bb917ad33b206a778a34",
       "package/units/economy/fabricatorT3.png": "347901f6bab85bbd1c44b5cf3460e7755138e8b70d773fecb6b2a4a26b7c40fc",
       "package/units/economy/factory.png": "f5fbe7d6c121670ef027714323b193a17734d63cae69bfc1ff317c5068e29e64",
       "package/units/economy/factory_back.png": "f5fbe7d6c121670ef027714323b193a17734d63cae69bfc1ff317c5068e29e64",
@@ -18516,11 +18516,11 @@
       "package/units/economy/laserDefence.hjson": "92d6fe2907c1c447a182535169741235955f983a31b10df7458ab5d4ab57778d",
       "package/units/economy/turret.png": "907d5bdfcaf8d04cd5f7cfde00bb6b77bf1973cd1191db26b8dd5f408392106a",
       "package/units/economy/turret_base2.png": "c7a05ab3c3edb89b81a698c08d60077f3b9771924a58f35fa1265f00c6d421c6",
-      "package/units/economy/turret_common_land.hjson": "08adf45be9b6547964c155a4fb02cbefa6af2c8e5636994d8e83fc3f0d270b9a",
+      "package/units/economy/turret_common_land.hjson": "f2c3b0ea7d78de86c06aff5b21795972c370d7387627cf6108417c0b7c48c4ad",
       "package/units/economy/turret_dead.png": "907d5bdfcaf8d04cd5f7cfde00bb6b77bf1973cd1191db26b8dd5f408392106a",
-      "package/units/economy/turret_t1.hjson": "e60d5001215b468547dc0c2006c410a3507e04e8e8d551981f18917a0d308799",
-      "package/units/economy/turret_t1_artillery.hjson": "dc81f8fadc98262542a54eb75e4ca160f43b2880085dea6f7c98130027e2b665",
-      "package/units/economy/turret_t2_gun.hjson": "ffe8a38859174abb6e3170c5be0e80dcef1a9a75b92ec268cc8423b53340a7af",
+      "package/units/economy/turret_t1.hjson": "accb6df21c9e77a20c81cf686fa3d4797a15ebda56a48c1cb98e4324145479c6",
+      "package/units/economy/turret_t1_artillery.hjson": "2027a9df0e698954d89ecf3640418796349736e02ab826ffbc5d5eedef285b12",
+      "package/units/economy/turret_t2_gun.hjson": "8faa893db0ec1e7746bb7ee9600065e73a4f97319fa5739ef3b94a332e7aa5cb",
       "package/units/economy/turret_top.png": "907d5bdfcaf8d04cd5f7cfde00bb6b77bf1973cd1191db26b8dd5f408392106a",
       "package/units/economy/turret_top_artillery.png": "c7a05ab3c3edb89b81a698c08d60077f3b9771924a58f35fa1265f00c6d421c6",
       "package/units/economy/turret_top_l2.png": "c7a05ab3c3edb89b81a698c08d60077f3b9771924a58f35fa1265f00c6d421c6",
@@ -18533,7 +18533,7 @@
       "package/units/mech-factory/engineer/body.png": "341a8f2d09ebedf676e91d6dafe831494920179c720b2496f17bf3a0bec0012a",
       "package/units/mech-factory/engineer/cannon.png": "9cecbcb5dc066fb59f4d8da20dbb4e66799a4f0f05d2c04c8d107ccc73d0cd1f",
       "package/units/mech-factory/engineer/dead.png": "ec48e59071fbd6f9fa1d038cc5601740a3173904046f7cc56445f0ae3b0f054c",
-      "package/units/mech-factory/engineer/engineer.hjson": "a47466adbe143348c4a7f5ee06d24d2c64c060ae0f141812126b9136263e88de",
+      "package/units/mech-factory/engineer/engineer.hjson": "749a1b9ca47ecbcec769db4c7c12cf21b6b4eec954cf42b4043bf5daa131a516",
       "package/units/mech-factory/engineer/foot.png": "f2e96fe3894acb933a8a00e6f07692855af9cc004643cdd2028d1321c1c3f633",
       "package/units/mech-factory/engineer/leg.png": "8e9f14534122311e078ac4795c3706e7be80077107d7ac3fb9233d653189ef73",
       "package/units/mech-factory/factory.png": "b0a9fa6f0ef2f4b9f240978e90e1925440f9814639826df97d4a582a9c3a7ec2",
@@ -18542,27 +18542,27 @@
       "package/units/mech-factory/factory_t2.png": "b0a9fa6f0ef2f4b9f240978e90e1925440f9814639826df97d4a582a9c3a7ec2",
       "package/units/mech-factory/heavy/body.png": "3edca2ba33a02f5d813e6042597b7fda8c0e3c6b15d1224706ed7688334887a6",
       "package/units/mech-factory/heavy/foot.png": "4ade28f090688ac6e73ae8f4df1f2d0b6dae5f3c8b03b81850e50a57e37669bc",
-      "package/units/mech-factory/heavy/heavy.hjson": "23575def10c8f264552f8adb4f30790038988f70ad281d9dfea5870988f2ac92",
+      "package/units/mech-factory/heavy/heavy.hjson": "426864cd2f6021b64b3e3b0e55de5d710027828354605f13a9afc98839c224de",
       "package/units/mech-factory/heavy/leg.png": "e623dcab437823824ef4527b8b7de770b27005a1c60d06c985efbd0d45a3159f",
       "package/units/mech-factory/heavy/shield.png": "78f7f5c331d0235c56db25d364ae43bf01f8deb021bfceadf60353a9e6384179",
       "package/units/mech-factory/heavy/small_turret.png": "c09d30972c99f2d9a45bef0a77a3f3e56ba78aab6a09fc6b01a444616a66e9d6",
       "package/units/mech-factory/heavy/turret.png": "80c8457ced89d6bc2920dc250e35cb11b3d7933d1dfa4e98d8ba4c13bb1e5c6f",
       "package/units/mech-factory/mechFactory.hjson": "d53e5538f3aaf671cebe9dd962f98fb2fbca2c0f15d963824cedae7f941b2269",
       "package/units/mech-factory/mechFactoryT2.hjson": "1fc775ca467dbc054532c7902bedead8ed10293f8dcce5986dd61275170b4908",
-      "package/units/mech.hjson": "43e323b8c352377dbac38f4c9bbd3d90a0c64484b134cc24024c2943c19834fa",
+      "package/units/mech.hjson": "39638c6d5e559f4d09301a17c9ec40ba28e94571d74b8dd8de4b13e7758b928b",
       "package/units/repairbay/body.png": "6ccf44446a0c4fbaa70a9ff1105257943feb5d622f07caca5e24b23cfc5b771e",
       "package/units/repairbay/dead.png": "cc321255a36fa9aed77068b995249114e569ce76688c9ebc21794a8cf420f8dd",
       "package/units/repairbay/repairbay.hjson": "efc6cf8e924b9f3992a04592649af5827f9c6d17b4e06324f5ddb6d68508c35f",
       "package/units/sea-factory/hovercraft.hjson": "a3ffcb5c6618e672fadf35eba05220d6dafdc8b7002d1686b5585835d15b26c5",
       "package/units/sea-factory/hovercraft.png": "d515f58aa5726cc44880b6b05c48b2af10a02118a164449a2388d6dcae534b8b",
       "package/units/sea-factory/hovercraft_dead.png": "60a36a41dc022e27b3fe20b5f0e530493648afb02ee90987bf45774f3ba0cfb0",
-      "package/units/sea-factory/land/tank.hjson": "44237f340697fbcf43dc28991da9977fd4264324c6f28b310d6300b6104739b8",
+      "package/units/sea-factory/land/tank.hjson": "9b47398bfb49a86661ce3c40417e832702d8a7ac8d7c2a12db42d79060b24b8e",
       "package/units/sea-factory/land/tank.png": "898fa8d12d89e73c988c258c3522a23660b2fdc500b4c8588fd2d8cf5fe4b605",
       "package/units/sea-factory/land/tank_dead.png": "cbab7f92fa0cbef203e94823e2cbdc3e0116df3dab205f2ce0296e399a1a4ffa",
       "package/units/sea-factory/land/tank_turret.png": "20dfaa2a45dd5bb635e83425fb64a6d3d3f9fef48d1b0a3b573fe5b9b67c4985",
       "package/units/sea-factory/naval/heavy_battleship.png": "fed347e885f6b394f48ebb3f82a3c7deb86ce6cd73e1035715b2be69fdb87a1f",
       "package/units/sea-factory/naval/heavy_battleship_dead.png": "b3b38d14f12c1cc7dada9e25ac1ee1c5a126472ec36f561c37d0949fbdc256a7",
-      "package/units/sea-factory/naval/heavyBattleship.hjson": "764670af7d998cbd03d676b883e834f13d31dd3a23c2663a8a6dba6cd631bfa1",
+      "package/units/sea-factory/naval/heavyBattleship.hjson": "497a818dee530d8328785f48b9c04c73801122efdec2fd7b5732106e824e9dbb",
       "package/units/sea-factory/naval/large_turret.png": "786ebb3167e16227585aa46f179ccc0fb21136deec159be7d9cf82708918550b",
       "package/units/sea-factory/sea_factory.png": "39e691989d04437422f25d66b50dbaa9cd9cf4af91a6a3f5e3a4ba754f84acdb",
       "package/units/sea-factory/sea_factory_dead.png": "da6613bbcce31da57a87f91b54bbb99fd6ce800eb6bcf5efa9245f71cda45a3a",
@@ -18571,51 +18571,51 @@
       "package/units/sea-factory/seaFactoryT2.hjson": "2f4f7682d460e3759ec81a60a1b23ff4459731511c195c83fd3204645e8d888e",
       "package/units/sea-factory/submarine/body.png": "d61fd88c779e1209fee1400b3e21fe79cfef45729b31aea4d3a476593e794892",
       "package/units/sea-factory/submarine/dead.png": "fed1c2fca42a6e8b4a815b4146e2371a66786a0a03a000652c4bf67ad23a7506",
-      "package/units/sea-factory/submarine/submarine.hjson": "9f7536ddb58af8d821e94d1738c8f73252ad4c99e115802ff1da051e3d86356a",
-      "package/units/spider/aa-t2.hjson": "1843046edf291861ba499b491fb62f2e1784322a87de686a6c2ca161bcc708b6",
+      "package/units/sea-factory/submarine/submarine.hjson": "edd35d0ebf15b41119511fb4b0af84fbbe55a80fc2aecb44161940258872e2e1",
+      "package/units/spider/aa-t2.hjson": "d5a2ab84cd49833c98406a2aebed3d2b469a047243afd4b1ab0bae1883134dbd",
       "package/units/spider/aa-t2.png": "65be990172b38abd38bf943d3469ebfe9507d59cc2b02afbb77a91e99cee32b6",
-      "package/units/spider/aa.hjson": "8b1cf25de890a94288377bd2cc138ee33caddcb5066ea25755289720b2f67956",
+      "package/units/spider/aa.hjson": "060dbbdfc926c1d5aea6360506588928f66dc4f458b7655165e8102d95f38114",
       "package/units/spider/aa.png": "0b9f36b2d623711b1f49cf41fbe70eb6c23e921ea3cb10ff9e24a15f08e017a8",
-      "package/units/spider/anti-nuke.hjson": "87ec3384fe10f316deedf68a525d06674ce938ca6ece66691ebb1644100b6dc4",
+      "package/units/spider/anti-nuke.hjson": "25596349c568dba59cb40db2834c5da648ac1431bde035cc3f0ba2729e9ec9e2",
       "package/units/spider/anti-nuke.png": "e8f864327a95429c8830fe38bb934ed4c4b673d675d284fa412d0f3370a99356",
       "package/units/spider/artillery-base.png": "31005cd39c5a40c76d1b2008470f02f10a9b490192dd82d85e6d41e24aaeff11",
-      "package/units/spider/artillery.hjson": "5f5d25714abb03614f4fcdb259e861fb776595eac3bd631c955b80c6ddb163bf",
+      "package/units/spider/artillery.hjson": "e3ab3af570338f3ae11620b89c3c5e5fdcd7bef65554eabdb357ecdf8855bfc4",
       "package/units/spider/artillery.png": "21d08ffc7cbd855b4e85e56bade550bb7218c08843cf07e7fdbe135e687d8820",
-      "package/units/spider/blink.hjson": "f931d90e31bf355b1e2b661bdfbb80ac9fa6a8ce4db1a3720d321e58628bd09e",
+      "package/units/spider/blink.hjson": "caf29fcc084fd57a6601075e298cc9cb477193dc2085c3fb412be52a37ac03bb",
       "package/units/spider/blink.png": "bf7c4642fa3927c6a16d31e93c1ef25ccc85b998edf90503580e7c7b65e28f9b",
       "package/units/spider/body.png": "1b6e62fa58c3fb4e9ac865c528f7cfb03613c0fa99ac07ce92a2a0fc74f9bcf9",
       "package/units/spider/dead.png": "ed1c887a864c07edfd0d7a906339d0ce1132039f6f2aea4ad6ae2dc0ec2e268d",
-      "package/units/spider/empty.hjson": "28009c318bb2e428c289d5096c2ad4d3dbaaf608d8b8d859e50016e2f6563cdc",
+      "package/units/spider/empty.hjson": "e827398af53225572b3ea90cf30e7659ae72b1235cf2504773445c7e9db00e50",
       "package/units/spider/empty.png": "43739c566e26fd7cb88f69d3864ea34740372f5ee99acac169e090beffbce5c6",
-      "package/units/spider/fabricator-t2.hjson": "52e29760782dda51742aa55438732afd94c35f683b75cfde5d0c957bf23d3e51",
+      "package/units/spider/fabricator-t2.hjson": "7e1a03d50e29c87661977e28553bc430f03bd3ffdc3ddbd1913a36d6efffb658",
       "package/units/spider/fabricator-t2.png": "fa641f80a86424197868e2a121dbb5bbfaaf4a34f787f5123f09d1daddb47670",
-      "package/units/spider/fabricator.hjson": "2f618fdd63d527e9e81abb981f7bed39ced8c702ba345dffa75641170408488f",
+      "package/units/spider/fabricator.hjson": "c0b2f9d1a1d88c1127dc955070cdfa187f64a76e5989adbd10f3f0f26cbe8129",
       "package/units/spider/fabricator.png": "31005cd39c5a40c76d1b2008470f02f10a9b490192dd82d85e6d41e24aaeff11",
-      "package/units/spider/flak.hjson": "dbec9643f3dfef9ffea09df072b0ba609ebe04725591e66c63887fcd4092c9a7",
+      "package/units/spider/flak.hjson": "e6c1dfee1b1a59be4954b1298c3d543471f4d94624b1dc772a5032c45316dd19",
       "package/units/spider/flak.png": "c00eb72366dc9c7fcc22e5a77e90a3ca4eaeb9255e6ebb652d038d5c18d7f96a",
       "package/units/spider/foot.png": "7038cf379803dc79ea3de87357e32fb5fcf2432f7e0c47bbc2c4f089ec087fe5",
-      "package/units/spider/gun-t2.hjson": "e5697915c0cbb2c17209b0455d411b4541de78da5268aa71900e109078c3e26d",
+      "package/units/spider/gun-t2.hjson": "da6b7b23e5f1286f2fd8a20107fbe2148ceb5a1d4c6880ca66f1d7b72aae9179",
       "package/units/spider/gun-t2.png": "18258f027e53041edac46991a6c10f3a85391d35a6cb790469df6910140f3570",
-      "package/units/spider/gun.hjson": "63707d7e41200a0d0314e59a61f281bd4b2f0073d1c5758e41b6cc3907489e02",
+      "package/units/spider/gun.hjson": "0ca8ad7eaf6c54a60b6a015e1e4a85f9d30af29adb44bf5a46397b7967f477cb",
       "package/units/spider/gun.png": "d12e5b8b43f1b8b631623a2c3d9b615b02efb82389c85c033fa6f3c5690869b8",
-      "package/units/spider/laser-defense.hjson": "a78463ada670da1f32e19148249d5ee2e4becdc552f98523c66733b1a3440b21",
+      "package/units/spider/laser-defense.hjson": "fe33ede92f9c8fba1e272e69cb854849d74062af41405612f1bd9f48b696de8a",
       "package/units/spider/laser-defense.png": "31005cd39c5a40c76d1b2008470f02f10a9b490192dd82d85e6d41e24aaeff11",
       "package/units/spider/leg.png": "584c01dc38d6b5a28e67bc88c84cd0a46abaaa02203e42656884692c904a4371",
-      "package/units/spider/lightning.hjson": "843bd9935dbfbbd44411318fe80e30e467c446cca5f0fac02f97e8fbf9eee2ff",
+      "package/units/spider/lightning.hjson": "00fb8962ccb53f1ee7d72fda3ffbbd1875346ebbcc09992913c2538381c7d327",
       "package/units/spider/lightning.png": "574a5548601288421133c38740cc69a5f8a9b562fe40a15a628c64b9520de770",
       "package/units/spider/nano.png": "feed165d316f8cb6c80e46631d5d272480cf5c1d18df265737f4b81244a9fdc1",
       "package/units/spider/shadow.png": "2e2c8757470c03ea534724e733edf9b091e863064e2b79955b4525b96b12870e",
-      "package/units/spider/shield.hjson": "51bf89eaa545097d5909743e268b1de7352ab7811e5a638d4ba0e2d9289d3274",
+      "package/units/spider/shield.hjson": "4dd2f922ee920a776d9933ee9cbb00d8914e0250cf28b44fe01241e9f4c7c138",
       "package/units/spider/shield.png": "bf7c4642fa3927c6a16d31e93c1ef25ccc85b998edf90503580e7c7b65e28f9b",
       "package/units/spider/slot-ui.png": "0d79d0a6629a3c9539ed4130ad13a444fc44d07812b515679e38c8c118bf714f",
-      "package/units/spider/small-laser-t2.hjson": "aef3ffa8cece48597d2297d5ba65e668f6f650243fe2cda2a5e077572ef0eada",
+      "package/units/spider/small-laser-t2.hjson": "537a8cc1f802c6b6b38b4e123b6818d5da1e8f00145e41133426a3ee745aa229",
       "package/units/spider/small-laser-t2.png": "d93009ae9d2f752477147288d311ccf25d5e6379ed5aee7738642db4cdad8840",
-      "package/units/spider/small-laser.hjson": "2ef9ee8b97a52a351a1e9834829f835328d4bbeb47bb638de503385b0475cb79",
+      "package/units/spider/small-laser.hjson": "3ae2a7b86c2ed775c8a01fa42a39fe9a1b3b2e7f11b1b7219c78e4d612ecd769",
       "package/units/spider/small-laser.png": "f60e673b182a1930751d0ca2b31957f8f9d359ccb43362c22d0674a7615db5e7",
-      "package/units/spider/speed-incomplete.hjson": "85ea375f2e8d4ed88a2cecd2b82e26f50a8a3dbbe78624b0c3d0166f88853428",
-      "package/units/spider/speed.hjson": "7cd441e6bb7052c52c2736eb1fb91e8ad1e0d5f15757e30e03b2f58aa25f4555",
+      "package/units/spider/speed-incomplete.hjson": "4b32d90622f89b604fb93fdd6179569348b0b4efcc95a511b6a3b31a2184a7fe",
+      "package/units/spider/speed.hjson": "4fa19187bc6c39579a2daf3df950609903f16dcd73620a16af5c773883f06a84",
       "package/units/spider/speed.png": "6a12b8a065e0f1e31c6fc33f1fafa1a6bf021a3df9a27ebb3d79ea7aae7fb956",
-      "package/units/spider/spider.hjson": "ba3a9128d10914a5cb24138b39ca26f62515c75e00381813a690614f1a5134b0"
+      "package/units/spider/spider.hjson": "60a8c45f9f023748f69d40789f46bfeb00fcb3513d9413549956ae659522988d"
     }
   }
 }

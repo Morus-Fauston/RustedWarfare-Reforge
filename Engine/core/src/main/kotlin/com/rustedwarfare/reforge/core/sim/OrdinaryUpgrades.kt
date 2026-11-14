@@ -98,8 +98,11 @@ internal class OrdinaryUpgrades private constructor(private val definitions: Map
         }
         if (completed == null) return OrdinaryUpgradeChange(advanced, workingLedger)
         val definition = definitions.getValue(completed.targetTypeId)
-        check(unit.alive && unit.definition.upgrades?.actions?.any {
-            it.actionKey == completed.actionKey && it.targetTypeId == definition.id } == true)
+        check(unit.alive)
+        val action = checkNotNull(unit.definition.upgrades?.actions?.singleOrNull {
+            it.actionKey == completed.actionKey && it.targetTypeId == definition.id })
+        val shield = if (unit.definition.className == "AuthoredEconomicBuilding")
+            UnitShield.afterConversion(unit, definition.shield) else unit.shield
         val oldMaximum = checkNotNull(unit.definition.maximumHealth).toFloat()
         val nextMaximum = checkNotNull(definition.maximumHealth).toFloat()
         // Native sea/air tier setters change their menu/appearance without writing HP.
@@ -110,12 +113,15 @@ internal class OrdinaryUpgrades private constructor(private val definitions: Map
         unit.typeId = definition.id
         unit.definition = definition
         unit.health = health
+        unit.shield = shield
         unit.speed = 0.0
         unit.combat?.let { it.cooldown = minOf(it.cooldown, checkNotNull(definition.combat).shootDelay) }
         val convertedLedger = definition.production?.let { production -> workingLedger.replaceFactory(unit.unitId,
             FactoryProductionSpec(unit.ownerPlayerId, production.unitTypeIds.associateWith { definitions.getValue(it).build!! },
                 definition.upgrades?.actions.orEmpty())) } ?: workingLedger
-        val retained = advanced.retain(unit, convertedLedger,
+        val credited = if (action.completionCredits == 0L) convertedLedger
+            else convertedLedger.refund(unit.ownerPlayerId, action.completionCredits)
+        val retained = advanced.retain(unit, credited,
             definition.upgrades?.actions?.mapTo(mutableSetOf()) { it.actionKey }.orEmpty())
         return retained.copy(events = listOf(Event("upgrade-completed", unit.unitId)) + retained.events)
     }
@@ -130,7 +136,12 @@ internal class OrdinaryUpgrades private constructor(private val definitions: Map
             return OrdinaryUpgradeChange(this, refunded,
                 if (removal.removed.isEmpty()) emptyList() else listOf(Event("upgrade-refunded", unit.unitId)))
         }
-        val removal = queues.retain(unit.unitId, allowed)
+        val removal = queues.retain(unit.unitId) { item ->
+            item.actionKey in allowed && unit.definition.upgrades?.actions?.any {
+                it.actionKey == item.actionKey && it.targetTypeId == item.targetTypeId &&
+                    it.price == item.cost && it.rate == item.rate
+            } == true
+        }
         var refunded = ledger
         for (item in removal.removed) refunded = refunded.refund(unit.ownerPlayerId, item.cost)
         return OrdinaryUpgradeChange(withQueues(removal.queues), refunded,

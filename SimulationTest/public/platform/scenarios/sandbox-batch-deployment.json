@@ -1,0 +1,25 @@
+{
+  "schemaVersion": 1,
+  "deploymentEnabled": true,
+  "intents": [
+    {
+      "intentId": "fixed",
+      "kind": "deploy",
+      "atStep": 2,
+      "entries": [
+        {"alias": "escort", "typeId": "tank", "x": 190, "y": 110, "owner": "p1"}
+      ]
+    },
+    {
+      "intentId": "event",
+      "kind": "deploy",
+      "afterEvent": {"kind": "unit-spawned", "unitAlias": "escort"},
+      "maxWaitSteps": 3,
+      "entries": [
+        {"alias": "reinforcement", "typeId": "tank", "x": 210, "y": 110, "owner": "p1"}
+      ]
+    },
+    {"intentId": "select", "kind": "select", "unitAlias": "reinforcement"},
+    {"intentId": "move", "kind": "move", "position": {"x": 230, "y": 130}, "waitSteps": 5}
+  ]
+}

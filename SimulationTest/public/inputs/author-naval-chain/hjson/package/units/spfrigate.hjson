@@ -1,6 +1,6 @@
 // Self-owned chain; INI templates and named weapon inheritance are intentional.
 {
-  "format": "rw-reforge.unit.v1",
+  "format": "rw-reforge.unit.v2",
   "copyFrom": [
     "spcorvette.hjson"
   ],

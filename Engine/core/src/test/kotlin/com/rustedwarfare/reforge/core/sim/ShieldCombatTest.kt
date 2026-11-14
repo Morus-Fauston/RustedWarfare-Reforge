@@ -1,9 +1,61 @@
 package com.rustedwarfare.reforge.core.sim
 
 import com.rustedwarfare.reforge.core.content.*
+import java.nio.file.Files
+import java.nio.file.Path
 import kotlin.test.*
+import org.hjson.JsonValue
 
 class ShieldCombatTest {
+    @Test fun recovery_at_the_float_limit_caps_shield_during_the_first_simulation_step() {
+        withShieldDuel(40.0, transform = { scene ->
+            val tank = scene.unitDefinitions.getValue("c_tank")
+            val shielded = UnitDefinition(tank.id, tank.className, tank.radius, tank.displayRadius, tank.totalFrames,
+                tank.imagePath, tank.imageScale, tank.movement, tank.retainedUnconsumed,
+                combat = tank.combat, shield = ShieldProfile(Float.MAX_VALUE, Float.MAX_VALUE))
+            scene.copy(unitDefinitions = scene.unitDefinitions + (tank.id to shielded))
+        }) { context ->
+            val shield = context.advance(Step(0, 1.0, "sim-tick")).units.single { it.unitId == "probe" }.shield
+            assertEquals(Float.MAX_VALUE, assertNotNull(shield).current)
+        }
+    }
+
+    @Test fun a_distinct_declared_tank_absorbs_an_actual_hit_and_regenerates() {
+        val fixtures = System.getProperty("public.fixtures.dir")?.let(Path::of)
+            ?: Path.of("../../SimulationTest/public/inputs")
+        val source = fixtures.resolve("three-format-tanks/json/units").toAbsolutePath().normalize()
+        val model = JsonValue.readJSON(Files.readString(source.resolve("tank.json"))).asObject()
+        model.get("core").asObject().set("name", "shield_scout").remove("overrideAndReplace")
+        model.add("abilities", JsonValue.readJSON(
+            """[{"name":"screen","type":"shield","maximum":50,"regeneration":0.3}]"""))
+        val dir = Files.createTempDirectory("reforge-shield-scout-").toRealPath()
+        val definition = try {
+            for (name in listOf("tank.png", "tank_dead.png", "tank_turret.png"))
+                Files.copy(source.resolve(name), dir.resolve(name))
+            val path = Files.writeString(dir.resolve("shield.json"), model.toString())
+            val shieldScout = assertIs<ContentResult.Success<LoadedUnitContent>>(
+                ContentLoader.loadDeclaredTankWithSources(path)).value.definition
+            withShieldDuel(40.0, transform = { scene ->
+                scene.copy(unitDefinitions = scene.unitDefinitions - "mechHeavyMissile" + (shieldScout.id to shieldScout),
+                    units = scene.units.map { if (it.unitId == "heavy") it.copy(typeId = shieldScout.id) else it })
+            }) { context ->
+                assertEquals(50f, context.observe().units.single { it.unitId == "heavy" }.shield?.current)
+                val hit = firstShieldHit(context)
+                val victim = hit.units.single { it.unitId == "heavy" }
+                assertEquals("shield_scout", victim.typeId)
+                assertEquals(210.0, victim.health)
+                assertEquals(10f, victim.shield?.current)
+                val next = context.advance(Step(hit.stepIndex + 1, 1.0, "sim-tick"))
+                assertEquals(10.3f, next.units.single { it.unitId == "heavy" }.shield?.current)
+            }
+            shieldScout
+        } finally {
+            Files.list(dir).use { children -> children.forEach(Files::delete) }
+            Files.delete(dir)
+        }
+        assertEquals(ShieldProfile(50f, .3f), definition.shield)
+    }
+
     @Test fun shield_hit_display_decays_independently_while_real_shield_recovers() = withShieldDuel(40.0) { context ->
         val hit = firstShieldHit(context)
         assertEquals(40f, hit.units.single { it.unitId == "heavy" }.shield?.displayDamage)

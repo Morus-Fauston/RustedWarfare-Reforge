@@ -45,7 +45,7 @@ class HoverContentTest {
         val image = assertIs<ContentResult.Failure>(ContentLoader.loadContentPack(root)).error
         assertEquals(ContentErrorCode.BAD_REFERENCE, image.code)
         assertEquals("image_shadow", image.field)
-        Files.writeString(author, """{"format":"rw-reforge.unit.v1","copyFrom":["missing.ini"]}""")
+        Files.writeString(author, """{"format":"rw-reforge.unit.v2","copyFrom":["missing.ini"]}""")
         val parent = assertIs<ContentResult.Failure>(ContentLoader.loadContentPack(root)).error
         assertEquals(ContentErrorCode.BAD_REFERENCE, parent.code)
         assertEquals("copyFrom", parent.field)

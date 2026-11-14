@@ -29,15 +29,17 @@ internal object AaBeamGunship {
     }
 
     fun supports(unit: UnitDefinition): Boolean {
-        val burning = unit.id == "aaBeamGunship_afterburn"
-        if (unit.id != "aaBeamGunship" && !burning) return false
+        val profile = unit.afterburn ?: return false
+        if (!profile.validIds()) return false
+        val burning = unit.id == profile.boostedForm
+        if (unit.id != profile.normalForm && !burning) return false
         if ((unit.afterburnTrailImagePath != null) != burning) return false
         val actions = unit.customActions ?: return false
-        val expectedActions = mutableListOf(CustomActionDefinition("afterBurn", "aaBeamGunship_afterburn_0",
-            "aaBeamGunship_afterburn", 1000f, if (burning) null else 6f, 25000))
+        val expectedActions = mutableListOf(CustomActionDefinition("afterBurn", "${profile.boostedForm}_0",
+            profile.boostedForm, 1000f, if (burning) null else 6f, 25000))
         if (burning) {
-            expectedActions += CustomActionDefinition("cancelBurn", "aaBeamGunship_1", "aaBeamGunship", 1000f, 6f)
-            expectedActions += CustomActionDefinition("autoSwitchBack", "aaBeamGunship_2", "aaBeamGunship", 0f, 6f,
+            expectedActions += CustomActionDefinition("cancelBurn", "${profile.normalForm}_1", profile.normalForm, 1000f, 6f)
+            expectedActions += CustomActionDefinition("autoSwitchBack", "${profile.normalForm}_2", profile.normalForm, 0f, 6f,
                 automatic = AutomaticActionCondition.ENERGY_EMPTY)
         }
         if (actions.actions != expectedActions || actions.automaticCooldown != 60f) return false

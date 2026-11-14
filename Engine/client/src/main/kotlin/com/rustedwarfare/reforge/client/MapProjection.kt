@@ -1,6 +1,7 @@
 package com.rustedwarfare.reforge.client
 
 import com.rustedwarfare.reforge.core.sim.Position
+import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.pow
 
@@ -9,14 +10,26 @@ data class MapArea(val left: Double, val bottom: Double, val width: Double, val 
 data class MapCamera(val center: Position, val zoom: Double = 1.0)
 
 class MapProjection(val worldWidth: Double, val worldHeight: Double,
-                    val mapArea: MapArea = MapArea(24.0, 100.0, 600.0, 400.0)) {
+                    mapArea: MapArea = MapArea(24.0, 100.0, 600.0, 400.0),
+                    private val fillViewport: Boolean = false) {
+    var mapArea = mapArea
+        private set
     var camera = MapCamera(Position(worldWidth / 2, worldHeight / 2))
         private set
     init {
         require(listOf(worldWidth, worldHeight, mapArea.width, mapArea.height).all { it.isFinite() && it > 0 })
         require(mapArea.left.isFinite() && mapArea.bottom.isFinite())
     }
-    private val fitScale = min(mapArea.width / worldWidth, mapArea.height / worldHeight)
+    private var fitScale = baseScale()
+    private fun baseScale(): Double = if (fillViewport) max(mapArea.width / worldWidth, mapArea.height / worldHeight)
+        else min(mapArea.width / worldWidth, mapArea.height / worldHeight)
+
+    internal fun resizeBattlefield(width: Double) {
+        if (!fillViewport || !width.isFinite() || width <= 0 || width == mapArea.width) return
+        mapArea = mapArea.copy(width = width)
+        fitScale = baseScale()
+        centerOn(camera.center)
+    }
     val scale: Double get() = fitScale * camera.zoom
     val width: Double get() = worldWidth * scale
     val height: Double get() = worldHeight * scale

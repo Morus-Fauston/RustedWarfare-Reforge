@@ -6,13 +6,14 @@ import java.nio.file.Path
 /** Qualified native producer; the disabled custom three-state INIs are not this capability. */
 internal object AmphibiousJetContentReader {
     private val schema = UnitContentSchema.native(setOf("format", "name", "maxHp", "radius", "price", "buildSpeed",
-        "image", "image_dead", "image_shadow", "image_wing_left", "image_wing_right"),
+        "image", "image_dead", "image_shadow", "image_wing_left", "image_wing_right", "locomotion"),
         setOf("rw-reforge.native-amphibious-jet.v1"))
 
     fun readWithSources(path: Path, validatePath: (Path) -> Unit): LoadedUnitContent =
         UnitSourceReader(schema, validatePath).load(path) { loaded ->
             val values = loaded.values.getValue("core")
             fun required(key: String) = requiredContentField(values[key], path, "core", key, "Required native amphibious jet field")
+            validateSubmersibleLocomotion(path, loaded, SubmersibleLocomotion.AIR_WATER)
             if (required("name") != "amphibiousJet") reject(ContentErrorCode.UNSUPPORTED_FEATURE, path, "core", "name",
                 reason = "Expected native amphibiousJet")
             for ((key, expected) in mapOf("maxHp" to 530.0, "radius" to 12.0, "price" to 2000.0, "buildSpeed" to .001)) {

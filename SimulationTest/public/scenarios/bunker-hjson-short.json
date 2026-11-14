@@ -12,13 +12,13 @@
       {
         "id": "mechBunker",
         "path": "../inputs/bunker-production/hjson/package/bunker.hjson",
-        "sha256": "60be69f481216f7a7ef15f0da0bcf2c3eced89b647bf6a45963ca5b990c479d3",
+        "sha256": "2cc2882dd87054d5e5668f07f2a455857d022917eec854a6cbd2ff36a1e70bb4",
         "loader": "mech-bunker"
       },
       {
         "id": "mechBunkerDeployed",
         "path": "../inputs/bunker-production/hjson/package/deployed.hjson",
-        "sha256": "84ee982924d41f3d4edd0a0ae75f5a169e718fac40d5a00ad795249b44583437",
+        "sha256": "1a23347d8557be3b7f22f3a34cbcd57b3357b052e2d912c1859bee53aa232b19",
         "loader": "mech-bunker"
       }
     ],

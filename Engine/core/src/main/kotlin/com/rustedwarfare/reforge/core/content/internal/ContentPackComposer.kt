@@ -41,6 +41,10 @@ internal object ContentPackComposer {
             reject(ContentErrorCode.BAD_REFERENCE, byId.getValue(cyclic.first()).manifest, field = "dependencies",
                 ref = cyclic.joinToString(), reason = "Cyclic enabled package dependencies")
         }
+        val openings = ordered.filter { it.opening != null }
+        if (openings.size > 1)
+            reject(ContentErrorCode.IDENTITY_CONFLICT, openings[1].manifest, field = "opening",
+                ref = openings.joinToString { it.id }, reason = "Enable a single package-owned opening")
         val units = linkedMapOf<String, UnitDefinition>()
         val provenance = linkedMapOf<String, ContentProvenance>()
         val sources = linkedMapOf<Path, ContentSourceIdentity>()
@@ -72,6 +76,11 @@ internal object ContentPackComposer {
                 ContentPackReader.rejectMissingAttachmentReference(source.entryPath, origins, reference,
                     "Expected the referenced qualified attachment form in the final set")
             }
+            unit.afterburn?.let { profile ->
+                for ((field, form) in listOf("normalForm" to profile.normalForm, "boostedForm" to profile.boostedForm)) {
+                    if (units[form]?.afterburn != profile) bad(form, field, "Afterburn forms must share the same profile")
+                }
+            }
             unit.customActions?.actions?.forEach { action ->
                 action.targetTypeId?.let { target ->
                     if (units[target]?.customActions == null)
@@ -82,10 +91,11 @@ internal object ContentPackComposer {
                         bad(launch.payloadUnitTypeId, "spawnUnit", "Scout payload requires its qualified unit in the final set")
                 }
             }
+            if (RoleCompositionRules.usesRoles(unit) && !RoleCompositionRules.supports(unit, units))
+                bad(id, "roles", "Expected complete supported unit roles and compatible conversion forms")
             unit.builder?.buildingTypeIds?.forEach { target ->
                 val definition = units[target]
-                val construction = if (unit.id == ModularSpiderRules.ID) definition?.siteConstruction else definition?.construction
-                if (construction == null) bad(target, "constructionTypes", "Builder target must exist with construction metadata in the final set")
+                if (definition?.let(unit::canConstruct) != true) bad(target, "constructionTypes", "Builder target must exist with construction metadata in the final set")
             }
             if (unit.className == "AuthoredBuilding") unit.upgrades?.let { profile ->
                 val target = profile.actions.singleOrNull()?.targetTypeId
@@ -110,6 +120,17 @@ internal object ContentPackComposer {
                     (target == "builder" && product.builder == null || target == "mechGun" && product.mech == null))
                     bad(target, "productionUnits", "Mech factory targets require the corresponding builder or two-legged mech capability")
             } }
+        }
+        val economic = units.values.filter { it.className == "AuthoredEconomicBuilding" }
+        for (checkReturn in listOf(false, true)) for (unit in economic) {
+            val invalid = AuthorEconomicRules.invalidAction(unit, units, checkReturn) ?: continue
+            val reportedSource = provenance.getValue(invalid.sourceId)
+            val section = invalid.key?.let { "action_$it" } ?: if (invalid.field == "actions") "actions" else "core"
+            val origin = byId.getValue(reportedSource.packageId).unitFieldOrigins[invalid.sourceId]
+                ?.get(section to invalid.field)
+            val error = ContentError(ContentErrorCode.BAD_REFERENCE, reportedSource.entryPath.toString(), section,
+                invalid.field, invalid.targetId, "Expected compatible resource-pool forms with valid paired conversion actions")
+            throw ContentReadException(origin?.locate(error, "[$section].${invalid.field}") ?: error)
         }
         return LoadedContentSet(ordered, units, provenance, sources.values.toList())
     }

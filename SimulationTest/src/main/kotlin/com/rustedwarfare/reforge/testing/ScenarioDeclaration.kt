@@ -14,6 +14,10 @@ internal object ScenarioDeclaration {
             if (!Regex("[a-f0-9]{64}").matches(it.text("sha256"))) throw InputError("Invalid content identity hash")
         }
         unique(references.map { it.id("id") }, "content")
+        val afterburnPairs = UnitActionDeclaration.afterburnPairs(value)
+        if (unitReferences(content).any { it["loader"] == s("aa-beam-gunship") &&
+                it.id("id") !in afterburnPairs && it.id("id") !in afterburnPairs.values })
+            throw InputError("Missing afterburn pair for an AA unit type")
         val coordinate = value.objectAt("coordinateModel")
         coordinate.id("id")
         listOf("space", "xAxis", "yAxis", "origin", "unit", "valueType", "precision").forEach { coordinate.text(it) }
@@ -42,6 +46,8 @@ internal object ScenarioDeclaration {
             if (observers.isEmpty() || observers.any { id -> players.none { it.id("playerId") == id } })
                 throw InputError("Unknown or empty player observer")
         }
+        blinkTypes(value)
+        transportTypes(value)
         val units = value.arrayAt("units").map { it.jsonObject }
         unique(units.map { it.id("unitId") }, "unit")
         if (units.isEmpty()) throw InputError("Empty unit declaration")
@@ -92,6 +98,40 @@ internal object ScenarioDeclaration {
             throw InputError("The finite underwater target loader requires its declared native identity")
         return units
     }
+    fun blinkTypes(scenario: JsonObject): Set<String> {
+        val raw = scenario["blinkTypes"] ?: return emptySet()
+        val declared = raw.jsonArray.map { element ->
+            if (element !is JsonPrimitive || !element.isString) throw InputError("Expected a Blink unit identity")
+            obj("id" to element).id("id")
+        }
+        unique(declared, "Blink unit")
+        val supported = unitReferences(scenario.objectAt("content")).filter { it["loader"] == s("hover-tank") }
+            .map { it.id("id") }.toSet()
+        if (declared.any { it !in supported }) throw InputError("Blink units require a declared hover-tank input")
+        return declared.toSet()
+    }
+
+    fun transportTypes(scenario: JsonObject): Map<String, JsonObject> {
+        val raw = scenario["transportTypes"] ?: return emptyMap()
+        val supported = unitReferences(scenario.objectAt("content")).filter { it["loader"] == s("hover-tank") }
+            .map { it.id("id") }.toSet()
+        return raw.jsonObject.mapValues { (type, value) ->
+            val settings = value.jsonObject
+            if (type !in supported || settings.keys != setOf("capacity", "unloadTicks") ||
+                settings.integer("capacity") !in 1L..1000L || settings.integer("unloadTicks") !in 1L..36000L)
+                throw InputError("Authored transport requires a hover-tank input with fixed capacity and unload timing")
+            settings
+        }
+    }
+
+    fun verifyTransportTypes(scenario: JsonObject, definitions: Map<String, com.rustedwarfare.reforge.core.content.UnitDefinition>) {
+        val loaded = definitions.mapNotNull { (id, definition) ->
+            definition.transportSettings?.let { id to obj("capacity" to n(it.capacity), "unloadTicks" to n(it.unloadTicks)) }
+        }.toMap()
+        if (loaded != transportTypes(scenario))
+            throw InputError("Loaded transport settings differ from the scenario's declared capacity and timing")
+    }
+
     val actionKinds = setOf("select", "move", "stop", "produce", "cancel-production", "attack", "patrol", "upgrade", "cancel-upgrade", "build", "repair", "reclaim", "resume-construction", "submarine-depth", "amphibious-flight", "load", "unload", "unit-action")
     fun validateAction(action: JsonObject) {
         when (action.text("kind")) {

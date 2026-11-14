@@ -34,8 +34,8 @@ class ConstructionMixedDispatchTest {
         }
     }
 
-    @Test fun mixed_repair_keeps_the_legal_worker_and_rejects_the_tank_individually() = mixedMaintenance(false)
-    @Test fun mixed_reclaim_keeps_the_legal_worker_and_rejects_the_tank_individually() = mixedMaintenance(true)
+    @Test fun mixed_repair_applies_to_the_worker_and_skips_ineligible_selection() = mixedMaintenance(false)
+    @Test fun mixed_reclaim_applies_to_the_worker_and_skips_ineligible_selection() = mixedMaintenance(true)
 
     private fun mixedMaintenance(reclaim: Boolean) {
         val base = scene()
@@ -54,12 +54,11 @@ class ConstructionMixedDispatchTest {
             session.select(Position(340.0, 290.0), SelectionMode.ADD)
             assertEquals(setOf("a", "t", "z"), session.selectedIds)
             assertFalse(session.canMaintain, "This ticket does not invent a mixed-menu aggregation")
-            val result = assertIs<ActionResult.Rejected>(if (reclaim) session.reclaim(target.position, true) else session.command(target.position, true))
-            assertEquals("cannot-maintain", result.error.code)
+            assertIs<ActionResult.Accepted>(if (reclaim) session.reclaim(target.position, true) else session.command(target.position, true))
             val batch = assertNotNull(session.lastCommandBatch)
-            assertEquals(listOf("a", "t"), batch.members.map { it.unitId })
-            assertEquals(1, batch.accepted); assertEquals(1, batch.rejected); assertEquals(1, batch.skipped)
-            assertEquals("Accepted 1, rejected 1, skipped 1", session.playerFeedback)
+            assertEquals(listOf("a"), batch.members.map { it.unitId })
+            assertEquals(1, batch.accepted); assertEquals(0, batch.rejected); assertEquals(2, batch.skipped)
+            assertEquals("Accepted 1, rejected 0, skipped 2", session.playerFeedback)
             val worker = session.observation.units.single { it.unitId == "a" }
             assertEquals(listOf(UnitTaskKind.PATROL, if (reclaim) UnitTaskKind.RECLAIM else UnitTaskKind.CONSTRUCT), worker.tasks.map { it.kind })
             assertEquals(target.unitId, worker.tasks.last().targetUnitId)

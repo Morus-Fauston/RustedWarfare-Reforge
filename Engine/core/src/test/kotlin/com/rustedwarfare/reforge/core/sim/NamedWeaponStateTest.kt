@@ -53,7 +53,7 @@ class NamedWeaponStateTest {
                         "{\"name\":\"$name\",\"copyFromSections\":[\"template_gun\"],\"x\":0,\"y\":0,\"delay\":1,\"recoilOffset\":0,\"turnSpeed\":0,\"turnSpeedAcceleration\":0" +
                             (if (fields.isEmpty()) "" else ",$fields") + "}"
                     }
-                    "{\"format\":\"rw-reforge.unit.v1\",\"copyFrom\":[\"base.ini\"],\"core\":{\"name\":\"named_tank\"},\"weapons\":[$weapons]}"
+                    "{\"format\":\"rw-reforge.unit.v2\",\"copyFrom\":[\"base.ini\"],\"core\":{\"name\":\"named_tank\"},\"weapons\":[$weapons]}"
                 }
                 val file = root.resolve("named.$format"); Files.writeString(file, text)
                 val loaded = ContentLoader.loadDeclaredTankWithSources(file)

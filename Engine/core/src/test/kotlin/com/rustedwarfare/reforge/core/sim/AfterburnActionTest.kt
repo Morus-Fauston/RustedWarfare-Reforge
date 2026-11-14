@@ -1,6 +1,7 @@
 package com.rustedwarfare.reforge.core.sim
 
 import com.rustedwarfare.reforge.core.content.*
+import java.nio.file.Files
 import java.nio.file.Path
 import org.junit.jupiter.api.io.TempDir
 import kotlin.test.*
@@ -17,6 +18,39 @@ internal object AfterburnScene {
 
 class AfterburnActionTest {
     @TempDir lateinit var temporary: Path
+
+    @Test fun a_distinct_authored_gunship_switches_its_declared_forms_and_keeps_the_move_order() = WaterTestScene.withMap { map ->
+        val root = AfterburnContentFixture.write(temporary, "json")
+        for (name in listOf("aa.json", "afterburn.json")) {
+            val path = root.resolve(name)
+            val document = org.hjson.JsonValue.readJSON(Files.readString(path)
+                .replace("aaBeamGunship_afterburn", "escort_boosted").replace("aaBeamGunship", "escort")).asObject()
+            document.set("afterburn", org.hjson.JsonValue.readJSON(
+                """{"normalForm":"escort","boostedForm":"escort_boosted"}"""))
+            Files.writeString(path, document.toString())
+        }
+        val result = ContentLoader.loadContentPack(root)
+        val definitions = assertIs<ContentResult.Success<LoadedContentPack>>(result, result.toString()).value.units
+        val input = LandingCraftScene.scenario(map, spawns = listOf(
+            UnitSpawn("aa", "p1", "escort", Position(150.0, 150.0), 90.0)))
+        val context = AaBeamScene.open(input.copy(unitDefinitions = input.unitDefinitions + definitions))
+        try {
+            val destination = Position(480.0, 240.0)
+            assertIs<ActionResult.Accepted>(context.submit(MoveAction("move", "p1", "aa", destination, context.world)))
+            assertIs<ActionResult.Accepted>(context.submit(UnitAction("burn", "p1", "aa", "afterBurn", context.world)))
+            val running = context.advance(Step(0, 1.0, "sim-tick")).units.single { it.unitId == "aa" }
+            assertEquals("escort_boosted", running.typeId)
+            assertEquals(destination, running.moveTarget)
+            assertEquals(6f, running.energy?.current)
+            val drained = context.advance(Step(1, 1.0, "sim-tick")).units.single { it.unitId == "aa" }
+            assertEquals(5.98f, drained.energy?.current)
+            assertIs<ActionResult.Accepted>(context.submit(UnitAction("cancel", "p1", "aa", "cancelBurn", context.world)))
+            val restored = context.advance(Step(2, 1.0, "sim-tick")).units.single { it.unitId == "aa" }
+            assertEquals("escort", restored.typeId)
+            assertEquals(destination, restored.moveTarget)
+            assertTrue(assertNotNull(restored.unitActions).actions.single { it.name == "afterBurn" }.cooldownRemaining > 0)
+        } finally { context.close() }
+    }
 
     @Test fun zero_sweep_in_the_accelerated_form_stops_the_existing_sweep_clock_and_offset() = WaterTestScene.withMap { map ->
         val context = AaBeamScene.open(AfterburnScene.scenario(map, temporary))

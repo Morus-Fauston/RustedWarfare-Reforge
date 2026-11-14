@@ -33,11 +33,11 @@ internal class UpgradeQueues private constructor(private val queues: Map<String,
         if (index < 0) return UpgradeRemoval(this, emptyList())
         return UpgradeRemoval(withQueue(unitId, items.filterIndexed { i, _ -> i != index }), listOf(items[index]))
     }
-    fun retain(unitId: String, allowed: Set<String>): UpgradeRemoval {
+    fun retain(unitId: String, allowed: (PendingUpgrade) -> Boolean): UpgradeRemoval {
         val items = queue(unitId)
-        val removed = items.filter { it.actionKey !in allowed }
+        val (retained, removed) = items.partition(allowed)
         if (removed.isEmpty()) return UpgradeRemoval(this, emptyList())
-        return UpgradeRemoval(withQueue(unitId, items.filter { it.actionKey in allowed }), removed)
+        return UpgradeRemoval(withQueue(unitId, retained), removed)
     }
     fun advance(unitId: String): UpgradeTick {
         val items = queue(unitId)

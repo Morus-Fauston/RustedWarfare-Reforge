@@ -1,0 +1,19 @@
+{
+  "format": "rw-reforge.content-pack.v1",
+  "id": "sp-economic-forms",
+  "name": "Economic forms test",
+  "units": [
+    {
+      "type": "author-economic-building",
+      "file": "extractor_form.json"
+    },
+    {
+      "type": "author-economic-building",
+      "file": "overclocked_form.json"
+    },
+    {
+      "type": "author-economic-building",
+      "file": "reinforced_form.json"
+    }
+  ]
+}

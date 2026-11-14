@@ -13,6 +13,7 @@ class LoadedContentPack internal constructor(
     dependencies: List<String> = emptyList(), replacements: Map<String, ContentReplacement> = emptyMap(),
     unitFiles: Map<String, Path> = emptyMap(),
     unitFieldOrigins: Map<String, Map<Pair<String, String>, Origin>> = emptyMap(),
+    val opening: ContentPackOpening? = null,
 ) {
     val units: Map<String, UnitDefinition> = Collections.unmodifiableMap(LinkedHashMap(units))
     val sources: List<ContentSourceIdentity> = Collections.unmodifiableList(ArrayList(sources))

@@ -30,7 +30,7 @@
       {
         "id": "c_tank",
         "path": "../inputs/three-format-production/economy/json/units/tank.json",
-        "sha256": "a202d212136db87bfbfba86a2762308651d8bc3aa3efc347d0c52b49d1e9fe8b",
+        "sha256": "0f2c3c9eb45c3fa54e5f7a8d2e960ca90891b0895b4e91169e6f8f48666d974d",
         "loader": "combat"
       },
       {

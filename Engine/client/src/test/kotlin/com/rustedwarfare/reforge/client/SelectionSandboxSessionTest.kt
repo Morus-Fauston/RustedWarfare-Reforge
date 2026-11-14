@@ -119,21 +119,35 @@ class SelectionSandboxSessionTest {
         }
     }
 
-    @Test fun mixed_selection_does_not_enable_factory_spending_even_when_factory_is_primary() {
+    @Test fun mixed_selection_production_follows_the_owned_primary_factory() {
         SandboxSession(ControlledScenario.load(root())).use { session ->
             session.select(Position(110.0, 210.0))
             session.select(Position(310.0, 210.0), SelectionMode.ADD)
             assertEquals("f", session.selectedId)
+            assertEquals("f", session.selectedFactoryQueue?.factoryId)
+            assertEquals(350L, session.productionPrice)
+            assertIs<ActionResult.Accepted>(session.produce())
+            assertEquals(1400L, session.observation.balance)
+            assertEquals(1, session.observation.factoryQueues.single().items.size)
+
+            session.select(Position(110.0, 210.0), SelectionMode.TOGGLE)
+            session.select(Position(110.0, 210.0), SelectionMode.ADD)
+            assertEquals("a", session.selectedId)
+            assertEquals(setOf("a", "f"), session.selectedIds)
             assertNull(session.selectedFactoryQueue)
-            assertNull(session.productionPrice)
             assertNull(session.produce())
             assertNull(session.cancelProduction())
+            assertEquals(1400L, session.observation.balance)
+
+            session.select(Position(310.0, 210.0), SelectionMode.TOGGLE)
+            session.select(Position(310.0, 210.0), SelectionMode.ADD)
+            assertIs<ActionResult.Accepted>(session.cancelProduction())
             assertEquals(1750L, session.observation.balance)
             assertTrue(session.observation.factoryQueues.single().items.isEmpty())
         }
     }
 
-    @Test fun building_rejection_does_not_prevent_later_tank_and_batch_has_distinct_action_ids() {
+    @Test fun mixed_move_skips_the_building_and_unowned_member_before_dispatch() {
         val base = ControlledScenario.load(root())
         val scene = base.copy(units = base.units.map { it.copy(unitId = when (it.unitId) {
             "a" -> "z"; "f" -> "a"; else -> it.unitId
@@ -146,16 +160,15 @@ class SelectionSandboxSessionTest {
             val target = Position(180.0, 330.0)
             assertIs<ActionResult.Accepted>(session.move(target))
             val batch = assertNotNull(session.lastCommandBatch)
-            assertEquals(listOf("a", "z"), batch.members.map { it.unitId })
+            assertEquals(listOf("z"), batch.members.map { it.unitId })
             assertEquals(1, batch.accepted)
-            assertEquals(1, batch.rejected)
-            assertEquals(1, batch.skipped)
-            assertEquals("immobile-unit", assertIs<ActionResult.Rejected>(batch.members.first().result).error.code)
-            assertEquals(2, batch.members.map { it.result.actionId }.toSet().size)
+            assertEquals(0, batch.rejected)
+            assertEquals(2, batch.skipped)
             assertEquals(target, session.observation.units.single { it.unitId == "z" }.moveTarget)
-            assertEquals("Accepted 1, rejected 1, skipped 1; immobile-unit", session.feedback)
+            assertEquals("Accepted 1, rejected 0, skipped 2", session.playerFeedback)
             session.tick()
-            assertEquals("Accepted 1, rejected 1, skipped 1; immobile-unit", session.feedback)
+            assertEquals(target, session.observation.units.single { it.unitId == "z" }.moveTarget)
+            assertEquals(batch, session.lastCommandBatch)
             session.select(Position(20.0, 20.0))
             assertEquals(setOf("z", "b", "a"), oldSelection)
             assertTrue(session.selectedIds.isEmpty())

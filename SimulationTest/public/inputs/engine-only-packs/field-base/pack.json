@@ -1,0 +1,42 @@
+{
+  "format": "rw-reforge.content-pack.v1",
+  "id": "field-base",
+  "name": "Field camp",
+  "units": [
+    {
+      "type": "constructor",
+      "file": "units/worker.json"
+    },
+    {
+      "type": "factory",
+      "file": "units/factory.json"
+    },
+    {
+      "type": "tank",
+      "file": "units/tank.json"
+    }
+  ],
+  "opening": {
+    "map": "maps/field.tmx",
+    "credits": 3500,
+    "opponentCredits": 0,
+    "units": [
+      {
+        "id": "worker",
+        "owner": "p1",
+        "type": "field_worker",
+        "x": 110,
+        "y": 210,
+        "heading": 90
+      },
+      {
+        "id": "rival",
+        "owner": "p2",
+        "type": "field_tank",
+        "x": 380,
+        "y": 210,
+        "heading": 270
+      }
+    ]
+  }
+}

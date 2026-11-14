@@ -1,12 +1,20 @@
 package com.rustedwarfare.reforge.core.content.internal
 
 import com.rustedwarfare.reforge.core.content.*
+import java.io.ByteArrayInputStream
+import java.io.InputStream
+import java.nio.file.Files
 import java.nio.file.Path
 import org.w3c.dom.Element
 
 internal object TmxReader {
-    fun read(path: Path): MapDefinition {
-        val map = readXml(path)
+    fun read(path: Path): MapDefinition = read(path, Files::readAllBytes) { Files.newInputStream(it) }
+
+    fun readPackage(path: Path, read: (Path) -> ByteArray): MapDefinition =
+        read(path, read) { ByteArrayInputStream(read(it)) }
+
+    private fun read(path: Path, read: (Path) -> ByteArray, openImage: (Path) -> InputStream): MapDefinition {
+        val map = readXml(path, read)
         if (map.tagName != "map") reject(ContentErrorCode.MALFORMED_SYNTAX, path, map.tagName, reason = "Expected map root")
         attributes(map, path, setOf("version", "tiledversion", "orientation", "renderorder", "width", "height",
             "tilewidth", "tileheight", "nextobjectid", "backgroundcolor"))
@@ -30,8 +38,8 @@ internal object TmxReader {
                 attributes(element, path, setOf("firstgid", "source"))
                 if (elements(element, path).isNotEmpty()) reject(ContentErrorCode.UNSUPPORTED_FEATURE, path, "tileset", reason = "External reference cannot have inline elements")
                 val source = resolveReference(path, required(element, path, "source"), "tileset", "source")
-                TsxReader.read(source, first, tileWidth, tileHeight)
-            } else TsxReader.readInline(element, path, first, tileWidth, tileHeight)
+                TsxReader.read(source, first, tileWidth, tileHeight, read, openImage)
+            } else TsxReader.readInline(element, path, first, tileWidth, tileHeight, openImage)
         }.sortedBy { it.firstGid }
         if (tileSets.isEmpty()) reject(ContentErrorCode.MISSING_REQUIRED_FIELD, path, "map", "tileset", reason = "No tilesets defined")
         tileSets.forEachIndexed { index, tileSet ->

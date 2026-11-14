@@ -14,7 +14,7 @@ def render(sections, fmt, parent=None):
             return str(v).lower() if isinstance(v, bool) else str(v)
         return '\n'.join('['+s+']\n'+(f'copyFrom: {parent}\n' if s == 'core' and parent else '')+
             '\n'.join(f'{k}: {literal(v)}' for k, v in fields.items()) for s, fields in sections.items())+'\n'
-    result = dict(format='rw-reforge.unit.v1')
+    result = dict(format='rw-reforge.unit.v2')
     if parent:
         result['copyFrom'] = [parent]
     for s, fields in sections.items():
@@ -23,6 +23,15 @@ def render(sections, fmt, parent=None):
             result.setdefault(dict(turret='weapons', projectile='projectiles', action='actions')[prefix], []).append(dict(name=name, **fields))
         else:
             result[s] = fields
+    core = result.get('core', {})
+    if 'maxShield' in core:
+        ability = dict(name='shield', type='shield', maximum=core['maxShield'],
+                       regeneration=core['shieldRegen'])
+        if core.get('startShieldAtZero'):
+            ability['startAtZero'] = True
+        result['core'] = {key: value for key, value in core.items()
+                          if key not in ('maxShield', 'shieldRegen', 'startShieldAtZero')}
+        result['abilities'] = [ability]
     return json.dumps(result, indent=2)+'\n'
 
 

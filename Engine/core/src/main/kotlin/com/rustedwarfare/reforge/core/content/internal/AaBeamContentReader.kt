@@ -9,6 +9,7 @@ internal object AaBeamContentReader {
     private val actionFields = setOf("buildSpeed", "convertTo", "resourceAmount", "resourceAmount_setValue",
         "addActionCooldownTime", "canPlayerCancel", "allowMultipleInQueue")
     private val schema = UnitContentSchema(mapOf(
+        "afterburn" to setOf("normalForm", "boostedForm"),
         "core" to setOf("name", "maxHp", "radius", "price", "buildSpeed", "image", "image_dead", "image_shadow",
             "image_turret", "beam_image", "beam_image_start", "beam_image_end", "energyRegen",
             "energyRegenWhenRecharging", "energyNeedsToRechargeToFull", "afterburn_trail_image"),
@@ -21,17 +22,31 @@ internal object AaBeamContentReader {
             "energyUsage", "idleSweepAngle"),
         booleanFields = setOf("energyNeedsToRechargeToFull", "canPlayerCancel", "allowMultipleInQueue"),
         textFields = setOf("name", "image", "image_dead", "image_shadow", "image_turret", "beam_image",
-            "beam_image_start", "beam_image_end", "convertTo", "resourceAmount", "autoTrigger", "addActionCooldownTime", "afterburn_trail_image"),
+            "beam_image_start", "beam_image_end", "normalForm", "boostedForm", "convertTo", "resourceAmount", "autoTrigger", "addActionCooldownTime", "afterburn_trail_image"),
         dynamicWeapons = false)
 
     fun readWithSources(path: Path, validatePath: (Path) -> Unit): LoadedUnitContent =
-        UnitSourceReader(schema, validatePath).load(path) { loaded ->
+        UnitSourceReader(schema, validatePath, inputGuard = { file, input, _ ->
+            if (!input.structured && "afterburn" in input.sections)
+                reject(ContentErrorCode.UNSUPPORTED_FEATURE, file, "afterburn",
+                    reason = "The afterburn profile section requires structured unit content")
+        }).load(path) { loaded ->
             val fields = loaded.values.getValue("core")
             fun required(key: String) = requiredContentField(fields[key], path, "core", key, "Required AA beam gunship field")
             val name = required("name")
-            if (name !in setOf("aaBeamGunship", "aaBeamGunship_afterburn"))
-                reject(ContentErrorCode.UNSUPPORTED_FEATURE, path, "core", "name", reason = "Expected a qualified AA form")
-            val afterburn = name == "aaBeamGunship_afterburn"
+            val profile = if (!loaded.structured) AfterburnProfile.ORIGINAL else {
+                val declaration = loaded.values["afterburn"]
+                    ?: reject(ContentErrorCode.MISSING_REQUIRED_FIELD, path, "afterburn", reason = "Declare the normal and boosted forms")
+                val normal = requiredContentField(declaration["normalForm"], path, "afterburn", "normalForm", "Required normal form id")
+                val boosted = requiredContentField(declaration["boostedForm"], path, "afterburn", "boostedForm", "Required boosted form id")
+                AfterburnProfile(normal, boosted)
+            }
+            if (!profile.validIds())
+                reject(ContentErrorCode.MALFORMED_SYNTAX, path, "afterburn", "boostedForm",
+                    reason = "Expected two distinct unit ids")
+            if (name !in setOf(profile.normalForm, profile.boostedForm))
+                reject(ContentErrorCode.UNSUPPORTED_FEATURE, path, "core", "name", reason = "Expected the normal or boosted form in the afterburn profile")
+            val afterburn = name == profile.boostedForm
             if (!afterburn && fields.containsKey("afterburn_trail_image"))
                 reject(ContentErrorCode.UNSUPPORTED_FEATURE, path, "core", "afterburn_trail_image", reason = "Only the accelerated form emits trails")
             fun expected(section: String, key: String, value: String, optional: Boolean = false): String {
@@ -67,10 +82,10 @@ internal object AaBeamContentReader {
                     if (automatic == null) 1000f else 0f, if (energy) 6f else null, if (cooldown) 25000 else 0,
                     automatic = automatic)
             }
-            val actions = mutableListOf(action("action_afterBurn", 0, "aaBeamGunship_afterburn", !afterburn, true))
+            val actions = mutableListOf(action("action_afterBurn", 0, profile.boostedForm, !afterburn, true))
             if (afterburn) {
-                actions += action("action_cancelBurn", 1, "aaBeamGunship", true, false)
-                actions += action("hiddenAction_autoSwitchBack", 2, "aaBeamGunship", true, false, AutomaticActionCondition.ENERGY_EMPTY)
+                actions += action("action_cancelBurn", 1, profile.normalForm, true, false)
+                actions += action("hiddenAction_autoSwitchBack", 2, profile.normalForm, true, false, AutomaticActionCondition.ENERGY_EMPTY)
             } else if (loaded.values.keys.any { it in setOf("action_cancelBurn", "hiddenAction_autoSwitchBack") })
                 reject(ContentErrorCode.UNSUPPORTED_FEATURE, path, reason = "Normal AA form does not declare afterburn recovery actions")
             for ((key, expected) in mapOf("maxHp" to 2500.0, "radius" to 22.0, "price" to 6000.0)) {
@@ -106,7 +121,7 @@ internal object AaBeamContentReader {
                     recoil = WeaponRecoil(0.0), idleSweep = IdleSweepProfile(if (afterburn) 0.0 else 20.0, 100f, .4f, 5),
                     namedWeapons = WeaponCatalog(listOf(weapon))), build = BuildProfile(6000L, 1f / 2100f),
                 shadowImagePath = image("image_shadow", 33, 52), energy = EnergyProfile(6f, if (afterburn) -.02f else .01f, .05f, true),
-                customActions = CustomActionsProfile(actions),
+                customActions = CustomActionsProfile(actions), afterburn = profile,
                 afterburnTrailImagePath = if (afterburn) image("afterburn_trail_image", 32, 32) else null)
         }
 }

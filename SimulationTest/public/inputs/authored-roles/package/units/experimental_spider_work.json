@@ -1,0 +1,19 @@
+{
+  "format": "rw-reforge.unit.v2",
+  "copyFrom": [
+    "scout_hull.json"
+  ],
+  "core": {
+    "name": "experimental_spider_work"
+  },
+  "roles": {
+    "constructionTypes": "field_factory,scout_hull",
+    "nanoConstructionTypes": "scout_hull",
+    "canRepairUnits": true,
+    "canRepairBuildings": true,
+    "nanoRange": 220,
+    "nanoTurnSpeed": 4,
+    "nanoBuildSpeed": 8,
+    "nanoRepairSpeed": 0.4
+  }
+}

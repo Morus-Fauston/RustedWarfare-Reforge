@@ -4,6 +4,7 @@ import com.rustedwarfare.reforge.core.content.*
 import com.rustedwarfare.reforge.core.sim.*
 import java.nio.file.Path
 import java.nio.file.Files
+import org.hjson.JsonValue
 import kotlin.test.*
 
 class AuthorWaterSandboxTest {
@@ -101,6 +102,56 @@ class AuthorWaterSandboxTest {
             assertEquals("spcruiser selected", session.playerFeedback)
         }
     }
+
+    @Test fun an_interception_hull_opens_with_a_paid_client_ammunition_card() {
+        val root = Files.createTempDirectory("authored-interception-water-card-")
+        val source = fixtures.resolve("author-water/json")
+        Files.walk(source).use { paths ->
+            paths.forEach {
+                val destination = root.resolve(source.relativize(it))
+                if (Files.isDirectory(it)) Files.createDirectories(destination) else Files.copy(it, destination)
+            }
+        }
+        val file = root.resolve("package/units/spcruiser.json")
+        val declaration = JsonValue.readJSON(Files.readString(file)).asObject()
+        declaration.get("weapons").asArray().add(JsonValue.readJSON("""{
+            "name":"screen","x":7,"y":20,"canShoot":false,"invisible":true,
+            "projectile":{"directDamage":600,"life":99999,"speed":0.2,"deflectionPower":-1,
+            "targetSpeed":6.5,"targetSpeedAcceleration":0.05,"ballistic":true,
+            "ballistic_delaymove_height":80,"ballistic_height":110}
+        }"""))
+        declaration.set("abilities", JsonValue.readJSON("""[{
+            "name":"screen","type":"navalInterception","weapon":"screen","landingRange":525,
+            "trackingRange":1150,"minimumHeight":50,"ammoPrice":1200,"ammoBuildRate":0.01,"ammoLimit":2
+        }]"""))
+        Files.writeString(file, declaration.toString())
+        val loaded = ContentLoader.loadContentPack(root.resolve("package"))
+        val pack = assertIs<ContentResult.Success<LoadedContentPack>>(loaded, loaded.toString()).value
+        val choice = ContentPackChoice(pack, "spcruiser")
+        val scene = SandboxLoader().use { loader ->
+            loader.requestPack(root, choice)
+            await(loader).scenario
+        }
+        for (enabled in listOf(false, true)) {
+            SandboxSession(scene, options = SandboxOptions(nukesEnabled = enabled)).use { session ->
+                session.select(Position(500.0, 300.0))
+                val card = session.actionMenu.unitActions.single { it.name == "buildAntiNuke" }
+                assertEquals(enabled, card.available)
+                assertTrue(card.tooltip.contains("1200") && card.tooltip.contains("1.7s"))
+                val action = session.unitAction("buildAntiNuke")
+                if (enabled) {
+                    assertIs<ActionResult.Accepted>(action)
+                    assertEquals(1800L, session.observation.balance)
+                    repeat(110) { session.tick() }
+                    assertEquals(1, session.observation.units.single { it.unitId == "a" }.unitActions?.stockpile)
+                } else {
+                    assertIs<ActionResult.Rejected>(action)
+                    assertEquals(3000L, session.observation.balance)
+                }
+            }
+        }
+    }
+
     @Test fun normal_selected_hull_sails_attacks_with_both_inherited_turrets_and_draws_their_poses() {
         for (format in listOf("ini", "json", "hjson")) {
             val loaded = load(format)

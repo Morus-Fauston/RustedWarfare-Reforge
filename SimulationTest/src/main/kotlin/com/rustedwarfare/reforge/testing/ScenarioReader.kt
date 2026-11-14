@@ -142,6 +142,9 @@ internal object ScenarioReader {
             if (images.any { it.toRealPath() !in paths }) throw InputError("A loaded image dependency has no declared identity")
             ref.id to unit
         }
+        if (definitions.filterValues { it.blink != null }.keys != ScenarioDeclaration.blinkTypes(input))
+            throw InputError("Loaded Blink definitions differ from the scenario's declared Blink units")
+        ScenarioDeclaration.verifyTransportTypes(input, definitions)
         if (map.tileSets.any { it.imagePath.toRealPath() !in paths }) {
             throw InputError("A loaded image dependency has no declared identity")
         }

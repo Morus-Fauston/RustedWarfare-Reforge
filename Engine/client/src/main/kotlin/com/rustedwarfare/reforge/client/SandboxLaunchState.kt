@@ -13,7 +13,8 @@ data class SandboxLoad(val generation: Long, val configuration: SandboxConfigura
 class SandboxLaunchState(initial: SandboxConfiguration) {
     private enum class Phase { EDITING, LOADING, RUNNING }
     private var phase = Phase.EDITING
-    private var generation = 0L
+    var generation = 0L
+        private set
     var configuration: SandboxConfiguration = initial
         private set
     val canEdit: Boolean get() = phase == Phase.EDITING

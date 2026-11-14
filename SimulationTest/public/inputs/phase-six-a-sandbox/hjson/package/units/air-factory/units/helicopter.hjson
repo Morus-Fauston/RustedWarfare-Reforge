@@ -1,6 +1,6 @@
 # Self-owned commented helicopter/native content
 {
-  format: "rw-reforge.unit.v1",
+  format: "rw-reforge.unit.v2",
   core: {
     "name": "helicopter",
     "class": "CustomUnitMetadata",

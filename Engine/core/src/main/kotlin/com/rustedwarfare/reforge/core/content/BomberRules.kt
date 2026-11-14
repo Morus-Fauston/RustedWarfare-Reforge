@@ -24,7 +24,8 @@ internal object BomberRules {
 
     fun supports(unit: UnitDefinition): Boolean {
         val profile = unit.combat ?: return false
-        return unit.id == ID && unit.className == "CustomUnitMetadata" && unit.radius == 16.0 && unit.displayRadius == 19.0 &&
+        return unit.attackMovement == AttackMovementProfile.BOMBER && unit.className == "CustomUnitMetadata" &&
+            unit.radius == 16.0 && unit.displayRadius == 19.0 &&
             unit.totalFrames == 1 && unit.maximumHealth == 3000.0 && unit.techLevel == 2 && unit.selfRegenRate == .1f &&
             unit.movement == movement && unit.build == build && unit.energy == energy &&
             unit.rotor == null && unit.mech == null && unit.customActions == null && unit.transport == null &&

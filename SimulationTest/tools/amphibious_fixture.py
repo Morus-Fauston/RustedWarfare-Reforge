@@ -55,6 +55,8 @@ def generate():
         jet=dict(format='rw-reforge.native-amphibious-jet.v1',name='amphibiousJet',maxHp=530,radius=12,
             price=2000,buildSpeed=.001,image='jet.png',image_dead='jet_dead.png',image_shadow='jet_shadow.png',
             image_wing_left='jet_left.png',image_wing_right='jet_right.png')
+        if fmt != 'ini':
+            jet['locomotion'] = 'air-water'
         write_native(units/f'amphibiousJet.{fmt}',jet)
         for name,kind,w,h in [('jet.png','body',15,26),('jet_dead.png','dead',15,26),('jet_shadow.png','shadow',15,26),
                               ('jet_left.png','wing-left',30,14),('jet_right.png','wing-right',30,14)]:

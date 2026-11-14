@@ -30,43 +30,43 @@
       {
         "id": "c_tank",
         "path": "../inputs/three-format-economy/maintenance/json/units/tank.json",
-        "sha256": "a202d212136db87bfbfba86a2762308651d8bc3aa3efc347d0c52b49d1e9fe8b",
+        "sha256": "0f2c3c9eb45c3fa54e5f7a8d2e960ca90891b0895b4e91169e6f8f48666d974d",
         "loader": "combat"
       },
       {
         "id": "extractorT1",
         "path": "../inputs/three-format-economy/maintenance/json/units/extractor.json",
-        "sha256": "d217884a937189b7209d04f57585a432e6cbee777c92eff3e21aec974d0421af",
+        "sha256": "03422049f05bfabf06821f09fbb32db57d48ad740c729fb9d6c31c0f04b4fabd",
         "loader": "economy-upgrades"
       },
       {
         "id": "extractorT2",
         "path": "../inputs/three-format-economy/maintenance/json/units/extractorT2.json",
-        "sha256": "32eb6b52136f917c5cf3cd079091b11ec6f350cf91d228acb7d21c322c5c28b2",
+        "sha256": "ee3194089adfd343cd6f043279c010415fb9b3b85a549ba34f5090f8c0ae9a9a",
         "loader": "economy-upgrades"
       },
       {
         "id": "extractorT3",
         "path": "../inputs/three-format-economy/maintenance/json/units/extractorT3.json",
-        "sha256": "357ad1248b7b4d9696d441e1347827e7edb523542a074cfdc4ac9d7a4afe38f3",
+        "sha256": "0255bba1cb0e0bad28bae0ea787bc1f3400bf7ff9751518fb2dcb765482f2a40",
         "loader": "economy-upgrades"
       },
       {
         "id": "fabricatorT1",
         "path": "../inputs/three-format-economy/maintenance/json/units/fabricatorT1.json",
-        "sha256": "01e4a2368d42ec44c7d0b301e0ca5897fd33fb1ce5f97b29f4f99299a20df664",
+        "sha256": "18cc6325bc1dde8e4174eb2493e8a5d58f2d631b86b5c8f0161d67082ef2e8fa",
         "loader": "economy-upgrades"
       },
       {
         "id": "fabricatorT2",
         "path": "../inputs/three-format-economy/maintenance/json/units/fabricatorT2.json",
-        "sha256": "5cf6065248de6c9c82f24ed8c90e198cc590bd1f8a3ec3723b295625d7f80073",
+        "sha256": "d9657d99fe5c9aceffe1d4492d6273d0c0a5ec013d3ff8559a03361586cfcdc3",
         "loader": "economy-upgrades"
       },
       {
         "id": "fabricatorT3",
         "path": "../inputs/three-format-economy/maintenance/json/units/fabricatorT3.json",
-        "sha256": "d27dd6375a827c2a215fb8836dc5ba1c8a9f8313b2fb5c18d6af4cb8a49a0cfe",
+        "sha256": "b5f681981ae87ad473d2751d6002bf4678c68398b667d7ce3b2534048b42d2c3",
         "loader": "economy-upgrades"
       }
     ],
@@ -104,7 +104,7 @@
       {
         "id": "dep-extractor_common.ini",
         "path": "../inputs/three-format-economy/maintenance/json/units/extractor_common.json",
-        "sha256": "53a68405f60abb2cd0f91cd1b7df3ddb05083260daaa8562ef8f081a64538222"
+        "sha256": "4157301d25b72c23d0000c7995d8e6e10c771325f7f8ea78c38c92466353bdac"
       },
       {
         "id": "dep-extractor_t1.png",

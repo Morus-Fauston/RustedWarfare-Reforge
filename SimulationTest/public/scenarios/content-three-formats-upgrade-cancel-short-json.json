@@ -12,19 +12,19 @@
       {
         "id": "c_turret_t1",
         "path": "../inputs/three-format-production/upgrade/json/units/turret_t1.json",
-        "sha256": "5ed52617d296ac2fcb38ce7f6502a234d3b989a863b158ef54c50fe590fe5808",
+        "sha256": "2013c3335cc625c19b4f1d73421d6e7dd8f07d2787e92ecbb6c0991f215a886a",
         "loader": "turret-upgrades"
       },
       {
         "id": "c_turret_t2_gun",
         "path": "../inputs/three-format-production/upgrade/json/units/turret_t2_gun.json",
-        "sha256": "bdebdaf7e923abf8103bd1691c71ad2cc67ad2ead9b83240ea032f61767afdf6",
+        "sha256": "9d59d6c4bc07d8b417eabd16760e2ca8bc45e91c259ee539cb429177aaddd23f",
         "loader": "turret"
       },
       {
         "id": "c_turret_t1_artillery",
         "path": "../inputs/three-format-production/upgrade/json/units/turret_t1_artillery.json",
-        "sha256": "3eabe5a38c510e153e4fc4449a88438ca7e46961692a866d0f6bff8bfccfafa2",
+        "sha256": "caa78b501cdf6fffa6a8c2104c746084361948d46b6f3a3d1d324cde82b62760",
         "loader": "turret"
       }
     ],
@@ -37,7 +37,7 @@
       {
         "id": "template",
         "path": "../inputs/three-format-production/upgrade/json/units/turret_common_land.json",
-        "sha256": "600cc6666f8347cb41cd44193e917192fde705c642074f59501597066da4a793"
+        "sha256": "904a90bad69b102ece4536c296fc4621947eadb53934c2db1c21067fac24f53f"
       },
       {
         "id": "turret.png",

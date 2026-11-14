@@ -2,8 +2,6 @@ package com.rustedwarfare.reforge.core.sim
 
 import com.rustedwarfare.reforge.core.content.CustomBallisticProfile
 import com.rustedwarfare.reforge.core.content.LinearProjectileAcceleration
-import com.rustedwarfare.reforge.core.content.ModularSpiderRules
-import com.rustedwarfare.reforge.core.content.ModularSpiderUtilityForms
 import com.rustedwarfare.reforge.core.content.NuclearSiloKind
 import com.rustedwarfare.reforge.core.content.ProjectileInterceptionProfile
 import com.rustedwarfare.reforge.core.content.ProjectileProfile
@@ -26,11 +24,11 @@ internal object ProjectileInterception {
 
     fun target(unit: MutableUnit, projectiles: List<MutableProjectile>, units: Map<String, MutableUnit>,
                players: List<Player>): MutableProjectile? {
-        val module = unit.typeId == ModularSpiderRules.ANTI_NUKE
-        val stock = if (module) unit.attachmentInterceptor.ammo else unit.ordnance.ammo
-        if (stock == 0 || module && unit.attachmentInterceptor.offline) return null
+        val module = unit.definition.attachmentModule?.interception
+        val stock = if (module != null) unit.attachmentInterceptor.ammo else unit.ordnance.ammo
+        if (stock == 0 || module != null && unit.attachmentInterceptor.offline) return null
         val profile = when {
-            module -> ModularSpiderUtilityForms.antiNukeRanges
+            module != null -> module
             unit.definition.nuclearSilo?.kind == NuclearSiloKind.INTERCEPTOR -> groundRanges
             else -> navalWeapon(unit)?.interception ?: return null
         }
@@ -54,7 +52,7 @@ internal object ProjectileInterception {
         shot.nukeTagged && !shot.hitApplied && !shot.intercepted && shot.remainingLife > 0.0
 
     fun launch(unit: MutableUnit, target: MutableProjectile, id: Long): MutableProjectile {
-        val module = unit.typeId == ModularSpiderRules.ANTI_NUKE
+        val module = unit.definition.attachmentModule?.interception != null
         val naval = navalWeapon(unit)
         val round = naval?.projectile ?: groundRound
         val muzzle = if (naval == null) {

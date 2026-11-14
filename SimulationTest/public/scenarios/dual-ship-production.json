@@ -63,13 +63,13 @@
       {
         "id": "spcorvette",
         "path": "../inputs/author-naval-chain/json/package/units/spcorvette.json",
-        "sha256": "f8ad6c8c7597d16571909536e14185c638daf351bc5393abdf486f9145d80382",
+        "sha256": "31e8720ad9e75d832c133262ae610402f8033f2ef6716799fdf3bc763be36776",
         "loader": "water-combat"
       },
       {
         "id": "spfrigate",
         "path": "../inputs/author-naval-chain/json/package/units/spfrigate.json",
-        "sha256": "cbc7151ddb54f06f76941e5b43d190cbc8fbf640809db5d321a40359468eb8ba",
+        "sha256": "1924046d5830697edade9b52b99f390b60e9d8fc97ec0ecade07ccbc4542d8f2",
         "loader": "water-combat"
       },
       {
@@ -16437,10 +16437,10 @@
       "package/units/ship.png": "fed347e885f6b394f48ebb3f82a3c7deb86ce6cd73e1035715b2be69fdb87a1f",
       "package/units/ship_dead.png": "b3b38d14f12c1cc7dada9e25ac1ee1c5a126472ec36f561c37d0949fbdc256a7",
       "package/units/spbuilder.json": "1e3bfac94e5a8d16b7e88606d2de911e0d63ac508b2e6fdf8e228194230fe911",
-      "package/units/spcorvette.json": "f8ad6c8c7597d16571909536e14185c638daf351bc5393abdf486f9145d80382",
+      "package/units/spcorvette.json": "31e8720ad9e75d832c133262ae610402f8033f2ef6716799fdf3bc763be36776",
       "package/units/spdock.json": "3ba5f82475d591fb6945535f4c2397a19351332cf570bd7f9880b0795116e7db",
       "package/units/spdockt2.json": "5fb23d62ecf7650eb639c57b16841418195fffb77cad34bbcdd0ee1dc1b2a026",
-      "package/units/spfrigate.json": "cbc7151ddb54f06f76941e5b43d190cbc8fbf640809db5d321a40359468eb8ba",
+      "package/units/spfrigate.json": "1924046d5830697edade9b52b99f390b60e9d8fc97ec0ecade07ccbc4542d8f2",
       "package/units/underwater_target.png": "bc8f3bf04c77313d277018f3da1296e7c85cc255086ff26d6fe23ef7113b8a6b",
       "package/units/underwaterTarget.json": "0e97a0ab19c3ef833664a8e67c43feddae745ba986c6694e6b67dc3125cfef1d",
       "package/units/workshop.png": "828526850b5b4981b0dec3b295d01e9bb6ade18d2ab11525dc8fa841aadb25b5",

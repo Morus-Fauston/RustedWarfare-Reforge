@@ -12,7 +12,7 @@
       {
         "id": "amphibiousJet",
         "path": "../inputs/amphibious-production/json/production-package/units/amphibiousJet.json",
-        "sha256": "2d273fb1f5e7900c71f69d93882bee6c4a99179baf8a3903aa2b299266eeef9e",
+        "sha256": "f6b2ccfb21653d7d8377796ba30fdc5a8f20690d5d01ee6dc7ede6b417f0abe9",
         "loader": "amphibious-jet"
       }
     ],
@@ -95,7 +95,7 @@
       {
         "id": "dep-22",
         "path": "../inputs/amphibious-production/json/production-package/units/helicopter.json",
-        "sha256": "24c7a9a9bf188eba12019de8be7a741232d5683604777b8cd5e4c41195813e26"
+        "sha256": "450c5b173b0bbcc570dcd81d400145a04c719e4f33563cef3ba4b218a576cf30"
       },
       {
         "id": "dep-23",
@@ -125,7 +125,7 @@
       {
         "id": "dep-29",
         "path": "../inputs/amphibious-production/json/production-package/units/land/tank.json",
-        "sha256": "a492a60d77972e0a35e946a2bb9883c1df1e52f742a571a34a703951f058fc5a"
+        "sha256": "0a180d0079db8387e25fbbf002aec3452f5a92d5abdbbb18299841ac5da92e2c"
       },
       {
         "id": "dep-30",

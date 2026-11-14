@@ -1,0 +1,67 @@
+{
+  "format": "rw-reforge.unit.v2",
+  "core": {
+    "maxHp": 3500,
+    "radius": 15,
+    "displayRadius": 15,
+    "price": 21000,
+    "buildSpeed": 0.0002,
+    "fogOfWarSightRange": 15,
+    "name": "support_landed"
+  },
+  "graphics": {
+    "image": "ship.png",
+    "image_wreak": "ship_dead.png"
+  },
+  "movement": {
+    "movementType": "NONE"
+  },
+  "roles": {
+    "constructionTypes": "field_factory,scout_hull",
+    "canRepairUnits": true,
+    "canRepairBuildings": true,
+    "autoRepair": true,
+    "nanoRange": 285,
+    "nanoRepairSpeed": 0.4,
+    "nanoTurnSpeed": 4,
+    "nanoBuildSpeed": 8,
+    "productionTypes": "scout_hull",
+    "productionSpeed": 3,
+    "nanoConstructionTypes": "scout_hull"
+  },
+  "abilities": [
+    {
+      "name": "cargo",
+      "type": "transport",
+      "capacity": 5,
+      "passengerMovement": "LAND",
+      "unloadTerrain": "land",
+      "unloadTicks": 30
+    },
+    {
+      "name": "blink",
+      "type": "blink",
+      "range": 180,
+      "chargeTicks": 12,
+      "cooldownTicks": 120,
+      "locked": true,
+      "queueSpeed": 3
+    },
+    {
+      "name": "landedShield",
+      "type": "shield",
+      "maximum": 5000,
+      "regeneration": 1,
+      "startAtZero": true
+    }
+  ],
+  "actions": [
+    {
+      "name": "undeploy",
+      "convertTo": "support_hover",
+      "buildSpeed": "3s",
+      "highPriorityQueue": true,
+      "ignoreFactorySpeed": true
+    }
+  ]
+}

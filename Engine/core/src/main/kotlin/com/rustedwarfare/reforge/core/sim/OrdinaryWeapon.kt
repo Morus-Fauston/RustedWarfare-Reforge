@@ -173,10 +173,21 @@ internal object OrdinaryWeapon {
         val destination = Position(target.position.x + projectile.offset.x, target.position.y + projectile.offset.y)
         var distanceSquared = ScreenPlane.distanceSquared(projectile.position, destination)
         require(distanceSquared.isFinite()) { "Projectile geometry must remain finite" }
-        projectile.heading = ScreenPlane.desired(projectile.position, destination)
+        val desired = ScreenPlane.desired(projectile.position, destination)
+        val steering = projectile.steering
+        val turnRate = if (distanceSquared < 225.0) steering?.nearTurnRate else steering?.turnRate
+        projectile.heading = if (turnRate == null || turnRate < 0.0) desired else {
+            val turn = turnRate * delta
+            val difference = ScreenPlane.difference(desired, projectile.heading)
+            ScreenPlane.normalize(projectile.heading + difference.coerceIn(-turn, turn))
+        }
         val step = projectile.speed * delta
         require(step.isFinite()) { "Projectile step must remain finite" }
-        if (distanceSquared == 0.0) {
+        if (turnRate != null && turnRate >= 0.0 && distanceSquared > 0.0 && projectile.heading != desired) {
+            val distance = sqrt(distanceSquared)
+            val driven = ScreenPlane.displacement(projectile.heading, minOf(distance, step))
+            projectile.position = Position(projectile.position.x + driven.x, projectile.position.y + driven.y)
+        } else if (distanceSquared == 0.0) {
             // A positive subnormal speed can have a squared step of zero. The ordinary hit
             // cache is already zero here; never normalize the zero vector by dividing by zero.
             projectile.position = destination

@@ -7,6 +7,8 @@ import java.util.concurrent.CancellationException
 /** Reads the effective opening chassis and qualified modules through the shared source coordinator. */
 internal object ModularSpiderContentReader {
     private val empty = ModularSpiderRules.EMPTY
+    private val interceptorRanges = setOf("interceptProjectiles_andTargetingGroundUnderDistance",
+        "interceptProjectiles_andUnderDistance", "interceptProjectiles_andOverHeight")
     private val legOffsets = listOf(
         listOf(-50, 20, -25, 10), listOf(50, 20, 15, 10), listOf(-35, 60, -15, 25), listOf(35, 60, 15, 25),
         listOf(-50, -30, -15, -25), listOf(50, -30, 15, -25), listOf(-35, -60, -15, -35), listOf(35, -60, 15, -35),
@@ -70,7 +72,7 @@ internal object ModularSpiderContentReader {
     private val flags = profiles.flatMap { it.values }.flatMap { it.entries }
         .filter { it.key !in text && (it.value == "true" || it.value == "false") }.map { it.key }.toSet()
     private val schema = UnitContentSchema(fields, fields.values.flatten().toSet() - text - flags,
-        flags, text, dynamicWeapons = false, timeFieldLocations = setOf("attack" to "shootDelay"))
+        flags, text, dynamicWeapons = false, timeFieldLocations = setOf("attack" to "shootDelay"), structuredAbilities = true)
 
     fun readWithSources(path: Path, validatePath: (Path) -> Unit): LoadedUnitContent =
         UnitSourceReader(schema, validatePath).load(path, setOf("onCreateSpawnUnitOf", "convertTo", "constructionTypes")) { content ->
@@ -78,7 +80,9 @@ internal object ModularSpiderContentReader {
                 path, section, field, "Required modular spider field")
             val name = value("core", "name")
             val form = ModularSpiderWeaponForms.byId[name]
-            val utility = ModularSpiderUtilityForms.byId[name]
+            val authoredInterceptor = content.structured && ModularSpiderRules.authoredModuleId(name) &&
+                content.values["turret_silo"]?.get("interceptProjectiles_withTags") == "nuke"
+            val utility = ModularSpiderUtilityForms.byId[if (authoredInterceptor) ModularSpiderRules.ANTI_NUKE else name]
             val expected = when (name) {
                 ModularSpiderRules.ID -> chassis
                 empty -> emptySlot
@@ -90,15 +94,25 @@ internal object ModularSpiderContentReader {
                 form != null -> setOf("image", "image_turret")
                 else -> setOf("image")
             }
+            val shield = ShieldContent.read(path, content, required = name == ModularSpiderRules.ID)
+            val expectedShield = if (name == ModularSpiderRules.ID) ShieldProfile(5000f, .3f) else null
+            ShieldContent.validateQualified(path, content, shield, expectedShield)
+            val hasShieldAbility = content.values.keys.any { it.startsWith("ability_") }
             for ((section, values) in content.values) {
+                if (section.startsWith("ability_")) continue
                 val permitted = expected[section]?.keys.orEmpty() +
                     if (section == "graphics") graphicFields else images[section].orEmpty().takeIf { section in expected }.orEmpty()
                 for (field in values.keys) if (field !in permitted)
                     reject(ContentErrorCode.UNSUPPORTED_FIELD, path, section, field, reason = "Field is unavailable for $name")
             }
             for ((section, fields) in expected) for ((field, required) in fields) {
+                if (hasShieldAbility && section == "core" && field in setOf("maxShield", "shieldRegen")) continue
                 val actual = value(section, field)
                 val matches = when {
+                    authoredInterceptor && section == "core" && field == "name" -> true
+                    authoredInterceptor && section == "turret_silo" && field in interceptorRanges -> true
+                    content.structured && name == empty && section == "action_buildAntinuke" && field == "convertTo" ->
+                        actual == required || ModularSpiderRules.authoredModuleId(actual)
                     field == "constructionTypes" -> actual.split(',').map(String::trim).let { types ->
                         types.distinct().size == types.size && ModularSpiderRules.constructionTypes.containsAll(types)
                     }
@@ -146,7 +160,7 @@ internal object ModularSpiderContentReader {
                         combat = CombatProfile(10000.0, 290.0, 85.0, 8.0, 4.0, 1.0, inert, nano, null, 1.0,
                             namedWeapons = WeaponCatalog(listOf(mount))),
                         durability = DurabilityProfile(10000.0, image("graphics", "image_wreak", 70, 90)),
-                        shield = ShieldProfile(5000f, .3f), selfRegenRate = .1f, income = IncomeProfile(40f, 30f),
+                        shield = shield, selfRegenRate = .1f, income = IncomeProfile(40f, 30f),
                         build = ModularSpiderRules.build,
                         builder = ModularSpiderRules.builder(value("canBuild_chassis", "constructionTypes").split(',').map(String::trim)),
                         maintenance = MaintenanceProfile.MODULAR_SPIDER, deathExplosion = ModularSpiderRules.deathExplosion,
@@ -156,11 +170,14 @@ internal object ModularSpiderContentReader {
                 name == empty -> UnitDefinition(name, "CustomUnitMetadata", 20.0, 20.0, 1, image("graphics", "image", 1, 1),
                     1.0, ModularSpiderRules.slotMovement, emptySet(), fogOfWarSightRange = 5,
                     durability = DurabilityProfile(3000.0, null), selfRegenRate = 3000f,
-                    attachmentModule = AttachmentModuleProfile(empty = true, installs = ModularSpiderRules.installs))
+                    attachmentModule = AttachmentModuleProfile(empty = true, installs = ModularSpiderRules.installs.map {
+                        it.copy(targetTypeId = value("action_${it.action}", "convertTo"))
+                    }))
                 utility != null -> UnitDefinition(name, "CustomUnitMetadata", 15.0, 12.0, 1,
                     image("graphics", "image", utility.width, utility.height), 1.0, ModularSpiderRules.slotMovement,
                     emptySet(), fogOfWarSightRange = 5, durability = DurabilityProfile(3000.0, null),
-                    selfRegenRate = .2f, income = utility.income, attachmentModule = utility.module,
+                    selfRegenRate = .2f, income = utility.income,
+                    attachmentModule = if (authoredInterceptor) utility.moduleWithInterception(interception(path, content)) else utility.module,
                     pointDefense = ModularSpiderUtilityForms.laserDefense.takeIf { name == ModularSpiderRules.LASER_DEFENSE })
                 else -> {
                     checkNotNull(form)
@@ -175,4 +192,14 @@ internal object ModularSpiderContentReader {
                 }
             }
         }
+
+    private fun interception(path: Path, content: UnitSourceReader.EffectiveSections): ProjectileInterceptionProfile {
+        val section = "turret_silo"
+        val values = content.values.getValue(section)
+        fun number(field: String, allowZero: Boolean = false): Float =
+            values[field]?.toFloatOrNull()?.takeIf { it >= 0f && (allowZero || it > 0f) && (it * it).isFinite() }
+                ?: reject(ContentErrorCode.MALFORMED_SYNTAX, path, section, field, values[field], "Expected a finite range or height")
+        return ProjectileInterceptionProfile(number("interceptProjectiles_andTargetingGroundUnderDistance"),
+            number("interceptProjectiles_andUnderDistance"), number("interceptProjectiles_andOverHeight", allowZero = true))
+    }
 }

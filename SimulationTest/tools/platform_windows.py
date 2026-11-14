@@ -10,7 +10,7 @@ import subprocess
 import tempfile
 import time
 
-from platform_scenario import PlatformError, compare_archive, read, save, sha, tree, validate_intent_contract, validate_unit_action_intent
+from platform_scenario import PlatformError, compare_archive_locked, read, save, sha, tree, validate_intent_contract, validate_unit_action_intent
 from diagnostic_reader import DiagnosticReader
 from platform_wait import WaitSegment
 from action_layout import wait_layout
@@ -20,6 +20,23 @@ DEFAULT_STARTS = {
     'public.phase-six-a-command-json.v1': ('phase-six-a-json.json', False),
     'public.phase-six-a-spider-json.v1': ('phase-six-a-spider-json.json', True),
 }
+
+
+def scroll_to_action(drawn, action_id, layout, scroll):
+    """Traverse the current, rendered list without consuming a stale frame."""
+    for amount in [-20] + [1] * 24:
+        actions = drawn.frame['actions']
+        if any(action['actionId'] == action_id for action in actions):
+            return drawn
+        bar = next((action for action in actions if action['actionId'] == 'action-list-scrollbar'
+                    and action['enabled']), None)
+        if bar is None or amount > 0 and bar['text'] == 'at-bottom':
+            return drawn
+        if amount < 0 and bar['text'] == 'at-top':
+            continue
+        scroll(*drawn.action('action-list')[:2], amount)
+        drawn = layout(after_revision=drawn.frame['layoutRevision'])
+    return drawn
 
 
 def startup_arguments(plan,snapshot,evidence):
@@ -32,7 +49,9 @@ def startup_arguments(plan,snapshot,evidence):
             raise PlatformError('input-contract', 'Installed Windows Start supports the two Phase VI A JSON seeds', 1)
     tail=['--evidence',str(evidence),'--visuals','placeholder']
     if default:
-        return tail,'RustedWarfare-Reforge | Phase VI A sandbox'
+        return ['--development','true']+tail,'RustedWarfare-Reforge | Phase VI A sandbox'
+    if 'testScene' in plan:
+        tail=['--development','true']+tail
     return ['--mode','sandbox','--inputs',str(snapshot)]+tail,TITLE
 
 
@@ -127,6 +146,12 @@ def wait_for_input(wait,reader,label,rule,start):
 
 
 def run_windows(scenario, contract, distribution, output, size, java='java', rate_profile='normal'):
+    from evidence_compact import archive_lock
+    with archive_lock(output):
+        return run_windows_locked(scenario, contract, distribution, output, size, java, rate_profile)
+
+
+def run_windows_locked(scenario, contract, distribution, output, size, java, rate_profile):
     from owned_window import Guard, Win32
     from workflow import resources
     if os.name != 'nt' or size not in ((1200, 800), (960, 640)):
@@ -168,10 +193,15 @@ def run_windows(scenario, contract, distribution, output, size, java='java', rat
         return reader.wait(label,predicate,proc,after_sequence=after_sequence,
             generation=current_generation if after_generation is None else None,
             after_generation=after_generation,timeout=deadline,check=guard.check if guard is not None else None)
-    def layout():
-        return wait_layout(wait,current_generation,size)
+    def layout(after_revision=None, enabled_action=None):
+        def wait_for_layout(label,predicate):
+            return wait(label,predicate,deadline=60 if enabled_action is not None else 15)
+        return wait_layout(wait_for_layout,current_generation,size,after_revision=after_revision,enabled_action=enabled_action)
     def click_action(action_id):
-        drawn=layout();target=drawn.action(action_id)
+        drawn=layout(enabled_action=action_id) if action_id=='start-match' else layout()
+        if not any(a['actionId']==action_id for a in drawn.frame['actions']):
+            drawn=scroll_to_action(drawn, action_id, layout, guard.scroll)
+        target=drawn.action(action_id)
         record(dict(kind='drawn-action-target',actionId=action_id,layout=drawn.frame,target=target))
         guard.click(*target)
     def world(position):
@@ -218,11 +248,7 @@ def run_windows(scenario, contract, distribution, output, size, java='java', rat
         if actual.get('unitId')!=selected:
             click_action('content-unit');click_action('content-unit:'+selected)
             wait('selected package unit',lambda rows:menu(rows).get('unitId')==selected)
-        def start_drawn(rows):
-            return any(a['actionId']=='start-match' and a['enabled'] is True
-                       for a in layout().frame['actions'])
-        wait('package previews and enabled Start',start_drawn,deadline=60)
-        guard.capture(output/'content-package-enabled.png')
+        click_action('startup-back')
     def set_speed(rate):
         boundary=reader.cursor
         click_action('set-speed:'+str(rate))
@@ -342,10 +368,15 @@ def run_windows(scenario, contract, distribution, output, size, java='java', rat
                         wait('ordinary Modular Spider start selected', lambda rows: any(
                             row.get('kind') == 'test-scenario-choice' and row.get('id') == plan['scenarioId']
                             and row.get('error') is None for row in rows))
+                        click_action('startup-back')
                 else:
                     click_action('test-scenes-tab');click_action('test-scene-use')
                     wait('paired scene selected',lambda rows:any(r.get('kind')=='test-scenario-choice' and r.get('id')==plan['scenarioId'] and r.get('error') is None for r in rows))
+                    click_action('startup-back')
             else:choose_content_pack()
+            if plan.get('contentPack') is not None:
+                layout(enabled_action='start-match')
+                guard.capture(output/'content-package-enabled.png')
             load_boundary=reader.cursor
             previous_generation=max((r['generation'] for r in reader.view() if r['kind']=='load-request'),default=0)
             click_action('start-match')
@@ -470,7 +501,7 @@ def run_windows(scenario, contract, distribution, output, size, java='java', rat
         if result.get('complete') and not result.get('cleanupErrors') and result['foregroundRestored'] is not False:
             save(output/'archive.json', dict(complete=True, backend='windows-input', files=tree(output)))
             try:
-                result.update(compare_archive(output))
+                result.update(compare_archive_locked(output))
             except PlatformError as error:
                 result.update(exitCode=error.exit_code, category=error.category, message=str(error), status='failed' if error.exit_code == 2 else 'incomplete')
             except Exception as error:
