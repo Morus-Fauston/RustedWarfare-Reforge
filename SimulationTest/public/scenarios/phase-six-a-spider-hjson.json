@@ -295,7 +295,7 @@
       {
         "id": "aaBeamGunship",
         "path": "../inputs/phase-six-a-sandbox/hjson/package/extra/air-products/units/aaBeamGunship.hjson",
-        "sha256": "38dbfba4a2c7a383ebd149e7660b38b174d5597fc0c20b864b50258578a799c5"
+        "sha256": "7077163feb43c740161834e56811fa004400df1ba69d8483a9fc66fccc21badf"
       },
       {
         "id": "aaBeamGunship_afterburn",
@@ -7061,7 +7061,7 @@
       "package/extra/air-products/units/aa_shadow.png": "da2646db128fe4e3047fe42c25707440619567e791526b29e44266a966cf77e0",
       "package/extra/air-products/units/aa_trail.png": "81584313c94d76a4a1f0a8288810ba75c07bd57ae4959dced652b8648955a00e",
       "package/extra/air-products/units/aa_turret.png": "0b9f36b2d623711b1f49cf41fbe70eb6c23e921ea3cb10ff9e24a15f08e017a8",
-      "package/extra/air-products/units/aaBeamGunship.hjson": "38dbfba4a2c7a383ebd149e7660b38b174d5597fc0c20b864b50258578a799c5",
+      "package/extra/air-products/units/aaBeamGunship.hjson": "7077163feb43c740161834e56811fa004400df1ba69d8483a9fc66fccc21badf",
       "package/extra/air-products/units/aaBeamGunship_afterburn.hjson": "6d10d392dbec28f45bb69657736f21367f471d41fdfe3806e5ab6fc523a0f70a",
       "package/extra/air-products/units/amphibiousJet.hjson": "e5a20203229de670e4912014639c7486e9d7d817b61be268afdb6d63be7181da",
       "package/extra/air-products/units/dropship.hjson": "0bc25c62b2cdd1541f2a451fc970da1b600748f8dccb66059655d008d3c06fdd",

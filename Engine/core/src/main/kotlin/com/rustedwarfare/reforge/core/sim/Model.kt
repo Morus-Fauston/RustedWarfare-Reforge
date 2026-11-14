@@ -235,7 +235,8 @@ data class ProjectileObservation(val objectId: Long, val sourceUnitId: String, v
 data class LightningSegment(val end: Position, val endHeight: Double)
 
 /** Current visible beam endpoint, captured without a host target identity. */
-data class BeamSegment(val end: Position, val endHeight: Double, val textureOffset: Float = 0f)
+data class BeamSegment(val end: Position, val endHeight: Double, val textureOffset: Float = 0f,
+    val resourceUnitType: String? = null, val visibleSourceUnitId: String? = null)
 
 /** Public launch appearance, independent of hidden source identity or its subsequent depth. */
 enum class ProjectileAppearance(val red: Int, val green: Int, val blue: Int, val drawSize: Float) {

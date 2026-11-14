@@ -297,7 +297,8 @@ internal class ActionCatalogue(private val definitions: Map<String, UnitDefiniti
                 (unit.shield?.let { "\nShield ${it.current.toInt()} / ${it.maximum.toInt()}" } ?: "") +
                 (unit.energy?.let { String.format(Locale.ROOT, "\nEnergy %.3f / %.3f%s", it.current, it.maximum,
                     if (it.recharging) " LOCKED" else "") } ?: "") +
-                (if (unit.typeId == "aaBeamGunship_afterburn") "\nAfterburn / weapons disabled" else "") +
+                (if (definitions.getValue(unit.typeId).afterburn?.boostedForm == unit.typeId)
+                    "\nAfterburn / weapons disabled" else "") +
                 (unit.submarine?.let { String.format(Locale.ROOT, "\n%s\nDepth %.2f\nSpeed %.2f\nRange %.0f",
                     if (it.underwater) "Underwater" else "Surface", unit.height, it.maximumSpeed, it.attackRange) } ?: "") +
                 (unit.amphibiousJet?.let { String.format(Locale.ROOT, "\n%s / %s\nHeight %.2f\nSpeed %.2f\nRange %.0f",

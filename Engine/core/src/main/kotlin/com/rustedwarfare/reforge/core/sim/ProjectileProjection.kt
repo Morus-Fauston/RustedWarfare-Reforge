@@ -26,11 +26,12 @@ internal class ProjectileProjection {
         Appearance(Position(canonical(position.x), canonical(position.y)), canonical(heading), canonical(height), areaRadius, style,
             lightning?.let { LightningSegment(Position(canonical(it.end.x), canonical(it.end.y)), canonical(it.endHeight)) },
             beam?.let { BeamSegment(Position(canonical(it.end.x), canonical(it.end.y)), canonical(it.endHeight),
-                if (it.textureOffset == 0f) 0f else it.textureOffset) })
+                if (it.textureOffset == 0f) 0f else it.textureOffset, it.resourceUnitType, it.visibleSourceUnitId) })
     private val appearanceOrder = compareBy<Appearance> { it.position.x }.thenBy { it.position.y }
         .thenBy { it.heading }.thenBy { it.height }.thenBy { it.areaRadius }.thenBy { it.style.ordinal }
         .thenBy { it.lightning?.end?.x }.thenBy { it.lightning?.end?.y }.thenBy { it.lightning?.endHeight }
-        .thenBy { it.beam?.end?.x }.thenBy { it.beam?.end?.y }.thenBy { it.beam?.endHeight }.thenBy { it.beam?.textureOffset }
+        .thenBy { it.beam?.end?.x }.thenBy { it.beam?.end?.y }.thenBy { it.beam?.endHeight }.thenBy { it.beam?.textureOffset }.thenBy { it.beam?.resourceUnitType }
+        .thenBy { it.beam?.visibleSourceUnitId }
 
     private fun compareEvent(a: PublicEvent, b: PublicEvent): Int {
         var value = compareValues(a.kind, b.kind)

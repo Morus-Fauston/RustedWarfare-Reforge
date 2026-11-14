@@ -14,6 +14,10 @@ internal object ScenarioDeclaration {
             if (!Regex("[a-f0-9]{64}").matches(it.text("sha256"))) throw InputError("Invalid content identity hash")
         }
         unique(references.map { it.id("id") }, "content")
+        val afterburnPairs = UnitActionDeclaration.afterburnPairs(value)
+        if (unitReferences(content).any { it["loader"] == s("aa-beam-gunship") &&
+                it.id("id") !in afterburnPairs && it.id("id") !in afterburnPairs.values })
+            throw InputError("Missing afterburn pair for an AA unit type")
         val coordinate = value.objectAt("coordinateModel")
         coordinate.id("id")
         listOf("space", "xAxis", "yAxis", "origin", "unit", "valueType", "precision").forEach { coordinate.text(it) }

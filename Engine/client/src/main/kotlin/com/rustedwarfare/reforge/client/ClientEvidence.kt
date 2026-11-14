@@ -108,7 +108,8 @@ internal fun ClientEvidence.recordFailure(kind: String, primary: Throwable) {
 internal fun Position.fields(): Map<String, Any?> = mapOf("x" to x, "y" to y)
 internal fun LightningSegment.fields(): Map<String, Any?> = mapOf("end" to end.fields(), "endHeight" to endHeight)
 internal fun BeamSegment.fields(): Map<String, Any?> = mapOf("end" to end.fields(), "endHeight" to endHeight,
-    "textureOffset" to textureOffset)
+    "textureOffset" to textureOffset) + listOfNotNull(resourceUnitType?.let { "resourceUnitType" to it },
+    visibleSourceUnitId?.let { "visibleSourceUnitId" to it }).toMap()
 private fun projectileVisualFields(appearance: ProjectileAppearance, lightning: LightningSegment?, beam: BeamSegment?): Map<String, Any?> =
     buildMap {
         if (appearance != ProjectileAppearance.STANDARD) put("appearance", appearance.name)

@@ -72,6 +72,11 @@ internal object ContentPackComposer {
                 ContentPackReader.rejectMissingAttachmentReference(source.entryPath, origins, reference,
                     "Expected the referenced qualified attachment form in the final set")
             }
+            unit.afterburn?.let { profile ->
+                for ((field, form) in listOf("normalForm" to profile.normalForm, "boostedForm" to profile.boostedForm)) {
+                    if (units[form]?.afterburn != profile) bad(form, field, "Afterburn forms must share the same profile")
+                }
+            }
             unit.customActions?.actions?.forEach { action ->
                 action.targetTypeId?.let { target ->
                     if (units[target]?.customActions == null)

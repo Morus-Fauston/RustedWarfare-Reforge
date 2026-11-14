@@ -18,6 +18,9 @@ internal object UnitLocomotion {
     fun isSubmerged(unit: MutableUnit): Boolean =
         unit.definition.locomotionStates != null && unit.height < SUBMERGED_DEPTH
 
+    fun effectiveMaximumSpeed(unit: MutableUnit, movement: MovementProfile): Double =
+        movement.moveSpeed * unit.terrainSpeedMultiplier
+
     fun movement(unit: MutableUnit): MovementProfile {
         val base = unit.definition.movement
         unit.attachmentMoveSpeed?.let { return base.copy(moveSpeed = it) }

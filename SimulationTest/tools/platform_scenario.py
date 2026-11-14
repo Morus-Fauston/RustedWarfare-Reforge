@@ -4,6 +4,7 @@ import hashlib
 import json
 import math
 import os
+import re
 from fnmatch import fnmatch
 from pathlib import Path
 import shutil
@@ -459,7 +460,33 @@ def compare_resource_sounds(records, expected):
     return result
 
 
+ORIGINAL_AFTERBURN_PAIR = {'aaBeamGunship': 'aaBeamGunship_afterburn'}
+
+
+def afterburn_pairs(policy):
+    if 'afterburnPairs' not in policy:
+        return ORIGINAL_AFTERBURN_PAIR
+    rows = policy['afterburnPairs']
+    pairs = {}
+    names = set()
+    if not isinstance(rows, list):
+        raise PlatformError('input-contract', 'Expected a fixed afterburn pair list', 1)
+    for row in rows:
+        if not isinstance(row, dict) or set(row) != {'normalForm', 'boostedForm'}:
+            raise PlatformError('input-contract', 'Invalid afterburn pair', 1)
+        normal, boosted = row['normalForm'], row['boostedForm']
+        if (any(not isinstance(name, str) or not re.fullmatch(r'[A-Za-z0-9_.-]+', name)
+                for name in (normal, boosted)) or normal == boosted or {normal, boosted} & names):
+            raise PlatformError('input-contract', 'Afterburn form identities must be distinct', 1)
+        pairs[normal] = boosted
+        names.update((normal, boosted))
+    return pairs
+
+
 def validate_history_poses(units, policy):
+    pairs = afterburn_pairs(policy)
+    boosted = set(pairs.values())
+    flight_types = pairs.keys() | boosted | {'bomber'}
     counts = policy.get('mechLegs', {})
     if not isinstance(counts, dict) or any(type(n) is not int or n < 1 for n in counts.values()):
         raise PlatformError('input-contract', 'Expected declared positive mech leg counts', 1)
@@ -468,7 +495,7 @@ def validate_history_poses(units, policy):
     def point(value):
         return isinstance(value, dict) and set(value) == {'x','y'} and all(number(v) for v in value.values())
     for unit in units:
-        if unit.get('typeId') in {'aaBeamGunship','aaBeamGunship_afterburn','bomber'}:
+        if unit.get('typeId') in flight_types:
             bomber = unit['typeId'] == 'bomber'
             category = 'history-bomber' if bomber else 'history-aa-beam'
             maximum = 3 if bomber else 6
@@ -477,7 +504,7 @@ def validate_history_poses(units, policy):
             if (not isinstance(energy,dict) or set(energy)!={'current','maximum','recharging'} or
                     not number(energy.get('current')) or not 0<=energy['current']<=maximum or
                     not number(energy.get('maximum')) or energy['maximum']!=maximum or type(energy.get('recharging')) is not bool or
-                    unit['typeId']!='aaBeamGunship_afterburn' and
+                    unit['typeId'] not in boosted and
                     (energy['recharging'] and energy['current']>=maximum or not energy['recharging'] and energy['current']<shot_cost)):
                 raise PlatformError(category,'Missing or inconsistent weapon energy and recharge lock',2)
             if (not isinstance(pose,dict) or set(pose)!={'velocity','height','heightPhase','rotorPhase','rotorHeading','rotorHeightOffset','fall'} or
@@ -498,7 +525,7 @@ def validate_history_poses(units, policy):
             elif unit.get('ownerPlayerId')!=policy.get('ownerPlayerId','p1'):
                 if state is not None:raise PlatformError('history-unit-action','Enemy action controls must be private',2)
             else:
-                names={'afterBurn','cancelBurn'} if unit['typeId']=='aaBeamGunship_afterburn' else {'afterBurn'}
+                names={'afterBurn','cancelBurn'} if unit['typeId'] in boosted else {'afterBurn'}
                 if (not isinstance(state,dict) or set(state)!={'actions','automaticCooldown'} or
                         not number(state.get('automaticCooldown')) or not 0<=state['automaticCooldown']<=60 or
                         not isinstance(state.get('actions'),dict) or set(state['actions'])!=names):
@@ -917,15 +944,21 @@ SPIDER_LAUNCH_SOURCES = {
 }
 
 
-def validate_launch_appearance(shot, units, verified_attachment_birth=None):
-    source=units.get(shot.get('sourceUnitId'),{})
+def validate_launch_appearance(shot, units, verified_attachment_birth=None, pairs=ORIGINAL_AFTERBURN_PAIR):
+    beam=shot.get('beam')
+    visible_source=beam.get('visibleSourceUnitId') if isinstance(beam,dict) else None
+    source=units.get(shot.get('sourceUnitId') or visible_source,{}) if isinstance(visible_source,(str,type(None))) else {}
+    source_type=source.get('typeId')
+    normal_form=next((normal for normal,boosted in pairs.items() if source_type in (normal,boosted)),None)
     weapon=shot.get('sourceWeaponName')
     style=shot.get('appearance','STANDARD')
     expected={'attackSubmarine':('SUBMARINE_MISSILE','SUBMARINE_TORPEDO'),
               'amphibiousJet':('AMPHIBIOUS_LIGHTNING',),'modularSpider_lightning':('SPIDER_LIGHTNING',),
-              'aaBeamGunship':('AA_BEAM',),'nukeLauncherC':('NUCLEAR',),'modularSpider':('NUCLEAR',),
+              'nukeLauncherC':('NUCLEAR',),'modularSpider':('NUCLEAR',),
               'antiNukeLauncherC':('INTERCEPTOR',),'modularSpider_antinuke':('INTERCEPTOR',),
               'mechFlame':('MECH_FLAME',)}.get(source.get('typeId'),('STANDARD',))
+    if normal_form is not None:
+        expected = ('AA_BEAM',)
     if verified_attachment_birth is not None:
         verified_style, verified_source = verified_attachment_birth
         disclosed = shot.get('sourceUnitId'), weapon
@@ -960,14 +993,19 @@ def validate_launch_appearance(shot, units, verified_attachment_birth=None):
             raise PlatformError('history-projectile','Missing or invalid native lightning geometry',2)
     elif line is not None:
         raise PlatformError('history-projectile','Lightning geometry on an unsupported launch appearance',2)
-    beam=shot.get('beam')
     if style=='AA_BEAM':
+        if 'kind' not in shot and 'sourceUnitId' in shot:
+            raise PlatformError('history-aa-beam','Active beam source must be part of its published resource',2)
         def finite(value):return type(value) in (int,float) and math.isfinite(value)
-        if (not isinstance(beam,dict) or set(beam)!={'end','endHeight','textureOffset'} or
+        expected_resource = None if normal_form in (None, 'aaBeamGunship') else normal_form
+        if (not isinstance(beam,dict) or set(beam)-{'resourceUnitType','visibleSourceUnitId'}!={'end','endHeight','textureOffset'} or
+                beam.get('resourceUnitType') != expected_resource or
+                'resourceUnitType' in beam and expected_resource is None or
+                'visibleSourceUnitId' in beam and ('kind' in shot or not isinstance(visible_source,str) or expected_resource is None) or
                 not isinstance(beam.get('end'),dict) or set(beam['end'])!={'x','y'} or
                 any(not finite(v) for v in beam['end'].values()) or not finite(beam.get('endHeight')) or
                 not finite(beam.get('textureOffset')) or beam['textureOffset']<0 or
-                ('kind' in shot or source) and shot.get('sourceWeaponName')!='1' or
+                'kind' in shot and source and shot.get('sourceWeaponName')!='1' or
                 any(shot.get(k) is not None for k in ('ground','missile','ballistic','areaExpansion','lightning'))):
             raise PlatformError('history-aa-beam','Missing or invalid authorized beam geometry',2)
         if 'kind' in shot and shot['kind'] not in ('born','rearmed','impact','expired','target-ended'):
@@ -977,10 +1015,13 @@ def validate_launch_appearance(shot, units, verified_attachment_birth=None):
     return style
 
 
-def validate_unit_action_history(records, policy):
+def validate_unit_action_history(records, policy, starting_units=()):
     """Independent finite AA command/step protocol, using the fixed normal one-tick schedule."""
     def f32(value):return struct.unpack('<f',struct.pack('<f',value))[0]
     owner=policy.get('ownerPlayerId','p1')
+    pairs=afterburn_pairs(policy)
+    form_pairs={form:(normal,boosted) for normal,boosted in pairs.items() for form in (normal,boosted)}
+    starts={unit['unitId']:unit['type'] for unit in starting_units if unit['type'] in form_pairs}
     previous={};pending={};ends={};automatic={};clock=0
     for row in records:
         if row.get('kind')=='action' and row.get('type')=='UnitAction':
@@ -990,23 +1031,28 @@ def validate_unit_action_history(records, policy):
         if step:clock=int(f32(f32(clock)+f32(16.666666)))
         expected_events=[]
         for unit in sample.get('units',[]):
-            if unit.get('ownerPlayerId')!=owner or unit.get('typeId') not in ('aaBeamGunship','aaBeamGunship_afterburn'):continue
-            identity=unit['unitId'];old=previous.get(identity);form=old['typeId'] if old else 'aaBeamGunship'
+            identity=unit['unitId']
+            old=previous.get(identity)
+            starting_type=starts.get(identity,unit.get('typeId'))
+            if unit.get('ownerPlayerId')!=owner or not old and starting_type not in form_pairs:
+                continue
+            normal,boosted=form_pairs[old['typeId'] if old else starting_type]
+            form=old['typeId'] if old else starts.get(identity,normal)
             timer=automatic.get(identity,0)
             queue=pending.setdefault(identity,[])
             if step and old and unit.get('alive') is True:
                 name=queue.pop(0) if queue else None
                 if name is not None:
-                    form='aaBeamGunship_afterburn' if name=='afterBurn' else 'aaBeamGunship'
+                    form=boosted if name=='afterBurn' else normal
                     if name=='afterBurn':ends[identity]=clock+25000
                     expected_events.append((identity,'unit-action-completed'))
-                if form=='aaBeamGunship_afterburn':
+                if form==boosted:
                     timer=max(0,timer-1)
                     # Energy updates before ordinary actions; base afterBurn then sets 6.
-                    energy=old['energy'];empty=(old['typeId']=='aaBeamGunship_afterburn' and
+                    energy=old['energy'];empty=(old['typeId']==boosted and
                         energy['recharging'] is False and f32(f32(energy['current'])+f32(-.02))<=0)
                     if timer==0 and empty:
-                        form='aaBeamGunship';timer=60
+                        form=normal;timer=60
                         expected_events.append((identity,'unit-action-automatic'))
             if unit['typeId']!=form:
                 raise PlatformError('history-unit-action','Unit form changed outside its normal queue or empty-energy trigger',2)
@@ -1184,9 +1230,13 @@ def compare_history(records, plan, policy, native_anchors=None, geometry=None):
              'productionOrder','completedUpgradeTypes','initialIncome','producedIncome','transportStages','unitActionStages',
              'bunkerStages','reclaimRefunds','nautilusTerrain','nuclearHistory','navalAmmoHistory',
              'spiderOpening','spiderWeaponModules','spiderUtilityModules','spiderDefenseModules','spiderBlink',
-             'spiderMixedModules', 'productionSession'}
+             'spiderMixedModules', 'productionSession', 'afterburnPairs'}
     if not isinstance(policy,dict) or set(policy)-allowed:
         raise PlatformError('input-contract', 'Unknown or malformed history obligations', 1)
+    pairs = afterburn_pairs(policy)
+    if 'testScene' in plan and pairs != afterburn_pairs(plan):
+        raise PlatformError('input-contract', 'Core and Session afterburn pair contracts differ', 1)
+    aa_types = pairs.keys() | set(pairs.values())
     unit_checkpoints = policy.get('unitsAfterIntents', {})
     intent_ids = {intent['intentId'] for intent in plan['intents']}
     if (not isinstance(unit_checkpoints, dict) or set(unit_checkpoints)-intent_ids or
@@ -1255,7 +1305,7 @@ def compare_history(records, plan, policy, native_anchors=None, geometry=None):
     for stage in declarations:
         if (not isinstance(stage,dict) or set(stage)!={'intentId','typeId','cooldown'} or
                 not isinstance(stage['intentId'],str) or stage['intentId'] not in ids or stage['intentId'] in action_stages or
-                stage['typeId'] not in ('aaBeamGunship','aaBeamGunship_afterburn') or
+                not isinstance(stage['typeId'],str) or stage['typeId'] not in aa_types or
                 stage['cooldown'] not in ('active','ready')):
             raise PlatformError('input-contract','Invalid fixed unit action stage',1)
         action_stages[stage['intentId']]=stage
@@ -1367,7 +1417,7 @@ def compare_history(records, plan, policy, native_anchors=None, geometry=None):
             stage=action_stages.get(active)
             if stage is not None:
                 candidates=[u for u in units.values() if u.get('ownerPlayerId')==policy.get('ownerPlayerId','p1') and
-                            u.get('typeId') in ('aaBeamGunship','aaBeamGunship_afterburn')]
+                            u.get('typeId') in aa_types]
                 if len(candidates)!=1 or candidates[0]['typeId']!=stage['typeId']:
                     raise PlatformError('history-unit-action-stage','Missing, ambiguous or wrong unit form at fixed boundary',2)
                 action=candidates[0]['unitActions']['actions']['afterBurn']
@@ -1488,7 +1538,7 @@ def compare_history(records, plan, policy, native_anchors=None, geometry=None):
                     # The module scans before lifecycle conversion and can launch before its reclaim completes.
                     launch_units=previous_units
                 source=launch_units.get(source_id,{})
-                style=validate_launch_appearance(event,launch_units,proof[1] if proof else None)
+                style=validate_launch_appearance(event,launch_units,proof[1] if proof else None,pairs)
                 if born:
                     if token in launch_appearances and launch_appearances[token]!=style:
                         raise PlatformError('history-projectile','Repeated birth changed launch appearance',2)
@@ -1502,7 +1552,7 @@ def compare_history(records, plan, policy, native_anchors=None, geometry=None):
                             source.get('typeId')==expected['typeId'] and event.get('sourceWeaponName') in expected['weaponNames'] and
                             event.get('targetUnitId')==expected['targetUnitId']):fired[i]=True
             for projectile in sample.get('projectiles',[]):
-                style=validate_launch_appearance(projectile,units)
+                style=validate_launch_appearance(projectile,units,pairs=pairs)
                 token=projectile.get('token')
                 if token in launch_appearances and launch_appearances[token]!=style:
                     raise PlatformError('history-projectile','Observed projectile changed launch appearance',2)
@@ -1572,7 +1622,7 @@ def compare_history(records, plan, policy, native_anchors=None, geometry=None):
     if 'productionSession' in policy and native_anchors is None:
         from production_session_assertions import validate_production_session
         validate_production_session(records, policy['productionSession'], PlatformError)
-    if 'unitActionStages' in policy:validate_unit_action_history(records,policy)
+    if 'unitActionStages' in policy:validate_unit_action_history(records,policy,plan.get('units',[]))
     if 'bunkerStages' in policy:validate_bunker_history(records,policy)
     if 'nautilusTerrain' in policy:validate_nautilus_history(records,policy)
     if 'navalAmmoHistory' in policy:

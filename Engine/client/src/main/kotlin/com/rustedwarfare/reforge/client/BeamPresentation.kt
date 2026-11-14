@@ -13,7 +13,10 @@ internal object BeamPresentation {
         Collections.unmodifiableList(view.projectiles.mapNotNull { shot ->
             if (shot.appearance != ProjectileAppearance.AA_BEAM) return@mapNotNull null
             val beam = requireNotNull(shot.beam) { "A beam requires authorized endpoint geometry" }
-            val images = resources.units.getValue("aaBeamGunship")
+            val images = if (beam.resourceUnitType != null) resources.units.getValue(checkNotNull(beam.resourceUnitType))
+            else resources.units["aaBeamGunship"] ?: resources.units.values.first {
+                it.beamImagePath != null && it.beamStartImagePath != null && it.beamEndImagePath != null
+            }
             require(images.beamImagePath != null && images.beamStartImagePath != null && images.beamEndImagePath != null)
             BeamDrawing(Position(shot.position.x, shot.position.y - shot.height),
                 Position(beam.end.x, beam.end.y - beam.endHeight), images, beam.textureOffset)

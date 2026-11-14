@@ -1,5 +1,6 @@
 {
   "format": "rw-reforge.unit.v2",
+  "afterburn": {"normalForm": "aaBeamGunship", "boostedForm": "aaBeamGunship_afterburn"},
   "core": {
     "name": "aaBeamGunship",
     "maxHp": 2500,

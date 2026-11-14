@@ -53,6 +53,7 @@ class UnitDefinition(
     val nuclearSilo: NuclearSiloProfile? = null,
     val attachmentLayout: AttachmentLayout? = null,
     val attachmentModule: AttachmentModuleProfile? = null,
+    val afterburn: AfterburnProfile? = null,
 ) {
     internal val locomotionStates: SubmersibleLocomotion?
         get() = amphibiousJet?.locomotion ?: submarine?.locomotion

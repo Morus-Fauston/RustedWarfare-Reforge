@@ -21,6 +21,11 @@ sealed interface AttachmentAutomaticAction {
     data class ConvertWhenBuilt(val targetTypeId: String) : AttachmentAutomaticAction
 }
 
+/** Replacement speed contributions are selected by priority, then by attachment slot. */
+data class AttachmentSpeed(val maximum: Double, val priority: Int, val readyOnly: Boolean) {
+    internal fun isValid(): Boolean = maximum.isFinite() && maximum > 0.0 && priority > 0
+}
+
 class AttachmentModuleProfile(
     val empty: Boolean,
     val selfBuildRate: Float = 0f,
@@ -29,6 +34,7 @@ class AttachmentModuleProfile(
     val reclaim: AttachmentRemoval? = null,
     upgrades: List<AttachmentUpgrade> = emptyList(),
     val automaticAction: AttachmentAutomaticAction? = null,
+    val parentSpeed: AttachmentSpeed? = null,
 ) {
     val installs: List<AttachmentInstall> = Collections.unmodifiableList(ArrayList(installs))
     val upgrades: List<AttachmentUpgrade> = Collections.unmodifiableList(ArrayList(upgrades))
@@ -117,7 +123,7 @@ internal object ModularSpiderRules {
         if (unit.id == EMPTY) return module.empty && unit.radius == 20.0 && unit.maximumHealth == 3000.0 &&
             unit.combat == null && unit.income == null && module.automaticAction == null &&
             module.installs == installs && module.upgrades.isEmpty() &&
-            module.selfBuildRate == 0f && module.cancel == null && module.reclaim == null
+            module.selfBuildRate == 0f && module.cancel == null && module.reclaim == null && module.parentSpeed == null
         val utility = ModularSpiderUtilityForms.byId[unit.id]
         if (utility != null) return unit.radius == 15.0 && unit.maximumHealth == 3000.0 &&
             unit.combat == null && unit.shield == null && unit.income == utility.income &&
@@ -135,7 +141,8 @@ internal object ModularSpiderRules {
     private fun matches(module: AttachmentModuleProfile, expected: AttachmentModuleProfile): Boolean =
         !module.empty && module.installs.isEmpty() && module.selfBuildRate == expected.selfBuildRate &&
             module.cancel == expected.cancel && module.reclaim == expected.reclaim &&
-            module.upgrades == expected.upgrades && module.automaticAction == expected.automaticAction
+            module.upgrades == expected.upgrades && module.automaticAction == expected.automaticAction &&
+            module.parentSpeed?.isValid() != false && module.parentSpeed == expected.parentSpeed
 
     fun isModuleId(id: String): Boolean = id == EMPTY || id in ModularSpiderWeaponForms.byId ||
         id in ModularSpiderUtilityForms.byId

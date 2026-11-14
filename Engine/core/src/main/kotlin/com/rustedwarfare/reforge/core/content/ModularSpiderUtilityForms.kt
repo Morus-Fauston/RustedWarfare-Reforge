@@ -20,11 +20,12 @@ internal object ModularSpiderUtilityForms {
         upgrades: List<AttachmentUpgrade> = emptyList(),
         automaticAction: AttachmentAutomaticAction? = null,
         additionalSections: Map<String, Map<String, String>> = emptyMap(),
+        parentSpeed: AttachmentSpeed? = null,
     ) {
         val module = AttachmentModuleProfile(empty = false, selfBuildRate = .001f,
             cancel = AttachmentRemoval(ModularSpiderRules.EMPTY, price, 120f),
             reclaim = AttachmentRemoval(ModularSpiderRules.EMPTY, price / 2, 180f),
-            upgrades = upgrades, automaticAction = automaticAction)
+            upgrades = upgrades, automaticAction = automaticAction, parentSpeed = parentSpeed)
 
         val sections = mapOf(
             "core" to (mapOf("name" to id, "class" to "CustomUnitMetadata", "price" to price.toString(),
@@ -58,7 +59,7 @@ internal object ModularSpiderUtilityForms {
             automaticAction = AttachmentAutomaticAction.RestoreParentShield(30f)),
         Form(ModularSpiderRules.SPEED_INCOMPLETE, 6000, 22, 21,
             automaticAction = AttachmentAutomaticAction.ConvertWhenBuilt(ModularSpiderRules.SPEED)),
-        Form(ModularSpiderRules.SPEED, 6000, 22, 21),
+        Form(ModularSpiderRules.SPEED, 6000, 22, 21, parentSpeed = AttachmentSpeed(.7, 2, readyOnly = true)),
         Form(ModularSpiderRules.LASER_DEFENSE, 3000, 20, 19, additionalSections = mapOf(
             "turret_laserDefence" to mapOf("x" to "0", "y" to "0", "invisible" to "true", "canShoot" to "false",
                 "laserDefenceEnergyUse" to laserDefense.cost.toString(), "limitingRange" to laserDefense.range.toString(),

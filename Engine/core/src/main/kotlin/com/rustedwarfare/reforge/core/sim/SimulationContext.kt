@@ -1505,8 +1505,13 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
                 return SimulationError("unsupported-unit-actions", "Ground height requires a qualified custom form")
             val beamGunship = !nautilus && !scout && !bomber && (definition.energy != null || definition.combat?.projectile?.beam != null ||
                 definition.combat?.namedWeapons?.ordered?.any { it.energyUsage != 0f || it.projectile.beam != null } == true)
-            if (beamGunship && !AaBeamGunship.supports(definition))
-                return SimulationError("unsupported-aa-beam", "Expected the qualified AA energy and beam representative")
+            if (definition.afterburn != null || beamGunship) {
+                if (!AaBeamGunship.supports(definition))
+                    return SimulationError("unsupported-aa-beam", "Expected a qualified afterburn profile with an energy beam")
+                val profile = checkNotNull(definition.afterburn)
+                if (listOf(profile.normalForm, profile.boostedForm).any { input.unitDefinitions[it]?.afterburn != profile })
+                    return SimulationError("invalid-unit-action-target", "Afterburn conversion forms must share the same profile")
+            }
             if (definition.customActions != null) {
                 if (!CustomUnitActions.supports(definition))
                     return SimulationError("unsupported-unit-actions", "Expected qualified custom unit actions")
@@ -2164,7 +2169,8 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
             beam.height = unit.height
             beam.remainingLife = weapon.projectile.life
             beam.hitApplied = false
-            beam.beamSegment = BeamSegment(target.position, target.height)
+            beam.beamSegment = BeamSegment(target.position, target.height,
+                resourceUnitType = unit.definition.afterburn?.normalForm?.takeUnless { it == "aaBeamGunship" })
             pendingProjectileEvents += ProjectileEventObservation(if (previous == null) "born" else "rearmed", projectileObservation(beam))
             pendingEvents += Event("projectile-fired", unit.unitId)
             return
@@ -2338,7 +2344,8 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
                     val x = GroundMath.sin((360f * projectile.scatter + projectile.age) % 360f) * radius
                     val y = GroundMath.sin((360f * projectile.scatter + projectile.age * 1.5f) % 360f) * radius
                     projectile.offset = Position(x.toDouble(), y.toDouble())
-                    projectile.beamSegment = BeamSegment(Position(target.position.x + x, target.position.y + y), target.height)
+                    projectile.beamSegment = BeamSegment(Position(target.position.x + x, target.position.y + y), target.height,
+                        resourceUnitType = projectile.beamSegment?.resourceUnitType)
                 }
             }
             if ((projectile.lightning || projectile.beam) && projectile.hitApplied) {
@@ -2682,7 +2689,7 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
             unit.movementState = MovementState.IDLE
             return
         }
-        val maximumSpeed = movement.moveSpeed * unit.terrainSpeedMultiplier
+        val maximumSpeed = UnitLocomotion.effectiveMaximumSpeed(unit, movement)
         val air = movement.type == MovementType.AIR
         val sliding = movement.slidingMode
         val contract = checkNotNull(scenario?.movementContract)

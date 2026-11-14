@@ -131,14 +131,20 @@ internal class PlayerObservationProjector(world: WorldHandle, scenario: Scenario
             if (event.interceptorUnitId != null && interceptor == null && !publicInterception) return@mapNotNull null
             val target = value.targetUnitId.takeIf { it in ids }
             val source = value.sourceUnitId.takeIf { it in ids }
+            val beam = if (source == null) value.beam?.copy(resourceUnitType = null) else value.beam
             ProjectedProjectileEvent(value.objectId, event.kind, value.position, value.heading, value.height,
                 source, target, event.damage.takeIf { target != null }, interceptor,
-                value.areaExpansion?.radius, value.sourceWeaponName?.takeIf { source != null }, value.appearance, value.lightning, value.beam)
+                value.areaExpansion?.radius, value.sourceWeaponName?.takeIf { source != null }, value.appearance, value.lightning, beam)
         }
         val projection = projectileProjection.project(
             observation.projectiles.filter { (it.alwaysVisibleInFog || isVisible(vision, it.position)) &&
                 (it.lightning?.let { line -> isVisible(vision, line.end) } ?: true) &&
-                (it.beam?.let { line -> isVisible(vision, line.end) } ?: true) }, projectedEvents,
+                (it.beam?.let { line -> isVisible(vision, line.end) } ?: true) }.map { shot ->
+                val beam = shot.beam
+                if (beam?.resourceUnitType == null) shot
+                else if (shot.sourceUnitId in ids) shot.copy(beam = beam.copy(visibleSourceUnitId = shot.sourceUnitId))
+                else shot.copy(beam = beam.copy(resourceUnitType = null))
+            }, projectedEvents,
             observation.projectiles.mapTo(mutableSetOf()) { it.objectId }.also { retained ->
                 rawProjectileEvents.forEach { retained += it.projectile.objectId }
             })

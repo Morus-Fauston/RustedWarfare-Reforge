@@ -319,13 +319,10 @@ internal object UnitAttachments {
     private fun completed(state: StepState, parent: MutableUnit, child: MutableUnit, event: String) {
         val layout = checkNotNull(parent.definition.attachmentLayout)
         fun attached(slot: AttachmentSlotDefinition): MutableUnit? = state.units[childId(parent, slot.number)]
-        parent.attachmentMoveSpeed = when {
-            layout.slots.any { slot -> attached(slot)?.let {
-                it.typeId == ModularSpiderRules.SPEED && BuildingWork.isReady(it)
-            } == true } -> .7
-            layout.slots.any { slot -> attached(slot)?.typeId in ModularSpiderWeaponForms.byId } -> .4
-            else -> null
-        }
+        parent.attachmentMoveSpeed = layout.slots.asSequence().mapNotNull { slot ->
+            val module = attached(slot) ?: return@mapNotNull null
+            module.definition.attachmentModule?.parentSpeed?.takeIf { !it.readyOnly || BuildingWork.isReady(module) }
+        }.maxByOrNull { it.priority }?.maximum
         state.pendingEvents += Event(event, child.unitId)
     }
 
