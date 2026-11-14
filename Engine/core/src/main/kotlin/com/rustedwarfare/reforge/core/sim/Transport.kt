@@ -43,7 +43,9 @@ internal object Transport {
     fun supports(definition: UnitDefinition): Boolean {
         if (definition.transport == TransportProfile.AUTHORED)
             return definition.transportSettings?.isValid() == true && definition.maximumHealth != null &&
-                definition.movement.type in setOf(MovementType.HOVER, MovementType.NONE) &&
+                (definition.movement.type in setOf(MovementType.HOVER, MovementType.NONE) ||
+                    definition.movement.type == MovementType.AIR && RoleCompositionRules.usesRoles(definition) &&
+                    definition.movement.flight?.isValid() == true) &&
                 definition.attachmentModule == null && definition.attachmentLayout == null
         if (definition.transportSettings != null) return false
         if (definition.transport == TransportProfile.NAUTILUS_SUBMERGED) return NautilusRules.supports(definition)

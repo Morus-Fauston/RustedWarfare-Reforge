@@ -7,9 +7,10 @@ import com.rustedwarfare.reforge.core.content.AttackMovementProfile
 import com.rustedwarfare.reforge.core.content.MechFlameRules
 import com.rustedwarfare.reforge.core.content.ModularSpiderRules
 import com.rustedwarfare.reforge.core.content.MovementType
+import com.rustedwarfare.reforge.core.content.RoleCompositionRules
 import com.rustedwarfare.reforge.core.content.TransportProfile
 import com.rustedwarfare.reforge.core.content.foundationMovementType
-import com.rustedwarfare.reforge.core.content.siteConstruction
+import com.rustedwarfare.reforge.core.content.canConstruct
 import com.rustedwarfare.reforge.core.content.DirectHitTargetKind
 import com.rustedwarfare.reforge.core.content.ScoutBotRules
 import com.rustedwarfare.reforge.core.content.ScoutPayloadStage
@@ -976,7 +977,8 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
         val exitProfile = unit.definition.production?.exitProfile
         if ((unit.definition.className == "AuthoredBuilding" || exitProfile in setOf(com.rustedwarfare.reforge.core.content.FactoryExitProfile.CUSTOM_MECH,
                 com.rustedwarfare.reforge.core.content.FactoryExitProfile.NATIVE_AIR,
-                com.rustedwarfare.reforge.core.content.FactoryExitProfile.NATIVE_SEA)) && !BuildingWork.isReady(unit))
+                com.rustedwarfare.reforge.core.content.FactoryExitProfile.NATIVE_SEA,
+                com.rustedwarfare.reforge.core.content.FactoryExitProfile.AUTHORED_MOBILE)) && !BuildingWork.isReady(unit))
             return reject(action, "factory-under-construction", if (exitProfile == com.rustedwarfare.reforge.core.content.FactoryExitProfile.NATIVE_AIR)
                 "The air factory must finish construction before accepting production"
                 else "The factory must finish construction before accepting production")
@@ -1001,11 +1003,16 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
     }
 
     private fun advanceProduction(factory: MutableUnit, input: Scenario) {
-        val tick = checkNotNull(productionLedger).advance(factory.unitId,
-            checkNotNull(factory.definition.production).speedMultiplier, Transport.allowsProductionCompletion(factory, units))
+        val ledger = checkNotNull(productionLedger)
+        val production = checkNotNull(factory.definition.production)
+        val mobile = production.exitProfile == com.rustedwarfare.reforge.core.content.FactoryExitProfile.AUTHORED_MOBILE
+        val map = if (mobile) buildingTerrain?.collisionMap ?: input.map else input.map
+        val tick = ledger.advance(factory.unitId, production.speedMultiplier, Transport.allowsProductionCompletion(factory, units)) { type ->
+            !mobile || FactoryExit.mobileBirth(factory, input.unitDefinitions.getValue(type), map) != null
+        }
         productionLedger = tick.ledger
         tick.completed?.let { completed ->
-            UnitRegistration.produced(steps.current, input, factory, completed)
+            UnitRegistration.produced(steps.current, input, factory, completed, map)
         }
     }
 
@@ -1602,6 +1609,9 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
             val m = definition.movement
             val attachedProfile = definition.attachmentLayout != null || definition.attachmentModule != null
             val spiderWork = ModularSpiderRules.supportsWork(definition)
+            val roles = RoleCompositionRules.usesRoles(definition)
+            if (roles && !RoleCompositionRules.supports(definition, input.unitDefinitions))
+                return SimulationError("unsupported-unit-roles", "Expected complete compatible authored roles and valid mobile construction")
             val spiderLightning = attachedProfile && definition.id == ModularSpiderRules.LIGHTNING
             val submarine = definition.submarine != null
             val amphibious = definition.amphibiousJet != null
@@ -1673,7 +1683,7 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
                     definition.deathExplosion != null || definition.pointDefense != null || definition.maximumHealth == null)
                     return SimulationError("unsupported-underwater-target", "Expected the finite fixed-depth unarmed WATER target")
             }
-            if (air && !amphibious && !dropship && !beamGunship && !bomber && !authoredAir && (m.flight?.isValid() != true || definition.rotor?.spinRate?.isFinite() != true ||
+            if (air && !amphibious && !dropship && !beamGunship && !bomber && !authoredAir && !roles && (m.flight?.isValid() != true || definition.rotor?.spinRate?.isFinite() != true ||
                     !m.slidingMode || !m.ignoringBody || m.reverseSpeedPercentage != .1 || definition.mech != null) ||
                 !air && (m.flight != null || definition.rotor != null))
                 return SimulationError("unsupported-flight", "Expected a finite AIR profile and a single finite rotor")
@@ -1683,24 +1693,23 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
                 return SimulationError("unsupported-mech", "Expected the finite supported mech locomotion category")
             val authoredMaintenance = definition.maintenance == com.rustedwarfare.reforge.core.content.MaintenanceProfile.AUTHORED
             if (authoredMaintenance != (definition.authoredMaintenance != null) || authoredMaintenance &&
-                    (definition.authoredMaintenance?.isValid() != true || definition.className != "AuthoredConstructor" ||
-                        definition.builder == null || definition.building != null || definition.combat != null))
+                    (definition.authoredMaintenance?.isValid() != true || definition.className != "AuthoredConstructor" && !roles ||
+                        definition.builder == null || definition.building != null || definition.combat != null && !roles))
                 return SimulationError("unsupported-maintenance", "Expected a finite authored constructor maintenance profile")
             if (definition.maintenance != null && !authoredMaintenance && !RepairBay.supports(definition) && !engineer && !scout && !spiderWork)
                 return SimulationError("unsupported-repair-bay", "Expected the complete finite native repair bay capability")
             if (definition.reclaimPrice != null && definition.reclaimPrice < 0L)
                 return SimulationError("invalid-reclaim-price", "Explicit reclaim price must be nonnegative")
             definition.builder?.takeUnless { scout }?.let { builder ->
-                if (definition.fogOfWarSightRange < 15 || !engineer && !spiderWork && (m.type != MovementType.LAND || m.moveSpeed > .8 ||
+                if (definition.fogOfWarSightRange < 15 || !engineer && !spiderWork && !roles && (m.type != MovementType.LAND || m.moveSpeed > .8 ||
                     (if (authoredMaintenance) !(builder.range > 0f && builder.range <= 500f &&
                         builder.repairRate > 0f && builder.repairRate <= 10f)
                         else builder.range != 85f || builder.repairRate != .2f) ||
                     builder.preparation != 30f || builder.decay != 1.3f ||
                     builder.buildSpeedMultiplier != 1f || builder.mainNanoTurret != null) ||
                     builder.buildingTypeIds.isEmpty() || builder.buildingTypeIds.distinct().size != builder.buildingTypeIds.size ||
-                    builder.buildingTypeIds.any { id ->
-                        input.unitDefinitions[id]?.let { if (spiderWork) it.siteConstruction else it.construction } == null
-                    })
+                    !builder.buildingTypeIds.containsAll(builder.nanoConstructionTypes) ||
+                    builder.buildingTypeIds.any { id -> input.unitDefinitions[id]?.let(definition::canConstruct) != true })
                     return SimulationError("unsupported-construction", "Finite construction requires supported sight, movement and building targets")
             }
             definition.construction?.let { construction ->
@@ -1774,7 +1783,8 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
                 if (nautilus && production.unitTypeIds.any { id ->
                         input.unitDefinitions[id]?.let(com.rustedwarfare.reforge.core.content.NautilusRules::acceptsProduct) != true })
                     return SimulationError("unsupported-production", "Nautilus requires the qualified product price, rate and capability")
-                if (production.speedMultiplier != (if (nautilus) 2f else 1f) ||
+                if (production.exitProfile == com.rustedwarfare.reforge.core.content.FactoryExitProfile.AUTHORED_MOBILE && !roles ||
+                    !roles && production.speedMultiplier != (if (nautilus) 2f else 1f) ||
                     production.exitProfile == com.rustedwarfare.reforge.core.content.FactoryExitProfile.CUSTOM_NAUTILUS && !nautilus)
                     return SimulationError("unsupported-production", "Expected qualified current factory speed and exit")
                 val authoredFactory = com.rustedwarfare.reforge.core.content.AuthorFactoryRules.supports(definition, input.unitDefinitions)
@@ -1799,7 +1809,7 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
                     (!FactoryExit.supportsMechFactory(definition) || input.unitDefinitions["builder"]?.builder == null ||
                         input.unitDefinitions["mechGun"]?.mech == null))
                     return SimulationError("unsupported-production", "Custom mech exits require the complete finite L1 factory and product capabilities")
-                if (definition.building == null && !nautilus || production.unitTypeIds.isEmpty() &&
+                if (definition.building == null && !nautilus && !roles || production.unitTypeIds.isEmpty() &&
                     !(FactoryExit.supportsSeaFactory(definition) && definition.id == "seaFactory") ||
                     production.unitTypeIds.distinct().size != production.unitTypeIds.size || production.unitTypeIds.any {
                         val build = input.unitDefinitions[it]?.build
@@ -1829,11 +1839,11 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
             val navalHull = definition.id == "heavyBattleship" && m.type == MovementType.WATER && definition.radius == 40.0
             val authoredSurface = definition.authoredWaterCombat
             if (authoredSurface && (m.type != MovementType.WATER || definition.combat == null ||
-                    definition.className != "CustomUnitMetadata" || !definition.id.matches(Regex("[a-z][a-z0-9_.-]*")) ||
+                    definition.className != "CustomUnitMetadata" && !roles || !definition.id.matches(Regex("[a-z][a-z0-9_.-]*")) ||
                     definition.radius <= 0.0 || !definition.displayRadius.isFinite() || definition.displayRadius <= 0.0 ||
                     !definition.imageScale.isFinite() || definition.imageScale <= 0.0 || definition.totalFrames <= 0 ||
-                    definition.fixedUnderwaterTarget != null || definition.building != null || definition.production != null ||
-                    definition.builder != null || definition.construction != null || definition.income != null ||
+                    definition.fixedUnderwaterTarget != null || definition.building != null || definition.production != null && !roles ||
+                    definition.builder != null && !roles || definition.construction != null || definition.income != null ||
                     definition.upgrades != null || definition.deathExplosion != null || definition.pointDefense != null ||
                     definition.mech != null || definition.rotor != null || m.flight != null ||
                     definition.directHitTargetKind != DirectHitTargetKind.ORDINARY))

@@ -1,0 +1,40 @@
+{
+  "format": "rw-reforge.unit.v2",
+  "core": {
+    "maxHp": 3500,
+    "radius": 15,
+    "displayRadius": 15,
+    "price": 21000,
+    "buildSpeed": 0.0002,
+    "fogOfWarSightRange": 20,
+    "name": "cargo_air"
+  },
+  "graphics": {
+    "image": "ship.png",
+    "image_wreak": "ship_dead.png"
+  },
+  "movement": {
+    "movementType": "AIR",
+    "moveSpeed": 0.8,
+    "moveAccelerationSpeed": 0.05,
+    "moveDecelerationSpeed": 0.05,
+    "maxTurnSpeed": 1.5,
+    "turnAcceleration": 0.1,
+    "targetHeight": 12,
+    "heightChangeRate": 0.3
+  },
+  "roles": {
+    "productionTypes": "scout_hull",
+    "productionSpeed": 3
+  },
+  "abilities": [
+    {
+      "name": "cargo",
+      "type": "transport",
+      "capacity": 12,
+      "passengerMovement": "LAND",
+      "unloadTerrain": "land",
+      "unloadTicks": 30
+    }
+  ]
+}

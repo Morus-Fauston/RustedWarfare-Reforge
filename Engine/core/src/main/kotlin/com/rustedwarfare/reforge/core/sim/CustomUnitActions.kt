@@ -7,6 +7,8 @@ import com.rustedwarfare.reforge.core.content.UnitDefinition
 import com.rustedwarfare.reforge.core.content.NautilusRules
 import com.rustedwarfare.reforge.core.content.NavalInterceptionRules
 import com.rustedwarfare.reforge.core.content.MapDefinition
+import com.rustedwarfare.reforge.core.content.MovementType
+import com.rustedwarfare.reforge.core.content.RoleCompositionRules
 import com.rustedwarfare.reforge.core.content.GroundLaunchProfile
 import com.rustedwarfare.reforge.core.content.ScoutBotRules
 
@@ -28,7 +30,7 @@ internal data class CustomActionState(val queue: List<PendingUnitAction> = empty
 internal object CustomUnitActions {
     fun supports(definition: UnitDefinition): Boolean = AaBeamGunship.supports(definition) || Bunker.supports(definition) ||
         NautilusRules.supports(definition) || NavalInterceptionRules.supports(definition) ||
-        ScoutBotRules.supports(definition) || definition.blink != null
+        ScoutBotRules.supports(definition) || definition.blink != null || RoleCompositionRules.usesRoles(definition)
 
     fun movementLocked(unit: MutableUnit, head: PendingUnitAction? = unit.customActionState.queue.firstOrNull()): Boolean = head?.let {
         it.progress > 0f && it.action.cannotMove
@@ -71,7 +73,8 @@ internal object CustomUnitActions {
         }
         val stockpile = unit.ordnance.ammo.takeIf { profile.actions.any { it.ammoProduction != null } }
         return UnitActionsObservation(immutable(actions), unit.customActionState.automaticCooldown, stockpile,
-            immutable(queue.filter { it.target != null || it.action.ammoProduction != null || it.action.blinkWork != null }
+            immutable(queue.filter { it.target != null || it.action.ammoProduction != null || it.action.blinkWork != null ||
+                RoleCompositionRules.usesRoles(unit.definition) && it.action.targetTypeId != null }
                 .map { QueuedUnitActionObservation(it.action.name, it.progress, it.target) }))
     }
 
@@ -168,7 +171,7 @@ internal object CustomUnitActions {
         val action = checkNotNull(unit.definition.customActions?.actions?.singleOrNull {
             it.actionId == head.action.actionId && it.automatic == null })
         val work = action.blinkWork
-        val speed = unit.definition.production?.speedMultiplier
+        val speed = if (action.ignoreFactorySpeed) 1f else unit.definition.production?.speedMultiplier
             ?: if (work != null) checkNotNull(unit.definition.blink).queueSpeed else 1f
         val ticks = if (work == null) 0f else head.advancedTicks + speed * delta.toFloat()
         val progress = if (work == null) head.progress + head.action.rate * speed * delta.toFloat() else ticks / work.ticks
@@ -213,7 +216,14 @@ internal object CustomUnitActions {
             unit.mechState?.feet?.size == target.mech.legs.size -> unit.mechState
             else -> MechMotion.initial(target, unit.position, unit.heading)
         }
-        if (old.movement.type != target.movement.type) unit.cancelRoute()
+        if (old.movement.type != target.movement.type) {
+            unit.cancelRoute()
+            if (RoleCompositionRules.usesRoles(target) && target.movement.type == MovementType.NONE) {
+                unit.speed = 0.0
+                unit.height = 0.0
+                unit.flightVelocity = Position(0.0, 0.0)
+            }
+        }
         val retained = target.customActions?.actions.orEmpty().filter { it.automatic == null }.associateBy { it.actionId }
         unit.customActionState = unit.customActionState.copy(queue = unit.customActionState.queue.mapNotNull { item ->
             if (item.action.blinkWork != null) item else retained[item.action.actionId]?.let { item.copy(action = it) }

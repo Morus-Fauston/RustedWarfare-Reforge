@@ -143,7 +143,8 @@ internal class ActionCatalogue(private val definitions: Map<String, UnitDefiniti
         val definition = definitions.getValue(factory.typeId)
         if (factory.constructionProgress < 1f && (definition.className == "AuthoredBuilding" || definition.production?.exitProfile in setOf(
             com.rustedwarfare.reforge.core.content.FactoryExitProfile.CUSTOM_MECH,
-            com.rustedwarfare.reforge.core.content.FactoryExitProfile.NATIVE_AIR))) return emptyList()
+            com.rustedwarfare.reforge.core.content.FactoryExitProfile.NATIVE_AIR,
+            com.rustedwarfare.reforge.core.content.FactoryExitProfile.AUTHORED_MOBILE))) return emptyList()
         return immutable(definitions.getValue(factory.typeId).production?.unitTypeIds.orEmpty().map { type ->
             val base = checkNotNull(production[type])
             val action = base.copy(rate = base.rate * checkNotNull(definition.production).speedMultiplier)
@@ -231,9 +232,16 @@ internal class ActionCatalogue(private val definitions: Map<String, UnitDefiniti
                 "buildAntiNuke" -> "Build interceptor"; else -> action.name }
             val status = if (action.queueIndex != null) "Queued ${(action.progress!! * 100f).toInt()}%" else if (action.cooldownRemaining > 0)
                 String.format(Locale.ROOT, "Cooling %.1fs", action.cooldownRemaining / 1000f) else "Ready"
-            val motion = when (action.name) { "deploy" -> "Movement locked while deploying\nCannot cancel"
+            val motion = when {
+                unitDefinition.production?.exitProfile == com.rustedwarfare.reforge.core.content.FactoryExitProfile.AUTHORED_MOBILE &&
+                    definition?.targetTypeId != null -> buildString {
+                        if (definition.cannotMove) append("Movement locked while converting\n")
+                        append(if (definition.canPlayerCancel) "Right on card: cancel" else "Cannot cancel")
+                    }
+                else -> when (action.name) { "deploy" -> "Movement locked while deploying\nCannot cancel"
                 "undeploy" -> "Fixed until undeployed\nCannot cancel"
                 "surface", "dive" -> "Movement locked while converting\nRight: cancel"; else -> "Movement orders continue" }
+            }
             val targetedBlink = blinkWork is BlinkWork.Teleport
             val tooltip = if (blinkWork != null && blink != null) {
                 if (targetedBlink && blink.locked) "$title\nMust be undeployed"

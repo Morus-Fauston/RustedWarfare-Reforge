@@ -197,7 +197,8 @@ data class CustomActionDefinition(val name: String, val actionId: String, val ta
     val automatic: AutomaticActionCondition? = null, val visible: Boolean = true,
     val cannotMove: Boolean = false, val rotateTo: Double? = null, val rotateToOrBackwards: Boolean = false,
     val highPriority: Boolean = false, val requiresOverWater: Boolean = false, val groundLaunch: GroundLaunchProfile? = null,
-    val ammoProduction: AmmoProductionProfile? = null, val blinkWork: BlinkWork? = null) {
+    val ammoProduction: AmmoProductionProfile? = null, val blinkWork: BlinkWork? = null,
+    val ignoreFactorySpeed: Boolean = false) {
     init {
         require(listOfNotNull(targetTypeId, groundLaunch, ammoProduction, blinkWork).size == 1)
         require(automatic == null || targetTypeId != null)
@@ -217,15 +218,29 @@ data class BuildingProfile(val footprint: BuildingFootprint, val backImagePath: 
     val foundationMovementType: MovementType? = null)
 class BuilderProfile(buildingTypeIds: List<String>, val range: Float = 85f,
     val preparation: Float = 30f, val decay: Float = 1.3f, val repairRate: Float = .2f,
-    val buildSpeedMultiplier: Float = 1f, val mainNanoTurret: String? = null) {
+    val buildSpeedMultiplier: Float = 1f, val mainNanoTurret: String? = null,
+    nanoConstructionTypes: Set<String> = emptySet(), val independentNanoTurnSpeed: Float? = null) {
     val buildingTypeIds: List<String> = Collections.unmodifiableList(ArrayList(buildingTypeIds))
+    val nanoConstructionTypes: Set<String> = Collections.unmodifiableSet(LinkedHashSet(nanoConstructionTypes))
 }
 data class ConstructionProfile(val price: Long, val rate: Float)
 
-/** Site work can construct these finite mobile products through the chassis nano turret. */
+/** Cost and rate after an authorized construction action has selected the target. */
 val UnitDefinition.siteConstruction: ConstructionProfile?
-    get() = construction ?: ModularSpiderRules.mobileConstruction(this)
-enum class FactoryExitProfile { NATIVE_LAND, CUSTOM_MECH, NATIVE_AIR, NATIVE_SEA, CUSTOM_NAUTILUS, NATIVE_EXPERIMENTAL }
+    get() = construction ?: build?.takeIf { building == null && movement.type != MovementType.NONE }
+        ?.let { ConstructionProfile(it.price, it.rate) }
+
+internal fun UnitDefinition.canConstruct(target: UnitDefinition): Boolean {
+    val profile = builder ?: return false
+    val construction = when {
+        target.id in profile.nanoConstructionTypes -> target.siteConstruction
+        maintenance == MaintenanceProfile.MODULAR_SPIDER -> target.construction ?: ModularSpiderRules.mobileConstruction(target)
+        else -> target.construction
+    } ?: return false
+    return target.id in profile.buildingTypeIds && target.maximumHealth != null &&
+        construction.price >= 0L && construction.rate.isFinite() && construction.rate > 0f
+}
+enum class FactoryExitProfile { NATIVE_LAND, CUSTOM_MECH, NATIVE_AIR, NATIVE_SEA, CUSTOM_NAUTILUS, NATIVE_EXPERIMENTAL, AUTHORED_MOBILE }
 
 /** Author buildings declare their terrain class; native sea factories retain their existing water fallback. */
 val UnitDefinition.foundationMovementType: MovementType

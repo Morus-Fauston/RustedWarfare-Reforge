@@ -127,6 +127,7 @@ internal data class StepState(
             require(unit.birthRemaining.isFinite() && unit.birthRemaining in 0f..birthLimit) { "Invalid birth timer" }
             unit.taskQueue.validateCandidate()
             require(unit.repairScanElapsed.isFinite() && unit.repairScanElapsed >= 0f) { "Invalid repair scan timer" }
+            require(unit.nanoHeading?.isFinite() != false) { "Nano heading must stay finite" }
             CustomUnitActions.validateCandidate(unit)
             NuclearOrdnance.validate(unit)
             require((unit.logicalRequestX == null) == (unit.logicalRequestY == null) &&

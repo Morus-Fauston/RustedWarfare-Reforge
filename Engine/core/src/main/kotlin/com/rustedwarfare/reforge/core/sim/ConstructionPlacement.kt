@@ -11,6 +11,13 @@ class PlacementFootprint internal constructor(cells: List<Pair<Int, Int>>, val w
 
 /** Shared placement center for the authoritative construction and authorized client preview. */
 object ConstructionPlacement {
+    internal fun centerReach(tile: Int, first: Int, last: Int, offset: Float?): Double {
+        val span = maxOf(kotlin.math.abs(first.toDouble()), kotlin.math.abs(last.toDouble()))
+        // Footprint conversion applies the custom offset and a one-unit bias before truncating.
+        val shift = offset?.let { kotlin.math.abs(it.toDouble() - 1.0) } ?: 0.0
+        return (span + 1.0) * tile + shift
+    }
+
     /** Native mobile nano-site contact test; this is not dynamic movement collision. */
     fun mobileOverlaps(position: Position, radius: Double, other: Position, otherRadius: Double,
                        otherIsBuilding: Boolean): Boolean {

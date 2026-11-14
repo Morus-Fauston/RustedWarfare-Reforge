@@ -3,7 +3,9 @@ package com.rustedwarfare.reforge.core.sim
 import com.rustedwarfare.reforge.core.knowledge.VisionSnapshot
 import com.rustedwarfare.reforge.core.content.foundationMovementType
 import com.rustedwarfare.reforge.core.content.MaintenanceProfile
+import com.rustedwarfare.reforge.core.content.UnitDefinition
 import com.rustedwarfare.reforge.core.content.siteConstruction
+import com.rustedwarfare.reforge.core.content.canConstruct
 import java.util.Collections
 
 internal data class BuildingRoute(val points: List<Position>, val knowledgeRevision: Long, val buildingRevision: Long)
@@ -129,6 +131,26 @@ internal class BuildingWork private constructor(val clock: Int, val nonces: Map<
             MapBounds.cell(target.position.y, map.tileHeight, map.heightTiles))
     }
 
+    private fun canSeeMobilePlacement(position: Position, definition: UnitDefinition, input: Scenario,
+                                      view: VisionSnapshot): Boolean {
+        val map = input.map
+        val contact = input.unitDefinitions.values.maxOf { candidate ->
+            val building = candidate.building
+            if (building == null) maxOf(11.0, definition.radius + candidate.radius) else {
+                val footprint = building.placementFootprint
+                maxOf(ConstructionPlacement.centerReach(map.tileWidth, footprint.left, footprint.right, building.anchor?.offsetX),
+                    ConstructionPlacement.centerReach(map.tileHeight, footprint.top, footprint.bottom, building.anchor?.offsetY))
+            }
+        }
+        val left = MapBounds.cell((position.x - contact).coerceAtLeast(0.0), map.tileWidth, map.widthTiles)
+        val right = MapBounds.cell((position.x + contact).coerceAtMost(map.widthTiles.toDouble() * map.tileWidth),
+            map.tileWidth, map.widthTiles)
+        val top = MapBounds.cell((position.y - contact).coerceAtLeast(0.0), map.tileHeight, map.heightTiles)
+        val bottom = MapBounds.cell((position.y + contact).coerceAtMost(map.heightTiles.toDouble() * map.tileHeight),
+            map.tileHeight, map.heightTiles)
+        return (left..right).all { x -> (top..bottom).all { y -> view.contains(x, y) } }
+    }
+
     private fun validateMaintenance(worker: MutableUnit, target: MutableUnit?, input: Scenario,
                                     view: VisionSnapshot?, reclaim: Boolean = false): SimulationError? {
         val contract = input.maintenanceContract
@@ -223,7 +245,18 @@ internal class BuildingWork private constructor(val clock: Int, val nonces: Map<
     }
 
     private fun turnForWork(worker: MutableUnit, target: Position, frame: BuildingWorkFrame): Double {
-        val name = worker.definition.builder?.mainNanoTurret
+        val profile = checkNotNull(worker.definition.builder)
+        val independentTurn = profile.independentNanoTurnSpeed
+        if (independentTurn != null) {
+            val heading = worker.nanoHeading ?: worker.heading
+            val desired = ScreenPlane.desired(worker.position, target)
+            val limit = independentTurn * frame.step.delta
+            val difference = ScreenPlane.difference(desired, heading)
+            val updated = ScreenPlane.normalize(heading + difference.coerceIn(-limit, limit))
+            worker.nanoHeading = updated
+            return ScreenPlane.difference(desired, updated)
+        }
+        val name = profile.mainNanoTurret
             ?: return frame.steering.turn(worker, target, frame.step.delta, frame.coordinates)
         val definition = checkNotNull(worker.definition.combat?.namedWeapons).byName.getValue(name)
         val state = checkNotNull(worker.namedWeapons).getValue(name)
@@ -344,12 +377,15 @@ internal class BuildingWork private constructor(val clock: Int, val nonces: Map<
             catch (_: BuildingInitializationException) { emptySet() }
         val view = frame.view
         if (view != null && cells.any { !view.contains(it.first, it.second) }) return BuildingWorkChange(this, ledger, upgrades)
+        val mobile = definition.building == null
+        if (mobile && view != null && !canSeeMobilePlacement(position, definition, input, view))
+            return BuildingWorkChange(this, ledger, upgrades)
         val live = frame.units.values.filter { it.alive && it.definition.building != null }
         val poolAtCenter = input.map.isResourcePool(MapBounds.cell(position.x, input.map.tileWidth, input.map.widthTiles),
             MapBounds.cell(position.y, input.map.tileHeight, input.map.heightTiles))
         val terrainBlocked = if (building.requiresResourcePool) !poolAtCenter else
             cells.any { input.map.isFoundationBlocked(it.first, it.second, definition.foundationMovementType) }
-        val mobileContact = definition.building == null && frame.units.values.any { other ->
+        val mobileContact = mobile && frame.units.values.any { other ->
             other !== worker && other.alive && other.carriedBy == null && other.attachment == null && ConstructionPlacement.mobileOverlaps(
                 position, definition.radius, other.position, other.definition.radius, other.definition.building != null)
         }
@@ -357,10 +393,11 @@ internal class BuildingWork private constructor(val clock: Int, val nonces: Map<
             input.map.tileWidth, input.map.tileHeight, position, definition.radius) ||
             terrainBlocked || mobileContact || live.any { other ->
                 val profile = checkNotNull(other.definition.building)
-                BuildingTerrain.footprint(input.map, other.position, profile.placementFootprint, profile.anchor, clipToMap = true).any { it in cells }
+                BuildingTerrain.footprint(input.map, other.position, profile.placementFootprint,
+                    profile.anchor, clipToMap = true).any { it in cells }
             }
         val reused = if (blocked) live.firstOrNull { other ->
-            other.ownerPlayerId == worker.ownerPlayerId && other.typeId == definition.id &&
+            !mobile && other.ownerPlayerId == worker.ownerPlayerId && other.typeId == definition.id &&
                 frame.coordinates.distanceSquared(position, other.position) <
                     (definition.radius + other.definition.radius) * (definition.radius + other.definition.radius)
         } else null
@@ -461,13 +498,11 @@ internal class BuildingWork private constructor(val clock: Int, val nonces: Map<
     }
 
     fun request(action: BuildAction, worker: MutableUnit, input: Scenario): SimulationError? {
-        val builder = worker.definition.builder ?: return SimulationError("cannot-build", "Unit cannot construct buildings")
+        if (worker.definition.builder == null) return SimulationError("cannot-build", "Unit cannot construct buildings")
         if (!input.nukesEnabled && input.unitDefinitions[action.buildingTypeId]?.nuclearSilo != null)
             return SimulationError("nukes-disabled", "Nuclear construction is disabled for this game")
         val target = input.unitDefinitions[action.buildingTypeId]
-        if (action.buildingTypeId !in builder.buildingTypeIds || target == null ||
-            (if (worker.definition.maintenance == MaintenanceProfile.MODULAR_SPIDER) target.siteConstruction
-             else target.construction) == null)
+        if (target == null || !worker.definition.canConstruct(target))
             return SimulationError("unsupported-construction-type", "Unit cannot construct this type")
         if (!MapBounds.contains(input.map.widthTiles.toDouble() * input.map.tileWidth,
                 input.map.heightTiles.toDouble() * input.map.tileHeight, action.target, 0.0))

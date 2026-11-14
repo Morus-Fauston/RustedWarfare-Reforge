@@ -2,6 +2,7 @@ package com.rustedwarfare.reforge.core.sim
 
 import com.rustedwarfare.reforge.core.content.FactoryExitProfile
 import com.rustedwarfare.reforge.core.content.AttachmentSlotDefinition
+import com.rustedwarfare.reforge.core.content.MapDefinition
 import com.rustedwarfare.reforge.core.content.ScoutBotRules
 import java.util.UUID
 
@@ -29,12 +30,13 @@ internal object UnitRegistration {
         }
     }
 
-    fun produced(state: StepState, input: Scenario, factory: MutableUnit, completed: ProductionCompletion): MutableUnit {
+    fun produced(state: StepState, input: Scenario, factory: MutableUnit, completed: ProductionCompletion,
+                 map: MapDefinition = input.map): MutableUnit {
         check(completed.ownerPlayerId == factory.ownerPlayerId)
         val definition = input.unitDefinitions.getValue(completed.typeId)
         val publicId = "produced:${factory.ownerPlayerId}:${completed.unitNonce}"
         check(publicId !in state.units) { "A paid production nonce must identify a new unit" }
-        val birth = FactoryExit.birth(factory, definition, input.map)
+        val birth = FactoryExit.birth(factory, definition, map)
         val customProducer = factory.definition.production?.exitProfile == FactoryExitProfile.CUSTOM_NAUTILUS
         require(customProducer || MapBounds.contains(input.map.widthTiles.toDouble() * input.map.tileWidth,
             input.map.heightTiles.toDouble() * input.map.tileHeight, birth.position, definition.radius)) {

@@ -241,7 +241,8 @@ internal class ProductionLedger private constructor(
     }
 
     /** One fixed sim-tick, one head; excess progress is never transferred to another item. */
-    fun advance(factoryId: String, speedMultiplier: Float = 1f, completionAllowed: Boolean = true): ProductionTick {
+    fun advance(factoryId: String, speedMultiplier: Float = 1f, completionAllowed: Boolean = true,
+                canPlace: (String) -> Boolean = { true }): ProductionTick {
         require(speedMultiplier.isFinite() && speedMultiplier > 0f)
         if (!isActive(factoryId)) return ProductionTick(this)
         val queue = work(factoryId)
@@ -252,7 +253,7 @@ internal class ProductionLedger private constructor(
             return ProductionTick(copy(
                 queues = changedQueue(factoryId, listOf(head.copy(progress = progress)) + queue.drop(1))))
         }
-        if (!completionAllowed) return ProductionTick(copy(
+        if (!completionAllowed || !canPlace(head.typeId)) return ProductionTick(copy(
             queues = changedQueue(factoryId, listOf(head.copy(progress = 1f)) + queue.drop(1))))
         val completed = ProductionCompletion(factoryId, factories.getValue(factoryId).ownerPlayerId, head.typeId, head.unitNonce)
         return ProductionTick(copy(queues = changedQueue(factoryId, queue.drop(1))), completed)

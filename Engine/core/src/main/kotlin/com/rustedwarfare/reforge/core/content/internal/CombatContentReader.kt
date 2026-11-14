@@ -103,7 +103,8 @@ internal object CombatContentReader {
             Kind.DECLARED_TANK, Kind.NATIVE_TANK -> schema.copy(movementTemplates = mapOf("tank" to tankTemplate),
                 structuredAbilities = true)
             Kind.BATTLESHIP -> NavalContentFields.schema(schema)
-            Kind.AUTHOR_WATER -> NavalContentFields.schema(schema).copy(structuredAbilities = true, navalInterceptionAbility = true)
+            Kind.AUTHOR_WATER -> AuthoredRoleContentReader.waterSchema(NavalContentFields.schema(schema))
+                .copy(structuredAbilities = true, navalInterceptionAbility = true)
             Kind.HEAVY_MECH -> HeavyMechContentFields.schema(schema).copy(structuredAbilities = true)
             Kind.MECH -> MechContentFields.schema(schema)
             Kind.HELICOPTER -> HelicopterContentFields.schema(schema)
@@ -445,7 +446,9 @@ internal object CombatContentReader {
             multiTargeting = optionalBoolean("attack", "turretMultiTargeting", false),
             rotateWithBody = heavy && optionalBoolean("attack", "turretRotateWithBody", true),
         )
-        val definition = UnitDefinition(identity, "CustomUnitMetadata", number("core", "radius", true),
+        val nano = if (authorWater) AuthoredRoleContentReader.readWaterNano(path, loaded) else null
+        val definition = UnitDefinition(identity, if (nano == null) "CustomUnitMetadata" else "AuthoredRoleUnit",
+            number("core", "radius", true),
             number("core", "displayRadius", true), integer("graphics", "total_frames", true),
             image("image"), imageScale,
             MovementProfile(movement, number("movement", "moveSpeed"), number("movement", "moveAccelerationSpeed"),
@@ -464,6 +467,9 @@ internal object CombatContentReader {
             shield = shield, shieldImagePath = if (heavy) image("image_shield") else null,
             blink = blink, customActions = blink?.actions() ?: interception?.actions,
             transport = transport?.let { TransportProfile.AUTHORED }, transportSettings = transport,
+            production = nano?.production, builder = nano?.builder,
+            maintenance = nano?.maintenance?.let { MaintenanceProfile.AUTHORED },
+            authoredMaintenance = nano?.maintenance,
             transportSlots = if ("transportSlotsNeeded" in sections.getValue("core")) integer("core", "transportSlotsNeeded") else 1)
         definition
     }

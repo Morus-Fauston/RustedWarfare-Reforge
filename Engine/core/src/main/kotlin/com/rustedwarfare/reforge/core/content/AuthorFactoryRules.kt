@@ -29,7 +29,7 @@ internal object AuthorFactoryRules {
             FactoryExitProfile.NATIVE_AIR -> product.movement.type == MovementType.AIR && product.combat != null &&
                 (product.rotor != null || BomberRules.supports(product))
             FactoryExitProfile.NATIVE_SEA -> product.movement.type == MovementType.WATER && product.combat != null
-            FactoryExitProfile.CUSTOM_NAUTILUS, FactoryExitProfile.NATIVE_EXPERIMENTAL -> false
+            FactoryExitProfile.CUSTOM_NAUTILUS, FactoryExitProfile.NATIVE_EXPERIMENTAL, FactoryExitProfile.AUTHORED_MOBILE -> false
         }
     }
 

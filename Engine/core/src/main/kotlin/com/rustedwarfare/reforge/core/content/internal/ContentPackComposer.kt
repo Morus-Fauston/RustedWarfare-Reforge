@@ -91,10 +91,11 @@ internal object ContentPackComposer {
                         bad(launch.payloadUnitTypeId, "spawnUnit", "Scout payload requires its qualified unit in the final set")
                 }
             }
+            if (RoleCompositionRules.usesRoles(unit) && !RoleCompositionRules.supports(unit, units))
+                bad(id, "roles", "Expected complete supported unit roles and compatible conversion forms")
             unit.builder?.buildingTypeIds?.forEach { target ->
                 val definition = units[target]
-                val construction = if (unit.id == ModularSpiderRules.ID) definition?.siteConstruction else definition?.construction
-                if (construction == null) bad(target, "constructionTypes", "Builder target must exist with construction metadata in the final set")
+                if (definition?.let(unit::canConstruct) != true) bad(target, "constructionTypes", "Builder target must exist with construction metadata in the final set")
             }
             if (unit.className == "AuthoredBuilding") unit.upgrades?.let { profile ->
                 val target = profile.actions.singleOrNull()?.targetTypeId

@@ -479,6 +479,7 @@ internal data class MutableUnit(
     var constructionRetryTime: Int = -9999,
     var constructionPreparation: Float = 0f,
     var constructionWorking: Boolean = false,
+    var nanoHeading: Double? = null,
     var previousWorkTargetActive: Boolean = false,
     /** Native r.d is independent of the work preparation and Stop fields. */
     var repairScanElapsed: Float = 0f,
