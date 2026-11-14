@@ -2,7 +2,7 @@
 from copy import deepcopy
 import unittest
 
-from public_final_candidate import JOBS, PR_WORKFLOW, verify_sample, pull_identity, require_toolchain
+from public_final_candidate import JOBS, PR_WORKFLOW, verify_sample, pull_identity, require_toolchain, qualification_runs, require_merge_tree
 
 
 class PublicFinalCandidateTest(unittest.TestCase):
@@ -13,6 +13,29 @@ class PublicFinalCandidateTest(unittest.TestCase):
             require_toolchain(dict(expected, toolchain={'python': '3.13.19'}), expected)
         with self.assertRaises(ValueError):
             require_toolchain(dict(expected, gradle={'version': '9.3.1', 'Revision': 'two'}), expected)
+
+    def test_selects_latest_three_independent_runs_for_same_pull_request(self):
+        rows = [dict(id=i, run_number=i+7, pull_requests=[{'number': 10}], run_attempt=1,
+                     status='completed') for i in (20, 21, 22)]
+        self.assertEqual((20, 21, 22), qualification_runs(dict(total_count=3, workflow_runs=rows[::-1]), 10, 22))
+        for items in (rows[:2], [*rows[:2], dict(rows[2], pull_requests=[{'number':11}])],
+                      [*rows[:2], dict(rows[2], run_attempt=3)],
+                      [*rows[:2], dict(rows[2], status='in_progress')], [rows[0], rows[0], rows[2]]):
+            with self.assertRaises(ValueError):
+                qualification_runs(dict(total_count=len(items), workflow_runs=items), 10, 22)
+        with self.assertRaises(ValueError):
+            qualification_runs(dict(total_count=4, workflow_runs=rows), 10, 22)
+        with self.assertRaises(ValueError):
+            qualification_runs(dict(total_count=3, workflow_runs=rows), 10, 21)
+
+    def test_equivalent_checkout_must_have_same_tree_and_ordered_parents(self):
+        expected = dict(tree='tree', base='base', head='head')
+        parents = [{'sha':'base'}, {'sha':'head'}]
+        require_merge_tree(dict(tree={'sha':'tree'}, parents=parents), expected)
+        with self.assertRaises(ValueError):
+            require_merge_tree(dict(tree={'sha':'different'}, parents=parents), expected)
+        with self.assertRaises(ValueError):
+            require_merge_tree(dict(tree={'sha':'tree'}, parents=parents[::-1]), expected)
 
     def test_current_candidate_uses_open_mergeable_main(self):
         pull = dict(state='open', base=dict(ref='main', sha='b'), head=dict(sha='h'),

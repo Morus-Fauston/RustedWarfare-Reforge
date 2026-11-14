@@ -104,35 +104,64 @@ def require_toolchain(plan, expected):
         raise ValueError('Qualification and final candidate toolchain identities differ')
 
 
-def qualify(prefix, pr_number, run_id, expected, output, source, selection, tools):
-    current = api(f'{prefix}/actions/runs/{run_id}')
-    if current['run_attempt'] != 3:
-        raise ValueError('Qualification requires exactly three consecutive full attempts of this run')
-    runs = api(f'{prefix}/actions/workflows/public-pr.yml/runs?event=pull_request&head_sha={expected["head"]}&per_page=100')
-    if [row['id'] for row in runs['workflow_runs']] != [run_id]:
-        raise ValueError('Expected the unique public PR run for the fixed head')
-    metadata = api(f'{prefix}/actions/runs/{run_id}/artifacts?per_page=100')
-    if metadata['total_count'] != len(metadata['artifacts']):
-        raise ValueError('Artifact index is incomplete')
+def qualification_runs(index, pr_number, latest_run):
+    indexed = index['workflow_runs']
+    if index['total_count'] != len(indexed):
+        raise ValueError('PR run index is incomplete')
+    runs = sorted(indexed, key=lambda row: row['run_number'], reverse=True)[:3]
+    if (len(runs) != 3 or runs[0]['id'] != latest_run
+            or len({row['id'] for row in runs}) != 3
+            or len({row['run_number'] for row in runs}) != 3
+            or any([pr['number'] for pr in row['pull_requests']] != [pr_number]
+                   or row['run_attempt'] != 1 or row['status'] != 'completed' for row in runs)):
+        raise ValueError('Qualification requires the latest three independent completed runs of this PR head')
+    return tuple(row['id'] for row in reversed(runs))
+
+
+def qualification_path(prefix, head):
+    return f'{prefix}/actions/workflows/public-pr.yml/runs?event=pull_request&head_sha={head}&per_page=100'
+
+
+def require_merge_tree(commit, expected):
+    if (commit['tree']['sha'] != expected['tree']
+            or [parent['sha'] for parent in commit['parents']] != [expected['base'], expected['head']]):
+        raise ValueError('Sample merge checkout does not have the same candidate tree and parents')
+
+
+def qualify(prefix, pr_number, latest_run, expected, output, source, selection, tools):
+    path = qualification_path(prefix, expected['head'])
+    run_ids = qualification_runs(api(path), pr_number, latest_run)
     samples = []
-    for attempt in range(1, 4):
-        path = f'{prefix}/actions/runs/{run_id}/attempts/{attempt}'
-        run = api(path)
-        jobs = api(f'{path}/jobs?per_page=100')
-        if run['run_attempt'] != attempt or jobs['total_count'] != len(jobs['jobs']):
-            raise ValueError('Attempt or job list differs')
+    for index, run_id in enumerate(run_ids, 1):
+        run_path = f'{prefix}/actions/runs/{run_id}'
+        run = api(f'{run_path}/attempts/1')
+        jobs = api(f'{run_path}/attempts/1/jobs?per_page=100')
+        if run['id'] != run_id or run['run_attempt'] != 1 or jobs['total_count'] != len(jobs['jobs']):
+            raise ValueError('Run identity, attempt or job list differs')
+        metadata = api(f'{run_path}/artifacts?per_page=100')
+        if metadata['total_count'] != len(metadata['artifacts']):
+            raise ValueError('Artifact index is incomplete')
         with tempfile.TemporaryDirectory(prefix='public-pr-evidence-') as tmp:
             folder = Path(tmp)
             artifacts = metadata['artifacts']
-            coverage, _ = load_artifact(artifacts, f'public-coverage-{attempt}', 'result.json', folder)
-            plan, plan_sha = load_artifact(artifacts, f'public-plan-{attempt}', 'plan.json', folder)
+            coverage, _ = load_artifact(artifacts, 'public-coverage-1', 'result.json', folder)
+            plan, plan_sha = load_artifact(artifacts, 'public-plan-1', 'plan.json', folder)
         if plan['source'] != source or any(plan[key] != data for key, data in selection.items()):
             raise ValueError('Sample plan differs from current executable selection or source')
         require_toolchain(plan, tools)
-        sample = verify_sample(expected, run, jobs['jobs'], coverage, plan, plan_sha)
+        checkout = plan['identity']['checkout']
+        if checkout != expected['checkout']:
+            commit = api(f'{prefix}/git/commits/{checkout}')
+            if commit['sha'] != checkout:
+                raise ValueError('Sample Git checkout lookup returned a different commit')
+            require_merge_tree(commit, expected)
+        sample = verify_sample(dict(expected, checkout=checkout), run, jobs['jobs'], coverage, plan, plan_sha)
+        sample['checkout'] = checkout
         samples.append(sample)
-        write_json(output/f'pr-{attempt}.json', dict(sample=sample, coverage=coverage, plan=plan))
+        write_json(output/f'pr-{index}.json', dict(sample=sample, coverage=coverage, plan=plan))
     require_current_candidate(prefix, pr_number, expected)
+    if qualification_runs(api(path), pr_number, latest_run) != run_ids:
+        raise ValueError('PR qualification runs changed during verification')
     return samples
 
 
@@ -167,6 +196,9 @@ def run_candidate(repo, output, pr_number, run_id):
         if identities(repo) != source or toolchain(repo) != tools['toolchain']:
             raise ValueError('Candidate inputs or toolchain changed during final verification')
         require_current_candidate(prefix, pr_number, expected)
+        accepted = tuple(sample['run'] for sample in result['samples'])
+        if qualification_runs(api(qualification_path(prefix, expected['head'])), pr_number, run_id) != accepted:
+            raise ValueError('PR qualification runs changed during verification')
         result['status'] = 'passed'
     except Exception as error:
         result['error'] = str(error)

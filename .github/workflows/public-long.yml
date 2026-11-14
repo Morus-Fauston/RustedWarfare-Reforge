@@ -8,7 +8,7 @@ on:
         description: PR number for fixed candidate verification
         type: string
       qualification:
-        description: Public PR workflow run ID with three complete attempts
+        description: Latest of the three independently retained public PR workflow runs
         type: string
 permissions:
   contents: read
