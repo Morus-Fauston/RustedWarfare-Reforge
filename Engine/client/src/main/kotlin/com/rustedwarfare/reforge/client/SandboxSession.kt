@@ -43,9 +43,17 @@ class SandboxSession(scenario: Scenario, private val evidence: ClientEvidence = 
         private set
     val canDeploy: Boolean get() = isOpen && options.deploymentEnabled
 
-    fun submitSandboxCommand(text: String): SandboxCommandReceipt {
+    fun submitSandboxCommand(text: String): SandboxCommandReceipt = submitSandboxRequest { sequence ->
+        SandboxCommandRequest(sequence, commandWorld, generation, text)
+    }
+
+    fun submitSandboxBatch(batch: SandboxCommand.SpawnBatch): SandboxCommandReceipt = submitSandboxRequest { sequence ->
+        SandboxCommandRequest(sequence, commandWorld, generation, batch)
+    }
+
+    private fun submitSandboxRequest(requestFor: (Long) -> SandboxCommandRequest): SandboxCommandReceipt {
         commandSequence = Math.incrementExact(commandSequence)
-        val request = SandboxCommandRequest(commandSequence, commandWorld, generation, text)
+        val request = requestFor(commandSequence)
         val result = commandHost.submit(request)
         if (result.status == SandboxCommandStatus.QUEUED) pendingSandboxRequests[result.sequence] = request
         recordSandboxReceipt(request, result)
@@ -57,9 +65,11 @@ class SandboxSession(scenario: Scenario, private val evidence: ClientEvidence = 
         sandboxCommandFeedback = when (result.status) {
             SandboxCommandStatus.HELP -> SandboxCommands.HELP
             SandboxCommandStatus.QUEUED -> "Queued for next simulation step"
-            SandboxCommandStatus.APPLIED -> "Spawned ${checkNotNull(result.unitId)}"
+            SandboxCommandStatus.APPLIED -> if (result.unitId != null) "Spawned ${result.unitId}"
+                else "Spawned ${result.generated.size} units"
             SandboxCommandStatus.REJECTED -> "Rejected: ${result.code}" +
-                (result.errorPosition?.let { " at character $it" } ?: "")
+                (result.errorPosition?.let { " at character $it" } ?: "") +
+                (result.failedEntry?.let { " in entry ${it + 1}" } ?: "")
         }
         evidence.recordWhenEnabled("sandbox-command") {
             val command = result.command as? SandboxCommand.Spawn
@@ -69,7 +79,8 @@ class SandboxSession(scenario: Scenario, private val evidence: ClientEvidence = 
                 "parameters" to command?.let { mapOf("type" to it.typeId, "x" to it.position.x,
                     "y" to it.position.y, "owner" to it.ownerPlayerId, "heading" to it.heading,
                     "state" to it.state.name.lowercase(java.util.Locale.ROOT)) },
-                "unitId" to result.unitId, "code" to result.code, "errorPosition" to result.errorPosition)
+                "unitId" to result.unitId, "generated" to result.generated, "failedEntry" to result.failedEntry,
+                "code" to result.code, "errorPosition" to result.errorPosition)
         }
     }
 
@@ -126,7 +137,8 @@ class SandboxSession(scenario: Scenario, private val evidence: ClientEvidence = 
         private set
 
     private var actionNumber = 0L
-    private var nextStep = 0L
+    var nextStep = 0L
+        private set
     var isOpen = true
         private set
     var feedback = "Ready"
@@ -485,15 +497,26 @@ class SandboxSession(scenario: Scenario, private val evidence: ClientEvidence = 
     }
 
     fun select(position: Position, mode: SelectionMode = SelectionMode.REPLACE) {
+        selectAt(unitAt(position, selectionOnly = true), mode)
+        evidence.recordWhenEnabled("selection") { mapOf("selectedId" to selectedId, "selectedIds" to selectedIds.sorted(),
+            "selectionRevision" to selectionRevision, "world" to position.fields()) }
+    }
+
+    fun selectDeployedUnit(unitId: String): Boolean {
+        if (!canDeploy || observation.units.none { it.unitId == unitId && controllable(it) }) return false
+        selectAt(unitId, SelectionMode.REPLACE)
+        evidence.recordWhenEnabled("selection") { mapOf("selectedId" to selectedId, "selectedIds" to selectedIds.sorted(),
+            "selectionRevision" to selectionRevision, "source" to "deployment-alias") }
+        return selectedId == unitId
+    }
+
+    private fun selectAt(id: String?, mode: SelectionMode) {
         rejectedFeedback = false
-        val id = unitAt(position, selectionOnly = true)
         if (id != null) {
             if (apply(SelectAction("click-${++actionNumber}", "p1", id, context.world)) is ActionResult.Accepted)
                 selection.select(listOf(id), mode)
         } else if (mode == SelectionMode.REPLACE) selection.select(emptyList())
         feedback = selectedId?.let { "Selected $it" } ?: "No selection"
-        evidence.recordWhenEnabled("selection") { mapOf("selectedId" to selectedId, "selectedIds" to selectedIds.sorted(),
-            "selectionRevision" to selectionRevision, "world" to position.fields()) }
     }
 
     fun tap(position: Position) {

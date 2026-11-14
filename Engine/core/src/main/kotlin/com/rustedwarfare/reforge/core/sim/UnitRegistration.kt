@@ -79,6 +79,9 @@ internal object UnitRegistration {
     fun sandboxId(ownerPlayerId: String, generation: Long, sequence: Long): String =
         "sandbox:$ownerPlayerId:$generation:$sequence"
 
+    fun sandboxBatchId(ownerPlayerId: String, generation: Long, sequence: Long, index: Int): String =
+        "sandbox-batch:$ownerPlayerId:$generation:$sequence:$index"
+
     fun scout(state: StepState, input: Scenario, source: MutableUnit, impact: MutableProjectile) {
         check(impact.sourceUnitId == source.unitId)
         val owner = source.ownerPlayerId
@@ -103,9 +106,8 @@ internal object UnitRegistration {
     }
 
     fun sandbox(state: StepState, input: Scenario, command: SandboxCommand.Spawn,
-                generation: Long, sequence: Long, coordinates: CoordinatePolicy): MutableUnit {
+                id: String, coordinates: CoordinatePolicy): MutableUnit {
         val definition = input.unitDefinitions.getValue(command.typeId)
-        val id = sandboxId(command.ownerPlayerId, generation, sequence)
         check(id !in state.units) { "Sandbox identity must be new" }
         val identity = nextIdentity(state)
         val unit = create(input, UnitSpawn(id, command.ownerPlayerId, command.typeId, command.position,

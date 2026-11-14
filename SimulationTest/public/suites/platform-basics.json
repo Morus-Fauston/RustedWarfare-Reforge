@@ -78,6 +78,7 @@
     ],
     "tools": [
       "com.rustedwarfare.reforge.testing.PlatformSessionRunnerTest",
+      "com.rustedwarfare.reforge.testing.SandboxDeploymentSessionTest",
       "com.rustedwarfare.reforge.testing.ResourceImagePlatformSessionTest",
       "com.rustedwarfare.reforge.testing.OfflineSpeedReplayTest"
     ],

@@ -12,7 +12,7 @@ class UnitRegistrationTest {
         val spawn = input.units.single { it.unitId == "f" }
         val born = UnitRegistration.sandbox(state, input,
             SandboxCommand.Spawn(spawn.typeId, spawn.position, "p1", state = SandboxInitialState.DAMAGED),
-            3L, 1L, ScreenPlane)
+            UnitRegistration.sandboxId("p1", 3L, 1L), ScreenPlane)
         val paid = assertIs<ProductionChange.Accepted>(state.productionLedger!!.enqueue(born.unitId, "c_tank", "2".repeat(32)))
         assertEquals(1400L, paid.ledger.balances.getValue("p1"))
         assertEquals(checkNotNull(born.definition.maximumHealth) / 2.0, born.health)

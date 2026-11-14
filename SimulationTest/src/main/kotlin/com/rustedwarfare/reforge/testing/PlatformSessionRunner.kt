@@ -6,6 +6,7 @@ import java.nio.file.StandardOpenOption.CREATE_NEW
 import com.rustedwarfare.reforge.client.ClientEvidence
 import com.rustedwarfare.reforge.client.ControlledScenario
 import com.rustedwarfare.reforge.client.SandboxSession
+import com.rustedwarfare.reforge.client.SandboxOptions
 import com.rustedwarfare.reforge.client.SandboxLoader
 import com.rustedwarfare.reforge.client.ContentPackChoice
 import com.rustedwarfare.reforge.client.LoadedSandbox
@@ -19,6 +20,9 @@ import com.rustedwarfare.reforge.core.content.ContentLoader
 import com.rustedwarfare.reforge.core.content.ContentResult
 import com.rustedwarfare.reforge.core.sim.Scenario
 import com.rustedwarfare.reforge.core.sim.Position
+import com.rustedwarfare.reforge.core.sim.SandboxCommand
+import com.rustedwarfare.reforge.core.sim.SandboxCommandStatus
+import com.rustedwarfare.reforge.core.sim.SandboxInitialState
 import com.rustedwarfare.reforge.pc.PcResourceImagePreparation
 import kotlinx.serialization.json.*
 
@@ -37,6 +41,14 @@ object PlatformSessionRunner {
         require(document.integer("schemaVersion") == 1L) { "Unsupported platform plan version" }
         val intents = document.arrayAt("intents").map { it.jsonObject }
         require(intents.isNotEmpty() && intents.map { it.id("intentId") }.distinct().size == intents.size) { "Empty or duplicate intent IDs" }
+        val deployment = document["deploymentEnabled"]?.let {
+            if (it !in setOf(b(true), b(false))) throw InputError("Expected deploymentEnabled boolean")
+            it == b(true)
+        } ?: false
+        if (!deployment && intents.any { it.text("kind") == "deploy" || "unitAlias" in it })
+            throw InputError("Explicit offline deployment is required for deployment or alias intents")
+        if (deployment && intents.any { "unitAlias" in it && (it.text("kind") != "select" || "position" in it) })
+            throw InputError("Select using either an alias or map position")
         Files.createDirectory(output)
         var sequence = 0L
         Files.newBufferedWriter(output.resolve("client-diagnostic.jsonl"), CREATE_NEW).use { writer ->
@@ -49,7 +61,7 @@ object PlatformSessionRunner {
                 writer.flush()
             }
             val loaded = loadScenario(inputs, document, evidence, output, loadTimeoutSeconds, plan)
-            SandboxSession(loaded.scenario, evidence).use { session ->
+            SandboxSession(loaded.scenario, evidence, SandboxOptions(deploymentEnabled = deployment)).use { session ->
                 val projection = MapProjection(loaded.scenario.map.widthTiles.toDouble() * loaded.scenario.map.tileWidth,
                     loaded.scenario.map.heightTiles.toDouble() * loaded.scenario.map.tileHeight)
                 val listener = projection.soundListener()
@@ -65,13 +77,25 @@ object PlatformSessionRunner {
                     }, evidence)
                 }
                 player.use {
+                val aliases = mutableMapOf<String, String>()
+                fun tick(beginFrame: Boolean) {
+                    if (beginFrame) player?.beginFrame()
+                    session.tick()
+                    player?.consume(session.consumeSounds(listener))
+                }
                 for (intent in intents) {
                     evidence.record("intent-start", mapOf("intentId" to intent.id("intentId")))
                     when (intent.text("kind")) {
                         "select" -> {
-                            val position = intent.objectAt("position")
-                            session.select(Position(position.number("x"), position.number("y")))
+                            if ("unitAlias" in intent) {
+                                val unit = aliases[intent.id("unitAlias")] ?: throw InputError("Unknown deployment alias")
+                                if (!session.selectDeployedUnit(unit)) throw InputError("Deployment alias is not selectable by p1")
+                            } else {
+                                val position = intent.objectAt("position")
+                                session.select(Position(position.number("x"), position.number("y")))
+                            }
                         }
+                        "deploy" -> deploy(intent, session, aliases) { tick(session.nextStep % 8 == 0L) }
                         "produce" -> session.produce(intent.id("typeId"))
                         "cancelProduction" -> session.cancelProduction(intent.id("typeId"))
                         "move" -> session.move(intent.objectAt("position").let { Position(it.number("x"), it.number("y")) })
@@ -132,16 +156,69 @@ object PlatformSessionRunner {
                     }
                     val waitSteps = if ("waitSteps" in intent) intent.integer("waitSteps") else 0L
                     require(waitSteps in 0..600) { "Client intent wait must be bounded to 600 steps" }
-                    repeat(waitSteps.toInt()) { tick ->
-                        if (tick % 8 == 0) player?.beginFrame()
-                        session.tick()
-                        player?.consume(session.consumeSounds(listener))
-                    }
+                    repeat(waitSteps.toInt()) { index -> tick(index % 8 == 0) }
                     evidence.record("intent-end", mapOf("intentId" to intent.id("intentId")))
                 }
                 }
             }
         }
+    }
+
+    private fun deploy(intent: JsonObject, session: SandboxSession, aliases: MutableMap<String, String>, tick: () -> Unit) {
+        val members = setOf("intentId", "kind", "entries")
+        val trigger = when (intent.keys) {
+            members + "atStep" -> {
+                val atStep = intent.integer("atStep")
+                if (atStep < session.nextStep || atStep - session.nextStep > 600L)
+                    throw InputError("Deployment step is past or outside its bound")
+                while (session.nextStep < atStep) tick()
+                atStep
+            }
+            members + setOf("afterEvent", "maxWaitSteps") -> {
+                val afterEvent = intent.objectAt("afterEvent")
+                if (afterEvent.keys !in setOf(setOf("kind"), setOf("kind", "unitAlias")))
+                    throw InputError("Expected event kind and optional deployment alias")
+                val event = afterEvent.id("kind")
+                val unitId = afterEvent["unitAlias"]?.let {
+                    aliases[afterEvent.id("unitAlias")] ?: throw InputError("Unknown event deployment alias")
+                }
+                val budget = intent.integer("maxWaitSteps")
+                if (budget !in 1..600L) throw InputError("Event wait must be bounded to 1..600 steps")
+                fun triggered() = session.observation.events.any { it.kind == event && (unitId == null || it.unitId == unitId) }
+                var used = 0L
+                while (!triggered() && used < budget) {
+                    tick()
+                    used++
+                }
+                if (!triggered()) throw InputError("Deployment event did not arrive within $budget steps")
+                session.nextStep
+            }
+            else -> throw InputError("Expected one bounded deployment trigger")
+        }
+        val entries = intent.arrayAt("entries").map { item ->
+            val entry = item.jsonObject
+            val required = setOf("alias", "typeId", "x", "y", "owner")
+            if (!entry.keys.containsAll(required) || (entry.keys - required).any { it !in setOf("heading", "state") })
+                throw InputError("Unexpected deployment entry fields")
+            val alias = entry.id("alias")
+            if (alias in aliases) throw InputError("Deployment alias has already been bound: $alias")
+            val state = when (entry["state"]?.let { entry.text("state") }) {
+                null, "ready" -> SandboxInitialState.READY
+                "damaged" -> SandboxInitialState.DAMAGED
+                else -> throw InputError("Unexpected deployment state")
+            }
+            SandboxCommand.Deployment(alias, SandboxCommand.Spawn(entry.id("typeId"),
+                Position(entry.number("x"), entry.number("y")), entry.id("owner"),
+                if ("heading" in entry) entry.number("heading") else 0.0, state))
+        }
+        val queued = session.submitSandboxBatch(SandboxCommand.SpawnBatch(entries))
+        if (queued.status != SandboxCommandStatus.QUEUED)
+            throw InputError("Deployment rejected at entry ${queued.failedEntry}: ${queued.code}")
+        tick()
+        val applied = checkNotNull(session.lastSandboxReceipt)
+        if (applied.sequence != queued.sequence || applied.stepIndex != trigger || applied.status != SandboxCommandStatus.APPLIED)
+            throw InputError("Deployment failed at step $trigger, entry ${applied.failedEntry}: ${applied.code}")
+        aliases.putAll(applied.generated)
     }
 
     private fun loadScenario(inputs: Path, document: JsonObject, evidence: ClientEvidence, output: Path, loadTimeoutSeconds: Int, seed: Path): LoadedSandbox {

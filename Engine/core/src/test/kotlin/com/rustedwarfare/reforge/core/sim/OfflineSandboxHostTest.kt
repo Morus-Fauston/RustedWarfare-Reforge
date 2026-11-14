@@ -216,6 +216,85 @@ class OfflineSandboxHostTest {
         } finally { host.close() }
     }
 
+    @Test fun a_batch_with_an_internal_placement_conflict_leaves_no_factories_or_allocated_identities() {
+        val base = BuildingTestContent.scenario()
+        val scene = base.copy(units = base.units.filter { it.unitId == "f" },
+            combatContract = CombatContract(12345, -1, mapOf("f" to 10L), 11L))
+        OfflineSandboxHost(scene, deploymentEnabled = true).use { host ->
+            val world = host.context.world
+            val faulty = SandboxCommandRequest(1L, world, 1L,
+                "/spawn-batch first landFactory 110 130 p1 | second landFactory 110 130 p2")
+            assertEquals("stale-world", host.submit(faulty.copy(generation = 2L)).code)
+            OfflineSandboxHost(scene).use { ordinary ->
+                assertEquals("deployment-disabled", ordinary.submit(faulty.copy(world = ordinary.context.world)).code)
+            }
+            assertEquals(SandboxCommandStatus.QUEUED, host.submit(faulty).status)
+            val rejectedView = host.advance(Step(0L, 1.0, "sim-tick"))
+            val rejected = assertNotNull(host.receipt(1L))
+            assertEquals(SandboxCommandStatus.REJECTED, rejected.status)
+            assertEquals("invalid-placement", rejected.code)
+            assertEquals(1, rejected.failedEntry)
+            assertEquals(rejected, host.submit(faulty))
+            assertEquals("request-conflict", host.submit(faulty.copy(text = "/help")).code)
+            assertEquals(listOf("f"), rejectedView.units.map { it.unitId })
+            assertEquals(0L, rejectedView.production!!.lastBirthSerial)
+            assertEquals(11L, rejectedView.combat!!.nextObjectId)
+            assertTrue(rejectedView.events.none { it.kind == "unit-spawned" })
+            assertEquals(1750L, host.context.observePlayer(world, "p1").balance)
+
+            val valid = SandboxCommandRequest(2L, world, 1L,
+                "/spawn-batch factory landFactory 110 130 p1 | escort c_tank 210 130 p1")
+            assertEquals(SandboxCommandStatus.QUEUED, host.submit(valid).status)
+            val committed = host.advance(Step(1L, 1.0, "sim-tick"))
+            val applied = assertNotNull(host.receipt(2L))
+            assertEquals(SandboxCommandStatus.APPLIED, applied.status)
+            assertEquals(setOf("factory", "escort"), applied.generated.keys)
+            assertEquals(applied, host.submit(valid))
+            assertEquals(applied.generated.values.toSet(), committed.units.filter { it.unitId != "f" }.map { it.unitId }.toSet())
+            assertEquals(setOf("c_tank", "landFactory"), committed.units.filter { it.unitId != "f" }.map { it.typeId }.toSet())
+            assertEquals(13L, committed.combat!!.nextObjectId)
+        }
+    }
+
+    @Test fun a_batch_reports_the_index_of_identity_exhaustion_and_keeps_the_world_unmodified() {
+        val base = BuildingTestContent.scenario()
+        val start = Long.MAX_VALUE - 1
+        val scene = base.copy(units = base.units.filter { it.unitId == "f" },
+            combatContract = CombatContract(12345, -1, mapOf("f" to 10L), start))
+        OfflineSandboxHost(scene, deploymentEnabled = true).use { host ->
+            val world = host.context.world
+            val request = SandboxCommandRequest(1, world, 1,
+                "/spawn-batch first c_tank 110 130 p1 | second c_tank 210 130 p1")
+            assertEquals(SandboxCommandStatus.QUEUED, host.submit(request).status)
+            val view = host.advance(Step(0L, 1.0, "sim-tick"))
+            val rejected = assertNotNull(host.receipt(1))
+            assertEquals("deployment-identities-exhausted", rejected.code)
+            assertEquals(1, rejected.failedEntry)
+            assertEquals(rejected, host.submit(request))
+            assertEquals(listOf("f"), view.units.map { it.unitId })
+            assertEquals(start, view.combat!!.nextObjectId)
+            assertEquals(0L, view.production!!.lastBirthSerial)
+            assertTrue(view.events.none { it.kind == "unit-spawned" })
+        }
+    }
+
+    @Test fun an_oversized_structured_batch_reserves_its_sequence_without_retaining_the_payload() {
+        OfflineSandboxHost(BuildingTestContent.scenario(), deploymentEnabled = true).use { host ->
+            val entry = SandboxCommand.Deployment("escort", SandboxCommand.Spawn("c_tank", Position(190.0, 130.0), "p1"))
+            val oversized = List(33) { index -> entry.copy(alias = "escort-$index") }
+            fun request(entries: List<SandboxCommand.Deployment>) =
+                SandboxCommandRequest(1, host.context.world, 1, SandboxCommand.SpawnBatch(entries))
+            val rejected = host.submit(request(oversized))
+            assertEquals("invalid-batch-size", rejected.code)
+            assertEquals(rejected, host.receipt(1))
+            assertEquals(rejected, host.submit(request(oversized.toList())))
+            assertEquals("request-conflict", host.submit(request(oversized.reversed())).code)
+            assertEquals("request-conflict", host.submit(request(listOf(entry))).code)
+            val observation = host.advance(Step(0, 1.0, "sim-tick"))
+            assertTrue(observation.events.none { it.kind == "unit-spawned" })
+        }
+    }
+
     @Test fun ready_air_uses_the_existing_nonzero_flight_initial_state_and_damaged_requires_maximum_health() {
         val original = HelicopterTestScene.unit()
         val definition = com.rustedwarfare.reforge.core.content.UnitDefinition(original.id, original.className,

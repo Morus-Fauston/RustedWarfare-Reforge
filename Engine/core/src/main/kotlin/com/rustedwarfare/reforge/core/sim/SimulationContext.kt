@@ -1011,28 +1011,33 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
     internal fun isCurrentSandboxWorld(handle: WorldHandle): Boolean = !closed && activeWorld === handle
 
     internal fun validateSandboxSpawn(command: SandboxCommand.Spawn, generation: Long, sequence: Long): SimulationError? {
+        val id = UnitRegistration.sandboxId(command.ownerPlayerId, generation, sequence)
+        return validateSandboxSpawn(command, id, steps.current)
+    }
+
+    private fun validateSandboxSpawn(command: SandboxCommand.Spawn, id: String, state: StepState): SimulationError? {
         val input = checkNotNull(scenario)
         fun rejected(code: String) = SimulationError(code, "Sandbox spawn rejected: $code")
         val definition = input.unitDefinitions[command.typeId] ?: return rejected("unknown-type")
         if (definition.attachmentLayout != null || definition.attachmentModule != null)
             return rejected("opening-only-type")
-        if (UnitRegistration.sandboxId(command.ownerPlayerId, generation, sequence) in units)
+        if (id in state.units)
             return rejected("duplicate-unit-id")
         if (input.players.none { it.playerId == command.ownerPlayerId }) return rejected("unknown-owner")
         if (command.state == SandboxInitialState.DAMAGED && definition.maximumHealth == null)
             return rejected("unsupported-state")
-        if (definition.production != null && productionLedger == null) return rejected("unsupported-type")
+        if (definition.production != null && state.productionLedger == null) return rejected("unsupported-type")
         if (!command.heading.isFinite() || !MapBounds.contains(input.map.widthTiles.toDouble() * input.map.tileWidth,
                 input.map.heightTiles.toDouble() * input.map.tileHeight, command.position, definition.radius))
             return rejected("invalid-placement")
         if (definition.building?.requiresResourcePool != true && definition.movement.type != MovementType.AIR &&
-            policies.terrain.intersects(buildingTerrain?.collisionMap ?: input.map, command.position,
+            policies.terrain.intersects(state.buildingTerrain?.collisionMap ?: input.map, command.position,
                 definition.radius, definition.foundationMovementType)) return rejected("invalid-placement")
         if (definition.building != null) {
             val cells = try {
-                BuildingTerrain.placementCells(input.map, definition, command.position, buildingTerrain?.cells.orEmpty())
+                BuildingTerrain.placementCells(input.map, definition, command.position, state.buildingTerrain?.cells.orEmpty())
             } catch (failure: BuildingInitializationException) { return rejected("invalid-placement") }
-            if (orderedUnits().any { unit ->
+            if (state.units.values.any { unit ->
                     unit.alive && unit.definition.building == null && UnitLocomotion.movement(unit).type != MovementType.AIR &&
                         (MapBounds.cell(unit.position.x, input.map.tileWidth, input.map.widthTiles) to
                             MapBounds.cell(unit.position.y, input.map.tileHeight, input.map.heightTiles)) in cells
@@ -1041,25 +1046,62 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
         return null
     }
 
-    internal fun advanceSandbox(step: Step, commands: List<Pair<SandboxCommandRequest, SandboxCommand.Spawn>>):
+    internal fun advanceSandbox(step: Step, commands: List<Pair<SandboxCommandRequest, SandboxCommand>>):
             Pair<Observation, List<SandboxCommandReceipt>> {
         val results = mutableListOf<SandboxCommandReceipt>()
         val observation = advanceInternal(step) {
             for ((request, command) in commands) {
-                val error = validateSandboxSpawn(command, request.generation, request.sequence)
-                if (error != null) {
-                    results += SandboxCommandReceipt(request.sequence, request.generation, world.id,
-                        SandboxCommandStatus.REJECTED, command, step.stepIndex, code = error.code)
-                    continue
+                when (command) {
+                    SandboxCommand.Help -> error("Help cannot be queued")
+                    is SandboxCommand.SpawnBatch -> results += applySandboxBatch(request, command, step.stepIndex)
+                    is SandboxCommand.Spawn -> {
+                        val id = UnitRegistration.sandboxId(command.ownerPlayerId, request.generation, request.sequence)
+                        val error = validateSandboxSpawn(command, id, steps.current)
+                        if (error != null) {
+                            results += SandboxCommandReceipt(request.sequence, request.generation, world.id,
+                                SandboxCommandStatus.REJECTED, command, step.stepIndex, code = error.code)
+                        } else {
+                            val born = UnitRegistration.sandbox(steps.current, checkNotNull(scenario), command, id,
+                                policies.coordinates)
+                            pendingEvents += Event("unit-spawned", born.unitId)
+                            results += SandboxCommandReceipt(request.sequence, request.generation, world.id,
+                                SandboxCommandStatus.APPLIED, command, step.stepIndex, born.unitId)
+                        }
+                    }
                 }
-                val born = UnitRegistration.sandbox(steps.current, checkNotNull(scenario), command,
-                    request.generation, request.sequence, policies.coordinates)
-                pendingEvents += Event("unit-spawned", born.unitId)
-                results += SandboxCommandReceipt(request.sequence, request.generation, world.id,
-                    SandboxCommandStatus.APPLIED, command, step.stepIndex, born.unitId)
             }
         }
         return observation to results
+    }
+
+    private fun applySandboxBatch(request: SandboxCommandRequest, batch: SandboxCommand.SpawnBatch,
+                                  atStep: Long): SandboxCommandReceipt {
+        val current = steps.current
+        // Registration updates only the new unit and replaces the registries and terrain it touches.
+        val staged = current.copy(units = LinkedHashMap(current.units))
+        val generated = linkedMapOf<String, String>()
+        val input = checkNotNull(scenario)
+        for ((index, entry) in batch.entries.withIndex()) {
+            val spawn = entry.spawn
+            val id = UnitRegistration.sandboxBatchId(spawn.ownerPlayerId, request.generation, request.sequence, index)
+            val reason = validateSandboxSpawn(spawn, id, staged)?.code
+                ?: "deployment-identities-exhausted".takeIf {
+                    staged.nextObjectId == Long.MAX_VALUE || staged.lastBirthSerial == Long.MAX_VALUE
+                }
+            if (reason != null) return SandboxCommandReceipt(request.sequence, request.generation, world.id,
+                SandboxCommandStatus.REJECTED, batch, atStep, code = reason, failedEntry = index)
+            UnitRegistration.sandbox(staged, input, spawn, id, policies.coordinates)
+            generated[entry.alias] = id
+        }
+        current.units = staged.units
+        current.productionLedger = staged.productionLedger
+        current.ordinaryUpgrades = staged.ordinaryUpgrades
+        current.buildingTerrain = staged.buildingTerrain
+        current.nextObjectId = staged.nextObjectId
+        current.lastBirthSerial = staged.lastBirthSerial
+        for (id in generated.values) pendingEvents += Event("unit-spawned", id)
+        return SandboxCommandReceipt(request.sequence, request.generation, world.id, SandboxCommandStatus.APPLIED,
+            batch, atStep, generated = Collections.unmodifiableMap(generated))
     }
 
     fun advance(step: Step): Observation = advanceInternal(step) {}
