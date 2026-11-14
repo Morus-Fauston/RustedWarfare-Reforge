@@ -11,7 +11,7 @@
     "unitType": { "enum": ["tank", "hoverTank"] },
     "abilities": {"type": "array", "items": {"anyOf": [
       {"$ref": "#/$defs/ShieldAbility"}, {"$ref": "#/$defs/BlinkAbility"}, {"$ref": "#/$defs/TransportAbility"},
-      {"$ref": "#/$defs/PointDefenseAbility"}
+      {"$ref": "#/$defs/PointDefenseAbility"}, {"$ref": "#/$defs/DeathExplosionAbility"}
     ]}},
     "removeAbilities": {"type": "array", "uniqueItems": true, "items": {"$ref": "#/$defs/name"}},
     "copyFrom": {
@@ -52,6 +52,19 @@
   }],
   "additionalProperties": false,
   "$defs": {
+    "DeathExplosionAbility": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name"],
+      "properties": {
+        "name": {"$ref": "#/$defs/name"},
+        "type": {"const": "deathExplosion"},
+        "effect": {"enum": ["ordinary", "nuclear"]},
+        "damage": {"type": "number", "minimum": 0},
+        "radius": {"type": "number", "exclusiveMinimum": 0},
+        "expandTicks": {"type": "integer", "minimum": 1, "maximum": 36000}
+      }
+    },
     "PointDefenseAbility": {
       "type": "object",
       "additionalProperties": false,
@@ -144,6 +157,7 @@
         "displayLocaleKey": { "type": "string" },
         "fogOfWarSightRange": { "type": "number" },
         "transportSlotsNeeded": { "type": "number" },
+        "initialWeaponFlagZero": { "type": "boolean" },
         "dont_load": { "type": "boolean" },
         "copyFromSections": {
           "type": "array",
@@ -265,6 +279,18 @@
         "directDamage": { "type": "number" },
         "life": { "type": "number" },
         "speed": { "type": "number" },
+        "ballistic": { "type": "boolean" },
+        "ballistic_delaymove_height": { "type": "number", "minimum": 0 },
+        "ballistic_height": { "type": "number", "minimum": 0 },
+        "autoTargetingOnDeadTarget": { "type": "boolean" },
+        "instant": { "type": "boolean" },
+        "lightingEffect": { "type": "boolean" },
+        "beamImage": { "type": "string" },
+        "beamStartImage": { "type": "string" },
+        "beamEndImage": { "type": "string" },
+        "shieldDamage": { "type": "number", "minimum": 0, "maximum": 10 },
+        "shieldDefection": { "type": "number", "minimum": 0, "maximum": 10 },
+        "buildingDamage": { "type": "number", "minimum": 0, "maximum": 10 },
         "targetSpeed": { "type": "number", "exclusiveMinimum": 0 },
         "targetSpeedAcceleration": { "type": "number", "exclusiveMinimum": 0 },
         "frame": {
@@ -293,6 +319,18 @@
         "directDamage": { "type": "number" },
         "life": { "type": "number" },
         "speed": { "type": "number" },
+        "ballistic": { "type": "boolean" },
+        "ballistic_delaymove_height": { "type": "number", "minimum": 0 },
+        "ballistic_height": { "type": "number", "minimum": 0 },
+        "autoTargetingOnDeadTarget": { "type": "boolean" },
+        "instant": { "type": "boolean" },
+        "lightingEffect": { "type": "boolean" },
+        "beamImage": { "type": "string" },
+        "beamStartImage": { "type": "string" },
+        "beamEndImage": { "type": "string" },
+        "shieldDamage": { "type": "number", "minimum": 0, "maximum": 10 },
+        "shieldDefection": { "type": "number", "minimum": 0, "maximum": 10 },
+        "buildingDamage": { "type": "number", "minimum": 0, "maximum": 10 },
         "targetSpeed": { "type": "number", "exclusiveMinimum": 0 },
         "targetSpeedAcceleration": { "type": "number", "exclusiveMinimum": 0 },
         "frame": {
@@ -410,6 +448,8 @@
           ]
         },
         "canShoot": { "type": "boolean" },
+        "canAttackCondition": { "enum": ["notFlying", "overWater", "flagZeroClear",
+          "if not self.flying", "if self.overWater()", "if self.overwater", "if not self.hasFlag(id=0)"] },
         "recoilOffset": { "type": "number" },
         "copyFromSections": {
           "type": "array",

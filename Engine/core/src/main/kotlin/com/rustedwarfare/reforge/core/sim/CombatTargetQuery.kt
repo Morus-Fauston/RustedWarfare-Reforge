@@ -3,6 +3,7 @@ package com.rustedwarfare.reforge.core.sim
 import com.rustedwarfare.reforge.core.content.MovementType
 import com.rustedwarfare.reforge.core.content.NamedWeaponDefinition
 import com.rustedwarfare.reforge.core.content.MapDefinition
+import com.rustedwarfare.reforge.core.content.WeaponCondition
 
 /** Queries current candidate objects in gameplay order; no position or membership survives a call. */
 internal object CombatTargetQuery {
@@ -22,6 +23,19 @@ internal object CombatTargetQuery {
         else -> weapon.canAttackLandUnits
     }
 
+    fun conditionAllows(actor: MutableUnit, target: MutableUnit, weapon: NamedWeaponDefinition, map: MapDefinition): Boolean =
+        allows(actor, weapon.condition, map) &&
+            (isFlying(target) || isUnderwater(target) || allows(actor, weapon.landCondition, map))
+
+    private fun allows(actor: MutableUnit, condition: WeaponCondition?, map: MapDefinition): Boolean =
+        when (condition) {
+            null -> true
+            WeaponCondition.NOT_FLYING -> !isFlying(actor)
+            WeaponCondition.OVER_WATER -> map.isOverWater(
+                (actor.position.x.toFloat() / map.tileWidth).toInt(), (actor.position.y.toFloat() / map.tileHeight).toInt())
+            WeaponCondition.SOURCE_FLAG_ZERO_CLEAR -> !actor.definition.initialWeaponFlagZero
+        }
+
     /** Common target category envelope for manual intent and gameplay candidate selection. */
     fun canAttackAirCategory(actor: MutableUnit, target: MutableUnit, map: MapDefinition): Boolean {
         if (target.carriedBy != null || target.definition.attachmentModule?.empty == true) return false
@@ -31,7 +45,7 @@ internal object CombatTargetQuery {
         } == true
         if (actor.definition.maintenance == com.rustedwarfare.reforge.core.content.MaintenanceProfile.MECH_ENGINEER)
             return isFlying(target)
-        if (actor.definition.combat?.projectile?.beam != null) return isFlying(target)
+        if (actor.definition.afterburn != null && actor.definition.combat?.projectile?.beam != null) return isFlying(target)
         if (actor.definition.transport == com.rustedwarfare.reforge.core.content.TransportProfile.NAUTILUS_SUBMERGED) {
             val sub = actor.typeId == "nautilusSubmarine"
             if (isFlying(target)) return !sub
@@ -48,9 +62,10 @@ internal object CombatTargetQuery {
         }
         // Preserve surface intent and non-shooting parent tracking; only the explicit special
         // categories require an actor-wide shooting capability before per-weapon qualification.
-        if (target.definition.movement.type != MovementType.AIR && !isUnderwater(target)) return true
         val catalog = actor.definition.combat?.namedWeapons ?: return !isFlying(target) && !isUnderwater(target)
-        return catalog.ordered.any { it.canShoot && weaponAllows(target, it) }
+        if (target.definition.movement.type != MovementType.AIR && !isUnderwater(target) &&
+            catalog.ordered.none { it.condition != null || it.landCondition != null }) return true
+        return catalog.ordered.any { it.canShoot && weaponAllows(target, it) && conditionAllows(actor, target, it, map) }
     }
 
     fun isEnemy(actor: MutableUnit, target: MutableUnit, players: List<Player>): Boolean =

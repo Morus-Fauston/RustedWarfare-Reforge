@@ -107,7 +107,7 @@ internal object ContentPackReader {
             val field = "units[$index]"
             val spec = objectFields(entry, setOf("type", "file"), manifest, field)
             val capability = string(spec.get("type"), "$field.type")
-            if (capability !in setOf("modular-spider", "nuclear-silo", "experimental-factory", "nautilus", "scout-bot", "mech-engineer", "repair-bay", "tank", "hover-tank", "hovercraft", "dropship", "aa-beam-gunship", "bomber", "mech-bunker", "mech-flame", "mech", "mech-heavy", "mech-factory", "builder", "constructor", "factory", "helicopter", "amphibious-jet", "air-factory", "battleship", "water-combat", "sea-factory", "underwater-target", "submarine", "command-center", "land-factory",
+            if (capability !in setOf("modular-spider", "nuclear-silo", "experimental-factory", "nautilus", "scout-bot", "mech-engineer", "repair-bay", "tank", "hover-tank", "hovercraft", "dropship", "aa-beam-gunship", "bomber", "mech-bunker", "mech-flame", "mech", "mech-heavy", "mech-factory", "builder", "constructor", "factory", "helicopter", "air-combat", "static-combat", "amphibious-jet", "air-factory", "battleship", "water-combat", "sea-factory", "underwater-target", "submarine", "command-center", "land-factory",
                     "economic-building", "ground-turret", "point-defense"))
                 reject(ContentErrorCode.UNSUPPORTED_FEATURE, manifest, field = "$field.type", reason = "Expected an implemented finite combat, mech, factory or builder capability")
             val reference = string(spec.get("file"), "$field.file")
@@ -150,6 +150,8 @@ internal object ContentPackReader {
                     if (it.definition.production?.exitProfile != FactoryExitProfile.NATIVE_SEA)
                         reject(ContentErrorCode.UNSUPPORTED_FEATURE, input, field = "format", reason = "Expected the finite native sea factory profile")
                 }
+                "air-combat" -> CombatContentReader.readAirWithSources(input) { requireOrdinary(root, it) }
+                "static-combat" -> CombatContentReader.readStaticWithSources(input) { requireOrdinary(root, it) }
                 "helicopter" -> CombatContentReader.readHelicopterWithSources(input) { requireOrdinary(root, it) }
                 "air-factory" -> FactoryContentReader.readWithSources(input) { requireOrdinary(root, it) }.also {
                     if (it.definition.production?.exitProfile != FactoryExitProfile.NATIVE_AIR)

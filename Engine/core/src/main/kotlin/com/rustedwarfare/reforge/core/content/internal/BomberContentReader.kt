@@ -37,10 +37,13 @@ internal object BomberContentReader {
         UnitSourceReader(schema, validatePath).load(path) { loaded ->
             fun value(section: String, field: String) = requiredContentField(loaded.values[section]?.get(field),
                 path, section, field, "Required bomber field")
+            val identity = value("core", "name")
+            val authored = loaded.structured && identity.matches(Regex("[a-z][a-z0-9_.-]*"))
             for ((section, values) in expected) for ((field, wanted) in values) {
                 val actual = value(section, field)
                 val number = wanted.toDoubleOrNull()
-                val matches = if (field in schema.numericFields) actual.toDoubleOrNull() == number else actual == wanted
+                val matches = if (section == "core" && field == "name" && authored) true
+                    else if (field in schema.numericFields) actual.toDoubleOrNull() == number else actual == wanted
                 if (!matches) {
                     val error = if (field == "projectile") ContentErrorCode.BAD_REFERENCE else ContentErrorCode.UNSUPPORTED_FEATURE
                     reject(error, path, section, field, reason = "Expected qualified bomber value $wanted")
@@ -60,9 +63,9 @@ internal object BomberContentReader {
                 return file
             }
             val dead = image("image_dead")
-            UnitDefinition(BomberRules.ID, "CustomUnitMetadata", 16.0, 19.0, 1, image("image"), 1.0,
+            UnitDefinition(identity, "CustomUnitMetadata", 16.0, 19.0, 1, image("image"), 1.0,
                 BomberRules.movement, emptySet(), combat = BomberRules.combat(dead),
                 build = BomberRules.build, shadowImagePath = image("image_shadow"),
-                energy = BomberRules.energy, selfRegenRate = .1f, techLevel = 2)
+                energy = BomberRules.energy, selfRegenRate = .1f, techLevel = 2, attackMovement = AttackMovementProfile.BOMBER)
         }
 }

@@ -31,6 +31,8 @@ internal object NavalContentFields {
         }
         val ground = bool("targetGround")
         val ballistic = bool("ballistic")
+        val retarget = bool("autoTargetingOnDeadTarget")
+        if (ground && retarget) bad("autoTargetingOnDeadTarget", "A fixed ground snapshot cannot select a replacement target")
         if (ground && ballistic) bad("ballistic", "Combined ground snapshot and custom ballistic is outside the finite naval profile")
         val direct = number("directDamage", 0.0)
         if (ground && direct != 0.0) bad("directDamage", "The finite naval ground snapshot has area damage only")
@@ -53,7 +55,7 @@ internal object NavalContentFields {
             height?.let { !it.delayMoveHeight.isFinite() || !it.apex.isFinite() || it.apex < it.delayMoveHeight } == true)
             bad("life", "Expected positive finite derived naval projectile dimensions")
         return ProjectileProfile(direct, life, speed, nonDeflectable = nonDeflectable,
-            ground = area, acceleration = acceleration, ballistic = height)
+            ground = area, acceleration = acceleration, ballistic = height, retargetOnDeath = retarget)
     }
 
     fun sound(path: Path, values: Map<String, String>, section: String): FireSoundProfile? {

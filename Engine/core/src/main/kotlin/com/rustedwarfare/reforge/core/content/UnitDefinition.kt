@@ -56,6 +56,9 @@ class UnitDefinition(
     val attachmentModule: AttachmentModuleProfile? = null,
     val afterburn: AfterburnProfile? = null,
     val blink: BlinkProfile? = null,
+    val attackMovement: AttackMovementProfile? = null,
+    val initialWeaponFlagZero: Boolean = false,
+    val authoredAirCombat: Boolean = false,
 ) {
     internal val locomotionStates: SubmersibleLocomotion?
         get() = amphibiousJet?.locomotion ?: submarine?.locomotion
@@ -127,7 +130,7 @@ data class HoverProfile(val targetHeight: Double = 4.0, val heightDrift: Double 
 }
 
 data class FlightProfile(val targetHeight: Double, val heightDrift: Double,
-    val heightChangeRate: Double, val startingHeightOffset: Double) {
+    val heightChangeRate: Double, val startingHeightOffset: Double, val landWhenStationary: Boolean = false) {
     fun isValid(): Boolean = listOf(targetHeight, heightDrift, heightChangeRate, startingHeightOffset).all { it.isFinite() } &&
         targetHeight >= 0.0 && heightDrift >= 0.0 && startingHeightOffset >= 0.0 &&
         (targetHeight + heightDrift).isFinite() && (heightChangeRate == -1.0 || heightChangeRate >= 0.0)
@@ -233,7 +236,7 @@ data class BuildProfile(val price: Long, val rate: Float)
 data class IncomeProfile(val period: Float, val credits: Float)
 
 data class DeathExplosionProfile(val damage: Float, val radius: Float, val expandTime: Float,
-    val nuclear: Boolean = false)
+    val nuclear: Boolean = false, val authored: Boolean = false)
 
 data class UpgradeActionProfile(val actionKey: String, val targetTypeId: String, val price: Long, val rate: Float)
 
@@ -309,7 +312,13 @@ data class NamedWeaponDefinition(val name: String, val projectileName: String,
     val invisible: Boolean = false, val imageOffsetX: Double = 0.0, val imageOffsetY: Double = 0.0,
     val idleDirectionReversing: Double? = null, val turnDeceleration: Double? = null,
     val energyUsage: Float = 0f, val idleSweep: IdleSweepProfile? = null, val resetTurret: Boolean = true,
-    val interception: ProjectileInterceptionProfile? = null)
+    val interception: ProjectileInterceptionProfile? = null,
+    val condition: WeaponCondition? = null,
+    val landCondition: WeaponCondition? = null)
+
+enum class WeaponCondition { NOT_FLYING, OVER_WATER, SOURCE_FLAG_ZERO_CLEAR }
+
+enum class AttackMovementProfile { BOMBER }
 
 data class ProjectileInterceptionProfile(val landingRange: Float, val trackingRange: Float, val minimumHeight: Float) {
     internal fun isValid(): Boolean =
@@ -345,7 +354,7 @@ data class ProjectileProfile(val directDamage: Double, val life: Double, val spe
     val splash: OrdinarySplashProfile? = null, val retargetOnDeath: Boolean = false,
     val ballistic: CustomBallisticProfile? = null, val lightning: Boolean = false,
     val damageModifiers: ProjectileDamageModifiers = ProjectileDamageModifiers(),
-    val beam: BeamProfile? = null)
+    val beam: BeamProfile? = null, val flame: Boolean = false)
 
 /** Shield expenditure and damage deflection are separate native projectile properties. */
 data class ProjectileDamageModifiers(val shieldDamage: Double = 1.0, val shieldDeflection: Double = 1.0,

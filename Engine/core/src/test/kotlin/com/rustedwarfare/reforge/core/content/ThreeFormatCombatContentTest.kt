@@ -433,7 +433,7 @@ class ThreeFormatCombatContentTest {
             tankJson.replace("tank_dead.png", "missing.png") to ContentErrorCode.BAD_REFERENCE,
             tankJson.replace("rw-reforge.unit.v2", "rw-reforge.unit.v99") to ContentErrorCode.UNSUPPORTED_FEATURE,
             tankJson.replace("\"directDamage\":25", "\"targetGround\":true,\"directDamage\":25") to ContentErrorCode.UNSUPPORTED_FIELD,
-            tankJson.replace("\"format\":", "\"abilities\":{},\"format\":") to ContentErrorCode.UNSUPPORTED_FIELD,
+            tankJson.replace("\"format\":", "\"abilities\":{},\"format\":") to ContentErrorCode.MALFORMED_SYNTAX,
             tankJson.replace("\"canShoot\":true", "\"skipInheritance\":\"true\",\"canShoot\":true") to ContentErrorCode.MALFORMED_SYNTAX,
         )) for (extension in listOf("json", "hjson")) withInput("tank.$extension", text) { path ->
             val error = assertIs<ContentResult.Failure>(ContentLoader.loadCombatUnit(path), text).error

@@ -31,6 +31,8 @@ internal data class UnitContentSchema(
     val transportAbility: Boolean = false,
     val pointDefenseAbility: Boolean = false,
     val navalInterceptionAbility: Boolean = false,
+    val deathExplosionAbility: Boolean = false,
+    val landAttackCondition: Boolean = false,
 ) {
     companion object {
         fun native(fields: Set<String>, formats: Set<String>): UnitContentSchema {
@@ -125,7 +127,8 @@ internal class UnitSourceReader(
                     setOf("capacity", "passengerMovement", "unloadTerrain", "unloadTicks") else emptySet()
                 val defense = if (schema.pointDefenseAbility) PointDefenseContent.fields else emptySet()
                 val interception = if (schema.navalInterceptionAbility) NavalInterceptionContent.fields else emptySet()
-                it + blink + transport + defense + interception
+                val death = if (schema.deathExplosionAbility) DeathExplosionContent.fields else emptySet()
+                it + blink + transport + defense + interception + death
             }
             section.startsWith("template_") -> fields.values.flatten().toSet()
             else -> fields[sectionKind(section)]
@@ -398,10 +401,13 @@ internal class UnitSourceReader(
                     key in schema.timeFields || (section to key) in schema.timeFieldLocations ->
                         value.isNumber || value.isString && value.asString().endsWith('s')
                     section.startsWith("ability_") -> when (key) {
-                        "type", "passengerMovement", "unloadTerrain", "weapon" -> value.isString
+                        "type", "passengerMovement", "unloadTerrain", "weapon", "effect" -> value.isString
                         "startAtZero", "locked" -> value.isBoolean
                         else -> value.isNumber
                     }
+                    key == "canAttackLandUnits" && schema.landAttackCondition ->
+                        value.isBoolean || section == "attack" && value.isString &&
+                            value.asString() in setOf("notFlying", "if not self.flying")
                     key in numericFields -> value.isNumber
                     key in booleanFields -> value.isBoolean
                     key in textFields -> value.isString

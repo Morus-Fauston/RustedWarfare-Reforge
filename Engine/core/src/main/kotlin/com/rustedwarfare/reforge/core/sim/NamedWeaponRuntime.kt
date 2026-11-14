@@ -144,7 +144,7 @@ internal object NamedWeaponRuntime {
 
     fun qualifies(unit: MutableUnit, target: MutableUnit, weapon: NamedWeaponDefinition,
                   players: List<Player>, coordinates: CoordinatePolicy, map: MapDefinition, checkRange: Boolean = true): Boolean {
-        if (!CombatTargetQuery.isEnemy(unit, target, players)) return false
+        if (!CombatTargetQuery.isEnemy(unit, target, players) || !CombatTargetQuery.conditionAllows(unit, target, weapon, map)) return false
         if ((unit.amphibiousState != null || unit.definition.submarine != null ||
                 unit.definition.transport == com.rustedwarfare.reforge.core.content.TransportProfile.NAUTILUS_SUBMERGED) &&
             !CombatTargetQuery.canAttackAirCategory(unit, target, map)) return false

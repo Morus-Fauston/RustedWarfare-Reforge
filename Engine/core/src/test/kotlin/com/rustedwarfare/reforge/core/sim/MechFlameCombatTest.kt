@@ -9,10 +9,11 @@ class MechFlameCombatTest {
     private val fixtures = System.getProperty("public.fixtures.dir")?.let(Path::of)
         ?: Path.of("../../SimulationTest/public/inputs")
 
-    private fun openFlameWitness(map: MapDefinition, targetX: Double): SimulationContext {
+    private fun openFlameWitness(map: MapDefinition, targetX: Double, authored: Boolean = false): SimulationContext {
         val pack = assertIs<ContentResult.Success<LoadedContentPack>>(ContentLoader.loadContentPack(
             fixtures.resolve("flame-mech-production/ini/production-package"))).value
-        val flame = pack.units.getValue("mechFlame")
+        val flame = if (authored) authoredWeaponsRepresentative(fixtures.resolve("flame-mech-production/json/production-package"),
+            "units/flame/flame.json", "brush_mech") else pack.units.getValue("mechFlame")
         val target = UnitDefinition("witness", "CustomUnitMetadata", 5.0, 5.0, 1, flame.imagePath, 1.0,
             WaterTestScene.unit(MovementType.LAND).movement.copy(moveSpeed = 1.1, moveAccelerationSpeed = 1.1),
             emptySet(), durability = DurabilityProfile(2000.0, null))
@@ -27,11 +28,13 @@ class MechFlameCombatTest {
     }
 
     @Test fun stop_clears_the_order_while_the_same_flame_finishes_at_its_frozen_point() = WaterTestScene.withMap { map ->
-        val context = openFlameWitness(map, 255.0)
+        val context = openFlameWitness(map, 255.0, authored = true)
         try {
             assertIs<ActionResult.Accepted>(context.submit(AttackAction("attack", "p1", "flame", "a-target", context.world)))
             val first = context.advance(Step(0, 1.0, "sim-tick"))
             val launch = first.projectileEvents.single { it.kind == "born" }.projectile
+            assertEquals("brush_mech", first.units.single { it.unitId == "flame" }.typeId)
+            assertEquals(ProjectileAppearance.MECH_FLAME, launch.appearance)
             assertEquals("2", launch.sourceWeaponName)
             val frozen = assertNotNull(launch.ground).targetPosition
             val inFlight = first.projectiles.single { it.objectId == launch.objectId }
