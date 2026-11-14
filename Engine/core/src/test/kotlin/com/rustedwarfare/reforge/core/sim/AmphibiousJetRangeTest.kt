@@ -4,6 +4,15 @@ import com.rustedwarfare.reforge.core.content.*
 import kotlin.test.*
 
 class AmphibiousJetRangeTest {
+    @Test fun underwater_jet_keeps_its_native_lightning_weapon_profile() {
+        val jet = AmphibiousJetScene.scenario().unitDefinitions.getValue("amphibiousJet")
+        val unit = MutableUnit("jet", "p1", jet.id, jet, Position(500.0, 200.0), 90.0, height = -8.0)
+        assertTrue(UnitLocomotion.isSubmerged(unit))
+        val current = assertNotNull(UnitCombat.profile(unit))
+        assertEquals(100.0, current.attackRange)
+        assertEquals(jet.combat?.projectile, current.projectile)
+    }
+
     @Test fun dive_reduces_actual_weapon_range_before_crossing_the_underwater_threshold() =
         WaterTestScene.withMap { map ->
             val base = AmphibiousJetScene.scenario()

@@ -9,7 +9,7 @@ class AuthorFactoryProductionTest {
     private val fixtures: Path get() = System.getProperty("public.fixtures.dir")?.let(Path::of)
         ?: Path.of("../../SimulationTest/public/inputs")
 
-    @Test fun a_distinct_v2_json_unit_is_bought_from_the_factory_and_hits_with_its_inline_projectile() {
+    @Test fun a_v2_tank_uses_the_land_template_from_production_through_movement_and_its_inline_projectile() {
         val source = fixtures.resolve("author-production/json/package")
         val workspace = Files.createTempDirectory("rwr-v2-production-").toAbsolutePath().normalize()
         try {
@@ -43,7 +43,15 @@ class AuthorFactoryProductionTest {
                 var step = 0L
                 while (simulation.observe().units.none { it.unitId == born } && step < 1000)
                     simulation.advance(Step(step++, 1.0, "sim-tick"))
+                val arrival = Position(240.0, 190.0)
                 assertEquals("amber_scout", simulation.observe().units.single { it.unitId == born }.typeId)
+                assertEquals(MovementType.LAND, content.units.getValue("amber_scout").movement.type)
+                assertEquals(1.1, content.units.getValue("amber_scout").movement.moveSpeed)
+                assertIs<ActionResult.Accepted>(simulation.submit(MoveAction("move", "p1", born, arrival, simulation.world)))
+                repeat(180) { simulation.advance(Step(step++, 1.0, "sim-tick")) }
+                val moved = simulation.observe().units.single { it.unitId == born }.position
+                assertTrue(kotlin.math.abs(moved.x - arrival.x) <= 4.0 &&
+                    kotlin.math.abs(moved.y - arrival.y) <= 4.0, "Expected arrival near $arrival, got $moved")
                 val before = assertNotNull(simulation.observe().units.single { it.unitId == "target" }.health)
                 assertIs<ActionResult.Accepted>(simulation.submit(AttackAction("aim", "p1", born, "target", simulation.world)))
                 var fired = false

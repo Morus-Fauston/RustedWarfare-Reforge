@@ -5,12 +5,6 @@ import kotlin.math.abs
 
 /** Native intent, physical depth and threshold presentation are independent state. */
 internal object SubmarineMotion {
-    fun submerged(unit: MutableUnit): Boolean = unit.definition.submarine != null && unit.height < -1.0
-
-    fun movement(unit: MutableUnit): MovementProfile = unit.definition.movement.let {
-        if (submerged(unit)) it.copy(moveSpeed = .45) else it
-    }
-
     fun supports(definition: UnitDefinition): Boolean = definition.submarine == SubmarineProfile.NATIVE &&
         definition.id == "attackSubmarine" && definition.className == "NativeSubmarine" &&
         definition.movement == MovementProfile(MovementType.WATER, .8, .018, .1, 1.2, .06, false, false, .6) &&
@@ -32,7 +26,7 @@ internal object SubmarineMotion {
         unit.submarineVerticalSpeed = towards(unit.submarineVerticalSpeed, rate, .003f * elapsed)
         unit.height = towards(unit.height.toFloat(), desired, unit.submarineVerticalSpeed * elapsed).toDouble()
         require(unit.height.isFinite() && unit.submarineVerticalSpeed.isFinite()) { "Submarine depth must remain finite" }
-        val surface = unit.height >= -1.0
+        val surface = !UnitLocomotion.isSubmerged(unit)
         val crossed = surface != unit.submarineSurfacePresentation
         unit.submarineSurfacePresentation = surface
         if (crossed) unit.localMotion = null

@@ -42,7 +42,7 @@
       {
         "id": "hoverTank",
         "path": "../inputs/nautilus-production/hjson/package/hover/hover.hjson",
-        "sha256": "a7efcdd2b82349f593ef5f476564e56446f5121283f9ee15d49a7fafa03fc7b1",
+        "sha256": "d1afd2cda0f079b33937203ff9dd2e0e987250752b40e3c821d61e5261e379e4",
         "loader": "hover-tank"
       }
     ],

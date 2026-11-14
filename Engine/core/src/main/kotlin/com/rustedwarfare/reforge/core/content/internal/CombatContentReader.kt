@@ -58,6 +58,13 @@ internal object CombatContentReader {
     private val schema = UnitContentSchema(fields, numericFields, booleanFields, textFields,
         requiredInlineProjectileFields = setOf("directDamage", "life", "speed"))
 
+    private val tankTemplate = mapOf("movementType" to "LAND", "moveSpeed" to "1.1",
+        "moveAccelerationSpeed" to "0.07", "moveDecelerationSpeed" to "0.17", "maxTurnSpeed" to "4.1",
+        "turnAcceleration" to "0.25", "moveSlidingMode" to "false", "moveIgnoringBody" to "false")
+    private val hoverTemplate = mapOf("movementType" to "HOVER", "moveSpeed" to "1.0",
+        "moveAccelerationSpeed" to "0.04", "moveDecelerationSpeed" to "0.09", "maxTurnSpeed" to "180",
+        "turnAcceleration" to "0.5", "moveSlidingMode" to "true", "moveIgnoringBody" to "true")
+
     fun read(path: Path): UnitDefinition = readWithSources(path).definition
 
     private enum class Kind { NATIVE_TANK, DECLARED_TANK, MECH, HELICOPTER, HEAVY_MECH, BATTLESHIP, AUTHOR_WATER, HOVER_TANK }
@@ -82,12 +89,13 @@ internal object CombatContentReader {
         UnitSourceReader(when (kind) {
             Kind.HOVER_TANK -> schema.copy(
                 fields = schema.fields + ("projectile_1" to (schema.fields.getValue("projectile_1") + setOf("targetSpeed", "targetSpeedAcceleration"))),
-                numericFields = schema.numericFields + setOf("targetSpeed", "targetSpeedAcceleration"))
+                numericFields = schema.numericFields + setOf("targetSpeed", "targetSpeedAcceleration"),
+                movementTemplates = mapOf("hoverTank" to hoverTemplate))
+            Kind.DECLARED_TANK, Kind.NATIVE_TANK -> schema.copy(movementTemplates = mapOf("tank" to tankTemplate))
             Kind.BATTLESHIP, Kind.AUTHOR_WATER -> NavalContentFields.schema(schema)
             Kind.HEAVY_MECH -> HeavyMechContentFields.schema(schema)
             Kind.MECH -> MechContentFields.schema(schema)
             Kind.HELICOPTER -> HelicopterContentFields.schema(schema)
-            else -> schema
         }, preRead = validatePath).load(path) { loaded ->
         val declared = kind != Kind.NATIVE_TANK
         val mech = kind == Kind.MECH

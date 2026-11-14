@@ -8,6 +8,7 @@
   ],
   "properties": {
     "format": { "const": "rw-reforge.unit.v2" },
+    "unitType": { "const": "tank" },
     "copyFrom": {
       "type": "array",
       "items": {

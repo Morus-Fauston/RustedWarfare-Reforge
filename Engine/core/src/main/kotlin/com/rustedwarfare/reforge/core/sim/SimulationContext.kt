@@ -166,7 +166,7 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
         val rules = checkNotNull(knowledgeRules)
         val oldStores = checkNotNull(knowledgeStores)
         val groundGids = input.map.groundGids
-        val groundTypes = input.unitDefinitions.values.flatMap { if (it.amphibiousJet != null) listOf(it.movement.type, MovementType.WATER) else listOf(it.movement.type) }
+        val groundTypes = input.unitDefinitions.values.flatMap(UnitLocomotion::routeTypes)
             .filter { it != MovementType.LAND && it != MovementType.AIR }.distinct()
         val vision = AutomaticVision.project(steps.current.automaticVisionState, world.id, (automaticVisionSnapshots?.values?.firstOrNull()?.epoch ?: -1L) + 1,
             input.map.widthTiles, input.map.heightTiles, input.map.tileWidth, input.map.tileHeight, input.players,
@@ -299,7 +299,7 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
         store.accept(world, visibleTerrain)
         val after = store.snapshot(world)
         val input = checkNotNull(scenario)
-        val groundTypes = input.unitDefinitions.values.flatMap { if (it.amphibiousJet != null) listOf(it.movement.type, MovementType.WATER) else listOf(it.movement.type) }
+        val groundTypes = input.unitDefinitions.values.flatMap(UnitLocomotion::routeTypes)
             .filter { it != MovementType.LAND && it != MovementType.AIR }.distinct()
         for (row in 0 until after.height) for (column in 0 until after.width) {
             if ((!before.planningBlocked(column, row) && after.planningBlocked(column, row)) ||
@@ -2211,7 +2211,7 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
             } else if (unit.typeId == ModularSpiderRules.LIGHTNING) ProjectileAppearance.SPIDER_LIGHTNING
                 else if (weapon.projectile.lightning) ProjectileAppearance.AMPHIBIOUS_LIGHTNING
                 else if (unit.definition.submarine == null) ProjectileAppearance.STANDARD
-                else if (SubmarineMotion.submerged(unit)) ProjectileAppearance.SUBMARINE_TORPEDO
+                else if (UnitLocomotion.isSubmerged(unit)) ProjectileAppearance.SUBMARINE_TORPEDO
                 else ProjectileAppearance.SUBMARINE_MISSILE)
         projectiles += projectile
         pendingProjectileEvents += ProjectileEventObservation("born", projectileObservation(projectile))
@@ -2937,8 +2937,8 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
                     },
                     attachmentOverview = attachments,
                     submarine = unit.definition.submarine?.let { SubmarineObservation(unit.submarineSurfaceIntent,
-                        unit.submarineVerticalSpeed, SubmarineMotion.submerged(unit), unit.submarineSurfacePresentation,
-                        SubmarineMotion.movement(unit).moveSpeed, UnitCombat.range(unit)) },
+                        unit.submarineVerticalSpeed, UnitLocomotion.isSubmerged(unit), unit.submarineSurfacePresentation,
+                        UnitLocomotion.movement(unit).moveSpeed, UnitCombat.range(unit)) },
                     amphibiousJet = AmphibiousJetMotion.observation(unit, currentScenario.map),
                     carriedBy = unit.carriedBy, transport = Transport.observe(unit, units), transportExit = unit.transportExit,
                     alive = unit.alive,

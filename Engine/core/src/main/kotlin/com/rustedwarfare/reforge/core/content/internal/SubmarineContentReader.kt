@@ -6,7 +6,7 @@ import java.nio.file.Path
 /** Finite native submarine through the common syntax, source and package guards. */
 internal object SubmarineContentReader {
     private val schema = UnitContentSchema.native(
-        setOf("format", "name", "maxHp", "radius", "price", "buildSpeed", "image", "image_dead"),
+        setOf("format", "name", "maxHp", "radius", "price", "buildSpeed", "image", "image_dead", "locomotion"),
         setOf("rw-reforge.native-submarine.v1"))
 
     fun readWithSources(path: Path, validatePath: (Path) -> Unit): LoadedUnitContent =
@@ -19,6 +19,7 @@ internal object SubmarineContentReader {
                 if (actual != expected) reject(ContentErrorCode.UNSUPPORTED_FEATURE, path, "core", key,
                     reason = "Expected native submarine value $expected")
             }
+            validateSubmersibleLocomotion(path, loaded, SubmersibleLocomotion.WATER)
             if (value("name") != "attackSubmarine") reject(ContentErrorCode.UNSUPPORTED_FEATURE, path, "core", "name",
                 reason = "Expected attackSubmarine")
             number("maxHp", 260.0); number("radius", 15.0); number("price", 800.0); number("buildSpeed", .001)
@@ -39,4 +40,16 @@ internal object SubmarineContentReader {
                     namedWeapons = WeaponCatalog(listOf(weapon))),
                 build = BuildProfile(800L, .001f), submarine = SubmarineProfile.NATIVE)
         }
+}
+
+internal fun validateSubmersibleLocomotion(path: Path, definition: UnitSourceReader.EffectiveSections,
+                                         expected: SubmersibleLocomotion) {
+    val declared = definition.values.getValue("core")["locomotion"]
+    if (declared == null) {
+        if (definition.structured) reject(ContentErrorCode.MISSING_REQUIRED_FIELD, path, field = "locomotion",
+            reason = "Expected the ${expected.contentName} locomotion state")
+        return
+    }
+    if (declared != expected.contentName) reject(ContentErrorCode.UNSUPPORTED_FEATURE, path, field = "locomotion",
+        reason = "Expected the ${expected.contentName} locomotion state")
 }

@@ -12,7 +12,7 @@
       {
         "id": "amphibiousJet",
         "path": "../inputs/amphibious-production/json/production-package/units/amphibiousJet.json",
-        "sha256": "2d273fb1f5e7900c71f69d93882bee6c4a99179baf8a3903aa2b299266eeef9e",
+        "sha256": "f6b2ccfb21653d7d8377796ba30fdc5a8f20690d5d01ee6dc7ede6b417f0abe9",
         "loader": "amphibious-jet"
       }
     ],

@@ -170,7 +170,7 @@
       {
         "id": "attackSubmarine",
         "path": "../inputs/phase-six-a-sandbox/hjson/package/units/sea-factory/submarine/submarine.hjson",
-        "sha256": "9f7536ddb58af8d821e94d1738c8f73252ad4c99e115802ff1da051e3d86356a"
+        "sha256": "edd35d0ebf15b41119511fb4b0af84fbbe55a80fc2aecb44161940258872e2e1"
       },
       {
         "id": "heavyBattleship",
@@ -285,7 +285,7 @@
       {
         "id": "amphibiousJet",
         "path": "../inputs/phase-six-a-sandbox/hjson/package/extra/air-products/units/amphibiousJet.hjson",
-        "sha256": "68713e7ea5064e26c8ccfcc4bf060cdef0255a44f77deff72168bd729a7fe6de"
+        "sha256": "e5a20203229de670e4912014639c7486e9d7d817b61be268afdb6d63be7181da"
       },
       {
         "id": "dropship",
@@ -335,7 +335,7 @@
       {
         "id": "hoverTank",
         "path": "../inputs/phase-six-a-sandbox/hjson/package/extra/nautilus/nautilus/hover/hover.hjson",
-        "sha256": "1be501f8f4c9f043cf84b58056b0bd87c36e3b2d938b091a02394d4aeb7ce0e9"
+        "sha256": "6d59041ff1e9d85257bc8c767ea6db66898672fa16edfab7fcac6674034cb7d7"
       },
       {
         "id": "robotCrab",
@@ -18415,7 +18415,7 @@
       "package/extra/air-products/units/aa_turret.png": "0b9f36b2d623711b1f49cf41fbe70eb6c23e921ea3cb10ff9e24a15f08e017a8",
       "package/extra/air-products/units/aaBeamGunship.hjson": "38dbfba4a2c7a383ebd149e7660b38b174d5597fc0c20b864b50258578a799c5",
       "package/extra/air-products/units/aaBeamGunship_afterburn.hjson": "6d10d392dbec28f45bb69657736f21367f471d41fdfe3806e5ab6fc523a0f70a",
-      "package/extra/air-products/units/amphibiousJet.hjson": "68713e7ea5064e26c8ccfcc4bf060cdef0255a44f77deff72168bd729a7fe6de",
+      "package/extra/air-products/units/amphibiousJet.hjson": "e5a20203229de670e4912014639c7486e9d7d817b61be268afdb6d63be7181da",
       "package/extra/air-products/units/dropship.hjson": "0bc25c62b2cdd1541f2a451fc970da1b600748f8dccb66059655d008d3c06fdd",
       "package/extra/air-products/units/dropship.png": "0e44f9bfdc9e760f6cd59df6e0a7aa973d5c08c0611e5fec1f94d569ec4a5e44",
       "package/extra/air-products/units/dropship_dead.png": "604d1acc5abe2f32a5429262f7e6b6f28922e36be789b93ddb55f04f6a874f06",
@@ -18446,7 +18446,7 @@
       "package/extra/nautilus/nautilus/body.png": "d0a214b3e6e95566a2272b5066ddca894eb70935047c749b882b7349c5a91347",
       "package/extra/nautilus/nautilus/dead.png": "1d30c331e5377cf75134857aa8b2b687ec3179e48acf5fe649a71625cdbd890a",
       "package/extra/nautilus/nautilus/foot.png": "05931f6c90ccac2921ae9c616932ab422ff1b6ac41c474980850b517b6626dfb",
-      "package/extra/nautilus/nautilus/hover/hover.hjson": "1be501f8f4c9f043cf84b58056b0bd87c36e3b2d938b091a02394d4aeb7ce0e9",
+      "package/extra/nautilus/nautilus/hover/hover.hjson": "6d59041ff1e9d85257bc8c767ea6db66898672fa16edfab7fcac6674034cb7d7",
       "package/extra/nautilus/nautilus/hover/shadow.png": "05994cff1434fb85e8e37527c034a535b6f1de4431aa3c50ac8b5370a1aef997",
       "package/extra/nautilus/nautilus/hover/tank.png": "71ebc6f6e73814573a90eaebadcdae40b53abe8a287cefbc5a8a06b6bab04ab0",
       "package/extra/nautilus/nautilus/hover/tank_dead.png": "3eab0f9914393445a2b3424643341ab33e55016b1fec645fd1a91f1a755643c8",
@@ -18571,7 +18571,7 @@
       "package/units/sea-factory/seaFactoryT2.hjson": "2f4f7682d460e3759ec81a60a1b23ff4459731511c195c83fd3204645e8d888e",
       "package/units/sea-factory/submarine/body.png": "d61fd88c779e1209fee1400b3e21fe79cfef45729b31aea4d3a476593e794892",
       "package/units/sea-factory/submarine/dead.png": "fed1c2fca42a6e8b4a815b4146e2371a66786a0a03a000652c4bf67ad23a7506",
-      "package/units/sea-factory/submarine/submarine.hjson": "9f7536ddb58af8d821e94d1738c8f73252ad4c99e115802ff1da051e3d86356a",
+      "package/units/sea-factory/submarine/submarine.hjson": "edd35d0ebf15b41119511fb4b0af84fbbe55a80fc2aecb44161940258872e2e1",
       "package/units/spider/aa-t2.hjson": "d5a2ab84cd49833c98406a2aebed3d2b469a047243afd4b1ab0bae1883134dbd",
       "package/units/spider/aa-t2.png": "65be990172b38abd38bf943d3469ebfe9507d59cc2b02afbb77a91e99cee32b6",
       "package/units/spider/aa.hjson": "060dbbdfc926c1d5aea6360506588928f66dc4f458b7655165e8102d95f38114",

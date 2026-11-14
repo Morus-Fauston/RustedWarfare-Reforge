@@ -36,7 +36,7 @@
       {
         "id": "amphibiousJet",
         "path": "../inputs/air-transport-production/hjson/production-package/units/amphibiousJet.hjson",
-        "sha256": "2d273fb1f5e7900c71f69d93882bee6c4a99179baf8a3903aa2b299266eeef9e",
+        "sha256": "f6b2ccfb21653d7d8377796ba30fdc5a8f20690d5d01ee6dc7ede6b417f0abe9",
         "loader": "amphibious-jet"
       },
       {
@@ -874,7 +874,7 @@
       "production-package/units/air_factory_t2.png": "7759a4a82006893505d7b8d4b83a83f79bdbf7d0258c2ecf66a8dfb3d8fd46d6",
       "production-package/units/airFactory.hjson": "1147c15ed4584a9484cdb89b3474162287ebd308773bc4d9907f9a39f4859e0f",
       "production-package/units/airFactoryT2.hjson": "15b39f88e16a2b280408ba9950e7ea3c426ff1abc5e7c744f08ca5f996faaaeb",
-      "production-package/units/amphibiousJet.hjson": "2d273fb1f5e7900c71f69d93882bee6c4a99179baf8a3903aa2b299266eeef9e",
+      "production-package/units/amphibiousJet.hjson": "f6b2ccfb21653d7d8377796ba30fdc5a8f20690d5d01ee6dc7ede6b417f0abe9",
       "production-package/units/body.png": "f2f5836caec9a3078885b8ab00654f27800d38f17352b3be4358c3afc6a42b90",
       "production-package/units/builder.hjson": "850db0bbe2edd2d0f7d302dbf3cb73c66359d33dbb7dab558c90986ffffbb69b",
       "production-package/units/builder.png": "15060aa3fb36bffd4414e803beb8f5d9b2982ed14bb497fbca6cadd3de18cc1b",

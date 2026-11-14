@@ -1,6 +1,7 @@
 # Shared hover production content
 {
   "format": "rw-reforge.unit.v2",
+  "unitType": "hoverTank",
   "core": {
     "name": "hoverTank",
     "class": "CustomUnitMetadata",
@@ -52,15 +53,5 @@
       "frame": 6,
       "drawSize": 1
     }
-  ],
-  "movement": {
-    "movementType": "HOVER",
-    "moveSpeed": 1,
-    "moveAccelerationSpeed": 0.04,
-    "moveDecelerationSpeed": 0.09,
-    "maxTurnSpeed": 180,
-    "turnAcceleration": 0.5,
-    "moveSlidingMode": true,
-    "moveIgnoringBody": true
-  }
+  ]
 }

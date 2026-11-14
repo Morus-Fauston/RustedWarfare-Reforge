@@ -54,7 +54,7 @@
       {
         "id": "attackSubmarine",
         "path": "../inputs/naval-production/hjson/production-package/units/submarine/submarine.hjson",
-        "sha256": "b8b12b9ba92285b2ffde11527065e108a22ac1b4b1a3f789b6140ed38c0f31ed",
+        "sha256": "617b046dcad32edc5c670435cbab635660b46ea69cf5fdbcb95fec579af90d3a",
         "loader": "submarine"
       }
     ],

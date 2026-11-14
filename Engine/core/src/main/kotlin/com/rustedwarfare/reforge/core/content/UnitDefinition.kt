@@ -54,6 +54,8 @@ class UnitDefinition(
     val attachmentLayout: AttachmentLayout? = null,
     val attachmentModule: AttachmentModuleProfile? = null,
 ) {
+    internal val locomotionStates: SubmersibleLocomotion?
+        get() = amphibiousJet?.locomotion ?: submarine?.locomotion
     val retainedUnconsumed: Set<String> = Collections.unmodifiableSet(LinkedHashSet(retainedUnconsumed))
     val maximumHealth: Double? get() = durability?.maxHp ?: combat?.maxHp
 }
@@ -97,6 +99,17 @@ data class MovementProfile(
 
 enum class MovementType { LAND, NONE, AIR, WATER, HOVER, OVER_CLIFF, OVER_CLIFF_WATER }
 
+/** A water route can begin before the unit crosses the underwater targeting threshold. */
+internal enum class SubmersibleLocomotion(
+    val contentName: String,
+    val submergedSpeed: Double,
+    val submergedTurnSpeed: Double? = null,
+    val divingChangesRoute: Boolean = false,
+) {
+    WATER("water", .45),
+    AIR_WATER("air-water", .4, 1.5, divingChangesRoute = true),
+}
+
 data class HoverProfile(val targetHeight: Double = 4.0, val heightDrift: Double = 1.5,
     val phaseSpeed: Double = 3.0, val heightChangeRate: Double = .1) {
     fun isValid(): Boolean = listOf(targetHeight, heightDrift, phaseSpeed, heightChangeRate).all { it.isFinite() && it >= 0.0 } &&
@@ -117,10 +130,16 @@ data class RotorDefinition(val imagePath: Path, val spinRate: Double)
 data class FixedUnderwaterTargetProfile(val height: Double = -8.0)
 
 /** Explicit native capability; depth alone does not make an ordinary unit a submarine. */
-enum class SubmarineProfile { NATIVE }
+enum class SubmarineProfile {
+    NATIVE;
+
+    internal val locomotion: SubmersibleLocomotion get() = SubmersibleLocomotion.WATER
+}
 
 /** Native capability and the two folding side images; independent from rotor flight. */
-data class AmphibiousJetProfile(val leftWingImagePath: Path, val rightWingImagePath: Path)
+data class AmphibiousJetProfile(val leftWingImagePath: Path, val rightWingImagePath: Path) {
+    internal val locomotion: SubmersibleLocomotion get() = SubmersibleLocomotion.AIR_WATER
+}
 
 /** Trusted original target class; a building or an unarmed life profile does not imply native membership. */
 enum class DirectHitTargetKind { ORDINARY, NATIVE_BUILDING }

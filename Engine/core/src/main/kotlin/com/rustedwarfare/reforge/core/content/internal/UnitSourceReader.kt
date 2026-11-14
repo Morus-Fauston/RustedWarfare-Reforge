@@ -25,6 +25,7 @@ internal data class UnitContentSchema(
     val timeFieldLocations: Set<Pair<String, String>> = emptySet(),
     val trimSectionName: Boolean = true,
     val requiredInlineProjectileFields: Set<String> = emptySet(),
+    val movementTemplates: Map<String, Map<String, String>> = emptyMap(),
 ) {
     companion object {
         fun native(fields: Set<String>, formats: Set<String>): UnitContentSchema {
@@ -121,6 +122,7 @@ internal class UnitSourceReader(
         val declaredControls: Set<String> = emptySet(),
         val removedWeapons: Set<String> = emptySet(),
         val inlineProjectileOwners: Map<String, String> = emptyMap(),
+        val movementTemplate: String? = null,
     )
 
     internal data class Origin(val path: Path, val section: String?, val field: String, val chain: List<Path> = listOf(path)) {
@@ -143,6 +145,7 @@ internal class UnitSourceReader(
     internal data class EffectiveSections(
         val values: MutableMap<String, MutableMap<String, String>>,
         val origins: MutableMap<Pair<String, String>, Origin>,
+        val structured: Boolean,
     )
 
     private fun templateOnly(path: Path, sections: Map<String, MutableMap<String, String>>): Boolean {
@@ -211,6 +214,7 @@ internal class UnitSourceReader(
         val target = root.sections.mapValuesTo(linkedMapOf()) { (_, values) -> values.toMutableMap() }
         val origins = linkedMapOf<Pair<String, String>, Origin>()
         for ((section, values) in target) for (key in values.keys) origins[section to key] = origin(path, root, section, key)
+        var movementTemplate = root.movementTemplate?.let { it to Origin(path, null, "unitType") }
         fun inherit(source: Path, input: Input, depth: Int, active: Set<Path>, chain: List<Path>,
             excluded: Set<String>): Set<String> {
             fun referenceFailure(name: String?, reason: String, code: ContentErrorCode = ContentErrorCode.BAD_REFERENCE): Nothing =
@@ -238,6 +242,9 @@ internal class UnitSourceReader(
                         throw ContentReadException(error.copy(reason = error.reason + context))
                     }
                 val parentChain = chain + listOf(parent)
+                if (movementTemplate == null) movementTemplate = document.movementTemplate?.let {
+                    it to Origin(parent, null, "unitType", parentChain)
+                }
                 for ((section, values) in document.sections) {
                     if (section in parentExclusions) continue
                     val effective = target.getOrPut(section) { linkedMapOf() }
@@ -282,6 +289,12 @@ internal class UnitSourceReader(
             }
         }
         for (section in declared.keys) inheritSection(section, section, 0, setOf(section))
+        movementTemplate?.let { (name, source) ->
+            val movement = target.getOrPut("movement") { linkedMapOf() }
+            for ((key, value) in schema.movementTemplates.getValue(name)) {
+                if (movement.putIfAbsent(key, value) == null) origins["movement" to key] = source
+            }
+        }
         val activeProjectiles = target.filterKeys { it.startsWith("turret_") }.values
             .mapNotNull { it["projectile"] }.toSet()
         val unusedInline = target.keys.filter { it.startsWith("projectile___inline_") &&
@@ -296,7 +309,7 @@ internal class UnitSourceReader(
                 reject(ContentErrorCode.UNSUPPORTED_FIELD, origin.path, origin.section, origin.field, reason = "Field is unsupported in consuming section $section")
             }
         }
-        return EffectiveSections(target, origins)
+        return EffectiveSections(target, origins, root.structured)
     }
 
     private fun readStructured(path: Path, hjson: Boolean, text: String): Input {
@@ -398,11 +411,21 @@ internal class UnitSourceReader(
         }
         val seen = mutableSetOf<String>()
         val removedWeapons = linkedSetOf<String>()
+        var movementTemplate: String? = null
         for (member in root) {
             val key = member.name
             if (!seen.add(key)) malformed(field = key, reason = "Duplicate member")
             when (key) {
                 "format" -> Unit
+                "unitType" -> {
+                    if (schema.movementTemplates.isEmpty())
+                        reject(ContentErrorCode.UNSUPPORTED_FIELD, path, field = key, reason = "No unit types supported by this reader")
+                    if (!member.value.isString) malformed(field = key, reason = "Expected a unit type name")
+                    val name = member.value.asString()
+                    if (name !in schema.movementTemplates)
+                        reject(ContentErrorCode.UNSUPPORTED_FEATURE, path, field = key, reason = "Unknown unit type: $name")
+                    movementTemplate = name
+                }
                 "copyFrom" -> {
                     if (!member.value.isArray) malformed(field = key, reason = "Expected a parent filename array")
                     parents = member.value.asArray().map { value ->
@@ -482,6 +505,6 @@ internal class UnitSourceReader(
         if (removedWeapons.any { it in result })
             malformed(field = "removeWeapons", reason = "A weapon cannot be declared and removed in the same unit")
         return Input(result, parents, templateOnly(path, result), structured = true, declaredControls = controls,
-            removedWeapons = removedWeapons, inlineProjectileOwners = inlineProjectileOwners)
+            removedWeapons = removedWeapons, inlineProjectileOwners = inlineProjectileOwners, movementTemplate = movementTemplate)
     }
 }

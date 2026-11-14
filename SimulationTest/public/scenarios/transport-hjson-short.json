@@ -54,7 +54,7 @@
       {
         "id": "attackSubmarine",
         "path": "../inputs/transport-production/hjson/production-package/units/submarine/submarine.hjson",
-        "sha256": "b8b12b9ba92285b2ffde11527065e108a22ac1b4b1a3f789b6140ed38c0f31ed",
+        "sha256": "617b046dcad32edc5c670435cbab635660b46ea69cf5fdbcb95fec579af90d3a",
         "loader": "submarine"
       },
       {
@@ -907,7 +907,7 @@
       "production-package/units/seaFactoryT2.hjson": "4ceabf590abc8338a97a5fd4ae913b32b55a163ec1f18e519713eef33522b487",
       "production-package/units/submarine/body.png": "d61fd88c779e1209fee1400b3e21fe79cfef45729b31aea4d3a476593e794892",
       "production-package/units/submarine/dead.png": "fed1c2fca42a6e8b4a815b4146e2371a66786a0a03a000652c4bf67ad23a7506",
-      "production-package/units/submarine/submarine.hjson": "b8b12b9ba92285b2ffde11527065e108a22ac1b4b1a3f789b6140ed38c0f31ed"
+      "production-package/units/submarine/submarine.hjson": "617b046dcad32edc5c670435cbab635660b46ea69cf5fdbcb95fec579af90d3a"
     }
   }
 }

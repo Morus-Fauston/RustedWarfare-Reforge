@@ -11,7 +11,7 @@ internal object CombatTargetQuery {
         else target.definition.movement.type == MovementType.AIR && target.height >= 4.0
 
     fun isUnderwater(target: MutableUnit): Boolean =
-        SubmarineMotion.submerged(target) || target.amphibiousState != null && target.height < -1.0 ||
+        UnitLocomotion.isSubmerged(target) ||
             target.definition.transport == com.rustedwarfare.reforge.core.content.TransportProfile.NAUTILUS_SUBMERGED && target.height < -1.0 ||
             target.definition.fixedUnderwaterTarget != null && target.height <= -1.0
 
@@ -40,7 +40,7 @@ internal object CombatTargetQuery {
                 (target.position.x.toFloat() / map.tileWidth).toInt(), (target.position.y.toFloat() / map.tileHeight).toInt())
         }
         if (actor.definition.submarine != null || actor.amphibiousState != null) {
-            val submerged = if (actor.amphibiousState != null) actor.height < -1.0 else SubmarineMotion.submerged(actor)
+            val submerged = UnitLocomotion.isSubmerged(actor)
             if (isFlying(target)) return !submerged
             if (isUnderwater(target)) return submerged
             return !submerged || target.height <= 2.0 && map.isOverWater(
