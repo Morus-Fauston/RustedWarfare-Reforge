@@ -37,6 +37,8 @@ class SandboxSession(scenario: Scenario, private val evidence: ClientEvidence = 
     private val commandWorld = context.world
     private var commandSequence = 0L
     private val pendingSandboxRequests = linkedMapOf<Long, SandboxCommandRequest>()
+    private val bridgeSequences = linkedMapOf<String, Long>()
+    private val deployedProjectileIds = linkedSetOf<Long>()
     var lastSandboxReceipt: SandboxCommandReceipt? = null
         private set
     var sandboxCommandFeedback: String = SandboxCommands.HELP
@@ -51,6 +53,19 @@ class SandboxSession(scenario: Scenario, private val evidence: ClientEvidence = 
         SandboxCommandRequest(sequence, commandWorld, generation, batch)
     }
 
+    fun submitSandboxProjectiles(batch: SandboxCommand.ProjectileBatch): SandboxCommandReceipt = submitSandboxRequest { sequence ->
+        SandboxCommandRequest(sequence, commandWorld, generation, batch)
+    }
+
+    internal fun submitSandboxProjectiles(requestId: String, batch: SandboxCommand.ProjectileBatch): SandboxCommandReceipt {
+        val sequence = bridgeSequences[requestId]
+        if (sequence != null) return commandHost.submit(SandboxCommandRequest(sequence, commandWorld, generation, batch))
+        val receipt = submitSandboxProjectiles(batch)
+        if (receipt.status == SandboxCommandStatus.QUEUED || commandHost.receipt(receipt.sequence) != null)
+            bridgeSequences[requestId] = receipt.sequence
+        return receipt
+    }
+
     private fun submitSandboxRequest(requestFor: (Long) -> SandboxCommandRequest): SandboxCommandReceipt {
         commandSequence = Math.incrementExact(commandSequence)
         val request = requestFor(commandSequence)
@@ -62,10 +77,12 @@ class SandboxSession(scenario: Scenario, private val evidence: ClientEvidence = 
 
     private fun recordSandboxReceipt(request: SandboxCommandRequest, result: SandboxCommandReceipt) {
         lastSandboxReceipt = result
+        deployedProjectileIds.addAll(result.projectileIds.values)
         sandboxCommandFeedback = when (result.status) {
             SandboxCommandStatus.HELP -> SandboxCommands.HELP
             SandboxCommandStatus.QUEUED -> "Queued for next simulation step"
             SandboxCommandStatus.APPLIED -> if (result.unitId != null) "Spawned ${result.unitId}"
+                else if (result.projectileIds.isNotEmpty()) "Deployed ${result.projectileIds.size} projectiles"
                 else "Spawned ${result.generated.size} units"
             SandboxCommandStatus.REJECTED -> "Rejected: ${result.code}" +
                 (result.errorPosition?.let { " at character $it" } ?: "") +
@@ -80,9 +97,12 @@ class SandboxSession(scenario: Scenario, private val evidence: ClientEvidence = 
                     "y" to it.position.y, "owner" to it.ownerPlayerId, "heading" to it.heading,
                     "state" to it.state.name.lowercase(java.util.Locale.ROOT)) },
                 "unitId" to result.unitId, "generated" to result.generated, "failedEntry" to result.failedEntry,
+                "projectileIds" to result.projectileIds.takeIf { it.isNotEmpty() },
                 "code" to result.code, "errorPosition" to result.errorPosition)
         }
     }
+
+    internal fun sandboxReceipt(sequence: Long): SandboxCommandReceipt? = commandHost.receipt(sequence)
 
     private var terrainKnowledge: List<com.rustedwarfare.reforge.core.knowledge.CellKnowledge>? = null
     private var latestFrame: SandboxFrame? = null
@@ -502,6 +522,13 @@ class SandboxSession(scenario: Scenario, private val evidence: ClientEvidence = 
                 recordSandboxReceipt(request, result)
                 pendingSandboxRequests.remove(sequence)
             }
+        }
+        if (canDeploy && deployedProjectileIds.isNotEmpty()) evidence.recordWhenEnabled("sandbox-projectile-sample") {
+            val samples = commandHost.projectileEvidence(deployedProjectileIds)
+            deployedProjectileIds.retainAll(samples.filter { it.kind == "live" }.map { it.objectId }.toSet())
+            mapOf("generation" to generation, "stepIndex" to (nextStep - 1),
+                "projectiles" to samples.map { mapOf("objectId" to it.objectId, "kind" to it.kind,
+                    "x" to it.position.x, "y" to it.position.y, "interceptorUnitId" to it.interceptorUnitId) })
         }
         publishFrame()
         observation.events.lastOrNull { it.kind == "unit-produced" }?.let { event ->

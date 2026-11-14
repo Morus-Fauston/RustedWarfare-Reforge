@@ -2,12 +2,19 @@ package com.rustedwarfare.reforge.core.sim
 
 enum class SandboxInitialState { READY, DAMAGED }
 
+/** Host identities for explicitly enabled offline test evidence only. */
+data class SandboxProjectileEvidence(val objectId: Long, val kind: String, val position: Position,
+    val interceptorUnitId: String? = null)
+
 sealed interface SandboxCommand {
     data object Help : SandboxCommand
     data class Spawn(val typeId: String, val position: Position, val ownerPlayerId: String,
                      val heading: Double = 0.0, val state: SandboxInitialState = SandboxInitialState.READY) : SandboxCommand
     data class Deployment(val alias: String, val spawn: Spawn)
     data class SpawnBatch(val entries: List<Deployment>) : SandboxCommand
+    data class ProjectileDeployment(val alias: String, val sourceUnitId: String, val targetUnitId: String,
+        val weapon: String?)
+    data class ProjectileBatch(val entries: List<ProjectileDeployment>) : SandboxCommand
 }
 
 sealed interface SandboxParseResult {

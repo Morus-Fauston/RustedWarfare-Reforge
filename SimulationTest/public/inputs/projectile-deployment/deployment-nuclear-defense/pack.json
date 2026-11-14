@@ -1,0 +1,38 @@
+{
+  "format": "rw-reforge.content-pack.v1",
+  "id": "deployment-nuclear-defense",
+  "name": "deployment-nuclear-defense",
+  "units": [
+    {
+      "type": "nuclear-silo",
+      "file": "units/nukeLauncherC.json"
+    },
+    {
+      "type": "nuclear-silo",
+      "file": "units/antiNukeLauncherC.json"
+    }
+  ],
+  "opening": {
+    "map": "maps/field.tmx",
+    "credits": 4000,
+    "opponentCredits": 0,
+    "units": [
+      {
+        "id": "silo",
+        "owner": "p2",
+        "type": "nukeLauncherC",
+        "x": 490,
+        "y": 190,
+        "heading": 270
+      },
+      {
+        "id": "defense",
+        "owner": "p1",
+        "type": "antiNukeLauncherC",
+        "x": 110,
+        "y": 190,
+        "heading": 0
+      }
+    ]
+  }
+}

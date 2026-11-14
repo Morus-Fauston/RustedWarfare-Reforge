@@ -18,6 +18,8 @@ import com.badlogic.gdx.scenes.scene2d.utils.ScissorStack
 import com.badlogic.gdx.scenes.scene2d.utils.TextureRegionDrawable
 import com.badlogic.gdx.scenes.scene2d.Touchable
 import com.rustedwarfare.reforge.core.sim.Position
+import com.rustedwarfare.reforge.core.sim.SandboxCommand
+import com.rustedwarfare.reforge.core.sim.SandboxCommandReceipt
 import com.badlogic.gdx.scenes.scene2d.Actor
 import com.badlogic.gdx.scenes.scene2d.Group
 import com.badlogic.gdx.scenes.scene2d.Stage
@@ -176,6 +178,14 @@ class BootstrapScreen(
     private var firstDrawnGeneration: Long? = null
     private var generation = 0L
     val inputGeneration: Long get() = launch.generation
+    fun deployProjectiles(requestId: String, batch: SandboxCommand.ProjectileBatch): SandboxCommandReceipt {
+        val active = checkNotNull(session) { "No active match" }
+        check(development && active.canDeploy) { "Deployment is disabled" }
+        return active.submitSandboxProjectiles(requestId, batch)
+    }
+
+    fun deploymentReceipt(sequence: Long): SandboxCommandReceipt? =
+        session?.takeIf { development && it.canDeploy }?.sandboxReceipt(sequence)
     private var activeRoot: Path = initialRoot
     private val stepClock = OfflineStepClock()
     private var lastPacingFrame = OfflinePacingFrame(0, 0.0)

@@ -3,6 +3,7 @@
 import argparse
 import base64
 import json
+import re
 from pathlib import Path
 import struct
 import sys
@@ -26,6 +27,21 @@ TOOLS = {
     "client_type": ("Type text through the focused client input processor.", {
         "generation": POINTER_ARGUMENTS["generation"],
         "text": {"type": "string", "minLength": 1, "maxLength": 512},
+    }),
+    "client_deploy_projectiles": ("Queue a batch of defined incoming projectiles in a development match.", {
+        "generation": POINTER_ARGUMENTS["generation"],
+        "requestId": {"type": "string", "pattern": "^[A-Za-z0-9._:-]{1,64}$"},
+        "entries": {
+            "type": "array", "minItems": 1, "maxItems": 32,
+            "items": {"type": "object", "additionalProperties": False,
+                      "required": ["alias", "sourceUnitId", "targetUnitId"],
+                      "properties": {key: {"type": "string", "minLength": 1, "maxLength": 96}
+                                     for key in ("alias", "sourceUnitId", "targetUnitId", "weapon")}}
+        }
+    }),
+    "client_deployment_receipt": ("Read an already submitted projectile deployment receipt.", {
+        "generation": POINTER_ARGUMENTS["generation"],
+        "sequence": {"type": "integer", "minimum": 1, "maximum": 2**63 - 1}
     }),
     "client_screenshot": ("Read one actual framebuffer as PNG.", {}),
     "client_close": ("Close the owned hidden Windows client.", {}),
@@ -64,6 +80,26 @@ class Client:
                     127 <= ord(character) <= 159 or 0xD800 <= ord(character) <= 0xDFFF
                     for character in value):
                 raise ValueError("Expected 1 to 512 typed characters")
+        if operation in ("client_deploy_projectiles", "client_deployment_receipt"):
+            if type(arguments["generation"]) is not int or not 0 <= arguments["generation"] < 2**63:
+                raise ValueError("Expected a nonnegative integer generation")
+        if operation == "client_deployment_receipt" and (
+                type(arguments["sequence"]) is not int or not 0 < arguments["sequence"] < 2**63):
+            raise ValueError("Expected a positive deployment sequence")
+        if operation == "client_deploy_projectiles":
+            request_id = arguments["requestId"]
+            if not isinstance(request_id, str) or not re.fullmatch(r"[A-Za-z0-9._:-]{1,64}", request_id):
+                raise ValueError("Expected a deployment request ID")
+            entries = arguments["entries"]
+            if not isinstance(entries, list) or not 1 <= len(entries) <= 32:
+                raise ValueError("Expected 1 to 32 projectile entries")
+            fields = {"alias", "sourceUnitId", "targetUnitId"}
+            for entry in entries:
+                if not isinstance(entry, dict) or set(entry) not in (fields, fields | {"weapon"}) or any(
+                        not isinstance(value, str) or not 1 <= len(value) <= 96 or any(
+                            ord(c) < 32 or 127 <= ord(c) <= 159 or 0xD800 <= ord(c) <= 0xDFFF for c in value)
+                        for value in entry.values()):
+                    raise ValueError("Invalid or unexpected projectile field")
         ready = json.loads((self.bridge / "ready.json").read_bytes())
         if ready["runId"] != self.run_id:
             raise ValueError("Owned client identity no longer matches")
@@ -123,7 +159,7 @@ def dispatch(client, message):
             "inputSchema": {"type": "object", "additionalProperties": False,
                             "properties": {"runId": {"type": "string"}, **arguments},
                             "required": ["runId", *arguments]},
-            "annotations": {"readOnlyHint": name in ("client_status", "client_screenshot"),
+            "annotations": {"readOnlyHint": name in ("client_status", "client_screenshot", "client_deployment_receipt"),
                             "destructiveHint": False, "openWorldHint": False},
         } for name, (description, arguments) in TOOLS.items()]}
     if method == "tools/call":

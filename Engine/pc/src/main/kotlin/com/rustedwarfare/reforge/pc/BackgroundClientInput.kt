@@ -7,7 +7,10 @@ import com.badlogic.gdx.files.FileHandle
 import com.badlogic.gdx.graphics.Pixmap
 import com.badlogic.gdx.graphics.PixmapIO
 import com.badlogic.gdx.utils.JsonReader
+import com.badlogic.gdx.utils.JsonValue
 import com.rustedwarfare.reforge.client.ClientEvidence
+import com.rustedwarfare.reforge.core.sim.SandboxCommand
+import com.rustedwarfare.reforge.core.sim.SandboxCommandReceipt
 import java.nio.file.Files
 import java.nio.file.LinkOption.NOFOLLOW_LINKS
 import java.nio.file.Path
@@ -20,6 +23,8 @@ internal class BackgroundClientInput(
     private val runId: String,
     private val evidence: ClientEvidence,
     private val currentGeneration: () -> Long,
+    private val deployProjectiles: (String, SandboxCommand.ProjectileBatch) -> SandboxCommandReceipt,
+    private val deploymentReceipt: (Long) -> SandboxCommandReceipt?,
 ) : ApplicationListener by client {
     private val bridge = directory.resolve("background-input")
     private val reader = JsonReader()
@@ -42,11 +47,29 @@ internal class BackgroundClientInput(
         if (!Files.isRegularFile(request, NOFOLLOW_LINKS)) return
         lastRequest = id
         val response = try {
-            require(Files.size(request) <= 4096) { "Request too large" }
+            require(Files.size(request) <= 64 * 1024) { "Request too large" }
             val message = reader.parse(Files.readString(request))
             require(message.getString("runId") == runId && message.getLong("id") == id) { "Stale input session" }
             val details = when (message.getString("action")) {
                 "status" -> emptyMap()
+                "deploy_projectiles", "deployment_receipt" -> {
+                    require(message.getLong("generation") == currentGeneration()) { "Stale client generation" }
+                    val receipt = if (message.getString("action") == "deploy_projectiles") {
+                        val entries = message.get("entries")
+                        require(entries.isArray && entries.size in 1..32) { "Expected 1 to 32 projectile entries" }
+                        val requestId = message.get("requestId")
+                        require(requestId != null && requestId.isString &&
+                            requestId.asString().matches(Regex("[A-Za-z0-9._:-]{1,64}"))) { "Expected a deployment request ID" }
+                        deployProjectiles(requestId.asString(), SandboxCommand.ProjectileBatch(entries.map(::deployment)))
+                    } else {
+                        val sequence = message.get("sequence")
+                        require(sequence != null && sequence.isLong && sequence.asLong() > 0) { "Expected sequence" }
+                        checkNotNull(deploymentReceipt(sequence.asLong())) { "Unknown deployment sequence" }
+                    }
+                    mapOf("deployment" to mapOf("sequence" to receipt.sequence, "generation" to receipt.generation,
+                        "worldId" to receipt.worldId, "stepIndex" to receipt.stepIndex, "status" to receipt.status.name,
+                        "code" to receipt.code, "failedEntry" to receipt.failedEntry, "projectileIds" to receipt.projectileIds))
+                }
                 "click", "scroll" -> {
                     val action = message.getString("action")
                     require(message.getLong("generation") == currentGeneration()) { "Stale client generation" }
@@ -116,6 +139,21 @@ internal class BackgroundClientInput(
         "width" to Gdx.graphics.width, "height" to Gdx.graphics.height,
         "framebufferWidth" to Gdx.graphics.backBufferWidth, "framebufferHeight" to Gdx.graphics.backBufferHeight,
     )
+
+    private fun deployment(entry: JsonValue): SandboxCommand.ProjectileDeployment {
+        val required = setOf("alias", "sourceUnitId", "targetUnitId")
+        require(entry.isObject && entry.size in 3..4 && entry.map { it.name }.toSet() ==
+            (required + if (entry.has("weapon")) setOf("weapon") else emptySet())) { "Unexpected projectile fields" }
+        fun text(key: String): String {
+            val value = entry.get(key)
+            require(value != null && value.isString) { "Expected projectile field $key" }
+            return value.asString().also { require(it.length in 1..96 && it.none(Char::isISOControl)) {
+                "Invalid projectile field $key"
+            } }
+        }
+        return SandboxCommand.ProjectileDeployment(text("alias"), text("sourceUnitId"), text("targetUnitId"),
+            if (entry.has("weapon")) text("weapon") else null)
+    }
 
     private fun write(name: String, values: Map<String, Any?>) {
         val temporary = bridge.resolve("$name.tmp")

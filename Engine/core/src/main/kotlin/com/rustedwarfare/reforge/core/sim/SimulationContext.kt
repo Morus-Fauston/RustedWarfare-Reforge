@@ -13,6 +13,7 @@ import com.rustedwarfare.reforge.core.content.siteConstruction
 import com.rustedwarfare.reforge.core.content.DirectHitTargetKind
 import com.rustedwarfare.reforge.core.content.ScoutBotRules
 import com.rustedwarfare.reforge.core.content.ScoutPayloadStage
+import com.rustedwarfare.reforge.core.content.NuclearSiloKind
 import com.rustedwarfare.reforge.core.path.PlanningTerrain
 import com.rustedwarfare.reforge.core.path.PlanningSegmentClearance
 import com.rustedwarfare.reforge.core.path.PathDiagnosticsException
@@ -1067,6 +1068,7 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
                 when (command) {
                     SandboxCommand.Help -> error("Help cannot be queued")
                     is SandboxCommand.SpawnBatch -> results += applySandboxBatch(request, command, step.stepIndex)
+                    is SandboxCommand.ProjectileBatch -> results += applySandboxProjectiles(request, command, step.stepIndex)
                     is SandboxCommand.Spawn -> {
                         val id = UnitRegistration.sandboxId(command.ownerPlayerId, request.generation, request.sequence)
                         val error = validateSandboxSpawn(command, id, steps.current)
@@ -1115,6 +1117,79 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
         for (id in generated.values) pendingEvents += Event("unit-spawned", id)
         return SandboxCommandReceipt(request.sequence, request.generation, world.id, SandboxCommandStatus.APPLIED,
             batch, atStep, generated = Collections.unmodifiableMap(generated))
+    }
+
+    private fun applySandboxProjectiles(request: SandboxCommandRequest, batch: SandboxCommand.ProjectileBatch,
+                                        atStep: Long): SandboxCommandReceipt {
+        val input = checkNotNull(scenario)
+        val staged = linkedMapOf<String, MutableProjectile>()
+        var id = nextObjectId
+        for ((index, entry) in batch.entries.withIndex()) {
+            fun reject(reason: String) = SandboxCommandReceipt(request.sequence, request.generation, world.id,
+                SandboxCommandStatus.REJECTED, batch, atStep, code = reason, failedEntry = index)
+            if (id == Long.MAX_VALUE) return reject("deployment-identities-exhausted")
+            if (input.combatContract == null) return reject("deployment-combat-unavailable")
+            val source = units[entry.sourceUnitId]?.takeIf { it.alive && it.carriedBy == null && BuildingWork.isReady(it) }
+                ?: return reject("unknown-projectile-source")
+            val target = units[entry.targetUnitId]?.takeIf { CombatTargetQuery.isEnemy(source, it, input.players) }
+                ?: return reject("unknown-projectile-target")
+            val shot = if (source.definition.nuclearSilo?.kind == NuclearSiloKind.LAUNCHER) {
+                if (entry.weapon != null && entry.weapon != "siloTop") return reject("unknown-projectile-weapon")
+                if (!input.nukesEnabled) return reject("nukes-disabled")
+                NuclearOrdnance.projectile(source, PendingOrdnance(OrdnanceAction.LAUNCH, target = target.position), id)
+            } else {
+                // Depth and flight conversions use specialized projectile factories outside this finite setup command.
+                if (source.definition.submarine != null || source.amphibiousState != null ||
+                    source.definition.transport == TransportProfile.NAUTILUS_SUBMERGED)
+                    return reject("unsupported-projectile-source-form")
+                val combat = UnitCombat.profile(source) ?: return reject("unknown-projectile-weapon")
+                val catalog = combat.weaponAssembly
+                val named = if (entry.weapon == null) catalog.slots.singleOrNull() else catalog.byName[entry.weapon]
+                if (named == null && (entry.weapon != null || catalog.slots.isNotEmpty()))
+                    return reject("unknown-projectile-weapon")
+                val definition = named?.definition
+                if (!CombatTargetQuery.canAttackAirCategory(source, target, input.map) ||
+                    definition?.let { !it.canShoot || !CombatTargetQuery.weaponAllows(target, it) ||
+                        !CombatTargetQuery.conditionAllows(source, target, it, input.map) } == true)
+                    return reject("projectile-target-ineligible")
+                val effective = if (catalog.usesNamedState) named?.profile ?: combat else combat
+                val profile = effective.projectile
+                if (profile.ground != null || profile.missile != null || profile.beam != null || profile.flame || profile.lightning ||
+                    profile.retargetOnDeath)
+                    return reject("unsupported-deployment-projectile")
+                val heading = ScreenPlane.desired(source.position, target.position)
+                val pose = definition?.let { source.namedWeapons?.get(it.name) } ?: source.combat
+                    ?: return reject("unknown-projectile-weapon")
+                val aimed = pose.copy(turretHeading = heading)
+                val muzzle = if (definition == null || !catalog.usesNamedState) OrdinaryWeapon.muzzle(source, aimed, effective)
+                    else NamedWeaponRuntime.muzzle(source, definition, aimed)
+                MutableProjectile(id, source.unitId, target.unitId, muzzle, heading, profile.life, Position(0.0, 0.0),
+                    0f, profile.speed, profile.directDamage, source.height, deflectionHealth = profile.deflectionHealth,
+                    instant = profile.instant, nonDeflectable = profile.nonDeflectable, sourceWeaponName = definition?.name,
+                    acceleration = profile.acceleration, splash = profile.splash, ballistic = profile.ballistic,
+                    damageModifiers = profile.damageModifiers, sourceOwnerId = source.ownerPlayerId)
+            }
+            staged[entry.alias] = shot
+            id++
+        }
+        nextObjectId = id
+        for (shot in staged.values) {
+            projectiles += shot
+            pendingProjectileEvents += ProjectileEventObservation("born", projectileObservation(shot))
+        }
+        return SandboxCommandReceipt(request.sequence, request.generation, world.id, SandboxCommandStatus.APPLIED,
+            batch, atStep, projectileIds = Collections.unmodifiableMap(staged.mapValues { it.value.objectId }))
+    }
+
+    internal fun sandboxProjectileEvidence(ids: Set<Long>): List<SandboxProjectileEvidence> {
+        val observation = observe()
+        val live = observation.projectiles.filter { it.objectId in ids }.map {
+            SandboxProjectileEvidence(it.objectId, "live", it.position)
+        }
+        val events = observation.projectileEvents.filter { it.projectile.objectId in ids }.map {
+            SandboxProjectileEvidence(it.projectile.objectId, it.kind, it.projectile.position, it.interceptorUnitId)
+        }
+        return events + live
     }
 
     fun advance(step: Step): Observation = advanceInternal(step) {}

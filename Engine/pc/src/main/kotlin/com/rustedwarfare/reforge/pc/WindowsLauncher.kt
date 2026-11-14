@@ -70,7 +70,8 @@ fun main(args: Array<String>) {
                 openSetup = options.development || args.contains("--inputs"))
             val client = if (sink == null) screen else WindowPerfSampling(screen, sink)
             val application = if (options.backgroundInput)
-                BackgroundClientInput(client, output, runId, checkNotNull(sink)) { screen.inputGeneration }
+                BackgroundClientInput(client, output, runId, checkNotNull(sink), { screen.inputGeneration },
+                    screen::deployProjectiles, screen::deploymentReceipt)
             else client
             Lwjgl3Application(application, config)
             evidence.record("process-completed", mapOf("status" to "normal"))

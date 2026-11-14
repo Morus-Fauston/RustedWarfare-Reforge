@@ -4,15 +4,18 @@ import java.util.Collections
 import java.security.MessageDigest
 
 data class SandboxCommandRequest(val sequence: Long, val world: WorldHandle, val generation: Long, val text: String,
-    val batch: SandboxCommand.SpawnBatch? = null) {
+    val batch: SandboxCommand.SpawnBatch? = null, val projectiles: SandboxCommand.ProjectileBatch? = null) {
     constructor(sequence: Long, world: WorldHandle, generation: Long, batch: SandboxCommand.SpawnBatch) :
         this(sequence, world, generation, "", batch)
+    constructor(sequence: Long, world: WorldHandle, generation: Long, projectiles: SandboxCommand.ProjectileBatch) :
+        this(sequence, world, generation, "", projectiles = projectiles)
 }
 enum class SandboxCommandStatus { QUEUED, HELP, APPLIED, REJECTED }
 data class SandboxCommandReceipt(val sequence: Long, val generation: Long, val worldId: String,
     val status: SandboxCommandStatus, val command: SandboxCommand? = null, val stepIndex: Long? = null,
     val unitId: String? = null, val code: String? = null, val errorPosition: Int? = null,
-    val generated: Map<String, String> = emptyMap(), val failedEntry: Int? = null)
+    val generated: Map<String, String> = emptyMap(), val failedEntry: Int? = null,
+    val projectileIds: Map<String, Long> = emptyMap())
 
 /** Local host capability, fixed before the match; ordinary player Actions never grant deployment. */
 class OfflineSandboxHost(input: Scenario, val deploymentEnabled: Boolean = false, val generation: Long = 1L) : AutoCloseable {
@@ -36,7 +39,8 @@ class OfflineSandboxHost(input: Scenario, val deploymentEnabled: Boolean = false
         if (input.world !== world || input.generation != generation) return rejected("stale-world")
         if (!deploymentEnabled) return rejected("deployment-disabled")
         if (input.sequence <= 0L) return rejected("invalid-request-sequence")
-        val oversized = input.batch?.entries?.let { it.size > SandboxCommands.MAX_BATCH_SIZE } == true
+        val oversized = (input.batch?.entries?.size ?: 0) > SandboxCommands.MAX_BATCH_SIZE ||
+            (input.projectiles?.entries?.size ?: 0) > SandboxCommands.MAX_BATCH_SIZE
         val previous = requests[input.sequence]
         if (previous == null && requests.size >= 1024) return rejected("command-limit")
         if (oversized) {
@@ -46,14 +50,16 @@ class OfflineSandboxHost(input: Scenario, val deploymentEnabled: Boolean = false
             return rejected("invalid-batch-size").also { requests[input.sequence] = SeenRequest(identity, it) }
         }
         if (previous != null) return if (previous.identity == input) previous.receipt else rejected("request-conflict")
-        if (input.batch != null && input.text.isNotEmpty()) return rejected("mixed-command-request")
-        val request = if (input.batch == null) input else input.copy(
-            batch = SandboxCommand.SpawnBatch(Collections.unmodifiableList(ArrayList(input.batch.entries))))
+        if (listOf(input.batch != null, input.projectiles != null, input.text.isNotEmpty()).count { it } > 1)
+            return rejected("mixed-command-request")
+        val request = input.copy(
+            batch = input.batch?.let { SandboxCommand.SpawnBatch(immutable(it.entries)) },
+            projectiles = input.projectiles?.let { SandboxCommand.ProjectileBatch(immutable(it.entries)) })
         fun retain(result: SandboxCommandReceipt): SandboxCommandReceipt {
             requests[request.sequence] = SeenRequest(request, result)
             return result
         }
-        val parsed = request.batch?.let { SandboxParseResult.Parsed(it) } ?: SandboxCommands.parse(request.text)
+        val parsed = (request.batch ?: request.projectiles)?.let { SandboxParseResult.Parsed(it) } ?: SandboxCommands.parse(request.text)
         if (parsed is SandboxParseResult.Rejected) {
             val result = rejected(parsed.code, parsed.position).copy(failedEntry = parsed.failedEntry)
             // Do not retain arbitrarily large caller strings in the bounded local request ledger.
@@ -65,12 +71,17 @@ class OfflineSandboxHost(input: Scenario, val deploymentEnabled: Boolean = false
         if (command is SandboxCommand.Spawn) context.validateSandboxSpawn(command, request.generation, request.sequence)?.let {
             return retain(rejected(it.code).copy(command = command))
         }
-        if (command is SandboxCommand.SpawnBatch) {
-            if (command.entries.isEmpty() || command.entries.size > SandboxCommands.MAX_BATCH_SIZE)
+        val aliases = when (command) {
+            is SandboxCommand.SpawnBatch -> command.entries.map { it.alias }
+            is SandboxCommand.ProjectileBatch -> command.entries.map { it.alias }
+            else -> null
+        }
+        if (aliases != null) {
+            if (aliases.isEmpty() || aliases.size > SandboxCommands.MAX_BATCH_SIZE)
                 return retain(rejected("invalid-batch-size"))
-            val aliases = mutableSetOf<String>()
-            for ((index, entry) in command.entries.withIndex()) {
-                if (!SandboxCommands.validAlias(entry.alias) || !aliases.add(entry.alias))
+            val seen = mutableSetOf<String>()
+            for ((index, alias) in aliases.withIndex()) {
+                if (!SandboxCommands.validAlias(alias) || !seen.add(alias))
                     return retain(rejected("invalid-or-duplicate-alias").copy(failedEntry = index))
             }
         }
@@ -92,7 +103,8 @@ class OfflineSandboxHost(input: Scenario, val deploymentEnabled: Boolean = false
             }
         }
         field(request.text)
-        for ((alias, spawn) in checkNotNull(request.batch).entries) {
+        field(request.batch?.entries?.size?.toString().orEmpty())
+        for ((alias, spawn) in request.batch?.entries.orEmpty()) {
             field(alias)
             field(spawn.typeId)
             field(spawn.ownerPlayerId)
@@ -101,10 +113,21 @@ class OfflineSandboxHost(input: Scenario, val deploymentEnabled: Boolean = false
             field(spawn.heading.toBits().toString())
             field(spawn.state.name)
         }
+        field(request.projectiles?.entries?.size?.toString().orEmpty())
+        for (entry in request.projectiles?.entries.orEmpty()) {
+            field(entry.alias)
+            field(entry.sourceUnitId)
+            field(entry.targetUnitId)
+            field(entry.weapon.orEmpty())
+            field((entry.weapon != null).toString())
+        }
         return digest.digest().joinToString("") { "%02x".format(it) }
     }
 
     fun receipt(sequence: Long): SandboxCommandReceipt? = requests[sequence]?.receipt
+
+    fun projectileEvidence(ids: Set<Long>): List<SandboxProjectileEvidence> =
+        if (closed || !deploymentEnabled || ids.isEmpty()) emptyList() else context.sandboxProjectileEvidence(ids)
 
     fun advance(step: Step): Observation {
         check(!closed && context.isCurrentSandboxWorld(world)) { "Local sandbox host is closed" }

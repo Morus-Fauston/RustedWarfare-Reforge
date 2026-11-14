@@ -45,7 +45,7 @@ object PlatformSessionRunner {
             if (it !in setOf(b(true), b(false))) throw InputError("Expected deploymentEnabled boolean")
             it == b(true)
         } ?: false
-        if (!deployment && intents.any { it.text("kind") == "deploy" || "unitAlias" in it })
+        if (!deployment && intents.any { it.text("kind") in setOf("deploy", "deploy-projectiles") || "unitAlias" in it })
             throw InputError("Explicit offline deployment is required for deployment or alias intents")
         if (deployment && intents.any { "unitAlias" in it && (it.text("kind") != "select" || "position" in it) })
             throw InputError("Select using either an alias or map position")
@@ -78,6 +78,7 @@ object PlatformSessionRunner {
                 }
                 player.use {
                 val aliases = mutableMapOf<String, String>()
+                val projectileAliases = mutableMapOf<String, Long>()
                 fun tick(beginFrame: Boolean) {
                     if (beginFrame) player?.beginFrame()
                     session.tick()
@@ -96,6 +97,58 @@ object PlatformSessionRunner {
                             }
                         }
                         "deploy" -> deploy(intent, session, aliases) { tick(session.nextStep % 8 == 0L) }
+                        "deploy-projectiles" -> {
+                            val fields = setOf("intentId", "kind", "entries", "waitSteps")
+                            val atStep = when (intent.keys) {
+                                fields + "atStep" -> {
+                                    val fixed = intent.integer("atStep")
+                                    if (fixed < session.nextStep || fixed - session.nextStep > 600)
+                                        throw InputError("Projectile deployment step is past or outside its bound")
+                                    while (session.nextStep < fixed) tick(session.nextStep % 8 == 0L)
+                                    fixed
+                                }
+                                fields + setOf("afterEvent", "maxWaitSteps") -> {
+                                    val trigger = intent.objectAt("afterEvent")
+                                    if (trigger.keys != setOf("kind", "unitId") || trigger.text("kind") != "unit-action-completed")
+                                        throw InputError("Expected a unit-action-completed trigger")
+                                    val unit = trigger.id("unitId")
+                                    val limit = intent.integer("maxWaitSteps")
+                                    if (limit !in 1..600) throw InputError("Projectile trigger wait must be bounded")
+                                    var remaining = limit
+                                    fun ready() = session.observation.events.any { it.kind == "unit-action-completed" && it.unitId == unit }
+                                    while (!ready() && remaining-- > 0) tick(session.nextStep % 8 == 0L)
+                                    if (!ready()) throw InputError("Projectile deployment trigger did not arrive")
+                                    session.nextStep
+                                }
+                                else -> throw InputError("Expected projectile entries and one bounded trigger")
+                            }
+                            val entries = intent.arrayAt("entries").map { item ->
+                                val entry = item.jsonObject
+                                val fields = setOf("alias", "sourceUnitId", "targetUnitId")
+                                if (entry.keys != fields && entry.keys != fields + "weapon")
+                                    throw InputError("Unexpected projectile entry fields")
+                                val alias = entry.id("alias")
+                                if (alias in projectileAliases) throw InputError("Projectile alias is already bound: $alias")
+                                SandboxCommand.ProjectileDeployment(alias,
+                                    entry.id("sourceUnitId"), entry.id("targetUnitId"),
+                                    if ("weapon" in entry) entry.id("weapon") else null)
+                            }
+                            val queued = session.submitSandboxProjectiles(SandboxCommand.ProjectileBatch(entries))
+                            if (queued.status != SandboxCommandStatus.QUEUED)
+                                throw InputError("Projectile deployment rejected: ${queued.code}")
+                            tick(session.nextStep % 8 == 0L)
+                            val applied = checkNotNull(session.lastSandboxReceipt)
+                            if (applied.sequence != queued.sequence || applied.stepIndex != atStep || applied.status != SandboxCommandStatus.APPLIED)
+                                throw InputError("Projectile deployment failed at entry ${applied.failedEntry}: ${applied.code}")
+                            projectileAliases.putAll(applied.projectileIds)
+                        }
+                        "projectile-alias" -> {
+                            if (intent.keys != setOf("intentId", "kind", "alias"))
+                                throw InputError("Expected a bound projectile alias")
+                            val alias = intent.id("alias")
+                            val objectId = projectileAliases[alias] ?: throw InputError("Unknown projectile alias: $alias")
+                            evidence.record("sandbox-projectile-reference", mapOf("alias" to alias, "objectId" to objectId))
+                        }
                         "produce" -> session.produce(intent.id("typeId"))
                         "cancelProduction" -> session.cancelProduction(intent.id("typeId"))
                         "move" -> session.move(intent.objectAt("position").let { Position(it.number("x"), it.number("y")) })
