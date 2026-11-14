@@ -1,5 +1,25 @@
 # Changelog
 
+## v0.4.0 (2026-11-14 13:13)
+
+### 新增
+
+- **闭合运行证据压缩**：按指定票据无损压缩 Session 和 Windows 运行归档的诊断 JSONL。原归档清单保留，支持在独立目录恢复并使用原比较器复核。
+- **批次互斥与收尾**：写入、比较、压缩和恢复共享批次锁。执行器归还已验证的归档后可按指定范围触发压缩，工具单独记录耗时。
+
+### 文件变更表
+
+| 文件 | 变更 |
+|:-----|:-----|
+| `SimulationTest/tools/evidence_compact.py` | **新增**。提供压缩计划、执行、校验后持久发布及独立恢复 |
+| `SimulationTest/tools/test_evidence_compact.py` | **新增**。验证归档恢复、中断重试及拒绝条件 |
+| `SimulationTest/tools/platform_scenario.py` | 为 Session 运行和原比较器接入批次互斥及按票收尾 |
+| `SimulationTest/tools/platform_windows.py` | 为 Windows 运行接入同一批次互斥 |
+| `SimulationTest/public/suites/tooling.json` | 公共工具组运行证据压缩测试 |
+| `SimulationTest/ci/public_check.py` | 固定公共源码闭包包含新工具与测试 |
+
+---
+
 ## v0.3.42 (2026-11-14 10:59)
 
 ### 修复

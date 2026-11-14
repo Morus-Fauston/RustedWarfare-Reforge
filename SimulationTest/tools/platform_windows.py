@@ -10,7 +10,7 @@ import subprocess
 import tempfile
 import time
 
-from platform_scenario import PlatformError, compare_archive, read, save, sha, tree, validate_intent_contract, validate_unit_action_intent
+from platform_scenario import PlatformError, compare_archive_locked, read, save, sha, tree, validate_intent_contract, validate_unit_action_intent
 from diagnostic_reader import DiagnosticReader
 from platform_wait import WaitSegment
 from action_layout import wait_layout
@@ -127,6 +127,12 @@ def wait_for_input(wait,reader,label,rule,start):
 
 
 def run_windows(scenario, contract, distribution, output, size, java='java', rate_profile='normal'):
+    from evidence_compact import archive_lock
+    with archive_lock(output):
+        return run_windows_locked(scenario, contract, distribution, output, size, java, rate_profile)
+
+
+def run_windows_locked(scenario, contract, distribution, output, size, java, rate_profile):
     from owned_window import Guard, Win32
     from workflow import resources
     if os.name != 'nt' or size not in ((1200, 800), (960, 640)):
@@ -470,7 +476,7 @@ def run_windows(scenario, contract, distribution, output, size, java='java', rat
         if result.get('complete') and not result.get('cleanupErrors') and result['foregroundRestored'] is not False:
             save(output/'archive.json', dict(complete=True, backend='windows-input', files=tree(output)))
             try:
-                result.update(compare_archive(output))
+                result.update(compare_archive_locked(output))
             except PlatformError as error:
                 result.update(exitCode=error.exit_code, category=error.category, message=str(error), status='failed' if error.exit_code == 2 else 'incomplete')
             except Exception as error:

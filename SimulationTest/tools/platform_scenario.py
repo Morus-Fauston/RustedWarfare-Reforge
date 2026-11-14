@@ -13,6 +13,7 @@ import sys
 import time
 import tempfile
 import xml.etree.ElementTree as ET
+import zlib
 import spider_platform
 
 
@@ -1745,6 +1746,12 @@ def windows_geometry(output, records, maps=None):
 
 
 def compare_archive(output, expected_scenario=None, expected_contract=None, started_after=None):
+    from evidence_compact import archive_lock
+    with archive_lock(output):
+        return compare_archive_locked(output, expected_scenario, expected_contract, started_after)
+
+
+def compare_archive_locked(output, expected_scenario=None, expected_contract=None, started_after=None):
     output = Path(output)
     if (expected_scenario is None) != (expected_contract is None):
         raise PlatformError('input-contract', 'Expected scenario and contract must be supplied together', 1)
@@ -1840,6 +1847,12 @@ def compare_archive(output, expected_scenario=None, expected_contract=None, star
 
 
 def run_session(scenario, contract, distribution, output, java='java', timeout=60):
+    from evidence_compact import archive_lock
+    with archive_lock(output):
+        return run_session_locked(scenario, contract, distribution, output, java, timeout)
+
+
+def run_session_locked(scenario, contract, distribution, output, java, timeout):
     scenario, contract, distribution, output = map(lambda p: Path(p).resolve(), (scenario, contract, distribution, output))
     plan = read(scenario)
     inputs = (scenario.parent / plan['inputs']).resolve()
@@ -1885,7 +1898,7 @@ def run_session(scenario, contract, distribution, output, java='java', timeout=6
         save(output/'archive.json', dict(complete=True, backend='session', files=tree(output)))
         result['sealing'] = dict(status='sealed-complete')
         result['consumption'] = dict(status='running')
-        result.update(compare_archive(output))
+        result.update(compare_archive_locked(output))
         result['consumption'] = dict(status='passed', exitCode=result['exitCode'])
     except PlatformError as error:
         if result['consumption']['status'] == 'running':
@@ -1922,11 +1935,13 @@ def main(argv=None):
     session = commands.add_parser('session')
     for option in ('scenario', 'contract', 'distribution', 'output'):
         session.add_argument('--'+option, required=True, type=Path)
+    session.add_argument('--compact-evidence-root', type=Path)
     session.add_argument('--java', default='java')
     session.add_argument('--timeout', type=int, default=60)
     windows = commands.add_parser('windows')
     for option in ('scenario', 'contract', 'distribution', 'output'):
         windows.add_argument('--'+option, required=True, type=Path)
+    windows.add_argument('--compact-evidence-root', type=Path)
     windows.add_argument('--java', default='java')
     windows.add_argument('--size', choices=['1200x800', '960x640'], required=True)
     windows.add_argument('--rate-profile', choices=['normal','segmented'], default='normal')
@@ -1937,6 +1952,13 @@ def main(argv=None):
     compare.add_argument('--started-after', type=float)
     args = parser.parse_args(argv)
     try:
+        compact_root = getattr(args, 'compact_evidence_root', None)
+        if compact_root is not None:
+            from evidence_compact import compact_batch, designated_batch, ordinary_path, ticket_root
+            ticket = ticket_root(compact_root)
+            batch = ordinary_path(args.output.absolute()).resolve()
+            if designated_batch(ticket, batch.name) != batch:
+                raise ValueError('Compaction output must be a batch directly inside the designated ticket')
         if args.command == 'session':
             result = run_session(args.scenario, args.contract, args.distribution, args.output, args.java, args.timeout)
         elif args.command == 'windows':
@@ -1945,6 +1967,12 @@ def main(argv=None):
                                  tuple(map(int, args.size.split('x'))), args.java, args.rate_profile)
         else:
             result = compare_archive(args.run, args.scenario, args.contract, args.started_after)
+        if compact_root is not None and (batch / 'archive.json').is_file():
+            try:
+                if read(batch / 'archive.json').get('complete') is True:
+                    result['compaction'] = compact_batch(ticket, batch)
+            except (OSError, EOFError, ValueError, KeyError, TypeError, zlib.error) as error:
+                result['compaction'] = dict(status='failed', message=str(error))
     except PlatformError as error:
         result = dict(exitCode=error.exit_code, category=error.category, message=str(error))
     except (OSError, ValueError, KeyError, TypeError) as error:

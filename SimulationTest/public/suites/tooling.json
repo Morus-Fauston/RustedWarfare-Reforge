@@ -39,6 +39,7 @@
     "SimulationTest/ci/test_source_snapshots.py",
     "SimulationTest/tools/test_perf_analysis.py",
     "SimulationTest/tools/test_platform_scenario.py",
+    "SimulationTest/tools/test_evidence_compact.py",
     "SimulationTest/tools/test_platform_session_cli.py",
     "SimulationTest/tools/test_workflow.py",
     "SimulationTest/tools/test_workflow_device.py",
