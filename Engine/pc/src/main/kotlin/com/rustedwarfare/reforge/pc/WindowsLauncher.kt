@@ -42,9 +42,14 @@ fun main(args: Array<String>) {
     JsonlEvidence(output, runId, inputs).use { evidence ->
         val config = Lwjgl3ApplicationConfiguration().apply {
             setTitle(options.title)
-            setWindowedMode(1200, 800)
+            if (options.backgroundInput) {
+                setWindowedMode(1920, 1080)
+                setInitialVisible(false)
+            } else {
+                setWindowedMode(1200, 800)
+            }
             setWindowSizeLimits(960, 640, -1, -1)
-            setPauseWhenLostFocus(true)
+            setPauseWhenLostFocus(!options.backgroundInput)
             setForegroundFPS(60)
             useVsync(true)
             disableAudio(false)
@@ -53,11 +58,16 @@ fun main(args: Array<String>) {
             "output" to output.toString(), "presentationStepsPerSecond" to 60, "coreDelta" to 1.0,
             "deltaUnit" to "sim-tick", "pacingIsOriginalGameFact" to false))
         try {
-            Lwjgl3Application(WindowPerfSampling(BootstrapScreen(inputs, evidence,
+            val screen = BootstrapScreen(inputs, evidence,
                 visualSettings = visualSettings, soundFactory = PcPlaybackSoundFactory(),
                 testScenarioSeed = options.testScenarioSeed ?: sceneRoot.resolve("dual-ship-production.json"),
                 selectDefaultTestScenario = options.testScenarioSeed != null,
-                alternateStartSeed = options.testScenarioSeed?.resolveSibling("phase-six-a-spider-json.json")), evidence), config)
+                alternateStartSeed = options.testScenarioSeed?.resolveSibling("phase-six-a-spider-json.json"))
+            val client = WindowPerfSampling(screen, evidence)
+            val application = if (options.backgroundInput)
+                BackgroundClientInput(client, output, runId, evidence) { screen.inputGeneration }
+            else client
+            Lwjgl3Application(application, config)
             evidence.record("process-completed", mapOf("status" to "normal"))
         } catch (failure: Throwable) {
             preserveFailure(failure) { evidence.record("process-failed", mapOf("message" to failure.toString())) }

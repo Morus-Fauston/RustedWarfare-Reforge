@@ -148,6 +148,7 @@ class BootstrapScreen(
     private var lastStartAvailable: Boolean? = null
     private var firstDrawnGeneration: Long? = null
     private var generation = 0L
+    val inputGeneration: Long get() = launch.generation
     private var activeRoot: Path = initialRoot
     private val stepClock = OfflineStepClock()
     private var lastPacingFrame = OfflinePacingFrame(0, 0.0)

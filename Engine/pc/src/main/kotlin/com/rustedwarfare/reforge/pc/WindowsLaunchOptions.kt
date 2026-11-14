@@ -16,6 +16,7 @@ data class WindowsLaunchOptions(
     val visualSource: VisualAssetSource? = null,
     val originalAssets: Path? = null,
     val testScenarioSeed: Path? = null,
+    val backgroundInput: Boolean = false,
 ) {
     val hasVisualOverride: Boolean get() = visualSource != null || originalAssets != null
     companion object {
@@ -28,11 +29,18 @@ data class WindowsLaunchOptions(
                 "Duplicate visual asset option"
             }
             val options = pairs.associate { (key, value) ->
-                require(key in setOf("--mode", "--inputs", "--evidence") + visualKeys) { "Unknown option: $key" }
+                require(key in setOf("--mode", "--inputs", "--evidence", "--background-input") + visualKeys) { "Unknown option: $key" }
                 key to value
             }
             val mode = options["--mode"] ?: "sandbox"
             require(mode in setOf("sandbox", "demo")) { "Unknown mode: $mode" }
+            val backgroundInput = options["--background-input"]?.let { value ->
+                require(value == "true" && pairs.count { it[0] == "--background-input" } == 1) {
+                    "Expected one --background-input true option"
+                }
+                require(mode == "sandbox" && "--evidence" in options) { "Background input requires sandbox evidence" }
+                true
+            } ?: false
             val runId = "run-" + DateTimeFormatter.ofPattern("yyyyMMdd'T'HHmmssSSS'Z'").withZone(ZoneOffset.UTC).format(Instant.now()) +
                 "-" + UUID.randomUUID().toString().take(8)
             fun resolve(path: String): Path = repoRoot.resolve(path).toAbsolutePath().normalize()
@@ -58,7 +66,7 @@ data class WindowsLaunchOptions(
                 resolve(options["--evidence"] ?: "Engine/pc/build/sandbox-runs/$runId"),
                 runId, if (explicitInputs == null) "RustedWarfare-Reforge | Phase VI A sandbox"
                 else "RustedWarfare-Reforge | P002 Windows sandbox", visualSource, originalAssets,
-                if (explicitInputs == null) seed else null)
+                if (explicitInputs == null) seed else null, backgroundInput)
         }
     }
 }
