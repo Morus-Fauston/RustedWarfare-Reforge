@@ -260,10 +260,7 @@ internal object UnitAttachments {
         if (child.attachmentAutomaticCooldown > 0f) return
         child.attachmentAutomaticCooldown = AUTOMATIC_COOLDOWN
         when (action) {
-            is AttachmentAutomaticAction.RestoreParentShield -> {
-                val shield = checkNotNull(parent.definition.shield)
-                parent.shield = minOf(shield.maximum, parent.shield + action.amount)
-            }
+            is AttachmentAutomaticAction.RestoreParentShield -> UnitShield.restoreFromAttachment(parent, action.amount)
             is AttachmentAutomaticAction.ConvertWhenBuilt -> {
                 val reclaim = child.attachmentOrder as? AttachmentOrder.Reclaim
                 convert(input, child, action.targetTypeId, child.constructionProgress)

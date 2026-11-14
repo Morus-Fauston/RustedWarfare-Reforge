@@ -10,6 +10,39 @@ import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
 class DeclaredTankContentTest {
+    @Test fun structured_named_shield_is_inherited_overridden_and_removed_on_a_new_tank() = withTank { root, _ ->
+        val fixtures = System.getProperty("public.fixtures.dir")?.let(Path::of)
+            ?: Path.of("../../SimulationTest/public/inputs")
+        val original = fixtures.resolve("three-format-tanks/json/units/tank.json")
+        val source = JsonValue.readJSON(Files.readString(original)).asObject()
+        source.get("core").asObject().set("name", "shield_scout").remove("overrideAndReplace")
+        source.add("abilities", JsonValue.readJSON("""[{"name":"screen","type":"shield","maximum":500,"regeneration":0.08}]"""))
+        Files.writeString(root.resolve("base.json"), source.toString())
+        val child = root.resolve("child.hjson")
+        fun load(fields: String): UnitDefinition {
+            Files.writeString(child, """{"format":"rw-reforge.unit.v2","copyFrom":["base.json"],$fields}""")
+            val result = ContentLoader.loadDeclaredTankWithSources(child)
+            return assertIs<ContentResult.Success<LoadedUnitContent>>(result, result.toString()).value.definition
+        }
+        assertEquals(ShieldProfile(500f, .08f), load(""""abilities":[]""").shield)
+        assertEquals(ShieldProfile(500f, .3f), load(""""abilities":[{"name":"screen","regeneration":0.3}]""").shield)
+        assertEquals(null, load(""""removeAbilities":["screen"]""").shield)
+
+        for ((fields, code, field) in listOf(
+            Triple(""""removeAbilities":["missing"]""", ContentErrorCode.BAD_REFERENCE, "removeAbilities"),
+            Triple(""""abilities":[{"name":"screen","type":"laser"}]""", ContentErrorCode.IDENTITY_CONFLICT, "type"),
+            Triple(""""abilities":[{"name":"screen","regeneration":"0.1"}]""", ContentErrorCode.MALFORMED_SYNTAX, "regeneration"),
+            Triple(""""abilities":[{"name":"screen"},{"name":"screen"}]""", ContentErrorCode.IDENTITY_CONFLICT, "name"),
+            Triple(""""abilities":[{"name":"backup","type":"shield","maximum":20}]""", ContentErrorCode.UNSUPPORTED_FEATURE, "type"),
+        )) {
+            Files.writeString(child, """{"format":"rw-reforge.unit.v2","copyFrom":["base.json"],$fields}""")
+            val error = assertIs<ContentResult.Failure>(ContentLoader.loadDeclaredTankWithSources(child)).error
+            assertEquals(code, error.code, error.toString())
+            assertEquals(field, error.field)
+            assertTrue(error.file in setOf(child.toString(), root.resolve("base.json").toString()))
+        }
+    }
+
     @Test fun declared_tank_selects_a_reusable_land_template_without_repeating_movement_fields() {
         withTank { root, _ ->
             val fixtures = System.getProperty("public.fixtures.dir")?.let(Path::of)

@@ -18,7 +18,7 @@
       {
         "id": "mechBunkerDeployed",
         "path": "../inputs/bunker-production/hjson/package/deployed.hjson",
-        "sha256": "19069e62cb944125d1d6e8dcfc454d54106e6219ff63a2ab6f855277e3fe73f2",
+        "sha256": "1a23347d8557be3b7f22f3a34cbcd57b3357b052e2d912c1859bee53aa232b19",
         "loader": "mech-bunker"
       }
     ],

@@ -23,6 +23,15 @@ def render(sections, fmt, parent=None):
             result.setdefault(dict(turret='weapons', projectile='projectiles', action='actions')[prefix], []).append(dict(name=name, **fields))
         else:
             result[s] = fields
+    core = result.get('core', {})
+    if 'maxShield' in core:
+        ability = dict(name='shield', type='shield', maximum=core['maxShield'],
+                       regeneration=core['shieldRegen'])
+        if core.get('startShieldAtZero'):
+            ability['startAtZero'] = True
+        result['core'] = {key: value for key, value in core.items()
+                          if key not in ('maxShield', 'shieldRegen', 'startShieldAtZero')}
+        result['abilities'] = [ability]
     return json.dumps(result, indent=2)+'\n'
 
 

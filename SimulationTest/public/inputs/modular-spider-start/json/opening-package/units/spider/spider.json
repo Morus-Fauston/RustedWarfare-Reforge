@@ -1,5 +1,6 @@
 {
   "format": "rw-reforge.unit.v2",
+  "abilities": [{"name": "shield", "type": "shield", "maximum": 5000, "regeneration": 0.3}],
   "core": {
     "name": "modularSpider",
     "class": "CustomUnitMetadata",
@@ -11,8 +12,6 @@
     "transportSlotsNeeded": 14,
     "isPickableStartingUnit": true,
     "startFallingWhenStartingUnit": true,
-    "maxShield": 5000,
-    "shieldRegen": 0.3,
     "selfRegenRate": 0.1,
     "canRepairBuildings": true,
     "canRepairUnits": true,

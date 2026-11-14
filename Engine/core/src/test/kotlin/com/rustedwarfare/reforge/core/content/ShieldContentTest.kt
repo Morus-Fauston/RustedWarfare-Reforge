@@ -8,15 +8,15 @@ import kotlin.test.*
 class ShieldContentTest {
     @Test fun invalid_shield_values_and_unknown_shield_capabilities_keep_their_field_and_source() {
         for ((field, value, code) in listOf(
-            Triple("maxShield", "-1", ContentErrorCode.MALFORMED_SYNTAX),
-            Triple("maxShield", "0", ContentErrorCode.MALFORMED_SYNTAX),
-            Triple("maxShield", "1e100", ContentErrorCode.MALFORMED_SYNTAX),
-            Triple("shieldRegen", "-0.08", ContentErrorCode.MALFORMED_SYNTAX),
-            Triple("shieldRegen", "1e100", ContentErrorCode.MALFORMED_SYNTAX),
-            Triple("shieldRegenDelay", "60", ContentErrorCode.UNSUPPORTED_FIELD))) withHeavyShieldPackage { root ->
+            Triple("maximum", "-1", ContentErrorCode.MALFORMED_SYNTAX),
+            Triple("maximum", "0", ContentErrorCode.MALFORMED_SYNTAX),
+            Triple("maximum", "1e100", ContentErrorCode.MALFORMED_SYNTAX),
+            Triple("regeneration", "-0.08", ContentErrorCode.MALFORMED_SYNTAX),
+            Triple("regeneration", "1e100", ContentErrorCode.MALFORMED_SYNTAX),
+            Triple("regenerationDelay", "60", ContentErrorCode.UNSUPPORTED_FIELD))) withHeavyShieldPackage { root ->
             val author = root.resolve("units/heavy.json")
             val document = JsonValue.readJSON(Files.readString(author)).asObject()
-            document.get("core").asObject().set(field, JsonValue.readJSON(value))
+            document.get("abilities").asArray()[0].asObject().set(field, JsonValue.readJSON(value))
             Files.writeString(author, document.toString())
             val error = assertIs<ContentResult.Failure>(ContentLoader.loadContentPack(root)).error
             assertEquals(code, error.code, field)
@@ -37,11 +37,11 @@ class ShieldContentTest {
     @Test fun a_positive_capacity_that_underflows_the_runtime_float_is_rejected_at_its_source() = withHeavyShieldPackage { root ->
         val author = root.resolve("units/heavy.json")
         val document = JsonValue.readJSON(Files.readString(author)).asObject()
-        document.get("core").asObject().set("maxShield", 1e-100)
+        document.get("abilities").asArray()[0].asObject().set("maximum", 1e-100)
         Files.writeString(author, document.toString())
         val result = assertIs<ContentResult.Failure>(ContentLoader.loadContentPack(root))
         assertEquals(ContentErrorCode.MALFORMED_SYNTAX, result.error.code)
-        assertEquals("maxShield", result.error.field)
+        assertEquals("maximum", result.error.field)
         assertEquals(author.toRealPath().toString(), result.error.file)
     }
     @Test fun current_three_format_heavy_packs_have_the_same_full_shield_definition() {
@@ -73,10 +73,6 @@ internal fun withHeavyShieldPackage(check: (Path) -> Unit) {
             require(destination.startsWith(root))
             if (Files.isDirectory(file)) Files.createDirectories(destination) else Files.copy(file, destination)
         } }
-        val author = root.resolve("units/heavy.json")
-        val value = JsonValue.readJSON(Files.readString(author)).asObject()
-        value.get("core").asObject().set("maxShield", 500).set("shieldRegen", .08)
-        Files.writeString(author, value.toString())
         check(root)
     } finally {
         Files.walk(root).use { paths -> paths.sorted(Comparator.reverseOrder()).forEach { path ->

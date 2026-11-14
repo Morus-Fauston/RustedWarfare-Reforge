@@ -1174,13 +1174,7 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
                         continue
                     }
                 }
-                unit.definition.shield?.let { profile ->
-                    val restored = unit.shield + profile.regeneration * step.delta.toFloat()
-                    require(restored.isFinite()) { "Shield regeneration must remain finite" }
-                    unit.shield = restored.coerceIn(0f, profile.maximum)
-                    val faded = unit.shieldDisplayDamage - unit.shieldDisplayDamage * .02f * step.delta.toFloat()
-                    unit.shieldDisplayDamage = maxOf(0f, faded - 4f * step.delta.toFloat()).coerceAtMost(50f)
-                }
+                UnitShield.advance(unit, step.delta.toFloat())
                 Bunker.advanceHeight(unit, step.delta)
                 if (unit.combat == null) MechBody.advance(unit, step.delta)
                 val previousRequest = unit.movementRequested
@@ -2625,19 +2619,8 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
     }
 
     private fun damageAfterShield(target: MutableUnit, applied: Double,
-        modifiers: com.rustedwarfare.reforge.core.content.ProjectileDamageModifiers): Double {
-        val shieldBefore = target.shield.toDouble()
-        val shieldCost = applied * modifiers.shieldDamage
-        val absorbed = minOf(shieldBefore, shieldCost)
-        val deflected = if (shieldBefore <= 0.0) 0.0 else
-            (if (shieldBefore < shieldCost) shieldBefore else applied) * modifiers.shieldDeflection
-        target.shield = (target.shield - absorbed).toFloat()
-        if (absorbed > 0.0) {
-            target.shieldDisplayDamage += absorbed.toFloat()
-            pendingEvents += Event("shield-damaged", target.unitId)
-        }
-        return maxOf(0.0, applied - deflected)
-    }
+        modifiers: com.rustedwarfare.reforge.core.content.ProjectileDamageModifiers): Double =
+        UnitShield.damage(target, applied, modifiers) { pendingEvents += Event("shield-damaged", target.unitId) }
 
     private fun processDeath(target: MutableUnit) {
             target.spiderBlink = null

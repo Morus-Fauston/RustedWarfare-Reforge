@@ -161,10 +161,7 @@ internal object CustomUnitActions {
         val health = (checkNotNull(unit.health).toFloat() / checkNotNull(unit.definition.maximumHealth).toFloat() *
             checkNotNull(target.maximumHealth).toFloat()).toDouble()
         val energy = target.energy?.let { unit.energy / checkNotNull(old.energy).maximum * it.maximum } ?: 0f
-        val shield = target.shield?.let { next ->
-            if (next.startAtZero) unit.shield.coerceIn(0f, next.maximum)
-            else old.shield?.let { unit.shield / it.maximum * next.maximum } ?: next.maximum
-        } ?: 0f
+        val shield = UnitShield.afterConversion(unit, target.shield)
         require(health.isFinite() && energy.isFinite() && shield.isFinite()) { "Converted resources must remain finite" }
         unit.typeId = target.id
         unit.definition = target

@@ -70,7 +70,7 @@ internal object ModularSpiderContentReader {
     private val flags = profiles.flatMap { it.values }.flatMap { it.entries }
         .filter { it.key !in text && (it.value == "true" || it.value == "false") }.map { it.key }.toSet()
     private val schema = UnitContentSchema(fields, fields.values.flatten().toSet() - text - flags,
-        flags, text, dynamicWeapons = false, timeFieldLocations = setOf("attack" to "shootDelay"))
+        flags, text, dynamicWeapons = false, timeFieldLocations = setOf("attack" to "shootDelay"), structuredAbilities = true)
 
     fun readWithSources(path: Path, validatePath: (Path) -> Unit): LoadedUnitContent =
         UnitSourceReader(schema, validatePath).load(path, setOf("onCreateSpawnUnitOf", "convertTo", "constructionTypes")) { content ->
@@ -90,13 +90,19 @@ internal object ModularSpiderContentReader {
                 form != null -> setOf("image", "image_turret")
                 else -> setOf("image")
             }
+            val shield = ShieldContent.read(path, content, required = name == ModularSpiderRules.ID)
+            val expectedShield = if (name == ModularSpiderRules.ID) ShieldProfile(5000f, .3f) else null
+            ShieldContent.validateQualified(path, content, shield, expectedShield)
+            val hasShieldAbility = content.values.keys.any { it.startsWith("ability_") }
             for ((section, values) in content.values) {
+                if (section.startsWith("ability_")) continue
                 val permitted = expected[section]?.keys.orEmpty() +
                     if (section == "graphics") graphicFields else images[section].orEmpty().takeIf { section in expected }.orEmpty()
                 for (field in values.keys) if (field !in permitted)
                     reject(ContentErrorCode.UNSUPPORTED_FIELD, path, section, field, reason = "Field is unavailable for $name")
             }
             for ((section, fields) in expected) for ((field, required) in fields) {
+                if (hasShieldAbility && section == "core" && field in setOf("maxShield", "shieldRegen")) continue
                 val actual = value(section, field)
                 val matches = when {
                     field == "constructionTypes" -> actual.split(',').map(String::trim).let { types ->
@@ -146,7 +152,7 @@ internal object ModularSpiderContentReader {
                         combat = CombatProfile(10000.0, 290.0, 85.0, 8.0, 4.0, 1.0, inert, nano, null, 1.0,
                             namedWeapons = WeaponCatalog(listOf(mount))),
                         durability = DurabilityProfile(10000.0, image("graphics", "image_wreak", 70, 90)),
-                        shield = ShieldProfile(5000f, .3f), selfRegenRate = .1f, income = IncomeProfile(40f, 30f),
+                        shield = shield, selfRegenRate = .1f, income = IncomeProfile(40f, 30f),
                         build = ModularSpiderRules.build,
                         builder = ModularSpiderRules.builder(value("canBuild_chassis", "constructionTypes").split(',').map(String::trim)),
                         maintenance = MaintenanceProfile.MODULAR_SPIDER, deathExplosion = ModularSpiderRules.deathExplosion,

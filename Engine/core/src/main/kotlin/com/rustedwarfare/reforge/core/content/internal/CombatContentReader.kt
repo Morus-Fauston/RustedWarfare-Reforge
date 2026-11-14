@@ -91,9 +91,10 @@ internal object CombatContentReader {
                 fields = schema.fields + ("projectile_1" to (schema.fields.getValue("projectile_1") + setOf("targetSpeed", "targetSpeedAcceleration"))),
                 numericFields = schema.numericFields + setOf("targetSpeed", "targetSpeedAcceleration"),
                 movementTemplates = mapOf("hoverTank" to hoverTemplate))
-            Kind.DECLARED_TANK, Kind.NATIVE_TANK -> schema.copy(movementTemplates = mapOf("tank" to tankTemplate))
+            Kind.DECLARED_TANK, Kind.NATIVE_TANK -> schema.copy(movementTemplates = mapOf("tank" to tankTemplate),
+                structuredAbilities = true)
             Kind.BATTLESHIP, Kind.AUTHOR_WATER -> NavalContentFields.schema(schema)
-            Kind.HEAVY_MECH -> HeavyMechContentFields.schema(schema)
+            Kind.HEAVY_MECH -> HeavyMechContentFields.schema(schema).copy(structuredAbilities = true)
             Kind.MECH -> MechContentFields.schema(schema)
             Kind.HELICOPTER -> HelicopterContentFields.schema(schema)
         }, preRead = validatePath).load(path) { loaded ->
@@ -321,13 +322,7 @@ internal object CombatContentReader {
                 } else null)
         })
         val primary = catalog.ordered.first()
-        val shield = if (heavy) {
-            fun shieldNumber(key: String, positive: Boolean): Float = number("core", key, positive).toFloat().also {
-                if (!it.isFinite() || positive && it <= 0f) invalid(ContentErrorCode.MALFORMED_SYNTAX, "core", key,
-                    reason = "Expected a finite ${if (positive) "positive" else "nonnegative"} shield float")
-            }
-            ShieldProfile(shieldNumber("maxShield", true), shieldNumber("shieldRegen", false))
-        } else null
+        val shield = ShieldContent.read(path, loaded, required = heavy)
         val profile = CombatProfile(
             integer("core", "maxHp", true).toDouble(), number("attack", "maxAttackRange", true),
             primary.shootDelay, primary.turretSize, primary.turnSpeed, primary.turnAcceleration,

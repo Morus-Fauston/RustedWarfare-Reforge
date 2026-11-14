@@ -26,6 +26,7 @@ internal data class UnitContentSchema(
     val trimSectionName: Boolean = true,
     val requiredInlineProjectileFields: Set<String> = emptySet(),
     val movementTemplates: Map<String, Map<String, String>> = emptyMap(),
+    val structuredAbilities: Boolean = false,
 ) {
     companion object {
         fun native(fields: Set<String>, formats: Set<String>): UnitContentSchema {
@@ -46,6 +47,7 @@ internal class UnitSourceReader(
     private val numericFields = schema.numericFields
     private val booleanFields = schema.booleanFields
     private val textFields = schema.textFields
+    private val abilityFields = setOf("type", "maximum", "regeneration", "startAtZero")
 
     fun load(path: Path, retainedFields: Set<String> = emptySet(), build: (EffectiveSections) -> UnitDefinition): LoadedUnitContent {
         val sources = linkedMapOf<Path, ContentSourceIdentity>()
@@ -111,7 +113,11 @@ internal class UnitSourceReader(
         name.none { it.isISOControl() || it in ",[]" }
 
     private fun allowedFields(section: String): Set<String>? =
-        if (section.startsWith("template_")) fields.values.flatten().toSet() else fields[sectionKind(section)]
+        when {
+            section.startsWith("ability_") -> abilityFields.takeIf { schema.structuredAbilities }
+            section.startsWith("template_") -> fields.values.flatten().toSet()
+            else -> fields[sectionKind(section)]
+        }
 
     internal data class Input(
         val sections: Map<String, MutableMap<String, String>>,
@@ -121,6 +127,7 @@ internal class UnitSourceReader(
         val flat: Boolean = false,
         val declaredControls: Set<String> = emptySet(),
         val removedWeapons: Set<String> = emptySet(),
+        val removedAbilities: Set<String> = emptySet(),
         val inlineProjectileOwners: Map<String, String> = emptyMap(),
         val movementTemplate: String? = null,
     )
@@ -176,7 +183,7 @@ internal class UnitSourceReader(
                     }
                     val rawName = line.substring(1, line.length - 1)
                     val next = if (schema.trimSectionName) rawName.trim() else rawName
-                    if (allowedFields(next) == null) reject(ContentErrorCode.UNSUPPORTED_FIELD, path, next, reason = "Unsupported unit section")
+                    if (next.startsWith("ability_") || allowedFields(next) == null) reject(ContentErrorCode.UNSUPPORTED_FIELD, path, next, reason = "Unsupported unit section")
                     if ((next.startsWith("turret_") || next.startsWith("projectile_") || next.startsWith("template_")) && !validName(next.substringAfter('_')))
                         reject(ContentErrorCode.IDENTITY_CONFLICT, path, next, "name", reason = "Invalid stable name")
                     if (sections.putIfAbsent(next, linkedMapOf()) != null) {
@@ -221,8 +228,8 @@ internal class UnitSourceReader(
                 reject(code, source, if (input.structured || input.flat) null else "core", "copyFrom", name,
                     "$reason; inheritance=${chain.joinToString(" -> ")}")
             if (depth > 10) referenceFailure(null, "Inheritance depth exceeds 10")
-            val inheritedWeapons = mutableSetOf<String>()
-            val parentExclusions = excluded + input.removedWeapons
+            val inheritedItems = mutableSetOf<String>()
+            val parentExclusions = excluded + input.removedWeapons + input.removedAbilities
             for (name in input.parents.asReversed()) {
                 if (name.isBlank() || name.contains("..") || name.startsWith("ROOT:") || name.startsWith("CORE:"))
                     referenceFailure(name, "Unsupported parent path", ContentErrorCode.UNSUPPORTED_FEATURE)
@@ -250,21 +257,27 @@ internal class UnitSourceReader(
                     val effective = target.getOrPut(section) { linkedMapOf() }
                     if (effective["@copyFrom_skipThisSection"] == "true") continue
                     for ((key, value) in values) {
-                        if (effective.putIfAbsent(key, value) == null)
-                            origins[section to key] = origin(parent, document, section, key, parentChain)
+                        val inherited = effective.putIfAbsent(key, value)
+                        if (inherited == null) origins[section to key] = origin(parent, document, section, key, parentChain)
+                        else if (section.startsWith("ability_") && key == "type" && value != inherited) {
+                            val declaration = origins.getValue(section to key)
+                            reject(ContentErrorCode.IDENTITY_CONFLICT, declaration.path, section, key, inherited,
+                                "Ability type cannot change through inheritance; inheritance=${declaration.chain.joinToString(" -> ")}")
+                        }
                     }
                 }
-                inheritedWeapons += inherit(parent, document, depth + 1, active + setOf(actual), parentChain, parentExclusions)
+                inheritedItems += inherit(parent, document, depth + 1, active + setOf(actual), parentChain, parentExclusions)
             }
-            for (section in input.removedWeapons) {
-                if (section !in inheritedWeapons)
-                    reject(ContentErrorCode.BAD_REFERENCE, source, field = "removeWeapons",
-                        reason = "Cannot remove nonexistent inherited weapon ${section.removePrefix("turret_")}; " +
+            for (section in input.removedWeapons + input.removedAbilities) {
+                val weapon = section in input.removedWeapons
+                if (section !in inheritedItems)
+                    reject(ContentErrorCode.BAD_REFERENCE, source, field = if (weapon) "removeWeapons" else "removeAbilities",
+                        reason = "Cannot remove nonexistent inherited ${if (weapon) "weapon" else "ability"} ${section.substringAfter('_')}; " +
                             "inheritance=${chain.joinToString(" -> ")}")
+                inheritedItems.remove(section)
             }
-            inheritedWeapons.removeAll(input.removedWeapons)
-            input.sections.keys.filterTo(inheritedWeapons) { it.startsWith("turret_") }
-            return inheritedWeapons
+            input.sections.keys.filterTo(inheritedItems) { it.startsWith("turret_") || it.startsWith("ability_") }
+            return inheritedItems
         }
         inherit(path, root, 0, setOf(path.toRealPath()), listOf(path), emptySet())
         val declared = target.mapValues { (_, values) -> values.toMap() }
@@ -349,6 +362,8 @@ internal class UnitSourceReader(
                 if (named && key == "name") continue
                 if (inlineWeapon != null && key in setOf("copyFromSections", "skipInheritance"))
                     malformedField(key, "An inline projectile must be a complete replacement")
+                if (section.startsWith("ability_") && key in setOf("copyFromSections", "skipInheritance"))
+                    malformedField(key, "Abilities inherit by stable name")
                 if (key == "copyFromSections") {
                     if (!member.value.isArray) malformed(section, key, "Expected section name array")
                     values["@copyFromSection"] = member.value.asArray().map { value ->
@@ -362,12 +377,19 @@ internal class UnitSourceReader(
                     values["@copyFrom_skipThisSection"] = member.value.toString()
                     continue
                 }
+                if (section == "core" && schema.structuredAbilities && key in setOf("maxShield", "shieldRegen", "startShieldAtZero"))
+                    reject(ContentErrorCode.UNSUPPORTED_FIELD, path, site, key, reason = "Declare shield parameters in abilities")
                 if (key !in allowedFields(section).orEmpty() && !(section == "core" && key == "dont_load"))
                     reject(ContentErrorCode.UNSUPPORTED_FIELD, path, site, prefix + key, reason = "Unsupported unit field")
                 val value = member.value
                 val correctType = when {
                     key in schema.timeFields || (section to key) in schema.timeFieldLocations ->
                         value.isNumber || value.isString && value.asString().endsWith('s')
+                    section.startsWith("ability_") -> when (key) {
+                        "type" -> value.isString
+                        "startAtZero" -> value.isBoolean
+                        else -> value.isNumber
+                    }
                     key in numericFields -> value.isNumber
                     key in booleanFields -> value.isBoolean
                     key in textFields -> value.isString
@@ -411,6 +433,7 @@ internal class UnitSourceReader(
         }
         val seen = mutableSetOf<String>()
         val removedWeapons = linkedSetOf<String>()
+        val removedAbilities = linkedSetOf<String>()
         var movementTemplate: String? = null
         for (member in root) {
             val key = member.name
@@ -441,12 +464,22 @@ internal class UnitSourceReader(
                             malformed(field = key, reason = "Expected distinct stable weapon names")
                     }
                 }
+                "removeAbilities" -> {
+                    if (!schema.structuredAbilities) reject(ContentErrorCode.UNSUPPORTED_FIELD, path, field = key, reason = "Unsupported unit member")
+                    if (!member.value.isArray) malformed(field = key, reason = "Expected an array of inherited ability names")
+                    for (value in member.value.asArray()) {
+                        if (!value.isString || !validName(value.asString()) ||
+                            !removedAbilities.add("ability_" + value.asString()))
+                            malformed(field = key, reason = "Expected distinct stable ability names")
+                    }
+                }
                 in fields.keys.filter { !it.startsWith("turret_") && !it.startsWith("projectile_") && !it.startsWith("action_") } -> {
                     if (!member.value.isObject) malformed(key, reason = "Expected a field object")
                     result[key] = fields(key, member.value.asObject())
                 }
-                "weapons", "projectiles", "actions" -> {
-                    if (key == "actions" && fields.keys.none { it.startsWith("action_") })
+                "weapons", "projectiles", "actions", "abilities" -> {
+                    if ((key == "actions" && fields.keys.none { it.startsWith("action_") }) ||
+                        (key == "abilities" && !schema.structuredAbilities))
                         reject(ContentErrorCode.UNSUPPORTED_FIELD, path, field = key, reason = "Unsupported unit member")
                     if (!member.value.isArray) malformed(key, reason = "Expected a named array")
                     for (entry in member.value.asArray()) {
@@ -455,7 +488,13 @@ internal class UnitSourceReader(
                         val name = value.get("name")
                         if (name == null || !name.isString || !validName(name.asString()))
                             malformed(key, "name", "Expected a stable name")
-                        val section = when (key) { "weapons" -> "turret_"; "projectiles" -> "projectile_"; else -> "action_" } + name.asString()
+                        val prefix = when (key) {
+                            "weapons" -> "turret_"
+                            "projectiles" -> "projectile_"
+                            "abilities" -> "ability_"
+                            else -> "action_"
+                        }
+                        val section = prefix + name.asString()
                         if (section in result)
                             reject(ContentErrorCode.IDENTITY_CONFLICT, path, section, "name", name.asString(), "Duplicate name")
                         if (key == "projectiles" && name.asString().startsWith("__inline_"))
@@ -504,7 +543,10 @@ internal class UnitSourceReader(
             seen.intersect(setOf("copyFrom"))
         if (removedWeapons.any { it in result })
             malformed(field = "removeWeapons", reason = "A weapon cannot be declared and removed in the same unit")
+        if (removedAbilities.any { it in result })
+            malformed(field = "removeAbilities", reason = "An ability cannot be declared and removed in the same unit")
         return Input(result, parents, templateOnly(path, result), structured = true, declaredControls = controls,
-            removedWeapons = removedWeapons, inlineProjectileOwners = inlineProjectileOwners, movementTemplate = movementTemplate)
+            removedWeapons = removedWeapons, removedAbilities = removedAbilities,
+            inlineProjectileOwners = inlineProjectileOwners, movementTemplate = movementTemplate)
     }
 }

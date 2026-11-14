@@ -120,7 +120,7 @@
       {
         "id": "mechHeavyMissile",
         "path": "../inputs/phase-six-a-sandbox/json/package/units/mech-factory/heavy/heavy.json",
-        "sha256": "035f174dd341a2fb75e02ae7117d3e2b630b5a5103ecb48789211c5b7fbf25d0"
+        "sha256": "f2e9bcf096d2717523a4f3c1a5e8e1eea49ef655032aed032c91a504736fa441"
       },
       {
         "id": "mechEngineer",
@@ -185,7 +185,7 @@
       {
         "id": "modularSpider",
         "path": "../inputs/phase-six-a-sandbox/json/package/units/spider/spider.json",
-        "sha256": "df35fbcca52404ae18d3c4d081afe73085ca1fad3884c2bc7618b0defc8f2cbc"
+        "sha256": "60a8c45f9f023748f69d40789f46bfeb00fcb3513d9413549956ae659522988d"
       },
       {
         "id": "modularSpider_emptySlot",
@@ -310,7 +310,7 @@
       {
         "id": "mechBunkerDeployed",
         "path": "../inputs/phase-six-a-sandbox/json/package/extra/bunker/units/bunker/deployed.json",
-        "sha256": "83798e346e4542c045dfcede0542a9fb2e24a7929dae3a7c25f1fd31d33ddfff"
+        "sha256": "3372d9f3ac61c32a7b30461eb88ad850e1c4ab4c089ed9190ad10c3fa3ff8dd1"
       },
       {
         "id": "mechFlame",
@@ -7075,7 +7075,7 @@
       "package/extra/air-products/units/jet_shadow.png": "1b64b8ec6b2f88cd7b5d97ac115dcdee35395ed08e02ec086a14c34e053fc7eb",
       "package/extra/bunker/units/bunker/body.png": "0eab7ae064a863202066f910491dfd2e1f9b206086913795d500b26fe7928b71",
       "package/extra/bunker/units/bunker/bunker.json": "c451a6e4bf38f8f376fa4ce3455d29b1fa2388e546ed3853dbc11e19cf55e2ed",
-      "package/extra/bunker/units/bunker/deployed.json": "83798e346e4542c045dfcede0542a9fb2e24a7929dae3a7c25f1fd31d33ddfff",
+      "package/extra/bunker/units/bunker/deployed.json": "3372d9f3ac61c32a7b30461eb88ad850e1c4ab4c089ed9190ad10c3fa3ff8dd1",
       "package/extra/bunker/units/bunker/foot.png": "2a917fabd6c029c91140cd373b569a27846fd7612def12d09ddddeece7d57014",
       "package/extra/bunker/units/bunker/leg.png": "f64290238b9b3058551b013476d86f441b8a496587afc00f6354ffcc21e8bee6",
       "package/extra/bunker/units/bunker/shadow.png": "2b7f2eb5819fd7464f1d046a02a05e7238d8c8be54cb0e0dddf2f1d355486c0a",
@@ -7190,7 +7190,7 @@
       "package/units/mech-factory/factory_t2.png": "b0a9fa6f0ef2f4b9f240978e90e1925440f9814639826df97d4a582a9c3a7ec2",
       "package/units/mech-factory/heavy/body.png": "3edca2ba33a02f5d813e6042597b7fda8c0e3c6b15d1224706ed7688334887a6",
       "package/units/mech-factory/heavy/foot.png": "4ade28f090688ac6e73ae8f4df1f2d0b6dae5f3c8b03b81850e50a57e37669bc",
-      "package/units/mech-factory/heavy/heavy.json": "035f174dd341a2fb75e02ae7117d3e2b630b5a5103ecb48789211c5b7fbf25d0",
+      "package/units/mech-factory/heavy/heavy.json": "f2e9bcf096d2717523a4f3c1a5e8e1eea49ef655032aed032c91a504736fa441",
       "package/units/mech-factory/heavy/leg.png": "e623dcab437823824ef4527b8b7de770b27005a1c60d06c985efbd0d45a3159f",
       "package/units/mech-factory/heavy/shield.png": "78f7f5c331d0235c56db25d364ae43bf01f8deb021bfceadf60353a9e6384179",
       "package/units/mech-factory/heavy/small_turret.png": "c09d30972c99f2d9a45bef0a77a3f3e56ba78aab6a09fc6b01a444616a66e9d6",
@@ -7263,7 +7263,7 @@
       "package/units/spider/speed-incomplete.json": "4b32d90622f89b604fb93fdd6179569348b0b4efcc95a511b6a3b31a2184a7fe",
       "package/units/spider/speed.json": "4fa19187bc6c39579a2daf3df950609903f16dcd73620a16af5c773883f06a84",
       "package/units/spider/speed.png": "6a12b8a065e0f1e31c6fc33f1fafa1a6bf021a3df9a27ebb3d79ea7aae7fb956",
-      "package/units/spider/spider.json": "df35fbcca52404ae18d3c4d081afe73085ca1fad3884c2bc7618b0defc8f2cbc"
+      "package/units/spider/spider.json": "60a8c45f9f023748f69d40789f46bfeb00fcb3513d9413549956ae659522988d"
     }
   },
   "windowsSpiderStart": true

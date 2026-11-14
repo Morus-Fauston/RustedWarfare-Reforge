@@ -9,6 +9,8 @@
   "properties": {
     "format": { "const": "rw-reforge.unit.v2" },
     "unitType": { "const": "tank" },
+    "abilities": {"type": "array", "items": {"$ref": "#/$defs/ShieldAbility"}},
+    "removeAbilities": {"type": "array", "uniqueItems": true, "items": {"$ref": "#/$defs/name"}},
     "copyFrom": {
       "type": "array",
       "items": {
@@ -43,6 +45,18 @@
   },
   "additionalProperties": false,
   "$defs": {
+    "ShieldAbility": {
+      "type": "object",
+      "required": ["name"],
+      "additionalProperties": false,
+      "properties": {
+        "name": {"$ref": "#/$defs/name"},
+        "type": {"const": "shield"},
+        "maximum": {"type": "number", "exclusiveMinimum": 0},
+        "regeneration": {"type": "number", "minimum": 0},
+        "startAtZero": {"type": "boolean"}
+      }
+    },
     "name": {
       "type": "string",
       "pattern": "^(?!\\s)(?!.*\\s$)[^,\\[\\]\\u0000-\\u001F\\u007F-\\u009F]+$"
