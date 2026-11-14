@@ -307,7 +307,7 @@ internal object CombatContentReader {
             if (number("movement", field) != 0.0)
                 invalid(ContentErrorCode.UNSUPPORTED_FEATURE, "movement", field, reason = "Stationary combat requires zero body movement")
         }
-        val projectileProfiles = projectiles.associateWith { projectile ->
+        val rawProjectileProfiles = projectiles.associateWith { projectile ->
             val flame = if (authoredAir || stationary) FlameWeaponContent.read(path, loaded, projectile) else null
             if (flame != null) return@associateWith flame
             val ballistic = if (!water && optionalBoolean(projectile, "ballistic", false)) {
@@ -330,6 +330,22 @@ internal object CombatContentReader {
                     OrdinarySplashProfile(number(projectile, "areaDamage").toFloat(), number(projectile, "areaRadius", true).toFloat()) else null,
                 retargetOnDeath = optionalBoolean(projectile, "autoTargetingOnDeadTarget", false), ballistic = ballistic)
             InstantWeaponContent.apply(path, loaded, projectile, base, validatePath)
+        }
+        val projectileProfiles = if (!water) rawProjectileProfiles else rawProjectileProfiles.mapValues { (section, profile) ->
+            val next = sections.getValue(section)["spawnProjectilesOnEndOfLife"]
+            if (profile.steering != null && !profile.supportsExpirySteering())
+                invalid(ContentErrorCode.UNSUPPORTED_FEATURE, section, "turnSpeed",
+                    reason = "Projectile steering requires the ordinary direct projectile")
+            if (next == null || next == "NONE") profile else {
+                val target = "projectile_$next"
+                val resolved = rawProjectileProfiles[target]
+                if (target == section || resolved == null ||
+                    sections.getValue(target)["spawnProjectilesOnEndOfLife"]?.let { it != "NONE" } == true ||
+                    !profile.supportsExpirySteering() || !resolved.isTerminalExpiryPayload())
+                    invalid(ContentErrorCode.BAD_REFERENCE, section, "spawnProjectilesOnEndOfLife", next,
+                        "Expected one terminal ordinary projectile in the same unit")
+                profile.copy(endOfLife = resolved)
+            }
         }
         val turretImage = if ((mech || air || stationary || authorWater || hover) && required("graphics", "image_turret") == "NONE") null else image("image_turret")
         val deadImage = if ((mech || heavy) && required("graphics", "image_wreak") == "NONE") null else image("image_wreak")

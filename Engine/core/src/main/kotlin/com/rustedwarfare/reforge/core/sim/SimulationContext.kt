@@ -14,6 +14,8 @@ import com.rustedwarfare.reforge.core.content.DirectHitTargetKind
 import com.rustedwarfare.reforge.core.content.ScoutBotRules
 import com.rustedwarfare.reforge.core.content.ScoutPayloadStage
 import com.rustedwarfare.reforge.core.content.NuclearSiloKind
+import com.rustedwarfare.reforge.core.content.isTerminalExpiryPayload
+import com.rustedwarfare.reforge.core.content.supportsExpirySteering
 import com.rustedwarfare.reforge.core.path.PlanningTerrain
 import com.rustedwarfare.reforge.core.path.PlanningSegmentClearance
 import com.rustedwarfare.reforge.core.path.PathDiagnosticsException
@@ -1171,7 +1173,8 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
                     0f, profile.speed, profile.directDamage, source.height, deflectionHealth = profile.deflectionHealth,
                     instant = profile.instant, nonDeflectable = profile.nonDeflectable, sourceWeaponName = definition?.name,
                     acceleration = profile.acceleration, splash = profile.splash, ballistic = profile.ballistic,
-                    damageModifiers = profile.damageModifiers, sourceOwnerId = source.ownerPlayerId)
+                    damageModifiers = profile.damageModifiers, sourceOwnerId = source.ownerPlayerId,
+                    steering = profile.steering, endOfLife = profile.endOfLife)
             }
             staged[entry.alias] = shot
             id++
@@ -1881,6 +1884,11 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
                 listOf(base) + base.namedWeapons?.ordered.orEmpty().filter { it.canShoot }.map { NamedWeaponRuntime.profile(base, it) }
             }.orEmpty()
             for (combat in combatProfiles) {
+                val shot = combat.projectile
+                if ((shot.steering != null || shot.endOfLife != null) &&
+                    (!(authoredSurface || navalHull) || !shot.supportsExpirySteering() ||
+                        shot.endOfLife?.isTerminalExpiryPayload() == false))
+                    return SimulationError("unsupported-combat", "Expected a finite direct naval expiry projectile and a terminal payload")
                 val flame = combat.projectile.flame
                 if (flame && !flameMech && ((!authoredAir && (m.type != MovementType.NONE || definition.building == null)) ||
                         combat.projectile.ground?.let { it.resolveAtSnapshot && it.initialVerticalSpeed == 0f &&
@@ -2369,6 +2377,7 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
             damageModifiers = weapon.projectile.damageModifiers,
             sourceOwnerId = unit.ownerPlayerId,
             attachmentRetargetMount = attachmentRetargetMount,
+            steering = weapon.projectile.steering, endOfLife = weapon.projectile.endOfLife,
             lightningSegment = if (weapon.projectile.lightning) LightningSegment(target.position, target.height) else null,
             appearance = if (flame) ProjectileAppearance.MECH_FLAME
             else if (bomber) {
@@ -2481,7 +2490,8 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
         val projectileUpdateLimit = nextObjectId
         updateProjectileBatch(delta, projectiles.filter { it.objectId in existingIds }.sortedBy { it.objectId }, trackedTargets)
         updateProjectileBatch(delta, projectiles.filter {
-            it.objectId !in existingIds && (it.scoutPayload == null || it.objectId < projectileUpdateLimit)
+            it.objectId !in existingIds &&
+                (it.scoutPayload == null && !it.derivedOnExpiry || it.objectId < projectileUpdateLimit)
         }.sortedBy { it.objectId }, trackedTargets)
     }
 
@@ -2566,15 +2576,35 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
                 }
                 pendingProjectileEvents += ProjectileEventObservation("impact", projectileObservation(projectile), appliedDamage)
                 projectile.hitApplied = true
-                if (!projectile.lightning && !projectile.beam) projectiles.remove(projectile)
+                if (!projectile.lightning && !projectile.beam) {
+                    projectiles.remove(projectile)
+                    if (projectile.remainingLife == 0.0) spawnExpiryPayload(projectile)
+                }
             } else if (projectile.remainingLife == 0.0) {
                 pendingProjectileEvents += ProjectileEventObservation("expired", projectileObservation(projectile))
                 projectiles.remove(projectile)
+                spawnExpiryPayload(projectile)
             } else if (projectile.intercepted) {
                 pendingProjectileEvents += ProjectileEventObservation("intercepted", projectileObservation(projectile))
                 projectiles.remove(projectile)
             }
         }
+    }
+
+    private fun spawnExpiryPayload(parent: MutableProjectile) {
+        val profile = parent.endOfLife ?: return
+        if (parent.intercepted || parent.sourceUnitId !in units) return
+        val id = nextObjectId
+        nextObjectId = Math.addExact(id, 1L)
+        val child = MutableProjectile(id, parent.sourceUnitId, parent.targetUnitId, parent.position, parent.heading,
+            profile.life, Position(0.0, 0.0), 0f, profile.speed, profile.directDamage, parent.height,
+            deflectionHealth = profile.deflectionHealth, nonDeflectable = profile.nonDeflectable,
+            sourceWeaponName = parent.sourceWeaponName, acceleration = profile.acceleration,
+            splash = profile.splash, damageModifiers = profile.damageModifiers,
+            appearance = parent.appearance, sourceOwnerId = parent.sourceOwnerId, steering = profile.steering,
+            derivedOnExpiry = true)
+        projectiles += child
+        pendingProjectileEvents += ProjectileEventObservation("born", projectileObservation(child))
     }
 
     private fun updateInterceptor(shot: MutableProjectile, course: InterceptionCourse, target: MutableProjectile?, delta: Double) {

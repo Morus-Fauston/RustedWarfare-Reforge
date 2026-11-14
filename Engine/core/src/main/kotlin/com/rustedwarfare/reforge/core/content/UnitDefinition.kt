@@ -368,7 +368,27 @@ data class ProjectileProfile(val directDamage: Double, val life: Double, val spe
     val splash: OrdinarySplashProfile? = null, val retargetOnDeath: Boolean = false,
     val ballistic: CustomBallisticProfile? = null, val lightning: Boolean = false,
     val damageModifiers: ProjectileDamageModifiers = ProjectileDamageModifiers(),
-    val beam: BeamProfile? = null, val flame: Boolean = false)
+    val beam: BeamProfile? = null, val flame: Boolean = false,
+    val steering: ProjectileSteering? = null, val endOfLife: ProjectileProfile? = null)
+
+data class ProjectileSteering(val turnRate: Double, val nearTurnRate: Double?) {
+    internal fun isValid(): Boolean = (turnRate == -1.0 || turnRate in 0.0..360.0) &&
+        (nearTurnRate == null || nearTurnRate in 0.0..360.0)
+}
+
+internal fun ProjectileProfile.supportsExpirySteering(): Boolean =
+    ground == null && ballistic == null && missile == null && beam == null &&
+        !instant && !retargetOnDeath && !flame && !lightning &&
+        (steering?.isValid() != false)
+
+internal fun ProjectileProfile.isTerminalExpiryPayload(): Boolean =
+    endOfLife == null && supportsExpirySteering() && splash == null &&
+        life.isFinite() && life > 0.0 && speed.isFinite() && speed > 0.0 &&
+        directDamage.isFinite() && directDamage >= 0.0 &&
+        deflectionHealth.isFinite() && deflectionHealth > 0f &&
+        damageModifiers == ProjectileDamageModifiers() &&
+        (acceleration?.let { it.targetSpeed.isFinite() && it.targetSpeed > 0.0 &&
+            it.acceleration.isFinite() && it.acceleration > 0.0 } != false)
 
 /** Shield expenditure and damage deflection are separate native projectile properties. */
 data class ProjectileDamageModifiers(val shieldDamage: Double = 1.0, val shieldDeflection: Double = 1.0,

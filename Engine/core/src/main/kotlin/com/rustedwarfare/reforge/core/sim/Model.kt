@@ -652,7 +652,10 @@ internal data class MutableProjectile(val objectId: Long, val sourceUnitId: Stri
     val nukeTagged: Boolean = false, var interception: InterceptionCourse? = null,
     val scoutPayload: ScoutPayload? = null,
     val sourceOwnerId: String? = null,
-    val attachmentRetargetMount: AttachmentRetargetMount? = null)
+    val attachmentRetargetMount: AttachmentRetargetMount? = null,
+    val steering: com.rustedwarfare.reforge.core.content.ProjectileSteering? = null,
+    val endOfLife: com.rustedwarfare.reforge.core.content.ProjectileProfile? = null,
+    val derivedOnExpiry: Boolean = false)
 
 internal data class AttachmentRetargetMount(val index: Int,
     val weapon: com.rustedwarfare.reforge.core.content.NamedWeaponDefinition)
