@@ -10,6 +10,7 @@ internal object ModularSpiderUtilityForms {
     const val BLINK_RANGE = 700.0
     const val BLINK_COOLDOWN = 1800
     const val BLINK_DURATION = 210
+    val blink = BlinkProfile(BLINK_RANGE, BLINK_DURATION, BLINK_COOLDOWN)
 
     class Form(
         val id: String,
@@ -20,11 +21,19 @@ internal object ModularSpiderUtilityForms {
         upgrades: List<AttachmentUpgrade> = emptyList(),
         automaticAction: AttachmentAutomaticAction? = null,
         additionalSections: Map<String, Map<String, String>> = emptyMap(),
+        parentSpeed: AttachmentSpeed? = null,
+        parentBlink: BlinkProfile? = null,
+        interception: ProjectileInterceptionProfile? = null,
     ) {
         val module = AttachmentModuleProfile(empty = false, selfBuildRate = .001f,
             cancel = AttachmentRemoval(ModularSpiderRules.EMPTY, price, 120f),
             reclaim = AttachmentRemoval(ModularSpiderRules.EMPTY, price / 2, 180f),
-            upgrades = upgrades, automaticAction = automaticAction)
+            upgrades = upgrades, automaticAction = automaticAction, parentSpeed = parentSpeed, parentBlink = parentBlink,
+            interception = interception)
+
+        fun moduleWithInterception(ranges: ProjectileInterceptionProfile) = AttachmentModuleProfile(
+            module.empty, module.selfBuildRate, module.installs, module.cancel, module.reclaim, module.upgrades,
+            module.automaticAction, module.parentSpeed, module.parentBlink, ranges)
 
         val sections = mapOf(
             "core" to (mapOf("name" to id, "class" to "CustomUnitMetadata", "price" to price.toString(),
@@ -58,14 +67,14 @@ internal object ModularSpiderUtilityForms {
             automaticAction = AttachmentAutomaticAction.RestoreParentShield(30f)),
         Form(ModularSpiderRules.SPEED_INCOMPLETE, 6000, 22, 21,
             automaticAction = AttachmentAutomaticAction.ConvertWhenBuilt(ModularSpiderRules.SPEED)),
-        Form(ModularSpiderRules.SPEED, 6000, 22, 21),
+        Form(ModularSpiderRules.SPEED, 6000, 22, 21, parentSpeed = AttachmentSpeed(.7, 2, readyOnly = true)),
         Form(ModularSpiderRules.LASER_DEFENSE, 3000, 20, 19, additionalSections = mapOf(
             "turret_laserDefence" to mapOf("x" to "0", "y" to "0", "invisible" to "true", "canShoot" to "false",
                 "laserDefenceEnergyUse" to laserDefense.cost.toString(), "limitingRange" to laserDefense.range.toString(),
                 "size" to "1"),
             "defenseEnergy" to mapOf("energyMax" to "1", "energyRegen" to laserDefense.recharge.toString()),
         )),
-        Form(ModularSpiderRules.ANTI_NUKE, 7000, 22, 21, additionalSections = mapOf(
+        Form(ModularSpiderRules.ANTI_NUKE, 7000, 22, 21, interception = antiNukeRanges, additionalSections = mapOf(
             "action_buildAntiNuke" to mapOf("price" to ANTI_NUKE_AMMO_COST.toString(),
                 "buildSpeed" to ANTI_NUKE_AMMO_RATE.toString(), "ammoLimit" to ANTI_NUKE_AMMO_LIMIT.toString(),
                 "addResources" to "ammo=1"),
@@ -80,7 +89,7 @@ internal object ModularSpiderUtilityForms {
                 "interceptProjectiles_andOverHeight" to antiNukeRanges.minimumHeight.toString(),
                 "resourceUsage" to "ammo=1, hasMissingFlag=1", "shoot_sound" to "nuke_launch", "shoot_sound_vol" to "0.15"),
         )),
-        Form(ModularSpiderRules.BLINK, 15000, 22, 21, additionalSections = mapOf(
+        Form(ModularSpiderRules.BLINK, 15000, 22, 21, parentBlink = blink, additionalSections = mapOf(
             "action_blink" to mapOf("buildSpeed" to "0", "allowMultipleInQueue" to "false",
                 "fireTurretXAtGround" to "dummyBlink", "fireTurretXAtGround_withProjectile" to "dummyBlink",
                 "fireTurretXAtGround_onlyOverPassableTileOf" to "HOVER",

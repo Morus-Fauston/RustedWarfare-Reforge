@@ -9,6 +9,67 @@ class AuthorFactoryProductionTest {
     private val fixtures: Path get() = System.getProperty("public.fixtures.dir")?.let(Path::of)
         ?: Path.of("../../SimulationTest/public/inputs")
 
+    @Test fun a_v2_tank_uses_the_land_template_from_production_through_movement_and_its_inline_projectile() {
+        val source = fixtures.resolve("author-production/json/package")
+        val workspace = Files.createTempDirectory("rwr-v2-production-").toAbsolutePath().normalize()
+        try {
+            Files.walk(source).use { paths -> paths.forEach { path ->
+                val target = workspace.resolve(source.relativize(path)).normalize()
+                require(target.startsWith(workspace))
+                if (Files.isDirectory(path)) Files.createDirectories(target) else Files.copy(path, target)
+            } }
+            val units = workspace.resolve("units")
+            val factory = units.resolve("spfactory.json")
+            Files.writeString(factory, Files.readString(factory).replace("builder,c_tank", "builder,amber_scout"))
+            val pack = workspace.resolve("pack.json")
+            Files.writeString(pack, Files.readString(pack).replace("units/tank.json", "units/amber.json"))
+            Files.writeString(units.resolve("amber.json"), """
+                {"format":"rw-reforge.unit.v2", "copyFrom":["tank.json"], "core":{"name":"amber_scout"},
+                 "weapons":[{"name":"1", "projectile":{"directDamage":41,"life":60,"speed":5}}]}
+            """.trimIndent())
+            val content = assertIs<ContentResult.Success<LoadedContentSet>>(
+                ContentLoader.loadContentPacks(listOf(workspace))).value
+            val scene = TestContentFactory.openScenario().copy(unitDefinitions = content.units, units = listOf(
+                UnitSpawn("factory", "p1", "spfactory", Position(210.0, 150.0), 0.0),
+                UnitSpawn("target", "p2", "builder", Position(280.0, 220.0), 0.0),
+            ), combatContract = CombatContract(12345, -1, mapOf("factory" to 8L, "target" to 9L), 10L),
+                economyContract = EconomyContract(mapOf("p1" to 3000L, "p2" to 0L)))
+            val simulation = assertIs<InitResult.Accepted>(SimulationContext.initialize(scene)).context
+            try {
+                assertIs<ActionResult.Accepted>(simulation.submit(ProduceAction(
+                    "buy", "p1", "factory", "amber_scout", "a".repeat(32), simulation.world)))
+                assertEquals(2650L, simulation.observePlayer(simulation.world, "p1").balance)
+                val born = "produced:p1:${"a".repeat(32)}"
+                var step = 0L
+                while (simulation.observe().units.none { it.unitId == born } && step < 1000)
+                    simulation.advance(Step(step++, 1.0, "sim-tick"))
+                val arrival = Position(240.0, 190.0)
+                assertEquals("amber_scout", simulation.observe().units.single { it.unitId == born }.typeId)
+                assertEquals(MovementType.LAND, content.units.getValue("amber_scout").movement.type)
+                assertEquals(1.1, content.units.getValue("amber_scout").movement.moveSpeed)
+                assertIs<ActionResult.Accepted>(simulation.submit(MoveAction("move", "p1", born, arrival, simulation.world)))
+                repeat(180) { simulation.advance(Step(step++, 1.0, "sim-tick")) }
+                val moved = simulation.observe().units.single { it.unitId == born }.position
+                assertTrue(kotlin.math.abs(moved.x - arrival.x) <= 4.0 &&
+                    kotlin.math.abs(moved.y - arrival.y) <= 4.0, "Expected arrival near $arrival, got $moved")
+                val before = assertNotNull(simulation.observe().units.single { it.unitId == "target" }.health)
+                assertIs<ActionResult.Accepted>(simulation.submit(AttackAction("aim", "p1", born, "target", simulation.world)))
+                var fired = false
+                while (step < 1600 && simulation.observe().units.any { it.unitId == "target" && it.health == before }) {
+                    val observation = simulation.advance(Step(step++, 1.0, "sim-tick"))
+                    fired = fired || observation.events.any { it.kind == "projectile-fired" && it.unitId == born }
+                }
+                assertTrue(fired)
+                assertEquals(before - 41.0, simulation.observe().units.single { it.unitId == "target" }.health)
+            } finally { simulation.close() }
+        } finally {
+            Files.walk(workspace).use { paths -> paths.sorted(Comparator.reverseOrder()).forEach { path ->
+                require(path.toAbsolutePath().normalize().startsWith(workspace))
+                Files.deleteIfExists(path)
+            } }
+        }
+    }
+
     private fun withFactory(action: (Path) -> Unit) {
         val source = fixtures.resolve("author-production/ini/package")
         val root = Files.createTempDirectory("rwr-author-production-").toAbsolutePath().normalize()

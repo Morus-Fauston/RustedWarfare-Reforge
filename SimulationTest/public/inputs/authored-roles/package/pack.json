@@ -1,0 +1,51 @@
+{
+  "format": "rw-reforge.content-pack.v1",
+  "id": "sp-role-composition",
+  "name": "Authored role composition",
+  "units": [
+    {
+      "type": "authored-role",
+      "file": "units/support_hover.json"
+    },
+    {
+      "type": "authored-role",
+      "file": "units/support_landed.json"
+    },
+    {
+      "type": "authored-role",
+      "file": "units/cargo_air.json"
+    },
+    {
+      "type": "authored-role",
+      "file": "units/scout_hull.json"
+    },
+    {
+      "type": "factory",
+      "file": "units/factory.json"
+    },
+    {
+      "type": "tank",
+      "file": "units/tank.json"
+    },
+    {
+      "type": "water-combat",
+      "file": "units/support_carrier.json"
+    },
+    {
+      "type": "authored-role",
+      "file": "units/experimental_spider_work.json"
+    },
+    {
+      "type": "authored-role",
+      "file": "units/modular_spider_work.json"
+    },
+    {
+      "type": "authored-role",
+      "file": "units/mech_engineer_work.json"
+    },
+    {
+      "type": "authored-role",
+      "file": "units/combat_engineer_work.json"
+    }
+  ]
+}

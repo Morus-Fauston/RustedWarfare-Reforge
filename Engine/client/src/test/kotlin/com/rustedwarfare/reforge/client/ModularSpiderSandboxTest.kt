@@ -172,6 +172,19 @@ class ModularSpiderSandboxTest {
             val legal = assertNotNull(session.previewGroundAction("blink", slot.position))
             assertEquals(slot.position, legal.source)
             assertTrue(legal.valid)
+            val map = MapProjection(scene.map.widthTiles.toDouble() * scene.map.tileWidth,
+                scene.map.heightTiles.toDouble() * scene.map.tileHeight)
+            val x = map.x(slot.position.x).toInt()
+            val y = map.y(slot.position.y).toInt()
+            var covered = false
+            val input = SandboxInput({ session }, { map }, { screenX, screenY -> Position(screenX.toDouble(), screenY.toDouble()) },
+                { true }, { false }, { false }, battlefieldAt = { _, _ -> !covered })
+            assertTrue(input.beginGroundAction("blink"))
+            assertTrue(input.touchDown(x, y, 0, com.badlogic.gdx.Input.Buttons.LEFT))
+            covered = true
+            assertTrue(input.touchUp(x, y, 0, com.badlogic.gdx.Input.Buttons.LEFT))
+            assertEquals("blink", input.groundActionName)
+            assertTrue(session.actionMenu.unitActions.single { it.name == "blink" }.available)
             assertEquals("action-target-out-of-range", session.previewGroundAction("blink",
                 com.rustedwarfare.reforge.core.sim.Position(slot.position.x + 701.0, slot.position.y))?.rejection)
             assertEquals("action-target-impassable", session.previewGroundAction("blink",

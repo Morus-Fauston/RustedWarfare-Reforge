@@ -3,6 +3,7 @@ package com.rustedwarfare.reforge.pc
 import com.badlogic.gdx.backends.lwjgl3.Lwjgl3Application
 import com.badlogic.gdx.backends.lwjgl3.Lwjgl3ApplicationConfiguration
 import com.rustedwarfare.reforge.client.BootstrapScreen
+import com.rustedwarfare.reforge.client.ClientEvidence
 import com.rustedwarfare.reforge.client.DemoStartupScreen
 import java.nio.file.Path
 
@@ -39,12 +40,19 @@ fun main(args: Array<String>) {
     }
     val inputs = requireNotNull(options.inputs)
     val output = options.evidence
-    JsonlEvidence(output, runId, inputs).use { evidence ->
+    val diagnostics = if (options.diagnostics) JsonlEvidence(output, runId, inputs) else null
+    diagnostics.use { sink ->
+        val evidence = sink ?: ClientEvidence.NONE
         val config = Lwjgl3ApplicationConfiguration().apply {
             setTitle(options.title)
-            setWindowedMode(1200, 800)
+            if (options.backgroundInput) {
+                if (options.backgroundCompact) setWindowedMode(960, 640) else setWindowedMode(1920, 1080)
+                setInitialVisible(false)
+            } else {
+                setWindowedMode(1200, 800)
+            }
             setWindowSizeLimits(960, 640, -1, -1)
-            setPauseWhenLostFocus(true)
+            setPauseWhenLostFocus(!options.backgroundInput)
             setForegroundFPS(60)
             useVsync(true)
             disableAudio(false)
@@ -53,11 +61,19 @@ fun main(args: Array<String>) {
             "output" to output.toString(), "presentationStepsPerSecond" to 60, "coreDelta" to 1.0,
             "deltaUnit" to "sim-tick", "pacingIsOriginalGameFact" to false))
         try {
-            Lwjgl3Application(WindowPerfSampling(BootstrapScreen(inputs, evidence,
+            val screen = BootstrapScreen(inputs, evidence,
                 visualSettings = visualSettings, soundFactory = PcPlaybackSoundFactory(),
-                testScenarioSeed = options.testScenarioSeed ?: sceneRoot.resolve("dual-ship-production.json"),
+                testScenarioSeed = if (options.development) options.testScenarioSeed ?: sceneRoot.resolve("dual-ship-production.json") else null,
                 selectDefaultTestScenario = options.testScenarioSeed != null,
-                alternateStartSeed = options.testScenarioSeed?.resolveSibling("phase-six-a-spider-json.json")), evidence), config)
+                alternateStartSeed = options.testScenarioSeed?.resolveSibling("phase-six-a-spider-json.json"),
+                development = options.development, initialContent = options.development || args.contains("--inputs"),
+                openSetup = options.development || args.contains("--inputs"))
+            val client = if (sink == null) screen else WindowPerfSampling(screen, sink)
+            val application = if (options.backgroundInput)
+                BackgroundClientInput(client, output, runId, checkNotNull(sink), { screen.inputGeneration },
+                    screen::deployProjectiles, screen::deploymentReceipt)
+            else client
+            Lwjgl3Application(application, config)
             evidence.record("process-completed", mapOf("status" to "normal"))
         } catch (failure: Throwable) {
             preserveFailure(failure) { evidence.record("process-failed", mapOf("message" to failure.toString())) }

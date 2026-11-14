@@ -1,0 +1,19 @@
+{
+  "format": "rw-reforge.unit.v2",
+  "copyFrom": [
+    "scout_hull.json"
+  ],
+  "core": {
+    "name": "mech_engineer_work"
+  },
+  "roles": {
+    "constructionTypes": "field_factory,field_tank",
+    "nanoConstructionTypes": "field_tank",
+    "canRepairUnits": true,
+    "canRepairBuildings": true,
+    "nanoRange": 140,
+    "nanoTurnSpeed": 3,
+    "nanoBuildSpeed": 2,
+    "nanoRepairSpeed": 0.3
+  }
+}

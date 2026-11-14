@@ -1,6 +1,6 @@
 // Owned mounted representative: actual Hjson comments and unquoted keys.
 {
-  format: "rw-reforge.unit.v1",
+  format: "rw-reforge.unit.v2",
   copyFrom: [
     "base.ini"
   ],

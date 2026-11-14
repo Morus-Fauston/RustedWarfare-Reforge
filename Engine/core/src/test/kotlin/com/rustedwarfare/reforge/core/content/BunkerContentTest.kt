@@ -20,6 +20,30 @@ class BunkerContentTest {
         return target
     }
 
+    @Test fun an_ini_child_can_inherit_the_structured_deployed_bunker_shield() {
+        val root = copy("json", "mixed")
+        val child = root.resolve("deployed.ini")
+        Files.writeString(child, "[core]\ncopyFrom: deployed.json\n")
+        val result = ContentLoader.loadBunkerWithSources(child)
+        val loaded = assertIs<ContentResult.Success<LoadedUnitContent>>(result, result.toString()).value
+        assertEquals(ShieldProfile(500f, .15f, true), loaded.definition.shield)
+        assertTrue(loaded.sources.any { it.path == root.resolve("deployed.json") })
+    }
+
+    @Test fun an_invalid_inherited_qualified_shield_points_to_the_declaring_parent_field() {
+        val root = copy("json", "invalid-shield")
+        val parent = root.resolve("invalid.json")
+        Files.writeString(parent, """{"format":"rw-reforge.unit.v2","copyFrom":["deployed.json"],
+            "abilities":[{"name":"shield","maximum":499}]}""")
+        val child = root.resolve("child.hjson")
+        Files.writeString(child, """{"format":"rw-reforge.unit.v2","copyFrom":["invalid.json"]}""")
+        val error = assertIs<ContentResult.Failure>(ContentLoader.loadBunkerWithSources(child)).error
+        assertEquals(ContentErrorCode.UNSUPPORTED_FEATURE, error.code)
+        assertEquals("ability_shield", error.section)
+        assertEquals("maximum", error.field)
+        assertEquals(parent.toString(), error.file)
+    }
+
     @Test fun final_composition_rejects_a_missing_conversion_target_in_every_format() {
         for (format in listOf("ini", "json", "hjson")) {
             val root = copy(format, "missing-$format")

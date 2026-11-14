@@ -47,9 +47,12 @@ internal object MechFlameContentReader {
         UnitSourceReader(schema, validatePath).load(path) { loaded ->
             fun value(section: String, field: String) = requiredContentField(loaded.values[section]?.get(field),
                 path, section, field, "Required flame-mech field")
+            val identity = value("core", "name")
+            val authored = loaded.structured && identity.matches(Regex("[a-z][a-z0-9_.-]*"))
             for ((section, entries) in expected) for ((field, wanted) in entries) {
                 val actual = value(section, field)
                 val matches = when (field) {
+                    "name" -> actual == wanted || authored
                     "moveWarmUp" -> actual.toDoubleOrNull() == 6.0 || actual == "0.1s"
                     in schema.numericFields -> actual.toDoubleOrNull() == wanted.toDouble()
                     else -> actual == wanted
@@ -80,7 +83,7 @@ internal object MechFlameContentReader {
             }
             val mech = MechDefinition(MechFlameRules.body, legs)
             if (!mech.isValid()) reject(ContentErrorCode.UNSUPPORTED_FEATURE, path, "leg_2", reason = "Expected shared leg and foot images")
-            UnitDefinition(MechFlameRules.ID, "CustomUnitMetadata", 25.0, 25.0, 1, image("graphics", "image", 45, 87), 1.0,
+            UnitDefinition(identity, "CustomUnitMetadata", 25.0, 25.0, 1, image("graphics", "image", 45, 87), 1.0,
                 MechFlameRules.movement, emptySet(), combat = MechFlameRules.combat, build = MechFlameRules.build, mech = mech,
                 shadowImagePath = image("graphics", "image_shadow", 45, 87), transportSlots = 2, selfRegenRate = .06f, techLevel = 2)
         }

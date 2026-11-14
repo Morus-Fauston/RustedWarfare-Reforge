@@ -55,7 +55,8 @@ internal object BunkerContentReader {
     private val schema = UnitContentSchema(fixed.mapValues { (s, f) -> f.keys + imageFields[s].orEmpty() },
         numericFields = entries.filter { it.key !in textFields && it.value.toDoubleOrNull() != null }.map { it.key }.toSet(),
         booleanFields = entries.filter { it.value in setOf("true", "false") }.map { it.key }.toSet(),
-        textFields = textFields, dynamicWeapons = false, timeFieldLocations = (1..4).map { "leg_$it" to "moveWarmUp" }.toSet())
+        textFields = textFields, dynamicWeapons = false, timeFieldLocations = (1..4).map { "leg_$it" to "moveWarmUp" }.toSet(),
+        structuredAbilities = true)
 
     fun readWithSources(path: Path, validatePath: (Path) -> Unit): LoadedUnitContent = UnitSourceReader(schema, validatePath).load(path) { loaded ->
         fun bad(s: String, k: String, reason: String): Nothing = reject(ContentErrorCode.UNSUPPORTED_FEATURE, path, s, k, reason = reason)
@@ -65,11 +66,16 @@ internal object BunkerContentReader {
             else -> bad("core", "name", "Expected one of the two qualified bunker forms")
         }
         val expected = if (deployed) fixed else mobile
+        val shield = ShieldContent.read(path, loaded, required = deployed)
+        ShieldContent.validateQualified(path, loaded, shield, if (deployed) ShieldProfile(500f, .15f, true) else null)
+        val hasShieldAbility = loaded.values.keys.any { it.startsWith("ability_") }
         for ((s, fields) in loaded.values) for (key in fields.keys) {
+            if (s.startsWith("ability_")) continue
             if (key !in expected[s].orEmpty() && key !in imageFields[s].orEmpty() ||
                 !deployed && s == "graphics" && key == "image_shield") bad(s, key, "Field is not used by this qualified form")
         }
         for ((s, fields) in expected) for ((key, wanted) in fields) {
+            if (hasShieldAbility && s == "core" && key in setOf("maxShield", "shieldRegen", "startShieldAtZero")) continue
             val value = loaded.values[s]?.get(key) ?: reject(ContentErrorCode.MISSING_REQUIRED_FIELD, path, s, key, reason = "Required bunker field")
             val number = wanted.toDoubleOrNull()
             if (if (number == null || key in textFields) value != wanted else value.toDoubleOrNull()?.let { it.isFinite() && it == number } != true)
@@ -96,7 +102,7 @@ internal object BunkerContentReader {
                 .07, .17, 1.0, .5, !deployed, !deployed, 1.0, 181), emptySet(), fogOfWarSightRange = 20, combat = combat,
             building = if (deployed) BuildingProfile(BuildingFootprint(-1,-1,1,1)) else null,
             build = BuildProfile(4500, .0006f), mech = HeavyMechContentFields.read(path, loaded, validatePath),
-            shadowImagePath = image("graphics", "image_shadow"), shield = if (deployed) ShieldProfile(500f, .15f, true) else null,
+            shadowImagePath = image("graphics", "image_shadow"), shield = shield,
             shieldImagePath = if (deployed) image("graphics", "image_shield") else null,
             customActions = CustomActionsProfile(listOf(deploy) + if (deployed) listOf(
                 CustomActionDefinition("undeploy", "mechBunker_1", "mechBunker", .010f, null)) else emptyList()),

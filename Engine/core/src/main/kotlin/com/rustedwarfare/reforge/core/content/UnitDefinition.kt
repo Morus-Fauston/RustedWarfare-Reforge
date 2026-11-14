@@ -40,6 +40,7 @@ class UnitDefinition(
     val amphibiousJet: AmphibiousJetProfile? = null,
     val transport: TransportProfile? = null,
     val transportSlots: Int = 1,
+    val transportSettings: TransportSettings? = null,
     val energy: EnergyProfile? = null,
     val customActions: CustomActionsProfile? = null,
     val afterburnTrailImagePath: Path? = null,
@@ -53,15 +54,38 @@ class UnitDefinition(
     val nuclearSilo: NuclearSiloProfile? = null,
     val attachmentLayout: AttachmentLayout? = null,
     val attachmentModule: AttachmentModuleProfile? = null,
+    val afterburn: AfterburnProfile? = null,
+    val blink: BlinkProfile? = null,
+    val attackMovement: AttackMovementProfile? = null,
+    val initialWeaponFlagZero: Boolean = false,
+    val authoredAirCombat: Boolean = false,
+    val authoredMaintenance: AuthoredMaintenance? = null,
 ) {
+    internal val locomotionStates: SubmersibleLocomotion?
+        get() = amphibiousJet?.locomotion ?: submarine?.locomotion
     val retainedUnconsumed: Set<String> = Collections.unmodifiableSet(LinkedHashSet(retainedUnconsumed))
     val maximumHealth: Double? get() = durability?.maxHp ?: combat?.maxHp
 }
 
-enum class TransportProfile { NATIVE_HOVERCRAFT, NATIVE_DROPSHIP, NAUTILUS_SUBMERGED }
+enum class TransportProfile { NATIVE_HOVERCRAFT, NATIVE_DROPSHIP, NAUTILUS_SUBMERGED, AUTHORED }
+
+enum class TransportUnloadTerrain { LAND, LIQUID, EITHER, NEVER }
+
+data class TransportSettings(val capacity: Int, val passengerMovement: MovementType,
+    val unloadTerrain: TransportUnloadTerrain, val unloadTicks: Int) {
+    internal fun isValid() = capacity in 1..1000 && passengerMovement != MovementType.NONE && unloadTicks in 1..36000
+}
 
 /** Native work capability, independent of the ordinary builder's construction menu. */
-enum class MaintenanceProfile { NATIVE_REPAIR_BAY, MECH_ENGINEER, SCOUT_BOT, MODULAR_SPIDER }
+enum class MaintenanceProfile { NATIVE_REPAIR_BAY, MECH_ENGINEER, SCOUT_BOT, MODULAR_SPIDER, AUTHORED }
+
+data class AuthoredMaintenance(val canRepairUnits: Boolean, val canRepairBuildings: Boolean,
+    val canReclaim: Boolean, val autoRepair: Boolean) {
+    internal fun isValid(): Boolean = (canRepairUnits || canRepairBuildings || canReclaim) &&
+        (!autoRepair || canRepairUnits || canRepairBuildings)
+
+    fun canRepair(target: UnitDefinition): Boolean = if (target.building == null) canRepairUnits else canRepairBuildings
+}
 
 /** Finite effective custom silos share their content and presentation slots. */
 data class NuclearSiloProfile(
@@ -97,6 +121,17 @@ data class MovementProfile(
 
 enum class MovementType { LAND, NONE, AIR, WATER, HOVER, OVER_CLIFF, OVER_CLIFF_WATER }
 
+/** A water route can begin before the unit crosses the underwater targeting threshold. */
+internal enum class SubmersibleLocomotion(
+    val contentName: String,
+    val submergedSpeed: Double,
+    val submergedTurnSpeed: Double? = null,
+    val divingChangesRoute: Boolean = false,
+) {
+    WATER("water", .45),
+    AIR_WATER("air-water", .4, 1.5, divingChangesRoute = true),
+}
+
 data class HoverProfile(val targetHeight: Double = 4.0, val heightDrift: Double = 1.5,
     val phaseSpeed: Double = 3.0, val heightChangeRate: Double = .1) {
     fun isValid(): Boolean = listOf(targetHeight, heightDrift, phaseSpeed, heightChangeRate).all { it.isFinite() && it >= 0.0 } &&
@@ -104,7 +139,7 @@ data class HoverProfile(val targetHeight: Double = 4.0, val heightDrift: Double 
 }
 
 data class FlightProfile(val targetHeight: Double, val heightDrift: Double,
-    val heightChangeRate: Double, val startingHeightOffset: Double) {
+    val heightChangeRate: Double, val startingHeightOffset: Double, val landWhenStationary: Boolean = false) {
     fun isValid(): Boolean = listOf(targetHeight, heightDrift, heightChangeRate, startingHeightOffset).all { it.isFinite() } &&
         targetHeight >= 0.0 && heightDrift >= 0.0 && startingHeightOffset >= 0.0 &&
         (targetHeight + heightDrift).isFinite() && (heightChangeRate == -1.0 || heightChangeRate >= 0.0)
@@ -117,10 +152,16 @@ data class RotorDefinition(val imagePath: Path, val spinRate: Double)
 data class FixedUnderwaterTargetProfile(val height: Double = -8.0)
 
 /** Explicit native capability; depth alone does not make an ordinary unit a submarine. */
-enum class SubmarineProfile { NATIVE }
+enum class SubmarineProfile {
+    NATIVE;
+
+    internal val locomotion: SubmersibleLocomotion get() = SubmersibleLocomotion.WATER
+}
 
 /** Native capability and the two folding side images; independent from rotor flight. */
-data class AmphibiousJetProfile(val leftWingImagePath: Path, val rightWingImagePath: Path)
+data class AmphibiousJetProfile(val leftWingImagePath: Path, val rightWingImagePath: Path) {
+    internal val locomotion: SubmersibleLocomotion get() = SubmersibleLocomotion.AIR_WATER
+}
 
 /** Trusted original target class; a building or an unarmed life profile does not imply native membership. */
 enum class DirectHitTargetKind { ORDINARY, NATIVE_BUILDING }
@@ -156,9 +197,10 @@ data class CustomActionDefinition(val name: String, val actionId: String, val ta
     val automatic: AutomaticActionCondition? = null, val visible: Boolean = true,
     val cannotMove: Boolean = false, val rotateTo: Double? = null, val rotateToOrBackwards: Boolean = false,
     val highPriority: Boolean = false, val requiresOverWater: Boolean = false, val groundLaunch: GroundLaunchProfile? = null,
-    val ammoProduction: AmmoProductionProfile? = null) {
+    val ammoProduction: AmmoProductionProfile? = null, val blinkWork: BlinkWork? = null,
+    val ignoreFactorySpeed: Boolean = false) {
     init {
-        require(listOfNotNull(targetTypeId, groundLaunch, ammoProduction).size == 1)
+        require(listOfNotNull(targetTypeId, groundLaunch, ammoProduction, blinkWork).size == 1)
         require(automatic == null || targetTypeId != null)
     }
 }
@@ -176,15 +218,29 @@ data class BuildingProfile(val footprint: BuildingFootprint, val backImagePath: 
     val foundationMovementType: MovementType? = null)
 class BuilderProfile(buildingTypeIds: List<String>, val range: Float = 85f,
     val preparation: Float = 30f, val decay: Float = 1.3f, val repairRate: Float = .2f,
-    val buildSpeedMultiplier: Float = 1f, val mainNanoTurret: String? = null) {
+    val buildSpeedMultiplier: Float = 1f, val mainNanoTurret: String? = null,
+    nanoConstructionTypes: Set<String> = emptySet(), val independentNanoTurnSpeed: Float? = null) {
     val buildingTypeIds: List<String> = Collections.unmodifiableList(ArrayList(buildingTypeIds))
+    val nanoConstructionTypes: Set<String> = Collections.unmodifiableSet(LinkedHashSet(nanoConstructionTypes))
 }
 data class ConstructionProfile(val price: Long, val rate: Float)
 
-/** Site work can construct these finite mobile products through the chassis nano turret. */
+/** Cost and rate after an authorized construction action has selected the target. */
 val UnitDefinition.siteConstruction: ConstructionProfile?
-    get() = construction ?: ModularSpiderRules.mobileConstruction(this)
-enum class FactoryExitProfile { NATIVE_LAND, CUSTOM_MECH, NATIVE_AIR, NATIVE_SEA, CUSTOM_NAUTILUS, NATIVE_EXPERIMENTAL }
+    get() = construction ?: build?.takeIf { building == null && movement.type != MovementType.NONE }
+        ?.let { ConstructionProfile(it.price, it.rate) }
+
+internal fun UnitDefinition.canConstruct(target: UnitDefinition): Boolean {
+    val profile = builder ?: return false
+    val construction = when {
+        target.id in profile.nanoConstructionTypes -> target.siteConstruction
+        maintenance == MaintenanceProfile.MODULAR_SPIDER -> target.construction ?: ModularSpiderRules.mobileConstruction(target)
+        else -> target.construction
+    } ?: return false
+    return target.id in profile.buildingTypeIds && target.maximumHealth != null &&
+        construction.price >= 0L && construction.rate.isFinite() && construction.rate > 0f
+}
+enum class FactoryExitProfile { NATIVE_LAND, CUSTOM_MECH, NATIVE_AIR, NATIVE_SEA, CUSTOM_NAUTILUS, NATIVE_EXPERIMENTAL, AUTHORED_MOBILE }
 
 /** Author buildings declare their terrain class; native sea factories retain their existing water fallback. */
 val UnitDefinition.foundationMovementType: MovementType
@@ -192,21 +248,27 @@ val UnitDefinition.foundationMovementType: MovementType
         ?: if (production?.exitProfile == FactoryExitProfile.NATIVE_SEA) MovementType.WATER else movement.type
 
 class ProductionProfile(unitTypeIds: List<String>, val exitProfile: FactoryExitProfile = FactoryExitProfile.NATIVE_LAND,
-    val speedMultiplier: Float = 1f) {
+    val speedMultiplier: Float = 1f, val rallyEnabled: Boolean = false) {
     constructor(unitTypeId: String) : this(listOf(unitTypeId))
     val unitTypeIds: List<String> = Collections.unmodifiableList(ArrayList(unitTypeIds))
     val unitTypeId: String get() = unitTypeIds.first()
-    override fun equals(other: Any?): Boolean = other is ProductionProfile && unitTypeIds == other.unitTypeIds && exitProfile == other.exitProfile && speedMultiplier == other.speedMultiplier
-    override fun hashCode(): Int = 31 * (31 * unitTypeIds.hashCode() + exitProfile.hashCode()) + speedMultiplier.hashCode()
-    override fun toString(): String = "ProductionProfile(unitTypeIds=$unitTypeIds, exitProfile=$exitProfile, speedMultiplier=$speedMultiplier)"
+    override fun equals(other: Any?): Boolean = other is ProductionProfile && unitTypeIds == other.unitTypeIds && exitProfile == other.exitProfile && speedMultiplier == other.speedMultiplier && rallyEnabled == other.rallyEnabled
+    override fun hashCode(): Int = 31 * (31 * (31 * unitTypeIds.hashCode() + exitProfile.hashCode()) + speedMultiplier.hashCode()) + rallyEnabled.hashCode()
+    override fun toString(): String = "ProductionProfile(unitTypeIds=$unitTypeIds, exitProfile=$exitProfile, speedMultiplier=$speedMultiplier, rallyEnabled=$rallyEnabled)"
 }
 data class BuildProfile(val price: Long, val rate: Float)
-data class IncomeProfile(val period: Float, val credits: Float)
+data class IncomeProfile(val period: Float, val credits: Float) {
+    companion object {
+        /** Keep binary32 ticks and the existing 0.1-tick threshold distinguishable. */
+        internal const val MAX_PERIOD = 1_000_000f
+    }
+}
 
 data class DeathExplosionProfile(val damage: Float, val radius: Float, val expandTime: Float,
-    val nuclear: Boolean = false)
+    val nuclear: Boolean = false, val authored: Boolean = false)
 
-data class UpgradeActionProfile(val actionKey: String, val targetTypeId: String, val price: Long, val rate: Float)
+data class UpgradeActionProfile(val actionKey: String, val targetTypeId: String, val price: Long, val rate: Float,
+    val completionCredits: Long = 0L)
 
 class UpgradeProfile(actions: List<UpgradeActionProfile>) {
     val actions: List<UpgradeActionProfile> = Collections.unmodifiableList(ArrayList(actions))
@@ -215,7 +277,7 @@ class UpgradeProfile(actions: List<UpgradeActionProfile>) {
 /** Finite point defense; an attached barrel follows the current module heading. */
 data class PointDefenseProfile(val range: Double = 160.0, val muzzleOffsetX: Double = 0.0,
     val muzzleOffsetY: Double = -13.0, val recharge: Float = .0004f, val cost: Float = .11f,
-    val initialEnergy: Float = 1f, val attachedBarrel: Double? = null) {
+    val initialEnergy: Float = 1f, val attachedBarrel: Double? = null, val authored: Boolean = false) {
     fun muzzle(position: Position, heading: Double): Position {
         val offset = attachedBarrel?.let { ScreenPlane.displacement(heading, it) } ?: Position(muzzleOffsetX, muzzleOffsetY)
         return Position(position.x + offset.x, position.y + offset.y)
@@ -280,9 +342,19 @@ data class NamedWeaponDefinition(val name: String, val projectileName: String,
     val invisible: Boolean = false, val imageOffsetX: Double = 0.0, val imageOffsetY: Double = 0.0,
     val idleDirectionReversing: Double? = null, val turnDeceleration: Double? = null,
     val energyUsage: Float = 0f, val idleSweep: IdleSweepProfile? = null, val resetTurret: Boolean = true,
-    val interception: ProjectileInterceptionProfile? = null)
+    val interception: ProjectileInterceptionProfile? = null,
+    val condition: WeaponCondition? = null,
+    val landCondition: WeaponCondition? = null)
 
-data class ProjectileInterceptionProfile(val landingRange: Float, val trackingRange: Float, val minimumHeight: Float)
+enum class WeaponCondition { NOT_FLYING, OVER_WATER, SOURCE_FLAG_ZERO_CLEAR }
+
+enum class AttackMovementProfile { BOMBER }
+
+data class ProjectileInterceptionProfile(val landingRange: Float, val trackingRange: Float, val minimumHeight: Float) {
+    internal fun isValid(): Boolean =
+        listOf(landingRange, trackingRange).all { it > 0f && (it * it).isFinite() } &&
+            minimumHeight.isFinite() && minimumHeight >= 0f
+}
 
 /** Gameplay trigger identity, never an audio filename or resource-pack decision. */
 enum class FireSoundProfile(val eventId: String, val volume: Float, val pitch: Float = 1f) {
@@ -312,7 +384,27 @@ data class ProjectileProfile(val directDamage: Double, val life: Double, val spe
     val splash: OrdinarySplashProfile? = null, val retargetOnDeath: Boolean = false,
     val ballistic: CustomBallisticProfile? = null, val lightning: Boolean = false,
     val damageModifiers: ProjectileDamageModifiers = ProjectileDamageModifiers(),
-    val beam: BeamProfile? = null)
+    val beam: BeamProfile? = null, val flame: Boolean = false,
+    val steering: ProjectileSteering? = null, val endOfLife: ProjectileProfile? = null)
+
+data class ProjectileSteering(val turnRate: Double, val nearTurnRate: Double?) {
+    internal fun isValid(): Boolean = (turnRate == -1.0 || turnRate in 0.0..360.0) &&
+        (nearTurnRate == null || nearTurnRate in 0.0..360.0)
+}
+
+internal fun ProjectileProfile.supportsExpirySteering(): Boolean =
+    ground == null && ballistic == null && missile == null && beam == null &&
+        !instant && !retargetOnDeath && !flame && !lightning &&
+        (steering?.isValid() != false)
+
+internal fun ProjectileProfile.isTerminalExpiryPayload(): Boolean =
+    endOfLife == null && supportsExpirySteering() && splash == null &&
+        life.isFinite() && life > 0.0 && speed.isFinite() && speed > 0.0 &&
+        directDamage.isFinite() && directDamage >= 0.0 &&
+        deflectionHealth.isFinite() && deflectionHealth > 0f &&
+        damageModifiers == ProjectileDamageModifiers() &&
+        (acceleration?.let { it.targetSpeed.isFinite() && it.targetSpeed > 0.0 &&
+            it.acceleration.isFinite() && it.acceleration > 0.0 } != false)
 
 /** Shield expenditure and damage deflection are separate native projectile properties. */
 data class ProjectileDamageModifiers(val shieldDamage: Double = 1.0, val shieldDeflection: Double = 1.0,

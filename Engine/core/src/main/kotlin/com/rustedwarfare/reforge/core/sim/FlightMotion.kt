@@ -3,7 +3,7 @@ package com.rustedwarfare.reforge.core.sim
 import kotlin.math.abs
 import kotlin.math.sin
 import kotlin.math.hypot
-import com.rustedwarfare.reforge.core.content.BomberRules
+import com.rustedwarfare.reforge.core.content.AttackMovementProfile
 import com.rustedwarfare.reforge.core.content.MapDefinition
 import com.rustedwarfare.reforge.core.content.MovementProfile
 
@@ -33,7 +33,8 @@ internal object FlightMotion {
         unit.rotorHeightOffset = (unit.rotorHeightOffset - .3 * delta).coerceAtLeast(0.0)
         unit.heightPhase += 2.0 * delta
         if (unit.heightPhase > 360.0) unit.heightPhase -= 360.0
-        if (unit.typeId == BomberRules.ID && advanceIdleLanding(unit, map, delta)) return
+        val bomber = unit.definition.attackMovement == AttackMovementProfile.BOMBER
+        if ((bomber || profile.landWhenStationary) && advanceIdleLanding(unit, map, delta, bomber)) return
         val desired = profile.targetHeight + sin(Math.toRadians(unit.heightPhase)) * profile.heightDrift
         val difference = unit.height - desired
         check(desired.isFinite() && difference.isFinite()) { "Non-finite derived flight height for ${unit.unitId}" }
@@ -72,10 +73,10 @@ internal object FlightMotion {
             (y + GroundMath.sin(away) * 600f).toDouble().coerceIn(radius, map.heightTiles.toDouble() * map.tileHeight - radius))
     }
 
-    private fun advanceIdleLanding(unit: MutableUnit, map: MapDefinition, delta: Double): Boolean {
+    private fun advanceIdleLanding(unit: MutableUnit, map: MapDefinition, delta: Double, requiresEmptyQueue: Boolean): Boolean {
         unit.flightIdleTime = if (unit.movementRequested || OrdinaryWeapon.moving(unit)) 0f
             else minOf(4f, unit.flightIdleTime + delta.toFloat())
-        if (unit.flightIdleTime <= 3f || unit.tasks.isNotEmpty() || map.isLiquid(
+        if (unit.flightIdleTime <= 3f || requiresEmptyQueue && unit.tasks.isNotEmpty() || map.isLiquid(
                 MapBounds.cell(unit.position.x, map.tileWidth, map.widthTiles),
                 MapBounds.cell(unit.position.y, map.tileHeight, map.heightTiles))) return false
         val height = unit.height.toFloat()

@@ -315,6 +315,19 @@ class SandboxFunctionalInstrumentation : Instrumentation() {
                 .put("x", x).put("y", y))
             return point
         }
+        fun tapAction(id: String, label: String, beforeDown: (() -> Unit)? = null): TouchGeometry {
+            var action: JsonValue? = null
+            await("$label action ready") {
+                val layout = rows().lastOrNull { matches(it, "action-layout") }
+                action = layout?.get("actions")?.firstOrNull {
+                    it.getString("actionId") == id && it.getBoolean("enabled")
+                }
+                action != null
+            }
+            val bounds = checkNotNull(action).get("bounds")
+            return tap(bounds.getFloat("x") + bounds.getFloat("width") / 2,
+                bounds.getFloat("y") + bounds.getFloat("height") / 2, label, beforeDown)
+        }
         fun key(code: Int) {
             businessPoll(input = true)
             sendKeyDownUpSync(code)
@@ -344,7 +357,7 @@ class SandboxFunctionalInstrumentation : Instrumentation() {
             }
         }
         fun configureSetup(mode: String, shared: Boolean, label: String) {
-            tap(790f,176f,"$label mode selector")
+            tapAction("match-vision-mode", "$label mode selector")
             inputFrames("$label-selector-open")
             val probe=SandboxSetupProbe(activity as AndroidLauncher)
             setupState(probe,"$label-selector-open",0,true,false)
@@ -354,7 +367,7 @@ class SandboxFunctionalInstrumentation : Instrumentation() {
             inputFrames("$label-selector-confirm")
             // Enter starts a fade; wait for actual pane removal, then the actual checkbox value.
             setupState(probe,"$label-selector-removed",modeIndex,false,false)
-            if(shared) tap(662f,128f,"$label shared on")
+            if(shared) tapAction("match-shared-vision", "$label shared on")
             setupState(probe,"$label-shared-option-ready",modeIndex,false,shared)
         }
         fun worldTap(x: Double, y: Double, label: String): TouchGeometry {
@@ -363,7 +376,7 @@ class SandboxFunctionalInstrumentation : Instrumentation() {
         }
         fun load(mode: String, shared: Boolean) {
             val mark = rows().size
-            tap(790f, 80f, "Start/Reopen", if (captureNewStart) ({
+            tapAction("start-match", "Start/Reopen", if (captureNewStart) ({
                 check(SandboxRecreateOracle.setup(rows())) { "Replacement auto-loaded before actual Start input" }
                 newStartBoundary = stream.records.size.toLong()
             }) else null)
@@ -493,13 +506,16 @@ class SandboxFunctionalInstrumentation : Instrumentation() {
             if(config.exercise=="recovery") {
                 val fixture=SandboxRecoveryFixture(targetContext,checkNotNull(runName))
                 recoveryFixture=fixture
+                await("qualified Start before removing the derived file") {
+                    rows().lastOrNull { matches(it, "start-availability") }?.getBoolean("canStart") == true
+                }
                 fixture.hide()
                 actions.put(JSONObject().put("kind","required-derived-reference-moved")
                     .put("relative","TestLab/local/P002-知识沙盒输入/tilesets/p001-ground.tsx")
                     .put("sha256",fixture.sha256).put("bytes",fixture.byteCount))
                 stream.expectLoadFailure(1)
                 val failedMark=rows().size
-                tap(790f,80f,"Start with required derived reference missing")
+                tapAction("start-match", "Start with required derived reference missing")
                 await("failed load request") { rows().drop(failedMark).any { matches(it,"load-request") } }
                 val request=rows().drop(failedMark).single { matches(it,"load-request") }
                 SandboxFunctionalOracle.configuration(request,config.mode,config.shared)
@@ -511,6 +527,15 @@ class SandboxFunctionalInstrumentation : Instrumentation() {
                 check(stream.expectedLoadFailureObserved())
                 fixture.restore()
                 check(fixture.restored)
+                await("retry control or automatic successful qualification") {
+                    val actions = rows().lastOrNull { matches(it, "action-layout") }?.get("actions")
+                    actions?.any { action -> action.getBoolean("enabled") &&
+                        action.getString("actionId") in setOf("check-start-content", "start-match") } == true
+                }
+                val currentLayout = rows().last { matches(it, "action-layout") }.get("actions")
+                if (currentLayout.any { it.getString("actionId") == "check-start-content" && it.getBoolean("enabled") }) {
+                    tapAction("check-start-content", "Recheck restored content")
+                }
                 actions.put(JSONObject().put("kind","required-derived-reference-restored")
                     .put("sha256",fixture.sha256).put("bytes",fixture.byteCount).put("failedGeneration",generation))
             }
@@ -786,16 +811,18 @@ class SandboxFunctionalInstrumentation : Instrumentation() {
                     actions.put(JSONObject().put("kind","recovered-match-move-stop")
                         .put("failedGeneration",recoveryFirstGeneration).put("newGeneration",generation))
                 } else {
-                    tap(790f, 176f, "disabled mode during match")
-                    tap(662f, 128f, "disabled shared during match")
+                    val matchLayout = rows().last { matches(it, "action-layout", generation) }
+                    check(matchLayout.get("actions").none {
+                        it.getString("actionId") in setOf("match-vision-mode", "match-shared-vision") && it.getBoolean("enabled")
+                    })
                     load(config.mode, config.shared)
                     mark = rows().size
-                    tap(865f, 312f, "Exit match to setup")
+                    tapAction("exit-match", "Exit match to setup")
                     await("Exit closes current match") {
                         rows().drop(mark).any { matches(it, "match-exit", generation) } &&
                             rows().drop(mark).any { matches(it, "closed", generation) }
                     }
-                    tap(662f, 128f, "editable shared toggled")
+                    tapAction("match-shared-vision", "editable shared toggled")
                     load(config.mode, !config.shared)
                 }
             } else if (config.exercise == "retention") {

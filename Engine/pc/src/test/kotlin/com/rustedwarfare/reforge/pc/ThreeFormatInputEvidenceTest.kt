@@ -31,8 +31,8 @@ class ThreeFormatInputEvidenceTest {
                 Files.move(old, parent)
                 val author = input.resolve("units/tank.$format")
                 Files.writeString(author, if (format == "json")
-                    """{"format":"rw-reforge.unit.v1","copyFrom":["base.ini"]}"""
-                else "format: rw-reforge.unit.v1\ncopyFrom: [\"base.ini\"]")
+                    """{"format":"rw-reforge.unit.v2","copyFrom":["base.ini"]}"""
+                else "format: rw-reforge.unit.v2\ncopyFrom: [\"base.ini\"]")
                 val loaded = load(input)
                 Files.writeString(parent, "Invalid after this load completed")
                 Files.writeString(author, "Invalid after this load completed")
@@ -56,7 +56,7 @@ class ThreeFormatInputEvidenceTest {
                 if (format == "json") {
                     val authorRow = files.single { it.getString("path") == author.toString() }
                     assertEquals(55L, authorRow.getLong("bytes"))
-                    assertEquals("ae03d75bc131b4fd56943de1e18e90edac965094967e3bd33a1261b38790a8c2", authorRow.getString("sha256"))
+                    assertEquals("fb5aac95b156141918ea415032306818d198c009703cb1ffbd8afe9c9087397a", authorRow.getString("sha256"))
                 }
             } finally {
                 Files.walk(temporary).use { paths -> paths.sorted(Comparator.reverseOrder()).forEach { owned ->

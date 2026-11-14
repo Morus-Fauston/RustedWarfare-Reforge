@@ -251,4 +251,7 @@ internal fun FlightPose.json(): JsonObject = obj("velocity" to velocity.json(), 
         (fall?.let { mapOf("fall" to obj("speed" to n(it.speed), "landed" to b(it.landed),
             "landedInWater" to b(it.landedInWater), "settled" to b(it.settled))) } ?: emptyMap())) }
 
-internal fun BeamSegment.json(): JsonObject = obj("end" to end.json(), "endHeight" to n(endHeight), "textureOffset" to n(textureOffset))
+internal fun BeamSegment.json(): JsonObject = JsonObject(
+    obj("end" to end.json(), "endHeight" to n(endHeight), "textureOffset" to n(textureOffset)) +
+        listOfNotNull(resourceUnitType?.let { "resourceUnitType" to s(it) },
+            visibleSourceUnitId?.let { "visibleSourceUnitId" to s(it) }).toMap())

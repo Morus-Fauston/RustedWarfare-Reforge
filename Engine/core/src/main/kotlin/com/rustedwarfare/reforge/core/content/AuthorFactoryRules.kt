@@ -24,10 +24,12 @@ internal object AuthorFactoryRules {
         val build = product.build ?: return false
         if (build.price < 0L || !build.rate.isFinite() || build.rate <= 0f) return false
         return when (exit) {
-            FactoryExitProfile.NATIVE_LAND, FactoryExitProfile.CUSTOM_MECH -> product.movement.type == MovementType.LAND
-            FactoryExitProfile.NATIVE_AIR -> product.movement.type == MovementType.AIR && product.rotor != null && product.combat != null
+            FactoryExitProfile.NATIVE_LAND -> product.movement.type == MovementType.LAND
+            FactoryExitProfile.CUSTOM_MECH -> product.movement.type == MovementType.LAND || MechFlameRules.supports(product)
+            FactoryExitProfile.NATIVE_AIR -> product.movement.type == MovementType.AIR && product.combat != null &&
+                (product.rotor != null || BomberRules.supports(product))
             FactoryExitProfile.NATIVE_SEA -> product.movement.type == MovementType.WATER && product.combat != null
-            FactoryExitProfile.CUSTOM_NAUTILUS, FactoryExitProfile.NATIVE_EXPERIMENTAL -> false
+            FactoryExitProfile.CUSTOM_NAUTILUS, FactoryExitProfile.NATIVE_EXPERIMENTAL, FactoryExitProfile.AUTHORED_MOBILE -> false
         }
     }
 

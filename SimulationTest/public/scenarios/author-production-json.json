@@ -57,7 +57,7 @@
       {
         "id": "c_tank",
         "path": "../inputs/three-format-tanks/json/units/tank.json",
-        "sha256": "f69e2a9224c37d2fad6baadd42967e98aadc0e67c576bd76c1be5c20d8040e61",
+        "sha256": "42b90d73878d9996aaa59dc0480945d26039a281b3da6cb9f55b1fd2909d3ac9",
         "loader": "combat"
       }
     ],

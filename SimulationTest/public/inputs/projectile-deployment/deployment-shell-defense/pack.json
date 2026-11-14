@@ -1,0 +1,70 @@
+{
+  "format": "rw-reforge.content-pack.v1",
+  "id": "deployment-shell-defense",
+  "name": "deployment-shell-defense",
+  "units": [
+    {
+      "type": "tank",
+      "file": "units/shooter.json"
+    },
+    {
+      "type": "tank",
+      "file": "units/immune.json"
+    },
+    {
+      "type": "point-defense",
+      "file": "units/laserDefence.json"
+    },
+    {
+      "type": "constructor",
+      "file": "units/builder.json"
+    },
+    {
+      "type": "factory",
+      "file": "units/factory.json"
+    },
+    {
+      "type": "tank",
+      "file": "units/target.json"
+    }
+  ],
+  "opening": {
+    "map": "maps/field.tmx",
+    "credits": 0,
+    "opponentCredits": 0,
+    "units": [
+      {
+        "id": "shooter",
+        "owner": "p2",
+        "type": "incoming_gun",
+        "x": 85,
+        "y": 190,
+        "heading": 90
+      },
+      {
+        "id": "immune",
+        "owner": "p2",
+        "type": "incoming_nondeflectable",
+        "x": 85,
+        "y": 250,
+        "heading": 90
+      },
+      {
+        "id": "defense",
+        "owner": "p1",
+        "type": "laserDefence",
+        "x": 245,
+        "y": 210,
+        "heading": 0
+      },
+      {
+        "id": "target",
+        "owner": "p1",
+        "type": "field_tank",
+        "x": 490,
+        "y": 210,
+        "heading": 270
+      }
+    ]
+  }
+}

@@ -2,6 +2,7 @@ package com.rustedwarfare.reforge.core.sim
 
 import com.rustedwarfare.reforge.core.content.FactoryExitProfile
 import com.rustedwarfare.reforge.core.content.AttachmentSlotDefinition
+import com.rustedwarfare.reforge.core.content.MapDefinition
 import com.rustedwarfare.reforge.core.content.ScoutBotRules
 import java.util.UUID
 
@@ -29,12 +30,13 @@ internal object UnitRegistration {
         }
     }
 
-    fun produced(state: StepState, input: Scenario, factory: MutableUnit, completed: ProductionCompletion): MutableUnit {
+    fun produced(state: StepState, input: Scenario, factory: MutableUnit, completed: ProductionCompletion,
+                 map: MapDefinition = input.map): MutableUnit {
         check(completed.ownerPlayerId == factory.ownerPlayerId)
         val definition = input.unitDefinitions.getValue(completed.typeId)
         val publicId = "produced:${factory.ownerPlayerId}:${completed.unitNonce}"
         check(publicId !in state.units) { "A paid production nonce must identify a new unit" }
-        val birth = FactoryExit.birth(factory, definition, input.map)
+        val birth = FactoryExit.birth(factory, definition, map)
         val customProducer = factory.definition.production?.exitProfile == FactoryExitProfile.CUSTOM_NAUTILUS
         require(customProducer || MapBounds.contains(input.map.widthTiles.toDouble() * input.map.tileWidth,
             input.map.heightTiles.toDouble() * input.map.tileHeight, birth.position, definition.radius)) {
@@ -48,13 +50,16 @@ internal object UnitRegistration {
         val born = register(state, input, spawn, identity.objectId, identity.updateKey,
             ProducedOrigin(factory.unitId, factory.typeId, completed.typeId), birth.protection, identity) { unit ->
             if (customProducer) unit.nativeTransportPlacement = true
+            val rally = factory.factoryRally.takeIf { factory.definition.production?.rallyEnabled == true }
             if (reachable) {
                 unit.moveTarget = birth.target
                 unit.originMoveId = "production-exit:$publicId"
-                if (definition.transport == com.rustedwarfare.reforge.core.content.TransportProfile.NATIVE_DROPSHIP || definition.energy != null)
-                    unit.taskQueue = UnitTaskQueue().append(UnitTask(UnitTaskKind.MOVE, checkNotNull(unit.originMoveId), birth.target))
+                if (rally != null || definition.transport == com.rustedwarfare.reforge.core.content.TransportProfile.NATIVE_DROPSHIP || definition.energy != null)
+                    unit.taskQueue = UnitTaskQueue().append(UnitTask(UnitTaskKind.MOVE, checkNotNull(unit.originMoveId), birth.target,
+                        factoryExit = rally != null))
                 unit.adoptRoute(listOf(birth.target), birth.target, -1L)
             }
+            if (rally != null) unit.taskQueue = unit.taskQueue.append(UnitTask(UnitTaskKind.MOVE, "production-rally:$publicId", rally, startsAfterFactoryExit = true))
         }
         if (factory.definition.production?.exitProfile == FactoryExitProfile.CUSTOM_MECH) {
             factory.productionSide = !factory.productionSide
@@ -78,6 +83,9 @@ internal object UnitRegistration {
 
     fun sandboxId(ownerPlayerId: String, generation: Long, sequence: Long): String =
         "sandbox:$ownerPlayerId:$generation:$sequence"
+
+    fun sandboxBatchId(ownerPlayerId: String, generation: Long, sequence: Long, index: Int): String =
+        "sandbox-batch:$ownerPlayerId:$generation:$sequence:$index"
 
     fun scout(state: StepState, input: Scenario, source: MutableUnit, impact: MutableProjectile) {
         check(impact.sourceUnitId == source.unitId)
@@ -103,9 +111,8 @@ internal object UnitRegistration {
     }
 
     fun sandbox(state: StepState, input: Scenario, command: SandboxCommand.Spawn,
-                generation: Long, sequence: Long, coordinates: CoordinatePolicy): MutableUnit {
+                id: String, coordinates: CoordinatePolicy): MutableUnit {
         val definition = input.unitDefinitions.getValue(command.typeId)
-        val id = sandboxId(command.ownerPlayerId, generation, sequence)
         check(id !in state.units) { "Sandbox identity must be new" }
         val identity = nextIdentity(state)
         val unit = create(input, UnitSpawn(id, command.ownerPlayerId, command.typeId, command.position,

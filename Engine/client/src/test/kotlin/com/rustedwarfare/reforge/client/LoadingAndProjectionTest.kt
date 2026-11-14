@@ -3,6 +3,8 @@ package com.rustedwarfare.reforge.client
 import com.rustedwarfare.reforge.core.sim.Position
 import com.rustedwarfare.reforge.core.sim.Scenario
 import java.nio.file.Path
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 import kotlin.test.*
 
 class LoadingAndProjectionTest {
@@ -77,6 +79,54 @@ class LoadingAndProjectionTest {
             loader.request(root)
             assertEquals("p001-windows", await(loader).getOrThrow().scenarioId)
             assertNull(loader.poll())
+        }
+    }
+
+    @Test fun a_cancelled_generation_drops_late_success_and_keeps_the_next_world() {
+        val entered = CountDownLatch(1)
+        val release = CountDownLatch(1)
+        val stale = root.resolve("slow-first-world")
+        val prepared = ControlledScenario.load(root)
+        val launch = SandboxLaunchState(SandboxConfiguration(stale, SandboxOptions()))
+        SandboxLoader { path ->
+            if (path == stale) {
+                entered.countDown()
+                while (release.count > 0) {
+                    try { release.await(2, TimeUnit.SECONDS) }
+                    catch (_: InterruptedException) { /* This input finishes after cancellation. */ }
+                }
+                prepared.copy(scenarioId = "cancelled-world")
+            } else prepared
+        }.use { loader ->
+            try {
+                val first = launch.start()
+                loader.request(first.configuration.root)
+                assertTrue(entered.await(2, TimeUnit.SECONDS))
+                loader.cancel()
+                launch.exit()
+                assertTrue(launch.canEdit)
+                assertNull(loader.pollPrepared())
+                launch.configure(SandboxConfiguration(root, SandboxOptions()))
+                val replacement = launch.start()
+                loader.request(replacement.configuration.root)
+                release.countDown()
+                assertFalse(launch.complete(first.generation))
+                assertEquals(prepared.scenarioId, await(loader).getOrThrow().scenarioId)
+                assertTrue(launch.complete(replacement.generation))
+                assertNull(loader.pollPrepared())
+            } finally { release.countDown() }
+        }
+    }
+
+    @Test fun qualification_rejects_parsed_content_that_cannot_start_a_world() {
+        val prepared = ControlledScenario.load(root)
+        val invalid = prepared.units.first().copy(position = Position(-20.0, -20.0))
+        SandboxLoader { path -> if (path == root) prepared else prepared.copy(units = listOf(invalid)) }.use { loader ->
+            loader.qualify(root.resolve("invalid-spawn"), null)
+            val failure = assertNotNull(await(loader).exceptionOrNull())
+            assertTrue(failure.message.orEmpty().startsWith("invalid-spawn:"), failure.message)
+            loader.qualify(root, null)
+            assertEquals(prepared.scenarioId, await(loader).getOrThrow().scenarioId)
         }
     }
 

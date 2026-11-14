@@ -21,6 +21,11 @@ sealed interface AttachmentAutomaticAction {
     data class ConvertWhenBuilt(val targetTypeId: String) : AttachmentAutomaticAction
 }
 
+/** Replacement speed contributions are selected by priority, then by attachment slot. */
+data class AttachmentSpeed(val maximum: Double, val priority: Int, val readyOnly: Boolean) {
+    internal fun isValid(): Boolean = maximum.isFinite() && maximum > 0.0 && priority > 0
+}
+
 class AttachmentModuleProfile(
     val empty: Boolean,
     val selfBuildRate: Float = 0f,
@@ -29,6 +34,9 @@ class AttachmentModuleProfile(
     val reclaim: AttachmentRemoval? = null,
     upgrades: List<AttachmentUpgrade> = emptyList(),
     val automaticAction: AttachmentAutomaticAction? = null,
+    val parentSpeed: AttachmentSpeed? = null,
+    val parentBlink: BlinkProfile? = null,
+    val interception: ProjectileInterceptionProfile? = null,
 ) {
     val installs: List<AttachmentInstall> = Collections.unmodifiableList(ArrayList(installs))
     val upgrades: List<AttachmentUpgrade> = Collections.unmodifiableList(ArrayList(upgrades))
@@ -63,6 +71,15 @@ internal object ModularSpiderRules {
         AttachmentInstall("buildAntinuke", ANTI_NUKE, 7000L),
         AttachmentInstall("buildBlink", BLINK, 15000L),
     )
+    private const val INTERCEPTOR_INSTALL = "buildAntinuke"
+
+    fun authoredModuleId(id: String): Boolean = id.matches(Regex("[a-z][a-z0-9_.-]*")) && !isModuleId(id) && id != ID
+
+    private fun matchesInstalls(configured: List<AttachmentInstall>): Boolean =
+        configured.size == installs.size && configured.zip(installs).all { (choice, original) ->
+            choice == original || original.action == INTERCEPTOR_INSTALL &&
+                choice.copy(targetTypeId = original.targetTypeId) == original && authoredModuleId(choice.targetTypeId)
+        }
     val slots = listOf(
         AttachmentSlotDefinition(1, -11.0, 32.0, 0.0, EMPTY),
         AttachmentSlotDefinition(2, 11.0, 32.0, 0.0, EMPTY),
@@ -112,13 +129,17 @@ internal object ModularSpiderRules {
 
     fun supportsModule(unit: UnitDefinition): Boolean {
         val module = unit.attachmentModule ?: return false
+        val authoredInterceptor = module.interception != null && authoredModuleId(unit.id)
+        val utility = ModularSpiderUtilityForms.byId[if (authoredInterceptor) ANTI_NUKE else unit.id]
+        val validInterception = if (authoredInterceptor) module.interception?.isValid() == true
+            else module.interception == utility?.module?.interception
+        if (module.parentBlink != utility?.module?.parentBlink || !validInterception) return false
         if (unit.movement != slotMovement || unit.attachmentLayout != null || unit.transport != null) return false
         if (unit.pointDefense != (if (unit.id == LASER_DEFENSE) ModularSpiderUtilityForms.laserDefense else null)) return false
         if (unit.id == EMPTY) return module.empty && unit.radius == 20.0 && unit.maximumHealth == 3000.0 &&
             unit.combat == null && unit.income == null && module.automaticAction == null &&
-            module.installs == installs && module.upgrades.isEmpty() &&
-            module.selfBuildRate == 0f && module.cancel == null && module.reclaim == null
-        val utility = ModularSpiderUtilityForms.byId[unit.id]
+            matchesInstalls(module.installs) && module.upgrades.isEmpty() &&
+            module.selfBuildRate == 0f && module.cancel == null && module.reclaim == null && module.parentSpeed == null
         if (utility != null) return unit.radius == 15.0 && unit.maximumHealth == 3000.0 &&
             unit.combat == null && unit.shield == null && unit.income == utility.income &&
             matches(module, utility.module)
@@ -135,7 +156,8 @@ internal object ModularSpiderRules {
     private fun matches(module: AttachmentModuleProfile, expected: AttachmentModuleProfile): Boolean =
         !module.empty && module.installs.isEmpty() && module.selfBuildRate == expected.selfBuildRate &&
             module.cancel == expected.cancel && module.reclaim == expected.reclaim &&
-            module.upgrades == expected.upgrades && module.automaticAction == expected.automaticAction
+            module.upgrades == expected.upgrades && module.automaticAction == expected.automaticAction &&
+            module.parentSpeed?.isValid() != false && module.parentSpeed == expected.parentSpeed
 
     fun isModuleId(id: String): Boolean = id == EMPTY || id in ModularSpiderWeaponForms.byId ||
         id in ModularSpiderUtilityForms.byId
@@ -160,7 +182,10 @@ internal object ModularSpiderRules {
             listOfNotNull((module.automaticAction as? AttachmentAutomaticAction.ConvertWhenBuilt)?.let {
                 Reference("hiddenAction_speedFinished", "convertTo", it.targetTypeId)
             })
-        return conversions.firstOrNull { !available(it.target, empty = false) }
+        return conversions.firstOrNull { reference ->
+            !available(reference.target, empty = false) ||
+                reference.section == "action_$INTERCEPTOR_INSTALL" && units[reference.target]?.attachmentModule?.interception == null
+        }
             ?: listOf("cancel" to module.cancel, "reclaim" to module.reclaim).firstNotNullOfOrNull { (action, removal) ->
                 removal?.takeUnless { available(it.targetTypeId, empty = true) }
                     ?.let { Reference("action_$action", "convertTo", it.targetTypeId) }

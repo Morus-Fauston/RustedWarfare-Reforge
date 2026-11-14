@@ -1,5 +1,6 @@
 package com.rustedwarfare.reforge.client
 
+import com.rustedwarfare.reforge.core.content.BlinkWork
 import com.rustedwarfare.reforge.core.content.UnitDefinition
 import com.rustedwarfare.reforge.core.content.UpgradeActionProfile
 import com.rustedwarfare.reforge.core.content.siteConstruction
@@ -76,7 +77,7 @@ internal class ActionCatalogue(private val definitions: Map<String, UnitDefiniti
                 action.queueIndex != null, action.cooldownRemaining, action.available, action.queueIndex != null,
                 action.progress, groundTargeted = true, iconTypeId = selected.typeId,
                 attachmentContext = selected.unitId to selected.typeId)
-        if (selected.typeId == "modularSpider_antinuke" && action.name in setOf("buildAntiNuke", "isEnabled", "isDisabled")) {
+        if (module.interception != null && action.name in setOf("buildAntiNuke", "isEnabled", "isDisabled")) {
             val ammo = checkNotNull(state.stockpile)
             val online = checkNotNull(state.interceptorOnline)
             val building = action.name == "buildAntiNuke"
@@ -142,7 +143,8 @@ internal class ActionCatalogue(private val definitions: Map<String, UnitDefiniti
         val definition = definitions.getValue(factory.typeId)
         if (factory.constructionProgress < 1f && (definition.className == "AuthoredBuilding" || definition.production?.exitProfile in setOf(
             com.rustedwarfare.reforge.core.content.FactoryExitProfile.CUSTOM_MECH,
-            com.rustedwarfare.reforge.core.content.FactoryExitProfile.NATIVE_AIR))) return emptyList()
+            com.rustedwarfare.reforge.core.content.FactoryExitProfile.NATIVE_AIR,
+            com.rustedwarfare.reforge.core.content.FactoryExitProfile.AUTHORED_MOBILE))) return emptyList()
         return immutable(definitions.getValue(factory.typeId).production?.unitTypeIds.orEmpty().map { type ->
             val base = checkNotNull(production[type])
             val action = base.copy(rate = base.rate * checkNotNull(definition.production).speedMultiplier)
@@ -164,7 +166,8 @@ internal class ActionCatalogue(private val definitions: Map<String, UnitDefiniti
              maintenance: Boolean): ActionMenuView {
         val selected = view.units.singleOrNull { it.unitId == primary }
         fun controllable(unit: UnitObservation) = localControl && unit.alive && unit.ownerPlayerId == view.playerId
-        val ownSingle = selected?.takeIf { ids.size == 1 && controllable(it) }
+        val ownPrimary = selected?.takeIf(::controllable)
+        val ownSingle = ownPrimary?.takeIf { ids.size == 1 }
         val depthAction = ownSingle?.takeIf { it.constructionProgress >= 1f }?.submarine?.surfaceIntent?.let { intent ->
             val surface = !intent
             SubmarineDepthActionView(surface, if (surface) "Surface" else "Dive",
@@ -180,19 +183,31 @@ internal class ActionCatalogue(private val definitions: Map<String, UnitDefiniti
                     else "Dive requires water below the aircraft", available)
             }
         }
-        val factory = ownSingle?.let { unit -> view.factoryQueues.firstOrNull { it.factoryId == unit.unitId } }
+        val factory = ownPrimary?.let { unit -> view.factoryQueues.firstOrNull { it.factoryId == unit.unitId } }
         val transportAction = ownSingle?.takeIf { it.constructionProgress >= 1f &&
             (definitions.getValue(it.typeId).transport != com.rustedwarfare.reforge.core.content.TransportProfile.NAUTILUS_SUBMERGED ||
                 it.typeId == "nautilusSubmarineSurface") }?.transport?.let {
-            TransportUnloadActionView(!it.unloading, if (it.unloading) "Cancel unload" else "Unload", it.unloading || it.canUnload)
+            TransportUnloadActionView(!it.unloading, if (it.unloading) "Cancel unload" else "Unload", it.unloading || it.canUnload,
+                it.occupiedSlots, it.capacity, it.passengerCount)
         }
-        val actionUnit = ownSingle ?: if (localControl) nuclearLaunchMember(view, ids) else null
-        val unitActions = immutable(actionUnit?.unitActions?.actions.orEmpty()
-            .filter { ownSingle != null || it.name == "launchNuke" }.map { action ->
-            actionUnit?.attachmentOverview?.let { return@map attachmentAction(action, it, checkNotNull(actionUnit.unitActions)) }
-            val unitDefinition = actionUnit?.let { definitions.getValue(it.typeId) }
+        val groupedLauncher = if (localControl && ids.size > 1) nuclearLaunchMember(view, ids) else null
+        val actionOwners = ownPrimary?.unitActions?.actions.orEmpty()
+            .filter { groupedLauncher == null || it.name != "launchNuke" }
+            .map { it to checkNotNull(ownPrimary) } + groupedLauncher?.unitActions?.actions.orEmpty()
+            .filter { it.name == "launchNuke" }.map { it to checkNotNull(groupedLauncher) }
+        val rally = ownSingle?.takeIf { it.constructionProgress >= 1f &&
+            definitions.getValue(it.typeId).production?.rallyEnabled == true }?.let {
+            val point = factory?.rally
+            val hint = if (point == null) "Left: choose rally point" else "Left: change point\nRight: clear point"
+            CustomUnitActionView("setRally", "Rally point", hint, false, 0, true, point != null, groundTargeted = true)
+        }
+        val unitActions = immutable(actionOwners.map { (action, actionUnit) ->
+            actionUnit.attachmentOverview?.let { return@map attachmentAction(action, it, checkNotNull(actionUnit.unitActions)) }
+            val unitDefinition = definitions.getValue(actionUnit.typeId)
             val definition = unitDefinition?.customActions?.actions?.singleOrNull { it.name == action.name }
             val launch = definition?.groundLaunch
+            val blink = unitDefinition.blink
+            val blinkWork = definition?.blinkWork
             val navalAmmo = definition?.ammoProduction
             val ammoPrice = navalAmmo?.price ?: when (action.name) {
                 "buildNuke" -> 11000L
@@ -200,29 +215,44 @@ internal class ActionCatalogue(private val definitions: Map<String, UnitDefiniti
                 else -> null
             }
             val nuclear = ammoPrice != null || action.name == "launchNuke"
-            val price = launch?.price ?: ammoPrice
+            val price = launch?.price ?: ammoPrice ?:
+                (blinkWork as? BlinkWork.Unlock)?.credits
             val affordable = price == null || affordable(view, price)
-            val stockpile = actionUnit?.unitActions?.stockpile ?: 0
-            val ammoQueued = actionUnit?.unitActions?.queue.orEmpty().count { it.name == action.name }
-            val cancelUnit = if (ownSingle == null && action.name == "launchNuke")
+            val stockpile = actionUnit.unitActions?.stockpile ?: 0
+            val ammoQueued = actionUnit.unitActions?.queue.orEmpty().count { it.name == action.name }
+            val cancelUnit = if (groupedLauncher != null && action.name == "launchNuke")
                 nuclearLaunchMember(view, ids, cancelling = true) else actionUnit
             val cancelAction = cancelUnit?.unitActions?.actions?.singleOrNull { it.name == action.name }
             val title = when (action.name) { "afterBurn" -> "Afterburn"; "cancelBurn" -> "Cancel burn"
                 "deploy" -> "Deploy"; "undeploy" -> "Undeploy"; "surface" -> "Surface"; "dive" -> "Dive"
                 "buildNuke" -> "Build nuke"; "launchNuke" -> "Launch nuke"
                 "launchScoutBot" -> "Scout bot"
+                "addBlink" -> "Add blink"
+                "blink" -> "Blink"
                 "buildAntiNuke" -> "Build interceptor"; else -> action.name }
             val status = if (action.queueIndex != null) "Queued ${(action.progress!! * 100f).toInt()}%" else if (action.cooldownRemaining > 0)
                 String.format(Locale.ROOT, "Cooling %.1fs", action.cooldownRemaining / 1000f) else "Ready"
-            val motion = when (action.name) { "deploy" -> "Movement locked while deploying\nCannot cancel"
+            val motion = when {
+                unitDefinition.production?.exitProfile == com.rustedwarfare.reforge.core.content.FactoryExitProfile.AUTHORED_MOBILE &&
+                    definition?.targetTypeId != null -> buildString {
+                        if (definition.cannotMove) append("Movement locked while converting\n")
+                        append(if (definition.canPlayerCancel) "Right on card: cancel" else "Cannot cancel")
+                    }
+                else -> when (action.name) { "deploy" -> "Movement locked while deploying\nCannot cancel"
                 "undeploy" -> "Fixed until undeployed\nCannot cancel"
                 "surface", "dive" -> "Movement locked while converting\nRight: cancel"; else -> "Movement orders continue" }
-            val tooltip = if (launch != null)
+            }
+            val targetedBlink = blinkWork is BlinkWork.Teleport
+            val tooltip = if (blinkWork != null && blink != null) {
+                if (targetedBlink && blink.locked) "$title\nMust be undeployed"
+                else if (targetedBlink) "$title\n$status\nRange ${blink.range.toInt()}\nLeft: choose ground point\nRight on card: cancel charge"
+                else "$title\n$status\n\$$price\n" + if (affordable) "Left: unlock Blink" else "Insufficient funds"
+            } else if (launch != null)
                 "Launch scout bot\n$status\n\$${launch.price} / Range ${launch.range.toInt()}\n" +
                     (if (affordable) "Left: choose ground point\nEsc / right: cancel selection" else "Insufficient funds") +
                     "\nMovement locked while building\nRight on card: cancel one queued"
             else if (navalAmmo != null) {
-                val speed = checkNotNull(unitDefinition.production).speedMultiplier
+                val speed = unitDefinition.production?.speedMultiplier ?: 1f
                 val duration = String.format(Locale.ROOT, "%.1fs", 1.0 / (definition.rate * speed * 60.0))
                 val admission = when {
                     !nukesEnabled -> "Nukes disabled"
@@ -242,29 +272,40 @@ internal class ActionCatalogue(private val definitions: Map<String, UnitDefiniti
                 cancelAction?.queueIndex != null && cancelUnit?.let { selected ->
                     nuclear || definitions.getValue(selected.typeId).customActions?.actions?.singleOrNull { it.name == action.name }
                         ?.canPlayerCancel == true
-                } == true, action.progress, groundTargeted = launch != null || action.name == "launchNuke",
+                } == true, action.progress, groundTargeted = launch != null || targetedBlink || action.name == "launchNuke",
                 iconTypeId = launch?.payloadUnitTypeId)
-        })
-        val profiles = ownSingle?.takeUnless { it.constructionProgress < 1f &&
+        } + listOfNotNull(rally))
+        val profiles = ownPrimary?.takeUnless { it.constructionProgress < 1f &&
             definitions.getValue(it.typeId).className == "AuthoredBuilding" }
             ?.let { definitions.getValue(it.typeId).upgrades?.actions }.orEmpty()
         val upgradeQueue = if (profiles.isEmpty()) null else view.upgradeQueues.firstOrNull { it.unitId == primary }
         val upgrades = immutable(profiles.map { profile ->
             val item = upgradeQueue?.items?.firstOrNull { it.actionKey == profile.actionKey }
             val seconds = nominalSeconds[selected?.typeId]
-            val authored = selected?.let { definitions.getValue(it.typeId).production != null } == true
-            val kind = if (authored) UpgradePresentationKind.FACTORY
+            val source = selected?.let { definitions.getValue(it.typeId) }
+            val authoredEconomy = source?.className == "AuthoredEconomicBuilding"
+            val kind = if (source?.production != null) UpgradePresentationKind.FACTORY
+                else if (authoredEconomy) UpgradePresentationKind.ECONOMIC_BRANCH
                 else if (seconds != null) UpgradePresentationKind.ECONOMIC else UpgradePresentationKind.DEFENSE
-            val title = if (kind == UpgradePresentationKind.ECONOMIC) "Upgrade - T${profile.targetTypeId.last()}"
-                else title(profile.targetTypeId, panel = true)
+            val title = when (kind) {
+                UpgradePresentationKind.ECONOMIC -> "Upgrade - T${profile.targetTypeId.last()}"
+                UpgradePresentationKind.ECONOMIC_BRANCH -> profile.actionKey.replace('_', ' ').replaceFirstChar { it.titlecase() }
+                else -> title(profile.targetTypeId, panel = true)
+            }
             val affordable = affordable(view, profile.price)
             val cardText = if (kind == UpgradePresentationKind.ECONOMIC)
                 "U $title${if (item != null) " (1)" else ""}\n" +
                     (item?.let { "${(it.progress * 100f).toInt()}%" } ?: "\$${profile.price}")
-                else title + (item?.let { "\n(1) ${(it.progress * 100f).toInt()}%" } ?: "\n\$${profile.price}")
+                else title + (item?.let { "\n(1) ${(it.progress * 100f).toInt()}%" } ?:
+                    if (profile.completionCredits == 0L) "\n\$${profile.price}" else "\n+\$${profile.completionCredits}")
             val tooltip = "$title (\$${profile.price})\n" + if (kind == UpgradePresentationKind.ECONOMIC)
                 "${seconds}s\nIncome +\$${nominalIncome(checkNotNull(selected).typeId)?.toInt() ?: 0} -> +\$${nominalIncome(profile.targetTypeId)?.toInt() ?: 0}\n" +
                     (if (affordable) "Left: upgrade" else "Insufficient funds") + "\nRight: cancel one"
+                else if (kind == UpgradePresentationKind.ECONOMIC_BRANCH)
+                    String.format(Locale.ROOT, "%.1fs\n", 1.0 / profile.rate / 60.0) +
+                        (if (profile.completionCredits > 0L) "Refund +\$${profile.completionCredits} on completion\n"
+                        else "Income +\$${source?.income?.credits?.toInt()} -> +\$${definitions[profile.targetTypeId]?.income?.credits?.toInt()}\n") +
+                        (if (affordable) "Left: queue" else "Insufficient funds") + "\nRight: cancel one"
                 else (if (kind == UpgradePresentationKind.FACTORY)
                     String.format(Locale.ROOT, "%.1fs\n", 1.0 / profile.rate / 60.0) else "") +
                     (item?.let { "Queue 1\n${(it.progress * 100f).toInt()}%\n" } ?: "") +
@@ -273,13 +314,15 @@ internal class ActionCatalogue(private val definitions: Map<String, UnitDefiniti
         })
         val workers = view.units.filter { it.unitId in ids }
         val validWorkers = workers.isNotEmpty() && workers.size == ids.size && workers.all { controllable(it) }
-        val slotPage = ownSingle?.attachmentOverview?.selectedSlot != null
+        val slotPage = ownPrimary?.attachmentOverview?.selectedSlot != null
         val buildings = if (!validWorkers || slotPage || workers.any { it.typeId != workers.first().typeId }) emptyList()
             else immutable(definitions.getValue(workers.first().typeId).builder?.buildingTypeIds.orEmpty()
                 .filter { nukesEnabled || definitions.getValue(it).nuclearSilo == null }
                 .map { checkNotNull(construction[it]) })
         val nativeMaintenance = validWorkers && workers.all { it.constructionProgress >= 1f && it.carriedBy == null &&
-            definitions.getValue(it.typeId).maintenance != null }
+            definitions.getValue(it.typeId).let { definition ->
+                definition.maintenance != null && definition.authoredMaintenance?.let { it.canRepairUnits || it.canRepairBuildings } != false
+            } }
         val workerText = if (buildings.isEmpty() && !nativeMaintenance) null else workerText(workers.sortedBy { it.unitId }, view)
         val info = if (ids.isEmpty()) null else if (ids.size > 1) workerText else selected?.let { unit ->
             "${unit.health?.toInt() ?: 0} / ${unit.maxHealth?.toInt() ?: 0}" +
@@ -292,7 +335,8 @@ internal class ActionCatalogue(private val definitions: Map<String, UnitDefiniti
                 (unit.shield?.let { "\nShield ${it.current.toInt()} / ${it.maximum.toInt()}" } ?: "") +
                 (unit.energy?.let { String.format(Locale.ROOT, "\nEnergy %.3f / %.3f%s", it.current, it.maximum,
                     if (it.recharging) " LOCKED" else "") } ?: "") +
-                (if (unit.typeId == "aaBeamGunship_afterburn") "\nAfterburn / weapons disabled" else "") +
+                (if (definitions.getValue(unit.typeId).afterburn?.boostedForm == unit.typeId)
+                    "\nAfterburn / weapons disabled" else "") +
                 (unit.submarine?.let { String.format(Locale.ROOT, "\n%s\nDepth %.2f\nSpeed %.2f\nRange %.0f",
                     if (it.underwater) "Underwater" else "Surface", unit.height, it.maximumSpeed, it.attackRange) } ?: "") +
                 (unit.amphibiousJet?.let { String.format(Locale.ROOT, "\n%s / %s\nHeight %.2f\nSpeed %.2f\nRange %.0f",
@@ -305,14 +349,19 @@ internal class ActionCatalogue(private val definitions: Map<String, UnitDefiniti
                     if (it.exhausted) " LOCKED" else "") } ?: "") + (workerText?.let { "\n$it" } ?: "")
         }
         return ActionMenuView(view.credits, production(view, factory), buildings, upgrades, factory, upgradeQueue,
-            validWorkers && workers.all { definitions.getValue(it.typeId).maintenance != null ||
-                maintenance && it.typeId == "builder" && definitions.getValue(it.typeId).builder != null },
+            validWorkers && workers.all { worker -> definitions.getValue(worker.typeId).let { definition ->
+                definition.maintenance != null && definition.authoredMaintenance?.canReclaim != false ||
+                    maintenance && worker.typeId == "builder" && definition.builder != null
+            } },
             workerText, info, selected?.let { title(it.typeId, panel = true) },
             view.units.filter { it.alive && it.ownerPlayerId == view.playerId && it.constructionProgress >= 1f }
                 .sumOf { nominalIncome(it.typeId)?.toDouble() ?: 0.0 }.toFloat(),
             upgradeQueue?.items?.joinToString("") { item ->
-                val name = if (upgrades.any { it.kind == UpgradePresentationKind.FACTORY && it.actionKey == item.actionKey })
-                    title(item.targetTypeId, panel = true) else if (item.actionKey == "upgrade_gun") "Gun" else "Art"
+                val action = upgrades.firstOrNull { it.actionKey == item.actionKey }
+                val name = when (action?.kind) {
+                    UpgradePresentationKind.FACTORY, UpgradePresentationKind.ECONOMIC_BRANCH -> action.title
+                    else -> if (item.actionKey == "upgrade_gun") "Gun" else "Art"
+                }
                 "  $name ${(item.progress * 100f).toInt()}%"
             }.orEmpty(), view.balance, depthAction, flightAction, transportAction, unitActions, nativeMaintenance,
             if (nativeMaintenance) workers.minOf { definitions.getValue(it.typeId).builder?.range?.toDouble() ?: 230.0 } else null)
@@ -344,7 +393,7 @@ internal fun taskLabel(task: UnitTask?, view: PlayerObservation): String =
 private fun <T> immutable(items: List<T>): List<T> = Collections.unmodifiableList(ArrayList(items))
 
 /** Published values never retain a mutable work list from a later refresh. */
-enum class UpgradePresentationKind { ECONOMIC, DEFENSE, FACTORY }
+enum class UpgradePresentationKind { ECONOMIC, ECONOMIC_BRANCH, DEFENSE, FACTORY }
 data class UpgradeActionView(val profile: UpgradeActionProfile, val kind: UpgradePresentationKind,
     val title: String, val cardText: String, val tooltip: String, val progress: Float?, val affordable: Boolean) {
     val actionKey: String get() = profile.actionKey
@@ -369,7 +418,8 @@ data class ActionMenuView(val credits: Double? = null, val production: List<Prod
 data class SubmarineDepthActionView(val surface: Boolean, val title: String, val tooltip: String)
 data class AmphibiousFlightActionView(val flying: Boolean, val title: String, val tooltip: String, val available: Boolean)
 
-data class TransportUnloadActionView(val unloading: Boolean, val title: String, val available: Boolean)
+data class TransportUnloadActionView(val unloading: Boolean, val title: String, val available: Boolean,
+                                     val occupiedSlots: Int, val capacity: Int, val passengerCount: Int)
 data class CustomUnitActionView(val name: String, val title: String, val tooltip: String,
     val queued: Boolean, val cooldownRemaining: Int, val available: Boolean, val cancellable: Boolean,
     val progress: Float? = null, val groundTargeted: Boolean = false, val iconTypeId: String? = null,
@@ -378,7 +428,8 @@ data class CustomUnitActionView(val name: String, val title: String, val tooltip
 /** The native onlyOneUnitAtATime launch flag selects one eligible member per command. */
 internal fun nuclearLaunchMember(view: PlayerObservation, ids: Set<String>, cancelling: Boolean = false): UnitObservation? =
     view.units.filter { it.unitId in ids && it.alive && it.ownerPlayerId == view.playerId &&
-        it.typeId == "nukeLauncherC" && it.constructionProgress >= 1f && it.carriedBy == null }
+        it.unitActions?.actions?.any { action -> action.name == "launchNuke" } == true &&
+        it.constructionProgress >= 1f && it.carriedBy == null }
         .sortedBy { it.unitId }.let { members ->
             members.firstOrNull { unit -> unit.unitActions?.actions?.any {
                 it.name == "launchNuke" && if (cancelling) it.queueIndex != null else it.available

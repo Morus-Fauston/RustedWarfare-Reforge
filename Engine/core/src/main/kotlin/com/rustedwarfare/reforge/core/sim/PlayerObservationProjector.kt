@@ -75,7 +75,7 @@ internal class PlayerObservationProjector(world: WorldHandle, scenario: Scenario
             if (it.ownerPlayerId != playerId) {
                 it.copy(moveTarget = null, pathPoints = emptyList(), attackTargetId = null, cooldown = null, pointDefense = null,
                     tasks = emptyList(), constructionTargetId = null, transportExit = null,
-                    transport = null, unitActions = null, attachmentOverview = null,
+                    transport = null, unitActions = null, attachmentOverview = null, factoryRally = null,
                     attachment = it.attachment?.takeIf { relation -> relation.parentUnitId in visibleIds },
                     submarine = it.submarine?.copy(surfaceIntent = null, verticalSpeed = null),
                     amphibiousJet = it.amphibiousJet?.copy(flyingIntent = null, verticalSpeed = null, canDive = null))
@@ -99,6 +99,7 @@ internal class PlayerObservationProjector(world: WorldHandle, scenario: Scenario
                 frame.reclaimedOwner(event.unitId) == playerId
             } else event.unitId != null && event.unitId in ids &&
                 (!(event.kind.startsWith("production-") || event.kind.startsWith("upgrade-") || event.kind.startsWith("unit-action-") ||
+                    event.kind == "rally-set" || event.kind == "rally-cleared" ||
                     event.kind in setOf("construction-unavailable", "construction-insufficient-funds", "construction-queue-full", "maintenance-completed",
                         "submarine-surface-requested", "submarine-dive-requested",
                         "amphibious-fly-requested", "amphibious-dive-requested",
@@ -131,14 +132,20 @@ internal class PlayerObservationProjector(world: WorldHandle, scenario: Scenario
             if (event.interceptorUnitId != null && interceptor == null && !publicInterception) return@mapNotNull null
             val target = value.targetUnitId.takeIf { it in ids }
             val source = value.sourceUnitId.takeIf { it in ids }
+            val beam = if (source == null) value.beam?.copy(resourceUnitType = null) else value.beam
             ProjectedProjectileEvent(value.objectId, event.kind, value.position, value.heading, value.height,
                 source, target, event.damage.takeIf { target != null }, interceptor,
-                value.areaExpansion?.radius, value.sourceWeaponName?.takeIf { source != null }, value.appearance, value.lightning, value.beam)
+                value.areaExpansion?.radius, value.sourceWeaponName?.takeIf { source != null }, value.appearance, value.lightning, beam)
         }
         val projection = projectileProjection.project(
             observation.projectiles.filter { (it.alwaysVisibleInFog || isVisible(vision, it.position)) &&
                 (it.lightning?.let { line -> isVisible(vision, line.end) } ?: true) &&
-                (it.beam?.let { line -> isVisible(vision, line.end) } ?: true) }, projectedEvents,
+                (it.beam?.let { line -> isVisible(vision, line.end) } ?: true) }.map { shot ->
+                val beam = shot.beam
+                if (beam?.resourceUnitType == null) shot
+                else if (shot.sourceUnitId in ids) shot.copy(beam = beam.copy(visibleSourceUnitId = shot.sourceUnitId))
+                else shot.copy(beam = beam.copy(resourceUnitType = null))
+            }, projectedEvents,
             observation.projectiles.mapTo(mutableSetOf()) { it.objectId }.also { retained ->
                 rawProjectileEvents.forEach { retained += it.projectile.objectId }
             })
@@ -148,7 +155,7 @@ internal class PlayerObservationProjector(world: WorldHandle, scenario: Scenario
             visible.filter { it.ownerPlayerId == playerId && it.alive &&
                 it.typeId in factoryTypes }.sortedBy { it.unitId }.map { factory ->
                     FactoryQueueObservation(factory.unitId, observation.economy?.queuedProduction?.getValue(factory.unitId).orEmpty()
-                        .map { ProductionQueueItem(it.typeId, it.progress) })
+                        .map { ProductionQueueItem(it.typeId, it.progress) }, factory.factoryRally)
                 } else emptyList()
         val playerUpgrades = if (localControl)
             visible.filter { it.ownerPlayerId == playerId && it.alive && it.typeId in upgradeTypes }

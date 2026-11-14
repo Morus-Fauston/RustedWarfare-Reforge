@@ -348,7 +348,7 @@ class NamedWeaponContentTest {
 
     private val tankJson = """
         {
-          "format":"rw-reforge.unit.v1",
+          "format":"rw-reforge.unit.v2",
           "core":{"name":"c_tank","overrideAndReplace":"tank","class":"CustomUnitMetadata",
             "price":350,"buildSpeed":0.002,"maxHp":210,"radius":11,"displayRadius":11,
             "isBio":false,"softCollisionOnAll":0},

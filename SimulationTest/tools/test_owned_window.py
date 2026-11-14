@@ -10,6 +10,24 @@ from owned_window import Guard,GuardFailure,Win32,focus_owned_once
 
 
 class OwnedCaptureTest(unittest.TestCase):
+    def test_wheel_stays_bound_to_the_current_owned_client(self):
+        state=dict(pid=11,startTicks=22,path='owned-java',hwnd=33,title='owned',windowThreadId=44,
+            alive=True,visible=True,foreground=33,width=100,height=80,x=10,y=20,
+            keyboardLayout=0x12340409,qualifiedKeyboardLayout=0x12340409,keyboardLanguage=0x409)
+        pointer=[0,0]
+        sent=[]
+        api=types.SimpleNamespace(snapshot=lambda:dict(state),point_owned=lambda x,y:True,
+            move=lambda x,y:pointer.__setitem__(slice(None),[x,y]),cursor=lambda:tuple(pointer),
+            wheel=sent.append)
+        guard=Guard(api,state,lambda row:None)
+        guard.settle=lambda seconds:None
+        guard.scroll(20,20,2)
+        self.assertEqual(sent,[2])
+        state['foreground']=99
+        with self.assertRaises(GuardFailure):
+            guard.scroll(20,20,-2)
+        self.assertEqual(sent,[2])
+
     def test_initial_focus_can_use_an_exposed_header_without_clicking_an_occluder(self):
         base=dict(pid=11,startTicks=22,path='owned-java',hwnd=33,title='owned',windowThreadId=44,
             alive=True,visible=True,foreground=99,width=1200,height=800,x=1271,y=85,

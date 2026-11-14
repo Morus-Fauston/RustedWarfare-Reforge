@@ -44,7 +44,7 @@
     "unitVariant": {
       "id": "spcruiser",
       "path": "../inputs/author-water/hjson/package/units/spcruiser.hjson",
-      "sha256": "b8020b01f24b0c567f75bb2191c5cdaa018792b651f9bb9c461712e09c7d5d43",
+      "sha256": "4240738542bc0726226c8608e9c2771e4a6c2edb4cdd3263df7d97a1e1f453c6",
       "loader": "water-combat"
     },
     "dependencies": [

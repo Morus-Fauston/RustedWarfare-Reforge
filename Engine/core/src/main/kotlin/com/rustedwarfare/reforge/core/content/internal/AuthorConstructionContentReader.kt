@@ -6,18 +6,22 @@ import java.nio.file.InvalidPathException
 
 /** Author constructor and plain building bodies share syntax, source closure and finite field handling. */
 internal object AuthorConstructionContentReader {
+    private val maintenanceFlags = setOf("canRepairUnits", "canRepairBuildings", "canReclaim", "autoRepair")
+    private val maintenanceNumbers = setOf("nanoRange", "nanoRepairSpeed")
     private val constructorFields = setOf("format", "name", "maxHp", "radius", "displayRadius", "movementType",
         "moveSpeed", "moveAccelerationSpeed", "moveDecelerationSpeed", "maxTurnSpeed", "turnAcceleration",
-        "price", "buildSpeed", "image", "image_dead", "fogOfWarSightRange", "constructionTypes")
-    private val constructorNumbers = constructorFields - setOf("format", "name", "movementType", "image", "image_dead", "constructionTypes")
+        "price", "buildSpeed", "image", "image_dead", "fogOfWarSightRange", "constructionTypes") + maintenanceFlags + maintenanceNumbers
+    private val constructorNumbers = constructorFields - setOf("format", "name", "movementType", "image", "image_dead", "constructionTypes") - maintenanceFlags
     private val constructorSchema = UnitContentSchema(mapOf("core" to constructorFields), constructorNumbers,
-        setOf("dont_load"), constructorFields - constructorNumbers, nativeFormats = setOf("rw-reforge.constructor.v1"))
+        setOf("dont_load") + maintenanceFlags, constructorFields - constructorNumbers - maintenanceFlags,
+        nativeFormats = setOf("rw-reforge.constructor.v1"))
     private val buildingFields = setOf("format", "name", "maxHp", "radius", "footprint", "placementFootprint",
         "movementType", "foundationMovementType", "price", "buildSpeed", "image", "image_back", "image_dead", "fogOfWarSightRange",
-        "productionUnits", "exitProfile", "upgradeTo", "upgradePrice", "upgradeBuildSpeed")
+        "productionUnits", "exitProfile", "upgradeTo", "upgradePrice", "upgradeBuildSpeed", "rally", "incomePeriod", "incomeCredits")
     private val upgradeNumbers = setOf("upgradePrice", "upgradeBuildSpeed")
     private val buildingSchema = UnitContentSchema.native(buildingFields, setOf("rw-reforge.factory.v1")).let {
-        it.copy(numericFields = it.numericFields + upgradeNumbers, textFields = it.textFields - upgradeNumbers)
+        it.copy(numericFields = it.numericFields + upgradeNumbers, booleanFields = it.booleanFields + "rally",
+            textFields = it.textFields - upgradeNumbers - "rally")
     }
 
     fun readConstructorWithSources(path: Path, validatePath: (Path) -> Unit = {}): LoadedUnitContent =
@@ -30,12 +34,17 @@ internal object AuthorConstructionContentReader {
             if (speed > .8) fields.bad("moveSpeed", "Existing constructor movement supports at most 0.8")
             val sight = fields.sight()
             if (sight < 15) fields.bad("fogOfWarSightRange", "Existing construction requires sight range at least 15")
+            val maintenance = fields.maintenance()
+            val builder = if (maintenance == null) BuilderProfile(targets) else
+                BuilderProfile(targets, range = fields.maintenanceNumber("nanoRange", 85f, 500f),
+                    repairRate = fields.maintenanceNumber("nanoRepairSpeed", .2f, 10f))
             UnitDefinition(fields.id(), "AuthoredConstructor", fields.positive("radius"), fields.positive("displayRadius"),
                 1, fields.image("image"), 1.0,
                 MovementProfile(MovementType.LAND, speed, fields.nonnegative("moveAccelerationSpeed"),
                     fields.nonnegative("moveDecelerationSpeed"), fields.nonnegative("maxTurnSpeed"), fields.nonnegative("turnAcceleration"), false, false),
                 emptySet(), sight, durability = DurabilityProfile(fields.positive("maxHp"), fields.image("image_dead")),
-                build = BuildProfile(fields.price(), fields.rate()), builder = BuilderProfile(targets))
+                build = BuildProfile(fields.price(), fields.rate()), builder = builder,
+                maintenance = maintenance?.let { MaintenanceProfile.AUTHORED }, authoredMaintenance = maintenance)
         }
 
     /** A construction body may register products through an existing factory exit. */
@@ -55,12 +64,16 @@ internal object AuthorConstructionContentReader {
             }
             val radius = fields.positive("radius")
             if (radius > 30.0) fields.bad("radius", "Existing ordinary construction supports radius at most 30")
+            val production = fields.production()
+            val income = fields.income()
+            if (income != null && production != null)
+                fields.bad("incomePeriod", "Income-only authored buildings use a separate construction body")
             UnitDefinition(fields.id(), "AuthoredBuilding", radius, radius, 1, fields.image("image"), 1.0,
                 MovementProfile(MovementType.NONE, 0.0, 0.0, 0.0, 0.0, 0.0, false, false), emptySet(), fields.sight(),
                 durability = DurabilityProfile(fields.positive("maxHp"), fields.image("image_dead")),
                 building = BuildingProfile(footprint, if ("image_back" in loaded.values.getValue("core")) fields.image("image_back") else null,
                     placementFootprint = placement, foundationMovementType = foundation),
-                production = fields.production(),
+                production = production, income = income,
                 upgrades = fields.upgrades(),
                 construction = ConstructionProfile(fields.price(), fields.rate()))
         }
@@ -77,11 +90,39 @@ internal object AuthorConstructionContentReader {
             if (ids.isEmpty() || ids.distinct().size != ids.size || ids.any { !it.matches(Regex("[a-z][a-z0-9_.-]*")) })
                 bad(key, "Expected a nonempty unique list of stable lowercase content IDs")
         }
+        fun maintenance(): AuthoredMaintenance? {
+            val profile = AuthoredMaintenance(boolean("canRepairUnits"), boolean("canRepairBuildings"),
+                boolean("canReclaim"), boolean("autoRepair"))
+            if (profile.isValid()) return profile
+            if (profile.autoRepair) bad("autoRepair", "Automatic work requires a repair category")
+            val unused = maintenanceNumbers.firstOrNull { it in values }
+            if (unused != null) bad(unused, "Maintenance settings require a repair or reclaim capability")
+            return null
+        }
+        fun maintenanceNumber(key: String, fallback: Float, upper: Float): Float {
+            if (key !in values) return fallback
+            val number = positive(key).toFloat()
+            if (number <= 0f || number > upper) bad(key, "Value is outside the finite maintenance range")
+            return number
+        }
         fun production(): ProductionProfile? {
-            if ("productionUnits" !in values && "exitProfile" !in values) return null
+            val rally = boolean("rally")
+            if ("productionUnits" !in values && "exitProfile" !in values) {
+                if (rally) bad("rally", "A rally point requires factory products")
+                return null
+            }
             val exit = FactoryExitProfile.entries.singleOrNull { it.name == required("exitProfile") }
                 ?: reject(ContentErrorCode.UNSUPPORTED_FEATURE, path, field = "exitProfile", reason = "Expected an existing finite factory exit profile")
-            return ProductionProfile(ids("productionUnits"), exit)
+            return ProductionProfile(ids("productionUnits"), exit, rallyEnabled = rally)
+        }
+        fun income(): IncomeProfile? {
+            if ("incomePeriod" !in values && "incomeCredits" !in values) return null
+            val period = positive("incomePeriod").toFloat()
+            val credits = nonnegative("incomeCredits").toFloat()
+            if (period !in 1f..IncomeProfile.MAX_PERIOD)
+                bad("incomePeriod", "Expected a period from one through 1000000 simulation ticks")
+            if (!credits.isFinite()) bad("incomeCredits", "Expected finite nonnegative credits")
+            return IncomeProfile(period, credits)
         }
         fun upgrades(): UpgradeProfile? {
             if (values.keys.none { it in setOf("upgradeTo", "upgradePrice", "upgradeBuildSpeed") }) return null
@@ -91,6 +132,11 @@ internal object AuthorConstructionContentReader {
             val rate = required("upgradeBuildSpeed").toFloatOrNull()?.takeIf { it.isFinite() && it > 0f }
                 ?: bad("upgradeBuildSpeed", "Expected positive finite binary32 upgrade speed")
             return UpgradeProfile(listOf(UpgradeActionProfile(target, target, price, rate)))
+        }
+        fun boolean(key: String): Boolean = when (values[key]) {
+            null, "false" -> false
+            "true" -> true
+            else -> bad(key, "Expected a boolean")
         }
         private fun number(key: String): Double = required(key).toDoubleOrNull()?.takeIf { it.isFinite() }
             ?: bad(key, "Expected a finite number")

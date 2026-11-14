@@ -22,7 +22,7 @@ class NautilusContentTest {
             val parent = root.resolve("base.$format")
             Files.move(entry, parent)
             Files.writeString(entry, if (format == "ini") "[core]\ncopyFrom: base.$format\n" else
-                """{"format":"rw-reforge.unit.v1","copyFrom":["base.$format"]}""")
+                """{"format":"rw-reforge.unit.v2","copyFrom":["base.$format"]}""")
             val loaded = assertIs<ContentResult.Success<LoadedContentPack>>(ContentLoader.loadContentPack(root)).value
             assertTrue(loaded.sources.any { it.path == parent.toAbsolutePath() })
             assertTrue(loaded.sources.any { it.path == root.resolve("body.png").toAbsolutePath() })

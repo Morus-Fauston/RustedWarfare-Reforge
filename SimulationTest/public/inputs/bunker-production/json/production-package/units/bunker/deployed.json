@@ -1,14 +1,12 @@
 {
-  "format": "rw-reforge.unit.v1",
+  "format": "rw-reforge.unit.v2",
   "copyFrom": [
     "bunker.json"
   ],
+  "abilities": [{"name": "shield", "type": "shield", "maximum": 500, "regeneration": 0.15, "startAtZero": true}],
   "core": {
     "name": "mechBunkerDeployed",
     "radius": 23,
-    "maxShield": 500,
-    "shieldRegen": 0.15,
-    "startShieldAtZero": true,
     "isBuilding": true,
     "footprint": "-1,-1,1,1",
     "constructionFootprint": "-1,-1,1,1"

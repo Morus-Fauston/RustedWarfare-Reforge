@@ -180,6 +180,16 @@ class Guard:
         finally:
             self.release_owned()
 
+    def scroll(self, x, y, amount):
+        if type(amount) is not int or not -20 <= amount <= 20 or amount == 0:
+            raise GuardFailure('unsupported-wheel-amount')
+        self.move(x, y)
+        self.settle(.06)
+        self.check_pointer(self.check())
+        self.api.wheel(amount)
+        self.record(dict(kind='owned-wheel', x=x, y=y, amount=amount))
+        self.settle(.12)
+
     def key(self, vk, ctrl=False):
         if vk not in (27, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 80, 83):
             raise GuardFailure('unregistered-key')
@@ -463,6 +473,13 @@ class Win32:
             event.type = 0; event.mi.dwFlags = {'left': (2, 4), 'right': (8, 16)}[value][up]
         if self.u.SendInput(1, ctypes.byref(event), ctypes.sizeof(event)) != 1:
             raise GuardFailure('owned-input-send-failed')
+
+    def wheel(self, amount):
+        event = self.Input()
+        event.mi.dwFlags = 0x0800
+        event.mi.mouseData = (-amount * 120) & 0xffffffff
+        if self.u.SendInput(1, ctypes.byref(event), ctypes.sizeof(event)) != 1:
+            raise GuardFailure('owned-wheel-send-failed')
 
     def resize(self, width, height, flags):
         outer, client = W.RECT(), W.RECT()

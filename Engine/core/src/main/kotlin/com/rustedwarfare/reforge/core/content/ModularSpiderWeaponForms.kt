@@ -24,7 +24,7 @@ internal object ModularSpiderWeaponForms {
     ) {
         val module = AttachmentModuleProfile(empty = false, selfBuildRate = .001f,
             cancel = AttachmentRemoval(empty, price, 120f), reclaim = AttachmentRemoval(empty, price / 2, 180f),
-            upgrades = upgrades)
+            upgrades = upgrades, parentSpeed = AttachmentSpeed(.4, 1, readyOnly = false))
 
         val sections = mapOf(
             "core" to fields("name" to id, "class" to "CustomUnitMetadata", "price" to price,

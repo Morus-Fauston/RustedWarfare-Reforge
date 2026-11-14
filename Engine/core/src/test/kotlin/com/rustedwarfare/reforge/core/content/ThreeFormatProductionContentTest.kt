@@ -222,7 +222,7 @@ class ThreeFormatProductionContentTest {
         fun objectText(values: Map<String, String>) = "{" + values.entries.joinToString(",") { (key, text) ->
             quote(key) + ":" + value(key, text)
         } + "}"
-        val members = mutableListOf("\"format\":\"rw-reforge.unit.v1\"")
+        val members = mutableListOf("\"format\":\"rw-reforge.unit.v2\"")
         sections["core"]?.remove("copyFrom")?.let { names ->
             members += "\"copyFrom\":[" + names.split(',').joinToString(",") {
                 quote(it.trim().removeSuffix(".ini") + ".$format")

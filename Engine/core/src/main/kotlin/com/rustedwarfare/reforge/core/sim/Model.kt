@@ -112,11 +112,11 @@ class UpgradeQueueObservation(val unitId: String, items: List<UpgradeQueueItem>)
     override fun hashCode(): Int = 31 * unitId.hashCode() + items.hashCode()
 }
 
-class FactoryQueueObservation(val factoryId: String, items: List<ProductionQueueItem>) {
+class FactoryQueueObservation(val factoryId: String, items: List<ProductionQueueItem>, val rally: Position? = null) {
     val items: List<ProductionQueueItem> = immutable(items)
     override fun equals(other: Any?): Boolean = other is FactoryQueueObservation &&
-        factoryId == other.factoryId && items == other.items
-    override fun hashCode(): Int = 31 * factoryId.hashCode() + items.hashCode()
+        factoryId == other.factoryId && items == other.items && rally == other.rally
+    override fun hashCode(): Int = 31 * (31 * factoryId.hashCode() + items.hashCode()) + rally.hashCode()
 }
 
 /** Trusted deterministic scene input, unrelated to command/display string IDs. */
@@ -133,7 +133,8 @@ enum class UnitTaskKind { MOVE, ATTACK, PATROL, BUILD, CONSTRUCT, RECLAIM, LOAD_
 data class UnitTask(val kind: UnitTaskKind, val actionId: String, val target: Position? = null,
     val targetUnitId: String? = null, val atStep: Long? = null,
     val buildingTypeId: String? = null, val buildingNonce: String? = null,
-    val automaticRepair: Boolean = false, val extraWorkRange: Float = 0f)
+    val automaticRepair: Boolean = false, val extraWorkRange: Float = 0f, internal val startsAfterFactoryExit: Boolean = false,
+    internal val factoryExit: Boolean = false)
 
 data class UnitObservation(
     val unitId: String,
@@ -174,6 +175,7 @@ data class UnitObservation(
     val nuclearDoors: Float? = null,
     val attachment: AttachedUnitObservation? = null,
     val attachmentOverview: AttachmentOverview? = null,
+    val factoryRally: Position? = null,
 )
 
 data class AttachedUnitObservation(val parentUnitId: String, val slot: Int, val empty: Boolean)
@@ -235,7 +237,8 @@ data class ProjectileObservation(val objectId: Long, val sourceUnitId: String, v
 data class LightningSegment(val end: Position, val endHeight: Double)
 
 /** Current visible beam endpoint, captured without a host target identity. */
-data class BeamSegment(val end: Position, val endHeight: Double, val textureOffset: Float = 0f)
+data class BeamSegment(val end: Position, val endHeight: Double, val textureOffset: Float = 0f,
+    val resourceUnitType: String? = null, val visibleSourceUnitId: String? = null)
 
 /** Public launch appearance, independent of hidden source identity or its subsequent depth. */
 enum class ProjectileAppearance(val red: Int, val green: Int, val blue: Int, val drawSize: Float) {
@@ -476,6 +479,7 @@ internal data class MutableUnit(
     var constructionRetryTime: Int = -9999,
     var constructionPreparation: Float = 0f,
     var constructionWorking: Boolean = false,
+    var nanoHeading: Double? = null,
     var previousWorkTargetActive: Boolean = false,
     /** Native r.d is independent of the work preparation and Stop fields. */
     var repairScanElapsed: Float = 0f,
@@ -495,6 +499,7 @@ internal data class MutableUnit(
     var flightLanded: Boolean = false,
     var flightLandedInWater: Boolean = false,
     var productionSide: Boolean = false,
+    var factoryRally: Position? = null,
     /** Custom instance j; retained when the normal locomotion-aim gate is closed. */
     var terrainSpeedMultiplier: Double = 1.0,
     var carriedBy: String? = null,
@@ -518,6 +523,7 @@ internal data class MutableUnit(
     var attachmentInterceptor: AttachmentInterceptorState = AttachmentInterceptorState(),
     var blinkRequest: Position? = null,
     var blinkCooldownUntil: Double = 0.0,
+    var blinkUnlocked: Boolean = false,
     var spiderBlink: SpiderBlink? = null,
 ) {
     val producerId: String? get() = productionOrigin?.producerId
@@ -647,7 +653,10 @@ internal data class MutableProjectile(val objectId: Long, val sourceUnitId: Stri
     val nukeTagged: Boolean = false, var interception: InterceptionCourse? = null,
     val scoutPayload: ScoutPayload? = null,
     val sourceOwnerId: String? = null,
-    val attachmentRetargetMount: AttachmentRetargetMount? = null)
+    val attachmentRetargetMount: AttachmentRetargetMount? = null,
+    val steering: com.rustedwarfare.reforge.core.content.ProjectileSteering? = null,
+    val endOfLife: com.rustedwarfare.reforge.core.content.ProjectileProfile? = null,
+    val derivedOnExpiry: Boolean = false)
 
 internal data class AttachmentRetargetMount(val index: Int,
     val weapon: com.rustedwarfare.reforge.core.content.NamedWeaponDefinition)

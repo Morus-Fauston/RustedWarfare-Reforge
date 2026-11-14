@@ -9,7 +9,9 @@ import com.rustedwarfare.reforge.core.content.MapDefinition
 import com.rustedwarfare.reforge.core.content.MovementType
 import com.rustedwarfare.reforge.core.content.ProjectileProfile
 import com.rustedwarfare.reforge.core.content.UnitDefinition
+import java.nio.file.Files
 import java.nio.file.Path
+import org.hjson.JsonValue
 import kotlin.test.*
 
 class ModularSpiderDefenseTest {
@@ -31,6 +33,63 @@ class ModularSpiderDefenseTest {
                 assertEquals("buildAntiNuke", battle.actions().queue.single().name)
             }
         }
+    }
+
+
+    @Test fun a_structured_slot_can_install_another_interceptor_definition_and_fire_its_paid_round() {
+        val fixtures = Path.of(checkNotNull(System.getProperty("public.fixtures.dir")))
+            .resolve("modular-spider-start/json/opening-package")
+        val temporary = Files.createTempDirectory("authored-attachment-interception-")
+        Files.walk(fixtures).use { paths ->
+            paths.forEach { source ->
+                val copy = temporary.resolve(fixtures.relativize(source))
+                if (!Files.isDirectory(source)) Files.copy(source, copy) else Files.createDirectories(copy)
+            }
+        }
+        val id = "fleet_screen_module"
+        val empty = temporary.resolve("units/spider/empty.json")
+        Files.writeString(empty, Files.readString(empty).replace("modularSpider_antinuke", id))
+        val file = temporary.resolve("units/spider/anti-nuke.json")
+        val document = JsonValue.readJSON(Files.readString(file)).asObject()
+        document.get("core").asObject().set("name", id)
+        val mount = document.get("weapons").asArray().single().asObject()
+        mount.set("interceptProjectiles_andTargetingGroundUnderDistance", 850)
+        mount.set("interceptProjectiles_andUnderDistance", 1400)
+        Files.writeString(file, document.toString())
+        val loaded = ContentLoader.loadContentPack(temporary)
+        val pack = assertIs<ContentResult.Success<LoadedContentPack>>(loaded, loaded.toString()).value
+        val socket = pack.units.getValue(id).attachmentModule?.interception
+        assertEquals(850f, socket?.landingRange)
+        assertEquals(1400f, socket?.trackingRange)
+        withBattle(definitions = pack.units) { battle ->
+            battle.click("selectSlot2")
+            val slot = battle.slot(2).unitId
+            battle.click("buildAntinuke")
+            assertEquals(33000L, battle.balance())
+            battle.tick()
+            assertEquals(id, battle.slot(2).typeId)
+            battle.until(1100) { battle.slot(2).progress == 1f }
+            val balance = battle.balance()
+            battle.click("buildAntiNuke")
+            assertEquals(balance - 3000L, battle.balance())
+            battle.silo("buildNuke")
+            battle.until(3400) { battle.unit("silo").unitActions?.stockpile == 1 }
+            assertEquals(1, battle.actions().stockpile)
+            battle.silo("launchNuke", Position(440.0, 160.0))
+            var intercepted = false
+            battle.until(1500) {
+                intercepted = intercepted || battle.context.observe().projectileEvents.any {
+                    it.kind == "intercepted" && it.interceptorUnitId == slot &&
+                        it.projectile.appearance == ProjectileAppearance.NUCLEAR
+                }
+                intercepted
+            }
+            assertEquals(0, battle.actions().stockpile)
+            assertEquals(slot, battle.slot(2).unitId)
+        }
+        mount.set("interceptProjectiles_andUnderDistance", 0)
+        Files.writeString(file, document.toString())
+        assertIs<ContentResult.Failure>(ContentLoader.loadContentPack(temporary))
     }
 
     @Test fun laser_uses_its_current_slot_and_its_own_energy_on_real_enemy_rounds() =
@@ -240,7 +299,7 @@ class ModularSpiderDefenseTest {
 
     private fun withBattle(nukesEnabled: Boolean = true, format: String = "ini", credits: Long = 40000L,
                            chassisKiller: Boolean = false, wideField: Boolean = false,
-                           run: (Battle) -> Unit) =
+                           definitions: Map<String, UnitDefinition>? = null, run: (Battle) -> Unit) =
         WaterTestScene.withMap { inputMap ->
             val map = if (wideField) {
                 val width = 80
@@ -250,8 +309,10 @@ class ModularSpiderDefenseTest {
                     IntArray(width * height) { ground }, BlockingGrid(width, height, BooleanArray(width * height)))
             } else inputMap
             val fixture = Path.of(checkNotNull(System.getProperty("public.fixtures.dir")))
-            val loaded = ContentLoader.loadContentPack(fixture.resolve("modular-spider-start/$format/opening-package"))
-            val spider = assertIs<ContentResult.Success<LoadedContentPack>>(loaded, loaded.toString()).value.units
+            val spider = definitions ?: kotlin.run {
+                val loaded = ContentLoader.loadContentPack(fixture.resolve("modular-spider-start/$format/opening-package"))
+                assertIs<ContentResult.Success<LoadedContentPack>>(loaded, loaded.toString()).value.units
+            }
             val base = NuclearScene.scenario(map)
             val gunner = UnitDefinition("gunnerType", "CustomUnitMetadata", 6.0, 6.0, 1,
                 spider.getValue("mechGun").imagePath, 1.0, WaterTestScene.unit(MovementType.LAND).movement.let {

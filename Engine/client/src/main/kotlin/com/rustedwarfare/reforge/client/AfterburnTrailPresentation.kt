@@ -28,7 +28,9 @@ internal class AfterburnTrailPresentation {
         previousTime = now
         val visible = view.units.map { it.unitId }.toSet()
         particles.removeAll { now - it.born >= 30.0 || it.unitId !in visible }
-        val moving = view.units.filter { it.alive && it.typeId == "aaBeamGunship_afterburn" && it.speed != 0.0 }
+        val moving = view.units.filter { unit ->
+            unit.alive && unit.speed != 0.0 && resources.units[unit.typeId]?.afterburnTrailImagePath != null
+        }
         emitters.keys.retainAll(moving.map { it.unitId }.toSet())
         if (delta > 0.0) for (unit in moving) {
             val images = resources.units.getValue(unit.typeId)

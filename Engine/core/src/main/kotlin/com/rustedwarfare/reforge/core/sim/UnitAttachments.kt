@@ -7,7 +7,6 @@ import com.rustedwarfare.reforge.core.content.AttachmentRemoval
 import com.rustedwarfare.reforge.core.content.AttachmentUpgrade
 import com.rustedwarfare.reforge.core.content.MapDefinition
 import com.rustedwarfare.reforge.core.content.ModularSpiderRules
-import com.rustedwarfare.reforge.core.content.ModularSpiderUtilityForms.BLINK_DURATION
 import com.rustedwarfare.reforge.core.content.ModularSpiderWeaponForms
 
 internal data class AttachmentBinding(val parentId: String, val slot: AttachmentSlotDefinition)
@@ -108,7 +107,7 @@ internal object UnitAttachments {
             val ready = order == null && cooldown == 0
             val balance = checkNotNull(state.productionLedger).balances.getValue(child.ownerPlayerId)
             val slotOrderIndex = queue.size
-            if (child.typeId == ModularSpiderRules.ANTI_NUKE) {
+            if (child.definition.attachmentModule?.interception != null) {
                 ammo = child.attachmentInterceptor.ammo
                 online = !child.attachmentInterceptor.offline
                 val offset = queue.size
@@ -117,7 +116,7 @@ internal object UnitAttachments {
                 }
                 queue += AttachmentInterceptor.queue(child)
             }
-            if (child.typeId == ModularSpiderRules.BLINK) {
+            if (child.definition.attachmentModule?.parentBlink != null) {
                 val blink = child.blinkRequest
                 val blinkCooldown = maxOf(cooldown, AttachmentBlink.cooldown(time, child))
                 actions += UnitActionObservation(AttachmentBlink.REQUEST, queue.size.takeIf { blink != null },
@@ -181,9 +180,9 @@ internal object UnitAttachments {
             ?: return SimulationError("attachment-slot-unavailable", "The selected slot is unavailable")
         val profile = checkNotNull(child.definition.attachmentModule)
         val order = child.attachmentOrder
-        if (name == AttachmentBlink.REQUEST && child.typeId == ModularSpiderRules.BLINK)
+        if (name == AttachmentBlink.REQUEST && child.definition.attachmentModule?.parentBlink != null)
             return AttachmentBlink.request(state.simulationTime, child, action, collision)
-        if (child.typeId == ModularSpiderRules.ANTI_NUKE && AttachmentInterceptor.handles(name)) {
+        if (child.definition.attachmentModule?.interception != null && AttachmentInterceptor.handles(name)) {
             return AttachmentInterceptor.request(state, child, name, action.cancelQueued)
         }
         if (action.cancelQueued) {
@@ -217,7 +216,7 @@ internal object UnitAttachments {
             state.productionLedger = checkNotNull(state.productionLedger).charge(child.ownerPlayerId, next.cost)
                 ?: return SimulationError("insufficient-funds", "The slot requires ${next.cost} credits")
         }
-        if (next is AttachmentOrder.Reclaim && child.typeId == ModularSpiderRules.ANTI_NUKE) {
+        if (next is AttachmentOrder.Reclaim && child.definition.attachmentModule?.interception != null) {
             child.attachmentInterceptor = child.attachmentInterceptor.copy(
                 roundsAheadOfReclaim = child.attachmentInterceptor.rounds.size)
         }
@@ -260,10 +259,7 @@ internal object UnitAttachments {
         if (child.attachmentAutomaticCooldown > 0f) return
         child.attachmentAutomaticCooldown = AUTOMATIC_COOLDOWN
         when (action) {
-            is AttachmentAutomaticAction.RestoreParentShield -> {
-                val shield = checkNotNull(parent.definition.shield)
-                parent.shield = minOf(shield.maximum, parent.shield + action.amount)
-            }
+            is AttachmentAutomaticAction.RestoreParentShield -> UnitShield.restoreFromAttachment(parent, action.amount)
             is AttachmentAutomaticAction.ConvertWhenBuilt -> {
                 val reclaim = child.attachmentOrder as? AttachmentOrder.Reclaim
                 convert(input, child, action.targetTypeId, child.constructionProgress)
@@ -276,7 +272,7 @@ internal object UnitAttachments {
     }
 
     private fun remove(state: StepState, input: Scenario, parent: MutableUnit, child: MutableUnit, action: AttachmentRemoval) {
-        if (child.typeId == ModularSpiderRules.ANTI_NUKE) AttachmentInterceptor.discardQueue(state, child)
+        if (child.definition.attachmentModule?.interception != null) AttachmentInterceptor.discardQueue(state, child)
         state.productionLedger = checkNotNull(state.productionLedger).refund(child.ownerPlayerId, action.refund)
         convert(input, child, action.targetTypeId, 1f)
         completed(state, parent, child, "attachment-slot-emptied")
@@ -322,13 +318,10 @@ internal object UnitAttachments {
     private fun completed(state: StepState, parent: MutableUnit, child: MutableUnit, event: String) {
         val layout = checkNotNull(parent.definition.attachmentLayout)
         fun attached(slot: AttachmentSlotDefinition): MutableUnit? = state.units[childId(parent, slot.number)]
-        parent.attachmentMoveSpeed = when {
-            layout.slots.any { slot -> attached(slot)?.let {
-                it.typeId == ModularSpiderRules.SPEED && BuildingWork.isReady(it)
-            } == true } -> .7
-            layout.slots.any { slot -> attached(slot)?.typeId in ModularSpiderWeaponForms.byId } -> .4
-            else -> null
-        }
+        parent.attachmentMoveSpeed = layout.slots.asSequence().mapNotNull { slot ->
+            val module = attached(slot) ?: return@mapNotNull null
+            module.definition.attachmentModule?.parentSpeed?.takeIf { !it.readyOnly || BuildingWork.isReady(module) }
+        }.maxByOrNull { it.priority }?.maximum
         state.pendingEvents += Event(event, child.unitId)
     }
 
@@ -370,14 +363,14 @@ internal object UnitAttachments {
                 defense.rounds.all { it.isFinite() && it in 0f..<1f } &&
                 defense.roundsAheadOfReclaim in 0..defense.rounds.size &&
                 (defense.roundsAheadOfReclaim == 0 || unit.attachmentOrder is AttachmentOrder.Reclaim) &&
-                (unit.typeId == ModularSpiderRules.ANTI_NUKE || defense.rounds.isEmpty() && !defense.switchPending))
+                (unit.definition.attachmentModule?.interception != null || defense.rounds.isEmpty() && !defense.switchPending))
             require(unit.blinkCooldownUntil.isFinite() && unit.blinkCooldownUntil >= 0.0 && unit.blinkRequest?.let {
-                unit.typeId == ModularSpiderRules.BLINK && it.x.isFinite() && it.y.isFinite()
+                unit.definition.attachmentModule?.parentBlink != null && it.x.isFinite() && it.y.isFinite()
             } != false)
         } else require(unit.definition.attachmentModule == null)
         unit.spiderBlink?.let { pending ->
             require(unit.definition.attachmentLayout != null && pending.target.x.isFinite() && pending.target.y.isFinite() &&
-                pending.remaining in 1..BLINK_DURATION)
+                pending.duration in 1..36000 && pending.remaining in 1..pending.duration)
         }
         if (unit.alive && !unit.reclaimed) unit.definition.attachmentLayout?.let { layout ->
             require(layout.slots.all { slot -> state.units[childId(unit, slot.number)]?.attachment == AttachmentBinding(unit.unitId, slot) })

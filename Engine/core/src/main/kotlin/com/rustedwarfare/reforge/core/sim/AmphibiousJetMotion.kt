@@ -35,7 +35,7 @@ internal object AmphibiousJetMotion {
 
     fun observation(unit: MutableUnit, map: MapDefinition): AmphibiousJetObservation? = unit.amphibiousState?.let { state ->
         val movement = UnitLocomotion.movement(unit)
-        AmphibiousJetObservation(state.flyingIntent, state.verticalSpeed, unit.height < -1.0,
+        AmphibiousJetObservation(state.flyingIntent, state.verticalSpeed, UnitLocomotion.isSubmerged(unit),
             state.surfacePresentation, movement.type, movement.moveSpeed,
             UnitCombat.range(unit), state.wingFold,
             state.phase, unit.sinkSpeed, unit.waterSettled,
@@ -49,7 +49,7 @@ internal object AmphibiousJetMotion {
         var phase = old.phase + 2f * elapsed
         if (phase > 360f) phase -= 360f
         val target = if (old.flyingIntent) 20f + sin(Math.toRadians(phase.toDouble())).toFloat() * 1.5f else -8f
-        val submerged = unit.height < -1.0
+        val submerged = UnitLocomotion.isSubmerged(unit)
         val wing = towards(old.wingFold, if (old.flyingIntent && !submerged) 0f else 1f, .018f * elapsed)
         val limit = if (submerged) .6f / 6f else .6f
         val speed = if (abs(unit.height.toFloat() - target) > 3f)
@@ -59,10 +59,10 @@ internal object AmphibiousJetMotion {
         require(listOf(phase, speed, height, wing).all { it.isFinite() }) { "Amphibious height must remain finite" }
         var flying = old.flyingIntent
         var surface = old.surfacePresentation
-        if (surface && height < -1f) {
+        if (surface && height < UnitLocomotion.SUBMERGED_DEPTH) {
             if (overWater(unit, map)) surface = false else flying = true
         }
-        if (!surface && height >= -1f) surface = true
+        if (!surface && height >= UnitLocomotion.SUBMERGED_DEPTH) surface = true
         unit.height = height.toDouble()
         unit.amphibiousState = old.copy(phase = phase, verticalSpeed = speed, flyingIntent = flying,
             wingFold = wing, surfacePresentation = surface)

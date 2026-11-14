@@ -71,7 +71,39 @@ internal object FactoryExit {
             building.placementFootprint == BuildingFootprint(-1, -1, 1, 3) && building.anchor == null && !building.requiresResourcePool
     }
 
+    fun mobileBirth(factory: MutableUnit, product: UnitDefinition, map: MapDefinition): FactoryBirth? {
+        val width = map.widthTiles.toDouble() * map.tileWidth
+        val height = map.heightTiles.toDouble() * map.tileHeight
+        val radius = product.radius
+        if (2 * radius > width || 2 * radius > height) return null
+        val home = factory.position
+        val blocking = map.blockingFor(product.movement.type)
+        val center = Position(home.x.coerceIn(radius, width - radius), home.y.coerceIn(radius, height - radius))
+        val headings = listOf(180.0, 90.0, -90.0, 0.0).map { ScreenPlane.normalize(factory.heading + it) }
+        fun along(heading: Double, distance: Double): Position {
+            val angle = Math.toRadians(heading)
+            return Position(center.x + sin(angle) * distance, center.y - cos(angle) * distance)
+        }
+        fun eligible(point: Position): Boolean {
+            if (!MapBounds.contains(width, height, point, radius)) return false
+            if (product.movement.type == MovementType.AIR) return true
+            val left = MapBounds.cell(point.x - radius, map.tileWidth, map.widthTiles)
+            val right = MapBounds.cell(point.x + radius, map.tileWidth, map.widthTiles)
+            val top = MapBounds.cell(point.y - radius, map.tileHeight, map.heightTiles)
+            val bottom = MapBounds.cell(point.y + radius, map.tileHeight, map.heightTiles)
+            return (left..right).all { x -> (top..bottom).none { y -> blocking.isBlocked(x, y) } }
+        }
+        val distance = factory.definition.radius + radius + 2.0
+        val heading = headings.firstOrNull { eligible(along(it, distance)) }
+            ?: return center.takeIf(::eligible)?.let { FactoryBirth(it, factory.heading, it, 30f, true) }
+        val birth = along(heading, distance)
+        val exit = along(heading, distance + 30.0).takeIf(::eligible) ?: birth
+        return FactoryBirth(birth, heading, exit, 30f)
+    }
+
     fun birth(factory: MutableUnit, product: UnitDefinition, map: MapDefinition): FactoryBirth {
+        if (factory.definition.production?.exitProfile == FactoryExitProfile.AUTHORED_MOBILE)
+            return checkNotNull(mobileBirth(factory, product, map)) { "Mobile factory completed without a valid exit" }
         if (factory.definition.production?.exitProfile == FactoryExitProfile.NATIVE_EXPERIMENTAL) {
             val speed = product.movement.moveSpeed.toFloat()
             val protection = 70f + (if (speed < .75f) 30f else 0f) + (if (speed < .55f) 20f else 0f)

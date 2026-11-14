@@ -81,14 +81,17 @@ class ActionLayout:
                 or min(p['worldWidth'],p['worldHeight'],p['scale'],p['areaWidth'],p['areaHeight'])<=0
                 or not number(x) or not number(y) or not 0<=x<p['worldWidth'] or not 0<=y<p['worldHeight']):
             raise LayoutError('Invalid world projection or position')
-        ux,uy=p['left']+x*p['scale'],p['bottom']+(p['worldHeight']-y)*p['scale']
+        scale_x = p.get('scaleX', p['scale'])
+        if not number(scale_x) or scale_x <= 0:
+            raise LayoutError('Invalid horizontal world projection')
+        ux,uy=p['left']+x*scale_x,p['bottom']+(p['worldHeight']-y)*p['scale']
         if (not p['areaLeft']<=ux<p['areaLeft']+p['areaWidth']
                 or not p['areaBottom']<uy<=p['areaBottom']+p['areaHeight'] or not 0<=ux<960 or not 0<uy<=640):
             raise LayoutError('World position outside drawn map viewport')
         return self._client(ux,uy)
 
 
-def wait_layout(wait, generation, size):
+def wait_layout(wait, generation, size, after_revision=None, enabled_action=None):
     found=[]
     def ready(rows):
         scope=generation
@@ -98,6 +101,11 @@ def wait_layout(wait, generation, size):
             scope=max(frames,key=lambda r:r['sequence'])['generation']
         try:layout=ActionLayout(rows,scope,size)
         except LayoutPending:return False
+        if after_revision is not None and layout.frame['layoutRevision'] <= after_revision:
+            return False
+        if enabled_action is not None and not any(action['actionId']==enabled_action and action['enabled'] is True
+                                                  for action in layout.frame['actions']):
+            return False
         found.append(layout)
         return True
     wait('current drawn actions',ready)

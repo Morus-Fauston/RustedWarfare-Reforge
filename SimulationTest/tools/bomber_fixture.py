@@ -36,7 +36,7 @@ def write_bomber(folder, form):
         text = '\n\n'.join(f'[{section}]\n' + '\n'.join(f'{k}: {literal(v)}' for k, v in fields.items())
                            for section, fields in sections.items()) + '\n'
     else:
-        content = {'format': 'rw-reforge.unit.v1'}
+        content = {'format': 'rw-reforge.unit.v2'}
         for section, fields in sections.items():
             if section.startswith('turret_'):
                 content.setdefault('weapons', []).append(dict(name=section.removeprefix('turret_'), **fields))

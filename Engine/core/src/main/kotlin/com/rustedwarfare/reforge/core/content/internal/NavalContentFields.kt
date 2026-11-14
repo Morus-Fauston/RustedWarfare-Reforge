@@ -11,12 +11,13 @@ internal object NavalContentFields {
             "movement" to (base.fields.getValue("movement") + "reverseSpeedPercentage"),
             "turret_1" to (base.fields.getValue("turret_1") + setOf("idleDirReversing", "invisible", "image")),
             "projectile_1" to (base.fields.getValue("projectile_1") + setOf("targetGround", "areaDamage", "areaRadius",
-                "targetSpeed", "targetSpeedAcceleration", "deflectionPower", "ballistic", "ballistic_delaymove_height", "ballistic_height"))),
+                "targetSpeed", "targetSpeedAcceleration", "deflectionPower", "ballistic", "ballistic_delaymove_height", "ballistic_height",
+                "turnSpeed", "turnSpeedWhenNear", "spawnProjectilesOnEndOfLife"))),
         numericFields = base.numericFields + setOf("transportSlotsNeeded", "reverseSpeedPercentage", "idleDirReversing",
             "areaDamage", "areaRadius", "targetSpeed", "targetSpeedAcceleration", "deflectionPower",
-            "ballistic_delaymove_height", "ballistic_height", "shoot_sound_vol"),
+            "ballistic_delaymove_height", "ballistic_height", "shoot_sound_vol", "turnSpeedWhenNear"),
         booleanFields = base.booleanFields + setOf("invisible", "targetGround", "ballistic"),
-        textFields = base.textFields + "shoot_sound")
+        textFields = base.textFields + setOf("shoot_sound", "spawnProjectilesOnEndOfLife"))
 
     fun projectile(path: Path, loaded: UnitSourceReader.EffectiveSections, section: String): ProjectileProfile {
         val values = loaded.values.getValue(section)
@@ -31,6 +32,8 @@ internal object NavalContentFields {
         }
         val ground = bool("targetGround")
         val ballistic = bool("ballistic")
+        val retarget = bool("autoTargetingOnDeadTarget")
+        if (ground && retarget) bad("autoTargetingOnDeadTarget", "A fixed ground snapshot cannot select a replacement target")
         if (ground && ballistic) bad("ballistic", "Combined ground snapshot and custom ballistic is outside the finite naval profile")
         val direct = number("directDamage", 0.0)
         if (ground && direct != 0.0) bad("directDamage", "The finite naval ground snapshot has area damage only")
@@ -52,8 +55,18 @@ internal object NavalContentFields {
             area?.let { !it.areaDamage.isFinite() || !it.areaRadius.isFinite() || it.areaRadius <= 0f } == true ||
             height?.let { !it.delayMoveHeight.isFinite() || !it.apex.isFinite() || it.apex < it.delayMoveHeight } == true)
             bad("life", "Expected positive finite derived naval projectile dimensions")
+        fun turnRate(key: String): Double? = values[key]?.let {
+            it.toDoubleOrNull()?.takeIf { value -> value.isFinite() && value in 0.0..360.0 }
+                ?: bad(key, "Expected a finite turn rate from zero to 360")
+        }
+        val turnRate = turnRate("turnSpeed")
+        val nearTurnRate = turnRate("turnSpeedWhenNear")
+        val steering = if (turnRate == null && nearTurnRate == null) null
+            else ProjectileSteering(turnRate ?: -1.0, nearTurnRate)
+        if (steering != null && (ground || ballistic || retarget))
+            bad("turnSpeed", "Projectile steering requires the ordinary direct projectile")
         return ProjectileProfile(direct, life, speed, nonDeflectable = nonDeflectable,
-            ground = area, acceleration = acceleration, ballistic = height)
+            ground = area, acceleration = acceleration, ballistic = height, retargetOnDeath = retarget, steering = steering)
     }
 
     fun sound(path: Path, values: Map<String, String>, section: String): FireSoundProfile? {

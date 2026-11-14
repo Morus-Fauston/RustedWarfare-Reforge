@@ -127,6 +127,7 @@
       "com.rustedwarfare.reforge.core.sim.WeaponAssemblyRuntimeTest",
       "com.rustedwarfare.reforge.core.content.AuthorWaterContentTest",
       "com.rustedwarfare.reforge.core.sim.AuthorWaterRuntimeTest",
+      "com.rustedwarfare.reforge.core.sim.ProjectileExpiryTest",
       "com.rustedwarfare.reforge.core.content.AuthorConstructionContentTest",
       "com.rustedwarfare.reforge.core.sim.AuthorBuildingFoundationTest",
       "com.rustedwarfare.reforge.core.sim.AuthorConstructionLifecycleTest",

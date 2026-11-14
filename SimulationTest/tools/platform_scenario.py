@@ -4,6 +4,7 @@ import hashlib
 import json
 import math
 import os
+import re
 from fnmatch import fnmatch
 from pathlib import Path
 import shutil
@@ -13,6 +14,7 @@ import sys
 import time
 import tempfile
 import xml.etree.ElementTree as ET
+import zlib
 import spider_platform
 
 
@@ -36,14 +38,14 @@ def validate_unit_action_intent(intent, paired=False):
     keys={'intentId','kind','actionName','waitSteps'}
     if paired and isinstance(intent.get('coreActionId'), str) and intent['coreActionId']:
         keys.add('coreActionId')
-    if (nuclear or targeted or name in spider_platform.CANCELLABLE) and 'cancelQueued' in intent:keys.add('cancelQueued')
+    if (nuclear or targeted or name == 'addBlink' or name in spider_platform.CANCELLABLE) and 'cancelQueued' in intent:keys.add('cancelQueued')
     if targeted and cancel is False:keys.add('target')
     target=intent.get('target')
     if (set(intent)!=keys or type(cancel) is not bool or
             targeted and not cancel and (not isinstance(target,dict) or set(target)!={'x','y'} or
                 any(type(v) not in (int,float) or not math.isfinite(v) for v in target.values())) or
             not isinstance(name,str) or not nuclear and not targeted and name not in (
-                'afterBurn','cancelBurn','deploy','undeploy','surface','dive',*spider_platform.ACTIONS) or
+                'afterBurn','cancelBurn','deploy','undeploy','surface','dive','addBlink',*spider_platform.ACTIONS) or
             type(intent.get('waitSteps')) is not int or not 0<=intent['waitSteps']<=600):
         raise PlatformError('input-contract','Expected a finite normal unit action and explicit bounded wait',1)
 
@@ -174,6 +176,10 @@ def input_footprint(geometry):
             (viewport['width'],viewport['height']) not in ((1200,800),(960,640)) or
             viewport['screenWidth']!=viewport['width'] or viewport['screenHeight']!=viewport['height']):
         raise PlatformError('input-geometry','Missing or unregistered fixed map/viewport geometry')
+    if geometry.get('battlefieldFill', False):
+        pixels_per_world=max(viewport['screenWidth']/geometry['worldWidth'],
+                             viewport['screenHeight']/geometry['worldHeight'])
+        return dict(x=1/pixels_per_world, y=1/pixels_per_world)
     scale=min(704/geometry['worldWidth'],512/geometry['worldHeight'])
     return dict(x=1/(scale*viewport['screenWidth']/960),y=1/(scale*viewport['screenHeight']/640))
 
@@ -454,7 +460,145 @@ def compare_resource_sounds(records, expected):
     return result
 
 
+ORIGINAL_AFTERBURN_PAIR = {'aaBeamGunship': 'aaBeamGunship_afterburn'}
+
+
+def afterburn_pairs(policy):
+    if 'afterburnPairs' not in policy:
+        return ORIGINAL_AFTERBURN_PAIR
+    rows = policy['afterburnPairs']
+    pairs = {}
+    names = set()
+    if not isinstance(rows, list):
+        raise PlatformError('input-contract', 'Expected a fixed afterburn pair list', 1)
+    for row in rows:
+        if not isinstance(row, dict) or set(row) != {'normalForm', 'boostedForm'}:
+            raise PlatformError('input-contract', 'Invalid afterburn pair', 1)
+        normal, boosted = row['normalForm'], row['boostedForm']
+        if (any(not isinstance(name, str) or not re.fullmatch(r'[A-Za-z0-9_.-]+', name)
+                for name in (normal, boosted)) or normal == boosted or {normal, boosted} & names):
+            raise PlatformError('input-contract', 'Afterburn form identities must be distinct', 1)
+        pairs[normal] = boosted
+        names.update((normal, boosted))
+    return pairs
+
+
+def blink_target(target):
+    if target is None:
+        return None
+    return {axis:struct.unpack('<f',struct.pack('<f',value))[0] for axis,value in target.items()}
+
+
+def validate_blink_completions(records, plan, policy, accepted):
+    declarations=policy.get('blinkCompletions',[])
+    if not isinstance(declarations,list):
+        raise PlatformError('input-contract','Expected fixed Blink completions',1)
+    commands={action['actionId']:action for action in plan.get('actions',[])}
+    spawns={unit['unitId']:unit for unit in plan.get('units',[])}
+    by_step={}
+    used=set()
+    charges=[]
+    for item in declarations:
+        fields={'unitId','actionId','completionStepIndex'}
+        if (not isinstance(item,dict) or item.keys()-{'cooldownTicks'}!=fields or
+                any(not isinstance(item[key],str) for key in ('unitId','actionId')) or
+                type(item['completionStepIndex']) is not int):
+            raise PlatformError('input-contract','Invalid Blink completion declaration',1)
+        identity=item['unitId']; action_id=item['actionId']; step=item['completionStepIndex']
+        command=commands.get(action_id,{})
+        spawn=spawns.get(identity,{})
+        if (action_id in used or spawn.get('type') not in policy['blinkTypes'] or
+                command.get('unitId')!=identity or command.get('actor')!=spawn.get('owner') or
+                command.get('kind')!='unit-action' or command.get('actionName') not in ('addBlink','blink') or
+                command.get('cancelQueued') is not False or not command['atStep']<=step<len(plan['termination']['steps'])):
+            raise PlatformError('input-contract','Blink completion is detached from a declared command',1)
+        jumping=command['actionName']=='blink'
+        cooldown=item.get('cooldownTicks')
+        if ((jumping and (type(cooldown) is not int or cooldown<=0)) or
+                (not jumping and 'cooldownTicks' in item)):
+            raise PlatformError('input-contract','A Blink jump must declare its exact cooldown ticks',1)
+        if accepted.get(action_id) is None:
+            raise PlatformError('history-blink','Missing accepted Blink command',2)
+        time, origin, target=accepted[action_id]
+        # Native input can spend additional steps between calls. Bind each expected
+        # completion to the actual accepted command and keep its declared duration.
+        completion=time+step-command['atStep']+1
+        if jumping:
+            charges.append((identity,time,completion,origin,cooldown))
+        used.add(action_id)
+        by_step.setdefault(completion,[]).append((command,target,cooldown))
+    if {key for key,value in accepted.items() if value is not None}-used:
+        raise PlatformError('input-contract','Each accepted non-cancelled Blink action needs a fixed completion',1)
+    if not used:
+        return
+    for row in records:
+        if row.get('kind')!='observation' or row.get('phase')!='step':
+            continue
+        sample=row['sample'];time=sample['simulationTime']
+        units={u['unitId']:u for u in sample['units']}
+        expected=by_step.pop(time,[])
+        events=[(e.get('kind'),e.get('unitId')) for e in sample.get('events',[]) if e.get('unitId') in units and
+                units[e['unitId']]['typeId'] in policy['blinkTypes']]
+        completions=sorted(identity for kind,identity in events if kind=='unit-action-completed')
+        teleports=sorted(identity for kind,identity in events if kind=='teleported')
+        if (completions!=sorted(command['unitId'] for command,_,_ in expected) or
+                teleports!=sorted(command['unitId'] for command,_,_ in expected if command['actionName']=='blink')):
+            raise PlatformError('history-blink','Blink completion differs from the fixed step',2)
+        for command,target,cooldown in expected:
+            name=command['actionName']
+            unit=units[command['unitId']]
+            actions=unit['unitActions']['actions']
+            if name=='blink':
+                if unit['position']!=target or actions['blink']['cooldownRemaining']!=math.ceil(cooldown*1000/60):
+                    raise PlatformError('history-blink','Teleport destination or cooldown is missing',2)
+            elif 'blink' not in actions or 'addBlink' in actions:
+                raise PlatformError('history-blink','Paid completion did not unlock Blink',2)
+        for identity,start,end,origin,cooldown in charges:
+            if start<time<end and (identity not in units or units[identity]['position']!=origin):
+                raise PlatformError('history-blink','Blink moved the unit before charge completion',2)
+            if end<time<=end+cooldown and identity in units and units[identity].get('alive'):
+                actual=units[identity]['unitActions']['actions'].get('blink',{})
+                if actual.get('cooldownRemaining')!=math.ceil((end+cooldown-time)*1000/60):
+                    raise PlatformError('history-blink','Blink cooldown differs from the fixed simulation clock',2)
+    if by_step:
+        raise PlatformError('history-blink','Missing declared Blink completion',2)
+
+
+def validate_blink_state(unit, owner):
+    state = unit.get('unitActions')
+    if unit.get('ownerPlayerId') != owner:
+        if state is not None:
+            raise PlatformError('history-blink','Enemy Blink state must remain private',2)
+        return
+    if not isinstance(state,dict) or set(state)-{'queue'} != {'actions','automaticCooldown'} or state['automaticCooldown'] != 0:
+        raise PlatformError('history-blink','Missing or invalid Blink action state',2)
+    actions=state['actions'];queue=state.get('queue',[])
+    if not isinstance(actions,dict) or len(actions)!=1 or not isinstance(queue,list) or len(queue)>1:
+        raise PlatformError('history-blink','Invalid Blink action or queue',2)
+    name,action=next(iter(actions.items()))
+    if (name not in ('blink','addBlink') or not isinstance(action,dict) or
+            set(action)!={'queueIndex','progress','cooldownRemaining','available'} or
+            type(action['available']) is not bool or type(action['cooldownRemaining']) is not int or action['cooldownRemaining']<0):
+        raise PlatformError('history-blink','Invalid Blink action fields',2)
+    if queue:
+        item=queue[0]
+        if (not isinstance(item,dict) or set(item)!={'name','progress','target'} or item['name']!=name or
+                type(item['progress']) not in (int,float) or not 0<=item['progress']<1 or
+                action['queueIndex']!=0 or action['progress']!=item['progress'] or action['available']):
+            raise PlatformError('history-blink','Invalid queued Blink action',2)
+        target=item['target']
+        if (name=='blink' and (not isinstance(target,dict) or set(target)!={'x','y'} or
+                any(type(v) not in (int,float) or not math.isfinite(v) for v in target.values())) or
+                name=='addBlink' and target is not None):
+            raise PlatformError('history-blink','Invalid Blink target',2)
+    elif action['queueIndex'] is not None or action['progress'] is not None:
+        raise PlatformError('history-blink','Unqueued Blink has queue fields',2)
+
+
 def validate_history_poses(units, policy):
+    pairs = afterburn_pairs(policy)
+    boosted = set(pairs.values())
+    flight_types = pairs.keys() | boosted | {'bomber'}
     counts = policy.get('mechLegs', {})
     if not isinstance(counts, dict) or any(type(n) is not int or n < 1 for n in counts.values()):
         raise PlatformError('input-contract', 'Expected declared positive mech leg counts', 1)
@@ -463,7 +607,7 @@ def validate_history_poses(units, policy):
     def point(value):
         return isinstance(value, dict) and set(value) == {'x','y'} and all(number(v) for v in value.values())
     for unit in units:
-        if unit.get('typeId') in {'aaBeamGunship','aaBeamGunship_afterburn','bomber'}:
+        if unit.get('typeId') in flight_types:
             bomber = unit['typeId'] == 'bomber'
             category = 'history-bomber' if bomber else 'history-aa-beam'
             maximum = 3 if bomber else 6
@@ -472,7 +616,7 @@ def validate_history_poses(units, policy):
             if (not isinstance(energy,dict) or set(energy)!={'current','maximum','recharging'} or
                     not number(energy.get('current')) or not 0<=energy['current']<=maximum or
                     not number(energy.get('maximum')) or energy['maximum']!=maximum or type(energy.get('recharging')) is not bool or
-                    unit['typeId']!='aaBeamGunship_afterburn' and
+                    unit['typeId'] not in boosted and
                     (energy['recharging'] and energy['current']>=maximum or not energy['recharging'] and energy['current']<shot_cost)):
                 raise PlatformError(category,'Missing or inconsistent weapon energy and recharge lock',2)
             if (not isinstance(pose,dict) or set(pose)!={'velocity','height','heightPhase','rotorPhase','rotorHeading','rotorHeightOffset','fall'} or
@@ -493,7 +637,7 @@ def validate_history_poses(units, policy):
             elif unit.get('ownerPlayerId')!=policy.get('ownerPlayerId','p1'):
                 if state is not None:raise PlatformError('history-unit-action','Enemy action controls must be private',2)
             else:
-                names={'afterBurn','cancelBurn'} if unit['typeId']=='aaBeamGunship_afterburn' else {'afterBurn'}
+                names={'afterBurn','cancelBurn'} if unit['typeId'] in boosted else {'afterBurn'}
                 if (not isinstance(state,dict) or set(state)!={'actions','automaticCooldown'} or
                         not number(state.get('automaticCooldown')) or not 0<=state['automaticCooldown']<=60 or
                         not isinstance(state.get('actions'),dict) or set(state['actions'])!=names):
@@ -517,6 +661,8 @@ def validate_history_poses(units, policy):
                         raise PlatformError('history-unit-action','Action availability differs from its state',2)
                 if sorted(indexes)!=list(range(len(indexes))):
                     raise PlatformError('history-unit-action','Action queue indexes must be unique and contiguous',2)
+        elif unit.get('typeId') in policy.get('blinkTypes', ()):
+            validate_blink_state(unit, policy.get('ownerPlayerId','p1'))
         elif unit.get('typeId') == spider_platform.CHASSIS:
             spider_platform.validate_state(unit, policy.get('ownerPlayerId','p1'))
         elif unit.get('typeId') in ('mechBunker','mechBunkerDeployed'):
@@ -546,8 +692,12 @@ def validate_history_poses(units, policy):
         if unit.get('carriedBy') is not None:
             raise PlatformError('history-transport','Carried passenger in a player sample',2)
         transport=unit.get('transport')
-        if unit.get('typeId') in {'hovercraft','dropship','nautilusSubmarine','nautilusSubmarineSurface','nautilusSubmarineLand'} and unit.get('ownerPlayerId')==policy.get('ownerPlayerId','p1'):
-            nautilus=unit['typeId'] in {'nautilusSubmarine','nautilusSubmarineSurface','nautilusSubmarineLand'}
+        nautilus=unit.get('typeId') in {'nautilusSubmarine','nautilusSubmarineSurface','nautilusSubmarineLand'}
+        authored=policy.get('transportTypes',{}).get(unit.get('typeId'))
+        if (nautilus or authored is not None or unit.get('typeId') in {'hovercraft','dropship'}) and unit.get('ownerPlayerId')==policy.get('ownerPlayerId','p1'):
+            capacity=authored['capacity'] if authored is not None else 3 if nautilus else 4
+            unload_ticks=authored['unloadTicks'] if authored is not None else 30
+            slot_limit=4 if nautilus else capacity
             if (not isinstance(transport,dict) or set(transport)!={'passengerIds','passengerCount','occupiedSlots','capacity','unloading','unloadRemaining','canUnload'} or
                     not number(unit.get('height'))):
                 raise PlatformError('history-transport','Missing or unapproved owner cargo fields',2)
@@ -555,10 +705,10 @@ def validate_history_poses(units, policy):
             if (not isinstance(passengers,list) or any(not isinstance(p,str) or not p for p in passengers) or
                     len(passengers)!=len(set(passengers)) or any(p==u.get('unitId') for p in passengers for u in units) or
                     type(transport['passengerCount']) is not int or transport['passengerCount']!=len(passengers) or
-                    type(transport['occupiedSlots']) is not int or not 0<=transport['occupiedSlots']<=4 or
-                    (not passengers and transport['occupiedSlots']!=0) or type(transport['capacity']) is not int or transport['capacity']!=(3 if nautilus else 4) or
+                    type(transport['occupiedSlots']) is not int or not 0<=transport['occupiedSlots']<=slot_limit or
+                    (not passengers and transport['occupiedSlots']!=0) or type(transport['capacity']) is not int or transport['capacity']!=capacity or
                     type(transport['unloading']) is not bool or type(transport['canUnload']) is not bool or
-                    not number(transport['unloadRemaining']) or not 0<=transport['unloadRemaining']<=30 or
+                    not number(transport['unloadRemaining']) or not 0<=transport['unloadRemaining']<=unload_ticks or
                     transport['canUnload'] and (not passengers or transport['unloading'] or unit.get('alive') is not True)):
                 raise PlatformError('history-transport','Invalid cargo count, capacity or unload state',2)
             if nautilus and (transport['occupiedSlots']!=len(passengers) or unit['typeId']!='nautilusSubmarineSurface' and (transport['unloading'] or
@@ -751,6 +901,27 @@ def validate_history_action(records, row, intent, geometry=None, paired=False):
             from nuclear_platform import validate_nuclear_call
             validate_nuclear_call(old,new,row,intent,input_footprint(geometry))
             return
+        if name in ('addBlink','blink'):
+            cancel=intent.get('cancelQueued',False);target=row.get('target');expected=intent.get('target')
+            limits=input_footprint(geometry)
+            matches=(target is None and expected is None or isinstance(target,dict) and isinstance(expected,dict) and
+                     set(target)==set(expected)=={'x','y'} and all(type(target[k]) in (int,float) and
+                     math.isfinite(target[k]) and abs(target[k]-expected[k])<=limits[k] for k in ('x','y')))
+            first=(old.get('unitActions') or {});last=(new.get('unitActions') or {})
+            before=first.get('queue',[]);after=last.get('queue',[])
+            # The diagnostic records the clicked point, while Core queues single-precision positions.
+            try:
+                position=blink_target(target) if matches else None
+            except OverflowError:
+                matches=False
+                position=None
+            pending=dict(name=name,progress=0,target=position)
+            if (row.get('actionName')!=name or row.get('cancelQueued') is not cancel or not matches or
+                    any(old.get(k)!=new.get(k) for k in set(old)|set(new) if k!='unitActions') or
+                    (cancel and (len(before)!=1 or before[0]['name']!=name or after) or
+                    not cancel and (before or after!=[pending] or not first.get('actions',{}).get(name,{}).get('available')))):
+                raise PlatformError('history-blink','Blink order or cancellation lacks the exact queue receipt',2)
+            return
         if naval_ammo or name==SCOUT_LAUNCH:
             actual=row.get('target'); expected=intent.get('target')
             cancel=intent.get('cancelQueued',False);limits=input_footprint(geometry)
@@ -912,15 +1083,21 @@ SPIDER_LAUNCH_SOURCES = {
 }
 
 
-def validate_launch_appearance(shot, units, verified_attachment_birth=None):
-    source=units.get(shot.get('sourceUnitId'),{})
+def validate_launch_appearance(shot, units, verified_attachment_birth=None, pairs=ORIGINAL_AFTERBURN_PAIR):
+    beam=shot.get('beam')
+    visible_source=beam.get('visibleSourceUnitId') if isinstance(beam,dict) else None
+    source=units.get(shot.get('sourceUnitId') or visible_source,{}) if isinstance(visible_source,(str,type(None))) else {}
+    source_type=source.get('typeId')
+    normal_form=next((normal for normal,boosted in pairs.items() if source_type in (normal,boosted)),None)
     weapon=shot.get('sourceWeaponName')
     style=shot.get('appearance','STANDARD')
     expected={'attackSubmarine':('SUBMARINE_MISSILE','SUBMARINE_TORPEDO'),
               'amphibiousJet':('AMPHIBIOUS_LIGHTNING',),'modularSpider_lightning':('SPIDER_LIGHTNING',),
-              'aaBeamGunship':('AA_BEAM',),'nukeLauncherC':('NUCLEAR',),'modularSpider':('NUCLEAR',),
+              'nukeLauncherC':('NUCLEAR',),'modularSpider':('NUCLEAR',),
               'antiNukeLauncherC':('INTERCEPTOR',),'modularSpider_antinuke':('INTERCEPTOR',),
               'mechFlame':('MECH_FLAME',)}.get(source.get('typeId'),('STANDARD',))
+    if normal_form is not None:
+        expected = ('AA_BEAM',)
     if verified_attachment_birth is not None:
         verified_style, verified_source = verified_attachment_birth
         disclosed = shot.get('sourceUnitId'), weapon
@@ -955,14 +1132,19 @@ def validate_launch_appearance(shot, units, verified_attachment_birth=None):
             raise PlatformError('history-projectile','Missing or invalid native lightning geometry',2)
     elif line is not None:
         raise PlatformError('history-projectile','Lightning geometry on an unsupported launch appearance',2)
-    beam=shot.get('beam')
     if style=='AA_BEAM':
+        if 'kind' not in shot and 'sourceUnitId' in shot:
+            raise PlatformError('history-aa-beam','Active beam source must be part of its published resource',2)
         def finite(value):return type(value) in (int,float) and math.isfinite(value)
-        if (not isinstance(beam,dict) or set(beam)!={'end','endHeight','textureOffset'} or
+        expected_resource = None if normal_form in (None, 'aaBeamGunship') else normal_form
+        if (not isinstance(beam,dict) or set(beam)-{'resourceUnitType','visibleSourceUnitId'}!={'end','endHeight','textureOffset'} or
+                beam.get('resourceUnitType') != expected_resource or
+                'resourceUnitType' in beam and expected_resource is None or
+                'visibleSourceUnitId' in beam and ('kind' in shot or not isinstance(visible_source,str) or expected_resource is None) or
                 not isinstance(beam.get('end'),dict) or set(beam['end'])!={'x','y'} or
                 any(not finite(v) for v in beam['end'].values()) or not finite(beam.get('endHeight')) or
                 not finite(beam.get('textureOffset')) or beam['textureOffset']<0 or
-                ('kind' in shot or source) and shot.get('sourceWeaponName')!='1' or
+                'kind' in shot and source and shot.get('sourceWeaponName')!='1' or
                 any(shot.get(k) is not None for k in ('ground','missile','ballistic','areaExpansion','lightning'))):
             raise PlatformError('history-aa-beam','Missing or invalid authorized beam geometry',2)
         if 'kind' in shot and shot['kind'] not in ('born','rearmed','impact','expired','target-ended'):
@@ -972,10 +1154,13 @@ def validate_launch_appearance(shot, units, verified_attachment_birth=None):
     return style
 
 
-def validate_unit_action_history(records, policy):
+def validate_unit_action_history(records, policy, starting_units=()):
     """Independent finite AA command/step protocol, using the fixed normal one-tick schedule."""
     def f32(value):return struct.unpack('<f',struct.pack('<f',value))[0]
     owner=policy.get('ownerPlayerId','p1')
+    pairs=afterburn_pairs(policy)
+    form_pairs={form:(normal,boosted) for normal,boosted in pairs.items() for form in (normal,boosted)}
+    starts={unit['unitId']:unit['type'] for unit in starting_units if unit['type'] in form_pairs}
     previous={};pending={};ends={};automatic={};clock=0
     for row in records:
         if row.get('kind')=='action' and row.get('type')=='UnitAction':
@@ -985,23 +1170,28 @@ def validate_unit_action_history(records, policy):
         if step:clock=int(f32(f32(clock)+f32(16.666666)))
         expected_events=[]
         for unit in sample.get('units',[]):
-            if unit.get('ownerPlayerId')!=owner or unit.get('typeId') not in ('aaBeamGunship','aaBeamGunship_afterburn'):continue
-            identity=unit['unitId'];old=previous.get(identity);form=old['typeId'] if old else 'aaBeamGunship'
+            identity=unit['unitId']
+            old=previous.get(identity)
+            starting_type=starts.get(identity,unit.get('typeId'))
+            if unit.get('ownerPlayerId')!=owner or not old and starting_type not in form_pairs:
+                continue
+            normal,boosted=form_pairs[old['typeId'] if old else starting_type]
+            form=old['typeId'] if old else starts.get(identity,normal)
             timer=automatic.get(identity,0)
             queue=pending.setdefault(identity,[])
             if step and old and unit.get('alive') is True:
                 name=queue.pop(0) if queue else None
                 if name is not None:
-                    form='aaBeamGunship_afterburn' if name=='afterBurn' else 'aaBeamGunship'
+                    form=boosted if name=='afterBurn' else normal
                     if name=='afterBurn':ends[identity]=clock+25000
                     expected_events.append((identity,'unit-action-completed'))
-                if form=='aaBeamGunship_afterburn':
+                if form==boosted:
                     timer=max(0,timer-1)
                     # Energy updates before ordinary actions; base afterBurn then sets 6.
-                    energy=old['energy'];empty=(old['typeId']=='aaBeamGunship_afterburn' and
+                    energy=old['energy'];empty=(old['typeId']==boosted and
                         energy['recharging'] is False and f32(f32(energy['current'])+f32(-.02))<=0)
                     if timer==0 and empty:
-                        form='aaBeamGunship';timer=60
+                        form=normal;timer=60
                         expected_events.append((identity,'unit-action-automatic'))
             if unit['typeId']!=form:
                 raise PlatformError('history-unit-action','Unit form changed outside its normal queue or empty-energy trigger',2)
@@ -1179,9 +1369,43 @@ def compare_history(records, plan, policy, native_anchors=None, geometry=None):
              'productionOrder','completedUpgradeTypes','initialIncome','producedIncome','transportStages','unitActionStages',
              'bunkerStages','reclaimRefunds','nautilusTerrain','nuclearHistory','navalAmmoHistory',
              'spiderOpening','spiderWeaponModules','spiderUtilityModules','spiderDefenseModules','spiderBlink',
-             'spiderMixedModules', 'productionSession'}
+             'spiderMixedModules', 'productionSession', 'afterburnPairs', 'blinkTypes', 'blinkCompletions', 'transportTypes',
+             'transportPassengerSlots', 'transportUnloadSteps'}
     if not isinstance(policy,dict) or set(policy)-allowed:
         raise PlatformError('input-contract', 'Unknown or malformed history obligations', 1)
+    pairs = afterburn_pairs(policy)
+    if 'testScene' in plan and pairs != afterburn_pairs(plan):
+        raise PlatformError('input-contract', 'Core and Session afterburn pair contracts differ', 1)
+    aa_types = pairs.keys() | set(pairs.values())
+    blink_types=policy.get('blinkTypes',[])
+    if (not isinstance(blink_types,list) or any(not isinstance(name,str) or not name for name in blink_types) or
+            len(set(blink_types))!=len(blink_types) or blink_types!=plan.get('blinkTypes',[])):
+        raise PlatformError('input-contract','Core and Session Blink type declarations differ',1)
+    transport_types=policy.get('transportTypes',{})
+    supported_transport={unit['id'] for unit in plan.get('content',{}).get('unitVariants',[]) if unit.get('loader')=='hover-tank'}
+    if (not isinstance(transport_types,dict) or transport_types!=plan.get('transportTypes',{}) or
+            any(name not in supported_transport or not isinstance(settings,dict) or
+                set(settings)!={'capacity','unloadTicks'} or type(settings['capacity']) is not int or
+                type(settings['unloadTicks']) is not int or not 1<=settings['capacity']<=1000 or
+                not 1<=settings['unloadTicks']<=36000 for name,settings in transport_types.items())):
+        raise PlatformError('input-contract','Core and Session authored transport declarations differ',1)
+    authored_passenger_slots=policy.get('transportPassengerSlots',{})
+    owner=policy.get('ownerPlayerId','p1')
+    declared_passengers={unit['unitId'] for unit in plan.get('units',[]) if unit.get('owner')==owner and
+                         unit.get('type') not in transport_types}
+    if (not isinstance(authored_passenger_slots,dict) or bool(transport_types)!=bool(authored_passenger_slots) or
+            any(name not in declared_passengers or type(slots) is not int or not 0<=slots<=1000
+                for name,slots in authored_passenger_slots.items())):
+        raise PlatformError('input-contract','Expected fixed authored passenger identities and slot costs',1)
+    unload_steps=policy.get('transportUnloadSteps',{})
+    authored_carriers={unit['unitId']:unit['type'] for unit in plan.get('units',[]) if unit.get('owner')==owner and
+              unit.get('type') in transport_types}
+    if (not isinstance(unload_steps,dict) or any(identity not in authored_carriers or not isinstance(check,list) or
+            len(check)!=2 or any(type(step) is not int or step<0 for step in check) or
+            check[1]-check[0]+1!=transport_types[authored_carriers[identity]]['unloadTicks']
+            for identity,check in unload_steps.items())):
+        raise PlatformError('input-contract','Invalid fixed authored unload windows',1)
+    checked_unload_steps=set()
     unit_checkpoints = policy.get('unitsAfterIntents', {})
     intent_ids = {intent['intentId'] for intent in plan['intents']}
     if (not isinstance(unit_checkpoints, dict) or set(unit_checkpoints)-intent_ids or
@@ -1250,11 +1474,12 @@ def compare_history(records, plan, policy, native_anchors=None, geometry=None):
     for stage in declarations:
         if (not isinstance(stage,dict) or set(stage)!={'intentId','typeId','cooldown'} or
                 not isinstance(stage['intentId'],str) or stage['intentId'] not in ids or stage['intentId'] in action_stages or
-                stage['typeId'] not in ('aaBeamGunship','aaBeamGunship_afterburn') or
+                not isinstance(stage['typeId'],str) or stage['typeId'] not in aa_types or
                 stage['cooldown'] not in ('active','ready')):
             raise PlatformError('input-contract','Invalid fixed unit action stage',1)
         action_stages[stage['intentId']]=stage
     transport_stages={}
+    known_carriers={'hovercraft','dropship','nautilusSubmarine','nautilusSubmarineSurface','nautilusSubmarineLand'} | transport_types.keys()
     declarations=policy.get('transportStages',[])
     if not isinstance(declarations,list):
         raise PlatformError('input-contract','Transport stages must be a fixed list',1)
@@ -1262,13 +1487,24 @@ def compare_history(records, plan, policy, native_anchors=None, geometry=None):
         if (not isinstance(stage,dict) or set(stage)-{'intentId','typeId','passengerCount','unloading','minimumX','maximumX'} or
                 not {'intentId','passengerCount','unloading'}<=set(stage) or stage['intentId'] not in ids or
                 not isinstance(stage.get('typeId','hovercraft'),str) or
-                stage.get('typeId','hovercraft') not in {'hovercraft','dropship','nautilusSubmarine','nautilusSubmarineSurface','nautilusSubmarineLand'} or
+                stage.get('typeId','hovercraft') not in known_carriers or
                 stage['intentId'] in transport_stages or type(stage['passengerCount']) is not int or stage['passengerCount']<0 or
                 type(stage['unloading']) is not bool or any(type(stage[k]) not in (int,float) or not math.isfinite(stage[k])
                     for k in ('minimumX','maximumX') if k in stage) or
                 stage.get('minimumX',-math.inf)>stage.get('maximumX',math.inf)):
             raise PlatformError('input-contract','Invalid fixed transport stage',1)
         transport_stages[stage['intentId']]=stage
+    paired_intents={item['coreActionId']:item for item in intents.values() if 'coreActionId' in item}
+    for action in plan.get('actions',[]):
+        identity=action.get('unitId')
+        if identity not in authored_carriers or action.get('kind')!='unload' or action.get('unloading') is not True:
+            continue
+        intent=paired_intents.get(action['actionId'],{})
+        stage=transport_stages.get(intent.get('intentId'))
+        if stage is not None and stage['passengerCount']==0 and not stage['unloading']:
+            window=unload_steps.get(identity)
+            if window is None or not action['atStep']<=window[0]<=window[1]<action['atStep']+intent['waitSteps']:
+                raise PlatformError('input-contract','Authored unload completion requires a fixed clock window in its intent',1)
     no_actions = policy.get('noActionIntents', [])
     if (not isinstance(no_actions, list) or len(no_actions) != len(set(no_actions)) or
             any(i not in ids or intents[i].get('kind') != 'select' for i in no_actions)):
@@ -1310,6 +1546,8 @@ def compare_history(records, plan, policy, native_anchors=None, geometry=None):
     active, pending, observations = None, 0, 0
     completed, steps, intent_steps, initial_step, action_count = 0, 0, 0, None, 0
     action_ids = set()
+    accepted_blink = {}
+    pending_blink = {}
     construction_charges, construction_ids, seen_units = {}, set(), set()
     stream=records
     if native_anchors is not None:
@@ -1362,7 +1600,7 @@ def compare_history(records, plan, policy, native_anchors=None, geometry=None):
             stage=action_stages.get(active)
             if stage is not None:
                 candidates=[u for u in units.values() if u.get('ownerPlayerId')==policy.get('ownerPlayerId','p1') and
-                            u.get('typeId') in ('aaBeamGunship','aaBeamGunship_afterburn')]
+                            u.get('typeId') in aa_types]
                 if len(candidates)!=1 or candidates[0]['typeId']!=stage['typeId']:
                     raise PlatformError('history-unit-action-stage','Missing, ambiguous or wrong unit form at fixed boundary',2)
                 action=candidates[0]['unitActions']['actions']['afterBurn']
@@ -1391,6 +1629,23 @@ def compare_history(records, plan, policy, native_anchors=None, geometry=None):
                 if viewport is None:raise PlatformError('input-geometry','History lacks a formal viewport')
                 context=dict(geometry,viewport=viewport)
             validate_history_action(records,row,intents[active],context,paired='testScene' in plan)
+            intent=intents[active]
+            if intent.get('actionName') in ('addBlink','blink'):
+                before=records[row['sequence']-1]['sample']
+                caster=next(unit for unit in before['units'] if unit['unitId']==row['unitId'])
+                if caster['typeId'] in blink_types:
+                    key=(row['unitId'],row['actionName'])
+                    if intent.get('cancelQueued',False):
+                        cancelled=pending_blink.pop(key,None)
+                        if cancelled is None:
+                            raise PlatformError('history-blink','Blink cancellation is missing its accepted order',2)
+                        accepted_blink[cancelled]=None
+                    else:
+                        identifier=intent.get('coreActionId')
+                        if not identifier:
+                            raise PlatformError('input-contract','Authored Blink requires a paired action identity',1)
+                        pending_blink[key]=identifier
+                        accepted_blink[identifier]=(before['simulationTime'],caster['position'],blink_target(row['target']))
             if active in refunds:
                 target=row.get('targetUnitId')
                 before=records[row['sequence']-1]['sample']
@@ -1409,7 +1664,7 @@ def compare_history(records, plan, policy, native_anchors=None, geometry=None):
                 raise PlatformError('input-contract','Naval ammunition reserves or refunds 6000 credits at the action',1)
             if charge:
                 if charge['at'] == 'action':
-                    refund=(name==SCOUT_LAUNCH or naval_ammo or spider_paid) and intents[active].get('cancelQueued') is True
+                    refund=(name in (SCOUT_LAUNCH,'addBlink') or naval_ammo or spider_paid) and intents[active].get('cancelQueued') is True
                     balance += charge['amount'] if refund else -charge['amount']
                 elif charge['at'] == 'first-step': pending += charge['amount']
                 else: construction_charges[active] = dict(charge=charge, action=row)
@@ -1461,6 +1716,49 @@ def compare_history(records, plan, policy, native_anchors=None, geometry=None):
                         sources[0].get('alive') is not True or sources[0].get('constructionProgress')!=1):
                     raise PlatformError('history-income', 'Fixed initial income source changed or is not a live completed owned unit', 2)
             validate_history_poses(units.values(), policy)
+            if transport_types:
+                carried=set()
+                for unit in units.values():
+                    if unit['typeId'] not in transport_types or unit['ownerPlayerId']!=owner:
+                        continue
+                    cargo=unit['transport']
+                    passengers=cargo['passengerIds']
+                    if (any(passenger not in authored_passenger_slots or passenger in carried or
+                            passenger not in seen_units for passenger in passengers) or
+                            sum(authored_passenger_slots[p] for p in passengers)!=cargo['occupiedSlots']):
+                        raise PlatformError('history-transport','Authored manifest differs from observed passenger identities or slot costs',2)
+                    carried.update(passengers)
+                if row.get('phase')=='step':
+                    released_ids={event.get('unitId') for event in sample['events'] if event.get('kind')=='unit-unloaded'}
+                    for identity in authored_carriers.keys()-unload_steps.keys():
+                        before=previous_units.get(identity,{}).get('transport')
+                        if before and released_ids.intersection(before['passengerIds']):
+                            raise PlatformError('history-transport','Authored release requires a fixed clock window',2)
+                    for identity,(start,end) in unload_steps.items():
+                        if not start<=index<=end:
+                            continue
+                        current=units.get(identity)
+                        previous=previous_units.get(identity)
+                        if (not current or not previous or current['position']!=previous['position'] or
+                                any(unit.get('ownerPlayerId')!=owner or unit.get('typeId')!=authored_carriers[identity]
+                                    for unit in (current,previous))):
+                            raise PlatformError('history-transport','Missing a stationary authored unload sample',2)
+                        cargo, before=current['transport'],previous['transport']
+                        if index<end:
+                            valid=(cargo['unloading'] and cargo['passengerIds']==before['passengerIds'] and
+                                   cargo['unloadRemaining']==end-index)
+                        else:
+                            released=before['passengerIds'][-1:]  # native order is last in, first out
+                            passenger=units.get(released[0],{}) if released else {}
+                            exit_state=passenger.get('transportExit') or {}
+                            valid=(bool(released) and passenger.get('ownerPlayerId')==owner and passenger.get('alive') is True and
+                                   exit_state.get('previousCarrierId')==identity and
+                                   cargo['passengerIds']==before['passengerIds'][:-1] and
+                                   cargo['unloadRemaining']==transport_types[authored_carriers[identity]]['unloadTicks'] and
+                                   released[0] in released_ids)
+                        if not valid:
+                            raise PlatformError('history-transport','Authored unload clock or release differs from the fixed window',2)
+                        checked_unload_steps.add((identity,index))
             destroyed_slots = {event.get('unitId') for event in sample.get('events', [])
                                if event.get('kind') == 'attachment-slot-destroyed'}
             reclaimed_slots = {event.get('unitId') for event in sample.get('events', [])
@@ -1483,7 +1781,7 @@ def compare_history(records, plan, policy, native_anchors=None, geometry=None):
                     # The module scans before lifecycle conversion and can launch before its reclaim completes.
                     launch_units=previous_units
                 source=launch_units.get(source_id,{})
-                style=validate_launch_appearance(event,launch_units,proof[1] if proof else None)
+                style=validate_launch_appearance(event,launch_units,proof[1] if proof else None,pairs)
                 if born:
                     if token in launch_appearances and launch_appearances[token]!=style:
                         raise PlatformError('history-projectile','Repeated birth changed launch appearance',2)
@@ -1497,7 +1795,7 @@ def compare_history(records, plan, policy, native_anchors=None, geometry=None):
                             source.get('typeId')==expected['typeId'] and event.get('sourceWeaponName') in expected['weaponNames'] and
                             event.get('targetUnitId')==expected['targetUnitId']):fired[i]=True
             for projectile in sample.get('projectiles',[]):
-                style=validate_launch_appearance(projectile,units)
+                style=validate_launch_appearance(projectile,units,pairs=pairs)
                 token=projectile.get('token')
                 if token in launch_appearances and launch_appearances[token]!=style:
                     raise PlatformError('history-projectile','Observed projectile changed launch appearance',2)
@@ -1564,10 +1862,13 @@ def compare_history(records, plan, policy, native_anchors=None, geometry=None):
         raise PlatformError('incomplete-run', 'Missing history observations or a pending first-step charge')
     validate_history_units(units.values(), policy.get('finalUnits', []))
     validate_production_history(records,policy)
+    if len(checked_unload_steps)!=sum(end-start+1 for start,end in unload_steps.values()):
+        raise PlatformError('history-transport','Missing steps from the fixed authored unload windows',2)
+    validate_blink_completions(records,plan,policy,accepted_blink)
     if 'productionSession' in policy and native_anchors is None:
         from production_session_assertions import validate_production_session
         validate_production_session(records, policy['productionSession'], PlatformError)
-    if 'unitActionStages' in policy:validate_unit_action_history(records,policy)
+    if 'unitActionStages' in policy:validate_unit_action_history(records,policy,plan.get('units',[]))
     if 'bunkerStages' in policy:validate_bunker_history(records,policy)
     if 'nautilusTerrain' in policy:validate_nautilus_history(records,policy)
     if 'navalAmmoHistory' in policy:
@@ -1740,11 +2041,54 @@ def windows_geometry(output, records, maps=None):
         if (int(root.get('width'))==r.get('mapWidth') and int(root.get('height'))==r.get('mapHeight') and
                 int(root.get('width'))*int(root.get('tilewidth'))==width and
                 int(root.get('height'))*int(root.get('tileheight'))==height):
-            return dict(worldWidth=width,worldHeight=height)
+            fill=g.get('battlefieldFill',False)
+            if type(fill) is not bool:
+                raise PlatformError('input-geometry','Invalid battlefield projection mode')
+            return dict(worldWidth=width,worldHeight=height,**({'battlefieldFill': True} if fill else {}))
     raise PlatformError('input-geometry','Loaded graphics geometry has no matching frozen input map')
 
 
 def compare_archive(output, expected_scenario=None, expected_contract=None, started_after=None):
+    from evidence_compact import archive_lock
+    with archive_lock(output):
+        return compare_archive_locked(output, expected_scenario, expected_contract, started_after)
+
+
+def verify_frozen_transport(plan, contract, files, digests):
+    settings=plan.get('transportTypes',{})
+    if not settings:
+        return
+    prefix=plan['inputs'].rstrip('/')+'/'
+    variants={ref['id']:ref for ref in plan['content']['unitVariants']}
+    owners={unit['unitId']:unit['type'] for unit in plan['units']}
+
+    def definition(identity):
+        ref=variants[identity]
+        if not ref['path'].startswith(prefix):
+            raise PlatformError('input-contract','Transport definition is outside the fixed input root',1)
+        name='inputSnapshot/'+ref['path'].removeprefix(prefix)
+        if name not in files or digests[name]!=ref['sha256']:
+            raise PlatformError('archive-identity','Frozen transport definition differs from the paired input')
+        raw=files[name].read_bytes()
+        if hashlib.sha256(raw).hexdigest()!=digests[name]:
+            raise PlatformError('archive-identity','Frozen transport definition changed during comparison')
+        document=read_document(raw)
+        if document.get('copyFrom') or document.get('core',{}).get('name')!=identity:
+            raise PlatformError('input-contract','Authored transport archive requires a direct, fixed unit definition',1)
+        return document
+
+    for identity, expected in settings.items():
+        document=definition(identity)
+        abilities=[item for item in document.get('abilities',[]) if item.get('type')=='transport']
+        if len(abilities)!=1 or {key:abilities[0].get(key) for key in ('capacity','unloadTicks')}!=expected:
+            raise PlatformError('input-contract','Archived transport capacity or timing differs from the frozen definition',1)
+    passengers=contract.get('history',{}).get('transportPassengerSlots',{})
+    for identity, expected in passengers.items():
+        if identity not in owners or definition(owners[identity]).get('core',{}).get('transportSlotsNeeded',1)!=expected:
+            raise PlatformError('input-contract','Archived passenger slot cost differs from the frozen definition',1)
+
+
+def compare_archive_locked(output, expected_scenario=None, expected_contract=None, started_after=None):
     output = Path(output)
     if (expected_scenario is None) != (expected_contract is None):
         raise PlatformError('input-contract', 'Expected scenario and contract must be supplied together', 1)
@@ -1835,11 +2179,18 @@ def compare_archive(output, expected_scenario=None, expected_contract=None, star
     if backend == 'windows-input':
         geometry = windows_geometry(output, records, {name: captured[path] for path, name in maps.items()})
     contract = read_document(captured['contract.json'])
+    verify_frozen_transport(plan, contract, actual, digests)
     anchors = read_document(captured['intents.json'])
     return compare_run(records, plan, contract, anchors, geometry)
 
 
 def run_session(scenario, contract, distribution, output, java='java', timeout=60):
+    from evidence_compact import archive_lock
+    with archive_lock(output):
+        return run_session_locked(scenario, contract, distribution, output, java, timeout)
+
+
+def run_session_locked(scenario, contract, distribution, output, java, timeout):
     scenario, contract, distribution, output = map(lambda p: Path(p).resolve(), (scenario, contract, distribution, output))
     plan = read(scenario)
     inputs = (scenario.parent / plan['inputs']).resolve()
@@ -1885,7 +2236,7 @@ def run_session(scenario, contract, distribution, output, java='java', timeout=6
         save(output/'archive.json', dict(complete=True, backend='session', files=tree(output)))
         result['sealing'] = dict(status='sealed-complete')
         result['consumption'] = dict(status='running')
-        result.update(compare_archive(output))
+        result.update(compare_archive_locked(output))
         result['consumption'] = dict(status='passed', exitCode=result['exitCode'])
     except PlatformError as error:
         if result['consumption']['status'] == 'running':
@@ -1922,11 +2273,13 @@ def main(argv=None):
     session = commands.add_parser('session')
     for option in ('scenario', 'contract', 'distribution', 'output'):
         session.add_argument('--'+option, required=True, type=Path)
+    session.add_argument('--compact-evidence-root', type=Path)
     session.add_argument('--java', default='java')
     session.add_argument('--timeout', type=int, default=60)
     windows = commands.add_parser('windows')
     for option in ('scenario', 'contract', 'distribution', 'output'):
         windows.add_argument('--'+option, required=True, type=Path)
+    windows.add_argument('--compact-evidence-root', type=Path)
     windows.add_argument('--java', default='java')
     windows.add_argument('--size', choices=['1200x800', '960x640'], required=True)
     windows.add_argument('--rate-profile', choices=['normal','segmented'], default='normal')
@@ -1937,6 +2290,13 @@ def main(argv=None):
     compare.add_argument('--started-after', type=float)
     args = parser.parse_args(argv)
     try:
+        compact_root = getattr(args, 'compact_evidence_root', None)
+        if compact_root is not None:
+            from evidence_compact import compact_batch, designated_batch, ordinary_path, ticket_root
+            ticket = ticket_root(compact_root)
+            batch = ordinary_path(args.output.absolute()).resolve()
+            if designated_batch(ticket, batch.name) != batch:
+                raise ValueError('Compaction output must be a batch directly inside the designated ticket')
         if args.command == 'session':
             result = run_session(args.scenario, args.contract, args.distribution, args.output, args.java, args.timeout)
         elif args.command == 'windows':
@@ -1945,6 +2305,12 @@ def main(argv=None):
                                  tuple(map(int, args.size.split('x'))), args.java, args.rate_profile)
         else:
             result = compare_archive(args.run, args.scenario, args.contract, args.started_after)
+        if compact_root is not None and (batch / 'archive.json').is_file():
+            try:
+                if read(batch / 'archive.json').get('complete') is True:
+                    result['compaction'] = compact_batch(ticket, batch)
+            except (OSError, EOFError, ValueError, KeyError, TypeError, zlib.error) as error:
+                result['compaction'] = dict(status='failed', message=str(error))
     except PlatformError as error:
         result = dict(exitCode=error.exit_code, category=error.category, message=str(error))
     except (OSError, ValueError, KeyError, TypeError) as error:
