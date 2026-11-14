@@ -46,6 +46,7 @@ internal object ScenarioDeclaration {
             if (observers.isEmpty() || observers.any { id -> players.none { it.id("playerId") == id } })
                 throw InputError("Unknown or empty player observer")
         }
+        blinkTypes(value)
         val units = value.arrayAt("units").map { it.jsonObject }
         unique(units.map { it.id("unitId") }, "unit")
         if (units.isEmpty()) throw InputError("Empty unit declaration")
@@ -96,6 +97,19 @@ internal object ScenarioDeclaration {
             throw InputError("The finite underwater target loader requires its declared native identity")
         return units
     }
+    fun blinkTypes(scenario: JsonObject): Set<String> {
+        val raw = scenario["blinkTypes"] ?: return emptySet()
+        val declared = raw.jsonArray.map { element ->
+            if (element !is JsonPrimitive || !element.isString) throw InputError("Expected a Blink unit identity")
+            obj("id" to element).id("id")
+        }
+        unique(declared, "Blink unit")
+        val supported = unitReferences(scenario.objectAt("content")).filter { it["loader"] == s("hover-tank") }
+            .map { it.id("id") }.toSet()
+        if (declared.any { it !in supported }) throw InputError("Blink units require a declared hover-tank input")
+        return declared.toSet()
+    }
+
     val actionKinds = setOf("select", "move", "stop", "produce", "cancel-production", "attack", "patrol", "upgrade", "cancel-upgrade", "build", "repair", "reclaim", "resume-construction", "submarine-depth", "amphibious-flight", "load", "unload", "unit-action")
     fun validateAction(action: JsonObject) {
         when (action.text("kind")) {

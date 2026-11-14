@@ -35,6 +35,7 @@ class AttachmentModuleProfile(
     upgrades: List<AttachmentUpgrade> = emptyList(),
     val automaticAction: AttachmentAutomaticAction? = null,
     val parentSpeed: AttachmentSpeed? = null,
+    val parentBlink: BlinkProfile? = null,
 ) {
     val installs: List<AttachmentInstall> = Collections.unmodifiableList(ArrayList(installs))
     val upgrades: List<AttachmentUpgrade> = Collections.unmodifiableList(ArrayList(upgrades))
@@ -118,6 +119,7 @@ internal object ModularSpiderRules {
 
     fun supportsModule(unit: UnitDefinition): Boolean {
         val module = unit.attachmentModule ?: return false
+        if (module.parentBlink != ModularSpiderUtilityForms.byId[unit.id]?.module?.parentBlink) return false
         if (unit.movement != slotMovement || unit.attachmentLayout != null || unit.transport != null) return false
         if (unit.pointDefense != (if (unit.id == LASER_DEFENSE) ModularSpiderUtilityForms.laserDefense else null)) return false
         if (unit.id == EMPTY) return module.empty && unit.radius == 20.0 && unit.maximumHealth == 3000.0 &&

@@ -1,5 +1,6 @@
 package com.rustedwarfare.reforge.client
 
+import com.rustedwarfare.reforge.core.content.BlinkWork
 import com.rustedwarfare.reforge.core.content.UnitDefinition
 import com.rustedwarfare.reforge.core.content.UpgradeActionProfile
 import com.rustedwarfare.reforge.core.content.siteConstruction
@@ -198,6 +199,8 @@ internal class ActionCatalogue(private val definitions: Map<String, UnitDefiniti
             val unitDefinition = definitions.getValue(actionUnit.typeId)
             val definition = unitDefinition?.customActions?.actions?.singleOrNull { it.name == action.name }
             val launch = definition?.groundLaunch
+            val blink = unitDefinition.blink
+            val blinkWork = definition?.blinkWork
             val navalAmmo = definition?.ammoProduction
             val ammoPrice = navalAmmo?.price ?: when (action.name) {
                 "buildNuke" -> 11000L
@@ -205,7 +208,8 @@ internal class ActionCatalogue(private val definitions: Map<String, UnitDefiniti
                 else -> null
             }
             val nuclear = ammoPrice != null || action.name == "launchNuke"
-            val price = launch?.price ?: ammoPrice
+            val price = launch?.price ?: ammoPrice ?:
+                (blinkWork as? BlinkWork.Unlock)?.credits
             val affordable = price == null || affordable(view, price)
             val stockpile = actionUnit.unitActions?.stockpile ?: 0
             val ammoQueued = actionUnit.unitActions?.queue.orEmpty().count { it.name == action.name }
@@ -216,13 +220,20 @@ internal class ActionCatalogue(private val definitions: Map<String, UnitDefiniti
                 "deploy" -> "Deploy"; "undeploy" -> "Undeploy"; "surface" -> "Surface"; "dive" -> "Dive"
                 "buildNuke" -> "Build nuke"; "launchNuke" -> "Launch nuke"
                 "launchScoutBot" -> "Scout bot"
+                "addBlink" -> "Add blink"
+                "blink" -> "Blink"
                 "buildAntiNuke" -> "Build interceptor"; else -> action.name }
             val status = if (action.queueIndex != null) "Queued ${(action.progress!! * 100f).toInt()}%" else if (action.cooldownRemaining > 0)
                 String.format(Locale.ROOT, "Cooling %.1fs", action.cooldownRemaining / 1000f) else "Ready"
             val motion = when (action.name) { "deploy" -> "Movement locked while deploying\nCannot cancel"
                 "undeploy" -> "Fixed until undeployed\nCannot cancel"
                 "surface", "dive" -> "Movement locked while converting\nRight: cancel"; else -> "Movement orders continue" }
-            val tooltip = if (launch != null)
+            val targetedBlink = blinkWork is BlinkWork.Teleport
+            val tooltip = if (blinkWork != null && blink != null) {
+                if (targetedBlink && blink.locked) "$title\nMust be undeployed"
+                else if (targetedBlink) "$title\n$status\nRange ${blink.range.toInt()}\nLeft: choose ground point\nRight on card: cancel charge"
+                else "$title\n$status\n\$$price\n" + if (affordable) "Left: unlock Blink" else "Insufficient funds"
+            } else if (launch != null)
                 "Launch scout bot\n$status\n\$${launch.price} / Range ${launch.range.toInt()}\n" +
                     (if (affordable) "Left: choose ground point\nEsc / right: cancel selection" else "Insufficient funds") +
                     "\nMovement locked while building\nRight on card: cancel one queued"
@@ -247,7 +258,7 @@ internal class ActionCatalogue(private val definitions: Map<String, UnitDefiniti
                 cancelAction?.queueIndex != null && cancelUnit?.let { selected ->
                     nuclear || definitions.getValue(selected.typeId).customActions?.actions?.singleOrNull { it.name == action.name }
                         ?.canPlayerCancel == true
-                } == true, action.progress, groundTargeted = launch != null || action.name == "launchNuke",
+                } == true, action.progress, groundTargeted = launch != null || targetedBlink || action.name == "launchNuke",
                 iconTypeId = launch?.payloadUnitTypeId)
         })
         val profiles = ownPrimary?.takeUnless { it.constructionProgress < 1f &&

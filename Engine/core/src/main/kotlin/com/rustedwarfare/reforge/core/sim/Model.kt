@@ -519,6 +519,7 @@ internal data class MutableUnit(
     var attachmentInterceptor: AttachmentInterceptorState = AttachmentInterceptorState(),
     var blinkRequest: Position? = null,
     var blinkCooldownUntil: Double = 0.0,
+    var blinkUnlocked: Boolean = false,
     var spiderBlink: SpiderBlink? = null,
 ) {
     val producerId: String? get() = productionOrigin?.producerId

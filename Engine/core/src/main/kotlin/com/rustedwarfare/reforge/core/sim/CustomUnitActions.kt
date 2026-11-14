@@ -1,5 +1,6 @@
 package com.rustedwarfare.reforge.core.sim
 
+import com.rustedwarfare.reforge.core.content.BlinkWork
 import com.rustedwarfare.reforge.core.content.CustomActionDefinition
 import com.rustedwarfare.reforge.core.content.AutomaticActionCondition
 import com.rustedwarfare.reforge.core.content.UnitDefinition
@@ -10,12 +11,12 @@ import com.rustedwarfare.reforge.core.content.ScoutBotRules
 
 /** Immutable queue values participate in the same candidate transaction as the unit. */
 internal data class PendingUnitAction(val action: CustomActionDefinition, val orderId: String, override val progress: Float = 0f,
-    val target: Position? = null) : PendingFactoryWork {
-    override val cost: Long get() = action.groundLaunch?.price ?: action.ammoProduction?.price ?: 0L
+    val target: Position? = null, val advancedTicks: Float = 0f) : PendingFactoryWork {
+    override val cost: Long get() = action.groundLaunch?.price ?: action.ammoProduction?.price ?: (action.blinkWork as? BlinkWork.Unlock)?.credits ?: 0L
     override val rate: Float get() = action.rate
 
     fun matches(current: CustomActionDefinition): Boolean = action == current &&
-        (target != null) == (action.groundLaunch != null) &&
+        (target != null) == (action.groundLaunch != null || action.blinkWork is BlinkWork.Teleport) &&
         target?.let { it.x.isFinite() && it.y.isFinite() } != false
 }
 internal data class CustomActionChange(val ledger: ProductionLedger?, val error: SimulationError? = null)
@@ -25,7 +26,7 @@ internal data class CustomActionState(val queue: List<PendingUnitAction> = empty
 /** Finite custom conversion actions; movement orders and same-name weapon state stay on the object. */
 internal object CustomUnitActions {
     fun supports(definition: UnitDefinition): Boolean = AaBeamGunship.supports(definition) || Bunker.supports(definition) ||
-        NautilusRules.supports(definition) || ScoutBotRules.supports(definition)
+        NautilusRules.supports(definition) || ScoutBotRules.supports(definition) || definition.blink != null
 
     fun movementLocked(unit: MutableUnit, head: PendingUnitAction? = unit.customActionState.queue.firstOrNull()): Boolean = head?.let {
         it.progress > 0f && it.action.cannotMove
@@ -51,22 +52,33 @@ internal object CustomUnitActions {
     }
 
     fun observe(unit: MutableUnit, now: Int, input: Scenario,
-                queue: List<PendingUnitAction> = unit.customActionState.queue): UnitActionsObservation? {
+                queue: List<PendingUnitAction> = unit.customActionState.queue, simulationTime: Double): UnitActionsObservation? {
         val profile = unit.definition.customActions ?: return null
-        val actions = profile.actions.filter { it.automatic == null && it.visible }.map { action ->
+        val actions = profile.actions.filter { it.automatic == null && it.visible &&
+            (it.blinkWork == null || blinkVisible(unit, it.blinkWork)) }.map { action ->
             val index = queue.indexOfFirst { it.action.actionId == action.actionId }
-            val remaining = maxOf(0, (unit.customActionState.cooldownEnds[action.actionId] ?: now) - now)
+            val remaining = if (action.blinkWork is BlinkWork.Teleport) Blink.uiCooldown(unit.blinkCooldownUntil - simulationTime)
+                else maxOf(0, (unit.customActionState.cooldownEnds[action.actionId] ?: now) - now)
             UnitActionObservation(action.name, index.takeIf { it >= 0 },
                 queue.getOrNull(index)?.progress, remaining,
                 unit.alive && unit.carriedBy == null && BuildingWork.isReady(unit) && remaining == 0 &&
                     (index < 0 || action.allowMultipleInQueue) &&
                     (!action.requiresOverWater || overWater(unit, input.map)) &&
+                    !(action.blinkWork is BlinkWork.Teleport && unit.definition.blink?.locked == true) &&
                     (action.ammoProduction == null || input.nukesEnabled && hasAmmoQueueRoom(unit, action, queue)))
         }
         val stockpile = unit.ordnance.ammo.takeIf { profile.actions.any { it.ammoProduction != null } }
         return UnitActionsObservation(immutable(actions), unit.customActionState.automaticCooldown, stockpile,
-            immutable(queue.filter { it.target != null || it.action.ammoProduction != null }
+            immutable(queue.filter { it.target != null || it.action.ammoProduction != null || it.action.blinkWork != null }
                 .map { QueuedUnitActionObservation(it.action.name, it.progress, it.target) }))
+    }
+
+    private fun blinkVisible(unit: MutableUnit, work: BlinkWork): Boolean {
+        val profile = checkNotNull(unit.definition.blink)
+        return when (work) {
+            is BlinkWork.Unlock -> !unit.blinkUnlocked
+            is BlinkWork.Teleport -> profile.unlockCredits == 0L || unit.blinkUnlocked
+        }
     }
 
     private fun hasAmmoQueueRoom(unit: MutableUnit, action: CustomActionDefinition, queue: List<PendingUnitAction>): Boolean =
@@ -74,15 +86,17 @@ internal object CustomUnitActions {
             checkNotNull(action.ammoProduction).queueLimit
 
     fun request(unit: MutableUnit, command: UnitAction, now: Int, input: Scenario, collisionMap: MapDefinition,
-                ledger: ProductionLedger?): CustomActionChange {
+                ledger: ProductionLedger?, simulationTime: Double): CustomActionChange {
         fun reject(code: String, message: String) = CustomActionChange(ledger, SimulationError(code, message))
         val action = unit.definition.customActions?.actions?.singleOrNull {
             it.name == command.actionName && it.automatic == null && it.visible
         } ?: return reject("unsupported-unit-action", "Unit does not expose this action")
         if (!BuildingWork.isReady(unit)) return reject("unit-incomplete", "Unit is not complete")
         val launch = action.groundLaunch
+        val work = action.blinkWork
+        val profile = unit.definition.blink
         val target = command.target
-        if (target != null && (command.cancelQueued || launch == null))
+        if (target != null && (command.cancelQueued || launch == null && work !is BlinkWork.Teleport))
             return reject("unexpected-action-target", "This action does not accept a ground target")
         if (command.cancelQueued) {
             if (!action.canPlayerCancel)
@@ -94,6 +108,12 @@ internal object CustomUnitActions {
             unit.customActionState = unit.customActionState.copy(queue = unit.customActionState.queue.filterIndexed { i, _ -> i != index })
             return CustomActionChange(refunded)
         }
+        if (work is BlinkWork.Teleport && profile?.locked == true)
+            return reject("unit-action-locked", "Blink requires the undeployed form")
+        if (work != null && !blinkVisible(unit, work))
+            return reject("unit-action-locked", "This Blink action is unavailable in the current unlock state")
+        if (work is BlinkWork.Teleport && unit.blinkCooldownUntil > simulationTime)
+            return reject("unit-action-cooldown", "Blink is cooling down")
         if (action.requiresOverWater && !overWater(unit, input.map))
             return reject("unit-action-requires-water", "This action requires water")
         if ((unit.customActionState.cooldownEnds[action.actionId] ?: now) > now)
@@ -118,7 +138,16 @@ internal object CustomUnitActions {
                 collisionMap.blockingFor(launch.movementType).isBlocked(x, y))
                 return reject("action-target-impassable", "Ground target is blocked for this launch")
         }
-        val item = PendingUnitAction(action, command.actionId, target = target)
+        if (work is BlinkWork.Teleport) {
+            val point = target ?: return reject("missing-action-target", "Select a ground point")
+            Blink.validateTarget(unit.position, point, checkNotNull(profile), collisionMap)?.let {
+                return CustomActionChange(ledger, it)
+            }
+        }
+        val destination = if (work is BlinkWork.Teleport) checkNotNull(target).let {
+            Position(it.x.toFloat().toDouble(), it.y.toFloat().toDouble())
+        } else target
+        val item = PendingUnitAction(action, command.actionId, target = destination)
         val paid = if (item.cost == 0L) ledger else {
             checkNotNull(ledger).charge(unit.ownerPlayerId, item.cost)
                 ?: return reject("insufficient-funds", "Not enough credits to queue this action")
@@ -131,21 +160,30 @@ internal object CustomUnitActions {
     }
 
     fun advanceQueue(unit: MutableUnit, definitions: Map<String, UnitDefinition>, delta: Double, now: Int,
-                     fireAtGround: (GroundLaunchProfile, Position) -> Unit): Boolean {
+                     stateAtStep: StepState, fireAtGround: (GroundLaunchProfile, Position) -> Unit): Boolean {
         val state = unit.customActionState
         val head = state.queue.firstOrNull() ?: return false
         val action = checkNotNull(unit.definition.customActions?.actions?.singleOrNull {
             it.actionId == head.action.actionId && it.automatic == null })
-        val progress = head.progress + head.action.rate * (unit.definition.production?.speedMultiplier ?: 1f) * delta.toFloat()
+        val work = action.blinkWork
+        val speed = unit.definition.production?.speedMultiplier
+            ?: if (work != null) checkNotNull(unit.definition.blink).queueSpeed else 1f
+        val ticks = if (work == null) 0f else head.advancedTicks + speed * delta.toFloat()
+        val progress = if (work == null) head.progress + head.action.rate * speed * delta.toFloat() else ticks / work.ticks
         require(progress.isFinite()) { "Unit action progress must remain finite" }
         if (progress < 1f) {
-            unit.customActionState = state.copy(queue = listOf(head.copy(progress = progress)) + state.queue.drop(1))
+            unit.customActionState = state.copy(queue = listOf(head.copy(progress = progress, advancedTicks = ticks)) + state.queue.drop(1))
             return false
         }
         unit.customActionState = state.copy(queue = state.queue.drop(1))
         action.energySet?.let { unit.energy = it }
         val launch = action.groundLaunch
         when {
+            work is BlinkWork.Unlock -> unit.blinkUnlocked = true
+            work is BlinkWork.Teleport -> {
+                unit.blinkCooldownUntil = stateAtStep.simulationTime + delta + checkNotNull(unit.definition.blink).cooldownTicks
+                Blink.teleport(stateAtStep, unit, checkNotNull(head.target))
+            }
             launch != null -> fireAtGround(launch, checkNotNull(head.target))
             action.ammoProduction != null -> unit.ordnance = unit.ordnance.copy(ammo = Math.addExact(unit.ordnance.ammo, 1))
             else -> convert(unit, definitions.getValue(checkNotNull(action.targetTypeId)))
@@ -174,9 +212,9 @@ internal object CustomUnitActions {
             else -> MechMotion.initial(target, unit.position, unit.heading)
         }
         if (old.movement.type != target.movement.type) unit.cancelRoute()
-        val retained = checkNotNull(target.customActions).actions.filter { it.automatic == null }.associateBy { it.actionId }
+        val retained = target.customActions?.actions.orEmpty().filter { it.automatic == null }.associateBy { it.actionId }
         unit.customActionState = unit.customActionState.copy(queue = unit.customActionState.queue.mapNotNull { item ->
-            retained[item.action.actionId]?.let { item.copy(action = it) }
+            if (item.action.blinkWork != null) item else retained[item.action.actionId]?.let { item.copy(action = it) }
         })
     }
 
@@ -208,13 +246,53 @@ internal object CustomUnitActions {
         return false
     }
 
+    fun reconcileBlinkConversion(unit: MutableUnit, ledger: ProductionLedger?): ProductionLedger? {
+        val target = unit.definition.blink
+        if (target == null) {
+            unit.blinkUnlocked = false
+            unit.blinkCooldownUntil = 0.0
+        }
+        val actions = unit.definition.customActions?.actions.orEmpty().associateBy { it.actionId }
+        val queue = if (unit.definition.production == null) unit.customActionState.queue
+            else checkNotNull(ledger).actionQueue(unit.unitId)
+        val removed = queue.filter { item ->
+            val work = item.action.blinkWork ?: return@filter false
+            item.action != actions[item.action.actionId] || work is BlinkWork.Teleport && target?.locked == true
+        }
+        if (removed.isEmpty()) return ledger
+        val retained = queue - removed.toSet()
+        val next = if (unit.definition.production == null) {
+            unit.customActionState = unit.customActionState.copy(queue = retained)
+            ledger
+        } else checkNotNull(ledger).replaceActions(unit.unitId, retained)
+        return removed.filter { it.cost > 0L }.fold(next) { balance, item ->
+            checkNotNull(balance).refund(unit.ownerPlayerId, item.cost)
+        }
+    }
+
+    fun dropBlinkOnDeath(unit: MutableUnit, ledger: ProductionLedger?): ProductionLedger? {
+        if (unit.definition.blink == null) return ledger
+        unit.blinkCooldownUntil = 0.0
+        unit.blinkUnlocked = false
+        if (unit.definition.production != null) return ledger
+        val queue = unit.customActionState.queue
+        val pending = queue.filter { it.action.blinkWork != null }
+        unit.customActionState = unit.customActionState.copy(queue = queue - pending.toSet())
+        return pending.filter { it.cost > 0L }.fold(ledger) { balance, work ->
+            checkNotNull(balance).refund(unit.ownerPlayerId, work.cost)
+        }
+    }
+
     fun validateCandidate(unit: MutableUnit) {
         val state = unit.customActionState
         val actions = unit.definition.customActions?.actions.orEmpty().filter { it.automatic == null }
         val byId = actions.associateBy { it.actionId }
+        require(unit.blinkCooldownUntil.isFinite() && unit.blinkCooldownUntil >= 0.0 &&
+            (!unit.blinkUnlocked || unit.definition.blink != null))
         require(state.automaticCooldown.isFinite() && state.automaticCooldown in 0f..60f &&
             state.queue.map { it.orderId }.distinct().size == state.queue.size &&
-            state.queue.all { item -> byId[item.action.actionId]?.let(item::matches) == true && item.progress in 0f..<1f } &&
+            state.queue.all { item -> byId[item.action.actionId]?.let(item::matches) == true && item.progress in 0f..<1f &&
+                item.advancedTicks.isFinite() && item.advancedTicks >= 0f } &&
             state.cooldownEnds.keys.all { (byId[it]?.cooldown ?: 0) > 0 } &&
             (unit.definition.customActions != null || state == CustomActionState())) {
             "Invalid custom unit action candidate"

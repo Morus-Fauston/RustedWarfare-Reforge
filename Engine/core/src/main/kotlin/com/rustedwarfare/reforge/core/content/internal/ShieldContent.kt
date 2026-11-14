@@ -8,8 +8,11 @@ import com.rustedwarfare.reforge.core.content.reject
 import java.nio.file.Path
 
 internal object ShieldContent {
-    fun read(path: Path, loaded: UnitSourceReader.EffectiveSections, required: Boolean = false): ShieldProfile? {
-        val abilities = loaded.values.keys.filter { it.startsWith("ability_") }
+    fun read(path: Path, loaded: UnitSourceReader.EffectiveSections, required: Boolean = false,
+             allowBlink: Boolean = false): ShieldProfile? {
+        val abilities = loaded.values.keys.filter {
+            it.startsWith("ability_") && (!allowBlink || loaded.values[it]?.get("type") != "blink")
+        }
         val section = abilities.firstOrNull()
         if (abilities.size > 1) reject(ContentErrorCode.UNSUPPORTED_FEATURE, path, abilities[1], "type",
             reason = "Only one shield ability can manage a unit's shield")
@@ -22,6 +25,10 @@ internal object ShieldContent {
             return ShieldProfile(number(path, loaded, "core", "maxShield", positive = true),
                 number(path, loaded, "core", "shieldRegen", positive = false),
                 core["startShieldAtZero"] == "true")
+        }
+        for (field in loaded.values.getValue(section).keys) {
+            if (field !in setOf("type", "maximum", "regeneration", "startAtZero"))
+                reject(ContentErrorCode.UNSUPPORTED_FIELD, path, section, field, reason = "Unsupported shield parameter")
         }
         if (hasIniShield)
             reject(ContentErrorCode.IDENTITY_CONFLICT, path, section, "type",

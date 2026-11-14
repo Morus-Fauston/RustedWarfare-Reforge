@@ -370,23 +370,27 @@ class SandboxSession(scenario: Scenario, private val evidence: ClientEvidence = 
         if (!isOpen || actionMenu.unitActions.none { it.name == name && it.available && it.groundTargeted }) return null
         val selected = if (name == "launchNuke") nuclearLaunchMember(observation, selectedIds)
             else observation.units.singleOrNull { it.unitId == selectedId }
-        val source = if (name == "blink") {
-            val overview = selected?.attachmentOverview ?: return null
+        val definition = selected?.let { scenario.unitDefinitions.getValue(it.typeId) }
+        val source = if (name == "blink" && selected?.attachmentOverview != null) {
+            val overview = checkNotNull(selected.attachmentOverview)
             val slot = overview.slots.singleOrNull { it.number == overview.selectedSlot } ?: return null
-            observation.units.singleOrNull { it.unitId == slot.unitId }?.position ?: return null
-        } else selected?.position ?: return null
-        val x = target.x.toFloat() - source.x.toFloat(); val y = target.y.toFloat() - source.y.toFloat()
+            observation.units.singleOrNull { it.unitId == slot.unitId } ?: return null
+        } else selected ?: return null
+        val origin = source.position
+        val x = target.x.toFloat() - origin.x.toFloat(); val y = target.y.toFloat() - origin.y.toFloat()
         val squared = x * x + y * y
-        if (name == "launchNuke") return GroundActionPreview(source, target, squared.isFinite() &&
+        if (name == "launchNuke") return GroundActionPreview(origin, target, squared.isFinite() &&
             squared >= 260f * 260f && squared <= 9999f * 9999f)
         val blink = name == "blink"
-        val range = if (blink) 700.0 else scenario.unitDefinitions.getValue(checkNotNull(selected).typeId).customActions
-            ?.actions?.singleOrNull { it.name == name }?.groundLaunch?.range ?: return null
+        val sourceDefinition = scenario.unitDefinitions.getValue(source.typeId)
+        val range = if (blink) (sourceDefinition.attachmentModule?.parentBlink ?: sourceDefinition.blink)?.range
+            else definition?.customActions?.actions?.singleOrNull { it.name == name }?.groundLaunch?.range
+        if (range == null) return null
         val map = scenario.map
-        val column = kotlin.math.floor(target.x / map.tileWidth).toInt()
-        val row = kotlin.math.floor(target.y / map.tileHeight).toInt()
-        val inRange = squared.isFinite() && squared <= range * range
-        val openGround = inRange &&
+        val (column, row) = if (blink) BlinkTarget.cell(target, map) else
+            kotlin.math.floor(target.x / map.tileWidth).toInt() to kotlin.math.floor(target.y / map.tileHeight).toInt()
+        val blinkError = if (blink) BlinkTarget.check(origin, target, range, map) else null
+        val openGround = if (blink) blinkError == null else squared.isFinite() && squared <= range * range &&
             column in 0 until map.widthTiles && row in 0 until map.heightTiles && !map.hoverBlocking.isBlocked(column, row)
         // Use the live collision footprint of observed buildings without revealing hidden units.
         val occupied = openGround && observation.units.any { unit ->
@@ -396,8 +400,8 @@ class SandboxSession(scenario: Scenario, private val evidence: ClientEvidence = 
             } == true
         }
         val valid = openGround && !occupied
-        return GroundActionPreview(source, target, valid, 0.0, range, 0.0,
-            if (valid || !blink) null else if (inRange) "action-target-impassable" else "action-target-out-of-range")
+        return GroundActionPreview(origin, target, valid, 0.0, range, 0.0,
+            if (valid || !blink) null else blinkError?.code ?: "action-target-impassable")
     }
 
     internal fun groundTargetRejected(reason: String) {

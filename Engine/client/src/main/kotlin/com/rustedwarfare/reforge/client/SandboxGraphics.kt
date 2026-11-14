@@ -11,6 +11,7 @@ import com.badlogic.gdx.graphics.glutils.ShapeRenderer
 import com.badlogic.gdx.utils.XmlReader
 import com.rustedwarfare.reforge.core.sim.PlayerObservation
 import com.rustedwarfare.reforge.core.sim.Scenario
+import com.rustedwarfare.reforge.core.sim.UnitObservation
 import java.nio.file.Path
 import com.rustedwarfare.reforge.core.sim.Position
 import com.rustedwarfare.reforge.core.sim.ProjectileAppearance
@@ -660,25 +661,25 @@ class SandboxGraphics private constructor(private val resources: SandboxRenderRe
 
     private fun drawBlink(shapes: ShapeRenderer, observation: PlayerObservation) {
         val step = observation.stepIndex
+        fun charge(unit: UnitObservation) = unit.unitActions?.queue?.firstOrNull { it.name == "blinkQueued" ||
+            it.name == "blink" && unit.attachmentOverview == null }
         if (observation.sampleId != blinkSample) {
             blinkSample = observation.sampleId
             for (unit in observation.units) {
-                if (unit.typeId != "modularSpider") continue
-                val charge = unit.unitActions?.queue?.any { it.name == "blinkQueued" } == true
-                if (charge) blinkOrigins[unit.unitId] = unit.position
+                if (charge(unit) != null) blinkOrigins[unit.unitId] = unit.position
                 if (observation.events.any { it.kind == "teleported" && it.unitId == unit.unitId } &&
                     blinkFlashes[unit.unitId]?.step != step) {
                     val origin = blinkOrigins.remove(unit.unitId) ?: unit.position
                     blinkFlashes[unit.unitId] = BlinkFlash(origin, unit.position, step)
                 }
             }
-            val known = observation.units.filter { it.alive }.mapTo(hashSetOf()) { it.unitId }
-            blinkOrigins.keys.retainAll(known)
+            val charging = observation.units.filter { it.alive && charge(it) != null }.mapTo(hashSetOf()) { it.unitId }
+            blinkOrigins.keys.retainAll(charging)
             blinkFlashes.values.removeAll { step - it.step >= 36 }
         }
         shapes.setColor(.07f, .93f, .95f, 1f)
         for (unit in observation.units) {
-            val charge = unit.unitActions?.queue?.firstOrNull { it.name == "blinkQueued" } ?: continue
+            val charge = charge(unit) ?: continue
             val radius = (24 + charge.progress * 25) * projection.scale.toFloat()
             val x = projection.x(unit.position.x)
             val y = projection.y(unit.position.y)

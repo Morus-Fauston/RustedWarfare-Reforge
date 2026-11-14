@@ -114,11 +114,11 @@ object PlatformSessionRunner {
                             } ?: false
                             val keys = setOf("intentId", "kind", "actionName", "waitSteps") +
                                 (if ("testScene" in document) setOf("coreActionId") else emptySet()) +
-                                (if ("cancelQueued" in intent && (nuclear || targeted || slotOrder)) setOf("cancelQueued") else emptySet()) +
+                                (if ("cancelQueued" in intent && (nuclear || targeted || slotOrder || name == "addBlink")) setOf("cancelQueued") else emptySet()) +
                                 (if (targeted && !cancel) setOf("target") else emptySet())
                             if (intent.keys != keys ||
                                 !nuclear && !targeted && !spider &&
-                                    name !in setOf("afterBurn", "cancelBurn", "deploy", "undeploy", "surface", "dive"))
+                                    name !in setOf("afterBurn", "cancelBurn", "deploy", "undeploy", "surface", "dive", "addBlink"))
                                 throw InputError("Expected a finite normal unit action and explicit waitSteps")
                             val point = intent["target"]?.jsonObject?.let {
                                 if (it.keys != setOf("x", "y")) throw InputError("Expected finite ground point")

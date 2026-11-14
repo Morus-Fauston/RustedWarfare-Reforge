@@ -38,14 +38,14 @@ def validate_unit_action_intent(intent, paired=False):
     keys={'intentId','kind','actionName','waitSteps'}
     if paired and isinstance(intent.get('coreActionId'), str) and intent['coreActionId']:
         keys.add('coreActionId')
-    if (nuclear or targeted or name in spider_platform.CANCELLABLE) and 'cancelQueued' in intent:keys.add('cancelQueued')
+    if (nuclear or targeted or name == 'addBlink' or name in spider_platform.CANCELLABLE) and 'cancelQueued' in intent:keys.add('cancelQueued')
     if targeted and cancel is False:keys.add('target')
     target=intent.get('target')
     if (set(intent)!=keys or type(cancel) is not bool or
             targeted and not cancel and (not isinstance(target,dict) or set(target)!={'x','y'} or
                 any(type(v) not in (int,float) or not math.isfinite(v) for v in target.values())) or
             not isinstance(name,str) or not nuclear and not targeted and name not in (
-                'afterBurn','cancelBurn','deploy','undeploy','surface','dive',*spider_platform.ACTIONS) or
+                'afterBurn','cancelBurn','deploy','undeploy','surface','dive','addBlink',*spider_platform.ACTIONS) or
             type(intent.get('waitSteps')) is not int or not 0<=intent['waitSteps']<=600):
         raise PlatformError('input-contract','Expected a finite normal unit action and explicit bounded wait',1)
 
@@ -483,6 +483,118 @@ def afterburn_pairs(policy):
     return pairs
 
 
+def blink_target(target):
+    if target is None:
+        return None
+    return {axis:struct.unpack('<f',struct.pack('<f',value))[0] for axis,value in target.items()}
+
+
+def validate_blink_completions(records, plan, policy, accepted):
+    declarations=policy.get('blinkCompletions',[])
+    if not isinstance(declarations,list):
+        raise PlatformError('input-contract','Expected fixed Blink completions',1)
+    commands={action['actionId']:action for action in plan.get('actions',[])}
+    spawns={unit['unitId']:unit for unit in plan.get('units',[])}
+    by_step={}
+    used=set()
+    charges=[]
+    for item in declarations:
+        fields={'unitId','actionId','completionStepIndex'}
+        if (not isinstance(item,dict) or item.keys()-{'cooldownTicks'}!=fields or
+                any(not isinstance(item[key],str) for key in ('unitId','actionId')) or
+                type(item['completionStepIndex']) is not int):
+            raise PlatformError('input-contract','Invalid Blink completion declaration',1)
+        identity=item['unitId']; action_id=item['actionId']; step=item['completionStepIndex']
+        command=commands.get(action_id,{})
+        spawn=spawns.get(identity,{})
+        if (action_id in used or spawn.get('type') not in policy['blinkTypes'] or
+                command.get('unitId')!=identity or command.get('actor')!=spawn.get('owner') or
+                command.get('kind')!='unit-action' or command.get('actionName') not in ('addBlink','blink') or
+                command.get('cancelQueued') is not False or not command['atStep']<=step<len(plan['termination']['steps'])):
+            raise PlatformError('input-contract','Blink completion is detached from a declared command',1)
+        jumping=command['actionName']=='blink'
+        cooldown=item.get('cooldownTicks')
+        if ((jumping and (type(cooldown) is not int or cooldown<=0)) or
+                (not jumping and 'cooldownTicks' in item)):
+            raise PlatformError('input-contract','A Blink jump must declare its exact cooldown ticks',1)
+        if accepted.get(action_id) is None:
+            raise PlatformError('history-blink','Missing accepted Blink command',2)
+        time, origin, target=accepted[action_id]
+        # Native input can spend additional steps between calls. Bind each expected
+        # completion to the actual accepted command and keep its declared duration.
+        completion=time+step-command['atStep']+1
+        if jumping:
+            charges.append((identity,time,completion,origin,cooldown))
+        used.add(action_id)
+        by_step.setdefault(completion,[]).append((command,target,cooldown))
+    if {key for key,value in accepted.items() if value is not None}-used:
+        raise PlatformError('input-contract','Each accepted non-cancelled Blink action needs a fixed completion',1)
+    if not used:
+        return
+    for row in records:
+        if row.get('kind')!='observation' or row.get('phase')!='step':
+            continue
+        sample=row['sample'];time=sample['simulationTime']
+        units={u['unitId']:u for u in sample['units']}
+        expected=by_step.pop(time,[])
+        events=[(e.get('kind'),e.get('unitId')) for e in sample.get('events',[]) if e.get('unitId') in units and
+                units[e['unitId']]['typeId'] in policy['blinkTypes']]
+        completions=sorted(identity for kind,identity in events if kind=='unit-action-completed')
+        teleports=sorted(identity for kind,identity in events if kind=='teleported')
+        if (completions!=sorted(command['unitId'] for command,_,_ in expected) or
+                teleports!=sorted(command['unitId'] for command,_,_ in expected if command['actionName']=='blink')):
+            raise PlatformError('history-blink','Blink completion differs from the fixed step',2)
+        for command,target,cooldown in expected:
+            name=command['actionName']
+            unit=units[command['unitId']]
+            actions=unit['unitActions']['actions']
+            if name=='blink':
+                if unit['position']!=target or actions['blink']['cooldownRemaining']!=math.ceil(cooldown*1000/60):
+                    raise PlatformError('history-blink','Teleport destination or cooldown is missing',2)
+            elif 'blink' not in actions or 'addBlink' in actions:
+                raise PlatformError('history-blink','Paid completion did not unlock Blink',2)
+        for identity,start,end,origin,cooldown in charges:
+            if start<time<end and (identity not in units or units[identity]['position']!=origin):
+                raise PlatformError('history-blink','Blink moved the unit before charge completion',2)
+            if end<time<=end+cooldown and identity in units and units[identity].get('alive'):
+                actual=units[identity]['unitActions']['actions'].get('blink',{})
+                if actual.get('cooldownRemaining')!=math.ceil((end+cooldown-time)*1000/60):
+                    raise PlatformError('history-blink','Blink cooldown differs from the fixed simulation clock',2)
+    if by_step:
+        raise PlatformError('history-blink','Missing declared Blink completion',2)
+
+
+def validate_blink_state(unit, owner):
+    state = unit.get('unitActions')
+    if unit.get('ownerPlayerId') != owner:
+        if state is not None:
+            raise PlatformError('history-blink','Enemy Blink state must remain private',2)
+        return
+    if not isinstance(state,dict) or set(state)-{'queue'} != {'actions','automaticCooldown'} or state['automaticCooldown'] != 0:
+        raise PlatformError('history-blink','Missing or invalid Blink action state',2)
+    actions=state['actions'];queue=state.get('queue',[])
+    if not isinstance(actions,dict) or len(actions)!=1 or not isinstance(queue,list) or len(queue)>1:
+        raise PlatformError('history-blink','Invalid Blink action or queue',2)
+    name,action=next(iter(actions.items()))
+    if (name not in ('blink','addBlink') or not isinstance(action,dict) or
+            set(action)!={'queueIndex','progress','cooldownRemaining','available'} or
+            type(action['available']) is not bool or type(action['cooldownRemaining']) is not int or action['cooldownRemaining']<0):
+        raise PlatformError('history-blink','Invalid Blink action fields',2)
+    if queue:
+        item=queue[0]
+        if (not isinstance(item,dict) or set(item)!={'name','progress','target'} or item['name']!=name or
+                type(item['progress']) not in (int,float) or not 0<=item['progress']<1 or
+                action['queueIndex']!=0 or action['progress']!=item['progress'] or action['available']):
+            raise PlatformError('history-blink','Invalid queued Blink action',2)
+        target=item['target']
+        if (name=='blink' and (not isinstance(target,dict) or set(target)!={'x','y'} or
+                any(type(v) not in (int,float) or not math.isfinite(v) for v in target.values())) or
+                name=='addBlink' and target is not None):
+            raise PlatformError('history-blink','Invalid Blink target',2)
+    elif action['queueIndex'] is not None or action['progress'] is not None:
+        raise PlatformError('history-blink','Unqueued Blink has queue fields',2)
+
+
 def validate_history_poses(units, policy):
     pairs = afterburn_pairs(policy)
     boosted = set(pairs.values())
@@ -549,6 +661,8 @@ def validate_history_poses(units, policy):
                         raise PlatformError('history-unit-action','Action availability differs from its state',2)
                 if sorted(indexes)!=list(range(len(indexes))):
                     raise PlatformError('history-unit-action','Action queue indexes must be unique and contiguous',2)
+        elif unit.get('typeId') in policy.get('blinkTypes', ()):
+            validate_blink_state(unit, policy.get('ownerPlayerId','p1'))
         elif unit.get('typeId') == spider_platform.CHASSIS:
             spider_platform.validate_state(unit, policy.get('ownerPlayerId','p1'))
         elif unit.get('typeId') in ('mechBunker','mechBunkerDeployed'):
@@ -782,6 +896,27 @@ def validate_history_action(records, row, intent, geometry=None, paired=False):
         if name in ('buildNuke','launchNuke','buildAntiNuke') and not naval_ammo:
             from nuclear_platform import validate_nuclear_call
             validate_nuclear_call(old,new,row,intent,input_footprint(geometry))
+            return
+        if name in ('addBlink','blink'):
+            cancel=intent.get('cancelQueued',False);target=row.get('target');expected=intent.get('target')
+            limits=input_footprint(geometry)
+            matches=(target is None and expected is None or isinstance(target,dict) and isinstance(expected,dict) and
+                     set(target)==set(expected)=={'x','y'} and all(type(target[k]) in (int,float) and
+                     math.isfinite(target[k]) and abs(target[k]-expected[k])<=limits[k] for k in ('x','y')))
+            first=(old.get('unitActions') or {});last=(new.get('unitActions') or {})
+            before=first.get('queue',[]);after=last.get('queue',[])
+            # The diagnostic records the clicked point, while Core queues single-precision positions.
+            try:
+                position=blink_target(target) if matches else None
+            except OverflowError:
+                matches=False
+                position=None
+            pending=dict(name=name,progress=0,target=position)
+            if (row.get('actionName')!=name or row.get('cancelQueued') is not cancel or not matches or
+                    any(old.get(k)!=new.get(k) for k in set(old)|set(new) if k!='unitActions') or
+                    (cancel and (len(before)!=1 or before[0]['name']!=name or after) or
+                    not cancel and (before or after!=[pending] or not first.get('actions',{}).get(name,{}).get('available')))):
+                raise PlatformError('history-blink','Blink order or cancellation lacks the exact queue receipt',2)
             return
         if naval_ammo or name==SCOUT_LAUNCH:
             actual=row.get('target'); expected=intent.get('target')
@@ -1230,13 +1365,17 @@ def compare_history(records, plan, policy, native_anchors=None, geometry=None):
              'productionOrder','completedUpgradeTypes','initialIncome','producedIncome','transportStages','unitActionStages',
              'bunkerStages','reclaimRefunds','nautilusTerrain','nuclearHistory','navalAmmoHistory',
              'spiderOpening','spiderWeaponModules','spiderUtilityModules','spiderDefenseModules','spiderBlink',
-             'spiderMixedModules', 'productionSession', 'afterburnPairs'}
+             'spiderMixedModules', 'productionSession', 'afterburnPairs', 'blinkTypes', 'blinkCompletions'}
     if not isinstance(policy,dict) or set(policy)-allowed:
         raise PlatformError('input-contract', 'Unknown or malformed history obligations', 1)
     pairs = afterburn_pairs(policy)
     if 'testScene' in plan and pairs != afterburn_pairs(plan):
         raise PlatformError('input-contract', 'Core and Session afterburn pair contracts differ', 1)
     aa_types = pairs.keys() | set(pairs.values())
+    blink_types=policy.get('blinkTypes',[])
+    if (not isinstance(blink_types,list) or any(not isinstance(name,str) or not name for name in blink_types) or
+            len(set(blink_types))!=len(blink_types) or blink_types!=plan.get('blinkTypes',[])):
+        raise PlatformError('input-contract','Core and Session Blink type declarations differ',1)
     unit_checkpoints = policy.get('unitsAfterIntents', {})
     intent_ids = {intent['intentId'] for intent in plan['intents']}
     if (not isinstance(unit_checkpoints, dict) or set(unit_checkpoints)-intent_ids or
@@ -1365,6 +1504,8 @@ def compare_history(records, plan, policy, native_anchors=None, geometry=None):
     active, pending, observations = None, 0, 0
     completed, steps, intent_steps, initial_step, action_count = 0, 0, 0, None, 0
     action_ids = set()
+    accepted_blink = {}
+    pending_blink = {}
     construction_charges, construction_ids, seen_units = {}, set(), set()
     stream=records
     if native_anchors is not None:
@@ -1446,6 +1587,23 @@ def compare_history(records, plan, policy, native_anchors=None, geometry=None):
                 if viewport is None:raise PlatformError('input-geometry','History lacks a formal viewport')
                 context=dict(geometry,viewport=viewport)
             validate_history_action(records,row,intents[active],context,paired='testScene' in plan)
+            intent=intents[active]
+            if intent.get('actionName') in ('addBlink','blink'):
+                before=records[row['sequence']-1]['sample']
+                caster=next(unit for unit in before['units'] if unit['unitId']==row['unitId'])
+                if caster['typeId'] in blink_types:
+                    key=(row['unitId'],row['actionName'])
+                    if intent.get('cancelQueued',False):
+                        cancelled=pending_blink.pop(key,None)
+                        if cancelled is None:
+                            raise PlatformError('history-blink','Blink cancellation is missing its accepted order',2)
+                        accepted_blink[cancelled]=None
+                    else:
+                        identifier=intent.get('coreActionId')
+                        if not identifier:
+                            raise PlatformError('input-contract','Authored Blink requires a paired action identity',1)
+                        pending_blink[key]=identifier
+                        accepted_blink[identifier]=(before['simulationTime'],caster['position'],blink_target(row['target']))
             if active in refunds:
                 target=row.get('targetUnitId')
                 before=records[row['sequence']-1]['sample']
@@ -1464,7 +1622,7 @@ def compare_history(records, plan, policy, native_anchors=None, geometry=None):
                 raise PlatformError('input-contract','Naval ammunition reserves or refunds 6000 credits at the action',1)
             if charge:
                 if charge['at'] == 'action':
-                    refund=(name==SCOUT_LAUNCH or naval_ammo or spider_paid) and intents[active].get('cancelQueued') is True
+                    refund=(name in (SCOUT_LAUNCH,'addBlink') or naval_ammo or spider_paid) and intents[active].get('cancelQueued') is True
                     balance += charge['amount'] if refund else -charge['amount']
                 elif charge['at'] == 'first-step': pending += charge['amount']
                 else: construction_charges[active] = dict(charge=charge, action=row)
@@ -1619,6 +1777,7 @@ def compare_history(records, plan, policy, native_anchors=None, geometry=None):
         raise PlatformError('incomplete-run', 'Missing history observations or a pending first-step charge')
     validate_history_units(units.values(), policy.get('finalUnits', []))
     validate_production_history(records,policy)
+    validate_blink_completions(records,plan,policy,accepted_blink)
     if 'productionSession' in policy and native_anchors is None:
         from production_session_assertions import validate_production_session
         validate_production_session(records, policy['productionSession'], PlatformError)

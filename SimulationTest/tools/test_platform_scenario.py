@@ -2,13 +2,65 @@
 import unittest
 import copy
 
-from platform_scenario import compare_history, compare_intent, compare_run, PlatformError, validate_launch_appearance
+from platform_scenario import (compare_history, compare_intent, compare_run, PlatformError,
+                               validate_blink_completions, validate_history_action, validate_launch_appearance)
 import json
 from pathlib import Path
 import tempfile
 
 
 class PlatformIntentTest(unittest.TestCase):
+    def test_blink_history_uses_the_accepted_click_and_proves_position_and_cooldown(self):
+        origin = dict(x=180.0, y=160.0)
+        target = dict(x=419.99993896484375, y=180.00003051757812)
+        spawn = dict(unitId='ship', type='experimentalGunship', owner='p1')
+        command = dict(actionId='jump', unitId='ship', kind='unit-action', actor='p1',
+                       atStep=0, actionName='blink', cancelQueued=False, target=dict(x=420, y=180))
+        plan = dict(actions=[command], units=[spawn], termination=dict(steps=[{}, {}]))
+        declaration = dict(unitId='ship', actionId='jump', completionStepIndex=1, cooldownTicks=1500)
+        policy = dict(blinkTypes=[spawn['type']], blinkCompletions=[declaration])
+        accepted = {'jump': (8, origin, target)}
+
+        def record(time, position, cooldown, *events):
+            unit = dict(unitId='ship', typeId=spawn['type'], alive=True, position=position,
+                        unitActions=dict(actions=dict(blink=dict(cooldownRemaining=cooldown))))
+            return dict(kind='observation', phase='step', sample=dict(simulationTime=time, units=[unit],
+                          events=[dict(kind=kind, unitId='ship') for kind in events]))
+
+        before = record(9, origin, 0)
+        complete = record(10, target, 25000, 'unit-action-completed', 'teleported')
+        after = record(11, target, 24984)
+        validate_blink_completions([before, complete, after], plan, policy, accepted)
+        with self.assertRaisesRegex(PlatformError, 'before charge completion'):
+            validate_blink_completions([record(9, target, 0), complete, after], plan, policy, accepted)
+        with self.assertRaisesRegex(PlatformError, 'destination or cooldown'):
+            validate_blink_completions([before, record(10, target, 1, 'unit-action-completed', 'teleported'), after],
+                                       plan, policy, accepted)
+        with self.assertRaisesRegex(PlatformError, 'fixed simulation clock'):
+            validate_blink_completions([before, complete, record(11, target, 1)], plan, policy, accepted)
+        with self.assertRaisesRegex(PlatformError, 'needs a fixed completion'):
+            validate_blink_completions([before], plan, dict(blinkTypes=[spawn['type']]), accepted)
+
+    def test_authored_blink_matches_the_float_position_stored_by_core(self):
+        target = dict(x=419.9999491373698, y=180.00002543131507)
+        stored = dict(x=419.99993896484375, y=180.00003051757812)
+        intent = dict(intentId='blink', kind='unit-action', actionName='blink', target=target, waitSteps=0)
+        unit = dict(unitId='ship', typeId='experimentalGunship', ownerPlayerId='p1', alive=True)
+        old = dict(unit, unitActions=dict(actions=dict(blink=dict(available=True))))
+        queue = [dict(name='blink', progress=0, target=stored)]
+        new = dict(unit, unitActions=dict(queue=queue))
+        sample = dict(worldId='control', stepIndex=21, simulationTime=22)
+        records = [
+            dict(sequence=0, kind='observation', phase='before-action', sample=dict(sample, units=[old])),
+            dict(sequence=1, kind='action', actionName='blink', actorPlayerId='p1', unitId='ship',
+                 target=target, cancelQueued=False),
+            dict(sequence=2, kind='observation', phase='after-action', sample=dict(sample, units=[new])),
+        ]
+        validate_history_action(records, records[1], intent)
+        queue[0]['target'] = dict(stored, x=419.9999694824219)
+        with self.assertRaisesRegex(PlatformError, 'exact queue receipt'):
+            validate_history_action(records, records[1], intent)
+
     def test_spider_ordinary_slot_order_follows_and_preserves_the_parent_blink(self):
         from spider_platform import validate_call
 

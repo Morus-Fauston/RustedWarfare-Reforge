@@ -99,6 +99,7 @@ object TraceComparator {
         val buildings = ConstructionDeclaration.buildings(scenario, contract)
         UpgradeDeclaration.conversions(scenario, contract)
         UnitActionDeclaration.conversions(scenario, contract)
+        blinkCompletions(scenario, contract)
         ReclaimDeclaration.removals(scenario, contract)
         if (contract.text("scope") != "self-behavior" || scenario.required("scenarioId") !in contract.arrayAt("scenarioIds")) {
             throw InputError("Only the declared self-behavior scenario can be evaluated")
@@ -219,6 +220,8 @@ object TraceComparator {
             val conversions = UpgradeDeclaration.conversions(scenario, contract)
             val unitConversions = UnitActionDeclaration.conversions(scenario, contract)
             val unitActionTypes = UnitActionDeclaration.types(scenario)
+            val blinkCompletions = blinkCompletions(scenario, contract)
+            val fixedActions = declaredActions.associateBy { it.id("actionId") }
             val boostedTypes = UnitActionDeclaration.afterburnPairs(scenario).values
             val nautilusTransitions = NautilusTraceValidator.validate(scenario, contract, rows) {
                 throw Incomplete("nautilus-transition", it)
@@ -366,9 +369,26 @@ object TraceComparator {
                             if (unit.objectAt("unitActions").number("automaticCooldown") != automatic)
                                 throw Incomplete("unit-action-cooldown", "Automatic cooldown differs from the declared conversion and input schedule")
                         }
-                        val expectedActionEvents = if (initial) emptyList() else unitConversions.filter {
+                        val blinkAtStep = if (initial) emptyList() else blinkCompletions[step].orEmpty()
+                        var expectedActionEvents = if (initial) emptyList() else unitConversions.filter {
                             it.integer("completionStepIndex") == step }.map {
                             it.id("unitId") to if (it["actionId"] == JsonNull) "unit-action-automatic" else "unit-action-completed" }
+                        expectedActionEvents += blinkAtStep.map { it.id("unitId") to "unit-action-completed" }
+                        for (declared in blinkAtStep) {
+                            val actionId = declared.id("actionId")
+                            if (actionId !in acceptedActions)
+                                throw Incomplete("blink-completion", "A Blink completion has no accepted command")
+                            val action = fixedActions.getValue(actionId)
+                            if (action["actionName"] == s("blink")) {
+                                val caster = units.single { it.id("unitId") == action.id("unitId") }
+                                val target = action.objectAt("target")
+                                val location = caster.objectAt("position")
+                                if (listOf("x", "y").any { location.number(it).toFloat() != target.number(it).toFloat() } ||
+                                    observation.arrayAt("events").none {
+                                        it.jsonObject["kind"] == s("teleported") && it.jsonObject["unitId"] == action["unitId"]
+                                    }) throw Incomplete("blink-completion", "The unit did not teleport to the declared ground point")
+                            }
+                        }
                         val actualActionEvents = observation.arrayAt("events").map { it.jsonObject }.filter {
                             it["unitId"]?.jsonPrimitive?.content !in nautilusTransitions + nuclearTransitions &&
                             it["kind"] in setOf(s("unit-action-completed"), s("unit-action-automatic")) }.map {
@@ -658,6 +678,7 @@ object TraceComparator {
             if (unit.number("nuclearDoors") !in 0.0..1.0)
                 throw Incomplete("nuclear-state", "Invalid door pose")
         }
+        else if (unit.id("typeId") in ScenarioDeclaration.blinkTypes(scenario)) validateBlinkState(unit, observer)
         else {
             if (unit["energy"] != null && unit["energy"] != JsonNull)
                 throw Incomplete("aa-beam-state", "Weapon energy on an unsupported unit")
@@ -816,6 +837,59 @@ object TraceComparator {
             repeat((step - pending.integer("atStep") + 1).toInt()) { progress += if (name == "deploy") .006f else .010f }
             if (entry["queueIndex"] != n(0) || entry.number("progress") != JsonPrimitive(progress).double)
                 throw Incomplete("bunker-queue", "Progress differs from accepted command and independent float schedule")
+        }
+    }
+
+    private fun blinkCompletions(scenario: JsonObject, contract: JsonObject): Map<Long, List<JsonObject>> {
+        val rows = contract["blinkCompletions"]?.jsonArray?.map { it.jsonObject }.orEmpty()
+        if (rows.isEmpty()) return emptyMap()
+        val known = ScenarioDeclaration.blinkTypes(scenario)
+        val spawns = scenario.arrayAt("units").map { it.jsonObject }.associateBy { it.id("unitId") }
+        val commands = scenario.arrayAt("actions").map { it.jsonObject }.associateBy { it.id("actionId") }
+        val used = mutableSetOf<String>()
+        val stepCount = scenario.objectAt("termination").arrayAt("steps").size
+        for (row in rows) {
+            if (row.keys != setOf("actionId", "unitId", "completionStepIndex")) throw InputError("Invalid Blink completion")
+            val id = row.id("actionId")
+            val unitId = row.id("unitId")
+            val spawn = spawns[unitId]
+            val command = commands[id] ?: throw InputError("Missing Blink command")
+            if (!used.add(id) || spawn?.id("type") !in known || command.id("unitId") != unitId ||
+                command.id("actor") != spawn?.id("owner") || command["kind"] != s("unit-action") ||
+                command["actionName"] !in setOf(s("addBlink"), s("blink")) || command["cancelQueued"] != b(false) ||
+                row.integer("completionStepIndex") !in command.integer("atStep") until stepCount.toLong())
+                throw InputError("Invalid Blink command or completion boundary")
+        }
+        return rows.groupBy { it.integer("completionStepIndex") }
+    }
+
+    private fun validateBlinkState(unit: JsonObject, observer: String?) {
+        fun invalid(): Nothing = throw Incomplete("blink-state", "Invalid or undisclosed Blink action state")
+        val value = unit["unitActions"]
+        if (observer != null && observer != unit.id("ownerPlayerId")) {
+            if (value != null && value != JsonNull) invalid()
+            return
+        }
+        val state = value as? JsonObject ?: invalid()
+        val actions = state["actions"] as? JsonObject ?: invalid()
+        val names = setOf("addBlink", "blink")
+        if (state.keys - "queue" != setOf("actions", "automaticCooldown") || state["automaticCooldown"] != n(0f) ||
+            actions.size != 1 || actions.keys.any { it !in names }) invalid()
+        val action = actions.values.single() as? JsonObject ?: invalid()
+        if (action.keys != setOf("queueIndex", "progress", "cooldownRemaining", "available") ||
+            action["available"] !in setOf(b(true), b(false)) ||
+            (action["cooldownRemaining"] as? JsonPrimitive)?.intOrNull?.let { it < 0 } != false) invalid()
+        val queue = state["queue"]?.jsonArray.orEmpty()
+        if (queue.isEmpty()) {
+            if (action["queueIndex"] != JsonNull || action["progress"] != JsonNull) invalid()
+        } else {
+            val item = queue.singleOrNull() as? JsonObject ?: invalid()
+            val name = actions.keys.single()
+            if (item.keys - "target" != setOf("name", "progress") || item["name"] != s(name) ||
+                action["queueIndex"] != n(0) || item["progress"] != action["progress"] ||
+                aaNumber(item["progress"]) !in 0.0..<1.0 || action["available"] != b(false)) invalid()
+            if (name == "blink") point(item["target"] as? JsonObject ?: invalid())
+            else if (item["target"] != null && item["target"] != JsonNull) invalid()
         }
     }
 

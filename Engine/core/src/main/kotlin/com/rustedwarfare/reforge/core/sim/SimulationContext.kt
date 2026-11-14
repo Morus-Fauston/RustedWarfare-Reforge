@@ -703,7 +703,7 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
                     change.error
                 } else withUnitActionQueue(unit) {
                     val change = CustomUnitActions.request(unit, action, steps.current.actionClock, currentScenario,
-                        buildingTerrain?.collisionMap ?: currentScenario.map, productionLedger)
+                        buildingTerrain?.collisionMap ?: currentScenario.map, productionLedger, simulationTime)
                     productionLedger = change.ledger
                     change.error
                 }
@@ -1239,6 +1239,8 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
                     }
                 }
                 if (fourLegged) updateUnit(unit, currentScenario.map, step.delta, step.stepIndex, candidate.motionSamples)
+                val blinkCooldown = unit.blinkCooldownUntil
+                val actionForm = unit.definition
                 if (BuildingWork.isReady(unit)) {
                     updateWeapon(unit, step.delta)
                     if (unit.definition.nuclearSilo != null) NuclearOrdnance.advance(unit, step.delta)?.let { work ->
@@ -1257,14 +1259,22 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
                     updateProjectileInterception(unit, currentScenario)
                     if (unit.definition.energy?.dieOnZero != true) WeaponEnergy.advance(unit, step.delta)
                     if ((!factoryWork || factoryActionAtHead) && withUnitActionQueue(unit) {
-                            CustomUnitActions.advanceQueue(unit, currentScenario.unitDefinitions, step.delta, steps.current.actionClock) { launch, target ->
+                            CustomUnitActions.advanceQueue(unit, currentScenario.unitDefinitions, step.delta, steps.current.actionClock,
+                                steps.current) { launch, target ->
                                 launchScoutPayload(unit, launch.turretName, target)
                             }
                         })
                         pendingEvents += Event("unit-action-completed", unit.unitId)
+                    if (actionForm !== unit.definition && (actionForm.blink != null || unit.definition.blink != null))
+                        productionLedger = CustomUnitActions.reconcileBlinkConversion(unit, productionLedger)
                     CustomUnitActions.constrain(unit, step.delta, policies.steering, policies.coordinates, unitActionHead(unit))
                 }
-                if (!fourLegged) updateUnit(unit, currentScenario.map, step.delta, step.stepIndex, candidate.motionSamples)
+                if (unit.definition.blink != null && unit.blinkCooldownUntil > blinkCooldown) {
+                    // The destination write preserves the logical order. Rebase the physical route at the new position.
+                    resumeProductionRoute(unit, currentScenario.map, step.stepIndex)
+                } else if (!fourLegged) {
+                    updateUnit(unit, currentScenario.map, step.delta, step.stepIndex, candidate.motionSamples)
+                }
                 FlightMotion.advancePose(unit, currentScenario.map, step.delta)
                 NautilusMotion.advance(unit, step.delta)
                 Transport.refreshTerrain(unit, currentScenario.map)
@@ -1279,10 +1289,14 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
                 if (BuildingWork.isReady(unit)) {
                     advanceWeaponCooldown(unit, step.delta)
                     if (!economicBuilding && !factoryWork) advanceUpgrade(unit)
+                    val beforeAutomatic = unit.definition
                     if (withUnitActionQueue(unit) {
                             CustomUnitActions.advanceAutomatic(unit, currentScenario.unitDefinitions, currentScenario.map, step.delta)
-                        })
+                        }) {
+                        if (beforeAutomatic.blink != null || unit.definition.blink != null)
+                            productionLedger = CustomUnitActions.reconcileBlinkConversion(unit, productionLedger)
                         pendingEvents += Event("unit-action-automatic", unit.unitId)
+                    }
                     regenerateHealth(unit, step.delta.toFloat())
                 }
             }
@@ -1435,7 +1449,8 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
                 return SimulationError("invalid-economy-contract", "Expected an explicit nonnegative balance for every declared player")
             }
         }
-        if (input.unitDefinitions.values.any { it.production != null || it.income != null || it.builder != null || it.construction != null } && input.economyContract == null) {
+        if (input.unitDefinitions.values.any { it.production != null || it.income != null || it.builder != null ||
+                it.construction != null || (it.blink?.unlockCredits ?: 0L) > 0L } && input.economyContract == null) {
             return SimulationError("missing-economy-contract", "Production, income and construction require an explicit economy contract")
         }
         if (input.units.any { it.ownerPlayerId !in players }) return SimulationError("bad-reference", "Unit owner is not a declared player")
@@ -1512,10 +1527,18 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
                 if (listOf(profile.normalForm, profile.boostedForm).any { input.unitDefinitions[it]?.afterburn != profile })
                     return SimulationError("invalid-unit-action-target", "Afterburn conversion forms must share the same profile")
             }
+            definition.blink?.let { profile ->
+                if (!profile.isValid() || definition.production?.let { it.speedMultiplier != profile.queueSpeed } == true ||
+                    definition.attachmentLayout != null || definition.attachmentModule != null ||
+                    definition.nuclearSilo != null || (!profile.locked && m.type != MovementType.HOVER) ||
+                    definition.customActions?.actions?.filter { it.blinkWork != null } != profile.actions().actions)
+                    return SimulationError("unsupported-blink", "Expected valid Blink work and a mobile or locked form")
+            }
             if (definition.customActions != null) {
                 if (!CustomUnitActions.supports(definition))
                     return SimulationError("unsupported-unit-actions", "Expected qualified custom unit actions")
                 if (definition.customActions.actions.any { action ->
+                    action.blinkWork != null && definition.blink == null ||
                     action.targetTypeId?.let { input.unitDefinitions[it]?.let(CustomUnitActions::supports) != true } == true ||
                     action.groundLaunch?.let { launch ->
                         input.unitDefinitions[launch.payloadUnitTypeId]?.let(ScoutBotRules::supports) != true
@@ -2631,6 +2654,9 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
 
     private fun processDeath(target: MutableUnit) {
             target.spiderBlink = null
+            val blinkLedger = CustomUnitActions.dropBlinkOnDeath(target, productionLedger)
+            if (blinkLedger !== productionLedger) pendingEvents += Event("unit-action-refunded", target.unitId)
+            productionLedger = blinkLedger
             if (target.definition.nuclearSilo != null) {
                 if (target.ordnance.queue.isNotEmpty()) pendingEvents += Event("unit-action-refunded", target.unitId)
                 productionLedger = NuclearOrdnance.discard(target, checkNotNull(productionLedger))
@@ -2920,7 +2946,7 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
                     shield = unit.definition.shield?.let { ShieldObservation(unit.shield, it.maximum, unit.shieldDisplayDamage) },
                     energy = unit.definition.energy?.let { EnergyObservation(unit.energy, it.maximum, unit.energyRecharging) },
                     unitActions = attachments?.let { UnitAttachments.observe(steps.current, unit, it, observedTime) }
-                        ?: NuclearOrdnance.observe(unit) ?: CustomUnitActions.observe(unit, steps.current.actionClock, currentScenario, unitActionQueue(unit)),
+                        ?: NuclearOrdnance.observe(unit) ?: CustomUnitActions.observe(unit, steps.current.actionClock, currentScenario, unitActionQueue(unit), observedTime),
                     nuclearDoors = unit.definition.nuclearSilo?.let { unit.ordnance.doors },
                     attachment = unit.attachment?.let {
                         AttachedUnitObservation(it.parentId, it.slot.number, checkNotNull(unit.definition.attachmentModule).empty)

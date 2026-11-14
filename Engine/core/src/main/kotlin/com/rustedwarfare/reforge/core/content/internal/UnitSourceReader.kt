@@ -27,6 +27,7 @@ internal data class UnitContentSchema(
     val requiredInlineProjectileFields: Set<String> = emptySet(),
     val movementTemplates: Map<String, Map<String, String>> = emptyMap(),
     val structuredAbilities: Boolean = false,
+    val blinkAbility: Boolean = false,
 ) {
     companion object {
         fun native(fields: Set<String>, formats: Set<String>): UnitContentSchema {
@@ -114,7 +115,9 @@ internal class UnitSourceReader(
 
     private fun allowedFields(section: String): Set<String>? =
         when {
-            section.startsWith("ability_") -> abilityFields.takeIf { schema.structuredAbilities }
+            section.startsWith("ability_") -> abilityFields.takeIf { schema.structuredAbilities }?.let {
+                if (schema.blinkAbility) it + setOf("range", "chargeTicks", "cooldownTicks", "unlockCredits", "unlockTicks", "locked", "queueSpeed") else it
+            }
             section.startsWith("template_") -> fields.values.flatten().toSet()
             else -> fields[sectionKind(section)]
         }
@@ -387,7 +390,7 @@ internal class UnitSourceReader(
                         value.isNumber || value.isString && value.asString().endsWith('s')
                     section.startsWith("ability_") -> when (key) {
                         "type" -> value.isString
-                        "startAtZero" -> value.isBoolean
+                        "startAtZero", "locked" -> value.isBoolean
                         else -> value.isNumber
                     }
                     key in numericFields -> value.isNumber

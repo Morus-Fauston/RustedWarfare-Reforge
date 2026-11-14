@@ -34,3 +34,15 @@ Add a shield with "abilities": [{"name": "screen", "type": "shield", "maximum": 
 The qualified AA gunship reader ("aa-beam-gunship") takes an afterburn object with two unit ids, for example {"normalForm":"escort","boostedForm":"escort_boosted"}. Let the boosted definition inherit that object. List both definitions in the enabled content and point the existing conversion actions at the declared form ids. The qualified form keeps the AA gunship's energy, cooldown, acceleration, targeting and trail rules. INI uses the original named pair.
 
 Attachment speed uses a replacement contribution. For the modular spider, a completed speed module takes priority over mounted-weapon contributions. Several contributions of the same priority use the first slot in the unit's layout. The winning contribution replaces base speed, then the terrain multiplier applies. Removing the winner allows the next contribution or the base speed to take effect.
+
+A structured unit loaded as `hover-tank` can declare one `blink` ability. The target is measured in world units and must be on a HOVER-passable tile. Charge, unlock and cooldown durations use simulation ticks. Set `queueSpeed` when the unit uses a queue multiplier. It defaults to one and must agree with the factory multiplier on definitions that also produce units. The optional paid unlock requires both `unlockCredits` and `unlockTicks`. The owner sees `addBlink` until the unlock completes, then sees the ground-targeted `blink` action. Setting `locked` disables Blink on a deployed form and retains the definition for inheritance.
+
+~~~json
+"abilities": [
+  {
+    "name": "jump", "type": "blink", "range": 700,
+    "chargeTicks": 210, "cooldownTicks": 1500,
+    "unlockCredits": 10000, "unlockTicks": 3000
+  }
+]
+~~~

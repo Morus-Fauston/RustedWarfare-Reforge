@@ -90,7 +90,7 @@ internal object CombatContentReader {
             Kind.HOVER_TANK -> schema.copy(
                 fields = schema.fields + ("projectile_1" to (schema.fields.getValue("projectile_1") + setOf("targetSpeed", "targetSpeedAcceleration"))),
                 numericFields = schema.numericFields + setOf("targetSpeed", "targetSpeedAcceleration"),
-                movementTemplates = mapOf("hoverTank" to hoverTemplate))
+                movementTemplates = mapOf("hoverTank" to hoverTemplate), structuredAbilities = true, blinkAbility = true)
             Kind.DECLARED_TANK, Kind.NATIVE_TANK -> schema.copy(movementTemplates = mapOf("tank" to tankTemplate),
                 structuredAbilities = true)
             Kind.BATTLESHIP, Kind.AUTHOR_WATER -> NavalContentFields.schema(schema)
@@ -107,6 +107,8 @@ internal object CombatContentReader {
         val hover = kind == Kind.HOVER_TANK
         val water = naval || authorWater
         val sections = loaded.values
+        val blink = if (hover) BlinkContent.read(path, loaded) else null
+        val deployedBlink = blink?.locked == true && sections["movement"]?.get("movementType") == "NONE"
         fun invalid(code: ContentErrorCode, s: String, key: String, ref: String? = null, reason: String): Nothing {
             val origin = loaded.origins[s to key] ?: UnitSourceReader.Origin(path, s, key)
             val context = if (origin.chain.size > 1 || origin.section != s)
@@ -204,7 +206,7 @@ internal object CombatContentReader {
                 "core", "techLevel", reason = "Expected a tech level from one through three")
         } ?: 1
         if (declared) {
-            if (when { hover -> identity != "hoverTank"; naval -> identity != "heavyBattleship"; mech -> identity != "mechGun"; heavy -> identity != "mechHeavyMissile"
+            if (when { hover -> identity != "hoverTank" && (blink == null || !identity.matches(Regex("[A-Za-z][A-Za-z0-9_.-]*"))); naval -> identity != "heavyBattleship"; mech -> identity != "mechGun"; heavy -> identity != "mechHeavyMissile"
                     else -> !identity.matches(Regex("[a-z][a-z0-9_.-]*")) })
                 invalid(ContentErrorCode.MALFORMED_SYNTAX, "core", "name", identity, "Expected a stable lowercase content ID")
             if ("overrideAndReplace" in sections["core"].orEmpty())
@@ -235,9 +237,12 @@ internal object CombatContentReader {
             if ("barrelY" in sections.getValue(weapon) && "size" in sections.getValue(weapon))
                 invalid(ContentErrorCode.MALFORMED_SYNTAX, weapon, "barrelY", reason = "barrelY and size are aliases and cannot both be specified")
         }
-        only("movement", "movementType", if (heavy) "OVER_CLIFF" else if (hover) "HOVER" else if (water) "WATER" else if (helicopter) "AIR" else "LAND")
-        only("movement", "moveSlidingMode", (helicopter || heavy || hover).toString())
-        only("movement", "moveIgnoringBody", (helicopter || heavy || hover).toString())
+        only("movement", "movementType", if (heavy) "OVER_CLIFF" else if (deployedBlink) "NONE" else if (hover) "HOVER" else if (water) "WATER" else if (helicopter) "AIR" else "LAND")
+        val sliding = helicopter || heavy || hover && !deployedBlink
+        if (!deployedBlink) {
+            only("movement", "moveSlidingMode", sliding.toString())
+            only("movement", "moveIgnoringBody", sliding.toString())
+        }
         val sight = sections["core"]?.get("fogOfWarSightRange")?.let {
             it.toIntOrNull() ?: invalid(ContentErrorCode.MALFORMED_SYNTAX, "core", "fogOfWarSightRange", reason = "Expected integer sight range")
         } ?: 15
@@ -322,7 +327,7 @@ internal object CombatContentReader {
                 } else null)
         })
         val primary = catalog.ordered.first()
-        val shield = ShieldContent.read(path, loaded, required = heavy)
+        val shield = ShieldContent.read(path, loaded, required = heavy, allowBlink = hover)
         val profile = CombatProfile(
             integer("core", "maxHp", true).toDouble(), number("attack", "maxAttackRange", true),
             primary.shootDelay, primary.turretSize, primary.turnSpeed, primary.turnAcceleration,
@@ -338,16 +343,17 @@ internal object CombatContentReader {
         val definition = UnitDefinition(identity, "CustomUnitMetadata", number("core", "radius", true),
             number("core", "displayRadius", true), integer("graphics", "total_frames", true),
             image("image"), imageScale,
-            MovementProfile(if (heavy) MovementType.OVER_CLIFF else if (hover) MovementType.HOVER else if (water) MovementType.WATER else if (helicopter) MovementType.AIR else MovementType.LAND, number("movement", "moveSpeed"), number("movement", "moveAccelerationSpeed"),
+            MovementProfile(if (heavy) MovementType.OVER_CLIFF else if (deployedBlink) MovementType.NONE else if (hover) MovementType.HOVER else if (water) MovementType.WATER else if (helicopter) MovementType.AIR else MovementType.LAND, number("movement", "moveSpeed"), number("movement", "moveAccelerationSpeed"),
                 number("movement", "moveDecelerationSpeed"), number("movement", "maxTurnSpeed"),
-                number("movement", "turnAcceleration"), helicopter || heavy || hover, helicopter || heavy || hover, reverse,
+                number("movement", "turnAcceleration"), sliding, sliding, reverse,
                 if (helicopter || heavy) integer("movement", "moveSlidingDir") else -1, flight?.first,
-                if (hover) HoverProfile() else null),
+                if (hover && !deployedBlink) HoverProfile() else null),
             sections.flatMap { (s, values) -> values.keys.filter { it in retained[sectionKind(s)].orEmpty() } }.toSet(), sight, profile,
             build = BuildProfile(price, buildRate), mech = gait, rotor = flight?.second, reclaimPrice = reclaimPrice,
             construction = if (mech) ConstructionProfile(price, buildRate) else null, techLevel = techLevel,
             authoredWaterCombat = authorWater, shadowImagePath = if (hover) image("image_shadow") else null,
             shield = shield, shieldImagePath = if (heavy) image("image_shield") else null,
+            blink = blink, customActions = blink?.actions(),
             transportSlots = if ("transportSlotsNeeded" in sections.getValue("core")) integer("core", "transportSlotsNeeded") else 1)
         definition
     }

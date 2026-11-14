@@ -54,6 +54,7 @@ class UnitDefinition(
     val attachmentLayout: AttachmentLayout? = null,
     val attachmentModule: AttachmentModuleProfile? = null,
     val afterburn: AfterburnProfile? = null,
+    val blink: BlinkProfile? = null,
 ) {
     internal val locomotionStates: SubmersibleLocomotion?
         get() = amphibiousJet?.locomotion ?: submarine?.locomotion
@@ -176,9 +177,9 @@ data class CustomActionDefinition(val name: String, val actionId: String, val ta
     val automatic: AutomaticActionCondition? = null, val visible: Boolean = true,
     val cannotMove: Boolean = false, val rotateTo: Double? = null, val rotateToOrBackwards: Boolean = false,
     val highPriority: Boolean = false, val requiresOverWater: Boolean = false, val groundLaunch: GroundLaunchProfile? = null,
-    val ammoProduction: AmmoProductionProfile? = null) {
+    val ammoProduction: AmmoProductionProfile? = null, val blinkWork: BlinkWork? = null) {
     init {
-        require(listOfNotNull(targetTypeId, groundLaunch, ammoProduction).size == 1)
+        require(listOfNotNull(targetTypeId, groundLaunch, ammoProduction, blinkWork).size == 1)
         require(automatic == null || targetTypeId != null)
     }
 }
