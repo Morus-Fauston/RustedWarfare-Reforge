@@ -1,6 +1,7 @@
 package com.rustedwarfare.reforge.client
 
 import com.rustedwarfare.reforge.core.sim.*
+import com.rustedwarfare.reforge.core.content.DurabilityProfile
 import com.rustedwarfare.reforge.core.content.UnitDefinition
 import java.nio.file.Path
 import kotlin.test.*
@@ -33,7 +34,9 @@ class TurretSandboxSessionTest {
 
     private fun unarmed(unit: UnitDefinition, sight: Int) = UnitDefinition(unit.id, unit.className,
         unit.radius, unit.displayRadius, unit.totalFrames, unit.imagePath, unit.imageScale, unit.movement,
-        unit.retainedUnconsumed, sight, null, unit.durability, unit.building, unit.production, unit.build, unit.directHitTargetKind)
+        unit.retainedUnconsumed, sight, null,
+        unit.durability ?: unit.maximumHealth?.let { DurabilityProfile(it, null) },
+        unit.building, unit.production, unit.build, unit.directHitTargetKind)
 
     @Test fun hidden_tower_presence_does_not_change_complete_session_frames_or_nested_client_evidence() {
         for (mode in listOf(SandboxMode.MEMORY, SandboxMode.HARDCORE)) {

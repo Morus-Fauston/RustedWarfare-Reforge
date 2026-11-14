@@ -27,7 +27,7 @@ class PatrolSandboxSessionTest {
             assertEquals(1, tasks.size, "Old sink values remain immutable after Stop")
         }
     }
-    @Test fun session_patrol_dispatches_the_fixed_selection_and_reports_real_partial_failure() {
+    @Test fun session_patrol_uses_captured_selection_and_skips_ineligible_members() {
         val rows = mutableListOf<Pair<String, Map<String, Any?>>>()
         SandboxSession(ControlledScenario.load(root()), ClientEvidence { kind, values -> rows += kind to values }).use { s ->
             s.select(Position(110.0, 210.0))
@@ -35,10 +35,11 @@ class PatrolSandboxSessionTest {
             s.select(Position(430.0, 210.0), SelectionMode.ADD)
             val selected = s.selectedIds
             val point = Position(30.0, 330.0)
-            assertIs<ActionResult.Rejected>(s.patrol(point, false, selected))
+            assertEquals(setOf("a", "f", "b"), selected)
+            assertIs<ActionResult.Accepted>(s.patrol(point, false, selected))
             val batch = checkNotNull(s.lastCommandBatch)
-            assertEquals(listOf("a", "f"), batch.members.map { it.unitId })
-            assertEquals(1, batch.accepted); assertEquals(1, batch.rejected); assertEquals(1, batch.skipped)
+            assertEquals(listOf("a"), batch.members.map { it.unitId })
+            assertEquals(1, batch.accepted); assertEquals(0, batch.rejected); assertEquals(2, batch.skipped)
             assertEquals(point, s.observation.units.single { it.unitId == "a" }.tasks.single().target)
             assertTrue(s.observation.units.single { it.unitId == "f" }.tasks.isEmpty())
             s.select(Position(0.0, 0.0))
@@ -46,7 +47,9 @@ class PatrolSandboxSessionTest {
             s.patrol(next, true, selected)
             assertEquals(listOf(point, next), s.observation.units.single { it.unitId == "a" }.tasks.map { it.target })
             assertTrue(s.selectedIds.isEmpty(), "Dispatch must use the captured press selection without changing current selection")
-            assertEquals(4, rows.count { it.first == "action" && it.second["type"] == "PatrolAction" })
+            val actions = rows.filter { it.first == "action" && it.second["type"] == "PatrolAction" }
+            assertEquals(listOf("a", "a"), actions.map { it.second["unitId"] })
+            assertEquals(2, actions.map { (it.second["result"] as Map<*, *>)["actionId"] }.toSet().size)
             repeat(80) { s.tick() }
             assertTrue(s.observation.units.single { it.unitId == "a" }.position != Position(110.0, 210.0))
         }
