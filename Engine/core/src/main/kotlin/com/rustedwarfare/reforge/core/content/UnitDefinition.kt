@@ -59,6 +59,7 @@ class UnitDefinition(
     val attackMovement: AttackMovementProfile? = null,
     val initialWeaponFlagZero: Boolean = false,
     val authoredAirCombat: Boolean = false,
+    val authoredMaintenance: AuthoredMaintenance? = null,
 ) {
     internal val locomotionStates: SubmersibleLocomotion?
         get() = amphibiousJet?.locomotion ?: submarine?.locomotion
@@ -76,7 +77,15 @@ data class TransportSettings(val capacity: Int, val passengerMovement: MovementT
 }
 
 /** Native work capability, independent of the ordinary builder's construction menu. */
-enum class MaintenanceProfile { NATIVE_REPAIR_BAY, MECH_ENGINEER, SCOUT_BOT, MODULAR_SPIDER }
+enum class MaintenanceProfile { NATIVE_REPAIR_BAY, MECH_ENGINEER, SCOUT_BOT, MODULAR_SPIDER, AUTHORED }
+
+data class AuthoredMaintenance(val canRepairUnits: Boolean, val canRepairBuildings: Boolean,
+    val canReclaim: Boolean, val autoRepair: Boolean) {
+    internal fun isValid(): Boolean = (canRepairUnits || canRepairBuildings || canReclaim) &&
+        (!autoRepair || canRepairUnits || canRepairBuildings)
+
+    fun canRepair(target: UnitDefinition): Boolean = if (target.building == null) canRepairUnits else canRepairBuildings
+}
 
 /** Finite effective custom silos share their content and presentation slots. */
 data class NuclearSiloProfile(
@@ -224,16 +233,21 @@ val UnitDefinition.foundationMovementType: MovementType
         ?: if (production?.exitProfile == FactoryExitProfile.NATIVE_SEA) MovementType.WATER else movement.type
 
 class ProductionProfile(unitTypeIds: List<String>, val exitProfile: FactoryExitProfile = FactoryExitProfile.NATIVE_LAND,
-    val speedMultiplier: Float = 1f) {
+    val speedMultiplier: Float = 1f, val rallyEnabled: Boolean = false) {
     constructor(unitTypeId: String) : this(listOf(unitTypeId))
     val unitTypeIds: List<String> = Collections.unmodifiableList(ArrayList(unitTypeIds))
     val unitTypeId: String get() = unitTypeIds.first()
-    override fun equals(other: Any?): Boolean = other is ProductionProfile && unitTypeIds == other.unitTypeIds && exitProfile == other.exitProfile && speedMultiplier == other.speedMultiplier
-    override fun hashCode(): Int = 31 * (31 * unitTypeIds.hashCode() + exitProfile.hashCode()) + speedMultiplier.hashCode()
-    override fun toString(): String = "ProductionProfile(unitTypeIds=$unitTypeIds, exitProfile=$exitProfile, speedMultiplier=$speedMultiplier)"
+    override fun equals(other: Any?): Boolean = other is ProductionProfile && unitTypeIds == other.unitTypeIds && exitProfile == other.exitProfile && speedMultiplier == other.speedMultiplier && rallyEnabled == other.rallyEnabled
+    override fun hashCode(): Int = 31 * (31 * (31 * unitTypeIds.hashCode() + exitProfile.hashCode()) + speedMultiplier.hashCode()) + rallyEnabled.hashCode()
+    override fun toString(): String = "ProductionProfile(unitTypeIds=$unitTypeIds, exitProfile=$exitProfile, speedMultiplier=$speedMultiplier, rallyEnabled=$rallyEnabled)"
 }
 data class BuildProfile(val price: Long, val rate: Float)
-data class IncomeProfile(val period: Float, val credits: Float)
+data class IncomeProfile(val period: Float, val credits: Float) {
+    companion object {
+        /** Keep binary32 ticks and the existing 0.1-tick threshold distinguishable. */
+        internal const val MAX_PERIOD = 1_000_000f
+    }
+}
 
 data class DeathExplosionProfile(val damage: Float, val radius: Float, val expandTime: Float,
     val nuclear: Boolean = false, val authored: Boolean = false)

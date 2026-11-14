@@ -228,7 +228,8 @@ internal fun PlayerObservation.fields(includeKnowledge: Boolean = true): Map<Str
             "blocked" to it.lastKnownBlocked, "gid" to it.lastKnownGroundGid) } else null),
     ) + (balance?.let { mapOf("balance" to it, "factoryQueues" to factoryQueues.map { factory ->
         mapOf("factoryId" to factory.factoryId, "items" to factory.items.map { item ->
-            mapOf("typeId" to item.typeId, "progress" to item.progress) }) },
+            mapOf("typeId" to item.typeId, "progress" to item.progress) }) +
+            (factory.rally?.let { mapOf("rally" to it.fields()) } ?: emptyMap()) },
         "upgradeQueues" to upgradeQueues.map { queue -> mapOf("unitId" to queue.unitId, "items" to queue.items.map { item ->
             mapOf("actionKey" to item.actionKey, "targetTypeId" to item.targetTypeId, "progress" to item.progress) }) }) } ?: emptyMap()) +
         (credits?.let { mapOf("credits" to it) } ?: emptyMap()) +

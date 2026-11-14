@@ -48,13 +48,16 @@ internal object UnitRegistration {
         val born = register(state, input, spawn, identity.objectId, identity.updateKey,
             ProducedOrigin(factory.unitId, factory.typeId, completed.typeId), birth.protection, identity) { unit ->
             if (customProducer) unit.nativeTransportPlacement = true
+            val rally = factory.factoryRally.takeIf { factory.definition.production?.rallyEnabled == true }
             if (reachable) {
                 unit.moveTarget = birth.target
                 unit.originMoveId = "production-exit:$publicId"
-                if (definition.transport == com.rustedwarfare.reforge.core.content.TransportProfile.NATIVE_DROPSHIP || definition.energy != null)
-                    unit.taskQueue = UnitTaskQueue().append(UnitTask(UnitTaskKind.MOVE, checkNotNull(unit.originMoveId), birth.target))
+                if (rally != null || definition.transport == com.rustedwarfare.reforge.core.content.TransportProfile.NATIVE_DROPSHIP || definition.energy != null)
+                    unit.taskQueue = UnitTaskQueue().append(UnitTask(UnitTaskKind.MOVE, checkNotNull(unit.originMoveId), birth.target,
+                        factoryExit = rally != null))
                 unit.adoptRoute(listOf(birth.target), birth.target, -1L)
             }
+            if (rally != null) unit.taskQueue = unit.taskQueue.append(UnitTask(UnitTaskKind.MOVE, "production-rally:$publicId", rally, startsAfterFactoryExit = true))
         }
         if (factory.definition.production?.exitProfile == FactoryExitProfile.CUSTOM_MECH) {
             factory.productionSide = !factory.productionSide

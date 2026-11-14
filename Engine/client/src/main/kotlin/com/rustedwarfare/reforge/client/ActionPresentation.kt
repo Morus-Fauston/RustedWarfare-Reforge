@@ -194,6 +194,12 @@ internal class ActionCatalogue(private val definitions: Map<String, UnitDefiniti
             .filter { groupedLauncher == null || it.name != "launchNuke" }
             .map { it to checkNotNull(ownPrimary) } + groupedLauncher?.unitActions?.actions.orEmpty()
             .filter { it.name == "launchNuke" }.map { it to checkNotNull(groupedLauncher) }
+        val rally = ownSingle?.takeIf { it.constructionProgress >= 1f &&
+            definitions.getValue(it.typeId).production?.rallyEnabled == true }?.let {
+            val point = factory?.rally
+            val hint = if (point == null) "Left: choose rally point" else "Left: change point\nRight: clear point"
+            CustomUnitActionView("setRally", "Rally point", hint, false, 0, true, point != null, groundTargeted = true)
+        }
         val unitActions = immutable(actionOwners.map { (action, actionUnit) ->
             actionUnit.attachmentOverview?.let { return@map attachmentAction(action, it, checkNotNull(actionUnit.unitActions)) }
             val unitDefinition = definitions.getValue(actionUnit.typeId)
@@ -260,7 +266,7 @@ internal class ActionCatalogue(private val definitions: Map<String, UnitDefiniti
                         ?.canPlayerCancel == true
                 } == true, action.progress, groundTargeted = launch != null || targetedBlink || action.name == "launchNuke",
                 iconTypeId = launch?.payloadUnitTypeId)
-        })
+        } + listOfNotNull(rally))
         val profiles = ownPrimary?.takeUnless { it.constructionProgress < 1f &&
             definitions.getValue(it.typeId).className == "AuthoredBuilding" }
             ?.let { definitions.getValue(it.typeId).upgrades?.actions }.orEmpty()
@@ -295,7 +301,9 @@ internal class ActionCatalogue(private val definitions: Map<String, UnitDefiniti
                 .filter { nukesEnabled || definitions.getValue(it).nuclearSilo == null }
                 .map { checkNotNull(construction[it]) })
         val nativeMaintenance = validWorkers && workers.all { it.constructionProgress >= 1f && it.carriedBy == null &&
-            definitions.getValue(it.typeId).maintenance != null }
+            definitions.getValue(it.typeId).let { definition ->
+                definition.maintenance != null && definition.authoredMaintenance?.let { it.canRepairUnits || it.canRepairBuildings } != false
+            } }
         val workerText = if (buildings.isEmpty() && !nativeMaintenance) null else workerText(workers.sortedBy { it.unitId }, view)
         val info = if (ids.isEmpty()) null else if (ids.size > 1) workerText else selected?.let { unit ->
             "${unit.health?.toInt() ?: 0} / ${unit.maxHealth?.toInt() ?: 0}" +
@@ -322,8 +330,10 @@ internal class ActionCatalogue(private val definitions: Map<String, UnitDefiniti
                     if (it.exhausted) " LOCKED" else "") } ?: "") + (workerText?.let { "\n$it" } ?: "")
         }
         return ActionMenuView(view.credits, production(view, factory), buildings, upgrades, factory, upgradeQueue,
-            validWorkers && workers.all { definitions.getValue(it.typeId).maintenance != null ||
-                maintenance && it.typeId == "builder" && definitions.getValue(it.typeId).builder != null },
+            validWorkers && workers.all { worker -> definitions.getValue(worker.typeId).let { definition ->
+                definition.maintenance != null && definition.authoredMaintenance?.canReclaim != false ||
+                    maintenance && worker.typeId == "builder" && definition.builder != null
+            } },
             workerText, info, selected?.let { title(it.typeId, panel = true) },
             view.units.filter { it.alive && it.ownerPlayerId == view.playerId && it.constructionProgress >= 1f }
                 .sumOf { nominalIncome(it.typeId)?.toDouble() ?: 0.0 }.toFloat(),

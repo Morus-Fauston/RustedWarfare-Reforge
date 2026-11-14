@@ -45,14 +45,35 @@ internal class BuildingWork private constructor(val clock: Int, val nonces: Map<
         }
 
         private fun canContinue(worker: MutableUnit, target: MutableUnit, input: Scenario): Boolean {
-            if (unitMaintenance(worker)) return target !== worker && target.alive && target.carriedBy == null &&
-                target.attachment == null && target.health != null && (isReady(target) || target.definition.siteConstruction != null)
+            if (unitMaintenance(worker)) {
+                if (target === worker || !target.alive || target.carriedBy != null || target.attachment != null ||
+                    target.health == null || !isReady(target) && target.definition.siteConstruction == null) return false
+                return canRepairAuthored(worker, target, input) || !isReady(target) &&
+                    target.ownerPlayerId == worker.ownerPlayerId &&
+                    target.typeId in checkNotNull(worker.definition.builder).buildingTypeIds
+            }
             if (input.maintenanceContract?.basePrices?.containsKey(target.typeId) == true &&
                 worker.typeId == "builder" && target.definition.building != null) return true
             val types = checkNotNull(worker.definition.builder).buildingTypeIds
             if (target.typeId in types) return true
             val base = OrdinaryUpgrades.constructionBaseTypeId(target.typeId) ?: return false
             return base in types && target.definition.construction != null
+        }
+
+        private fun canRepairAuthored(worker: MutableUnit, target: MutableUnit, input: Scenario): Boolean {
+            val settings = worker.definition.authoredMaintenance ?: return true
+            val team = input.players.single { it.playerId == worker.ownerPlayerId }.teamId
+            return settings.canRepair(target.definition) &&
+                (worker.ownerPlayerId == target.ownerPlayerId ||
+                    team != null && input.players.single { it.playerId == target.ownerPlayerId }.teamId == team)
+        }
+
+        private fun authoredHealthCanChange(worker: MutableUnit, target: MutableUnit, reclaim: Boolean): Boolean {
+            if (worker.definition.authoredMaintenance == null || !isReady(target)) return true
+            val health = checkNotNull(target.health)
+            val rate = repairRate(worker).toDouble()
+            return if (reclaim) health - rate * 5.1 < health
+                else health >= checkNotNull(target.definition.maximumHealth) || health + rate > health
         }
 
         fun validateEnvelope(action: Action): SimulationError? {
@@ -70,6 +91,7 @@ internal class BuildingWork private constructor(val clock: Int, val nonces: Map<
     /** Native post-parent update: selecting a task does not execute repair in this call. */
     fun advanceAutomatic(worker: MutableUnit, input: Scenario, delta: Double, candidates: () -> List<MutableUnit>) {
         if (!unitMaintenance(worker) || worker.definition.maintenance == MaintenanceProfile.SCOUT_BOT ||
+            worker.definition.authoredMaintenance?.autoRepair == false ||
             !worker.alive || worker.carriedBy != null || !isReady(worker)) return
         worker.repairScanElapsed += delta.toFloat()
         require(worker.repairScanElapsed.isFinite()) { "Repair scan timer must remain finite" }
@@ -79,8 +101,9 @@ internal class BuildingWork private constructor(val clock: Int, val nonces: Map<
         var chosen: MutableUnit? = null
         var bestHealth = -1f
         for (target in candidates()) {
-            if (!canContinue(worker, target, input) || target.health == null ||
-                isReady(target) && target.health!! >= checkNotNull(target.definition.maximumHealth)) continue
+            if (!canContinue(worker, target, input) || !canRepairAuthored(worker, target, input) || target.health == null ||
+                isReady(target) && target.health!! >= checkNotNull(target.definition.maximumHealth) ||
+                !authoredHealthCanChange(worker, target, reclaim = false)) continue
             if (target.ownerPlayerId != worker.ownerPlayerId &&
                 (team == null || input.players.single { it.playerId == target.ownerPlayerId }.teamId != team)) continue
             val dx = worker.position.x.toFloat() - target.position.x.toFloat()
@@ -111,13 +134,19 @@ internal class BuildingWork private constructor(val clock: Int, val nonces: Map<
         val contract = input.maintenanceContract
         if (!unitMaintenance(worker) && (contract == null || worker.typeId != "builder" || worker.definition.builder == null))
             return SimulationError("cannot-maintain", "Unit cannot maintain buildings")
+        val authored = worker.definition.authoredMaintenance
+        if (authored != null && (if (reclaim) !authored.canReclaim else !authored.canRepairUnits && !authored.canRepairBuildings))
+            return SimulationError("cannot-maintain", "Unit lacks the requested maintenance capability")
         if (target == null || target === worker || !target.alive || target.carriedBy != null || target.health == null ||
+            authored != null && (target.attachment != null || !reclaim && !canRepairAuthored(worker, target, input)) ||
             (reclaim || !unitMaintenance(worker)) && target.ownerPlayerId != worker.ownerPlayerId ||
             !unitMaintenance(worker) && (target.definition.building == null || target.typeId !in checkNotNull(contract).basePrices) ||
             reclaim && target.definition.reclaimPrice == null && target.definition.build == null &&
                 target.definition.construction == null && contract?.basePrices?.containsKey(target.typeId) != true ||
             !visible(target, input, view))
             return SimulationError("invalid-maintenance-target", "Maintenance target is not available")
+        if (!authoredHealthCanChange(worker, target, reclaim))
+            return SimulationError("maintenance-rate-too-small", "The maintenance rate cannot change this target's health")
         return null
     }
 
@@ -257,7 +286,7 @@ internal class BuildingWork private constructor(val clock: Int, val nonces: Map<
             val target = frame.units[task.targetUnitId]
             if (target == null || !target.alive || target.carriedBy != null ||
                 !unitMaintenance(worker) && target.ownerPlayerId != worker.ownerPlayerId ||
-                !canContinue(worker, target, input) ||
+                !canContinue(worker, target, input) || !authoredHealthCanChange(worker, target, reclaim = false) ||
                 isReady(target) && checkNotNull(target.health) >= checkNotNull(target.definition.maximumHealth)) {
                 worker.taskQueue = worker.taskQueue.pop()
                 worker.constructionElapsed = 0f
@@ -274,9 +303,14 @@ internal class BuildingWork private constructor(val clock: Int, val nonces: Map<
                 return BuildingWorkChange(this, ledger, upgrades, events =
                     if (isReady(target)) listOf(Event("construction-completed", target.unitId)) else emptyList())
             }
-            val health = checkNotNull(target.health).toFloat() + repairRate(worker) * delta.toFloat()
-            val maximum = checkNotNull(target.definition.maximumHealth).toFloat()
-            target.health = minOf(maximum, health).toDouble()
+            val currentHealth = checkNotNull(target.health)
+            val currentMaximum = checkNotNull(target.definition.maximumHealth)
+            val authored = worker.definition.authoredMaintenance != null
+            val repair = repairRate(worker)
+            val health = if (authored) currentHealth + repair.toDouble() * delta
+                else (currentHealth.toFloat() + repair * delta.toFloat()).toDouble()
+            val maximum = if (authored) currentMaximum else currentMaximum.toFloat().toDouble()
+            target.health = minOf(maximum, health)
             if (health > maximum) {
                 worker.taskQueue = worker.taskQueue.pop()
                 worker.constructionElapsed = 0f
@@ -381,7 +415,11 @@ internal class BuildingWork private constructor(val clock: Int, val nonces: Map<
             target.constructionProgress = maxOf(0f, target.constructionProgress - .001f * 5.1f * frame.step.delta.toFloat())
             target.constructionProgress <= 0f
         } else {
-            target.health = maxOf(0f, checkNotNull(target.health).toFloat() - repairRate(worker) * 5.1f * frame.step.delta.toFloat()).toDouble()
+            val current = checkNotNull(target.health)
+            val repair = repairRate(worker)
+            target.health = if (worker.definition.authoredMaintenance != null)
+                maxOf(0.0, current - repair.toDouble() * 5.1 * frame.step.delta)
+            else maxOf(0f, current.toFloat() - repair * 5.1f * frame.step.delta.toFloat()).toDouble()
             checkNotNull(target.health) <= 0.0
         }
         if (!finished) return BuildingWorkChange(this, ledger, upgrades)

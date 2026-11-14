@@ -112,11 +112,11 @@ class UpgradeQueueObservation(val unitId: String, items: List<UpgradeQueueItem>)
     override fun hashCode(): Int = 31 * unitId.hashCode() + items.hashCode()
 }
 
-class FactoryQueueObservation(val factoryId: String, items: List<ProductionQueueItem>) {
+class FactoryQueueObservation(val factoryId: String, items: List<ProductionQueueItem>, val rally: Position? = null) {
     val items: List<ProductionQueueItem> = immutable(items)
     override fun equals(other: Any?): Boolean = other is FactoryQueueObservation &&
-        factoryId == other.factoryId && items == other.items
-    override fun hashCode(): Int = 31 * factoryId.hashCode() + items.hashCode()
+        factoryId == other.factoryId && items == other.items && rally == other.rally
+    override fun hashCode(): Int = 31 * (31 * factoryId.hashCode() + items.hashCode()) + rally.hashCode()
 }
 
 /** Trusted deterministic scene input, unrelated to command/display string IDs. */
@@ -133,7 +133,8 @@ enum class UnitTaskKind { MOVE, ATTACK, PATROL, BUILD, CONSTRUCT, RECLAIM, LOAD_
 data class UnitTask(val kind: UnitTaskKind, val actionId: String, val target: Position? = null,
     val targetUnitId: String? = null, val atStep: Long? = null,
     val buildingTypeId: String? = null, val buildingNonce: String? = null,
-    val automaticRepair: Boolean = false, val extraWorkRange: Float = 0f)
+    val automaticRepair: Boolean = false, val extraWorkRange: Float = 0f, internal val startsAfterFactoryExit: Boolean = false,
+    internal val factoryExit: Boolean = false)
 
 data class UnitObservation(
     val unitId: String,
@@ -174,6 +175,7 @@ data class UnitObservation(
     val nuclearDoors: Float? = null,
     val attachment: AttachedUnitObservation? = null,
     val attachmentOverview: AttachmentOverview? = null,
+    val factoryRally: Position? = null,
 )
 
 data class AttachedUnitObservation(val parentUnitId: String, val slot: Int, val empty: Boolean)
@@ -496,6 +498,7 @@ internal data class MutableUnit(
     var flightLanded: Boolean = false,
     var flightLandedInWater: Boolean = false,
     var productionSide: Boolean = false,
+    var factoryRally: Position? = null,
     /** Custom instance j; retained when the normal locomotion-aim gate is closed. */
     var terrainSpeedMultiplier: Double = 1.0,
     var carriedBy: String? = null,

@@ -1,6 +1,7 @@
 package com.rustedwarfare.reforge.core.sim
 
 import com.rustedwarfare.reforge.core.content.MapDefinition
+import com.rustedwarfare.reforge.core.content.IncomeProfile
 import com.rustedwarfare.reforge.core.content.BomberRules
 import com.rustedwarfare.reforge.core.content.AttackMovementProfile
 import com.rustedwarfare.reforge.core.content.MechFlameRules
@@ -695,7 +696,17 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
             return reject(action, "immobile-unit", "Unit cannot move")
         }
         val result = when (action) {
-            is UnitAction -> {
+            is UnitAction -> if (action.actionName == "setRally" && unit.definition.production?.rallyEnabled == true) {
+                if (!BuildingWork.isReady(unit)) return reject(action, "factory-under-construction", "Factory is under construction")
+                val point = action.target
+                if (action.cancelQueued == (point != null)) return reject(action, "invalid-rally-target", "Supply a rally point or clear it")
+                val map = currentScenario.map
+                if (point != null && !MapBounds.contains(map.widthTiles.toDouble() * map.tileWidth,
+                        map.heightTiles.toDouble() * map.tileHeight, point, 0.0))
+                    return reject(action, "invalid-rally-target", "Rally point is outside the map")
+                unit.factoryRally = point
+                ActionResult.Accepted(action.actionId, listOf(Event(if (point == null) "rally-cleared" else "rally-set", unit.unitId)))
+            } else {
                 val error = if (unit.definition.attachmentLayout != null) {
                     UnitAttachments.request(steps.current, unit, action,
                         buildingTerrain?.collisionMap ?: currentScenario.map)
@@ -1231,13 +1242,19 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
                     else updateAttackRoute(unit, currentScenario.map, step.stepIndex)
                 }
                 val fourLegged = unit.definition.mech?.kind == com.rustedwarfare.reforge.core.content.MechKind.FOUR_LEGGED
-                if ((unit.definition.groundHeight != null || com.rustedwarfare.reforge.core.content.NautilusRules.supports(unit.definition)) &&
+                val head = unit.tasks.firstOrNull()
+                if (unit.moveTarget == null && head?.factoryExit == true && unit.birthRemaining == 0f)
+                    unit.taskQueue = unit.taskQueue.pop()
+                val queuedMove = unit.tasks.firstOrNull()?.takeIf { it.kind == UnitTaskKind.MOVE }
+                if ((queuedMove?.startsAfterFactoryExit == true && unit.birthRemaining == 0f ||
+                        unit.definition.groundHeight != null || com.rustedwarfare.reforge.core.content.NautilusRules.supports(unit.definition)) &&
                     unit.definition.movement.type != MovementType.NONE && unit.moveTarget == null) {
-                    unit.tasks.firstOrNull()?.takeIf { it.kind == UnitTaskKind.MOVE }?.let { task ->
+                    queuedMove?.let { task ->
                         unit.moveTarget = task.target
                         unit.originMoveId = task.actionId
                         unit.originAtStep = task.atStep
                         resumeProductionRoute(unit, currentScenario.map, step.stepIndex)
+                        if (unit.moveTarget == null && task.startsAfterFactoryExit) unit.taskQueue = unit.taskQueue.pop()
                     }
                 }
                 if (fourLegged) updateUnit(unit, currentScenario.map, step.delta, step.stepIndex, candidate.motionSamples)
@@ -1444,7 +1461,7 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
             return SimulationError("reserved-unit-id", "Construction scenes reserve the constructed unit namespace")
         val players = input.players.map { it.playerId }.toSet()
         val incomes = input.unitDefinitions.values.mapNotNull { it.income }
-        if (incomes.any { !it.period.isFinite() || it.period < 1f || !it.credits.isFinite() || it.credits < 0f })
+        if (incomes.any { it.period !in 1f..IncomeProfile.MAX_PERIOD || !it.credits.isFinite() || it.credits < 0f })
             return SimulationError("unsupported-income", "Income requires a finite period of at least one tick and finite nonnegative credits")
         input.economyContract?.let { economy ->
             if (economy.initialBalances.keys != players || economy.initialBalances.values.any {
@@ -1582,14 +1599,22 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
                 m.reverseSpeedPercentage != 0.0 && definition.mech == null && m.type != MovementType.WATER) ||
                 definition.mech?.let { !it.isValid() || !bunker && !nautilus && !scout && !flameMech && !attachedProfile && m.type != (if (it.kind == com.rustedwarfare.reforge.core.content.MechKind.FOUR_LEGGED) MovementType.OVER_CLIFF else MovementType.LAND) } == true)
                 return SimulationError("unsupported-mech", "Expected the finite supported mech locomotion category")
-            if (definition.maintenance != null && !RepairBay.supports(definition) && !engineer && !scout && !spiderWork)
+            val authoredMaintenance = definition.maintenance == com.rustedwarfare.reforge.core.content.MaintenanceProfile.AUTHORED
+            if (authoredMaintenance != (definition.authoredMaintenance != null) || authoredMaintenance &&
+                    (definition.authoredMaintenance?.isValid() != true || definition.className != "AuthoredConstructor" ||
+                        definition.builder == null || definition.building != null || definition.combat != null))
+                return SimulationError("unsupported-maintenance", "Expected a finite authored constructor maintenance profile")
+            if (definition.maintenance != null && !authoredMaintenance && !RepairBay.supports(definition) && !engineer && !scout && !spiderWork)
                 return SimulationError("unsupported-repair-bay", "Expected the complete finite native repair bay capability")
             if (definition.reclaimPrice != null && definition.reclaimPrice < 0L)
                 return SimulationError("invalid-reclaim-price", "Explicit reclaim price must be nonnegative")
             definition.builder?.takeUnless { scout }?.let { builder ->
                 if (definition.fogOfWarSightRange < 15 || !engineer && !spiderWork && (m.type != MovementType.LAND || m.moveSpeed > .8 ||
-                    builder.range != 85f || builder.preparation != 30f || builder.decay != 1.3f ||
-                    builder.repairRate != .2f || builder.buildSpeedMultiplier != 1f || builder.mainNanoTurret != null) ||
+                    (if (authoredMaintenance) !(builder.range > 0f && builder.range <= 500f &&
+                        builder.repairRate > 0f && builder.repairRate <= 10f)
+                        else builder.range != 85f || builder.repairRate != .2f) ||
+                    builder.preparation != 30f || builder.decay != 1.3f ||
+                    builder.buildSpeedMultiplier != 1f || builder.mainNanoTurret != null) ||
                     builder.buildingTypeIds.isEmpty() || builder.buildingTypeIds.distinct().size != builder.buildingTypeIds.size ||
                     builder.buildingTypeIds.any { id ->
                         input.unitDefinitions[id]?.let { if (spiderWork) it.siteConstruction else it.construction } == null
@@ -1671,6 +1696,8 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
                     production.exitProfile == com.rustedwarfare.reforge.core.content.FactoryExitProfile.CUSTOM_NAUTILUS && !nautilus)
                     return SimulationError("unsupported-production", "Expected qualified current factory speed and exit")
                 val authoredFactory = com.rustedwarfare.reforge.core.content.AuthorFactoryRules.supports(definition, input.unitDefinitions)
+                if (production.rallyEnabled && !authoredFactory)
+                    return SimulationError("unsupported-production", "Rally points require a qualified authored factory")
                 if (production.exitProfile == com.rustedwarfare.reforge.core.content.FactoryExitProfile.NATIVE_EXPERIMENTAL &&
                     (!com.rustedwarfare.reforge.core.content.ExperimentalFactoryRules.supports(definition) ||
                         input.unitDefinitions["nautilusSubmarineLand"]?.let(com.rustedwarfare.reforge.core.content.NautilusRules::supports) != true))
@@ -1706,7 +1733,7 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
                         definition.production != null && !com.rustedwarfare.reforge.core.content.AuthorFactoryRules.supports(definition, input.unitDefinitions) ||
                         definition.builder != null || definition.combat != null ||
                         definition.upgrades != null && !com.rustedwarfare.reforge.core.content.AuthorFactoryRules.supports(definition, input.unitDefinitions) ||
-                        definition.income != null || definition.pointDefense != null))
+                        definition.income != null && definition.production != null || definition.pointDefense != null))
                     return SimulationError("unsupported-building", "Explicit author foundations require a finite plain construction body")
                 if (m.type != MovementType.NONE || definition.maximumHealth == null || definition.radius <= 0.0 ||
                     shape.left > 0 || shape.top > 0 || shape.right < 0 || shape.bottom < 0 ||
@@ -2989,6 +3016,7 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
                         AttachedUnitObservation(it.parentId, it.slot.number, checkNotNull(unit.definition.attachmentModule).empty)
                     },
                     attachmentOverview = attachments,
+                    factoryRally = unit.factoryRally.takeIf { unit.definition.production?.rallyEnabled == true && unit.alive },
                     submarine = unit.definition.submarine?.let { SubmarineObservation(unit.submarineSurfaceIntent,
                         unit.submarineVerticalSpeed, UnitLocomotion.isSubmerged(unit), unit.submarineSurfacePresentation,
                         UnitLocomotion.movement(unit).moveSpeed, UnitCombat.range(unit)) },

@@ -379,6 +379,16 @@ class SandboxGraphics private constructor(private val resources: SandboxRenderRe
                     primaryId: String? = null) {
         shapes.color = Color(0.45f, 0.5f, 0.47f, 1f)
         shapes.rect(projection.left.toFloat(), projection.bottom.toFloat(), projection.width.toFloat(), projection.height.toFloat())
+        for (factory in frame.observation.factoryQueues.filter { it.factoryId in selectedIds }) {
+            val target = factory.rally ?: continue
+            val unit = frame.observation.units.firstOrNull { it.unitId == factory.factoryId } ?: continue
+            val x = projection.x(target.x); val y = projection.y(target.y)
+            shapes.color = Color.CYAN
+            shapes.line(projection.x(unit.position.x), projection.y(unit.position.y), x, y)
+            shapes.line(x, y - 6f, x, y + 8f)
+            shapes.line(x, y + 8f, x + 9f, y + 4f)
+            shapes.line(x + 9f, y + 4f, x, y + 1f)
+        }
         val selectedSlots = frame.observation.units.asSequence().filter { it.unitId in selectedIds }
             .associate { it.unitId to it.attachmentOverview?.selectedSlot }
         for (unit in frame.observation.units) {
@@ -492,7 +502,8 @@ class SandboxGraphics private constructor(private val resources: SandboxRenderRe
             val sourceX = projection.x(preview.source.x); val sourceY = projection.y(preview.source.y)
             if (preview.minimumRange > 0.0)
                 shapes.circle(sourceX, sourceY, (preview.minimumRange * projection.scale).toFloat(), 96)
-            shapes.circle(sourceX, sourceY, (preview.maximumRange * projection.scale).toFloat(), 192)
+            if (preview.maximumRange > 0.0)
+                shapes.circle(sourceX, sourceY, (preview.maximumRange * projection.scale).toFloat(), 192)
             val x = projection.x(preview.position.x); val y = projection.y(preview.position.y)
             if (preview.areaRadius > 0.0) {
                 shapes.circle(x, y, (preview.areaRadius * projection.scale).toFloat(), 96)

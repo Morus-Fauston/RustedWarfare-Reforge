@@ -75,7 +75,7 @@ internal class PlayerObservationProjector(world: WorldHandle, scenario: Scenario
             if (it.ownerPlayerId != playerId) {
                 it.copy(moveTarget = null, pathPoints = emptyList(), attackTargetId = null, cooldown = null, pointDefense = null,
                     tasks = emptyList(), constructionTargetId = null, transportExit = null,
-                    transport = null, unitActions = null, attachmentOverview = null,
+                    transport = null, unitActions = null, attachmentOverview = null, factoryRally = null,
                     attachment = it.attachment?.takeIf { relation -> relation.parentUnitId in visibleIds },
                     submarine = it.submarine?.copy(surfaceIntent = null, verticalSpeed = null),
                     amphibiousJet = it.amphibiousJet?.copy(flyingIntent = null, verticalSpeed = null, canDive = null))
@@ -99,6 +99,7 @@ internal class PlayerObservationProjector(world: WorldHandle, scenario: Scenario
                 frame.reclaimedOwner(event.unitId) == playerId
             } else event.unitId != null && event.unitId in ids &&
                 (!(event.kind.startsWith("production-") || event.kind.startsWith("upgrade-") || event.kind.startsWith("unit-action-") ||
+                    event.kind == "rally-set" || event.kind == "rally-cleared" ||
                     event.kind in setOf("construction-unavailable", "construction-insufficient-funds", "construction-queue-full", "maintenance-completed",
                         "submarine-surface-requested", "submarine-dive-requested",
                         "amphibious-fly-requested", "amphibious-dive-requested",
@@ -154,7 +155,7 @@ internal class PlayerObservationProjector(world: WorldHandle, scenario: Scenario
             visible.filter { it.ownerPlayerId == playerId && it.alive &&
                 it.typeId in factoryTypes }.sortedBy { it.unitId }.map { factory ->
                     FactoryQueueObservation(factory.unitId, observation.economy?.queuedProduction?.getValue(factory.unitId).orEmpty()
-                        .map { ProductionQueueItem(it.typeId, it.progress) })
+                        .map { ProductionQueueItem(it.typeId, it.progress) }, factory.factoryRally)
                 } else emptyList()
         val playerUpgrades = if (localControl)
             visible.filter { it.ownerPlayerId == playerId && it.alive && it.typeId in upgradeTypes }
