@@ -327,7 +327,7 @@ class PlatformIntentTest(unittest.TestCase):
         snapshot=Path('owned-snapshot');evidence=Path('owned-evidence')
         plan = dict(testScene={}, windowsDefaultStart=True, scenarioId='public.phase-six-a-command-json.v1')
         args,title=startup_arguments(plan,snapshot,evidence)
-        self.assertEqual(['--evidence',str(evidence),'--visuals','placeholder'],args)
+        self.assertEqual(['--development','true','--evidence',str(evidence),'--visuals','placeholder'],args)
         self.assertEqual('RustedWarfare-Reforge | Phase VI A sandbox',title)
         explicit,title=startup_arguments({},snapshot,evidence)
         self.assertEqual(['--mode','sandbox','--inputs',str(snapshot),'--evidence',str(evidence),'--visuals','placeholder'],explicit)

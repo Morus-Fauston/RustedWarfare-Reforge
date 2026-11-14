@@ -91,7 +91,7 @@ class ActionLayout:
         return self._client(ux,uy)
 
 
-def wait_layout(wait, generation, size, after_revision=None):
+def wait_layout(wait, generation, size, after_revision=None, enabled_action=None):
     found=[]
     def ready(rows):
         scope=generation
@@ -102,6 +102,9 @@ def wait_layout(wait, generation, size, after_revision=None):
         try:layout=ActionLayout(rows,scope,size)
         except LayoutPending:return False
         if after_revision is not None and layout.frame['layoutRevision'] <= after_revision:
+            return False
+        if enabled_action is not None and not any(action['actionId']==enabled_action and action['enabled'] is True
+                                                  for action in layout.frame['actions']):
             return False
         found.append(layout)
         return True

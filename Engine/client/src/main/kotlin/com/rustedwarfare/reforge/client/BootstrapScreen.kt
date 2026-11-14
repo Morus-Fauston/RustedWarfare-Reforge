@@ -7,6 +7,7 @@ import com.badlogic.gdx.graphics.OrthographicCamera
 import com.badlogic.gdx.graphics.Pixmap
 import com.badlogic.gdx.graphics.Texture
 import com.badlogic.gdx.graphics.g2d.BitmapFont
+import com.badlogic.gdx.graphics.g2d.Batch
 import com.badlogic.gdx.graphics.g2d.SpriteBatch
 import com.badlogic.gdx.graphics.glutils.ShapeRenderer
 import com.badlogic.gdx.math.Vector2
@@ -38,7 +39,12 @@ class BootstrapScreen(
     private val testScenarioSeed: Path? = null,
     private val selectDefaultTestScenario: Boolean = false,
     private val alternateStartSeed: Path? = null,
+    private val development: Boolean = false,
+    private val initialContent: Boolean = true,
+    openSetup: Boolean = true,
 ) : ApplicationAdapter() {
+    private enum class StartupPage { HOME, SETUP, CONTENT, RESOURCES, DEVELOPMENT }
+    private data class ContentCandidate(val root: Path, val content: ContentPackChoice?)
     private lateinit var batch: SpriteBatch
     private lateinit var shapes: ShapeRenderer
     private lateinit var skin: Skin
@@ -60,11 +66,11 @@ class BootstrapScreen(
     private lateinit var commandPanel: Table
     private var commandConsoleOpen = false
     private lateinit var rootField: TextField
+    private lateinit var titleLabel: Label
     private lateinit var selectedLabel: Label
     private lateinit var selectionHeading: Label
     private lateinit var productionNoticeLabel: Label
     private lateinit var statusLabel: Label
-    private lateinit var messageLabel: Label
     private lateinit var stopButton: TextButton
     private lateinit var patrolButton: TextButton
     private lateinit var depthButton: TextButton
@@ -137,18 +143,33 @@ class BootstrapScreen(
     private var packPanel: ContentPackPanel? = null
     private lateinit var visualsTab: TextButton
     private lateinit var packTab: TextButton
-    private var showContentPack = visualSettings == null
-    private var showTestScenarios = false
+    private lateinit var setupButton: TextButton
+    private lateinit var retryContentButton: TextButton
+    private lateinit var menuBackButton: TextButton
+    private lateinit var quitButton: TextButton
+    private lateinit var previewHeading: Label
+    private lateinit var startupTitle: Label
+    private lateinit var startupStatus: Label
+    private lateinit var startupNotice: ScrollPane
+    private lateinit var startupFrame: Image
+    private lateinit var mapPreview: Actor
+    private var startupPage = if (openSetup) StartupPage.SETUP else StartupPage.HOME
+    private var settingsBack = startupPage
+    private val qualification = SandboxLoader()
+    private var contentInput: String? = null
+    private var contentCandidate: ContentCandidate? = null
+    private var qualifiedContent: Result<LoadedSandbox>? = null
     private val testScenes = TestScenarioMenu().apply {
-        if (selectDefaultTestScenario) choose(requireNotNull(testScenarioSeed))
+        if (development && selectDefaultTestScenario) choose(requireNotNull(testScenarioSeed))
     }
     private var testScenePanel: TestScenarioPanel? = null
     private lateinit var testSceneTab: TextButton
-    private var customRootText = initialRoot.toAbsolutePath().normalize().toString()
+    private var customRootText = if (initialContent) initialRoot.toAbsolutePath().normalize().toString() else ""
     private val launch = SandboxLaunchState(SandboxConfiguration(initialRoot.toAbsolutePath().normalize(), SandboxOptions(), visualState?.selection ?: VisualAssetSelection()))
     private var activeVisuals: PreparedVisualAssets? = null
     private var pendingLoad: SandboxLoad? = null
     private var loading = false
+    private var loadingDrawn = false
     private var menuDrawn = false
     private var menuEpoch = 0L
     private var lastStartAvailable: Boolean? = null
@@ -206,7 +227,7 @@ class BootstrapScreen(
             it.setBounds(x, y - h, w, h); it.setAlignment(Align.topLeft); it.setWrap(true)
             it.touchable = Touchable.disabled; stage.addActor(it)
         }
-        label("RustedWarfare-Reforge", 16f, 628f, 440f, 28f).setFontScale(1.3f)
+        titleLabel = label("RustedWarfare-Reforge", 16f, 628f, 440f, 28f).apply { setFontScale(1.3f) }
         productionLabel = label("", 470f, 628f, 474f, 28f)
         rateButtons.clear()
         OfflineRate.entries.forEachIndexed { index, rate ->
@@ -352,7 +373,6 @@ class BootstrapScreen(
         }
         statusLabel = label("", 16f, 52f, 480f, 44f)
         productionNoticeLabel = label("", 16f, 84f, 400f, 24f)
-        messageLabel = label("Loading", 40f, 400f, 560f, 260f)
         stopButton = button("Stop (S)", 752f, 168f, 84f) { mapInput.cancel(); session?.stop(); updateHud() }
         patrolButton = button("Patrol (P)", 844f, 168f, 84f) { mapInput.beginPatrol(); updateHud() }
         depthButton = TextButton("Surface", skin).also { actor ->
@@ -388,12 +408,19 @@ class BootstrapScreen(
             customActionButtons[name] = actor
             stage.addActor(actor)
         }
-        exitButton = button("Exit match", 752f, 72f, 176f) { leaveMatch() }
+        exitButton = button("Return to menu", 752f, 72f, 176f) { leaveMatch() }
         contentLabel = label("Content folder", 752f, 378f, 176f, 24f)
-        rootField = TextField(launch.configuration.root.toString(), skin).also {
+        rootField = TextField(testScenes.choice?.root?.toString() ?: customRootText, skin).also {
             it.setOnlyFontChars(false)
             it.setBounds(752f, 312f, 176f, 34f); stage.addActor(it)
             it.isDisabled = touchControls
+            it.addListener(object : ChangeListener() {
+                override fun changed(event: ChangeEvent, actor: Actor) {
+                    if (!testScenes.selected) customRootText = it.text
+                    lastHudState = null
+                    updateHud()
+                }
+            })
         }
         modeBox = SelectBox<String>(skin).also {
             it.setItems("NoFog", "Memory", "Hardcore")
@@ -440,12 +467,70 @@ class BootstrapScreen(
             })
             stage.addActor(it)
         }
+        startupFrame = Image(skin.newDrawable("white", Color(.14f, .17f, .15f, 1f))).also {
+            it.touchable = Touchable.disabled
+            stage.addActor(it)
+            it.zIndex = 0
+        }
+        startupTitle = label("", 130f, 616f, 700f, 52f).apply { setAlignment(Align.center); setFontScale(1.9f) }
+        previewHeading = label("", 178f, 449f, 256f, 52f).apply { setAlignment(Align.topLeft) }
+        mapPreview = object : Actor() {
+            override fun draw(batch: Batch, parentAlpha: Float) {
+                val map = testScenes.choice?.scenario?.map ?: qualifiedContent?.getOrNull()?.scenario?.map ?: return
+                val scale = minOf(width / (map.widthTiles * map.tileWidth), height / (map.heightTiles * map.tileHeight))
+                val cellWidth = map.tileWidth * scale
+                val cellHeight = map.tileHeight * scale
+                val left = x + (width - cellWidth * map.widthTiles) / 2
+                val bottom = y + (height - cellHeight * map.heightTiles) / 2
+                val columnStride = (map.widthTiles / 80).coerceAtLeast(1)
+                val rowStride = (map.heightTiles / 60).coerceAtLeast(1)
+                val original = batch.packedColor
+                val tile = skin.getRegion("white")
+                for (row in 0 until map.heightTiles step rowStride) for (col in 0 until map.widthTiles step columnStride) {
+                    when {
+                        map.isResourcePool(col, row) -> batch.setColor(.76f, .72f, .44f, parentAlpha)
+                        map.blocking.isBlocked(col, row) -> batch.setColor(.22f, .34f, .36f, parentAlpha)
+                        else -> batch.setColor(.47f, .54f, .37f, parentAlpha)
+                    }
+                    val tilesHigh = minOf(rowStride, map.heightTiles - row)
+                    batch.draw(tile, left + col * cellWidth, bottom + (map.heightTiles - row - tilesHigh) * cellHeight,
+                        minOf(columnStride, map.widthTiles - col) * cellWidth, tilesHigh * cellHeight)
+                }
+                batch.packedColor = original
+            }
+        }.apply { setBounds(178f, 213f, 256f, 174f); touchable = Touchable.disabled }
+        stage.addActor(mapPreview)
+        startupStatus = Label("", skin).apply { setAlignment(Align.center); setWrap(true) }
+        startupNotice = ScrollPane(startupStatus, ScrollPane.ScrollPaneStyle().apply {
+            vScrollKnob = skin.newDrawable("white", Color(.45f, .55f, .48f, 1f)).apply { minWidth = 6f }
+        }).apply {
+            setBounds(146f, 122f, 668f, 48f)
+            setScrollingDisabled(true, false)
+            setFadeScrollBars(false)
+            setOverscroll(false, false)
+            addListener(object : InputListener() {
+                override fun enter(event: InputEvent, x: Float, y: Float, pointer: Int, fromActor: Actor?) {
+                    if (pointer == -1) this@BootstrapScreen.stage.scrollFocus = this@apply
+                }
+            })
+        }
+        stage.addActor(startupNotice)
+        retryContentButton = button("Check again", 178f, 174f, 144f) {
+            resetContentQualification()
+            refreshContentQualification()
+            updateHud()
+        }.apply { height = 34f }
+        setupButton = button("Skirmish", 346f, 359f, 268f) { showStartupPage(StartupPage.SETUP) }
+        menuBackButton = button("Back", 146f, 76f, 136f) {
+            showStartupPage(if (startupPage == StartupPage.SETUP) StartupPage.HOME else settingsBack)
+        }
+        quitButton = button("Quit", 346f, 187f, 268f) { Gdx.app.exit() }
         startButton = button("Start", 752f, 96f, 176f) { requestLoad() }
         visualPanel = visualState?.let { state -> VisualAssetSettingsPanel(state, skin, visualSettings?.let { it::createUiFont },
             contentChoice = { testScenes.choice?.content ?: packState.choice() }) {
             evidence.recordVisualAssetMenu(state)
             loadError = null; lastHudState = null; updateHud()
-        }.also { it.setBounds(40f, 120f, 660f, 440f); stage.addActor(it) } }
+        }.also { it.setBounds(150f, 114f, 660f, 440f); stage.addActor(it) } }
         packPanel = ContentPackPanel(packState, skin, visualSettings?.let { it::createUiFont }) {
             if (visualState?.busy == true) visualState.cancel()
             evidence.recordWhenEnabled("content-pack-menu") { mapOf("busy" to packState.busy,
@@ -457,17 +542,19 @@ class BootstrapScreen(
                     "packageId" to origin.packageId, "entryPath" to origin.entryPath.toString(),
                     "replacedPackageIds" to origin.replacedPackageIds) }) }
             loadError = null; lastHudState = null; updateHud()
-        }.also { it.setBounds(40f, 120f, 660f, 440f); stage.addActor(it) }
+        }.also { it.setBounds(150f, 114f, 660f, 440f); stage.addActor(it) }
         visualsTab = button("Resource packs", 40f, 568f, 176f) {
-            showTestScenarios = false; showContentPack = false; lastHudState = null; updateHud()
+            openSettingsPage(StartupPage.RESOURCES)
         }
         packTab = button("Content pack", 232f, 568f, 176f) {
-            if (testScenes.selected) rootField.text = customRootText
-            showTestScenarios = false; testScenes.useCustomContent()
-            showContentPack = true; lastHudState = null; updateHud()
+            if (testScenes.selected) {
+                testScenes.useCustomContent()
+                rootField.text = customRootText
+            }
+            openSettingsPage(StartupPage.CONTENT)
         }
-        testSceneTab = button(if (alternateStartSeed == null) "Test scenes" else "Starting units", 424f, 568f, 176f) {
-            showTestScenarios = true; lastHudState = null; updateHud()
+        testSceneTab = button(if (alternateStartSeed == null) "Development" else "Starting units", 424f, 568f, 176f) {
+            openSettingsPage(StartupPage.DEVELOPMENT)
         }
         testScenePanel = TestScenarioPanel(testScenes, testScenarioSeed, alternateStartSeed, skin,
             visualSettings?.let { it::createUiFont }) {
@@ -481,7 +568,7 @@ class BootstrapScreen(
                 "seed" to selected?.seed?.toString(), "inputRoot" to selected?.root?.toString(),
                 "unitId" to selected?.content?.unitId, "error" to testScenes.error))
             loadError = null; lastHudState = null; updateHud()
-        }.also { it.setBounds(40f, 120f, 660f, 440f); stage.addActor(it) }
+        }.also { it.setBounds(150f, 114f, 660f, 440f); stage.addActor(it) }
         mapInput = SandboxInput({ session }, { graphics?.projection }, { x, y ->
             viewport.unproject(Vector2(x.toFloat(), y.toFloat())).let {
                 Position(it.x.toDouble() * battlefieldWidth / viewport.worldWidth, it.y.toDouble())
@@ -560,7 +647,7 @@ class BootstrapScreen(
             }
 
             override fun keyDown(keycode: Int): Boolean {
-                if (keycode == Input.Keys.SLASH && !commandConsoleOpen && !paused && !loading &&
+                if (development && keycode == Input.Keys.SLASH && !commandConsoleOpen && !paused && !loading &&
                     !touchControls && session?.canDeploy == true && stage.keyboardFocus !is TextField) {
                     mapInput.cancel()
                     commandConsoleOpen = true
@@ -570,7 +657,16 @@ class BootstrapScreen(
                     evidence.record("sandbox-console", mapOf("generation" to generation, "open" to true))
                     return true
                 }
-                if (!commandConsoleOpen) return false
+                if (!commandConsoleOpen) {
+                    if ((keycode == Input.Keys.ESCAPE || touchControls && keycode == Input.Keys.BACK) && session == null) {
+                        if (loading) leaveMatch()
+                        else if (startupPage == StartupPage.SETUP) showStartupPage(StartupPage.HOME)
+                        else if (startupPage != StartupPage.HOME) showStartupPage(settingsBack)
+                        else return false
+                        return true
+                    }
+                    return false
+                }
                 if (keycode == Input.Keys.ESCAPE) {
                     closeCommandConsole(); updateHud(); return true
                 }
@@ -585,8 +681,7 @@ class BootstrapScreen(
         }, stage, object : InputAdapter() {
             override fun keyDown(keycode: Int): Boolean {
                 if (!touchControls || keycode != Input.Keys.BACK) return false
-                leaveMatch()
-                Gdx.app.exit()
+                if (session != null) leaveMatch() else Gdx.app.exit()
                 return true
             }
         }, mapInput)
@@ -653,6 +748,55 @@ class BootstrapScreen(
             stage.addActor(button)
         }
 
+    private fun showStartupPage(value: StartupPage) {
+        if (loading || session != null) return
+        modeBox.hideList()
+        packPanel?.closeLists()
+        startupPage = value
+        stage.cancelTouchFocus()
+        stage.unfocusAll()
+        lastHudState = null
+        updateHud()
+    }
+
+    private fun openSettingsPage(value: StartupPage) {
+        if (startupPage == StartupPage.HOME || startupPage == StartupPage.SETUP) settingsBack = startupPage
+        showStartupPage(value)
+    }
+
+    private fun resetContentQualification() {
+        qualification.cancel()
+        contentInput = null
+        contentCandidate = null
+        qualifiedContent = null
+        lastHudState = null
+    }
+
+    private fun refreshContentQualification() {
+        if (!launch.canEdit) return
+        val input = rootField.text.takeIf { !testScenes.selected && packState.canStart && it.isNotBlank() }
+        val content = if (input == null) null else packState.choice()
+        if (input != contentInput || content != contentCandidate?.content) {
+            contentInput = input
+            qualification.cancel()
+            contentCandidate = null
+            qualifiedContent = null
+            lastHudState = null
+            if (input != null) runCatching { ContentCandidate(Paths.get(input).toAbsolutePath().normalize(), content) }
+                .onSuccess { candidate ->
+                    contentCandidate = candidate
+                    qualification.qualify(candidate.root, content)
+                }.onFailure { failure -> qualifiedContent = Result.failure(failure) }
+        }
+        qualification.pollPrepared()?.let { result ->
+            qualifiedContent = result
+            lastHudState = null
+        }
+    }
+
+    private fun canStartMatch(): Boolean = visualState?.canStart != false &&
+        if (testScenes.selected) testScenes.choice != null else packState.canStart && qualifiedContent?.isSuccess == true
+
     private fun requestLoad() {
         if (loading) {
             evidence.record("load-request-ignored", mapOf("generation" to generation, "reason" to "already-loading"))
@@ -660,12 +804,13 @@ class BootstrapScreen(
         }
         try {
             val request = if (launch.canEdit) {
-                check(visualState?.canStart != false) { visualState?.error ?: "Save and apply the visual selection first" }
-                check(testScenes.canStart) { testScenes.error ?: "Choose a valid test scenario first" }
-                check(testScenes.selected || packState.canStart) { packState.error ?: "Finish checking the content package first" }
+                refreshContentQualification()
+                if (!canStartMatch()) return
                 val scene = testScenes.choice
-                launch.configure(launch.configuration.copy(root = scene?.root ?: Paths.get(rootField.text).toAbsolutePath().normalize(),
-                    visuals = visualState?.selection ?: launch.configuration.visuals, contentPack = scene?.content ?: packState.choice(), testScenario = scene))
+                val content = contentCandidate
+                launch.configure(launch.configuration.copy(root = scene?.root ?: checkNotNull(content).root,
+                    visuals = visualState?.selection ?: launch.configuration.visuals,
+                    contentPack = scene?.content ?: content?.content, testScenario = scene))
                 launch.start()
             } else launch.reopen()
             val acceptedNanos = System.nanoTime()
@@ -675,6 +820,7 @@ class BootstrapScreen(
             generation = request.generation
             activeRoot = request.configuration.root
             loading = true
+            loadingDrawn = false
             loadError = null
             evidence.record("load-request", mapOf("generation" to generation, "root" to activeRoot.toString(),
                 "acceptedNanos" to acceptedNanos, "menuEpoch" to menuEpoch,
@@ -695,14 +841,21 @@ class BootstrapScreen(
     }
 
     private fun leaveMatch() {
+        val cancelled = loading
+        val released = session != null
+        val previousGeneration = generation
         closeMatchResources()
         launch.exit()
         launch.configure(launch.configuration.copy(options = launch.configuration.options.copy(deploymentEnabled = false)))
         if (::deploymentBox.isInitialized) deploymentBox.isChecked = false
         if (visualState?.busy == true) visualState.cancel()
+        startupPage = StartupPage.SETUP
+        settingsBack = StartupPage.SETUP
+        lastHudState = null
         menuDrawn = false
         if (presentationReady) { stage.unfocusAll(); updateHud() }
-        evidence.record("match-exit", mapOf("generation" to generation))
+        if (cancelled || released) evidence.record(if (cancelled) "load-cancelled" else "match-exit",
+            mapOf("generation" to previousGeneration, "menuGeneration" to launch.generation))
     }
 
     private fun closeMatchResources() {
@@ -733,6 +886,8 @@ class BootstrapScreen(
         pendingLoad?.let { launch.fail(it.generation) }
         pendingLoad = null
         loading = false
+        resetContentQualification()
+        startupPage = StartupPage.SETUP
         loadError = failure.message ?: failure.toString()
         preserveFailure(failure) {
             evidence.recordWhenEnabled("load-error") { mapOf("generation" to generation, "message" to loadError) }
@@ -743,7 +898,8 @@ class BootstrapScreen(
 
     override fun render() {
         if (!presentationReady || disposed) return
-        if (loading) loader.pollPrepared()?.fold(onSuccess = { loaded ->
+        refreshContentQualification()
+        if (loading && loadingDrawn) loader.pollPrepared()?.fold(onSuccess = { loaded ->
             val scenario = loaded.scenario
             val request = pendingLoad ?: return@fold
             var pendingGraphics: SandboxGraphics? = null
@@ -825,7 +981,7 @@ class BootstrapScreen(
         viewport.apply()
         batch.projectionMatrix = viewport.camera.combined
         shapes.projectionMatrix = viewport.camera.combined
-        if (touchControls || current == null) {
+        if (touchControls && current != null) {
             shapes.begin(ShapeRenderer.ShapeType.Filled)
             shapes.color = Color(0.105f, 0.13f, 0.12f, 1f)
             if (touchControls) shapes.rect(736f, 0f, 224f, 592f)
@@ -855,9 +1011,10 @@ class BootstrapScreen(
             graphics.drawMinimap(shapes, current.frame)
         }
         stage.act(Gdx.graphics.deltaTime); stage.draw()
+        loadingDrawn = loading
         val drawnNanos = System.nanoTime()
         if (current == null && !loading && launch.canEdit) {
-            val available = !startButton.isDisabled
+            val available = startButton.isVisible && !startButton.isDisabled
             if (!menuDrawn) {
                 menuEpoch++
                 evidence.record("startup-menu-drawn", mapOf("menuEpoch" to menuEpoch, "drawnNanos" to drawnNanos,
@@ -889,11 +1046,15 @@ class BootstrapScreen(
             entries += DrawnAction(id, actor, actor.text.toString(), enabled = !actor.isDisabled)
         }
         button("start-match", startButton); button("exit-match", exitButton)
+        button("skirmish-setup", setupButton); button("startup-back", menuBackButton)
+        button("check-start-content", retryContentButton)
         rateButtons.forEach { (rate, actor) -> button("set-speed:${rate.multiplier}", actor) }
         button("pause-simulation", simulationPauseButton)
         button("content-tab", packTab)
         button("resource-tab", visualsTab)
         button("test-scenes-tab", testSceneTab)
+        entries += DrawnAction("match-vision-mode", modeBox, modeBox.selected, enabled = !modeBox.isDisabled)
+        entries += DrawnAction("match-shared-vision", shareBox, shareBox.text.toString(), enabled = !shareBox.isDisabled)
         entries += DrawnAction("content-root", rootField, rootField.text, enabled = !rootField.isDisabled)
         testScenePanel?.let { entries += it.drawnActions() }
         visualPanel?.let { entries += it.drawnActions() }
@@ -1211,7 +1372,7 @@ class BootstrapScreen(
         commandField.isVisible = showConsole
         commandFeedbackLabel.isVisible = showConsole
         commandFeedbackLabel.setText(current?.sandboxCommandFeedback ?: "")
-        commandHintLabel.isVisible = current?.canDeploy == true && !showConsole && !touchControls
+        commandHintLabel.isVisible = development && current?.canDeploy == true && !showConsole && !touchControls
         val menu = current?.actionMenu
         val selected = current?.observation?.units?.find { it.unitId == current.selectedId }
         val naval = selected?.transport != null && menu?.unitActions?.any { it.name == "buildAntiNuke" } == true
@@ -1238,7 +1399,7 @@ class BootstrapScreen(
             (selected.pointDefense?.let { String.format(Locale.ROOT, "\nEnergy %.3f%s", it.energy,
                 if (it.exhausted) " LOCKED" else "") } ?: ""))
         val queue = menu?.factoryQueue
-        selectionHeading.isVisible = !nativePanel
+        selectionHeading.isVisible = current != null && !nativePanel
         val notice = current?.productionNotice
         productionNoticeLabel.isVisible = nativePanel && notice != null && current.observation.stepIndex - notice.step < 240
         productionNoticeLabel.setText(notice?.text ?: "")
@@ -1436,32 +1597,96 @@ class BootstrapScreen(
             selected?.unitActions?.stockpile != null || selected?.attachmentOverview != null)
             patrolLabel.isVisible = false
         selectedLabel.isVisible = current != null
-        listOf<Actor>(contentLabel, rootField, modeBox, shareBox).forEach { it.isVisible = launch.canEdit }
-        groupButtons.forEachIndexed { index, button -> button.setText("${index + 1} (${state.groups[index]})"); button.isDisabled = current == null }
-        rootField.isDisabled = touchControls || !launch.canEdit || testScenes.selected
-        modeBox.isDisabled = !launch.canEdit
-        shareBox.isDisabled = !launch.canEdit
-        deploymentBox.isVisible = launch.canEdit && !touchControls
-        deploymentBox.isDisabled = loading || !launch.canEdit || touchControls
-        noNukesBox.isVisible = launch.canEdit
-        noNukesBox.isDisabled = loading || !launch.canEdit
-        startButton.setText(if (launch.canEdit) "Start" else "Reopen")
-        startButton.isDisabled = loading || launch.canEdit && (visualState?.canStart == false || !testScenes.canStart || !testScenes.selected && !packState.canStart)
-        visualsTab.isVisible = current == null && visualPanel != null
-        packTab.isVisible = current == null
-        testSceneTab.isVisible = current == null && testScenarioSeed != null && (!touchControls || alternateStartSeed != null)
+        val setup = current == null && !loading && startupPage == StartupPage.SETUP
+        val home = current == null && !loading && startupPage == StartupPage.HOME
+        val managing = current == null && !loading && !setup && !home
+        titleLabel.isVisible = current != null
+        statusLabel.isVisible = current != null
+        groupButtons.forEachIndexed { index, actor ->
+            actor.setText("${index + 1} (${state.groups[index]})"); actor.isVisible = current != null
+        }
+        val editable = launch.canEdit && !loading
+        startupFrame.isVisible = current == null
+        if (home) startupFrame.setBounds(286f, 159f, 388f, 280f)
+        else startupFrame.setBounds(124f, 60f, 712f, 493f)
+        startupTitle.isVisible = current == null
+        startupTitle.setText(when {
+            loading -> "Loading match"
+            home -> "RustedWarfare-Reforge"
+            setup -> "Skirmish setup"
+            startupPage == StartupPage.DEVELOPMENT -> "Development"
+            else -> "RustedWarfare-Reforge"
+        })
+        setupButton.isVisible = home
+        retryContentButton.isVisible = setup && !testScenes.selected && qualifiedContent?.isFailure == true
+        quitButton.isVisible = home
+        menuBackButton.isVisible = setup || managing
+        previewHeading.isVisible = setup
+        mapPreview.isVisible = setup
+        val prepared = testScenes.choice?.scenario ?: qualifiedContent?.getOrNull()?.scenario
+        previewHeading.setText(prepared?.let { scenario ->
+            "${testScenes.choice?.name ?: contentCandidate?.content?.pack?.name ?: "Selected map"}\n" +
+            "${scenario.map.widthTiles} x ${scenario.map.heightTiles} tiles"
+        } ?: "No map selected")
+        val startupMessage = when {
+            loading -> state.preparationStatus ?: "Preparing content and resources..."
+            loadError != null -> loadError
+            testScenes.selected && testScenes.error != null -> testScenes.error
+            packState.error != null -> packState.error
+            packState.compositionError != null -> packState.compositionError
+            qualifiedContent?.isFailure == true -> qualifiedContent?.exceptionOrNull()?.message
+            visualState?.canStart == false -> visualState.error ?: "Apply the resource selection before starting."
+            contentCandidate != null && qualifiedContent == null -> "Checking map and content..."
+            !canStartMatch() -> "Choose a checked content folder and enable any content packs you want to use."
+            else -> ""
+        }.orEmpty()
+        startupNotice.isVisible = (loading || setup) && startupMessage.isNotEmpty()
+        if (!startupStatus.textEquals(startupMessage)) {
+            startupStatus.setText(startupMessage)
+            startupNotice.scrollY = 0f
+        }
+        contentLabel.isVisible = setup
+        contentLabel.setBounds(488f, 420f, 296f, 24f)
+        rootField.isVisible = setup
+        rootField.setBounds(488f, 379f, 296f, 36f)
+        rootField.isDisabled = touchControls || !editable || testScenes.selected
+        modeBox.isVisible = setup
+        modeBox.setBounds(488f, 323f, 296f, 40f)
+        modeBox.isDisabled = !editable
+        shareBox.isVisible = setup
+        shareBox.setBounds(488f, 268f, 296f, 40f)
+        shareBox.isDisabled = !editable
+        noNukesBox.isVisible = setup
+        noNukesBox.setBounds(488f, 220f, 296f, 36f)
+        noNukesBox.isDisabled = !editable
+        deploymentBox.isVisible = setup && development && !touchControls
+        deploymentBox.setBounds(488f, 174f, 296f, 36f)
+        deploymentBox.isDisabled = !editable || !development || touchControls
+        startButton.isVisible = setup || current != null
+        startButton.setText(if (setup) "Start" else "Reopen")
+        startButton.isDisabled = loading || setup && !canStartMatch()
+        if (setup) startButton.setBounds(666f, 76f, 148f, 40f)
+        exitButton.isVisible = loading || current != null
+        exitButton.setText(if (loading) "Cancel" else "Return")
+        if (loading) exitButton.setBounds(406f, 76f, 148f, 40f)
+        packTab.isVisible = setup || home
+        packTab.setBounds(if (home) 346f else 298f, if (home) 305f else 76f, if (home) 268f else 112f, 40f)
+        visualsTab.isVisible = (setup || home) && visualPanel != null
+        visualsTab.setBounds(if (home) 346f else 422f, if (home) 251f else 76f, if (home) 268f else 110f, 40f)
+        testSceneTab.isVisible = (setup || home) && development && testScenarioSeed != null && !touchControls
+        testSceneTab.setBounds(if (home) 346f else 544f, if (home) 132f else 76f, if (home) 268f else 110f, 40f)
         testScenePanel?.let {
-            it.isVisible = current == null && showTestScenarios
+            it.isVisible = managing && startupPage == StartupPage.DEVELOPMENT
             it.setEditable(launch.canEdit && !loading)
             it.refresh(if (loading) state.preparationStatus ?: "Preparing scene..." else loadError)
         }
         visualPanel?.let {
-            it.isVisible = current == null && !showContentPack && !showTestScenarios
+            it.isVisible = managing && startupPage == StartupPage.RESOURCES
             it.setEditable(launch.canEdit && !loading)
             it.setStatus(if (loading) state.preparationStatus ?: "Preparing scene..." else loadError)
         }
         packPanel?.let {
-            it.isVisible = current == null && showContentPack && !showTestScenarios
+            it.isVisible = managing && startupPage == StartupPage.CONTENT
             it.setEditable(launch.canEdit && !loading)
             it.setStatus(if (loading) state.preparationStatus ?: "Preparing scene..." else loadError)
         }
@@ -1475,8 +1700,6 @@ class BootstrapScreen(
             nativePanel -> current.playerFeedback
             else -> "${current.feedback}\nStep ${current.observation.stepIndex}"
         })
-        messageLabel.isVisible = current == null && visualPanel == null
-        messageLabel.setText(if (loading) "Loading" else loadError ?: "Ready")
         minimapActor.isVisible = current != null
         val ownerHeading = menu?.let { desktopPrimaryHeading(it, state.selected, state.selectedIds) }
         battleActions.update(current?.selectedId, ownerHeading,
@@ -1641,7 +1864,7 @@ class BootstrapScreen(
         if (disposed) return
         disposed = true
         Gdx.input.inputProcessor = null
-        listOf<() -> Unit>({ leaveMatch() }, { loader.close() }, { visualState?.close() }, { packState.close() }, { releasePresentation() }).forEach { cleanup ->
+        listOf<() -> Unit>({ leaveMatch() }, { loader.close() }, { qualification.close() }, { visualState?.close() }, { packState.close() }, { releasePresentation() }).forEach { cleanup ->
             try { cleanup() } catch (failure: Exception) { Gdx.app.error("p001-dispose", "Cleanup failed", failure) }
         }
         evidence.record("application-disposed", emptyMap())

@@ -3,6 +3,7 @@ package com.rustedwarfare.reforge.pc
 import com.badlogic.gdx.backends.lwjgl3.Lwjgl3Application
 import com.badlogic.gdx.backends.lwjgl3.Lwjgl3ApplicationConfiguration
 import com.rustedwarfare.reforge.client.BootstrapScreen
+import com.rustedwarfare.reforge.client.ClientEvidence
 import com.rustedwarfare.reforge.client.DemoStartupScreen
 import java.nio.file.Path
 
@@ -39,7 +40,9 @@ fun main(args: Array<String>) {
     }
     val inputs = requireNotNull(options.inputs)
     val output = options.evidence
-    JsonlEvidence(output, runId, inputs).use { evidence ->
+    val diagnostics = if (options.diagnostics) JsonlEvidence(output, runId, inputs) else null
+    diagnostics.use { sink ->
+        val evidence = sink ?: ClientEvidence.NONE
         val config = Lwjgl3ApplicationConfiguration().apply {
             setTitle(options.title)
             if (options.backgroundInput) {
@@ -60,12 +63,14 @@ fun main(args: Array<String>) {
         try {
             val screen = BootstrapScreen(inputs, evidence,
                 visualSettings = visualSettings, soundFactory = PcPlaybackSoundFactory(),
-                testScenarioSeed = options.testScenarioSeed ?: sceneRoot.resolve("dual-ship-production.json"),
+                testScenarioSeed = if (options.development) options.testScenarioSeed ?: sceneRoot.resolve("dual-ship-production.json") else null,
                 selectDefaultTestScenario = options.testScenarioSeed != null,
-                alternateStartSeed = options.testScenarioSeed?.resolveSibling("phase-six-a-spider-json.json"))
-            val client = WindowPerfSampling(screen, evidence)
+                alternateStartSeed = options.testScenarioSeed?.resolveSibling("phase-six-a-spider-json.json"),
+                development = options.development, initialContent = options.development || args.contains("--inputs"),
+                openSetup = options.development || args.contains("--inputs"))
+            val client = if (sink == null) screen else WindowPerfSampling(screen, sink)
             val application = if (options.backgroundInput)
-                BackgroundClientInput(client, output, runId, evidence) { screen.inputGeneration }
+                BackgroundClientInput(client, output, runId, checkNotNull(sink)) { screen.inputGeneration }
             else client
             Lwjgl3Application(application, config)
             evidence.record("process-completed", mapOf("status" to "normal"))

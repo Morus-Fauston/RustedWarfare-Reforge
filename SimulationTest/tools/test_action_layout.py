@@ -18,6 +18,21 @@ def frame():
 
 
 class LayoutControls(unittest.TestCase):
+    def test_start_waits_for_the_enabled_action_to_be_drawn(self):
+        blocked = frame()
+        blocked['actions'][0].update(actionId='start-match', enabled=False)
+        qualified = copy.deepcopy(blocked)
+        qualified.update(sequence=13, layoutRevision=5)
+        qualified['actions'][0]['enabled'] = True
+
+        def wait(label, ready):
+            self.assertFalse(ready([blocked]))
+            self.assertTrue(ready([blocked, qualified]))
+
+        result = wait_layout(wait, 3, (1200, 800), enabled_action='start-match')
+        self.assertEqual(result.frame['layoutRevision'], 5)
+        self.assertEqual(result.action('start-match'), (1108, 416, 'left'))
+
     def test_scroll_retries_stale_draws_before_clicking_a_newly_visible_card(self):
         first=frame()
         desired=first['actions'].pop()

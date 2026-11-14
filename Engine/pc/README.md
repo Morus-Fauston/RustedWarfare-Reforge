@@ -2,7 +2,7 @@
 
 现行目标为 Windows；平台启动与随包运行时打包共用 core/client。离线本机执行核心，联网消费授权结果；目录名不自动新增其他桌面平台承诺。
 
-Windows 使用 LWJGL3 离线启动入口；当前默认载入随包自有四期建造内容，旧 P001/P002 输入可显式选择。使用现有 libGDX 1.13.1，字节码目标 Java 17；工程使用 JDK 25 工具链。开发验证与维护者最终体验分别记录，总入口见[Engine](../README.md)。
+Windows 使用 LWJGL3 离线启动入口。使用现有 libGDX 1.13.1，字节码目标 Java 17，工程使用 JDK 25 工具链。开发验证与维护者最终体验分别记录，总入口见[Engine](../README.md)。
 
 ## 构建与启动
 
@@ -13,9 +13,9 @@ Windows 使用 LWJGL3 离线启动入口；当前默认载入随包自有四期�
 ./gradlew.bat :pc:run --no-daemon
 ```
 
-`:pc:run` 自动使用仓库根目录为工作目录。不传 `--inputs` 时，从程序资源提取51件自有四期输入到本次JVM拥有的临时目录；同进程重开继续复用输入，正常退出清理该目录。缺少随包资源或读取失败会报错，不静默切换场景。该内容使用自有占位图片，不包含原版游戏核心或原版纹理。
+`:pc:run` 自动使用仓库根目录为工作目录。默认进入主菜单。从 Skirmish 打开开局设置，指定可用的内容目录，等待检查通过后按 Start。内容包和资源包各有管理页。加载期间可取消，返回设置后可更改内容，局内 Reopen 复用已冻结的设置。
 
-默认场景从一座己方指挥中心、1750资金、无预置工人开始。生产工人后可建设抽取器、制造仪、陆军工厂、基础炮塔和一级点防御；两种经济建筑支持常规T3，工厂可生产工人和既有坦克。修理、回收、协作连续施工及两种炮塔首段升级沿现有能力，不开放额外兵种、中心重建或高级分支。
+`--development true` 打开离线开发设置，允许选择测试场景或启用沙盒布置。随包的六期 A 自有开发场景提供指挥中心或模块蜘蛛开局，开局资源和单位以所选场景为准。
 
 显式 `--inputs CONTENT_DIRECTORY` 仍从工作目录解析相对路径，使用原P002窗口标题；可用 `--inputs TestLab/local/P002-知识沙盒输入` 或 `--inputs TestLab/local/P001-移动沙盒输入` 回归旧私有输入。这些本地资料不随公开克隆或发行目录提供，缺件会加载失败。
 
@@ -27,7 +27,7 @@ Windows 使用 LWJGL3 离线启动入口；当前默认载入随包自有四期�
 
 `installDist` 包含程序和依赖库，不包含 JRE，需可用的 `JAVA_HOME` 或 PATH 中的 Java。本票实际运行环境为 Windows 11 amd64、Microsoft JDK 25.0.3。LWJGL 3.3.3 的 JNI/Unsafe 警告保留在验证日志；不据此声称其他运行时已验证。
 
-支持成对参数 `--mode sandbox|demo`、`--inputs CONTENT_DIRECTORY`、`--evidence NEW_RUN_DIRECTORY`，默认模式为 sandbox；相对路径从工作目录解析。默认每次新建 `Engine/pc/build/sandbox-runs/run-<时间>-<随机值>/`，这是可丢弃开发输出；长期验收证据必须用 `--evidence` 指向对应票据 evidence 下的新批次。已存在的批次不会覆盖。可用 `:pc:run --args='--inputs ... --evidence ...'` 传参，含空格的路径需在 args 内加引号。Demo 使用既有随包自有输入及 `Engine/pc/build/demo-runs/`，拒绝 `--inputs`，其专项规则不代表正式沙盒规则。
+支持成对参数 `--mode sandbox|demo`、`--inputs CONTENT_DIRECTORY`、`--development true`、`--evidence NEW_RUN_DIRECTORY`，默认模式为 sandbox，相对路径从工作目录解析。沙盒诊断通过显式开发模式或 `--evidence` 启用。开发模式默认写入 `Engine/pc/build/sandbox-runs/run-<时间>-<随机值>/`。长期验收证据用 `--evidence` 指向对应票据下的新批次。可用 `:pc:run --args='--inputs ... --evidence ...'` 传参，含空格的路径需在 args 内加引号。Demo 使用随包的自有输入及 `Engine/pc/build/demo-runs/`。
 
 ## 选择画面素材
 
