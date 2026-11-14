@@ -1,6 +1,7 @@
 package com.rustedwarfare.reforge.core.sim
 
 import com.rustedwarfare.reforge.core.content.MapDefinition
+import com.rustedwarfare.reforge.core.content.MovementType
 import com.rustedwarfare.reforge.core.content.NautilusRules
 import com.rustedwarfare.reforge.core.content.ScoutBotRules
 import com.rustedwarfare.reforge.core.path.PlanningTerrain
@@ -55,7 +56,7 @@ internal data class StepState(
     var scheduledActions: MutableList<Action> = mutableListOf(),
     var actionResultOwners: IdentityHashMap<ActionResult, String> = IdentityHashMap(),
     var playerActionRevisions: MutableMap<String, Long> = mutableMapOf(),
-    var noFogPlanning: CachedPlanningTerrain? = null,
+    var noFogPlanning: MutableMap<MovementType, CachedPlanningTerrain> = mutableMapOf(),
     var playerPlanning: MutableMap<String, CachedPlanningTerrain> = mutableMapOf(),
     var knowledgeStores: Map<String, PlayerTerrainKnowledge>? = null,
     var automaticVisionSnapshots: Map<String, VisionSnapshot>? = null,
@@ -81,6 +82,7 @@ internal data class StepState(
         scheduledActions = scheduledActions.toMutableList(),
         actionResultOwners = IdentityHashMap(actionResultOwners),
         playerActionRevisions = HashMap(playerActionRevisions),
+        noFogPlanning = HashMap(noFogPlanning),
         playerPlanning = HashMap(playerPlanning),
         pathDiagnostics = pathDiagnostics?.toMutableList(),
         pendingKnowledgeDiscoveries = pendingKnowledgeDiscoveries.mapValuesTo(linkedMapOf()) {

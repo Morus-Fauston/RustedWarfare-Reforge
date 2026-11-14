@@ -107,11 +107,8 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
     private val playerActionRevisions: MutableMap<String, Long>
         get() = steps.current.playerActionRevisions
     private val playerObservationProjectors = mutableMapOf<String, PlayerObservationProjector>()
-    private var noFogPlanning: CachedPlanningTerrain?
-        get() = steps.current.noFogPlanning
-        set(value) { steps.current.noFogPlanning = value }
-    private val playerPlanning: MutableMap<String, CachedPlanningTerrain>
-        get() = steps.current.playerPlanning
+    private val noFogPlanning get() = steps.current.noFogPlanning
+    private val playerPlanning get() = steps.current.playerPlanning
     private var knowledgeStores: Map<String, PlayerTerrainKnowledge>?
         get() = steps.current.knowledgeStores
         set(value) { steps.current.knowledgeStores = value }
@@ -369,7 +366,7 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
         actionResultOwners.clear()
         playerActionRevisions.clear()
         playerObservationProjectors.clear()
-        noFogPlanning = null
+        noFogPlanning.clear()
         playerPlanning.clear()
         return CloseResult.Closed
     }
@@ -464,9 +461,16 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
     /** Ground follows the configured source; dynamic buildings always follow owner visibility. */
     private fun planningTerrainFor(unit: MutableUnit, map: MapDefinition): PlanningTerrain {
         val movementType = UnitLocomotion.movement(unit).type
-        if (UnitLocomotion.movement(unit).type == MovementType.AIR)
+        if (movementType == MovementType.AIR) {
+            if (knowledgeStores != null) return PlanningTerrain(map.widthTiles, map.heightTiles, map.tileWidth,
+                map.tileHeight, BooleanArray(map.widthTiles * map.heightTiles))
+            val cached = noFogPlanning[MovementType.AIR]
+            if (cached != null && cached.world === activeWorld && cached.map === map) return cached.terrain
             return PlanningTerrain(map.widthTiles, map.heightTiles, map.tileWidth, map.tileHeight,
-                BooleanArray(map.widthTiles * map.heightTiles))
+                BooleanArray(map.widthTiles * map.heightTiles)).also {
+                noFogPlanning[MovementType.AIR] = CachedPlanningTerrain(world, map, null, it, movementType = movementType)
+            }
+        }
         val ownerBuildings = buildingKnowledge[unit.ownerPlayerId]?.cells
         val escaping = unit.birthRemaining == 0f && ownerBuildings?.contains(
             MapBounds.cell(unit.position.x, map.tileWidth, map.widthTiles) to
@@ -476,10 +480,10 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
             checkNotNull(knowledgeRules).pathSource == PathInformationSource.PLAYER_KNOWLEDGE
         // Preserve the shared legacy ground-only adapter when no building subsystem is active.
         if (!usesKnowledge && ownerBuildings == null) {
-            val cached = noFogPlanning
+            val cached = noFogPlanning[movementType]
             if (cached != null && cached.world === activeWorld && cached.map === map && cached.movementType == movementType) return cached.terrain
             return PlanningTerrain.fromNoFog(map, movementType).also {
-                noFogPlanning = CachedPlanningTerrain(world, map, null, it, movementType = movementType)
+                noFogPlanning[movementType] = CachedPlanningTerrain(world, map, null, it, movementType = movementType)
             }
         }
         val snapshot = if (usesKnowledge) checkNotNull(stores?.get(unit.ownerPlayerId)).snapshot(world) else null
