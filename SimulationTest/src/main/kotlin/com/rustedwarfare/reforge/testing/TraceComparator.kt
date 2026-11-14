@@ -527,7 +527,8 @@ object TraceComparator {
 
     private fun validateTransportSamples(units: List<JsonObject>, scenario: JsonObject) {
         val nautilusTypes = typesLoadedBy(scenario, setOf("nautilus"))
-        val types = typesLoadedBy(scenario, setOf("hovercraft", "dropship")) + nautilusTypes
+        val authored = ScenarioDeclaration.transportTypes(scenario)
+        val types = typesLoadedBy(scenario, setOf("hovercraft", "dropship")) + nautilusTypes + authored.keys
         if (types.isEmpty()) return
         fun invalid(reason: String): Nothing = throw Incomplete("transport-state", reason)
         fun number(value: JsonElement?, name: String): Double {
@@ -557,17 +558,21 @@ object TraceComparator {
                 val manifest = cargo["passengerIds"] as? JsonArray ?: invalid("Missing manifest")
                 val passengers = manifest.map(::id)
                 val nautilus = unit.id("typeId") in nautilusTypes
-                if (passengers.distinct().size != passengers.size || cargo["passengerCount"] != n(passengers.size) || cargo["capacity"] != n(if (nautilus) 3 else 4))
+                val settings = authored[unit.id("typeId")]
+                val capacity = settings?.integer("capacity") ?: if (nautilus) 3L else 4L
+                val unloadTicks = settings?.integer("unloadTicks") ?: 30L
+                val slotLimit = if (nautilus) 4L else capacity
+                if (passengers.distinct().size != passengers.size || cargo["passengerCount"] != n(passengers.size) || cargo["capacity"] != n(capacity))
                     invalid("Invalid manifest count or capacity")
                 val slots = number(cargo["occupiedSlots"], "occupiedSlots")
-                if (slots !in 0.0..4.0 || slots % 1.0 != 0.0 || passengers.isEmpty() && slots != 0.0)
+                if (slots !in 0.0..slotLimit.toDouble() || slots % 1.0 != 0.0 || passengers.isEmpty() && slots != 0.0)
                     invalid("Invalid occupied slots")
                 if (nautilus && (slots != passengers.size.toDouble() || unit.id("typeId") != "nautilusSubmarineSurface" && (cargo["unloading"] != b(false) ||
                     cargo["canUnload"] != b(false)))
                     )
                     invalid("Submerged production must retain its single-slot products")
                 if (cargo["unloading"] !in setOf(b(true), b(false)) || cargo["canUnload"] !in setOf(b(true), b(false)) ||
-                    number(cargo["unloadRemaining"], "unloadRemaining") !in 0.0..30.0) invalid("Invalid unload controls")
+                    number(cargo["unloadRemaining"], "unloadRemaining") !in 0.0..unloadTicks.toDouble()) invalid("Invalid unload controls")
                 if (cargo["canUnload"] == b(true) && (passengers.isEmpty() || cargo["unloading"] == b(true) || unit["alive"] != b(true)))
                     invalid("Impossible unload eligibility")
                 for (passengerId in passengers) {

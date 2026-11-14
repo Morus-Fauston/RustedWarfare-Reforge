@@ -40,6 +40,7 @@ class UnitDefinition(
     val amphibiousJet: AmphibiousJetProfile? = null,
     val transport: TransportProfile? = null,
     val transportSlots: Int = 1,
+    val transportSettings: TransportSettings? = null,
     val energy: EnergyProfile? = null,
     val customActions: CustomActionsProfile? = null,
     val afterburnTrailImagePath: Path? = null,
@@ -62,7 +63,14 @@ class UnitDefinition(
     val maximumHealth: Double? get() = durability?.maxHp ?: combat?.maxHp
 }
 
-enum class TransportProfile { NATIVE_HOVERCRAFT, NATIVE_DROPSHIP, NAUTILUS_SUBMERGED }
+enum class TransportProfile { NATIVE_HOVERCRAFT, NATIVE_DROPSHIP, NAUTILUS_SUBMERGED, AUTHORED }
+
+enum class TransportUnloadTerrain { LAND, LIQUID, EITHER, NEVER }
+
+data class TransportSettings(val capacity: Int, val passengerMovement: MovementType,
+    val unloadTerrain: TransportUnloadTerrain, val unloadTicks: Int) {
+    internal fun isValid() = capacity in 1..1000 && passengerMovement != MovementType.NONE && unloadTicks in 1..36000
+}
 
 /** Native work capability, independent of the ordinary builder's construction menu. */
 enum class MaintenanceProfile { NATIVE_REPAIR_BAY, MECH_ENGINEER, SCOUT_BOT, MODULAR_SPIDER }

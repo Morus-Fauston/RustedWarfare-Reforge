@@ -9,9 +9,9 @@ import java.nio.file.Path
 
 internal object ShieldContent {
     fun read(path: Path, loaded: UnitSourceReader.EffectiveSections, required: Boolean = false,
-             allowBlink: Boolean = false): ShieldProfile? {
+             allowOtherAbilities: Boolean = false): ShieldProfile? {
         val abilities = loaded.values.keys.filter {
-            it.startsWith("ability_") && (!allowBlink || loaded.values[it]?.get("type") != "blink")
+            it.startsWith("ability_") && (!allowOtherAbilities || loaded.values[it]?.get("type") !in setOf("blink", "transport"))
         }
         val section = abilities.firstOrNull()
         if (abilities.size > 1) reject(ContentErrorCode.UNSUPPORTED_FEATURE, path, abilities[1], "type",

@@ -255,6 +255,7 @@ object PlatformSessionRunner {
             while (System.nanoTime() < deadline) {
                 loader.pollPrepared()?.let { result ->
                     val loaded = result.getOrThrow()
+                    if (testScenario != null) ScenarioDeclaration.verifyTransportTypes(document, loaded.scenario.unitDefinitions)
                     evidence.recordLoadReady(1L, loaded)
                     loaded.visuals?.let { evidence.recordVisualAssetsReady(it, 1L) }
                     loaded.contentPack?.let { current ->

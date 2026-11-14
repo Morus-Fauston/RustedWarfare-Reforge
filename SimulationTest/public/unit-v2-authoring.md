@@ -23,7 +23,7 @@ The child updates the parent's `main` mount by stable name. It keeps the mount c
 
 An empty `weapons` list retains the parent weapons. Set `removeWeapons` to the stable names to remove from this file's inherited weapons. A sibling parent can still supply a weapon removed within a different branch. An absent name, a duplicate declaration, or a surviving weapon link to a deleted entry is a load error. Projectile names beginning with `__inline_` are reserved.
 
-The [schema](unit-v2.schema.json) lists fields and types for the ordinary tank reader. Required gameplay fields can come from parents. The reader also checks the effective definition, value ranges and references after inheritance. Add the new unit name to the factory's production list to make the unit available through the normal purchase action.
+The [schema](unit-v2.schema.json) lists fields and types for the ordinary tank and hover-tank readers. Required gameplay fields can come from parents. The selected reader checks the effective definition, value ranges and references after inheritance. Add the new unit name to the factory's production list to make the unit available through the normal purchase action.
 
 Set `"unitType": "tank"` to use the ordinary tank's default land movement. You can omit the `movement` object or supply the entries you want to override, for example `"movement": {"moveSpeed": 1.25}`. Explicit movement fields from the unit or its parents take priority over template defaults. The specialized `hover-tank` loader accepts `"unitType": "hoverTank"` with the same override rule and its existing hover defaults.
 
@@ -46,3 +46,14 @@ A structured unit loaded as `hover-tank` can declare one `blink` ability. The ta
   }
 ]
 ~~~
+
+A structured `hover-tank` can carry units by declaring one transport ability. Set its capacity in passenger slots, the boarding movement type, the unload terrain, and the interval between unload attempts in simulation ticks.
+
+~~~json
+{
+  "name": "waterBay", "type": "transport", "capacity": 2,
+  "passengerMovement": "HOVER", "unloadTerrain": "liquid", "unloadTicks": 6
+}
+~~~
+
+The transport uses the same owner, construction, and cargo checks as the native carriers. The passenger consumes its own `transportSlotsNeeded`. The `unloadTerrain` values are `land`, `liquid`, `either` and `never`. A blocked exit leaves the passenger in the bay for the next attempt.

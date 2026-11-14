@@ -692,8 +692,12 @@ def validate_history_poses(units, policy):
         if unit.get('carriedBy') is not None:
             raise PlatformError('history-transport','Carried passenger in a player sample',2)
         transport=unit.get('transport')
-        if unit.get('typeId') in {'hovercraft','dropship','nautilusSubmarine','nautilusSubmarineSurface','nautilusSubmarineLand'} and unit.get('ownerPlayerId')==policy.get('ownerPlayerId','p1'):
-            nautilus=unit['typeId'] in {'nautilusSubmarine','nautilusSubmarineSurface','nautilusSubmarineLand'}
+        nautilus=unit.get('typeId') in {'nautilusSubmarine','nautilusSubmarineSurface','nautilusSubmarineLand'}
+        authored=policy.get('transportTypes',{}).get(unit.get('typeId'))
+        if (nautilus or authored is not None or unit.get('typeId') in {'hovercraft','dropship'}) and unit.get('ownerPlayerId')==policy.get('ownerPlayerId','p1'):
+            capacity=authored['capacity'] if authored is not None else 3 if nautilus else 4
+            unload_ticks=authored['unloadTicks'] if authored is not None else 30
+            slot_limit=4 if nautilus else capacity
             if (not isinstance(transport,dict) or set(transport)!={'passengerIds','passengerCount','occupiedSlots','capacity','unloading','unloadRemaining','canUnload'} or
                     not number(unit.get('height'))):
                 raise PlatformError('history-transport','Missing or unapproved owner cargo fields',2)
@@ -701,10 +705,10 @@ def validate_history_poses(units, policy):
             if (not isinstance(passengers,list) or any(not isinstance(p,str) or not p for p in passengers) or
                     len(passengers)!=len(set(passengers)) or any(p==u.get('unitId') for p in passengers for u in units) or
                     type(transport['passengerCount']) is not int or transport['passengerCount']!=len(passengers) or
-                    type(transport['occupiedSlots']) is not int or not 0<=transport['occupiedSlots']<=4 or
-                    (not passengers and transport['occupiedSlots']!=0) or type(transport['capacity']) is not int or transport['capacity']!=(3 if nautilus else 4) or
+                    type(transport['occupiedSlots']) is not int or not 0<=transport['occupiedSlots']<=slot_limit or
+                    (not passengers and transport['occupiedSlots']!=0) or type(transport['capacity']) is not int or transport['capacity']!=capacity or
                     type(transport['unloading']) is not bool or type(transport['canUnload']) is not bool or
-                    not number(transport['unloadRemaining']) or not 0<=transport['unloadRemaining']<=30 or
+                    not number(transport['unloadRemaining']) or not 0<=transport['unloadRemaining']<=unload_ticks or
                     transport['canUnload'] and (not passengers or transport['unloading'] or unit.get('alive') is not True)):
                 raise PlatformError('history-transport','Invalid cargo count, capacity or unload state',2)
             if nautilus and (transport['occupiedSlots']!=len(passengers) or unit['typeId']!='nautilusSubmarineSurface' and (transport['unloading'] or
@@ -1365,7 +1369,8 @@ def compare_history(records, plan, policy, native_anchors=None, geometry=None):
              'productionOrder','completedUpgradeTypes','initialIncome','producedIncome','transportStages','unitActionStages',
              'bunkerStages','reclaimRefunds','nautilusTerrain','nuclearHistory','navalAmmoHistory',
              'spiderOpening','spiderWeaponModules','spiderUtilityModules','spiderDefenseModules','spiderBlink',
-             'spiderMixedModules', 'productionSession', 'afterburnPairs', 'blinkTypes', 'blinkCompletions'}
+             'spiderMixedModules', 'productionSession', 'afterburnPairs', 'blinkTypes', 'blinkCompletions', 'transportTypes',
+             'transportPassengerSlots', 'transportUnloadSteps'}
     if not isinstance(policy,dict) or set(policy)-allowed:
         raise PlatformError('input-contract', 'Unknown or malformed history obligations', 1)
     pairs = afterburn_pairs(policy)
@@ -1376,6 +1381,31 @@ def compare_history(records, plan, policy, native_anchors=None, geometry=None):
     if (not isinstance(blink_types,list) or any(not isinstance(name,str) or not name for name in blink_types) or
             len(set(blink_types))!=len(blink_types) or blink_types!=plan.get('blinkTypes',[])):
         raise PlatformError('input-contract','Core and Session Blink type declarations differ',1)
+    transport_types=policy.get('transportTypes',{})
+    supported_transport={unit['id'] for unit in plan.get('content',{}).get('unitVariants',[]) if unit.get('loader')=='hover-tank'}
+    if (not isinstance(transport_types,dict) or transport_types!=plan.get('transportTypes',{}) or
+            any(name not in supported_transport or not isinstance(settings,dict) or
+                set(settings)!={'capacity','unloadTicks'} or type(settings['capacity']) is not int or
+                type(settings['unloadTicks']) is not int or not 1<=settings['capacity']<=1000 or
+                not 1<=settings['unloadTicks']<=36000 for name,settings in transport_types.items())):
+        raise PlatformError('input-contract','Core and Session authored transport declarations differ',1)
+    authored_passenger_slots=policy.get('transportPassengerSlots',{})
+    owner=policy.get('ownerPlayerId','p1')
+    declared_passengers={unit['unitId'] for unit in plan.get('units',[]) if unit.get('owner')==owner and
+                         unit.get('type') not in transport_types}
+    if (not isinstance(authored_passenger_slots,dict) or bool(transport_types)!=bool(authored_passenger_slots) or
+            any(name not in declared_passengers or type(slots) is not int or not 0<=slots<=1000
+                for name,slots in authored_passenger_slots.items())):
+        raise PlatformError('input-contract','Expected fixed authored passenger identities and slot costs',1)
+    unload_steps=policy.get('transportUnloadSteps',{})
+    authored_carriers={unit['unitId']:unit['type'] for unit in plan.get('units',[]) if unit.get('owner')==owner and
+              unit.get('type') in transport_types}
+    if (not isinstance(unload_steps,dict) or any(identity not in authored_carriers or not isinstance(check,list) or
+            len(check)!=2 or any(type(step) is not int or step<0 for step in check) or
+            check[1]-check[0]+1!=transport_types[authored_carriers[identity]]['unloadTicks']
+            for identity,check in unload_steps.items())):
+        raise PlatformError('input-contract','Invalid fixed authored unload windows',1)
+    checked_unload_steps=set()
     unit_checkpoints = policy.get('unitsAfterIntents', {})
     intent_ids = {intent['intentId'] for intent in plan['intents']}
     if (not isinstance(unit_checkpoints, dict) or set(unit_checkpoints)-intent_ids or
@@ -1449,6 +1479,7 @@ def compare_history(records, plan, policy, native_anchors=None, geometry=None):
             raise PlatformError('input-contract','Invalid fixed unit action stage',1)
         action_stages[stage['intentId']]=stage
     transport_stages={}
+    known_carriers={'hovercraft','dropship','nautilusSubmarine','nautilusSubmarineSurface','nautilusSubmarineLand'} | transport_types.keys()
     declarations=policy.get('transportStages',[])
     if not isinstance(declarations,list):
         raise PlatformError('input-contract','Transport stages must be a fixed list',1)
@@ -1456,13 +1487,24 @@ def compare_history(records, plan, policy, native_anchors=None, geometry=None):
         if (not isinstance(stage,dict) or set(stage)-{'intentId','typeId','passengerCount','unloading','minimumX','maximumX'} or
                 not {'intentId','passengerCount','unloading'}<=set(stage) or stage['intentId'] not in ids or
                 not isinstance(stage.get('typeId','hovercraft'),str) or
-                stage.get('typeId','hovercraft') not in {'hovercraft','dropship','nautilusSubmarine','nautilusSubmarineSurface','nautilusSubmarineLand'} or
+                stage.get('typeId','hovercraft') not in known_carriers or
                 stage['intentId'] in transport_stages or type(stage['passengerCount']) is not int or stage['passengerCount']<0 or
                 type(stage['unloading']) is not bool or any(type(stage[k]) not in (int,float) or not math.isfinite(stage[k])
                     for k in ('minimumX','maximumX') if k in stage) or
                 stage.get('minimumX',-math.inf)>stage.get('maximumX',math.inf)):
             raise PlatformError('input-contract','Invalid fixed transport stage',1)
         transport_stages[stage['intentId']]=stage
+    paired_intents={item['coreActionId']:item for item in intents.values() if 'coreActionId' in item}
+    for action in plan.get('actions',[]):
+        identity=action.get('unitId')
+        if identity not in authored_carriers or action.get('kind')!='unload' or action.get('unloading') is not True:
+            continue
+        intent=paired_intents.get(action['actionId'],{})
+        stage=transport_stages.get(intent.get('intentId'))
+        if stage is not None and stage['passengerCount']==0 and not stage['unloading']:
+            window=unload_steps.get(identity)
+            if window is None or not action['atStep']<=window[0]<=window[1]<action['atStep']+intent['waitSteps']:
+                raise PlatformError('input-contract','Authored unload completion requires a fixed clock window in its intent',1)
     no_actions = policy.get('noActionIntents', [])
     if (not isinstance(no_actions, list) or len(no_actions) != len(set(no_actions)) or
             any(i not in ids or intents[i].get('kind') != 'select' for i in no_actions)):
@@ -1674,6 +1716,49 @@ def compare_history(records, plan, policy, native_anchors=None, geometry=None):
                         sources[0].get('alive') is not True or sources[0].get('constructionProgress')!=1):
                     raise PlatformError('history-income', 'Fixed initial income source changed or is not a live completed owned unit', 2)
             validate_history_poses(units.values(), policy)
+            if transport_types:
+                carried=set()
+                for unit in units.values():
+                    if unit['typeId'] not in transport_types or unit['ownerPlayerId']!=owner:
+                        continue
+                    cargo=unit['transport']
+                    passengers=cargo['passengerIds']
+                    if (any(passenger not in authored_passenger_slots or passenger in carried or
+                            passenger not in seen_units for passenger in passengers) or
+                            sum(authored_passenger_slots[p] for p in passengers)!=cargo['occupiedSlots']):
+                        raise PlatformError('history-transport','Authored manifest differs from observed passenger identities or slot costs',2)
+                    carried.update(passengers)
+                if row.get('phase')=='step':
+                    released_ids={event.get('unitId') for event in sample['events'] if event.get('kind')=='unit-unloaded'}
+                    for identity in authored_carriers.keys()-unload_steps.keys():
+                        before=previous_units.get(identity,{}).get('transport')
+                        if before and released_ids.intersection(before['passengerIds']):
+                            raise PlatformError('history-transport','Authored release requires a fixed clock window',2)
+                    for identity,(start,end) in unload_steps.items():
+                        if not start<=index<=end:
+                            continue
+                        current=units.get(identity)
+                        previous=previous_units.get(identity)
+                        if (not current or not previous or current['position']!=previous['position'] or
+                                any(unit.get('ownerPlayerId')!=owner or unit.get('typeId')!=authored_carriers[identity]
+                                    for unit in (current,previous))):
+                            raise PlatformError('history-transport','Missing a stationary authored unload sample',2)
+                        cargo, before=current['transport'],previous['transport']
+                        if index<end:
+                            valid=(cargo['unloading'] and cargo['passengerIds']==before['passengerIds'] and
+                                   cargo['unloadRemaining']==end-index)
+                        else:
+                            released=before['passengerIds'][-1:]  # native order is last in, first out
+                            passenger=units.get(released[0],{}) if released else {}
+                            exit_state=passenger.get('transportExit') or {}
+                            valid=(bool(released) and passenger.get('ownerPlayerId')==owner and passenger.get('alive') is True and
+                                   exit_state.get('previousCarrierId')==identity and
+                                   cargo['passengerIds']==before['passengerIds'][:-1] and
+                                   cargo['unloadRemaining']==transport_types[authored_carriers[identity]]['unloadTicks'] and
+                                   released[0] in released_ids)
+                        if not valid:
+                            raise PlatformError('history-transport','Authored unload clock or release differs from the fixed window',2)
+                        checked_unload_steps.add((identity,index))
             destroyed_slots = {event.get('unitId') for event in sample.get('events', [])
                                if event.get('kind') == 'attachment-slot-destroyed'}
             reclaimed_slots = {event.get('unitId') for event in sample.get('events', [])
@@ -1777,6 +1862,8 @@ def compare_history(records, plan, policy, native_anchors=None, geometry=None):
         raise PlatformError('incomplete-run', 'Missing history observations or a pending first-step charge')
     validate_history_units(units.values(), policy.get('finalUnits', []))
     validate_production_history(records,policy)
+    if len(checked_unload_steps)!=sum(end-start+1 for start,end in unload_steps.values()):
+        raise PlatformError('history-transport','Missing steps from the fixed authored unload windows',2)
     validate_blink_completions(records,plan,policy,accepted_blink)
     if 'productionSession' in policy and native_anchors is None:
         from production_session_assertions import validate_production_session
@@ -1967,6 +2054,40 @@ def compare_archive(output, expected_scenario=None, expected_contract=None, star
         return compare_archive_locked(output, expected_scenario, expected_contract, started_after)
 
 
+def verify_frozen_transport(plan, contract, files, digests):
+    settings=plan.get('transportTypes',{})
+    if not settings:
+        return
+    prefix=plan['inputs'].rstrip('/')+'/'
+    variants={ref['id']:ref for ref in plan['content']['unitVariants']}
+    owners={unit['unitId']:unit['type'] for unit in plan['units']}
+
+    def definition(identity):
+        ref=variants[identity]
+        if not ref['path'].startswith(prefix):
+            raise PlatformError('input-contract','Transport definition is outside the fixed input root',1)
+        name='inputSnapshot/'+ref['path'].removeprefix(prefix)
+        if name not in files or digests[name]!=ref['sha256']:
+            raise PlatformError('archive-identity','Frozen transport definition differs from the paired input')
+        raw=files[name].read_bytes()
+        if hashlib.sha256(raw).hexdigest()!=digests[name]:
+            raise PlatformError('archive-identity','Frozen transport definition changed during comparison')
+        document=read_document(raw)
+        if document.get('copyFrom') or document.get('core',{}).get('name')!=identity:
+            raise PlatformError('input-contract','Authored transport archive requires a direct, fixed unit definition',1)
+        return document
+
+    for identity, expected in settings.items():
+        document=definition(identity)
+        abilities=[item for item in document.get('abilities',[]) if item.get('type')=='transport']
+        if len(abilities)!=1 or {key:abilities[0].get(key) for key in ('capacity','unloadTicks')}!=expected:
+            raise PlatformError('input-contract','Archived transport capacity or timing differs from the frozen definition',1)
+    passengers=contract.get('history',{}).get('transportPassengerSlots',{})
+    for identity, expected in passengers.items():
+        if identity not in owners or definition(owners[identity]).get('core',{}).get('transportSlotsNeeded',1)!=expected:
+            raise PlatformError('input-contract','Archived passenger slot cost differs from the frozen definition',1)
+
+
 def compare_archive_locked(output, expected_scenario=None, expected_contract=None, started_after=None):
     output = Path(output)
     if (expected_scenario is None) != (expected_contract is None):
@@ -2058,6 +2179,7 @@ def compare_archive_locked(output, expected_scenario=None, expected_contract=Non
     if backend == 'windows-input':
         geometry = windows_geometry(output, records, {name: captured[path] for path, name in maps.items()})
     contract = read_document(captured['contract.json'])
+    verify_frozen_transport(plan, contract, actual, digests)
     anchors = read_document(captured['intents.json'])
     return compare_run(records, plan, contract, anchors, geometry)
 

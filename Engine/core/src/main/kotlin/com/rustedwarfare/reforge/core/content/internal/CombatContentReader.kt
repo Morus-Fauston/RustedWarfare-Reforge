@@ -90,7 +90,8 @@ internal object CombatContentReader {
             Kind.HOVER_TANK -> schema.copy(
                 fields = schema.fields + ("projectile_1" to (schema.fields.getValue("projectile_1") + setOf("targetSpeed", "targetSpeedAcceleration"))),
                 numericFields = schema.numericFields + setOf("targetSpeed", "targetSpeedAcceleration"),
-                movementTemplates = mapOf("hoverTank" to hoverTemplate), structuredAbilities = true, blinkAbility = true)
+                movementTemplates = mapOf("hoverTank" to hoverTemplate), structuredAbilities = true,
+                blinkAbility = true, transportAbility = true)
             Kind.DECLARED_TANK, Kind.NATIVE_TANK -> schema.copy(movementTemplates = mapOf("tank" to tankTemplate),
                 structuredAbilities = true)
             Kind.BATTLESHIP, Kind.AUTHOR_WATER -> NavalContentFields.schema(schema)
@@ -108,6 +109,7 @@ internal object CombatContentReader {
         val water = naval || authorWater
         val sections = loaded.values
         val blink = if (hover) BlinkContent.read(path, loaded) else null
+        val transport = if (hover) TransportContent.read(path, loaded) else null
         val deployedBlink = blink?.locked == true && sections["movement"]?.get("movementType") == "NONE"
         fun invalid(code: ContentErrorCode, s: String, key: String, ref: String? = null, reason: String): Nothing {
             val origin = loaded.origins[s to key] ?: UnitSourceReader.Origin(path, s, key)
@@ -206,7 +208,10 @@ internal object CombatContentReader {
                 "core", "techLevel", reason = "Expected a tech level from one through three")
         } ?: 1
         if (declared) {
-            if (when { hover -> identity != "hoverTank" && (blink == null || !identity.matches(Regex("[A-Za-z][A-Za-z0-9_.-]*"))); naval -> identity != "heavyBattleship"; mech -> identity != "mechGun"; heavy -> identity != "mechHeavyMissile"
+            if (when { hover -> identity != "hoverTank" &&
+                (if (blink != null) !identity.matches(Regex("[A-Za-z][A-Za-z0-9_.-]*"))
+                else transport == null || !identity.matches(Regex("[a-z][a-z0-9_.-]*")))
+                naval -> identity != "heavyBattleship"; mech -> identity != "mechGun"; heavy -> identity != "mechHeavyMissile"
                     else -> !identity.matches(Regex("[a-z][a-z0-9_.-]*")) })
                 invalid(ContentErrorCode.MALFORMED_SYNTAX, "core", "name", identity, "Expected a stable lowercase content ID")
             if ("overrideAndReplace" in sections["core"].orEmpty())
@@ -327,7 +332,7 @@ internal object CombatContentReader {
                 } else null)
         })
         val primary = catalog.ordered.first()
-        val shield = ShieldContent.read(path, loaded, required = heavy, allowBlink = hover)
+        val shield = ShieldContent.read(path, loaded, required = heavy, allowOtherAbilities = hover)
         val profile = CombatProfile(
             integer("core", "maxHp", true).toDouble(), number("attack", "maxAttackRange", true),
             primary.shootDelay, primary.turretSize, primary.turnSpeed, primary.turnAcceleration,
@@ -354,6 +359,7 @@ internal object CombatContentReader {
             authoredWaterCombat = authorWater, shadowImagePath = if (hover) image("image_shadow") else null,
             shield = shield, shieldImagePath = if (heavy) image("image_shield") else null,
             blink = blink, customActions = blink?.actions(),
+            transport = transport?.let { TransportProfile.AUTHORED }, transportSettings = transport,
             transportSlots = if ("transportSlotsNeeded" in sections.getValue("core")) integer("core", "transportSlotsNeeded") else 1)
         definition
     }

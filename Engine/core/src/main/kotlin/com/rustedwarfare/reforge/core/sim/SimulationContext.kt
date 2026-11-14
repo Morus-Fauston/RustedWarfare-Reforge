@@ -5,6 +5,7 @@ import com.rustedwarfare.reforge.core.content.BomberRules
 import com.rustedwarfare.reforge.core.content.MechFlameRules
 import com.rustedwarfare.reforge.core.content.ModularSpiderRules
 import com.rustedwarfare.reforge.core.content.MovementType
+import com.rustedwarfare.reforge.core.content.TransportProfile
 import com.rustedwarfare.reforge.core.content.foundationMovementType
 import com.rustedwarfare.reforge.core.content.siteConstruction
 import com.rustedwarfare.reforge.core.content.DirectHitTargetKind
@@ -1279,7 +1280,8 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
                 NautilusMotion.advance(unit, step.delta)
                 Transport.refreshTerrain(unit, currentScenario.map)
                 pendingEvents += Transport.advance(unit, units, currentScenario.map, step.delta)
-                if (unit.transportState == null) HoverMotion.advancePose(unit, step.delta)
+                if (unit.transportState == null || unit.definition.transport == TransportProfile.AUTHORED)
+                    HoverMotion.advancePose(unit, step.delta)
                 if (SubmarineMotion.advance(unit, step.delta)) pendingEvents += Event("submarine-threshold-crossed", unit.unitId)
                 if (AmphibiousJetMotion.advance(unit, currentScenario.map, step.delta))
                     pendingEvents += Event("amphibious-threshold-crossed", unit.unitId)

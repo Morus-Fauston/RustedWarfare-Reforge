@@ -1,15 +1,17 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "title": "Reforge unit v2 for the ordinary tank reader",
-  "description": "JSON and parsed Hjson syntax for a pack entry with type tank. The engine validates the inherited definition and its references.",
+  "title": "Reforge unit v2 for ordinary and hover tanks",
+  "description": "JSON and parsed Hjson syntax for tank and hover-tank pack entries. The engine validates the inherited definition and its references.",
   "type": "object",
   "required": [
     "format"
   ],
   "properties": {
     "format": { "const": "rw-reforge.unit.v2" },
-    "unitType": { "const": "tank" },
-    "abilities": {"type": "array", "items": {"$ref": "#/$defs/ShieldAbility"}},
+    "unitType": { "enum": ["tank", "hoverTank"] },
+    "abilities": {"type": "array", "items": {"anyOf": [
+      {"$ref": "#/$defs/ShieldAbility"}, {"$ref": "#/$defs/BlinkAbility"}, {"$ref": "#/$defs/TransportAbility"}
+    ]}},
     "removeAbilities": {"type": "array", "uniqueItems": true, "items": {"$ref": "#/$defs/name"}},
     "copyFrom": {
       "type": "array",
@@ -43,6 +45,10 @@
       "uniqueItems": true
     }
   },
+  "allOf": [{
+    "if": {"required": ["unitType"], "properties": {"unitType": {"const": "tank"}}},
+    "then": {"properties": {"abilities": {"items": {"$ref": "#/$defs/ShieldAbility"}}}}
+  }],
   "additionalProperties": false,
   "$defs": {
     "ShieldAbility": {
@@ -55,6 +61,35 @@
         "maximum": {"type": "number", "exclusiveMinimum": 0},
         "regeneration": {"type": "number", "minimum": 0},
         "startAtZero": {"type": "boolean"}
+      }
+    },
+    "BlinkAbility": {
+      "type": "object",
+      "required": ["name"],
+      "additionalProperties": false,
+      "properties": {
+        "name": {"$ref": "#/$defs/name"},
+        "type": {"const": "blink"},
+        "range": {"type": "number", "exclusiveMinimum": 0},
+        "chargeTicks": {"type": "integer", "minimum": 1, "maximum": 36000},
+        "cooldownTicks": {"type": "integer", "minimum": 1, "maximum": 36000},
+        "unlockCredits": {"type": "integer", "minimum": 1},
+        "unlockTicks": {"type": "integer", "minimum": 1, "maximum": 36000},
+        "locked": {"type": "boolean"},
+        "queueSpeed": {"type": "number", "minimum": 0.01, "maximum": 100}
+      }
+    },
+    "TransportAbility": {
+      "type": "object",
+      "required": ["name"],
+      "additionalProperties": false,
+      "properties": {
+        "name": {"$ref": "#/$defs/name"},
+        "type": {"const": "transport"},
+        "capacity": {"type": "integer", "minimum": 1, "maximum": 1000},
+        "passengerMovement": {"enum": ["LAND", "AIR", "WATER", "HOVER", "OVER_CLIFF", "OVER_CLIFF_WATER"]},
+        "unloadTerrain": {"enum": ["land", "liquid", "either", "never"]},
+        "unloadTicks": {"type": "integer", "minimum": 1, "maximum": 36000}
       }
     },
     "name": {
@@ -207,6 +242,8 @@
         "directDamage": { "type": "number" },
         "life": { "type": "number" },
         "speed": { "type": "number" },
+        "targetSpeed": { "type": "number", "exclusiveMinimum": 0 },
+        "targetSpeedAcceleration": { "type": "number", "exclusiveMinimum": 0 },
         "frame": {
           "type": [
             "boolean",
@@ -233,6 +270,8 @@
         "directDamage": { "type": "number" },
         "life": { "type": "number" },
         "speed": { "type": "number" },
+        "targetSpeed": { "type": "number", "exclusiveMinimum": 0 },
+        "targetSpeedAcceleration": { "type": "number", "exclusiveMinimum": 0 },
         "frame": {
           "type": [
             "boolean",
