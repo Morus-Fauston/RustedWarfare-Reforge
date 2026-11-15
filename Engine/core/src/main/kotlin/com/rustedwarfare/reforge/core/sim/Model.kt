@@ -456,7 +456,7 @@ internal data class MutableUnit(
     var height: Double = definition.movement.flight?.startingHeightOffset ?: 0.0,
     var submarineSurfaceIntent: Boolean = false,
     var submarineVerticalSpeed: Float = 0f,
-    var submarineSurfacePresentation: Boolean = true,
+    var submarineSurfacePresentation: Boolean = definition.submarine == null || height >= UnitLocomotion.SUBMERGED_DEPTH,
     var amphibiousState: AmphibiousJetState? = if (definition.amphibiousJet != null) AmphibiousJetState() else null,
     var heightPhase: Double = 0.0,
     var flightIdleTime: Float = 0f,

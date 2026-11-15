@@ -1392,14 +1392,23 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
                 } else if (!fourLegged) {
                     updateUnit(unit, currentScenario.map, step.delta, step.stepIndex, candidate.motionSamples)
                 }
-                FlightMotion.advancePose(unit, currentScenario.map, step.delta)
-                NautilusMotion.advance(unit, step.delta)
+                val acceptsHeight = { height: Double ->
+                    val allowed = UnitContact.canChangeHeight(unit, height, orderedUnits(),
+                        currentScenario.map, buildingTerrain)
+                    if (!allowed) {
+                        val blocked = Event("movement-blocked", unit.unitId)
+                        if (blocked !in pendingEvents) pendingEvents += blocked
+                    }
+                    allowed
+                }
+                FlightMotion.advancePose(unit, currentScenario.map, step.delta, acceptsHeight)
+                NautilusMotion.advance(unit, step.delta, acceptsHeight)
                 Transport.refreshTerrain(unit, currentScenario.map)
-                pendingEvents += Transport.advance(unit, units, currentScenario.map, step.delta)
+                pendingEvents += Transport.advance(unit, units, currentScenario.map, step.delta, acceptsHeight)
                 if (unit.transportState == null || unit.definition.transport == TransportProfile.AUTHORED)
                     HoverMotion.advancePose(unit, step.delta)
-                if (SubmarineMotion.advance(unit, step.delta)) pendingEvents += Event("submarine-threshold-crossed", unit.unitId)
-                if (AmphibiousJetMotion.advance(unit, currentScenario.map, step.delta))
+                if (SubmarineMotion.advance(unit, step.delta, acceptsHeight)) pendingEvents += Event("submarine-threshold-crossed", unit.unitId)
+                if (AmphibiousJetMotion.advance(unit, currentScenario.map, step.delta, acceptsHeight))
                     pendingEvents += Event("amphibious-threshold-crossed", unit.unitId)
                 MechGait.advance(unit, step.delta)
                 MechMotion.requireFinitePose(unit)
@@ -3024,21 +3033,23 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
         val circle = (shape as? MovementCollisionShape.Circle)?.let { CircularTerrain(it.radius) }
         val collisionMap = if (unit.birthRemaining > 0f) map else buildingTerrain?.collisionMap ?: map
         val hullTerrain = shape?.let { HullTerrainGrid.authoritative(collisionMap, movement.type) }
-        val rotationClipped = if (hull != null && unit.heading != headingBefore) {
-            val requested = unit.heading
-            val legal = RectangularTurn.resolve(checkNotNull(hullTerrain), hull, unit.position, headingBefore, requested)
-            if (legal != requested) {
-                unit.heading = legal
-                unit.angularVelocity = 0.0
-                if (movement.type == MovementType.WATER && unit.definition.combat?.rotateWithBody == true) {
-                    val adjustment = policies.coordinates.difference(legal, requested)
-                    for (state in unit.namedWeapons?.values ?: listOfNotNull(unit.combat)) {
-                        state.turretHeading = policies.coordinates.normalize(state.turretHeading + adjustment)
-                    }
+        val requestedHeading = unit.heading
+        val terrainHeading = if (hull != null && requestedHeading != headingBefore) {
+            RectangularTurn.resolve(checkNotNull(hullTerrain), hull, unit.position, headingBefore, requestedHeading)
+        } else requestedHeading
+        val legalHeading = if (hull != null && terrainHeading != headingBefore) {
+            UnitContact.turn(unit, hull, headingBefore, terrainHeading, orderedUnits())
+        } else terrainHeading
+        if (legalHeading != requestedHeading) {
+            unit.heading = legalHeading
+            unit.angularVelocity = 0.0
+            if (movement.type == MovementType.WATER && unit.definition.combat?.rotateWithBody == true) {
+                val adjustment = policies.coordinates.difference(legalHeading, requestedHeading)
+                for (state in unit.namedWeapons?.values ?: listOfNotNull(unit.combat)) {
+                    state.turretHeading = policies.coordinates.normalize(state.turretHeading + adjustment)
                 }
             }
-            legal != requested
-        } else false
+        }
         unit.mechState = unit.mechState?.copy(hadMotionAim = aimForSample != null)
         Transport.recordMotionGate(unit, aimForSample != null)
         val displacement = if (sliding) {
@@ -3062,14 +3073,14 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
         val candidate = Position(unit.position.x + displacement.x, unit.position.y + displacement.y)
         val integratedHeading = unit.heading
         val integratedSpeed = unit.speed
-        fun recordMotion(resolved: Position?, disposition: MotionTerrainDisposition) {
+        fun recordMotion(resolved: Position?, disposition: MotionTerrainDisposition, unitContactLimited: Boolean) {
             motionSamples?.add(MotionStepSample(checkNotNull(activeWorld).id, unit.unitId, unit.ownerPlayerId, unit.typeId,
                 executionStep, simulationTime, delta, originBefore, positionBefore, headingBefore, speedBefore, angularVelocityBefore,
                 commandBefore, normalCompleted, aimForSample != null, aimForSample,
                 finalForSample.takeIf { aimForSample != null }, differenceForSample.takeIf { aimForSample != null },
                 requestedFraction, integratedHeading, integratedSpeed, candidate, resolved, disposition,
                 unit.position, unit.heading, unit.speed, unit.angularVelocity,
-                progressBefore, unit.localProgressTime, correctionBefore, unit.terrainCorrectionTime))
+                progressBefore, unit.localProgressTime, correctionBefore, unit.terrainCorrectionTime, unitContactLimited))
         }
         if (!candidate.x.isFinite() || !candidate.y.isFinite()) {
             throw ArithmeticException("Non-finite movement candidate for ${unit.unitId}")
@@ -3077,7 +3088,7 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
         val rectangle = hull?.let { RectangularTerrain(it, unit.heading) }
         if (shape == null && !Transport.containsPosition(unit, map, candidate)) {
             blockAtMapBoundary(unit)
-            recordMotion(null, MotionTerrainDisposition.CANDIDATE_OUTSIDE_MAP)
+            recordMotion(null, MotionTerrainDisposition.CANDIDATE_OUTSIDE_MAP, legalHeading != terrainHeading)
             return
         }
         val producerCells = if (shape != null && unit.birthRemaining == 0f && buildingTerrain != null)
@@ -3085,7 +3096,7 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
             else emptySet()
         val translationTerrain = if (producerCells.isEmpty()) hullTerrain
             else HullTerrainGrid.leavingProducer(collisionMap, map, movement.type, producerCells)
-        val resolved = when {
+        val terrainResolved = when {
             rectangle != null -> rectangle.resolve(checkNotNull(translationTerrain), unit.position, candidate)
             circle != null -> circle.resolve(checkNotNull(translationTerrain), unit.position, candidate)
             air -> candidate
@@ -3093,6 +3104,8 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
             else -> TerrainMotion.resolve(buildingTerrain?.collisionMap ?: map, unit.position, candidate,
                 map.takeIf { buildingTerrain != null }, movement.type, unit.nativeTransportPlacement)
         }
+        val resolved = UnitContact.translate(unit, terrainResolved, orderedUnits())
+        val unitContactLimited = legalHeading != terrainHeading || resolved != terrainResolved
         val insideMap = when {
             rectangle != null -> rectangle.contains(checkNotNull(hullTerrain), resolved)
             circle != null -> circle.contains(checkNotNull(hullTerrain), resolved)
@@ -3100,10 +3113,11 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
         }
         if (!insideMap) {
             blockAtMapBoundary(unit)
-            recordMotion(resolved, MotionTerrainDisposition.RESOLVED_OUTSIDE_MAP)
+            recordMotion(terrainResolved, MotionTerrainDisposition.RESOLVED_OUTSIDE_MAP, unitContactLimited)
             return
         }
-        if (rotationClipped || resolved != candidate) {
+        val terrainCorrected = terrainHeading != requestedHeading || terrainResolved != candidate
+        if (terrainCorrected || unitContactLimited) {
             pendingEvents += Event("movement-blocked", unit.unitId)
             unit.terrainCorrectionTime += delta
             unit.terrainClearSteps = 0
@@ -3125,7 +3139,8 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
             unit.speed != 0.0 -> MovementState.DECELERATING
             else -> MovementState.IDLE
         }
-        recordMotion(resolved, if (!rotationClipped && resolved == candidate) MotionTerrainDisposition.DIRECT else MotionTerrainDisposition.CORRECTED)
+        recordMotion(terrainResolved, if (terrainCorrected) MotionTerrainDisposition.CORRECTED
+            else MotionTerrainDisposition.DIRECT, unitContactLimited)
     }
 
     private fun blockAtMapBoundary(unit: MutableUnit) {

@@ -14,7 +14,7 @@ class SubmarineCoreAdapterTest {
             CoreAdapter(input).use { core ->
                 val initial = core.initial().json().arrayAt("units").first().jsonObject
                 assertEquals(obj("surfaceIntent" to b(false), "verticalSpeed" to n(0f), "underwater" to b(true),
-                    "surfacePresentation" to b(true), "maximumSpeed" to n(.45), "attackRange" to n(180.0)), initial.objectAt("submarine"))
+                    "surfacePresentation" to b(false), "maximumSpeed" to n(.45), "attackRange" to n(180.0)), initial.objectAt("submarine"))
                 val surface = core.submit(input.actions.single())
                 assertIs<ActionResult.Accepted>(surface, "$format: $surface")
                 core.advance(Step(0, 1.0, "sim-tick"))

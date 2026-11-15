@@ -42,7 +42,7 @@ internal object AmphibiousJetMotion {
             unit.alive && BuildingWork.isReady(unit) && state.flyingIntent && overWater(unit, map))
     }
 
-    fun advance(unit: MutableUnit, map: MapDefinition, delta: Double): Boolean {
+    fun advance(unit: MutableUnit, map: MapDefinition, delta: Double, acceptsHeight: (Double) -> Boolean): Boolean {
         val old = unit.amphibiousState ?: return false
         if (!unit.alive) return false
         val elapsed = delta.toFloat()
@@ -57,6 +57,7 @@ internal object AmphibiousJetMotion {
         else towards(old.verticalSpeed, .07f, .006f * elapsed)
         val height = towards(unit.height.toFloat(), target, speed * elapsed)
         require(listOf(phase, speed, height, wing).all { it.isFinite() }) { "Amphibious height must remain finite" }
+        if (!acceptsHeight(height.toDouble())) return false
         var flying = old.flyingIntent
         var surface = old.surfacePresentation
         if (surface && height < UnitLocomotion.SUBMERGED_DEPTH) {

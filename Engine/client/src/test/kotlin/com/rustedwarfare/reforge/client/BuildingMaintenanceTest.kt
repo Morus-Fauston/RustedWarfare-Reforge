@@ -236,7 +236,7 @@ class BuildingMaintenanceTest {
     @Test fun a_second_builder_repairs_real_reclaim_damage_without_charging_or_finishing_an_unfinished_project_early() {
         val base = ControlledScenario.load(inputRoot())
         val scene = base.copy(units = listOf(UnitSpawn("a", "p1", "builder", Position(120.0, 170.0), 90.0),
-            UnitSpawn("b", "p1", "builder", Position(120.0, 190.0), 90.0),
+            UnitSpawn("b", "p1", "builder", Position(130.0, 130.0), 90.0),
             UnitSpawn("factory", "p1", "landFactory", Position(190.0, 170.0), 0.0)),
             combatContract = CombatContract(1, -1, mapOf("a" to 1L, "b" to 2L, "factory" to 3L), 4L))
         val context = assertIs<InitResult.Accepted>(SimulationContext.initialize(scene)).context
@@ -266,6 +266,9 @@ class BuildingMaintenanceTest {
             assertIs<ActionResult.Accepted>(context.submit(StopAction("pause-extractor", "p1", "a", context.world)))
             assertEquals(800.0, context.observe().units.single { it.unitId == target }.health)
             assertTrue(context.observe().units.single { it.unitId == target }.constructionProgress < 1f)
+            assertIs<ActionResult.Accepted>(context.submit(MoveAction("clear-extractor-approach", "p1", "a",
+                Position(100.0, 245.0), context.world)))
+            repeat(160) { tick() }
             assertIs<ActionResult.Accepted>(context.submit(RepairUnitAction("resume-full-hp", "p1", "b", target, context.world)))
             repeat(1500) { tick() }
             assertEquals(1f, context.observe().units.single { it.unitId == target }.constructionProgress)

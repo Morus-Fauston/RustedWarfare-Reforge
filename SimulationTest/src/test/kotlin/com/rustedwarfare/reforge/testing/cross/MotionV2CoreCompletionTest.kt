@@ -8,7 +8,8 @@ class MotionV2CoreCompletionTest {
     private fun sample(x:Double,target:Position,normal:Boolean,step:Long=0,time:Double=0.0,delta:Double=1.0)=
         MotionStepSample("w","u1","p1","tank",step,time,delta,"diag.0",Position(x,100.0),90.0,0.0,0.0,target,normal,
             !normal,if(normal)null else target,if(normal)null else true,if(normal)null else 0.0,0.0,90.0,0.0,
-            Position(x,100.0),Position(x,100.0),MotionTerrainDisposition.DIRECT,Position(x,100.0),90.0,0.0,0.0,0.0,0.0,0.0,0.0)
+            Position(x,100.0),Position(x,100.0),MotionTerrainDisposition.DIRECT,Position(x,100.0),90.0,0.0,0.0,0.0,0.0,0.0,0.0,
+            unitContactLimited = false)
     private fun move(target:Position,sequence:Long=0,q:Double=0.0)=
         MotionV2CoreCompletion.Command(sequence,q,MotionV2CoreCompletion.CommandKind.MOVE,target)
     private fun one(distance:Double,normal:Boolean):MotionV2CoreCompletion.Frame {

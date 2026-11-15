@@ -20,11 +20,10 @@ internal class CircularTerrain(private val radius: Double) {
         val far = Position(start.x + fraction * dx, start.y + fraction * dy)
         val length = hypot(dx, dy)
         if (length == 0.0) return end
-        val vx = dx / length
-        val vy = dy / length
         val rounding = 4.0 * Math.ulp(maxOf(map.width, map.height, radius))
         val reach = radius - rounding
         if (reach <= 0.0) return far
+        val drift = Position(dx, dy)
 
         map.anyBlocked(minOf(start.x, far.x) - radius, maxOf(start.x, far.x) + radius,
             minOf(start.y, far.y) - radius, maxOf(start.y, far.y) + radius) { column, row ->
@@ -32,21 +31,7 @@ internal class CircularTerrain(private val radius: Double) {
             val right = left + map.tileWidth
             val top = row.toDouble() * map.tileHeight
             val bottom = top + map.tileHeight
-            if (separatesFrom(start, vx, vy, reach, left, right, top, bottom)) return@anyBlocked false
-
-            // Two strips and four corner disks form the open interior of the rounded tile.
-            fraction = minOf(fraction, insideRectangle(start, dx, dy, left - reach, right + reach, top, bottom, fraction),
-                insideRectangle(start, dx, dy, left, right, top - reach, bottom + reach, fraction))
-            for (x in listOf(left, right)) for (y in listOf(top, bottom)) {
-                val toX = x - start.x
-                val toY = y - start.y
-                val perpendicular = abs(toX * vy - toY * vx)
-                if (perpendicular >= reach) continue
-                val parallel = toX * vx + toY * vy
-                val spread = sqrt((reach - perpendicular) * (reach + perpendicular))
-                if (parallel + spread <= 0.0) continue
-                fraction = minOf(fraction, (parallel - spread).coerceAtLeast(0.0) / length)
-            }
+            fraction = roundRectangleEntry(start, drift, reach, left, right, top, bottom, fraction)
             fraction == 0.0
         }
         return when (fraction) {
@@ -71,19 +56,50 @@ internal class CircularTerrain(private val radius: Double) {
                 (start.y - top == nearest && dy <= 0.0) || (bottom - start.y == nearest && dy >= 0.0)
         }
     }
+}
 
-    private fun insideRectangle(start: Position, dx: Double, dy: Double, left: Double, right: Double,
-                                top: Double, bottom: Double, limit: Double): Double {
-        var enter = 0.0
-        var leave = limit
-        fun clip(value: Double, velocity: Double, low: Double, high: Double): Boolean {
-            if (velocity == 0.0) return value > low && value < high
-            val a = (low - value) / velocity
-            val b = (high - value) / velocity
-            enter = maxOf(enter, minOf(a, b))
-            leave = minOf(leave, maxOf(a, b))
-            return enter < leave
-        }
-        return if (clip(start.x, dx, left, right) && clip(start.y, dy, top, bottom)) enter else limit
+internal fun roundedRectangleClearance(point: Position, halfLength: Double, halfWidth: Double, radius: Double): Double {
+    val x = abs(point.x) - halfLength
+    val y = abs(point.y) - halfWidth
+    return hypot(x.coerceAtLeast(0.0), y.coerceAtLeast(0.0)) + minOf(0.0, maxOf(x, y)) - radius
+}
+
+/** The open interior of a rounded rectangle consists of two strips and four corner disks. */
+internal fun roundRectangleEntry(start: Position, drift: Position, radius: Double, left: Double, right: Double,
+                                 top: Double, bottom: Double, limit: Double): Double {
+    val length = hypot(drift.x, drift.y)
+    if (length == 0.0) return limit
+    val vx = drift.x / length
+    val vy = drift.y / length
+    if (CircularTerrain.separatesFrom(start, vx, vy, radius, left, right, top, bottom)) return limit
+    if (radius == 0.0) return insideRectangle(start, drift, left, right, top, bottom, limit)
+
+    var fraction = minOf(limit, insideRectangle(start, drift, left - radius, right + radius, top, bottom, limit),
+        insideRectangle(start, drift, left, right, top - radius, bottom + radius, limit))
+    for (x in listOf(left, right)) for (y in listOf(top, bottom)) {
+        val toX = x - start.x
+        val toY = y - start.y
+        val perpendicular = abs(toX * vy - toY * vx)
+        if (perpendicular >= radius) continue
+        val parallel = toX * vx + toY * vy
+        val spread = sqrt((radius - perpendicular) * (radius + perpendicular))
+        if (parallel + spread <= 0.0) continue
+        fraction = minOf(fraction, (parallel - spread).coerceAtLeast(0.0) / length)
     }
+    return fraction
+}
+
+private fun insideRectangle(start: Position, drift: Position, left: Double, right: Double,
+                            top: Double, bottom: Double, limit: Double): Double {
+    var enter = 0.0
+    var leave = limit
+    fun clip(value: Double, velocity: Double, low: Double, high: Double): Boolean {
+        if (velocity == 0.0) return value > low && value < high
+        val a = (low - value) / velocity
+        val b = (high - value) / velocity
+        enter = maxOf(enter, minOf(a, b))
+        leave = minOf(leave, maxOf(a, b))
+        return enter < leave
+    }
+    return if (clip(start.x, drift.x, left, right) && clip(start.y, drift.y, top, bottom)) enter else limit
 }

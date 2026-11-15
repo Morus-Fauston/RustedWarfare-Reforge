@@ -13,7 +13,7 @@ class DemoNaturalPathDiagnosticTest {
     fun `natural initial segments cross the old band and preserve the full authored demo journey`() {
         val directory = Files.createTempDirectory("demo-natural-path-diagnostic-")
         println("demo-natural-path-diagnostic-output=$directory")
-        val input = DemoScenario.load()
+        val input = demoTerrainScenario()
         val goal = Position(1140.0, 400.0)
         val blocked = buildList {
             for (row in 0 until input.map.heightTiles) for (column in 0 until input.map.widthTiles) {

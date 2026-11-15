@@ -1,9 +1,21 @@
 package com.rustedwarfare.reforge.client.demo
 
+import com.rustedwarfare.reforge.core.content.MovementCollisionShape
+import com.rustedwarfare.reforge.core.content.UnitDefinition
 import com.rustedwarfare.reforge.core.sim.*
 import kotlin.math.hypot
 import kotlin.math.max
 import kotlin.test.*
+
+internal fun demoTerrainScenario(): Scenario {
+    val demo = DemoScenario.load()
+    val source = demo.unitDefinitions.getValue("demo_tank")
+    // The terrain oracle drives fifty simultaneous traces to one shared test coordinate.
+    val probe = UnitDefinition(source.id, source.className, source.radius, source.displayRadius,
+        source.totalFrames, source.imagePath, source.imageScale, source.movement, source.retainedUnconsumed,
+        source.fogOfWarSightRange, movementCollision = MovementCollisionShape.Circle(0.0))
+    return demo.copy(unitDefinitions = mapOf("demo_tank" to probe))
+}
 
 /** Independent command-cause/tail oracle; the legacy targetRadius field is not a completion gate. */
 internal class DemoMoveOracle(private val scenario: Scenario, private val goal: Position, initial: List<UnitObservation>) {

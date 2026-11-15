@@ -15,8 +15,10 @@ import kotlin.test.*
 class PathKnownConnectorRepairTest {
     @Test fun `fifty known gap routes repair invalid connectors before subsequent movement`() {
         val walls=(0 until 24).filter { it !in 10..14 }.map { intArrayOf(16,it) }
+        // Crossing probes isolate repair against known terrain.
         val unit=UnitDefinition("tank","tank",11.0,11.0,1,Path.of("assets/units/tanks/tank.png"),1.0,
-            MovementProfile(MovementType.LAND,1.1,0.05,0.02,3.0,0.01,false,false),emptySet())
+            MovementProfile(MovementType.LAND,1.1,0.05,0.02,3.0,0.01,false,false),emptySet(),
+            movementCollision = MovementCollisionShape.Circle(0.0))
         val map=MapDefinition(32,24,20,20,emptyList(),IntArray(768),
             BlockingGrid(32,24,BooleanArray(768) { it%32==16 && it/32 !in 10..14 }))
         val scenario=Scenario("known-connector-repair",map,mapOf(unit.id to unit),listOf(Player("p1",PlayerControl.LOCAL)),

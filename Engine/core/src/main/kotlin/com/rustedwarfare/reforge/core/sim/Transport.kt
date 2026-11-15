@@ -202,7 +202,8 @@ internal object Transport {
         unit.transportState = unit.transportState?.copy(motionGate = hasNormalAim)
     }
 
-    fun advance(unit: MutableUnit, units: Map<String, MutableUnit>, map: MapDefinition, delta: Double): List<Event> {
+    fun advance(unit: MutableUnit, units: Map<String, MutableUnit>, map: MapDefinition, delta: Double,
+                acceptsHeight: (Double) -> Boolean): List<Event> {
         if (unit.nativeTransportPlacement && MapBounds.contains(map.widthTiles.toDouble() * map.tileWidth,
                 map.heightTiles.toDouble() * map.tileHeight, unit.position, unit.definition.radius))
             unit.nativeTransportPlacement = false
@@ -274,7 +275,8 @@ internal object Transport {
             val target = if (landing) 2f else 35f + GroundMath.sin(phase) * 1.5f
             val limit = (if (landing) .4f else .35f) * delta.toFloat()
             val height = unit.height.toFloat()
-            unit.height = (if (height < target) minOf(target, height + limit) else maxOf(target, height - limit)).toDouble()
+            val nextHeight = (if (height < target) minOf(target, height + limit) else maxOf(target, height - limit)).toDouble()
+            if (acceptsHeight(nextHeight)) unit.height = nextHeight
             return events
         }
         var phase = unit.heightPhase.toFloat() + 4f * delta.toFloat()
@@ -328,10 +330,10 @@ internal object Transport {
             action.actionId, targetUnitId = target.unitId, atStep = action.atStep))
         actor.attackCommand = null
         actor.cancelRoute()
-        return advanceLoading(actor, units) ?: error("A new load order must be active")
+        return advanceLoading(actor, units, allowHullContact = false) ?: error("A new load order must be active")
     }
 
-    fun advanceLoading(actor: MutableUnit, units: Map<String, MutableUnit>): TransportChange? {
+    fun advanceLoading(actor: MutableUnit, units: Map<String, MutableUnit>, allowHullContact: Boolean = true): TransportChange? {
         val task = actor.tasks.firstOrNull()?.takeIf { it.kind == UnitTaskKind.LOAD_INTO || it.kind == UnitTaskKind.LOAD_UP }
             ?: return null
         val target = units[task.targetUnitId]
@@ -348,7 +350,11 @@ internal object Transport {
         val x = carrier.position.x.toFloat() - passenger.position.x.toFloat()
         val y = carrier.position.y.toFloat() - passenger.position.y.toFloat()
         val squared = x * x + y * y
-        if (if (into) squared >= 441f else squared > 441f) return TransportChange(approach = target.position)
+        val beyondBoardingRange = if (into) squared >= 441f else squared > 441f
+        // A valid boarding order can finish at hull contact when the native center threshold
+        // would require penetrating the carrier. Other movement still uses the same collision.
+        if (beyondBoardingRange && !(allowHullContact && UnitContact.inContact(passenger, carrier)))
+            return TransportChange(approach = target.position)
         val state = checkNotNull(carrier.transportState)
         carrier.transportState = state.copy(passengerIds = immutable(state.passengerIds + passenger.unitId))
         passenger.carriedBy = carrier.unitId

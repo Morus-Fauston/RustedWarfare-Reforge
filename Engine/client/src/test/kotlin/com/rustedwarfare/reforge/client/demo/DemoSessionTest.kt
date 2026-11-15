@@ -42,7 +42,7 @@ class DemoSessionTest {
     }
 
     @Test fun `authored map discovers unseen barriers replans retains memory and reaches goal`() {
-        val input = DemoScenario.load()
+        val input = demoTerrainScenario()
         DemoSession(input).use { session ->
             assertNull(session.knowledge.cell(25, 20).lastKnownBlocked)
             val goal = Position(1140.0, 400.0)

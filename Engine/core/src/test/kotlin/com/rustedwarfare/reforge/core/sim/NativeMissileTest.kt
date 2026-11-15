@@ -41,15 +41,19 @@ class NativeMissileTest {
         val builder = base.unitDefinitions.getValue("builder")
         val fragile = UnitDefinition("fragile", builder.className, builder.radius, builder.displayRadius,
             1, builder.imagePath, 1.0, builder.movement, emptySet(), durability = builder.durability!!.copy(maxHp = 25.0))
+        // This retarget fixture needs equal distances and identical centers in the spatial index.
+        val indexProbe = UnitDefinition("index-probe", builder.className, builder.radius, builder.displayRadius,
+            1, builder.imagePath, 1.0, builder.movement, emptySet(), durability = builder.durability,
+            movementCollision = MovementCollisionShape.Circle(0.0))
         val tank = BuildingTestContent.scenario().unitDefinitions.getValue("c_tank")
         val killer = UnitDefinition("killer", tank.className, tank.radius, tank.displayRadius, tank.totalFrames,
             tank.imagePath, 1.0, tank.movement, emptySet(), combat = tank.combat!!.copy(attackRange = 100.0,
                 shootDelay = 1000.0, turretTurnSpeed = 999.0, projectile = tank.combat.projectile.copy(speed = 10000.0)))
         val input = PointDefenseTestContent.identities(base.copy(players = base.players.map { it.copy(control = PlayerControl.LOCAL) },
-            unitDefinitions = base.unitDefinitions + mapOf(center.id to center, fragile.id to fragile, killer.id to killer),
+            unitDefinitions = base.unitDefinitions + listOf(center, fragile, killer, indexProbe).associateBy { it.id },
             units = listOf(base.units.first(), UnitSpawn("b", "p2", fragile.id, Position(310.0, 210.0), 0.0),
-                UnitSpawn("c", "p2", builder.id, Position(180.0, 210.0), 90.0),
-                UnitSpawn("d", "p2", builder.id, Position(180.0, 210.0), 90.0),
+                UnitSpawn("c", "p2", indexProbe.id, Position(180.0, 210.0), 90.0),
+                UnitSpawn("d", "p2", indexProbe.id, Position(180.0, 210.0), 90.0),
                 UnitSpawn("far", "p2", builder.id, Position(310.0, 310.0), 0.0),
                 UnitSpawn("z", "p1", killer.id, Position(310.0, 30.0), 180.0))))
         val c = assertIs<InitResult.Accepted>(SimulationContext.initialize(input)).context

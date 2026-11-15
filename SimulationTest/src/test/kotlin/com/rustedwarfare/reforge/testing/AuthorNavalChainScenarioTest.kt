@@ -30,7 +30,10 @@ class AuthorNavalChainScenarioTest {
             assertEquals(3200, steps.size)
             val hostSteps = steps.map { it.objectAt("observation") }
             assertTrue(hostSteps.first().objectAt("combat").arrayAt("weapons").isEmpty())
-            val arrivals = hostSteps.drop(2400).flatMap { it.arrayAt("events") }.map { it.jsonObject }
+            val sailStep = readObject(scenario).arrayAt("actions").map { it.jsonObject }
+                .single { it.text("actionId") == "sail-second" }.integer("atStep")
+            val arrivals = hostSteps.filter { it.integer("stepIndex") >= sailStep }
+                .flatMap { it.arrayAt("events") }.map { it.jsonObject }
                 .filter { it.id("kind") == "movement-arrived" && it.id("unitId") == secondId }
             assertEquals(1, arrivals.size, "Normal completion must be an actual core event for the second ship")
             val last = steps.last().objectAt("observation")

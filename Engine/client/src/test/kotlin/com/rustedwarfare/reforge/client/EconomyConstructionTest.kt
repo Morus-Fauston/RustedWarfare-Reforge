@@ -486,8 +486,10 @@ class EconomyConstructionTest {
         val gun = UnitDefinition("gun", tank.className, tank.radius, tank.displayRadius, tank.totalFrames,
             tank.imagePath, tank.imageScale, tank.movement, emptySet(), combat = checkNotNull(tank.combat).copy(
                 shootDelay = 10000.0, attackRange = 200.0, projectile = ProjectileProfile(500.0, 99.0, 200.0)))
+        // The probes isolate the closely spaced damage radii and crossing timing.
         val target = UnitDefinition("witness", tank.className, tank.radius, tank.displayRadius, tank.totalFrames,
-            tank.imagePath, tank.imageScale, tank.movement, emptySet(), durability = DurabilityProfile(1000.0, tank.combat!!.deadImagePath))
+            tank.imagePath, tank.imageScale, tank.movement, emptySet(), durability = DurabilityProfile(1000.0, tank.combat!!.deadImagePath),
+            movementCollision = MovementCollisionShape.Circle(0.0))
         val defense = UnitDefinition("defense", "DefenseWitness", 10.0, 10.0, tank.totalFrames, tank.imagePath,
             tank.imageScale, MovementProfile(MovementType.NONE, 0.0, 0.0, 0.0, 0.0, 0.0, false, false), emptySet(),
             durability = DurabilityProfile(1000.0, tank.combat!!.deadImagePath),

@@ -41,7 +41,7 @@ internal object NautilusMotion {
         }
     }
 
-    fun advance(unit: MutableUnit, delta: Double) {
+    fun advance(unit: MutableUnit, delta: Double, acceptsHeight: (Double) -> Boolean) {
         if (unit.definition.transport != TransportProfile.NAUTILUS_SUBMERGED) return
         val land = unit.typeId == "nautilusSubmarineLand"
         val targetHeight = if (land) 2f else if (unit.typeId == "nautilusSubmarineSurface") .1f else -8f
@@ -59,16 +59,19 @@ internal object NautilusMotion {
         val change = minOf(.005f, abs(height - target) * .05f * .3f + .1f) * elapsed
         height = if (height < target) minOf(target, height + change) else maxOf(target, height - change)
         val fallingThreshold = targetHeight + drift + 1f
+        var sinkSpeed = unit.sinkSpeed
         if (height > fallingThreshold) {
-            unit.sinkSpeed += .03f * elapsed
-            if (height < 0f) unit.sinkSpeed = minOf(unit.sinkSpeed, .2f)
-            height -= unit.sinkSpeed * elapsed
+            sinkSpeed += .03f * elapsed
+            if (height < 0f) sinkSpeed = minOf(sinkSpeed, .2f)
+            height -= sinkSpeed * elapsed
             if (height <= fallingThreshold) {
                 if (height < targetHeight + drift) height = targetHeight + drift
-                unit.sinkSpeed = 0f
+                sinkSpeed = 0f
             }
-        } else unit.sinkSpeed = 0f
-        require(height.isFinite() && phase.isFinite() && unit.sinkSpeed.isFinite()) { "Custom water height must remain finite" }
+        } else sinkSpeed = 0f
+        require(height.isFinite() && phase.isFinite() && sinkSpeed.isFinite()) { "Custom water height must remain finite" }
+        if (!acceptsHeight(height.toDouble())) return
+        unit.sinkSpeed = sinkSpeed
         unit.height = height.toDouble()
         unit.heightPhase = phase.toDouble()
     }

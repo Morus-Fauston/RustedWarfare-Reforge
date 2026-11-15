@@ -18,14 +18,17 @@ internal object SubmarineMotion {
         definition.imageScale == 1.0 && definition.movement.flight == null && definition.movement.hover == null &&
         definition.directHitTargetKind == DirectHitTargetKind.ORDINARY
 
-    fun advance(unit: MutableUnit, delta: Double): Boolean {
+    fun advance(unit: MutableUnit, delta: Double, acceptsHeight: (Double) -> Boolean): Boolean {
         if (unit.definition.submarine == null || !unit.alive) return false
         val elapsed = delta.toFloat()
         val desired = if (unit.submarineSurfaceIntent) 1f else -8f
         val rate = if (abs(unit.height.toFloat() - desired) > 2f) .08f else .02f
-        unit.submarineVerticalSpeed = towards(unit.submarineVerticalSpeed, rate, .003f * elapsed)
-        unit.height = towards(unit.height.toFloat(), desired, unit.submarineVerticalSpeed * elapsed).toDouble()
-        require(unit.height.isFinite() && unit.submarineVerticalSpeed.isFinite()) { "Submarine depth must remain finite" }
+        val verticalSpeed = towards(unit.submarineVerticalSpeed, rate, .003f * elapsed)
+        val height = towards(unit.height.toFloat(), desired, verticalSpeed * elapsed).toDouble()
+        require(height.isFinite() && verticalSpeed.isFinite()) { "Submarine depth must remain finite" }
+        if (!acceptsHeight(height)) return false
+        unit.height = height
+        unit.submarineVerticalSpeed = verticalSpeed
         val surface = !UnitLocomotion.isSubmerged(unit)
         val crossed = surface != unit.submarineSurfacePresentation
         unit.submarineSurfacePresentation = surface
