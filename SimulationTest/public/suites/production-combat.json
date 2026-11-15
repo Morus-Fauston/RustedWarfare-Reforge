@@ -125,6 +125,7 @@
       "com.rustedwarfare.reforge.core.sim.UnitYieldTest",
       "com.rustedwarfare.reforge.core.sim.RouteContinuationTest",
       "com.rustedwarfare.reforge.core.sim.NarrowPassageTest",
+      "com.rustedwarfare.reforge.core.sim.GroupMoveDestinationsTest",
       "com.rustedwarfare.reforge.core.sim.WaterMovementTest",
       "com.rustedwarfare.reforge.core.sim.SandboxCommandParserTest",
       "com.rustedwarfare.reforge.core.sim.OfflineSandboxHostTest",

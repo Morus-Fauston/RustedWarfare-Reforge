@@ -27,6 +27,22 @@ internal object UnitContact {
     fun shareLayer(first: MutableUnit, second: MutableUnit): Boolean =
         layer(first)?.let { it == layer(second) } == true
 
+    fun posesOverlap(first: MovementCollisionShape, at: Position, heading: Double,
+                     second: MovementCollisionShape, other: Position, otherHeading: Double): Boolean {
+        val offset = subtract(at, other)
+        val reach = boundingRadius(first) + boundingRadius(second)
+        return abs(offset.x) <= reach && abs(offset.y) <= reach &&
+            Body(first, heading).overlaps(Body(second, otherHeading), offset)
+    }
+
+    fun poseFits(shape: MovementCollisionShape, at: Position, heading: Double, map: HullTerrainGrid): Boolean {
+        val inside = when (shape) {
+            is MovementCollisionShape.Circle -> CircularTerrain(shape.radius).contains(map, at)
+            is MovementCollisionShape.Rectangle -> RectangularTerrain(shape, heading).contains(map, at)
+        }
+        return inside && !overlapsTerrain(Body(shape, heading), at, map)
+    }
+
     fun inContact(unit: MutableUnit, other: MutableUnit): Boolean {
         val layer = layer(unit) ?: return false
         if (layer(other) != layer) return false
@@ -225,7 +241,7 @@ internal object UnitContact {
         }
     }
 
-    private fun boundingRadius(shape: MovementCollisionShape): Double = when (shape) {
+    fun boundingRadius(shape: MovementCollisionShape): Double = when (shape) {
         is MovementCollisionShape.Circle -> shape.radius
         is MovementCollisionShape.Rectangle -> hypot(shape.length / 2.0, shape.width / 2.0)
     }

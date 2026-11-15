@@ -446,6 +446,7 @@ internal data class MutableUnit(
     var routeTranslationClipped: Boolean = false,
     var routeOccupantIds: List<String> = emptyList(),
     var passageEntry: PassageEntry? = null,
+    var groupMoveReservation: GroupMoveReservation? = null,
     var lastYieldStep: Long = -1L,
     var lastYieldTo: Pair<String, String>? = null,
     var localProgressTime: Double = 0.0,
@@ -624,6 +625,7 @@ internal data class MutableUnit(
     fun clearMoveOrigin() {
         originMoveId = null
         originAtStep = null
+        groupMoveReservation = null
         lastPlannedKnowledgeRevision = -1L
         lastPlannedBuildingRevision = -1L
         nearTargetTime = 0.0

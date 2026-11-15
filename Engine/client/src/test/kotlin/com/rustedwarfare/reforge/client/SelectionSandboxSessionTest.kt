@@ -1,10 +1,73 @@
 package com.rustedwarfare.reforge.client
 
+import com.rustedwarfare.reforge.core.content.BlockingGrid
+import com.rustedwarfare.reforge.core.content.MapDefinition
 import com.rustedwarfare.reforge.core.sim.*
 import java.nio.file.Path
 import kotlin.test.*
 
 class SelectionSandboxSessionTest {
+    @Test fun one_ground_click_assigns_distinct_destinations_to_two_selected_tanks() {
+        val base = ControlledScenario.load(root())
+        val tank = base.units.single { it.unitId == "a" }
+        val second = tank.copy(unitId = "z", position = Position(180.0, 110.0))
+        val scene = base.copy(units = listOf(tank, second), combatContract = base.combatContract!!.copy(
+            unitObjectIds = mapOf("a" to 8L, "z" to 11L), nextObjectId = 12L))
+        val target = Position(180.0, 330.0)
+        val radius = (scene.unitDefinitions.getValue(tank.typeId).movementCollision as
+            com.rustedwarfare.reforge.core.content.MovementCollisionShape.Circle).radius
+        fun run(reverseSelection: Boolean): Map<String, Position?> = SandboxSession(scene).use { session ->
+            val order = if (reverseSelection) listOf(second, tank) else listOf(tank, second)
+            session.select(order[0].position)
+            session.select(order[1].position, SelectionMode.ADD)
+            assertEquals(setOf("a", "z"), session.selectedIds)
+            assertIs<ActionResult.Accepted>(session.command(target))
+            val destinations = session.observation.units.associate { it.unitId to it.moveTarget }
+            println("Shared click $target destinations=$destinations")
+            assertEquals(target, destinations.getValue("a"))
+            val other = assertNotNull(destinations.getValue("z"))
+            assertTrue(kotlin.math.hypot(other.x - target.x, other.y - target.y) in (2.0 * radius)..64.0)
+            val arrived = mutableSetOf<String>()
+            repeat(1100) {
+                session.tick()
+                arrived += session.observation.events.filter { it.kind == "movement-arrived" }.mapNotNull { it.unitId }
+            }
+            assertEquals(setOf("a", "z"), arrived)
+            destinations
+        }
+        assertEquals(run(false), run(true))
+        SandboxSession(scene).use { session ->
+            session.select(second.position)
+            assertIs<ActionResult.Accepted>(session.command(target))
+            assertEquals(target, session.observation.units.single { it.unitId == "z" }.moveTarget)
+        }
+    }
+
+    @Test fun group_movement_reports_the_count_behind_a_known_barrier() {
+        val base = ControlledScenario.load(root())
+        val tank = base.units.single { it.unitId == "a" }
+        val other = tank.copy(unitId = "z", position = Position(430.0, 210.0))
+        val source = base.map
+        val barrier = BlockingGrid(source.widthTiles, source.heightTiles,
+            BooleanArray(source.widthTiles * source.heightTiles) { it % source.widthTiles == 15 })
+        val map = MapDefinition(source.widthTiles, source.heightTiles, source.tileWidth, source.tileHeight,
+            source.tileSets, source.groundGids, barrier)
+        val scene = base.copy(map = map, units = listOf(tank, other), combatContract = base.combatContract!!.copy(
+            unitObjectIds = mapOf("a" to 8L, "z" to 11L), nextObjectId = 12L))
+        SandboxSession(scene).use { session ->
+            session.select(tank.position)
+            session.select(other.position, SelectionMode.ADD)
+            val click = Position(180.0, 330.0)
+            assertIs<ActionResult.Accepted>(session.command(click))
+            val batch = assertNotNull(session.lastCommandBatch)
+            assertEquals(1, batch.dispatched)
+            assertEquals(1, batch.withoutDestination)
+            assertEquals("Accepted 1, no destination 1, rejected 0, skipped 0", session.playerFeedback)
+            assertEquals(click, session.observation.units.single { it.unitId == "a" }.moveTarget)
+            assertNull(session.observation.units.single { it.unitId == "z" }.moveTarget)
+        }
+    }
+
     @Test fun two_real_products_attack_damage_and_public_death_remove_saved_members() {
         val input = ControlledScenario.load(root())
         SandboxSession(input).use { s ->

@@ -34,7 +34,11 @@ class DemoSessionTest {
             session.moveSelected(target)
             assertEquals(target, session.lastTarget)
             assertEquals(50, session.searches)
-            assertTrue(session.observation.units.all { it.moveTarget == target })
+            val destinations = session.observation.units.map { assertNotNull(it.moveTarget) }
+            assertEquals(50, destinations.toSet().size)
+            assertTrue(target in destinations)
+            assertTrue(destinations.all { kotlin.math.hypot(it.x - target.x, it.y - target.y) <= 60.0 })
+            assertTrue(session.observation.units.all { it.pathPoints.last() == it.moveTarget })
             repeat(20) { session.tick() }
             assertTrue(session.observation.units.all { it.position != before.getValue(it.unitId) })
             assertTrue(session.exploredCells >= session.visibleCells)

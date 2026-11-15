@@ -179,6 +179,7 @@ class SandboxSession(scenario: Scenario, private val evidence: ClientEvidence = 
             feedback == "production-cancelled" -> "Production cancelled; funds returned"
             feedback == "empty-production-queue" -> "Production queue is empty"
             feedback == "path-unreachable" -> "Destination is unreachable"
+            feedback.startsWith("No destination for ") -> feedback
             feedback == "action-target-out-of-range" -> "Location too far"
             feedback == "action-target-impassable" -> "Invalid map location (must be passable by HOVER)"
             feedback == "unit-action-cooldown" -> "Action is cooling down"
@@ -376,8 +377,12 @@ class SandboxSession(scenario: Scenario, private val evidence: ClientEvidence = 
         apply(CancelUpgradeAction("click-${++actionNumber}", "p1", checkNotNull(selectedId), it.actionKey, context.world))
     }
 
-    fun move(position: Position): ActionResult? = dispatch(applicable = ::canMove) { id ->
-        MoveAction("click-${++actionNumber}", "p1", id, position, context.world)
+    fun move(position: Position): ActionResult? {
+        val selection = selectedIds
+        val group = if (selection.size > 1) context.prepareGroupMove("p1", selection, position) else null
+        return dispatch(selection, ::canMove, group) { id ->
+            MoveAction("click-${++actionNumber}", "p1", id, position, context.world)
+        }
     }
     val canPatrol: Boolean get() = isOpen && observation.units.any { it.unitId in selectedIds && canMove(it) }
     private fun canMove(unit: UnitObservation): Boolean = controllable(unit) && unit.carriedBy == null &&
@@ -455,6 +460,7 @@ class SandboxSession(scenario: Scenario, private val evidence: ClientEvidence = 
         }
 
     private fun dispatch(selectionAtPress: Set<String> = selectedIds, applicable: (UnitObservation) -> Boolean = ::controllable,
+                         moveGroup: GroupMovePlan? = null,
                          action: (String) -> Action): ActionResult? {
         val members = selectionAtPress.sorted()
         val revision = selectionRevision
@@ -463,7 +469,7 @@ class SandboxSession(scenario: Scenario, private val evidence: ClientEvidence = 
         lastCommandBatch = null
         for (id in members) {
             if (members.size > 1 && observation.units.none { it.unitId == id && applicable(it) }) { skipped++; continue }
-            results += SelectionCommandMember(id, apply(action(id)))
+            results += SelectionCommandMember(id, apply(action(id), moveGroup))
         }
         val batch = SelectionCommandBatch(results, skipped)
         lastCommandBatch = batch
@@ -471,7 +477,9 @@ class SandboxSession(scenario: Scenario, private val evidence: ClientEvidence = 
             feedback = "No selection"
             rejectedFeedback = false
         } else if (members.size > 1) {
-            feedback = (if (batch.queueFull == members.size) "construction-queue-full"
+            feedback = (if (batch.withoutDestination > 0)
+                "Accepted ${batch.dispatched}, no destination ${batch.withoutDestination}, rejected ${batch.rejected}, skipped ${batch.skipped}"
+                else if (batch.queueFull == members.size) "construction-queue-full"
                 else if (batch.queueFull > 0) "Added ${batch.added}, queue full ${batch.queueFull}, rejected ${batch.rejected}, skipped ${batch.skipped}"
                 else "Accepted ${batch.accepted}, rejected ${batch.rejected}, skipped ${batch.skipped}") +
                 results.mapNotNull { (it.result as? ActionResult.Rejected)?.error?.code }.distinct().joinToString(", ", prefix = "; ")
@@ -479,6 +487,7 @@ class SandboxSession(scenario: Scenario, private val evidence: ClientEvidence = 
         }
         evidence.recordWhenEnabled("selection-command") { mapOf("accepted" to batch.accepted,
             "added" to batch.added, "queueFull" to batch.queueFull, "rejected" to batch.rejected, "skipped" to batch.skipped,
+            "withoutDestination" to batch.withoutDestination,
             "selectionRevision" to revision, "selectionAtPress" to members,
             "members" to results.map { mapOf("unitId" to it.unitId, "result" to it.result.fields()) }) }
         return results.lastOrNull()?.result
@@ -536,7 +545,11 @@ class SandboxSession(scenario: Scenario, private val evidence: ClientEvidence = 
                 productionNotice = ProductionNotice("${unitTitle(unit.typeId)} created", observation.stepIndex)
             }
         }
-        if (!rejectedFeedback) observation.events.lastOrNull()?.let { feedback = it.kind }
+        if (!rejectedFeedback) {
+            val missingDestinations = observation.events.count { it.kind == "group-destination-unavailable" }
+            if (missingDestinations > 0) feedback = "No destination for $missingDestinations"
+            else observation.events.lastOrNull()?.let { feedback = it.kind }
+        }
         capture("step")
     }
 
@@ -604,9 +617,9 @@ class SandboxSession(scenario: Scenario, private val evidence: ClientEvidence = 
         .sortedWith(compareBy<Pair<UnitObservation, Double>> { it.second }.thenBy { it.first.unitId })
         .firstOrNull()?.first?.unitId
 
-    private fun apply(action: Action): ActionResult {
+    private fun apply(action: Action, moveGroup: GroupMovePlan? = null): ActionResult {
         capture("before-action")
-        val result = context.submit(action)
+        val result = if (moveGroup == null) context.submit(action) else context.submitGroupMove(action as MoveAction, moveGroup)
         publishFrame()
         feedback = when (result) {
             is ActionResult.Rejected -> result.error.code
@@ -692,6 +705,10 @@ class SelectionCommandBatch(members: List<SelectionCommandMember>, val skipped: 
     val members: List<SelectionCommandMember> = java.util.Collections.unmodifiableList(ArrayList(members))
     val accepted: Int get() = members.count { it.result is ActionResult.Accepted }
     val rejected: Int get() = members.count { it.result is ActionResult.Rejected }
+    val withoutDestination: Int get() = members.count { member ->
+        (member.result as? ActionResult.Accepted)?.events?.any { it.kind == "group-destination-unavailable" } == true
+    }
+    val dispatched: Int get() = accepted - withoutDestination
     val queueFull: Int get() = members.count { member ->
         (member.result as? ActionResult.Accepted)?.events?.any { it.kind == "construction-queue-full" } == true
     }
