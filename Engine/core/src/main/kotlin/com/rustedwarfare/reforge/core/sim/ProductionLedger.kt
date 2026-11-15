@@ -1,6 +1,7 @@
 package com.rustedwarfare.reforge.core.sim
 
 import com.rustedwarfare.reforge.core.content.BuildProfile
+import java.math.BigDecimal
 import java.util.Collections
 
 /** Trusted factory registration; command authority remains the simulation's responsibility. */
@@ -31,6 +32,10 @@ internal sealed interface ProductionChange {
     data class Accepted(val ledger: ProductionLedger) : ProductionChange
     data class Rejected(val error: ProductionError) : ProductionChange
 }
+internal sealed interface SandboxCreditAdjustment {
+    data class Accepted(val ledger: ProductionLedger, val change: SandboxCreditChange) : SandboxCreditAdjustment
+    data class Rejected(val code: String) : SandboxCreditAdjustment
+}
 
 /** Pure candidate bookkeeping. Completion describes work; it never fabricates or publishes a unit. */
 internal class ProductionLedger private constructor(
@@ -40,24 +45,29 @@ internal class ProductionLedger private constructor(
     private val nonces: Map<String, Set<String>> = emptyMap(),
     private val inactive: Set<String> = emptySet(),
     private val preciseBalances: Map<String, Double>? = null,
+    private val incomeEnabled: Boolean = false,
 ) {
     val balances: Map<String, Long> get() = integerBalances ?: Collections.unmodifiableMap(
         checkNotNull(preciseBalances).mapValuesTo(linkedMapOf()) { it.value.toLong() })
     init { require((integerBalances == null) != (preciseBalances == null)) }
 
     companion object {
+        const val INCOME_LIMIT = 999999999.0
+        private const val MAX_EXACT_DOUBLE_INTEGER = 9007199254740991L
         private val nonceFormat = Regex("[0-9a-f]{32}")
         private fun <K, V> freeze(values: Map<K, V>): Map<K, V> =
             Collections.unmodifiableMap(LinkedHashMap(values))
         fun initial(balances: Map<String, Long>, factories: Map<String, FactoryProductionSpec>,
-                    incomeEnabled: Boolean = false): ProductionLedger {
+                    incomeEnabled: Boolean = false, maintenanceEnabled: Boolean = false): ProductionLedger {
             require(balances.values.all { it >= 0L }) { "Initial balances must be nonnegative" }
             require(factories.values.all { it.ownerPlayerId in balances && it.valid() }) { "Invalid factory production registration" }
-            return ProductionLedger(balances.takeUnless { incomeEnabled }?.let { freeze(it) },
+            val precise = incomeEnabled || maintenanceEnabled
+            return ProductionLedger(balances.takeUnless { precise }?.let { freeze(it) },
                 freeze(factories),
                 queues = freeze(emptyMap()), nonces = freeze(emptyMap()),
                 inactive = Collections.unmodifiableSet(LinkedHashSet()),
-                preciseBalances = balances.takeIf { incomeEnabled }?.mapValues { it.value.toDouble() }?.let { freeze(it) })
+                preciseBalances = balances.takeIf { precise }?.mapValues { it.value.toDouble() }?.let { freeze(it) },
+                incomeEnabled = incomeEnabled)
         }
     }
 
@@ -72,7 +82,7 @@ internal class ProductionLedger private constructor(
         ProductionLedger(
             integerBalances?.let { if (it === this.integerBalances) it else freeze(it) },
             factories, queues, nonces, inactive,
-            preciseBalances?.let { if (it === this.preciseBalances) it else freeze(it) })
+            preciseBalances?.let { if (it === this.preciseBalances) it else freeze(it) }, incomeEnabled)
 
     private fun changedQueue(factoryId: String, items: List<PendingFactoryWork>) =
         Collections.unmodifiableMap(queues + (factoryId to immutable(items)))
@@ -187,10 +197,49 @@ internal class ProductionLedger private constructor(
         return copy(integerBalances = amounts + (owner to Math.addExact(amounts.getValue(owner), credits)))
     }
 
+    fun adjustSandboxCredits(owner: String, amount: Long, otherRefunds: () -> Sequence<Long>): SandboxCreditAdjustment {
+        fun rejected(code: String) = SandboxCreditAdjustment.Rejected(code)
+        fun applied(next: ProductionLedger, before: Number, after: Number) =
+            SandboxCreditAdjustment.Accepted(next, SandboxCreditChange(owner, before.toString(), after.toString()))
+        preciseBalances?.let {
+            val before = it.getValue(owner)
+            val delta = amount.toDouble()
+            if (amount > 0L && incomeEnabled && before > INCOME_LIMIT - delta)
+                return rejected("amount-out-of-range")
+            val after = before + delta
+            if (after < 0.0) return rejected("insufficient-funds")
+            if (amount !in -MAX_EXACT_DOUBLE_INTEGER..MAX_EXACT_DOUBLE_INTEGER)
+                return rejected("amount-out-of-range")
+            // At whole-credit precision, compare the exact values represented by the two balances.
+            if (Math.ulp(maxOf(before, after)) >= 1.0 &&
+                BigDecimal(after).subtract(BigDecimal(before)).compareTo(BigDecimal.valueOf(amount)) != 0)
+                return rejected("amount-out-of-range")
+            val next = if (amount == 0L) this else copy(preciseBalances = it + (owner to after))
+            return applied(next, before, after)
+        }
+        val amounts = checkNotNull(integerBalances)
+        val before = amounts.getValue(owner)
+        if (amount < -before) return rejected("insufficient-funds")
+        if (amount == 0L) return applied(this, before, before)
+        if (amount > Long.MAX_VALUE - before) return rejected("amount-out-of-range")
+        val after = before + amount
+        if (amount > 0L) {
+            // Preserve room for the refunds available before this command.
+            var room = Long.MAX_VALUE - after
+            val factoryRefunds = queues.asSequence().filter { (id, _) -> factories.getValue(id).ownerPlayerId == owner }
+                .flatMap { (_, items) -> items.asSequence().map { it.cost } }
+            for (refund in factoryRefunds + otherRefunds()) {
+                if (refund > room) return rejected("amount-out-of-range")
+                room -= refund
+            }
+        }
+        return applied(copy(integerBalances = amounts + (owner to after)), before, after)
+    }
+
     fun creditIncome(owner: String, credits: Float): ProductionLedger {
         require(credits.isFinite() && credits >= 0f)
         val amounts = checkNotNull(preciseBalances)
-        return copy(preciseBalances = amounts + (owner to minOf(amounts.getValue(owner) + credits.toDouble(), 999999999.0)))
+        return copy(preciseBalances = amounts + (owner to minOf(amounts.getValue(owner) + credits.toDouble(), INCOME_LIMIT)))
     }
 
     fun creditReclaim(owner: String, credits: Double): ProductionLedger {

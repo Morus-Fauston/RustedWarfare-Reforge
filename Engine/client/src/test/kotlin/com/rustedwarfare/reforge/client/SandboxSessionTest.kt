@@ -19,6 +19,29 @@ class SandboxSessionTest {
             TimeModel("p001.time.v1", "sim-tick", "ieee754-binary64", "fixed-explicit-delta"), MovementContract(16.0, 4.0))
     }
 
+    @Test fun command_panel_reports_the_before_and_after_credits_from_the_offline_host() {
+        val scene = scenario().copy(economyContract = EconomyContract(mapOf("p1" to 100L, "p2" to 20L)))
+        val records = mutableListOf<Pair<String, Map<String, Any?>>>()
+        SandboxSession(scene, ClientEvidence { kind, fields -> records += kind to fields },
+            SandboxOptions(deploymentEnabled = true)).use { session ->
+            assertEquals(SandboxCommandStatus.QUEUED, session.submitSandboxCommand("/credits p1 +17").status)
+            assertEquals(100L, session.observation.balance)
+            session.tick()
+            assertEquals(117L, session.observation.balance)
+            assertTrue(session.sandboxCommandFeedback.contains("p1"))
+            assertTrue(session.sandboxCommandFeedback.contains("100"))
+            assertTrue(session.sandboxCommandFeedback.contains("117"))
+            val creditRecords = records.filter { it.first == "sandbox-command" }.map { it.second }
+            assertEquals(listOf("QUEUED", "APPLIED"), creditRecords.map { it["status"] })
+            assertEquals(mapOf("player" to "p1", "amount" to "17", "before" to "100", "after" to "117"),
+                creditRecords.last()["credits"])
+            assertEquals(SandboxCommandStatus.QUEUED, session.submitSandboxCommand("/credits p1 -118").status)
+            session.tick()
+            assertEquals(117L, session.observation.balance)
+            assertTrue(session.sandboxCommandFeedback.contains("insufficient-funds"))
+        }
+    }
+
     @Test fun explicit_deployment_session_uses_the_shared_next_step_host_and_records_command_receipts() {
         val records = mutableListOf<Pair<String, Map<String, Any?>>>()
         val ordinary = SandboxSession(scenario())

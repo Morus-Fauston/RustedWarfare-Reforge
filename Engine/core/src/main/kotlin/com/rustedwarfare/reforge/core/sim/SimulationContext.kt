@@ -6,6 +6,7 @@ import com.rustedwarfare.reforge.core.content.BomberRules
 import com.rustedwarfare.reforge.core.content.AttackMovementProfile
 import com.rustedwarfare.reforge.core.content.MechFlameRules
 import com.rustedwarfare.reforge.core.content.ModularSpiderRules
+import com.rustedwarfare.reforge.core.content.ModularSpiderUtilityForms.ANTI_NUKE_AMMO_COST
 import com.rustedwarfare.reforge.core.content.MovementCollisionShape
 import com.rustedwarfare.reforge.core.content.MovementType
 import com.rustedwarfare.reforge.core.content.NativeSeaFactoryProducts
@@ -1240,6 +1241,7 @@ class SimulationContext internal constructor(private val policies: ExperimentalP
             for ((request, command) in commands) {
                 when (command) {
                     SandboxCommand.Help -> error("Help cannot be queued")
+                    is SandboxCommand.Credits -> results += applySandboxCredits(request, command, step.stepIndex)
                     is SandboxCommand.SpawnBatch -> results += applySandboxBatch(request, command, step.stepIndex)
                     is SandboxCommand.ProjectileBatch -> results += applySandboxProjectiles(request, command, step.stepIndex)
                     is SandboxCommand.Spawn -> {
@@ -1260,6 +1262,42 @@ class SimulationContext internal constructor(private val policies: ExperimentalP
             }
         }
         return observation to results
+    }
+
+    private fun applySandboxCredits(request: SandboxCommandRequest, command: SandboxCommand.Credits,
+                                    stepIndex: Long): SandboxCommandReceipt {
+        fun rejected(code: String) = SandboxCommandReceipt(request.sequence, request.generation, world.id,
+            SandboxCommandStatus.REJECTED, command, stepIndex, code = code)
+        val player = command.playerId
+        if (checkNotNull(scenario).players.none { it.playerId == player }) return rejected("unknown-owner")
+        val ledger = productionLedger ?: return rejected("economy-unavailable")
+        return when (val adjusted = ledger.adjustSandboxCredits(player, command.amount) { sandboxRefunds(player) }) {
+            is SandboxCreditAdjustment.Rejected -> rejected(adjusted.code)
+            is SandboxCreditAdjustment.Accepted -> {
+                productionLedger = adjusted.ledger
+                SandboxCommandReceipt(request.sequence, request.generation, world.id,
+                    SandboxCommandStatus.APPLIED, command, stepIndex, credits = adjusted.change)
+            }
+        }
+    }
+
+    private fun sandboxRefunds(player: String): Sequence<Long> = sequence {
+        for (unit in units.values) {
+            if (!unit.alive || unit.ownerPlayerId != player) continue
+            ordinaryUpgrades?.pendingRefunds(unit.unitId)?.let { yieldAll(it) }
+            for (item in unit.customActionState.queue) yield(item.cost)
+            for (item in unit.ordnance.queue) yield(item.action.cost)
+            yield(unit.attachmentInterceptor.rounds.size * ANTI_NUKE_AMMO_COST)
+            when (val order = unit.attachmentOrder) {
+                is AttachmentOrder.Paid -> yield(order.cost)
+                is AttachmentOrder.Cancel -> {
+                    yield(order.action.refund)
+                    yield(order.displacedUpgrade?.cost ?: 0L)
+                }
+                is AttachmentOrder.Reclaim -> yield(order.action.refund)
+                null -> Unit
+            }
+        }
     }
 
     private fun applySandboxBatch(request: SandboxCommandRequest, batch: SandboxCommand.SpawnBatch,
@@ -1653,7 +1691,9 @@ class SimulationContext internal constructor(private val policies: ExperimentalP
         }
         val initialLedger = nextScenario.economyContract?.let { economy ->
             ProductionLedger.initial(economy.initialBalances, emptyMap(),
-                nextScenario.unitDefinitions.values.any { it.income != null || it.maintenance != null } || nextScenario.maintenanceContract != null)
+                incomeEnabled = nextScenario.unitDefinitions.values.any { it.income != null },
+                maintenanceEnabled = nextScenario.maintenanceContract != null ||
+                    nextScenario.unitDefinitions.values.any { it.maintenance != null })
         }
         val initialUpgrades = OrdinaryUpgrades.prepare(nextScenario)
         worldGeneration += 1
@@ -1732,7 +1772,7 @@ class SimulationContext internal constructor(private val policies: ExperimentalP
             return SimulationError("unsupported-income", "Income requires a finite period of at least one tick and finite nonnegative credits")
         input.economyContract?.let { economy ->
             if (economy.initialBalances.keys != players || economy.initialBalances.values.any {
-                    it < 0L || (incomes.isNotEmpty() && it > 999999999L) }) {
+                    it < 0L || (incomes.isNotEmpty() && it > ProductionLedger.INCOME_LIMIT.toLong()) }) {
                 return SimulationError("invalid-economy-contract", "Expected an explicit nonnegative balance for every declared player")
             }
         }

@@ -8,6 +8,7 @@ data class SandboxProjectileEvidence(val objectId: Long, val kind: String, val p
 
 sealed interface SandboxCommand {
     data object Help : SandboxCommand
+    data class Credits(val playerId: String, val amount: Long) : SandboxCommand
     data class Spawn(val typeId: String, val position: Position, val ownerPlayerId: String,
                      val heading: Double = 0.0, val state: SandboxInitialState = SandboxInitialState.READY) : SandboxCommand
     data class Deployment(val alias: String, val spawn: Spawn)
@@ -26,9 +27,11 @@ sealed interface SandboxParseResult {
 /** Finite author commands shared by local UI, headless callers and command replay. */
 object SandboxCommands {
     const val HELP = "/help\n/spawn <type> <x> <y> <owner> [heading=<angle>] [state=ready|damaged]\n" +
-        "/spawn-batch <alias> <type> <x> <y> <owner> [options] | <alias> …"
+        "/spawn-batch <alias> <type> <x> <y> <owner> [options] | <alias> …\n" +
+        "/credits <player> <+amount|-amount>"
     internal const val MAX_BATCH_SIZE = 32
     private val identifier = Regex("[A-Za-z0-9._:-]+")
+    private val signedInteger = Regex("[+-][0-9]+")
     private val token = Regex("\\S+")
 
     fun parse(text: String): SandboxParseResult {
@@ -58,6 +61,16 @@ object SandboxCommands {
         fun at(index: Int) = words[index].range.first + 1
         if (words[0].value == "/help") return if (words.size == 1)
             SandboxParseResult.Parsed(SandboxCommand.Help) else reject("unexpected-argument", at(1))
+        if (words[0].value == "/credits") {
+            if (words.size < 3) return reject("missing-argument", text.length + 1)
+            if (words.size > 3) return reject("unexpected-argument", at(3))
+            val owner = words[1].value
+            if (!identifier.matches(owner)) return reject("invalid-owner-id", at(1))
+            val amount = words[2].value
+            if (!signedInteger.matches(amount)) return reject("invalid-signed-integer", at(2))
+            return SandboxParseResult.Parsed(SandboxCommand.Credits(owner,
+                amount.toLongOrNull() ?: return reject("amount-out-of-range", at(2))))
+        }
         if (words[0].value != "/spawn") return reject("unknown-command", at(0))
         if (words.size < 5) return reject("missing-argument", text.length + 1)
         if (!identifier.matches(words[1].value)) return reject("invalid-type-id", at(1))

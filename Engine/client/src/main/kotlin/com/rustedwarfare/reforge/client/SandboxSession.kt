@@ -78,18 +78,23 @@ class SandboxSession(scenario: Scenario, private val evidence: ClientEvidence = 
     private fun recordSandboxReceipt(request: SandboxCommandRequest, result: SandboxCommandReceipt) {
         lastSandboxReceipt = result
         deployedProjectileIds.addAll(result.projectileIds.values)
+        val funding = result.credits
         sandboxCommandFeedback = when (result.status) {
             SandboxCommandStatus.HELP -> SandboxCommands.HELP
             SandboxCommandStatus.QUEUED -> "Queued for next simulation step"
-            SandboxCommandStatus.APPLIED -> if (result.unitId != null) "Spawned ${result.unitId}"
-                else if (result.projectileIds.isNotEmpty()) "Deployed ${result.projectileIds.size} projectiles"
-                else "Spawned ${result.generated.size} units"
+            SandboxCommandStatus.APPLIED -> when {
+                funding != null -> "Credits for ${funding.playerId} ${funding.before} to ${funding.after}"
+                result.unitId != null -> "Spawned ${result.unitId}"
+                result.projectileIds.isNotEmpty() -> "Deployed ${result.projectileIds.size} projectiles"
+                else -> "Spawned ${result.generated.size} units"
+            }
             SandboxCommandStatus.REJECTED -> "Rejected: ${result.code}" +
                 (result.errorPosition?.let { " at character $it" } ?: "") +
                 (result.failedEntry?.let { " in entry ${it + 1}" } ?: "")
         }
         evidence.recordWhenEnabled("sandbox-command") {
             val command = result.command as? SandboxCommand.Spawn
+            val credits = result.command as? SandboxCommand.Credits
             mapOf("requestSequence" to result.sequence, "generation" to result.generation,
                 "worldId" to result.worldId, "stepIndex" to (result.stepIndex ?: nextStep),
                 "status" to result.status.name, "input" to request.text.take(512),
@@ -98,6 +103,8 @@ class SandboxSession(scenario: Scenario, private val evidence: ClientEvidence = 
                     "state" to it.state.name.lowercase(java.util.Locale.ROOT)) },
                 "unitId" to result.unitId, "generated" to result.generated, "failedEntry" to result.failedEntry,
                 "projectileIds" to result.projectileIds.takeIf { it.isNotEmpty() },
+                "credits" to credits?.let { mapOf("player" to it.playerId, "amount" to it.amount.toString(),
+                    "before" to result.credits?.before, "after" to result.credits?.after) },
                 "code" to result.code, "errorPosition" to result.errorPosition)
         }
     }
