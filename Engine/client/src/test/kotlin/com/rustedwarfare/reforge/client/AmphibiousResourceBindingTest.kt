@@ -31,6 +31,13 @@ class AmphibiousResourceBindingTest {
             assertEquals(before.units.getValue("amphibiousJet").drawSize(slot, 30, 14),
                 after.units.getValue("amphibiousJet").drawSize(slot, 60, 28))
             assertEquals(base.images.getValue(right).path, replaced.resourcePack.resolve(right))
+            val pc = ResourcePackMetadata.read(
+                """{"formatVersion":1,"requiresResourceFormat":1,"id":"reforge:pc-original-resources-fixture","name":"PC import","description":"Qualified PC part fixture","icon":"reforge:units/amphibiousjet/left_wing"}""".toByteArray(), "pack.json")
+            val mixed = ResourceImageComposer.compose(base, listOf(ResourceImageLayer(metadata, mapOf(left to hd)),
+                ResourceImageLayer(pc, mapOf(left to old, right to base.images.getValue(right)))))
+            val mixedAppearance = before.withVisuals(prepared.withResourceImages(mixed)).units.getValue("amphibiousJet")
+            assertEquals(90.0, mixedAppearance.amphibiousImageHeading(UnitImageSlot.LEFT_WING, 90.0))
+            assertEquals(0.0, mixedAppearance.amphibiousImageHeading(UnitImageSlot.RIGHT_WING, 90.0))
             assertFailsWith<IllegalArgumentException> {
                 ResourceImageComposer.compose(base, listOf(ResourceImageLayer(metadata,
                     mapOf(left to hd.copy(declaration = hd.declaration.copy(frameWidth = 15))))))

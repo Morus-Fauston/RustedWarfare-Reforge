@@ -17,6 +17,21 @@ import com.rustedwarfare.reforge.core.sim.Position
 import com.rustedwarfare.reforge.core.sim.ProjectileAppearance
 import kotlin.math.abs
 
+internal fun unitDrawOrder(units: List<UnitObservation>): List<UnitObservation> {
+    fun layer(unit: UnitObservation): Int = when {
+        unit.flightPose != null && unit.height > 0.0 -> 3
+        !unit.alive -> 0
+        unit.amphibiousJet?.surfacePresentation == false -> 1
+        unit.amphibiousJet?.surfacePresentation == true || unit.flightPose != null -> 3
+        else -> 2
+    }
+    val byId = units.associateBy { it.unitId }
+    return units.sortedWith(compareBy({ unit ->
+        val host = unit.attachment?.let { byId[it.parentUnitId] }
+        layer(host ?: unit)
+    }, { it.attachment != null }))
+}
+
 class SandboxGraphics private constructor(private val resources: SandboxRenderResources, fullBattlefield: Boolean) : AutoCloseable {
     val projection = MapProjection(resources.widthTiles.toDouble() * resources.tileWidth,
         resources.heightTiles.toDouble() * resources.tileHeight,
@@ -193,10 +208,7 @@ class SandboxGraphics private constructor(private val resources: SandboxRenderRe
         val mechFrames = MechPresentation.project(frame.observation, projection, resources).associateBy { it.unitId }
         val flightFrames = FlightPresentation.project(frame.observation, projection).associateBy { it.unitId }
         val waterFrames = WaterPresentation.project(frame.observation, projection).associateBy { it.unitId }
-        val observedUnits = frame.observation.units
-        val drawOrder = if (observedUnits.any { it.attachment != null }) observedUnits.sortedBy { it.attachment != null }
-            else observedUnits
-        for (unit in drawOrder) {
+        for (unit in unitDrawOrder(frame.observation.units)) {
             val definition = resources.units.getValue(unit.typeId)
             if (!definition.isDrawn(unit)) continue
             batch.setColor(1f, 1f, 1f, if (unit.alive && unit.constructionProgress < 1f) .45f else 1f)
@@ -230,7 +242,8 @@ class SandboxGraphics private constructor(private val resources: SandboxRenderRe
                 val sw = (size.width * projection.scale).toFloat()
                 val sh = (size.height * projection.scale).toFloat()
                 batch.draw(shadow, projection.x(unit.position.x) - sw / 2, projection.y(unit.position.y) - sh / 2,
-                    sw / 2, sh / 2, sw, sh, 1f, 1f, -requireNotNull(jetHeading).toFloat())
+                    sw / 2, sh / 2, sw, sh, 1f, 1f,
+                    -definition.amphibiousImageHeading(UnitImageSlot.SHADOW, requireNotNull(jetHeading)).toFloat())
             }
             if (mech?.drawShadow == true) shadows[unit.typeId]?.let { shadow ->
                 val size = definition.drawSize(UnitImageSlot.SHADOW, shadow.regionWidth, shadow.regionHeight)
@@ -273,12 +286,14 @@ class SandboxGraphics private constructor(private val resources: SandboxRenderRe
             }
             val corpse = if (!unit.alive) corpses[unit.typeId] else null
             val region = corpse ?: units.getValue(unit.typeId)
-            val size = definition.drawSize(if (corpse != null) UnitImageSlot.DEAD else UnitImageSlot.BODY, region.regionWidth, region.regionHeight)
+            val slot = if (corpse != null) UnitImageSlot.DEAD else UnitImageSlot.BODY
+            val size = definition.drawSize(slot, region.regionWidth, region.regionHeight)
             val w = (size.width * projection.scale).toFloat()
             val h = (size.height * projection.scale).toFloat()
+            val imageHeading = jetHeading?.let { definition.amphibiousImageHeading(slot, it) } ?: unit.heading
             batch.draw(region, (flight?.bodyX ?: mech?.bodyX ?: water?.bodyX ?: hover?.bodyX ?: projection.x(heightAdjustedCenter?.x ?: unit.position.x)) - w / 2,
                 (flight?.bodyY ?: mech?.bodyY ?: water?.bodyY ?: hover?.bodyY ?: projection.y(heightAdjustedCenter?.y ?: unit.position.y)) - h / 2,
-                w / 2, h / 2, w, h, 1f, 1f, flight?.bodyRotation ?: mech?.rotation ?: water?.bodyRotation ?: hover?.rotation ?: -(jetHeading ?: unit.heading).toFloat())
+                w / 2, h / 2, w, h, 1f, 1f, flight?.bodyRotation ?: mech?.rotation ?: water?.bodyRotation ?: hover?.rotation ?: -imageHeading.toFloat())
             if (unit.alive && unit.unitId in selectedIds) {
                 wings[unit.typeId to UnitImageSlot.SLOT_OVERLAY]?.let { overlay ->
                     val size = definition.drawSize(UnitImageSlot.SLOT_OVERLAY, overlay.regionWidth, overlay.regionHeight)

@@ -25,6 +25,9 @@ internal data class TurretDrawing(val weaponName: String?, val imagePath: Path, 
 
 internal data class WingDrawing(val slot: UnitImageSlot, val imagePath: Path, val center: Position, val heading: Double)
 
+private val amphibiousImageSlots = setOf(UnitImageSlot.BODY, UnitImageSlot.DEAD, UnitImageSlot.SHADOW,
+    UnitImageSlot.LEFT_WING, UnitImageSlot.RIGHT_WING)
+
 data class UnitAppearance(val displayRadius: Double, val imagePath: Path, val imageScale: Double, val totalFrames: Int,
     val turretImagePath: Path? = null, val deadImagePath: Path? = null, val turretImageScale: Double = 1.0,
     val backImagePath: Path? = null, val turretMount: TurretMount = TurretMount(),
@@ -41,7 +44,11 @@ data class UnitAppearance(val displayRadius: Double, val imagePath: Path, val im
     val nativeLegSize: ImageLogicalSize? = null, val arm1ImagePath: Path? = null, val arm2ImagePath: Path? = null,
     val nuclearSiloKind: NuclearSiloKind? = null, val shadowOffset: Position? = null,
     val slotOverlayImagePath: Path? = null,
-    val pointDefense: com.rustedwarfare.reforge.core.content.PointDefenseProfile? = null) {
+    val pointDefense: com.rustedwarfare.reforge.core.content.PointDefenseProfile? = null,
+    val rotatedAmphibiousImages: Set<UnitImageSlot> = emptySet()) {
+    internal fun amphibiousImageHeading(slot: UnitImageSlot, heading: Double): Double =
+        if (slot in rotatedAmphibiousImages) heading - 90.0 else heading
+
     internal fun nuclearDoors(unit: UnitObservation): List<WingDrawing> {
         val amount = unit.nuclearDoors ?: return emptyList()
         if (!unit.alive) return emptyList()
@@ -63,7 +70,8 @@ data class UnitAppearance(val displayRadius: Double, val imagePath: Path, val im
         return listOf(Triple(UnitImageSlot.LEFT_WING, leftWingImagePath, "left"),
             Triple(UnitImageSlot.RIGHT_WING, rightWingImagePath, "right")).map { (slot, path, name) ->
             val pivot = requireNotNull(poses[name]).pivot
-            WingDrawing(slot, requireNotNull(path), Position(pivot.x, pivot.y - unit.height), heading)
+            WingDrawing(slot, requireNotNull(path), Position(pivot.x, pivot.y - unit.height),
+                amphibiousImageHeading(slot, heading))
         }
     }
     internal fun turretDrawings(unit: UnitObservation, weapons: List<VisibleUnitWeapon>): List<TurretDrawing> {
@@ -133,9 +141,18 @@ class SandboxRenderResources private constructor(
         val mappedUnits = units.mapValues { (id, before) ->
             val image = requireNotNull(visuals.units[id]) { "VISUAL_MAPPING_UNSUPPORTED: unit $id" }
             val replacements = image.bindings()
-            before.withImages(before.imageBindings().map { part, _ ->
+            val mapped = before.withImages(before.imageBindings().map { part, _ ->
                 requireNotNull(replacements.images[part]) { "VISUAL_MAPPING_UNSUPPORTED: unit $id ${part.suffix}" }
             })
+            if (before.leftWingImagePath == null || before.rightWingImagePath == null) mapped else {
+                val addresses = visuals.resourcePack.unitBindings.getValue(id).bindings()
+                // Certified PC imports already turned the native sprites clockwise. The native
+                // renderer used their original axes, so undo that rotation only on winning PC parts.
+                mapped.copy(rotatedAmphibiousImages = amphibiousImageSlots.filterTo(mutableSetOf()) { slot ->
+                    val provider = addresses[slot]?.resource?.let { visuals.resolvedImages?.providers?.get(it) }
+                    provider?.startsWith("reforge:pc-original-resources-") == true
+                })
+            }
         }
         val mappedTiles = if (useScenarioTerrain) tileSets else tileSets.map { atlas ->
             val layout = atlas.supportedLayout()
@@ -220,7 +237,8 @@ class SandboxRenderResources private constructor(
                         unit.attachmentLayout != null -> ImageLogicalSize(10, 84)
                         unit.maintenance == com.rustedwarfare.reforge.core.content.MaintenanceProfile.SCOUT_BOT -> ImageLogicalSize(24, 102)
                         unit.maintenance == com.rustedwarfare.reforge.core.content.MaintenanceProfile.MECH_ENGINEER -> ImageLogicalSize(19, 82)
-                        unit.id == "mechFlame" || unit.mech?.kind == com.rustedwarfare.reforge.core.content.MechKind.FOUR_LEGGED -> ImageLogicalSize(16, 68)
+                        unit.id == "mechFlame" || unit.id == "nautilusSubmarineLand" ||
+                            unit.mech?.kind == com.rustedwarfare.reforge.core.content.MechKind.FOUR_LEGGED -> ImageLogicalSize(16, 68)
                         else -> null
                     })
             }), Collections.unmodifiableMap(scenario.players.associate { it.playerId to it.teamId }))

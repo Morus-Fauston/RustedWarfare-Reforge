@@ -26,6 +26,14 @@ internal data class BattleActionRow(val id: String, val title: String, val enabl
     val attachment: Pair<String, String>? = null, val hint: String = "", val iconType: String? = null,
     val progress: Float? = null)
 
+private const val ACTION_CARD_HEIGHT = 62f
+private const val ACTION_CARD_PADDING = 2f
+private const val ACTION_ROW_HEIGHT = ACTION_CARD_HEIGHT + 2 * ACTION_CARD_PADDING
+
+internal class BattleActionScrollPane(content: Actor, style: ScrollPane.ScrollPaneStyle) : ScrollPane(content, style) {
+    override fun getMouseWheelY(): Float = ACTION_ROW_HEIGHT
+}
+
 /** Scrollable list of actions already projected from the player's authorized view. */
 internal class BattleActionList(skin: Skin, stage: Stage, session: () -> SandboxSession?,
     private val unitIcon: (String) -> TextureRegion?,
@@ -59,7 +67,7 @@ internal class BattleActionList(skin: Skin, stage: Stage, session: () -> Sandbox
         setBounds(752f, 454f, 184f, 46f)
         stage.addActor(this)
     }
-    private val scroll = ScrollPane(content, ScrollPane.ScrollPaneStyle().apply {
+    private val scroll = BattleActionScrollPane(content, ScrollPane.ScrollPaneStyle().apply {
         background = skin.newDrawable("white", Color(.09f, .10f, .09f, .43f))
         vScroll = skin.newDrawable("white", Color(.10f, .12f, .10f, .81f)).apply { minWidth = 7f }
         vScrollKnob = skin.newDrawable("white", Color(.59f, .75f, .53f, 1f)).apply { minWidth = 7f; minHeight = 22f }
@@ -141,11 +149,11 @@ internal class BattleActionList(skin: Skin, stage: Stage, session: () -> Sandbox
             for ((index, row) in currentRows.withIndex()) {
                 val entry = createRow(row.id)
                 panes[row.id] = entry
-                content.add(entry.table).width(84f).height(62f).pad(2f)
+                content.add(entry.table).width(84f).height(ACTION_CARD_HEIGHT).pad(ACTION_CARD_PADDING)
                 if (index % 2 == 1) content.row()
             }
         }
-        scroll.height = minOf(330f, ((value.size + 1) / 2 * 66f))
+        scroll.height = minOf(5 * ACTION_ROW_HEIGHT, (value.size + 1) / 2 * ACTION_ROW_HEIGHT)
         scroll.y = 446f - scroll.height
         if (rebuild) {
             scroll.scrollY = 0f
