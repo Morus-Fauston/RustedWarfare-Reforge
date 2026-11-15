@@ -202,17 +202,18 @@ class UnitContactTest {
         val start = Position(350.0, 190.0)
         val scene = WaterTestScene.scenario(map, MovementType.HOVER, start).copy(
             unitDefinitions = listOf(hover, land, water).associateBy { it.id },
+            players = listOf(Player("p1", PlayerControl.LOCAL), Player("p2", PlayerControl.LOCAL)),
             units = listOf(UnitSpawn("hover", "p1", hover.id, start, 90.0),
-                UnitSpawn("land", "p1", land.id, Position(386.0, 190.0), 180.0),
-                UnitSpawn("water", "p1", water.id, Position(408.0, 190.0), 180.0)))
+                UnitSpawn("land", "p2", land.id, Position(386.0, 190.0), 180.0),
+                UnitSpawn("water", "p2", water.id, Position(408.0, 190.0), 180.0)))
         assertIs<InitResult.Accepted>(SimulationContext.initialize(scene)).context.useContext { context ->
             move(context, "hover", Position(515.0, 190.0))
             repeat(110) { context.advance(Step(it.toLong(), 1.0, "sim-tick")) }
             assertEquals(374.0, context.observe().units.single { it.unitId == "hover" }.position.x, 1e-9)
-            move(context, "land", Position(386.0, 310.0))
+            move(context, "land", Position(386.0, 310.0), owner = "p2")
             for (tick in 110L..220L) context.advance(Step(tick, 1.0, "sim-tick"))
             assertEquals(396.0, context.observe().units.single { it.unitId == "hover" }.position.x, 1e-9)
-            move(context, "water", Position(408.0, 310.0))
+            move(context, "water", Position(408.0, 310.0), owner = "p2")
             for (tick in 221L..380L) context.advance(Step(tick, 1.0, "sim-tick"))
             assertTrue(context.observe().units.single { it.unitId == "hover" }.position.x > 460.0)
         }
@@ -300,9 +301,10 @@ class UnitContactTest {
             val center = Position(500.0, 190.0)
             val scene = WaterTestScene.scenario(map, MovementType.WATER, center).copy(
                 unitDefinitions = pack.units + (surface.id to surface),
+                players = listOf(Player("p1", PlayerControl.LOCAL, "allies"), Player("p2", PlayerControl.LOCAL, "allies")),
                 units = listOf(UnitSpawn("sub", "p1", "attackSubmarine", center, 90.0, -8.0),
                     UnitSpawn("surface", "p1", surface.id, Position(520.0, 190.0), 90.0),
-                    UnitSpawn("blocker", "p1", "attackSubmarine", Position(580.0, 190.0), 90.0, -8.0)),
+                    UnitSpawn("blocker", "p2", "attackSubmarine", Position(580.0, 190.0), 90.0, -8.0)),
                 combatContract = CombatContract(12345, -1, mapOf("sub" to 8L, "surface" to 9L, "blocker" to 10L), 11L))
             assertIs<InitResult.Accepted>(SimulationContext.initialize(scene)).context.useContext { context ->
                 move(context, "sub", Position(650.0, 190.0))
@@ -311,7 +313,7 @@ class UnitContactTest {
                 val stop = approaching.last().units.single { it.unitId == "sub" }
                 assertEquals(550.0, stop.position.x, 1e-9)
                 assertEquals(-8.0, stop.height)
-                assertIs<ActionResult.Accepted>(context.submit(SubmarineDepthAction("raise-blocker", "p1", "blocker", true, context.world)))
+                assertIs<ActionResult.Accepted>(context.submit(SubmarineDepthAction("raise-blocker", "p2", "blocker", true, context.world)))
                 val clear = (271L..900L).map { context.advance(Step(it, 1.0, "sim-tick")) }
                 val surfaced = clear.single { Event("submarine-threshold-crossed", "blocker") in it.events }
                 val onward = clear.firstOrNull { it.stepIndex >= surfaced.stepIndex &&
@@ -446,8 +448,8 @@ class UnitContactTest {
             emptySet(), fogOfWarSightRange = 1, movementCollision = shape)
     }
 
-    private fun move(context: SimulationContext, id: String, destination: Position): ActionResult.Accepted =
-        assertIs<ActionResult.Accepted>(context.submit(MoveAction("move-$id", "p1", id, destination, context.world)))
+    private fun move(context: SimulationContext, id: String, destination: Position, owner: String = "p1"): ActionResult.Accepted =
+        assertIs<ActionResult.Accepted>(context.submit(MoveAction("move-$id", owner, id, destination, context.world)))
 
     private inline fun SimulationContext.useContext(action: (SimulationContext) -> Unit) {
         try {

@@ -86,7 +86,7 @@ class RouteContinuationTest {
             val target = Position(570.0, 190.0)
             val scene = WaterTestScene.scenario(map, MovementType.WATER, start).copy(units = listOf(
                 UnitSpawn("mover", "p1", "water-test", start, 90.0),
-                UnitSpawn("occupant", "p1", "water-test", occupied, 0.0)))
+                UnitSpawn("occupant", "p2", "water-test", occupied, 0.0)))
             val context = assertIs<InitResult.Accepted>(SimulationContext.initialize(scene)).context
             try {
                 context.enablePathDiagnostics(context.world)
@@ -119,7 +119,7 @@ class RouteContinuationTest {
             val start = Position(10.0, 110.0)
             val scene = WaterTestScene.scenario(map, MovementType.WATER, start).copy(units = listOf(
                 UnitSpawn("mover", "p1", "water-test", start, 0.0),
-                UnitSpawn("occupant", "p1", "water-test", Position(10.0, 70.0), 0.0)))
+                UnitSpawn("occupant", "p2", "water-test", Position(10.0, 70.0), 0.0)))
             val context = assertIs<InitResult.Accepted>(SimulationContext.initialize(scene)).context
             try {
                 context.enablePathDiagnostics(context.world)
@@ -222,9 +222,10 @@ class RouteContinuationTest {
             for ((originX, goalX, releaseStep) in listOf(Triple(470.0, 502.0, 256L), Triple(478.0, 494.9, 101L))) {
                 val origin = Position(originX, 190.0)
                 val goal = Position(goalX, 190.0)
-                val scene = WaterTestScene.scenario(map, MovementType.WATER, origin).copy(units = listOf(
-                    UnitSpawn("mover", "p1", "water-test", origin, 90.0),
-                    UnitSpawn("occupant", "p1", "water-test", Position(500.0, 190.0), 0.0)))
+                val scene = WaterTestScene.scenario(map, MovementType.WATER, origin).copy(
+                    players = listOf(Player("p1", PlayerControl.LOCAL), Player("p2", PlayerControl.LOCAL)),
+                    units = listOf(UnitSpawn("mover", "p1", "water-test", origin, 90.0),
+                        UnitSpawn("occupant", "p2", "water-test", Position(500.0, 190.0), 0.0)))
                 val context = assertIs<InitResult.Accepted>(SimulationContext.initialize(scene)).context
                 try {
                     fun Observation.mover() = units.single { it.unitId == "mover" }
@@ -238,7 +239,7 @@ class RouteContinuationTest {
                     assertEquals(null, premature?.stepIndex, "Physically blocked move reported normal arrival")
                     assertEquals(goal, waiting.last().mover().moveTarget)
 
-                    assertIs<ActionResult.Accepted>(context.submit(MoveAction("clear", "p1", "occupant",
+                    assertIs<ActionResult.Accepted>(context.submit(MoveAction("clear", "p2", "occupant",
                         Position(500.0, 120.0), context.world)))
                     val released = (releaseStep..(releaseStep + 204)).map { context.advance(Step(it, 1.0, "sim-tick")) }
                     val completion = released.single { arrived in it.events }

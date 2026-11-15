@@ -3245,14 +3245,25 @@ class SimulationContext internal constructor(private val policies: ExperimentalP
             else -> TerrainMotion.resolve(buildingTerrain?.collisionMap ?: map, unit.position, candidate,
                 map.takeIf { buildingTerrain != null }, movement.type, unit.nativeTransportPlacement)
         }
-        val resolved = UnitContact.translate(unit, terrainResolved, orderedUnits())
-        val unitContactLimited = legalHeading != terrainHeading || resolved != terrainResolved
-        val insideMap = when {
-            rectangle != null -> rectangle.contains(checkNotNull(hullTerrain), resolved)
-            circle != null -> circle.contains(checkNotNull(hullTerrain), resolved)
-            else -> Transport.containsPosition(unit, map, resolved)
+        fun insideMap(position: Position): Boolean = when {
+            rectangle != null -> rectangle.contains(checkNotNull(hullTerrain), position)
+            circle != null -> circle.contains(checkNotNull(hullTerrain), position)
+            else -> Transport.containsPosition(unit, map, position)
         }
-        if (!insideMap) {
+        val yielding = if (target != null && unit.originMoveId != null && unit.birthRemaining == 0f &&
+            unit.tasks.firstOrNull()?.kind == UnitTaskKind.MOVE)
+            UnitContact.YieldRequest(buildingTerrain?.collisionMap ?: map, executionStep) { blocker ->
+                val locomotion = UnitLocomotion.movement(blocker)
+                blocker.ownerPlayerId == unit.ownerPlayerId && blocker.lastYieldStep != executionStep &&
+                    blocker.lastYieldTo?.let { it.first == unit.unitId && it.second == unit.originMoveId } != true &&
+                    blocker.birthRemaining == 0f && blocker.moveTarget == null && blocker.tasks.isEmpty() &&
+                    blocker.movementState == MovementState.IDLE && blocker.speed == 0.0 && !blocker.movementRequested &&
+                    !blocker.constructionWorking && blocker.spiderBlink == null && unitActionHead(blocker) == null &&
+                    locomotion.moveSpeed > 0.0 && locomotion.type != MovementType.NONE && insideMap(terrainResolved)
+            } else null
+        val resolved = UnitContact.translate(unit, terrainResolved, orderedUnits(), yielding)
+        val unitContactLimited = legalHeading != terrainHeading || resolved != terrainResolved
+        if (!insideMap(resolved)) {
             blockAtMapBoundary(unit)
             recordMotion(terrainResolved, MotionTerrainDisposition.RESOLVED_OUTSIDE_MAP, unitContactLimited)
             return

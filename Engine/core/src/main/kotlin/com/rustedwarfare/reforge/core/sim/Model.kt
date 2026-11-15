@@ -445,6 +445,8 @@ internal data class MutableUnit(
     var stalledRouteTicks: Long = 0,
     var routeTranslationClipped: Boolean = false,
     var routeOccupantIds: List<String> = emptyList(),
+    var lastYieldStep: Long = -1L,
+    var lastYieldTo: Pair<String, String>? = null,
     var localProgressTime: Double = 0.0,
     var terrainCorrectionTime: Double = 0.0,
     var terrainClearSteps: Int = 0,
