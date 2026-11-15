@@ -14,6 +14,8 @@ internal data class CachedPlanningTerrain(val world: WorldHandle, val map: MapDe
     val escapingBuildings: Boolean = false,
     val movementType: com.rustedwarfare.reforge.core.content.MovementType = com.rustedwarfare.reforge.core.content.MovementType.LAND)
 
+internal data class PlayerPlanningKey(val owner: String, val movementType: MovementType, val escaping: Boolean)
+
 internal data class AutomaticKnowledgeCommit(
     val stores: Map<String, PlayerTerrainKnowledge>,
     val views: Map<String, VisionSnapshot>,
@@ -57,7 +59,7 @@ internal data class StepState(
     var actionResultOwners: IdentityHashMap<ActionResult, String> = IdentityHashMap(),
     var playerActionRevisions: MutableMap<String, Long> = mutableMapOf(),
     var noFogPlanning: MutableMap<MovementType, CachedPlanningTerrain> = mutableMapOf(),
-    var playerPlanning: MutableMap<String, CachedPlanningTerrain> = mutableMapOf(),
+    var playerPlanning: MutableMap<PlayerPlanningKey, CachedPlanningTerrain> = mutableMapOf(),
     var knowledgeStores: Map<String, PlayerTerrainKnowledge>? = null,
     var automaticVisionSnapshots: Map<String, VisionSnapshot>? = null,
     var automaticVisionState: AutomaticVisionState? = null,

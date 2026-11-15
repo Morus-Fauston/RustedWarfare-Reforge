@@ -24,6 +24,9 @@ internal object UnitContact {
         else -> Layer.SURFACE
     }
 
+    fun shareLayer(first: MutableUnit, second: MutableUnit): Boolean =
+        layer(first)?.let { it == layer(second) } == true
+
     fun inContact(unit: MutableUnit, other: MutableUnit): Boolean {
         val layer = layer(unit) ?: return false
         if (layer(other) != layer) return false

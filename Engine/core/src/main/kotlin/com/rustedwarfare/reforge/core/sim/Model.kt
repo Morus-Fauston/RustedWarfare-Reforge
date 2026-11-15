@@ -445,6 +445,7 @@ internal data class MutableUnit(
     var stalledRouteTicks: Long = 0,
     var routeTranslationClipped: Boolean = false,
     var routeOccupantIds: List<String> = emptyList(),
+    var passageEntry: PassageEntry? = null,
     var lastYieldStep: Long = -1L,
     var lastYieldTo: Pair<String, String>? = null,
     var localProgressTime: Double = 0.0,
@@ -568,6 +569,7 @@ internal data class MutableUnit(
     fun pauseRoute() {
         moveTarget = null
         pathPoints.clear()
+        passageEntry = null
         clearMoveOrigin()
         movementState = if (speed != 0.0) MovementState.DECELERATING else MovementState.IDLE
     }

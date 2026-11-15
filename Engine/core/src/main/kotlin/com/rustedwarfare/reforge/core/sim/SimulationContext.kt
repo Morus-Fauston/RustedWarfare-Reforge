@@ -37,6 +37,7 @@ class SimulationContext internal constructor(private val policies: ExperimentalP
     private var activeWorld: WorldHandle? = null
     val world: WorldHandle get() = checkNotNull(activeWorld) { "Simulation is closed" }
     private var scenario: Scenario? = null
+    private var passageAdmission: PassageAdmission? = null
     private var units: MutableMap<String, MutableUnit>
         get() = steps.current.units
         set(value) { steps.current.units = value }
@@ -366,6 +367,7 @@ class SimulationContext internal constructor(private val policies: ExperimentalP
         steps.current.routeContinuationDiagnostics = null
         activeWorld = null
         this.scenario = null
+        passageAdmission = null
         productionLedger = null
         missileTargets = null
         ordinaryUpgrades = null
@@ -487,8 +489,8 @@ class SimulationContext internal constructor(private val policies: ExperimentalP
         null -> Transport.boundaryRadius(unit)
     }
 
-    private fun planningTerrainFor(unit: MutableUnit, map: MapDefinition): PlanningTerrain {
-        val movementType = UnitLocomotion.movement(unit).type
+    private fun planningTerrainFor(unit: MutableUnit, map: MapDefinition,
+                                   movementType: MovementType = UnitLocomotion.movement(unit).type): PlanningTerrain {
         if (movementType == MovementType.AIR) {
             if (knowledgeStores != null) return PlanningTerrain(map.widthTiles, map.heightTiles, map.tileWidth,
                 map.tileHeight, BooleanArray(map.widthTiles * map.heightTiles))
@@ -515,13 +517,14 @@ class SimulationContext internal constructor(private val policies: ExperimentalP
             }
         }
         val snapshot = if (usesKnowledge) checkNotNull(stores?.get(unit.ownerPlayerId)).snapshot(world) else null
-        val cached = playerPlanning[unit.ownerPlayerId]
+        val cacheKey = PlayerPlanningKey(unit.ownerPlayerId, movementType, escaping)
+        val cached = playerPlanning[cacheKey]
         if (cached != null && cached.world === activeWorld && cached.map === map && cached.knowledge === snapshot &&
             cached.buildings === ownerBuildings && cached.escapingBuildings == escaping && cached.movementType == movementType) return cached.terrain
         val ground = if (snapshot == null) PlanningTerrain.fromNoFog(map, movementType)
             else PlanningTerrain.fromKnowledge(snapshot, map.tileWidth, map.tileHeight, movementType, map.tileSets)
         return (if (escaping) ground else ground.withBuildings(ownerBuildings ?: emptySet())).also {
-            playerPlanning[unit.ownerPlayerId] = CachedPlanningTerrain(world, map, snapshot, it, ownerBuildings, escaping, movementType)
+            playerPlanning[cacheKey] = CachedPlanningTerrain(world, map, snapshot, it, ownerBuildings, escaping, movementType)
         }
     }
 
@@ -1257,7 +1260,9 @@ class SimulationContext internal constructor(private val policies: ExperimentalP
                 retainedPatrolTarget(unit)
             replanForKnowledge(currentScenario.map, step.stepIndex)
             repairInvalidConnections(currentScenario.map, step.stepIndex)
-            recoverStalledMoves(currentScenario.map, step.stepIndex)
+            val passageWaiting = checkNotNull(passageAdmission).waitingUnits(orderedUnits(), step,
+                { unit, type -> planningTerrainFor(unit, currentScenario.map, type) }, ::knowsRouteOccupant)
+            recoverStalledMoves(currentScenario.map, step.stepIndex, passageWaiting)
             prepareRouteSuccessors(currentScenario.map, step.stepIndex, candidate.routeContinuationSamples)
             for (unit in orderedUnits().toList()) {
                 val attachment = unit.attachment
@@ -1375,7 +1380,7 @@ class SimulationContext internal constructor(private val policies: ExperimentalP
                         if (unit.moveTarget == null && task.startsAfterFactoryExit) unit.taskQueue = unit.taskQueue.pop()
                     }
                 }
-                if (fourLegged) updateUnit(unit, currentScenario.map, step.delta, step.stepIndex, candidate)
+                if (fourLegged) updateUnit(unit, currentScenario.map, step.delta, step.stepIndex, candidate, unit.unitId in passageWaiting)
                 val blinkCooldown = unit.blinkCooldownUntil
                 val actionForm = unit.definition
                 if (BuildingWork.isReady(unit)) {
@@ -1410,7 +1415,7 @@ class SimulationContext internal constructor(private val policies: ExperimentalP
                     // The destination write preserves the logical order. Rebase the physical route at the new position.
                     resumeProductionRoute(unit, currentScenario.map, step.stepIndex)
                 } else if (!fourLegged) {
-                    updateUnit(unit, currentScenario.map, step.delta, step.stepIndex, candidate)
+                    updateUnit(unit, currentScenario.map, step.delta, step.stepIndex, candidate, unit.unitId in passageWaiting)
                 }
                 val acceptsHeight = { height: Double ->
                     val allowed = UnitContact.canChangeHeight(unit, height, orderedUnits(),
@@ -1528,6 +1533,7 @@ class SimulationContext internal constructor(private val policies: ExperimentalP
             economyContract = nextScenario.economyContract?.let {
                 it.copy(initialBalances = Collections.unmodifiableMap(LinkedHashMap(it.initialBalances))) },
         )
+        passageAdmission = PassageAdmission(nextScenario.unitDefinitions.values)
         productionLedger = initialLedger
         ordinaryUpgrades = initialUpgrades
         buildingTerrain = initialBuildings
@@ -2931,10 +2937,11 @@ class SimulationContext internal constructor(private val policies: ExperimentalP
             }
     }
 
-    private fun recoverStalledMoves(map: MapDefinition, step: Long) {
+    private fun recoverStalledMoves(map: MapDefinition, step: Long, passageWaiting: Set<String>) {
         for (unit in orderedUnits()) {
             val stalled = unit.stalledRouteTicks
-            if (!unit.alive || unit.carriedBy != null || stalled == 0L || stalled % ROUTE_RETRY_TICKS != 0L) continue
+            if (!unit.alive || unit.carriedBy != null || unit.unitId in passageWaiting ||
+                stalled == 0L || stalled % ROUTE_RETRY_TICKS != 0L) continue
             val target = unit.moveTarget ?: continue
             val command = unit.tasks.firstOrNull()?.takeIf { it.kind == UnitTaskKind.MOVE } ?: continue
             val occupants = orderedUnits().filter {
@@ -3029,7 +3036,7 @@ class SimulationContext internal constructor(private val policies: ExperimentalP
             UnitLocomotion.movement(unit).type != MovementType.AIR
 
     private fun updateUnit(unit: MutableUnit, map: MapDefinition, delta: Double, executionStep: Long,
-                           step: CandidateStep) {
+                           step: CandidateStep, passageWaiting: Boolean) {
         if (!BuildingWork.isReady(unit)) return
         val movement = UnitLocomotion.movement(unit)
         if (unit.spiderBlink != null || CustomUnitActions.movementLocked(unit, unitActionHead(unit)) ||
@@ -3037,6 +3044,17 @@ class SimulationContext internal constructor(private val policies: ExperimentalP
             unit.speed = 0.0
             unit.flightVelocity = Position(0.0, 0.0)
             unit.movementState = MovementState.IDLE
+            return
+        }
+        val passageTarget = unit.moveTarget
+        if (passageWaiting && passageTarget != null && unit.passageEntry?.commandId == unit.originMoveId) {
+            unit.requestMovement(logicalRouteTarget(unit, passageTarget))
+            unit.speed = 0.0
+            unit.angularVelocity = 0.0
+            unit.flightVelocity = Position(0.0, 0.0)
+            unit.stalledRouteTicks = 0
+            unit.nearTargetTime = 0.0
+            unit.movementState = MovementState.MOVING
             return
         }
         val maximumSpeed = UnitLocomotion.effectiveMaximumSpeed(unit, movement)
