@@ -3,6 +3,24 @@ package com.rustedwarfare.reforge.core.sim
 import kotlin.test.*
 
 class AmphibiousJetMovementTest {
+    @Test fun the_body_and_weapons_follow_movement_steering_without_a_target() {
+        val scene = AmphibiousJetScene.scenario().copy(
+            units = listOf(UnitSpawn("jet", "p1", "amphibiousJet", Position(320.0, 300.0), 90.0)),
+            combatContract = CombatContract(12345, -1, mapOf("jet" to 8L), 9L))
+        val context = AmphibiousJetScene.open(scene)
+        try {
+            assertIs<ActionResult.Accepted>(context.submit(
+                MoveAction("turn", "p1", "jet", Position(320.0, 80.0), context.world)))
+            repeat(8) { context.advance(Step(it.toLong(), 1.0, "sim-tick")) }
+            val frame = context.observePlayer(context.world, "p1")
+            val jet = frame.units.single()
+            assertNotEquals(90.0, jet.heading)
+            assertNull(jet.attackTargetId)
+            assertEquals(setOf("left", "right", "body"), frame.weapons.map { it.weaponName }.toSet())
+            frame.weapons.forEach { assertEquals(jet.heading, it.turretHeading, 1e-6, it.weaponName) }
+        } finally { context.close() }
+    }
+
     @Test fun diving_preserves_the_order_but_cannot_follow_an_old_air_route_across_the_coast() =
         WaterTestScene.withMap { map ->
             val context = AmphibiousJetScene.open(AmphibiousJetScene.scenario().copy(map = map,

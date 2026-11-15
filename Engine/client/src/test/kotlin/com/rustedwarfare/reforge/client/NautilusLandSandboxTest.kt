@@ -4,6 +4,25 @@ import com.rustedwarfare.reforge.core.sim.*
 import kotlin.test.*
 
 class NautilusLandSandboxTest {
+    @Test fun all_six_legs_crop_their_vertical_shaft_artwork() {
+        val base = NautilusSandboxScene.scenario("json")
+        val scene = base.copy(
+            units = listOf(UnitSpawn("nautilus", "p1", "nautilusSubmarineLand", Position(250.0, 310.0), 90.0)),
+            combatContract = CombatContract(12345, -1, mapOf("nautilus" to 8L), 9L))
+        val resources = SandboxRenderResources.from(scene)
+        val projection = MapProjection(800.0, 600.0, MapArea(0.0, 0.0, 800.0, 600.0))
+        SandboxSession(scene).use { session ->
+            session.tick()
+            val legs = MechPresentation.project(session.observation, projection, resources).single().legs
+            assertEquals(6, legs.size)
+            for (leg in legs) {
+                val shaft = assertNotNull(leg.shaft)
+                assertEquals(68, shaft.sourceImageHeight)
+                assertTrue(shaft.sourceHeight in 1..68)
+            }
+        }
+    }
+
     @Test fun normal_command_start_builds_the_experimental_factory_and_pays_for_a_three_form_cargo_round_trip() {
         for (format in listOf("ini", "json", "hjson")) {
             val scene = NautilusSandboxScene.scenario(format)

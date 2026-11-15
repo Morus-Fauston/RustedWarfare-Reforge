@@ -23,7 +23,9 @@ internal object BodyMotion {
         val headingBefore = unit.heading
         val difference = steering.turn(unit, aim, delta, coordinates)
         val applied = coordinates.difference(unit.heading, headingBefore)
-        if (unit.definition.combat?.rotateWithBody == true) {
+        // The native jet holds its independent aim only while it has a combat target.
+        val idleJet = unit.amphibiousState != null && unit.primaryCombatTargetId == null
+        if (unit.definition.combat?.rotateWithBody == true || idleJet) {
             for (state in unit.namedWeapons?.values ?: listOfNotNull(unit.combat)) {
                 state.turretHeading = coordinates.normalize(state.turretHeading + applied)
             }
