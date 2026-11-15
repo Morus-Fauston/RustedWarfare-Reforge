@@ -1,0 +1,27 @@
+{
+  "format": "rw-reforge.content-pack.v1",
+  "id": "phase-seven.single-ship.json",
+  "name": "Phase VII heavy battleship hull",
+  "units": [
+    {
+      "type": "battleship",
+      "file": "heavyBattleship.json"
+    },
+    {
+      "type": "sea-factory",
+      "file": "units/seaFactory.json"
+    },
+    {
+      "type": "sea-factory",
+      "file": "units/seaFactoryT2.json"
+    },
+    {
+      "type": "builder",
+      "file": "units/builder.json"
+    },
+    {
+      "type": "submarine",
+      "file": "units/submarine/submarine.json"
+    }
+  ]
+}

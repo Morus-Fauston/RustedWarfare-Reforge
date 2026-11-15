@@ -18,8 +18,11 @@ internal object Transport {
 
     /** Native placement can occupy the small negative strip that JVM f2i maps to cell zero. */
     fun containsPosition(unit: MutableUnit, map: MapDefinition, position: Position): Boolean {
-        if (MapBounds.contains(map.widthTiles.toDouble() * map.tileWidth,
-                map.heightTiles.toDouble() * map.tileHeight, position, boundaryRadius(unit))) return true
+        val within = if (unit.nativeTransportPlacement)
+            MapBounds.contains(map.widthTiles.toDouble() * map.tileWidth,
+                map.heightTiles.toDouble() * map.tileHeight, position, 0.0)
+        else MapBounds.containsHull(map, position, unit.heading, unit.definition.movementCollision)
+        if (within) return true
         if (!unit.nativeTransportPlacement || !position.x.isFinite() || !position.y.isFinite()) return false
         if (unit.scoutOrigin != null) {
             // A spread impact may be outside the map. Keep the observed birth pose and permit a route back inside.

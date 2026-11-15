@@ -101,6 +101,29 @@ internal object FactoryExit {
         return FactoryBirth(birth, heading, exit, 30f)
     }
 
+    fun departingSeaFactoryCells(map: MapDefinition, unit: MutableUnit, producer: MutableUnit?,
+                                 next: Position, shape: MovementCollisionShape): Set<Pair<Int, Int>> {
+        if (producer?.alive != true || producer.definition.production?.exitProfile != FactoryExitProfile.NATIVE_SEA ||
+            unit.originMoveId == null || next == unit.position) return emptySet()
+        val building = checkNotNull(producer.definition.building)
+        val producerCells = BuildingTerrain.footprint(map, producer.position, building.footprint, building.anchor)
+        val south = (producerCells.maxOf { it.second } + 1.0) * map.tileHeight
+        val start = unit.position
+        val leaving = when (shape) {
+            is MovementCollisionShape.Circle -> {
+                val north = producerCells.minOf { it.second }.toDouble() * map.tileHeight
+                val west = producerCells.minOf { it.first }.toDouble() * map.tileWidth
+                val east = (producerCells.maxOf { it.first } + 1.0) * map.tileWidth
+                CircularTerrain.separatesFrom(start, next.x - start.x, next.y - start.y, shape.radius,
+                    west, east, north, south)
+            }
+            is MovementCollisionShape.Rectangle -> unit.originMoveId == "production-exit:${unit.unitId}" &&
+                start.y >= producer.position.y && next.y > start.y &&
+                start.y - kotlin.math.hypot(shape.length / 2.0, shape.width / 2.0) < south
+        }
+        return if (leaving) producerCells else emptySet()
+    }
+
     fun birth(factory: MutableUnit, product: UnitDefinition, map: MapDefinition): FactoryBirth {
         if (factory.definition.production?.exitProfile == FactoryExitProfile.AUTHORED_MOBILE)
             return checkNotNull(mobileBirth(factory, product, map)) { "Mobile factory completed without a valid exit" }

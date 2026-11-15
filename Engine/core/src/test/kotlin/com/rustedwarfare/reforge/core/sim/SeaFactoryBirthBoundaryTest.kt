@@ -80,9 +80,12 @@ class SeaFactoryBirthBoundaryTest {
             assertTrue(blocked.units.single { it.unitId == id }.position.y < 260.0)
             assertEquals(0f, blocked.production!!.units.single().birthRemaining)
             assertEquals(5000L, context.observePlayer(context.world, "p1").balance)
-            assertIs<ActionResult.Accepted>(context.submit(MoveAction("recover", "p1", id, Position(600.0, 220.0), context.world)))
+            val recovery = assertIs<ActionResult.Accepted>(context.submit(MoveAction("recover", "p1", id, Position(600.0, 220.0), context.world)))
             repeat(400) { tick() }
-            assertTrue(context.observe().units.single { it.unitId == id }.position.x > 590.0)
+            val start = blocked.units.single { it.unitId == id }
+            val end = context.observe().units.single { it.unitId == id }
+            assertTrue(end.position.x > 590.0,
+                "Recovery kept ship at ${end.position}/${end.heading} from ${start.position}/${start.heading}, events=${recovery.events}")
             assertEquals(1, context.observe().production!!.units.size)
             assertEquals(5000L, context.observePlayer(context.world, "p1").balance)
         } finally { context.close() }

@@ -214,6 +214,9 @@ internal class UnitSourceReader(
                         reject(ContentErrorCode.MALFORMED_SYNTAX, path, section, reason = "Invalid field at line ${index + 1}")
                     }
                     val key = line.substring(0, colon).trim()
+                    if (key in MovementCollisionContent.fields && (current == "movement" || current.startsWith("template_")))
+                        reject(ContentErrorCode.UNSUPPORTED_FIELD, path, current, key,
+                            reason = "Declare movement collision dimensions in structured content")
                     if (key !in allowedFields(current).orEmpty() && key !in setOf("@copyFromSection", "@copyFrom_skipThisSection") && !(current == "core" && key in setOf("copyFrom", "dont_load"))) {
                         reject(ContentErrorCode.UNSUPPORTED_FIELD, path, current, key, reason = "Unsupported unit field")
                     }

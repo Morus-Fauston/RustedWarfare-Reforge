@@ -1,5 +1,6 @@
 package com.rustedwarfare.reforge.core.sim
 
+import com.rustedwarfare.reforge.core.content.MovementCollisionShape
 import com.rustedwarfare.reforge.core.content.MovementProfile
 import com.rustedwarfare.reforge.core.content.MovementType
 import com.rustedwarfare.reforge.core.content.TransportProfile
@@ -17,6 +18,16 @@ internal object UnitLocomotion {
 
     fun isSubmerged(unit: MutableUnit): Boolean =
         unit.definition.locomotionStates != null && unit.height < SUBMERGED_DEPTH
+
+    fun terrainHull(unit: MutableUnit): MovementCollisionShape? {
+        if (unit.nativeTransportPlacement) return null
+        return when (val shape = unit.definition.movementCollision) {
+            is MovementCollisionShape.Rectangle -> shape
+            is MovementCollisionShape.Circle -> shape.takeIf {
+                it.radius > 0.0 && (movement(unit).type == MovementType.WATER || it.radius != unit.definition.radius)
+            }
+        }
+    }
 
     fun effectiveMaximumSpeed(unit: MutableUnit, movement: MovementProfile): Double =
         movement.moveSpeed * unit.terrainSpeedMultiplier

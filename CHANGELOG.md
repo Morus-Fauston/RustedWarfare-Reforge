@@ -1,5 +1,32 @@
 # Changelog
 
+## v0.5.0 (2026-11-15 21:06)
+
+### 新增
+
+- **单舰通行**：用圆形和随朝向旋转的矩形校验船体通行。格网候选使用生效舰体与玩家已知地形，连续校验覆盖贴岸和转向扫岸。
+- **重型战舰演练**：新增 JSON/Hjson 单舰演练包。重型战舰采用长 102、宽 20 地图单位的矩形，沿原生海厂建造、升级和付费生产取得。
+
+### 调整
+
+- **INI 内容**：原版 INI 默认使用已有半径的圆形，继承结构化模板后使用生效碰撞形状。
+- **海厂离厂**：产物可沿合法方向离开与生产厂的初始重叠，岸墙堵口后可用合法移动接管脱困。
+
+### 技术
+
+- **验证**：定向测试、公开机制与短场景以及应用内独立整审通过。
+
+### 文件变更表
+
+| 文件 | 变更 |
+|:-----|:-----|
+| `Engine/core/src/main/kotlin/com/rustedwarfare/reforge/core/content/` | 读取生效船体及格式继承 |
+| `Engine/core/src/main/kotlin/com/rustedwarfare/reforge/core/sim/` | 校验岸线、转向、格网路线和生产出口 |
+| `Engine/core/src/test/kotlin/com/rustedwarfare/reforge/core/` | 复验生产、通行、越界与兼容行为 |
+| `SimulationTest/public/inputs/phase-seven-single-ship/` | 新增自有 JSON/Hjson 单舰演练包 |
+
+---
+
 ## v0.4.22 (2026-11-15 12:43)
 
 ### 修复

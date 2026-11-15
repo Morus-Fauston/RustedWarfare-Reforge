@@ -1,6 +1,7 @@
 package com.rustedwarfare.reforge.core.sim
 
 import com.rustedwarfare.reforge.core.content.MapDefinition
+import com.rustedwarfare.reforge.core.content.MovementCollisionShape
 import com.rustedwarfare.reforge.core.path.PlanningTerrain
 import com.rustedwarfare.reforge.core.path.PathSearchCounters
 import com.rustedwarfare.reforge.core.path.PlanningSegmentClearance
@@ -9,7 +10,8 @@ import java.util.PriorityQueue
 /** The candidate and waypoint policies are experimental and replaceable for later calibration. */
 internal interface PathPolicy {
     fun findPath(map: PlanningTerrain, start: Position, target: Position, radius: Double,
-                 counters: PathSearchCounters? = null, targetRange: Double = 0.0): List<Position>?
+                 counters: PathSearchCounters? = null, targetRange: Double = 0.0,
+                 hull: HullRoute? = null): List<Position>?
 }
 
 internal class ClearanceAStarPolicy(
@@ -18,7 +20,8 @@ internal class ClearanceAStarPolicy(
     private val terrain: PlanningTerrainPolicy,
 ) : PathPolicy {
     override fun findPath(map: PlanningTerrain, start: Position, target: Position, radius: Double,
-                          counters: PathSearchCounters?, targetRange: Double): List<Position>? {
+                          counters: PathSearchCounters?, targetRange: Double,
+                          hull: HullRoute?): List<Position>? {
         if (counters != null) counters.actualSearchCalls++
         require(targetRange.isFinite() && targetRange >= 0.0)
         if (targetRange > 0.0) return findPathToRange(map, start, target, radius, targetRange, counters)
@@ -29,7 +32,12 @@ internal class ClearanceAStarPolicy(
         val startCell = cellOf(map, start) ?: return null
         val goalCell = cellOf(map, target) ?: return null
         if (terrain.intersects(map, start, radius) || terrain.intersects(map, target, radius)) return null
-        if (PlanningSegmentClearance.allows(map, start, target, radius)) return listOf(target)
+        val hullGrid = hull?.let { HullTerrainGrid.authorized(map) }
+        fun arrival(from: Position, point: Position, heading: Double): Double? =
+            hull?.arrival(checkNotNull(hullGrid), from, point, heading)
+        if (if (hull == null) PlanningSegmentClearance.allows(map, start, target, radius)
+            else arrival(start, target, hull.heading) != null) return listOf(target)
+
         val candidates = Array(map.heightTiles) { BooleanArray(map.widthTiles) }
         for (row in 0 until map.heightTiles) for (col in 0 until map.widthTiles) {
             if (counters != null) counters.candidatesChecked++
@@ -37,58 +45,65 @@ internal class ClearanceAStarPolicy(
         }
         if (!candidates[goalCell.second][goalCell.first]) return null
 
-        data class Node(val col: Int, val row: Int, val g: Int, val f: Int)
-        val open = PriorityQueue<Node>(compareBy<Node> { it.f }.thenBy { it.row }.thenBy { it.col }.thenBy { it.g })
-        val startKey = startCell.first to startCell.second
-        val cameFrom = HashMap<Pair<Int, Int>, Pair<Int, Int>>()
-        val cost = HashMap<Pair<Int, Int>, Int>().apply { this[startKey] = 0 }
+        data class Key(val col: Int, val row: Int, val heading: Double = 0.0)
+        data class Node(val key: Key, val g: Int, val f: Int)
+        fun remaining(col: Int, row: Int): Int = if (hull == null)
+            heuristic(col, row, goalCell.first, goalCell.second)
+        else maxOf(kotlin.math.abs(col - goalCell.first), kotlin.math.abs(row - goalCell.second))
+        val startKey = Key(startCell.first, startCell.second, hull?.heading ?: 0.0)
+        val open = PriorityQueue<Node>(compareBy<Node> { it.f }.thenBy { it.key.row }.thenBy { it.key.col }
+            .thenBy { it.g }.thenBy { it.key.heading })
+        val cameFrom = HashMap<Key, Key>()
+        val cost = HashMap<Key, Int>().apply { this[startKey] = 0 }
+        val offsets = if (hull is RectangularDeparture) orthogonal + diagonal else orthogonal
         if (counters != null) {
             counters.enqueued++
             counters.heuristicCalls++
         }
-        open += Node(startCell.first, startCell.second, 0, heuristic(startCell.first, startCell.second, goalCell.first, goalCell.second))
+        open += Node(startKey, 0, remaining(startKey.col, startKey.row))
 
         while (open.isNotEmpty()) {
             val current = open.remove()
             if (counters != null) counters.popped++
-            val currentKey = current.col to current.row
-            if (cost[currentKey] != current.g) continue
-            if (currentKey == goalCell.first to goalCell.second) {
-                val cells = ArrayList<Pair<Int, Int>>()
-                var cursor = currentKey
-                cells += cursor
+            val key = current.key
+            if (cost[key] != current.g) continue
+            val from = if (key == startKey) start else pointPolicy.point(map, key.col, key.row)
+            val finish = if (hull == null) key.col == goalCell.first && key.row == goalCell.second
+                else arrival(from, target, key.heading) != null
+            if (finish) {
+                val points = mutableListOf<Position>()
+                var cursor = key
                 while (cursor != startKey) {
-                    cursor = cameFrom[cursor] ?: return null
-                    cells += cursor
+                    points += pointPolicy.point(map, cursor.col, cursor.row)
+                    cursor = cameFrom.getValue(cursor)
                 }
-                cells.reverse()
-                val points = cells.drop(1).map { (col, row) ->
-                    pointPolicy.point(map, col, row)
-                }.toMutableList()
+                points.reverse()
                 if (points.lastOrNull() != target) points += target
-                return simplify(map, start, points, radius)
+                return if (hull == null) simplify(map, start, points, radius) else points
             }
             if (counters != null) counters.expanded++
-            // Same row/column tie order as the old sorted list: up, left, right, down.
-            for (direction in 0..3) {
-                val nextCol = current.col + when (direction) { 1 -> -1; 2 -> 1; else -> 0 }
-                val nextRow = current.row + when (direction) { 0 -> -1; 3 -> 1; else -> 0 }
-                if (nextCol !in 0 until map.widthTiles || nextRow !in 0 until map.heightTiles) continue
+            for ((dx, dy) in offsets) {
+                val col = key.col + dx
+                val row = key.row + dy
+                if (col !in 0 until map.widthTiles || row !in 0 until map.heightTiles) continue
                 if (counters != null) counters.neighborsChecked++
-                if (!candidates[nextRow][nextCol]) continue
-                if (currentKey == startKey &&
-                    !PlanningSegmentClearance.allows(map, start, pointPolicy.point(map, nextCol, nextRow), radius)
-                ) continue
-                val nextKey = nextCol to nextRow
+                if (!candidates[row][col]) continue
+                val point = pointPolicy.point(map, col, row)
+                val heading = if (hull != null) arrival(from, point, key.heading) ?: continue
+                    else {
+                        if (key == startKey && !PlanningSegmentClearance.allows(map, from, point, radius)) continue
+                        0.0
+                    }
+                val next = Key(col, row, heading)
                 val nextCost = current.g + 1
-                if (nextCost < (cost[nextKey] ?: Int.MAX_VALUE)) {
-                    cost[nextKey] = nextCost
-                    cameFrom[nextKey] = currentKey
+                if (nextCost < (cost[next] ?: Int.MAX_VALUE)) {
+                    cost[next] = nextCost
+                    cameFrom[next] = key
                     if (counters != null) {
                         counters.enqueued++
                         counters.heuristicCalls++
                     }
-                    open += Node(nextCol, nextRow, nextCost, nextCost + heuristic(nextCol, nextRow, goalCell.first, goalCell.second))
+                    open += Node(next, nextCost, nextCost + remaining(col, row))
                 }
             }
         }
@@ -189,6 +204,51 @@ internal class ClearanceAStarPolicy(
 
     private fun heuristic(col: Int, row: Int, goalCol: Int, goalRow: Int): Int =
         kotlin.math.abs(col - goalCol) + kotlin.math.abs(row - goalRow)
+
+    private companion object {
+        val orthogonal = listOf(0 to -1, -1 to 0, 1 to 0, 0 to 1)
+        val diagonal = listOf(-1 to -1, 1 to -1, -1 to 1, 1 to 1)
+    }
+}
+
+internal sealed interface HullRoute {
+    val heading: Double
+    fun arrival(terrain: HullTerrainGrid, start: Position, target: Position, from: Double): Double?
+
+    data class Circle(val radius: Double) : HullRoute {
+        override val heading = 0.0
+        override fun arrival(terrain: HullTerrainGrid, start: Position, target: Position, from: Double): Double? =
+            CircularTerrain(radius).let { if (it.contains(terrain, start) && it.resolve(terrain, start, target) == target) heading else null }
+    }
+
+    companion object {
+        fun forUnit(unit: MutableUnit): HullRoute? = when (val shape = UnitLocomotion.terrainHull(unit)) {
+            is MovementCollisionShape.Rectangle -> RectangularDeparture(shape, unit.heading,
+                UnitLocomotion.movement(unit).reverseSpeedPercentage > 0.95)
+            is MovementCollisionShape.Circle -> Circle(shape.radius)
+            null -> null
+        }
+    }
+}
+
+internal data class RectangularDeparture(
+    val shape: MovementCollisionShape.Rectangle,
+    override val heading: Double,
+    val reverse: Boolean,
+) : HullRoute {
+    fun headingTowards(start: Position, target: Position, current: Double): Double {
+        if (start == target) return current
+        val direct = ScreenPlane.desired(start, target)
+        return if (reverse && kotlin.math.abs(ScreenPlane.difference(direct, current)) > 100.0)
+            ScreenPlane.normalize(direct + 180.0) else direct
+    }
+
+    override fun arrival(terrain: HullTerrainGrid, start: Position, target: Position, from: Double): Double? {
+        val to = headingTowards(start, target, from)
+        val hull = RectangularTerrain(shape, to)
+        return if (hull.contains(terrain, start) && hull.resolve(terrain, start, target) == target &&
+            RectangularTurn.resolve(terrain, shape, start, from, to) == to) to else null
+    }
 }
 
 internal fun interface PathCandidatePolicy {

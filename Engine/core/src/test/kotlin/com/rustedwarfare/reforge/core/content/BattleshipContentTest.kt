@@ -1,9 +1,66 @@
 package com.rustedwarfare.reforge.core.content
 
+import java.nio.file.Files
 import java.nio.file.Path
 import kotlin.test.*
 
 class BattleshipContentTest {
+    @Test
+    fun structured_battleship_can_declare_a_rectangular_movement_hull() {
+        val hull = """
+            "collisionShape": "rectangle",
+            "collisionLength": 76,
+            "collisionWidth": 18,
+        """.trimIndent()
+        for (format in listOf("json", "hjson")) withBattleshipMovementFields(format, hull) { file ->
+            val result = ContentLoader.loadBattleshipUnit(file)
+            val definition = assertIs<ContentResult.Success<UnitDefinition>>(result, "$format: $result").value
+            assertEquals(40.0, definition.radius)
+            assertEquals(MovementCollisionShape.Rectangle(76.0, 18.0), definition.movementCollision)
+        }
+    }
+
+    @Test
+    fun an_ini_child_inherits_a_structured_shape_and_reports_bad_inherited_dimensions() =
+        withBattleshipMovementFields("json", """
+            "collisionShape": "rectangle",
+            "collisionLength": 76,
+            "collisionWidth": 18,
+        """.trimIndent()) { template ->
+            val input = Files.readString(template).replace("\"core\": {", "\"core\": { \"dont_load\": true,")
+            Files.writeString(template, input)
+            val child = template.resolveSibling("ship.ini")
+            Files.writeString(child, "[core]\ncopyFrom: heavyBattleship.json\n")
+            val inherited = assertIs<ContentResult.Success<UnitDefinition>>(ContentLoader.loadBattleshipUnit(child)).value
+            assertEquals(MovementCollisionShape.Rectangle(76.0, 18.0), inherited.movementCollision)
+
+            Files.writeString(template, input.replace("\"collisionWidth\": 18", "\"collisionWidth\": -1"))
+            val invalid = assertIs<ContentResult.Failure>(ContentLoader.loadBattleshipUnit(child)).error
+            assertEquals(ContentErrorCode.MALFORMED_SYNTAX, invalid.code)
+            assertEquals(template.toString(), invalid.file)
+            assertEquals("collisionWidth", invalid.field)
+            assertTrue("inheritance=" in invalid.reason)
+        }
+
+    @Test
+    fun structured_circles_use_an_explicit_movement_radius_and_reject_rectangle_dimensions() {
+        val circle = """
+            "collisionShape": "circle",
+            "collisionRadius": 23,
+        """.trimIndent()
+        for (format in listOf("json", "hjson")) withBattleshipMovementFields(format, circle) { file ->
+            val ship = assertIs<ContentResult.Success<UnitDefinition>>(ContentLoader.loadBattleshipUnit(file)).value
+            assertEquals(MovementCollisionShape.Circle(23.0), ship.movementCollision)
+            assertEquals(40.0, ship.radius)
+
+            val input = Files.readString(file)
+            Files.writeString(file, input.replace("\"collisionRadius\": 23,", "\"collisionRadius\": 23, \"collisionLength\": 76,"))
+            val invalid = assertIs<ContentResult.Failure>(ContentLoader.loadBattleshipUnit(file)).error
+            assertEquals(ContentErrorCode.MALFORMED_SYNTAX, invalid.code)
+            assertEquals("collisionLength", invalid.field)
+        }
+    }
+
     @Test
     fun three_formats_preserve_water_body_five_weapons_and_three_projectile_profiles() {
         val fixtures = System.getProperty("public.fixtures.dir")?.let(Path::of) ?: Path.of("../../SimulationTest/public/inputs")
@@ -15,6 +72,7 @@ class BattleshipContentTest {
             val ship = set.units.getValue("heavyBattleship")
             assertEquals(4000.0, ship.maximumHealth)
             assertEquals(40.0, ship.radius)
+            assertEquals(MovementCollisionShape.Circle(40.0), ship.movementCollision)
             assertEquals(MovementProfile(MovementType.WATER, .7, .02, .05, 1.0, .05, false, false, 1.0), ship.movement)
             assertEquals(BuildProfile(6000L, .0004f), ship.build)
             assertNull(ship.mech)
@@ -42,5 +100,26 @@ class BattleshipContentTest {
             assertFalse("transportSlotsNeeded" in ship.retainedUnconsumed)
             assertIs<ContentResult.Success<Unit>>(pack.verifyStable())
         }
+    }
+}
+
+internal fun withBattleshipMovementFields(format: String, fields: String, action: (Path) -> Unit) {
+    val fixtures = System.getProperty("public.fixtures.dir")?.let(Path::of)
+        ?: Path.of("../../SimulationTest/public/inputs")
+    val fixture = fixtures.resolve("naval-production/$format/production-package/units/naval")
+    val directory = Files.createTempDirectory("reforge-battleship-content-")
+    try {
+        for (asset in listOf("heavy_battleship.png", "heavy_battleship_dead.png", "large_turret.png")) {
+            Files.copy(fixture.resolve(asset), directory.resolve(asset))
+        }
+        val source = fixture.resolve("heavyBattleship.$format")
+        val file = directory.resolve(source.fileName)
+        val original = Files.readString(source)
+        val movement = "\"movement\": {"
+        assertTrue(movement in original)
+        Files.writeString(file, original.replace(movement, "$movement\n$fields"))
+        action(file)
+    } finally {
+        assertTrue(directory.toFile().deleteRecursively())
     }
 }

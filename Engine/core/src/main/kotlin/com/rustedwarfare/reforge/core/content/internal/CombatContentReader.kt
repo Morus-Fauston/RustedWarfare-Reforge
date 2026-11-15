@@ -28,7 +28,7 @@ internal object CombatContentReader {
         "projectile_1" to setOf("directDamage", "life", "speed", "frame", "drawSize", "ballistic",
             "ballistic_delaymove_height", "ballistic_height", "autoTargetingOnDeadTarget") + InstantWeaponContent.fields,
         "movement" to setOf("movementType", "moveSpeed", "moveAccelerationSpeed", "moveDecelerationSpeed",
-            "maxTurnSpeed", "turnAcceleration", "moveSlidingMode", "moveIgnoringBody"),
+            "maxTurnSpeed", "turnAcceleration", "moveSlidingMode", "moveIgnoringBody") + MovementCollisionContent.fields,
     )
     private val retained = mapOf(
         "core" to setOf("mass", "isBio", "softCollisionOnAll", "displayLocaleKey"),
@@ -45,13 +45,13 @@ internal object CombatContentReader {
         "warmup", "warmupCallDownRate", "warmupShootDelayTransfer", "canAttackMaxAngle", "turnSpeed",
         "limitingAngle", "idleDir", "barrelY", "size", "barrelX", "barrelOffsetX_onOddShots",
         "recoilOffset", "recoilOutTime", "recoilReturnTime", "ballistic_delaymove_height", "ballistic_height",
-        "shieldDamage", "shieldDefection", "buildingDamage")
+        "shieldDamage", "shieldDefection", "buildingDamage") + MovementCollisionContent.dimensions
     private val booleanFields = setOf("isBio", "canAttack", "canAttackFlyingUnits", "canAttackLandUnits",
         "canAttackUnderwaterUnits", "canShoot", "moveSlidingMode", "moveIgnoringBody", "dont_load", "turretMultiTargeting",
         "warmupNoReset", "slave", "ballistic", "autoTargetingOnDeadTarget", "initialWeaponFlagZero") + InstantWeaponContent.booleans
     private val textFields = setOf("name", "overrideAndReplace", "class", "displayLocaleKey",
         "image", "image_wreak", "image_turret", "movementType", "projectile", "attachedTo", "linkDelayWithTurret", "canAttackCondition",
-        "beamImage", "beamStartImage", "beamEndImage")
+        "beamImage", "beamStartImage", "beamEndImage", MovementCollisionContent.shapeField)
 
     private fun sectionKind(section: String): String = when {
         section.startsWith("turret_") -> "turret_1"
@@ -447,8 +447,9 @@ internal object CombatContentReader {
             rotateWithBody = heavy && optionalBoolean("attack", "turretRotateWithBody", true),
         )
         val nano = if (authorWater) AuthoredRoleContentReader.readWaterNano(path, loaded) else null
+        val radius = number("core", "radius", true)
         val definition = UnitDefinition(identity, if (nano == null) "CustomUnitMetadata" else "AuthoredRoleUnit",
-            number("core", "radius", true),
+            radius,
             number("core", "displayRadius", true), integer("graphics", "total_frames", true),
             image("image"), imageScale,
             MovementProfile(movement, number("movement", "moveSpeed"), number("movement", "moveAccelerationSpeed"),
@@ -460,6 +461,7 @@ internal object CombatContentReader {
             build = BuildProfile(price, buildRate), mech = gait, rotor = rotor, reclaimPrice = reclaimPrice,
             building = if (stationary) BuildingProfile(BuildingFootprint(0, 0, 0, 0)) else null,
             authoredAirCombat = authoredAir,
+            movementCollision = MovementCollisionContent.read(path, loaded, radius),
             construction = if (mech) ConstructionProfile(price, buildRate) else null, techLevel = techLevel,
             authoredWaterCombat = authorWater, shadowImagePath = if (hover) image("image_shadow") else null,
             pointDefense = defense, deathExplosion = death,
