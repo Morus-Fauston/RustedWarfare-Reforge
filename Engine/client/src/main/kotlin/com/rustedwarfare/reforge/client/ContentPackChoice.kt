@@ -20,6 +20,10 @@ data class ContentPackChoice(val content: LoadedContentSet, val unitId: String) 
     /** The selected unit's effective author; all validation uses the complete set. */
     val pack: LoadedContentPack get() = content.packages.single { it.id == content.provenance.getValue(unitId).packageId }
 
+    internal val singleSelectionButtons: Map<String, SingleSelectionButton> get() = content.packages.mapNotNull { pack ->
+        pack.singleSelectionButton?.takeIf { content.provenance[it.unitType]?.packageId == pack.id }
+    }.associateBy { it.unitType }
+
     /** Worker-only: recheck the final content before platform image preparation. */
     fun revalidate(): ContentPackChoice {
         when (val stable = content.verifyStable()) {

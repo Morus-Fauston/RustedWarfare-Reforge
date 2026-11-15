@@ -4,6 +4,7 @@ import com.rustedwarfare.reforge.core.sim.*
 import com.rustedwarfare.reforge.core.content.MovementType
 import com.rustedwarfare.reforge.core.content.foundationMovementType
 import com.rustedwarfare.reforge.core.content.GroundRules
+import com.rustedwarfare.reforge.core.content.SingleSelectionButton
 import java.util.UUID
 import java.nio.file.Path
 
@@ -25,7 +26,8 @@ class SandboxSession(scenario: Scenario, private val evidence: ClientEvidence = 
                      val options: SandboxOptions = SandboxOptions(),
                      clockMillis: () -> Long = { System.nanoTime() / 1_000_000L },
                      val generation: Long = 1L,
-                     cameraCues: List<OfflineCameraCue> = emptyList()) : AutoCloseable {
+                     cameraCues: List<OfflineCameraCue> = emptyList(),
+                     singleSelectionButtons: Map<String, SingleSelectionButton> = emptyMap()) : AutoCloseable {
     constructor(scenario: Scenario, evidence: ClientEvidence, options: SandboxOptions, clockMillis: () -> Long) :
         this(scenario, evidence, options, clockMillis, 1L)
 
@@ -133,7 +135,7 @@ class SandboxSession(scenario: Scenario, private val evidence: ClientEvidence = 
     private var latestFrame: SandboxFrame? = null
     val frame: SandboxFrame get() = checkNotNull(latestFrame) { "Match is closed" }
     val observation: PlayerObservation get() = frame.observation
-    private val actionCatalogue = ActionCatalogue(this.scenario.unitDefinitions, this.scenario.nukesEnabled)
+    private val actionCatalogue = ActionCatalogue(this.scenario.unitDefinitions, this.scenario.nukesEnabled, singleSelectionButtons)
     private var menuObservation: PlayerObservation? = null
     private var menuSelectionRevision = -1L
     private var menu: ActionMenuView? = null

@@ -960,7 +960,8 @@ class BootstrapScreen(
                 val generationEvidence = evidence.withGeneration(runGeneration)
                 val cameraCues = request.configuration.testScenario?.cameraCues.orEmpty()
                 pendingSession = SandboxSession(scenario, generationEvidence, request.configuration.options,
-                    generation = runGeneration, cameraCues = cameraCues)
+                    generation = runGeneration, cameraCues = cameraCues,
+                    singleSelectionButtons = loaded.contentPack?.singleSelectionButtons.orEmpty())
                 val camera = if (cameraCues.isEmpty()) null else OfflineCameraController(pendingGraphics.projection, generationEvidence)
                 pendingSounds = loaded.visuals?.resolvedSounds?.let { resources -> SoundPlayback(
                     pendingSession.consumeSounds(pendingGraphics.projection.soundListener()), resources,

@@ -49,7 +49,8 @@ internal object ContentPackReader {
             reject(ContentErrorCode.MALFORMED_SYNTAX, manifest,
                 reason = "Invalid package metadata at ${failure.line}:${failure.column}: ${failure.message}")
         }
-        val metadata = objectFields(parsed, setOf("format", "id", "name", "units", "dependencies", "replacements", "opening"), manifest)
+        val metadata = objectFields(parsed, setOf("format", "id", "name", "units", "dependencies", "replacements", "opening",
+            "singleSelectionButton"), manifest)
         fun string(value: JsonValue?, field: String): String {
             if (value == null) reject(ContentErrorCode.MISSING_REQUIRED_FIELD, manifest, field = field, reason = "Required package field")
             if (!value.isString || value.asString().isBlank() || value.asString().any(Char::isISOControl))
@@ -303,8 +304,24 @@ internal object ContentPackReader {
             if (roster.none { it.ownerPlayerId == "p1" }) fieldError("opening.units", "Expected at least one local unit")
             ContentPackOpening(map, credits("credits"), credits("opponentCredits"), roster)
         }
+        val button = metadata.get("singleSelectionButton")?.let { declaration ->
+            val field = "singleSelectionButton"
+            val entry = objectFields(declaration, setOf("unitType", "action", "label"), manifest, field)
+            val unit = string(entry.get("unitType"), "$field.unitType")
+            val action = string(entry.get("action"), "$field.action")
+            val label = string(entry.get("label"), "$field.label")
+            val definition = units[unit] ?: reject(ContentErrorCode.BAD_REFERENCE, manifest, field = "$field.unitType",
+                ref = unit, reason = "The package must declare the button's unit")
+            val command = definition.customActions?.actions?.singleOrNull { it.name == action }
+                ?: reject(ContentErrorCode.BAD_REFERENCE, manifest, field = "$field.action",
+                    ref = action, reason = "Expected an existing unit action")
+            if (!command.visible || command.automatic != null || command.groundLaunch != null || command.blinkWork is BlinkWork.Teleport)
+                reject(ContentErrorCode.UNSUPPORTED_FEATURE, manifest, field = "$field.action", ref = action,
+                    reason = "Expected a visible manual action that needs no battlefield target")
+            SingleSelectionButton(unit, action, label)
+        }
         val loaded = LoadedContentPack(root, manifest, id, name, units, sources.values.toList(), dependencies, replacements,
-            unitFiles, unitFieldOrigins, opening)
+            unitFiles, unitFieldOrigins, opening, button)
         when (val stable = loaded.verifyStable()) {
             is ContentResult.Failure -> throw ContentReadException(stable.error)
             is ContentResult.Success -> Unit
