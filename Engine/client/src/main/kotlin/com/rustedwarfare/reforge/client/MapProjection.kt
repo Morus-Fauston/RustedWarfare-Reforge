@@ -35,14 +35,15 @@ class MapProjection(val worldWidth: Double, val worldHeight: Double,
     val height: Double get() = worldHeight * scale
     val left: Double get() = mapArea.left + mapArea.width / 2 - camera.center.x * scale
     val bottom: Double get() = mapArea.bottom + mapArea.height / 2 - (worldHeight - camera.center.y) * scale
-    fun zoomAt(uiX: Double, uiY: Double, scroll: Double) {
+    fun zoomAt(uiX: Double, uiY: Double, scroll: Double, keepCenter: Boolean = false) {
         if (!scroll.isFinite()) return
         val anchor = toWorld(uiX, uiY) ?: return
         val zoom = (camera.zoom * 1.2.pow(-scroll)).coerceIn(1.0, 4.0)
         val nextScale = fitScale * zoom
-        camera = MapCamera(clamp(Position(
+        val center = if (keepCenter) camera.center else Position(
             anchor.x - (uiX - mapArea.left - mapArea.width / 2) / nextScale,
-            anchor.y + (uiY - mapArea.bottom - mapArea.height / 2) / nextScale), zoom), zoom)
+            anchor.y + (uiY - mapArea.bottom - mapArea.height / 2) / nextScale)
+        camera = MapCamera(clamp(center, zoom), zoom)
     }
     fun panBy(uiDx: Double, uiDy: Double) {
         if (!uiDx.isFinite() || !uiDy.isFinite()) return

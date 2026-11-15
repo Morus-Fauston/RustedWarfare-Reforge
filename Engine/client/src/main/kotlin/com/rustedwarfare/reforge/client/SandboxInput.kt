@@ -19,6 +19,8 @@ class SandboxInput(
     private val touchControls: Boolean = false,
     private val insideViewport: (Int, Int) -> Boolean = { _, _ -> true },
     private val battlefieldAt: (Int, Int) -> Boolean = { _, _ -> true },
+    private val cameraTakeover: (String) -> Unit = {},
+    private val cameraFollowsUnit: () -> Boolean = { false },
 ) : InputAdapter() {
     private var gesture: MapGesture? = null
     private var ownerButton: Int? = null
@@ -264,6 +266,8 @@ class SandboxInput(
         if (ownsPoint && projection()?.toWorld(ui.x, ui.y) == null) {
             cancelGesture(); changed(); return true
         }
+        val panning = ownerButton == Input.Buttons.MIDDLE && ui != pointerPosition
+        if (panning) cameraTakeover("pan")
         pointerPosition = ui
         gesture?.drag(ui.x, ui.y)
         if (ownerButton == Input.Buttons.MIDDLE) recordCamera("pan")
@@ -353,7 +357,10 @@ class SandboxInput(
             }
             cancelGesture(); changed(); return true
         }
+        val resumedPan = ownerButton == Input.Buttons.MIDDLE && ui != pointerPosition
+        if (resumedPan) cameraTakeover("pan")
         val intent = gesture?.release(ui.x, ui.y)
+        if (resumedPan) recordCamera("pan")
         when (intent) {
             is MapIntent.Click -> if (battlefieldAt(screenX, screenY)) current.select(intent.position, intent.mode) else Unit
             is MapIntent.Box -> current.selectBox(intent.start, intent.end, intent.mode, intent.selectionAtStart)
@@ -383,7 +390,7 @@ class SandboxInput(
         val map = projection() ?: return false
         val ui = pointerPosition ?: return false
         if (map.toWorld(ui.x, ui.y) == null) return false
-        map.zoomAt(ui.x, ui.y, amountY.toDouble())
+        map.zoomAt(ui.x, ui.y, amountY.toDouble(), keepCenter = cameraFollowsUnit())
         recordCamera("zoom"); return true
     }
     override fun keyDown(keycode: Int): Boolean {
@@ -522,7 +529,11 @@ class SandboxInput(
         val current = session() ?: return
         val previousSelection = current.selectedIds.toSet()
         if (control()) current.saveGroup(index) else current.recallGroup(index, shift())?.let {
-            projection()?.centerOn(it); recordCamera("group")
+            projection()?.let { map ->
+                cameraTakeover("group")
+                map.centerOn(it)
+                recordCamera("group")
+            }
         }
         if (current.selectedIds != previousSelection) { endConstruction(); endReclaim(); endGroundAction() }
         changed()

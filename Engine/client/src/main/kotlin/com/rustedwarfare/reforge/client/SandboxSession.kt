@@ -24,7 +24,8 @@ data class GroundActionPreview(val source: Position, val position: Position, val
 class SandboxSession(scenario: Scenario, private val evidence: ClientEvidence = ClientEvidence.NONE,
                      val options: SandboxOptions = SandboxOptions(),
                      clockMillis: () -> Long = { System.nanoTime() / 1_000_000L },
-                     val generation: Long = 1L) : AutoCloseable {
+                     val generation: Long = 1L,
+                     cameraCues: List<OfflineCameraCue> = emptyList()) : AutoCloseable {
     constructor(scenario: Scenario, evidence: ClientEvidence, options: SandboxOptions, clockMillis: () -> Long) :
         this(scenario, evidence, options, clockMillis, 1L)
 
@@ -32,7 +33,7 @@ class SandboxSession(scenario: Scenario, private val evidence: ClientEvidence = 
     val hasConstructorDefinitions: Boolean = this.scenario.unitDefinitions.values.any { it.builder != null }
     val hasProductionDefinitions: Boolean = this.scenario.unitDefinitions.values.any { it.production != null }
     val renderResources: SandboxRenderResources = SandboxRenderResources.from(this.scenario)
-    private val commandHost = OfflineSandboxHost(this.scenario, options.deploymentEnabled, generation)
+    private val commandHost = OfflineSandboxHost(this.scenario, options.deploymentEnabled, generation, cameraCues)
     private val context = commandHost.context
     private val commandWorld = context.world
     private var commandSequence = 0L
@@ -44,6 +45,13 @@ class SandboxSession(scenario: Scenario, private val evidence: ClientEvidence = 
     var sandboxCommandFeedback: String = SandboxCommands.HELP
         private set
     val canDeploy: Boolean get() = isOpen && options.deploymentEnabled
+
+    internal fun updateCamera(camera: OfflineCameraController) {
+        val view = observation
+        camera.advance(view.stepIndex, commandHost.takeCameraMotions(view.playerId)) { id ->
+            view.units.firstOrNull { it.unitId == id && it.alive }?.position
+        }
+    }
 
     fun submitSandboxCommand(text: String): SandboxCommandReceipt = submitSandboxRequest { sequence ->
         SandboxCommandRequest(sequence, commandWorld, generation, text)

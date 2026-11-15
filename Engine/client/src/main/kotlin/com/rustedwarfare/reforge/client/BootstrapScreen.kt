@@ -44,6 +44,7 @@ class BootstrapScreen(
     private val development: Boolean = false,
     private val initialContent: Boolean = true,
     openSetup: Boolean = true,
+    private val cameraStartSeed: Path? = null,
 ) : ApplicationAdapter() {
     private enum class StartupPage { HOME, SETUP, CONTENT, RESOURCES, DEVELOPMENT }
     private data class ContentCandidate(val root: Path, val content: ContentPackChoice?)
@@ -59,6 +60,7 @@ class BootstrapScreen(
     private val loader = SandboxLoader()
     private var session: SandboxSession? = null
     private var graphics: SandboxGraphics? = null
+    private var scriptedCamera: OfflineCameraController? = null
     private var sounds: SoundPlayback? = null
     private lateinit var deploymentBox: CheckBox
     private lateinit var noNukesBox: CheckBox
@@ -569,7 +571,7 @@ class BootstrapScreen(
         testSceneTab = button(if (alternateStartSeed == null) "Development" else "Starting units", 424f, 568f, 176f) {
             openSettingsPage(StartupPage.DEVELOPMENT)
         }
-        testScenePanel = TestScenarioPanel(testScenes, testScenarioSeed, alternateStartSeed, skin,
+        testScenePanel = TestScenarioPanel(testScenes, testScenarioSeed, alternateStartSeed, cameraStartSeed, skin,
             visualSettings?.let { it::createUiFont }) {
             if (visualState?.busy == true) visualState.cancel()
             if (testScenes.selected) {
@@ -591,7 +593,9 @@ class BootstrapScreen(
                 val bottom = Gdx.graphics.height - y
                 x >= viewport.screenX && x < viewport.screenX + viewport.screenWidth &&
                     bottom >= viewport.screenY && bottom < viewport.screenY + viewport.screenHeight
-            }, battlefieldAt = { x, y -> touchControls || battlefieldAt(x, y) })
+            }, battlefieldAt = { x, y -> touchControls || battlefieldAt(x, y) },
+            cameraTakeover = { reason -> scriptedCamera?.takeOver(reason) },
+            cameraFollowsUnit = { scriptedCamera?.followsUnit == true })
         for (index in 1..3) groupButtons += button("$index (0)", 508f + (index - 1) * 72f, 12f, 64f) { mapInput.group(index) }
         minimapActor = Actor().apply {
             val area = if (touchControls) MapArea(752.0, 456.0, 176.0, 112.0) else SandboxGraphics.DESKTOP_MINIMAP_AREA
@@ -603,6 +607,7 @@ class BootstrapScreen(
                     val g = graphics ?: return
                     val area = g.minimap.area
                     val target = g.minimap.locate(area.left + x, area.bottom + y, dragging) ?: return
+                    scriptedCamera?.takeOver("minimap")
                     g.projection.centerOn(target)
                     evidence.record("camera", mapOf("reason" to "minimap",
                         "center" to g.projection.camera.center.fields(), "zoom" to g.projection.camera.zoom))
@@ -905,6 +910,7 @@ class BootstrapScreen(
         val closingSession = session; session = null
         val closingGraphics = graphics; graphics = null
         val closingSounds = sounds; sounds = null
+        scriptedCamera = null
         activeVisuals = null
         listOf<() -> Unit>({ closingSounds?.close() }, { closingSession?.close() }, { closingGraphics?.close() }).forEach { cleanup ->
             try { cleanup() } catch (failure: Exception) {
@@ -951,7 +957,11 @@ class BootstrapScreen(
                     "battlefieldFill" to !touchControls,
                     "worldWidth" to pendingGraphics.projection.worldWidth, "worldHeight" to pendingGraphics.projection.worldHeight))
                 val runGeneration = generation
-                pendingSession = SandboxSession(scenario, evidence.withGeneration(runGeneration), request.configuration.options, generation = runGeneration)
+                val generationEvidence = evidence.withGeneration(runGeneration)
+                val cameraCues = request.configuration.testScenario?.cameraCues.orEmpty()
+                pendingSession = SandboxSession(scenario, generationEvidence, request.configuration.options,
+                    generation = runGeneration, cameraCues = cameraCues)
+                val camera = if (cameraCues.isEmpty()) null else OfflineCameraController(pendingGraphics.projection, generationEvidence)
                 pendingSounds = loaded.visuals?.resolvedSounds?.let { resources -> SoundPlayback(
                     pendingSession.consumeSounds(pendingGraphics.projection.soundListener()), resources,
                     soundFactory, evidence.withGeneration(runGeneration)) }
@@ -962,6 +972,7 @@ class BootstrapScreen(
                 graphics = pendingGraphics
                 activeVisuals = loaded.visuals
                 session = pendingSession
+                scriptedCamera = camera
                 sounds = pendingSounds
                 loaded.visuals?.let { visuals -> evidence.recordVisualAssetsReady(visuals, generation) }
                 visualSettings?.preparationDiagnostics?.takeIf { it.isNotEmpty() }?.let {
@@ -988,6 +999,7 @@ class BootstrapScreen(
             try {
                 lastPacingFrame = stepClock.advance(elapsed) {
                     current.tick()
+                    scriptedCamera?.let(current::updateCamera)
                     sounds?.let { player -> player.consume(current.consumeSounds(checkNotNull(graphics).projection.soundListener())) }
                 }
                 recordSimulationPacing()

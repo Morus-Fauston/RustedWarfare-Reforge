@@ -1,8 +1,39 @@
 package com.rustedwarfare.reforge.core.sim
 
+import com.rustedwarfare.reforge.core.knowledge.KnowledgeRules
+import com.rustedwarfare.reforge.core.knowledge.PathInformationSource
+import com.rustedwarfare.reforge.core.knowledge.TerrainRetention
 import kotlin.test.*
 
 class OfflineSandboxHostTest {
+    @Test fun local_camera_cues_are_ordered_once_and_never_grant_a_hidden_target() {
+        val base = BuildingTestContent.scenario()
+        val scene = base.copy(
+            unitDefinitions = base.unitDefinitions.mapValues { (_, unit) -> BuildingTestContent.variant(unit, sight = 1) },
+            automaticVision = KnowledgeRules(TerrainRetention.MEMORY, PathInformationSource.PLAYER_KNOWLEDGE, false))
+        val locate = OfflineCameraMotion.Locate(Position(300.0, 200.0))
+        val replace = OfflineCameraMotion.Pan(Position(320.0, 200.0), 30)
+        val cues = listOf(OfflineCameraCue(0, "p1", locate),
+            OfflineCameraCue(1, "p1", OfflineCameraMotion.Follow("b")),
+            OfflineCameraCue(2, "p1", OfflineCameraMotion.Follow("a")),
+            OfflineCameraCue(0, "p1", replace))
+        OfflineSandboxHost(scene, cameraCues = cues).use { host ->
+            assertTrue(host.takeCameraMotions("p1").isEmpty())
+            host.advance(Step(0, 1.0, "sim-tick"))
+            assertTrue(host.takeCameraMotions("p2").isEmpty())
+            assertEquals(listOf(locate, replace), host.takeCameraMotions("p1"))
+            assertTrue(host.takeCameraMotions("p1").isEmpty())
+            host.advance(Step(1, 1.0, "sim-tick"))
+            assertTrue(host.context.observePlayer(host.context.world, "p1").units.none { it.unitId == "b" })
+            assertEquals(listOf(OfflineCameraMotion.TargetUnavailable), host.takeCameraMotions("p1"))
+            host.advance(Step(2, 1.0, "sim-tick"))
+            assertEquals(listOf(OfflineCameraMotion.Follow("a")), host.takeCameraMotions("p1"))
+        }
+        assertFailsWith<IllegalArgumentException> {
+            OfflineSandboxHost(scene, cameraCues = listOf(OfflineCameraCue(0, "p2", locate)))
+        }
+    }
+
     @Test fun ordinary_offline_stale_identity_and_invalid_placement_never_change_the_world() {
         val scene = BuildingTestContent.scenario()
         val ordinary = OfflineSandboxHost(scene)

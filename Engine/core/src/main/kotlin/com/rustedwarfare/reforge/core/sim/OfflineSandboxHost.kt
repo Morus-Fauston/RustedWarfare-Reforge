@@ -23,10 +23,27 @@ data class SandboxCommandReceipt(val sequence: Long, val generation: Long, val w
     val unitChange: SandboxUnitChange? = null)
 
 /** Local host capability, fixed before the match; ordinary player Actions never grant deployment. */
-class OfflineSandboxHost(input: Scenario, val deploymentEnabled: Boolean = false, val generation: Long = 1L) : AutoCloseable {
+class OfflineSandboxHost(input: Scenario, val deploymentEnabled: Boolean = false, val generation: Long = 1L,
+    cameraCues: List<OfflineCameraCue> = emptyList()) : AutoCloseable {
     private data class SeenRequest(val identity: Any, val receipt: SandboxCommandReceipt)
 
-    init { require(generation > 0L) }
+    init {
+        require(generation > 0L)
+        val localPlayers = input.players.filter { it.control == PlayerControl.LOCAL }.map { it.playerId }.toSet()
+        val width = input.map.widthTiles.toDouble() * input.map.tileWidth
+        val height = input.map.heightTiles.toDouble() * input.map.tileHeight
+        fun mapPoint(point: Position) = MapBounds.contains(width, height, point, 0.0)
+        for (cue in cameraCues) {
+            require(cue.stepIndex >= 0 && cue.playerId in localPlayers) { "Camera cue requires a step and local player" }
+            val valid = when (val motion = cue.motion) {
+                is OfflineCameraMotion.Locate -> mapPoint(motion.center)
+                is OfflineCameraMotion.Pan -> mapPoint(motion.center) && motion.durationTicks > 0
+                is OfflineCameraMotion.Follow -> motion.unitId.isNotBlank()
+                OfflineCameraMotion.TargetUnavailable -> false
+            }
+            require(valid) { "Invalid camera cue at step ${cue.stepIndex}" }
+        }
+    }
 
     val context: SimulationContext = when (val initialized = SimulationContext.initialize(input)) {
         is InitResult.Accepted -> initialized.context
@@ -36,6 +53,24 @@ class OfflineSandboxHost(input: Scenario, val deploymentEnabled: Boolean = false
     private var closed = false
     private val requests = linkedMapOf<Long, SeenRequest>()
     private val pending = linkedMapOf<Long, Pair<SandboxCommandRequest, SandboxCommand>>()
+
+    private val cameraSchedule = cameraCues.groupBy { it.playerId }
+        .mapValues { (_, cues) -> ArrayDeque(cues.sortedBy { it.stepIndex }) }
+    private var cameraStep = -1L
+
+    fun takeCameraMotions(playerId: String): List<OfflineCameraMotion> {
+        if (closed || !context.isCurrentSandboxWorld(world)) return emptyList()
+        val cues = cameraSchedule[playerId] ?: return emptyList()
+        if (cues.firstOrNull()?.stepIndex?.let { it <= cameraStep } != true) return emptyList()
+        val visible by lazy { context.observePlayer(world, playerId).units }
+        return buildList {
+            while (cues.firstOrNull()?.stepIndex?.let { it <= cameraStep } == true) {
+                val motion = cues.removeFirst().motion
+                add(if (motion is OfflineCameraMotion.Follow && visible.none { it.unitId == motion.unitId && it.alive })
+                    OfflineCameraMotion.TargetUnavailable else motion)
+            }
+        }
+    }
 
     fun submit(input: SandboxCommandRequest): SandboxCommandReceipt {
         fun rejected(code: String, position: Int? = null) = SandboxCommandReceipt(input.sequence, input.generation,
@@ -142,6 +177,7 @@ class OfflineSandboxHost(input: Scenario, val deploymentEnabled: Boolean = false
             requests[result.sequence] = requests.getValue(result.sequence).copy(receipt = result)
             pending.remove(result.sequence)
         }
+        cameraStep = observation.stepIndex
         return observation
     }
 
