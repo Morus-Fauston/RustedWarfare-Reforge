@@ -441,6 +441,10 @@ internal data class MutableUnit(
     var lastPlannedBuildingRevision: Long = -1L,
     var nearTargetTime: Double = 0.0,
     var localMotion: LocalMotionSegment? = null,
+    var routeContinuation: RouteContinuation? = null,
+    var stalledRouteTicks: Long = 0,
+    var routeTranslationClipped: Boolean = false,
+    var routeOccupantIds: List<String> = emptyList(),
     var localProgressTime: Double = 0.0,
     var terrainCorrectionTime: Double = 0.0,
     var terrainClearSteps: Int = 0,
@@ -567,11 +571,16 @@ internal data class MutableUnit(
     }
 
     /** Replanning and repair preserve command identity, completion time and terrain history. */
-    fun adoptRoute(points: List<Position>, logicalTarget: Position, knowledgeRevision: Long, buildingRevision: Long = -1L) {
+    fun adoptRoute(points: List<Position>, logicalTarget: Position, knowledgeRevision: Long, buildingRevision: Long = -1L,
+                   occupantIds: List<String> = emptyList()) {
         recordLogicalTarget(logicalTarget)
         pendingPathNodeCounts = immutable(pendingPathNodeCounts + points.size)
         pathPoints = points.toMutableList()
         localMotion = null
+        routeContinuation = null
+        stalledRouteTicks = 0
+        routeTranslationClipped = false
+        routeOccupantIds = occupantIds
         localProgressTime = 0.0
         lastPlannedKnowledgeRevision = knowledgeRevision
         lastPlannedBuildingRevision = buildingRevision
@@ -615,6 +624,10 @@ internal data class MutableUnit(
         lastPlannedBuildingRevision = -1L
         nearTargetTime = 0.0
         localMotion = null
+        routeContinuation = null
+        stalledRouteTicks = 0
+        routeTranslationClipped = false
+        routeOccupantIds = emptyList()
         localProgressTime = 0.0
     }
 }

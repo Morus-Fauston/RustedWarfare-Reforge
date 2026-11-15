@@ -31,7 +31,7 @@ import com.rustedwarfare.reforge.core.knowledge.*
 import java.util.Collections
 import java.util.IdentityHashMap
 
-class SimulationContext private constructor(private val policies: ExperimentalPolicies = ExperimentalPolicies()) {
+class SimulationContext internal constructor(private val policies: ExperimentalPolicies) {
     private val steps = CandidateSteps()
     private val soundAuthority = SoundAuthority()
     private var activeWorld: WorldHandle? = null
@@ -256,6 +256,20 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
         return result
     }
 
+    fun enableRouteContinuationDiagnostics(world: WorldHandle) {
+        checkMotionDiagnosticsWorld(world)
+        check(steps.current.routeContinuationDiagnostics == null) { "Route continuation diagnostics are already enabled" }
+        steps.current.routeContinuationDiagnostics = mutableListOf()
+    }
+
+    fun drainRouteContinuationDiagnostics(world: WorldHandle): List<RouteContinuationSample> {
+        checkMotionDiagnosticsWorld(world)
+        val samples = checkNotNull(steps.current.routeContinuationDiagnostics) { "Route continuation diagnostics are not enabled" }
+        val result = immutable(samples)
+        samples.clear()
+        return result
+    }
+
     private fun checkMotionDiagnosticsWorld(world: WorldHandle) {
         if (closed) throw MotionDiagnosticsException("closed", "Simulation is closed")
         if (world !== activeWorld) throw MotionDiagnosticsException("stale-world", "Motion diagnostics belong to a different world")
@@ -264,7 +278,9 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
     companion object {
         private const val PRODUCED_UNIT_PREFIX = "produced:"
         private const val CONSTRUCTED_UNIT_PREFIX = "constructed:"
-        fun initialize(scenario: Scenario): InitResult = SimulationContext().initializeInternal(scenario)
+        private const val ROUTE_RETRY_TICKS = 60L
+        private const val ROUTE_FAILURE_TICKS = 420L
+        fun initialize(scenario: Scenario): InitResult = SimulationContext(ExperimentalPolicies()).initializeInternal(scenario)
     }
 
     fun initialize(scenario: Scenario): InitResult = initializeInternal(scenario)
@@ -346,6 +362,8 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
         pathDiagnostics = null
         motionDiagnostics?.clear()
         motionDiagnostics = null
+        steps.current.routeContinuationDiagnostics?.clear()
+        steps.current.routeContinuationDiagnostics = null
         activeWorld = null
         this.scenario = null
         productionLedger = null
@@ -514,7 +532,7 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
                                         executionStep: Long? = null,
                                         start: Position = unit.position,
                                         preservedPrefixPointCount: Int = 0,
-                                        targetRange: Double = 0.0): List<Position>? {
+                                        targetRange: Double = 0.0, occupancy: RouteOccupancy? = null): List<Position>? {
         val counters = PathSearchCounters()
         val usedKnowledge = knowledgeStores != null && knowledgeRules?.pathSource == PathInformationSource.PLAYER_KNOWLEDGE
         var outcome = PathSearchOutcome.FAILED
@@ -532,7 +550,7 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
             searchStart = System.nanoTime()
             searchEntered = true
             val path = policies.path.findPath(terrain, Transport.queryPosition(unit, map, start), target,
-                routeRadius(unit), counters, targetRange, HullRoute.forUnit(unit))
+                routeRadius(unit), counters, targetRange, HullRoute.forUnit(unit), occupancy)
             outcome = if (path == null) PathSearchOutcome.UNREACHABLE else PathSearchOutcome.FOUND
             pathPointCount = path?.size ?: 0
             return path
@@ -1239,6 +1257,8 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
                 retainedPatrolTarget(unit)
             replanForKnowledge(currentScenario.map, step.stepIndex)
             repairInvalidConnections(currentScenario.map, step.stepIndex)
+            recoverStalledMoves(currentScenario.map, step.stepIndex)
+            prepareRouteSuccessors(currentScenario.map, step.stepIndex, candidate.routeContinuationSamples)
             for (unit in orderedUnits().toList()) {
                 val attachment = unit.attachment
                 if (attachment != null) {
@@ -1355,7 +1375,7 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
                         if (unit.moveTarget == null && task.startsAfterFactoryExit) unit.taskQueue = unit.taskQueue.pop()
                     }
                 }
-                if (fourLegged) updateUnit(unit, currentScenario.map, step.delta, step.stepIndex, candidate.motionSamples)
+                if (fourLegged) updateUnit(unit, currentScenario.map, step.delta, step.stepIndex, candidate)
                 val blinkCooldown = unit.blinkCooldownUntil
                 val actionForm = unit.definition
                 if (BuildingWork.isReady(unit)) {
@@ -1390,7 +1410,7 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
                     // The destination write preserves the logical order. Rebase the physical route at the new position.
                     resumeProductionRoute(unit, currentScenario.map, step.stepIndex)
                 } else if (!fourLegged) {
-                    updateUnit(unit, currentScenario.map, step.delta, step.stepIndex, candidate.motionSamples)
+                    updateUnit(unit, currentScenario.map, step.delta, step.stepIndex, candidate)
                 }
                 val acceptsHeight = { height: Double ->
                     val allowed = UnitContact.canChangeHeight(unit, height, orderedUnits(),
@@ -2911,8 +2931,105 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
             }
     }
 
+    private fun recoverStalledMoves(map: MapDefinition, step: Long) {
+        for (unit in orderedUnits()) {
+            val stalled = unit.stalledRouteTicks
+            if (!unit.alive || unit.carriedBy != null || stalled == 0L || stalled % ROUTE_RETRY_TICKS != 0L) continue
+            val target = unit.moveTarget ?: continue
+            val command = unit.tasks.firstOrNull()?.takeIf { it.kind == UnitTaskKind.MOVE } ?: continue
+            val occupants = orderedUnits().filter {
+                it !== unit && knowsRouteOccupant(unit, it) && UnitContact.inContact(unit, it)
+            }
+            val occupancy = UnitContact.routeAround(unit, occupants)
+            val samples = pathDiagnostics
+            val path = if (samples == null) policies.path.findPath(planningTerrainFor(unit, map),
+                Transport.queryPosition(unit, map), target, routeRadius(unit), hull = HullRoute.forUnit(unit), occupancy = occupancy)
+            else findPathWithDiagnostics(command.actionId, command.atStep, target, unit, map, samples,
+                PathSearchReason.ROUTE_REPAIR, step, occupancy = occupancy)
+            if (path == null) {
+                if (stalled < ROUTE_FAILURE_TICKS) continue
+                unit.taskQueue = unit.taskQueue.pop()
+                unit.cancelRoute()
+                pendingEvents += Event("movement-cancelled", unit.unitId)
+                pendingEvents += Event("path-unreachable", unit.unitId)
+            } else if (path != unit.pathPoints) {
+                unit.adoptRoute(path, logicalRouteTarget(unit, target), plannedKnowledgeRevision(unit),
+                    plannedBuildingRevision(unit), occupants.map { it.unitId })
+            }
+        }
+    }
+
+    private fun knowsRouteOccupant(unit: MutableUnit, other: MutableUnit): Boolean =
+        other.ownerPlayerId == unit.ownerPlayerId || isVisibleTo(unit.ownerPlayerId, other.position, other.nativeTransportPlacement)
+
+    private fun routeOccupancy(unit: MutableUnit): RouteOccupancy? {
+        if (unit.routeOccupantIds.isEmpty()) return null
+        val visible = unit.routeOccupantIds.mapNotNull { id -> units[id]?.takeIf { knowsRouteOccupant(unit, it) } }
+        return UnitContact.routeAround(unit, visible)
+    }
+
+    private fun prepareRouteSuccessors(map: MapDefinition, stepIndex: Long, samples: MutableList<RouteContinuationSample>?) {
+        var budget = policies.routePreparationBudget(stepIndex)
+        val handoffDistance = checkNotNull(scenario?.movementContract).pathPointRadius
+        val readyIn = 40.0
+        val candidates = orderedUnits().mapNotNull { unit ->
+            if (!preparesRouteSuccessor(unit) || unit.routeContinuation?.ready == true) return@mapNotNull null
+            val movement = UnitLocomotion.movement(unit)
+            val speed = UnitLocomotion.effectiveMaximumSpeed(unit, movement)
+            if (speed <= 0.0) return@mapNotNull null
+            val remaining = (kotlin.math.sqrt(policies.coordinates.distanceSquared(unit.position, unit.pathPoints.first())) -
+                handoffDistance).coerceAtLeast(0.0)
+            val remainingTicks = remaining / speed
+            (unit to remainingTicks).takeIf { remainingTicks <= readyIn }
+        }.sortedWith(compareBy<Pair<MutableUnit, Double>> { it.second }.thenBy { it.first.updateKey })
+        for ((unit, remaining) in candidates) {
+            val continuation = requestRouteContinuation(unit, stepIndex, remaining, samples)
+            if (budget <= 0) continue
+            budget--
+            val terrain = planningTerrainFor(unit, map)
+            val hull = HullRoute.forUnit(unit)
+            val start = if (continuation.waiting) Transport.queryPosition(unit, map) else continuation.anchor
+            val incoming = if (continuation.waiting) unit.heading
+                else (hull as? RectangularDeparture)?.headingTowards(unit.position, start, unit.heading) ?: unit.heading
+            if (continuationFits(terrain, start, continuation.successor, incoming, hull, routeRadius(unit),
+                    routeOccupancy(unit))) {
+                unit.routeContinuation = continuation.copy(ready = true)
+                recordRouteContinuation(samples, stepIndex, unit, continuation, remaining, RouteContinuationStage.READY)
+            }
+        }
+    }
+
+    private fun requestRouteContinuation(unit: MutableUnit, step: Long, estimate: Double,
+                                         samples: MutableList<RouteContinuationSample>?): RouteContinuation {
+        unit.routeContinuation?.let { return it }
+        val continuation = RouteContinuation(unit.pathPoints[0], unit.pathPoints[1])
+        unit.routeContinuation = continuation
+        recordRouteContinuation(samples, step, unit, continuation, estimate, RouteContinuationStage.REQUESTED)
+        return continuation
+    }
+
+    private fun recordRouteContinuation(samples: MutableList<RouteContinuationSample>?, step: Long, unit: MutableUnit,
+                                        continuation: RouteContinuation, remaining: Double, stage: RouteContinuationStage) {
+        samples?.add(RouteContinuationSample(step, unit.unitId, checkNotNull(unit.originMoveId),
+            continuation.anchor, continuation.successor, remaining, stage))
+    }
+
+    private fun continuationFits(terrain: PlanningTerrain, start: Position, target: Position, heading: Double,
+                                 hull: HullRoute?, radius: Double, occupancy: RouteOccupancy? = null): Boolean {
+        val arrival = if (hull == null) {
+            if (!PlanningSegmentClearance.allows(terrain, start, target, radius)) return false
+            heading
+        } else hull.arrival(HullTerrainGrid.authorized(terrain), start, target, heading) ?: return false
+        return occupancy?.allows(start, target, heading, arrival) != false
+    }
+
+    private fun preparesRouteSuccessor(unit: MutableUnit): Boolean =
+        unit.alive && unit.carriedBy == null && unit.attachment == null && unit.birthRemaining == 0f &&
+            unit.tasks.firstOrNull()?.kind == UnitTaskKind.MOVE && unit.pathPoints.size > 1 &&
+            UnitLocomotion.movement(unit).type != MovementType.AIR
+
     private fun updateUnit(unit: MutableUnit, map: MapDefinition, delta: Double, executionStep: Long,
-                           motionSamples: MutableList<MotionStepSample>?) {
+                           step: CandidateStep) {
         if (!BuildingWork.isReady(unit)) return
         val movement = UnitLocomotion.movement(unit)
         if (unit.spiderBlink != null || CustomUnitActions.movementLocked(unit, unitActionHead(unit)) ||
@@ -2962,7 +3079,8 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
                 unit.nearTargetTime > 240.0 -> 16.0
                 else -> 7.0
             }
-            if (!approachingBuilding && policies.capture.inside(commandDistanceSquared, completionRadius)) {
+            if (!approachingBuilding && !unit.routeTranslationClipped &&
+                policies.capture.inside(commandDistanceSquared, completionRadius)) {
                 unit.cancelRoute()
                 if (unit.tasks.firstOrNull()?.kind == UnitTaskKind.MOVE) unit.taskQueue = unit.taskQueue.pop()
                 pendingEvents += Event("movement-arrived", unit.unitId)
@@ -2992,6 +3110,30 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
             unit.requestMovement(logicalRouteTarget(unit, target))
             val temporaryBirth = unit.birthRemaining > 0f
             val local = if (temporaryBirth) null else unit.ensureLocalMotion()
+            val usesPreparedJoin = preparesRouteSuccessor(unit)
+            val occupancy = routeOccupancy(unit)
+            val canHandOff = !temporaryBirth && unit.pathPoints.size > 1 && policies.capture.inside(
+                policies.coordinates.distanceSquared(unit.position, unit.pathPoints.first()), contract.pathPointRadius) &&
+                continuationFits(planningTerrainFor(unit, map), Transport.queryPosition(unit, map),
+                    unit.pathPoints[1], unit.heading, if (usesPreparedJoin) HullRoute.forUnit(unit) else null,
+                    routeRadius(unit), occupancy)
+            if (canHandOff && usesPreparedJoin) {
+                val routeSamples = step.routeContinuationSamples
+                val continuation = requestRouteContinuation(unit, executionStep, 0.0, routeSamples)
+                if (!continuation.ready) {
+                    if (!continuation.waiting) {
+                        unit.routeContinuation = continuation.copy(waiting = true)
+                        recordRouteContinuation(routeSamples, executionStep, unit, continuation, 0.0, RouteContinuationStage.WAITING)
+                    }
+                    // Keep the last safe pose and original order until the next segment is prepared.
+                    unit.speed = 0.0
+                    unit.flightVelocity = Position(0.0, 0.0)
+                    unit.stalledRouteTicks = 0
+                    unit.movementState = MovementState.MOVING
+                    return
+                }
+                recordRouteContinuation(routeSamples, executionStep, unit, continuation, 0.0, RouteContinuationStage.HANDED_OFF)
+            }
             val steeringTarget = local?.aim ?: target
             val finalPoint = temporaryBirth || (unit.pathPoints.size == 1 && checkNotNull(local).isLast)
             val d2 = policies.coordinates.distanceSquared(unit.position, steeringTarget)
@@ -3010,19 +3152,18 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
             speedTarget = maximumSpeed * requestedFraction
             if (temporaryBirth) {
                 // cn supplies the command aim directly, without normal route-node lookahead.
-            } else if (unit.pathPoints.size > 1 && policies.capture.inside(
-                    policies.coordinates.distanceSquared(unit.position, unit.pathPoints.first()), contract.pathPointRadius) &&
-                PlanningSegmentClearance.allows(planningTerrainFor(unit, map), Transport.queryPosition(unit, map),
-                    unit.pathPoints[1], routeRadius(unit))) {
+            } else if (canHandOff) {
                 unit.pathPoints.removeAt(0)
                 unit.localMotion = null
+                unit.routeContinuation = null
                 unit.localProgressTime = 0.0
             } else {
                 val terrain = planningTerrainFor(unit, map)
                 val progress = LocalMotionMaintenance.advance(checkNotNull(local), unit.localProgressTime, delta, fraction > 0.0,
                     d2, !finalPoint && policies.capture.inside(d2, 16.0), unit.terrainCorrectionTime,
                     { policies.coordinates.distanceSquared(unit.position, it) },
-                    { PlanningSegmentClearance.allows(terrain, Transport.queryPosition(unit, map), it, routeRadius(unit)) })
+                    { continuationFits(terrain, Transport.queryPosition(unit, map), it, unit.heading,
+                        if (occupancy == null) null else HullRoute.forUnit(unit), routeRadius(unit), occupancy) })
                 unit.localMotion = progress.segment
                 unit.localProgressTime = progress.activeTime
             }
@@ -3074,7 +3215,7 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
         val integratedHeading = unit.heading
         val integratedSpeed = unit.speed
         fun recordMotion(resolved: Position?, disposition: MotionTerrainDisposition, unitContactLimited: Boolean) {
-            motionSamples?.add(MotionStepSample(checkNotNull(activeWorld).id, unit.unitId, unit.ownerPlayerId, unit.typeId,
+            step.motionSamples?.add(MotionStepSample(checkNotNull(activeWorld).id, unit.unitId, unit.ownerPlayerId, unit.typeId,
                 executionStep, simulationTime, delta, originBefore, positionBefore, headingBefore, speedBefore, angularVelocityBefore,
                 commandBefore, normalCompleted, aimForSample != null, aimForSample,
                 finalForSample.takeIf { aimForSample != null }, differenceForSample.takeIf { aimForSample != null },
@@ -3117,6 +3258,14 @@ class SimulationContext private constructor(private val policies: ExperimentalPo
             return
         }
         val terrainCorrected = terrainHeading != requestedHeading || terrainResolved != candidate
+        if (unit.moveTarget != null && unit.tasks.firstOrNull()?.kind == UnitTaskKind.MOVE) {
+            unit.routeTranslationClipped = resolved != candidate
+            if (unit.routeTranslationClipped) unit.nearTargetTime = 0.0
+            val attemptedPoseChange = candidate != positionBefore || requestedHeading != headingBefore
+            val heldAtPriorPose = resolved == positionBefore && legalHeading == headingBefore
+            unit.stalledRouteTicks = if (attemptedPoseChange && heldAtPriorPose &&
+                (terrainCorrected || unitContactLimited)) unit.stalledRouteTicks + 1 else 0
+        }
         if (terrainCorrected || unitContactLimited) {
             pendingEvents += Event("movement-blocked", unit.unitId)
             unit.terrainCorrectionTime += delta

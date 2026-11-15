@@ -122,6 +122,7 @@
       "com.rustedwarfare.reforge.core.sim.SeaFactoryUpgradeTest",
       "com.rustedwarfare.reforge.core.sim.UnderwaterTargetContractTest",
       "com.rustedwarfare.reforge.core.sim.UnitContactTest",
+      "com.rustedwarfare.reforge.core.sim.RouteContinuationTest",
       "com.rustedwarfare.reforge.core.sim.WaterMovementTest",
       "com.rustedwarfare.reforge.core.sim.SandboxCommandParserTest",
       "com.rustedwarfare.reforge.core.sim.OfflineSandboxHostTest",

@@ -70,6 +70,29 @@ internal object UnitContact {
         return Position(start.x + drift.x * fraction, start.y + drift.y * fraction)
     }
 
+    fun routeAround(unit: MutableUnit, occupants: List<MutableUnit>): RouteOccupancy? {
+        val contactLayer = layer(unit) ?: return null
+        val obstacles = occupants.filter { layer(it) == contactLayer }
+        if (obstacles.isEmpty()) return null
+        val shape = unit.definition.movementCollision
+        return RouteOccupancy { start, target, before, after ->
+            val drift = subtract(target, start)
+            val moving = Body(shape, after)
+            obstacles.all { occupant ->
+                val fixedShape = occupant.definition.movementCollision
+                val offset = subtract(start, occupant.position)
+                val heading = if (shape !is MovementCollisionShape.Rectangle || before == after) after
+                    else when (fixedShape) {
+                        is MovementCollisionShape.Circle -> RectangularTurn.againstCircle(shape, fixedShape.radius,
+                            negate(offset), before, after)
+                        is MovementCollisionShape.Rectangle -> RectangularTurn.againstRectangle(shape, fixedShape,
+                            offset, occupant.heading, before, after)
+                    }
+                heading == after && moving.entry(Body(fixedShape, occupant.heading), offset, drift, 1.0) == 1.0
+            }
+        }
+    }
+
     fun canChangeHeight(unit: MutableUnit, requested: Double, units: Collection<MutableUnit>,
                         map: MapDefinition, buildings: BuildingTerrain?): Boolean {
         val current = layer(unit)

@@ -63,6 +63,7 @@ internal data class StepState(
     var automaticVisionState: AutomaticVisionState? = null,
     var pathDiagnostics: MutableList<PathSearchSample>? = null,
     var motionDiagnostics: MutableList<MotionStepSample>? = null,
+    var routeContinuationDiagnostics: MutableList<RouteContinuationSample>? = null,
     var pendingKnowledgeDiscoveries: MutableMap<String, MutableMap<Pair<Int, Int>, Long>> = mutableMapOf(),
 ) {
     fun fork(): StepState = copy(
@@ -273,6 +274,7 @@ internal class CandidateSteps {
 internal class CandidateStep(val state: StepState, private val step: Step) {
     val existingProjectileIds = state.projectiles.mapTo(hashSetOf()) { it.objectId }
     val motionSamples = state.motionDiagnostics?.let { mutableListOf<MotionStepSample>() }
+    val routeContinuationSamples = state.routeContinuationDiagnostics?.let { mutableListOf<RouteContinuationSample>() }
     private var knowledge: AutomaticKnowledgeCommit? = null
     private var buildings: BuildingCommit? = null
     val vision: Map<String, VisionSnapshot>? get() = knowledge?.views ?: state.automaticVisionSnapshots
@@ -315,6 +317,7 @@ internal class CandidateStep(val state: StepState, private val step: Step) {
         state.pendingSoundTriggers.clear()
         state.pendingActionResults.clear()
         motionSamples?.let { checkNotNull(committedMotion).addAll(it) }
+        routeContinuationSamples?.let { checkNotNull(state.routeContinuationDiagnostics).addAll(it) }
         return observation
     }
 

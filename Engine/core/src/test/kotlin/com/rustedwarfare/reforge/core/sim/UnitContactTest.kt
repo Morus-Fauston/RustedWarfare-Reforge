@@ -17,6 +17,35 @@ import kotlin.test.assertTrue
 
 class UnitContactTest {
     @Test
+    fun a_blocked_turn_with_no_translation_still_requests_route_repair() = WaterTestScene.withMap { map ->
+        val center = Position(500.0, 190.0)
+        val ship = contactUnit("ship", MovementType.WATER, MovementCollisionShape.Rectangle(24.0, 6.0))
+        val obstructing = contactUnit("circle", MovementType.WATER, MovementCollisionShape.Circle(2.0))
+        val input = WaterTestScene.scenario(map, MovementType.WATER, center).copy(
+            unitDefinitions = listOf(ship, obstructing).associateBy { it.id },
+            units = listOf(UnitSpawn("ship", "p1", ship.id, center, 0.0),
+                UnitSpawn("occupant", "p1", obstructing.id, Position(508.0, 182.0), 0.0)))
+        assertIs<InitResult.Accepted>(SimulationContext.initialize(input)).context.useContext { context ->
+            context.enableMotionDiagnostics(context.world)
+            context.enablePathDiagnostics(context.world)
+            move(context, "ship", Position(575.0, 190.0))
+            for (tick in 0L..170L) context.advance(Step(tick, 1.0, "sim-tick"))
+            val blockedTurn = context.drainMotionDiagnostics(context.world).filter { sample ->
+                sample.unitId == "ship" && sample.unitContactLimited && sample.candidate == sample.positionBefore &&
+                    sample.finalHeading == sample.headingBefore
+            }
+            assertTrue(blockedTurn.isNotEmpty(), "The sample needs a physically blocked turn with zero attempted translation")
+            val repair = context.drainPathDiagnostics(context.world).firstOrNull {
+                it.unitId == "ship" && it.actionId == "move-ship" &&
+                    it.reason == com.rustedwarfare.reforge.core.path.PathSearchReason.ROUTE_REPAIR
+            }
+            assertTrue(repair != null, "A blocked turn must trigger repair without waiting for translation")
+            assertTrue(checkNotNull(repair.executionStep) > blockedTurn.first().stepIndex)
+            println("Turn only blocked at ${blockedTurn.first().stepIndex}; same-command route repair at ${repair.executionStep}")
+        }
+    }
+
+    @Test
     fun a_rectangular_ship_stops_at_first_contact_with_a_stationary_circle() = WaterTestScene.withMap { map ->
         val circle = WaterTestScene.unit(MovementType.WATER)
         val rectangle = contactUnit("long-ship", MovementType.WATER, MovementCollisionShape.Rectangle(24.0, 8.0))
@@ -283,8 +312,12 @@ class UnitContactTest {
                 assertEquals(550.0, stop.position.x, 1e-9)
                 assertEquals(-8.0, stop.height)
                 assertIs<ActionResult.Accepted>(context.submit(SubmarineDepthAction("raise-blocker", "p1", "blocker", true, context.world)))
-                for (tick in 271L..540L) context.advance(Step(tick, 1.0, "sim-tick"))
-                assertTrue(context.observe().units.single { it.unitId == "sub" }.position.x > 610.0)
+                val clear = (271L..900L).map { context.advance(Step(it, 1.0, "sim-tick")) }
+                val surfaced = clear.single { Event("submarine-threshold-crossed", "blocker") in it.events }
+                val onward = clear.firstOrNull { it.stepIndex >= surfaced.stepIndex &&
+                    it.units.single { unit -> unit.unitId == "sub" }.position.x > 610.0 }
+                assertTrue(onward != null, "Original submerged move did not continue after the blocker's layer changed")
+                println("Layer clearance at ${surfaced.stepIndex}, continued past 610 at ${onward.stepIndex}")
             }
         } }
 
@@ -368,8 +401,9 @@ class UnitContactTest {
         assertIs<InitResult.Accepted>(SimulationContext.initialize(opening)).context.useContext { clear ->
             assertIs<InitResult.Accepted>(SimulationContext.initialize(occupied)).context.useContext { hidden ->
                 val target = Position(710.0, 190.0)
+                hidden.enablePathDiagnostics(hidden.world)
                 assertEquals(move(clear, "mover", target).events, move(hidden, "mover", target).events)
-                var contact = false
+                var contact: Long? = null
                 for (tick in 0L..160L) {
                     clear.advance(Step(tick, 1.0, "sim-tick"))
                     hidden.advance(Step(tick, 1.0, "sim-tick"))
@@ -381,13 +415,25 @@ class UnitContactTest {
                     if (Event("movement-blocked", "mover") in occupiedView.events) {
                         assertEquals(listOf(Event("movement-blocked", "mover")), occupiedView.events)
                         assertEquals(554.0, pose.position.x, 1e-9)
-                        contact = true
+                        contact = tick
                         break
                     }
                     assertEquals(unoccupiedView.units, occupiedView.units)
                     assertEquals(unoccupiedView.events, occupiedView.events)
                 }
-                assertTrue(contact)
+                val blockedAt = checkNotNull(contact)
+                for (tick in (blockedAt + 1)..(blockedAt + 130)) {
+                    hidden.advance(Step(tick, 1.0, "sim-tick"))
+                    val view = hidden.observePlayer(hidden.world, "p1")
+                    assertEquals(listOf(target), view.units.single().pathPoints)
+                    assertEquals(listOf(Event("movement-blocked", "mover")), view.events)
+                }
+                val retries = hidden.drainPathDiagnostics(hidden.world).filter {
+                    it.reason == com.rustedwarfare.reforge.core.path.PathSearchReason.ROUTE_REPAIR
+                }
+                assertTrue(retries.isNotEmpty())
+                assertTrue(retries.all { it.pathPointCount == 1 && it.usedPlayerKnowledge })
+                println("Hidden blocker contacted at $blockedAt, retries=${retries.map { it.executionStep }}")
             }
         }
     }

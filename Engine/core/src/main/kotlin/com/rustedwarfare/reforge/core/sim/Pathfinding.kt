@@ -11,7 +11,11 @@ import java.util.PriorityQueue
 internal interface PathPolicy {
     fun findPath(map: PlanningTerrain, start: Position, target: Position, radius: Double,
                  counters: PathSearchCounters? = null, targetRange: Double = 0.0,
-                 hull: HullRoute? = null): List<Position>?
+                 hull: HullRoute? = null, occupancy: RouteOccupancy? = null): List<Position>?
+}
+
+internal fun interface RouteOccupancy {
+    fun allows(start: Position, target: Position, fromHeading: Double, toHeading: Double): Boolean
 }
 
 internal class ClearanceAStarPolicy(
@@ -21,7 +25,7 @@ internal class ClearanceAStarPolicy(
 ) : PathPolicy {
     override fun findPath(map: PlanningTerrain, start: Position, target: Position, radius: Double,
                           counters: PathSearchCounters?, targetRange: Double,
-                          hull: HullRoute?): List<Position>? {
+                          hull: HullRoute?, occupancy: RouteOccupancy?): List<Position>? {
         if (counters != null) counters.actualSearchCalls++
         require(targetRange.isFinite() && targetRange >= 0.0)
         if (targetRange > 0.0) return findPathToRange(map, start, target, radius, targetRange, counters)
@@ -33,10 +37,15 @@ internal class ClearanceAStarPolicy(
         val goalCell = cellOf(map, target) ?: return null
         if (terrain.intersects(map, start, radius) || terrain.intersects(map, target, radius)) return null
         val hullGrid = hull?.let { HullTerrainGrid.authorized(map) }
-        fun arrival(from: Position, point: Position, heading: Double): Double? =
-            hull?.arrival(checkNotNull(hullGrid), from, point, heading)
-        if (if (hull == null) PlanningSegmentClearance.allows(map, start, target, radius)
-            else arrival(start, target, hull.heading) != null) return listOf(target)
+        val checkEverySegment = hull != null || occupancy != null
+        fun arrival(from: Position, point: Position, heading: Double): Double? {
+            val nextHeading = if (hull == null) {
+                if (!PlanningSegmentClearance.allows(map, from, point, radius)) return null
+                heading
+            } else hull.arrival(checkNotNull(hullGrid), from, point, heading) ?: return null
+            return nextHeading.takeIf { occupancy?.allows(from, point, heading, nextHeading) != false }
+        }
+        if (arrival(start, target, hull?.heading ?: 0.0) != null) return listOf(target)
 
         val candidates = Array(map.heightTiles) { BooleanArray(map.widthTiles) }
         for (row in 0 until map.heightTiles) for (col in 0 until map.widthTiles) {
@@ -68,7 +77,7 @@ internal class ClearanceAStarPolicy(
             val key = current.key
             if (cost[key] != current.g) continue
             val from = if (key == startKey) start else pointPolicy.point(map, key.col, key.row)
-            val finish = if (hull == null) key.col == goalCell.first && key.row == goalCell.second
+            val finish = if (!checkEverySegment) key.col == goalCell.first && key.row == goalCell.second
                 else arrival(from, target, key.heading) != null
             if (finish) {
                 val points = mutableListOf<Position>()
@@ -79,7 +88,7 @@ internal class ClearanceAStarPolicy(
                 }
                 points.reverse()
                 if (points.lastOrNull() != target) points += target
-                return if (hull == null) simplify(map, start, points, radius) else points
+                return if (checkEverySegment) points else simplify(map, start, points, radius)
             }
             if (counters != null) counters.expanded++
             for ((dx, dy) in offsets) {
@@ -89,7 +98,7 @@ internal class ClearanceAStarPolicy(
                 if (counters != null) counters.neighborsChecked++
                 if (!candidates[row][col]) continue
                 val point = pointPolicy.point(map, col, row)
-                val heading = if (hull != null) arrival(from, point, key.heading) ?: continue
+                val heading = if (checkEverySegment) arrival(from, point, key.heading) ?: continue
                     else {
                         if (key == startKey && !PlanningSegmentClearance.allows(map, from, point, radius)) continue
                         0.0
