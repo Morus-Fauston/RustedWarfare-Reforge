@@ -618,9 +618,15 @@ class SandboxSession(scenario: Scenario, private val evidence: ClientEvidence = 
             "start" to start.fields(), "end" to end.fields(), "mode" to mode.name) }
     }
 
-    private fun unitAt(position: Position, selectionOnly: Boolean = false): String? = observation.units.asSequence()
+    internal fun sandboxPickTargetAt(position: Position, requiresHealth: Boolean): String? =
+        unitAt(position, eligible = { unit ->
+            (!requiresHealth || unit.health != null) && renderResources.units.getValue(unit.typeId).isDrawn(unit)
+        })
+
+    private fun unitAt(position: Position, selectionOnly: Boolean = false,
+                       eligible: (UnitObservation) -> Boolean = { true }): String? = observation.units.asSequence()
         .filter { unit -> unit.alive && scenario.unitDefinitions.getValue(unit.typeId).attachmentModule
-            ?.let { !selectionOnly && !it.empty } != false }
+            ?.let { !selectionOnly && !it.empty } != false && eligible(unit) }
         .map { unit ->
             val center = unit.displayedBodyPosition()
             val dx = center.x - position.x

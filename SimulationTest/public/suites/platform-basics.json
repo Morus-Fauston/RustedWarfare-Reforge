@@ -25,6 +25,7 @@
       "com.rustedwarfare.reforge.client.PatrolSandboxInputTest",
       "com.rustedwarfare.reforge.client.ProductionActionViewTest",
       "com.rustedwarfare.reforge.client.SandboxInputTest",
+      "com.rustedwarfare.reforge.client.SandboxPickingTest",
       "com.rustedwarfare.reforge.client.SelectionSandboxSessionTest",
       "com.rustedwarfare.reforge.client.SelectionStateTest",
       "com.rustedwarfare.reforge.client.TouchSessionTest",

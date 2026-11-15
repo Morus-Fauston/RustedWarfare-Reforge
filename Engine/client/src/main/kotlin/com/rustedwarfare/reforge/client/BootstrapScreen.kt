@@ -66,6 +66,9 @@ class BootstrapScreen(
     private lateinit var commandFeedbackLabel: Label
     private lateinit var commandHintLabel: Label
     private lateinit var commandPanel: Table
+    private lateinit var commandPickHint: Label
+    private val commandPickButtons = linkedMapOf<String, TextButton>()
+    private var commandPickError: String? = null
     private var commandConsoleOpen = false
     private lateinit var rootField: TextField
     private lateinit var titleLabel: Label
@@ -634,7 +637,7 @@ class BootstrapScreen(
         }) { lastHudState = null; updateHud() }
         commandPanel = Table().also {
             it.background = skin.newDrawable("white", Color(.07f, .10f, .09f, 1f))
-            it.setBounds(40f, 100f, 660f, 140f)
+            it.setBounds(40f, 100f, 660f, 220f)
             stage.addActor(it)
         }
         commandFeedbackLabel = label("", 48f, 232f, 644f, 84f).also {
@@ -644,9 +647,25 @@ class BootstrapScreen(
             it.setOnlyFontChars(false); it.maxLength = 512
             it.setBounds(48f, 108f, 644f, 34f); stage.addActor(it)
         }
+        commandPickButtons["sandbox-pick-spawn"] = button("Place once", 48f, 150f, 130f) {
+            beginPickedCommand(SandboxPick.parseSpawn(commandField.text, repeat = false), "Enter a unit type and player")
+        }
+        commandPickButtons["sandbox-pick-repeat"] = button("Keep placing", 186f, 150f, 130f) {
+            beginPickedCommand(SandboxPick.parseSpawn(commandField.text, repeat = true), "Enter a unit type and player")
+        }
+        commandPickButtons["sandbox-pick-destroy"] = button("Pick destroy", 324f, 150f, 130f) {
+            beginPickedCommand(SandboxPick.Destroy, "")
+        }
+        commandPickButtons["sandbox-pick-health"] = button("Pick health", 462f, 150f, 130f) {
+            beginPickedCommand(SandboxPick.parseHealth(commandField.text), "Enter a signed health amount")
+        }
+        commandPickHint = label("Place <type> <player>    Health <+amount|-amount>", 48f, 194f, 644f, 24f)
         commandHintLabel = label("Sandbox: / for commands", 40f, 100f, 660f, 24f)
         commandConsoleOpen = false
         Gdx.input.inputProcessor = InputMultiplexer(object : InputAdapter() {
+            override fun touchDown(screenX: Int, screenY: Int, pointer: Int, button: Int): Boolean =
+                pointer == 0 && button == Input.Buttons.RIGHT && mapInput.cancelSandboxPick()
+
             override fun mouseMoved(screenX: Int, screenY: Int): Boolean {
                 if (!touchControls && session != null && !commandConsoleOpen) {
                     val point = stage.screenToStageCoordinates(Vector2(screenX.toFloat(), screenY.toFloat()))
@@ -661,6 +680,7 @@ class BootstrapScreen(
                     !touchControls && session?.canDeploy == true && stage.keyboardFocus !is TextField) {
                     mapInput.cancel()
                     commandConsoleOpen = true
+                    commandPickError = null
                     commandField.text = ""
                     stage.keyboardFocus = commandField
                     lastHudState = null; updateHud()
@@ -681,6 +701,7 @@ class BootstrapScreen(
                     closeCommandConsole(); updateHud(); return true
                 }
                 if (keycode == Input.Keys.ENTER) {
+                    commandPickError = null
                     session?.submitSandboxCommand(commandField.text)
                     commandField.selectAll()
                     lastHudState = null; updateHud(); return true
@@ -1015,6 +1036,7 @@ class BootstrapScreen(
                 shapes.begin(ShapeRenderer.ShapeType.Line)
                 graphics.drawOverlay(shapes, current.frame, current.selectedIds, mapInput.box, mapInput.constructionPreview,
                     mapInput.groundActionPreview, current.selectedId.takeUnless { touchControls })
+                mapInput.sandboxPickPreview?.let { graphics.drawSandboxPick(shapes, current.frame, it) }
                 shapes.end()
                 graphics.drawFlameEffects(shapes, current.frame)
             } finally { ScissorStack.popScissors() }
@@ -1074,6 +1096,7 @@ class BootstrapScreen(
         entries += DrawnAction("no-nukes", noNukesBox, noNukesBox.text.toString(), enabled = !noNukesBox.isDisabled)
         entries += DrawnAction("sandbox-command-input", commandField, commandField.text,
             enabled = commandConsoleOpen && current?.canDeploy == true)
+        commandPickButtons.forEach { (id, actor) -> button(id, actor) }
         packPanel?.let { entries += it.drawnActions() }
         button("stop", stopButton); button("choose-patrol", patrolButton)
         entries += DrawnAction("minimap", minimapActor, "Minimap", enabled = current != null)
@@ -1189,6 +1212,17 @@ class BootstrapScreen(
         if (::commandField.isInitialized && stage.keyboardFocus === commandField) stage.keyboardFocus = null
         lastHudState = null
         evidence.record("sandbox-console", mapOf("generation" to generation, "open" to false))
+    }
+
+    private fun beginPickedCommand(mode: SandboxPick?, error: String) {
+        if (mode == null) {
+            commandPickError = error
+        } else {
+            commandPickError = null
+            closeCommandConsole()
+            mapInput.beginSandboxPick(mode)
+        }
+        updateHud()
     }
 
     private fun factoryActionCard(input: OwnedActionInput): FactoryActionCard {
@@ -1382,8 +1416,19 @@ class BootstrapScreen(
         commandPanel.isVisible = showConsole
         commandField.isVisible = showConsole
         commandFeedbackLabel.isVisible = showConsole
-        commandFeedbackLabel.setText(current?.sandboxCommandFeedback ?: "")
+        commandPickHint.isVisible = showConsole
+        commandPickButtons.values.forEach { it.isVisible = showConsole }
+        commandFeedbackLabel.setText(commandPickError ?: current?.sandboxCommandFeedback.orEmpty())
         commandHintLabel.isVisible = development && current?.canDeploy == true && !showConsole && !touchControls
+        val pickHint = when (val pick = mapInput.sandboxPick) {
+            is SandboxPick.Spawn -> "Place ${pick.setup.typeId} for ${pick.setup.ownerPlayerId}"
+            SandboxPick.Destroy -> "Pick a unit to destroy"
+            is SandboxPick.Health -> "Pick a unit to adjust health by ${pick.amount}"
+            null -> null
+        }
+        commandHintLabel.setText(pickHint?.let { "$it    ${mapInput.sandboxPickFeedback ?: "Esc or right click cancels"}" }
+            ?: current?.lastSandboxReceipt?.let { "${current.sandboxCommandFeedback}    / for commands" }
+            ?: "Sandbox: / for commands")
         val menu = current?.actionMenu
         val selected = current?.observation?.units?.find { it.unitId == current.selectedId }
         val naval = selected?.transport != null && menu?.unitActions?.any { it.name == "buildAntiNuke" } == true
