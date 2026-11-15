@@ -331,6 +331,8 @@ internal object UnitContact {
 
     private fun sweepCircle(start: Position, drift: Position, radius: Double,
                             rect: MovementCollisionShape.Rectangle?, limit: Double): Double {
+        // This circle pair only gets farther apart. Avoid a spurious entry at a rounded tangent.
+        if (rect == null && dot(start, drift) >= 0.0) return limit
         val halfLength = (rect?.length ?: 0.0) / 2.0
         val halfWidth = (rect?.width ?: 0.0) / 2.0
         return roundRectangleEntry(start, drift, radius.coerceAtLeast(0.0), -halfLength, halfLength, -halfWidth, halfWidth, limit)

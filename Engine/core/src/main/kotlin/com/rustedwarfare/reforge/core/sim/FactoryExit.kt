@@ -9,10 +9,43 @@ internal data class FactoryBirth(val position: Position, val heading: Double, va
 
 /** Finite supported factory exits; no unit collision search or new spawn-file interpreter. */
 internal object FactoryExit {
+    private val nativeSeaFactoryIds = setOf("seaFactory", "seaFactoryT2")
+
+    fun isNativeSeaDeparture(unit: MutableUnit): Boolean =
+        unit.productionOrigin?.factoryTypeId in nativeSeaFactoryIds &&
+            unit.originMoveId == "production-exit:${unit.unitId}"
+
+    fun waitingNativeSeaDepartures(map: MapDefinition, units: Map<String, MutableUnit>): Set<String> {
+        val waiting = hashSetOf<String>()
+        val byFactory = units.values.filter {
+            it.alive && it.carriedBy == null && it.moveTarget != null && isNativeSeaDeparture(it)
+        }.groupBy { checkNotNull(it.productionOrigin).producerId }
+        val priority = compareByDescending<MutableUnit> { it.position.y }.thenBy { it.updateKey }
+        for ((producerId, departures) in byFactory) {
+            if (departures.size < 2) continue
+            val producer = units[producerId] ?: continue
+            val building = producer.definition.building ?: continue
+            val cells = BuildingTerrain.footprint(map, producer.position, building.footprint, building.anchor)
+            val left = cells.minOf { it.first }.toDouble() * map.tileWidth
+            val right = (cells.maxOf { it.first } + 1.0) * map.tileWidth
+            val south = (cells.maxOf { it.second } + 1.0) * map.tileHeight
+            val usingOutlet = departures.filter { unit ->
+                val radius = UnitContact.boundingRadius(unit.definition.movementCollision)
+                unit.position.y - radius < south && unit.position.x + radius > left && unit.position.x - radius < right
+            }
+            val leaders = mutableListOf<MutableUnit>()
+            for (unit in usingOutlet.sortedWith(priority)) {
+                if (leaders.any { UnitContact.shareLayer(unit, it) }) waiting += unit.unitId
+                else leaders += unit
+            }
+        }
+        return waiting
+    }
+
     fun supportsSeaFactory(definition: UnitDefinition): Boolean {
         val building = definition.building ?: return false
         val t2 = definition.id == "seaFactoryT2"
-        return definition.id in setOf("seaFactory", "seaFactoryT2") &&
+        return definition.id in nativeSeaFactoryIds &&
             definition.techLevel == (if (t2) 2 else 1) &&
             definition.production?.let { it.exitProfile == FactoryExitProfile.NATIVE_SEA &&
                 NativeSeaFactoryProducts.validDeclaration(it.unitTypeIds) } == true &&
@@ -117,7 +150,8 @@ internal object FactoryExit {
                 CircularTerrain.separatesFrom(start, next.x - start.x, next.y - start.y, shape.radius,
                     west, east, north, south)
             }
-            is MovementCollisionShape.Rectangle -> unit.originMoveId == "production-exit:${unit.unitId}" &&
+            is MovementCollisionShape.Rectangle ->
+                (producer.definition.id in nativeSeaFactoryIds || unit.originMoveId == "production-exit:${unit.unitId}") &&
                 start.y >= producer.position.y && next.y > start.y &&
                 start.y - kotlin.math.hypot(shape.length / 2.0, shape.width / 2.0) < south
         }

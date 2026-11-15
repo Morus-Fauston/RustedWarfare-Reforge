@@ -116,6 +116,7 @@
       "com.rustedwarfare.reforge.core.sim.BattleshipSoundTest",
       "com.rustedwarfare.reforge.core.sim.BattleshipTorpedoDefenseTest",
       "com.rustedwarfare.reforge.core.sim.NavalConstructionChainTest",
+      "com.rustedwarfare.reforge.core.sim.NativeSeaDepartureTest",
       "com.rustedwarfare.reforge.core.sim.SeaFactoryBirthBoundaryTest",
       "com.rustedwarfare.reforge.core.sim.SeaFactoryFailureTest",
       "com.rustedwarfare.reforge.core.sim.SeaFactoryProductionTest",

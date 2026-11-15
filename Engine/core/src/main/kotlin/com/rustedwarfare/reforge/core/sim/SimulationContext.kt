@@ -412,12 +412,13 @@ class SimulationContext internal constructor(private val policies: ExperimentalP
         return GroupMovePlan(world, stepIndex.takeIf { hasAdvanced }, actor, click, movingIds, destinations)
     }
 
-    private fun findGroupMovePath(unit: MutableUnit, point: Position, map: MapDefinition): List<Position>? =
+    private fun findGroupMovePath(unit: MutableUnit, point: Position, map: MapDefinition,
+                                  occupancy: RouteOccupancy? = null): List<Position>? =
         if (unit.birthRemaining > 0f) {
             listOf(point).takeIf { MapBounds.contains(map.widthTiles.toDouble() * map.tileWidth,
                 map.heightTiles.toDouble() * map.tileHeight, point, routeRadius(unit)) }
         } else policies.path.findPath(planningTerrainFor(unit, map), Transport.queryPosition(unit, map),
-            point, routeRadius(unit), hull = HullRoute.forUnit(unit))
+            point, routeRadius(unit), hull = HullRoute.forUnit(unit), occupancy = occupancy)
 
     private fun groupSlotVacant(unit: MutableUnit, slot: GroupMoveSlot, map: MapDefinition,
                                leaving: Set<String>): Boolean {
@@ -473,8 +474,12 @@ class SimulationContext internal constructor(private val policies: ExperimentalP
         } ?: return false
         val points = GroupMoveDestinations.positions(map, reservation.plan.click)
             .filterNot { it == reservation.slot.position }
+        val holders = orderedUnits().filter { other ->
+            other !== unit && knowsRouteOccupant(unit, other) && GroupMoveDestinations.overlaps(unit, reservation.slot, other)
+        }
+        val occupancy = UnitContact.routeAround(unit, holders)
         val replacement = GroupMoveDestinations.available(unit, points,
-            { point -> findGroupMovePath(unit, point, map) },
+            { point -> findGroupMovePath(unit, point, map, occupancy) },
             { slot -> groupSlotFits(unit, slot, map) && orderedUnits().none { other ->
                 if (other === unit || !knowsRouteOccupant(unit, other)) false
                 else {
@@ -495,7 +500,7 @@ class SimulationContext internal constructor(private val policies: ExperimentalP
             unit.groupMoveReservation = GroupMoveReservation(reservation.plan, replacement)
             unit.nearTargetTime = 0.0
             unit.adoptRoute(replacement.path, logicalRouteTarget(unit, replacement.position),
-                plannedKnowledgeRevision(unit), plannedBuildingRevision(unit))
+                plannedKnowledgeRevision(unit), plannedBuildingRevision(unit), holders.map { it.unitId })
             pendingEvents += Event("group-destination-reassigned", unit.unitId)
         }
         return true
@@ -735,6 +740,7 @@ class SimulationContext internal constructor(private val policies: ExperimentalP
                 else prefix + if (suffix.firstOrNull() == prefix.last()) suffix.drop(1) else suffix
             } else search(unit.position)
             if (path == null) {
+                if (FactoryExit.isNativeSeaDeparture(unit)) continue
                 if (replaceInvalidGroupDestination(unit, map)) continue
                 if (unit.tasks.firstOrNull()?.kind == UnitTaskKind.BUILD) unit.pauseRoute()
                 else unit.cancelRoute()
@@ -761,6 +767,7 @@ class SimulationContext internal constructor(private val policies: ExperimentalP
             }
             if (UnitLocomotion.movement(unit).type == MovementType.AIR) continue
             if (unit.birthRemaining > 0f) continue
+            if (FactoryExit.isNativeSeaDeparture(unit)) continue
             val target = unit.moveTarget ?: continue
             val first = unit.pathPoints.firstOrNull() ?: continue
             val terrain = planningTerrainFor(unit, map)
@@ -1386,7 +1393,8 @@ class SimulationContext internal constructor(private val policies: ExperimentalP
             repairInvalidConnections(currentScenario.map, step.stepIndex)
             val passageWaiting = checkNotNull(passageAdmission).waitingUnits(orderedUnits(), step,
                 { unit, type -> planningTerrainFor(unit, currentScenario.map, type) }, ::knowsRouteOccupant)
-            recoverStalledMoves(currentScenario.map, step.stepIndex, passageWaiting)
+            val seaDepartureWaiting = FactoryExit.waitingNativeSeaDepartures(currentScenario.map, units)
+            recoverStalledMoves(currentScenario.map, step.stepIndex, passageWaiting, seaDepartureWaiting)
             prepareRouteSuccessors(currentScenario.map, step.stepIndex, candidate.routeContinuationSamples)
             for (unit in orderedUnits().toList()) {
                 val attachment = unit.attachment
@@ -1504,7 +1512,8 @@ class SimulationContext internal constructor(private val policies: ExperimentalP
                         if (unit.moveTarget == null && task.startsAfterFactoryExit) unit.taskQueue = unit.taskQueue.pop()
                     }
                 }
-                if (fourLegged) updateUnit(unit, currentScenario.map, step.delta, step.stepIndex, candidate, unit.unitId in passageWaiting)
+                if (fourLegged) updateUnit(unit, currentScenario.map, step.delta, step.stepIndex, candidate,
+                    passageWaiting = unit.unitId in passageWaiting, departureWaiting = unit.unitId in seaDepartureWaiting)
                 val blinkCooldown = unit.blinkCooldownUntil
                 val actionForm = unit.definition
                 if (BuildingWork.isReady(unit)) {
@@ -1539,7 +1548,8 @@ class SimulationContext internal constructor(private val policies: ExperimentalP
                     // The destination write preserves the logical order. Rebase the physical route at the new position.
                     resumeProductionRoute(unit, currentScenario.map, step.stepIndex)
                 } else if (!fourLegged) {
-                    updateUnit(unit, currentScenario.map, step.delta, step.stepIndex, candidate, unit.unitId in passageWaiting)
+                    updateUnit(unit, currentScenario.map, step.delta, step.stepIndex, candidate,
+                        passageWaiting = unit.unitId in passageWaiting, departureWaiting = unit.unitId in seaDepartureWaiting)
                 }
                 val acceptsHeight = { height: Double ->
                     val allowed = UnitContact.canChangeHeight(unit, height, orderedUnits(),
@@ -2238,6 +2248,7 @@ class SimulationContext internal constructor(private val policies: ExperimentalP
             samples, PathSearchReason.ROUTE_REPAIR, executionStep)
         if (unit.attackCommand != null) unit.lastAttackPathAttemptStep = executionStep
         if (path == null) {
+            if (FactoryExit.isNativeSeaDeparture(unit)) return
             unit.cancelRoute()
             pendingEvents += Event("movement-cancelled", unit.unitId)
             pendingEvents += Event("path-unreachable", unit.unitId)
@@ -3063,13 +3074,18 @@ class SimulationContext internal constructor(private val policies: ExperimentalP
             }
     }
 
-    private fun recoverStalledMoves(map: MapDefinition, step: Long, passageWaiting: Set<String>) {
+    private fun recoverStalledMoves(map: MapDefinition, step: Long, passageWaiting: Set<String>,
+                                    seaDepartureWaiting: Set<String>) {
         for (unit in orderedUnits()) {
             val stalled = unit.stalledRouteTicks
-            if (!unit.alive || unit.carriedBy != null || unit.unitId in passageWaiting ||
+            if (!unit.alive || unit.carriedBy != null || unit.unitId in passageWaiting || unit.unitId in seaDepartureWaiting ||
                 stalled == 0L || stalled % ROUTE_RETRY_TICKS != 0L) continue
             val target = unit.moveTarget ?: continue
-            val command = unit.tasks.firstOrNull()?.takeIf { it.kind == UnitTaskKind.MOVE } ?: continue
+            val nativeDeparture = FactoryExit.isNativeSeaDeparture(unit)
+            val move = unit.tasks.firstOrNull()?.takeIf { it.kind == UnitTaskKind.MOVE }
+            if (nativeDeparture && unit.birthRemaining > 0f || !nativeDeparture && move == null) continue
+            val actionId = move?.actionId ?: checkNotNull(unit.originMoveId)
+            val atStep = if (move == null) unit.originAtStep else move.atStep
             val occupants = orderedUnits().filter {
                 it !== unit && knowsRouteOccupant(unit, it) && UnitContact.inContact(unit, it)
             }
@@ -3077,9 +3093,10 @@ class SimulationContext internal constructor(private val policies: ExperimentalP
             val samples = pathDiagnostics
             val path = if (samples == null) policies.path.findPath(planningTerrainFor(unit, map),
                 Transport.queryPosition(unit, map), target, routeRadius(unit), hull = HullRoute.forUnit(unit), occupancy = occupancy)
-            else findPathWithDiagnostics(command.actionId, command.atStep, target, unit, map, samples,
+            else findPathWithDiagnostics(actionId, atStep, target, unit, map, samples,
                 PathSearchReason.ROUTE_REPAIR, step, occupancy = occupancy)
             if (path == null) {
+                if (nativeDeparture) continue
                 if (stalled < ROUTE_FAILURE_TICKS) continue
                 if ((unit.groupMoveReservation?.occupiedTicks ?: 0) > 0) continue
                 if (replaceInvalidGroupDestination(unit, map)) continue
@@ -3164,7 +3181,7 @@ class SimulationContext internal constructor(private val policies: ExperimentalP
             UnitLocomotion.movement(unit).type != MovementType.AIR
 
     private fun updateUnit(unit: MutableUnit, map: MapDefinition, delta: Double, executionStep: Long,
-                           step: CandidateStep, passageWaiting: Boolean) {
+                           step: CandidateStep, passageWaiting: Boolean, departureWaiting: Boolean) {
         if (!BuildingWork.isReady(unit)) return
         val movement = UnitLocomotion.movement(unit)
         if (unit.spiderBlink != null || CustomUnitActions.movementLocked(unit, unitActionHead(unit)) ||
@@ -3174,8 +3191,10 @@ class SimulationContext internal constructor(private val policies: ExperimentalP
             unit.movementState = MovementState.IDLE
             return
         }
+        val nativeDeparture = FactoryExit.isNativeSeaDeparture(unit)
         val passageTarget = unit.moveTarget
-        if (passageWaiting && passageTarget != null && unit.passageEntry?.commandId == unit.originMoveId) {
+        if (passageTarget != null && (departureWaiting && nativeDeparture ||
+                passageWaiting && unit.passageEntry?.commandId == unit.originMoveId)) {
             unit.requestMovement(logicalRouteTarget(unit, passageTarget))
             unit.speed = 0.0
             unit.angularVelocity = 0.0
@@ -3397,8 +3416,9 @@ class SimulationContext internal constructor(private val policies: ExperimentalP
             circle != null -> circle.contains(checkNotNull(hullTerrain), position)
             else -> Transport.containsPosition(unit, map, position)
         }
-        val yielding = if (target != null && unit.originMoveId != null && unit.birthRemaining == 0f &&
-            unit.tasks.firstOrNull()?.kind == UnitTaskKind.MOVE)
+        val ordinaryMove = unit.tasks.firstOrNull()?.kind == UnitTaskKind.MOVE
+        val yielding = if (target != null && unit.originMoveId != null &&
+            (nativeDeparture || unit.birthRemaining == 0f && ordinaryMove))
             UnitContact.YieldRequest(buildingTerrain?.collisionMap ?: map, executionStep) { blocker ->
                 val locomotion = UnitLocomotion.movement(blocker)
                 blocker.ownerPlayerId == unit.ownerPlayerId && blocker.lastYieldStep != executionStep &&
@@ -3416,7 +3436,7 @@ class SimulationContext internal constructor(private val policies: ExperimentalP
             return
         }
         val terrainCorrected = terrainHeading != requestedHeading || terrainResolved != candidate
-        if (unit.moveTarget != null && unit.tasks.firstOrNull()?.kind == UnitTaskKind.MOVE) {
+        if (unit.moveTarget != null && (nativeDeparture || ordinaryMove)) {
             unit.routeTranslationClipped = resolved != candidate
             if (unit.routeTranslationClipped) unit.nearTargetTime = 0.0
             val attemptedPoseChange = candidate != positionBefore || requestedHeading != headingBefore
