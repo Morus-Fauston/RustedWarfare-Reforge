@@ -66,6 +66,12 @@ class UnitDefinition(
         get() = amphibiousJet?.locomotion ?: submarine?.locomotion
     val retainedUnconsumed: Set<String> = Collections.unmodifiableSet(LinkedHashSet(retainedUnconsumed))
     val maximumHealth: Double? get() = durability?.maxHp ?: combat?.maxHp
+    val productionRequiresCompletedConstruction: Boolean get() =
+        className == "AuthoredBuilding" || when (production?.exitProfile) {
+            FactoryExitProfile.CUSTOM_MECH, FactoryExitProfile.NATIVE_AIR,
+            FactoryExitProfile.NATIVE_SEA, FactoryExitProfile.AUTHORED_MOBILE -> true
+            else -> false
+        }
 }
 
 enum class TransportProfile { NATIVE_HOVERCRAFT, NATIVE_DROPSHIP, NAUTILUS_SUBMERGED, AUTHORED }

@@ -6,6 +6,39 @@ import kotlin.test.*
 
 class SeaFactoryContentTest {
     @Test
+    fun all_formats_read_a_new_native_product_declaration_at_both_tiers() {
+        val fixtures = System.getProperty("public.fixtures.dir")?.let(Path::of) ?: Path.of("../../SimulationTest/public/inputs")
+        for (format in listOf("ini", "json", "hjson")) for (id in listOf("seaFactory", "seaFactoryT2")) {
+            val files = fixtures.resolve("naval-production/$format/production-package/units")
+            val original = files.resolve("$id.$format")
+            val input = Files.readString(original)
+            val temp = Files.createTempDirectory("reforge-declared-sea-")
+            val declaration = temp.resolve(original.fileName)
+            val images = Regex("sea_factory[^\\s\",]*\\.png").findAll(input).map { it.value }.distinct().toList()
+            try {
+                for (image in images) Files.copy(files.resolve(image), temp.resolve(image))
+                val declared = input.replace("heavyBattleship,attackSubmarine", "spcorvette,attackSubmarine")
+                    .let { if (id == "seaFactory") it.replace("attackSubmarine", "attackSubmarine,spcorvette") else it }
+                Files.writeString(declaration, declared)
+                val result = ContentLoader.loadFactory(declaration)
+                val factory = assertIs<ContentResult.Success<UnitDefinition>>(result, "$format $id: $result").value
+                val products = if (id == "seaFactory") listOf("attackSubmarine", "spcorvette") else listOf("spcorvette", "attackSubmarine")
+                assertEquals(products, factory.production?.unitTypeIds)
+                assertEquals(FactoryExitProfile.NATIVE_SEA, factory.production?.exitProfile)
+                for (malformed in listOf("spcorvette,spcorvette", "spcorvette,", "sp corvette")) {
+                    Files.writeString(declaration, declared.replace(products.joinToString(","), malformed))
+                    val error = assertIs<ContentResult.Failure>(ContentLoader.loadFactory(declaration), "$format $id $malformed").error
+                    assertEquals("productionUnits", error.field)
+                }
+            } finally {
+                Files.deleteIfExists(declaration)
+                for (image in images) Files.deleteIfExists(temp.resolve(image))
+                Files.delete(temp)
+            }
+        }
+    }
+
+    @Test
     fun three_formats_load_explicit_t1_upgrade_and_t2_heavy_product_without_inventing_t1_products() {
         val fixtures = System.getProperty("public.fixtures.dir")?.let(Path::of) ?: Path.of("../../SimulationTest/public/inputs")
         for (format in listOf("ini", "json", "hjson")) for (tier in listOf(1, 2)) {

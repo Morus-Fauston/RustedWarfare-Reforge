@@ -141,10 +141,7 @@ internal class ActionCatalogue(private val definitions: Map<String, UnitDefiniti
     private fun production(view: PlayerObservation, queue: FactoryQueueObservation?): List<ProductionActionView> {
         val factory = view.units.singleOrNull { it.unitId == queue?.factoryId } ?: return emptyList()
         val definition = definitions.getValue(factory.typeId)
-        if (factory.constructionProgress < 1f && (definition.className == "AuthoredBuilding" || definition.production?.exitProfile in setOf(
-            com.rustedwarfare.reforge.core.content.FactoryExitProfile.CUSTOM_MECH,
-            com.rustedwarfare.reforge.core.content.FactoryExitProfile.NATIVE_AIR,
-            com.rustedwarfare.reforge.core.content.FactoryExitProfile.AUTHORED_MOBILE))) return emptyList()
+        if (factory.constructionProgress < 1f && definition.productionRequiresCompletedConstruction) return emptyList()
         return immutable(definitions.getValue(factory.typeId).production?.unitTypeIds.orEmpty().map { type ->
             val base = checkNotNull(production[type])
             val action = base.copy(rate = base.rate * checkNotNull(definition.production).speedMultiplier)

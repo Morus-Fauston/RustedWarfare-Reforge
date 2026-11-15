@@ -8,6 +8,7 @@ import com.rustedwarfare.reforge.core.content.MechFlameRules
 import com.rustedwarfare.reforge.core.content.ModularSpiderRules
 import com.rustedwarfare.reforge.core.content.MovementCollisionShape
 import com.rustedwarfare.reforge.core.content.MovementType
+import com.rustedwarfare.reforge.core.content.NativeSeaFactoryProducts
 import com.rustedwarfare.reforge.core.content.RoleCompositionRules
 import com.rustedwarfare.reforge.core.content.TransportProfile
 import com.rustedwarfare.reforge.core.content.foundationMovementType
@@ -1130,10 +1131,7 @@ class SimulationContext internal constructor(private val policies: ExperimentalP
     private fun applyProduction(action: Action, unit: MutableUnit, typeId: String, nonce: String?): ActionResult {
         if (unit.definition.production == null) return reject(action, "cannot-produce", "Unit cannot produce")
         val exitProfile = unit.definition.production?.exitProfile
-        if ((unit.definition.className == "AuthoredBuilding" || exitProfile in setOf(com.rustedwarfare.reforge.core.content.FactoryExitProfile.CUSTOM_MECH,
-                com.rustedwarfare.reforge.core.content.FactoryExitProfile.NATIVE_AIR,
-                com.rustedwarfare.reforge.core.content.FactoryExitProfile.NATIVE_SEA,
-                com.rustedwarfare.reforge.core.content.FactoryExitProfile.AUTHORED_MOBILE)) && !BuildingWork.isReady(unit))
+        if (unit.definition.productionRequiresCompletedConstruction && !BuildingWork.isReady(unit))
             return reject(action, "factory-under-construction", if (exitProfile == com.rustedwarfare.reforge.core.content.FactoryExitProfile.NATIVE_AIR)
                 "The air factory must finish construction before accepting production"
                 else "The factory must finish construction before accepting production")
@@ -1965,9 +1963,12 @@ class SimulationContext internal constructor(private val policies: ExperimentalP
                         input.unitDefinitions["nautilusSubmarineLand"]?.let(com.rustedwarfare.reforge.core.content.NautilusRules::supports) != true))
                     return SimulationError("unsupported-production", "Experimental factory requires the qualified native body and land Nautilus product")
                 if (!authoredFactory && production.exitProfile == com.rustedwarfare.reforge.core.content.FactoryExitProfile.NATIVE_SEA &&
-                    (!FactoryExit.supportsSeaFactory(definition) || input.unitDefinitions["heavyBattleship"]?.movement?.type != MovementType.WATER ||
-                        input.unitDefinitions["heavyBattleship"]?.combat == null))
-                    return SimulationError("unsupported-production", "Native sea exits require the finite factory tier and armed WATER product")
+                    (!FactoryExit.supportsSeaFactory(definition) || production.unitTypeIds.any { id ->
+                        input.unitDefinitions[id]?.let {
+                            NativeSeaFactoryProducts.accepts(definition.techLevel, it)
+                        } != true
+                    }))
+                    return SimulationError("unsupported-production", "Native sea exits require a supported factory tier and declared water-capable products")
                 if (!authoredFactory && production.exitProfile == com.rustedwarfare.reforge.core.content.FactoryExitProfile.NATIVE_AIR &&
                     (!FactoryExit.supportsAirFactory(definition) || production.unitTypeIds.any { id ->
                         val product = input.unitDefinitions[id]
@@ -1979,8 +1980,7 @@ class SimulationContext internal constructor(private val policies: ExperimentalP
                     (!FactoryExit.supportsMechFactory(definition) || input.unitDefinitions["builder"]?.builder == null ||
                         input.unitDefinitions["mechGun"]?.mech == null))
                     return SimulationError("unsupported-production", "Custom mech exits require the complete finite L1 factory and product capabilities")
-                if (definition.building == null && !nautilus && !roles || production.unitTypeIds.isEmpty() &&
-                    !(FactoryExit.supportsSeaFactory(definition) && definition.id == "seaFactory") ||
+                if (definition.building == null && !nautilus && !roles || production.unitTypeIds.isEmpty() ||
                     production.unitTypeIds.distinct().size != production.unitTypeIds.size || production.unitTypeIds.any {
                         val build = input.unitDefinitions[it]?.build
                         build == null || build.price < 0L || !build.rate.isFinite() || build.rate <= 0f })
