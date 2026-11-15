@@ -178,6 +178,8 @@ internal data class StepState(
             unit.health?.let { require((it >= 0.0 || it == -1.0) && it <= checkNotNull(unit.definition.maximumHealth) &&
                 (!unit.deathPending || it == -1.0 && unit.carriedBy == null) &&
                 unit.alive == (it > 0.0 || unit.deathPending)) { "Invalid unit life state" } }
+            require(!unit.destroyedWithoutHealth || unit.health == null && unit.definition.maximumHealth == null &&
+                !unit.deathPending) { "Invalid destroyed unit without health" }
             for (state in unit.namedWeapons?.values ?: listOfNotNull(unit.combat)) {
                 require(listOf(state.turretHeading, state.angularVelocity, state.cooldown, state.offset.x, state.offset.y,
                     state.idleBaseHeading, state.idleOffset, state.warmup)

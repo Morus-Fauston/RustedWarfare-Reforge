@@ -13,12 +13,14 @@ data class SandboxCommandRequest(val sequence: Long, val world: WorldHandle, val
 enum class SandboxCommandStatus { QUEUED, HELP, APPLIED, REJECTED }
 /** Exact ledger values as text, preserving integer and fractional balances in the same receipt. */
 data class SandboxCreditChange(val playerId: String, val before: String, val after: String)
+data class SandboxUnitChange(val unitId: String, val healthBefore: Double?, val healthAfter: Double?, val destroyed: Boolean)
 
 data class SandboxCommandReceipt(val sequence: Long, val generation: Long, val worldId: String,
     val status: SandboxCommandStatus, val command: SandboxCommand? = null, val stepIndex: Long? = null,
     val unitId: String? = null, val code: String? = null, val errorPosition: Int? = null,
     val generated: Map<String, String> = emptyMap(), val failedEntry: Int? = null,
-    val projectileIds: Map<String, Long> = emptyMap(), val credits: SandboxCreditChange? = null)
+    val projectileIds: Map<String, Long> = emptyMap(), val credits: SandboxCreditChange? = null,
+    val unitChange: SandboxUnitChange? = null)
 
 /** Local host capability, fixed before the match; ordinary player Actions never grant deployment. */
 class OfflineSandboxHost(input: Scenario, val deploymentEnabled: Boolean = false, val generation: Long = 1L) : AutoCloseable {

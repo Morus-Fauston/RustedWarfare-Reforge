@@ -520,6 +520,7 @@ internal data class MutableUnit(
     var energy: Float = definition.energy?.maximum ?: 0f,
     var energyRecharging: Boolean = false,
     var attachment: AttachmentBinding? = null,
+    var sandboxPreservesPositiveAttachmentHealth: Boolean = false,
     var attachmentIds: Map<Int, String> = emptyMap(),
     var openingFallSpeed: Float = 0f,
     var selectedAttachmentSlot: Int? = null,
@@ -533,10 +534,11 @@ internal data class MutableUnit(
     var blinkCooldownUntil: Double = 0.0,
     var blinkUnlocked: Boolean = false,
     var spiderBlink: SpiderBlink? = null,
+    var destroyedWithoutHealth: Boolean = false,
 ) {
     val producerId: String? get() = productionOrigin?.producerId
     val reversing: Boolean get() = mechState?.reversing ?: bodyReversing
-    val alive: Boolean get() = deathPending || health == null || checkNotNull(health) > 0.0
+    val alive: Boolean get() = !destroyedWithoutHealth && (deathPending || health == null || checkNotNull(health) > 0.0)
     val tasks: List<UnitTask> get() = taskQueue.tasks
     var primaryCombatTargetId: String?
         get() = if (namedWeapons != null) sharedWeaponTargetId else combat?.targetId

@@ -331,13 +331,16 @@ internal object UnitAttachments {
             val binding = child.attachment ?: continue
             val parent = state.units[binding.parentId]
             val cancel = child.attachmentOrder as? AttachmentOrder.Cancel
+            val health = checkNotNull(child.health)
+            if (health >= 1.0) child.sandboxPreservesPositiveAttachmentHealth = false
             if (parent == null || !parent.alive || parent.reclaimed) {
                 refundPayment(state, child)
                 AttachmentInterceptor.discardQueue(state, child)
                 child.reclaimed = true
                 state.missileTargets = state.missileTargets?.remove(child.unitId)
                 state.pendingEvents += Event("attachment-removed", child.unitId)
-            } else if (checkNotNull(child.health) < 1.0 && child.definition.attachmentModule?.empty == false) {
+            } else if (health < 1.0 && (health == 0.0 || !child.sandboxPreservesPositiveAttachmentHealth) &&
+                child.definition.attachmentModule?.empty == false) {
                 refundPayment(state, child)
                 AttachmentInterceptor.discardQueue(state, child)
                 convert(input, child, binding.slot.initialTypeId, 1f)

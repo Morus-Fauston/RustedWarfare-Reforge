@@ -79,11 +79,14 @@ class SandboxSession(scenario: Scenario, private val evidence: ClientEvidence = 
         lastSandboxReceipt = result
         deployedProjectileIds.addAll(result.projectileIds.values)
         val funding = result.credits
+        val unitChange = result.unitChange
         sandboxCommandFeedback = when (result.status) {
             SandboxCommandStatus.HELP -> SandboxCommands.HELP
             SandboxCommandStatus.QUEUED -> "Queued for next simulation step"
             SandboxCommandStatus.APPLIED -> when {
                 funding != null -> "Credits for ${funding.playerId} ${funding.before} to ${funding.after}"
+                unitChange?.destroyed == true -> "Destroyed ${unitChange.unitId}"
+                unitChange != null -> "Health for ${unitChange.unitId} ${unitChange.healthBefore} to ${unitChange.healthAfter}"
                 result.unitId != null -> "Spawned ${result.unitId}"
                 result.projectileIds.isNotEmpty() -> "Deployed ${result.projectileIds.size} projectiles"
                 else -> "Spawned ${result.generated.size} units"
@@ -95,6 +98,11 @@ class SandboxSession(scenario: Scenario, private val evidence: ClientEvidence = 
         evidence.recordWhenEnabled("sandbox-command") {
             val command = result.command as? SandboxCommand.Spawn
             val credits = result.command as? SandboxCommand.Credits
+            val unitControl = when (val operation = result.command) {
+                is SandboxCommand.Destroy -> mapOf("operation" to "destroy", "unitId" to operation.unitId)
+                is SandboxCommand.Health -> mapOf("operation" to "health", "unitId" to operation.unitId, "amount" to operation.amount)
+                else -> null
+            }
             mapOf("requestSequence" to result.sequence, "generation" to result.generation,
                 "worldId" to result.worldId, "stepIndex" to (result.stepIndex ?: nextStep),
                 "status" to result.status.name, "input" to request.text.take(512),
@@ -105,6 +113,8 @@ class SandboxSession(scenario: Scenario, private val evidence: ClientEvidence = 
                 "projectileIds" to result.projectileIds.takeIf { it.isNotEmpty() },
                 "credits" to credits?.let { mapOf("player" to it.playerId, "amount" to it.amount.toString(),
                     "before" to result.credits?.before, "after" to result.credits?.after) },
+                "unitControl" to unitControl?.plus(mapOf("healthBefore" to unitChange?.healthBefore,
+                    "healthAfter" to unitChange?.healthAfter, "destroyed" to unitChange?.destroyed)),
                 "code" to result.code, "errorPosition" to result.errorPosition)
         }
     }

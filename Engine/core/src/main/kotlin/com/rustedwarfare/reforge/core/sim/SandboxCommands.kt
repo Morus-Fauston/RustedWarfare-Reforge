@@ -9,6 +9,8 @@ data class SandboxProjectileEvidence(val objectId: Long, val kind: String, val p
 sealed interface SandboxCommand {
     data object Help : SandboxCommand
     data class Credits(val playerId: String, val amount: Long) : SandboxCommand
+    data class Destroy(val unitId: String) : SandboxCommand
+    data class Health(val unitId: String, val amount: Double) : SandboxCommand
     data class Spawn(val typeId: String, val position: Position, val ownerPlayerId: String,
                      val heading: Double = 0.0, val state: SandboxInitialState = SandboxInitialState.READY) : SandboxCommand
     data class Deployment(val alias: String, val spawn: Spawn)
@@ -28,10 +30,11 @@ sealed interface SandboxParseResult {
 object SandboxCommands {
     const val HELP = "/help\n/spawn <type> <x> <y> <owner> [heading=<angle>] [state=ready|damaged]\n" +
         "/spawn-batch <alias> <type> <x> <y> <owner> [options] | <alias> …\n" +
-        "/credits <player> <+amount|-amount>"
+        "/credits <player> <+amount|-amount>\n/destroy <unit-id>\n/health <unit-id> <+amount|-amount>"
     internal const val MAX_BATCH_SIZE = 32
     private val identifier = Regex("[A-Za-z0-9._:-]+")
     private val signedInteger = Regex("[+-][0-9]+")
+    private val signedDecimal = Regex("[+-](?:[0-9]+(?:\\.[0-9]*)?|\\.[0-9]+)(?:[eE][+-]?[0-9]+)?")
     private val token = Regex("\\S+")
 
     fun parse(text: String): SandboxParseResult {
@@ -70,6 +73,19 @@ object SandboxCommands {
             if (!signedInteger.matches(amount)) return reject("invalid-signed-integer", at(2))
             return SandboxParseResult.Parsed(SandboxCommand.Credits(owner,
                 amount.toLongOrNull() ?: return reject("amount-out-of-range", at(2))))
+        }
+        if (words[0].value == "/destroy" || words[0].value == "/health") {
+            val destroy = words[0].value == "/destroy"
+            val expected = if (destroy) 2 else 3
+            if (words.size < expected) return reject("missing-argument", text.length + 1)
+            if (words.size > expected) return reject("unexpected-argument", at(expected))
+            val unitId = words[1].value
+            if (!identifier.matches(unitId)) return reject("invalid-unit-id", at(1))
+            if (destroy) return SandboxParseResult.Parsed(SandboxCommand.Destroy(unitId))
+            val rawAmount = words[2].value
+            val amount = rawAmount.takeIf(signedDecimal::matches)?.toDoubleOrNull()?.takeIf { it.isFinite() }
+                ?: return reject("invalid-signed-number", at(2))
+            return SandboxParseResult.Parsed(SandboxCommand.Health(unitId, amount))
         }
         if (words[0].value != "/spawn") return reject("unknown-command", at(0))
         if (words.size < 5) return reject("missing-argument", text.length + 1)

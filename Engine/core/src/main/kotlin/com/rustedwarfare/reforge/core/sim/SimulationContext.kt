@@ -1242,6 +1242,8 @@ class SimulationContext internal constructor(private val policies: ExperimentalP
                 when (command) {
                     SandboxCommand.Help -> error("Help cannot be queued")
                     is SandboxCommand.Credits -> results += applySandboxCredits(request, command, step.stepIndex)
+                    is SandboxCommand.Destroy -> results += applySandboxUnitChange(request, command, command.unitId, null, step.stepIndex)
+                    is SandboxCommand.Health -> results += applySandboxUnitChange(request, command, command.unitId, command.amount, step.stepIndex)
                     is SandboxCommand.SpawnBatch -> results += applySandboxBatch(request, command, step.stepIndex)
                     is SandboxCommand.ProjectileBatch -> results += applySandboxProjectiles(request, command, step.stepIndex)
                     is SandboxCommand.Spawn -> {
@@ -1298,6 +1300,33 @@ class SimulationContext internal constructor(private val policies: ExperimentalP
                 null -> Unit
             }
         }
+    }
+
+    private fun applySandboxUnitChange(request: SandboxCommandRequest, command: SandboxCommand, unitId: String,
+                                       amount: Double?, stepIndex: Long): SandboxCommandReceipt {
+        fun rejected(code: String) = SandboxCommandReceipt(request.sequence, request.generation, world.id,
+            SandboxCommandStatus.REJECTED, command, stepIndex, code = code)
+        val unit = units[unitId] ?: return rejected("unknown-unit")
+        if (!unit.alive || unit.deathPending || unit.reclaimed) return rejected("inactive-unit")
+        if (unit.definition.attachmentModule?.empty == true) return rejected("unit-unavailable")
+        val binding = unit.attachment
+        if (binding != null) {
+            val parent = units[binding.parentId]
+            if (parent == null || !parent.alive || parent.deathPending || parent.reclaimed)
+                return rejected("inactive-unit")
+        }
+        val before = unit.health
+        val after = if (amount == null) before?.let { 0.0 } else {
+            if (before == null) return rejected("health-unavailable")
+            (before + amount).coerceIn(0.0, checkNotNull(unit.definition.maximumHealth))
+        }
+        unit.health = after
+        if (after == null) unit.destroyedWithoutHealth = true
+        val destroyed = amount == null || after == 0.0
+        unit.sandboxPreservesPositiveAttachmentHealth = binding != null && after != null && after > 0.0 && after < 1.0
+        if (binding == null && destroyed) processDeath(unit)
+        return SandboxCommandReceipt(request.sequence, request.generation, world.id, SandboxCommandStatus.APPLIED,
+            command, stepIndex, unitId, unitChange = SandboxUnitChange(unitId, before, after, destroyed))
     }
 
     private fun applySandboxBatch(request: SandboxCommandRequest, batch: SandboxCommand.SpawnBatch,
@@ -1437,6 +1466,7 @@ class SimulationContext internal constructor(private val policies: ExperimentalP
             for (unit in orderedUnits().toList()) {
                 val attachment = unit.attachment
                 if (attachment != null) {
+                    if (!unit.alive) continue
                     val parent = units[attachment.parentId]?.takeIf { it.alive && it.carriedBy == null && !it.reclaimed } ?: continue
                     UnitAttachments.synchronize(parent, unit, attachment.slot)
                     if (BuildingWork.isReady(unit)) {
@@ -3052,10 +3082,12 @@ class SimulationContext internal constructor(private val policies: ExperimentalP
         val constructionDamage = if (target.constructionProgress < 1f) armoredDamage * 1.75 else armoredDamage
         require(constructionDamage.isFinite()) { "Construction damage must remain finite" }
         val applied = target.definition.durability?.maxDamagePerHit?.let { minOf(constructionDamage, it) } ?: constructionDamage
-        target.health = maxOf(0.0, before - damageAfterShield(target, applied, modifiers))
+        val after = maxOf(0.0, before - damageAfterShield(target, applied, modifiers))
+        target.health = after
+        if (after < before) target.sandboxPreservesPositiveAttachmentHealth = false
         pendingEvents += Event("unit-damaged", target.unitId)
         if (!target.alive && attachment == null) processDeath(target)
-        return before - checkNotNull(target.health)
+        return before - after
     }
 
     private fun damageAfterShield(target: MutableUnit, applied: Double,
