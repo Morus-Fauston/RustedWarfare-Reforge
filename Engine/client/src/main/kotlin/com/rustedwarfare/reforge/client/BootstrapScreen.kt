@@ -59,6 +59,8 @@ class BootstrapScreen(
     private val battlefieldWidth: Float get() = if (touchControls) viewport.worldWidth else battlefieldCamera.viewportWidth
     private val loader = SandboxLoader()
     private var session: SandboxSession? = null
+    private var collisionBoxesVisible = false
+    private var collisionBoxPanel: CollisionBoxDevelopmentPanel? = null
     private var graphics: SandboxGraphics? = null
     private var scriptedCamera: OfflineCameraController? = null
     private var suspendedCamera: MapCamera? = null
@@ -266,6 +268,9 @@ class BootstrapScreen(
             }
         }.apply { height = 24f }
         pacingLabel = label("", 344f, 600f, 376f, 24f)
+        collisionBoxPanel = if (development && touchControls) {
+            CollisionBoxDevelopmentPanel(skin, collisionBoxesVisible, ::showCollisionBoxes).also(stage::addActor)
+        } else null
         selectionHeading = label("Selection", 752f, 442f, 176f, 22f)
         selectedLabel = label("None", 752f, 414f, 176f, 100f)
         patrolLabel = label("", 752f, 306f, 176f, 72f)
@@ -729,6 +734,11 @@ class BootstrapScreen(
             }
 
             override fun keyDown(keycode: Int): Boolean {
+                if (development && !touchControls && keycode == Input.Keys.F3 && session?.isOpen == true &&
+                    !loading && !paused) {
+                    showCollisionBoxes(!collisionBoxesVisible)
+                    return true
+                }
                 if (development && keycode == Input.Keys.SLASH && !commandConsoleOpen && !paused && !loading &&
                     !touchControls && session?.canDeploy == true && stage.keyboardFocus !is TextField) {
                     mapInput.cancel()
@@ -945,6 +955,8 @@ class BootstrapScreen(
     }
 
     private fun closeMatchResources() {
+        collisionBoxesVisible = false
+        collisionBoxPanel?.reset()
         closeCommandConsole()
         cancelInput()
         loader.cancel()
@@ -1109,6 +1121,7 @@ class BootstrapScreen(
                 graphics.drawOverlay(shapes, current.frame, current.selectedIds, mapInput.box, mapInput.constructionPreview,
                     mapInput.groundActionPreview, current.selectedId.takeUnless { touchControls })
                 mapInput.sandboxPickPreview?.let { graphics.drawSandboxPick(shapes, current.frame, it) }
+                if (collisionBoxesVisible) CollisionBoxView.draw(shapes, current, graphics.projection)
                 shapes.end()
                 graphics.drawFlameEffects(shapes, current.frame)
             } finally { ScissorStack.popScissors() }
@@ -1156,6 +1169,7 @@ class BootstrapScreen(
         button("check-start-content", retryContentButton)
         rateButtons.forEach { (rate, actor) -> button("set-speed:${rate.multiplier}", actor) }
         button("pause-simulation", simulationPauseButton)
+        collisionBoxPanel?.let { entries += it.drawnActions() }
         button("content-tab", packTab)
         button("resource-tab", visualsTab)
         button("test-scenes-tab", testSceneTab)
@@ -1263,9 +1277,18 @@ class BootstrapScreen(
             "stepIndex" to session?.observation?.stepIndex, "hostNanos" to now))
     }
 
+    private fun showCollisionBoxes(visible: Boolean) {
+        val current = session?.takeIf { it.isOpen } ?: return
+        collisionBoxesVisible = visible
+        evidence.recordWhenEnabled("collision-box-view") {
+            mapOf("enabled" to visible, "generation" to generation, "stepIndex" to current.observation.stepIndex)
+        }
+    }
+
     private fun updatePacingHud() {
         if (!presentationReady) return
         val visible = session?.isOpen == true
+        collisionBoxPanel?.isVisible = visible && !paused && !loading
         rateButtons.forEach { (rate, actor) ->
             actor.isVisible = visible
             actor.isDisabled = paused || loading || !visible

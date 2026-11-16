@@ -6,6 +6,8 @@ AGP 9.1.1、compileSdk/targetSdk 34、minSdk 26、Build Tools 36.0.0、Java 字�
 
 从 `Engine/` 执行 `./gradlew.bat :android:assembleDebug --no-daemon`，APK 输出为 `android/build/outputs/apk/debug/android-debug.apk`。SDK 通过本机 `local.properties` 的 `sdk.dir` 或 `ANDROID_HOME` 配置；`local.properties` 不得提交或公开。需要预先安装 SDK Platform 34 与 Build Tools 36.0.0。
 
+调试包可用 `adb shell am start -n com.rustedwarfare.reforge.android/.AndroidLauncher --ez com.rustedwarfare.reforge.DEVELOPMENT true` 启动开发模式。打开对局后，在 `Development` 面板点选 `Collision boxes` 切换碰撞箱视图，每局默认关闭。
+
 使用默认 debug 签名，不提供发布签名或发布包。横屏显示受控地图与两名玩家单位：点单位单选，点地面向所选单位发移动指令，Stop 停止，Exit match 释放本局，Reopen 创建新局。另一玩家单位可检查选择表现，移动和停止仍由同一核心拒绝。系统返回键退出 Activity；再次启动创建新局。总入口见[Engine](../README.md)。
 
 后台暂停模拟并在 GL 线程释放局内绘制、UI 与原生缓冲；恢复重建表现、保留同局与选择，不补算后台时间。销毁（包括非 finishing 的 Activity 重建）关闭核心与内容加载器，不保存对局；本轮验证 Home/恢复、返回退出/启动及 `Activity.recreate()`，不保证任意后台情形存活。

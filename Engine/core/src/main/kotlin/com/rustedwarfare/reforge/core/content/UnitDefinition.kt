@@ -4,6 +4,7 @@ import com.rustedwarfare.reforge.core.sim.Position
 import com.rustedwarfare.reforge.core.sim.ScreenPlane
 import java.nio.file.Path
 import java.util.Collections
+import kotlin.math.hypot
 
 class UnitDefinition(
     val id: String,
@@ -128,6 +129,12 @@ data class MovementProfile(
 
 /** Physical dimensions in map coordinates, independent of selection and weapon targeting. */
 sealed interface MovementCollisionShape {
+    val boundingRadius: Double
+        get() = when (this) {
+            is Circle -> radius
+            is Rectangle -> hypot(length / 2.0, width / 2.0)
+        }
+
     data class Circle(val radius: Double) : MovementCollisionShape
     data class Rectangle(val length: Double, val width: Double) : MovementCollisionShape
 }

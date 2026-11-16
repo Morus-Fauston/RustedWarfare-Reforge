@@ -1,6 +1,7 @@
 package com.rustedwarfare.reforge.client
 
 import com.rustedwarfare.reforge.core.sim.*
+import com.rustedwarfare.reforge.core.content.MovementCollisionShape
 import com.rustedwarfare.reforge.core.content.MovementType
 import com.rustedwarfare.reforge.core.content.foundationMovementType
 import com.rustedwarfare.reforge.core.content.GroundRules
@@ -135,6 +136,15 @@ class SandboxSession(scenario: Scenario, private val evidence: ClientEvidence = 
     private var latestFrame: SandboxFrame? = null
     val frame: SandboxFrame get() = checkNotNull(latestFrame) { "Match is closed" }
     val observation: PlayerObservation get() = frame.observation
+
+    internal fun movementCollisionForView(unit: UnitObservation): MovementCollisionShape? {
+        if (!unit.alive) return null
+        val definition = scenario.unitDefinitions.getValue(unit.typeId)
+        // The projected attachment relation can be hidden when the parent is outside vision.
+        return definition.movementCollision.takeIf {
+            definition.building == null && definition.attachmentModule == null && it.boundingRadius > 0.0
+        }
+    }
     private val actionCatalogue = ActionCatalogue(this.scenario.unitDefinitions, this.scenario.nukesEnabled, singleSelectionButtons)
     private var menuObservation: PlayerObservation? = null
     private var menuSelectionRevision = -1L

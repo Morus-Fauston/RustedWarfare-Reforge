@@ -37,6 +37,36 @@ class KnowledgeSandboxSessionTest {
         }
     }
 
+    @Test fun collision_boxes_drop_hidden_units_and_leave_the_player_simulation_unchanged() {
+        val options = SandboxOptions(SandboxMode.MEMORY)
+        val projection = MapProjection(100.0, 100.0, MapArea(0.0, 0.0, 100.0, 100.0))
+        SandboxSession(fastScenario(), options = options).use { drawn ->
+            SandboxSession(fastScenario(), options = options).use { control ->
+                for (session in listOf(drawn, control)) {
+                    session.select(Position(30.0, 30.0))
+                    assertIs<ActionResult.Accepted>(session.move(Position(30.0, 90.0)))
+                }
+                val before = drawn.observation
+                val initial = CollisionBoxView.project(drawn, projection).associateBy { it.unitId }
+                assertEquals(setOf("own", "visible"), initial.keys)
+                val circle = initial.getValue("visible")
+                assertEquals(1.0, circle.bound)
+                assertTrue(circle.corners.isEmpty())
+                assertTrue(circle.route.isEmpty())
+                assertNull(circle.target)
+                assertSame(before, drawn.observation)
+                repeat(4) {
+                    drawn.tick()
+                    control.tick()
+                    assertEquals(control.observation.units, drawn.observation.units)
+                    assertEquals(control.observation.events, drawn.observation.events)
+                    assertFalse(CollisionBoxView.project(drawn, projection).any { it.unitId == "hidden" })
+                }
+                assertEquals(listOf("own"), CollisionBoxView.project(drawn, projection).map { it.unitId })
+            }
+        }
+    }
+
     private fun publicValues(v: PlayerObservation): List<Any?> = listOf(
         v.sampleId, v.worldId, v.scenarioId, v.playerId, v.stepIndex, v.simulationTime,
         v.units, v.events, v.actionResults, v.projectiles, v.projectileEvents, v.balance, v.factoryQueues,

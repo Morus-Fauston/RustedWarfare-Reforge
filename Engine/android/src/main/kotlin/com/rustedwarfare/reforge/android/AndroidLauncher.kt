@@ -1,5 +1,6 @@
 package com.rustedwarfare.reforge.android
 
+import android.content.pm.ApplicationInfo
 import android.os.Bundle
 import com.badlogic.gdx.backends.android.AndroidApplication
 import com.badlogic.gdx.backends.android.AndroidApplicationConfiguration
@@ -17,10 +18,14 @@ class AndroidLauncher : AndroidApplication() {
         try {
             val content = File(filesDir.canonicalFile, "owned-sandbox-v1")
             SandboxAssets.copy(assets, content)
+            val development = applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE != 0 &&
+                intent.getBooleanExtra("com.rustedwarfare.reforge.DEVELOPMENT", false)
             run.record("launch", mapOf("package" to packageName, "sdk" to android.os.Build.VERSION.SDK_INT,
                 "abis" to android.os.Build.SUPPORTED_ABIS.toList(), "content" to content.absolutePath,
-                "restoredActivity" to (savedInstanceState != null), "lifecyclePolicy" to "pause-no-catchup-destroy-new-match"))
-            val screen = BootstrapScreen(File(content, "TestLab/local/P002-知识沙盒输入").toPath(), run, touchControls = true)
+                "restoredActivity" to (savedInstanceState != null), "lifecyclePolicy" to "pause-no-catchup-destroy-new-match",
+                "development" to development))
+            val screen = BootstrapScreen(File(content, "TestLab/local/P002-知识沙盒输入").toPath(), run, touchControls = true,
+                development = development)
             sandbox = screen
             initialize(screen,
                 AndroidApplicationConfiguration().apply { disableAudio = true; useImmersiveMode = true })

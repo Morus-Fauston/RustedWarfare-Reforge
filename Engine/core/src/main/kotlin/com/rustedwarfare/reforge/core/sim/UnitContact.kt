@@ -245,10 +245,7 @@ internal object UnitContact {
         }
     }
 
-    fun boundingRadius(shape: MovementCollisionShape): Double = when (shape) {
-        is MovementCollisionShape.Circle -> shape.radius
-        is MovementCollisionShape.Rectangle -> hypot(shape.length / 2.0, shape.width / 2.0)
-    }
+    fun boundingRadius(shape: MovementCollisionShape): Double = shape.boundingRadius
 
     private class Body(private val shape: MovementCollisionShape, heading: Double) {
         val reach = boundingRadius(shape)

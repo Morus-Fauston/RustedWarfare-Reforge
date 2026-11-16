@@ -6,8 +6,11 @@ import com.badlogic.gdx.scenes.scene2d.InputEvent
 import com.rustedwarfare.reforge.core.content.ContentLoader
 import com.rustedwarfare.reforge.core.content.ContentResult
 import com.rustedwarfare.reforge.core.content.LoadedContentPack
+import com.rustedwarfare.reforge.core.content.UnitDefinition
 import com.rustedwarfare.reforge.core.sim.ActionResult
+import com.rustedwarfare.reforge.core.sim.CombatContract
 import com.rustedwarfare.reforge.core.sim.Position
+import com.rustedwarfare.reforge.core.sim.UnitSpawn
 import java.nio.file.Files
 import java.nio.file.Path
 import org.hjson.JsonObject
@@ -79,6 +82,29 @@ class ModularSpiderSandboxTest {
                 assertIs<ActionResult.Accepted>(session.unitAction("selectSlotBuild"))
                 assertIs<ActionResult.Accepted>(session.build("builder", Position(260.0, 200.0)))
             }
+        }
+    }
+
+    @Test fun a_visible_enemy_module_with_a_hidden_parent_has_no_collision_outline() {
+        val (root, pack) = source("hjson")
+        val base = contentPackScenario(root, ContentPackChoice(pack, "modularSpider"))
+        val builder = base.unitDefinitions.getValue("builder")
+        val witness = UnitDefinition("watch", builder.className, 1.0, 1.0, 1, builder.imagePath, 1.0,
+            builder.movement, emptySet(), fogOfWarSightRange = 1)
+        val units = listOf(UnitSpawn("watch", "p1", witness.id, Position(448.0, 134.0), 270.0),
+            UnitSpawn("enemy", "p2", "modularSpider", Position(400.0, 150.0), 90.0))
+        val input = base.copy(unitDefinitions = base.unitDefinitions + (witness.id to witness), units = units,
+            combatContract = CombatContract(12345, -1, mapOf("watch" to 8L, "enemy" to 9L), 10L))
+        SandboxSession(input, options = SandboxOptions(SandboxMode.MEMORY)).use { session ->
+            session.tick()
+            val unitsInView = session.observation.units
+            assertFalse(unitsInView.any { it.unitId == "enemy" }, "The enemy chassis must remain in fog")
+            val visibleModule = assertNotNull(unitsInView.firstOrNull { it.typeId == "modularSpider_emptySlot" },
+                "Expected an exposed module in $unitsInView")
+            assertNull(visibleModule.attachment, "The projected view must conceal the hidden parent")
+            val projection = MapProjection((base.map.widthTiles * base.map.tileWidth).toDouble(),
+                (base.map.heightTiles * base.map.tileHeight).toDouble())
+            assertEquals(listOf("watch"), CollisionBoxView.project(session, projection).map { it.unitId })
         }
     }
 
