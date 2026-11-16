@@ -276,6 +276,7 @@ internal class CandidateSteps {
 
 /** Owns projected resources and the publication window, as well as the working state. */
 internal class CandidateStep(val state: StepState, private val step: Step) {
+    val translations = UnitContact.Translations(step.delta)
     val existingProjectileIds = state.projectiles.mapTo(hashSetOf()) { it.objectId }
     val motionSamples = state.motionDiagnostics?.let { mutableListOf<MotionStepSample>() }
     val routeContinuationSamples = state.routeContinuationDiagnostics?.let { mutableListOf<RouteContinuationSample>() }

@@ -2,7 +2,9 @@ package com.rustedwarfare.reforge.core.sim
 
 import com.rustedwarfare.reforge.core.content.ContentLoader
 import com.rustedwarfare.reforge.core.content.ContentResult
+import com.rustedwarfare.reforge.core.content.DurabilityProfile
 import com.rustedwarfare.reforge.core.content.LoadedContentPack
+import com.rustedwarfare.reforge.core.content.LoadedUnitContent
 import com.rustedwarfare.reforge.core.content.MovementCollisionShape
 import com.rustedwarfare.reforge.core.content.MovementType
 import com.rustedwarfare.reforge.core.content.UnitDefinition
@@ -10,12 +12,153 @@ import com.rustedwarfare.reforge.core.content.withSubmarinePackage
 import com.rustedwarfare.reforge.core.knowledge.KnowledgeRules
 import com.rustedwarfare.reforge.core.knowledge.PathInformationSource
 import com.rustedwarfare.reforge.core.knowledge.TerrainRetention
+import java.nio.file.Path
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
 import kotlin.test.assertTrue
 
 class UnitContactTest {
+    @Test
+    fun measured_gunboat_and_battleship_push_at_the_bow() = WaterTestScene.withMap { map ->
+        val pack = assertIs<ContentResult.Success<LoadedContentPack>>(ContentLoader.loadContentPack(
+            fixtures.resolve("naval-production/json/production-package"))).value
+        val gunboat = gunboat()
+        val battleship = pack.units.getValue("heavyBattleship")
+        assertEquals(1500.0, gunboat.mass)
+        assertEquals(40000.0, battleship.mass)
+        for ((mover, occupant) in listOf(gunboat to battleship, battleship to gunboat, gunboat to gunboat)) {
+            val moverStart = Position(500.0, 190.0)
+            val occupantStart = Position(moverStart.x + foreReach(mover) + foreReach(occupant), moverStart.y)
+            val input = WaterTestScene.scenario(map, MovementType.WATER, moverStart).copy(
+                unitDefinitions = listOf(mover, occupant).associateBy { it.id },
+                units = listOf(UnitSpawn("mover", "p1", mover.id, moverStart, 90.0),
+                    UnitSpawn("occupant", "p1", occupant.id, occupantStart, 270.0)),
+                combatContract = CombatContract(12345, -1, mapOf("mover" to 8L, "occupant" to 9L), 10L),
+            )
+            val initialized = SimulationContext.initialize(input)
+            assertIs<InitResult.Accepted>(initialized, initialized.toString()).context.useContext { context ->
+                context.enableMotionDiagnostics(context.world)
+                move(context, "mover", Position(730.0, 190.0))
+                val frame = context.advance(Step(0, 1.0, "sim-tick")).units.associateBy { it.unitId }
+                val resolved = checkNotNull(context.drainMotionDiagnostics(context.world).single { it.unitId == "mover" }.terrainResolved)
+                val requested = resolved.x - moverStart.x
+                val travel = frame.getValue("mover").position.x - moverStart.x
+                val transferred = frame.getValue("occupant").position.x - occupantStart.x
+                val moverMass = checkNotNull(mover.mass)
+                val occupantMass = checkNotNull(occupant.mass)
+                println("${mover.id} ($moverMass) -> ${occupant.id} ($occupantMass): requested=$requested travel=$travel transferred=$transferred")
+                assertTrue(requested > 0.0)
+                assertEquals(travel, transferred, 1e-9)
+                val expected = if (mover.id == "gunboat" && occupant.id == "heavyBattleship") 0.0
+                    else requested * moverMass / (moverMass + occupantMass)
+                assertEquals(expected, transferred, 1e-9)
+                assertEquals(270.0, frame.getValue("occupant").heading, 1e-9)
+            }
+        }
+    }
+
+    @Test
+    fun a_stationary_firing_unit_keeps_the_attack_and_returns_to_range_after_a_push() = WaterTestScene.withMap { map ->
+        val gunboat = gunboat()
+        val gunboatStart = Position(560.0, 190.0)
+        val moverStart = Position(gunboatStart.x - foreReach(gunboat) - 6.0, gunboatStart.y)
+        val attackRange = checkNotNull(gunboat.combat).attackRange
+        val enemyStart = Position(gunboatStart.x - attackRange + .02, gunboatStart.y)
+        val mover = contactUnit("tug", MovementType.WATER, mass = 12000.0)
+        val dummy = UnitDefinition("target", mover.className, mover.radius, mover.displayRadius, mover.totalFrames,
+            mover.imagePath, mover.imageScale, mover.movement.copy(moveSpeed = 0.0), emptySet(),
+            durability = DurabilityProfile(1000.0, null))
+        val scene = WaterTestScene.scenario(map, MovementType.WATER, moverStart).copy(
+            unitDefinitions = listOf(mover, gunboat, dummy).associateBy { it.id },
+            units = listOf(UnitSpawn("a-mover", "p1", mover.id, moverStart, 90.0),
+                UnitSpawn("gunboat", "p1", gunboat.id, gunboatStart, 270.0), UnitSpawn("target", "p2", dummy.id, enemyStart, 90.0)),
+            combatContract = CombatContract(12345, -1, mapOf("a-mover" to 8L, "gunboat" to 9L, "target" to 10L), 11L),
+        )
+        assertIs<InitResult.Accepted>(SimulationContext.initialize(scene)).context.useContext { context ->
+            assertIs<ActionResult.Accepted>(context.submit(AttackAction("attack", "p1", "gunboat", "target", context.world)))
+            var tick = 0L
+            fun advance() = context.advance(Step(tick++, 1.0, "sim-tick"))
+            var fired = false
+            while (!fired && tick < 90) {
+                val frame = advance()
+                assertEquals(gunboatStart, frame.units.single { it.unitId == "gunboat" }.position)
+                fired = frame.projectiles.any { it.sourceUnitId == "gunboat" }
+            }
+            assertTrue(fired)
+            move(context, "a-mover", Position(690.0, 190.0))
+            var displaced = advance().units.single { it.unitId == "gunboat" }
+            while (displaced.position.x - enemyStart.x < attackRange && tick < 100)
+                displaced = advance().units.single { it.unitId == "gunboat" }
+            assertTrue(displaced.position.x - enemyStart.x >= attackRange)
+            assertEquals("attack", displaced.tasks.single().actionId)
+            assertIs<ActionResult.Accepted>(context.submit(MoveAction("clear-west", "p1", "a-mover", Position(470.0, 160.0), context.world)))
+            var returned = displaced
+            while (returned.position.x - enemyStart.x >= attackRange && tick < 300)
+                returned = advance().units.single { it.unitId == "gunboat" }
+            assertTrue(returned.position.x - enemyStart.x < attackRange)
+            assertEquals("attack", returned.tasks.single().actionId)
+        }
+    }
+
+    private val fixtures get() =
+        System.getProperty("public.fixtures.dir")?.let(Path::of) ?: Path.of("../../SimulationTest/public/inputs")
+
+    private fun gunboat() = assertIs<ContentResult.Success<LoadedUnitContent>>(ContentLoader.loadAuthorWaterUnitWithSources(
+        fixtures.resolve("phase-seven-gunboat/units/gunboat.json"))).value.definition
+
+    private fun foreReach(unit: UnitDefinition) = when (val shape = unit.movementCollision) {
+        is MovementCollisionShape.Circle -> shape.radius
+        is MovementCollisionShape.Rectangle -> shape.length / 2.0
+    }
+
+    @Test
+    fun touching_mobile_pairs_share_one_forward_step_by_mass() = WaterTestScene.withMap { map ->
+        val start = Position(500.0, 190.0)
+        val occupantStart = Position(512.0, 190.0)
+        val cases = listOf(
+            Triple("light-pushes-heavy", 3000.0, 12000.0),
+            Triple("heavy-pushes-light", 12000.0, 3000.0),
+            Triple("equal-mass", 3000.0, 3000.0),
+            Triple("at-provisional-cutoff", 3000.0, 24000.0),
+            Triple("above-provisional-cutoff", 3000.0, 24001.0),
+        )
+        data class PushSample(val case: String, val requested: Double, val moverTravel: Double, val occupantTravel: Double,
+                              val expected: Double, val occupantHeading: Double)
+        val measurements = mutableListOf<PushSample>()
+        for ((name, moverMass, occupantMass) in cases) {
+            val mover = contactUnit("mover-hull", MovementType.WATER, mass = moverMass)
+            val occupant = contactUnit("occupant-hull", MovementType.WATER, mass = occupantMass)
+            val scene = WaterTestScene.scenario(map, MovementType.WATER, start).copy(
+                unitDefinitions = listOf(mover, occupant).associateBy { it.id },
+                units = listOf(UnitSpawn("mover", "p1", mover.id, start, 90.0),
+                    UnitSpawn("occupant", "p2", occupant.id, occupantStart, 180.0)),
+            )
+            assertIs<InitResult.Accepted>(SimulationContext.initialize(scene)).context.useContext { context ->
+                context.enableMotionDiagnostics(context.world)
+                move(context, "mover", Position(570.0, 190.0))
+                val updated = context.advance(Step(0, 1.0, "sim-tick")).units.associateBy { it.unitId }
+                val motion = context.drainMotionDiagnostics(context.world).single { it.unitId == "mover" }
+                val requested = checkNotNull(motion.terrainResolved).x - start.x
+                val front = updated.getValue("mover")
+                val back = updated.getValue("occupant")
+                assertTrue(requested > 0.0, name)
+                assertEquals(190.0, front.position.y, 1e-9, name)
+                assertEquals(190.0, back.position.y, 1e-9, name)
+                val expected = if (name == "above-provisional-cutoff") 0.0 else
+                    requested * (moverMass / (moverMass + occupantMass))
+                measurements += PushSample(name, requested, front.position.x - start.x, back.position.x - occupantStart.x,
+                    expected, back.heading)
+            }
+        }
+        measurements.forEach(::println)
+        for (sample in measurements) {
+            assertEquals(sample.expected, sample.occupantTravel, 1e-9, sample.case)
+            assertEquals(sample.expected, sample.moverTravel, 1e-9, sample.case)
+            assertEquals(180.0, sample.occupantHeading, 1e-9, sample.case)
+        }
+    }
+
     @Test
     fun a_blocked_turn_with_no_translation_still_requests_route_repair() = WaterTestScene.withMap { map ->
         val center = Position(500.0, 190.0)
@@ -294,7 +437,7 @@ class UnitContactTest {
     }
 
     @Test
-    fun submerged_motion_passes_below_a_surface_body_and_stops_at_another_submarine() =
+    fun submerged_motion_passes_below_a_surface_body_and_pushes_only_the_submerged_occupant() =
         WaterTestScene.withMap { map -> withSubmarinePackage { root ->
             val pack = assertIs<ContentResult.Success<LoadedContentPack>>(ContentLoader.loadContentPack(root)).value
             val surface = contactUnit("surface", MovementType.WATER)
@@ -310,9 +453,12 @@ class UnitContactTest {
                 move(context, "sub", Position(650.0, 190.0))
                 val approaching = (0L..270L).map { context.advance(Step(it, 1.0, "sim-tick")) }
                 assertTrue(approaching.any { Event("movement-blocked", "sub") in it.events })
-                val stop = approaching.last().units.single { it.unitId == "sub" }
-                assertEquals(550.0, stop.position.x, 1e-9)
-                assertEquals(-8.0, stop.height)
+                val pastSurface = approaching.last().units.single { it.unitId == "sub" }
+                val pushed = approaching.last().units.single { it.unitId == "blocker" }
+                assertTrue(pastSurface.position.x > 550.0)
+                assertEquals(30.0, pushed.position.x - pastSurface.position.x, 1e-8)
+                assertTrue(approaching.all { frame -> frame.units.single { it.unitId == "surface" }.position == Position(520.0, 190.0) })
+                assertEquals(-8.0, pastSurface.height)
                 assertIs<ActionResult.Accepted>(context.submit(SubmarineDepthAction("raise-blocker", "p2", "blocker", true, context.world)))
                 val clear = (271L..900L).map { context.advance(Step(it, 1.0, "sim-tick")) }
                 val surfaced = clear.single { Event("submarine-threshold-crossed", "blocker") in it.events }
@@ -391,61 +537,65 @@ class UnitContactTest {
 
     @Test
     fun a_hidden_body_changes_neither_the_route_nor_receipts_before_contact() = WaterTestScene.withMap { map ->
-        val center = Position(500.0, 190.0)
-        val mover = contactUnit("mover", MovementType.WATER)
-        val blocker = contactUnit("hidden", MovementType.WATER, MovementCollisionShape.Rectangle(120.0, 8.0))
-        val opening = WaterTestScene.scenario(map, MovementType.WATER, center).copy(
-            unitDefinitions = listOf(mover, blocker).associateBy { it.id },
-            units = listOf(UnitSpawn("mover", "p1", mover.id, center, 90.0)),
-            automaticVision = KnowledgeRules(TerrainRetention.MEMORY, PathInformationSource.PLAYER_KNOWLEDGE, false))
-        val occupied = opening.copy(units = opening.units +
-            UnitSpawn("hidden", "p2", blocker.id, Position(620.0, 190.0), 90.0))
-        assertIs<InitResult.Accepted>(SimulationContext.initialize(opening)).context.useContext { clear ->
-            assertIs<InitResult.Accepted>(SimulationContext.initialize(occupied)).context.useContext { hidden ->
-                val target = Position(710.0, 190.0)
-                hidden.enablePathDiagnostics(hidden.world)
-                assertEquals(move(clear, "mover", target).events, move(hidden, "mover", target).events)
-                var contact: Long? = null
-                for (tick in 0L..160L) {
-                    clear.advance(Step(tick, 1.0, "sim-tick"))
-                    hidden.advance(Step(tick, 1.0, "sim-tick"))
-                    val unoccupiedView = clear.observePlayer(clear.world, "p1")
-                    val occupiedView = hidden.observePlayer(hidden.world, "p1")
-                    val pose = occupiedView.units.single()
-                    assertEquals("mover", pose.unitId)
-                    assertEquals(unoccupiedView.units.single().pathPoints, pose.pathPoints)
-                    if (Event("movement-blocked", "mover") in occupiedView.events) {
-                        assertEquals(listOf(Event("movement-blocked", "mover")), occupiedView.events)
-                        assertEquals(554.0, pose.position.x, 1e-9)
-                        contact = tick
-                        break
+        for (pushable in listOf(false, true)) {
+            val center = Position(500.0, 190.0)
+            val mover = contactUnit("mover", MovementType.WATER, mass = 3000.0)
+            val blocker = contactUnit("hidden", MovementType.WATER, MovementCollisionShape.Rectangle(120.0, 8.0), mass = if (pushable) 3000.0 else null)
+            val opening = WaterTestScene.scenario(map, MovementType.WATER, center).copy(
+                unitDefinitions = listOf(mover, blocker).associateBy { it.id },
+                units = listOf(UnitSpawn("mover", "p1", mover.id, center, 90.0)),
+                automaticVision = KnowledgeRules(TerrainRetention.MEMORY, PathInformationSource.PLAYER_KNOWLEDGE, false))
+            val occupied = opening.copy(units = opening.units +
+                UnitSpawn("hidden", "p2", blocker.id, Position(620.0, 190.0), 90.0))
+            assertIs<InitResult.Accepted>(SimulationContext.initialize(opening)).context.useContext { clear ->
+                assertIs<InitResult.Accepted>(SimulationContext.initialize(occupied)).context.useContext { hidden ->
+                    val target = Position(710.0, 190.0)
+                    hidden.enablePathDiagnostics(hidden.world)
+                    assertEquals(move(clear, "mover", target).events, move(hidden, "mover", target).events)
+                    var contact: Long? = null
+                    for (tick in 0L..160L) {
+                        clear.advance(Step(tick, 1.0, "sim-tick"))
+                        hidden.advance(Step(tick, 1.0, "sim-tick"))
+                        val unoccupiedView = clear.observePlayer(clear.world, "p1")
+                        val occupiedView = hidden.observePlayer(hidden.world, "p1")
+                        val pose = occupiedView.units.single()
+                        assertEquals("mover", pose.unitId)
+                        assertEquals(unoccupiedView.units.single().pathPoints, pose.pathPoints)
+                        if (Event("movement-blocked", "mover") in occupiedView.events) {
+                            assertEquals(listOf(Event("movement-blocked", "mover")), occupiedView.events)
+                            val pushed = hidden.observe().units.single { it.unitId == "hidden" }
+                            if (pushable) assertTrue(pushed.position.x > 620.0) else assertEquals(620.0, pushed.position.x)
+                            assertEquals(66.0, pushed.position.x - pose.position.x, 1e-9)
+                            contact = tick
+                            break
+                        }
+                        assertEquals(unoccupiedView.units, occupiedView.units)
+                        assertEquals(unoccupiedView.events, occupiedView.events)
                     }
-                    assertEquals(unoccupiedView.units, occupiedView.units)
-                    assertEquals(unoccupiedView.events, occupiedView.events)
+                    val blockedAt = checkNotNull(contact)
+                    for (tick in (blockedAt + 1)..(blockedAt + 130)) {
+                        hidden.advance(Step(tick, 1.0, "sim-tick"))
+                        val view = hidden.observePlayer(hidden.world, "p1")
+                        assertEquals(listOf(target), view.units.single().pathPoints)
+                        assertEquals(listOf(Event("movement-blocked", "mover")), view.events)
+                    }
+                    val retries = hidden.drainPathDiagnostics(hidden.world).filter {
+                        it.reason == com.rustedwarfare.reforge.core.path.PathSearchReason.ROUTE_REPAIR
+                    }
+                    assertEquals(pushable, retries.isEmpty())
+                    assertTrue(retries.all { it.pathPointCount == 1 && it.usedPlayerKnowledge })
+                    println("Hidden blocker contacted at $blockedAt, retries=${retries.map { it.executionStep }}")
                 }
-                val blockedAt = checkNotNull(contact)
-                for (tick in (blockedAt + 1)..(blockedAt + 130)) {
-                    hidden.advance(Step(tick, 1.0, "sim-tick"))
-                    val view = hidden.observePlayer(hidden.world, "p1")
-                    assertEquals(listOf(target), view.units.single().pathPoints)
-                    assertEquals(listOf(Event("movement-blocked", "mover")), view.events)
-                }
-                val retries = hidden.drainPathDiagnostics(hidden.world).filter {
-                    it.reason == com.rustedwarfare.reforge.core.path.PathSearchReason.ROUTE_REPAIR
-                }
-                assertTrue(retries.isNotEmpty())
-                assertTrue(retries.all { it.pathPointCount == 1 && it.usedPlayerKnowledge })
-                println("Hidden blocker contacted at $blockedAt, retries=${retries.map { it.executionStep }}")
             }
         }
     }
 
     private fun contactUnit(id: String, type: MovementType, shape: MovementCollisionShape = MovementCollisionShape.Circle(6.0),
-                            turnSpeed: Double = 90.0): UnitDefinition {
+                            turnSpeed: Double = 90.0, mass: Double? = null): UnitDefinition {
         val source = WaterTestScene.unit(type)
         return UnitDefinition(id, source.className, source.radius, source.displayRadius, source.totalFrames,
             source.imagePath, source.imageScale, source.movement.copy(maxTurnSpeed = turnSpeed, turnAcceleration = 0.0),
-            emptySet(), fogOfWarSightRange = 1, movementCollision = shape)
+            emptySet(), fogOfWarSightRange = 1, movementCollision = shape, mass = mass)
     }
 
     private fun move(context: SimulationContext, id: String, destination: Position, owner: String = "p1"): ActionResult.Accepted =

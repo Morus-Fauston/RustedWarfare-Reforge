@@ -353,19 +353,48 @@ internal object Transport {
             return TransportChange(error = failure, event = Event("loading-cancelled", actor.unitId))
         }
         checkNotNull(carrier); checkNotNull(passenger); checkNotNull(target)
-        val x = carrier.position.x.toFloat() - passenger.position.x.toFloat()
-        val y = carrier.position.y.toFloat() - passenger.position.y.toFloat()
-        val squared = x * x + y * y
-        val beyondBoardingRange = if (into) squared >= 441f else squared > 441f
-        // A valid boarding order can finish at hull contact when the native center threshold
-        // would require penetrating the carrier. Other movement still uses the same collision.
-        if (beyondBoardingRange && !(allowHullContact && UnitContact.inContact(passenger, carrier)))
+        if (!inBoardingRange(carrier, passenger, into, allowHullContact))
             return TransportChange(approach = target.position)
         val state = checkNotNull(carrier.transportState)
         carrier.transportState = state.copy(passengerIds = immutable(state.passengerIds + passenger.unitId))
         passenger.carriedBy = carrier.unitId
         finishOrder(actor)
         return TransportChange(event = Event("unit-loaded", carrier.unitId))
+    }
+
+    fun isBoarding(unit: MutableUnit, units: Map<String, MutableUnit>): Boolean {
+        for (actor in units.values) {
+            val task = actor.tasks.firstOrNull() ?: continue
+            if (task.kind != UnitTaskKind.LOAD_INTO && task.kind != UnitTaskKind.LOAD_UP) continue
+            if (actor !== unit && task.targetUnitId != unit.unitId) continue
+            val target = units[task.targetUnitId] ?: continue
+            if (canBoard(actor, target, units, hullContactReached = false)) return true
+        }
+        return false
+    }
+
+    fun isLoadingPairAtContact(first: MutableUnit, second: MutableUnit, units: Map<String, MutableUnit>): Boolean =
+        canBoard(first, second, units, hullContactReached = true) || canBoard(second, first, units, hullContactReached = true)
+
+    private fun canBoard(actor: MutableUnit, target: MutableUnit, units: Map<String, MutableUnit>,
+                         hullContactReached: Boolean): Boolean {
+        val task = actor.tasks.firstOrNull()?.takeIf { it.targetUnitId == target.unitId } ?: return false
+        val into = task.kind == UnitTaskKind.LOAD_INTO
+        if (!into && task.kind != UnitTaskKind.LOAD_UP) return false
+        val carrier = if (into) target else actor
+        val passenger = if (into) actor else target
+        return (hullContactReached || inBoardingRange(carrier, passenger, into, allowHullContact = true)) &&
+            admission(carrier, passenger, units) == null
+    }
+
+    private fun inBoardingRange(carrier: MutableUnit, passenger: MutableUnit, into: Boolean,
+                                allowHullContact: Boolean): Boolean {
+        val x = carrier.position.x.toFloat() - passenger.position.x.toFloat()
+        val y = carrier.position.y.toFloat() - passenger.position.y.toFloat()
+        val squared = x * x + y * y
+        val centerInRange = if (into) squared < 441f else squared <= 441f
+        // A valid order can finish at hull contact before the native center threshold.
+        return centerInRange || (allowHullContact && UnitContact.inContact(passenger, carrier))
     }
 
     private fun finishOrder(actor: MutableUnit) {

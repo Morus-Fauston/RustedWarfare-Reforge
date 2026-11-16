@@ -536,7 +536,15 @@ class MechEngineerWorkTest {
     }
 
     @Test fun the_mobile_constructor_repairs_a_really_hit_unit_at_point_three_without_a_builder_warmup() {
-        val c = assertIs<InitResult.Accepted>(SimulationContext.initialize(scene())).context
+        val base = scene()
+        val engineer = base.units.single { it.unitId == "engineer" }
+        val engineerRadius = base.unitDefinitions.getValue(engineer.typeId).radius
+        val builderRadius = base.unitDefinitions.getValue("builder").radius
+        val mover = UnitSpawn("a-mover", "p1", "builder",
+            Position(engineer.position.x - engineerRadius - builderRadius, engineer.position.y), 90.0)
+        val combat = CombatContract(12345, -1, mapOf("engineer" to 8L, "target" to 9L, "enemy" to 10L, "a-mover" to 11L), 12L)
+        val c = assertIs<InitResult.Accepted>(SimulationContext.initialize(
+            base.copy(units = base.units + mover, combatContract = combat))).context
         try {
             var step = 0L
             fun tick() = c.advance(Step(step++, 1.0, "sim-tick"))
@@ -554,6 +562,11 @@ class MechEngineerWorkTest {
             tick()
             assertEquals((health.toFloat() + .3f).toDouble(), target().health)
             assertEquals("target", c.observe().units.single { it.unitId == "engineer" }.constructionTargetId)
+            submit(MoveAction("push-worker", "p1", "a-mover", engineer.position, c.world))
+            val contact = tick()
+            assertTrue(Event("movement-blocked", "a-mover") in contact.events)
+            assertEquals(engineer.position, contact.units.single { it.unitId == "engineer" }.position)
+            assertTrue(contact.construction!!.workers.single { it.unitId == "engineer" }.working)
             val stopped = target().health
             submit(StopAction("stop", "p1", "engineer", c.world))
             assertEquals(stopped, target().health)

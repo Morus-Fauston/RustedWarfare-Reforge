@@ -15,6 +15,12 @@ internal object FactoryExit {
         unit.productionOrigin?.factoryTypeId in nativeSeaFactoryIds &&
             unit.originMoveId == "production-exit:${unit.unitId}"
 
+    fun isSeaDeparture(unit: MutableUnit, definitions: Map<String, UnitDefinition>): Boolean {
+        val origin = unit.productionOrigin ?: return false
+        return unit.originMoveId == "production-exit:${unit.unitId}" &&
+            definitions[origin.factoryTypeId]?.production?.exitProfile == FactoryExitProfile.NATIVE_SEA
+    }
+
     fun waitingNativeSeaDepartures(map: MapDefinition, units: Map<String, MutableUnit>): Set<String> {
         val waiting = hashSetOf<String>()
         val byFactory = units.values.filter {

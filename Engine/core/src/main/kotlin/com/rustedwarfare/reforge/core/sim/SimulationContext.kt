@@ -3285,7 +3285,7 @@ class SimulationContext internal constructor(private val policies: ExperimentalP
             unit.movementState = MovementState.MOVING
             return
         }
-        val maximumSpeed = UnitLocomotion.effectiveMaximumSpeed(unit, movement)
+        val maximumSpeed = step.translations.maximumSpeed(unit, movement)
         val air = movement.type == MovementType.AIR
         val sliding = movement.slidingMode
         val contract = checkNotNull(scenario?.movementContract)
@@ -3503,7 +3503,8 @@ class SimulationContext internal constructor(private val policies: ExperimentalP
             else -> Transport.containsPosition(unit, map, position)
         }
         val ordinaryMove = unit.tasks.firstOrNull()?.kind == UnitTaskKind.MOVE
-        val yielding = if (target != null && unit.originMoveId != null &&
+        val seaDeparture = FactoryExit.isSeaDeparture(unit, checkNotNull(scenario).unitDefinitions)
+        val yielding = if (target != null && unit.originMoveId != null && seaDeparture &&
             (nativeDeparture || unit.birthRemaining == 0f && ordinaryMove))
             UnitContact.YieldRequest(buildingTerrain?.collisionMap ?: map, executionStep, units) { blocker ->
                 val locomotion = UnitLocomotion.movement(blocker)
@@ -3514,12 +3515,25 @@ class SimulationContext internal constructor(private val policies: ExperimentalP
                     !blocker.constructionWorking && blocker.spiderBlink == null && unitActionHead(blocker) == null &&
                     locomotion.moveSpeed > 0.0 && locomotion.type != MovementType.NONE && insideMap(boundedPosition)
             } else null
-        val resolved = UnitContact.translate(unit, boundedPosition, orderedUnits(), yielding)
+        val contactMap = buildingTerrain?.collisionMap ?: map
+        val canPush: ((MutableUnit) -> Boolean)? = if (!seaDeparture && unit.birthRemaining == 0f && insideMap(boundedPosition)) {
+            { blocker -> canDisplaceInContact(blocker) && !Transport.isLoadingPairAtContact(unit, blocker, units) }
+        } else null
+        val translation = step.translations.resolve(unit, boundedPosition, orderedUnits(), contactMap, units, canPush, yielding)
+        val resolved = translation.position
         val unitContactLimited = legalHeading != boundedHeading || resolved != boundedPosition
         if (!insideMap(resolved)) {
             blockAtMapBoundary(unit)
             recordMotion(boundedPosition, MotionTerrainDisposition.RESOLVED_OUTSIDE_MAP, unitContactLimited)
             return
+        }
+        translation.displaced?.let { shift ->
+            shift.unit.position = shift.position
+            UnitAttachments.synchronizeAdjustedChildren(units, shift.unit)
+            if (translation.legacyYield) {
+                shift.unit.lastYieldStep = executionStep
+                shift.unit.lastYieldTo = unit.unitId to checkNotNull(unit.originMoveId)
+            }
         }
         val terrainCorrected = boundedHeading != requestedHeading || boundedPosition != candidate
         if (unit.moveTarget != null && (nativeDeparture || ordinaryMove)) {
@@ -3554,6 +3568,15 @@ class SimulationContext internal constructor(private val policies: ExperimentalP
         }
         recordMotion(boundedPosition, if (terrainCorrected) MotionTerrainDisposition.CORRECTED
             else MotionTerrainDisposition.DIRECT, unitContactLimited)
+    }
+
+    private fun canDisplaceInContact(unit: MutableUnit): Boolean {
+        val movement = UnitLocomotion.movement(unit)
+        return unit.birthRemaining == 0f && !FactoryExit.isSeaDeparture(unit, checkNotNull(scenario).unitDefinitions) &&
+            BuildingWork.isReady(unit) && movement.moveSpeed > 0.0 && movement.type != MovementType.NONE &&
+            !unit.constructionWorking && unit.spiderBlink == null &&
+            !CustomUnitActions.movementLocked(unit, unitActionHead(unit)) &&
+            unit.transportState?.unloading != true && !Transport.isBoarding(unit, units)
     }
 
     private fun blockAtMapBoundary(unit: MutableUnit) {
