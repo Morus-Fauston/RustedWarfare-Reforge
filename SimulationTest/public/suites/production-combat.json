@@ -458,6 +458,11 @@
   },
   "short": [
     {
+      "id": "phase-seven-gunboat",
+      "scenario": "scenarios/phase-seven-gunboat.json",
+      "contract": "contracts/phase-seven-gunboat.json"
+    },
+    {
       "id": "phase-six-a-default",
       "backend": "session",
       "scenario": "scenarios/phase-six-a-json.json",
@@ -1395,6 +1400,11 @@
     }
   ],
   "long": [
+    {
+      "id": "phase-seven-gunboat-long",
+      "scenario": "scenarios/phase-seven-gunboat.json",
+      "contract": "contracts/phase-seven-gunboat.json"
+    },
     {
       "id": "modular-spider-mixed-modules",
       "backend": "session",

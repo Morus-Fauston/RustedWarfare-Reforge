@@ -1,0 +1,191 @@
+{
+  "schemaVersion": 1,
+  "kind": "behavior-contract",
+  "contractId": "public.phase-seven-gunboat.contract.v1",
+  "scope": "self-behavior",
+  "scenarioIds": [
+    "public.phase-seven-gunboat.v1"
+  ],
+  "comparison": {
+    "numberMode": "declared-per-field",
+    "tolerances": {}
+  },
+  "approval": {
+    "status": "tool-fixture-only",
+    "source": "ENG-P013-016 owned gunboat and native sea factory. Binary32 production completion independently calculated."
+  },
+  "exclusions": [
+    "original-compatibility",
+    "platform-input",
+    "performance"
+  ],
+  "producedUnits": [
+    {
+      "unitId": "produced:p1:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "productionActionId": "produce",
+      "producerId": "dock",
+      "owner": "p1",
+      "typeId": "gunboat",
+      "unitNonce": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "birthStepIndex": 200
+    }
+  ],
+  "rules": [
+    {
+      "ruleId": "opening-bank-and-target",
+      "when": {
+        "phase": "initial",
+        "stepIndex": 0
+      },
+      "assertions": [
+        {
+          "path": "economy.balances.p1",
+          "operator": "equals",
+          "value": 2300
+        },
+        {
+          "path": "units.opponent.health",
+          "operator": "equals",
+          "value": 170
+        }
+      ]
+    },
+    {
+      "ruleId": "queue-payment",
+      "when": {
+        "phase": "after-advance",
+        "stepIndex": 0
+      },
+      "assertions": [
+        {
+          "path": "economy.balances.p1",
+          "operator": "equals",
+          "value": 2000
+        }
+      ]
+    },
+    {
+      "ruleId": "gunboat-born",
+      "when": {
+        "phase": "after-advance",
+        "stepIndex": 200
+      },
+      "assertions": [
+        {
+          "path": "units.produced:p1:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb.health",
+          "operator": "equals",
+          "value": 170
+        },
+        {
+          "path": "units.produced:p1:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb.position.x",
+          "operator": "equals",
+          "value": 170
+        },
+        {
+          "path": "units.produced:p1:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb.position.y",
+          "operator": "equals",
+          "value": 235
+        },
+        {
+          "path": "units.produced:p1:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb.moveTarget.y",
+          "operator": "equals",
+          "value": 365
+        }
+      ]
+    },
+    {
+      "ruleId": "crossed-and-ready-to-attack",
+      "when": {
+        "phase": "after-advance",
+        "stepIndex": 684
+      },
+      "assertions": [
+        {
+          "path": "units.produced:p1:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb.alive",
+          "operator": "equals",
+          "value": true
+        },
+        {
+          "path": "units.opponent.health",
+          "operator": "equals",
+          "value": 170
+        }
+      ]
+    },
+    {
+      "ruleId": "left-factory-using-native-exit",
+      "when": {
+        "phase": "after-advance",
+        "stepIndex": 260
+      },
+      "assertions": [
+        {
+          "path": "units.produced:p1:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb.movementState",
+          "operator": "equals",
+          "value": "moving"
+        },
+        {
+          "path": "units.produced:p1:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb.moveTarget.y",
+          "operator": "equals",
+          "value": 365
+        }
+      ]
+    },
+    {
+      "ruleId": "inside-twenty-unit-channel",
+      "when": {
+        "phase": "after-advance",
+        "stepIndex": 570
+      },
+      "assertions": [
+        {
+          "path": "units.produced:p1:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb.movementState",
+          "operator": "equals",
+          "value": "moving"
+        },
+        {
+          "path": "units.produced:p1:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb.moveTarget.x",
+          "operator": "equals",
+          "value": 550
+        },
+        {
+          "path": "units.produced:p1:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb.moveTarget.y",
+          "operator": "equals",
+          "value": 290
+        }
+      ]
+    },
+    {
+      "ruleId": "past-opposite-shore",
+      "when": {
+        "phase": "after-advance",
+        "stepIndex": 684
+      },
+      "assertions": [
+        {
+          "path": "units.produced:p1:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb.moveTarget",
+          "operator": "absent-or-null"
+        }
+      ]
+    },
+    {
+      "ruleId": "each-gunboat-takes-one-shell",
+      "when": {
+        "phase": "after-advance",
+        "stepIndex": 720
+      },
+      "assertions": [
+        {
+          "path": "units.produced:p1:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb.health",
+          "operator": "equals",
+          "value": 158
+        },
+        {
+          "path": "units.opponent.health",
+          "operator": "equals",
+          "value": 158
+        }
+      ]
+    }
+  ]
+}
