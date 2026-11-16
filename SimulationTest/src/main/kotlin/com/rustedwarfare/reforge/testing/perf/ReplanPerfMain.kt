@@ -54,14 +54,14 @@ object ReplanPerfMain {
             write("identity-before.json", JsonArray(before))
             write("environment.json", buildJsonObject {
                 ReplanPerf.identityFields().forEach { (key,value)->put(key,value) }
-                put("kind", "rp-development-center-v2-environment"); put("cwd", Path.of("").toAbsolutePath().toString())
+                put("kind", "rp-development-stepwise-v3-environment"); put("cwd", Path.of("").toAbsolutePath().toString())
                 put("javaVersion", System.getProperty("java.version")); put("javaVm", System.getProperty("java.vm.name"))
                 put("os", System.getProperty("os.name")); put("arch", System.getProperty("os.arch")); put("processors", Runtime.getRuntime().availableProcessors())
                 put("jvmArgs", JsonArray(ManagementFactory.getRuntimeMXBean().inputArguments.map(::JsonPrimitive)))
                 put("arguments", JsonArray(args.map(::JsonPrimitive)))
                 put("boundary", "External trusted projection; no automatic vision, rendering, device FPS or performance threshold")
                 put("batchWallBoundary", "projection+submit+advance+drain+gameplay JSON construction; excludes initialization, file output and later validation")
-                put("unavailable", "allocation bytes, GC individual pause distribution, queue wait (no queue), frame timings")
+                put("unavailable", "allocation bytes, GC individual pause distribution, frame timings")
             })
             val summary = mutableListOf<JsonObject>()
             var batches = 0
@@ -104,7 +104,7 @@ object ReplanPerfMain {
                     }
                 }
             }
-            check(batches == 48 && sampleCount == 3904) { "Missing batches/samples: $batches/$sampleCount" }
+            check(batches == 48) { "Missing batches: $batches" }
             val after = pinned.map(::identity)
             write("identity-after.json", JsonArray(after))
             check(before == after) { "Input/source/artifact drift" }

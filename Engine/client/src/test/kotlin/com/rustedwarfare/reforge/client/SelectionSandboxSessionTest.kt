@@ -22,6 +22,8 @@ class SelectionSandboxSessionTest {
             session.select(order[1].position, SelectionMode.ADD)
             assertEquals(setOf("a", "z"), session.selectedIds)
             assertIs<ActionResult.Accepted>(session.command(target))
+            assertTrue(session.observation.units.all { it.moveTarget == null })
+            awaitMovePlans(session, "a", "z")
             val destinations = session.observation.units.associate { it.unitId to it.moveTarget }
             println("Shared click $target destinations=$destinations")
             assertEquals(target, destinations.getValue("a"))
@@ -39,6 +41,7 @@ class SelectionSandboxSessionTest {
         SandboxSession(scene).use { session ->
             session.select(second.position)
             assertIs<ActionResult.Accepted>(session.command(target))
+            awaitMovePlans(session, "z")
             assertEquals(target, session.observation.units.single { it.unitId == "z" }.moveTarget)
         }
     }
@@ -60,9 +63,10 @@ class SelectionSandboxSessionTest {
             val click = Position(180.0, 330.0)
             assertIs<ActionResult.Accepted>(session.command(click))
             val batch = assertNotNull(session.lastCommandBatch)
-            assertEquals(1, batch.dispatched)
-            assertEquals(1, batch.withoutDestination)
-            assertEquals("Accepted 1, no destination 1, rejected 0, skipped 0", session.playerFeedback)
+            assertEquals(2, batch.accepted)
+            assertEquals("Accepted 2, rejected 0, skipped 0", session.playerFeedback)
+            awaitMovePlans(session, "a", "z")
+            assertEquals("No destination for 1", session.playerFeedback)
             assertEquals(click, session.observation.units.single { it.unitId == "a" }.moveTarget)
             assertNull(session.observation.units.single { it.unitId == "z" }.moveTarget)
         }
@@ -227,7 +231,7 @@ class SelectionSandboxSessionTest {
             assertEquals(1, batch.accepted)
             assertEquals(0, batch.rejected)
             assertEquals(2, batch.skipped)
-            assertEquals(target, session.observation.units.single { it.unitId == "z" }.moveTarget)
+            assertNull(session.observation.units.single { it.unitId == "z" }.moveTarget)
             assertEquals("Accepted 1, rejected 0, skipped 2", session.playerFeedback)
             session.tick()
             assertEquals(target, session.observation.units.single { it.unitId == "z" }.moveTarget)
@@ -255,6 +259,8 @@ class SelectionSandboxSessionTest {
             armed = true
             val target = Position(180.0, 330.0)
             assertSame(firstFailure, assertFailsWith<IllegalStateException> { session.move(target) })
+            assertEquals(target, session.observation.units.single { it.unitId == "a" }.tasks.single().target)
+            awaitMovePlans(session, "a")
             assertEquals(target, session.observation.units.single { it.unitId == "a" }.moveTarget)
             assertNull(session.observation.units.single { it.unitId == "z" }.moveTarget)
         } finally { armed = false; session.close() }
@@ -267,10 +273,23 @@ class SelectionSandboxSessionTest {
             session.select(Position(430.0, 210.0), SelectionMode.ADD)
             val target = Position(180.0, 330.0)
             session.move(target)
+            awaitMovePlans(session, "a")
             assertEquals(target, session.observation.units.single { it.unitId == "a" }.moveTarget)
             assertNull(session.observation.units.single { it.unitId == "f" }.moveTarget)
             assertNull(session.observation.units.single { it.unitId == "b" }.moveTarget)
         }
+    }
+
+    private fun awaitMovePlans(session: SandboxSession, vararg members: String) {
+        val terminal = mutableSetOf<String>()
+        repeat(2400) {
+            session.tick()
+            session.observation.events.asSequence()
+                .filter { it.kind == "movement-started" || it.kind == "group-destination-unavailable" }
+                .mapNotNullTo(terminal) { it.unitId }
+            if (terminal.containsAll(members.toList())) return
+        }
+        error("No completed move plan for ${members.toList() - terminal}")
     }
 
     @Test fun two_real_products_selected_additively_both_stop_and_stay_stopped() {

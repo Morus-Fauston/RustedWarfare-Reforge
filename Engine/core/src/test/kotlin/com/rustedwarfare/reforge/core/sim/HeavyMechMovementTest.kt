@@ -12,13 +12,16 @@ class HeavyMechMovementTest {
         try {
             for (world in listOf(context, open)) assertIs<ActionResult.Accepted>(world.submit(
                 MoveAction("east", "p1", "heavy", Position(600.0, 200.0), world.world)))
-            assertEquals(open.observe().units.single().pathPoints, context.observe().units.single().pathPoints,
-                "An unseen wall must not change the knowledge-based initial path")
             var detour = false
             for (q in 0L..599L) {
                 val observation = context.advance(Step(q, 1.0, "sim-tick"))
-                open.advance(Step(q, 1.0, "sim-tick"))
+                val unblocked = open.advance(Step(q, 1.0, "sim-tick"))
                 val unit = observation.units.single()
+                if (q == 0L) {
+                    assertTrue(unit.pathPoints.isNotEmpty())
+                    assertEquals(unblocked.units.single().pathPoints, unit.pathPoints,
+                        "An unseen wall must not change the knowledge-based initial path")
+                }
                 assertTrue(unit.position.x < 300.0, "An OVER_CLIFF sliding unit cannot cross the sealed wall")
                 assertFalse((unit.position.x / 20).toInt() to (unit.position.y / 20).toInt() in wall)
                 assertNull(unit.flightPose)
@@ -31,9 +34,11 @@ class HeavyMechMovementTest {
             assertIs<InitResult.Accepted>(context.reopen(HeavyMechTestScene.scenario(heading = 90.0, blocked = wall)))
             val sealed = assertIs<ActionResult.Accepted>(context.submit(
                 MoveAction("known-wall", "p1", "heavy", Position(600.0, 200.0), context.world)))
-            assertTrue(sealed.events.any { it.kind == "path-unreachable" })
-            assertNull(context.observe().units.single().moveTarget)
-            assertEquals(Position(200.0, 200.0), context.advance(Step(0, 1.0, "sim-tick")).units.single().position)
+            assertTrue(sealed.events.isEmpty())
+            val unreachable = context.advanceToMoveOutcome(0, "heavy")
+            assertTrue(Event("path-unreachable", "heavy") in unreachable.events)
+            assertNull(unreachable.units.single().moveTarget)
+            assertEquals(Position(200.0, 200.0), unreachable.units.single().position)
         } finally { context.close(); open.close() }
     }
 

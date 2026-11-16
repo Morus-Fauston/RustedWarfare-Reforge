@@ -416,6 +416,53 @@ class PlatformIntentTest(unittest.TestCase):
             with self.subTest(moveTarget=value),self.assertRaises(PlatformError):
                 validate_history_action(changed,changed[1],intent,geometry)
 
+    def test_move_receipt_and_exact_route_are_verified_at_their_own_steps(self):
+        target = dict(x=170, y=150)
+        unit = dict(unitId='a', ownerPlayerId='p1', alive=True, position=dict(x=120, y=150),
+                    moveTarget=None, pathPoints=[], tasks=[])
+        task = dict(kind='move', target=target)
+
+        def observation(sequence, phase, state, events=()):
+            return dict(sequence=sequence, kind='observation', phase=phase,
+                        sample=dict(worldId='w', stepIndex=max(0, sequence-2),
+                                    simulationTime=max(0, sequence-2), units=[state], events=list(events)))
+
+        action = dict(sequence=1, kind='action', type='MoveAction', unitId='a', actorPlayerId='p1',
+                      target=target, result=dict(actionId='click-1', accepted=True, events=[]))
+        rows = [observation(0, 'before-action', unit), action,
+                observation(2, 'after-action', dict(unit, tasks=[task])),
+                observation(3, 'step', dict(unit, tasks=[task])),
+                observation(4, 'step', dict(unit, moveTarget=target, pathPoints=[target], tasks=[task]),
+                            (dict(kind='movement-started', unitId='a'),))]
+        intent = dict(intentId='move', kind='move', unitId='a', position=target)
+        rule = dict(intentId='move', actionType='MoveAction', unitId='a', accepted=True, targetFromIntent=True,
+                    assertions=[dict(path='units.a.moveTarget', operator='equalsActionTarget')])
+        validate_history_action(rows, action, intent)
+        self.assertEqual(4, compare_intent(rows, intent, rule, -1)['movePlanSampleSequence'])
+
+        mutations = (
+            lambda history: history[2]['sample']['units'][0]['tasks'].clear(),
+            lambda history: history[2]['sample']['units'][0].update(position=dict(x=121, y=150)),
+            lambda history: history[3].update(kind='intent-end'),
+            lambda history: history[4]['sample']['events'][0].update(unitId='other'),
+            lambda history: history[4]['sample']['units'][0].update(moveTarget=dict(x=171, y=150)),
+            lambda history: history[4]['sample'].update(worldId='other'),
+        )
+        for mutate in mutations:
+            changed = copy.deepcopy(rows)
+            mutate(changed)
+            with self.assertRaises(PlatformError):
+                validate_history_action(changed, changed[1], intent)
+        failed = rows[:4] + [observation(4, 'step', unit, (
+            dict(kind='movement-cancelled', unitId='a'), dict(kind='path-unreachable', unitId='a')))]
+        validate_history_action(failed, action, dict(intent, pathUnreachable=True))
+        with self.assertRaises(PlatformError):
+            validate_history_action(failed, action, intent)
+        missing_target = rows[:4] + [observation(4, 'step', unit, (
+            dict(kind='movement-started', unitId='a'), dict(kind='movement-arrived', unitId='a')))]
+        with self.assertRaises(PlatformError):
+            validate_history_action(missing_target, action, intent)
+
     def test_production_history_requires_the_declared_fifo_and_completed_upgrade(self):
         from platform_scenario import validate_production_history
         def event(identity,typ,kind):

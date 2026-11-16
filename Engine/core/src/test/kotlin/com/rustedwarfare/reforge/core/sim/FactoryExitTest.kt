@@ -34,12 +34,14 @@ class FactoryExitTest {
                 assertTrue(visible.units.any { it.unitId == "h" })
                 val move = assertIs<ActionResult.Accepted>(c.submit(MoveAction("known-target", "p1", born.unitId,
                     Position(310.0, 330.0), c.world)))
+                assertTrue(move.events.isEmpty())
+                val planned = c.advanceToMoveOutcome(901, born.unitId)
                 if (hidden) {
-                    assertTrue(move.events.any { it.kind == "path-unreachable" },
+                    assertTrue(Event("path-unreachable", born.unitId) in planned.events,
                         "Hidden truth must not remove the known destination building from owner planning")
-                    assertNull(c.observe().units.single { it.unitId == born.unitId }.moveTarget)
+                    assertNull(planned.units.single { it.unitId == born.unitId }.moveTarget)
                 } else {
-                    assertEquals(Position(310.0, 330.0), c.observe().units.single { it.unitId == born.unitId }.moveTarget)
+                    assertEquals(Position(310.0, 330.0), planned.units.single { it.unitId == born.unitId }.moveTarget)
                 }
             } finally { c.close() }
         }
@@ -97,15 +99,17 @@ class FactoryExitTest {
             assertEquals(1400L, c.observePlayer(c.world, "p1").balance)
             val tangent = Position(30.0, bottom - 11.0)
             assertIs<ActionResult.Accepted>(c.submit(MoveAction("tangent", "p1", id, tangent, c.world)))
-            assertEquals(tangent, c.observe().units.single { it.unitId == id }.moveTarget)
+            assertEquals(tangent, c.observe().units.single { it.unitId == id }.tasks.single().target)
             val step = c.advance(Step(501, 1.0, "sim-tick"))
+            assertTrue(Event("movement-started", id) in step.events)
             assertEquals(born.position, step.units.single { it.unitId == id }.position)
             assertTrue(step.events.any { it.kind == "movement-boundary-blocked" && it.unitId == id })
             assertEquals(29f, step.production!!.units.single().birthRemaining)
             assertEquals(0.0, step.units.single { it.unitId == id }.speed)
             val outside = assertIs<ActionResult.Accepted>(c.submit(MoveAction("outside", "p1", id,
                 Position(30.0, bottom - 10.999), c.world)))
-            assertTrue(outside.events.any { it.kind == "path-unreachable" })
+            assertTrue(outside.events.isEmpty())
+            assertTrue(Event("path-unreachable", id) in c.advance(Step(502, 1.0, "sim-tick")).events)
             assertNull(c.observe().units.single { it.unitId == id }.moveTarget)
             assertEquals("invalid-target", assertIs<ActionResult.Rejected>(c.submit(MoveAction("nonfinite", "p1", id,
                 Position(Double.NaN, bottom - 11.0), c.world))).error.code)
@@ -159,24 +163,32 @@ class FactoryExitTest {
             assertEquals(0f, c.observe().production!!.units.single().birthRemaining)
             val destination = Position(310.0, 270.0)
             // Alternate the same owner's inside/outside units so the shared cache must change mode.
+            var step = 531L
             repeat(2) { attempt ->
                 assertIs<ActionResult.Accepted>(c.submit(MoveAction("escape-$attempt", "p1", id, destination, c.world)))
-                assertEquals(destination, c.observe().units.single { it.unitId == id }.moveTarget)
+                val planned = c.advanceToMoveOutcome(step, id)
+                step = planned.stepIndex + 1
+                assertEquals(destination, planned.units.single { it.unitId == id }.moveTarget)
                 val ordinary = assertIs<ActionResult.Accepted>(c.submit(MoveAction("ordinary-$attempt", "p1", "a", destination, c.world)))
-                assertTrue(ordinary.events.any { it.kind == "path-unreachable" })
-                assertNull(c.observe().units.single { it.unitId == "a" }.moveTarget)
+                assertTrue(ordinary.events.isEmpty())
+                val failed = c.advanceToMoveOutcome(step, "a")
+                step = failed.stepIndex + 1
+                assertTrue(Event("path-unreachable", "a") in failed.events)
+                assertNull(failed.units.single { it.unitId == "a" }.moveTarget)
             }
-            for (step in 531L..730L) c.advance(Step(step, 1.0, "sim-tick"))
+            repeat(200) { c.advance(Step(step++, 1.0, "sim-tick")) }
             val insideOther = c.observe().units.single { it.unitId == id }
             assertTrue(insideOther.position.y in 260.0..<280.0,
                 "C6 must also release another building, not just the producer")
             assertTrue(c.observe().units.single { it.unitId == "g" }.alive)
             assertIs<ActionResult.Accepted>(c.submit(MoveAction("leave-other", "p1", id, Position(390.0, 270.0), c.world)))
-            for (step in 731L..1030L) c.advance(Step(step, 1.0, "sim-tick"))
+            repeat(300) { c.advance(Step(step++, 1.0, "sim-tick")) }
             assertTrue(c.observe().units.single { it.unitId == id }.position.x > 350.0)
             val back = assertIs<ActionResult.Accepted>(c.submit(MoveAction("back-normal", "p1", id, destination, c.world)))
-            assertTrue(back.events.any { it.kind == "path-unreachable" }, "After leaving known e, normal building cost must apply again")
-            assertNull(c.observe().units.single { it.unitId == id }.moveTarget)
+            assertTrue(back.events.isEmpty())
+            val failed = c.advanceToMoveOutcome(step, id)
+            assertTrue(Event("path-unreachable", id) in failed.events, "After leaving known e, normal building cost must apply again")
+            assertNull(failed.units.single { it.unitId == id }.moveTarget)
         } finally { c.close() }
     }
 

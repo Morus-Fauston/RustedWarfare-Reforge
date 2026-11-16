@@ -60,8 +60,10 @@ class GeometryAndFailureTest {
         val result = assertIs<ActionResult.Accepted>(context.submit(
             MoveAction("a1", "p1", "u1", Position(130.0, 110.0), context.world),
         ))
-        assertEquals(listOf("movement-started"), result.events.map { it.kind })
-        assertEquals(listOf(Position(130.0, 110.0)), context.observe().units.single().pathPoints)
+        assertTrue(result.events.isEmpty())
+        val routed = context.advance(Step(0, 1.0, "sim-tick"))
+        assertEquals(listOf("movement-started"), routed.events.map { it.kind })
+        assertEquals(listOf(Position(130.0, 110.0)), routed.units.single().pathPoints)
     }
 
     @Test
@@ -76,12 +78,16 @@ class GeometryAndFailureTest {
         val result = assertIs<ActionResult.Accepted>(context.submit(
             MoveAction("a1", "p1", "u1", Position(134.0, 132.0), context.world),
         ))
-        assertEquals(listOf("movement-started"), result.events.map { it.kind })
-        assertEquals(Position(134.0, 132.0), context.observe().units.single().moveTarget)
+        assertTrue(result.events.isEmpty())
+        val routed = context.advance(Step(0, 1.0, "sim-tick"))
+        assertEquals(listOf("movement-started"), routed.events.map { it.kind })
+        assertEquals(Position(134.0, 132.0), routed.units.single().moveTarget)
         val blocked = assertIs<ActionResult.Accepted>(context.submit(
             MoveAction("blocked", "p1", "u1", Position(140.0, 150.0), context.world)))
-        assertEquals(listOf("movement-cancelled", "path-unreachable"), blocked.events.map { it.kind })
-        assertEquals(null, context.observe().units.single().moveTarget)
+        assertTrue(blocked.events.isEmpty())
+        val rejectedRoute = context.advance(Step(1, 1.0, "sim-tick"))
+        assertEquals(listOf("movement-cancelled", "path-unreachable"), rejectedRoute.events.map { it.kind })
+        assertEquals(null, rejectedRoute.units.single().moveTarget)
     }
 
     @Test
@@ -97,8 +103,8 @@ class GeometryAndFailureTest {
         context.enableKnowledge(context.world, KnowledgeRules(TerrainRetention.MEMORY,
             PathInformationSource.PLAYER_KNOWLEDGE, false))
         context.submit(MoveAction("a1", "p1", "u1", Position(250.0, 110.0), context.world))
-        assertEquals(listOf(Position(250.0, 110.0)), context.observe().units.single().pathPoints)
         val first = context.advance(Step(0, 1.0, "sim-tick")).units.single()
+        assertEquals(listOf(Position(250.0, 110.0)), first.pathPoints)
         assertEquals(Position(130.0, 110.0), first.position)
         context.submit(MoveAction("turn", "p1", "u1", Position(250.0, 112.0), context.world))
         val passing = context.advance(Step(1, 1.0, "sim-tick"))
@@ -138,7 +144,8 @@ class GeometryAndFailureTest {
         )
         val context = assertIs<InitResult.Accepted>(SimulationContext.initialize(source)).context
         context.submit(MoveAction("a1", "p1", "u1", Position(170.0, 110.0), context.world))
-        val path = context.observe().units.single().pathPoints
-        assertEquals(path, context.advance(Step(0, 1.0, "sim-tick")).units.single().pathPoints)
+        assertTrue(context.observe().units.single().pathPoints.isEmpty())
+        val planned = context.advance(Step(0, 1.0, "sim-tick")).units.single()
+        assertEquals(listOf(Position(170.0, 110.0)), planned.pathPoints)
     }
 }

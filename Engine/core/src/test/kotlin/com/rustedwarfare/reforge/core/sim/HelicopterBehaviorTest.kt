@@ -146,9 +146,11 @@ class HelicopterBehaviorTest {
             val c = HelicopterTestScene.open(source.copy(map = blocked, automaticVision = rules))
             try {
                 move(c)
-                assertEquals(listOf(Position(600.0, 200.0)), c.observePlayer(c.world, "p1").units.single().pathPoints)
                 val events = mutableListOf<String>()
-                repeat(500) { q -> events += c.advance(Step(q.toLong(), 1.0, "sim-tick")).events.map { it.kind } }
+                repeat(500) { q ->
+                    events += c.advance(Step(q.toLong(), 1.0, "sim-tick")).events.map { it.kind }
+                    if (q == 0) assertEquals(listOf(Position(600.0, 200.0)), c.observePlayer(c.world, "p1").units.single().pathPoints)
+                }
                 assertEquals(1, events.count { it == "movement-arrived" })
                 assertFalse("movement-blocked" in events)
                 assertFalse("path-unreachable" in events)
@@ -169,7 +171,8 @@ class HelicopterBehaviorTest {
             move(c)
             repeat(10) { c.advance(Step(it.toLong(), 1.0, "sim-tick")) }
             val response = move(c, "invalid-target", Position(14.99, 200.0))
-            assertTrue(response.events.any { it.kind == "path-unreachable" })
+            assertTrue(response.events.isEmpty())
+            assertTrue(Event("path-unreachable", "h1") in c.advance(Step(10, 1.0, "sim-tick")).events)
             assertNull(c.observe().units.single().moveTarget)
             val before = c.observe().units.single()
             val result = assertIs<ActionResult.Rejected>(c.submit(MoveAction("nan", "p1", "h1", Position(Double.NaN, 1.0), c.world)))

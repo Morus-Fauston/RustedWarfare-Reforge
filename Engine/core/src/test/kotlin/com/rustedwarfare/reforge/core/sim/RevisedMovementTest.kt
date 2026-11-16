@@ -56,8 +56,8 @@ class RevisedMovementTest {
     @Test
     fun final_radius_is_strict_and_same_tile_target_is_exact() {
         val context = context(Position(110.0, 110.0), Position(117.0, 110.0))
-        assertEquals(listOf(Position(117.0, 110.0)), context.observe().units.single().pathPoints)
         val boundary = context.advance(Step(0, 1.0, "sim-tick"))
+        assertEquals(listOf(Position(117.0, 110.0)), boundary.units.single().pathPoints)
         assertTrue(boundary.events.none { it.kind == "movement-arrived" })
         assertEquals(0.077, boundary.units.single().speed, 1e-9)
         val inside = context.advance(Step(1, 1.0, "sim-tick"))
@@ -99,15 +99,20 @@ class RevisedMovementTest {
         val before = context.observe().units.single()
         assertEquals(1.1, before.speed, 1e-9)
         val result = assertIs<ActionResult.Accepted>(context.submit(MoveAction("a2", "p1", "u1", Position(450.0, 100.0), context.world)))
-        assertEquals(listOf("movement-cancelled", "path-unreachable"), result.events.map { it.kind })
+        assertTrue(result.events.isEmpty())
         assertEquals(before.speed, context.observe().units.single().speed)
         val expected = listOf(0.913, 0.726, 0.539, 0.352, 0.165, 0.0)
+        val outcomes = mutableListOf<String>()
         expected.forEachIndexed { index, speed ->
-            val unit = context.advance(Step(16L + index, 1.0, "sim-tick")).units.single()
+            val frame = context.advance(Step(16L + index, 1.0, "sim-tick"))
+            outcomes += frame.events.map { it.kind }
+            val unit = frame.units.single()
             assertEquals(speed, unit.speed, 1e-9)
             assertEquals(null, unit.moveTarget)
             assertTrue(unit.pathPoints.isEmpty())
         }
+        if ("path-unreachable" !in outcomes) outcomes += context.advanceToMoveOutcome(22, "u1").events.map { it.kind }
+        assertEquals(listOf("movement-cancelled", "path-unreachable"), outcomes)
         assertEquals(2.695, context.observe().units.single().position.x - before.position.x, 1e-9)
     }
 }

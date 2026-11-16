@@ -104,12 +104,14 @@ class PathPlannerTest {
                 context.enableKnowledge(context.world, KnowledgeRules(TerrainRetention.MEMORY,
                     PathInformationSource.PLAYER_KNOWLEDGE, false))
                 val accepted=assertIs<ActionResult.Accepted>(context.submit(MoveAction("move","p1","u1",Position(250.0,110.0),context.world)))
-                assertEquals(listOf("movement-started"),accepted.events.map { it.kind })
-                assertEquals(listOf(Position(250.0,110.0)),context.observe().units.single().pathPoints)
-                assertEquals(Position(130.0,110.0),context.advance(Step(0,1.0,"sim-tick")).units.single().position)
+                assertTrue(accepted.events.isEmpty())
+                val initial=context.advance(Step(0,1.0,"sim-tick"))
+                assertEquals(listOf("movement-started"),initial.events.map { it.kind })
+                assertEquals(listOf(Position(250.0,110.0)),initial.units.single().pathPoints)
+                assertEquals(Position(130.0,110.0),initial.units.single().position)
                 context.submit(MoveAction("turn","p1","u1",Position(250.0,112.0),context.world))
-                assertEquals(listOf(Position(250.0,112.0)),context.observe().units.single().pathPoints)
                 val sample=context.advance(Step(1,1.0,"sim-tick"));val unit=sample.units.single()
+                assertEquals(listOf(Position(250.0,112.0)),unit.pathPoints)
                 // Direct target now supplies a real turn; the truth pair has identical unknown terrain.
                 val expectedSpeed=20.0
                 val angle=Math.toRadians(90.25)
@@ -134,8 +136,9 @@ class PathPlannerTest {
                 unitDefinitions=mapOf("tank" to point),units=listOf(UnitSpawn("u1","p1","tank",Position(110.0,110.0),90.0))))).context
             try {
                 assertIs<ActionResult.Accepted>(context.submit(MoveAction("point","p1","u1",Position(170.0,110.0),context.world)))
-                assertEquals(listOf(Position(170.0,110.0)),context.observe().units.single().pathPoints)
-                assertTrue(context.advance(Step(0,1.0,"sim-tick")).units.single().position.x>110.0)
+                val pointMove=context.advance(Step(0,1.0,"sim-tick")).units.single()
+                assertEquals(listOf(Position(170.0,110.0)),pointMove.pathPoints)
+                assertTrue(pointMove.position.x>110.0)
             } finally {context.close()}
         }
     }

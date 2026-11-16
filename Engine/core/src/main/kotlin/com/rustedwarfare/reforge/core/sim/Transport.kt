@@ -10,7 +10,7 @@ internal data class TransportState(val passengerIds: List<String> = emptyList(),
     val liquid: Boolean = false, val airCorpseLanded: Boolean = false)
 
 internal data class TransportChange(val error: SimulationError? = null, val event: Event? = null,
-    val approach: Position? = null)
+    val approach: Position? = null, val boardedUnitId: String? = null)
 
 /** Owns admission and both sides of the passenger relation. Callers never edit the manifest. */
 internal object Transport {
@@ -359,7 +359,7 @@ internal object Transport {
         carrier.transportState = state.copy(passengerIds = immutable(state.passengerIds + passenger.unitId))
         passenger.carriedBy = carrier.unitId
         finishOrder(actor)
-        return TransportChange(event = Event("unit-loaded", carrier.unitId))
+        return TransportChange(event = Event("unit-loaded", carrier.unitId), boardedUnitId = passenger.unitId)
     }
 
     fun isBoarding(unit: MutableUnit, units: Map<String, MutableUnit>): Boolean {

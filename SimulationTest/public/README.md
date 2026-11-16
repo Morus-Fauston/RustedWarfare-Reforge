@@ -213,7 +213,7 @@ python -B SimulationTest/tools/specialist_check.py --entry reference-host --bind
 
 五个p003公共合成夹具文件为`test_bf_observer_transform.py`、`test_gboot_transform.py`、`test_original_approved_layout.py`、`test_original_dependency_layout.py`与`test_original_input_transform.py`。其余九份smali相关控制及一份APK ZIP元数据控制读取固定私有输入，保留既有全部正反断言，实际输入身份另见批次记录，沿`transform-original`逐文件运行；不能用整个p003目录的glob冒公共测试。独立文件执行器`ci/python_check.py --test <file> --output <new-file>`只运行指定文件，拒绝零测试、跳过及覆盖旧收据。
 
-`MotionV2CoreInputsTest`的十二项可移植输入/真实加载断言进入公共集；原Windows junction断言完整移至`MotionV2CoreInputsWindowsTest`，本地以`:test --tests com.rustedwarfare.reforge.testing.cross.MotionV2CoreInputsWindowsTest`运行。原`:test`仍发现两个类，Linux公共集不以跳过Windows例求绿。`OriginalMotionComparisonTest`、`MotionV2StandardTest`、`MotionV2SourceAdmissionTest`、`ReplanPerfTest`和`PrefixDiagnosticSerializationTest`继续使用TestLab、原固定helpers/JAR或私有suite，以完整类为专属入口；没有删除断言或以公共样本替代原版资格。
+`MotionV2CoreInputsTest`的十二项可移植输入/真实加载断言进入公共集；原Windows junction断言完整移至`MotionV2CoreInputsWindowsTest`，本地以`:test --tests com.rustedwarfare.reforge.testing.cross.MotionV2CoreInputsWindowsTest`运行。原`:test`仍发现两个类，Linux公共集不以跳过Windows例求绿。`OriginalMotionComparisonTest`、`MotionV2StandardTest`、`MotionV2SourceAdmissionTest`、`ReplanPerfTest`和`PrefixDiagnosticSerializationTest`继续使用TestLab、原固定helpers/JAR或私有suite，以完整类为专属入口；没有删除断言或以公共样本替代原版资格。 当前 `ReplanPerfTest` 使用私有 `RP.development.stepwise.v3.json`，在第二批 Move 全部实际发布后揭示完整障碍。RP v2 原协议及原始证据保留。
 
 注册表`specialist-entries.json`说明参考桥纯JDK/SDK stub、原版比较与采集、设备、PC输入、正式性能、资格/开发测量、私有工具控制和本机目录工具的原入口、资源边界、必需文件角色及平台。`reference-host`与`reference-sdk`的完整编译/逐JVM场景见`Decompile/reference-bridge/README.md`；读取这些文档需要本地完整工作区。`original-compare`用CrossMain的`original-motion-v1`契约分派到既有O.v1比较器，须固定批准标准及双方合格采集；tool-fixture结果不等于运行时兼容通过。
 

@@ -42,7 +42,7 @@ class PrefixDiagnosticSerializationTest {
         val replan = batch.steps.single { it.step == 2 }.samples.single()
         assertTrue(initial.actualSearchCalls > 0)
         assertTrue(replan.actualSearchCalls > 0)
-        assertFields(ReplanPerf.sampleJson(initial), Position(50.0, 150.0), Position(550.0, 150.0),
+        assertFields(ReplanPerf.sampleJson(initial), ReplanPerf.spawnPosition(0), Position(550.0, 150.0),
             0, PathSearchReason.USER_MOVE, 0L)
         assertFields(ReplanPerf.sampleJson(replan), assertNotNull(replan.searchStart), Position(550.0, 150.0),
             replan.preservedPrefixPointCount, PathSearchReason.KNOWLEDGE_REPLAN, 2L)
@@ -87,7 +87,8 @@ class PrefixDiagnosticSerializationTest {
         for (value in listOf(raw, normalized)) {
             assertNumber(value, "actualSearchCalls")
             assertTrue(value.getValue("actualSearchCalls").jsonPrimitive.long > 0)
-            assertFields(value, Position(30.0, 50.0), Position(70.0, 50.0), 0, PathSearchReason.KNOWLEDGE_REPLAN, 0L)
+            // The knowledge update precedes the first budgeted search for the accepted order.
+            assertFields(value, Position(30.0, 50.0), Position(70.0, 50.0), 0, PathSearchReason.USER_MOVE, 0L)
         }
         for (field in listOf("searchStart", "searchTarget", "preservedPrefixPointCount", "reason", "executionStep")) {
             assertEquals(raw.getValue(field), normalized.getValue(field), field)

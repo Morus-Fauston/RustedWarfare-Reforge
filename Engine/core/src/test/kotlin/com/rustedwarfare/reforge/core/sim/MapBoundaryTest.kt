@@ -28,12 +28,13 @@ class MapBoundaryTest {
             assertEquals(moving, context.observe().units.single())
             val result = assertIs<ActionResult.Accepted>(context.submit(
                 MoveAction("outside", "p1", "u1", Position(50.0, 10.0), context.world)))
-            assertEquals(listOf("movement-cancelled", "path-unreachable"), result.events.map { it.kind })
+            assertTrue(result.events.isEmpty())
             val cancelled = context.observe().units.single()
             assertNull(cancelled.moveTarget)
             assertTrue(cancelled.pathPoints.isEmpty())
             assertEquals(moving.speed, cancelled.speed)
             val stopped = context.advance(Step(1, 1.0, "sim-tick"))
+            assertEquals(listOf("movement-cancelled", "path-unreachable"), stopped.events.take(2).map { it.kind })
             assertEquals(moving.position, stopped.units.single().position)
             assertEquals(0.0, stopped.units.single().speed)
             assertTrue(stopped.events.any { it.kind == "movement-boundary-blocked" })
@@ -77,7 +78,7 @@ class MapBoundaryTest {
             assertEquals(MovementState.BLOCKED, stopped.movementState)
             assertTrue(result.events.any { it.kind == "movement-boundary-blocked" })
             assertIs<ActionResult.Accepted>(context.submit(MoveAction("retry", "p1", "u1", Position(50.0, 70.0), context.world)))
-            assertEquals(Position(50.0, 70.0), context.observe().units.single().moveTarget)
+            assertEquals(Position(50.0, 70.0), context.advance(Step(1, 1.0, "sim-tick")).units.single().moveTarget)
         } finally { context.close() }
     }
 

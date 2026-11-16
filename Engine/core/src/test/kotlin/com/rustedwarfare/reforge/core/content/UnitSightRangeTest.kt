@@ -15,6 +15,7 @@ class UnitSightRangeTest {
             class: CustomUnitMetadata
             radius: 1
             displayRadius: 1
+            mass: 1
             [graphics]
             total_frames: 1
             image: owned.png

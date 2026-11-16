@@ -32,6 +32,23 @@ internal class KnowledgeCells private constructor(
         return KnowledgeCells(size, next)
     }
 
+    fun forEachTerrainChangeFrom(previous: KnowledgeCells, visit: (Int, CellKnowledge) -> Unit) {
+        require(size == previous.size)
+        for (block in blocks.indices) {
+            val before = previous.blocks[block]
+            val after = blocks[block]
+            if (before === after) continue
+            val start = block * BLOCK_SIZE
+            val count = minOf(BLOCK_SIZE, size - start)
+            for (offset in 0 until count) {
+                val old = before?.get(offset) ?: UNKNOWN
+                val new = after?.get(offset) ?: UNKNOWN
+                if (old.lastKnownBlocked != new.lastKnownBlocked || old.lastKnownGroundGid != new.lastKnownGroundGid)
+                    visit(start + offset, new)
+            }
+        }
+    }
+
     companion object {
         private const val BLOCK_SIZE = 64
         val UNKNOWN = CellKnowledge(false, null)

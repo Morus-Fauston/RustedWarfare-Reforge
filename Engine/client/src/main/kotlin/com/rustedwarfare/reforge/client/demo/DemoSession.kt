@@ -73,7 +73,7 @@ class DemoSession(val scenario: Scenario) : AutoCloseable {
 
     fun moveSelected(position: Position) {
         if (!isOpen) return
-        val group = if (selection.size > 1) context.prepareGroupMove("p1", selection, position) else null
+        val group = if (selection.size > 1) context.requestGroupMove("p1", selection, position) else null
         var accepted = 0
         var withoutDestination = 0
         var rejection: String? = null

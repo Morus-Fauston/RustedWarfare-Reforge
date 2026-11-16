@@ -156,8 +156,14 @@ class SandboxSessionTest {
             session.move(Position(250.0, 110.0))
             repeat(25) { session.tick() }
             val result = assertIs<ActionResult.Accepted>(session.move(Position(450.0, 110.0)))
-            assertEquals(listOf("movement-cancelled", "path-unreachable"), result.events.map { it.kind })
-            repeat(30) { session.tick() }
+            assertTrue(result.events.isEmpty())
+            val events = buildList {
+                repeat(30) {
+                    session.tick()
+                    addAll(session.observation.events.map { it.kind })
+                }
+            }
+            assertEquals(listOf("movement-cancelled", "path-unreachable"), events)
             val stopped = session.observation.units.first()
             assertNull(stopped.moveTarget)
             assertTrue(stopped.pathPoints.isEmpty())

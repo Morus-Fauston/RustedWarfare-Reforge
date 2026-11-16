@@ -60,10 +60,15 @@ class LandingCraftMapEdgeTest {
             repeat(60) { context.advance(Step(it + 30L, 1.0, "sim-tick")) }
             assertNull(context.observe().units.single { it.unitId == "b" }.transportExit)
             assertIs<ActionResult.Accepted>(context.submit(MoveAction("outside", "p1", "b", Position(-30.0, 10.0), context.world)))
-            assertTrue(context.observe().units.single { it.unitId == "b" }.tasks.isEmpty())
             // The carrier occupies the dry corridor along row zero. Clear that corridor first.
             assertIs<ActionResult.Accepted>(context.submit(MoveAction("clear-carrier", "p1", "craft", Position(92.0, 280.0), context.world)))
-            repeat(350) { context.advance(Step(it + 90L, 1.0, "sim-tick")) }
+            repeat(350) {
+                val frame = context.advance(Step(it + 90L, 1.0, "sim-tick"))
+                if (it == 0) {
+                    assertTrue(Event("path-unreachable", "b") in frame.events)
+                    assertTrue(frame.units.single { unit -> unit.unitId == "b" }.tasks.isEmpty())
+                }
+            }
             val carrier = context.observe().units.single { it.unitId == "craft" }
             assertTrue(carrier.position.y > 100.0, "Carrier must clear the corridor: ${carrier.position}, ${carrier.heading}")
             assertIs<ActionResult.Accepted>(context.submit(MoveAction("back-in", "p1", "b", Position(100.0, 10.0), context.world)))
@@ -71,7 +76,9 @@ class LandingCraftMapEdgeTest {
             assertTrue(context.observe().units.single { it.unitId == "b" }.position.x > 80)
             assertTrue(context.observePlayer(context.world, "p1").units.any { it.unitId == "b" })
             assertIs<ActionResult.Accepted>(context.submit(MoveAction("ordinary-boundary", "p1", "b", Position(0.0, 10.0), context.world)))
-            assertTrue(context.observe().units.single { it.unitId == "b" }.tasks.isEmpty(), "The normal radius is restored after returning inside")
+            val outside = context.advance(Step(740, 1.0, "sim-tick"))
+            assertTrue(Event("path-unreachable", "b") in outside.events)
+            assertTrue(outside.units.single { it.unitId == "b" }.tasks.isEmpty(), "The normal radius is restored after returning inside")
         } finally { context.close() }
     }
 

@@ -30,6 +30,8 @@ class PathKnownConnectorRepairTest {
         println("eng017-known-connector-raw=$directory")
         val records=mutableListOf<JsonObject>()
         try {
+            val stepLimit = 500
+            val tailSteps = 9
             context.enableKnowledge(context.world,KnowledgeRules(TerrainRetention.MEMORY,PathInformationSource.PLAYER_KNOWLEDGE,false))
             context.enablePathDiagnostics(context.world)
             val cells=(0 until 768).map { VisibleTerrainCell(it%32,it/32,map.blocking.isBlocked(it%32,it/32)) }
@@ -37,18 +39,27 @@ class PathKnownConnectorRepairTest {
             val initial=context.knowledgeSnapshot(context.world,"p1")
             records+=buildJsonObject {
                 put("kind","development-known-connector-repair");put("formalCompatibility",false)
-                put("developmentOnly",true);put("steps",10);put("unitCount",50)
+                put("developmentOnly",true);put("stepLimit",stepLimit);put("tailSteps",tailSteps);put("unitCount",50)
                 put("knowledgeRevision",initial.revision)
                 putJsonArray("cells") { cells.forEach { c->add(buildJsonObject { put("column",c.column);put("row",c.row);put("blocked",c.blocked) }) } }
             }
             for(i in 0 until 50)assertIs<ActionResult.Accepted>(context.submit(MoveAction("perf-move%03d".format(i),"p1",id(i),goal(i),context.world,0)))
             var previous:Observation?=null
+            val started = mutableSetOf<String>()
+            val firstConnectors = mutableSetOf<String>()
+            var lastStartStep = 0
             var exercised=0
-            for(step in 0..9) {
+            for(step in 0 until stepLimit) {
                 val before=previous?.units?.associateBy { it.unitId }.orEmpty()
                 val invalid=before.values.filter { it.pathPoints.isNotEmpty() && !clear(listOf(it.position,it.pathPoints.first()),walls) }
-                if(step==1)assertEquals(setOf(6,17,28,39,49).map(::id).toSet(),invalid.map { it.unitId }.toSet())
+                val justStarted = previous?.events.orEmpty().filter { it.kind == "movement-started" }.map { it.unitId }.toSet()
+                firstConnectors += invalid.map { it.unitId }.filter { it in justStarted }
                 val observation=context.advance(Step(step.toLong(),1.0,"sim-tick"))
+                observation.events.filter { it.kind == "movement-started" }.forEach {
+                    val unitId = checkNotNull(it.unitId)
+                    assertTrue(started.add(unitId), "duplicate movement start: $unitId")
+                    lastStartStep = step
+                }
                 val searches=context.drainPathDiagnostics(context.world)
                 records+=buildJsonObject {
                     put("kind","step");put("step",step)
@@ -76,7 +87,10 @@ class PathKnownConnectorRepairTest {
                     assertTrue(clear(listOf(old.position)+current.pathPoints,walls),"repaired global path invalid: step=$step ${old.unitId}")
                 }
                 previous=observation
+                if (started.size == 50 && step - lastStartStep >= tailSteps) break
             }
+            assertEquals((0 until 50).map(::id).toSet(), started)
+            assertEquals(setOf(6,17,28,39,49).map(::id).toSet(), firstConnectors)
             assertTrue(exercised>=5,"required post-movement connector cases were not exercised")
         } finally {
             Files.write(directory.resolve("raw.jsonl"),records.map { it.toString() })

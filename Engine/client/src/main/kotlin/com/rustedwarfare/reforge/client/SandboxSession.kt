@@ -419,7 +419,7 @@ class SandboxSession(scenario: Scenario, private val evidence: ClientEvidence = 
 
     fun move(position: Position): ActionResult? {
         val selection = selectedIds
-        val group = if (selection.size > 1) context.prepareGroupMove("p1", selection, position) else null
+        val group = if (selection.size > 1) context.requestGroupMove("p1", selection, position) else null
         return dispatch(selection, ::canMove, group) { id ->
             MoveAction("click-${++actionNumber}", "p1", id, position, context.world)
         }
@@ -500,7 +500,7 @@ class SandboxSession(scenario: Scenario, private val evidence: ClientEvidence = 
         }
 
     private fun dispatch(selectionAtPress: Set<String> = selectedIds, applicable: (UnitObservation) -> Boolean = ::controllable,
-                         moveGroup: GroupMovePlan? = null,
+                         moveGroup: GroupMoveRequest? = null,
                          action: (String) -> Action): ActionResult? {
         val members = selectionAtPress.sorted()
         val revision = selectionRevision
@@ -663,7 +663,7 @@ class SandboxSession(scenario: Scenario, private val evidence: ClientEvidence = 
         .sortedWith(compareBy<Pair<UnitObservation, Double>> { it.second }.thenBy { it.first.unitId })
         .firstOrNull()?.first?.unitId
 
-    private fun apply(action: Action, moveGroup: GroupMovePlan? = null): ActionResult {
+    private fun apply(action: Action, moveGroup: GroupMoveRequest? = null): ActionResult {
         capture("before-action")
         val result = if (moveGroup == null) context.submit(action) else context.submitGroupMove(action as MoveAction, moveGroup)
         publishFrame()

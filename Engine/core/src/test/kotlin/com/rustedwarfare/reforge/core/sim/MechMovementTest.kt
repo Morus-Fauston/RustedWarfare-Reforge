@@ -86,8 +86,11 @@ class MechMovementTest {
             val before = context.observe().units
             assertIs<ActionResult.Rejected>(context.submit(MoveAction("nan", "p1", "u1", Position(Double.NaN, 100.0), context.world)))
             val outside = assertIs<ActionResult.Accepted>(context.submit(MoveAction("outside", "p1", "u1", Position(0.0, 100.0), context.world)))
-            assertEquals(listOf("movement-cancelled", "path-unreachable"), outside.events.map { it.kind }) // D-083.
-            assertEquals(before, context.observe().units)
+            assertTrue(outside.events.isEmpty())
+            val failed = context.advance(Step(1, 1.0, "sim-tick"))
+            assertEquals(listOf("movement-cancelled", "path-unreachable"),
+                failed.events.map { it.kind }) // D-083.
+            assertEquals(before, failed.units)
         } finally { context.close() }
         val wall = (0 until 20).map { 15 to it }.toSet()
         val blocked = MechTestScene.open(MechTestScene.scenario(blocked = wall))
@@ -95,9 +98,11 @@ class MechMovementTest {
             blocked.submit(MoveAction("old", "p1", "u1", Position(200.0, 100.0), blocked.world))
             blocked.advance(Step(0, 1.0, "sim-tick"))
             val result = assertIs<ActionResult.Accepted>(blocked.submit(MoveAction("sealed", "p1", "u1", Position(500.0, 100.0), blocked.world)))
-            assertTrue(result.events.any { it.kind == "path-unreachable" })
-            assertNull(blocked.observe().units.single().moveTarget)
-            assertEquals(0.0, blocked.advance(Step(1, 1.0, "sim-tick")).units.single().speed)
+            assertTrue(result.events.isEmpty())
+            val failed = blocked.advanceToMoveOutcome(1, "u1")
+            assertTrue(Event("path-unreachable", "u1") in failed.events)
+            assertNull(failed.units.single().moveTarget)
+            assertEquals(0.0, failed.units.single().speed)
         } finally { blocked.close() }
         val unit = MechTestScene.unit()
         val fast = MechTestScene.with(unit, movement = unit.movement.copy(moveSpeed = 60.0, moveAccelerationSpeed = 1.0, reverseSpeedPercentage = 0.0))

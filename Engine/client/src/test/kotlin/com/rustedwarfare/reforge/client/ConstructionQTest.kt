@@ -139,10 +139,12 @@ class ConstructionQTest {
             context.advance(Step(1, 1.0, "sim-tick"))
             assertEquals(2.toByte(), state().singleNodePathCount)
             move("different-float", Position(651.0, 170.0))
-            assertEquals(0.toByte(), state().singleNodePathCount)
-            assertEquals(listOf(1), state().pendingPathNodeCounts)
+            assertEquals(2.toByte(), state().singleNodePathCount)
+            assertTrue(state().pendingPathNodeCounts.isEmpty())
             context.advance(Step(2, 1.0, "sim-tick"))
             assertEquals(1.toByte(), state().singleNodePathCount)
+            assertEquals(0.toByte(), state().qBeforeDispatch)
+            assertEquals(listOf(1), state().consumedPathNodeCounts)
             assertIs<ActionResult.Accepted>(context.submit(StopAction("stop", "p1", "worker", context.world)))
             assertEquals(0.toByte(), state().singleNodePathCount)
             assertNull(state().logicalRequestX); assertNull(state().logicalRequestY)
@@ -165,7 +167,7 @@ class ConstructionQTest {
         } finally { context.close() }
     }
 
-    @Test fun a_real_second_shot_failure_rolls_back_already_consumed_pending_paths_before_same_step_retry() {
+    @Test fun a_real_second_shot_failure_rolls_back_the_latest_pending_move_before_same_step_retry() {
         val base = openScene()
         val tank = base.unitDefinitions.getValue("c_tank")
         val witness = com.rustedwarfare.reforge.core.content.UnitDefinition("witness", tank.className, tank.radius,
@@ -186,7 +188,7 @@ class ConstructionQTest {
             for (context in contexts) {
                 context.enablePathDiagnostics(context.world)
                 repeat(128) { index -> assertIs<ActionResult.Accepted>(context.submit(MoveAction("pending-$index", "p1", "aa", Position(650.0, 110.0), context.world))) }
-                assertEquals(128, context.drainPathDiagnostics(context.world).size)
+                assertTrue(context.drainPathDiagnostics(context.world).isEmpty())
                 assertIs<ActionResult.Accepted>(context.submit(AttackAction("near", "p2", "b", "a", context.world)))
                 assertIs<ActionResult.Accepted>(context.submit(SelectAction("scheduled", "p1", "c", context.world, 0)))
             }
@@ -196,12 +198,12 @@ class ConstructionQTest {
             control.observe()
             control.observePlayer(control.world, "p1")
             val pending = before.construction!!.workers.single()
-            assertEquals(List(128) { 1 }, pending.pendingPathNodeCounts)
+            assertTrue(pending.pendingPathNodeCounts.isEmpty())
             assertEquals(0.toByte(), pending.singleNodePathCount)
             assertFailsWith<ArithmeticException> { failed.advance(Step(0, 1.0, "sim-tick")) }
             assertSame(before, failed.observe())
             assertSame(playerBefore, failed.observePlayer(failed.world, "p1"))
-            assertEquals(List(128) { 1 }, failed.observe().construction!!.workers.single().pendingPathNodeCounts)
+            assertTrue(failed.observe().construction!!.workers.single().pendingPathNodeCounts.isEmpty())
             assertEquals(0.toByte(), failed.observe().construction!!.workers.single().singleNodePathCount)
             assertTrue(failed.drainPathDiagnostics(failed.world).isEmpty(), "The failed candidate must not publish new path samples")
             for (context in contexts)
@@ -214,10 +216,15 @@ class ConstructionQTest {
             assertEquals("a", actual.projectiles.single().sourceUnitId)
             val worker = actual.construction!!.workers.single()
             assertEquals(0.toByte(), worker.qBeforeDispatch)
-            assertEquals((-128).toByte(), worker.singleNodePathCount, "Retry must consume all pending real acceptances exactly once")
-            assertEquals(List(128) { 1 }, worker.consumedPathNodeCounts)
+            assertEquals(1.toByte(), worker.singleNodePathCount, "Retry must consume the latest published route exactly once")
+            assertEquals(listOf(1), worker.consumedPathNodeCounts)
+            for (context in contexts) {
+                val search = context.drainPathDiagnostics(context.world).single()
+                assertEquals("pending-127", search.actionId)
+                assertEquals(0L, search.executionStep)
+            }
             assertTrue(worker.pendingPathNodeCounts.isEmpty())
-            assertEquals(List(128) { 1 }, pending.pendingPathNodeCounts)
+            assertTrue(pending.pendingPathNodeCounts.isEmpty())
             assertEquals(control.observePlayer(control.world, "p1").fields(), failed.observePlayer(failed.world, "p1").fields())
         } finally { contexts.forEach { it.close() } }
     }
@@ -373,30 +380,30 @@ class ConstructionQTest {
         } finally { context.close() }
     }
 
-    @Test fun real_same_float_move_acceptances_keep_every_pending_entry_and_wrap_a_signed_byte() {
+    @Test fun each_committed_real_same_float_route_counts_once_and_wraps_a_signed_byte() {
         for (count in listOf(127, 128, 256)) {
             val context = assertIs<InitResult.Accepted>(SimulationContext.initialize(openScene())).context
             try {
                 context.enablePathDiagnostics(context.world)
+                val initial = context.observe().construction!!.workers.single()
                 repeat(count) { index ->
                     assertIs<ActionResult.Accepted>(context.submit(MoveAction("same-$index", "p1", "worker",
                         Position(650.0 + if (index % 2 == 0) 0.000001 else 0.0, 170.0), context.world)))
+                    assertTrue(context.drainPathDiagnostics(context.world).isEmpty())
+                    context.advance(Step(index.toLong(), 1.0, "sim-tick"))
+                    val search = context.drainPathDiagnostics(context.world).single()
+                    assertEquals("same-$index", search.actionId)
+                    assertEquals(com.rustedwarfare.reforge.core.path.PathSearchOutcome.FOUND, search.outcome)
+                    assertEquals(1, search.pathPointCount)
+                    assertEquals(listOf(1), context.observe().construction!!.workers.single().consumedPathNodeCounts)
                 }
-                val searches = context.drainPathDiagnostics(context.world)
-                assertEquals(count, searches.size)
-                assertTrue(searches.all { it.outcome == com.rustedwarfare.reforge.core.path.PathSearchOutcome.FOUND && it.pathPointCount == 1 })
-                val pending = context.observe().construction!!.workers.single()
-                assertEquals(List(count) { 1 }, pending.pendingPathNodeCounts)
-                assertEquals(0.toByte(), pending.singleNodePathCount)
-                context.advance(Step(0, 1.0, "sim-tick"))
                 val consumed = context.observe().construction!!.workers.single()
                 assertEquals(when (count) { 127 -> 127.toByte(); 128 -> (-128).toByte(); else -> 0.toByte() }, consumed.singleNodePathCount)
-                assertEquals(List(count) { 1 }, consumed.consumedPathNodeCounts)
                 assertTrue(consumed.pendingPathNodeCounts.isEmpty())
-                assertEquals(List(count) { 1 }, pending.pendingPathNodeCounts, "A later tail must not mutate an old host observation")
+                assertEquals(0.toByte(), initial.singleNodePathCount, "A later tail must not mutate an old host observation")
                 if (count == 127) {
                     assertIs<ActionResult.Accepted>(context.submit(MoveAction("next-acceptance", "p1", "worker", Position(650.0, 170.0), context.world)))
-                    context.advance(Step(1, 1.0, "sim-tick"))
+                    context.advance(Step(count.toLong(), 1.0, "sim-tick"))
                     assertEquals((-128).toByte(), context.observe().construction!!.workers.single().singleNodePathCount)
                 }
             } finally { context.close() }
@@ -408,11 +415,12 @@ class ConstructionQTest {
         try {
             context.enablePathDiagnostics(context.world)
             assertIs<ActionResult.Accepted>(context.submit(MoveAction("one-node", "p1", "worker", Position(650.0, 170.0), context.world)))
+            assertTrue(context.drainPathDiagnostics(context.world).isEmpty())
+            assertEquals(0.toByte(), context.observe().construction!!.workers.single().singleNodePathCount)
+            context.advance(Step(0, 1.0, "sim-tick"))
             val search = context.drainPathDiagnostics(context.world).single()
             assertEquals(com.rustedwarfare.reforge.core.path.PathSearchOutcome.FOUND, search.outcome)
             assertEquals(1, search.pathPointCount, "The actual path policy must really return a single node")
-            assertEquals(0.toByte(), context.observe().construction!!.workers.single().singleNodePathCount)
-            context.advance(Step(0, 1.0, "sim-tick"))
             val first = context.observe().construction!!.workers.single()
             assertEquals(1.toByte(), first.singleNodePathCount)
             assertEquals(0.toByte(), first.qBeforeDispatch)
@@ -456,12 +464,19 @@ class ConstructionQTest {
         val context = assertIs<InitResult.Accepted>(initialized, initialized.toString()).context
         try {
             val move = assertIs<ActionResult.Accepted>(context.submit(MoveAction("wall-control", "p1", "worker", target, context.world)))
-            assertTrue(move.events.any { it.kind == "path-unreachable" }, "The complete real wall must block the actual path policy")
+            assertTrue(move.events.isEmpty())
+            var step = 0L
+            val blocked = (0 until 250).any {
+                context.advance(Step(step++, 1.0, "sim-tick")).events.any {
+                    it.kind == "path-unreachable" && it.unitId == "worker"
+                }
+            }
+            assertTrue(blocked, "The complete real wall must block the actual path policy")
             assertIs<ActionResult.Accepted>(context.submit(BuildAction("far-build", "p1", "worker", "landFactory",
                 target, "1".repeat(32), context.world)))
             assertIs<ActionResult.Accepted>(context.submit(PatrolAction("tail", "p1", "worker", Position(170.0, 290.0), true, context.world)))
-            repeat(6) { index ->
-                context.advance(Step(index.toLong(), 1.0, "sim-tick"))
+            repeat(6) {
+                context.advance(Step(step++, 1.0, "sim-tick"))
                 val owner = context.observePlayer(context.world, "p1")
                 val worker = owner.units.single()
                 assertEquals(listOf("far-build", "tail"), worker.tasks.map { it.actionId })

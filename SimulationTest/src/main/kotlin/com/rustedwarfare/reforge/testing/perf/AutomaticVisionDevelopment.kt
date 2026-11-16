@@ -173,7 +173,7 @@ object AutomaticVisionDevelopment {
                 step==0 -> require(observation["events"]==JsonArray(listOf(started()))) { "Scheduled Move did not start exactly once" }
                 else -> require("movement-started" !in kinds && kinds.count { it=="movement-arrived" }==if(step==normalStep)1 else 0) { "Late start or mismatched normal event" }
             }
-            require(observation["actionResults"]==if(step==0)JsonArray(listOf(accepted(JsonNull,JsonArray(listOf(started())))))else JsonArray(emptyList())) { "Host request results differ from scheduled Move" }
+            require(observation["actionResults"]==if(step==0)JsonArray(listOf(accepted(JsonNull,JsonArray(emptyList()))))else JsonArray(emptyList())) { "Host request results differ from scheduled Move" }
             if(step>=0 && old!=null) {
                 val oldTarget=old.getValue("moveTarget")
                 if(oldTarget!=JsonNull) {

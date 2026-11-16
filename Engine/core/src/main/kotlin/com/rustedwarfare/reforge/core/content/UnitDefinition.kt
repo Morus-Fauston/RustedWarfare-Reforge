@@ -64,6 +64,7 @@ class UnitDefinition(
     val movementCollision: MovementCollisionShape = MovementCollisionShape.Circle(radius),
     val mass: Double? = null,
 ) {
+    internal val contactBufferCollision = movementCollision.contactBufferOutline()
     internal val locomotionStates: SubmersibleLocomotion?
         get() = amphibiousJet?.locomotion ?: submarine?.locomotion
     val retainedUnconsumed: Set<String> = Collections.unmodifiableSet(LinkedHashSet(retainedUnconsumed))
@@ -131,13 +132,14 @@ data class MovementProfile(
 /** Physical dimensions in map coordinates, independent of selection and weapon targeting. */
 sealed interface MovementCollisionShape {
     val boundingRadius: Double
-        get() = when (this) {
-            is Circle -> radius
-            is Rectangle -> hypot(length / 2.0, width / 2.0)
-        }
 
-    data class Circle(val radius: Double) : MovementCollisionShape
-    data class Rectangle(val length: Double, val width: Double) : MovementCollisionShape
+    data class Circle(val radius: Double) : MovementCollisionShape {
+        override val boundingRadius: Double get() = radius
+    }
+
+    data class Rectangle(val length: Double, val width: Double) : MovementCollisionShape {
+        override val boundingRadius: Double = hypot(length / 2.0, width / 2.0)
+    }
 }
 
 const val UNIT_CONTACT_BUFFER_WIDTH = 2.0

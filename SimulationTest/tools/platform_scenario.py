@@ -184,6 +184,55 @@ def input_footprint(geometry):
     return dict(x=1/(scale*viewport['screenWidth']/960),y=1/(scale*viewport['screenHeight']/640))
 
 
+def move_plan_observation(records, action, before, receipt, unreachable=False, end_sequence=None):
+    unit_id = action['unitId']
+    def controlled_unit(sample):
+        units = [unit for unit in sample['units'] if unit.get('unitId') == unit_id]
+        if len(units) != 1:
+            raise PlatformError('move-plan-identity', 'Move lacks one controlled object in its observation', 2)
+        return units[0]
+
+    pending = controlled_unit(receipt['sample'])
+    tasks = pending.get('tasks', [])
+    events = action.get('result', {}).get('events', [])
+    if pending.get('moveTarget') is not None or not tasks:
+        return receipt, events
+
+    previous = controlled_unit(before['sample'])
+    if (not isinstance(tasks, list) or len(tasks) != 1 or not isinstance(tasks[0], dict) or
+            tasks[0].get('kind') != 'move' or tasks[0].get('target') != action.get('target') or
+            pending.get('pathPoints') != [] or not previous.get('position') or pending.get('position') != previous['position'] or
+            events != []):
+        raise PlatformError('move-plan-receipt', 'Move must record its exact pending task before any route or movement', 2)
+
+    expected = ['movement-cancelled', 'path-unreachable'] if unreachable else ['movement-started']
+    for row in records:
+        if row['sequence'] <= receipt['sequence']:
+            continue
+        if (end_sequence is not None and row['sequence'] > end_sequence or
+                row.get('kind') in ('intent-end', 'closed') or
+                row.get('kind') == 'action' and row.get('unitId') == unit_id):
+            break
+        if row.get('kind') != 'observation' or row.get('phase') != 'step':
+            continue
+        sample = row['sample']
+        if sample.get('worldId') != receipt['sample']['worldId'] or row.get('generation') != receipt.get('generation'):
+            raise PlatformError('move-plan-identity', 'Move plan observation changed its world or generation', 2)
+        own_events = [event for event in sample.get('events', []) if event.get('unitId') == unit_id]
+        lifecycle = [event.get('kind') for event in own_events
+                     if event.get('kind') in ('movement-started', 'movement-cancelled', 'path-unreachable')]
+        unit = controlled_unit(sample)
+        if unit.get('ownerPlayerId') != action.get('actorPlayerId') or unit.get('typeId') != pending.get('typeId'):
+            raise PlatformError('move-plan-identity', 'Move plan changed its controlled object', 2)
+        if lifecycle:
+            if sorted(lifecycle) != expected:
+                raise PlatformError('move-plan-outcome', 'Move plan lifecycle differs from the fixed intent', 2)
+            return row, own_events
+        if unit.get('moveTarget') is not None or unit.get('pathPoints') != [] or unit.get('tasks') != tasks:
+            raise PlatformError('move-plan-outcome', 'Move changed its pending task without a plan outcome', 2)
+    raise PlatformError('move-plan-outcome', 'Move lacks its plan outcome within the fixed intent', 2)
+
+
 def compare_intent(records, intent, rule, after_sequence, geometry=None):
     validate_intent_contract(intent,rule)
     assertions=rule['assertions']
@@ -245,8 +294,13 @@ def compare_intent(records, intent, rule, after_sequence, geometry=None):
                     any(key not in target or target[key] != expected for key, expected in target_identity.items()) or
                     type(target.get('health')) not in (int, float) or not math.isfinite(target['health']) or target['health'] <= 0):
                 raise PlatformError('object-identity', 'Attack target is not the fixed living enemy', 2)
-    for assertion in rule['assertions']:
-        current = value_at(after['sample'], assertion['path'])
+    move_path = 'units.' + rule['unitId'] + '.moveTarget'
+    move_plan = after
+    if intent.get('kind') == 'move' and rule['accepted'] and any(a['path'] == move_path for a in assertions):
+        move_plan, _ = move_plan_observation(records, action, before, after, intent.get('pathUnreachable') is True)
+    for assertion in assertions:
+        observed = move_plan if assertion['path'] == move_path else after
+        current = value_at(observed['sample'], assertion['path'])
         expected = assertion.get('value')
         if assertion['operator'] == 'equalsActionTarget':
             if not isinstance(action.get('target'), dict):
@@ -261,6 +315,8 @@ def compare_intent(records, intent, rule, after_sequence, geometry=None):
             raise PlatformError('assertion-failed', 'Postcondition differs: '+assertion['path'], 2)
     judgment = dict(exitCode=0, actionId=action['result']['actionId'], actionSequence=action['sequence'],
                     sampleSequence=after['sequence'])
+    if move_plan is not after:
+        judgment['movePlanSampleSequence'] = move_plan['sequence']
     if 'tail' in rule:
         tail = rule['tail']
         count = tail.get('samples')
@@ -856,7 +912,7 @@ def validate_bunker_state(unit, owner):
     if type(action['available']) is not bool or action['available']!=available:invalid('Invalid bunker action availability')
 
 
-def validate_history_action(records, row, intent, geometry=None, paired=False):
+def validate_history_action(records, row, intent, geometry=None, paired=False, end_sequence=None):
     """Bind a fixed intention to its existing exported call and owned object."""
     index=row['sequence']
     if not 0 < index < len(records)-1:
@@ -999,11 +1055,12 @@ def validate_history_action(records, row, intent, geometry=None, paired=False):
     if kind in ('build','move') and 'position' in intent and not same_point(row.get('target'),intent['position'],input_footprint(geometry)):
         raise PlatformError('history-action-fields','Formal destination differs from the fixed Session point',2)
     if kind=='move':
-        unit=next(u for u in right['units'] if u.get('unitId')==identity)
         if 'pathUnreachable' in intent and type(intent['pathUnreachable']) is not bool:
             raise PlatformError('input-contract','Expected strict unreachable-path boolean',1)
-        if intent.get('pathUnreachable') is True:
-            events=row.get('result',{}).get('events',[])
+        unreachable = intent.get('pathUnreachable') is True
+        resolved, events = move_plan_observation(records, row, before, after, unreachable, end_sequence)
+        unit = next(u for u in resolved['sample']['units'] if u['unitId'] == identity)
+        if unreachable:
             if (unit.get('moveTarget') is not None or unit.get('tasks')!=[] or
                     any(sum(e.get('kind')==kind and e.get('unitId')==identity for e in events)!=1
                         for kind in ('movement-cancelled','path-unreachable'))):
@@ -1550,6 +1607,7 @@ def compare_history(records, plan, policy, native_anchors=None, geometry=None):
     pending_blink = {}
     construction_charges, construction_ids, seen_units = {}, set(), set()
     stream=records
+    intent_end_sequences = {}
     if native_anchors is not None:
         if ([a.get('intentId') for a in native_anchors]!=[i['intentId'] for i in plan['intents']] or
                 any(type(a.get(k)) is not int for a in native_anchors for k in ('afterSequence','endSequence')) or
@@ -1559,6 +1617,7 @@ def compare_history(records, plan, policy, native_anchors=None, geometry=None):
             raise PlatformError('history-intent','Invalid recorded native input boundaries',1)
         starts={a['afterSequence']+1:a['intentId'] for a in native_anchors}
         ends={a['endSequence']:a['intentId'] for a in native_anchors}
+        intent_end_sequences = {intent_id: sequence for sequence, intent_id in ends.items()}
         stream=[]
         for row in records:
             if row['sequence'] in starts:stream.append(dict(kind='intent-start',intentId=starts[row['sequence']]))
@@ -1628,7 +1687,8 @@ def compare_history(records, plan, policy, native_anchors=None, geometry=None):
                 viewport=next((r for r in reversed(records) if r.get('kind')=='resize' and r['sequence']<row['sequence']),None)
                 if viewport is None:raise PlatformError('input-geometry','History lacks a formal viewport')
                 context=dict(geometry,viewport=viewport)
-            validate_history_action(records,row,intents[active],context,paired='testScene' in plan)
+            validate_history_action(records,row,intents[active],context,paired='testScene' in plan,
+                                    end_sequence=intent_end_sequences.get(active))
             intent=intents[active]
             if intent.get('actionName') in ('addBlink','blink'):
                 before=records[row['sequence']-1]['sample']

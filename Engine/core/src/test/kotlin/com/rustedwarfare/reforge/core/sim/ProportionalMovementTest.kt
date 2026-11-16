@@ -5,6 +5,7 @@ import com.rustedwarfare.reforge.core.content.MapDefinition
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
+import kotlin.test.assertTrue
 
 class ProportionalMovementTest {
     private fun context(maximumSpeed: Double): SimulationContext {
@@ -27,8 +28,10 @@ class ProportionalMovementTest {
             try {
                 val accepted = assertIs<ActionResult.Accepted>(context.submit(MoveAction("move", "p1", "u1",
                     Position(300.0, 100.0), context.world)))
-                assertEquals(listOf("movement-started"), accepted.events.map { it.kind })
-                val unit = context.advance(Step(0, 1.0, "sim-tick")).units.single()
+                assertTrue(accepted.events.isEmpty())
+                val frame = context.advance(Step(0, 1.0, "sim-tick"))
+                assertEquals(listOf("movement-started"), frame.events.map { it.kind })
+                val unit = frame.units.single()
                 assertEquals(expectedFirstSpeed, unit.speed, 1e-12)
                 assertEquals(100.0 + expectedFirstSpeed, unit.position.x, 1e-12)
                 assertEquals(100.0, unit.position.y, 1e-12)

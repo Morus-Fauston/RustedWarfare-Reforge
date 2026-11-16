@@ -44,7 +44,7 @@ class CommandTimelineTest {
         context.submit(StopAction("a2", "p1", "u1", context.world, atStep = 0))
         val sample = context.advance(Step(0, 1.0, "sim-tick"))
         assertEquals(listOf("a1", "a2"), sample.actionResults.map { it.actionId })
-        assertEquals(listOf("movement-started", "movement-cancelled"), sample.events.map { it.kind })
+        assertEquals(listOf("movement-cancelled"), sample.events.map { it.kind })
         assertEquals(null, sample.units.single().moveTarget)
         assertEquals(0.0, sample.units.single().speed)
     }

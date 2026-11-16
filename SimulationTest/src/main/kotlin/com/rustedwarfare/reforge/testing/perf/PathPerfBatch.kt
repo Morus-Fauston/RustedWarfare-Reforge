@@ -17,6 +17,7 @@ import com.rustedwarfare.reforge.core.sim.CoordinateModel
 import com.rustedwarfare.reforge.core.sim.InitResult
 import com.rustedwarfare.reforge.core.sim.MoveAction
 import com.rustedwarfare.reforge.core.sim.MovementContract
+import com.rustedwarfare.reforge.core.sim.Observation
 import com.rustedwarfare.reforge.core.sim.Player
 import com.rustedwarfare.reforge.core.sim.PlayerControl
 import com.rustedwarfare.reforge.core.sim.Position
@@ -216,29 +217,43 @@ object PathPerfBatch {
             if (diagnosticsEnabled && context.drainPathDiagnostics(world).isNotEmpty()) {
                 throw PathPerfDiagnosticsException("submit phase must not run a search")
             }
-            val advanceStart = System.nanoTime()
-            val observation = context.advance(Step(0L, 1.0, "sim-tick"))
-            val advanceNanos = (System.nanoTime() - advanceStart).coerceAtLeast(0L)
-            val samples = if (diagnosticsEnabled) context.drainPathDiagnostics(world) else emptyList()
-            val outcomes = observation.units.map { observed ->
-                UnitPathOutcome(
-                    observed.unitId, observed.ownerPlayerId, observed.typeId, observed.position,
-                    observed.heading, observed.speed, observed.angularVelocity, observed.pathPoints,
-                    observed.moveTarget, observed.movementState.name,
-                )
+            val samples = mutableListOf<PathSearchSample>()
+            val events = mutableListOf<BatchEvent>()
+            val actionResults = mutableListOf<BatchActionResult>()
+            val outcomes = linkedMapOf<String, UnitPathOutcome>()
+            var advanceNanos = 0L
+            var step = 0L
+            var observation: Observation
+            do {
+                val advanceStart = System.nanoTime()
+                observation = context.advance(Step(step++, 1.0, "sim-tick"))
+                advanceNanos += (System.nanoTime() - advanceStart).coerceAtLeast(0L)
+                if (diagnosticsEnabled) samples += context.drainPathDiagnostics(world)
+                events += observation.events.map { BatchEvent(it.kind, it.unitId) }
+                actionResults += observation.actionResults.map {
+                    when (it) {
+                        is ActionResult.Accepted -> BatchActionResult(it.actionId, true, null)
+                        is ActionResult.Rejected -> BatchActionResult(it.actionId, false, it.error.code)
+                    }
+                }
+                val completed = observation.events.filter { it.kind in setOf("movement-started", "path-unreachable") }
+                    .mapNotNullTo(hashSetOf()) { it.unitId }
+                for (observed in observation.units) if (observed.unitId in completed && observed.unitId !in outcomes) {
+                    outcomes[observed.unitId] = UnitPathOutcome(
+                        observed.unitId, observed.ownerPlayerId, observed.typeId, observed.position,
+                        observed.heading, observed.speed, observed.angularVelocity, observed.pathPoints,
+                        observed.moveTarget, observed.movementState.name,
+                    )
+                }
+            } while (outcomes.size < n && step < 4096)
+            if (outcomes.size != n) {
+                throw PathPerfCorrectnessException("Only ${outcomes.size} of $n movement plans finished after $step steps")
             }
             val gcAfter = if (diagnosticsEnabled) gcSnapshot() else null
             val heapAfter = if (diagnosticsEnabled) heapUsedBytes() else -1L
-            val events = observation.events.map { BatchEvent(it.kind, it.unitId) }
-            val actionResults = observation.actionResults.map {
-                when (it) {
-                    is ActionResult.Accepted -> BatchActionResult(it.actionId, true, null)
-                    is ActionResult.Rejected -> BatchActionResult(it.actionId, false, it.error.code)
-                }
-            }
             val gcAvailable = gcBefore != null && gcAfter != null
             val batch = PathPerfBatchResult(
-                scenarioKey, n, round, samples, outcomes, accepted, submitNanos, advanceNanos, diagnosticsEnabled,
+                scenarioKey, n, round, samples, outcomes.values.sortedBy { it.unitId }, accepted, submitNanos, advanceNanos, diagnosticsEnabled,
                 observation.stepIndex, observation.simulationTime, events, actionResults,
                 accepted, samples.sumOf { it.actualSearchCalls }, 0, 0,
                 gcAvailable,
@@ -311,8 +326,8 @@ object PathPerfBatch {
         }
         val expectedKnowledge = scenarioKey != "OPEN_NOFOG"
         val unreachable = scenarioKey == "MEMORY_UNREACHABLE"
-        if (batch.stepIndex != 0L || batch.simulationTime != 1.0) {
-            throw PathPerfCorrectnessException("batch must observe step 0 at simulationTime 1.0")
+        if (batch.stepIndex < 0L || batch.simulationTime != batch.stepIndex + 1.0) {
+            throw PathPerfCorrectnessException("batch must retain the final planning step and its matching simulation time")
         }
         if (batch.actionResults.size != n || batch.actionResults.any { !it.accepted }) {
             throw PathPerfCorrectnessException("every submitted move must have an accepted action result")
@@ -354,7 +369,7 @@ object PathPerfBatch {
                 throw PathPerfCorrectnessException("sample ${sample.actionId} must be scheduled for step 0")
             }
             val index = parseIndex(sample.unitId)
-            if (sample.executionStep != 0L || sample.reason != PathSearchReason.USER_MOVE ||
+            if (sample.executionStep?.let { it in 0L..batch.stepIndex } != true || sample.reason != PathSearchReason.USER_MOVE ||
                 sample.preservedPrefixPointCount != 0 || sample.searchStart != Position(startX(index), startY(index)) ||
                 sample.searchTarget != Position(goalX(index), goalY(index))) {
                 throw PathPerfCorrectnessException("sample ${sample.actionId} initial search provenance differs from the fixed request")
@@ -376,6 +391,9 @@ object PathPerfBatch {
                 throw PathPerfCorrectnessException("unreachable sample ${sample.actionId} must expand at least one node")
             }
         }
+        if (batch.samples.maxOf { checkNotNull(it.executionStep) } != batch.stepIndex) {
+            throw PathPerfCorrectnessException("batch ended at a different step than its final movement plan")
+        }
         val authorized = authorizedBlocked(scenarioKey, map)
         for (outcome in batch.units) {
             if (outcome.ownerPlayerId != "p1" || outcome.typeId != expectedTypeId) {
@@ -385,7 +403,7 @@ object PathPerfBatch {
             val goal = Position(goalX(index), goalY(index))
             val sample = batch.samples.single { it.unitId == outcome.unitId }
             if (sample.pathPointCount != outcome.pathPoints.size) {
-                throw PathPerfCorrectnessException("unit ${outcome.unitId} diagnostic path count differs from its fixed step-0 path")
+                throw PathPerfCorrectnessException("unit ${outcome.unitId} diagnostic path count differs from its first planned path")
             }
             if (outcome.moveTarget != if (unreachable) null else goal) {
                 throw PathPerfCorrectnessException("unit ${outcome.unitId} target differs from its fixed outcome")

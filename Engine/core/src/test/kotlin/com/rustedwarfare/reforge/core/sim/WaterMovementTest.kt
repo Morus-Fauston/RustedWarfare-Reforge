@@ -32,8 +32,10 @@ class WaterMovementTest {
             try {
                 val accepted = assertIs<ActionResult.Accepted>(context.submit(
                     MoveAction("turn-east", "p1", "w1", Position(x + 100.0, 150.0), context.world)))
-                assertTrue(accepted.events.any { it.kind == "movement-started" })
-                return context.advance(Step(0L, 1.0, "sim-tick")).units.single()
+                assertTrue(accepted.events.isEmpty())
+                val frame = context.advance(Step(0L, 1.0, "sim-tick"))
+                assertTrue(Event("movement-started", "w1") in frame.events)
+                return frame.units.single()
             } finally {
                 context.close()
             }
@@ -71,10 +73,12 @@ class WaterMovementTest {
                 context.enableMotionDiagnostics(context.world)
                 val move = assertIs<ActionResult.Accepted>(context.submit(
                     MoveAction("cross-diagonal", "p1", "w1", target, context.world)))
-                assertTrue(move.events.any { it.kind == "movement-started" }, "basin=$basin: ${move.events}")
-                val route = context.observe().units.single().pathPoints
+                assertTrue(move.events.isEmpty())
+                val frame = context.advanceToMoveOutcome(0, "w1")
+                assertTrue(Event("movement-started", "w1") in frame.events, "basin=$basin: ${frame.events}")
+                val route = frame.units.single().pathPoints
                 assertEquals(!basin, route.size == 1)
-                repeat(700) { context.advance(Step(it.toLong(), 1.0, "sim-tick")) }
+                repeat(699) { context.advance(Step(frame.stepIndex + it + 1L, 1.0, "sim-tick")) }
                 val final = context.observePlayer(context.world, "p1").units.single()
                 val trace = context.drainMotionDiagnostics(context.world)
                 assertTrue(ScreenPlane.distanceSquared(final.position, target) < 64.0,
@@ -104,8 +108,11 @@ class WaterMovementTest {
         try {
             val command = assertIs<ActionResult.Accepted>(context.submit(
                 MoveAction("tangent-edge", "p1", "w1", Position(5.0, 60.0), context.world)))
-            assertTrue(command.events.any { it.kind == "movement-started" })
-            repeat(220) { context.advance(Step(it.toLong(), 1.0, "sim-tick")) }
+            assertTrue(command.events.isEmpty())
+            repeat(220) {
+                val frame = context.advance(Step(it.toLong(), 1.0, "sim-tick"))
+                if (it == 0) assertTrue(Event("movement-started", "w1") in frame.events)
+            }
             val ship = context.observePlayer(context.world, "p1").units.single()
             assertEquals(5.0, ship.position.x)
             assertTrue(ship.position.y < 68.0)
@@ -143,8 +150,11 @@ class WaterMovementTest {
             try {
                 val move = assertIs<ActionResult.Accepted>(context.submit(
                     MoveAction("follow-bank", "p1", "w1", Position(start.x, 65.0), context.world)))
-                assertTrue(move.events.any { it.kind == "movement-started" })
-                repeat(330) { context.advance(Step(it.toLong(), 1.0, "sim-tick")) }
+                assertTrue(move.events.isEmpty())
+                repeat(330) {
+                    val frame = context.advance(Step(it.toLong(), 1.0, "sim-tick"))
+                    if (it == 0) assertTrue(Event("movement-started", "w1") in frame.events)
+                }
                 val final = context.observe().units.single()
                 assertEquals(start.x, final.position.x)
                 if (clearance < 0.0) assertEquals(191.0, final.position.y, 1e-8)
@@ -207,10 +217,10 @@ class WaterMovementTest {
         try {
             assertTrue(context.observePlayer(context.world, "p1").units.none { it.unitId == "building" })
             context.submit(MoveAction("blind", "p1", "boat", Position(700.0, 210.0), context.world))
-            assertEquals(listOf(Position(700.0, 210.0)), context.observe().units.single { it.unitId == "boat" }.pathPoints)
             var corrections = 0
             repeat(450) { step ->
                 val sample = context.advance(Step(step.toLong(), 1.0, "sim-tick"))
+                if (step == 0) assertEquals(listOf(Position(700.0, 210.0)), sample.units.single { it.unitId == "boat" }.pathPoints)
                 val position = sample.units.single { it.unitId == "boat" }.position
                 assertTrue(position.x < 600.0, "A hidden building still contributes real WATER collision: $position")
                 corrections += sample.events.count { it.kind == "movement-blocked" }
@@ -240,12 +250,14 @@ class WaterMovementTest {
                             KnowledgeRules(TerrainRetention.MEMORY, PathInformationSource.PLAYER_KNOWLEDGE, false))
                         context.enablePathDiagnostics(context.world)
                         context.submit(MoveAction("north", "p1", "w1", Position(10.0, 30.0), context.world))
-                        context.drainPathDiagnostics(context.world)
+                        val first = context.advance(Step(0, 1.0, "sim-tick"))
+                        assertTrue(Event("movement-started", "w1") in first.events)
+                        assertEquals(listOf(PathSearchReason.USER_MOVE), context.drainPathDiagnostics(context.world).map { it.reason })
                     }
                     assertEquals(open.observe().units.single().pathPoints, blocked.observe().units.single().pathPoints)
                     val old = blocked.knowledgeSnapshot(blocked.world, "p1")
                     assertNull(old.cell(0, 3).lastKnownGroundGid)
-                    var step = 0L
+                    var step = 1L
                     if (automatic) {
                         while (blocked.knowledgeSnapshot(blocked.world, "p1").cell(0, 3).lastKnownGroundGid == null && step < 200L) {
                             blocked.advance(Step(step++, 1.0, "sim-tick"))
@@ -283,9 +295,12 @@ class WaterMovementTest {
                 for (id in listOf("dry", "wet", "dry", "wet")) {
                     val result = assertIs<ActionResult.Accepted>(context.submit(MoveAction("$id-${context.observe().sampleId}",
                         "p1", id, Position(if (id == "wet") 700.0 else 300.0, 200.0), context.world)))
-                    assertEquals(listOf("movement-started"), result.events.map { it.kind })
+                    assertTrue(result.events.isEmpty())
                 }
-                repeat(800) { context.advance(Step(it.toLong(), 1.0, "sim-tick")) }
+                repeat(800) {
+                    val frame = context.advance(Step(it.toLong(), 1.0, "sim-tick"))
+                    if (it == 0) assertEquals(2, frame.events.count { event -> event.kind == "movement-started" })
+                }
                 assertTrue(context.observe().units.single { it.unitId == "wet" }.position.x > 690.0)
                 assertTrue(context.observe().units.single { it.unitId == "dry" }.position.x > 290.0)
                 assertTrue(old.cell(25, 10).lastKnownBlocked == true)
@@ -307,11 +322,12 @@ class WaterMovementTest {
                     val x = if (id == "wet") 700.0 else 300.0
                     val result = assertIs<ActionResult.Accepted>(context.submit(
                         MoveAction("move-$id", "p1", id, Position(x, 200.0), context.world)))
-                    assertEquals(listOf("movement-started"), result.events.map { it.kind }, "order=$order id=$id")
+                    assertTrue(result.events.isEmpty(), "order=$order id=$id")
                 }
                 val arrivals = mutableListOf<String>()
                 repeat(800) { step ->
                     val sample = context.advance(Step(step.toLong(), 1.0, "sim-tick"))
+                    if (step == 0) assertEquals(order, sample.events.filter { it.kind == "movement-started" }.map { it.unitId })
                     arrivals += sample.events.filter { it.kind == "movement-arrived" }.map { it.unitId!! }
                     assertTrue(sample.units.single { it.unitId == "wet" }.position.x >= 400.0)
                     assertTrue(sample.units.single { it.unitId == "dry" }.position.x < 400.0)

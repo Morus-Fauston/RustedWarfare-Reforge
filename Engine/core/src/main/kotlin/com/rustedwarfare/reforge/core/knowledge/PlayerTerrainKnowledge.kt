@@ -14,7 +14,7 @@ class KnowledgeSnapshot private constructor(
     val width: Int,
     val height: Int,
     val revision: Long,
-    ownedCells: KnowledgeCells,
+    private val ownedCells: KnowledgeCells,
 ) {
     internal constructor(worldId: String, playerId: String, width: Int, height: Int, revision: Long,
                          cells: List<CellKnowledge>) : this(worldId, playerId, width, height, revision, KnowledgeCells.copied(cells))
@@ -24,6 +24,13 @@ class KnowledgeSnapshot private constructor(
         return cells[row * width + column]
     }
     fun planningBlocked(column: Int, row: Int): Boolean = cell(column,row).lastKnownBlocked ?: false
+
+    internal fun forEachTerrainChangeFrom(previous: KnowledgeSnapshot, visit: (Int, CellKnowledge) -> Unit) {
+        require(worldId == previous.worldId && playerId == previous.playerId &&
+            width == previous.width && height == previous.height)
+        ownedCells.forEachTerrainChangeFrom(previous.ownedCells, visit)
+    }
+
     internal companion object {
         fun owned(worldId: String, playerId: String, width: Int, height: Int, revision: Long,
                   cells: KnowledgeCells) = KnowledgeSnapshot(worldId, playerId, width, height, revision, cells)

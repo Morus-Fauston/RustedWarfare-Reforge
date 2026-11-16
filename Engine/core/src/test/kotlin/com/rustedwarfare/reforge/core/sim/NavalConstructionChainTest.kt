@@ -82,7 +82,9 @@ class NavalConstructionChainTest {
                 assertTrue(launch.position.y > 270.0, "The circular ship must still leave the factory")
                 val move = assertIs<ActionResult.Accepted>(context.submit(
                     MoveAction("too-wide", "p1", ship, Position(450.0, 540.0), context.world)))
-                assertTrue(move.events.any { it.kind == "path-unreachable" }, "Illegal circular route: ${move.events}")
+                assertTrue(move.events.isEmpty())
+                val blocked = context.advanceToMoveOutcome(context.observe().stepIndex + 1, ship)
+                assertTrue(Event("path-unreachable", ship) in blocked.events, "Illegal circular route: ${blocked.events}")
             }
         }
 

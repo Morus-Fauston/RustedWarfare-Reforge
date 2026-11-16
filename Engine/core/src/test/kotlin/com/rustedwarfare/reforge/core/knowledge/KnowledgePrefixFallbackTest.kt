@@ -28,7 +28,9 @@ class KnowledgePrefixFallbackTest {
             context.enablePathDiagnostics(context.world)
             context.acceptVisibleTerrain(context.world, "p1", (0..5).map { VisibleTerrainCell(7, it, true) })
             assertIs<ActionResult.Accepted>(context.submit(MoveAction("one-move", "p1", "u1", goal, context.world)))
-            val oldPath = context.observe().units.single().pathPoints
+            val opening = awaitInitialRoute(context)
+            assertEquals(start, opening.units.single().position)
+            val oldPath = opening.units.single().pathPoints
             assertTrue(oldPath.size > 1)
             assertEquals(listOf(Position(170.0, 130.0), Position(130.0, 130.0), goal), oldPath)
             context.drainPathDiagnostics(context.world)
@@ -44,7 +46,7 @@ class KnowledgePrefixFallbackTest {
                 from = point
             }
             assertEquals(2, prefix.size, "Independent closed-rectangle geometry must establish a nonempty safe prefix")
-            val after = context.advance(Step(0, 1.0, "sim-tick"))
+            val after = context.advance(Step(opening.stepIndex + 1, 1.0, "sim-tick"))
             val samples = context.drainPathDiagnostics(context.world)
             println("KPF01,$oldPath,$samples,${after.units.single()}")
             assertEquals(2, samples.size)
@@ -78,7 +80,9 @@ class KnowledgePrefixFallbackTest {
             context.enablePathDiagnostics(context.world)
             context.acceptVisibleTerrain(context.world, "p1", (0..5).map { VisibleTerrainCell(7, it, true) })
             assertIs<ActionResult.Accepted>(context.submit(MoveAction("one-move", "p1", "u1", goal, context.world)))
-            val oldPath = context.observe().units.single().pathPoints
+            val opening = awaitInitialRoute(context)
+            assertEquals(start, opening.units.single().position)
+            val oldPath = opening.units.single().pathPoints
             context.drainPathDiagnostics(context.world)
             val newWalls = (0..8).map { it to 3 } + (0..2).map { 4 to it }
             val prefix = mutableListOf<Position>()
@@ -90,7 +94,7 @@ class KnowledgePrefixFallbackTest {
             }
             assertEquals(2, prefix.size)
             context.acceptVisibleTerrain(context.world, "p1", newWalls.map { (col, row) -> VisibleTerrainCell(col, row, true) })
-            val after = context.advance(Step(0, 1.0, "sim-tick"))
+            val after = context.advance(Step(opening.stepIndex + 1, 1.0, "sim-tick"))
             val samples = context.drainPathDiagnostics(context.world)
             println("KPF02,$oldPath,$samples,${after.events}")
             assertEquals(listOf(prefix.last(), start), samples.map { it.searchStart })
@@ -100,8 +104,16 @@ class KnowledgePrefixFallbackTest {
             assertNull(after.units.single().moveTarget)
             assertTrue(after.units.single().pathPoints.isEmpty())
             assertEquals(start, after.units.single().position)
-            assertEquals(listOf("movement-started", "movement-cancelled", "path-unreachable"), after.events.map { it.kind })
+            assertEquals(listOf("movement-cancelled", "path-unreachable"), after.events.map { it.kind })
         } finally { context.close() }
+    }
+
+    private fun awaitInitialRoute(context: SimulationContext): Observation {
+        for (step in 0L..100L) {
+            val frame = context.advance(Step(step, 1.0, "sim-tick"))
+            if (Event("movement-started", "u1") in frame.events) return frame
+        }
+        error("Initial move was never planned")
     }
 
     private fun clear(a: Position, b: Position, blocked: List<Pair<Int, Int>>): Boolean = blocked.all { (column, row) ->

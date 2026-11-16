@@ -182,7 +182,7 @@ class MovementContractTest {
         traceObservation("M05", "step", advance(context, 0))
         val before = context.observe().units.single()
         val result = assertIs<ActionResult.Accepted>(context.submit(MoveAction("a2", "p1", "u1", Position(450.0, 100.0), context.world)))
-        assertTrue(result.events.any { it.kind == "path-unreachable" })
+        assertTrue(result.events.isEmpty())
         val unit = context.observe().units.single()
         assertEquals(null, unit.moveTarget)
         assertTrue(unit.pathPoints.isEmpty())
@@ -190,7 +190,10 @@ class MovementContractTest {
         val after = advance(context, 1)
         traceObservation("M05", "step", after)
         assertEquals(0.0, after.units.single().speed)
-        println("M05 accepted=$result before=$before step1=${after.units} events=${after.events}")
+        val outcome = if (Event("path-unreachable", "u1") in after.events) after else context.advanceToMoveOutcome(2, "u1")
+        assertTrue(Event("path-unreachable", "u1") in outcome.events)
+        assertEquals(null, outcome.units.single().moveTarget)
+        println("M05 accepted=$result before=$before step1=${after.units} events=${outcome.events}")
     }
 
     private fun normalizeAngle(angle: Double): Double = ((angle + 180.0) % 360.0 + 360.0) % 360.0 - 180.0

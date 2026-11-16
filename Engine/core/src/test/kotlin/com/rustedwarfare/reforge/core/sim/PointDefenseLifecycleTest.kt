@@ -67,26 +67,38 @@ class PointDefenseLifecycleTest {
         val c = assertIs<InitResult.Accepted>(SimulationContext.initialize(scene)).context
         try {
             val before = c.observe()
-            assertIs<ActionResult.Accepted>(c.submit(MoveAction("before", "p1", "a", Position(430.0, 210.0), c.world)))
-            assertTrue(c.observe().units.single { it.unitId == "a" }.pathPoints.any { it.y < 200.0 || it.y >= 240.0 })
+            val routeControl = assertIs<InitResult.Accepted>(SimulationContext.initialize(scene)).context
+            try {
+                assertIs<ActionResult.Accepted>(routeControl.submit(
+                    MoveAction("before", "p1", "a", Position(430.0, 210.0), routeControl.world)))
+                val routed = routeControl.advanceToMoveOutcome(0, "a")
+                assertTrue(routed.units.single { it.unitId == "a" }.pathPoints.any { it.y < 200.0 || it.y >= 240.0 })
+            } finally { routeControl.close() }
             assertIs<ActionResult.Accepted>(c.submit(StopAction("wait", "p1", "a", c.world)))
             assertIs<ActionResult.Accepted>(c.submit(AttackAction("kill-defense", "p2", "z", "d", c.world)))
             var step = 0L
-            while (c.observe().units.single { it.unitId == "d" }.alive && step < 30L) c.advance(Step(step++, 1.0, "sim-tick"))
+            while (c.observe().units.single { it.unitId == "d" }.alive && step < 30L)
+                c.advance(Step(step++, 1.0, "sim-tick"))
             val dead = c.observe().units.single { it.unitId == "d" }
             assertFalse(dead.alive)
             assertEquals(500.0, before.units.single { it.unitId == "d" }.health)
             assertEquals("inactive-unit", assertIs<ActionResult.Rejected>(c.submit(StopAction("dead-stop", "p1", "d", c.world))).error.code)
             assertIs<ActionResult.Accepted>(c.submit(MoveAction("through", "p1", "a", Position(430.0, 210.0), c.world)))
-            assertTrue(c.observe().units.single { it.unitId == "a" }.pathPoints.all { it.y in 200.0..<240.0 })
-            repeat(40) {
+            repeat(40) { index ->
                 val row = c.advance(Step(step++, 1.0, "sim-tick"))
+                if (index == 0) {
+                    val path = row.units.single { it.unitId == "a" }.pathPoints
+                    assertTrue(path.isNotEmpty() && path.all { it.y in 200.0..<240.0 })
+                }
                 assertEquals(dead.pointDefense, row.units.single { it.unitId == "d" }.pointDefense)
                 assertTrue(row.projectileEvents.none { it.kind == "deflected" && it.interceptorUnitId == "d" })
             }
             for ((id, target) in listOf("other-building" to Position(310.0, 90.0), "wall" to Position(490.0, 210.0))) {
                 val result = assertIs<ActionResult.Accepted>(c.submit(MoveAction(id, "p1", "a", target, c.world)))
-                assertTrue(result.events.any { it.kind == "path-unreachable" })
+                assertTrue(result.events.isEmpty())
+                val blocked = c.advanceToMoveOutcome(step, "a")
+                step = blocked.stepIndex + 1
+                assertTrue(Event("path-unreachable", "a") in blocked.events)
             }
             assertTrue(c.observe().units.single { it.unitId == "d2" }.alive)
             assertFalse(map.blocking.isBlocked(15, 10))

@@ -6,13 +6,12 @@ import com.rustedwarfare.reforge.core.content.MovementType
 import com.rustedwarfare.reforge.core.content.MapDefinition
 import com.rustedwarfare.reforge.core.content.TransportProfile
 import com.rustedwarfare.reforge.core.content.UnitDefinition
-import com.rustedwarfare.reforge.core.content.contactBufferOutline
 import kotlin.math.abs
 import kotlin.math.atan2
 import kotlin.math.hypot
 import kotlin.math.PI
 
-private enum class ContactLayer { SURFACE, SUBMERGED }
+internal enum class ContactLayer { SURFACE, SUBMERGED }
 
 private fun UnitDefinition.contactLayerAt(height: Double): ContactLayer? = when {
     CombatTargetQuery.isUnderwater(this, height) -> ContactLayer.SUBMERGED
@@ -38,7 +37,7 @@ internal object UnitContact {
     class YieldRequest(val collisionMap: MapDefinition, val stepIndex: Long, val unitsById: Map<String, MutableUnit>,
                        val canYield: (MutableUnit) -> Boolean)
 
-    private fun layer(unit: MutableUnit, height: Double = unit.height): ContactLayer? = when {
+    fun layer(unit: MutableUnit, height: Double = unit.height): ContactLayer? = when {
         !unit.alive || unit.carriedBy != null || unit.attachment != null || unit.definition.building != null -> null
         else -> unit.definition.contactLayerAt(height)
     }
@@ -94,7 +93,7 @@ internal object UnitContact {
     }
 
     /** Per-step settlement in the simulation's existing motion update order. */
-    class Translations(private val delta: Double) {
+    class Translations(private val delta: Double, private val movePending: (String) -> Boolean) {
         private val startingPositions = mutableMapOf<String, Position>()
         private val maximumSpeeds = mutableMapOf<String, Double>()
         private val settled = mutableSetOf<String>()
@@ -104,8 +103,8 @@ internal object UnitContact {
         fun resolve(unit: MutableUnit, requested: Position, units: Collection<MutableUnit>, map: MapDefinition,
                     unitsById: Map<String, MutableUnit>, canPush: ((MutableUnit, MutableUnit) -> Boolean)?,
                     yielding: YieldRequest? = null, canBuffer: (MutableUnit) -> Boolean): Translation {
-            val support = if (canPush == null) null else gatheringGoal(unit)?.let { goal ->
-                val bodies = gatheringSupport ?: supportedGatherings(units).also { gatheringSupport = it }
+            val support = if (canPush == null) null else gatheringGoal(unit, movePending)?.let { goal ->
+                val bodies = gatheringSupport ?: supportedGatherings(units, movePending).also { gatheringSupport = it }
                 bodies[goal]
             }
             if (support != null && unit.unitId in support) return Translation(unit.position, supported = true)
@@ -114,7 +113,8 @@ internal object UnitContact {
             val ownLimit = pushLimits[unit.unitId]?.let { maxOf(maximumTravel(unit), it) }
             val target = if (ownLimit == null) requested else
                 lastLegalPoint(unit.position, requested) { distance(origin, it) <= ownLimit + positionRoundoff(origin, it) }
-            val hardContacts = translationContacts(unit, target, units, simultaneous = canPush != null)
+            val moverMass = if (canPush == null || unit.unitId in settled) null else positiveMass(unit)
+            val hardContacts = translationContacts(unit, target, units, simultaneous = moverMass != null)
             val hardFraction = hardContacts.minOfOrNull { it.fraction } ?: 1.0
             val clipped = pointAt(unit.position, target, hardFraction)
             val hardBlocker = hardContacts.firstOrNull()?.blocker
@@ -123,8 +123,7 @@ internal object UnitContact {
                     return Translation(target, listOf(it), legacyYield = true)
                 }
             }
-            if (canPush == null || unit.unitId in settled) return Translation(clipped)
-            val moverMass = positiveMass(unit) ?: return Translation(clipped)
+            if (canPush == null || moverMass == null) return Translation(clipped)
             val softContact = if (hardContacts.isEmpty()) translationContact(unit, target, units, buffered = true, included = canBuffer) else null
             val contacts = if (softContact == null) hardContacts else listOf(softContact)
             if (contacts.isEmpty()) return Translation(target)
@@ -275,7 +274,8 @@ internal object UnitContact {
 
     private data class GatheringGoal(val playerId: String, val layer: ContactLayer, val position: Position)
 
-    private fun gatheringGoal(unit: MutableUnit): GatheringGoal? {
+    private fun gatheringGoal(unit: MutableUnit, movePending: (String) -> Boolean): GatheringGoal? {
+        if (movePending(unit.unitId)) return null
         val target = unit.tasks.firstOrNull()?.takeIf { it.kind == UnitTaskKind.MOVE && !it.factoryExit }?.target ?: return null
         val layer = layer(unit) ?: return null
         return GatheringGoal(unit.ownerPlayerId, layer, target)
@@ -283,8 +283,10 @@ internal object UnitContact {
 
     /** Opposing pressure on an occupied shared target supports a stationary cluster.
      * Closing the contact component over successive rings lets the next step release it when that support opens. */
-    private fun supportedGatherings(units: Collection<MutableUnit>): Map<GatheringGoal, Set<String>> {
-        val groups = units.mapNotNull { unit -> gatheringGoal(unit)?.let { it to unit } }.groupBy({ it.first }, { it.second })
+    private fun supportedGatherings(units: Collection<MutableUnit>,
+                                    movePending: (String) -> Boolean): Map<GatheringGoal, Set<String>> {
+        val groups = units.mapNotNull { unit -> gatheringGoal(unit, movePending)?.let { it to unit } }
+            .groupBy({ it.first }, { it.second })
         val result = mutableMapOf<GatheringGoal, Set<String>>()
         for ((goal, approaching) in groups) {
             if (approaching.size < 3) continue
@@ -352,8 +354,8 @@ internal object UnitContact {
         val second = blocker.definition.movementCollision
         val offset = subtract(target, blocker.position)
         val hardGap = Body(first, unit.heading).clearance(Body(second, blocker.heading), offset)
-        val bufferGap = Body(first.contactBufferOutline(), unit.heading)
-            .clearance(Body(second.contactBufferOutline(), blocker.heading), offset)
+        val bufferGap = Body(unit.definition.contactBufferCollision, unit.heading)
+            .clearance(Body(blocker.definition.contactBufferCollision, blocker.heading), offset)
         if (bufferGap >= 0.0) return 0.0
         return -bufferGap / (hardGap.coerceAtLeast(0.0) - bufferGap)
     }
@@ -413,21 +415,29 @@ internal object UnitContact {
         val start = unit.position
         if (start == requested) return emptyList()
         val layer = layer(unit) ?: return emptyList()
-        fun shape(other: MutableUnit) = other.definition.movementCollision.let { if (buffered) it.contactBufferOutline() else it }
-        val body = Body(shape(unit), unit.heading)
+        fun shape(other: MutableUnit) =
+            if (buffered) other.definition.contactBufferCollision else other.definition.movementCollision
+        val ownShape = shape(unit)
+        val ownReach = boundingRadius(ownShape)
+        var body: Body? = null
         val drift = subtract(requested, start)
-        val length = hypot(drift.x, drift.y)
+        val sweepX = abs(drift.x)
+        val sweepY = abs(drift.y)
+        val length = if (simultaneous) hypot(drift.x, drift.y) else 0.0
         var fraction = 1.0
         val contacts = mutableListOf<Contact>()
         for (other in units) {
-            if (unit === other || other.unitId in ignoredIds || layer(other) != layer) continue
+            if (unit === other || other.unitId in ignoredIds) continue
             val otherCenter = if (shifted?.unit === other) shifted.position else other.position
-            val offset = subtract(start, otherCenter)
+            val offsetX = start.x - otherCenter.x
+            val offsetY = start.y - otherCenter.y
             val otherShape = shape(other)
-            val reach = body.reach + boundingRadius(otherShape)
-            if (abs(offset.x) > reach + abs(drift.x) || abs(offset.y) > reach + abs(drift.y)) continue
-            if (included != null && !included(other)) continue
-            val limit = body.entry(Body(otherShape, other.heading), offset, drift, if (simultaneous) 1.0 else fraction)
+            val reach = ownReach + boundingRadius(otherShape)
+            if (abs(offsetX) > reach + sweepX || abs(offsetY) > reach + sweepY) continue
+            if (layer(other) != layer || included != null && !included(other)) continue
+            val moving = body ?: Body(ownShape, unit.heading).also { body = it }
+            val limit = moving.entry(Body(otherShape, other.heading), Position(offsetX, offsetY), drift,
+                if (simultaneous) 1.0 else fraction)
             if (limit >= 1.0) continue
             val tied = simultaneous && contacts.isNotEmpty() &&
                 abs(limit - fraction) * length <= positionRoundoff(start, otherCenter)

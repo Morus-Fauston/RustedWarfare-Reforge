@@ -30,15 +30,12 @@ class GroupMoveDestinationsTest {
             UnitSpawn("z", "p1", "water-test", lastSlot, 90.0)))
         val context = assertIs<InitResult.Accepted>(SimulationContext.initialize(scene)).context
         try {
-            val group = assertNotNull(context.prepareGroupMove("p1", listOf("a", "z"), click))
-            val outcomes = submitSelection(context, group, "a", "z")
-            val initial = context.observe()
-            println("Single available position $lastSlot targets=${initial.units.associate { it.unitId to it.moveTarget }} outcomes=${outcomes.map { it.events }}")
-            assertEquals(null, initial.ship("a").moveTarget)
-            assertEquals(lastSlot, initial.ship("z").moveTarget)
-            assertTrue(Event("group-destination-unavailable", "a") in outcomes.first().events)
-            assertTrue(Event("movement-started", "z") in outcomes.last().events)
-            val frame = context.advance(Step(0, 1.0, "sim-tick"))
+            val group = assertNotNull(context.requestGroupMove("p1", listOf("a", "z"), click))
+            submitSelection(context, group, "a", "z")
+            val frame = awaitPlanning(context, "a", "z")
+            assertEquals(null, frame.ship("a").moveTarget)
+            assertTrue(Event("group-destination-unavailable", "a") in frame.events)
+            assertTrue(Event("movement-started", "z") in frame.events)
             assertEquals(approach, frame.ship("a").position)
             assertEquals(lastSlot, frame.ship("z").position)
             assertTrue(Event("movement-arrived", "z") in frame.events)
@@ -73,17 +70,20 @@ class GroupMoveDestinationsTest {
             try {
                 assertIs<ActionResult.Accepted>(context.submit(MoveAction("slow-long", "p2", "holding",
                     Position(730.0, 200.0), context.world)))
-                val group = assertNotNull(context.prepareGroupMove("p1", listOf("a", "z"), click))
+                val group = assertNotNull(context.requestGroupMove("p1", listOf("a", "z"), click))
                 submitSelection(context, group, "a", "z")
-                assertEquals(click, context.observe().ship("a").moveTarget)
-                val frames = (0L..900L).map { context.advance(Step(it, 1.0, "sim-tick")) }
-                val changed = assertNotNull(frames.firstOrNull { Event("group-destination-reassigned", "a") in it.events })
-                val before = frames[(changed.stepIndex - 1).toInt()].ship("a").position
+                val initial = awaitPlanning(context, "a", "z")
+                assertEquals(click, initial.ship("a").moveTarget)
+                val frames = listOf(initial) + (1L..900L).map { context.advance(Step(initial.stepIndex + it, 1.0, "sim-tick")) }
+                val changedIndex = frames.indexOfFirst { Event("group-destination-reassigned", "a") in it.events }
+                assertTrue(changedIndex > 0)
+                val changed = frames[changedIndex]
+                val before = frames[changedIndex - 1].ship("a").position
                 val distance = kotlin.math.sqrt(ScreenPlane.distanceSquared(before, click))
                 println("Long hull blocked the original goal from ${distance} units away; replacement at ${changed.stepIndex}")
                 assertTrue(distance > 41.0)
                 assertTrue(changed.ship("a").moveTarget != null && changed.ship("a").moveTarget != click)
-                assertTrue(changed.stepIndex + 1 >= 420)
+                assertTrue(changed.stepIndex - initial.stepIndex + 1 >= 420)
             } finally {
                 context.close()
             }
@@ -101,15 +101,16 @@ class GroupMoveDestinationsTest {
         val context = assertIs<InitResult.Accepted>(SimulationContext.initialize(scene)).context
         try {
             context.enableKnowledge(context.world, KnowledgeRules(TerrainRetention.MEMORY, PathInformationSource.PLAYER_KNOWLEDGE, false))
-            val group = assertNotNull(context.prepareGroupMove("p1", listOf("z", "a"), click))
+            val group = assertNotNull(context.requestGroupMove("p1", listOf("z", "a"), click))
             submitSelection(context, group, "a", "z")
-            assertEquals(click, context.observe().ship("a").moveTarget)
-            val otherTarget = assertNotNull(context.observe().ship("z").moveTarget)
+            val initial = awaitPlanning(context, "a", "z")
+            assertEquals(click, initial.ship("a").moveTarget)
+            val otherTarget = assertNotNull(initial.ship("z").moveTarget)
             val shore = listOf(VisibleTerrainCell(30, 10, true, 1))
             context.acceptVisibleTerrain(context.world, "p2", shore)
-            assertEquals(click, context.advance(Step(0, 1.0, "sim-tick")).ship("a").moveTarget)
+            assertEquals(click, context.advance(Step(initial.stepIndex + 1, 1.0, "sim-tick")).ship("a").moveTarget)
             context.acceptVisibleTerrain(context.world, "p1", shore)
-            val frame = context.advance(Step(1, 1.0, "sim-tick"))
+            val frame = context.advance(Step(initial.stepIndex + 2, 1.0, "sim-tick"))
             val replacement = assertNotNull(frame.ship("a").moveTarget)
             assertTrue(Event("group-destination-reassigned", "a") in frame.events)
             assertTrue(Event("group-destination-reassigned", "z") !in frame.events)
@@ -135,12 +136,13 @@ class GroupMoveDestinationsTest {
             val context = assertIs<InitResult.Accepted>(SimulationContext.initialize(scene)).context
             try {
                 context.enableKnowledge(context.world, KnowledgeRules(TerrainRetention.MEMORY, PathInformationSource.PLAYER_KNOWLEDGE, false))
-                val group = assertNotNull(context.prepareGroupMove("p1", listOf("a", "z"), click))
+                val group = assertNotNull(context.requestGroupMove("p1", listOf("a", "z"), click))
                 submitSelection(context, group, "a", "z")
-                assertEquals(click, context.observe().ship("a").moveTarget)
-                val otherTarget = assertNotNull(context.observe().ship("z").moveTarget)
+                val initial = awaitPlanning(context, "a", "z")
+                assertEquals(click, initial.ship("a").moveTarget)
+                val otherTarget = assertNotNull(initial.ship("z").moveTarget)
                 context.acceptVisibleTerrain(context.world, "p1", wall)
-                val blocked = context.advance(Step(0, 1.0, "sim-tick"))
+                val blocked = context.advance(Step(initial.stepIndex + 1, 1.0, "sim-tick"))
                 println("Disconnected original target $click, new target=${blocked.ship("a").moveTarget}, events=${blocked.events}")
                 assertTrue(Event("group-destination-reassigned", "a") in blocked.events)
                 assertTrue(assertNotNull(blocked.ship("a").moveTarget).x <= 574.0)
@@ -163,13 +165,13 @@ class GroupMoveDestinationsTest {
         try {
             assertIs<ActionResult.Accepted>(context.submit(MoveAction("move-away", "p2", "holding",
                 Position(600.0, 340.0), context.world)))
-            val group = assertNotNull(context.prepareGroupMove("p1", listOf("z", "a"), click))
+            val group = assertNotNull(context.requestGroupMove("p1", listOf("z", "a"), click))
             submitSelection(context, group, "a", "z")
-            val initial = context.observe()
+            val initial = awaitPlanning(context, "a", "z")
             assertEquals(click, initial.ship("a").moveTarget)
             val unaffectedTarget = assertNotNull(initial.ship("z").moveTarget)
             assertTrue(unaffectedTarget != click)
-            val frames = (0L..1250L).map { context.advance(Step(it, 1.0, "sim-tick")) }
+            val frames = (1L..1251L).map { context.advance(Step(initial.stepIndex + it, 1.0, "sim-tick")) }
             val changed = frames.firstOrNull { Event("group-destination-reassigned", "a") in it.events }
             val arrived = frames.firstOrNull { Event("movement-arrived", "a") in it.events }
             val other = frames.firstOrNull { Event("movement-arrived", "z") in it.events }
@@ -178,7 +180,7 @@ class GroupMoveDestinationsTest {
             assertNotNull(other)
             if (reassign) {
                 assertNotNull(changed)
-                assertTrue(changed.stepIndex + 1 >= 420)
+                assertTrue(changed.stepIndex - initial.stepIndex + 1 >= 420)
                 assertTrue(changed.ship("a").moveTarget != null && changed.ship("a").moveTarget != click)
                 assertTrue(frames.takeWhile { it !== changed }.all { it.ship("a").moveTarget == click })
                 assertTrue(frames.none { Event("group-destination-reassigned", "z") in it.events })
@@ -206,17 +208,17 @@ class GroupMoveDestinationsTest {
             for (click in listOf(shore, offshore)) {
                 val context = assertIs<InitResult.Accepted>(SimulationContext.initialize(scene)).context
                 try {
-                    val group = assertNotNull(context.prepareGroupMove("p1", listOf("a-hover", "z-land"), click))
-                    val results = submitSelection(context, group, "a-hover", "z-land")
-                    val frame = context.observe()
+                    val group = assertNotNull(context.requestGroupMove("p1", listOf("a-hover", "z-land"), click))
+                    submitSelection(context, group, "a-hover", "z-land")
+                    val frame = awaitPlanning(context, "a-hover", "z-land")
                     if (click == shore) {
                         assertEquals(shore, frame.ship("z-land").moveTarget)
                         assertTrue(frame.ship("a-hover").moveTarget != null && frame.ship("a-hover").moveTarget != shore)
                     } else {
                         assertEquals(offshore, frame.ship("a-hover").moveTarget)
                         assertEquals(null, frame.ship("z-land").moveTarget)
-                        assertTrue(Event("group-destination-unavailable", "z-land") in results.last().events)
-                        assertTrue(Event("path-unreachable", "z-land") in results.last().events)
+                        assertTrue(Event("group-destination-unavailable", "z-land") in frame.events)
+                        assertTrue(Event("path-unreachable", "z-land") in frame.events)
                     }
                 } finally {
                     context.close()
@@ -224,9 +226,21 @@ class GroupMoveDestinationsTest {
             }
         }
 
-    private fun submitSelection(context: SimulationContext, group: GroupMovePlan, vararg members: String) =
-        members.map { id -> assertIs<ActionResult.Accepted>(context.submitGroupMove(
-            MoveAction("click-$id", "p1", id, group.click, context.world), group)) }
+    private fun submitSelection(context: SimulationContext, group: GroupMoveRequest, vararg members: String) =
+        members.forEach { id ->
+            val receipt = assertIs<ActionResult.Accepted>(context.submitGroupMove(
+                MoveAction("click-$id", "p1", id, group.click, context.world), group))
+            assertTrue(receipt.events.isEmpty())
+        }
+
+    private fun awaitPlanning(context: SimulationContext, vararg members: String): Observation {
+        for (step in 0L..2400L) {
+            val frame = context.advance(Step(step, 1.0, "sim-tick"))
+            if (members.all { id -> frame.events.any { it.unitId == id &&
+                    it.kind in setOf("movement-started", "group-destination-unavailable") } }) return frame
+        }
+        error("Group movement plan could not finish")
+    }
 
     private fun variant(template: UnitDefinition, id: String, speed: Double = template.movement.moveSpeed,
                         shape: MovementCollisionShape = template.movementCollision) =

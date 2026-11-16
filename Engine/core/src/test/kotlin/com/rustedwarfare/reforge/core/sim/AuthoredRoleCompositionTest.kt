@@ -138,11 +138,16 @@ class AuthoredRoleCompositionTest {
             assertEquals(1f, completed.constructionProgress)
             assertEquals(3550L, owner().balance)
             val waypoints = listOf(Position(264.0, 150.0), Position(208.0, 212.0), Position(208.0, 91.0))
-            val orders = waypoints.asSequence().mapIndexed { index, point ->
-                assertIs<ActionResult.Accepted>(c.submit(MoveAction("move-new-$index", "p1", id, point, c.world)))
+            var step = 105L
+            val started = waypoints.withIndex().any { (index, point) ->
+                val accepted = assertIs<ActionResult.Accepted>(c.submit(MoveAction("move-new-$index", "p1", id, point, c.world)))
+                assertTrue(accepted.events.isEmpty())
+                val frame = c.advanceToMoveOutcome(step, id)
+                step = frame.stepIndex + 1
+                Event("movement-started", id) in frame.events
             }
-            assertTrue(orders.any { order -> order.events.any { it.kind == "movement-started" } })
-            repeat(135) { c.advance(Step(105L + it, 1.0, "sim-tick")) }
+            assertTrue(started)
+            repeat(135) { c.advance(Step(step++, 1.0, "sim-tick")) }
             assertNotEquals(completed.position, owner().units.single { it.unitId == id }.position)
         }
 

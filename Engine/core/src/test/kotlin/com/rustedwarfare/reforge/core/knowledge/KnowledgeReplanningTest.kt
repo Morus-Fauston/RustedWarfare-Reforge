@@ -33,17 +33,18 @@ class KnowledgeReplanningTest {
         try {
             c.enablePathDiagnostics(c.world)
             move(c)
+            c.advance(Step(0, 1.0, "sim-tick"))
             c.drainPathDiagnostics(c.world)
             c.acceptVisibleTerrain(c.world, "p2", listOf(VisibleTerrainCell(2, 2, true)))
             c.acceptVisibleTerrain(c.world, "p1", listOf(VisibleTerrainCell(0, 0, true)))
-            c.advance(Step(0, 1.0, "sim-tick"))
+            c.advance(Step(1, 1.0, "sim-tick"))
             assertTrue(c.drainPathDiagnostics(c.world).isEmpty())
             assertEquals(straight, c.observe().units.single().pathPoints)
             c.acceptVisibleTerrain(c.world, "p1", listOf(VisibleTerrainCell(2, 2, true)))
-            c.advance(Step(1, 1.0, "sim-tick"))
+            c.advance(Step(2, 1.0, "sim-tick"))
             assertEquals(1, c.drainPathDiagnostics(c.world).size)
             c.acceptVisibleTerrain(c.world, "p1", listOf(VisibleTerrainCell(2, 2, true)))
-            c.advance(Step(2, 1.0, "sim-tick"))
+            c.advance(Step(3, 1.0, "sim-tick"))
             assertTrue(c.drainPathDiagnostics(c.world).isEmpty())
         } finally { c.close() }
     }
@@ -55,14 +56,15 @@ class KnowledgeReplanningTest {
             try {
                 c.enablePathDiagnostics(c.world)
                 move(c)
+                c.advance(Step(0, 1.0, "sim-tick"))
                 c.drainPathDiagnostics(c.world)
                 c.acceptVisibleTerrain(c.world, "p1", listOf(VisibleTerrainCell(2, 2, true)))
                 c.acceptVisibleTerrain(c.world, "p1", emptyList())
-                val o = c.advance(Step(0, 1.0, "sim-tick"))
+                val o = c.advance(Step(1, 1.0, "sim-tick"))
                 assertEquals(if (retention == TerrainRetention.MEMORY) upper else straight, o.units.single().pathPoints)
                 assertEquals(if (retention == TerrainRetention.MEMORY) 1 else 0, c.drainPathDiagnostics(c.world).size)
                 c.acceptVisibleTerrain(c.world, "p1", emptyList())
-                c.advance(Step(1, 1.0, "sim-tick"))
+                c.advance(Step(2, 1.0, "sim-tick"))
                 assertTrue(c.drainPathDiagnostics(c.world).isEmpty())
             } finally { c.close() }
         }
@@ -74,9 +76,10 @@ class KnowledgeReplanningTest {
         try {
             c.enablePathDiagnostics(c.world)
             move(c)
+            c.advance(Step(0, 1.0, "sim-tick"))
             c.drainPathDiagnostics(c.world)
             var blockedStep: Long? = null
-            for (step in 0L until 200L) {
+            for (step in 1L until 200L) {
                 val observation = c.advance(Step(step, 1.0, "sim-tick"))
                 val u = observation.units.single()
                 assertFalse(u.position.x >= 40.0 && u.position.x < 60.0 && u.position.y >= 40.0 && u.position.y < 60.0)
@@ -105,18 +108,19 @@ class KnowledgeReplanningTest {
         try {
             c.enablePathDiagnostics(c.world)
             move(c)
+            c.advance(Step(0, 1.0, "sim-tick"))
             c.drainPathDiagnostics(c.world)
             c.acceptVisibleTerrain(c.world, "p1", (0..4).map { VisibleTerrainCell(2, it, true) })
-            val o = c.advance(Step(0, 1.0, "sim-tick"))
+            val o = c.advance(Step(1, 1.0, "sim-tick"))
             val u = o.units.single()
             assertNull(u.moveTarget)
             assertTrue(u.pathPoints.isEmpty())
             assertEquals(MovementState.IDLE, u.movementState)
-            assertEquals(listOf("movement-started", "movement-cancelled", "path-unreachable"), o.events.map { it.kind })
-            assertEquals(listOf("m1"), o.actionResults.map { it.actionId })
+            assertEquals(listOf("movement-cancelled", "path-unreachable"), o.events.map { it.kind })
+            assertTrue(o.actionResults.isEmpty())
             assertEquals(1, c.drainPathDiagnostics(c.world).size)
             c.acceptVisibleTerrain(c.world, "p1", listOf(VisibleTerrainCell(1, 0, true)))
-            val later = c.advance(Step(1, 1.0, "sim-tick"))
+            val later = c.advance(Step(2, 1.0, "sim-tick"))
             assertNull(later.units.single().moveTarget)
             assertTrue(later.events.isEmpty())
             assertTrue(c.drainPathDiagnostics(c.world).isEmpty())
@@ -130,15 +134,16 @@ class KnowledgeReplanningTest {
             try {
                 c.enablePathDiagnostics(c.world)
                 move(c)
+                c.advance(Step(0, 1.0, "sim-tick"))
                 c.drainPathDiagnostics(c.world)
                 c.acceptVisibleTerrain(c.world, "p1", listOf(VisibleTerrainCell(2, 2, true)))
                 when (mode) {
-                    "immediate" -> { move(c, "new"); assertEquals(1, c.drainPathDiagnostics(c.world).size) }
-                    "scheduled" -> move(c, "new", 0)
-                    else -> c.submit(StopAction("stop", "p1", "u1", c.world, 0))
+                    "immediate" -> { move(c, "new"); assertTrue(c.drainPathDiagnostics(c.world).isEmpty()) }
+                    "scheduled" -> move(c, "new", 1)
+                    else -> c.submit(StopAction("stop", "p1", "u1", c.world, 1))
                 }
-                val o = c.advance(Step(0, 1.0, "sim-tick"))
-                assertEquals(if (mode == "scheduled") 1 else 0, c.drainPathDiagnostics(c.world).size)
+                val o = c.advance(Step(1, 1.0, "sim-tick"))
+                assertEquals(if (mode == "stop") 0 else 1, c.drainPathDiagnostics(c.world).size)
                 if (mode == "stop") assertNull(o.units.single().moveTarget)
                 else assertEquals(upper, o.units.single().pathPoints)
             } finally { c.close() }
@@ -153,13 +158,14 @@ class KnowledgeReplanningTest {
             c.enablePathDiagnostics(c.world)
             move(c)
             c.submit(MoveAction("m2", "p1", "u2", Position(70.0, 90.0), c.world))
+            c.advance(Step(0, 1.0, "sim-tick"))
             c.drainPathDiagnostics(c.world)
             assertFailsWith<KnowledgeException> { c.acceptVisibleTerrain(c.world, "p1", listOf(VisibleTerrainCell(2, 2, true), VisibleTerrainCell(2, 2, true))) }
             assertEquals(0L, c.knowledgeSnapshot(c.world, "p1").revision)
-            c.advance(Step(0, 1.0, "sim-tick"))
+            c.advance(Step(1, 1.0, "sim-tick"))
             assertTrue(c.drainPathDiagnostics(c.world).isEmpty())
             c.acceptVisibleTerrain(c.world, "p1", listOf(VisibleTerrainCell(2, 2, true), VisibleTerrainCell(0, 0, true)))
-            c.advance(Step(1, 1.0, "sim-tick"))
+            c.advance(Step(2, 1.0, "sim-tick"))
             assertEquals(listOf("u1"), c.drainPathDiagnostics(c.world).map { it.unitId })
             val old = c.world
             c.acceptVisibleTerrain(old, "p1", listOf(VisibleTerrainCell(2, 4, true)))
@@ -169,9 +175,9 @@ class KnowledgeReplanningTest {
             c.enablePathDiagnostics(c.world)
             assertFailsWith<KnowledgeException> { c.acceptVisibleTerrain(old, "p1", emptyList()) }
             move(c, "newworld")
-            c.drainPathDiagnostics(c.world)
-            c.advance(Step(0, 1.0, "sim-tick"))
             assertTrue(c.drainPathDiagnostics(c.world).isEmpty())
+            c.advance(Step(0, 1.0, "sim-tick"))
+            assertEquals("newworld", c.drainPathDiagnostics(c.world).single().actionId)
         } finally { c.close() }
     }
 
@@ -216,9 +222,10 @@ class KnowledgeReplanningTest {
             try {
                 c.enablePathDiagnostics(c.world)
                 move(c)
+                c.advance(Step(0, 1.0, "sim-tick"))
                 c.drainPathDiagnostics(c.world)
                 c.acceptVisibleTerrain(c.world, "p1", listOf(VisibleTerrainCell(2, 1, true)))
-                c.advance(Step(0, 1.0, "sim-tick"))
+                c.advance(Step(1, 1.0, "sim-tick"))
                 assertEquals(0, c.drainPathDiagnostics(c.world).size)
             } finally { c.close() }
         }
@@ -227,9 +234,10 @@ class KnowledgeReplanningTest {
         try {
             corner.enablePathDiagnostics(corner.world)
             corner.submit(MoveAction("corner", "p1", "u1", Position(30.0, 50.0), corner.world))
+            corner.advance(Step(0, 1.0, "sim-tick"))
             corner.drainPathDiagnostics(corner.world)
             corner.acceptVisibleTerrain(corner.world, "p1", listOf(VisibleTerrainCell(2, 1, true)))
-            corner.advance(Step(0, 1.0, "sim-tick"))
+            corner.advance(Step(1, 1.0, "sim-tick"))
             assertTrue(corner.drainPathDiagnostics(corner.world).isEmpty())
         } finally { corner.close() }
     }
@@ -263,9 +271,11 @@ class KnowledgeReplanningTest {
             assertEquals(1L, auto.actualSearchCalls)
             assertTrue(b.actionResults.isEmpty())
             move(measured, "immediate")
+            assertTrue(measured.drainPathDiagnostics(measured.world).isEmpty())
+            measured.advance(Step(2, 1.0, "sim-tick"))
             val immediate = measured.drainPathDiagnostics(measured.world).single()
             assertEquals(PathSearchReason.USER_MOVE, immediate.reason)
-            assertNull(immediate.executionStep)
+            assertEquals(2L, immediate.executionStep)
             assertNull(immediate.scheduledStep)
         } finally { plain.close(); measured.close() }
     }
@@ -276,14 +286,15 @@ class KnowledgeReplanningTest {
         try {
             c.enablePathDiagnostics(c.world)
             assertIs<ActionResult.Accepted>(move(c))
+            c.advance(Step(0, 1.0, "sim-tick"))
             assertEquals(straight, c.observe().units.single().pathPoints)
             c.drainPathDiagnostics(c.world)
             c.acceptVisibleTerrain(c.world, "p1", listOf(VisibleTerrainCell(2, 2, true)))
             assertTrue(c.drainPathDiagnostics(c.world).isEmpty())
-            val observation = c.advance(Step(0, 1.0, "sim-tick"))
+            val observation = c.advance(Step(1, 1.0, "sim-tick"))
             assertEquals(upper, observation.units.single().pathPoints)
             assertEquals(Position(70.0, 50.0), observation.units.single().moveTarget)
-            assertEquals(listOf("m1"), observation.actionResults.map { it.actionId })
+            assertTrue(observation.actionResults.isEmpty())
             assertEquals(1L, c.drainPathDiagnostics(c.world).single().actualSearchCalls)
         } finally { c.close() }
     }

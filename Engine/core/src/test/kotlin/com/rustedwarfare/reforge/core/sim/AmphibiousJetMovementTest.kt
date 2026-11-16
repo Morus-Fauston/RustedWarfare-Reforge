@@ -31,6 +31,7 @@ class AmphibiousJetMovementTest {
                 fun advance(count: Int) { repeat(count) { context.advance(Step(step++, 1.0, "sim-tick")) } }
                 fun move(id: String, x: Double) = context.submit(MoveAction(id, "p1", "jet", Position(x, 200.0), context.world))
                 assertIs<ActionResult.Accepted>(move("air-order", 300.0))
+                advance(1)
                 val before = context.observe().units.single()
                 assertIs<ActionResult.Accepted>(context.submit(AmphibiousFlightAction("dive", "p1", "jet", false, context.world)))
                 assertEquals(before.tasks, context.observe().units.single().tasks)

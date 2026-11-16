@@ -77,7 +77,10 @@ class TurretLifecycleTest {
             assertTrue(c.observe().units.single { it.unitId == "g" }.alive)
             for ((id, point) in listOf("live-factory" to Position(400.0, 300.0), "hard-cell" to Position(550.0, 210.0))) {
                 val result = assertIs<ActionResult.Accepted>(c.submit(MoveAction(id, "p1", survivor, point, c.world)))
-                assertTrue(result.events.any { it.kind == "path-unreachable" })
+                assertTrue(result.events.isEmpty())
+                val blocked = c.advanceToMoveOutcome(next, survivor)
+                assertTrue(Event("path-unreachable", survivor) in blocked.events)
+                next = blocked.stepIndex + 1
             }
         } finally { c.close() }
     }

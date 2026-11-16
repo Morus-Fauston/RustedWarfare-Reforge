@@ -47,11 +47,11 @@ class AutomaticVisionTest {
             assertNull(context.knowledgeSnapshot(context.world, "p1").cell(0, 3).lastKnownBlocked)
             context.enablePathDiagnostics(context.world)
             assertIs<ActionResult.Accepted>(context.submit(MoveAction("move", "p1", "u1", Position(10.0, 30.0), context.world)))
-            context.drainPathDiagnostics(context.world)
+            assertTrue(context.drainPathDiagnostics(context.world).isEmpty())
             val discovered = context.advance(Step(0, 1.0, "sim-tick"))
             assertEquals(Position(10.0, 90.0), discovered.units.single().position)
             assertEquals(CellKnowledge(true, true, 0), context.knowledgeSnapshot(context.world, "p1").cell(0, 3))
-            assertTrue(context.drainPathDiagnostics(context.world).isEmpty())
+            assertEquals(PathSearchReason.USER_MOVE, context.drainPathDiagnostics(context.world).single().reason)
             val stopped = context.advance(Step(1, 1.0, "sim-tick"))
             assertNull(stopped.units.single().moveTarget)
             assertTrue(stopped.units.single().pathPoints.isEmpty())
@@ -136,7 +136,9 @@ class AutomaticVisionTest {
             context.submit(MoveAction("ally-move", "p2", "u2", Position(50.0, 70.0), context.world))
             context.submit(MoveAction("own-move", "p1", "u1", Position(30.0, 70.0), context.world))
             val before = context.observePlayer(context.world, "p1")
-            assertEquals(Position(30.0, 70.0), before.units.single { it.unitId == "u1" }.moveTarget)
+            val own = before.units.single { it.unitId == "u1" }
+            assertNull(own.moveTarget)
+            assertEquals(Position(30.0, 70.0), own.tasks.single().target)
             val ally = before.units.single { it.unitId == "u2" }
             assertNull(ally.moveTarget)
             assertTrue(ally.pathPoints.isEmpty())
@@ -338,6 +340,7 @@ class AutomaticVisionTest {
         try {
             for (context in listOf(hiddenWall, hiddenOpen, truthWall, truthOpen)) {
                 context.submit(MoveAction("same-move", "p1", "u1", Position(90.0, 90.0), context.world))
+                context.advance(Step(0, 1.0, "sim-tick"))
             }
             val wallView = hiddenWall.observePlayer(hiddenWall.world, "p1")
             val openView = hiddenOpen.observePlayer(hiddenOpen.world, "p1")

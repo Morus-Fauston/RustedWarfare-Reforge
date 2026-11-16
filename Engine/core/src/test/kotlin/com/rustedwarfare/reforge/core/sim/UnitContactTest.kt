@@ -203,15 +203,18 @@ class UnitContactTest {
             val target = Position(650.0, 190.0)
             val move = assertIs<ActionResult.Accepted>(context.submit(
                 MoveAction("cross-water", "p1", "mover", target, context.world)))
-            assertTrue(move.events.any { it.kind == "movement-started" })
+            assertTrue(move.events.isEmpty())
+            var started = false
             var blocked = false
             repeat(320) { tick ->
                 val visible = context.advance(Step(tick.toLong(), 1.0, "sim-tick"))
+                started = started || Event("movement-started", "mover") in visible.events
                 blocked = blocked || visible.events.any { it.kind == "movement-blocked" && it.unitId == "mover" }
                 val center = visible.units.single { it.unitId == "mover" }.position
                 assertTrue(center.x <= 542.0 + 1e-9,
                     "The bow penetrated the stationary circle at tick $tick: $center")
             }
+            assertTrue(started)
             val units = context.observePlayer(context.world, "p1").units.associateBy { it.unitId }
             assertEquals(542.0, units.getValue("mover").position.x, 1e-9)
             assertEquals(Position(560.0, 190.0), units.getValue("stationary").position)

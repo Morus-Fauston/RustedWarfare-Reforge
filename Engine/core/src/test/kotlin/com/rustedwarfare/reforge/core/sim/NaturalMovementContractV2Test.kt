@@ -47,10 +47,11 @@ class NaturalMovementContractV2Test {
                 for (context in listOf(empty, hidden)) {
                     val accepted = assertIs<ActionResult.Accepted>(
                         context.submit(MoveAction("move", "p1", "u1", target, context.world)))
-                    assertEquals(listOf("movement-started"), accepted.events.map { it.kind })
-                    assertEquals(listOf(target), context.observe().units.single().pathPoints)
+                    assertTrue(accepted.events.isEmpty())
+                    assertTrue(context.observe().units.single().pathPoints.isEmpty())
                 }
                 val firstEmpty = empty.advance(Step(0, 1.0, "sim-tick"))
+                assertEquals(listOf(target), firstEmpty.units.single().pathPoints)
                 val firstHidden = hidden.advance(Step(0, 1.0, "sim-tick"))
                 assertEquals(firstEmpty.units, firstHidden.units)
                 assertEquals(Position(130.0, 110.0), firstEmpty.units.single().position)
@@ -111,7 +112,7 @@ class NaturalMovementContractV2Test {
         try {
             val target = Position(100.0, 140.0)
             assertIs<ActionResult.Accepted>(context.submit(MoveAction("turn", "p1", "u1", target, context.world)))
-            assertEquals(listOf(target), context.observe().units.single().pathPoints)
+            assertTrue(context.observe().units.single().pathPoints.isEmpty())
             // Twentieths of a degree: 16 quarter-degree accelerations, then five 4.1-degree turns.
             val turnUnits = listOf(5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55, 60, 65, 70, 75, 80,
                 82, 82, 82, 82, 82)

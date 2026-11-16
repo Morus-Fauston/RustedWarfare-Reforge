@@ -9,6 +9,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
 import kotlin.test.assertFailsWith
+import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 import kotlinx.serialization.json.*
 
@@ -29,7 +30,7 @@ class ReplanPerfTest {
             val points=u.getValue("pathPoints").jsonArray.toMutableList();points[points.lastIndex]=goal
             JsonObject(u+("pathPoints" to JsonArray(points)))
         } }
-        val alias=changed(6) { obs->
+        val alias=changed(batch.steps.size - 2) { obs->
             val events=obs.getValue("events").jsonArray.map { v->val e=v.jsonObject
                 if(e["unitId"]==JsonPrimitive("rp-0"))JsonObject(e+("unitId" to JsonPrimitive("rp-1")))else e
             };JsonObject(obs+("events" to JsonArray(events)))
@@ -73,7 +74,7 @@ class ReplanPerfTest {
         val batch=ReplanPerf.measure(unit(),1,TerrainRetention.MEMORY,true)
         val step=batch.steps[2];val s=step.samples.single()
         for(changed in listOf(s.copy(actionId="other"),s.copy(scheduledStep=2),s.copy(searchStart=null),
-            s.copy(searchStart=com.rustedwarfare.reforge.core.sim.Position(50.0,150.0)),s.copy(searchTarget=null),
+            s.copy(searchStart=ReplanPerf.spawnPosition(0)),s.copy(searchTarget=null),
             s.copy(preservedPrefixPointCount=1))) {
             val steps=batch.steps.mapIndexed { i,value->if(i==2)value.copy(samples=listOf(changed))else value }
             val error=assertFailsWith<IllegalStateException> { ReplanPerf.validate(batch.copy(steps=steps)) }
@@ -82,9 +83,13 @@ class ReplanPerfTest {
     }
     @Test fun `development protocol requires its fixed hash before any run output or core execution`() {
         val root=Path.of(System.getProperty("repo.root"))
-        val protocol=root.resolve("TestLab/contracts/P002-perf/RP.development.center.v2.json")
+        val protocol=root.resolve("TestLab/contracts/P002-perf/RP.development.stepwise.v3.json")
         ReplanPerfMain.requireDevelopmentProtocol(protocol,ReplanPerf.DEVELOPMENT_CONTRACT_SHA256)
         assertFailsWith<IllegalArgumentException> { ReplanPerfMain.requireDevelopmentProtocol(protocol,"0".repeat(64)) }
+        val historicalDevelopment = root.resolve("TestLab/contracts/P002-perf/RP.development.center.v2.json")
+        assertFailsWith<IllegalArgumentException> {
+            ReplanPerfMain.requireDevelopmentProtocol(historicalDevelopment, ReplanPerf.DEVELOPMENT_CONTRACT_SHA256)
+        }
         val old=root.resolve("TestLab/contracts/P002-perf/s08-v2.json")
         val oldSha=java.security.MessageDigest.getInstance("SHA-256").digest(java.nio.file.Files.readAllBytes(old)).joinToString("") { "%02x".format(it) }
         assertFailsWith<IllegalArgumentException> { ReplanPerfMain.requireDevelopmentProtocol(old,oldSha) }
@@ -122,6 +127,7 @@ class ReplanPerfTest {
         assertEquals(PathPerfBatch.DEVELOPMENT_GEOMETRY,raw["geometryVersion"]?.jsonPrimitive?.content)
         assertEquals(true,raw["developmentOnly"]?.jsonPrimitive?.boolean)
         assertEquals("development-replanning-only",raw["qualificationScope"]?.jsonPrimitive?.content)
+        assertEquals("stepwise.v3", raw["movePlanningProtocol"]?.jsonPrimitive?.content)
         assertEquals(false,raw["fullTerrainWritebackQualified"]?.jsonPrimitive?.boolean)
     }
     private fun unit() = assertIs<ContentResult.Success<com.rustedwarfare.reforge.core.content.UnitDefinition>>(
@@ -132,7 +138,10 @@ class ReplanPerfTest {
     @Test
     fun `real discovery replans once while unrelated and repeated knowledge does not`() {
         val batch = ReplanPerf.measure(unit(), 1, TerrainRetention.MEMORY, true)
-        assertEquals(listOf(1, 0, 1, 0, 0, 1, 1, 0), batch.steps.map { it.samples.size })
+        val fullReveal = batch.steps.size - 2
+        assertEquals(listOf(1, 0, 1, 0, 0), batch.steps.take(ReplanPerf.REISSUE_STEP).map { it.samples.size })
+        assertEquals(1, batch.steps.subList(ReplanPerf.REISSUE_STEP, fullReveal).sumOf { it.samples.size })
+        assertEquals(listOf(1, 0), batch.steps.takeLast(2).map { it.samples.size })
         assertEquals(listOf(PathSearchReason.USER_MOVE, PathSearchReason.KNOWLEDGE_REPLAN,
             PathSearchReason.USER_MOVE, PathSearchReason.KNOWLEDGE_REPLAN),
             batch.steps.flatMap { it.samples }.map { it.reason })
@@ -177,12 +186,22 @@ class ReplanPerfTest {
             ReplanPerf.validate(measured)
             ReplanPerf.validate(control)
             assertTrue(ReplanPerf.sameGameplay(measured, control))
-            assertEquals(200, measured.steps.sumOf { it.samples.size })
-            assertEquals(100, measured.steps.flatMap { it.samples }.count { it.reason == PathSearchReason.KNOWLEDGE_REPLAN })
+            val samples = measured.steps.flatMap { it.samples }
+            assertEquals(100, samples.count { it.reason == PathSearchReason.USER_MOVE })
+            assertEquals(100, samples.filter { it.reason == PathSearchReason.KNOWLEDGE_REPLAN }
+                .map { it.unitId to it.executionStep }.toSet().size)
             assertFailsWith<IllegalStateException> { ReplanPerf.validate(measured.copy(steps = measured.steps.dropLast(1))) }
             val wrong = measured.steps.toMutableList()
             wrong[2] = wrong[2].copy(samples = emptyList())
             assertFailsWith<IllegalStateException> { ReplanPerf.validate(measured.copy(steps = wrong)) }
+            val revealIndex = measured.steps.lastIndex - 1
+            val reveal = measured.steps[revealIndex]
+            if (retention == TerrainRetention.MEMORY) {
+                val duplicate = assertNotNull(reveal.samples.groupBy { it.unitId }.values.firstOrNull { it.size > 1 })
+                val missingSuffix = measured.steps.toMutableList()
+                missingSuffix[revealIndex] = reveal.copy(samples = reveal.samples - duplicate.first())
+                assertFailsWith<IllegalStateException> { ReplanPerf.validate(measured.copy(steps = missingSuffix)) }
+            }
         }
     }
 }

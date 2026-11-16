@@ -34,22 +34,34 @@ data class ReplanBatch(
 )
 
 object ReplanPerf {
-    const val DEVELOPMENT_CONTRACT_SHA256 = "92d67ebdbec9937e4322d69e2f8c916157ef7f18abab09d727371c2e2d3d1a90"
+    internal const val REISSUE_STEP = 5
+    private const val LAST_PLANNING_STEP = 2048
+    const val DEVELOPMENT_CONTRACT_SHA256 = "4b957115e78376ab2785b586befefc755d54fbfa4bd2b5fe7015085230f96585"
     internal fun identityFields(version: String = PathPerfBatch.DEVELOPMENT_GEOMETRY): JsonObject {
         check(version == PathPerfBatch.DEVELOPMENT_GEOMETRY) { "Unsupported development replanning geometry version" }
         return buildJsonObject {
             put("geometryVersion",version);put("developmentOnly",true)
             put("qualificationScope","development-replanning-only");put("fullTerrainWritebackQualified",false)
+            put("movePlanningProtocol", "stepwise.v3")
             put("validatorContractSha256",DEVELOPMENT_CONTRACT_SHA256)
         }
     }
+
+    internal fun spawnPosition(index: Int) = Position(36.0 + 27 * (index % 10), 150.0 + 30 * (index / 10))
+
+    private fun requestedPosition(index: Int) = Position(550.0, spawnPosition(index).y)
+
     fun measure(unit: UnitDefinition, count: Int, retention: TerrainRetention, diagnostics: Boolean): ReplanBatch {
         require(count in listOf(1, 10, 50))
         require(unit.radius == 11.0)
+        // Isolate knowledge and route publication from contact while the second order drains.
+        val probe = UnitDefinition(unit.id, unit.className, unit.radius, unit.displayRadius, unit.totalFrames,
+            unit.imagePath, unit.imageScale, unit.movement.copy(moveSpeed = 0.01), unit.retainedUnconsumed,
+            unit.fogOfWarSightRange, movementCollision = unit.movementCollision, mass = unit.mass)
         val blocked = BooleanArray(32 * 24) { it % 32 == 15 || it == 33 }
-        val input = Scenario("rp-v1", MapDefinition(32, 24, 20, 20, emptyList(), IntArray(768), BlockingGrid(32, 24, blocked)),
-            mapOf(unit.id to unit), listOf(Player("p1", PlayerControl.LOCAL), Player("p2", PlayerControl.NONE)),
-            (0 until count).map { UnitSpawn("rp-$it", "p1", unit.id, Position(50.0 + 20 * (it % 3), 150.0 + 20 * (it % 8)), 90.0) },
+        val input = Scenario("rp-stepwise-v3", MapDefinition(32, 24, 20, 20, emptyList(), IntArray(768), BlockingGrid(32, 24, blocked)),
+            mapOf(probe.id to probe), listOf(Player("p1", PlayerControl.LOCAL), Player("p2", PlayerControl.NONE)),
+            (0 until count).map { UnitSpawn("rp-$it", "p1", probe.id, spawnPosition(it), 90.0) },
             CoordinateModel("p001.coordinate.v1", "2d", "x-right", "y-down", "top-left", "world-unit", "double", "ieee754-binary64"),
             TimeModel("p001.time.v1", "sim-tick", "ieee754-binary64", "fixed-explicit-delta"), MovementContract(16.0, 4.0))
         val context = (SimulationContext.initialize(input) as? InitResult.Accepted)?.context ?: error("RP initialization rejected")
@@ -62,7 +74,10 @@ object ReplanPerf {
             val begin = System.nanoTime()
             val full = (0 until 24).map { VisibleTerrainCell(15, it, true) }
             val partial = (5..18).map { VisibleTerrainCell(15, it, true) }
-            for (step in 0..7) {
+            val reissued = hashSetOf<String>()
+            val knowledgeRows = hashMapOf<String, Pair<KnowledgeSnapshot, JsonObject>>()
+            var revealAt: Int? = null
+            for (step in 0..(LAST_PLANNING_STEP + 2)) {
                 val projectionStart = System.nanoTime()
                 when (step) {
                     1 -> {
@@ -71,13 +86,14 @@ object ReplanPerf {
                     }
                     2, 3 -> context.acceptVisibleTerrain(context.world, "p1", partial)
                     4 -> context.acceptVisibleTerrain(context.world, "p1", emptyList())
-                    6, 7 -> context.acceptVisibleTerrain(context.world, "p1", full)
                 }
+                if (revealAt?.let { step in it..it + 1 } == true)
+                    context.acceptVisibleTerrain(context.world, "p1", full)
                 val projectionNanos = System.nanoTime() - projectionStart
                 val submitStart = System.nanoTime()
-                if (step == 0 || step == 5) for (index in 0 until count) {
+                if (step == 0 || step == REISSUE_STEP) for (index in 0 until count) {
                     val accepted = context.submit(MoveAction("rp-$step-$index", "p1", "rp-$index",
-                        Position(550.0, 150.0 + 20 * (index % 8)), context.world, step.toLong()))
+                        requestedPosition(index), context.world, step.toLong()))
                     check(accepted is ActionResult.Accepted && accepted.queuedForStep == step.toLong()) { "Move rejected: $accepted" }
                 }
                 val submitNanos = System.nanoTime() - submitStart
@@ -92,17 +108,28 @@ object ReplanPerf {
                     putJsonArray("knowledge") {
                         for (player in listOf("p1", "p2")) {
                             val snapshot = context.knowledgeSnapshot(context.world, player)
-                            add(buildJsonObject {
+                            val cached = knowledgeRows[player]
+                            val row = cached?.takeIf { it.first === snapshot }?.second ?: buildJsonObject {
                                 put("player", player); put("revision", snapshot.revision)
                                 putJsonArray("cells") { snapshot.cells.forEach { cell -> add(buildJsonObject {
                                     put("visible", cell.visible)
                                     put("blocked", cell.lastKnownBlocked?.let(::JsonPrimitive) ?: JsonNull)
                                 }) } }
-                            })
+                            }.also { knowledgeRows[player] = snapshot to it }
+                            add(row)
                         }
                     }
                 }
                 steps += ReplanStep(step, projectionNanos, submitNanos, advanceNanos, drainNanos, samples, gameplay)
+                if (step >= REISSUE_STEP && revealAt == null) {
+                    val starts = observation.events.filter { it.kind == "movement-started" }
+                    check(starts.all { reissued.add(checkNotNull(it.unitId)) }) { "A reissued Move started twice" }
+                    if (reissued.size == count) revealAt = step + 1
+                }
+                if (step == revealAt?.plus(1)) break
+            }
+            check(revealAt != null && revealAt <= LAST_PLANNING_STEP + 1 && steps.last().step == revealAt + 1) {
+                "The reissued Moves did not publish all their routes under the step budget"
             }
             val elapsed = System.nanoTime() - begin
             val heapAfter = heap()
@@ -117,30 +144,65 @@ object ReplanPerf {
         identityFields(batch.geometryVersion)
         check(batch.count in listOf(1, 10, 50))
         val expectedIds = (0 until batch.count).map { "rp-$it" }.toSet()
-        check(batch.steps.map { it.step } == (0..7).toList()) { "Missing RP steps" }
-        val expected = listOf(batch.count, 0, batch.count, 0, 0, batch.count, batch.count, 0)
+        val fullRevealStep = batch.steps.size - 2
+        val reissuingSteps = REISSUE_STEP until fullRevealStep
+        check(fullRevealStep in (REISSUE_STEP + 1)..(LAST_PLANNING_STEP + 1) &&
+            batch.steps.map { it.step } == batch.steps.indices.toList()) { "Missing RP steps" }
+        val reissued = hashSetOf<String>()
+        fun event(kind: String, id: String) = buildJsonObject { put("kind", kind); put("unitId", id) }
+        fun decodePosition(point: JsonObject) =
+            Position(point.getValue("x").jsonPrimitive.double, point.getValue("y").jsonPrimitive.double)
         for ((index, step) in batch.steps.withIndex()) {
+            val observation = step.gameplay.getValue("observation").jsonObject
+            val events = observation.getValue("events").jsonArray.map { it.jsonObject }
+            val lifecycle = events.filterNot { it["kind"] == JsonPrimitive("movement-blocked") }
+            check(events.all { it.getValue("unitId").jsonPrimitive.content in expectedIds }) { "Event refers to an unrelated unit" }
+            val started = if (index in reissuingSteps) {
+                lifecycle.filter { it["kind"] == JsonPrimitive("movement-started") }
+                    .map { it.getValue("unitId").jsonPrimitive.content }
+            } else emptyList()
+            check(started.all { reissued.add(it) }) { "A reissued Move started twice" }
+            if (index == reissuingSteps.last) check(started.isNotEmpty() && reissued == expectedIds) {
+                "Full knowledge must follow the last actual route publication"
+            }
             if (batch.diagnostics) {
-                check(step.samples.size == expected[index]) { "step $index sample count ${step.samples.size} != ${expected[index]}" }
-                check(step.samples.map { it.unitId }.distinct().size == expected[index]) { "Duplicate searched units" }
-                if (expected[index] > 0) check(step.samples.map { it.unitId }.toSet() == expectedIds) { "Wrong searched units" }
-                val reason = if (index in listOf(0, 5)) PathSearchReason.USER_MOVE else PathSearchReason.KNOWLEDGE_REPLAN
+                val expected = when (index) {
+                    0, 2, fullRevealStep -> expectedIds
+                    in reissuingSteps -> started.toSet()
+                    else -> emptySet()
+                }
+                val samplesByUnit = step.samples.groupBy { it.unitId }
+                check(samplesByUnit.keys == expected) { "Wrong searched units at step $index" }
+                val reason = if (index == 0 || index in reissuingSteps) PathSearchReason.USER_MOVE else PathSearchReason.KNOWLEDGE_REPLAN
                 check(step.samples.all { it.actualSearchCalls == 1L && it.reason == reason && it.executionStep == index.toLong() && it.usedPlayerKnowledge }) { "Wrong actual search provenance" }
-                check(step.samples.all { it.outcome == if (index == 6) PathSearchOutcome.UNREACHABLE else PathSearchOutcome.FOUND }) { "Wrong path outcome" }
-                for(sample in step.samples) {
-                    val unitIndex=sample.unitId.removePrefix("rp-").toInt()
-                    val originStep=if(index<5)0 else 5
-                    val start=if(index==0)Position(50.0+20*(unitIndex%3),150.0+20*(unitIndex%8)) else {
-                        val prior=batch.steps[index-1].gameplay.getValue("observation").jsonObject.getValue("units").jsonArray
-                            .single { it.jsonObject.getValue("unitId").jsonPrimitive.content==sample.unitId }.jsonObject.getValue("position").jsonObject
-                        Position(prior.getValue("x").jsonPrimitive.double,prior.getValue("y").jsonPrimitive.double)
+                check(step.samples.all { it.outcome == if (index == fullRevealStep) PathSearchOutcome.UNREACHABLE else PathSearchOutcome.FOUND }) { "Wrong path outcome" }
+                val priorUnits = if (index == 0) emptyMap() else batch.steps[index - 1].gameplay
+                    .getValue("observation").jsonObject.getValue("units").jsonArray.map { it.jsonObject }
+                    .associateBy { it.getValue("unitId").jsonPrimitive.content }
+                for ((unitId, samples) in samplesByUnit) {
+                    val unitIndex = unitId.removePrefix("rp-").toInt()
+                    val originStep = if (index < REISSUE_STEP) 0 else REISSUE_STEP
+                    val prior = priorUnits[unitId]
+                    val start = prior?.let { decodePosition(it.getValue("position").jsonObject) } ?: spawnPosition(unitIndex)
+                    val expectedStarts = if (index == fullRevealStep) {
+                        val path = checkNotNull(prior).getValue("pathPoints").jsonArray.map { decodePosition(it.jsonObject) }
+                        val walls = (0 until 24).map { intArrayOf(15, it) } + listOf(intArrayOf(1, 1))
+                        val prefix = (listOf(start) + path).zipWithNext().takeWhile { (from, to) ->
+                            MotionCenterGeometry.centerPath(listOf(from, to), walls, 32, 24, 20, 20, 11.0)
+                        }
+                        if (prefix.isNotEmpty() && prefix.size < path.size) listOf(prefix.last().second, start)
+                        else listOf(start)
+                    } else listOf(start)
+                    check(samples.map { it.searchStart } == expectedStarts) {
+                        "Wrong actual search input identity for $unitId at $index: ordered origins"
                     }
-                    check(sample.actionId=="rp-$originStep-$unitIndex" && sample.scheduledStep==originStep.toLong() &&
-                        sample.preservedPrefixPointCount==0 && sample.searchStart==start &&
-                        sample.searchTarget==Position(550.0,150.0+20*(unitIndex%8))) { "Wrong actual search input identity" }
+                    check(samples.all {
+                        it.actionId == "rp-$originStep-$unitIndex" && it.scheduledStep == originStep.toLong() &&
+                            it.preservedPrefixPointCount == 0 && it.searchTarget == requestedPosition(unitIndex) &&
+                            (index != fullRevealStep || it.pathPointCount == 0)
+                    }) { "Wrong actual search input identity" }
                 }
             } else check(step.samples.isEmpty())
-            val observation = step.gameplay.getValue("observation").jsonObject
             val units = observation.getValue("units").jsonArray
             check(units.size == batch.count && units.map { it.jsonObject.getValue("unitId").jsonPrimitive.content }.toSet() == expectedIds)
             check(observation.getValue("stepIndex").jsonPrimitive.int == index)
@@ -149,11 +211,17 @@ object ReplanPerf {
                 it.jsonObject.getValue("player").jsonPrimitive.content=="p1"
             }.jsonObject.getValue("cells").jsonArray
             check(ownerCells.size==768) { "Incomplete owner knowledge" }
+            if (index >= fullRevealStep) check((0 until 24).all {
+                ownerCells[it * 32 + 15].jsonObject.getValue("blocked") == JsonPrimitive(true)
+            }) { "Missing full disclosure before rejection" }
             val knownWalls=ownerCells.mapIndexedNotNull { cell,value ->
                 if(value.jsonObject.getValue("blocked").jsonPrimitive.booleanOrNull==true)intArrayOf(cell%32,cell/32)else null
             }
             for (value in units) {
                 val u = value.jsonObject
+                val unitId = u.getValue("unitId").jsonPrimitive.content
+                val unitIndex = unitId.removePrefix("rp-").toInt()
+                val goal = requestedPosition(unitIndex)
                 check(u.getValue("ownerPlayerId").jsonPrimitive.content == "p1" &&
                     u.getValue("typeId").jsonPrimitive.content == batch.typeId) { "Wrong unit ownership/type" }
                 val position = u.getValue("position").jsonObject
@@ -166,33 +234,37 @@ object ReplanPerf {
                 val points = u.getValue("pathPoints").jsonArray.map { point -> point.jsonObject.let {
                     Position(it.getValue("x").jsonPrimitive.double, it.getValue("y").jsonPrimitive.double)
                 } }
-                step.samples.singleOrNull { it.unitId==u.getValue("unitId").jsonPrimitive.content }?.let {
+                step.samples.singleOrNull { it.unitId == unitId }?.let {
                     check(it.pathPointCount==points.size) { "Wrong diagnostic path count" }
                 }
-                if (index >= 6) {
+                if (index >= fullRevealStep) {
                     check(u.getValue("moveTarget") == JsonNull && points.isEmpty()) { "Unreachable target survived" }
+                } else if (index in reissuingSteps && unitId !in reissued) {
+                    val task = u.getValue("tasks").jsonArray.single().jsonObject
+                    check(u.getValue("moveTarget") == JsonNull && points.isEmpty() &&
+                        task.getValue("kind") == JsonPrimitive("MOVE") &&
+                        task.getValue("actionId") == JsonPrimitive("rp-$REISSUE_STEP-$unitIndex") &&
+                        decodePosition(task.getValue("target").jsonObject) == goal) { "Pending Move changed before route publication" }
                 } else {
                     check(u.getValue("moveTarget") != JsonNull && points.isNotEmpty()) { "Active request lost" }
-                    val unitIndex=u.getValue("unitId").jsonPrimitive.content.removePrefix("rp-").toInt()
-                    val goal=Position(550.0,150.0+20*(unitIndex%8))
                     val target=u.getValue("moveTarget").jsonObject
-                    check(Position(target.getValue("x").jsonPrimitive.double,target.getValue("y").jsonPrimitive.double)==goal && points.last()==goal) { "Wrong active request goal or route tail" }
+                    check(decodePosition(target) == goal && points.last() == goal) { "Wrong active request goal or route tail" }
                     check(MotionCenterGeometry.centerPath(listOf(Position(x,y))+points,knownWalls,32,24,20,20,11.0)) { "Illegal known-terrain path at step $index" }
                 }
             }
-            fun event(kind:String,id:String)=buildJsonObject { put("kind",kind);put("unitId",id) }
             val expectedEvents=when(index) {
-                0,5 -> (0 until batch.count).map { event("movement-started","rp-$it") }
-                6 -> expectedIds.sorted().flatMap { listOf(event("movement-cancelled",it),event("path-unreachable",it)) }
+                0 -> (0 until batch.count).map { event("movement-started","rp-$it") }
+                fullRevealStep -> expectedIds.sorted().flatMap { listOf(event("movement-cancelled",it),event("path-unreachable",it)) }
+                in reissuingSteps -> started.map { event("movement-started", it) }
                 else -> emptyList()
             }
-            check(observation.getValue("events").jsonArray==JsonArray(expectedEvents)) { "Wrong per-unit request lifecycle events" }
-            val expectedResults=if(index==0 || index==5)(0 until batch.count).map { i->buildJsonObject {
+            check(lifecycle == expectedEvents) { "Wrong per-unit request lifecycle events" }
+            val expectedResults=if(index==0 || index==REISSUE_STEP)(0 until batch.count).map { i->buildJsonObject {
                 put("actionId","rp-$index-$i");put("status","accepted");put("queuedForStep",JsonNull)
-                put("events",JsonArray(listOf(event("movement-started","rp-$i"))))
+                put("events",JsonArray(emptyList()))
             } }else emptyList()
             check(observation.getValue("actionResults").jsonArray==JsonArray(expectedResults)) { "Wrong original request outcomes" }
-            if (index in 4..5) {
+            if (index in 4 until fullRevealStep) {
                 val p1 = step.gameplay.getValue("knowledge").jsonArray[0].jsonObject.getValue("cells").jsonArray
                 check(p1[10 * 32 + 15].jsonObject.getValue("blocked") ==
                     if (batch.retention == TerrainRetention.MEMORY) JsonPrimitive(true) else JsonNull)

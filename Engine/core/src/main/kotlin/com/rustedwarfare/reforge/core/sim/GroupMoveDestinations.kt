@@ -3,18 +3,17 @@ package com.rustedwarfare.reforge.core.sim
 import com.rustedwarfare.reforge.core.content.MovementCollisionShape
 import com.rustedwarfare.reforge.core.content.MapDefinition
 
-/** A selection's proposals, validated again as each ordinary Move is submitted. */
-class GroupMovePlan internal constructor(
+/** The selected members and target of one ordinary group order. */
+class GroupMoveRequest internal constructor(
     internal val world: WorldHandle,
     internal val completedStep: Long?,
     internal val actor: String,
     internal val click: Position,
     internal val members: Set<String>,
-    internal val destinations: Map<String, GroupMoveSlot>,
 )
 
 internal data class GroupMoveSlot(val position: Position, val heading: Double, val path: List<Position>)
-internal data class GroupMoveReservation(val plan: GroupMovePlan, val slot: GroupMoveSlot, val occupiedTicks: Long = 0)
+internal data class GroupMoveReservation(val plan: GroupMoveRequest, val slot: GroupMoveSlot, val occupiedTicks: Long = 0)
 
 internal object GroupMoveDestinations {
     fun positions(map: MapDefinition, click: Position): List<Position> {
@@ -27,36 +26,147 @@ internal object GroupMoveDestinations {
         }.sortedWith(compareBy<Position> { ScreenPlane.distanceSquared(click, it) }.thenBy { it.x }.thenBy { it.y })
     }
 
-    fun assign(members: List<MutableUnit>, points: List<Position>,
-               route: (MutableUnit, Position) -> List<Position>?,
-               vacant: (MutableUnit, GroupMoveSlot) -> Boolean): Map<String, GroupMoveSlot> {
-        val choices = members.map { unit ->
-            unit to available(unit, points, { route(unit, it) }, { vacant(unit, it) }).toList()
+    class Assignment(private val choices: List<Pair<MutableUnit, List<PlannedMove>>>) {
+        private enum class Phase { FILTER, RESERVE, RECONCILE }
+        private enum class Check { MORE, CLEAR, BLOCKED }
+        private var phase = Phase.FILTER
+        private val staying = mutableListOf<MutableUnit>()
+        private val stayingIds = hashSetOf<String>()
+        private val usable = mutableListOf<Pair<MutableUnit, List<PlannedMove>>>()
+        private val reserved = mutableListOf<Pair<MutableUnit, PlannedMove>>()
+        private val reservedIds = hashSetOf<String>()
+        private val conflicts = mutableListOf<MutableUnit>()
+        private var memberIndex = 0
+        private var optionIndex = 0
+        private var pairIndex = 0
+        private val filteredOptions = mutableListOf<PlannedMove>()
+        var destinations: Map<String, PlannedMove>? = null
+            private set
+
+        fun fork(): Assignment = Assignment(choices).also {
+            it.phase = phase
+            it.staying.addAll(staying)
+            it.stayingIds.addAll(stayingIds)
+            it.usable.addAll(usable)
+            it.reserved.addAll(reserved)
+            it.reservedIds.addAll(reservedIds)
+            it.conflicts.addAll(conflicts)
+            it.memberIndex = memberIndex
+            it.optionIndex = optionIndex
+            it.pairIndex = pairIndex
+            it.filteredOptions.addAll(filteredOptions)
+            it.destinations = destinations
         }
-        val priority = compareBy<Pair<MutableUnit, List<GroupMoveSlot>>> { it.second.size }.thenBy { it.first.updateKey }
-        val staying = linkedMapOf<String, MutableUnit>()
-        while (true) {
-            val usable = choices.map { (unit, options) ->
-                unit to options.filter { slot ->
-                    staying.values.none { other -> other !== unit && overlaps(unit, slot, other) }
+
+        fun advance(budget: PathWorkBudget) {
+            while (destinations == null && budget.take()) {
+                when (phase) {
+                    Phase.FILTER -> filterOne()
+                    Phase.RESERVE -> reserveOne()
+                    Phase.RECONCILE -> reconcileOne()
                 }
-            }.sortedWith(priority)
-            val reserved = mutableListOf<Pair<MutableUnit, GroupMoveSlot>>()
-            for ((unit, candidates) in usable) {
-                val slot = candidates.firstOrNull { candidate ->
-                    reserved.none { (other, assigned) -> overlaps(unit, candidate, other, assigned) }
-                } ?: continue
-                reserved += unit to slot
             }
-            val assigned = reserved.associate { (unit, slot) -> unit.unitId to slot }
-            // A member without a destination keeps its existing pose. Reconcile any
-            // reservations depending on it leaving, using the already computed paths.
-            val leftInPlace = members.filter { it.unitId !in assigned && it.unitId !in staying }
-            val conflicts = leftInPlace.filter { other ->
-                reserved.any { (unit, slot) -> overlaps(unit, slot, other) }
+        }
+
+        private fun filterOne() {
+            if (memberIndex == choices.size) {
+                usable.sortWith(compareBy<Pair<MutableUnit, List<PlannedMove>>> { it.second.size }.thenBy { it.first.updateKey })
+                phase = Phase.RESERVE
+                memberIndex = 0
+                return
             }
-            if (conflicts.isEmpty()) return assigned
-            for (other in conflicts) staying[other.unitId] = other
+            val (unit, options) = choices[memberIndex]
+            if (optionIndex == options.size) {
+                usable += unit to filteredOptions.toList()
+                filteredOptions.clear()
+                nextMember()
+                return
+            }
+            val option = options[optionIndex]
+            val slot = checkNotNull(option.slot)
+            when (checkPair(staying.size) { staying[it] !== unit && overlaps(unit, slot, staying[it]) }) {
+                Check.MORE -> Unit
+                Check.CLEAR -> {
+                    filteredOptions += option
+                    nextOption()
+                }
+                Check.BLOCKED -> nextOption()
+            }
+        }
+
+        private fun reserveOne() {
+            if (memberIndex == usable.size) {
+                phase = Phase.RECONCILE
+                memberIndex = 0
+                return
+            }
+            val (unit, options) = usable[memberIndex]
+            if (optionIndex == options.size) return nextMember()
+            val option = options[optionIndex]
+            val slot = checkNotNull(option.slot)
+            when (checkPair(reserved.size) { index ->
+                val (other, assigned) = reserved[index]
+                overlaps(unit, slot, other, checkNotNull(assigned.slot))
+            }) {
+                Check.MORE -> Unit
+                Check.CLEAR -> {
+                    reserved += unit to option
+                    reservedIds += unit.unitId
+                    nextMember()
+                }
+                Check.BLOCKED -> nextOption()
+            }
+        }
+
+        private fun reconcileOne() {
+            if (memberIndex < choices.size) {
+                val unit = choices[memberIndex].first
+                // A member without a destination keeps its current pose.
+                if (unit.unitId in stayingIds || unit.unitId in reservedIds) return nextMember()
+                when (checkPair(reserved.size) { index ->
+                    val (other, planned) = reserved[index]
+                    overlaps(other, checkNotNull(planned.slot), unit)
+                }) {
+                    Check.MORE -> Unit
+                    Check.CLEAR -> nextMember()
+                    Check.BLOCKED -> {
+                        conflicts += unit
+                        nextMember()
+                    }
+                }
+                return
+            }
+            if (conflicts.isEmpty()) {
+                destinations = reserved.associate { (unit, slot) -> unit.unitId to slot }
+            } else {
+                for (unit in conflicts) {
+                    staying += unit
+                    stayingIds += unit.unitId
+                }
+                usable.clear()
+                reserved.clear()
+                reservedIds.clear()
+                conflicts.clear()
+                phase = Phase.FILTER
+                memberIndex = 0
+            }
+        }
+
+        private fun nextMember() {
+            memberIndex++
+            optionIndex = 0
+            pairIndex = 0
+        }
+
+        private fun nextOption() {
+            optionIndex++
+            pairIndex = 0
+        }
+
+        /** Evaluate no more than one pair under the caller's current work allowance. */
+        private inline fun checkPair(size: Int, overlaps: (Int) -> Boolean): Check {
+            if (pairIndex < size && overlaps(pairIndex++)) return Check.BLOCKED
+            return if (pairIndex == size) Check.CLEAR else Check.MORE
         }
     }
 

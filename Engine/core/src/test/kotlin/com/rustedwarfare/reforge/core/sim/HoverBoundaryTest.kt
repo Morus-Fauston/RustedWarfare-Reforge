@@ -27,11 +27,12 @@ class HoverBoundaryTest {
         val context = assertIs<InitResult.Accepted>(initialized, initialized.toString()).context
         try {
             assertIs<ActionResult.Accepted>(context.submit(MoveAction("blind", "p1", "h", Position(700.0, 210.0), context.world)))
-            assertEquals(listOf(Position(700.0, 210.0)), context.observe().units.single { it.unitId == "h" }.pathPoints)
             var corrections = 0
             repeat(450) { index ->
                 val frame = context.advance(Step(index.toLong(), 1.0, "sim-tick"))
-                assertTrue(frame.units.single { it.unitId == "h" }.position.x < 600.0)
+                val moving = frame.units.single { it.unitId == "h" }
+                if (index == 0) assertEquals(listOf(Position(700.0, 210.0)), moving.pathPoints)
+                assertTrue(moving.position.x < 600.0)
                 corrections += frame.events.count { it.kind == "movement-blocked" }
             }
             assertTrue(corrections > 0)
@@ -39,8 +40,10 @@ class HoverBoundaryTest {
             assertTrue(view.units.none { it.unitId == "wall" })
             assertNull(view.knowledge!!.cell(30, 10).lastKnownGroundGid)
             val outside = assertIs<ActionResult.Accepted>(context.submit(MoveAction("outside", "p1", "h", Position(900.0, 210.0), context.world)))
-            assertTrue(outside.events.any { it.kind == "path-unreachable" })
-            assertNull(context.observe().units.single { it.unitId == "h" }.moveTarget)
+            assertTrue(outside.events.isEmpty())
+            val failed = context.advance(Step(450, 1.0, "sim-tick"))
+            assertTrue(Event("path-unreachable", "h") in failed.events)
+            assertNull(failed.units.single { it.unitId == "h" }.moveTarget)
         } finally { context.close() }
     }
 

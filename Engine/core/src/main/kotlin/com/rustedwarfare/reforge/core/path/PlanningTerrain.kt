@@ -43,6 +43,19 @@ class PlanningTerrain(
         return PlanningTerrain(widthTiles, heightTiles, tileWidth, tileHeight, combined)
     }
 
+    internal fun withUpdatedKnowledge(previous: KnowledgeSnapshot, current: KnowledgeSnapshot,
+                                      movementType: MovementType, tileSets: List<TileSetDefinition>): PlanningTerrain {
+        var updated: BooleanArray? = null
+        current.forEachTerrainChangeFrom(previous) { index, knowledge ->
+            val blocked = knowledge.movementBlocked(movementType, tileSets)
+            if (blocked != cells[index]) {
+                val output = updated ?: cells.copyOf().also { updated = it }
+                output[index] = blocked
+            }
+        }
+        return updated?.let { PlanningTerrain(widthTiles, heightTiles, tileWidth, tileHeight, it) } ?: this
+    }
+
     companion object {
         private fun validateShape(width: Int, height: Int, tileWidth: Int, tileHeight: Int) {
             if(width<=0 || height<=0 || width.toLong()*height>Int.MAX_VALUE) throw PlanningException("invalid-dimensions", "Positive dimensions with product within Int are required")

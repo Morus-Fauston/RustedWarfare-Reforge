@@ -29,3 +29,12 @@ internal object TestContentFactory {
         )
     }
 }
+
+internal fun SimulationContext.advanceToMoveOutcome(firstStep: Long, unitId: String): Observation {
+    for (step in firstStep until firstStep + 6000) {
+        val frame = advance(Step(step, 1.0, "sim-tick"))
+        if (frame.events.any { it.unitId == unitId && (it.kind == "movement-started" || it.kind == "path-unreachable") })
+            return frame
+    }
+    error("No movement planning outcome for $unitId")
+}

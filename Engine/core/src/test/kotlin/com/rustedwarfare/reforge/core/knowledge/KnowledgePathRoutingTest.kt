@@ -101,7 +101,9 @@ class KnowledgePathRoutingTest {
             blockedContext.enableKnowledge(blockedContext.world, rules(PathInformationSource.PLAYER_KNOWLEDGE))
 
             openContext.submit(MoveAction("m-open", "p1", "u1", target, openContext.world))
+            openContext.advance(Step(0, 1.0, "sim-tick"))
             blockedContext.submit(MoveAction("m-blocked", "p1", "u1", target, blockedContext.world))
+            blockedContext.advance(Step(0, 1.0, "sim-tick"))
 
             assertEquals(straight, openContext.observe().units.single().pathPoints)
             assertEquals(
@@ -128,7 +130,9 @@ class KnowledgePathRoutingTest {
             legacyMode.enableKnowledge(legacyMode.world, rules(PathInformationSource.ORIGINAL_COMPATIBILITY))
 
             notEnabled.submit(MoveAction("m-plain", "p1", "u1", target, notEnabled.world))
+            notEnabled.advance(Step(0, 1.0, "sim-tick"))
             legacyMode.submit(MoveAction("m-legacy", "p1", "u1", target, legacyMode.world))
+            legacyMode.advance(Step(0, 1.0, "sim-tick"))
 
             assertEquals(upper, notEnabled.observe().units.single().pathPoints)
             assertEquals(
@@ -164,6 +168,7 @@ class KnowledgePathRoutingTest {
 
             // p1 has an empty history: p2's blocked cell must not leak into p1's route.
             context.submit(MoveAction("m-p1", "p1", "u1", target, world))
+            context.advance(Step(0, 1.0, "sim-tick"))
             assertEquals(
                 straight,
                 context.observe().units.single().pathPoints,
@@ -172,6 +177,7 @@ class KnowledgePathRoutingTest {
 
             context.acceptVisibleTerrain(world, "p1", listOf(VisibleTerrainCell(2, 2, true)))
             context.submit(MoveAction("m-p1b", "p1", "u1", target, world))
+            context.advance(Step(1, 1.0, "sim-tick"))
             assertEquals(
                 upper,
                 context.observe().units.single().pathPoints,
@@ -195,6 +201,7 @@ class KnowledgePathRoutingTest {
             memory.acceptVisibleTerrain(mw, "p1", listOf(VisibleTerrainCell(2, 2, true)))
             memory.acceptVisibleTerrain(mw, "p1", emptyList())
             memory.submit(MoveAction("m-mem", "p1", "u1", target, mw))
+            memory.advance(Step(0, 1.0, "sim-tick"))
             assertEquals(upper, memory.observe().units.single().pathPoints, "MEMORY keeps the last known blocked cell")
 
             val hw = hardcore.world
@@ -202,6 +209,7 @@ class KnowledgePathRoutingTest {
             hardcore.acceptVisibleTerrain(hw, "p1", listOf(VisibleTerrainCell(2, 2, true)))
             hardcore.acceptVisibleTerrain(hw, "p1", emptyList())
             hardcore.submit(MoveAction("m-hard", "p1", "u1", target, hw))
+            hardcore.advance(Step(0, 1.0, "sim-tick"))
             assertEquals(straight, hardcore.observe().units.single().pathPoints, "HARDCORE_FORGET clears knowledge out of view")
         } finally {
             memory.close()
@@ -221,6 +229,7 @@ class KnowledgePathRoutingTest {
             reachable.enableKnowledge(world, rules(PathInformationSource.PLAYER_KNOWLEDGE))
 
             reachable.submit(MoveAction("m-first", "p1", "u1", target, world))
+            reachable.advance(Step(0, 1.0, "sim-tick"))
             assertEquals(straight, reachable.observe().units.single().pathPoints)
 
             // Goal cell (3,2) is learned blocked; an unknown goal is still planned, a known one is not.
@@ -228,7 +237,9 @@ class KnowledgePathRoutingTest {
             val result = reachable.submit(MoveAction("m-goal", "p1", "u1", target, world))
             assertIs<com.rustedwarfare.reforge.core.sim.ActionResult.Accepted>(result)
 
-            val unit = reachable.observe().units.single()
+            assertTrue(result.events.isEmpty())
+            val planned = reachable.advance(Step(1, 1.0, "sim-tick"))
+            val unit = planned.units.single()
             assertNull(unit.moveTarget)
             assertTrue(unit.pathPoints.isEmpty())
             assertEquals(
@@ -236,7 +247,7 @@ class KnowledgePathRoutingTest {
                     com.rustedwarfare.reforge.core.sim.Event("movement-cancelled", "u1"),
                     com.rustedwarfare.reforge.core.sim.Event("path-unreachable", "u1"),
                 ),
-                result.events,
+                planned.events,
             )
         } finally {
             reachable.close()
@@ -263,7 +274,9 @@ class KnowledgePathRoutingTest {
             truthOpen.enableKnowledge(truthOpen.world, rules(PathInformationSource.PLAYER_KNOWLEDGE))
 
             unknownTruthBlocked.submit(MoveAction("m-u", "p1", "u1", target, unknownTruthBlocked.world))
+            unknownTruthBlocked.advance(Step(0, 1.0, "sim-tick"))
             truthOpen.submit(MoveAction("m-o", "p1", "u1", target, truthOpen.world))
+            truthOpen.advance(Step(0, 1.0, "sim-tick"))
 
             assertEquals(straight, truthOpen.observe().units.single().pathPoints)
             assertEquals(
@@ -275,7 +288,7 @@ class KnowledgePathRoutingTest {
             // (3,2) spans x 60..80, y 40..60; radius is 1.0 from the definition built above.
             var sawBlocked = false
             var worstDistance = Double.MAX_VALUE
-            for (stepIndex in 0L until 200L) {
+            for (stepIndex in 1L until 200L) {
                 val observation = unknownTruthBlocked.advance(Step(stepIndex, 1.0, "sim-tick"))
                 val unit = observation.units.single()
 
@@ -327,6 +340,7 @@ class KnowledgePathRoutingTest {
             assertNotSame(oldWorld, newWorld)
 
             context.submit(MoveAction("m-new", "p1", "u1", target, newWorld))
+            context.advance(Step(0, 1.0, "sim-tick"))
             assertEquals(
                 upper,
                 context.observe().units.single().pathPoints,
@@ -364,6 +378,7 @@ class KnowledgePathRoutingTest {
 
             // First rules must still govern: PLAYER_KNOWLEDGE with empty history ignores truth blocking.
             context.submit(MoveAction("m-keep", "p1", "u1", target, world))
+            context.advance(Step(0, 1.0, "sim-tick"))
             assertEquals(
                 straight,
                 context.observe().units.single().pathPoints,

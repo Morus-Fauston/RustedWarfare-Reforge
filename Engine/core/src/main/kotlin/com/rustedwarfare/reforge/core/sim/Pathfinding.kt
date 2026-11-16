@@ -12,7 +12,109 @@ internal interface PathPolicy {
     fun findPath(map: PlanningTerrain, start: Position, target: Position, radius: Double,
                  counters: PathSearchCounters? = null, targetRange: Double = 0.0,
                  hull: HullRoute? = null, occupancy: RouteOccupancy? = null): List<Position>?
+
+    fun beginExact(map: PlanningTerrain, start: Position, target: Position, radius: Double,
+                   hull: HullRoute? = null, occupancy: RouteOccupancy? = null,
+                   counters: PathSearchCounters? = null): ExactPathSearch
 }
+
+
+internal data class PathGridKey(val col: Int, val row: Int, val heading: Double = 0.0)
+
+internal class PathWorkBudget(private var remaining: Int) {
+    val exhausted: Boolean get() = remaining == 0
+
+    fun take(cost: Int = 8): Boolean {
+        if (remaining < cost) {
+            remaining = 0
+            return false
+        }
+        remaining -= cost
+        return true
+    }
+}
+
+internal interface ExactPathSearch {
+    val finished: Boolean
+    val path: List<Position>?
+    val counters: PathSearchCounters?
+    fun fork(rollback: PathSearchRollback): ExactPathSearch
+    fun advance(budget: PathWorkBudget, cache: PathClearanceCache? = null)
+}
+
+/** Shared mutable search data needs undo only for work done in the current candidate step. */
+internal class PathSearchRollback {
+    private var changes: MutableList<() -> Unit>? = null
+
+    fun record(undo: () -> Unit) {
+        val recorded = changes ?: mutableListOf<() -> Unit>().also { changes = it }
+        recorded += undo
+    }
+
+    fun commit() { changes = null }
+
+    fun restore() {
+        changes?.asReversed()?.forEach { it() }
+        changes = null
+    }
+}
+
+/** Reuse clearance grids and repeated shape checks inside one group order. */
+internal class PathClearanceCache(
+    private val grids: MutableMap<Pair<PlanningTerrain, Double>, BooleanArray> = HashMap(),
+    private val rectangleChecks: RectangleChecks = RectangleChecks(),
+) {
+    fun fork(): PathClearanceCache = PathClearanceCache(HashMap(grids), rectangleChecks)
+    fun get(terrain: PlanningTerrain, radius: Double): BooleanArray? = grids[terrain to radius]
+    fun put(terrain: PlanningTerrain, radius: Double, cells: BooleanArray) {
+        grids[terrain to radius] = cells
+    }
+
+    fun rectangularArrival(map: PlanningTerrain, terrain: HullTerrainGrid, hull: RectangularDeparture,
+                           from: Position, target: Position, fromHeading: Double): Double? =
+        rectangleChecks.arrival(map, terrain, hull, from, target, fromHeading)
+
+    fun rectangularNeighbors(map: PlanningTerrain, hull: RectangularDeparture, radius: Double,
+                             from: Position, heading: Double, build: () -> List<PathGridKey>): List<PathGridKey> =
+        rectangleChecks.neighbors(map, hull, radius, from, heading, build)
+
+    /** These caches affect cost on the host but every queue pop consumes the same work allowance. */
+    internal class RectangleChecks {
+        private data class Turn(val map: PlanningTerrain, val shape: MovementCollisionShape.Rectangle,
+                                val at: Position, val from: Double, val to: Double)
+        private data class Sweep(val map: PlanningTerrain, val shape: MovementCollisionShape.Rectangle,
+                                 val from: Position, val target: Position, val heading: Double)
+        private data class NeighborSource(val map: PlanningTerrain, val shape: MovementCollisionShape.Rectangle,
+                                          val radius: Double, val reverse: Boolean,
+                                          val at: Position, val heading: Double)
+        private val turns = BoundedChecks<Turn, Boolean>()
+        private val sweeps = BoundedChecks<Sweep, Boolean>()
+        private val local = BoundedChecks<NeighborSource, List<PathGridKey>>()
+
+        fun arrival(map: PlanningTerrain, terrain: HullTerrainGrid, hull: RectangularDeparture,
+                    from: Position, target: Position, heading: Double): Double? {
+            val next = hull.headingTowards(from, target, heading)
+            val movesClear = sweeps.getOrPut(Sweep(map, hull.shape, from, target, next)) {
+                val rectangle = RectangularTerrain(hull.shape, next)
+                rectangle.contains(terrain, from) && rectangle.resolve(terrain, from, target) == target
+            }
+            if (!movesClear) return null
+            val turnsClear = turns.getOrPut(Turn(map, hull.shape, from, heading, next)) {
+                RectangularTurn.resolve(terrain, hull.shape, from, heading, next) == next
+            }
+            return next.takeIf { turnsClear }
+        }
+
+        fun neighbors(map: PlanningTerrain, hull: RectangularDeparture, radius: Double, from: Position,
+                      heading: Double, build: () -> List<PathGridKey>): List<PathGridKey> =
+            local.getOrPut(NeighborSource(map, hull.shape, radius, hull.reverse, from, heading), build)
+
+        private class BoundedChecks<K, V> : LinkedHashMap<K, V>(64, .75f, true) {
+            override fun removeEldestEntry(eldest: MutableMap.MutableEntry<K, V>?) = size > 32_768
+        }
+    }
+}
+
 
 internal fun interface RouteOccupancy {
     fun allows(start: Position, target: Position, fromHeading: Double, toHeading: Double): Boolean
@@ -26,97 +128,263 @@ internal class ClearanceAStarPolicy(
     override fun findPath(map: PlanningTerrain, start: Position, target: Position, radius: Double,
                           counters: PathSearchCounters?, targetRange: Double,
                           hull: HullRoute?, occupancy: RouteOccupancy?): List<Position>? {
-        if (counters != null) counters.actualSearchCalls++
         require(targetRange.isFinite() && targetRange >= 0.0)
-        if (targetRange > 0.0) return findPathToRange(map, start, target, radius, targetRange, counters)
-        if (!MapBounds.contains(map.widthTiles.toDouble() * map.tileWidth,
-                map.heightTiles.toDouble() * map.tileHeight, start, radius) ||
-            !MapBounds.contains(map.widthTiles.toDouble() * map.tileWidth,
-                map.heightTiles.toDouble() * map.tileHeight, target, radius)) return null
-        val startCell = cellOf(map, start) ?: return null
-        val goalCell = cellOf(map, target) ?: return null
-        if (terrain.intersects(map, start, radius) || terrain.intersects(map, target, radius)) return null
-        val hullGrid = hull?.let { HullTerrainGrid.authorized(map) }
-        val checkEverySegment = hull != null || occupancy != null
-        fun arrival(from: Position, point: Position, heading: Double): Double? {
+        if (targetRange > 0.0) {
+            if (counters != null) counters.actualSearchCalls++
+            return findPathToRange(map, start, target, radius, targetRange, counters)
+        }
+        val search = beginExact(map, start, target, radius, hull, occupancy, counters)
+        while (!search.finished) search.advance(PathWorkBudget(Int.MAX_VALUE))
+        return search.path
+    }
+
+    override fun beginExact(map: PlanningTerrain, start: Position, target: Position, radius: Double,
+                            hull: HullRoute?, occupancy: RouteOccupancy?, counters: PathSearchCounters?): ExactPathSearch =
+        ClearPathSearch(map, start, target, radius, hull, occupancy, counters)
+
+    private data class Node(val key: PathGridKey, val g: Int, val f: Int)
+    private class Frontier {
+        val open = PriorityQueue<Node>(nodeOrder)
+        val parents = HashMap<PathGridKey, PathGridKey>()
+        val costs = HashMap<PathGridKey, Int>()
+    }
+
+    private enum class SearchPhase { START, CLEARANCE, SEARCH, RECONSTRUCT, SIMPLIFY, FINISHED }
+
+    private inner class ClearPathSearch(
+        private val map: PlanningTerrain,
+        private val start: Position,
+        private val target: Position,
+        private val radius: Double,
+        private val hull: HullRoute?,
+        private val occupancy: RouteOccupancy?,
+        override val counters: PathSearchCounters?,
+    ) : ExactPathSearch {
+        private val checkEverySegment = hull != null || occupancy != null
+        private val offsets = if (hull is RectangularDeparture) rectangleOffsets else orthogonal
+        private var phase = SearchPhase.START
+        private var startKey: PathGridKey? = null
+        private var goal: Pair<Int, Int>? = null
+        private var hullGrid: HullTerrainGrid? = null
+        private var clearance: BooleanArray? = null
+        private var cellsChecked = 0
+        private var frontier: Frontier? = null
+        private var rollback: PathSearchRollback? = null
+        private var cursor: PathGridKey? = null
+        private var rawPoints: MutableList<Position>? = null
+        private var simplified: MutableList<Position>? = null
+        private var anchor = start
+        private var simplifyStart = 0
+        private var simplifyProbe = 0
+        override var path: List<Position>? = null
+            private set
+        override val finished: Boolean get() = phase == SearchPhase.FINISHED
+
+        override fun fork(rollback: PathSearchRollback): ExactPathSearch =
+            ClearPathSearch(map, start, target, radius, hull, occupancy, counters?.copy()).also {
+                it.phase = phase
+                it.startKey = startKey
+                it.goal = goal
+                it.hullGrid = hullGrid
+                // Clearance writes only beyond cellsChecked. The old prefix is intact after a failed step.
+                it.clearance = clearance
+                it.cellsChecked = cellsChecked
+                it.frontier = frontier
+                if (frontier != null || rawPoints != null || simplified != null) it.rollback = rollback
+                it.cursor = cursor
+                it.rawPoints = rawPoints
+                it.simplified = simplified
+                it.anchor = anchor
+                it.simplifyStart = simplifyStart
+                it.simplifyProbe = simplifyProbe
+                it.path = path
+            }
+
+        override fun advance(budget: PathWorkBudget, cache: PathClearanceCache?) {
+            while (!finished && budget.take(workCost(cache))) {
+                when (phase) {
+                    SearchPhase.START -> initialize(cache)
+                    SearchPhase.CLEARANCE -> prepareClearance(cache)
+                    SearchPhase.SEARCH -> expand(cache)
+                    SearchPhase.RECONSTRUCT -> reconstruct()
+                    SearchPhase.SIMPLIFY -> simplifyOne()
+                    SearchPhase.FINISHED -> error("Completed path cannot consume more work")
+                }
+            }
+        }
+
+        private fun workCost(cache: PathClearanceCache?): Int =
+            if (phase == SearchPhase.SEARCH && cache != null && hull is RectangularDeparture && occupancy == null) 1 else 8
+
+        private fun complete(points: List<Position>? = null) {
+            path = points
+            phase = SearchPhase.FINISHED
+        }
+
+        private fun initialize(cache: PathClearanceCache?) {
+            if (counters != null) counters.actualSearchCalls++
+            val width = map.widthTiles.toDouble() * map.tileWidth
+            val height = map.heightTiles.toDouble() * map.tileHeight
+            if (!MapBounds.contains(width, height, start, radius) ||
+                !MapBounds.contains(width, height, target, radius)) return complete()
+            val startCell = cellOf(map, start) ?: return complete()
+            goal = cellOf(map, target) ?: return complete()
+            if (terrain.intersects(map, start, radius) || terrain.intersects(map, target, radius)) return complete()
+            hullGrid = hull?.let { HullTerrainGrid.authorized(map) }
+            val heading = hull?.heading ?: 0.0
+            if (arrival(start, target, heading, cache) != null) return complete(listOf(target))
+            startKey = PathGridKey(startCell.first, startCell.second, heading)
+            val cached = cache?.get(map, radius)
+            clearance = cached ?: BooleanArray(map.widthTiles * map.heightTiles)
+            if (cached == null) phase = SearchPhase.CLEARANCE else beginQueue()
+        }
+
+        private fun prepareClearance(cache: PathClearanceCache?) {
+            val cells = checkNotNull(clearance)
+            val limit = minOf(cells.size, cellsChecked + CLEARANCE_CELLS_PER_WORK)
+            while (cellsChecked < limit) {
+                val index = cellsChecked++
+                if (counters != null) counters.candidatesChecked++
+                cells[index] = candidatePolicy.allows(map, index % map.widthTiles, index / map.widthTiles, radius)
+            }
+            if (cellsChecked == cells.size) {
+                cache?.put(map, radius, cells)
+                beginQueue()
+            }
+        }
+
+        private fun beginQueue() {
+            val (col, row) = checkNotNull(goal)
+            if (!isCandidate(col, row)) return complete()
+            val first = checkNotNull(startKey)
+            val routes = Frontier()
+            frontier = routes
+            routes.costs[first] = 0
+            enqueue(routes, first, 0)
+            phase = SearchPhase.SEARCH
+        }
+
+        private fun isCandidate(col: Int, row: Int): Boolean = checkNotNull(clearance)[row * map.widthTiles + col]
+
+        private fun arrival(from: Position, point: Position, heading: Double, cache: PathClearanceCache?): Double? {
+            if (cache != null && hull is RectangularDeparture && occupancy == null)
+                return cache.rectangularArrival(map, checkNotNull(hullGrid), hull, from, point, heading)
             val nextHeading = if (hull == null) {
                 if (!PlanningSegmentClearance.allows(map, from, point, radius)) return null
                 heading
             } else hull.arrival(checkNotNull(hullGrid), from, point, heading) ?: return null
             return nextHeading.takeIf { occupancy?.allows(from, point, heading, nextHeading) != false }
         }
-        if (arrival(start, target, hull?.heading ?: 0.0) != null) return listOf(target)
 
-        val candidates = Array(map.heightTiles) { BooleanArray(map.widthTiles) }
-        for (row in 0 until map.heightTiles) for (col in 0 until map.widthTiles) {
-            if (counters != null) counters.candidatesChecked++
-            candidates[row][col] = candidatePolicy.allows(map, col, row, radius)
+        private fun enqueue(routes: Frontier, key: PathGridKey, cost: Int) {
+            val (goalCol, goalRow) = checkNotNull(goal)
+            val remaining = if (hull == null) heuristic(key.col, key.row, goalCol, goalRow)
+                else maxOf(kotlin.math.abs(key.col - goalCol), kotlin.math.abs(key.row - goalRow))
+            if (counters != null) {
+                counters.enqueued++
+                counters.heuristicCalls++
+            }
+            val node = Node(key, cost, cost + remaining)
+            routes.open += node
+            rollback?.record { check(routes.open.remove(node)) }
         }
-        if (!candidates[goalCell.second][goalCell.first]) return null
 
-        data class Key(val col: Int, val row: Int, val heading: Double = 0.0)
-        data class Node(val key: Key, val g: Int, val f: Int)
-        fun remaining(col: Int, row: Int): Int = if (hull == null)
-            heuristic(col, row, goalCell.first, goalCell.second)
-        else maxOf(kotlin.math.abs(col - goalCell.first), kotlin.math.abs(row - goalCell.second))
-        val startKey = Key(startCell.first, startCell.second, hull?.heading ?: 0.0)
-        val open = PriorityQueue<Node>(compareBy<Node> { it.f }.thenBy { it.key.row }.thenBy { it.key.col }
-            .thenBy { it.g }.thenBy { it.key.heading })
-        val cameFrom = HashMap<Key, Key>()
-        val cost = HashMap<Key, Int>().apply { this[startKey] = 0 }
-        val offsets = if (hull is RectangularDeparture) orthogonal + diagonal else orthogonal
-        if (counters != null) {
-            counters.enqueued++
-            counters.heuristicCalls++
-        }
-        open += Node(startKey, 0, remaining(startKey.col, startKey.row))
-
-        while (open.isNotEmpty()) {
-            val current = open.remove()
+        private fun expand(cache: PathClearanceCache?) {
+            val routes = checkNotNull(frontier)
+            val current = routes.open.poll() ?: return complete()
+            rollback?.record { routes.open += current }
             if (counters != null) counters.popped++
             val key = current.key
-            if (cost[key] != current.g) continue
+            if (routes.costs[key] != current.g) return
             val from = if (key == startKey) start else pointPolicy.point(map, key.col, key.row)
-            val finish = if (!checkEverySegment) key.col == goalCell.first && key.row == goalCell.second
-                else arrival(from, target, key.heading) != null
-            if (finish) {
-                val points = mutableListOf<Position>()
-                var cursor = key
-                while (cursor != startKey) {
-                    points += pointPolicy.point(map, cursor.col, cursor.row)
-                    cursor = cameFrom.getValue(cursor)
-                }
-                points.reverse()
-                if (points.lastOrNull() != target) points += target
-                return if (checkEverySegment) points else simplify(map, start, points, radius)
+            val targetCell = checkNotNull(goal)
+            val reached = if (checkEverySegment) arrival(from, target, key.heading, cache) != null
+                else key.col == targetCell.first && key.row == targetCell.second
+            if (reached) {
+                cursor = key
+                rawPoints = mutableListOf()
+                phase = SearchPhase.RECONSTRUCT
+                return
             }
             if (counters != null) counters.expanded++
+            fun visit(next: PathGridKey) {
+                val nextCost = current.g + 1
+                val previousCost = routes.costs[next]
+                if (nextCost < (previousCost ?: Int.MAX_VALUE)) {
+                    routes.costs[next] = nextCost
+                    val previousParent = routes.parents.put(next, key)
+                    rollback?.record {
+                        if (previousCost == null) routes.costs.remove(next) else routes.costs[next] = previousCost
+                        if (previousParent == null) routes.parents.remove(next) else routes.parents[next] = previousParent
+                    }
+                    enqueue(routes, next, nextCost)
+                }
+            }
+            if (cache != null && hull is RectangularDeparture && occupancy == null) {
+                val neighbors = cache.rectangularNeighbors(map, hull, radius, from, key.heading) {
+                    buildList { scanNeighbors(key, from, cache) { add(it) } }
+                }
+                neighbors.forEach(::visit)
+            } else scanNeighbors(key, from, cache, ::visit)
+        }
+
+        private inline fun scanNeighbors(key: PathGridKey, from: Position, cache: PathClearanceCache?,
+                                         accept: (PathGridKey) -> Unit) {
             for ((dx, dy) in offsets) {
                 val col = key.col + dx
                 val row = key.row + dy
                 if (col !in 0 until map.widthTiles || row !in 0 until map.heightTiles) continue
                 if (counters != null) counters.neighborsChecked++
-                if (!candidates[row][col]) continue
+                if (!isCandidate(col, row)) continue
                 val point = pointPolicy.point(map, col, row)
-                val heading = if (checkEverySegment) arrival(from, point, key.heading) ?: continue
-                    else {
-                        if (key == startKey && !PlanningSegmentClearance.allows(map, from, point, radius)) continue
-                        0.0
-                    }
-                val next = Key(col, row, heading)
-                val nextCost = current.g + 1
-                if (nextCost < (cost[next] ?: Int.MAX_VALUE)) {
-                    cost[next] = nextCost
-                    cameFrom[next] = key
-                    if (counters != null) {
-                        counters.enqueued++
-                        counters.heuristicCalls++
-                    }
-                    open += Node(next, nextCost, nextCost + remaining(col, row))
+                val heading = if (checkEverySegment) arrival(from, point, key.heading, cache) ?: continue else {
+                    if (key == startKey && !PlanningSegmentClearance.allows(map, from, point, radius)) continue
+                    0.0
                 }
+                accept(PathGridKey(col, row, heading))
             }
         }
-        return null
+
+        private fun reconstruct() {
+            val key = checkNotNull(cursor)
+            val points = checkNotNull(rawPoints)
+            if (key != startKey) {
+                appendPoint(points, pointPolicy.point(map, key.col, key.row))
+                cursor = checkNotNull(frontier).parents.getValue(key)
+                return
+            }
+            frontier = null
+            points.reverse()
+            rollback?.record { points.reverse() }
+            if (points.lastOrNull() != target) appendPoint(points, target)
+            if (checkEverySegment) {
+                complete(points)
+            } else {
+                simplifyProbe = points.lastIndex
+                simplified = mutableListOf()
+                phase = SearchPhase.SIMPLIFY
+            }
+        }
+
+        private fun simplifyOne() {
+            val points = checkNotNull(rawPoints)
+            if (simplifyStart == points.size) return complete(checkNotNull(simplified))
+            if (simplifyProbe < simplifyStart) return complete()
+            val next = points[simplifyProbe]
+            if (PlanningSegmentClearance.allows(map, anchor, next, radius)) {
+                anchor = next
+                appendPoint(checkNotNull(simplified), next)
+                simplifyStart = simplifyProbe + 1
+                simplifyProbe = points.lastIndex
+            } else {
+                simplifyProbe--
+            }
+        }
+
+        private fun appendPoint(points: MutableList<Position>, point: Position) {
+            points += point
+            rollback?.record { points.removeAt(points.lastIndex) }
+        }
     }
 
     /** Reach a continuous legal stance; the blocked target center is never opened for traversal. */
@@ -215,8 +483,11 @@ internal class ClearanceAStarPolicy(
         kotlin.math.abs(col - goalCol) + kotlin.math.abs(row - goalRow)
 
     private companion object {
+        const val CLEARANCE_CELLS_PER_WORK = 32
         val orthogonal = listOf(0 to -1, -1 to 0, 1 to 0, 0 to 1)
-        val diagonal = listOf(-1 to -1, 1 to -1, -1 to 1, 1 to 1)
+        val rectangleOffsets = orthogonal + listOf(-1 to -1, 1 to -1, -1 to 1, 1 to 1)
+        val nodeOrder = compareBy<Node> { it.f }.thenBy { it.key.row }.thenBy { it.key.col }
+            .thenBy { it.g }.thenBy { it.key.heading }
     }
 }
 

@@ -5,15 +5,15 @@ import com.rustedwarfare.reforge.core.sim.Position
 class PathDiagnosticsException(val code: String, message: String) : IllegalStateException(message)
 
 /** One real search attempt; never escapes into an observation or diagnostic sample. */
-internal class PathSearchCounters {
-    var actualSearchCalls = 0L
-    var candidatesChecked = 0L
-    var popped = 0L
-    var expanded = 0L
-    var enqueued = 0L
-    var neighborsChecked = 0L
-    var heuristicCalls = 0L
-}
+internal data class PathSearchCounters(
+    var actualSearchCalls: Long = 0,
+    var candidatesChecked: Long = 0,
+    var popped: Long = 0,
+    var expanded: Long = 0,
+    var enqueued: Long = 0,
+    var neighborsChecked: Long = 0,
+    var heuristicCalls: Long = 0,
+)
 
 enum class PathSearchOutcome { FOUND, UNREACHABLE, FAILED }
 enum class PathSearchReason { USER_MOVE, KNOWLEDGE_REPLAN, ROUTE_REPAIR, ATTACK_PURSUIT, CONSTRUCTION_APPROACH }

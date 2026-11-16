@@ -12,7 +12,8 @@ import java.util.IdentityHashMap
 internal data class CachedPlanningTerrain(val world: WorldHandle, val map: MapDefinition,
     val knowledge: KnowledgeSnapshot?, val terrain: PlanningTerrain, val buildings: Set<Pair<Int, Int>>? = null,
     val escapingBuildings: Boolean = false,
-    val movementType: com.rustedwarfare.reforge.core.content.MovementType = com.rustedwarfare.reforge.core.content.MovementType.LAND)
+    val movementType: com.rustedwarfare.reforge.core.content.MovementType = com.rustedwarfare.reforge.core.content.MovementType.LAND,
+    val ground: PlanningTerrain = terrain)
 
 internal data class PlayerPlanningKey(val owner: String, val movementType: MovementType, val escaping: Boolean)
 
@@ -56,6 +57,7 @@ internal data class StepState(
     var latestObservation: Observation? = null,
     var committedObservation: Observation? = null,
     var scheduledActions: MutableList<Action> = mutableListOf(),
+    var movePlanning: MovePlanning = MovePlanning(),
     var actionResultOwners: IdentityHashMap<ActionResult, String> = IdentityHashMap(),
     var playerActionRevisions: MutableMap<String, Long> = mutableMapOf(),
     var noFogPlanning: MutableMap<MovementType, CachedPlanningTerrain> = mutableMapOf(),
@@ -68,7 +70,7 @@ internal data class StepState(
     var routeContinuationDiagnostics: MutableList<RouteContinuationSample>? = null,
     var pendingKnowledgeDiscoveries: MutableMap<String, MutableMap<Pair<Int, Int>, Long>> = mutableMapOf(),
 ) {
-    fun fork(): StepState = copy(
+    fun fork(planningRollback: PathSearchRollback): StepState = copy(
         units = units.mapValuesTo(linkedMapOf()) { (_, unit) ->
             val combat = unit.combat?.copy()
             val named = unit.namedWeapons?.mapValuesTo(linkedMapOf()) { (_, state) ->
@@ -83,6 +85,7 @@ internal data class StepState(
         pendingSoundTriggers = pendingSoundTriggers.toMutableList(),
         pendingActionResults = pendingActionResults.toMutableList(),
         scheduledActions = scheduledActions.toMutableList(),
+        movePlanning = movePlanning.fork(planningRollback),
         actionResultOwners = IdentityHashMap(actionResultOwners),
         playerActionRevisions = HashMap(playerActionRevisions),
         noFogPlanning = HashMap(noFogPlanning),
@@ -104,8 +107,9 @@ internal data class StepState(
         for (unit in units.values) {
             UnitAttachments.validateCandidateUnit(this, unit)
             require(input.unitDefinitions[unit.typeId] === unit.definition) { "Unit definition must remain registered" }
-            require(listOf(unit.position.x, unit.position.y, unit.heading, unit.speed, unit.angularVelocity, unit.height)
-                .all { it.isFinite() } && (unit.health?.isFinite() != false)) { "Unit candidate must remain finite" }
+            require(unit.position.x.isFinite() && unit.position.y.isFinite() && unit.heading.isFinite() &&
+                unit.speed.isFinite() && unit.angularVelocity.isFinite() && unit.height.isFinite() &&
+                unit.health?.isFinite() != false) { "Unit candidate must remain finite" }
             MechMotion.requireFinitePose(unit)
             unit.definition.energy?.let { profile ->
                 require(unit.energy.isFinite() && unit.energy in 0f..profile.maximum) { "Weapon energy candidate must be bounded" }
@@ -259,15 +263,18 @@ internal class CandidateSteps {
     fun advance(input: Scenario, step: Step, actions: List<Action>,
                 observe: (Long, Double, Long) -> Observation, update: (CandidateStep) -> Unit): Observation {
         val previous = StepCheckpoint(current)
-        val candidate = CandidateStep(previous.state.fork(), step)
+        val planningRollback = PathSearchRollback()
+        val candidate = CandidateStep(previous.state.fork(planningRollback), step)
         current = candidate.state
         try {
             update(candidate)
             val observation = candidate.publish(input, actions, observe)
             candidate.releasePreviousKnowledge(previous.state)
+            planningRollback.commit()
             return observation
         } catch (failure: Exception) {
             current = previous.state
+            planningRollback.restore()
             candidate.abort()
             throw failure
         }
@@ -276,7 +283,7 @@ internal class CandidateSteps {
 
 /** Owns projected resources and the publication window, as well as the working state. */
 internal class CandidateStep(val state: StepState, private val step: Step) {
-    val translations = UnitContact.Translations(step.delta)
+    val translations = UnitContact.Translations(step.delta, state.movePlanning::pending)
     val existingProjectileIds = state.projectiles.mapTo(hashSetOf()) { it.objectId }
     val motionSamples = state.motionDiagnostics?.let { mutableListOf<MotionStepSample>() }
     val routeContinuationSamples = state.routeContinuationDiagnostics?.let { mutableListOf<RouteContinuationSample>() }

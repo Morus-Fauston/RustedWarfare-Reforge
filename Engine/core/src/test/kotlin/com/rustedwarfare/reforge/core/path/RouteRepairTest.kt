@@ -39,11 +39,12 @@ class RouteRepairTest {
         try {
             for (context in listOf(blocked, empty)) {
                 context.submit(MoveAction("hidden-move", "p1", "u1", target, context.world))
+                context.advance(Step(0, 1.0, "sim-tick"))
                 assertEquals(listOf(target), context.observe().units.single().pathPoints)
                 assertTrue(context.drainPathDiagnostics(context.world).single().usedPlayerKnowledge)
             }
             var collision = false
-            for (step in 0L until 120L) {
+            for (step in 1L until 120L) {
                 val a = blocked.advance(Step(step, 1.0, "sim-tick")).units.single()
                 val b = empty.advance(Step(step, 1.0, "sim-tick")).units.single()
                 collision = collision || a.position != b.position

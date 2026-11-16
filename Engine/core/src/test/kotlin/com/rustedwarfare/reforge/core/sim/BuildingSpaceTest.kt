@@ -9,6 +9,7 @@ import com.rustedwarfare.reforge.core.path.PathSearchReason
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
+import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 import kotlin.test.assertSame
 import kotlin.test.assertFailsWith
@@ -34,11 +35,11 @@ class BuildingSpaceTest {
                 context.enablePathDiagnostics(context.world)
                 assertTrue(context.observePlayer(context.world, "p1").units.none { it.unitId == "f" })
                 assertIs<ActionResult.Accepted>(context.submit(MoveAction("discover", "p1", "a", Position(510.0, 210.0), context.world)))
-                assertTrue(context.observe().units.single { it.unitId == "a" }.pathPoints.all { it.y in 180.0..<240.0 })
                 var sawFactory = false
                 repeat(500) { step ->
                     context.advance(Step(step.toLong(), 1.0, "sim-tick"))
                     val unit = context.observe().units.single { it.unitId == "a" }
+                    if (step == 0) assertTrue(unit.pathPoints.isNotEmpty() && unit.pathPoints.all { it.y in 180.0..<240.0 })
                     assertTrue(unit.position.x !in 280.0..<340.0 || unit.position.y !in 180.0..<240.0)
                     val view = context.observePlayer(context.world, "p1")
                     if (view.units.any { it.unitId == "f" }) {
@@ -56,14 +57,16 @@ class BuildingSpaceTest {
                 assertEquals(if (rules.retention == TerrainRetention.MEMORY) false else null,
                     lost.knowledge!!.cell(15, 10).lastKnownBlocked)
                 assertIs<ActionResult.Accepted>(context.submit(MoveAction("new-after-loss", "p1", "a", Position(510.0, 210.0), context.world)))
-                assertTrue(context.observe().units.single { it.unitId == "a" }.pathPoints.all { it.y in 180.0..<240.0 },
+                val path = context.advanceToMoveOutcome(1100, "a").units.single { it.unitId == "a" }.pathPoints
+                assertTrue(path.isNotEmpty() && path.all { it.y in 180.0..<240.0 },
                     "A remembered ground tile must not retain an unseen unit building")
             } finally { context.close() }
             val shared = assertIs<InitResult.Accepted>(SimulationContext.initialize(input.copy(automaticVision = rules.copy(shareAlliedVision = true)))).context
             try {
                 assertTrue(shared.observePlayer(shared.world, "p1").units.any { it.unitId == "f" })
                 assertIs<ActionResult.Accepted>(shared.submit(MoveAction("shared", "p1", "a", Position(510.0, 210.0), shared.world)))
-                assertTrue(shared.observe().units.single { it.unitId == "a" }.pathPoints.any { it.y < 180.0 || it.y >= 240.0 })
+                val path = shared.advanceToMoveOutcome(0, "a").units.single { it.unitId == "a" }.pathPoints
+                assertTrue(path.any { it.y < 180.0 || it.y >= 240.0 })
             } finally { shared.close() }
         }
     }
@@ -127,7 +130,20 @@ class BuildingSpaceTest {
             assertEquals(contexts[1].observe().projectiles, failed.observe().projectiles)
             assertEquals(contexts[1].observe().combat, failed.observe().combat)
             assertEquals(publicValues(contexts[1].observePlayer(contexts[1].world, "p1")), publicValues(failed.observePlayer(failed.world, "p1")))
-            assertEquals(1, failed.drainPathDiagnostics(failed.world).count { it.actionId == "scheduled-route" })
+            val published = mutableListOf<Long>()
+            val diagnostics = contexts.map { it.drainPathDiagnostics(it.world).toMutableList() }
+            for (step in 76L..675L) {
+                if (diagnostics.all { samples -> samples.any { it.actionId == "scheduled-route" && it.reason == PathSearchReason.USER_MOVE } }) break
+                val frames = contexts.map { it.advance(Step(step, 1.0, "sim-tick")) }
+                assertEquals(frames[1].units, frames[0].units)
+                assertEquals(frames[1].events, frames[0].events)
+                for ((index, c) in contexts.withIndex()) diagnostics[index] += c.drainPathDiagnostics(c.world)
+            }
+            for (samples in diagnostics) {
+                val planned = samples.single { it.actionId == "scheduled-route" && it.reason == PathSearchReason.USER_MOVE }
+                published += assertNotNull(planned.executionStep)
+            }
+            assertEquals(published.first(), published.last())
         } finally { contexts.forEach { it.close() } }
     }
 
@@ -188,15 +204,21 @@ class BuildingSpaceTest {
             println("native-factory-real-death ticks=$nextStep finalHp=${context.observe().units.single { it.unitId == "f" }.health}")
             assertEquals(1200.0, old.units.single { it.unitId == "f" }.health)
             assertIs<ActionResult.Accepted>(context.submit(MoveAction("through-corpse", "p1", "a", Position(430.0, 210.0), context.world)))
-            assertTrue(context.observe().units.single { it.unitId == "a" }.pathPoints.all { it.y in 180.0..<240.0 },
+            val planned = context.advanceToMoveOutcome(nextStep, "a")
+            nextStep = planned.stepIndex + 1
+            val path = planned.units.single { it.unitId == "a" }.pathPoints
+            assertTrue(path.isNotEmpty() && path.all { it.y in 180.0..<240.0 },
                 "A dead building must be absent from new path cost")
-            repeat(300) { context.advance(Step(nextStep++, 1.0, "sim-tick")) }
+            repeat(299) { context.advance(Step(nextStep++, 1.0, "sim-tick")) }
             assertTrue(context.observe().units.single { it.unitId == "a" }.position.x > 350.0)
             assertTrue(context.observe().units.single { it.unitId == "f2" }.alive)
             for ((name, goal) in listOf("still-live-building" to Position(310.0, 90.0), "still-hard-wall" to Position(490.0, 210.0))) {
                 val blocked = assertIs<ActionResult.Accepted>(context.submit(MoveAction(name, "p1", "a", goal, context.world)))
-                assertTrue(blocked.events.any { it.kind == "path-unreachable" })
-                assertEquals(null, context.observe().units.single { it.unitId == "a" }.moveTarget)
+                assertTrue(blocked.events.isEmpty())
+                val failed = context.advanceToMoveOutcome(nextStep, "a")
+                nextStep = failed.stepIndex + 1
+                assertTrue(Event("path-unreachable", "a") in failed.events)
+                assertEquals(null, failed.units.single { it.unitId == "a" }.moveTarget)
             }
             assertTrue(!map.blocking.isBlocked(15, 10), "The original ground map must not be overwritten with building cost")
             assertTrue(map.blocking.isBlocked(24, 10))
@@ -206,7 +228,8 @@ class BuildingSpaceTest {
             assertTrue(context.observe().units.single { it.unitId == "f" }.alive)
             assertEquals(1200.0, context.observe().units.single { it.unitId == "f" }.health)
             assertIs<ActionResult.Accepted>(context.submit(MoveAction("fresh-live-cost", "p1", "a", Position(430.0, 210.0), context.world)))
-            assertTrue(context.observe().units.single { it.unitId == "a" }.pathPoints.any { it.y < 180.0 || it.y >= 240.0 })
+            val fresh = context.advanceToMoveOutcome(0, "a")
+            assertTrue(fresh.units.single { it.unitId == "a" }.pathPoints.any { it.y < 180.0 || it.y >= 240.0 })
             assertEquals("stale-world", assertIs<ActionResult.Rejected>(context.submit(
                 StopAction("old-building-world", "p1", "a", oldWorld))).error.code)
         } finally { context.close() }
@@ -246,11 +269,12 @@ class BuildingSpaceTest {
             assertEquals(1200.0, factory.maxHealth)
             assertEquals(30.0, input.unitDefinitions.getValue(factory.typeId).radius)
             assertIs<ActionResult.Accepted>(context.submit(MoveAction("past-factory", "p1", "a", Position(510.0, 210.0), context.world)))
-            val routed = context.observe().units.single { it.unitId == "a" }
-            assertTrue(routed.pathPoints.any { it.y < 180.0 || it.y >= 240.0 }, "NoFog must plan around the live 3x3 building cost")
-            var after = context.observe()
+            val routed = context.advanceToMoveOutcome(0, "a")
+            assertTrue(routed.units.single { it.unitId == "a" }.pathPoints.any { it.y < 180.0 || it.y >= 240.0 },
+                "NoFog must plan around the live 3x3 building cost")
+            var after = routed
             repeat(600) { step ->
-                after = context.advance(Step(step.toLong(), 1.0, "sim-tick"))
+                after = context.advance(Step(routed.stepIndex + step + 1, 1.0, "sim-tick"))
                 val unit = after.units.single { it.unitId == "a" }
                 val column = (unit.position.x / 20).toInt()
                 val row = (unit.position.y / 20).toInt()
