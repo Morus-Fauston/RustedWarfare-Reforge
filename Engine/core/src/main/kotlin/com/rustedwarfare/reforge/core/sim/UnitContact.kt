@@ -13,7 +13,8 @@ internal object UnitContact {
     private data class Contact(val fraction: Double, val blocker: MutableUnit)
     private data class SideShift(val unit: MutableUnit, val position: Position)
 
-    class YieldRequest(val collisionMap: MapDefinition, val stepIndex: Long, val canYield: (MutableUnit) -> Boolean)
+    class YieldRequest(val collisionMap: MapDefinition, val stepIndex: Long, val unitsById: Map<String, MutableUnit>,
+                       val canYield: (MutableUnit) -> Boolean)
 
     private fun layer(unit: MutableUnit, height: Double = unit.height): Layer? = when {
         !unit.alive || unit.carriedBy != null || unit.attachment != null || unit.definition.building != null -> null
@@ -78,9 +79,10 @@ internal object UnitContact {
                   yielding: YieldRequest? = null): Position {
         val contact = translationContact(unit, requested, units) ?: return requested
         if (yielding != null && yielding.canYield(contact.blocker)) {
-            val shift = sideShift(unit, requested, contact.blocker, units, yielding.collisionMap)
+            val shift = sideShift(unit, requested, contact.blocker, units, yielding)
             if (shift != null) {
                 shift.unit.position = shift.position
+                UnitAttachments.synchronizeAdjustedChildren(yielding.unitsById, shift.unit)
                 shift.unit.lastYieldStep = yielding.stepIndex
                 shift.unit.lastYieldTo = unit.unitId to checkNotNull(unit.originMoveId)
                 return requested
@@ -118,7 +120,8 @@ internal object UnitContact {
     }
 
     private fun sideShift(mover: MutableUnit, requested: Position, blocker: MutableUnit,
-                          units: Collection<MutableUnit>, map: MapDefinition): SideShift? {
+                          units: Collection<MutableUnit>, yielding: YieldRequest): SideShift? {
+        val map = yielding.collisionMap
         val drift = subtract(requested, mover.position)
         val length = hypot(drift.x, drift.y)
         val side = Position(-drift.y / length, drift.x / length)
@@ -138,6 +141,7 @@ internal object UnitContact {
 
         fun legalShift(delta: Double): SideShift? {
             val end = position(delta)
+            if (!UnitAttachments.containsAdjustedSlots(yielding.unitsById, blocker, map, end)) return null
             val terrainClear = when (blockerShape) {
                 is MovementCollisionShape.Circle -> if (blockerShape.radius > 0.0)
                     CircularTerrain(blockerShape.radius).resolve(grid, blocker.position, end) == end

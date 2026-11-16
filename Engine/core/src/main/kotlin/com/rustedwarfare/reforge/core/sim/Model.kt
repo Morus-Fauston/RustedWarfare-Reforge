@@ -522,6 +522,7 @@ internal data class MutableUnit(
     var attachment: AttachmentBinding? = null,
     var sandboxPreservesPositiveAttachmentHealth: Boolean = false,
     var attachmentIds: Map<Int, String> = emptyMap(),
+    var attachmentOffsets: Map<Int, Position> = emptyMap(),
     var openingFallSpeed: Float = 0f,
     var selectedAttachmentSlot: Int? = null,
     var attachmentMoveSpeed: Double? = null,

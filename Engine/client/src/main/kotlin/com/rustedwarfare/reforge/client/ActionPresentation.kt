@@ -210,11 +210,16 @@ internal class ActionCatalogue(private val definitions: Map<String, UnitDefiniti
         val unitActions = immutable(actionOwners.mapNotNull { (action, actionUnit) ->
             val button = singleSelectionButtons[actionUnit.typeId]?.takeIf { it.action == action.name }
             val single = ownSingle?.unitId == actionUnit.unitId
+            val unitDefinition = definitions.getValue(actionUnit.typeId)
             actionUnit.attachmentOverview?.let {
+                unitDefinition.attachmentLayout?.offsetActions?.get(action.name)?.let { offset ->
+                    if (!single) return@mapNotNull null
+                    val hint = "Slot ${offset.slot} · X ${offset.x}, Y ${offset.y}"
+                    return@mapNotNull CustomUnitActionView(action.name, action.name, hint, false, 0, action.available, false)
+                }
                 val viewAction = attachmentAction(action, it, checkNotNull(actionUnit.unitActions))
                 return@mapNotNull selectionButton(viewAction, button, single)
             }
-            val unitDefinition = definitions.getValue(actionUnit.typeId)
             val definition = unitDefinition?.customActions?.actions?.singleOrNull { it.name == action.name }
             val launch = definition?.groundLaunch
             val blink = unitDefinition.blink

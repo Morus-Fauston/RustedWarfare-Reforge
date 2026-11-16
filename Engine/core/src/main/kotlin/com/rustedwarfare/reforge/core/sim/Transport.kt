@@ -226,7 +226,10 @@ internal object Transport {
                 if (passenger == null) state = state.copy(unloading = false)
                 else {
                     val negativeSide = state.passengerIds.size % 2 == 0
-                    val point = landingPoint(unit, passenger, map, negativeSide)
+                    val heading = ScreenPlane.normalize(if (nautilus) unit.heading else unit.heading - 180.0)
+                    val point = landingPoint(unit, passenger, map, negativeSide) { candidate ->
+                        UnitAttachments.containsAdjustedSlots(units, passenger, map, candidate, heading)
+                    }
                     if (point == null) events += Event("unload-blocked", unit.unitId)
                     else {
                         // Commit relation and manifest together only after a candidate is legal.
@@ -235,8 +238,9 @@ internal object Transport {
                         passenger.position = point
                         passenger.nativeTransportPlacement = !MapBounds.contains(map.widthTiles.toDouble() * map.tileWidth,
                             map.heightTiles.toDouble() * map.tileHeight, point, passenger.definition.radius)
-                        passenger.heading = ScreenPlane.normalize(if (nautilus) unit.heading else unit.heading - 180.0)
+                        passenger.heading = heading
                         if (nautilus) passenger.height = unit.height
+                        UnitAttachments.synchronizeAdjustedChildren(units, passenger)
                         passenger.transportExit = TransportExitObservation(unit.unitId, 45f)
                         passenger.attackCommand = null
                         passenger.clearWeaponTargets()
@@ -292,7 +296,8 @@ internal object Transport {
     private fun liquid(unit: MutableUnit, map: MapDefinition) = map.isLiquid(
         (unit.position.x.toFloat() / map.tileWidth).toInt(), (unit.position.y.toFloat() / map.tileHeight).toInt())
 
-    private fun landingPoint(carrier: MutableUnit, passenger: MutableUnit, map: MapDefinition, negativeSide: Boolean): Position? {
+    private fun landingPoint(carrier: MutableUnit, passenger: MutableUnit, map: MapDefinition, negativeSide: Boolean,
+                             acceptsPosition: (Position) -> Boolean): Position? {
         val rear = carrier.heading.toFloat() - 270f
         val side = if (negativeSide) -9f else 9f
         val x: Float
@@ -314,10 +319,11 @@ internal object Transport {
         }
         val candidates = listOf(x to y, x + 10f to y, x - 10f to y, x - 20f to y + 10f, x - 20f to y - 10f)
         val blocking = map.blockingFor(UnitLocomotion.movement(passenger).type)
-        return candidates.firstOrNull { (px, py) ->
+        return candidates.firstNotNullOfOrNull { (px, py) ->
             val column = (px / map.tileWidth).toInt(); val row = (py / map.tileHeight).toInt()
-            column in 0 until map.widthTiles && row in 0 until map.heightTiles && !blocking.isBlocked(column, row)
-        }?.let { Position(it.first.toDouble(), it.second.toDouble()) }
+            if (column in 0 until map.widthTiles && row in 0 until map.heightTiles && !blocking.isBlocked(column, row))
+                Position(px.toDouble(), py.toDouble()).takeIf(acceptsPosition) else null
+        }
     }
 
     fun request(action: LoadAction, actor: MutableUnit, target: MutableUnit,

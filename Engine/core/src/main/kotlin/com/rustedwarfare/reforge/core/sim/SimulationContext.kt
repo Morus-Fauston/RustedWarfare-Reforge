@@ -857,34 +857,42 @@ class SimulationContext internal constructor(private val policies: ExperimentalP
             return reject(action, "immobile-unit", "Unit cannot move")
         }
         val result = when (action) {
-            is UnitAction -> if (action.actionName == "setRally" && unit.definition.production?.rallyEnabled == true) {
-                if (!BuildingWork.isReady(unit)) return reject(action, "factory-under-construction", "Factory is under construction")
-                val point = action.target
-                if (action.cancelQueued == (point != null)) return reject(action, "invalid-rally-target", "Supply a rally point or clear it")
-                val map = currentScenario.map
-                if (point != null && !MapBounds.contains(map.widthTiles.toDouble() * map.tileWidth,
-                        map.heightTiles.toDouble() * map.tileHeight, point, 0.0))
-                    return reject(action, "invalid-rally-target", "Rally point is outside the map")
-                unit.factoryRally = point
-                ActionResult.Accepted(action.actionId, listOf(Event(if (point == null) "rally-cleared" else "rally-set", unit.unitId)))
-            } else {
-                val error = if (unit.definition.attachmentLayout != null) {
-                    UnitAttachments.request(steps.current, unit, action,
-                        buildingTerrain?.collisionMap ?: currentScenario.map)
-                } else if (unit.definition.nuclearSilo != null) {
-                    val change = NuclearOrdnance.request(unit, action.actionName, action.cancelQueued, checkNotNull(productionLedger), action.target)
-                    productionLedger = change.ledger
-                    change.error
-                } else withUnitActionQueue(unit) {
-                    val change = CustomUnitActions.request(unit, action, steps.current.actionClock, currentScenario,
-                        buildingTerrain?.collisionMap ?: currentScenario.map, productionLedger, simulationTime)
-                    productionLedger = change.ledger
-                    change.error
+            is UnitAction -> {
+                val offset = unit.definition.attachmentLayout?.offsetActions?.get(action.actionName)
+                if (offset != null) {
+                    UnitAttachments.adjustOffset(steps.current, unit, action, offset, currentScenario.map)?.let {
+                        return reject(action, it.code, it.message)
+                    }
+                    ActionResult.Accepted(action.actionId, listOf(Event("unit-action-attachment-offset-changed", unit.unitId)))
+                } else if (action.actionName == "setRally" && unit.definition.production?.rallyEnabled == true) {
+                    if (!BuildingWork.isReady(unit)) return reject(action, "factory-under-construction", "Factory is under construction")
+                    val point = action.target
+                    if (action.cancelQueued == (point != null)) return reject(action, "invalid-rally-target", "Supply a rally point or clear it")
+                    val map = currentScenario.map
+                    if (point != null && !MapBounds.contains(map.widthTiles.toDouble() * map.tileWidth,
+                            map.heightTiles.toDouble() * map.tileHeight, point, 0.0))
+                        return reject(action, "invalid-rally-target", "Rally point is outside the map")
+                    unit.factoryRally = point
+                    ActionResult.Accepted(action.actionId, listOf(Event(if (point == null) "rally-cleared" else "rally-set", unit.unitId)))
+                } else {
+                    val error = if (unit.definition.attachmentLayout != null) {
+                        UnitAttachments.request(steps.current, unit, action,
+                            buildingTerrain?.collisionMap ?: currentScenario.map)
+                    } else if (unit.definition.nuclearSilo != null) {
+                        val change = NuclearOrdnance.request(unit, action.actionName, action.cancelQueued, checkNotNull(productionLedger), action.target)
+                        productionLedger = change.ledger
+                        change.error
+                    } else withUnitActionQueue(unit) {
+                        val change = CustomUnitActions.request(unit, action, steps.current.actionClock, currentScenario,
+                            buildingTerrain?.collisionMap ?: currentScenario.map, productionLedger, simulationTime)
+                        productionLedger = change.ledger
+                        change.error
+                    }
+                    error?.let {
+                        return reject(action, it.code, it.message)
+                    }
+                    ActionResult.Accepted(action.actionId, listOf(Event(if (action.cancelQueued) "unit-action-cancelled" else "unit-action-queued", unit.unitId)))
                 }
-                error?.let {
-                    return reject(action, it.code, it.message)
-                }
-                ActionResult.Accepted(action.actionId, listOf(Event(if (action.cancelQueued) "unit-action-cancelled" else "unit-action-queued", unit.unitId)))
             }
             is UnloadAction -> {
                 if (!BuildingWork.isReady(unit)) return reject(action, "inactive-unit", "Unfinished units cannot unload")
@@ -1468,6 +1476,7 @@ class SimulationContext internal constructor(private val policies: ExperimentalP
                 if (attachment != null) {
                     if (!unit.alive) continue
                     val parent = units[attachment.parentId]?.takeIf { it.alive && it.carriedBy == null && !it.reclaimed } ?: continue
+                    if (parent.deathPending && attachment.slot.number in parent.attachmentOffsets) continue
                     UnitAttachments.synchronize(parent, unit, attachment.slot)
                     if (BuildingWork.isReady(unit)) {
                         updatePointDefense(unit, step.delta)
@@ -1658,7 +1667,7 @@ class SimulationContext internal constructor(private val policies: ExperimentalP
             for (parent in orderedUnits()) {
                 val pending = parent.spiderBlink ?: continue
                 if (parent.alive && !parent.reclaimed && parent.carriedBy == null && pending.queuedAt < step.stepIndex)
-                    AttachmentBlink.advanceParent(steps.current, parent, pending)
+                    AttachmentBlink.advanceParent(steps.current, parent, pending, currentScenario.map)
             }
             UnitAttachments.settleLifecycle(steps.current, currentScenario)
             missileTargets = missileTargets?.refresh(orderedUnits())
@@ -3416,14 +3425,18 @@ class SimulationContext internal constructor(private val policies: ExperimentalP
         val terrainHeading = if (hull != null && requestedHeading != headingBefore) {
             RectangularTurn.resolve(checkNotNull(hullTerrain), hull, unit.position, headingBefore, requestedHeading)
         } else requestedHeading
-        val legalHeading = if (hull != null && terrainHeading != headingBefore) {
-            UnitContact.turn(unit, hull, headingBefore, terrainHeading, orderedUnits())
-        } else terrainHeading
+        val boundedHeading = UnitAttachments.limitTurn(units, unit, map, headingBefore, terrainHeading)
+        val legalHeading = if (hull != null && boundedHeading != headingBefore) {
+            UnitContact.turn(unit, hull, headingBefore, boundedHeading, orderedUnits())
+        } else boundedHeading
         if (legalHeading != requestedHeading) {
             unit.heading = legalHeading
             unit.angularVelocity = 0.0
+            val adjustment = policies.coordinates.difference(legalHeading, requestedHeading)
+            if (boundedHeading != terrainHeading) unit.mechState = unit.mechState?.let { state ->
+                state.copy(motionAngle = MechMotion.angleDifference(state.motionAngle + adjustment, 0.0))
+            }
             if (movement.type == MovementType.WATER && unit.definition.combat?.rotateWithBody == true) {
-                val adjustment = policies.coordinates.difference(legalHeading, requestedHeading)
                 for (state in unit.namedWeapons?.values ?: listOfNotNull(unit.combat)) {
                     state.turretHeading = policies.coordinates.normalize(state.turretHeading + adjustment)
                 }
@@ -3467,7 +3480,7 @@ class SimulationContext internal constructor(private val policies: ExperimentalP
         val rectangle = hull?.let { RectangularTerrain(it, unit.heading) }
         if (shape == null && !Transport.containsPosition(unit, map, candidate)) {
             blockAtMapBoundary(unit)
-            recordMotion(null, MotionTerrainDisposition.CANDIDATE_OUTSIDE_MAP, legalHeading != terrainHeading)
+            recordMotion(null, MotionTerrainDisposition.CANDIDATE_OUTSIDE_MAP, legalHeading != boundedHeading)
             return
         }
         val producerCells = if (shape != null && unit.birthRemaining == 0f && buildingTerrain != null)
@@ -3483,6 +3496,7 @@ class SimulationContext internal constructor(private val policies: ExperimentalP
             else -> TerrainMotion.resolve(buildingTerrain?.collisionMap ?: map, unit.position, candidate,
                 map.takeIf { buildingTerrain != null }, movement.type, unit.nativeTransportPlacement)
         }
+        val boundedPosition = UnitAttachments.limitTranslation(units, unit, map, terrainResolved)
         fun insideMap(position: Position): Boolean = when {
             rectangle != null -> rectangle.contains(checkNotNull(hullTerrain), position)
             circle != null -> circle.contains(checkNotNull(hullTerrain), position)
@@ -3491,23 +3505,23 @@ class SimulationContext internal constructor(private val policies: ExperimentalP
         val ordinaryMove = unit.tasks.firstOrNull()?.kind == UnitTaskKind.MOVE
         val yielding = if (target != null && unit.originMoveId != null &&
             (nativeDeparture || unit.birthRemaining == 0f && ordinaryMove))
-            UnitContact.YieldRequest(buildingTerrain?.collisionMap ?: map, executionStep) { blocker ->
+            UnitContact.YieldRequest(buildingTerrain?.collisionMap ?: map, executionStep, units) { blocker ->
                 val locomotion = UnitLocomotion.movement(blocker)
                 blocker.ownerPlayerId == unit.ownerPlayerId && blocker.lastYieldStep != executionStep &&
                     blocker.lastYieldTo?.let { it.first == unit.unitId && it.second == unit.originMoveId } != true &&
                     blocker.birthRemaining == 0f && blocker.moveTarget == null && blocker.tasks.isEmpty() &&
                     blocker.movementState == MovementState.IDLE && blocker.speed == 0.0 && !blocker.movementRequested &&
                     !blocker.constructionWorking && blocker.spiderBlink == null && unitActionHead(blocker) == null &&
-                    locomotion.moveSpeed > 0.0 && locomotion.type != MovementType.NONE && insideMap(terrainResolved)
+                    locomotion.moveSpeed > 0.0 && locomotion.type != MovementType.NONE && insideMap(boundedPosition)
             } else null
-        val resolved = UnitContact.translate(unit, terrainResolved, orderedUnits(), yielding)
-        val unitContactLimited = legalHeading != terrainHeading || resolved != terrainResolved
+        val resolved = UnitContact.translate(unit, boundedPosition, orderedUnits(), yielding)
+        val unitContactLimited = legalHeading != boundedHeading || resolved != boundedPosition
         if (!insideMap(resolved)) {
             blockAtMapBoundary(unit)
-            recordMotion(terrainResolved, MotionTerrainDisposition.RESOLVED_OUTSIDE_MAP, unitContactLimited)
+            recordMotion(boundedPosition, MotionTerrainDisposition.RESOLVED_OUTSIDE_MAP, unitContactLimited)
             return
         }
-        val terrainCorrected = terrainHeading != requestedHeading || terrainResolved != candidate
+        val terrainCorrected = boundedHeading != requestedHeading || boundedPosition != candidate
         if (unit.moveTarget != null && (nativeDeparture || ordinaryMove)) {
             unit.routeTranslationClipped = resolved != candidate
             if (unit.routeTranslationClipped) unit.nearTargetTime = 0.0
@@ -3538,7 +3552,7 @@ class SimulationContext internal constructor(private val policies: ExperimentalP
             unit.speed != 0.0 -> MovementState.DECELERATING
             else -> MovementState.IDLE
         }
-        recordMotion(terrainResolved, if (terrainCorrected) MotionTerrainDisposition.CORRECTED
+        recordMotion(boundedPosition, if (terrainCorrected) MotionTerrainDisposition.CORRECTED
             else MotionTerrainDisposition.DIRECT, unitContactLimited)
     }
 

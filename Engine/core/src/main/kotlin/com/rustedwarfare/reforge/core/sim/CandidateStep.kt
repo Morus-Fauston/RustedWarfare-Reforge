@@ -172,7 +172,7 @@ internal data class StepState(
                     unit.unitId == "scout:${unit.ownerPlayerId}:${birth.projectileId}" &&
                     unit.updateKey.startsWith("~produced/")) { "Invalid scout bot birth identity" }
             }
-            require(Transport.containsPosition(unit, input.map, unit.position)) {
+            require(UnitAttachments.containsChild(units, unit, input.map)) {
                 "Unit movement hull must remain within the map"
             }
             unit.health?.let { require((it >= 0.0 || it == -1.0) && it <= checkNotNull(unit.definition.maximumHealth) &&

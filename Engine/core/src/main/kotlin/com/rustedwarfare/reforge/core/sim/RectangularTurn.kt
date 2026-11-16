@@ -64,6 +64,30 @@ internal object RectangularTurn {
         return if (fraction == 1.0) requested else ScreenPlane.normalize(from + fraction * change)
     }
 
+    fun pointWithinMap(center: Position, offset: Position, radius: Double, width: Double, height: Double,
+                       from: Double, requested: Double, fits: (Double) -> Boolean): Double {
+        val change = ScreenPlane.difference(requested, from)
+        if (change == 0.0) return requested
+        val arc = Arc(Math.toRadians(from), Math.toRadians(change))
+        val left = Crossing(-offset.y, -offset.x, center.x - radius, false)
+        val right = Crossing(offset.y, offset.x, width - radius - center.x, false)
+        val top = Crossing(-offset.x, offset.y, center.y - radius, false)
+        val bottom = Crossing(offset.x, -offset.y, height - radius - center.y, false)
+        val edges = listOf(left, right, top, bottom)
+        val fraction = arc.firstWhere(0.0, 1.0, edges) { sine, cosine -> edges.any { it.contains(sine, cosine) } }
+        fun at(progress: Double) =
+            if (progress == 1.0) requested else ScreenPlane.normalize(from + progress * change)
+        val heading = at(fraction)
+        if (fits(heading)) return heading
+        var low = 0.0
+        var high = fraction
+        repeat(52) {
+            val middle = (low + high) / 2.0
+            if (fits(at(middle))) low = middle else high = middle
+        }
+        return at(low)
+    }
+
     fun againstCircle(shape: MovementCollisionShape.Rectangle, radius: Double, offset: Position,
                       from: Double, requested: Double): Double {
         val change = ScreenPlane.difference(requested, from)

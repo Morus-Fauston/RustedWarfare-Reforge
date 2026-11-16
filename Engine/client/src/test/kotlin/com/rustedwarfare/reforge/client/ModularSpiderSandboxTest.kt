@@ -8,10 +8,18 @@ import com.rustedwarfare.reforge.core.content.ContentResult
 import com.rustedwarfare.reforge.core.content.LoadedContentPack
 import com.rustedwarfare.reforge.core.sim.ActionResult
 import com.rustedwarfare.reforge.core.sim.Position
+import java.nio.file.Files
 import java.nio.file.Path
+import org.hjson.JsonObject
+import org.hjson.JsonValue
+import org.hjson.Stringify
+import org.junit.jupiter.api.io.TempDir
 import kotlin.test.*
 
 class ModularSpiderSandboxTest {
+    @field:TempDir
+    lateinit var work: Path
+
     private val fixtures = System.getProperty("public.fixtures.dir")?.let(Path::of)
         ?: Path.of("../../SimulationTest/public/inputs")
 
@@ -19,6 +27,38 @@ class ModularSpiderSandboxTest {
         val root = fixtures.resolve("modular-spider-start/$format")
         val result = ContentLoader.loadContentPack(root.resolve("opening-package"))
         return root to assertIs<ContentResult.Success<LoadedContentPack>>(result).value
+    }
+
+    @Test fun authored_offset_uses_the_existing_single_unit_action_list() {
+        val root = fixtures.resolve("modular-spider-start/hjson")
+        val source = root.resolve("opening-package")
+        val target = work.resolve("opening-package")
+        Files.walk(source).use { paths ->
+            paths.forEach { path ->
+                val destination = target.resolve(source.relativize(path))
+                if (Files.isDirectory(path)) Files.createDirectories(destination) else Files.copy(path, destination)
+            }
+        }
+        val chassis = target.resolve("units/spider/spider.hjson")
+        val declaration = JsonValue.readHjson(Files.readString(chassis)).asObject()
+        declaration.get("actions").asArray().add(JsonObject().add("name", "extendModule")
+            .add("attachmentSlot", 1).add("attachmentX", 0).add("attachmentY", 60))
+        Files.writeString(chassis, declaration.toString(Stringify.HJSON))
+        val pack = assertIs<ContentResult.Success<LoadedContentPack>>(ContentLoader.loadContentPack(target)).value
+        SandboxSession(contentPackScenario(root, ContentPackChoice(pack, "modularSpider"))).use { session ->
+            repeat(100) { session.tick() }
+            val parent = session.observation.units.single { it.typeId == "modularSpider" }
+            val child = assertNotNull(parent.attachmentOverview).slots.first { it.number == 1 }.unitId
+            session.select(parent.position)
+            val row = session.actionMenu.battleActions().single { it.id == "unit-action:extendModule" }
+            assertTrue(row.enabled)
+            assertFalse(row.target)
+            val accepted = assertIs<ActionResult.Accepted>(session.unitAction("extendModule"))
+            assertEquals(parent.unitId, accepted.events.single().unitId)
+            val module = session.observation.units.single { it.unitId == child }
+            val distance = kotlin.math.hypot(module.position.x - parent.position.x, module.position.y - parent.position.y)
+            assertEquals(60.0, distance, .000001)
+        }
     }
 
     @Test fun the_build_page_exposes_normal_site_work_and_yields_to_a_slot_page() {

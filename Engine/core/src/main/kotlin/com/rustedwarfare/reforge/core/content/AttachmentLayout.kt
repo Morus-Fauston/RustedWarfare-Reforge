@@ -6,8 +6,12 @@ import java.util.Collections
 data class AttachmentSlotDefinition(val number: Int, val x: Double, val y: Double, val idleHeading: Double,
     val initialTypeId: String)
 
-class AttachmentLayout(slots: List<AttachmentSlotDefinition>, val slotImagePath: Path) {
+data class AttachmentOffsetAction(val slot: Int, val x: Double, val y: Double)
+
+class AttachmentLayout(slots: List<AttachmentSlotDefinition>, val slotImagePath: Path,
+                       offsetActions: Map<String, AttachmentOffsetAction> = emptyMap()) {
     val slots: List<AttachmentSlotDefinition> = Collections.unmodifiableList(ArrayList(slots))
+    val offsetActions: Map<String, AttachmentOffsetAction> = Collections.unmodifiableMap(LinkedHashMap(offsetActions))
 }
 
 data class AttachmentInstall(val action: String, val targetTypeId: String, val cost: Long)
@@ -45,6 +49,7 @@ class AttachmentModuleProfile(
 internal object ModularSpiderRules {
     const val ID = "modularSpider"
     const val EMPTY = "modularSpider_emptySlot"
+    const val MOUNTED_RADIUS = 15.0
     const val GUN = "modularSpider_gunturret"
     const val LASER = "modularSpider_smallgunturret"
     const val ANTI_AIR = "modularSpider_antiair"
@@ -123,7 +128,19 @@ internal object ModularSpiderRules {
             unit.combat?.namedWeapons?.byName?.get("nanoTurret")?.let { !it.canShoot && it.warmup == 30.0 } == true
     }
 
+    private val offsetActionName = Regex("[A-Za-z][A-Za-z0-9_.-]{0,63}")
+
+    fun isOffsetActionName(name: String): Boolean =
+        offsetActionName.matches(name) && !name.startsWith("selectSlot") && name !in
+            setOf("blink", "blinkQueued", "cancel", "reclaim", "buildAntiNuke", "isEnabled", "isDisabled") &&
+            installs.none { it.action == name } &&
+            ModularSpiderWeaponForms.byId.values.none { form -> form.module.upgrades.any { it.action == name } } &&
+            ModularSpiderUtilityForms.byId.values.none { form -> form.module.upgrades.any { it.action == name } }
+
     fun supportsChassis(unit: UnitDefinition): Boolean = unit.id == ID && unit.attachmentLayout?.slots == slots &&
+        unit.attachmentLayout.offsetActions.all { (name, action) ->
+            isOffsetActionName(name) && slots.any { it.number == action.slot } && action.x.isFinite() && action.y.isFinite()
+        } &&
         unit.movement == movement && unit.maximumHealth == 10000.0 && unit.shield == ShieldProfile(5000f, .3f) &&
         unit.mech?.let { it.kind == MechKind.EIGHT_LEGGED && it.isValid() } == true
 
@@ -140,7 +157,7 @@ internal object ModularSpiderRules {
             unit.combat == null && unit.income == null && module.automaticAction == null &&
             matchesInstalls(module.installs) && module.upgrades.isEmpty() &&
             module.selfBuildRate == 0f && module.cancel == null && module.reclaim == null && module.parentSpeed == null
-        if (utility != null) return unit.radius == 15.0 && unit.maximumHealth == 3000.0 &&
+        if (utility != null) return unit.radius == MOUNTED_RADIUS && unit.maximumHealth == 3000.0 &&
             unit.combat == null && unit.shield == null && unit.income == utility.income &&
             matches(module, utility.module)
         val form = ModularSpiderWeaponForms.byId[unit.id] ?: return false
@@ -148,7 +165,7 @@ internal object ModularSpiderRules {
         val extraImages = form.additionalTurretDimensions.keys.associateWith { name ->
             combat.namedWeapons?.byName?.get(name)?.imagePath ?: return false
         }
-        return unit.radius == 15.0 && unit.maximumHealth == form.health && unit.income == null &&
+        return unit.radius == MOUNTED_RADIUS && unit.maximumHealth == form.health && unit.income == null &&
             combat.turretImagePath?.let { combat == form.combat(it, extraImages) } == true &&
             matches(module, form.module)
     }
