@@ -24,7 +24,7 @@
       {
         "id": "builder",
         "path": "../inputs/mech-engineer-production/hjson/production-package/units/builder.hjson",
-        "sha256": "6c1b6dc0086b4c24695710d1b8b84c618d17f4a485f696fb04539cb00b7c2eca",
+        "sha256": "d100c463468ba50556fb0e0956472d85e08f50945f0b905b627d732e13e40b85",
         "loader": "builder"
       },
       {
@@ -48,7 +48,7 @@
       {
         "id": "mechEngineer",
         "path": "../inputs/mech-engineer-production/hjson/production-package/units/engineer/engineer.hjson",
-        "sha256": "c3332e7ed4fae423b7fce1eec25785b1e8f50f1cdd894af38c9bfc7723923799",
+        "sha256": "90c750da1d207e9291953ede7a897d3026b45a8d5b632c044dd42349d0bb2b05",
         "loader": "mech-engineer"
       },
       {

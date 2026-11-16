@@ -1,5 +1,6 @@
 {
   "format": "rw-reforge.native-hovercraft.v1",
+  "mass": 12000,
   "name": "hovercraft",
   "maxHp": 450,
   "radius": 15,

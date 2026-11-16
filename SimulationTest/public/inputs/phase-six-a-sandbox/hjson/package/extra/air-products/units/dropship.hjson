@@ -1,5 +1,6 @@
 {
   "format": "rw-reforge.native-dropship.v1",
+  "mass": 16000,
   "name": "dropship",
   "maxHp": 500,
   "radius": 20,

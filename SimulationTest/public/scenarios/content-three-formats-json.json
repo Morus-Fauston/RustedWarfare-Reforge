@@ -12,7 +12,7 @@
       {
         "id": "c_tank",
         "path": "../inputs/three-format-tanks/json/units/tank.json",
-        "sha256": "42b90d73878d9996aaa59dc0480945d26039a281b3da6cb9f55b1fd2909d3ac9",
+        "sha256": "5217e80a0889f5389dd53fc633b77a9b256c6a3201bdfb5a145f91a9bfc79f91",
         "loader": "combat"
       },
       {
@@ -24,7 +24,7 @@
       {
         "id": "builder",
         "path": "../inputs/production-combat/center/units/builder.properties",
-        "sha256": "0de6bc2ab221fb996ffd41a23a00ef7c27c25dafec95df72396b17b3354c4ab2",
+        "sha256": "66ad0cdca50b61d8d2049ca28e246784813066153c03e0111935059f2eafabc1",
         "loader": "builder"
       }
     ],

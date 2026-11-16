@@ -1,6 +1,7 @@
 {
   "format": "rw-reforge.unit.v2",
   "core": {
+    "mass": 3000,
     "name": "c_tank",
     "class": "CustomUnitMetadata",
     "price": 350,

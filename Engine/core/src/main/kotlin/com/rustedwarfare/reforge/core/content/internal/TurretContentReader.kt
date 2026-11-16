@@ -31,7 +31,7 @@ internal object TurretContentReader {
         "action_upgrade_flame" to actionFields, "action_upgrade_lightning" to actionFields,
         "action_upgrade_gunT3" to actionFields, "action_upgrade_artilleryT2" to actionFields,
     )
-    private val retained = setOf("core.price", "core.buildSpeed", "core.mass", "core.techLevel", "core.isBio",
+    private val retained = setOf("core.price", "core.buildSpeed", "core.techLevel", "core.isBio",
         "core.displayLocaleKey", "core.buildingSelectionOffset", "graphics.image_shadow", "graphics.shadowOffsetX",
         "graphics.shadowOffsetY", "turret_1.shoot_sound", "turret_1.shoot_sound_vol", "turret_1.shoot_flame",
         "turret_1.shoot_light", "projectile_1.frame", "movement.moveAccelerationSpeed", "movement.moveDecelerationSpeed",
@@ -57,6 +57,7 @@ internal object TurretContentReader {
 
     private fun documents(path: Path, enableUpgrades: Boolean, enableConstruction: Boolean,
                           validatePath: (Path) -> Unit) = UnitSourceReader(schema,
+        packageRoot = (validatePath as? ContentPackPathGuard)?.root,
         preRead = { file ->
             validatePath(file)
             ordinary(file, path, "core", if (file == path) "name" else "copyFrom")
@@ -259,7 +260,8 @@ internal object TurretContentReader {
             BuildingProfile(shape, anchor = FootprintAnchor(binary32("core", "buildingToFootprintOffsetX"), binary32("core", "buildingToFootprintOffsetY"))),
             build = siteProfile?.takeIf { id == "c_turret_t2_gun" }?.let { BuildProfile(it.price, it.rate) },
             upgrades = upgrades, construction = siteProfile?.takeUnless { id == "c_turret_t2_gun" },
-            techLevel = if (enableConstruction && id != "c_turret_t1") 2 else 1)
+            techLevel = if (enableConstruction && id != "c_turret_t1") 2 else 1,
+            mass = loaded.mass(path, movable = false))
     }
 
     private fun ordinary(file: Path, source: Path, section: String, field: String) {

@@ -12,7 +12,7 @@
       {
         "id": "mechBunker",
         "path": "../inputs/bunker-production/ini/package/bunker.ini",
-        "sha256": "ab136e0a00ed24cc64d79ee10eed24aeb09b1ad7ed664f6e2c0987d5783fcf31",
+        "sha256": "b003f0aad3e01f7ac8119cf79d75bb249cd0b9d0a0e0a2657fe17a90539f046b",
         "loader": "mech-bunker"
       },
       {

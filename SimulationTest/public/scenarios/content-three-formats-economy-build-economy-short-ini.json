@@ -18,7 +18,7 @@
       {
         "id": "builder",
         "path": "../inputs/three-format-economy/economy/ini/units/builder.ini",
-        "sha256": "2d0b0e454b904182c8c6dca991a0252bead473942342556512b6eff2f726b82a",
+        "sha256": "4cf77ba73853de9ced30662878bbd80633a82716d2ccc89298e2da99ac146aab",
         "loader": "builder"
       },
       {
@@ -30,7 +30,7 @@
       {
         "id": "c_tank",
         "path": "../inputs/three-format-economy/economy/ini/units/tank.ini",
-        "sha256": "99aa63a6f6e87662e257af3ca7c4557290153e60e62fcdf74360e15caef612e8",
+        "sha256": "87492c0211b24a35781910436bc5f6ea0631d4fd5645b98d13ee92fd2d19d3ff",
         "loader": "combat"
       },
       {

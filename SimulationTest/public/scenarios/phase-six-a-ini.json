@@ -105,7 +105,7 @@
       {
         "id": "builder",
         "path": "../inputs/phase-six-a-sandbox/ini/package/units/mech-factory/builder.ini",
-        "sha256": "dff94bc5bc2c3f4cafdadda1bbf77b8d682d08ff5f4c2d9b5294fe66f287fcc2"
+        "sha256": "1a90f741476957215bac5fff9834bea053f51dfc9b740041af826c5ba2033ca7"
       },
       {
         "id": "mechFactory",
@@ -125,7 +125,7 @@
       {
         "id": "mechEngineer",
         "path": "../inputs/phase-six-a-sandbox/ini/package/units/mech-factory/engineer/engineer.ini",
-        "sha256": "b984614f9d23991357d44d40bf5d6ad7a427e50f0c17295b81ae24089b55d3bb"
+        "sha256": "08e3cefa7c46a381bac78517173068e45ee394ed86629a26263e615125c1e933"
       },
       {
         "id": "airFactory",
@@ -145,7 +145,7 @@
       {
         "id": "bomber",
         "path": "../inputs/phase-six-a-sandbox/ini/package/units/air-factory/bomber.ini",
-        "sha256": "d255b0170f5095cfadcb3b766f72b11b3d384ac01031b8fc846cf376011ef8b1"
+        "sha256": "21435d1ce4cc92a80562dd75c4a5417467fe754485423d5cc8515d3ee9528b4b"
       },
       {
         "id": "seaFactory",
@@ -160,17 +160,17 @@
       {
         "id": "hovercraft",
         "path": "../inputs/phase-six-a-sandbox/ini/package/units/sea-factory/hovercraft.ini",
-        "sha256": "6deff4c1cc65454e9ddabb2bbd9af4cec9d80b9cc8aa19ee012a5c0f875c866f"
+        "sha256": "e32f5dcd5bb1c2feba23eb01ac2e2c2670f15723c7d4a1b1fa61275db825c033"
       },
       {
         "id": "c_tank",
         "path": "../inputs/phase-six-a-sandbox/ini/package/units/sea-factory/land/tank.ini",
-        "sha256": "f297e31a124d57858eab11b1340af9ac7db25ad8641bed9592666c2d7751226a"
+        "sha256": "d63d7741a625b0832293be95d1d36a427052dc3e14072576324da68944e01e43"
       },
       {
         "id": "attackSubmarine",
         "path": "../inputs/phase-six-a-sandbox/ini/package/units/sea-factory/submarine/submarine.ini",
-        "sha256": "56d2f25601789a9dc7ad2dcb7df57ed2efac8c89456552580a2d6eb6796a965b"
+        "sha256": "399d6e9127d8f6923f2588159e4bcb013dbb60d5d4d95c334af98e1b607e349a"
       },
       {
         "id": "heavyBattleship",
@@ -185,97 +185,97 @@
       {
         "id": "modularSpider",
         "path": "../inputs/phase-six-a-sandbox/ini/package/units/spider/spider.ini",
-        "sha256": "0c82b935dd763e31b93e086203b3f0e0b91905a66784ad50ddfbebbf1c0c4fb5"
+        "sha256": "cb1afddd2ac270686b5af411c231deff91cc584fe91a7369730a1481e266a3ea"
       },
       {
         "id": "modularSpider_emptySlot",
         "path": "../inputs/phase-six-a-sandbox/ini/package/units/spider/empty.ini",
-        "sha256": "9a6e27dcdf2dd09d868b6d36df7429c148191ae54afe81bfcab951fc33b852dc"
+        "sha256": "b4fa1cad9caf648cab80df85d22219b7761c5e451bbc57ac872995f478d33e30"
       },
       {
         "id": "modularSpider_gunturret",
         "path": "../inputs/phase-six-a-sandbox/ini/package/units/spider/gun.ini",
-        "sha256": "df1a3036130eac72de233cb7df2badc4d04e9b6daf4cd4bfec9a3ac0fc609b4f"
+        "sha256": "fb402b51f3c0bb1da3371c8840f8b5362b7bcb822982bc85810c0fc0c4e6889b"
       },
       {
         "id": "modularSpider_smallgunturret",
         "path": "../inputs/phase-six-a-sandbox/ini/package/units/spider/small-laser.ini",
-        "sha256": "13cb0f111ad7ed0808c3e45fa52712ec49c71886676d191b2857f9a4d2481dee"
+        "sha256": "f4a4690a8ddb128488512a5e86d51a16c24b02689b7e62e752feb13216b06149"
       },
       {
         "id": "modularSpider_smallgunturretT2",
         "path": "../inputs/phase-six-a-sandbox/ini/package/units/spider/small-laser-t2.ini",
-        "sha256": "a25410c0a0e9f310eb9e71e2ffaf6fb2d0e815ff93bb1bf7571217bff1d44a9f"
+        "sha256": "532c457e469b8ba88b33f4fd81df1d49d0caf48c4962fa1c77510b0375392c5f"
       },
       {
         "id": "modularSpider_gunturretT2",
         "path": "../inputs/phase-six-a-sandbox/ini/package/units/spider/gun-t2.ini",
-        "sha256": "e0f452705864b530cc5c8a38832190719d71a3cb6c9b6cb3a27ace1286485137"
+        "sha256": "25625f63f06d243e0744b0c850e77bcfb8fe1035e6a24bab93137812b702e854"
       },
       {
         "id": "modularSpider_antiair",
         "path": "../inputs/phase-six-a-sandbox/ini/package/units/spider/aa.ini",
-        "sha256": "0623f535dc80a8bb4455d92e5621d4704a115a8e3a53d3aa8457a404d1224670"
+        "sha256": "b803a168ff103781271f4719b833e61d14e0526f6c348ee6c7ec60ea4a4d4c0d"
       },
       {
         "id": "modularSpider_antiairT2",
         "path": "../inputs/phase-six-a-sandbox/ini/package/units/spider/aa-t2.ini",
-        "sha256": "e083c661c2307bfcbf54bc32fabb86b299b7ee9b6ed0a56498eefc3f18218ea7"
+        "sha256": "55957f321ebb44d1fbf58de38aed6687bb08f7dd2e3157b56b299463abe5782a"
       },
       {
         "id": "modularSpider_antiairFlak",
         "path": "../inputs/phase-six-a-sandbox/ini/package/units/spider/flak.ini",
-        "sha256": "50c68cc42a49a5ca49bfd6b2ce3bc98ca642bbe6ac8bba23a1d4402c889bc260"
+        "sha256": "ee6e3961989dcd13a14310918f922a42504a48f23ce5e5c7fe55d8a962690083"
       },
       {
         "id": "modularSpider_lightning",
         "path": "../inputs/phase-six-a-sandbox/ini/package/units/spider/lightning.ini",
-        "sha256": "95fd8f76886c21a2a9e6ec89aeb3a6f8cb8e3797be8caada7eb32c5fd6fc32c9"
+        "sha256": "989ca45710f018e5985144955edea1ebc720a5695a31ac71bcbcae77f7f4f49d"
       },
       {
         "id": "modularSpider_artillery",
         "path": "../inputs/phase-six-a-sandbox/ini/package/units/spider/artillery.ini",
-        "sha256": "1f10bd951a7c3235a45d48c0637b16b726c8e2933b82970ea051b56ceee7c9f7"
+        "sha256": "e13a4bf8e05d98f163c13b1d66b5b6e09e09851ec9af74c58b4079cc95767ae2"
       },
       {
         "id": "modularSpider_fabricator",
         "path": "../inputs/phase-six-a-sandbox/ini/package/units/spider/fabricator.ini",
-        "sha256": "1dd8e744296b33e53d19f1ce09e4b94971137d38e545b223eeb61956b072fb29"
+        "sha256": "ee282e3a82a9292200ec3630c6e26baaddd9064df29a0d9728c32596368701af"
       },
       {
         "id": "modularSpider_fabricatorT2",
         "path": "../inputs/phase-six-a-sandbox/ini/package/units/spider/fabricator-t2.ini",
-        "sha256": "84a554fb8b81c2286a4bb7f3e1918612879a9ca1d899efa5fa272595de2c1b1f"
+        "sha256": "257f4a432db57b882c19cf1f5a6e648201f78dd8a2d0356382cc670f4b1e40e1"
       },
       {
         "id": "modularSpider_shieldGen",
         "path": "../inputs/phase-six-a-sandbox/ini/package/units/spider/shield.ini",
-        "sha256": "4d724adc527574bbb1ed783378bc72fbc6f8aa69d563f1d33c9f48b7668c3ab8"
+        "sha256": "09e4e10ea77dd7135ebddb77c0960a18e41b390158b7d917763ed217f16f243d"
       },
       {
         "id": "modularSpider_speedIncomplete",
         "path": "../inputs/phase-six-a-sandbox/ini/package/units/spider/speed-incomplete.ini",
-        "sha256": "45c88370c33d60ed35dff2812c0c03a39eed6e545fa59d43d394b7ba461a908d"
+        "sha256": "1d31a06aef9f5eacaa55306407911274babfa964ce16047b53b327f36588e2e0"
       },
       {
         "id": "modularSpider_speed",
         "path": "../inputs/phase-six-a-sandbox/ini/package/units/spider/speed.ini",
-        "sha256": "309bcf3a4b043e70a98a2da468d894535e779a824540f081b94e2bac7e8e53e6"
+        "sha256": "46f31c00ad4e2e7e7a4e4305d0131f9e7111d577b2f49332364e5603d0b8009e"
       },
       {
         "id": "modularSpider_laserdefense",
         "path": "../inputs/phase-six-a-sandbox/ini/package/units/spider/laser-defense.ini",
-        "sha256": "984a8f1fe6c27651ded75fb508a13ba5f58dc8b59c3ecc9fdb608aabd896340d"
+        "sha256": "7c6b629909e595bc1bb24f5946af2ca4dd6135eda8e00d78964835e0a0c7108d"
       },
       {
         "id": "modularSpider_antinuke",
         "path": "../inputs/phase-six-a-sandbox/ini/package/units/spider/anti-nuke.ini",
-        "sha256": "514fc79d8c4c3f2edfd76959c1a7a25c8d47d882a25997e0e5cf3b413b49ca3e"
+        "sha256": "fc67f72bdf05384462117208e10671ad65d46b3a519a0be2ace393bdddc9e4a8"
       },
       {
         "id": "modularSpider_blink",
         "path": "../inputs/phase-six-a-sandbox/ini/package/units/spider/blink.ini",
-        "sha256": "57348a41dcdb0773f2b9b3e1f050f66d79a28bf9990d29b91322208ca8344633"
+        "sha256": "c48e3aeb0117c6b353c29576ade0e8447454395d8c68b4452f52d49da843489d"
       },
       {
         "id": "commandCenter",
@@ -285,17 +285,17 @@
       {
         "id": "amphibiousJet",
         "path": "../inputs/phase-six-a-sandbox/ini/package/extra/air-products/units/amphibiousJet.ini",
-        "sha256": "1a29b989d23116a8bc2eddca9e342e9c415ad37a9e6be6ffb9adc3dae365206e"
+        "sha256": "d66a095397e46ee330b58f5cf65a85d40f6d6379cef5050585d289040a778e6d"
       },
       {
         "id": "dropship",
         "path": "../inputs/phase-six-a-sandbox/ini/package/extra/air-products/units/dropship.ini",
-        "sha256": "5ed3661eb8c4cc8bbc590122674e8073ba14428a89096a076f09336b30ec92fd"
+        "sha256": "3e1d252090b79044b9cc6841f6400f2d30743f6f98befa27d2b2d42c98306b7c"
       },
       {
         "id": "aaBeamGunship",
         "path": "../inputs/phase-six-a-sandbox/ini/package/extra/air-products/units/aaBeamGunship.ini",
-        "sha256": "325fa91eae0fbda8fb4e5512dfac55d616c45a8842b768860a7d880959ab0ac0"
+        "sha256": "ea8327dc2976113817c9cb3d35398951bad57d18610cb13325ba1e4e4ce21751"
       },
       {
         "id": "aaBeamGunship_afterburn",
@@ -305,7 +305,7 @@
       {
         "id": "mechBunker",
         "path": "../inputs/phase-six-a-sandbox/ini/package/extra/bunker/units/bunker/bunker.ini",
-        "sha256": "955a07fcbcc68c27651b14dc081416dfd600c6cd921b2d30e9b709eaec14c094"
+        "sha256": "8fa9e95d45a09d1e31efc895f02a3b472bbca18c5453278e794648810e04459b"
       },
       {
         "id": "mechBunkerDeployed",
@@ -320,32 +320,32 @@
       {
         "id": "nautilusSubmarine",
         "path": "../inputs/phase-six-a-sandbox/ini/package/extra/nautilus/nautilus/nautilus.ini",
-        "sha256": "e4641e28313c8def71bb0fd0985e9d73f8df1540eb00d95d56a2e53853488ff2"
+        "sha256": "f3cba857a0d55c67ef40a85db2bec67033cfc70c27a894eb11f257962edc179d"
       },
       {
         "id": "nautilusSubmarineSurface",
         "path": "../inputs/phase-six-a-sandbox/ini/package/extra/nautilus/nautilus/nautilusSurface.ini",
-        "sha256": "6393382f2599ddc6738ab3db66bd8c509fed855a91c4aebe5e3025661db90018"
+        "sha256": "2db5ff991ef87e428aeedc902265dadeab52aa4dd10e6168b8b8797e136edc7e"
       },
       {
         "id": "nautilusSubmarineLand",
         "path": "../inputs/phase-six-a-sandbox/ini/package/extra/nautilus/nautilus/nautilusLand.ini",
-        "sha256": "8c4796190240f14413073c8daa4cd002ef045ff67798bfebbe706c4ab367b8a5"
+        "sha256": "9ef25da73f736f4f3da42b2415932734af14b7056ee8af592f563b75cea8a1e2"
       },
       {
         "id": "hoverTank",
         "path": "../inputs/phase-six-a-sandbox/ini/package/extra/nautilus/nautilus/hover/hover.ini",
-        "sha256": "277a57acd5e32155213c36764e82ee68876d66dc230726004078f13ef7824ed3"
+        "sha256": "72b3c3dd1877143957e54f78be216e909d850be47ea93d0c99bc4d9e6d8f0926"
       },
       {
         "id": "robotCrab",
         "path": "../inputs/phase-six-a-sandbox/ini/package/extra/nautilus/nautilus/scout/robotCrab.ini",
-        "sha256": "464fa07e0e1964b1ae48484c3d709fe4a6b0db19e0f414d922c547d67e228fac"
+        "sha256": "51f5b82e3cc8c0a78de92d7d67b2461f2327f30dd351776d18e78001432bb0d2"
       },
       {
         "id": "robotCrabWater",
         "path": "../inputs/phase-six-a-sandbox/ini/package/extra/nautilus/nautilus/scout/robotCrabWater.ini",
-        "sha256": "b9dba4aa9c59f7a7567fbb3e54280da5aff00cb879ef26500a4044fd99089ea1"
+        "sha256": "b0113b12493feba7392ee04de0cdee6f4ba097cfede4e1e89c007bf7da51f748"
       },
       {
         "id": "experimentalLandFactory",
@@ -787,7 +787,7 @@
       {
         "id": "dep114",
         "path": "../inputs/phase-six-a-sandbox/ini/package/units/economy/turret_common_land.ini",
-        "sha256": "24e6df4e7c154785fa5f81d66522859045c3c67b7c0689b8cbc1fc681b05ea60"
+        "sha256": "0e8f74a747fc6c0bc77b8c4acda4a1e1d91e64274dc6fbd91e6b012ea7f01d6f"
       },
       {
         "id": "dep115",
@@ -18413,10 +18413,10 @@
       "package/extra/air-products/units/aa_shadow.png": "da2646db128fe4e3047fe42c25707440619567e791526b29e44266a966cf77e0",
       "package/extra/air-products/units/aa_trail.png": "81584313c94d76a4a1f0a8288810ba75c07bd57ae4959dced652b8648955a00e",
       "package/extra/air-products/units/aa_turret.png": "0b9f36b2d623711b1f49cf41fbe70eb6c23e921ea3cb10ff9e24a15f08e017a8",
-      "package/extra/air-products/units/aaBeamGunship.ini": "325fa91eae0fbda8fb4e5512dfac55d616c45a8842b768860a7d880959ab0ac0",
+      "package/extra/air-products/units/aaBeamGunship.ini": "ea8327dc2976113817c9cb3d35398951bad57d18610cb13325ba1e4e4ce21751",
       "package/extra/air-products/units/aaBeamGunship_afterburn.ini": "ab3116aea39fef4a5d009bb6482370a289a326be82bb47f68e789cbb16e466f6",
-      "package/extra/air-products/units/amphibiousJet.ini": "1a29b989d23116a8bc2eddca9e342e9c415ad37a9e6be6ffb9adc3dae365206e",
-      "package/extra/air-products/units/dropship.ini": "5ed3661eb8c4cc8bbc590122674e8073ba14428a89096a076f09336b30ec92fd",
+      "package/extra/air-products/units/amphibiousJet.ini": "d66a095397e46ee330b58f5cf65a85d40f6d6379cef5050585d289040a778e6d",
+      "package/extra/air-products/units/dropship.ini": "3e1d252090b79044b9cc6841f6400f2d30743f6f98befa27d2b2d42c98306b7c",
       "package/extra/air-products/units/dropship.png": "0e44f9bfdc9e760f6cd59df6e0a7aa973d5c08c0611e5fec1f94d569ec4a5e44",
       "package/extra/air-products/units/dropship_dead.png": "604d1acc5abe2f32a5429262f7e6b6f28922e36be789b93ddb55f04f6a874f06",
       "package/extra/air-products/units/dropship_shadow.png": "11b26ac87143306dfa7547ee0db124241ce6c02a3cb3df5e71407f3544150be3",
@@ -18426,7 +18426,7 @@
       "package/extra/air-products/units/jet_right.png": "717e4192943b371bba6a1f75b951f45f35e791757bb4295c5d97ecef2a07101c",
       "package/extra/air-products/units/jet_shadow.png": "1b64b8ec6b2f88cd7b5d97ac115dcdee35395ed08e02ec086a14c34e053fc7eb",
       "package/extra/bunker/units/bunker/body.png": "0eab7ae064a863202066f910491dfd2e1f9b206086913795d500b26fe7928b71",
-      "package/extra/bunker/units/bunker/bunker.ini": "955a07fcbcc68c27651b14dc081416dfd600c6cd921b2d30e9b709eaec14c094",
+      "package/extra/bunker/units/bunker/bunker.ini": "8fa9e95d45a09d1e31efc895f02a3b472bbca18c5453278e794648810e04459b",
       "package/extra/bunker/units/bunker/deployed.ini": "f6e8c775ad41bc0f7fe1d70755f703bc87fc615eb1c0d011f1ecc59bb5e18835",
       "package/extra/bunker/units/bunker/foot.png": "2a917fabd6c029c91140cd373b569a27846fd7612def12d09ddddeece7d57014",
       "package/extra/bunker/units/bunker/leg.png": "f64290238b9b3058551b013476d86f441b8a496587afc00f6354ffcc21e8bee6",
@@ -18446,20 +18446,20 @@
       "package/extra/nautilus/nautilus/body.png": "d0a214b3e6e95566a2272b5066ddca894eb70935047c749b882b7349c5a91347",
       "package/extra/nautilus/nautilus/dead.png": "1d30c331e5377cf75134857aa8b2b687ec3179e48acf5fe649a71625cdbd890a",
       "package/extra/nautilus/nautilus/foot.png": "05931f6c90ccac2921ae9c616932ab422ff1b6ac41c474980850b517b6626dfb",
-      "package/extra/nautilus/nautilus/hover/hover.ini": "277a57acd5e32155213c36764e82ee68876d66dc230726004078f13ef7824ed3",
+      "package/extra/nautilus/nautilus/hover/hover.ini": "72b3c3dd1877143957e54f78be216e909d850be47ea93d0c99bc4d9e6d8f0926",
       "package/extra/nautilus/nautilus/hover/shadow.png": "05994cff1434fb85e8e37527c034a535b6f1de4431aa3c50ac8b5370a1aef997",
       "package/extra/nautilus/nautilus/hover/tank.png": "71ebc6f6e73814573a90eaebadcdae40b53abe8a287cefbc5a8a06b6bab04ab0",
       "package/extra/nautilus/nautilus/hover/tank_dead.png": "3eab0f9914393445a2b3424643341ab33e55016b1fec645fd1a91f1a755643c8",
       "package/extra/nautilus/nautilus/leg.png": "f53a804b044605a29c4bb72a19a89c5fd971413ca3987dde49975832bf479efb",
-      "package/extra/nautilus/nautilus/nautilus.ini": "e4641e28313c8def71bb0fd0985e9d73f8df1540eb00d95d56a2e53853488ff2",
-      "package/extra/nautilus/nautilus/nautilusLand.ini": "8c4796190240f14413073c8daa4cd002ef045ff67798bfebbe706c4ab367b8a5",
-      "package/extra/nautilus/nautilus/nautilusSurface.ini": "6393382f2599ddc6738ab3db66bd8c509fed855a91c4aebe5e3025661db90018",
+      "package/extra/nautilus/nautilus/nautilus.ini": "f3cba857a0d55c67ef40a85db2bec67033cfc70c27a894eb11f257962edc179d",
+      "package/extra/nautilus/nautilus/nautilusLand.ini": "9ef25da73f736f4f3da42b2415932734af14b7056ee8af592f563b75cea8a1e2",
+      "package/extra/nautilus/nautilus/nautilusSurface.ini": "2db5ff991ef87e428aeedc902265dadeab52aa4dd10e6168b8b8797e136edc7e",
       "package/extra/nautilus/nautilus/scout/base.png": "fcf81fbd8d3249f9fdb67d476dd65472e7ddfac85aae8d8cc41532f3c345e13b",
       "package/extra/nautilus/nautilus/scout/dead.png": "9015bd7b81af4007052dec7ba2348f4df812d7468a59ed0252befb2a65ef495c",
       "package/extra/nautilus/nautilus/scout/foot.png": "f7384f4a77fcb038a8e41d555cb28cdb5170d0427a11932d3e8c5c7e66df71f3",
       "package/extra/nautilus/nautilus/scout/leg.png": "e214187f8708d0043085c145fed9c065da8d417574ba01b0fb9189a99aab59f9",
-      "package/extra/nautilus/nautilus/scout/robotCrab.ini": "464fa07e0e1964b1ae48484c3d709fe4a6b0db19e0f414d922c547d67e228fac",
-      "package/extra/nautilus/nautilus/scout/robotCrabWater.ini": "b9dba4aa9c59f7a7567fbb3e54280da5aff00cb879ef26500a4044fd99089ea1",
+      "package/extra/nautilus/nautilus/scout/robotCrab.ini": "51f5b82e3cc8c0a78de92d7d67b2461f2327f30dd351776d18e78001432bb0d2",
+      "package/extra/nautilus/nautilus/scout/robotCrabWater.ini": "b0113b12493feba7392ee04de0cdee6f4ba097cfede4e1e89c007bf7da51f748",
       "package/extra/nautilus/nautilus/scout/turret.png": "32806335dcc85ca90f465074222035356464739b1ea602f29337d3e50bff4983",
       "package/extra/nautilus/units/experimental_back.png": "48ce4976c5a9bca04fafeb721b829a53db1d27e4eed5e738fb95a4782ba78201",
       "package/extra/nautilus/units/experimental_dead.png": "dad915f09a2c62cc160dad0df6952682f652ee980c4b32f66ed42679cae85950",
@@ -18478,7 +18478,7 @@
       "package/extra/silos/dead.png": "e9ddf22d8d33bd87626d664b490813d3c611ee5018534729c86fb57a033eb293",
       "package/extra/silos/nukeLauncherC.ini": "6b5bea3a146ca304c89c48b637e841336f57d0a0d94826d741b2a8c5c436cd8e",
       "package/pack.json": "810363e9eebf7305f6eab936fb7c622491c4c40a406de3e1551a494ebb70212b",
-      "package/units/air-factory/bomber.ini": "d255b0170f5095cfadcb3b766f72b11b3d384ac01031b8fc846cf376011ef8b1",
+      "package/units/air-factory/bomber.ini": "21435d1ce4cc92a80562dd75c4a5417467fe754485423d5cc8515d3ee9528b4b",
       "package/units/air-factory/bomber_body.png": "8d64bf9486c99b9ea0c3c0dcf72a8ce09c2a3f2a753f68f7e563c23b69027f37",
       "package/units/air-factory/bomber_dead.png": "7dedafa65eede108bc4ed220b29988ac3279cdd4d1c807a230aad531802fd5ae",
       "package/units/air-factory/bomber_shadow.png": "83fa7ac87c69cea7acc295b3398ef3906b9b6459d6c557dc86e02238e47bb77d",
@@ -18516,7 +18516,7 @@
       "package/units/economy/laserDefence.ini": "5a16766af70cca2b30bdd6cd0ae55e449d17f298f7b1455119902c0729fb12f2",
       "package/units/economy/turret.png": "907d5bdfcaf8d04cd5f7cfde00bb6b77bf1973cd1191db26b8dd5f408392106a",
       "package/units/economy/turret_base2.png": "c7a05ab3c3edb89b81a698c08d60077f3b9771924a58f35fa1265f00c6d421c6",
-      "package/units/economy/turret_common_land.ini": "24e6df4e7c154785fa5f81d66522859045c3c67b7c0689b8cbc1fc681b05ea60",
+      "package/units/economy/turret_common_land.ini": "0e8f74a747fc6c0bc77b8c4acda4a1e1d91e64274dc6fbd91e6b012ea7f01d6f",
       "package/units/economy/turret_dead.png": "907d5bdfcaf8d04cd5f7cfde00bb6b77bf1973cd1191db26b8dd5f408392106a",
       "package/units/economy/turret_t1.ini": "269df8cef09ba8eeb6deb1c53e4570a6fc1b6ce3f7474d889ac7b7b093d879a7",
       "package/units/economy/turret_t1_artillery.ini": "44e545d6b40aa49a202fab240d28dc71c9a18eaeda1d97c95e117e1d8e3408d6",
@@ -18526,14 +18526,14 @@
       "package/units/economy/turret_top_l2.png": "c7a05ab3c3edb89b81a698c08d60077f3b9771924a58f35fa1265f00c6d421c6",
       "package/units/foot.png": "aa467f0cf16491a8ee42e826459d42f141dbe0dbde0ac4063d84cdad163775e7",
       "package/units/leg.png": "4ec9be2fef0a297abe341f3dbd5201dd66c5454a0bb190cc1dd4a5d2252c5819",
-      "package/units/mech-factory/builder.ini": "dff94bc5bc2c3f4cafdadda1bbf77b8d682d08ff5f4c2d9b5294fe66f287fcc2",
+      "package/units/mech-factory/builder.ini": "1a90f741476957215bac5fff9834bea053f51dfc9b740041af826c5ba2033ca7",
       "package/units/mech-factory/builder.png": "15060aa3fb36bffd4414e803beb8f5d9b2982ed14bb497fbca6cadd3de18cc1b",
       "package/units/mech-factory/builder_dead.png": "15060aa3fb36bffd4414e803beb8f5d9b2982ed14bb497fbca6cadd3de18cc1b",
       "package/units/mech-factory/engineer/blank.png": "43739c566e26fd7cb88f69d3864ea34740372f5ee99acac169e090beffbce5c6",
       "package/units/mech-factory/engineer/body.png": "341a8f2d09ebedf676e91d6dafe831494920179c720b2496f17bf3a0bec0012a",
       "package/units/mech-factory/engineer/cannon.png": "9cecbcb5dc066fb59f4d8da20dbb4e66799a4f0f05d2c04c8d107ccc73d0cd1f",
       "package/units/mech-factory/engineer/dead.png": "ec48e59071fbd6f9fa1d038cc5601740a3173904046f7cc56445f0ae3b0f054c",
-      "package/units/mech-factory/engineer/engineer.ini": "b984614f9d23991357d44d40bf5d6ad7a427e50f0c17295b81ae24089b55d3bb",
+      "package/units/mech-factory/engineer/engineer.ini": "08e3cefa7c46a381bac78517173068e45ee394ed86629a26263e615125c1e933",
       "package/units/mech-factory/engineer/foot.png": "f2e96fe3894acb933a8a00e6f07692855af9cc004643cdd2028d1321c1c3f633",
       "package/units/mech-factory/engineer/leg.png": "8e9f14534122311e078ac4795c3706e7be80077107d7ac3fb9233d653189ef73",
       "package/units/mech-factory/factory.png": "b0a9fa6f0ef2f4b9f240978e90e1925440f9814639826df97d4a582a9c3a7ec2",
@@ -18553,10 +18553,10 @@
       "package/units/repairbay/body.png": "6ccf44446a0c4fbaa70a9ff1105257943feb5d622f07caca5e24b23cfc5b771e",
       "package/units/repairbay/dead.png": "cc321255a36fa9aed77068b995249114e569ce76688c9ebc21794a8cf420f8dd",
       "package/units/repairbay/repairbay.ini": "ba3827a402af02c8454b0857d9d699614e5e051fa3075fbceb108cc4971fc4a9",
-      "package/units/sea-factory/hovercraft.ini": "6deff4c1cc65454e9ddabb2bbd9af4cec9d80b9cc8aa19ee012a5c0f875c866f",
+      "package/units/sea-factory/hovercraft.ini": "e32f5dcd5bb1c2feba23eb01ac2e2c2670f15723c7d4a1b1fa61275db825c033",
       "package/units/sea-factory/hovercraft.png": "d515f58aa5726cc44880b6b05c48b2af10a02118a164449a2388d6dcae534b8b",
       "package/units/sea-factory/hovercraft_dead.png": "60a36a41dc022e27b3fe20b5f0e530493648afb02ee90987bf45774f3ba0cfb0",
-      "package/units/sea-factory/land/tank.ini": "f297e31a124d57858eab11b1340af9ac7db25ad8641bed9592666c2d7751226a",
+      "package/units/sea-factory/land/tank.ini": "d63d7741a625b0832293be95d1d36a427052dc3e14072576324da68944e01e43",
       "package/units/sea-factory/land/tank.png": "898fa8d12d89e73c988c258c3522a23660b2fdc500b4c8588fd2d8cf5fe4b605",
       "package/units/sea-factory/land/tank_dead.png": "cbab7f92fa0cbef203e94823e2cbdc3e0116df3dab205f2ce0296e399a1a4ffa",
       "package/units/sea-factory/land/tank_turret.png": "20dfaa2a45dd5bb635e83425fb64a6d3d3f9fef48d1b0a3b573fe5b9b67c4985",
@@ -18571,51 +18571,51 @@
       "package/units/sea-factory/seaFactoryT2.ini": "7003267738d0e32a0876f4ac92646e21288e4c54738353f28e0bbf00d6d0ef89",
       "package/units/sea-factory/submarine/body.png": "d61fd88c779e1209fee1400b3e21fe79cfef45729b31aea4d3a476593e794892",
       "package/units/sea-factory/submarine/dead.png": "fed1c2fca42a6e8b4a815b4146e2371a66786a0a03a000652c4bf67ad23a7506",
-      "package/units/sea-factory/submarine/submarine.ini": "56d2f25601789a9dc7ad2dcb7df57ed2efac8c89456552580a2d6eb6796a965b",
-      "package/units/spider/aa-t2.ini": "e083c661c2307bfcbf54bc32fabb86b299b7ee9b6ed0a56498eefc3f18218ea7",
+      "package/units/sea-factory/submarine/submarine.ini": "399d6e9127d8f6923f2588159e4bcb013dbb60d5d4d95c334af98e1b607e349a",
+      "package/units/spider/aa-t2.ini": "55957f321ebb44d1fbf58de38aed6687bb08f7dd2e3157b56b299463abe5782a",
       "package/units/spider/aa-t2.png": "65be990172b38abd38bf943d3469ebfe9507d59cc2b02afbb77a91e99cee32b6",
-      "package/units/spider/aa.ini": "0623f535dc80a8bb4455d92e5621d4704a115a8e3a53d3aa8457a404d1224670",
+      "package/units/spider/aa.ini": "b803a168ff103781271f4719b833e61d14e0526f6c348ee6c7ec60ea4a4d4c0d",
       "package/units/spider/aa.png": "0b9f36b2d623711b1f49cf41fbe70eb6c23e921ea3cb10ff9e24a15f08e017a8",
-      "package/units/spider/anti-nuke.ini": "514fc79d8c4c3f2edfd76959c1a7a25c8d47d882a25997e0e5cf3b413b49ca3e",
+      "package/units/spider/anti-nuke.ini": "fc67f72bdf05384462117208e10671ad65d46b3a519a0be2ace393bdddc9e4a8",
       "package/units/spider/anti-nuke.png": "e8f864327a95429c8830fe38bb934ed4c4b673d675d284fa412d0f3370a99356",
       "package/units/spider/artillery-base.png": "31005cd39c5a40c76d1b2008470f02f10a9b490192dd82d85e6d41e24aaeff11",
-      "package/units/spider/artillery.ini": "1f10bd951a7c3235a45d48c0637b16b726c8e2933b82970ea051b56ceee7c9f7",
+      "package/units/spider/artillery.ini": "e13a4bf8e05d98f163c13b1d66b5b6e09e09851ec9af74c58b4079cc95767ae2",
       "package/units/spider/artillery.png": "21d08ffc7cbd855b4e85e56bade550bb7218c08843cf07e7fdbe135e687d8820",
-      "package/units/spider/blink.ini": "57348a41dcdb0773f2b9b3e1f050f66d79a28bf9990d29b91322208ca8344633",
+      "package/units/spider/blink.ini": "c48e3aeb0117c6b353c29576ade0e8447454395d8c68b4452f52d49da843489d",
       "package/units/spider/blink.png": "bf7c4642fa3927c6a16d31e93c1ef25ccc85b998edf90503580e7c7b65e28f9b",
       "package/units/spider/body.png": "1b6e62fa58c3fb4e9ac865c528f7cfb03613c0fa99ac07ce92a2a0fc74f9bcf9",
       "package/units/spider/dead.png": "ed1c887a864c07edfd0d7a906339d0ce1132039f6f2aea4ad6ae2dc0ec2e268d",
-      "package/units/spider/empty.ini": "9a6e27dcdf2dd09d868b6d36df7429c148191ae54afe81bfcab951fc33b852dc",
+      "package/units/spider/empty.ini": "b4fa1cad9caf648cab80df85d22219b7761c5e451bbc57ac872995f478d33e30",
       "package/units/spider/empty.png": "43739c566e26fd7cb88f69d3864ea34740372f5ee99acac169e090beffbce5c6",
-      "package/units/spider/fabricator-t2.ini": "84a554fb8b81c2286a4bb7f3e1918612879a9ca1d899efa5fa272595de2c1b1f",
+      "package/units/spider/fabricator-t2.ini": "257f4a432db57b882c19cf1f5a6e648201f78dd8a2d0356382cc670f4b1e40e1",
       "package/units/spider/fabricator-t2.png": "fa641f80a86424197868e2a121dbb5bbfaaf4a34f787f5123f09d1daddb47670",
-      "package/units/spider/fabricator.ini": "1dd8e744296b33e53d19f1ce09e4b94971137d38e545b223eeb61956b072fb29",
+      "package/units/spider/fabricator.ini": "ee282e3a82a9292200ec3630c6e26baaddd9064df29a0d9728c32596368701af",
       "package/units/spider/fabricator.png": "31005cd39c5a40c76d1b2008470f02f10a9b490192dd82d85e6d41e24aaeff11",
-      "package/units/spider/flak.ini": "50c68cc42a49a5ca49bfd6b2ce3bc98ca642bbe6ac8bba23a1d4402c889bc260",
+      "package/units/spider/flak.ini": "ee6e3961989dcd13a14310918f922a42504a48f23ce5e5c7fe55d8a962690083",
       "package/units/spider/flak.png": "c00eb72366dc9c7fcc22e5a77e90a3ca4eaeb9255e6ebb652d038d5c18d7f96a",
       "package/units/spider/foot.png": "7038cf379803dc79ea3de87357e32fb5fcf2432f7e0c47bbc2c4f089ec087fe5",
-      "package/units/spider/gun-t2.ini": "e0f452705864b530cc5c8a38832190719d71a3cb6c9b6cb3a27ace1286485137",
+      "package/units/spider/gun-t2.ini": "25625f63f06d243e0744b0c850e77bcfb8fe1035e6a24bab93137812b702e854",
       "package/units/spider/gun-t2.png": "18258f027e53041edac46991a6c10f3a85391d35a6cb790469df6910140f3570",
-      "package/units/spider/gun.ini": "df1a3036130eac72de233cb7df2badc4d04e9b6daf4cd4bfec9a3ac0fc609b4f",
+      "package/units/spider/gun.ini": "fb402b51f3c0bb1da3371c8840f8b5362b7bcb822982bc85810c0fc0c4e6889b",
       "package/units/spider/gun.png": "d12e5b8b43f1b8b631623a2c3d9b615b02efb82389c85c033fa6f3c5690869b8",
-      "package/units/spider/laser-defense.ini": "984a8f1fe6c27651ded75fb508a13ba5f58dc8b59c3ecc9fdb608aabd896340d",
+      "package/units/spider/laser-defense.ini": "7c6b629909e595bc1bb24f5946af2ca4dd6135eda8e00d78964835e0a0c7108d",
       "package/units/spider/laser-defense.png": "31005cd39c5a40c76d1b2008470f02f10a9b490192dd82d85e6d41e24aaeff11",
       "package/units/spider/leg.png": "584c01dc38d6b5a28e67bc88c84cd0a46abaaa02203e42656884692c904a4371",
-      "package/units/spider/lightning.ini": "95fd8f76886c21a2a9e6ec89aeb3a6f8cb8e3797be8caada7eb32c5fd6fc32c9",
+      "package/units/spider/lightning.ini": "989ca45710f018e5985144955edea1ebc720a5695a31ac71bcbcae77f7f4f49d",
       "package/units/spider/lightning.png": "574a5548601288421133c38740cc69a5f8a9b562fe40a15a628c64b9520de770",
       "package/units/spider/nano.png": "feed165d316f8cb6c80e46631d5d272480cf5c1d18df265737f4b81244a9fdc1",
       "package/units/spider/shadow.png": "2e2c8757470c03ea534724e733edf9b091e863064e2b79955b4525b96b12870e",
-      "package/units/spider/shield.ini": "4d724adc527574bbb1ed783378bc72fbc6f8aa69d563f1d33c9f48b7668c3ab8",
+      "package/units/spider/shield.ini": "09e4e10ea77dd7135ebddb77c0960a18e41b390158b7d917763ed217f16f243d",
       "package/units/spider/shield.png": "bf7c4642fa3927c6a16d31e93c1ef25ccc85b998edf90503580e7c7b65e28f9b",
       "package/units/spider/slot-ui.png": "0d79d0a6629a3c9539ed4130ad13a444fc44d07812b515679e38c8c118bf714f",
-      "package/units/spider/small-laser-t2.ini": "a25410c0a0e9f310eb9e71e2ffaf6fb2d0e815ff93bb1bf7571217bff1d44a9f",
+      "package/units/spider/small-laser-t2.ini": "532c457e469b8ba88b33f4fd81df1d49d0caf48c4962fa1c77510b0375392c5f",
       "package/units/spider/small-laser-t2.png": "d93009ae9d2f752477147288d311ccf25d5e6379ed5aee7738642db4cdad8840",
-      "package/units/spider/small-laser.ini": "13cb0f111ad7ed0808c3e45fa52712ec49c71886676d191b2857f9a4d2481dee",
+      "package/units/spider/small-laser.ini": "f4a4690a8ddb128488512a5e86d51a16c24b02689b7e62e752feb13216b06149",
       "package/units/spider/small-laser.png": "f60e673b182a1930751d0ca2b31957f8f9d359ccb43362c22d0674a7615db5e7",
-      "package/units/spider/speed-incomplete.ini": "45c88370c33d60ed35dff2812c0c03a39eed6e545fa59d43d394b7ba461a908d",
-      "package/units/spider/speed.ini": "309bcf3a4b043e70a98a2da468d894535e779a824540f081b94e2bac7e8e53e6",
+      "package/units/spider/speed-incomplete.ini": "1d31a06aef9f5eacaa55306407911274babfa964ce16047b53b327f36588e2e0",
+      "package/units/spider/speed.ini": "46f31c00ad4e2e7e7a4e4305d0131f9e7111d577b2f49332364e5603d0b8009e",
       "package/units/spider/speed.png": "6a12b8a065e0f1e31c6fc33f1fafa1a6bf021a3df9a27ebb3d79ea7aae7fb956",
-      "package/units/spider/spider.ini": "0c82b935dd763e31b93e086203b3f0e0b91905a66784ad50ddfbebbf1c0c4fb5"
+      "package/units/spider/spider.ini": "cb1afddd2ac270686b5af411c231deff91cc584fe91a7369730a1481e266a3ea"
     }
   }
 }

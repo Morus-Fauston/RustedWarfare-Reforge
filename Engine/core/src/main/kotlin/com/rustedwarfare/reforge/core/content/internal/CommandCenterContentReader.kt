@@ -66,6 +66,7 @@ internal object CommandCenterContentReader {
             durability = DurabilityProfile(hp, dead, 2500.0),
             building = BuildingProfile(BuildingFootprint(-1, -1, 1, 1), image("image_back")),
             production = ProductionProfile("builder"), directHitTargetKind = DirectHitTargetKind.NATIVE_BUILDING,
-            income = IncomeProfile(number("incomePeriod", 10.0).toFloat(), number("incomeCredits", 4.5).toFloat()))
+            income = IncomeProfile(number("incomePeriod", 10.0).toFloat(), number("incomeCredits", 4.5).toFloat()),
+            mass = UnitMassContent.read(path, values["mass"], movable = false))
     }
 }

@@ -12,7 +12,7 @@
       {
         "id": "amphibiousJet",
         "path": "../inputs/amphibious-production/ini/production-package/units/amphibiousJet.ini",
-        "sha256": "a89f6e0bdd1d9e8a5896968e178e53702d362cc36a5b390ea71c84518e0469ce",
+        "sha256": "946420703be2659195db471c4adb72ff76e2a6dc537ed0e602cd830023058424",
         "loader": "amphibious-jet"
       }
     ],
@@ -55,7 +55,7 @@
       {
         "id": "dep-13",
         "path": "../inputs/amphibious-production/ini/production-package/units/builder.ini",
-        "sha256": "f8cf9509cf23f6582f236bb357f8f32f9d5db75df4664f61a1c8010214f1782c"
+        "sha256": "9ad9e1aef48992b1c3b130b145831df4ac74d46180a761d1fcf96b0a10d7d2e1"
       },
       {
         "id": "dep-14",
@@ -125,7 +125,7 @@
       {
         "id": "dep-29",
         "path": "../inputs/amphibious-production/ini/production-package/units/land/tank.ini",
-        "sha256": "425d0bd828d0fa40c0acefe35e078bd9d9f6eef2cc2645241f26849301f5dd3f"
+        "sha256": "2ba79925a727135c1bb71aca176a3570acf9b7fb5ae6158b696fb271bb6bc721"
       },
       {
         "id": "dep-30",

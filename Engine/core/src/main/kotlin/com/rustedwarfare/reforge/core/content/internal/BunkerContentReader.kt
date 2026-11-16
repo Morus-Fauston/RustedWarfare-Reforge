@@ -70,7 +70,7 @@ internal object BunkerContentReader {
         ShieldContent.validateQualified(path, loaded, shield, if (deployed) ShieldProfile(500f, .15f, true) else null)
         val hasShieldAbility = loaded.values.keys.any { it.startsWith("ability_") }
         for ((s, fields) in loaded.values) for (key in fields.keys) {
-            if (s.startsWith("ability_")) continue
+            if (s.startsWith("ability_") || s == "core" && key == "mass") continue
             if (key !in expected[s].orEmpty() && key !in imageFields[s].orEmpty() ||
                 !deployed && s == "graphics" && key == "image_shield") bad(s, key, "Field is not used by this qualified form")
         }
@@ -106,6 +106,7 @@ internal object BunkerContentReader {
             shieldImagePath = if (deployed) image("graphics", "image_shield") else null,
             customActions = CustomActionsProfile(listOf(deploy) + if (deployed) listOf(
                 CustomActionDefinition("undeploy", "mechBunker_1", "mechBunker", .010f, null)) else emptyList()),
-            groundHeight = GroundHeightProfile(if (deployed) 0f else 3f))
+            groundHeight = GroundHeightProfile(if (deployed) 0f else 3f),
+            mass = loaded.mass(path, movable = !deployed))
     }
 }

@@ -36,13 +36,13 @@
       {
         "id": "builder",
         "path": "../inputs/transport-production/hjson/production-package/units/builder.hjson",
-        "sha256": "31e25b1c15e7c3f3e6f3ee2b2e3b5f6e352ef603e443518d06eeffc42547e551",
+        "sha256": "c912502b26c6630f193c88054907dd439e7eff4bc9f124d12dc164e6a3aa8c86",
         "loader": "builder"
       },
       {
         "id": "c_tank",
         "path": "../inputs/transport-production/hjson/production-package/units/land/tank.hjson",
-        "sha256": "3ad9c0cca5e3f0d7b51420b56dfc4c527f5a4a0cfd9e07ec3696056365e0e07b",
+        "sha256": "cc2c23a28c8175286c39376033d220bb65097bc93836296583675d456ab7082b",
         "loader": "declared-tank"
       },
       {
@@ -54,13 +54,13 @@
       {
         "id": "attackSubmarine",
         "path": "../inputs/transport-production/hjson/production-package/units/submarine/submarine.hjson",
-        "sha256": "617b046dcad32edc5c670435cbab635660b46ea69cf5fdbcb95fec579af90d3a",
+        "sha256": "95e5f659fa799ee4ab5c3b2ba3ef95757bd06d0ac74f6bcd653d10b478314fd2",
         "loader": "submarine"
       },
       {
         "id": "hovercraft",
         "path": "../inputs/transport-production/hjson/production-package/units/hovercraft.hjson",
-        "sha256": "9a34ed485c64b74babf5d483eff04e00948facdb1df134fb1a0505eb013ea575",
+        "sha256": "c8a93ef33531706414fe7d42c38ea56dba7aba45601ad2173f3a9f656a5d892b",
         "loader": "hovercraft"
       },
       {
@@ -880,17 +880,17 @@
       "production-package/units/air/dead.png": "78e0d0b9a4eb88801361721035f5b84d141fb745f094192891496c4b63916976",
       "production-package/units/air/helicopter.hjson": "a0f67651c335be1bf46b9793ea74c186437b6172e3be78ad189cd4cd905a3121",
       "production-package/units/air/rotor.png": "3bec04ec0daa8dcea012e8447d4ee0a58e392850da8e366d30d8e512829fd9af",
-      "production-package/units/builder.hjson": "31e25b1c15e7c3f3e6f3ee2b2e3b5f6e352ef603e443518d06eeffc42547e551",
+      "production-package/units/builder.hjson": "c912502b26c6630f193c88054907dd439e7eff4bc9f124d12dc164e6a3aa8c86",
       "production-package/units/builder.png": "15060aa3fb36bffd4414e803beb8f5d9b2982ed14bb497fbca6cadd3de18cc1b",
       "production-package/units/builder_dead.png": "15060aa3fb36bffd4414e803beb8f5d9b2982ed14bb497fbca6cadd3de18cc1b",
       "production-package/units/commandCenter/base.png": "8095d081de1407fe59e9ff99f5a5822e03275f87ffbd0f2a09ac736f8f6b3695",
       "production-package/units/commandCenter/base_back.png": "07e2e3d786bf88d6d1dfe57add1b732e84a9bd2d6313732cc4f86ec8c4da2885",
       "production-package/units/commandCenter/base_dead.png": "940b030d8a9c0161c69b1831041186c97409e85d404aa5c5f6ec58fa5d831b16",
       "production-package/units/commandCenter/commandCenter.hjson": "42cf28c27350fe51923acc75216ae6d473c4c1eb5b504945159200308679f98c",
-      "production-package/units/hovercraft.hjson": "9a34ed485c64b74babf5d483eff04e00948facdb1df134fb1a0505eb013ea575",
+      "production-package/units/hovercraft.hjson": "c8a93ef33531706414fe7d42c38ea56dba7aba45601ad2173f3a9f656a5d892b",
       "production-package/units/hovercraft.png": "d515f58aa5726cc44880b6b05c48b2af10a02118a164449a2388d6dcae534b8b",
       "production-package/units/hovercraft_dead.png": "60a36a41dc022e27b3fe20b5f0e530493648afb02ee90987bf45774f3ba0cfb0",
-      "production-package/units/land/tank.hjson": "3ad9c0cca5e3f0d7b51420b56dfc4c527f5a4a0cfd9e07ec3696056365e0e07b",
+      "production-package/units/land/tank.hjson": "cc2c23a28c8175286c39376033d220bb65097bc93836296583675d456ab7082b",
       "production-package/units/land/tank.png": "898fa8d12d89e73c988c258c3522a23660b2fdc500b4c8588fd2d8cf5fe4b605",
       "production-package/units/land/tank_dead.png": "cbab7f92fa0cbef203e94823e2cbdc3e0116df3dab205f2ce0296e399a1a4ffa",
       "production-package/units/land/tank_turret.png": "20dfaa2a45dd5bb635e83425fb64a6d3d3f9fef48d1b0a3b573fe5b9b67c4985",
@@ -907,7 +907,7 @@
       "production-package/units/seaFactoryT2.hjson": "4ceabf590abc8338a97a5fd4ae913b32b55a163ec1f18e519713eef33522b487",
       "production-package/units/submarine/body.png": "d61fd88c779e1209fee1400b3e21fe79cfef45729b31aea4d3a476593e794892",
       "production-package/units/submarine/dead.png": "fed1c2fca42a6e8b4a815b4146e2371a66786a0a03a000652c4bf67ad23a7506",
-      "production-package/units/submarine/submarine.hjson": "617b046dcad32edc5c670435cbab635660b46ea69cf5fdbcb95fec579af90d3a"
+      "production-package/units/submarine/submarine.hjson": "95e5f659fa799ee4ab5c3b2ba3ef95757bd06d0ac74f6bcd653d10b478314fd2"
     }
   }
 }

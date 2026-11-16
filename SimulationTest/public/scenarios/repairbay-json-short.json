@@ -18,7 +18,7 @@
       {
         "id": "builder",
         "path": "../inputs/repairbay-production/json/production-package/builder.json",
-        "sha256": "aa98d2ee2f31e5037c91c7cddd7c33d39311929083cb902d346c2391c22bffe9",
+        "sha256": "4488a7485cae5dd0f0d445c62abd62cb55f893eb40e5d0922a55ff70169d9e05",
         "loader": "builder"
       }
     ],

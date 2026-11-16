@@ -17,7 +17,7 @@ def write_bomber(folder, form):
     turret = dict(x=0, y=0, size=1.1, turnSpeed=20, energyUsage=1, invisible=True)
     shot = dict(life=250, speed=.3, targetSpeed=1.7, deflectionPower=3, drawSize=1, color='#000000', trailEffect=False)
     sections = dict(
-        core=dict(name='bomber', maxHp=3000, radius=16, displayRadius=19, price=4000, techLevel=2,
+        core=dict(mass=20000, name='bomber', maxHp=3000, radius=16, displayRadius=19, price=4000, techLevel=2,
                   buildSpeed=.00025, selfRegenRate=.1, energyMax=3, energyRegen=.002,
                   energyNeedsToRechargeToFull=True),
         graphics=dict(total_frames=1, image='bomber_body.png', image_dead='bomber_dead.png', image_shadow='bomber_shadow.png'),

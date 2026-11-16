@@ -42,7 +42,7 @@ def generate():
         leg = dict(x=-22, y=15, attach_x=-5, attach_y=10, moveSpeed=1.9, rotateSpeed=7,
             heightSpeed=.3, moveWarmUp='0.1s', resetAngle=25, image_leg='leg.png', image_foot='foot.png', dust_effect=False,
             holdDisMin=5, holdDisMax=19, favourOppositeSideNeighbours=True, estimatingPositionMultiplier=.7)
-        base = dict(core=dict(name='mechBunker', **{'class':'CustomUnitMetadata'}, price=4500, maxHp=800,
+        base = dict(core=dict(mass=6000, name='mechBunker', **{'class':'CustomUnitMetadata'}, price=4500, maxHp=800,
                 radius=29, fogOfWarSightRange=20, buildSpeed=.0006),
             graphics=dict(total_frames=1, image='body.png', image_wreak='NONE', image_turret='NONE',
                 image_shadow='shadow.png', lock_body_rotation_with_main_turret=False, lock_leg_rotation_with_main_turret=False),

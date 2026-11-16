@@ -37,7 +37,7 @@
       {
         "id": "template",
         "path": "../inputs/three-format-production/upgrade/json/units/turret_common_land.json",
-        "sha256": "904a90bad69b102ece4536c296fc4621947eadb53934c2db1c21067fac24f53f"
+        "sha256": "8dfae44a9db833e4394584550c97d84640ce074d86886b3983c1387e8862ccc9"
       },
       {
         "id": "turret.png",

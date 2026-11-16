@@ -3,6 +3,7 @@
   "format": "rw-reforge.unit.v2",
   "unitType": "hoverTank",
   "core": {
+    "mass": 3000,
     "name": "hoverTank",
     "class": "CustomUnitMetadata",
     "price": 450,

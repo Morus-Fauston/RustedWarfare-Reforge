@@ -18,7 +18,7 @@ internal object AfterburnContentFixture {
             image.setRGB(size.first / 2, size.second / 2, 0xff497f74.toInt())
             check(javax.imageio.ImageIO.write(image, "png", root.resolve("$name.png").toFile()))
         }
-        val core = linkedMapOf("name" to "aaBeamGunship", "maxHp" to "2500", "radius" to "22",
+        val core = linkedMapOf("name" to "aaBeamGunship", "mass" to "20000", "maxHp" to "2500", "radius" to "22",
             "price" to "6000", "buildSpeed" to "0.0004761904761904762", "image" to "body.png",
             "image_dead" to "dead.png", "image_shadow" to "shadow.png", "image_turret" to "turret.png",
             "beam_image" to "beam.png", "beam_image_start" to "beam_start.png", "beam_image_end" to "beam_end.png")
@@ -39,7 +39,7 @@ internal object AfterburnContentFixture {
                 "canPlayerCancel" to "false", "allowMultipleInQueue" to "false"),
             "hiddenAction_autoSwitchBack" to linkedMapOf("autoTrigger" to "if self.energy(empty=true)",
                 "convertTo" to "aaBeamGunship", "resourceAmount" to "energy", "resourceAmount_setValue" to "6"))
-        val numbers = setOf("maxHp", "radius", "price", "buildSpeed", "energyRegen", "energyRegenWhenRecharging",
+        val numbers = setOf("mass", "maxHp", "radius", "price", "buildSpeed", "energyRegen", "energyRegenWhenRecharging",
             "resourceAmount_setValue", "moveSpeed", "moveAccelerationSpeed", "moveDecelerationSpeed",
             "maxTurnSpeed", "turnAcceleration", "energyUsage", "idleSweepAngle")
         val booleans = setOf("canPlayerCancel", "allowMultipleInQueue", "energyNeedsToRechargeToFull")

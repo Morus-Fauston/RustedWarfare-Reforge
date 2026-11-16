@@ -51,7 +51,7 @@ def scout_forms(pack, fmt):
     scout.mkdir(exist_ok=True)
     entries = []
     for name, water in (('robotCrab', False), ('robotCrabWater', True)):
-        unit = dict(core=dict(name=name, radius=11, displayRadius=13, maxHp=650, price=700, buildSpeed=.002,
+        unit = dict(core=dict(mass=500, name=name, radius=11, displayRadius=13, maxHp=650, price=700, buildSpeed=.002,
                 reclaimPrice=0, fogOfWarSightRange=22, energyMax=1, energyRegen=-.0005,
                 energyStartingPercentage=1, dieOnZeroEnergy=True, nanoRange=110, nanoRepairSpeed=.4, nanoBuildSpeed=.4,
                 canRepairBuildings=True, canRepairUnits=True, canReclaimResources=True, image='base.png',
@@ -75,7 +75,7 @@ def scout_forms(pack, fmt):
 
 
 def generate():
-    core = dict(name='nautilusSubmarine', maxHp=4000, radius=36, price=18000, buildSpeed=.0003,
+    core = dict(mass=30000, name='nautilusSubmarine', maxHp=4000, radius=36, price=18000, buildSpeed=.0003,
         techLevel=2, fogOfWarSightRange=24, selfRegenRate=.1, nanoFactorySpeed=2,
         productionUnits='hoverTank', energyMax=6, energyRegen=.01, energyNeedsToRechargeToFull=True,
         maxTransportingUnits=3, transportUnitsRequireMovementType='WATER,HOVER,OVER_CLIFF_WATER',

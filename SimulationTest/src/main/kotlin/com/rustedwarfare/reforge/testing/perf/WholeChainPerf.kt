@@ -91,7 +91,7 @@ object WholeChainPerf {
         val unit = UnitDefinition(original.id, original.className, original.radius, original.displayRadius,
             original.totalFrames, original.imagePath, original.imageScale, original.movement, original.retainedUnconsumed,
             if (kind in listOf("DETOUR", "UNREACHABLE")) 60 else 3,
-            movementCollision = MovementCollisionShape.Circle(0.0))
+            movementCollision = MovementCollisionShape.Circle(0.0), mass = original.mass)
         val spawns = (0 until count).map { i -> UnitSpawn("u$i", "p1", "tank",
             if (kind == "DISPERSED") Position(OFFSET + 50.0 + 35 * (i % 5), OFFSET + 50.0 + 30 * (i / 5)) else Position(OFFSET + 50.0, OFFSET + 70.0), 90.0) }
         val goals = spawns.associate { spawn ->

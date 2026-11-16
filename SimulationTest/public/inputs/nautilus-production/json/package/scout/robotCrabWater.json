@@ -1,6 +1,7 @@
 {
   "format": "rw-reforge.unit.v2",
   "core": {
+    "mass": 500,
     "name": "robotCrabWater",
     "radius": 11,
     "displayRadius": 13,

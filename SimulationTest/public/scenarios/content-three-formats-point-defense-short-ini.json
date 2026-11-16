@@ -12,7 +12,7 @@
       {
         "id": "c_tank",
         "path": "../inputs/three-format-production/production/ini/units/tank.ini",
-        "sha256": "99aa63a6f6e87662e257af3ca7c4557290153e60e62fcdf74360e15caef612e8",
+        "sha256": "87492c0211b24a35781910436bc5f6ea0631d4fd5645b98d13ee92fd2d19d3ff",
         "loader": "combat"
       },
       {

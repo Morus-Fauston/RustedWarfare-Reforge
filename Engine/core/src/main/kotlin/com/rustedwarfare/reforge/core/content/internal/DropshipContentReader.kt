@@ -33,6 +33,7 @@ internal object DropshipContentReader {
             UnitDefinition("dropship", "NativeDropship", 20.0, 20.0, 1, image("image"), 1.0,
                 MovementProfile(MovementType.AIR, 2.3, .03, .05, 1.4, 0.0, false, false, .6), emptySet(),
                 durability = DurabilityProfile(500.0, image("image_dead")), build = BuildProfile(800L, .001f),
-                shadowImagePath = image("image_shadow"), transport = TransportProfile.NATIVE_DROPSHIP)
+                shadowImagePath = image("image_shadow"), transport = TransportProfile.NATIVE_DROPSHIP,
+                mass = loaded.mass(path, movable = true))
         }
 }

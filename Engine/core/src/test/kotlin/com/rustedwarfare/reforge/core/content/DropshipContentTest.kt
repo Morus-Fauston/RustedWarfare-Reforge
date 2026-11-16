@@ -18,12 +18,12 @@ class DropshipContentTest {
                 image.setRGB(22, 23, 0xff3b7e63.toInt())
                 assertTrue(ImageIO.write(image, "png", root.resolve("$name.png").toFile()))
             }
-            val fields = linkedMapOf("format" to "rw-reforge.native-dropship.v1", "name" to "dropship",
+            val fields = linkedMapOf("format" to "rw-reforge.native-dropship.v1", "name" to "dropship", "mass" to "16000",
                 "maxHp" to "500", "radius" to "20", "price" to "800", "buildSpeed" to "0.001",
                 "image" to "body.png", "image_dead" to "dead.png", "image_shadow" to "shadow.png")
             val text = if (format == "ini") fields.entries.joinToString("\n") { "${it.key}=${it.value}" }
                 else fields.entries.joinToString(",\n", "{\n", "\n}") {
-                    "\"${it.key}\": " + (if (it.key in setOf("maxHp", "radius", "price", "buildSpeed")) it.value else "\"${it.value}\"")
+                    "\"${it.key}\": " + (if (it.key in setOf("mass", "maxHp", "radius", "price", "buildSpeed")) it.value else "\"${it.value}\"")
                 }
             Files.writeString(root.resolve("dropship.$format"), text)
             Files.writeString(root.resolve("pack.json"), """{

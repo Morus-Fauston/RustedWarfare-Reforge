@@ -44,7 +44,8 @@ internal object AuthorConstructionContentReader {
                     fields.nonnegative("moveDecelerationSpeed"), fields.nonnegative("maxTurnSpeed"), fields.nonnegative("turnAcceleration"), false, false),
                 emptySet(), sight, durability = DurabilityProfile(fields.positive("maxHp"), fields.image("image_dead")),
                 build = BuildProfile(fields.price(), fields.rate()), builder = builder,
-                maintenance = maintenance?.let { MaintenanceProfile.AUTHORED }, authoredMaintenance = maintenance)
+                maintenance = maintenance?.let { MaintenanceProfile.AUTHORED }, authoredMaintenance = maintenance,
+                mass = loaded.mass(path, movable = true))
         }
 
     /** A construction body may register products through an existing factory exit. */
@@ -75,7 +76,8 @@ internal object AuthorConstructionContentReader {
                     placementFootprint = placement, foundationMovementType = foundation),
                 production = production, income = income,
                 upgrades = fields.upgrades(),
-                construction = ConstructionProfile(fields.price(), fields.rate()))
+                construction = ConstructionProfile(fields.price(), fields.rate()),
+                mass = loaded.mass(path, movable = false))
         }
 
     private class Fields(val path: Path, val loaded: UnitSourceReader.EffectiveSections, val validatePath: (Path) -> Unit) {

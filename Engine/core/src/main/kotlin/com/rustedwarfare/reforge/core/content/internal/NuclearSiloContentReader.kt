@@ -50,6 +50,7 @@ internal object NuclearSiloContentReader {
                     placementFootprint = placement),
                 build = BuildProfile(kind.constructionPrice, .001f),
                 construction = ConstructionProfile(kind.constructionPrice, .001f),
-                nuclearSilo = NuclearSiloProfile(image("image_arm1"), image("image_arm2"), kind))
+                nuclearSilo = NuclearSiloProfile(image("image_arm1"), image("image_arm2"), kind),
+                mass = loaded.mass(path, movable = false))
         }
 }

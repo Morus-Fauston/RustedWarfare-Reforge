@@ -18,7 +18,7 @@
       {
         "id": "builder",
         "path": "../inputs/nuclear-silo/ini/normal-package/builder.ini",
-        "sha256": "aa2f62b6b825e63b36e2536f705596c31bae05c9638ac33325746ac19ff23d25",
+        "sha256": "3f59aeb000b28ccccb396908cc7786616a44f321e302da484ab063fda293efd5",
         "loader": "builder"
       },
       {

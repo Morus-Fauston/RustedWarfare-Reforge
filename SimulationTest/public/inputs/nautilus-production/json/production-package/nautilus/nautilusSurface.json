@@ -1,6 +1,7 @@
 {
   "format": "rw-reforge.unit.v2",
   "core": {
+    "mass": 30000,
     "name": "nautilusSubmarineSurface",
     "maxHp": 4000,
     "radius": 36,

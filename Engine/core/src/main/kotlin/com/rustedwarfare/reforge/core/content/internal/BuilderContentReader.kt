@@ -17,10 +17,11 @@ internal object BuilderContentReader {
     fun read(path: Path): UnitDefinition = readWithSources(path).definition
 
     fun readWithSources(path: Path, validatePath: (Path) -> Unit = {}): LoadedUnitContent = UnitSourceReader(schema, validatePath).load(path) { loaded ->
-        definition(path, loaded.values.getValue("core"), validatePath)
+        definition(path, loaded, validatePath)
     }
 
-    private fun definition(path: Path, values: Map<String, String>, validatePath: (Path) -> Unit): UnitDefinition {
+    private fun definition(path: Path, loaded: UnitSourceReader.EffectiveSections, validatePath: (Path) -> Unit): UnitDefinition {
+        val values = loaded.values.getValue("core")
         fun required(key: String): String = requiredContentField(values[key], path, null, key,
             "Required builder field is absent or empty")
         fun only(key: String, expected: String) {
@@ -71,6 +72,7 @@ internal object BuilderContentReader {
             number("fogOfWarSightRange", 15.0).toInt(),
             durability = DurabilityProfile(number("maxHp", 170.0), image("image_dead")),
             build = BuildProfile(number("price", 500.0).toLong(), number("buildSpeed", .002).toFloat()),
-            builder = if (construction) BuilderProfile(targets) else null)
+            builder = if (construction) BuilderProfile(targets) else null,
+            mass = loaded.mass(path, movable = true))
     }
 }

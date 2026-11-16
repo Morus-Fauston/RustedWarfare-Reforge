@@ -3,6 +3,7 @@
   unitType: tank
   # Same authored tank; formal Hjson comments and quoteless version.
   "core": {
+    "mass": 3000,
     "name": "c_tank",
     "class": "CustomUnitMetadata",
     "price": 350,

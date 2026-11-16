@@ -70,12 +70,12 @@
       {
         "id": "dep1",
         "path": "../inputs/author-shore/ini/package/units/base-constructor.ini",
-        "sha256": "ada1ada5be91d3ad922ce1cbe422d336d93cba6f4b9411884e393e7ccdacb128"
+        "sha256": "6c9fdaf62e117d44ab0a4d22fc2087a37cf375807e96f2712402b9ba358974ea"
       },
       {
         "id": "dep2",
         "path": "../inputs/author-shore/ini/package/units/base.ini",
-        "sha256": "0a6f3edcc4f48a5d10a775ce9fe6ec4fad8b6ced66807c0a7808608c0a3e7e8f"
+        "sha256": "bff6b0fbdf0513cd9ce5442d28fcc793d02325125490ce37dfe96d01768f70e9"
       },
       {
         "id": "dep3",

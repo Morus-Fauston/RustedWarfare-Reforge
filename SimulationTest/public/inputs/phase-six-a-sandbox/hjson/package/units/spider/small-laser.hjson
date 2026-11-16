@@ -1,6 +1,7 @@
 {
   "format": "rw-reforge.unit.v2",
   "core": {
+    "mass": 10000,
     "name": "modularSpider_smallgunturret",
     "class": "CustomUnitMetadata",
     "price": 700,

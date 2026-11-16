@@ -12,37 +12,37 @@
       {
         "id": "nautilusSubmarine",
         "path": "../inputs/nautilus-production/hjson/package/nautilus.hjson",
-        "sha256": "06244f9651abd023b81d30c0b2caea32f7a9ca52a014143f02ce55c9d7cec434",
+        "sha256": "9b2a6147acd53e1a90a51cdf6a13364841898742af9c9f9b42aecd33c7098491",
         "loader": "nautilus"
       },
       {
         "id": "nautilusSubmarineSurface",
         "path": "../inputs/nautilus-production/hjson/package/nautilusSurface.hjson",
-        "sha256": "e404d0b6fe1d5aef52cdb7ca3ed628779fc7838aa3b6ece7aa3fa564154210e3",
+        "sha256": "8a0ddf002282eeb46e28881fa7eb691cb20aa3838ed5178803779a9a247844f6",
         "loader": "nautilus"
       },
       {
         "id": "nautilusSubmarineLand",
         "path": "../inputs/nautilus-production/hjson/package/nautilusLand.hjson",
-        "sha256": "4cc7ca3320ca27cd5a20185cd018d6a40fa58fc77abeccd90f4a2f8613fb5ddc",
+        "sha256": "4b2e60c808b48785c59d3f0fa95c24f1e6f5fa1d81bfd68b72ef1fe9b9501f3e",
         "loader": "nautilus"
       },
       {
         "id": "robotCrab",
         "path": "../inputs/nautilus-production/hjson/package/scout/robotCrab.hjson",
-        "sha256": "897c3cd060abbac65805d84be1dffcb1602915b2f7030069bfac67b0705dbdef",
+        "sha256": "209b371de247750be435e72aa0a5d4491e680b22117a8390bf5885578b6b25b8",
         "loader": "scout-bot"
       },
       {
         "id": "robotCrabWater",
         "path": "../inputs/nautilus-production/hjson/package/scout/robotCrabWater.hjson",
-        "sha256": "7f7f09a26e1e917dc7d8008d89967cc6c089a6b3b2482f276e5c89fb1ece3ba2",
+        "sha256": "14f59f73e80197d18e2d5b3522d8a56ae3c6f25a047530c129630951b0fe723d",
         "loader": "scout-bot"
       },
       {
         "id": "hoverTank",
         "path": "../inputs/nautilus-production/hjson/package/hover/hover.hjson",
-        "sha256": "d1afd2cda0f079b33937203ff9dd2e0e987250752b40e3c821d61e5261e379e4",
+        "sha256": "1613d920e3848c3a46ac2f085f622dd06dd46ce4e847d30b23ec3f62913f1cd0",
         "loader": "hover-tank"
       }
     ],

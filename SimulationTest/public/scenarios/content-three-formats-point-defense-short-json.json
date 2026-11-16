@@ -12,7 +12,7 @@
       {
         "id": "c_tank",
         "path": "../inputs/three-format-production/production/json/units/tank.json",
-        "sha256": "0f2c3c9eb45c3fa54e5f7a8d2e960ca90891b0895b4e91169e6f8f48666d974d",
+        "sha256": "ad35defff71714f1cc2a9fb928361c619769a43f374952e1995a7e68bc807cca",
         "loader": "combat"
       },
       {

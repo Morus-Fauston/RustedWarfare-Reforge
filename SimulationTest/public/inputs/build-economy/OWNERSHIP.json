@@ -52,7 +52,7 @@
     },
     {
       "path": "economy/units/builder.properties",
-      "sha256": "2d0b0e454b904182c8c6dca991a0252bead473942342556512b6eff2f726b82a"
+      "sha256": "4cf77ba73853de9ced30662878bbd80633a82716d2ccc89298e2da99ac146aab"
     },
     {
       "path": "economy/units/builder_dead.png",
@@ -144,7 +144,7 @@
     },
     {
       "path": "economy/units/tank.ini",
-      "sha256": "99aa63a6f6e87662e257af3ca7c4557290153e60e62fcdf74360e15caef612e8"
+      "sha256": "87492c0211b24a35781910436bc5f6ea0631d4fd5645b98d13ee92fd2d19d3ff"
     },
     {
       "path": "economy/units/tank.png",
@@ -200,7 +200,7 @@
     },
     {
       "path": "factory/units/builder.properties",
-      "sha256": "bb8926bedc7e48b1cf5aae35dd1bc7a54b946a7446f01b28c58f571d3fd40059"
+      "sha256": "f5b0708743fdf0a921abf779d06bb4425ef2c077c06c43ed3cce88960f995470"
     },
     {
       "path": "factory/units/builder_dead.png",
@@ -228,7 +228,7 @@
     },
     {
       "path": "factory/units/tank.ini",
-      "sha256": "99aa63a6f6e87662e257af3ca7c4557290153e60e62fcdf74360e15caef612e8"
+      "sha256": "87492c0211b24a35781910436bc5f6ea0631d4fd5645b98d13ee92fd2d19d3ff"
     },
     {
       "path": "factory/units/tank.png",
@@ -292,7 +292,7 @@
     },
     {
       "path": "queue/units/builder.properties",
-      "sha256": "2d0b0e454b904182c8c6dca991a0252bead473942342556512b6eff2f726b82a"
+      "sha256": "4cf77ba73853de9ced30662878bbd80633a82716d2ccc89298e2da99ac146aab"
     },
     {
       "path": "queue/units/builder_dead.png",
@@ -380,7 +380,7 @@
     },
     {
       "path": "queue/units/tank.ini",
-      "sha256": "99aa63a6f6e87662e257af3ca7c4557290153e60e62fcdf74360e15caef612e8"
+      "sha256": "87492c0211b24a35781910436bc5f6ea0631d4fd5645b98d13ee92fd2d19d3ff"
     },
     {
       "path": "queue/units/tank.png",
@@ -436,7 +436,7 @@
     },
     {
       "path": "start/units/builder.properties",
-      "sha256": "0de6bc2ab221fb996ffd41a23a00ef7c27c25dafec95df72396b17b3354c4ab2"
+      "sha256": "66ad0cdca50b61d8d2049ca28e246784813066153c03e0111935059f2eafabc1"
     },
     {
       "path": "start/units/builder_dead.png",
@@ -464,7 +464,7 @@
     },
     {
       "path": "start/units/tank.ini",
-      "sha256": "99aa63a6f6e87662e257af3ca7c4557290153e60e62fcdf74360e15caef612e8"
+      "sha256": "87492c0211b24a35781910436bc5f6ea0631d4fd5645b98d13ee92fd2d19d3ff"
     },
     {
       "path": "start/units/tank.png",
@@ -520,7 +520,7 @@
     },
     {
       "path": "turret-upgrades/units/tank.ini",
-      "sha256": "99aa63a6f6e87662e257af3ca7c4557290153e60e62fcdf74360e15caef612e8"
+      "sha256": "87492c0211b24a35781910436bc5f6ea0631d4fd5645b98d13ee92fd2d19d3ff"
     },
     {
       "path": "turret-upgrades/units/tank.png",
@@ -544,7 +544,7 @@
     },
     {
       "path": "turret-upgrades/units/turret_common_land.ini",
-      "sha256": "24e6df4e7c154785fa5f81d66522859045c3c67b7c0689b8cbc1fc681b05ea60"
+      "sha256": "0e8f74a747fc6c0bc77b8c4acda4a1e1d91e64274dc6fbd91e6b012ea7f01d6f"
     },
     {
       "path": "turret-upgrades/units/turret_dead.png",
@@ -628,7 +628,7 @@
     },
     {
       "path": "upgrades/units/builder.properties",
-      "sha256": "2d0b0e454b904182c8c6dca991a0252bead473942342556512b6eff2f726b82a"
+      "sha256": "4cf77ba73853de9ced30662878bbd80633a82716d2ccc89298e2da99ac146aab"
     },
     {
       "path": "upgrades/units/builder_dead.png",
@@ -716,7 +716,7 @@
     },
     {
       "path": "upgrades/units/tank.ini",
-      "sha256": "99aa63a6f6e87662e257af3ca7c4557290153e60e62fcdf74360e15caef612e8"
+      "sha256": "87492c0211b24a35781910436bc5f6ea0631d4fd5645b98d13ee92fd2d19d3ff"
     },
     {
       "path": "upgrades/units/tank.png",

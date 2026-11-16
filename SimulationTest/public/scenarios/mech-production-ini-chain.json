@@ -24,7 +24,7 @@
       {
         "id": "builder",
         "path": "../inputs/mech-production/ini/production-package/units/builder.ini",
-        "sha256": "7d086a4d8bd66ce92aae07a25b961c577d04ee79dc34865b7029db8905d28fec",
+        "sha256": "92c462c583d70dd8c73aac5e8fea1e6bbdecce34a351ea5bdf392d07e85cdd4b",
         "loader": "builder"
       }
     ],

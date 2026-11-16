@@ -1,6 +1,7 @@
 {
   "format": "rw-reforge.unit.v2",
   "core": {
+    "mass": 6000,
     "name": "mechBunker",
     "class": "CustomUnitMetadata",
     "price": 4500,

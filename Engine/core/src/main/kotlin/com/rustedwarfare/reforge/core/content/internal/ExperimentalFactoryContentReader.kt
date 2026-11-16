@@ -38,6 +38,7 @@ internal object ExperimentalFactoryContentReader {
                     placementFootprint = BuildingFootprint(-2, -2, 2, 4)),
                 production = ProductionProfile(listOf("nautilusSubmarineLand"), FactoryExitProfile.NATIVE_EXPERIMENTAL),
                 build = BuildProfile(11000L, .00035f), construction = ConstructionProfile(11000L, .00035f),
-                directHitTargetKind = DirectHitTargetKind.NATIVE_BUILDING, techLevel = 2)
+                directHitTargetKind = DirectHitTargetKind.NATIVE_BUILDING, techLevel = 2,
+                mass = loaded.mass(path, movable = false))
         }
 }

@@ -1,5 +1,6 @@
 {
   "format": "rw-reforge.native-submarine.v1",
+  "mass": 3000,
   "name": "attackSubmarine",
   "locomotion": "water",
   "maxHp": 260,

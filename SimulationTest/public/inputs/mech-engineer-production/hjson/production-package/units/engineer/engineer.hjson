@@ -1,6 +1,7 @@
 {
   "format": "rw-reforge.unit.v2",
   "core": {
+    "mass": 8000,
     "name": "mechEngineer",
     "maxHp": 2000,
     "radius": 19,

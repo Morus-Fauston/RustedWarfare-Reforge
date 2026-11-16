@@ -14,7 +14,7 @@ def generate():
         pack = DEST / fmt / 'package'
         shutil.copytree(ROOT / f'SimulationTest/public/inputs/repairbay-production/{fmt}/package',
                         pack / 'repairbay', dirs_exist_ok=True)
-        fields = dict(name='mechEngineer', maxHp=2000, radius=19, price=5000, buildSpeed=.0008, techLevel=2,
+        fields = dict(mass=8000, name='mechEngineer', maxHp=2000, radius=19, price=5000, buildSpeed=.0008, techLevel=2,
             fogOfWarSightRange=16, transportSlotsNeeded=3, selfRegenRate=.08,
             canRepairBuildings=True, canRepairUnits=True, autoRepair=True, canReclaimResources=True,
             nanoRange=140, nanoRepairSpeed=.3, nanoBuildSpeed=2, generation_credits=1, generation_delay=40,

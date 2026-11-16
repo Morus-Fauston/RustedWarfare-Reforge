@@ -43,7 +43,8 @@ class UnitVariantLoadTest {
         assertEquals(0.25, unit.movement.turnAcceleration)
         assertEquals(false, unit.movement.slidingMode)
         assertEquals(false, unit.movement.ignoringBody)
-        assertEquals(setOf("price", "maxHp", "mass", "techLevel", "buildSpeed", "isBio",
+        assertEquals(1.0, unit.mass)
+        assertEquals(setOf("price", "maxHp", "techLevel", "buildSpeed", "isBio",
             "softCollisionOnAll", "image_shadow", "shadowOffsetX", "shadowOffsetY",
             "animation_moving_start", "animation_moving_end", "animation_moving_speed", "dustEffect"),
             unit.retainedUnconsumed)

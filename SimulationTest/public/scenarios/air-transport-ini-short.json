@@ -24,7 +24,7 @@
       {
         "id": "builder",
         "path": "../inputs/air-transport-production/ini/production-package/units/builder.ini",
-        "sha256": "f8cf9509cf23f6582f236bb357f8f32f9d5db75df4664f61a1c8010214f1782c",
+        "sha256": "9ad9e1aef48992b1c3b130b145831df4ac74d46180a761d1fcf96b0a10d7d2e1",
         "loader": "builder"
       },
       {
@@ -36,7 +36,7 @@
       {
         "id": "amphibiousJet",
         "path": "../inputs/air-transport-production/ini/production-package/units/amphibiousJet.ini",
-        "sha256": "a89f6e0bdd1d9e8a5896968e178e53702d362cc36a5b390ea71c84518e0469ce",
+        "sha256": "946420703be2659195db471c4adb72ff76e2a6dc537ed0e602cd830023058424",
         "loader": "amphibious-jet"
       },
       {
@@ -48,7 +48,7 @@
       {
         "id": "c_tank",
         "path": "../inputs/air-transport-production/ini/production-package/units/land/tank.ini",
-        "sha256": "425d0bd828d0fa40c0acefe35e078bd9d9f6eef2cc2645241f26849301f5dd3f",
+        "sha256": "2ba79925a727135c1bb71aca176a3570acf9b7fb5ae6158b696fb271bb6bc721",
         "loader": "declared-tank"
       },
       {
@@ -60,7 +60,7 @@
       {
         "id": "dropship",
         "path": "../inputs/air-transport-production/ini/production-package/units/dropship.ini",
-        "sha256": "a696cadb7aa961449ca9fdcf570c69e7e885da541374cc0eef2ff1eb3fadd332",
+        "sha256": "646d932c879d2a687f9513eede2ebf2cb61cb0294b9254cd8dd98e4a28659ab7",
         "loader": "dropship"
       }
     ],
@@ -874,9 +874,9 @@
       "production-package/units/air_factory_t2.png": "7759a4a82006893505d7b8d4b83a83f79bdbf7d0258c2ecf66a8dfb3d8fd46d6",
       "production-package/units/airFactory.ini": "68cdd627a129ff1a701b8979dc046bc7037ac868c53b61952ba99da647ca3982",
       "production-package/units/airFactoryT2.ini": "5776ae127372ea58593ec721eb5db178ac66cb9ac0498a9c93133a5edf4934dc",
-      "production-package/units/amphibiousJet.ini": "a89f6e0bdd1d9e8a5896968e178e53702d362cc36a5b390ea71c84518e0469ce",
+      "production-package/units/amphibiousJet.ini": "946420703be2659195db471c4adb72ff76e2a6dc537ed0e602cd830023058424",
       "production-package/units/body.png": "f2f5836caec9a3078885b8ab00654f27800d38f17352b3be4358c3afc6a42b90",
-      "production-package/units/builder.ini": "f8cf9509cf23f6582f236bb357f8f32f9d5db75df4664f61a1c8010214f1782c",
+      "production-package/units/builder.ini": "9ad9e1aef48992b1c3b130b145831df4ac74d46180a761d1fcf96b0a10d7d2e1",
       "production-package/units/builder.png": "15060aa3fb36bffd4414e803beb8f5d9b2982ed14bb497fbca6cadd3de18cc1b",
       "production-package/units/builder_dead.png": "15060aa3fb36bffd4414e803beb8f5d9b2982ed14bb497fbca6cadd3de18cc1b",
       "production-package/units/commandCenter/base.png": "8095d081de1407fe59e9ff99f5a5822e03275f87ffbd0f2a09ac736f8f6b3695",
@@ -884,7 +884,7 @@
       "production-package/units/commandCenter/base_dead.png": "940b030d8a9c0161c69b1831041186c97409e85d404aa5c5f6ec58fa5d831b16",
       "production-package/units/commandCenter/commandCenter.ini": "ba61e3f9276f2e23acd41e2d483a5eb68a552b434b1ec781764d1e1b14cdf556",
       "production-package/units/dead.png": "78e0d0b9a4eb88801361721035f5b84d141fb745f094192891496c4b63916976",
-      "production-package/units/dropship.ini": "a696cadb7aa961449ca9fdcf570c69e7e885da541374cc0eef2ff1eb3fadd332",
+      "production-package/units/dropship.ini": "646d932c879d2a687f9513eede2ebf2cb61cb0294b9254cd8dd98e4a28659ab7",
       "production-package/units/dropship.png": "0e44f9bfdc9e760f6cd59df6e0a7aa973d5c08c0611e5fec1f94d569ec4a5e44",
       "production-package/units/dropship_dead.png": "604d1acc5abe2f32a5429262f7e6b6f28922e36be789b93ddb55f04f6a874f06",
       "production-package/units/dropship_shadow.png": "11b26ac87143306dfa7547ee0db124241ce6c02a3cb3df5e71407f3544150be3",
@@ -894,7 +894,7 @@
       "production-package/units/jet_left.png": "717e4192943b371bba6a1f75b951f45f35e791757bb4295c5d97ecef2a07101c",
       "production-package/units/jet_right.png": "717e4192943b371bba6a1f75b951f45f35e791757bb4295c5d97ecef2a07101c",
       "production-package/units/jet_shadow.png": "1b64b8ec6b2f88cd7b5d97ac115dcdee35395ed08e02ec086a14c34e053fc7eb",
-      "production-package/units/land/tank.ini": "425d0bd828d0fa40c0acefe35e078bd9d9f6eef2cc2645241f26849301f5dd3f",
+      "production-package/units/land/tank.ini": "2ba79925a727135c1bb71aca176a3570acf9b7fb5ae6158b696fb271bb6bc721",
       "production-package/units/land/tank.png": "898fa8d12d89e73c988c258c3522a23660b2fdc500b4c8588fd2d8cf5fe4b605",
       "production-package/units/land/tank_dead.png": "cbab7f92fa0cbef203e94823e2cbdc3e0116df3dab205f2ce0296e399a1a4ffa",
       "production-package/units/land/tank_turret.png": "20dfaa2a45dd5bb635e83425fb64a6d3d3f9fef48d1b0a3b573fe5b9b67c4985",

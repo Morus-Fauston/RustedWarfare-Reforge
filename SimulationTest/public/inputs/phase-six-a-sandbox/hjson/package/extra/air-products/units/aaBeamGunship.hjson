@@ -2,6 +2,7 @@
   "format": "rw-reforge.unit.v2",
   "afterburn": {"normalForm": "aaBeamGunship", "boostedForm": "aaBeamGunship_afterburn"},
   "core": {
+    "mass": 20000,
     "name": "aaBeamGunship",
     "maxHp": 2500,
     "radius": 22,

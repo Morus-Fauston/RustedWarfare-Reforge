@@ -23,6 +23,7 @@ def png(path, width, height, rgb):
 
 def generate():
     tank = '''[core]
+mass: 3000
 name: c_tank
 overrideAndReplace: tank
 class: CustomUnitMetadata
@@ -113,6 +114,7 @@ image_dead=factory_dead.png
         if name == 'patrol-return':
             write(root, 'patrol.properties', 'format=rw-reforge.patrol-sandbox.v1\nvariant=patrol-return\n')
     turret = '''[core]
+mass: 9000
 dont_load: true
 class: CustomUnitMetadata
 isBuilding: true
@@ -247,6 +249,7 @@ image_back=base_back.png
 image_dead=base_dead.png
 ''')
     write(center, 'units/builder.properties', '''format=rw-reforge.native-builder.v1
+mass=3000
 name=builder
 maxHp=170
 radius=10

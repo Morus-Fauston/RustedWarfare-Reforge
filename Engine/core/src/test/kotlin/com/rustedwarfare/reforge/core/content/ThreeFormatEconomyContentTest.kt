@@ -61,6 +61,18 @@ class ThreeFormatEconomyContentTest {
         assertEquals("core", failure.section)
         assertEquals("mass", failure.field)
         assertTrue(failure.reason.contains(child.toString()))
+
+        val missingMass = org.hjson.JsonValue.readHjson(economicJson(root.resolve("extractor_common.ini"), "hjson")).asObject()
+        missingMass.get("core").asObject().remove("mass")
+        Files.writeString(parent, missingMass.toString())
+        val structuredChild = root.resolve("extractor.json")
+        val structuredDefinition = org.hjson.JsonValue.readJSON(economicJson(child, "json")).asObject()
+        structuredDefinition.set("copyFrom", org.hjson.JsonArray().add(parent.fileName.toString()))
+        Files.writeString(structuredChild, structuredDefinition.toString())
+        val result = ContentLoader.loadEconomyUnitWithSources(structuredChild)
+        val missing = assertIs<ContentResult.Failure>(result, result.toString()).error
+        assertEquals(ContentErrorCode.MISSING_REQUIRED_FIELD, missing.code, missing.toString())
+        assertEquals("mass", missing.field)
     }
 
     @Test
@@ -288,7 +300,7 @@ class ThreeFormatEconomyContentTest {
     }
 
     private val builderJson = """{
-      "format":"rw-reforge.native-builder.v1", "name":"builder", "maxHp":170,
+      "format":"rw-reforge.native-builder.v1", "mass":3000, "name":"builder", "maxHp":170,
       "radius":10, "displayRadius":12, "movementType":"LAND", "moveSpeed":0.8,
       "moveAccelerationSpeed":0.04, "moveDecelerationSpeed":0.1, "maxTurnSpeed":3.8,
       "turnAcceleration":0.35, "price":500, "buildSpeed":0.002, "fogOfWarSightRange":15,

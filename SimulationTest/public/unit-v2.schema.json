@@ -141,13 +141,7 @@
         "price": { "type": "number" },
         "reclaimPrice": { "type": "number" },
         "maxHp": { "type": "number" },
-        "mass": {
-          "type": [
-            "boolean",
-            "number",
-            "string"
-          ]
-        },
+        "mass": {"type": "number", "exclusiveMinimum": 0},
         "techLevel": { "type": "integer", "minimum": 1, "maximum": 3 },
         "buildSpeed": { "type": "number" },
         "radius": { "type": "number" },
@@ -469,13 +463,7 @@
         "price": { "type": "number" },
         "reclaimPrice": { "type": "number" },
         "maxHp": { "type": "number" },
-        "mass": {
-          "type": [
-            "boolean",
-            "number",
-            "string"
-          ]
-        },
+        "mass": {"type": "number", "exclusiveMinimum": 0},
         "techLevel": { "type": "integer", "minimum": 1, "maximum": 3 },
         "buildSpeed": { "type": "number" },
         "radius": { "type": "number" },

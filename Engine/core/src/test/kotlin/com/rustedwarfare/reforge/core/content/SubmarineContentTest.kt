@@ -87,12 +87,12 @@ internal fun withSubmarinePackage(format: String = "json", check: (Path) -> Unit
             "format":"rw-reforge.content-pack.v1", "id":"owned-submarine-$format", "name":"Owned submarine test",
             "units":[{"type":"submarine", "file":"sub.$format"}]
         }""")
-        val values = linkedMapOf("format" to "rw-reforge.native-submarine.v1", "name" to "attackSubmarine",
+        val values = linkedMapOf("format" to "rw-reforge.native-submarine.v1", "name" to "attackSubmarine", "mass" to "3000",
             "maxHp" to "260", "radius" to "15", "price" to "800", "buildSpeed" to "0.001",
             "image" to "body.png", "image_dead" to "dead.png")
         val text = if (format == "ini") values.entries.joinToString("\n") { "${it.key}=${it.value}" }
             else "{" + (values + ("locomotion" to "water")).entries.joinToString(",") {
-                "\"${it.key}\":" + if (it.key in setOf("maxHp", "radius", "price", "buildSpeed")) it.value else "\"${it.value}\""
+                "\"${it.key}\":" + if (it.key in setOf("mass", "maxHp", "radius", "price", "buildSpeed")) it.value else "\"${it.value}\""
             } + "}"
         Files.writeString(root.resolve("sub.$format"), text)
         check(root)

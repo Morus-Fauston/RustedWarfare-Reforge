@@ -204,7 +204,7 @@ class ThreeFormatProductionContentTest {
                     line.substring(0, index).trim(), line.substring(index + 1).trim()) == null)
             }
         }
-        val numbers = setOf("price", "buildSpeed", "maxHp", "radius", "displayRadius", "fogOfWarSightRange",
+        val numbers = setOf("mass", "price", "buildSpeed", "maxHp", "radius", "displayRadius", "fogOfWarSightRange",
             "total_frames", "imageScale", "turretImageScale", "turretTurnSpeed", "turretSize", "maxAttackRange",
             "shootDelay", "x", "y", "turnSpeedAcceleration", "turnSpeedDeceleration", "recoilOffset",
             "recoilOutTime", "recoilReturnTime", "idleSweepAngle", "idleSweepDelay", "idleSweepSpeed", "turnSpeed",
@@ -246,7 +246,7 @@ class ThreeFormatProductionContentTest {
 
     // Test-owned syntax conversion of fixed public data; no implementation schema is consulted.
     private fun nativeJson(path: Path, format: String): String {
-        val numeric = setOf("maxHp", "radius", "fogOfWarSightRange", "price", "buildSpeed", "incomePeriod", "incomeCredits")
+        val numeric = setOf("mass", "maxHp", "radius", "fogOfWarSightRange", "price", "buildSpeed", "incomePeriod", "incomeCredits")
         fun quote(text: String) = "\"" + text.replace("\\", "\\\\").replace("\"", "\\\"") + "\""
         val members = Files.readAllLines(path).filter { it.isNotBlank() && !it.trimStart().startsWith('#') }.map { line ->
             val separator = line.indexOf('=')

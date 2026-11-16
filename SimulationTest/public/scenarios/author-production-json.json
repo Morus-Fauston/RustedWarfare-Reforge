@@ -51,13 +51,13 @@
       {
         "id": "builder",
         "path": "../inputs/author-production/json/package/units/builder.json",
-        "sha256": "33c7fd83efc6d412836f1947281649b26f8713b796f72feba954683456847bb8",
+        "sha256": "a623df5008672da43ab3bf495d793313276287178a94c5c188897ec891dc60d4",
         "loader": "builder"
       },
       {
         "id": "c_tank",
         "path": "../inputs/three-format-tanks/json/units/tank.json",
-        "sha256": "42b90d73878d9996aaa59dc0480945d26039a281b3da6cb9f55b1fd2909d3ac9",
+        "sha256": "5217e80a0889f5389dd53fc633b77a9b256c6a3201bdfb5a145f91a9bfc79f91",
         "loader": "combat"
       }
     ],

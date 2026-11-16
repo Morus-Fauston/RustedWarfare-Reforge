@@ -15,6 +15,10 @@ import org.hjson.JsonObject
 import org.hjson.JsonValue
 import org.hjson.ParseException
 
+internal class ContentPackPathGuard(val root: Path) : (Path) -> Unit {
+    override fun invoke(file: Path) = ContentPackReader.requireOrdinary(root, file)
+}
+
 /** Explicit entry discovery around the shared unit coordinator; no second unit parser. */
 internal object ContentPackReader {
     private val manifestNames = listOf("pack.json", "pack.hjson")
@@ -30,6 +34,7 @@ internal object ContentPackReader {
             reject(ContentErrorCode.UNSUPPORTED_FEATURE, manifest, field = "pack", reason = "Expected pack.json or pack.hjson")
         val root = manifest.parent
         requireOrdinary(root, manifest)
+        val validateUnitPath = ContentPackPathGuard(root)
         val sources = linkedMapOf<Path, ContentSourceIdentity>()
         fun capture(file: Path, bytes: ByteArray) {
             val next = contentSourceIdentity(file, bytes)
@@ -134,57 +139,57 @@ internal object ContentPackReader {
             if (!files.add(input)) reject(ContentErrorCode.IDENTITY_CONFLICT, manifest, field = "$field.file", ref = reference,
                 reason = "Duplicate package entry")
             val loaded = when (capability) {
-                "modular-spider" -> ModularSpiderContentReader.readWithSources(input) { requireOrdinary(root, it) }
-                "nuclear-silo" -> NuclearSiloContentReader.readWithSources(input) { requireOrdinary(root, it) }
-                "nautilus" -> NautilusContentReader.readWithSources(input) { requireOrdinary(root, it) }
-                "scout-bot" -> ScoutBotContentReader.readWithSources(input) { requireOrdinary(root, it) }
-                "mech-engineer" -> MechEngineerContentReader.readWithSources(input) { requireOrdinary(root, it) }
-                "repair-bay" -> RepairBayContentReader.readWithSources(input) { requireOrdinary(root, it) }
-                "mech-bunker" -> BunkerContentReader.readWithSources(input) { requireOrdinary(root, it) }
-                "bomber" -> BomberContentReader.readWithSources(input) { requireOrdinary(root, it) }
-                "aa-beam-gunship" -> AaBeamContentReader.readWithSources(input) { requireOrdinary(root, it) }
-                "hovercraft" -> HovercraftContentReader.readWithSources(input) { requireOrdinary(root, it) }
-                "dropship" -> DropshipContentReader.readWithSources(input) { requireOrdinary(root, it) }
-                "amphibious-jet" -> AmphibiousJetContentReader.readWithSources(input) { requireOrdinary(root, it) }
-                "submarine" -> SubmarineContentReader.readWithSources(input) { requireOrdinary(root, it) }
-                "hover-tank" -> CombatContentReader.readHoverTankWithSources(input) { requireOrdinary(root, it) }
-                "command-center" -> CommandCenterContentReader.readWithSources(input) { requireOrdinary(root, it) }
-                "land-factory" -> FactoryContentReader.readWithSources(input) { requireOrdinary(root, it) }.also {
+                "modular-spider" -> ModularSpiderContentReader.readWithSources(input, validateUnitPath)
+                "nuclear-silo" -> NuclearSiloContentReader.readWithSources(input, validateUnitPath)
+                "nautilus" -> NautilusContentReader.readWithSources(input, validateUnitPath)
+                "scout-bot" -> ScoutBotContentReader.readWithSources(input, validateUnitPath)
+                "mech-engineer" -> MechEngineerContentReader.readWithSources(input, validateUnitPath)
+                "repair-bay" -> RepairBayContentReader.readWithSources(input, validateUnitPath)
+                "mech-bunker" -> BunkerContentReader.readWithSources(input, validateUnitPath)
+                "bomber" -> BomberContentReader.readWithSources(input, validateUnitPath)
+                "aa-beam-gunship" -> AaBeamContentReader.readWithSources(input, validateUnitPath)
+                "hovercraft" -> HovercraftContentReader.readWithSources(input, validateUnitPath)
+                "dropship" -> DropshipContentReader.readWithSources(input, validateUnitPath)
+                "amphibious-jet" -> AmphibiousJetContentReader.readWithSources(input, validateUnitPath)
+                "submarine" -> SubmarineContentReader.readWithSources(input, validateUnitPath)
+                "hover-tank" -> CombatContentReader.readHoverTankWithSources(input, validateUnitPath)
+                "command-center" -> CommandCenterContentReader.readWithSources(input, validateUnitPath)
+                "land-factory" -> FactoryContentReader.readWithSources(input, validateUnitPath).also {
                     if (it.definition.production?.exitProfile != FactoryExitProfile.NATIVE_LAND)
                         reject(ContentErrorCode.UNSUPPORTED_FEATURE, input, field = "format", reason = "Expected the finite native land factory profile")
                 }
-                "underwater-target" -> UnderwaterTargetContentReader.readWithSources(input) { requireOrdinary(root, it) }
-                "battleship" -> CombatContentReader.readBattleshipWithSources(input) { requireOrdinary(root, it) }
-                "water-combat" -> CombatContentReader.readAuthorWaterWithSources(input) { requireOrdinary(root, it) }
-                "sea-factory" -> FactoryContentReader.readWithSources(input) { requireOrdinary(root, it) }.also {
+                "underwater-target" -> UnderwaterTargetContentReader.readWithSources(input, validateUnitPath)
+                "battleship" -> CombatContentReader.readBattleshipWithSources(input, validateUnitPath)
+                "water-combat" -> CombatContentReader.readAuthorWaterWithSources(input, validateUnitPath)
+                "sea-factory" -> FactoryContentReader.readWithSources(input, validateUnitPath).also {
                     if (it.definition.production?.exitProfile != FactoryExitProfile.NATIVE_SEA)
                         reject(ContentErrorCode.UNSUPPORTED_FEATURE, input, field = "format", reason = "Expected the finite native sea factory profile")
                 }
-                "air-combat" -> CombatContentReader.readAirWithSources(input) { requireOrdinary(root, it) }
-                "static-combat" -> CombatContentReader.readStaticWithSources(input) { requireOrdinary(root, it) }
-                "helicopter" -> CombatContentReader.readHelicopterWithSources(input) { requireOrdinary(root, it) }
-                "air-factory" -> FactoryContentReader.readWithSources(input) { requireOrdinary(root, it) }.also {
+                "air-combat" -> CombatContentReader.readAirWithSources(input, validateUnitPath)
+                "static-combat" -> CombatContentReader.readStaticWithSources(input, validateUnitPath)
+                "helicopter" -> CombatContentReader.readHelicopterWithSources(input, validateUnitPath)
+                "air-factory" -> FactoryContentReader.readWithSources(input, validateUnitPath).also {
                     if (it.definition.production?.exitProfile != FactoryExitProfile.NATIVE_AIR)
                         reject(ContentErrorCode.UNSUPPORTED_FEATURE, input, field = "format", reason = "Expected the finite native air factory profile")
                 }
-                "mech" -> CombatContentReader.readMechWithSources(input) { requireOrdinary(root, it) }
-                "mech-flame" -> MechFlameContentReader.readWithSources(input) { requireOrdinary(root, it) }
-                "mech-heavy" -> CombatContentReader.readHeavyMechWithSources(input) { requireOrdinary(root, it) }
-                "mech-factory" -> FactoryContentReader.readWithSources(input) { requireOrdinary(root, it) }.also {
+                "mech" -> CombatContentReader.readMechWithSources(input, validateUnitPath)
+                "mech-flame" -> MechFlameContentReader.readWithSources(input, validateUnitPath)
+                "mech-heavy" -> CombatContentReader.readHeavyMechWithSources(input, validateUnitPath)
+                "mech-factory" -> FactoryContentReader.readWithSources(input, validateUnitPath).also {
                     if (it.definition.production?.exitProfile != FactoryExitProfile.CUSTOM_MECH)
                         reject(ContentErrorCode.UNSUPPORTED_FEATURE, input, field = "format", reason = "Expected the finite mech factory profile")
                 }
-                "experimental-factory" -> ExperimentalFactoryContentReader.readWithSources(input) { requireOrdinary(root, it) }
-                "builder" -> BuilderContentReader.readWithSources(input) { requireOrdinary(root, it) }
-                "economic-building" -> EconomyContentReader.readWithSources(input, enableUpgrades = true) { requireOrdinary(root, it) }
-                "author-economic-building" -> AuthorEconomicContentReader.readWithSources(input) { requireOrdinary(root, it) }
-                "authored-role" -> AuthoredRoleContentReader.readWithSources(input) { requireOrdinary(root, it) }
+                "experimental-factory" -> ExperimentalFactoryContentReader.readWithSources(input, validateUnitPath)
+                "builder" -> BuilderContentReader.readWithSources(input, validateUnitPath)
+                "economic-building" -> EconomyContentReader.readWithSources(input, enableUpgrades = true, validatePath = validateUnitPath)
+                "author-economic-building" -> AuthorEconomicContentReader.readWithSources(input, validateUnitPath)
+                "authored-role" -> AuthoredRoleContentReader.readWithSources(input, validateUnitPath)
                 "ground-turret" -> TurretContentReader.readWithSources(input, enableUpgrades = true,
-                    enableConstruction = true) { requireOrdinary(root, it) }
-                "point-defense" -> PointDefenseContentReader.readWithSources(input, enableConstruction = true) { requireOrdinary(root, it) }
-                "constructor" -> AuthorConstructionContentReader.readConstructorWithSources(input) { requireOrdinary(root, it) }
-                "factory" -> AuthorConstructionContentReader.readBuildingWithSources(input) { requireOrdinary(root, it) }
-                else -> CombatContentReader.readDeclaredWithSources(input) { requireOrdinary(root, it) }
+                    enableConstruction = true, validatePath = validateUnitPath)
+                "point-defense" -> PointDefenseContentReader.readWithSources(input, enableConstruction = true, validatePath = validateUnitPath)
+                "constructor" -> AuthorConstructionContentReader.readConstructorWithSources(input, validateUnitPath)
+                "factory" -> AuthorConstructionContentReader.readBuildingWithSources(input, validateUnitPath)
+                else -> CombatContentReader.readDeclaredWithSources(input, validateUnitPath)
             }
             val definition = loaded.definition
             for (source in loaded.sources) requireOrdinary(root, source.path)

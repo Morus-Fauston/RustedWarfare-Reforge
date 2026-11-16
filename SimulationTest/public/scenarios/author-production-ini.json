@@ -51,13 +51,13 @@
       {
         "id": "builder",
         "path": "../inputs/author-production/ini/package/units/builder.ini",
-        "sha256": "0de6bc2ab221fb996ffd41a23a00ef7c27c25dafec95df72396b17b3354c4ab2",
+        "sha256": "66ad0cdca50b61d8d2049ca28e246784813066153c03e0111935059f2eafabc1",
         "loader": "builder"
       },
       {
         "id": "c_tank",
         "path": "../inputs/three-format-tanks/ini/units/tank.ini",
-        "sha256": "99aa63a6f6e87662e257af3ca7c4557290153e60e62fcdf74360e15caef612e8",
+        "sha256": "87492c0211b24a35781910436bc5f6ea0631d4fd5645b98d13ee92fd2d19d3ff",
         "loader": "combat"
       }
     ],

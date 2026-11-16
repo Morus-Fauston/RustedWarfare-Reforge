@@ -49,6 +49,7 @@ internal object AmphibiousJetContentReader {
                 combat = CombatProfile(530.0, 170.0, 110.0, 5.0, 4.0, .35, projectile, null,
                     image("image_dead"), 1.0, recoil = WeaponRecoil(0.0), namedWeapons = WeaponCatalog(weapons), turretTurnDeceleration = .38),
                 build = BuildProfile(2000L, .001f), shadowImagePath = image("image_shadow"),
-                amphibiousJet = AmphibiousJetProfile(image("image_wing_left"), image("image_wing_right")))
+                amphibiousJet = AmphibiousJetProfile(image("image_wing_left"), image("image_wing_right")),
+                mass = loaded.mass(path, movable = true))
         }
 }

@@ -34,6 +34,7 @@ internal object HovercraftContentReader {
                 MovementProfile(MovementType.HOVER, .9, .03, .05, 1.4, .1, false, false,
                     hover = HoverProfile(3.0, 1.5, 4.0, .1)), emptySet(),
                 durability = DurabilityProfile(450.0, image("image_dead")), build = BuildProfile(600L, .003f),
-                transport = TransportProfile.NATIVE_HOVERCRAFT)
+                transport = TransportProfile.NATIVE_HOVERCRAFT,
+                mass = loaded.mass(path, movable = true))
         }
 }

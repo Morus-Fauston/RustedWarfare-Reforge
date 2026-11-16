@@ -65,72 +65,67 @@ internal object ScenarioReader {
         val identities = listOf(mapRef) + unitRefs + content.arrayAt("dependencies").map { identity(it.jsonObject) }
         if (identities.map { it.id }.distinct().size != identities.size ||
             identities.map { it.path }.distinct().size != identities.size) throw InputError("Duplicate content identity/path")
-        val paths = identities.map { it.path }.toSet()
+        val declaredSources = identities.associateBy { it.path }
+        val paths = declaredSources.keys
         verifyXmlReferences(mapRef.path, paths, mutableSetOf())
         val map = unwrap(ContentLoader.loadMap(mapRef.path))
         input["automaticVision"]?.jsonObject?.objectAt("grid")?.let { grid ->
             if (grid.integer("width") != map.widthTiles.toLong() || grid.integer("height") != map.heightTiles.toLong())
                 throw InputError("Declared knowledge grid differs from verified map dimensions")
         }
-        fun checkedAuthor(loaded: ContentResult<LoadedUnitContent>, producer: Boolean? = null,
-                          upgrading: Boolean? = null): ContentResult<UnitDefinition> = when (loaded) {
-            is ContentResult.Failure -> loaded
-            is ContentResult.Success -> {
-                val declaredSources = identities.associateBy { it.path }
-                for (source in loaded.value.sources) {
-                    val declared = declaredSources[source.path.toRealPath()]
-                        ?: throw InputError("An inherited author source has no declared identity: ${source.path}")
-                    if (source.sha256 != declared.sha256 || source.bytes != Files.size(declared.path))
-                        throw InputError("Parsed author source differs from its declared identity: ${source.path}")
-                }
-                unwrap(loaded.value.verifyStable())
-                if (producer != null && (loaded.value.definition.production != null) != producer)
-                    throw InputError("Author factory adapter must declare its actual production capability")
-                if (upgrading != null && (loaded.value.definition.upgrades != null) != upgrading)
-                    throw InputError("Author factory adapter must declare its actual upgrade capability")
-                ContentResult.Success(loaded.value.definition)
-            }
-        }
         val definitions = unitRefs.zip(unitDeclarations).associate { (ref, declaration) ->
-            verifyTemplateReferences(ref.path, paths, mutableSetOf())
-            val unit = unwrap(when (declaration["loader"]?.jsonPrimitive?.content ?: "variant") {
-                "combat" -> ContentLoader.loadCombatUnit(ref.path)
-                "declared-tank" -> checkedAuthor(ContentLoader.loadDeclaredTankWithSources(ref.path))
-                "mech" -> ContentLoader.loadMechUnit(ref.path)
-                "mech-heavy" -> ContentLoader.loadHeavyMechUnit(ref.path)
-                "helicopter" -> ContentLoader.loadHelicopterUnit(ref.path)
-                "hover-tank" -> checkedAuthor(ContentLoader.loadHoverTankWithSources(ref.path))
-                "battleship" -> ContentLoader.loadBattleshipUnit(ref.path)
-                "submarine" -> checkedAuthor(ContentLoader.loadSubmarineWithSources(ref.path))
-                "amphibious-jet" -> checkedAuthor(ContentLoader.loadAmphibiousJetWithSources(ref.path))
-                "hovercraft" -> checkedAuthor(ContentLoader.loadHovercraftWithSources(ref.path))
-                "dropship" -> checkedAuthor(ContentLoader.loadDropshipWithSources(ref.path))
-                "bomber" -> checkedAuthor(ContentLoader.loadBomberWithSources(ref.path))
-                "aa-beam-gunship" -> checkedAuthor(ContentLoader.loadAaBeamWithSources(ref.path))
-                "mech-bunker" -> checkedAuthor(ContentLoader.loadBunkerWithSources(ref.path))
-                "mech-engineer" -> checkedAuthor(ContentLoader.loadMechEngineerWithSources(ref.path))
-                "nautilus" -> checkedAuthor(ContentLoader.loadNautilusWithSources(ref.path))
-                "scout-bot" -> checkedAuthor(ContentLoader.loadScoutBotWithSources(ref.path))
-                "nuclear-silo" -> checkedAuthor(ContentLoader.loadNuclearSiloWithSources(ref.path))
-                "water-combat" -> checkedAuthor(ContentLoader.loadAuthorWaterUnitWithSources(ref.path))
-                "constructor" -> checkedAuthor(ContentLoader.loadAuthorConstructorWithSources(ref.path))
-                "author-factory" -> checkedAuthor(ContentLoader.loadAuthorBuildingWithSources(ref.path), false, false)
-                "author-producer" -> checkedAuthor(ContentLoader.loadAuthorBuildingWithSources(ref.path), true, false)
-                "author-upgrading-producer" -> checkedAuthor(ContentLoader.loadAuthorBuildingWithSources(ref.path), true, true)
-                "underwater-target" -> ContentLoader.loadUnderwaterTargetUnit(ref.path)
-                "factory" -> ContentLoader.loadFactory(ref.path)
-                "builder" -> ContentLoader.loadBuilder(ref.path)
-                "repair-bay" -> checkedAuthor(ContentLoader.loadRepairBayWithSources(ref.path))
-                "command-center" -> ContentLoader.loadCommandCenter(ref.path)
-                "turret" -> ContentLoader.loadTurretUnit(ref.path)
-                "turret-upgrades" -> ContentLoader.loadTurretUnit(ref.path, true)
-                "turret-construction" -> ContentLoader.loadTurretUnit(ref.path, true, true)
-                "point-defense" -> ContentLoader.loadPointDefense(ref.path)
-                "point-defense-construction" -> ContentLoader.loadPointDefense(ref.path, true)
-                "economy" -> ContentLoader.loadEconomyUnit(ref.path)
-                "economy-upgrades" -> ContentLoader.loadEconomyUnit(ref.path, true)
-                else -> ContentLoader.loadUnitVariant(ref.path)
+            val loader = declaration["loader"]?.jsonPrimitive?.content ?: "variant"
+            val loaded = unwrap(when (loader) {
+                "combat" -> ContentLoader.loadCombatUnitWithSources(ref.path)
+                "declared-tank" -> ContentLoader.loadDeclaredTankWithSources(ref.path)
+                "mech" -> ContentLoader.loadMechUnitWithSources(ref.path)
+                "mech-heavy" -> ContentLoader.loadHeavyMechUnitWithSources(ref.path)
+                "helicopter" -> ContentLoader.loadHelicopterUnitWithSources(ref.path)
+                "hover-tank" -> ContentLoader.loadHoverTankWithSources(ref.path)
+                "battleship" -> ContentLoader.loadBattleshipUnitWithSources(ref.path)
+                "submarine" -> ContentLoader.loadSubmarineWithSources(ref.path)
+                "amphibious-jet" -> ContentLoader.loadAmphibiousJetWithSources(ref.path)
+                "hovercraft" -> ContentLoader.loadHovercraftWithSources(ref.path)
+                "dropship" -> ContentLoader.loadDropshipWithSources(ref.path)
+                "bomber" -> ContentLoader.loadBomberWithSources(ref.path)
+                "aa-beam-gunship" -> ContentLoader.loadAaBeamWithSources(ref.path)
+                "mech-bunker" -> ContentLoader.loadBunkerWithSources(ref.path)
+                "mech-engineer" -> ContentLoader.loadMechEngineerWithSources(ref.path)
+                "nautilus" -> ContentLoader.loadNautilusWithSources(ref.path)
+                "scout-bot" -> ContentLoader.loadScoutBotWithSources(ref.path)
+                "nuclear-silo" -> ContentLoader.loadNuclearSiloWithSources(ref.path)
+                "water-combat" -> ContentLoader.loadAuthorWaterUnitWithSources(ref.path)
+                "constructor" -> ContentLoader.loadAuthorConstructorWithSources(ref.path)
+                "author-factory", "author-producer", "author-upgrading-producer" ->
+                    ContentLoader.loadAuthorBuildingWithSources(ref.path)
+                "underwater-target" -> ContentLoader.loadUnderwaterTargetUnitWithSources(ref.path)
+                "factory" -> ContentLoader.loadFactoryWithSources(ref.path)
+                "builder" -> ContentLoader.loadBuilderWithSources(ref.path)
+                "repair-bay" -> ContentLoader.loadRepairBayWithSources(ref.path)
+                "command-center" -> ContentLoader.loadCommandCenterWithSources(ref.path)
+                "turret" -> ContentLoader.loadTurretUnitWithSources(ref.path)
+                "turret-upgrades" -> ContentLoader.loadTurretUnitWithSources(ref.path, true)
+                "turret-construction" -> ContentLoader.loadTurretUnitWithSources(ref.path, true, true)
+                "point-defense" -> ContentLoader.loadPointDefenseWithSources(ref.path)
+                "point-defense-construction" -> ContentLoader.loadPointDefenseWithSources(ref.path, true)
+                "economy" -> ContentLoader.loadEconomyUnitWithSources(ref.path)
+                "economy-upgrades" -> ContentLoader.loadEconomyUnitWithSources(ref.path, true)
+                else -> ContentLoader.loadUnitVariantWithSources(ref.path)
             })
+            for (source in loaded.sources) {
+                val declared = declaredSources[source.path.toRealPath()]
+                    ?: throw InputError("A loaded unit source has no declared identity: ${source.path}")
+                if (source.sha256 != declared.sha256 || source.bytes != Files.size(declared.path))
+                    throw InputError("Parsed unit source differs from its declared identity: ${source.path}")
+            }
+            unwrap(loaded.verifyStable())
+            val unit = loaded.definition
+            if (loader in setOf("author-factory", "author-producer", "author-upgrading-producer")) {
+                if ((unit.production != null) != (loader != "author-factory"))
+                    throw InputError("Author factory adapter must declare its actual production capability")
+                if ((unit.upgrades != null) != (loader == "author-upgrading-producer"))
+                    throw InputError("Author factory adapter must declare its actual upgrade capability")
+            }
             if (content.containsKey("unitVariants") && ref.id != unit.id) throw InputError("Content type ID differs from loaded definition")
             val images = listOfNotNull(unit.imagePath, unit.combat?.turretImagePath, unit.combat?.deadImagePath,
                 unit.durability?.deadImagePath, unit.building?.backImagePath, unit.rotor?.imagePath, unit.shadowImagePath,
@@ -201,20 +196,6 @@ internal object ScenarioReader {
             InputIdentity(scenarioId, source, digest(scenarioText.toByteArray(Charsets.UTF_8))),
             InputIdentity(contract.id("contractId"), contractFile, digest(contractText.toByteArray(Charsets.UTF_8))), coordinate, time,
             input, contract)
-    }
-
-    private fun verifyTemplateReferences(path: Path, allowed: Set<Path>, visited: MutableSet<Path>) {
-        if (!visited.add(path)) throw InputError("Cyclic content template")
-        var section = ""
-        Files.readAllLines(path).forEach { raw ->
-            val line = raw.trim()
-            if (line.startsWith("[") && line.endsWith("]")) section = line.substring(1, line.length - 1).trim()
-            if (section == "core" && ':' in line && line.substringBefore(':').trim() == "copyFrom") {
-                val parent = path.parent.resolve(line.substringAfter(':').trim()).normalize().toAbsolutePath()
-                if (!Files.isRegularFile(parent) || parent.toRealPath() !in allowed) throw InputError("Undeclared content template: $parent")
-                verifyTemplateReferences(parent.toRealPath(), allowed, visited)
-            }
-        }
     }
 
     private fun verifyXmlReferences(path: Path, allowed: Set<Path>, visited: MutableSet<Path>) {

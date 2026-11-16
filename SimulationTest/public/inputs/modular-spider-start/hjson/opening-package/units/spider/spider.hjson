@@ -2,6 +2,7 @@
   "format": "rw-reforge.unit.v2",
   "abilities": [{"name": "shield", "type": "shield", "maximum": 5000, "regeneration": 0.3}],
   "core": {
+    "mass": 120000,
     "name": "modularSpider",
     "class": "CustomUnitMetadata",
     "price": 90000,

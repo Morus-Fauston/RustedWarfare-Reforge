@@ -48,7 +48,8 @@ internal object EconomyContentReader {
 
     fun readWithSources(path: Path, enableUpgrades: Boolean, validatePath: (Path) -> Unit = {}): LoadedUnitContent {
         var rootId = ""
-        val reader = UnitSourceReader(schema, preRead = { validatePath(it); ordinary(it, it) }, inputGuard = { file, input, root ->
+        val reader = UnitSourceReader(schema, preRead = { validatePath(it); ordinary(it, it) },
+            packageRoot = (validatePath as? ContentPackPathGuard)?.root, inputGuard = { file, input, root ->
             val core = input.sections["core"].orEmpty()
             if (root) {
                 rootId = core["name"] ?: reject(ContentErrorCode.MISSING_REQUIRED_FIELD, file, "core", "name",
@@ -89,14 +90,14 @@ internal object EconomyContentReader {
             }
         })
         return reader.load(path) { loaded ->
-            // An explicit skip of a complete inherited section leaves no semantic section.
-            val values = loaded.values.filterValues { it.isNotEmpty() }
-            definition(path, values, enableUpgrades, validatePath)
+            definition(path, loaded, enableUpgrades, validatePath)
         }
     }
 
-    private fun definition(path: Path, values: Map<String, Map<String, String>>, enableUpgrades: Boolean,
+    private fun definition(path: Path, loaded: UnitSourceReader.EffectiveSections, enableUpgrades: Boolean,
                            validatePath: (Path) -> Unit): UnitDefinition {
+        // An explicit skip of a complete inherited section leaves no semantic section.
+        val values = loaded.values.filterValues { it.isNotEmpty() }
         val id = values.getValue("core").getValue("name")
         val extractor = id.startsWith("extractor")
         val tier = id.last().digitToInt()
@@ -184,7 +185,11 @@ internal object EconomyContentReader {
         else if (values["core"]?.containsKey("placeOnlyOnResPool") == true) fixed("core", "placeOnlyOnResPool", "false")
         if (values["core"]?.containsKey("isBio") == true) fixed("core", "isBio", "false")
         if (values["core"]?.containsKey("class") == true) fixed("core", "class", "CustomUnitMetadata")
-        number("core", "mass", 9000.0); number("core", "techLevel", if (extractor) tier.toDouble() else minOf(tier, 2).toDouble())
+        val mass = loaded.mass(path, movable = false)
+            ?: reject(ContentErrorCode.MISSING_REQUIRED_FIELD, path, "core", "mass", reason = "Missing economic field")
+        if (mass != 9000.0)
+            reject(ContentErrorCode.UNSUPPORTED_FEATURE, path, "core", "mass", reason = "Expected economic mass 9000")
+        number("core", "techLevel", if (extractor) tier.toDouble() else minOf(tier, 2).toDouble())
         if (extractor) {
             number("core", "buildingSelectionOffset", 4.0); number("core", "numBitsOnDeath", 16.0)
             fixed("core", "hideScorchMark", "true")
@@ -241,7 +246,8 @@ internal object EconomyContentReader {
                 number("core", "buildSpeed", if (extractor) .001 else listOf(.0005, .0004, .0003)[tier - 1]).toFloat()),
             income = IncomeProfile(40f, income.toFloat()), techLevel = if (extractor) tier else minOf(tier, 2),
             upgrades = if (enableUpgrades && tier < 3) UpgradeProfile(listOf(checkNotNull(upgrade).action)) else null,
-            deathExplosion = if (extractor) null else DeathExplosionProfile(listOf(350f, 450f, 850f)[tier - 1], 90f, 35f))
+            deathExplosion = if (extractor) null else DeathExplosionProfile(listOf(350f, 450f, 850f)[tier - 1], 90f, 35f),
+            mass = mass)
     }
 
     private fun ordinary(file: Path, source: Path) {

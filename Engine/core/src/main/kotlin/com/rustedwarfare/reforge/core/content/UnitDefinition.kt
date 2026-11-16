@@ -62,6 +62,7 @@ class UnitDefinition(
     val authoredAirCombat: Boolean = false,
     val authoredMaintenance: AuthoredMaintenance? = null,
     val movementCollision: MovementCollisionShape = MovementCollisionShape.Circle(radius),
+    val mass: Double? = null,
 ) {
     internal val locomotionStates: SubmersibleLocomotion?
         get() = amphibiousJet?.locomotion ?: submarine?.locomotion

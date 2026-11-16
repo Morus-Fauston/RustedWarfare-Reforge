@@ -18,7 +18,7 @@
       {
         "id": "builder",
         "path": "../inputs/nuclear-silo/hjson/normal-package/builder.hjson",
-        "sha256": "b67602c7da2634f9326b1471ac7ce311748c4062618c277283632f09cda5a83e",
+        "sha256": "e38e87b99cebfd8447878052a864ce2a0a3dfa94436c38fe515040fa7b393072",
         "loader": "builder"
       },
       {

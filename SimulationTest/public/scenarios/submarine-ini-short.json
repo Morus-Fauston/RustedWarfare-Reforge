@@ -12,7 +12,7 @@
       {
         "id": "builder",
         "path": "../inputs/naval-production/ini/production-package/units/builder.ini",
-        "sha256": "4c5121e67068ff2e1c54cd532e227bcffa07c902d6d00f140103c6338013a93d",
+        "sha256": "701a8002f3f86b80ed23ec5ee57a6a0afa2438b3f7a6f8cb9e818952c8d19359",
         "loader": "builder"
       },
       {
@@ -36,7 +36,7 @@
       {
         "id": "c_tank",
         "path": "../inputs/naval-production/ini/production-package/units/land/tank.ini",
-        "sha256": "425d0bd828d0fa40c0acefe35e078bd9d9f6eef2cc2645241f26849301f5dd3f",
+        "sha256": "2ba79925a727135c1bb71aca176a3570acf9b7fb5ae6158b696fb271bb6bc721",
         "loader": "declared-tank"
       },
       {
@@ -54,7 +54,7 @@
       {
         "id": "attackSubmarine",
         "path": "../inputs/naval-production/ini/production-package/units/submarine/submarine.ini",
-        "sha256": "23dd0a63bd253c70c4ec51316d1eda9f9b339f7989bbe365dc62e958ec8a0ed1",
+        "sha256": "6ad822a6ea1a7c87c4d02ef103b540306060659610ce180c26f1b3a8d529ff68",
         "loader": "submarine"
       }
     ],
@@ -4633,10 +4633,10 @@
       "production-package/units/air/dead.png": "78e0d0b9a4eb88801361721035f5b84d141fb745f094192891496c4b63916976",
       "production-package/units/air/helicopter.ini": "efc7d4fe4a1dff8c58b703c5b7d688b6609946c45b41d2ca680f40b6cd166c5a",
       "production-package/units/air/rotor.png": "3bec04ec0daa8dcea012e8447d4ee0a58e392850da8e366d30d8e512829fd9af",
-      "production-package/units/builder.ini": "4c5121e67068ff2e1c54cd532e227bcffa07c902d6d00f140103c6338013a93d",
+      "production-package/units/builder.ini": "701a8002f3f86b80ed23ec5ee57a6a0afa2438b3f7a6f8cb9e818952c8d19359",
       "production-package/units/builder.png": "15060aa3fb36bffd4414e803beb8f5d9b2982ed14bb497fbca6cadd3de18cc1b",
       "production-package/units/builder_dead.png": "15060aa3fb36bffd4414e803beb8f5d9b2982ed14bb497fbca6cadd3de18cc1b",
-      "production-package/units/land/tank.ini": "425d0bd828d0fa40c0acefe35e078bd9d9f6eef2cc2645241f26849301f5dd3f",
+      "production-package/units/land/tank.ini": "2ba79925a727135c1bb71aca176a3570acf9b7fb5ae6158b696fb271bb6bc721",
       "production-package/units/land/tank.png": "898fa8d12d89e73c988c258c3522a23660b2fdc500b4c8588fd2d8cf5fe4b605",
       "production-package/units/land/tank_dead.png": "cbab7f92fa0cbef203e94823e2cbdc3e0116df3dab205f2ce0296e399a1a4ffa",
       "production-package/units/land/tank_turret.png": "20dfaa2a45dd5bb635e83425fb64a6d3d3f9fef48d1b0a3b573fe5b9b67c4985",
@@ -4653,7 +4653,7 @@
       "production-package/units/seaFactoryT2.ini": "df9e707efad894a18825977bccad935408adab8098d0046ce1092c2a82f4b030",
       "production-package/units/submarine/body.png": "d61fd88c779e1209fee1400b3e21fe79cfef45729b31aea4d3a476593e794892",
       "production-package/units/submarine/dead.png": "fed1c2fca42a6e8b4a815b4146e2371a66786a0a03a000652c4bf67ad23a7506",
-      "production-package/units/submarine/submarine.ini": "23dd0a63bd253c70c4ec51316d1eda9f9b339f7989bbe365dc62e958ec8a0ed1"
+      "production-package/units/submarine/submarine.ini": "6ad822a6ea1a7c87c4d02ef103b540306060659610ce180c26f1b3a8d529ff68"
     }
   }
 }

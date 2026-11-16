@@ -1,6 +1,7 @@
 {
   "format": "rw-reforge.unit.v2",
   "core": {
+    "mass": 16000,
     "maxHp": 3500,
     "radius": 15,
     "displayRadius": 15,

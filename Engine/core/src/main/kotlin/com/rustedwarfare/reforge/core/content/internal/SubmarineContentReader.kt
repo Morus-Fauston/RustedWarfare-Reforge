@@ -38,7 +38,8 @@ internal object SubmarineContentReader {
                 combat = CombatProfile(260.0, 250.0, 170.0, 10.0, 2.5, .08, projectile, null,
                     image("image_dead"), 1.0, recoil = WeaponRecoil(0.0), fireSound = FireSoundProfile.SUBMARINE_MISSILE,
                     namedWeapons = WeaponCatalog(listOf(weapon))),
-                build = BuildProfile(800L, .001f), submarine = SubmarineProfile.NATIVE)
+                build = BuildProfile(800L, .001f), submarine = SubmarineProfile.NATIVE,
+                mass = loaded.mass(path, movable = true))
         }
 }
 

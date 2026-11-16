@@ -51,6 +51,7 @@ internal object RepairBayContentReader {
                 building = BuildingProfile(BuildingFootprint(-1, -1, 1, 1)),
                 build = BuildProfile(1500L, .001f), construction = ConstructionProfile(1500L, .001f),
                 directHitTargetKind = DirectHitTargetKind.NATIVE_BUILDING,
-                maintenance = MaintenanceProfile.NATIVE_REPAIR_BAY)
+                maintenance = MaintenanceProfile.NATIVE_REPAIR_BAY,
+                mass = loaded.mass(path, movable = false))
         }
 }

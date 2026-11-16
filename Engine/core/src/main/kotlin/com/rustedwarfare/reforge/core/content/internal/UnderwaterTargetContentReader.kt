@@ -34,6 +34,7 @@ internal object UnderwaterTargetContentReader {
             UnitDefinition("navalUnderwaterTarget", "OwnedFixedUnderwaterTarget", number("radius", 6.0), 6.0, 1,
                 image("image"), 1.0, MovementProfile(MovementType.WATER, 0.0, 0.0, 0.0, 0.0, 0.0, false, false), emptySet(), 0,
                 durability = DurabilityProfile(number("maxHp", 1000.0), if (value("image_dead") == "NONE") null else image("image_dead")),
-                fixedUnderwaterTarget = FixedUnderwaterTargetProfile(number("height", -8.0)))
+                fixedUnderwaterTarget = FixedUnderwaterTargetProfile(number("height", -8.0)),
+                mass = loaded.mass(path, movable = false))
         }
 }

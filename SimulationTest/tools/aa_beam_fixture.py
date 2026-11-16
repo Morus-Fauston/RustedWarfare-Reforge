@@ -36,7 +36,7 @@ def png(kind, width, height):
 
 
 def write_forms(pack, fmt):
-    core = dict(name='aaBeamGunship', maxHp=2500, radius=22, price=6000, buildSpeed=1 / 2100,
+    core = dict(mass=20000, name='aaBeamGunship', maxHp=2500, radius=22, price=6000, buildSpeed=1 / 2100,
         image='aa.png', image_dead='aa_dead.png', image_shadow='aa_shadow.png', image_turret='aa_turret.png',
         beam_image='aa_beam.png', beam_image_start='aa_beam_start.png', beam_image_end='aa_beam_end.png',
         energyRegen=.01, energyRegenWhenRecharging=.05, energyNeedsToRechargeToFull=True)

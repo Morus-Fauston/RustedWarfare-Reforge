@@ -90,8 +90,14 @@ object ContentLoader {
     fun loadMechUnit(path: Path): ContentResult<UnitDefinition> =
         load(path) { CombatContentReader.readMechWithSources(it).definition }
 
+    fun loadMechUnitWithSources(path: Path): ContentResult<LoadedUnitContent> =
+        load(path) { CombatContentReader.readMechWithSources(it) }
+
     fun loadHelicopterUnit(path: Path): ContentResult<UnitDefinition> =
         load(path) { CombatContentReader.readHelicopterWithSources(it).definition }
+
+    fun loadHelicopterUnitWithSources(path: Path): ContentResult<LoadedUnitContent> =
+        load(path) { CombatContentReader.readHelicopterWithSources(it) }
 
     fun loadHoverTankWithSources(path: Path): ContentResult<LoadedUnitContent> =
         load(path) { CombatContentReader.readHoverTankWithSources(it) }
@@ -99,8 +105,14 @@ object ContentLoader {
     fun loadHeavyMechUnit(path: Path): ContentResult<UnitDefinition> =
         load(path) { CombatContentReader.readHeavyMechWithSources(it).definition }
 
+    fun loadHeavyMechUnitWithSources(path: Path): ContentResult<LoadedUnitContent> =
+        load(path) { CombatContentReader.readHeavyMechWithSources(it) }
+
     fun loadBattleshipUnit(path: Path): ContentResult<UnitDefinition> =
         load(path) { CombatContentReader.readBattleshipWithSources(it).definition }
+
+    fun loadBattleshipUnitWithSources(path: Path): ContentResult<LoadedUnitContent> =
+        load(path) { CombatContentReader.readBattleshipWithSources(it) }
 
     /** Author surface combat shares the common syntax and retains its complete parsed source closure. */
     fun loadAuthorWaterUnitWithSources(path: Path): ContentResult<LoadedUnitContent> =
@@ -115,6 +127,9 @@ object ContentLoader {
     fun loadUnderwaterTargetUnit(path: Path): ContentResult<UnitDefinition> =
         load(path) { UnderwaterTargetContentReader.readWithSources(it) {}.definition }
 
+    fun loadUnderwaterTargetUnitWithSources(path: Path): ContentResult<LoadedUnitContent> =
+        load(path) { UnderwaterTargetContentReader.readWithSources(it) {} }
+
     fun loadSubmarineWithSources(path: Path): ContentResult<LoadedUnitContent> =
         load(path) { com.rustedwarfare.reforge.core.content.internal.SubmarineContentReader.readWithSources(it) {} }
 
@@ -127,7 +142,10 @@ object ContentLoader {
     fun loadDeclaredTankWithSources(path: Path): ContentResult<LoadedUnitContent> =
         load(path) { CombatContentReader.readDeclaredWithSources(it) }
 
-    fun loadUnitVariant(iniPath: Path): ContentResult<UnitDefinition> = load(iniPath, IniReader::read)
+    fun loadUnitVariant(iniPath: Path): ContentResult<UnitDefinition> = load(iniPath) { IniReader.readWithSources(it).definition }
+
+    fun loadUnitVariantWithSources(path: Path): ContentResult<LoadedUnitContent> =
+        load(path, IniReader::readWithSources)
     fun loadMap(tmxPath: Path): ContentResult<MapDefinition> = load(tmxPath, TmxReader::read)
 
     private fun <T> load(path: Path, read: (Path) -> T): ContentResult<T> {

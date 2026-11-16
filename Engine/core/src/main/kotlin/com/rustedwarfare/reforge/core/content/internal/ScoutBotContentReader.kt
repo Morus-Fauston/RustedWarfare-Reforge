@@ -64,6 +64,7 @@ internal object ScoutBotContentReader {
                 build = ScoutBotRules.build, builder = ScoutBotRules.builder, energy = ScoutBotRules.energy,
                 customActions = ScoutBotRules.actions(water), groundHeight = ScoutBotRules.height,
                 mech = ScoutBotRules.mech(water, image("image_leg"), image("image_foot")),
-                maintenance = MaintenanceProfile.SCOUT_BOT, reclaimPrice = 0L)
+                maintenance = MaintenanceProfile.SCOUT_BOT, reclaimPrice = 0L,
+                mass = loaded.mass(path, movable = true))
         }
 }

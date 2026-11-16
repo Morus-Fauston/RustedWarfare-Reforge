@@ -24,7 +24,7 @@ def generate():
             units=[dict(type='repair-bay', file=f'repairbay.{fmt}')]), indent=2)+'\n', encoding='utf8')
         production = DEST / fmt / 'production-package'
         shutil.copytree(pack, production, dirs_exist_ok=True)
-        builder = dict(format='rw-reforge.native-builder.v7', name='builder', maxHp=170,
+        builder = dict(format='rw-reforge.native-builder.v7', mass=3000, name='builder', maxHp=170,
             radius=10, displayRadius=12, movementType='LAND', moveSpeed=.8,
             moveAccelerationSpeed=.04, moveDecelerationSpeed=.1, maxTurnSpeed=3.8,
             turnAcceleration=.35, price=500, buildSpeed=.002, fogOfWarSightRange=15,

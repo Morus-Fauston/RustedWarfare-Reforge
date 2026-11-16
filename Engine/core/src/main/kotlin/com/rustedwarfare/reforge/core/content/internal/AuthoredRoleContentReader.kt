@@ -95,7 +95,8 @@ internal object AuthoredRoleContentReader {
                 maintenance = nano.maintenance?.let { MaintenanceProfile.AUTHORED },
                 authoredMaintenance = nano.maintenance, shield = shield, transport = transport?.let { TransportProfile.AUTHORED },
                 transportSettings = transport, blink = blink,
-                customActions = convert.takeIf { it.isNotEmpty() }?.let { CustomActionsProfile(it) })
+                customActions = convert.takeIf { it.isNotEmpty() }?.let { CustomActionsProfile(it) },
+                mass = loaded.mass(path, movable = !stopped))
         }
 
     data class NanoRoles(val builder: BuilderProfile?, val maintenance: AuthoredMaintenance?,

@@ -25,6 +25,7 @@ class MotionV2CoreInputsTest {
         Files.writeString(unit,"""
             [core]
             name: private_fixture
+            mass: 1
             class: CustomUnitMetadata
             radius: 1
             displayRadius: 1
@@ -67,6 +68,28 @@ class MotionV2CoreInputsTest {
         assertEquals(.17,loaded.evidence.objectAt("unit").objectAt("movement").number("deceleration"))
         assertEquals(4,loaded.evidence.arrayAt("files").size)
         assertTrue(loaded.verifyStable().isEmpty())
+    }
+
+    @Test fun directory_template_is_part_of_the_actual_unit_dependency_union() {
+        val f = fixture()
+        Files.writeString(f.unit, Files.readString(f.unit).lineSequence()
+            .filterNot { it.trimStart().startsWith("mass:") }.joinToString("\n"))
+        val template = directory.resolve("all-units.template")
+        Files.writeString(template, "[core]\nmass: 2500\n")
+        refresh(f)
+
+        val missing = assertFailsWith<IllegalArgumentException> { MotionV2CoreInputs.load(f.manifest, f.request) }
+        assertContains(missing.message.orEmpty(), "Undeclared actual dependency")
+        assertContains(missing.message.orEmpty(), template.fileName.toString())
+
+        val files = readObject(f.manifest).arrayAt("files")
+        manifest(f, mapOf("files" to JsonArray(files + identity(template))))
+        val loaded = MotionV2CoreInputs.load(f.manifest, f.request)
+        assertEquals(2500.0, loaded.unit.mass)
+        assertTrue(loaded.verifyStable().isEmpty())
+
+        Files.writeString(template, "[core]\nmass: 2501\n")
+        assertTrue(loaded.verifyStable().any { "all-units.template" in it })
     }
 
     @Test fun actual_rejected_submission_is_recorded_without_claiming_consumption_or_advancing() {

@@ -52,7 +52,7 @@ def generate():
         t2.update(name='airFactoryT2',techLevel=2,price=2500,productionUnits='helicopter,amphibiousJet',image='air_factory_t2.png')
         write_native(units/f'airFactory.{fmt}',t1);write_native(units/f'airFactoryT2.{fmt}',t2)
         (units/'air_factory_t2.png').write_bytes(png(40,63,'factory'))
-        jet=dict(format='rw-reforge.native-amphibious-jet.v1',name='amphibiousJet',maxHp=530,radius=12,
+        jet=dict(format='rw-reforge.native-amphibious-jet.v1',mass=10000,name='amphibiousJet',maxHp=530,radius=12,
             price=2000,buildSpeed=.001,image='jet.png',image_dead='jet_dead.png',image_shadow='jet_shadow.png',
             image_wing_left='jet_left.png',image_wing_right='jet_right.png')
         if fmt != 'ini':

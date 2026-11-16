@@ -31,7 +31,7 @@ internal object CombatContentReader {
             "maxTurnSpeed", "turnAcceleration", "moveSlidingMode", "moveIgnoringBody") + MovementCollisionContent.fields,
     )
     private val retained = mapOf(
-        "core" to setOf("mass", "isBio", "softCollisionOnAll", "displayLocaleKey"),
+        "core" to setOf("isBio", "softCollisionOnAll", "displayLocaleKey"),
         "graphics" to setOf("image_shadow", "shadowOffsetX", "shadowOffsetY", "animation_moving_start",
             "animation_moving_end", "animation_moving_speed", "dustEffect"),
         "turret_1" to setOf("shoot_sound", "shoot_sound_vol", "shoot_flame", "shoot_light"),
@@ -462,6 +462,7 @@ internal object CombatContentReader {
             building = if (stationary) BuildingProfile(BuildingFootprint(0, 0, 0, 0)) else null,
             authoredAirCombat = authoredAir,
             movementCollision = MovementCollisionContent.read(path, loaded, radius),
+            mass = loaded.mass(path, movable = movement != MovementType.NONE && !stationary),
             construction = if (mech) ConstructionProfile(price, buildRate) else null, techLevel = techLevel,
             authoredWaterCombat = authorWater, shadowImagePath = if (hover) image("image_shadow") else null,
             pointDefense = defense, deathExplosion = death,

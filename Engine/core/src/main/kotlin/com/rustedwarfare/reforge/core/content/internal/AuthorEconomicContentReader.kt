@@ -80,6 +80,7 @@ internal object AuthorEconomicContentReader {
                 upgrades = UpgradeProfile(actions), income = IncomeProfile(
                     number("incomePeriod", 1.0, IncomeProfile.MAX_PERIOD.toDouble()).toFloat(),
                     number("incomeCredits", 0.0, 1_000_000.0).toFloat()),
-                shield = ShieldContent.read(path, loaded))
+                shield = ShieldContent.read(path, loaded),
+                mass = loaded.mass(path, movable = false))
         }
 }

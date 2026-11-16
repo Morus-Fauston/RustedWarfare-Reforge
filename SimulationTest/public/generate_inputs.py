@@ -19,6 +19,7 @@ def generate():
 <tileset firstgid="1" name="owned" tilewidth="20" tileheight="20"><image source="owned.png" width="20" height="20"/></tileset>
 <layer name="Ground" width="12" height="12"><data encoding="csv">''' + ','.join(['1'] * 144) + '</data></layer>\n</map>\n', encoding='utf-8', newline='\n')
     (assets / 'walker.ini').write_text('''[core]
+mass: 1
 name: public_walker
 class: CustomUnitMetadata
 radius: 1

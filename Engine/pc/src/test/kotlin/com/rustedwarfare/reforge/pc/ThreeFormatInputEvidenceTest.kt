@@ -50,7 +50,7 @@ class ThreeFormatInputEvidenceTest {
                 assertEquals(expected, files.map { Path.of(it.getString("path")) }.toSet())
                 assertTrue(files.all { it.has("sha256") })
                 val parentRow = files.single { it.getString("path") == parent.toString() }
-                assertEquals("99aa63a6f6e87662e257af3ca7c4557290153e60e62fcdf74360e15caef612e8", parentRow.getString("sha256"))
+                assertEquals("87492c0211b24a35781910436bc5f6ea0631d4fd5645b98d13ee92fd2d19d3ff", parentRow.getString("sha256"))
                 assertTrue(files.any { it.getString("path") == author.toString() && it.has("sha256") })
                 assertTrue(files.none { it.getString("path") == old.toString() })
                 if (format == "json") {

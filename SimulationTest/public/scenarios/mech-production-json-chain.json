@@ -24,7 +24,7 @@
       {
         "id": "builder",
         "path": "../inputs/mech-production/json/production-package/units/builder.json",
-        "sha256": "8a8adc60837e1bec44b6f5c75f8a0d5bfcc19206441421235eb0091eaeb2ccf2",
+        "sha256": "e2233246ceaf77c91d5207e1a40244659c8976e74c85eb479af82b9111ced37d",
         "loader": "builder"
       }
     ],

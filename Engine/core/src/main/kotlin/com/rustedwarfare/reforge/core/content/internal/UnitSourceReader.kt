@@ -2,6 +2,7 @@ package com.rustedwarfare.reforge.core.content.internal
 
 import com.rustedwarfare.reforge.core.content.*
 import java.nio.file.Files
+import java.nio.file.LinkOption.NOFOLLOW_LINKS
 import java.nio.file.Path
 import java.nio.file.InvalidPathException
 import java.io.IOException
@@ -34,6 +35,7 @@ internal data class UnitContentSchema(
     val deathExplosionAbility: Boolean = false,
     val landAttackCondition: Boolean = false,
     val dynamicActions: Boolean = false,
+    val weaponlessIni: Boolean = false,
 ) {
     companion object {
         fun native(fields: Set<String>, formats: Set<String>): UnitContentSchema {
@@ -49,9 +51,10 @@ internal class UnitSourceReader(
     private val schema: UnitContentSchema,
     private val preRead: (Path) -> Unit = {},
     private val inputGuard: (Path, Input, Boolean) -> Unit = { _, _, _ -> },
+    private val packageRoot: Path? = (preRead as? ContentPackPathGuard)?.root,
 ) {
-    private val fields = schema.fields
-    private val numericFields = schema.numericFields
+    private val fields = schema.fields + ("core" to (schema.fields.getValue("core") + "mass"))
+    private val numericFields = schema.numericFields + "mass"
     private val booleanFields = schema.booleanFields
     private val textFields = schema.textFields
     private val abilityFields = setOf("type", "maximum", "regeneration", "startAtZero")
@@ -99,7 +102,7 @@ internal class UnitSourceReader(
             if (separator <= 0) reject(ContentErrorCode.MALFORMED_SYNTAX, path,
                 reason = "Expected native field=value at line ${index + 1}")
             val key = line.substring(0, separator).trim()
-            if (key !in schema.fields.getValue("core") && key !in setOf("copyFrom", "dont_load"))
+            if (key !in fields.getValue("core") && key !in setOf("copyFrom", "dont_load"))
                 reject(ContentErrorCode.UNSUPPORTED_FIELD, path, field = key, reason = "Unsupported native field")
             if (values.putIfAbsent(key, line.substring(separator + 1).trim()) != null)
                 reject(ContentErrorCode.MALFORMED_SYNTAX, path, field = key, reason = "Duplicate native field")
@@ -170,7 +173,11 @@ internal class UnitSourceReader(
         val values: MutableMap<String, MutableMap<String, String>>,
         val origins: MutableMap<Pair<String, String>, Origin>,
         val structured: Boolean,
-    )
+        private val originalIni: Boolean,
+    ) {
+        fun mass(path: Path, movable: Boolean): Double? =
+            UnitMassContent.read(path, values["core"]?.get("mass"), movable, originalIni)
+    }
 
     private fun templateOnly(path: Path, sections: Map<String, MutableMap<String, String>>): Boolean {
         val flag = sections["core"]?.remove("dont_load") ?: return false
@@ -181,13 +188,13 @@ internal class UnitSourceReader(
         }
     }
 
-    private fun readDocument(path: Path, text: (Path) -> String): Input {
+    private fun readDocument(path: Path, text: (Path) -> String, massTemplate: Boolean): Input {
         preRead(path)
         val sections = linkedMapOf<String, MutableMap<String, String>>()
         val extension = path.fileName.toString().substringAfterLast('.', "")
-        if (extension.equals("json", true) || extension.equals("hjson", true)) {
+        if (!massTemplate && !schema.weaponlessIni && (extension.equals("json", true) || extension.equals("hjson", true))) {
             return readStructured(path, extension.equals("hjson", true), text(path))
-        } else if (schema.nativeFormats.isNotEmpty()) {
+        } else if (schema.nativeFormats.isNotEmpty() && !massTemplate) {
             return readNative(path, text(path))
         } else {
             var section: String? = null
@@ -200,7 +207,9 @@ internal class UnitSourceReader(
                     }
                     val rawName = line.substring(1, line.length - 1)
                     val next = if (schema.trimSectionName) rawName.trim() else rawName
-                    if (next.startsWith("ability_") || allowedFields(next) == null) reject(ContentErrorCode.UNSUPPORTED_FIELD, path, next, reason = "Unsupported unit section")
+                    if (!massTemplate && schema.weaponlessIni && next in setOf("attack", "turret_1", "projectile_1"))
+                        reject(ContentErrorCode.WEAPON_SECTION_PRESENT, path, next, reason = "Weapon sections are forbidden")
+                    if (!massTemplate && (next.startsWith("ability_") || allowedFields(next) == null)) reject(ContentErrorCode.UNSUPPORTED_FIELD, path, next, reason = "Unsupported unit section")
                     if ((next.startsWith("turret_") || next.startsWith("projectile_") || next.startsWith("template_")) && !validName(next.substringAfter('_')))
                         reject(ContentErrorCode.IDENTITY_CONFLICT, path, next, "name", reason = "Invalid stable name")
                     if (sections.putIfAbsent(next, linkedMapOf()) != null) {
@@ -214,10 +223,12 @@ internal class UnitSourceReader(
                         reject(ContentErrorCode.MALFORMED_SYNTAX, path, section, reason = "Invalid field at line ${index + 1}")
                     }
                     val key = line.substring(0, colon).trim()
-                    if (key in MovementCollisionContent.fields && (current == "movement" || current.startsWith("template_")))
+                    if (!massTemplate && schema.weaponlessIni && key == "overrideAndReplace")
+                        reject(ContentErrorCode.IDENTITY_CONFLICT, path, current, key, reason = "Global replacement is forbidden")
+                    if (!massTemplate && key in MovementCollisionContent.fields && (current == "movement" || current.startsWith("template_")))
                         reject(ContentErrorCode.UNSUPPORTED_FIELD, path, current, key,
                             reason = "Declare movement collision dimensions in structured content")
-                    if (key !in allowedFields(current).orEmpty() && key !in setOf("@copyFromSection", "@copyFrom_skipThisSection") && !(current == "core" && key in setOf("copyFrom", "dont_load"))) {
+                    if (!massTemplate && key !in allowedFields(current).orEmpty() && key !in setOf("@copyFromSection", "@copyFrom_skipThisSection") && !(current == "core" && key in setOf("copyFrom", "dont_load"))) {
                         reject(ContentErrorCode.UNSUPPORTED_FIELD, path, current, key, reason = "Unsupported unit field")
                     }
                     val value = line.substring(colon + 1).trim()
@@ -234,10 +245,27 @@ internal class UnitSourceReader(
         return Input(sections, parents, templateOnly(path, sections), declaredControls = controls)
     }
 
-    private fun loadSections(path: Path, text: (Path) -> String): EffectiveSections {
-        val root = readDocument(path, text)
-        inputGuard(path, root, true)
-        if (root.templateOnly) reject(ContentErrorCode.UNSUPPORTED_FEATURE, path, "core".takeUnless { root.flat }, "dont_load", reason = "Template-only input cannot be loaded as a unit")
+    private fun directoryTemplate(path: Path): Path? {
+        val boundary = packageRoot ?: path.parent
+        var directory = path.parent
+        while (directory.startsWith(boundary)) {
+            val standard = directory.resolve("all-units.template")
+            if (Files.exists(standard, NOFOLLOW_LINKS)) return standard
+            val match = Files.list(directory).use { entries ->
+                entries.filter { it.fileName.toString().equals("all-units.template", ignoreCase = true) }
+                    .findFirst().orElse(null)
+            }
+            if (match != null) return match
+            if (directory == boundary) break
+            directory = directory.parent
+        }
+        return null
+    }
+
+    private fun loadSections(path: Path, text: (Path) -> String, massTemplate: Boolean = false): EffectiveSections {
+        val root = readDocument(path, text, massTemplate)
+        if (!massTemplate) inputGuard(path, root, true)
+        if (!massTemplate && root.templateOnly) reject(ContentErrorCode.UNSUPPORTED_FEATURE, path, "core".takeUnless { root.flat }, "dont_load", reason = "Template-only input cannot be loaded as a unit")
         val target = root.sections.mapValuesTo(linkedMapOf()) { (_, values) -> values.toMutableMap() }
         val origins = linkedMapOf<Pair<String, String>, Origin>()
         for ((section, values) in target) for (key in values.keys) origins[section to key] = origin(path, root, section, key)
@@ -259,7 +287,9 @@ internal class UnitSourceReader(
                     catch (failure: IOException) { referenceFailure(name, "Cannot resolve parent $parent: ${failure.message}") }
                     catch (failure: SecurityException) { referenceFailure(name, "Parent access denied: $parent") }
                 if (actual in active) referenceFailure(name, "Cyclic inheritance: ${active.joinToString(" -> ")} -> $actual")
-                val document = try { readDocument(parent, text).also { inputGuard(parent, it, false) } }
+                val document = try {
+                    readDocument(parent, text, massTemplate).also { if (!massTemplate) inputGuard(parent, it, false) }
+                }
                     catch (failure: IOException) { referenceFailure(name, "Cannot read parent $parent: ${failure.message}") }
                     catch (failure: SecurityException) { referenceFailure(name, "Parent access denied: $parent") }
                     catch (failure: ContentReadException) {
@@ -300,28 +330,60 @@ internal class UnitSourceReader(
             return inheritedItems
         }
         inherit(path, root, 0, setOf(path.toRealPath()), listOf(path), emptySet())
-        val declared = target.mapValues { (_, values) -> values.toMap() }
+        val originalIni = !root.structured && !root.flat
+        if (massTemplate) return EffectiveSections(target, origins, root.structured, originalIni)
+
+        // Resolve directory defaults and unit sections in one declaration table.
+        val declared = target.mapValuesTo(linkedMapOf()) { (_, values) -> values.toMutableMap() }
+        val declaredOrigins = origins.toMutableMap()
+        val templateFields = mutableSetOf<Pair<String, String>>()
+        val core = target["core"]
+        if (originalIni && (core?.containsKey("mass") != true || core.containsKey("@copyFromSection"))) {
+            directoryTemplate(path)?.let { template ->
+                val inherited = loadSections(template, text, massTemplate = true)
+                for ((section, entries) in inherited.values) {
+                    val effective = declared.getOrPut(section) { linkedMapOf() }
+                    if (effective["@copyFrom_skipThisSection"] == "true") continue
+                    for ((key, value) in entries) if (effective.putIfAbsent(key, value) == null) {
+                        val field = section to key
+                        val source = inherited.origins.getValue(field)
+                        declaredOrigins[field] = source.copy(chain = listOf(path) + source.chain)
+                        templateFields += field
+                    }
+                }
+                val mass = "core" to "mass"
+                if (mass in templateFields) {
+                    target.getOrPut("core") { linkedMapOf() }["mass"] = declared.getValue("core").getValue("mass")
+                    origins[mass] = declaredOrigins.getValue(mass)
+                }
+            }
+        }
         fun sectionFailure(section: String, ref: String? = null, reason: String): Nothing {
-            val origin = origins[section to "@copyFromSection"] ?: Origin(path, section, "@copyFromSection")
+            val origin = declaredOrigins[section to "@copyFromSection"] ?: Origin(path, section, "@copyFromSection")
             reject(ContentErrorCode.BAD_REFERENCE, origin.path, origin.section, origin.field, ref,
                 "$reason; inheritance=${origin.chain.joinToString(" -> ")}; consumer=[$section]")
         }
-        fun inheritSection(consumer: String, source: String, depth: Int, active: Set<String>) {
+        fun inheritSection(consumer: String, source: String, depth: Int, active: Set<String>, massOnly: Boolean = false) {
             if (depth > 10) sectionFailure(source, reason = "Section inheritance depth exceeds 10: ${active.joinToString(" -> ")}")
             val parents = declared.getValue(source)["@copyFromSection"]?.takeIf { it.isNotBlank() } ?: return
+            val onlyMass = massOnly || (source to "@copyFromSection") in templateFields
+            if (onlyMass && consumer != "core") return
             for (name in parents.split(',').map(String::trim).asReversed()) {
                 val values = declared[name]
                 if (name.isBlank() || values.isNullOrEmpty()) sectionFailure(source, name, "Unknown or empty source section")
                 if (name in active) sectionFailure(source, name, "Cyclic section inheritance: ${active.joinToString(" -> ")} -> $name")
                 for ((key, value) in values) {
                     if (key in setOf("@copyFromSection", "@copyFrom_skipThisSection")) continue
+                    val field = name to key
+                    // The directory template supplies only mass to the unit definition.
+                    if ((onlyMass || field in templateFields) && !(consumer == "core" && key == "mass")) continue
                     if (target.getValue(consumer).putIfAbsent(key, value) == null)
-                        origins[consumer to key] = origins.getValue(name to key)
+                        origins[consumer to key] = declaredOrigins.getValue(field)
                 }
-                inheritSection(consumer, name, depth + 1, active + name)
+                inheritSection(consumer, name, depth + 1, active + name, onlyMass)
             }
         }
-        for (section in declared.keys) inheritSection(section, section, 0, setOf(section))
+        for (section in target.keys) inheritSection(section, section, 0, setOf(section))
         movementTemplate?.let { (name, source) ->
             val movement = target.getOrPut("movement") { linkedMapOf() }
             for ((key, value) in schema.movementTemplates.getValue(name)) {
@@ -342,7 +404,7 @@ internal class UnitSourceReader(
                 reject(ContentErrorCode.UNSUPPORTED_FIELD, origin.path, origin.section, origin.field, reason = "Field is unsupported in consuming section $section")
             }
         }
-        return EffectiveSections(target, origins, root.structured)
+        return EffectiveSections(target, origins, root.structured, originalIni)
     }
 
     private fun readStructured(path: Path, hjson: Boolean, text: String): Input {
@@ -445,7 +507,7 @@ internal class UnitSourceReader(
                         value.asString()
                     }
                 } else {
-                    if (key !in schema.fields.getValue("core") && key != "dont_load")
+                    if (key !in fields.getValue("core") && key != "dont_load")
                         reject(ContentErrorCode.UNSUPPORTED_FIELD, path, field = key, reason = "Unsupported native field")
                     flat.add(key, member.value)
                 }

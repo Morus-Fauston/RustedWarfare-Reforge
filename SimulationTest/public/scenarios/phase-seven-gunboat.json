@@ -24,7 +24,7 @@
       {
         "id": "gunboat",
         "path": "../inputs/phase-seven-gunboat/units/gunboat.json",
-        "sha256": "6f2defc5f1c2defcc3c88b8f7853461bf74048eabc9bfe0f52119b19495ceb7f",
+        "sha256": "cb6e34b58ee3fa07d95a714838f74fb5b1cdf34fa76f33918831b1a90716e3d2",
         "loader": "water-combat"
       }
     ],

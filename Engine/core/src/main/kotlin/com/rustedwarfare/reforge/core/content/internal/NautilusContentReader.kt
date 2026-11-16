@@ -129,6 +129,7 @@ internal object NautilusContentReader {
                 energy = EnergyProfile(6f, .01f, .01f, true), selfRegenRate = .1f, techLevel = 2,
                 customActions = NautilusRules.actions(id),
                 mech = if (id == "nautilusSubmarine") null else NautilusRules.legs(id,
-                    legImage("image_leg", 16, 68), legImage("image_foot", 17, 36)))
+                    legImage("image_leg", 16, 68), legImage("image_foot", 17, 36)),
+                mass = loaded.mass(path, movable = true))
         }
 }

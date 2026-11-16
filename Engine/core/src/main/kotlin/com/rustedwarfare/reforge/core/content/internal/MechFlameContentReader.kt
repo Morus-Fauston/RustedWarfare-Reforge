@@ -85,6 +85,7 @@ internal object MechFlameContentReader {
             if (!mech.isValid()) reject(ContentErrorCode.UNSUPPORTED_FEATURE, path, "leg_2", reason = "Expected shared leg and foot images")
             UnitDefinition(identity, "CustomUnitMetadata", 25.0, 25.0, 1, image("graphics", "image", 45, 87), 1.0,
                 MechFlameRules.movement, emptySet(), combat = MechFlameRules.combat, build = MechFlameRules.build, mech = mech,
-                shadowImagePath = image("graphics", "image_shadow", 45, 87), transportSlots = 2, selfRegenRate = .06f, techLevel = 2)
+                shadowImagePath = image("graphics", "image_shadow", 45, 87), transportSlots = 2, selfRegenRate = .06f, techLevel = 2,
+                mass = loaded.mass(path, movable = true))
         }
 }

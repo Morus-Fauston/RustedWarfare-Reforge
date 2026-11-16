@@ -2,6 +2,7 @@
   "format": "rw-reforge.unit.v2",
   "unitType": "tank",
   "core": {
+    "mass": 3000,
     "name": "incoming_gun",
     "class": "CustomUnitMetadata",
     "price": 350,

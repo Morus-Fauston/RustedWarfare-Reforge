@@ -1,6 +1,7 @@
 {
   "format": "rw-reforge.unit.v2",
   "core": {
+    "mass": 10000,
     "name": "modularSpider_fabricatorT2",
     "class": "CustomUnitMetadata",
     "price": 7000,

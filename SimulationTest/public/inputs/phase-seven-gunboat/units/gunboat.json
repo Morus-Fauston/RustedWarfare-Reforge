@@ -1,6 +1,7 @@
 {
   "format": "rw-reforge.unit.v2",
   "core": {
+    "mass": 1500,
     "name": "gunboat",
     "class": "CustomUnitMetadata",
     "price": 300,

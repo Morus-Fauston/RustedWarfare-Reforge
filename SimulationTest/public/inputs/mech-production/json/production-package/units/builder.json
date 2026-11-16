@@ -1,5 +1,6 @@
 {
   "format": "rw-reforge.native-builder.v5",
+  "mass": 3000,
   "name": "builder",
   "maxHp": 170,
   "radius": 10,

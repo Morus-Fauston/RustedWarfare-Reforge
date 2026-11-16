@@ -18,7 +18,7 @@
       {
         "id": "builder",
         "path": "../inputs/three-format-production/economy/hjson/units/builder.properties",
-        "sha256": "2d0b0e454b904182c8c6dca991a0252bead473942342556512b6eff2f726b82a",
+        "sha256": "4cf77ba73853de9ced30662878bbd80633a82716d2ccc89298e2da99ac146aab",
         "loader": "builder"
       },
       {
@@ -30,7 +30,7 @@
       {
         "id": "c_tank",
         "path": "../inputs/three-format-production/economy/hjson/units/tank.hjson",
-        "sha256": "0f658a7f9f74f8b9f655fef79e41825450c9c05d17e399b3f04a63509db5301c",
+        "sha256": "8f24983c29919afca84dd86591540549b1c6aa80e8fed4daa4daae7275af7d36",
         "loader": "combat"
       },
       {

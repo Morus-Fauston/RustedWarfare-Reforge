@@ -18,7 +18,7 @@
       {
         "id": "builder",
         "path": "../inputs/repairbay-production/ini/production-package/builder.ini",
-        "sha256": "9073e949e67c08d8864a019d98f0c5169cc1ee3571c4f3cd4314261becc4021b",
+        "sha256": "402a8b1fefd10bc235482ed498694ec20aee14d9233a14d18bd4b25806c6f304",
         "loader": "builder"
       }
     ],

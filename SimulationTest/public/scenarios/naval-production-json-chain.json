@@ -12,7 +12,7 @@
       {
         "id": "builder",
         "path": "../inputs/naval-production/json/production-package/units/builder.json",
-        "sha256": "775c145859edf839c08b854ae3bf1019c4ea3520a2e8ee7ac1ab8eb6bd2fa4a9",
+        "sha256": "3940e72b55e87fd05e5611647bb0af34320cc687b343dcce5d7c5b142adcae55",
         "loader": "builder"
       },
       {
@@ -36,7 +36,7 @@
       {
         "id": "c_tank",
         "path": "../inputs/three-format-tanks/json/units/tank.json",
-        "sha256": "42b90d73878d9996aaa59dc0480945d26039a281b3da6cb9f55b1fd2909d3ac9",
+        "sha256": "5217e80a0889f5389dd53fc633b77a9b256c6a3201bdfb5a145f91a9bfc79f91",
         "loader": "combat"
       },
       {
@@ -54,7 +54,7 @@
       {
         "id": "attackSubmarine",
         "path": "../inputs/naval-production/json/production-package/units/submarine/submarine.json",
-        "sha256": "617b046dcad32edc5c670435cbab635660b46ea69cf5fdbcb95fec579af90d3a",
+        "sha256": "95e5f659fa799ee4ab5c3b2ba3ef95757bd06d0ac74f6bcd653d10b478314fd2",
         "loader": "submarine"
       }
     ],

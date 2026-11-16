@@ -118,7 +118,8 @@ internal object FactoryContentReader {
             construction = if (construction) ConstructionProfile(positive("price").toLong(), positive("buildSpeed").toFloat()) else null,
             upgrades = if (mechV2 && !t2) UpgradeProfile(listOf(UpgradeActionProfile("upgrade_t2", "mechFactoryT2", 4000L, .0004f))) else null,
             directHitTargetKind = if (mech) DirectHitTargetKind.ORDINARY else DirectHitTargetKind.NATIVE_BUILDING,
-            techLevel = if (t2) 2 else 1)
+            techLevel = if (t2) 2 else 1,
+            mass = UnitMassContent.read(path, values["mass"], movable = false))
     }
 
     private fun airDefinition(path: Path, values: Map<String, String>, validatePath: (Path) -> Unit): UnitDefinition {
@@ -169,7 +170,8 @@ internal object FactoryContentReader {
             build = BuildProfile(if (t2) 2500L else 1000L, .001f), construction = ConstructionProfile(if (t2) 2500L else 1000L, .001f),
             techLevel = if (t2) 2 else 1,
             upgrades = if (upgrade) UpgradeProfile(listOf(UpgradeActionProfile("upgrade_t2", "airFactoryT2", 1500L, .0004f))) else null,
-            directHitTargetKind = DirectHitTargetKind.NATIVE_BUILDING)
+            directHitTargetKind = DirectHitTargetKind.NATIVE_BUILDING,
+            mass = UnitMassContent.read(path, values["mass"], movable = false))
     }
 
     /** Explicit T1/T2 native profile on the common syntax, source and image path. */
@@ -219,6 +221,7 @@ internal object FactoryContentReader {
             build = BuildProfile(if (t2) 3000L else 1000L, .0007f), construction = ConstructionProfile(if (t2) 3000L else 1000L, .0007f),
             techLevel = if (t2) 2 else 1,
             upgrades = if (t2) null else UpgradeProfile(listOf(UpgradeActionProfile("upgrade_t2", "seaFactoryT2", 2000L, .0004f))),
-            directHitTargetKind = DirectHitTargetKind.NATIVE_BUILDING)
+            directHitTargetKind = DirectHitTargetKind.NATIVE_BUILDING,
+            mass = UnitMassContent.read(path, values["mass"], movable = false))
     }
 }

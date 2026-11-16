@@ -37,7 +37,7 @@
       {
         "id": "template",
         "path": "../inputs/three-format-production/upgrade/ini/units/turret_common_land.ini",
-        "sha256": "c95f3f098ff83ced4e3ab5d798873f5920c1b4af7a0edff9819c94e0f83d4930"
+        "sha256": "ca142818108d73188dddf9187ee37edc37cfa611ab9862854f8019fefa7c32f1"
       },
       {
         "id": "turret.png",

@@ -1,6 +1,7 @@
 {
   "format": "rw-reforge.unit.v2",
   "core": {
+    "mass": 10000,
     "name": "modularSpider_antiair",
     "class": "CustomUnitMetadata",
     "price": 1000,

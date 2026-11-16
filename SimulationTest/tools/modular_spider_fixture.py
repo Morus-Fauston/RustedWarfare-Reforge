@@ -21,7 +21,7 @@ CHASSIS_BUILD_TYPES = ("builder", "hovercraft", "c_turret_t1", "c_turret_t1_arti
 
 def opening():
     sections = {
-        "core": {"name": "modularSpider", "class": "CustomUnitMetadata", "price": 90000, "buildSpeed": .0002,
+        "core": {"mass": 120000, "name": "modularSpider", "class": "CustomUnitMetadata", "price": 90000, "buildSpeed": .0002,
                  "maxHp": 10000, "radius": 49, "fogOfWarSightRange": 19, "transportSlotsNeeded": 14,
                  "isPickableStartingUnit": True, "startFallingWhenStartingUnit": True,
                  "maxShield": 5000, "shieldRegen": .3, "selfRegenRate": .1,
@@ -57,7 +57,7 @@ def opening():
 
 def empty_slot():
     return {
-        "core": {"name": "modularSpider_emptySlot", "class": "CustomUnitMetadata", "price": 1000,
+        "core": {"mass": 90000, "name": "modularSpider_emptySlot", "class": "CustomUnitMetadata", "price": 1000,
                  "maxHp": 3000, "radius": 20, "selfRegenRate": 3000,
                  "isUnselectable": True, "canNotBeDirectlyAttacked": True},
         "graphics": {"image": "empty.png", "total_frames": 1},
@@ -81,7 +81,7 @@ def upgrade(target, price):
 
 def gun():
     return {
-        "core": {"name": "modularSpider_gunturret", "class": "CustomUnitMetadata", "price": 2000,
+        "core": {"mass": 10000, "name": "modularSpider_gunturret", "class": "CustomUnitMetadata", "price": 2000,
                  "maxHp": 2000, "radius": 15, "displayRadius": 12, "isUnselectable": True,
                  "canNotBeDirectlyAttacked": False, "selfBuildRate": .001, "selfRegenRate": .2},
         "graphics": {"image": "empty.png", "image_turret": "gun.png", "total_frames": 1},
@@ -101,7 +101,7 @@ def gun():
 
 def module(name, price, health, sprite, reach, delay, barrel, turn, *, land, air):
     return {
-        "core": {"name": "modularSpider_" + name, "class": "CustomUnitMetadata", "price": price,
+        "core": {"mass": 10000, "name": "modularSpider_" + name, "class": "CustomUnitMetadata", "price": price,
                  "maxHp": health, "radius": 15, "displayRadius": 12, "isUnselectable": True,
                  "canNotBeDirectlyAttacked": False, "selfBuildRate": .001, "selfRegenRate": .2},
         "graphics": {"image": "empty.png", "image_turret": sprite + ".png", "total_frames": 1},
@@ -195,7 +195,7 @@ def artillery():
 
 def utility(name, price, sprite):
     return {
-        "core": {"name": "modularSpider_" + name, "class": "CustomUnitMetadata", "price": price,
+        "core": {"mass": 10000, "name": "modularSpider_" + name, "class": "CustomUnitMetadata", "price": price,
                  "maxHp": 3000, "radius": 15, "displayRadius": 12, "isUnselectable": True,
                  "canNotBeDirectlyAttacked": False, "selfBuildRate": .001, "selfRegenRate": .2},
         "graphics": {"image": sprite + ".png", "total_frames": 1},

@@ -43,7 +43,7 @@ def generate():
         text = unit_path.read_text(encoding='utf8')
         assert text.count('helicopter,amphibiousJet') == 1
         unit_path.write_text(text.replace('helicopter,amphibiousJet', 'helicopter,amphibiousJet,dropship'), encoding='utf8')
-        fields = dict(format='rw-reforge.native-dropship.v1', name='dropship', maxHp=500, radius=20,
+        fields = dict(format='rw-reforge.native-dropship.v1', mass=16000, name='dropship', maxHp=500, radius=20,
                       price=800, buildSpeed=.001, image='dropship.png', image_dead='dropship_dead.png',
                       image_shadow='dropship_shadow.png')
         write_native(pack / 'units' / f'dropship.{fmt}', fields)

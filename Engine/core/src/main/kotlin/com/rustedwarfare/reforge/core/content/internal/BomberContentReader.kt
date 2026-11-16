@@ -66,6 +66,7 @@ internal object BomberContentReader {
             UnitDefinition(identity, "CustomUnitMetadata", 16.0, 19.0, 1, image("image"), 1.0,
                 BomberRules.movement, emptySet(), combat = BomberRules.combat(dead),
                 build = BomberRules.build, shadowImagePath = image("image_shadow"),
-                energy = BomberRules.energy, selfRegenRate = .1f, techLevel = 2, attackMovement = AttackMovementProfile.BOMBER)
+                energy = BomberRules.energy, selfRegenRate = .1f, techLevel = 2, attackMovement = AttackMovementProfile.BOMBER,
+                mass = loaded.mass(path, movable = true))
         }
 }

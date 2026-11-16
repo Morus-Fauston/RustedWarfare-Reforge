@@ -60,10 +60,20 @@ internal object MotionV2CoreInputs {
                     listOf(relative(p,image.single().getAttribute("source"))).also { it.forEach(::declared) }
                 }.toSet()
                 val map=content(ContentLoader.loadMap(declared(mapPath)))
-                val unit=content(ContentLoader.loadUnitVariant(declared(unitPath)))
+                val loaded = content(ContentLoader.loadUnitVariantWithSources(declared(unitPath)))
+                val unitSources = loaded.sources.map { source ->
+                    val sourcePath = declared(source.path)
+                    val declaration = byPath.getValue(sourcePath)
+                    require(source.sha256 == declaration.text("sha256") && source.bytes == declaration.integer("bytes")) {
+                        "Parsed unit source differs from its declared identity: $sourcePath"
+                    }
+                    sourcePath
+                }.toSet()
+                content(loaded.verifyStable())
+                val unit = loaded.definition
                 require(map.tileSets.map { it.imagePath }.toSet()==images) { "Loaded atlas path mismatch" }
                 declared(unit.imagePath)
-                val expected=setOf(mapPath,unitPath,unit.imagePath)+tsx+images
+                val expected=setOf(mapPath,unit.imagePath)+unitSources+tsx+images
                 require(byPath.keys==expected) { "Declared files differ from the actual dependency union" }
                 require(map.widthTiles==map.blocking.widthTiles && map.heightTiles==map.blocking.heightTiles)
                 val bits=buildString { for(y in 0 until map.heightTiles) for(x in 0 until map.widthTiles) append(if(map.blocking.isBlocked(x,y)) '1' else '0') }

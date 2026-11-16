@@ -25,7 +25,7 @@
         "id": "builder",
         "loader": "builder",
         "path": "../inputs/helicopter-production/json/production-package/units/builder.json",
-        "sha256": "318f3eafd2c1cd9642808261225ff52e3f10169323768608d3ed564a1aee82fc"
+        "sha256": "b4462c1e48650797beeea2b13f67983a420e4be25c45edc8b6c23588ca2b761a"
       }
     ],
     "dependencies": [

@@ -1,5 +1,6 @@
 {
   "format": "rw-reforge.native-amphibious-jet.v1",
+  "mass": 10000,
   "name": "amphibiousJet",
   "locomotion": "air-water",
   "maxHp": 530,

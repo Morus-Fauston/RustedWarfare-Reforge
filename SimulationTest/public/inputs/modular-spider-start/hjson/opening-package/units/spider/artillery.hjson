@@ -1,6 +1,7 @@
 {
   "format": "rw-reforge.unit.v2",
   "core": {
+    "mass": 10000,
     "name": "modularSpider_artillery",
     "class": "CustomUnitMetadata",
     "price": 5000,

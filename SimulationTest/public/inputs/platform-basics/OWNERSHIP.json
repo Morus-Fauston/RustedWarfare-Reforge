@@ -75,9 +75,9 @@
     },
     {
       "path": "construction/units/builder.properties",
-      "sha256": "2d0b0e454b904182c8c6dca991a0252bead473942342556512b6eff2f726b82a",
+      "sha256": "4cf77ba73853de9ced30662878bbd80633a82716d2ccc89298e2da99ac146aab",
       "source": "inputs/maintenance-defense/maintenance/units/builder.properties",
-      "sourceSha256": "2d0b0e454b904182c8c6dca991a0252bead473942342556512b6eff2f726b82a"
+      "sourceSha256": "4cf77ba73853de9ced30662878bbd80633a82716d2ccc89298e2da99ac146aab"
     },
     {
       "path": "construction/units/builder_dead.png",
@@ -207,9 +207,9 @@
     },
     {
       "path": "construction/units/tank.ini",
-      "sha256": "99aa63a6f6e87662e257af3ca7c4557290153e60e62fcdf74360e15caef612e8",
+      "sha256": "87492c0211b24a35781910436bc5f6ea0631d4fd5645b98d13ee92fd2d19d3ff",
       "source": "inputs/maintenance-defense/maintenance/units/tank.ini",
-      "sourceSha256": "99aa63a6f6e87662e257af3ca7c4557290153e60e62fcdf74360e15caef612e8"
+      "sourceSha256": "87492c0211b24a35781910436bc5f6ea0631d4fd5645b98d13ee92fd2d19d3ff"
     },
     {
       "path": "construction/units/tank.png",
@@ -291,9 +291,9 @@
     },
     {
       "path": "production/units/tank.ini",
-      "sha256": "99aa63a6f6e87662e257af3ca7c4557290153e60e62fcdf74360e15caef612e8",
+      "sha256": "87492c0211b24a35781910436bc5f6ea0631d4fd5645b98d13ee92fd2d19d3ff",
       "source": "inputs/production-combat/production/units/tank.ini",
-      "sourceSha256": "99aa63a6f6e87662e257af3ca7c4557290153e60e62fcdf74360e15caef612e8"
+      "sourceSha256": "87492c0211b24a35781910436bc5f6ea0631d4fd5645b98d13ee92fd2d19d3ff"
     },
     {
       "path": "production/units/tank.png",
@@ -375,9 +375,9 @@
     },
     {
       "path": "upgrade/units/tank.ini",
-      "sha256": "99aa63a6f6e87662e257af3ca7c4557290153e60e62fcdf74360e15caef612e8",
+      "sha256": "87492c0211b24a35781910436bc5f6ea0631d4fd5645b98d13ee92fd2d19d3ff",
       "source": "inputs/production-combat/upgrade/units/tank.ini",
-      "sourceSha256": "99aa63a6f6e87662e257af3ca7c4557290153e60e62fcdf74360e15caef612e8"
+      "sourceSha256": "87492c0211b24a35781910436bc5f6ea0631d4fd5645b98d13ee92fd2d19d3ff"
     },
     {
       "path": "upgrade/units/tank.png",
@@ -405,9 +405,9 @@
     },
     {
       "path": "upgrade/units/turret_common_land.ini",
-      "sha256": "c95f3f098ff83ced4e3ab5d798873f5920c1b4af7a0edff9819c94e0f83d4930",
+      "sha256": "ca142818108d73188dddf9187ee37edc37cfa611ab9862854f8019fefa7c32f1",
       "source": "inputs/production-combat/upgrade/units/turret_common_land.ini",
-      "sourceSha256": "c95f3f098ff83ced4e3ab5d798873f5920c1b4af7a0edff9819c94e0f83d4930"
+      "sourceSha256": "ca142818108d73188dddf9187ee37edc37cfa611ab9862854f8019fefa7c32f1"
     },
     {
       "path": "upgrade/units/turret_dead.png",
@@ -517,9 +517,9 @@
     },
     {
       "path": "maintenance/units/builder.properties",
-      "sha256": "2d0b0e454b904182c8c6dca991a0252bead473942342556512b6eff2f726b82a",
+      "sha256": "4cf77ba73853de9ced30662878bbd80633a82716d2ccc89298e2da99ac146aab",
       "source": "inputs/maintenance-defense/maintenance/units/builder.properties",
-      "sourceSha256": "2d0b0e454b904182c8c6dca991a0252bead473942342556512b6eff2f726b82a"
+      "sourceSha256": "4cf77ba73853de9ced30662878bbd80633a82716d2ccc89298e2da99ac146aab"
     },
     {
       "path": "maintenance/units/builder_dead.png",
@@ -649,9 +649,9 @@
     },
     {
       "path": "maintenance/units/tank.ini",
-      "sha256": "99aa63a6f6e87662e257af3ca7c4557290153e60e62fcdf74360e15caef612e8",
+      "sha256": "87492c0211b24a35781910436bc5f6ea0631d4fd5645b98d13ee92fd2d19d3ff",
       "source": "inputs/maintenance-defense/maintenance/units/tank.ini",
-      "sourceSha256": "99aa63a6f6e87662e257af3ca7c4557290153e60e62fcdf74360e15caef612e8"
+      "sourceSha256": "87492c0211b24a35781910436bc5f6ea0631d4fd5645b98d13ee92fd2d19d3ff"
     },
     {
       "path": "maintenance/units/tank.png",

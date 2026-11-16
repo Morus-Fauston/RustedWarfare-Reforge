@@ -83,6 +83,7 @@ internal object MechEngineerContentReader {
                 build = BuildProfile(5000L, .0008f), builder = BuilderProfile(targets, 140f, 0f, 4f, .3f, 2f, "nanoTurret"),
                 income = IncomeProfile(40f, 1f), mech = MechDefinition(
                     MechBodyDefinition(3.0, .2, 0.0, 0.0, 0.0, 0.0, 0.0, 0), legs, MechKind.FOUR_LEGGED),
-                transportSlots = 3, maintenance = MaintenanceProfile.MECH_ENGINEER, selfRegenRate = .08f, techLevel = 2)
+                transportSlots = 3, maintenance = MaintenanceProfile.MECH_ENGINEER, selfRegenRate = .08f, techLevel = 2,
+                mass = loaded.mass(path, movable = true))
         }
 }

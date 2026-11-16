@@ -55,6 +55,7 @@ internal object PointDefenseContentReader {
             building = BuildingProfile(BuildingFootprint(0, 0, 1, 1),
                 anchor = if (enableConstruction) FootprintAnchor(20f, 20f) else null),
             directHitTargetKind = DirectHitTargetKind.NATIVE_BUILDING, pointDefense = PointDefenseProfile(),
-            construction = if (enableConstruction) ConstructionProfile(1200L, .001f) else null)
+            construction = if (enableConstruction) ConstructionProfile(1200L, .001f) else null,
+            mass = UnitMassContent.read(path, values["mass"], movable = false))
     }
 }

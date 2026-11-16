@@ -488,14 +488,14 @@ class ThreeFormatCombatContentTest {
             assertEquals(listOf(path, base), loaded.sources.map { it.path })
             assertEquals(55L, loaded.sources[0].bytes)
             assertEquals("fb5aac95b156141918ea415032306818d198c009703cb1ffbd8afe9c9087397a", loaded.sources[0].sha256)
-            assertEquals("99aa63a6f6e87662e257af3ca7c4557290153e60e62fcdf74360e15caef612e8", loaded.sources[1].sha256)
+            assertEquals("87492c0211b24a35781910436bc5f6ea0631d4fd5645b98d13ee92fd2d19d3ff", loaded.sources[1].sha256)
             assertIs<ContentResult.Success<Unit>>(loaded.verifyStable())
             Files.writeString(base, original.replace("price: 350", "price: 420"))
             val changed = assertIs<ContentResult.Failure>(loaded.verifyStable()).error
             assertEquals(ContentErrorCode.BAD_REFERENCE, changed.code)
             assertEquals(base.toString(), changed.file)
             assertEquals(350L, assertNotNull(loaded.definition.build).price)
-            assertEquals("99aa63a6f6e87662e257af3ca7c4557290153e60e62fcdf74360e15caef612e8", loaded.sources[1].sha256)
+            assertEquals("87492c0211b24a35781910436bc5f6ea0631d4fd5645b98d13ee92fd2d19d3ff", loaded.sources[1].sha256)
             val reopened = assertIs<ContentResult.Success<LoadedUnitContent>>(ContentLoader.loadCombatUnitWithSources(path)).value
             assertEquals(420L, assertNotNull(reopened.definition.build).price)
             assertIs<ContentResult.Success<Unit>>(reopened.verifyStable())
@@ -544,7 +544,7 @@ class ThreeFormatCombatContentTest {
     private val tankJson = """
         {
           "format": "rw-reforge.unit.v2",
-          "core": {"name":"c_tank", "overrideAndReplace":"tank", "class":"CustomUnitMetadata",
+          "core": {"mass":3000, "name":"c_tank", "overrideAndReplace":"tank", "class":"CustomUnitMetadata",
             "price":350, "buildSpeed":0.002, "maxHp":210, "radius":11, "displayRadius":11,
             "isBio":false, "softCollisionOnAll":0},
           "graphics": {"total_frames":3, "image":"tank.png", "image_wreak":"tank_dead.png", "image_turret":"tank_turret.png"},

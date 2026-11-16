@@ -150,7 +150,8 @@ object ControlledScenario {
         val target = com.rustedwarfare.reforge.core.content.UnitDefinition("patrol_target", tank.className,
             tank.radius, tank.displayRadius, tank.totalFrames, tank.imagePath, tank.imageScale, tank.movement,
             tank.retainedUnconsumed, tank.fogOfWarSightRange,
-            durability = com.rustedwarfare.reforge.core.content.DurabilityProfile(25.0, checkNotNull(tank.combat).deadImagePath))
+            durability = com.rustedwarfare.reforge.core.content.DurabilityProfile(25.0, checkNotNull(tank.combat).deadImagePath),
+            mass = tank.mass)
         return base.copy(scenarioId = "p005-patrol", unitDefinitions = base.unitDefinitions + (target.id to target),
             units = listOf(UnitSpawn("a", "p1", tank.id, Position(110.0, 210.0), 90.0),
                 UnitSpawn("c", "p1", tank.id, Position(110.0, 330.0), 90.0),

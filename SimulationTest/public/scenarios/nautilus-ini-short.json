@@ -12,37 +12,37 @@
       {
         "id": "nautilusSubmarine",
         "path": "../inputs/nautilus-production/ini/package/nautilus.ini",
-        "sha256": "e4641e28313c8def71bb0fd0985e9d73f8df1540eb00d95d56a2e53853488ff2",
+        "sha256": "f3cba857a0d55c67ef40a85db2bec67033cfc70c27a894eb11f257962edc179d",
         "loader": "nautilus"
       },
       {
         "id": "nautilusSubmarineSurface",
         "path": "../inputs/nautilus-production/ini/package/nautilusSurface.ini",
-        "sha256": "6393382f2599ddc6738ab3db66bd8c509fed855a91c4aebe5e3025661db90018",
+        "sha256": "2db5ff991ef87e428aeedc902265dadeab52aa4dd10e6168b8b8797e136edc7e",
         "loader": "nautilus"
       },
       {
         "id": "nautilusSubmarineLand",
         "path": "../inputs/nautilus-production/ini/package/nautilusLand.ini",
-        "sha256": "8c4796190240f14413073c8daa4cd002ef045ff67798bfebbe706c4ab367b8a5",
+        "sha256": "9ef25da73f736f4f3da42b2415932734af14b7056ee8af592f563b75cea8a1e2",
         "loader": "nautilus"
       },
       {
         "id": "robotCrab",
         "path": "../inputs/nautilus-production/ini/package/scout/robotCrab.ini",
-        "sha256": "464fa07e0e1964b1ae48484c3d709fe4a6b0db19e0f414d922c547d67e228fac",
+        "sha256": "51f5b82e3cc8c0a78de92d7d67b2461f2327f30dd351776d18e78001432bb0d2",
         "loader": "scout-bot"
       },
       {
         "id": "robotCrabWater",
         "path": "../inputs/nautilus-production/ini/package/scout/robotCrabWater.ini",
-        "sha256": "b9dba4aa9c59f7a7567fbb3e54280da5aff00cb879ef26500a4044fd99089ea1",
+        "sha256": "b0113b12493feba7392ee04de0cdee6f4ba097cfede4e1e89c007bf7da51f748",
         "loader": "scout-bot"
       },
       {
         "id": "hoverTank",
         "path": "../inputs/nautilus-production/ini/package/hover/hover.ini",
-        "sha256": "dad4f985171b2b3ad7cb03fa88769aec816535903411a6afa17c7b2549db1e07",
+        "sha256": "e6af36b2e96a6703d98ce024da5f26b8d32438c2784fbda0b13c9ecb164e4b5e",
         "loader": "hover-tank"
       }
     ],

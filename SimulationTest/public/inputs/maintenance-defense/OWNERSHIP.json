@@ -52,7 +52,7 @@
     },
     {
       "path": "construction/units/builder.properties",
-      "sha256": "04284f863b5da19fefe403cec22e8231d7641fa441e5ab8d7810190f9aa0f02a"
+      "sha256": "c754155af47a4efda97129a2f199e1f364e59b2da38b311bebebffe89d48e1a7"
     },
     {
       "path": "construction/units/builder_dead.png",
@@ -152,7 +152,7 @@
     },
     {
       "path": "construction/units/tank.ini",
-      "sha256": "99aa63a6f6e87662e257af3ca7c4557290153e60e62fcdf74360e15caef612e8"
+      "sha256": "87492c0211b24a35781910436bc5f6ea0631d4fd5645b98d13ee92fd2d19d3ff"
     },
     {
       "path": "construction/units/tank.png",
@@ -176,7 +176,7 @@
     },
     {
       "path": "construction/units/turret_common_land.ini",
-      "sha256": "24e6df4e7c154785fa5f81d66522859045c3c67b7c0689b8cbc1fc681b05ea60"
+      "sha256": "0e8f74a747fc6c0bc77b8c4acda4a1e1d91e64274dc6fbd91e6b012ea7f01d6f"
     },
     {
       "path": "construction/units/turret_dead.png",
@@ -256,7 +256,7 @@
     },
     {
       "path": "maintenance/units/builder.properties",
-      "sha256": "2d0b0e454b904182c8c6dca991a0252bead473942342556512b6eff2f726b82a"
+      "sha256": "4cf77ba73853de9ced30662878bbd80633a82716d2ccc89298e2da99ac146aab"
     },
     {
       "path": "maintenance/units/builder_dead.png",
@@ -344,7 +344,7 @@
     },
     {
       "path": "maintenance/units/tank.ini",
-      "sha256": "99aa63a6f6e87662e257af3ca7c4557290153e60e62fcdf74360e15caef612e8"
+      "sha256": "87492c0211b24a35781910436bc5f6ea0631d4fd5645b98d13ee92fd2d19d3ff"
     },
     {
       "path": "maintenance/units/tank.png",
@@ -416,7 +416,7 @@
     },
     {
       "path": "point-defense/units/tank.ini",
-      "sha256": "99aa63a6f6e87662e257af3ca7c4557290153e60e62fcdf74360e15caef612e8"
+      "sha256": "87492c0211b24a35781910436bc5f6ea0631d4fd5645b98d13ee92fd2d19d3ff"
     },
     {
       "path": "point-defense/units/tank.png",
@@ -476,7 +476,7 @@
     },
     {
       "path": "turret/units/tank.ini",
-      "sha256": "99aa63a6f6e87662e257af3ca7c4557290153e60e62fcdf74360e15caef612e8"
+      "sha256": "87492c0211b24a35781910436bc5f6ea0631d4fd5645b98d13ee92fd2d19d3ff"
     },
     {
       "path": "turret/units/tank.png",
@@ -500,7 +500,7 @@
     },
     {
       "path": "turret/units/turret_common_land.ini",
-      "sha256": "52b80c691510e1747adce4cf48092a95e03cfa78b66302346f25a7da67264f30"
+      "sha256": "543785c52488407caadf4a924dc72db39e73878c03221469be66b2d621f04a69"
     },
     {
       "path": "turret/units/turret_t1.ini",

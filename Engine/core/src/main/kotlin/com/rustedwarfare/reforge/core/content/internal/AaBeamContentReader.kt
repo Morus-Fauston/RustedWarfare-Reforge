@@ -122,6 +122,7 @@ internal object AaBeamContentReader {
                     namedWeapons = WeaponCatalog(listOf(weapon))), build = BuildProfile(6000L, 1f / 2100f),
                 shadowImagePath = image("image_shadow", 33, 52), energy = EnergyProfile(6f, if (afterburn) -.02f else .01f, .05f, true),
                 customActions = CustomActionsProfile(actions), afterburn = profile,
-                afterburnTrailImagePath = if (afterburn) image("afterburn_trail_image", 32, 32) else null)
+                afterburnTrailImagePath = if (afterburn) image("afterburn_trail_image", 32, 32) else null,
+                mass = loaded.mass(path, movable = true))
         }
 }

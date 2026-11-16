@@ -47,7 +47,7 @@ class ThreeFormatSandboxTest {
                 val initial = await(loader).getOrThrow()
                 val base = root.resolve("units/base.ini")
                 assertEquals(listOf(root.resolve("units/tank.json"), base), initial.contentSources.map { it.path })
-                assertEquals("99aa63a6f6e87662e257af3ca7c4557290153e60e62fcdf74360e15caef612e8", initial.contentSources[1].sha256)
+                assertEquals("87492c0211b24a35781910436bc5f6ea0631d4fd5645b98d13ee92fd2d19d3ff", initial.contentSources[1].sha256)
                 val appearance = initial.renderResources
                 val visuals = PreparedVisualAssets(VisualAssetSelection(), "self-owned", "fixed-owned-fixture",
                     appearance.units.mapValues { (_, unit) -> VisualUnitImages(unit.imagePath, unit.backImagePath,
@@ -61,7 +61,7 @@ class ThreeFormatSandboxTest {
                 assertTrue(failure.message.orEmpty().contains("source bytes changed"), failure.toString())
                 assertNull(loader.pollPrepared())
                 assertEquals(350L, assertNotNull(initial.scenario.unitDefinitions.getValue("c_tank").build).price)
-                assertEquals("99aa63a6f6e87662e257af3ca7c4557290153e60e62fcdf74360e15caef612e8", initial.contentSources[1].sha256)
+                assertEquals("87492c0211b24a35781910436bc5f6ea0631d4fd5645b98d13ee92fd2d19d3ff", initial.contentSources[1].sha256)
                 loader.request(root)
                 val reopened = await(loader).getOrThrow()
                 assertEquals(420L, assertNotNull(reopened.scenario.unitDefinitions.getValue("c_tank").build).price)

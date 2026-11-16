@@ -43,6 +43,7 @@ class ControlledScenarioTest {
             Files.writeString(root.resolve("units/weaponless_tank.ini"), """
                 [core]
                 name: own_test_tank
+                mass: 1
                 class: CustomUnitMetadata
                 radius: 11
                 displayRadius: 11

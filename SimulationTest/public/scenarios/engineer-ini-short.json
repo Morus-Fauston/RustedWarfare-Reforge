@@ -24,7 +24,7 @@
       {
         "id": "builder",
         "path": "../inputs/mech-engineer-production/ini/production-package/units/builder.ini",
-        "sha256": "312d3069044605d2a78c64f8898751ebdcfd60c52f9ed34710ebd00948852334",
+        "sha256": "30fbbd2d991bba4984d7216daa4355fc18aaf0ab15ddbd6f7e95fecf0f12d1b7",
         "loader": "builder"
       },
       {
@@ -48,7 +48,7 @@
       {
         "id": "mechEngineer",
         "path": "../inputs/mech-engineer-production/ini/production-package/units/engineer/engineer.ini",
-        "sha256": "14b8063c92b6469cd16ee7ed7dda282f8d3d0e2daa9a99f65f961466c8f4e7a1",
+        "sha256": "ff1e460b8c4f72b66eb9adc41d59eb16db0a6e0419de618765c81930625f68ee",
         "loader": "mech-engineer"
       },
       {

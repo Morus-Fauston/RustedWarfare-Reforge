@@ -11,7 +11,7 @@
     "unitVariant": {
       "id": "public.walker",
       "path": "../inputs/select-move-stop/walker.ini",
-      "sha256": "ce2dcbd102d0c774c1b6636df45eeb487faa5bf2bfadb17dbdf0be6f634ad209"
+      "sha256": "c24e139eafb3a530c0295e854f19b2b1074d03212fa0e4318e4533dc640e4c49"
     },
     "dependencies": [
       {

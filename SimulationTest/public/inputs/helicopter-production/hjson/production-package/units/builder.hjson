@@ -1,6 +1,7 @@
 # Self-owned commented helicopter/native content
 {
   format: "rw-reforge.native-builder.v6",
+  "mass": 3000,
   "name": "builder",
   "maxHp": 170,
   "radius": 10,

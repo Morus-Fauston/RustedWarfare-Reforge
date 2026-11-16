@@ -1,6 +1,7 @@
 {
   "format": "rw-reforge.unit.v2",
   "core": {
+    "mass": 90000,
     "name": "modularSpider_emptySlot",
     "class": "CustomUnitMetadata",
     "price": 1000,

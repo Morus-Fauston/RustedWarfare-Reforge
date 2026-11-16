@@ -123,7 +123,7 @@ internal object ModularSpiderContentReader {
                 }
                 val permitted = expected[section]?.keys.orEmpty() +
                     if (section == "graphics") graphicFields else images[section].orEmpty().takeIf { section in expected }.orEmpty()
-                for (field in values.keys) if (field !in permitted)
+                for (field in values.keys) if (field !in permitted && !(section == "core" && field == "mass"))
                     reject(ContentErrorCode.UNSUPPORTED_FIELD, path, section, field, reason = "Field is unavailable for $name")
             }
             for ((section, fields) in expected) for ((field, required) in fields) {
@@ -187,20 +187,23 @@ internal object ModularSpiderContentReader {
                         maintenance = MaintenanceProfile.MODULAR_SPIDER, deathExplosion = ModularSpiderRules.deathExplosion,
                         transportSlots = 14, shadowImagePath = image("graphics", "image_shadow", 81, 113),
                         attachmentLayout = AttachmentLayout(ModularSpiderRules.slots,
-                            image("graphics", "image_slotUi", 82, 114), offsets))
+                            image("graphics", "image_slotUi", 82, 114), offsets),
+                        mass = content.mass(path, movable = true))
                 }
                 name == empty -> UnitDefinition(name, "CustomUnitMetadata", 20.0, 20.0, 1, image("graphics", "image", 1, 1),
                     1.0, ModularSpiderRules.slotMovement, emptySet(), fogOfWarSightRange = 5,
                     durability = DurabilityProfile(3000.0, null), selfRegenRate = 3000f,
                     attachmentModule = AttachmentModuleProfile(empty = true, installs = ModularSpiderRules.installs.map {
                         it.copy(targetTypeId = value("action_${it.action}", "convertTo"))
-                    }))
+                    }),
+                    mass = content.mass(path, movable = false))
                 utility != null -> UnitDefinition(name, "CustomUnitMetadata", 15.0, 12.0, 1,
                     image("graphics", "image", utility.width, utility.height), 1.0, ModularSpiderRules.slotMovement,
                     emptySet(), fogOfWarSightRange = 5, durability = DurabilityProfile(3000.0, null),
                     selfRegenRate = .2f, income = utility.income,
                     attachmentModule = if (authoredInterceptor) utility.moduleWithInterception(interception(path, content)) else utility.module,
-                    pointDefense = ModularSpiderUtilityForms.laserDefense.takeIf { name == ModularSpiderRules.LASER_DEFENSE })
+                    pointDefense = ModularSpiderUtilityForms.laserDefense.takeIf { name == ModularSpiderRules.LASER_DEFENSE },
+                    mass = content.mass(path, movable = false))
                 else -> {
                     checkNotNull(form)
                     val turret = image("graphics", "image_turret", form.width, form.height)
@@ -210,7 +213,8 @@ internal object ModularSpiderContentReader {
                     UnitDefinition(name, "CustomUnitMetadata", 15.0, 12.0, 1, image("graphics", "image", 1, 1),
                         1.0, ModularSpiderRules.slotMovement, emptySet(), fogOfWarSightRange = 5,
                         combat = form.combat(turret, additionalTurrets),
-                        selfRegenRate = .2f, attachmentModule = form.module)
+                        selfRegenRate = .2f, attachmentModule = form.module,
+                        mass = content.mass(path, movable = false))
                 }
             }
         }
