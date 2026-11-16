@@ -350,8 +350,8 @@
       "owner": "p2",
       "type": "c_tank",
       "position": {
-        "x": 510,
-        "y": 30
+        "x": 577.2739,
+        "y": 16.3722
       },
       "heading": 270
     },
@@ -360,8 +360,8 @@
       "owner": "p2",
       "type": "c_tank",
       "position": {
-        "x": 510,
-        "y": 40
+        "x": 581.7028,
+        "y": 41.4897
       },
       "heading": 270
     },
@@ -370,8 +370,8 @@
       "owner": "p2",
       "type": "c_tank",
       "position": {
-        "x": 510,
-        "y": 50
+        "x": 580.8127,
+        "y": 66.9791
       },
       "heading": 270
     },
@@ -380,8 +380,8 @@
       "owner": "p2",
       "type": "c_tank",
       "position": {
-        "x": 510,
-        "y": 60
+        "x": 574.6425,
+        "y": 91.7265
       },
       "heading": 270
     },
@@ -390,8 +390,8 @@
       "owner": "p2",
       "type": "c_tank",
       "position": {
-        "x": 510,
-        "y": 70
+        "x": 563.4619,
+        "y": 114.6502
       },
       "heading": 270
     },
@@ -400,8 +400,8 @@
       "owner": "p2",
       "type": "c_tank",
       "position": {
-        "x": 510,
-        "y": 80
+        "x": 547.7595,
+        "y": 134.7483
       },
       "heading": 270
     },
@@ -410,8 +410,8 @@
       "owner": "p2",
       "type": "c_tank",
       "position": {
-        "x": 532,
-        "y": 30
+        "x": 528.2215,
+        "y": 151.1426
       },
       "heading": 270
     },
@@ -420,8 +420,8 @@
       "owner": "p2",
       "type": "c_tank",
       "position": {
-        "x": 532,
-        "y": 40
+        "x": 505.702,
+        "y": 163.1164
       },
       "heading": 270
     },
@@ -430,8 +430,8 @@
       "owner": "p2",
       "type": "c_tank",
       "position": {
-        "x": 532,
-        "y": 50
+        "x": 481.18510000000003,
+        "y": 170.1465
       },
       "heading": 270
     },
@@ -440,8 +440,8 @@
       "owner": "p2",
       "type": "c_tank",
       "position": {
-        "x": 532,
-        "y": 60
+        "x": 455.7423,
+        "y": 171.9257
       },
       "heading": 270
     },
@@ -450,8 +450,8 @@
       "owner": "p2",
       "type": "c_tank",
       "position": {
-        "x": 532,
-        "y": 70
+        "x": 430.4855,
+        "y": 168.3761
       },
       "heading": 270
     },
@@ -460,8 +460,8 @@
       "owner": "p2",
       "type": "c_tank",
       "position": {
-        "x": 532,
-        "y": 80
+        "x": 406.5187,
+        "y": 159.6529
       },
       "heading": 270
     }
@@ -621,8 +621,140 @@
       "unitId": "produced:p1:11111111111111111111111111111111"
     },
     {
+      "actionId": "approach-z01",
+      "atStep": 6227,
+      "actor": "p2",
+      "kind": "move",
+      "unitId": "z01",
+      "target": {
+        "x": 227.2739,
+        "y": 16.3722
+      }
+    },
+    {
+      "actionId": "approach-z02",
+      "atStep": 6227,
+      "actor": "p2",
+      "kind": "move",
+      "unitId": "z02",
+      "target": {
+        "x": 231.7028,
+        "y": 41.4897
+      }
+    },
+    {
+      "actionId": "approach-z03",
+      "atStep": 6227,
+      "actor": "p2",
+      "kind": "move",
+      "unitId": "z03",
+      "target": {
+        "x": 230.8127,
+        "y": 66.9791
+      }
+    },
+    {
+      "actionId": "approach-z04",
+      "atStep": 6227,
+      "actor": "p2",
+      "kind": "move",
+      "unitId": "z04",
+      "target": {
+        "x": 224.6425,
+        "y": 91.7265
+      }
+    },
+    {
+      "actionId": "approach-z05",
+      "atStep": 6227,
+      "actor": "p2",
+      "kind": "move",
+      "unitId": "z05",
+      "target": {
+        "x": 213.4619,
+        "y": 114.6502
+      }
+    },
+    {
+      "actionId": "approach-z06",
+      "atStep": 6227,
+      "actor": "p2",
+      "kind": "move",
+      "unitId": "z06",
+      "target": {
+        "x": 197.7595,
+        "y": 134.7483
+      }
+    },
+    {
+      "actionId": "approach-z07",
+      "atStep": 6227,
+      "actor": "p2",
+      "kind": "move",
+      "unitId": "z07",
+      "target": {
+        "x": 178.2215,
+        "y": 151.1426
+      }
+    },
+    {
+      "actionId": "approach-z08",
+      "atStep": 6227,
+      "actor": "p2",
+      "kind": "move",
+      "unitId": "z08",
+      "target": {
+        "x": 155.702,
+        "y": 163.1164
+      }
+    },
+    {
+      "actionId": "approach-z09",
+      "atStep": 6227,
+      "actor": "p2",
+      "kind": "move",
+      "unitId": "z09",
+      "target": {
+        "x": 131.1851,
+        "y": 170.1465
+      }
+    },
+    {
+      "actionId": "approach-z10",
+      "atStep": 6227,
+      "actor": "p2",
+      "kind": "move",
+      "unitId": "z10",
+      "target": {
+        "x": 105.7423,
+        "y": 171.9257
+      }
+    },
+    {
+      "actionId": "approach-z11",
+      "atStep": 6227,
+      "actor": "p2",
+      "kind": "move",
+      "unitId": "z11",
+      "target": {
+        "x": 80.4855,
+        "y": 168.3761
+      }
+    },
+    {
+      "actionId": "approach-z12",
+      "atStep": 6227,
+      "actor": "p2",
+      "kind": "move",
+      "unitId": "z12",
+      "target": {
+        "x": 56.5187,
+        "y": 159.6529
+      }
+    },
+    {
       "actionId": "siege-1",
-      "atStep": 6500,
+      "atStep": 6600,
       "actor": "p2",
       "kind": "attack",
       "unitId": "z01",
@@ -630,7 +762,7 @@
     },
     {
       "actionId": "siege-2",
-      "atStep": 6500,
+      "atStep": 6600,
       "actor": "p2",
       "kind": "attack",
       "unitId": "z02",
@@ -638,7 +770,7 @@
     },
     {
       "actionId": "siege-3",
-      "atStep": 6500,
+      "atStep": 6600,
       "actor": "p2",
       "kind": "attack",
       "unitId": "z03",
@@ -646,7 +778,7 @@
     },
     {
       "actionId": "siege-4",
-      "atStep": 6500,
+      "atStep": 6600,
       "actor": "p2",
       "kind": "attack",
       "unitId": "z04",
@@ -654,7 +786,7 @@
     },
     {
       "actionId": "siege-5",
-      "atStep": 6500,
+      "atStep": 6600,
       "actor": "p2",
       "kind": "attack",
       "unitId": "z05",
@@ -662,7 +794,7 @@
     },
     {
       "actionId": "siege-6",
-      "atStep": 6500,
+      "atStep": 6600,
       "actor": "p2",
       "kind": "attack",
       "unitId": "z06",
@@ -670,7 +802,7 @@
     },
     {
       "actionId": "siege-7",
-      "atStep": 6500,
+      "atStep": 6600,
       "actor": "p2",
       "kind": "attack",
       "unitId": "z07",
@@ -678,7 +810,7 @@
     },
     {
       "actionId": "siege-8",
-      "atStep": 6500,
+      "atStep": 6600,
       "actor": "p2",
       "kind": "attack",
       "unitId": "z08",
@@ -686,7 +818,7 @@
     },
     {
       "actionId": "siege-9",
-      "atStep": 6500,
+      "atStep": 6600,
       "actor": "p2",
       "kind": "attack",
       "unitId": "z09",
@@ -694,7 +826,7 @@
     },
     {
       "actionId": "siege-10",
-      "atStep": 6500,
+      "atStep": 6600,
       "actor": "p2",
       "kind": "attack",
       "unitId": "z10",
@@ -702,19 +834,44 @@
     },
     {
       "actionId": "siege-11",
-      "atStep": 6500,
+      "atStep": 6600,
       "actor": "p2",
       "kind": "attack",
       "unitId": "z11",
       "targetUnitId": "h"
     },
     {
-      "actionId": "siege-12",
-      "atStep": 6500,
+      "actionId": "screen-z04",
+      "atStep": 9000,
       "actor": "p2",
-      "kind": "attack",
-      "unitId": "z12",
-      "targetUnitId": "h"
+      "kind": "move",
+      "unitId": "z04",
+      "target": {
+        "x": 200,
+        "y": 90
+      }
+    },
+    {
+      "actionId": "screen-z02",
+      "atStep": 9250,
+      "actor": "p2",
+      "kind": "move",
+      "unitId": "z02",
+      "target": {
+        "x": 248,
+        "y": 43
+      }
+    },
+    {
+      "actionId": "screen-z01",
+      "atStep": 9500,
+      "actor": "p2",
+      "kind": "move",
+      "unitId": "z01",
+      "target": {
+        "x": 207,
+        "y": 67
+      }
     },
     {
       "actionId": "to-defense-lane",
