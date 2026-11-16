@@ -53,6 +53,9 @@ class MapProjection(val worldWidth: Double, val worldHeight: Double,
         if (!position.x.isFinite() || !position.y.isFinite()) return
         camera = camera.copy(center = clamp(position, camera.zoom))
     }
+    internal fun restoreCamera(state: MapCamera) {
+        camera = MapCamera(clamp(state.center, state.zoom), state.zoom)
+    }
     private fun clamp(position: Position, zoom: Double): Position {
         val halfWidth = min(worldWidth / 2, mapArea.width / (fitScale * zoom) / 2)
         val halfHeight = min(worldHeight / 2, mapArea.height / (fitScale * zoom) / 2)

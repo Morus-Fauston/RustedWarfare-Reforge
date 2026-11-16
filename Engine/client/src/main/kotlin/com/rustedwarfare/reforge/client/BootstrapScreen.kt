@@ -61,6 +61,10 @@ class BootstrapScreen(
     private var session: SandboxSession? = null
     private var graphics: SandboxGraphics? = null
     private var scriptedCamera: OfflineCameraController? = null
+    private var suspendedCamera: MapCamera? = null
+    private val cameraJoystick = FixedCameraJoystick()
+    private lateinit var cameraJoystickBox: CheckBox
+    private lateinit var cameraJoystickArea: Actor
     private var sounds: SoundPlayback? = null
     private lateinit var deploymentBox: CheckBox
     private lateinit var noNukesBox: CheckBox
@@ -482,6 +486,16 @@ class BootstrapScreen(
             })
             stage.addActor(it)
         }
+        cameraJoystickBox = CheckBox(" Camera joystick", skin).also {
+            it.isChecked = launch.configuration.options.cameraJoystickEnabled
+            it.addListener(object : ChangeListener() {
+                override fun changed(event: ChangeEvent, actor: Actor) {
+                    if (touchControls && launch.canEdit) launch.configure(launch.configuration.copy(options =
+                        launch.configuration.options.copy(cameraJoystickEnabled = cameraJoystickBox.isChecked)))
+                }
+            })
+            stage.addActor(it)
+        }
         startupFrame = Image(skin.newDrawable("white", Color(.14f, .17f, .15f, 1f))).also {
             it.touchable = Touchable.disabled
             stage.addActor(it)
@@ -645,6 +659,35 @@ class BootstrapScreen(
             it.setBounds(40f, 100f, 660f, 220f)
             stage.addActor(it)
         }
+        cameraJoystickArea = Actor().also { area ->
+            area.setBounds(34f, 78f, 112f, 112f)
+            area.addListener(object : InputListener() {
+                private fun horizontal(x: Float) = 2.0 * x / area.width - 1.0
+                private fun vertical(y: Float) = 2.0 * y / area.height - 1.0
+
+                override fun touchDown(event: InputEvent, x: Float, y: Float, pointer: Int, button: Int): Boolean {
+                    if (!cameraJoystickActive() || button != Input.Buttons.LEFT) return false
+                    if (cameraJoystick.press(pointer, horizontal(x), vertical(y))) {
+                        takeCameraFromJoystick()
+                        recordCameraJoystick("pressed", pointer)
+                    }
+                    return true
+                }
+
+                override fun touchDragged(event: InputEvent, x: Float, y: Float, pointer: Int) {
+                    if (cameraJoystick.drag(pointer, horizontal(x), vertical(y))) {
+                        takeCameraFromJoystick()
+                        recordCameraJoystick("dragged", pointer)
+                    }
+                }
+
+                override fun touchUp(event: InputEvent, x: Float, y: Float, pointer: Int, button: Int) {
+                    if (event.isTouchFocusCancel) clearCameraJoystick("focus-cancel")
+                    else if (cameraJoystick.release(pointer)) recordCameraJoystick("released", pointer)
+                }
+            })
+            stage.addActor(area)
+        }
         commandFeedbackLabel = label("", 48f, 232f, 644f, 84f).also {
             it.setWrap(true); it.setAlignment(Align.topLeft)
         }
@@ -668,6 +711,11 @@ class BootstrapScreen(
         commandHintLabel = label("Sandbox: / for commands", 40f, 100f, 660f, 24f)
         commandConsoleOpen = false
         Gdx.input.inputProcessor = InputMultiplexer(object : InputAdapter() {
+            override fun touchCancelled(screenX: Int, screenY: Int, pointer: Int, button: Int): Boolean {
+                if (cameraJoystickActive()) clearCameraJoystick("system-cancel", pointer)
+                return false
+            }
+
             override fun touchDown(screenX: Int, screenY: Int, pointer: Int, button: Int): Boolean =
                 pointer == 0 && button == Input.Buttons.RIGHT && mapInput.cancelSandboxPick()
 
@@ -864,6 +912,7 @@ class BootstrapScreen(
                 "mode" to request.configuration.options.mode.name,
                 "shareAlliedVision" to request.configuration.options.shareAlliedVision,
                 "deploymentEnabled" to request.configuration.options.deploymentEnabled,
+                "cameraJoystickEnabled" to request.configuration.options.cameraJoystickEnabled,
                 "nukesEnabled" to request.configuration.options.nukesEnabled,
                 "testScenarioId" to request.configuration.testScenario?.id, "testScenarioSeed" to request.configuration.testScenario?.seed?.toString()))
             val contentPack = request.configuration.contentPack
@@ -911,6 +960,7 @@ class BootstrapScreen(
         val closingGraphics = graphics; graphics = null
         val closingSounds = sounds; sounds = null
         scriptedCamera = null
+        suspendedCamera = null
         activeVisuals = null
         listOf<() -> Unit>({ closingSounds?.close() }, { closingSession?.close() }, { closingGraphics?.close() }).forEach { cleanup ->
             try { cleanup() } catch (failure: Exception) {
@@ -962,6 +1012,10 @@ class BootstrapScreen(
                 pendingSession = SandboxSession(scenario, generationEvidence, request.configuration.options,
                     generation = runGeneration, cameraCues = cameraCues,
                     singleSelectionButtons = loaded.contentPack?.singleSelectionButtons.orEmpty())
+                if (touchControls && pendingSession.options.cameraJoystickEnabled) {
+                    val map = pendingGraphics.projection
+                    map.restoreCamera(map.camera.copy(zoom = FixedCameraJoystick.startingZoom))
+                }
                 val camera = if (cameraCues.isEmpty()) null else OfflineCameraController(pendingGraphics.projection, generationEvidence)
                 pendingSounds = loaded.visuals?.resolvedSounds?.let { resources -> SoundPlayback(
                     pendingSession.consumeSounds(pendingGraphics.projection.soundListener()), resources,
@@ -974,6 +1028,7 @@ class BootstrapScreen(
                 activeVisuals = loaded.visuals
                 session = pendingSession
                 scriptedCamera = camera
+                if (touchControls) recordCameraJoystick("opened", null)
                 sounds = pendingSounds
                 loaded.visuals?.let { visuals -> evidence.recordVisualAssetsReady(visuals, generation) }
                 visualSettings?.preparationDiagnostics?.takeIf { it.isNotEmpty() }?.let {
@@ -1002,6 +1057,10 @@ class BootstrapScreen(
                     current.tick()
                     scriptedCamera?.let(current::updateCamera)
                     sounds?.let { player -> player.consume(current.consumeSounds(checkNotNull(graphics).projection.soundListener())) }
+                }
+                if (cameraJoystickActive()) graphics?.projection?.let { map ->
+                    if (cameraJoystick.apply(map, elapsed, ::takeCameraFromJoystick))
+                        recordCameraJoystick("panned", cameraJoystick.pointer)
                 }
                 recordSimulationPacing()
             } catch (failure: Exception) {
@@ -1055,6 +1114,7 @@ class BootstrapScreen(
             } finally { ScissorStack.popScissors() }
             shapes.projectionMatrix = viewport.camera.combined
             graphics.drawMinimap(shapes, current.frame)
+            if (cameraJoystickActive()) drawCameraJoystick()
         }
         stage.act(Gdx.graphics.deltaTime); stage.draw()
         loadingDrawn = loading
@@ -1106,6 +1166,9 @@ class BootstrapScreen(
         visualPanel?.let { entries += it.drawnActions() }
         entries += DrawnAction("sandbox-deployment", deploymentBox, deploymentBox.text.toString(),
             enabled = !deploymentBox.isDisabled)
+        entries += DrawnAction("camera-joystick-enable", cameraJoystickBox, cameraJoystickBox.text.toString(),
+            enabled = !cameraJoystickBox.isDisabled)
+        entries += DrawnAction("camera-joystick-area", cameraJoystickArea, "Camera joystick", enabled = cameraJoystickActive())
         entries += DrawnAction("no-nukes", noNukesBox, noNukesBox.text.toString(), enabled = !noNukesBox.isDisabled)
         entries += DrawnAction("sandbox-command-input", commandField, commandField.text,
             enabled = commandConsoleOpen && current?.canDeploy == true)
@@ -1424,6 +1487,7 @@ class BootstrapScreen(
     private fun updateHud() {
         if (!presentationReady) return
         val current = session
+        cameraJoystickArea.isVisible = cameraJoystickActive()
         if (current?.canDeploy != true) closeCommandConsole()
         val showConsole = commandConsoleOpen && current?.canDeploy == true
         commandPanel.isVisible = showConsole
@@ -1736,6 +1800,9 @@ class BootstrapScreen(
         deploymentBox.isVisible = setup && development && !touchControls
         deploymentBox.setBounds(488f, 174f, 296f, 36f)
         deploymentBox.isDisabled = !editable || !development || touchControls
+        cameraJoystickBox.isVisible = setup && touchControls
+        cameraJoystickBox.setBounds(488f, 174f, 296f, 36f)
+        cameraJoystickBox.isDisabled = !editable || !touchControls
         startButton.isVisible = setup || current != null
         startButton.setText(if (setup) "Start" else "Reopen")
         startButton.isDisabled = loading || setup && !canStartMatch()
@@ -1837,7 +1904,10 @@ class BootstrapScreen(
         releaseSounds()
         // Release GL and native buffers on the GL thread before Android suspends it.
         // A later non-finishing Activity destroy can then close the host without GL calls.
-        if (touchControls) releasePresentation()
+        if (touchControls) {
+            suspendedCamera = graphics?.projection?.camera ?: suspendedCamera
+            releasePresentation()
+        }
         evidence.record("pause", emptyMap())
     }
 
@@ -1862,7 +1932,12 @@ class BootstrapScreen(
                 createPresentation()
                 graphics = session?.let { SandboxGraphics.load(activeVisuals?.let(it.renderResources::withVisuals)
                     ?: it.renderResources, activeRoot, fullBattlefield = !touchControls) }
-                graphics?.projection?.resizeBattlefield(battlefieldWidth.toDouble())
+                graphics?.projection?.let { map ->
+                    map.resizeBattlefield(battlefieldWidth.toDouble())
+                    suspendedCamera?.let(map::restoreCamera)
+                    scriptedCamera?.rebind(map)
+                }
+                suspendedCamera = null
                 updateHud()
             } catch (failure: Exception) {
                 preserveFailure(failure) { leaveMatch() }
@@ -1887,6 +1962,7 @@ class BootstrapScreen(
         stepClock.discardCatchup()
         ignoreNextHostFrame = true
         evidence.record("resume", emptyMap())
+        if (touchControls && session != null) recordCameraJoystick("resumed", null)
     }
 
     fun destroyPausedHost() {
@@ -1897,6 +1973,43 @@ class BootstrapScreen(
     private fun releaseSounds() {
         val closing = sounds; sounds = null
         closing?.close()
+    }
+
+    private fun cameraJoystickActive() =
+        touchControls && !paused && session?.options?.cameraJoystickEnabled == true
+
+    private fun takeCameraFromJoystick() {
+        if (cameraJoystick.steering) scriptedCamera?.takeOver("joystick")
+    }
+
+    private fun clearCameraJoystick(event: String, systemPointer: Int? = null) {
+        val held = cameraJoystick.pointer
+        if (cameraJoystick.cancel() || systemPointer != null) recordCameraJoystick(event, held, systemPointer)
+    }
+
+    private fun recordCameraJoystick(event: String, pointer: Int?, systemPointer: Int? = null) {
+        evidence.recordWhenEnabled("camera-joystick") {
+            val map = graphics?.projection
+            mapOf("event" to event, "generation" to generation, "stepIndex" to session?.observation?.stepIndex,
+                "enabled" to (session?.options?.cameraJoystickEnabled == true), "pointer" to pointer,
+                "systemPointer" to systemPointer, "owner" to cameraJoystick.pointer,
+                "center" to map?.camera?.center?.fields(), "zoom" to map?.camera?.zoom)
+        }
+    }
+
+    private fun drawCameraJoystick() {
+        val area = cameraJoystickArea
+        val radius = area.width / 2f
+        val x = area.x + radius
+        val y = area.y + radius
+        val direction = cameraJoystick.direction
+        shapes.begin(ShapeRenderer.ShapeType.Filled)
+        shapes.color = Color.DARK_GRAY
+        shapes.circle(x, y, radius, 32)
+        shapes.color = Color.LIGHT_GRAY
+        shapes.circle(x + direction.x.toFloat() * radius * .64f,
+            y + direction.y.toFloat() * radius * .64f, radius * .26f, 24)
+        shapes.end()
     }
 
     private fun releasePresentation() {
@@ -1916,6 +2029,7 @@ class BootstrapScreen(
     }
 
     private fun cancelInput() {
+        clearCameraJoystick("input-cancel")
         constructionHover = null
         upgradeHover = null
         upgradeInputs.forEach { it.cancel() }

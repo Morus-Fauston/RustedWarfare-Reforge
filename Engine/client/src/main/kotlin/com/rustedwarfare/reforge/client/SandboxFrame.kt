@@ -7,7 +7,8 @@ import java.util.Collections
 enum class SandboxMode { NO_FOG, MEMORY, HARDCORE }
 
 data class SandboxOptions(val mode: SandboxMode = SandboxMode.NO_FOG, val shareAlliedVision: Boolean = false,
-                          val deploymentEnabled: Boolean = false, val nukesEnabled: Boolean = true) {
+                          val deploymentEnabled: Boolean = false, val nukesEnabled: Boolean = true,
+                          val cameraJoystickEnabled: Boolean = false) {
     constructor(mode: SandboxMode, shareAlliedVision: Boolean) : this(mode, shareAlliedVision, false)
 
     internal fun knowledgeRules(): KnowledgeRules? = when (mode) {

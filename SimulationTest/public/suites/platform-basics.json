@@ -15,6 +15,7 @@
       "com.rustedwarfare.reforge.client.OfflineStepClockTest",
       "com.rustedwarfare.reforge.client.CameraProjectionTest",
       "com.rustedwarfare.reforge.client.OfflineCameraControllerTest",
+      "com.rustedwarfare.reforge.client.FixedCameraJoystickTest",
       "com.rustedwarfare.reforge.client.ClientFailureHandlingTest",
       "com.rustedwarfare.reforge.client.ConstructionHotkeyInputTest",
       "com.rustedwarfare.reforge.client.ConstructionSelectionFeedbackTest",

@@ -3,7 +3,7 @@ package com.rustedwarfare.reforge.client
 import com.rustedwarfare.reforge.core.sim.OfflineCameraMotion
 import com.rustedwarfare.reforge.core.sim.Position
 
-internal class OfflineCameraController(private val map: MapProjection, private val evidence: ClientEvidence = ClientEvidence.NONE) {
+internal class OfflineCameraController(private var map: MapProjection, private val evidence: ClientEvidence = ClientEvidence.NONE) {
     private sealed interface CameraControl {
         val motion: String
         data class Pan(val start: Position, val destination: Position, val started: Long, val duration: Int) : CameraControl {
@@ -64,6 +64,10 @@ internal class OfflineCameraController(private val map: MapProjection, private v
     }
 
     fun takeOver(reason: String) = stop(reason)
+
+    fun rebind(projection: MapProjection) {
+        map = projection
+    }
 
     private fun stop(reason: String) {
         val control = active ?: return
