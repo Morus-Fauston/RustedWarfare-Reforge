@@ -3516,18 +3516,26 @@ class SimulationContext internal constructor(private val policies: ExperimentalP
                     locomotion.moveSpeed > 0.0 && locomotion.type != MovementType.NONE && insideMap(boundedPosition)
             } else null
         val contactMap = buildingTerrain?.collisionMap ?: map
-        val canPush: ((MutableUnit) -> Boolean)? = if (!seaDeparture && unit.birthRemaining == 0f && insideMap(boundedPosition)) {
-            { blocker -> canDisplaceInContact(blocker) && !Transport.isLoadingPairAtContact(unit, blocker, units) }
+        val canPush: ((MutableUnit, MutableUnit) -> Boolean)? = if (!seaDeparture && unit.birthRemaining == 0f && insideMap(boundedPosition)) {
+            { pusher, blocker -> canDisplaceInContact(blocker) && !Transport.isLoadingPairAtContact(pusher, blocker, units) }
         } else null
-        val translation = step.translations.resolve(unit, boundedPosition, orderedUnits(), contactMap, units, canPush, yielding)
+        val translation = step.translations.resolve(unit, boundedPosition, orderedUnits(), contactMap, units, canPush, yielding) { blocker ->
+            isVisibleTo(unit.ownerPlayerId, blocker.position, blocker.nativeTransportPlacement)
+        }
         val resolved = translation.position
-        val unitContactLimited = legalHeading != boundedHeading || resolved != boundedPosition
+        if (translation.supported) {
+            unit.heading = headingBefore
+            unit.speed = 0.0
+            unit.angularVelocity = 0.0
+            unit.flightVelocity = Position(0.0, 0.0)
+        }
+        val unitContactLimited = translation.supported || legalHeading != boundedHeading || resolved != boundedPosition
         if (!insideMap(resolved)) {
             blockAtMapBoundary(unit)
             recordMotion(boundedPosition, MotionTerrainDisposition.RESOLVED_OUTSIDE_MAP, unitContactLimited)
             return
         }
-        translation.displaced?.let { shift ->
+        for (shift in translation.displaced) {
             shift.unit.position = shift.position
             UnitAttachments.synchronizeAdjustedChildren(units, shift.unit)
             if (translation.legacyYield) {
@@ -3562,6 +3570,7 @@ class SimulationContext internal constructor(private val policies: ExperimentalP
             unit.terrainSpeedMultiplier = if (map.isCliff(column, row)) .7 else 1.0
         }
         unit.movementState = when {
+            translation.supported -> MovementState.BLOCKED
             unit.moveTarget != null -> MovementState.MOVING
             unit.speed != 0.0 -> MovementState.DECELERATING
             else -> MovementState.IDLE

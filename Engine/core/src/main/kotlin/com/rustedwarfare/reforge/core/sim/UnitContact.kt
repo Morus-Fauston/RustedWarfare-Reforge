@@ -5,29 +5,42 @@ import com.rustedwarfare.reforge.core.content.MovementProfile
 import com.rustedwarfare.reforge.core.content.MovementType
 import com.rustedwarfare.reforge.core.content.MapDefinition
 import com.rustedwarfare.reforge.core.content.TransportProfile
+import com.rustedwarfare.reforge.core.content.UnitDefinition
+import com.rustedwarfare.reforge.core.content.contactBufferOutline
 import kotlin.math.abs
+import kotlin.math.atan2
 import kotlin.math.hypot
+import kotlin.math.PI
+
+private enum class ContactLayer { SURFACE, SUBMERGED }
+
+private fun UnitDefinition.contactLayerAt(height: Double): ContactLayer? = when {
+    CombatTargetQuery.isUnderwater(this, height) -> ContactLayer.SUBMERGED
+    movement.type == MovementType.AIR &&
+        (height >= 4.0 || movement.flight == null && amphibiousJet == null && transport != TransportProfile.NATIVE_DROPSHIP) -> null
+    else -> ContactLayer.SURFACE
+}
+
+/** Whether the given pose height supports body contact for this definition. */
+fun UnitDefinition.hasContactLayerAt(height: Double): Boolean = contactLayerAt(height) != null
 
 /** Physical contacts use the current authoritative poses, independently of route knowledge. */
 internal object UnitContact {
     // ENG-P014-003 starting value for the planned playtest.
     private const val PROVISIONAL_PUSH_MASS_RATIO = 8.0
+    private const val MAX_PUSH_DEPTH = 8
 
-    private enum class Layer { SURFACE, SUBMERGED }
     private data class Contact(val fraction: Double, val blocker: MutableUnit)
     data class Adjustment(val unit: MutableUnit, val position: Position)
-    data class Translation(val position: Position, val displaced: Adjustment? = null, val legacyYield: Boolean = false)
+    data class Translation(val position: Position, val displaced: List<Adjustment> = emptyList(),
+                           val legacyYield: Boolean = false, val supported: Boolean = false)
 
     class YieldRequest(val collisionMap: MapDefinition, val stepIndex: Long, val unitsById: Map<String, MutableUnit>,
                        val canYield: (MutableUnit) -> Boolean)
 
-    private fun layer(unit: MutableUnit, height: Double = unit.height): Layer? = when {
+    private fun layer(unit: MutableUnit, height: Double = unit.height): ContactLayer? = when {
         !unit.alive || unit.carriedBy != null || unit.attachment != null || unit.definition.building != null -> null
-        CombatTargetQuery.isUnderwater(unit, height) -> Layer.SUBMERGED
-        unit.definition.movement.type == MovementType.AIR &&
-            (height >= 4.0 || unit.definition.movement.flight == null && unit.amphibiousState == null &&
-                unit.definition.transport != TransportProfile.NATIVE_DROPSHIP) -> null
-        else -> Layer.SURFACE
+        else -> unit.definition.contactLayerAt(height)
     }
 
     fun shareLayer(first: MutableUnit, second: MutableUnit): Boolean =
@@ -84,70 +97,173 @@ internal object UnitContact {
     class Translations(private val delta: Double) {
         private val startingPositions = mutableMapOf<String, Position>()
         private val maximumSpeeds = mutableMapOf<String, Double>()
-        private val paired = mutableSetOf<String>()
+        private val settled = mutableSetOf<String>()
         private val pushLimits = mutableMapOf<String, Double>()
+        private var gatheringSupport: Map<GatheringGoal, Set<String>>? = null
 
         fun resolve(unit: MutableUnit, requested: Position, units: Collection<MutableUnit>, map: MapDefinition,
-                    unitsById: Map<String, MutableUnit>, canPush: ((MutableUnit) -> Boolean)?,
-                    yielding: YieldRequest? = null): Translation {
+                    unitsById: Map<String, MutableUnit>, canPush: ((MutableUnit, MutableUnit) -> Boolean)?,
+                    yielding: YieldRequest? = null, canBuffer: (MutableUnit) -> Boolean): Translation {
+            val support = if (canPush == null) null else gatheringGoal(unit)?.let { goal ->
+                val bodies = gatheringSupport ?: supportedGatherings(units).also { gatheringSupport = it }
+                bodies[goal]
+            }
+            if (support != null && unit.unitId in support) return Translation(unit.position, supported = true)
             if (unit.position == requested) return Translation(requested)
             val origin = startingPositions.getOrPut(unit.unitId) { unit.position }
             val ownLimit = pushLimits[unit.unitId]?.let { maxOf(maximumTravel(unit), it) }
             val target = if (ownLimit == null) requested else
                 lastLegalPoint(unit.position, requested) { distance(origin, it) <= ownLimit + positionRoundoff(origin, it) }
-            val collision = translationContact(unit, target, units) ?: return Translation(target)
-            val clipped = pointAt(unit.position, target, collision.fraction)
-            val blocker = collision.blocker
-            if (yielding != null && yielding.canYield(blocker)) {
-                sideShift(unit, target, blocker, units, yielding)?.let { return Translation(target, it, legacyYield = true) }
+            val hardContacts = translationContacts(unit, target, units, simultaneous = canPush != null)
+            val hardFraction = hardContacts.minOfOrNull { it.fraction } ?: 1.0
+            val clipped = pointAt(unit.position, target, hardFraction)
+            val hardBlocker = hardContacts.firstOrNull()?.blocker
+            if (hardBlocker != null && yielding != null && yielding.canYield(hardBlocker)) {
+                sideShift(unit, target, hardBlocker, units, yielding)?.let {
+                    return Translation(target, listOf(it), legacyYield = true)
+                }
             }
-            if (canPush == null || unit.unitId in paired || blocker.unitId in paired)
-                return Translation(clipped)
-            val moverMass = unit.definition.mass?.takeIf { it.isFinite() && it > 0.0 } ?: return Translation(clipped)
-            val blockerMass = blocker.definition.mass?.takeIf { it.isFinite() && it > 0.0 } ?: return Translation(clipped)
-            if (blockerMass / moverMass > PROVISIONAL_PUSH_MASS_RATIO || !canPush(blocker)) return Translation(clipped)
-            val scale = maxOf(moverMass, blockerMass)
-            val moverWeight = moverMass / scale
-            val transfer = (1.0 - collision.fraction) * (moverWeight / (moverWeight + blockerMass / scale))
+            if (canPush == null || unit.unitId in settled) return Translation(clipped)
+            val moverMass = positiveMass(unit) ?: return Translation(clipped)
+            val softContact = if (hardContacts.isEmpty()) translationContact(unit, target, units, buffered = true, included = canBuffer) else null
+            val contacts = if (softContact == null) hardContacts else listOf(softContact)
+            if (contacts.isEmpty()) return Translation(target)
+            fun transferRatio(pusher: MutableUnit, blocker: MutableUnit): Double? {
+                val ratio = positiveMass(blocker)?.div(moverMass) ?: return null
+                if (blocker.unitId in settled || support?.contains(blocker.unitId) == true || !canPush(pusher, blocker)) return null
+                return ratio.takeIf { it <= PROVISIONAL_PUSH_MASS_RATIO }
+            }
+            val pressureTravel = if (softContact == null) 1.0 - hardFraction
+                else (1.0 - softContact.fraction) * bufferPressure(unit, softContact.blocker, target)
+            if (pressureTravel == 0.0) return Translation(clipped)
+
             val drift = subtract(target, unit.position)
-            val desiredBlocker = Position(blocker.position.x + drift.x * transfer, blocker.position.y + drift.y * transfer)
-            val nextContact = translationContact(blocker, desiredBlocker, units, ignored = unit)
-            val blockerTarget = pointAt(blocker.position, desiredBlocker, nextContact?.fraction ?: 1.0)
-            if (blockerTarget == blocker.position) return Translation(clipped)
-            val blockerOrigin = startingPositions.getOrPut(blocker.unitId) { blocker.position }
-            val blockerTravel = maximumTravel(blocker)
-            val shape = blocker.definition.movementCollision
-            val motion = UnitLocomotion.movement(blocker).type
-            val terrain = if (motion != MovementType.AIR) motion
-                else if (blocker.flightLandedInWater) MovementType.WATER else MovementType.LAND
-            val grid = HullTerrainGrid.authoritative(map, terrain)
-            val body = Body(shape, blocker.heading)
-
-            fun moverEnd(blockerEnd: Position): Position = Position(
-                clipped.x + (blockerEnd.x - blocker.position.x),
-                clipped.y + (blockerEnd.y - blocker.position.y),
-            )
-
-            val blockedByLayer = layer(blocker)
-            val actualBlocker = lastLegalPoint(blocker.position, blockerTarget) { candidate ->
-                val moverEnd = moverEnd(candidate)
-                val limit = maxOf(blockerTravel, distance(origin, moverEnd))
-                distance(blockerOrigin, candidate) <= limit + positionRoundoff(blockerOrigin, candidate) &&
-                    UnitAttachments.containsAdjustedSlots(unitsById, blocker, map, candidate) &&
-                    clearsTerrain(blocker, shape, body, candidate, map, terrain, grid) &&
-                    translationContact(blocker, candidate, units, ignored = unit) == null &&
-                    units.none { other ->
-                        other !== blocker && other !== unit && layer(other) == blockedByLayer &&
-                            body.overlaps(Body(other.definition.movementCollision, other.heading), subtract(candidate, other.position))
-                    } &&
-                    translationContact(unit, moverEnd, units, Adjustment(blocker, candidate)) == null
+            val members = contacts.mapTo(mutableListOf()) { contact ->
+                val ratio = transferRatio(unit, contact.blocker) ?: return Translation(clipped)
+                ChainLink(contact.blocker, 0.0, 1, ratio)
             }
-            if (actualBlocker == blocker.position) return Translation(clipped)
-            val actualMover = moverEnd(actualBlocker)
-            paired += unit.unitId
-            paired += blocker.unitId
-            pushLimits[blocker.unitId] = distance(origin, actualMover)
-            return Translation(actualMover, Adjustment(blocker, actualBlocker))
+            val connected = members.mapTo(mutableSetOf(unit.unitId)) { it.unit.unitId }
+            var freeShare = Double.POSITIVE_INFINITY
+            var pinned: ChainLink? = null
+            while (freeShare > 0.0) {
+                // Every link sees the same share and set of connected bodies in a round.
+                val share = minOf(freeShare, shareForPressure(pressureTravel, members))
+                val nextRound = linkedMapOf<String, ChainLink>()
+                for (member in members) {
+                    val wanted = share - member.contactOffset
+                    if (wanted <= 0.0) continue
+                    val endpoint = offsetAlong(member.unit.position, drift, wanted)
+                    val nextContacts = translationContacts(member.unit, endpoint, units, ignoredIds = connected, simultaneous = true)
+                    for (next in nextContacts) {
+                        val offset = member.contactOffset + wanted * next.fraction
+                        val ratio = transferRatio(member.unit, next.blocker)
+                        if (ratio == null || member.depth == MAX_PUSH_DEPTH) {
+                            if (offset < freeShare) {
+                                freeShare = offset
+                                pinned = member.takeIf { next.blocker.unitId !in settled && support?.contains(next.blocker.unitId) != true }
+                            }
+                            continue
+                        }
+                        val link = ChainLink(next.blocker, offset, member.depth + 1, ratio)
+                        val previous = nextRound[next.blocker.unitId]
+                        if (previous == null || offset < previous.contactOffset) nextRound[next.blocker.unitId] = link
+                    }
+                }
+                val additions = nextRound.values.filter { it.contactOffset <= freeShare }
+                if (additions.isEmpty()) break
+                for (link in additions) {
+                    connected += link.unit.unitId
+                    members += link
+                }
+            }
+            val pressureShare = shareForPressure(pressureTravel, members)
+            val requestedShare = minOf(freeShare, pressureShare)
+
+            val chain = members.map { constrainedLink(it, map) }
+            val rootBody = Body(unit.definition.movementCollision, unit.heading)
+            fun moverEnd(share: Double): Position = if (softContact == null) offsetAlong(clipped, drift, share)
+                else offsetAlong(target, drift, -members.sumOf { it.massRatio * it.travel(share) })
+
+            fun clearAt(share: Double): Boolean {
+                val end = moverEnd(share)
+                val moverTravel = distance(origin, end)
+                val destinations = chain.map { member ->
+                    offsetAlong(member.link.unit.position, drift, member.link.travel(share))
+                }
+                if (translationContact(unit, end, units, ignoredIds = connected) != null) return false
+                for ((i, member) in chain.withIndex()) {
+                    val moved = member.link.unit
+                    val destination = destinations[i]
+                    if (destination != moved.position) {
+                        val limit = maxOf(member.maxTravel, moverTravel)
+                        if (distance(member.start, destination) > limit + positionRoundoff(member.start, destination) ||
+                            !UnitAttachments.containsAdjustedSlots(unitsById, moved, map, destination) ||
+                            !clearsTerrain(moved, moved.definition.movementCollision, member.body, destination, map, member.terrain, member.grid) ||
+                            translationContact(moved, destination, units, ignoredIds = connected) != null) return false
+                    }
+                    if (!clearRelative(rootBody, unit.position, end, member.body, moved.position, destination))
+                        return false
+                    for (j in 0 until i) {
+                        val earlier = chain[j]
+                        if (!clearRelative(earlier.body, earlier.link.unit.position, destinations[j], member.body, moved.position, destination))
+                            return false
+                    }
+                }
+                return true
+            }
+
+            val actualShare = lastLegalFraction(requestedShare, ::clearAt)
+            val axialAdjustments = chain.mapNotNull { member ->
+                val moved = member.link.unit
+                val destination = offsetAlong(moved.position, drift, member.link.travel(actualShare))
+                if (distance(moved.position, destination) <= positionRoundoff(moved.position, destination)) null
+                else Adjustment(moved, destination)
+            }
+            val translation = if (axialAdjustments.isNotEmpty()) Translation(moverEnd(actualShare), axialAdjustments)
+                else if (softContact != null || (requestedShare == 0.0 && pinned == null)) Translation(clipped)
+                else slide(unit, target, clipped, origin, drift, pressureShare,
+                    (pinned?.let { link -> chain.firstOrNull { it.link == link } } ?: chain.last()), units, unitsById, map)
+            if (translation.displaced.isEmpty()) return translation
+            settled += unit.unitId
+            for (adjustment in translation.displaced) {
+                settled += adjustment.unit.unitId
+                pushLimits[adjustment.unit.unitId] = distance(origin, translation.position)
+            }
+            return translation
+        }
+
+        private fun slide(unit: MutableUnit, target: Position, clipped: Position, origin: Position, drift: Position,
+                          share: Double, member: ConstrainedLink, units: Collection<MutableUnit>,
+                          unitsById: Map<String, MutableUnit>, map: MapDefinition): Translation {
+            val pushed = member.link.unit
+            val length = hypot(drift.x, drift.y)
+            val limit = maxOf(member.maxTravel, distance(origin, clipped))
+            val lateral = minOf(share * length, limit)
+            val side = Position(-drift.y / length, drift.x / length)
+            val shape = pushed.definition.movementCollision
+            for (direction in listOf(-1.0, 1.0)) {
+                val wanted = offsetAlong(pushed.position, side, lateral * direction)
+                val actual = lastLegalPoint(pushed.position, wanted) { candidate ->
+                    distance(member.start, candidate) <= limit + positionRoundoff(member.start, candidate) &&
+                        UnitAttachments.containsAdjustedSlots(unitsById, pushed, map, candidate) &&
+                        clearsTerrain(pushed, shape, member.body, candidate, map, member.terrain, member.grid) &&
+                        translationContact(pushed, candidate, units) == null
+                }
+                if (distance(pushed.position, actual) <= positionRoundoff(pushed.position, actual)) continue
+                val adjustment = Adjustment(pushed, actual)
+                val ahead = translationContact(unit, target, units, shifted = adjustment)
+                return Translation(pointAt(unit.position, target, ahead?.fraction ?: 1.0), listOf(adjustment))
+            }
+            return Translation(clipped)
+        }
+
+        private fun constrainedLink(link: ChainLink, map: MapDefinition): ConstrainedLink {
+            val pushed = link.unit
+            val motion = UnitLocomotion.movement(pushed).type
+            val terrain = if (motion != MovementType.AIR) motion
+                else if (pushed.flightLandedInWater) MovementType.WATER else MovementType.LAND
+            return ConstrainedLink(link, startingPositions.getOrPut(pushed.unitId) { pushed.position }, maximumTravel(pushed),
+                Body(pushed.definition.movementCollision, pushed.heading), terrain, HullTerrainGrid.authoritative(map, terrain))
         }
 
         fun maximumSpeed(unit: MutableUnit, movement: MovementProfile): Double =
@@ -157,6 +273,107 @@ internal object UnitContact {
             maximumSpeed(unit, UnitLocomotion.movement(unit)) * delta
     }
 
+    private data class GatheringGoal(val playerId: String, val layer: ContactLayer, val position: Position)
+
+    private fun gatheringGoal(unit: MutableUnit): GatheringGoal? {
+        val target = unit.tasks.firstOrNull()?.takeIf { it.kind == UnitTaskKind.MOVE && !it.factoryExit }?.target ?: return null
+        val layer = layer(unit) ?: return null
+        return GatheringGoal(unit.ownerPlayerId, layer, target)
+    }
+
+    /** Opposing pressure on an occupied shared target supports a stationary cluster.
+     * Closing the contact component over successive rings lets the next step release it when that support opens. */
+    private fun supportedGatherings(units: Collection<MutableUnit>): Map<GatheringGoal, Set<String>> {
+        val groups = units.mapNotNull { unit -> gatheringGoal(unit)?.let { it to unit } }.groupBy({ it.first }, { it.second })
+        val result = mutableMapOf<GatheringGoal, Set<String>>()
+        for ((goal, approaching) in groups) {
+            if (approaching.size < 3) continue
+            val candidates = units.asSequence().filter { it.ownerPlayerId == goal.playerId && layer(it) == goal.layer }
+                .associateWith { Body(it.definition.movementCollision, it.heading) }
+            val point = Body(MovementCollisionShape.Circle(0.0), 0.0)
+            val occupied = candidates.keys.firstOrNull { unit ->
+                val body = Body(unit.definition.movementCollision, unit.heading)
+                distance(unit.position, goal.position) <= body.reach &&
+                    body.clearance(point, subtract(unit.position, goal.position)) <= 0.0
+            } ?: continue
+            val connected = mutableSetOf(occupied)
+            val open = ArrayDeque<MutableUnit>()
+            open.addLast(occupied)
+            while (open.isNotEmpty()) {
+                val from = open.removeFirst()
+                val body = candidates.getValue(from)
+                for ((other, outline) in candidates) {
+                    if (other in connected) continue
+                    val offset = subtract(from.position, other.position)
+                    val reach = body.reach + outline.reach
+                    val roundoff = positionRoundoff(from.position, other.position)
+                    if (abs(offset.x) > reach + roundoff || abs(offset.y) > reach + roundoff ||
+                        body.clearance(outline, offset) > roundoff) continue
+                    connected += other
+                    open.addLast(other)
+                }
+            }
+            val bearings = approaching.asSequence().filter { it in connected && it.position != goal.position }
+                .map { atan2(it.position.y - goal.position.y, it.position.x - goal.position.x) }.sorted().toList()
+            if (bearings.size < 3) continue
+            var prior = bearings.last() - 2.0 * PI
+            val surrounded = bearings.all { bearing ->
+                (bearing - prior <= PI).also { prior = bearing }
+            }
+            if (surrounded) result[goal] = connected.mapTo(mutableSetOf()) { it.unitId }
+        }
+        return result
+    }
+
+    private data class ChainLink(val unit: MutableUnit, val contactOffset: Double, val depth: Int, val massRatio: Double) {
+        fun travel(share: Double): Double = (share - contactOffset).coerceAtLeast(0.0)
+    }
+    private data class ConstrainedLink(val link: ChainLink, val start: Position, val maxTravel: Double, val body: Body,
+                                       val terrain: MovementType, val grid: HullTerrainGrid)
+
+    private fun positiveMass(unit: MutableUnit): Double? = unit.definition.mass?.takeIf { it.isFinite() && it > 0.0 }
+
+    private fun shareForPressure(pressure: Double, members: List<ChainLink>): Double {
+        var weightedPressure = pressure
+        var relativeMass = 1.0
+        var share = pressure
+        for (member in members.sortedBy { it.contactOffset }) {
+            if (member.contactOffset >= share) break
+            // Each member consumes mass-weighted travel only once the previous links close its gap.
+            weightedPressure += member.massRatio * member.contactOffset
+            relativeMass += member.massRatio
+            share = weightedPressure / relativeMass
+        }
+        return share
+    }
+
+    private fun bufferPressure(unit: MutableUnit, blocker: MutableUnit, target: Position): Double {
+        val first = unit.definition.movementCollision
+        val second = blocker.definition.movementCollision
+        val offset = subtract(target, blocker.position)
+        val hardGap = Body(first, unit.heading).clearance(Body(second, blocker.heading), offset)
+        val bufferGap = Body(first.contactBufferOutline(), unit.heading)
+            .clearance(Body(second.contactBufferOutline(), blocker.heading), offset)
+        if (bufferGap >= 0.0) return 0.0
+        return -bufferGap / (hardGap.coerceAtLeast(0.0) - bufferGap)
+    }
+
+    private fun clearRelative(first: Body, start: Position, end: Position,
+                              second: Body, otherStart: Position, otherEnd: Position): Boolean {
+        val offset = subtract(start, otherStart)
+        val endOffset = subtract(end, otherEnd)
+        val drift = subtract(endOffset, offset)
+        val roundoff = positionRoundoff(end, otherEnd)
+        val entry = first.entry(second, offset, drift, 1.0)
+        return first.clearance(second, endOffset) >= -roundoff &&
+            (1.0 - entry) * hypot(drift.x, drift.y) <= roundoff
+    }
+
+    private fun offsetAlong(point: Position, drift: Position, fraction: Double): Position =
+        Position(point.x + drift.x * fraction, point.y + drift.y * fraction)
+
+
+
     private fun pointAt(start: Position, end: Position, fraction: Double): Position = when (fraction) {
         0.0 -> start
         1.0 -> end
@@ -164,14 +381,19 @@ internal object UnitContact {
     }
 
     private fun lastLegalPoint(start: Position, end: Position, legal: (Position) -> Boolean): Position {
-        if (start == end || legal(end)) return end
+        if (start == end) return end
+        return pointAt(start, end, lastLegalFraction(1.0) { legal(pointAt(start, end, it)) })
+    }
+
+    private fun lastLegalFraction(maximum: Double, legal: (Double) -> Boolean): Double {
+        if (maximum == 0.0 || legal(maximum)) return maximum
         var clear = 0.0
-        var blocked = 1.0
+        var blocked = maximum
         repeat(48) {
             val fraction = (clear + blocked) * .5
-            if (legal(pointAt(start, end, fraction))) clear = fraction else blocked = fraction
+            if (legal(fraction)) clear = fraction else blocked = fraction
         }
-        return pointAt(start, end, clear)
+        return clear
     }
 
     private fun distance(a: Position, b: Position): Double = hypot(a.x - b.x, a.y - b.y)
@@ -180,28 +402,46 @@ internal object UnitContact {
         4.0 * Math.ulp(maxOf(abs(a.x), abs(a.y), abs(b.x), abs(b.y)))
 
     private fun translationContact(unit: MutableUnit, requested: Position, units: Collection<MutableUnit>,
-                                   shifted: Adjustment? = null, ignored: MutableUnit? = null): Contact? {
+                                   shifted: Adjustment? = null, ignoredIds: Set<String> = emptySet(),
+                                   buffered: Boolean = false, included: ((MutableUnit) -> Boolean)? = null): Contact? =
+        translationContacts(unit, requested, units, shifted, ignoredIds, buffered, included).firstOrNull()
+
+    private fun translationContacts(unit: MutableUnit, requested: Position, units: Collection<MutableUnit>,
+                                    shifted: Adjustment? = null, ignoredIds: Set<String> = emptySet(),
+                                    buffered: Boolean = false, included: ((MutableUnit) -> Boolean)? = null,
+                                    simultaneous: Boolean = false): List<Contact> {
         val start = unit.position
-        if (start == requested) return null
-        val layer = layer(unit) ?: return null
-        val body = Body(unit.definition.movementCollision, unit.heading)
+        if (start == requested) return emptyList()
+        val layer = layer(unit) ?: return emptyList()
+        fun shape(other: MutableUnit) = other.definition.movementCollision.let { if (buffered) it.contactBufferOutline() else it }
+        val body = Body(shape(unit), unit.heading)
         val drift = subtract(requested, start)
+        val length = hypot(drift.x, drift.y)
         var fraction = 1.0
-        var blocker: MutableUnit? = null
+        val contacts = mutableListOf<Contact>()
         for (other in units) {
-            if (unit === other || other === ignored || layer(other) != layer) continue
+            if (unit === other || other.unitId in ignoredIds || layer(other) != layer) continue
             val otherCenter = if (shifted?.unit === other) shifted.position else other.position
             val offset = subtract(start, otherCenter)
-            val reach = body.reach + boundingRadius(other.definition.movementCollision)
+            val otherShape = shape(other)
+            val reach = body.reach + boundingRadius(otherShape)
             if (abs(offset.x) > reach + abs(drift.x) || abs(offset.y) > reach + abs(drift.y)) continue
-            val limit = body.entry(Body(other.definition.movementCollision, other.heading), offset, drift, fraction)
-            if (limit < fraction) {
+            if (included != null && !included(other)) continue
+            val limit = body.entry(Body(otherShape, other.heading), offset, drift, if (simultaneous) 1.0 else fraction)
+            if (limit >= 1.0) continue
+            val tied = simultaneous && contacts.isNotEmpty() &&
+                abs(limit - fraction) * length <= positionRoundoff(start, otherCenter)
+            if (tied) {
+                fraction = minOf(fraction, limit)
+                contacts += Contact(limit, other)
+            } else if (limit < fraction) {
                 fraction = limit
-                blocker = other
-                if (fraction == 0.0) break
+                contacts.clear()
+                contacts += Contact(limit, other)
+                if (!simultaneous && fraction == 0.0) break
             }
         }
-        return blocker?.let { Contact(fraction, it) }
+        return contacts
     }
 
     private fun sideShift(mover: MutableUnit, requested: Position, blocker: MutableUnit,
@@ -308,12 +548,12 @@ internal object UnitContact {
         val pose = unit.position
         val body = Body(unit.definition.movementCollision, unit.heading)
         // A large step between air and submerged depth still needs clearance at the surface.
-        val crossesSurface = current == null && target == Layer.SUBMERGED || target == null && current == Layer.SUBMERGED
+        val crossesSurface = current == null && target == ContactLayer.SUBMERGED || target == null && current == ContactLayer.SUBMERGED
         if (target == null && !crossesSurface) return true
         for (other in units) {
             if (other === unit) continue
             val otherLayer = layer(other) ?: continue
-            if (otherLayer != target && !(crossesSurface && otherLayer == Layer.SURFACE)) continue
+            if (otherLayer != target && !(crossesSurface && otherLayer == ContactLayer.SURFACE)) continue
             val offset = subtract(pose, other.position)
             val shape = other.definition.movementCollision
             val reach = body.reach + boundingRadius(shape)
@@ -321,7 +561,7 @@ internal object UnitContact {
             if (body.overlaps(Body(shape, other.heading), offset)) return false
         }
         val buildingCells = buildings?.cells.orEmpty()
-        if (current != null && (target != Layer.SURFACE || buildingCells.isEmpty())) return true
+        if (current != null && (target != ContactLayer.SURFACE || buildingCells.isEmpty())) return true
         val movement = if (unit.amphibiousState == null) MovementType.LAND else MovementType.WATER
         val grid = HullTerrainGrid.authoritative(buildings?.collisionMap ?: map, movement)
         return !overlapsTerrain(body, pose, grid) { x, y -> current == null || (x to y) in buildingCells }

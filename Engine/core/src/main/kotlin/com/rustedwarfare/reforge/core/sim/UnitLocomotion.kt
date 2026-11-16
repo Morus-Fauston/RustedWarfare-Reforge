@@ -16,8 +16,10 @@ internal object UnitLocomotion {
 
     const val SUBMERGED_DEPTH = -1.0
 
-    fun isSubmerged(unit: MutableUnit, height: Double = unit.height): Boolean =
-        unit.definition.locomotionStates != null && height < SUBMERGED_DEPTH
+    fun isSubmerged(unit: MutableUnit, height: Double = unit.height): Boolean = isSubmerged(unit.definition, height)
+
+    fun isSubmerged(definition: UnitDefinition, height: Double): Boolean =
+        definition.locomotionStates != null && height < SUBMERGED_DEPTH
 
     fun terrainHull(unit: MutableUnit): MovementCollisionShape? {
         if (unit.nativeTransportPlacement) return null

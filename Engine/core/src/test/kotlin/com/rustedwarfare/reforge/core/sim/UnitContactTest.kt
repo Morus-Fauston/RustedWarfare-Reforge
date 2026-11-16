@@ -456,7 +456,8 @@ class UnitContactTest {
                 val pastSurface = approaching.last().units.single { it.unitId == "sub" }
                 val pushed = approaching.last().units.single { it.unitId == "blocker" }
                 assertTrue(pastSurface.position.x > 550.0)
-                assertEquals(30.0, pushed.position.x - pastSurface.position.x, 1e-8)
+                val gap = pushed.position.x - pastSurface.position.x
+                assertTrue(gap in (30.0 - 1e-8)..34.0)
                 assertTrue(approaching.all { frame -> frame.units.single { it.unitId == "surface" }.position == Position(520.0, 190.0) })
                 assertEquals(-8.0, pastSurface.height)
                 assertIs<ActionResult.Accepted>(context.submit(SubmarineDepthAction("raise-blocker", "p2", "blocker", true, context.world)))

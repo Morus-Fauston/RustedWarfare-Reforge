@@ -140,6 +140,15 @@ sealed interface MovementCollisionShape {
     data class Rectangle(val length: Double, val width: Double) : MovementCollisionShape
 }
 
+const val UNIT_CONTACT_BUFFER_WIDTH = 2.0
+
+/** Outline used for unit-to-unit buffer contact; terrain keeps the original hard shape. */
+fun MovementCollisionShape.contactBufferOutline(): MovementCollisionShape = when (this) {
+    is MovementCollisionShape.Circle -> copy(radius = radius + UNIT_CONTACT_BUFFER_WIDTH)
+    is MovementCollisionShape.Rectangle -> copy(length = length + 2.0 * UNIT_CONTACT_BUFFER_WIDTH,
+        width = width + 2.0 * UNIT_CONTACT_BUFFER_WIDTH)
+}
+
 enum class MovementType { LAND, NONE, AIR, WATER, HOVER, OVER_CLIFF, OVER_CLIFF_WATER }
 
 /** A water route can begin before the unit crosses the underwater targeting threshold. */

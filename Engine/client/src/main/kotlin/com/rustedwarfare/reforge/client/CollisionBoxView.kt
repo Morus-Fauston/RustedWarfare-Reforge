@@ -3,6 +3,7 @@ package com.rustedwarfare.reforge.client
 import com.badlogic.gdx.graphics.Color
 import com.badlogic.gdx.graphics.glutils.ShapeRenderer
 import com.rustedwarfare.reforge.core.content.MovementCollisionShape
+import com.rustedwarfare.reforge.core.content.contactBufferOutline
 import com.rustedwarfare.reforge.core.sim.Position
 import kotlin.math.PI
 import kotlin.math.cos
@@ -13,6 +14,8 @@ internal data class CollisionBoxDrawing(
     val center: Position,
     val corners: List<Position>,
     val bound: Double,
+    val bufferCorners: List<Position>,
+    val bufferRadius: Double?,
     val headingTip: Position,
     val route: List<Position>,
     val target: Position?,
@@ -30,11 +33,11 @@ internal object CollisionBoxView {
                 unit.position.x + forwardX * forward - forwardY * right,
                 unit.position.y + forwardY * forward + forwardX * right,
             ))
-            val corners = when (shape) {
+            fun corners(outline: MovementCollisionShape): List<Position> = when (outline) {
                 is MovementCollisionShape.Circle -> emptyList()
                 is MovementCollisionShape.Rectangle -> {
-                    val l = shape.length / 2
-                    val w = shape.width / 2
+                    val l = outline.length / 2
+                    val w = outline.width / 2
                     listOf(projectOffset(l, w), projectOffset(l, -w), projectOffset(-l, -w), projectOffset(-l, w))
                 }
             }
@@ -42,7 +45,9 @@ internal object CollisionBoxView {
                 is MovementCollisionShape.Circle -> shape.radius
                 is MovementCollisionShape.Rectangle -> shape.length / 2
             }
-            CollisionBoxDrawing(unit.unitId, screen(unit.position), corners, shape.boundingRadius * projection.scale,
+            val buffer = if (session.hasContactLayerForView(unit)) shape.contactBufferOutline() else null
+            CollisionBoxDrawing(unit.unitId, screen(unit.position), corners(shape), shape.boundingRadius * projection.scale,
+                buffer?.let(::corners).orEmpty(), buffer?.let { it.boundingRadius * projection.scale },
                 projectOffset(nose), unit.pathPoints.map(::screen), unit.moveTarget?.let(::screen))
         }
     }
@@ -56,6 +61,11 @@ internal object CollisionBoxView {
             val x = center.x.toFloat()
             val y = center.y.toFloat()
             val radius = body.bound.toFloat()
+            body.bufferRadius?.let { bufferRadius ->
+                shapes.color = BUFFER_COLOR
+                if (body.bufferCorners.isEmpty()) shapes.circle(x, y, bufferRadius.toFloat(), CIRCLE_SEGMENTS)
+                else body.bufferCorners.forEachIndexed { i, point -> line(point, body.bufferCorners[(i + 1) % body.bufferCorners.size]) }
+            }
             shapes.color = Color.ORANGE
             if (body.corners.isEmpty()) shapes.circle(x, y, radius, CIRCLE_SEGMENTS)
             else body.corners.forEachIndexed { i, point -> line(point, body.corners[(i + 1) % body.corners.size]) }
@@ -78,7 +88,6 @@ internal object CollisionBoxView {
                 }
             } else shapes.circle(x, y, radius, CIRCLE_SEGMENTS)
 
-            // ENG-P014-004 adds the contact buffer outline in this pass when the simulation supplies it.
             var from = center
             for (point in body.route) {
                 line(from, point)
@@ -95,4 +104,5 @@ internal object CollisionBoxView {
     }
 
     private const val CIRCLE_SEGMENTS = 32
+    private val BUFFER_COLOR = Color(0.45f, 1f, 1f, 1f)
 }

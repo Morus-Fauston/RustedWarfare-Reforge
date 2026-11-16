@@ -145,6 +145,9 @@ class SandboxSession(scenario: Scenario, private val evidence: ClientEvidence = 
             definition.building == null && definition.attachmentModule == null && it.boundingRadius > 0.0
         }
     }
+
+    internal fun hasContactLayerForView(unit: UnitObservation): Boolean =
+        scenario.unitDefinitions.getValue(unit.typeId).hasContactLayerAt(unit.height)
     private val actionCatalogue = ActionCatalogue(this.scenario.unitDefinitions, this.scenario.nukesEnabled, singleSelectionButtons)
     private var menuObservation: PlayerObservation? = null
     private var menuSelectionRevision = -1L

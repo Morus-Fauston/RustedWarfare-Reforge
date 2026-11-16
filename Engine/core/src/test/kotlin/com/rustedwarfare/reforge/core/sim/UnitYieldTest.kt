@@ -114,24 +114,49 @@ class UnitYieldTest {
     }
 
     @Test
-    fun a_third_body_clips_the_pair_without_starting_a_chain() = WaterTestScene.withMap { map ->
-        val mover = movable("mover-hull", MovementType.WATER)
-        val blocker = movable("blocker-hull", MovementType.WATER)
-        val start = Position(500.0, 190.0)
-        val occupied = Position(512.0, 190.0)
-        val third = Position(524.25, 190.0)
-        val scene = pair(map, mover, blocker, start, occupied, 90.0)
-        withContext(scene.copy(units = scene.units + UnitSpawn("third", "p1", blocker.id, third, 90.0))) { context ->
-            move(context, "mover", Position(650.0, 190.0))
+    fun a_chain_stops_at_its_anchored_tail_in_an_exact_width_channel() = WaterTestScene.withCorridor(dryBarrier = false) { map ->
+        val shape = MovementCollisionShape.Circle(10.0)
+        val mover = movable("hull", MovementType.WATER, shape)
+        val anchor = movable("anchor", MovementType.WATER, shape, speed = 0.0)
+        val start = Position(10.0, 100.0)
+        val occupied = Position(10.0, 80.0)
+        val third = Position(10.0, 59.75)
+        val scene = pair(map, mover, mover, start, occupied, 0.0)
+        withContext(scene.copy(unitDefinitions = scene.unitDefinitions + (anchor.id to anchor),
+            units = scene.units + UnitSpawn("third", "p1", anchor.id, third, 0.0))) { context ->
+            move(context, "mover", Position(10.0, 30.0))
             repeat(20) { tick ->
                 val frame = context.advance(Step(tick.toLong(), 1.0, "sim-tick"))
                 assertEquals(third, frame.find("third").position)
-                assertEquals(512.25, frame.find("blocker").position.x, 1e-8)
-                assertEquals(500.25, frame.find("mover").position.x, 1e-8)
+                assertEquals(79.75, frame.find("blocker").position.y, 1e-8)
+                assertEquals(99.75, frame.find("mover").position.y, 1e-8)
                 assertTrue(Event("movement-blocked", "mover") in frame.events)
             }
         }
     }
+
+    @Test
+    fun the_contact_buffer_does_not_narrow_a_channel_with_exact_hull_clearance() =
+        WaterTestScene.withCorridor(dryBarrier = false) { map ->
+            for (shape in listOf(MovementCollisionShape.Circle(10.0), MovementCollisionShape.Rectangle(24.0, 20.0))) {
+                val unit = movable("vessel", MovementType.WATER, shape)
+                val start = Position(10.0, 106.0)
+                val destination = Position(10.0, 20.0)
+                val scene = WaterTestScene.scenario(map, MovementType.WATER, start).copy(
+                    unitDefinitions = mapOf(unit.id to unit), units = listOf(UnitSpawn("mover", "p1", unit.id, start, 0.0)),
+                )
+                withContext(scene) { context ->
+                    move(context, "mover", destination)
+                    var arrived = false
+                    for (tick in 0L..180L) {
+                        val frame = context.advance(Step(tick, 1.0, "sim-tick"))
+                        assertEquals(10.0, frame.find("mover").position.x, 1e-9)
+                        arrived = arrived || Event("movement-arrived", "mover") in frame.events
+                    }
+                    assertTrue(arrived, "Hard hull fits the channel: $shape")
+                }
+            }
+        }
 
     @Test
     fun a_building_footprint_clips_the_pair() {
@@ -174,6 +199,198 @@ class UnitYieldTest {
             assertEquals(occupied.x + .7 * 12.0 / 52.0, pushed.position.x, 1e-8)
             assertEquals(occupied.y, pushed.position.y, 1e-8)
             assertEquals(270.0, pushed.heading)
+        }
+    }
+
+    @Test
+    fun deeper_buffer_contact_pushes_farther_before_the_hard_shapes_touch() = WaterTestScene.withMap { map ->
+        val mover = movable("mover-hull", MovementType.WATER)
+        val blocker = movable("blocker-hull", MovementType.WATER)
+        val start = Position(500.0, 190.0)
+        val samples = mutableListOf<Double>()
+        for (gap in listOf(3.5, 2.0, 1.0)) {
+            val occupied = Position(512.0 + gap, 190.0)
+            withContext(pair(map, mover, blocker, start, occupied, 90.0, occupiedHeading = 270.0)) { context ->
+                move(context, "mover", Position(650.0, 190.0))
+                val frame = context.advance(Step(0, 1.0, "sim-tick"))
+                val front = frame.find("mover")
+                val pushed = frame.find("blocker")
+                assertTrue(pushed.position.x - front.position.x > 12.0)
+                assertEquals(occupied.y, pushed.position.y)
+                assertEquals(270.0, pushed.heading)
+                samples += pushed.position.x - occupied.x
+            }
+        }
+        println("Pre-contact displacements for gaps 3.5, 2.0, 1.0: $samples")
+        assertTrue(samples.first() > 0.0)
+        assertTrue(samples.zipWithNext().all { (shallower, deeper) -> deeper > shallower })
+        assertTrue(samples.all { it <= .7 })
+    }
+
+    @Test
+    fun three_touching_units_share_the_request_by_total_chain_mass() = WaterTestScene.withMap { map ->
+        val unit = movable("ship", MovementType.WATER)
+        val start = Position(500.0, 190.0)
+        val scene = pair(map, unit, unit, start, Position(512.0, 190.0), 90.0)
+        val tail = UnitSpawn("tail", "p1", unit.id, Position(524.0, 190.0), 270.0)
+        withContext(scene.copy(units = scene.units + tail)) { context ->
+            move(context, "mover", Position(650.0, 190.0))
+            val frame = context.advance(Step(0, 1.0, "sim-tick"))
+            val shifts = (scene.units + tail).map { frame.find(it.unitId).position.x - it.position.x }
+            println("Three-body hard-contact sharing: $shifts")
+            for (shift in shifts) assertEquals(.7 / 3.0, shift, 1e-8)
+            assertEquals(270.0, frame.find("tail").heading)
+        }
+    }
+
+    @Test
+    fun a_wide_ship_transfers_one_step_to_two_simultaneous_branches() =
+        WaterTestScene.withCorridor(dryBarrier = false) { map ->
+            val wide = movable("wide", MovementType.WATER, MovementCollisionShape.Rectangle(20.0, 20.0))
+            val narrow = movable("narrow", MovementType.WATER, MovementCollisionShape.Rectangle(20.0, 10.0))
+            val start = Position(10.0, 100.0)
+            val scene = pair(map, wide, narrow, start, Position(5.0, 80.0), 0.0)
+            val side = UnitSpawn("right", "p1", narrow.id, Position(15.0, 80.0), 0.0)
+            withContext(scene.copy(units = scene.units + side)) { context ->
+                move(context, "mover", Position(10.0, 30.0))
+                val frame = context.advance(Step(0, 1.0, "sim-tick"))
+                for (spawn in scene.units + side) {
+                    val actual = frame.find(spawn.unitId)
+                    assertEquals(spawn.position.x, actual.position.x, 1e-9)
+                    assertEquals(.7 / 3.0, spawn.position.y - actual.position.y, 1e-8, spawn.unitId)
+                }
+            }
+        }
+
+    @Test
+    fun a_chain_adds_the_next_mass_only_for_the_travel_after_actual_contact() = WaterTestScene.withMap { map ->
+        val unit = movable("ship", MovementType.WATER)
+        val start = Position(500.0, 190.0)
+        for (gap in listOf(.30, .36)) {
+            val scene = pair(map, unit, unit, start, Position(512.0, 190.0), 90.0)
+            val tail = UnitSpawn("tail", "p2", unit.id, Position(524.0 + gap, 190.0), 270.0)
+            withContext(scene.copy(units = scene.units + tail)) { context ->
+                move(context, "mover", Position(650.0, 190.0))
+                val frame = context.advance(Step(0, 1.0, "sim-tick"))
+                val travelled = (scene.units + tail).map { frame.find(it.unitId).position.x - it.position.x }
+                println("Hard chain with gap $gap: $travelled")
+                val shared = if (gap < .35) (.7 + gap) / 3 else .35
+                assertEquals(shared, travelled[0], 1e-9)
+                assertEquals(shared, travelled[1], 1e-9)
+                assertEquals((shared - gap).coerceAtLeast(0.0), travelled[2], 1e-9)
+            }
+        }
+    }
+
+    @Test
+    fun a_crowd_does_not_hold_a_unit_with_hard_clearance_in_front_of_it() = WaterTestScene.withMap { map ->
+        val goal = Position(217.0, 166.0)
+        val tank = movable("tank", MovementType.LAND)
+        val spawns = listOf(
+            UnitSpawn("center", "p1", tank.id, goal, 90.0),
+            UnitSpawn("north", "p1", tank.id, Position(217.0, 154.0), 180.0),
+            UnitSpawn("south", "p1", tank.id, Position(217.0, 178.0), 0.0),
+            UnitSpawn("west", "p1", tank.id, Position(205.0, 166.0), 90.0),
+            UnitSpawn("east", "p1", tank.id, Position(229.0, 166.0), 270.0),
+            UnitSpawn("bridge-one", "p1", tank.id, Position(244.0, 166.0), 270.0),
+            UnitSpawn("bridge-two", "p1", tank.id, Position(259.0, 166.0), 270.0),
+            UnitSpawn("outer", "p1", tank.id, Position(274.0, 166.0), 270.0),
+        )
+        val scene = WaterTestScene.scenario(map, MovementType.LAND, goal).copy(
+            unitDefinitions = mapOf(tank.id to tank), units = spawns,
+        )
+        withContext(scene) { context ->
+            val inner = listOf("north", "south", "west", "east")
+            for (id in inner + "outer") move(context, id, goal)
+            val pressed = context.advance(Step(0, 1.0, "sim-tick"))
+            for (id in inner) assertEquals(spawns.single { it.unitId == id }.position, pressed.find(id).position)
+            assertTrue(pressed.find("outer").position.x < 274.0, "Units still outside hard contact must approach")
+            for (id in listOf("west", "east", "outer")) assertIs<ActionResult.Accepted>(context.submit(
+                StopAction("stop-$id", "p1", id, context.world)))
+            val released = context.advance(Step(1, 1.0, "sim-tick"))
+            assertTrue(listOf("north", "south").any { released.find(it).position != pressed.find(it).position })
+            for (id in listOf("north", "south")) assertEquals("move-$id", released.find(id).tasks.single().actionId)
+        }
+    }
+
+    @Test
+    fun fifty_units_converge_and_remain_parked() = WaterTestScene.withMap { map ->
+        val tank = movable("tank", MovementType.LAND)
+        val goal = Position(217.0, 166.0)
+        val spawns = List(50) { index ->
+            val start = Position(62.0 + index % 10 * 33.0, 72.0 + index / 10 * 53.0)
+            val heading = 90.0 + Math.toDegrees(kotlin.math.atan2(goal.y - start.y, goal.x - start.x))
+            UnitSpawn("tank-${index.toString().padStart(2, '0')}", "p1", tank.id, start, heading)
+        }
+        val scene = WaterTestScene.scenario(map, MovementType.LAND, spawns.first().position).copy(
+            unitDefinitions = mapOf(tank.id to tank), units = spawns,
+        )
+        withContext(scene) { context ->
+            for (spawn in spawns) move(context, spawn.unitId, goal)
+            var maximumTravel = 0.0
+            var quiet = 0
+            var tick = 0L
+            var previous = context.observe().units.associate { it.unitId to it.position }
+            var active = context.observe().units
+            var headings = active.associate { it.unitId to it.heading }
+            while (quiet < 160 && tick < 2400) {
+                active = context.advance(Step(tick++, 1.0, "sim-tick")).units
+                val current = active.associate { it.unitId to it.position }
+                val travel = active.maxOf { kotlin.math.sqrt(ScreenPlane.distanceSquared(previous.getValue(it.unitId), it.position)) }
+                maximumTravel = maxOf(maximumTravel, travel)
+                if (tick % 200 == 0L) {
+                    val movers = active.filter { it.position != previous.getValue(it.unitId) }
+                    val movement = movers.sortedByDescending { ScreenPlane.distanceSquared(previous.getValue(it.unitId), it.position) }
+                        .take(3).map { "${it.unitId}:${previous.getValue(it.unitId)}->${it.position}, speed=${it.speed}" }
+                    println("gathering $tick moved=${movers.size} active=${active.count { it.moveTarget != null }} maxStep=$travel $movement")
+                }
+                for (i in active.indices) for (j in i + 1 until active.size) {
+                    assertTrue(ScreenPlane.distanceSquared(active[i].position, active[j].position) >= 144.0 - 1e-7,
+                        "Hard overlap at step $tick for ${active[i].unitId} and ${active[j].unitId}")
+                }
+                val currentHeadings = active.associate { it.unitId to it.heading }
+                quiet = if (current == previous && currentHeadings == headings) quiet + 1 else 0
+                previous = current
+                headings = currentHeadings
+            }
+            val outerSquare = active.maxOf { ScreenPlane.distanceSquared(it.position, goal) }
+            println("50-unit convergence: ticks=$tick quiet=$quiet maximumTravel=$maximumTravel outerRadius=${kotlin.math.sqrt(outerSquare)} " +
+                "activeOrders=${active.count { it.moveTarget != null }}")
+            assertEquals(160, quiet, "The whole formation should remain parked for 160 steps")
+            assertTrue(outerSquare < 100.0 * 100.0, "A unit stopped before reaching the gathering area")
+            assertTrue(maximumTravel <= .7 + 1e-8, "A unit exceeded its step budget")
+            assertTrue(active.all { it.speed == 0.0 })
+            val edge = active.maxBy { ScreenPlane.distanceSquared(it.position, goal) }
+            val oldDistance = kotlin.math.sqrt(ScreenPlane.distanceSquared(edge.position, goal))
+            val out = Position(edge.position.x + 18.0 * (edge.position.x - goal.x) / oldDistance,
+                edge.position.y + 18.0 * (edge.position.y - goal.y) / oldDistance)
+            assertIs<ActionResult.Accepted>(context.submit(
+                MoveAction("leave-gathering", "p1", edge.unitId, out, context.world)))
+            repeat(270) { context.advance(Step(tick++, 1.0, "sim-tick")) }
+            val moved = context.observe().find(edge.unitId)
+            println("Shared-target exit for ${edge.unitId}: ${edge.position} -> ${moved.position}")
+            assertTrue(ScreenPlane.distanceSquared(moved.position, goal) > (oldDistance + 5.0) * (oldDistance + 5.0))
+        }
+    }
+
+    @Test
+    fun a_pinned_push_link_can_slide_into_clear_side_space() = WaterTestScene.withMap { map ->
+        val mover = movable("mobile", MovementType.WATER)
+        val anchor = movable("anchor", MovementType.WATER, speed = 0.0)
+        val occupied = Position(512.0, 190.0)
+        val anchorPosition = Position(524.0, 190.0)
+        val scene = pair(map, mover, mover, Position(500.0, 190.0), occupied, 90.0)
+        withContext(scene.copy(unitDefinitions = scene.unitDefinitions + (anchor.id to anchor),
+            units = scene.units + UnitSpawn("anchor", "p1", anchor.id, anchorPosition, 90.0))) { context ->
+            move(context, "mover", Position(650.0, 190.0))
+            val frame = context.advance(Step(0, 1.0, "sim-tick"))
+            val slipped = frame.find("blocker")
+            assertEquals(anchorPosition, frame.find("anchor").position)
+            assertEquals(occupied.x, slipped.position.x, 1e-9)
+            val sideways = kotlin.math.abs(occupied.y - slipped.position.y)
+            assertTrue(sideways in 1e-6..(.7 + 1e-9))
+            assertEquals(90.0, slipped.heading)
+            assertTrue(ScreenPlane.distanceSquared(slipped.position, frame.find("mover").position) >= 144.0 - 1e-7)
         }
     }
 
