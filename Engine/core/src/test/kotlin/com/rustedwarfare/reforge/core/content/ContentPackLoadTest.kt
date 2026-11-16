@@ -11,6 +11,20 @@ import kotlin.test.assertFailsWith
 
 class ContentPackLoadTest {
     @Test
+    fun a_single_selection_button_requires_an_existing_action_on_a_unit_declared_in_this_pack() {
+        withPack { root, manifest ->
+            val original = Files.readString(manifest)
+            for ((unit, part) in listOf("amber_scout" to "action", "missing" to "unitType")) {
+                val declaration = """"singleSelectionButton":{"unitType":"$unit","action":"afterBurn","label":"Boost flight"},"""
+                Files.writeString(manifest, original.replace("\"units\":", declaration + "\"units\":"))
+                val error = failure(root)
+                assertEquals(ContentErrorCode.BAD_REFERENCE, error.code)
+                assertEquals("singleSelectionButton.$part", error.field)
+            }
+        }
+    }
+
+    @Test
     fun a_local_pack_discovers_three_format_tanks_and_freezes_actual_metadata_and_images() {
         for (format in listOf("ini", "json", "hjson")) withPack(format) { root, manifest ->
             val attempt = ContentLoader.loadContentPack(root)

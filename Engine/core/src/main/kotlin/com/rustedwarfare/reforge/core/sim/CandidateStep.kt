@@ -14,6 +14,8 @@ internal data class CachedPlanningTerrain(val world: WorldHandle, val map: MapDe
     val escapingBuildings: Boolean = false,
     val movementType: com.rustedwarfare.reforge.core.content.MovementType = com.rustedwarfare.reforge.core.content.MovementType.LAND)
 
+internal data class PlayerPlanningKey(val owner: String, val movementType: MovementType, val escaping: Boolean)
+
 internal data class AutomaticKnowledgeCommit(
     val stores: Map<String, PlayerTerrainKnowledge>,
     val views: Map<String, VisionSnapshot>,
@@ -57,12 +59,13 @@ internal data class StepState(
     var actionResultOwners: IdentityHashMap<ActionResult, String> = IdentityHashMap(),
     var playerActionRevisions: MutableMap<String, Long> = mutableMapOf(),
     var noFogPlanning: MutableMap<MovementType, CachedPlanningTerrain> = mutableMapOf(),
-    var playerPlanning: MutableMap<String, CachedPlanningTerrain> = mutableMapOf(),
+    var playerPlanning: MutableMap<PlayerPlanningKey, CachedPlanningTerrain> = mutableMapOf(),
     var knowledgeStores: Map<String, PlayerTerrainKnowledge>? = null,
     var automaticVisionSnapshots: Map<String, VisionSnapshot>? = null,
     var automaticVisionState: AutomaticVisionState? = null,
     var pathDiagnostics: MutableList<PathSearchSample>? = null,
     var motionDiagnostics: MutableList<MotionStepSample>? = null,
+    var routeContinuationDiagnostics: MutableList<RouteContinuationSample>? = null,
     var pendingKnowledgeDiscoveries: MutableMap<String, MutableMap<Pair<Int, Int>, Long>> = mutableMapOf(),
 ) {
     fun fork(): StepState = copy(
@@ -169,12 +172,14 @@ internal data class StepState(
                     unit.unitId == "scout:${unit.ownerPlayerId}:${birth.projectileId}" &&
                     unit.updateKey.startsWith("~produced/")) { "Invalid scout bot birth identity" }
             }
-            require(Transport.containsPosition(unit, input.map, unit.position)) {
-                "Unit collision circle must remain within the map"
+            require(UnitAttachments.containsChild(units, unit, input.map)) {
+                "Unit movement hull must remain within the map"
             }
             unit.health?.let { require((it >= 0.0 || it == -1.0) && it <= checkNotNull(unit.definition.maximumHealth) &&
                 (!unit.deathPending || it == -1.0 && unit.carriedBy == null) &&
                 unit.alive == (it > 0.0 || unit.deathPending)) { "Invalid unit life state" } }
+            require(!unit.destroyedWithoutHealth || unit.health == null && unit.definition.maximumHealth == null &&
+                !unit.deathPending) { "Invalid destroyed unit without health" }
             for (state in unit.namedWeapons?.values ?: listOfNotNull(unit.combat)) {
                 require(listOf(state.turretHeading, state.angularVelocity, state.cooldown, state.offset.x, state.offset.y,
                     state.idleBaseHeading, state.idleOffset, state.warmup)
@@ -273,6 +278,7 @@ internal class CandidateSteps {
 internal class CandidateStep(val state: StepState, private val step: Step) {
     val existingProjectileIds = state.projectiles.mapTo(hashSetOf()) { it.objectId }
     val motionSamples = state.motionDiagnostics?.let { mutableListOf<MotionStepSample>() }
+    val routeContinuationSamples = state.routeContinuationDiagnostics?.let { mutableListOf<RouteContinuationSample>() }
     private var knowledge: AutomaticKnowledgeCommit? = null
     private var buildings: BuildingCommit? = null
     val vision: Map<String, VisionSnapshot>? get() = knowledge?.views ?: state.automaticVisionSnapshots
@@ -315,6 +321,7 @@ internal class CandidateStep(val state: StepState, private val step: Step) {
         state.pendingSoundTriggers.clear()
         state.pendingActionResults.clear()
         motionSamples?.let { checkNotNull(committedMotion).addAll(it) }
+        routeContinuationSamples?.let { checkNotNull(state.routeContinuationDiagnostics).addAll(it) }
         return observation
     }
 

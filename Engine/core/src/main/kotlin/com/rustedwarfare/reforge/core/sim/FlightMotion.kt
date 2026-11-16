@@ -25,7 +25,7 @@ internal object FlightMotion {
         return Position(vx + (target.x - vx) / remaining * limit, vy + (target.y - vy) / remaining * limit)
     }
 
-    fun advancePose(unit: MutableUnit, map: MapDefinition, delta: Double) {
+    fun advancePose(unit: MutableUnit, map: MapDefinition, delta: Double, acceptsHeight: (Double) -> Boolean) {
         val profile = unit.definition.movement.flight ?: return
         unit.definition.rotor?.let { rotor ->
             unit.rotorPhase = (unit.rotorPhase + rotor.spinRate * delta) % 360.0
@@ -34,14 +34,15 @@ internal object FlightMotion {
         unit.heightPhase += 2.0 * delta
         if (unit.heightPhase > 360.0) unit.heightPhase -= 360.0
         val bomber = unit.definition.attackMovement == AttackMovementProfile.BOMBER
-        if ((bomber || profile.landWhenStationary) && advanceIdleLanding(unit, map, delta, bomber)) return
+        if ((bomber || profile.landWhenStationary) && advanceIdleLanding(unit, map, delta, bomber, acceptsHeight)) return
         val desired = profile.targetHeight + sin(Math.toRadians(unit.heightPhase)) * profile.heightDrift
         val difference = unit.height - desired
         check(desired.isFinite() && difference.isFinite()) { "Non-finite derived flight height for ${unit.unitId}" }
         val rate = if (profile.heightChangeRate < 0.0) abs(unit.height - 2.0) * .02 + .2
             else profile.heightChangeRate
         val cappedRate = minOf(rate, abs(difference) * .015 + .1)
-        unit.height = approach(unit.height, desired, cappedRate * delta)
+        val nextHeight = approach(unit.height, desired, cappedRate * delta)
+        if (acceptsHeight(nextHeight)) unit.height = nextHeight
         check(listOf(unit.height, unit.heightPhase, unit.rotorPhase, unit.rotorHeightOffset,
                 desired, rate, cappedRate).all { it.isFinite() }) {
             "Non-finite flight height for ${unit.unitId}"
@@ -73,7 +74,8 @@ internal object FlightMotion {
             (y + GroundMath.sin(away) * 600f).toDouble().coerceIn(radius, map.heightTiles.toDouble() * map.tileHeight - radius))
     }
 
-    private fun advanceIdleLanding(unit: MutableUnit, map: MapDefinition, delta: Double, requiresEmptyQueue: Boolean): Boolean {
+    private fun advanceIdleLanding(unit: MutableUnit, map: MapDefinition, delta: Double,
+                                   requiresEmptyQueue: Boolean, acceptsHeight: (Double) -> Boolean): Boolean {
         unit.flightIdleTime = if (unit.movementRequested || OrdinaryWeapon.moving(unit)) 0f
             else minOf(4f, unit.flightIdleTime + delta.toFloat())
         if (unit.flightIdleTime <= 3f || requiresEmptyQueue && unit.tasks.isNotEmpty() || map.isLiquid(
@@ -81,7 +83,8 @@ internal object FlightMotion {
                 MapBounds.cell(unit.position.y, map.tileHeight, map.heightTiles))) return false
         val height = unit.height.toFloat()
         val speed = abs(height - 2f) * .05f * .4f + .2f
-        unit.height = approach(height.toDouble(), 2.0, (speed * delta.toFloat()).toDouble())
+        val nextHeight = approach(height.toDouble(), 2.0, (speed * delta.toFloat()).toDouble())
+        if (acceptsHeight(nextHeight)) unit.height = nextHeight
         check(unit.height.isFinite()) { "Non-finite idle flight height for ${unit.unitId}" }
         return true
     }

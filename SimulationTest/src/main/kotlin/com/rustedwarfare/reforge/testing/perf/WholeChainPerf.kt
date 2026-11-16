@@ -87,9 +87,11 @@ object WholeChainPerf {
         val blocked = BooleanArray(WIDTH * HEIGHT) { kind in listOf("DETOUR", "HIDDEN", "UNREACHABLE") &&
             it % WIDTH == 24 && (kind == "UNREACHABLE" || it / WIDTH in 11..25) }
         val original = base.unitDefinitions.getValue("tank")
+        // Shared starts and goals exercise path execution with independent probes.
         val unit = UnitDefinition(original.id, original.className, original.radius, original.displayRadius,
             original.totalFrames, original.imagePath, original.imageScale, original.movement, original.retainedUnconsumed,
-            if (kind in listOf("DETOUR", "UNREACHABLE")) 60 else 3)
+            if (kind in listOf("DETOUR", "UNREACHABLE")) 60 else 3,
+            movementCollision = MovementCollisionShape.Circle(0.0))
         val spawns = (0 until count).map { i -> UnitSpawn("u$i", "p1", "tank",
             if (kind == "DISPERSED") Position(OFFSET + 50.0 + 35 * (i % 5), OFFSET + 50.0 + 30 * (i / 5)) else Position(OFFSET + 50.0, OFFSET + 70.0), 90.0) }
         val goals = spawns.associate { spawn ->

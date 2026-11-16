@@ -389,6 +389,24 @@ class SandboxGraphics private constructor(private val resources: SandboxRenderRe
         batch.color = Color.WHITE
     }
 
+    internal fun drawSandboxPick(shapes: ShapeRenderer, frame: SandboxFrame, preview: SandboxPickPreview) {
+        shapes.color = when (preview.mode) {
+            is SandboxPick.Spawn -> Color.GOLD
+            SandboxPick.Destroy -> Color.RED
+            is SandboxPick.Health -> Color.CYAN
+        }
+        val x = preview.cursor.x.toFloat()
+        val y = preview.cursor.y.toFloat()
+        shapes.line(x - 7f, y, x - 2f, y)
+        shapes.line(x + 2f, y, x + 7f, y)
+        shapes.line(x, y - 7f, x, y - 2f)
+        shapes.line(x, y + 2f, x, y + 7f)
+        val target = frame.observation.units.firstOrNull { it.unitId == preview.targetId } ?: return
+        val center = target.displayedBodyPosition()
+        val radius = (resources.units.getValue(target.typeId).displayRadius * projection.scale).toFloat() + 4f
+        shapes.circle(projection.x(center.x), projection.y(center.y), radius, 32)
+    }
+
     fun drawOverlay(shapes: ShapeRenderer, frame: SandboxFrame, selectedIds: Set<String>, box: Pair<Position, Position>? = null,
                     construction: ConstructionPreview? = null, groundAction: GroundActionPreview? = null,
                     primaryId: String? = null) {

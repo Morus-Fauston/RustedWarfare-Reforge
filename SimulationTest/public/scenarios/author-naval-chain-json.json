@@ -256,8 +256,19 @@
       "targetUnitId": "b"
     },
     {
-      "actionId": "sail-second",
+      "actionId": "clear-corvette",
       "atStep": 2400,
+      "actor": "p1",
+      "unitId": "produced:p1:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "kind": "move",
+      "target": {
+        "x": 290,
+        "y": 85
+      }
+    },
+    {
+      "actionId": "sail-second",
+      "atStep": 2700,
       "actor": "p1",
       "unitId": "produced:p1:cccccccccccccccccccccccccccccccc",
       "kind": "move",

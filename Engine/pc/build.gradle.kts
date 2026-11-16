@@ -60,6 +60,7 @@ distributions {
             from(rootProject.projectDir.parentFile.resolve("SimulationTest/public/scenarios")) {
                 include("phase-five-*.json")
                 include("phase-six-a-*.json")
+                include("phase-seven-camera.json")
                 into("test-scenarios/scenarios")
             }
             from(rootProject.projectDir.parentFile.resolve("SimulationTest/public/inputs/phase-five-sandbox")) {

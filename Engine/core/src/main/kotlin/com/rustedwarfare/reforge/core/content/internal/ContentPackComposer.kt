@@ -105,6 +105,9 @@ internal object ContentPackComposer {
             unit.production?.let { production -> production.unitTypeIds.forEach { target ->
                 val product = units[target]
                 if (product?.build == null) bad(target, "productionUnits", "Production target must exist with build metadata in the final set")
+                if (unit.className == "NativeSeaFactoryFixture" && production.exitProfile == FactoryExitProfile.NATIVE_SEA &&
+                    !NativeSeaFactoryProducts.accepts(unit.techLevel, product))
+                    bad(target, "productionUnits", "Native sea products must qualify for the factory tier and move through water")
                 if (production.exitProfile == FactoryExitProfile.CUSTOM_NAUTILUS && !NautilusRules.acceptsProduct(product))
                     bad(target, "productionUnits", "Nautilus requires the qualified product price, rate and capability")
                 if (unit.className == "AuthoredBuilding" && (!AuthorFactoryRules.body(unit) ||

@@ -73,16 +73,27 @@ class DemoSession(val scenario: Scenario) : AutoCloseable {
 
     fun moveSelected(position: Position) {
         if (!isOpen) return
+        val group = if (selection.size > 1) context.prepareGroupMove("p1", selection, position) else null
         var accepted = 0
+        var withoutDestination = 0
         var rejection: String? = null
         for (unitId in selection) {
-            when (val result = context.submit(MoveAction("demo-${++actionNumber}", "p1", unitId, position, context.world))) {
-                is ActionResult.Accepted -> accepted++
+            val command = MoveAction("demo-${++actionNumber}", "p1", unitId, position, context.world)
+            val result = if (group == null) context.submit(command) else context.submitGroupMove(command, group)
+            when (result) {
+                is ActionResult.Accepted -> {
+                    if (result.events.any { it.kind == "group-destination-unavailable" }) withoutDestination++ else accepted++
+                }
                 is ActionResult.Rejected -> rejection = result.error.code
             }
         }
         if (accepted > 0) lastTarget = position
-        feedback = rejection ?: if (accepted > 0) "Move $accepted" else "No selection"
+        feedback = when {
+            withoutDestination > 0 -> "Move $accepted, no destination $withoutDestination"
+            rejection != null -> rejection
+            accepted > 0 -> "Move $accepted"
+            else -> "No selection"
+        }
         drainSearches()
     }
 
@@ -98,7 +109,9 @@ class DemoSession(val scenario: Scenario) : AutoCloseable {
         if (!isOpen) return
         val sample = context.advance(Step(nextStep, 1.0, "sim-tick"))
         nextStep++
-        sample.events.lastOrNull()?.let { feedback = it.kind }
+        val missingDestinations = sample.events.count { it.kind == "group-destination-unavailable" }
+        if (missingDestinations > 0) feedback = "No destination for $missingDestinations"
+        else sample.events.lastOrNull()?.let { feedback = it.kind }
         projectVisibility()
         drainSearches()
     }

@@ -1,6 +1,7 @@
 package com.rustedwarfare.reforge.client
 
 import com.rustedwarfare.reforge.core.content.BlinkWork
+import com.rustedwarfare.reforge.core.content.SingleSelectionButton
 import com.rustedwarfare.reforge.core.content.UnitDefinition
 import com.rustedwarfare.reforge.core.content.UpgradeActionProfile
 import com.rustedwarfare.reforge.core.content.siteConstruction
@@ -9,7 +10,9 @@ import java.util.Collections
 import java.util.Locale
 
 /** One fixed catalogue per match. Short panel labels and full feedback labels keep their existing roles. */
-internal class ActionCatalogue(private val definitions: Map<String, UnitDefinition>, private val nukesEnabled: Boolean = true) {
+internal class ActionCatalogue(private val definitions: Map<String, UnitDefinition>, private val nukesEnabled: Boolean = true,
+    singleSelectionButtons: Map<String, SingleSelectionButton> = emptyMap()) {
+    private val singleSelectionButtons = singleSelectionButtons.toMap()
     private data class Names(val panel: String, val full: String = panel)
     private val names = mapOf(
         "commandCenter" to Names("Command", "Command center"), "builder" to Names("Builder"),
@@ -141,10 +144,7 @@ internal class ActionCatalogue(private val definitions: Map<String, UnitDefiniti
     private fun production(view: PlayerObservation, queue: FactoryQueueObservation?): List<ProductionActionView> {
         val factory = view.units.singleOrNull { it.unitId == queue?.factoryId } ?: return emptyList()
         val definition = definitions.getValue(factory.typeId)
-        if (factory.constructionProgress < 1f && (definition.className == "AuthoredBuilding" || definition.production?.exitProfile in setOf(
-            com.rustedwarfare.reforge.core.content.FactoryExitProfile.CUSTOM_MECH,
-            com.rustedwarfare.reforge.core.content.FactoryExitProfile.NATIVE_AIR,
-            com.rustedwarfare.reforge.core.content.FactoryExitProfile.AUTHORED_MOBILE))) return emptyList()
+        if (factory.constructionProgress < 1f && definition.productionRequiresCompletedConstruction) return emptyList()
         return immutable(definitions.getValue(factory.typeId).production?.unitTypeIds.orEmpty().map { type ->
             val base = checkNotNull(production[type])
             val action = base.copy(rate = base.rate * checkNotNull(definition.production).speedMultiplier)
@@ -161,6 +161,12 @@ internal class ActionCatalogue(private val definitions: Map<String, UnitDefiniti
 
     private fun affordable(view: PlayerObservation, price: Long): Boolean = view.credits?.let { it >= price.toDouble() }
         ?: (view.balance?.let { it >= price } == true)
+
+    private fun selectionButton(action: CustomUnitActionView, button: SingleSelectionButton?, single: Boolean): CustomUnitActionView? {
+        if (button == null) return action
+        if (single && action.available && !action.groundTargeted) return action.copy(title = button.label)
+        return action.takeIf { it.cancellable }?.copy(available = false)
+    }
 
     fun menu(view: PlayerObservation, ids: Set<String>, primary: String?, localControl: Boolean,
              maintenance: Boolean): ActionMenuView {
@@ -201,9 +207,19 @@ internal class ActionCatalogue(private val definitions: Map<String, UnitDefiniti
             val hint = if (point == null) "Left: choose rally point" else "Left: change point\nRight: clear point"
             CustomUnitActionView("setRally", "Rally point", hint, false, 0, true, point != null, groundTargeted = true)
         }
-        val unitActions = immutable(actionOwners.map { (action, actionUnit) ->
-            actionUnit.attachmentOverview?.let { return@map attachmentAction(action, it, checkNotNull(actionUnit.unitActions)) }
+        val unitActions = immutable(actionOwners.mapNotNull { (action, actionUnit) ->
+            val button = singleSelectionButtons[actionUnit.typeId]?.takeIf { it.action == action.name }
+            val single = ownSingle?.unitId == actionUnit.unitId
             val unitDefinition = definitions.getValue(actionUnit.typeId)
+            actionUnit.attachmentOverview?.let {
+                unitDefinition.attachmentLayout?.offsetActions?.get(action.name)?.let { offset ->
+                    if (!single) return@mapNotNull null
+                    val hint = "Slot ${offset.slot} · X ${offset.x}, Y ${offset.y}"
+                    return@mapNotNull CustomUnitActionView(action.name, action.name, hint, false, 0, action.available, false)
+                }
+                val viewAction = attachmentAction(action, it, checkNotNull(actionUnit.unitActions))
+                return@mapNotNull selectionButton(viewAction, button, single)
+            }
             val definition = unitDefinition?.customActions?.actions?.singleOrNull { it.name == action.name }
             val launch = definition?.groundLaunch
             val blink = unitDefinition.blink
@@ -267,13 +283,14 @@ internal class ActionCatalogue(private val definitions: Map<String, UnitDefiniti
                         (if (affordable) "Left: produce" else "Insufficient funds")
                     else "3.5s\nRange 260 - 9999 / blast 250\nLeft: choose ground point\nEsc / right: cancel selection") +
                     "\nRight on card: cancel one queued"
-            CustomUnitActionView(action.name, title, tooltip,
+            val viewAction = CustomUnitActionView(action.name, title, tooltip,
                 action.queueIndex != null, action.cooldownRemaining, action.available && affordable,
                 cancelAction?.queueIndex != null && cancelUnit?.let { selected ->
                     nuclear || definitions.getValue(selected.typeId).customActions?.actions?.singleOrNull { it.name == action.name }
                         ?.canPlayerCancel == true
                 } == true, action.progress, groundTargeted = launch != null || targetedBlink || action.name == "launchNuke",
                 iconTypeId = launch?.payloadUnitTypeId)
+            selectionButton(viewAction, button, single)
         } + listOfNotNull(rally))
         val profiles = ownPrimary?.takeUnless { it.constructionProgress < 1f &&
             definitions.getValue(it.typeId).className == "AuthoredBuilding" }

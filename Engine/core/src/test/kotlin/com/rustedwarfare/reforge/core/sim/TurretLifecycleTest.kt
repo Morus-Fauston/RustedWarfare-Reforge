@@ -40,8 +40,8 @@ class TurretLifecycleTest {
 
     @Test fun original_700_health_tower_dies_once_stops_firing_and_releases_only_its_own_custom_cells() {
         val base = TurretTestContent.scenario()
-        val staging = listOf(Position(330.0, 40.0), Position(320.0, 80.0), Position(320.0, 120.0),
-            Position(330.0, 160.0), Position(300.0, 60.0), Position(300.0, 100.0))
+        val staging = listOf(Position(414.0, 100.0), Position(439.0, 40.0), Position(561.0, 40.0),
+            Position(586.0, 100.0), Position(561.0, 160.0), Position(439.0, 160.0))
         val units = staging.mapIndexed { i, p -> UnitSpawn("a$i", "p1", "c_tank", p, 90.0) } +
             listOf(UnitSpawn("t", "p2", "c_turret_t1", Position(500.0, 100.0), 270.0),
                 UnitSpawn("g", "p2", "landFactory", Position(400.0, 300.0), 0.0))

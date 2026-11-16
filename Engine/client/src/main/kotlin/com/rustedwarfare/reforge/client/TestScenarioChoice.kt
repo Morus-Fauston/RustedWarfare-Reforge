@@ -12,6 +12,7 @@ import java.security.MessageDigest
 /** The public core scenario is also the menu/session seed. Expectations live in a separate contract. */
 class TestScenarioChoice private constructor(val seed: Path, val root: Path, val id: String,
     val name: String, val content: ContentPackChoice, val scenario: Scenario,
+    val cameraCues: List<OfflineCameraCue>,
     private val identities: Map<Path, String>) {
     fun verifyStable() {
         for ((path, expected) in identities) require(ordinaryHash(path) == expected) {
@@ -85,9 +86,42 @@ class TestScenarioChoice private constructor(val seed: Path, val root: Path, val
                     combat.get("unitObjectIds").associate { it.name to it.asLong() }, combat.getLong("nextObjectId")),
                 economyContract = EconomyContract(document.get("economyContract").get("initialBalances").associate { it.name to it.asLong() }),
                 maintenanceContract = readMaintenance(document, choice.content.units))
-            val result = TestScenarioChoice(seed, root, scene.scenarioId, document.get("testScene").getString("displayName"), choice, scene, identities)
+            val result = TestScenarioChoice(seed, root, scene.scenarioId, document.get("testScene").getString("displayName"),
+                choice, scene, readCameraCues(document), identities)
             result.verifyStable()
             return result
+        }
+
+        private fun readCameraCues(document: JsonValue): List<OfflineCameraCue> {
+            val list = document.get("offlineCamera") ?: return emptyList()
+            require(list.isArray) { "TEST_SCENE_INVALID: offlineCamera must be an array" }
+            return list.mapIndexed { index, entry ->
+                val where = "TEST_SCENE_INVALID: offlineCamera[$index]"
+                require(entry.isObject && entry.get("step")?.isLong == true && entry.get("player")?.isString == true &&
+                    entry.get("motion")?.isString == true) { "$where requires a step, player and motion" }
+                val step = entry.getLong("step")
+                val player = entry.getString("player")
+                fun center(): Position {
+                    require(entry.get("x")?.isNumber == true && entry.get("y")?.isNumber == true) { "$where requires x and y" }
+                    return Position(entry.getDouble("x"), entry.getDouble("y"))
+                }
+                val motion = when (entry.getString("motion")) {
+                    "locate" -> OfflineCameraMotion.Locate(center())
+                    "pan" -> {
+                        val duration = entry.get("durationTicks")
+                        require(duration?.isLong == true && duration.asLong() in 1..Int.MAX_VALUE.toLong()) {
+                            "$where requires a positive durationTicks"
+                        }
+                        OfflineCameraMotion.Pan(center(), duration.asInt())
+                    }
+                    "follow" -> {
+                        require(entry.get("unit")?.isString == true) { "$where requires a unit" }
+                        OfflineCameraMotion.Follow(entry.getString("unit"))
+                    }
+                    else -> error("$where has an unknown motion")
+                }
+                OfflineCameraCue(step, player, motion)
+            }
         }
 
         private fun readMaintenance(document: JsonValue, definitions: Map<String, UnitDefinition>): MaintenanceContract? {

@@ -11,7 +11,7 @@ class MotionV2CoreHistoryTest {
                        disposition:MotionTerrainDisposition=MotionTerrainDisposition.DIRECT)=MotionStepSample(
         "w","u1","p1","tank",step,q,delta,null,Position(100.0,100.0),90.0,0.0,0.0,null,false,
         false,null,null,null,0.0,90.0,0.0,Position(100.0,100.0),Position(100.0,100.0),disposition,
-        Position(100.0,100.0),90.0,0.0,0.0,0.0,0.0,before,after)
+        Position(100.0,100.0),90.0,0.0,0.0,0.0,0.0,before,after, unitContactLimited = false)
     private fun frame(m:MotionStepSample)=MotionV2CoreHistory.Frame(m,emptyList())
 
     @Test fun corrected_accumulates_and_three_direct_steps_clear_while_boundary_preserves_streak() {

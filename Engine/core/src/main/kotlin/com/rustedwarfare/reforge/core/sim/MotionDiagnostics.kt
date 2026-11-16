@@ -14,6 +14,7 @@ data class MotionStepSample(
     val finalPosition: Position, val finalHeading: Double, val finalSpeed: Double, val finalAngularVelocity: Double,
     val localProgressBefore: Double, val localProgressAfter: Double,
     val correctionTimeBefore: Double, val correctionTimeAfter: Double,
+    val unitContactLimited: Boolean,
 )
 
 class MotionDiagnosticsException(val code: String, message: String) : IllegalStateException(message)

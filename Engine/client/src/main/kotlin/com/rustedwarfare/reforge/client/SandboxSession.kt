@@ -4,6 +4,7 @@ import com.rustedwarfare.reforge.core.sim.*
 import com.rustedwarfare.reforge.core.content.MovementType
 import com.rustedwarfare.reforge.core.content.foundationMovementType
 import com.rustedwarfare.reforge.core.content.GroundRules
+import com.rustedwarfare.reforge.core.content.SingleSelectionButton
 import java.util.UUID
 import java.nio.file.Path
 
@@ -24,7 +25,9 @@ data class GroundActionPreview(val source: Position, val position: Position, val
 class SandboxSession(scenario: Scenario, private val evidence: ClientEvidence = ClientEvidence.NONE,
                      val options: SandboxOptions = SandboxOptions(),
                      clockMillis: () -> Long = { System.nanoTime() / 1_000_000L },
-                     val generation: Long = 1L) : AutoCloseable {
+                     val generation: Long = 1L,
+                     cameraCues: List<OfflineCameraCue> = emptyList(),
+                     singleSelectionButtons: Map<String, SingleSelectionButton> = emptyMap()) : AutoCloseable {
     constructor(scenario: Scenario, evidence: ClientEvidence, options: SandboxOptions, clockMillis: () -> Long) :
         this(scenario, evidence, options, clockMillis, 1L)
 
@@ -32,7 +35,7 @@ class SandboxSession(scenario: Scenario, private val evidence: ClientEvidence = 
     val hasConstructorDefinitions: Boolean = this.scenario.unitDefinitions.values.any { it.builder != null }
     val hasProductionDefinitions: Boolean = this.scenario.unitDefinitions.values.any { it.production != null }
     val renderResources: SandboxRenderResources = SandboxRenderResources.from(this.scenario)
-    private val commandHost = OfflineSandboxHost(this.scenario, options.deploymentEnabled, generation)
+    private val commandHost = OfflineSandboxHost(this.scenario, options.deploymentEnabled, generation, cameraCues)
     private val context = commandHost.context
     private val commandWorld = context.world
     private var commandSequence = 0L
@@ -44,6 +47,13 @@ class SandboxSession(scenario: Scenario, private val evidence: ClientEvidence = 
     var sandboxCommandFeedback: String = SandboxCommands.HELP
         private set
     val canDeploy: Boolean get() = isOpen && options.deploymentEnabled
+
+    internal fun updateCamera(camera: OfflineCameraController) {
+        val view = observation
+        camera.advance(view.stepIndex, commandHost.takeCameraMotions(view.playerId)) { id ->
+            view.units.firstOrNull { it.unitId == id && it.alive }?.position
+        }
+    }
 
     fun submitSandboxCommand(text: String): SandboxCommandReceipt = submitSandboxRequest { sequence ->
         SandboxCommandRequest(sequence, commandWorld, generation, text)
@@ -78,18 +88,31 @@ class SandboxSession(scenario: Scenario, private val evidence: ClientEvidence = 
     private fun recordSandboxReceipt(request: SandboxCommandRequest, result: SandboxCommandReceipt) {
         lastSandboxReceipt = result
         deployedProjectileIds.addAll(result.projectileIds.values)
+        val funding = result.credits
+        val unitChange = result.unitChange
         sandboxCommandFeedback = when (result.status) {
             SandboxCommandStatus.HELP -> SandboxCommands.HELP
             SandboxCommandStatus.QUEUED -> "Queued for next simulation step"
-            SandboxCommandStatus.APPLIED -> if (result.unitId != null) "Spawned ${result.unitId}"
-                else if (result.projectileIds.isNotEmpty()) "Deployed ${result.projectileIds.size} projectiles"
-                else "Spawned ${result.generated.size} units"
+            SandboxCommandStatus.APPLIED -> when {
+                funding != null -> "Credits for ${funding.playerId} ${funding.before} to ${funding.after}"
+                unitChange?.destroyed == true -> "Destroyed ${unitChange.unitId}"
+                unitChange != null -> "Health for ${unitChange.unitId} ${unitChange.healthBefore} to ${unitChange.healthAfter}"
+                result.unitId != null -> "Spawned ${result.unitId}"
+                result.projectileIds.isNotEmpty() -> "Deployed ${result.projectileIds.size} projectiles"
+                else -> "Spawned ${result.generated.size} units"
+            }
             SandboxCommandStatus.REJECTED -> "Rejected: ${result.code}" +
                 (result.errorPosition?.let { " at character $it" } ?: "") +
                 (result.failedEntry?.let { " in entry ${it + 1}" } ?: "")
         }
         evidence.recordWhenEnabled("sandbox-command") {
             val command = result.command as? SandboxCommand.Spawn
+            val credits = result.command as? SandboxCommand.Credits
+            val unitControl = when (val operation = result.command) {
+                is SandboxCommand.Destroy -> mapOf("operation" to "destroy", "unitId" to operation.unitId)
+                is SandboxCommand.Health -> mapOf("operation" to "health", "unitId" to operation.unitId, "amount" to operation.amount)
+                else -> null
+            }
             mapOf("requestSequence" to result.sequence, "generation" to result.generation,
                 "worldId" to result.worldId, "stepIndex" to (result.stepIndex ?: nextStep),
                 "status" to result.status.name, "input" to request.text.take(512),
@@ -98,6 +121,10 @@ class SandboxSession(scenario: Scenario, private val evidence: ClientEvidence = 
                     "state" to it.state.name.lowercase(java.util.Locale.ROOT)) },
                 "unitId" to result.unitId, "generated" to result.generated, "failedEntry" to result.failedEntry,
                 "projectileIds" to result.projectileIds.takeIf { it.isNotEmpty() },
+                "credits" to credits?.let { mapOf("player" to it.playerId, "amount" to it.amount.toString(),
+                    "before" to result.credits?.before, "after" to result.credits?.after) },
+                "unitControl" to unitControl?.plus(mapOf("healthBefore" to unitChange?.healthBefore,
+                    "healthAfter" to unitChange?.healthAfter, "destroyed" to unitChange?.destroyed)),
                 "code" to result.code, "errorPosition" to result.errorPosition)
         }
     }
@@ -108,7 +135,7 @@ class SandboxSession(scenario: Scenario, private val evidence: ClientEvidence = 
     private var latestFrame: SandboxFrame? = null
     val frame: SandboxFrame get() = checkNotNull(latestFrame) { "Match is closed" }
     val observation: PlayerObservation get() = frame.observation
-    private val actionCatalogue = ActionCatalogue(this.scenario.unitDefinitions, this.scenario.nukesEnabled)
+    private val actionCatalogue = ActionCatalogue(this.scenario.unitDefinitions, this.scenario.nukesEnabled, singleSelectionButtons)
     private var menuObservation: PlayerObservation? = null
     private var menuSelectionRevision = -1L
     private var menu: ActionMenuView? = null
@@ -179,6 +206,7 @@ class SandboxSession(scenario: Scenario, private val evidence: ClientEvidence = 
             feedback == "production-cancelled" -> "Production cancelled; funds returned"
             feedback == "empty-production-queue" -> "Production queue is empty"
             feedback == "path-unreachable" -> "Destination is unreachable"
+            feedback.startsWith("No destination for ") -> feedback
             feedback == "action-target-out-of-range" -> "Location too far"
             feedback == "action-target-impassable" -> "Invalid map location (must be passable by HOVER)"
             feedback == "unit-action-cooldown" -> "Action is cooling down"
@@ -376,8 +404,12 @@ class SandboxSession(scenario: Scenario, private val evidence: ClientEvidence = 
         apply(CancelUpgradeAction("click-${++actionNumber}", "p1", checkNotNull(selectedId), it.actionKey, context.world))
     }
 
-    fun move(position: Position): ActionResult? = dispatch(applicable = ::canMove) { id ->
-        MoveAction("click-${++actionNumber}", "p1", id, position, context.world)
+    fun move(position: Position): ActionResult? {
+        val selection = selectedIds
+        val group = if (selection.size > 1) context.prepareGroupMove("p1", selection, position) else null
+        return dispatch(selection, ::canMove, group) { id ->
+            MoveAction("click-${++actionNumber}", "p1", id, position, context.world)
+        }
     }
     val canPatrol: Boolean get() = isOpen && observation.units.any { it.unitId in selectedIds && canMove(it) }
     private fun canMove(unit: UnitObservation): Boolean = controllable(unit) && unit.carriedBy == null &&
@@ -455,6 +487,7 @@ class SandboxSession(scenario: Scenario, private val evidence: ClientEvidence = 
         }
 
     private fun dispatch(selectionAtPress: Set<String> = selectedIds, applicable: (UnitObservation) -> Boolean = ::controllable,
+                         moveGroup: GroupMovePlan? = null,
                          action: (String) -> Action): ActionResult? {
         val members = selectionAtPress.sorted()
         val revision = selectionRevision
@@ -463,7 +496,7 @@ class SandboxSession(scenario: Scenario, private val evidence: ClientEvidence = 
         lastCommandBatch = null
         for (id in members) {
             if (members.size > 1 && observation.units.none { it.unitId == id && applicable(it) }) { skipped++; continue }
-            results += SelectionCommandMember(id, apply(action(id)))
+            results += SelectionCommandMember(id, apply(action(id), moveGroup))
         }
         val batch = SelectionCommandBatch(results, skipped)
         lastCommandBatch = batch
@@ -471,7 +504,9 @@ class SandboxSession(scenario: Scenario, private val evidence: ClientEvidence = 
             feedback = "No selection"
             rejectedFeedback = false
         } else if (members.size > 1) {
-            feedback = (if (batch.queueFull == members.size) "construction-queue-full"
+            feedback = (if (batch.withoutDestination > 0)
+                "Accepted ${batch.dispatched}, no destination ${batch.withoutDestination}, rejected ${batch.rejected}, skipped ${batch.skipped}"
+                else if (batch.queueFull == members.size) "construction-queue-full"
                 else if (batch.queueFull > 0) "Added ${batch.added}, queue full ${batch.queueFull}, rejected ${batch.rejected}, skipped ${batch.skipped}"
                 else "Accepted ${batch.accepted}, rejected ${batch.rejected}, skipped ${batch.skipped}") +
                 results.mapNotNull { (it.result as? ActionResult.Rejected)?.error?.code }.distinct().joinToString(", ", prefix = "; ")
@@ -479,6 +514,7 @@ class SandboxSession(scenario: Scenario, private val evidence: ClientEvidence = 
         }
         evidence.recordWhenEnabled("selection-command") { mapOf("accepted" to batch.accepted,
             "added" to batch.added, "queueFull" to batch.queueFull, "rejected" to batch.rejected, "skipped" to batch.skipped,
+            "withoutDestination" to batch.withoutDestination,
             "selectionRevision" to revision, "selectionAtPress" to members,
             "members" to results.map { mapOf("unitId" to it.unitId, "result" to it.result.fields()) }) }
         return results.lastOrNull()?.result
@@ -536,7 +572,11 @@ class SandboxSession(scenario: Scenario, private val evidence: ClientEvidence = 
                 productionNotice = ProductionNotice("${unitTitle(unit.typeId)} created", observation.stepIndex)
             }
         }
-        if (!rejectedFeedback) observation.events.lastOrNull()?.let { feedback = it.kind }
+        if (!rejectedFeedback) {
+            val missingDestinations = observation.events.count { it.kind == "group-destination-unavailable" }
+            if (missingDestinations > 0) feedback = "No destination for $missingDestinations"
+            else observation.events.lastOrNull()?.let { feedback = it.kind }
+        }
         capture("step")
     }
 
@@ -588,9 +628,15 @@ class SandboxSession(scenario: Scenario, private val evidence: ClientEvidence = 
             "start" to start.fields(), "end" to end.fields(), "mode" to mode.name) }
     }
 
-    private fun unitAt(position: Position, selectionOnly: Boolean = false): String? = observation.units.asSequence()
+    internal fun sandboxPickTargetAt(position: Position, requiresHealth: Boolean): String? =
+        unitAt(position, eligible = { unit ->
+            (!requiresHealth || unit.health != null) && renderResources.units.getValue(unit.typeId).isDrawn(unit)
+        })
+
+    private fun unitAt(position: Position, selectionOnly: Boolean = false,
+                       eligible: (UnitObservation) -> Boolean = { true }): String? = observation.units.asSequence()
         .filter { unit -> unit.alive && scenario.unitDefinitions.getValue(unit.typeId).attachmentModule
-            ?.let { !selectionOnly && !it.empty } != false }
+            ?.let { !selectionOnly && !it.empty } != false && eligible(unit) }
         .map { unit ->
             val center = unit.displayedBodyPosition()
             val dx = center.x - position.x
@@ -604,9 +650,9 @@ class SandboxSession(scenario: Scenario, private val evidence: ClientEvidence = 
         .sortedWith(compareBy<Pair<UnitObservation, Double>> { it.second }.thenBy { it.first.unitId })
         .firstOrNull()?.first?.unitId
 
-    private fun apply(action: Action): ActionResult {
+    private fun apply(action: Action, moveGroup: GroupMovePlan? = null): ActionResult {
         capture("before-action")
-        val result = context.submit(action)
+        val result = if (moveGroup == null) context.submit(action) else context.submitGroupMove(action as MoveAction, moveGroup)
         publishFrame()
         feedback = when (result) {
             is ActionResult.Rejected -> result.error.code
@@ -692,6 +738,10 @@ class SelectionCommandBatch(members: List<SelectionCommandMember>, val skipped: 
     val members: List<SelectionCommandMember> = java.util.Collections.unmodifiableList(ArrayList(members))
     val accepted: Int get() = members.count { it.result is ActionResult.Accepted }
     val rejected: Int get() = members.count { it.result is ActionResult.Rejected }
+    val withoutDestination: Int get() = members.count { member ->
+        (member.result as? ActionResult.Accepted)?.events?.any { it.kind == "group-destination-unavailable" } == true
+    }
+    val dispatched: Int get() = accepted - withoutDestination
     val queueFull: Int get() = members.count { member ->
         (member.result as? ActionResult.Accepted)?.events?.any { it.kind == "construction-queue-full" } == true
     }

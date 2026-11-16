@@ -18,8 +18,11 @@ internal object Transport {
 
     /** Native placement can occupy the small negative strip that JVM f2i maps to cell zero. */
     fun containsPosition(unit: MutableUnit, map: MapDefinition, position: Position): Boolean {
-        if (MapBounds.contains(map.widthTiles.toDouble() * map.tileWidth,
-                map.heightTiles.toDouble() * map.tileHeight, position, boundaryRadius(unit))) return true
+        val within = if (unit.nativeTransportPlacement)
+            MapBounds.contains(map.widthTiles.toDouble() * map.tileWidth,
+                map.heightTiles.toDouble() * map.tileHeight, position, 0.0)
+        else MapBounds.containsHull(map, position, unit.heading, unit.definition.movementCollision)
+        if (within) return true
         if (!unit.nativeTransportPlacement || !position.x.isFinite() || !position.y.isFinite()) return false
         if (unit.scoutOrigin != null) {
             // A spread impact may be outside the map. Keep the observed birth pose and permit a route back inside.
@@ -199,7 +202,8 @@ internal object Transport {
         unit.transportState = unit.transportState?.copy(motionGate = hasNormalAim)
     }
 
-    fun advance(unit: MutableUnit, units: Map<String, MutableUnit>, map: MapDefinition, delta: Double): List<Event> {
+    fun advance(unit: MutableUnit, units: Map<String, MutableUnit>, map: MapDefinition, delta: Double,
+                acceptsHeight: (Double) -> Boolean): List<Event> {
         if (unit.nativeTransportPlacement && MapBounds.contains(map.widthTiles.toDouble() * map.tileWidth,
                 map.heightTiles.toDouble() * map.tileHeight, unit.position, unit.definition.radius))
             unit.nativeTransportPlacement = false
@@ -222,7 +226,10 @@ internal object Transport {
                 if (passenger == null) state = state.copy(unloading = false)
                 else {
                     val negativeSide = state.passengerIds.size % 2 == 0
-                    val point = landingPoint(unit, passenger, map, negativeSide)
+                    val heading = ScreenPlane.normalize(if (nautilus) unit.heading else unit.heading - 180.0)
+                    val point = landingPoint(unit, passenger, map, negativeSide) { candidate ->
+                        UnitAttachments.containsAdjustedSlots(units, passenger, map, candidate, heading)
+                    }
                     if (point == null) events += Event("unload-blocked", unit.unitId)
                     else {
                         // Commit relation and manifest together only after a candidate is legal.
@@ -231,8 +238,9 @@ internal object Transport {
                         passenger.position = point
                         passenger.nativeTransportPlacement = !MapBounds.contains(map.widthTiles.toDouble() * map.tileWidth,
                             map.heightTiles.toDouble() * map.tileHeight, point, passenger.definition.radius)
-                        passenger.heading = ScreenPlane.normalize(if (nautilus) unit.heading else unit.heading - 180.0)
+                        passenger.heading = heading
                         if (nautilus) passenger.height = unit.height
+                        UnitAttachments.synchronizeAdjustedChildren(units, passenger)
                         passenger.transportExit = TransportExitObservation(unit.unitId, 45f)
                         passenger.attackCommand = null
                         passenger.clearWeaponTargets()
@@ -271,7 +279,8 @@ internal object Transport {
             val target = if (landing) 2f else 35f + GroundMath.sin(phase) * 1.5f
             val limit = (if (landing) .4f else .35f) * delta.toFloat()
             val height = unit.height.toFloat()
-            unit.height = (if (height < target) minOf(target, height + limit) else maxOf(target, height - limit)).toDouble()
+            val nextHeight = (if (height < target) minOf(target, height + limit) else maxOf(target, height - limit)).toDouble()
+            if (acceptsHeight(nextHeight)) unit.height = nextHeight
             return events
         }
         var phase = unit.heightPhase.toFloat() + 4f * delta.toFloat()
@@ -287,7 +296,8 @@ internal object Transport {
     private fun liquid(unit: MutableUnit, map: MapDefinition) = map.isLiquid(
         (unit.position.x.toFloat() / map.tileWidth).toInt(), (unit.position.y.toFloat() / map.tileHeight).toInt())
 
-    private fun landingPoint(carrier: MutableUnit, passenger: MutableUnit, map: MapDefinition, negativeSide: Boolean): Position? {
+    private fun landingPoint(carrier: MutableUnit, passenger: MutableUnit, map: MapDefinition, negativeSide: Boolean,
+                             acceptsPosition: (Position) -> Boolean): Position? {
         val rear = carrier.heading.toFloat() - 270f
         val side = if (negativeSide) -9f else 9f
         val x: Float
@@ -309,10 +319,11 @@ internal object Transport {
         }
         val candidates = listOf(x to y, x + 10f to y, x - 10f to y, x - 20f to y + 10f, x - 20f to y - 10f)
         val blocking = map.blockingFor(UnitLocomotion.movement(passenger).type)
-        return candidates.firstOrNull { (px, py) ->
+        return candidates.firstNotNullOfOrNull { (px, py) ->
             val column = (px / map.tileWidth).toInt(); val row = (py / map.tileHeight).toInt()
-            column in 0 until map.widthTiles && row in 0 until map.heightTiles && !blocking.isBlocked(column, row)
-        }?.let { Position(it.first.toDouble(), it.second.toDouble()) }
+            if (column in 0 until map.widthTiles && row in 0 until map.heightTiles && !blocking.isBlocked(column, row))
+                Position(px.toDouble(), py.toDouble()).takeIf(acceptsPosition) else null
+        }
     }
 
     fun request(action: LoadAction, actor: MutableUnit, target: MutableUnit,
@@ -325,10 +336,10 @@ internal object Transport {
             action.actionId, targetUnitId = target.unitId, atStep = action.atStep))
         actor.attackCommand = null
         actor.cancelRoute()
-        return advanceLoading(actor, units) ?: error("A new load order must be active")
+        return advanceLoading(actor, units, allowHullContact = false) ?: error("A new load order must be active")
     }
 
-    fun advanceLoading(actor: MutableUnit, units: Map<String, MutableUnit>): TransportChange? {
+    fun advanceLoading(actor: MutableUnit, units: Map<String, MutableUnit>, allowHullContact: Boolean = true): TransportChange? {
         val task = actor.tasks.firstOrNull()?.takeIf { it.kind == UnitTaskKind.LOAD_INTO || it.kind == UnitTaskKind.LOAD_UP }
             ?: return null
         val target = units[task.targetUnitId]
@@ -345,7 +356,11 @@ internal object Transport {
         val x = carrier.position.x.toFloat() - passenger.position.x.toFloat()
         val y = carrier.position.y.toFloat() - passenger.position.y.toFloat()
         val squared = x * x + y * y
-        if (if (into) squared >= 441f else squared > 441f) return TransportChange(approach = target.position)
+        val beyondBoardingRange = if (into) squared >= 441f else squared > 441f
+        // A valid boarding order can finish at hull contact when the native center threshold
+        // would require penetrating the carrier. Other movement still uses the same collision.
+        if (beyondBoardingRange && !(allowHullContact && UnitContact.inContact(passenger, carrier)))
+            return TransportChange(approach = target.position)
         val state = checkNotNull(carrier.transportState)
         carrier.transportState = state.copy(passengerIds = immutable(state.passengerIds + passenger.unitId))
         passenger.carriedBy = carrier.unitId

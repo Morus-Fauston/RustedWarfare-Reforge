@@ -116,13 +116,21 @@
       "com.rustedwarfare.reforge.core.sim.BattleshipSoundTest",
       "com.rustedwarfare.reforge.core.sim.BattleshipTorpedoDefenseTest",
       "com.rustedwarfare.reforge.core.sim.NavalConstructionChainTest",
+      "com.rustedwarfare.reforge.core.sim.NativeSeaDepartureTest",
       "com.rustedwarfare.reforge.core.sim.SeaFactoryBirthBoundaryTest",
       "com.rustedwarfare.reforge.core.sim.SeaFactoryFailureTest",
       "com.rustedwarfare.reforge.core.sim.SeaFactoryProductionTest",
       "com.rustedwarfare.reforge.core.sim.SeaFactoryUpgradeTest",
       "com.rustedwarfare.reforge.core.sim.UnderwaterTargetContractTest",
+      "com.rustedwarfare.reforge.core.sim.UnitContactTest",
+      "com.rustedwarfare.reforge.core.sim.UnitYieldTest",
+      "com.rustedwarfare.reforge.core.sim.RouteContinuationTest",
+      "com.rustedwarfare.reforge.core.sim.NarrowPassageTest",
+      "com.rustedwarfare.reforge.core.sim.GroupMoveDestinationsTest",
       "com.rustedwarfare.reforge.core.sim.WaterMovementTest",
       "com.rustedwarfare.reforge.core.sim.SandboxCommandParserTest",
+      "com.rustedwarfare.reforge.core.sim.SandboxCreditsTest",
+      "com.rustedwarfare.reforge.core.sim.SandboxUnitControlTest",
       "com.rustedwarfare.reforge.core.sim.OfflineSandboxHostTest",
       "com.rustedwarfare.reforge.core.sim.WeaponAssemblyRuntimeTest",
       "com.rustedwarfare.reforge.core.content.AuthorWaterContentTest",
@@ -449,6 +457,11 @@
     ]
   },
   "short": [
+    {
+      "id": "phase-seven-gunboat",
+      "scenario": "scenarios/phase-seven-gunboat.json",
+      "contract": "contracts/phase-seven-gunboat.json"
+    },
     {
       "id": "phase-six-a-default",
       "backend": "session",
@@ -1387,6 +1400,11 @@
     }
   ],
   "long": [
+    {
+      "id": "phase-seven-gunboat-long",
+      "scenario": "scenarios/phase-seven-gunboat.json",
+      "contract": "contracts/phase-seven-gunboat.json"
+    },
     {
       "id": "modular-spider-mixed-modules",
       "backend": "session",

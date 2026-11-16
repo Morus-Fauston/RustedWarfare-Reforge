@@ -41,12 +41,16 @@ internal object AttachmentBlink {
         }
     }
 
-    fun advanceParent(state: StepState, parent: MutableUnit, pending: SpiderBlink) {
+    fun advanceParent(state: StepState, parent: MutableUnit, pending: SpiderBlink, map: MapDefinition) {
         if (pending.remaining > 1) {
             parent.spiderBlink = pending.copy(remaining = pending.remaining - 1)
             return
         }
         parent.spiderBlink = null
+        if (!UnitAttachments.containsAdjustedSlots(state.units, parent, map, pending.target)) {
+            state.pendingEvents += Event("unit-action-blink-blocked", parent.unitId)
+            return
+        }
         Blink.teleport(state, parent, pending.target)
     }
 

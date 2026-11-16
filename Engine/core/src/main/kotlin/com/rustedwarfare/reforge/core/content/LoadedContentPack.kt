@@ -14,6 +14,7 @@ class LoadedContentPack internal constructor(
     unitFiles: Map<String, Path> = emptyMap(),
     unitFieldOrigins: Map<String, Map<Pair<String, String>, Origin>> = emptyMap(),
     val opening: ContentPackOpening? = null,
+    val singleSelectionButton: SingleSelectionButton? = null,
 ) {
     val units: Map<String, UnitDefinition> = Collections.unmodifiableMap(LinkedHashMap(units))
     val sources: List<ContentSourceIdentity> = Collections.unmodifiableList(ArrayList(sources))
@@ -42,3 +43,5 @@ class LoadedContentPack internal constructor(
 }
 
 data class ContentReplacement(val targetPackId: String, val targetContentId: String)
+
+data class SingleSelectionButton(val unitType: String, val action: String, val label: String)

@@ -36,6 +36,9 @@
       "intentId": "attack-builder"
     },
     {
+      "intentId": "clear-corvette"
+    },
+    {
       "intentId": "select-frigate"
     },
     {

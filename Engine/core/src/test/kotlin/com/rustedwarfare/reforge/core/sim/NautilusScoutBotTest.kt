@@ -153,8 +153,16 @@ class NautilusScoutBotTest {
             val water = context.observe().units.single { it.unitId == first.unitId }
             assertEquals("robotCrabWater", water.typeId)
             assertEquals(1f - .0005f, water.energy!!.current)
-            assertIs<ActionResult.Accepted>(context.submit(MoveAction("scout-to-land", "p1", first.unitId, Position(370.0, 180.0), context.world)))
-            while (step <= 750 && context.observe().units.single { it.unitId == first.unitId }.typeId != "robotCrab")
+            // Clear the mother's contact hull before crossing the shore.
+            assertIs<ActionResult.Accepted>(context.submit(MoveAction("scout-around-mother", "p1", first.unitId,
+                Position(first.position.x, 90.0), context.world)))
+            val bypassDeadline = step + 350L
+            while (step <= bypassDeadline && context.observe().units.single { it.unitId == first.unitId }.position.y > 105.0)
+                context.advance(Step(step++, 1.0, "sim-tick"))
+            assertTrue(context.observe().units.single { it.unitId == first.unitId }.position.y <= 105.0)
+            assertIs<ActionResult.Accepted>(context.submit(MoveAction("scout-to-land", "p1", first.unitId, Position(370.0, 90.0), context.world)))
+            val shoreDeadline = step + 750L
+            while (step <= shoreDeadline && context.observe().units.single { it.unitId == first.unitId }.typeId != "robotCrab")
                 context.advance(Step(step++, 1.0, "sim-tick"))
             val land = context.observe().units.single { it.unitId == first.unitId }
             assertEquals("robotCrab", land.typeId)

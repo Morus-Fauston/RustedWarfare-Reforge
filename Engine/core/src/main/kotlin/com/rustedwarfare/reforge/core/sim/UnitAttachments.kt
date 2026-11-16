@@ -3,6 +3,7 @@ package com.rustedwarfare.reforge.core.sim
 import com.rustedwarfare.reforge.core.content.AttachmentAutomaticAction
 import com.rustedwarfare.reforge.core.content.AttachmentSlotDefinition
 import com.rustedwarfare.reforge.core.content.AttachmentInstall
+import com.rustedwarfare.reforge.core.content.AttachmentOffsetAction
 import com.rustedwarfare.reforge.core.content.AttachmentRemoval
 import com.rustedwarfare.reforge.core.content.AttachmentUpgrade
 import com.rustedwarfare.reforge.core.content.MapDefinition
@@ -53,10 +54,13 @@ internal object UnitAttachments {
         if (height <= 1f) parent.openingFallSpeed = 0f
     }
 
-    fun position(parent: MutableUnit, slot: AttachmentSlotDefinition): Position {
-        val forward = ScreenPlane.displacement(parent.heading, slot.y)
-        val right = ScreenPlane.displacement(parent.heading + 90.0, slot.x)
-        return Position(parent.position.x + forward.x + right.x, parent.position.y + forward.y + right.y)
+    fun position(parent: MutableUnit, slot: AttachmentSlotDefinition): Position =
+        position(parent.position, parent.heading, parent.attachmentOffsets[slot.number] ?: Position(slot.x, slot.y))
+
+    private fun position(center: Position, heading: Double, offset: Position): Position {
+        val forward = ScreenPlane.displacement(heading, offset.y)
+        val right = ScreenPlane.displacement(heading + 90.0, offset.x)
+        return Position(center.x + forward.x + right.x, center.y + forward.y + right.y)
     }
 
     fun heading(parent: MutableUnit, slot: AttachmentSlotDefinition): Double =
@@ -77,6 +81,79 @@ internal object UnitAttachments {
 
     private fun childId(parent: MutableUnit, number: Int): String = parent.attachmentIds.getValue(number)
 
+    private fun radius(child: MutableUnit): Double =
+        if (child.definition.attachmentModule?.empty == true) ModularSpiderRules.MOUNTED_RADIUS else child.definition.radius
+
+    private fun fits(map: MapDefinition, position: Position, radius: Double): Boolean =
+        MapBounds.contains(map.widthTiles.toDouble() * map.tileWidth, map.heightTiles.toDouble() * map.tileHeight,
+            position, radius)
+
+    fun containsChild(units: Map<String, MutableUnit>, child: MutableUnit, map: MapDefinition): Boolean {
+        val binding = child.attachment
+        val adjusted = binding != null && units[binding.parentId]?.attachmentOffsets?.containsKey(binding.slot.number) == true
+        return if (adjusted) fits(map, child.position, radius(child))
+        else Transport.containsPosition(child, map, child.position)
+    }
+
+    fun containsAdjustedSlots(units: Map<String, MutableUnit>, parent: MutableUnit, map: MapDefinition,
+                              center: Position = parent.position, heading: Double = parent.heading): Boolean =
+        parent.attachmentOffsets.all { (number, offset) ->
+            fits(map, position(center, heading, offset), radius(units.getValue(childId(parent, number))))
+        }
+
+    fun synchronizeAdjustedChildren(units: Map<String, MutableUnit>, parent: MutableUnit) {
+        for (number in parent.attachmentOffsets.keys) {
+            val child = units.getValue(childId(parent, number))
+            synchronize(parent, child, checkNotNull(child.attachment).slot)
+        }
+    }
+
+    fun limitTranslation(units: Map<String, MutableUnit>, parent: MutableUnit, map: MapDefinition, requested: Position): Position {
+        if (containsAdjustedSlots(units, parent, map, requested)) return requested
+        val start = parent.position
+        var low = 0.0
+        var high = 1.0
+        var legal = start
+        repeat(52) {
+            val middle = (low + high) / 2.0
+            val candidate = Position(start.x + (requested.x - start.x) * middle, start.y + (requested.y - start.y) * middle)
+            if (containsAdjustedSlots(units, parent, map, candidate)) {
+                low = middle
+                legal = candidate
+            } else high = middle
+        }
+        return legal
+    }
+
+    fun limitTurn(units: Map<String, MutableUnit>, parent: MutableUnit, map: MapDefinition, from: Double, requested: Double): Double {
+        if (from == requested || parent.attachmentOffsets.isEmpty()) return requested
+        val width = map.widthTiles.toDouble() * map.tileWidth
+        val height = map.heightTiles.toDouble() * map.tileHeight
+        var legal = requested
+        for ((number, offset) in parent.attachmentOffsets) {
+            val radius = radius(units.getValue(childId(parent, number)))
+            legal = RectangularTurn.pointWithinMap(parent.position, offset, radius, width, height, from, legal) { heading ->
+                fits(map, position(parent.position, heading, offset), radius)
+            }
+        }
+        return legal
+    }
+
+    fun adjustOffset(state: StepState, parent: MutableUnit, action: UnitAction,
+                     offset: AttachmentOffsetAction, map: MapDefinition): SimulationError? {
+        if (action.cancelQueued || action.target != null)
+            return SimulationError("invalid-slot-action", "An attachment offset takes no target or cancellation")
+        val child = state.units[childId(parent, offset.slot)]?.takeIf { it.alive && !it.reclaimed }
+            ?: return SimulationError("attachment-slot-unavailable", "The attachment slot is unavailable")
+        val relative = Position(offset.x, offset.y)
+        val target = position(parent.position, parent.heading, relative)
+        if (!fits(map, target, radius(child)))
+            return SimulationError("attachment-outside-map", "The adjusted attachment would be outside the map")
+        parent.attachmentOffsets = parent.attachmentOffsets + (offset.slot to relative)
+        synchronize(parent, child, checkNotNull(child.attachment).slot)
+        return null
+    }
+
     fun overview(state: StepState, parent: MutableUnit): AttachmentOverview? {
         val layout = parent.definition.attachmentLayout?.takeIf { parent.alive && !parent.reclaimed } ?: return null
         val slots = layout.slots.mapNotNull { slot ->
@@ -89,6 +166,10 @@ internal object UnitAttachments {
     fun observe(state: StepState, parent: MutableUnit, overview: AttachmentOverview, time: Double): UnitActionsObservation {
         val actions = overview.slots.mapTo(mutableListOf()) { slot ->
             UnitActionObservation("selectSlot${slot.number}", null, null, 0, true)
+        }
+        checkNotNull(parent.definition.attachmentLayout).offsetActions.forEach { (name, offset) ->
+            val available = state.units[childId(parent, offset.slot)]?.let { it.alive && !it.reclaimed } == true
+            actions += UnitActionObservation(name, null, null, 0, available)
         }
         actions += UnitActionObservation("selectSlotBuild", null, null, 0, overview.selectedSlot != null)
         val child = overview.selectedSlot?.let { state.units[childId(parent, it)] }
@@ -331,13 +412,16 @@ internal object UnitAttachments {
             val binding = child.attachment ?: continue
             val parent = state.units[binding.parentId]
             val cancel = child.attachmentOrder as? AttachmentOrder.Cancel
+            val health = checkNotNull(child.health)
+            if (health >= 1.0) child.sandboxPreservesPositiveAttachmentHealth = false
             if (parent == null || !parent.alive || parent.reclaimed) {
                 refundPayment(state, child)
                 AttachmentInterceptor.discardQueue(state, child)
                 child.reclaimed = true
                 state.missileTargets = state.missileTargets?.remove(child.unitId)
                 state.pendingEvents += Event("attachment-removed", child.unitId)
-            } else if (checkNotNull(child.health) < 1.0 && child.definition.attachmentModule?.empty == false) {
+            } else if (health < 1.0 && (health == 0.0 || !child.sandboxPreservesPositiveAttachmentHealth) &&
+                child.definition.attachmentModule?.empty == false) {
                 refundPayment(state, child)
                 AttachmentInterceptor.discardQueue(state, child)
                 convert(input, child, binding.slot.initialTypeId, 1f)

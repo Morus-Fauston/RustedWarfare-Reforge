@@ -441,6 +441,14 @@ internal data class MutableUnit(
     var lastPlannedBuildingRevision: Long = -1L,
     var nearTargetTime: Double = 0.0,
     var localMotion: LocalMotionSegment? = null,
+    var routeContinuation: RouteContinuation? = null,
+    var stalledRouteTicks: Long = 0,
+    var routeTranslationClipped: Boolean = false,
+    var routeOccupantIds: List<String> = emptyList(),
+    var passageEntry: PassageEntry? = null,
+    var groupMoveReservation: GroupMoveReservation? = null,
+    var lastYieldStep: Long = -1L,
+    var lastYieldTo: Pair<String, String>? = null,
     var localProgressTime: Double = 0.0,
     var terrainCorrectionTime: Double = 0.0,
     var terrainClearSteps: Int = 0,
@@ -456,7 +464,7 @@ internal data class MutableUnit(
     var height: Double = definition.movement.flight?.startingHeightOffset ?: 0.0,
     var submarineSurfaceIntent: Boolean = false,
     var submarineVerticalSpeed: Float = 0f,
-    var submarineSurfacePresentation: Boolean = true,
+    var submarineSurfacePresentation: Boolean = definition.submarine == null || height >= UnitLocomotion.SUBMERGED_DEPTH,
     var amphibiousState: AmphibiousJetState? = if (definition.amphibiousJet != null) AmphibiousJetState() else null,
     var heightPhase: Double = 0.0,
     var flightIdleTime: Float = 0f,
@@ -512,7 +520,9 @@ internal data class MutableUnit(
     var energy: Float = definition.energy?.maximum ?: 0f,
     var energyRecharging: Boolean = false,
     var attachment: AttachmentBinding? = null,
+    var sandboxPreservesPositiveAttachmentHealth: Boolean = false,
     var attachmentIds: Map<Int, String> = emptyMap(),
+    var attachmentOffsets: Map<Int, Position> = emptyMap(),
     var openingFallSpeed: Float = 0f,
     var selectedAttachmentSlot: Int? = null,
     var attachmentMoveSpeed: Double? = null,
@@ -525,10 +535,11 @@ internal data class MutableUnit(
     var blinkCooldownUntil: Double = 0.0,
     var blinkUnlocked: Boolean = false,
     var spiderBlink: SpiderBlink? = null,
+    var destroyedWithoutHealth: Boolean = false,
 ) {
     val producerId: String? get() = productionOrigin?.producerId
     val reversing: Boolean get() = mechState?.reversing ?: bodyReversing
-    val alive: Boolean get() = deathPending || health == null || checkNotNull(health) > 0.0
+    val alive: Boolean get() = !destroyedWithoutHealth && (deathPending || health == null || checkNotNull(health) > 0.0)
     val tasks: List<UnitTask> get() = taskQueue.tasks
     var primaryCombatTargetId: String?
         get() = if (namedWeapons != null) sharedWeaponTargetId else combat?.targetId
@@ -562,16 +573,22 @@ internal data class MutableUnit(
     fun pauseRoute() {
         moveTarget = null
         pathPoints.clear()
+        passageEntry = null
         clearMoveOrigin()
         movementState = if (speed != 0.0) MovementState.DECELERATING else MovementState.IDLE
     }
 
     /** Replanning and repair preserve command identity, completion time and terrain history. */
-    fun adoptRoute(points: List<Position>, logicalTarget: Position, knowledgeRevision: Long, buildingRevision: Long = -1L) {
+    fun adoptRoute(points: List<Position>, logicalTarget: Position, knowledgeRevision: Long, buildingRevision: Long = -1L,
+                   occupantIds: List<String> = emptyList()) {
         recordLogicalTarget(logicalTarget)
         pendingPathNodeCounts = immutable(pendingPathNodeCounts + points.size)
         pathPoints = points.toMutableList()
         localMotion = null
+        routeContinuation = null
+        stalledRouteTicks = 0
+        routeTranslationClipped = false
+        routeOccupantIds = occupantIds
         localProgressTime = 0.0
         lastPlannedKnowledgeRevision = knowledgeRevision
         lastPlannedBuildingRevision = buildingRevision
@@ -611,10 +628,15 @@ internal data class MutableUnit(
     fun clearMoveOrigin() {
         originMoveId = null
         originAtStep = null
+        groupMoveReservation = null
         lastPlannedKnowledgeRevision = -1L
         lastPlannedBuildingRevision = -1L
         nearTargetTime = 0.0
         localMotion = null
+        routeContinuation = null
+        stalledRouteTicks = 0
+        routeTranslationClipped = false
+        routeOccupantIds = emptyList()
         localProgressTime = 0.0
     }
 }

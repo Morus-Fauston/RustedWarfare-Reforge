@@ -62,7 +62,7 @@ class SeaFactoryBirthBoundaryTest {
 
     @Test fun an_external_dry_wall_blocks_the_native_exit_without_duplicate_birth_or_charge_and_a_legal_move_recovers() = WaterTestScene.withMap { source ->
         val gids = source.groundGids
-        for (column in 20..39) gids[13 * 40 + column] = 1
+        for (column in 20..39) gids[15 * 40 + column] = 1
         val map = MapDefinition(40, 20, 20, 20, source.tileSets, gids,
             BlockingGrid(40, 20, BooleanArray(800) { gids[it] == 2 }))
         val context = assertIs<InitResult.Accepted>(SimulationContext.initialize(SeaFactoryScene.scenario(map, tier = "seaFactoryT2"))).context
@@ -76,13 +76,18 @@ class SeaFactoryBirthBoundaryTest {
             repeat(450) { tick() }
             val blocked = context.observe()
             assertEquals(1, events.count { it.kind == "unit-produced" && it.unitId == id })
-            assertTrue(events.any { it.kind == "path-unreachable" && it.unitId == id })
-            assertTrue(blocked.units.single { it.unitId == id }.position.y < 260.0)
+            assertTrue(events.any { it.kind == "movement-blocked" && it.unitId == id })
+            assertTrue(events.none { it.kind == "path-unreachable" && it.unitId == id })
+            assertEquals(Position(509.0, 285.0), blocked.units.single { it.unitId == id }.moveTarget)
+            assertTrue(blocked.units.single { it.unitId == id }.position.y + 40.0 <= 300.0 + 1e-9)
             assertEquals(0f, blocked.production!!.units.single().birthRemaining)
             assertEquals(5000L, context.observePlayer(context.world, "p1").balance)
-            assertIs<ActionResult.Accepted>(context.submit(MoveAction("recover", "p1", id, Position(600.0, 220.0), context.world)))
+            val recovery = assertIs<ActionResult.Accepted>(context.submit(MoveAction("recover", "p1", id, Position(610.0, 250.0), context.world)))
             repeat(400) { tick() }
-            assertTrue(context.observe().units.single { it.unitId == id }.position.x > 590.0)
+            val start = blocked.units.single { it.unitId == id }
+            val end = context.observe().units.single { it.unitId == id }
+            assertTrue(end.position.x > 590.0,
+                "Recovery kept ship at ${end.position}/${end.heading} from ${start.position}/${start.heading}, events=${recovery.events}")
             assertEquals(1, context.observe().production!!.units.size)
             assertEquals(5000L, context.observePlayer(context.world, "p1").balance)
         } finally { context.close() }

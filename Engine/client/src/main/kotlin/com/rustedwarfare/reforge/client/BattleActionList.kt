@@ -38,7 +38,7 @@ internal class BattleActionScrollPane(content: Actor, style: ScrollPane.ScrollPa
 internal class BattleActionList(skin: Skin, stage: Stage, session: () -> SandboxSession?,
     private val unitIcon: (String) -> TextureRegion?,
     dispatch: (SandboxSession, BattleActionRow, Boolean) -> Unit, changed: () -> Unit) {
-    private class Card(val table: Table, val label: Label, val icon: Image, val progress: Image)
+    private class Card(val table: Table, val label: Label, val icon: Image, val progress: Image, val input: OwnedActionInput)
 
     private val content = Table(skin).top()
     private val panes = linkedMapOf<String, Card>()
@@ -107,13 +107,7 @@ internal class BattleActionList(skin: Skin, stage: Stage, session: () -> Sandbox
         val progress = Image(skin.newDrawable("white", Color(.58f, .86f, .38f, .93f))).apply {
             touchable = Touchable.disabled
         }
-        val widget = Table(skin).apply {
-            touchable = Touchable.enabled
-            background = skin.newDrawable("white", Color(.17f, .18f, .16f, .72f))
-            add(icon).size(22f).padTop(2f).row()
-            add(label).width(75f).growY().pad(1f, 3f, 3f, 3f)
-            addActor(progress)
-            addListener(OwnedActionInput(session, { scroll.isVisible }, setOf(Input.Buttons.LEFT, Input.Buttons.RIGHT),
+        val input = OwnedActionInput(session, { scroll.isVisible }, setOf(Input.Buttons.LEFT, Input.Buttons.RIGHT),
                 cancelOnExit = true,
                 identity = {
                     currentRows.singleOrNull { it.id == id }?.let { row ->
@@ -129,9 +123,16 @@ internal class BattleActionList(skin: Skin, stage: Stage, session: () -> Sandbox
                 hovered = { entered ->
                     if (entered) hoveredId = id else if (hoveredId == id) hoveredId = null
                     showHint()
-                }, hitAt = ::hitsCard))
+                }, hitAt = ::hitsCard)
+        val widget = Table(skin).apply {
+            touchable = Touchable.enabled
+            background = skin.newDrawable("white", Color(.17f, .18f, .16f, .72f))
+            add(icon).size(22f).padTop(2f).row()
+            add(label).width(75f).growY().pad(1f, 3f, 3f, 3f)
+            addActor(progress)
+            addListener(input)
         }
-        Card(widget, label, icon, progress)
+        Card(widget, label, icon, progress, input)
     }
 
     fun update(owner: String?, caption: String?, value: List<BattleActionRow>) {
@@ -144,6 +145,8 @@ internal class BattleActionList(skin: Skin, stage: Stage, session: () -> Sandbox
         if (!scroll.isVisible && scroll.stage?.scrollFocus === scroll) scroll.stage.scrollFocus = null
         if (rebuild) {
             hoveredId = null
+            // Actor removal fires Stage's touch-focus cancellation synchronously.
+            panes.values.forEach { it.input.cancel() }
             panes.clear()
             content.clearChildren()
             for ((index, row) in currentRows.withIndex()) {

@@ -12,6 +12,151 @@ import kotlin.test.assertNotNull
 
 class WaterMovementTest {
     @Test
+    fun ordinary_move_stops_a_turn_whose_middle_pose_sweeps_across_the_bank() = WaterTestScene.withMap { shore ->
+        val hull = WaterTestScene.unit(MovementType.WATER)
+        val ship = UnitDefinition(hull.id, hull.className, hull.radius, hull.displayRadius, hull.totalFrames,
+            hull.imagePath, hull.imageScale, hull.movement.copy(maxTurnSpeed = 90.0, turnAcceleration = 0.0), emptySet(), fogOfWarSightRange = 0,
+            movementCollision = MovementCollisionShape.Rectangle(20.0, 10.0))
+        val blockedColumn = (0 until shore.heightTiles).mapTo(linkedSetOf()) { 0 to it }
+        val water = shore.groundGids[shore.widthTiles - 1]
+        val map = MapDefinition(shore.widthTiles, shore.heightTiles, shore.tileWidth, shore.tileHeight, shore.tileSets,
+            IntArray(shore.widthTiles * shore.heightTiles) { water }, shore.blocking, blockedColumn)
+
+        fun turnFrom(x: Double): UnitObservation {
+            val start = Position(x, 150.0)
+            val base = WaterTestScene.scenario(map, MovementType.WATER, start)
+            val input = base.copy(unitDefinitions = mapOf(ship.id to ship),
+                units = listOf(base.units.single().copy(heading = 0.0)),
+                automaticVision = KnowledgeRules(TerrainRetention.MEMORY, PathInformationSource.PLAYER_KNOWLEDGE, false))
+            val context = assertIs<InitResult.Accepted>(SimulationContext.initialize(input)).context
+            try {
+                val accepted = assertIs<ActionResult.Accepted>(context.submit(
+                    MoveAction("turn-east", "p1", "w1", Position(x + 100.0, 150.0), context.world)))
+                assertTrue(accepted.events.any { it.kind == "movement-started" })
+                return context.advance(Step(0L, 1.0, "sim-tick")).units.single()
+            } finally {
+                context.close()
+            }
+        }
+
+        // 0 and 90 degrees each fit 10.5 units from the bank. Intermediate corners do not.
+        val constrained = turnFrom(30.5)
+        assertEquals(43.3440035485, constrained.heading, 1e-6)
+        assertEquals(Position(30.5, 150.0), constrained.position)
+        assertEquals(90.0, turnFrom(50.0).heading)
+    }
+
+    @Test
+    fun a_rectangular_ship_uses_a_diagonal_channel_directly_or_after_turning_in_the_basin() = WaterTestScene.withMap { shore ->
+        val hull = WaterTestScene.unit(MovementType.WATER)
+        val ship = UnitDefinition(hull.id, hull.className, hull.radius, hull.displayRadius, hull.totalFrames,
+            hull.imagePath, hull.imageScale, hull.movement, emptySet(),
+            movementCollision = MovementCollisionShape.Rectangle(48.0, 16.0))
+        val water = shore.groundGids[shore.widthTiles - 1]
+        val land = shore.groundGids.first()
+        val target = Position(190.0, 190.0)
+        for (basin in listOf(false, true)) {
+            val gids = IntArray(12 * 12) { index ->
+                val row = index / 12
+                val column = index % 12
+                if (kotlin.math.abs(row - column) <= 1 || basin && column <= 3) water else land
+            }
+            val map = MapDefinition(12, 12, 20, 20, shore.tileSets, gids, BlockingGrid(12, 12, BooleanArray(gids.size)))
+            val start = if (basin) Position(40.0, 130.0) else Position(50.0, 50.0)
+            val base = WaterTestScene.scenario(map, MovementType.WATER, start)
+            val input = base.copy(unitDefinitions = mapOf(ship.id to ship),
+                units = listOf(base.units.single().copy(heading = if (basin) 0.0 else 135.0)))
+            val context = assertIs<InitResult.Accepted>(SimulationContext.initialize(input)).context
+            try {
+                context.enableMotionDiagnostics(context.world)
+                val move = assertIs<ActionResult.Accepted>(context.submit(
+                    MoveAction("cross-diagonal", "p1", "w1", target, context.world)))
+                assertTrue(move.events.any { it.kind == "movement-started" }, "basin=$basin: ${move.events}")
+                val route = context.observe().units.single().pathPoints
+                assertEquals(!basin, route.size == 1)
+                repeat(700) { context.advance(Step(it.toLong(), 1.0, "sim-tick")) }
+                val final = context.observePlayer(context.world, "p1").units.single()
+                val trace = context.drainMotionDiagnostics(context.world)
+                assertTrue(ScreenPlane.distanceSquared(final.position, target) < 64.0,
+                    "basin=$basin route=$route final=${final.position}/${final.heading}, " +
+                        "first correction=${trace.firstOrNull { it.terrainDisposition != MotionTerrainDisposition.DIRECT }}")
+            } finally {
+                context.close()
+            }
+        }
+    }
+
+    @Test
+    fun a_rectangular_hull_can_move_tangent_to_the_map_edge() = WaterTestScene.withMap { shore ->
+        val original = WaterTestScene.unit(MovementType.WATER)
+        val rectangle = UnitDefinition(original.id, original.className, original.radius, original.displayRadius,
+            original.totalFrames, original.imagePath, original.imageScale, original.movement, emptySet(),
+            movementCollision = MovementCollisionShape.Rectangle(20.0, 10.0))
+        val gids = IntArray(shore.widthTiles * shore.heightTiles) { shore.groundGids[shore.widthTiles - 1] }
+        val water = MapDefinition(shore.widthTiles, shore.heightTiles, shore.tileWidth, shore.tileHeight,
+            shore.tileSets, gids, shore.blocking)
+        val start = Position(5.0, 150.0)
+        val base = WaterTestScene.scenario(water, MovementType.WATER, start)
+        val scenario = base.copy(unitDefinitions = mapOf(rectangle.id to rectangle),
+            units = listOf(base.units.single().copy(heading = 0.0)))
+        val opened = SimulationContext.initialize(scenario)
+        val context = assertIs<InitResult.Accepted>(opened, opened.toString()).context
+        try {
+            val command = assertIs<ActionResult.Accepted>(context.submit(
+                MoveAction("tangent-edge", "p1", "w1", Position(5.0, 60.0), context.world)))
+            assertTrue(command.events.any { it.kind == "movement-started" })
+            repeat(220) { context.advance(Step(it.toLong(), 1.0, "sim-tick")) }
+            val ship = context.observePlayer(context.world, "p1").units.single()
+            assertEquals(5.0, ship.position.x)
+            assertTrue(ship.position.y < 68.0)
+        } finally {
+            context.close()
+        }
+    }
+
+    @Test
+    fun an_in_place_sweep_stops_on_the_legal_side_of_the_map_edge() = WaterTestScene.withMap { map ->
+        val grid = HullTerrainGrid.authoritative(map, MovementType.AIR)
+        val hull = MovementCollisionShape.Rectangle(20.0, 10.0)
+        val start = Position(10.5, 150.0)
+        val last = RectangularTurn.resolve(grid, hull, start, 0.0, 90.0)
+        assertEquals(43.3440035485, last, 1e-6)
+        assertTrue(RectangularTerrain(hull, last).contains(grid, start))
+    }
+
+    @Test
+    fun a_long_hull_slides_along_a_tangent_bank_but_stops_at_a_small_intrusion() = WaterTestScene.withMap { shore ->
+        val original = WaterTestScene.unit(MovementType.WATER)
+        val ship = UnitDefinition(original.id, original.className, original.radius, original.displayRadius,
+            original.totalFrames, original.imagePath, original.imageScale, original.movement, emptySet(),
+            fogOfWarSightRange = 0, movementCollision = MovementCollisionShape.Rectangle(102.0, 20.0))
+        val gids = IntArray(shore.widthTiles * shore.heightTiles) { shore.groundGids[shore.widthTiles - 1] }
+        val map = MapDefinition(shore.widthTiles, shore.heightTiles, shore.tileWidth, shore.tileHeight, shore.tileSets,
+            gids, shore.blocking, (4..6).mapTo(linkedSetOf()) { 1 to it })
+        for (clearance in listOf(-0.000001, 0.0, 0.000001)) {
+            val start = Position(50.0 + clearance, 230.0)
+            val base = WaterTestScene.scenario(map, MovementType.WATER, start)
+            val input = base.copy(unitDefinitions = mapOf(ship.id to ship),
+                units = listOf(base.units.single().copy(heading = 0.0)),
+                automaticVision = KnowledgeRules(TerrainRetention.MEMORY, PathInformationSource.PLAYER_KNOWLEDGE, false))
+            val context = assertIs<InitResult.Accepted>(SimulationContext.initialize(input)).context
+            try {
+                val move = assertIs<ActionResult.Accepted>(context.submit(
+                    MoveAction("follow-bank", "p1", "w1", Position(start.x, 65.0), context.world)))
+                assertTrue(move.events.any { it.kind == "movement-started" })
+                repeat(330) { context.advance(Step(it.toLong(), 1.0, "sim-tick")) }
+                val final = context.observe().units.single()
+                assertEquals(start.x, final.position.x)
+                if (clearance < 0.0) assertEquals(191.0, final.position.y, 1e-8)
+                else assertTrue(final.position.y < 73.0)
+                println("bank x=40; width=20; length=102; clearance=$clearance; end=${final.position}; heading=${final.heading}")
+            } finally {
+                context.close()
+            }
+        }
+    }
+
+    @Test
     fun ordinary_water_body_reverses_and_stop_retains_signed_inertia_without_mech_pose() = WaterTestScene.withMap { map ->
         val input = WaterTestScene.scenario(map, MovementType.WATER, Position(500.0, 200.0)).copy(
             unitDefinitions = mapOf("water-test" to WaterTestScene.unit(MovementType.WATER, reverse = 1.0)))

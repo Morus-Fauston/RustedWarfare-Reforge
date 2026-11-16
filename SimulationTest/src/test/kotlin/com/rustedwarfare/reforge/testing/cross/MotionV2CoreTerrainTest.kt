@@ -18,7 +18,8 @@ class MotionV2CoreTerrainTest {
         targetFraction=0.0,integratedHeading=90.0,integratedSpeed=1.0,candidate=candidate,terrainResolved=resolved,
         terrainDisposition=if(resolved==candidate) MotionTerrainDisposition.DIRECT else MotionTerrainDisposition.CORRECTED,
         finalPosition=resolved ?: start,finalHeading=90.0,finalSpeed=1.0,finalAngularVelocity=2.25,
-        localProgressBefore=0.0,localProgressAfter=0.0,correctionTimeBefore=0.0,correctionTimeAfter=0.0)
+        localProgressBefore=0.0,localProgressAfter=0.0,correctionTimeBefore=0.0,correctionTimeAfter=0.0,
+        unitContactLimited = false)
     private fun assertBits(expected: Position, actual: Position?) {
         assertNotNull(actual)
         assertEquals(expected.x.toBits(),actual.x.toBits(),"x")

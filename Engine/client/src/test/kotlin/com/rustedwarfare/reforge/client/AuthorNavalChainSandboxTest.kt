@@ -130,6 +130,12 @@ class AuthorNavalChainSandboxTest {
             repeat(400) { session.tick(); collect() }
             assertEquals(setOf("port", "starboard"), fired)
             assertTrue(session.observation.units.single { it.unitId == "b" }.health!! < 170.0)
+            // Clear the frigate's southbound route after the first ship has fired.
+            session.select(session.observation.units.single { it.unitId == first.unitId }.position)
+            assertIs<ActionResult.Accepted>(session.move(Position(290.0, 85.0)))
+            until(800, "first ship clears the berth") {
+                session.observation.units.single { it.unitId == first.unitId }.position.y < 105.0
+            }
             until(1200, "second paid ship is born") { session.observation.units.any { it.typeId == "spfrigate" } }
             val second = session.observation.units.single { it.typeId == "spfrigate" }
             assertEquals("p1", second.ownerPlayerId)

@@ -60,11 +60,18 @@ class UnitDefinition(
     val initialWeaponFlagZero: Boolean = false,
     val authoredAirCombat: Boolean = false,
     val authoredMaintenance: AuthoredMaintenance? = null,
+    val movementCollision: MovementCollisionShape = MovementCollisionShape.Circle(radius),
 ) {
     internal val locomotionStates: SubmersibleLocomotion?
         get() = amphibiousJet?.locomotion ?: submarine?.locomotion
     val retainedUnconsumed: Set<String> = Collections.unmodifiableSet(LinkedHashSet(retainedUnconsumed))
     val maximumHealth: Double? get() = durability?.maxHp ?: combat?.maxHp
+    val productionRequiresCompletedConstruction: Boolean get() =
+        className == "AuthoredBuilding" || when (production?.exitProfile) {
+            FactoryExitProfile.CUSTOM_MECH, FactoryExitProfile.NATIVE_AIR,
+            FactoryExitProfile.NATIVE_SEA, FactoryExitProfile.AUTHORED_MOBILE -> true
+            else -> false
+        }
 }
 
 enum class TransportProfile { NATIVE_HOVERCRAFT, NATIVE_DROPSHIP, NAUTILUS_SUBMERGED, AUTHORED }
@@ -118,6 +125,12 @@ data class MovementProfile(
     val flight: FlightProfile? = null,
     val hover: HoverProfile? = null,
 )
+
+/** Physical dimensions in map coordinates, independent of selection and weapon targeting. */
+sealed interface MovementCollisionShape {
+    data class Circle(val radius: Double) : MovementCollisionShape
+    data class Rectangle(val length: Double, val width: Double) : MovementCollisionShape
+}
 
 enum class MovementType { LAND, NONE, AIR, WATER, HOVER, OVER_CLIFF, OVER_CLIFF_WATER }
 

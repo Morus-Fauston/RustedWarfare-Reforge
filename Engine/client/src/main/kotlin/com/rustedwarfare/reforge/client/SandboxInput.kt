@@ -3,6 +3,8 @@ package com.rustedwarfare.reforge.client
 import com.badlogic.gdx.Input
 import com.badlogic.gdx.InputAdapter
 import com.rustedwarfare.reforge.core.sim.Position
+import com.rustedwarfare.reforge.core.sim.SandboxCommandReceipt
+import com.rustedwarfare.reforge.core.sim.SandboxCommandStatus
 
 /** Screen adapter; Scene2D is the first processor in the actual multiplexer. */
 class SandboxInput(
@@ -17,6 +19,8 @@ class SandboxInput(
     private val touchControls: Boolean = false,
     private val insideViewport: (Int, Int) -> Boolean = { _, _ -> true },
     private val battlefieldAt: (Int, Int) -> Boolean = { _, _ -> true },
+    private val cameraTakeover: (String) -> Unit = {},
+    private val cameraFollowsUnit: () -> Boolean = { false },
 ) : InputAdapter() {
     private var gesture: MapGesture? = null
     private var ownerButton: Int? = null
@@ -95,7 +99,69 @@ class SandboxInput(
         private set
     var patrolPointCount = 0
         private set
-    val box: Pair<Position, Position>? get() = gesture?.box
+    val box: Pair<Position, Position>? get() = gesture?.box.takeIf { sandboxPress == null }
+    private class SandboxPickOwner(val session: SandboxSession, val mode: SandboxPick) {
+        var submitted: SandboxCommandReceipt? = null
+        val receipt: SandboxCommandReceipt? get() = submitted?.let { session.sandboxReceipt(it.sequence) ?: it }
+    }
+    private data class SandboxPress(val owner: SandboxPickOwner, val targetId: String?)
+    private var sandboxPickOwner: SandboxPickOwner? = null
+    private var sandboxPress: SandboxPress? = null
+    internal val sandboxPick: SandboxPick? get() = currentSandboxPick()?.mode
+    internal val sandboxPickFeedback: String? get() = currentSandboxPick()?.let { owner ->
+        owner.receipt?.takeIf { it.sequence == owner.session.lastSandboxReceipt?.sequence }
+            ?.let { owner.session.sandboxCommandFeedback }
+    }
+    internal val sandboxPickPreview: SandboxPickPreview? get() {
+        val owner = currentSandboxPick() ?: return null
+        val ui = pointerPosition ?: return null
+        val world = projection()?.toWorld(ui.x, ui.y) ?: return null
+        return SandboxPickPreview(ui, sandboxTarget(owner, world), owner.mode)
+    }
+
+    internal fun beginSandboxPick(mode: SandboxPick): Boolean {
+        val current = session() ?: return false
+        if (!active() || editing() || touchControls || !current.canDeploy) return false
+        cancel()
+        sandboxPickOwner = SandboxPickOwner(current, mode)
+        modeRevision++
+        evidence.record("sandbox-pick-mode", mapOf("active" to true, "operation" to mode.action,
+            "repeat" to ((mode as? SandboxPick.Spawn)?.repeat == true)))
+        changed()
+        return true
+    }
+
+    internal fun cancelSandboxPick(): Boolean {
+        if (currentSandboxPick() == null) return false
+        endSandboxPick()
+        changed()
+        return true
+    }
+
+    private fun currentSandboxPick(): SandboxPickOwner? {
+        val owner = sandboxPickOwner ?: return null
+        if (!active() || editing() || session() !== owner.session || !owner.session.canDeploy) {
+            endSandboxPick()
+            return null
+        }
+        if (owner.receipt?.status == SandboxCommandStatus.APPLIED && (owner.mode as? SandboxPick.Spawn)?.repeat != true) {
+            endSandboxPick()
+            return null
+        }
+        return owner
+    }
+
+    private fun endSandboxPick() {
+        val owner = sandboxPickOwner ?: return
+        sandboxPickOwner = null
+        modeRevision++
+        cancelGesture()
+        evidence.record("sandbox-pick-mode", mapOf("active" to false, "operation" to owner.mode.action))
+    }
+
+    private fun sandboxTarget(owner: SandboxPickOwner, point: Position): String? =
+        if (owner.mode is SandboxPick.Spawn) null
+        else owner.session.sandboxPickTargetAt(point, requiresHealth = owner.mode is SandboxPick.Health)
     private fun control() = pressed(Input.Keys.CONTROL_LEFT) || pressed(Input.Keys.CONTROL_RIGHT)
     private fun shift() = pressed(Input.Keys.SHIFT_LEFT) || pressed(Input.Keys.SHIFT_RIGHT)
     private fun mode() = when { control() -> SelectionMode.TOGGLE; shift() -> SelectionMode.ADD; else -> SelectionMode.REPLACE }
@@ -103,6 +169,8 @@ class SandboxInput(
 
     override fun touchDown(screenX: Int, screenY: Int, pointer: Int, button: Int): Boolean {
         if (!active() || pointer != 0 || !insideViewport(screenX, screenY)) return false
+        if (button == Input.Buttons.RIGHT && cancelSandboxPick()) return true
+        val pick = currentSandboxPick()
         val reclaimActive = maintenanceMode
         val groundActive = groundActionName != null
         if (ownerButton != null) return false
@@ -121,6 +189,19 @@ class SandboxInput(
             return true
         }
         val world = map.toWorld(ui.x, ui.y) ?: return false
+        if (pick != null && button == Input.Buttons.LEFT) {
+            if (!canTargetAt(screenX, screenY)) return false
+            if (pick.receipt?.status == SandboxCommandStatus.QUEUED) return true
+            val target = sandboxTarget(pick, world)
+            sandboxPress = SandboxPress(pick, target)
+            ownerButton = button
+            pointerPosition = ui
+            gesture = MapGesture(map).also { check(it.begin(ui.x, ui.y, MapButton.SELECT, SelectionMode.REPLACE, emptySet())) }
+            evidence.recordWhenEnabled("sandbox-pick-press") { mapOf("operation" to pick.mode.action,
+                "point" to world.fields(), "targetUnitId" to target) }
+            changed()
+            return true
+        }
         val kind = when (button) {
             Input.Buttons.LEFT -> MapButton.SELECT
             Input.Buttons.RIGHT -> MapButton.COMMAND
@@ -175,7 +256,8 @@ class SandboxInput(
     override fun touchDragged(screenX: Int, screenY: Int, pointer: Int): Boolean {
         if (pointer != 0 || ownerButton == null) return false
         if (!active() || (ownerButton == Input.Buttons.MIDDLE && editing())) { cancel(); return true }
-        val ownsPoint = constructionPress != null || reclaimPress != null || commandPress != null || groundActionPress != null
+        val ownsPoint = constructionPress != null || reclaimPress != null || commandPress != null ||
+            groundActionPress != null || sandboxPress != null
         if (ownsPoint && !canTargetAt(screenX, screenY)) { cancelGesture(); changed(); return true }
         val ui = uiPoint(screenX, screenY) ?: run {
             if (ownsPoint) cancelGesture()
@@ -184,6 +266,8 @@ class SandboxInput(
         if (ownsPoint && projection()?.toWorld(ui.x, ui.y) == null) {
             cancelGesture(); changed(); return true
         }
+        val panning = ownerButton == Input.Buttons.MIDDLE && ui != pointerPosition
+        if (panning) cameraTakeover("pan")
         pointerPosition = ui
         gesture?.drag(ui.x, ui.y)
         if (ownerButton == Input.Buttons.MIDDLE) recordCamera("pan")
@@ -195,6 +279,20 @@ class SandboxInput(
         val current = session()
         val ui = uiPoint(screenX, screenY)
         if (!active() || current == null || ui == null) { cancel(); return true }
+        sandboxPress?.let { press ->
+            val click = gesture?.release(ui.x, ui.y) as? MapIntent.Click
+            val activePick = currentSandboxPick()
+            val point = click?.position?.takeIf { canTargetAt(screenX, screenY) && activePick === press.owner }
+            val target = point?.let { sandboxTarget(press.owner, it) }
+            val text = point?.takeIf { target == press.targetId }?.let { press.owner.mode.command(it, target) }
+            val receipt = text?.let(current::submitSandboxCommand)
+            if (receipt != null) press.owner.submitted = receipt
+            evidence.recordWhenEnabled("sandbox-pick-release") { mapOf("operation" to press.owner.mode.action,
+                "point" to point?.fields(), "targetAtPress" to press.targetId, "targetUnitId" to target,
+                "requestSequence" to receipt?.sequence, "status" to receipt?.status?.name) }
+            cancelGesture(); changed()
+            return true
+        }
         groundActionPress?.let { press ->
             val point = if (canTargetAt(screenX, screenY)) projection()?.let { map ->
                 if (press.name == "blink") map.groundPoint(ui.x, ui.y) else map.toWorld(ui.x, ui.y)
@@ -259,7 +357,10 @@ class SandboxInput(
             }
             cancelGesture(); changed(); return true
         }
+        val resumedPan = ownerButton == Input.Buttons.MIDDLE && ui != pointerPosition
+        if (resumedPan) cameraTakeover("pan")
         val intent = gesture?.release(ui.x, ui.y)
+        if (resumedPan) recordCamera("pan")
         when (intent) {
             is MapIntent.Click -> if (battlefieldAt(screenX, screenY)) current.select(intent.position, intent.mode) else Unit
             is MapIntent.Box -> current.selectBox(intent.start, intent.end, intent.mode, intent.selectionAtStart)
@@ -277,6 +378,11 @@ class SandboxInput(
     }
     override fun mouseMoved(screenX: Int, screenY: Int): Boolean {
         pointerPosition = if (canTargetAt(screenX, screenY)) uiPoint(screenX, screenY) else null
+        if (sandboxPickOwner != null) evidence.recordWhenEnabled("sandbox-pick-hover") {
+            val preview = sandboxPickPreview
+            mapOf("operation" to preview?.mode?.action, "cursor" to preview?.cursor?.fields(),
+                "targetUnitId" to preview?.targetId)
+        }
         return false
     }
     override fun scrolled(amountX: Float, amountY: Float): Boolean {
@@ -284,12 +390,13 @@ class SandboxInput(
         val map = projection() ?: return false
         val ui = pointerPosition ?: return false
         if (map.toWorld(ui.x, ui.y) == null) return false
-        map.zoomAt(ui.x, ui.y, amountY.toDouble())
+        map.zoomAt(ui.x, ui.y, amountY.toDouble(), keepCenter = cameraFollowsUnit())
         recordCamera("zoom"); return true
     }
     override fun keyDown(keycode: Int): Boolean {
         if (!active() || editing() || touchControls) return false
         val current = session() ?: return false
+        if (keycode == Input.Keys.ESCAPE && cancelSandboxPick()) return true
         if (keycode == Input.Keys.ESCAPE && groundActionName != null) { endGroundAction(); changed(); return true }
         val buildType = when (keycode) {
             Input.Keys.X -> "c_turret_t1"
@@ -341,6 +448,7 @@ class SandboxInput(
     }
     fun beginPatrol(): Boolean {
         if (!active() || editing() || session()?.canPatrol != true) return false
+        endSandboxPick()
         endReclaim()
         endGroundAction()
         endConstruction()
@@ -352,6 +460,7 @@ class SandboxInput(
     fun beginConstruction(typeId: String): Boolean {
         val current = session() ?: return false
         if (!active() || editing() || touchControls || current.constructionActions.none { it.typeId == typeId }) return false
+        endSandboxPick()
         endReclaim()
         endGroundAction()
         endPatrol()
@@ -369,6 +478,7 @@ class SandboxInput(
         val current = session() ?: return false
         if (!active() || editing() || touchControls || !current.isOpen ||
             (if (repair) !current.canRepair else !current.canMaintain)) return false
+        endSandboxPick()
         endReclaim(); endConstruction(); endPatrol(); endGroundAction(); cancelGesture()
         reclaimOwner = ReclaimOwner(current, checkNotNull(current.selectedId), current.selectionRevision, repair)
         modeRevision++
@@ -419,7 +529,11 @@ class SandboxInput(
         val current = session() ?: return
         val previousSelection = current.selectedIds.toSet()
         if (control()) current.saveGroup(index) else current.recallGroup(index, shift())?.let {
-            projection()?.centerOn(it); recordCamera("group")
+            projection()?.let { map ->
+                cameraTakeover("group")
+                map.centerOn(it)
+                recordCamera("group")
+            }
         }
         if (current.selectedIds != previousSelection) { endConstruction(); endReclaim(); endGroundAction() }
         changed()
@@ -429,7 +543,7 @@ class SandboxInput(
         evidence.record("camera", mapOf("reason" to reason, "center" to map.camera.center.fields(), "zoom" to map.camera.zoom))
     }
     private fun cancelGesture() {
-        gesture?.cancel(); gesture = null; patrolPress = null; commandPress = null; constructionPress = null; reclaimPress = null; groundActionPress = null; ownerButton = null; pointerPosition = null
+        gesture?.cancel(); gesture = null; patrolPress = null; commandPress = null; constructionPress = null; reclaimPress = null; groundActionPress = null; sandboxPress = null; ownerButton = null; pointerPosition = null
     }
-    fun cancel() { endConstruction(); endPatrol(); endReclaim(); endGroundAction(); pHeld = false; upgradeHeld = false; constructionHeld.clear() }
+    fun cancel() { endConstruction(); endPatrol(); endReclaim(); endGroundAction(); endSandboxPick(); pHeld = false; upgradeHeld = false; constructionHeld.clear() }
 }

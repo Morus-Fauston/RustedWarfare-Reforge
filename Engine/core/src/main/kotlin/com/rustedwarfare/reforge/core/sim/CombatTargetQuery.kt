@@ -11,10 +11,10 @@ internal object CombatTargetQuery {
         if (target.amphibiousState != null) UnitLocomotion.movement(target).type == MovementType.AIR
         else target.definition.movement.type == MovementType.AIR && target.height >= 4.0
 
-    fun isUnderwater(target: MutableUnit): Boolean =
-        UnitLocomotion.isSubmerged(target) ||
-            target.definition.transport == com.rustedwarfare.reforge.core.content.TransportProfile.NAUTILUS_SUBMERGED && target.height < -1.0 ||
-            target.definition.fixedUnderwaterTarget != null && target.height <= -1.0
+    fun isUnderwater(target: MutableUnit, height: Double = target.height): Boolean =
+        UnitLocomotion.isSubmerged(target, height) ||
+            target.definition.transport == com.rustedwarfare.reforge.core.content.TransportProfile.NAUTILUS_SUBMERGED && height < UnitLocomotion.SUBMERGED_DEPTH ||
+            target.definition.fixedUnderwaterTarget != null && height <= UnitLocomotion.SUBMERGED_DEPTH
 
     /** Physical flying takes precedence; negative ordinary heights do not grant underwater capability. */
     fun weaponAllows(target: MutableUnit, weapon: NamedWeaponDefinition): Boolean = when {

@@ -96,6 +96,15 @@
       "targetUnitId": "b"
     },
     {
+      "intentId": "clear-corvette",
+      "kind": "move",
+      "position": {
+        "x": 295,
+        "y": 535
+      },
+      "waitSteps": 300
+    },
+    {
       "intentId": "select-frigate",
       "kind": "select",
       "position": {
@@ -119,7 +128,7 @@
         "x": 250,
         "y": 430
       },
-      "waitSteps": 500
+      "waitSteps": 200
     }
   ]
 }

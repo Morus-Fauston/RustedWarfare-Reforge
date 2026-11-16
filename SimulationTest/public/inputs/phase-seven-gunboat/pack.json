@@ -1,0 +1,42 @@
+{
+  "format": "rw-reforge.content-pack.v1",
+  "id": "p013-gunboat",
+  "name": "Owned gunboat and sea factory",
+  "units": [
+    {
+      "type": "sea-factory",
+      "file": "units/seaFactory.json"
+    },
+    {
+      "type": "sea-factory",
+      "file": "units/seaFactoryT2.json"
+    },
+    {
+      "type": "water-combat",
+      "file": "units/gunboat.json"
+    }
+  ],
+  "opening": {
+    "map": "map/channel.tmx",
+    "credits": 2300,
+    "opponentCredits": 0,
+    "units": [
+      {
+        "id": "dock",
+        "owner": "p1",
+        "type": "seaFactory",
+        "x": 170,
+        "y": 230,
+        "heading": 0
+      },
+      {
+        "id": "opponent",
+        "owner": "p2",
+        "type": "gunboat",
+        "x": 680,
+        "y": 290,
+        "heading": 270
+      }
+    ]
+  }
+}

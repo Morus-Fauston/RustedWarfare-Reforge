@@ -46,7 +46,8 @@ internal object MotionV2CoreMotion {
             v.number("targetFraction"),v.number("integratedHeading"),v.number("integratedSpeed"),point(v.required("candidate")),
             optionalPoint(v.required("terrainResolved")),MotionTerrainDisposition.valueOf(disposition),
             point(v.required("finalPosition")),v.number("finalHeading"),v.number("finalSpeed"),v.number("finalAngularVelocity"),
-            v.number("localProgressBefore"),v.number("localProgressAfter"),v.number("correctionTimeBefore"),v.number("correctionTimeAfter"))
+            v.number("localProgressBefore"),v.number("localProgressAfter"),v.number("correctionTimeBefore"),v.number("correctionTimeAfter"),
+            unitContactLimited = false)
     }
     private fun unit(observation: JsonObject, m: MotionStepSample): JsonObject {
         val units = observation.arrayAt("units"); source(units.size==1,"Expected one paired unit")

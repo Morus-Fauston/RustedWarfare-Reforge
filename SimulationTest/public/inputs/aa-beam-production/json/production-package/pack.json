@@ -2,6 +2,11 @@
   "format": "rw-reforge.content-pack.v1",
   "id": "p009-aa-beam-production-json",
   "name": "Owned AA beam production",
+  "singleSelectionButton": {
+    "unitType": "aaBeamGunship",
+    "action": "afterBurn",
+    "label": "Boost flight"
+  },
   "units": [
     {
       "type": "helicopter",

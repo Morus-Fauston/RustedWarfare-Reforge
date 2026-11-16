@@ -19,6 +19,67 @@ class SandboxSessionTest {
             TimeModel("p001.time.v1", "sim-tick", "ieee754-binary64", "fixed-explicit-delta"), MovementContract(16.0, 4.0))
     }
 
+    @Test fun command_panel_reports_the_before_and_after_credits_from_the_offline_host() {
+        val scene = scenario().copy(economyContract = EconomyContract(mapOf("p1" to 100L, "p2" to 20L)))
+        val records = mutableListOf<Pair<String, Map<String, Any?>>>()
+        SandboxSession(scene, ClientEvidence { kind, fields -> records += kind to fields },
+            SandboxOptions(deploymentEnabled = true)).use { session ->
+            assertEquals(SandboxCommandStatus.QUEUED, session.submitSandboxCommand("/credits p1 +17").status)
+            assertEquals(100L, session.observation.balance)
+            session.tick()
+            assertEquals(117L, session.observation.balance)
+            assertTrue(session.sandboxCommandFeedback.contains("p1"))
+            assertTrue(session.sandboxCommandFeedback.contains("100"))
+            assertTrue(session.sandboxCommandFeedback.contains("117"))
+            val creditRecords = records.filter { it.first == "sandbox-command" }.map { it.second }
+            assertEquals(listOf("QUEUED", "APPLIED"), creditRecords.map { it["status"] })
+            assertEquals(mapOf("player" to "p1", "amount" to "17", "before" to "100", "after" to "117"),
+                creditRecords.last()["credits"])
+            assertEquals(SandboxCommandStatus.QUEUED, session.submitSandboxCommand("/credits p1 -118").status)
+            session.tick()
+            assertEquals(117L, session.observation.balance)
+            assertTrue(session.sandboxCommandFeedback.contains("insufficient-funds"))
+        }
+    }
+
+    @Test fun command_panel_replays_foreign_unit_health_and_destruction_with_host_receipts() {
+        val root = Path.of(checkNotNull(System.getProperty("public.fixtures.dir")))
+        val tank = assertIs<ContentResult.Success<com.rustedwarfare.reforge.core.content.UnitDefinition>>(
+            ContentLoader.loadCombatUnit(root.resolve("production-combat/production/units/tank.ini"))).value
+        val base = scenario()
+        val scene = base.copy(unitDefinitions = base.unitDefinitions + (tank.id to tank),
+            units = base.units.map { if (it.unitId == "u2") it.copy(typeId = tank.id) else it },
+            combatContract = CombatContract(12345, -1, mapOf("u1" to 8L, "u2" to 9L), 10L))
+        val full = requireNotNull(tank.maximumHealth)
+        val adjusted = full - 2.5
+        val outcomes = mutableListOf<List<SandboxUnitChange>>()
+        repeat(2) {
+            val records = mutableListOf<Pair<String, Map<String, Any?>>>()
+            SandboxSession(scene, ClientEvidence { kind, fields -> records += kind to fields },
+                SandboxOptions(deploymentEnabled = true)).use { session ->
+                val before = session.observation.units.single { it.unitId == "u2" }
+                assertEquals(full, before.health)
+                val changes = mutableListOf<SandboxUnitChange>()
+                assertEquals(SandboxCommandStatus.QUEUED, session.submitSandboxCommand("/health u2 -2.5").status)
+                session.tick()
+                changes += assertNotNull(session.lastSandboxReceipt?.unitChange)
+                assertEquals(adjusted, session.observation.units.single { it.unitId == "u2" }.health)
+                assertEquals("Health for u2 $full to $adjusted", session.sandboxCommandFeedback)
+                assertEquals(SandboxCommandStatus.QUEUED, session.submitSandboxCommand("/destroy u2").status)
+                session.tick()
+                changes += assertNotNull(session.lastSandboxReceipt?.unitChange)
+                assertTrue(session.observation.units.none { it.unitId == "u2" && it.alive })
+                assertEquals("Destroyed u2", session.sandboxCommandFeedback)
+                val applied = records.filter { it.first == "sandbox-command" && it.second["status"] == "APPLIED" }
+                assertEquals(mapOf("operation" to "destroy", "unitId" to "u2", "healthBefore" to adjusted,
+                    "healthAfter" to 0.0, "destroyed" to true), applied.last().second["unitControl"])
+                outcomes += changes
+            }
+        }
+        val expected = listOf(SandboxUnitChange("u2", full, adjusted, false), SandboxUnitChange("u2", adjusted, 0.0, true))
+        assertEquals(listOf(expected, expected), outcomes)
+    }
+
     @Test fun explicit_deployment_session_uses_the_shared_next_step_host_and_records_command_receipts() {
         val records = mutableListOf<Pair<String, Map<String, Any?>>>()
         val ordinary = SandboxSession(scenario())

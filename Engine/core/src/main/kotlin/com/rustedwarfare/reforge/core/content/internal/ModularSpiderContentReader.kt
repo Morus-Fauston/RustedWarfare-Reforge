@@ -71,8 +71,12 @@ internal object ModularSpiderContentReader {
         references + images.values.flatten()
     private val flags = profiles.flatMap { it.values }.flatMap { it.entries }
         .filter { it.key !in text && (it.value == "true" || it.value == "false") }.map { it.key }.toSet()
-    private val schema = UnitContentSchema(fields, fields.values.flatten().toSet() - text - flags,
-        flags, text, dynamicWeapons = false, timeFieldLocations = setOf("attack" to "shootDelay"), structuredAbilities = true)
+    private val offsetFields = setOf("attachmentSlot", "attachmentX", "attachmentY")
+    private val actionFields = fields.filterKeys { it.startsWith("action_") }.values.flatten().toSet()
+    private val schema = UnitContentSchema(fields + ("action_1" to (actionFields + offsetFields)),
+        (fields.values.flatten().toSet() - text - flags) + offsetFields,
+        flags, text, dynamicWeapons = false, dynamicActions = true,
+        timeFieldLocations = setOf("attack" to "shootDelay"), structuredAbilities = true)
 
     fun readWithSources(path: Path, validatePath: (Path) -> Unit): LoadedUnitContent =
         UnitSourceReader(schema, validatePath).load(path, setOf("onCreateSpawnUnitOf", "convertTo", "constructionTypes")) { content ->
@@ -98,8 +102,25 @@ internal object ModularSpiderContentReader {
             val expectedShield = if (name == ModularSpiderRules.ID) ShieldProfile(5000f, .3f) else null
             ShieldContent.validateQualified(path, content, shield, expectedShield)
             val hasShieldAbility = content.values.keys.any { it.startsWith("ability_") }
+            val offsets = linkedMapOf<String, AttachmentOffsetAction>()
             for ((section, values) in content.values) {
                 if (section.startsWith("ability_")) continue
+                if (section.startsWith("action_") && section !in expected) {
+                    val action = section.removePrefix("action_")
+                    if (!content.structured || name != ModularSpiderRules.ID || section in fields ||
+                        !ModularSpiderRules.isOffsetActionName(action))
+                        reject(ContentErrorCode.UNSUPPORTED_FIELD, path, section, reason = "Unsupported modular spider action")
+                    for (field in values.keys - offsetFields)
+                        reject(ContentErrorCode.UNSUPPORTED_FIELD, path, section, field, reason = "Unsupported offset action field")
+                    val number = values["attachmentSlot"]?.toDoubleOrNull()?.let { id ->
+                        ModularSpiderRules.slots.singleOrNull { it.number.toDouble() == id }?.number
+                    } ?: reject(ContentErrorCode.BAD_REFERENCE, path, section, "attachmentSlot", values["attachmentSlot"],
+                        "Expected the number of an existing attachment slot")
+                    fun offset(field: String): Double = values[field]?.toDoubleOrNull()?.takeIf { it.isFinite() }
+                        ?: reject(ContentErrorCode.MALFORMED_SYNTAX, path, section, field, values[field], "Expected a finite offset")
+                    offsets[action] = AttachmentOffsetAction(number, offset("attachmentX"), offset("attachmentY"))
+                    continue
+                }
                 val permitted = expected[section]?.keys.orEmpty() +
                     if (section == "graphics") graphicFields else images[section].orEmpty().takeIf { section in expected }.orEmpty()
                 for (field in values.keys) if (field !in permitted)
@@ -165,7 +186,8 @@ internal object ModularSpiderContentReader {
                         builder = ModularSpiderRules.builder(value("canBuild_chassis", "constructionTypes").split(',').map(String::trim)),
                         maintenance = MaintenanceProfile.MODULAR_SPIDER, deathExplosion = ModularSpiderRules.deathExplosion,
                         transportSlots = 14, shadowImagePath = image("graphics", "image_shadow", 81, 113),
-                        attachmentLayout = AttachmentLayout(ModularSpiderRules.slots, image("graphics", "image_slotUi", 82, 114)))
+                        attachmentLayout = AttachmentLayout(ModularSpiderRules.slots,
+                            image("graphics", "image_slotUi", 82, 114), offsets))
                 }
                 name == empty -> UnitDefinition(name, "CustomUnitMetadata", 20.0, 20.0, 1, image("graphics", "image", 1, 1),
                     1.0, ModularSpiderRules.slotMovement, emptySet(), fogOfWarSightRange = 5,

@@ -149,5 +149,6 @@ internal class OrdinaryUpgrades private constructor(private val definitions: Map
     }
 
     fun observe(ledger: ProductionLedger): UpgradeObservation = UpgradeObservation(queues.observe().queues + ledger.upgradeObservation())
+    fun pendingRefunds(unitId: String): Sequence<Long> = queues.queue(unitId).asSequence().map { it.cost }
     fun validateCandidate(units: Map<String, MutableUnit>) = queues.validateCandidate(units)
 }

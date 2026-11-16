@@ -20,6 +20,10 @@ data class ContentPackChoice(val content: LoadedContentSet, val unitId: String) 
     /** The selected unit's effective author; all validation uses the complete set. */
     val pack: LoadedContentPack get() = content.packages.single { it.id == content.provenance.getValue(unitId).packageId }
 
+    internal val singleSelectionButtons: Map<String, SingleSelectionButton> get() = content.packages.mapNotNull { pack ->
+        pack.singleSelectionButton?.takeIf { content.provenance[it.unitType]?.packageId == pack.id }
+    }.associateBy { it.unitType }
+
     /** Worker-only: recheck the final content before platform image preparation. */
     fun revalidate(): ContentPackChoice {
         when (val stable = content.verifyStable()) {
@@ -132,15 +136,15 @@ internal fun contentPackScenario(root: Path, choice: ContentPackChoice): Scenari
         choice.content.units["airFactoryT2"]?.production?.unitTypeIds == listOf("helicopter", "amphibiousJet") &&
         choice.content.units["c_tank"]?.combat != null && choice.content.units["helicopter"]?.rotor != null &&
         choice.content.units["navalUnderwaterTarget"]?.fixedUnderwaterTarget == FixedUnderwaterTargetProfile(-8.0)
-    val naval = choice.unitId in setOf("builder", "seaFactory", "seaFactoryT2", "heavyBattleship", "attackSubmarine", "c_tank", "helicopter") &&
-        choice.content.units["heavyBattleship"]?.movement?.type == MovementType.WATER &&
-        choice.content.units["seaFactory"]?.production?.exitProfile == FactoryExitProfile.NATIVE_SEA &&
-        choice.content.units["seaFactoryT2"]?.production?.unitTypeIds == listOf("heavyBattleship", "attackSubmarine") &&
-        choice.content.units["attackSubmarine"]?.submarine == SubmarineProfile.NATIVE &&
-        choice.content.units["builder"]?.builder?.buildingTypeIds == listOf("seaFactory") &&
-        choice.content.units["c_tank"]?.movement?.type == MovementType.LAND &&
-        choice.content.units["helicopter"]?.rotor != null &&
-        choice.content.units["navalUnderwaterTarget"]?.fixedUnderwaterTarget == FixedUnderwaterTargetProfile(-8.0)
+    val seaFactory = choice.content.units["seaFactory"]
+    val upgradedSeaFactory = choice.content.units["seaFactoryT2"]
+    val declaredSeaProducts = seaFactory?.production?.unitTypeIds.orEmpty() +
+        upgradedSeaFactory?.production?.unitTypeIds.orEmpty()
+    val naval = choice.unitId in setOf("builder", "seaFactory", "seaFactoryT2", "c_tank", "helicopter") + declaredSeaProducts &&
+        seaFactory?.production?.exitProfile == FactoryExitProfile.NATIVE_SEA &&
+        upgradedSeaFactory?.production?.exitProfile == FactoryExitProfile.NATIVE_SEA &&
+        seaFactory.upgrades?.actions?.singleOrNull()?.targetTypeId == upgradedSeaFactory.id &&
+        choice.content.units["builder"]?.builder?.buildingTypeIds == listOf(seaFactory.id)
     val authorWater = choice.content.units.getValue(choice.unitId).authoredWaterCombat
     val map = when (val result = ContentLoader.loadMap(root.resolve(if (nautilus || bomber || aaBeam || airTransport || transport || amphibious || naval || authorWater) "maps/naval-shore.tmx" else "maps/p001-controlled.tmx"))) {
         is ContentResult.Failure -> error(result.error.describe())
@@ -244,16 +248,25 @@ internal fun contentPackScenario(root: Path, choice: ContentPackChoice): Scenari
         TimeModel("p001.time.v1", "sim-tick", "ieee754-binary64", "fixed-explicit-delta"), MovementContract(16.0, 4.0),
         combatContract = CombatContract(12345, -1, mapOf("a" to 8L, "b" to 9L), 10L),
         economyContract = EconomyContract(mapOf("p1" to 5000L, "p2" to 0L)))
-    if (naval) return Scenario(if (choice.unitId == "attackSubmarine") "p009-submarine-production" else "p008-naval-production", map, choice.content.units,
-        listOf(Player("p1", PlayerControl.LOCAL, "one"), Player("p2", PlayerControl.NONE, "two")),
-        listOf(UnitSpawn("a", "p1", "builder", Position(390.0, 150.0), 90.0),
-            UnitSpawn("b", "p2", "c_tank", Position(330.0, 550.0), 270.0),
-            UnitSpawn("c", "p2", "helicopter", Position(650.0, 150.0), 270.0),
-            UnitSpawn("d", "p2", "navalUnderwaterTarget", Position(600.0, 300.0), 0.0, -8.0)),
-        CoordinateModel("p001.coordinate.v1", "2d", "x-right", "y-down", "top-left", "world-unit", "double", "ieee754-binary64"),
-        TimeModel("p001.time.v1", "sim-tick", "ieee754-binary64", "fixed-explicit-delta"), MovementContract(16.0, 4.0),
-        combatContract = CombatContract(12345, -1, mapOf("a" to 8L, "b" to 9L, "c" to 10L, "d" to 11L), 12L),
-        economyContract = EconomyContract(mapOf("p1" to 12000L, "p2" to 0L)))
+    if (naval) {
+        val units = choice.content.units
+        val spawns = buildList {
+            add(UnitSpawn("a", "p1", "builder", Position(390.0, 150.0), 90.0))
+            if (units["c_tank"]?.movement?.type == MovementType.LAND)
+                add(UnitSpawn("b", "p2", "c_tank", Position(330.0, 550.0), 270.0))
+            if (units["helicopter"]?.rotor != null)
+                add(UnitSpawn("c", "p2", "helicopter", Position(650.0, 150.0), 270.0))
+            if (units["navalUnderwaterTarget"]?.fixedUnderwaterTarget == FixedUnderwaterTargetProfile(-8.0))
+                add(UnitSpawn("d", "p2", "navalUnderwaterTarget", Position(600.0, 300.0), 0.0, -8.0))
+        }
+        val initialIds = mapOf("a" to 8L, "b" to 9L, "c" to 10L, "d" to 11L)
+        return Scenario(if (choice.unitId == "attackSubmarine") "p009-submarine-production" else "p008-naval-production",
+            map, units, listOf(Player("p1", PlayerControl.LOCAL, "one"), Player("p2", PlayerControl.NONE, "two")), spawns,
+            CoordinateModel("p001.coordinate.v1", "2d", "x-right", "y-down", "top-left", "world-unit", "double", "ieee754-binary64"),
+            TimeModel("p001.time.v1", "sim-tick", "ieee754-binary64", "fixed-explicit-delta"), MovementContract(16.0, 4.0),
+            combatContract = CombatContract(12345, -1, spawns.associate { it.unitId to initialIds.getValue(it.unitId) }, 12L),
+            economyContract = EconomyContract(mapOf("p1" to 12000L, "p2" to 0L)))
+    }
     if (authorWater) return Scenario("p008-content-pack", map, choice.content.units,
         listOf(Player("p1", PlayerControl.LOCAL, "one"), Player("p2", PlayerControl.NONE, "two")),
         listOf(UnitSpawn("a", "p1", choice.unitId, Position(500.0, 300.0), 90.0),

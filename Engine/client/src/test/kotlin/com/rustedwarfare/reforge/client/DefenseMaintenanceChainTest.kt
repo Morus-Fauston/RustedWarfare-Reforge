@@ -36,6 +36,9 @@ class DefenseMaintenanceChainTest {
             assertEquals(0f, shield.constructionProgress)
             assertEquals(50.0, c.observePlayer(c.world, "p1").credits)
             assertIs<ActionResult.Accepted>(c.submit(StopAction("pause-shield", "p1", "a", c.world)))
+            assertIs<ActionResult.Accepted>(c.submit(MoveAction("clear-shield-approach", "p1", "a",
+                Position(190.0, 100.0), c.world)))
+            repeat(200) { tick() }
             assertIs<ActionResult.Accepted>(c.submit(ResumeConstructionAction("resume-shield", "p1", "b", shield.unitId, c.world)))
             while (c.observe().units.single { it.unitId == shield.unitId }.constructionProgress < 1f && step < 4000L) tick()
             assertEquals(1f, c.observe().units.single { it.unitId == shield.unitId }.constructionProgress)

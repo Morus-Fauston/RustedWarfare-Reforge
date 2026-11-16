@@ -108,7 +108,12 @@ class PhaseFiveSandboxTest {
                         }
                         else -> error("Unexpected paired intent")
                     }
-                    if (kind != "select") assertIs<ActionResult.Accepted>(result, "$format/${intent.getString("intentId")}")
+                    if (kind != "select") {
+                        val details = if (result is ActionResult.Accepted) "" else session.observation.units
+                            .filter { it.ownerPlayerId == "p1" && it.alive }
+                            .joinToString { "${it.typeId} at ${it.position}" }
+                        assertIs<ActionResult.Accepted>(result, "$format/${intent.getString("intentId")}, selected=$selectedType $details")
+                    }
                     if (kind == "stop") stopped += requireNotNull(selectedType)
                     repeat(intent.getInt("waitSteps", 0)) {
                         session.tick()

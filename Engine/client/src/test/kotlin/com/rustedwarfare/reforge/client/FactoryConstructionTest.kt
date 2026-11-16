@@ -185,7 +185,7 @@ class FactoryConstructionTest {
     @Test fun learning_about_a_new_factory_preserves_a_workers_route_to_its_work_range() {
         val base = ControlledScenario.load(inputRoot())
         val scene = base.copy(units = listOf(UnitSpawn("a-worker", "p1", "builder", Position(50.0, 290.0), 90.0),
-            UnitSpawn("b-worker", "p1", "builder", Position(418.0, 290.0), 90.0)),
+            UnitSpawn("b-worker", "p1", "builder", Position(432.0, 260.0), 90.0)),
             automaticVision = SandboxOptions(SandboxMode.MEMORY).knowledgeRules(),
             combatContract = CombatContract(1, -1, mapOf("a-worker" to 1L, "b-worker" to 2L), 3L))
         val context = assertIs<InitResult.Accepted>(SimulationContext.initialize(scene)).context

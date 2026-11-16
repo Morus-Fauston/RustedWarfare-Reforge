@@ -12,7 +12,7 @@ class MotionV2CoreIntegrationTest {
         Position(100.0,100.0),90.0,0.0,0.0,Position(400.0,100.0),false,
         true,Position(400.0,100.0),true,0.0,1.0,90.0,0.07700000000000001,
         Position(100.077,100.0),Position(100.077,100.0),MotionTerrainDisposition.DIRECT,
-        Position(100.077,100.0),90.0,0.07700000000000001,0.0,0.0,1.0,0.0,0.0)
+        Position(100.077,100.0),90.0,0.07700000000000001,0.0,0.0,1.0,0.0,0.0, unitContactLimited = false)
 
     @Test fun first_proportional_acceleration_rejects_consistent_but_wrong_world_speed() {
         val result=MotionV2CoreIntegration.assess(first(),profile,mathRuntimeQualified=true)
