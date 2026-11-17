@@ -65,8 +65,29 @@ internal class PathSearchRollback {
 internal class PathClearanceCache(
     private val grids: MutableMap<Pair<PlanningTerrain, Double>, BooleanArray> = HashMap(),
     private val rectangleChecks: RectangleChecks = RectangleChecks(),
+    private val departureNeighbors: MutableMap<DepartureSource, List<PathGridKey>> = HashMap(),
 ) {
-    fun fork(): PathClearanceCache = PathClearanceCache(HashMap(grids), rectangleChecks)
+    fun fork(): PathClearanceCache = PathClearanceCache(HashMap(grids), rectangleChecks, departureNeighbors)
+
+    internal data class DepartureSource(val map: PlanningTerrain, val shape: MovementCollisionShape.Rectangle,
+                                       val radius: Double, val reverse: Boolean, val origin: Position,
+                                       val from: Position, val heading: Double)
+
+    fun departureNeighbors(map: PlanningTerrain, hull: RectangularDeparture, radius: Double, origin: Position,
+                           from: Position, heading: Double): List<PathGridKey>? =
+        departureNeighbors[DepartureSource(map, hull.shape, radius, hull.reverse, origin, from, heading)]
+
+    fun rememberDepartureNeighbors(map: PlanningTerrain, hull: RectangularDeparture, radius: Double, origin: Position,
+                                   from: Position, heading: Double, neighbors: List<PathGridKey>,
+                                   rollback: PathSearchRollback?) {
+        // This cache changes deterministic work cost, so candidate-step writes must be undone.
+        // Saturate instead of evicting; a failed step must also preserve the admission order.
+        if (departureNeighbors.size >= 32_768) return
+        val key = DepartureSource(map, hull.shape, radius, hull.reverse, origin, from, heading)
+        if (key in departureNeighbors) return
+        departureNeighbors[key] = neighbors
+        rollback?.record { departureNeighbors.remove(key) }
+    }
     fun get(terrain: PlanningTerrain, radius: Double): BooleanArray? = grids[terrain to radius]
     fun put(terrain: PlanningTerrain, radius: Double, cells: BooleanArray) {
         grids[terrain to radius] = cells
@@ -193,7 +214,7 @@ internal class ClearanceAStarPolicy(
                 it.clearance = clearance
                 it.cellsChecked = cellsChecked
                 it.frontier = frontier
-                if (frontier != null || rawPoints != null || simplified != null) it.rollback = rollback
+                it.rollback = rollback
                 it.cursor = cursor
                 it.useDepartureLattice = useDepartureLattice
                 it.rawPoints = rawPoints
@@ -217,9 +238,13 @@ internal class ClearanceAStarPolicy(
             }
         }
 
-        private fun workCost(cache: PathClearanceCache?): Int =
-            if (phase == SearchPhase.SEARCH && cache != null && hull is RectangularDeparture &&
-                occupancy == null && !useDepartureLattice) 1 else 8
+        private fun workCost(cache: PathClearanceCache?): Int {
+            if (phase != SearchPhase.SEARCH || cache == null || hull !is RectangularDeparture || occupancy != null) return 8
+            if (!useDepartureLattice) return 1
+            val key = frontier?.open?.peek()?.key ?: return 8
+            val from = if (key == startKey) start else routePoint(key.col, key.row)
+            return if (cache.departureNeighbors(map, hull, radius, start, from, key.heading) != null) 1 else 8
+        }
 
         private fun complete(points: List<Position>? = null) {
             path = points
@@ -356,6 +381,12 @@ internal class ClearanceAStarPolicy(
                 val neighbors = cache.rectangularNeighbors(map, hull, radius, from, key.heading) {
                     buildList { scanNeighbors(key, from, cache) { add(it) } }
                 }
+                neighbors.forEach(::visit)
+            } else if (cache != null && hull is RectangularDeparture && occupancy == null && useDepartureLattice) {
+                val neighbors = cache.departureNeighbors(map, hull, radius, start, from, key.heading)
+                    ?: buildList { scanNeighbors(key, from, cache) { add(it) } }.also {
+                        cache.rememberDepartureNeighbors(map, hull, radius, start, from, key.heading, it, rollback)
+                    }
                 neighbors.forEach(::visit)
             } else scanNeighbors(key, from, cache, ::visit)
         }

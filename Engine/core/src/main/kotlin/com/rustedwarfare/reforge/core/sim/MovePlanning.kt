@@ -46,11 +46,19 @@ internal data class MovePlanningInput(
         matchesMembers(current) && sameOccupants(occupants, current.occupants)
 
     fun matchesMembers(current: MovePlanningInput): Boolean =
+        matchesMembers(current, replacingCommand = false)
+
+    fun matchesRepeatedCommand(current: MovePlanningInput): Boolean =
+        collectDiagnostics == current.collectDiagnostics && repair == null && current.repair == null &&
+            matchesMembers(current, replacingCommand = true) && sameOccupants(occupants, current.occupants)
+
+    private fun matchesMembers(current: MovePlanningInput, replacingCommand: Boolean): Boolean =
         map === current.map && members.size == current.members.size &&
             members.indices.all { index ->
                 val saved = members[index]
                 val next = current.members[index]
-                saved.action == next.action && saved.pose == next.pose && saved.start == next.start &&
+                (if (replacingCommand) saved.action.sameMoveRequest(next.action) else saved.action == next.action) &&
+                    saved.pose == next.pose && saved.start == next.start &&
                     saved.radius == next.radius && saved.terrain === next.terrain && saved.hull == next.hull &&
                     saved.hasBirthDelay == next.hasBirthDelay
             }
@@ -67,13 +75,16 @@ internal data class MovePlanningInput(
         }
 }
 
+private fun MoveAction.sameMoveRequest(other: MoveAction): Boolean =
+    unitId == other.unitId && actorPlayerId == other.actorPlayerId && world === other.world && target == other.target
+
 internal data class PlannedMove(val slot: GroupMoveSlot?, val counters: PathSearchCounters?, val searchNanos: Long,
                                 val preserveCurrentRoute: Boolean = false)
 
 /** The ordinary order queue belongs to the same candidate transaction as movement. */
 internal class MovePlanning {
     private class Order(val group: GroupMoveRequest?, val actions: MutableList<MoveAction>,
-                        val repair: ManeuverRepair? = null)
+                        val repair: ManeuverRepair? = null, var requestKey: Any = Any())
 
     private val orders = linkedSetOf<Order>()
     private val byMember = HashMap<String, Order>()
@@ -83,19 +94,34 @@ internal class MovePlanning {
     fun fork(rollback: PathSearchRollback): MovePlanning = MovePlanning().also { pending ->
         for (order in orders) {
             // Single orders are removed as a whole, so their requests can be shared across rollback.
-            val request = if (order.group == null) order else Order(order.group, order.actions.toMutableList(), order.repair)
+            val request = if (order.group == null) order else
+                Order(order.group, order.actions.toMutableList(), order.repair, order.requestKey)
             pending.add(request)
             workByOrder[order]?.let { pending.workByOrder[request] = it.fork(rollback) }
         }
     }
 
     fun enqueue(action: MoveAction, group: GroupMoveRequest?) {
+        val prior = byMember[action.unitId]
+        val reusable = prior?.takeIf { old ->
+            old.repair == null && old.actions.firstOrNull { it.unitId == action.unitId }?.sameMoveRequest(action) == true &&
+                if (group == null) old.group == null else old.group?.let {
+                    it.world === group.world && it.actor == group.actor && it.click == group.click &&
+                        it.members == group.members && old.actions.mapTo(hashSetOf()) { member -> member.unitId } == group.members
+                } == true
+        }?.let(workByOrder::get)
         cancel(action.unitId)
         val existing = group?.let(byGroup::get)
-        if (existing == null) add(Order(group, mutableListOf(action)))
+        if (existing == null) {
+            val order = Order(group, mutableListOf(action))
+            add(order)
+            if (reusable != null) workByOrder[order] = reusable
+        }
         else {
             existing.actions += action
-            workByOrder.remove(existing)
+            existing.requestKey = Any()
+            // A repeated selection is received member by member. Keep its saved work
+            // until the next simulation step can validate the complete new request.
             byMember[action.unitId] = existing
         }
     }
@@ -146,12 +172,24 @@ internal class MovePlanning {
                     order.repair?.reason ?: PathSearchReason.USER_MOVE, budget.used - usedBefore, completed, restarted,
                     (workByOrder[order]?.publication?.workUnits ?: activePublicationWork) - publicationBefore))
             }
-            val previousWork = workByOrder[order]
+            var previousWork = workByOrder[order]
+            if (previousWork != null && previousWork.requestKey !== order.requestKey) {
+                if (!budget.take()) {
+                    record(completed = false)
+                    return
+                }
+                val current = snapshot(order.actions, order.group, order.repair)
+                if (!previousWork.rebind(current)) previousWork = Work(current, order.group)
+                previousWork.requestKey = order.requestKey
+                workByOrder[order] = previousWork
+            }
             if (previousWork == null && (order.group != null || order.repair != null) && !budget.take()) {
                 record(completed = false)
                 return
             }
-            val work = previousWork ?: Work(snapshot(order.actions, order.group, order.repair), order.group)
+            val work = previousWork ?: Work(snapshot(order.actions, order.group, order.repair), order.group).also {
+                it.requestKey = order.requestKey
+            }
             var result = work.advance(pathPolicy, budget)
             if (result == null) {
                 record(completed = false)
@@ -177,7 +215,7 @@ internal class MovePlanning {
                         live.terrain !== saved.terrain || live.hull != saved.hull || live.hasBirthDelay != saved.hasBirthDelay ||
                         live.pose.layer != saved.pose.layer || live.pose.shape != saved.pose.shape) {
                         record(completed = true, restarted = true)
-                        workByOrder[order] = Work(current, order.group)
+                        workByOrder[order] = Work(current, order.group).also { it.requestKey = order.requestKey }
                         queued.remove(); orders.add(order)
                         return
                     }
@@ -194,7 +232,7 @@ internal class MovePlanning {
                 val current = snapshot(order.actions, order.group, order.repair)
                 if (!work.stillValid(current, result)) {
                     record(completed = true, restarted = true)
-                    workByOrder[order] = Work(current, order.group)
+                    workByOrder[order] = Work(current, order.group).also { it.requestKey = order.requestKey }
                     // A moving member or occupant must not keep independent orders behind
                     // a search that is repeatedly invalidated before publication.
                     queued.remove()
@@ -217,7 +255,7 @@ internal class MovePlanning {
         }
     }
 
-    private class Work(val input: MovePlanningInput, private val group: GroupMoveRequest?,
+    private class Work(var input: MovePlanningInput, private val group: GroupMoveRequest?,
                        private val groupPoints: List<Position>? = group?.let {
                            val points = GroupMoveDestinations.positions(input.map, it.click)
                            if (input.repair == ManeuverRepair.GROUP_SLOT) {
@@ -225,6 +263,7 @@ internal class MovePlanning {
                                points.filterNot { point -> point == prior }
                            } else points
                        }) {
+        var requestKey: Any? = null
         var publication: OvertakePublication? = null
         private var searchedResult: Map<String, PlannedMove>? = null
         private var cursor = 0
@@ -234,13 +273,21 @@ internal class MovePlanning {
         private var checkingSlot: PlannedMove? = null
         private var occupantIndex = -1
         private var cache = group?.let { PathClearanceCache() }
+        private var rollback: PathSearchRollback? = null
         private val candidates = mutableListOf<Pair<MutableUnit, List<PlannedMove>>>()
         private val currentMemberCandidates = mutableListOf<PlannedMove>()
         private var assignment: GroupMoveDestinations.Assignment? = null
         private val blockedSlots = if (input.repair == ManeuverRepair.GROUP_SLOT)
             mutableListOf<Pair<GroupMoveSlot, String>>() else null
 
+        fun rebind(current: MovePlanningInput): Boolean {
+            if (!input.matchesRepeatedCommand(current)) return false
+            input = current
+            return true
+        }
+
         fun fork(rollback: PathSearchRollback): Work = Work(input, group, groupPoints).also { copy ->
+            copy.requestKey = requestKey
             copy.publication = publication?.fork(rollback)
             copy.searchedResult = searchedResult
             copy.cursor = cursor
@@ -250,6 +297,7 @@ internal class MovePlanning {
             copy.checkingSlot = checkingSlot
             copy.occupantIndex = occupantIndex
             copy.cache = cache?.fork()
+            copy.rollback = rollback
             copy.candidates.addAll(candidates)
             copy.currentMemberCandidates.addAll(currentMemberCandidates)
             copy.assignment = assignment?.fork()
@@ -329,8 +377,9 @@ internal class MovePlanning {
                         input.occupants.filter { it.obstructsRoute }.map { it.body })
                     else -> null
                 }
-                policy.beginExact(member.terrain, member.start, point, member.radius,
-                    member.hull, occupancy, if (input.collectDiagnostics) PathSearchCounters() else null).also { search = it }
+                val started = policy.beginExact(member.terrain, member.start, point, member.radius,
+                    member.hull, occupancy, if (input.collectDiagnostics) PathSearchCounters() else null)
+                (rollback?.let { started.fork(it) } ?: started).also { search = it }
             }
             val startTime = if (input.collectDiagnostics) System.nanoTime() else 0
             active.advance(budget, cache)
