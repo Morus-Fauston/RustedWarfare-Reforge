@@ -451,8 +451,6 @@ internal data class MutableUnit(
     var routeOccupantIds: List<String> = emptyList(),
     var passageEntry: PassageEntry? = null,
     var groupMoveReservation: GroupMoveReservation? = null,
-    var lastYieldStep: Long = -1L,
-    var lastYieldTo: Pair<String, String>? = null,
     var localProgressTime: Double = 0.0,
     var terrainCorrectionTime: Double = 0.0,
     var terrainClearSteps: Int = 0,

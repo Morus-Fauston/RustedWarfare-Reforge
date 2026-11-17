@@ -3782,23 +3782,11 @@ class SimulationContext internal constructor(private val policies: ExperimentalP
             else -> Transport.containsPosition(unit, map, position)
         }
         val ordinaryMove = unit.tasks.firstOrNull()?.kind == UnitTaskKind.MOVE
-        val seaDeparture = FactoryExit.isSeaDeparture(unit, checkNotNull(scenario).unitDefinitions)
-        val yielding = if (target != null && unit.originMoveId != null && seaDeparture &&
-            (nativeDeparture || unit.birthRemaining == 0f && ordinaryMove))
-            UnitContact.YieldRequest(buildingTerrain?.collisionMap ?: map, executionStep, units) { blocker ->
-                val locomotion = UnitLocomotion.movement(blocker)
-                blocker.ownerPlayerId == unit.ownerPlayerId && blocker.lastYieldStep != executionStep &&
-                    blocker.lastYieldTo?.let { it.first == unit.unitId && it.second == unit.originMoveId } != true &&
-                    blocker.birthRemaining == 0f && blocker.moveTarget == null && blocker.tasks.isEmpty() &&
-                    blocker.movementState == MovementState.IDLE && blocker.speed == 0.0 && !blocker.movementRequested &&
-                    !blocker.constructionWorking && blocker.spiderBlink == null && unitActionHead(blocker) == null &&
-                    locomotion.moveSpeed > 0.0 && locomotion.type != MovementType.NONE && insideMap(boundedPosition)
-            } else null
         val contactMap = buildingTerrain?.collisionMap ?: map
-        val canPush: ((MutableUnit, MutableUnit) -> Boolean)? = if (!seaDeparture && unit.birthRemaining == 0f && insideMap(boundedPosition)) {
+        val canPush: ((MutableUnit, MutableUnit) -> Boolean)? = if (unit.birthRemaining == 0f && insideMap(boundedPosition)) {
             { pusher, blocker -> canDisplaceInContact(blocker) && !Transport.isLoadingPairAtContact(pusher, blocker, units) }
         } else null
-        val translation = step.translations.resolve(unit, boundedPosition, orderedUnits(), contactMap, units, canPush, yielding) { blocker ->
+        val translation = step.translations.resolve(unit, boundedPosition, orderedUnits(), contactMap, units, canPush, map) { blocker ->
             isVisibleTo(unit.ownerPlayerId, blocker.position, blocker.nativeTransportPlacement)
         }
         val resolved = translation.position
@@ -3820,10 +3808,6 @@ class SimulationContext internal constructor(private val policies: ExperimentalP
             step.translations.recordPush(shift.unit, shift.position)
             shift.unit.position = shift.position
             UnitAttachments.synchronizeAdjustedChildren(units, shift.unit)
-            if (translation.legacyYield) {
-                shift.unit.lastYieldStep = executionStep
-                shift.unit.lastYieldTo = unit.unitId to checkNotNull(unit.originMoveId)
-            }
         }
         val terrainCorrected = boundedHeading != requestedHeading || boundedPosition != candidate
         if (unit.moveTarget != null && (nativeDeparture || ordinaryMove)) {
@@ -3865,7 +3849,7 @@ class SimulationContext internal constructor(private val policies: ExperimentalP
 
     private fun canDisplaceInContact(unit: MutableUnit): Boolean {
         val movement = UnitLocomotion.movement(unit)
-        return unit.birthRemaining == 0f && !FactoryExit.isSeaDeparture(unit, checkNotNull(scenario).unitDefinitions) &&
+        return unit.birthRemaining == 0f &&
             BuildingWork.isReady(unit) && movement.moveSpeed > 0.0 && movement.type != MovementType.NONE &&
             !unit.constructionWorking && unit.spiderBlink == null &&
             !CustomUnitActions.movementLocked(unit, unitActionHead(unit)) &&

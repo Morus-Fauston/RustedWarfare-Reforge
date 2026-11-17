@@ -8,58 +8,142 @@ import com.rustedwarfare.reforge.core.content.MovementCollisionShape
 import com.rustedwarfare.reforge.core.content.MovementType
 import com.rustedwarfare.reforge.core.content.UnitDefinition
 import java.nio.file.Path
-import kotlin.math.abs
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertIs
-import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
 class NativeSeaDepartureTest {
     @Test
-    fun automatic_exit_can_move_the_direct_idle_own_blocker_within_the_existing_limit() =
-        WaterTestScene.withMap { map ->
-            val direct = Position(510.0, 230.0)
-            val nearby = Position(554.0, 224.0)
+    fun a_departed_rectangle_cannot_be_pushed_back_into_its_factory_from_the_side() = WaterTestScene.withMap { map ->
+        val scene = nativeScene(map, rectangle = true,
+            UnitSpawn("pusher", "p1", "port-marker", Position(447.0, 150.0), 150.0), markerMass = 40000.0)
+        val context = assertIs<InitResult.Accepted>(SimulationContext.initialize(scene)).context
+        try {
+            val frames = Frames(context)
+            val ship = produce(context, "b")
+            frames.until(3100) { it.units.any { unit -> unit.unitId == ship && unit.moveTarget == null } }
+            for ((id, target) in listOf("south-west" to Position(465.0, 300.0), "along-side" to Position(465.0, 170.0))) {
+                assertIs<ActionResult.Accepted>(context.submit(MoveAction(id, "p1", ship, target, context.world)))
+                frames.until(5000) { Event("movement-arrived", ship) in it.events }
+            }
+            assertIs<ActionResult.Accepted>(context.submit(StopAction("park-beside", "p1", ship, context.world)))
+            repeat(100) { frames.next() }
+            val parked = context.observe().unit(ship)
+            fun clearFactory(unit: UnitObservation): Boolean {
+                val radians = Math.toRadians(unit.heading)
+                val x = kotlin.math.abs(kotlin.math.sin(radians)) * 51.0 + kotlin.math.abs(kotlin.math.cos(radians)) * 10.0
+                val y = kotlin.math.abs(kotlin.math.cos(radians)) * 51.0 + kotlin.math.abs(kotlin.math.sin(radians)) * 10.0
+                if (unit.position.x + x <= 480.0 + 1e-8 || unit.position.x - x >= 540.0 - 1e-8 ||
+                    unit.position.y + y <= 120.0 + 1e-8 || unit.position.y - y >= 200.0 - 1e-8) return true
+                // A rotated hull's bounding box may touch a factory corner while the hull stays clear.
+                val forward = kotlin.math.sin(radians) to -kotlin.math.cos(radians)
+                val right = -forward.second to forward.first
+                return listOf(forward to 51.0, right to 10.0).any { (axis, half) ->
+                    val offset = kotlin.math.abs((unit.position.x - 510.0) * axis.first +
+                        (unit.position.y - 160.0) * axis.second)
+                    offset >= half + kotlin.math.abs(axis.first) * 30.0 + kotlin.math.abs(axis.second) * 40.0 - 1e-8
+                }
+            }
+            assertTrue(clearFactory(parked), "fixture has not cleared factory: $parked")
+            assertIs<ActionResult.Accepted>(context.submit(MoveAction("diagonal-pressure", "p1", "pusher",
+                Position(490.0, 250.0), context.world)))
+            repeat(600) {
+                val frame = frames.next()
+                assertTrue(clearFactory(frame.unit(ship)), "departed ship re-entered producer at ${frame.stepIndex}: ${frame.unit(ship)}")
+            }
+            println("Departed rectangle stayed outside producer: parked=${parked.position}/${parked.heading}, end=${context.observe().unit(ship).position}")
+        } finally { context.close() }
+    }
+
+    @Test
+    fun the_next_birth_pushes_a_stopped_ship_whose_stern_still_overlaps_its_factory() = WaterTestScene.withMap { map ->
+      for (rectangle in listOf(false, true)) {
+        val context = assertIs<InitResult.Accepted>(SimulationContext.initialize(nativeScene(map, rectangle))).context
+        try {
+            val frames = Frames(context)
+            val first = produce(context, "b")
+            frames.until(2800) { it.units.any { ship -> ship.unitId == first && ship.position.y >= 205.0 } }
+            assertIs<ActionResult.Accepted>(context.submit(StopAction("stop-in-outlet", "p1", first, context.world)))
+            repeat(100) { frames.next() }
+            val stopped = context.observe().unit(first)
+            assertTrue(stopped.position.y - 40.0 < 200.0, "stern already clear: $stopped")
+            assertEquals(0.0, stopped.speed)
+            val second = produce(context, "a")
+            frames.until(2600) { Event("unit-produced", second) in it.events }
+            var previous = context.observe().unit(first).position
+            var pushed = 0
+            repeat(1400) {
+                val frame = frames.next()
+                val ship = frame.unit(first)
+                val travel = kotlin.math.sqrt(ScreenPlane.distanceSquared(previous, ship.position))
+                assertTrue(travel <= .7 + 1e-8, "stopped ship jumped $travel")
+                if (travel > 1e-8) pushed++
+                assertEquals(stopped.heading, ship.heading)
+                assertTrue(ship.tasks.isEmpty())
+                previous = ship.position
+            }
+            assertTrue(pushed > 1, "stopped ship was never gradually pushed: $previous")
+            assertTrue(context.observe().unit(second).position.y > 260.0, "following ship did not leave")
+            assertEquals(18000L, context.observe().economy!!.balances.getValue("p1"))
+            assertEquals(setOf(first, second), context.observe().production!!.units.map { it.unitId }.toSet())
+            println("Stopped stern cleared rectangle=$rectangle: start=${stopped.position}, end=$previous, pushedSteps=$pushed")
+        } finally { context.close() }
+      }
+    }
+
+    @Test
+    fun a_paid_departure_pushes_idle_own_allied_and_enemy_units_gradually() = WaterTestScene.withMap { map ->
+        val occupied = Position(510.0, 230.0)
+        val nearby = Position(554.0, 224.0)
+        for ((owner, team) in listOf("p1" to "enemy", "p2" to "own", "p2" to "enemy")) {
             val scene = nativeScene(map, rectangle = true,
-                UnitSpawn("direct", "p1", "port-marker", direct, 90.0),
-                UnitSpawn("nearby", "p1", "port-marker", nearby, 90.0))
+                UnitSpawn("direct", owner, "port-marker", occupied, 90.0),
+                UnitSpawn("nearby", "p1", "port-marker", nearby, 90.0)).copy(
+                players = listOf(Player("p1", PlayerControl.LOCAL, "own"), Player("p2", PlayerControl.LOCAL, team)))
             val context = assertIs<InitResult.Accepted>(SimulationContext.initialize(scene)).context
             try {
                 val ship = produce(context, "a")
                 val ticks = Frames(context)
-                val birth = ticks.until(2600) { frame -> Event("unit-produced", ship) in frame.events }
-                assertEquals(Position(510.0, 170.0), birth.unit(ship).position)
-                val frames = List(510) { ticks.next() }
-                val shifted = frames.firstOrNull { it.unit("direct").position != direct }
-                val original = frames.last().unit(ship)
-                println("Auto exit birth=${birth.stepIndex} shift=${shifted?.stepIndex} berth=${original.position} direct=${frames.last().unit("direct").position}")
-                assertNotNull(shifted)
-                val newPosition = shifted.unit("direct").position
-                assertTrue(abs(newPosition.x - direct.x) in 15.0..20.0)
-                val heading = ScreenPlane.displacement(shifted.unit(ship).heading, 1.0)
-                val longitudinal = (newPosition.x - direct.x) * heading.x + (newPosition.y - direct.y) * heading.y
-                assertEquals(0.0, longitudinal, 1e-8)
-                assertTrue(frames.dropWhile { it !== shifted }.all { it.unit("direct").position == newPosition })
-                assertTrue(frames.all { it.unit("nearby").position == nearby })
-                assertTrue(original.position.y > 260.0)
-                assertEquals(24000L, context.observe().economy!!.balances.getValue("p1"))
-            } finally {
-                context.close()
-            }
+                ticks.until(2600) { Event("unit-produced", ship) in it.events }
+                var previous = occupied
+                var displacedSteps = 0
+                repeat(700) {
+                    val frame = ticks.next()
+                    val blocker = frame.unit("direct")
+                    val travel = kotlin.math.sqrt(ScreenPlane.distanceSquared(previous, blocker.position))
+                    assertTrue(travel <= .7 + 1e-8, "$owner/$team jumped $travel at ${frame.stepIndex}")
+                    if (travel > 1e-8) displacedSteps++
+                    assertTrue(blocker.tasks.isEmpty())
+                    assertEquals(90.0, blocker.heading)
+                    assertEquals(nearby, frame.unit("nearby").position)
+                    previous = blocker.position
+                }
+                assertTrue(displacedSteps > 1, "$owner/$team never received gradual push")
+                assertTrue(context.observe().unit(ship).position.y > 260.0, "$owner/$team did not leave")
+                assertEquals(24000L, context.observePlayer(context.world, "p1").balance)
+                assertEquals(listOf(ship), context.observe().production!!.units.map { it.unitId })
+                println("departure relation=$owner/$team displacedSteps=$displacedSteps blocker=$previous")
+            } finally { context.close() }
         }
+    }
 
     @Test
     fun blocked_native_berth_completes_both_orders_then_hands_off_and_accepts_player_takeover() =
         WaterTestScene.withMap { water ->
             // Keep both birth poses exactly coincident, including after the first ship attempts to move.
-            val occupied = Position(510.0, 249.999999)
-            val map = outletMap(water, lastBankRow = 10)
+            val occupied = Position(510.0, 215.999999)
+            val map = outletMap(water, lastBankRow = 8)
             val scene = nativeScene(map, rectangle = false,
-                UnitSpawn("holder", "p2", "port-marker", occupied, 90.0), markerRadius = 40.0)
+                UnitSpawn("holder", "p2", "port-marker", occupied, 90.0), workingMarker = true).copy(
+                players = listOf(Player("p1", PlayerControl.LOCAL, "one"), Player("p2", PlayerControl.LOCAL, "one")))
             val context = assertIs<InitResult.Accepted>(SimulationContext.initialize(scene)).context
             try {
+                val frames = Frames(context)
+                assertIs<ActionResult.Accepted>(context.submit(BuildAction("anchor-work", "p2", "holder", "seaFactory",
+                    Position(710.0, 290.0), "c".repeat(32), context.world)))
+                frames.until(100) { it.construction!!.workers.any { worker -> worker.unitId == "holder" && worker.working } }
                 // Deliberately reverse lexical nonce order so this is completion order.
                 val first = produce(context, "b")
                 val second = produce(context, "a")
@@ -67,7 +151,6 @@ class NativeSeaDepartureTest {
                 assertEquals(18000L, paid.balances.getValue("p1"))
                 assertEquals(listOf("b".repeat(32), "a".repeat(32)),
                     paid.queuedProduction.getValue("factory").map { it.unitNonce })
-                val frames = Frames(context)
                 val firstBirth = frames.until(2650) { Event("unit-produced", first) in it.events }
                 val blocked = frames.until(150) { Event("movement-blocked", first) in it.events }
                 val secondBirth = frames.until(2650) { Event("unit-produced", second) in it.events }
@@ -83,23 +166,27 @@ class NativeSeaDepartureTest {
                     val frame = frames.next()
                     assertEquals(spawn, frame.unit(first).position)
                     assertEquals(spawn, frame.unit(second).position)
+                    assertTrue(frame.construction!!.workers.single { it.unitId == "holder" }.working)
+                    assertEquals(occupied, frame.unit("holder").position)
                     for (ship in listOf(first, second)) assertEquals(Position(509.0, 285.0), frame.unit(ship).moveTarget)
                 }
+                assertIs<ActionResult.Accepted>(context.submit(StopAction("stop-work", "p2", "holder", context.world)))
                 assertIs<ActionResult.Accepted>(context.submit(MoveAction("back-away", "p2", "holder",
                     Position(510.0, 348.0), context.world)))
                 val granted = frames.until(1400) { it.unit(first).position.y > 176.0 }
                 assertEquals(spawn, granted.unit(second).position)
                 frames.until(1000) { it.unit("holder").position.y > 333.0 }
                 assertIs<ActionResult.Accepted>(context.submit(MoveAction("open-berth", "p2", "holder",
-                    Position(746.0, 345.0), context.world)))
+                    Position(600.0, 230.0), context.world)))
                 val outside = frames.until(1200) { it.unit(first).position.y > 265.0 }
                 assertIs<ActionResult.Accepted>(context.submit(MoveAction("clear-exit", "p1", first,
-                    Position(635.0, 345.0), context.world)))
+                    Position(600.0, 345.0), context.world)))
                 val following = frames.until(1000) { it.unit(second).position.y > 185.0 }
                 assertEquals(Position(509.0, 285.0), following.unit(second).moveTarget)
                 val manual = Position(511.0, 348.0)
                 assertIs<ActionResult.Accepted>(context.submit(MoveAction("take-over", "p1", second, manual, context.world)))
-                assertEquals(manual, context.observe().unit(second).moveTarget)
+                assertEquals("take-over", context.observe().unit(second).tasks.single().actionId)
+                frames.until(300) { it.unit(second).moveTarget == manual }
                 val arrived = frames.until(2300) { Event("movement-arrived", second) in it.events }
                 assertTrue(arrived.unit(second).position.y > 330.0)
                 assertEquals(18000L, arrived.economy!!.balances.getValue("p1"))
@@ -111,9 +198,40 @@ class NativeSeaDepartureTest {
         }
 
     @Test
+    fun a_building_sealing_the_outlet_does_not_pause_or_duplicate_paid_production() = WaterTestScene.withMap { water ->
+        val site = Position(510.0, 290.0)
+        val scene = nativeScene(outletMap(water, lastBankRow = 13), rectangle = false,
+            UnitSpawn("wall", "p2", "seaFactory", site, 0.0)).copy(
+            players = listOf(Player("p1", PlayerControl.LOCAL, "one"), Player("p2", PlayerControl.LOCAL, "one")))
+        val context = assertIs<InitResult.Accepted>(SimulationContext.initialize(scene)).context
+        try {
+            val first = produce(context, "b")
+            val second = produce(context, "a")
+            val frames = Frames(context)
+            val births = mutableListOf<String>()
+            repeat(5600) {
+                val frame = frames.next()
+                births += frame.events.filter { it.kind == "unit-produced" }.map { checkNotNull(it.unitId) }
+                assertEquals(site, frame.unit("wall").position)
+                for (ship in frame.units.filter { it.unitId == first || it.unitId == second }) {
+                    assertTrue(ship.position.y + 40.0 <= 270.0 + 1e-8, "ship crossed building: $ship")
+                    assertEquals(Position(509.0, 285.0), ship.moveTarget)
+                }
+            }
+            val end = context.observe()
+            assertEquals(listOf(first, second), births)
+            assertEquals(setOf(first, second), end.production!!.units.map { it.unitId }.toSet())
+            assertTrue(end.economy!!.queuedProduction.getValue("factory").isEmpty())
+            assertEquals(18000L, end.economy.balances.getValue("p1"))
+            println("Building sealed outlet: two births, no duplicate charges through ${frames.step}; positions=${end.units.map { it.unitId to it.position }}")
+        } finally { context.close() }
+    }
+
+    @Test
     fun farther_out_departure_precedes_an_older_ship_still_inside_the_outlet() = WaterTestScene.withMap { water ->
         val scene = nativeScene(outletMap(water, lastBankRow = 13), rectangle = false,
-            UnitSpawn("holder", "p2", "port-marker", Position(510.0, 209.0), 90.0), markerRadius = 40.0)
+            UnitSpawn("holder", "p2", "port-marker", Position(510.0, 209.0), 90.0), markerRadius = 40.0,
+            markerMass = 100000000.0)
         val context = assertIs<InitResult.Accepted>(SimulationContext.initialize(scene)).context
         try {
             val inner = produce(context, "b", "attackSubmarine")
@@ -177,12 +295,17 @@ class NativeSeaDepartureTest {
     }
 
     private fun nativeScene(map: MapDefinition, rectangle: Boolean, vararg additional: UnitSpawn,
-                            markerRadius: Double = 6.0): Scenario {
+                            markerRadius: Double = 6.0, markerMass: Double = 1000.0,
+                            workingMarker: Boolean = false): Scenario {
         val base = SeaFactoryScene.scenario(map, "json", "seaFactoryT2")
         val original = WaterTestScene.unit(MovementType.WATER)
-        val marker = UnitDefinition("port-marker", original.className, original.radius, original.displayRadius,
+        val marker = UnitDefinition("port-marker", if (workingMarker) "AuthoredRoleUnit" else original.className,
+            original.radius, original.displayRadius,
             original.totalFrames, original.imagePath, original.imageScale, original.movement, original.retainedUnconsumed,
-            movementCollision = MovementCollisionShape.Circle(markerRadius))
+            movementCollision = MovementCollisionShape.Circle(markerRadius), mass = markerMass,
+            durability = base.unitDefinitions.getValue("seaFactoryT2").durability.takeIf { workingMarker },
+            builder = if (workingMarker) com.rustedwarfare.reforge.core.content.BuilderProfile(
+                listOf("seaFactory"), range = 250f, buildSpeedMultiplier = .01f) else null)
         val definitions = if (rectangle) {
             val inputs = System.getProperty("public.fixtures.dir")?.let(Path::of) ?: Path.of("../../SimulationTest/public/inputs")
             assertIs<ContentResult.Success<LoadedContentPack>>(ContentLoader.loadContentPack(

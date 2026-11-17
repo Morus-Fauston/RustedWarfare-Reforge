@@ -15,12 +15,6 @@ internal object FactoryExit {
         unit.productionOrigin?.factoryTypeId in nativeSeaFactoryIds &&
             unit.originMoveId == "production-exit:${unit.unitId}"
 
-    fun isSeaDeparture(unit: MutableUnit, definitions: Map<String, UnitDefinition>): Boolean {
-        val origin = unit.productionOrigin ?: return false
-        return unit.originMoveId == "production-exit:${unit.unitId}" &&
-            definitions[origin.factoryTypeId]?.production?.exitProfile == FactoryExitProfile.NATIVE_SEA
-    }
-
     fun waitingNativeSeaDepartures(map: MapDefinition, units: Map<String, MutableUnit>): Set<String> {
         val waiting = hashSetOf<String>()
         val byFactory = units.values.filter {
@@ -141,25 +135,29 @@ internal object FactoryExit {
     }
 
     fun departingSeaFactoryCells(map: MapDefinition, unit: MutableUnit, producer: MutableUnit?,
-                                 next: Position, shape: MovementCollisionShape): Set<Pair<Int, Int>> {
+                                 next: Position, shape: MovementCollisionShape,
+                                 requireExitOrder: Boolean = true): Set<Pair<Int, Int>> {
         if (producer?.alive != true || producer.definition.production?.exitProfile != FactoryExitProfile.NATIVE_SEA ||
-            unit.originMoveId == null || next == unit.position) return emptySet()
+            (requireExitOrder && unit.originMoveId == null) || next == unit.position) return emptySet()
         val building = checkNotNull(producer.definition.building)
         val producerCells = BuildingTerrain.footprint(map, producer.position, building.footprint, building.anchor)
+        val north = producerCells.minOf { it.second }.toDouble() * map.tileHeight
+        val west = producerCells.minOf { it.first }.toDouble() * map.tileWidth
+        val east = (producerCells.maxOf { it.first } + 1.0) * map.tileWidth
         val south = (producerCells.maxOf { it.second } + 1.0) * map.tileHeight
         val start = unit.position
         val leaving = when (shape) {
             is MovementCollisionShape.Circle -> {
-                val north = producerCells.minOf { it.second }.toDouble() * map.tileHeight
-                val west = producerCells.minOf { it.first }.toDouble() * map.tileWidth
-                val east = (producerCells.maxOf { it.first } + 1.0) * map.tileWidth
                 CircularTerrain.separatesFrom(start, next.x - start.x, next.y - start.y, shape.radius,
                     west, east, north, south)
             }
             is MovementCollisionShape.Rectangle ->
                 (producer.definition.id in nativeSeaFactoryIds || unit.originMoveId == "production-exit:${unit.unitId}") &&
                 start.y >= producer.position.y && next.y > start.y &&
-                start.y - kotlin.math.hypot(shape.length / 2.0, shape.width / 2.0) < south
+                start.y - kotlin.math.hypot(shape.length / 2.0, shape.width / 2.0) < south &&
+                (requireExitOrder || UnitContact.separatesExistingOverlap(shape, start, unit.heading, next,
+                    MovementCollisionShape.Rectangle(south - north, east - west),
+                    Position((west + east) / 2.0, (north + south) / 2.0), 0.0))
         }
         return if (leaving) producerCells else emptySet()
     }
