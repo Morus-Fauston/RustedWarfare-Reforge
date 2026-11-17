@@ -28,6 +28,28 @@ class RectangularManeuverTest {
     private val hull = MovementCollisionShape.Rectangle(102.0, 20.0)
 
     @Test
+    fun ship_finds_another_turn_pose_without_a_second_order_or_clearing_the_blocker() = WaterTestScene.withMap { shore ->
+        val blocker = BasinBlocker(Position(440.0, 169.0), Position(440.0, 230.0), Long.MAX_VALUE,
+            MovementCollisionShape.Rectangle(24.0, 13.0))
+        val repairs = mutableListOf<PathSearchSample>()
+        val track = move(strait(shore), Position(240.0, 120.0), 90.0, Position(110.0, 120.0), blocker, repairs)
+        val found = repairs.firstOrNull { it.reason == PathSearchReason.ROUTE_REPAIR && it.outcome == PathSearchOutcome.FOUND }
+        assertNotNull(found, "Sustained rotational contact must produce a new maneuver for the original Move")
+        assertEquals("maneuver", found.actionId)
+        assertTrue(track.any { it.position.x > 450.0 || kotlin.math.abs(it.position.y - 120.0) > 20.0 },
+            "The ship must really sail to a different turning pose")
+        println("sustained-turn recovery=${found.executionStep}; arrived=${track.lastIndex}; final=${track.last().position}")
+    }
+
+    @Test
+    fun a_light_vessel_needs_no_player_clearing_order_and_replays_identically() = WaterTestScene.withMap { shore ->
+        val blocker = BasinBlocker(Position(440.0, 169.0), Position(440.0, 230.0), Long.MAX_VALUE,
+            MovementCollisionShape.Rectangle(24.0, 13.0), mass = 1_000.0)
+        fun replay() = move(strait(shore), Position(240.0, 120.0), 90.0, Position(110.0, 120.0), blocker)
+        assertEquals(replay(), replay())
+    }
+
+    @Test
     fun ship_passes_the_rear_target_only_after_turning_in_open_water() = WaterTestScene.withMap { shore ->
         val map = strait(shore)
         val start = Position(240.0, 120.0)
@@ -68,18 +90,13 @@ class RectangularManeuverTest {
     }
 
     @Test
-    fun ship_keeps_its_turn_order_until_the_other_vessel_leaves_the_basin() = WaterTestScene.withMap { shore ->
-        val blocker = BasinBlocker(Position(440.0, 175.0), Position(440.0, 230.0), 1_250L)
-        val track = move(strait(shore), Position(240.0, 120.0), 90.0, Position(110.0, 120.0), blocker)
-        assertTrue(track.size > blocker.releaseStep, "The blocker did not hold the ship until the release order")
-        val hold = track[700]
-        assertTrue(hold.position.x >= 410.0)
-        assertTrue(kotlin.math.abs(ScreenPlane.difference(hold.heading, 270.0)) > 10.0)
-        for (unit in track.subList(701, blocker.releaseStep.toInt())) {
-            assertEquals(hold.position, unit.position)
-            assertEquals(hold.heading, unit.heading)
-            assertEquals(Position(110.0, 120.0), unit.moveTarget)
-        }
+    fun short_basin_occupancy_can_clear_without_replacing_the_original_turn_route() = WaterTestScene.withMap { shore ->
+        val blocker = BasinBlocker(Position(440.0, 175.0), Position(440.0, 230.0), 430L)
+        val repairs = mutableListOf<PathSearchSample>()
+        val track = move(strait(shore), Position(240.0, 120.0), 90.0, Position(110.0, 120.0), blocker, repairs)
+        assertTrue(repairs.none { it.reason == PathSearchReason.ROUTE_REPAIR },
+            "Short occupancy must not require an alternate turn route")
+        assertTrue(track.take(blocker.releaseStep.toInt()).all { it.moveTarget == Position(110.0, 120.0) })
         assertTrue(track.last().position.x < 117.0)
     }
 
@@ -87,9 +104,56 @@ class RectangularManeuverTest {
     fun repeated_turn_attempts_do_not_enter_a_rectangular_blocker() = WaterTestScene.withMap { shore ->
         val blocker = BasinBlocker(Position(440.0, 169.0), Position(440.0, 230.0), 1_250L,
             MovementCollisionShape.Rectangle(24.0, 13.0))
-        val track = move(strait(shore), Position(240.0, 120.0), 90.0, Position(110.0, 120.0), blocker)
+        val repairs = mutableListOf<PathSearchSample>()
+        val track = move(strait(shore), Position(240.0, 120.0), 90.0, Position(110.0, 120.0), blocker, repairs)
         assertTrue(track.size > blocker.releaseStep)
-        assertEquals(track[700].heading, track[blocker.releaseStep.toInt() - 1].heading)
+        val westbound = track.indexOfFirst { it.heading in 225.0..315.0 }
+        assertTrue(westbound in 0 until blocker.releaseStep.toInt(), "The ship must turn before any clearing order")
+        assertTrue(repairs.any { it.reason == PathSearchReason.ROUTE_REPAIR && assertNotNull(it.executionStep) < blocker.releaseStep })
+        assertTrue(repairs.none { it.reason == PathSearchReason.ROUTE_REPAIR && assertNotNull(it.executionStep) >= blocker.releaseStep },
+            "Opening the old basin must not restart a legal route that is already progressing")
+        assertTrue(track[blocker.releaseStep.toInt() + 20].position.x < track[blocker.releaseStep.toInt()].position.x)
+    }
+
+    @Test
+    fun a_basin_with_no_legal_turn_does_not_search_forever() = WaterTestScene.withMap { shore ->
+        val map = strait(shore)
+        val ship = battleship()
+        val fixture = WaterTestScene.unit(MovementType.WATER)
+        val bar = UnitDefinition("basin-bar", fixture.className, 16.0, 16.0, fixture.totalFrames,
+            fixture.imagePath, fixture.imageScale, fixture.movement.copy(moveSpeed = 0.0), emptySet(),
+            movementCollision = MovementCollisionShape.Rectangle(24.0, 200.0), mass = 500_000.0)
+        val base = WaterTestScene.scenario(map, MovementType.WATER, Position(240.0, 120.0))
+        val scene = base.copy(unitDefinitions = mapOf(ship.id to ship, bar.id to bar), units = listOf(
+            UnitSpawn("w1", "p1", ship.id, Position(240.0, 120.0), 90.0),
+            UnitSpawn("top", "p1", bar.id, Position(500.0, 72.0), 180.0),
+            UnitSpawn("bottom", "p1", bar.id, Position(500.0, 168.0), 180.0)))
+        val context = assertIs<InitResult.Accepted>(SimulationContext.initialize(scene)).context
+        try {
+            context.enablePathDiagnostics(context.world)
+            context.enablePlanningWorkDiagnostics(context.world)
+            assertIs<ActionResult.Accepted>(context.submit(MoveAction("maneuver", "p1", "w1",
+                Position(110.0, 120.0), context.world)))
+            val terrain = HullTerrainGrid.authoritative(map, MovementType.WATER)
+            for (tick in 0L..2_000L) {
+                context.advance(Step(tick, 1.0, "sim-tick"))
+                val units = context.observePlayer(context.world, "p1").units
+                val moving = units.single { it.unitId == "w1" }
+                assertTrue(UnitContact.poseFits(hull, moving.position, moving.heading, terrain))
+                for (other in units.filter { it.unitId != "w1" }) {
+                    assertTrue(!UnitContact.posesOverlap(hull, moving.position, moving.heading,
+                        bar.movementCollision, other.position, other.heading))
+                }
+            }
+            val repairs = context.drainPathDiagnostics(context.world).filter { it.reason == PathSearchReason.ROUTE_REPAIR }
+            assertTrue(repairs.isNotEmpty(), "A sustained rotational block must try recovery")
+            assertTrue(repairs.all { it.outcome == PathSearchOutcome.UNREACHABLE })
+            val work = context.drainPlanningWorkDiagnostics(context.world)
+            assertTrue(work.all { it.used in 0..512 && it.slices.sumOf { slice -> slice.workUnits } == it.used })
+            assertTrue(work.filter { it.executionStep > 1_500 }.all { it.used == 0 },
+                "Unchanged impossible occupancy must not consume recovery budget forever: ${repairs.map { it.executionStep }}")
+            println("impossible turn repairs=${repairs.map { it.executionStep }}")
+        } finally { context.close() }
     }
 
     @Test
@@ -259,7 +323,8 @@ class RectangularManeuverTest {
     }
 
     private data class BasinBlocker(val start: Position, val exit: Position, val releaseStep: Long,
-                                   val shape: MovementCollisionShape = MovementCollisionShape.Circle(16.0))
+                                   val shape: MovementCollisionShape = MovementCollisionShape.Circle(16.0),
+                                   val mass: Double = 500_000.0)
 
     private fun strait(shore: MapDefinition) = waterMap(30, 16, shore) { col, row ->
         col in 1..29 && row in 5..6 || col >= 19 && row in 1..12
@@ -287,7 +352,7 @@ class RectangularManeuverTest {
         val base = WaterTestScene.scenario(map, MovementType.WATER, start)
         val blockingShip = UnitDefinition("turn-blocker", fixture.className, 16.0, 16.0, fixture.totalFrames,
             fixture.imagePath, fixture.imageScale, fixture.movement, emptySet(),
-            movementCollision = blocker?.shape ?: MovementCollisionShape.Circle(16.0), mass = 500_000.0)
+            movementCollision = blocker?.shape ?: MovementCollisionShape.Circle(16.0), mass = blocker?.mass ?: 500_000.0)
         val definitions = if (blocker == null) mapOf(ship.id to ship)
             else mapOf(ship.id to ship, blockingShip.id to blockingShip)
         val scenario = base.copy(unitDefinitions = definitions,
@@ -297,6 +362,7 @@ class RectangularManeuverTest {
         val context = assertIs<InitResult.Accepted>(opened, opened.toString()).context
         try {
             if (searches != null) context.enablePathDiagnostics(context.world)
+            context.enablePlanningWorkDiagnostics(context.world)
             val accepted = assertIs<ActionResult.Accepted>(
                 context.submit(MoveAction("maneuver", "p1", "w1", target, context.world)))
             assertTrue(accepted.events.isEmpty())
@@ -309,6 +375,10 @@ class RectangularManeuverTest {
                         context.submit(MoveAction("clear-basin", "p1", "w2", blocker.exit, context.world, tick)))
                 }
                 val sample = context.advance(Step(tick, 1.0, "sim-tick"))
+                for (work in context.drainPlanningWorkDiagnostics(context.world)) {
+                    assertTrue(work.used in 0..512)
+                    assertEquals(work.used, work.slices.sumOf { it.workUnits })
+                }
                 if (searches != null) searches += context.drainPathDiagnostics(context.world)
                 val playersUnits = context.observePlayer(context.world, "p1").units
                 val unit = playersUnits.single { it.unitId == "w1" }

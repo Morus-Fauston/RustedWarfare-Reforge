@@ -3314,7 +3314,9 @@ class SimulationContext internal constructor(private val policies: ExperimentalP
                 movingContact >= ROUTE_RETRY_TICKS &&
                 impendingRouteContacts(unit, map, 0.0).isNotEmpty() &&
                 (stalled < ROUTE_RETRY_TICKS || routeContacts(unit).any { it.moveTarget != null })
-            val limited = if (overtaking) movingContact else stalled
+            val sustainedTurnContact = unit.definition.movementCollision is MovementCollisionShape.Rectangle &&
+                unit.followsManeuverRoute && movingContact >= ROUTE_RETRY_TICKS && routeContacts(unit).isNotEmpty()
+            val limited = if (overtaking || sustainedTurnContact) movingContact else stalled
             if (!unit.alive || unit.carriedBy != null || unit.unitId in passageWaiting || unit.unitId in seaDepartureWaiting ||
                 limited == 0L || limited % ROUTE_RETRY_TICKS != 0L) continue
             val target = unit.moveTarget ?: continue
@@ -3829,9 +3831,7 @@ class SimulationContext internal constructor(private val policies: ExperimentalP
             if (unit.routeTranslationClipped) unit.nearTargetTime = 0.0
             val attemptedPoseChange = candidate != positionBefore || requestedHeading != headingBefore
             val heldAtPriorPose = resolved == positionBefore && legalHeading == headingBefore
-            val waitsForOccupant = maneuverLeg != null && unit.maneuverTurnWaypoint == positionBefore &&
-                legalHeading != boundedHeading && candidate == positionBefore
-            unit.stalledRouteTicks = if (!waitsForOccupant && attemptedPoseChange && heldAtPriorPose &&
+            unit.stalledRouteTicks = if (attemptedPoseChange && heldAtPriorPose &&
                 (terrainCorrected || unitContactLimited)) unit.stalledRouteTicks + 1 else 0
         }
         if (terrainCorrected || unitContactLimited) {
