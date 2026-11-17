@@ -16,7 +16,7 @@ import kotlin.test.assertTrue
 
 class GroupMoveDestinationsTest {
     @Test
-    fun when_only_one_position_fits_the_member_already_there_can_keep_it() = WaterTestScene.withMap { water ->
+    fun a_narrow_shore_expands_beyond_the_old_radius_for_both_reachable_members() = WaterTestScene.withMap { water ->
         val banks = (20 until water.widthTiles).flatMap { column ->
             (0 until water.heightTiles).filter { it != 9 }.map { column to it }
         }.toSet()
@@ -33,12 +33,12 @@ class GroupMoveDestinationsTest {
             val group = assertNotNull(context.requestGroupMove("p1", listOf("a", "z"), click))
             submitSelection(context, group, "a", "z")
             val frame = awaitPlanning(context, "a", "z")
-            assertEquals(null, frame.ship("a").moveTarget)
-            assertTrue(Event("group-destination-unavailable", "a") in frame.events)
+            val first = assertNotNull(frame.ship("a").moveTarget)
+            val second = assertNotNull(frame.ship("z").moveTarget)
+            assertTrue(listOf(first, second).any { ScreenPlane.distanceSquared(it, click) > 60.0 * 60.0 })
+            assertTrue(ScreenPlane.distanceSquared(first, second) >= 16.0 * 16.0)
+            assertTrue(frame.events.none { it.kind == "group-destination-unavailable" })
             assertTrue(Event("movement-started", "z") in frame.events)
-            assertEquals(approach, frame.ship("a").position)
-            assertEquals(lastSlot, frame.ship("z").position)
-            assertTrue(Event("movement-arrived", "z") in frame.events)
         } finally {
             context.close()
         }
@@ -110,12 +110,11 @@ class GroupMoveDestinationsTest {
             context.acceptVisibleTerrain(context.world, "p2", shore)
             assertEquals(click, context.advance(Step(initial.stepIndex + 1, 1.0, "sim-tick")).ship("a").moveTarget)
             context.acceptVisibleTerrain(context.world, "p1", shore)
-            val frame = context.advance(Step(initial.stepIndex + 2, 1.0, "sim-tick"))
+            val frame = awaitReplacement(context, initial.stepIndex + 2, "a", "z" to otherTarget)
             val replacement = assertNotNull(frame.ship("a").moveTarget)
             assertTrue(Event("group-destination-reassigned", "a") in frame.events)
             assertTrue(Event("group-destination-reassigned", "z") !in frame.events)
             assertTrue(replacement != click)
-            assertEquals(otherTarget, frame.ship("z").moveTarget)
             println("Authorized static shore changed $click to $replacement; other remained $otherTarget")
         } finally {
             context.close()
@@ -125,7 +124,9 @@ class GroupMoveDestinationsTest {
     @Test
     fun a_confirmed_unreachable_route_can_find_a_nearby_destination_on_the_approach_side() =
         WaterTestScene.withMap { water ->
-            val wall = (0 until water.heightTiles).map { VisibleTerrainCell(29, it, true, 1) }
+            // Keep z's buffer-spaced slot on valid terrain: this fixture changes
+            // only a's connectivity, rather than invalidating both destinations.
+            val wall = (0 until water.heightTiles).map { VisibleTerrainCell(28, it, true, 1) }
             val gids = water.groundGids.apply { for (cell in wall) this[cell.row * water.widthTiles + cell.column] = 1 }
             val map = MapDefinition(water.widthTiles, water.heightTiles, water.tileWidth, water.tileHeight,
                 water.tileSets, gids, water.blocking)
@@ -142,11 +143,10 @@ class GroupMoveDestinationsTest {
                 assertEquals(click, initial.ship("a").moveTarget)
                 val otherTarget = assertNotNull(initial.ship("z").moveTarget)
                 context.acceptVisibleTerrain(context.world, "p1", wall)
-                val blocked = context.advance(Step(initial.stepIndex + 1, 1.0, "sim-tick"))
+                val blocked = awaitReplacement(context, initial.stepIndex + 1, "a", "z" to otherTarget)
                 println("Disconnected original target $click, new target=${blocked.ship("a").moveTarget}, events=${blocked.events}")
                 assertTrue(Event("group-destination-reassigned", "a") in blocked.events)
-                assertTrue(assertNotNull(blocked.ship("a").moveTarget).x <= 574.0)
-                assertEquals(otherTarget, blocked.ship("z").moveTarget)
+                assertTrue(assertNotNull(blocked.ship("a").moveTarget).x <= 554.0)
             } finally {
                 context.close()
             }
@@ -163,6 +163,7 @@ class GroupMoveDestinationsTest {
                 UnitSpawn("holding", "p2", "holder", click, 180.0)))
         val context = assertIs<InitResult.Accepted>(SimulationContext.initialize(scene)).context
         try {
+            context.enablePlanningWorkDiagnostics(context.world)
             assertIs<ActionResult.Accepted>(context.submit(MoveAction("move-away", "p2", "holding",
                 Position(600.0, 340.0), context.world)))
             val group = assertNotNull(context.requestGroupMove("p1", listOf("z", "a"), click))
@@ -176,6 +177,9 @@ class GroupMoveDestinationsTest {
             val arrived = frames.firstOrNull { Event("movement-arrived", "a") in it.events }
             val other = frames.firstOrNull { Event("movement-arrived", "z") in it.events }
             println("Holder speed=$holderSpeed reassigned=${changed?.stepIndex} target=${changed?.ship("a")?.moveTarget} arrived=${arrived?.stepIndex} other=${other?.stepIndex}")
+            val work = context.drainPlanningWorkDiagnostics(context.world)
+            assertTrue(work.all { it.used <= it.limit })
+            println("Replacement work: ${work.filter { it.slices.any { s -> s.restarted || s.completed } }}")
             assertTrue(frames.takeWhile { it !== other }.all { it.ship("z").moveTarget == unaffectedTarget })
             assertNotNull(other)
             if (reassign) {
@@ -195,7 +199,7 @@ class GroupMoveDestinationsTest {
     }
 
     @Test
-    fun scarce_shore_destinations_get_priority_and_an_unavailable_member_reports_its_original_move_failure() =
+    fun scarce_shore_destinations_get_priority_and_farther_members_expand_back_to_reachable_land() =
         WaterTestScene.withMap { map ->
             val shore = Position(390.0, 190.0)
             val offshore = Position(600.0, 190.0)
@@ -216,9 +220,8 @@ class GroupMoveDestinationsTest {
                         assertTrue(frame.ship("a-hover").moveTarget != null && frame.ship("a-hover").moveTarget != shore)
                     } else {
                         assertEquals(offshore, frame.ship("a-hover").moveTarget)
-                        assertEquals(null, frame.ship("z-land").moveTarget)
-                        assertTrue(Event("group-destination-unavailable", "z-land") in frame.events)
-                        assertTrue(Event("path-unreachable", "z-land") in frame.events)
+                        assertTrue(assertNotNull(frame.ship("z-land").moveTarget).x < 400.0)
+                        assertTrue(frame.events.none { it.kind == "group-destination-unavailable" || it.kind == "path-unreachable" })
                     }
                 } finally {
                     context.close()
@@ -234,12 +237,29 @@ class GroupMoveDestinationsTest {
         }
 
     private fun awaitPlanning(context: SimulationContext, vararg members: String): Observation {
-        for (step in 0L..2400L) {
+        for (step in 0L..12000L) {
             val frame = context.advance(Step(step, 1.0, "sim-tick"))
             if (members.all { id -> frame.events.any { it.unitId == id &&
                     it.kind in setOf("movement-started", "group-destination-unavailable") } }) return frame
         }
         error("Group movement plan could not finish")
+    }
+
+    private fun awaitReplacement(context: SimulationContext, firstStep: Long, id: String,
+                                 preserved: Pair<String, Position>): Observation {
+        context.enablePlanningWorkDiagnostics(context.world)
+        for (step in firstStep until firstStep + 12000) {
+            val frame = context.advance(Step(step, 1.0, "sim-tick"))
+            assertTrue(context.drainPlanningWorkDiagnostics(context.world).all { it.used <= it.limit })
+            val other = frame.ship(preserved.first)
+            assertTrue(Event("group-destination-reassigned", preserved.first) !in frame.events)
+            assertTrue(other.moveTarget == preserved.second || other.moveTarget == null &&
+                ScreenPlane.distanceSquared(other.position, preserved.second) <= 49.0,
+                "Unaffected member must keep its original slot until arriving within the existing seven-unit radius: $other")
+            if (Event("group-destination-reassigned", id) in frame.events) return frame
+            assertTrue(Event("group-destination-unavailable", id) !in frame.events)
+        }
+        error("Replacement did not finish")
     }
 
     private fun variant(template: UnitDefinition, id: String, speed: Double = template.movement.moveSpeed,

@@ -2,6 +2,9 @@ package com.rustedwarfare.reforge.core.sim
 
 import com.rustedwarfare.reforge.core.content.MovementCollisionShape
 import com.rustedwarfare.reforge.core.content.MapDefinition
+import java.util.PriorityQueue
+import kotlin.math.ceil
+import kotlin.math.floor
 
 /** The selected members and target of one ordinary group order. */
 class GroupMoveRequest internal constructor(
@@ -17,14 +20,49 @@ internal data class GroupMoveReservation(val plan: GroupMoveRequest, val slot: G
                                          val occupiedTicks: Long = 0, val needsReplacement: Boolean = false)
 
 internal object GroupMoveDestinations {
-    fun positions(map: MapDefinition, click: Position): List<Position> {
-        val spacing = minOf(map.tileWidth, map.tileHeight) / 2.0
-        return buildList {
-            // Search around the exact click, through a radius of three map cells.
-            for (dy in -6..6) for (dx in -6..6) {
-                if (dx * dx + dy * dy <= 36) add(Position(click.x + dx * spacing, click.y + dy * spacing))
+    /** Finite map lattice, emitted nearest first without constructing the whole map. */
+    class Points(private val map: MapDefinition, private val click: Position) {
+        private data class Offset(val x: Int, val y: Int) {
+            val distanceSquared get() = x.toDouble() * x + y.toDouble() * y
+        }
+        private val spacing = minOf(map.tileWidth, map.tileHeight) / 2.0
+        private val minX = ceil(-click.x / spacing).toInt()
+        private val maxX = floor((map.widthTiles.toDouble() * map.tileWidth - click.x) / spacing).toInt()
+        private val minY = ceil(-click.y / spacing).toInt()
+        private val maxY = floor((map.heightTiles.toDouble() * map.tileHeight - click.y) / spacing).toInt()
+        private var pending = PriorityQueue(compareBy<Offset> { it.distanceSquared }.thenBy { it.x }.thenBy { it.y })
+        private var seen = hashSetOf<Offset>()
+        private var rollback: PathSearchRollback? = null
+
+        init {
+            if (minX <= maxX && minY <= maxY) add(Offset(0.coerceIn(minX, maxX), 0.coerceIn(minY, maxY)))
+        }
+
+        val exhausted get() = pending.isEmpty()
+
+        fun fork(rollback: PathSearchRollback): Points = Points(map, click).also {
+            it.pending = pending
+            it.seen = seen
+            it.rollback = rollback
+        }
+
+        /** Caller charges one work unit for this pop and its four bounded neighbours. */
+        fun next(): Position? {
+            val at = pending.poll() ?: return null
+            rollback?.record { pending.add(at) }
+            if (at.x > minX) add(Offset(at.x - 1, at.y))
+            if (at.x < maxX) add(Offset(at.x + 1, at.y))
+            if (at.y > minY) add(Offset(at.x, at.y - 1))
+            if (at.y < maxY) add(Offset(at.x, at.y + 1))
+            return Position(click.x + at.x * spacing, click.y + at.y * spacing)
+        }
+
+        private fun add(offset: Offset) {
+            if (seen.add(offset)) {
+                pending.add(offset)
+                rollback?.record { check(pending.remove(offset)); check(seen.remove(offset)) }
             }
-        }.sortedWith(compareBy<Position> { ScreenPlane.distanceSquared(click, it) }.thenBy { it.x }.thenBy { it.y })
+        }
     }
 
     class Assignment(private val choices: List<Pair<MutableUnit, List<PlannedMove>>>) {
@@ -40,11 +78,12 @@ internal object GroupMoveDestinations {
         private var memberIndex = 0
         private var optionIndex = 0
         private var pairIndex = 0
-        private val filteredOptions = mutableListOf<PlannedMove>()
+        private var filteredOptions = mutableListOf<PlannedMove>()
+        private var rollback: PathSearchRollback? = null
         var destinations: Map<String, PlannedMove>? = null
             private set
 
-        fun fork(): Assignment = Assignment(choices).also {
+        fun fork(rollback: PathSearchRollback): Assignment = Assignment(choices).also {
             it.phase = phase
             it.staying.addAll(staying)
             it.stayingIds.addAll(stayingIds)
@@ -55,7 +94,8 @@ internal object GroupMoveDestinations {
             it.memberIndex = memberIndex
             it.optionIndex = optionIndex
             it.pairIndex = pairIndex
-            it.filteredOptions.addAll(filteredOptions)
+            it.filteredOptions = filteredOptions
+            it.rollback = rollback
             it.destinations = destinations
         }
 
@@ -78,8 +118,8 @@ internal object GroupMoveDestinations {
             }
             val (unit, options) = choices[memberIndex]
             if (optionIndex == options.size) {
-                usable += unit to filteredOptions.toList()
-                filteredOptions.clear()
+                usable += unit to filteredOptions
+                filteredOptions = mutableListOf()
                 nextMember()
                 return
             }
@@ -89,6 +129,8 @@ internal object GroupMoveDestinations {
                 Check.MORE -> Unit
                 Check.CLEAR -> {
                     filteredOptions += option
+                    val list = filteredOptions
+                    rollback?.record { list.removeAt(list.lastIndex) }
                     nextOption()
                 }
                 Check.BLOCKED -> nextOption()
@@ -171,17 +213,13 @@ internal object GroupMoveDestinations {
         }
     }
 
-    fun available(unit: MutableUnit, points: List<Position>, route: (Position) -> List<Position>?,
-                  vacant: (GroupMoveSlot) -> Boolean): Sequence<GroupMoveSlot> =
-        points.asSequence().mapNotNull { point -> route(point)?.let { slot(unit, point, it) } }.filter(vacant)
-
     fun overlaps(unit: MutableUnit, slot: GroupMoveSlot, other: MutableUnit, assigned: GroupMoveSlot): Boolean =
-        UnitContact.shareLayer(unit, other) && UnitContact.posesOverlap(unit.definition.movementCollision,
-            slot.position, slot.heading, other.definition.movementCollision, assigned.position, assigned.heading)
+        UnitContact.shareLayer(unit, other) && UnitContact.posesOverlap(unit.definition.contactBufferCollision,
+            slot.position, slot.heading, other.definition.contactBufferCollision, assigned.position, assigned.heading)
 
     fun overlaps(unit: MutableUnit, slot: GroupMoveSlot, other: MutableUnit): Boolean =
-        UnitContact.shareLayer(unit, other) && UnitContact.posesOverlap(unit.definition.movementCollision,
-            slot.position, slot.heading, other.definition.movementCollision, other.position, other.heading)
+        UnitContact.shareLayer(unit, other) && UnitContact.posesOverlap(unit.definition.contactBufferCollision,
+            slot.position, slot.heading, other.definition.contactBufferCollision, other.position, other.heading)
 
     fun slot(unit: MutableUnit, point: Position, path: List<Position>): GroupMoveSlot =
         GroupMoveSlot(point, arrivalHeading(unit, path), path)

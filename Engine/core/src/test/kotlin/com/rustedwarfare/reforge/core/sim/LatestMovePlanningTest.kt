@@ -105,12 +105,13 @@ class LatestMovePlanningTest {
                 ids.forEach { id -> assertIs<ActionResult.Accepted>(context.submitGroupMove(
                     MoveAction("bay-$id", "p1", id, target, context.world), group)) }
                 var finishedAt: Long? = null
-                for (tick in 0L..1000L) {
+                for (tick in 0L..12000L) {
                     val frame = context.advance(Step(tick, 1.0, "sim-tick"))
-                    assertTrue(frame.units.all { it.moveTarget == null })
                     context.drainPlanningWorkDiagnostics(context.world).forEach { assertTrue(it.used in 0..512) }
                     context.drainPathDiagnostics(context.world)
-                    if (frame.events.count { it.kind == "group-destination-unavailable" } == ids.size) {
+                    assertTrue(frame.events.none { it.kind == "group-destination-unavailable" })
+                    if (frame.events.count { it.kind == "movement-started" } == ids.size) {
+                        assertTrue(frame.units.all { assertNotNull(it.moveTarget).x < 240.0 })
                         finishedAt = tick; break
                     }
                 }
