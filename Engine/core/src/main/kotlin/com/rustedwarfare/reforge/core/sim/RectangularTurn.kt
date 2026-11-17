@@ -14,7 +14,10 @@ internal object RectangularTurn {
     fun resolve(map: HullTerrainGrid, shape: MovementCollisionShape.Rectangle,
                 center: Position, from: Double, requested: Double): Double {
         val change = ScreenPlane.difference(requested, from)
-        if (change == 0.0) return from
+        if (change == 0.0) {
+            // Canonical cardinal alignment can differ from the integrated angle by a few ulps.
+            return if (requested == from || UnitContact.poseFits(shape, center, requested, map)) requested else from
+        }
         val arc = Arc(Math.toRadians(from), Math.toRadians(change))
         val halfLength = shape.length / 2.0
         val halfWidth = shape.width / 2.0
@@ -38,6 +41,8 @@ internal object RectangularTurn {
             if (progress == 1.0) requested else ScreenPlane.normalize(from + change * progress)
         fun fits(heading: Double) = RectangularTerrain(shape, heading).contains(map, center)
         val heading = at(fraction)
+        if (heading != requested && ScreenPlane.difference(requested, heading) == 0.0 &&
+            UnitContact.poseFits(shape, center, requested, map)) return requested
         if (fits(heading)) return heading
 
         // A trigonometric root can round to the outside of the closed map edge.

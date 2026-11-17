@@ -444,6 +444,9 @@ internal data class MutableUnit(
     var routeContinuation: RouteContinuation? = null,
     var stalledRouteTicks: Long = 0,
     var routeTranslationClipped: Boolean = false,
+    var followsManeuverRoute: Boolean = false,
+    var maneuverTurnWaypoint: Position? = null,
+    var lastManeuverContactRepair: Long? = null,
     var routeOccupantIds: List<String> = emptyList(),
     var passageEntry: PassageEntry? = null,
     var groupMoveReservation: GroupMoveReservation? = null,
@@ -588,6 +591,7 @@ internal data class MutableUnit(
         routeContinuation = null
         stalledRouteTicks = 0
         routeTranslationClipped = false
+        maneuverTurnWaypoint = null
         routeOccupantIds = occupantIds
         localProgressTime = 0.0
         lastPlannedKnowledgeRevision = knowledgeRevision
@@ -636,6 +640,9 @@ internal data class MutableUnit(
         routeContinuation = null
         stalledRouteTicks = 0
         routeTranslationClipped = false
+        followsManeuverRoute = false
+        maneuverTurnWaypoint = null
+        lastManeuverContactRepair = null
         routeOccupantIds = emptyList()
         localProgressTime = 0.0
     }

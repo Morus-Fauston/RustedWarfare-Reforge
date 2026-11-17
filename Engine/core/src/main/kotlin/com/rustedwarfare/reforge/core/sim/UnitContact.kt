@@ -83,13 +83,32 @@ internal object UnitContact {
             val otherShape = other.definition.movementCollision
             val reach = radius + boundingRadius(otherShape)
             if (abs(offset.x) > reach || abs(offset.y) > reach) continue
-            heading = when (otherShape) {
+            val limit = when (otherShape) {
                 is MovementCollisionShape.Circle -> RectangularTurn.againstCircle(shape, otherShape.radius, offset, from, heading)
                 is MovementCollisionShape.Rectangle -> RectangularTurn.againstRectangle(shape, otherShape, negate(offset), other.heading, from, heading)
             }
+            heading = safeTurnEndpoint(shape, otherShape, negate(offset), other.heading, from, limit)
             if (heading == from) return from
         }
         return heading
+    }
+
+    /** A root in the obstacle's rotated frame can round across the hard world-space boundary. */
+    private fun safeTurnEndpoint(shape: MovementCollisionShape.Rectangle, other: MovementCollisionShape,
+                                 offset: Position, otherHeading: Double, from: Double, limit: Double): Double {
+        if (from == limit) return from
+        val fixed = Body(other, otherHeading)
+        fun overlaps(heading: Double) = Body(shape, heading).overlaps(fixed, offset)
+        if (!overlaps(limit) || overlaps(from)) return limit
+        val change = ScreenPlane.difference(limit, from)
+        fun headingAt(fraction: Double) = if (fraction == 0.0) from else ScreenPlane.normalize(from + change * fraction)
+        var safe = 0.0
+        var blocked = 1.0
+        repeat(52) {
+            val middle = (safe + blocked) * 0.5
+            if (overlaps(headingAt(middle))) blocked = middle else safe = middle
+        }
+        return headingAt(safe)
     }
 
     /** Per-step settlement in the simulation's existing motion update order. */

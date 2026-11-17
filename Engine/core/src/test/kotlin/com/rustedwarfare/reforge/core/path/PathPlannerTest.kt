@@ -26,6 +26,20 @@ class PathPlannerTest {
         } finally { context.close() }
     }
 
+    @Test fun standard_tile_clearance_matches_the_center_terrain_policy_at_all_map_edges() {
+        val terrain = PlanningTerrain(5, 4, 13, 21, BooleanArray(20) { it == 7 || it == 10 })
+        val standard = CenterClearance(PlanningCenterTerrain)
+        val original = CenterClearance(PlanningTerrainPolicy { map, point, radius ->
+            PlanningCenterTerrain.intersects(map, point, radius)
+        })
+        for (radius in listOf(0.0, 6.5, 6.500001, 10.5, 13.0, 30.0, -1.0, Double.NaN)) {
+            for (row in 0 until terrain.heightTiles) for (column in 0 until terrain.widthTiles) {
+                assertEquals(original.allows(terrain, column, row, radius), standard.allows(terrain, column, row, radius),
+                    "column $column, row $row, radius $radius")
+            }
+        }
+    }
+
     @Test fun ki03_truth_adapter_misuse_changes_the_same_public_planner_result() {
         val straight=listOf(Position(70.0,50.0))
         val upper=listOf(Position(30.0,30.0),Position(70.0,30.0),Position(70.0,50.0))

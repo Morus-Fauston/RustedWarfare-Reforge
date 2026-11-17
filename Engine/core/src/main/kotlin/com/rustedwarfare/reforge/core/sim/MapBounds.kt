@@ -24,7 +24,9 @@ internal object MapBounds {
     }
 
     fun contains(width: Double, height: Double, position: Position, radius: Double): Boolean =
-        position.x.isFinite() && position.y.isFinite() && radius.isFinite() && radius >= 0.0 &&
-            position.x >= radius && position.y >= radius &&
-            position.x <= width - radius && position.y <= height - radius
+        contains(width, height, position.x, position.y, radius)
+
+    fun contains(width: Double, height: Double, x: Double, y: Double, radius: Double): Boolean =
+        x.isFinite() && y.isFinite() && radius.isFinite() && radius >= 0.0 &&
+            x >= radius && y >= radius && x <= width - radius && y <= height - radius
 }

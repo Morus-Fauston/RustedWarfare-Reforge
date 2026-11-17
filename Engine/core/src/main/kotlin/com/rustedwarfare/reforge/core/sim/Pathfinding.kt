@@ -171,6 +171,7 @@ internal class ClearanceAStarPolicy(
         private var frontier: Frontier? = null
         private var rollback: PathSearchRollback? = null
         private var cursor: PathGridKey? = null
+        private var useDepartureLattice = false
         private var rawPoints: MutableList<Position>? = null
         private var simplified: MutableList<Position>? = null
         private var anchor = start
@@ -192,6 +193,7 @@ internal class ClearanceAStarPolicy(
                 it.frontier = frontier
                 if (frontier != null || rawPoints != null || simplified != null) it.rollback = rollback
                 it.cursor = cursor
+                it.useDepartureLattice = useDepartureLattice
                 it.rawPoints = rawPoints
                 it.simplified = simplified
                 it.anchor = anchor
@@ -214,7 +216,8 @@ internal class ClearanceAStarPolicy(
         }
 
         private fun workCost(cache: PathClearanceCache?): Int =
-            if (phase == SearchPhase.SEARCH && cache != null && hull is RectangularDeparture && occupancy == null) 1 else 8
+            if (phase == SearchPhase.SEARCH && cache != null && hull is RectangularDeparture &&
+                occupancy == null && !useDepartureLattice) 1 else 8
 
         private fun complete(points: List<Position>? = null) {
             path = points
@@ -231,6 +234,10 @@ internal class ClearanceAStarPolicy(
             goal = cellOf(map, target) ?: return complete()
             if (terrain.intersects(map, start, radius) || terrain.intersects(map, target, radius)) return complete()
             hullGrid = hull?.let { HullTerrainGrid.authorized(map) }
+            // Every orientation contains this disk, so an obstructed disk rules out the endpoint.
+            if (hull is RectangularDeparture && hull.maneuver &&
+                !UnitContact.poseFits(MovementCollisionShape.Circle(minOf(hull.shape.length, hull.shape.width) / 2.0),
+                    target, 0.0, checkNotNull(hullGrid))) return complete()
             val heading = hull?.heading ?: 0.0
             if (arrival(start, target, heading, cache) != null) return complete(listOf(target))
             startKey = PathGridKey(startCell.first, startCell.second, heading)
@@ -255,7 +262,7 @@ internal class ClearanceAStarPolicy(
 
         private fun beginQueue() {
             val (col, row) = checkNotNull(goal)
-            if (!isCandidate(col, row)) return complete()
+            if (!isCandidate(col, row) && !useDepartureLattice && !canUseDepartureLattice()) return complete()
             val first = checkNotNull(startKey)
             val routes = Frontier()
             frontier = routes
@@ -265,6 +272,21 @@ internal class ClearanceAStarPolicy(
         }
 
         private fun isCandidate(col: Int, row: Int): Boolean = checkNotNull(clearance)[row * map.widthTiles + col]
+
+        // A legal center can lie between tile centers, for example in a two-tile canal.
+        // Keep the grid spacing while preserving the departure's offset within each cell.
+        private fun canUseDepartureLattice(): Boolean {
+            if ((hull as? RectangularDeparture)?.maneuver != true || useDepartureLattice) return false
+            val key = checkNotNull(startKey)
+            return start != pointPolicy.point(map, key.col, key.row)
+        }
+
+        private fun routePoint(col: Int, row: Int): Position {
+            if (!useDepartureLattice) return pointPolicy.point(map, col, row)
+            val origin = checkNotNull(startKey)
+            return Position(start.x + (col - origin.col).toDouble() * map.tileWidth,
+                start.y + (row - origin.row).toDouble() * map.tileHeight)
+        }
 
         private fun arrival(from: Position, point: Position, heading: Double, cache: PathClearanceCache?): Double? {
             if (cache != null && hull is RectangularDeparture && occupancy == null)
@@ -291,12 +313,19 @@ internal class ClearanceAStarPolicy(
 
         private fun expand(cache: PathClearanceCache?) {
             val routes = checkNotNull(frontier)
-            val current = routes.open.poll() ?: return complete()
+            val current = routes.open.poll()
+            if (current == null) {
+                if (canUseDepartureLattice()) {
+                    useDepartureLattice = true
+                    beginQueue()
+                } else complete()
+                return
+            }
             rollback?.record { routes.open += current }
             if (counters != null) counters.popped++
             val key = current.key
             if (routes.costs[key] != current.g) return
-            val from = if (key == startKey) start else pointPolicy.point(map, key.col, key.row)
+            val from = if (key == startKey) start else routePoint(key.col, key.row)
             val targetCell = checkNotNull(goal)
             val reached = if (checkEverySegment) arrival(from, target, key.heading, cache) != null
                 else key.col == targetCell.first && key.row == targetCell.second
@@ -320,7 +349,7 @@ internal class ClearanceAStarPolicy(
                     enqueue(routes, next, nextCost)
                 }
             }
-            if (cache != null && hull is RectangularDeparture && occupancy == null) {
+            if (cache != null && hull is RectangularDeparture && occupancy == null && !useDepartureLattice) {
                 val neighbors = cache.rectangularNeighbors(map, hull, radius, from, key.heading) {
                     buildList { scanNeighbors(key, from, cache) { add(it) } }
                 }
@@ -335,8 +364,8 @@ internal class ClearanceAStarPolicy(
                 val row = key.row + dy
                 if (col !in 0 until map.widthTiles || row !in 0 until map.heightTiles) continue
                 if (counters != null) counters.neighborsChecked++
-                if (!isCandidate(col, row)) continue
-                val point = pointPolicy.point(map, col, row)
+                if (if (useDepartureLattice) map.isBlocked(col, row) else !isCandidate(col, row)) continue
+                val point = routePoint(col, row)
                 val heading = if (checkEverySegment) arrival(from, point, key.heading, cache) ?: continue else {
                     if (key == startKey && !PlanningSegmentClearance.allows(map, from, point, radius)) continue
                     0.0
@@ -349,14 +378,14 @@ internal class ClearanceAStarPolicy(
             val key = checkNotNull(cursor)
             val points = checkNotNull(rawPoints)
             if (key != startKey) {
-                appendPoint(points, pointPolicy.point(map, key.col, key.row))
+                appendRoutePoint(points, routePoint(key.col, key.row))
                 cursor = checkNotNull(frontier).parents.getValue(key)
                 return
             }
             frontier = null
             points.reverse()
             rollback?.record { points.reverse() }
-            if (points.lastOrNull() != target) appendPoint(points, target)
+            if (points.lastOrNull() != target) appendRoutePoint(points, target)
             if (checkEverySegment) {
                 complete(points)
             } else {
@@ -384,6 +413,15 @@ internal class ClearanceAStarPolicy(
         private fun appendPoint(points: MutableList<Position>, point: Position) {
             points += point
             rollback?.record { points.removeAt(points.lastIndex) }
+        }
+
+        private fun appendRoutePoint(points: MutableList<Position>, point: Position) {
+            val last = points.lastIndex
+            if ((hull as? RectangularDeparture)?.maneuver == true && last >= 1 &&
+                ScreenPlane.desired(points[last - 1], points[last]) == ScreenPlane.desired(points[last], point)) {
+                val replaced = points.set(last, point)
+                rollback?.record { points[last] = replaced }
+            } else appendPoint(points, point)
         }
     }
 
@@ -502,9 +540,12 @@ internal sealed interface HullRoute {
     }
 
     companion object {
-        fun forUnit(unit: MutableUnit): HullRoute? = when (val shape = UnitLocomotion.terrainHull(unit)) {
-            is MovementCollisionShape.Rectangle -> RectangularDeparture(shape, unit.heading,
-                UnitLocomotion.movement(unit).reverseSpeedPercentage > 0.95)
+        fun forUnit(unit: MutableUnit, maneuver: Boolean = false): HullRoute? = when (val shape = UnitLocomotion.terrainHull(unit)) {
+            is MovementCollisionShape.Rectangle -> {
+                val movement = UnitLocomotion.movement(unit)
+                val useManeuver = maneuver && unit.mechState == null && !movement.slidingMode
+                RectangularDeparture(shape, unit.heading, !useManeuver && movement.reverseSpeedPercentage > 0.95, useManeuver)
+            }
             is MovementCollisionShape.Circle -> Circle(shape.radius)
             null -> null
         }
@@ -515,6 +556,7 @@ internal data class RectangularDeparture(
     val shape: MovementCollisionShape.Rectangle,
     override val heading: Double,
     val reverse: Boolean,
+    val maneuver: Boolean = false,
 ) : HullRoute {
     fun headingTowards(start: Position, target: Position, current: Double): Double {
         if (start == target) return current
@@ -536,8 +578,12 @@ internal fun interface PathCandidatePolicy {
 }
 
 internal class CenterClearance(private val terrain: PlanningTerrainPolicy) : PathCandidatePolicy {
-    override fun allows(map: PlanningTerrain, col: Int, row: Int, radius: Double): Boolean =
-        !map.isBlocked(col, row) && !terrain.intersects(map, TileCenters.point(map, col, row), radius)
+    override fun allows(map: PlanningTerrain, col: Int, row: Int, radius: Double): Boolean {
+        if (map.isBlocked(col, row)) return false
+        if (terrain !== PlanningCenterTerrain) return !terrain.intersects(map, TileCenters.point(map, col, row), radius)
+        return MapBounds.contains(map.widthTiles.toDouble() * map.tileWidth, map.heightTiles.toDouble() * map.tileHeight,
+            (col + 0.5) * map.tileWidth, (row + 0.5) * map.tileHeight, radius)
+    }
 }
 
 internal fun interface PathPointPolicy {

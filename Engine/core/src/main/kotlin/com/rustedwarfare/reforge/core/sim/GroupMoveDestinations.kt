@@ -13,7 +13,8 @@ class GroupMoveRequest internal constructor(
 )
 
 internal data class GroupMoveSlot(val position: Position, val heading: Double, val path: List<Position>)
-internal data class GroupMoveReservation(val plan: GroupMoveRequest, val slot: GroupMoveSlot, val occupiedTicks: Long = 0)
+internal data class GroupMoveReservation(val plan: GroupMoveRequest, val slot: GroupMoveSlot,
+                                         val occupiedTicks: Long = 0, val needsReplacement: Boolean = false)
 
 internal object GroupMoveDestinations {
     fun positions(map: MapDefinition, click: Position): List<Position> {

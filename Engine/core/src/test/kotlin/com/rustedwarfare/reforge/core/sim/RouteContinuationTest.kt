@@ -1,6 +1,7 @@
 package com.rustedwarfare.reforge.core.sim
 
 import com.rustedwarfare.reforge.core.content.MapDefinition
+import com.rustedwarfare.reforge.core.content.BlockingGrid
 import com.rustedwarfare.reforge.core.content.MovementType
 import com.rustedwarfare.reforge.core.path.PathSearchOutcome
 import com.rustedwarfare.reforge.core.path.PathSearchReason
@@ -45,23 +46,31 @@ class RouteContinuationTest {
         WaterTestScene.withMap { base ->
             val rows = listOf("b-tied" to 310.0, "z-near" to 70.0, "a-tied" to 190.0)
             val spawns = rows.map { (id, y) ->
-                UnitSpawn(id, "p1", "water-test", Position(if (id == "z-near") 454.0 else 450.0, y), 90.0)
+                UnitSpawn(id, "p1", "water-test", Position(if (id == "z-near") 54.0 else 50.0, y), 90.0)
             }
             val obstacles = rows.flatMap { (_, y) ->
                 val row = (y / base.tileHeight).toInt()
-                listOf(25 to row, 25 to (row + 1))
+                listOf(5 to row, 5 to (row + 1))
             }.toSet()
-            val map = MapDefinition(base.widthTiles, base.heightTiles, base.tileWidth, base.tileHeight,
-                base.tileSets, base.groundGids, base.blocking, obstacles)
+            // Fit all three circle route publications in the same step so only handoff priority
+            // can distinguish the tied units. The geometry around the routes stays the same.
+            val width = 14
+            val height = 18
+            val water = base.groundGids[base.widthTiles - 1]
+            val map = MapDefinition(width, height, base.tileWidth, base.tileHeight, base.tileSets,
+                IntArray(width * height) { water },
+                BlockingGrid(width, height, BooleanArray(width * height)), obstacles)
             val scene = WaterTestScene.scenario(map, MovementType.WATER, spawns.first().position).copy(units = spawns)
             val context = assertIs<InitResult.Accepted>(SimulationContext(ExperimentalPolicies(
                 routePreparationBudget = { 1 })).initialize(scene)).context
             try {
                 context.enableRouteContinuationDiagnostics(context.world)
                 for ((id, y) in rows) assertIs<ActionResult.Accepted>(context.submit(
-                    MoveAction("move-$id", "p1", id, Position(570.0, y), context.world)))
-                val firstAnchors = context.observe().units.associate { it.unitId to it.pathPoints.first() }
-                for (tick in 0L..4L) context.advance(Step(tick, 1.0, "sim-tick"))
+                    MoveAction("move-$id", "p1", id, Position(170.0, y), context.world)))
+                val published = context.advance(Step(0L, 1.0, "sim-tick"))
+                assertEquals(rows.map { it.first }.toSet(), published.events.filter { it.kind == "movement-started" }.map { it.unitId }.toSet())
+                val firstAnchors = published.units.associate { it.unitId to it.pathPoints.first() }
+                for (tick in 1L..4L) context.advance(Step(tick, 1.0, "sim-tick"))
                 val samples = context.drainRouteContinuationDiagnostics(context.world).filter {
                     it.anchor == firstAnchors.getValue(it.unitId)
                 }
@@ -161,9 +170,12 @@ class RouteContinuationTest {
                 try {
                     context.enableRouteContinuationDiagnostics(context.world)
                     assertIs<ActionResult.Accepted>(context.submit(MoveAction("one-order", "p1", "w1", goal, context.world)))
-                    val initial = context.observe().units.single().pathPoints
+                    val publication = context.advanceToMoveOutcome(0L, "w1")
+                    val initial = publication.units.single().pathPoints
                     assertTrue(initial.size > 2, "Detour needs a preparable handoff")
-                    val frames = (0L..900L).map { context.advance(Step(it, 1.0, "sim-tick")) }
+                    val frames = listOf(publication) + ((publication.stepIndex + 1L)..900L).map {
+                        context.advance(Step(it, 1.0, "sim-tick"))
+                    }
                     return Triple(initial, frames, context.drainRouteContinuationDiagnostics(context.world))
                 } finally {
                     context.close()

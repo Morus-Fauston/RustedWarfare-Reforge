@@ -34,6 +34,11 @@ class StepMovePlanningTest {
                 val steps = CandidateSteps()
                 val action = MoveAction("test", "p1", "u1", target, origin.world)
                 steps.current.movePlanning.enqueue(action, null)
+                if (retry) {
+                    val abandoned = steps.current.movePlanning.fork(PathSearchRollback())
+                    abandoned.cancel(action.unitId)
+                    assertTrue(!abandoned.pending(action.unitId))
+                }
                 val member = MovePlanningMember(action, null, MovePlanningPose(start, 0.0, ContactLayer.SURFACE,
                     MovementCollisionShape.Circle(0.0)), start, 0.0, terrain, null, false, 0)
                 val input = MovePlanningInput(map, listOf(member), emptyList(), true)
@@ -46,8 +51,11 @@ class StepMovePlanningTest {
                             Observation("plan-$index", origin.world.id, scenario.scenarioId, index, time,
                                 emptyList(), emptyList(), emptyList())
                         }) { candidate ->
-                            candidate.state.movePlanning.advance(policy, PathWorkBudget(8), { _, _ -> input },
-                                { _, _, result -> planned = result })
+                            candidate.state.movePlanning.advance(policy, PathWorkBudget(8), { queued, _, _ ->
+                                assertEquals(listOf(action), queued)
+                                input
+                            },
+                                { _, _, _, _, result -> planned = result })
                         }
                         return planned
                     }
