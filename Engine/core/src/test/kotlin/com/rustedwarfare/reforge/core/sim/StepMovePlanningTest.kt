@@ -10,6 +10,8 @@ import com.rustedwarfare.reforge.core.knowledge.PathInformationSource
 import com.rustedwarfare.reforge.core.knowledge.TerrainRetention
 import com.rustedwarfare.reforge.core.knowledge.VisibleTerrainCell
 import com.rustedwarfare.reforge.core.path.PlanningTerrain
+import com.rustedwarfare.reforge.core.path.PlanningWorkSample
+import com.rustedwarfare.reforge.core.path.PlanningWorkSlice
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
@@ -32,6 +34,7 @@ class StepMovePlanningTest {
         try {
             fun replay(retry: Boolean): Pair<Long, List<Position>> {
                 val steps = CandidateSteps()
+                steps.current.planningWorkDiagnostics = mutableListOf()
                 val action = MoveAction("test", "p1", "u1", target, origin.world)
                 steps.current.movePlanning.enqueue(action, null)
                 if (retry) {
@@ -51,21 +54,27 @@ class StepMovePlanningTest {
                             Observation("plan-$index", origin.world.id, scenario.scenarioId, index, time,
                                 emptyList(), emptyList(), emptyList())
                         }) { candidate ->
-                            candidate.state.movePlanning.advance(policy, PathWorkBudget(8), { queued, _, _ ->
+                            val budget = PathWorkBudget(8)
+                            val work = mutableListOf<PlanningWorkSlice>()
+                            candidate.state.movePlanning.advance(policy, budget, { queued, _, _ ->
                                 assertEquals(listOf(action), queued)
                                 input
                             },
-                                { _, _, _, _, result -> planned = result })
+                                { _, _, _, _, result -> planned = result }, work)
+                            candidate.planningWorkSample = PlanningWorkSample(step, budget.limit, budget.used, work.toList())
                         }
                         return planned
                     }
                     if (retry && step % 3L == 1L) {
+                        val committedWork = steps.current.planningWorkDiagnostics?.toList()
                         assertEquals("observer failed after planning", assertFailsWith<IllegalStateException> {
                             advance(fail = true)
                         }.message)
                         assertTrue(steps.current.movePlanning.pending("u1"))
+                        assertEquals(committedWork, steps.current.planningWorkDiagnostics)
                     }
                     val result = advance(fail = false) ?: continue
+                    assertEquals((step + 1).toInt(), steps.current.planningWorkDiagnostics?.size)
                     assertTrue(assertNotNull(result.counters).expanded > 100, "Fixture must advance a real frontier")
                     val points = assertNotNull(result.slot).path
                     assertEquals(target, points.last())

@@ -6,6 +6,7 @@ import com.rustedwarfare.reforge.core.content.NautilusRules
 import com.rustedwarfare.reforge.core.content.ScoutBotRules
 import com.rustedwarfare.reforge.core.path.PlanningTerrain
 import com.rustedwarfare.reforge.core.path.PathSearchSample
+import com.rustedwarfare.reforge.core.path.PlanningWorkSample
 import com.rustedwarfare.reforge.core.knowledge.*
 import java.util.IdentityHashMap
 
@@ -66,6 +67,7 @@ internal data class StepState(
     var automaticVisionSnapshots: Map<String, VisionSnapshot>? = null,
     var automaticVisionState: AutomaticVisionState? = null,
     var pathDiagnostics: MutableList<PathSearchSample>? = null,
+    var planningWorkDiagnostics: MutableList<PlanningWorkSample>? = null,
     var motionDiagnostics: MutableList<MotionStepSample>? = null,
     var routeContinuationDiagnostics: MutableList<RouteContinuationSample>? = null,
     var pendingKnowledgeDiscoveries: MutableMap<String, MutableMap<Pair<Int, Int>, Long>> = mutableMapOf(),
@@ -283,10 +285,13 @@ internal class CandidateSteps {
 
 /** Owns projected resources and the publication window, as well as the working state. */
 internal class CandidateStep(val state: StepState, private val step: Step) {
-    val translations = UnitContact.Translations(step.delta, state.movePlanning::pending)
+    val translations = UnitContact.Translations(step.delta) { id ->
+        state.movePlanning.pending(id) && !state.movePlanning.repairing(id)
+    }
     val existingProjectileIds = state.projectiles.mapTo(hashSetOf()) { it.objectId }
     val motionSamples = state.motionDiagnostics?.let { mutableListOf<MotionStepSample>() }
     val routeContinuationSamples = state.routeContinuationDiagnostics?.let { mutableListOf<RouteContinuationSample>() }
+    var planningWorkSample: PlanningWorkSample? = null
     private var knowledge: AutomaticKnowledgeCommit? = null
     private var buildings: BuildingCommit? = null
     val vision: Map<String, VisionSnapshot>? get() = knowledge?.views ?: state.automaticVisionSnapshots
@@ -331,6 +336,7 @@ internal class CandidateStep(val state: StepState, private val step: Step) {
         state.pendingActionResults.clear()
         motionSamples?.let { checkNotNull(committedMotion).addAll(it) }
         routeContinuationSamples?.let { checkNotNull(state.routeContinuationDiagnostics).addAll(it) }
+        planningWorkSample?.let { checkNotNull(state.planningWorkDiagnostics).add(it) }
         return observation
     }
 

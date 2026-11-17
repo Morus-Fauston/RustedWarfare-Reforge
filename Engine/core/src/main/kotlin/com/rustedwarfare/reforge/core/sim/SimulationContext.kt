@@ -29,6 +29,8 @@ import com.rustedwarfare.reforge.core.path.PathSearchOutcome
 import com.rustedwarfare.reforge.core.path.KnowledgePathImpact
 import com.rustedwarfare.reforge.core.path.movementBlocked
 import com.rustedwarfare.reforge.core.path.PathSearchReason
+import com.rustedwarfare.reforge.core.path.PlanningWorkSlice
+import com.rustedwarfare.reforge.core.path.PlanningWorkSample
 import com.rustedwarfare.reforge.core.knowledge.*
 import java.util.Collections
 import java.util.IdentityHashMap
@@ -230,6 +232,24 @@ class SimulationContext internal constructor(private val policies: ExperimentalP
         return drained
     }
 
+    /** Separate opt-in avoids retaining per-step history for existing search-only consumers. */
+    fun enablePlanningWorkDiagnostics(world: WorldHandle) {
+        checkPathDiagnosticsWorld(world)
+        if (steps.current.planningWorkDiagnostics != null)
+            throw PathDiagnosticsException("already-enabled", "Planning work diagnostics are already enabled")
+        steps.current.planningWorkDiagnostics = mutableListOf()
+    }
+
+    /** Trusted-host work accounting; never projected to player observations. */
+    fun drainPlanningWorkDiagnostics(world: WorldHandle): List<PlanningWorkSample> {
+        checkPathDiagnosticsWorld(world)
+        val samples = steps.current.planningWorkDiagnostics
+            ?: throw PathDiagnosticsException("not-enabled", "Planning work diagnostics are not enabled")
+        val drained = Collections.unmodifiableList(ArrayList(samples))
+        samples.clear()
+        return drained
+    }
+
     private fun checkPathDiagnosticsWorld(world: WorldHandle) {
         if (closed) throw PathDiagnosticsException("closed", "Simulation is closed")
         if (world !== activeWorld) throw PathDiagnosticsException("stale-world", "Path diagnostics belong to a different world")
@@ -364,6 +384,8 @@ class SimulationContext internal constructor(private val policies: ExperimentalP
         pendingKnowledgeDiscoveries.clear()
         pathDiagnostics?.clear()
         pathDiagnostics = null
+        steps.current.planningWorkDiagnostics?.clear()
+        steps.current.planningWorkDiagnostics = null
         motionDiagnostics?.clear()
         motionDiagnostics = null
         steps.current.routeContinuationDiagnostics?.clear()
@@ -429,7 +451,8 @@ class SimulationContext internal constructor(private val policies: ExperimentalP
             if (!unit.alive || unit.carriedBy != null || unit.attachment != null || unit.ownerPlayerId != action.actorPlayerId ||
                 unit.definition.movement.type == MovementType.NONE || unit.tasks.firstOrNull()?.actionId != action.actionId)
                 return@mapNotNull null
-            if (repair != null && (!unit.followsManeuverRoute || unit.moveTarget != action.target)) return@mapNotNull null
+            if (repair != null && ((!unit.followsManeuverRoute && repair != ManeuverRepair.CONTACT) ||
+                    unit.moveTarget != action.target)) return@mapNotNull null
             val started = if (collectDiagnostics) System.nanoTime() else 0
             val terrain = planningTerrainFor(unit, map)
             val start = Transport.queryPosition(unit, map)
@@ -1558,9 +1581,14 @@ class SimulationContext internal constructor(private val policies: ExperimentalP
             deploy()
             buildingWork = buildingWork.advanceClock(step.delta)
             actions.forEach { applyAction(it, step.stepIndex) }
-            candidate.state.movePlanning.advance(policies.path, PathWorkBudget(MOVE_PLANNING_WORK_PER_STEP),
+            val planningBudget = PathWorkBudget(MOVE_PLANNING_WORK_PER_STEP)
+            val planningSlices = candidate.state.planningWorkDiagnostics?.let { mutableListOf<PlanningWorkSlice>() }
+            candidate.state.movePlanning.advance(policies.path, planningBudget,
                 { requests, group, repair -> movePlanningInput(currentScenario.map, requests, group, repair) },
-                { member, group, repair, occupants, plan -> publishMove(member, group, repair, occupants, plan, step.stepIndex) })
+                { member, group, repair, occupants, plan -> publishMove(member, group, repair, occupants, plan, step.stepIndex) },
+                planningSlices)
+            if (planningSlices != null) candidate.planningWorkSample = PlanningWorkSample(step.stepIndex,
+                planningBudget.limit, planningBudget.used, Collections.unmodifiableList(planningSlices))
             refreshGroupDestinations(currentScenario.map, step.delta)
             for (unit in orderedUnits()) if (unit.alive && unit.carriedBy == null && unit.tasks.firstOrNull()?.kind == UnitTaskKind.PATROL)
                 retainedPatrolTarget(unit)
@@ -3267,7 +3295,7 @@ class SimulationContext internal constructor(private val policies: ExperimentalP
             val nativeDeparture = FactoryExit.isNativeSeaDeparture(unit)
             val move = unit.tasks.firstOrNull()?.takeIf { it.kind == UnitTaskKind.MOVE }
             if (nativeDeparture && unit.birthRemaining > 0f || !nativeDeparture && move == null) continue
-            if (unit.followsManeuverRoute) {
+            if (unit.followsManeuverRoute || !nativeDeparture && move != null) {
                 if (unit.lastManeuverContactRepair != step) scheduleManeuverRepair(unit, target, ManeuverRepair.CONTACT)
                 continue
             }

@@ -5,6 +5,8 @@ import com.rustedwarfare.reforge.core.content.MovementCollisionShape
 import com.rustedwarfare.reforge.core.path.PathSearchCounters
 import com.rustedwarfare.reforge.core.path.PathSearchReason
 import com.rustedwarfare.reforge.core.path.PlanningTerrain
+import com.rustedwarfare.reforge.core.path.PlanningWorkSlice
+import java.util.Collections
 
 internal data class MovePlanningPose(val position: Position, val heading: Double, val layer: ContactLayer?,
                                      val shape: MovementCollisionShape)
@@ -127,31 +129,41 @@ internal class MovePlanning {
         budget: PathWorkBudget,
         snapshot: (List<MoveAction>, GroupMoveRequest?, ManeuverRepair?) -> MovePlanningInput,
         publish: (MovePlanningMember, GroupMoveRequest?, ManeuverRepair?, List<String>, PlannedMove) -> Unit,
+        samples: MutableList<PlanningWorkSlice>? = null,
     ) {
         val queued = orders.iterator()
         while (queued.hasNext() && !budget.exhausted) {
             val order = queued.next()
+            val usedBefore = budget.used
+            fun record(completed: Boolean, restarted: Boolean = false) {
+                samples?.add(PlanningWorkSlice(Collections.unmodifiableList(order.actions.map { it.unitId }),
+                    order.repair?.reason ?: PathSearchReason.USER_MOVE, budget.used - usedBefore, completed, restarted))
+            }
             val previousWork = workByOrder[order]
-            if (previousWork == null && (order.group != null || order.repair != null) && !budget.take()) return
+            if (previousWork == null && (order.group != null || order.repair != null) && !budget.take()) {
+                record(completed = false)
+                return
+            }
             val work = previousWork ?: Work(snapshot(order.actions, order.group, order.repair), order.group)
             val result = work.advance(pathPolicy, budget)
             if (result == null) {
+                record(completed = false)
                 workByOrder[order] = work
                 return
             }
             if (previousWork != null) {
                 val current = snapshot(order.actions, order.group, order.repair)
                 if (!work.stillValid(current, result)) {
+                    record(completed = true, restarted = true)
                     workByOrder[order] = Work(current, order.group)
-                    if (order.repair == ManeuverRepair.GROUP_SLOT) {
-                        // A moving occupant may legitimately invalidate this slot. Allow independent
-                        // orders already waiting to use the next step before retrying this search.
-                        queued.remove()
-                        orders.add(order)
-                    }
+                    // A moving member or occupant must not keep independent orders behind
+                    // a search that is repeatedly invalidated before publication.
+                    queued.remove()
+                    orders.add(order)
                     return
                 }
             }
+            record(completed = true)
             for (member in work.input.members) {
                 val planned = result[member.action.unitId] ?: PlannedMove(null, null, 0)
                 val occupants = if (order.repair == null) emptyList()

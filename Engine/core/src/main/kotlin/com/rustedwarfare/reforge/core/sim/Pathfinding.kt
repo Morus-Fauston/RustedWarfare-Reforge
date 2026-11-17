@@ -21,7 +21,9 @@ internal interface PathPolicy {
 
 internal data class PathGridKey(val col: Int, val row: Int, val heading: Double = 0.0)
 
-internal class PathWorkBudget(private var remaining: Int) {
+internal class PathWorkBudget(val limit: Int) {
+    private var remaining = limit
+    val used: Int get() = limit - remaining
     val exhausted: Boolean get() = remaining == 0
 
     fun take(cost: Int = 8): Boolean {

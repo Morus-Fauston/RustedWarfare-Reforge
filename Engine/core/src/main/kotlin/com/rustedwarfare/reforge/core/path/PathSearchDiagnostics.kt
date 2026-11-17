@@ -18,6 +18,22 @@ internal data class PathSearchCounters(
 enum class PathSearchOutcome { FOUND, UNREACHABLE, FAILED }
 enum class PathSearchReason { USER_MOVE, KNOWLEDGE_REPLAN, ROUTE_REPAIR, ATTACK_PURSUIT, CONSTRUCTION_APPROACH }
 
+/** Trusted-host accounting of the shared move queue, separate from wall-clock duration. */
+data class PlanningWorkSlice(
+    val unitIds: List<String>,
+    val reason: PathSearchReason,
+    val workUnits: Int,
+    val completed: Boolean,
+    val restarted: Boolean,
+)
+
+data class PlanningWorkSample(
+    val executionStep: Long,
+    val limit: Int,
+    val used: Int,
+    val slices: List<PlanningWorkSlice>,
+)
+
 data class PathSearchSample(
     val actionId: String,
     val unitId: String,
