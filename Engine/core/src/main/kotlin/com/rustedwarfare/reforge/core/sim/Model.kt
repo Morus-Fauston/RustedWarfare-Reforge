@@ -443,6 +443,7 @@ internal data class MutableUnit(
     var localMotion: LocalMotionSegment? = null,
     var routeContinuation: RouteContinuation? = null,
     var stalledRouteTicks: Long = 0,
+    var hardContactLimitedTicks: Long = 0,
     var routeTranslationClipped: Boolean = false,
     var followsManeuverRoute: Boolean = false,
     var maneuverTurnWaypoint: Position? = null,
@@ -590,6 +591,7 @@ internal data class MutableUnit(
         localMotion = null
         routeContinuation = null
         stalledRouteTicks = 0
+        hardContactLimitedTicks = 0
         routeTranslationClipped = false
         maneuverTurnWaypoint = null
         routeOccupantIds = occupantIds
@@ -639,6 +641,7 @@ internal data class MutableUnit(
         localMotion = null
         routeContinuation = null
         stalledRouteTicks = 0
+        hardContactLimitedTicks = 0
         routeTranslationClipped = false
         followsManeuverRoute = false
         maneuverTurnWaypoint = null

@@ -3676,6 +3676,8 @@ class SimulationContext internal constructor(private val policies: ExperimentalP
             isVisibleTo(unit.ownerPlayerId, blocker.position, blocker.nativeTransportPlacement)
         }
         val resolved = translation.position
+        step.translations.recordOwnMotion(unit, positionBefore, resolved, legalHeading != headingBefore,
+            legalHeading != boundedHeading)
         if (translation.supported) {
             unit.heading = headingBefore
             unit.speed = 0.0
@@ -3689,6 +3691,7 @@ class SimulationContext internal constructor(private val policies: ExperimentalP
             return
         }
         for (shift in translation.displaced) {
+            step.translations.recordPush(shift.unit, shift.position)
             shift.unit.position = shift.position
             UnitAttachments.synchronizeAdjustedChildren(units, shift.unit)
             if (translation.legacyYield) {

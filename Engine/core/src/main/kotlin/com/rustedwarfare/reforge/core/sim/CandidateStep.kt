@@ -297,6 +297,7 @@ internal class CandidateStep(val state: StepState, private val step: Step) {
     fun publish(input: Scenario, actions: List<Action>, observe: (Long, Double, Long) -> Observation): Observation {
         val nextTime = state.simulationTime + step.delta
         require(nextTime.isFinite()) { "Simulation time must remain finite" }
+        translations.finish(state.units.values, motionSamples)
         state.validate(input)
         val observation = observe(step.stepIndex, nextTime, state.revision + 1L)
         val owners = IdentityHashMap<ActionResult, String>(observation.actionResults.size)

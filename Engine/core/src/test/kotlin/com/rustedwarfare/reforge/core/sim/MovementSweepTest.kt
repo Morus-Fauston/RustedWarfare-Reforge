@@ -83,7 +83,8 @@ class MovementSweepTest {
                 context.enableMotionDiagnostics(context.world)
                 val knowledge=context.knowledgeSnapshot(context.world,"p1")
                 context.submit(MoveAction("go","p1","u1",direction.goal,context.world))
-                val path=context.observe().units.single().pathPoints
+                assertTrue(context.observe().units.single().pathPoints.isEmpty())
+                val path=listOf(direction.goal)
                 val result=context.advance(Step(0,1.0,"sim-tick"));val now=result.units.single()
                 assertEquals(Position(300.0,200.0),now.position);assertEquals(speed,now.speed)
                 assertEquals(path,now.pathPoints);assertEquals(direction.goal,now.moveTarget)
@@ -121,16 +122,17 @@ class MovementSweepTest {
                 context.enableKnowledge(context.world, KnowledgeRules(TerrainRetention.MEMORY,
                     PathInformationSource.PLAYER_KNOWLEDGE, false))
                 context.submit(MoveAction("move", "p1", "u1", Position(350.0, 110.0), context.world))
-                paths += context.observe().units.single().pathPoints
+                assertTrue(context.observe().units.single().pathPoints.isEmpty())
                 val result = context.advance(Step(0, 1.0, "sim-tick"))
                 val unit = result.units.single()
+                paths += unit.pathPoints
                 // Hidden tile spans x=160..180. Both x=110 and x=210 are independently clear.
                 assertEquals(if (blocked) Position(110.0, 110.0) else Position(210.0, 110.0), unit.position)
                 // D-095 multi-cell protection retains the ordinary integrated propulsion/command.
                 assertEquals(100.0, unit.speed)
                 assertEquals(MovementState.MOVING, unit.movementState)
                 assertEquals(Position(350.0, 110.0), unit.moveTarget)
-                assertEquals(paths.last(), unit.pathPoints)
+                assertEquals(listOf(Position(350.0, 110.0)), unit.pathPoints)
                 assertEquals(0.0, unit.angularVelocity)
                 assertTrue(result.events.none { it.kind in setOf("movement-arrived", "path-unreachable") })
                 assertEquals(blocked, result.events.any { it.kind == "movement-blocked" })

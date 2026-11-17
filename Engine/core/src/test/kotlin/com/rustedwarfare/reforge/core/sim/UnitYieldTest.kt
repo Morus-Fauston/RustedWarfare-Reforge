@@ -550,6 +550,84 @@ class UnitYieldTest {
         }
     }
 
+    @Test
+    fun a_commanded_follower_accumulates_hard_contact_time_even_while_both_poses_advance() =
+        WaterTestScene.withCorridor(dryBarrier = false) { map ->
+            for (contact in listOf(false, true)) {
+                val rear = movable("rear", MovementType.WATER, speed = if (contact) .7 else .2)
+                val front = movable("front", MovementType.WATER, speed = .2, mass = 30000.0)
+                val at = Position(10.0, if (contact) 100.0 else 110.0)
+                withContext(pair(map, rear, front, at, Position(10.0, 88.0), 0.0)) { context ->
+                    context.enableMotionDiagnostics(context.world)
+                    move(context, "blocker", Position(10.0, 25.0))
+                    move(context, "mover", Position(10.0, 40.0))
+                    var previous = at
+                    repeat(20) { tick ->
+                        val frame = context.advance(Step(tick.toLong(), 1.0, "sim-tick"))
+                        val sample = context.drainMotionDiagnostics(context.world).single { it.unitId == "mover" }
+                        val follower = frame.find("mover")
+                        assertTrue(follower.position.y < previous.y, "follower must really advance")
+                        assertEquals(if (contact) 12.0 else 22.0, follower.position.y - frame.find("blocker").position.y, 1e-8)
+                        assertEquals(if (contact) tick + 1L else 0L, sample.hardContactLimitedTicks)
+                        previous = follower.position
+                    }
+                }
+            }
+        }
+
+    @Test
+    fun contact_diagnostics_separate_propulsion_and_pushes_in_both_update_orders() = WaterTestScene.withMap { map ->
+        for (pusherFirst in listOf(false, true)) {
+            val fast = movable("fast", MovementType.WATER)
+            val slow = movable("slow", MovementType.WATER, speed = .2)
+            val pusherId = if (pusherFirst) "a-pusher" else "z-pusher"
+            val pushedId = "mid-pushed"
+            val spawns = listOf(UnitSpawn(pusherId, "p1", fast.id, Position(500.0, 190.0), 90.0),
+                UnitSpawn(pushedId, "p1", slow.id, Position(512.0, 190.0), 90.0))
+            val scene = WaterTestScene.scenario(map, MovementType.WATER, spawns.first().position).copy(
+                unitDefinitions = listOf(fast, slow).associateBy { it.id }, units = spawns)
+            withContext(scene) { context ->
+                context.enableMotionDiagnostics(context.world)
+                move(context, pusherId, Position(650.0, 190.0))
+                move(context, pushedId, Position(660.0, 190.0))
+                val frame = context.advance(Step(0, 1.0, "sim-tick"))
+                val sample = context.drainMotionDiagnostics(context.world).single { it.unitId == pushedId }
+                val ownTravel = sample.finalPosition.x - sample.positionBefore.x
+                val totalTravel = frame.find(pushedId).position.x - 512.0
+                assertTrue(sample.pushedDisplacement.x > 0.0)
+                assertTrue(ownTravel in 0.0..(.2 + 1e-9))
+                assertEquals(totalTravel, ownTravel + sample.pushedDisplacement.x, 1e-9)
+                assertEquals(0.0, sample.pushedDisplacement.y)
+                assertEquals("move-$pushedId", frame.find(pushedId).tasks.single().actionId)
+            }
+        }
+    }
+
+    @Test
+    fun a_later_side_push_does_not_erase_the_followers_contact_history() = WaterTestScene.withMap { map ->
+        val rear = movable("rear", MovementType.WATER)
+        val front = movable("front", MovementType.WATER, speed = .2, mass = 30000.0)
+        val pusher = movable("pusher", MovementType.WATER, mass = 12000.0)
+        val scene = pair(map, rear, front, Position(510.0, 190.0), Position(510.0, 178.0), 0.0).copy(
+            unitDefinitions = listOf(rear, front, pusher).associateBy { it.id },
+            units = listOf(UnitSpawn("mover", "p1", rear.id, Position(510.0, 190.0), 0.0),
+                UnitSpawn("blocker", "p1", front.id, Position(510.0, 178.0), 0.0),
+                UnitSpawn("z-pusher", "p1", pusher.id, Position(498.0, 190.0), 90.0)))
+        withContext(scene) { context ->
+            context.enableMotionDiagnostics(context.world)
+            move(context, "blocker", Position(510.0, 70.0))
+            move(context, "mover", Position(510.0, 80.0))
+            move(context, "z-pusher", Position(650.0, 190.0))
+            val frame = context.advance(Step(0, 1.0, "sim-tick"))
+            val sample = context.drainMotionDiagnostics(context.world).single { it.unitId == "mover" }
+            assertTrue(sample.pushedDisplacement.x > 0.0)
+            assertEquals(1L, sample.hardContactLimitedTicks)
+            assertTrue(frame.find("mover").position.x > 510.0)
+            assertTrue(frame.find("mover").position.y < 190.0)
+            assertEquals("move-mover", frame.find("mover").tasks.single().actionId)
+        }
+    }
+
     private fun pair(map: MapDefinition, mover: UnitDefinition, blocker: UnitDefinition, start: Position,
                      occupied: Position, heading: Double, occupiedHeading: Double = heading): Scenario =
         WaterTestScene.scenario(map, mover.movement.type, start).copy(

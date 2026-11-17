@@ -118,6 +118,42 @@ internal object UnitContact {
         private val settled = mutableSetOf<String>()
         private val pushLimits = mutableMapOf<String, Double>()
         private var gatheringSupport: Map<GatheringGoal, Set<String>>? = null
+        private val hardLimited = mutableSetOf<String>()
+        private val ownProgress = mutableSetOf<String>()
+        private val pushedDisplacements = mutableMapOf<String, Position>()
+
+        fun recordOwnMotion(unit: MutableUnit, before: Position, after: Position, turned: Boolean,
+                            turnLimited: Boolean) {
+            if (distance(before, after) > positionRoundoff(before, after) || turned) ownProgress += unit.unitId
+            if (turnLimited) hardLimited += unit.unitId
+        }
+
+        fun recordPush(unit: MutableUnit, destination: Position) {
+            val prior = pushedDisplacements[unit.unitId] ?: Position(0.0, 0.0)
+            pushedDisplacements[unit.unitId] = Position(prior.x + destination.x - unit.position.x,
+                prior.y + destination.y - unit.position.y)
+        }
+
+        /** Settle after every mover so a later push cannot masquerade as this unit's own progress. */
+        fun finish(units: Collection<MutableUnit>, samples: MutableList<MotionStepSample>?) {
+            for (unit in units) {
+                val active = unit.moveTarget != null && unit.tasks.firstOrNull()?.kind == UnitTaskKind.MOVE
+                unit.hardContactLimitedTicks = when {
+                    !active -> 0
+                    unit.unitId in hardLimited -> unit.hardContactLimitedTicks + 1
+                    unit.unitId in pushedDisplacements && unit.unitId !in ownProgress -> unit.hardContactLimitedTicks
+                    else -> 0
+                }
+            }
+            if (samples != null) {
+                val byId = units.associateBy { it.unitId }
+                for (index in samples.indices) {
+                    val sample = samples[index]
+                    samples[index] = sample.copy(hardContactLimitedTicks = byId.getValue(sample.unitId).hardContactLimitedTicks,
+                        pushedDisplacement = pushedDisplacements[sample.unitId] ?: Position(0.0, 0.0))
+                }
+            }
+        }
 
         fun resolve(unit: MutableUnit, requested: Position, units: Collection<MutableUnit>, map: MapDefinition,
                     unitsById: Map<String, MutableUnit>, canPush: ((MutableUnit, MutableUnit) -> Boolean)?,
@@ -134,11 +170,13 @@ internal object UnitContact {
                 lastLegalPoint(unit.position, requested) { distance(origin, it) <= ownLimit + positionRoundoff(origin, it) }
             val moverMass = if (canPush == null || unit.unitId in settled) null else positiveMass(unit)
             val hardContacts = translationContacts(unit, target, units, simultaneous = moverMass != null)
+            if (hardContacts.isNotEmpty() || target != requested) hardLimited += unit.unitId
             val hardFraction = hardContacts.minOfOrNull { it.fraction } ?: 1.0
             val clipped = pointAt(unit.position, target, hardFraction)
             val hardBlocker = hardContacts.firstOrNull()?.blocker
             if (hardBlocker != null && yielding != null && yielding.canYield(hardBlocker)) {
                 sideShift(unit, target, hardBlocker, units, yielding)?.let {
+                    hardLimited -= unit.unitId
                     return Translation(target, listOf(it), legacyYield = true)
                 }
             }
