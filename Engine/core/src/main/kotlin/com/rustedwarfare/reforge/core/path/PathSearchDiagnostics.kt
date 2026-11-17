@@ -25,6 +25,7 @@ data class PlanningWorkSlice(
     val workUnits: Int,
     val completed: Boolean,
     val restarted: Boolean,
+    val publicationWorkUnits: Int = 0,
 )
 
 data class PlanningWorkSample(

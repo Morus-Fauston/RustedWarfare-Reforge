@@ -119,6 +119,8 @@ internal object UnitContact {
         private val pushLimits = mutableMapOf<String, Double>()
         private var gatheringSupport: Map<GatheringGoal, Set<String>>? = null
         private val hardLimited = mutableSetOf<String>()
+        private val planningWait = mutableSetOf<String>()
+        fun recordPlanningWait(unit: MutableUnit) { planningWait += unit.unitId }
         private val ownProgress = mutableSetOf<String>()
         private val pushedDisplacements = mutableMapOf<String, Position>()
 
@@ -140,6 +142,7 @@ internal object UnitContact {
                 val active = unit.moveTarget != null && unit.tasks.firstOrNull()?.kind == UnitTaskKind.MOVE
                 unit.hardContactLimitedTicks = when {
                     !active -> 0
+                    unit.unitId in planningWait -> unit.hardContactLimitedTicks
                     unit.unitId in hardLimited -> unit.hardContactLimitedTicks + 1
                     unit.unitId in pushedDisplacements && unit.unitId !in ownProgress -> unit.hardContactLimitedTicks
                     else -> 0

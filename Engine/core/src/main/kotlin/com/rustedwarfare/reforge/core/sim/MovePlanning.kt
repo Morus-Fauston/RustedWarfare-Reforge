@@ -24,10 +24,12 @@ internal data class MovePlanningMember(
 )
 
 internal data class MovePlanningOccupant(val body: MutableUnit, val pose: MovePlanningPose,
-                                         val reserved: GroupMoveSlot?, val idle: Boolean, val obstructsRoute: Boolean = false)
+                                         val reserved: GroupMoveSlot?, val idle: Boolean, val obstructsRoute: Boolean = false,
+                                         val knownRouteAim: Position? = null)
 
 internal enum class ManeuverRepair(val reason: PathSearchReason) {
     CONTACT(PathSearchReason.ROUTE_REPAIR),
+    OVERTAKE(PathSearchReason.ROUTE_REPAIR),
     CONNECTION(PathSearchReason.ROUTE_REPAIR),
     KNOWLEDGE(PathSearchReason.KNOWLEDGE_REPLAN),
     GROUP_SLOT(PathSearchReason.ROUTE_REPAIR),
@@ -65,7 +67,8 @@ internal data class MovePlanningInput(
         }
 }
 
-internal data class PlannedMove(val slot: GroupMoveSlot?, val counters: PathSearchCounters?, val searchNanos: Long)
+internal data class PlannedMove(val slot: GroupMoveSlot?, val counters: PathSearchCounters?, val searchNanos: Long,
+                                val preserveCurrentRoute: Boolean = false)
 
 /** The ordinary order queue belongs to the same candidate transaction as movement. */
 internal class MovePlanning {
@@ -123,6 +126,7 @@ internal class MovePlanning {
 
     fun pending(unitId: String): Boolean = unitId in byMember
     fun repairing(unitId: String): Boolean = byMember[unitId]?.repair != null
+    fun preparingPublication(unitId: String): Boolean = byMember[unitId]?.let { workByOrder[it]?.publication != null } == true
 
     fun advance(
         pathPolicy: PathPolicy,
@@ -135,9 +139,12 @@ internal class MovePlanning {
         while (queued.hasNext() && !budget.exhausted) {
             val order = queued.next()
             val usedBefore = budget.used
+            val publicationBefore = workByOrder[order]?.publication?.workUnits ?: 0
+            var activePublicationWork = publicationBefore
             fun record(completed: Boolean, restarted: Boolean = false) {
                 samples?.add(PlanningWorkSlice(Collections.unmodifiableList(order.actions.map { it.unitId }),
-                    order.repair?.reason ?: PathSearchReason.USER_MOVE, budget.used - usedBefore, completed, restarted))
+                    order.repair?.reason ?: PathSearchReason.USER_MOVE, budget.used - usedBefore, completed, restarted,
+                    (workByOrder[order]?.publication?.workUnits ?: activePublicationWork) - publicationBefore))
             }
             val previousWork = workByOrder[order]
             if (previousWork == null && (order.group != null || order.repair != null) && !budget.take()) {
@@ -145,13 +152,45 @@ internal class MovePlanning {
                 return
             }
             val work = previousWork ?: Work(snapshot(order.actions, order.group, order.repair), order.group)
-            val result = work.advance(pathPolicy, budget)
+            var result = work.advance(pathPolicy, budget)
             if (result == null) {
                 record(completed = false)
                 workByOrder[order] = work
                 return
             }
-            if (previousWork != null) {
+            if (order.repair == ManeuverRepair.OVERTAKE) {
+                val current = snapshot(order.actions, order.group, order.repair)
+                val publication = work.publication ?: current.members.singleOrNull()?.let {
+                    OvertakePublication(current, result[it.action.unitId] ?: PlannedMove(null,null,0), work.input.members.single().start)
+                }?.also { work.publication = it }
+                if (publication != null) {
+                    publication.advance(budget)
+                    activePublicationWork = publication.workUnits
+                    if (publication.result == null) {
+                        workByOrder[order] = work
+                        record(completed = false)
+                        return
+                    }
+                    val live = current.members.singleOrNull()
+                    val saved = publication.input.members.single()
+                    if (live == null || live.action != saved.action || live.radius != saved.radius ||
+                        live.terrain !== saved.terrain || live.hull != saved.hull || live.hasBirthDelay != saved.hasBirthDelay ||
+                        live.pose.layer != saved.pose.layer || live.pose.shape != saved.pose.shape) {
+                        record(completed = true, restarted = true)
+                        workByOrder[order] = Work(current, order.group)
+                        queued.remove(); orders.add(order)
+                        return
+                    }
+                    val checked = publication.validateCurrent(current,budget)
+                    activePublicationWork = publication.workUnits
+                    if(checked==null) {
+                        workByOrder[order]=work
+                        record(completed=false)
+                        return
+                    }
+                    result = mapOf(saved.action.unitId to checked)
+                }
+            } else if (previousWork != null) {
                 val current = snapshot(order.actions, order.group, order.repair)
                 if (!work.stillValid(current, result)) {
                     record(completed = true, restarted = true)
@@ -167,6 +206,7 @@ internal class MovePlanning {
             for (member in work.input.members) {
                 val planned = result[member.action.unitId] ?: PlannedMove(null, null, 0)
                 val occupants = if (order.repair == null) emptyList()
+                    else if(order.repair==ManeuverRepair.OVERTAKE) work.publication?.currentOccupantIds.orEmpty()
                     else work.input.occupants.filter { it.obstructsRoute }.map { it.body.unitId }
                 publish(member, order.group, order.repair, occupants, planned)
             }
@@ -185,6 +225,8 @@ internal class MovePlanning {
                                points.filterNot { point -> point == prior }
                            } else points
                        }) {
+        var publication: OvertakePublication? = null
+        private var searchedResult: Map<String, PlannedMove>? = null
         private var cursor = 0
         private var pointIndex = 0
         private var search: ExactPathSearch? = null
@@ -199,6 +241,8 @@ internal class MovePlanning {
             mutableListOf<Pair<GroupMoveSlot, String>>() else null
 
         fun fork(rollback: PathSearchRollback): Work = Work(input, group, groupPoints).also { copy ->
+            copy.publication = publication?.fork(rollback)
+            copy.searchedResult = searchedResult
             copy.cursor = cursor
             copy.pointIndex = pointIndex
             copy.search = search?.fork(rollback)
@@ -228,6 +272,7 @@ internal class MovePlanning {
         }
 
         fun advance(pathPolicy: PathPolicy, budget: PathWorkBudget): Map<String, PlannedMove>? {
+            searchedResult?.let { return it }
             if (group == null) {
                 val member = input.members.singleOrNull() ?: return emptyMap()
                 val point = member.action.target
@@ -235,7 +280,7 @@ internal class MovePlanning {
                     if (!budget.take()) return null
                     birthRoute(member, point)
                 } else planRoute(member, point, pathPolicy, budget) ?: return null
-                return mapOf(member.action.unitId to attempt)
+                return mapOf(member.action.unitId to attempt).also { searchedResult = it }
             }
             while (cursor < input.members.size && !budget.exhausted) {
                 val member = input.members[cursor]
@@ -280,7 +325,7 @@ internal class MovePlanning {
                               budget: PathWorkBudget): PlannedMove? {
             val active = search ?: run {
                 val occupancy = when (input.repair) {
-                    ManeuverRepair.CONTACT, ManeuverRepair.GROUP_SLOT -> UnitContact.routeAround(checkNotNull(member.body),
+                    ManeuverRepair.CONTACT, ManeuverRepair.OVERTAKE, ManeuverRepair.GROUP_SLOT -> UnitContact.routeAround(checkNotNull(member.body),
                         input.occupants.filter { it.obstructsRoute }.map { it.body })
                     else -> null
                 }

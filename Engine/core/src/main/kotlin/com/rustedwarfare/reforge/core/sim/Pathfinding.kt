@@ -278,7 +278,8 @@ internal class ClearanceAStarPolicy(
         // A legal center can lie between tile centers, for example in a two-tile canal.
         // Keep the grid spacing while preserving the departure's offset within each cell.
         private fun canUseDepartureLattice(): Boolean {
-            if ((hull as? RectangularDeparture)?.maneuver != true || useDepartureLattice) return false
+            val canDepartBetweenCenters = (hull as? RectangularDeparture)?.maneuver == true || hull == null && occupancy != null
+            if (!canDepartBetweenCenters || useDepartureLattice) return false
             val key = checkNotNull(startKey)
             return start != pointPolicy.point(map, key.col, key.row)
         }
