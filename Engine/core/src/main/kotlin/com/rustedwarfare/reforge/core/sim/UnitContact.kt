@@ -209,6 +209,9 @@ internal object UnitContact {
                 }?.let { Contact(0.0, it) } else null else null
             val contacts = if (softContact == null) hardContacts else listOf(softContact)
             if (contacts.isEmpty()) return Translation(target)
+            for (contact in contacts) {
+                contactSlide(unit, target, origin, contact.blocker, units, unitsById, map, ground)?.let { return it }
+            }
             fun transferRatio(pusher: MutableUnit, blocker: MutableUnit): Double? {
                 val ratio = positiveMass(blocker)?.div(moverMass) ?: return null
                 if (blocker.unitId in settled || support?.contains(blocker.unitId) == true || !canPush(pusher, blocker)) return null
@@ -316,6 +319,49 @@ internal object UnitContact {
                 pushLimits[adjustment.unit.unitId] = distance(origin, translation.position)
             }
             return translation
+        }
+
+        private fun contactSlide(unit: MutableUnit, target: Position, origin: Position, other: MutableUnit,
+                                  units: Collection<MutableUnit>, unitsById: Map<String, MutableUnit>,
+                                  map: MapDefinition, ground: MapDefinition): Translation? {
+            if (unit.moveTarget == null ||
+                movePending(other.unitId)) return null
+            val entry = unit.passageEntry
+            if (entry != null && other.passageEntry?.let { it.passage == entry.passage && it.side != entry.side } == true)
+                return null
+            val drift = subtract(target, unit.position)
+            val length = hypot(drift.x, drift.y)
+            if (length == 0.0) return null
+            // A stopped companion at the same gathering must not be driven ahead of
+            // a passing member when the latter can use the open tangent instead.
+            val reservation = unit.groupMoveReservation
+            val parkedPeer = other.moveTarget == null && unit.ownerPlayerId == other.ownerPlayerId &&
+                reservation != null && other.moveArrival?.let { it.group && it.originalTarget == reservation.plan.click } == true &&
+                unit.definition.movementCollision is MovementCollisionShape.Circle &&
+                other.definition.movementCollision is MovementCollisionShape.Circle
+            if (other.moveTarget == null && !parkedPeer) return null
+            val opposing = ScreenPlane.displacement(other.heading, 1.0)
+            if (!parkedPeer && dot(drift, opposing) / length > -0.5) return null
+            val normal = subtract(unit.position, other.position)
+            val separation = hypot(normal.x, normal.y)
+            if (separation == 0.0 || normal.x * drift.x + normal.y * drift.y >= 0.0) return null
+            var tangent = Position(-normal.y / separation, normal.x / separation)
+            val toward = if (parkedPeer) subtract(checkNotNull(unit.moveTarget), unit.position) else null
+            val projection = toward?.let { dot(tangent, it) } ?: 0.0
+            if (projection < 0.0 || (projection == 0.0 && tangent.x * -drift.y + tangent.y * drift.x < 0.0))
+                tangent = negate(tangent)
+            val wanted = offsetAlong(unit.position, tangent, length)
+            val body = Body(unit.definition.movementCollision, unit.heading)
+            val terrain = UnitLocomotion.movement(unit).type
+            val grid = HullTerrainGrid.authoritative(map, terrain)
+            val limit = pushLimits[unit.unitId]?.let { maxOf(maximumTravel(unit), it) }
+            val actual = lastLegalPoint(unit.position, wanted) { point ->
+                (limit == null || distance(origin, point) <= limit + positionRoundoff(origin, point)) &&
+                    UnitAttachments.containsAdjustedSlots(unitsById, unit, map, point) &&
+                    clearsTerrain(unit, unit.definition.movementCollision, body, point, map, terrain, grid, ground, unitsById) &&
+                    translationContact(unit, point, units) == null
+            }
+            return if (distance(unit.position, actual) > positionRoundoff(unit.position, actual)) Translation(actual) else null
         }
 
         private fun slide(unit: MutableUnit, target: Position, clipped: Position, origin: Position, drift: Position,

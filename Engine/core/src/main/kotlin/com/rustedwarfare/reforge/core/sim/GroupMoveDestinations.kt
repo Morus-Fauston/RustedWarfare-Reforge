@@ -17,7 +17,8 @@ class GroupMoveRequest internal constructor(
 
 internal data class GroupMoveSlot(val position: Position, val heading: Double, val path: List<Position>)
 internal data class GroupMoveReservation(val plan: GroupMoveRequest, val slot: GroupMoveSlot,
-                                         val occupiedTicks: Long = 0, val needsReplacement: Boolean = false)
+                                         val occupiedTicks: Long = 0, val needsReplacement: Boolean = false,
+                                         val occupiedBy: String? = null)
 
 internal object GroupMoveDestinations {
     /** Finite map lattice, emitted nearest first without constructing the whole map. */
@@ -100,11 +101,50 @@ internal object GroupMoveDestinations {
         }
 
         fun advance(budget: PathWorkBudget) {
-            while (destinations == null && budget.take()) {
+            while (destinations == null && budget.take(pairWorkCost())) {
                 when (phase) {
                     Phase.FILTER -> filterOne()
                     Phase.RESERVE -> reserveOne()
                     Phase.RECONCILE -> reconcileOne()
+                }
+            }
+        }
+
+        /** Broadphase and the single circle-distance predicate are constant
+         * checks. Rectangle projection checks retain the full geometry charge,
+         * as in route publication; no motion sweep is performed here.
+         * Candidate order and the actual overlap predicates remain unchanged.
+         */
+        private fun pairWorkCost(): Int {
+            fun cost(unit: MutableUnit, slot: GroupMoveSlot, other: MutableUnit,
+                     assigned: GroupMoveSlot? = null): Int {
+                if (!UnitContact.shareLayer(unit, other)) return 1
+                if (unit.definition.contactBufferCollision is MovementCollisionShape.Circle &&
+                    other.definition.contactBufferCollision is MovementCollisionShape.Circle) return 1
+                val position = assigned?.position ?: other.position
+                val reach = unit.definition.contactBufferCollision.boundingRadius +
+                    other.definition.contactBufferCollision.boundingRadius
+                return if (kotlin.math.abs(slot.position.x - position.x) > reach ||
+                    kotlin.math.abs(slot.position.y - position.y) > reach) 1 else 8
+            }
+            return when (phase) {
+                Phase.FILTER -> {
+                    val (unit, options) = choices.getOrNull(memberIndex) ?: return 8
+                    val slot = options.getOrNull(optionIndex)?.slot ?: return 8
+                    val other = staying.getOrNull(pairIndex) ?: return 8
+                    if (other === unit) 1 else cost(unit, slot, other)
+                }
+                Phase.RESERVE -> {
+                    val (unit, options) = usable.getOrNull(memberIndex) ?: return 8
+                    val slot = options.getOrNull(optionIndex)?.slot ?: return 8
+                    val (other, assigned) = reserved.getOrNull(pairIndex) ?: return 8
+                    cost(unit, slot, other, checkNotNull(assigned.slot))
+                }
+                Phase.RECONCILE -> {
+                    val unit = choices.getOrNull(memberIndex)?.first ?: return 8
+                    if (unit.unitId in stayingIds || unit.unitId in reservedIds) return 8
+                    val (other, assigned) = reserved.getOrNull(pairIndex) ?: return 8
+                    cost(other, checkNotNull(assigned.slot), unit)
                 }
             }
         }

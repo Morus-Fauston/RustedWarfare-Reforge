@@ -337,7 +337,7 @@ class OvertakingTest {
                 maxTurnSpeed=90.0,turnAcceleration=0.0),emptySet(),15,tank.combat)
         val victim = UnitDefinition("victim",tank.className,tank.radius,tank.displayRadius,tank.totalFrames,tank.imagePath,
             tank.imageScale,shooter.movement,emptySet(),15,checkNotNull(tank.combat).copy(attackRange=1.0))
-        val targetX = 800.0 + checkNotNull(shooter.combat).attackRange + 69.5
+        val targetX = 800.0 + checkNotNull(shooter.combat).attackRange + .5
         val scenario = base.copy(map=map,players=base.players.map { it.copy(control=PlayerControl.LOCAL) },
             unitDefinitions=base.unitDefinitions+mapOf(shooter.id to shooter,victim.id to victim),
             units=base.units+listOf(UnitSpawn("victim","p2",victim.id,Position(targetX,1000.0),270.0),
@@ -347,29 +347,45 @@ class OvertakingTest {
             combatContract=CombatContract(12345,-1,mapOf("leader" to 8L,"follower" to 9L,"victim" to 10L,
                 "z-shooter" to 11L,"victim2" to 12L,"z-shooter2" to 13L),Long.MAX_VALUE-1))
         val contexts = listOf(0,1).map { assertIs<InitResult.Accepted>(SimulationContext.initialize(scenario)).context }
+        val witness = assertIs<InitResult.Accepted>(SimulationContext.initialize(scenario.copy(
+            combatContract = checkNotNull(scenario.combatContract).copy(nextObjectId = 100L)))).context
         try {
-            for(context in contexts) {
+            for(context in contexts + witness) {
                 context.enableMotionDiagnostics(context.world)
                 context.enablePlanningWorkDiagnostics(context.world)
                 for((id,target) in listOf("leader" to Position(360.0,200.0),"follower" to Position(340.0,200.0)))
                     assertIs<ActionResult.Accepted>(context.submit(MoveAction("go-$id","p1",id,target,context.world)))
-                for((id,y) in listOf("victim" to 1000.0,"victim2" to 1500.0))
-                    assertIs<ActionResult.Accepted>(context.submit(MoveAction("go-$id","p2",id,Position(800.0,y),context.world)))
-                for(tick in 0L..68L) context.advance(Step(tick,1.0,"sim-tick"))
-                assertTrue(context.drainMotionDiagnostics(context.world).last { it.unitId=="follower" }.hardContactLimitedTicks>=60)
-                val beforeFailureWork = context.drainPlanningWorkDiagnostics(context.world)
-                println("before-overflow work=${beforeFailureWork.filter { it.used>0 }}")
-                assertTrue(beforeFailureWork.last().slices.any { it.publicationWorkUnits>0 && !it.completed },
-                    "The real overflow must interrupt an already-started publication")
-                assertTrue(beforeFailureWork.any { sample -> sample.slices.any {
-                    it.reason==com.rustedwarfare.reforge.core.path.PathSearchReason.ROUTE_REPAIR && !it.completed
-                } })
             }
+            // Static, out-of-range targets do not consume the move budget or
+            // schedule the failure by a guessed search duration.
+            var failureTick = -1L
+            for(tick in 0L..250L) {
+                val frames = (contexts + witness).map { it.advance(Step(tick,1.0,"sim-tick")) }
+                assertTrue(frames.all { it.events.none { event -> event.kind == "projectile-fired" } })
+                val work = (contexts + witness).map { it.drainPlanningWorkDiagnostics(it.world) }
+                assertEquals(work[0],work[1]); assertEquals(work[0],work[2])
+                val motion = (contexts + witness).map { it.drainMotionDiagnostics(it.world) }
+                if(work[0].any { sample -> sample.slices.any { it.publicationWorkUnits>0 && !it.completed } }) {
+                    assertTrue(motion[0].last { it.unitId=="follower" }.hardContactLimitedTicks>=60)
+                    failureTick=tick+1
+                    break
+                }
+            }
+            assertTrue(failureTick>=0,"Reach an actually started, unfinished publication")
+            for(context in contexts + witness) for(id in listOf("victim","victim2"))
+                assertIs<ActionResult.Accepted>(context.submit(AttackAction("approach-$id","p2",id,
+                    if(id=="victim") "z-shooter" else "z-shooter2",context.world)))
+            // With spare IDs the exact target step advances publication and
+            // fires both real shots, after the approaching targets update.
+            val seen = witness.advance(Step(failureTick,1.0,"sim-tick"))
+            assertEquals(setOf("z-shooter","z-shooter2"),seen.events.filter { it.kind=="projectile-fired" }.map { it.unitId }.toSet())
+            assertEquals(2,seen.projectileEvents.count { it.kind=="born" })
+            assertTrue(witness.drainPlanningWorkDiagnostics(witness.world).any { sample ->
+                sample.slices.any { it.publicationWorkUnits>0 }
+            },"The failing step itself must advance the publication cursor")
             val failed = contexts.first()
             val before = failed.observe()
-            // The targets update before the shooters. The second real shot
-            // exhausts the final usable ID after the moving repair has advanced.
-            assertFailsWith<ArithmeticException> { failed.advance(Step(69,1.0,"sim-tick")) }
+            assertFailsWith<ArithmeticException> { failed.advance(Step(failureTick,1.0,"sim-tick")) }
             assertSame(before,failed.observe())
             assertTrue(failed.drainMotionDiagnostics(failed.world).isEmpty())
             assertTrue(failed.drainPlanningWorkDiagnostics(failed.world).isEmpty())
@@ -377,7 +393,7 @@ class OvertakingTest {
                 assertIs<ActionResult.Accepted>(context.submit(StopAction("stop-$id","p2",id,context.world)))
             var published = false
             var resumedPublication = false
-            for(tick in 69L..250L) {
+            for(tick in failureTick..failureTick+181L) {
                 val frames=contexts.map { it.advance(Step(tick,1.0,"sim-tick")) }
                 assertEquals(frames[0].units,frames[1].units)
                 assertEquals(frames[0].events,frames[1].events)
@@ -394,8 +410,10 @@ class OvertakingTest {
             }
             assertTrue(published,"Retry must eventually publish the useful bypass and release contact history")
             assertTrue(resumedPublication,"Retry must retain and advance the publication cursor across steps")
-        } finally { contexts.forEach { it.close() } }
+            println("overflow interrupted real publication at step $failureTick; witness fired twice; retry matched")
+        } finally { (contexts + witness).forEach { it.close() } }
     }
+
 
     @Test
     fun stop_and_replacement_clear_established_contact_history_and_cancel_the_moving_bypass() = WaterTestScene.withMap { source ->
@@ -597,13 +615,15 @@ class OvertakingTest {
                 val frame = context.advance(Step(tick, 1.0, "sim-tick"))
                 val leader = frame.units.single { it.unitId == "leader" }
                 val follower = frame.units.single { it.unitId == "follower" }
-                val motion = context.drainMotionDiagnostics(context.world).single { it.unitId == "follower" }
-                if (motion.hardContactLimitedTicks > 0) {
+                val motion = context.drainMotionDiagnostics(context.world).singleOrNull { it.unitId == "follower" }
+                assertTrue(motion != null || follower.moveTarget == null && follower.speed == 0.0,
+                    "Only an arrived stationary follower may omit its motion sample at $tick: $follower")
+                if (motion != null && motion.hardContactLimitedTicks > 0) {
                     if (firstLimited == null) firstLimited = tick
                     if (motion.hardContactLimitedTicks >= 60 && follower.position.x > 150.0) movingLimited = true
                 }
                 if (follower.position.x > leader.position.x + 12.0 && passed == null) passed = tick
-                if (tick % 20 == 0L) trail += "$tick:${leader.position}:${follower.position}:${motion.hardContactLimitedTicks}"
+                if (tick % 20 == 0L) trail += "$tick:${leader.position}:${follower.position}:${motion?.hardContactLimitedTicks}"
                 assertTrue(ScreenPlane.distanceSquared(leader.position, follower.position) >= 144.0 - 1e-7)
                 assertTrue(frame.events.none { it.kind in setOf("movement-cancelled", "path-unreachable") })
                 follower.moveTarget?.let { assertEquals(Position(340.0, 200.0), it) }

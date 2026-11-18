@@ -1,6 +1,7 @@
 package com.rustedwarfare.reforge.core.sim
 
 import com.rustedwarfare.reforge.core.content.MapDefinition
+import com.rustedwarfare.reforge.core.content.BlockingGrid
 import com.rustedwarfare.reforge.core.content.MovementCollisionShape
 import com.rustedwarfare.reforge.core.content.MovementType
 import com.rustedwarfare.reforge.core.content.UnitDefinition
@@ -26,20 +27,28 @@ class NarrowPassageTest {
         val opposingEntry = first.indexOfFirst { it.ship("opposing").position.x < 626.0 }
         println("Already entered: clear=$firstClear opposite entry=$opposingEntry arrivals=${arrivals(first)}")
         assertTrue(firstClear >= 0 && opposingEntry > firstClear)
-        assertTrue(first.subList(0, opposingEntry).all { it.ship("opposing").moveTarget == left })
+        // An accepted logical order can precede its budgeted physical route.
+        assertTrue(first.subList(0, opposingEntry).all { it.ship("opposing").tasks.firstOrNull()?.target == left })
         assertEquals(setOf("through", "opposing"), arrivals(first).keys)
-        assertRepeated(first, run(scene, orders.reversed(), 720))
+        assertRepeated(first, run(scene.copy(units = scene.units.reversed()), orders, 720))
     }
 
     @Test
-    fun both_arrival_times_and_same_step_order_come_from_the_entrance() = withPassage { map ->
-        val scene = scene(map, boat("z-east", "p1", 495.0), boat("a-west", "p2", 645.0))
-        val east = Order("z-east", "p1", Position(700.0, 245.0))
-        val west = Order("a-west", "p2", Position(445.0, 135.0))
+    fun both_arrival_times_and_same_step_order_come_from_the_entrance() = WaterTestScene.withMap { base ->
+        // Both short routes publish in the same step under the real 512 budget,
+        // so this remains an entrance tie rather than a planning-queue race.
+        val banks = (0 until 9).filter { it != 4 }.map { 6 to it }.toSet()
+        val map = MapDefinition(12, 9, 20, 20, base.tileSets, IntArray(108) { 2 },
+            BlockingGrid(12, 9, BooleanArray(108)), banks)
+        val scene = scene(map, boat("z-east", "p1", 95.0).copy(position = Position(95.0, 90.0)),
+            boat("a-west", "p2", 165.0).copy(position = Position(165.0, 90.0)))
+        val east = Order("z-east", "p1", Position(170.0, 110.0))
+        val west = Order("a-west", "p2", Position(90.0, 70.0))
         val tied = run(scene, listOf(east, west), 870)
         val staggered = run(scene, listOf(east, west.copy(tick = 12)), 870)
-        fun entries(frames: List<Observation>) = listOf(frames.indexOfFirst { it.ship("z-east").position.x > 514.0 },
-            frames.indexOfFirst { it.ship("a-west").position.x < 626.0 })
+        assertTrue(tied.first().events.count { it.kind == "movement-started" } == 2)
+        fun entries(frames: List<Observation>) = listOf(frames.indexOfFirst { it.ship("z-east").position.x > 114.0 },
+            frames.indexOfFirst { it.ship("a-west").position.x < 146.0 })
         println("Identical entrance steps: ${entries(tied)}; east ready earlier: ${entries(staggered)}")
         assertTrue(entries(tied).let { (eastTick, westTick) -> westTick in 0 until eastTick })
         assertTrue(entries(staggered).let { (eastTick, westTick) -> eastTick in 0 until westTick })
@@ -58,6 +67,7 @@ class NarrowPassageTest {
             Order("z-waiting", "p2", Position(432.0, 133.0), 12),
             Order("a-late", "p1", Position(735.0, 151.0), 35))
         val frames = run(scene, orders, 1480)
+        println("Queued arrival route: ${listOf(500, 700, 1000, 1480).map { i -> frames[i].ship("c-admitted").let { listOf(i, it.position, it.heading, it.moveTarget, it.pathPoints) } }}")
         val existingClear = frames.indexOfFirst { it.ship("c-admitted").position.x >= 626.0 }
         val olderEntry = frames.indexOfFirst { it.ship("z-waiting").position.x < 626.0 }
         val olderClear = frames.indexOfFirst { it.ship("z-waiting").position.x <= 514.0 }
@@ -70,7 +80,9 @@ class NarrowPassageTest {
         assertTrue(held.size > 420 && held.last().stepIndex - held.first().stepIndex == held.size.toLong() - 1)
         println("Late approach held at $heldAt for ${held.size} steps with its original move")
         assertEquals(orders.map { it.ship }.toSet(), arrivals(frames).keys)
-        assertRepeated(frames, run(scene.copy(units = scene.units.reversed()), orders.reversed(), 1480))
+        // Submission order is part of the budgeted input. Reverse the initial
+        // storage order while replaying the identical command sequence.
+        assertRepeated(frames, run(scene.copy(units = scene.units.reversed()), orders, 1480))
     }
 
     @Test
@@ -222,7 +234,9 @@ class NarrowPassageTest {
                     context.world, order.tick))
                 assertIs<ActionResult.Accepted>(receipt, receipt.toString())
             }
-            return (0L..last).map { tick -> context.advance(Step(tick, 1.0, "sim-tick")) }
+            return (0L..last).map { tick -> context.advance(Step(tick, 1.0, "sim-tick")) }.also { frames ->
+                println("Move publication: ${orders.map { order -> order.ship to frames.indexOfFirst { frame -> frame.events.any { it.kind == "movement-started" && it.unitId == order.ship } } }}")
+            }
         } finally {
             context.close()
         }
@@ -235,7 +249,8 @@ class NarrowPassageTest {
     }.toMap()
 
     private fun assertRepeated(first: List<Observation>, repeat: List<Observation>) {
-        assertEquals(first.map { it.units }, repeat.map { it.units })
+        assertEquals(first.size, repeat.size)
+        for (index in first.indices) assertEquals(first[index].units, repeat[index].units, "first differing step $index")
         assertEquals(arrivals(first), arrivals(repeat))
     }
 

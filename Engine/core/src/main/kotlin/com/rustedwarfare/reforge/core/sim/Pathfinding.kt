@@ -23,7 +23,8 @@ internal interface PathPolicy {
 }
 
 
-internal data class PathGridKey(val col: Int, val row: Int, val heading: Double = 0.0)
+internal data class PathGridKey(val col: Int, val row: Int, val heading: Double = 0.0,
+                                val initialPose: Boolean = false)
 
 internal class PathWorkBudget(val limit: Int) {
     private var remaining = limit
@@ -292,7 +293,10 @@ internal class ClearanceAStarPolicy(
             val heading = hull?.heading ?: 0.0
             if (nearest && !canLeaveStart()) return complete()
             if (arrival(start, target, heading, cache) != null) return complete(listOf(target))
-            startKey = PathGridKey(startCell.first, startCell.second, heading)
+            // A displaced pose and its tile center are different reachable
+            // states. Merging them prevents a legal rejoin around a bank corner.
+            startKey = PathGridKey(startCell.first, startCell.second, heading,
+                initialPose = start != pointPolicy.point(map, startCell.first, startCell.second))
             if (nearest && start != pointPolicy.point(map, startCell.first, startCell.second)) useDepartureLattice = true
             val cached = cache?.get(map, radius)
             clearance = cached ?: BooleanArray(map.widthTiles * map.heightTiles)
@@ -545,7 +549,8 @@ internal class ClearanceAStarPolicy(
 
         private inline fun scanNeighbors(key: PathGridKey, from: Position, cache: PathClearanceCache?,
                                          accept: (PathGridKey) -> Unit) {
-            for ((dx, dy) in offsets) {
+            val directions = if (key == startKey && from != routePoint(key.col, key.row)) listOf(0 to 0) + offsets else offsets
+            for ((dx, dy) in directions) {
                 val col = key.col + dx
                 val row = key.row + dy
                 if (col !in 0 until map.widthTiles || row !in 0 until map.heightTiles) continue

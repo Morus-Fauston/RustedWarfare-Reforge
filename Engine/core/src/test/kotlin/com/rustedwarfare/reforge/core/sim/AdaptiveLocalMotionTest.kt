@@ -100,8 +100,8 @@ class AdaptiveLocalMotionTest {
                     assertTrue(observation.events.none { it.kind in setOf("path-unreachable","movement-boundary-blocked") })
                     if(arrived) {
                         assertNull(now.moveTarget);assertTrue(now.pathPoints.isEmpty())
-                        assertEquals(previous.heading,now.heading);assertEquals(previous.angularVelocity,now.angularVelocity)
-                        assertEquals(maxOf(0.0,previous.speed-.02*p.moveSpeed),now.speed,1e-12)
+                        assertEquals(previous.heading,now.heading);assertEquals(0.0,now.angularVelocity)
+                        assertEquals(0.0,now.speed)
                         stable=if(now.speed==0.0 && now.position==previous.position)stable+1 else 0
                         if(stable>=19)break
                     }

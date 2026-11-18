@@ -55,6 +55,154 @@ class GroupMoveDestinationsTest {
     }
 
     @Test
+    fun a_brief_second_holder_does_not_reset_the_continuous_first_holder() = WaterTestScene.withMap { map ->
+        val click = Position(600.0, 200.0)
+        val opening = WaterTestScene.scenario(map, MovementType.WATER, Position(575.0, 200.0))
+        val source = opening.unitDefinitions.getValue("water-test")
+        val member = variant(source, "slow-member", 0.01, MovementCollisionShape.Circle(12.0))
+        val holder = variant(source, "holder", 0.001, MovementCollisionShape.Circle(6.0))
+        val passer = UnitDefinition("passer", source.className, 2.0, 2.0, source.totalFrames,
+            source.imagePath, source.imageScale, source.movement.copy(moveSpeed = 0.7,
+                maxTurnSpeed = 180.0, turnAcceleration = 180.0), emptySet(),
+            movementCollision = MovementCollisionShape.Circle(2.0))
+        val scene = opening.copy(unitDefinitions = opening.unitDefinitions +
+            listOf(member, holder, passer).associateBy { it.id }, units = listOf(
+            UnitSpawn("a", "p1", member.id, Position(570.0, 200.0), 90.0),
+            UnitSpawn("z", "p1", source.id, Position(750.0, 300.0), 270.0),
+            UnitSpawn("b-passer", "p1", passer.id, Position(600.0, 225.0), 180.0),
+            UnitSpawn("c-holder", "p1", holder.id, click, 90.0)))
+        val context = assertIs<InitResult.Accepted>(SimulationContext.initialize(scene)).context
+        try {
+            for ((id, target) in listOf("b-passer" to Position(600.0, 380.0), "c-holder" to Position(730.0, 200.0)))
+                assertIs<ActionResult.Accepted>(context.submit(MoveAction("initial-$id", "p1", id, target, context.world)))
+            val group = assertNotNull(context.requestGroupMove("p1", listOf("a", "z"), click))
+            submitSelection(context, group, "a", "z")
+            val initial = awaitPlanning(context, "a", "z")
+            assertEquals(click, initial.ship("a").moveTarget)
+            assertIs<ActionResult.Accepted>(context.submit(StopAction("passer-waits", "p1", "b-passer", context.world)))
+            var simultaneous = false
+            var closestPassingDistanceSquared = Double.POSITIVE_INFINITY
+            var closestPassingPose: Position? = null
+            var reassigned = false
+            context.enablePlanningWorkDiagnostics(context.world)
+            for (offset in 1L..650L) {
+                if (offset == 300L) assertIs<ActionResult.Accepted>(context.submit(
+                    MoveAction("passer-enters", "p1", "b-passer", Position(600.0, 210.0), context.world)))
+                if (offset == 400L) assertIs<ActionResult.Accepted>(context.submit(
+                    MoveAction("passer-leaves", "p1", "b-passer", Position(600.0, 380.0), context.world)))
+                val frame = context.advance(Step(initial.stepIndex + offset, 1.0, "sim-tick"))
+                assertTrue(context.drainPlanningWorkDiagnostics(context.world).all { it.used <= it.limit })
+                val held = frame.ship("c-holder").position
+                val passing = frame.ship("b-passer").position
+                val passingDistanceSquared = ScreenPlane.distanceSquared(passing, click)
+                if (passingDistanceSquared < closestPassingDistanceSquared) {
+                    closestPassingDistanceSquared = passingDistanceSquared
+                    closestPassingPose = passing
+                }
+                assertTrue(ScreenPlane.distanceSquared(held, click) < 256.0, "The first holder must remain continuously in the slot buffer")
+                assertTrue(ScreenPlane.distanceSquared(held, passing) >= 64.0 - 1e-7)
+                simultaneous = simultaneous || ScreenPlane.distanceSquared(passing, click) < 324.0
+                reassigned = reassigned || Event("group-destination-reassigned", "a") in frame.events
+            }
+            assertTrue(simultaneous, "The transient holder must actually share the occupied slot buffer: closest=$closestPassingDistanceSquared at $closestPassingPose")
+            assertTrue(reassigned, "A transient earlier holder must not restart the persistent holder's 420-step wait")
+        } finally { context.close() }
+    }
+
+    @Test
+    fun successive_short_lived_holders_do_not_turn_passing_traffic_into_one_persistent_blocker() =
+        WaterTestScene.withMap { map ->
+            val click = Position(600.0, 200.0)
+            val opening = WaterTestScene.scenario(map, MovementType.WATER, Position(575.0, 200.0))
+            val source = opening.unitDefinitions.getValue("water-test")
+            val slow = variant(source, "slow-member", 0.01, MovementCollisionShape.Circle(6.0))
+            val traffic = variant(source, "traffic", 0.7, MovementCollisionShape.Circle(6.0))
+            val scene = opening.copy(unitDefinitions = opening.unitDefinitions + mapOf(slow.id to slow, traffic.id to traffic),
+                units = listOf(UnitSpawn("a", "p1", slow.id, Position(575.0, 200.0), 90.0),
+                    UnitSpawn("z", "p1", source.id, Position(750.0, 300.0), 270.0),
+                    UnitSpawn("first", "p1", traffic.id, click, 90.0),
+                    UnitSpawn("second", "p1", traffic.id, Position(600.0, 216.0), 0.0)))
+            val context = assertIs<InitResult.Accepted>(SimulationContext.initialize(scene)).context
+            try {
+                for ((id, target) in listOf("first" to Position(730.0, 200.0), "second" to Position(600.0, 380.0)))
+                    assertIs<ActionResult.Accepted>(context.submit(MoveAction("initial-$id", "p1", id, target, context.world)))
+                val group = assertNotNull(context.requestGroupMove("p1", listOf("a", "z"), click))
+                submitSelection(context, group, "a", "z")
+                val initial = awaitPlanning(context, "a", "z")
+                assertEquals(click, initial.ship("a").moveTarget)
+                assertIs<ActionResult.Accepted>(context.submit(StopAction("first-waits", "p1", "first", context.world)))
+                assertIs<ActionResult.Accepted>(context.submit(StopAction("second-waits", "p1", "second", context.world)))
+                var changes = 0
+                val consecutive = mutableMapOf<String, Int>()
+                var longestOccupation = 0
+                context.enablePlanningWorkDiagnostics(context.world)
+                for (offset in 1L..650L) {
+                    if (offset == 250L) {
+                        assertIs<ActionResult.Accepted>(context.submit(MoveAction("first-leaves", "p1", "first", Position(730.0, 200.0), context.world)))
+                        assertIs<ActionResult.Accepted>(context.submit(MoveAction("second-enters", "p1", "second", click, context.world)))
+                    }
+                    if (offset == 500L) assertIs<ActionResult.Accepted>(context.submit(
+                        MoveAction("second-leaves", "p1", "second", Position(600.0, 380.0), context.world)))
+                    val frame = context.advance(Step(initial.stepIndex + offset, 1.0, "sim-tick"))
+                    assertTrue(context.drainPlanningWorkDiagnostics(context.world).all { it.used <= it.limit })
+                    changes += frame.events.count { it.kind == "group-destination-reassigned" && it.unitId == "a" }
+                    for (id in listOf("first", "second")) {
+                        val duration = if (ScreenPlane.distanceSquared(frame.ship(id).position, click) < 256.0)
+                            (consecutive[id] ?: 0) + 1 else 0
+                        consecutive[id] = duration
+                        longestOccupation = maxOf(longestOccupation, duration)
+                    }
+                    assertTrue(frame.events.none { it.unitId == "a" && it.kind == "movement-cancelled" })
+                }
+                assertTrue(longestOccupation < 420, "The fixture must only contain short-lived individual holders: $longestOccupation")
+                assertEquals(0, changes, "Neither passing body occupies this member's slot for 420 consecutive steps")
+                assertEquals(click, context.observe().ship("a").moveTarget)
+            } finally { context.close() }
+        }
+
+    @Test
+    fun a_confirmed_stationary_holder_invalidates_the_slot_before_the_slow_member_reaches_it() =
+        WaterTestScene.withMap { map ->
+            val click = Position(600.0, 200.0)
+            val opening = WaterTestScene.scenario(map, MovementType.WATER, Position(475.0, 187.0))
+            val source = opening.unitDefinitions.getValue("water-test")
+            val slow = variant(source, "slow-member", 0.01, MovementCollisionShape.Circle(6.0))
+            val holder = variant(source, "slow-holder", 0.001, MovementCollisionShape.Circle(6.0))
+            val scene = opening.copy(players = listOf(Player("p1", PlayerControl.LOCAL), Player("p2", PlayerControl.LOCAL)),
+                unitDefinitions = opening.unitDefinitions + mapOf(slow.id to slow, holder.id to holder), units = listOf(
+                    UnitSpawn("a", "p1", slow.id, Position(475.0, 187.0), 90.0),
+                    UnitSpawn("z", "p1", source.id, Position(610.0, 130.0), 180.0),
+                    UnitSpawn("holding", "p2", holder.id, click, 90.0)))
+            val context = assertIs<InitResult.Accepted>(SimulationContext.initialize(scene)).context
+            try {
+                assertIs<ActionResult.Accepted>(context.submit(MoveAction("holder-leaving", "p2", "holding",
+                    Position(730.0, 200.0), context.world)))
+                val group = assertNotNull(context.requestGroupMove("p1", listOf("a", "z"), click))
+                submitSelection(context, group, "a", "z")
+                val initial = awaitPlanning(context, "a", "z")
+                assertEquals(click, initial.ship("a").moveTarget)
+                assertIs<ActionResult.Accepted>(context.submit(StopAction("holder-stopped", "p2", "holding", context.world)))
+                context.enablePlanningWorkDiagnostics(context.world)
+                var replacement: Observation? = null
+                for (tick in initial.stepIndex + 1..initial.stepIndex + 1800) {
+                    val frame = context.advance(Step(tick, 1.0, "sim-tick"))
+                    assertTrue(context.drainPlanningWorkDiagnostics(context.world).all { it.used <= it.limit })
+                    assertTrue(frame.events.none { it.unitId in setOf("a", "z") &&
+                        (it.kind == "movement-cancelled" || it.kind == "group-destination-unavailable") })
+                    if (Event("group-destination-reassigned", "a") in frame.events) {
+                        replacement = frame
+                        break
+                    }
+                }
+                val changed = assertNotNull(replacement, "A stationary known holder must not wait for the slow member to approach")
+                assertTrue(ScreenPlane.distanceSquared(changed.ship("a").position, click) > 100.0 * 100.0)
+                assertTrue(changed.ship("a").moveTarget != click)
+                assertEquals(0.0, changed.ship("holding").speed)
+                assertTrue(changed.stepIndex - initial.stepIndex >= 420)
+            } finally { context.close() }
+        }
+
+    @Test
     fun a_visible_long_hull_can_confirm_occupation_before_the_mover_gets_within_a_tile() =
         WaterTestScene.withMap { map ->
             val click = Position(600.0, 200.0)

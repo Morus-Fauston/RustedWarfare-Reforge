@@ -67,7 +67,10 @@ internal class PassageAdmission(definitions: Collection<UnitDefinition>) {
         for (unit in units) unit.passageEntry = null
         val waiting = HashSet<String>()
         for (approaches in proposals.values.groupBy { it.entry.passage }.values) for (own in approaches) {
-            val blocked = !own.entry.entered && approaches.any { other ->
+            // Entered units retain priority over entrance queues. If both sides
+            // are already inside, the same priority also selects which mover
+            // yields its own propulsion while being pushed back with its order.
+            val blocked = approaches.any { other ->
                 other.entry.side != own.entry.side && own.width + other.width > own.entry.passage.width &&
                     UnitContact.shareLayer(own.unit, other.unit) && knows(own.unit, other.unit) &&
                     knows(other.unit, own.unit) && priority.compare(other, own) < 0

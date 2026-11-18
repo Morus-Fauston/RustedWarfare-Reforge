@@ -152,6 +152,12 @@ internal class MovePlanning {
         for (action in order.actions) byMember[action.unitId] = order
     }
 
+    fun pendingReservation(unitId: String): GroupMoveReservation? {
+        val order = byMember[unitId] ?: return null
+        val group = order.group ?: return null
+        return workByOrder[order]?.heldSlot(unitId)?.let { GroupMoveReservation(group, it) }
+    }
+
     fun pending(unitId: String): Boolean = unitId in byMember
     fun repairing(unitId: String): Boolean = byMember[unitId]?.repair != null
     fun holdsManeuverRoute(unitId: String): Boolean = byMember[unitId]?.repair?.let { it != ManeuverRepair.SHORE_REJOIN } == true
@@ -198,6 +204,12 @@ internal class MovePlanning {
                 it.requestKey = order.requestKey
             }
             var result = work.advance(pathPolicy, budget)
+            if (work.restartTail) {
+                record(completed = false, restarted = true)
+                workByOrder.remove(order)
+                queued.remove(); orders.add(order)
+                return
+            }
             if (result == null) {
                 record(completed = false)
                 workByOrder[order] = work
@@ -205,6 +217,15 @@ internal class MovePlanning {
             }
             if (order.repair == ManeuverRepair.OVERTAKE) {
                 val current = snapshot(order.actions, order.group, order.repair)
+                // A circle can finish while its search is still queued. An
+                // empty live request must never publish the saved move again.
+                if (current.members.isEmpty()) {
+                    record(completed = true)
+                    for (action in order.actions) byMember.remove(action.unitId)
+                    workByOrder.remove(order)
+                    queued.remove()
+                    continue
+                }
                 val publication = work.publication ?: current.members.singleOrNull()?.let {
                     OvertakePublication(current, result[it.action.unitId] ?: PlannedMove(null,null,0), work.input.members.single().start)
                 }?.also { work.publication = it }
@@ -222,7 +243,7 @@ internal class MovePlanning {
                         live.terrain !== saved.terrain || live.hull != saved.hull || live.hasBirthDelay != saved.hasBirthDelay ||
                         live.pose.layer != saved.pose.layer || live.pose.shape != saved.pose.shape) {
                         record(completed = true, restarted = true)
-                        workByOrder[order] = Work(current, order.group).also { it.requestKey = order.requestKey }
+                        workByOrder.remove(order)
                         queued.remove(); orders.add(order)
                         return
                     }
@@ -253,22 +274,56 @@ internal class MovePlanning {
                 val current = snapshot(order.actions, order.group, order.repair)
                 if (!work.stillValid(current, result)) {
                     record(completed = true, restarted = true)
-                    workByOrder[order] = Work(current, order.group).also { it.requestKey = order.requestKey }
+                    // The retry waits behind other orders. Bind its next pose
+                    // when it actually gets budget, rather than saving a fresh
+                    // but already unworked snapshot that can move while queued.
+                    workByOrder.remove(order)
                     // A moving member or occupant must not keep independent orders behind
                     // a search that is repeatedly invalidated before publication.
                     queued.remove()
                     orders.add(order)
                     return
                 }
+                if (order.repair == ManeuverRepair.GROUP_SLOT && current.members.singleOrNull()?.pose?.shape is MovementCollisionShape.Circle) {
+                    val live = current.members.single()
+                    val planned = result[live.action.unitId]
+                    if (planned?.slot != null) {
+                        val publication = work.publication ?: OvertakePublication(current, planned,
+                            work.input.members.single().start, rejoinOnly = true).also { work.publication = it }
+                        publication.advance(budget)
+                        activePublicationWork = publication.workUnits
+                        if (publication.result == null) {
+                            workByOrder[order] = work
+                            record(completed = false)
+                            return
+                        }
+                        val checked = publication.validateCurrent(current, budget)
+                        activePublicationWork = publication.workUnits
+                        if (checked == null) {
+                            workByOrder[order] = work
+                            record(completed = false)
+                            return
+                        }
+                        result = mapOf(live.action.unitId to checked)
+                    }
+                }
             }
-            record(completed = true)
+            val partial = work.moreRoutes
+            record(completed = !partial)
             for (member in work.input.members) {
-                if (order.repair == ManeuverRepair.SHORE_REJOIN && member.action.unitId !in result) continue
+                if ((order.repair == ManeuverRepair.SHORE_REJOIN || partial || work.hasReleased) && member.action.unitId !in result) continue
                 val planned = result[member.action.unitId] ?: PlannedMove(null, null, 0)
                 val occupants = if (order.repair == null) emptyList()
                     else if(order.repair==ManeuverRepair.OVERTAKE) work.publication?.currentOccupantIds.orEmpty()
                     else work.input.occupants.filter { it.obstructsRoute }.map { it.body.unitId }
                 publish(member, order.group, order.repair, occupants, planned)
+            }
+            if (partial) {
+                work.noteReleased(checkNotNull(order.group), result)
+                for (id in result.keys) byMember.remove(id)
+                order.actions.removeAll { it.unitId in result }
+                workByOrder[order] = work
+                return
             }
             for (action in order.actions) byMember.remove(action.unitId)
             if (order.repair == null) order.group?.let(byGroup::remove)
@@ -280,6 +335,17 @@ internal class MovePlanning {
     private class Work(var input: MovePlanningInput, private val group: GroupMoveRequest?) {
         private var pointSource = group?.let { GroupMoveDestinations.Points(input.map, it.click) }
         private var groupPoints = mutableListOf<Position>()
+        private var openGround: OpenGroundGroup? = null
+        private var released: Map<String, GroupMoveReservation> = emptyMap()
+        val hasReleased get() = released.isNotEmpty()
+        val moreRoutes get() = openGround?.pendingRoutes == true
+        var restartTail = false
+            private set
+        fun heldSlot(id: String) = if (hasReleased) openGround?.heldSlot(id) else null
+        fun noteReleased(group: GroupMoveRequest, ready: Map<String, PlannedMove>) {
+            released = released + ready.mapValues { GroupMoveReservation(group, checkNotNull(it.value.slot)) }
+        }
+        private var triedOpenGround = false
         private var batchSize = 113
         private var generating = true
         private var outerDistance = 0.0
@@ -308,6 +374,9 @@ internal class MovePlanning {
         fun fork(rollback: PathSearchRollback): Work = Work(input, group).also { copy ->
             copy.pointSource = pointSource?.fork(rollback)
             copy.groupPoints = groupPoints
+            copy.openGround = openGround?.fork(rollback)
+            copy.released = released; copy.restartTail = restartTail
+            copy.triedOpenGround = triedOpenGround
             copy.batchSize = batchSize
             copy.generating = generating
             copy.outerDistance = outerDistance
@@ -329,8 +398,24 @@ internal class MovePlanning {
         }
 
         fun stillValid(current: MovePlanningInput, result: Map<String, PlannedMove>): Boolean {
+            if (hasReleased) {
+                // Only already released holders still driving the very same reserved slot are internal.
+                // A replacement order, new parking position or external entrant invalidates the proof.
+                val remaining = input.copy(members = input.members.filterNot { it.action.unitId in released })
+                val external = current.occupants.filterNot { o ->
+                    val held = released[o.body.unitId]
+                    held != null && o.body.groupMoveReservation?.plan === held.plan && o.reserved == held.slot
+                }
+                return scoped(remaining).matches(scoped(current.copy(occupants = external)))
+            }
             if (input.repair != ManeuverRepair.GROUP_SLOT) return scoped(input).matches(scoped(current))
-            if (!input.matchesMembers(current)) return false
+            val chosen = input.members.singleOrNull()?.let { result[it.action.unitId]?.slot }
+            val rejoiningCircle = chosen != null && input.members.singleOrNull()?.pose?.shape is MovementCollisionShape.Circle &&
+                current.members.size == input.members.size
+            val requests = if (rejoiningCircle) current.copy(members = current.members.mapIndexed { index, live ->
+                live.copy(start = input.members[index].start, pose = live.pose.copy(position = input.members[index].pose.position))
+            }) else current
+            if (!input.matchesMembers(requests)) return false
             // A slowly moving holder must not restart replacement forever. Its
             // current pose is checked at the chosen slot below, and live hard
             // contact still guards every route step. A changed set of blockers
@@ -339,7 +424,6 @@ internal class MovePlanning {
                 current.occupants.filter { it.obstructsRoute }.map { it.body.unitId }) return false
             val member = input.members.singleOrNull() ?: return true
             val body = checkNotNull(member.body)
-            val chosen = result[member.action.unitId]?.slot
             if (chosen != null) return current.occupants.none { blocks(body, chosen, it) }
 
             // Exhaustion is valid only against the same current occupancy. There
@@ -350,6 +434,7 @@ internal class MovePlanning {
         /** Distant changes only invalidate a search after its frontier reaches them. */
         private fun scoped(value: MovePlanningInput): MovePlanningInput {
             val request = group ?: return value
+            openGround?.let { open -> return value.copy(occupants = value.occupants.filter(open::dependsOn)) }
             val radius = value.members.maxOfOrNull { checkNotNull(it.body).definition.contactBufferCollision.boundingRadius } ?: 0.0
             return value.copy(occupants = value.occupants.filter { holder ->
                 val reach = outerDistance + radius + holder.body.definition.contactBufferCollision.boundingRadius
@@ -393,6 +478,16 @@ internal class MovePlanning {
                 return mapOf(member.action.unitId to attempt).also { searchedResult = it }
             }
             if (input.members.isEmpty()) return emptyMap()
+            if (!triedOpenGround && input.repair == null && input.members.size >= 2 &&
+                input.members.first().body != null && input.members.first().pose.shape is MovementCollisionShape.Circle &&
+                input.members.first().hull == null && pathPolicy is ClearanceAStarPolicy) {
+                val open = openGround ?: OpenGroundGroup(input, group).also { openGround = it }
+                val result = open.advance(budget) { m, point -> planRoute(m, point, pathPolicy, budget, clearApproach = true) }
+                outerDistance = open.outerDistance
+                if (!open.rejected) return result
+                if (hasReleased) { restartTail = true; return null }
+                openGround = null; triedOpenGround = true
+            }
             val source = checkNotNull(pointSource)
             if (generating) {
                 while (groupPoints.size < batchSize && !source.exhausted) {
@@ -417,12 +512,25 @@ internal class MovePlanning {
                 }
                 if (cursor == candidates.size) candidates += checkNotNull(member.body) to mutableListOf<PlannedMove>()
                 val point = groupPoints[pointIndex]
-                val attempt = checkingSlot ?: run {
+                // A circle's destination clearance is independent of its arrival
+                // heading. Reject occupied replacement points before paying for
+                // a full route to each one; vacant() retains its budgeted cursor
+                // across steps and the later slot check reuses that result.
+                val precheck = input.repair == ManeuverRepair.GROUP_SLOT && member.pose.shape is MovementCollisionShape.Circle
+                val available = if (precheck && checkingSlot == null)
+                    vacant(member, slot(member, point, emptyList()), budget) ?: return null else true
+                val attempt = if (!available) PlannedMove(null, null, 0) else checkingSlot ?: run {
                     if (member.hasBirthDelay) {
                         if (!budget.take()) return null
                         birthRoute(member, point)
                     } else planRoute(member, point, pathPolicy, budget) ?: return null
-                }.also { checkingSlot = it }
+                }.also {
+                    checkingSlot = it
+                    // A nearest route or positional capture can end somewhere
+                    // other than the prechecked lattice point. Check that pose
+                    // with its own cursor before accepting this replacement.
+                    if (precheck && it.slot?.position != point) occupantIndex = -1
+                }
                 val slot = attempt.slot
                 if (slot == null && attempt.nearest && point == group.click) {
                     val id = member.action.unitId
@@ -475,13 +583,12 @@ internal class MovePlanning {
         }
 
         private fun planRoute(member: MovePlanningMember, point: Position, policy: PathPolicy,
-                              budget: PathWorkBudget): PlannedMove? {
+                              budget: PathWorkBudget, clearApproach: Boolean = false): PlannedMove? {
             val active = search ?: run {
-                val occupancy = when (input.repair) {
-                    ManeuverRepair.CONTACT, ManeuverRepair.OVERTAKE, ManeuverRepair.GROUP_SLOT -> UnitContact.routeAround(checkNotNull(member.body),
-                        input.occupants.filter { it.obstructsRoute }.map { it.body })
-                    else -> member.body?.let { body -> UnitContact.routeAround(body,
-                        input.occupants.filter { it.obstructsRoute }.map { it.body }) }
+                // The open-ground solver checks every relevant holder once, and only accepts
+                // direct segments inside that checked area. Do not reread the world per slot.
+                val occupancy = if (clearApproach) null else member.body?.let { body ->
+                    UnitContact.routeAround(body, input.occupants.filter { it.obstructsRoute }.map { it.body })
                 }
                 val counters = if (input.collectDiagnostics) PathSearchCounters() else null
                 val started = if (searchingNearest) policy.beginNearest(member.terrain, member.start, point, member.radius,
@@ -504,7 +611,8 @@ internal class MovePlanning {
             }
             val stationaryPath = active.path?.all { it == member.start } == true
             if ((active.path == null || stationaryPath) && !searchingNearest && (group == null || point == group.click) &&
-                input.repair != ManeuverRepair.CONTACT) {
+                input.repair != ManeuverRepair.CONTACT &&
+                !(input.repair == ManeuverRepair.OVERTAKE && member.body?.groupMoveReservation != null)) {
                 searchingNearest = true
                 search = null
                 return null
@@ -517,9 +625,18 @@ internal class MovePlanning {
             return result
         }
 
-        private fun slot(member: MovePlanningMember, point: Position, path: List<Position>): GroupMoveSlot =
-            member.body?.let { GroupMoveDestinations.slot(it, point, path) }
+        private fun slot(member: MovePlanningMember, point: Position, path: List<Position>): GroupMoveSlot {
+            // Positional arrival can finish a group member at its existing pose.
+            // Reserve that actual footprint, rather than a final orientation it
+            // must never manoeuvre merely to match. Nearest search keeps its
+            // precise endpoint and birth departure keeps its separate contract.
+            if (group != null && !searchingNearest && !member.hasBirthDelay && path.size == 1 &&
+                ScreenPlane.distanceSquared(member.start, point) < 49.0) {
+                return GroupMoveSlot(member.start, checkNotNull(member.body).heading, listOf(member.start))
+            }
+            return member.body?.let { GroupMoveDestinations.slot(it, point, path) }
                 ?: GroupMoveSlot(point, member.pose.heading, path)
+        }
 
         private fun vacant(member: MovePlanningMember, slot: GroupMoveSlot, budget: PathWorkBudget): Boolean? {
             if (occupantIndex == -1) {
