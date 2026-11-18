@@ -69,10 +69,31 @@ internal class PathSearchRollback {
 /** Reuse clearance grids and repeated shape checks inside one group order. */
 internal class PathClearanceCache(
     private val grids: MutableMap<Pair<PlanningTerrain, Double>, BooleanArray> = HashMap(),
+    val reuseApproach: Boolean = true,
     private val rectangleChecks: RectangleChecks = RectangleChecks(),
     private val departureNeighbors: MutableMap<DepartureSource, List<PathGridKey>> = HashMap(),
 ) {
-    fun fork(): PathClearanceCache = PathClearanceCache(HashMap(grids), rectangleChecks, departureNeighbors)
+    private data class Approach(val terrain: PlanningTerrain, val radius: Double, val start: Position,
+                                val path: List<Position>)
+    private var approach: Approach? = null
+
+    fun fork(): PathClearanceCache = PathClearanceCache(HashMap(grids), reuseApproach, rectangleChecks, departureNeighbors).also {
+        it.approach = approach
+    }
+
+    fun rememberApproach(map: PlanningTerrain, radius: Double, start: Position, path: List<Position>) {
+        if (path.size in 2..8) approach = Approach(map, radius, start, path.toList())
+    }
+
+    fun approachTo(map: PlanningTerrain, radius: Double, start: Position, target: Position): List<Position>? {
+        val saved = approach ?: return null
+        if (saved.terrain !== map || saved.radius != radius || saved.start != start) return null
+        val reach = minOf(map.tileWidth, map.tileHeight).toDouble()
+        if (ScreenPlane.distanceSquared(target, saved.path.last()) > reach * reach) return null
+        val prefixEnd = saved.path[saved.path.lastIndex - 1]
+        if (!PlanningSegmentClearance.allows(map, prefixEnd, target, radius)) return null
+        return saved.path.dropLast(1) + target
+    }
 
     internal data class DepartureSource(val map: PlanningTerrain, val shape: MovementCollisionShape.Rectangle,
                                        val radius: Double, val reverse: Boolean, val origin: Position,
@@ -183,7 +204,7 @@ internal class ClearanceAStarPolicy(
         val costs = HashMap<PathGridKey, Int>()
     }
 
-    private enum class SearchPhase { START, CLEARANCE, SEARCH, BOUNDARY, RECONSTRUCT, SIMPLIFY, FINISHED }
+    private enum class SearchPhase { START, APPROACH, CLEARANCE, SEARCH, BOUNDARY, RECONSTRUCT, SIMPLIFY, FINISHED }
 
     private inner class ClearPathSearch(
         private val map: PlanningTerrain,
@@ -253,11 +274,12 @@ internal class ClearanceAStarPolicy(
             while (!finished && budget.take(workCost(cache))) {
                 when (phase) {
                     SearchPhase.START -> initialize(cache)
+                    SearchPhase.APPROACH -> checkApproach(cache)
                     SearchPhase.CLEARANCE -> prepareClearance(cache)
                     SearchPhase.SEARCH -> expand(cache)
                     SearchPhase.BOUNDARY -> considerOccupiedBoundary()
                     SearchPhase.RECONSTRUCT -> reconstruct()
-                    SearchPhase.SIMPLIFY -> simplifyOne()
+                    SearchPhase.SIMPLIFY -> simplifyOne(cache)
                     SearchPhase.FINISHED -> error("Completed path cannot consume more work")
                 }
             }
@@ -298,6 +320,18 @@ internal class ClearanceAStarPolicy(
             startKey = PathGridKey(startCell.first, startCell.second, heading,
                 initialPose = start != pointPolicy.point(map, startCell.first, startCell.second))
             if (nearest && start != pointPolicy.point(map, startCell.first, startCell.second)) useDepartureLattice = true
+            if (!nearest && !checkEverySegment && cache?.reuseApproach == true) phase = SearchPhase.APPROACH
+            else loadClearance(cache)
+        }
+
+        // A shortcut still needs a charged final segment check. A rejected probe resumes
+        // the exact search without repeating the direct segment on the next step.
+        private fun checkApproach(cache: PathClearanceCache?) {
+            val route = cache?.approachTo(map, radius, start, target)
+            if (route != null) complete(route) else loadClearance(cache)
+        }
+
+        private fun loadClearance(cache: PathClearanceCache?) {
             val cached = cache?.get(map, radius)
             clearance = cached ?: BooleanArray(map.widthTiles * map.heightTiles)
             if (cached == null) phase = SearchPhase.CLEARANCE else beginQueue()
@@ -586,9 +620,13 @@ internal class ClearanceAStarPolicy(
             }
         }
 
-        private fun simplifyOne() {
+        private fun simplifyOne(cache: PathClearanceCache?) {
             val points = checkNotNull(rawPoints)
-            if (simplifyStart == points.size) return complete(checkNotNull(simplified))
+            if (simplifyStart == points.size) {
+                val route = checkNotNull(simplified)
+                if (!nearest) cache?.rememberApproach(map, radius, start, route)
+                return complete(route)
+            }
             if (simplifyProbe < simplifyStart) return complete()
             val next = points[simplifyProbe]
             if (PlanningSegmentClearance.allows(map, anchor, next, radius)) {

@@ -1,6 +1,7 @@
 package com.rustedwarfare.reforge.core.sim
 
 import com.rustedwarfare.reforge.core.content.MapDefinition
+import com.rustedwarfare.reforge.core.content.MovementType
 import com.rustedwarfare.reforge.core.content.MovementCollisionShape
 import com.rustedwarfare.reforge.core.path.PathSearchCounters
 import com.rustedwarfare.reforge.core.path.PathSearchReason
@@ -332,7 +333,8 @@ internal class MovePlanning {
         }
     }
 
-    private class Work(var input: MovePlanningInput, private val group: GroupMoveRequest?) {
+    private class Work(var input: MovePlanningInput, private val group: GroupMoveRequest?,
+                       private var batchSize: Int = initialBatchSize(input)) {
         private var pointSource = group?.let { GroupMoveDestinations.Points(input.map, it.click) }
         private var groupPoints = mutableListOf<Position>()
         private var openGround: OpenGroundGroup? = null
@@ -346,7 +348,14 @@ internal class MovePlanning {
             released = released + ready.mapValues { GroupMoveReservation(group, checkNotNull(it.value.slot)) }
         }
         private var triedOpenGround = false
-        private var batchSize = 113
+        private companion object {
+            fun initialBatchSize(input: MovePlanningInput): Int {
+                val members = input.members
+                if (input.repair != null || members.size !in 2..28) return 113
+                return if (members.all { it.pose.shape is MovementCollisionShape.Circle && !it.hasBirthDelay && it.body?.definition?.movement?.type == MovementType.LAND })
+                    maxOf(1, members.size * 4) else 113
+            }
+        }
         private var generating = true
         private var outerDistance = 0.0
         var requestKey: Any? = null
@@ -359,7 +368,7 @@ internal class MovePlanning {
         private var searchNanos = 0L
         private var checkingSlot: PlannedMove? = null
         private var occupantIndex = -1
-        private var cache = group?.let { PathClearanceCache() }
+        private var cache = group?.let { PathClearanceCache(reuseApproach = input.repair == null && input.members.size >= 2) }
         private var rollback: PathSearchRollback? = null
         private val candidates = mutableListOf<Pair<MutableUnit, MutableList<PlannedMove>>>()
         private var immobileMembers = mutableMapOf<String, PlannedMove>()
@@ -371,13 +380,12 @@ internal class MovePlanning {
             return true
         }
 
-        fun fork(rollback: PathSearchRollback): Work = Work(input, group).also { copy ->
+        fun fork(rollback: PathSearchRollback): Work = Work(input, group, batchSize).also { copy ->
             copy.pointSource = pointSource?.fork(rollback)
             copy.groupPoints = groupPoints
             copy.openGround = openGround?.fork(rollback)
             copy.released = released; copy.restartTail = restartTail
             copy.triedOpenGround = triedOpenGround
-            copy.batchSize = batchSize
             copy.generating = generating
             copy.outerDistance = outerDistance
             copy.requestKey = requestKey
