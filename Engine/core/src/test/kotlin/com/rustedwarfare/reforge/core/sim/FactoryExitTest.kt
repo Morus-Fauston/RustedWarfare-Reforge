@@ -5,13 +5,50 @@ import com.rustedwarfare.reforge.core.knowledge.*
 import kotlin.test.*
 
 class FactoryExitTest {
+    private fun assertNearestStillRespectsKnownBuilding(scene: Scenario, frame: Observation,
+                                                       unitId: String, buildingId: String, destination: Position) {
+        val unit = frame.units.single { it.unitId == unitId }
+        val body = scene.unitDefinitions.getValue(unit.typeId)
+        val building = scene.units.single { it.unitId == buildingId }
+        val definition = checkNotNull(scene.unitDefinitions.getValue(building.typeId).building)
+        val cells = BuildingTerrain.footprint(scene.map, building.position, definition.footprint, definition.anchor)
+        val map = scene.map
+        val known = MapDefinition(map.widthTiles, map.heightTiles, map.tileWidth, map.tileHeight,
+            map.tileSets, map.groundGids, BlockingGrid(map.widthTiles, map.heightTiles,
+                BooleanArray(map.widthTiles * map.heightTiles) { index ->
+                    val column = index % map.widthTiles
+                    val row = index / map.widthTiles
+                    map.blocking.isBlocked(column, row) || (column to row) in cells
+                }), map.waterObstacles + cells)
+        val terrain = HullTerrainGrid.authoritative(known, body.movement.type)
+        assertTrue(!UnitContact.poseFits(body.movementCollision, destination, unit.heading, terrain),
+            "The requested destination really is obstructed by the known building")
+        val endpoint = unit.moveTarget ?: assertNotNull(unit.moveArrival).stoppedAt
+        assertTrue(endpoint != destination, "Ordinary planning must not reuse the building escape mode")
+        assertTrue(UnitContact.poseFits(body.movementCollision, endpoint, unit.heading, terrain),
+            "Nearest fallback must keep the whole body outside the known destination building: $endpoint")
+        assertTrue(frame.events.none { it.unitId == unitId &&
+            (it.kind == "path-unreachable" || it.kind == "movement-cancelled") })
+        assertTrue(frame.events.any { it.unitId == unitId &&
+            (it.kind == "movement-started" || it.kind == "movement-arrived") })
+        var from = unit.position
+        for (point in unit.pathPoints) {
+            assertEquals(point, CircularTerrain(body.movementCollision.boundingRadius).resolve(terrain, from, point),
+                "The fallback route must respect this known building as well as its endpoint")
+            from = point
+        }
+    }
+
     @Test fun being_inside_a_hidden_truth_building_does_not_select_the_owners_escape_planning_mode() {
         val base = BuildingTestContent.scenario()
+        // Keep the starting body clear of the known target building. This
+        // isolates hidden-truth escape permission from an illegal known start.
+        val knownTarget = Position(310.0, 350.0)
         val input = base.copy(unitDefinitions = base.unitDefinitions.mapValues { (_, u) ->
             BuildingTestContent.variant(u, sight = if (u.building == null) 0 else 1) },
             units = listOf(base.units.single { it.unitId == "f" },
                 UnitSpawn("g", "p2", "landFactory", Position(310.0, 270.0), 0.0),
-                UnitSpawn("h", "p1", "landFactory", Position(310.0, 330.0), 0.0)),
+                UnitSpawn("h", "p1", "landFactory", knownTarget, 0.0)),
             combatContract = CombatContract(12345, -1, mapOf("f" to 10L, "g" to 12L, "h" to 13L), 14L))
         for (hidden in listOf(true, false)) {
             val scene = input.copy(automaticVision = if (!hidden) null else
@@ -32,16 +69,16 @@ class FactoryExitTest {
                 val visible = c.observePlayer(c.world, "p1")
                 assertEquals(!hidden, visible.units.any { it.unitId == "g" })
                 assertTrue(visible.units.any { it.unitId == "h" })
+                assertTrue(born.position.y + scene.unitDefinitions.getValue(born.typeId).movementCollision.boundingRadius < 320.0,
+                    "The body must start outside h's known footprint, whose northern edge is y=320")
                 val move = assertIs<ActionResult.Accepted>(c.submit(MoveAction("known-target", "p1", born.unitId,
-                    Position(310.0, 330.0), c.world)))
+                    knownTarget, c.world)))
                 assertTrue(move.events.isEmpty())
                 val planned = c.advanceToMoveOutcome(901, born.unitId)
                 if (hidden) {
-                    assertTrue(Event("path-unreachable", born.unitId) in planned.events,
-                        "Hidden truth must not remove the known destination building from owner planning")
-                    assertNull(planned.units.single { it.unitId == born.unitId }.moveTarget)
+                    assertNearestStillRespectsKnownBuilding(scene, planned, born.unitId, "h", knownTarget)
                 } else {
-                    assertEquals(Position(310.0, 330.0), planned.units.single { it.unitId == born.unitId }.moveTarget)
+                    assertEquals(knownTarget, planned.units.single { it.unitId == born.unitId }.moveTarget)
                 }
             } finally { c.close() }
         }
@@ -173,8 +210,7 @@ class FactoryExitTest {
                 assertTrue(ordinary.events.isEmpty())
                 val failed = c.advanceToMoveOutcome(step, "a")
                 step = failed.stepIndex + 1
-                assertTrue(Event("path-unreachable", "a") in failed.events)
-                assertNull(failed.units.single { it.unitId == "a" }.moveTarget)
+                assertNearestStillRespectsKnownBuilding(scene, failed, "a", "g", destination)
             }
             repeat(200) { c.advance(Step(step++, 1.0, "sim-tick")) }
             val insideOther = c.observe().units.single { it.unitId == id }
@@ -187,8 +223,7 @@ class FactoryExitTest {
             val back = assertIs<ActionResult.Accepted>(c.submit(MoveAction("back-normal", "p1", id, destination, c.world)))
             assertTrue(back.events.isEmpty())
             val failed = c.advanceToMoveOutcome(step, id)
-            assertTrue(Event("path-unreachable", id) in failed.events, "After leaving known e, normal building cost must apply again")
-            assertNull(failed.units.single { it.unitId == id }.moveTarget)
+            assertNearestStillRespectsKnownBuilding(scene, failed, id, "g", destination)
         } finally { c.close() }
     }
 

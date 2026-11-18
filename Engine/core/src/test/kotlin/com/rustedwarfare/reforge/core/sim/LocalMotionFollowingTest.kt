@@ -115,13 +115,18 @@ class LocalMotionFollowingTest {
         } finally { context.close() }
     }
 
-    @Test fun zero_maximum_world_speed_does_not_erase_positive_propulsion_fraction() {
+    @Test fun zero_maximum_world_speed_rejects_without_creating_motion_state() {
         val context = open(90.0, 0.0)
         try {
-            context.submit(MoveAction("zero", "p1", "u1", Position(300.0, 100.0), context.world))
+            val rejected = assertIs<ActionResult.Rejected>(context.submit(
+                MoveAction("zero", "p1", "u1", Position(300.0, 100.0), context.world)))
+            assertEquals("immobile-unit", rejected.error.code)
+            assertTrue(context.localMotionSnapshots(context.world).isEmpty())
             val unit = context.advance(Step(0, 1.0, "sim-tick")).units.single()
             assertEquals(0.0, unit.speed); assertEquals(Position(100.0, 100.0), unit.position)
-            assertEquals(1.0, context.localMotionSnapshots(context.world).getValue("u1").activeTime)
+            assertNull(unit.moveTarget)
+            assertTrue(unit.pathPoints.isEmpty())
+            assertTrue(context.localMotionSnapshots(context.world).isEmpty())
         } finally { context.close() }
     }
 
@@ -130,8 +135,8 @@ class LocalMotionFollowingTest {
             val context = open()
             try {
                 val goal = Position(100.0, 100.0 + length)
-                context.submit(MoveAction("move", "p1", "u1", goal, context.world))
-                assertEquals(listOf(goal), context.observe().units.single().pathPoints)
+                assertIs<ActionResult.Accepted>(context.submit(MoveAction("move", "p1", "u1", goal, context.world)))
+                assertTrue(context.observe().units.single().pathPoints.isEmpty(), "Planning belongs to advance")
                 // The first aim is 20 or 40wu away: the ordinary 46-degree gate rejects
                 // this initial 55-degree error. Using the global goal wrongly selects 89.
                 val first = context.advance(Step(0, 1.0, "sim-tick")).units.single()

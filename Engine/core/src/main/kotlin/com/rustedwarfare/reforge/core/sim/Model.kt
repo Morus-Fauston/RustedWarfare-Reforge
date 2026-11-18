@@ -176,6 +176,7 @@ data class UnitObservation(
     val attachment: AttachedUnitObservation? = null,
     val attachmentOverview: AttachmentOverview? = null,
     val factoryRally: Position? = null,
+    val moveArrival: MoveArrival? = null,
 )
 
 data class AttachedUnitObservation(val parentUnitId: String, val slot: Int, val empty: Boolean)
@@ -433,6 +434,9 @@ internal data class MutableUnit(
     /** Retained steering-rate state; an idle unit does not integrate it into heading. */
     var angularVelocity: Double = 0.0,
     var moveTarget: Position? = null,
+    var nearestMoveTarget: Position? = null,
+    var nearestMoveIsGroup: Boolean = false,
+    var moveArrival: MoveArrival? = null,
     var pathPoints: MutableList<Position> = mutableListOf(),
     var movementState: MovementState = MovementState.IDLE,
     var originMoveId: String? = null,
@@ -630,6 +634,8 @@ internal data class MutableUnit(
     }
 
     fun clearMoveOrigin() {
+        nearestMoveTarget = null
+        nearestMoveIsGroup = false
         originMoveId = null
         originAtStep = null
         groupMoveReservation = null

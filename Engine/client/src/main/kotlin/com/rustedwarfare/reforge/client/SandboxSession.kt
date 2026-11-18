@@ -206,10 +206,28 @@ class SandboxSession(scenario: Scenario, private val evidence: ClientEvidence = 
     private var rejectedFeedback = false
     var productionNotice: ProductionNotice? = null
         private set
+    private var arrivalCommandStep = 0L
+    private val immobileMoveMembers = mutableSetOf<String>()
+    private val selectedArrivals: List<MoveArrival>
+        get() {
+            val values = observation.units.filter { it.ownerPlayerId == observation.playerId && it.unitId in selectedIds }
+                .mapNotNull { it.moveArrival }.filter { it.stepIndex >= arrivalCommandStep }
+            val latest = values.maxOfOrNull { it.stepIndex } ?: return emptyList()
+            return values.takeIf { observation.stepIndex - latest < 180L }.orEmpty()
+        }
+    val moveArrivalMarker: MoveArrival?
+        get() = selectedArrivals.singleOrNull().takeIf { selectedIds.size == 1 }
 
     /** Player copy is separate from the original diagnostic feedback and identifiers. */
     val playerFeedback: String
-        get() = when {
+        get() {
+            val arrivals = selectedArrivals
+            val immobile = selectedIds.count { it in immobileMoveMembers }
+            if ((!rejectedFeedback || immobile > 0) && arrivals.isNotEmpty()) return if (selectedIds.size > 1)
+                "${arrivals.size} units stopped near target" + if (immobile == 0) "" else
+                    "; $immobile ${if (immobile == 1) "unit" else "units"} cannot move"
+            else "Reached nearest accessible position; ${java.lang.String.format(java.util.Locale.ROOT, "%.1f", arrivals.single().distance)} from target"
+            return when {
             feedback.startsWith("Selected ") -> if (selectedIds.size > 1) "${selectedIds.size} units selected"
                 else observation.units.firstOrNull { it.unitId == selectedId }?.let { "${unitTitle(it.typeId)} selected" } ?: "No selection"
             feedback == "insufficient-funds" || feedback == "construction-insufficient-funds" -> "Insufficient funds"
@@ -219,6 +237,8 @@ class SandboxSession(scenario: Scenario, private val evidence: ClientEvidence = 
             feedback == "production-cancelled" -> "Production cancelled; funds returned"
             feedback == "empty-production-queue" -> "Production queue is empty"
             feedback == "path-unreachable" -> "Destination is unreachable"
+            feedback == "immobile-unit" -> "Unit cannot move"
+            feedback == "invalid-target" -> "Target is outside the map"
             feedback.startsWith("No destination for ") -> feedback
             feedback == "action-target-out-of-range" -> "Location too far"
             feedback == "action-target-impassable" -> "Invalid map location (must be passable by HOVER)"
@@ -230,6 +250,7 @@ class SandboxSession(scenario: Scenario, private val evidence: ClientEvidence = 
             feedback.startsWith("Group ") || feedback.startsWith("Accepted ") || feedback.startsWith("Added ") -> feedback.substringBefore(';')
             rejectedFeedback -> "Order unavailable"
             else -> "Order received"
+        }
         }
 
     private fun unitTitle(type: String) = actionCatalogue.title(type)
@@ -506,6 +527,8 @@ class SandboxSession(scenario: Scenario, private val evidence: ClientEvidence = 
         val revision = selectionRevision
         val results = mutableListOf<SelectionCommandMember>()
         var skipped = 0
+        arrivalCommandStep = nextStep
+        immobileMoveMembers.clear()
         lastCommandBatch = null
         for (id in members) {
             if (members.size > 1 && observation.units.none { it.unitId == id && applicable(it) }) { skipped++; continue }
@@ -580,6 +603,14 @@ class SandboxSession(scenario: Scenario, private val evidence: ClientEvidence = 
                     "x" to it.position.x, "y" to it.position.y, "interceptorUnitId" to it.interceptorUnitId) })
         }
         publishFrame()
+        for (result in observation.actionResults.filterIsInstance<ActionResult.Rejected>()) {
+            if (result.error.code == "immobile-unit") {
+                val member = lastCommandBatch?.members?.firstOrNull { it.result.actionId == result.actionId } ?: continue
+                immobileMoveMembers += member.unitId
+                feedback = result.error.code
+                rejectedFeedback = true
+            }
+        }
         observation.events.lastOrNull { it.kind == "unit-produced" }?.let { event ->
             observation.units.firstOrNull { it.unitId == event.unitId && it.ownerPlayerId == observation.playerId }?.let { unit ->
                 productionNotice = ProductionNotice("${unitTitle(unit.typeId)} created", observation.stepIndex)

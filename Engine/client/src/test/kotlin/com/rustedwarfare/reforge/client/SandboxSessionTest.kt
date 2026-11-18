@@ -150,25 +150,29 @@ class SandboxSessionTest {
         }
     }
 
-    @Test fun `unreachable click cancels a moving unit and never restores the previous goal`() {
+    @Test fun `unreachable replacement reaches a legal stop and reports the new goal`() {
         SandboxSession(scenario()).use { session ->
             session.select(Position(110.0, 110.0))
             session.move(Position(250.0, 110.0))
             repeat(25) { session.tick() }
             val result = assertIs<ActionResult.Accepted>(session.move(Position(450.0, 110.0)))
             assertTrue(result.events.isEmpty())
-            val events = buildList {
-                repeat(30) {
-                    session.tick()
-                    addAll(session.observation.events.map { it.kind })
-                }
+            val events = mutableListOf<String>()
+            for (tick in 0..12000) {
+                session.tick()
+                events += session.observation.events.map { it.kind }
+                if (session.observation.units.first().moveArrival != null) break
             }
-            assertEquals(listOf("movement-cancelled", "path-unreachable"), events)
+            assertTrue(events.none { it in setOf("movement-cancelled", "path-unreachable") })
             val stopped = session.observation.units.first()
+            val arrival = assertNotNull(stopped.moveArrival)
+            assertEquals(Position(450.0, 110.0), arrival.originalTarget)
+            assertEquals(stopped.position, arrival.stoppedAt)
+            assertTrue(arrival.distance > 0.0)
             assertNull(stopped.moveTarget)
             assertTrue(stopped.pathPoints.isEmpty())
             assertEquals(0.0, stopped.speed)
-            assertTrue(stopped.position.x < 250.0)
+            assertTrue(stopped.position.x > 250.0)
             repeat(30) { session.tick() }
             assertEquals(stopped, session.observation.units.first())
         }

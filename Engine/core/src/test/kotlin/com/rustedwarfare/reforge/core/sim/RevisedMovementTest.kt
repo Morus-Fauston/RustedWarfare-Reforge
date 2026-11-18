@@ -4,6 +4,7 @@ import com.rustedwarfare.reforge.core.content.*
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
+import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
 class RevisedMovementTest {
@@ -93,7 +94,7 @@ class RevisedMovementTest {
     }
 
     @Test
-    fun unreachable_replacement_retains_speed_then_decelerates_without_restoring_the_old_path() {
+    fun unreachable_replacement_decelerates_then_executes_the_nearest_route() {
         val context = context(Position(110.0, 110.0), Position(250.0, 110.0))
         (0L..15L).forEach { context.advance(Step(it, 1.0, "sim-tick")) }
         val before = context.observe().units.single()
@@ -111,8 +112,21 @@ class RevisedMovementTest {
             assertEquals(null, unit.moveTarget)
             assertTrue(unit.pathPoints.isEmpty())
         }
-        if ("path-unreachable" !in outcomes) outcomes += context.advanceToMoveOutcome(22, "u1").events.map { it.kind }
-        assertEquals(listOf("movement-cancelled", "path-unreachable"), outcomes)
         assertEquals(2.695, context.observe().units.single().position.x - before.position.x, 1e-9)
+        for (tick in 22L..12000L) {
+            val frame = context.advance(Step(tick, 1.0, "sim-tick"))
+            outcomes += frame.events.map { it.kind }
+            if (frame.units.single().moveArrival != null) break
+        }
+        assertTrue(outcomes.none { it in setOf("movement-cancelled", "path-unreachable") })
+        assertTrue("movement-started" in outcomes)
+        val stopped = context.observe().units.single()
+        val arrival = assertNotNull(stopped.moveArrival)
+        assertEquals(Position(450.0, 100.0), arrival.originalTarget)
+        assertEquals(stopped.position, arrival.stoppedAt)
+        assertTrue(arrival.distance > 0.0)
+        assertEquals(null, stopped.moveTarget)
+        assertEquals(0.0, stopped.speed)
+        context.close()
     }
 }

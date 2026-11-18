@@ -1122,6 +1122,19 @@ class BootstrapScreen(
                     mapInput.groundActionPreview, current.selectedId.takeUnless { touchControls })
                 mapInput.sandboxPickPreview?.let { graphics.drawSandboxPick(shapes, current.frame, it) }
                 if (collisionBoxesVisible) CollisionBoxView.draw(shapes, current, graphics.projection)
+                current.moveArrivalMarker?.let { arrival ->
+                    val projection = graphics.projection
+                    val tx = projection.x(arrival.originalTarget.x)
+                    val ty = projection.y(arrival.originalTarget.y)
+                    val sx = projection.x(arrival.stoppedAt.x)
+                    val sy = projection.y(arrival.stoppedAt.y)
+                    shapes.color = Color.YELLOW
+                    shapes.line(tx - 6f, ty - 6f, tx + 6f, ty + 6f)
+                    shapes.line(tx - 6f, ty + 6f, tx + 6f, ty - 6f)
+                    shapes.line(tx, ty, sx, sy)
+                    shapes.color = Color.GREEN
+                    shapes.circle(sx, sy, 7f)
+                }
                 shapes.end()
                 graphics.drawFlameEffects(shapes, current.frame)
             } finally { ScissorStack.popScissors() }

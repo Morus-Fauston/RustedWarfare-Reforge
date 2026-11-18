@@ -34,7 +34,7 @@ class SelectionSandboxSessionTest {
                 session.tick()
                 arrived += session.observation.events.filter { it.kind == "movement-arrived" }.mapNotNull { it.unitId }
             }
-            assertEquals(setOf("a", "z"), arrived)
+            assertEquals(setOf("a", "z"), arrived, "Final units=${session.observation.units}")
             destinations
         }
         assertEquals(run(false), run(true))
@@ -66,9 +66,14 @@ class SelectionSandboxSessionTest {
             assertEquals(2, batch.accepted)
             assertEquals("Accepted 2, rejected 0, skipped 0", session.playerFeedback)
             awaitMovePlans(session, "a", "z")
-            assertEquals("No destination for 1", session.playerFeedback)
             assertEquals(click, session.observation.units.single { it.unitId == "a" }.moveTarget)
-            assertNull(session.observation.units.single { it.unitId == "z" }.moveTarget)
+            assertNotNull(session.observation.units.single { it.unitId == "z" }.moveTarget)
+            for (tick in 0..10000) {
+                session.tick()
+                if (session.observation.units.all { it.moveArrival != null }) break
+            }
+            assertEquals("2 units stopped near target", session.playerFeedback)
+            assertNull(session.moveArrivalMarker)
         }
     }
 

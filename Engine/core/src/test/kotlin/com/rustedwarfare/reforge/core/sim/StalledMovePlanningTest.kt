@@ -165,10 +165,20 @@ class StalledMovePlanningTest {
                 context.enablePathDiagnostics(context.world)
                 context.enablePlanningWorkDiagnostics(context.world)
                 assertIs<ActionResult.Accepted>(context.submit(MoveAction("go", "p1", "mover", Position(10.0, 25.0), context.world)))
-                for (tick in 0L..1800L) context.advance(Step(tick, 1.0, "sim-tick"))
+                var stoppedAt: Long? = null
+                for (tick in 0L..1800L) {
+                    val frame = context.advance(Step(tick, 1.0, "sim-tick"))
+                    assertTrue(frame.events.none { it.kind == "movement-cancelled" || it.kind == "path-unreachable" })
+                    if (frame.events.any { it.kind == "movement-nearest-reached" }) stoppedAt = tick
+                }
                 val repairs = context.drainPathDiagnostics(context.world).filter { it.reason == PathSearchReason.ROUTE_REPAIR }
                 assertTrue(repairs.size in 1..7, "Bound the old failure policy without adding endless retries: $repairs")
-                assertTrue(repairs.all { it.outcome == PathSearchOutcome.UNREACHABLE })
+                assertTrue(repairs.last().outcome == PathSearchOutcome.FOUND)
+                assertTrue(stoppedAt != null && stoppedAt >= 420L, "Static no-route must stop with a result after the failure threshold")
+                val mover = context.observePlayer(context.world, "p1").units.single { it.unitId == "mover" }
+                assertEquals(Position(10.0, 100.0), mover.position)
+                assertEquals(69.0, kotlin.test.assertNotNull(mover.moveArrival).distance, 0.00001)
+                assertTrue(mover.tasks.isEmpty() && mover.moveTarget == null)
                 val work = context.drainPlanningWorkDiagnostics(context.world)
                 assertTrue(work.all { it.used in 0..512 && it.slices.sumOf { s -> s.workUnits } == it.used })
                 assertTrue(work.filter { it.executionStep > 600 }.all { it.used == 0 })

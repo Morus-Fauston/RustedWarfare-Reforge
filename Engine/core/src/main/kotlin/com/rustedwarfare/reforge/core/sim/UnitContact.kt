@@ -27,6 +27,12 @@ fun UnitDefinition.hasContactLayerAt(height: Double): Boolean = contactLayerAt(h
 internal object UnitContact {
     // ENG-P014-003 starting value for the planned playtest.
     private const val PROVISIONAL_PUSH_MASS_RATIO = 8.0
+
+    fun canPushMass(pusher: MutableUnit, blocker: MutableUnit): Boolean {
+        val moving = positiveMass(pusher) ?: return false
+        val fixed = positiveMass(blocker) ?: return false
+        return fixed / moving <= PROVISIONAL_PUSH_MASS_RATIO
+    }
     private const val MAX_PUSH_DEPTH = 8
 
     private data class Contact(val fraction: Double, val blocker: MutableUnit)
@@ -98,6 +104,19 @@ internal object UnitContact {
         return heading
     }
 
+    fun canAdvanceAgainstTurn(unit: MutableUnit, shape: MovementCollisionShape.Rectangle, from: Double,
+                              probe: Double, occupants: Collection<MutableUnit>, known: (MutableUnit) -> Boolean,
+                              movable: (MutableUnit) -> Boolean): Boolean {
+        var blockedByMovable = false
+        for (other in occupants) {
+            if (other === unit || !shareLayer(unit, other) || !known(other)) continue
+            if (turn(unit, shape, from, probe, listOf(other)) == probe) continue
+            if (!movable(other) || !canPushMass(unit, other)) return false
+            blockedByMovable = true
+        }
+        return blockedByMovable
+    }
+
     /** A root in the obstacle's rotated frame can round across the hard world-space boundary. */
     private fun safeTurnEndpoint(shape: MovementCollisionShape.Rectangle, other: MovementCollisionShape,
                                  offset: Position, otherHeading: Double, from: Double, limit: Double): Double {
@@ -165,7 +184,7 @@ internal object UnitContact {
 
         fun resolve(unit: MutableUnit, requested: Position, units: Collection<MutableUnit>, map: MapDefinition,
                     unitsById: Map<String, MutableUnit>, canPush: ((MutableUnit, MutableUnit) -> Boolean)?,
-                    ground: MapDefinition,
+                    ground: MapDefinition, freeBlockedTurn: Boolean = false,
                     canBuffer: (MutableUnit) -> Boolean): Translation {
             val support = if (canPush == null) null else gatheringGoal(unit, movePending)?.let { goal ->
                 val bodies = gatheringSupport ?: supportedGatherings(units, movePending).also { gatheringSupport = it }
@@ -183,7 +202,11 @@ internal object UnitContact {
             val hardFraction = hardContacts.minOfOrNull { it.fraction } ?: 1.0
             val clipped = pointAt(unit.position, target, hardFraction)
             if (canPush == null || moverMass == null) return Translation(clipped)
-            val softContact = if (hardContacts.isEmpty()) translationContact(unit, target, units, buffered = true, included = canBuffer) else null
+            val softContact = if (hardContacts.isEmpty()) translationContact(unit, target, units, buffered = true, included = canBuffer)
+                ?: if (freeBlockedTurn) units.firstOrNull { other -> other !== unit && shareLayer(unit, other) && canBuffer(other) &&
+                    distance(target, other.position) < distance(unit.position, other.position) &&
+                    bufferPressure(unit, other, target) > 0.0
+                }?.let { Contact(0.0, it) } else null else null
             val contacts = if (softContact == null) hardContacts else listOf(softContact)
             if (contacts.isEmpty()) return Translation(target)
             fun transferRatio(pusher: MutableUnit, blocker: MutableUnit): Double? {
@@ -259,7 +282,8 @@ internal object UnitContact {
                             !clearsTerrain(moved, moved.definition.movementCollision, member.body, destination, map, member.terrain, member.grid, ground, unitsById) ||
                             translationContact(moved, destination, units, ignoredIds = connected) != null) return false
                     }
-                    if (!clearRelative(rootBody, unit.position, end, member.body, moved.position, destination))
+                    if (!clearRelative(rootBody, unit.position, end, member.body, moved.position, destination,
+                            requireClearEnd = unit.nearestMoveTarget != null && unit.definition.movementCollision is MovementCollisionShape.Rectangle))
                         return false
                     for (j in 0 until i) {
                         val earlier = chain[j]
@@ -277,7 +301,11 @@ internal object UnitContact {
                 if (distance(moved.position, destination) <= positionRoundoff(moved.position, destination)) null
                 else Adjustment(moved, destination)
             }
-            val translation = if (axialAdjustments.isNotEmpty()) Translation(moverEnd(actualShare), axialAdjustments)
+            // Sliding under forward pressure can clear a grazing hull where an axial push cannot.
+            val sideRelease = if (freeBlockedTurn && chain.size == 1 && pressureShare > 0.0)
+                slide(unit, target, clipped, origin, drift, pressureShare, chain.single(),
+                    units, unitsById, map, ground, chargeMass = true).takeIf { it.displaced.isNotEmpty() } else null
+            val translation = sideRelease ?: if (axialAdjustments.isNotEmpty()) Translation(moverEnd(actualShare), axialAdjustments)
                 else if (softContact != null || (requestedShare == 0.0 && pinned == null)) Translation(clipped)
                 else slide(unit, target, clipped, origin, drift, pressureShare,
                     (pinned?.let { link -> chain.firstOrNull { it.link == link } } ?: chain.last()), units, unitsById, map, ground)
@@ -292,25 +320,40 @@ internal object UnitContact {
 
         private fun slide(unit: MutableUnit, target: Position, clipped: Position, origin: Position, drift: Position,
                           share: Double, member: ConstrainedLink, units: Collection<MutableUnit>,
-                          unitsById: Map<String, MutableUnit>, map: MapDefinition, ground: MapDefinition): Translation {
+                          unitsById: Map<String, MutableUnit>, map: MapDefinition, ground: MapDefinition,
+                          chargeMass: Boolean = false): Translation {
             val pushed = member.link.unit
             val length = hypot(drift.x, drift.y)
-            val limit = maxOf(member.maxTravel, distance(origin, clipped))
-            val lateral = minOf(share * length, limit)
             val side = Position(-drift.y / length, drift.x / length)
             val shape = pushed.definition.movementCollision
             for (direction in listOf(-1.0, 1.0)) {
-                val wanted = offsetAlong(pushed.position, side, lateral * direction)
+                val initialLimit = maxOf(member.maxTravel, distance(origin, clipped))
+                val wanted = offsetAlong(pushed.position, side, minOf(share * length, initialLimit) * direction)
                 val actual = lastLegalPoint(pushed.position, wanted) { candidate ->
-                    distance(member.start, candidate) <= limit + positionRoundoff(member.start, candidate) &&
+                    distance(member.start, candidate) <= initialLimit + positionRoundoff(member.start, candidate) &&
                         UnitAttachments.containsAdjustedSlots(unitsById, pushed, map, candidate) &&
                         clearsTerrain(pushed, shape, member.body, candidate, map, member.terrain, member.grid, ground, unitsById) &&
                         translationContact(pushed, candidate, units) == null
                 }
                 if (distance(pushed.position, actual) <= positionRoundoff(pushed.position, actual)) continue
-                val adjustment = Adjustment(pushed, actual)
-                val ahead = translationContact(unit, target, units, shifted = adjustment)
-                return Translation(pointAt(unit.position, target, ahead?.fraction ?: 1.0), listOf(adjustment))
+                val mover = Body(unit.definition.movementCollision, unit.heading)
+                fun settle(destination: Position): Position? {
+                    val cost = if (chargeMass) member.link.massRatio * distance(pushed.position, destination) / length else 0.0
+                    val available = offsetAlong(target, drift, -cost)
+                    val ahead = translationContact(unit, available, units, shifted = Adjustment(pushed, destination))
+                    val limit = pointAt(unit.position, available, ahead?.fraction ?: 1.0)
+                    fun clear(end: Position) = clearRelative(mover, unit.position, end,
+                        member.body, pushed.position, destination, requireClearEnd = true)
+                    if (!clear(limit) && !clear(unit.position)) return null
+                    return lastLegalPoint(unit.position, limit, ::clear)
+                }
+                val destination = lastLegalPoint(pushed.position, actual) { at ->
+                    val end = settle(at)
+                    end != null && distance(member.start, at) <= maxOf(member.maxTravel, distance(origin, end)) +
+                        positionRoundoff(member.start, at)
+                }
+                if (distance(pushed.position, destination) <= positionRoundoff(pushed.position, destination)) continue
+                return Translation(settle(destination) ?: continue, listOf(Adjustment(pushed, destination)))
             }
             return Translation(clipped)
         }
@@ -420,13 +463,13 @@ internal object UnitContact {
     }
 
     private fun clearRelative(first: Body, start: Position, end: Position,
-                              second: Body, otherStart: Position, otherEnd: Position): Boolean {
+                              second: Body, otherStart: Position, otherEnd: Position, requireClearEnd: Boolean = false): Boolean {
         val offset = subtract(start, otherStart)
         val endOffset = subtract(end, otherEnd)
         val drift = subtract(endOffset, offset)
         val roundoff = positionRoundoff(end, otherEnd)
         val entry = first.entry(second, offset, drift, 1.0)
-        return first.clearance(second, endOffset) >= -roundoff &&
+        return (if (requireClearEnd) !first.overlaps(second, endOffset) else first.clearance(second, endOffset) >= -roundoff) &&
             (1.0 - entry) * hypot(drift.x, drift.y) <= roundoff
     }
 
@@ -441,7 +484,7 @@ internal object UnitContact {
         else -> Position(start.x + (end.x - start.x) * fraction, start.y + (end.y - start.y) * fraction)
     }
 
-    private fun lastLegalPoint(start: Position, end: Position, legal: (Position) -> Boolean): Position {
+    fun lastLegalPoint(start: Position, end: Position, legal: (Position) -> Boolean): Position {
         if (start == end) return end
         return pointAt(start, end, lastLegalFraction(1.0) { legal(pointAt(start, end, it)) })
     }
@@ -540,10 +583,27 @@ internal object UnitContact {
         val obstacles = occupants.filter { layer(it) == contactLayer }
         if (obstacles.isEmpty()) return null
         val shape = unit.definition.movementCollision
-        return RouteOccupancy { start, target, before, after ->
+        return object : RouteOccupancy {
+          override val nearestBoundaryCount: Int get() = if (shape is MovementCollisionShape.Circle) obstacles.size else 0
+          override fun nearestBoundary(index: Int, target: Position): Position? {
+            val moving = shape as? MovementCollisionShape.Circle ?: return null
+            val fixed = obstacles[index]
+            val circle = fixed.definition.movementCollision as? MovementCollisionShape.Circle ?: return null
+            val dx = target.x - fixed.position.x
+            val dy = target.y - fixed.position.y
+            val length = hypot(dx, dy)
+            if (length == 0.0) return null
+            // Stay outside the hard Minkowski boundary under binary64 rounding.
+            var reach = moving.radius + circle.radius
+            repeat(8) { reach = Math.nextUp(reach) }
+            return Position(fixed.position.x + dx * reach / length, fixed.position.y + dy * reach / length)
+          }
+          override fun allows(start: Position, target: Position, fromHeading: Double, toHeading: Double): Boolean {
+            val before = fromHeading
+            val after = toHeading
             val drift = subtract(target, start)
             val moving = Body(shape, after)
-            obstacles.all { occupant ->
+            return obstacles.all { occupant ->
                 val fixedShape = occupant.definition.movementCollision
                 val offset = subtract(start, occupant.position)
                 val heading = if (shape !is MovementCollisionShape.Rectangle || before == after) after
@@ -555,6 +615,7 @@ internal object UnitContact {
                     }
                 heading == after && moving.entry(Body(fixedShape, occupant.heading), offset, drift, 1.0) == 1.0
             }
+          }
         }
     }
 

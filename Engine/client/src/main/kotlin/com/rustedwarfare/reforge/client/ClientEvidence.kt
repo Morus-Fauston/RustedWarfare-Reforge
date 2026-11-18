@@ -154,6 +154,9 @@ internal fun UnitObservation.fields(): Map<String, Any?> {
                 (task.buildingTypeId?.let { mapOf("buildingTypeId" to it) } ?: emptyMap()) },
     )
     unit.mechPose?.let { values["mechPose"] = it.fields() }
+    unit.moveArrival?.let { values["moveArrival"] = mapOf("originalTarget" to it.originalTarget.fields(),
+        "stoppedAt" to it.stoppedAt.fields(), "distance" to it.distance,
+        "stepIndex" to it.stepIndex, "group" to it.group) }
     unit.shield?.let { values["shield"] = mapOf("current" to it.current, "maximum" to it.maximum, "displayDamage" to it.displayDamage) }
     unit.energy?.let { values["energy"] = mapOf("current" to it.current, "maximum" to it.maximum, "recharging" to it.recharging) }
     unit.nuclearDoors?.let { values["nuclearDoors"] = it }

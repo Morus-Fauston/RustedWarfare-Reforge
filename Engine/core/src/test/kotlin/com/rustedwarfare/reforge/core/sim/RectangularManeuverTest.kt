@@ -28,6 +28,176 @@ class RectangularManeuverTest {
     private val hull = MovementCollisionShape.Rectangle(102.0, 20.0)
 
     @Test
+    fun simultaneous_shore_rejoins_share_the_move_budget_and_restore_the_occupant_cursor() = WaterTestScene.withMap { shore ->
+        val map = waterMap(32, 32, shore) { _, _ -> true }
+        val terrain = PlanningTerrain.fromNoFog(map, MovementType.WATER)
+        val def = battleship()
+        val world = WorldHandle("rejoin-test")
+        val members = (0..4).map { i ->
+            val start = Position(150.0, 100.0 + i * 100)
+            val body = MutableUnit("w$i", "p1", def.id, def, start, 90.0)
+            val next = Position(220.0, start.y)
+            body.pathPoints.addAll(listOf(Position(150.0, start.y + 20), next))
+            MovePlanningMember(MoveAction("near-$i", "p1", body.unitId, next, world), body,
+                MovePlanningPose(start, 90.0, ContactLayer.SURFACE, hull), start, 10.0, terrain,
+                HullRoute.forUnit(body, maneuver = true), false, 0L)
+        }
+        val queue = MovePlanning()
+        members.forEach { queue.repair(it.action, ManeuverRepair.SHORE_REJOIN) }
+        assertTrue(!queue.holdsManeuverRoute("w0"), "An optional rejoin must not suspend the active leg")
+        val withFreshMove = queue.fork(PathSearchRollback())
+        val fresh = members[0].action.copy(actionId = "fresh", unitId = "scout")
+        withFreshMove.enqueue(fresh, null)
+        val served = mutableListOf<String>()
+        withFreshMove.advance(ExperimentalPolicies().path, PathWorkBudget(8), { actions, _, reason ->
+            served += actions.single().unitId
+            MovePlanningInput(map, emptyList(), emptyList(), false, reason)
+        }, { _, _, _, _, _ -> })
+        assertEquals("scout", served.first(), "Optional backlog held up a later player command")
+        fun slice(q: MovePlanning, entered: Boolean = false): Pair<List<String>, Int> {
+            val budget = PathWorkBudget(24)
+            val samples = mutableListOf<com.rustedwarfare.reforge.core.path.PlanningWorkSlice>()
+            val releases = mutableListOf<String>()
+            q.advance(ExperimentalPolicies().path, budget, { actions, _, reason ->
+                assertTrue(!budget.exhausted, "Live occupancy was sampled after exhausting the budget")
+                val m = members.single { it.action == actions.single() }
+                if (entered && m === members.first()) error("Materialized a live snapshot too large for the step")
+                MovePlanningInput(map, listOf(m), members.filter { it !== m }.map {
+                    MovePlanningOccupant(checkNotNull(it.body), it.pose, null, idle = true, obstructsRoute = true)
+                }, false, reason)
+            }, { member, _, _, _, planned ->
+                assertEquals(member.body!!.pathPoints[1], assertNotNull(planned.slot).position)
+                releases += member.action.unitId
+            }, samples, liveUnitCount = { if (entered) 30 else members.size })
+            assertEquals(budget.used, samples.sumOf { it.workUnits })
+            return releases to budget.used
+        }
+        assertEquals(emptyList<String>() to 24, slice(queue))
+        val undo = PathSearchRollback()
+        val discarded = slice(queue.fork(undo))
+        undo.restore()
+        assertEquals(emptyList<String>(), discarded.first)
+        assertEquals(discarded, slice(queue))
+        val crowded = queue.fork(PathSearchRollback())
+        assertTrue("w0" !in slice(crowded, entered = true).first)
+        assertTrue(!crowded.pending("w0"), "An obsolete optional shortcut should release the queue")
+        val remaining = (0..35).flatMap { slice(queue).first }
+        assertEquals(members.map { it.action.unitId }, remaining)
+    }
+
+    @Test
+    fun a_hidden_boat_outside_the_actual_turn_cannot_veto_a_known_side_push() {
+        val ship = MutableUnit("ship", "p1", "heavyBattleship", battleship(), Position(500.0, 200.0), 90.0)
+        val base = WaterTestScene.unit(MovementType.WATER)
+        val boat = UnitDefinition("boat", base.className, 1.0, 1.0, base.totalFrames, base.imagePath,
+            base.imageScale, base.movement, emptySet(), movementCollision = MovementCollisionShape.Circle(1.0), mass = 1000.0)
+        fun vessel(id: String, player: String, pos: Position) = MutableUnit(id, player, boat.id, boat, pos, 90.0)
+        val known = vessel("known", "p1", Position(548.0, 211.1))
+        val hidden = vessel("hidden", "p2", Position(452.0, 187.0))
+        fun turn(to: Double, vararg bodies: MutableUnit) = UnitContact.turn(ship, hull, 90.0, to, bodies.asList())
+        assertTrue(turn(91.0, known) < 91.0)
+        assertEquals(91.0, turn(91.0, hidden))
+        assertTrue(turn(94.0, hidden) < 94.0)
+        assertEquals(turn(91.0, known), turn(91.0, known, hidden))
+        fun seek(vararg bodies: MutableUnit) = UnitContact.canAdvanceAgainstTurn(ship, hull, 90.0, 94.0,
+            bodies.asList(), { it.ownerPlayerId == "p1" }, { true })
+        assertTrue(seek(known))
+        assertEquals(seek(known), seek(known, hidden))
+        assertTrue(!seek(hidden))
+    }
+
+    @Test
+    fun a_free_side_push_charges_the_mover_for_the_mass_actually_shifted() = WaterTestScene.withMap { map ->
+        val (forward, lateral) = settleSlowBoat(map, Position(505.0, 202.0))
+        assertEquals(.8, lateral, 1e-9)
+        assertEquals(1.0 - .25 * lateral, forward, 1e-9)
+        assertTrue(lateral <= maxOf(.1, forward) + 1e-9, "forward=$forward, lateral=$lateral")
+    }
+
+    @Test
+    fun a_side_push_clipped_again_at_the_bow_uses_the_final_mover_travel() = WaterTestScene.withMap { map ->
+        val (forward, lateral) = settleSlowBoat(map, Position(516.2, 190.0))
+        assertTrue(forward in 0.0..0.21 && lateral > 0.0)
+        assertTrue(lateral <= maxOf(.1, forward) + 1e-9, "forward=$forward, lateral=$lateral")
+    }
+
+    private fun settleSlowBoat(map: MapDefinition, boatAt: Position): Pair<Double, Double> {
+        val base = WaterTestScene.unit(MovementType.WATER)
+        fun body(id: String, shape: MovementCollisionShape, mass: Double, speed: Double, at: Position): MutableUnit {
+            val def = UnitDefinition(id, base.className, base.radius, base.displayRadius, base.totalFrames,
+                base.imagePath, base.imageScale, base.movement.copy(moveSpeed = speed), emptySet(),
+                movementCollision = shape, mass = mass)
+            return MutableUnit(id, "p1", id, def, at, 90.0)
+        }
+        val ship = body("ship", MovementCollisionShape.Rectangle(20.0, 12.0), 4000.0, 1.0, Position(500.0, 190.0))
+        val boat = body("boat", MovementCollisionShape.Circle(6.0), 1000.0, .1, boatAt)
+        val units = listOf(ship, boat)
+        val translation = UnitContact.Translations(1.0) { false }.resolve(ship, Position(501.0, 190.0), units,
+            map, units.associateBy { it.unitId }, { _, b -> b === boat }, map, freeBlockedTurn = true) { true }
+        val shifted = translation.displaced.single().position
+        assertEquals(boatAt.x, shifted.x, 1e-9, "The boat must slide laterally")
+        return translation.position.x - ship.position.x to kotlin.math.abs(shifted.y - boatAt.y)
+    }
+
+    @Test
+    fun a_near_shore_order_can_leave_a_stopped_group_pose_beside_a_light_vessel() = WaterTestScene.withMap { shore ->
+        val map = strait(shore)
+        val ship = battleship()
+        val fixture = WaterTestScene.unit(MovementType.WATER)
+        val boat = UnitDefinition("gunboat", fixture.className, 13.0, 13.0, fixture.totalFrames,
+            fixture.imagePath, fixture.imageScale,
+            fixture.movement.copy(moveSpeed = 1.5, moveAccelerationSpeed = .06,
+                moveDecelerationSpeed = .2, maxTurnSpeed = 2.8, turnAcceleration = .35), emptySet(),
+            movementCollision = MovementCollisionShape.Rectangle(24.0, 13.0), mass = 1500.0)
+        // These are legal stopped poses reached by ordinary group Move in the Windows run.
+        val start = Position(496.1996122324158, 211.3244449123104)
+        val otherStart = Position(537.5270809410437, 228.49156312553097)
+        val base = WaterTestScene.scenario(map, MovementType.WATER, start)
+        val scene = base.copy(unitDefinitions = mapOf(ship.id to ship, boat.id to boat), units = listOf(
+            UnitSpawn("w1", "p1", ship.id, start, 138.81165882719108),
+            UnitSpawn("w2", "p1", boat.id, otherStart, 121.38320978923423)))
+        val context = assertIs<InitResult.Accepted>(SimulationContext.initialize(scene)).context
+        try {
+            context.enablePlanningWorkDiagnostics(context.world)
+            val terrain = HullTerrainGrid.authoritative(map, MovementType.WATER)
+            val click = Position(20.0, 120.00001525878906)
+            assertIs<ActionResult.Accepted>(context.submit(MoveAction("near-shore", "p1", "w1", click, context.world)))
+            var arrival: MoveArrival? = null
+            var previousMoving: Position? = null
+            var previousOther: Position? = null
+            for (tick in 0L..6000L) {
+                val frame = context.advance(Step(tick, 1.0, "sim-tick"))
+                val moving = frame.units.single { it.unitId == "w1" }
+                val other = frame.units.single { it.unitId == "w2" }
+                if (previousMoving != null && previousOther != null) {
+                    val movingStep = kotlin.math.hypot(moving.position.x - previousMoving!!.x,
+                        moving.position.y - previousMoving!!.y)
+                    val otherStep = kotlin.math.hypot(other.position.x - previousOther!!.x,
+                        other.position.y - previousOther!!.y)
+                    assertTrue(otherStep <= maxOf(1.5, movingStep) + 1e-8,
+                        "Side push exceeds one-step travel bound at $tick: mover=$movingStep, vessel=$otherStep")
+                }
+                previousMoving = moving.position
+                previousOther = other.position
+                assertTrue(UnitContact.poseFits(hull, moving.position, moving.heading, terrain),
+                    "Battleship crosses the bank at $tick: ${moving.position}/${moving.heading}; boat=${other.position}")
+                assertTrue(UnitContact.poseFits(boat.movementCollision, other.position, other.heading, terrain),
+                    "Gunboat crosses the bank at $tick: ${other.position}/${other.heading}")
+                assertTrue(!UnitContact.posesOverlap(hull, moving.position, moving.heading,
+                    boat.movementCollision, other.position, other.heading),
+                    "Vessels overlap at $tick: ${moving.position}/${moving.heading}, ${other.position}/${other.heading}")
+                assertTrue(frame.events.none { it.kind in setOf("movement-cancelled", "path-unreachable") })
+                assertTrue(context.drainPlanningWorkDiagnostics(context.world).all { it.used <= it.limit })
+                arrival = moving.moveArrival
+                if (arrival != null) break
+            }
+            val stopped = assertNotNull(arrival, "The original near-shore order must finish without a clearing order")
+            assertEquals(click, stopped.originalTarget)
+            assertTrue(stopped.stoppedAt.x < 100.0, "The ship must sail back through the channel")
+        } finally { context.close() }
+    }
+
+    @Test
     fun ship_finds_another_turn_pose_without_a_second_order_or_clearing_the_blocker() = WaterTestScene.withMap { shore ->
         val blocker = BasinBlocker(Position(440.0, 169.0), Position(440.0, 230.0), Long.MAX_VALUE,
             MovementCollisionShape.Rectangle(24.0, 13.0))
@@ -135,8 +305,11 @@ class RectangularManeuverTest {
             assertIs<ActionResult.Accepted>(context.submit(MoveAction("maneuver", "p1", "w1",
                 Position(110.0, 120.0), context.world)))
             val terrain = HullTerrainGrid.authoritative(map, MovementType.WATER)
+            var stopped = false
             for (tick in 0L..2_000L) {
-                context.advance(Step(tick, 1.0, "sim-tick"))
+                val frame = context.advance(Step(tick, 1.0, "sim-tick"))
+                assertTrue(frame.events.none { it.kind == "movement-cancelled" || it.kind == "path-unreachable" })
+                if (frame.events.any { it.kind == "movement-nearest-reached" && it.unitId == "w1" }) stopped = true
                 val units = context.observePlayer(context.world, "p1").units
                 val moving = units.single { it.unitId == "w1" }
                 assertTrue(UnitContact.poseFits(hull, moving.position, moving.heading, terrain))
@@ -147,7 +320,11 @@ class RectangularManeuverTest {
             }
             val repairs = context.drainPathDiagnostics(context.world).filter { it.reason == PathSearchReason.ROUTE_REPAIR }
             assertTrue(repairs.isNotEmpty(), "A sustained rotational block must try recovery")
-            assertTrue(repairs.all { it.outcome == PathSearchOutcome.UNREACHABLE })
+            assertTrue(repairs.last().outcome == PathSearchOutcome.FOUND)
+            assertTrue(stopped, "An impossible static turn must finish with a nearest-stop result")
+            val final = context.observePlayer(context.world, "p1").units.single { it.unitId == "w1" }
+            assertNotNull(final.moveArrival)
+            assertTrue(final.tasks.isEmpty() && final.moveTarget == null)
             val work = context.drainPlanningWorkDiagnostics(context.world)
             assertTrue(work.all { it.used in 0..512 && it.slices.sumOf { slice -> slice.workUnits } == it.used })
             assertTrue(work.filter { it.executionStep > 1_500 }.all { it.used == 0 },

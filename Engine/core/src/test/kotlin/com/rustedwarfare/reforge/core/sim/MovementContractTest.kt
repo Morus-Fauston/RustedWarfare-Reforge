@@ -174,7 +174,7 @@ class MovementContractTest {
     }
 
     @Test
-    fun m05_unreachable_target_cancels_old_move_without_nearby_replacement() {
+    fun m05_unreachable_replacement_finishes_at_the_nearest_legal_position() {
         val context = initialized(scenario(listOf(UnitSpawn("u1", "p1", "tank", Position(110.0, 110.0), 90.0))))
         traceObservation("M05", "initial", context.observe())
         assertIs<ActionResult.Accepted>(context.submit(MoveAction("a1", "p1", "u1", Position(400.0, 100.0), context.world)))
@@ -190,9 +190,20 @@ class MovementContractTest {
         val after = advance(context, 1)
         traceObservation("M05", "step", after)
         assertEquals(0.0, after.units.single().speed)
-        val outcome = if (Event("path-unreachable", "u1") in after.events) after else context.advanceToMoveOutcome(2, "u1")
-        assertTrue(Event("path-unreachable", "u1") in outcome.events)
+        var outcome = after
+        for (tick in 2L..12000L) {
+            assertTrue(outcome.events.none { it.kind in setOf("movement-cancelled", "path-unreachable") })
+            if (outcome.units.single().moveArrival != null) break
+            outcome = advance(context, tick)
+        }
+        val arrival = assertNotNull(outcome.units.single().moveArrival)
+        assertEquals(Position(450.0, 100.0), arrival.originalTarget)
+        assertEquals(outcome.units.single().position, arrival.stoppedAt)
+        assertTrue(arrival.distance > 0.0)
+        assertTrue(arrival.distance < hypot(before.position.x - 450.0, before.position.y - 100.0))
+        assertFalse(intersectsBlocked(actualMap(), arrival.stoppedAt, actualUnit().radius))
         assertEquals(null, outcome.units.single().moveTarget)
+        assertEquals(0.0, outcome.units.single().speed)
         println("M05 accepted=$result before=$before step1=${after.units} events=${outcome.events}")
     }
 

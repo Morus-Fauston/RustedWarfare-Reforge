@@ -181,7 +181,7 @@ class GroupMoveDestinationsTest {
             assertTrue(work.all { it.used <= it.limit })
             println("Replacement work: ${work.filter { it.slices.any { s -> s.restarted || s.completed } }}")
             assertTrue(frames.takeWhile { it !== other }.all { it.ship("z").moveTarget == unaffectedTarget })
-            assertNotNull(other)
+            assertNotNull(other, "Last occupied frame=${frames.last().units}")
             if (reassign) {
                 assertNotNull(changed)
                 assertTrue(changed.stepIndex - initial.stepIndex + 1 >= 420)
@@ -192,7 +192,7 @@ class GroupMoveDestinationsTest {
                 assertEquals(null, changed)
                 assertTrue(frames.takeWhile { it !== arrived }.all { it.ship("a").moveTarget == click })
             }
-            assertNotNull(arrived)
+            assertNotNull(arrived, "Last occupied frame=${frames.last().units}")
         } finally {
             context.close()
         }

@@ -73,7 +73,7 @@ internal class PlayerObservationProjector(world: WorldHandle, scenario: Scenario
                 if (task.targetUnitId != null && task.targetUnitId !in visibleIds) task.copy(targetUnitId = null) else task
             })
             if (it.ownerPlayerId != playerId) {
-                it.copy(moveTarget = null, pathPoints = emptyList(), attackTargetId = null, cooldown = null, pointDefense = null,
+                it.copy(moveTarget = null, moveArrival = null, pathPoints = emptyList(), attackTargetId = null, cooldown = null, pointDefense = null,
                     tasks = emptyList(), constructionTargetId = null, transportExit = null,
                     transport = null, unitActions = null, attachmentOverview = null, factoryRally = null,
                     attachment = it.attachment?.takeIf { relation -> relation.parentUnitId in visibleIds },
@@ -101,7 +101,7 @@ internal class PlayerObservationProjector(world: WorldHandle, scenario: Scenario
                 (!(event.kind.startsWith("production-") || event.kind.startsWith("upgrade-") || event.kind.startsWith("unit-action-") ||
                     event.kind == "rally-set" || event.kind == "rally-cleared" ||
                     event.kind in setOf("construction-unavailable", "construction-insufficient-funds", "construction-queue-full", "maintenance-completed",
-                        "submarine-surface-requested", "submarine-dive-requested",
+                        "movement-nearest-reached", "submarine-surface-requested", "submarine-dive-requested",
                         "amphibious-fly-requested", "amphibious-dive-requested",
                         "unit-loaded", "unload-started", "unload-cancelled", "loading-cancelled", "unload-blocked")) ||
                     visible.any { it.unitId == event.unitId && it.ownerPlayerId == playerId }) }
