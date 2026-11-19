@@ -150,7 +150,13 @@ internal object UnitContact {
 
         fun recordOwnMotion(unit: MutableUnit, before: Position, after: Position, turned: Boolean,
                             turnLimited: Boolean) {
-            if (distance(before, after) > positionRoundoff(before, after) || turned) ownProgress += unit.unitId
+            val translated = distance(before, after) > positionRoundoff(before, after)
+            if (translated || turned) ownProgress += unit.unitId
+            val landing = unit.landingMember
+            if (translated && landing?.noRouteTicks != null && landing.claimed != null) {
+                val waypoint = unit.pathPoints.firstOrNull() ?: landing.claimed
+                if (distance(after, waypoint) < distance(before, waypoint)) unit.landingMember = landing.copy(noRouteTicks = null)
+            }
             if (turnLimited) hardLimited += unit.unitId
         }
 
@@ -161,8 +167,16 @@ internal object UnitContact {
         }
 
         /** Settle after every mover so a later push cannot masquerade as this unit's own progress. */
-        fun finish(units: Collection<MutableUnit>, samples: MutableList<MotionStepSample>?) {
+        fun finish(units: Collection<MutableUnit>, samples: MutableList<MotionStepSample>?, occupancy: LandingOccupancy? = null) {
             for (unit in units) {
+                occupancy?.update(unit)
+                unit.landingMember?.let { landing ->
+                    val pushed = unit.unitId in pushedDisplacements
+                    val pose = if (pushed) unit.position else landing.pushedPose?.takeIf { it == unit.position }
+                    if (landing.pushed != pushed || landing.pushedPose != pose || landing.noRouteTicks != null) {
+                        unit.landingMember = landing.copy(pushed = pushed, pushedPose = pose, noRouteTicks = landing.noRouteTicks?.plus(1))
+                    }
+                }
                 val active = unit.moveTarget != null && unit.tasks.firstOrNull()?.kind == UnitTaskKind.MOVE
                 unit.hardContactLimitedTicks = when {
                     !active -> 0
@@ -631,12 +645,12 @@ internal object UnitContact {
         return traversed && !overlapsTerrain(body, target, grid)
     }
 
-    fun withinSweptBounds(unit: MutableUnit, start: Position, end: Position, other: MutableUnit): Boolean {
+    fun withinSweptBounds(unit: MutableUnit, start: Position, end: Position, other: MutableUnit, pose: Position = other.position): Boolean {
         val radius = unit.definition.movementCollision.boundingRadius + other.definition.movementCollision.boundingRadius
         val dx = end.x - start.x
         val dy = end.y - start.y
-        val x = other.position.x - start.x
-        val y = other.position.y - start.y
+        val x = pose.x - start.x
+        val y = pose.y - start.y
         val lengthSquared = dx * dx + dy * dy
         val fraction = if (lengthSquared == 0.0) 0.0 else ((x * dx + y * dy) / lengthSquared).coerceIn(0.0, 1.0)
         return hypot(x - fraction * dx, y - fraction * dy) <= Math.nextUp(radius)

@@ -456,6 +456,7 @@ internal data class MutableUnit(
     var passageEntry: PassageEntry? = null,
     var groupMoveReservation: GroupMoveReservation? = null,
     var landingMember: LandingMember? = null,
+    var adoptedRouteRevision: Long = 0,
     var localProgressTime: Double = 0.0,
     var terrainCorrectionTime: Double = 0.0,
     var terrainClearSteps: Int = 0,
@@ -590,6 +591,7 @@ internal data class MutableUnit(
                    occupantIds: List<String> = emptyList()) {
         recordLogicalTarget(logicalTarget)
         pendingPathNodeCounts = immutable(pendingPathNodeCounts + points.size)
+        adoptedRouteRevision++
         pathPoints = points.toMutableList()
         localMotion = null
         routeContinuation = null

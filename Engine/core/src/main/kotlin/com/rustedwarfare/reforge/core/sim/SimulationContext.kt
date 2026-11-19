@@ -551,6 +551,18 @@ class SimulationContext internal constructor(private val policies: ExperimentalP
             UnitContact.layer(unit), shape)
     }
 
+    private fun notifyLandingRoute(unit: MutableUnit) {
+        val pool = unit.landingMember?.group?.let(steps.current.landingSites::get) ?: return
+        if (pool.checkingTraffic) pool.routePublished(unit)
+    }
+
+    private fun notifyLandingBody(unit: MutableUnit) {
+        val watching = steps.current.landingSites.values.filter { it.checkingTraffic }
+        if (watching.isEmpty()) return
+        val index = units.keys.indexOf(unit.unitId)
+        for (pool in watching) pool.trafficChanged(unit, null, index, units::get)
+    }
+
     private fun publishMove(member: MovePlanningMember, group: GroupMoveRequest?, repair: ManeuverRepair?,
                             occupants: List<String>, planned: PlannedMove, executionStep: Long) {
         val action = member.action
@@ -561,6 +573,7 @@ class SimulationContext internal constructor(private val policies: ExperimentalP
             if (slot != null && unit.pathPoints.size > 1 && unit.pathPoints[1] == slot.position &&
                 unit.pathPoints.first() == member.body?.pathPoints?.firstOrNull()) {
                 unit.pathPoints.removeAt(0)
+                notifyLandingRoute(unit)
                 unit.maneuverTurnWaypoint = unit.position
             }
             return
@@ -575,8 +588,26 @@ class SimulationContext internal constructor(private val policies: ExperimentalP
                 searchTarget = slot?.position ?: action.target, searchStart = member.start))
         }
         if (repair != null) {
+            val landing = unit.landingMember
+            val lostRoute = landing?.claimed != null && (slot == null || planned.nearest)
+            if (lostRoute && repair == ManeuverRepair.CONTACT && landing?.noRouteTicks == null) {
+                unit.landingMember = landing!!.copy(noRouteTicks = 0L)
+            }
+            if (landing != null && lostRoute && (repair == ManeuverRepair.KNOWLEDGE || repair == ManeuverRepair.CONTACT &&
+                    (unit.stalledRouteTicks >= ROUTE_FAILURE_TICKS || (landing.noRouteTicks ?: 0L) >= ROUTE_FAILURE_TICKS))) {
+                val click = landing.group.click
+                unit.landingMember = LandingMember(landing.group, releasedSite = landing.claimed)
+                unit.groupMoveReservation = null
+                unit.moveTarget = click
+                unit.taskQueue = unit.taskQueue.replaceHead(task.copy(target = click))
+                unit.adoptRoute(emptyList(), click, plannedKnowledgeRevision(unit), plannedBuildingRevision(unit))
+                pendingEvents += Event("group-destination-released", unit.unitId)
+                return
+            }
             if (repair == ManeuverRepair.CONTACT || repair == ManeuverRepair.OVERTAKE) unit.lastManeuverContactRepair = executionStep
             if (slot != null) {
+                if (!planned.nearest && (!planned.preserveCurrentRoute || unit.pathPoints.isNotEmpty()) &&
+                    unit.landingMember?.noRouteTicks != null) unit.landingMember = unit.landingMember!!.copy(noRouteTicks = null)
                 if (planned.preserveCurrentRoute || planned.nearest && unit.landingMember != null) return
                 if (repair == ManeuverRepair.CONTACT && unit.landingMember?.claimed != null &&
                     unit.landingMember!!.group.members.any { id -> units[id]?.let { isParkedPeer(unit, it) } == true }) {
@@ -603,6 +634,7 @@ class SimulationContext internal constructor(private val policies: ExperimentalP
                 }
                 unit.adoptRoute(slot.path, logicalRouteTarget(unit, slot.position), plannedKnowledgeRevision(unit),
                     plannedBuildingRevision(unit), occupants)
+                notifyLandingRoute(unit)
                 if (repair == ManeuverRepair.OVERTAKE) unit.followsManeuverRoute = true
                 return
             }
@@ -619,7 +651,9 @@ class SimulationContext internal constructor(private val policies: ExperimentalP
         }
         if (slot == null) {
             unit.taskQueue = unit.taskQueue.pop()
+            val priorGroup = unit.landingMember?.group
             unit.cancelRoute()
+            if (priorGroup != null) notifyLandingBody(unit)
             if (planned.nearest) {
                 reject(action, "immobile-unit", "No legal movement from the current pose")
                 return
@@ -631,6 +665,7 @@ class SimulationContext internal constructor(private val policies: ExperimentalP
         }
         if (task.target != slot.position) unit.taskQueue = unit.taskQueue.replaceHead(task.copy(target = slot.position))
         unit.moveTarget = slot.position
+        val priorGroup = unit.landingMember?.group
         if (planned.nearest) {
             unit.nearestMoveTarget = action.target
             unit.nearestMoveIsGroup = group != null || unit.landingMember != null
@@ -641,6 +676,7 @@ class SimulationContext internal constructor(private val policies: ExperimentalP
         unit.originMoveId = action.actionId
         unit.originAtStep = action.atStep
         unit.adoptRoute(slot.path, logicalRouteTarget(unit, slot.position), plannedKnowledgeRevision(unit), plannedBuildingRevision(unit))
+        if (priorGroup != null && unit.landingMember == null) notifyLandingBody(unit) else notifyLandingRoute(unit)
         unit.followsManeuverRoute = (planned.nearest || (member.hull as? RectangularDeparture)?.maneuver == true) && !member.hasBirthDelay
         pendingEvents += Event("movement-started", unit.unitId)
     }
@@ -671,6 +707,7 @@ class SimulationContext internal constructor(private val policies: ExperimentalP
 
     private fun advanceSharedLandings(map: MapDefinition, budget: PathWorkBudget, slices: MutableList<PlanningWorkSlice>?) {
         val pools = steps.current.landingSites
+        val world by lazy { orderedUnits().toList() }
         val groups = orderedUnits().filter { it.alive && it.landingMember != null }.groupBy { it.landingMember!!.group }
         pools.keys.retainAll(groups.keys)
         for ((group, members) in groups) {
@@ -679,15 +716,26 @@ class SimulationContext internal constructor(private val policies: ExperimentalP
                 ScreenPlane.distanceSquared(it.position, target) <= it.definition.movementCollision.boundingRadius * it.definition.movementCollision.boundingRadius
             } == true }
             val stalled = members.filter { it.moveTarget != null && it.landingMember!!.claimed != null && ScreenPlane.distanceSquared(it.position, it.moveTarget!!) <= 16.0 * it.definition.movementCollision.boundingRadius * it.definition.movementCollision.boundingRadius }
-            if (membersDriving.isEmpty() && entering.isEmpty() && stalled.isEmpty()) continue
+            val displaced = members.filter { car -> car.moveTarget != null && car.landingMember!!.let { it.pushed || it.pushedPose != null || it.restingSite != null } }
+            if (membersDriving.isEmpty() && entering.isEmpty() && stalled.isEmpty() && displaced.isEmpty()) continue
             // Request the first slice next step if planning left too little work for a checked exchange.
             if (budget.limit - budget.used < 32) steps.current.landingsShortOfBudget = true
+            if (budget.exhausted) continue
             val before = budget.used
-            val leader = membersDriving.firstOrNull() ?: entering.firstOrNull() ?: stalled.first()
+            val leader = membersDriving.firstOrNull() ?: entering.firstOrNull() ?: stalled.firstOrNull() ?: displaced.first()
             val pool = pools.getOrPut(group) { SharedLandingSites.forGroup(map, group, leader, members) }
             pool.beginService()
+            // Separate orders retain their identities while competing for the same physical pad.
+            // Own reservations are command knowledge. Other players expose only their visible bodies.
+            val index = steps.current.landingOccupancy
+            fun occupied(site: Position): Boolean = index.at(site).any { id ->
+                val other = units[id] ?: return@any false
+                val state = other.landingMember ?: return@any false
+                other.alive && UnitContact.shareLayer(leader, other) &&
+                    if (other.ownerPlayerId == leader.ownerPlayerId) (state.claimed ?: state.ingress) == site
+                    else state.parked && other.position == site && knowsRouteOccupant(leader, other)
+            }
             pool.supply(planningTerrainFor(leader, map), leader, budget)
-            val occupied = members.mapNotNullTo(hashSetOf()) { it.landingMember?.let { state -> state.claimed ?: state.ingress } }
             fun canAdopt(unit: MutableUnit, path: List<Position>): Boolean {
                 val end = path.firstOrNull { it != unit.position } ?: return true
                 if (!budget.take(1)) return false
@@ -703,6 +751,8 @@ class SimulationContext internal constructor(private val policies: ExperimentalP
             fun claim(unit: MutableUnit, target: Position) {
                 steps.current.movePlanning.cancel(unit.unitId)
                 unit.landingMember = LandingMember(group, target)
+                index.update(unit)
+                pool.routePublished(unit)
                 val slot = GroupMoveSlot(target, unit.heading, listOf(target))
                 unit.groupMoveReservation = GroupMoveReservation(group, slot)
                 unit.moveTarget = target
@@ -713,11 +763,20 @@ class SimulationContext internal constructor(private val policies: ExperimentalP
             fun approach(unit: MutableUnit, target: Position, path: List<Position>) {
                 steps.current.movePlanning.cancel(unit.unitId)
                 unit.landingMember = LandingMember(group, ingress = target)
+                index.update(unit)
+                pool.routePublished(unit)
                 unit.moveTarget = target
                 unit.taskQueue = unit.taskQueue.replaceHead(unit.tasks.first().copy(target = target))
                 unit.adoptRoute(path, target, plannedKnowledgeRevision(unit), plannedBuildingRevision(unit))
                 unit.followsManeuverRoute = true
             }
+            if (displaced.isNotEmpty()) pool.checkPushed(displaced, world, budget, checkNotNull(scenario?.movementContract).targetRadius,
+                units::get, ::occupied, { planningTerrainFor(it, map) }, { car, other, site ->
+                    other !== car && UnitContact.withinSweptBounds(car, car.position, site, other) &&
+                        (other.landingMember?.group !== group || isParkedPeer(car, other)) &&
+                        UnitContact.shareLayer(car, other) && knowsRouteOccupant(car, other) &&
+                        UnitContact.routeAround(car, listOf(other))?.allows(car.position, site, car.heading, car.heading) == false
+                }, ::claim)
             // Both approaching bodies must gain real clearance from exchanging live claims.
             pool.visitApproachingPairs(stalled, budget) { a, b ->
                 val aSite = a.landingMember!!.claimed!!
@@ -748,11 +807,14 @@ class SimulationContext internal constructor(private val policies: ExperimentalP
             }
             val centre = Position(members.sumOf { it.position.x } / members.size, members.sumOf { it.position.y } / members.size)
             pool.visitDriving(membersDriving.sortedBy { ScreenPlane.distanceSquared(it.position, group.click) }, budget) { unit ->
+                if (unit.landingMember?.claimed != null || unit.landingMember?.restingSite != null) return@visitDriving
                 if (!pool.near(unit.position)) {
                     if (!unit.landingMember!!.guided && budget.take()) {
                         val guide = pool.incomingGuide(unit, centre, planningTerrainFor(unit, map))
-                        if (guide != null && canAdopt(unit, listOf(guide))) unit.adoptRoute(listOf(guide, group.click), group.click,
-                            plannedKnowledgeRevision(unit), plannedBuildingRevision(unit))
+                        if (guide != null && canAdopt(unit, listOf(guide))) {
+                            unit.adoptRoute(listOf(guide, group.click), group.click, plannedKnowledgeRevision(unit), plannedBuildingRevision(unit))
+                            pool.routePublished(unit)
+                        }
                         unit.landingMember = unit.landingMember!!.copy(guided = true)
                     }
                     return@visitDriving
@@ -776,12 +838,13 @@ class SimulationContext internal constructor(private val policies: ExperimentalP
                     claim(unit, target)
                     return@visitDriving
                 }
-                val target = pool.choose(unit, planningTerrainFor(unit, map), occupied, centre, budget) ?: return@visitDriving
+                val target = pool.choose(unit, planningTerrainFor(unit, map), ::occupied, centre, budget) ?: return@visitDriving
                 val path = pool.approach(unit, target, planningTerrainFor(unit, map))
                 if (!canAdopt(unit, path)) {
-                    if (members.all { it === unit || it.landingMember?.parked == true } && !budget.exhausted) {
+                    if (unit.landingMember?.releasedSite != target && members.all { it === unit || it.landingMember?.parked == true } && !budget.exhausted) {
                         // Reserve the last free site while its obstructed approach is being planned.
-                        unit.landingMember = LandingMember(group, claimed = target)
+                        unit.landingMember = LandingMember(group, claimed = target, noRouteTicks = 0L)
+                        index.update(unit)
                         unit.moveTarget = target
                         unit.taskQueue = unit.taskQueue.replaceHead(unit.tasks.first().copy(target = target))
                         unit.adoptRoute(emptyList(), target, plannedKnowledgeRevision(unit), plannedBuildingRevision(unit))
@@ -790,7 +853,6 @@ class SimulationContext internal constructor(private val policies: ExperimentalP
                     }
                     return@visitDriving
                 }
-                occupied += target
                 if (path.size == 1) claim(unit, target) else approach(unit, target, path)
             }
             if (budget.used > before) slices?.add(PlanningWorkSlice(membersDriving.map { it.unitId }, PathSearchReason.USER_MOVE,
@@ -1212,6 +1274,7 @@ class SimulationContext internal constructor(private val policies: ExperimentalP
         if ((action is MoveAction || action is PatrolAction) && unit.definition.movement.type == MovementType.NONE) {
             return reject(action, "immobile-unit", "Unit cannot move")
         }
+        val priorLanding = unit.landingMember
         val result = when (action) {
             is UnitAction -> {
                 val offset = unit.definition.attachmentLayout?.offsetActions?.get(action.actionName)
@@ -1387,6 +1450,9 @@ class SimulationContext internal constructor(private val policies: ExperimentalP
             action is PatrolAction && !action.append) {
             unit.constructionElapsed = 0f
             unit.constructionWorking = false
+        }
+        if (priorLanding?.group !== unit.landingMember?.group || priorLanding?.parked != unit.landingMember?.parked) {
+            notifyLandingBody(unit)
         }
         val publishedResult = if (constructionQueueFull && result is ActionResult.Accepted)
             ActionResult.Accepted(result.actionId, result.events + Event("construction-queue-full", unit.unitId), result.queuedForStep) else result
@@ -3523,6 +3589,12 @@ class SimulationContext internal constructor(private val policies: ExperimentalP
                 (stalled < ROUTE_RETRY_TICKS || routeContacts(unit).any { it.moveTarget != null })
             val sustainedTurnContact = unit.definition.movementCollision is MovementCollisionShape.Rectangle &&
                 unit.followsManeuverRoute && movingContact >= ROUTE_RETRY_TICKS && routeContacts(unit).isNotEmpty()
+            // An obstructed landing can have a claim while the first repair has no route.
+            // There is no attempted translation on that tick to increment stalledRouteTicks.
+            val waitingForRoute = unit.moveTarget != null && unit.landingMember?.claimed != null && (unit.pathPoints.isEmpty() || unit.landingMember?.noRouteTicks != null)
+            if (waitingForRoute && !steps.current.movePlanning.pending(unit.unitId) && combatFrame.toLong() % ROUTE_RETRY_TICKS == 0L) {
+                scheduleManeuverRepair(unit, checkNotNull(unit.moveTarget), ManeuverRepair.CONTACT)
+            }
             val limited = if (overtaking || sustainedTurnContact) movingContact else stalled
             if (!unit.alive || unit.carriedBy != null || unit.unitId in passageWaiting || unit.unitId in seaDepartureWaiting ||
                 limited == 0L || limited % ROUTE_RETRY_TICKS != 0L) continue
@@ -3730,7 +3802,9 @@ class SimulationContext internal constructor(private val policies: ExperimentalP
         var finalForSample = false
         var differenceForSample = 0.0
         var requestedFraction = 0.0
-        var target = unit.moveTarget
+        val settlingFromPush = unit.landingMember?.restingSite != null
+        if (settlingFromPush && unit.speed == 0.0) unit.angularVelocity = 0.0
+        var target = unit.moveTarget.takeUnless { settlingFromPush }
         var speedTarget = 0.0
         var maneuverLeg: ManeuverLeg? = null
         val attackTarget = unit.attackCommand?.targetUnitId?.let { units[it] }
@@ -3746,7 +3820,7 @@ class SimulationContext internal constructor(private val policies: ExperimentalP
             policies.coordinates.distanceSquared(unit.position, workTarget) > builder.range.toDouble() * builder.range
         } == true
         val taskKind = unit.tasks.firstOrNull()?.kind
-        val reportsStop = unit.nearestMoveTarget != null || unit.groupMoveReservation != null
+        val reportsStop = unit.nearestMoveTarget != null || unit.groupMoveReservation != null || unit.landingMember?.claimed != null
         // Group slots reserve hard shapes at the planned endpoint. Stopping a
         // circle several units short can occupy the neighbouring member's slot.
         // Keep ordinary route following; the last leg can continue until the
@@ -3814,8 +3888,8 @@ class SimulationContext internal constructor(private val policies: ExperimentalP
             if (!approachingBuilding && (!unit.routeTranslationClipped || capturedGroupPose) &&
                 (!followsManeuver || unit.pathPoints.size == 1) &&
                 ((unit.groupMoveReservation?.occupiedTicks ?: 0) == 0L || capturedGroupPose) && clearsSlots) {
-                val originalTarget = unit.nearestMoveTarget ?: unit.groupMoveReservation?.plan?.click
-                val wasGroup = unit.nearestMoveIsGroup || unit.groupMoveReservation != null
+                val originalTarget = unit.nearestMoveTarget ?: unit.landingMember?.group?.click ?: unit.groupMoveReservation?.plan?.click
+                val wasGroup = unit.nearestMoveIsGroup || unit.landingMember != null || unit.groupMoveReservation != null
                 val parked = unit.landingMember?.copy(parked = true)
                 unit.cancelRoute()
                 unit.landingMember = parked
@@ -3878,7 +3952,7 @@ class SimulationContext internal constructor(private val policies: ExperimentalP
                 speedTarget = leg.approachSpeed(maximumSpeed, movement.moveDecelerationSpeed * maximumSpeed, finalForSample)
                 if (maximumSpeed > 0.0) requestedFraction = speedTarget / maximumSpeed
             }
-        } else if (target != null && !air) {
+        } else if (target != null && !air && (unit.birthRemaining > 0f || unit.pathPoints.isNotEmpty())) {
             unit.requestMovement(logicalRouteTarget(unit, target))
             val temporaryBirth = unit.birthRemaining > 0f
             val local = if (temporaryBirth) null else unit.ensureLocalMotion()
@@ -4085,7 +4159,8 @@ class SimulationContext internal constructor(private val policies: ExperimentalP
         val contactMap = buildingTerrain?.collisionMap ?: map
         val canPush: ((MutableUnit, MutableUnit) -> Boolean)? = if (unit.birthRemaining == 0f && insideMap(boundedPosition)) {
             { pusher, blocker ->
-                canDisplaceInContact(blocker) && !isParkedPeer(pusher, blocker) &&
+                canDisplaceInContact(blocker) && !(pusher.landingMember != null &&
+                    blocker.ownerPlayerId == pusher.ownerPlayerId && blocker.landingMember?.parked == true) &&
                     !Transport.isLoadingPairAtContact(pusher, blocker, units)
             }
         } else null
