@@ -7,6 +7,23 @@ import com.rustedwarfare.reforge.core.content.MapDefinition
 import kotlin.test.*
 
 class SharedLandingClaimsTest {
+    @Test fun a_displaced_car_outside_all_pads_leaves_work_for_other_arrivals() {
+        val cells = BooleanArray(48 * 32)
+        val map = MapDefinition(48, 32, 20, 20, emptyList(), IntArray(cells.size), BlockingGrid(48, 32, cells))
+        val ground = com.rustedwarfare.reforge.core.path.PlanningTerrain(48, 32, 20, 20, cells)
+        val click = Position(640.0, 320.0)
+        val group = GroupMoveRequest(WorldHandle("push"), null, "p1", click, (1..32).map { "car-$it" }.toSet(), true)
+        val def = TestContentFactory.openScenario().unitDefinitions.getValue("tank")
+        val car = MutableUnit("car-1", "p1", "tank", def, Position(80.0, 120.0), 90.0)
+        car.moveTarget = click
+        car.landingMember = LandingMember(group, pushedPose = car.position)
+        val pool = SharedLandingSites.forGroup(map, group, listOf(car))
+        pool.supply(ground, car, PathWorkBudget(128))
+        val slice = PathWorkBudget(8)
+        pool.checkPushed(listOf(car), listOf(car), slice, 2.0, { car }, { false }, { ground }, { _, _, _ -> false }) { _, _ -> fail("no pad within reach") }
+        assertNull(car.landingMember!!.pushedPose, "Finish the distant check in this slice")
+        assertTrue(slice.used < slice.limit, "Keep capacity for a car at a pad")
+    }
     @Test fun overlapping_legacy_orders_keep_separate_parking_rights() = checkReissuedParking(false)
     @Test fun a_shared_order_cannot_grant_parking_rights_to_its_legacy_predecessor() = checkReissuedParking(true)
 

@@ -850,13 +850,18 @@ class SimulationContext internal constructor(private val policies: ExperimentalP
                     claim(second, pair.second)
                 }
             }
-            if (displaced.isNotEmpty()) pool.checkPushed(displaced, world, budget, checkNotNull(scenario?.movementContract).targetRadius,
+            if (displaced.isNotEmpty()) {
+                val remaining = budget.limit - budget.used
+                val pushBudget = PathWorkBudget(if (membersDriving.isEmpty()) remaining else remaining / 2)
+                pool.checkPushed(displaced, world, pushBudget, checkNotNull(scenario?.movementContract).targetRadius,
                 units::get, ::occupied, { planningTerrainFor(it, map) }, { car, other, site ->
                     other !== car && UnitContact.withinSweptBounds(car, car.position, site, other) &&
                         (other.landingMember?.group !== group || isParkedPeer(car, other)) &&
                         UnitContact.shareLayer(car, other) && knowsRouteOccupant(car, other) &&
                         UnitContact.routeAround(car, listOf(other))?.allows(car.position, site, car.heading, car.heading) == false
                 }, ::claim)
+                check(budget.take(pushBudget.used))
+            }
             // Both approaching bodies must gain real clearance from exchanging live claims.
             pool.visitApproachingPairs(stalled, budget) { a, b ->
                 val aSite = a.landingMember!!.claimed!!
@@ -1982,7 +1987,15 @@ class SimulationContext internal constructor(private val policies: ExperimentalP
             deploy()
             buildingWork = buildingWork.advanceClock(step.delta)
             actions.forEach { applyAction(it, step.stepIndex) }
-            val planningBudget = PathWorkBudget(MOVE_PLANNING_WORK_PER_STEP)
+            // Allocate a slice to cold gate reads on the step after they ran out, or
+            // to wall repairs when their periodic retry is due. Unused queue work is
+            // available to both services on this same step.
+            val wallDue = step.stepIndex % ROUTE_RETRY_TICKS == 0L && orderedUnits().any {
+                it.landingMember != null && it.terrainCorrectionTime >= 3.0 && it.moveTarget != null
+            }
+            val needsGateWork = candidate.state.gateWorkDeferred
+            val reserve = if (needsGateWork || wallDue) MOVE_PLANNING_WORK_PER_STEP / 4 else 0
+            val planningBudget = PathWorkBudget(MOVE_PLANNING_WORK_PER_STEP - reserve)
             val planningSlices = candidate.state.planningWorkDiagnostics?.let { mutableListOf<PlanningWorkSlice>() }
             val serveLandingsFirst = candidate.state.landingsShortOfBudget
             candidate.state.landingsShortOfBudget = false
@@ -1999,17 +2012,27 @@ class SimulationContext internal constructor(private val policies: ExperimentalP
                 },
                 planningSlices, liveUnitCount = { units.size }, executionStep = step.stepIndex, lookupTraffic = units::get)
             if (!serveLandingsFirst) advanceSharedLandings(currentScenario.map, planningBudget, planningSlices)
-            if (planningSlices != null) candidate.planningWorkSample = PlanningWorkSample(step.stepIndex,
-                planningBudget.limit, planningBudget.used, Collections.unmodifiableList(planningSlices))
             refreshGroupDestinations(currentScenario.map, step.delta)
             for (unit in orderedUnits()) if (unit.alive && unit.carriedBy == null && unit.tasks.firstOrNull()?.kind == UnitTaskKind.PATROL)
                 retainedPatrolTarget(unit)
             replanForKnowledge(currentScenario.map, step.stepIndex)
             repairInvalidConnections(currentScenario.map, step.stepIndex)
+            val remaining = MOVE_PLANNING_WORK_PER_STEP - planningBudget.used
+            val gateBudget = PathWorkBudget(if (wallDue) remaining / 2 else remaining)
+            val survey = candidate.state.driverPassages
             val passageWaiting = checkNotNull(passageAdmission).waitingUnits(orderedUnits(), step,
-                { unit, type -> planningTerrainFor(unit, currentScenario.map, type) }, ::knowsRouteOccupant)
+                { unit, type -> planningTerrainFor(unit, currentScenario.map, type) }, ::knowsRouteOccupant, survey, gateBudget)
+            candidate.state.gateWorkDeferred = survey.shortOfBudget
+            val repairBudget = PathWorkBudget(remaining - gateBudget.used)
             val seaDepartureWaiting = FactoryExit.waitingNativeSeaDepartures(currentScenario.map, units)
-            recoverStalledMoves(currentScenario.map, step.stepIndex, passageWaiting, seaDepartureWaiting)
+            recoverStalledMoves(currentScenario.map, step.stepIndex, passageWaiting, seaDepartureWaiting, repairBudget)
+            if (planningSlices != null) {
+                val localWork = gateBudget.used + repairBudget.used
+                if (localWork > 0) planningSlices.add(PlanningWorkSlice(emptyList(), PathSearchReason.ROUTE_REPAIR,
+                    localWork, !survey.shortOfBudget && !repairBudget.exhausted, false))
+                candidate.planningWorkSample = PlanningWorkSample(step.stepIndex, MOVE_PLANNING_WORK_PER_STEP,
+                    planningBudget.used + localWork, Collections.unmodifiableList(planningSlices))
+            }
             prepareRouteSuccessors(currentScenario.map, step.stepIndex, candidate.routeContinuationSamples)
             if (trafficSeparationEnabled) {
                 val visits = TrafficSeparation.Visits()
@@ -3704,7 +3727,7 @@ class SimulationContext internal constructor(private val policies: ExperimentalP
     }
 
     private fun recoverStalledMoves(map: MapDefinition, step: Long, passageWaiting: Set<String>,
-                                    seaDepartureWaiting: Set<String>) {
+                                    seaDepartureWaiting: Set<String>, repairBudget: PathWorkBudget) {
         for (unit in orderedUnits()) {
             val stalled = unit.stalledRouteTicks
             val movingContact = unit.hardContactLimitedTicks
@@ -3721,9 +3744,50 @@ class SimulationContext internal constructor(private val policies: ExperimentalP
                 scheduleManeuverRepair(unit, checkNotNull(unit.moveTarget), ManeuverRepair.CONTACT)
             }
             val limited = if (overtaking || sustainedTurnContact) movingContact else stalled
-            if (!unit.alive || unit.carriedBy != null || unit.unitId in passageWaiting || unit.unitId in seaDepartureWaiting ||
-                limited == 0L || limited % ROUTE_RETRY_TICKS != 0L) continue
+            if (!unit.alive || unit.carriedBy != null || unit.unitId in passageWaiting || unit.unitId in seaDepartureWaiting) continue
+            val retry = limited > 0 && limited % ROUTE_RETRY_TICKS == 0L
+            // Wall pressure can turn the hull or nudge the body without freeing its route.
+            val checkWall = step % ROUTE_RETRY_TICKS == 0L && unit.terrainCorrectionTime >= 3.0
+            if (!retry && !checkWall) continue
             val target = unit.moveTarget ?: continue
+            if ((checkWall || stalled >= ROUTE_RETRY_TICKS && unit.terrainCorrectionTime > 0) &&
+                unit.landingMember != null && unit.definition.movementCollision is MovementCollisionShape.Circle &&
+                unit.pathPoints.isNotEmpty() && repairBudget.take(1 + unit.routeOccupantIds.size)) {
+                // A push can leave a legal circle touching the corner beside its planned lane.
+                // Try the two checked legs through its own cell before requesting a new long path.
+                val pose = unit.position
+                val mid = Position((kotlin.math.floor(pose.x / map.tileWidth) + 0.5) * map.tileWidth,
+                    (kotlin.math.floor(pose.y / map.tileHeight) + 0.5) * map.tileHeight)
+                val next = unit.pathPoints.first()
+                // Budget the occupancy lookup and each swept leg before reading it.
+                // If this slice runs out, leave the route available to the normal repair queue.
+                val terrain = planningTerrainFor(unit, map)
+                val hull = HullRoute.forUnit(unit)
+                val occupancy = routeOccupancy(unit)
+                fun fits(from: Position, to: Position): Boolean {
+                    val tiles = kotlin.math.ceil(maxOf(kotlin.math.abs(to.x - from.x) / map.tileWidth,
+                        kotlin.math.abs(to.y - from.y) / map.tileHeight)).toInt()
+                    return repairBudget.take(1 + tiles.coerceAtMost(MOVE_PLANNING_WORK_PER_STEP) + unit.routeOccupantIds.size) &&
+                        continuationFits(terrain, from, to, unit.heading, hull, routeRadius(unit), occupancy)
+                }
+                val bend = if (fits(pose, next)) null else {
+                    // When the cell centre is still behind the corner, line up with
+                    // the opening on one axis first. Both legs must clear the hull.
+                    val x = next.x.coerceIn(pose.x - map.tileWidth, pose.x + map.tileWidth)
+                    val y = next.y.coerceIn(pose.y - map.tileHeight, pose.y + map.tileHeight)
+                    listOf(mid, Position(pose.x, y), Position(x, pose.y)).firstOrNull {
+                        it != pose && it != next && fits(pose, it) && fits(it, next)
+                    }
+                }
+                if (bend != null) {
+                    unit.pathPoints.add(0, bend)
+                    unit.localMotion = null
+                    unit.routeContinuation = null
+                    unit.localProgressTime = 0.0
+                    continue
+                }
+            }
+            if (!retry) continue
             val nativeDeparture = FactoryExit.isNativeSeaDeparture(unit)
             val move = unit.tasks.firstOrNull()?.takeIf { it.kind == UnitTaskKind.MOVE }
             if (nativeDeparture && unit.birthRemaining > 0f || !nativeDeparture && move == null) continue
@@ -4005,7 +4069,13 @@ class SimulationContext internal constructor(private val policies: ExperimentalP
             val radius = unit.definition.movementCollision.boundingRadius
             if (length > radius) {
                 val passed = ((unit.position.x - first.x) * dx + (unit.position.y - first.y) * dy) / length
-                if (passed > radius && passed + radius < length) {
+                // A circle just beyond its turn can chase a perpendicular projection
+                // indefinitely when a distant parked body blocks the rest of the leg.
+                // Aim ahead only once its actual centre is beside the outgoing segment.
+                val lateral = kotlin.math.abs((unit.position.x - first.x) * dy - (unit.position.y - first.y) * dx) / length
+                val passedTurn = passed > radius || (followsManeuver && passed > 0.0 && lateral <= radius &&
+                    unit.landingMember?.preciseApproach != true)
+                if (passedTurn && passed + radius < length) {
                     val t = minOf(1.0, (passed + 2 * radius) / length)
                     val join = Position(first.x + t * dx, first.y + t * dy)
                     if (continuationFits(planningTerrainFor(unit, map), unit.position, join, unit.heading,
@@ -4027,7 +4097,10 @@ class SimulationContext internal constructor(private val policies: ExperimentalP
             // A pushed circle can already be alongside the next leg. Aiming
             // forever at its moving projection makes a slow-turning body orbit
             // that point. Join the successor when the actual swept route is legal.
-            val canJoin = point != unit.pathPoints.first() && continuationFits(planningTerrainFor(unit, map),
+            val first = unit.pathPoints.first()
+            val withinTurn = unit.landingMember?.let { !it.preciseApproach } == true &&
+                policies.capture.inside(ScreenPlane.distanceSquared(unit.position, first), contract.pathPointRadius)
+            val canJoin = (point != first || withinTurn) && continuationFits(planningTerrainFor(unit, map),
                 unit.position, unit.pathPoints[1], unit.heading, HullRoute.forUnit(unit), routeRadius(unit), routeOccupancy(unit, includeMoving = true))
             onSegment || canJoin
         } else false
@@ -4120,7 +4193,7 @@ class SimulationContext internal constructor(private val policies: ExperimentalP
                 val distanceSquared=policies.coordinates.distanceSquared(unit.position,leg.target)
                 val difference=policies.coordinates.difference(policies.coordinates.desired(unit.position,leg.target),unit.heading)
                 requestedFraction=policies.propulsion.targetFraction(movement,unit.speed,
-                    if (reportsStop) maxOf(distanceSquared, 16.0)
+                    if (reportsStop || unit.landingMember?.ingress == leg.target) maxOf(distanceSquared, 16.0)
                     else if(finalForSample) distanceSquared else maxOf(distanceSquared,9.0),difference,finalForSample,contract.targetRadius)
                 speedTarget=leg.approachSpeed(maximumSpeed,movement.moveDecelerationSpeed*maximumSpeed,finalForSample)*requestedFraction
             } else if (wasAligned) {
@@ -4131,13 +4204,19 @@ class SimulationContext internal constructor(private val policies: ExperimentalP
             unit.requestMovement(logicalRouteTarget(unit, target))
             val temporaryBirth = unit.birthRemaining > 0f
             val local = if (temporaryBirth) null else unit.ensureLocalMotion()
-            val usesPreparedJoin = preparesRouteSuccessor(unit)
-            val occupancy = routeOccupancy(unit)
-            val canHandOff = !temporaryBirth && unit.pathPoints.size > 1 && policies.capture.inside(
-                policies.coordinates.distanceSquared(unit.position, unit.pathPoints.first()), contract.pathPointRadius) &&
+            // A prepared successor in the same group route can be driven directly
+            // from the bend approach. Do not bunch every hull at the node centre.
+            val turnDistance = if (unit.routeContinuation?.ready == true && unit.landingMember?.let {
+                    !it.preciseApproach && it.claimed == null && it.ingress == null
+                } == true && unit.definition.movementCollision is MovementCollisionShape.Circle)
+                maxOf(contract.pathPointRadius, minOf(map.tileWidth, map.tileHeight) * 2.0) else contract.pathPointRadius
+            val nearHandoff = !temporaryBirth && unit.pathPoints.size > 1 && policies.capture.inside(
+                policies.coordinates.distanceSquared(unit.position, unit.pathPoints.first()), turnDistance)
+            val usesPreparedJoin = nearHandoff && preparesRouteSuccessor(unit)
+            val canHandOff = nearHandoff &&
                 continuationFits(planningTerrainFor(unit, map), Transport.queryPosition(unit, map),
                     unit.pathPoints[1], unit.heading, if (usesPreparedJoin) HullRoute.forUnit(unit) else null,
-                    routeRadius(unit), occupancy)
+                    routeRadius(unit), routeOccupancy(unit))
             if (canHandOff && usesPreparedJoin) {
                 val routeSamples = step.routeContinuationSamples
                 val continuation = requestRouteContinuation(unit, executionStep, 0.0, routeSamples)
@@ -4166,7 +4245,15 @@ class SimulationContext internal constructor(private val policies: ExperimentalP
                 else -> policies.steering.turn(unit, steeringTarget, delta, policies.coordinates)
             }
             val preciseSlide = sliding && finalPoint && unit.nearestMoveTarget != null && steeringTarget == target
-            val propulsionDistance = if (((approachingBuilding || approachingWork || approachingLoad) && finalPoint) || preciseSlide) maxOf(d2, 16.0) else d2
+            // The next leg may be clear from the waypoint but not yet from the actual body.
+            // Keep driving the last few units into that waypoint under the normal steering gate.
+            val closingAnchor = usesPreparedJoin && !canHandOff && local?.isLast == true &&
+                unit.pathPoints.size > 1 && steeringTarget == unit.pathPoints.first()
+            val propulsionDistance = when {
+                ((approachingBuilding || approachingWork || approachingLoad) && finalPoint) || preciseSlide -> maxOf(d2, 16.0)
+                closingAnchor -> maxOf(d2, 9.0)
+                else -> d2
+            }
             val fraction = policies.propulsion.targetFraction(movement, unit.speed, propulsionDistance,
                 if (movement.ignoringBody) 0.0 else diff, finalPoint, contract.targetRadius)
             aimForSample = steeringTarget
@@ -4191,12 +4278,14 @@ class SimulationContext internal constructor(private val policies: ExperimentalP
                 unit.routeContinuation = null
                 unit.localProgressTime = 0.0
             } else {
-                val terrain = planningTerrainFor(unit, map)
                 val progress = LocalMotionMaintenance.advance(checkNotNull(local), unit.localProgressTime, delta, fraction > 0.0,
                     d2, !finalPoint && policies.capture.inside(d2, 16.0), unit.terrainCorrectionTime,
                     { policies.coordinates.distanceSquared(unit.position, it) },
-                    { continuationFits(terrain, Transport.queryPosition(unit, map), it, unit.heading,
-                        if (occupancy == null) null else HullRoute.forUnit(unit), routeRadius(unit), occupancy) })
+                    { next ->
+                        val occupancy = routeOccupancy(unit)
+                        continuationFits(planningTerrainFor(unit, map), Transport.queryPosition(unit, map), next, unit.heading,
+                            if (occupancy == null) null else HullRoute.forUnit(unit), routeRadius(unit), occupancy)
+                    })
                 unit.localMotion = progress.segment
                 unit.localProgressTime = progress.activeTime
             }

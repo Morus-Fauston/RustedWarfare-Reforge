@@ -23,14 +23,13 @@ internal object PlanningSegmentClearance {
         val height = heightTiles.toDouble() * tileHeight
         if (!MapBounds.contains(width, height, start, radius) ||
             !MapBounds.contains(width, height, end, radius)) return false
-        val firstColumn = (floor((minOf(start.x, end.x) - radius) / tileWidth) - 1)
-            .coerceIn(0.0, widthTiles.toDouble()).toInt()
-        val lastColumn = (floor((maxOf(start.x, end.x) + radius) / tileWidth) + 1)
-            .coerceIn(-1.0, widthTiles - 1.0).toInt()
-        val firstRow = (floor((minOf(start.y, end.y) - radius) / tileHeight) - 1)
-            .coerceIn(0.0, heightTiles.toDouble()).toInt()
-        val lastRow = (floor((maxOf(start.y, end.y) + radius) / tileHeight) + 1)
-            .coerceIn(-1.0, heightTiles - 1.0).toInt()
+        // This policy tests the centre line. Bounds already account for the radius.
+        // Only cells between the endpoint cells can contain a point of a straight leg.
+        val firstColumn = floor(minOf(start.x, end.x) / tileWidth).toInt().coerceIn(0, widthTiles)
+        val lastColumn = floor(maxOf(start.x, end.x) / tileWidth).toInt().coerceIn(-1, widthTiles - 1)
+        val firstRow = floor(minOf(start.y, end.y) / tileHeight).toInt().coerceIn(0, heightTiles)
+        val lastRow = floor(maxOf(start.y, end.y) / tileHeight).toInt().coerceIn(-1, heightTiles - 1)
+        if (firstColumn == lastColumn && firstRow == lastRow) return !blocked(firstColumn, firstRow)
         if (candidates != null) return !candidates(firstColumn, lastColumn, firstRow, lastRow) { column, row ->
             CenterLineCells.enters(start, end, column, row, tileWidth, tileHeight)
         }

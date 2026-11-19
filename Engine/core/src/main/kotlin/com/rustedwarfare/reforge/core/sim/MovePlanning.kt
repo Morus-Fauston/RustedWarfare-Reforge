@@ -187,6 +187,15 @@ internal class MovePlanning {
         executionStep: Long = 0,
         lookupTraffic: (String) -> MutableUnit? = { null },
     ) {
+        // Long repairs retain their search cursor but yield between simulation steps.
+        // Other members can then publish their own repairs or receive a new order.
+        if (orders.size > 1) {
+            val front = orders.first()
+            if (front.repair != null && front in workByOrder) {
+                orders.remove(front)
+                orders.add(front)
+            }
+        }
         val ordinary = orders.iterator()
         val optional = optionalRejoins.iterator()
         while (!budget.exhausted) {

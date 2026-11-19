@@ -216,7 +216,7 @@ internal object TrafficSeparation {
                         cap = min(cap, crossingSpeed(car, peer, vx, vy))
                         val entry = car.unit.passageEntry
                         val otherEntry = peer.unit.passageEntry
-                        if (entry != null && otherEntry != null && entry.passage === otherEntry.passage &&
+                        if (entry != null && otherEntry != null && entry.passage == otherEntry.passage &&
                             entry.side == otherEntry.side && entry.passage.width < 2 * (car.radius + peer.radius)) {
                             val mouth = entry.passage.mouths[entry.side]
                             val ownDepth = mouth.depth(p)

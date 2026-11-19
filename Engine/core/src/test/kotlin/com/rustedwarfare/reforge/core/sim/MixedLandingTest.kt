@@ -50,6 +50,59 @@ class MixedLandingTest {
         }
     }
 
+    @Test fun mixed_cars_join_a_parking_lane_only_after_surveying_the_current_apron() {
+        val scene = scenario({ _, _ -> false }, Position(180.0, 260.0))
+        val cars = scene.units.map { spawn ->
+            MutableUnit(spawn.unitId, "p1", spawn.typeId, scene.unitDefinitions.getValue(spawn.typeId),
+                spawn.position, 90.0)
+        }
+        val group = GroupMoveRequest(WorldHandle("mixed-apron"), null, "p1", click, setOf("a", "b"), true)
+        val pool = SharedLandingSites.forGroup(scene.map, group, cars)
+        fun ground() = com.rustedwarfare.reforge.core.path.PlanningTerrain(38, 38, 20, 20, BooleanArray(38 * 38))
+        val terrain = ground()
+        val car = cars.last()
+        val pad = Position(click.x, click.y + 30.0)
+        val survey = assertNotNull(pool.mixedBays)
+        assertNull(survey.sites(terrain, PathWorkBudget(1)))
+        assertEquals(listOf(pad), pool.approach(car, pad, terrain))
+        assertEquals(emptyList(), survey.sites(terrain, PathWorkBudget(256)))
+        val path = pool.approach(car, pad, terrain)
+        assertEquals(2, path.size)
+        assertEquals(pad, path.last())
+        assertEquals(pad.y, path.first().y)
+        assertTrue(path.first().x in (car.position.x + 1.0)..(pad.x - 1.0))
+        assertEquals(listOf(pad), pool.approach(car, pad, ground()))
+    }
+
+    @Test fun a_circle_just_past_a_bend_drives_the_clear_prefix_when_a_parked_body_blocks_the_far_end() {
+        val base = scenario({ _, _ -> false }, Position(200.577, 299.817))
+        val click = Position(550.0, 190.0)
+        val spawns = listOf(UnitSpawn("car", "p1", "small", Position(200.577, 299.817), 276.4),
+            UnitSpawn("parked", "p1", "small", Position(490.0, 210.0), 90.0))
+        val ctx = assertIs<InitResult.Accepted>(SimulationContext.initialize(base.copy(units = spawns))).context
+        try {
+            assertIs<ActionResult.Accepted>(ctx.submit(MoveAction("original", "p1", "car", click, ctx.world)))
+            ctx.advanceToMoveOutcome(0, "car")
+            val state = (SimulationContext::class.java.getDeclaredField("steps").apply { isAccessible = true }
+                .get(ctx) as CandidateSteps).current
+            val car = state.units.getValue("car")
+            car.position = spawns.first().position
+            car.heading = 276.4
+            car.speed = 0.0
+            car.adoptRoute(listOf(Position(200.0, 300.0), click), click, car.lastPlannedKnowledgeRevision,
+                car.lastPlannedBuildingRevision, listOf("parked"))
+            car.followsManeuverRoute = true
+            car.landingMember = LandingMember(GroupMoveRequest(ctx.world, null, "p1", click, setOf("car", "parked"), true))
+            val first = state.stepIndex + 1
+            for (tick in first until first + 600) {
+                val frame = ctx.advance(Step(tick, 1.0, "sim-tick"))
+                val moved = frame.units.single { it.unitId == "car" }
+                if (moved.position.x > 216.0) return
+            }
+            fail("Vehicle kept turning at the projection of the waypoint")
+        } finally { ctx.close() }
+    }
+
     @Test fun first_arriving_small_car_leaves_the_only_wide_bay() = checkBays(false)
     @Test fun another_reachable_wide_bay_lets_the_small_car_park_nearby() = checkBays(true)
 

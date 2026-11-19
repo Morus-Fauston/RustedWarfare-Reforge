@@ -475,21 +475,21 @@ internal class ClearanceAStarPolicy(
                 return
             }
             val probe = obstacles.nearestBoundary(boundaryIndex++, target) ?: return
-            val key = checkNotNull(boundaryKey)
-            val from = if (key == startKey) start else routePoint(key.col, key.row)
             val shape = (hull as? HullRoute.Circle)?.let { MovementCollisionShape.Circle(it.radius) }
                 ?: if (hull == null) MovementCollisionShape.Circle(radius) else return
+            // A circle scores the same at every heading. Only a better endpoint needs a swept route check.
+            val distance = MoveArrival.distanceToHull(shape, probe, 0.0, target)
+            val center = ScreenPlane.distanceSquared(probe, target)
+            if (!(distance < nearestDistance || distance == nearestDistance && center < nearestCenterDistance)) return
+            val key = checkNotNull(boundaryKey)
+            val from = if (key == startKey) start else routePoint(key.col, key.row)
             val heading = ScreenPlane.desired(from, probe)
             if (!UnitContact.poseFits(shape, probe, heading, checkNotNull(hullGrid)) ||
                 arrival(from, probe, key.heading, null) == null) return
-            val distance = MoveArrival.distanceToHull(shape, probe, heading, target)
-            val center = ScreenPlane.distanceSquared(probe, target)
-            if (distance < nearestDistance || distance == nearestDistance && center < nearestCenterDistance) {
-                nearestDistance = distance
-                nearestCenterDistance = center
-                nearestKey = key
-                endpoint = probe
-            }
+            nearestDistance = distance
+            nearestCenterDistance = center
+            nearestKey = key
+            endpoint = probe
         }
 
         private fun canLeaveStart(): Boolean {
@@ -562,17 +562,17 @@ internal class ClearanceAStarPolicy(
                         if (legal(probe)) low = mid else high = mid
                     }
                     point = Position(from.x + (end.x - from.x) * low, from.y + (end.y - from.y) * low)
+                    if (!legal(point)) continue
                 }
-                if (!legal(point)) continue
                 // A clipped ray need not meet an axis-aligned bank at its closest
                 // tangent when the click lies between lattice rows or columns.
                 val probes = if (shape is MovementCollisionShape.Circle)
                     listOf(point, Position(point.x, target.y), Position(target.x, point.y)) else listOf(point)
                 for (probe in probes) {
-                    if (probe != point && (!legal(probe) || arrival(from, probe, key.heading, null) == null)) continue
                     val distance = MoveArrival.distanceToHull(shape, probe, if (probe == from) key.heading else heading, target)
                     val center = ScreenPlane.distanceSquared(probe, target)
                     if (distance < nearestDistance || distance == nearestDistance && center < nearestCenterDistance) {
+                        if (probe != point && (!legal(probe) || arrival(from, probe, key.heading, null) == null)) continue
                         nearestDistance = distance
                         nearestCenterDistance = center
                         nearestKey = key

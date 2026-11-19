@@ -14,6 +14,7 @@ internal class MixedLandingBays(private val click: Position, private val horizon
     private var first = -1
     private var openings = emptyList<Position>()
     private var complete = false
+    fun openApron(terrain: PlanningTerrain): Boolean = ground === terrain && complete && openings.isEmpty()
     private data class Band(val low: Int, val high: Int, val crossMid: Double)
     private var bands = emptyList<Band>()
     private var bandIndex = 0

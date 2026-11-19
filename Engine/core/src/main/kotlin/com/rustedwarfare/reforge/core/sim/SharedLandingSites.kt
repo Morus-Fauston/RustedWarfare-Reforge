@@ -3,6 +3,8 @@ package com.rustedwarfare.reforge.core.sim
 import com.rustedwarfare.reforge.core.content.MapDefinition
 import com.rustedwarfare.reforge.core.path.PlanningSegmentClearance
 import com.rustedwarfare.reforge.core.path.PlanningTerrain
+import com.rustedwarfare.reforge.core.content.MovementCollisionShape
+import kotlin.math.round
 import kotlin.math.ceil
 import kotlin.math.sqrt
 
@@ -48,6 +50,9 @@ internal class LandingOccupancy(private val bySite: MutableMap<Position, Set<Str
                                 private val undo: PathSearchRollback? = null) {
     internal data class StopPose(val pose: Position, val heading: Double, val layer: ContactLayer,
                                 val order: GroupMoveRequest?, val parked: Boolean, val radius: Double)
+    // Immutable summary of the index inputs, shared across a candidate fork.
+    internal class IndexedBody(val owner: Any, val site: Position?, val body: Position?, val stop: StopPose?)
+
     var revision = 0L
         private set
     fun fork(rollback: PathSearchRollback) = LandingOccupancy(bySite, byUnit, stopped, stamps, watchers, rollback).also { it.revision = revision }
@@ -87,11 +92,26 @@ internal class LandingOccupancy(private val bySite: MutableMap<Position, Set<Str
         undo?.record { if (old == null) stopped.remove(unit.unitId) else stopped[unit.unitId] = old }
     }
 
-    fun update(unit: MutableUnit) {
-        trackStop(unit)
+    fun update(units: Collection<MutableUnit>) {
+        for (unit in units) synchronize(unit)
+    }
+
+    fun update(unit: MutableUnit) = synchronize(unit)
+
+    private fun synchronize(unit: MutableUnit) {
         val member = unit.landingMember
         val reservation = (member?.claimed ?: member?.ingress)?.takeIf { unit.alive }
         val body = unit.position.takeIf { unit.alive && member?.parked == true }
+        val layer = if (unit.moveTarget == null) UnitContact.layer(unit) else null
+        val indexed = unit.indexedLandingBody
+        if (indexed != null && indexed.owner === bySite && indexed.site == reservation && indexed.body == body) {
+            val stop = indexed.stop
+            if (layer == null && stop == null || stop != null && layer == stop.layer && stop.pose == unit.position &&
+                stop.heading == unit.heading && stop.radius == unit.definition.movementCollision.boundingRadius &&
+                stop.order === member?.group && stop.parked == (member?.parked == true)) return
+        }
+        trackStop(unit)
+        unit.indexedLandingBody = IndexedBody(bySite, reservation, body, stopped[unit.unitId])
         val old = byUnit[unit.unitId].orEmpty()
         if (old.size == (if (reservation != null) 1 else 0) + (if (body != null && body != reservation) 1 else 0) &&
             (reservation == null || reservation in old) && (body == null || body in old)) return
@@ -139,6 +159,7 @@ internal class SharedLandingSites(private val map: MapDefinition, private val gr
         private set
     private var points = GroupMoveDestinations.Points(map, group.click, spacing)
     private var sites = emptyList<Position>()
+    private var suppliedSites = emptySet<Position>()
 
     private data class Scan(val entry: Position, val start: Position, val terrain: PlanningTerrain,
                             val index: Int, val best: Position?, val score: Double, val allTaken: Boolean)
@@ -213,7 +234,7 @@ internal class SharedLandingSites(private val map: MapDefinition, private val gr
             val other = id?.let(lookup) ?: return null
             val landing = other.landingMember ?: return null
             return landing.ingress?.takeIf { other.alive && other.moveTarget != null && landing.group === group &&
-                landing.claimed == null && sameLane(entrance, it) }
+                landing.claimed == null && sameLane(entrance, it) && (other === unit || depth(other.position) < depth(entrance)) }
         }
         val resume = saved?.takeIf { it.deepestSite == currentSite(it.deepestId) }
         var deepest = resume?.deepestId
@@ -261,6 +282,7 @@ internal class SharedLandingSites(private val map: MapDefinition, private val gr
         it.pushCursor = pushCursor
         it.needed = needed
         it.sites = sites
+        it.suppliedSites = suppliedSites
         it.survey = survey?.fork(rollback)
         it.searchCredit = searchCredit
         entrancePair?.footprint?.journal(rollback)
@@ -274,12 +296,22 @@ internal class SharedLandingSites(private val map: MapDefinition, private val gr
     private var needed = group.members.size
 
     fun supply(terrain: PlanningTerrain, body: MutableUnit, budget: PathWorkBudget) {
+        val previousSize = sites.size
         while (sites.size < needed && !points.exhausted && budget.take(1)) {
             val p = points.next() ?: break
             if (UnitContact.poseFits(body.definition.movementCollision, p, body.heading, HullTerrainGrid.authorized(terrain))) {
                 sites = sites + p
             }
         }
+        if (previousSize < sites.size) suppliedSites = suppliedSites + sites.subList(previousSize, sites.size)
+    }
+
+    // Inside half the lattice pitch, at most one generated point can be within reach.
+    private fun nearestSupplied(p: Position): Position? {
+        val x = round((p.x - group.click.x) / spacing)
+        val y = round((p.y - group.click.y) / spacing)
+        val pad = Position(group.click.x + x * spacing, group.click.y + y * spacing)
+        return pad.takeIf { it in suppliedSites }
     }
 
     private enum class PushCheck { SITE, POSE, ROUTE, SWEEP, PUBLISH }
@@ -353,7 +385,8 @@ internal class SharedLandingSites(private val map: MapDefinition, private val gr
             check(budget.take(1))
             val state = checkNotNull(car.landingMember)
             val ground = terrain(car)
-            val scan = pushScans[id]?.takeIf { it.pose == car.position && it.terrain === ground && it.heading == car.heading } ?: PushScan(car.position, car.heading, terrain = ground)
+            val scan = pushScans[id]?.takeIf { it.pose == car.position && it.terrain === ground &&
+                (it.heading == car.heading || car.definition.movementCollision is MovementCollisionShape.Circle) } ?: PushScan(car.position, car.heading, terrain = ground)
             fun finish() { pushScans.remove(id); finished += id }
             fun reject() {
                 car.landingMember = state.copy(restingSite = null, restingPose = null, pushedPose = null)
@@ -363,11 +396,12 @@ internal class SharedLandingSites(private val map: MapDefinition, private val gr
             val site = scan.site
             when (scan.check) {
                 PushCheck.SITE -> {
-                    val candidate = sites.getOrNull(scan.index)
+                    val single = radius < spacing / 2
+                    val candidate = if (single) nearestSupplied(car.position) else sites.getOrNull(scan.index)
                     if (candidate == null) reject()
                     else if (!occupied(candidate) && ScreenPlane.distanceSquared(car.position, candidate) <= radius * radius)
                         pushScans[id] = scan.copy(check = PushCheck.POSE, site = candidate, index = 0)
-                    else pushScans[id] = scan.copy(index = scan.index + 1)
+                    else if (single) reject() else pushScans[id] = scan.copy(index = scan.index + 1)
                 }
                 PushCheck.POSE -> {
                     if (!UnitContact.poseFits(car.definition.movementCollision, checkNotNull(site), car.heading,
@@ -725,7 +759,7 @@ internal class SharedLandingSites(private val map: MapDefinition, private val gr
 
     /** Join the final lane outside the parking area before driving between parked bodies. */
     fun approach(unit: MutableUnit, target: Position, terrain: PlanningTerrain): List<Position> {
-        if (!outside || mixedBays != null) return listOf(target)
+        if (!outside || mixedBays?.openApron(terrain) == false) return listOf(target)
         val dx = fillOrigin.x - group.click.x
         val dy = fillOrigin.y - group.click.y
         val length = sqrt(dx * dx + dy * dy)

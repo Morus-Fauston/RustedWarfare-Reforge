@@ -168,8 +168,8 @@ internal object UnitContact {
 
         /** Settle after every mover so a later push cannot masquerade as this unit's own progress. */
         fun finish(units: Collection<MutableUnit>, samples: MutableList<MotionStepSample>?, occupancy: LandingOccupancy? = null) {
+            occupancy?.update(units)
             for (unit in units) {
-                occupancy?.update(unit)
                 unit.landingMember?.let { landing ->
                     val pushed = unit.unitId in pushedDisplacements
                     val pose = if (pushed) unit.position else landing.pushedPose?.takeIf { it == unit.position }
@@ -737,10 +737,13 @@ internal object UnitContact {
 
     fun boundingRadius(shape: MovementCollisionShape): Double = shape.boundingRadius
 
+    // Only rectangles project onto local axes.
+    private val circleAxis = Position(1.0, 0.0)
+
     private class Body(private val shape: MovementCollisionShape, heading: Double) {
         val reach = boundingRadius(shape)
-        private val forward = ScreenPlane.displacement(heading, 1.0)
-        private val right = Position(-forward.y, forward.x)
+        private val forward = if (shape is MovementCollisionShape.Rectangle) ScreenPlane.displacement(heading, 1.0) else circleAxis
+        private val right = if (shape is MovementCollisionShape.Rectangle) Position(-forward.y, forward.x) else circleAxis
 
         fun entry(other: Body, offset: Position, drift: Position, limit: Double): Double {
             val rect = shape as? MovementCollisionShape.Rectangle
