@@ -135,6 +135,8 @@ internal data class LandingMember(val group: GroupMoveRequest, val claimed: Posi
 
 internal class SharedLandingSites(private val map: MapDefinition, private val group: GroupMoveRequest,
                                   private val spacing: Double, private val fillOrigin: Position, private val spread: Double, private val outside: Boolean) {
+    var mixedBays: MixedLandingBays? = null
+        private set
     private var points = GroupMoveDestinations.Points(map, group.click, spacing)
     private var sites = emptyList<Position>()
 
@@ -245,6 +247,7 @@ internal class SharedLandingSites(private val map: MapDefinition, private val gr
     }
 
     fun fork(rollback: PathSearchRollback) = SharedLandingSites(map, group, spacing, fillOrigin, spread, outside).also {
+        it.mixedBays = mixedBays?.fork(rollback)
         it.points = points.fork(rollback)
         it.smallTurn = smallTurn
         it.entryCursor = entryCursor
@@ -491,7 +494,7 @@ internal class SharedLandingSites(private val map: MapDefinition, private val gr
     private var searchCredit = 0
 
     /** The exact planner's atomic operation costs eight. Save paid units from short slices. */
-    private fun advanceExact(query: ExactPathSearch, budget: PathWorkBudget) {
+    fun advanceExact(query: ExactPathSearch, budget: PathWorkBudget) {
         val available = budget.limit - budget.used
         val total = searchCredit + available
         val quantum = total / 8 * 8
@@ -708,7 +711,8 @@ internal class SharedLandingSites(private val map: MapDefinition, private val gr
             val released = unit.landingMember?.releasedSite
             if (best != null && (site == released && best != released ||
                     (site == released) == (best == released) && distance >= bestDistance)) continue
-            if (PlanningSegmentClearance.allows(terrain, start, site, unit.definition.movementCollision.boundingRadius)) {
+            if (if (mixedBays == null) PlanningSegmentClearance.allows(terrain, start, site, unit.definition.movementCollision.boundingRadius)
+                else MixedLandingBays.clears(unit, listOf(site), terrain)) {
                 best = site
                 bestDistance = distance
             }
@@ -721,7 +725,7 @@ internal class SharedLandingSites(private val map: MapDefinition, private val gr
 
     /** Join the final lane outside the parking area before driving between parked bodies. */
     fun approach(unit: MutableUnit, target: Position, terrain: PlanningTerrain): List<Position> {
-        if (!outside) return listOf(target)
+        if (!outside || mixedBays != null) return listOf(target)
         val dx = fillOrigin.x - group.click.x
         val dy = fillOrigin.y - group.click.y
         val length = sqrt(dx * dx + dy * dy)
@@ -788,10 +792,17 @@ internal class SharedLandingSites(private val map: MapDefinition, private val gr
         (p.y - group.click.y) * (fillOrigin.y - group.click.y)
 
     companion object {
-        fun forGroup(map: MapDefinition, group: GroupMoveRequest, body: MutableUnit, members: List<MutableUnit>): SharedLandingSites {
+        fun forGroup(map: MapDefinition, group: GroupMoveRequest, members: List<MutableUnit>): SharedLandingSites {
             val lattice = minOf(map.tileWidth, map.tileHeight) * 0.5
-            val diameter = body.definition.contactBufferCollision.boundingRadius * 2.0
-            val spacing = maxOf(1.0, ceil(diameter / lattice)) * lattice
+            // A pair needs the sum of its two envelopes. Doubling a lone long hull would
+            // put the next pad outside the very room both vehicles can occupy.
+            var largest = 0.0
+            var second = 0.0
+            for (car in members) {
+                val radius = car.definition.contactBufferCollision.boundingRadius
+                if (radius >= largest) { second = largest; largest = radius } else second = maxOf(second, radius)
+            }
+            val spacing = maxOf(1.0, ceil((largest + second) / lattice)) * lattice
             val dx = group.click.x - members.sumOf { it.position.x } / members.size
             val dy = group.click.y - members.sumOf { it.position.y } / members.size
             val radius = spacing * sqrt(group.members.size / Math.PI)
@@ -799,7 +810,10 @@ internal class SharedLandingSites(private val map: MapDefinition, private val gr
             val centre = Position(group.click.x - dx, group.click.y - dy)
             val extent = sqrt(members.sumOf { ScreenPlane.distanceSquared(centre, it.position) } / members.size)
             return SharedLandingSites(map, group, spacing, Position(group.click.x + dx * fraction, group.click.y + dy * fraction),
-                minOf(1.0, radius / maxOf(spacing, extent * sqrt(2.0))), sqrt(dx * dx + dy * dy) > extent + radius)
+                minOf(1.0, radius / maxOf(spacing, extent * sqrt(2.0))), sqrt(dx * dx + dy * dy) > extent + radius).also { pool ->
+                    if (members.any { it.definition.movementCollision != members.first().definition.movementCollision })
+                        pool.mixedBays = MixedLandingBays.forApproach(group.click, dx, dy, spacing * (sqrt(group.members.size.toDouble()) + 2.0))
+                }
         }
     }
 }

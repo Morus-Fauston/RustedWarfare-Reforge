@@ -1,6 +1,8 @@
 package com.rustedwarfare.reforge.core.sim
 
 import com.rustedwarfare.reforge.core.content.BlockingGrid
+import com.rustedwarfare.reforge.core.content.HoverProfile
+import com.rustedwarfare.reforge.core.content.MovementType
 import com.rustedwarfare.reforge.core.content.MapDefinition
 import kotlin.test.*
 
@@ -11,8 +13,9 @@ class SharedLandingClaimsTest {
     private fun checkReissuedParking(shared: Boolean) {
         val base = TestContentFactory.openScenario()
         val tank = base.unitDefinitions.getValue("tank")
-        val map = MapDefinition(48, 32, 20, 20, emptyList(), IntArray(1536), BlockingGrid(48, 32, BooleanArray(1536)))
-        val scene = base.copy(map = map, unitDefinitions = mapOf("tank" to tank, "other" to TestContentFactory.unitWith(tank)),
+        val map = MapDefinition(48, 32, 20, 20, base.map.tileSets, IntArray(1536) { base.map.tileSets.first().firstGid }, BlockingGrid(48, 32, BooleanArray(1536)))
+        val scene = base.copy(map = map, unitDefinitions = mapOf("tank" to tank, "other" to TestContentFactory.unitWith(tank, movement = tank.movement.copy(type = MovementType.HOVER, hover = HoverProfile(),
+                slidingMode = true, ignoringBody = true, reverseSpeedPercentage = 0.0))),
             units = listOf(UnitSpawn("a", "p1", "other", Position(80.0, 120.0), 90.0),
                 UnitSpawn("b", "p1", "tank", Position(320.0, 240.0), 90.0),
                 UnitSpawn("c", "p1", if (shared) "tank" else "other", Position(320.0, 360.0), 90.0)))
@@ -21,7 +24,8 @@ class SharedLandingClaimsTest {
             if (failStopStep) error("discard scheduled stop")
             8
         })
-        val ctx = assertIs<InitResult.Accepted>(SimulationContext(policies).initialize(scene)).context
+        val init = SimulationContext(policies).initialize(scene)
+        val ctx = assertIs<InitResult.Accepted>(init, init.toString()).context
         try {
             val click = Position(440.0, 240.0)
             fun send(prefix: String, vararg ids: String): GroupMoveRequest {

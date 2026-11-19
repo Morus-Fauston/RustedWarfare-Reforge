@@ -20,7 +20,7 @@ class GroupMoveExpansionTest {
             val click = Position(600.0, 300.0)
             val cars = (0 until 30).map { i -> MutableUnit("car-$i", "p1", def.id, def, Position(50.0, 300.0), 0.0) }
             val group = GroupMoveRequest(context.world, null, "p1", click, cars.mapTo(linkedSetOf()) { it.unitId }, true)
-            val pool = SharedLandingSites.forGroup(scene.map, group, cars.first(), cars)
+            val pool = SharedLandingSites.forGroup(scene.map, group, cars)
             for ((i, car) in cars.withIndex()) {
                 car.moveTarget = click
                 car.landingMember = LandingMember(group, ingress = Position(300.0 + i * 10, 300.0))

@@ -432,9 +432,7 @@ class SimulationContext internal constructor(private val policies: ExperimentalP
         val members = orderedUnits().filter { it.unitId in requested && it.ownerPlayerId == actor && it.alive &&
             it.carriedBy == null && it.attachment == null && it.definition.movement.type != MovementType.NONE }
         if (members.size < 2) return null
-        val first = members.first().definition
-        val shared = first.movement.type == MovementType.LAND && first.movementCollision is MovementCollisionShape.Circle &&
-            members.all { it.definition === first && it.birthRemaining <= 0f && it.attachment == null }
+        val shared = members.all { it.definition.movement.type == MovementType.LAND && it.birthRemaining <= 0f }
         return GroupMoveRequest(world, stepIndex.takeIf { hasAdvanced }, actor, click, members.mapTo(hashSetOf()) { it.unitId }, shared)
     }
 
@@ -674,7 +672,12 @@ class SimulationContext internal constructor(private val policies: ExperimentalP
         val priorGroup = unit.landingMember?.group
         if (repair == null || repair == ManeuverRepair.KNOWLEDGE)
             unit.landingMember = unit.landingMember?.copy(branch = planned.branch)
-        if (planned.nearest) {
+        // Initial paths can publish before the landing pool has had its first time slice.
+        val nearSharedArea = planned.nearest && priorGroup != null && priorGroup.members.any { id ->
+            units[id]?.definition?.movementCollision?.let { it != unit.definition.movementCollision } == true
+        } &&
+            ScreenPlane.distanceSquared(slot.position, priorGroup.click) <= unit.definition.movementCollision.boundingRadius.let { it * it }
+        if (planned.nearest && !nearSharedArea) {
             unit.nearestMoveTarget = action.target
             unit.nearestMoveIsGroup = group != null || unit.landingMember != null
             unit.landingMember = null
@@ -738,7 +741,7 @@ class SimulationContext internal constructor(private val policies: ExperimentalP
             if (budget.exhausted) continue
             val before = budget.used
             val leader = membersDriving.firstOrNull() ?: entering.firstOrNull() ?: stalled.firstOrNull() ?: displaced.first()
-            val pool = pools.getOrPut(group) { SharedLandingSites.forGroup(map, group, leader, members) }
+            val pool = pools.getOrPut(group) { SharedLandingSites.forGroup(map, group, members) }
             pool.beginService()
             // Separate orders retain their identities while competing for the same physical pad.
             // Own reservations are command knowledge. Other players expose only their visible bodies.
@@ -754,6 +757,26 @@ class SimulationContext internal constructor(private val policies: ExperimentalP
             fun canAdopt(unit: MutableUnit, path: List<Position>): Boolean {
                 val end = path.firstOrNull { it != unit.position } ?: return true
                 if (!budget.take(1)) return false
+                if (pool.mixedBays != null) {
+                    val grid = HullTerrainGrid.authorized(planningTerrainFor(unit, map))
+                    val hull = HullRoute.forUnit(unit, maneuver = true) ?: return false
+                    var start = unit.position
+                    var heading = unit.heading
+                    for ((i, target) in path.withIndex()) {
+                        if (i != 0 && !budget.take(1)) return false
+                        val arrival = if (start == target) heading else hull.arrival(grid, start, target, heading) ?: return false
+                        if (!UnitContact.poseFits(unit.definition.movementCollision, target, arrival, grid)) return false
+                        for (other in world) {
+                            if (other === unit || other.landingMember?.group === group && !isParkedPeer(unit, other) ||
+                                !UnitContact.shareLayer(unit, other) || !UnitContact.withinSweptBounds(unit, start, target, other) ||
+                                !knowsRouteOccupant(unit, other)) continue
+                            if (!budget.take(1) || UnitContact.routeAround(unit, listOf(other))?.allows(start, target, heading, arrival) == false) return false
+                        }
+                        start = target
+                        heading = arrival
+                    }
+                    return true
+                }
                 for (other in orderedUnits()) {
                     if (other === unit || !UnitContact.withinSweptBounds(unit, unit.position, end, other) ||
                         other.landingMember?.group === group && !isParkedPeer(unit, other) ||
@@ -785,7 +808,31 @@ class SimulationContext internal constructor(private val policies: ExperimentalP
                 unit.adoptRoute(path, target, plannedKnowledgeRevision(unit), plannedBuildingRevision(unit))
                 unit.followsManeuverRoute = true
             }
-            if (membersDriving.size == 2 && membersDriving.all { it.landingMember?.let { m ->
+            val survey = pool.mixedBays
+            var surveyingBays = false
+            if (survey != null && membersDriving.any { pool.near(it.position) }) {
+                val available = budget.limit - budget.used
+                val slice = PathWorkBudget(minOf(available, maxOf(1, available / 2)))
+                val bays = survey.sites(planningTerrainFor(leader, map), slice)
+                val decision = when {
+                    bays == null -> MixedLandingBays.Decision.Pending
+                    bays.isEmpty() -> MixedLandingBays.Decision.Ordinary
+                    else -> survey.choose(members, bays, ::occupied, pool::near, { planningTerrainFor(it, map) },
+                        policies.path, slice, pool::advanceExact) { car -> world.filter { other ->
+                            other !== car && other.alive && UnitContact.shareLayer(car, other) &&
+                                (other.landingMember?.group !== group || isParkedPeer(car, other)) && knowsRouteOccupant(car, other)
+                        } }
+                }
+                check(budget.take(slice.used))
+                if (decision is MixedLandingBays.Decision.Claim) {
+                    val car = decision.car
+                    val site = decision.path.last()
+                    claim(car, site)
+                    car.adoptRoute(decision.path, site, plannedKnowledgeRevision(car), plannedBuildingRevision(car))
+                }
+                surveyingBays = decision != MixedLandingBays.Decision.Ordinary
+            }
+            if (!surveyingBays && membersDriving.size == 2 && membersDriving.all { it.landingMember?.let { m ->
                     m.ingress == null && m.releasedSite == null && m.pushedPose == null } == true && it.pathPoints.isNotEmpty() }) {
                 val (first, second) = membersDriving
                 val pair = pool.separateEntrances(first, second, budget, world, index,
@@ -874,7 +921,7 @@ class SimulationContext internal constructor(private val policies: ExperimentalP
                 if (!pool.near(unit.position)) {
                     if (!unit.landingMember!!.guided && budget.take()) {
                         val guide = pool.incomingGuide(unit, centre, planningTerrainFor(unit, map))
-                        if (guide != null && canAdopt(unit, listOf(guide))) {
+                        if (guide != null && canAdopt(unit, if (pool.mixedBays != null) listOf(guide, group.click) else listOf(guide))) {
                             unit.adoptRoute(listOf(guide, group.click), group.click, plannedKnowledgeRevision(unit), plannedBuildingRevision(unit))
                             pool.routePublished(unit)
                         }
@@ -882,6 +929,7 @@ class SimulationContext internal constructor(private val policies: ExperimentalP
                     }
                     return@visitDriving
                 }
+                if (surveyingBays) return@visitDriving
                 val preview = unit.landingMember!!.ingress
                 if (preview != null) {
                     if (!pool.atEntrance(unit.position, preview)) return@visitDriving
