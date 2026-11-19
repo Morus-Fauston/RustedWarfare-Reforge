@@ -209,7 +209,7 @@ class GroupMoveExpansionTest {
                     next.events.filter { it.kind == "movement-arrived" }.mapTo(arrived) { requireNotNull(it.unitId) }
                     if (arrived.size == ids.size && next.units.all { it.moveTarget == null }) { frame = next; break }
                 }
-                val planned = assertNotNull(frame, "All fourteen members must occupy destinations: $arrived")
+                val planned = assertNotNull(frame, "All fourteen members must occupy destinations: $arrived; poses=${context.observe().units.map { listOf(it.unitId, it.position, it.moveTarget, it.pathPoints.firstOrNull()) }}")
                 val points = planned.units.map { it.position }
                 assertTrue(points.any { ScreenPlane.distanceSquared(it, click) > 60.0 * 60.0 })
                 for (a in points.indices) for (b in 0 until a) {

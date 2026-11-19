@@ -37,6 +37,9 @@ import java.util.IdentityHashMap
 
 class SimulationContext internal constructor(private val policies: ExperimentalPolicies) {
     private val steps = CandidateSteps()
+    internal var trafficSeparationEnabled = true
+    internal val trafficSeparationVisits get() = steps.current.separationVisits
+    internal val trafficSeparationInterventions: Long get() = steps.current.separationInterventions
     private val soundAuthority = SoundAuthority()
     private var activeWorld: WorldHandle? = null
     val world: WorldHandle get() = checkNotNull(activeWorld) { "Simulation is closed" }
@@ -1956,6 +1959,12 @@ class SimulationContext internal constructor(private val policies: ExperimentalP
             val seaDepartureWaiting = FactoryExit.waitingNativeSeaDepartures(currentScenario.map, units)
             recoverStalledMoves(currentScenario.map, step.stepIndex, passageWaiting, seaDepartureWaiting)
             prepareRouteSuccessors(currentScenario.map, step.stepIndex, candidate.routeContinuationSamples)
+            if (trafficSeparationEnabled) {
+                val visits = TrafficSeparation.Visits()
+                candidate.state.separationVisits = visits
+                candidate.separationCaps = TrafficSeparation.speedLimits(orderedUnits(), visits)
+                candidate.parkedNeighbors = TrafficSeparation.ParkedNeighbors(orderedUnits(), visits, ::knowsRouteOccupant)
+            }
             for (unit in orderedUnits().toList()) {
                 val attachment = unit.attachment
                 if (attachment != null) {
@@ -3903,6 +3912,19 @@ class SimulationContext internal constructor(private val policies: ExperimentalP
         val followsManeuver = (unit.followsManeuverRoute ||
             unit.groupMoveReservation != null && unit.pathPoints.size == 1) &&
             taskKind == UnitTaskKind.MOVE && !air && !sliding
+        if (taskKind == UnitTaskKind.MOVE && !followsManeuver && movement.type == MovementType.LAND &&
+            unit.definition.movementCollision is MovementCollisionShape.Circle && unit.pathPoints.isNotEmpty()) {
+            val bypass = step.parkedNeighbors?.bypass(unit, unit.pathPoints.first()) { from, to ->
+                continuationFits(planningTerrainFor(unit, map), from, to, unit.heading, HullRoute.forUnit(unit),
+                    routeRadius(unit), routeOccupancy(unit))
+            }.orEmpty()
+            if (bypass.isNotEmpty()) {
+                unit.pathPoints.addAll(0, bypass)
+                unit.localMotion = null
+                unit.localProgressTime = 0.0
+                unit.routeContinuation = null
+            }
+        }
         fun maneuverAim(): Position {
             val first=unit.pathPoints.first()
             if(unit.definition.movementCollision !is MovementCollisionShape.Circle || unit.pathPoints.size<2 || unit.landingMember?.preciseApproach == true) return first
@@ -3919,6 +3941,30 @@ class SimulationContext internal constructor(private val policies: ExperimentalP
             return if (projection == first || continuationFits(planningTerrainFor(unit, map),
                     unit.position, projection, unit.heading, HullRoute.forUnit(unit), routeRadius(unit), routeOccupancy(unit, includeMoving = true)))
                 projection else first
+        }
+        // Rejoin a forward point on the existing leg if a push carried the body past its start.
+        if (trafficSeparationEnabled && unit.landingMember != null && unit.pathPoints.size >= 2 &&
+            unit.definition.movementCollision is MovementCollisionShape.Circle) {
+            val first = unit.pathPoints[0]
+            val next = unit.pathPoints[1]
+            val dx = next.x - first.x
+            val dy = next.y - first.y
+            val length = kotlin.math.hypot(dx, dy)
+            val radius = unit.definition.movementCollision.boundingRadius
+            if (length > radius) {
+                val passed = ((unit.position.x - first.x) * dx + (unit.position.y - first.y) * dy) / length
+                if (passed > radius && passed + radius < length) {
+                    val t = minOf(1.0, (passed + 2 * radius) / length)
+                    val join = Position(first.x + t * dx, first.y + t * dy)
+                    if (continuationFits(planningTerrainFor(unit, map), unit.position, join, unit.heading,
+                            HullRoute.forUnit(unit), routeRadius(unit), routeOccupancy(unit, includeMoving = true))) {
+                        unit.pathPoints[0] = join
+                        unit.localMotion = null
+                        unit.routeContinuation = null
+                        unit.localProgressTime = 0.0
+                    }
+                }
+            }
         }
         val roundoffWaypoint = if (followsManeuver && unit.pathPoints.size > 1 &&
             unit.definition.movementCollision is MovementCollisionShape.Circle) {
@@ -4055,7 +4101,8 @@ class SimulationContext internal constructor(private val policies: ExperimentalP
                 }
                 recordRouteContinuation(routeSamples, executionStep, unit, continuation, 0.0, RouteContinuationStage.HANDED_OFF)
             }
-            val steeringTarget = local?.aim ?: target
+            val plannedAim = local?.aim ?: target
+            val steeringTarget = if (trafficSeparationEnabled) TrafficSeparation.mouthAim(unit, plannedAim) else plannedAim
             val finalPoint = temporaryBirth || (unit.pathPoints.size == 1 && checkNotNull(local).isLast)
             val d2 = policies.coordinates.distanceSquared(unit.position, steeringTarget)
             val diff = when {
@@ -4160,6 +4207,12 @@ class SimulationContext internal constructor(private val policies: ExperimentalP
         }
         unit.mechState = unit.mechState?.copy(hadMotionAim = aimForSample != null)
         Transport.recordMotionGate(unit, aimForSample != null)
+        val followingCap = step.separationCaps[unit.unitId]
+        if (followingCap != null && speedTarget > followingCap) {
+            speedTarget = followingCap
+            requestedFraction = if (maximumSpeed > 0.0) speedTarget / maximumSpeed else 0.0
+            step.state.separationInterventions++
+        }
         val displacement = if (sliding) {
             val desiredVelocity = aimForSample?.let {
                 // Sliding already aims at the route; reversing changes body orientation,

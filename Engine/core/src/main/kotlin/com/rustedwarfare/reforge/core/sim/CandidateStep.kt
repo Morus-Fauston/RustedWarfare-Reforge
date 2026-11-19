@@ -61,6 +61,8 @@ internal data class StepState(
     var movePlanning: MovePlanning = MovePlanning(),
     var landingOccupancy: LandingOccupancy = LandingOccupancy(),
     var landingsShortOfBudget: Boolean = false,
+    var separationInterventions: Long = 0,
+    var separationVisits: TrafficSeparation.Visits = TrafficSeparation.Visits(),
     var landingAdmissions: MutableMap<GroupMoveRequest, Set<String>> = mutableMapOf(),
     var landingSites: MutableMap<GroupMoveRequest, SharedLandingSites> = mutableMapOf(),
     var actionResultOwners: IdentityHashMap<ActionResult, String> = IdentityHashMap(),
@@ -292,6 +294,8 @@ internal class CandidateSteps {
 
 /** Owns projected resources and the publication window, as well as the working state. */
 internal class CandidateStep(val state: StepState, private val step: Step) {
+    var parkedNeighbors: TrafficSeparation.ParkedNeighbors? = null
+    var separationCaps: Map<String, Double> = emptyMap()
     val translations = UnitContact.Translations(step.delta) { id ->
         state.movePlanning.pending(id) && !state.movePlanning.repairing(id)
     }
