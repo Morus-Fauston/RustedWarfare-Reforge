@@ -305,7 +305,6 @@ class SimulationContext internal constructor(private val policies: ExperimentalP
         private const val MOVE_PLANNING_WORK_PER_STEP = 512
         private const val PRODUCED_UNIT_PREFIX = "produced:"
         private const val CONSTRUCTED_UNIT_PREFIX = "constructed:"
-        private const val ROUTE_RETRY_TICKS = 60L
         private const val ROUTE_FAILURE_TICKS = 420L
         fun initialize(scenario: Scenario): InitResult = SimulationContext(ExperimentalPolicies()).initializeInternal(scenario)
     }
@@ -1990,9 +1989,7 @@ class SimulationContext internal constructor(private val policies: ExperimentalP
             // Allocate a slice to cold gate reads on the step after they ran out, or
             // to wall repairs when their periodic retry is due. Unused queue work is
             // available to both services on this same step.
-            val wallDue = step.stepIndex % ROUTE_RETRY_TICKS == 0L && orderedUnits().any {
-                it.landingMember != null && it.terrainCorrectionTime >= 3.0 && it.moveTarget != null
-            }
+            val wallDue = candidate.state.sharedWallRepairDue(step.stepIndex)
             val needsGateWork = candidate.state.gateWorkDeferred
             val reserve = if (needsGateWork || wallDue) MOVE_PLANNING_WORK_PER_STEP / 4 else 0
             val planningBudget = PathWorkBudget(MOVE_PLANNING_WORK_PER_STEP - reserve)
@@ -3740,14 +3737,14 @@ class SimulationContext internal constructor(private val policies: ExperimentalP
             // An obstructed landing can have a claim while the first repair has no route.
             // There is no attempted translation on that tick to increment stalledRouteTicks.
             val waitingForRoute = unit.moveTarget != null && unit.landingMember?.claimed != null && (unit.pathPoints.isEmpty() || unit.landingMember?.noRouteTicks != null)
-            if (waitingForRoute && !steps.current.movePlanning.pending(unit.unitId) && combatFrame.toLong() % ROUTE_RETRY_TICKS == 0L) {
+            if (waitingForRoute && !steps.current.movePlanning.pending(unit.unitId) && unit.landingMember!!.group.repairDue(step)) {
                 scheduleManeuverRepair(unit, checkNotNull(unit.moveTarget), ManeuverRepair.CONTACT)
             }
             val limited = if (overtaking || sustainedTurnContact) movingContact else stalled
             if (!unit.alive || unit.carriedBy != null || unit.unitId in passageWaiting || unit.unitId in seaDepartureWaiting) continue
             val retry = limited > 0 && limited % ROUTE_RETRY_TICKS == 0L
             // Wall pressure can turn the hull or nudge the body without freeing its route.
-            val checkWall = step % ROUTE_RETRY_TICKS == 0L && unit.terrainCorrectionTime >= 3.0
+            val checkWall = unit.wallRepairDue(step)
             if (!retry && !checkWall) continue
             val target = unit.moveTarget ?: continue
             if ((checkWall || stalled >= ROUTE_RETRY_TICKS && unit.terrainCorrectionTime > 0) &&

@@ -16,6 +16,17 @@ class GroupMoveRequest internal constructor(
     internal val sharedLanding: Boolean = false,
 ) {
     internal val trafficOrder = if (sharedLanding) members.sorted() else emptyList()
+
+    internal fun repairDue(step: Long): Boolean = (step - (completedStep ?: -1L) - 1L) % ROUTE_RETRY_TICKS == 0L
+}
+
+internal const val ROUTE_RETRY_TICKS = 60L
+
+internal fun MutableUnit.wallRepairDue(step: Long): Boolean = terrainCorrectionTime >= 3.0 && moveTarget != null &&
+    (landingMember?.group?.repairDue(step) ?: (step % ROUTE_RETRY_TICKS == 0L))
+
+internal fun StepState.sharedWallRepairDue(step: Long): Boolean = units.values.any {
+    it.landingMember != null && it.wallRepairDue(step)
 }
 
 /** Arrival receipts carry the click for display. Live shared landings carry the order identity. */

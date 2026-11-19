@@ -2,6 +2,7 @@ package com.rustedwarfare.reforge.core.sim
 
 import com.rustedwarfare.reforge.core.path.PlanningTerrain
 import kotlin.test.Test
+import com.rustedwarfare.reforge.core.path.PathSearchReason
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
@@ -102,7 +103,8 @@ class PassageSurveyBudgetTest {
             }
             val retry = SimulationContext::class.java.declaredMethods.single { it.name == "recoverStalledMoves" }
                 .apply { isAccessible = true }
-            fun recover(budget: PathWorkBudget) = retry.invoke(ctx, map, 60L, emptySet<String>(), emptySet<String>(), budget)
+            val retryStep = requireNotNull(wallGroup.completedStep) + 1 + ROUTE_RETRY_TICKS
+            fun recover(budget: PathWorkBudget) = retry.invoke(ctx, map, retryStep, emptySet<String>(), emptySet<String>(), budget)
             state.noFogPlanning.clear()
             recover(PathWorkBudget(512 - work.used))
             assertEquals(listOf(1, 1), drivers.map { it.pathPoints.size })
@@ -111,6 +113,19 @@ class PassageSurveyBudgetTest {
             recover(available)
             assertEquals(listOf(2, 2), drivers.map { it.pathPoints.size })
             kotlin.test.assertTrue(available.used in 1..512)
+
+            // A just-issued order has members before its landing pool is materialized.
+            val other = assertNotNull(ctx.requestGroupMove("p1", listOf(cars.last().unitId, queued.last().unitId), click))
+            drivers.last().landingMember = LandingMember(other)
+            drivers.forEachIndexed { i, u -> u.pathPoints = mutableListOf(Position(176.0, 191.0 + 100 * i)) }
+            assertNull(state.landingSites[wallGroup])
+            assertNull(state.landingSites[other])
+            kotlin.test.assertFalse(state.sharedWallRepairDue(retryStep - 1))
+            kotlin.test.assertTrue(state.sharedWallRepairDue(retryStep), "Due drivers without sites still need a reserved slice")
+            ctx.advance(Step(retryStep, 1.0, "sim-tick"))
+            val shared = ctx.drainPlanningWorkDiagnostics(ctx.world).single()
+            val wallWork = shared.slices.filter { it.reason == PathSearchReason.ROUTE_REPAIR && it.unitIds.isEmpty() }.sumOf { it.workUnits }
+            kotlin.test.assertTrue(wallWork > 0 && shared.used <= 512, "No wall service or shared budget exceeded: $shared")
         } finally { ctx.close() }
     }
 }

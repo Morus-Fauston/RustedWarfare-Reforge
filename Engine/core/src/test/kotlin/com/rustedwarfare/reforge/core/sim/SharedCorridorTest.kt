@@ -7,6 +7,16 @@ import com.rustedwarfare.reforge.core.path.PlanningTerrain
 import kotlin.test.*
 
 class SharedCorridorTest {
+    @Test fun a_group_retries_at_the_same_command_age_after_an_idle_start() {
+        val ids = setOf("lead", "rear")
+        val initial = GroupMoveRequest(WorldHandle("initial"), null, "p1", Position(40.0, 40.0), ids, true)
+        val later = GroupMoveRequest(WorldHandle("later"), 78, "p1", Position(40.0, 40.0), ids, true)
+        for (age in 0L..181L) {
+            assertEquals(age % 60L == 0L, initial.repairDue(age))
+            assertEquals(initial.repairDue(age), later.repairDue(79L + age))
+        }
+    }
+
     private class ForkRoad(extraStone: Int = -1) {
         private val width = 42
         private val height = 30

@@ -9,6 +9,15 @@ import kotlin.math.pow
 data class MapArea(val left: Double, val bottom: Double, val width: Double, val height: Double)
 data class MapCamera(val center: Position, val zoom: Double = 1.0)
 
+/** Invert the axis-aligned UI viewport in double precision before projecting onto the map. */
+internal fun battlefieldPoint(screenX: Int, screenY: Int, windowHeight: Int,
+                              viewportLeft: Int, viewportBottom: Int, viewportWidth: Int, viewportHeight: Int,
+                              battlefieldWidth: Double, battlefieldHeight: Double): Position? {
+    if (viewportWidth <= 0 || viewportHeight <= 0) return null
+    return Position((screenX.toDouble() - viewportLeft) * battlefieldWidth / viewportWidth,
+        (windowHeight.toDouble() - screenY - viewportBottom) * battlefieldHeight / viewportHeight)
+}
+
 class MapProjection(val worldWidth: Double, val worldHeight: Double,
                     mapArea: MapArea = MapArea(24.0, 100.0, 600.0, 400.0),
                     private val fillViewport: Boolean = false) {
