@@ -96,7 +96,8 @@ class StepMovePlanningTest {
                     UnitSpawn("b", "p1", "builder", Position(200.0, 250.0), 90.0))))
                 try {
                     val requestTarget = Position(270.0, 180.0)
-                    val request = assertNotNull(context.requestGroupMove("p1", listOf("a", "b"), requestTarget))
+                    // Mix the carrier into the selection so the unsubmitted members keep this order pending.
+                    val request = assertNotNull(context.requestGroupMove("p1", listOf("a", "b", "craft"), requestTarget))
                     assertIs<ActionResult.Accepted>(context.submitGroupMove(move(context, "a", requestTarget, "group"), request))
                     val waiting = context.advance(Step(0, 1.0, "sim-tick"))
                     assertTrue(waiting.events.none { it.kind == "movement-started" })

@@ -611,7 +611,7 @@ internal class ClearanceAStarPolicy(
             points.reverse()
             rollback?.record { points.reverse() }
             if (points.lastOrNull() != endpoint) appendRoutePoint(points, endpoint)
-            if (checkEverySegment) {
+            if (checkEverySegment && ((hull as? HullRoute.Circle)?.simplify != true || occupancy != null)) {
                 complete(points)
             } else {
                 simplifyProbe = points.lastIndex
@@ -624,12 +624,12 @@ internal class ClearanceAStarPolicy(
             val points = checkNotNull(rawPoints)
             if (simplifyStart == points.size) {
                 val route = checkNotNull(simplified)
-                if (!nearest) cache?.rememberApproach(map, radius, start, route)
+                if (!nearest && !checkEverySegment) cache?.rememberApproach(map, radius, start, route)
                 return complete(route)
             }
             if (simplifyProbe < simplifyStart) return complete()
             val next = points[simplifyProbe]
-            if (PlanningSegmentClearance.allows(map, anchor, next, radius)) {
+            if (arrival(anchor, next, 0.0, cache) != null) {
                 anchor = next
                 appendPoint(checkNotNull(simplified), next)
                 simplifyStart = simplifyProbe + 1
@@ -762,7 +762,7 @@ internal sealed interface HullRoute {
     val heading: Double
     fun arrival(terrain: HullTerrainGrid, start: Position, target: Position, from: Double): Double?
 
-    data class Circle(val radius: Double) : HullRoute {
+    data class Circle(val radius: Double, val simplify: Boolean = false) : HullRoute {
         override val heading = 0.0
         override fun arrival(terrain: HullTerrainGrid, start: Position, target: Position, from: Double): Double? =
             CircularTerrain(radius).let { if (it.contains(terrain, start) && it.resolve(terrain, start, target) == target) heading else null }
@@ -775,7 +775,7 @@ internal sealed interface HullRoute {
                 val useManeuver = maneuver && unit.mechState == null && !movement.slidingMode
                 RectangularDeparture(shape, unit.heading, !useManeuver && movement.reverseSpeedPercentage > 0.95, useManeuver)
             }
-            is MovementCollisionShape.Circle -> Circle(shape.radius)
+            is MovementCollisionShape.Circle -> Circle(shape.radius, simplify = unit.landingMember != null)
             null -> null
         }
     }

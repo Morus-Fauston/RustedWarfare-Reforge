@@ -176,7 +176,10 @@ internal object UnitContact {
                 val byId = units.associateBy { it.unitId }
                 for (index in samples.indices) {
                     val sample = samples[index]
-                    samples[index] = sample.copy(hardContactLimitedTicks = byId.getValue(sample.unitId).hardContactLimitedTicks,
+                    val body = byId.getValue(sample.unitId)
+                    samples[index] = sample.copy(hardContactLimitedTicks = body.hardContactLimitedTicks,
+                        landingClaim = body.landingMember?.claimed, landingIngress = body.landingMember?.ingress,
+                        landingParked = body.landingMember?.parked == true,
                         pushedDisplacement = pushedDisplacements[sample.unitId] ?: Position(0.0, 0.0))
                 }
             }
@@ -341,7 +344,10 @@ internal object UnitContact {
                 other.definition.movementCollision is MovementCollisionShape.Circle
             if (other.moveTarget == null && !parkedPeer) return null
             val opposing = ScreenPlane.displacement(other.heading, 1.0)
-            if (!parkedPeer && dot(drift, opposing) / length > -0.5) return null
+            val travelling = unit.landingMember
+            val convoy = travelling != null && travelling.claimed == null && travelling.ingress == null &&
+                other.landingMember?.group === travelling.group && other.moveTarget != null && unit.hardContactLimitedTicks > 0
+            if (!parkedPeer && !convoy && dot(drift, opposing) / length > -0.5) return null
             val normal = subtract(unit.position, other.position)
             val separation = hypot(normal.x, normal.y)
             if (separation == 0.0 || normal.x * drift.x + normal.y * drift.y >= 0.0) return null
@@ -350,7 +356,8 @@ internal object UnitContact {
             val projection = toward?.let { dot(tangent, it) } ?: 0.0
             if (projection < 0.0 || (projection == 0.0 && tangent.x * -drift.y + tangent.y * drift.x < 0.0))
                 tangent = negate(tangent)
-            val wanted = offsetAlong(unit.position, tangent, length)
+            val wanted = if (convoy) offsetAlong(unit.position, tangent, dot(drift, tangent))
+                else offsetAlong(unit.position, tangent, length)
             val body = Body(unit.definition.movementCollision, unit.heading)
             val terrain = UnitLocomotion.movement(unit).type
             val grid = HullTerrainGrid.authoritative(map, terrain)
@@ -622,6 +629,17 @@ internal object UnitContact {
                 RectangularTerrain(shape, unit.heading).resolve(grid, unit.position, target) == target
         }
         return traversed && !overlapsTerrain(body, target, grid)
+    }
+
+    fun withinSweptBounds(unit: MutableUnit, start: Position, end: Position, other: MutableUnit): Boolean {
+        val radius = unit.definition.movementCollision.boundingRadius + other.definition.movementCollision.boundingRadius
+        val dx = end.x - start.x
+        val dy = end.y - start.y
+        val x = other.position.x - start.x
+        val y = other.position.y - start.y
+        val lengthSquared = dx * dx + dy * dy
+        val fraction = if (lengthSquared == 0.0) 0.0 else ((x * dx + y * dy) / lengthSquared).coerceIn(0.0, 1.0)
+        return hypot(x - fraction * dx, y - fraction * dy) <= Math.nextUp(radius)
     }
 
     fun routeAround(unit: MutableUnit, occupants: List<MutableUnit>): RouteOccupancy? {

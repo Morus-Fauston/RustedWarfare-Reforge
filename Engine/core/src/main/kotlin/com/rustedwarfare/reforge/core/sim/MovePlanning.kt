@@ -7,6 +7,7 @@ import com.rustedwarfare.reforge.core.path.PathSearchCounters
 import com.rustedwarfare.reforge.core.path.PathSearchReason
 import com.rustedwarfare.reforge.core.path.PlanningTerrain
 import com.rustedwarfare.reforge.core.path.PlanningWorkSlice
+import com.rustedwarfare.reforge.core.path.FirstSegmentDecision
 import java.util.Collections
 
 internal data class MovePlanningPose(val position: Position, val heading: Double, val layer: ContactLayer?,
@@ -43,6 +44,7 @@ internal data class MovePlanningInput(
     val occupants: List<MovePlanningOccupant>,
     val collectDiagnostics: Boolean,
     val repair: ManeuverRepair? = null,
+    val segmentPeers: List<MovePlanningOccupant> = emptyList(),
 ) {
     fun matches(current: MovePlanningInput): Boolean =
         matchesMembers(current) && sameOccupants(occupants, current.occupants)
@@ -181,10 +183,11 @@ internal class MovePlanning {
             val usedBefore = budget.used
             val publicationBefore = workByOrder[order]?.publication?.workUnits ?: 0
             var activePublicationWork = publicationBefore
+            var firstSegment: FirstSegmentDecision? = null
             fun record(completed: Boolean, restarted: Boolean = false) {
                 samples?.add(PlanningWorkSlice(Collections.unmodifiableList(order.actions.map { it.unitId }),
                     order.repair?.reason ?: PathSearchReason.USER_MOVE, budget.used - usedBefore, completed, restarted,
-                    (workByOrder[order]?.publication?.workUnits ?: activePublicationWork) - publicationBefore))
+                    (workByOrder[order]?.publication?.workUnits ?: activePublicationWork) - publicationBefore, firstSegment))
             }
             var previousWork = workByOrder[order]
             if (previousWork != null && previousWork.requestKey !== order.requestKey) {
@@ -216,6 +219,7 @@ internal class MovePlanning {
                 workByOrder[order] = work
                 return
             }
+            var liveInput: MovePlanningInput? = null
             if (order.repair == ManeuverRepair.OVERTAKE) {
                 val current = snapshot(order.actions, order.group, order.repair)
                 // A circle can finish while its search is still queued. An
@@ -273,6 +277,7 @@ internal class MovePlanning {
                 }
             } else if (previousWork != null) {
                 val current = snapshot(order.actions, order.group, order.repair)
+                liveInput = current
                 if (!work.stillValid(current, result)) {
                     record(completed = true, restarted = true)
                     // The retry waits behind other orders. Bind its next pose
@@ -306,6 +311,31 @@ internal class MovePlanning {
                             return
                         }
                         result = mapOf(live.action.unitId to checked)
+                    }
+                }
+            }
+            val member = work.input.members.singleOrNull()
+            if ((order.repair == null || order.repair == ManeuverRepair.CONTACT) && member?.body?.landingMember != null) {
+                val end = result[member.action.unitId]?.slot?.path?.firstOrNull { it != member.start }
+                if (end != null) {
+                    val live = liveInput ?: work.input
+                    val blockers = work.checkFirstSegment(member, end, live.segmentPeers, budget)
+                    if (blockers == null) {
+                        workByOrder[order] = work
+                        queued.remove(); orders.add(order)
+                        record(completed = false)
+                        return
+                    }
+                    if (samples != null) firstSegment = FirstSegmentDecision(member.action.actionId, member.action.unitId,
+                        member.start, end, blockers.map { it.body.unitId }, if (blockers.isEmpty()) "adopt" else "replan-member")
+                    if (blockers.isNotEmpty()) {
+                        val retry = Work(live, order.group)
+                        retry.localObstacles = blockers
+                        retry.requestKey = order.requestKey
+                        workByOrder[order] = retry
+                        queued.remove(); orders.add(order)
+                        record(completed = false, restarted = true)
+                        return
                     }
                 }
             }
@@ -365,6 +395,29 @@ internal class MovePlanning {
         private var pointIndex = 0
         private var search: ExactPathSearch? = null
         private var searchingNearest = false
+        var localObstacles = emptyList<MovePlanningOccupant>()
+        private var checkedPeers = mutableMapOf<String, Pair<MovePlanningPose, Boolean>>()
+
+        fun checkFirstSegment(member: MovePlanningMember, end: Position, peers: List<MovePlanningOccupant>,
+                              budget: PathWorkBudget): List<MovePlanningOccupant>? {
+            val body = checkNotNull(member.body)
+            val blocked = mutableListOf<MovePlanningOccupant>()
+            for (peer in peers) {
+                val id = peer.body.unitId
+                if (!UnitContact.withinSweptBounds(body, member.start, end, peer.body)) continue
+                val previous = checkedPeers[id]
+                val obstructs = if (previous?.first == peer.pose) previous.second else {
+                    if (!budget.take()) return null
+                    val intersects = UnitContact.routeAround(body, listOf(peer.body))?.allows(member.start, end,
+                        body.heading, body.heading) == false
+                    checkedPeers[id] = peer.pose to intersects
+                    intersects
+                }
+                if (obstructs) blocked += peer
+            }
+            return blocked
+        }
+
         private var searchNanos = 0L
         private var checkingSlot: PlannedMove? = null
         private var occupantIndex = -1
@@ -393,6 +446,8 @@ internal class MovePlanning {
             copy.searchedResult = searchedResult
             copy.cursor = cursor
             copy.pointIndex = pointIndex
+            copy.localObstacles = localObstacles
+            copy.checkedPeers.putAll(checkedPeers)
             copy.search = search?.fork(rollback)
             copy.searchingNearest = searchingNearest
             copy.searchNanos = searchNanos
@@ -596,7 +651,7 @@ internal class MovePlanning {
                 // The open-ground solver checks every relevant holder once, and only accepts
                 // direct segments inside that checked area. Do not reread the world per slot.
                 val occupancy = if (clearApproach) null else member.body?.let { body ->
-                    UnitContact.routeAround(body, input.occupants.filter { it.obstructsRoute }.map { it.body })
+                    UnitContact.routeAround(body, (input.occupants.filter { it.obstructsRoute } + localObstacles).map { it.body })
                 }
                 val counters = if (input.collectDiagnostics) PathSearchCounters() else null
                 val started = if (searchingNearest) policy.beginNearest(member.terrain, member.start, point, member.radius,

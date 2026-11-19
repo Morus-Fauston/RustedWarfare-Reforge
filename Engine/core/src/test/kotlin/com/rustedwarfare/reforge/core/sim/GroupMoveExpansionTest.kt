@@ -12,6 +12,52 @@ import kotlin.test.assertTrue
 
 class GroupMoveExpansionTest {
     @Test
+    fun small_landing_slices_reach_the_last_pair_last_entrance_and_deepest_live_ingress() {
+        val scene = TestContentFactory.openScenario()
+        val def = scene.unitDefinitions.getValue("tank")
+        val context = assertIs<InitResult.Accepted>(SimulationContext.initialize(scene)).context
+        try {
+            val click = Position(600.0, 300.0)
+            val cars = (0 until 30).map { i -> MutableUnit("car-$i", "p1", def.id, def, Position(50.0, 300.0), 0.0) }
+            val group = GroupMoveRequest(context.world, null, "p1", click, cars.mapTo(linkedSetOf()) { it.unitId }, true)
+            val pool = SharedLandingSites.forGroup(scene.map, group, cars.first(), cars)
+            for ((i, car) in cars.withIndex()) {
+                car.moveTarget = click
+                car.landingMember = LandingMember(group, ingress = Position(300.0 + i * 10, 300.0))
+            }
+            val byId = cars.associateBy { it.unitId }
+            val entrance = cars.first().landingMember!!.ingress!!
+            var deepest: MutableUnit? = null
+            for (step in 0 until 8) {
+                val slice = PathWorkBudget(4)
+                deepest = pool.deepestEntering(cars.first(), entrance, slice, byId::get)
+                if (deepest != null) break
+            }
+            assertEquals(cars.last().unitId, deepest?.unitId)
+            // Complete a scan over all unordered pairs with just one unit left on each step.
+            var lastPair = false
+            repeat(3 * cars.size * cars.size) {
+                pool.beginService()
+                val slice = PathWorkBudget(512).also { it.take(511) }
+                pool.visitApproachingPairs(cars, slice) { a, b ->
+                    if (a === cars[cars.lastIndex - 1] && b === cars.last()) lastPair = true
+                }
+            }
+            assertTrue(lastPair)
+            val front = cars.first().also { it.position = Position(500.0, 300.0); it.landingMember = LandingMember(group, it.position) }
+            val follower = cars.last().also { it.landingMember = LandingMember(group, Position(550.0, 300.0)) }
+            var lastEntrance = false
+            repeat(3 * cars.size + 3) {
+                pool.beginService()
+                pool.visitEntrances(listOf(front), cars, PathWorkBudget(1)) { a, b ->
+                    if (a === front && b === follower) lastEntrance = true
+                }
+            }
+            assertTrue(lastEntrance)
+        } finally { context.close() }
+    }
+
+    @Test
     fun an_occupant_entering_the_rectangle_buffer_corner_invalidates_pending_publication() {
         val opening = TestContentFactory.openScenario()
         val source = opening.unitDefinitions.getValue("tank")
@@ -118,7 +164,8 @@ class GroupMoveExpansionTest {
 
     @Test
     fun fourteen_reachable_members_expand_beyond_three_tiles_and_leave_buffer_space_deterministically() {
-        fun replay(): Pair<Long, List<Position>> {
+        data class Receipt(val step: Long, val trace: List<Int>, val positions: List<Position>)
+        fun replay(inject: Boolean): Receipt {
             val opening = TestContentFactory.openScenario()
             val tank = TestContentFactory.unitWith(opening.unitDefinitions.getValue("tank"), radius = 19.0)
             val map = MapDefinition(64, 48, 20, 20, emptyList(), IntArray(64 * 48),
@@ -126,7 +173,15 @@ class GroupMoveExpansionTest {
             val scene = opening.copy(map = map, unitDefinitions = mapOf("tank" to tank), units = (0 until 14).map {
                 UnitSpawn("u$it", "p1", "tank", Position(80.0 + it * 80.0, 100.0), 180.0)
             })
-            val initialized = SimulationContext.initialize(scene)
+            var injected = false
+            val steering = SteeringPolicy { body, aim, delta, coordinates ->
+                if (inject && !injected && body.landingMember?.claimed != null) {
+                    injected = true
+                    error("injected after shared claim")
+                }
+                AcceleratedSteering.turn(body, aim, delta, coordinates)
+            }
+            val initialized = SimulationContext(ExperimentalPolicies(steering = steering)).initialize(scene)
             val context = assertIs<InitResult.Accepted>(initialized, initialized.toString()).context
             try {
                 context.enablePlanningWorkDiagnostics(context.world)
@@ -137,13 +192,25 @@ class GroupMoveExpansionTest {
                     MoveAction("select-$id", "p1", id, click, context.world), group)) }
                 assertTrue(context.observe().units.all { it.moveTarget == null })
                 var frame: Observation? = null
+                val arrived = mutableSetOf<String>()
+                val trace = mutableListOf<Int>()
+                context.enableMotionDiagnostics(context.world)
                 for (step in 0L..6000L) {
-                    val next = context.advance(Step(step, 1.0, "sim-tick"))
+                    val tick = Step(step, 1.0, "sim-tick")
+                    val next = try { context.advance(tick) } catch (failure: IllegalStateException) {
+                        if (failure.message != "injected after shared claim") throw failure
+                        assertTrue(context.drainMotionDiagnostics(context.world).isEmpty())
+                        context.advance(tick)
+                    }
+                    val motion = context.drainMotionDiagnostics(context.world)
+                    trace += listOf(next.events, motion.map { listOf(it.unitId, it.finalPosition, it.finalHeading,
+                        it.steeringAim, it.commandTargetBefore, it.landingClaim, it.landingIngress, it.landingParked) }).hashCode()
                     assertTrue(next.events.none { it.kind == "group-destination-unavailable" }, "Reachable member lost its slot at $step")
-                    if (next.units.all { it.moveTarget != null }) { frame = next; break }
+                    next.events.filter { it.kind == "movement-arrived" }.mapTo(arrived) { requireNotNull(it.unitId) }
+                    if (arrived.size == ids.size && next.units.all { it.moveTarget == null }) { frame = next; break }
                 }
-                val planned = assertNotNull(frame, "All fourteen members must acquire destinations")
-                val points = planned.units.map { assertNotNull(it.moveTarget) }
+                val planned = assertNotNull(frame, "All fourteen members must occupy destinations: $arrived")
+                val points = planned.units.map { it.position }
                 assertTrue(points.any { ScreenPlane.distanceSquared(it, click) > 60.0 * 60.0 })
                 for (a in points.indices) for (b in 0 until a) {
                     assertTrue(sqrt(ScreenPlane.distanceSquared(points[a], points[b])) >= 42.0 - 1e-8,
@@ -152,10 +219,12 @@ class GroupMoveExpansionTest {
                 val work = context.drainPlanningWorkDiagnostics(context.world)
                 assertTrue(work.size > 1)
                 assertTrue(work.all { it.used <= it.limit })
-                println("Expanded fourteen: published=${planned.stepIndex} targets=$points maxWork=${work.maxOf { it.used }}")
-                return planned.stepIndex to points
+                println("Expanded fourteen: settled=${planned.stepIndex} targets=$points maxWork=${work.maxOf { it.used }}")
+                assertEquals(inject, injected)
+                trace += work.hashCode()
+                return Receipt(planned.stepIndex, trace, points)
             } finally { context.close() }
         }
-        assertEquals(replay(), replay())
+        assertEquals(replay(false), replay(true))
     }
 }
