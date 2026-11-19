@@ -455,6 +455,7 @@ internal data class MutableUnit(
     var routeOccupantIds: List<String> = emptyList(),
     var passageEntry: PassageEntry? = null,
     var groupMoveReservation: GroupMoveReservation? = null,
+    var parkedReservationOwner: GroupMoveRequest? = null,
     var landingMember: LandingMember? = null,
     var adoptedRouteRevision: Long = 0,
     var localProgressTime: Double = 0.0,
@@ -642,6 +643,7 @@ internal data class MutableUnit(
         originMoveId = null
         originAtStep = null
         groupMoveReservation = null
+        parkedReservationOwner = null
         landingMember = null
         lastPlannedKnowledgeRevision = -1L
         lastPlannedBuildingRevision = -1L

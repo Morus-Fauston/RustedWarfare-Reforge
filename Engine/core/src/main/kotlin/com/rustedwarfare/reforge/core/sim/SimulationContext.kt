@@ -536,7 +536,7 @@ class SimulationContext internal constructor(private val policies: ExperimentalP
                 if (other.unitId in leaving || UnitContact.layer(other) == null) return@mapNotNull null
                 if (replacing != null && !UnitContact.shareLayer(observer, other)) return@mapNotNull null
                 val known = knowsRouteOccupant(observer, other)
-                val reserved = ownGroupSlot(observer, other)?.takeIf { known }
+                val reserved = if (known) ownGroupReservation(observer, other)?.slot else null
                 val idle = (other.moveTarget == null || replacing != null) && known
                 if (!idle && reserved == null) return@mapNotNull null
                 val pose = movePlanningPose(other)
@@ -684,10 +684,11 @@ class SimulationContext internal constructor(private val policies: ExperimentalP
         pendingEvents += Event("movement-started", unit.unitId)
     }
 
-    private fun ownGroupSlot(unit: MutableUnit, other: MutableUnit): GroupMoveSlot? =
-        if (other.ownerPlayerId != unit.ownerPlayerId) null else
-            other.groupMoveReservation?.slot?.takeIf { other.moveTarget == it.position }
-                ?: steps.current.movePlanning.pendingReservation(other.unitId)?.slot
+    private fun ownGroupReservation(observer: MutableUnit, other: MutableUnit): GroupMoveReservation? {
+        if (other.ownerPlayerId != observer.ownerPlayerId) return null
+        return other.groupMoveReservation?.takeIf { other.moveTarget == it.slot.position }
+            ?: steps.current.movePlanning.pendingReservation(other.unitId)
+    }
 
     private fun groupSlotFits(unit: MutableUnit, slot: GroupMoveSlot, map: MapDefinition): Boolean {
         val grid = HullTerrainGrid.authorized(planningTerrainFor(unit, map))
@@ -698,12 +699,10 @@ class SimulationContext internal constructor(private val policies: ExperimentalP
         val reserved = unit.groupMoveReservation ?: return true
         val stopped = reserved.slot.copy(position = unit.position, heading = unit.heading)
         return orderedUnits().none { other ->
-            if (other === unit || other.ownerPlayerId != unit.ownerPlayerId ||
-                !knowsRouteOccupant(unit, other)) false
-            else if ((other.groupMoveReservation ?: steps.current.movePlanning.pendingReservation(other.unitId))?.plan === reserved.plan)
-                GroupMoveDestinations.overlaps(unit, stopped, other, checkNotNull(ownGroupSlot(unit, other)))
-            else if (other.moveArrival?.let { it.group && it.originalTarget == reserved.plan.click } == true)
-                GroupMoveDestinations.overlaps(unit, stopped, other)
+            if (other === unit || other.ownerPlayerId != unit.ownerPlayerId) return@none false
+            val peer = ownGroupReservation(unit, other)
+            if (peer?.plan === reserved.plan) GroupMoveDestinations.overlaps(unit, stopped, other, peer.slot)
+            else if (reserved.plan.hasParkedMember(other)) GroupMoveDestinations.overlaps(unit, stopped, other)
             else false
         }
     }
@@ -4008,11 +4007,13 @@ class SimulationContext internal constructor(private val policies: ExperimentalP
             val capturedGroupPose = unit.groupMoveReservation != null && clearsSlots
             if (!approachingBuilding && (!unit.routeTranslationClipped || capturedGroupPose) &&
                 (!followsManeuver || unit.pathPoints.size == 1) &&
-                ((unit.groupMoveReservation?.occupiedTicks ?: 0) == 0L || capturedGroupPose) && clearsSlots) {
+                clearsSlots) {
                 val originalTarget = unit.nearestMoveTarget ?: unit.landingMember?.group?.click ?: unit.groupMoveReservation?.plan?.click
                 val wasGroup = unit.nearestMoveIsGroup || unit.landingMember != null || unit.groupMoveReservation != null
                 val parked = unit.landingMember?.copy(parked = true, stoppedOrder = unit.tasks.firstOrNull())
+                val parkedReservationOwner = if (parked == null) unit.groupMoveReservation?.plan else null
                 unit.cancelRoute()
+                unit.parkedReservationOwner = parkedReservationOwner
                 unit.landingMember = parked
                 if (unit.tasks.firstOrNull()?.kind == UnitTaskKind.MOVE) unit.taskQueue = unit.taskQueue.pop()
                 pendingEvents += Event("movement-arrived", unit.unitId)

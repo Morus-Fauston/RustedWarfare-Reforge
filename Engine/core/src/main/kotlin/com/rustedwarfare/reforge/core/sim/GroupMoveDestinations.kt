@@ -16,6 +16,13 @@ class GroupMoveRequest internal constructor(
     internal val sharedLanding: Boolean = false,
 )
 
+/** Arrival receipts carry the click for display. Live shared landings carry the order identity. */
+internal fun GroupMoveRequest.hasParkedMember(unit: MutableUnit): Boolean {
+    if (unit.ownerPlayerId != actor || unit.moveTarget != null || unit.unitId !in members) return false
+    if (sharedLanding) return unit.landingMember?.let { it.parked && it.group === this } == true
+    return unit.parkedReservationOwner === this
+}
+
 internal data class GroupMoveSlot(val position: Position, val heading: Double, val path: List<Position>)
 internal data class GroupMoveReservation(val plan: GroupMoveRequest, val slot: GroupMoveSlot,
                                          val occupiedTicks: Long = 0, val needsReplacement: Boolean = false,

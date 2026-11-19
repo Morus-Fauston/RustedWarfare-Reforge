@@ -352,8 +352,7 @@ internal object UnitContact {
             // A stopped companion at the same gathering must not be driven ahead of
             // a passing member when the latter can use the open tangent instead.
             val reservation = unit.groupMoveReservation
-            val parkedPeer = other.moveTarget == null && unit.ownerPlayerId == other.ownerPlayerId &&
-                reservation != null && other.moveArrival?.let { it.group && it.originalTarget == reservation.plan.click } == true &&
+            val parkedPeer = reservation?.plan?.hasParkedMember(other) == true &&
                 unit.definition.movementCollision is MovementCollisionShape.Circle &&
                 other.definition.movementCollision is MovementCollisionShape.Circle
             if (other.moveTarget == null && !parkedPeer) return null
