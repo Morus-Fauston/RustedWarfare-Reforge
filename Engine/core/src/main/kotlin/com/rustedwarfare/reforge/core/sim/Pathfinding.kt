@@ -167,6 +167,7 @@ internal class PathClearanceCache(
 
 internal fun interface RouteOccupancy {
     fun allows(start: Position, target: Position, fromHeading: Double, toHeading: Double): Boolean
+    val simplifyRoute: Boolean get() = false
     val nearestBoundaryCount: Int get() = 0
     fun nearestBoundary(index: Int, target: Position): Position? = null
 }
@@ -611,7 +612,7 @@ internal class ClearanceAStarPolicy(
             points.reverse()
             rollback?.record { points.reverse() }
             if (points.lastOrNull() != endpoint) appendRoutePoint(points, endpoint)
-            if (checkEverySegment && ((hull as? HullRoute.Circle)?.simplify != true || occupancy != null)) {
+            if (checkEverySegment && ((hull as? HullRoute.Circle)?.simplify != true || occupancy?.simplifyRoute == false)) {
                 complete(points)
             } else {
                 simplifyProbe = points.lastIndex

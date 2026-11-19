@@ -131,7 +131,7 @@ internal fun landingApproachesSeparate(first: MutableUnit, firstSite: Position, 
 /** Physical locations belong to the command. A travelling vehicle has no claim until it enters the landing area. */
 internal data class LandingMember(val group: GroupMoveRequest, val claimed: Position? = null, val parked: Boolean = false, val ingress: Position? = null, val guided: Boolean = false, val preciseApproach: Boolean = false,
                                   val pushed: Boolean = false, val restingSite: Position? = null, val restingPose: Position? = null,
-                                  val pushedPose: Position? = null, val releasedSite: Position? = null, val noRouteTicks: Long? = null, val stoppedOrder: UnitTask? = null, val waitingForBay: String? = null)
+                                  val pushedPose: Position? = null, val releasedSite: Position? = null, val noRouteTicks: Long? = null, val stoppedOrder: UnitTask? = null, val waitingForBay: String? = null, val branch: BranchPassage? = null)
 
 internal class SharedLandingSites(private val map: MapDefinition, private val group: GroupMoveRequest,
                                   private val spacing: Double, private val fillOrigin: Position, private val spread: Double, private val outside: Boolean) {

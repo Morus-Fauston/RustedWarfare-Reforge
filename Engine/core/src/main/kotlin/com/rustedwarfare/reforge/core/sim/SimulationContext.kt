@@ -465,6 +465,7 @@ class SimulationContext internal constructor(private val policies: ExperimentalP
             MovePlanningMember(action, body, movePlanningPose(unit), start, routeRadius(unit), terrain,
                 hull, unit.birthRemaining > 0f, preparation)
         }
+        val queuePeers = mutableListOf<Position>()
         val segmentPeers = mutableListOf<MovePlanningOccupant>()
         val occupants = if (repair == ManeuverRepair.SHORE_REJOIN && members.isNotEmpty()) {
             val observer = checkNotNull(members.single().body)
@@ -519,6 +520,7 @@ class SimulationContext internal constructor(private val policies: ExperimentalP
                 if (other.unitId == observer.unitId || !UnitContact.shareLayer(observer, other) ||
                     !knowsRouteOccupant(observer, other)) return@mapNotNull null
                 val landing = observer.landingMember
+                if (repair == null && landing != null && other.landingMember?.group === landing.group) queuePeers += other.position
                 if (repair == null && landing != null && (other.landingMember?.group !== landing.group || isParkedPeer(observer, other))) {
                     segmentPeers += MovePlanningOccupant(other.copy(), movePlanningPose(other), null,
                         idle = other.moveTarget == null, obstructsRoute = true)
@@ -545,7 +547,7 @@ class SimulationContext internal constructor(private val policies: ExperimentalP
                 MovePlanningOccupant(other.copy(), occupiedPose, reserved, idle, obstructsRoute)
             }
         }
-        return MovePlanningInput(map, members, occupants, collectDiagnostics, repair, segmentPeers)
+        return MovePlanningInput(map, members, occupants, collectDiagnostics, repair, segmentPeers, queuePeers)
     }
 
     private fun movePlanningPose(unit: MutableUnit): MovePlanningPose {
@@ -635,6 +637,7 @@ class SimulationContext internal constructor(private val policies: ExperimentalP
                     unit.nearTargetTime = 0.0
                     pendingEvents += Event("group-destination-reassigned", unit.unitId)
                 }
+                if (landing != null) unit.landingMember = unit.landingMember?.copy(branch = planned.branch)
                 unit.adoptRoute(slot.path, logicalRouteTarget(unit, slot.position), plannedKnowledgeRevision(unit),
                     plannedBuildingRevision(unit), occupants)
                 notifyLandingRoute(unit)
@@ -669,6 +672,8 @@ class SimulationContext internal constructor(private val policies: ExperimentalP
         if (task.target != slot.position) unit.taskQueue = unit.taskQueue.replaceHead(task.copy(target = slot.position))
         unit.moveTarget = slot.position
         val priorGroup = unit.landingMember?.group
+        if (repair == null || repair == ManeuverRepair.KNOWLEDGE)
+            unit.landingMember = unit.landingMember?.copy(branch = planned.branch)
         if (planned.nearest) {
             unit.nearestMoveTarget = action.target
             unit.nearestMoveIsGroup = group != null || unit.landingMember != null
@@ -1944,7 +1949,7 @@ class SimulationContext internal constructor(private val policies: ExperimentalP
                     publishMove(member, group, repair, occupants, plan, step.stepIndex)
                     units[member.action.unitId]?.let(candidate.state.landingOccupancy::update)
                 },
-                planningSlices, liveUnitCount = { units.size })
+                planningSlices, liveUnitCount = { units.size }, executionStep = step.stepIndex, lookupTraffic = units::get)
             if (!serveLandingsFirst) advanceSharedLandings(currentScenario.map, planningBudget, planningSlices)
             if (planningSlices != null) candidate.planningWorkSample = PlanningWorkSample(step.stepIndex,
                 planningBudget.limit, planningBudget.used, Collections.unmodifiableList(planningSlices))
@@ -4298,6 +4303,13 @@ class SimulationContext internal constructor(private val policies: ExperimentalP
                 !(unit.landingMember?.preciseApproach == true && isParkedPeer(unit, blocker))
         }
         val resolved = translation.position
+        val drivingGroup = unit.landingMember?.group
+        val roadAim = unit.pathPoints.firstOrNull() ?: unit.moveTarget
+        if (drivingGroup != null && roadAim != null && insideMap(resolved) &&
+            ScreenPlane.distanceSquared(positionBefore, resolved) > 1e-8 &&
+            ScreenPlane.distanceSquared(resolved, roadAim) < ScreenPlane.distanceSquared(positionBefore, roadAim)) {
+            unit.lastRoadProgress = RoadProgress(drivingGroup, executionStep, resolved.x-positionBefore.x, resolved.y-positionBefore.y)
+        }
         step.translations.recordOwnMotion(unit, positionBefore, resolved, legalHeading != headingBefore,
             legalHeading != boundedHeading)
         if (translation.supported) {

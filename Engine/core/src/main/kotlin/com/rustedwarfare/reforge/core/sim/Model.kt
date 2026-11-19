@@ -457,6 +457,7 @@ internal data class MutableUnit(
     var groupMoveReservation: GroupMoveReservation? = null,
     var parkedReservationOwner: GroupMoveRequest? = null,
     var landingMember: LandingMember? = null,
+    var lastRoadProgress: RoadProgress? = null,
     var adoptedRouteRevision: Long = 0,
     var localProgressTime: Double = 0.0,
     var terrainCorrectionTime: Double = 0.0,

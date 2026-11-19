@@ -14,7 +14,9 @@ class GroupMoveRequest internal constructor(
     internal val click: Position,
     internal val members: Set<String>,
     internal val sharedLanding: Boolean = false,
-)
+) {
+    internal val trafficOrder = if (sharedLanding) members.sorted() else emptyList()
+}
 
 /** Arrival receipts carry the click for display. Live shared landings carry the order identity. */
 internal fun GroupMoveRequest.hasParkedMember(unit: MutableUnit): Boolean {
