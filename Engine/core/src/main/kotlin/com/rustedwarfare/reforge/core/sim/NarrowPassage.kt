@@ -73,12 +73,22 @@ internal class PassageAdmission(definitions: Collection<UnitDefinition>) {
             val blocked = approaches.any { other ->
                 other.entry.side != own.entry.side && own.width + other.width > own.entry.passage.width &&
                     UnitContact.shareLayer(own.unit, other.unit) && knows(own.unit, other.unit) &&
-                    knows(other.unit, own.unit) && priority.compare(other, own) < 0
+                    knows(other.unit, own.unit) && priority.compare(other, own) < 0 &&
+                    !independentLandings(own.unit, other.unit)
             }
             own.unit.passageEntry = own.entry.copy(admitted = !blocked)
             if (blocked) waiting += own.unit.unitId
         }
         return waiting
+    }
+
+    private fun independentLandings(a: MutableUnit, b: MutableUnit): Boolean {
+        val member = a.landingMember ?: return false
+        if (b.landingMember?.group !== member.group) return false
+        val aSite = member.claimed ?: return false
+        val bSite = b.landingMember?.claimed ?: return false
+        return a.pathPoints.singleOrNull() == aSite && b.pathPoints.singleOrNull() == bSite &&
+            landingApproachesSeparate(a, aSite, b, bSite)
     }
 
     private fun approach(unit: MutableUnit, terrain: PlanningTerrain, type: MovementType, step: Step,

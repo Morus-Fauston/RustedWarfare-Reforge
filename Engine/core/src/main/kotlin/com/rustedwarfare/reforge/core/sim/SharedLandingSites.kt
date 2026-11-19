@@ -6,13 +6,89 @@ import com.rustedwarfare.reforge.core.path.PlanningTerrain
 import kotlin.math.ceil
 import kotlin.math.sqrt
 
-/** Reverse lookup for live reservations and settled bodies. Updated on adoption and contact settlement. */
+/** Cells actually consulted by a parking query, including the moving hull's swept bounds. */
+internal class LandingFootprint(private val occupancy: LandingOccupancy, private val since: Long) {
+    private val cells = HashSet<Long>()
+    var stale = false
+        private set
+    private var undo: PathSearchRollback? = null
+    fun journal(rollback: PathSearchRollback) { undo = rollback }
+    fun invalidate(rollback: PathSearchRollback?) {
+        if (stale) return
+        stale = true
+        rollback?.record { stale = false }
+    }
+    fun visit(a: Position, b: Position = a, radius: Double = 0.0) {
+        if (stale) return
+        eachCell(a, b, radius) { key ->
+            if (cells.add(key)) {
+                occupancy.watch(key, this, since, undo)
+                undo?.record { cells.remove(key) }
+            }
+        }
+    }
+    companion object {
+        inline fun eachCell(a: Position, b: Position, radius: Double, visit: (Long) -> Unit) {
+            cellRange(minOf(a.x, b.x) - radius, maxOf(a.x, b.x) + radius).forEach { x ->
+                cellRange(minOf(a.y, b.y) - radius, maxOf(a.y, b.y) + radius).forEach { y ->
+                    visit((x.toLong() shl 32) or (y.toLong() and 0xffffffffL))
+                }
+            }
+        }
+        fun cellRange(lo: Double, hi: Double) = kotlin.math.floor(lo / 32).toInt()..kotlin.math.floor(hi / 32).toInt()
+    }
+}
+
+/** Reverse lookup and revision of the traffic that can change a last arrival's exact search. */
 internal class LandingOccupancy(private val bySite: MutableMap<Position, Set<String>> = hashMapOf(),
                                 private val byUnit: MutableMap<String, Set<Position>> = hashMapOf(),
+                                private val stopped: MutableMap<String, StopPose> = hashMapOf(),
+                                private val stamps: MutableMap<Long, Long> = hashMapOf(),
+                                private val watchers: MutableMap<Long, java.util.WeakHashMap<LandingFootprint, Boolean>> = hashMapOf(),
                                 private val undo: PathSearchRollback? = null) {
-    fun fork(rollback: PathSearchRollback) = LandingOccupancy(bySite, byUnit, rollback)
+    internal data class StopPose(val pose: Position, val heading: Double, val layer: ContactLayer,
+                                val order: GroupMoveRequest?, val parked: Boolean, val radius: Double)
+    var revision = 0L
+        private set
+    fun fork(rollback: PathSearchRollback) = LandingOccupancy(bySite, byUnit, stopped, stamps, watchers, rollback).also { it.revision = revision }
+
+    /** A cell change reaches only searches that visited that cell. Retired searches need no world scan to detach. */
+    fun watch(key: Long, footprint: LandingFootprint, since: Long, rollback: PathSearchRollback?) {
+        if ((stamps[key] ?: 0L) > since) {
+            footprint.invalidate(rollback)
+            return
+        }
+        val listeners = watchers.getOrPut(key) { java.util.WeakHashMap() }
+        listeners[footprint] = true
+        rollback?.record { listeners.remove(footprint) }
+    }
+
+    private fun stamp(p: Position, radius: Double) {
+        LandingFootprint.eachCell(p, p, radius) { key ->
+            val old = stamps.put(key, revision)
+            if (old != revision) {
+                undo?.record { if (old == null) stamps.remove(key) else stamps[key] = old }
+                watchers[key]?.keys?.forEach { it.invalidate(undo) }
+            }
+        }
+    }
+
+    private fun trackStop(unit: MutableUnit) {
+        val old = stopped[unit.unitId]
+        val layer = if (unit.moveTarget == null) UnitContact.layer(unit) else null
+        val member = unit.landingMember
+        if (layer == null && old == null || old != null && layer == old.layer && old.pose == unit.position &&
+            old.heading == unit.heading && old.radius == unit.definition.movementCollision.boundingRadius && old.order === member?.group && old.parked == (member?.parked == true)) return
+        if (layer == null) stopped.remove(unit.unitId) else stopped[unit.unitId] =
+            StopPose(unit.position, unit.heading, layer, member?.group, member?.parked == true, unit.definition.movementCollision.boundingRadius)
+        revision++
+        old?.let { stamp(it.pose, it.radius) }
+        if (layer != null) stamp(unit.position, unit.definition.movementCollision.boundingRadius)
+        undo?.record { if (old == null) stopped.remove(unit.unitId) else stopped[unit.unitId] = old }
+    }
 
     fun update(unit: MutableUnit) {
+        trackStop(unit)
         val member = unit.landingMember
         val reservation = (member?.claimed ?: member?.ingress)?.takeIf { unit.alive }
         val body = unit.position.takeIf { unit.alive && member?.parked == true }
@@ -29,16 +105,33 @@ internal class LandingOccupancy(private val bySite: MutableMap<Position, Set<Str
             if (to.isEmpty()) byUnit.remove(unit.unitId) else byUnit[unit.unitId] = to
         }
         replace(old, next)
+        revision++
+        for (p in old) stamp(p, 0.0)
+        for (p in next) stamp(p, 0.0)
         undo?.record { replace(next, old) }
     }
 
     fun at(site: Position): Set<String> = bySite[site].orEmpty()
 }
 
+/** A separating line between the pads keeps both swept disks disjoint along the two straight approaches. */
+internal fun landingApproachesSeparate(first: MutableUnit, firstSite: Position, second: MutableUnit, secondSite: Position): Boolean {
+    if (firstSite == secondSite) return false
+    fun ownSide(unit: MutableUnit, own: Position, other: Position): Boolean {
+        val dx = other.x - own.x
+        val dy = other.y - own.y
+        val separation = sqrt(dx * dx + dy * dy)
+        val projection = (unit.position.x - own.x) * dx + (unit.position.y - own.y) * dy
+        val clearance = separation * (separation / 2 - unit.definition.movementCollision.boundingRadius)
+        return clearance >= 0 && projection <= clearance
+    }
+    return ownSide(first, firstSite, secondSite) && ownSide(second, secondSite, firstSite)
+}
+
 /** Physical locations belong to the command. A travelling vehicle has no claim until it enters the landing area. */
 internal data class LandingMember(val group: GroupMoveRequest, val claimed: Position? = null, val parked: Boolean = false, val ingress: Position? = null, val guided: Boolean = false, val preciseApproach: Boolean = false,
                                   val pushed: Boolean = false, val restingSite: Position? = null, val restingPose: Position? = null,
-                                  val pushedPose: Position? = null, val releasedSite: Position? = null, val noRouteTicks: Long? = null)
+                                  val pushedPose: Position? = null, val releasedSite: Position? = null, val noRouteTicks: Long? = null, val stoppedOrder: UnitTask? = null, val waitingForBay: String? = null)
 
 internal class SharedLandingSites(private val map: MapDefinition, private val group: GroupMoveRequest,
                                   private val spacing: Double, private val fillOrigin: Position, private val spread: Double, private val outside: Boolean) {
@@ -165,6 +258,13 @@ internal class SharedLandingSites(private val map: MapDefinition, private val gr
         it.pushCursor = pushCursor
         it.needed = needed
         it.sites = sites
+        it.survey = survey?.fork(rollback)
+        it.searchCredit = searchCredit
+        entrancePair?.footprint?.journal(rollback)
+        it.entrancePair = entrancePair
+        it.movedAside = movedAside
+        it.yieldScan = yieldScan?.let { scan -> scan.copy(query = scan.query?.fork(rollback), extra = scan.extra?.fork(rollback)) }
+        it.lastArrival = lastArrival?.fork(rollback)
         it.repairTerrain = repairTerrain
     }
 
@@ -185,7 +285,7 @@ internal class SharedLandingSites(private val map: MapDefinition, private val gr
                                 val terrain: PlanningTerrain)
     private val pushScans = mutableMapOf<String, PushScan>()
     private var pushCursor = 0
-    val checkingTraffic get() = pushScans.isNotEmpty()
+    val checkingTraffic get() = pushScans.isNotEmpty() || entrancePair != null
     fun routePublished(peer: MutableUnit) {
         val index = memberRanks[peer.unitId] ?: return
         for ((id, scan) in pushScans) {
@@ -198,6 +298,17 @@ internal class SharedLandingSites(private val map: MapDefinition, private val gr
 
     /** Only a newly obstructed leg (or a replaced suffix) invalidates a route the cursor has already visited. */
     fun trafficChanged(body: MutableUnit, previous: MutableUnit?, worldIndex: Int, lookup: (String) -> MutableUnit?) {
+        entrancePair?.let { scan ->
+            val first = lookup(scan.first)
+            val second = lookup(scan.second)
+            val a = if (scan.swapped) scan.b else scan.a
+            val b = if (scan.swapped) scan.a else scan.b
+            if (worldIndex < scan.swept && first != null && second != null && body !== first && body !== second &&
+                a != null && b != null && (UnitContact.withinSweptBounds(first, first.position, a, body) ||
+                    UnitContact.withinSweptBounds(second, second.position, b, body))) {
+                entrancePair = scan.copy(swept = worldIndex.coerceAtLeast(0))
+            }
+        }
         if (!body.alive) return
         val own = body.landingMember?.group === group
         val route = own && body.moveTarget != null && body.pathPoints.isNotEmpty()
@@ -296,6 +407,271 @@ internal class SharedLandingSites(private val map: MapDefinition, private val gr
                 }
             }
         }
+    }
+
+    private data class EntrancePair(val first: String, val second: String, val revision: Long,
+        val groundA: PlanningTerrain, val groundB: PlanningTerrain, val footprint: LandingFootprint, val cursor: Int = 0,
+        val a: Position? = null, val b: Position? = null, val swapped: Boolean = false,
+        val swept: Int = 0, val fromA: Position? = null, val fromB: Position? = null,
+        val headingA: Double = 0.0, val headingB: Double = 0.0)
+    private var entrancePair: EntrancePair? = null
+
+    /** Charge a pad or a traffic body per visit. A short slice resumes at the first unread entry. */
+    fun separateEntrances(first: MutableUnit, second: MutableUnit, budget: PathWorkBudget, world: List<MutableUnit>, index: LandingOccupancy,
+                          groundA: PlanningTerrain, groundB: PlanningTerrain, occupied: (Position) -> Boolean, clearGround: (MutableUnit, Position) -> Boolean,
+                          blocks: (MutableUnit, Position, MutableUnit) -> Boolean): Pair<Position, Position>? {
+        if (budget.exhausted) return null
+        var job = entrancePair?.takeIf { it.first == first.unitId && it.second == second.unitId && !it.footprint.stale &&
+            it.groundA === groundA && it.groundB === groundB }
+            ?: EntrancePair(first.unitId, second.unitId, index.revision, groundA, groundB, LandingFootprint(index, index.revision))
+        fun finish(): Pair<Position, Position>? { entrancePair = null; return null }
+        while (job.cursor < sites.size) {
+            if (!budget.take(1)) { entrancePair = job; return null }
+            val site = sites[job.cursor]
+            job.footprint.visit(site)
+            job = job.copy(cursor = job.cursor + 1)
+            if (occupied(site)) continue
+            job = when {
+                job.a == null -> job.copy(a = site)
+                job.b == null -> job.copy(b = site)
+                else -> return finish()
+            }
+        }
+        val reach = spacing * (sqrt(group.members.size.toDouble()) + 3.0)
+        while (true) {
+            val a = (if (job.swapped) job.b else job.a) ?: return finish()
+            val b = (if (job.swapped) job.a else job.b) ?: return finish()
+            if (occupied(a) || occupied(b)) return finish()
+            if (job.fromA != first.position || job.fromB != second.position ||
+                job.headingA != first.heading || job.headingB != second.heading) {
+                if (!budget.take(1)) { entrancePair = job; return null }
+                if (ScreenPlane.distanceSquared(first.position, a) > reach * reach ||
+                    ScreenPlane.distanceSquared(second.position, b) > reach * reach ||
+                    !landingApproachesSeparate(first, a, second, b) || !clearGround(first, a) || !clearGround(second, b)) {
+                    if (job.swapped) return finish()
+                    job = job.copy(swapped = true, swept = 0, fromA = null)
+                    continue
+                }
+                job.footprint.visit(first.position, a, first.definition.movementCollision.boundingRadius)
+                job.footprint.visit(second.position, b, second.definition.movementCollision.boundingRadius)
+                job = job.copy(swept = 0, fromA = first.position, fromB = second.position,
+                    headingA = first.heading, headingB = second.heading)
+            }
+            if (job.swept == world.size) { entrancePair = null; return if (job.footprint.stale) null else a to b }
+            if (!budget.take(1)) { entrancePair = job; return null }
+            val other = world[job.swept]
+            if (blocks(first, a, other) || blocks(second, b, other)) {
+                if (job.swapped) return finish()
+                job = job.copy(swapped = true, swept = 0, fromA = null)
+            } else job = job.copy(swept = job.swept + 1)
+        }
+    }
+
+    private class TrafficSurvey(val rear: String, val goal: Position, val start: Position,
+        val heading: Double, val terrain: PlanningTerrain, val revision: Long, val vision: Any?,
+        val parked: ArrayList<MutableUnit> = arrayListOf(), val gates: ArrayList<Int> = arrayListOf(),
+        var cursor: Int = 0, var last: Boolean = true, val footprint: LandingFootprint, val undo: PathSearchRollback? = null) {
+        fun fork(rollback: PathSearchRollback) = TrafficSurvey(rear, goal, start, heading, terrain, revision, vision,
+            parked, gates, cursor, last, footprint, rollback).also { footprint.journal(rollback) }
+        fun visit(body: MutableUnit, mover: MutableUnit, group: GroupMoveRequest, visible: Boolean) {
+            cursor++
+            if (body === mover || !body.alive) return
+            val state = body.landingMember
+            if (state?.group === group && !state.parked) last = false
+            if (!visible || body.moveTarget != null || !UnitContact.shareLayer(mover, body)) return
+            if (state?.group === group && state.parked && state.stoppedOrder != null && body.tasks.isEmpty()) {
+                gates.add(parked.size)
+                undo?.record { gates.removeAt(gates.lastIndex) }
+            }
+            parked.add(body.copy())
+            undo?.record { parked.removeAt(parked.lastIndex) }
+        }
+    }
+    private var survey: TrafficSurvey? = null
+    private var searchCredit = 0
+
+    /** The exact planner's atomic operation costs eight. Save paid units from short slices. */
+    private fun advanceExact(query: ExactPathSearch, budget: PathWorkBudget) {
+        val available = budget.limit - budget.used
+        val total = searchCredit + available
+        val quantum = total / 8 * 8
+        if (quantum == 0) { budget.take(available); searchCredit = total; return }
+        val slice = PathWorkBudget(quantum)
+        query.advance(slice)
+        val used = slice.used - searchCredit
+        check(used >= 0 && budget.take(used))
+        searchCredit = 0
+        if (!query.finished) {
+            searchCredit = budget.limit - budget.used
+            budget.take(searchCredit)
+        }
+    }
+
+    private data class YieldScan(val stage: Int = 0, val gateIndex: Int = 0, val cursor: Int = 0,
+        val bay: Position? = null, val frontPath: List<Position>? = null, val query: ExactPathSearch? = null,
+        val extra: GroupMoveDestinations.Points? = null, val refineBay: Boolean = false)
+    private var yieldScan: YieldScan? = null
+    private var movedAside = emptySet<String>()
+    data class ArrivalRoute(val rearPath: List<Position>, val frontId: String? = null, val frontPath: List<Position> = emptyList())
+
+    /** Null while evaluating a released original. Active group arrivals keep the ordinary selection path. */
+    fun recoverLast(rear: MutableUnit, goal: Position, terrain: PlanningTerrain, index: LandingOccupancy, vision: Any?,
+        budget: PathWorkBudget, policy: PathPolicy, world: List<MutableUnit>, occupied: (Position) -> Boolean,
+        visible: (MutableUnit) -> Boolean): ArrivalRoute? {
+        var traffic = survey
+        if (traffic == null || traffic.rear != rear.unitId || traffic.goal != goal || traffic.start != rear.position ||
+            traffic.heading != rear.heading || traffic.terrain !== terrain || traffic.footprint.stale || traffic.vision !== vision) {
+            traffic = TrafficSurvey(rear.unitId, goal, rear.position, rear.heading, terrain, index.revision, vision,
+                footprint = LandingFootprint(index, index.revision))
+            survey = traffic
+            yieldScan = null
+            lastArrival = null
+            searchCredit = 0
+        }
+        fun checkedSite(site: Position): Boolean { traffic.footprint.visit(site); return occupied(site) }
+        fun checkedBodies(car: MutableUnit, bodies: List<MutableUnit>): RouteOccupancy {
+            val occupancy = UnitContact.routeAroundLayer(car, bodies)
+            val footprint = traffic.footprint
+            val radius = car.definition.movementCollision.boundingRadius
+            return RouteOccupancy { start, end, before, after ->
+                footprint.visit(start, end, radius)
+                occupancy?.allows(start, end, before, after) != false
+            }
+        }
+        fun current(route: ArrivalRoute): ArrivalRoute? = route.takeUnless { traffic.footprint.stale }
+        while (traffic.cursor < world.size) {
+            if (!budget.take(1)) return null
+            val body = world[traffic.cursor]
+            traffic.visit(body, rear, group, visible(body))
+        }
+        if (!traffic.last || checkedSite(goal) || budget.exhausted) return null
+        val alternative = replacementRoute(rear, terrain, ::checkedSite, budget, policy) {
+            checkedBodies(rear, traffic.parked)
+        }
+        if (alternative != null) return current(ArrivalRoute(alternative))
+        if (lastArrival?.let { it.checkingOriginal && it.search?.finished == true && it.search.path != null } != true) return null
+        var job = yieldScan ?: YieldScan()
+        val grid = parkingTerrain(terrain)
+        while (!budget.exhausted && job.stage != 3) {
+            val slot = traffic.gates.getOrNull(job.gateIndex)
+            val front = slot?.let(traffic.parked::get)
+            if (job.stage != 0 && (front == null || front.unitId in movedAside)) {
+                if (front == null) { yieldScan = job.copy(stage = 3); return null }
+                job = YieldScan(stage = 4, gateIndex = job.gateIndex + 1)
+                yieldScan = job
+                continue
+            }
+            var query = job.query
+            if (query == null) {
+                if (!budget.take(1)) return null
+                val car = if (job.stage == 1) checkNotNull(front) else rear
+                var target = goal
+                if (job.stage == 1 && job.refineBay) target = checkNotNull(job.bay)
+                else if (job.stage == 1) {
+                    if (job.cursor < sites.size) {
+                        target = sites[job.cursor]
+                        job = job.copy(cursor = job.cursor + 1, bay = target)
+                    } else {
+                        val extra = job.extra ?: GroupMoveDestinations.Points(map, group.click, spacing)
+                        val next = extra.next()
+                        if (next == null || !near(next)) {
+                            job = YieldScan(stage = 4, gateIndex = job.gateIndex + 1)
+                            yieldScan = job
+                            continue
+                        }
+                        target = next
+                        job = job.copy(extra = extra, bay = target)
+                    }
+                    yieldScan = job
+                    if (target == goal || checkedSite(target) || !UnitContact.poseFits(car.definition.movementCollision,
+                        target, car.heading, HullTerrainGrid.authorized(terrain))) continue
+                }
+                // O(1) view substitutes the gate body without filtering the world for each trial.
+                val base = traffic.parked
+                val bodies = if (job.stage == 0) base else object : AbstractList<MutableUnit>() {
+                    val replaced = checkNotNull(slot)
+                    val substitute = when (job.stage) {
+                        1 -> rear.copy()
+                        2 -> checkNotNull(front).copy(position = checkNotNull(job.bay))
+                        else -> null
+                    }
+                    override val size = base.size - if (substitute == null) 1 else 0
+                    override fun get(index: Int): MutableUnit = if (index != replaced) base[index] else substitute ?: base.last()
+                }
+                query = policy.beginExact(if (job.stage == 1 && !job.refineBay) terrain else grid, car.position, target,
+                    car.definition.movementCollision.boundingRadius, HullRoute.forUnit(car), checkedBodies(car, bodies))
+                job = job.copy(query = query)
+                yieldScan = job
+            }
+            advanceExact(query, budget)
+            if (!query.finished) return null
+            val path = query.path?.takeIf { it.isNotEmpty() }
+            job = when (job.stage) {
+                0 -> if (path != null) return current(ArrivalRoute(path)) else job.copy(stage = 4, query = null)
+                4 -> if (path == null) YieldScan(stage = 4, gateIndex = job.gateIndex + 1) else job.copy(stage = 1, query = null)
+                1 -> job.copy(stage = if (path == null) 1 else 2, frontPath = path, query = null,
+                    refineBay = path == null && !job.refineBay && grid !== terrain)
+                else -> if (path != null && !occupied(checkNotNull(job.bay)) && !occupied(goal)) {
+                    return current(ArrivalRoute(path, checkNotNull(front).unitId, checkNotNull(job.frontPath)))
+                } else job.copy(stage = 1, query = null)
+            }
+            yieldScan = job
+        }
+        return null
+    }
+
+    /** Consume the permission only in the candidate step that publishes both reservations. */
+    fun acceptYield(rear: MutableUnit, front: MutableUnit, goal: Position, bay: Position,
+                    occupied: (Position) -> Boolean): Boolean {
+        val queued = rear.tasks.firstOrNull() ?: return false
+        val gate = front.landingMember ?: return false
+        val waiting = rear.landingMember ?: return false
+        if (!front.alive || !rear.alive || gate.group !== group || waiting.group !== group ||
+            !gate.parked || gate.stoppedOrder == null || front.tasks.isNotEmpty() ||
+            waiting.releasedSite != goal || waiting.claimed != null || queued.actionId != rear.originMoveId ||
+            front.unitId in movedAside || goal == bay || occupied(goal) || occupied(bay)) return false
+        movedAside = movedAside + front.unitId
+        yieldScan = null
+        return true
+    }
+
+    private data class LastArrival(val id: String, val start: Position, val original: Position,
+                                   val terrain: PlanningTerrain, val alternatives: GroupMoveDestinations.Points,
+                                   val target: Position?, val search: ExactPathSearch?, val checkingOriginal: Boolean) {
+        fun fork(undo: PathSearchRollback) = copy(alternatives = alternatives.fork(undo), search = search?.fork(undo))
+    }
+    private var lastArrival: LastArrival? = null
+
+    /** A mobile obstruction cannot justify abandoning the original pad. First search on authorized terrain alone. */
+    private fun replacementRoute(unit: MutableUnit, terrain: PlanningTerrain, occupied: (Position) -> Boolean,
+                         budget: PathWorkBudget, paths: PathPolicy, obstacles: () -> RouteOccupancy?): List<Position>? {
+        val original = unit.landingMember?.releasedSite ?: return null
+        val radius = unit.definition.movementCollision.boundingRadius
+        val hull = HullRoute.forUnit(unit)
+        var job = lastArrival?.takeIf { it.id == unit.unitId && it.original == original &&
+            it.terrain === terrain && it.start == unit.position } ?: LastArrival(unit.unitId, unit.position, original,
+            terrain, GroupMoveDestinations.Points(map, group.click, spacing), original,
+            paths.beginExact(terrain, unit.position, original, radius, hull), true)
+        lastArrival = job
+        while (!budget.exhausted) {
+            val search = job.search
+            if (search != null) {
+                if (!search.finished) advanceExact(search, budget)
+                if (!search.finished) return null
+                val path = search.path
+                if (job.checkingOriginal && path != null) return null
+                if (!job.checkingOriginal && path != null && path.isNotEmpty() && !occupied(path.last())) return path
+                job = job.copy(target = null, search = null, checkingOriginal = false)
+                lastArrival = job
+            }
+            if (!budget.take(1)) return null
+            val point = job.alternatives.next() ?: return null
+            if (point == original || occupied(point) || !UnitContact.poseFits(unit.definition.movementCollision,
+                    point, unit.heading, HullTerrainGrid.authorized(terrain))) continue
+            job = job.copy(target = point, search = paths.beginExact(terrain, unit.position, point, radius, hull, obstacles()))
+            lastArrival = job
+        }
+        return null
     }
 
     fun near(p: Position): Boolean {

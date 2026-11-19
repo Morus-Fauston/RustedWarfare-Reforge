@@ -658,7 +658,10 @@ internal object UnitContact {
 
     fun routeAround(unit: MutableUnit, occupants: List<MutableUnit>): RouteOccupancy? {
         val contactLayer = layer(unit) ?: return null
-        val obstacles = occupants.filter { layer(it) == contactLayer }
+        return routeAroundLayer(unit, occupants.filter { layer(it) == contactLayer })
+    }
+
+    fun routeAroundLayer(unit: MutableUnit, obstacles: List<MutableUnit>): RouteOccupancy? {
         if (obstacles.isEmpty()) return null
         val shape = unit.definition.movementCollision
         return object : RouteOccupancy {
