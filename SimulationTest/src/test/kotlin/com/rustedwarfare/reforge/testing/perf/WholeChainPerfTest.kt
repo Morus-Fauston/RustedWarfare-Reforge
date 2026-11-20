@@ -38,9 +38,10 @@ class WholeChainPerfTest {
             assertTrue(error.message.orEmpty().contains("Normal clear retained target/path"),error.message)
         }
         for((change,message)in listOf<Pair<(UnitObservation)->UnitObservation,String>>(
-            ({u:UnitObservation->u.copy(speed=before.speed-.02)}) to "Wrong post-command deceleration",
-            ({u:UnitObservation->u.copy(heading=u.heading+1)}) to "Coasting changed heading",
-            ({u:UnitObservation->u.copy(angularVelocity=u.angularVelocity+1)}) to "Wrong post-command deceleration")) {
+            ({u:UnitObservation->u.copy(speed=before.speed-.02)}) to "Arrival did not stop in the capture step",
+            ({u:UnitObservation->u.copy(heading=u.heading+1)}) to "Arrival changed the captured pose",
+            ({u:UnitObservation->u.copy(position=u.position.copy(x=u.position.x+0.01))}) to "Arrival changed the captured pose",
+            ({u:UnitObservation->u.copy(angularVelocity=u.angularVelocity+1)}) to "Arrival did not stop in the capture step")) {
             val error=assertFailsWith<IllegalStateException> { WholeChainPerf.qualify(changeUnit(run,index,change)) }
             assertTrue(error.message.orEmpty().contains(message),error.message)
         }

@@ -1058,6 +1058,13 @@ def validate_history_action(records, row, intent, geometry=None, paired=False, e
         if 'pathUnreachable' in intent and type(intent['pathUnreachable']) is not bool:
             raise PlatformError('input-contract','Expected strict unreachable-path boolean',1)
         unreachable = intent.get('pathUnreachable') is True
+        nearest = intent.get('pathNearest')
+        if 'pathNearest' in intent and (unreachable or not isinstance(nearest, dict) or
+                set(nearest) != {'stoppedAt', 'distance'} or
+                not same_point(nearest['stoppedAt'], nearest['stoppedAt']) or
+                type(nearest['distance']) not in (int, float) or not math.isfinite(nearest['distance']) or
+                nearest['distance'] <= 0):
+            raise PlatformError('input-contract', 'Expected a fixed nearest stop pose and positive hull distance', 1)
         resolved, events = move_plan_observation(records, row, before, after, unreachable, end_sequence)
         unit = next(u for u in resolved['sample']['units'] if u['unitId'] == identity)
         if unreachable:
@@ -1065,6 +1072,46 @@ def validate_history_action(records, row, intent, geometry=None, paired=False, e
                     any(sum(e.get('kind')==kind and e.get('unitId')==identity for e in events)!=1
                         for kind in ('movement-cancelled','path-unreachable'))):
                 raise PlatformError('history-action-fields','Unreachable Move must cancel its route with explicit receipts',2)
+        elif nearest is not None:
+            stop = nearest['stoppedAt']
+            if not same_point(unit.get('moveTarget'), stop) or same_point(stop, row.get('target')):
+                raise PlatformError('history-action-fields', 'Nearest Move did not route to its declared stop', 2)
+            def stopped(state):
+                return (same_point(state.get('position'), stop) and state.get('moveTarget') is None and
+                        state.get('pathPoints') == [] and state.get('tasks') == [] and state.get('speed') == 0 and
+                        state.get('angularVelocity') == 0 and state.get('movementState') == 'idle')
+            arrival_heading = None
+            tail_steps = 0
+            for observed in records:
+                if observed['sequence'] < resolved['sequence']:
+                    continue
+                if (end_sequence is not None and observed['sequence'] > end_sequence or
+                        observed.get('kind') in ('intent-end', 'closed') or
+                        observed.get('kind') == 'action' and observed.get('unitId') == identity):
+                    break
+                if observed.get('kind') != 'observation' or observed.get('phase') != 'step':
+                    continue
+                sample = observed['sample']
+                if sample.get('worldId') != resolved['sample']['worldId'] or observed.get('generation') != resolved.get('generation'):
+                    raise PlatformError('move-plan-identity', 'Nearest Move changed its world or generation', 2)
+                own = [event.get('kind') for event in sample.get('events', []) if event.get('unitId') == identity]
+                if 'movement-nearest-reached' in own:
+                    if arrival_heading is not None or own.count('movement-nearest-reached') != 1 or own.count('movement-arrived') != 1:
+                        raise PlatformError('move-plan-outcome', 'Nearest Move has inconsistent arrival events', 2)
+                    arrived = value_at(sample, 'units.'+identity)
+                    expected = dict(originalTarget=row['target'], stoppedAt=stop, distance=nearest['distance'],
+                                    stepIndex=sample['stepIndex'], group=False)
+                    arrival_heading = arrived.get('heading')
+                    if (arrived.get('moveArrival') != expected or not stopped(arrived) or
+                            type(arrival_heading) not in (int, float) or not math.isfinite(arrival_heading)):
+                        raise PlatformError('move-plan-outcome', 'Nearest Move did not stop with its declared arrival receipt', 2)
+                elif arrival_heading is not None:
+                    tail = value_at(sample, 'units.'+identity)
+                    if not stopped(tail) or tail.get('heading') != arrival_heading or 'movement-arrived' in own:
+                        raise PlatformError('move-plan-outcome', 'Nearest Move did not remain stopped after arrival', 2)
+                    tail_steps += 1
+            if tail_steps == 0:
+                raise PlatformError('move-plan-outcome', 'Nearest Move needs an arrival and a stopped tail within the fixed intent', 2)
         elif not same_point(unit.get('moveTarget'),row.get('target')):
             raise PlatformError('history-action-fields','Move target did not exactly match the accepted formal destination',2)
     if kind=='attack':

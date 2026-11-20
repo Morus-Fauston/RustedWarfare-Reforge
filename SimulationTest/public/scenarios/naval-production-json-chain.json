@@ -313,14 +313,14 @@
     },
     {
       "actionId": "stop",
-      "atStep": 7320,
+      "atStep": 7380,
       "actor": "p1",
       "unitId": "produced:p1:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
       "kind": "stop"
     },
     {
       "actionId": "attack-ground",
-      "atStep": 7360,
+      "atStep": 7420,
       "actor": "p1",
       "unitId": "produced:p1:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
       "kind": "attack",

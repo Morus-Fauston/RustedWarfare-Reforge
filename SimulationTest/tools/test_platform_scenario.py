@@ -463,6 +463,31 @@ class PlatformIntentTest(unittest.TestCase):
         with self.assertRaises(PlatformError):
             validate_history_action(missing_target, action, intent)
 
+        stop = dict(x=160, y=150)
+        planned = observation(4, 'step', dict(unit, moveTarget=stop, pathPoints=[stop], tasks=[task]),
+                              (dict(kind='movement-started', unitId='a'),))
+        arrival = dict(originalTarget=target, stoppedAt=stop, distance=4, stepIndex=3, group=False)
+        finished = observation(5, 'step', dict(unit, position=stop, moveArrival=arrival, speed=0,
+                                               angularVelocity=0, heading=90, movementState='idle'),
+                               tuple(dict(kind=kind, unitId='a') for kind in ('movement-arrived', 'movement-nearest-reached')))
+        tail = observation(6, 'step', dict(finished['sample']['units'][0], moveArrival=None))
+        nearest_rows = rows[:4] + [planned, finished, tail]
+        nearest_intent = dict(intent, pathNearest=dict(stoppedAt=stop, distance=4))
+        validate_history_action(nearest_rows, action, nearest_intent)
+        for mutate in (
+            lambda history: history[5]['sample']['events'].pop(),
+            lambda history: history[5]['sample']['units'][0]['moveArrival'].update(originalTarget=stop),
+            lambda history: history[5]['sample']['units'][0].update(speed=.1),
+            lambda history: history[5]['sample'].update(worldId='other'),
+            lambda history: history[6]['sample']['units'][0].update(position=dict(x=161, y=150)),
+            lambda history: history[6]['sample']['units'][0].update(heading=91),
+            lambda history: history.pop(),
+        ):
+            changed = copy.deepcopy(nearest_rows)
+            mutate(changed)
+            with self.assertRaises(PlatformError):
+                validate_history_action(changed, changed[1], nearest_intent)
+
     def test_production_history_requires_the_declared_fifo_and_completed_upgrade(self):
         from platform_scenario import validate_production_history
         def event(identity,typ,kind):

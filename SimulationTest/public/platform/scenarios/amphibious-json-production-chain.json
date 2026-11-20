@@ -148,7 +148,13 @@
         "x": 250,
         "y": 300
       },
-      "pathUnreachable": true
+      "pathNearest": {
+        "stoppedAt": {
+          "x": 412,
+          "y": 300
+        },
+        "distance": 150
+      }
     },
     {
       "intentId": "fly",

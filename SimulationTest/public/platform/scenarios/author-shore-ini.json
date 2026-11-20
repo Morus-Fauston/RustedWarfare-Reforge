@@ -21,7 +21,7 @@
       "kind": "move",
       "unitId": "a",
       "position": {
-        "x": 170,
+        "x": 176,
         "y": 210
       },
       "waitSteps": 180
