@@ -13,12 +13,14 @@ import com.rustedwarfare.reforge.testing.json
 import com.rustedwarfare.reforge.testing.MotionCenterGeometry
 import java.nio.file.Path
 import kotlinx.serialization.json.*
-import kotlin.math.hypot
 
 data class AutomaticVisionDevelopmentRun(val fixture:AutomaticVisionPerfFixture, val diagnosticsEnabled:Boolean, val rows:List<JsonObject>)
 
 /** Functional qualification only; no performance timing or throughput conclusions. */
 object AutomaticVisionDevelopment {
+    private const val SCHEMA_VERSION = 3
+    private const val MOTION_RULES_VERSION = "p002.dev.automatic-vision-stop.v3"
+
     fun captureDevelopment(fixture: AutomaticVisionPerfFixture, diagnosticsEnabled: Boolean = true): AutomaticVisionDevelopmentRun {
         checkFixture(fixture)
         require(diagnosticsEnabled) { "A1 only qualifies diagnostics enabled" }
@@ -33,7 +35,7 @@ object AutomaticVisionDevelopment {
             context.enablePathDiagnostics(context.world)
             fun sample(label: String, phase: String, actionResult: ActionResult? = null) {
                 rows += buildJsonObject {
-                    put("schemaVersion", 2); developmentIdentity(this); put("kind", "automatic-vision-development-sample")
+                    put("schemaVersion", SCHEMA_VERSION); developmentIdentity(this); put("kind", "automatic-vision-development-sample")
                     put("label", label); put("phase", phase)
                     put("observation", context.observe().json())
                     putJsonObject("players") {
@@ -85,7 +87,7 @@ object AutomaticVisionDevelopment {
                 if(settledAt!=null && step-settledAt>=fixture.tailSteps)break
             }
             rows += buildJsonObject {
-                put("schemaVersion", 2); developmentIdentity(this); put("kind", "automatic-vision-development-completion")
+                put("schemaVersion", SCHEMA_VERSION); developmentIdentity(this); put("kind", "automatic-vision-development-completion")
                 put("label", "completion"); put("advanceCount", advances); put("requestCount", 1)
                 put("status", if (settledAt != null) "normal-cleared-and-settled" else "budget-exhausted")
                 put("normalClearStep",normalAt?.let(::JsonPrimitive) ?: JsonNull)
@@ -110,7 +112,7 @@ object AutomaticVisionDevelopment {
         require(rows.first().text("label") == "initial" && rows[1].text("label") == "submit")
         val completion = rows.last()
         rows.forEach { row->
-            require(row.integer("schemaVersion")==2 && row["motionRulesVersion"]==JsonPrimitive("p002.dev.center-motion.v2") &&
+            require(row.integer("schemaVersion")==SCHEMA_VERSION && row["motionRulesVersion"]==JsonPrimitive(MOTION_RULES_VERSION) &&
                 row["developmentOnly"]==JsonPrimitive(true) && row["qualificationScope"]==JsonPrimitive("development-automatic-discovery-only") &&
                 row["fullTerrainWritebackQualified"]==JsonPrimitive(false)) { "Historical or unknown development protocol" }
         }
@@ -150,7 +152,7 @@ object AutomaticVisionDevelopment {
             put("actionId","avp05-move-0");put("status","accepted");put("queuedForStep",queued);put("events",events)
         }
         for ((index, row) in rows.dropLast(1).withIndex()) {
-            require(row.text("kind") == "automatic-vision-development-sample" && row.integer("schemaVersion") == 2)
+            require(row.text("kind") == "automatic-vision-development-sample" && row.integer("schemaVersion") == SCHEMA_VERSION)
             val step = index - 2
             val phase = when (index) { 0 -> "initial"; 1 -> "submit"; else -> "advance" }
             require(row.text("phase") == phase && row.text("label") == if (index < 2) phase else "advance:$step")
@@ -187,13 +189,10 @@ object AutomaticVisionDevelopment {
                 }else require("movement-arrived" !in kinds) { "Duplicate normal arrival" }
                 if(unit["moveTarget"]==JsonNull) {
                     require(oldTarget==JsonNull || "movement-arrived" in kinds) { "Move ended without normal arrival" }
-                    require(unit["heading"]==old["heading"] && unit["angularVelocity"]==old["angularVelocity"]) { "Clear/braking changed heading or retained cg" }
-                    val speed=maxOf(0.0,old.getValue("speed").jsonPrimitive.double-.02*1.1)
-                    require(kotlin.math.abs(unit.getValue("speed").jsonPrimitive.double-speed)<=1e-12) { "Wrong proportional braking" }
-                    val angle=Math.toRadians(old.getValue("heading").jsonPrimitive.double)
-                    val candidate=Position(previousPosition.x+kotlin.math.sin(angle)*speed,previousPosition.y-kotlin.math.cos(angle)*speed)
-                    require(MotionCenterGeometry.centerPath(listOf(candidate),wall.map { intArrayOf(it.first,it.second) },30,20,20,20,11.0) &&
-                        hypot(candidate.x-position.x,candidate.y-position.y)<=1e-9) { "Invalid open post-clear displacement" }
+                    require(unit["heading"] == old["heading"]) { "Stopped move changed heading" }
+                    require(unit.getValue("speed").jsonPrimitive.double == 0.0 &&
+                        unit.getValue("angularVelocity").jsonPrimitive.double == 0.0 &&
+                        position == previousPosition) { "Move did not stop at the captured pose" }
                 }
             }
             require(position.x.isFinite() && position.y.isFinite() && position.x in 11.0..589.0 && position.y in 11.0..389.0)
@@ -414,7 +413,7 @@ object AutomaticVisionDevelopment {
         MotionCenterGeometry.centerPath(listOf(a,b),listOf(intArrayOf(column,row)),30,20,20,20,11.0)
 
     private fun developmentIdentity(value:JsonObjectBuilder) = with(value) {
-        put("motionRulesVersion","p002.dev.center-motion.v2");put("developmentOnly",true)
+        put("motionRulesVersion", MOTION_RULES_VERSION);put("developmentOnly",true)
         put("qualificationScope","development-automatic-discovery-only");put("fullTerrainWritebackQualified",false)
     }
 }

@@ -124,7 +124,8 @@ class ReplanPerfTest {
     @Test fun `development replanning raw identifies its limited center scope`() {
         val batch=ReplanPerf.measure(unit(),1,TerrainRetention.MEMORY,true)
         val raw=ReplanPerf.batchJson(batch)
-        assertEquals(PathPerfBatch.DEVELOPMENT_GEOMETRY,raw["geometryVersion"]?.jsonPrimitive?.content)
+        assertEquals("p002.dev.center-motion.v2",raw["geometryVersion"]?.jsonPrimitive?.content)
+        assertFailsWith<IllegalStateException> { ReplanPerf.identityFields(PathPerfBatch.DEVELOPMENT_GEOMETRY) }
         assertEquals(true,raw["developmentOnly"]?.jsonPrimitive?.boolean)
         assertEquals("development-replanning-only",raw["qualificationScope"]?.jsonPrimitive?.content)
         assertEquals("stepwise.v3", raw["movePlanningProtocol"]?.jsonPrimitive?.content)

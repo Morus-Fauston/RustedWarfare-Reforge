@@ -73,8 +73,8 @@ class PathPerfDiagnosticsException(message: String) : IllegalStateException(mess
  * available for old literal checks; current outputs do not qualify the old PR performance standard.
  */
 object PathPerfBatch {
-    const val DEVELOPMENT_GEOMETRY = "p002.dev.center-motion.v2"
-    const val DEVELOPMENT_CONTRACT_SHA256 = "c082407405daded97125d1587bad3012c300e62d97a1c1ec0b393bfa74b25f29"
+    const val DEVELOPMENT_GEOMETRY = "p002.dev.path-planning.v3"
+    const val DEVELOPMENT_CONTRACT_SHA256 = "617a4190e5406cd0b1b2a27b08aaef70d8f245e26978551b330242c37ab6d872"
 
     private fun requireDevelopment(version: String) {
         if (version != DEVELOPMENT_GEOMETRY) throw PathPerfCorrectnessException("Unknown or historical geometry version: $version")
@@ -325,7 +325,7 @@ object PathPerfBatch {
             }
         }
         val expectedKnowledge = scenarioKey != "OPEN_NOFOG"
-        val unreachable = scenarioKey == "MEMORY_UNREACHABLE"
+        val sealedWall = scenarioKey == "MEMORY_UNREACHABLE"
         if (batch.stepIndex < 0L || batch.simulationTime != batch.stepIndex + 1.0) {
             throw PathPerfCorrectnessException("batch must retain the final planning step and its matching simulation time")
         }
@@ -335,13 +335,10 @@ object PathPerfBatch {
         if (batch.actionResults.map { it.actionId }.toSet() != expectedActions) {
             throw PathPerfCorrectnessException("action results must cover every perf-move id")
         }
-        if (unreachable) {
-            for (index in 0 until n) {
-                val unitId = "perf-u%03d".format(index)
-                if (batch.events.none { it.kind == "path-unreachable" && it.unitId == unitId }) {
-                    throw PathPerfCorrectnessException("unreachable unit $unitId must emit path-unreachable")
-                }
-            }
+        val publications = batch.events.filter { it.kind == "movement-started" }
+        if (publications.size != n || publications.map { it.unitId }.toSet() != expectedUnits ||
+            batch.events.any { it.kind == "path-unreachable" || it.kind == "movement-cancelled" }) {
+            throw PathPerfCorrectnessException("each unit must publish exactly one successful movement plan")
         }
         if (batch.acceptedMoves != n || batch.requestCount != n || batch.actualSearchCalls != n.toLong() || batch.reuseCount != 0 || batch.replanCount != 0) {
             throw PathPerfCorrectnessException("request/actual/reuse/replan counts do not match the fixed batch")
@@ -369,14 +366,14 @@ object PathPerfBatch {
                 throw PathPerfCorrectnessException("sample ${sample.actionId} must be scheduled for step 0")
             }
             val index = parseIndex(sample.unitId)
+            val endpoint = fixedPlanningEndpoint(scenarioKey, index)
             if (sample.executionStep?.let { it in 0L..batch.stepIndex } != true || sample.reason != PathSearchReason.USER_MOVE ||
                 sample.preservedPrefixPointCount != 0 || sample.searchStart != Position(startX(index), startY(index)) ||
-                sample.searchTarget != Position(goalX(index), goalY(index))) {
+                sample.searchTarget != endpoint) {
                 throw PathPerfCorrectnessException("sample ${sample.actionId} initial search provenance differs from the fixed request")
             }
-            val expectedOutcome = if (unreachable) PathSearchOutcome.UNREACHABLE else PathSearchOutcome.FOUND
-            if (sample.outcome != expectedOutcome) {
-                throw PathPerfCorrectnessException("sample ${sample.actionId} expected $expectedOutcome got ${sample.outcome}")
+            if (sample.outcome != PathSearchOutcome.FOUND) {
+                throw PathPerfCorrectnessException("sample ${sample.actionId} expected a route, got ${sample.outcome}")
             }
             val direct = fixedDirectCenter(scenarioKey, parseIndex(sample.unitId))
             val expectedCandidates = if (direct) 0L else (WIDTH_TILES * HEIGHT_TILES).toLong()
@@ -387,8 +384,8 @@ object PathPerfBatch {
                     sample.neighborsChecked, sample.heuristicCalls).any { it != 0L }) {
                 throw PathPerfCorrectnessException("direct sample ${sample.actionId} must have zero A* work")
             }
-            if (unreachable && sample.expanded < 1L) {
-                throw PathPerfCorrectnessException("unreachable sample ${sample.actionId} must expand at least one node")
+            if (sealedWall && sample.expanded < 1L) {
+                throw PathPerfCorrectnessException("nearest search ${sample.actionId} must expand at least one node")
             }
         }
         if (batch.samples.maxOf { checkNotNull(it.executionStep) } != batch.stepIndex) {
@@ -400,35 +397,30 @@ object PathPerfBatch {
                 throw PathPerfCorrectnessException("unit ${outcome.unitId} owner/type differs from the fixed input")
             }
             val index = parseIndex(outcome.unitId)
-            val goal = Position(goalX(index), goalY(index))
+            val goal = fixedPlanningEndpoint(scenarioKey, index)
             val sample = batch.samples.single { it.unitId == outcome.unitId }
-            if (sample.pathPointCount != outcome.pathPoints.size) {
-                throw PathPerfCorrectnessException("unit ${outcome.unitId} diagnostic path count differs from its first planned path")
+            val extra = outcome.pathPoints.size - sample.pathPointCount
+            // Movement can insert a two-point contact-buffer detour after publication in the same step.
+            if (sample.pathPointCount <= 0 || extra != 0 && (extra != 2 || sealedWall)) {
+                throw PathPerfCorrectnessException("unit ${outcome.unitId} diagnostic route count differs from its observed path")
             }
-            if (outcome.moveTarget != if (unreachable) null else goal) {
+            if (outcome.moveTarget != goal) {
                 throw PathPerfCorrectnessException("unit ${outcome.unitId} target differs from its fixed outcome")
             }
-            if (unreachable) {
-                if (outcome.pathPoints.isNotEmpty()) {
-                    throw PathPerfCorrectnessException("unit ${outcome.unitId} must have no path when unreachable")
-                }
-                continue
-            }
-            if (outcome.pathPoints.isEmpty()) {
-                throw PathPerfCorrectnessException("unit ${outcome.unitId} must have a path")
-            }
+            val planned = outcome.pathPoints.drop(extra)
             val start = Position(startX(index), startY(index))
             if (outcome.pathPoints.any { it == start }) {
                 throw PathPerfCorrectnessException("unit ${outcome.unitId} path must not repeat the start cell")
             }
-            if (fixedDirectCenter(scenarioKey, index) && outcome.pathPoints != listOf(goal)) {
+            if (fixedDirectCenter(scenarioKey, index) && planned != listOf(goal)) {
                 throw PathPerfCorrectnessException("direct unit ${outcome.unitId} must have only its exact goal")
             }
             if (outcome.pathPoints.last() != goal) {
                 throw PathPerfCorrectnessException("unit ${outcome.unitId} path must end exactly at the goal")
             }
-            if (!MotionCenterGeometry.centerPath(listOf(start) + outcome.pathPoints, authorized,
-                    WIDTH_TILES, HEIGHT_TILES, TILE_WIDTH, TILE_HEIGHT, UNIT_RADIUS)) {
+            fun clears(path: List<Position>) = MotionCenterGeometry.centerPath(listOf(start) + path, authorized,
+                WIDTH_TILES, HEIGHT_TILES, TILE_WIDTH, TILE_HEIGHT, UNIT_RADIUS)
+            if (!clears(planned) || extra != 0 && !clears(outcome.pathPoints)) {
                 throw PathPerfCorrectnessException("unit ${outcome.unitId} path fails independent geometry on the authorized grid")
             }
         }
@@ -453,7 +445,7 @@ object PathPerfBatch {
         if (!isPlainDirectory(repo) || !isPlainFile(unit) || !isPlainDirectory(outputRoot)) {
             return PathPerfRunResult(outputRoot, 64)
         }
-        val contract = repo.resolve("TestLab/contracts/P002-perf/PR.development.center.v2.json")
+        val contract = repo.resolve("TestLab/contracts/P002-perf/PR.development.center.v3.json")
         if (!isPlainFile(contract) || sha256(contract) != DEVELOPMENT_CONTRACT_SHA256) return PathPerfRunResult(outputRoot, 64)
         if (!insideForbidden(repo, outputRoot)) return PathPerfRunResult(outputRoot, 64)
         val before = sha256(unit)
@@ -848,7 +840,7 @@ object PathPerfBatch {
             put("repoRoot", repo.toString())
             put("runnerClass", PathPerfBatch::class.java.name)
             put("pathAlgorithm", "natural-direct-then-four-neighbour-grid.v1")
-            put("pathValidator", "fixed-fixture-half-open-center-rational.v2-development")
+            put("pathValidator", "fixed-fixture-half-open-center-rational.v3-development")
             put("independentGeometryApi", "MotionCenterGeometry.exact-binary64-BigInteger-rational-partition")
             put("javaDesktopModulePresent", ModuleLayer.boot().findModule("java.desktop").isPresent)
             put("round0Note", "round0 is the group's first batch in this JVM, not an independent fresh-JVM cold start")
@@ -874,6 +866,9 @@ object PathPerfBatch {
         "MEMORY_GAP" -> 7 * (index % 10) - 9 * (index / 10) in -11..27
         else -> true
     }
+
+    private fun fixedPlanningEndpoint(scenarioKey: String, index: Int): Position =
+        Position(if (scenarioKey == "MEMORY_UNREACHABLE") 16 * TILE_WIDTH - UNIT_RADIUS else goalX(index), goalY(index))
 
     /** Fixed fixture geometry, independently derived in the reviewed D-076 validator contract.
      * In MEMORY_GAP, -4 <= 7a-9b <= 20 gives 18 direct and 32 fallback requests for n=50.

@@ -217,7 +217,7 @@ python -B SimulationTest/tools/specialist_check.py --entry reference-host --bind
 
 注册表`specialist-entries.json`说明参考桥纯JDK/SDK stub、原版比较与采集、设备、PC输入、正式性能、资格/开发测量、私有工具控制和本机目录工具的原入口、资源边界、必需文件角色及平台。`reference-host`与`reference-sdk`的完整编译/逐JVM场景见`Decompile/reference-bridge/README.md`；读取这些文档需要本地完整工作区。`original-compare`用CrossMain的`original-motion-v1`契约分派到既有O.v1比较器，须固定批准标准及双方合格采集；tool-fixture结果不等于运行时兼容通过。
 
-正式性能沿既有workflow性能计划的`mode=measure`和`maintainerApproved=true`执行WholeChainPerfMain，资格检查为`mode=qualify`；两者都需要固定协议、包清单与成功构建收据，数值最终结论仍单独判定。PathPerfBatchMain当前必须显式传`--geometry-version p002.dev.center-motion.v2`，只属于开发几何测试，历史省略该参数的120批命令不能当成当前正式入口。
+正式性能沿既有 workflow 性能计划的 `mode=measure` 和 `maintainerApproved=true` 执行 WholeChainPerfMain，资格检查为 `mode=qualify`。两者均需要固定协议、包清单和成功构建收据。开发几何工具 PathPerfBatchMain 使用 `--geometry-version p002.dev.path-planning.v3`，并从 `--repo-root` 读取私有合同 `TestLab/contracts/P002-perf/PR.development.center.v3.json`。
 
 预检bindings格式为`{"released":true,"files":{"<role>":{"path":"<canonical-absolute-file>","sha256":"<fixed-sha256>"}}}`，角色必须与所选注册项完全相同，Manifest角色绑定已有清单文件而非目录。预检只读这些文件与身份，不递归证明清单成员完整、不检测运行时可用性，也不执行命令模板。`released`只声明资源/范围已释放，不能授予新的设备、原版或正式性能权限。结果始终`executed:false`；`ready`/退出0仅表示声明文件可读且哈希吻合，缺件/漂移为`evidence-insufficient`/退出3，未释放资源或平台不符为`blocked`/退出64。未知入口、无效参数和旧输出直接拒绝；任何这些状态都不能作为专属验证通过。历史结果保留原环境、命令和失败状态。
 

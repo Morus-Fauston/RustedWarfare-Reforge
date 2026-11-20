@@ -274,7 +274,7 @@
         "Linux"
       ],
       "documentation": "SimulationTest/README.md",
-      "boundary": "PathPerfBatchMain explicit p002.dev.center-motion.v2, development-only fixed geometry; historical formal path batch is not replayed",
+      "boundary": "PathPerfBatchMain uses p002.dev.path-planning.v3 and the private TestLab/contracts/P002-perf/PR.development.center.v3.json contract for development-only fixed geometry",
       "commandTemplate": [
         "java",
         "-cp",
@@ -289,7 +289,7 @@
         "--output",
         "<new-approved-root>",
         "--geometry-version",
-        "p002.dev.center-motion.v2"
+        "p002.dev.path-planning.v3"
       ]
     },
     {
