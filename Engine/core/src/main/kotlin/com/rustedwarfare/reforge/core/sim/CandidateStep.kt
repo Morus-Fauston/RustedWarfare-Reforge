@@ -87,7 +87,7 @@ internal data class StepState(
             val named = unit.namedWeapons?.mapValuesTo(linkedMapOf()) { (_, state) ->
                 if (state === unit.combat) checkNotNull(combat) else state.copy()
             }
-            unit.copy(pathPoints = unit.pathPoints.toMutableList(), combat = combat, namedWeapons = named,
+            unit.copy(combat = combat, namedWeapons = named,
                 pointDefense = unit.pointDefense?.copy()) }
         return copy(
         units = forkedUnits,

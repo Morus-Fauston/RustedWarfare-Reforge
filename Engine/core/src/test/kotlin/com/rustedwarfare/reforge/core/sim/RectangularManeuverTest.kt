@@ -37,7 +37,7 @@ class RectangularManeuverTest {
             val start = Position(150.0, 100.0 + i * 100)
             val body = MutableUnit("w$i", "p1", def.id, def, start, 90.0)
             val next = Position(220.0, start.y)
-            body.pathPoints.addAll(listOf(Position(150.0, start.y + 20), next))
+            body.pathPoints = listOf(Position(150.0, start.y + 20), next)
             MovePlanningMember(MoveAction("near-$i", "p1", body.unitId, next, world), body,
                 MovePlanningPose(start, 90.0, ContactLayer.SURFACE, hull), start, 10.0, terrain,
                 HullRoute.forUnit(body, maneuver = true), false, 0L)

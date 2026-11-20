@@ -32,8 +32,8 @@ class SharedCorridorTest {
         private val policy = ExperimentalPolicies().path
 
         fun replan(start: Position, old: PlannedMove, passage: BranchPassage?, moving: Boolean, shortBlocked: Boolean): PlannedMove {
-            val body = MutableUnit("rear", "p1", "tank", def, start, 90.0, pathPoints = old.slot!!.path.toMutableList(),
-                landingMember = LandingMember(group, branch = passage))
+            val body = MutableUnit("rear", "p1", "tank", def, start, 90.0, nav = UnitNavigationState(
+                pathPoints = old.slot!!.path, groupReservation = GroupReservation(landing = LandingMember(group, branch = passage))))
             if (moving) body.lastRoadProgress = RoadProgress(group, 200L, 0.4, 0.1)
             val move = MoveAction("repair", "p1", body.unitId, target, world)
             val member = MovePlanningMember(move, body, MovePlanningPose(start, 90.0, UnitContact.layer(body), def.movementCollision),
@@ -56,11 +56,11 @@ class SharedCorridorTest {
             val command = GroupMoveRequest(world, null, "p1", target, ids.toSet(), true)
             val start = Position(300.0, 280.0)
             val branch = BranchPassage(terrain, true, Position(390.0, 410.0), 1)
-            val driver = MutableUnit(ids.first(), "p1", "tank", def, start, 90.0,
-                pathPoints = mutableListOf(Position(350.0, 410.0), Position(450.0, 410.0), target),
-                landingMember = LandingMember(command, branch = branch))
-            val leader = MutableUnit(ids.last(), "p1", "tank", def, Position(378.0, 412.0), 90.0,
-                landingMember = LandingMember(command))
+            val driver = MutableUnit(ids.first(), "p1", "tank", def, start, 90.0, nav = UnitNavigationState(
+                pathPoints = listOf(Position(350.0, 410.0), Position(450.0, 410.0), target),
+                groupReservation = GroupReservation(landing = LandingMember(command, branch = branch))))
+            val leader = MutableUnit(ids.last(), "p1", "tank", def, Position(378.0, 412.0), 90.0, nav = UnitNavigationState(
+                groupReservation = GroupReservation(landing = LandingMember(command))))
             val move = MoveAction("repair", "p1", driver.unitId, target, world)
             val member = MovePlanningMember(move, driver, MovePlanningPose(start, 90.0, UnitContact.layer(driver), def.movementCollision),
                 start, 6.0, terrain, HullRoute.forUnit(driver, maneuver = true), false, 0)
@@ -104,7 +104,7 @@ class SharedCorridorTest {
 
         fun drive(id: String, start: Position, queue: List<Position> = emptyList(), command: GroupMoveRequest = group,
                   knowledge: PlanningTerrain = terrain): PlannedMove {
-            val unit = MutableUnit(id, "p1", "tank", def, start, 90.0, landingMember = LandingMember(command))
+            val unit = MutableUnit(id, "p1", "tank", def, start, 90.0, nav = UnitNavigationState(groupReservation = GroupReservation(landing = LandingMember(command))))
             val move = MoveAction("drive-$id", "p1", id, target, world)
             val member = MovePlanningMember(move, unit, MovePlanningPose(start, 90.0, UnitContact.layer(unit), def.movementCollision),
                 start, 6.0, knowledge, HullRoute.forUnit(unit, maneuver = true), false, 0)
@@ -155,14 +155,14 @@ class SharedCorridorTest {
         val def = TestContentFactory.unitWith(TestContentFactory.openScenario().unitDefinitions.getValue("tank"), radius = 6.0)
         val target = Position(640.0, 210.0)
         fun car(id: String, x: Double, y: Double) = MutableUnit(id, "p1", "tank", def, Position(x, y), 90.0,
-            speed = 1.0, landingMember = LandingMember(road.group))
+            speed = 1.0, nav = UnitNavigationState(groupReservation = GroupReservation(landing = LandingMember(road.group))))
     }
 
     @Test fun stationary_queue_with_positive_drivetrain_speed_releases_the_blocked_lane() {
         val f = RepairFork()
         val driver = f.car("rear", 335.0, 210.0)
         val leader = f.car("front", 372.0, 210.0)
-        driver.pathPoints.add(f.target)
+        driver.pathPoints = driver.pathPoints + f.target
         val detour = listOf(Position(350.0, 410.0), Position(450.0, 410.0), f.target)
         val branch = BranchPassage(f.road.terrain, true, Position(390.0, 210.0), 1)
         val proof = BranchRepair(branch, f.road.group, driver.position, detour)
