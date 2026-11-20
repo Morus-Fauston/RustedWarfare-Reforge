@@ -28,7 +28,7 @@ jobs:
         with:
           python-version: '3.13'
       - name: Complete public mechanism and short layer
-        run: python -B SimulationTest/ci/public_batch.py --kind pr --test-forks 2 --scenario-workers 4 --output SimulationTest/build/public-pr
+        run: python -B SimulationTest/ci/public_batch.py --kind pr --test-forks 2 --scenario-workers 4 --command-timeout 1200 --output SimulationTest/build/public-pr
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         if: always()
         with:
