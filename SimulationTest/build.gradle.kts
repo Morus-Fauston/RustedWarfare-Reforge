@@ -55,3 +55,11 @@ tasks.register<JavaExec>("p001Suite") {
     mainClass.set("com.rustedwarfare.reforge.testing.p001.P001SuiteMainKt")
     jvmArgs("-Dfile.encoding=UTF-8", "-Dstdout.encoding=UTF-8", "-Dstderr.encoding=UTF-8")
 }
+
+tasks.register<JavaExec>("diagnosticBaselineCapture") {
+    group = "verification"
+    description = "Run offline diagnostic baseline capture and render 2s stall-highlighted contact sheets"
+    classpath = sourceSets.main.get().runtimeClasspath
+    mainClass.set("com.rustedwarfare.reforge.testing.DiagnosticBaselineCaptureMainKt")
+    jvmArgs("-Dfile.encoding=UTF-8", "-Dstdout.encoding=UTF-8", "-Dstderr.encoding=UTF-8")
+}

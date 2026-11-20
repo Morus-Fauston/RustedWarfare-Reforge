@@ -137,17 +137,16 @@ class SandboxSession(scenario: Scenario, private val evidence: ClientEvidence = 
     val frame: SandboxFrame get() = checkNotNull(latestFrame) { "Match is closed" }
     val observation: PlayerObservation get() = frame.observation
 
-    internal fun movementCollisionForView(unit: UnitObservation): MovementCollisionShape? {
-        if (!unit.alive) return null
-        val definition = scenario.unitDefinitions.getValue(unit.typeId)
-        // The projected attachment relation can be hidden when the parent is outside vision.
-        return definition.movementCollision.takeIf {
-            definition.building == null && definition.attachmentModule == null && it.boundingRadius > 0.0
-        }
-    }
+    private val diagnosticTracker = DiagnosticSceneProjector.LiveTracker(this.scenario.unitDefinitions)
+
+    internal val diagnosticScene: DiagnosticFrameScene
+        get() = diagnosticTracker.updateAndProjectPlayer(observation)
+
+    internal fun movementCollisionForView(unit: UnitObservation): MovementCollisionShape? =
+        DiagnosticSceneProjector.mobileShapeForView(unit, scenario.unitDefinitions)
 
     internal fun hasContactLayerForView(unit: UnitObservation): Boolean =
-        scenario.unitDefinitions.getValue(unit.typeId).hasContactLayerAt(unit.height)
+        DiagnosticSceneProjector.hasContactLayerForView(unit, scenario.unitDefinitions)
     private val actionCatalogue = ActionCatalogue(this.scenario.unitDefinitions, this.scenario.nukesEnabled, singleSelectionButtons)
     private var menuObservation: PlayerObservation? = null
     private var menuSelectionRevision = -1L
@@ -260,7 +259,12 @@ class SandboxSession(scenario: Scenario, private val evidence: ClientEvidence = 
     val totalNominalIncome: Float get() = actionMenu.totalNominalIncome
 
     init {
-        try { latestFrame = makeFrame(); capture("initial") }
+        try {
+            val initial = makeFrame()
+            latestFrame = initial
+            diagnosticTracker.ingestPlayer(initial.observation)
+            capture("initial")
+        }
         catch (failure: Exception) { context.close(); isOpen = false; throw failure }
     }
 
@@ -603,6 +607,7 @@ class SandboxSession(scenario: Scenario, private val evidence: ClientEvidence = 
                     "x" to it.position.x, "y" to it.position.y, "interceptorUnitId" to it.interceptorUnitId) })
         }
         publishFrame()
+        diagnosticTracker.ingestPlayer(observation)
         for (result in observation.actionResults.filterIsInstance<ActionResult.Rejected>()) {
             if (result.error.code == "immobile-unit") {
                 val member = lastCommandBatch?.members?.firstOrNull { it.result.actionId == result.actionId } ?: continue
@@ -747,7 +752,8 @@ class SandboxSession(scenario: Scenario, private val evidence: ClientEvidence = 
     }
 
     private fun publishFrame() {
-        latestFrame = makeFrame()
+        val next = makeFrame()
+        latestFrame = next
         val previous = selectedIds
         selection.reconcile(observation.units.filter { it.alive }.map { it.unitId }.toSet(),
             observation.units.filter { !it.alive }.map { it.unitId }.toSet() +
@@ -766,6 +772,7 @@ class SandboxSession(scenario: Scenario, private val evidence: ClientEvidence = 
             isOpen = false
             selection.clear()
             latestFrame = null
+            diagnosticTracker.reset()
             menuObservation = null
             menu = null
             terrainKnowledge = null
