@@ -78,6 +78,11 @@ jobs:
           path: |
             SimulationTest/build/public-pr/result.json
             SimulationTest/build/public-pr/*.log
+            SimulationTest/build/public-pr/mechanisms/result.json
+            SimulationTest/build/public-pr/mechanisms/group-*/*.json
+            SimulationTest/build/public-pr/mechanisms/group-*/command/*.log
+            SimulationTest/build/public-pr/mechanisms/group-*/*/*methods.json
+            SimulationTest/build/public-pr/mechanisms/group-*/*/xml/TEST-*.xml
           if-no-files-found: error
   public-prepare:
     if: (github.event_name == 'workflow_dispatch' && inputs.execution == 'parallel') || (github.event_name == 'pull_request' && (vars.PUBLIC_PR_PARALLEL == 'true' || (vars.PUBLIC_PR_PARALLEL != 'false' && github.event.pull_request.head.repo.full_name == github.repository && contains(fromJSON('["codex/phase-six-asp-test", "codex/phase-six-asp-formal"]'), github.head_ref) && github.base_ref == 'main')))

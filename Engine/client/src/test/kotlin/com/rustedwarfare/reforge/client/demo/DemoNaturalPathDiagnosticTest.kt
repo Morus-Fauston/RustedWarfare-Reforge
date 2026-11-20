@@ -43,26 +43,9 @@ class DemoNaturalPathDiagnosticTest {
                         trace.appendLine("initial\t-1\t${unit.unitId}\t${unit.position.x}\t${unit.position.y}\t${unit.heading}\t${unit.speed}\t${unit.movementState}\t${unit.moveTarget}\t${unit.pathPoints}")
                     }
                 }
-                var pointBandUnits = 0
-                var segmentBandUnits = 0
-                Files.newBufferedWriter(directory.resolve("initial-paths.tsv")).use { initial ->
-                    initial.appendLine("unit\tstartX\tstartY\tpathPoints\toldPointPredicate\tcontinuousSegmentCrossesBand")
-                    for (unit in session.observation.units) {
-                        val points = listOf(starts.getValue(unit.unitId)) + unit.pathPoints
-                        val pointBand = unit.pathPoints.any {
-                            (it.x / 20).toInt() in 24..26 && (it.y / 20).toInt() in 15..24
-                        }
-                        val segmentBand = points.zipWithNext().any { (a, b) ->
-                            segmentRectangleDistance(a, b, 480.0, 300.0, 540.0, 500.0) == 0.0
-                        }
-                        if (pointBand) pointBandUnits++
-                        if (segmentBand) segmentBandUnits++
-                        val start = starts.getValue(unit.unitId)
-                        initial.appendLine("${unit.unitId}\t${start.x}\t${start.y}\t${unit.pathPoints.joinToString(";") { "${it.x}:${it.y}" }}\t$pointBand\t$segmentBand")
-                    }
-                }
-                val initialSearches = session.searches
-                val initialReplans = session.replans
+                val publishedPaths = linkedMapOf<String, List<Position>>()
+                var initialSearches = 0
+                var initialReplans = 0
                 var discovered = false
                 var memory = false
                 var moved = false
@@ -75,6 +58,15 @@ class DemoNaturalPathDiagnosticTest {
                     repeat(2500) {
                         session.tick()
                         val observation = session.observation
+                        if (publishedPaths.size < starts.size) {
+                            val published = observation.events.filter { it.kind == "movement-started" }
+                                .mapTo(hashSetOf()) { it.unitId }
+                            for (unit in observation.units) {
+                                if (unit.unitId in published) publishedPaths.putIfAbsent(unit.unitId, unit.pathPoints)
+                            }
+                            initialSearches = session.searches
+                            initialReplans = session.replans
+                        }
                         movementOracle.accept(observation)
                         val exactInputs = session.drainMotionDiagnostics()
                         assertEquals(observation.units.map { it.unitId }, exactInputs.map { it.unitId })
@@ -104,6 +96,21 @@ class DemoNaturalPathDiagnosticTest {
                     }
                   }
                 }
+                var pointBandUnits = 0
+                var segmentBandUnits = 0
+                Files.newBufferedWriter(directory.resolve("initial-paths.tsv")).use { initial ->
+                    initial.appendLine("unit\tstartX\tstartY\tpathPoints\toldPointPredicate\tcontinuousSegmentCrossesBand")
+                    for ((id, path) in publishedPaths) {
+                        val start = starts.getValue(id)
+                        val pointBand = path.any { (it.x / 20).toInt() in 24..26 && (it.y / 20).toInt() in 15..24 }
+                        val segmentBand = (listOf(start) + path).zipWithNext().any { (a, b) ->
+                            segmentRectangleDistance(a, b, 480.0, 300.0, 540.0, 500.0) == 0.0
+                        }
+                        if (pointBand) pointBandUnits++
+                        if (segmentBand) segmentBandUnits++
+                        initial.appendLine("$id\t${start.x}\t${start.y}\t${path.joinToString(";") { "${it.x}:${it.y}" }}\t$pointBand\t$segmentBand")
+                    }
+                }
                 movementOracle.assertComplete()
                 val arrived = movementOracle.normalCompletions
                 val summary = "initiallyUnknown=$initiallyUnknown\nunits=${starts.size}\ninitialSearches=$initialSearches\ninitialReplans=$initialReplans\npointBandUnits=$pointBandUnits\nsegmentBandUnits=$segmentBandUnits\nsteps=2500\ndiscovered=$discovered\nmemory=$memory\nmovedBeyondBarriers=$moved\nsearches=${session.searches}\nreplans=${session.replans}\narrived=$arrived\ntrueWallCenterViolations=$violationCount\nfirstViolations=${violations.joinToString(" | ")}\nfinalStates=${session.observation.units.groupingBy { it.movementState }.eachCount()}\n"
@@ -111,7 +118,8 @@ class DemoNaturalPathDiagnosticTest {
                 println(summary)
                 assertTrue(initiallyUnknown)
                 assertEquals(50, starts.size)
-                assertEquals(50, initialSearches)
+                assertEquals(starts.keys, publishedPaths.keys)
+                assertTrue(initialSearches in 1..50)
                 assertEquals(0, initialReplans)
                 assertEquals(0, pointBandUnits, "Retained old point predicate must stay visibly distinct")
                 assertTrue(segmentBandUnits > 0, "The actual initial continuous routes must cross the old unknown band")

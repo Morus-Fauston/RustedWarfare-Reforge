@@ -1,10 +1,12 @@
 package com.rustedwarfare.reforge.core.sim
 
+import com.rustedwarfare.reforge.core.content.BlockingGrid
 import com.rustedwarfare.reforge.core.content.ContentLoader
 import com.rustedwarfare.reforge.core.content.ContentResult
 import com.rustedwarfare.reforge.core.content.DurabilityProfile
 import com.rustedwarfare.reforge.core.content.LoadedContentPack
 import com.rustedwarfare.reforge.core.content.LoadedUnitContent
+import com.rustedwarfare.reforge.core.content.MapDefinition
 import com.rustedwarfare.reforge.core.content.MovementCollisionShape
 import com.rustedwarfare.reforge.core.content.MovementType
 import com.rustedwarfare.reforge.core.content.UnitDefinition
@@ -341,11 +343,20 @@ class UnitContactTest {
     }
 
     @Test
-    fun a_hovercraft_contacts_land_and_water_occupants_in_the_same_move() = WaterTestScene.withMap { map ->
+    fun a_hovercraft_contacts_land_and_water_occupants_in_the_same_move() = WaterTestScene.withMap { shore ->
         val hover = contactUnit("hover", MovementType.HOVER)
         val land = contactUnit("land", MovementType.LAND)
         val water = contactUnit("water", MovementType.WATER)
         val start = Position(350.0, 190.0)
+        val banks = buildSet {
+            for (row in 0 until shore.heightTiles) for (col in 16..27) {
+                if (row != 9 && !(col == 19 && row > 9) && !(col == 20 && row < 9)) add(col to row)
+            }
+        }
+        val map = MapDefinition(shore.widthTiles, shore.heightTiles, shore.tileWidth, shore.tileHeight,
+            shore.tileSets, shore.groundGids, BlockingGrid(shore.widthTiles, shore.heightTiles,
+                BooleanArray(shore.widthTiles * shore.heightTiles) { (it % shore.widthTiles to it / shore.widthTiles) in banks }),
+            banks)
         val scene = WaterTestScene.scenario(map, MovementType.HOVER, start).copy(
             unitDefinitions = listOf(hover, land, water).associateBy { it.id },
             players = listOf(Player("p1", PlayerControl.LOCAL), Player("p2", PlayerControl.LOCAL)),
@@ -359,7 +370,7 @@ class UnitContactTest {
             move(context, "land", Position(386.0, 310.0), owner = "p2")
             for (tick in 110L..220L) context.advance(Step(tick, 1.0, "sim-tick"))
             assertEquals(396.0, context.observe().units.single { it.unitId == "hover" }.position.x, 1e-9)
-            move(context, "water", Position(408.0, 310.0), owner = "p2")
+            move(context, "water", Position(410.0, 70.0), owner = "p2")
             for (tick in 221L..380L) context.advance(Step(tick, 1.0, "sim-tick"))
             assertTrue(context.observe().units.single { it.unitId == "hover" }.position.x > 460.0)
         }

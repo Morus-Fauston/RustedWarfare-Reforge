@@ -3730,6 +3730,7 @@ class SimulationContext internal constructor(private val policies: ExperimentalP
             val movingContact = unit.hardContactLimitedTicks
             val overtaking = unit.definition.movementCollision is MovementCollisionShape.Circle &&
                 movingContact >= ROUTE_RETRY_TICKS &&
+                (unit.landingMember != null || stalled < ROUTE_FAILURE_TICKS) &&
                 impendingRouteContacts(unit, map, 0.0).isNotEmpty() &&
                 (stalled < ROUTE_RETRY_TICKS || routeContacts(unit).any { it.moveTarget != null })
             val sustainedTurnContact = unit.definition.movementCollision is MovementCollisionShape.Rectangle &&
@@ -4371,7 +4372,15 @@ class SimulationContext internal constructor(private val policies: ExperimentalP
                 Position(unit.flightVelocity.x * delta, unit.flightVelocity.y * delta)
             } else policies.coordinates.displacement(unit.heading, unit.speed * delta)
         }
+        // A circle can circle across a very short final leg unless it aligns
+        // before spending a full propulsion step. The exact endpoint still
+        // goes through terrain and contact checks below.
+        val finishNearestWaterLeg = maneuverLeg != null && finalForSample && movement.type == MovementType.WATER &&
+            unit.nearestMoveTarget != null && unit.landingMember == null &&
+            unit.definition.movementCollision is MovementCollisionShape.Circle &&
+            ScreenPlane.distanceSquared(unit.position, maneuverLeg.target) <= (maximumSpeed * delta) * (maximumSpeed * delta)
         val candidate = if (maneuverLeg != null && (unit.landingMember?.preciseApproach == true ||
+                finishNearestWaterLeg ||
                 unit.landingMember?.claimed == maneuverLeg.target && ScreenPlane.distanceSquared(unit.position, maneuverLeg.target) <=
                     unit.definition.movementCollision.boundingRadius * unit.definition.movementCollision.boundingRadius)) maneuverLeg.position(unit.heading, unit.speed * delta)
         else if(maneuverLeg!=null && unit.definition.movementCollision is MovementCollisionShape.Circle) {

@@ -43,4 +43,22 @@ class TrafficSeparationTest {
             println("parked=$parked steps=${work.size} maxCells=${work.maxOf { it.cells }} maxBodies=${work.maxOf { it.bodies }} maxIncomplete=${work.maxOf { it.truncated }}")
         }
     }
+
+    @Test fun independent_moves_to_the_same_waypoint_brake_before_contact() {
+        val tank = TestContentFactory.openScenario().unitDefinitions.getValue("tank")
+        val waypoint = Position(200.0, 200.0)
+        val offset = 1.6 * tank.contactBufferCollision.boundingRadius
+        fun driver(id: String, position: Position, heading: Double, goal: Position) =
+            MutableUnit(id, "p1", tank.id, tank, position, heading).apply {
+                speed = tank.movement.moveSpeed
+                moveTarget = goal
+                pathPoints = mutableListOf(waypoint, goal)
+                taskQueue = taskQueue.append(UnitTask(UnitTaskKind.MOVE, "move-$id", goal))
+            }
+        val west = driver("west", Position(waypoint.x - offset, waypoint.y), 90.0, Position(250.0, 200.0))
+        val south = driver("south", Position(waypoint.x, waypoint.y + offset), 0.0, Position(200.0, 150.0))
+        assertTrue(!UnitContact.inContact(west, south))
+        val limits = TrafficSeparation.speedLimits(listOf(west, south), TrafficSeparation.Visits())
+        assertTrue(limits.values.any { it < tank.movement.moveSpeed }, limits.toString())
+    }
 }

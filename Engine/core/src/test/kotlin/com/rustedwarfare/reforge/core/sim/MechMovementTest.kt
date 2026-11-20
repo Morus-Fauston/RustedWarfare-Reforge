@@ -75,7 +75,7 @@ class MechMovementTest {
         } finally { context.close() }
     }
 
-    @Test fun short_command_unreachable_replacement_and_map_boundary_keep_existing_land_rules() {
+    @Test fun short_command_nearest_replacement_and_map_boundary_keep_existing_land_rules() {
         val context = MechTestScene.open()
         try {
             context.submit(MoveAction("short", "p1", "u1", Position(106.0, 100.0), context.world))
@@ -85,12 +85,10 @@ class MechMovementTest {
             assertTrue(result.events.any { it.kind == "movement-arrived" })
             val before = context.observe().units
             assertIs<ActionResult.Rejected>(context.submit(MoveAction("nan", "p1", "u1", Position(Double.NaN, 100.0), context.world)))
-            val outside = assertIs<ActionResult.Accepted>(context.submit(MoveAction("outside", "p1", "u1", Position(0.0, 100.0), context.world)))
-            assertTrue(outside.events.isEmpty())
-            val failed = context.advance(Step(1, 1.0, "sim-tick"))
-            assertEquals(listOf("movement-cancelled", "path-unreachable"),
-                failed.events.map { it.kind }) // D-083.
-            assertEquals(before, failed.units)
+            val outside = assertIs<ActionResult.Rejected>(context.submit(
+                MoveAction("outside", "p1", "u1", Position(-1.0, 100.0), context.world)))
+            assertEquals("invalid-target", outside.error.code)
+            assertEquals(before, context.observe().units)
         } finally { context.close() }
         val wall = (0 until 20).map { 15 to it }.toSet()
         val blocked = MechTestScene.open(MechTestScene.scenario(blocked = wall))
@@ -99,10 +97,11 @@ class MechMovementTest {
             blocked.advance(Step(0, 1.0, "sim-tick"))
             val result = assertIs<ActionResult.Accepted>(blocked.submit(MoveAction("sealed", "p1", "u1", Position(500.0, 100.0), blocked.world)))
             assertTrue(result.events.isEmpty())
-            val failed = blocked.advanceToMoveOutcome(1, "u1")
-            assertTrue(Event("path-unreachable", "u1") in failed.events)
-            assertNull(failed.units.single().moveTarget)
-            assertEquals(0.0, failed.units.single().speed)
+            val nearest = blocked.advanceToMoveOutcome(1, "u1")
+            val unit = nearest.units.single()
+            assertTrue(Event("movement-started", "u1") in nearest.events)
+            assertTrue(assertNotNull(unit.moveTarget).x in 200.0..<300.0)
+            assertTrue(unit.pathPoints.all { it.x < 300.0 })
         } finally { blocked.close() }
         val unit = MechTestScene.unit()
         val fast = MechTestScene.with(unit, movement = unit.movement.copy(moveSpeed = 60.0, moveAccelerationSpeed = 1.0, reverseSpeedPercentage = 0.0))

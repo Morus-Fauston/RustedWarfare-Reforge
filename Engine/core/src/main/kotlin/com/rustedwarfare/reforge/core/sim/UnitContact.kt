@@ -282,8 +282,21 @@ internal object UnitContact {
 
             val chain = members.map { constrainedLink(it, map) }
             val rootBody = Body(unit.definition.movementCollision, unit.heading)
-            fun moverEnd(share: Double): Position = if (softContact == null) offsetAlong(clipped, drift, share)
-                else offsetAlong(target, drift, -members.sumOf { it.massRatio * it.travel(share) })
+            val producerId = unit.productionOrigin?.producerId
+            // A newer hull can be born inside its predecessor. Hold the newborn at
+            // first contact while the existing hull clears that overlap under pressure.
+            val separatingBirth = if (producerId != null && FactoryExit.isNativeSeaDeparture(unit)) {
+                chain.filter { member ->
+                    val other = member.link.unit
+                    other.productionOrigin?.producerId == producerId &&
+                        rootBody.overlaps(member.body, subtract(unit.position, other.position))
+                }
+            } else emptyList()
+            fun moverEnd(share: Double): Position = when {
+                separatingBirth.isNotEmpty() -> clipped
+                softContact == null -> offsetAlong(clipped, drift, share)
+                else -> offsetAlong(target, drift, -members.sumOf { it.massRatio * it.travel(share) })
+            }
 
             fun clearAt(share: Double): Boolean {
                 val end = moverEnd(share)
@@ -303,7 +316,8 @@ internal object UnitContact {
                             translationContact(moved, destination, units, ignoredIds = connected) != null) return false
                     }
                     if (!clearRelative(rootBody, unit.position, end, member.body, moved.position, destination,
-                            requireClearEnd = unit.nearestMoveTarget != null && unit.definition.movementCollision is MovementCollisionShape.Rectangle))
+                            requireClearEnd = unit.nearestMoveTarget != null && unit.definition.movementCollision is MovementCollisionShape.Rectangle,
+                            allowExistingOverlap = member in separatingBirth))
                         return false
                     for (j in 0 until i) {
                         val earlier = chain[j]
@@ -529,13 +543,15 @@ internal object UnitContact {
     }
 
     private fun clearRelative(first: Body, start: Position, end: Position,
-                              second: Body, otherStart: Position, otherEnd: Position, requireClearEnd: Boolean = false): Boolean {
+                              second: Body, otherStart: Position, otherEnd: Position, requireClearEnd: Boolean = false,
+                              allowExistingOverlap: Boolean = false): Boolean {
         val offset = subtract(start, otherStart)
         val endOffset = subtract(end, otherEnd)
         val drift = subtract(endOffset, offset)
         val roundoff = positionRoundoff(end, otherEnd)
         val entry = first.entry(second, offset, drift, 1.0)
-        return (if (requireClearEnd) !first.overlaps(second, endOffset) else first.clearance(second, endOffset) >= -roundoff) &&
+        val minimum = if (allowExistingOverlap) minOf(0.0, first.clearance(second, offset)) else 0.0
+        return (if (requireClearEnd) !first.overlaps(second, endOffset) else first.clearance(second, endOffset) >= minimum - roundoff) &&
             (1.0 - entry) * hypot(drift.x, drift.y) <= roundoff
     }
 

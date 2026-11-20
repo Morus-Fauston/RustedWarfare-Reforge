@@ -12,8 +12,9 @@ class TouchSessionTest {
             session.tap(Position(110.0, 110.0))
             session.tap(Position(230.0, 110.0))
             assertEquals("u1", session.selectedId)
+            session.tick()
             assertEquals(Position(230.0, 110.0), session.observation.units.first().moveTarget)
-            repeat(60) { session.tick() }
+            repeat(59) { session.tick() }
             assertTrue(session.observation.units.first().position.x > 130.0)
             session.stop()
             repeat(30) { session.tick() }

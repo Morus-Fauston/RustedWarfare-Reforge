@@ -95,12 +95,16 @@ class ArtilleryAreaTest {
             assertIs<ActionResult.Accepted>(c.submit(ProduceAction("produce", "p2", "f", "c_tank", "a".repeat(32), c.world)))
             assertIs<ActionResult.Accepted>(c.submit(UpgradeAction("upgrade", "p2", "u", "upgrade_gun", c.world)))
             assertEquals(1650L, c.observePlayer(c.world, "p2").balance)
-            val blocked = assertIs<ActionResult.Accepted>(c.submit(MoveAction("blocked", "p1", "a", Position(390.0, 130.0), c.world)))
-            assertTrue(blocked.events.isEmpty())
+            val requested = Position(390.0, 130.0)
+            val control = assertIs<InitResult.Accepted>(SimulationContext.initialize(scene)).context
+            try {
+                assertIs<ActionResult.Accepted>(control.submit(MoveAction("blocked", "p1", "a", requested, control.world)))
+                val blocked = control.advanceToMoveOutcome(0, "a")
+                assertNotEquals(requested, assertNotNull(blocked.units.single { it.unitId == "a" }.moveTarget))
+            } finally { control.close() }
             assertIs<ActionResult.Accepted>(c.submit(AttackAction("target", "p1", "t", "z", c.world)))
             val old = c.observe()
             val row = c.advance(Step(0, 1.0, "sim-tick"))
-            assertTrue(Event("path-unreachable", "a") in row.events)
             for (id in listOf("f", "u")) {
                 assertFalse(row.units.single { it.unitId == id }.alive, id)
                 assertEquals(1, row.events.count { it.kind == "unit-died" && it.unitId == id })
@@ -110,10 +114,10 @@ class ArtilleryAreaTest {
             assertTrue(row.upgrades!!.queues.getValue("u").isEmpty())
             assertEquals(1, row.events.count { it.kind == "production-refunded" })
             assertEquals(1, row.events.count { it.kind == "upgrade-refunded" })
-            assertIs<ActionResult.Accepted>(c.submit(MoveAction("released", "p1", "a", Position(390.0, 130.0), c.world)))
-            val released = c.advance(Step(1, 1.0, "sim-tick"))
+            assertIs<ActionResult.Accepted>(c.submit(MoveAction("released", "p1", "a", requested, c.world)))
+            val released = c.advanceToMoveOutcome(1, "a")
             assertTrue(Event("movement-started", "a") in released.events)
-            assertTrue(released.units.single { it.unitId == "a" }.pathPoints.isNotEmpty())
+            assertEquals(requested, released.units.single { it.unitId == "a" }.pathPoints.last())
             assertEquals(3000L, c.observePlayer(c.world, "p2").balance)
             assertTrue(old.units.single { it.unitId == "u" }.alive)
             assertEquals(1, old.upgrades!!.queues.getValue("u").size)

@@ -170,14 +170,16 @@ class HelicopterBehaviorTest {
         try {
             move(c)
             repeat(10) { c.advance(Step(it.toLong(), 1.0, "sim-tick")) }
-            val response = move(c, "invalid-target", Position(14.99, 200.0))
-            assertTrue(response.events.isEmpty())
-            assertTrue(Event("path-unreachable", "h1") in c.advance(Step(10, 1.0, "sim-tick")).events)
-            assertNull(c.observe().units.single().moveTarget)
             val before = c.observe().units.single()
+            val outside = assertIs<ActionResult.Rejected>(c.submit(
+                MoveAction("outside", "p1", "h1", Position(-0.01, 200.0), c.world)))
+            assertEquals("invalid-target", outside.error.code)
             val result = assertIs<ActionResult.Rejected>(c.submit(MoveAction("nan", "p1", "h1", Position(Double.NaN, 1.0), c.world)))
             assertEquals("invalid-target", result.error.code)
             assertEquals(before, c.observe().units.single())
+            move(c, "boundary-nearest", Position(14.99, 200.0))
+            val route = c.advanceToMoveOutcome(10, "h1").units.single()
+            assertEquals(Position(15.0, 200.0), route.moveTarget)
         } finally { c.close() }
     }
 
@@ -188,6 +190,7 @@ class HelicopterBehaviorTest {
             units = listOf(source.units.single().copy(position = Position(700.0, 200.0)))))
         try {
             move(c, target = Position(785.0, 200.0))
+            var stopped = false
             var boundaryStep = -1L
             for (q in 0L..299L) {
                 val before = c.observe().units.single()
@@ -201,7 +204,14 @@ class HelicopterBehaviorTest {
                     boundaryStep = q
                     break
                 }
+                val unit = result.units.single()
+                if (!stopped && unit.position.x >= 760.0) {
+                    assertTrue(unit.speed > 0.0)
+                    assertIs<ActionResult.Accepted>(c.submit(StopAction("stop-before-edge", "p1", "h1", c.world)))
+                    stopped = true
+                }
             }
+            assertTrue(stopped)
             assertTrue(boundaryStep >= 0)
             val before = c.observe().units.single().position
             move(c, "recover", Position(500.0, 200.0))

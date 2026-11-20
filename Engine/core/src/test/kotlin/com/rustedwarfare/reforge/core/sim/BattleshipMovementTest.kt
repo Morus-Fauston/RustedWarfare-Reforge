@@ -30,12 +30,13 @@ class BattleshipMovementTest {
             try {
                 val bad = assertIs<ActionResult.Accepted>(context.submit(MoveAction("outside", "p1", "ship", Position(770.0, 200.0), context.world)))
                 assertTrue(bad.events.isEmpty())
-                val outside = context.advance(Step(0, 1.0, "sim-tick"))
-                assertTrue(Event("path-unreachable", "ship") in outside.events)
+                val edgeRoute = context.advanceToMoveOutcome(0, "ship")
+                assertTrue(Event("movement-started", "ship") in edgeRoute.events)
+                assertEquals(Position(760.0, 200.0), edgeRoute.units.single().moveTarget)
                 context.submit(MoveAction("east", "p1", "ship", Position(700.0, 200.0), context.world))
                 var arrivals = 0
                 repeat(800) { step ->
-                    val sample = context.advance(Step(step + 1L, 1.0, "sim-tick"))
+                    val sample = context.advance(Step(edgeRoute.stepIndex + step + 1L, 1.0, "sim-tick"))
                     assertNull(sample.units.single().mechPose)
                     assertTrue(sample.units.single().position.x in 400.0..760.0)
                     arrivals += sample.events.count { it.kind == "movement-arrived" }

@@ -20,12 +20,14 @@ class SubmarineFailureTest {
                 assertEquals(initial,context.observe().units)
                 val land = assertIs<ActionResult.Accepted>(context.submit(MoveAction("dry","p1","sub",Position(100.0,200.0),context.world)))
                 assertTrue(land.events.isEmpty())
-                assertTrue(Event("path-unreachable", "sub") in context.advance(Step(0, 1.0, "sim-tick")).events)
-                assertNull(context.observe().units.single { it.unitId=="sub" }.moveTarget)
-                for (id in listOf("first","duplicate")) assertEquals(2L, assertIs<ActionResult.Accepted>(context.submit(
-                    SubmarineDepthAction(id,"p1","sub",true,context.world,2L))).queuedForStep)
+                val shore = context.advanceToMoveOutcome(0, "sub")
+                val goal = assertNotNull(shore.units.single { it.unitId == "sub" }.moveTarget)
+                assertTrue(goal.x in 400.0..<500.0, goal.toString())
+                val scheduled = shore.stepIndex + 2
+                for (id in listOf("first","duplicate")) assertEquals(scheduled, assertIs<ActionResult.Accepted>(context.submit(
+                    SubmarineDepthAction(id,"p1","sub",true,context.world,scheduled))).queuedForStep)
                 assertEquals(false,context.observe().units.single { it.unitId=="sub" }.submarine!!.surfaceIntent)
-                for (q in 1L..2L) context.advance(Step(q,1.0,"sim-tick"))
+                for (q in scheduled - 1..scheduled) context.advance(Step(q,1.0,"sim-tick"))
                 val row = context.observe()
                 assertEquals(true,row.units.single { it.unitId=="sub" }.submarine!!.surfaceIntent)
                 assertIs<ActionResult.Accepted>(row.actionResults.single { it.actionId=="first" })

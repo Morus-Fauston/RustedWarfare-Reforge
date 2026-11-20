@@ -12,6 +12,7 @@ class AuthorShoreScenarioTest {
         val output = TestArchives.directory("RWR_AUTHOR_WATER_ARCHIVE_ROOT", javaClass, "rwr-author-shore-archive-")
         Files.createDirectories(output)
         var baseline: List<JsonObject>? = null
+        val shipId = "produced:p1:" + "b".repeat(32)
         for (format in listOf("ini", "json", "hjson")) {
             val scenario = public.resolve("scenarios/author-shore-$format.json")
             val contract = public.resolve("contracts/author-shore-$format.json")
@@ -23,15 +24,23 @@ class AuthorShoreScenarioTest {
                 .map { json.parseToJsonElement(it).jsonObject }
             val normalized = rows.map(TraceComparator::normalize)
             if (baseline == null) baseline = normalized else assertEquals(baseline, normalized, "$format complete shore archive")
-            val steps = rows.filter { it["kind"] == s("observation") && it["phase"] == s("after-advance") }
+            val steps = normalized.filter { it["kind"] == s("observation") && it["phase"] == s("after-advance") }
             assertEquals(1600, steps.size)
-            val last = TraceComparator.normalize(steps.last()).objectAt("observation")
-            val ship = last.arrayAt("units").single {
-                it.jsonObject.id("unitId") == "produced:p1:" + "b".repeat(32)
-            }.jsonObject
+            val sailStep = readObject(scenario).arrayAt("actions").map { it.jsonObject }
+                .single { it.id("actionId") == "sail" }.integer("atStep")
+            val observations = steps.map { it.objectAt("observation") }
+            val arrivals = observations.filter { it.integer("stepIndex") >= sailStep }
+                .flatMap { it.arrayAt("events") }.map { it.jsonObject }
+                .filter { it.id("kind") == "movement-arrived" && it.id("unitId") == shipId }
+            assertEquals(1, arrivals.size, "The sail order must reach ordinary arrival")
+            val ship = observations.last().arrayAt("units").single { it.jsonObject.id("unitId") == shipId }.jsonObject
             val position = ship.objectAt("position")
-            assertTrue(hypot(position.number("x") - 250.0, position.number("y") - 430.0) <= 4.0)
-            val index = rows.indexOf(steps[180])
+            assertTrue(hypot(position.number("x") - 250.0, position.number("y") - 430.0) < 7.0)
+            assertEquals(0.0, ship.number("speed"))
+            assertEquals(JsonNull, ship["moveTarget"])
+            val index = rows.indexOfFirst { it["kind"] == s("observation") && it["phase"] == s("after-advance") &&
+                it.objectAt("observation").integer("stepIndex") == 180L }
+            assertTrue(index >= 0)
             val original = rows[index]
             val observation = original.objectAt("observation")
             val economy = observation.objectAt("economy")

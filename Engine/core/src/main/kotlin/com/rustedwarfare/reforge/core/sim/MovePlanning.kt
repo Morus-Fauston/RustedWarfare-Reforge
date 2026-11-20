@@ -557,7 +557,12 @@ internal class MovePlanning {
                 }
                 return scoped(remaining).matches(scoped(current.copy(occupants = external)))
             }
-            if (input.repair != ManeuverRepair.GROUP_SLOT) return scoped(input).matches(scoped(current))
+            if (input.repair != ManeuverRepair.GROUP_SLOT) {
+                if (!scoped(input).matches(scoped(current))) return false
+                val member = current.members.singleOrNull()
+                return input.repair != ManeuverRepair.CONTACT || member == null ||
+                    result[member.action.unitId]?.nearest != true || canStopAfterContact(member, current.occupants)
+            }
             val chosen = input.members.singleOrNull()?.let { result[it.action.unitId]?.slot }
             val rejoiningCircle = chosen != null && input.members.singleOrNull()?.pose?.shape is MovementCollisionShape.Circle &&
                 current.members.size == input.members.size
@@ -808,9 +813,7 @@ internal class MovePlanning {
             active.advance(budget, cache)
             if (input.collectDiagnostics) searchNanos += (System.nanoTime() - startTime).coerceAtLeast(0)
             if (!active.finished) return null
-            if (active.path == null && input.repair == ManeuverRepair.CONTACT &&
-                (member.body?.stalledRouteTicks ?: 0L) >= 420L &&
-                (input.occupants.none { it.obstructsRoute } || input.occupants.any { it.obstructsRoute && it.fixed })) {
+            if (active.path == null && input.repair == ManeuverRepair.CONTACT && canStopAfterContact(member, input.occupants)) {
                 val result = PlannedMove(slot(member, member.start, listOf(member.start)), active.counters, searchNanos, nearest = true)
                 search = null
                 searchingNearest = false
@@ -831,6 +834,33 @@ internal class MovePlanning {
             searchingNearest = false
             searchNanos = 0
             return result
+        }
+
+        private fun canStopAfterContact(member: MovePlanningMember, occupants: List<MovePlanningOccupant>): Boolean {
+            val unit = member.body ?: return false
+            if (unit.stalledRouteTicks < 420L) return false
+            val blockers = occupants.filter { it.obstructsRoute }
+            if (unit.landingMember != null || unit.groupMoveReservation != null)
+                return blockers.isEmpty() || blockers.any { it.fixed }
+            return blockers.all {
+                it.fixed && it.body.moveTarget == null || opposingBlockedMoves(unit, it.body)
+            }
+        }
+
+        private fun opposingBlockedMoves(unit: MutableUnit, other: MutableUnit): Boolean {
+            if (other.ownerPlayerId != unit.ownerPlayerId || other.landingMember != null ||
+                other.groupMoveReservation != null || other.stalledRouteTicks < 420L) return false
+            // Each current route must lead into the other hull. A new order can
+            // change that fact before either unit has changed pose.
+            fun blockedBy(driver: MutableUnit, blocker: MutableUnit): Boolean {
+                val task = driver.tasks.firstOrNull() ?: return false
+                if (task.kind != UnitTaskKind.MOVE || task.target != driver.moveTarget) return false
+                val first = driver.pathPoints.firstOrNull() ?: return false
+                val aim = if (first == driver.position) driver.pathPoints.getOrNull(1) ?: return false else first
+                return UnitContact.routeAround(driver, listOf(blocker))
+                    ?.allows(driver.position, aim, driver.heading, driver.heading) == false
+            }
+            return blockedBy(unit, other) && blockedBy(other, unit)
         }
 
         private fun slot(member: MovePlanningMember, point: Position, path: List<Position>): GroupMoveSlot {

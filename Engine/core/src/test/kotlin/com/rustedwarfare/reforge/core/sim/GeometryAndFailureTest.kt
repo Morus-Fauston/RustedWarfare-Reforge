@@ -6,7 +6,9 @@ import com.rustedwarfare.reforge.core.knowledge.*
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
+import kotlin.test.assertFalse
 import kotlin.test.assertIs
+import kotlin.test.assertNotNull
 import kotlin.test.assertSame
 import kotlin.test.assertTrue
 
@@ -67,7 +69,7 @@ class GeometryAndFailureTest {
     }
 
     @Test
-    fun exact_open_center_target_survives_circle_overlap_but_blocked_target_is_not_replaced() {
+    fun exact_open_center_target_survives_circle_overlap_and_blocked_click_stays_outside_the_tile() {
         val source = TestContentFactory.openScenario()
         val unit = TestContentFactory.unitWith(source.unitDefinitions.getValue("tank"), radius = 10.0)
         val context = assertIs<InitResult.Accepted>(SimulationContext.initialize(source.copy(
@@ -85,9 +87,11 @@ class GeometryAndFailureTest {
         val blocked = assertIs<ActionResult.Accepted>(context.submit(
             MoveAction("blocked", "p1", "u1", Position(140.0, 150.0), context.world)))
         assertTrue(blocked.events.isEmpty())
-        val rejectedRoute = context.advance(Step(1, 1.0, "sim-tick"))
-        assertEquals(listOf("movement-cancelled", "path-unreachable"), rejectedRoute.events.map { it.kind })
-        assertEquals(null, rejectedRoute.units.single().moveTarget)
+        val fallbackRoute = context.advanceToMoveOutcome(1, "u1")
+        assertTrue(Event("movement-started", "u1") in fallbackRoute.events)
+        val fallback = assertNotNull(fallbackRoute.units.single().moveTarget)
+        assertFalse(fallback.x in 140.0..<160.0 && fallback.y in 140.0..<160.0)
+        assertTrue(kotlin.math.hypot(fallback.x - 140.0, fallback.y - 150.0) <= 10.0 + 1e-6, fallback.toString())
     }
 
     @Test

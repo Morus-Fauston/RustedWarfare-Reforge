@@ -7,7 +7,7 @@ import java.nio.file.Path
 import kotlin.test.*
 
 class SelectionSandboxSessionTest {
-    @Test fun one_ground_click_assigns_distinct_destinations_to_two_selected_tanks() {
+    @Test fun one_ground_click_parks_two_selected_tanks_in_distinct_shared_slots() {
         val base = ControlledScenario.load(root())
         val tank = base.units.single { it.unitId == "a" }
         val second = tank.copy(unitId = "z", position = Position(180.0, 110.0))
@@ -16,7 +16,7 @@ class SelectionSandboxSessionTest {
         val target = Position(180.0, 330.0)
         val radius = (scene.unitDefinitions.getValue(tank.typeId).movementCollision as
             com.rustedwarfare.reforge.core.content.MovementCollisionShape.Circle).radius
-        fun run(reverseSelection: Boolean): Map<String, Position?> = SandboxSession(scene).use { session ->
+        fun run(reverseSelection: Boolean): Set<Position> = SandboxSession(scene).use { session ->
             val order = if (reverseSelection) listOf(second, tank) else listOf(tank, second)
             session.select(order[0].position)
             session.select(order[1].position, SelectionMode.ADD)
@@ -24,18 +24,18 @@ class SelectionSandboxSessionTest {
             assertIs<ActionResult.Accepted>(session.command(target))
             assertTrue(session.observation.units.all { it.moveTarget == null })
             awaitMovePlans(session, "a", "z")
-            val destinations = session.observation.units.associate { it.unitId to it.moveTarget }
-            println("Shared click $target destinations=$destinations")
-            assertEquals(target, destinations.getValue("a"))
-            val other = assertNotNull(destinations.getValue("z"))
-            assertTrue(kotlin.math.hypot(other.x - target.x, other.y - target.y) in (2.0 * radius)..64.0)
             val arrived = mutableSetOf<String>()
             repeat(1100) {
                 session.tick()
                 arrived += session.observation.events.filter { it.kind == "movement-arrived" }.mapNotNull { it.unitId }
             }
             assertEquals(setOf("a", "z"), arrived, "Final units=${session.observation.units}")
-            destinations
+            val parked = session.observation.units.sortedBy { it.unitId }
+            assertTrue(parked.all { it.moveTarget == null && it.speed == 0.0 && it.angularVelocity == 0.0 })
+            val (first, last) = parked.map { it.position }
+            assertTrue(kotlin.math.hypot(first.x - last.x, first.y - last.y) >= 2.0 * radius - 1e-6)
+            assertTrue(parked.all { kotlin.math.hypot(it.position.x - target.x, it.position.y - target.y) <= 64.0 })
+            parked.map { it.position }.toSet()
         }
         assertEquals(run(false), run(true))
         SandboxSession(scene).use { session ->

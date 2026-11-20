@@ -8,7 +8,7 @@ import com.rustedwarfare.reforge.core.knowledge.*
 import kotlin.test.*
 
 class MapBoundaryTest {
-    @Test fun invalid_target_cancels_without_replacement_and_deceleration_still_obeys_the_boundary() {
+    @Test fun out_of_map_order_preserves_the_move_and_stop_inertia_obeys_the_boundary() {
         val source = scenario()
         val tank = source.unitDefinitions.getValue("tank")
         val fast = TestContentFactory.unitWith(tank, movement = tank.movement.copy(
@@ -26,15 +26,16 @@ class MapBoundaryTest {
             assertEquals("invalid-target", assertIs<ActionResult.Rejected>(context.submit(
                 MoveAction("nan", "p1", "u1", Position(Double.NaN, 10.0), context.world))).error.code)
             assertEquals(moving, context.observe().units.single())
-            val result = assertIs<ActionResult.Accepted>(context.submit(
-                MoveAction("outside", "p1", "u1", Position(50.0, 10.0), context.world)))
-            assertTrue(result.events.isEmpty())
+            val rejected = assertIs<ActionResult.Rejected>(context.submit(
+                MoveAction("outside", "p1", "u1", Position(50.0, -1.0), context.world)))
+            assertEquals("invalid-target", rejected.error.code)
+            assertEquals(moving, context.observe().units.single())
+            assertIs<ActionResult.Accepted>(context.submit(StopAction("stop", "p1", "u1", context.world)))
             val cancelled = context.observe().units.single()
             assertNull(cancelled.moveTarget)
             assertTrue(cancelled.pathPoints.isEmpty())
             assertEquals(moving.speed, cancelled.speed)
             val stopped = context.advance(Step(1, 1.0, "sim-tick"))
-            assertEquals(listOf("movement-cancelled", "path-unreachable"), stopped.events.take(2).map { it.kind })
             assertEquals(moving.position, stopped.units.single().position)
             assertEquals(0.0, stopped.units.single().speed)
             assertTrue(stopped.events.any { it.kind == "movement-boundary-blocked" })

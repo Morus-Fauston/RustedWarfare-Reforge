@@ -39,6 +39,7 @@ internal object TrafficSeparation {
 
     /** Aim through the usable part of a straight mouth after traffic pushes a body off its route. */
     fun mouthAim(unit: MutableUnit, planned: Position): Position {
+        if (unit.landingMember == null && unit.groupMoveReservation == null) return planned
         if (UnitLocomotion.movement(unit).type != MovementType.LAND) return planned
         val entry = unit.passageEntry ?: return planned
         val shape = unit.definition.movementCollision as? MovementCollisionShape.Circle ?: return planned
@@ -81,6 +82,7 @@ internal object TrafficSeparation {
             if (length == 0.0) return emptyList()
             val dx = (target.x - start.x) / length
             val dy = (target.y - start.y) / length
+            val hardRadius = unit.definition.movementCollision.boundingRadius
             val radius = unit.definition.contactBufferCollision.boundingRadius
             val reach = 5 * (radius + largest)
             var first = Double.POSITIVE_INFINITY
@@ -90,6 +92,7 @@ internal object TrafficSeparation {
             for (peer in nearby) {
                     if (peer === unit || peer.ownerPlayerId != unit.ownerPlayerId || !UnitContact.shareLayer(unit, peer) ||
                         unit.landingMember?.group?.let { it === peer.landingMember?.group } == true) continue
+                    if (hardRadius == 0.0 && peer.definition.movementCollision.boundingRadius == 0.0) continue
                     val clearance = radius + peer.definition.contactBufferCollision.boundingRadius
                     val vx = peer.position.x - start.x
                     val vy = peer.position.y - start.y
@@ -139,8 +142,12 @@ internal object TrafficSeparation {
         val stream = car.unit.landingMember?.group ?: car.unit.groupMoveReservation?.plan
         val otherStream = peer.unit.landingMember?.group ?: peer.unit.groupMoveReservation?.plan
         if (stream != null && stream === otherStream) return car.cruise
-        // A crossing conflict lies ahead of both vehicles. Ignore converging same-order paths
-        // and peers which have already cleared the intersection and are turning to park.
+        // Approaches that both end at the same parking point are handled by
+        // following and hard contact. The exception stops at the final leg.
+        val terminal = car.unit.pathPoints.singleOrNull()
+        if (terminal != null && terminal == car.unit.moveTarget &&
+            terminal == peer.unit.pathPoints.singleOrNull() && terminal == peer.unit.moveTarget) return car.cruise
+        // A crossing conflict lies ahead of both vehicles.
         val determinant = car.dx * peer.dy - car.dy * peer.dx
         if ((x * peer.dy - y * peer.dx) / determinant <= 0.0 ||
             (x * car.dy - y * car.dx) / determinant <= 0.0) return car.cruise
