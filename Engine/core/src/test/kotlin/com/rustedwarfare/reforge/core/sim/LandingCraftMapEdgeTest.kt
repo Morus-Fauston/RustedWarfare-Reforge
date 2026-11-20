@@ -59,13 +59,13 @@ class LandingCraftMapEdgeTest {
             assertIs<ActionResult.Accepted>(context.submit(StopAction("stop", "p1", "b", context.world)))
             repeat(60) { context.advance(Step(it + 30L, 1.0, "sim-tick")) }
             assertNull(context.observe().units.single { it.unitId == "b" }.transportExit)
-            assertIs<ActionResult.Accepted>(context.submit(MoveAction("outside", "p1", "b", Position(-30.0, 10.0), context.world)))
+            assertEquals("invalid-target", assertIs<ActionResult.Rejected>(context.submit(
+                MoveAction("outside", "p1", "b", Position(-30.0, 10.0), context.world))).error.code)
             // The carrier occupies the dry corridor along row zero. Clear that corridor first.
             assertIs<ActionResult.Accepted>(context.submit(MoveAction("clear-carrier", "p1", "craft", Position(92.0, 280.0), context.world)))
             repeat(350) {
                 val frame = context.advance(Step(it + 90L, 1.0, "sim-tick"))
                 if (it == 0) {
-                    assertTrue(Event("path-unreachable", "b") in frame.events)
                     assertTrue(frame.units.single { unit -> unit.unitId == "b" }.tasks.isEmpty())
                 }
             }
@@ -76,9 +76,13 @@ class LandingCraftMapEdgeTest {
             assertTrue(context.observe().units.single { it.unitId == "b" }.position.x > 80)
             assertTrue(context.observePlayer(context.world, "p1").units.any { it.unitId == "b" })
             assertIs<ActionResult.Accepted>(context.submit(MoveAction("ordinary-boundary", "p1", "b", Position(0.0, 10.0), context.world)))
-            val outside = context.advance(Step(740, 1.0, "sim-tick"))
-            assertTrue(Event("path-unreachable", "b") in outside.events)
-            assertTrue(outside.units.single { it.unitId == "b" }.tasks.isEmpty(), "The normal radius is restored after returning inside")
+            val route = context.advanceToMoveOutcome(740, "b").units.single { it.unitId == "b" }
+            val radius = assertNotNull(route.moveTarget).let {
+                assertTrue(it.x > 0.0 && it.x < route.position.x,
+                    "Returning inside restores the regular hull constraint: $it")
+                it.x
+            }
+            assertTrue(radius >= 1.0)
         } finally { context.close() }
     }
 

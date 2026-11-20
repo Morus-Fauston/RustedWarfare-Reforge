@@ -80,9 +80,10 @@ class CenterTerrainMovementTest {
         val walls = (4..15).flatMap { row -> listOf(13 to row, 15 to row) }.toSet()
         val context = open(Position(290.0, 110.0), 180.0, walls)
         try {
-            context.submit(MoveAction("move", "p1", "u1", Position(290.0, 270.0), context.world))
-            assertEquals(listOf(Position(290.0, 270.0)), context.observe().units.single().pathPoints)
+            assertIs<ActionResult.Accepted>(context.submit(
+                MoveAction("move", "p1", "u1", Position(290.0, 270.0), context.world)))
             val samples = (0L..180L).map { context.advance(Step(it, 1.0, "sim-tick")) }
+            assertEquals(listOf(Position(290.0, 270.0)), samples.first().units.single().pathPoints)
             assertTrue(samples.all { it.units.single().position.x == 290.0 })
             assertEquals(1, samples.sumOf { s -> s.events.count { it.kind == "movement-arrived" } })
             assertEquals(MovementState.IDLE, samples.last().units.single().movementState)
@@ -99,8 +100,9 @@ class CenterTerrainMovementTest {
             try {
                 val result = assertIs<ActionResult.Accepted>(context.submit(MoveAction("depart", "p1", "u1", goal, context.world)))
                 assertTrue(result.events.none { it.kind == "path-unreachable" })
-                assertEquals(listOf(goal), context.observe().units.single().pathPoints)
-                assertNotEquals(start, context.advance(Step(0, 1.0, "sim-tick")).units.single().position)
+                val first = context.advance(Step(0, 1.0, "sim-tick")).units.single()
+                assertEquals(listOf(goal), first.pathPoints)
+                assertNotEquals(start, first.position)
             } finally { context.close() }
         }
     }

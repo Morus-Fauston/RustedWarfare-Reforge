@@ -56,13 +56,16 @@ class AutomaticVisionDevelopmentTest {
         reject("late-started-synced",syncObservation(1,"events",JsonArray(listOf(buildJsonObject { put("kind","movement-started");put("unitId","u0") }))),"Late start")
         val result=run.rows[2].getValue("observation").jsonObject.getValue("actionResults").jsonArray.single().jsonObject
         reject("host-result-synced",syncObservation(0,"actionResults",JsonArray(listOf(JsonObject(result+("status" to JsonPrimitive("rejected")))))),"Host request results")
-        reject("clear-heading-synced",changedStep(normal,mapOf("heading" to JsonPrimitive(90.0))),"heading or retained cg")
-        reject("clear-cg-synced",changedStep(normal,mapOf("angularVelocity" to JsonPrimitive(0.0))),"heading or retained cg")
-        reject("braking-speed-synced",changedStep(normal+1,mapOf("speed" to JsonPrimitive(0.0))),"proportional braking")
-        reject("terminal-cg-synced",changedStep(settle+1,mapOf("angularVelocity" to JsonPrimitive(0.0))),"heading or retained cg")
+        reject("clear-heading-synced",changedStep(normal,mapOf("heading" to JsonPrimitive(90.0))),"Stopped move changed heading")
+        reject("clear-cg-synced",changedStep(normal,mapOf("angularVelocity" to JsonPrimitive(0.01))),"Move did not stop at the captured pose")
+        reject("residual-speed-synced",changedStep(normal,mapOf("speed" to JsonPrimitive(0.01))),"Move did not stop at the captured pose")
+        reject("terminal-cg-synced",changedStep(settle+1,mapOf("angularVelocity" to JsonPrimitive(0.01))),"Move did not stop at the captured pose")
         reject("missing-terminal-tail",run.rows.dropLast(2)+run.rows.last(),"Failed requirement")
         reject("wrong-settle-step",run.rows.dropLast(1)+JsonObject(run.rows.last()+("settleStep" to JsonPrimitive(settle-1))),"Failed requirement")
         reject("wrong-protocol",run.rows.map { JsonObject(it+("developmentOnly" to JsonPrimitive(false))) },"Historical or unknown")
+        reject("old-braking-protocol", run.rows.map { JsonObject(it + mapOf(
+            "schemaVersion" to JsonPrimitive(2),
+            "motionRulesVersion" to JsonPrimitive("p002.dev.center-motion.v2"))) }, "Historical or unknown")
         reject("actual-truth-sweep",changedStep(12,mapOf("position" to buildJsonObject { put("x",330.0);put("y",90.0) })),"Truth sweep collision")
         val falseNormal=run.rows.mapIndexed { i,row->when(i) {
             3 -> {

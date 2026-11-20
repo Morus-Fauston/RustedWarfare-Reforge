@@ -23,9 +23,8 @@ class CornerCaptureTest {
         context.enableKnowledge(context.world, KnowledgeRules(TerrainRetention.MEMORY, PathInformationSource.PLAYER_KNOWLEDGE, false))
         context.acceptVisibleTerrain(context.world, "p1", listOf(VisibleTerrainCell(2, 2 + offsetRows, true)))
         context.enablePathDiagnostics(context.world)
-        context.submit(MoveAction("move", "p1", "u1", Position(70.0, 50.0 + offset), context.world))
-        assertEquals(initialPath.map { it.copy(y = it.y + offset) }, context.observe().units.single().pathPoints)
-        assertEquals(1, context.drainPathDiagnostics(context.world).single().actualSearchCalls)
+        assertIs<ActionResult.Accepted>(context.submit(
+            MoveAction("move", "p1", "u1", Position(70.0, 50.0 + offset), context.world)))
         return context
     }
 
@@ -41,7 +40,8 @@ class CornerCaptureTest {
                 assertEquals(if (step < 13L) initialPath else initialPath.drop(1), unit.pathPoints)
                 assertEquals(Position(70.0, 50.0), unit.moveTarget)
                 assertTrue(observation.events.none { it.kind in setOf("movement-arrived", "movement-blocked") })
-                assertTrue(context.drainPathDiagnostics(context.world).isEmpty())
+                assertEquals(if (step == 0L) listOf(1L) else emptyList(),
+                    context.drainPathDiagnostics(context.world).map { it.actualSearchCalls })
                 println("CP01,$step,${unit.position},${unit.speed},${unit.heading},${unit.pathPoints}")
             }
         } finally { context.close() }
@@ -67,8 +67,9 @@ class CornerCaptureTest {
                 assertEquals(if (step == 0L) path else path.drop(1), unit.pathPoints)
                 assertEquals(Position(70.0, 70.0), unit.moveTarget)
                 assertTrue(a.events.none { it.kind in setOf("movement-arrived", "movement-blocked") })
-                assertTrue(first.drainPathDiagnostics(first.world).isEmpty())
-                assertTrue(second.drainPathDiagnostics(second.world).isEmpty())
+                val expectedSearches = if (step == 0L) listOf(1L) else emptyList()
+                assertEquals(expectedSearches, first.drainPathDiagnostics(first.world).map { it.actualSearchCalls })
+                assertEquals(expectedSearches, second.drainPathDiagnostics(second.world).map { it.actualSearchCalls })
                 println("CP03,$step,${unit.position},${unit.speed},${unit.heading},${unit.pathPoints}")
             }
         } finally { first.close(); second.close() }
@@ -86,9 +87,8 @@ class CornerCaptureTest {
             TimeModel("p001.time.v1", "sim-tick", "ieee754-binary64", "fixed-explicit-delta"), MovementContract(16.0, 4.0)))).context
         try {
             context.enablePathDiagnostics(context.world)
-            context.submit(MoveAction("move", "p1", "u1", Position(130.0, 50.0), context.world))
-            assertEquals(path, context.observe().units.single().pathPoints)
-            context.drainPathDiagnostics(context.world)
+            assertIs<ActionResult.Accepted>(context.submit(
+                MoveAction("move", "p1", "u1", Position(130.0, 50.0), context.world)))
             for (step in 0L..9L) {
                 val observation = context.advance(Step(step, 1.0, "sim-tick"))
                 val unit = observation.units.single()
@@ -98,7 +98,8 @@ class CornerCaptureTest {
                 assertEquals(if (step < 9L) path else path.drop(1), unit.pathPoints)
                 assertEquals(Position(130.0, 50.0), unit.moveTarget)
                 assertTrue(observation.events.none { it.kind in setOf("movement-arrived", "movement-blocked") })
-                assertTrue(context.drainPathDiagnostics(context.world).isEmpty())
+                assertEquals(if (step == 0L) listOf(1L) else emptyList(),
+                    context.drainPathDiagnostics(context.world).map { it.actualSearchCalls })
                 println("CP02,$step,${unit.position},${unit.speed},${unit.heading},${unit.pathPoints}")
             }
         } finally { context.close() }

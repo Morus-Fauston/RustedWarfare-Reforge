@@ -26,7 +26,7 @@ internal object UnitLocomotion {
         return when (val shape = unit.definition.movementCollision) {
             is MovementCollisionShape.Rectangle -> shape
             is MovementCollisionShape.Circle -> shape.takeIf {
-                it.radius > 0.0 && (movement(unit).type == MovementType.WATER || it.radius != unit.definition.radius)
+                it.radius > 0.0 && (unit.landingMember != null || movement(unit).type == MovementType.WATER || it.radius != unit.definition.radius)
             }
         }
     }

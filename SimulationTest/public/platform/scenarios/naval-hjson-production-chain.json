@@ -151,7 +151,7 @@
         "x": 450,
         "y": 400
       },
-      "waitSteps": 20
+      "waitSteps": 80
     },
     {
       "intentId": "stop-ship",
@@ -165,7 +165,7 @@
         "x": 330,
         "y": 550
       },
-      "waitSteps": 440
+      "waitSteps": 380
     },
     {
       "intentId": "attack-underwater",

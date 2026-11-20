@@ -10,6 +10,13 @@ import kotlin.test.assertFailsWith
 import com.rustedwarfare.reforge.client.demo.DemoScenario
 
 class VisualAssetBindingTest {
+    @Test fun coastal_ground_can_mark_its_third_tile_as_a_rock() {
+        val coast = VisualTileAtlas(1, "naval-ground", 20, 20, Path.of("coast.png"), setOf(2), 40, 5,
+            0, 0, null, emptySet())
+        assertEquals("naval-ground-40", coast.supportedLayout())
+        assertFailsWith<IllegalArgumentException> { coast.copy(blockedTileIds = setOf(1)).supportedLayout() }
+        assertFailsWith<IllegalArgumentException> { coast.copy(resourcePoolTileIds = setOf(2)).supportedLayout() }
+    }
     @Test fun known_atlas_geometry_and_blocking_select_one_recipe_and_unknown_semantics_are_rejected() {
         val repo = System.getProperty("repo.root")?.let(Path::of) ?: generateSequence(Path.of("").toAbsolutePath()) { it.parent }
             .first { Files.isRegularFile(it.resolve("AGENTS.md")) }

@@ -150,7 +150,13 @@ internal object UnitContact {
 
         fun recordOwnMotion(unit: MutableUnit, before: Position, after: Position, turned: Boolean,
                             turnLimited: Boolean) {
-            if (distance(before, after) > positionRoundoff(before, after) || turned) ownProgress += unit.unitId
+            val translated = distance(before, after) > positionRoundoff(before, after)
+            if (translated || turned) ownProgress += unit.unitId
+            val landing = unit.landingMember
+            if (translated && landing?.noRouteTicks != null && landing.claimed != null) {
+                val waypoint = unit.pathPoints.firstOrNull() ?: landing.claimed
+                if (distance(after, waypoint) < distance(before, waypoint)) unit.landingMember = landing.copy(noRouteTicks = null)
+            }
             if (turnLimited) hardLimited += unit.unitId
         }
 
@@ -161,8 +167,16 @@ internal object UnitContact {
         }
 
         /** Settle after every mover so a later push cannot masquerade as this unit's own progress. */
-        fun finish(units: Collection<MutableUnit>, samples: MutableList<MotionStepSample>?) {
+        fun finish(units: Collection<MutableUnit>, samples: MutableList<MotionStepSample>?, occupancy: LandingOccupancy? = null) {
+            occupancy?.update(units)
             for (unit in units) {
+                unit.landingMember?.let { landing ->
+                    val pushed = unit.unitId in pushedDisplacements
+                    val pose = if (pushed) unit.position else landing.pushedPose?.takeIf { it == unit.position }
+                    if (landing.pushed != pushed || landing.pushedPose != pose || landing.noRouteTicks != null) {
+                        unit.landingMember = landing.copy(pushed = pushed, pushedPose = pose, noRouteTicks = landing.noRouteTicks?.plus(1))
+                    }
+                }
                 val active = unit.moveTarget != null && unit.tasks.firstOrNull()?.kind == UnitTaskKind.MOVE
                 unit.hardContactLimitedTicks = when {
                     !active -> 0
@@ -176,7 +190,10 @@ internal object UnitContact {
                 val byId = units.associateBy { it.unitId }
                 for (index in samples.indices) {
                     val sample = samples[index]
-                    samples[index] = sample.copy(hardContactLimitedTicks = byId.getValue(sample.unitId).hardContactLimitedTicks,
+                    val body = byId.getValue(sample.unitId)
+                    samples[index] = sample.copy(hardContactLimitedTicks = body.hardContactLimitedTicks,
+                        landingClaim = body.landingMember?.claimed, landingIngress = body.landingMember?.ingress,
+                        landingParked = body.landingMember?.parked == true,
                         pushedDisplacement = pushedDisplacements[sample.unitId] ?: Position(0.0, 0.0))
                 }
             }
@@ -265,8 +282,21 @@ internal object UnitContact {
 
             val chain = members.map { constrainedLink(it, map) }
             val rootBody = Body(unit.definition.movementCollision, unit.heading)
-            fun moverEnd(share: Double): Position = if (softContact == null) offsetAlong(clipped, drift, share)
-                else offsetAlong(target, drift, -members.sumOf { it.massRatio * it.travel(share) })
+            val producerId = unit.productionOrigin?.producerId
+            // A newer hull can be born inside its predecessor. Hold the newborn at
+            // first contact while the existing hull clears that overlap under pressure.
+            val separatingBirth = if (producerId != null && FactoryExit.isNativeSeaDeparture(unit)) {
+                chain.filter { member ->
+                    val other = member.link.unit
+                    other.productionOrigin?.producerId == producerId &&
+                        rootBody.overlaps(member.body, subtract(unit.position, other.position))
+                }
+            } else emptyList()
+            fun moverEnd(share: Double): Position = when {
+                separatingBirth.isNotEmpty() -> clipped
+                softContact == null -> offsetAlong(clipped, drift, share)
+                else -> offsetAlong(target, drift, -members.sumOf { it.massRatio * it.travel(share) })
+            }
 
             fun clearAt(share: Double): Boolean {
                 val end = moverEnd(share)
@@ -286,7 +316,8 @@ internal object UnitContact {
                             translationContact(moved, destination, units, ignoredIds = connected) != null) return false
                     }
                     if (!clearRelative(rootBody, unit.position, end, member.body, moved.position, destination,
-                            requireClearEnd = unit.nearestMoveTarget != null && unit.definition.movementCollision is MovementCollisionShape.Rectangle))
+                            requireClearEnd = unit.nearestMoveTarget != null && unit.definition.movementCollision is MovementCollisionShape.Rectangle,
+                            allowExistingOverlap = member in separatingBirth))
                         return false
                     for (j in 0 until i) {
                         val earlier = chain[j]
@@ -335,13 +366,15 @@ internal object UnitContact {
             // A stopped companion at the same gathering must not be driven ahead of
             // a passing member when the latter can use the open tangent instead.
             val reservation = unit.groupMoveReservation
-            val parkedPeer = other.moveTarget == null && unit.ownerPlayerId == other.ownerPlayerId &&
-                reservation != null && other.moveArrival?.let { it.group && it.originalTarget == reservation.plan.click } == true &&
+            val parkedPeer = reservation?.plan?.hasParkedMember(other) == true &&
                 unit.definition.movementCollision is MovementCollisionShape.Circle &&
                 other.definition.movementCollision is MovementCollisionShape.Circle
             if (other.moveTarget == null && !parkedPeer) return null
             val opposing = ScreenPlane.displacement(other.heading, 1.0)
-            if (!parkedPeer && dot(drift, opposing) / length > -0.5) return null
+            val travelling = unit.landingMember
+            val convoy = travelling != null && travelling.claimed == null && travelling.ingress == null &&
+                other.landingMember?.group === travelling.group && other.moveTarget != null && unit.hardContactLimitedTicks > 0
+            if (!parkedPeer && !convoy && dot(drift, opposing) / length > -0.5) return null
             val normal = subtract(unit.position, other.position)
             val separation = hypot(normal.x, normal.y)
             if (separation == 0.0 || normal.x * drift.x + normal.y * drift.y >= 0.0) return null
@@ -350,7 +383,8 @@ internal object UnitContact {
             val projection = toward?.let { dot(tangent, it) } ?: 0.0
             if (projection < 0.0 || (projection == 0.0 && tangent.x * -drift.y + tangent.y * drift.x < 0.0))
                 tangent = negate(tangent)
-            val wanted = offsetAlong(unit.position, tangent, length)
+            val wanted = if (convoy) offsetAlong(unit.position, tangent, dot(drift, tangent))
+                else offsetAlong(unit.position, tangent, length)
             val body = Body(unit.definition.movementCollision, unit.heading)
             val terrain = UnitLocomotion.movement(unit).type
             val grid = HullTerrainGrid.authoritative(map, terrain)
@@ -509,13 +543,15 @@ internal object UnitContact {
     }
 
     private fun clearRelative(first: Body, start: Position, end: Position,
-                              second: Body, otherStart: Position, otherEnd: Position, requireClearEnd: Boolean = false): Boolean {
+                              second: Body, otherStart: Position, otherEnd: Position, requireClearEnd: Boolean = false,
+                              allowExistingOverlap: Boolean = false): Boolean {
         val offset = subtract(start, otherStart)
         val endOffset = subtract(end, otherEnd)
         val drift = subtract(endOffset, offset)
         val roundoff = positionRoundoff(end, otherEnd)
         val entry = first.entry(second, offset, drift, 1.0)
-        return (if (requireClearEnd) !first.overlaps(second, endOffset) else first.clearance(second, endOffset) >= -roundoff) &&
+        val minimum = if (allowExistingOverlap) minOf(0.0, first.clearance(second, offset)) else 0.0
+        return (if (requireClearEnd) !first.overlaps(second, endOffset) else first.clearance(second, endOffset) >= minimum - roundoff) &&
             (1.0 - entry) * hypot(drift.x, drift.y) <= roundoff
     }
 
@@ -624,9 +660,23 @@ internal object UnitContact {
         return traversed && !overlapsTerrain(body, target, grid)
     }
 
+    fun withinSweptBounds(unit: MutableUnit, start: Position, end: Position, other: MutableUnit, pose: Position = other.position): Boolean {
+        val radius = unit.definition.movementCollision.boundingRadius + other.definition.movementCollision.boundingRadius
+        val dx = end.x - start.x
+        val dy = end.y - start.y
+        val x = pose.x - start.x
+        val y = pose.y - start.y
+        val lengthSquared = dx * dx + dy * dy
+        val fraction = if (lengthSquared == 0.0) 0.0 else ((x * dx + y * dy) / lengthSquared).coerceIn(0.0, 1.0)
+        return hypot(x - fraction * dx, y - fraction * dy) <= Math.nextUp(radius)
+    }
+
     fun routeAround(unit: MutableUnit, occupants: List<MutableUnit>): RouteOccupancy? {
         val contactLayer = layer(unit) ?: return null
-        val obstacles = occupants.filter { layer(it) == contactLayer }
+        return routeAroundLayer(unit, occupants.filter { layer(it) == contactLayer })
+    }
+
+    fun routeAroundLayer(unit: MutableUnit, obstacles: List<MutableUnit>): RouteOccupancy? {
         if (obstacles.isEmpty()) return null
         val shape = unit.definition.movementCollision
         return object : RouteOccupancy {
@@ -703,10 +753,13 @@ internal object UnitContact {
 
     fun boundingRadius(shape: MovementCollisionShape): Double = shape.boundingRadius
 
+    // Only rectangles project onto local axes.
+    private val circleAxis = Position(1.0, 0.0)
+
     private class Body(private val shape: MovementCollisionShape, heading: Double) {
         val reach = boundingRadius(shape)
-        private val forward = ScreenPlane.displacement(heading, 1.0)
-        private val right = Position(-forward.y, forward.x)
+        private val forward = if (shape is MovementCollisionShape.Rectangle) ScreenPlane.displacement(heading, 1.0) else circleAxis
+        private val right = if (shape is MovementCollisionShape.Rectangle) Position(-forward.y, forward.x) else circleAxis
 
         fun entry(other: Body, offset: Position, drift: Position, limit: Double): Double {
             val rect = shape as? MovementCollisionShape.Rectangle

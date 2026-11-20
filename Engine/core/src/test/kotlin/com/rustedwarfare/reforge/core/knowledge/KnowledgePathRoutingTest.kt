@@ -18,6 +18,7 @@ import com.rustedwarfare.reforge.core.sim.SimulationContext
 import com.rustedwarfare.reforge.core.sim.Step
 import com.rustedwarfare.reforge.core.sim.TimeModel
 import com.rustedwarfare.reforge.core.sim.UnitSpawn
+import com.rustedwarfare.reforge.core.sim.advanceToMoveOutcome
 import java.nio.file.Path
 import kotlin.math.hypot
 import kotlin.test.*
@@ -218,37 +219,35 @@ class KnowledgePathRoutingTest {
     }
 
     /**
-     * KR05: a known-blocked goal is accepted as an action but planned as unreachable, which cancels
-     * the old movement and clears the previous target/path.
+     * KR05: an accepted replacement uses the owner's knowledge to find a legal
+     * destination near a blocked click.
      */
     @Test
-    fun kr05_known_blocked_goal_is_accepted_but_cancels_movement() {
+    fun kr05_known_blocked_goal_replaces_the_old_move_with_a_legal_endpoint() {
         val reachable = open(map())
         try {
             val world = reachable.world
             reachable.enableKnowledge(world, rules(PathInformationSource.PLAYER_KNOWLEDGE))
 
-            reachable.submit(MoveAction("m-first", "p1", "u1", target, world))
+            val firstTarget = Position(70.0, 30.0)
+            reachable.submit(MoveAction("m-first", "p1", "u1", firstTarget, world))
             reachable.advance(Step(0, 1.0, "sim-tick"))
-            assertEquals(straight, reachable.observe().units.single().pathPoints)
+            assertEquals(listOf(firstTarget), reachable.observe().units.single().pathPoints)
 
-            // Goal cell (3,2) is learned blocked; an unknown goal is still planned, a known one is not.
+            // Only the player's known terrain records a blockage at the click.
             reachable.acceptVisibleTerrain(world, "p1", listOf(VisibleTerrainCell(3, 2, true)))
             val result = reachable.submit(MoveAction("m-goal", "p1", "u1", target, world))
             assertIs<com.rustedwarfare.reforge.core.sim.ActionResult.Accepted>(result)
 
             assertTrue(result.events.isEmpty())
-            val planned = reachable.advance(Step(1, 1.0, "sim-tick"))
+            val planned = reachable.advanceToMoveOutcome(1, "u1")
             val unit = planned.units.single()
-            assertNull(unit.moveTarget)
-            assertTrue(unit.pathPoints.isEmpty())
-            assertEquals(
-                listOf(
-                    com.rustedwarfare.reforge.core.sim.Event("movement-cancelled", "u1"),
-                    com.rustedwarfare.reforge.core.sim.Event("path-unreachable", "u1"),
-                ),
-                planned.events,
-            )
+            assertTrue(planned.events.any { it.kind == "movement-started" && it.unitId == "u1" })
+            val fallback = assertNotNull(unit.moveTarget)
+            assertEquals(fallback, unit.pathPoints.last())
+            assertNotEquals(firstTarget, fallback)
+            assertEquals(11.0, hypot(fallback.x - target.x, fallback.y - target.y), 1e-6)
+            assertFalse(fallback.x in 60.0..<80.0 && fallback.y in 40.0..<60.0)
         } finally {
             reachable.close()
         }

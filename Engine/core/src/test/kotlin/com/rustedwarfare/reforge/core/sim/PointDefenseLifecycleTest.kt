@@ -52,7 +52,7 @@ class PointDefenseLifecycleTest {
         val profile = tank.combat!!
         // The native defense keeps its original HP, energy and footprint. Fast lethal shots are explicit trusted input.
         val killer = PointDefenseTestContent.variant(tank, id = "killer", combat = profile.copy(attackRange = 1000.0,
-            turretTurnSpeed = 0.0, turretTurnAcceleration = 0.0,
+            turretTurnSpeed = 0.0, turretTurnAcceleration = 0.0, shootDelay = 1000.0,
             projectile = profile.projectile.copy(speed = 100.0, directDamage = 1000.0)))
         val map = base.map.let { MapDefinition(it.widthTiles, it.heightTiles, it.tileWidth, it.tileHeight,
             it.tileSets, it.groundGids, BlockingGrid(it.widthTiles, it.heightTiles,
@@ -67,10 +67,12 @@ class PointDefenseLifecycleTest {
         val c = assertIs<InitResult.Accepted>(SimulationContext.initialize(scene)).context
         try {
             val before = c.observe()
-            val routeControl = assertIs<InitResult.Accepted>(SimulationContext.initialize(scene)).context
+            val destination = Position(390.0, 210.0)
+            val routeControl = assertIs<InitResult.Accepted>(SimulationContext.initialize(
+                PointDefenseTestContent.identities(scene.copy(units = scene.units.filter { it.unitId != "z" })))).context
             try {
                 assertIs<ActionResult.Accepted>(routeControl.submit(
-                    MoveAction("before", "p1", "a", Position(430.0, 210.0), routeControl.world)))
+                    MoveAction("before", "p1", "a", destination, routeControl.world)))
                 val routed = routeControl.advanceToMoveOutcome(0, "a")
                 assertTrue(routed.units.single { it.unitId == "a" }.pathPoints.any { it.y < 200.0 || it.y >= 240.0 })
             } finally { routeControl.close() }
@@ -83,22 +85,25 @@ class PointDefenseLifecycleTest {
             assertFalse(dead.alive)
             assertEquals(500.0, before.units.single { it.unitId == "d" }.health)
             assertEquals("inactive-unit", assertIs<ActionResult.Rejected>(c.submit(StopAction("dead-stop", "p1", "d", c.world))).error.code)
-            assertIs<ActionResult.Accepted>(c.submit(MoveAction("through", "p1", "a", Position(430.0, 210.0), c.world)))
-            repeat(40) { index ->
+            assertIs<ActionResult.Accepted>(c.submit(MoveAction("through", "p1", "a", destination, c.world)))
+            var verifiedRoute = false
+            repeat(40) {
                 val row = c.advance(Step(step++, 1.0, "sim-tick"))
-                if (index == 0) {
+                if (Event("movement-started", "a") in row.events) {
                     val path = row.units.single { it.unitId == "a" }.pathPoints
-                    assertTrue(path.isNotEmpty() && path.all { it.y in 200.0..<240.0 })
+                    assertEquals(listOf(destination), path)
+                    verifiedRoute = true
                 }
                 assertEquals(dead.pointDefense, row.units.single { it.unitId == "d" }.pointDefense)
                 assertTrue(row.projectileEvents.none { it.kind == "deflected" && it.interceptorUnitId == "d" })
             }
+            assertTrue(verifiedRoute)
             for ((id, target) in listOf("other-building" to Position(310.0, 90.0), "wall" to Position(490.0, 210.0))) {
                 val result = assertIs<ActionResult.Accepted>(c.submit(MoveAction(id, "p1", "a", target, c.world)))
                 assertTrue(result.events.isEmpty())
                 val blocked = c.advanceToMoveOutcome(step, "a")
                 step = blocked.stepIndex + 1
-                assertTrue(Event("path-unreachable", "a") in blocked.events)
+                assertNotEquals(target, assertNotNull(blocked.units.single { it.unitId == "a" }.moveTarget), id)
             }
             assertTrue(c.observe().units.single { it.unitId == "d2" }.alive)
             assertFalse(map.blocking.isBlocked(15, 10))

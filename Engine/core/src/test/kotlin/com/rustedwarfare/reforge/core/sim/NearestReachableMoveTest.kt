@@ -210,6 +210,11 @@ class NearestReachableMoveTest {
                     assertEquals(230.0, results.getValue("left").distance, 0.00001)
                     assertEquals(0.0, results.getValue("right").distance, 1.1)
                     assertTrue(frame.units.all { it.tasks.isEmpty() && it.moveTarget == null })
+                    val stopped = frame.units.map { it.position to it.heading }
+                    repeat(600) { offset ->
+                        val quiet = context.advance(Step(frame.stepIndex + offset + 1L, 1.0, "sim-tick"))
+                        assertEquals(stopped, quiet.units.map { it.position to it.heading })
+                    }
                     done = true
                     break
                 }

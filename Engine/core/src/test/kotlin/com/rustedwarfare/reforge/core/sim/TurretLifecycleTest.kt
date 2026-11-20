@@ -79,7 +79,8 @@ class TurretLifecycleTest {
                 val result = assertIs<ActionResult.Accepted>(c.submit(MoveAction(id, "p1", survivor, point, c.world)))
                 assertTrue(result.events.isEmpty())
                 val blocked = c.advanceToMoveOutcome(next, survivor)
-                assertTrue(Event("path-unreachable", survivor) in blocked.events)
+                val destination = assertNotNull(blocked.units.single { it.unitId == survivor }.moveTarget)
+                assertNotEquals(point, destination, id)
                 next = blocked.stepIndex + 1
             }
         } finally { c.close() }

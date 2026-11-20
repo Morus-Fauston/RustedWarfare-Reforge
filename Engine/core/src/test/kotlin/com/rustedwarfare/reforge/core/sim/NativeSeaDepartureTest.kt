@@ -84,7 +84,8 @@ class NativeSeaDepartureTest {
                 assertTrue(ship.tasks.isEmpty())
                 previous = ship.position
             }
-            assertTrue(pushed > 1, "stopped ship was never gradually pushed: $previous")
+            assertTrue(pushed > 1, "rectangle=$rectangle, stopped=${stopped.position}/${stopped.heading}, " +
+                "pushed=$pushed, next=${context.observe().unit(second)}")
             assertTrue(context.observe().unit(second).position.y > 260.0, "following ship did not leave")
             assertEquals(18000L, context.observe().economy!!.balances.getValue("p1"))
             assertEquals(setOf(first, second), context.observe().production!!.units.map { it.unitId }.toSet())
@@ -187,7 +188,13 @@ class NativeSeaDepartureTest {
                 assertIs<ActionResult.Accepted>(context.submit(MoveAction("take-over", "p1", second, manual, context.world)))
                 assertEquals("take-over", context.observe().unit(second).tasks.single().actionId)
                 frames.until(300) { it.unit(second).moveTarget == manual }
-                val arrived = frames.until(2300) { Event("movement-arrived", second) in it.events }
+                context.enableMotionDiagnostics(context.world)
+                val arrived = try {
+                    frames.until(2300) { Event("movement-arrived", second) in it.events }
+                } catch (error: IllegalStateException) {
+                    val tail = context.drainMotionDiagnostics(context.world).filter { it.unitId == second }.takeLast(5)
+                    throw IllegalStateException("${error.message}; tail=$tail", error)
+                }
                 assertTrue(arrived.unit(second).position.y > 330.0)
                 assertEquals(18000L, arrived.economy!!.balances.getValue("p1"))
                 assertEquals(setOf(first, second), arrived.production!!.units.map { it.unitId }.toSet())

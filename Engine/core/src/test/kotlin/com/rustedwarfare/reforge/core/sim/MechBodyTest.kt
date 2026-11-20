@@ -8,12 +8,12 @@ class MechBodyTest {
         val source = MechTestScene.unit()
         val profile = MechDefinition(source.mech!!.body, source.mech!!.legs.map { it.copy(warmUp = 100.0) })
         val context = MechTestScene.open(MechTestScene.scenario(
-            MechTestScene.with(source, profile, source.movement.copy(reverseSpeedPercentage = 0.0, moveSpeed = 0.0)),
+            MechTestScene.with(source, profile, source.movement.copy(reverseSpeedPercentage = 0.0, moveAccelerationSpeed = 0.0)),
             position = Position(300.0, 200.0)))
         try {
-            context.submit(MoveAction("north", "p1", "u1", Position(300.0, 50.0), context.world))
+            assertIs<ActionResult.Accepted>(context.submit(MoveAction("north", "p1", "u1", Position(300.0, 50.0), context.world)))
             context.advance(Step(0, 1.0, "sim-tick"))
-            context.submit(MoveAction("west", "p1", "u1", Position(100.0, 200.0), context.world))
+            assertIs<ActionResult.Accepted>(context.submit(MoveAction("west", "p1", "u1", Position(100.0, 200.0), context.world)))
             var firstSwing: UnitObservation? = null
             for (step in 1L..249L) {
                 val unit = context.advance(Step(step, 1.0, "sim-tick")).units.single()
@@ -28,7 +28,7 @@ class MechBodyTest {
     @Test fun negative_half_turn_keeps_its_sign_and_does_not_create_a_spurious_body_hold() {
         val source = MechTestScene.unit()
         val context = MechTestScene.open(MechTestScene.scenario(
-            MechTestScene.with(source, movement = source.movement.copy(moveSpeed = 0.0)),
+            MechTestScene.with(source, movement = source.movement.copy(moveAccelerationSpeed = 0.0)),
             heading = 270.9, position = Position(400.0, 200.0)))
         try {
             context.submit(MoveAction("west", "p1", "u1", Position(100.0, 200.0), context.world))

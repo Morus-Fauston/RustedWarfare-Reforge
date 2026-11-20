@@ -11,31 +11,60 @@ import com.rustedwarfare.reforge.core.knowledge.CellKnowledge
 class PlanningException(val code: String, message: String) : IllegalArgumentException(message)
 
 /** A self-contained planning value, not an authorization interface or a live truth query. */
-class PlanningTerrain(
+class PlanningTerrain private constructor(
     val widthTiles: Int,
     val heightTiles: Int,
     val tileWidth: Int,
     val tileHeight: Int,
-    blocked: BooleanArray,
+    private val cells: BooleanArray,
+    private val blockedIndex: BlockedCellIndex,
+    private val subdivision: Int,
 ) {
-    init {
-        validateShape(widthTiles,heightTiles,tileWidth,tileHeight)
-        if(blocked.size.toLong()!=widthTiles.toLong()*heightTiles) throw PlanningException("invalid-blocking", "Blocking count must match planning dimensions")
+    private constructor(width: Int, height: Int, tileWidth: Int, tileHeight: Int, cells: BooleanArray, validated: Unit) :
+        this(width, height, tileWidth, tileHeight, cells, BlockedCellIndex(width, cells), 1)
+
+    constructor(widthTiles: Int, heightTiles: Int, tileWidth: Int, tileHeight: Int, blocked: BooleanArray) :
+        this(widthTiles, heightTiles, tileWidth, tileHeight, blocked.run {
+            validateShape(widthTiles, heightTiles, tileWidth, tileHeight)
+            if (size.toLong() != widthTiles.toLong() * heightTiles)
+                throw PlanningException("invalid-blocking", "Blocking count must match planning dimensions")
+            copyOf()
+        }, Unit)
+
+    /** A finer graph over the same immutable authorized terrain. No second mask or index is built. */
+    internal fun subdivided(factor: Int): PlanningTerrain {
+        require(factor > 0 && tileWidth % factor == 0 && tileHeight % factor == 0)
+        require(widthTiles.toLong() * heightTiles * factor <= Int.MAX_VALUE / factor)
+        return PlanningTerrain(widthTiles * factor, heightTiles * factor, tileWidth / factor, tileHeight / factor,
+            cells, blockedIndex, subdivision * factor)
     }
-    private val cells=blocked.copyOf()
-    private val blockedIndex = BlockedCellIndex(widthTiles, cells)
+
     internal fun anyBlocked(firstColumn: Int, lastColumn: Int, firstRow: Int, lastRow: Int,
-                            predicate: (Int, Int) -> Boolean): Boolean =
-        blockedIndex.any(firstColumn, lastColumn, firstRow, lastRow, predicate)
+                            predicate: (Int, Int) -> Boolean): Boolean {
+        if (subdivision == 1) return blockedIndex.any(firstColumn, lastColumn, firstRow, lastRow, predicate)
+        if (firstColumn > lastColumn || firstRow > lastRow) return false
+        return blockedIndex.any(firstColumn / subdivision, lastColumn / subdivision,
+            firstRow / subdivision, lastRow / subdivision) { column, row ->
+            val left = column * subdivision
+            val top = row * subdivision
+            for (y in maxOf(firstRow, top)..minOf(lastRow, top + subdivision - 1))
+                for (x in maxOf(firstColumn, left)..minOf(lastColumn, left + subdivision - 1))
+                    if (predicate(x, y)) return@any true
+            false
+        }
+    }
     fun isBlocked(column: Int, row: Int): Boolean {
         if(column !in 0 until widthTiles || row !in 0 until heightTiles) throw PlanningException("out-of-bounds", "Planning cell is outside the terrain")
-        return cells[row*widthTiles+column]
+        return cells[(row / subdivision) * (widthTiles / subdivision) + column / subdivision]
     }
+
+    private fun cellCopy() = if (subdivision == 1) cells.copyOf() else
+        BooleanArray(widthTiles * heightTiles) { isBlocked(it % widthTiles, it / widthTiles) }
 
     /** Compose authorized dynamic cells into a self-contained value, without retaining a truth query. */
     internal fun withBuildings(buildings: Set<Pair<Int, Int>>): PlanningTerrain {
         if (buildings.isEmpty()) return this
-        val combined = cells.copyOf()
+        val combined = cellCopy()
         for ((column, row) in buildings) {
             require(column in 0 until widthTiles && row in 0 until heightTiles)
             combined[row * widthTiles + column] = true
@@ -48,8 +77,8 @@ class PlanningTerrain(
         var updated: BooleanArray? = null
         current.forEachTerrainChangeFrom(previous) { index, knowledge ->
             val blocked = knowledge.movementBlocked(movementType, tileSets)
-            if (blocked != cells[index]) {
-                val output = updated ?: cells.copyOf().also { updated = it }
+            if (blocked != isBlocked(index % widthTiles, index / widthTiles)) {
+                val output = updated ?: cellCopy().also { updated = it }
                 output[index] = blocked
             }
         }

@@ -27,11 +27,11 @@ class OverCliffKnowledgeTest {
             context.advance(Step(0, 1.0, "sim-tick"))
             context.enablePathDiagnostics(context.world)
             assertIs<ActionResult.Accepted>(context.submit(MoveAction("move", "p1", "u1", Position(70.0, 50.0), context.world)))
-            val original = context.observe().units.single().pathPoints
+            val original = context.advance(Step(1, 1.0, "sim-tick")).units.single().pathPoints
             assertEquals(listOf(Position(30.0, 30.0), Position(70.0, 30.0), Position(70.0, 50.0)), original)
             context.drainPathDiagnostics(context.world)
             context.acceptVisibleTerrain(context.world, "p1", listOf(VisibleTerrainCell(2, 1, true, 3)))
-            val next = context.advance(Step(1, 1.0, "sim-tick")).units.single()
+            val next = context.advance(Step(2, 1.0, "sim-tick")).units.single()
             assertNotEquals(original, next.pathPoints, "The safe first connection must not conceal a blocked later segment")
             assertEquals(original.first(), next.pathPoints.first(), "Keep the still-safe prefix")
             assertEquals(listOf(PathSearchReason.KNOWLEDGE_REPLAN), context.drainPathDiagnostics(context.world).map { it.reason })
@@ -54,9 +54,10 @@ class OverCliffKnowledgeTest {
             context.acceptVisibleTerrain(context.world, "p1", listOf(VisibleTerrainCell(2, 2, true, 2)))
             context.advance(Step(0, 1.0, "sim-tick"))
             assertIs<ActionResult.Accepted>(context.submit(MoveAction("move", "p1", "u1", Position(70.0, 50.0), context.world)))
+            context.advance(Step(1, 1.0, "sim-tick"))
             assertEquals(listOf(Position(70.0, 50.0)), context.observePlayer(context.world, "p1").units.single().pathPoints)
             context.acceptVisibleTerrain(context.world, "p1", listOf(VisibleTerrainCell(2, 2, true, 3)))
-            val view = context.advance(Step(1, 1.0, "sim-tick"))
+            val view = context.advance(Step(2, 1.0, "sim-tick"))
             assertEquals(listOf(Position(30.0, 30.0), Position(70.0, 30.0), Position(70.0, 50.0)), view.units.single().pathPoints)
         } finally { context.close() }
     }

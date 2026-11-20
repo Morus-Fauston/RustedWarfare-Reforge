@@ -33,13 +33,18 @@ class DemoSessionTest {
             val target = Position(900.0, 310.0)
             session.moveSelected(target)
             assertEquals(target, session.lastTarget)
-            assertEquals(50, session.searches)
-            val destinations = session.observation.units.map { assertNotNull(it.moveTarget) }
-            assertEquals(50, destinations.toSet().size)
-            assertTrue(target in destinations)
-            assertTrue(destinations.all { kotlin.math.hypot(it.x - target.x, it.y - target.y) <= 60.0 })
-            assertTrue(session.observation.units.all { it.pathPoints.last() == it.moveTarget })
-            repeat(20) { session.tick() }
+            val started = mutableSetOf<String>()
+            repeat(120) {
+                session.tick()
+                for (event in session.observation.events.filter { it.kind == "movement-started" }) {
+                    val unit = session.observation.units.single { it.unitId == event.unitId }
+                    assertEquals(target, unit.moveTarget)
+                    assertEquals(target, unit.pathPoints.last())
+                    started += unit.unitId
+                }
+            }
+            assertEquals(before.keys, started)
+            assertTrue(session.searches in 1..50)
             assertTrue(session.observation.units.all { it.position != before.getValue(it.unitId) })
             assertTrue(session.exploredCells >= session.visibleCells)
         }
@@ -51,20 +56,27 @@ class DemoSessionTest {
             assertNull(session.knowledge.cell(25, 20).lastKnownBlocked)
             val goal = Position(1140.0, 400.0)
             session.moveSelected(goal)
-            assertEquals(50, session.searches)
-            assertEquals(0, session.replans)
             val movementOracle = DemoMoveOracle(input, goal, session.observation)
             // The initial plans cross the unknown band instead of consulting its truth grid.
             val unknownBand = Rectangle2D.Double(480.0, 300.0, 60.0, 200.0)
-            assertTrue(session.observation.units.any { unit -> (listOf(unit.position) + unit.pathPoints).zipWithNext().any { (a, b) ->
-                unknownBand.intersectsLine(a.x, a.y, b.x, b.y)
-            } })
+            val starts = session.observation.units.associate { it.unitId to it.position }
+            val published = mutableSetOf<String>()
+            var plannedAcrossBand = false
             var discovered = false
             var memory = false
             var moved = false
             repeat(2500) {
                 session.tick()
                 movementOracle.accept(session.observation)
+                for (event in session.observation.events.filter { it.kind == "movement-started" }) {
+                    val unit = session.observation.units.single { it.unitId == event.unitId }
+                    if (published.add(unit.unitId)) {
+                        plannedAcrossBand = plannedAcrossBand ||
+                            (listOf(starts.getValue(unit.unitId)) + unit.pathPoints).zipWithNext().any { (a, b) ->
+                                unknownBand.intersectsLine(a.x, a.y, b.x, b.y)
+                            }
+                    }
+                }
                 discovered = discovered || session.knowledge.cells.any { it.lastKnownBlocked == true }
                 memory = memory || session.knowledge.cells.any { !it.visible && it.lastKnownBlocked != null }
                 moved = moved || session.observation.units.any { it.position.x > 1000 }
@@ -74,6 +86,8 @@ class DemoSessionTest {
                 }
             }
             assertTrue(discovered, "must discover blocked terrain")
+            assertEquals(starts.keys, published)
+            assertTrue(plannedAcrossBand)
             assertTrue(session.replans > 0, "must execute actual KR-R searches")
             assertTrue(memory, "must retain terrain after it leaves sight")
             assertTrue(moved, "must move beyond barriers")

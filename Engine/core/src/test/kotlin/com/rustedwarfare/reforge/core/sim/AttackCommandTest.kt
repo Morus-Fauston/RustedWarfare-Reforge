@@ -65,7 +65,7 @@ class AttackCommandTest {
     }
 
     @Test
-    fun rejected_move_preserves_attack_but_accepted_unreachable_move_replaces_it() {
+    fun rejected_move_preserves_attack_but_accepted_blocked_click_replaces_it_with_a_nearest_route() {
         val context = assertIs<InitResult.Accepted>(SimulationContext.initialize(scenario("p005-sealed.tmx"))).context
         try {
             context.submit(AttackAction("attack", "p1", "a", "b", context.world))
@@ -75,9 +75,16 @@ class AttackCommandTest {
             assertEquals("b", context.observe().units.single { it.unitId == "a" }.attackTargetId)
             val accepted = assertIs<ActionResult.Accepted>(context.submit(
                 MoveAction("unreachable", "p1", "a", Position(290.0, 210.0), context.world)))
-            assertEquals(listOf("movement-cancelled", "path-unreachable"), accepted.events.map { it.kind })
+            assertTrue(accepted.events.isEmpty())
             assertNull(context.observe().units.single { it.unitId == "a" }.attackTargetId)
             assertNull(context.observe().units.single { it.unitId == "a" }.moveTarget)
+            val routed = context.advanceToMoveOutcome(0, "a")
+            assertTrue(Event("movement-started", "a") in routed.events)
+            val unit = routed.units.single { it.unitId == "a" }
+            assertNull(unit.attackTargetId)
+            val destination = unit.pathPoints.last()
+            assertEquals(destination, unit.moveTarget)
+            assertTrue(destination.x in 110.0..<280.0, "Route must stay on the near side of the wall: $destination")
         } finally {
             context.close()
         }

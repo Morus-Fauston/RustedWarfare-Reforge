@@ -73,10 +73,10 @@ class HelicopterSimulationTest {
         try {
             val target = Position(600.0, 200.0)
             assertIs<ActionResult.Accepted>(context.submit(MoveAction("cross-wall", "p1", "h1", target, context.world)))
-            val ordered = context.observe().units.single()
+            val flight = (0L..199L).map { context.advance(Step(it, 1.0, "sim-tick")) }
+            val ordered = flight.first().units.single()
             assertEquals(target, ordered.moveTarget)
             assertEquals(listOf(target), ordered.pathPoints)
-            val flight = (0L..199L).map { context.advance(Step(it, 1.0, "sim-tick")) }
             assertTrue(flight.last().units.single().position.x > 400.0)
             assertTrue(flight.all { kotlin.math.abs(it.units.single().position.y - 200.0) < 1e-10 })
             assertTrue(flight.flatMap { it.events }.none { it.kind in setOf("movement-blocked", "movement-cancelled", "path-unreachable") })

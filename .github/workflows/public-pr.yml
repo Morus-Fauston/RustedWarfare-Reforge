@@ -28,7 +28,7 @@ jobs:
         with:
           python-version: '3.13'
       - name: Complete public mechanism and short layer
-        run: python -B SimulationTest/ci/public_batch.py --kind pr --test-forks 2 --scenario-workers 4 --output SimulationTest/build/public-pr
+        run: python -B SimulationTest/ci/public_batch.py --kind pr --test-forks 2 --scenario-workers 4 --command-timeout 1200 --output SimulationTest/build/public-pr
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         if: always()
         with:
@@ -78,6 +78,11 @@ jobs:
           path: |
             SimulationTest/build/public-pr/result.json
             SimulationTest/build/public-pr/*.log
+            SimulationTest/build/public-pr/mechanisms/result.json
+            SimulationTest/build/public-pr/mechanisms/group-*/*.json
+            SimulationTest/build/public-pr/mechanisms/group-*/command/*.log
+            SimulationTest/build/public-pr/mechanisms/group-*/*/*methods.json
+            SimulationTest/build/public-pr/mechanisms/group-*/*/xml/TEST-*.xml
           if-no-files-found: error
   public-prepare:
     if: (github.event_name == 'workflow_dispatch' && inputs.execution == 'parallel') || (github.event_name == 'pull_request' && (vars.PUBLIC_PR_PARALLEL == 'true' || (vars.PUBLIC_PR_PARALLEL != 'false' && github.event.pull_request.head.repo.full_name == github.repository && contains(fromJSON('["codex/phase-six-asp-test", "codex/phase-six-asp-formal"]'), github.head_ref) && github.base_ref == 'main')))

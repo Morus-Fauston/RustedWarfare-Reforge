@@ -541,7 +541,7 @@ class MechEngineerWorkTest {
         val engineerRadius = base.unitDefinitions.getValue(engineer.typeId).radius
         val builderRadius = base.unitDefinitions.getValue("builder").radius
         val mover = UnitSpawn("a-mover", "p1", "builder",
-            Position(engineer.position.x - engineerRadius - builderRadius, engineer.position.y), 90.0)
+            Position(engineer.position.x - engineerRadius - builderRadius - 10.0, engineer.position.y), 90.0)
         val combat = CombatContract(12345, -1, mapOf("engineer" to 8L, "target" to 9L, "enemy" to 10L, "a-mover" to 11L), 12L)
         val c = assertIs<InitResult.Accepted>(SimulationContext.initialize(
             base.copy(units = base.units + mover, combatContract = combat))).context
@@ -562,11 +562,23 @@ class MechEngineerWorkTest {
             tick()
             assertEquals((health.toFloat() + .3f).toDouble(), target().health)
             assertEquals("target", c.observe().units.single { it.unitId == "engineer" }.constructionTargetId)
-            submit(MoveAction("push-worker", "p1", "a-mover", engineer.position, c.world))
-            val contact = tick()
-            assertTrue(Event("movement-blocked", "a-mover") in contact.events)
-            assertEquals(engineer.position, contact.units.single { it.unitId == "engineer" }.position)
-            assertTrue(contact.construction!!.workers.single { it.unitId == "engineer" }.working)
+            val beyondEngineer = Position(engineer.position.x + 35.0, engineer.position.y)
+            submit(MoveAction("push-worker", "p1", "a-mover", beyondEngineer, c.world))
+            var advanced = false
+            var routedAround = false
+            repeat(20) {
+                val contact = tick()
+                val worker = contact.units.single { it.unitId == "engineer" }
+                val approaching = contact.units.single { it.unitId == "a-mover" }
+                advanced = advanced || approaching.position.x > mover.position.x
+                routedAround = routedAround || approaching.moveTarget == beyondEngineer &&
+                    approaching.pathPoints.any { kotlin.math.abs(it.y - engineer.position.y) >= engineerRadius + builderRadius }
+                assertEquals(engineer.position, worker.position)
+                assertTrue(ScreenPlane.distanceSquared(approaching.position, worker.position) >=
+                    (engineerRadius + builderRadius) * (engineerRadius + builderRadius) - 1e-8)
+                assertTrue(contact.construction!!.workers.single { it.unitId == "engineer" }.working)
+            }
+            assertTrue(advanced && routedAround, "The move must advance along a route clear of the working engineer")
             val stopped = target().health
             submit(StopAction("stop", "p1", "engineer", c.world))
             assertEquals(stopped, target().health)

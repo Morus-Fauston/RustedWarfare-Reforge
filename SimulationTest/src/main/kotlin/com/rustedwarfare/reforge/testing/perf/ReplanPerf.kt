@@ -30,15 +30,16 @@ data class ReplanBatch(
     val gcCount: Long,
     val gcMillis: Long,
     val typeId: String,
-    val geometryVersion: String = PathPerfBatch.DEVELOPMENT_GEOMETRY,
+    val geometryVersion: String = ReplanPerf.DEVELOPMENT_GEOMETRY,
 )
 
 object ReplanPerf {
     internal const val REISSUE_STEP = 5
     private const val LAST_PLANNING_STEP = 2048
+    const val DEVELOPMENT_GEOMETRY = "p002.dev.center-motion.v2"
     const val DEVELOPMENT_CONTRACT_SHA256 = "4b957115e78376ab2785b586befefc755d54fbfa4bd2b5fe7015085230f96585"
-    internal fun identityFields(version: String = PathPerfBatch.DEVELOPMENT_GEOMETRY): JsonObject {
-        check(version == PathPerfBatch.DEVELOPMENT_GEOMETRY) { "Unsupported development replanning geometry version" }
+    internal fun identityFields(version: String = DEVELOPMENT_GEOMETRY): JsonObject {
+        check(version == DEVELOPMENT_GEOMETRY) { "Unsupported development replanning geometry version" }
         return buildJsonObject {
             put("geometryVersion",version);put("developmentOnly",true)
             put("qualificationScope","development-replanning-only");put("fullTerrainWritebackQualified",false)

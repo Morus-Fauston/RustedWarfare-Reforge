@@ -60,12 +60,12 @@ TEST-P001-003 已接入规则求值。采集完整后，`comparison/result.json`
 在 `SimulationTest/` 执行 `./gradlew.bat installDist --no-daemon` 后，可用安装目录的全部依赖启动（Windows/JVM）：
 
 ```powershell
-java -cp "build/install/simulation-test/lib/*" com.rustedwarfare.reforge.testing.perf.PathPerfBatchMain --repo-root "<仓库绝对路径>" --unit "<已批准单位INI绝对路径>" --unit-sha "<该INI的SHA256>" --output "<允许新建测量批次的绝对目录>"
+java -cp "build/install/simulation-test/lib/*" com.rustedwarfare.reforge.testing.perf.PathPerfBatchMain --repo-root "<仓库绝对路径>" --unit "<已批准单位INI绝对路径>" --unit-sha "<该INI的SHA256>" --output "<允许新建测量批次的绝对目录>" --geometry-version p002.dev.path-planning.v3
 ```
 
 上述占位符必须换成实际绝对路径和事先固定的身份；单位图片等依赖也须原位可读。`--output` 必须是已存在且可写的普通目录，不能位于本仓库的原版输入、TestLab、Docs 或 `.git` 下；执行器在其内 exclusive-create 新批次，不覆盖旧结果。该命令会真正执行 **1/10/50 实体、5 场景、8 轮共120批**，不是帮助或构建命令。运行前确认单独资源窗口、输入／源码身份和输出目录，不能在另一性能任务、Gradle 或模拟器运行时混测；此文档修复没有重新执行该测量。
 
-执行器输出每批原始样本、正确性控制、环境和分位汇总。round0是同一JVM内的首批，不是每批新JVM冷启动；轮1–2预热、3–7纳入实测统计。公开仓库不包含内部测量输入和历史结果，也没有为当前新源码提供已验证性能排名、毫秒/FPS阈值、动态避让或自动重规划成本结论。
+执行器需要由 `--repo-root` 定位私有合同 `TestLab/contracts/P002-perf/PR.development.center.v3.json`。输出包含每批原始样本、正确性控制、环境和分位汇总。round0 是同一 JVM 内的首批，轮 1–2 预热，轮 3–7 纳入实测统计。内部测量输入、合同和历史结果随私有工作区保存。
 
 无需原图的性能工具专项单元测试可单独过滤运行：
 

@@ -69,10 +69,31 @@ internal class PathSearchRollback {
 /** Reuse clearance grids and repeated shape checks inside one group order. */
 internal class PathClearanceCache(
     private val grids: MutableMap<Pair<PlanningTerrain, Double>, BooleanArray> = HashMap(),
+    val reuseApproach: Boolean = true,
     private val rectangleChecks: RectangleChecks = RectangleChecks(),
     private val departureNeighbors: MutableMap<DepartureSource, List<PathGridKey>> = HashMap(),
 ) {
-    fun fork(): PathClearanceCache = PathClearanceCache(HashMap(grids), rectangleChecks, departureNeighbors)
+    private data class Approach(val terrain: PlanningTerrain, val radius: Double, val start: Position,
+                                val path: List<Position>)
+    private var approach: Approach? = null
+
+    fun fork(): PathClearanceCache = PathClearanceCache(HashMap(grids), reuseApproach, rectangleChecks, departureNeighbors).also {
+        it.approach = approach
+    }
+
+    fun rememberApproach(map: PlanningTerrain, radius: Double, start: Position, path: List<Position>) {
+        if (path.size in 2..8) approach = Approach(map, radius, start, path.toList())
+    }
+
+    fun approachTo(map: PlanningTerrain, radius: Double, start: Position, target: Position): List<Position>? {
+        val saved = approach ?: return null
+        if (saved.terrain !== map || saved.radius != radius || saved.start != start) return null
+        val reach = minOf(map.tileWidth, map.tileHeight).toDouble()
+        if (ScreenPlane.distanceSquared(target, saved.path.last()) > reach * reach) return null
+        val prefixEnd = saved.path[saved.path.lastIndex - 1]
+        if (!PlanningSegmentClearance.allows(map, prefixEnd, target, radius)) return null
+        return saved.path.dropLast(1) + target
+    }
 
     internal data class DepartureSource(val map: PlanningTerrain, val shape: MovementCollisionShape.Rectangle,
                                        val radius: Double, val reverse: Boolean, val origin: Position,
@@ -146,6 +167,7 @@ internal class PathClearanceCache(
 
 internal fun interface RouteOccupancy {
     fun allows(start: Position, target: Position, fromHeading: Double, toHeading: Double): Boolean
+    val simplifyRoute: Boolean get() = false
     val nearestBoundaryCount: Int get() = 0
     fun nearestBoundary(index: Int, target: Position): Position? = null
 }
@@ -183,7 +205,7 @@ internal class ClearanceAStarPolicy(
         val costs = HashMap<PathGridKey, Int>()
     }
 
-    private enum class SearchPhase { START, CLEARANCE, SEARCH, BOUNDARY, RECONSTRUCT, SIMPLIFY, FINISHED }
+    private enum class SearchPhase { START, APPROACH, CLEARANCE, SEARCH, BOUNDARY, RECONSTRUCT, SIMPLIFY, FINISHED }
 
     private inner class ClearPathSearch(
         private val map: PlanningTerrain,
@@ -253,11 +275,12 @@ internal class ClearanceAStarPolicy(
             while (!finished && budget.take(workCost(cache))) {
                 when (phase) {
                     SearchPhase.START -> initialize(cache)
+                    SearchPhase.APPROACH -> checkApproach(cache)
                     SearchPhase.CLEARANCE -> prepareClearance(cache)
                     SearchPhase.SEARCH -> expand(cache)
                     SearchPhase.BOUNDARY -> considerOccupiedBoundary()
                     SearchPhase.RECONSTRUCT -> reconstruct()
-                    SearchPhase.SIMPLIFY -> simplifyOne()
+                    SearchPhase.SIMPLIFY -> simplifyOne(cache)
                     SearchPhase.FINISHED -> error("Completed path cannot consume more work")
                 }
             }
@@ -298,6 +321,18 @@ internal class ClearanceAStarPolicy(
             startKey = PathGridKey(startCell.first, startCell.second, heading,
                 initialPose = start != pointPolicy.point(map, startCell.first, startCell.second))
             if (nearest && start != pointPolicy.point(map, startCell.first, startCell.second)) useDepartureLattice = true
+            if (!nearest && !checkEverySegment && cache?.reuseApproach == true) phase = SearchPhase.APPROACH
+            else loadClearance(cache)
+        }
+
+        // A shortcut still needs a charged final segment check. A rejected probe resumes
+        // the exact search without repeating the direct segment on the next step.
+        private fun checkApproach(cache: PathClearanceCache?) {
+            val route = cache?.approachTo(map, radius, start, target)
+            if (route != null) complete(route) else loadClearance(cache)
+        }
+
+        private fun loadClearance(cache: PathClearanceCache?) {
             val cached = cache?.get(map, radius)
             clearance = cached ?: BooleanArray(map.widthTiles * map.heightTiles)
             if (cached == null) phase = SearchPhase.CLEARANCE else beginQueue()
@@ -440,21 +475,21 @@ internal class ClearanceAStarPolicy(
                 return
             }
             val probe = obstacles.nearestBoundary(boundaryIndex++, target) ?: return
-            val key = checkNotNull(boundaryKey)
-            val from = if (key == startKey) start else routePoint(key.col, key.row)
             val shape = (hull as? HullRoute.Circle)?.let { MovementCollisionShape.Circle(it.radius) }
                 ?: if (hull == null) MovementCollisionShape.Circle(radius) else return
+            // A circle scores the same at every heading. Only a better endpoint needs a swept route check.
+            val distance = MoveArrival.distanceToHull(shape, probe, 0.0, target)
+            val center = ScreenPlane.distanceSquared(probe, target)
+            if (!(distance < nearestDistance || distance == nearestDistance && center < nearestCenterDistance)) return
+            val key = checkNotNull(boundaryKey)
+            val from = if (key == startKey) start else routePoint(key.col, key.row)
             val heading = ScreenPlane.desired(from, probe)
             if (!UnitContact.poseFits(shape, probe, heading, checkNotNull(hullGrid)) ||
                 arrival(from, probe, key.heading, null) == null) return
-            val distance = MoveArrival.distanceToHull(shape, probe, heading, target)
-            val center = ScreenPlane.distanceSquared(probe, target)
-            if (distance < nearestDistance || distance == nearestDistance && center < nearestCenterDistance) {
-                nearestDistance = distance
-                nearestCenterDistance = center
-                nearestKey = key
-                endpoint = probe
-            }
+            nearestDistance = distance
+            nearestCenterDistance = center
+            nearestKey = key
+            endpoint = probe
         }
 
         private fun canLeaveStart(): Boolean {
@@ -527,17 +562,17 @@ internal class ClearanceAStarPolicy(
                         if (legal(probe)) low = mid else high = mid
                     }
                     point = Position(from.x + (end.x - from.x) * low, from.y + (end.y - from.y) * low)
+                    if (!legal(point)) continue
                 }
-                if (!legal(point)) continue
                 // A clipped ray need not meet an axis-aligned bank at its closest
                 // tangent when the click lies between lattice rows or columns.
                 val probes = if (shape is MovementCollisionShape.Circle)
                     listOf(point, Position(point.x, target.y), Position(target.x, point.y)) else listOf(point)
                 for (probe in probes) {
-                    if (probe != point && (!legal(probe) || arrival(from, probe, key.heading, null) == null)) continue
                     val distance = MoveArrival.distanceToHull(shape, probe, if (probe == from) key.heading else heading, target)
                     val center = ScreenPlane.distanceSquared(probe, target)
                     if (distance < nearestDistance || distance == nearestDistance && center < nearestCenterDistance) {
+                        if (probe != point && (!legal(probe) || arrival(from, probe, key.heading, null) == null)) continue
                         nearestDistance = distance
                         nearestCenterDistance = center
                         nearestKey = key
@@ -577,7 +612,7 @@ internal class ClearanceAStarPolicy(
             points.reverse()
             rollback?.record { points.reverse() }
             if (points.lastOrNull() != endpoint) appendRoutePoint(points, endpoint)
-            if (checkEverySegment) {
+            if (checkEverySegment && ((hull as? HullRoute.Circle)?.simplify != true || occupancy?.simplifyRoute == false)) {
                 complete(points)
             } else {
                 simplifyProbe = points.lastIndex
@@ -586,12 +621,16 @@ internal class ClearanceAStarPolicy(
             }
         }
 
-        private fun simplifyOne() {
+        private fun simplifyOne(cache: PathClearanceCache?) {
             val points = checkNotNull(rawPoints)
-            if (simplifyStart == points.size) return complete(checkNotNull(simplified))
+            if (simplifyStart == points.size) {
+                val route = checkNotNull(simplified)
+                if (!nearest && !checkEverySegment) cache?.rememberApproach(map, radius, start, route)
+                return complete(route)
+            }
             if (simplifyProbe < simplifyStart) return complete()
             val next = points[simplifyProbe]
-            if (PlanningSegmentClearance.allows(map, anchor, next, radius)) {
+            if (arrival(anchor, next, 0.0, cache) != null) {
                 anchor = next
                 appendPoint(checkNotNull(simplified), next)
                 simplifyStart = simplifyProbe + 1
@@ -724,7 +763,7 @@ internal sealed interface HullRoute {
     val heading: Double
     fun arrival(terrain: HullTerrainGrid, start: Position, target: Position, from: Double): Double?
 
-    data class Circle(val radius: Double) : HullRoute {
+    data class Circle(val radius: Double, val simplify: Boolean = false) : HullRoute {
         override val heading = 0.0
         override fun arrival(terrain: HullTerrainGrid, start: Position, target: Position, from: Double): Double? =
             CircularTerrain(radius).let { if (it.contains(terrain, start) && it.resolve(terrain, start, target) == target) heading else null }
@@ -737,7 +776,7 @@ internal sealed interface HullRoute {
                 val useManeuver = maneuver && unit.mechState == null && !movement.slidingMode
                 RectangularDeparture(shape, unit.heading, !useManeuver && movement.reverseSpeedPercentage > 0.95, useManeuver)
             }
-            is MovementCollisionShape.Circle -> Circle(shape.radius)
+            is MovementCollisionShape.Circle -> Circle(shape.radius, simplify = unit.landingMember != null)
             null -> null
         }
     }

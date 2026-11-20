@@ -52,7 +52,8 @@ class ProductionTransactionTest {
             assertTrue(actual.observe().events.none { it.kind == "production-refunded" })
             assertIs<ActionResult.Accepted>(actual.submit(MoveAction("former-factory", "p1", born.unitId,
                 Position(312.0, 210.0), actual.world)))
-            assertEquals(Position(312.0, 210.0), actual.observe().units.single { it.unitId == born.unitId }.moveTarget)
+            val route = actual.advanceToMoveOutcome(deathStep + 101, born.unitId)
+            assertEquals(Position(312.0, 210.0), route.units.single { it.unitId == born.unitId }.moveTarget)
         } finally { oracle.close(); actual.close() }
     }
 

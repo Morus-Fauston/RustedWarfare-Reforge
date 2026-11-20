@@ -11,7 +11,7 @@ import kotlin.math.hypot
 
 internal data class PassageEntry(val passage: NarrowPassage, val side: Int, val terrainType: MovementType,
                                  val commandId: String, val waitingSince: Long, val admitted: Boolean,
-                                 val entered: Boolean)
+                                 val entered: Boolean, val surveyWidth: Double?, val terrain: PlanningTerrain)
 
 internal class PassageAdmission(definitions: Collection<UnitDefinition>) {
     // Registered dimensions do not expose which opposing units are present under fog.
@@ -34,65 +34,97 @@ internal class PassageAdmission(definitions: Collection<UnitDefinition>) {
 
     fun waitingUnits(units: Collection<MutableUnit>, step: Step,
                      terrainFor: (MutableUnit, MovementType) -> PlanningTerrain,
-                     knows: (MutableUnit, MutableUnit) -> Boolean): Set<String> {
+                     knows: (MutableUnit, MutableUnit) -> Boolean, survey: DriverPassageSurvey,
+                     budget: PathWorkBudget): Set<String> {
         val moving = units.filter {
             it.alive && it.carriedBy == null && it.attachment == null && it.birthRemaining == 0f &&
                 it.originMoveId != null && it.pathPoints.isNotEmpty() && it.tasks.firstOrNull()?.kind == UnitTaskKind.MOVE &&
                 UnitLocomotion.movement(it).type.let { type -> type != MovementType.AIR && type != MovementType.NONE }
         }
+        val ruledOut = HashMap<String, Double>()
+        val ownTerrain = HashMap<String, PlanningTerrain>(moving.size)
         val proposals = linkedMapOf<String, Approach>()
         for (unit in moving) {
             val type = UnitLocomotion.movement(unit).type
-            val next = approach(unit, terrainFor(unit, type), type, step) ?: continue
+            val terrain = terrainFor(unit, type)
+            ownTerrain[unit.unitId] = terrain
+            val next = approach(unit, terrain, type, step, survey, budget, ruledOut = ruledOut) ?: continue
             proposals[unit.unitId] = next
         }
-        val identified = proposals.values.toList()
-        for (unit in moving) {
-            if (unit.unitId in proposals) continue
-            // A hover route, for example, can traverse a water passage without having
-            // a chokepoint in its own mask. Verify the same geometry in its owner's
-            // knowledge and check its actual route before joining the waiting group.
-            for (other in identified) {
-                if (!UnitContact.shareLayer(unit, other.unit) ||
-                    !knows(unit, other.unit) || !knows(other.unit, unit)) continue
-                val entry = other.entry
-                val type = entry.terrainType
-                if (UnitLocomotion.movement(unit).type == type) continue
-                val next = approach(unit, terrainFor(unit, type), type, step, entry.passage) ?: continue
-                proposals[unit.unitId] = next
-                break
+        val identified = proposals.values.groupBy { it.entry.passage }
+        val additional = mutableListOf<Approach>()
+        for ((passage, leaders) in identified) {
+            val entry = leaders.first().entry
+            for (unit in moving) {
+                if (proposals[unit.unitId]?.entry?.passage == passage) continue
+                val type = UnitLocomotion.movement(unit).type
+                if (type == entry.terrainType && (entry.surveyWidth == null || ruledOut[unit.unitId] == entry.surveyWidth)) continue
+                val sharedTerrain = if (type == entry.terrainType) ownTerrain[unit.unitId] else null
+                if (entry.surveyWidth != null && sharedTerrain === entry.terrain &&
+                    !withinSurveyReach(unit, passage, sharedTerrain, step.delta)) continue
+                val width = travelWidth(unit.definition.movementCollision)
+                if (leaders.none { other -> width + other.width > passage.width && UnitContact.shareLayer(unit, other.unit) &&
+                        knows(unit, other.unit) && knows(other.unit, unit) }) continue
+                val next = approach(unit, sharedTerrain ?: terrainFor(unit, entry.terrainType), entry.terrainType, step,
+                    survey, budget, entry) ?: continue
+                additional += next
             }
         }
 
         for (unit in units) unit.passageEntry = null
         val waiting = HashSet<String>()
-        for (approaches in proposals.values.groupBy { it.entry.passage }.values) for (own in approaches) {
+        for (approaches in (proposals.values + additional).groupBy { it.entry.passage }.values) for (own in approaches) {
             // Entered units retain priority over entrance queues. If both sides
             // are already inside, the same priority also selects which mover
             // yields its own propulsion while being pushed back with its order.
             val blocked = approaches.any { other ->
                 other.entry.side != own.entry.side && own.width + other.width > own.entry.passage.width &&
                     UnitContact.shareLayer(own.unit, other.unit) && knows(own.unit, other.unit) &&
-                    knows(other.unit, own.unit) && priority.compare(other, own) < 0
+                    knows(other.unit, own.unit) && priority.compare(other, own) < 0 &&
+                    !independentLandings(own.unit, other.unit)
             }
-            own.unit.passageEntry = own.entry.copy(admitted = !blocked)
+            if (own.unit.passageEntry == null || blocked) own.unit.passageEntry = own.entry.copy(admitted = !blocked)
             if (blocked) waiting += own.unit.unitId
         }
         return waiting
     }
 
+    /** Supplemental surveys have two parallel mouths and a straight throat. A
+     * vehicle outside this box cannot sample it within the approach horizon. */
+    private fun withinSurveyReach(unit: MutableUnit, passage: NarrowPassage, terrain: PlanningTerrain, delta: Double): Boolean {
+        val mouth = passage.mouths[0]
+        val far = passage.mouths[1]
+        val tile = maxOf(terrain.tileWidth, terrain.tileHeight).toDouble()
+        val travel = UnitLocomotion.effectiveMaximumSpeed(unit, UnitLocomotion.movement(unit)) * delta
+        val reach = longestHull * 2.0 + tile * 3.0 + travel
+        val along = if (mouth.horizontal) unit.position.x else unit.position.y
+        val across = if (mouth.horizontal) unit.position.y else unit.position.x
+        return along >= minOf(mouth.plane, far.plane) - reach && along <= maxOf(mouth.plane, far.plane) + reach &&
+            across >= mouth.low - reach && across <= mouth.high + reach
+    }
+
+    private fun independentLandings(a: MutableUnit, b: MutableUnit): Boolean {
+        val member = a.landingMember ?: return false
+        if (b.landingMember?.group !== member.group) return false
+        val aSite = member.claimed ?: return false
+        val bSite = b.landingMember?.claimed ?: return false
+        return a.pathPoints.singleOrNull() == aSite && b.pathPoints.singleOrNull() == bSite &&
+            landingApproachesSeparate(a, aSite, b, bSite)
+    }
+
     private fun approach(unit: MutableUnit, terrain: PlanningTerrain, type: MovementType, step: Step,
-                         required: NarrowPassage? = null): Approach? {
+                         survey: DriverPassageSurvey, budget: PathWorkBudget, required: PassageEntry? = null,
+                         ruledOut: MutableMap<String, Double>? = null): Approach? {
         val tile = maxOf(terrain.tileWidth, terrain.tileHeight).toDouble()
         if (twoHullWidth <= minOf(terrain.tileWidth, terrain.tileHeight)) return null
         val shape = unit.definition.movementCollision
         val width = travelWidth(shape)
         if (width <= 0.0) return null
         val command = checkNotNull(unit.originMoveId)
-        val previous = unit.passageEntry?.takeIf { it.commandId == command && it.terrainType == type }
+        val previous = unit.passageEntry?.takeIf { it.commandId == command && it.terrainType == type && it.terrain === terrain }
         val halfX = axialHalf(shape, unit.heading, true)
         val halfY = axialHalf(shape, unit.heading, false)
-        if (previous?.entered == true && (required == null || previous.passage == required)) {
+        if (previous?.entered == true && (required == null || previous.passage == required.passage)) {
             val passage = previous.passage
             // The route can turn away from the opening before the stern and its exit path clear.
             val outlet = passage.mouths[1 - previous.side]
@@ -109,6 +141,16 @@ internal class PassageAdmission(definitions: Collection<UnitDefinition>) {
         val horizon = gate + tile + maxOf(halfX, halfY)
         val increment = minOf(terrain.tileWidth, terrain.tileHeight) / 2.0
         val known = geometry.getOrPut(terrain) { KnownPassages(twoHullWidth) }
+        // A large registered hull can merge several nearby openings into one area
+        // with many mouths. Also resolve the single-file geometry for these drivers.
+        val driverWidth = 2.0 * width
+        val localWidth = if (required != null) required.surveyWidth else driverWidth.takeIf {
+            unit.landingMember != null && shape is MovementCollisionShape.Circle &&
+                it < twoHullWidth && it > minOf(terrain.tileWidth, terrain.tileHeight)
+        }
+        var masked = false
+        var lastColumn = Int.MIN_VALUE
+        var lastRow = Int.MIN_VALUE
         val checked = HashSet<NarrowPassage>()
         var from = unit.position
         var distance = 0.0
@@ -124,20 +166,39 @@ internal class PassageAdmission(definitions: Collection<UnitDefinition>) {
             for (index in -backSamples..samples) {
                 val offset = if (index < 0) maxOf(index * increment, -back) else limit * index / samples
                 val fraction = offset / length
-                val point = Position(from.x + dx * fraction, from.y + dy * fraction)
-                val passage = known.at(terrain, point) ?: continue
-                if (!checked.add(passage) || (required?.let { it != passage } ?: (passage.width < width))) continue
+                // With the same knowledge the other driver can test this exact gate,
+                // without discovering the same throat again from a different tile.
+                val column = kotlin.math.floor((from.x + dx * fraction) / terrain.tileWidth).toInt()
+                val row = kotlin.math.floor((from.y + dy * fraction) / terrain.tileHeight).toInt()
+                if (column == lastColumn && row == lastRow) continue
+                lastColumn = column
+                lastRow = row
+                val shared = required?.takeIf { it.terrain === terrain }
+                val tileInfo = if (shared == null && required?.surveyWidth == null) known.tileAt(terrain, column, row) else null
+                val global = tileInfo?.passage
+                val passage = when {
+                    shared != null -> shared.passage.takeIf { it.contains(column, row) }
+                    global != null -> { masked = true; global }
+                    localWidth == null -> null
+                    required == null && tileInfo?.wideBay == true -> null
+                    else -> survey.at(terrain, column, row, localWidth, budget)
+                } ?: continue
+                if (!checked.add(passage) || (required?.let { it.passage != passage } ?: (passage.width < width))) continue
                 val inside = passage.overlaps(unit.position, halfX, halfY)
                 val side = passage.entryAlong(unit.position, unit.pathPoints, inside) ?: continue
                 if (!inside && passage.mouths[side].depth(unit.position) !in 0.0..gate) continue
                 val entry = previous?.takeIf { it.passage == passage && it.side == side }
-                    ?: PassageEntry(passage, side, type, command, step.stepIndex, admitted = false, entered = false)
+                    ?: PassageEntry(passage, side, type, command, step.stepIndex, admitted = false, entered = false,
+                        surveyWidth = localWidth.takeIf { global == null }, terrain = terrain)
                 return Approach(unit, entry.copy(entered = inside), width)
             }
             distance += length
             if (distance >= horizon) break
             from = target
         }
+        // Every sampled tile was ruled out for this width on the driver's own
+        // terrain. Another vehicle of that size cannot reveal an untested gate.
+        if (localWidth != null && !masked && !survey.shortOfBudget) ruledOut?.put(unit.unitId, localWidth)
         return null
     }
 

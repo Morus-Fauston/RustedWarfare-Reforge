@@ -604,9 +604,8 @@ class BootstrapScreen(
             loadError = null; lastHudState = null; updateHud()
         }.also { it.setBounds(150f, 114f, 660f, 440f); stage.addActor(it) }
         mapInput = SandboxInput({ session }, { graphics?.projection }, { x, y ->
-            viewport.unproject(Vector2(x.toFloat(), y.toFloat())).let {
-                Position(it.x.toDouble() * battlefieldWidth / viewport.worldWidth, it.y.toDouble())
-            }
+            battlefieldPoint(x, y, Gdx.graphics.height, viewport.screenX, viewport.screenY,
+                viewport.screenWidth, viewport.screenHeight, battlefieldWidth.toDouble(), viewport.worldHeight.toDouble())
         }, { !paused && session != null }, { stage.keyboardFocus is TextField },
             { Gdx.input.isKeyPressed(it) }, { updateHud() }, evidence, touchControls, { x, y ->
                 val bottom = Gdx.graphics.height - y

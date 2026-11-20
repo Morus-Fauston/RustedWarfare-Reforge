@@ -74,9 +74,13 @@ internal fun roundRectangleEntry(start: Position, drift: Position, radius: Doubl
     if (CircularTerrain.separatesFrom(start, vx, vy, radius, left, right, top, bottom)) return limit
     if (radius == 0.0) return insideRectangle(start, drift, left, right, top, bottom, limit)
 
-    var fraction = minOf(limit, insideRectangle(start, drift, left - radius, right + radius, top, bottom, limit),
+    // A disk has a single corner center and no strips with a nonempty interior.
+    var fraction = if (left == right && top == bottom) limit else minOf(limit,
+        insideRectangle(start, drift, left - radius, right + radius, top, bottom, limit),
         insideRectangle(start, drift, left, right, top - radius, bottom + radius, limit))
-    for (x in listOf(left, right)) for (y in listOf(top, bottom)) {
+    for (i in 0..(if (left == right) 0 else 1)) for (j in 0..(if (top == bottom) 0 else 1)) {
+        val x = if (i == 0) left else right
+        val y = if (j == 0) top else bottom
         val toX = x - start.x
         val toY = y - start.y
         val perpendicular = abs(toX * vy - toY * vx)

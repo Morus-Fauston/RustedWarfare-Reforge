@@ -83,7 +83,10 @@ class PhaseFiveSandboxTest {
     }
 
     @Test fun all_five_normally_produced_representatives_move_stop_and_fire_in_the_paired_mixed_target_world() {
-        val expected = setOf("c_tank", "mechGun", "mechHeavyMissile", "helicopter", "heavyBattleship")
+        val expectedSelection = mapOf("select-combat-tank" to "c_tank", "select-combat-mech" to "mechGun",
+            "select-combat-heavy" to "mechHeavyMissile", "select-combat-helicopter" to "helicopter",
+            "select-combat-battleship" to "heavyBattleship")
+        val expected = expectedSelection.values.toSet()
         for (format in listOf("ini", "json", "hjson", "mixed")) {
             val seed = publicRoot.resolve("scenarios/phase-five-$format.json")
             val choice = TestScenarioChoice.open(seed)
@@ -94,9 +97,19 @@ class PhaseFiveSandboxTest {
                 for (intent in plan.get("intents")) {
                     fun position() = intent.get("position").let { Position(it.getDouble("x"), it.getDouble("y")) }
                     val kind = intent.getString("kind")
+                    val intentId = intent.getString("intentId")
                     val selectedType = session.observation.units.firstOrNull { it.unitId == session.selectedId }?.typeId
                     val result = when (kind) {
-                        "select" -> { session.select(position()); null }
+                        "select" -> {
+                            session.select(position())
+                            expectedSelection[intentId]?.let { type ->
+                                val products = session.observation.units.filter { it.ownerPlayerId == "p1" && it.typeId in expected }
+                                val selected = products.firstOrNull { it.unitId == session.selectedId }
+                                assertEquals(type, selected?.typeId, "$format/$intentId ${position()} products=" +
+                                    products.joinToString { "${it.typeId} at ${it.position}, height=${it.height}" })
+                            }
+                            null
+                        }
                         "move" -> session.move(position())
                         "produce" -> session.produce(intent.getString("typeId"))
                         "build" -> session.build(intent.getString("typeId"), position())
@@ -112,7 +125,7 @@ class PhaseFiveSandboxTest {
                         val details = if (result is ActionResult.Accepted) "" else session.observation.units
                             .filter { it.ownerPlayerId == "p1" && it.alive }
                             .joinToString { "${it.typeId} at ${it.position}" }
-                        assertIs<ActionResult.Accepted>(result, "$format/${intent.getString("intentId")}, selected=$selectedType $details")
+                        assertIs<ActionResult.Accepted>(result, "$format/$intentId, selected=$selectedType $details")
                     }
                     if (kind == "stop") stopped += requireNotNull(selectedType)
                     repeat(intent.getInt("waitSteps", 0)) {

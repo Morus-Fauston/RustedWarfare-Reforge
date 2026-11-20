@@ -57,13 +57,14 @@ class PrivateKnowledgeScenarioIntegrationTest {
                 assertFalse(session.frame.terrain[wall].known)
                 session.select(Position(110.0, 110.0))
                 assertIs<ActionResult.Accepted>(session.move(Position(350.0, 110.0)))
+                session.tick()
                 assertEquals(listOf(Position(350.0, 110.0)), session.observation.units.single().pathPoints)
                 val movementOracle = DemoMoveOracle(input, Position(350.0, 110.0), listOf(session.observation.units.single { it.unitId == "u1" }))
                 var discovered = false
                 var rerouted = false
                 var arrived = false
                 println("P002_TRACE\tmode\tstep\tx\ty\theading\tspeed\tstate\twallVisible\tpath")
-                for (step in 0 until 2500) {
+                for (step in 1 until 2500) {
                     session.tick()
                     val unit = session.observation.units.single { it.unitId == "u1" }
                     movementOracle.accept(listOf(unit), session.observation.events, session.observation.stepIndex)
@@ -71,8 +72,8 @@ class PrivateKnowledgeScenarioIntegrationTest {
                     discovered = discovered || visible
                     rerouted = rerouted || unit.pathPoints.any { it.y != 110.0 }
                     println("P002_TRACE\t$mode\t$step\t${unit.position.x}\t${unit.position.y}\t${unit.heading}\t${unit.speed}\t${unit.movementState}\t$visible\t${unit.pathPoints.joinToString(";") { "${it.x}:${it.y}" }}")
-                    if (unit.moveTarget == null) {
-                        arrived = true
+                    arrived = arrived || session.observation.events.any {
+                        it.unitId == "u1" && it.kind == "movement-arrived"
                     }
                 }
                 assertTrue(discovered, "$mode must discover the initially hidden wall")

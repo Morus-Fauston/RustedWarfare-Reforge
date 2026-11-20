@@ -199,14 +199,15 @@ class PathPerfBatchTest {
     }
 
     @Test
-    fun `measure batch memory unreachable reports early unreachable with full candidates`() {
+    fun `measure batch memory unreachable plans to the near side with full candidates`() {
         val batch = PathPerfBatch.measureBatch("MEMORY_UNREACHABLE", 1, 0, testUnit())
         val sample = batch.samples.single()
-        assertEquals(PathSearchOutcome.UNREACHABLE, sample.outcome)
+        assertEquals(PathSearchOutcome.FOUND, sample.outcome)
         assertEquals(1L, sample.actualSearchCalls)
         assertEquals(768L, sample.candidatesChecked)
         assertTrue(sample.expanded > 0)
-        assertTrue(batch.units.single().pathPoints.isEmpty())
+        assertEquals(Position(309.0, goal(0).y), sample.searchTarget)
+        assertEquals(listOf(sample.searchTarget), batch.units.single().pathPoints)
     }
 
     @Test
@@ -423,8 +424,8 @@ class PathPerfBatchTest {
     fun `environment records the actual algorithm validator contract and JDK geometry identity`() {
         val environment = Json.parseToJsonElement(PathPerfBatch.buildEnvironment("a".repeat(64), testUnit(), Path.of("."))).jsonObject
         assertEquals("natural-direct-then-four-neighbour-grid.v1", environment["pathAlgorithm"]?.jsonPrimitive?.content)
-        assertEquals("fixed-fixture-half-open-center-rational.v2-development", environment["pathValidator"]?.jsonPrimitive?.content)
-        assertEquals("c082407405daded97125d1587bad3012c300e62d97a1c1ec0b393bfa74b25f29",
+        assertEquals("fixed-fixture-half-open-center-rational.v3-development", environment["pathValidator"]?.jsonPrimitive?.content)
+        assertEquals("617a4190e5406cd0b1b2a27b08aaef70d8f245e26978551b330242c37ab6d872",
             environment["validatorContractSha256"]?.jsonPrimitive?.content)
         assertEquals(true, environment["javaDesktopModulePresent"]?.jsonPrimitive?.boolean)
         assertEquals("MotionCenterGeometry.exact-binary64-BigInteger-rational-partition", environment["independentGeometryApi"]?.jsonPrimitive?.content)

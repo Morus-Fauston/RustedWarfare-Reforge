@@ -29,12 +29,13 @@ class TurretCombatTest {
         try {
             val move = assertIs<ActionResult.Accepted>(c.submit(MoveAction("legal-continuous-goal", "p1", "a", Position(299.0, 200.0), c.world)))
             assertTrue(move.events.none { it.kind == "path-unreachable" })
-            assertEquals(Position(299.0, 200.0), c.observe().units.single { it.unitId == "a" }.pathPoints.last())
+            val routed = c.advanceToMoveOutcome(0, "a")
+            assertEquals(Position(299.0, 200.0), routed.units.single { it.unitId == "a" }.pathPoints.last())
             assertIs<ActionResult.Accepted>(c.submit(StopAction("reset-order", "p1", "a", c.world)))
             assertIs<ActionResult.Accepted>(c.submit(AttackAction("far-building", "p1", "a", "t", c.world)))
             var fired = false
             var arrivedOutsideRange = false
-            for (step in 0L..799L) {
+            for (step in routed.stepIndex + 1..routed.stepIndex + 800) {
                 val frame = c.advance(Step(step, 1.0, "sim-tick"))
                 val actor = frame.units.single { it.unitId == "a" }
                 assertTrue(actor.position.x < 300.0, "Never open the wall or the target's building cost")

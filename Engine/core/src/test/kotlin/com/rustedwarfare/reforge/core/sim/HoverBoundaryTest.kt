@@ -39,11 +39,10 @@ class HoverBoundaryTest {
             val view = context.observePlayer(context.world, "p1")
             assertTrue(view.units.none { it.unitId == "wall" })
             assertNull(view.knowledge!!.cell(30, 10).lastKnownGroundGid)
-            val outside = assertIs<ActionResult.Accepted>(context.submit(MoveAction("outside", "p1", "h", Position(900.0, 210.0), context.world)))
-            assertTrue(outside.events.isEmpty())
-            val failed = context.advance(Step(450, 1.0, "sim-tick"))
-            assertTrue(Event("path-unreachable", "h") in failed.events)
-            assertNull(failed.units.single { it.unitId == "h" }.moveTarget)
+            val outside = assertIs<ActionResult.Rejected>(context.submit(
+                MoveAction("outside", "p1", "h", Position(900.0, 210.0), context.world)))
+            assertEquals("invalid-target", outside.error.code)
+            assertEquals(view.units, context.observePlayer(context.world, "p1").units)
         } finally { context.close() }
     }
 
