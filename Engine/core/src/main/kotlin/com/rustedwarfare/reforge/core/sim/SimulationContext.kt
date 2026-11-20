@@ -72,6 +72,9 @@ class SimulationContext internal constructor(private val policies: ExperimentalP
     private var missileTargets: MissileTargetIndex?
         get() = steps.current.missileTargets
         set(value) { steps.current.missileTargets = value }
+    private var spatialIndex: WorldSpatialIndex
+        get() = steps.current.spatialIndex
+        set(value) { steps.current.spatialIndex = value }
     private var buildingTerrain: BuildingTerrain?
         get() = steps.current.buildingTerrain
         set(value) { steps.current.buildingTerrain = value }
@@ -404,6 +407,7 @@ class SimulationContext internal constructor(private val policies: ExperimentalP
         buildingKnowledge = emptyMap()
         pendingBuildingDiscoveries = emptyMap()
         units = linkedMapOf()
+        spatialIndex = WorldSpatialIndex()
         projectiles.clear()
         steps.current.temporaryVision = emptyList()
         pendingEvents.clear()
@@ -467,13 +471,21 @@ class SimulationContext internal constructor(private val policies: ExperimentalP
         val occupants = if (repair == ManeuverRepair.SHORE_REJOIN && members.isNotEmpty()) {
             val observer = checkNotNull(members.single().body)
             val next = observer.pathPoints.getOrNull(1)
-            orderedUnits().mapNotNull { other ->
-                val reach = observer.definition.movementCollision.boundingRadius + other.definition.movementCollision.boundingRadius
-                if (next == null || other.unitId == observer.unitId || !UnitContact.shareLayer(observer, other) ||
-                    other.position.x !in minOf(observer.position.x, next.x)-reach..maxOf(observer.position.x, next.x)+reach ||
-                    other.position.y !in minOf(observer.position.y, next.y)-reach..maxOf(observer.position.y, next.y)+reach ||
-                    !knowsRouteOccupant(observer, other)) null
-                else MovePlanningOccupant(other.copy(), movePlanningPose(other), null, idle = other.moveTarget == null, obstructsRoute = true)
+            val contactLayer = UnitContact.layer(observer)
+            if (next == null || contactLayer == null) emptyList() else {
+                spatialIndex.querySwept(
+                    SpatialLayer.fromContact(contactLayer),
+                    observer.position,
+                    next,
+                    observer.definition.movementCollision.boundingRadius,
+                ).mapNotNull { other ->
+                    val reach = observer.definition.movementCollision.boundingRadius + other.definition.movementCollision.boundingRadius
+                    if (other.unitId == observer.unitId || !UnitContact.shareLayer(observer, other) ||
+                        other.position.x !in minOf(observer.position.x, next.x)-reach..maxOf(observer.position.x, next.x)+reach ||
+                        other.position.y !in minOf(observer.position.y, next.y)-reach..maxOf(observer.position.y, next.y)+reach ||
+                        !knowsRouteOccupant(observer, other)) null
+                    else MovePlanningOccupant(other.copy(), movePlanningPose(other), null, idle = other.moveTarget == null, obstructsRoute = true)
+                }
             }
         } else if ((repair == ManeuverRepair.CONTACT || repair == ManeuverRepair.OVERTAKE) && members.isNotEmpty()) {
             val observer = checkNotNull(members.single().body)
@@ -486,7 +498,9 @@ class SimulationContext internal constructor(private val policies: ExperimentalP
                     if(length==0.0) observer.position else Position(observer.position.x+(it.x-observer.position.x)/length*travel,
                         observer.position.y+(it.y-observer.position.y)/length*travel)
                 }
-                orderedUnits().mapNotNull { other ->
+                val contactLayer = UnitContact.layer(observer)
+                val layerUnits = if (contactLayer == null) emptyList() else spatialIndex.allInLayer(SpatialLayer.fromContact(contactLayer))
+                layerUnits.mapNotNull { other ->
                     if(other.unitId==observer.unitId || !UnitContact.shareLayer(observer,other) || !knowsRouteOccupant(observer,other)) return@mapNotNull null
                     val reach=observer.definition.movementCollision.boundingRadius+other.definition.movementCollision.boundingRadius+maxOf(map.tileWidth,map.tileHeight)
                     val imminent=ScreenPlane.distanceSquared(observer.position,other.position)<=reach*reach ||
@@ -498,7 +512,7 @@ class SimulationContext internal constructor(private val policies: ExperimentalP
                         obstructsRoute=imminent || other.moveTarget==null,
                         knownRouteAim=other.pathPoints.firstOrNull().takeIf { other.ownerPlayerId==observer.ownerPlayerId })
                 }
-            } else (if (observer.landingMember?.claimed != null) orderedUnits().filter { other ->
+            } else (if (observer.landingMember?.claimed != null) (UnitContact.layer(observer)?.let { spatialIndex.allInLayer(SpatialLayer.fromContact(it)) } ?: emptyList()).filter { other ->
                 if (other.unitId == observer.unitId || !UnitContact.shareLayer(observer, other) || !knowsRouteOccupant(observer, other)) return@filter false
                 val peer = other.landingMember?.group === observer.landingMember?.group
                 if (!peer || isParkedPeer(observer, other)) {
@@ -513,10 +527,22 @@ class SimulationContext internal constructor(private val policies: ExperimentalP
             }
         } else if (group == null && members.isNotEmpty()) {
             val observer = checkNotNull(members.single().body)
-            orderedUnits().mapNotNull { other ->
+            val landing = observer.landingMember
+            val targetPos = members.single().action.target
+            val candidates = if (repair == null && landing != null) (UnitContact.layer(observer)?.let { spatialIndex.allInLayer(SpatialLayer.fromContact(it)) } ?: emptyList()) else {
+                val contactLayer = UnitContact.layer(observer)
+                if (contactLayer == null) emptyList() else {
+                    val ownR = observer.definition.movementCollision.boundingRadius
+                    spatialIndex.queryBounds(
+                        SpatialLayer.fromContact(contactLayer),
+                        targetPos.x - ownR, targetPos.x + ownR,
+                        targetPos.y - ownR, targetPos.y + ownR,
+                    )
+                }
+            }
+            candidates.mapNotNull { other ->
                 if (other.unitId == observer.unitId || !UnitContact.shareLayer(observer, other) ||
                     !knowsRouteOccupant(observer, other)) return@mapNotNull null
-                val landing = observer.landingMember
                 if (repair == null && landing != null && other.landingMember?.group === landing.group) queuePeers += other.position
                 if (repair == null && landing != null && (other.landingMember?.group !== landing.group || isParkedPeer(observer, other))) {
                     segmentPeers += MovePlanningOccupant(other.copy(), movePlanningPose(other), null,
@@ -524,14 +550,19 @@ class SimulationContext internal constructor(private val policies: ExperimentalP
                 }
                 if (canDisplaceInContact(other) && UnitContact.canPushMass(observer, other)) return@mapNotNull null
                 val reach = observer.definition.movementCollision.boundingRadius + other.definition.movementCollision.boundingRadius
-                if (ScreenPlane.distanceSquared(members.single().action.target, other.position) > reach * reach) return@mapNotNull null
+                if (ScreenPlane.distanceSquared(targetPos, other.position) > reach * reach) return@mapNotNull null
                 MovePlanningOccupant(other.copy(), movePlanningPose(other), null, idle = true, obstructsRoute = true, fixed = true)
             }
         } else if (members.isEmpty()) emptyList() else {
             val leaving = members.mapTo(hashSetOf()) { it.action.unitId }
             val observer = checkNotNull(members.first().body)
             val replacing = observer.groupMoveReservation?.slot.takeIf { repair == ManeuverRepair.GROUP_SLOT }
-            orderedUnits().mapNotNull { other ->
+            val groupCandidates = if (replacing != null) {
+                UnitContact.layer(observer)?.let { spatialIndex.allInLayer(SpatialLayer.fromContact(it)) } ?: emptyList()
+            } else {
+                (spatialIndex.allInLayer(SpatialLayer.SURFACE) + spatialIndex.allInLayer(SpatialLayer.SUBMERGED)).sortedBy { it.updateKey }
+            }
+            groupCandidates.mapNotNull { other ->
                 if (other.unitId in leaving || UnitContact.layer(other) == null) return@mapNotNull null
                 if (replacing != null && !UnitContact.shareLayer(observer, other)) return@mapNotNull null
                 val known = knowsRouteOccupant(observer, other)
@@ -704,14 +735,31 @@ class SimulationContext internal constructor(private val policies: ExperimentalP
 
     private fun groupStopClearsSlots(unit: MutableUnit): Boolean {
         val reserved = unit.groupMoveReservation ?: return true
+        val layer = UnitContact.layer(unit) ?: return true
         val stopped = reserved.slot.copy(position = unit.position, heading = unit.heading)
-        return orderedUnits().none { other ->
-            if (other === unit || other.ownerPlayerId != unit.ownerPlayerId) return@none false
+        val ownBuf = unit.definition.contactBufferCollision.boundingRadius
+        // Check live nearby parked members via spatialIndex and group peers (which have slot positions separate from current position).
+        val nearby = spatialIndex.queryBounds(
+            SpatialLayer.fromContact(layer),
+            stopped.position.x - ownBuf, stopped.position.x + ownBuf,
+            stopped.position.y - ownBuf, stopped.position.y + ownBuf,
+            useBufferRadius = true,
+        )
+        for (other in nearby) {
+            if (other === unit || other.ownerPlayerId != unit.ownerPlayerId) continue
             val peer = ownGroupReservation(unit, other)
-            if (peer?.plan === reserved.plan) GroupMoveDestinations.overlaps(unit, stopped, other, peer.slot)
-            else if (reserved.plan.hasParkedMember(other)) GroupMoveDestinations.overlaps(unit, stopped, other)
-            else false
+            if (peer?.plan !== reserved.plan && reserved.plan.hasParkedMember(other) &&
+                GroupMoveDestinations.overlaps(unit, stopped, other)
+            ) return false
         }
+        for (memberId in reserved.plan.members) {
+            if (memberId == unit.unitId) continue
+            val other = units[memberId] ?: continue
+            if (other.ownerPlayerId != unit.ownerPlayerId) continue
+            val peer = ownGroupReservation(unit, other)
+            if (peer?.plan === reserved.plan && GroupMoveDestinations.overlaps(unit, stopped, other, peer.slot)) return false
+        }
+        return true
     }
 
     private fun advanceSharedLandings(map: MapDefinition, budget: PathWorkBudget, slices: MutableList<PlanningWorkSlice>?) {
@@ -765,7 +813,14 @@ class SimulationContext internal constructor(private val policies: ExperimentalP
                         if (i != 0 && !budget.take(1)) return false
                         val arrival = if (start == target) heading else hull.arrival(grid, start, target, heading) ?: return false
                         if (!UnitContact.poseFits(unit.definition.movementCollision, target, arrival, grid)) return false
-                        for (other in world) {
+                        val contactLayer = UnitContact.layer(unit)
+                        val sweptCandidates = if (contactLayer == null) emptyList() else spatialIndex.querySwept(
+                            SpatialLayer.fromContact(contactLayer),
+                            start,
+                            target,
+                            unit.definition.movementCollision.boundingRadius,
+                        )
+                        for (other in sweptCandidates) {
                             if (other === unit || other.landingMember?.group === group && !isParkedPeer(unit, other) ||
                                 !UnitContact.shareLayer(unit, other) || !UnitContact.withinSweptBounds(unit, start, target, other) ||
                                 !knowsRouteOccupant(unit, other)) continue
@@ -776,7 +831,14 @@ class SimulationContext internal constructor(private val policies: ExperimentalP
                     }
                     return true
                 }
-                for (other in orderedUnits()) {
+                val contactLayer = UnitContact.layer(unit)
+                val sweptCandidates = if (contactLayer == null) emptyList() else spatialIndex.querySwept(
+                    SpatialLayer.fromContact(contactLayer),
+                    unit.position,
+                    end,
+                    unit.definition.movementCollision.boundingRadius,
+                )
+                for (other in sweptCandidates) {
                     if (other === unit || !UnitContact.withinSweptBounds(unit, unit.position, end, other) ||
                         other.landingMember?.group === group && !isParkedPeer(unit, other) ||
                         !UnitContact.shareLayer(unit, other) || !knowsRouteOccupant(unit, other)) continue
@@ -989,8 +1051,17 @@ class SimulationContext internal constructor(private val policies: ExperimentalP
                 return other !== unit && (other.moveTarget == null || distance <= approachRange * approachRange) &&
                     GroupMoveDestinations.overlaps(unit, reservation.slot, other) && knowsRouteOccupant(unit, other)
             }
+            val contactLayer = UnitContact.layer(unit)
             val holder = reservation.occupiedBy?.let(units::get)?.takeIf(::occupies)
-                ?: orderedUnits().firstOrNull(::occupies)
+                ?: if (contactLayer == null) null else {
+                    val bufR = unit.definition.contactBufferCollision.boundingRadius
+                    val sp = reservation.slot.position
+                    spatialIndex.queryBounds(
+                        SpatialLayer.fromContact(contactLayer),
+                        sp.x - bufR, sp.x + bufR, sp.y - bufR, sp.y + bufR,
+                        useBufferRadius = true,
+                    ).firstOrNull(::occupies)
+                }
             val occupied = holder != null
             val sameHolder = holder?.unitId == reservation.occupiedBy
             val ticks = when {
@@ -1099,8 +1170,8 @@ class SimulationContext internal constructor(private val policies: ExperimentalP
             val owner = action.unitId.substring(prefix.length, separator)
             if (input.players.none { it.playerId == owner }) return unavailable()
             if (action is SelectAction) {
-                val unit = orderedUnits().firstOrNull {
-                    it.unitId == action.unitId && isVisibleTo(actor.playerId, it.position, it.nativeTransportPlacement)
+                val unit = units[action.unitId]?.takeIf {
+                    isVisibleTo(actor.playerId, it.position, it.nativeTransportPlacement)
                 } ?: return unavailable()
                 return CommandActor.Available(unit)
             }
@@ -1354,9 +1425,9 @@ class SimulationContext internal constructor(private val policies: ExperimentalP
         if (attacker.definition.combat == null) return SimulationError("cannot-attack", "Unit cannot attack")
         val input = checkNotNull(scenario)
         val team = input.players.single { it.playerId == attacker.ownerPlayerId }.teamId
-        val target = orderedUnits().asSequence().filter {
+        val target = units[action.targetUnitId]?.takeIf {
             it.alive && isVisibleTo(action.actorPlayerId, it.position, it.nativeTransportPlacement)
-        }.firstOrNull { it.unitId == action.targetUnitId }
+        }
         val enemy = target != null && target.ownerPlayerId != attacker.ownerPlayerId &&
             (team == null || input.players.single { it.playerId == target.ownerPlayerId }.teamId != team)
         return if (target == null || !enemy || target.health == null || !CombatTargetQuery.canAttackAirCategory(attacker, target, input.map)) {
@@ -1442,7 +1513,10 @@ class SimulationContext internal constructor(private val policies: ExperimentalP
                 val change = Transport.request(action, unit, target, units)
                 change.error?.let { return reject(action, it.code, it.message) }
                 steps.current.movePlanning.cancel(unit.unitId)
-                change.boardedUnitId?.let(::cancelBoardedMove)
+                change.boardedUnitId?.let { id ->
+                    cancelBoardedMove(id)
+                    units[id]?.let(spatialIndex::relocate)
+                }
                 ActionResult.Accepted(action.actionId, listOfNotNull(change.event))
             }
             is AmphibiousFlightAction -> {
@@ -1615,7 +1689,13 @@ class SimulationContext internal constructor(private val policies: ExperimentalP
         productionLedger = change.ledger
         ordinaryUpgrades = change.upgrades
         change.reclaimedUnitId?.let { id ->
-            Transport.onRemoved(units.getValue(id), units, input.map)
+            val removed = units.getValue(id)
+            val cargoIds = removed.transportState?.passengerIds
+            Transport.onRemoved(removed, units, input.map)
+            spatialIndex.remove(id)
+            if (cargoIds != null) {
+                for (cid in cargoIds) units[cid]?.let(spatialIndex::relocate)
+            }
             missileTargets = missileTargets?.remove(id)
             buildingTerrain = BuildingTerrain.fromLive(input.map, units.values, checkNotNull(buildingTerrain))
         }
@@ -1662,6 +1742,7 @@ class SimulationContext internal constructor(private val policies: ExperimentalP
     private fun advanceUpgrade(unit: MutableUnit) {
         val upgrades = ordinaryUpgrades ?: return
         pendingEvents += applyUpgradeChange(upgrades.advance(unit, checkNotNull(productionLedger)))
+        spatialIndex.relocate(unit)
     }
 
     private fun refundUpgrades(unit: MutableUnit) {
@@ -1758,7 +1839,11 @@ class SimulationContext internal constructor(private val policies: ExperimentalP
             val cells = try {
                 BuildingTerrain.placementCells(input.map, definition, command.position, state.buildingTerrain?.cells.orEmpty())
             } catch (failure: BuildingInitializationException) { return rejected("invalid-placement") }
-            if (state.units.values.any { unit ->
+            val minX = cells.minOf { it.first } * input.map.tileWidth.toDouble()
+            val maxX = (cells.maxOf { it.first } + 1) * input.map.tileWidth.toDouble()
+            val minY = cells.minOf { it.second } * input.map.tileHeight.toDouble()
+            val maxY = (cells.maxOf { it.second } + 1) * input.map.tileHeight.toDouble()
+            if (state.spatialIndex.queryAllLayersBounds(minX, maxX, minY, maxY).any { unit ->
                     unit.alive && unit.definition.building == null && UnitLocomotion.movement(unit).type != MovementType.AIR &&
                         (MapBounds.cell(unit.position.x, input.map.tileWidth, input.map.widthTiles) to
                             MapBounds.cell(unit.position.y, input.map.tileHeight, input.map.heightTiles)) in cells
@@ -1866,7 +1951,8 @@ class SimulationContext internal constructor(private val policies: ExperimentalP
                                   atStep: Long): SandboxCommandReceipt {
         val current = steps.current
         // Registration updates only the new unit and replaces the registries and terrain it touches.
-        val staged = current.copy(units = LinkedHashMap(current.units))
+        val stagedUnits = LinkedHashMap(current.units)
+        val staged = current.copy(units = stagedUnits, spatialIndex = current.spatialIndex.fork(stagedUnits))
         val generated = linkedMapOf<String, String>()
         val input = checkNotNull(scenario)
         for ((index, entry) in batch.entries.withIndex()) {
@@ -1882,6 +1968,7 @@ class SimulationContext internal constructor(private val policies: ExperimentalP
             generated[entry.alias] = id
         }
         current.units = staged.units
+        current.spatialIndex = staged.spatialIndex
         current.productionLedger = staged.productionLedger
         current.ordinaryUpgrades = staged.ordinaryUpgrades
         current.buildingTerrain = staged.buildingTerrain
@@ -2031,6 +2118,7 @@ class SimulationContext internal constructor(private val policies: ExperimentalP
                     planningBudget.used + localWork, Collections.unmodifiableList(planningSlices))
             }
             prepareRouteSuccessors(currentScenario.map, step.stepIndex, candidate.routeContinuationSamples)
+            spatialIndex.beginStep()
             if (trafficSeparationEnabled) {
                 val visits = TrafficSeparation.Visits()
                 candidate.state.separationVisits = visits
@@ -2044,6 +2132,7 @@ class SimulationContext internal constructor(private val policies: ExperimentalP
                     val parent = units[attachment.parentId]?.takeIf { it.alive && it.carriedBy == null && !it.reclaimed } ?: continue
                     if (parent.deathPending && attachment.slot.number in parent.attachmentOffsets) continue
                     UnitAttachments.synchronize(parent, unit, attachment.slot)
+                    spatialIndex.relocate(unit)
                     if (BuildingWork.isReady(unit)) {
                         updatePointDefense(unit, step.delta)
                         updateProjectileInterception(unit, currentScenario)
@@ -2071,12 +2160,17 @@ class SimulationContext internal constructor(private val policies: ExperimentalP
                     WaterBody.advanceCorpse(unit, currentScenario.map, step.delta)
                     HoverMotion.advanceCorpse(unit, currentScenario.map, step.delta)
                     Transport.advanceCorpse(unit, currentScenario.map, step.delta)
+                    val corpseCargo = unit.transportState?.passengerIds
                     NautilusMotion.advanceCorpse(unit, units, currentScenario.map, step.delta)
+                    if (corpseCargo != null && unit.transportState?.passengerIds.isNullOrEmpty()) {
+                        for (cid in corpseCargo) units[cid]?.let(spatialIndex::relocate)
+                    }
                     AaBeamGunship.advanceCorpse(unit, currentScenario.map, step.delta)
                     continue
                 }
                 if (unit.carriedBy != null) continue
                 UnitAttachments.advanceOpeningFall(unit, step.delta.toFloat())
+                spatialIndex.relocate(unit)
                 if (unit.definition.energy?.dieOnZero == true && BuildingWork.isReady(unit)) {
                     WeaponEnergy.advance(unit, step.delta)
                     if (unit.energy <= 0f) {
@@ -2087,6 +2181,7 @@ class SimulationContext internal constructor(private val policies: ExperimentalP
                 }
                 UnitShield.advance(unit, step.delta.toFloat())
                 Bunker.advanceHeight(unit, step.delta)
+                spatialIndex.relocate(unit)
                 if (unit.combat == null) MechBody.advance(unit, step.delta)
                 val previousRequest = unit.movementRequested
                 unit.movementRequested = false
@@ -2101,7 +2196,10 @@ class SimulationContext internal constructor(private val policies: ExperimentalP
                 }
                 val loading = Transport.advanceLoading(unit, units)
                 loading?.event?.let { pendingEvents += it }
-                loading?.boardedUnitId?.let(::cancelBoardedMove)
+                loading?.boardedUnitId?.let { id ->
+                    cancelBoardedMove(id)
+                    units[id]?.let(spatialIndex::relocate)
+                }
                 loading?.approach?.let { target ->
                     unit.requestMovement(target)
                     val endpoint = unit.moveTarget
@@ -2183,6 +2281,7 @@ class SimulationContext internal constructor(private val policies: ExperimentalP
                             }
                         })
                         pendingEvents += Event("unit-action-completed", unit.unitId)
+                    if (actionForm !== unit.definition) spatialIndex.relocate(unit)
                     if (actionForm !== unit.definition && (actionForm.blink != null || unit.definition.blink != null))
                         productionLedger = CustomUnitActions.reconcileBlinkConversion(unit, productionLedger)
                     CustomUnitActions.constrain(unit, step.delta, policies.steering, policies.coordinates, unitActionHead(unit))
@@ -2195,7 +2294,7 @@ class SimulationContext internal constructor(private val policies: ExperimentalP
                         passageWaiting = unit.unitId in passageWaiting, departureWaiting = unit.unitId in seaDepartureWaiting)
                 }
                 val acceptsHeight = { height: Double ->
-                    val allowed = UnitContact.canChangeHeight(unit, height, orderedUnits(),
+                    val allowed = UnitContact.canChangeHeight(unit, height, spatialIndex,
                         currentScenario.map, buildingTerrain)
                     if (!allowed) {
                         val blocked = Event("movement-blocked", unit.unitId)
@@ -2203,15 +2302,31 @@ class SimulationContext internal constructor(private val policies: ExperimentalP
                     }
                     allowed
                 }
+                val passengersBeforeUnload = unit.transportState?.passengerIds
                 FlightMotion.advancePose(unit, currentScenario.map, step.delta, acceptsHeight)
                 NautilusMotion.advance(unit, step.delta, acceptsHeight)
                 Transport.refreshTerrain(unit, currentScenario.map)
                 pendingEvents += Transport.advance(unit, units, currentScenario.map, step.delta, acceptsHeight)
+                if (passengersBeforeUnload != null) {
+                    val remaining = unit.transportState?.passengerIds.orEmpty()
+                    if (remaining.size < passengersBeforeUnload.size) {
+                        for (pid in passengersBeforeUnload) {
+                            if (pid !in remaining) {
+                                val unloaded = units[pid]
+                                if (unloaded != null) {
+                                    spatialIndex.relocate(unloaded)
+                                    for (cid in unloaded.attachmentIds.values) units[cid]?.let(spatialIndex::relocate)
+                                }
+                            }
+                        }
+                    }
+                }
                 if (unit.transportState == null || unit.definition.transport == TransportProfile.AUTHORED)
                     HoverMotion.advancePose(unit, step.delta)
                 if (SubmarineMotion.advance(unit, step.delta, acceptsHeight)) pendingEvents += Event("submarine-threshold-crossed", unit.unitId)
                 if (AmphibiousJetMotion.advance(unit, currentScenario.map, step.delta, acceptsHeight))
                     pendingEvents += Event("amphibious-threshold-crossed", unit.unitId)
+                spatialIndex.relocate(unit)
                 MechGait.advance(unit, step.delta)
                 MechMotion.requireFinitePose(unit)
                 unit.finishMovementRequest()
@@ -2222,6 +2337,7 @@ class SimulationContext internal constructor(private val policies: ExperimentalP
                     if (withUnitActionQueue(unit) {
                             CustomUnitActions.advanceAutomatic(unit, currentScenario.unitDefinitions, currentScenario.map, step.delta)
                         }) {
+                        if (beforeAutomatic !== unit.definition) spatialIndex.relocate(unit)
                         if (beforeAutomatic.blink != null || unit.definition.blink != null)
                             productionLedger = CustomUnitActions.reconcileBlinkConversion(unit, productionLedger)
                         pendingEvents += Event("unit-action-automatic", unit.unitId)
@@ -2317,6 +2433,7 @@ class SimulationContext internal constructor(private val policies: ExperimentalP
         ordinaryUpgrades = initialUpgrades
         buildingTerrain = initialBuildings
         units = linkedMapOf()
+        spatialIndex = WorldSpatialIndex()
         projectiles = mutableListOf()
         steps.current.temporaryVision = emptyList()
         combatFrame = nextScenario.combatContract?.initialFrameCounter ?: -1
@@ -2953,7 +3070,7 @@ class SimulationContext internal constructor(private val policies: ExperimentalP
             CombatTargetQuery.canAttackAirCategory(unit, target, input.map)
         var target = units[command.targetUnitId]?.takeIf(::eligible)
         if (target == null) {
-            target = CombatTargetQuery.nearestEnemy(unit, orderedUnits(), input.players, policies.coordinates, input.map)
+            target = CombatTargetQuery.nearestEnemy(unit, spatialIndex.queryAllLayersCenterBox(unit.position, UnitCombat.range(unit) + 1e-6), input.players, policies.coordinates, input.map)
             unit.cancelRoute()
             unit.bomberApproach = null
             if (target == null) {
@@ -3026,8 +3143,10 @@ class SimulationContext internal constructor(private val policies: ExperimentalP
         return null
     }
 
-    private fun acquirePatrolTarget(unit: MutableUnit): MutableUnit? =
-        CombatTargetQuery.patrolEnemy(unit, orderedUnits(), checkNotNull(scenario).players, ::isVisibleTo, checkNotNull(scenario).map)
+    private fun acquirePatrolTarget(unit: MutableUnit): MutableUnit? {
+        val searchRange = maxOf(UnitCombat.range(unit).toFloat() + 110f, 190f).toDouble() + 1.0
+        return CombatTargetQuery.patrolEnemy(unit, spatialIndex.queryAllLayersCenterBox(unit.position, searchRange), checkNotNull(scenario).players, ::isVisibleTo, checkNotNull(scenario).map)
+    }
 
     private fun advanceWeaponCooldown(unit: MutableUnit, delta: Double) {
         unit.namedWeapons?.values?.forEach {
@@ -3079,7 +3198,7 @@ class SimulationContext internal constructor(private val policies: ExperimentalP
             }
             if (retained != null && state.patrolDispatchTimer == 0f) state.patrolDispatchTimer = interval
             retained?.takeIf(::inRange)
-        } else manualTarget ?: units[state.targetId]?.takeIf { eligible(it) && inRange(it) } ?: CombatTargetQuery.nearestEnemy(unit, orderedUnits(), input.players, policies.coordinates, input.map)
+        } else manualTarget ?: units[state.targetId]?.takeIf { eligible(it) && inRange(it) } ?: CombatTargetQuery.nearestEnemy(unit, spatialIndex.queryAllLayersCenterBox(unit.position, UnitCombat.range(unit) + 1e-6), input.players, policies.coordinates, input.map)
         if (target == null) {
             if (!patrol) state.targetId = null
             return
@@ -3100,8 +3219,8 @@ class SimulationContext internal constructor(private val policies: ExperimentalP
     private fun updateNamedWeapons(unit: MutableUnit, delta: Double, preferredTarget: MutableUnit?) {
         val input = checkNotNull(scenario)
         val contract = checkNotNull(input.combatContract)
-        val candidates = orderedUnits()
         val globalRange = UnitCombat.range(unit)
+        val candidates = spatialIndex.queryAllLayersCenterBox(unit.position, globalRange + 1e-6)
         fun globalEligible(target: MutableUnit) = CombatTargetQuery.isEnemy(unit, target, input.players) &&
             CombatTargetQuery.canAttackAirCategory(unit, target, input.map) &&
             policies.coordinates.distanceSquared(unit.position, target.position) < globalRange * globalRange
@@ -3496,7 +3615,7 @@ class SimulationContext internal constructor(private val policies: ExperimentalP
         val source = checkNotNull(units[projectile.sourceUnitId])
         val players = checkNotNull(scenario).players
         val team = players.single { it.playerId == source.ownerPlayerId }.teamId
-        for (target in orderedUnits()) {
+        for (target in spatialIndex.queryAllLayersCenterBox(projectile.position, area.radius.toDouble() + 1.0)) {
             if (!target.alive || target.carriedBy != null || target.health == null || target.unitId in area.hitUnitIds ||
                 target.height.toFloat() < -5f && projectile.height.toFloat() >= -2f ||
                 !area.profile.nuclear && target.ownerPlayerId != source.ownerPlayerId && team != null &&
@@ -3555,7 +3674,7 @@ class SimulationContext internal constructor(private val policies: ExperimentalP
         val preferred = units[source?.primaryCombatTargetId]
         var nearest = 120.0 * 120.0
         var chosen: MutableUnit? = null
-        for (candidate in orderedUnits()) {
+        for (candidate in spatialIndex.queryAllLayersCenterBox(center, 121.0)) {
             if (source == null) {
                 if (!CombatTargetQuery.isEnemy(owner, candidate, input.players) ||
                     !CombatTargetQuery.weaponAllows(candidate, checkNotNull(attachmentMount).weapon)) continue
@@ -3592,7 +3711,7 @@ class SimulationContext internal constructor(private val policies: ExperimentalP
         val x = projectile.position.x.toFloat()
         val y = projectile.position.y.toFloat()
         val height = projectile.height.toFloat()
-        for (target in orderedUnits()) {
+        for (target in spatialIndex.queryAllLayersCenterBox(projectile.position, profile.radius.toDouble() + 1.0)) {
             if (!target.alive || target.carriedBy != null || target.health == null || target.ownerPlayerId == owner ||
                 team != null && players.single { it.playerId == target.ownerPlayerId }.teamId == team) continue
             if (CombatTargetQuery.isFlying(target) != (height >= 5f) ||
@@ -3621,7 +3740,7 @@ class SimulationContext internal constructor(private val policies: ExperimentalP
         val team = players.single { it.playerId == owner }.teamId
         val x = center.x.toFloat()
         val y = center.y.toFloat()
-        for (target in orderedUnits()) {
+        for (target in spatialIndex.queryAllLayersCenterBox(center, currentRadius.toDouble() + 1.0)) {
             if (!target.alive || target.carriedBy != null || target.health == null || target.ownerPlayerId == owner ||
                 team != null && players.single { it.playerId == target.ownerPlayerId }.teamId == team) continue
             if (CombatTargetQuery.isFlying(target) != (height >= 5f) ||
@@ -3680,7 +3799,13 @@ class SimulationContext internal constructor(private val policies: ExperimentalP
                 if (target.ordnance.queue.isNotEmpty()) pendingEvents += Event("unit-action-refunded", target.unitId)
                 productionLedger = NuclearOrdnance.discard(target, checkNotNull(productionLedger))
             }
+            val cargoIds = target.transportState?.passengerIds
             Transport.onDeath(target, units, checkNotNull(scenario).map, deferCargo = NautilusMotion.slowDeath(target))
+            spatialIndex.remove(target.unitId)
+            for (cid in target.attachmentIds.values) spatialIndex.remove(cid)
+            if (cargoIds != null) {
+                for (cid in cargoIds) units[cid]?.let(spatialIndex::relocate)
+            }
             missileTargets = missileTargets?.remove(target.unitId)
             if (target.definition.production != null) {
                 if (checkNotNull(productionLedger).upgradeQueue(target.unitId).isNotEmpty())
@@ -3822,8 +3947,14 @@ class SimulationContext internal constructor(private val policies: ExperimentalP
     private fun knowsRouteOccupant(unit: MutableUnit, other: MutableUnit): Boolean =
         other.ownerPlayerId == unit.ownerPlayerId || isVisibleTo(unit.ownerPlayerId, other.position, other.nativeTransportPlacement)
 
-    private fun routeContacts(unit: MutableUnit): List<MutableUnit> = orderedUnits().filter {
-        it.unitId != unit.unitId && knowsRouteOccupant(unit, it) && UnitContact.inContact(unit, it)
+    private fun routeContacts(unit: MutableUnit): List<MutableUnit> {
+        val layer = UnitContact.layer(unit) ?: return emptyList()
+        val r = unit.definition.movementCollision.boundingRadius + 1.0
+        return spatialIndex.queryBounds(
+            SpatialLayer.fromContact(layer),
+            unit.position.x - r, unit.position.x + r,
+            unit.position.y - r, unit.position.y + r,
+        ).filter { it.unitId != unit.unitId && knowsRouteOccupant(unit, it) && UnitContact.inContact(unit, it) }
     }
 
     private fun impendingRouteContacts(unit: MutableUnit, map: MapDefinition, delta: Double): List<MutableUnit> {
@@ -3836,9 +3967,17 @@ class SimulationContext internal constructor(private val policies: ExperimentalP
             Position(unit.position.x + dx / length * travel, unit.position.y + dy / length * travel)
         // A leader can have moved since it limited this follower. Include a body
         // that would limit the next ordinary step, without inflating hard shapes.
-        return orderedUnits().filter { other ->
-            val reach = unit.definition.movementCollision.boundingRadius + other.definition.movementCollision.boundingRadius +
-                maxOf(map.tileWidth, map.tileHeight)
+        val layer = UnitContact.layer(unit) ?: return emptyList()
+        val tilePad = maxOf(map.tileWidth, map.tileHeight).toDouble()
+        val ownRadius = unit.definition.movementCollision.boundingRadius
+        val candidates = spatialIndex.querySwept(
+            SpatialLayer.fromContact(layer),
+            unit.position,
+            next,
+            ownRadius + tilePad,
+        )
+        return candidates.filter { other ->
+            val reach = ownRadius + other.definition.movementCollision.boundingRadius + tilePad
             other.unitId != unit.unitId && UnitContact.shareLayer(unit, other) && knowsRouteOccupant(unit, other) &&
                 (ScreenPlane.distanceSquared(unit.position, other.position) <= reach * reach ||
                     UnitContact.routeAround(unit, listOf(other))
@@ -4314,7 +4453,7 @@ class SimulationContext internal constructor(private val policies: ExperimentalP
         } else requestedHeading
         val boundedHeading = UnitAttachments.limitTurn(units, unit, map, headingBefore, terrainHeading)
         val legalHeading = if (hull != null && boundedHeading != headingBefore) {
-            UnitContact.turn(unit, hull, headingBefore, boundedHeading, orderedUnits())
+            UnitContact.turn(unit, hull, headingBefore, boundedHeading, spatialIndex)
         } else boundedHeading
         // A light idle vessel can touch the side of a stopped hull. Turning
         // into it is forbidden, but forward propulsion can push it clear using
@@ -4326,7 +4465,7 @@ class SimulationContext internal constructor(private val policies: ExperimentalP
             policies.coordinates.normalize(headingBefore + policies.coordinates.difference(wanted, headingBefore).coerceIn(-arc, arc))
         } else boundedHeading
         val forwardTurnEscape = nearShoreLeg && hull != null && (legalHeading != boundedHeading || turnProbe != boundedHeading) &&
-            UnitContact.canAdvanceAgainstTurn(unit, hull, headingBefore, turnProbe, orderedUnits(),
+            UnitContact.canAdvanceAgainstTurn(unit, hull, headingBefore, turnProbe, spatialIndex,
                 { knowsRouteOccupant(unit, it) }, ::canDisplaceInContact)
         val sailClearOfBank = nearShoreLeg && terrainHeading != requestedHeading && legalHeading == terrainHeading
         if (forwardTurnEscape || sailClearOfBank) {
@@ -4441,7 +4580,7 @@ class SimulationContext internal constructor(private val policies: ExperimentalP
                     !Transport.isLoadingPairAtContact(pusher, blocker, units)
             }
         } else null
-        val translation = step.translations.resolve(unit, boundedPosition, orderedUnits(), contactMap, units, canPush, map, forwardTurnEscape) { blocker ->
+        val translation = step.translations.resolve(unit, boundedPosition, contactMap, units, canPush, map, forwardTurnEscape) { blocker ->
             isVisibleTo(unit.ownerPlayerId, blocker.position, blocker.nativeTransportPlacement) &&
                 !(unit.landingMember?.preciseApproach == true && isParkedPeer(unit, blocker))
         }
@@ -4470,7 +4609,9 @@ class SimulationContext internal constructor(private val policies: ExperimentalP
         for (shift in translation.displaced) {
             step.translations.recordPush(shift.unit, shift.position)
             shift.unit.position = shift.position
+            spatialIndex.relocate(shift.unit)
             UnitAttachments.synchronizeAdjustedChildren(units, shift.unit)
+            for (cid in shift.unit.attachmentIds.values) units[cid]?.let(spatialIndex::relocate)
         }
         val terrainCorrected = boundedHeading != requestedHeading || boundedPosition != candidate
         if (unit.moveTarget != null && (nativeDeparture || ordinaryMove)) {
@@ -4490,6 +4631,13 @@ class SimulationContext internal constructor(private val policies: ExperimentalP
             if (unit.terrainClearSteps >= 3) unit.terrainCorrectionTime = 0.0
         }
         unit.position = resolved
+        spatialIndex.relocate(unit)
+        if (unit.attachmentOffsets.isNotEmpty()) {
+            UnitAttachments.synchronizeAdjustedChildren(units, unit)
+            for (number in unit.attachmentOffsets.keys) {
+                unit.attachmentIds[number]?.let(units::get)?.let(spatialIndex::relocate)
+            }
+        }
         if (unit.maneuverTurnWaypoint != null && resolved != unit.maneuverTurnWaypoint) unit.maneuverTurnWaypoint = null
         if (maneuverLeg != null && !finalForSample && resolved == maneuverLeg.target) unit.speed = 0.0
         // The normal custom I() gate is open for this alive, uncarried, nonbuilding unit.

@@ -69,6 +69,7 @@ internal object UnitRegistration {
             factory.productionSide = !factory.productionSide
             if (factory.typeId != "nautilusSubmarineSurface" || birth.fallback) {
                 Transport.retainProduced(factory, born)
+                state.spatialIndex.relocate(born)
                 state.pendingEvents += Event("unit-loaded", factory.unitId)
             }
             if (birth.fallback) state.pendingEvents += Event("production-exit-fallback", publicId)
@@ -183,6 +184,7 @@ internal object UnitRegistration {
             BuildingTerrain.fromLive(input.map, state.units.values + unit, state.buildingTerrain)
         Transport.refreshTerrain(unit, input.map)
         state.units[unit.unitId] = unit
+        state.spatialIndex.insert(unit)
         state.productionLedger = ledger
         state.ordinaryUpgrades = upgrades
         state.buildingTerrain = terrain

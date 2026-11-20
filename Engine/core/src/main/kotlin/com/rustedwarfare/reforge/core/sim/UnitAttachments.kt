@@ -151,6 +151,7 @@ internal object UnitAttachments {
             return SimulationError("attachment-outside-map", "The adjusted attachment would be outside the map")
         parent.attachmentOffsets = parent.attachmentOffsets + (offset.slot to relative)
         synchronize(parent, child, checkNotNull(child.attachment).slot)
+        state.spatialIndex.relocate(child)
         return null
     }
 
@@ -403,6 +404,7 @@ internal object UnitAttachments {
             val module = attached(slot) ?: return@mapNotNull null
             module.definition.attachmentModule?.parentSpeed?.takeIf { !it.readyOnly || BuildingWork.isReady(module) }
         }.maxByOrNull { it.priority }?.maximum
+        state.spatialIndex.relocate(child)
         state.pendingEvents += Event(event, child.unitId)
     }
 
@@ -418,6 +420,7 @@ internal object UnitAttachments {
                 refundPayment(state, child)
                 AttachmentInterceptor.discardQueue(state, child)
                 child.reclaimed = true
+                state.spatialIndex.remove(child.unitId)
                 state.missileTargets = state.missileTargets?.remove(child.unitId)
                 state.pendingEvents += Event("attachment-removed", child.unitId)
             } else if (health < 1.0 && (health == 0.0 || !child.sandboxPreservesPositiveAttachmentHealth) &&

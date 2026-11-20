@@ -44,6 +44,7 @@ internal data class StepState(
     var productionLedger: ProductionLedger? = null,
     var ordinaryUpgrades: OrdinaryUpgrades? = null,
     var missileTargets: MissileTargetIndex? = null,
+    var spatialIndex: WorldSpatialIndex = WorldSpatialIndex(),
     var buildingTerrain: BuildingTerrain? = null,
     var buildingKnowledge: Map<String, BuildingKnowledge> = emptyMap(),
     var pendingBuildingDiscoveries: Map<String, Map<Pair<Int, Int>, Long>> = emptyMap(),
@@ -80,14 +81,17 @@ internal data class StepState(
     var routeContinuationDiagnostics: MutableList<RouteContinuationSample>? = null,
     var pendingKnowledgeDiscoveries: MutableMap<String, MutableMap<Pair<Int, Int>, Long>> = mutableMapOf(),
 ) {
-    fun fork(planningRollback: PathSearchRollback): StepState = copy(
-        units = units.mapValuesTo(linkedMapOf()) { (_, unit) ->
+    fun fork(planningRollback: PathSearchRollback): StepState {
+        val forkedUnits = units.mapValuesTo(linkedMapOf()) { (_, unit) ->
             val combat = unit.combat?.copy()
             val named = unit.namedWeapons?.mapValuesTo(linkedMapOf()) { (_, state) ->
                 if (state === unit.combat) checkNotNull(combat) else state.copy()
             }
             unit.copy(pathPoints = unit.pathPoints.toMutableList(), combat = combat, namedWeapons = named,
-                pointDefense = unit.pointDefense?.copy()) },
+                pointDefense = unit.pointDefense?.copy()) }
+        return copy(
+        units = forkedUnits,
+        spatialIndex = spatialIndex.fork(forkedUnits),
         projectiles = projectiles.mapTo(mutableListOf()) {
             it.copy(expansion = it.expansion?.let { area -> area.copy(hitUnitIds = LinkedHashSet(area.hitUnitIds)) }) },
         pendingEvents = pendingEvents.toMutableList(),
@@ -110,7 +114,8 @@ internal data class StepState(
         // Motion samples are staged separately and appended only on successful publication.
         // Do not recopy the already committed, potentially long diagnostic history per step.
         // Vision source counts and knowledge blocks are immutable; sharing them is a fork.
-    )
+        )
+    }
 
     fun validate(input: Scenario) {
         require(temporaryVision.all { it.owner in input.players.map { p -> p.playerId } &&
@@ -243,6 +248,7 @@ internal data class StepState(
         productionLedger?.validateCandidate()
         productionLedger?.validateUpgrades(units)
         missileTargets?.validate(units)
+        spatialIndex.validate(units)
         ordinaryUpgrades?.validateCandidate(units)
         // Ended/event-only objects also enter the public window; removing them from the active
         // container must not let an invalid numeric candidate bypass the S4 publication gate.
@@ -299,7 +305,7 @@ internal class CandidateSteps {
 internal class CandidateStep(val state: StepState, private val step: Step) {
     var parkedNeighbors: TrafficSeparation.ParkedNeighbors? = null
     var separationCaps: Map<String, Double> = emptyMap()
-    val translations = UnitContact.Translations(step.delta) { id ->
+    val translations = UnitContact.Translations(step.delta, state.spatialIndex) { id ->
         state.movePlanning.pending(id) && !state.movePlanning.repairing(id)
     }
     val existingProjectileIds = state.projectiles.mapTo(hashSetOf()) { it.objectId }

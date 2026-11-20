@@ -84,7 +84,8 @@ class SharedLandingClaimsTest {
                 mover.moveTarget = click
                 mover.groupMoveReservation = order?.let { GroupMoveReservation(it, slot) }
                 val units = listOf(mover, rest)
-                return UnitContact.Translations(1.0) { false }.resolve(mover, Position(102.0, 200.0), units,
+                val spatial = WorldSpatialIndex().apply { syncAll(units) }
+                return UnitContact.Translations(1.0, spatial) { false }.resolve(mover, Position(102.0, 200.0),
                     map, units.associateBy { it.unitId }, { _, _ -> true }, map) { true }.position
             }
             assertEquals(resolved(null), resolved(old))
@@ -125,7 +126,8 @@ class SharedLandingClaimsTest {
                 resting.moveArrival = MoveArrival(click, resting.position, 0.0, 1, true)
             }
             val units = listOf(moving, resting)
-            return UnitContact.Translations(1.0) { false }.resolve(moving, Position(102.0, 200.0), units, map,
+            val spatial = WorldSpatialIndex().apply { syncAll(units) }
+            return UnitContact.Translations(1.0, spatial) { false }.resolve(moving, Position(102.0, 200.0), map,
                 units.associateBy { it.unitId }, { _, _ -> true }, map) { true }.position
         }
         val idle = translate(null)

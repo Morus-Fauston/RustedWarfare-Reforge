@@ -132,7 +132,8 @@ class RectangularManeuverTest {
         val ship = body("ship", MovementCollisionShape.Rectangle(20.0, 12.0), 4000.0, 1.0, Position(500.0, 190.0))
         val boat = body("boat", MovementCollisionShape.Circle(6.0), 1000.0, .1, boatAt)
         val units = listOf(ship, boat)
-        val translation = UnitContact.Translations(1.0) { false }.resolve(ship, Position(501.0, 190.0), units,
+        val spatial = WorldSpatialIndex().apply { syncAll(units) }
+        val translation = UnitContact.Translations(1.0, spatial) { false }.resolve(ship, Position(501.0, 190.0),
             map, units.associateBy { it.unitId }, { _, b -> b === boat }, map, freeBlockedTurn = true) { true }
         val shifted = translation.displaced.single().position
         assertEquals(boatAt.x, shifted.x, 1e-9, "The boat must slide laterally")

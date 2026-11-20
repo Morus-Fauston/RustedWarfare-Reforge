@@ -83,6 +83,19 @@ internal object UnitContact {
     }
 
     fun turn(unit: MutableUnit, shape: MovementCollisionShape.Rectangle, from: Double, requested: Double,
+             spatialIndex: WorldSpatialIndex): Double {
+        if (from == requested) return from
+        val layer = layer(unit) ?: return requested
+        val radius = boundingRadius(shape)
+        val candidates = spatialIndex.queryBounds(
+            SpatialLayer.fromContact(layer),
+            unit.position.x - radius, unit.position.x + radius,
+            unit.position.y - radius, unit.position.y + radius,
+        )
+        return turn(unit, shape, from, requested, candidates)
+    }
+
+    fun turn(unit: MutableUnit, shape: MovementCollisionShape.Rectangle, from: Double, requested: Double,
              units: Collection<MutableUnit>): Double {
         if (from == requested) return from
         val layer = layer(unit) ?: return requested
@@ -102,6 +115,19 @@ internal object UnitContact {
             if (heading == from) return from
         }
         return heading
+    }
+
+    fun canAdvanceAgainstTurn(unit: MutableUnit, shape: MovementCollisionShape.Rectangle, from: Double,
+                              probe: Double, spatialIndex: WorldSpatialIndex, known: (MutableUnit) -> Boolean,
+                              movable: (MutableUnit) -> Boolean): Boolean {
+        val layer = layer(unit) ?: return false
+        val radius = boundingRadius(shape)
+        val candidates = spatialIndex.queryBounds(
+            SpatialLayer.fromContact(layer),
+            unit.position.x - radius, unit.position.x + radius,
+            unit.position.y - radius, unit.position.y + radius,
+        )
+        return canAdvanceAgainstTurn(unit, shape, from, probe, candidates, known, movable)
     }
 
     fun canAdvanceAgainstTurn(unit: MutableUnit, shape: MovementCollisionShape.Rectangle, from: Double,
@@ -136,7 +162,11 @@ internal object UnitContact {
     }
 
     /** Per-step settlement in the simulation's existing motion update order. */
-    class Translations(private val delta: Double, private val movePending: (String) -> Boolean) {
+    class Translations(
+        private val delta: Double,
+        private val spatialIndex: WorldSpatialIndex,
+        private val movePending: (String) -> Boolean,
+    ) {
         private val startingPositions = mutableMapOf<String, Position>()
         private val maximumSpeeds = mutableMapOf<String, Double>()
         private val settled = mutableSetOf<String>()
@@ -199,12 +229,12 @@ internal object UnitContact {
             }
         }
 
-        fun resolve(unit: MutableUnit, requested: Position, units: Collection<MutableUnit>, map: MapDefinition,
+        fun resolve(unit: MutableUnit, requested: Position, map: MapDefinition,
                     unitsById: Map<String, MutableUnit>, canPush: ((MutableUnit, MutableUnit) -> Boolean)?,
                     ground: MapDefinition, freeBlockedTurn: Boolean = false,
                     canBuffer: (MutableUnit) -> Boolean): Translation {
             val support = if (canPush == null) null else gatheringGoal(unit, movePending)?.let { goal ->
-                val bodies = gatheringSupport ?: supportedGatherings(units, movePending).also { gatheringSupport = it }
+                val bodies = gatheringSupport ?: supportedGatherings(spatialIndex, movePending).also { gatheringSupport = it }
                 bodies[goal]
             }
             if (support != null && unit.unitId in support) return Translation(unit.position, supported = true)
@@ -214,20 +244,30 @@ internal object UnitContact {
             val target = if (ownLimit == null) requested else
                 lastLegalPoint(unit.position, requested) { distance(origin, it) <= ownLimit + positionRoundoff(origin, it) }
             val moverMass = if (canPush == null || unit.unitId in settled) null else positiveMass(unit)
-            val hardContacts = translationContacts(unit, target, units, simultaneous = moverMass != null)
+            val hardContacts = translationContacts(unit, target, spatialIndex, simultaneous = moverMass != null)
             if (hardContacts.isNotEmpty() || target != requested) hardLimited += unit.unitId
             val hardFraction = hardContacts.minOfOrNull { it.fraction } ?: 1.0
             val clipped = pointAt(unit.position, target, hardFraction)
             if (canPush == null || moverMass == null) return Translation(clipped)
-            val softContact = if (hardContacts.isEmpty()) translationContact(unit, target, units, buffered = true, included = canBuffer)
-                ?: if (freeBlockedTurn) units.firstOrNull { other -> other !== unit && shareLayer(unit, other) && canBuffer(other) &&
-                    distance(target, other.position) < distance(unit.position, other.position) &&
-                    bufferPressure(unit, other, target) > 0.0
-                }?.let { Contact(0.0, it) } else null else null
+            val softContact = if (hardContacts.isEmpty()) translationContact(unit, target, spatialIndex, buffered = true, included = canBuffer)
+                ?: if (freeBlockedTurn) {
+                    val contactLayer = layer(unit)
+                    val bufRadius = boundingRadius(unit.definition.contactBufferCollision)
+                    val nearby = if (contactLayer == null) emptyList() else spatialIndex.queryBounds(
+                        SpatialLayer.fromContact(contactLayer),
+                        target.x - bufRadius, target.x + bufRadius,
+                        target.y - bufRadius, target.y + bufRadius,
+                        useBufferRadius = true,
+                    )
+                    nearby.firstOrNull { other -> other !== unit && shareLayer(unit, other) && canBuffer(other) &&
+                        distance(target, other.position) < distance(unit.position, other.position) &&
+                        bufferPressure(unit, other, target) > 0.0
+                    }?.let { Contact(0.0, it) }
+                } else null else null
             val contacts = if (softContact == null) hardContacts else listOf(softContact)
             if (contacts.isEmpty()) return Translation(target)
             for (contact in contacts) {
-                contactSlide(unit, target, origin, contact.blocker, units, unitsById, map, ground)?.let { return it }
+                contactSlide(unit, target, origin, contact.blocker, unitsById, map, ground)?.let { return it }
             }
             fun transferRatio(pusher: MutableUnit, blocker: MutableUnit): Double? {
                 val ratio = positiveMass(blocker)?.div(moverMass) ?: return null
@@ -254,7 +294,7 @@ internal object UnitContact {
                     val wanted = share - member.contactOffset
                     if (wanted <= 0.0) continue
                     val endpoint = offsetAlong(member.unit.position, drift, wanted)
-                    val nextContacts = translationContacts(member.unit, endpoint, units, ignoredIds = connected, simultaneous = true)
+                    val nextContacts = translationContacts(member.unit, endpoint, spatialIndex, ignoredIds = connected, simultaneous = true)
                     for (next in nextContacts) {
                         val offset = member.contactOffset + wanted * next.fraction
                         val ratio = transferRatio(member.unit, next.blocker)
@@ -304,7 +344,7 @@ internal object UnitContact {
                 val destinations = chain.map { member ->
                     offsetAlong(member.link.unit.position, drift, member.link.travel(share))
                 }
-                if (translationContact(unit, end, units, ignoredIds = connected) != null) return false
+                if (translationContact(unit, end, spatialIndex, ignoredIds = connected) != null) return false
                 for ((i, member) in chain.withIndex()) {
                     val moved = member.link.unit
                     val destination = destinations[i]
@@ -313,7 +353,7 @@ internal object UnitContact {
                         if (distance(member.start, destination) > limit + positionRoundoff(member.start, destination) ||
                             !UnitAttachments.containsAdjustedSlots(unitsById, moved, map, destination) ||
                             !clearsTerrain(moved, moved.definition.movementCollision, member.body, destination, map, member.terrain, member.grid, ground, unitsById) ||
-                            translationContact(moved, destination, units, ignoredIds = connected) != null) return false
+                            translationContact(moved, destination, spatialIndex, ignoredIds = connected) != null) return false
                     }
                     if (!clearRelative(rootBody, unit.position, end, member.body, moved.position, destination,
                             requireClearEnd = unit.nearestMoveTarget != null && unit.definition.movementCollision is MovementCollisionShape.Rectangle,
@@ -338,11 +378,11 @@ internal object UnitContact {
             // Sliding under forward pressure can clear a grazing hull where an axial push cannot.
             val sideRelease = if (freeBlockedTurn && chain.size == 1 && pressureShare > 0.0)
                 slide(unit, target, clipped, origin, drift, pressureShare, chain.single(),
-                    units, unitsById, map, ground, chargeMass = true).takeIf { it.displaced.isNotEmpty() } else null
+                    unitsById, map, ground, chargeMass = true).takeIf { it.displaced.isNotEmpty() } else null
             val translation = sideRelease ?: if (axialAdjustments.isNotEmpty()) Translation(moverEnd(actualShare), axialAdjustments)
                 else if (softContact != null || (requestedShare == 0.0 && pinned == null)) Translation(clipped)
                 else slide(unit, target, clipped, origin, drift, pressureShare,
-                    (pinned?.let { link -> chain.firstOrNull { it.link == link } } ?: chain.last()), units, unitsById, map, ground)
+                    (pinned?.let { link -> chain.firstOrNull { it.link == link } } ?: chain.last()), unitsById, map, ground)
             if (translation.displaced.isEmpty()) return translation
             settled += unit.unitId
             for (adjustment in translation.displaced) {
@@ -353,7 +393,7 @@ internal object UnitContact {
         }
 
         private fun contactSlide(unit: MutableUnit, target: Position, origin: Position, other: MutableUnit,
-                                  units: Collection<MutableUnit>, unitsById: Map<String, MutableUnit>,
+                                  unitsById: Map<String, MutableUnit>,
                                   map: MapDefinition, ground: MapDefinition): Translation? {
             if (unit.moveTarget == null ||
                 movePending(other.unitId)) return null
@@ -393,13 +433,13 @@ internal object UnitContact {
                 (limit == null || distance(origin, point) <= limit + positionRoundoff(origin, point)) &&
                     UnitAttachments.containsAdjustedSlots(unitsById, unit, map, point) &&
                     clearsTerrain(unit, unit.definition.movementCollision, body, point, map, terrain, grid, ground, unitsById) &&
-                    translationContact(unit, point, units) == null
+                    translationContact(unit, point, spatialIndex) == null
             }
             return if (distance(unit.position, actual) > positionRoundoff(unit.position, actual)) Translation(actual) else null
         }
 
         private fun slide(unit: MutableUnit, target: Position, clipped: Position, origin: Position, drift: Position,
-                          share: Double, member: ConstrainedLink, units: Collection<MutableUnit>,
+                          share: Double, member: ConstrainedLink,
                           unitsById: Map<String, MutableUnit>, map: MapDefinition, ground: MapDefinition,
                           chargeMass: Boolean = false): Translation {
             val pushed = member.link.unit
@@ -413,14 +453,14 @@ internal object UnitContact {
                     distance(member.start, candidate) <= initialLimit + positionRoundoff(member.start, candidate) &&
                         UnitAttachments.containsAdjustedSlots(unitsById, pushed, map, candidate) &&
                         clearsTerrain(pushed, shape, member.body, candidate, map, member.terrain, member.grid, ground, unitsById) &&
-                        translationContact(pushed, candidate, units) == null
+                        translationContact(pushed, candidate, spatialIndex) == null
                 }
                 if (distance(pushed.position, actual) <= positionRoundoff(pushed.position, actual)) continue
                 val mover = Body(unit.definition.movementCollision, unit.heading)
                 fun settle(destination: Position): Position? {
                     val cost = if (chargeMass) member.link.massRatio * distance(pushed.position, destination) / length else 0.0
                     val available = offsetAlong(target, drift, -cost)
-                    val ahead = translationContact(unit, available, units, shifted = Adjustment(pushed, destination))
+                    val ahead = translationContact(unit, available, spatialIndex, shifted = Adjustment(pushed, destination))
                     val limit = pointAt(unit.position, available, ahead?.fraction ?: 1.0)
                     fun clear(end: Position) = clearRelative(mover, unit.position, end,
                         member.body, pushed.position, destination, requireClearEnd = true)
@@ -465,18 +505,26 @@ internal object UnitContact {
 
     /** Opposing pressure on an occupied shared target supports a stationary cluster.
      * Closing the contact component over successive rings lets the next step release it when that support opens. */
-    private fun supportedGatherings(units: Collection<MutableUnit>,
+    private fun supportedGatherings(spatialIndex: WorldSpatialIndex,
                                     movePending: (String) -> Boolean): Map<GatheringGoal, Set<String>> {
-        val groups = units.mapNotNull { unit -> gatheringGoal(unit, movePending)?.let { it to unit } }
-            .groupBy({ it.first }, { it.second })
+        val groups = linkedMapOf<GatheringGoal, MutableList<MutableUnit>>()
+        for (sLayer in listOf(SpatialLayer.SURFACE, SpatialLayer.SUBMERGED)) {
+            for (unit in spatialIndex.allInLayer(sLayer)) {
+                val goal = gatheringGoal(unit, movePending) ?: continue
+                groups.getOrPut(goal) { mutableListOf() }.add(unit)
+            }
+        }
         val result = mutableMapOf<GatheringGoal, Set<String>>()
         for ((goal, approaching) in groups) {
             if (approaching.size < 3) continue
-            val candidates = units.asSequence().filter { it.ownerPlayerId == goal.playerId && layer(it) == goal.layer }
-                .associateWith { Body(it.definition.movementCollision, it.heading) }
+            val sLayer = SpatialLayer.fromContact(goal.layer)
+            val bodyCache = HashMap<MutableUnit, Body>()
+            fun bodyOf(u: MutableUnit): Body = bodyCache.getOrPut(u) { Body(u.definition.movementCollision, u.heading) }
             val point = Body(MovementCollisionShape.Circle(0.0), 0.0)
-            val occupied = candidates.keys.firstOrNull { unit ->
-                val body = Body(unit.definition.movementCollision, unit.heading)
+            val nearGoal = spatialIndex.queryBounds(sLayer, goal.position.x, goal.position.x, goal.position.y, goal.position.y)
+            val occupied = nearGoal.firstOrNull { unit ->
+                if (unit.ownerPlayerId != goal.playerId || layer(unit) != goal.layer) return@firstOrNull false
+                val body = bodyOf(unit)
                 distance(unit.position, goal.position) <= body.reach &&
                     body.clearance(point, subtract(unit.position, goal.position)) <= 0.0
             } ?: continue
@@ -485,9 +533,16 @@ internal object UnitContact {
             open.addLast(occupied)
             while (open.isNotEmpty()) {
                 val from = open.removeFirst()
-                val body = candidates.getValue(from)
-                for ((other, outline) in candidates) {
-                    if (other in connected) continue
+                val body = bodyOf(from)
+                val margin = body.reach + 1.0
+                val neighbors = spatialIndex.queryBounds(
+                    sLayer,
+                    from.position.x - margin, from.position.x + margin,
+                    from.position.y - margin, from.position.y + margin,
+                )
+                for (other in neighbors) {
+                    if (other in connected || other.ownerPlayerId != goal.playerId || layer(other) != goal.layer) continue
+                    val outline = bodyOf(other)
                     val offset = subtract(from.position, other.position)
                     val reach = body.reach + outline.reach
                     val roundoff = positionRoundoff(from.position, other.position)
@@ -587,12 +642,12 @@ internal object UnitContact {
     private fun positionRoundoff(a: Position, b: Position): Double =
         4.0 * Math.ulp(maxOf(abs(a.x), abs(a.y), abs(b.x), abs(b.y)))
 
-    private fun translationContact(unit: MutableUnit, requested: Position, units: Collection<MutableUnit>,
+    private fun translationContact(unit: MutableUnit, requested: Position, spatialIndex: WorldSpatialIndex,
                                    shifted: Adjustment? = null, ignoredIds: Set<String> = emptySet(),
                                    buffered: Boolean = false, included: ((MutableUnit) -> Boolean)? = null): Contact? =
-        translationContacts(unit, requested, units, shifted, ignoredIds, buffered, included).firstOrNull()
+        translationContacts(unit, requested, spatialIndex, shifted, ignoredIds, buffered, included).firstOrNull()
 
-    private fun translationContacts(unit: MutableUnit, requested: Position, units: Collection<MutableUnit>,
+    private fun translationContacts(unit: MutableUnit, requested: Position, spatialIndex: WorldSpatialIndex,
                                     shifted: Adjustment? = null, ignoredIds: Set<String> = emptySet(),
                                     buffered: Boolean = false, included: ((MutableUnit) -> Boolean)? = null,
                                     simultaneous: Boolean = false): List<Contact> {
@@ -609,33 +664,78 @@ internal object UnitContact {
         val sweepY = abs(drift.y)
         val length = if (simultaneous) hypot(drift.x, drift.y) else 0.0
         var fraction = 1.0
-        val contacts = mutableListOf<Contact>()
-        for (other in units) {
-            if (unit === other || other.unitId in ignoredIds) continue
-            val otherCenter = if (shifted?.unit === other) shifted.position else other.position
+        var bestSingle: Contact? = null
+        var contacts: MutableList<Contact>? = null
+        val minX = minOf(start.x, requested.x) - ownReach
+        val maxX = maxOf(start.x, requested.x) + ownReach
+        val minY = minOf(start.y, requested.y) - ownReach
+        val maxY = maxOf(start.y, requested.y) + ownReach
+        val shiftedUnit = shifted?.unit
+        var sawShifted = false
+        fun inspect(other: MutableUnit) {
+            if (unit === other || other.unitId in ignoredIds) return
+            if (other === shiftedUnit) sawShifted = true
+            val otherCenter = if (shiftedUnit === other) shifted.position else other.position
             val offsetX = start.x - otherCenter.x
             val offsetY = start.y - otherCenter.y
             val otherShape = shape(other)
             val reach = ownReach + boundingRadius(otherShape)
-            if (abs(offsetX) > reach + sweepX || abs(offsetY) > reach + sweepY) continue
-            if (layer(other) != layer || included != null && !included(other)) continue
+            if (abs(offsetX) > reach + sweepX || abs(offsetY) > reach + sweepY) return
+            if (layer(other) != layer || included != null && !included(other)) return
             val moving = body ?: Body(ownShape, unit.heading).also { body = it }
-            val limit = moving.entry(Body(otherShape, other.heading), Position(offsetX, offsetY), drift,
-                if (simultaneous) 1.0 else fraction)
-            if (limit >= 1.0) continue
-            val tied = simultaneous && contacts.isNotEmpty() &&
-                abs(limit - fraction) * length <= positionRoundoff(start, otherCenter)
-            if (tied) {
-                fraction = minOf(fraction, limit)
-                contacts += Contact(limit, other)
+            val limit = moving.entry(Body(otherShape, other.heading), Position(offsetX, offsetY), drift, 1.0)
+            if (limit >= 1.0) return
+            if (!simultaneous) {
+                val current = bestSingle
+                if (current == null || limit < fraction ||
+                    (limit == fraction && other.updateKey < current.blocker.updateKey)
+                ) {
+                    fraction = limit
+                    bestSingle = Contact(limit, other)
+                }
+                return
+            }
+            val list = contacts ?: mutableListOf<Contact>().also { contacts = it }
+            val tol = positionRoundoff(start, otherCenter)
+            if (list.isEmpty()) {
+                fraction = limit
+                list += Contact(limit, other)
             } else if (limit < fraction) {
                 fraction = limit
-                contacts.clear()
-                contacts += Contact(limit, other)
-                if (!simultaneous && fraction == 0.0) break
+                // Unconditionally prune any earlier contacts outside tie tolerance of the new minimum fraction.
+                list.removeIf { existing ->
+                    val c = if (shiftedUnit === existing.blocker) shifted.position else existing.blocker.position
+                    (existing.fraction - fraction) * length > positionRoundoff(start, c)
+                }
+                list += Contact(limit, other)
+            } else if ((limit - fraction) * length <= tol) {
+                list += Contact(limit, other)
             }
         }
-        return contacts
+        spatialIndex.forEachInBoundsUnordered(
+            SpatialLayer.fromContact(layer),
+            minX, maxX, minY, maxY,
+            useBufferRadius = buffered,
+        ) { other ->
+            inspect(other)
+            false
+        }
+        if (shiftedUnit != null && !sawShifted && shiftedUnit !== unit && shiftedUnit.unitId !in ignoredIds) {
+            inspect(shiftedUnit)
+        }
+        if (!simultaneous) {
+            return bestSingle?.let(::listOf) ?: emptyList()
+        }
+        val list = contacts ?: return emptyList()
+        // Order-independent final tie filter against global minimum fraction.
+        if (list.size > 1) {
+            list.removeIf { existing ->
+                val c = if (shiftedUnit === existing.blocker) shifted.position else existing.blocker.position
+                (existing.fraction - fraction) * length > positionRoundoff(start, c)
+            }
+            list.sortBy { it.blocker.updateKey }
+        }
+        return list
     }
 
     private fun clearsTerrain(unit: MutableUnit, shape: MovementCollisionShape, body: Body, target: Position,
@@ -713,6 +813,34 @@ internal object UnitContact {
             }
           }
         }
+    }
+
+    fun canChangeHeight(unit: MutableUnit, requested: Double, spatialIndex: WorldSpatialIndex,
+                        map: MapDefinition, buildings: BuildingTerrain?): Boolean {
+        val current = layer(unit)
+        val target = layer(unit, requested)
+        if (current == target) return true
+        val pose = unit.position
+        val body = Body(unit.definition.movementCollision, unit.heading)
+        // A large step between air and submerged depth still needs clearance at the surface.
+        val crossesSurface = current == null && target == ContactLayer.SUBMERGED || target == null && current == ContactLayer.SUBMERGED
+        if (target == null && !crossesSurface) return true
+        val candidates = ArrayList<MutableUnit>()
+        if (target != null) {
+            candidates.addAll(spatialIndex.queryBounds(
+                SpatialLayer.fromContact(target),
+                pose.x - body.reach, pose.x + body.reach,
+                pose.y - body.reach, pose.y + body.reach,
+            ))
+        }
+        if (crossesSurface && target != ContactLayer.SURFACE) {
+            candidates.addAll(spatialIndex.queryBounds(
+                SpatialLayer.SURFACE,
+                pose.x - body.reach, pose.x + body.reach,
+                pose.y - body.reach, pose.y + body.reach,
+            ))
+        }
+        return canChangeHeight(unit, requested, candidates, map, buildings)
     }
 
     fun canChangeHeight(unit: MutableUnit, requested: Double, units: Collection<MutableUnit>,
