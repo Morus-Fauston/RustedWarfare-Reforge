@@ -1,3 +1,9 @@
+v0.5.56 (2026-11-22 04:15)
+  新增: 支持不改变选中集合地显式切换主选单位并在混选时渲染最多 6 枚类型小标签（+k 溢出、主选高亮、primary-chip:{typeId} 上报、归属小字与全部 ownPrimary 专属动作同步切换）/ 模块蜘蛛 3×2 统一槽位小键（空槽 rw-slot-empty、满槽单位图、选中高亮、select-slot:{n} 上报及模块键与价格联动）/ 只读 TransportObservation 增补 passengerTypeIds 并在选中卡下渲染合并乘员货舱行与目标选点/就地/取消卸载闭环（含途中取消与新指令清理）
+  技术: 新增 UiHudMultiSpiderTransportTest 并通过 7 组客户端回归共 46 项测试全绿；完成 1920×1080 三态实窗采集，Hydrogen 视觉并排对照与 Neon 独立代码整审定向复核均 0 必修
+
+====
+
 v0.5.55 (2026-11-22 03:03)
   新增: 打包 65 枚自有 72px RGBA 指令图标图集（MipMapLinearLinear 与完整显存回收）/ 实现能力驱动动作列表与 HudActionPanel 并彻底移除 NativeActionPanel（置顶共用命令行停止 S/巡逻 P/守卫 G 弹 amber 未支持、两列骨白键帽与按下态/激活 rust 描边/资金不足禁用闪烁/排队徽标与底进度条、逐像素平滑 ScrollPane 与滚动实时对齐悬停提示框）/ 战场顶部居中 300 宽目标模式提示卡（建造三态、回收修理、巡逻计数与右键 Esc 退出）
   技术: 迁移 15 项旧测试并新增 UiHudActionListAndIconsTest；通过 1920×1080 与 960×640 实窗四态对照，Hydrogen 视觉并排审阅与 Neon 独立代码整审定向复核均 0 必修

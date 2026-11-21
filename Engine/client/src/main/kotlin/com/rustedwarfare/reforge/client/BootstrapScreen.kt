@@ -719,6 +719,14 @@ class BootstrapScreen(
                     lastHudState = null
                     updateHud()
                 }
+                override fun onSelectPrimaryType(typeId: String) {
+                    val active = session ?: return
+                    if (active.selectPrimaryByType(typeId)) {
+                        mapInput.cancel()
+                        lastHudState = null
+                        updateHud()
+                    }
+                }
             },
         ).also(stage::addActor)
         minimapActor = Actor().apply {
@@ -780,6 +788,7 @@ class BootstrapScreen(
                         else owner.unitAction(arg, cancelQueued = cancel)
                     "submarine-surface", "submarine-dive" -> owner.submarineDepth(key.id == "submarine-surface")
                     "amphibious-fly", "amphibious-dive" -> owner.amphibiousFlight(key.id == "amphibious-fly")
+                    "transport-unload-target" -> mapInput.beginGroundAction("transport-unload-target")
                     "transport-unload", "transport-cancel-unload" -> owner.unload(key.id == "transport-unload")
                     "choose-reclaim" -> mapInput.beginReclaim()
                     "choose-repair" -> mapInput.beginRepair()
@@ -794,6 +803,18 @@ class BootstrapScreen(
                     HudActionKeyState.DISABLED -> key.noteText?.let { hudEvents.pushWarning(it) }
                     else -> {}
                 }
+            },
+            onSelectSlot = { slotNum ->
+                val owner = session ?: return@HudActionPanel
+                mapInput.cancel()
+                val currentSlot = owner.observation.units.firstOrNull { it.unitId == owner.selectedId }?.attachmentOverview?.selectedSlot
+                if (currentSlot == slotNum) {
+                    owner.unitAction("selectSlotBuild")
+                } else {
+                    owner.unitAction("selectSlot$slotNum")
+                }
+                lastHudState = null
+                updateHud()
             },
         )
         battleActions = BattleActionList(skin, stage, { session }, { graphics?.unitIcon(it) }, { owner, row, cancel ->

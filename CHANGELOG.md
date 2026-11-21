@@ -1,5 +1,18 @@
 # Changelog
 
+## v0.5.56 (2026-11-22 04:15)
+
+### 新增
+
+- **多选类型小标签与显式主选切换**：在 `SelectionState` 与 `SandboxSession` 支持不改变 `selectedIds` 集合地显式切换主选单位（`setPrimary` / `selectPrimaryByType`）；`InGameHudOverlay` 在混选多种类型时于选中卡上方渲染最多 6 枚类型小标签（图标+数量，超出显示 `+k`，主选 `value` 高亮并始终保留，上报 `primary-chip:{typeId}`），点击即同步切换选中卡、`{名称} 的动作` 归属小字及 `ActionPresentation` 中全部归属 `ownPrimary` 的专属动作（建造、回收/修理、运输卸载、集结点、潜艇/两栖切换与生产/升级）。
+- **模块蜘蛛 3×2 统一槽位小键**：在 `HudActionModels` / `HudActionPanel` 落地 3×2 等尺寸槽位小键（PC 高 40 / 触控高 46，空槽显示 `rw-slot-empty` 虚线六边形、满槽显示 24×24 模块单位图与建造进度条、选中槽位 `value` 高亮、上报 `select-slot:{n}` 及 `unit-action:selectSlot{n}` 兼容别名），点击槽位切换对应模块安装/升级/启停/瞬移/回收键与价格/资金不足状态（重复点击返回 Build 页），并按规格在槽位页隐藏底盘回收/修理键。
+- **运输载具货舱行与目标/就地/取消卸载**：在只读 `TransportObservation` 增补 `passengerTypeIds: List<String>`（保持 `PlayerObservationProjector` 对非己方完整隐私裁剪）；`InGameHudOverlay` 在选中卡下方渲染“货舱”行（按乘员类型合并图标+数量芯片，右侧 `已占/容量`）；实现“卸载”目标选点（`transport-unload-target`，解耦当前水面限制，支持移动到达自动卸载与途中 `transport-cancel-unload` 取消、新指令自动清除待卸载目标、受阻停下不原地误卸）与“就地卸载”（`transport-unload`）。
+
+### 技术
+
+- **测试、实窗对照与双门禁复核**：新增 `UiHudMultiSpiderTransportTest`（8 项测试覆盖主选切换、6 标签溢出、模块蜘蛛槽位联动、货舱合并、`unloadAt` 到达卸载与新移动覆盖取消、敌方隐私裁剪及副标题翻译键）并通过既有 `ActionMenuTest` / `ConstructionMixedDispatchTest` / `ConstructionHotkeyInputTest` / `SelectionSandboxSessionTest` / `ModularSpiderSandboxTest` / `RoleCompositionHudTest` 共 46/46 全绿；为 `BackgroundClientInput` 增补带严格边界校验的 `drag` / `key` 驱动指令，在 1920×1080 实窗采集多选混合、模块蜘蛛槽位与运输机货舱 3 组画面，Hydrogen 视觉对照 0 必修 PASS，独立非作者 Neon 代码整审及 6 项必修返修复核 0 必修 PASS。
+
+---
 ## v0.5.55 (2026-11-22 03:03)
 
 ### 新增

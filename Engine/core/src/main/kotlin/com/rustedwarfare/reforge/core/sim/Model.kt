@@ -193,7 +193,7 @@ data class UnitActionsObservation(val actions: List<UnitActionObservation>, val 
 
 data class TransportObservation(val passengerIds: List<String>?, val passengerCount: Int,
     val occupiedSlots: Int, val capacity: Int, val unloading: Boolean, val unloadRemaining: Float?,
-    val canUnload: Boolean = false)
+    val canUnload: Boolean = false, val passengerTypeIds: List<String> = emptyList())
 
 data class TransportExitObservation(val previousCarrierId: String, val remaining: Float)
 

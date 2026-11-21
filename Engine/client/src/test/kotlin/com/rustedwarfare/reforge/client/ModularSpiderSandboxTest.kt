@@ -124,7 +124,8 @@ class ModularSpiderSandboxTest {
             fun purchaseMenu() = session.actionMenu.unitActions.any { it.name == "buildFabricator" }
             fun bounds() {
                 val projected = HudActionProjection.projectActionList(session, null, false, false, false, null, false)
-                val ids = projected.exclusiveKeys.map { it.id }
+                val ids = projected.exclusiveKeys.map { it.id } + projected.attachmentSlots.map { "unit-action:selectSlot${it.slotNumber}" }
+                assertEquals(6, projected.attachmentSlots.size)
                 assertEquals(ids.distinct().size, ids.size, "Duplicate projected attachment keys")
                 assertTrue(session.actionMenu.unitActions.all { "unit-action:${it.name}" in ids })
             }

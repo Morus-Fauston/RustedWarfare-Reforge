@@ -20,6 +20,30 @@ data class HudStatBar(
     val style: HudStatStyle = HudStatStyle.NORMAL,
 )
 
+data class HudTypeChipModel(
+    val typeId: String,
+    val count: Int,
+    val isPrimary: Boolean,
+    val displayName: String,
+)
+
+data class HudTypeChipsSection(
+    val chips: List<HudTypeChipModel>,
+    val overflowCount: Int = 0,
+)
+
+data class HudCargoChipModel(
+    val typeId: String,
+    val count: Int,
+    val displayName: String,
+)
+
+data class HudCargoSection(
+    val items: List<HudCargoChipModel>,
+    val occupiedSlots: Int,
+    val capacity: Int,
+)
+
 data class HudQueueSlot(
     val typeId: String?,
     val progress: Float?,
@@ -47,7 +71,9 @@ data class HudSelectionCardModel(
 
 data class HudSnapshot(
     val creditsText: String,
+    val typeChips: HudTypeChipsSection? = null,
     val selectionCard: HudSelectionCardModel?,
+    val cargoSection: HudCargoSection? = null,
     val queueSection: HudQueueSection?,
     val showActionsSection: Boolean,
     val menuOpen: Boolean,
@@ -58,6 +84,7 @@ data class HudSnapshot(
 
 object HudSidebarProjection {
     private const val MAX_QUEUE_SLOTS = 5
+    const val MAX_TYPE_CHIPS = 6
 
     /** Computes right-rail minimap height in reference units per Spec §6: clamped to [0.5, 1.0] * sidebarWidth. */
     fun minimapHeightRef(worldWidth: Double, worldHeight: Double, sidebarWidth: Float = UiTokens.SIDEBAR_WIDTH): Float {
@@ -92,13 +119,17 @@ object HudSidebarProjection {
         val obs = session.observation
         val menu = session.actionMenu
         val balance = menu.balance ?: menu.credits?.toLong() ?: obs.balance ?: obs.credits?.toLong() ?: 0L
-        val selectedUnits = obs.units.filter { it.alive && it.unitId in session.selectedIds }
-        val primary = obs.units.firstOrNull { it.alive && it.unitId == session.selectedId } ?: selectedUnits.firstOrNull()
+        val selectedIds = session.selectedIds
+        val primaryId = session.selectedId
+        val selectedUnits = obs.units.filter { it.alive && it.unitId in selectedIds }
+        val primary = obs.units.firstOrNull { it.alive && it.unitId == primaryId } ?: selectedUnits.firstOrNull()
 
         if (primary == null) {
             return HudSnapshot(
                 creditsText = formatCredits(balance),
+                typeChips = null,
                 selectionCard = null,
+                cargoSection = null,
                 queueSection = null,
                 showActionsSection = false,
                 menuOpen = menuOpen,
@@ -109,48 +140,41 @@ object HudSidebarProjection {
         }
 
         val isOwn = primary.ownerPlayerId == obs.playerId
+        val typeChips = buildTypeChips(selectedUnits, primary.typeId) { typeId -> session.unitTitle(typeId) }
         val distinctTypes = selectedUnits.map { it.typeId }.distinct()
         val countText = when {
             selectedUnits.size <= 1 -> "×1"
-            distinctTypes.size <= 1 -> "×${selectedUnits.size}"
-            else -> UiStrings.format("selected", "N" to selectedUnits.size, language = language)
+            distinctTypes.size > 1 -> UiStrings.format("selected", "N" to selectedUnits.size, language = language)
+            else -> "×${selectedUnits.size}"
         }
-
         val displayName = menu.selectedTitle?.takeIf { it.isNotBlank() } ?: primary.typeId
 
-        // Determine subtitle: foreign owner > energy locked warning > toggle state > income
+        // Subtitle priority: foreign owner -> energy recharging warning -> unit state -> nominal income
         var subtitle: String? = null
         var subWarn = false
         var subIncome = false
         if (!isOwn) {
             subtitle = formatForeignOwnerSubtitle(primary.ownerPlayerId, obs.playerId, language)
+        } else if (primary.energy?.recharging == true || primary.pointDefense?.exhausted == true) {
+            subtitle = "▲ ${UiStrings.get("charging", language)}"
+            subWarn = true
         } else {
-            val energyLocked = primary.energy?.recharging == true || primary.pointDefense?.exhausted == true
-            when {
-                energyLocked -> {
-                    subtitle = "▲ ${UiStrings.get("charging", language)}"
-                    subWarn = true
-                }
-                primary.submarine != null -> {
-                    val sub = primary.submarine
-                    val submerged = sub != null && sub.underwater
-                    subtitle = UiStrings.get(if (submerged) "submerged" else "surfaced", language)
-                }
-                primary.amphibiousJet != null -> {
-                    val jet = primary.amphibiousJet
-                    val flying = jet?.movementType == com.rustedwarfare.reforge.core.content.MovementType.AIR
-                    val under = jet?.underwater == true
-                    subtitle = UiStrings.get(if (flying) "flying" else if (under) "submerged" else "surfaced", language)
-                }
-                selectedUnits.size == 1 && (session.nominalIncome(primary.typeId) ?: 0f) > 0.01f -> {
-                    val unitIncome = session.nominalIncome(primary.typeId) ?: 0f
-                    subtitle = "+${unitIncome.roundToInt()}"
+            val stateLabel = when {
+                primary.submarine != null -> UiStrings.get(if (primary.submarine!!.underwater) "submerged" else "surfaced", language)
+                primary.amphibiousJet != null -> UiStrings.get(if (primary.amphibiousJet!!.underwater) "submerged" else "flying", language)
+                else -> null
+            }
+            if (stateLabel != null) {
+                subtitle = stateLabel
+            } else {
+                val ownIncome = session.nominalIncome(primary.typeId) ?: 0f
+                if (ownIncome > 0.01f) {
+                    subtitle = "+$${ownIncome.roundToInt()}"
                     subIncome = true
                 }
             }
         }
 
-        // Stat bars (HP, under-construction progress, shield, energy)
         val bars = buildList {
             val hp = primary.health
             val maxHp = primary.maxHealth
@@ -163,7 +187,7 @@ object HudSidebarProjection {
                     style = HudStatStyle.NORMAL,
                 ))
             }
-            if (primary.constructionProgress < 1f) {
+            if (primary.constructionProgress < 0.999f) {
                 val pct = (primary.constructionProgress * 100f).roundToInt().coerceIn(0, 100)
                 add(HudStatBar(
                     labelKey = "build",
@@ -220,9 +244,12 @@ object HudSidebarProjection {
             statBars = bars,
         )
 
+        val cargoSection = if (isOwn) buildCargoSection(primary) { typeId -> session.unitTitle(typeId) } else null
         val queueSection = if (isOwn) buildQueueSection(menu, primary, obs.units) else null
         val hasActions = isOwn && (
-            menu.battleActions().isNotEmpty() ||
+            session.canPatrol ||
+                primary.attachmentOverview != null ||
+                menu.battleActions().isNotEmpty() ||
                 menu.production.isNotEmpty() ||
                 menu.construction.isNotEmpty() ||
                 menu.upgrades.isNotEmpty() ||
@@ -236,13 +263,84 @@ object HudSidebarProjection {
 
         return HudSnapshot(
             creditsText = formatCredits(balance),
+            typeChips = typeChips,
             selectionCard = card,
+            cargoSection = cargoSection,
             queueSection = queueSection,
             showActionsSection = hasActions,
             menuOpen = menuOpen,
             simPaused = simPaused,
             activeRate = activeRate,
             language = language,
+        )
+    }
+
+    /**
+     * Builds the multi-type selection chip row (HUD Spec §5.2):
+     * - Shown only when 2+ distinct unit types are selected
+     * - Max 6 type chips; excess types summarized in [HudTypeChipsSection.overflowCount] (+k)
+     * - Primary unit's type is guaranteed to be included and highlighted
+     */
+    internal fun buildTypeChips(
+        selectedUnits: List<UnitObservation>,
+        primaryTypeId: String,
+        titleOf: (String) -> String,
+    ): HudTypeChipsSection? {
+        if (selectedUnits.size < 2) return null
+        val counts = LinkedHashMap<String, Int>()
+        for (u in selectedUnits) {
+            counts[u.typeId] = (counts[u.typeId] ?: 0) + 1
+        }
+        if (counts.size < 2) return null
+
+        val allEntries = counts.entries.toList()
+        val chosen = if (allEntries.size <= MAX_TYPE_CHIPS) {
+            allEntries
+        } else {
+            val head = allEntries.take(MAX_TYPE_CHIPS).toMutableList()
+            if (head.none { it.key == primaryTypeId }) {
+                val primaryEntry = allEntries.firstOrNull { it.key == primaryTypeId }
+                if (primaryEntry != null) {
+                    head[MAX_TYPE_CHIPS - 1] = primaryEntry
+                }
+            }
+            head
+        }
+        val overflow = (allEntries.size - chosen.size).coerceAtLeast(0)
+        return HudTypeChipsSection(
+            chips = chosen.map { (typeId, count) ->
+                HudTypeChipModel(
+                    typeId = typeId,
+                    count = count,
+                    isPrimary = typeId == primaryTypeId,
+                    displayName = titleOf(typeId),
+                )
+            },
+            overflowCount = overflow,
+        )
+    }
+
+    /**
+     * Builds the transport cargo manifest row (HUD Spec §7.2):
+     * - Shown for own units with [UnitObservation.transport] != null
+     * - Merges passengers by [TransportObservation.passengerTypeIds] preserving order
+     */
+    internal fun buildCargoSection(
+        primary: UnitObservation,
+        titleOf: (String) -> String,
+    ): HudCargoSection? {
+        val tr = primary.transport ?: return null
+        val counts = LinkedHashMap<String, Int>()
+        for (typeId in tr.passengerTypeIds) {
+            counts[typeId] = (counts[typeId] ?: 0) + 1
+        }
+        val items = counts.entries.map { (typeId, count) ->
+            HudCargoChipModel(typeId = typeId, count = count, displayName = titleOf(typeId))
+        }
+        return HudCargoSection(
+            items = items,
+            occupiedSlots = tr.occupiedSlots,
+            capacity = tr.capacity,
         )
     }
 

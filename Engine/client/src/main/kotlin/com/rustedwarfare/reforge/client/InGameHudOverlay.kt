@@ -27,7 +27,9 @@ data class HudOverlayLayout(
     val sidebarBottom: Float,
     val minimapRect: Rectangle,
     val creditsRect: Rectangle,
+    val typeChipsRect: Rectangle?,
     val cardRect: Rectangle?,
+    val cargoRect: Rectangle?,
     val queueRect: Rectangle?,
     val actionsTopY: Float,
     val actionsMaxHeight: Float,
@@ -47,6 +49,7 @@ interface InGameHudCallbacks {
     fun onMenuRestart()
     fun onMenuBackToStart()
     fun onMenuSettings()
+    fun onSelectPrimaryType(typeId: String) {}
 }
 
 /**
@@ -108,6 +111,11 @@ internal class InGameHudOverlay(
     private val btnMenuSettings = HitActor(onClick = { callbacks.onMenuSettings() })
 
     private val btnPauseResume = HitActor(onClick = { callbacks.onTogglePause() })
+    private val typeChipActors = List(HudSidebarProjection.MAX_TYPE_CHIPS) { idx ->
+        HitActor(onClick = {
+            snapshot?.typeChips?.chips?.getOrNull(idx)?.let { chip -> callbacks.onSelectPrimaryType(chip.typeId) }
+        })
+    }
 
     private val sidebarBlocker = Actor().apply {
         addListener(object : InputListener() {
@@ -134,6 +142,7 @@ internal class InGameHudOverlay(
         addActor(btnMenuBack)
         addActor(btnMenuSettings)
         addActor(btnPauseResume)
+        typeChipActors.forEach(::addActor)
     }
 
     private fun bodyFont(): BitmapFont = fontsProvider()?.body ?: fallbackFontProvider()
@@ -211,6 +220,19 @@ internal class InGameHudOverlay(
             sidebarBlocker.touchable = Touchable.disabled
         }
 
+        // Position multi-type selection chip hit actors (Spec §5.2)
+        val chipsSection = hudSnapshot.typeChips
+        val chipsRect = layout.typeChipsRect
+        if (chipsSection != null && chipsRect != null && !hudSnapshot.menuOpen && !hudSnapshot.simPaused) {
+            val chipRects = computeTypeChipRects(chipsRect, chipsSection)
+            typeChipActors.forEachIndexed { idx, actor ->
+                val r = chipRects.getOrNull(idx)
+                if (r != null) actor.setActiveBounds(r.x, r.y, r.width, r.height) else actor.disable()
+            }
+        } else {
+            typeChipActors.forEach { it.disable() }
+        }
+
         val modalOpen = hudSnapshot.menuOpen || hudSnapshot.simPaused
         scrimActor.setBounds(0f, 0f, stageW, stageH)
         scrimActor.touchable = if (modalOpen) Touchable.enabled else Touchable.disabled
@@ -251,6 +273,7 @@ internal class InGameHudOverlay(
         btnRate1.disable(); btnRate2.disable(); btnRate4.disable()
         btnMenuResume.disable(); btnMenuRestart.disable(); btnMenuBack.disable(); btnMenuSettings.disable()
         btnPauseResume.disable()
+        typeChipActors.forEach { it.disable() }
     }
 
     /** True if [stageX],[stageY] should be consumed by HUD chrome instead of passing to battlefield. */
@@ -286,6 +309,14 @@ internal class InGameHudOverlay(
         }
         if (snap.simPaused && !snap.menuOpen) {
             list += DrawnAction("pause-resume", btnPauseResume, UiStrings.get("resume", lang), enabled = true)
+        }
+        if (!snap.menuOpen && !snap.simPaused) {
+            snap.typeChips?.chips?.forEachIndexed { idx, chip ->
+                val actor = typeChipActors.getOrNull(idx) ?: return@forEachIndexed
+                if (actor.touchable == Touchable.enabled) {
+                    list += DrawnAction("primary-chip:${chip.typeId}", actor, "${chip.displayName} ${chip.count}", enabled = true)
+                }
+            }
         }
         return list
     }
@@ -350,11 +381,25 @@ internal class InGameHudOverlay(
             cr.x + cr.width - padH, cr.y + cr.height * 0.5f + 1f, UiTokens.TEXT, alpha,
         )
 
+        val chips = snap.typeChips
+        val chipsRect = l.typeChipsRect
+        if (chips != null && chipsRect != null) {
+            fillRect(batch, white, l.sidebarLeft + 1f, chipsRect.y + chipsRect.height, l.sidebarWidth - 1f, 1f, UiTokens.HAIR, alpha)
+            drawTypeChips(batch, white, chips, chipsRect, alpha)
+        }
+
         val card = snap.selectionCard
         val cardRect = l.cardRect
         if (card != null && cardRect != null) {
             fillRect(batch, white, l.sidebarLeft + 1f, cardRect.y + cardRect.height, l.sidebarWidth - 1f, 1f, UiTokens.HAIR, alpha)
             drawSelectionCard(batch, white, card, cardRect, snap.language, alpha)
+        }
+
+        val cargo = snap.cargoSection
+        val cargoRect = l.cargoRect
+        if (cargo != null && cargoRect != null) {
+            fillRect(batch, white, l.sidebarLeft + 1f, cargoRect.y + cargoRect.height, l.sidebarWidth - 1f, 1f, UiTokens.HAIR, alpha)
+            drawCargoSection(batch, white, cargo, cargoRect, snap.language, alpha)
         }
 
         val queue = snap.queueSection
@@ -366,6 +411,110 @@ internal class InGameHudOverlay(
 
         if (externalActionsH > 0f && snap.showActionsSection) {
             fillRect(batch, white, l.sidebarLeft + 1f, l.actionsTopY, l.sidebarWidth - 1f, 1f, UiTokens.HAIR, alpha)
+        }
+    }
+
+    private fun drawTypeChips(
+        batch: Batch,
+        white: TextureRegion,
+        section: HudTypeChipsSection,
+        rect: Rectangle,
+        alpha: Float,
+    ) {
+        val chipRects = computeTypeChipRects(rect, section)
+        section.chips.forEachIndexed { idx, chip ->
+            val r = chipRects.getOrNull(idx) ?: return@forEachIndexed
+            val actor = typeChipActors.getOrNull(idx)
+            val bg = when {
+                chip.isPrimary -> UiTokens.VALUE
+                actor?.hovered == true -> MENU_ROW_HOVER
+                else -> UiTokens.WELL
+            }
+            val border = if (chip.isPrimary) UiTokens.VALUE else UiTokens.LINE
+            val fg = if (chip.isPrimary) UiTokens.WELL else UiTokens.TEXT
+            fillRect(batch, white, r.x, r.y, r.width, r.height, bg, alpha)
+            strokeRect(batch, white, r.x, r.y, r.width, r.height, border, alpha)
+            val icon = unitIconProvider(chip.typeId)
+            val iconSz = 16f
+            val cy = r.y + r.height * 0.5f
+            if (icon != null) {
+                val asp = icon.regionWidth.toFloat() / icon.regionHeight.coerceAtLeast(1).toFloat()
+                val dw = if (asp >= 1f) iconSz else iconSz * asp
+                val dh = if (asp >= 1f) iconSz / asp else iconSz
+                batch.setColor(1f, 1f, 1f, alpha)
+                batch.draw(icon, r.x + 6f + (iconSz - dw) * 0.5f, cy - dh * 0.5f, dw, dh)
+            }
+            drawTextRight(batch, countMonoFont(), chip.count.toString(), r.x + r.width - 6f, cy, fg, alpha)
+        }
+        if (section.overflowCount > 0) {
+            val overflowRect = chipRects.getOrNull(section.chips.size)
+            if (overflowRect != null) {
+                fillRect(batch, white, overflowRect.x, overflowRect.y, overflowRect.width, overflowRect.height, UiTokens.WELL, alpha)
+                strokeRect(batch, white, overflowRect.x, overflowRect.y, overflowRect.width, overflowRect.height, UiTokens.LINE, alpha)
+                drawTextCenter(batch, countMonoFont(), "+${section.overflowCount}", overflowRect.x + overflowRect.width * 0.5f, overflowRect.y + overflowRect.height * 0.5f, UiTokens.DIM, alpha)
+            }
+        }
+    }
+
+    private fun drawCargoSection(
+        batch: Batch,
+        white: TextureRegion,
+        cargo: HudCargoSection,
+        rect: Rectangle,
+        lang: UiLanguage,
+        alpha: Float,
+    ) {
+        val padH = UiTokens.SIDEBAR_PAD_H
+        val cy = rect.y + rect.height * 0.5f
+        drawTextLeft(batch, smallFont(), UiStrings.get("cargo", lang), rect.x + padH, cy, UiTokens.DIM, alpha)
+
+        // Right-aligned occupied/capacity (occupied 13pt bold text, /capacity 11pt dim per Spec §7.2)
+        val rightEdge = rect.x + rect.width - padH
+        val capText = "/${cargo.capacity}"
+        val occText = cargo.occupiedSlots.toString()
+        glyphLayout.setText(captionMonoFont(), capText)
+        val capW = glyphLayout.width
+        glyphLayout.setText(countMonoFont(), occText)
+        val occW = glyphLayout.width
+        drawTextRight(batch, captionMonoFont(), capText, rightEdge, cy - 0.5f, UiTokens.DIM, alpha)
+        drawTextRight(batch, countMonoFont(), occText, rightEdge - capW - 1f, cy + 0.5f, UiTokens.TEXT, alpha)
+        val capacityLeft = rightEdge - capW - occW - 8f
+
+        // Merged passenger chips (unit icon 16x16 + count)
+        val labelColW = if (lang == UiLanguage.EN) 38f else 32f
+        var cx = rect.x + padH + labelColW + 4f
+        val chipH = 24f
+        val chipY = rect.y + (rect.height - chipH) * 0.5f
+        if (cargo.items.isEmpty()) {
+            drawTextLeft(batch, smallFont(), UiStrings.get("empty", lang), cx, cy, UiTokens.DIM, alpha * 0.85f)
+        } else {
+            var rendered = 0
+            for (item in cargo.items) {
+                val cntText = item.count.toString()
+                glyphLayout.setText(smallMonoFont(), cntText)
+                val chipW = (5f + 16f + 4f + glyphLayout.width + 5f).coerceAtLeast(36f)
+                if (cx + chipW > capacityLeft && rendered > 0) {
+                    val remain = cargo.items.size - rendered
+                    if (cx + 26f <= capacityLeft) {
+                        drawTextLeft(batch, smallMonoFont(), "+$remain", cx + 2f, cy, UiTokens.DIM, alpha)
+                    }
+                    break
+                }
+                fillRect(batch, white, cx, chipY, chipW, chipH, UiTokens.WELL, alpha)
+                strokeRect(batch, white, cx, chipY, chipW, chipH, UiTokens.LINE, alpha)
+                val icon = unitIconProvider(item.typeId)
+                if (icon != null) {
+                    val iconSz = 16f
+                    val asp = icon.regionWidth.toFloat() / icon.regionHeight.coerceAtLeast(1).toFloat()
+                    val dw = if (asp >= 1f) iconSz else iconSz * asp
+                    val dh = if (asp >= 1f) iconSz / asp else iconSz
+                    batch.setColor(1f, 1f, 1f, alpha)
+                    batch.draw(icon, cx + 5f + (iconSz - dw) * 0.5f, cy - dh * 0.5f, dw, dh)
+                }
+                drawTextRight(batch, smallMonoFont(), cntText, cx + chipW - 5f, cy, UiTokens.TEXT, alpha)
+                cx += chipW + 4f
+                rendered++
+            }
         }
     }
 
@@ -429,7 +578,13 @@ internal class InGameHudOverlay(
             val rowRight = rightEdge
             val labelColW = if (lang == UiLanguage.EN) 40f else 30f
             val colGap = if (lang == UiLanguage.EN) 6f else 8f
-            val valColW = UiTokens.STAT_VALUE_COL_WIDTH
+            val measuredValW = card.statBars.maxOfOrNull { b ->
+                glyphLayout.setText(smallMonoFont(), b.currentText)
+                val cw = glyphLayout.width
+                val mw = if (b.maxText.isNotEmpty()) { glyphLayout.setText(captionMonoFont(), b.maxText); glyphLayout.width + 2f } else 0f
+                cw + mw
+            } ?: 0f
+            val valColW = maxOf(UiTokens.STAT_VALUE_COL_WIDTH, measuredValW)
             val barX = rowLeft + labelColW + colGap
             val barW = (rowRight - valColW - colGap - barX).coerceAtLeast(36f)
             var rowCenterY = iconY - 8f - STAT_ROW_H * 0.5f
@@ -796,12 +951,14 @@ internal class InGameHudOverlay(
         }
 
         fun setActiveBounds(x: Float, y: Float, w: Float, h: Float) {
+            isVisible = true
             setBounds(x, y, w, h)
             touchable = Touchable.enabled
         }
 
         fun disable() {
             hovered = false
+            isVisible = false
             touchable = Touchable.disabled
             setBounds(0f, 0f, 0f, 0f)
         }
@@ -812,6 +969,11 @@ internal class InGameHudOverlay(
         const val CREDITS_ROW_HEIGHT: Float = 38f
         const val STAT_ROW_H: Float = 14f
         const val STAT_ROW_GAP: Float = 4f
+        const val TYPE_CHIPS_PAD_V: Float = 7f
+        const val TYPE_CHIP_H: Float = 26f
+        const val TYPE_CHIP_W: Float = 46f
+        const val TYPE_CHIP_GAP: Float = 4f
+        const val CARGO_ROW_HEIGHT: Float = 40f
         const val QUEUE_ROW_HEIGHT: Float = 42f
         const val QUEUE_SLOT_SIZE: Float = 24f
         const val NOTICE_H: Float = 26f
@@ -845,8 +1007,19 @@ internal class InGameHudOverlay(
             val creditsRect = Rectangle(sideLeft, cursorY - CREDITS_ROW_HEIGHT, sideW, CREDITS_ROW_HEIGHT)
             cursorY = creditsRect.y
 
+            var typeChipsRect: Rectangle? = null
             var cardRect: Rectangle? = null
+            var cargoRect: Rectangle? = null
             var queueRect: Rectangle? = null
+
+            val chips = snapshot?.typeChips
+            if (chips != null && chips.chips.isNotEmpty()) {
+                val totalBadges = chips.chips.size + if (chips.overflowCount > 0) 1 else 0
+                val rows = typeChipRowCount(sideW, totalBadges)
+                val chipsH = TYPE_CHIPS_PAD_V * 2f + rows * TYPE_CHIP_H + (rows - 1).coerceAtLeast(0) * TYPE_CHIP_GAP
+                typeChipsRect = Rectangle(sideLeft, cursorY - chipsH, sideW, chipsH)
+                cursorY = typeChipsRect.y
+            }
 
             val card = snapshot?.selectionCard
             if (card != null) {
@@ -855,6 +1028,12 @@ internal class InGameHudOverlay(
                 val cardH = UiTokens.SIDEBAR_PAD_V * 2f + UiTokens.ICON_BOX_SIZE + statsH
                 cardRect = Rectangle(sideLeft, cursorY - cardH, sideW, cardH)
                 cursorY = cardRect.y
+            }
+
+            val cargo = snapshot?.cargoSection
+            if (cargo != null) {
+                cargoRect = Rectangle(sideLeft, cursorY - CARGO_ROW_HEIGHT, sideW, CARGO_ROW_HEIGHT)
+                cursorY = cargoRect.y
             }
 
             val queue = snapshot?.queueSection
@@ -875,12 +1054,40 @@ internal class InGameHudOverlay(
                 sidebarBottom = sidebarBottom,
                 minimapRect = minimapRect,
                 creditsRect = creditsRect,
+                typeChipsRect = typeChipsRect,
                 cardRect = cardRect,
+                cargoRect = cargoRect,
                 queueRect = queueRect,
                 actionsTopY = actionsTopY,
                 actionsMaxHeight = maxActionsH,
                 systemBarRect = Rectangle(UiTokens.SCREEN_MARGIN, stageH - UiTokens.SCREEN_MARGIN - SYSTEM_BAR_HEIGHT, 240f, SYSTEM_BAR_HEIGHT),
             )
+        }
+
+        internal fun typeChipRowCount(sidebarWidth: Float, badgeCount: Int): Int {
+            if (badgeCount <= 0) return 0
+            val innerW = (sidebarWidth - UiTokens.SIDEBAR_PAD_H * 2f).coerceAtLeast(TYPE_CHIP_W)
+            val perRow = ((innerW + TYPE_CHIP_GAP) / (TYPE_CHIP_W + TYPE_CHIP_GAP)).toInt().coerceAtLeast(1)
+            return (badgeCount + perRow - 1) / perRow
+        }
+
+        internal fun computeTypeChipRects(sectionRect: Rectangle, section: HudTypeChipsSection): List<Rectangle> {
+            val total = section.chips.size + if (section.overflowCount > 0) 1 else 0
+            val innerLeft = sectionRect.x + UiTokens.SIDEBAR_PAD_H
+            val innerRight = sectionRect.x + sectionRect.width - UiTokens.SIDEBAR_PAD_H
+            val result = ArrayList<Rectangle>(total)
+            var cx = innerLeft
+            var cy = sectionRect.y + sectionRect.height - TYPE_CHIPS_PAD_V - TYPE_CHIP_H
+            for (i in 0 until total) {
+                val w = if (i < section.chips.size) TYPE_CHIP_W else 34f
+                if (cx > innerLeft && cx + w > innerRight + 0.5f) {
+                    cx = innerLeft
+                    cy -= (TYPE_CHIP_H + TYPE_CHIP_GAP)
+                }
+                result += Rectangle(cx, cy, w, TYPE_CHIP_H)
+                cx += w + TYPE_CHIP_GAP
+            }
+            return result
         }
     }
 }

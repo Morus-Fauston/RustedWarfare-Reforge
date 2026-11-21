@@ -55,6 +55,8 @@ object UiTokens {
     const val ACTION_KEY_HEIGHT_TOUCH: Float = 58f
     const val COMMON_KEY_HEIGHT_PC: Float = 28f
     const val COMMON_KEY_HEIGHT_TOUCH: Float = 34f
+    const val SLOT_KEY_HEIGHT_PC: Float = 40f
+    const val SLOT_KEY_HEIGHT_TOUCH: Float = 46f
     const val KEY_GAP: Float = 5f
     const val KEY_RADIUS: Float = 4f
     const val GROUP_CELL_W_PC: Float = 44f
@@ -71,6 +73,7 @@ object UiTokens {
 
     fun actionKeyHeight(touch: Boolean): Float = if (touch) ACTION_KEY_HEIGHT_TOUCH else ACTION_KEY_HEIGHT_PC
     fun commonKeyHeight(touch: Boolean): Float = if (touch) COMMON_KEY_HEIGHT_TOUCH else COMMON_KEY_HEIGHT_PC
+    fun slotKeyHeight(touch: Boolean): Float = if (touch) SLOT_KEY_HEIGHT_TOUCH else SLOT_KEY_HEIGHT_PC
 
     // --- §3.3 Typography Reference Sizes (reference units) ---
     /** Credits value (mono) */

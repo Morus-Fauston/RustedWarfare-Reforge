@@ -48,9 +48,10 @@ class SandboxInput(
     private var groundActionPress: GroundActionOwner? = null
     private fun ownsGroundAction(current: SandboxSession?): Boolean = groundActionOwner?.let { owner ->
         active() && current === owner.session && current.isOpen && current.selectionRevision == owner.revision &&
-            current.selectedIds == owner.members && current.actionMenu.unitActions.any {
-                it.name == owner.name && it.available && it.attachmentContext == owner.attachment
-            }
+            current.selectedIds == owner.members && (
+                if (owner.name == "transport-unload-target") current.canTargetUnload()
+                else current.actionMenu.unitActions.any { it.name == owner.name && it.available && it.attachmentContext == owner.attachment }
+            )
     } == true
     val groundActionName: String? get() {
         if (groundActionOwner != null && !ownsGroundAction(session())) endGroundAction()
@@ -302,7 +303,8 @@ class SandboxInput(
                 pointerPosition = ui
                 val preview = current.previewGroundAction(press.name, point)
                 if (preview?.valid == true) {
-                    val result = current.unitAction(press.name, target = point)
+                    val result = if (press.name == "transport-unload-target") current.unloadAt(point)
+                        else current.unitAction(press.name, target = point)
                     if (result is com.rustedwarfare.reforge.core.sim.ActionResult.Accepted) endGroundAction()
                 } else preview?.rejection?.let { reason ->
                     current.groundTargetRejected(reason)
@@ -496,12 +498,18 @@ class SandboxInput(
     fun beginGroundAction(name: String): Boolean {
         val current = session() ?: return false
         if (!active() || editing() || !current.isOpen) return false
-        val action = current.actionMenu.unitActions.singleOrNull {
-            it.name == name && it.available && it.groundTargeted
-        } ?: return false
+        val attachmentContext: Pair<String, String>? = if (name == "transport-unload-target") {
+            if (!current.canTargetUnload()) return false
+            null
+        } else {
+            val action = current.actionMenu.unitActions.singleOrNull {
+                it.name == name && it.available && it.groundTargeted
+            } ?: return false
+            action.attachmentContext
+        }
         cancel()
         groundActionOwner = GroundActionOwner(current, current.selectionRevision, current.selectedIds.toSet(), name,
-            action.attachmentContext)
+            attachmentContext)
         modeRevision++
         evidence.record("ground-action-mode", mapOf("active" to true, "actionName" to name))
         changed(); return true

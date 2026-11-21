@@ -99,6 +99,54 @@ internal class BackgroundClientInput(
                     }
                     mapOf("input" to (mapOf("x" to x, "y" to y) + input))
                 }
+                "drag" -> {
+                    require(message.getLong("generation") == currentGeneration()) { "Stale client generation" }
+                    fun coord(name: String, limit: Int): Int {
+                        val node = message.get(name)
+                        require(node != null && node.isLong) { "Expected integer coordinate $name" }
+                        val value = node.asLong()
+                        require(value in 0L until limit.toLong()) { "Input $name is outside the current client viewport" }
+                        return value.toInt()
+                    }
+                    val x1 = coord("x1", Gdx.graphics.width)
+                    val y1 = coord("y1", Gdx.graphics.height)
+                    val x2 = coord("x2", Gdx.graphics.width)
+                    val y2 = coord("y2", Gdx.graphics.height)
+                    val buttonNode = message.get("button")
+                    val name = when {
+                        buttonNode == null -> "left"
+                        buttonNode.isString -> buttonNode.asString()
+                        else -> throw IllegalArgumentException("Expected string button")
+                    }
+                    val button = when (name) {
+                        "left" -> Input.Buttons.LEFT
+                        "right" -> Input.Buttons.RIGHT
+                        else -> throw IllegalArgumentException("Unknown button: $name")
+                    }
+                    val processor = checkNotNull(Gdx.input.inputProcessor) { "Client is not accepting input" }
+                    val down = processor.touchDown(x1, y1, 0, button)
+                    val midX = (x1 + x2) / 2
+                    val midY = (y1 + y2) / 2
+                    val drag1 = processor.touchDragged(midX, midY, 0)
+                    val drag2 = processor.touchDragged(x2, y2, 0)
+                    val up = processor.touchUp(x2, y2, 0, button)
+                    mapOf("input" to mapOf("x1" to x1, "y1" to y1, "x2" to x2, "y2" to y2, "button" to name,
+                        "downConsumed" to down, "dragConsumed" to (drag1 || drag2), "upConsumed" to up))
+                }
+                "key" -> {
+                    require(message.getLong("generation") == currentGeneration()) { "Stale client generation" }
+                    val keyNode = message.get("keycode")
+                    require(keyNode != null && keyNode.isLong) { "Expected integer keycode" }
+                    val rawKey = keyNode.asLong()
+                    require(rawKey in 0L..Input.Keys.MAX_KEYCODE.toLong()) {
+                        "Keycode must be between 0 and ${Input.Keys.MAX_KEYCODE}"
+                    }
+                    val keycode = rawKey.toInt()
+                    val processor = checkNotNull(Gdx.input.inputProcessor) { "Client is not accepting input" }
+                    val down = processor.keyDown(keycode)
+                    val up = processor.keyUp(keycode)
+                    mapOf("input" to mapOf("keycode" to keycode, "downConsumed" to down, "upConsumed" to up))
+                }
                 "type" -> {
                     require(message.getLong("generation") == currentGeneration()) { "Stale client generation" }
                     val text = message.getString("text")

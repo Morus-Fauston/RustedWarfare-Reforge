@@ -58,13 +58,25 @@ data class HudCommonCommandModel(
     val enabled: Boolean,
 )
 
+data class HudAttachmentSlotModel(
+    val slotNumber: Int,
+    val unitId: String,
+    val typeId: String,
+    val empty: Boolean,
+    val selected: Boolean,
+    val progress: Float,
+    val title: String,
+    val tooltip: HudActionTooltipModel,
+)
+
 data class HudActionListSnapshot(
     val showCommonBar: Boolean,
     val commonCommands: List<HudCommonCommandModel>,
     val ownerSubtitle: String?,
+    val attachmentSlots: List<HudAttachmentSlotModel> = emptyList(),
     val exclusiveKeys: List<HudActionKeyModel>,
 ) {
-    val isEmpty: Boolean get() = !showCommonBar && exclusiveKeys.isEmpty()
+    val isEmpty: Boolean get() = !showCommonBar && attachmentSlots.isEmpty() && exclusiveKeys.isEmpty()
 }
 
 data class HudTargetModeCardModel(
@@ -137,6 +149,7 @@ object HudActionProjection {
                 showCommonBar = false,
                 commonCommands = emptyList(),
                 ownerSubtitle = null,
+                attachmentSlots = emptyList(),
                 exclusiveKeys = emptyList(),
             )
         }
@@ -177,6 +190,33 @@ object HudActionProjection {
         val distinctTypes = selectedUnits.map { it.typeId }.distinct()
         val primaryName = menu.selectedTitle?.takeIf { it.isNotBlank() } ?: primary.typeId
 
+        val attachmentOverview = primary.attachmentOverview
+        val attachmentSlots = attachmentOverview?.slots?.map { slot ->
+            val isEmpty = session.isEmptyAttachmentModule(slot.typeId)
+            val title = if (isEmpty) UiStrings.get("empty", language) else session.unitTitle(slot.typeId)
+            val statusLine = when {
+                isEmpty -> UiStrings.get("empty", language)
+                slot.progress < 0.999f -> "${(slot.progress * 100f).roundToInt().coerceIn(0, 100)}%"
+                else -> title
+            }
+            HudAttachmentSlotModel(
+                slotNumber = slot.number,
+                unitId = slot.unitId,
+                typeId = slot.typeId,
+                empty = isEmpty,
+                selected = attachmentOverview.selectedSlot == slot.number,
+                progress = slot.progress,
+                title = title,
+                tooltip = HudActionTooltipModel(
+                    title = "${UiStrings.format("slotPrefix", "N" to slot.number, language = language)} · $title",
+                    priceText = null,
+                    description = statusLine,
+                    rows = emptyList(),
+                    footnote = UiStrings.get("leftUse", language),
+                ),
+            )
+        } ?: emptyList()
+
         val keys = ArrayList<HudActionKeyModel>(16)
 
         // 1. Target-type exclusive actions placed FIRST per Spec §7.1–7.2 (Rally, Reclaim, Repair)
@@ -209,7 +249,8 @@ object HudActionProjection {
             )
         }
 
-        if (menu.canMaintain) {
+        val slotPageActive = attachmentOverview?.selectedSlot != null
+        if (menu.canMaintain && !slotPageActive) {
             keys += HudActionKeyModel(
                 id = "choose-reclaim",
                 cancelId = null,
@@ -236,7 +277,7 @@ object HudActionProjection {
             )
         }
 
-        if (menu.canRepair) {
+        if (menu.canRepair && !slotPageActive) {
             keys += HudActionKeyModel(
                 id = "choose-repair",
                 cancelId = null,
@@ -444,37 +485,92 @@ object HudActionProjection {
         }
 
         menu.transportAction?.let { tr ->
-            val id = if (tr.unloading) "transport-unload" else "transport-cancel-unload"
-            val label = if (tr.unloading) UiStrings.get("unload", language) else UiStrings.get("cancelBtn", language)
             val rows = listOf(
                 HudTooltipRow(UiStrings.get("cargo", language), "${tr.occupiedSlots}/${tr.capacity}"),
             )
-            keys += HudActionKeyModel(
-                id = id,
-                cancelId = null,
-                title = label,
-                unitIconTypeId = null,
-                commandIconName = if (tr.unloading) "rw-unload" else "rw-cancel",
-                priceText = null,
-                noteText = "${tr.occupiedSlots}/${tr.capacity}",
-                hotkeyLabel = null,
-                queueBadgeCount = 0,
-                progress = null,
-                state = if (tr.available) HudActionKeyState.READY else HudActionKeyState.DISABLED,
-                enabled = tr.available,
-                cancelEnabled = false,
-                isTargetAction = false,
-                attachmentContext = null,
-                tooltip = HudActionTooltipModel(label, null, tr.title, rows, UiStrings.get("leftUse", language)),
-            )
+            val movingToUnload = session.hasPendingUnload(primary.unitId)
+            if (tr.unloading && !movingToUnload) {
+                val targetAvailable = session.canTargetUnload()
+                val unloadActive = activeGroundActionName == "transport-unload-target"
+                val unloadLabel = UiStrings.get("unload", language)
+                val unloadState = when {
+                    unloadActive -> HudActionKeyState.ACTIVE_MODE
+                    targetAvailable -> HudActionKeyState.READY
+                    else -> HudActionKeyState.DISABLED
+                }
+                keys += HudActionKeyModel(
+                    id = "transport-unload-target",
+                    cancelId = null,
+                    title = unloadLabel,
+                    unitIconTypeId = null,
+                    commandIconName = "rw-unload",
+                    priceText = null,
+                    noteText = if (!targetAvailable && tr.passengerCount == 0) UiStrings.get("empty", language) else null,
+                    hotkeyLabel = null,
+                    queueBadgeCount = 0,
+                    progress = null,
+                    state = unloadState,
+                    enabled = targetAvailable,
+                    cancelEnabled = false,
+                    isTargetAction = true,
+                    attachmentContext = null,
+                    tooltip = HudActionTooltipModel(unloadLabel, null, tr.title, rows, UiStrings.get("leftTarget", language)),
+                )
+                val hereLabel = UiStrings.get("unloadHere", language)
+                keys += HudActionKeyModel(
+                    id = "transport-unload",
+                    cancelId = null,
+                    title = hereLabel,
+                    unitIconTypeId = null,
+                    commandIconName = "rw-load",
+                    priceText = null,
+                    noteText = if (!tr.available && tr.passengerCount == 0) UiStrings.get("empty", language) else null,
+                    hotkeyLabel = null,
+                    queueBadgeCount = 0,
+                    progress = null,
+                    state = if (tr.available) HudActionKeyState.READY else HudActionKeyState.DISABLED,
+                    enabled = tr.available,
+                    cancelEnabled = false,
+                    isTargetAction = false,
+                    attachmentContext = null,
+                    tooltip = HudActionTooltipModel(hereLabel, null, tr.title, rows, UiStrings.get("leftUse", language)),
+                )
+            } else {
+                val cancelLabel = UiStrings.get("cancelBtn", language)
+                val cancelAvailable = movingToUnload || tr.available
+                keys += HudActionKeyModel(
+                    id = "transport-cancel-unload",
+                    cancelId = null,
+                    title = cancelLabel,
+                    unitIconTypeId = null,
+                    commandIconName = "rw-cancel",
+                    priceText = null,
+                    noteText = "${tr.occupiedSlots}/${tr.capacity}",
+                    hotkeyLabel = null,
+                    queueBadgeCount = 0,
+                    progress = null,
+                    state = if (cancelAvailable) HudActionKeyState.READY else HudActionKeyState.DISABLED,
+                    enabled = cancelAvailable,
+                    cancelEnabled = false,
+                    isTargetAction = false,
+                    attachmentContext = null,
+                    tooltip = HudActionTooltipModel(cancelLabel, null, tr.title, rows, UiStrings.get("leftUse", language)),
+                )
+            }
         }
 
-        // 6. Remaining custom unit actions (excluding setRally already promoted to front)
+        // 6. Remaining custom unit actions (excluding setRally promoted to front & selectSlotN rendered in 3x2 slot grid)
+        val slotActionNames = attachmentSlots.map { "selectSlot${it.slotNumber}" }.toSet()
         for (act in menu.unitActions) {
             if (act.name == "setRally") continue
+            if (act.name in slotActionNames) continue
             val active = activeGroundActionName == act.name
             val coolSec = ceil(act.cooldownRemaining / 1000.0).toInt()
+            val parsedCost = parseActionCost(act.tooltip)
+            val lack = if (parsedCost != null) (parsedCost - balance).coerceAtLeast(0L) else 0L
+            val shortFunds = !act.available && !act.queued && parsedCost != null && lack > 0L
             val note = when {
+                shortFunds -> null
                 coolSec > 0 -> UiStrings.format("cool", "N" to coolSec, language = language)
                 !act.available && act.tooltip.contains("charging", ignoreCase = true) -> UiStrings.get("charging", language)
                 !act.available && act.tooltip.contains("full", ignoreCase = true) -> UiStrings.get("stockFull", language)
@@ -482,16 +578,23 @@ object HudActionProjection {
             }
             val state = when {
                 active -> HudActionKeyState.ACTIVE_MODE
+                shortFunds -> HudActionKeyState.SHORT_FUNDS
                 act.available -> HudActionKeyState.READY
                 else -> HudActionKeyState.DISABLED
             }
+            val priceText = parsedCost?.let(::formatPrice)
+            val rows = buildList {
+                if (priceText != null) add(HudTooltipRow(UiStrings.get("cost", language), priceText))
+                if (shortFunds) add(HudTooltipRow(UiStrings.get("noFunds", language), UiStrings.format("short", "N" to lack, language = language), isWarning = true))
+            }
+            val useCmdIcon = act.iconTypeId == null || act.name in setOf("reclaim", "cancel", "isEnabled", "isDisabled", "blink", "blinkQueued")
             keys += HudActionKeyModel(
                 id = "unit-action:${act.name}",
                 cancelId = if (act.cancellable) "cancel-unit-action:${act.name}" else null,
                 title = act.title,
-                unitIconTypeId = act.iconTypeId,
-                commandIconName = if (act.iconTypeId == null) commandIconForAction(act.name) else null,
-                priceText = null,
+                unitIconTypeId = if (useCmdIcon) null else act.iconTypeId,
+                commandIconName = if (useCmdIcon) commandIconForAction(act.name) else null,
+                priceText = priceText,
                 noteText = note,
                 hotkeyLabel = null,
                 queueBadgeCount = if (act.queued) 1 else 0,
@@ -503,15 +606,15 @@ object HudActionProjection {
                 attachmentContext = act.attachmentContext,
                 tooltip = HudActionTooltipModel(
                     title = act.title,
-                    priceText = null,
+                    priceText = priceText,
                     description = cleanDescription(act.tooltip),
-                    rows = emptyList(),
+                    rows = rows,
                     footnote = UiStrings.get(if (act.groundTargeted) "leftTarget" else if (act.cancellable) "leftQueue" else "leftUse", language),
                 ),
             )
         }
 
-        val ownerSubtitle = if (distinctTypes.size > 1 && keys.isNotEmpty()) {
+        val ownerSubtitle = if (distinctTypes.size > 1 && (keys.isNotEmpty() || attachmentSlots.isNotEmpty())) {
             UiStrings.format("owner", "NAME" to primaryName, language = language)
         } else {
             null
@@ -521,6 +624,7 @@ object HudActionProjection {
             showCommonBar = showCommon,
             commonCommands = commonCommands,
             ownerSubtitle = ownerSubtitle,
+            attachmentSlots = attachmentSlots,
             exclusiveKeys = keys,
         )
     }
@@ -602,6 +706,21 @@ object HudActionProjection {
             )
         }
 
+        if (groundActionName == "transport-unload-target") {
+            val tr = session.actionMenu.transportAction
+            val title = UiStrings.get("unload", language)
+            val rightVal = tr?.let { "${it.occupiedSlots}/${it.capacity}" }
+            val desc = if (language == UiLanguage.ZH) "移动至目标位置并卸载全部乘员" else "Move to target location and unload all passengers"
+            return HudTargetModeCardModel(
+                title = title,
+                rightValue = rightVal,
+                description = desc,
+                statusText = pickActionHint,
+                statusIsWarning = false,
+                cancelHint = cancelHint,
+            )
+        }
+
         if (groundActionName != null) {
             val action = session.actionMenu.unitActions.firstOrNull { it.name == groundActionName }
             val title = when (groundActionName) {
@@ -652,6 +771,9 @@ object HudActionProjection {
 
         return null
     }
+
+    private val costPattern = Regex("""(?:Cost\s+|\$)(\d+)""", RegexOption.IGNORE_CASE)
+    private fun parseActionCost(tooltip: String): Long? = costPattern.find(tooltip)?.groupValues?.getOrNull(1)?.toLongOrNull()
 
     private fun cleanDescription(raw: String): String {
         if (raw.isBlank()) return ""

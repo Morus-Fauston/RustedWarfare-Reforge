@@ -206,6 +206,16 @@ class SandboxSession(scenario: Scenario, private val evidence: ClientEvidence = 
     var productionNotice: ProductionNotice? = null
         private set
     private var arrivalCommandStep = 0L
+    private val pendingUnloadTargets = LinkedHashMap<String, Position>()
+    /** True when the given unit (or primary selected unit) is currently moving to a target unload point. */
+    fun hasPendingUnload(unitId: String? = selectedId): Boolean = unitId != null && unitId in pendingUnloadTargets
+    /** True when the primary selected transport can pick a ground point to move and unload (even if currently over liquid). */
+    fun canTargetUnload(): Boolean {
+        val tr = actionMenu.transportAction ?: return false
+        val uid = selectedId ?: return false
+        val unit = observation.units.firstOrNull { it.unitId == uid && it.alive } ?: return false
+        return tr.unloading && tr.passengerCount > 0 && canMove(unit)
+    }
     private val immobileMoveMembers = mutableSetOf<String>()
     private val selectedArrivals: List<MoveArrival>
         get() {
@@ -253,6 +263,7 @@ class SandboxSession(scenario: Scenario, private val evidence: ClientEvidence = 
         }
 
     internal fun unitTitle(type: String) = actionCatalogue.title(type)
+    internal fun isEmptyAttachmentModule(typeId: String): Boolean = scenario.unitDefinitions[typeId]?.attachmentModule?.empty == true
     val hasEconomicConstruction: Boolean get() = scenario.unitDefinitions.containsKey("extractorT1")
     val selectedUnitInfo: String? get() = actionMenu.selectedUnitInfo
     fun nominalIncome(typeId: String): Float? = actionCatalogue.nominalIncome(typeId)
@@ -465,6 +476,14 @@ class SandboxSession(scenario: Scenario, private val evidence: ClientEvidence = 
     }
 
     fun previewGroundAction(name: String, target: Position): GroundActionPreview? {
+        if (name == "transport-unload-target") {
+            if (!canTargetUnload()) return null
+            val selected = observation.units.singleOrNull { it.unitId == selectedId } ?: return null
+            val inBounds = target.x.isFinite() && target.y.isFinite() &&
+                target.x in 0.0..(scenario.map.widthTiles.toDouble() * scenario.map.tileWidth) &&
+                target.y in 0.0..(scenario.map.heightTiles.toDouble() * scenario.map.tileHeight)
+            return GroundActionPreview(selected.position, target, inBounds, 0.0, 0.0, 0.0)
+        }
         if (!isOpen || actionMenu.unitActions.none { it.name == name && it.available && it.groundTargeted }) return null
         val selected = if (name == "launchNuke") nuclearLaunchMember(observation, selectedIds)
             else observation.units.singleOrNull { it.unitId == selectedId }
@@ -519,10 +538,36 @@ class SandboxSession(scenario: Scenario, private val evidence: ClientEvidence = 
             apply(AmphibiousFlightAction("click-${++actionNumber}", "p1", checkNotNull(selectedId), flying, context.world))
         }
 
-    fun unload(unloading: Boolean): ActionResult? = actionMenu.transportAction
-        ?.takeIf { it.available && it.unloading == unloading }?.let {
-            apply(UnloadAction("click-${++actionNumber}", "p1", checkNotNull(selectedId), unloading, context.world))
+    fun unload(unloading: Boolean): ActionResult? {
+        val unitId = selectedId ?: return null
+        if (!unloading && pendingUnloadTargets.remove(unitId) != null) {
+            return apply(StopAction("click-${++actionNumber}", "p1", unitId, context.world))
         }
+        return actionMenu.transportAction
+            ?.takeIf { it.available && it.unloading == unloading }?.let {
+                pendingUnloadTargets.remove(unitId)
+                apply(UnloadAction("click-${++actionNumber}", "p1", unitId, unloading, context.world))
+            }
+    }
+
+    /** Moves the selected transport to [position] and triggers unload automatically upon arrival (or immediately if close and legal here). */
+    fun unloadAt(position: Position): ActionResult? {
+        if (!canTargetUnload()) return null
+        val unitId = selectedId ?: return null
+        val unit = observation.units.firstOrNull { it.unitId == unitId && it.alive } ?: return null
+        val tr = unit.transport ?: return null
+        val dist = kotlin.math.hypot(position.x - unit.position.x, position.y - unit.position.y)
+        if (dist <= 24.0 && tr.canUnload) {
+            pendingUnloadTargets.remove(unitId)
+            return apply(UnloadAction("click-${++actionNumber}", "p1", unitId, true, context.world))
+        }
+        pendingUnloadTargets.remove(unitId)
+        val moveRes = apply(MoveAction("click-${++actionNumber}", "p1", unitId, position, context.world))
+        if (moveRes is ActionResult.Accepted) {
+            pendingUnloadTargets[unitId] = position
+        }
+        return moveRes
+    }
 
     private fun dispatch(selectionAtPress: Set<String> = selectedIds, applicable: (UnitObservation) -> Boolean = ::controllable,
                          moveGroup: GroupMoveRequest? = null,
@@ -536,6 +581,7 @@ class SandboxSession(scenario: Scenario, private val evidence: ClientEvidence = 
         lastCommandBatch = null
         for (id in members) {
             if (members.size > 1 && observation.units.none { it.unitId == id && applicable(it) }) { skipped++; continue }
+            pendingUnloadTargets.remove(id)
             results += SelectionCommandMember(id, apply(action(id), moveGroup))
         }
         val batch = SelectionCommandBatch(results, skipped)
@@ -607,6 +653,28 @@ class SandboxSession(scenario: Scenario, private val evidence: ClientEvidence = 
                     "x" to it.position.x, "y" to it.position.y, "interceptorUnitId" to it.interceptorUnitId) })
         }
         publishFrame()
+        if (pendingUnloadTargets.isNotEmpty()) {
+            val iter = pendingUnloadTargets.entries.iterator()
+            while (iter.hasNext()) {
+                val (uid, dest) = iter.next()
+                val unit = observation.units.firstOrNull { it.unitId == uid && it.alive }
+                val tr = unit?.transport
+                if (unit == null || tr == null || tr.passengerCount == 0 || tr.unloading) {
+                    iter.remove()
+                    continue
+                }
+                val dist = kotlin.math.hypot(dest.x - unit.position.x, dest.y - unit.position.y)
+                if (dist <= 32.0) {
+                    iter.remove()
+                    if (tr.canUnload) {
+                        apply(UnloadAction("click-${++actionNumber}", "p1", uid, true, context.world))
+                    }
+                } else if (unit.moveTarget == null) {
+                    // Carrier stopped prematurely / path blocked far from target: cancel pending unload instead of dumping cargo in wrong spot
+                    iter.remove()
+                }
+            }
+        }
         diagnosticTracker.ingestPlayer(observation)
         for (result in observation.actionResults.filterIsInstance<ActionResult.Rejected>()) {
             if (result.error.code == "immobile-unit") {
@@ -635,6 +703,22 @@ class SandboxSession(scenario: Scenario, private val evidence: ClientEvidence = 
             "selectionRevision" to selectionRevision, "world" to position.fields()) }
     }
 
+    /** Switches the primary selected unit to another member already in [selectedIds] without changing selection membership. */
+    fun selectPrimary(unitId: String): Boolean {
+        if (!isOpen || unitId !in selectedIds) return false
+        val changed = selection.setPrimary(unitId)
+        if (changed) {
+            evidence.recordWhenEnabled("primary-selection") { mapOf("primaryId" to selectedId, "selectedIds" to selectedIds.sorted(), "selectionRevision" to selectionRevision) }
+        }
+        return changed
+    }
+
+    /** Switches the primary selected unit to the first selected member of [typeId] without changing [selectedIds]. */
+    fun selectPrimaryByType(typeId: String): Boolean {
+        if (!isOpen) return false
+        val candidate = observation.units.firstOrNull { it.alive && it.unitId in selectedIds && it.typeId == typeId } ?: return false
+        return selectPrimary(candidate.unitId)
+    }
     fun selectDeployedUnit(unitId: String): Boolean {
         if (!canDeploy || observation.units.none { it.unitId == unitId && controllable(it) }) return false
         selectAt(unitId, SelectionMode.REPLACE)
@@ -769,6 +853,7 @@ class SandboxSession(scenario: Scenario, private val evidence: ClientEvidence = 
         finally {
             commandHost.close()
             pendingSandboxRequests.clear()
+            pendingUnloadTargets.clear()
             isOpen = false
             selection.clear()
             latestFrame = null
