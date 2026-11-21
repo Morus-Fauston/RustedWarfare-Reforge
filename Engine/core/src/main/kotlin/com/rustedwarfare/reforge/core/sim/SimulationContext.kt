@@ -2077,8 +2077,9 @@ class SimulationContext internal constructor(private val policies: ExperimentalP
             // available to both services on this same step.
             val wallDue = candidate.state.sharedWallRepairDue(step.stepIndex)
             val needsGateWork = candidate.state.gateWorkDeferred
-            val reserve = if (needsGateWork || wallDue) MOVE_PLANNING_WORK_PER_STEP / 4 else 0
-            val planningBudget = PathWorkBudget(MOVE_PLANNING_WORK_PER_STEP - reserve)
+            val stepBudgetLimit = policies.movePlanningBudgetPerStep
+            val reserve = if (needsGateWork || wallDue) stepBudgetLimit / 4 else 0
+            val planningBudget = PathWorkBudget(stepBudgetLimit - reserve)
             val planningSlices = candidate.state.planningWorkDiagnostics?.let { mutableListOf<PlanningWorkSlice>() }
             val serveLandingsFirst = candidate.state.landingsShortOfBudget
             candidate.state.landingsShortOfBudget = false
@@ -2100,7 +2101,7 @@ class SimulationContext internal constructor(private val policies: ExperimentalP
                 retainedPatrolTarget(unit)
             replanForKnowledge(currentScenario.map, step.stepIndex)
             repairInvalidConnections(currentScenario.map, step.stepIndex)
-            val remaining = MOVE_PLANNING_WORK_PER_STEP - planningBudget.used
+            val remaining = stepBudgetLimit - planningBudget.used
             val gateBudget = PathWorkBudget(if (wallDue) remaining / 2 else remaining)
             val survey = candidate.state.driverPassages
             val passageWaiting = checkNotNull(passageAdmission).waitingUnits(orderedUnits(), step,
@@ -2113,7 +2114,7 @@ class SimulationContext internal constructor(private val policies: ExperimentalP
                 val localWork = gateBudget.used + repairBudget.used
                 if (localWork > 0) planningSlices.add(PlanningWorkSlice(emptyList(), PathSearchReason.ROUTE_REPAIR,
                     localWork, !survey.shortOfBudget && !repairBudget.exhausted, false))
-                candidate.planningWorkSample = PlanningWorkSample(step.stepIndex, MOVE_PLANNING_WORK_PER_STEP,
+                candidate.planningWorkSample = PlanningWorkSample(step.stepIndex, stepBudgetLimit,
                     planningBudget.used + localWork, Collections.unmodifiableList(planningSlices))
             }
             prepareRouteSuccessors(currentScenario.map, step.stepIndex, candidate.routeContinuationSamples)

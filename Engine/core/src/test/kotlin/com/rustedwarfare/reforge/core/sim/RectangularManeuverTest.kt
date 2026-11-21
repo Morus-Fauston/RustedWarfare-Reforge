@@ -480,17 +480,18 @@ class RectangularManeuverTest {
         while (!work.finished) {
             val current = work
             val before = checkNotNull(current.counters).popped
+            val stepBudget = 64
             if (slices == 2) {
                 val abandoned = PathSearchRollback()
-                current.fork(abandoned).advance(PathWorkBudget(512), cache.fork())
+                current.fork(abandoned).advance(PathWorkBudget(stepBudget), cache.fork())
                 abandoned.restore()
                 assertEquals(before, current.counters?.popped)
             }
             val journal = PathSearchRollback()
             work = current.fork(journal)
-            work.advance(PathWorkBudget(512), cache)
+            work.advance(PathWorkBudget(stepBudget), cache)
             journal.commit()
-            assertTrue(checkNotNull(work.counters).popped - before <= 512)
+            assertTrue(checkNotNull(work.counters).popped - before <= stepBudget)
             assertTrue(++slices < 100, "Offset search should terminate within the probe bound")
         }
         val path = checkNotNull(work.path)

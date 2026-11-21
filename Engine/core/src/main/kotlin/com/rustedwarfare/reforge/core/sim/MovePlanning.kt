@@ -470,7 +470,7 @@ internal class MovePlanning {
         private var searchNanos = 0L
         private var checkingSlot: PlannedMove? = null
         private var occupantIndex = -1
-        private var cache = group?.let { PathClearanceCache(reuseApproach = input.repair == null && input.members.size >= 2) }
+        private var cache: PathClearanceCache? = PathClearanceCache(reuseApproach = group != null && input.repair == null && input.members.size >= 2)
         private var rollback: PathSearchRollback? = null
         private val candidates = mutableListOf<Pair<MutableUnit, MutableList<PlannedMove>>>()
         private var immobileMembers = mutableMapOf<String, PlannedMove>()

@@ -108,7 +108,7 @@ class PathDiagnosticsTest {
             val sample = context.drainPathDiagnostics(context.world).single()
             assertEquals(PathSearchOutcome.FOUND, sample.outcome)
             assertTrue(sample.actualSearchCalls >= 1L)
-            assertTrue(sample.candidatesChecked >= 25L)
+            assertTrue(sample.candidatesChecked in 1L..25L, "O(1) clearance & component fast-reject avoids full-map scan: ${sample.candidatesChecked}")
             assertTrue(sample.expanded >= 1L)
             assertEquals(sample.enqueued, sample.heuristicCalls)
             assertEquals(unit.pathPoints.size, sample.pathPointCount)

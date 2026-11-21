@@ -15,6 +15,7 @@ internal class ExperimentalPolicies(
     val time: TimePolicy = FixedSimTick,
     val path: PathPolicy = ClearanceAStarPolicy(CenterClearance(PlanningCenterTerrain), TileCenters, PlanningCenterTerrain),
     val routePreparationBudget: (Long) -> Int = { 8 },
+    val movePlanningBudgetPerStep: Int = 512,
 )
 
 internal interface CoordinatePolicy {
