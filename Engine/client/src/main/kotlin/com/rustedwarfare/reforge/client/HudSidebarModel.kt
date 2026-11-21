@@ -142,8 +142,9 @@ object HudSidebarProjection {
                     val under = jet?.underwater == true
                     subtitle = UiStrings.get(if (flying) "flying" else if (under) "submerged" else "surfaced", language)
                 }
-                menu.totalNominalIncome > 0.01f && selectedUnits.size == 1 -> {
-                    subtitle = "+$${menu.totalNominalIncome.roundToInt()}"
+                selectedUnits.size == 1 && (session.nominalIncome(primary.typeId) ?: 0f) > 0.01f -> {
+                    val unitIncome = session.nominalIncome(primary.typeId) ?: 0f
+                    subtitle = "+${unitIncome.roundToInt()}"
                     subIncome = true
                 }
             }

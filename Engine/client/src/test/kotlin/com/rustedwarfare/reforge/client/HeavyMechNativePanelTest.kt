@@ -15,15 +15,15 @@ class HeavyMechNativePanelTest {
         val root = fixtures.resolve("heavy-mech-production/json")
         val pack = assertIs<ContentResult.Success<LoadedContentPack>>(ContentLoader.loadContentPack(root.resolve("production-package"))).value
         val scene = contentPackScenario(root, ContentPackChoice(pack, "builder"))
-        assertTrue(NativeActionPanel.supports(scene.scenarioId), "The real production scene must enable its native panel")
+        // Capability-driven HUD action list (UI-P001-005)
         SandboxSession(scene).use { session ->
             session.select(Position(190.0, 150.0))
             assertIs<ActionResult.Accepted>(session.build("mechFactory", Position(270.0, 150.0)))
             repeat(1201) { session.tick() }
             session.select(Position(270.0, 150.0))
             assertEquals(listOf("builder", "mechGun"), session.productionActions.map { it.typeId })
-            val positions = NativeActionPanel.upgrades.getValue(session.selectedUpgrades.single().actionKey)
-            val buy = actor(positions.first, FactoryUpgradeInput({ session }, { true }, "upgrade_t2"))
+            val buyRect = com.badlogic.gdx.math.Rectangle(0f, 0f, 100f, 52f)
+            val buy = actor(buyRect, FactoryUpgradeInput({ session }, { true }, "upgrade_t2"))
             press(buy, true)
             assertEquals(15000L, session.observation.balance)
             press(buy, false)
@@ -33,13 +33,9 @@ class HeavyMechNativePanelTest {
             press(buy, true); press(buy, false)
             repeat(2600) { session.tick() }
             assertEquals(listOf("builder", "mechGun", "mechHeavyMissile"), session.productionActions.map { it.typeId })
-            val slots = NativeActionPanel.production.take(session.productionActions.size)
-            assertEquals(3, slots.size)
-            for (a in slots.indices) for (b in 0 until a) {
-                val x = slots[a]; val y = slots[b]
-                assertFalse(x.x < y.x + y.width && x.x + x.width > y.x && x.y < y.y + y.height && x.y + x.height > y.y)
-            }
-            val third = actor(slots[2], ProductionButtonInput({ session }, { true },
+            val hudKeys = HudActionProjection.projectActionList(session, null, false, false, false, null, false).exclusiveKeys
+            assertTrue(hudKeys.map { it.id }.containsAll(listOf("produce:builder", "produce:mechGun", "produce:mechHeavyMissile")))
+            val third = actor(com.badlogic.gdx.math.Rectangle(0f, 0f, 100f, 52f), ProductionButtonInput({ session }, { true },
                 typeId = { session.productionActions.getOrNull(2)?.typeId }))
             press(third, true)
             assertEquals(11000L, session.observation.balance)
@@ -53,7 +49,7 @@ class HeavyMechNativePanelTest {
             assertTrue(session.observation.factoryQueues.single().items.isEmpty())
         }
     }
-    private fun actor(bounds: NativeCardBounds, input: InputListener) = Actor().apply {
+    private fun actor(bounds: com.badlogic.gdx.math.Rectangle, input: InputListener) = Actor().apply {
         setBounds(bounds.x, bounds.y, bounds.width, bounds.height); addListener(input)
     }
     private fun press(actor: Actor, down: Boolean, button: Int = Input.Buttons.LEFT) = actor.fire(InputEvent().apply {

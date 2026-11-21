@@ -21,6 +21,7 @@ class SandboxInput(
     private val battlefieldAt: (Int, Int) -> Boolean = { _, _ -> true },
     private val cameraTakeover: (String) -> Unit = {},
     private val cameraFollowsUnit: () -> Boolean = { false },
+    private val onGuardUnsupported: () -> Unit = {},
 ) : InputAdapter() {
     private var gesture: MapGesture? = null
     private var ownerButton: Int? = null
@@ -436,6 +437,7 @@ class SandboxInput(
         }
         if (group != null) { group(group); return true }
         if (keycode == Input.Keys.S) { cancel(); current.stop(); changed(); return true }
+        if (keycode == Input.Keys.G && current.canPatrol) { onGuardUnsupported(); return true }
         return false
     }
     override fun keyUp(keycode: Int): Boolean {
@@ -459,7 +461,7 @@ class SandboxInput(
     }
     fun beginConstruction(typeId: String): Boolean {
         val current = session() ?: return false
-        if (!active() || editing() || touchControls || current.constructionActions.none { it.typeId == typeId }) return false
+        if (!active() || editing() || current.constructionActions.none { it.typeId == typeId }) return false
         endSandboxPick()
         endReclaim()
         endGroundAction()
@@ -476,7 +478,7 @@ class SandboxInput(
     fun beginRepair(): Boolean = beginMaintenance(true)
     private fun beginMaintenance(repair: Boolean): Boolean {
         val current = session() ?: return false
-        if (!active() || editing() || touchControls || !current.isOpen ||
+        if (!active() || editing() || !current.isOpen ||
             (if (repair) !current.canRepair else !current.canMaintain)) return false
         endSandboxPick()
         endReclaim(); endConstruction(); endPatrol(); endGroundAction(); cancelGesture()
@@ -493,7 +495,7 @@ class SandboxInput(
     }
     fun beginGroundAction(name: String): Boolean {
         val current = session() ?: return false
-        if (!active() || editing() || touchControls || !current.isOpen) return false
+        if (!active() || editing() || !current.isOpen) return false
         val action = current.actionMenu.unitActions.singleOrNull {
             it.name == name && it.available && it.groundTargeted
         } ?: return false

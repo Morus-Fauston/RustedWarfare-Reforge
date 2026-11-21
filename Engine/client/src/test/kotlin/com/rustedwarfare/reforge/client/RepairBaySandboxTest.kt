@@ -86,7 +86,7 @@ class RepairBaySandboxTest {
             assertEquals("p009-repairbay-production", loaded.scenario.scenarioId)
             assertEquals(listOf("commandCenter"), loaded.scenario.units.filter { it.ownerPlayerId == "p1" }.map { it.typeId })
             assertEquals(16000L, loaded.scenario.economyContract!!.initialBalances.getValue("p1"))
-            assertTrue(NativeActionPanel.supports(loaded.scenario.scenarioId))
+            // Capability-driven HUD action list (UI-P001-005); scenario whitelist removed
             SandboxSession(loaded.scenario).use { session ->
                 fun until(limit: Int, ready: () -> Boolean) {
                     repeat(limit) { if (!ready()) session.tick() }

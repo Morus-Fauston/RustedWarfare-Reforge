@@ -33,7 +33,7 @@ class AaBeamSandboxTest {
             assertTrue(images.images.keys.map { it.suffix }.containsAll(listOf("beam", "beam_start", "beam_end")))
             val accelerated = loaded.renderResources.units.getValue("aaBeamGunship_afterburn").imageBindings()
             assertTrue(accelerated.images.keys.any { it.suffix == "afterburn_trail" }, "Accelerated form must bind its actual trail image")
-            assertTrue(NativeActionPanel.supports(loaded.scenario.scenarioId))
+            // Capability-driven HUD action list (UI-P001-005); scenario whitelist removed
             SandboxSession(loaded.scenario).use { session ->
                 fun until(limit: Int, ready: () -> Boolean) {
                     repeat(limit) { if (!ready()) session.tick() }

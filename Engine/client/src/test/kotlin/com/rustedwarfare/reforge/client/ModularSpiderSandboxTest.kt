@@ -117,31 +117,19 @@ class ModularSpiderSandboxTest {
     @Test fun the_native_panel_exposes_clickable_slot_and_module_cards() {
         val (root, pack) = source("ini")
         val scene = contentPackScenario(root, ContentPackChoice(pack, "modularSpider"))
-        assertTrue(NativeActionPanel.supports(scene.scenarioId))
+        // Capability-driven HUD action list (UI-P001-005)
         SandboxSession(scene).use { session ->
             repeat(100) { session.tick() }
             session.select(session.observation.units.single { it.typeId == "modularSpider" }.position)
             fun purchaseMenu() = session.actionMenu.unitActions.any { it.name == "buildFabricator" }
             fun bounds() {
-                val cards = session.actionMenu.unitActions.map {
-                    NativeActionPanel.customBounds(it.name, naval = false, spiderPurchaseMenu = purchaseMenu())
-                }
-                assertTrue(cards.all { it.x >= 752f && it.x + it.width <= 928f && it.y >= 84f && it.y + it.height <= 340f })
-                if (purchaseMenu()) {
-                    assertTrue(cards.all { it.y >= NativeActionPanel.spiderPurchaseStopY + 40f })
-                    val reopen = NativeActionPanel.spiderPurchaseReopen
-                    val exit = NativeActionPanel.spiderPurchaseExit
-                    assertTrue(reopen.y + reopen.height <= NativeActionPanel.spiderPurchaseStopY)
-                    assertTrue(exit.y + exit.height <= NativeActionPanel.spiderPurchaseStopY)
-                    assertTrue(reopen.x + reopen.width <= exit.x)
-                }
-                for ((index, a) in cards.withIndex()) for (b in cards.drop(index + 1)) {
-                    assertTrue(a.x + a.width <= b.x || b.x + b.width <= a.x ||
-                        a.y + a.height <= b.y || b.y + b.height <= a.y, "Overlapping attachment cards: $a and $b")
-                }
+                val projected = HudActionProjection.projectActionList(session, null, false, false, false, null, false)
+                val ids = projected.exclusiveKeys.map { it.id }
+                assertEquals(ids.distinct().size, ids.size, "Duplicate projected attachment keys")
+                assertTrue(session.actionMenu.unitActions.all { "unit-action:${it.name}" in ids })
             }
             fun click(name: String) {
-                val bounds = NativeActionPanel.customBounds(name, naval = false, spiderPurchaseMenu = purchaseMenu())
+                val bounds = com.badlogic.gdx.math.Rectangle(0f, 0f, 100f, 52f)
                 val actor = Actor().apply { setSize(bounds.width, bounds.height) }
                 val event = InputEvent().also { it.listenerActor = actor }
                 val input = CustomUnitActionButtonInput({ session }, { true }, name)
@@ -211,14 +199,9 @@ class ModularSpiderSandboxTest {
             assertEquals("Disable", switch.title)
             assertTrue(ammo.tooltip.contains("Online") && ammo.tooltip.contains("Cost 3000"))
             assertFalse(switch.cancellable)
-            val cards = menu.unitActions.map {
-                NativeActionPanel.customBounds(it.name, naval = false, spiderInterceptor = true)
-            }
-            assertTrue(cards.all { it.y >= 184f }, "Interceptor cards must clear the Stop and Patrol controls")
-            for ((index, a) in cards.withIndex()) for (b in cards.drop(index + 1)) {
-                assertTrue(a.x + a.width <= b.x || b.x + b.width <= a.x ||
-                    a.y + a.height <= b.y || b.y + b.height <= a.y, "Overlapping interceptor cards: $a and $b")
-            }
+            val projected = HudActionProjection.projectActionList(session, null, false, false, false, null, false)
+            assertTrue(projected.exclusiveKeys.any { it.id == "unit-action:buildAntiNuke" })
+            assertTrue(projected.exclusiveKeys.any { it.id == "unit-action:isEnabled" })
         }
     }
 

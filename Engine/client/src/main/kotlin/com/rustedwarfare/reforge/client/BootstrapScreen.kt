@@ -53,8 +53,10 @@ class BootstrapScreen(
     private lateinit var skin: Skin
     private lateinit var stage: Stage
     private lateinit var battleActions: BattleActionList
+    private lateinit var hudActionPanel: HudActionPanel
     private lateinit var minimapActor: Actor
     private lateinit var hudOverlay: InGameHudOverlay
+    private var commandIcons: HudCommandIconAtlas? = null
     private val hudEvents = HudEventStream()
     private var hudMenuOpen = false
     private var lastObservedEventSampleId: String? = null
@@ -144,8 +146,7 @@ class BootstrapScreen(
     private var repairHover = false
     private var flightHover = false
     private var nativeSelection: Set<String> = emptySet()
-    private val nativePanel: Boolean get() = NativeActionPanel.supports(session?.observation?.scenarioId) ||
-        session?.hasConstructorDefinitions == true || session?.hasProductionDefinitions == true
+    private val nativePanel: Boolean get() = false
     private val upgradeButtons = mutableMapOf<String, Pair<TextButton, TextButton>>()
     private val upgradeInputs = mutableListOf<UpgradeButtonInput>()
     private var upgradeHover: String? = null
@@ -229,7 +230,8 @@ class BootstrapScreen(
         val balance: Long?, val queue: com.rustedwarfare.reforge.core.sim.FactoryQueueObservation?,
         val patrolMode: Boolean, val patrolPoints: Int, val reclaimMode: Boolean, val repairMode: Boolean,
         val workerQueueText: String?, val menu: ActionMenuView?,
-        val hudMenuOpen: Boolean, val simPaused: Boolean, val simRate: OfflineRate, val language: UiLanguage)
+        val hudMenuOpen: Boolean, val simPaused: Boolean, val simRate: OfflineRate, val language: UiLanguage,
+        val constructionTypeId: String?, val placementState: PlacementState?, val groundActionName: String?, val sandboxPick: SandboxPick?)
     private var lastHudState: HudState? = null
     private val drawnActionLayout = DrawnActionLayout()
 
@@ -411,27 +413,7 @@ class BootstrapScreen(
             table.add(nativeTooltipText).width(204f).pad(8f)
             stage.addActor(table)
         }
-        for ((key, positions) in NativeActionPanel.upgrades) {
-            fun endpoint(text: String, bounds: NativeCardBounds, cancel: Boolean): TextButton = TextButton(text, skin).also { button ->
-                button.setBounds(bounds.x, bounds.y, bounds.width, bounds.height)
-                val input = UpgradeButtonInput({ session }, { !paused && button.isVisible && !button.isDisabled },
-                    key, cancel, { lastHudState = null; updateHud() })
-                upgradeInputs += input
-                button.addListener(input)
-                button.addListener(object : InputListener() {
-                    override fun enter(event: InputEvent, x: Float, y: Float, pointer: Int, fromActor: Actor?) {
-                        if (pointer == -1) { upgradeHover = key; lastHudState = null }
-                    }
-                    override fun exit(event: InputEvent, x: Float, y: Float, pointer: Int, toActor: Actor?) {
-                        if (pointer == -1 && upgradeHover == key) { upgradeHover = null; lastHudState = null }
-                    }
-                })
-                stage.addActor(button)
-            }
-            val buy = endpoint("", positions.first, false)
-            val cancel = endpoint("Cancel", positions.second, true)
-            upgradeButtons[key] = buy to cancel
-        }
+        // Legacy NativeActionPanel upgrade buttons removed in UI-P001-005 (replaced by HudActionPanel)
         statusLabel = label("", 16f, 52f, 480f, 44f)
         productionNoticeLabel = label("", 16f, 84f, 400f, 24f)
         stopButton = button("Stop (S)", 752f, 168f, 84f) { mapInput.cancel(); session?.stop(); updateHud() }
@@ -457,18 +439,7 @@ class BootstrapScreen(
             })
             stage.addActor(actor)
         }
-        for ((name, bounds) in NativeActionPanel.customActions) {
-            val actor = TextButton("", skin)
-            actor.setBounds(bounds.x, bounds.y, bounds.width, bounds.height)
-            val input = CustomUnitActionButtonInput({ session }, { !paused && !loading && session?.isOpen == true }, name,
-                changed = { lastHudState = null; updateHud() }, hovered = { entered ->
-                    customActionHover = name.takeIf { entered }; lastHudState = null
-                }, beginTargeting = { mapInput.beginGroundAction(it) })
-            actor.addListener(input)
-            customActionInputs += input
-            customActionButtons[name] = actor
-            stage.addActor(actor)
-        }
+        // Legacy NativeActionPanel customActions removed in UI-P001-005 (replaced by HudActionPanel)
         exitButton = button("Return to menu", 752f, 72f, 176f) { leaveMatch() }
         contentLabel = label("Content folder", 752f, 378f, 176f, 24f)
         rootField = TextField(testScenes.choice?.root?.toString() ?: customRootText, skin).also {
@@ -683,8 +654,17 @@ class BootstrapScreen(
                     bottom >= viewport.screenY && bottom < viewport.screenY + viewport.screenHeight
             }, battlefieldAt = { x, y -> battlefieldAt(x, y) },
             cameraTakeover = { reason -> scriptedCamera?.takeOver(reason) },
-            cameraFollowsUnit = { scriptedCamera?.followsUnit == true })
+            cameraFollowsUnit = { scriptedCamera?.followsUnit == true },
+            onGuardUnsupported = {
+                hudEvents.pushWarning(UiStrings.get("unsupported.guard"))
+                lastHudState = null
+                updateHud()
+            })
         for (index in 1..3) groupButtons += button("$index (0)", 508f + (index - 1) * 72f, 12f, 64f) { mapInput.group(index) }
+        commandIcons = runCatching { HudCommandIconAtlas.load() }.onFailure { err ->
+            Gdx.app?.error("ui-p001-icons", "Failed to load HudCommandIconAtlas", err)
+        }.getOrNull()
+        created += { commandIcons?.close(); commandIcons = null }
         hudOverlay = InGameHudOverlay(
             skin = skin,
             fontsProvider = { fontSet },
@@ -768,6 +748,54 @@ class BootstrapScreen(
                 override fun scrolled(event: InputEvent, x: Float, y: Float, amountX: Float, amountY: Float) = true
             })
         }.also(stage::addActor)
+        hudActionPanel = HudActionPanel(
+            skin = skin,
+            stage = stage,
+            touchControls = touchControls,
+            fontsProvider = { fontSet },
+            fallbackFontProvider = { fallbackFont ?: skin.getFont("default") },
+            unitIconProvider = { graphics?.unitIcon(it) },
+            commandIconProvider = { name -> commandIcons?.icon(name) },
+            onCommonCommand = { cmdId ->
+                val active = session ?: return@HudActionPanel
+                when (cmdId) {
+                    "stop" -> {
+                        mapInput.cancel()
+                        active.stop()
+                    }
+                    "choose-patrol" -> mapInput.beginPatrol()
+                    "choose-guard" -> hudEvents.pushWarning(UiStrings.get("unsupported.guard"))
+                }
+                lastHudState = null
+                updateHud()
+            },
+            onExclusiveAction = { key, cancel ->
+                val owner = session ?: return@HudActionPanel
+                val arg = key.id.substringAfter(':')
+                when (key.id.substringBefore(':')) {
+                    "produce" -> if (cancel) owner.cancelProduction(arg) else owner.produce(arg)
+                    "upgrade" -> if (cancel) owner.cancelUpgrade(arg) else owner.upgrade(arg)
+                    "choose-construction" -> mapInput.beginConstruction(arg)
+                    "unit-action" -> if (key.isTargetAction && !cancel) mapInput.beginGroundAction(arg)
+                        else owner.unitAction(arg, cancelQueued = cancel)
+                    "submarine-surface", "submarine-dive" -> owner.submarineDepth(key.id == "submarine-surface")
+                    "amphibious-fly", "amphibious-dive" -> owner.amphibiousFlight(key.id == "amphibious-fly")
+                    "transport-unload", "transport-cancel-unload" -> owner.unload(key.id == "transport-unload")
+                    "choose-reclaim" -> mapInput.beginReclaim()
+                    "choose-repair" -> mapInput.beginRepair()
+                    else -> hudEvents.pushWarning(UiStrings.get("unsupported.generic"))
+                }
+                lastHudState = null
+                updateHud()
+            },
+            onDisabledFlash = { key ->
+                when (key.state) {
+                    HudActionKeyState.SHORT_FUNDS -> hudEvents.pushWarning(UiStrings.get("noFunds"))
+                    HudActionKeyState.DISABLED -> key.noteText?.let { hudEvents.pushWarning(it) }
+                    else -> {}
+                }
+            },
+        )
         battleActions = BattleActionList(skin, stage, { session }, { graphics?.unitIcon(it) }, { owner, row, cancel ->
             val key = row.id.substringAfter(':')
             when (row.id.substringBefore(':')) {
@@ -853,7 +881,7 @@ class BootstrapScreen(
                 if (!touchControls && session != null && !commandConsoleOpen) {
                     val point = stage.screenToStageCoordinates(Vector2(screenX.toFloat(), screenY.toFloat()))
                     val hit = stage.hit(point.x, point.y, true)
-                    stage.scrollFocus = battleActions.scrollTarget(hit) ?: minimapActor.takeIf { hit === it }
+                    stage.scrollFocus = hudActionPanel.scrollTarget(hit) ?: minimapActor.takeIf { hit === it }
                 }
                 return false
             }
@@ -1424,21 +1452,13 @@ class BootstrapScreen(
         }
         if (current != null && !paused) {
             hudEvents.update(Gdx.graphics.deltaTime)
+            if (::hudActionPanel.isInitialized) hudActionPanel.tickEffects(Gdx.graphics.deltaTime)
             syncHudEventsFromSession(current)
         }
         updateHud()
         updatePacingHud()
         Gdx.gl.glClearColor(0.075f, 0.09f, 0.085f, 1f)
-        nativeTooltip.isVisible = nativePanel && !paused &&
-            (productionHover != null && session?.productionActions?.any { it.typeId == productionHover } == true ||
-                constructionHover != null && session?.constructionActions?.any { it.typeId == constructionHover } == true ||
-                economicUpgradeHover && economicUpgradeCard.isVisible || reclaimHover && reclaimCard.isVisible ||
-                repairHover && repairCard.isVisible ||
-                upgradeHover != null && session?.selectedUpgrades?.any { it.actionKey == upgradeHover } == true ||
-                factoryUpgradeHover != null && session?.selectedUpgrades?.any { it.actionKey == factoryUpgradeHover } == true ||
-                flightHover && session?.actionMenu?.flightAction != null ||
-                session?.actionMenu?.unitActions?.any { it.name == customActionHover } == true)
-        if (nativeTooltip.isVisible) nativeTooltip.toFront()
+        nativeTooltip.isVisible = false
         fontDebouncer.pollReadyScale(Gdx.graphics.deltaTime)?.let { readyScale ->
             rebuildFontsForScale(readyScale)
         }
@@ -1557,7 +1577,7 @@ class BootstrapScreen(
         if (stopButton.isVisible) button("stop", stopButton)
         if (patrolButton.isVisible) button("choose-patrol", patrolButton)
         entries += DrawnAction("minimap", minimapActor, "Minimap", enabled = current != null)
-        entries += battleActions.drawnActions()
+        if (::hudActionPanel.isInitialized && current != null) entries += hudActionPanel.drawnActions()
         customActionButtons.forEach { (name, actor) ->
             val action = menu?.unitActions?.singleOrNull { it.name == name }
             entries += DrawnAction("unit-action:$name", actor, actor.text.toString(), enabled = action?.available == true)
@@ -1757,8 +1777,8 @@ class BootstrapScreen(
         card.table.isVisible = nativePanel
         when {
             overflow -> card.table.setBounds((index % 2) * 92f, ((total + 1) / 2 - 1 - index / 2) * 60f, 84f, 54f)
-            naval -> NativeActionPanel.navalProduction.let { card.table.setBounds(it.x, it.y, it.width, it.height) }
-            total <= 3 -> NativeActionPanel.production[index].let { card.table.setBounds(it.x, it.y, it.width, it.height) }
+            naval -> card.table.setBounds(752f, 270f, 84f, 50f)
+            total <= 3 -> card.table.setBounds(752f + (index % 2) * 92f, 256f - (index / 2) * 68f, 84f, 64f)
             else -> card.table.setBounds(752f + (index % 2) * 92f, 280f - (index / 2) * 60f, 84f, 54f)
         }
         val compact = total > 3 || naval
@@ -1945,7 +1965,8 @@ class BootstrapScreen(
         val state = HudState(selected, current?.selectedIds ?: emptySet(), (1..3).map { current?.groupCount(it) ?: 0 }, current?.feedback, current?.observation?.stepIndex,
             launch.canEdit, loading, visualState?.preparationStatus, loadError, current != null, menu?.balance, menu?.factoryQueue,
             mapInput.patrolMode, mapInput.patrolPointCount, mapInput.reclaimMode, mapInput.repairMode, menu?.workerQueueText, menu,
-            hudMenuOpen, stepClock.isPaused, stepClock.rate, UiStrings.currentLanguage)
+            hudMenuOpen, stepClock.isPaused, stepClock.rate, UiStrings.currentLanguage,
+            mapInput.constructionTypeId, mapInput.constructionPreview?.state, mapInput.groundActionName, mapInput.sandboxPick)
         if (state == lastHudState) {
             if (current != null && ::hudOverlay.isInitialized) {
                 hudOverlay.syncEventStream(hudEvents)
@@ -2104,31 +2125,8 @@ class BootstrapScreen(
         }
         stopButton.isDisabled = selected == null
         depthButton.isVisible = menu?.depthAction != null || menu?.flightAction != null || menu?.transportAction != null
-        val unloadBounds = if (naval) NativeActionPanel.navalUnload
-            else if (menu?.transportAction != null && menu.unitActions.isNotEmpty()) NativeActionPanel.transportWithCustomAction
-            else NativeCardBounds(752f, 188f, 176f, 40f)
-        depthButton.setBounds(unloadBounds.x, unloadBounds.y, unloadBounds.width, unloadBounds.height)
-        depthButton.isDisabled = menu?.depthAction == null && menu?.flightAction?.available != true && menu?.transportAction?.available != true
-        depthButton.setText(menu?.depthAction?.title ?: menu?.flightAction?.title ?: menu?.transportAction?.title ?: "Surface")
-        val spiderPurchaseMenu = menu?.unitActions?.any { it.name == "buildFabricator" } == true
-        val spiderInterceptor = selected?.attachmentOverview != null && selected.unitActions?.interceptorOnline != null
-        customActionButtons.forEach { (name, actor) ->
-            val action = menu?.unitActions?.singleOrNull { it.name == name }
-            val bounds = NativeActionPanel.customBounds(name, naval, spiderPurchaseMenu, spiderInterceptor)
-            actor.setBounds(bounds.x, bounds.y, bounds.width, bounds.height)
-            actor.isVisible = current != null && action != null && !(name == "selectSlotBuild" &&
-                selected?.attachmentOverview?.selectedSlot == null)
-            actor.isDisabled = action?.available != true && action?.cancellable != true
-            val status = when {
-                action?.queued == true -> "\n${((action.progress ?: 0f) * 100f).toInt()}%"
-                (action?.cooldownRemaining ?: 0) > 0 -> String.format(Locale.ROOT, "\n%.1fs", action!!.cooldownRemaining / 1000f)
-                else -> ""
-            }
-            val title = action?.title.orEmpty()
-            val compact = spiderPurchaseMenu && bounds.height == 24f
-            actor.label.setFontScale(if (compact && status.isNotEmpty()) .8f else 1f)
-            actor.setText((if (compact) title.removePrefix("Add ") else title) + status)
-        }
+        depthButton.isVisible = false
+        depthButton.isDisabled = true
         menu?.unitActions?.singleOrNull { it.name == customActionHover }?.let { action ->
             setUnitIcon(nativeTooltipIcon, action.iconTypeId ?: selected?.typeId)
             nativeTooltipText.setText(action.tooltip)
@@ -2137,23 +2135,7 @@ class BootstrapScreen(
             setUnitIcon(nativeTooltipIcon, selected?.typeId)
             nativeTooltipText.setText(action.tooltip)
         }
-        val economicPanel = nativePanel && (current?.hasEconomicConstruction == true || constructionCards.size > 4 ||
-            menu?.canMaintain == true && constructionCards.size > 2 || productionCards.size + factoryUpgradeCards.size > 4)
-        val stopY = when {
-            spiderPurchaseMenu -> NativeActionPanel.spiderPurchaseStopY
-            spider -> 112f
-            economicPanel -> 112f
-            nativePanel -> 144f
-            else -> 168f
-        }
-        stopButton.setY(stopY)
-        patrolButton.setY(stopY)
-        val reopenBounds = if (spiderPurchaseMenu) NativeActionPanel.spiderPurchaseReopen
-            else NativeCardBounds(752f, if (economicPanel) 64f else if (nativePanel || launch.canEdit) 96f else 120f, 176f, 40f)
-        val exitBounds = if (spiderPurchaseMenu) NativeActionPanel.spiderPurchaseExit
-            else NativeCardBounds(752f, if (economicPanel) 16f else if (nativePanel) 48f else 72f, 176f, 40f)
-        startButton.setBounds(reopenBounds.x, reopenBounds.y, reopenBounds.width, reopenBounds.height)
-        exitButton.setBounds(exitBounds.x, exitBounds.y, exitBounds.width, exitBounds.height)
+        // Legacy bottom stop/reopen/exit bounds replaced by InGameHudOverlay & HudActionPanel
         stopButton.isVisible = current != null
         patrolButton.isVisible = current != null && !touchControls
         patrolButton.isDisabled = current?.canPatrol != true
@@ -2329,36 +2311,61 @@ class BootstrapScreen(
             externalActionsHeight = 0f,
         )
         val railLayout = hudOverlay.layout
-        val showSidebarActions = current != null && !paused && hudSnap?.showActionsSection == true
-        battleActions.setSidebarAnchor(
-            left = railLayout.sidebarLeft + UiTokens.SIDEBAR_PAD_H,
-            topY = railLayout.actionsTopY,
-            width = (railLayout.sidebarWidth - UiTokens.SIDEBAR_PAD_H * 2f).coerceAtLeast(160f),
-            maxHeight = railLayout.actionsMaxHeight,
-            suppressTitle = true,
+        // Keep legacy BattleActionList empty/hidden now that HudActionPanel owns the action list
+        battleActions.update(null, null, emptyList())
+        val actionListSnap = if (current != null && !paused) {
+            HudActionProjection.projectActionList(
+                session = current,
+                activeConstructionTypeId = mapInput.constructionTypeId,
+                reclaimMode = mapInput.reclaimMode,
+                repairMode = mapInput.repairMode,
+                patrolMode = mapInput.patrolMode,
+                activeGroundActionName = mapInput.groundActionName,
+                touchControls = touchControls,
+            )
+        } else null
+        val targetModeCard = if (current != null && !paused && !hudMenuOpen && !stepClock.isPaused) {
+            HudActionProjection.projectTargetModeCard(
+                session = current,
+                constructionTypeId = mapInput.constructionTypeId,
+                constructionPreview = mapInput.constructionPreview,
+                reclaimMode = mapInput.reclaimMode,
+                repairMode = mapInput.repairMode,
+                patrolMode = mapInput.patrolMode,
+                patrolPointCount = mapInput.patrolPointCount,
+                groundActionName = mapInput.groundActionName,
+                groundActionPreview = mapInput.groundActionPreview,
+                sandboxPick = mapInput.sandboxPick,
+                touchControls = touchControls,
+            )
+        } else null
+        val effectiveHudSnap = hudSnap?.copy(showActionsSection = actionListSnap != null && !actionListSnap.isEmpty)
+        hudActionPanel.update(
+            stageWidth = viewport.worldWidth,
+            stageHeight = viewport.worldHeight,
+            sidebarLeft = railLayout.sidebarLeft,
+            actionsTopY = railLayout.actionsTopY,
+            sidebarWidth = railLayout.sidebarWidth,
+            actionsMaxHeight = railLayout.actionsMaxHeight,
+            actionSnapshot = actionListSnap,
+            targetModeCard = targetModeCard,
         )
-        val ownerHeading = menu?.let { desktopPrimaryHeading(it, state.selected, state.selectedIds) }
-        battleActions.update(
-            current?.selectedId,
-            ownerHeading,
-            if (showSidebarActions) menu?.battleActions().orEmpty() else emptyList(),
-        )
-        // Re-sync hudOverlay with actual external actions height so sidebarBottom shrink-wraps accurately
+        // Re-sync hudOverlay with actual HudActionPanel occupied height so sidebarBottom shrink-wraps accurately
         hudOverlay.update(
             stageWidth = viewport.worldWidth,
             stageHeight = viewport.worldHeight,
             worldWidth = worldW,
             worldHeight = worldH,
-            hudSnapshot = hudSnap,
+            hudSnapshot = effectiveHudSnap,
             eventStream = hudEvents,
-            externalActionsHeight = if (showSidebarActions) battleActions.occupiedHeight else 0f,
+            externalActionsHeight = hudActionPanel.occupiedHeight,
         )
         if (current != null) {
             if (hudMenuOpen || stepClock.isPaused) {
                 hudOverlay.toFront()
             } else {
                 minimapActor.toFront()
-                battleActions.toFront()
+                hudActionPanel.toFront()
                 if (commandConsoleOpen) {
                     commandPanel.toFront()
                     commandField.toFront()
@@ -2406,7 +2413,7 @@ class BootstrapScreen(
     private fun battlefieldAt(screenX: Int, screenY: Int): Boolean {
         val point = stage.screenToStageCoordinates(Vector2(screenX.toFloat(), screenY.toFloat()))
         if (::hudOverlay.isInitialized && hudOverlay.containsHudPoint(point.x, point.y)) return false
-        if (battleActions.containsPoint(point.x, point.y)) return false
+        if (::hudActionPanel.isInitialized && hudActionPanel.containsPoint(point.x, point.y)) return false
         val hit = stage.hit(point.x, point.y, true)
         return hit == null || hit === stage.root
     }
@@ -2584,9 +2591,10 @@ class BootstrapScreen(
         presentationReady = false
         Gdx.input.inputProcessor = null
         val closingGraphics = graphics; graphics = null
+        val closingCommandIcons = commandIcons; commandIcons = null
         val closingFonts = fontSet; fontSet = null
         val closingFallback = fallbackFont; fallbackFont = null
-        listOf<() -> Unit>({ releaseSounds() }, { closingGraphics?.close() }, { visualPanel?.close() }, { packPanel?.close() }, { testScenePanel?.close() }, { skirmishMapPanel?.close() }, { stage.dispose() }, {
+        listOf<() -> Unit>({ releaseSounds() }, { closingGraphics?.close() }, { closingCommandIcons?.close() }, { visualPanel?.close() }, { packPanel?.close() }, { testScenePanel?.close() }, { skirmishMapPanel?.close() }, { stage.dispose() }, {
             if (::skin.isInitialized && skin.has("default-font", BitmapFont::class.java)) {
                 skin.remove("default-font", BitmapFont::class.java)
             }
