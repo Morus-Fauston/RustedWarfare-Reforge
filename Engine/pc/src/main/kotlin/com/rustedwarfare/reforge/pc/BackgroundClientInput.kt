@@ -142,10 +142,16 @@ internal class BackgroundClientInput(
                         "Keycode must be between 0 and ${Input.Keys.MAX_KEYCODE}"
                     }
                     val keycode = rawKey.toInt()
+                    val ctrl = message.getBoolean("ctrl", false)
+                    val shift = message.getBoolean("shift", false)
                     val processor = checkNotNull(Gdx.input.inputProcessor) { "Client is not accepting input" }
+                    if (ctrl) processor.keyDown(Input.Keys.CONTROL_LEFT)
+                    if (shift) processor.keyDown(Input.Keys.SHIFT_LEFT)
                     val down = processor.keyDown(keycode)
                     val up = processor.keyUp(keycode)
-                    mapOf("input" to mapOf("keycode" to keycode, "downConsumed" to down, "upConsumed" to up))
+                    if (shift) processor.keyUp(Input.Keys.SHIFT_LEFT)
+                    if (ctrl) processor.keyUp(Input.Keys.CONTROL_LEFT)
+                    mapOf("input" to mapOf("keycode" to keycode, "ctrl" to ctrl, "shift" to shift, "downConsumed" to down, "upConsumed" to up))
                 }
                 "type" -> {
                     require(message.getLong("generation") == currentGeneration()) { "Stale client generation" }

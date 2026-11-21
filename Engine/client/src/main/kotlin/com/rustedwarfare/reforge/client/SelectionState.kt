@@ -50,6 +50,12 @@ class SelectionState(private val clockMillis: () -> Long = { System.nanoTime() /
         groups[index].addAll(selected)
     }
 
+    /** Appends current [selectedIds] to group [index] without clearing existing members. */
+    fun appendGroup(index: Int) {
+        require(index in groups.indices)
+        groups[index].addAll(selected)
+    }
+
     fun groupMembers(index: Int): Set<String> {
         require(index in groups.indices)
         return Collections.unmodifiableSet(LinkedHashSet(groups[index]))

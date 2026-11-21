@@ -164,8 +164,11 @@ class SandboxInput(
     private fun sandboxTarget(owner: SandboxPickOwner, point: Position): String? =
         if (owner.mode is SandboxPick.Spawn) null
         else owner.session.sandboxPickTargetAt(point, requiresHealth = owner.mode is SandboxPick.Health)
-    private fun control() = pressed(Input.Keys.CONTROL_LEFT) || pressed(Input.Keys.CONTROL_RIGHT)
-    private fun shift() = pressed(Input.Keys.SHIFT_LEFT) || pressed(Input.Keys.SHIFT_RIGHT)
+    private val heldModifiers = mutableSetOf<Int>()
+    private fun control() = pressed(Input.Keys.CONTROL_LEFT) || pressed(Input.Keys.CONTROL_RIGHT) ||
+        Input.Keys.CONTROL_LEFT in heldModifiers || Input.Keys.CONTROL_RIGHT in heldModifiers
+    private fun shift() = pressed(Input.Keys.SHIFT_LEFT) || pressed(Input.Keys.SHIFT_RIGHT) ||
+        Input.Keys.SHIFT_LEFT in heldModifiers || Input.Keys.SHIFT_RIGHT in heldModifiers
     private fun mode() = when { control() -> SelectionMode.TOGGLE; shift() -> SelectionMode.ADD; else -> SelectionMode.REPLACE }
     private fun canTargetAt(x: Int, y: Int) = insideViewport(x, y) && battlefieldAt(x, y)
 
@@ -397,6 +400,12 @@ class SandboxInput(
         recordCamera("zoom"); return true
     }
     override fun keyDown(keycode: Int): Boolean {
+        if (keycode == Input.Keys.CONTROL_LEFT || keycode == Input.Keys.CONTROL_RIGHT ||
+            keycode == Input.Keys.SHIFT_LEFT || keycode == Input.Keys.SHIFT_RIGHT
+        ) {
+            heldModifiers.add(keycode)
+            return false
+        }
         if (!active() || editing() || touchControls) return false
         val current = session() ?: return false
         if (keycode == Input.Keys.ESCAPE && cancelSandboxPick()) return true
@@ -443,6 +452,12 @@ class SandboxInput(
         return false
     }
     override fun keyUp(keycode: Int): Boolean {
+        if (keycode == Input.Keys.CONTROL_LEFT || keycode == Input.Keys.CONTROL_RIGHT ||
+            keycode == Input.Keys.SHIFT_LEFT || keycode == Input.Keys.SHIFT_RIGHT
+        ) {
+            heldModifiers.remove(keycode)
+            return false
+        }
         if (keycode == Input.Keys.X || keycode == Input.Keys.J) return constructionHeld.remove(keycode)
         if (keycode == Input.Keys.U) {
             val held = upgradeHeld; upgradeHeld = false; return held
@@ -555,5 +570,5 @@ class SandboxInput(
     private fun cancelGesture() {
         gesture?.cancel(); gesture = null; patrolPress = null; commandPress = null; constructionPress = null; reclaimPress = null; groundActionPress = null; sandboxPress = null; ownerButton = null; pointerPosition = null
     }
-    fun cancel() { endConstruction(); endPatrol(); endReclaim(); endGroundAction(); endSandboxPick(); pHeld = false; upgradeHeld = false; constructionHeld.clear() }
+    fun cancel() { endConstruction(); endPatrol(); endReclaim(); endGroundAction(); endSandboxPick(); pHeld = false; upgradeHeld = false; constructionHeld.clear(); heldModifiers.clear() }
 }

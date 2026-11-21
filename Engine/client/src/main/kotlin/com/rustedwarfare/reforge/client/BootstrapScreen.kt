@@ -56,6 +56,7 @@ class BootstrapScreen(
     private lateinit var hudActionPanel: HudActionPanel
     private lateinit var minimapActor: Actor
     private lateinit var hudOverlay: InGameHudOverlay
+    private lateinit var hudGroupBar: HudControlGroupBar
     private var commandIcons: HudCommandIconAtlas? = null
     private val hudEvents = HudEventStream()
     private var hudMenuOpen = false
@@ -822,6 +823,56 @@ class BootstrapScreen(
                 updateHud()
             },
         )
+        hudGroupBar = HudControlGroupBar(
+            skin = skin,
+            touchControls = touchControls,
+            fontsProvider = { fontSet },
+            fallbackFontProvider = { fallbackFont ?: skin.getFont("default") },
+            onPcGroupClick = { index ->
+                mapInput.group(index)
+                lastHudState = null
+                updateHud()
+            },
+            onTouchGroupAction = { index, outcome ->
+                val owner = session ?: return@HudControlGroupBar
+                val prevSelection = owner.selectedIds.toSet()
+                hudActionPanel.clearTouchPreview()
+                when (outcome) {
+                    TouchGroupReleaseOutcome.RECALL -> {
+                        owner.recallGroup(index, additive = false)?.let { center ->
+                            graphics?.projection?.let { map ->
+                                takeOverCamera("group")
+                                map.centerOn(center)
+                            }
+                        }
+                    }
+                    TouchGroupReleaseOutcome.SAVE_EMPTY, TouchGroupReleaseOutcome.REPLACE -> {
+                        owner.saveGroup(index)
+                    }
+                    TouchGroupReleaseOutcome.APPEND_AND_RECALL -> {
+                        owner.appendGroup(index)
+                        owner.recallGroup(index, additive = false)?.let { center ->
+                            graphics?.projection?.let { map ->
+                                takeOverCamera("group")
+                                map.centerOn(center)
+                            }
+                        }
+                    }
+                    TouchGroupReleaseOutcome.NONE -> Unit
+                }
+                if (owner.selectedIds != prevSelection) {
+                    mapInput.cancel()
+                }
+                lastHudState = null
+                updateHud()
+            },
+            hasSelection = { session?.selectedIds?.isNotEmpty() == true },
+            allowTouchHold = {
+                !paused && !hudMenuOpen && !stepClock.isPaused &&
+                    mapInput.constructionTypeId == null && !mapInput.reclaimMode &&
+                    !mapInput.repairMode && !mapInput.patrolMode && mapInput.groundActionName == null
+            },
+        ).also(stage::addActor)
         battleActions = BattleActionList(skin, stage, { session }, { graphics?.unitIcon(it) }, { owner, row, cancel ->
             val key = row.id.substringAfter(':')
             when (row.id.substringBefore(':')) {
@@ -900,8 +951,19 @@ class BootstrapScreen(
                 return false
             }
 
-            override fun touchDown(screenX: Int, screenY: Int, pointer: Int, button: Int): Boolean =
-                !hudMenuOpen && !stepClock.isPaused && pointer == 0 && button == Input.Buttons.RIGHT && mapInput.cancelSandboxPick()
+            override fun touchDown(screenX: Int, screenY: Int, pointer: Int, button: Int): Boolean {
+                if (touchControls && pointer == 0 && ::hudActionPanel.isInitialized && hudActionPanel.hasTouchPreview) {
+                    val pt = stage.screenToStageCoordinates(Vector2(screenX.toFloat(), screenY.toFloat()))
+                    if (hudActionPanel.isPointInTouchPreviewCard(pt.x, pt.y)) {
+                        // Consume tap inside the touch preview card so it never leaks onto the battlefield (Spec §9.1/§9.3)
+                        return true
+                    }
+                    if (!hudActionPanel.isPointOnExclusiveKey(pt.x, pt.y)) {
+                        hudActionPanel.clearTouchPreview()
+                    }
+                }
+                return !hudMenuOpen && !stepClock.isPaused && pointer == 0 && button == Input.Buttons.RIGHT && mapInput.cancelSandboxPick()
+            }
 
             override fun mouseMoved(screenX: Int, screenY: Int): Boolean {
                 if (!touchControls && session != null && !commandConsoleOpen) {
@@ -1607,6 +1669,7 @@ class BootstrapScreen(
         if (patrolButton.isVisible) button("choose-patrol", patrolButton)
         entries += DrawnAction("minimap", minimapActor, "Minimap", enabled = current != null)
         if (::hudActionPanel.isInitialized && current != null) entries += hudActionPanel.drawnActions()
+        if (::hudGroupBar.isInitialized && current != null) entries += hudGroupBar.drawnActions()
         customActionButtons.forEach { (name, actor) ->
             val action = menu?.unitActions?.singleOrNull { it.name == name }
             entries += DrawnAction("unit-action:$name", actor, actor.text.toString(), enabled = action?.available == true)
@@ -1991,7 +2054,7 @@ class BootstrapScreen(
         val menu = current?.actionMenu
         val selected = current?.observation?.units?.find { it.unitId == current.selectedId }
         val naval = selected?.transport != null && menu?.unitActions?.any { it.name == "buildAntiNuke" } == true
-        val state = HudState(selected, current?.selectedIds ?: emptySet(), (1..3).map { current?.groupCount(it) ?: 0 }, current?.feedback, current?.observation?.stepIndex,
+        val state = HudState(selected, current?.selectedIds ?: emptySet(), HudControlGroupLogic.GROUP_ORDER.map { current?.groupCount(it) ?: 0 }, current?.feedback, current?.observation?.stepIndex,
             launch.canEdit, loading, visualState?.preparationStatus, loadError, current != null, menu?.balance, menu?.factoryQueue,
             mapInput.patrolMode, mapInput.patrolPointCount, mapInput.reclaimMode, mapInput.repairMode, menu?.workerQueueText, menu,
             hudMenuOpen, stepClock.isPaused, stepClock.rate, UiStrings.currentLanguage,
@@ -2379,6 +2442,14 @@ class BootstrapScreen(
             actionsMaxHeight = railLayout.actionsMaxHeight,
             actionSnapshot = actionListSnap,
             targetModeCard = targetModeCard,
+            primaryUnitId = current?.selectedId,
+            language = UiStrings.currentLanguage,
+        )
+        hudGroupBar.update(
+            visible = current != null && !paused && !hudMenuOpen && !stepClock.isPaused && !commandConsoleOpen,
+            joystickVisible = cameraJoystickActive(),
+            countOf = { idx -> current?.groupCount(idx) ?: 0 },
+            lang = UiStrings.currentLanguage,
         )
         // Re-sync hudOverlay with actual HudActionPanel occupied height so sidebarBottom shrink-wraps accurately
         hudOverlay.update(
@@ -2395,6 +2466,7 @@ class BootstrapScreen(
                 hudOverlay.toFront()
             } else {
                 minimapActor.toFront()
+                hudGroupBar.toFront()
                 hudActionPanel.toFront()
                 if (commandConsoleOpen) {
                     commandPanel.toFront()
@@ -2443,7 +2515,8 @@ class BootstrapScreen(
     private fun battlefieldAt(screenX: Int, screenY: Int): Boolean {
         val point = stage.screenToStageCoordinates(Vector2(screenX.toFloat(), screenY.toFloat()))
         if (::hudOverlay.isInitialized && hudOverlay.containsHudPoint(point.x, point.y)) return false
-        if (::hudActionPanel.isInitialized && hudActionPanel.containsPoint(point.x, point.y)) return false
+        if (::hudActionPanel.isInitialized && (hudActionPanel.containsPoint(point.x, point.y) || hudActionPanel.isPointInTouchPreviewCard(point.x, point.y))) return false
+        if (::hudGroupBar.isInitialized && hudGroupBar.containsPoint(point.x, point.y)) return false
         val hit = stage.hit(point.x, point.y, true)
         return hit == null || hit === stage.root
     }
@@ -2606,13 +2679,20 @@ class BootstrapScreen(
         val x = area.x + radius
         val y = area.y + radius
         val direction = cameraJoystick.direction
+        Gdx.gl.glEnable(GL20.GL_BLEND)
+        Gdx.gl.glBlendFunc(GL20.GL_SRC_ALPHA, GL20.GL_ONE_MINUS_SRC_ALPHA)
         shapes.begin(ShapeRenderer.ShapeType.Filled)
-        shapes.color = Color.DARK_GRAY
-        shapes.circle(x, y, radius, 32)
-        shapes.color = Color.LIGHT_GRAY
-        shapes.circle(x + direction.x.toFloat() * radius * .64f,
-            y + direction.y.toFloat() * radius * .64f, radius * .26f, 24)
+        shapes.setColor(UiTokens.RAIL.r, UiTokens.RAIL.g, UiTokens.RAIL.b, 0.45f)
+        shapes.circle(x, y, radius, 40)
+        shapes.setColor(0.788f, 0.820f, 0.835f, 0.55f)
+        shapes.circle(x + direction.x.toFloat() * radius * .58f,
+            y + direction.y.toFloat() * radius * .58f, radius * .35f, 28)
         shapes.end()
+        shapes.begin(ShapeRenderer.ShapeType.Line)
+        shapes.setColor(UiTokens.LINE.r, UiTokens.LINE.g, UiTokens.LINE.b, 0.90f)
+        shapes.circle(x, y, radius, 40)
+        shapes.end()
+        Gdx.gl.glDisable(GL20.GL_BLEND)
     }
 
     private fun syncMinimapActorBounds(g: SandboxGraphics) {
@@ -2661,6 +2741,8 @@ class BootstrapScreen(
         factoryUpgradeHover = null
         if (::economicUpgradeInput.isInitialized) economicUpgradeInput.cancel()
         if (::nativeTooltip.isInitialized) nativeTooltip.isVisible = false
+        if (::hudGroupBar.isInitialized) hudGroupBar.cancelHold()
+        if (::hudActionPanel.isInitialized) hudActionPanel.clearTouchPreview()
         if (::mapInput.isInitialized) mapInput.cancel()
         if (::stage.isInitialized) { stage.cancelTouchFocus(); stage.unfocusAll() }
     }

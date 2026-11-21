@@ -174,6 +174,12 @@ class SandboxSession(scenario: Scenario, private val evidence: ClientEvidence = 
         selection.saveGroup(index)
         evidence.recordWhenEnabled("group-save") { mapOf("group" to index, "count" to groupCount(index)) }
     }
+
+    fun appendGroup(index: Int) {
+        if (!isOpen) return
+        selection.appendGroup(index)
+        evidence.recordWhenEnabled("group-append") { mapOf("group" to index, "count" to groupCount(index)) }
+    }
     fun groupCount(index: Int): Int {
         if (!isOpen) return 0
         val visible = observation.units.filter { it.alive }.map { it.unitId }.toSet()

@@ -32,6 +32,60 @@ import kotlin.math.ceil
  * - PC hover tooltip docked to the left of the sidebar, top-aligned with hovered key, clamped on-screen
  * - Battlefield top-center 300-wide target-mode hint card for construction/rally/reclaim/repair/patrol/nuke/sandbox
  */
+/**
+ * Pure original Android "first-tap preview, second-tap execute" state machine (HUD Spec §9.3 & DEC-P011-001).
+ *
+ * - Target-mode / construction actions (`isTargetAction == true`): first tap immediately executes (enters target mode)
+ *   and clears any active preview.
+ * - Normal queued / instant actions (`isTargetAction == false`):
+ *   - First tap caches (unitId, actionId) and shows the preview card (returns PREVIEW).
+ *   - Second tap while cache still matches the same (unitId, actionId) executes the action (returns EXECUTE).
+ *   - Switching primary unit, tapping outside the card, or tapping another action clears/replaces the preview.
+ */
+enum class TouchActionTapOutcome {
+    PREVIEW,
+    EXECUTE,
+}
+
+class TouchActionPreviewState {
+    var previewUnitId: String? = null
+        private set
+    var previewActionId: String? = null
+        private set
+
+    val active: Boolean get() = previewActionId != null
+
+    fun isPreviewing(unitId: String?, actionId: String): Boolean =
+        unitId != null && previewUnitId == unitId && previewActionId == actionId
+
+    /** Reconciles cache against the currently selected representative unit ID and available action IDs. */
+    fun reconcile(currentPrimaryUnitId: String?, availableActionIds: Set<String>) {
+        if (previewUnitId == null || previewActionId == null) return
+        if (currentPrimaryUnitId == null || previewUnitId != currentPrimaryUnitId || previewActionId !in availableActionIds) {
+            clear()
+        }
+    }
+
+    /** Handles a released tap on an exclusive action key in touch mode. */
+    fun onActionTap(primaryUnitId: String?, key: HudActionKeyModel): TouchActionTapOutcome {
+        if (key.isTargetAction) {
+            clear()
+            return TouchActionTapOutcome.EXECUTE
+        }
+        if (primaryUnitId != null && previewUnitId == primaryUnitId && previewActionId == key.id) {
+            return TouchActionTapOutcome.EXECUTE
+        }
+        previewUnitId = primaryUnitId
+        previewActionId = key.id
+        return TouchActionTapOutcome.PREVIEW
+    }
+
+    fun clear() {
+        previewUnitId = null
+        previewActionId = null
+    }
+}
+
 internal class HudActionPanel(
     private val skin: Skin,
     private val stage: Stage,
@@ -57,6 +111,10 @@ internal class HudActionPanel(
     private var hoveredKeyId: String? = null
     private var hoveredKeyTopY: Float = 0f
     private val flashTimers = LinkedHashMap<String, Float>()
+    internal val touchPreview = TouchActionPreviewState()
+    private var activePrimaryUnitId: String? = null
+    private var lastPopupRect: Rectangle? = null
+    private var activeLanguage: UiLanguage = UiLanguage.ZH
 
     private val glyphLayout = GlyphLayout()
 
@@ -120,7 +178,10 @@ internal class HudActionPanel(
     }
 
     private val commonButtons: List<CommonButtonActor> = List(3) { idx ->
-        CommonButtonActor(idx) { id -> onCommonCommand(id) }.also { commonGroup.addActor(it) }
+        CommonButtonActor(idx) { id ->
+            touchPreview.clear()
+            onCommonCommand(id)
+        }.also { commonGroup.addActor(it) }
     }
 
     // --- 2. Scrollable 2-column exclusive keys ---
@@ -149,11 +210,21 @@ internal class HudActionPanel(
                     return true
                 }
 
+                override fun touchDragged(event: InputEvent, x: Float, y: Float, pointer: Int) {
+                    if (pointer != 0 || !pressed) return
+                    val dx = event.stageX - pressStageX
+                    val dy = event.stageY - pressStageY
+                    if (dx * dx + dy * dy > 144f) {
+                        pressed = false
+                    }
+                }
+
                 override fun touchUp(event: InputEvent, x: Float, y: Float, pointer: Int, button: Int) {
                     if (pointer != 0 || button != pressButton) return
+                    val wasPressed = pressed
                     pressButton = -1
                     pressed = false
-                    if (event.isTouchFocusCancel) return
+                    if (!wasPressed || event.isTouchFocusCancel) return
                     val dx = event.stageX - pressStageX
                     val dy = event.stageY - pressStageY
                     if (dx * dx + dy * dy > 144f) return // scrolled past drag threshold
@@ -162,6 +233,19 @@ internal class HudActionPanel(
                     val cancel = button == Input.Buttons.RIGHT
                     if (cancel) {
                         if (model.cancelEnabled) panel.onExclusiveAction(model, true)
+                    } else if (panel.touchControls) {
+                        val outcome = panel.touchPreview.onActionTap(panel.activePrimaryUnitId, model)
+                        if (outcome == TouchActionTapOutcome.EXECUTE) {
+                            if (model.enabled) {
+                                panel.onExclusiveAction(model, false)
+                            } else {
+                                panel.triggerFlash(model.id)
+                                panel.onDisabledFlash(model)
+                            }
+                        } else {
+                            // First tap preview: keep card visible anchored to this key, do NOT execute yet
+                            panel.setHoveredKey(model.id, this@KeyActor)
+                        }
                     } else {
                         if (model.enabled) {
                             panel.onExclusiveAction(model, false)
@@ -214,6 +298,15 @@ internal class HudActionPanel(
                     return true
                 }
 
+                override fun touchDragged(event: InputEvent, x: Float, y: Float, pointer: Int) {
+                    if (pointer != 0 || !pressActive) return
+                    val dx = event.stageX - pressStageX
+                    val dy = event.stageY - pressStageY
+                    if (dx * dx + dy * dy > 144f) {
+                        pressActive = false
+                    }
+                }
+
                 override fun touchUp(event: InputEvent, x: Float, y: Float, pointer: Int, button: Int) {
                     if (pointer != 0 || !pressActive) return
                     pressActive = false
@@ -223,6 +316,7 @@ internal class HudActionPanel(
                     if (dx * dx + dy * dy > 144f) return
                     if (!panel.hitsInsideScroll(event.stageX, event.stageY)) return
                     if (x < 0f || y < 0f || x > width || y > height) return
+                    panel.touchPreview.clear()
                     panel.onSelectSlot(model.slotNumber)
                 }
 
@@ -300,22 +394,38 @@ internal class HudActionPanel(
             targetCard?.let { card ->
                 drawTargetModeCard(batch, white, card, parentAlpha)
             }
-            if (!touchControls && hoveredKeyId != null && scrollPane.isVisible) {
-                val keyId = hoveredKeyId!!
-                val slotNum = if (keyId.startsWith("select-slot:")) keyId.removePrefix("select-slot:").toIntOrNull() else null
-                val actor: Actor? = if (slotNum != null) slotActors[slotNum] else keyActors[keyId]
+            lastPopupRect = null
+            val activeTipKeyId = if (touchControls) touchPreview.previewActionId else hoveredKeyId
+            if (activeTipKeyId != null && scrollPane.isVisible) {
+                val slotNum = if (!touchControls && activeTipKeyId.startsWith("select-slot:")) {
+                    activeTipKeyId.removePrefix("select-slot:").toIntOrNull()
+                } else null
+                val actor: Actor? = if (slotNum != null) slotActors[slotNum] else keyActors[activeTipKeyId]
                 if (actor != null) {
                     val bottomPt = actor.localToStageCoordinates(Vector2(0f, 0f))
                     val topY = bottomPt.y + actor.height
                     val visibleInScroll = topY > scrollPane.y + 1f && bottomPt.y < scrollPane.y + scrollPane.height - 1f
                     if (visibleInScroll) {
                         hoveredKeyTopY = topY
-                        val tip = if (slotNum != null) {
+                        val rawTip = if (slotNum != null) {
                             snapshot.attachmentSlots.firstOrNull { it.slotNumber == slotNum }?.tooltip
                         } else {
-                            snapshot.exclusiveKeys.firstOrNull { it.id == keyId }?.tooltip
+                            snapshot.exclusiveKeys.firstOrNull { it.id == activeTipKeyId }?.tooltip
                         }
-                        if (tip != null) drawHoverTooltip(batch, white, tip, parentAlpha)
+                        if (rawTip != null) {
+                            val tipToDraw = if (touchControls) {
+                                val keyModel = snapshot.exclusiveKeys.firstOrNull { it.id == activeTipKeyId }
+                                val touchFoot = if (keyModel?.enabled == true) {
+                                    UiStrings.get("touchPreviewHint", activeLanguage)
+                                } else {
+                                    rawTip.footnote
+                                }
+                                rawTip.copy(footnote = touchFoot)
+                            } else {
+                                rawTip
+                            }
+                            lastPopupRect = drawHoverTooltip(batch, white, tipToDraw, parentAlpha)
+                        }
                     }
                 }
             }
@@ -352,6 +462,29 @@ internal class HudActionPanel(
         if (commonGroup.isVisible) commonGroup.toFront()
         if (scrollPane.isVisible) scrollPane.toFront()
         floatingOverlay.toFront()
+    }
+
+    /** Clears active touch action preview card (e.g. tap outside card, unit switch, menu/pause open). */
+    fun clearTouchPreview() {
+        touchPreview.clear()
+    }
+
+    /** True if a touch preview tooltip card is currently open. */
+    val hasTouchPreview: Boolean get() = touchControls && touchPreview.active
+
+    /** True if [stageX],[stageY] falls inside the floating touch preview card. */
+    fun isPointInTouchPreviewCard(stageX: Float, stageY: Float): Boolean =
+        touchControls && touchPreview.active && lastPopupRect?.contains(stageX, stageY) == true
+
+    /** True if [stageX],[stageY] hits any visible exclusive action key inside the scroll viewport. */
+    fun isPointOnExclusiveKey(stageX: Float, stageY: Float): Boolean {
+        if (!scrollPane.isVisible || !hitsInsideScroll(stageX, stageY)) return false
+        val pt = Vector2()
+        for (actor in keyActors.values) {
+            actor.stageToLocalCoordinates(pt.set(stageX, stageY))
+            if (pt.x in 0f..actor.width && pt.y in 0f..actor.height) return true
+        }
+        return false
     }
 
     fun containsPoint(x: Float, y: Float): Boolean {
@@ -391,7 +524,16 @@ internal class HudActionPanel(
         actionsMaxHeight: Float,
         actionSnapshot: HudActionListSnapshot?,
         targetModeCard: HudTargetModeCardModel?,
+        primaryUnitId: String? = null,
+        language: UiLanguage = UiStrings.currentLanguage,
     ) {
+        activePrimaryUnitId = primaryUnitId
+        activeLanguage = language
+        if (actionSnapshot == null || targetModeCard != null) {
+            touchPreview.clear()
+        } else {
+            touchPreview.reconcile(primaryUnitId, actionSnapshot.exclusiveKeys.map { it.id }.toSet())
+        }
         stageW = stageWidth.coerceAtLeast(1f)
         stageH = stageHeight.coerceAtLeast(1f)
         targetCard = targetModeCard
@@ -710,7 +852,8 @@ internal class HudActionPanel(
         }
 
         // Active mode or hover inner outline (Spec §7.3)
-        if (m.state == HudActionKeyState.ACTIVE_MODE) {
+        val isTouchPreviewed = touchControls && touchPreview.isPreviewing(activePrimaryUnitId, m.id)
+        if (m.state == HudActionKeyState.ACTIVE_MODE || isTouchPreviewed) {
             strokeRectInset(batch, white, x + 1f, y + 1f, w - 2f, h - 2f, 2f, UiTokens.RUST, alpha)
         } else if (m.state == HudActionKeyState.READY && actor.hovered) {
             strokeRectInset(batch, white, x + 1f, y + 1f, w - 2f, h - 2f, 2f, UiTokens.INK, alpha)
@@ -788,7 +931,7 @@ internal class HudActionPanel(
         batch.packedColor = orig
     }
 
-    private fun drawHoverTooltip(batch: Batch, white: TextureRegion, tip: HudActionTooltipModel, alpha: Float) {
+    private fun drawHoverTooltip(batch: Batch, white: TextureRegion, tip: HudActionTooltipModel, alpha: Float): Rectangle {
         val tipW = UiTokens.TOOLTIP_WIDTH
         val padH = 12f
         val padV = 10f
@@ -844,8 +987,12 @@ internal class HudActionPanel(
         // Footnote
         if (tip.footnote.isNotBlank()) {
             cy -= 4f
-            drawTextLeft(batch, smallFont(), ellipsize(smallFont(), tip.footnote, innerW), tipX + padH, cy, UiTokens.DIM, alpha)
+            val isTouchHint = touchControls && tip.footnote == UiStrings.get("touchPreviewHint", activeLanguage)
+            val footColor = if (isTouchHint) UiTokens.RUST else UiTokens.DIM
+            val footFont = if (isTouchHint) keyBoldFont() else smallFont()
+            drawTextLeft(batch, footFont, ellipsize(footFont, tip.footnote, innerW), tipX + padH, cy, footColor, alpha)
         }
+        return Rectangle(tipX, tipY, tipW, tipH)
     }
 
     private fun drawTargetModeCard(batch: Batch, white: TextureRegion, card: HudTargetModeCardModel, alpha: Float) {

@@ -1,5 +1,18 @@
 # Changelog
 
+## v0.5.58 (2026-11-22 06:05)
+
+### 新增
+
+- **PC/触控双端编组栏（`HudControlGroupBar`）**：按《局内 HUD 规格》第 10 节与维护者采纳的 `DEC-P011-001` 落地双端编组栏：PC 左下角仅显示非空编组（支持全部 `0–9` 编组并按 `1..9, 0` 排布跳过空号，44×40 格、大号组号 + 右上小号单位数），保留点击选组、700ms 连按居中镜头、`Ctrl+数字` 保存与 `Shift+数字` 并选；触控端位于半透明镜头摇杆右侧（`x=160`，50×50 格）固定显示前 3 格（空组虚线压暗，第 4 格起仅非空显示），上方常显实时阶段提示条（“按住保存编组”→“松手调用/存入”→“松手追加编组”→“松手替换整组”），按 `0.83s / 1.67s` 三段按住计时与底进度条执行短按调用/空组存入、追加并选（`SelectionState.appendGroup` / `SandboxSession.appendGroup`）与替换整组，并在增删槽位时复用 `GroupSlotActor` 保持长按焦点、在目标模式/菜单/暂停期间严格门控 `allowTouchHold()`。
+- **原版触控首点预览与次点执行交互（`TouchActionPreviewState`）**：按《局内 HUD 规格》第 9.3 节在 `HudActionPanel` 落地触控动作交互：普通生产/队列/即时动作键首点缓存 `(代表单位 ID, 动作 ID)`、以 `rust` 描边高亮并在侧栏左侧弹出带 `rust` 色“再次点击执行”脚注的说明卡而不执行；次点同一代表单位同一动作才执行入队；切换主选单位、动作消失、进入目标模式或点按卡外/非键空白自动清除预览，且点击预览卡内部直接消费事件防止穿透到战场；建造与选点类动作键（`isTargetAction == true`）首点直接进入目标模式并关闭预览；`KeyActor` 与 `SlotActor` 均补齐 12px 滚动拖拽防抖。
+- **触控镜头摇杆视觉对齐**：`BootstrapScreen.drawCameraJoystick` 对齐 Demo 半透明暗灰外环（`rail 0.45` + `line 0.90`）与半透明摇杆球样式并正确恢复 `GL_BLEND`。
+
+### 技术
+
+- **测试、开发支撑、实窗对照与双门禁复核**：为 `SandboxInput` 补齐 `keyDown/keyUp` 修饰键追踪与 `cancel()` 清理；为开发/测试专用的 `WindowsLaunchOptions` / `BackgroundClientInput` 增补 `--touch true`、多分辨率 `--background-size`（`960x640 / 1920x1080 / 2400x1080 / 2560x1080`）与 `ctrl`/`shift` 按键组合支持；新增 `UiHudGroupsAndTouchTest`（覆盖 10 组非空跳号、触控前 3 固定格、`0.83s / 1.67s` 全边界、真实 `SandboxInput` `Ctrl/Shift` 编组与 `cancel()` 清理、真实 `SandboxSession` 工厂首点预览不入队与次点入队及建造首点直进）及 `BackgroundLaunchTest` 启动项校验并通过全部回归；完成 PC 1920×1080 与触控 2400×1080（常态、首点预览、次点入队）实窗采集，Hydrogen 视觉并排审阅 0 必修 PASS，独立非作者 Neon 代码整审定向复核 0 必修 PASS。
+
+---
 ## v0.5.57 (2026-11-22 05:21)
 
 ### 新增

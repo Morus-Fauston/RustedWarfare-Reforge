@@ -18,6 +18,9 @@ data class WindowsLaunchOptions(
     val testScenarioSeed: Path? = null,
     val backgroundInput: Boolean = false,
     val backgroundCompact: Boolean = false,
+    val backgroundWidth: Int = 1920,
+    val backgroundHeight: Int = 1080,
+    val touchSimulation: Boolean = false,
     val development: Boolean = false,
     val diagnostics: Boolean = false,
     val skirmishMap: Path? = null,
@@ -33,7 +36,7 @@ data class WindowsLaunchOptions(
                 "Duplicate visual asset option"
             }
             val options = pairs.associate { (key, value) ->
-                require(key in setOf("--mode", "--inputs", "--map", "--development", "--evidence", "--background-input", "--background-size") + visualKeys) { "Unknown option: $key" }
+                require(key in setOf("--mode", "--inputs", "--map", "--development", "--evidence", "--background-input", "--background-size", "--touch") + visualKeys) { "Unknown option: $key" }
                 key to value
             }
             val mode = options["--mode"] ?: "sandbox"
@@ -51,9 +54,21 @@ data class WindowsLaunchOptions(
                 require(mode == "sandbox" && "--evidence" in options) { "Background input requires sandbox evidence" }
                 true
             } ?: false
-            val backgroundCompact = options["--background-size"]?.let { value ->
-                require(backgroundInput && value == "960x640" && pairs.count { it[0] == "--background-size" } == 1) {
-                    "Expected one --background-size 960x640 option with background input"
+            val (backgroundCompact, bgWidth, bgHeight) = options["--background-size"]?.let { value ->
+                require(backgroundInput && pairs.count { it[0] == "--background-size" } == 1) {
+                    "Expected one --background-size option with background input"
+                }
+                when (value) {
+                    "960x640" -> Triple(true, 960, 640)
+                    "1920x1080" -> Triple(false, 1920, 1080)
+                    "2400x1080" -> Triple(false, 2400, 1080)
+                    "2560x1080" -> Triple(false, 2560, 1080)
+                    else -> throw IllegalArgumentException("Unsupported --background-size: $value")
+                }
+            } ?: Triple(false, 1920, 1080)
+            val touchSimulation = options["--touch"]?.let { value ->
+                require(development && value == "true" && pairs.count { it[0] == "--touch" } == 1) {
+                    "Expected one --touch true option in development mode"
                 }
                 true
             } ?: false
@@ -87,7 +102,7 @@ data class WindowsLaunchOptions(
                     else -> "RustedWarfare-Reforge"
                 }, visualSource, originalAssets,
                 if (development && explicitInputs == null && skirmishMap == null) seed else null, backgroundInput, backgroundCompact,
-                development, development || "--evidence" in options, skirmishMap)
+                bgWidth, bgHeight, touchSimulation, development, development || "--evidence" in options, skirmishMap)
         }
     }
 }
