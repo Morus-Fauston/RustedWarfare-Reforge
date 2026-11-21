@@ -91,6 +91,7 @@ internal object UnitMovementOrchestrator {
         val normalCompleted: Boolean,
         val abortedForContinuation: Boolean = false,
         val avoidanceApplied: Boolean = false,
+        val airSeparationVel: LocomotionModule.Vec2? = null,
     )
 
     private data class HeadingResolution(
@@ -122,7 +123,15 @@ internal object UnitMovementOrchestrator {
     ) {
         if (!BuildingWork.isReady(unit)) return
         val movement = UnitLocomotion.movement(unit)
-        if (gateMovementLockOrWait(host, unit, movement, delta, executionStep, step, passageWaiting, departureWaiting)) {
+        val narrowMouthStagingAim = if (host.trafficSeparationEnabled && passageWaiting &&
+            unit.passageEntry?.commandId == unit.originMoveId &&
+            unit.passageEntry?.entered == false &&
+            unit.moveTarget != null &&
+            movement.type != MovementType.AIR && movement.type != MovementType.NONE
+        ) {
+            LocomotionModule.computeNarrowMouthStagingAim(host, unit, host.planningTerrainFor(unit, map))
+        } else null
+        if (gateMovementLockOrWait(host, unit, movement, delta, executionStep, step, passageWaiting && narrowMouthStagingAim == null, departureWaiting)) {
             return
         }
 
@@ -139,7 +148,7 @@ internal object UnitMovementOrchestrator {
         val correctionBefore = unit.terrainCorrectionTime
 
         val steering = computeSteeringAndArrival(
-            host, unit, map, movement, maximumSpeed, air, sliding, delta, executionStep, step,
+            host, unit, map, movement, maximumSpeed, air, sliding, delta, executionStep, step, narrowMouthStagingAim,
         )
         if (steering.abortedForContinuation) return
 
@@ -214,7 +223,7 @@ internal object UnitMovementOrchestrator {
             unit.speed = 0.0
             unit.angularVelocity = 0.0
             unit.flightVelocity = Position(0.0, 0.0)
-            unit.nav = unit.nav.copy(stalledRouteTicks = 0L, nearTargetTime = 0.0)
+            unit.nav = unit.nav.copy(stalledRouteTicks = 0L, nearTargetTime = 0.0, localMotion = null, localProgressTime = 0.0)
             unit.movementState = MovementState.MOVING
             return true
         }
@@ -233,6 +242,7 @@ internal object UnitMovementOrchestrator {
         delta: Double,
         executionStep: Long,
         step: CandidateStep,
+        narrowMouthStagingAim: Position?,
     ): SteeringIntent {
         val contract = host.movementContract
         val policies = host.policies
@@ -372,8 +382,10 @@ internal object UnitMovementOrchestrator {
                 unit.nearTargetTime > 240.0 -> 16.0
                 else -> 7.0
             }
+            val airRallyCaptured = air && host.trafficSeparationEnabled && taskKind == UnitTaskKind.MOVE &&
+                unit.birthRemaining == 0f && LocomotionModule.isAirRallyRingArrived(host, unit, target)
             val captured = (unit.landingMember == null || unit.landingMember?.claimed != null) &&
-                policies.capture.inside(commandDistanceSquared, completionRadius)
+                (policies.capture.inside(commandDistanceSquared, completionRadius) || airRallyCaptured)
             val clearsSlots = captured && host.groupStopClearsSlots(unit)
             val capturedGroupPose = unit.groupMoveReservation != null && clearsSlots
             if (!approachingBuilding && (!unit.routeTranslationClipped || capturedGroupPose) &&
@@ -407,6 +419,71 @@ internal object UnitMovementOrchestrator {
             }
         }
 
+        var airSepVec: LocomotionModule.Vec2? = null
+        if (narrowMouthStagingAim != null && target != null) {
+            unit.requestMovement(host.logicalRouteTarget(unit, target))
+            unit.nav = unit.nav.copy(stalledRouteTicks = 0L, nearTargetTime = 0.0, localMotion = null, localProgressTime = 0.0)
+            val terrainForStage = host.planningTerrainFor(unit, map)
+            val stageDist = sqrt(policies.coordinates.distanceSquared(unit.position, narrowMouthStagingAim))
+            val stageSpeedCap = minOf(maximumSpeed * 0.72, stageDist / maxOf(delta, 1.0))
+            val stageSolve = LocomotionModule.solveGroundLocomotion(
+                host = host,
+                unit = unit,
+                terrain = terrainForStage,
+                movement = movement,
+                desiredTarget = narrowMouthStagingAim,
+                baseSpeedTarget = stageSpeedCap,
+                maximumSpeed = maximumSpeed,
+                finalPoint = true,
+                delta = delta,
+                coordinates = policies.coordinates,
+            )
+            val effectiveAim = if (stageSolve.applied) {
+                avoidanceApplied = true
+                unit.nav = unit.nav.copy(lastAvoidHeadingDeg = stageSolve.nextAvoidHeadingDeg)
+                val probe = policies.coordinates.displacement(stageSolve.targetHeadingDeg, maxOf(24.0, stageDist))
+                Position(unit.position.x + probe.x, unit.position.y + probe.y)
+            } else narrowMouthStagingAim
+            val diff = BodyMotion.turnOrdinary(
+                unit, effectiveAim, delta, policies.steering, policies.coordinates, allowReverse = false, alignHeading = false,
+            )
+            val desiredHeading = policies.coordinates.desired(unit.position, effectiveAim)
+            val postErr = abs(policies.coordinates.difference(desiredHeading, unit.heading))
+            val cosT = when {
+                postErr <= 15.0 -> 1.0
+                postErr >= 95.0 -> 0.0
+                else -> maxOf(0.0, kotlin.math.cos(Math.toRadians((postErr - 15.0) * (90.0 / 80.0))))
+            }
+            val rawSpd = if (stageSolve.applied) minOf(stageSpeedCap, stageSolve.solvedVelocity.length()) else stageSpeedCap
+            speedTarget = rawSpd * cosT
+            requestedFraction = if (maximumSpeed > 1e-7) speedTarget / maximumSpeed else 0.0
+            aimForSample = effectiveAim
+            finalForSample = false
+            differenceForSample = diff
+            return SteeringIntent(
+                target = target,
+                speedTarget = speedTarget,
+                requestedFraction = requestedFraction,
+                maneuverLeg = null,
+                aimForSample = aimForSample,
+                finalForSample = finalForSample,
+                differenceForSample = differenceForSample,
+                normalCompleted = normalCompleted,
+                avoidanceApplied = avoidanceApplied,
+            )
+        }
+
+        if (air && host.trafficSeparationEnabled && !approachingLoad) {
+            airSepVec = LocomotionModule.solveAirSoftSeparation(
+                host = host,
+                unit = unit,
+                movement = movement,
+                desiredTarget = target,
+                maximumSpeed = maximumSpeed,
+                delta = delta,
+            )
+        }
+
         if (target != null && air) {
             unit.requestMovement(host.logicalRouteTarget(unit, target))
             val d2 = policies.coordinates.distanceSquared(unit.position, target)
@@ -425,6 +502,23 @@ internal object UnitMovementOrchestrator {
             aimForSample = target
             finalForSample = true
             differenceForSample = difference
+            if (airSepVec != null && !ordinaryBody && sliding) {
+                val baseDir = policies.coordinates.displacement(policies.coordinates.desired(unit.position, target), abs(speedTarget))
+                val blendX = baseDir.x + airSepVec.x * 0.55
+                val blendY = baseDir.y + airSepVec.y * 0.55
+                val blendMag = hypot(blendX, blendY)
+                if (blendMag > 1e-5) {
+                    val capped = minOf(maximumSpeed, blendMag)
+                    aimForSample = Position(unit.position.x + blendX / blendMag * maxOf(32.0, sqrt(d2)), unit.position.y + blendY / blendMag * maxOf(32.0, sqrt(d2)))
+                    speedTarget = capped
+                    requestedFraction = if (maximumSpeed > 1e-7) capped / maximumSpeed else 0.0
+                    avoidanceApplied = true
+                }
+            }
+        } else if (target == null && air && airSepVec != null && unit.birthRemaining == 0f) {
+            // Idle airborne flock soft separation: drift cleanly via airSeparationVel in Phase 4
+            // while FlightMotion decelerates residual flightVelocity toward zero (prevents inertia oscillation).
+            avoidanceApplied = true
         }
 
         if (target != null && followsManeuver && unit.pathPoints.isNotEmpty()) {
@@ -531,7 +625,9 @@ internal object UnitMovementOrchestrator {
                 host.recordRouteContinuation(routeSamples, executionStep, unit, continuation, 0.0, RouteContinuationStage.HANDED_OFF)
             }
             val plannedAim = local?.aim ?: target
-            val steeringTarget = if (host.trafficSeparationEnabled) TrafficSeparation.mouthAim(unit, plannedAim) else plannedAim
+            val steeringTarget = if (host.trafficSeparationEnabled) {
+                LocomotionModule.alignNarrowMouthReentryAim(unit, TrafficSeparation.mouthAim(unit, plannedAim))
+            } else plannedAim
             val finalPoint = temporaryBirth || (unit.pathPoints.size == 1 && checkNotNull(local).isLast)
             val d2 = policies.coordinates.distanceSquared(unit.position, steeringTarget)
             val preciseSlide = sliding && finalPoint && unit.nearestMoveTarget != null && steeringTarget == target
@@ -557,9 +653,9 @@ internal object UnitMovementOrchestrator {
             val terrainForAvoid = host.planningTerrainFor(unit, map)
             val directWaypointClear = PlanningSegmentClearance.allows(terrainForAvoid, Transport.queryPosition(unit, map), routeWaypoint, host.routeRadius(unit))
             val baseAvoidTarget = if (directWaypointClear) routeWaypoint else steeringTarget
-            val avoidanceTarget = if (host.trafficSeparationEnabled) TrafficSeparation.mouthAim(unit, baseAvoidTarget) else baseAvoidTarget
-            // Compute pure distance-based speed ceiling (heading diff = 0.0) so LocomotionModule preserves
-            // final-approach braking and anchor-closing deceleration while applying its own cosine turn throttle.
+            val avoidanceTarget = if (host.trafficSeparationEnabled) {
+                LocomotionModule.alignNarrowMouthReentryAim(unit, TrafficSeparation.mouthAim(unit, baseAvoidTarget))
+            } else baseAvoidTarget
             // Compute pure distance-based speed ceiling (heading diff = 0.0).
             // Only apply final-stop braking when genuinely approaching a final stop (finalPoint without
             // an unclaimed shared-landing group click) or a prepared hull closing anchor; intermediate
@@ -694,6 +790,7 @@ internal object UnitMovementOrchestrator {
             differenceForSample = differenceForSample,
             normalCompleted = normalCompleted,
             avoidanceApplied = avoidanceApplied,
+            airSeparationVel = airSepVec,
         )
     }
 
@@ -834,14 +931,30 @@ internal object UnitMovementOrchestrator {
             } ?: Position(0.0, 0.0)
             unit.flightVelocity = FlightMotion.velocity(movement, unit.flightVelocity, desiredVelocity, requestedFraction, delta, maximumSpeed)
             unit.speed = hypot(unit.flightVelocity.x, unit.flightVelocity.y)
-            Position(unit.flightVelocity.x * delta, unit.flightVelocity.y * delta)
+            // Apply lightweight Boids soft-separation drift directly to airborne displacement (like non-sliding
+            // aircraft) so low-acceleration helicopters (moveAccelerationSpeed=0.03) still spread apart smoothly
+            // at shared rally points without overshooting or piling into overlapping clusters.
+            val airSep = if (air) steering.airSeparationVel else null
+            if (airSep != null) {
+                val sepGain = if (steering.target == null) 0.75 else 0.55
+                Position(
+                    unit.flightVelocity.x * delta + airSep.x * delta * sepGain,
+                    unit.flightVelocity.y * delta + airSep.y * delta * sepGain,
+                )
+            } else {
+                Position(unit.flightVelocity.x * delta, unit.flightVelocity.y * delta)
+            }
         } else {
             val rate = if (unit.speed < speedTarget) movement.moveAccelerationSpeed else movement.moveDecelerationSpeed
             unit.speed = host.approachSpeed(unit.speed, speedTarget, rate * maximumSpeed * delta)
-            if (unit.definition.attackMovement == AttackMovementProfile.BOMBER) {
+            val baseDisp = if (unit.definition.attackMovement == AttackMovementProfile.BOMBER) {
                 unit.flightVelocity = policies.coordinates.displacement(unit.heading, unit.speed)
                 Position(unit.flightVelocity.x * delta, unit.flightVelocity.y * delta)
             } else policies.coordinates.displacement(unit.heading, unit.speed * delta)
+            val airSep = if (air) steering.airSeparationVel else null
+            if (airSep != null && !sliding) {
+                Position(baseDisp.x + airSep.x * delta * 0.65, baseDisp.y + airSep.y * delta * 0.65)
+            } else baseDisp
         }
 
         val finishNearestWaterLeg = maneuverLeg != null && finalForSample && movement.type == MovementType.WATER &&
@@ -898,7 +1011,13 @@ internal object UnitMovementOrchestrator {
         val terrainResolved = when {
             rectangle != null -> rectangle.resolve(checkNotNull(translationTerrain), unit.position, candidate)
             circle != null -> circle.resolve(checkNotNull(translationTerrain), unit.position, candidate)
-            air -> candidate
+            air -> if (steering.airSeparationVel != null) {
+                val br = Transport.boundaryRadius(unit)
+                Position(
+                    candidate.x.coerceIn(br, map.widthTiles.toDouble() * map.tileWidth - br),
+                    candidate.y.coerceIn(br, map.heightTiles.toDouble() * map.tileHeight - br),
+                )
+            } else candidate
             unit.birthRemaining > 0f -> TerrainMotion.resolve(map, unit.position, candidate, movementType = movement.type)
             else -> TerrainMotion.resolve(
                 host.buildingTerrain?.collisionMap ?: map, unit.position, candidate,

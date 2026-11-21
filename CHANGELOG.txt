@@ -1,3 +1,9 @@
+v0.5.53 (2026-11-22 06:12)
+  架构改进: 扩展 LocomotionModule 分级互让权重（结合质量/面积/敏捷度映射 [0.10, 0.90]）、站定开火与已离口静候 0 责任、宽路 0 停顿斜向超车与远程射程弧自然展开（攻击目标严格迷雾可见性校验、显式 32-bit FNV-1a 确定性并列打破）；新增单行窄口门外侧方让空与重入中心对齐接入 UnitMovementOrchestrator；新增独立 AIR 层轻量二维 Boids 软分离与环落位（按真实定义半径分离、边界钳位、起降与轰炸机豁免）
+  技术: 新增 MixedOvertakeAndAirSeparationTest 5 项单测及 3 个混编/窄桥/空军诊断场景，55 项专项单测与公开短场景批跑（6 套）全通过；6 套 2 秒停滞标红拼图（rocks-small-100 100/100、opposed-open-25v25 50/50、opposed-corridor-8v8 16/16、mixed-overtake-wide 11/11、narrow-bridge-yield 2/2、air-flock-rally 16/16 零红标零重叠）经 Hydrogen 目视复核 APPROVE，Carbon 非作者审阅与定向复核 APPROVE（0 必修）
+
+====
+
 v0.5.52 (2026-11-22 03:27)
   架构改进: 新增二维局部速度避让深模块 LocomotionModule，在步初冻结空间索引与严格迷雾隔离下实现无量纲自适应二维 Boids 软分离（真单行窄道与地图边界净宽衰减）、靠右微偏置 2D ORCA 半平面线性规划、硬保静态墙体的 3D LP 最小侵入退化（含切线平局正向投影）及短窗可达转向扇区/滞回/余弦节流；不可变 UnitNavigationState 增加 lastAvoidHeadingDeg 随候选步回滚，接入 UnitMovementOrchestrator 并跳过旧一维 separationCaps
   技术: 新增 LocomotionModuleTest 10 项单测，536 项核心回归与公开短场景批跑（6 套）全通过；三套 2 秒停滞标红拼图（rocks-small-100 100/100、opposed-open-25v25 50/50、opposed-corridor-8v8 16/16）经 Hydrogen 目视复核 APPROVE，非作者代码整审与定向复核 APPROVE（0 必修）

@@ -1,5 +1,18 @@
 # Changelog
 
+## v0.5.53 (2026-11-22 06:12)
+
+### 架构改进
+
+- **混编分级互让权重与宽路 0 停顿实时超车**：扩展 `LocomotionModule` 分级互惠避让权重（结合质量、面积与敏捷度映射至 `[0.10, 0.90]`，灵活小车承担 `0.75–0.90` 侧让责任，重型慢车保持平顺航线且无通用碾压致死）；站定开火单位及已腾空通道出口阻塞带的门外静候车避让责任为 `0`；宽走廊与开阔地同向追赶慢车或锚定车时结合授权地形净空探针施加斜向变道偏置，经 2D ORCA 实时 0 停顿超车，对向靠右分流激活时自动抑制左超防逆行，并收束窄门同组同速误触发；远程追击单位在接近射程外缘受静止友军阻挡时沿射程弧自然扇形展开（攻击目标严格经迷雾可见性过滤）。
+- **单行窄口门外侧方让空与重入对齐**：新增 `computeNarrowMouthStagingAim` 与 `alignNarrowMouthReentryAim` 并接入 `UnitMovementOrchestrator`；未获 `PassageAdmission` 准入且阻塞出口的自由圆形单位自动在门外搜索经授权地形与双向段净空校验的侧方待命点（豁免矩形船体、机动路径、慢转水船及跨地形共享门），获准入后先对准门外中心锚点再切入窄道，避免切角撞墙或堵死出口车流。
+- **独立 `AIR` 层高空机群轻量二维 Boids 软分离**：新增 `solveAirSoftSeparation` 与 `isAirRallyRingArrived`，严格查询步初冻结 `SpatialLayer.AIR` 同阵营高空巡航友机，按 `max(definition.radius, movementCollision.boundingRadius)` 保持清晰可视间距并豁免未移动静态空军、起降中低空机与轰炸机进近；采用显式 32-bit FNV-1a（基于 `updateKey`）跨端确定性黄金角打破同像素重合，在 Phase 4 叠加轻量分离位移并钳位在地图边界内，使 16 架直升机同点集结自然散开且无 2 秒停滞。
+
+### 技术
+
+- **验证与审查**：新增 `MixedOvertakeAndAirSeparationTest` 5 项单测及 `DiagnosticBaselineCaptureMain` 3 个混编/窄桥/空军诊断场景；55 项专项单测（含 `NarrowPassageTest`、`LocomotionModuleTest`、`UnitContactTest`、`HeavyMech*`、`AirMovementTest`、`HelicopterCombatTest`）与公开短场景批跑（6 套）全通过；6 套 2 秒停滞标红拼图（`rocks-small-100` 100/100、`opposed-open-25v25` 50/50 零红标、`opposed-corridor-8v8` 16/16 零红标、`mixed-overtake-wide` 11/11 零红标、`narrow-bridge-yield` 2/2 零硬接触、`air-flock-rally` 16/16 零红标零重叠）经 Hydrogen 独立目视复核 `APPROVE`（0 必修）；经全新上下文 Carbon 非作者审阅并修复 2 项问题（显式 FNV-1a 跨端确定性哈希与门外静候阻塞带边界）后定向复核 `APPROVE`（0 必修）。
+
+---
 ## v0.5.52 (2026-11-22 03:27)
 
 ### 架构改进
