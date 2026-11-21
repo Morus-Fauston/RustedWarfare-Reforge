@@ -44,6 +44,11 @@ data class HudCargoSection(
     val capacity: Int,
 )
 
+data class HudStockpileSection(
+    val current: Int,
+    val capacity: Int,
+)
+
 data class HudQueueSlot(
     val typeId: String?,
     val progress: Float?,
@@ -74,6 +79,7 @@ data class HudSnapshot(
     val typeChips: HudTypeChipsSection? = null,
     val selectionCard: HudSelectionCardModel?,
     val cargoSection: HudCargoSection? = null,
+    val stockpileSection: HudStockpileSection? = null,
     val queueSection: HudQueueSection?,
     val showActionsSection: Boolean,
     val menuOpen: Boolean,
@@ -159,11 +165,7 @@ object HudSidebarProjection {
             subtitle = "▲ ${UiStrings.get("charging", language)}"
             subWarn = true
         } else {
-            val stateLabel = when {
-                primary.submarine != null -> UiStrings.get(if (primary.submarine!!.underwater) "submerged" else "surfaced", language)
-                primary.amphibiousJet != null -> UiStrings.get(if (primary.amphibiousJet!!.underwater) "submerged" else "flying", language)
-                else -> null
-            }
+            val stateLabel = resolveUnitStateSubtitle(primary, session, language)
             if (stateLabel != null) {
                 subtitle = stateLabel
             } else {
@@ -187,7 +189,7 @@ object HudSidebarProjection {
                     style = HudStatStyle.NORMAL,
                 ))
             }
-            if (primary.constructionProgress < 0.999f) {
+            if (primary.constructionProgress < 1f) {
                 val pct = (primary.constructionProgress * 100f).roundToInt().coerceIn(0, 100)
                 add(HudStatBar(
                     labelKey = "build",
@@ -245,9 +247,15 @@ object HudSidebarProjection {
         )
 
         val cargoSection = if (isOwn) buildCargoSection(primary) { typeId -> session.unitTitle(typeId) } else null
-        val queueSection = if (isOwn) buildQueueSection(menu, primary, obs.units) else null
+        val stockpileSection = if (isOwn && primary.constructionProgress >= 1f) {
+            buildStockpileSection(primary, session)
+        } else null
+        val queueSection = if (isOwn && primary.constructionProgress >= 1f) {
+            buildQueueSection(menu, primary, obs.units)
+        } else null
         val hasActions = isOwn && (
             session.canPatrol ||
+                session.canCancelConstruction() ||
                 primary.attachmentOverview != null ||
                 menu.battleActions().isNotEmpty() ||
                 menu.production.isNotEmpty() ||
@@ -266,6 +274,7 @@ object HudSidebarProjection {
             typeChips = typeChips,
             selectionCard = card,
             cargoSection = cargoSection,
+            stockpileSection = stockpileSection,
             queueSection = queueSection,
             showActionsSection = hasActions,
             menuOpen = menuOpen,
@@ -281,6 +290,45 @@ object HudSidebarProjection {
      * - Max 6 type chips; excess types summarized in [HudTypeChipsSection.overflowCount] (+k)
      * - Primary unit's type is guaranteed to be included and highlighted
      */
+    internal fun resolveUnitStateSubtitle(
+        primary: UnitObservation,
+        session: SandboxSession,
+        language: UiLanguage,
+    ): String? {
+        primary.submarine?.let { sub ->
+            return UiStrings.get(if (sub.underwater) "submerged" else "surfaced", language)
+        }
+        primary.amphibiousJet?.let { jet ->
+            return UiStrings.get(if (jet.underwater) "submerged" else "flying", language)
+        }
+        session.bunkerDeployedState(primary.typeId)?.let { deployed ->
+            return UiStrings.get(if (deployed) "deployed" else "undeployed", language)
+        }
+        session.nautilusSurfaceState(primary.typeId)?.let { onSurface ->
+            return UiStrings.get(if (onSurface) "surfaced" else "submerged", language)
+        }
+        if (session.isAfterburnBoosted(primary.typeId)) {
+            return UiStrings.get("afterburning", language)
+        }
+        primary.unitActions?.interceptorOnline?.let { online ->
+            return UiStrings.get(if (online) "enabled" else "disabled", language)
+        }
+        return null
+    }
+
+    internal fun buildStockpileSection(
+        primary: UnitObservation,
+        session: SandboxSession,
+    ): HudStockpileSection? {
+        val current = primary.unitActions?.stockpile ?: return null
+        val selectedSlotId = primary.attachmentOverview?.selectedSlot?.let { num ->
+            primary.attachmentOverview?.slots?.firstOrNull { it.number == num }?.typeId
+        }
+        val cap = session.stockpileCapacity(selectedSlotId ?: primary.typeId) ?: return null
+        if (cap <= 0) return null
+        return HudStockpileSection(current = current.coerceIn(0, cap), capacity = cap)
+    }
+
     internal fun buildTypeChips(
         selectedUnits: List<UnitObservation>,
         primaryTypeId: String,
@@ -365,10 +413,9 @@ object HudSidebarProjection {
         val uq = menu.upgradeQueue
         if (uq != null && uq.items.isNotEmpty()) {
             val activeProgress = uq.items.first().progress.coerceIn(0f, 1f)
-            val slots = buildSlots(
-                items = uq.items.map { it.targetTypeId },
-                activeProgress = activeProgress,
-            )
+            val slots = uq.items.take(MAX_QUEUE_SLOTS).mapIndexed { idx, item ->
+                HudQueueSlot(typeId = item.targetTypeId, progress = if (idx == 0) activeProgress else null)
+            }
             return HudQueueSection(
                 labelKey = "upgradeQ",
                 slots = slots,

@@ -6,6 +6,7 @@ import com.rustedwarfare.reforge.core.content.MovementType
 import com.rustedwarfare.reforge.core.content.foundationMovementType
 import com.rustedwarfare.reforge.core.content.GroundRules
 import com.rustedwarfare.reforge.core.content.SingleSelectionButton
+import com.rustedwarfare.reforge.core.content.siteConstruction
 import java.util.UUID
 import java.nio.file.Path
 
@@ -453,6 +454,87 @@ class SandboxSession(scenario: Scenario, private val evidence: ClientEvidence = 
         apply(CancelUpgradeAction("click-${++actionNumber}", "p1", checkNotNull(selectedId), it.actionKey, context.world))
     }
 
+    /** True if the current primary unit is an own under-construction building that can cancel construction. */
+    fun canCancelConstruction(): Boolean {
+        if (!isOpen) return false
+        val primary = observation.units.firstOrNull { it.unitId == selectedId } ?: return false
+        return controllable(primary) && primary.constructionProgress < 1f &&
+            scenario.unitDefinitions[primary.typeId]?.building != null
+    }
+
+    /** Cancels construction of the currently selected own under-construction building, refunding its construction price. */
+    fun cancelConstruction(): ActionResult? {
+        if (!canCancelConstruction()) return null
+        val unitId = checkNotNull(selectedId)
+        val result = apply(CancelConstructionAction("click-${++actionNumber}", "p1", unitId, context.world))
+
+        return result
+    }
+
+    /** Returns the stockpile capacity for a unit if it produces/stores ordnance, or null if not a stockpile unit. */
+    fun stockpileCapacity(typeId: String): Int? {
+        val def = scenario.unitDefinitions[typeId] ?: return null
+        def.nuclearSilo?.kind?.let { kind ->
+            return when (kind) {
+                com.rustedwarfare.reforge.core.content.NuclearSiloKind.LAUNCHER -> 4
+                com.rustedwarfare.reforge.core.content.NuclearSiloKind.INTERCEPTOR -> 12
+            }
+        }
+        def.customActions?.actions?.firstOrNull { it.ammoProduction != null }?.ammoProduction?.let {
+            return it.queueLimit
+        }
+        if (def.attachmentModule?.interception != null) {
+            return 12 // ModularSpiderUtilityForms.ANTI_NUKE_AMMO_LIMIT
+        }
+        return null
+    }
+
+    /** Returns the site construction price for a unit type if known, used for cancel-construction refund tooltips. */
+    fun siteConstructionPrice(typeId: String): Long? {
+        val def = scenario.unitDefinitions[typeId] ?: return null
+        return def.siteConstruction?.price
+            ?: def.construction?.price
+            ?: def.build?.price
+            ?: scenario.maintenanceContract?.basePrices?.get(typeId)
+    }
+
+    /** Returns true if the unit definition is an afterburn boosted form. */
+    fun isAfterburnBoosted(typeId: String): Boolean =
+        scenario.unitDefinitions[typeId]?.afterburn?.boostedForm == typeId
+
+    /** Returns true if the unit definition has a bunker deploy/undeploy pair (deployed or mobile). */
+    fun bunkerDeployedState(typeId: String): Boolean? {
+        val actions = scenario.unitDefinitions[typeId]?.customActions?.actions ?: return null
+        if (actions.any { it.name == "undeploy" && it.visible }) return true
+        if (actions.any { it.name == "deploy" && it.visible }) return false
+        return null
+    }
+
+    /** Returns true if the unit definition is a custom nautilus surface/submerged unit. */
+    fun nautilusSurfaceState(typeId: String): Boolean? {
+        val actions = scenario.unitDefinitions[typeId]?.customActions?.actions ?: return null
+        if (typeId.startsWith("nautilusSubmarine")) {
+            if (actions.any { it.name == "dive" && it.visible }) return true
+            if (actions.any { it.name == "surface" && it.visible }) return false
+        }
+        return null
+    }
+
+    /** Returns true if the unit definition is a building. */
+    fun isBuilding(typeId: String): Boolean = scenario.unitDefinitions[typeId]?.building != null
+
+    /** True if any currently selected own unit can perform reclaim maintenance. */
+    fun hasMaintainerInSelection(): Boolean = hasSelectedMaintainer()
+
+    /** Returns the active nuclear launcher member for the current selection (matches ActionPresentation & unitAction). */
+    fun selectedNuclearLauncher(): UnitObservation? =
+        if (selectedIds.size > 1) nuclearLaunchMember(observation, selectedIds)
+        else observation.units.firstOrNull { it.unitId == selectedId }
+
+    /** Returns true if the unit has an energy profile or point defense that can enter recharge lock. */
+    fun isEnergyLocked(unit: UnitObservation): Boolean =
+        unit.energy?.recharging == true || unit.pointDefense?.exhausted == true
+
     fun move(position: Position): ActionResult? {
         val selection = selectedIds
         val group = if (selection.size > 1) context.requestGroupMove("p1", selection, position) else null
@@ -841,7 +923,9 @@ class SandboxSession(scenario: Scenario, private val evidence: ClientEvidence = 
         val previous = selectedIds
         selection.reconcile(observation.units.filter { it.alive }.map { it.unitId }.toSet(),
             observation.units.filter { !it.alive }.map { it.unitId }.toSet() +
-                observation.events.filter { it.kind == "building-reclaimed" }.mapNotNull { it.unitId })
+                observation.events.filter {
+                    it.kind == "building-reclaimed" || it.kind == "construction-cancelled"
+                }.mapNotNull { it.unitId })
         if (previous.isNotEmpty() && selectedIds.isEmpty()) {
             feedback = "No selection"
         }

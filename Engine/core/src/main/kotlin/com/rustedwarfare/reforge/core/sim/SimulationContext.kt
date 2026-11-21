@@ -1557,6 +1557,28 @@ class SimulationContext internal constructor(private val policies: ExperimentalP
                 buildingWork.request(action, unit, currentScenario)?.let { return reject(action, it.code, it.message) }
                 ActionResult.Accepted(action.actionId)
             }
+            is CancelConstructionAction -> {
+                if (unit.definition.building == null)
+                    return reject(action, "cannot-cancel-construction", "Unit is not a building")
+                if (BuildingWork.isReady(unit))
+                    return reject(action, "construction-already-complete", "Completed buildings cannot cancel construction")
+                val change = buildingWork.cancelSite(unit, units, currentScenario, productionLedger, ordinaryUpgrades)
+                    ?: return reject(action, "cannot-cancel-construction", "Building construction cannot be cancelled")
+                productionLedger = change.ledger
+                ordinaryUpgrades = change.upgrades
+                val cargoIds = unit.transportState?.passengerIds
+                Transport.onRemoved(unit, units, currentScenario.map)
+                spatialIndex.remove(unit.unitId)
+                if (cargoIds != null) {
+                    for (cid in cargoIds) units[cid]?.let(spatialIndex::relocate)
+                }
+                missileTargets = missileTargets?.remove(unit.unitId)
+                prepareBuildings(automaticVisionSnapshots)?.let(::commitBuildings)
+                    ?: buildingTerrain?.let { existing ->
+                        buildingTerrain = BuildingTerrain.fromLive(currentScenario.map, units.values, existing)
+                    }
+                ActionResult.Accepted(action.actionId, change.events)
+            }
             is PatrolAction -> {
                 if (!action.target.x.isFinite() || !action.target.y.isFinite())
                     return reject(action, "invalid-target", "Target coordinates must be finite")
@@ -1903,6 +1925,10 @@ class SimulationContext internal constructor(private val policies: ExperimentalP
     private fun sandboxRefunds(player: String): Sequence<Long> = sequence {
         for (unit in units.values) {
             if (!unit.alive || unit.ownerPlayerId != player) continue
+            scenario?.let { input ->
+                val siteRefund = buildingWork.siteCancellationRefund(unit, input)
+                if (siteRefund > 0L) yield(siteRefund)
+            }
             ordinaryUpgrades?.pendingRefunds(unit.unitId)?.let { yieldAll(it) }
             for (item in unit.customActionState.queue) yield(item.cost)
             for (item in unit.ordnance.queue) yield(item.action.cost)

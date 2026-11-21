@@ -1,5 +1,18 @@
 # Changelog
 
+## v0.5.57 (2026-11-22 05:21)
+
+### 新增
+
+- **在建建筑自取消施工闭环（极窄授权核心接缝）**：在 `Commands.kt`、`BuildingWork.kt` 与 `SimulationContext.kt` 新增 `CancelConstructionAction` 与 `BuildingWork.cancelSite`（先算后改并捕获整数余额溢出、纳入 `sandboxRefunds` 退款预留、释放对应工人施工任务、发出 `construction-cancelled` 事件清理 `SelectionState` 编组并即时刷新 `buildingKnowledge`）；选中未建成己方建筑时，选中卡展示 rust 色 `施工` 进度条，动作区在建成前隐藏生产/升级键并仅显示 `取消施工`（`cancel-construction`）与 `回收`（`choose-reclaim`，仅当选中含可用工人时启用，否则明确禁用标 `需选工人`）。
+- **弹药储备行与核弹目标模式半径圈**：在 `HudSidebarModel` / `InGameHudOverlay` 为核弹井（4）、反核井（12）、舰船导弹与蜘蛛反核模块（12）渲染 `储备` 行（实心/虚线方格数严格等于 `已有/容量`）；`buildNuke`/`buildAntiNuke` 满仓禁用并标 `储备已满`，`launchNuke` 键右上标 `可用 N`（多选核弹井时与 `nuclearLaunchMember` 口径一致），目标模式提示卡显示 `剩余 N 发`（修复非 ASCII 字体回退以完整渲染中文）并在战场光标绘制 translucent rust 填充与虚线爆炸半径圈。
+- **状态切换、能量充能锁定、双分支升级与镜头跟随标签**：实现潜艇、两栖机、移动炮塔、鹦鹉螺、加力与反核模块（修正 `isEnabled`/`isDisabled` 图标与下一步动词极性）单键显示下一步动作 + 选中卡当前状态 + 切换过渡进度条防连点；能量回充锁定（`energy.recharging` / `pointDefense.exhausted`）选中卡与能量条呈 amber `▲ 充能中` 并禁用耗能动作（禁用态优先展示短原因）；双分支升级选定一分支后另一分支置灰标 `分支已定`、队列行标 `升级`、取消后恢复可用；引擎镜头跟随时左上常驻 `rw-camera-follow` + `跟随中 · 拖动地图退出` 标签，拖拽/小地图/触控摇杆通过统一 `takeOverCamera` 即时清除。
+
+### 技术
+
+- **双语预热、测试与双门禁复核**：全部新增固定 UI 文案纳入 `UiStrings.kt`（ZH/EN 键对称并预热 FreeType 字形）；新增 `CancelConstructionActionTest`（3 项含整数余额溢出预留验证）与 `UiHudBuildingStockpileStatesTest`（10 项覆盖在建取消、核弹储备与多选、炮塔分支锁定与取消恢复、潜艇/移动炮塔过渡防连点、点防御与武器能量锁定、反核图标极性及镜头跟随），并与既有核心/客户端回归全绿；完成 1920×1080 实窗六态（工地、炮塔分支、潜艇、核弹井目标模式、点防御充能锁定、镜头跟随标签）对照采集，Hydrogen 视觉并排审阅 0 必修 PASS，独立非作者 Neon 代码整审经 10+1 项定向返修复核 0 必修 PASS。
+
+---
 ## v0.5.56 (2026-11-22 04:15)
 
 ### 新增

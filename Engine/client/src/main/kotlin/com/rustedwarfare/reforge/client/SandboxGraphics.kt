@@ -579,6 +579,25 @@ class SandboxGraphics private constructor(private val resources: SandboxRenderRe
         shapes.circle(projection.x(center.x), projection.y(center.y), radius, 32)
     }
 
+    /** Draws a subtle translucent rust fill under area-targeted cursor previews (e.g. nuclear blast radius, Spec §8.2). */
+    fun drawGroundActionAreaFill(shapes: ShapeRenderer, preview: GroundActionPreview) {
+        if (preview.areaRadius <= 0.0) return
+        val x = projection.x(preview.position.x)
+        val y = projection.y(preview.position.y)
+        val r = (preview.areaRadius * projection.scale).toFloat()
+        if (r <= 1f) return
+        Gdx.gl.glEnable(GL20.GL_BLEND)
+        Gdx.gl.glBlendFunc(GL20.GL_SRC_ALPHA, GL20.GL_ONE_MINUS_SRC_ALPHA)
+        shapes.begin(ShapeRenderer.ShapeType.Filled)
+        if (preview.valid) {
+            shapes.setColor(UiTokens.RUST.r, UiTokens.RUST.g, UiTokens.RUST.b, 0.14f)
+        } else {
+            shapes.setColor(UiTokens.FOE.r, UiTokens.FOE.g, UiTokens.FOE.b, 0.14f)
+        }
+        shapes.circle(x, y, r, 72)
+        shapes.end()
+    }
+
     fun drawOverlay(shapes: ShapeRenderer, frame: SandboxFrame, selectedIds: Set<String>, box: Pair<Position, Position>? = null,
                     construction: ConstructionPreview? = null, groundAction: GroundActionPreview? = null,
                     primaryId: String? = null) {
@@ -703,18 +722,30 @@ class SandboxGraphics private constructor(private val resources: SandboxRenderRe
                 (20 * projection.scale).toFloat(), (20 * projection.scale).toFloat())
         }
         groundAction?.let { preview ->
-            shapes.color = if (preview.valid) Color.ORANGE else Color.RED
+            val blastColor = if (preview.valid) UiTokens.RUST else UiTokens.FOE
+            shapes.color = blastColor
             val sourceX = projection.x(preview.source.x); val sourceY = projection.y(preview.source.y)
-            if (preview.minimumRange > 0.0)
+            if (preview.minimumRange > 0.0) {
+                shapes.setColor(blastColor.r, blastColor.g, blastColor.b, 0.35f)
                 shapes.circle(sourceX, sourceY, (preview.minimumRange * projection.scale).toFloat(), 96)
+                shapes.color = blastColor
+            }
             if (preview.maximumRange > 0.0)
                 shapes.circle(sourceX, sourceY, (preview.maximumRange * projection.scale).toFloat(), 192)
             val x = projection.x(preview.position.x); val y = projection.y(preview.position.y)
             if (preview.areaRadius > 0.0) {
-                shapes.circle(x, y, (preview.areaRadius * projection.scale).toFloat(), 96)
-                shapes.circle(x, y, ((preview.areaRadius - 30.0) * projection.scale).toFloat(), 96)
+                val outerR = (preview.areaRadius * projection.scale).toFloat()
+                drawDashedCircle(shapes, x, y, outerR, dashArcPx = 9f, gapArcPx = 6f)
+                drawDashedCircle(shapes, x, y, outerR + 1f, dashArcPx = 9f, gapArcPx = 6f)
+                val innerR = ((preview.areaRadius - 30.0) * projection.scale).toFloat()
+                if (innerR > 4f) {
+                    shapes.setColor(blastColor.r, blastColor.g, blastColor.b, 0.35f)
+                    drawDashedCircle(shapes, x, y, innerR, dashArcPx = 6f, gapArcPx = 6f)
+                    shapes.color = blastColor
+                }
             }
-            shapes.line(x - 7f, y, x + 7f, y); shapes.line(x, y - 7f, x, y + 7f)
+            val cross = if (preview.areaRadius > 0.0) 14f else 7f
+            shapes.line(x - cross, y, x + cross, y); shapes.line(x, y - cross, x, y + cross)
         }
         drawBlink(shapes, frame.observation)
         for (effect in nuclearPresentation.project(frame.observation)) {
@@ -967,6 +998,28 @@ class SandboxGraphics private constructor(private val resources: SandboxRenderRe
         shapes.setColor(0.95f, 0.98f, 0.96f, 1f)
         shapes.rect(vx1, vy1, vx2 - vx1, vy2 - vy1)
         shapes.end()
+    }
+
+    private fun drawDashedCircle(shapes: ShapeRenderer, cx: Float, cy: Float, radius: Float, dashArcPx: Float, gapArcPx: Float) {
+        if (radius <= 1f) return
+        val circumference = (2.0 * kotlin.math.PI * radius).toFloat()
+        val stepPx = (dashArcPx + gapArcPx).coerceAtLeast(2f)
+        val count = (circumference / stepPx).toInt().coerceIn(16, 180)
+        val period = (2.0 * kotlin.math.PI / count).toFloat()
+        val dashAngle = period * (dashArcPx / stepPx)
+        for (i in 0 until count) {
+            val a0 = i * period
+            val a1 = a0 + dashAngle
+            val mid = (a0 + a1) * 0.5f
+            val x0 = cx + kotlin.math.cos(a0.toDouble()).toFloat() * radius
+            val y0 = cy + kotlin.math.sin(a0.toDouble()).toFloat() * radius
+            val xm = cx + kotlin.math.cos(mid.toDouble()).toFloat() * radius
+            val ym = cy + kotlin.math.sin(mid.toDouble()).toFloat() * radius
+            val x1 = cx + kotlin.math.cos(a1.toDouble()).toFloat() * radius
+            val y1 = cy + kotlin.math.sin(a1.toDouble()).toFloat() * radius
+            shapes.line(x0, y0, xm, ym)
+            shapes.line(xm, ym, x1, y1)
+        }
     }
 
     private fun drawBlink(shapes: ShapeRenderer, observation: PlayerObservation) {

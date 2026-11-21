@@ -115,6 +115,19 @@ object UiStrings {
         "unsupported.generic" to "该功能暂未支持",
         "arrivalDeviated" to "目标受阻，已停靠最近可达位置",
         "mapSkipped" to "已跳过 {DETAIL}",
+        "buildAntiNuke" to "制造反核弹",
+        "deploy" to "展开",
+        "undeploy" to "收起",
+        "enable" to "启用",
+        "disable" to "停用",
+        "afterburn" to "加力",
+        "cancelBurn" to "停止加力",
+        "afterburning" to "加力中",
+        "cancelBuildDesc" to "立即取消该在建建筑并退还建造资金",
+        "reclaimSiteDesc" to "拆除当前工地",
+        "reclaimNeedWorker" to "需选工人",
+        "reclaimNeedWorkerFull" to "需选中建造者方可回收，或直接点击取消施工",
+        "launchNukeDesc" to "在地图上选择落点，光标处显示爆炸半径。",
     )
 
     private val tableEn: Map<String, String> = mapOf(
@@ -209,6 +222,19 @@ object UiStrings {
         "unsupported.generic" to "Feature not yet supported",
         "arrivalDeviated" to "Target obstructed, stopped at nearest reachable point",
         "mapSkipped" to "Skipped {DETAIL}",
+        "buildAntiNuke" to "Build interceptor",
+        "deploy" to "Deploy",
+        "undeploy" to "Undeploy",
+        "enable" to "Enable",
+        "disable" to "Disable",
+        "afterburn" to "Afterburn",
+        "cancelBurn" to "Cancel burn",
+        "afterburning" to "Afterburn",
+        "cancelBuildDesc" to "Stop building and refund the credits spent so far.",
+        "reclaimSiteDesc" to "Dismantle this site.",
+        "reclaimNeedWorker" to "Need builder",
+        "reclaimNeedWorkerFull" to "Select a builder to reclaim, or use Cancel build directly.",
+        "launchNukeDesc" to "Pick a target on the map. The blast radius is shown at the cursor.",
     )
 
     /** Translates a fixed UI key in [language]. Returns [key] verbatim if unmapped. */

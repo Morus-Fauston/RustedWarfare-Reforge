@@ -835,7 +835,8 @@ internal class HudActionPanel(
             for (row in tip.rows) {
                 drawTextLeft(batch, smallFont(), row.label, tipX + padH, cy, UiTokens.DIM, alpha)
                 val vColor = if (row.isWarning) UiTokens.AMBER else UiTokens.TEXT
-                drawTextRight(batch, smallMonoFont(), row.value, tipX + tipW - padH, cy, vColor, alpha)
+                val vFont = if (row.value.any { it.code > 127 }) smallFont() else smallMonoFont()
+                drawTextRight(batch, vFont, row.value, tipX + tipW - padH, cy, vColor, alpha)
                 cy -= 17f
             }
         }
@@ -868,7 +869,8 @@ internal class HudActionPanel(
 
         var cy = cardY + cardH - padV - 9f
         card.rightValue?.let { rv ->
-            drawTextRight(batch, smallMonoFont(), rv, cardX + cardW - padH, cy, UiTokens.TEXT, alpha)
+            val rvFont = if (rv.any { it.code > 127 }) smallFont() else smallMonoFont()
+            drawTextRight(batch, rvFont, rv, cardX + cardW - padH, cy, UiTokens.TEXT, alpha)
         }
         val titleMaxW = if (card.rightValue != null) innerW - 72f else innerW
         drawTextLeft(batch, tooltipTitleFont(), ellipsize(tooltipTitleFont(), card.title, titleMaxW), cardX + padH, cy, UiTokens.TEXT, alpha)

@@ -30,6 +30,7 @@ data class HudOverlayLayout(
     val typeChipsRect: Rectangle?,
     val cardRect: Rectangle?,
     val cargoRect: Rectangle?,
+    val stockpileRect: Rectangle?,
     val queueRect: Rectangle?,
     val actionsTopY: Float,
     val actionsMaxHeight: Float,
@@ -66,6 +67,7 @@ internal class InGameHudOverlay(
     private val fontsProvider: () -> UiFontSet?,
     private val fallbackFontProvider: () -> BitmapFont,
     private val unitIconProvider: (String) -> TextureRegion?,
+    private val commandIconProvider: (String) -> TextureRegion? = { null },
     private val callbacks: InGameHudCallbacks,
 ) : Group() {
 
@@ -402,6 +404,13 @@ internal class InGameHudOverlay(
             drawCargoSection(batch, white, cargo, cargoRect, snap.language, alpha)
         }
 
+        val stockpile = snap.stockpileSection
+        val stockpileRect = l.stockpileRect
+        if (stockpile != null && stockpileRect != null) {
+            fillRect(batch, white, l.sidebarLeft + 1f, stockpileRect.y + stockpileRect.height, l.sidebarWidth - 1f, 1f, UiTokens.HAIR, alpha)
+            drawStockpileSection(batch, white, stockpile, stockpileRect, snap.language, alpha)
+        }
+
         val queue = snap.queueSection
         val qRect = l.queueRect
         if (queue != null && qRect != null) {
@@ -515,6 +524,51 @@ internal class InGameHudOverlay(
                 cx += chipW + 4f
                 rendered++
             }
+        }
+    }
+
+    private fun drawStockpileSection(
+        batch: Batch,
+        white: TextureRegion,
+        stock: HudStockpileSection,
+        rect: Rectangle,
+        lang: UiLanguage,
+        alpha: Float,
+    ) {
+        val padH = UiTokens.SIDEBAR_PAD_H
+        val cy = rect.y + rect.height * 0.5f
+        drawTextLeft(batch, smallFont(), UiStrings.get("stock", lang), rect.x + padH, cy, UiTokens.DIM, alpha)
+
+        // Right-aligned current/capacity (current 13pt bold text, /capacity 11pt dim per Spec §5.4)
+        val rightEdge = rect.x + rect.width - padH
+        val capText = "/${stock.capacity}"
+        val curText = stock.current.toString()
+        glyphLayout.setText(captionMonoFont(), capText)
+        val capW = glyphLayout.width
+        glyphLayout.setText(countMonoFont(), curText)
+        val curW = glyphLayout.width
+        drawTextRight(batch, captionMonoFont(), capText, rightEdge, cy - 0.5f, UiTokens.DIM, alpha)
+        drawTextRight(batch, countMonoFont(), curText, rightEdge - capW - 1f, cy + 0.5f, UiTokens.TEXT, alpha)
+        val maxPipRight = rightEdge - capW - curW - 8f
+
+        // 14x14 pips (solid VALUE fill for stocked, dashed LINE outline for empty slots per Spec §5.4)
+        // If capacity > available single-row width (e.g. 12 interceptors), shrink pip size slightly so every pip fits cleanly.
+        val labelColW = if (lang == UiLanguage.EN) 36f else 30f
+        val startX = rect.x + padH + labelColW + 4f
+        val availW = (maxPipRight - startX).coerceAtLeast(14f)
+        val cap = stock.capacity.coerceAtLeast(1)
+        val gap = if (cap <= 6) 4f else 2f
+        val pipSize = minOf(STOCKPILE_PIP_SIZE, ((availW - (cap - 1) * gap) / cap).coerceAtLeast(4f))
+        val pipY = rect.y + (rect.height - pipSize) * 0.5f
+        var px = startX
+        for (i in 0 until cap) {
+            if (i < stock.current) {
+                fillRect(batch, white, px, pipY, pipSize, pipSize, UiTokens.VALUE, alpha)
+                strokeRect(batch, white, px, pipY, pipSize, pipSize, UiTokens.LINE, alpha)
+            } else {
+                drawDashedRect(batch, white, px, pipY, pipSize, pipSize, UiTokens.LINE, alpha * 0.78f)
+            }
+            px += pipSize + gap
         }
     }
 
@@ -726,13 +780,20 @@ internal class InGameHudOverlay(
 
         if (cameraFollowing) {
             val text = UiStrings.get("following", snap.language)
+            val followIcon = commandIconProvider("rw-camera-follow")
+            val iconSz = 14f
+            val iconLead = if (followIcon != null) iconSz + 7f else 0f
             glyphLayout.setText(font, text)
-            val w = glyphLayout.width + 22f
+            val w = glyphLayout.width + 20f + iconLead
             val h = NOTICE_H
             ny -= h
             fillRect(batch, white, x, ny, w, h, UiTokens.RAIL, alpha)
             strokeRect(batch, white, x, ny, w, h, UiTokens.VALUE, alpha)
-            drawTextLeft(batch, font, text, x + 10f, ny + h * 0.5f, UiTokens.TEXT, alpha)
+            if (followIcon != null) {
+                batch.setColor(UiTokens.VALUE.r, UiTokens.VALUE.g, UiTokens.VALUE.b, UiTokens.VALUE.a * alpha)
+                batch.draw(followIcon, x + 9f, ny + (h - iconSz) * 0.5f, iconSz, iconSz)
+            }
+            drawTextLeft(batch, font, text, x + 10f + iconLead, ny + h * 0.5f, UiTokens.TEXT, alpha)
             ny -= NOTICE_GAP
         }
 
@@ -974,6 +1035,8 @@ internal class InGameHudOverlay(
         const val TYPE_CHIP_W: Float = 46f
         const val TYPE_CHIP_GAP: Float = 4f
         const val CARGO_ROW_HEIGHT: Float = 40f
+        const val STOCKPILE_ROW_HEIGHT: Float = 36f
+        const val STOCKPILE_PIP_SIZE: Float = 14f
         const val QUEUE_ROW_HEIGHT: Float = 42f
         const val QUEUE_SLOT_SIZE: Float = 24f
         const val NOTICE_H: Float = 26f
@@ -1010,6 +1073,7 @@ internal class InGameHudOverlay(
             var typeChipsRect: Rectangle? = null
             var cardRect: Rectangle? = null
             var cargoRect: Rectangle? = null
+            var stockpileRect: Rectangle? = null
             var queueRect: Rectangle? = null
 
             val chips = snapshot?.typeChips
@@ -1036,6 +1100,12 @@ internal class InGameHudOverlay(
                 cursorY = cargoRect.y
             }
 
+            val stockpile = snapshot?.stockpileSection
+            if (stockpile != null) {
+                stockpileRect = Rectangle(sideLeft, cursorY - STOCKPILE_ROW_HEIGHT, sideW, STOCKPILE_ROW_HEIGHT)
+                cursorY = stockpileRect.y
+            }
+
             val queue = snapshot?.queueSection
             if (queue != null) {
                 queueRect = Rectangle(sideLeft, cursorY - QUEUE_ROW_HEIGHT, sideW, QUEUE_ROW_HEIGHT)
@@ -1057,6 +1127,7 @@ internal class InGameHudOverlay(
                 typeChipsRect = typeChipsRect,
                 cardRect = cardRect,
                 cargoRect = cargoRect,
+                stockpileRect = stockpileRect,
                 queueRect = queueRect,
                 actionsTopY = actionsTopY,
                 actionsMaxHeight = maxActionsH,

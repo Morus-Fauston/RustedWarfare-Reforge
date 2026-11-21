@@ -653,7 +653,7 @@ class BootstrapScreen(
                 x >= viewport.screenX && x < viewport.screenX + viewport.screenWidth &&
                     bottom >= viewport.screenY && bottom < viewport.screenY + viewport.screenHeight
             }, battlefieldAt = { x, y -> battlefieldAt(x, y) },
-            cameraTakeover = { reason -> scriptedCamera?.takeOver(reason) },
+            cameraTakeover = { reason -> takeOverCamera(reason) },
             cameraFollowsUnit = { scriptedCamera?.followsUnit == true },
             onGuardUnsupported = {
                 hudEvents.pushWarning(UiStrings.get("unsupported.guard"))
@@ -670,6 +670,7 @@ class BootstrapScreen(
             fontsProvider = { fontSet },
             fallbackFontProvider = { fallbackFont ?: skin.getFont("default") },
             unitIconProvider = { graphics?.unitIcon(it) },
+            commandIconProvider = { name -> commandIcons?.icon(name) },
             callbacks = object : InGameHudCallbacks {
                 override fun onToggleMenu() {
                     if (paused || loading || session?.isOpen != true) return
@@ -739,7 +740,7 @@ class BootstrapScreen(
                     val g = graphics ?: return
                     val area = g.minimap.area
                     val target = g.minimap.locate(area.left + x, area.bottom + y, dragging) ?: return
-                    scriptedCamera?.takeOver("minimap")
+                    takeOverCamera("minimap")
                     g.projection.centerOn(target)
                     evidence.record("camera", mapOf("reason" to "minimap",
                         "center" to g.projection.camera.center.fields(), "zoom" to g.projection.camera.zoom))
@@ -790,6 +791,10 @@ class BootstrapScreen(
                     "amphibious-fly", "amphibious-dive" -> owner.amphibiousFlight(key.id == "amphibious-fly")
                     "transport-unload-target" -> mapInput.beginGroundAction("transport-unload-target")
                     "transport-unload", "transport-cancel-unload" -> owner.unload(key.id == "transport-unload")
+                    "cancel-construction" -> {
+                        mapInput.cancel()
+                        owner.cancelConstruction()
+                    }
                     "choose-reclaim" -> mapInput.beginReclaim()
                     "choose-repair" -> mapInput.beginRepair()
                     else -> hudEvents.pushWarning(UiStrings.get("unsupported.generic"))
@@ -1500,6 +1505,9 @@ class BootstrapScreen(
             shapes.projectionMatrix = battlefieldCamera.combined
             if (ScissorStack.pushScissors(clip)) try {
                 batch.begin(); graphics.draw(batch, current.frame, mapInput.constructionPreview, current.selectedIds); batch.end()
+                mapInput.groundActionPreview?.takeIf { it.areaRadius > 0.0 }?.let { preview ->
+                    graphics.drawGroundActionAreaFill(shapes, preview)
+                }
                 shapes.begin(ShapeRenderer.ShapeType.Line)
                 graphics.drawOverlay(shapes, current.frame, current.selectedIds, mapInput.box, mapInput.constructionPreview,
                     mapInput.groundActionPreview, current.selectedId.takeUnless { touchControls })
@@ -2322,6 +2330,7 @@ class BootstrapScreen(
         val worldH = graphics?.projection?.worldHeight ?: 1000.0
 
         // First compute pre-actions layout so BattleActionList anchors flush beneath queue/card inside 232px rail
+        hudEvents.setCameraFollowing(scriptedCamera?.followsUnit == true)
         hudOverlay.update(
             stageWidth = viewport.worldWidth,
             stageHeight = viewport.worldHeight,
@@ -2566,8 +2575,14 @@ class BootstrapScreen(
     private fun cameraJoystickActive() =
         touchControls && !paused && session?.options?.cameraJoystickEnabled == true
 
+    private fun takeOverCamera(reason: String) {
+        scriptedCamera?.takeOver(reason)
+        hudEvents.setCameraFollowing(scriptedCamera?.followsUnit == true)
+        if (::hudOverlay.isInitialized) hudOverlay.syncEventStream(hudEvents)
+    }
+
     private fun takeCameraFromJoystick() {
-        if (cameraJoystick.steering) scriptedCamera?.takeOver("joystick")
+        if (cameraJoystick.steering) takeOverCamera("joystick")
     }
 
     private fun clearCameraJoystick(event: String, systemPointer: Int? = null) {

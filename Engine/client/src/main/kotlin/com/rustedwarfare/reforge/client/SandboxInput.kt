@@ -78,7 +78,7 @@ class SandboxInput(
             val owner = reclaimOwner ?: return false
             val current = session()
             if (!active() || current !== owner.session || !current.isOpen ||
-                (if (owner.repair) !current.canRepair else !current.canMaintain) ||
+                (if (owner.repair) !current.canRepair else (!current.canMaintain && !current.hasMaintainerInSelection())) ||
                 current.selectedId != owner.worker || current.selectionRevision != owner.revision) endReclaim()
             return reclaimOwner != null
         }
@@ -481,7 +481,7 @@ class SandboxInput(
     private fun beginMaintenance(repair: Boolean): Boolean {
         val current = session() ?: return false
         if (!active() || editing() || !current.isOpen ||
-            (if (repair) !current.canRepair else !current.canMaintain)) return false
+            (if (repair) !current.canRepair else (!current.canMaintain && !current.hasMaintainerInSelection()))) return false
         endSandboxPick()
         endReclaim(); endConstruction(); endPatrol(); endGroundAction(); cancelGesture()
         reclaimOwner = ReclaimOwner(current, checkNotNull(current.selectedId), current.selectionRevision, repair)
