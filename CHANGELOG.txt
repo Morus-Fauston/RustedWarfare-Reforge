@@ -1,3 +1,9 @@
+v0.5.53 (2026-11-22 01:37)
+  新增: 废除 StretchViewport/FitViewport 升级短边 640 连续等比 ScreenViewport（含触控 ppcY 8mm 键高下限与 Android 全屏战场）/ 接入 gdx-freetype 1.13.1（PC 与 Android 四 ABI）及随包 OFL 开源 NotoSansSC + JetBrainsMono 增量字体、预热与拖拽防抖重建 / 落地 UiTokens 设计令牌与中英双语 UiStrings（含核心 kebab-case 拒绝码映射、内容包原文透传）
+  技术: 补齐缩放/坐标往返/15 色 RGBA/防抖/双语与 OFL 资源单测；通过 PC 实窗冒烟、:pc:installDist 与 :android:assembleDebug 四 ABI 构建，独立非作者代码整审定向复核 0 必修
+
+====
+
 v0.5.52 (2026-11-22 00:41)
   新增: ADR-013 四级地块图集按需加载（未使用图集零 GPU 分配、同源 PNG 去重共享纹理）/ 随包公开占位地形图集与两张多层示范 .tmx / 多图层视口裁剪、全 8 种 Tiled 翻转渲染与真实地块平均色等比增量小地图 / 启动页独立 .tmx 选图预览与 --map 直开，未支持单位安全跳过并记录提示
   技术: 补齐四级解析、去重、翻转与容错单测；通过自有双图（含 Memory 迷雾）与原版 Big Island / Fire Bridge 1920×1080 实窗验证，非作者代码整审与 Hydrogen 视觉对照复核均 0 必修

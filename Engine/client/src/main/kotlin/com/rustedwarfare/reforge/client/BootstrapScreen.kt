@@ -26,8 +26,7 @@ import com.badlogic.gdx.scenes.scene2d.Stage
 import com.badlogic.gdx.scenes.scene2d.ui.*
 import com.badlogic.gdx.scenes.scene2d.utils.ChangeListener
 import com.badlogic.gdx.utils.Align
-import com.badlogic.gdx.utils.viewport.FitViewport
-import com.badlogic.gdx.utils.viewport.StretchViewport
+import com.badlogic.gdx.utils.viewport.ScreenViewport
 import java.nio.file.Path
 import java.nio.file.Paths
 import java.util.Locale
@@ -55,9 +54,14 @@ class BootstrapScreen(
     private lateinit var stage: Stage
     private lateinit var battleActions: BattleActionList
     private lateinit var minimapActor: Actor
-    private val viewport = if (touchControls) FitViewport(960f, 640f) else StretchViewport(960f, 640f)
+    private val viewport = ScreenViewport()
+    private var uiMetrics: UiMetrics = UiScale.metrics(960, 640, touchControls)
+    private var fontSet: UiFontSet? = null
+    private var fallbackFont: BitmapFont? = null
+    private val fontDebouncer = FontRebuildDebouncer()
     private val battlefieldCamera = OrthographicCamera()
-    private val battlefieldWidth: Float get() = if (touchControls) viewport.worldWidth else battlefieldCamera.viewportWidth
+    private val battlefieldWidth: Float get() = battlefieldCamera.viewportWidth.takeIf { it > 0f } ?: viewport.worldWidth
+    private val battlefieldHeight: Float get() = battlefieldCamera.viewportHeight.takeIf { it > 0f } ?: viewport.worldHeight
     private val loader = SandboxLoader()
     private var session: SandboxSession? = null
     private var collisionBoxesVisible = false
@@ -231,9 +235,34 @@ class BootstrapScreen(
         drawnActionLayout.invalidate()
         val created = mutableListOf<() -> Unit>()
         try {
+        val initW = Gdx.graphics?.width?.takeIf { it > 0 } ?: 960
+        val initH = Gdx.graphics?.height?.takeIf { it > 0 } ?: 640
+        val initPpc = Gdx.graphics?.ppcY?.takeIf { it > 0f } ?: 0f
+        val initPpi = Gdx.graphics?.ppiY?.takeIf { it > 0f } ?: 0f
+        uiMetrics = UiScale.metricsFromDensity(initW, initH, touchControls, initPpc, initPpi)
+        viewport.unitsPerPixel = 1f / uiMetrics.scale
+        viewport.update(initW, initH, true)
+        battlefieldCamera.setToOrtho(false, viewport.worldWidth, viewport.worldHeight)
         batch = SpriteBatch().also { created += { it.dispose() } }
         shapes = ShapeRenderer().also { created += { it.dispose() } }
-        skin = makeSkin().also { created += { it.dispose() } }
+        val createdFonts = createSafeFontSet(uiMetrics.scale, collectFontPreloadStrings())
+        fontSet = createdFonts
+        fallbackFont = if (createdFonts == null) BitmapFont() else null
+        if (createdFonts != null) {
+            fontDebouncer.markApplied(uiMetrics.scale)
+            created += { createdFonts.close(); if (fontSet === createdFonts) fontSet = null }
+        } else {
+            val fb = fallbackFont
+            created += { fb?.dispose(); if (fallbackFont === fb) fallbackFont = null }
+        }
+        skin = makeSkin(createdFonts?.body ?: checkNotNull(fallbackFont)).also { s ->
+            created += {
+                if (s.has("default-font", BitmapFont::class.java)) {
+                    s.remove("default-font", BitmapFont::class.java)
+                }
+                s.dispose()
+            }
+        }
         stage = Stage(viewport, batch).also { created += { it.dispose() } }
         groupButtons.clear()
         upgradeButtons.clear()
@@ -243,12 +272,7 @@ class BootstrapScreen(
         productionCards.clear()
         factoryUpgradeCards.clear()
         factoryUpgradeHover = null
-        if (touchControls) stage.addActor(Actor().apply {
-            setBounds(736f, 0f, 224f, 592f)
-            addListener(object : InputListener() {
-                override fun touchDown(event: InputEvent, x: Float, y: Float, pointer: Int, button: Int) = true
-            })
-        })
+
         fun label(text: String, x: Float, y: Float, w: Float, h: Float): Label = Label(text, skin).also {
             it.setBounds(x, y - h, w, h); it.setAlignment(Align.topLeft); it.setWrap(true)
             it.touchable = Touchable.disabled; stage.addActor(it)
@@ -643,13 +667,13 @@ class BootstrapScreen(
         }.also { it.setBounds(150f, 114f, 660f, 440f); stage.addActor(it) }
         mapInput = SandboxInput({ session }, { graphics?.projection }, { x, y ->
             battlefieldPoint(x, y, Gdx.graphics.height, viewport.screenX, viewport.screenY,
-                viewport.screenWidth, viewport.screenHeight, battlefieldWidth.toDouble(), viewport.worldHeight.toDouble())
+                viewport.screenWidth, viewport.screenHeight, battlefieldWidth.toDouble(), battlefieldHeight.toDouble())
         }, { !paused && session != null }, { stage.keyboardFocus is TextField },
             { Gdx.input.isKeyPressed(it) }, { updateHud() }, evidence, touchControls, { x, y ->
                 val bottom = Gdx.graphics.height - y
                 x >= viewport.screenX && x < viewport.screenX + viewport.screenWidth &&
                     bottom >= viewport.screenY && bottom < viewport.screenY + viewport.screenHeight
-            }, battlefieldAt = { x, y -> touchControls || battlefieldAt(x, y) },
+            }, battlefieldAt = { x, y -> battlefieldAt(x, y) },
             cameraTakeover = { reason -> scriptedCamera?.takeOver(reason) },
             cameraFollowsUnit = { scriptedCamera?.followsUnit == true })
         for (index in 1..3) groupButtons += button("$index (0)", 508f + (index - 1) * 72f, 12f, 64f) { mapInput.group(index) }
@@ -828,14 +852,134 @@ class BootstrapScreen(
         }
     }
 
-    private fun makeSkin(): Skin {
+    private fun createSafeFontSet(scale: Float, preloadExtras: Iterable<String> = emptyList()): UiFontSet? =
+        runCatching { UiFontSet.create(scale, UiStrings.preloadCharacters(preloadExtras)) }.onFailure { err ->
+            Gdx.app?.error("ui-p001-fonts", "Failed to create FreeType UiFontSet, falling back to default BitmapFont", err)
+        }.getOrNull()
+
+    private fun collectFontPreloadStrings(): List<String> = buildList {
+        session?.renderResources?.units?.keys?.forEach(::add)
+        session?.actionMenu?.let { menu ->
+            menu.selectedTitle?.let(::add)
+            menu.battleActions().forEach { add(it.title); add(it.hint) }
+        }
+        skirmishMapState.selected?.displayName?.let(::add)
+    }
+
+    private fun rebuildFontsForScale(targetScale: Float) {
+        val next = createSafeFontSet(targetScale, collectFontPreloadStrings()) ?: return
+        val oldSet = fontSet
+        val oldFallback = fallbackFont
+        val retiredFonts = LinkedHashSet<BitmapFont>().apply {
+            oldSet?.allFonts?.let(::addAll)
+            oldFallback?.let(::add)
+        }
+        fontSet = next
+        fallbackFont = null
+        if (::skin.isInitialized) {
+            // Rebind live/cached actors FIRST while shared Skin styles still point to retired fonts,
+            // so Label.setStyle() / TextField.setStyle() rebuild their internal BitmapFontCache!
+            refreshActorFonts(stage.root, next.body, retiredFonts)
+            productionCards.values.forEach { refreshActorFonts(it.table, next.body, retiredFonts) }
+            factoryUpgradeCards.values.forEach { refreshActorFonts(it.table, next.body, retiredFonts) }
+            constructionCards.values.forEach { refreshActorFonts(it.table, next.body, retiredFonts) }
+            applyFontSetToSkin(skin, next, retiredFonts)
+        }
+        oldSet?.close()
+        oldFallback?.dispose()
+    }
+
+    private fun applyFontSetToSkin(targetSkin: Skin, fonts: UiFontSet, retired: Set<BitmapFont>) {
+        val body = fonts.body
+        targetSkin.add("default-font", body, BitmapFont::class.java)
+        targetSkin.getAll(Label.LabelStyle::class.java)?.values()?.forEach { style ->
+            if (style.font in retired) style.font = body
+        }
+        targetSkin.getAll(TextButton.TextButtonStyle::class.java)?.values()?.forEach { style ->
+            if (style.font in retired) style.font = body
+        }
+        targetSkin.getAll(TextField.TextFieldStyle::class.java)?.values()?.forEach { style ->
+            if (style.font in retired) style.font = body
+            if (style.messageFont in retired) style.messageFont = body
+        }
+        targetSkin.getAll(com.badlogic.gdx.scenes.scene2d.ui.List.ListStyle::class.java)?.values()?.forEach { style ->
+            if (style.font in retired) style.font = body
+        }
+        targetSkin.getAll(SelectBox.SelectBoxStyle::class.java)?.values()?.forEach { style ->
+            if (style.font in retired) style.font = body
+            if (style.listStyle?.font in retired) style.listStyle.font = body
+        }
+        targetSkin.getAll(CheckBox.CheckBoxStyle::class.java)?.values()?.forEach { style ->
+            if (style.font in retired) style.font = body
+        }
+    }
+
+    /**
+     * Rebinds ONLY actors whose style references a retired font from [retired] (preserving sub-panels'
+     * own platform fonts) and explicitly refreshes hidden SelectBox dropdown lists.
+     */
+    private fun refreshActorFonts(actor: Actor, bodyFont: BitmapFont, retired: Set<BitmapFont>) {
+        when (actor) {
+            is Label -> {
+                if (actor.style.font in retired) {
+                    actor.style = Label.LabelStyle(actor.style).apply { font = bodyFont }
+                }
+            }
+            is CheckBox -> {
+                if (actor.style.font in retired) {
+                    actor.style = CheckBox.CheckBoxStyle(actor.style).apply { font = bodyFont }
+                }
+            }
+            is TextButton -> {
+                if (actor.style.font in retired) {
+                    actor.style = TextButton.TextButtonStyle(actor.style).apply { font = bodyFont }
+                }
+            }
+            is TextField -> {
+                if (actor.style.font in retired || actor.style.messageFont in retired) {
+                    actor.style = TextField.TextFieldStyle(actor.style).apply {
+                        if (font in retired) font = bodyFont
+                        if (messageFont in retired) messageFont = bodyFont
+                    }
+                }
+            }
+            is com.badlogic.gdx.scenes.scene2d.ui.List<*> -> {
+                if (actor.style.font in retired) {
+                    actor.style = com.badlogic.gdx.scenes.scene2d.ui.List.ListStyle(actor.style).apply { font = bodyFont }
+                }
+            }
+            is SelectBox<*> -> {
+                val styleNeeds = actor.style.font in retired || actor.style.listStyle?.font in retired
+                val listNeeds = actor.list.style.font in retired
+                if (styleNeeds || listNeeds) {
+                    val copy = SelectBox.SelectBoxStyle(actor.style).apply {
+                        if (font in retired) font = bodyFont
+                        if (listStyle != null && listStyle.font in retired) {
+                            listStyle = com.badlogic.gdx.scenes.scene2d.ui.List.ListStyle(listStyle).apply { font = bodyFont }
+                        }
+                    }
+                    actor.style = copy
+                    if (actor.list.style.font in retired) {
+                        actor.list.style = com.badlogic.gdx.scenes.scene2d.ui.List.ListStyle(actor.list.style).apply { font = bodyFont }
+                    }
+                }
+            }
+        }
+        if (actor is Group) {
+            val children = actor.children
+            for (i in 0 until children.size) {
+                refreshActorFonts(children[i], bodyFont, retired)
+            }
+        }
+    }
+
+    private fun makeSkin(font: BitmapFont): Skin {
         val result = Skin()
         val pixmap = Pixmap(1, 1, Pixmap.Format.RGBA8888)
         pixmap.setColor(Color.WHITE); pixmap.fill()
         val texture = try { Texture(pixmap) } finally { pixmap.dispose() }
         result.add("white", texture)
-        val font = BitmapFont()
-        result.add("default-font", font)
+        result.add("default-font", font, BitmapFont::class.java)
         val text = Color(0.9f, 0.92f, 0.9f, 1f)
         result.add("default", Label.LabelStyle(font, text))
         result.add("default", TextButton.TextButtonStyle().apply {
@@ -1064,11 +1208,11 @@ class BootstrapScreen(
                     "visualsPreparedNanos" to timing.visualsPreparedNanos, "completedNanos" to timing.completedNanos,
                     "observedNanos" to System.nanoTime())) }
                 val graphicsStartedNanos = System.nanoTime()
-                pendingGraphics = SandboxGraphics.load(loaded, activeRoot, fullBattlefield = !touchControls)
-                pendingGraphics.projection.resizeBattlefield(battlefieldWidth.toDouble())
+                pendingGraphics = SandboxGraphics.load(loaded, activeRoot, fullBattlefield = true)
+                pendingGraphics.projection.resizeBattlefield(battlefieldWidth.toDouble(), battlefieldHeight.toDouble())
                 evidence.record("load-graphics-ready", mapOf("generation" to generation,
                     "startedNanos" to graphicsStartedNanos, "completedNanos" to System.nanoTime(),
-                    "battlefieldFill" to !touchControls,
+                    "battlefieldFill" to true,
                     "worldWidth" to pendingGraphics.projection.worldWidth, "worldHeight" to pendingGraphics.projection.worldHeight))
                 val runGeneration = generation
                 val generationEvidence = evidence.withGeneration(runGeneration)
@@ -1113,6 +1257,31 @@ class BootstrapScreen(
                 if (touchControls) recordCameraJoystick("opened", null)
                 sounds = pendingSounds
                 loaded.visuals?.let { visuals -> evidence.recordVisualAssetsReady(visuals, generation) }
+                fontSet?.let { fs ->
+                    val extras = buildList<String> {
+                        scenario.unitDefinitions.values.forEach { def ->
+                            add(def.id)
+                            def.customActions?.actions?.forEach { action ->
+                                add(action.name)
+                                add(action.actionId)
+                            }
+                        }
+                        loaded.contentPack?.pack?.name?.let(::add)
+                        loaded.contentPack?.content?.openingPack?.name?.let(::add)
+                        loaded.startupNotices.forEach(::add)
+                    }
+                    if (extras.isNotEmpty()) {
+                        val uniqueChars = LinkedHashSet<Char>()
+                        for (s in extras) for (c in s) if (!c.isISOControl()) uniqueChars.add(c)
+                        if (uniqueChars.isNotEmpty()) {
+                            val extraText = String(uniqueChars.toCharArray())
+                            val layout = com.badlogic.gdx.graphics.g2d.GlyphLayout()
+                            layout.setText(fs.body, extraText)
+                            layout.setText(fs.title, extraText)
+                            layout.setText(fs.keyBold, extraText)
+                        }
+                    }
+                }
                 visualSettings?.preparationDiagnostics?.takeIf { it.isNotEmpty() }?.let {
                     evidence.record("resource-acceptance-reuse", it + mapOf("generation" to generation))
                 }
@@ -1163,28 +1332,24 @@ class BootstrapScreen(
                 flightHover && session?.actionMenu?.flightAction != null ||
                 session?.actionMenu?.unitActions?.any { it.name == customActionHover } == true)
         if (nativeTooltip.isVisible) nativeTooltip.toFront()
+        fontDebouncer.pollReadyScale(Gdx.graphics.deltaTime)?.let { readyScale ->
+            rebuildFontsForScale(readyScale)
+        }
         Gdx.gl.glClear(GL20.GL_COLOR_BUFFER_BIT)
         viewport.apply()
         batch.projectionMatrix = viewport.camera.combined
         shapes.projectionMatrix = viewport.camera.combined
-        if (touchControls && current != null) {
-            shapes.begin(ShapeRenderer.ShapeType.Filled)
-            shapes.color = Color(0.105f, 0.13f, 0.12f, 1f)
-            if (touchControls) shapes.rect(736f, 0f, 224f, 592f)
-            shapes.rect(0f, 592f, 960f, 48f)
-            shapes.end()
-        }
+
         val graphics = graphics
         if (current != null && graphics != null) {
             val clip = Rectangle()
             val area = graphics.projection.mapArea
             val stagePerWorldX = viewport.worldWidth / battlefieldWidth
-            stage.calculateScissors(Rectangle((area.left * stagePerWorldX).toFloat(), area.bottom.toFloat(),
-                (area.width * stagePerWorldX).toFloat(), area.height.toFloat()), clip)
-            if (!touchControls) {
-                batch.projectionMatrix = battlefieldCamera.combined
-                shapes.projectionMatrix = battlefieldCamera.combined
-            }
+            val stagePerWorldY = viewport.worldHeight / battlefieldHeight
+            stage.calculateScissors(Rectangle((area.left * stagePerWorldX).toFloat(), (area.bottom * stagePerWorldY).toFloat(),
+                (area.width * stagePerWorldX).toFloat(), (area.height * stagePerWorldY).toFloat()), clip)
+            batch.projectionMatrix = battlefieldCamera.combined
+            shapes.projectionMatrix = battlefieldCamera.combined
             if (ScissorStack.pushScissors(clip)) try {
                 batch.begin(); graphics.draw(batch, current.frame, mapInput.constructionPreview, current.selectedIds); batch.end()
                 shapes.begin(ShapeRenderer.ShapeType.Line)
@@ -1847,10 +2012,24 @@ class BootstrapScreen(
             actor.setText("${index + 1} (${state.groups[index]})"); actor.isVisible = current != null
         }
         val editable = launch.canEdit && !loading
+        val sxOff = ((viewport.worldWidth - 960f) * 0.5f).coerceAtLeast(0f)
+        val syOff = ((viewport.worldHeight - 640f) * 0.5f).coerceAtLeast(0f)
         startupFrame.isVisible = current == null
-        if (home) startupFrame.setBounds(286f, 159f, 388f, 280f)
-        else startupFrame.setBounds(124f, 60f, 712f, 493f)
+        if (home) startupFrame.setBounds(sxOff + 286f, syOff + 159f, 388f, 280f)
+        else startupFrame.setBounds(sxOff + 124f, syOff + 60f, 712f, 493f)
         startupTitle.isVisible = current == null
+        startupTitle.setBounds(sxOff + 130f, syOff + 564f, 700f, 52f)
+        previewHeading.setBounds(sxOff + 178f, syOff + 397f, 256f, 52f)
+        mapPreview.setBounds(sxOff + 178f, syOff + 213f, 256f, 174f)
+        startupNotice.setBounds(sxOff + 146f, syOff + 122f, 668f, 48f)
+        retryContentButton.setBounds(sxOff + 178f, syOff + 174f, 144f, 34f)
+        setupButton.setBounds(sxOff + 346f, syOff + 359f, 268f, 40f)
+        menuBackButton.setBounds(sxOff + 146f, syOff + 76f, 136f, 40f)
+        quitButton.setBounds(sxOff + 346f, syOff + 187f, 268f, 40f)
+        visualPanel?.setBounds(sxOff + 150f, syOff + 114f, 660f, 440f)
+        packPanel?.setBounds(sxOff + 150f, syOff + 114f, 660f, 440f)
+        skirmishMapPanel?.setBounds(sxOff + 150f, syOff + 114f, 660f, 440f)
+        testScenePanel?.setBounds(sxOff + 150f, syOff + 114f, 660f, 440f)
         startupTitle.setText(when {
             loading -> "Loading match"
             home -> "RustedWarfare-Reforge"
@@ -1897,40 +2076,40 @@ class BootstrapScreen(
         }
         val packageOpening = contentCandidate?.content?.content?.openingPack != null
         contentLabel.isVisible = setup && !packageOpening
-        contentLabel.setBounds(488f, 420f, 296f, 24f)
+        contentLabel.setBounds(sxOff + 488f, syOff + 420f, 296f, 24f)
         rootField.isVisible = setup && !packageOpening
-        rootField.setBounds(488f, 379f, 296f, 36f)
+        rootField.setBounds(sxOff + 488f, syOff + 379f, 296f, 36f)
         rootField.isDisabled = touchControls || !editable || testScenes.selected
         modeBox.isVisible = setup
-        modeBox.setBounds(488f, 323f, 296f, 40f)
+        modeBox.setBounds(sxOff + 488f, syOff + 323f, 296f, 40f)
         modeBox.isDisabled = !editable
         shareBox.isVisible = setup
-        shareBox.setBounds(488f, 268f, 296f, 40f)
+        shareBox.setBounds(sxOff + 488f, syOff + 268f, 296f, 40f)
         shareBox.isDisabled = !editable
         noNukesBox.isVisible = setup
-        noNukesBox.setBounds(488f, 220f, 296f, 36f)
+        noNukesBox.setBounds(sxOff + 488f, syOff + 220f, 296f, 36f)
         noNukesBox.isDisabled = !editable
         deploymentBox.isVisible = setup && development && !touchControls
-        deploymentBox.setBounds(488f, 174f, 296f, 36f)
+        deploymentBox.setBounds(sxOff + 488f, syOff + 174f, 296f, 36f)
         deploymentBox.isDisabled = !editable || !development || touchControls
         cameraJoystickBox.isVisible = setup && touchControls
-        cameraJoystickBox.setBounds(488f, 174f, 296f, 36f)
+        cameraJoystickBox.setBounds(sxOff + 488f, syOff + 174f, 296f, 36f)
         cameraJoystickBox.isDisabled = !editable || !touchControls
         startButton.isVisible = setup || current != null
         startButton.setText(if (setup) "Start" else "Reopen")
         startButton.isDisabled = loading || setup && !canStartMatch()
-        if (setup) startButton.setBounds(666f, 76f, 148f, 40f)
+        if (setup) startButton.setBounds(sxOff + 666f, syOff + 76f, 148f, 40f)
         exitButton.isVisible = loading || current != null
         exitButton.setText(if (loading) "Cancel" else "Return")
-        if (loading) exitButton.setBounds(406f, 76f, 148f, 40f)
+        if (loading) exitButton.setBounds(sxOff + 406f, syOff + 76f, 148f, 40f)
         packTab.isVisible = setup || home
-        packTab.setBounds(if (home) 346f else 290f, if (home) 305f else 76f, if (home) 268f else 108f, 40f)
+        packTab.setBounds(sxOff + (if (home) 346f else 290f), syOff + (if (home) 305f else 76f), if (home) 268f else 108f, 40f)
         visualsTab.isVisible = (setup || home) && visualPanel != null
-        visualsTab.setBounds(if (home) 346f else 404f, if (home) 251f else 76f, if (home) 268f else 108f, 40f)
+        visualsTab.setBounds(sxOff + (if (home) 346f else 404f), syOff + (if (home) 251f else 76f), if (home) 268f else 108f, 40f)
         skirmishMapTab.isVisible = setup
-        skirmishMapTab.setBounds(if (retryContentButton.isVisible) 326f else 178f, 174f, 114f, 34f)
+        skirmishMapTab.setBounds(sxOff + (if (retryContentButton.isVisible) 326f else 178f), syOff + 174f, 114f, 34f)
         testSceneTab.isVisible = (setup || home) && development && testScenarioSeed != null && !touchControls
-        testSceneTab.setBounds(if (home) 346f else 520f, if (home) 132f else 76f, if (home) 268f else 118f, 40f)
+        testSceneTab.setBounds(sxOff + (if (home) 346f else 520f), syOff + (if (home) 132f else 76f), if (home) 268f else 118f, 40f)
         skirmishMapPanel?.let {
             it.isVisible = managing && startupPage == StartupPage.MAPS
             if (it.isVisible) it.refresh()
@@ -2006,17 +2185,30 @@ class BootstrapScreen(
 
     override fun resize(width: Int, height: Int) {
         cancelInput()
-        viewport.update(width, height, true)
-        if (!touchControls && width > 0 && height > 0) {
-            battlefieldCamera.setToOrtho(false, viewport.worldHeight * width / height, viewport.worldHeight)
-            graphics?.projection?.resizeBattlefield(battlefieldWidth.toDouble())
+        if (width > 0 && height > 0) {
+            val ppc = Gdx.graphics?.ppcY?.takeIf { it > 0f } ?: 0f
+            val ppi = Gdx.graphics?.ppiY?.takeIf { it > 0f } ?: 0f
+            uiMetrics = UiScale.metricsFromDensity(width, height, touchControls, ppc, ppi)
+            viewport.unitsPerPixel = 1f / uiMetrics.scale
+            viewport.update(width, height, true)
+            battlefieldCamera.setToOrtho(false, viewport.worldWidth, viewport.worldHeight)
+            graphics?.projection?.resizeBattlefield(battlefieldWidth.toDouble(), battlefieldHeight.toDouble())
+            fontDebouncer.onScaleChanged(uiMetrics.scale)
+        } else {
+            viewport.update(width, height, true)
         }
         graphics?.let { g ->
             g.updateMinimapAspect(viewport.screenWidth, viewport.screenHeight, viewport.worldWidth, viewport.worldHeight)
             syncMinimapActorBounds(g)
         }
-        evidence.record("resize", mapOf("width" to width, "height" to height, "screenX" to viewport.screenX,
-            "screenY" to viewport.screenY, "screenWidth" to viewport.screenWidth, "screenHeight" to viewport.screenHeight))
+        if (presentationReady) {
+            lastHudState = null
+            updateHud()
+        }
+        evidence.record("resize", mapOf("width" to width, "height" to height,
+            "uiScale" to uiMetrics.scale, "logicalWidth" to uiMetrics.logicalWidth, "logicalHeight" to uiMetrics.logicalHeight,
+            "screenX" to viewport.screenX, "screenY" to viewport.screenY,
+            "screenWidth" to viewport.screenWidth, "screenHeight" to viewport.screenHeight))
     }
     override fun pause() {
         if (disposed) return
@@ -2059,13 +2251,13 @@ class BootstrapScreen(
                     ).firstOrNull()
                     val bound = activeVisuals?.let { v -> it.renderResources.bindVisuals(v, originalTilesetRoot = origRoot) }
                         ?: it.renderResources.resolveTileAtlases(null, origRoot)
-                    SandboxGraphics.load(bound, activeRoot, fullBattlefield = !touchControls)
+                    SandboxGraphics.load(bound, activeRoot, fullBattlefield = true)
                 }
                 graphics?.let { g ->
                     g.updateMinimapAspect(viewport.screenWidth, viewport.screenHeight, viewport.worldWidth, viewport.worldHeight)
                     syncMinimapActorBounds(g)
                     val map = g.projection
-                    map.resizeBattlefield(battlefieldWidth.toDouble())
+                    map.resizeBattlefield(battlefieldWidth.toDouble(), battlefieldHeight.toDouble())
                     suspendedCamera?.let(map::restoreCamera)
                     scriptedCamera?.rebind(map)
                 }
@@ -2156,7 +2348,14 @@ class BootstrapScreen(
         presentationReady = false
         Gdx.input.inputProcessor = null
         val closingGraphics = graphics; graphics = null
-        listOf<() -> Unit>({ releaseSounds() }, { closingGraphics?.close() }, { visualPanel?.close() }, { packPanel?.close() }, { testScenePanel?.close() }, { skirmishMapPanel?.close() }, { stage.dispose() }, { skin.dispose() },
+        val closingFonts = fontSet; fontSet = null
+        val closingFallback = fallbackFont; fallbackFont = null
+        listOf<() -> Unit>({ releaseSounds() }, { closingGraphics?.close() }, { visualPanel?.close() }, { packPanel?.close() }, { testScenePanel?.close() }, { skirmishMapPanel?.close() }, { stage.dispose() }, {
+            if (::skin.isInitialized && skin.has("default-font", BitmapFont::class.java)) {
+                skin.remove("default-font", BitmapFont::class.java)
+            }
+            skin.dispose()
+        }, { closingFonts?.close() }, { closingFallback?.dispose() },
             { shapes.dispose() }, { batch.dispose() }).forEach { cleanup ->
             try { cleanup() } catch (failure: Exception) {
                 evidence.recordFailure("cleanup-error", failure)

@@ -43,12 +43,21 @@ class SandboxGraphics private constructor(private val resources: SandboxRenderRe
     val minimap = Minimap(projection.worldWidth, projection.worldHeight,
         Minimap.fitArea(minimapBounds, projection.worldWidth, projection.worldHeight))
 
-    /** Updates minimap stage bounds to preserve true map aspect ratio in physical screen pixels. */
+    /** Updates minimap stage bounds pinned to top-right of [stageWidth]x[stageHeight] preserving physical aspect ratio. */
     fun updateMinimapAspect(screenWidth: Int, screenHeight: Int, stageWidth: Float, stageHeight: Float) {
         if (screenWidth <= 0 || screenHeight <= 0 || stageWidth <= 0f || stageHeight <= 0f) return
         val pxPerUnitX = screenWidth.toDouble() / stageWidth.toDouble()
         val pxPerUnitY = screenHeight.toDouble() / stageHeight.toDouble()
-        minimap.updateArea(Minimap.fitArea(minimapBounds, projection.worldWidth, projection.worldHeight, pxPerUnitX, pxPerUnitY))
+        val margin = UiTokens.SCREEN_MARGIN.toDouble()
+        val maxW = minOf(UiTokens.SIDEBAR_WIDTH.toDouble(), (stageWidth - margin * 2.0).coerceAtLeast(64.0))
+        val maxH = minOf(UiTokens.SIDEBAR_WIDTH.toDouble(), (stageHeight * 0.36).coerceAtLeast(64.0))
+        val dynamicBounds = MapArea(
+            left = (stageWidth - maxW).coerceAtLeast(0.0),
+            bottom = (stageHeight - maxH).coerceAtLeast(0.0),
+            width = maxW,
+            height = maxH,
+        )
+        minimap.updateArea(Minimap.fitArea(dynamicBounds, projection.worldWidth, projection.worldHeight, pxPerUnitX, pxPerUnitY))
     }
     private val owned = mutableListOf<Texture>()
     private val tiles = mutableMapOf<Int, TextureRegion>()

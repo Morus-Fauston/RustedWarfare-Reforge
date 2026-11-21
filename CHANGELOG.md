@@ -1,5 +1,18 @@
 # Changelog
 
+## v0.5.53 (2026-11-22 01:37)
+
+### 新增
+
+- **连续等比缩放与全屏战场底座**：废除 `BootstrapScreen` 的桌面端 `StretchViewport(960, 640)` 与 Android 端 `FitViewport(960, 640)`，统一升级为基于短边 640 参考单位的连续等比 `ScreenViewport`（`UiScale` / `UiMetrics`），支持 `960×640 → 1.0`、`1920×1080 → 1.6875`、`2560×1080 → 1.6875`（额外宽度全归战场，零非等比拉伸）及触控端基于 `ppcY / 10` 的 8mm 物理键高下限 `s_touch`；Android 端开启 `fullBattlefield = true` 并移除旧 736 透明挡板，`resize()` 自动触发居中与视口重排。
+- **FreeType 开源中文字体与防抖重建**：在 `client` / `pc` / `android`（四 ABI `armeabi-v7a`、`arm64-v8a`、`x86`、`x86_64`）接入 `gdx-freetype:1.13.1`，随包附带 OFL 1.1 许可的 `NotoSansSC-Regular.otf`、`NotoSansSC-Bold.otf`、`JetBrainsMono-Regular.ttf` 与完整许可证及第三方声明；实现 `UiFontSet` 按实际像素 `字号 × s` 增量生成清晰字形、开局字形预热与 `FontRebuildDebouncer` 拖拽防抖重建（严格先换绑控件缓存、再更新 `Skin` 样式、最后按先字体后生成器顺序释放旧资源，隔离无泄漏）。
+- **设计令牌与中英双语固定文案表**：落地 `UiTokens`（15 项颜色、尺寸与 11–19 号字号令牌）与 `UiStrings`（完整中英双语键表、默认跟随 `Locale.getDefault()`、透传内容包原文不翻译，并支持核心 kebab-case 拒绝码归一化与暂未支持提示映射）。
+
+### 技术
+
+- **测试、多端构建与独立整审**：新增 `UiFoundationScaleTokensAndStringsTest` 覆盖三分辨率/竖屏/触控 8mm 下限、`ScreenViewport` 坐标往返、15 色完整 RGBA、防抖、双语键齐与 OFL 资源校验；通过 PC `1920×1080` 与 `960×640` 实窗 FreeType 冒烟、`:pc:installDist` 及 `:android:assembleDebug`（确认四 ABI `libgdx-freetype.so` 与字体/OFL 许可全部打入 APK），独立非作者代码整审与两轮定向复核归零（0 必修）。
+
+---
 ## v0.5.52 (2026-11-22 00:41)
 
 ### 新增
