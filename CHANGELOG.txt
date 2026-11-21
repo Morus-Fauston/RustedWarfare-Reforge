@@ -1,3 +1,9 @@
+v0.5.59 (2026-11-22 06:58)
+  新增: 整合开发模式 F3 调试层与子图层开关（保留核心同源 DiagnosticSceneProjector/CollisionBoxView 绘制并支持 F3+B 碰撞箱/缓冲/矢量/停滞、F3+R 路线与落点、F3+G 半透明地块网格，新开局自动重置，普通模式零入口）/ 新增双栏等宽诊断叠加层 HudDebugOverlay（左上 9 行全局信息与图例、右侧 6 行主选单位诊断、战场宽 <780 自动单列堆叠、事件提示实时下移零重叠、严格只读玩家获准视野不泄露迷雾敌军）/ 触控开发模式以系统条末尾“调试”按钮（debug-layer-toggle）与图层行点击切层彻底替代旧 CollisionBoxDevelopmentPanel / 归位开发模式 `/` 沙盒指令台 HudSandboxConsole（宽 460 战场底部居中、保留 sandbox-command-input 及点选动作 ID、非面板区域不拦截战场点击）/ 接入单选与多选最近可达到达偏差事件流提示并保留地图标记
+  技术: 扩展 UiStrings（pick.repeat、arrivalDeviatedMulti）及后台抓图 1280x800/F3 组合键支持；新增 UiHudDebugLayerAndConsoleTest（含迷雾隐藏敌军隐私校验、调试开关权威位级确定性、460 居中与动作 ID 契约）并通过相关回归全绿；完成 1920×1080（常态与 F3+G 网格）、960×640 窄窗堆叠、1280×800 底部居中指令台与触控 2400×1080 系统条调试按钮实窗采集，Hydrogen 视觉并排审阅与 Neon 独立代码整审定向复核均 0 必修 PASS
+
+====
+
 v0.5.58 (2026-11-22 06:05)
   新增: 落地 PC/触控双端编组栏 HudControlGroupBar（PC 左下仅显示非空编组支持全部 0–9、44×40 格、点击选组/700ms 连按居中/Ctrl+数字保存/Shift+数字并选；触控端位于镜头摇杆右侧固定前 3 格且空组虚线压暗、第 4 格起非空显示，实现 DEC-P011-001 的 0.83s/1.67s 三段按住阶段提示、底进度条与短按调用/空组存入/追加并选/替换闭环）/ 落地原版触控首点预览次点执行交互（TouchActionPreviewState 普通动作首点弹左侧说明卡“再次点击执行”且不入队、次点同代表单位同动作执行、切单位/点卡外/进目标模式自动关闭并拦截卡内点击防穿透、建造与选点类首点直进目标模式）/ 镜头摇杆统一为半透明圆环与摇杆球风格
   技术: 扩充 SelectionState/SandboxSession.appendGroup、SandboxInput 修饰键追踪及开发期 --touch/--background-size 抓图支持；新增 UiHudGroupsAndTouchTest 与 BackgroundLaunchTest 校验并通过相关回归全绿；完成 PC 1920×1080 与触控 2400×1080（常态/首点预览/次点入队）实窗对照采集，Hydrogen 视觉并排审阅 0 必修 PASS，Neon 独立代码整审定向复核 0 必修 PASS

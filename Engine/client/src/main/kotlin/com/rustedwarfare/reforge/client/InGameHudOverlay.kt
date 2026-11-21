@@ -51,6 +51,7 @@ interface InGameHudCallbacks {
     fun onMenuBackToStart()
     fun onMenuSettings()
     fun onSelectPrimaryType(typeId: String) {}
+    fun onToggleDebug() {}
 }
 
 /**
@@ -78,6 +79,9 @@ internal class InGameHudOverlay(
     private var stageH: Float = 640f
     private var minimapWellH: Float = 148f
     private var externalActionsH: Float = 0f
+    private var showDebugButton: Boolean = false
+    private var debugActive: Boolean = false
+    private var noticeTopYOverride: Float? = null
 
     var layout: HudOverlayLayout = computeLayout(
         stageW = 960f,
@@ -106,6 +110,7 @@ internal class InGameHudOverlay(
     private val btnRate1 = HitActor(onClick = { callbacks.onSelectRate(OfflineRate.NORMAL) })
     private val btnRate2 = HitActor(onClick = { callbacks.onSelectRate(OfflineRate.DOUBLE) })
     private val btnRate4 = HitActor(onClick = { callbacks.onSelectRate(OfflineRate.QUADRUPLE) })
+    private val btnDebug = HitActor(onClick = { callbacks.onToggleDebug() })
 
     private val btnMenuResume = HitActor(onClick = { callbacks.onMenuResume() })
     private val btnMenuRestart = HitActor(onClick = { callbacks.onMenuRestart() })
@@ -139,6 +144,7 @@ internal class InGameHudOverlay(
         addActor(btnRate1)
         addActor(btnRate2)
         addActor(btnRate4)
+        addActor(btnDebug)
         addActor(btnMenuResume)
         addActor(btnMenuRestart)
         addActor(btnMenuBack)
@@ -157,9 +163,10 @@ internal class InGameHudOverlay(
     private fun captionMonoFont(): BitmapFont = fontsProvider()?.captionMono ?: fallbackFontProvider()
 
     /** Lightweight per-frame sync for fading notice alphas & camera-follow badge without full relayout. */
-    fun syncEventStream(eventStream: HudEventStream) {
+    fun syncEventStream(eventStream: HudEventStream, noticesStartBelowY: Float? = noticeTopYOverride) {
         notices = eventStream.visibleNotices()
         cameraFollowing = eventStream.cameraFollowing
+        noticeTopYOverride = noticesStartBelowY
     }
 
     fun update(
@@ -170,6 +177,9 @@ internal class InGameHudOverlay(
         hudSnapshot: HudSnapshot?,
         eventStream: HudEventStream,
         externalActionsHeight: Float,
+        showTouchDebugButton: Boolean = false,
+        debugLayerEnabled: Boolean = false,
+        noticesStartBelowY: Float? = null,
     ) {
         stageW = stageWidth.coerceAtLeast(1f)
         stageH = stageHeight.coerceAtLeast(1f)
@@ -178,6 +188,9 @@ internal class InGameHudOverlay(
         cameraFollowing = eventStream.cameraFollowing
         minimapWellH = HudSidebarProjection.minimapHeightRef(worldWidth, worldHeight, UiTokens.SIDEBAR_WIDTH)
         externalActionsH = externalActionsHeight.coerceAtLeast(0f)
+        showDebugButton = showTouchDebugButton
+        debugActive = debugLayerEnabled
+        noticeTopYOverride = noticesStartBelowY
         setBounds(0f, 0f, stageW, stageH)
         isVisible = hudSnapshot != null
 
@@ -210,6 +223,12 @@ internal class InGameHudOverlay(
         btnRate1.setActiveBounds(cx, sysY, wRate1, SYSTEM_BAR_HEIGHT); cx += wRate1
         btnRate2.setActiveBounds(cx, sysY, wRate2, SYSTEM_BAR_HEIGHT); cx += wRate2
         btnRate4.setActiveBounds(cx, sysY, wRate4, SYSTEM_BAR_HEIGHT); cx += wRate4
+        if (showDebugButton) {
+            val wDebug = measureSystemCellWidth(UiStrings.get("debugBtn", lang), bodyFont())
+            btnDebug.setActiveBounds(cx, sysY, wDebug, SYSTEM_BAR_HEIGHT); cx += wDebug
+        } else {
+            btnDebug.disable()
+        }
         layout = layout.copy(
             systemBarRect = Rectangle(UiTokens.SCREEN_MARGIN, sysY, cx - UiTokens.SCREEN_MARGIN, SYSTEM_BAR_HEIGHT),
         )
@@ -272,7 +291,7 @@ internal class InGameHudOverlay(
         sidebarBlocker.touchable = Touchable.disabled
         scrimActor.touchable = Touchable.disabled
         btnMenu.disable(); btnPause.disable()
-        btnRate1.disable(); btnRate2.disable(); btnRate4.disable()
+        btnRate1.disable(); btnRate2.disable(); btnRate4.disable(); btnDebug.disable()
         btnMenuResume.disable(); btnMenuRestart.disable(); btnMenuBack.disable(); btnMenuSettings.disable()
         btnPauseResume.disable()
         typeChipActors.forEach { it.disable() }
@@ -301,6 +320,11 @@ internal class InGameHudOverlay(
         list += DrawnAction("set-speed:1", btnRate1, "1×", enabled = true)
         list += DrawnAction("set-speed:2", btnRate2, "2×", enabled = true)
         list += DrawnAction("set-speed:4", btnRate4, "4×", enabled = true)
+        if (showDebugButton) {
+            val dbgLabel = UiStrings.get("debugBtn", lang)
+            list += DrawnAction("debug-layer-toggle", btnDebug, dbgLabel, enabled = true)
+            list += DrawnAction("collision-box-view", btnDebug, dbgLabel, enabled = true)
+        }
         if (snap.menuOpen) {
             list += DrawnAction("menu-resume", btnMenuResume, UiStrings.get("menu.resume", lang), enabled = true)
             list += DrawnAction("menu-restart", btnMenuRestart, UiStrings.get("menu.restart", lang), enabled = true)
@@ -748,7 +772,10 @@ internal class InGameHudOverlay(
         )
         drawSystemCell(batch, white, btnRate1, "1×", countMonoFont(), active = snap.activeRate == OfflineRate.NORMAL, drawRightSep = true, alpha = alpha)
         drawSystemCell(batch, white, btnRate2, "2×", countMonoFont(), active = snap.activeRate == OfflineRate.DOUBLE, drawRightSep = true, alpha = alpha)
-        drawSystemCell(batch, white, btnRate4, "4×", countMonoFont(), active = snap.activeRate == OfflineRate.QUADRUPLE, drawRightSep = false, alpha = alpha)
+        drawSystemCell(batch, white, btnRate4, "4×", countMonoFont(), active = snap.activeRate == OfflineRate.QUADRUPLE, drawRightSep = showDebugButton, alpha = alpha)
+        if (showDebugButton) {
+            drawSystemCell(batch, white, btnDebug, UiStrings.get("debugBtn", lang), bodyFont(), active = debugActive, drawRightSep = false, alpha = alpha)
+        }
 
         strokeRect(batch, white, bar.x, bar.y, bar.width, bar.height, UiTokens.LINE, alpha)
     }
@@ -774,7 +801,7 @@ internal class InGameHudOverlay(
     }
 
     private fun drawNotices(batch: Batch, white: TextureRegion, snap: HudSnapshot, alpha: Float) {
-        var ny = layout.systemBarRect.y - 8f
+        var ny = (noticeTopYOverride ?: layout.systemBarRect.y) - 8f
         val x = UiTokens.SCREEN_MARGIN
         val font = bodyFont()
 

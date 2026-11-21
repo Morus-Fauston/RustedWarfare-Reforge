@@ -143,6 +143,12 @@ class SandboxSession(scenario: Scenario, private val evidence: ClientEvidence = 
     internal val diagnosticScene: DiagnosticFrameScene
         get() = diagnosticTracker.updateAndProjectPlayer(observation)
 
+    internal val debugMap: com.rustedwarfare.reforge.core.content.MapDefinition
+        get() = scenario.map
+
+    internal fun unitDefinitionForView(typeId: String): com.rustedwarfare.reforge.core.content.UnitDefinition? =
+        scenario.unitDefinitions[typeId]
+
     internal fun movementCollisionForView(unit: UnitObservation): MovementCollisionShape? =
         DiagnosticSceneProjector.mobileShapeForView(unit, scenario.unitDefinitions)
 
@@ -233,6 +239,9 @@ class SandboxSession(scenario: Scenario, private val evidence: ClientEvidence = 
         }
     val moveArrivalMarker: MoveArrival?
         get() = selectedArrivals.singleOrNull().takeIf { selectedIds.size == 1 }
+
+    internal val selectedMoveArrivals: List<MoveArrival>
+        get() = selectedArrivals
 
     /** Player copy is separate from the original diagnostic feedback and identifiers. */
     val playerFeedback: String

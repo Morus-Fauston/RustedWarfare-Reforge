@@ -1,5 +1,18 @@
 # Changelog
 
+## v0.5.59 (2026-11-22 06:58)
+
+### 新增
+
+- **F3 调试层总开关、子图层过滤与双栏等宽信息（`HudDebugOverlay`、`CollisionBoxView`）**：严格仅在开发模式提供（普通模式零入口、默认关闭、每局重置），`F3` 开关整层，`F3+B`（碰撞箱/缓冲/矢量/停滞）、`F3+R`（路线与落点）、`F3+G`（启用 `GL_BLEND` 混合的半透明地块网格）独立过滤复用核心同源 `DiagnosticSceneProjector` 几何；新增 `HudDebugOverlay` 左上 9 行全局读数（版本模式、FPS/帧耗时、sim step/rate/actual/backlog、地图尺寸与迷雾、镜头、指针世界/地块坐标与地形 GID、可见单位与弹体计数、图层状态与橙/青图例）及右侧 6 行主选单位诊断（归一化朝向角、运动状态与命令、碰撞形状与质量、接触/缓冲计数、路径与剩余距离）；战场宽度 `<780` 参考单位自动堆叠为单列，左上事件提示同步下移至 `leftColumnBottomY` 下方零重叠；严格读取玩家获准 `PlayerObservation`，绝不泄露迷雾隐藏敌军。
+- **触控开发模式系统条“调试”按钮**：彻底移除旧 `CollisionBoxDevelopmentPanel`，在 `InGameHudOverlay` 系统条末尾新增开发模式触控“调试”按钮（高亮表示开启，上报 `debug-layer-toggle` 与 `collision-box-view`），并在调试文字栏的 `layers` 行支持直接点击切换 `[B]/[R]/[G]` 子图层；模态菜单/暂停态下严格门控防冲突。
+- **底部居中 `/` 沙盒指令台与到达偏差提示归位（`HudSandboxConsole`、`BootstrapScreen`）**：移除旧左下常驻沙盒文字与大面板，改为开发模式按 `/` 唤起宽 460、战场底部居中停靠的 `HudSandboxConsole`（`Touchable.childrenOnly` 不拦截外部战场点击；上方点选按钮行、深色等宽输入栏、命令回显与 `Esc 关闭 · 回车提交` 脚注，完整保留 `sandbox-command-input` 及 4 个 `sandbox-pick-*` ID）；将单选与多选最近可达停点偏差（含 `stepIndex` 去重）接入左上 4 秒普通事件提示流并保留地图标记。
+
+### 技术
+
+- **测试、实窗对照与双门禁复核**：补齐 `UiStrings` 翻译键（`pick.repeat`、`arrivalDeviatedMulti`）及开发背景抓图 `1280x800` / `f3` 组合键支持；新增 `UiHudDebugLayerAndConsoleTest`（覆盖子图层默认/重置、`<780` 堆叠阈值、`SandboxMode.MEMORY` 视野外隐藏敌军不泄露实证、调试开关前后权威模拟位级一致、`HudSandboxConsole` 460 居中布局与动作 ID 及单/多选到达偏差 4 秒淡出），与 `UiHud*` / `KnowledgeSandboxSessionTest` / `BackgroundLaunchTest` 回归全绿；采集 1920×1080（常态与半透明 F3+G 网格）、960×640 窄窗单列、1280×800 底部居中指令台及触控 2400×1080 系统条“调试”按钮共 5 张实窗图，Hydrogen 视觉并排审阅 0 必修 PASS，独立非作者 Neon 代码整审经 3 P1 + 4 P2 返修复核 0 必修 PASS。
+
+---
 ## v0.5.58 (2026-11-22 06:05)
 
 ### 新增

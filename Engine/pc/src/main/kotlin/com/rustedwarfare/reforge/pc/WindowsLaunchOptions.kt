@@ -60,6 +60,7 @@ data class WindowsLaunchOptions(
                 }
                 when (value) {
                     "960x640" -> Triple(true, 960, 640)
+                    "1280x800" -> Triple(false, 1280, 800)
                     "1920x1080" -> Triple(false, 1920, 1080)
                     "2400x1080" -> Triple(false, 2400, 1080)
                     "2560x1080" -> Triple(false, 2560, 1080)
