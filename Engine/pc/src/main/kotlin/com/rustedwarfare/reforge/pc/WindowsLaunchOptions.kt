@@ -20,19 +20,20 @@ data class WindowsLaunchOptions(
     val backgroundCompact: Boolean = false,
     val development: Boolean = false,
     val diagnostics: Boolean = false,
+    val skirmishMap: Path? = null,
 ) {
     val hasVisualOverride: Boolean get() = visualSource != null || originalAssets != null
     companion object {
         fun parse(args: Array<String>, repoRoot: Path,
                   defaultScenarioSeed: Path = repoRoot.resolve("SimulationTest/public/scenarios/phase-six-a-json.json")): WindowsLaunchOptions {
-            require(args.size % 2 == 0) { "Usage: [--mode sandbox|demo] [--inputs PATH] [--development true] [--evidence NEW_RUN_DIRECTORY] [--visuals placeholder|original] [--original-assets PATH]" }
+            require(args.size % 2 == 0) { "Usage: [--mode sandbox|demo] [--inputs PATH] [--map PATH] [--development true] [--evidence NEW_RUN_DIRECTORY] [--visuals placeholder|original] [--original-assets PATH]" }
             val visualKeys = setOf("--visuals", "--original-assets")
             val pairs = args.toList().chunked(2)
             require(pairs.filter { it[0] in visualKeys }.map { it[0] }.distinct().size == pairs.count { it[0] in visualKeys }) {
                 "Duplicate visual asset option"
             }
             val options = pairs.associate { (key, value) ->
-                require(key in setOf("--mode", "--inputs", "--development", "--evidence", "--background-input", "--background-size") + visualKeys) { "Unknown option: $key" }
+                require(key in setOf("--mode", "--inputs", "--map", "--development", "--evidence", "--background-input", "--background-size") + visualKeys) { "Unknown option: $key" }
                 key to value
             }
             val mode = options["--mode"] ?: "sandbox"
@@ -69,12 +70,13 @@ data class WindowsLaunchOptions(
                 require(value.isNotBlank()) { "--original-assets requires a directory" }; resolve(value)
             }
             if (mode == "demo") {
-                require("--inputs" !in options) { "Demo uses packaged self-owned inputs" }
+                require("--inputs" !in options && "--map" !in options) { "Demo uses packaged self-owned inputs" }
                 return WindowsLaunchOptions(mode, null,
                     resolve(options["--evidence"] ?: "Engine/pc/build/demo-runs/$runId"), runId,
                     "RustedWarfare-Reforge | Field Demo", visualSource, originalAssets)
             }
             val explicitInputs = options["--inputs"]
+            val skirmishMap = options["--map"]?.let { value -> require(value.isNotBlank()) { "--map requires a .tmx path" }; resolve(value) }
             val seed = defaultScenarioSeed.toAbsolutePath().normalize()
             return WindowsLaunchOptions(mode,
                 explicitInputs?.let(::resolve) ?: seed.parent.resolve("../inputs/phase-six-a-sandbox/json").normalize(),
@@ -84,8 +86,8 @@ data class WindowsLaunchOptions(
                     development -> "RustedWarfare-Reforge | Phase VI A sandbox"
                     else -> "RustedWarfare-Reforge"
                 }, visualSource, originalAssets,
-                if (development && explicitInputs == null) seed else null, backgroundInput, backgroundCompact,
-                development, development || "--evidence" in options)
+                if (development && explicitInputs == null && skirmishMap == null) seed else null, backgroundInput, backgroundCompact,
+                development, development || "--evidence" in options, skirmishMap)
         }
     }
 }

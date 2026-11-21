@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<map version="1.2" tiledversion="1.4.3" orientation="orthogonal" renderorder="right-down" width="44" height="34" tilewidth="20" tileheight="20" infinite="0">
+ <tileset firstgid="1" source="../../visuals/placeholder/tilesets/base_terrain.tsx"/>
+ <tileset firstgid="21" source="../../visuals/placeholder/tilesets/units_markers.tsx"/>
+ <layer name="Ground" width="44" height="34">
+  <data encoding="base64" compression="gzip">H4sIALC7AWsC/+2YwQ7DIAxDCwUk+v8fvEsnRRGQNPE02DhY4tJXyxgKLcdxlK2tH1ZmmpWdBc3Eps8mJq9nNLvFqrda7PJFNufVjiyeP8GmzCrI4xfBprxwKwpjSw5RyZfYdK6CkkvnrgzWOmdrs0gKv+FBBjzj9zvORg+feOUZI+YrNPyeDWVQFt7u8gwS8XiRcQJl0etCMHKp16vhORr5SfAbjRlzr9SzN4ueX08GGr8RtOZQfRj5nbEPo/6i+7Da/oDYIzX7bwB9kxEZaL5v3u6ufH5An6E8fbOcKRFeLWvakkMSvHrvF5qOZeMdi7OQ97cIYK90P17x/8OK/3e2/k8vjIAeFWAXAAA=</data>
+ </layer>
+ <layer name="GroundDetails" width="44" height="34">
+  <data encoding="base64" compression="gzip">H4sIALC7AWsC/+2YiQ0AIAwCXQH2H9YdDBoqMEBDD+u3VlVliMFe+ZgHm5OsJxh4SJxBtSDkASF/BM48jdfEqT8IeUDIEg94/b5PTK9F8x7ZHMfVmnRmuN97IPTvuL5uZueUratXmHK7+XaieU8//UFwENcqRxvCCA1WYBcAAA==</data>
+ </layer>
+ <layer name="Items" width="44" height="34">
+  <data encoding="base64" compression="gzip">H4sIALC7AWsC/+3WsQ3AIAwEQHZ49p81ygYBEwlLd40bZCMKP2MAALeaH+st/d/zKfTL5n1z6D0AVvdS11nU8zI/5FsO5nGn/wMAdPYA246PVGAXAAA=</data>
+ </layer>
+ <layer name="Units" width="44" height="34">
+  <data encoding="base64" compression="gzip">H4sIALC7AWsC/+3QMREAMAwDMZNIW/5Is5ZAMkkA7LtPAACAXy18XJlzBjafrAAALGomtz1uYBcAAA==</data>
+ </layer>
+ <objectgroup name="Triggers">
+  <object id="1" name="map_info" x="20" y="20" width="100" height="60">
+   <properties>
+    <property name="type" value="skirmish"/>
+    <property name="fog" value="los"/>
+   </properties>
+  </object>
+ </objectgroup>
+</map>

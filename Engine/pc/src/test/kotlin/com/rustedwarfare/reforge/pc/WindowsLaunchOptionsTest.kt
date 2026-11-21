@@ -127,4 +127,20 @@ class WindowsLaunchOptionsTest {
         }
     }
 
+
+    @Test fun skirmish_map_cli_option_resolves_path_and_rejects_blank_or_demo_mode() {
+        val repository = Files.createTempDirectory("map-cli-")
+        try {
+            val parsed = WindowsLaunchOptions.parse(arrayOf("--map", "maps/river_crossing.tmx"), repository)
+            assertEquals(repository.resolve("maps/river_crossing.tmx").toAbsolutePath().normalize(), parsed.skirmishMap)
+            assertFailsWith<IllegalArgumentException> {
+                WindowsLaunchOptions.parse(arrayOf("--map", "   "), repository)
+            }
+            assertFailsWith<IllegalArgumentException> {
+                WindowsLaunchOptions.parse(arrayOf("--mode", "demo", "--map", "maps/river_crossing.tmx"), repository)
+            }
+        } finally {
+            repository.toFile().deleteRecursively()
+        }
+    }
 }

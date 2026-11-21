@@ -68,7 +68,8 @@ fun main(args: Array<String>) {
                 alternateStartSeed = options.testScenarioSeed?.resolveSibling("phase-six-a-spider-json.json"),
                 development = options.development, initialContent = options.development || args.contains("--inputs"),
                 openSetup = options.development || args.contains("--inputs"),
-                cameraStartSeed = sceneRoot.resolve("phase-seven-camera.json").takeIf { options.development })
+                cameraStartSeed = sceneRoot.resolve("phase-seven-camera.json").takeIf { options.development },
+                initialSkirmishMap = options.skirmishMap)
             val client = if (sink == null) screen else WindowPerfSampling(screen, sink)
             val application = if (options.backgroundInput)
                 BackgroundClientInput(client, output, runId, checkNotNull(sink), { screen.inputGeneration },

@@ -8,7 +8,40 @@ data class MinimapFrame(val terrain: List<TerrainFrameCell>, val units: List<Min
 
 /** Consumes exactly the same authorized frame as the main map. */
 class Minimap(val worldWidth: Double, val worldHeight: Double,
-              val area: MapArea = MapArea(752.0, 456.0, 176.0, 112.0)) {
+              initialArea: MapArea = MapArea(752.0, 456.0, 176.0, 112.0)) {
+    var area: MapArea = initialArea
+        private set
+
+    fun updateArea(newArea: MapArea) {
+        area = newArea
+    }
+
+    companion object {
+        /**
+         * Computes a screen-aspect-compensated minimap MapArea anchored at the top-right corner of [bounds],
+         * preserving the true map width:height ratio in physical screen pixels even under non-uniform stage scaling.
+         */
+        fun fitArea(
+            bounds: MapArea,
+            worldWidth: Double,
+            worldHeight: Double,
+            stagePixelsPerUnitX: Double = 1.0,
+            stagePixelsPerUnitY: Double = 1.0,
+        ): MapArea {
+            if (worldWidth <= 0.0 || worldHeight <= 0.0 || stagePixelsPerUnitX <= 0.0 || stagePixelsPerUnitY <= 0.0) {
+                return bounds
+            }
+            val maxPxW = bounds.width * stagePixelsPerUnitX
+            val maxPxH = bounds.height * stagePixelsPerUnitY
+            val scale = minOf(maxPxW / worldWidth, maxPxH / worldHeight)
+            val stageW = (worldWidth * scale / stagePixelsPerUnitX).coerceIn(1.0, bounds.width)
+            val stageH = (worldHeight * scale / stagePixelsPerUnitY).coerceIn(1.0, bounds.height)
+            // Anchor top-right inside bounds so minimap hugs the top-right corner cleanly
+            val left = bounds.left + (bounds.width - stageW)
+            val bottom = bounds.bottom + (bounds.height - stageH)
+            return MapArea(left, bottom, stageW, stageH)
+        }
+    }
     fun frame(frame: SandboxFrame): MinimapFrame = MinimapFrame(
         Collections.unmodifiableList(ArrayList(frame.terrain)),
         Collections.unmodifiableList(frame.observation.units.filter { it.alive && it.attachment == null }.map {

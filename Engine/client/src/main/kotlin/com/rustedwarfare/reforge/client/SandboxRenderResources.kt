@@ -4,6 +4,7 @@ import com.rustedwarfare.reforge.core.sim.Scenario
 import com.badlogic.gdx.graphics.Color
 import com.rustedwarfare.reforge.core.content.TurretMount
 import com.rustedwarfare.reforge.core.content.WeaponRecoil
+import com.rustedwarfare.reforge.core.content.MapVisualLayer
 import com.rustedwarfare.reforge.core.content.NuclearSiloKind
 import com.rustedwarfare.reforge.core.sim.Position
 import com.rustedwarfare.reforge.core.sim.UnitObservation
@@ -130,6 +131,7 @@ class SandboxRenderResources private constructor(
     val widthTiles: Int, val heightTiles: Int, val tileWidth: Int, val tileHeight: Int,
     val tileSets: List<VisualTileAtlas>, val units: Map<String, UnitAppearance>,
     private val playerTeams: Map<String, String?>,
+    val visualLayers: List<MapVisualLayer> = emptyList(),
 ) {
     fun withVisuals(visuals: PreparedVisualAssets): SandboxRenderResources {
         visuals.verify()
@@ -137,7 +139,7 @@ class SandboxRenderResources private constructor(
     }
 
     /** Pure worker binding. The loader verifies the complete descriptor after binding, before publishing it. */
-    internal fun bindVisuals(visuals: PreparedVisualAssets, useScenarioTerrain: Boolean = false): SandboxRenderResources {
+    internal fun bindVisuals(visuals: PreparedVisualAssets, useScenarioTerrain: Boolean = false, originalTilesetRoot: Path? = null): SandboxRenderResources {
         val mappedUnits = units.mapValues { (id, before) ->
             val image = requireNotNull(visuals.units[id]) { "VISUAL_MAPPING_UNSUPPORTED: unit $id" }
             val replacements = image.bindings()
@@ -154,19 +156,26 @@ class SandboxRenderResources private constructor(
                 })
             }
         }
-        val mappedTiles = if (useScenarioTerrain) tileSets else tileSets.map { atlas ->
-            val layout = atlas.supportedLayout()
-            val resolved = visuals.resolvedImages?.images?.get(ResourceId.parse("reforge:terrain/$layout"))
-            val rows = (atlas.tileCount + atlas.columns - 1) / atlas.columns
-            if (resolved != null) require(resolved.pixelWidth % atlas.columns == 0 && resolved.pixelHeight % rows == 0 &&
-                resolved.declaration.totalFrames == 1 && resolved.declaration.frameWidth == atlas.columns * atlas.tileWidth &&
-                resolved.declaration.frameHeight == rows * atlas.tileHeight) { "RESOURCE_PACK_BINDING_INVALID: reforge:terrain/$layout: Invalid atlas sampling layout" }
-            atlas.copy(imagePath = requireNotNull(visuals.terrain[layout]) { "VISUAL_MAPPING_UNSUPPORTED: $layout" }, transparentColor = null,
-                pixelTileWidth = resolved?.let { it.pixelWidth / atlas.columns } ?: atlas.tileWidth,
-                pixelTileHeight = resolved?.let { it.pixelHeight / rows } ?: atlas.tileHeight)
-        }
+        val mappedTiles = if (useScenarioTerrain) tileSets else resolveTiles(visuals, originalTilesetRoot)
         return SandboxRenderResources(widthTiles, heightTiles, tileWidth, tileHeight,
-            Collections.unmodifiableList(mappedTiles), Collections.unmodifiableMap(mappedUnits), playerTeams)
+            Collections.unmodifiableList(mappedTiles), Collections.unmodifiableMap(mappedUnits), playerTeams, visualLayers)
+    }
+
+    /** Resolves terrain tilesets through ADR-013 four-tier priority even when PreparedVisualAssets is absent. */
+    internal fun resolveTileAtlases(visuals: PreparedVisualAssets? = null, originalTilesetRoot: Path? = null): SandboxRenderResources {
+        return SandboxRenderResources(widthTiles, heightTiles, tileWidth, tileHeight,
+            Collections.unmodifiableList(resolveTiles(visuals, originalTilesetRoot)), units, playerTeams, visualLayers)
+    }
+
+    private fun resolveTiles(visuals: PreparedVisualAssets?, originalTilesetRoot: Path?): List<VisualTileAtlas> = tileSets.map { atlas ->
+        val resolved = TilesetAtlasResolver.resolveAtlasImage(atlas, visuals, originalTilesetRoot)
+        atlas.copy(
+            imagePath = resolved.path,
+            transparentColor = resolved.transparentColor,
+            pixelTileWidth = resolved.pixelTileWidth,
+            pixelTileHeight = resolved.pixelTileHeight,
+            isPlaceholderFallback = resolved.tier == 4,
+        )
     }
     /** Both endpoints come from the authorized player view and immutable appearance metadata. */
     internal fun defenseBeams(observation: PlayerObservation): List<DefenseBeam> = observation.projectileEvents.mapNotNull { event ->
@@ -241,6 +250,7 @@ class SandboxRenderResources private constructor(
                             unit.mech?.kind == com.rustedwarfare.reforge.core.content.MechKind.FOUR_LEGGED -> ImageLogicalSize(16, 68)
                         else -> null
                     })
-            }), Collections.unmodifiableMap(scenario.players.associate { it.playerId to it.teamId }))
+            }), Collections.unmodifiableMap(scenario.players.associate { it.playerId to it.teamId }),
+            Collections.unmodifiableList(scenario.map.visualLayers))
     }
 }

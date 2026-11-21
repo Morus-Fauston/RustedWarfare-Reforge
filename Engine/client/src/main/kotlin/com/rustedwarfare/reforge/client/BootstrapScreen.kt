@@ -45,8 +45,9 @@ class BootstrapScreen(
     private val initialContent: Boolean = true,
     openSetup: Boolean = true,
     private val cameraStartSeed: Path? = null,
+    private val initialSkirmishMap: Path? = null,
 ) : ApplicationAdapter() {
-    private enum class StartupPage { HOME, SETUP, CONTENT, RESOURCES, DEVELOPMENT }
+    private enum class StartupPage { HOME, SETUP, CONTENT, RESOURCES, DEVELOPMENT, MAPS }
     private data class ContentCandidate(val root: Path, val content: ContentPackChoice?)
     private lateinit var batch: SpriteBatch
     private lateinit var shapes: ShapeRenderer
@@ -177,6 +178,10 @@ class BootstrapScreen(
     }
     private var testScenePanel: TestScenarioPanel? = null
     private lateinit var testSceneTab: TextButton
+    private val skirmishMapState = SkirmishMapSelectionState()
+    private var skirmishMapPanel: SkirmishMapPanel? = null
+    private lateinit var skirmishMapTab: TextButton
+    private var matchStartupNotices: List<String> = emptyList()
     private var customRootText = if (initialContent) initialRoot.toAbsolutePath().normalize().toString() else ""
     private val launch = SandboxLaunchState(SandboxConfiguration(initialRoot.toAbsolutePath().normalize(), SandboxOptions(), visualState?.selection ?: VisualAssetSelection()))
     private var activeVisuals: PreparedVisualAssets? = null
@@ -510,21 +515,26 @@ class BootstrapScreen(
         previewHeading = label("", 178f, 449f, 256f, 52f).apply { setAlignment(Align.topLeft) }
         mapPreview = object : Actor() {
             override fun draw(batch: Batch, parentAlpha: Float) {
-                val map = testScenes.choice?.scenario?.map ?: qualifiedContent?.getOrNull()?.scenario?.map ?: return
-                val scale = minOf(width / (map.widthTiles * map.tileWidth), height / (map.heightTiles * map.tileHeight))
-                val cellWidth = map.tileWidth * scale
-                val cellHeight = map.tileHeight * scale
-                val left = x + (width - cellWidth * map.widthTiles) / 2
-                val bottom = y + (height - cellHeight * map.heightTiles) / 2
+                val map = skirmishMapState.selected?.map ?: testScenes.choice?.scenario?.map ?: qualifiedContent?.getOrNull()?.scenario?.map ?: return
+                val pxPerUnitX = if (viewport.worldWidth > 0f && viewport.screenWidth > 0) viewport.screenWidth.toFloat() / viewport.worldWidth else 1f
+                val pxPerUnitY = if (viewport.worldHeight > 0f && viewport.screenHeight > 0) viewport.screenHeight.toFloat() / viewport.worldHeight else 1f
+                val maxPxW = width * pxPerUnitX
+                val maxPxH = height * pxPerUnitY
+                val pxScale = minOf(maxPxW / (map.widthTiles * map.tileWidth), maxPxH / (map.heightTiles * map.tileHeight))
+                val cellWidth = (map.tileWidth * pxScale) / pxPerUnitX
+                val cellHeight = (map.tileHeight * pxScale) / pxPerUnitY
+                val left = x + (width - cellWidth * map.widthTiles) / 2f
+                val bottom = y + (height - cellHeight * map.heightTiles) / 2f
                 val columnStride = (map.widthTiles / 80).coerceAtLeast(1)
                 val rowStride = (map.heightTiles / 60).coerceAtLeast(1)
                 val original = batch.packedColor
                 val tile = skin.getRegion("white")
                 for (row in 0 until map.heightTiles step rowStride) for (col in 0 until map.widthTiles step columnStride) {
                     when {
-                        map.isResourcePool(col, row) -> batch.setColor(.76f, .72f, .44f, parentAlpha)
-                        map.blocking.isBlocked(col, row) -> batch.setColor(.22f, .34f, .36f, parentAlpha)
-                        else -> batch.setColor(.47f, .54f, .37f, parentAlpha)
+                        map.isResourcePool(col, row) -> batch.setColor(.89f, .73f, .24f, parentAlpha)
+                        !map.waterBlocking.isBlocked(col, row) && map.blocking.isBlocked(col, row) -> batch.setColor(.16f, .42f, .61f, parentAlpha)
+                        map.blocking.isBlocked(col, row) -> batch.setColor(.34f, .36f, .32f, parentAlpha)
+                        else -> batch.setColor(.36f, .52f, .31f, parentAlpha)
                     }
                     val tilesHigh = minOf(rowStride, map.heightTiles - row)
                     batch.draw(tile, left + col * cellWidth, bottom + (map.heightTiles - row - tilesHigh) * cellHeight,
@@ -589,6 +599,34 @@ class BootstrapScreen(
         }
         testSceneTab = button(if (alternateStartSeed == null) "Development" else "Starting units", 424f, 568f, 176f) {
             openSettingsPage(StartupPage.DEVELOPMENT)
+        }
+        skirmishMapTab = button("Maps (.tmx)", 424f, 568f, 112f) {
+            openSettingsPage(StartupPage.MAPS)
+        }
+        skirmishMapPanel = SkirmishMapPanel(
+            skirmishMapState,
+            skin,
+            originalDirectoryProvider = { visualState?.selection?.originalDirectory ?: visualSettings?.initialSelection?.originalDirectory },
+        ) {
+            if (skirmishMapState.selected != null && testScenes.selected) {
+                testScenes.useCustomContent()
+                rootField.text = customRootText
+            }
+            evidence.record("skirmish-map-choice", mapOf(
+                "selected" to (skirmishMapState.selected != null),
+                "path" to skirmishMapState.selected?.path?.toString(),
+                "displayName" to skirmishMapState.selected?.displayName,
+                "error" to skirmishMapState.error,
+            ))
+            loadError = null; lastHudState = null; updateHud()
+        }.also {
+            it.setBounds(150f, 114f, 660f, 440f)
+            stage.addActor(it)
+            initialSkirmishMap?.let { preselected ->
+                if (skirmishMapState.select(preselected, visualState?.selection?.originalDirectory ?: visualSettings?.initialSelection?.originalDirectory)) {
+                    it.refresh()
+                }
+            }
         }
         testScenePanel = TestScenarioPanel(testScenes, testScenarioSeed, alternateStartSeed, cameraStartSeed, skin,
             visualSettings?.let { it::createUiFont }) {
@@ -889,7 +927,11 @@ class BootstrapScreen(
     }
 
     private fun canStartMatch(): Boolean = visualState?.canStart != false &&
-        if (testScenes.selected) testScenes.choice != null else packState.canStart && qualifiedContent?.isSuccess == true
+        when {
+            skirmishMapState.selected != null -> packState.canStart && (packState.choice() != null || qualifiedContent?.isSuccess == true || rootField.text.trim().takeIf { it.isNotEmpty() }?.let { raw -> runCatching { java.nio.file.Files.isRegularFile(java.nio.file.Paths.get(raw).resolve("pack.json")) }.getOrDefault(false) } == true)
+            testScenes.selected -> testScenes.choice != null
+            else -> packState.canStart && qualifiedContent?.isSuccess == true
+        }
 
     private fun requestLoad() {
         if (loading) {
@@ -900,11 +942,17 @@ class BootstrapScreen(
             val request = if (launch.canEdit) {
                 refreshContentQualification()
                 if (!canStartMatch()) return
-                val scene = testScenes.choice
+                val skirmish = skirmishMapState.selected
+                val scene = if (skirmish != null) null else testScenes.choice
                 val content = contentCandidate
-                launch.configure(launch.configuration.copy(root = scene?.root ?: checkNotNull(content).root,
+                launch.configure(launch.configuration.copy(
+                    root = scene?.root ?: content?.root ?: activeRoot,
                     visuals = visualState?.selection ?: launch.configuration.visuals,
-                    contentPack = scene?.content ?: content?.content, testScenario = scene))
+                    contentPack = scene?.content ?: content?.content ?: packState.choice(),
+                    testScenario = scene,
+                    skirmishMapPath = skirmish?.path,
+                    skirmishMapName = skirmish?.displayName,
+                ))
                 launch.start()
             } else launch.reopen()
             val acceptedNanos = System.nanoTime()
@@ -927,8 +975,12 @@ class BootstrapScreen(
             val contentPack = request.configuration.contentPack
             val prepare = visualState?.prepareForLoad(contentPack)
                 ?: visualSettings?.let { settings -> { settings.prepareForContent(request.configuration.visuals, contentPack) } }
+            val skirmishMapPath = request.configuration.skirmishMapPath
             val testScenario = request.configuration.testScenario
-            if (testScenario != null) loader.requestTestScenario(testScenario, prepare)
+            if (skirmishMapPath != null) {
+                val origDir = request.configuration.visuals.originalDirectory ?: visualSettings?.initialSelection?.originalDirectory
+                loader.requestSkirmishMap(skirmishMapPath, activeRoot, contentPack, origDir, request.configuration.skirmishMapName, prepare)
+            } else if (testScenario != null) loader.requestTestScenario(testScenario, prepare)
             else if (contentPack == null) loader.request(activeRoot, prepare)
             else loader.requestPack(activeRoot, contentPack, prepare)
         } catch (failure: Exception) { failLoad(failure) }
@@ -973,6 +1025,7 @@ class BootstrapScreen(
         scriptedCamera = null
         suspendedCamera = null
         activeVisuals = null
+        matchStartupNotices = emptyList()
         listOf<() -> Unit>({ closingSounds?.close() }, { closingSession?.close() }, { closingGraphics?.close() }).forEach { cleanup ->
             try { cleanup() } catch (failure: Exception) {
                 evidence.recordFailure("cleanup-error", failure)
@@ -1027,14 +1080,32 @@ class BootstrapScreen(
                     val map = pendingGraphics.projection
                     map.restoreCamera(map.camera.copy(zoom = FixedCameraJoystick.startingZoom))
                 }
+                if (request.configuration.skirmishMapPath != null) {
+                    val focus = pendingSession.observation.units.firstOrNull { it.alive && it.ownerPlayerId == "p1" }
+                    if (focus != null) {
+                        pendingGraphics.projection.centerOn(focus.position)
+                    }
+                    evidence.record("terrain-atlas-usage", mapOf(
+                        "generation" to generation,
+                        "loadedTerrainTextureCount" to pendingGraphics.loadedTerrainTextureCount,
+                        "declaredTilesetCount" to scenario.map.tileSets.size,
+                        "visualLayerCount" to scenario.map.visualLayers.size,
+                    ))
+                }
                 val camera = if (cameraCues.isEmpty()) null else OfflineCameraController(pendingGraphics.projection, generationEvidence)
                 pendingSounds = loaded.visuals?.resolvedSounds?.let { resources -> SoundPlayback(
                     pendingSession.consumeSounds(pendingGraphics.projection.soundListener()), resources,
                     soundFactory, evidence.withGeneration(runGeneration)) }
+                matchStartupNotices = loaded.startupNotices
+                if (loaded.startupNotices.isNotEmpty()) {
+                    evidence.record("skirmish-startup-notices", mapOf("generation" to generation, "notices" to loaded.startupNotices))
+                }
                 evidence.recordLoadReady(generation, loaded)
                 check(launch.complete(request.generation)) { "Cancelled load generation" }
                 loaded.visuals?.let { visualState?.rememberPublished(it, loaded.contentPack) }
                 pendingLoad = null
+                pendingGraphics.updateMinimapAspect(viewport.screenWidth, viewport.screenHeight, viewport.worldWidth, viewport.worldHeight)
+                syncMinimapActorBounds(pendingGraphics)
                 graphics = pendingGraphics
                 activeVisuals = loaded.visuals
                 session = pendingSession
@@ -1137,8 +1208,9 @@ class BootstrapScreen(
                 shapes.end()
                 graphics.drawFlameEffects(shapes, current.frame)
             } finally { ScissorStack.popScissors() }
+            batch.projectionMatrix = viewport.camera.combined
             shapes.projectionMatrix = viewport.camera.combined
-            graphics.drawMinimap(shapes, current.frame)
+            graphics.drawMinimap(shapes, current.frame, batch)
             if (cameraJoystickActive()) drawCameraJoystick()
         }
         stage.act(Gdx.graphics.deltaTime); stage.draw()
@@ -1179,6 +1251,7 @@ class BootstrapScreen(
         button("start-match", startButton); button("exit-match", exitButton)
         button("skirmish-setup", setupButton); button("startup-back", menuBackButton)
         button("check-start-content", retryContentButton)
+        button("skirmish-maps", skirmishMapTab)
         rateButtons.forEach { (rate, actor) -> button("set-speed:${rate.multiplier}", actor) }
         button("pause-simulation", simulationPauseButton)
         collisionBoxPanel?.let { entries += it.drawnActions() }
@@ -1783,30 +1856,35 @@ class BootstrapScreen(
             home -> "RustedWarfare-Reforge"
             setup -> "Skirmish setup"
             startupPage == StartupPage.DEVELOPMENT -> "Development"
+            startupPage == StartupPage.MAPS -> "Skirmish Maps (.tmx)"
             else -> "RustedWarfare-Reforge"
         })
         setupButton.isVisible = home
-        retryContentButton.isVisible = setup && !testScenes.selected && qualifiedContent?.isFailure == true
+        retryContentButton.isVisible = setup && !testScenes.selected && skirmishMapState.selected == null && qualifiedContent?.isFailure == true
         quitButton.isVisible = home
         menuBackButton.isVisible = setup || managing
         previewHeading.isVisible = setup
         mapPreview.isVisible = setup
+        val selectedTmx = skirmishMapState.selected
         val prepared = testScenes.choice?.scenario ?: qualifiedContent?.getOrNull()?.scenario
-        previewHeading.setText(prepared?.let { scenario ->
-            val choice = contentCandidate?.content
-            val name = testScenes.choice?.name ?: choice?.content?.openingPack?.name ?: choice?.pack?.name ?: "Selected map"
-            "$name\n" +
-            "${scenario.map.widthTiles} x ${scenario.map.heightTiles} tiles"
-        } ?: "No map selected")
+        previewHeading.setText(when {
+            selectedTmx != null -> "${selectedTmx.displayName}\n${selectedTmx.map.widthTiles} x ${selectedTmx.map.heightTiles} tiles (${selectedTmx.playerCount}p)"
+            prepared != null -> {
+                val choice = contentCandidate?.content
+                val name = testScenes.choice?.name ?: choice?.content?.openingPack?.name ?: choice?.pack?.name ?: "Selected map"
+                "$name\n${prepared.map.widthTiles} x ${prepared.map.heightTiles} tiles"
+            }
+            else -> "No map selected"
+        })
         val startupMessage = when {
             loading -> state.preparationStatus ?: "Preparing content and resources..."
             loadError != null -> loadError
             testScenes.selected && testScenes.error != null -> testScenes.error
             packState.error != null -> packState.error
             packState.compositionError != null -> packState.compositionError
-            qualifiedContent?.isFailure == true -> qualifiedContent?.exceptionOrNull()?.message
+            skirmishMapState.selected == null && qualifiedContent?.isFailure == true -> qualifiedContent?.exceptionOrNull()?.message
             visualState?.canStart == false -> visualState.error ?: "Apply the resource selection before starting."
-            contentCandidate != null && qualifiedContent == null -> "Checking map and content..."
+            skirmishMapState.selected == null && contentCandidate != null && qualifiedContent == null -> "Checking map and content..."
             !canStartMatch() -> if (rootField.text.isBlank())
                 "Check and enable a base package in Content packs."
             else "Choose a checked content folder and enable any content packs you want to use."
@@ -1846,11 +1924,17 @@ class BootstrapScreen(
         exitButton.setText(if (loading) "Cancel" else "Return")
         if (loading) exitButton.setBounds(406f, 76f, 148f, 40f)
         packTab.isVisible = setup || home
-        packTab.setBounds(if (home) 346f else 298f, if (home) 305f else 76f, if (home) 268f else 112f, 40f)
+        packTab.setBounds(if (home) 346f else 290f, if (home) 305f else 76f, if (home) 268f else 108f, 40f)
         visualsTab.isVisible = (setup || home) && visualPanel != null
-        visualsTab.setBounds(if (home) 346f else 422f, if (home) 251f else 76f, if (home) 268f else 110f, 40f)
+        visualsTab.setBounds(if (home) 346f else 404f, if (home) 251f else 76f, if (home) 268f else 108f, 40f)
+        skirmishMapTab.isVisible = setup
+        skirmishMapTab.setBounds(if (retryContentButton.isVisible) 326f else 178f, 174f, 114f, 34f)
         testSceneTab.isVisible = (setup || home) && development && testScenarioSeed != null && !touchControls
-        testSceneTab.setBounds(if (home) 346f else 544f, if (home) 132f else 76f, if (home) 268f else 110f, 40f)
+        testSceneTab.setBounds(if (home) 346f else 520f, if (home) 132f else 76f, if (home) 268f else 118f, 40f)
+        skirmishMapPanel?.let {
+            it.isVisible = managing && startupPage == StartupPage.MAPS
+            if (it.isVisible) it.refresh()
+        }
         testScenePanel?.let {
             it.isVisible = managing && startupPage == StartupPage.DEVELOPMENT
             it.setEditable(launch.canEdit && !loading)
@@ -1873,7 +1957,7 @@ class BootstrapScreen(
             state.preparationStatus != null -> state.preparationStatus
             loadError != null -> if (visualRecoveryFailed) "Visual cache failed. Reopen or exit match to prepare again." else "Load failed"
             current == null -> "Ready"
-            nativePanel -> current.playerFeedback
+            nativePanel -> if (matchStartupNotices.isNotEmpty() && (current.playerFeedback.isBlank() || current.playerFeedback == "Ready")) "! " + matchStartupNotices.joinToString(" | ") else current.playerFeedback
             else -> "${current.feedback}\nStep ${current.observation.stepIndex}"
         })
         minimapActor.isVisible = current != null
@@ -1927,6 +2011,10 @@ class BootstrapScreen(
             battlefieldCamera.setToOrtho(false, viewport.worldHeight * width / height, viewport.worldHeight)
             graphics?.projection?.resizeBattlefield(battlefieldWidth.toDouble())
         }
+        graphics?.let { g ->
+            g.updateMinimapAspect(viewport.screenWidth, viewport.screenHeight, viewport.worldWidth, viewport.worldHeight)
+            syncMinimapActorBounds(g)
+        }
         evidence.record("resize", mapOf("width" to width, "height" to height, "screenX" to viewport.screenX,
             "screenY" to viewport.screenY, "screenWidth" to viewport.screenWidth, "screenHeight" to viewport.screenHeight))
     }
@@ -1965,9 +2053,18 @@ class BootstrapScreen(
         if (touchControls && !presentationReady) {
             try {
                 createPresentation()
-                graphics = session?.let { SandboxGraphics.load(activeVisuals?.let(it.renderResources::withVisuals)
-                    ?: it.renderResources, activeRoot, fullBattlefield = !touchControls) }
-                graphics?.projection?.let { map ->
+                graphics = session?.let {
+                    val origRoot = TmxSkirmishScenarioBuilder.tilesetFallbackRoots(
+                        visualState?.selection?.originalDirectory ?: visualSettings?.initialSelection?.originalDirectory
+                    ).firstOrNull()
+                    val bound = activeVisuals?.let { v -> it.renderResources.bindVisuals(v, originalTilesetRoot = origRoot) }
+                        ?: it.renderResources.resolveTileAtlases(null, origRoot)
+                    SandboxGraphics.load(bound, activeRoot, fullBattlefield = !touchControls)
+                }
+                graphics?.let { g ->
+                    g.updateMinimapAspect(viewport.screenWidth, viewport.screenHeight, viewport.worldWidth, viewport.worldHeight)
+                    syncMinimapActorBounds(g)
+                    val map = g.projection
                     map.resizeBattlefield(battlefieldWidth.toDouble())
                     suspendedCamera?.let(map::restoreCamera)
                     scriptedCamera?.rebind(map)
@@ -2047,13 +2144,19 @@ class BootstrapScreen(
         shapes.end()
     }
 
+    private fun syncMinimapActorBounds(g: SandboxGraphics) {
+        if (!::minimapActor.isInitialized) return
+        val area = g.minimap.area
+        minimapActor.setBounds(area.left.toFloat(), area.bottom.toFloat(), area.width.toFloat(), area.height.toFloat())
+    }
+
     private fun releasePresentation() {
         if (!presentationReady) return
         cancelInput()
         presentationReady = false
         Gdx.input.inputProcessor = null
         val closingGraphics = graphics; graphics = null
-        listOf<() -> Unit>({ releaseSounds() }, { closingGraphics?.close() }, { visualPanel?.close() }, { packPanel?.close() }, { testScenePanel?.close() }, { stage.dispose() }, { skin.dispose() },
+        listOf<() -> Unit>({ releaseSounds() }, { closingGraphics?.close() }, { visualPanel?.close() }, { packPanel?.close() }, { testScenePanel?.close() }, { skirmishMapPanel?.close() }, { stage.dispose() }, { skin.dispose() },
             { shapes.dispose() }, { batch.dispose() }).forEach { cleanup ->
             try { cleanup() } catch (failure: Exception) {
                 evidence.recordFailure("cleanup-error", failure)

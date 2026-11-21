@@ -9,6 +9,8 @@ import com.badlogic.gdx.graphics.g2d.SpriteBatch
 import com.badlogic.gdx.graphics.g2d.TextureRegion
 import com.badlogic.gdx.graphics.glutils.ShapeRenderer
 import com.badlogic.gdx.utils.XmlReader
+import com.rustedwarfare.reforge.core.content.GroundRules
+import com.rustedwarfare.reforge.core.content.MapVisualLayerKind
 import com.rustedwarfare.reforge.core.sim.PlayerObservation
 import com.rustedwarfare.reforge.core.sim.Scenario
 import com.rustedwarfare.reforge.core.sim.UnitObservation
@@ -37,10 +39,37 @@ class SandboxGraphics private constructor(private val resources: SandboxRenderRe
         resources.heightTiles.toDouble() * resources.tileHeight,
         if (fullBattlefield) MapArea(0.0, 0.0, 960.0, 640.0) else MapArea(16.0, 64.0, 704.0, 512.0),
         fillViewport = fullBattlefield)
-    val minimap = if (fullBattlefield) Minimap(projection.worldWidth, projection.worldHeight,
-        DESKTOP_MINIMAP_AREA) else Minimap(projection.worldWidth, projection.worldHeight)
+    private val minimapBounds = if (fullBattlefield) DESKTOP_MINIMAP_AREA else MapArea(752.0, 456.0, 176.0, 112.0)
+    val minimap = Minimap(projection.worldWidth, projection.worldHeight,
+        Minimap.fitArea(minimapBounds, projection.worldWidth, projection.worldHeight))
+
+    /** Updates minimap stage bounds to preserve true map aspect ratio in physical screen pixels. */
+    fun updateMinimapAspect(screenWidth: Int, screenHeight: Int, stageWidth: Float, stageHeight: Float) {
+        if (screenWidth <= 0 || screenHeight <= 0 || stageWidth <= 0f || stageHeight <= 0f) return
+        val pxPerUnitX = screenWidth.toDouble() / stageWidth.toDouble()
+        val pxPerUnitY = screenHeight.toDouble() / stageHeight.toDouble()
+        minimap.updateArea(Minimap.fitArea(minimapBounds, projection.worldWidth, projection.worldHeight, pxPerUnitX, pxPerUnitY))
+    }
     private val owned = mutableListOf<Texture>()
     private val tiles = mutableMapOf<Int, TextureRegion>()
+    private val tileAverageColors = mutableMapOf<Int, TileAverageColor>()
+    internal var loadedTerrainTextureCount: Int = 0
+        private set
+    private var minimapPixmap: Pixmap? = null
+    private var minimapTexture: Texture? = null
+    private var minimapVisibilityState: ByteArray? = null
+    private var minimapGroundSnapshot: IntArray? = null
+    private val resourcePoolFlags: BooleanArray = run {
+        val count = resources.widthTiles * resources.heightTiles
+        BooleanArray(count) { index ->
+            val layers = resources.visualLayers
+            layers.any { layer ->
+                val clean = layer.cleanGidAt(index)
+                val atlas = TilesetAtlasResolver.ownerOf(resources.tileSets, clean)
+                atlas != null && (clean - atlas.firstGid) in atlas.resourcePoolTileIds
+            }
+        }
+    }
     private val units = mutableMapOf<String, TextureRegion>()
     private val turrets = mutableMapOf<String, TextureRegion>()
     private val namedTurrets = mutableMapOf<Pair<String, String>, TextureRegion>()
@@ -70,7 +99,7 @@ class SandboxGraphics private constructor(private val resources: SandboxRenderRe
     } ?: units[typeId]
 
     companion object {
-        internal val DESKTOP_MINIMAP_AREA = MapArea(752.0, 512.0, 184.0, 112.0)
+        internal val DESKTOP_MINIMAP_AREA = MapArea(752.0, 464.0, 184.0, 160.0)
 
         fun load(resources: SandboxRenderResources, root: Path, fullBattlefield: Boolean = false): SandboxGraphics =
             loadPrepared(resources, root, intArrayOf(), fullBattlefield)
@@ -88,8 +117,18 @@ class SandboxGraphics private constructor(private val resources: SandboxRenderRe
                                  fullBattlefield: Boolean): SandboxGraphics {
             val graphics = SandboxGraphics(resources, fullBattlefield)
             try {
-                graphics.loadImages(root)
-                for (gid in ground) require(gid == 0 || graphics.tiles.containsKey(gid)) { "Missing tile image for gid=$gid" }
+                val activeGids = LinkedHashSet<Int>(256)
+                if (resources.visualLayers.isNotEmpty()) {
+                    activeGids.addAll(TilesetAtlasResolver.collectActiveVisualGids(resources.visualLayers))
+                }
+                for (gid in ground) {
+                    val clean = GroundRules.stripFlipFlags(gid)
+                    if (clean != 0) activeGids.add(clean)
+                }
+                graphics.loadImages(root, activeGids)
+                for (gid in activeGids) {
+                    require(graphics.tiles.containsKey(gid)) { "Missing tile image for gid=$gid" }
+                }
                 return graphics
             } catch (failure: Exception) {
                 try { graphics.close() } catch (cleanup: Exception) { failure.addSuppressed(cleanup) }
@@ -112,13 +151,83 @@ class SandboxGraphics private constructor(private val resources: SandboxRenderRe
         } finally { pixmap.dispose() }
     }
 
-    private fun loadParsedTiles() {
-        for (definition in resources.tileSets) {
-            val texture = texture(definition.imagePath, definition.transparentColor)
-            for (index in 0 until definition.tileCount) tiles[definition.firstGid + index] = TextureRegion(texture,
-                definition.margin + index % definition.columns * (definition.pixelTileWidth + definition.spacing),
-                definition.margin + index / definition.columns * (definition.pixelTileHeight + definition.spacing),
-                definition.pixelTileWidth, definition.pixelTileHeight)
+    private fun loadParsedTiles(activeGids: Set<Int>) {
+        // ADR-013: Only load atlases actually referenced by at least one non-zero GID in visual layers.
+        // If activeGids is empty (e.g. direct unit-test call with empty ground), load all declared atlases.
+        val atlasesToLoad = if (activeGids.isEmpty()) resources.tileSets
+        else TilesetAtlasResolver.activeAtlases(resources.tileSets, activeGids)
+
+        data class CachedAtlasUpload(val texture: Texture, val pixmap: Pixmap)
+        val uploaded = linkedMapOf<TilesetAtlasResolver.TextureUploadKey, CachedAtlasUpload>()
+        try {
+            for (definition in atlasesToLoad) {
+                val key = TilesetAtlasResolver.textureUploadKey(definition)
+                val normalizedPath = key.path
+                val normalizedTrans = key.normalizedTransparentColor
+                val cached = uploaded.getOrPut(key) {
+                    val pixmap = Pixmap(Gdx.files.absolute(normalizedPath.toString()))
+                    try {
+                        if (normalizedTrans != null) {
+                            val rgb = normalizedTrans.toIntOrNull(16)
+                                ?: throw IllegalArgumentException("Invalid transparent color: ${definition.transparentColor}")
+                            pixmap.blending = Pixmap.Blending.None
+                            for (y in 0 until pixmap.height) for (x in 0 until pixmap.width) {
+                                if (pixmap.getPixel(x, y) ushr 8 == rgb) pixmap.drawPixel(x, y, 0)
+                            }
+                        }
+                        val tex = Texture(pixmap).also {
+                            owned += it
+                            it.setFilter(Texture.TextureFilter.Nearest, Texture.TextureFilter.Nearest)
+                        }
+                        loadedTerrainTextureCount++
+                        CachedAtlasUpload(tex, pixmap)
+                    } catch (failure: Throwable) {
+                        pixmap.dispose()
+                        throw failure
+                    }
+                }
+                val effectiveMargin = if (definition.isPlaceholderFallback) 0 else definition.margin
+                val effectiveSpacing = if (definition.isPlaceholderFallback) 0 else definition.spacing
+                val cols = definition.columns.coerceAtLeast(1)
+                val stepX = (definition.pixelTileWidth + effectiveSpacing).coerceAtLeast(1)
+                val stepY = (definition.pixelTileHeight + effectiveSpacing).coerceAtLeast(1)
+                val availCols = ((cached.pixmap.width - 2 * effectiveMargin + effectiveSpacing) / stepX).coerceAtLeast(1)
+                val availRows = ((cached.pixmap.height - 2 * effectiveMargin + effectiveSpacing) / stepY).coerceAtLeast(1)
+                val maxCapacity = availCols * availRows
+                for (index in 0 until definition.tileCount) {
+                    val gid = definition.firstGid + index
+                    if (activeGids.isNotEmpty() && gid !in activeGids) continue
+                    // When an atlas fell back to a smaller placeholder biome strip (e.g. 60x40 = 6 tiles),
+                    // wrap tile index cleanly within the fallback texture bounds so no out-of-bounds UV occurs.
+                    val fitsDirect = !definition.isPlaceholderFallback && cols <= availCols && (index / cols) < availRows
+                    val sampleIdx = if (fitsDirect) index else (index % maxCapacity)
+                    val sampleCols = if (fitsDirect) cols else availCols
+                    val rx = (effectiveMargin + (sampleIdx % sampleCols) * stepX).coerceIn(0, (cached.pixmap.width - 1).coerceAtLeast(0))
+                    val ry = (effectiveMargin + (sampleIdx / sampleCols) * stepY).coerceIn(0, (cached.pixmap.height - 1).coerceAtLeast(0))
+                    val regionW = definition.pixelTileWidth.coerceAtMost(cached.pixmap.width - rx).coerceAtLeast(1)
+                    val regionH = definition.pixelTileHeight.coerceAtMost(cached.pixmap.height - ry).coerceAtLeast(1)
+                    // Original misc.tsx tile id=9 (random tree marker) contains a red '?' editor placeholder;
+                    // substitute clean tree tile id=10 from the same misc atlas when present so live maps look clean.
+                    val isMiscRandomTreeMarker = !definition.isPlaceholderFallback &&
+                        index == 9 &&
+                        (definition.name.equals("misc", ignoreCase = true) ||
+                            definition.imageSource.replace('\\', '/').substringAfterLast('/').equals("misc.png", ignoreCase = true)) &&
+                        definition.tileCount > 10 &&
+                        (10 / sampleCols) < availRows
+                    val finalRx = if (isMiscRandomTreeMarker) {
+                        (effectiveMargin + (10 % sampleCols) * stepX).coerceIn(0, (cached.pixmap.width - 1).coerceAtLeast(0))
+                    } else rx
+                    val finalRy = if (isMiscRandomTreeMarker) {
+                        (effectiveMargin + (10 / sampleCols) * stepY).coerceIn(0, (cached.pixmap.height - 1).coerceAtLeast(0))
+                    } else ry
+                    val finalW = definition.pixelTileWidth.coerceAtMost(cached.pixmap.width - finalRx).coerceAtLeast(1)
+                    val finalH = definition.pixelTileHeight.coerceAtMost(cached.pixmap.height - finalRy).coerceAtLeast(1)
+                    tiles[gid] = TextureRegion(cached.texture, finalRx, finalRy, finalW, finalH)
+                    tileAverageColors[gid] = TerrainTileColorSampler.samplePixmapTile(cached.pixmap, finalRx, finalRy, finalW, finalH)
+                }
+            }
+        } finally {
+            uploaded.values.forEach { it.pixmap.dispose() }
         }
     }
 
@@ -147,10 +256,10 @@ class SandboxGraphics private constructor(private val resources: SandboxRenderRe
         }
     }
 
-    private fun loadImages(root: Path) {
+    private fun loadImages(root: Path, activeGids: Set<Int>) {
         // Parsed content carries its immutable atlas layout across initial load and GL recovery.
         // Retain the legacy constructor's unspecified-layout behavior for existing callers.
-        if (resources.tileSets.all { it.columns > 0 && it.tileCount != Int.MAX_VALUE }) loadParsedTiles()
+        if (resources.tileSets.all { it.columns > 0 && it.tileCount != Int.MAX_VALUE }) loadParsedTiles(activeGids)
         else loadLegacyTiles(root)
         val turretImages = mutableMapOf<Path, TextureRegion>()
         fun turretRegion(path: Path) = turretImages.getOrPut(path) { TextureRegion(texture(path)) }
@@ -183,15 +292,66 @@ class SandboxGraphics private constructor(private val resources: SandboxRenderRe
 
     fun draw(batch: SpriteBatch, frame: SandboxFrame, construction: ConstructionPreview? = null,
         selectedIds: Set<String> = emptySet()) {
-        for (cell in frame.terrain) {
-            val gid = cell.gid ?: continue
-            if (gid == 0) continue
-            batch.setColor(if (cell.visible) 1f else 0.3f, if (cell.visible) 1f else 0.3f,
-                if (cell.visible) 1f else 0.3f, 1f)
-            batch.draw(tiles.getValue(gid),
-                projection.x(cell.column.toDouble() * resources.tileWidth),
-                projection.y((cell.row + 1.0) * resources.tileHeight),
-                (resources.tileWidth * projection.scale).toFloat(), (resources.tileHeight * projection.scale).toFloat())
+        val bounds = TerrainTileColorSampler.visibleBounds(
+            projection, resources.widthTiles, resources.heightTiles, resources.tileWidth, resources.tileHeight, padTiles = 1,
+        )
+        val drawW = (resources.tileWidth * projection.scale).toFloat()
+        val drawH = (resources.tileHeight * projection.scale).toFloat()
+        val layers = resources.visualLayers
+        val hasVisualLayers = layers.isNotEmpty() && frame.terrain.size == resources.widthTiles * resources.heightTiles
+        if (hasVisualLayers) {
+            val groundLayer = layers.firstOrNull { it.kind == MapVisualLayerKind.GROUND }
+            for (layer in layers) {
+                for (row in bounds.minRow..bounds.maxRow) {
+                    val rowOffset = row * resources.widthTiles
+                    val y = projection.y((row + 1.0) * resources.tileHeight)
+                    for (col in bounds.minCol..bounds.maxCol) {
+                        val index = rowOffset + col
+                        val cell = frame.terrain[index]
+                        if (!cell.known) continue
+                        val rawGid = if (layer === groundLayer) {
+                            val cellGid = cell.gid ?: continue
+                            val cleanCell = GroundRules.stripFlipFlags(cellGid)
+                            val layerRaw = layer.rawGidAt(index)
+                            if (GroundRules.stripFlipFlags(layerRaw) == cleanCell) layerRaw else cellGid
+                        } else {
+                            layer.rawGidAt(index)
+                        }
+                        val cleanGid = GroundRules.stripFlipFlags(rawGid)
+                        if (cleanGid == 0) continue
+                        val region = tiles[cleanGid] ?: continue
+                        val shade = if (cell.visible) 1f else 0.3f
+                        batch.setColor(shade, shade, shade, 1f)
+                        val x = projection.x(col.toDouble() * resources.tileWidth)
+                        val flags = GroundRules.flipFlags(rawGid)
+                        if (flags == 0) {
+                            batch.draw(region, x, y, drawW, drawH)
+                        } else {
+                            val (rot, sx, sy) = TerrainTileColorSampler.decodeTiledTransform(flags)
+                            batch.draw(region, x, y, drawW * 0.5f, drawH * 0.5f, drawW, drawH, sx, sy, rot)
+                        }
+                    }
+                }
+            }
+        } else {
+            for (cell in frame.terrain) {
+                if (cell.column !in bounds.minCol..bounds.maxCol || cell.row !in bounds.minRow..bounds.maxRow) continue
+                val rawGid = cell.gid ?: continue
+                val cleanGid = GroundRules.stripFlipFlags(rawGid)
+                if (cleanGid == 0) continue
+                val region = tiles[cleanGid] ?: continue
+                val shade = if (cell.visible) 1f else 0.3f
+                batch.setColor(shade, shade, shade, 1f)
+                val x = projection.x(cell.column.toDouble() * resources.tileWidth)
+                val y = projection.y((cell.row + 1.0) * resources.tileHeight)
+                val flags = GroundRules.flipFlags(rawGid)
+                if (flags == 0) {
+                    batch.draw(region, x, y, drawW, drawH)
+                } else {
+                    val (rot, sx, sy) = TerrainTileColorSampler.decodeTiledTransform(flags)
+                    batch.draw(region, x, y, drawW * 0.5f, drawH * 0.5f, drawW, drawH, sx, sy, rot)
+                }
+            }
         }
         batch.color = Color.WHITE
         for (drawing in afterburnTrails.project(frame.observation, resources)) {
@@ -674,19 +834,105 @@ class SandboxGraphics private constructor(private val resources: SandboxRenderRe
         }
     }
 
-    fun drawMinimap(shapes: ShapeRenderer, frame: SandboxFrame) {
+    private fun syncMinimapTexture(frame: SandboxFrame): Texture? {
+        val w = resources.widthTiles
+        val h = resources.heightTiles
+        if (w <= 0 || h <= 0) return null
+        val cellCount = w * h
+        val pixmap = minimapPixmap ?: Pixmap(w, h, Pixmap.Format.RGBA8888).also {
+            it.blending = Pixmap.Blending.None
+            it.setColor(0f, 0f, 0f, 1f)
+            it.fill()
+            minimapPixmap = it
+        }
+        val stateCache = minimapVisibilityState ?: ByteArray(cellCount) { -1 }.also { minimapVisibilityState = it }
+        val gidCache = minimapGroundSnapshot ?: IntArray(cellCount) { -1 }.also { minimapGroundSnapshot = it }
+        var dirty = minimapTexture == null
+
+        for (cell in frame.terrain) {
+            val col = cell.column
+            val row = cell.row
+            if (col !in 0 until w || row !in 0 until h) continue
+            val index = row * w + col
+            val stateByte: Byte = when {
+                !cell.known -> 0
+                cell.visible -> 2
+                else -> 1
+            }
+            val cleanGid = cell.gid?.let { GroundRules.stripFlipFlags(it) } ?: 0
+            if (stateCache[index] == stateByte && gidCache[index] == cleanGid) continue
+            stateCache[index] = stateByte
+            gidCache[index] = cleanGid
+            val rgba = when (stateByte.toInt()) {
+                0 -> 0x000000FF // Unexplored -> solid black
+                else -> {
+                    val full = TerrainTileColorSampler.compositeCellRgb(
+                        cellIndex = index,
+                        groundGid = cleanGid,
+                        visualLayers = resources.visualLayers,
+                        tileColors = tileAverageColors,
+                        isResourcePool = index < resourcePoolFlags.size && resourcePoolFlags[index],
+                    )
+                    if (stateByte.toInt() == 2) full else TerrainTileColorSampler.darkenRgba(full, 0.45f)
+                }
+            }
+            pixmap.drawPixel(col, row, rgba)
+            dirty = true
+        }
+
+        val tex = minimapTexture
+        if (tex == null) {
+            val created = Texture(pixmap).also {
+                it.setFilter(Texture.TextureFilter.Nearest, Texture.TextureFilter.Nearest)
+                owned += it
+                minimapTexture = it
+            }
+            return created
+        }
+        if (dirty) {
+            tex.draw(pixmap, 0, 0)
+        }
+        return tex
+    }
+
+    fun drawMinimap(shapes: ShapeRenderer, frame: SandboxFrame, batch: SpriteBatch? = null) {
         val view = minimap.frame(frame)
         val area = minimap.area
-        shapes.begin(ShapeRenderer.ShapeType.Filled)
-        shapes.color = Color.BLACK
-        shapes.rect(area.left.toFloat(), area.bottom.toFloat(), area.width.toFloat(), area.height.toFloat())
-        val width = (area.width / resources.widthTiles).toFloat()
-        val height = (area.height / resources.heightTiles).toFloat()
-        for (cell in view.terrain) {
-            if (!cell.known) continue
-            shapes.color = if (cell.visible) Color(0.35f, 0.46f, 0.34f, 1f) else Color(0.1f, 0.14f, 0.1f, 1f)
-            shapes.rect(minimap.x(cell.column.toDouble() * resources.tileWidth),
-                minimap.y((cell.row + 1.0) * resources.tileHeight), width, height)
+        if (batch != null) {
+            val tex = syncMinimapTexture(frame)
+            if (tex != null) {
+                batch.begin()
+                batch.color = Color.WHITE
+                batch.draw(tex, area.left.toFloat(), area.bottom.toFloat(), area.width.toFloat(), area.height.toFloat())
+                batch.end()
+            }
+            shapes.begin(ShapeRenderer.ShapeType.Filled)
+        } else {
+            shapes.begin(ShapeRenderer.ShapeType.Filled)
+            shapes.color = Color.BLACK
+            shapes.rect(area.left.toFloat(), area.bottom.toFloat(), area.width.toFloat(), area.height.toFloat())
+            val width = (area.width / resources.widthTiles).toFloat()
+            val height = (area.height / resources.heightTiles).toFloat()
+            for (cell in view.terrain) {
+                if (!cell.known) continue
+                val index = cell.row * resources.widthTiles + cell.column
+                val rgba = TerrainTileColorSampler.compositeCellRgb(
+                    cellIndex = index,
+                    groundGid = cell.gid ?: 0,
+                    visualLayers = resources.visualLayers,
+                    tileColors = tileAverageColors,
+                    isResourcePool = index in resourcePoolFlags.indices && resourcePoolFlags[index],
+                )
+                val finalRgba = if (cell.visible) rgba else TerrainTileColorSampler.darkenRgba(rgba, 0.45f)
+                shapes.setColor(
+                    ((finalRgba ushr 24) and 0xFF) / 255f,
+                    ((finalRgba ushr 16) and 0xFF) / 255f,
+                    ((finalRgba ushr 8) and 0xFF) / 255f,
+                    1f,
+                )
+                shapes.rect(minimap.x(cell.column.toDouble() * resources.tileWidth),
+                    minimap.y((cell.row + 1.0) * resources.tileHeight), width, height)
+            }
         }
         for (unit in view.units) {
             shapes.color = resources.unitCircleColor(frame.observation.playerId, unit.owner)
@@ -694,12 +940,16 @@ class SandboxGraphics private constructor(private val resources: SandboxRenderRe
         }
         shapes.end()
         shapes.begin(ShapeRenderer.ShapeType.Line)
-        shapes.color = Color.WHITE
+        shapes.setColor(0.54f, 0.62f, 0.56f, 1f)
         shapes.rect(area.left.toFloat(), area.bottom.toFloat(), area.width.toFloat(), area.height.toFloat())
         val topLeft = checkNotNull(projection.clippedWorld(projection.mapArea.left, projection.mapArea.bottom + projection.mapArea.height))
         val bottomRight = checkNotNull(projection.clippedWorld(projection.mapArea.left + projection.mapArea.width, projection.mapArea.bottom))
-        shapes.rect(minimap.x(topLeft.x), minimap.y(bottomRight.y),
-            minimap.x(bottomRight.x) - minimap.x(topLeft.x), minimap.y(topLeft.y) - minimap.y(bottomRight.y))
+        val vx1 = minimap.x(topLeft.x).coerceIn(area.left.toFloat() + 1f, (area.left + area.width).toFloat() - 2f)
+        val vx2 = minimap.x(bottomRight.x).coerceIn(vx1 + 1f, (area.left + area.width).toFloat() - 1f)
+        val vy1 = minimap.y(bottomRight.y).coerceIn(area.bottom.toFloat() + 1f, (area.bottom + area.height).toFloat() - 2f)
+        val vy2 = minimap.y(topLeft.y).coerceIn(vy1 + 1f, (area.bottom + area.height).toFloat() - 1f)
+        shapes.setColor(0.95f, 0.98f, 0.96f, 1f)
+        shapes.rect(vx1, vy1, vx2 - vx1, vy2 - vy1)
         shapes.end()
     }
 
@@ -744,7 +994,12 @@ class SandboxGraphics private constructor(private val resources: SandboxRenderRe
         owned.forEach { texture ->
             try { texture.dispose() } catch (error: Exception) { if (failure == null) failure = error else failure.addSuppressed(error) }
         }
-        owned.clear(); tiles.clear(); units.clear(); turrets.clear(); namedTurrets.clear(); corpses.clear(); backs.clear()
+        minimapPixmap?.let { pm ->
+            try { pm.dispose() } catch (error: Exception) { if (failure == null) failure = error else failure.addSuppressed(error) }
+        }
+        minimapPixmap = null; minimapTexture = null; minimapVisibilityState = null; minimapGroundSnapshot = null
+        owned.clear(); tiles.clear(); tileAverageColors.clear(); loadedTerrainTextureCount = 0
+        units.clear(); turrets.clear(); namedTurrets.clear(); corpses.clear(); backs.clear()
         legs.clear(); feet.clear(); impacts.clear()
         failure?.let { throw it }
     }
