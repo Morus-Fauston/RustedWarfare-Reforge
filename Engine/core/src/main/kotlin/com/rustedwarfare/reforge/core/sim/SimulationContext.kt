@@ -306,6 +306,7 @@ class SimulationContext internal constructor(private val policies: ExperimentalP
 
     companion object {
         private const val MOVE_PLANNING_WORK_PER_STEP = 512
+        private const val FAST_STALL_TICKS = 12L
         private const val PRODUCED_UNIT_PREFIX = "produced:"
         private const val CONSTRUCTED_UNIT_PREFIX = "constructed:"
         private const val ROUTE_FAILURE_TICKS = 420L
@@ -450,7 +451,12 @@ class SimulationContext internal constructor(private val policies: ExperimentalP
             if (!unit.alive || unit.carriedBy != null || unit.attachment != null || unit.ownerPlayerId != action.actorPlayerId ||
                 unit.definition.movement.type == MovementType.NONE || unit.tasks.firstOrNull()?.actionId != action.actionId)
                 return@mapNotNull null
-            if (repair != null && ((!unit.followsManeuverRoute && repair != ManeuverRepair.CONTACT && repair != ManeuverRepair.OVERTAKE && repair != ManeuverRepair.GROUP_SLOT) ||
+            if (repair != null && ((!unit.followsManeuverRoute &&
+                    repair != ManeuverRepair.CONTACT &&
+                    repair != ManeuverRepair.OVERTAKE &&
+                    repair != ManeuverRepair.GROUP_SLOT &&
+                    repair != ManeuverRepair.CONNECTION &&
+                    repair != ManeuverRepair.KNOWLEDGE) ||
                     unit.moveTarget != action.target)) return@mapNotNull null
             val started = if (collectDiagnostics) System.nanoTime() else 0
             val sourceTerrain = planningTerrainFor(unit, map)
@@ -665,6 +671,7 @@ class SimulationContext internal constructor(private val policies: ExperimentalP
                     pendingEvents += Event("group-destination-reassigned", unit.unitId)
                 }
                 if (landing != null) unit.landingMember = unit.landingMember?.copy(branch = planned.branch)
+                unit.nav = unit.nav.copy(repairConsecutiveFailures = 0, repairBackoffStep = 0L)
                 unit.adoptRoute(slot.path, logicalRouteTarget(unit, slot.position), plannedKnowledgeRevision(unit),
                     plannedBuildingRevision(unit), occupants)
                 notifyLandingRoute(unit)
@@ -683,9 +690,15 @@ class SimulationContext internal constructor(private val policies: ExperimentalP
             }
         }
         if (slot == null) {
-            unit.taskQueue = unit.taskQueue.pop()
+            val amphibiousPaused = repair == ManeuverRepair.CONNECTION && unit.amphibiousState != null && task.kind == UnitTaskKind.MOVE
+            if (!amphibiousPaused) {
+                unit.taskQueue = unit.taskQueue.pop()
+            }
             val priorGroup = unit.landingMember?.group
             unit.cancelRoute()
+            if (amphibiousPaused) {
+                unit.amphibiousState = unit.amphibiousState?.copy(terrainPausedMove = true)
+            }
             if (priorGroup != null) notifyLandingBody(unit)
             if (planned.nearest) {
                 reject(action, "immobile-unit", "No legal movement from the current pose")
@@ -1387,6 +1400,16 @@ class SimulationContext internal constructor(private val policies: ExperimentalP
                 policies.coordinates.distanceSquared(unit.position, first) < 9.0 &&
                 !PlanningSegmentClearance.allows(terrain, start, unit.pathPoints[1], radius)
             if (firstConnectionClear && localConnectionClear && !nearCornerStall && !localCornerStall) continue
+            // Bring ordinary MOVE connection repairs inside the step planning budget (ENG-P016-005):
+            // 0-tick trigger into MovePlanning eliminates unbounded synchronous full-map A* frame spikes.
+            val headTaskKind = unit.tasks.firstOrNull()?.kind
+            if (headTaskKind == UnitTaskKind.MOVE && unit.originMoveId != null) {
+                // Bring ALL ordinary MOVE connection repairs strictly inside the step planning budget (ENG-P016-005):
+                // 0-tick static obstruction detection queues ManeuverRepair.CONNECTION into MovePlanning so
+                // repairInvalidConnections never escapes budget to run unbounded synchronous full-map A*.
+                scheduleManeuverRepair(unit, target, ManeuverRepair.CONNECTION)
+                continue
+            }
             if (unit.attackCommand != null) unit.lastAttackPathAttemptStep = executionStep
             val samples = pathDiagnostics
             fun search(destination: Position): List<Position>? =
@@ -1629,12 +1652,43 @@ class SimulationContext internal constructor(private val policies: ExperimentalP
                 unit.moveArrival = null
                 unit.taskQueue = UnitTaskQueue().append(UnitTask(UnitTaskKind.MOVE, action.actionId, action.target,
                     atStep = action.atStep))
+                // Optimistic same-step turn/start (ENG-P016-005): when the unit is already in motion or
+                // clicking a fresh single-unit/shared-landing direction whose immediate front is clear of
+                // terrain AND target is actually reachable (not behind an enclosing wall), turn immediately
+                // without losing momentum while planning runs.
+                // Multi-member synchronized group selections (group != null && !sharedLanding) and rectangular
+                // ships with strict swept hull proofs wait for their published maneuver route first.
+                val optMovement = UnitLocomotion.movement(unit)
+                val optShape = unit.definition.movementCollision
+                if (optMovement.type != MovementType.NONE && unit.birthRemaining <= 0f &&
+                    optShape is MovementCollisionShape.Circle &&
+                    (group == null || group.sharedLanding)) {
+                    val optTerrain = planningTerrainFor(unit, currentScenario.map)
+                    val dx = action.target.x - unit.position.x
+                    val dy = action.target.y - unit.position.y
+                    val dist = kotlin.math.hypot(dx, dy)
+                    val optMap = currentScenario.map
+                    val startCol = MapBounds.cell(unit.position.x, optMap.tileWidth, optMap.widthTiles)
+                    val startRow = MapBounds.cell(unit.position.y, optMap.tileHeight, optMap.heightTiles)
+                    val goalCol = MapBounds.cell(action.target.x, optMap.tileWidth, optMap.widthTiles)
+                    val goalRow = MapBounds.cell(action.target.y, optMap.tileHeight, optMap.heightTiles)
+                    val targetReachable = optMovement.type == MovementType.AIR ||
+                        optTerrain.isCellConnected(startCol, startRow, goalCol, goalRow)
+                    if (dist > 1e-4 && targetReachable) {
+                        val probeDist = minOf(dist, minOf(currentScenario.map.tileWidth, currentScenario.map.tileHeight).toDouble())
+                        val probe = Position(unit.position.x + dx / dist * probeDist, unit.position.y + dy / dist * probeDist)
+                        if (optMovement.type == MovementType.AIR ||
+                            PlanningSegmentClearance.allows(optTerrain, unit.position, probe, routeRadius(unit))) {
+                            unit.optimisticSteerTarget = action.target
+                        }
+                    }
+                }
                 if (group?.sharedLanding == true) {
                     unit.landingMember = LandingMember(group)
                     val admissions = steps.current.landingAdmissions
                     admissions[group] = admissions[group].orEmpty() + unit.unitId
-                    steps.current.movePlanning.enqueue(action, null)
-                } else steps.current.movePlanning.enqueue(action, group)
+                    steps.current.movePlanning.enqueue(action, null, selectionSize = group.members.size)
+                } else steps.current.movePlanning.enqueue(action, group, selectionSize = group?.members?.size ?: 1)
                 ActionResult.Accepted(action.actionId)
             }
         }
@@ -2081,14 +2135,15 @@ class SimulationContext internal constructor(private val policies: ExperimentalP
             val reserve = if (needsGateWork || wallDue) stepBudgetLimit / 4 else 0
             val planningBudget = PathWorkBudget(stepBudgetLimit - reserve)
             val planningSlices = candidate.state.planningWorkDiagnostics?.let { mutableListOf<PlanningWorkSlice>() }
-            val serveLandingsFirst = candidate.state.landingsShortOfBudget
+            val serveLandingsFirst = candidate.state.landingsShortOfBudget &&
+                !candidate.state.movePlanning.hasPendingFastLaneOrders()
             candidate.state.landingsShortOfBudget = false
             if (serveLandingsFirst) {
                 val landingBudget = PathWorkBudget(planningBudget.limit / 4)
                 advanceSharedLandings(currentScenario.map, landingBudget, planningSlices)
                 check(planningBudget.take(landingBudget.used))
             }
-            candidate.state.movePlanning.advance(policies.path, planningBudget,
+            val p2UsedFirstPass = candidate.state.movePlanning.advance(policies.path, planningBudget,
                 { requests, group, repair -> movePlanningInput(currentScenario.map, requests, group, repair, step.delta) },
                 { member, group, repair, occupants, plan ->
                     publishMove(member, group, repair, occupants, plan, step.stepIndex)
@@ -2101,6 +2156,19 @@ class SimulationContext internal constructor(private val policies: ExperimentalP
                 retainedPatrolTarget(unit)
             replanForKnowledge(currentScenario.map, step.stepIndex)
             repairInvalidConnections(currentScenario.map, step.stepIndex)
+            // 0-tick static obstruction response (ENG-P016-005): immediately spend remaining step budget
+            // on newly queued CONNECTION/KNOWLEDGE repairs in this same step without rotating queues a
+            // second time and while honoring the step-wide P2 budget cap.
+            if (!planningBudget.exhausted && candidate.state.movePlanning.hasPendingRepairs()) {
+                candidate.state.movePlanning.advance(policies.path, planningBudget,
+                    { requests, group, repair -> movePlanningInput(currentScenario.map, requests, group, repair, step.delta) },
+                    { member, group, repair, occupants, plan ->
+                        publishMove(member, group, repair, occupants, plan, step.stepIndex)
+                        units[member.action.unitId]?.let(candidate.state.landingOccupancy::update)
+                    },
+                    planningSlices, liveUnitCount = { units.size }, executionStep = step.stepIndex, lookupTraffic = units::get,
+                    rotateQueues = false, p2BudgetAlreadyUsed = p2UsedFirstPass)
+            }
             val remaining = stepBudgetLimit - planningBudget.used
             val gateBudget = PathWorkBudget(if (wallDue) remaining / 2 else remaining)
             val survey = candidate.state.driverPassages
@@ -3868,12 +3936,35 @@ class SimulationContext internal constructor(private val policies: ExperimentalP
             }
             val limited = if (overtaking || sustainedTurnContact) movingContact else stalled
             if (!unit.alive || unit.carriedBy != null || unit.unitId in passageWaiting || unit.unitId in seaDepartureWaiting) continue
-            val retry = limited > 0 && limited % ROUTE_RETRY_TICKS == 0L
+            // Fast physical stall detection (ENG-P016-005): when physically blocked by terrain/wall pressure
+            // with no advancing front peer in the same queue, trigger responsive escape in 12 ticks (~0.2s)
+            // with exponential backoff 12 -> 24 -> 48 ticks.
+            val contacts = routeContacts(unit)
+            val hasAdvancingFrontPeer = contacts.any { other ->
+                val sameGroup = unit.landingMember?.group?.let { grp ->
+                    other.landingMember?.group === grp && other.lastRoadProgress?.let {
+                        it.group === grp && step - it.step <= FAST_STALL_TICKS
+                    } == true
+                } == true
+                val advancingPeer = other.moveTarget != null && other.speed > 0.05 * UnitLocomotion.movement(other).moveSpeed
+                sameGroup || advancingPeer
+            }
+            // Fast physical stall escape (ENG-P016-005): trigger within 12 ticks (~0.2s) with exponential
+            // backoff 12 -> 24 -> 48 when physically obstructed by terrain/wall pressure (not pure unit-contact
+            // blocking where legacy contact recovery rules govern) and no front peer is advancing.
+            val fastStallEligible = stalled >= FAST_STALL_TICKS &&
+                unit.terrainCorrectionTime > 0.0 &&
+                unit.terrainOnlyStall &&
+                !hasAdvancingFrontPeer &&
+                step >= unit.repairBackoffStep &&
+                !steps.current.movePlanning.pending(unit.unitId)
+            val periodicRetry = limited > 0 && limited % ROUTE_RETRY_TICKS == 0L
+            val retry = (periodicRetry && (!unit.terrainOnlyStall || step >= unit.repairBackoffStep)) || fastStallEligible
             // Wall pressure can turn the hull or nudge the body without freeing its route.
             val checkWall = unit.wallRepairDue(step)
             if (!retry && !checkWall) continue
             val target = unit.moveTarget ?: continue
-            if ((checkWall || stalled >= ROUTE_RETRY_TICKS && unit.terrainCorrectionTime > 0) &&
+            if ((checkWall || (stalled >= ROUTE_RETRY_TICKS || fastStallEligible) && unit.terrainCorrectionTime > 0) &&
                 unit.landingMember != null && unit.definition.movementCollision is MovementCollisionShape.Circle &&
                 unit.pathPoints.isNotEmpty() && repairBudget.take(1 + unit.routeOccupantIds.size)) {
                 // A push can leave a legal circle touching the corner beside its planned lane.
@@ -3912,8 +4003,18 @@ class SimulationContext internal constructor(private val policies: ExperimentalP
             val move = unit.tasks.firstOrNull()?.takeIf { it.kind == UnitTaskKind.MOVE }
             if (nativeDeparture && unit.birthRemaining > 0f || !nativeDeparture && move == null) continue
             if (unit.followsManeuverRoute || !nativeDeparture && move != null) {
-                if (unit.lastManeuverContactRepair != step) scheduleManeuverRepair(unit, target,
-                    if (overtaking) ManeuverRepair.OVERTAKE else ManeuverRepair.CONTACT)
+                if (unit.lastManeuverContactRepair != step) {
+                    if (fastStallEligible || (periodicRetry && unit.terrainCorrectionTime > 0.0 && !overtaking)) {
+                        val failures = unit.repairConsecutiveFailures.coerceAtMost(2)
+                        val backoff = FAST_STALL_TICKS shl failures // 12 -> 24 -> 48
+                        unit.nav = unit.nav.copy(
+                            repairBackoffStep = step + backoff,
+                            repairConsecutiveFailures = (unit.repairConsecutiveFailures + 1).coerceAtMost(4),
+                        )
+                    }
+                    scheduleManeuverRepair(unit, target,
+                        if (overtaking) ManeuverRepair.OVERTAKE else ManeuverRepair.CONTACT)
+                }
                 continue
             }
             val actionId = move?.actionId ?: checkNotNull(unit.originMoveId)

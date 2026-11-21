@@ -27,16 +27,17 @@ internal data class PathGridKey(val col: Int, val row: Int, val heading: Double 
                                 val initialPose: Boolean = false)
 
 internal class PathWorkBudget(val limit: Int) {
-    private var remaining = limit
-    val used: Int get() = limit - remaining
-    val exhausted: Boolean get() = remaining == 0
+    private var _remaining = limit
+    val remaining: Int get() = _remaining
+    val used: Int get() = limit - _remaining
+    val exhausted: Boolean get() = _remaining == 0
 
     fun take(cost: Int = 8): Boolean {
-        if (remaining < cost) {
-            remaining = 0
+        if (_remaining < cost) {
+            _remaining = 0
             return false
         }
-        remaining -= cost
+        _remaining -= cost
         return true
     }
 }

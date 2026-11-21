@@ -4,7 +4,9 @@ import com.rustedwarfare.reforge.core.content.AttackMovementProfile
 import com.rustedwarfare.reforge.core.content.MapDefinition
 import com.rustedwarfare.reforge.core.content.MovementCollisionShape
 import com.rustedwarfare.reforge.core.content.MovementType
-import com.rustedwarfare.reforge.core.content.UnitDefinition
+import com.rustedwarfare.reforge.core.content.UnitDefinition
+
+import com.rustedwarfare.reforge.core.path.PlanningSegmentClearance
 import com.rustedwarfare.reforge.core.path.PlanningTerrain
 import kotlin.math.abs
 import kotlin.math.hypot
@@ -242,6 +244,11 @@ internal object UnitMovementOrchestrator {
         if (settlingFromPush && unit.speed == 0.0) unit.angularVelocity = 0.0
         var target = unit.moveTarget.takeUnless { settlingFromPush }
         var speedTarget = 0.0
+        // Optimistic same-step turn while initial P0 planning runs (ENG-P016-005):
+        // preserves speed and starts rotating toward the fresh right-click immediately on the command step.
+        val optimisticTarget = if (target == null && !settlingFromPush && step.state.movePlanning.pending(unit.unitId)) {
+            unit.optimisticSteerTarget
+        } else null
         var maneuverLeg: ManeuverLeg? = null
 
         val attackTarget = unit.attackCommand?.targetUnitId?.let { host.units[it] }
@@ -529,6 +536,29 @@ internal object UnitMovementOrchestrator {
             }
         }
 
+        if (target == null && optimisticTarget != null) {
+            differenceForSample = policies.steering.turn(unit, optimisticTarget, delta, policies.coordinates)
+            val cosFactor = kotlin.math.cos(Math.toRadians(kotlin.math.abs(differenceForSample).coerceAtMost(90.0)))
+            // Preserve momentum if already moving AND the actual forward heading segment for this step is
+            // terrain-clear; otherwise turn in place (speedTarget = 0) so we never coast into a wall while planning.
+            val forwardProbeDist = maxOf(unit.speed * delta * 1.5, host.routeRadius(unit) * 0.5)
+            val forwardOffset = policies.coordinates.displacement(unit.heading, forwardProbeDist)
+            val forwardProbe = Position(
+                unit.position.x + forwardOffset.x,
+                unit.position.y + forwardOffset.y,
+            )
+            val forwardClear = movement.type == MovementType.AIR ||
+                PlanningSegmentClearance.allows(
+                    host.planningTerrainFor(unit, map),
+                    Transport.queryPosition(unit, map),
+                    forwardProbe,
+                    host.routeRadius(unit),
+                )
+            speedTarget = if (unit.speed > 0.0 && forwardClear) maxOf(unit.speed * cosFactor, maximumSpeed * 0.25 * cosFactor)
+                else 0.0
+            requestedFraction = if (maximumSpeed > 0.0) (speedTarget / maximumSpeed).coerceIn(0.0, 1.0) else 0.0
+            aimForSample = optimisticTarget
+        }
         return SteeringIntent(
             target = target,
             speedTarget = speedTarget,
@@ -818,12 +848,20 @@ internal object UnitMovementOrchestrator {
         }
         if (terrainCorrected || unitContactLimited) {
             host.pendingEvents += Event("movement-blocked", unit.unitId)
-            unit.nav = unit.nav.copy(terrainCorrectionTime = unit.terrainCorrectionTime + delta, terrainClearSteps = 0)
+            unit.nav = unit.nav.copy(
+                terrainCorrectionTime = unit.terrainCorrectionTime + delta,
+                terrainClearSteps = 0,
+                terrainOnlyStall = terrainCorrected && !unitContactLimited,
+            )
         } else if (delta > 0.0) {
             val clearSteps = (unit.terrainClearSteps + 1).coerceAtMost(3)
+            val cleared = clearSteps >= 3
             unit.nav = unit.nav.copy(
                 terrainClearSteps = clearSteps,
-                terrainCorrectionTime = if (clearSteps >= 3) 0.0 else unit.terrainCorrectionTime,
+                terrainCorrectionTime = if (cleared) 0.0 else unit.terrainCorrectionTime,
+                terrainOnlyStall = if (cleared) false else unit.terrainOnlyStall,
+                repairBackoffStep = if (cleared) 0L else unit.repairBackoffStep,
+                repairConsecutiveFailures = if (cleared) 0 else unit.repairConsecutiveFailures,
             )
         }
         unit.position = resolved
