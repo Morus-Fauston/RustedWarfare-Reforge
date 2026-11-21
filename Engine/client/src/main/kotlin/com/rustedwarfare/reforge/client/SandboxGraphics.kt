@@ -40,24 +40,27 @@ class SandboxGraphics private constructor(private val resources: SandboxRenderRe
         if (fullBattlefield) MapArea(0.0, 0.0, 960.0, 640.0) else MapArea(16.0, 64.0, 704.0, 512.0),
         fillViewport = fullBattlefield)
     private val minimapBounds = if (fullBattlefield) DESKTOP_MINIMAP_AREA else MapArea(752.0, 456.0, 176.0, 112.0)
+    var minimapWellArea: MapArea = minimapBounds
+        private set
     val minimap = Minimap(projection.worldWidth, projection.worldHeight,
-        Minimap.fitArea(minimapBounds, projection.worldWidth, projection.worldHeight))
+        Minimap.fitCentered(minimapBounds, projection.worldWidth, projection.worldHeight))
 
-    /** Updates minimap stage bounds pinned to top-right of [stageWidth]x[stageHeight] preserving physical aspect ratio. */
+    /** Updates minimap stage bounds inside the right-rail opaque well (HUD Spec §6: width=232, height clamped [0.5, 1.0]*w). */
     fun updateMinimapAspect(screenWidth: Int, screenHeight: Int, stageWidth: Float, stageHeight: Float) {
         if (screenWidth <= 0 || screenHeight <= 0 || stageWidth <= 0f || stageHeight <= 0f) return
         val pxPerUnitX = screenWidth.toDouble() / stageWidth.toDouble()
         val pxPerUnitY = screenHeight.toDouble() / stageHeight.toDouble()
-        val margin = UiTokens.SCREEN_MARGIN.toDouble()
-        val maxW = minOf(UiTokens.SIDEBAR_WIDTH.toDouble(), (stageWidth - margin * 2.0).coerceAtLeast(64.0))
-        val maxH = minOf(UiTokens.SIDEBAR_WIDTH.toDouble(), (stageHeight * 0.36).coerceAtLeast(64.0))
-        val dynamicBounds = MapArea(
-            left = (stageWidth - maxW).coerceAtLeast(0.0),
-            bottom = (stageHeight - maxH).coerceAtLeast(0.0),
-            width = maxW,
-            height = maxH,
+        val sideW = UiTokens.SIDEBAR_WIDTH.coerceAtMost((stageWidth - UiTokens.SCREEN_MARGIN * 2f).coerceAtLeast(160f))
+        val wellH = HudSidebarProjection.minimapHeightRef(projection.worldWidth, projection.worldHeight, sideW)
+            .coerceAtMost((stageHeight * 0.45f).coerceAtLeast(80f))
+        val wellBounds = MapArea(
+            left = (stageWidth - sideW).coerceAtLeast(0f).toDouble(),
+            bottom = (stageHeight - wellH).coerceAtLeast(0f).toDouble(),
+            width = sideW.toDouble(),
+            height = wellH.toDouble(),
         )
-        minimap.updateArea(Minimap.fitArea(dynamicBounds, projection.worldWidth, projection.worldHeight, pxPerUnitX, pxPerUnitY))
+        minimapWellArea = wellBounds
+        minimap.updateArea(Minimap.fitCentered(wellBounds, projection.worldWidth, projection.worldHeight, pxPerUnitX, pxPerUnitY))
     }
     private val owned = mutableListOf<Texture>()
     private val tiles = mutableMapOf<Int, TextureRegion>()
@@ -907,7 +910,13 @@ class SandboxGraphics private constructor(private val resources: SandboxRenderRe
     fun drawMinimap(shapes: ShapeRenderer, frame: SandboxFrame, batch: SpriteBatch? = null) {
         val view = minimap.frame(frame)
         val area = minimap.area
+        val well = minimapWellArea
         if (batch != null) {
+            // Opaque black well backdrop (HUD Spec §6: letterboxed when map aspect exceeds [0.5, 1.0])
+            shapes.begin(ShapeRenderer.ShapeType.Filled)
+            shapes.color = Color.BLACK
+            shapes.rect(well.left.toFloat(), well.bottom.toFloat(), well.width.toFloat(), well.height.toFloat())
+            shapes.end()
             val tex = syncMinimapTexture(frame)
             if (tex != null) {
                 batch.begin()
@@ -949,8 +958,6 @@ class SandboxGraphics private constructor(private val resources: SandboxRenderRe
         }
         shapes.end()
         shapes.begin(ShapeRenderer.ShapeType.Line)
-        shapes.setColor(0.54f, 0.62f, 0.56f, 1f)
-        shapes.rect(area.left.toFloat(), area.bottom.toFloat(), area.width.toFloat(), area.height.toFloat())
         val topLeft = checkNotNull(projection.clippedWorld(projection.mapArea.left, projection.mapArea.bottom + projection.mapArea.height))
         val bottomRight = checkNotNull(projection.clippedWorld(projection.mapArea.left + projection.mapArea.width, projection.mapArea.bottom))
         val vx1 = minimap.x(topLeft.x).coerceIn(area.left.toFloat() + 1f, (area.left + area.width).toFloat() - 2f)

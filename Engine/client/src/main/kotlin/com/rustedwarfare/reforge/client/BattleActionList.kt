@@ -45,6 +45,23 @@ internal class BattleActionList(skin: Skin, stage: Stage, session: () -> Sandbox
     private var currentRows = emptyList<BattleActionRow>()
     private var selection: String? = null
     private var hoveredId: String? = null
+    private var anchorLeft: Float = 752f
+    private var anchorTopY: Float = 446f
+    private var anchorWidth: Float = 184f
+    private var anchorMaxHeight: Float = 330f
+    private var hideTitle: Boolean = false
+
+    val occupiedHeight: Float
+        get() = if (scroll.isVisible) scroll.height + 16f else 0f
+
+    fun setSidebarAnchor(left: Float, topY: Float, width: Float, maxHeight: Float, suppressTitle: Boolean = true) {
+        anchorLeft = left
+        anchorTopY = topY
+        anchorWidth = width
+        anchorMaxHeight = maxHeight.coerceAtLeast(0f)
+        hideTitle = suppressTitle
+        if (suppressTitle) title.isVisible = false
+    }
     private val hint = Label("", skin).apply {
         setBounds(482f, 220f, 252f, 196f)
         setAlignment(Align.topLeft)
@@ -68,7 +85,7 @@ internal class BattleActionList(skin: Skin, stage: Stage, session: () -> Sandbox
         stage.addActor(this)
     }
     private val scroll = BattleActionScrollPane(content, ScrollPane.ScrollPaneStyle().apply {
-        background = skin.newDrawable("white", Color(.09f, .10f, .09f, .43f))
+        background = skin.newDrawable("white", Color(0f, 0f, 0f, 0f))
         vScroll = skin.newDrawable("white", Color(.10f, .12f, .10f, .81f)).apply { minWidth = 7f }
         vScrollKnob = skin.newDrawable("white", Color(.59f, .75f, .53f, 1f)).apply { minWidth = 7f; minHeight = 22f }
     }).apply {
@@ -140,7 +157,7 @@ internal class BattleActionList(skin: Skin, stage: Stage, session: () -> Sandbox
         selection = owner
         currentRows = value
         scroll.isVisible = value.isNotEmpty()
-        title.isVisible = !caption.isNullOrBlank()
+        title.isVisible = !hideTitle && !caption.isNullOrBlank()
         title.setText(caption.orEmpty())
         if (!scroll.isVisible && scroll.stage?.scrollFocus === scroll) scroll.stage.scrollFocus = null
         if (rebuild) {
@@ -152,12 +169,19 @@ internal class BattleActionList(skin: Skin, stage: Stage, session: () -> Sandbox
             for ((index, row) in currentRows.withIndex()) {
                 val entry = createRow(row.id)
                 panes[row.id] = entry
-                content.add(entry.table).width(84f).height(ACTION_CARD_HEIGHT).pad(ACTION_CARD_PADDING)
+                val cardW = ((anchorWidth - 12f) * 0.5f - ACTION_CARD_PADDING * 2f).coerceIn(68f, 96f)
+                content.add(entry.table).width(cardW).height(ACTION_CARD_HEIGHT).pad(ACTION_CARD_PADDING)
                 if (index % 2 == 1) content.row()
             }
         }
-        scroll.height = minOf(5 * ACTION_ROW_HEIGHT, (value.size + 1) / 2 * ACTION_ROW_HEIGHT)
-        scroll.y = 446f - scroll.height
+        val rowsHeight = ((value.size + 1) / 2) * ACTION_ROW_HEIGHT
+        val availH = (anchorMaxHeight - 16f).coerceAtLeast(0f)
+        scroll.width = anchorWidth
+        scroll.x = anchorLeft
+        scroll.height = minOf(availH, rowsHeight)
+        scroll.y = anchorTopY - 8f - scroll.height
+        hint.x = (anchorLeft - UiTokens.TOOLTIP_WIDTH - 12f).coerceAtLeast(8f)
+        hint.y = (scroll.y + scroll.height - hint.height).coerceAtLeast(8f)
         if (rebuild) {
             scroll.scrollY = 0f
             scroll.updateVisualScroll()
@@ -178,9 +202,15 @@ internal class BattleActionList(skin: Skin, stage: Stage, session: () -> Sandbox
             }
             card.icon.color = if (row.enabled || row.cancelEnabled) Color.WHITE else Color.GRAY
             card.progress.isVisible = row.progress != null
-            card.progress.setBounds(2f, 2f, 80f * (row.progress ?: 0f).coerceIn(0f, 1f), 2f)
+            val progMaxW = (card.table.width - 4f).coerceAtLeast(16f)
+            card.progress.setBounds(2f, 2f, progMaxW * (row.progress ?: 0f).coerceIn(0f, 1f), 2f)
         }
         showHint()
+    }
+
+    fun toFront() {
+        scroll.toFront()
+        if (hint.isVisible) hint.toFront()
     }
 
     fun containsPoint(x: Float, y: Float): Boolean = scroll.isVisible &&

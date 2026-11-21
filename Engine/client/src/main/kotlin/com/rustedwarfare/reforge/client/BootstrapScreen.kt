@@ -54,6 +54,13 @@ class BootstrapScreen(
     private lateinit var stage: Stage
     private lateinit var battleActions: BattleActionList
     private lateinit var minimapActor: Actor
+    private lateinit var hudOverlay: InGameHudOverlay
+    private val hudEvents = HudEventStream()
+    private var hudMenuOpen = false
+    private var lastObservedEventSampleId: String? = null
+    private val lastObservedActionResultIds = LinkedHashSet<String>()
+    private var lastArrivalNoticeKey: String? = null
+    private var lastHudSnapshot: HudSnapshot? = null
     private val viewport = ScreenViewport()
     private var uiMetrics: UiMetrics = UiScale.metrics(960, 640, touchControls)
     private var fontSet: UiFontSet? = null
@@ -221,7 +228,8 @@ class BootstrapScreen(
         val loading: Boolean, val preparationStatus: String?, val error: String?, val hasSession: Boolean,
         val balance: Long?, val queue: com.rustedwarfare.reforge.core.sim.FactoryQueueObservation?,
         val patrolMode: Boolean, val patrolPoints: Int, val reclaimMode: Boolean, val repairMode: Boolean,
-        val workerQueueText: String?, val menu: ActionMenuView?)
+        val workerQueueText: String?, val menu: ActionMenuView?,
+        val hudMenuOpen: Boolean, val simPaused: Boolean, val simRate: OfflineRate, val language: UiLanguage)
     private var lastHudState: HudState? = null
     private val drawnActionLayout = DrawnActionLayout()
 
@@ -668,7 +676,7 @@ class BootstrapScreen(
         mapInput = SandboxInput({ session }, { graphics?.projection }, { x, y ->
             battlefieldPoint(x, y, Gdx.graphics.height, viewport.screenX, viewport.screenY,
                 viewport.screenWidth, viewport.screenHeight, battlefieldWidth.toDouble(), battlefieldHeight.toDouble())
-        }, { !paused && session != null }, { stage.keyboardFocus is TextField },
+        }, { !paused && session != null && !hudMenuOpen && !stepClock.isPaused }, { stage.keyboardFocus is TextField },
             { Gdx.input.isKeyPressed(it) }, { updateHud() }, evidence, touchControls, { x, y ->
                 val bottom = Gdx.graphics.height - y
                 x >= viewport.screenX && x < viewport.screenX + viewport.screenWidth &&
@@ -677,6 +685,62 @@ class BootstrapScreen(
             cameraTakeover = { reason -> scriptedCamera?.takeOver(reason) },
             cameraFollowsUnit = { scriptedCamera?.followsUnit == true })
         for (index in 1..3) groupButtons += button("$index (0)", 508f + (index - 1) * 72f, 12f, 64f) { mapInput.group(index) }
+        hudOverlay = InGameHudOverlay(
+            skin = skin,
+            fontsProvider = { fontSet },
+            fallbackFontProvider = { fallbackFont ?: skin.getFont("default") },
+            unitIconProvider = { graphics?.unitIcon(it) },
+            callbacks = object : InGameHudCallbacks {
+                override fun onToggleMenu() {
+                    if (paused || loading || session?.isOpen != true) return
+                    hudMenuOpen = !hudMenuOpen
+                    if (hudMenuOpen) {
+                        closeCommandConsole()
+                        cancelInput()
+                    }
+                    lastHudState = null
+                    updateHud()
+                }
+                override fun onTogglePause() {
+                    if (paused || loading || session?.isOpen != true) return
+                    hudMenuOpen = false
+                    stepClock.setPaused(!stepClock.isPaused)
+                    if (stepClock.isPaused) {
+                        closeCommandConsole()
+                        cancelInput()
+                    }
+                    recordSimulationControl(if (stepClock.isPaused) "pause" else "resume")
+                    lastHudState = null
+                    updateHud()
+                }
+                override fun onSelectRate(rate: OfflineRate) {
+                    if (paused || loading || session?.isOpen != true) return
+                    stepClock.setRate(rate)
+                    recordSimulationControl("speed")
+                    lastHudState = null
+                    updateHud()
+                }
+                override fun onMenuResume() {
+                    hudMenuOpen = false
+                    lastHudState = null
+                    updateHud()
+                }
+                override fun onMenuRestart() {
+                    hudMenuOpen = false
+                    requestLoad()
+                }
+                override fun onMenuBackToStart() {
+                    hudMenuOpen = false
+                    leaveMatch()
+                }
+                override fun onMenuSettings() {
+                    hudMenuOpen = false
+                    hudEvents.pushWarning(UiStrings.get("unsupported.settings"))
+                    lastHudState = null
+                    updateHud()
+                }
+            },
+        ).also(stage::addActor)
         minimapActor = Actor().apply {
             val area = if (touchControls) MapArea(752.0, 456.0, 176.0, 112.0) else SandboxGraphics.DESKTOP_MINIMAP_AREA
             setBounds(area.left.toFloat(), area.bottom.toFloat(), area.width.toFloat(), area.height.toFloat())
@@ -783,7 +847,7 @@ class BootstrapScreen(
             }
 
             override fun touchDown(screenX: Int, screenY: Int, pointer: Int, button: Int): Boolean =
-                pointer == 0 && button == Input.Buttons.RIGHT && mapInput.cancelSandboxPick()
+                !hudMenuOpen && !stepClock.isPaused && pointer == 0 && button == Input.Buttons.RIGHT && mapInput.cancelSandboxPick()
 
             override fun mouseMoved(screenX: Int, screenY: Int): Boolean {
                 if (!touchControls && session != null && !commandConsoleOpen) {
@@ -801,7 +865,7 @@ class BootstrapScreen(
                     return true
                 }
                 if (development && keycode == Input.Keys.SLASH && !commandConsoleOpen && !paused && !loading &&
-                    !touchControls && session?.canDeploy == true && stage.keyboardFocus !is TextField) {
+                    !hudMenuOpen && !stepClock.isPaused && !touchControls && session?.canDeploy == true && stage.keyboardFocus !is TextField) {
                     mapInput.cancel()
                     commandConsoleOpen = true
                     commandPickError = null
@@ -812,12 +876,37 @@ class BootstrapScreen(
                     return true
                 }
                 if (!commandConsoleOpen) {
-                    if ((keycode == Input.Keys.ESCAPE || touchControls && keycode == Input.Keys.BACK) && session == null) {
-                        if (loading) leaveMatch()
-                        else if (startupPage == StartupPage.SETUP) showStartupPage(StartupPage.HOME)
-                        else if (startupPage != StartupPage.HOME) showStartupPage(settingsBack)
-                        else return false
-                        return true
+                    if (keycode == Input.Keys.ESCAPE || touchControls && keycode == Input.Keys.BACK) {
+                        if (session == null) {
+                            if (loading) leaveMatch()
+                            else if (startupPage == StartupPage.SETUP) showStartupPage(StartupPage.HOME)
+                            else if (startupPage != StartupPage.HOME) showStartupPage(settingsBack)
+                            else return false
+                            return true
+                        }
+                        if (hudMenuOpen) {
+                            hudMenuOpen = false
+                            lastHudState = null
+                            updateHud()
+                            return true
+                        }
+                        if (stepClock.isPaused) {
+                            stepClock.setPaused(false)
+                            recordSimulationControl("resume")
+                            lastHudState = null
+                            updateHud()
+                            return true
+                        }
+                        val hasActiveTargetMode = mapInput.constructionTypeId != null ||
+                            mapInput.reclaimMode || mapInput.repairMode || mapInput.patrolMode ||
+                            mapInput.groundActionName != null || mapInput.sandboxPick != null
+                        if (!hasActiveTargetMode) {
+                            hudMenuOpen = true
+                            cancelInput()
+                            lastHudState = null
+                            updateHud()
+                            return true
+                        }
                     }
                     return false
                 }
@@ -1152,6 +1241,12 @@ class BootstrapScreen(
     private fun closeMatchResources() {
         collisionBoxesVisible = false
         collisionBoxPanel?.reset()
+        hudMenuOpen = false
+        hudEvents.clear()
+        lastObservedEventSampleId = null
+        lastObservedActionResultIds.clear()
+        lastArrivalNoticeKey = null
+        lastHudSnapshot = null
         closeCommandConsole()
         cancelInput()
         loader.cancel()
@@ -1241,8 +1336,16 @@ class BootstrapScreen(
                     pendingSession.consumeSounds(pendingGraphics.projection.soundListener()), resources,
                     soundFactory, evidence.withGeneration(runGeneration)) }
                 matchStartupNotices = loaded.startupNotices
+                hudEvents.clear()
+                hudMenuOpen = false
+                lastObservedEventSampleId = null
+                lastObservedActionResultIds.clear()
+                lastArrivalNoticeKey = null
                 if (loaded.startupNotices.isNotEmpty()) {
                     evidence.record("skirmish-startup-notices", mapOf("generation" to generation, "notices" to loaded.startupNotices))
+                    for (notice in loaded.startupNotices) {
+                        hudEvents.pushWarning(notice)
+                    }
                 }
                 evidence.recordLoadReady(generation, loaded)
                 check(launch.complete(request.generation)) { "Cancelled load generation" }
@@ -1319,6 +1422,10 @@ class BootstrapScreen(
                 throw failure
             }
         }
+        if (current != null && !paused) {
+            hudEvents.update(Gdx.graphics.deltaTime)
+            syncHudEventsFromSession(current)
+        }
         updateHud()
         updatePacingHud()
         Gdx.gl.glClearColor(0.075f, 0.09f, 0.085f, 1f)
@@ -1379,6 +1486,12 @@ class BootstrapScreen(
             if (cameraJoystickActive()) drawCameraJoystick()
         }
         stage.act(Gdx.graphics.deltaTime); stage.draw()
+        if (current != null && ::hudOverlay.isInitialized && (hudMenuOpen || stepClock.isPaused)) {
+            batch.projectionMatrix = viewport.camera.combined
+            batch.begin()
+            hudOverlay.drawModalLayer(batch, 1f)
+            batch.end()
+        }
         loadingDrawn = loading
         val drawnNanos = System.nanoTime()
         if (current == null && !loading && launch.canEdit) {
@@ -1413,12 +1526,15 @@ class BootstrapScreen(
         fun button(id: String, actor: TextButton) {
             entries += DrawnAction(id, actor, actor.text.toString(), enabled = !actor.isDisabled)
         }
-        button("start-match", startButton); button("exit-match", exitButton)
+        if (::hudOverlay.isInitialized && current != null) entries += hudOverlay.drawnActions()
+        if (current == null) { button("start-match", startButton); button("exit-match", exitButton) }
         button("skirmish-setup", setupButton); button("startup-back", menuBackButton)
         button("check-start-content", retryContentButton)
         button("skirmish-maps", skirmishMapTab)
-        rateButtons.forEach { (rate, actor) -> button("set-speed:${rate.multiplier}", actor) }
-        button("pause-simulation", simulationPauseButton)
+        if (current == null) {
+            rateButtons.forEach { (rate, actor) -> button("set-speed:${rate.multiplier}", actor) }
+            button("pause-simulation", simulationPauseButton)
+        }
         collisionBoxPanel?.let { entries += it.drawnActions() }
         button("content-tab", packTab)
         button("resource-tab", visualsTab)
@@ -1438,9 +1554,10 @@ class BootstrapScreen(
             enabled = commandConsoleOpen && current?.canDeploy == true)
         commandPickButtons.forEach { (id, actor) -> button(id, actor) }
         packPanel?.let { entries += it.drawnActions() }
-        button("stop", stopButton); button("choose-patrol", patrolButton)
+        if (stopButton.isVisible) button("stop", stopButton)
+        if (patrolButton.isVisible) button("choose-patrol", patrolButton)
         entries += DrawnAction("minimap", minimapActor, "Minimap", enabled = current != null)
-        if (!touchControls) entries += battleActions.drawnActions()
+        entries += battleActions.drawnActions()
         customActionButtons.forEach { (name, actor) ->
             val action = menu?.unitActions?.singleOrNull { it.name == name }
             entries += DrawnAction("unit-action:$name", actor, actor.text.toString(), enabled = action?.available == true)
@@ -1535,19 +1652,62 @@ class BootstrapScreen(
         }
     }
 
+    private fun syncHudEventsFromSession(current: SandboxSession) {
+        val obs = current.observation
+        hudEvents.setCameraFollowing(scriptedCamera?.followsUnit == true)
+        if (obs.sampleId != lastObservedEventSampleId) {
+            lastObservedEventSampleId = obs.sampleId
+            for (result in obs.actionResults) {
+                if (result is com.rustedwarfare.reforge.core.sim.ActionResult.Rejected) {
+                    val key = "${result.actionId}:${result.error.code}"
+                    if (lastObservedActionResultIds.add(key)) {
+                        hudEvents.pushRejectionCode(result.error.code)
+                    }
+                }
+            }
+            while (lastObservedActionResultIds.size > 128) {
+                val iter = lastObservedActionResultIds.iterator()
+                if (iter.hasNext()) { iter.next(); iter.remove() } else break
+            }
+            for (event in obs.events) {
+                when (event.kind) {
+                    "unit-produced" -> {
+                        val unit = obs.units.firstOrNull { it.unitId == event.unitId && it.ownerPlayerId == obs.playerId }
+                        if (unit != null) {
+                            val title = current.unitTitle(unit.typeId)
+                            hudEvents.pushInfo(UiStrings.format("done", "NAME" to title))
+                        }
+                    }
+                    "unit-damaged" -> {
+                        val unit = obs.units.firstOrNull { it.unitId == event.unitId && it.ownerPlayerId == obs.playerId }
+                        if (unit != null) {
+                            hudEvents.pushInfo(UiStrings.get("damage"))
+                        }
+                    }
+                }
+            }
+            val marker = current.moveArrivalMarker
+            if (marker != null) {
+                val arrivalKey = "${marker.originalTarget.x.toInt()},${marker.originalTarget.y.toInt()}:${marker.stoppedAt.x.toInt()},${marker.stoppedAt.y.toInt()}"
+                if (arrivalKey != lastArrivalNoticeKey) {
+                    lastArrivalNoticeKey = arrivalKey
+                    hudEvents.pushInfo(UiStrings.get("arrivalDeviated"))
+                }
+            }
+        }
+    }
+
     private fun updatePacingHud() {
         if (!presentationReady) return
         val visible = session?.isOpen == true
-        collisionBoxPanel?.isVisible = visible && !paused && !loading
-        rateButtons.forEach { (rate, actor) ->
-            actor.isVisible = visible
-            actor.isDisabled = paused || loading || !visible
-            actor.setText("${rate.multiplier}x" + if (stepClock.rate == rate) " *" else "")
+        collisionBoxPanel?.isVisible = visible && !paused && !loading && development && touchControls
+        rateButtons.forEach { (_, actor) ->
+            actor.isVisible = false
+            actor.isDisabled = true
         }
-        simulationPauseButton.isVisible = visible
-        simulationPauseButton.isDisabled = paused || loading || !visible
-        simulationPauseButton.setText(if (stepClock.isPaused) "Resume" else "Pause")
-        pacingLabel.isVisible = visible
+        simulationPauseButton.isVisible = false
+        simulationPauseButton.isDisabled = true
+        pacingLabel.isVisible = false
         val actual = if (paused) 0.0 else stepClock.actualMultiplier
         val state = if (paused) "Suspended" else if (stepClock.isPaused) "Paused" else "Speed"
         pacingLabel.setText("$state ${stepClock.rate.multiplier}x | actual " +
@@ -1784,8 +1944,14 @@ class BootstrapScreen(
         val naval = selected?.transport != null && menu?.unitActions?.any { it.name == "buildAntiNuke" } == true
         val state = HudState(selected, current?.selectedIds ?: emptySet(), (1..3).map { current?.groupCount(it) ?: 0 }, current?.feedback, current?.observation?.stepIndex,
             launch.canEdit, loading, visualState?.preparationStatus, loadError, current != null, menu?.balance, menu?.factoryQueue,
-            mapInput.patrolMode, mapInput.patrolPointCount, mapInput.reclaimMode, mapInput.repairMode, menu?.workerQueueText, menu)
-        if (state == lastHudState) return
+            mapInput.patrolMode, mapInput.patrolPointCount, mapInput.reclaimMode, mapInput.repairMode, menu?.workerQueueText, menu,
+            hudMenuOpen, stepClock.isPaused, stepClock.rate, UiStrings.currentLanguage)
+        if (state == lastHudState) {
+            if (current != null && ::hudOverlay.isInitialized) {
+                hudOverlay.syncEventStream(hudEvents)
+            }
+            return
+        }
         if (state.preparationStatus != null && state.preparationStatus != lastHudState?.preparationStatus) {
             evidence.record("resource-preparation-stage", mapOf("generation" to generation, "stage" to state.preparationStatus,
                 "scope" to if (loading) "match-load" else "menu-preparation"))
@@ -2140,14 +2306,84 @@ class BootstrapScreen(
             else -> "${current.feedback}\nStep ${current.observation.stepIndex}"
         })
         minimapActor.isVisible = current != null
+        val hudSnap = current?.let {
+            HudSidebarProjection.project(
+                session = it,
+                menuOpen = hudMenuOpen,
+                simPaused = stepClock.isPaused,
+                activeRate = stepClock.rate,
+            )
+        }
+        lastHudSnapshot = hudSnap
+        val worldW = graphics?.projection?.worldWidth ?: 1000.0
+        val worldH = graphics?.projection?.worldHeight ?: 1000.0
+
+        // First compute pre-actions layout so BattleActionList anchors flush beneath queue/card inside 232px rail
+        hudOverlay.update(
+            stageWidth = viewport.worldWidth,
+            stageHeight = viewport.worldHeight,
+            worldWidth = worldW,
+            worldHeight = worldH,
+            hudSnapshot = hudSnap,
+            eventStream = hudEvents,
+            externalActionsHeight = 0f,
+        )
+        val railLayout = hudOverlay.layout
+        val showSidebarActions = current != null && !paused && hudSnap?.showActionsSection == true
+        battleActions.setSidebarAnchor(
+            left = railLayout.sidebarLeft + UiTokens.SIDEBAR_PAD_H,
+            topY = railLayout.actionsTopY,
+            width = (railLayout.sidebarWidth - UiTokens.SIDEBAR_PAD_H * 2f).coerceAtLeast(160f),
+            maxHeight = railLayout.actionsMaxHeight,
+            suppressTitle = true,
+        )
         val ownerHeading = menu?.let { desktopPrimaryHeading(it, state.selected, state.selectedIds) }
-        battleActions.update(current?.selectedId, ownerHeading,
-            if (current != null && !touchControls && !paused) menu?.battleActions().orEmpty() else emptyList())
-        if (current != null && !touchControls) {
+        battleActions.update(
+            current?.selectedId,
+            ownerHeading,
+            if (showSidebarActions) menu?.battleActions().orEmpty() else emptyList(),
+        )
+        // Re-sync hudOverlay with actual external actions height so sidebarBottom shrink-wraps accurately
+        hudOverlay.update(
+            stageWidth = viewport.worldWidth,
+            stageHeight = viewport.worldHeight,
+            worldWidth = worldW,
+            worldHeight = worldH,
+            hudSnapshot = hudSnap,
+            eventStream = hudEvents,
+            externalActionsHeight = if (showSidebarActions) battleActions.occupiedHeight else 0f,
+        )
+        if (current != null) {
+            if (hudMenuOpen || stepClock.isPaused) {
+                hudOverlay.toFront()
+            } else {
+                minimapActor.toFront()
+                battleActions.toFront()
+                if (commandConsoleOpen) {
+                    commandPanel.toFront()
+                    commandField.toFront()
+                    commandFeedbackLabel.toFront()
+                    commandPickHint.toFront()
+                    commandPickButtons.values.forEach { it.toFront() }
+                }
+            }
+        }
+
+        if (current != null) {
+            // Hide legacy match chrome replaced by InGameHudOverlay on both desktop and touch (HUD Spec §4, §5, §12.1)
+            titleLabel.isVisible = false
+            productionLabel.isVisible = false
+            productionNoticeLabel.isVisible = false
+            statusLabel.isVisible = false
+            patrolLabel.isVisible = false
+            startButton.isVisible = false
+            exitButton.isVisible = false
             produceButton.isVisible = false
             cancelProductionButton.isVisible = false
             productionLayer.isVisible = false
+            productionScroll.isVisible = false
             constructionLayer.isVisible = false
+            constructionScroll.isVisible = false
             reclaimCard.isVisible = false
             repairCard.isVisible = false
             economicUpgradeCard.isVisible = false
@@ -2158,10 +2394,9 @@ class BootstrapScreen(
             nativeInfo.isVisible = false
             selectedLabel.isVisible = false
             selectionHeading.isVisible = false
-            stopButton.setBounds(752f, 68f, 84f, 36f)
-            patrolButton.setBounds(844f, 68f, 92f, 36f)
-            startButton.setBounds(752f, 20f, 84f, 36f)
-            exitButton.setBounds(844f, 20f, 92f, 36f)
+            stopButton.isVisible = false
+            patrolButton.isVisible = false
+            groupButtons.forEach { it.isVisible = false }
         } else {
             productionLayer.isVisible = true
             constructionLayer.isVisible = true
@@ -2170,6 +2405,7 @@ class BootstrapScreen(
 
     private fun battlefieldAt(screenX: Int, screenY: Int): Boolean {
         val point = stage.screenToStageCoordinates(Vector2(screenX.toFloat(), screenY.toFloat()))
+        if (::hudOverlay.isInitialized && hudOverlay.containsHudPoint(point.x, point.y)) return false
         if (battleActions.containsPoint(point.x, point.y)) return false
         val hit = stage.hit(point.x, point.y, true)
         return hit == null || hit === stage.root

@@ -1,3 +1,9 @@
+v0.5.54 (2026-11-22 02:24)
+  新增: 实现右侧 232 自适应侧栏骨架（小地图纯黑等比槽、千分位资金行、侧栏下方透传）/ 选中卡（40×40 图标、25% 分段血量施工护盾能量条、定宽右对齐数值、敌方红条并隐藏队列动作）与 5 格生产施工升级队列行 / 左上系统条、≡ 菜单下拉面板、全屏压暗暂停卡、Esc 状态机与事件提示流（4s 普通事件 + 3s amber ▲ 未支持/拒绝/跳图单位提示）
+  技术: 新增 UiHudSkeletonAndEventsTest 覆盖事件流、侧栏布局与真实会话投影；通过 1920×1080 五态实窗采集与 §13.1 动作 ID 验证，Hydrogen 视觉对照与 Neon 独立代码整审定向复核均 0 必修
+
+====
+
 v0.5.53 (2026-11-22 01:37)
   新增: 废除 StretchViewport/FitViewport 升级短边 640 连续等比 ScreenViewport（含触控 ppcY 8mm 键高下限与 Android 全屏战场）/ 接入 gdx-freetype 1.13.1（PC 与 Android 四 ABI）及随包 OFL 开源 NotoSansSC + JetBrainsMono 增量字体、预热与拖拽防抖重建 / 落地 UiTokens 设计令牌与中英双语 UiStrings（含核心 kebab-case 拒绝码映射、内容包原文透传）
   技术: 补齐缩放/坐标往返/15 色 RGBA/防抖/双语与 OFL 资源单测；通过 PC 实窗冒烟、:pc:installDist 与 :android:assembleDebug 四 ABI 构建，独立非作者代码整审定向复核 0 必修

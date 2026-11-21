@@ -252,7 +252,7 @@ class SandboxSession(scenario: Scenario, private val evidence: ClientEvidence = 
         }
         }
 
-    private fun unitTitle(type: String) = actionCatalogue.title(type)
+    internal fun unitTitle(type: String) = actionCatalogue.title(type)
     val hasEconomicConstruction: Boolean get() = scenario.unitDefinitions.containsKey("extractorT1")
     val selectedUnitInfo: String? get() = actionMenu.selectedUnitInfo
     fun nominalIncome(typeId: String): Float? = actionCatalogue.nominalIncome(typeId)
