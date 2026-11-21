@@ -1,3 +1,9 @@
+v0.5.52 (2026-11-22 03:27)
+  架构改进: 新增二维局部速度避让深模块 LocomotionModule，在步初冻结空间索引与严格迷雾隔离下实现无量纲自适应二维 Boids 软分离（真单行窄道与地图边界净宽衰减）、靠右微偏置 2D ORCA 半平面线性规划、硬保静态墙体的 3D LP 最小侵入退化（含切线平局正向投影）及短窗可达转向扇区/滞回/余弦节流；不可变 UnitNavigationState 增加 lastAvoidHeadingDeg 随候选步回滚，接入 UnitMovementOrchestrator 并跳过旧一维 separationCaps
+  技术: 新增 LocomotionModuleTest 10 项单测，536 项核心回归与公开短场景批跑（6 套）全通过；三套 2 秒停滞标红拼图（rocks-small-100 100/100、opposed-open-25v25 50/50、opposed-corridor-8v8 16/16）经 Hydrogen 目视复核 APPROVE，非作者代码整审与定向复核 APPROVE（0 必修）
+
+====
+
 v0.5.51 (2026-11-21 22:59)
   架构改进: MovePlanning 建立 P0 玩家新令快车道（1–5 辆抢占与超编降级迁移）/ P1 流场挂点 / P2 修路三级优先级预算隔离（P2 3/4 上限与跨步轮转）及同步 0 步二轮推进，收回 repairInvalidConnections 普通 MOVE 至步级预算；新增微移短接驳防活锁（adoptSpliced）、新令 ScreenPlane 前向净空护栏下的当步乐观转向，以及 12 步快敏物理脱困与 12→24→48 指数退避
   技术: 新增 PriorityPlanningSchedulerTest 8 项单测，33 类 136 项核心回归、知识前缀回归及公开短场景批跑（6 套）全通过，3 轮独立非作者审阅与定向复核 APPROVE（0 必修）

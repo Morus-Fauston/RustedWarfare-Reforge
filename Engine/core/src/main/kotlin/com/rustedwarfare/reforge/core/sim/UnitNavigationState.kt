@@ -72,6 +72,7 @@ internal data class UnitNavigationState(
     val optimisticSteerTarget: Position? = null,
     val repairBackoffStep: Long = 0L,
     val repairConsecutiveFailures: Int = 0,
+    val lastAvoidHeadingDeg: Double? = null,
 ) {
     /**
      * Atomically freezes a caller-provided waypoint list (or keeps emptyList) so external
@@ -130,6 +131,7 @@ internal data class UnitNavigationState(
         optimisticSteerTarget = null,
         repairBackoffStep = 0L,
         repairConsecutiveFailures = 0,
+        lastAvoidHeadingDeg = null,
     )
 
     /** Pauses the physical route while keeping arrival history and terrain correction state. */
@@ -159,6 +161,7 @@ internal data class UnitNavigationState(
         lastPlannedKnowledgeRevision = knowledgeRevision,
         lastPlannedBuildingRevision = buildingRevision,
         optimisticSteerTarget = null,
+        lastAvoidHeadingDeg = null,
     )
 
     /** Pops the front waypoint when a leg completes or hands off. */
@@ -197,6 +200,7 @@ internal data class UnitNavigationState(
                 localMotion = null,
                 localProgressTime = 0.0,
                 routeContinuation = null,
+                lastAvoidHeadingDeg = null,
             )
         } else {
             copy(pathPoints = frozen)
@@ -216,6 +220,7 @@ internal data class UnitNavigationState(
                 localMotion = null,
                 routeContinuation = null,
                 localProgressTime = 0.0,
+                lastAvoidHeadingDeg = null,
             )
         } else {
             copy(pathPoints = frozen)

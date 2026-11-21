@@ -558,6 +558,10 @@ internal class MovePlanning {
             val body = checkNotNull(member.body)
             val blocked = mutableListOf<MovePlanningOccupant>()
             for (peer in peers) {
+                // Only stationary/parked/immovable peers force a pre-launch detour; moving peers
+                // in other groups are resolved dynamically by 2D local velocity avoidance (ENG-P016-006).
+                val peerActiveGroup = peer.body.landingMember?.group
+                if (!peer.idle && !peer.fixed && peerActiveGroup != null && peerActiveGroup !== body.landingMember?.group) continue
                 val id = peer.body.unitId
                 if (!UnitContact.withinSweptBounds(body, member.start, end, peer.body)) continue
                 val previous = checkedPeers[id]

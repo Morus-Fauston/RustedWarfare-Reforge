@@ -551,8 +551,9 @@ class SimulationContext internal constructor(private val policies: ExperimentalP
                     !knowsRouteOccupant(observer, other)) return@mapNotNull null
                 if (repair == null && landing != null && other.landingMember?.group === landing.group) queuePeers += other.position
                 if (repair == null && landing != null && (other.landingMember?.group !== landing.group || isParkedPeer(observer, other))) {
+                    val otherPendingMove = other.moveTarget == null && steps.current.movePlanning.pending(other.unitId)
                     segmentPeers += MovePlanningOccupant(other.copy(), movePlanningPose(other), null,
-                        idle = other.moveTarget == null, obstructsRoute = true)
+                        idle = other.moveTarget == null && !otherPendingMove, obstructsRoute = true)
                 }
                 if (canDisplaceInContact(other) && UnitContact.canPushMass(observer, other)) return@mapNotNull null
                 val reach = observer.definition.movementCollision.boundingRadius + other.definition.movementCollision.boundingRadius
