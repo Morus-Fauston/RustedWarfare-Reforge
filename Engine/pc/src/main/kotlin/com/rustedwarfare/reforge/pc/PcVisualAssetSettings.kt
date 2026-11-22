@@ -171,9 +171,74 @@ internal class PcVisualAssetSettings @JvmOverloads constructor(private val store
             preparationStatus = "Checking prepared resources before loading..."
             val sounds = ResourceSoundComposer.compose(images)
             val used = (base.resourcePack.resources.keys.map { images.images.getValue(it).path } + sounds.sounds.values.map { it.path }).toSet()
+            val userPackRootsHighToLow = users.mapNotNull { it.manifest.parent }
+            val themePatches = mutableListOf<com.rustedwarfare.reforge.client.UiThemePatch>()
+            val unmanagedThemeHashes = linkedMapOf<Path, Pair<Long, String>>()
+            val unmanagedAbsentThemes = mutableListOf<Path>()
+            for (pack in users) {
+                val root = pack.manifest.parent ?: continue
+                val themeFile = com.rustedwarfare.reforge.client.UiThemeComposer.resolveStrictPackFile(
+                    root,
+                    com.rustedwarfare.reforge.client.UiThemeComposer.PACK_THEME_FILE,
+                )
+                if (themeFile == null) {
+                    if (!pack.clientHeld) unmanagedAbsentThemes.add(root)
+                    continue
+                }
+                val themeBytes = if (!pack.clientHeld && inputs != null) {
+                    inputs.read(themeFile, com.rustedwarfare.reforge.client.UiThemeComposer.MAX_THEME_BYTES)
+                } else {
+                    Files.newInputStream(themeFile).use {
+                        it.readNBytes(com.rustedwarfare.reforge.client.UiThemeComposer.MAX_THEME_BYTES + 1)
+                    }.also {
+                        require(it.size <= com.rustedwarfare.reforge.client.UiThemeComposer.MAX_THEME_BYTES) {
+                            "UI_THEME_INVALID: $themeFile: Theme exceeds 512 KiB limit"
+                        }
+                    }
+                }
+                val patch = com.rustedwarfare.reforge.client.UiThemePatch.read(themeBytes, themeFile.toString(), requireFull = false)
+                themePatches += patch
+                if (!pack.clientHeld) {
+                    unmanagedThemeHashes[themeFile] = themeBytes.size.toLong() to visualHash(themeBytes)
+                    for (relAsset in patch.assets.values.filterNotNull().distinct()) {
+                        val assetFile = com.rustedwarfare.reforge.client.UiThemeComposer.resolveStrictPackFile(root, relAsset) ?: continue
+                        val assetBytes = if (inputs != null) inputs.read(assetFile, 16 * 1024 * 1024) else Files.readAllBytes(assetFile)
+                        unmanagedThemeHashes[assetFile] = assetBytes.size.toLong() to visualHash(assetBytes)
+                    }
+                }
+            }
+            val composedTheme = com.rustedwarfare.reforge.client.UiThemeComposer.compose(overridesHighToLow = themePatches)
+            val themeAssetResolver = com.rustedwarfare.reforge.client.UiThemeAssetResolver(userPackRootsHighToLow)
+            fun verifyUnmanagedThemes() {
+                for (absentRoot in unmanagedAbsentThemes) {
+                    val nowPresent = com.rustedwarfare.reforge.client.UiThemeComposer.resolveStrictPackFile(
+                        absentRoot,
+                        com.rustedwarfare.reforge.client.UiThemeComposer.PACK_THEME_FILE,
+                    )
+                    require(nowPresent == null) { "RESOURCE_PACK_SOURCE_CHANGED: $nowPresent: Theme appeared after checking; check this pack again" }
+                }
+                for ((file, expectedDigest) in unmanagedThemeHashes) {
+                    val parentRoot = userPackRootsHighToLow.firstOrNull { file.startsWith(it.toAbsolutePath().normalize()) }
+                    val rel = parentRoot?.toAbsolutePath()?.normalize()?.relativize(file)?.toString()?.replace('\\', '/')
+                    val rechecked = if (parentRoot != null && rel != null) {
+                        com.rustedwarfare.reforge.client.UiThemeComposer.resolveStrictPackFile(parentRoot, rel)
+                    } else null
+                    require(rechecked != null) { "RESOURCE_PACK_SOURCE_CHANGED: $file: Theme resource missing after checking" }
+                    val currentBytes = Files.readAllBytes(rechecked)
+                    require(currentBytes.size.toLong() == expectedDigest.first && visualHash(currentBytes) == expectedDigest.second) {
+                        "RESOURCE_PACK_SOURCE_CHANGED: $file: Theme resource changed after checking; check this pack again"
+                    }
+                }
+            }
             val prepared = base.withConfiguration(resolved, original?.profileId ?: base.profileId, original?.identity ?: base.identity)
-                .withResourceImages(images) { baseSounds.verify(); original?.verify(); users.forEach { it.verifyUsed(used) } }
+                .withResourceImages(images) {
+                    baseSounds.verify()
+                    original?.verify()
+                    users.forEach { it.verifyUsed(used) }
+                    verifyUnmanagedThemes()
+                }
                 .withResourceSounds(sounds)
+                .withUiTheme(composedTheme, themeAssetResolver)
                 .also { it.verifyForPublication() }
             if (key != null && inputs != null && trustedOutputs.identity != null) {
                 val records = users.mapNotNull { pack ->

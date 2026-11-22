@@ -1,4 +1,24 @@
 # Changelog
+## v0.5.68 (2026-11-23 00:25)
+
+### 新增
+
+- **轻量化界面样式主题（`UiTheme`）与表现资源包声明式分层覆写（`UiTheme.kt`、`ui/theme.json`、`ADR-014`）**：
+  - 将局内 HUD 全部颜色令牌、装饰性圆角/描边/阴影/角标偏移度量、单位图标提亮调参及可选图标/字体/九宫格贴图路径收拢至随包内置默认主题 `Engine/client/src/main/resources/ui/theme.json`（保留现行构成主义默认视觉零回归，支持 `#RRGGBB` / `#RRGGBBAA` / `#RRGGBB@alpha` 精确浮点透明通道），严格恪守“只改样式、不改 HUD 组织方式、交互状态机与触控安全底线”约束。
+  - 新增纯 Kotlin 分层合并器 `UiThemeComposer` 与只读 `UiThemeProvider` / `UiThemeAssetResolver`，按表现资源包优先级（高优先级用户包 → 低优先级用户包 → 内置默认）逐键局部覆写 `ui/theme.json`，缺失键自动逐层回退，严格校验 JSON 512 KiB 上限、有限浮点/合理区间及逐段拒绝符号链接与路径穿越（`UI_THEME_INVALID`）。
+  - 随仓提供最小主题覆写样例 `Engine/client/src/test/resources/ui-theme-samples/cobalt-steel/ui/theme.json`，并新增桌面调试直开参数 `--theme-pack <dir>`（`WindowsLaunchOptions.kt`、`WindowsLauncher.kt`）。
+
+### 调整
+
+- **全 HUD 渲染链路接入 `UiThemeProvider` 与 `ADR-008` 资源托管闭环**：
+  - `InGameHudOverlay`、`HudActionPanel`、`HudControlGroupBar`、`HudDebugOverlay`、`HudSandboxConsole`、`HudCommandIconAtlas`、`UiFontSet` 与 `BootstrapScreen` 全部改为从活动 `UiTheme` 读取颜色、装饰度量与可覆写资产，切换主题时完整比较主题值相等性以重建样式与资源，并安全释放旧图集/字体、在自定义图集失败时自动兜底默认图集。
+  - `PcAcceptedResourceStore` 与 `PcVisualAssetSettings` 将用户表现资源包内的 `ui/theme.json` 及声明的包内资产纳入 `ADR-008` 客户端托管收据校验与未托管外部包冻结快照/发布复核，并拦截与 `pack.json`/`receipt.*`/`media-*` 冲突的保留文件名。
+
+### 技术
+
+- **验证与独立审阅收据（`UI-P003-001`）**：新增 `UiThemeAndOverlayTest`（覆盖内置默认与历史 `UiTokens` 零回归、三层局部覆写、恶意/越界/超限/NaN 拦截、匿名同 ID 主题值比较）与 `PcUiThemeResourcePackTest`（覆盖受托包删源复原、非 `ui/` 托管资产篡改检测、保留文件名拒绝、未托管主题篡改与事后新增拦截）；受影响 `:client:test`、`:pc:test` 与 `:pc:installDist` 全绿，`workspace_layout.py --root` 返回 `ok: true`；全新上下文 Neon 独立非作者代码整审首轮提出 3 项 P1（非 `ui/` 托管与 `JsonValue` 链表复验、未托管外部包冻结读取复核、完整主题值比较）及 4 项 P2 均完成返修，经原审定向复核 `APPROVED`（0 必修）。
+
+---
 ## v0.5.67 (2026-11-22 21:41)
 
 ### 修复

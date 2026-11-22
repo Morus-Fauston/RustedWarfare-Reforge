@@ -71,7 +71,10 @@ internal class InGameHudOverlay(
     private val unitIconProvider: (String) -> TextureRegion?,
     private val commandIconProvider: (String) -> TextureRegion? = { null },
     private val callbacks: InGameHudCallbacks,
+    private val themeProvider: UiThemeProvider = UiThemeProvider { UiTheme.DEFAULT },
 ) : Group() {
+    private val theme: UiTheme get() = themeProvider.currentTheme()
+    private val colors: UiThemeColors get() = theme.colors
 
     private var snapshot: HudSnapshot? = null
     private var notices: List<HudNoticeItem> = emptyList()
@@ -413,7 +416,7 @@ internal class InGameHudOverlay(
         val white = skin.getRegion("white")
         val origColor = batch.packedColor
 
-        fillRect(batch, white, 0f, 0f, stageW, stageH, UiTokens.SCRIM, parentAlpha)
+        fillRect(batch, white, 0f, 0f, stageW, stageH, colors.scrim, parentAlpha)
         drawSystemBar(batch, white, snap, parentAlpha)
         if (snap.menuOpen) {
             drawMenuPanel(batch, white, snap, parentAlpha)
@@ -431,60 +434,60 @@ internal class InGameHudOverlay(
 
         val bodyH = (l.minimapRect.y - l.sidebarBottom).coerceAtLeast(0f)
         if (bodyH > 0f) {
-            fillRect(batch, white, l.sidebarLeft, l.sidebarBottom, l.sidebarWidth, bodyH, UiTokens.RAIL, alpha)
+            fillRect(batch, white, l.sidebarLeft, l.sidebarBottom, l.sidebarWidth, bodyH, colors.rail, alpha)
         }
-        fillRect(batch, white, l.sidebarLeft, l.sidebarBottom, 1f, railH, UiTokens.LINE, alpha)
-        fillRect(batch, white, l.sidebarLeft, l.sidebarBottom, l.sidebarWidth, 1f, UiTokens.LINE, alpha)
-        fillRect(batch, white, l.sidebarLeft, l.minimapRect.y, l.sidebarWidth, 1f, UiTokens.LINE, alpha)
+        fillRect(batch, white, l.sidebarLeft, l.sidebarBottom, 1f, railH, colors.line, alpha)
+        fillRect(batch, white, l.sidebarLeft, l.sidebarBottom, l.sidebarWidth, 1f, colors.line, alpha)
+        fillRect(batch, white, l.sidebarLeft, l.minimapRect.y, l.sidebarWidth, 1f, colors.line, alpha)
 
         val cr = l.creditsRect
         val padH = UiTokens.SIDEBAR_PAD_H
         drawTextLeft(
             batch, smallFont(), UiStrings.get("funds", snap.language),
-            cr.x + padH, cr.y + cr.height * 0.5f, UiTokens.DIM, alpha,
+            cr.x + padH, cr.y + cr.height * 0.5f, colors.dim, alpha,
         )
         drawTextRight(
             batch, creditsMonoFont(), snap.creditsText,
-            cr.x + cr.width - padH, cr.y + cr.height * 0.5f + 1f, UiTokens.TEXT, alpha,
+            cr.x + cr.width - padH, cr.y + cr.height * 0.5f + 1f, colors.text, alpha,
         )
 
         val chips = snap.typeChips
         val chipsRect = l.typeChipsRect
         if (chips != null && chipsRect != null) {
-            fillRect(batch, white, l.sidebarLeft + 1f, chipsRect.y + chipsRect.height, l.sidebarWidth - 1f, 1f, UiTokens.HAIR, alpha)
+            fillRect(batch, white, l.sidebarLeft + 1f, chipsRect.y + chipsRect.height, l.sidebarWidth - 1f, 1f, colors.hair, alpha)
             drawTypeChips(batch, white, chips, chipsRect, alpha)
         }
 
         val card = snap.selectionCard
         val cardRect = l.cardRect
         if (card != null && cardRect != null) {
-            fillRect(batch, white, l.sidebarLeft + 1f, cardRect.y + cardRect.height, l.sidebarWidth - 1f, 1f, UiTokens.HAIR, alpha)
+            fillRect(batch, white, l.sidebarLeft + 1f, cardRect.y + cardRect.height, l.sidebarWidth - 1f, 1f, colors.hair, alpha)
             drawSelectionCard(batch, white, card, cardRect, snap.language, alpha)
         }
 
         val cargo = snap.cargoSection
         val cargoRect = l.cargoRect
         if (cargo != null && cargoRect != null) {
-            fillRect(batch, white, l.sidebarLeft + 1f, cargoRect.y + cargoRect.height, l.sidebarWidth - 1f, 1f, UiTokens.HAIR, alpha)
+            fillRect(batch, white, l.sidebarLeft + 1f, cargoRect.y + cargoRect.height, l.sidebarWidth - 1f, 1f, colors.hair, alpha)
             drawCargoSection(batch, white, cargo, cargoRect, snap.language, alpha)
         }
 
         val stockpile = snap.stockpileSection
         val stockpileRect = l.stockpileRect
         if (stockpile != null && stockpileRect != null) {
-            fillRect(batch, white, l.sidebarLeft + 1f, stockpileRect.y + stockpileRect.height, l.sidebarWidth - 1f, 1f, UiTokens.HAIR, alpha)
+            fillRect(batch, white, l.sidebarLeft + 1f, stockpileRect.y + stockpileRect.height, l.sidebarWidth - 1f, 1f, colors.hair, alpha)
             drawStockpileSection(batch, white, stockpile, stockpileRect, snap.language, alpha)
         }
 
         val queue = snap.queueSection
         val qRect = l.queueRect
         if (queue != null && qRect != null) {
-            fillRect(batch, white, l.sidebarLeft + 1f, qRect.y + qRect.height, l.sidebarWidth - 1f, 1f, UiTokens.HAIR, alpha)
+            fillRect(batch, white, l.sidebarLeft + 1f, qRect.y + qRect.height, l.sidebarWidth - 1f, 1f, colors.hair, alpha)
             drawQueueSection(batch, white, queue, qRect, snap.language, alpha)
         }
 
         if (externalActionsH > 0f && snap.showActionsSection) {
-            fillRect(batch, white, l.sidebarLeft + 1f, l.actionsTopY, l.sidebarWidth - 1f, 1f, UiTokens.HAIR, alpha)
+            fillRect(batch, white, l.sidebarLeft + 1f, l.actionsTopY, l.sidebarWidth - 1f, 1f, colors.hair, alpha)
         }
     }
 
@@ -500,12 +503,12 @@ internal class InGameHudOverlay(
             val r = chipRects.getOrNull(idx) ?: return@forEachIndexed
             val actor = typeChipActors.getOrNull(idx)
             val bg = when {
-                chip.isPrimary -> UiTokens.VALUE
-                actor?.hovered == true -> MENU_ROW_HOVER
-                else -> UiTokens.WELL
+                chip.isPrimary -> colors.value
+                actor?.hovered == true -> colors.cellHover
+                else -> colors.well
             }
-            val border = if (chip.isPrimary) UiTokens.VALUE else UiTokens.LINE
-            val fg = if (chip.isPrimary) UiTokens.WELL else UiTokens.TEXT
+            val border = if (chip.isPrimary) colors.value else colors.line
+            val fg = if (chip.isPrimary) colors.well else colors.text
             fillRect(batch, white, r.x, r.y, r.width, r.height, bg, alpha)
             strokeRect(batch, white, r.x, r.y, r.width, r.height, border, alpha)
             val icon = unitIconProvider(chip.typeId)
@@ -523,9 +526,9 @@ internal class InGameHudOverlay(
         if (section.overflowCount > 0) {
             val overflowRect = chipRects.getOrNull(section.chips.size)
             if (overflowRect != null) {
-                fillRect(batch, white, overflowRect.x, overflowRect.y, overflowRect.width, overflowRect.height, UiTokens.WELL, alpha)
-                strokeRect(batch, white, overflowRect.x, overflowRect.y, overflowRect.width, overflowRect.height, UiTokens.LINE, alpha)
-                drawTextCenter(batch, countMonoFont(), "+${section.overflowCount}", overflowRect.x + overflowRect.width * 0.5f, overflowRect.y + overflowRect.height * 0.5f, UiTokens.DIM, alpha)
+                fillRect(batch, white, overflowRect.x, overflowRect.y, overflowRect.width, overflowRect.height, colors.well, alpha)
+                strokeRect(batch, white, overflowRect.x, overflowRect.y, overflowRect.width, overflowRect.height, colors.line, alpha)
+                drawTextCenter(batch, countMonoFont(), "+${section.overflowCount}", overflowRect.x + overflowRect.width * 0.5f, overflowRect.y + overflowRect.height * 0.5f, colors.dim, alpha)
             }
         }
     }
@@ -540,7 +543,7 @@ internal class InGameHudOverlay(
     ) {
         val padH = UiTokens.SIDEBAR_PAD_H
         val cy = rect.y + rect.height * 0.5f
-        drawTextLeft(batch, smallFont(), UiStrings.get("cargo", lang), rect.x + padH, cy, UiTokens.DIM, alpha)
+        drawTextLeft(batch, smallFont(), UiStrings.get("cargo", lang), rect.x + padH, cy, colors.dim, alpha)
 
         // Right-aligned occupied/capacity (occupied 13pt bold text, /capacity 11pt dim per Spec §7.2)
         val rightEdge = rect.x + rect.width - padH
@@ -550,8 +553,8 @@ internal class InGameHudOverlay(
         val capW = glyphLayout.width
         glyphLayout.setText(countMonoFont(), occText)
         val occW = glyphLayout.width
-        drawTextRight(batch, captionMonoFont(), capText, rightEdge, cy - 0.5f, UiTokens.DIM, alpha)
-        drawTextRight(batch, countMonoFont(), occText, rightEdge - capW - 1f, cy + 0.5f, UiTokens.TEXT, alpha)
+        drawTextRight(batch, captionMonoFont(), capText, rightEdge, cy - 0.5f, colors.dim, alpha)
+        drawTextRight(batch, countMonoFont(), occText, rightEdge - capW - 1f, cy + 0.5f, colors.text, alpha)
         val capacityLeft = rightEdge - capW - occW - 8f
 
         // Merged passenger chips (unit icon 16x16 + count)
@@ -560,7 +563,7 @@ internal class InGameHudOverlay(
         val chipH = 24f
         val chipY = rect.y + (rect.height - chipH) * 0.5f
         if (cargo.items.isEmpty()) {
-            drawTextLeft(batch, smallFont(), UiStrings.get("empty", lang), cx, cy, UiTokens.DIM, alpha * 0.85f)
+            drawTextLeft(batch, smallFont(), UiStrings.get("empty", lang), cx, cy, colors.dim, alpha * 0.85f)
         } else {
             var rendered = 0
             for (item in cargo.items) {
@@ -570,12 +573,12 @@ internal class InGameHudOverlay(
                 if (cx + chipW > capacityLeft && rendered > 0) {
                     val remain = cargo.items.size - rendered
                     if (cx + 26f <= capacityLeft) {
-                        drawTextLeft(batch, smallMonoFont(), "+$remain", cx + 2f, cy, UiTokens.DIM, alpha)
+                        drawTextLeft(batch, smallMonoFont(), "+$remain", cx + 2f, cy, colors.dim, alpha)
                     }
                     break
                 }
-                fillRect(batch, white, cx, chipY, chipW, chipH, UiTokens.WELL, alpha)
-                strokeRect(batch, white, cx, chipY, chipW, chipH, UiTokens.LINE, alpha)
+                fillRect(batch, white, cx, chipY, chipW, chipH, colors.well, alpha)
+                strokeRect(batch, white, cx, chipY, chipW, chipH, colors.line, alpha)
                 val icon = unitIconProvider(item.typeId)
                 if (icon != null) {
                     val iconSz = 16f
@@ -585,7 +588,7 @@ internal class InGameHudOverlay(
                     batch.setColor(1f, 1f, 1f, alpha)
                     batch.draw(icon, cx + 5f + (iconSz - dw) * 0.5f, cy - dh * 0.5f, dw, dh)
                 }
-                drawTextRight(batch, smallMonoFont(), cntText, cx + chipW - 5f, cy, UiTokens.TEXT, alpha)
+                drawTextRight(batch, smallMonoFont(), cntText, cx + chipW - 5f, cy, colors.text, alpha)
                 cx += chipW + 4f
                 rendered++
             }
@@ -602,7 +605,7 @@ internal class InGameHudOverlay(
     ) {
         val padH = UiTokens.SIDEBAR_PAD_H
         val cy = rect.y + rect.height * 0.5f
-        drawTextLeft(batch, smallFont(), UiStrings.get("stock", lang), rect.x + padH, cy, UiTokens.DIM, alpha)
+        drawTextLeft(batch, smallFont(), UiStrings.get("stock", lang), rect.x + padH, cy, colors.dim, alpha)
 
         // Right-aligned current/capacity (current 13pt bold text, /capacity 11pt dim per Spec §5.4)
         val rightEdge = rect.x + rect.width - padH
@@ -612,8 +615,8 @@ internal class InGameHudOverlay(
         val capW = glyphLayout.width
         glyphLayout.setText(countMonoFont(), curText)
         val curW = glyphLayout.width
-        drawTextRight(batch, captionMonoFont(), capText, rightEdge, cy - 0.5f, UiTokens.DIM, alpha)
-        drawTextRight(batch, countMonoFont(), curText, rightEdge - capW - 1f, cy + 0.5f, UiTokens.TEXT, alpha)
+        drawTextRight(batch, captionMonoFont(), capText, rightEdge, cy - 0.5f, colors.dim, alpha)
+        drawTextRight(batch, countMonoFont(), curText, rightEdge - capW - 1f, cy + 0.5f, colors.text, alpha)
         val maxPipRight = rightEdge - capW - curW - 8f
 
         // 14x14 pips (solid VALUE fill for stocked, dashed LINE outline for empty slots per Spec §5.4)
@@ -628,10 +631,10 @@ internal class InGameHudOverlay(
         var px = startX
         for (i in 0 until cap) {
             if (i < stock.current) {
-                fillRect(batch, white, px, pipY, pipSize, pipSize, UiTokens.VALUE, alpha)
-                strokeRect(batch, white, px, pipY, pipSize, pipSize, UiTokens.LINE, alpha)
+                fillRect(batch, white, px, pipY, pipSize, pipSize, colors.value, alpha)
+                strokeRect(batch, white, px, pipY, pipSize, pipSize, colors.line, alpha)
             } else {
-                drawDashedRect(batch, white, px, pipY, pipSize, pipSize, UiTokens.LINE, alpha * 0.78f)
+                drawDashedRect(batch, white, px, pipY, pipSize, pipSize, colors.line, alpha * 0.78f)
             }
             px += pipSize + gap
         }
@@ -647,7 +650,7 @@ internal class InGameHudOverlay(
     ) {
         val leftPad = if (card.isEnemyOrNeutral) 14f else UiTokens.SIDEBAR_PAD_H
         if (card.isEnemyOrNeutral) {
-            val stripeColor = card.ownerStripeRgb?.let { MatchPlayerColors.rgbToColor(it) } ?: UiTokens.FOE
+            val stripeColor = card.ownerStripeRgb?.let { MatchPlayerColors.rgbToColor(it) } ?: colors.foe
             fillRect(batch, white, rect.x + 1f, rect.y, 4f, rect.height, stripeColor, alpha)
         }
 
@@ -656,8 +659,8 @@ internal class InGameHudOverlay(
         val iconX = rect.x + leftPad
         val iconY = topY - iconSize
 
-        fillRect(batch, white, iconX, iconY, iconSize, iconSize, UiTokens.WELL, alpha)
-        strokeRect(batch, white, iconX, iconY, iconSize, iconSize, UiTokens.LINE, alpha)
+        fillRect(batch, white, iconX, iconY, iconSize, iconSize, colors.iconWell, alpha)
+        strokeRect(batch, white, iconX, iconY, iconSize, iconSize, colors.line, alpha)
 
         val iconRegion = unitIconProvider(card.typeId)
         if (iconRegion != null) {
@@ -673,19 +676,19 @@ internal class InGameHudOverlay(
         val countFont = if (card.countText.startsWith("×")) countMonoFont() else smallFont()
         glyphLayout.setText(countFont, card.countText)
         val countW = glyphLayout.width
-        drawTextRight(batch, countFont, card.countText, rightEdge, topY - 8f, UiTokens.DIM, alpha)
+        drawTextRight(batch, countFont, card.countText, rightEdge, topY - 8f, colors.dim, alpha)
 
         val textX = iconX + iconSize + 9f
         val availNameW = (rightEdge - countW - 6f - textX).coerceAtLeast(40f)
         val nameToDraw = ellipsize(titleFont(), card.displayName, availNameW)
         val nameCenterY = if (card.subtitleText != null) iconY + iconSize * 0.68f else iconY + iconSize * 0.5f
-        drawTextLeft(batch, titleFont(), nameToDraw, textX, nameCenterY, UiTokens.TEXT, alpha)
+        drawTextLeft(batch, titleFont(), nameToDraw, textX, nameCenterY, colors.text, alpha)
 
         card.subtitleText?.let { sub ->
             val subColor = when {
-                card.subtitleIsWarning -> UiTokens.AMBER
-                card.subtitleIsIncome -> UiTokens.VALUE
-                else -> UiTokens.DIM
+                card.subtitleIsWarning -> colors.amber
+                card.subtitleIsIncome -> colors.value
+                else -> colors.dim
             }
             val availSubW = (rightEdge - textX).coerceAtLeast(40f)
             val subDraw = ellipsize(smallFont(), sub, availSubW)
@@ -709,18 +712,18 @@ internal class InGameHudOverlay(
             var rowCenterY = iconY - 8f - STAT_ROW_H * 0.5f
 
             for (bar in card.statBars) {
-                val labelColor = if (bar.style == HudStatStyle.WARNING_AMBER) UiTokens.AMBER else UiTokens.DIM
-                val valColor = if (bar.style == HudStatStyle.WARNING_AMBER) UiTokens.AMBER else UiTokens.TEXT
+                val labelColor = if (bar.style == HudStatStyle.WARNING_AMBER) colors.amber else colors.dim
+                val valColor = if (bar.style == HudStatStyle.WARNING_AMBER) colors.amber else colors.text
                 val fillColor = when (bar.style) {
-                    HudStatStyle.PROGRESS_RUST -> UiTokens.RUST
-                    HudStatStyle.WARNING_AMBER -> UiTokens.AMBER
-                    HudStatStyle.NORMAL -> UiTokens.VALUE
+                    HudStatStyle.PROGRESS_RUST -> colors.rust
+                    HudStatStyle.WARNING_AMBER -> colors.amber
+                    HudStatStyle.NORMAL -> colors.value
                 }
 
                 drawTextLeft(batch, smallFont(), UiStrings.get(bar.labelKey, lang), rowLeft, rowCenterY, labelColor, alpha)
 
                 val barY = rowCenterY - UiTokens.STAT_BAR_HEIGHT * 0.5f
-                fillRect(batch, white, barX, barY, barW, UiTokens.STAT_BAR_HEIGHT, UiTokens.WELL, alpha)
+                fillRect(batch, white, barX, barY, barW, UiTokens.STAT_BAR_HEIGHT, colors.well, alpha)
                 val innerW = (barW - 2f).coerceAtLeast(0f)
                 val fillW = (innerW * bar.ratio.coerceIn(0f, 1f))
                 if (fillW > 0.5f) {
@@ -728,15 +731,15 @@ internal class InGameHudOverlay(
                 }
                 for (q in 1..3) {
                     val tickX = barX + barW * (q * 0.25f)
-                    fillRect(batch, white, tickX, barY + 1f, 1f, UiTokens.STAT_BAR_HEIGHT - 2f, UiTokens.WELL, alpha)
+                    fillRect(batch, white, tickX, barY + 1f, 1f, UiTokens.STAT_BAR_HEIGHT - 2f, colors.well, alpha)
                 }
-                strokeRect(batch, white, barX, barY, barW, UiTokens.STAT_BAR_HEIGHT, UiTokens.LINE, alpha)
+                strokeRect(batch, white, barX, barY, barW, UiTokens.STAT_BAR_HEIGHT, colors.line, alpha)
 
                 if (bar.maxText.isNotEmpty()) {
                     val capFont = captionMonoFont()
                     glyphLayout.setText(capFont, bar.maxText)
                     val maxW = glyphLayout.width
-                    drawTextRight(batch, capFont, bar.maxText, rowRight, rowCenterY - 0.5f, UiTokens.DIM, alpha)
+                    drawTextRight(batch, capFont, bar.maxText, rowRight, rowCenterY - 0.5f, colors.dim, alpha)
                     drawTextRight(batch, smallMonoFont(), bar.currentText, rowRight - maxW - 2f, rowCenterY, valColor, alpha)
                 } else {
                     drawTextRight(batch, smallMonoFont(), bar.currentText, rowRight, rowCenterY, valColor, alpha)
@@ -757,7 +760,7 @@ internal class InGameHudOverlay(
     ) {
         val padH = UiTokens.SIDEBAR_PAD_H
         val centerY = rect.y + rect.height * 0.5f
-        drawTextLeft(batch, smallFont(), UiStrings.get(queue.labelKey, lang), rect.x + padH, centerY, UiTokens.DIM, alpha)
+        drawTextLeft(batch, smallFont(), UiStrings.get(queue.labelKey, lang), rect.x + padH, centerY, colors.dim, alpha)
 
         val slotRects = computeQueueSlotRects(rect, lang)
         queue.slots.forEachIndexed { idx, slot ->
@@ -768,23 +771,23 @@ internal class InGameHudOverlay(
             val occupied = slot.typeId != null || slot.overflowCount > 0
             if (occupied) {
                 val hovered = slot.typeId != null && queueSlotActors.getOrNull(idx)?.hovered == true
-                fillRect(batch, white, sx, slotY, slotSize, slotSize, if (hovered) MENU_ROW_HOVER else UiTokens.WELL, alpha)
+                fillRect(batch, white, sx, slotY, slotSize, slotSize, if (hovered) colors.cellHover else colors.iconWell, alpha)
                 slot.progress?.let { p ->
                     val fillH = ((slotSize - 2f) * p.coerceIn(0f, 1f))
                     if (fillH > 0.5f) {
-                        fillRect(batch, white, sx + 1f, slotY + 1f, slotSize - 2f, fillH, QUEUE_PROGRESS_RUST, alpha)
+                        fillRect(batch, white, sx + 1f, slotY + 1f, slotSize - 2f, fillH, colors.queueProgress, alpha)
                     }
                 }
                 val borderColor = when {
-                    hovered -> UiTokens.FOE
-                    slot.progress != null -> UiTokens.RUST
-                    else -> UiTokens.LINE
+                    hovered -> colors.foe
+                    slot.progress != null -> colors.rust
+                    else -> colors.line
                 }
                 strokeRect(batch, white, sx, slotY, slotSize, slotSize, borderColor, alpha)
                 if (slot.overflowCount > 0) {
                     drawTextCenter(
                         batch, captionMonoFont(), "+${slot.overflowCount}",
-                        sx + slotSize * 0.5f, slotY + slotSize * 0.5f, UiTokens.DIM, alpha,
+                        sx + slotSize * 0.5f, slotY + slotSize * 0.5f, colors.dim, alpha,
                     )
                 } else if (slot.typeId != null) {
                     val region = unitIconProvider(slot.typeId)
@@ -806,23 +809,23 @@ internal class InGameHudOverlay(
                         val badgeH = (glyphLayout.height + 2.5f).coerceAtLeast(9.5f).coerceAtMost(11.5f)
                         val bx = sx + slotSize - badgeW
                         val by = slotY + slotSize - badgeH
-                        fillRect(batch, white, bx, by, badgeW, badgeH, QUEUE_COUNT_BADGE_RED, alpha)
-                        drawTextCenter(batch, badgeFont, badgeText, bx + badgeW * 0.5f, by + badgeH * 0.5f + 0.5f, Color.WHITE, alpha)
+                        fillRect(batch, white, bx, by, badgeW, badgeH, colors.queueCountBadgeBg, alpha)
+                        drawTextCenter(batch, badgeFont, badgeText, bx + badgeW * 0.5f, by + badgeH * 0.5f + 0.5f, colors.queueCountBadgeText, alpha)
                     }
                 }
             } else {
-                drawDashedRect(batch, white, sx, slotY, slotSize, slotSize, UiTokens.LINE, alpha * 0.65f)
+                drawDashedRect(batch, white, sx, slotY, slotSize, slotSize, colors.line, alpha * 0.65f)
             }
         }
 
         queue.progressPercent?.let { pct ->
-            drawTextRight(batch, countMonoFont(), "$pct%", rect.x + rect.width - padH, centerY, UiTokens.TEXT, alpha)
+            drawTextRight(batch, countMonoFont(), "$pct%", rect.x + rect.width - padH, centerY, colors.text, alpha)
         }
     }
 
     private fun drawSystemBar(batch: Batch, white: TextureRegion, snap: HudSnapshot, alpha: Float) {
         val bar = layout.systemBarRect
-        fillRect(batch, white, bar.x, bar.y, bar.width, bar.height, UiTokens.RAIL, alpha)
+        fillRect(batch, white, bar.x, bar.y, bar.width, bar.height, colors.rail, alpha)
 
         val lang = snap.language
         drawSystemCell(batch, white, btnMenu, UiStrings.get("menu", lang), bodyFont(), active = snap.menuOpen, drawRightSep = true, alpha = alpha)
@@ -838,7 +841,7 @@ internal class InGameHudOverlay(
             drawSystemCell(batch, white, btnDebug, UiStrings.get("debugBtn", lang), bodyFont(), active = debugActive, drawRightSep = false, alpha = alpha)
         }
 
-        strokeRect(batch, white, bar.x, bar.y, bar.width, bar.height, UiTokens.LINE, alpha)
+        strokeRect(batch, white, bar.x, bar.y, bar.width, bar.height, colors.line, alpha)
     }
 
     private fun drawSystemCell(
@@ -852,12 +855,12 @@ internal class InGameHudOverlay(
         alpha: Float,
     ) {
         if (active) {
-            fillRect(batch, white, actor.x, actor.y, actor.width, actor.height, UiTokens.VALUE, alpha)
+            fillRect(batch, white, actor.x, actor.y, actor.width, actor.height, colors.value, alpha)
         }
-        val textColor = if (active) UiTokens.WELL else UiTokens.TEXT
+        val textColor = if (active) colors.well else colors.text
         drawTextCenter(batch, font, text, actor.x + actor.width * 0.5f, actor.y + actor.height * 0.5f, textColor, alpha)
         if (drawRightSep) {
-            fillRect(batch, white, actor.x + actor.width - 1f, actor.y, 1f, actor.height, UiTokens.LINE, alpha)
+            fillRect(batch, white, actor.x + actor.width - 1f, actor.y, 1f, actor.height, colors.line, alpha)
         }
     }
 
@@ -875,13 +878,13 @@ internal class InGameHudOverlay(
             val w = glyphLayout.width + 20f + iconLead
             val h = NOTICE_H
             ny -= h
-            fillRect(batch, white, x, ny, w, h, UiTokens.RAIL, alpha)
-            strokeRect(batch, white, x, ny, w, h, UiTokens.VALUE, alpha)
+            fillRect(batch, white, x, ny, w, h, colors.rail, alpha)
+            strokeRect(batch, white, x, ny, w, h, colors.value, alpha)
             if (followIcon != null) {
-                batch.setColor(UiTokens.VALUE.r, UiTokens.VALUE.g, UiTokens.VALUE.b, UiTokens.VALUE.a * alpha)
+                batch.setColor(colors.value.r, colors.value.g, colors.value.b, colors.value.a * alpha)
                 batch.draw(followIcon, x + 9f, ny + (h - iconSz) * 0.5f, iconSz, iconSz)
             }
-            drawTextLeft(batch, font, text, x + 10f + iconLead, ny + h * 0.5f, UiTokens.TEXT, alpha)
+            drawTextLeft(batch, font, text, x + 10f + iconLead, ny + h * 0.5f, colors.text, alpha)
             ny -= NOTICE_GAP
         }
 
@@ -896,13 +899,13 @@ internal class InGameHudOverlay(
             val h = NOTICE_H
             ny -= h
 
-            fillRect(batch, white, x, ny, w, h, UiTokens.RAIL, itemAlpha)
-            strokeRect(batch, white, x, ny, w, h, UiTokens.LINE, itemAlpha)
+            fillRect(batch, white, x, ny, w, h, colors.rail, itemAlpha)
+            strokeRect(batch, white, x, ny, w, h, colors.line, itemAlpha)
 
-            val pipColor = if (item.kind == HudNoticeKind.WARNING) UiTokens.AMBER else UiTokens.RUST
+            val pipColor = if (item.kind == HudNoticeKind.WARNING) colors.amber else colors.rust
             fillRect(batch, white, x + 10f, ny + (h - 7f) * 0.5f, 7f, 7f, pipColor, itemAlpha)
 
-            val textColor = if (item.kind == HudNoticeKind.WARNING) UiTokens.AMBER else UiTokens.TEXT
+            val textColor = if (item.kind == HudNoticeKind.WARNING) colors.amber else colors.text
             val textMaxW = (w - 33f).coerceAtLeast(40f)
             drawTextLeft(batch, font, ellipsize(font, displayText, textMaxW), x + 25f, ny + h * 0.5f, textColor, itemAlpha)
             ny -= NOTICE_GAP
@@ -915,8 +918,8 @@ internal class InGameHudOverlay(
         val panelX = UiTokens.SCREEN_MARGIN
         val panelY = layout.systemBarRect.y - 6f - panelH
 
-        fillRect(batch, white, panelX, panelY, panelW, panelH, UiTokens.SOLID, alpha)
-        strokeRect(batch, white, panelX, panelY, panelW, panelH, MENU_BORDER, alpha)
+        fillRect(batch, white, panelX, panelY, panelW, panelH, colors.solid, alpha)
+        strokeRect(batch, white, panelX, panelY, panelW, panelH, colors.popupBorder, alpha)
 
         val lang = snap.language
         drawMenuRow(batch, white, btnMenuResume, "▶", UiStrings.get("menu.resume", lang), "Esc", dimmed = false, alpha = alpha)
@@ -935,14 +938,14 @@ internal class InGameHudOverlay(
         dimmed: Boolean,
         alpha: Float,
     ) {
-        val bg = if (actor.hovered && !dimmed) MENU_ROW_HOVER else UiTokens.CELL
+        val bg = if (actor.hovered && !dimmed) colors.cellHover else colors.cell
         fillRect(batch, white, actor.x, actor.y, actor.width, actor.height, bg, alpha)
-        val fg = if (dimmed) UiTokens.DIM else UiTokens.TEXT
+        val fg = if (dimmed) colors.dim else colors.text
         val cy = actor.y + actor.height * 0.5f
         drawMenuIcon(batch, white, glyph, actor.x + 12f, cy, fg, alpha)
         drawTextLeft(batch, bodyFont(), label, actor.x + 30f, cy, fg, alpha)
         if (shortcut != null) {
-            drawTextRight(batch, smallFont(), shortcut, actor.x + actor.width - 10f, cy, UiTokens.DIM, alpha)
+            drawTextRight(batch, smallFont(), shortcut, actor.x + actor.width - 10f, cy, colors.dim, alpha)
         }
     }
 
@@ -977,24 +980,24 @@ internal class InGameHudOverlay(
         val cardX = (stageW - cardW) * 0.5f
         val cardY = (stageH - cardH) * 0.5f
 
-        fillRect(batch, white, cardX, cardY, cardW, cardH, UiTokens.SOLID, alpha)
-        strokeRect(batch, white, cardX, cardY, cardW, cardH, MENU_BORDER, alpha)
+        fillRect(batch, white, cardX, cardY, cardW, cardH, colors.solid, alpha)
+        strokeRect(batch, white, cardX, cardY, cardW, cardH, colors.popupBorder, alpha)
 
         drawTextCenter(
             batch, titleFont(), UiStrings.get("paused", snap.language),
-            cardX + cardW * 0.5f, cardY + cardH - 30f, UiTokens.TEXT, alpha,
+            cardX + cardW * 0.5f, cardY + cardH - 30f, colors.text, alpha,
         )
 
         val btn = btnPauseResume
-        val btnBg = if (btn.hovered) UiTokens.BONE_HI else UiTokens.BONE
+        val btnBg = if (btn.hovered) colors.boneHi else colors.bone
         fillRect(batch, white, btn.x, btn.y, btn.width, btn.height, btnBg, alpha)
         val btnCy = btn.y + btn.height * 0.5f
         val resumeLabel = UiStrings.get("resume", snap.language)
         glyphLayout.setText(commandFont(), resumeLabel)
         val contentW = 10f + 6f + glyphLayout.width
         val startX = btn.x + (btn.width - contentW) * 0.5f
-        drawMenuIcon(batch, white, "▶", startX + 4f, btnCy, UiTokens.INK, alpha)
-        drawTextLeft(batch, commandFont(), resumeLabel, startX + 14f, btnCy, UiTokens.INK, alpha)
+        drawMenuIcon(batch, white, "▶", startX + 4f, btnCy, colors.ink, alpha)
+        drawTextLeft(batch, commandFont(), resumeLabel, startX + 14f, btnCy, colors.ink, alpha)
     }
 
     private fun measureSystemCellWidth(text: String, font: BitmapFont): Float {
@@ -1141,10 +1144,6 @@ internal class InGameHudOverlay(
         const val PAUSE_CARD_W: Float = 196f
         const val PAUSE_CARD_H: Float = 112f
 
-        private val MENU_BORDER: Color = UiTokens.hex(0x727B81, 1f)
-        private val MENU_ROW_HOVER: Color = UiTokens.hex(0x41494E, 1f)
-        private val QUEUE_PROGRESS_RUST: Color = Color(UiTokens.RUST.r, UiTokens.RUST.g, UiTokens.RUST.b, 0.55f)
-        private val QUEUE_COUNT_BADGE_RED: Color = UiTokens.hex(0xC92A2A, 0.96f)
 
         /** Deterministic slot bounds for queue rendering and click-to-cancel hit testing (UI-P002 §5.2). */
         fun computeQueueSlotRects(rect: Rectangle, lang: UiLanguage, slotCount: Int = 5): List<Rectangle> {

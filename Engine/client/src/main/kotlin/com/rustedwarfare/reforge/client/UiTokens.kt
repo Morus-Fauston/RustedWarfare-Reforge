@@ -3,50 +3,52 @@ package com.rustedwarfare.reforge.client
 import com.badlogic.gdx.graphics.Color
 
 /**
- * Design tokens for the redesigned in-game HUD (HUD Spec §3).
+ * Design tokens for the redesigned in-game HUD (HUD Spec §3 & ADR-014).
  *
- * All values match `Docs/规格/局内HUD重设计/局内HUD演示稿.html` and `局内HUD规格.md` §3.1–3.3.
+ * Color properties delegate to [UiTheme.DEFAULT] (loaded from `ui/theme.json`), so there is a
+ * single authoritative color source; HUD widgets consume the active [UiThemeProvider] at draw time
+ * so resource packs can override styles cleanly without altering HUD organization.
  */
 object UiTokens {
-    // --- §3.1 Color Tokens ---
+    // --- §3.1 Color Tokens (delegated to UiTheme.DEFAULT) ---
     /** Sidebar background (except opaque minimap), system bar, control group cells: #212528 @ 0.86 */
-    val RAIL: Color = hex(0x212528, 0.86f)
+    val RAIL: Color get() = UiTheme.DEFAULT.colors.rail.cpy()
     /** Solid popup/tooltip/placement card/console background: #24292C */
-    val SOLID: Color = hex(0x24292C, 1f)
+    val SOLID: Color get() = UiTheme.DEFAULT.colors.solid.cpy()
     /** Common command keys, disabled keys, module slot keys: #353B3F */
-    val CELL: Color = hex(0x353B3F, 1f)
+    val CELL: Color get() = UiTheme.DEFAULT.colors.cell.cpy()
     /** Progress bar trough, icon well, queue slot well: #1A1E20 */
-    val WELL: Color = hex(0x1A1E20, 1f)
+    val WELL: Color get() = UiTheme.DEFAULT.colors.well.cpy()
     /** Standard 1px structural border: #596167 */
-    val LINE: Color = hex(0x596167, 1f)
+    val LINE: Color get() = UiTheme.DEFAULT.colors.line.cpy()
     /** Hairline divider between sidebar sections: white @ 0.11 */
-    val HAIR: Color = Color(1f, 1f, 1f, 0.11f)
+    val HAIR: Color get() = UiTheme.DEFAULT.colors.hair.cpy()
     /** Primary text: #DFE3E5 */
-    val TEXT: Color = hex(0xDFE3E5, 1f)
+    val TEXT: Color get() = UiTheme.DEFAULT.colors.text.cpy()
     /** Secondary text & labels: #9AA3A8 */
-    val DIM: Color = hex(0x9AA3A8, 1f)
+    val DIM: Color get() = UiTheme.DEFAULT.colors.dim.cpy()
     /** Stat bar fill & active selection tint: #C9D1D5 */
-    val VALUE: Color = hex(0xC9D1D5, 1f)
+    val VALUE: Color get() = UiTheme.DEFAULT.colors.value.cpy()
     /** Action keycap surface (bone white): #DBD5C6 */
-    val BONE: Color = hex(0xDBD5C6, 1f)
+    val BONE: Color get() = UiTheme.DEFAULT.colors.bone.cpy()
     /** Action keycap hover & active mode surface: #F2EDE0 */
-    val BONE_HI: Color = hex(0xF2EDE0, 1f)
+    val BONE_HI: Color get() = UiTheme.DEFAULT.colors.boneHi.cpy()
     /** Text & icon ink on bone keycaps: #1A1A18 */
-    val INK: Color = hex(0x1A1A18, 1f)
+    val INK: Color get() = UiTheme.DEFAULT.colors.ink.cpy()
     /** Sole in-progress accent (production/build progress, queue badge, event pip, active mode border): #DC5A22 */
-    val RUST: Color = hex(0xDC5A22, 1f)
+    val RUST: Color get() = UiTheme.DEFAULT.colors.rust.cpy()
     /** Insufficient funds / warning / unsupported notice accent (always paired with ▲): #E6AA2D */
-    val AMBER: Color = hex(0xE6AA2D, 1f)
+    val AMBER: Color get() = UiTheme.DEFAULT.colors.amber.cpy()
     /** Enemy accent (minimap foe dots, enemy card stripe, selection ring): #E0564A */
-    val FOE: Color = hex(0xE0564A, 1f)
+    val FOE: Color get() = UiTheme.DEFAULT.colors.foe.cpy()
     /** Modal/pause scrim overlay: black @ 0.45 */
-    val SCRIM: Color = Color(0f, 0f, 0f, 0.45f)
+    val SCRIM: Color get() = UiTheme.DEFAULT.colors.scrim.cpy()
     /** F3 debug overlay line background: black @ 0.60 */
-    val DEBUG_BG: Color = Color(0f, 0f, 0f, 0.60f)
+    val DEBUG_BG: Color get() = UiTheme.DEFAULT.colors.debugBg.cpy()
     /** F3 debug text: #E8ECEE */
-    val DEBUG_TEXT: Color = hex(0xE8ECEE, 1f)
+    val DEBUG_TEXT: Color get() = UiTheme.DEFAULT.colors.debugText.cpy()
 
-    // --- §3.2 Dimension Tokens (reference units at short edge = 640) ---
+    // --- §3.2 Dimension Tokens (structural layout constants in reference units at short edge = 640) ---
     const val SIDEBAR_WIDTH: Float = 232f
     const val SCREEN_MARGIN: Float = 8f
     const val SIDEBAR_PAD_H: Float = 10f

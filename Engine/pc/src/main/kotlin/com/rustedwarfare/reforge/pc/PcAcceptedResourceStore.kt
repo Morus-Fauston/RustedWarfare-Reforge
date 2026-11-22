@@ -122,7 +122,37 @@ internal class PcAcceptedResourceStore(cache: Path,
             event.candidates.forEach { candidates.add(JsonObject().add("sound", it.sound.value).add("weight", it.weight)) }
             events.add(id.value, JsonObject().add("candidates", candidates).add("append", event.append))
         }
+        // Preserve optional validated ui/theme.json and any pack-local assets it references under client custody (ADR-014 & ADR-008)
+        val uiMembers = JsonValue(JsonValue.ValueType.array)
+        val sourceRoot = pack.manifest.parent
+        val themeSource = sourceRoot?.let { UiThemeComposer.resolveStrictPackFile(it, UiThemeComposer.PACK_THEME_FILE) }
+        if (sourceRoot != null && themeSource != null) {
+            val themeBytes = read(themeSource, UiThemeComposer.MAX_THEME_BYTES)
+            val parsedPatch = UiThemePatch.read(themeBytes, themeSource.toString(), requireFull = false)
+            val destTheme = stage.resolve(UiThemeComposer.PACK_THEME_FILE)
+            Files.createDirectories(destTheme.parent)
+            Files.write(destTheme, themeBytes, CREATE_NEW)
+            members.add(UiThemeComposer.PACK_THEME_FILE, JsonObject().add("bytes", themeBytes.size).add("sha256", visualHash(themeBytes)))
+            uiMembers.add(JsonValue(UiThemeComposer.PACK_THEME_FILE))
+            val reservedTopNames = setOf("pack.json", "pack.hjson", "receipt.json", "receipt.mac", "images.json", "images.hjson", "sounds.json", "sounds.hjson")
+            for (relAsset in parsedPatch.assets.values.filterNotNull().distinct()) {
+                if (relAsset in reservedTopNames || relAsset.matches(Regex("media-[0-9]+\\.(png|wav)"))) {
+                    throw IllegalArgumentException("UI_THEME_INVALID: $relAsset: Conflicts with reserved resource pack file")
+                }
+                val srcAsset = UiThemeComposer.resolveStrictPackFile(sourceRoot, relAsset) ?: continue
+                val assetBytes = read(srcAsset)
+                val destAsset = stage.resolve(relAsset).normalize()
+                require(destAsset.startsWith(stage) && destAsset != stage) { "UI_THEME_INVALID: $relAsset: Escapes stage root" }
+                Files.createDirectories(destAsset.parent)
+                if (Files.notExists(destAsset, NOFOLLOW_LINKS)) {
+                    Files.write(destAsset, assetBytes, CREATE_NEW)
+                    members.add(relAsset, JsonObject().add("bytes", assetBytes.size).add("sha256", visualHash(assetBytes)))
+                    uiMembers.add(JsonValue(relAsset))
+                }
+            }
+        }
         receipt.add("images", images).add("sounds", sounds).add("events", events).add("members", members)
+        if (uiMembers.size > 0) receipt.add("uiMembers", uiMembers)
         val bytes = receipt.toJson(OutputType.json).toByteArray(Charsets.UTF_8)
         val identity = visualHash(bytes)
         Files.write(stage.resolve("receipt.json"), bytes, CREATE_NEW)
@@ -162,6 +192,20 @@ internal class PcAcceptedResourceStore(cache: Path,
             layouts(original.get("contracts").asObject())
         } else { require(original == null); emptyMap() }
         val members = receipt.get("members").asObject()
+        val uiKeysToCheck = linkedSetOf<String>()
+        var uiNode = receipt.get("uiMembers")?.child
+        while (uiNode != null) {
+            uiKeysToCheck.add(uiNode.asString())
+            uiNode = uiNode.next
+        }
+        var memNode = members.child
+        while (memNode != null) {
+            val n = memNode.name
+            if (n != null && !n.matches(Regex("media-[0-9]+\\.(png|wav)"))) {
+                uiKeysToCheck.add(n)
+            }
+            memNode = memNode.next
+        }
         fun member(file: String): Path {
             require(file.matches(Regex("media-[0-9]+\\.(png|wav)")) && members.get(file) != null)
             return directory.resolve(file)
@@ -187,6 +231,20 @@ internal class PcAcceptedResourceStore(cache: Path,
             checkVisualCancellation()
             require(read(directory.resolve("receipt.json"), 4 * 1024 * 1024).contentEquals(bytes)) {
                 "RESOURCE_PACK_ACCEPTANCE_INVALID: Fixed receipt changed"
+            }
+            for (relName in uiKeysToCheck) {
+                val entry = requireNotNull(members.get(relName)) {
+                    "RESOURCE_PACK_ACCEPTANCE_INVALID: Missing UI member metadata: $relName"
+                }.asObject()
+                val memberFile = try {
+                    UiThemeComposer.resolveStrictPackFile(directory, relName)
+                } catch (e: IllegalArgumentException) {
+                    throw IllegalArgumentException("RESOURCE_PACK_ACCEPTANCE_INVALID: Invalid UI member path $relName: ${e.message}", e)
+                } ?: throw IllegalArgumentException("RESOURCE_PACK_ACCEPTANCE_INVALID: Missing accepted UI theme file: $relName")
+                val actual = read(memberFile)
+                require(actual.size == entry.getInt("bytes", -1) && visualHash(actual) == entry.getString("sha256", "")) {
+                    "RESOURCE_PACK_ACCEPTANCE_INVALID: Accepted UI theme file changed: $relName"
+                }
             }
             for (path in paths) {
                 if (path.parent != directory) continue

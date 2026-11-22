@@ -35,7 +35,11 @@ internal fun unitDrawOrder(units: List<UnitObservation>): List<UnitObservation> 
     }, { it.attachment != null }))
 }
 
-class SandboxGraphics private constructor(private val resources: SandboxRenderResources, fullBattlefield: Boolean) : AutoCloseable {
+class SandboxGraphics private constructor(
+    private val resources: SandboxRenderResources,
+    fullBattlefield: Boolean,
+    private val uiTheme: UiTheme = UiTheme.DEFAULT,
+) : AutoCloseable {
     val projection = MapProjection(resources.widthTiles.toDouble() * resources.tileWidth,
         resources.heightTiles.toDouble() * resources.tileHeight,
         if (fullBattlefield) MapArea(0.0, 0.0, 960.0, 640.0) else MapArea(16.0, 64.0, 704.0, 512.0),
@@ -116,21 +120,43 @@ class SandboxGraphics private constructor(private val resources: SandboxRenderRe
     companion object {
         internal val DESKTOP_MINIMAP_AREA = MapArea(752.0, 464.0, 184.0, 160.0)
 
-        fun load(resources: SandboxRenderResources, root: Path, fullBattlefield: Boolean = false): SandboxGraphics =
-            loadPrepared(resources, root, intArrayOf(), fullBattlefield)
+        fun load(
+            resources: SandboxRenderResources,
+            root: Path,
+            fullBattlefield: Boolean = false,
+            uiTheme: UiTheme = UiTheme.DEFAULT,
+        ): SandboxGraphics =
+            loadPrepared(resources, root, intArrayOf(), fullBattlefield, uiTheme)
 
         /** Consume worker-bound metadata; GL owns texture upload, completeness checks and release. */
-        fun load(loaded: LoadedSandbox, root: Path, fullBattlefield: Boolean = false): SandboxGraphics =
-            loadPrepared(loaded.renderResources, root, loaded.scenario.map.groundGids, fullBattlefield)
+        fun load(
+            loaded: LoadedSandbox,
+            root: Path,
+            fullBattlefield: Boolean = false,
+            uiTheme: UiTheme? = null,
+        ): SandboxGraphics =
+            loadPrepared(
+                loaded.renderResources,
+                root,
+                loaded.scenario.map.groundGids,
+                fullBattlefield,
+                uiTheme ?: loaded.visuals?.uiTheme ?: UiTheme.DEFAULT,
+            )
 
         fun load(scenario: Scenario, root: Path, visuals: PreparedVisualAssets? = null): SandboxGraphics {
             val resources = SandboxRenderResources.from(scenario)
-            return loadPrepared(visuals?.let { resources.withVisuals(it) } ?: resources, root, scenario.map.groundGids, false)
+            return loadPrepared(
+                visuals?.let { resources.withVisuals(it) } ?: resources,
+                root,
+                scenario.map.groundGids,
+                false,
+                visuals?.uiTheme ?: UiTheme.DEFAULT,
+            )
         }
 
         private fun loadPrepared(resources: SandboxRenderResources, root: Path, ground: IntArray,
-                                 fullBattlefield: Boolean): SandboxGraphics {
-            val graphics = SandboxGraphics(resources, fullBattlefield)
+                                 fullBattlefield: Boolean, uiTheme: UiTheme = UiTheme.DEFAULT): SandboxGraphics {
+            val graphics = SandboxGraphics(resources, fullBattlefield, uiTheme)
             try {
                 val activeGids = LinkedHashSet<Int>(256)
                 if (resources.visualLayers.isNotEmpty()) {

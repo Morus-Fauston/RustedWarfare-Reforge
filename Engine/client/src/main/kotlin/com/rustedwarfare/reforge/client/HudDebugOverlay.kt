@@ -249,7 +249,9 @@ internal class HudDebugOverlay(
     private val onToggleRoutes: () -> Unit,
     private val onToggleDetails: () -> Unit = {},
     private val onToggleGrid: () -> Unit,
+    private val themeProvider: UiThemeProvider = UiThemeProvider { UiTheme.DEFAULT },
 ) : Group() {
+    private val colors: UiThemeColors get() = themeProvider.currentTheme().colors
 
     private var snapshot: HudDebugOverlaySnapshot? = null
     private var stageW: Float = 960f
@@ -399,15 +401,15 @@ internal class HudDebugOverlay(
 
     private fun drawMonoPillLeft(batch: Batch, white: TextureRegion, font: BitmapFont, text: String, x: Float, y: Float, alpha: Float) {
         val w = ceil(textWidth(font, text) + PAD_X * 2f)
-        fillRect(batch, white, x, y, w, ROW_H, BG_COLOR, alpha)
-        drawText(batch, font, text, x + PAD_X, y + ROW_H * 0.5f, TEXT_COLOR, alpha)
+        fillRect(batch, white, x, y, w, ROW_H, colors.debugBg, alpha)
+        drawText(batch, font, text, x + PAD_X, y + ROW_H * 0.5f, colors.debugText, alpha)
     }
 
     private fun drawMonoPillRight(batch: Batch, white: TextureRegion, font: BitmapFont, text: String, rightX: Float, y: Float, alpha: Float) {
         val w = ceil(textWidth(font, text) + PAD_X * 2f)
         val x = rightX - w
-        fillRect(batch, white, x, y, w, ROW_H, BG_COLOR, alpha)
-        drawText(batch, font, text, x + PAD_X, y + ROW_H * 0.5f, TEXT_COLOR, alpha)
+        fillRect(batch, white, x, y, w, ROW_H, colors.debugBg, alpha)
+        drawText(batch, font, text, x + PAD_X, y + ROW_H * 0.5f, colors.debugText, alpha)
     }
 
     private fun drawLegendRow(batch: Batch, white: TextureRegion, font: BitmapFont, x: Float, y: Float, alpha: Float) {
@@ -419,21 +421,21 @@ internal class HudDebugOverlay(
         val w2 = textWidth(font, part2)
         val w3 = textWidth(font, part3)
         val totalW = ceil(PAD_X * 2f + sq + w1 + sq + w2 + sq + w3)
-        fillRect(batch, white, x, y, totalW, ROW_H, BG_COLOR, alpha)
+        fillRect(batch, white, x, y, totalW, ROW_H, colors.debugBg, alpha)
 
         var cx = x + PAD_X
         val midY = y + ROW_H * 0.5f
-        fillRect(batch, white, cx, midY - sq * 0.5f, sq, sq, LEGEND_YELLOW, alpha)
+        fillRect(batch, white, cx, midY - sq * 0.5f, sq, sq, colors.debugLegendHard, alpha)
         cx += sq
-        drawText(batch, font, part1, cx, midY, TEXT_COLOR, alpha)
+        drawText(batch, font, part1, cx, midY, colors.debugText, alpha)
         cx += w1
-        fillRect(batch, white, cx, midY - sq * 0.5f, sq, sq, LEGEND_STALLED, alpha)
+        fillRect(batch, white, cx, midY - sq * 0.5f, sq, sq, colors.debugLegendStalled, alpha)
         cx += sq
-        drawText(batch, font, part2, cx, midY, TEXT_COLOR, alpha)
+        drawText(batch, font, part2, cx, midY, colors.debugText, alpha)
         cx += w2
-        fillRect(batch, white, cx, midY - sq * 0.5f, sq, sq, LEGEND_CYAN, alpha)
+        fillRect(batch, white, cx, midY - sq * 0.5f, sq, sq, colors.debugLegendDetail, alpha)
         cx += sq
-        drawText(batch, font, part3, cx, midY, TEXT_COLOR, alpha)
+        drawText(batch, font, part3, cx, midY, colors.debugText, alpha)
     }
 
     private fun monoFont(): BitmapFont = fontsProvider()?.smallMono ?: fallbackFontProvider()
@@ -461,10 +463,5 @@ internal class HudDebugOverlay(
         const val ROW_H: Float = 17f
         const val ROW_GAP: Float = 2f
         const val PAD_X: Float = 6f
-        private val BG_COLOR: Color = Color(0f, 0f, 0f, 0.60f)
-        private val TEXT_COLOR: Color = UiTokens.hex(0xE8ECEE)
-        private val LEGEND_YELLOW: Color = UiTokens.hex(0xF2C96B)
-        private val LEGEND_STALLED: Color = UiTokens.hex(0xFF2929)
-        private val LEGEND_CYAN: Color = UiTokens.hex(0x52D8FF)
     }
 }

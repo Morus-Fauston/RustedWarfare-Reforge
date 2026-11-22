@@ -1,0 +1,16 @@
+{
+  "schemaVersion": 1,
+  "id": "sample:cobalt-steel",
+  "colors": {
+    "rail": "#16202CE0",
+    "solid": "#1A2635FF",
+    "bone": "#DCE6F0FF",
+    "boneHi": "#EEF5FCFF",
+    "rust": "#2E86DEFF",
+    "amber": "#F5B041FF",
+    "queueProgress": "#2E86DE8C"
+  },
+  "metrics": {
+    "keyShadowHeight": 2.0
+  }
+}

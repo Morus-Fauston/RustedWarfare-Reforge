@@ -114,7 +114,9 @@ internal class HudControlGroupBar(
     private val onTouchGroupAction: (Int, TouchGroupReleaseOutcome) -> Unit,
     private val hasSelection: () -> Boolean,
     private val allowTouchHold: () -> Boolean,
+    private val themeProvider: UiThemeProvider = UiThemeProvider { UiTheme.DEFAULT },
 ) : Group() {
+    private val colors: UiThemeColors get() = themeProvider.currentTheme().colors
 
     private val glyphLayout = GlyphLayout()
     private val slotActors = LinkedHashMap<Int, GroupSlotActor>()
@@ -337,16 +339,16 @@ internal class HudControlGroupBar(
         val x = barBounds.x
         val y = barBounds.y + barBounds.height + 4f
         val borderColor = when (stage) {
-            TouchGroupHoldStage.APPEND -> UiTokens.VALUE
-            TouchGroupHoldStage.REPLACE -> UiTokens.AMBER
-            else -> UiTokens.LINE
+            TouchGroupHoldStage.APPEND -> colors.value
+            TouchGroupHoldStage.REPLACE -> colors.amber
+            else -> colors.line
         }
         val textColor = when (stage) {
-            TouchGroupHoldStage.REPLACE -> UiTokens.AMBER
-            TouchGroupHoldStage.APPEND -> UiTokens.VALUE
-            else -> UiTokens.TEXT
+            TouchGroupHoldStage.REPLACE -> colors.amber
+            TouchGroupHoldStage.APPEND -> colors.value
+            else -> colors.text
         }
-        fillRect(batch, white, x, y, w, h, UiTokens.RAIL, alpha)
+        fillRect(batch, white, x, y, w, h, colors.rail, alpha)
         strokeRect(batch, white, x, y, w, h, borderColor, alpha)
         drawTextLeft(batch, font, text, x + 6f, y + h * 0.5f, textColor, alpha)
         batch.packedColor = orig
@@ -366,10 +368,10 @@ internal class HudControlGroupBar(
         val holdStage = if (isHoldingThis) HudControlGroupLogic.holdStage(holdingElapsedSec) else TouchGroupHoldStage.NONE
 
         val bg = when {
-            m.empty && !isHoldingThis -> EMPTY_BG
-            actor.pressed -> UiTokens.CELL
-            actor.hovered -> HOVER_BG
-            else -> UiTokens.RAIL
+            m.empty && !isHoldingThis -> colors.groupEmptyBg
+            actor.pressed -> colors.cell
+            actor.hovered -> colors.groupHoverBg
+            else -> colors.rail
         }
         fillRect(batch, white, x, y, w, h, bg, alpha)
 
@@ -377,9 +379,9 @@ internal class HudControlGroupBar(
         if (isHoldingThis) {
             val ratio = (holdingElapsedSec / HudControlGroupLogic.REPLACE_THRESHOLD_SEC).coerceIn(0f, 1f)
             val fillColor = when (holdStage) {
-                TouchGroupHoldStage.REPLACE -> UiTokens.AMBER
-                TouchGroupHoldStage.APPEND -> UiTokens.VALUE
-                else -> UiTokens.RUST
+                TouchGroupHoldStage.REPLACE -> colors.amber
+                TouchGroupHoldStage.APPEND -> colors.value
+                else -> colors.rust
             }
             if (ratio > 0.01f) {
                 fillRect(batch, white, x + 1f, y + 1f, (w - 2f) * ratio, 3f, fillColor, alpha)
@@ -387,24 +389,24 @@ internal class HudControlGroupBar(
         }
 
         val borderColor = when {
-            holdStage == TouchGroupHoldStage.REPLACE -> UiTokens.AMBER
-            holdStage == TouchGroupHoldStage.APPEND -> UiTokens.VALUE
-            isHoldingThis -> UiTokens.RUST
-            else -> UiTokens.LINE
+            holdStage == TouchGroupHoldStage.REPLACE -> colors.amber
+            holdStage == TouchGroupHoldStage.APPEND -> colors.value
+            isHoldingThis -> colors.rust
+            else -> colors.line
         }
         if (m.empty && !isHoldingThis) {
-            drawDashedRect(batch, white, x, y, w, h, UiTokens.LINE, alpha * 0.85f)
+            drawDashedRect(batch, white, x, y, w, h, colors.line, alpha * 0.85f)
         } else {
             strokeRect(batch, white, x, y, w, h, borderColor, alpha)
         }
 
         // Large group number centered (20pt mono bold)
-        val numColor = if (m.empty && !isHoldingThis) UiTokens.DIM else UiTokens.TEXT
+        val numColor = if (m.empty && !isHoldingThis) colors.dim else colors.text
         drawTextCenter(batch, numberFont(), m.groupIndex.toString(), x + w * 0.5f, y + h * 0.5f, numColor, alpha)
 
         // Small unit count top-right when non-empty
         if (!m.empty) {
-            drawTextRight(batch, countFont(), m.memberCount.toString(), x + w - 4f, y + h - 8f, UiTokens.DIM, alpha)
+            drawTextRight(batch, countFont(), m.memberCount.toString(), x + w - 4f, y + h - 8f, colors.dim, alpha)
         }
 
         batch.packedColor = orig
@@ -478,7 +480,5 @@ internal class HudControlGroupBar(
         const val TOUCH_LEFT_WITH_JOYSTICK: Float = 160f
         const val HINT_H: Float = 20f
 
-        private val EMPTY_BG: Color = UiTokens.hex(0x212528, 0.55f)
-        private val HOVER_BG: Color = UiTokens.hex(0x2E3438, 0.96f)
     }
 }

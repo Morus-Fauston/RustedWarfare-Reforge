@@ -1,3 +1,10 @@
+v0.5.68 (2026-11-23 00:25)
+  新增: 落地 ADR-014 轻量化界面样式主题（UiTheme.kt 与内置默认 ui/theme.json），支持表现资源包声明式局部覆写配色、装饰度量、图标提亮调参及可选图标/字体/九宫格路径（严守只改样式不改 HUD 组织方式与交互状态机），提供 cobalt-steel 最小覆写样例与 PC 调试参数 --theme-pack
+  调整: 全 HUD 渲染组件（InGameHudOverlay/HudActionPanel/HudControlGroupBar/HudDebugOverlay/HudSandboxConsole/HudCommandIconAtlas/UiFontSet/BootstrapScreen）接入 UiThemeProvider 与完整主题值相等性重建；PcAcceptedResourceStore 与 PcVisualAssetSettings 将 ui/theme.json 及引用资产纳入 ADR-008 托管校验、保留文件名拦截与未托管外部包发布复核
+  技术: 新增 UiThemeAndOverlayTest 与 PcUiThemeResourcePackTest，受影响 :client:test、:pc:test、:pc:installDist 全绿，workspace_layout.py --root 返回 ok: true / 全新上下文 Neon 独立代码整审首轮 3 项 P1 返修后经原审定向复核 APPROVED（0 必修）
+
+====
+
 v0.5.67 (2026-11-22 21:41)
   修复: 同步 PathPerfBatch 与 PathPerfBatchTest 的非直达寻路 candidatesChecked 校验为 in 1L..maxCandidates（适配 v0.5.50 O(1) 惰性净空场并保持直达 == 0L，与并行 ENG-P016 同位一致），修复 PR #16 Public mechanism and short tests 在 group-2 的历史断言失败
   技术: CI group-2 全部 29 个 SimulationTest 工具链测试类（:test --rerun-tasks）全绿通过，workspace_layout.py 返回 ok: true

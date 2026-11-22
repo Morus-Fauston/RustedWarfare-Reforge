@@ -98,7 +98,11 @@ internal class HudActionPanel(
     private val onExclusiveAction: (HudActionKeyModel, Boolean) -> Unit,
     private val onDisabledFlash: (HudActionKeyModel) -> Unit,
     private val onSelectSlot: (Int) -> Unit = {},
+    private val themeProvider: UiThemeProvider = UiThemeProvider { UiTheme.DEFAULT },
 ) {
+    private val theme: UiTheme get() = themeProvider.currentTheme()
+    private val colors: UiThemeColors get() = theme.colors
+    private var appliedScrollTheme: UiTheme? = null
     private var snapshot = HudActionListSnapshot(false, emptyList(), null, emptyList(), emptyList())
     private var targetCard: HudTargetModeCardModel? = null
     private var anchorLeft = 0f
@@ -136,7 +140,7 @@ internal class HudActionPanel(
                 if (btn.isVisible) drawCommonKey(batch, white, btn, x, y, parentAlpha)
             }
             snapshot.ownerSubtitle?.let { owner ->
-                drawTextLeft(batch, smallFont(), owner, x, y + ownerTextY, UiTokens.DIM, parentAlpha)
+                drawTextLeft(batch, smallFont(), owner, x, y + ownerTextY, colors.dim, parentAlpha)
             }
             batch.packedColor = orig
         }
@@ -360,8 +364,9 @@ internal class HudActionPanel(
     private val scrollPane = object : ScrollPane(
         scrollContent,
         ScrollPaneStyle().apply {
-            vScroll = skin.newDrawable("white", Color(0.10f, 0.12f, 0.13f, 0.65f)).apply { minWidth = SCROLLBAR_W }
-            vScrollKnob = skin.newDrawable("white", UiTokens.LINE).apply { minWidth = SCROLLBAR_W; minHeight = 24f }
+            val initColors = themeProvider.currentTheme().colors
+            vScroll = skin.newDrawable("white", initColors.scrollTrack).apply { minWidth = SCROLLBAR_W }
+            vScrollKnob = skin.newDrawable("white", initColors.line).apply { minWidth = SCROLLBAR_W; minHeight = 24f }
         },
     ) {
         override fun getMouseWheelY(): Float = 40f
@@ -529,6 +534,14 @@ internal class HudActionPanel(
     ) {
         activePrimaryUnitId = primaryUnitId
         activeLanguage = language
+        val activeTheme = theme
+        if (appliedScrollTheme != activeTheme) {
+            appliedScrollTheme = activeTheme
+            scrollPane.style = ScrollPane.ScrollPaneStyle(scrollPane.style).apply {
+                vScroll = skin.newDrawable("white", activeTheme.colors.scrollTrack).apply { minWidth = SCROLLBAR_W }
+                vScrollKnob = skin.newDrawable("white", activeTheme.colors.line).apply { minWidth = SCROLLBAR_W; minHeight = 24f }
+            }
+        }
         if (actionSnapshot == null || targetModeCard != null) {
             touchPreview.clear()
         } else {
@@ -732,19 +745,19 @@ internal class HudActionPanel(
         val w = btn.width
         val h = btn.height
         val bg = when {
-            m.active -> UiTokens.BONE_HI
-            btn.hovered -> CELL_HOVER
-            else -> UiTokens.CELL
+            m.active -> colors.boneHi
+            btn.hovered -> colors.cellHover
+            else -> colors.cell
         }
-        val fg = if (m.active) UiTokens.INK else UiTokens.TEXT
+        val fg = if (m.active) colors.ink else colors.text
 
         fillRect(batch, white, x, y, w, h, bg, alpha)
         // Bottom 2px keycap bevel shadow
-        fillRect(batch, white, x, y, w, 2f, KEY_SHADOW, alpha)
+        fillRect(batch, white, x, y, w, theme.metrics.commonKeyShadowHeight, colors.keyShadow, alpha)
         if (m.active) {
-            strokeRectInset(batch, white, x, y, w, h, 2f, UiTokens.RUST, alpha)
+            strokeRectInset(batch, white, x, y, w, h, 2f, colors.rust, alpha)
         } else {
-            strokeRect(batch, white, x, y, w, h, UiTokens.LINE, alpha * 0.55f)
+            strokeRect(batch, white, x, y, w, h, colors.line, alpha * 0.55f)
         }
 
         val cy = y + h * 0.5f + 0.5f
@@ -767,7 +780,7 @@ internal class HudActionPanel(
         }
         drawTextLeft(batch, commandFont(), m.label, cx, cy, fg, alpha)
         if (hasHk) {
-            val hkColor = if (m.active) UiTokens.INK else UiTokens.DIM
+            val hkColor = if (m.active) colors.ink else colors.dim
             drawTextLeft(batch, smallMonoFont(), m.hotkey, cx + labelW + 4f, cy - 0.5f, hkColor, alpha * 0.85f)
         }
     }
@@ -782,17 +795,17 @@ internal class HudActionPanel(
         val h = actor.height
 
         val bg = when {
-            m.selected -> UiTokens.VALUE
-            actor.hovered -> CELL_HOVER
-            else -> UiTokens.CELL
+            m.selected -> colors.value
+            actor.hovered -> colors.cellHover
+            else -> colors.cell
         }
         fillRect(batch, white, x, y, w, h, bg, alpha)
         if (!m.selected) {
-            fillRect(batch, white, x, y, w, 2f, KEY_SHADOW, alpha)
+            fillRect(batch, white, x, y, w, theme.metrics.commonKeyShadowHeight, colors.keyShadow, alpha)
         }
 
         // Top-left 12pt slot number (Spec §7.4)
-        val numColor = if (m.selected) UiTokens.WELL else UiTokens.DIM
+        val numColor = if (m.selected) colors.well else colors.dim
         drawTextLeft(batch, smallMonoFont(), m.slotNumber.toString(), x + 5f, y + h - 8f, numColor, alpha)
 
         // Center icon: 24x24 unit artwork when occupied, 22x22 rw-slot-empty (0.6 alpha) when empty (Spec §7.4)
@@ -802,7 +815,7 @@ internal class HudActionPanel(
             val emptyIcon = commandIconProvider("rw-slot-empty")
             if (emptyIcon != null) {
                 val sz = 22f
-                val ic = if (m.selected) UiTokens.WELL else UiTokens.VALUE
+                val ic = if (m.selected) colors.well else colors.value
                 batch.setColor(ic.r, ic.g, ic.b, ic.a * alpha * 0.6f)
                 batch.draw(emptyIcon, cx - sz * 0.5f, cy - sz * 0.5f, sz, sz)
             }
@@ -818,7 +831,7 @@ internal class HudActionPanel(
             }
             if (m.progress < 0.999f) {
                 val pw = w * m.progress.coerceIn(0f, 1f)
-                if (pw > 0.5f) fillRect(batch, white, x, y, pw, 3f, UiTokens.RUST, alpha)
+                if (pw > 0.5f) fillRect(batch, white, x, y, pw, 3f, colors.rust, alpha)
             }
         }
         batch.packedColor = orig
@@ -837,26 +850,26 @@ internal class HudActionPanel(
         val flashing = (flashTimers[m.id] ?: 0f) > 0f
         val isBone = m.state == HudActionKeyState.READY || m.state == HudActionKeyState.ACTIVE_MODE
         val bg = when {
-            flashing && !isBone -> CELL_FLASH
-            m.state == HudActionKeyState.ACTIVE_MODE -> UiTokens.BONE_HI
-            m.state == HudActionKeyState.READY && actor.hovered -> UiTokens.BONE_HI
-            m.state == HudActionKeyState.READY -> UiTokens.BONE
-            else -> UiTokens.CELL
+            flashing && !isBone -> colors.cellFlash
+            m.state == HudActionKeyState.ACTIVE_MODE -> colors.boneHi
+            m.state == HudActionKeyState.READY && actor.hovered -> colors.boneHi
+            m.state == HudActionKeyState.READY -> colors.bone
+            else -> colors.cell
         }
-        val fg = if (isBone) UiTokens.INK else DISABLED_TEXT
+        val fg = if (isBone) colors.ink else colors.disabledText
 
         fillRect(batch, white, x, y, w, h, bg, alpha)
         // Bottom 3px physical keycap shadow bevel (hidden when pressed, Spec §7.3)
         if (!isPressed) {
-            fillRect(batch, white, x, y, w, 3f, KEY_SHADOW, alpha)
+            fillRect(batch, white, x, y, w, theme.metrics.keyShadowHeight, colors.keyShadow, alpha)
         }
 
         // Active mode or hover inner outline (Spec §7.3)
         val isTouchPreviewed = touchControls && touchPreview.isPreviewing(activePrimaryUnitId, m.id)
         if (m.state == HudActionKeyState.ACTIVE_MODE || isTouchPreviewed) {
-            strokeRectInset(batch, white, x + 1f, y + 1f, w - 2f, h - 2f, 2f, UiTokens.RUST, alpha)
+            strokeRectInset(batch, white, x + 1f, y + 1f, w - 2f, h - 2f, 2f, colors.rust, alpha)
         } else if (m.state == HudActionKeyState.READY && actor.hovered) {
-            strokeRectInset(batch, white, x + 1f, y + 1f, w - 2f, h - 2f, 2f, UiTokens.INK, alpha)
+            strokeRectInset(batch, white, x + 1f, y + 1f, w - 2f, h - 2f, 2f, colors.ink, alpha)
         }
 
         // Top-left icon: 28×28 unit artwork OR 22×22 command icon (tinted ink / dim)
@@ -868,14 +881,14 @@ internal class HudActionPanel(
             val asp = unitReg.regionWidth.toFloat() / unitReg.regionHeight.coerceAtLeast(1).toFloat()
             val dw = if (asp >= 1f) maxSz else maxSz * asp
             val dh = if (asp >= 1f) maxSz / asp else maxSz
-            if (isBone) batch.setColor(1f, 1f, 1f, alpha) else batch.setColor(0.65f, 0.68f, 0.70f, alpha)
+            if (isBone) batch.setColor(1f, 1f, 1f, alpha) else batch.setColor(colors.disabledUnitTint.r, colors.disabledUnitTint.g, colors.disabledUnitTint.b, colors.disabledUnitTint.a * alpha)
             batch.draw(unitReg, x + iconPadL + (maxSz - dw) * 0.5f, iconTopY - maxSz + (maxSz - dh) * 0.5f, dw, dh)
         } else {
             val cmdName = m.commandIconName ?: "rw-info"
             val cmdReg = commandIconProvider(cmdName)
             if (cmdReg != null) {
                 val sz = 22f
-                val icColor = if (isBone) UiTokens.INK else DISABLED_ICON
+                val icColor = if (isBone) colors.ink else colors.disabledIcon
                 batch.setColor(icColor.r, icColor.g, icColor.b, icColor.a * alpha)
                 batch.draw(cmdReg, x + iconPadL, iconTopY - sz - 1f, sz, sz)
             }
@@ -886,12 +899,12 @@ internal class HudActionPanel(
         val topTextY = y + h - 12f
         if (m.priceText != null) {
             if (m.state == HudActionKeyState.SHORT_FUNDS) {
-                drawTextRight(batch, smallMonoFont(), "▲ ${m.priceText}", rightX, topTextY, UiTokens.AMBER, alpha)
+                drawTextRight(batch, smallMonoFont(), "▲ ${m.priceText}", rightX, topTextY, colors.amber, alpha)
             } else {
                 drawTextRight(batch, smallMonoFont(), m.priceText, rightX, topTextY, fg, alpha)
             }
         } else if (m.noteText != null) {
-            val noteColor = if (isBone) NOTE_INK else UiTokens.DIM
+            val noteColor = if (isBone) colors.noteInk else colors.dim
             drawTextRight(batch, smallFont(), m.noteText, rightX, topTextY, noteColor, alpha)
         }
 
@@ -904,12 +917,12 @@ internal class HudActionPanel(
             val bh = 16f
             val bx = rightX - bw
             val by = y + 7f
-            fillRect(batch, white, bx, by, bw, bh, UiTokens.RUST, alpha)
-            drawTextCenter(batch, smallMonoFont(), badgeText, bx + bw * 0.5f, by + bh * 0.5f, Color.WHITE, alpha)
+            fillRect(batch, white, bx, by, bw, bh, colors.rust, alpha)
+            drawTextCenter(batch, smallMonoFont(), badgeText, bx + bw * 0.5f, by + bh * 0.5f, colors.queueCountBadgeText, alpha)
             bottomRightLimit = bx - 4f
         }
         if (m.hotkeyLabel != null) {
-            val hkColor = if (isBone) UiTokens.INK else UiTokens.DIM
+            val hkColor = if (isBone) colors.ink else colors.dim
             glyphLayout.setText(smallMonoFont(), m.hotkeyLabel)
             drawTextRight(batch, smallMonoFont(), m.hotkeyLabel, bottomRightLimit, y + 13f, hkColor, alpha * 0.65f)
             bottomRightLimit -= (glyphLayout.width + 4f)
@@ -924,7 +937,7 @@ internal class HudActionPanel(
         m.progress?.let { p ->
             val pw = (w * p.coerceIn(0f, 1f))
             if (pw > 0.5f) {
-                fillRect(batch, white, x, y, pw, 4f, UiTokens.RUST, alpha)
+                fillRect(batch, white, x, y, pw, 4f, colors.rust, alpha)
             }
         }
 
@@ -949,23 +962,23 @@ internal class HudActionPanel(
         val desiredBottom = hoveredKeyTopY - tipH
         val tipY = desiredBottom.coerceIn(UiTokens.SCREEN_MARGIN, (stageH - UiTokens.SCREEN_MARGIN - tipH).coerceAtLeast(UiTokens.SCREEN_MARGIN))
 
-        fillRect(batch, white, tipX, tipY, tipW, tipH, UiTokens.SOLID, alpha)
-        strokeRect(batch, white, tipX, tipY, tipW, tipH, POPUP_BORDER, alpha)
+        fillRect(batch, white, tipX, tipY, tipW, tipH, colors.solid, alpha)
+        strokeRect(batch, white, tipX, tipY, tipW, tipH, colors.popupBorder, alpha)
 
         var cy = tipY + tipH - padV - 9f
         // Title + right-aligned price
         tip.priceText?.let { p ->
-            drawTextRight(batch, smallMonoFont(), p, tipX + tipW - padH, cy, UiTokens.TEXT, alpha)
+            drawTextRight(batch, smallMonoFont(), p, tipX + tipW - padH, cy, colors.text, alpha)
         }
         val titleMaxW = if (tip.priceText != null) innerW - 58f else innerW
-        drawTextLeft(batch, tooltipTitleFont(), ellipsize(tooltipTitleFont(), tip.title, titleMaxW), tipX + padH, cy, UiTokens.TEXT, alpha)
+        drawTextLeft(batch, tooltipTitleFont(), ellipsize(tooltipTitleFont(), tip.title, titleMaxW), tipX + padH, cy, colors.text, alpha)
         cy -= 17f
 
         // Description lines
         if (descLines.isNotEmpty()) {
             cy -= 3f
             for (line in descLines) {
-                drawTextLeft(batch, smallFont(), line, tipX + padH, cy, DESC_TEXT, alpha)
+                drawTextLeft(batch, smallFont(), line, tipX + padH, cy, colors.descText, alpha)
                 cy -= 16f
             }
             cy -= 3f
@@ -973,11 +986,11 @@ internal class HudActionPanel(
 
         // Key-value rows under hairline
         if (tip.rows.isNotEmpty()) {
-            fillRect(batch, white, tipX + padH, cy + 4f, innerW, 1f, UiTokens.HAIR, alpha)
+            fillRect(batch, white, tipX + padH, cy + 4f, innerW, 1f, colors.hair, alpha)
             cy -= 6f
             for (row in tip.rows) {
-                drawTextLeft(batch, smallFont(), row.label, tipX + padH, cy, UiTokens.DIM, alpha)
-                val vColor = if (row.isWarning) UiTokens.AMBER else UiTokens.TEXT
+                drawTextLeft(batch, smallFont(), row.label, tipX + padH, cy, colors.dim, alpha)
+                val vColor = if (row.isWarning) colors.amber else colors.text
                 val vFont = if (row.value.any { it.code > 127 }) smallFont() else smallMonoFont()
                 drawTextRight(batch, vFont, row.value, tipX + tipW - padH, cy, vColor, alpha)
                 cy -= 17f
@@ -988,7 +1001,7 @@ internal class HudActionPanel(
         if (tip.footnote.isNotBlank()) {
             cy -= 4f
             val isTouchHint = touchControls && tip.footnote == UiStrings.get("touchPreviewHint", activeLanguage)
-            val footColor = if (isTouchHint) UiTokens.RUST else UiTokens.DIM
+            val footColor = if (isTouchHint) colors.rust else colors.dim
             val footFont = if (isTouchHint) keyBoldFont() else smallFont()
             drawTextLeft(batch, footFont, ellipsize(footFont, tip.footnote, innerW), tipX + padH, cy, footColor, alpha)
         }
@@ -1011,29 +1024,29 @@ internal class HudActionPanel(
         val cardX = centeredX.coerceIn(UiTokens.SCREEN_MARGIN, maxSafeX)
         val cardY = stageH - UiTokens.SCREEN_MARGIN - cardH
 
-        fillRect(batch, white, cardX, cardY, cardW, cardH, UiTokens.SOLID, alpha)
-        strokeRect(batch, white, cardX, cardY, cardW, cardH, POPUP_BORDER, alpha)
+        fillRect(batch, white, cardX, cardY, cardW, cardH, colors.solid, alpha)
+        strokeRect(batch, white, cardX, cardY, cardW, cardH, colors.popupBorder, alpha)
 
         var cy = cardY + cardH - padV - 9f
         card.rightValue?.let { rv ->
             val rvFont = if (rv.any { it.code > 127 }) smallFont() else smallMonoFont()
-            drawTextRight(batch, rvFont, rv, cardX + cardW - padH, cy, UiTokens.TEXT, alpha)
+            drawTextRight(batch, rvFont, rv, cardX + cardW - padH, cy, colors.text, alpha)
         }
         val titleMaxW = if (card.rightValue != null) innerW - 72f else innerW
-        drawTextLeft(batch, tooltipTitleFont(), ellipsize(tooltipTitleFont(), card.title, titleMaxW), cardX + padH, cy, UiTokens.TEXT, alpha)
+        drawTextLeft(batch, tooltipTitleFont(), ellipsize(tooltipTitleFont(), card.title, titleMaxW), cardX + padH, cy, colors.text, alpha)
         cy -= 18f
 
         for (line in descLines) {
-            drawTextLeft(batch, smallFont(), line, cardX + padH, cy, DESC_TEXT, alpha)
+            drawTextLeft(batch, smallFont(), line, cardX + padH, cy, colors.descText, alpha)
             cy -= 16f
         }
 
         // Bottom hairline + status (left) & cancel hint (right)
         val footerY = cardY + padV + 7f
-        fillRect(batch, white, cardX + padH, footerY + 11f, innerW, 1f, UiTokens.HAIR, alpha)
-        val statusColor = if (card.statusIsWarning) UiTokens.AMBER else UiTokens.VALUE
+        fillRect(batch, white, cardX + padH, footerY + 11f, innerW, 1f, colors.hair, alpha)
+        val statusColor = if (card.statusIsWarning) colors.amber else colors.value
         drawTextLeft(batch, smallFont(), card.statusText, cardX + padH, footerY, statusColor, alpha)
-        drawTextRight(batch, smallFont(), card.cancelHint, cardX + cardW - padH, footerY, UiTokens.DIM, alpha)
+        drawTextRight(batch, smallFont(), card.cancelHint, cardX + cardW - padH, footerY, colors.dim, alpha)
     }
 
     private fun wrapText(font: BitmapFont, text: String, maxWidth: Float, maxLines: Int): List<String> {
@@ -1123,13 +1136,5 @@ internal class HudActionPanel(
         const val SCROLLBAR_W: Float = 6f
         const val OWNER_LINE_H: Float = 16f
 
-        private val POPUP_BORDER: Color = UiTokens.hex(0x727B81, 1f)
-        private val KEY_SHADOW: Color = Color(0f, 0f, 0f, 0.35f)
-        private val CELL_HOVER: Color = UiTokens.hex(0x41494E, 1f)
-        private val CELL_FLASH: Color = UiTokens.hex(0x4D565C, 1f)
-        private val DISABLED_TEXT: Color = UiTokens.hex(0xB4BBBF, 1f)
-        private val DISABLED_ICON: Color = UiTokens.hex(0x8C959A, 1f)
-        private val NOTE_INK: Color = UiTokens.hex(0x5D5A52, 1f)
-        private val DESC_TEXT: Color = UiTokens.hex(0xC8CFD3, 1f)
     }
 }
