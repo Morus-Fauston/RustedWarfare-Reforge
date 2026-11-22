@@ -869,8 +869,8 @@
       "kind": "move",
       "unitId": "z01",
       "target": {
-        "x": 207,
-        "y": 67
+        "x": 218,
+        "y": 75
       }
     },
     {
@@ -902,7 +902,7 @@
       "kind": "move",
       "unitId": "produced:p1:00000000000000000000000000000000",
       "target": {
-        "x": 330,
+        "x": 350,
         "y": 190
       }
     },
@@ -921,7 +921,7 @@
       "unitId": "produced:p1:00000000000000000000000000000000",
       "buildingTypeId": "c_turret_t1",
       "target": {
-        "x": 330,
+        "x": 350,
         "y": 190
       },
       "buildingNonce": "cccccccccccccccccccccccccccccccc",

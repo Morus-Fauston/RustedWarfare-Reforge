@@ -767,6 +767,7 @@ internal class ClearanceAStarPolicy(
                 }
                 Position(from.x + (end.x - from.x) * low, from.y + (end.y - from.y) * low)
             }
+            if (!legal(point)) return
             val probes = listOf(point, Position(point.x, target.y), Position(target.x, point.y))
             for (probe in probes) {
                 val distance = MoveArrival.distanceToHull(shape, probe, if (probe == from) 0.0 else direction, target)

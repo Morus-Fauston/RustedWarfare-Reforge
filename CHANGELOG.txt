@@ -1,3 +1,9 @@
+v0.5.62 (2026-11-22 17:12)
+  修复: 补齐 Pathfinding.considerNearestPrimitive 二分后 if (!legal(point)) return 合法性校验，修复 PR #15 公开短测 FactoryExitTest 2 项失败 / 在全部独立契约零改动前提下，同步 bomber-{ini,json,hjson}-production-chain（select-air 269,234）、build-economy-chain（move-worker 110,95）与 maintenance-defense-chain（screen-z01 218,75 与炮塔 350,190）场景输入以适配 v0.5.31 正常到达当步停驱语义
+  技术: FactoryExitTest(6/6) 及相关核心回归全绿 / 11 项 Python 平台单测全绿 / 6 套公开短场景批跑全绿 / bomber 三格式与 build-economy、maintenance-defense 长测全通过 / 全新上下文 Neon 独立非作者整审 0 必修 APPROVE，Pathfinding.kt 单行修复与并行 ENG-P016 同位一致零语义冲突
+
+====
+
 v0.5.61 (2026-11-22 14:30)
   调整: 修订大屏 HUD 为连续非线性自适应缩放（UiScale.computeBaseScale：短边 <=640 维持 max(0.5, r) 线性，短边 >640 采用 max(r^0.55, 0.50*r)，逻辑短边上限 1280 且 16:9 侧栏占比地板 10.2%，4K 侧栏由 20.4% 收紧至约 11.8%；桌面纯像素短边不读 EDID/PPI，触控共用基础曲线并保留 8mm 下限）
   修复: 修复开发模式桌面端默认开启沙盒部署权限并支持 /、小键盘 / 与中文输入法 、 在常规及暂停态唤出沙盒指令台（同时吞掉紧随的重复 keyTyped 字符防误写入输入框）/ 修复 HudSandboxConsole 多行反馈（如 /help）高度自适应排版，消除文字与输入框/脚注穿透重叠

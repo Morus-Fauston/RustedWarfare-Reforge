@@ -1,4 +1,19 @@
 # Changelog
+## v0.5.62 (2026-11-22 17:12)
+
+### 修复
+
+- **原始前沿最近落点合法性校验补齐（`Pathfinding.kt`）**：`considerNearestPrimitive` 在 48 次二分逼近后补齐 `if (!legal(point)) return`（对齐 `considerNearest` 既有逻辑），避免起点本身不满足 `legal` 约束时将非法点误选为最近落点，修复 PR #15 公开短测中 `FactoryExitTest` 2 项失败（`escape_planning_and_collision_release_all_known_buildings_without_giving_the_outer_car_that_mode` 与 `being_inside_a_hidden_truth_building_does_not_select_the_owners_escape_planning_mode`）。
+- **公开长测场景适配到点即时停驱语义**：对齐 `v0.5.31`（`20a1b097`）确立的“正常到达当步速度清零”规则，在保持全部独立验收契约（`contracts/`）零改动的前提下，同步修正 3 组长测场景输入坐标：
+  - `bomber-{ini,json,hjson}-production-chain.json` 与 `bomber_scenarios.py`：`select-air` 点选坐标由 `(269, 270)` 更新为 `(269, 234)`（对齐轰炸机停驱降落点 `(269.08, 233.62)`）；
+  - `build-economy-chain.json` 与 `generate_economy_scenarios.py`：`move-worker` 目标由 `(110, 90)` 调至 `(110, 95)`，确保建造者在步 `1701` 就位即建工厂；
+  - `maintenance-defense-chain.json`：调整 `screen-z01`（`(218, 75)`）与 `face-defense`/`turret`（`(350, 190)`），恢复攻防射程关系使炮塔完整竣工并清剿全部 12 辆敌方坦克。
+
+### 技术
+
+- **前置 CI 修复全量验证（`UI-P002-000a`）**：`FactoryExitTest`（6/6）、`TerrainClearanceAndPrimitiveKernelTest`、`NormalMoveCompletionTest`、`BomberFlightTest` 及 11 项 Python 平台工具单测全绿；6 套公开短场景批跑（`public_batch.py --kind short`：`content-movement-knowledge`、`production-combat`、`build-economy`、`maintenance-defense`、`platform-basics`、`content-three-formats`）全绿；长测 `bomber-{ini,json,hjson}-production-chain`、`build-economy-chain`、`maintenance-defense-chain` 全部退出码 0 通过；全新上下文 Neon 非作者代码与契约整审 0 必修 `APPROVE`，且 `Pathfinding.kt` 单行修复与并行 `ENG-P016` 分支保持同位一致零语义冲突。
+
+---
 
 ## v0.5.61 (2026-11-22 14:30)
 
