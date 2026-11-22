@@ -1,5 +1,20 @@
 # Changelog
 
+## v0.5.60 (2026-11-22 08:36)
+
+### 修复
+
+- **公开测试工具详尽分支补齐（`SimulationTest`）**：`MotionDiagnosticCapture` 与 `MotionV2CoreTraceJson` 的动作序列化 `when` 表达式补齐 `CancelConstructionAction` 分支与前置断言，使公开短场景批跑（`public_batch.py --kind short`）与 `:installDist` 编译在加入取消施工核心接缝后恢复全绿。
+
+### 技术
+
+- **UI-P001 整期固定候选收口与三分辨率实窗验收**：
+  - **公开测试与短场景**：6 套公开短场景（`content-movement-knowledge`、`production-combat`、`build-economy`、`maintenance-defense`、`platform-basics`、`content-three-formats`）串行批跑全通过（总计 889.0s）；受影响核心（6 类 31 项）、客户端（33 类 156 项，含全部新增 `UiHud*`/`TmxDynamicAtlasAndSkirmishTest` 及全部 15 个移除 `NativeActionPanel` 断言的旧测试）、PC（6 类 33 项）与 Android 宿主检查（`verifySandboxHostChecks` 4 项 414 检查）全部 0 失败。
+  - **三分辨率实窗与帧耗时**：同一固定候选完成 `960×640`、`1920×1080`、`2560×1080` 实窗采集与操作闭环（含原版遭遇战地图 `[p2]Big Island (2p).tmx` 33→8 活跃图集及退局再开闭环、`[p2]Fire Bridge (2p) [by uber].tmx` 42→19 活跃图集、自有示范多层图 `river_crossing.tmx` 2→1 活跃图集及全 HUD/暂停/菜单/目标卡/amber 提示/F3 调试层）；稳态帧工作耗时 P50 为 0.25–0.40ms（P95 2.61–5.08ms、间隔 P50 16.67ms），F3 开启前后均值 0.985ms→1.373ms 无明显卡顿。
+  - **Android 四 ABI 与双终审门禁**：`:android:assembleDebug` 构建通过，APK 解包核验 `arm64-v8a`/`armeabi-v7a`/`x86`/`x86_64` 四 ABI 均包含 `libgdx.so` 与 `libgdx-freetype.so`，随包 Noto Sans SC / JetBrains Mono 字体、OFL-1.1 许可证、`THIRD-PARTY-NOTICES.txt`、65 指令图标图集与 2 张示范地图齐备；Hydrogen 视觉并排终审（13 张实窗 vs 7 张 Demo 参考稿）与全新上下文 Neon 独立代码与契约整审均 0 必修 PASS。
+- **未验证边界与合并接缝**：Android 真机触控手感、最终人工试玩接收与合入 `main` 留待维护者确认；与并行 `ENG-P016` 分支（`fbd2d5f0`）同文件改动包括 `CHANGELOG.md`、`CHANGELOG.txt`、`Model.kt`（行段不重叠）、`SimulationContext.kt`（行段不重叠），并持续关注 `CONTEXT.md`、`BootstrapScreen.kt`、`SandboxSession.kt`。
+
+---
 ## v0.5.59 (2026-11-22 06:58)
 
 ### 新增

@@ -1,3 +1,9 @@
+v0.5.60 (2026-11-22 08:36)
+  修复: 补齐 SimulationTest 中 MotionDiagnosticCapture 与 MotionV2CoreTraceJson 对 CancelConstructionAction 的详尽分支，恢复公开短场景批跑编译与执行全绿
+  技术: 完成 UI-P001 固定候选收口：6 套公开短场景批跑全通过 / 受影响核心(31)、客户端(156)、PC(33) 与 Android 宿主检查(414) 全绿 / 完成 960×640、1920×1080、2560×1080 三分辨率实窗与原版遭遇战(Big Island 8/33 图集、Fire Bridge 19/42 图集)及自有示范图(river_crossing 1/2 图集)对照核验（稳态 P50 0.25–0.40ms，F3 前后 0.985→1.373ms）/ Android Debug APK 四 ABI(arm64-v8a/armeabi-v7a/x86/x86_64) 含 libgdx-freetype.so 与随包字体/OFL 许可证核验通过 / Hydrogen 视觉终审与 Neon 独立代码整审均 0 必修 PASS；登记 ENG-P016 合并接缝并标注 Android 真机手感与最终试玩留待维护者验收
+
+====
+
 v0.5.59 (2026-11-22 06:58)
   新增: 整合开发模式 F3 调试层与子图层开关（保留核心同源 DiagnosticSceneProjector/CollisionBoxView 绘制并支持 F3+B 碰撞箱/缓冲/矢量/停滞、F3+R 路线与落点、F3+G 半透明地块网格，新开局自动重置，普通模式零入口）/ 新增双栏等宽诊断叠加层 HudDebugOverlay（左上 9 行全局信息与图例、右侧 6 行主选单位诊断、战场宽 <780 自动单列堆叠、事件提示实时下移零重叠、严格只读玩家获准视野不泄露迷雾敌军）/ 触控开发模式以系统条末尾“调试”按钮（debug-layer-toggle）与图层行点击切层彻底替代旧 CollisionBoxDevelopmentPanel / 归位开发模式 `/` 沙盒指令台 HudSandboxConsole（宽 460 战场底部居中、保留 sandbox-command-input 及点选动作 ID、非面板区域不拦截战场点击）/ 接入单选与多选最近可达到达偏差事件流提示并保留地图标记
   技术: 扩展 UiStrings（pick.repeat、arrivalDeviatedMulti）及后台抓图 1280x800/F3 组合键支持；新增 UiHudDebugLayerAndConsoleTest（含迷雾隐藏敌军隐私校验、调试开关权威位级确定性、460 居中与动作 ID 契约）并通过相关回归全绿；完成 1920×1080（常态与 F3+G 网格）、960×640 窄窗堆叠、1280×800 底部居中指令台与触控 2400×1080 系统条调试按钮实窗采集，Hydrogen 视觉并排审阅与 Neon 独立代码整审定向复核均 0 必修 PASS
