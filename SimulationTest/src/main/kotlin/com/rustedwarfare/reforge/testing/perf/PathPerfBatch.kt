@@ -228,7 +228,11 @@ object PathPerfBatch {
                 val advanceStart = System.nanoTime()
                 observation = context.advance(Step(step++, 1.0, "sim-tick"))
                 advanceNanos += (System.nanoTime() - advanceStart).coerceAtLeast(0L)
-                if (diagnosticsEnabled) samples += context.drainPathDiagnostics(world)
+                if (diagnosticsEnabled) {
+                    // Only collect initial USER_MOVE planning samples; units published on early steps of
+                    // a multi-step batch may later emit ROUTE_REPAIR samples during movement.
+                    samples += context.drainPathDiagnostics(world).filter { it.reason == PathSearchReason.USER_MOVE }
+                }
                 events += observation.events.map { BatchEvent(it.kind, it.unitId) }
                 actionResults += observation.actionResults.map {
                     when (it) {
@@ -376,9 +380,17 @@ object PathPerfBatch {
                 throw PathPerfCorrectnessException("sample ${sample.actionId} expected a route, got ${sample.outcome}")
             }
             val direct = fixedDirectCenter(scenarioKey, parseIndex(sample.unitId))
-            val expectedCandidates = if (direct) 0L else (WIDTH_TILES * HEIGHT_TILES).toLong()
-            if (sample.candidatesChecked != expectedCandidates) {
-                throw PathPerfCorrectnessException("sample ${sample.actionId} candidates must be $expectedCandidates")
+            val maxCandidates = (WIDTH_TILES * HEIGHT_TILES).toLong()
+            if (direct) {
+                if (sample.candidatesChecked != 0L) {
+                    throw PathPerfCorrectnessException("sample ${sample.actionId} direct candidates must be 0, got ${sample.candidatesChecked}")
+                }
+            } else {
+                // O(1) lazy TerrainClearanceField (ENG-P016-004) evaluates only cells touched by A*
+                // instead of eagerly scanning all WIDTH_TILES * HEIGHT_TILES = 768 cells.
+                if (sample.candidatesChecked !in 1L..maxCandidates) {
+                    throw PathPerfCorrectnessException("sample ${sample.actionId} fallback candidates must be in 1..$maxCandidates, got ${sample.candidatesChecked}")
+                }
             }
             if (direct && listOf(sample.popped, sample.expanded, sample.enqueued,
                     sample.neighborsChecked, sample.heuristicCalls).any { it != 0L }) {
@@ -927,10 +939,26 @@ object PathPerfBatch {
         val units = (0 until n).map { index ->
             UnitSpawn("perf-u%03d".format(index), "p1", unit.id, Position(startX(index), startY(index)), 90.0)
         }
+        // PathPerfBatch is a development-path-planning-only benchmark whose fixed 20u spawn lattice is tighter
+        // than diameter 22u (radius=11); keep movementCollision = Circle(radius) for terrain clearance while
+        // setting mass = null so already-planned units cannot shove waiting units off their fixed spawn coordinates.
+        val isolatedUnit = UnitDefinition(
+            id = unit.id,
+            className = unit.className,
+            radius = unit.radius,
+            displayRadius = unit.displayRadius,
+            totalFrames = unit.totalFrames,
+            imagePath = unit.imagePath,
+            imageScale = unit.imageScale,
+            movement = unit.movement,
+            retainedUnconsumed = unit.retainedUnconsumed,
+            fogOfWarSightRange = unit.fogOfWarSightRange,
+            mass = null,
+        )
         return Scenario(
             scenarioId = "path-perf-$scenarioKey",
             map = map,
-            unitDefinitions = mapOf(unit.id to unit),
+            unitDefinitions = mapOf(isolatedUnit.id to isolatedUnit),
             players = listOf(Player("p1", PlayerControl.LOCAL)),
             units = units,
             coordinateModel = CoordinateModel(

@@ -1,5 +1,22 @@
 # Changelog
 
+## v0.5.55 (2026-11-22 23:13)
+
+### 架构改进
+
+- **物理删除旧移动浅模块补丁与死链路**：彻底移除 `TrafficSeparation.kt`、`CorridorChoice.kt`、`OvertakePublication.kt`、`MovePlanning.corridors`（16 折线缓存）、`ManeuverRepair.OVERTAKE`、60 步超车等待与全部残留死字段/死引用（`separationVisits`、`separationCaps`、`parkedNeighbors`、`lastRoadProgress`、`LandingMember.branch`、`queuePeers`、`knownRouteAim`、`lookupTraffic`、`preserveCurrentRoute`、`impendingRouteContacts`）；将 `UnitContact.contactSlide` 瘦身为仅服务同指令已停靠圆形同伴的 `parkedPeerTangentSlide`，移除移动车流硬蹭与 `convoy` 分支。
+- **不向前兼容旧寻路实现测试清理**：删除直接绑定已删旧模块的 `OvertakingTest`、`SharedCorridorTest`、`TrafficSeparationTest`；其余旧寻路白盒单测改为按真实玩法不变量（零硬侵入、不穿墙、迷雾隔离、质量推挤与终态可达停稳）断言，同步将 `PathKnownConnectorRepairTest` 对齐步预算修路语义并更新 `dual-ship-production.json` 建厂步点（`189 → 188`）。
+
+### 修复
+
+- **局部避让几何过滤、海厂脱口与落位预算修复**：`LocomotionModule` 入口限定正半径圆形碰撞体、邻车与空军查询过滤建筑/附属槽位等非接触实体、修正静止体超车几何边界与空军核心占领停稳判定；海厂新生船在厂房足迹脱口阶段跳过 2D 避让防被推回逆行；`SharedLandingSites.choose` 优先选择无已停靠阻挡车位并在共享预算耗尽时原样挂起续扫；`Pathfinding` 补齐目标占用初始化快判与最近点合法性校验；`recoverStalledMoves` 惰性求值 `routeContacts` 消除千单位静止场景退化；`UnitContactTest` 悬浮艇陆水占位测试零修改自然转绿。
+- **开发寻路性能 CLI `MEMORY_GAP` 销账**：`PathPerfBatch` 仅采集 `PathSearchReason.USER_MOVE` 区分初始寻路与移动中 `ROUTE_REPAIR`，对齐惰性净空评估计数口径并将 20u 密排基准测试单位 `mass` 置空消除出生重叠推挤，CLI 实跑全绿（`exitCode=0`）。
+
+### 技术
+
+- **验证与审查**：净减代码 2,049 行（31 files changed, +265 / -2,314）；全量 `:core:test`（421 suites / 1,551 tests 全绿）、`SimulationTest` 专项（`TestScenarioSeedParityTest`、`PathPerfBatchTest`、`PathKnownConnectorRepairTest` 全绿）、`PathPerfBatchMain` CLI 实跑（`EXIT=0`）、公开短场景批跑（`public_batch.py --kind short` 全通过）与 `workspace_layout.py`（`ok: true`）全绿；经全新上下文独立 Neon 非作者代码与反特判整审发现 2 项 P1，全部修复后定向复核 `APPROVE`（0 必修）。
+
+---
 ## v0.5.54 (2026-11-22 12:46)
 
 ### 架构改进

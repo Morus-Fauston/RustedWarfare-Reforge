@@ -63,7 +63,6 @@ internal data class UnitNavigationState(
     val passageEntry: PassageEntry? = null,
     val groupReservation: GroupReservation? = null,
     val indexedLandingBody: LandingOccupancy.IndexedBody? = null,
-    val lastRoadProgress: RoadProgress? = null,
     val adoptedRouteRevision: Long = 0L,
     val localProgressTime: Double = 0.0,
     val terrainCorrectionTime: Double = 0.0,

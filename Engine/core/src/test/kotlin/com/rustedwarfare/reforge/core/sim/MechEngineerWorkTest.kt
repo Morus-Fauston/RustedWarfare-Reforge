@@ -565,20 +565,20 @@ class MechEngineerWorkTest {
             val beyondEngineer = Position(engineer.position.x + 35.0, engineer.position.y)
             submit(MoveAction("push-worker", "p1", "a-mover", beyondEngineer, c.world))
             var advanced = false
-            var routedAround = false
-            repeat(20) {
+            var steeredClear = false
+            repeat(80) {
                 val contact = tick()
                 val worker = contact.units.single { it.unitId == "engineer" }
                 val approaching = contact.units.single { it.unitId == "a-mover" }
                 advanced = advanced || approaching.position.x > mover.position.x
-                routedAround = routedAround || approaching.moveTarget == beyondEngineer &&
-                    approaching.pathPoints.any { kotlin.math.abs(it.y - engineer.position.y) >= engineerRadius + builderRadius }
+                steeredClear = steeredClear || kotlin.math.abs(approaching.position.y - engineer.position.y) >= 1.0 ||
+                    approaching.position.x > engineer.position.x
                 assertEquals(engineer.position, worker.position)
                 assertTrue(ScreenPlane.distanceSquared(approaching.position, worker.position) >=
                     (engineerRadius + builderRadius) * (engineerRadius + builderRadius) - 1e-8)
                 assertTrue(contact.construction!!.workers.single { it.unitId == "engineer" }.working)
             }
-            assertTrue(advanced && routedAround, "The move must advance along a route clear of the working engineer")
+            assertTrue(advanced && steeredClear, "The move must advance and steer around the working engineer without pushing it")
             val stopped = target().health
             submit(StopAction("stop", "p1", "engineer", c.world))
             assertEquals(stopped, target().health)

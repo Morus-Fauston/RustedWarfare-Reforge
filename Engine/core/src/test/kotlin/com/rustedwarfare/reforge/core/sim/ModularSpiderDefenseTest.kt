@@ -103,7 +103,7 @@ class ModularSpiderDefenseTest {
             assertTrue(battle.slot(1).progress < 1f)
             battle.until(1100) { battle.slot(1).progress == 1f }
             assertEquals(1f, battle.unit(slotId).pointDefense?.energy)
-            battle.move("p1", "spider", Position(358.0, 160.0))
+            battle.move("p1", "spider", Position(300.0, 160.0))
             var first: Observation? = null
             battle.until(600) {
                 val observation = battle.context.observe()

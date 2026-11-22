@@ -592,9 +592,6 @@ internal data class MutableUnit(
     var landingMember: LandingMember?
         get() = nav.landingMember
         set(value) { nav = nav.withLandingMember(value) }
-    var lastRoadProgress: RoadProgress?
-        get() = nav.lastRoadProgress
-        set(value) { if (nav.lastRoadProgress != value) nav = nav.copy(lastRoadProgress = value) }
     var adoptedRouteRevision: Long
         get() = nav.adoptedRouteRevision
         set(value) { if (nav.adoptedRouteRevision != value) nav = nav.copy(adoptedRouteRevision = value) }

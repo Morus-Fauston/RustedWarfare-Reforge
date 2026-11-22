@@ -390,6 +390,8 @@ internal class ClearanceAStarPolicy(
                 !UnitContact.poseFits(MovementCollisionShape.Circle(minOf(hull.shape.length, hull.shape.width) / 2.0),
                     target, 0.0, checkNotNull(hullGrid))) return complete()
             val heading = hull?.heading ?: 0.0
+            if (!nearest && hull !is RectangularDeparture && occupancy != null &&
+                !occupancy.allows(target, target, heading, heading)) return complete()
             if (nearest && !canLeaveStart()) return complete()
             if (arrival(start, target, heading, cache) != null) return complete(listOf(target))
             // A displaced pose and its tile center are different reachable
@@ -768,6 +770,7 @@ internal class ClearanceAStarPolicy(
                 }
                 Position(from.x + (end.x - from.x) * low, from.y + (end.y - from.y) * low)
             }
+            if (!legal(point)) return
             val probes = listOf(point, Position(point.x, target.y), Position(target.x, point.y))
             for (probe in probes) {
                 val distance = MoveArrival.distanceToHull(shape, probe, if (probe == from) 0.0 else direction, target)

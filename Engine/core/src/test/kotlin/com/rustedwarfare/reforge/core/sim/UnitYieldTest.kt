@@ -325,8 +325,12 @@ class UnitYieldTest {
         val scene = WaterTestScene.scenario(map, MovementType.LAND, spawns.first().position).copy(
             unitDefinitions = mapOf(tank.id to tank), units = spawns,
         )
-        withContext(scene) { context ->
-            for (spawn in spawns) move(context, spawn.unitId, goal)
+        withContext(scene, avoidance = true) { context ->
+            val group = assertNotNull(context.requestGroupMove("p1", spawns.map { it.unitId }, goal))
+            for (spawn in spawns) {
+                assertIs<ActionResult.Accepted>(context.submitGroupMove(
+                    MoveAction("move-${spawn.unitId}", "p1", spawn.unitId, goal, context.world), group))
+            }
             var maximumTravel = 0.0
             var quiet = 0
             var tick = 0L
@@ -648,9 +652,10 @@ class UnitYieldTest {
         assertIs<ActionResult.Accepted>(context.submit(MoveAction("move-$id", "p1", id, target, context.world)))
     }
 
-    private inline fun withContext(scene: Scenario, action: (SimulationContext) -> Unit) {
+    private inline fun withContext(scene: Scenario, avoidance: Boolean = false, action: (SimulationContext) -> Unit) {
         val initialized = SimulationContext.initialize(scene)
         val context = assertIs<InitResult.Accepted>(initialized, initialized.toString()).context
+        context.trafficSeparationEnabled = avoidance
         try {
             action(context)
         } finally {

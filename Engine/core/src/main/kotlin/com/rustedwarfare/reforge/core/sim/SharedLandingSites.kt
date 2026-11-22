@@ -151,7 +151,7 @@ internal fun landingApproachesSeparate(first: MutableUnit, firstSite: Position, 
 /** Physical locations belong to the command. A travelling vehicle has no claim until it enters the landing area. */
 internal data class LandingMember(val group: GroupMoveRequest, val claimed: Position? = null, val parked: Boolean = false, val ingress: Position? = null, val guided: Boolean = false, val preciseApproach: Boolean = false,
                                   val pushed: Boolean = false, val restingSite: Position? = null, val restingPose: Position? = null,
-                                  val pushedPose: Position? = null, val releasedSite: Position? = null, val noRouteTicks: Long? = null, val stoppedOrder: UnitTask? = null, val waitingForBay: String? = null, val branch: BranchPassage? = null)
+                                  val pushedPose: Position? = null, val releasedSite: Position? = null, val noRouteTicks: Long? = null, val stoppedOrder: UnitTask? = null, val waitingForBay: String? = null)
 
 internal class SharedLandingSites(private val map: MapDefinition, private val group: GroupMoveRequest,
                                   private val spacing: Double, private val fillOrigin: Position, private val spread: Double, private val outside: Boolean) {
@@ -162,7 +162,8 @@ internal class SharedLandingSites(private val map: MapDefinition, private val gr
     private var suppliedSites = emptySet<Position>()
 
     private data class Scan(val entry: Position, val start: Position, val terrain: PlanningTerrain,
-                            val index: Int, val best: Position?, val score: Double, val allTaken: Boolean)
+                            val index: Int, val best: Position?, val score: Double,
+                            val bestBlocked: Position?, val blockedScore: Double, val allTaken: Boolean)
     private val scans = mutableMapOf<String, Scan>()
 
     // Resume the pair sweep on the next candidate step. Leave most of the queue for arrivals.
@@ -718,7 +719,14 @@ internal class SharedLandingSites(private val map: MapDefinition, private val gr
             ScreenPlane.distanceSquared(p, anchor) <= reach * reach
     }
 
-    fun choose(unit: MutableUnit, terrain: PlanningTerrain, occupied: (Position) -> Boolean, centre: Position, budget: PathWorkBudget): Position? {
+    fun choose(
+        unit: MutableUnit,
+        terrain: PlanningTerrain,
+        occupied: (Position) -> Boolean,
+        centre: Position,
+        budget: PathWorkBudget,
+        unobstructed: ((Position) -> Boolean)? = null,
+    ): Position? {
         if (sites.size < group.members.size && !points.exhausted) return null
         val saved = scans[unit.unitId]?.takeIf { it.terrain === terrain }
         val start = saved?.start ?: unit.position
@@ -731,12 +739,21 @@ internal class SharedLandingSites(private val map: MapDefinition, private val gr
         val clickRow = kotlin.math.floor(group.click.y / terrain.tileHeight).toInt().coerceIn(0, terrain.heightTiles - 1)
         val confinedPocketClick = terrain.clearanceField().clearanceRings(clickCol, clickRow) in 1..2 &&
             group.members.size >= ChunkedFlowFieldAdapter.MIN_GROUP_SIZE
+        val released = unit.landingMember?.releasedSite
+        fun better(candidate: Position, dist: Double, current: Position?, currentDist: Double): Boolean {
+            if (current == null) return true
+            if (candidate == released && current != released) return false
+            if (candidate != released && current == released) return true
+            return dist < currentDist
+        }
         var allTaken = saved?.allTaken ?: true
         var best = saved?.best
         var bestDistance = saved?.score ?: Double.POSITIVE_INFINITY
+        var bestBlocked = saved?.bestBlocked
+        var bestBlockedDistance = saved?.blockedScore ?: Double.POSITIVE_INFINITY
         for (index in (saved?.index ?: 0) until sites.size) {
             if (!budget.take(1)) {
-                scans[unit.unitId] = Scan(entry, start, terrain, index, best, bestDistance, allTaken)
+                scans[unit.unitId] = Scan(entry, start, terrain, index, best, bestDistance, bestBlocked, bestBlockedDistance, allTaken)
                 return null
             }
             val site = sites[index]
@@ -753,18 +770,36 @@ internal class SharedLandingSites(private val map: MapDefinition, private val gr
                 0.25 * sqrt(ScreenPlane.distanceSquared(fillOrigin, site))
             if (occupied(site)) continue
             allTaken = false
-            val released = unit.landingMember?.releasedSite
-            if (best != null && (site == released && best != released ||
-                    (site == released) == (best == released) && distance >= bestDistance)) continue
-            if (if (mixedBays == null) PlanningSegmentClearance.allows(terrain, start, site, unit.definition.movementCollision.boundingRadius)
-                else MixedLandingBays.clears(unit, listOf(site), terrain)) {
-                best = site
-                bestDistance = distance
+            val beatsClear = better(site, distance, best, bestDistance)
+            val beatsBlocked = best == null && better(site, distance, bestBlocked, bestBlockedDistance)
+            if (!beatsClear && !beatsBlocked) continue
+            val terrainClear = if (mixedBays == null) PlanningSegmentClearance.allows(terrain, start, site, unit.definition.movementCollision.boundingRadius)
+                else MixedLandingBays.clears(unit, listOf(site), terrain)
+            if (!terrainClear) continue
+            val isUnobstructed = if (unobstructed == null) true else {
+                val res = unobstructed(site)
+                if (!res && budget.exhausted) {
+                    scans[unit.unitId] = Scan(entry, start, terrain, index, best, bestDistance, bestBlocked, bestBlockedDistance, allTaken)
+                    return null
+                }
+                res
+            }
+            if (isUnobstructed) {
+                if (beatsClear) {
+                    best = site
+                    bestDistance = distance
+                }
+            } else if (beatsBlocked) {
+                bestBlocked = site
+                bestBlockedDistance = distance
             }
         }
         scans.remove(unit.unitId)
-        if (allTaken && sites.isNotEmpty()) needed = maxOf(needed, sites.size + 1)
-        return best?.takeIf { !occupied(it) && (start == unit.position ||
+        val chosen = best ?: bestBlocked
+        if ((allTaken || (released != null && (chosen == null || chosen == released))) && sites.isNotEmpty()) {
+            needed = maxOf(needed, sites.size + 1)
+        }
+        return chosen?.takeIf { !occupied(it) && (start == unit.position ||
             PlanningSegmentClearance.allows(terrain, unit.position, it, unit.definition.movementCollision.boundingRadius)) }
     }
 

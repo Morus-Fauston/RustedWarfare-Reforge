@@ -1,3 +1,10 @@
+v0.5.55 (2026-11-22 23:13)
+  架构改进: 物理删除 TrafficSeparation / CorridorChoice / OvertakePublication、16 折线缓存、60 步超车等待及全部死引用死字段，UnitContact.contactSlide 瘦身为 parkedPeerTangentSlide；清理 3 个绑定已删旧模块的废测并按真实玩法不变量收敛旧寻路单测
+  修复: 补齐 LocomotionModule 非接触体过滤与几何边界、海厂脱口避让豁免、SharedLandingSites 选位预算挂起、Pathfinding 占用快判与 recoverStalledMoves 惰性接触查询；销账悬浮艇陆水占位与寻路性能 CLI MEMORY_GAP 两项历史红项
+  技术: 净减 2,049 行；全量 :core:test（1,551 项）、SimulationTest 专项、PathPerfBatchMain CLI、公开短测批跑与工作区布局检查全绿；全新上下文独立 Neon 整审修复 2 项 P1 后定向复核 APPROVE（0 必修）
+
+====
+
 v0.5.54 (2026-11-22 12:46)
   架构改进: 建立双适配器接缝 NavigationGuidance 与按需分块共享流场深模块 ChunkedFlowFieldAdapter（16×16 分块、步内 P1 预算增量构建、候选步安全回滚与按玩家严格迷雾隔离）；落地大车宽道让道代价、单格针眼门与多缝隙滞回软拥堵分流、局域脏块增量重算（含前沿堆清理、懒删除与阻塞下游防倒灌）、高频连点取消旧未完建场及同地形远端主干复用、O(1) 规模群移快启与死胡同/岸线饱和外溢统一结算（settleSaturationOverflow 原子取消挂起修路并同步 landingOccupancy）；将 OVER_CLIFF 纳入 sharedLanding 并保留水域最近点共享落点，修复历史 14 混编原令 30910/31060 全部 14/14 到达稳态
   技术: 新增 ChunkedFlowFieldTest 10 项单测及 rocks-mixed-100 / culdesac-overflow-100 诊断场景，59 项核心专项单测、历史 14 原令 30910/31060（双 14/14 稳态 600 步）与公开短场景批跑全通过；8 套同源 2 秒停滞标红拼图及峰值放大图（rocks-small-100 100/100、rocks-mixed-100 97/100 零停滞标红、culdesac-overflow-100 100/100 步 459 收敛及全部回归场景）经 Hydrogen 强制目视复核 APPROVE，全新上下文 Neon 非作者整审发现 4 项 P1 修复后定向复核 APPROVE（0 必修）

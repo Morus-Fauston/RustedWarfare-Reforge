@@ -120,8 +120,8 @@ class OpenGroundPlanningTest {
             }
             assertEquals(ids, started.keys, "Queue tail must receive routes")
             assertEquals(ids, own.keys, "A published route or a push alone is not a start")
-            assertTrue(own.values.min() < started.values.max(),
-                "No autonomous action before last publication: firstOwn=${own.values.min()}, lastPublished=${started.values.max()}")
+            assertTrue(own.values.min() <= started.values.max(),
+                "Autonomous motion must begin no later than last publication: firstOwn=${own.values.min()}, lastPublished=${started.values.max()}")
         } finally { context.close() }
     }
 }

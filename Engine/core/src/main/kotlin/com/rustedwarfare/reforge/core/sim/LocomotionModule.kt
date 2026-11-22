@@ -157,6 +157,10 @@ internal object LocomotionModule {
         if (maximumSpeed <= EPS || delta <= 0.0) {
             return passthrough(unit, desiredTarget, baseSpeedTarget, maximumSpeed, coordinates)
         }
+        val collision = unit.definition.movementCollision
+        if (collision !is MovementCollisionShape.Circle || collision.boundingRadius <= 0.0) {
+            return passthrough(unit, desiredTarget, baseSpeedTarget, maximumSpeed, coordinates)
+        }
         val contactLayer = UnitContact.layer(unit)
             ?: return passthrough(unit, desiredTarget, baseSpeedTarget, maximumSpeed, coordinates)
         val spatialLayer = SpatialLayer.fromContact(contactLayer)
@@ -193,6 +197,9 @@ internal object LocomotionModule {
             limit = TOP_K_NEIGHBORS,
             includeBufferPadding = true,
         ) { candidate ->
+            if (candidate.hardRadius <= 0.0) return@queryFrozenTopK false
+            val peerUnit = host.units[candidate.unitId]
+            if (peerUnit == null || UnitContact.layer(peerUnit) != contactLayer) return@queryFrozenTopK false
             candidate.ownerPlayerId == unit.ownerPlayerId ||
                 host.isVisibleTo(unit.ownerPlayerId, candidate.position, candidate.nativeTransportPlacement)
         }
@@ -209,7 +216,9 @@ internal object LocomotionModule {
                 limit = 8,
                 includeBufferPadding = false,
             ) { candidate ->
-                if (!candidate.moving || candidate.speed <= 0.12 * maximumSpeed) return@queryFrozenTopK false
+                if (candidate.hardRadius <= 0.0 || !candidate.moving || candidate.speed <= 0.12 * maximumSpeed) return@queryFrozenTopK false
+                val peerUnit = host.units[candidate.unitId]
+                if (peerUnit == null || UnitContact.layer(peerUnit) != contactLayer) return@queryFrozenTopK false
                 val pDir = Vec2.fromHeading(candidate.heading, 1.0)
                 if (desiredDir.dot(pDir) >= -0.25) return@queryFrozenTopK false
                 val rx = candidate.position.x - unit.position.x
@@ -461,9 +470,10 @@ internal object LocomotionModule {
                     (corridorOpenness >= 0.75 && distToTarget > combinedHard * 14.0)
                 val isSignificantlySlower = (peerAnchored && !sameLandingGroup) ||
                     (sameFlow && closingRate > max(0.12 * maximumSpeed, 0.18 * desiredSpeed) && allowSameClassOvertake)
-                val overtakeHorizon = max(combinedHard * 5.0, closingRate * scale.timeHorizon * 1.65)
-                if (isSignificantlySlower && forwardProj > -combinedHard * 0.25 && forwardProj < overtakeHorizon &&
-                    abs(lateralOffset) < combinedComfort * 1.15
+                val overtakeHorizon = min(distToTarget, max(combinedHard * 5.0, closingRate * scale.timeHorizon * 1.65))
+                val overtakeLatLimit = if (peerAnchored) combinedHard * 1.15 else combinedComfort * 1.15
+                if (isSignificantlySlower && forwardProj > 0.0 && forwardProj < overtakeHorizon &&
+                    abs(lateralOffset) < overtakeLatLimit
                 ) {
                     val passClear = combinedHard * 1.35 + scale.hardRadius * 0.4
                     val rightProbe = Position(
@@ -1393,7 +1403,9 @@ internal object LocomotionModule {
         ) { candidate ->
             // Lightweight soft separation applies among same-owner airborne squads; enemy/other-player
             // aircraft pass freely in air without forcing lateral deflection (ADR-009).
-            candidate.ownerPlayerId == unit.ownerPlayerId
+            val peerUnit = host.units[candidate.unitId]
+            candidate.ownerPlayerId == unit.ownerPlayerId &&
+                peerUnit != null && peerUnit.attachment == null && peerUnit.definition.building == null
         }
         if (neighbors.isEmpty()) return null
 
@@ -1477,7 +1489,9 @@ internal object LocomotionModule {
             limit = 24,
             includeBufferPadding = false,
         ) { candidate ->
-            candidate.ownerPlayerId == unit.ownerPlayerId
+            val peerUnit = host.units[candidate.unitId]
+            candidate.ownerPlayerId == unit.ownerPlayerId &&
+                peerUnit != null && peerUnit.attachment == null && peerUnit.definition.building == null
         }
         if (allPeers.isEmpty()) return false
         var innerCount = 0
@@ -1516,11 +1530,11 @@ internal object LocomotionModule {
                 if (dot > 0.15) blockingPeerAhead = true
             }
         }
-        val coreOccupied = closestPeerDistToTarget <= max(hardR * 2.0, 24.0) || distToTarget <= max(hardR * 1.5, 16.0)
-        if (!coreOccupied) return false
+        val peerOccupiesCore = closestPeerDistToTarget <= max(hardR * 2.0, 24.0)
+        if (!peerOccupiesCore) return false
         // Also check whether separation push roughly cancels approach pull (near equilibrium around settled flock).
         val atEquilibrium = closingSpeed < maxSpeed * 0.45
-        val leaderSettled = distToTarget <= max(hardR * 1.6, 18.0) && atEquilibrium
+        val leaderSettled = distToTarget <= max(hardR * 1.6, 18.0) && atEquilibrium && (blockingPeerAhead || nearestPeerClearRatio < 1.35)
         // Once inner aircraft occupy the rally core and block our radial approach, settle immediately
         // (even if snug at ratio >= 0.80) so idle soft separation smoothly expands the entire flock to full
         // non-overlapping comfort spacing without hovering in active-move stall!

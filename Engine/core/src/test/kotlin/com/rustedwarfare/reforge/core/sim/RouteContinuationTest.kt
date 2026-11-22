@@ -109,6 +109,8 @@ class RouteContinuationTest {
                 UnitSpawn("northbound", "p1", "water-test", first, 0.0),
                 UnitSpawn("southbound", "p1", "water-test", second, 180.0)))
             val context = assertIs<InitResult.Accepted>(SimulationContext.initialize(scene)).context
+            // Isolate low-level hard-contact movement-blocked -> ROUTE_REPAIR -> movement-nearest-reached fallback contract.
+            context.trafficSeparationEnabled = false
             try {
                 context.enablePathDiagnostics(context.world)
                 assertIs<ActionResult.Accepted>(context.submit(MoveAction("north", "p1", "northbound",
@@ -197,20 +199,15 @@ class RouteContinuationTest {
                 assertIs<ActionResult.Accepted>(context.submit(MoveAction("one-detour", "p1", "mover", target, context.world)))
                 val frames = (0L..1150L).map { context.advance(Step(it, 1.0, "sim-tick")) }
                 fun Observation.mover() = units.single { it.unitId == "mover" }
-                val contact = frames.first { Event("movement-blocked", "mover") in it.events }
-                val paths = context.drainPathDiagnostics(context.world)
-                val repair = paths.first { it.actionId == "one-detour" && it.reason == PathSearchReason.ROUTE_REPAIR &&
-                    it.outcome == PathSearchOutcome.FOUND }
-                assertTrue(checkNotNull(repair.executionStep) > contact.stepIndex)
                 val arrived = frames.singleOrNull { Event("movement-arrived", "mover") in it.events }
-                assertTrue(arrived != null, "Contact at ${contact.stepIndex}, planned detour at ${repair.executionStep}, last mover=${frames.last().mover()}")
+                assertTrue(arrived != null, "Mover must route smoothly around visible occupant and arrive, last mover=${frames.last().mover()}")
                 assertTrue(ScreenPlane.distanceSquared(arrived.mover().position, target) < 49.0)
                 assertTrue(frames.all { frame ->
                     frame.units.single { it.unitId == "occupant" }.position == occupied &&
                         ScreenPlane.distanceSquared(frame.mover().position, occupied) >= 144.0 - 1e-8
                 })
                 assertTrue(frames.none { Event("path-unreachable", "mover") in it.events })
-                println("Open water contact=${contact.stepIndex} repair=${repair.executionStep} arrival=${arrived.stepIndex}")
+                println("Open water smooth avoidance arrival=${arrived.stepIndex}")
             } finally {
                 context.close()
             }

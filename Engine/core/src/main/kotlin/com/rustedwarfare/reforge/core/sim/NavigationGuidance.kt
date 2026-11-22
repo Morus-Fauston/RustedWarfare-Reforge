@@ -796,8 +796,9 @@ internal class ChunkedFlowFieldAdapter(
         val group = member.group
         val goalClearRings = field.terrain.clearanceField().clearanceRings(field.key.goalCol, field.key.goalRow)
         val isConfinedPocketOrShore = goalClearRings <= 3 || unit.nearestMoveTarget != null
-        val stallTicksThreshold = if (isConfinedPocketOrShore) 55L else 130L
-        val deepStallThreshold = if (isConfinedPocketOrShore) 85L else 190L
+        if (!isConfinedPocketOrShore) return false
+        val stallTicksThreshold = 55L
+        val deepStallThreshold = 85L
         val anchorStalled = unit.nav.progressAnchorStep >= 0L && (executionStep - unit.nav.progressAnchorStep) >= stallTicksThreshold
         val deeplyAnchorStalled = unit.nav.progressAnchorStep >= 0L && (executionStep - unit.nav.progressAnchorStep) >= deepStallThreshold
         val claimedOrIngressStalled = (member.claimed != null || member.ingress != null) &&
@@ -888,20 +889,10 @@ internal class ChunkedFlowFieldAdapter(
         val slow = abs(unit.speed) < 0.45 * maxSpd
         // True saturation indicator: unit is either slow/blocked OR hasn't improved road progress in >= 45 ticks
         // while boxed against settled group teammates.
-        val stalledAtFrontier = if (isConfinedPocketOrShore) {
-            unit.stalledRouteTicks >= 12L || unit.localProgressTime > 55.0 ||
-                unit.terrainCorrectionTime >= 18.0 || unit.nearTargetTime >= 110.0 || anchorStalled
-        } else {
-            anchorStalled
-        }
+        val stalledAtFrontier = unit.stalledRouteTicks >= 12L || unit.localProgressTime > 55.0 ||
+            unit.terrainCorrectionTime >= 18.0 || unit.nearTargetTime >= 110.0 || anchorStalled
         if (deeplyAnchorStalled && (parkedAhead >= 1 || parkedCloseAny >= 1) && closestParkedDist <= unitRadius * 5.0) {
             return true
-        }
-        if (!isConfinedPocketOrShore) {
-            // In wide open clearings, let units steer around parked teammates into open landing bays;
-            // only trigger fallback overflow settling if genuinely boxed in for >= 180-260 ticks.
-            return (parkedCloseAny >= 2 && anchorStalled && closestParkedDist <= unitRadius * 4.2) ||
-                (parkedAhead >= 1 && deeplyAnchorStalled && closestParkedDist <= unitRadius * 4.8)
         }
         if (openForwardTile) {
             return closestParkedDist <= unitRadius * 4.5 &&
