@@ -1,4 +1,18 @@
 # Changelog
+## v0.5.67 (2026-11-22 21:41)
+
+### 修复
+
+- **PR #16 `group-2` 工具链机制测试历史基线断言同步（`PathPerfBatch.kt`、`PathPerfBatchTest.kt`）**：
+  - `v0.5.50`（`93ee5bce`）引入 O(1) 惰性 `TerrainClearanceField` 废除全图净空扫描后，`PathPerfBatch` 校验器与 `PathPerfBatchTest` 仍硬编码要求 `candidatesChecked == 768`（全图 32×24 格），导致 `Public mechanism and short tests` 在 `group-0`/`group-1` 全绿后于 `group-2` 失败。
+  - 将非直达寻路的 `candidatesChecked` 校验改为与并行 `ENG-P016` 同位一致的 `in 1L..maxCandidates`（直达仍严格校验 `== 0L`），并同步 `PathPerfBatchTest` 对应 2 处断言。
+
+### 技术
+
+- **验证收据**：复跑 CI `group-2` 全部 29 个 `SimulationTest` 工具链测试类（`:test --rerun-tasks`，249/249 项）全绿通过；改动与并行 `ENG-P016` 完全同位一致、零语义冲突。
+
+---
+
 ## v0.5.66 (2026-11-22 19:51)
 
 ### 新增

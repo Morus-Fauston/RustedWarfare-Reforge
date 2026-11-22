@@ -1,3 +1,9 @@
+v0.5.67 (2026-11-22 21:41)
+  修复: 同步 PathPerfBatch 与 PathPerfBatchTest 的非直达寻路 candidatesChecked 校验为 in 1L..maxCandidates（适配 v0.5.50 O(1) 惰性净空场并保持直达 == 0L，与并行 ENG-P016 同位一致），修复 PR #16 Public mechanism and short tests 在 group-2 的历史断言失败
+  技术: CI group-2 全部 29 个 SimulationTest 工具链测试类（:test --rerun-tasks）全绿通过，workspace_layout.py 返回 ok: true
+
+====
+
 v0.5.66 (2026-11-22 19:51)
   新增: 新增离线 CPU 复合多图层单位图标合成器 CompositeUnitIconBuilder 并接入 SandboxGraphics 缓存（按 BACK -> BODY frame 0 -> ARM1/ARM2 -> TURRET/NAMED_TURRET 挂点偏移 -> ROTOR 叠合、复用 MatchPlayerColors 纯绿着色、按非透明外接包围盒自动裁切居中并保留 iconWeaponName 模块特例，随 owned 统一释放），全 HUD 五处（动作键/选中卡/多选类型标签/队列格/货舱乘员）统一显示完整复合单位图标
   调整: 重构 HudSidebarProjection.buildSlots 工厂与建造者施工队列为 Run-Length 连续段折叠（相邻同 typeId 合并为一格、队首保留进度条、超 5 段时第 5 格 +N 显示溢出真实总件数）；在 InGameHudOverlay 为 count >= 2 的队列格右上角绘制红底白字等宽计数角标（count == 1 不显），并绑定左/右键点击命中区与动作 ID queue-slot:{idx} 接通 cancelProduction / cancelUpgrade 及施工队列 amber 提示

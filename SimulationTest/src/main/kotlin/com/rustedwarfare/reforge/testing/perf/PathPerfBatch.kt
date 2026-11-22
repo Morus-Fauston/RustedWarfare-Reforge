@@ -376,9 +376,17 @@ object PathPerfBatch {
                 throw PathPerfCorrectnessException("sample ${sample.actionId} expected a route, got ${sample.outcome}")
             }
             val direct = fixedDirectCenter(scenarioKey, parseIndex(sample.unitId))
-            val expectedCandidates = if (direct) 0L else (WIDTH_TILES * HEIGHT_TILES).toLong()
-            if (sample.candidatesChecked != expectedCandidates) {
-                throw PathPerfCorrectnessException("sample ${sample.actionId} candidates must be $expectedCandidates")
+            val maxCandidates = (WIDTH_TILES * HEIGHT_TILES).toLong()
+            if (direct) {
+                if (sample.candidatesChecked != 0L) {
+                    throw PathPerfCorrectnessException("sample ${sample.actionId} direct candidates must be 0, got ${sample.candidatesChecked}")
+                }
+            } else {
+                // O(1) lazy TerrainClearanceField (ENG-P016-004) evaluates only cells touched by A*
+                // instead of eagerly scanning all WIDTH_TILES * HEIGHT_TILES = 768 cells.
+                if (sample.candidatesChecked !in 1L..maxCandidates) {
+                    throw PathPerfCorrectnessException("sample ${sample.actionId} fallback candidates must be in 1..$maxCandidates, got ${sample.candidatesChecked}")
+                }
             }
             if (direct && listOf(sample.popped, sample.expanded, sample.enqueued,
                     sample.neighborsChecked, sample.heuristicCalls).any { it != 0L }) {
