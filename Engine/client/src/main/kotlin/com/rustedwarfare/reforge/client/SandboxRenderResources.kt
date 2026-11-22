@@ -17,7 +17,7 @@ import kotlin.math.sin
 
 data class WeaponAppearance(val imagePath: Path?, val imageScale: Double,
     val invisible: Boolean = false, val offsetX: Double = 0.0, val offsetY: Double = 0.0,
-    val logicalSize: ImageLogicalSize? = null)
+    val logicalSize: ImageLogicalSize? = null, val mountX: Double = 0.0, val mountY: Double = 0.0)
 internal data class TurretDrawing(val weaponName: String?, val imagePath: Path, val imageScale: Double,
     val pivot: Position, val heading: Double, val logicalSize: ImageLogicalSize? = null) {
     fun drawSize(pixelWidth: Int, pixelHeight: Int) = ImageDrawSize(
@@ -246,7 +246,7 @@ class SandboxRenderResources private constructor(
                     unit.combat?.recoil, unit.combat?.shootDelay ?: 0.0,
                     economicBuilding = unit.income != null && unit.construction != null,
                     weaponImages = Collections.unmodifiableMap(drawingOrder
-                        .associate { it.name to WeaponAppearance(it.imagePath, it.imageScale, it.invisible, it.imageOffsetX, it.imageOffsetY) }),
+                        .associate { it.name to WeaponAppearance(it.imagePath, it.imageScale, it.invisible, it.imageOffsetX, it.imageOffsetY, mountX = it.mount.localX, mountY = it.mount.localY) }),
                     legImagePath = images.leg, footImagePath = images.foot,
                     rotorImagePath = images.rotor, mechKind = unit.mech?.kind, shadowImagePath = images.shadow,
                     shieldImagePath = images.shield, shieldRadius = unit.radius,

@@ -68,19 +68,31 @@ class UiHudSkeletonAndEventsTest {
 
     @Test
     fun queueSlotsCapAtFiveWithOverflowBadge() {
+        // RLE collapses consecutive identical items: [tank, tank, scout] -> [tank x2] [scout x1]
         val three = HudSidebarProjection.buildSlots(listOf("tank", "tank", "scout"), 0.46f)
         assertEquals(5, three.size)
         assertEquals("tank", three[0].typeId)
+        assertEquals(2, three[0].count)
         assertEquals(0.46f, three[0].progress ?: -1f, 1e-4f)
-        assertEquals("scout", three[2].typeId)
-        assertNull(three[3].typeId)
+        assertEquals("scout", three[1].typeId)
+        assertEquals(1, three[1].count)
+        assertNull(three[2].typeId)
         assertEquals(0, three[4].overflowCount)
 
-        val seven = HudSidebarProjection.buildSlots(List(7) { "tank" }, 0.30f)
-        assertEquals(5, seven.size)
-        assertEquals("tank", seven[3].typeId)
-        assertNull(seven[4].typeId)
-        assertEquals(3, seven[4].overflowCount)
+        // All-identical queue collapses into single slot [tank x7]
+        val sevenSame = HudSidebarProjection.buildSlots(List(7) { "tank" }, 0.30f)
+        assertEquals(5, sevenSame.size)
+        assertEquals("tank", sevenSame[0].typeId)
+        assertEquals(7, sevenSame[0].count)
+        assertNull(sevenSame[1].typeId)
+        assertEquals(0, sevenSame[4].overflowCount)
+
+        // 6 distinct runs overflow into slot 4 with sum of actual overflow item counts
+        val sixRuns = HudSidebarProjection.buildSlots(listOf("a", "b", "c", "d", "e", "e", "f"), 0.30f)
+        assertEquals(5, sixRuns.size)
+        assertEquals("d", sixRuns[3].typeId)
+        assertNull(sixRuns[4].typeId)
+        assertEquals(3, sixRuns[4].overflowCount)
     }
 
     @Test

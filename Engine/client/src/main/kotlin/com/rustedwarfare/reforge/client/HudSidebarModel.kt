@@ -49,16 +49,25 @@ data class HudStockpileSection(
     val capacity: Int,
 )
 
+enum class HudQueueKind {
+    PRODUCTION,
+    UPGRADE,
+    BUILD,
+}
+
 data class HudQueueSlot(
     val typeId: String?,
     val progress: Float?,
+    val count: Int = 0,
     val overflowCount: Int = 0,
+    val upgradeActionKey: String? = null,
 )
 
 data class HudQueueSection(
     val labelKey: String,
     val slots: List<HudQueueSlot>,
     val progressPercent: Int?,
+    val kind: HudQueueKind = HudQueueKind.PRODUCTION,
 )
 
 data class HudSelectionCardModel(
@@ -408,18 +417,25 @@ object HudSidebarProjection {
                 labelKey = "queue",
                 slots = slots,
                 progressPercent = (activeProgress * 100f).roundToInt().coerceIn(0, 100),
+                kind = HudQueueKind.PRODUCTION,
             )
         }
         val uq = menu.upgradeQueue
         if (uq != null && uq.items.isNotEmpty()) {
             val activeProgress = uq.items.first().progress.coerceIn(0f, 1f)
             val slots = uq.items.take(MAX_QUEUE_SLOTS).mapIndexed { idx, item ->
-                HudQueueSlot(typeId = item.targetTypeId, progress = if (idx == 0) activeProgress else null)
+                HudQueueSlot(
+                    typeId = item.targetTypeId,
+                    progress = if (idx == 0) activeProgress else null,
+                    count = 1,
+                    upgradeActionKey = item.actionKey,
+                )
             }
             return HudQueueSection(
                 labelKey = "upgradeQ",
                 slots = slots,
                 progressPercent = (activeProgress * 100f).roundToInt().coerceIn(0, 100),
+                kind = HudQueueKind.UPGRADE,
             )
         }
         // Builder construction / build task queue (HUD Spec §5.3: label "施工" / "Build")
@@ -443,6 +459,7 @@ object HudSidebarProjection {
                         labelKey = "build",
                         slots = buildSlots(typeIds, headProgress),
                         progressPercent = (headProgress * 100f).roundToInt().coerceIn(0, 100),
+                        kind = HudQueueKind.BUILD,
                     )
                 }
             }
@@ -450,16 +467,44 @@ object HudSidebarProjection {
         return null
     }
 
+    /**
+     * 按 Run-Length 连续段折叠相邻同 `typeId` 排队项（UI-P002 补充规格 §5.2）：
+     * - 例如 `[tank, tank, tank, heli, tank]` -> `[tank ×3] [heli ×1] [tank ×1]`。
+     * - 第 1 个连续段保留队首当前进度 `activeProgress`。
+     * - 最多展示 5 格；若连续段数超过 5，前 4 格显示前 4 段，第 5 格显示被折叠进溢出的**实际排队件数总和** `+N`。
+     */
     internal fun buildSlots(items: List<String>, activeProgress: Float): List<HudQueueSlot> {
-        val total = items.size
+        val runs = mutableListOf<Pair<String, Int>>()
+        for (typeId in items) {
+            if (runs.isNotEmpty() && runs.last().first == typeId) {
+                val last = runs.last()
+                runs[runs.lastIndex] = last.first to (last.second + 1)
+            } else {
+                runs += typeId to 1
+            }
+        }
+        val runCount = runs.size
         return List(MAX_QUEUE_SLOTS) { idx ->
             when {
-                idx < total && (idx < MAX_QUEUE_SLOTS - 1 || total <= MAX_QUEUE_SLOTS) ->
-                    HudQueueSlot(typeId = items[idx], progress = if (idx == 0) activeProgress else null)
-                idx == MAX_QUEUE_SLOTS - 1 && total > MAX_QUEUE_SLOTS ->
-                    HudQueueSlot(typeId = null, progress = null, overflowCount = total - (MAX_QUEUE_SLOTS - 1))
+                idx < runCount && (idx < MAX_QUEUE_SLOTS - 1 || runCount <= MAX_QUEUE_SLOTS) -> {
+                    val (typeId, count) = runs[idx]
+                    HudQueueSlot(
+                        typeId = typeId,
+                        progress = if (idx == 0) activeProgress else null,
+                        count = count,
+                    )
+                }
+                idx == MAX_QUEUE_SLOTS - 1 && runCount > MAX_QUEUE_SLOTS -> {
+                    val overflowItems = runs.subList(MAX_QUEUE_SLOTS - 1, runCount).sumOf { it.second }
+                    HudQueueSlot(
+                        typeId = null,
+                        progress = null,
+                        count = 0,
+                        overflowCount = overflowItems,
+                    )
+                }
                 else ->
-                    HudQueueSlot(typeId = null, progress = null)
+                    HudQueueSlot(typeId = null, progress = null, count = 0)
             }
         }
     }

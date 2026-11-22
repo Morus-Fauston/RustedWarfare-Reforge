@@ -84,6 +84,7 @@ class SandboxGraphics private constructor(private val resources: SandboxRenderRe
         }
     }
     private val units = mutableMapOf<String, TextureRegion>()
+    private val compositeUnitIcons = mutableMapOf<String, TextureRegion>()
     private val turrets = mutableMapOf<String, TextureRegion>()
     private val namedTurrets = mutableMapOf<Pair<String, String>, TextureRegion>()
     private data class Impact(val position: Position, val height: Double, val started: Long, val large: Boolean)
@@ -108,9 +109,9 @@ class SandboxGraphics private constructor(private val resources: SandboxRenderRe
     private val blinkFlashes = mutableMapOf<String, BlinkFlash>()
     private var blinkSample: String? = null
     private var playerColorShader: ShaderProgram? = null
-    fun unitIcon(typeId: String): TextureRegion? = resources.units[typeId]?.iconWeaponName?.let {
-        namedTurrets[typeId to it]
-    } ?: units[typeId]
+    fun unitIcon(typeId: String): TextureRegion? = compositeUnitIcons[typeId]
+        ?: resources.units[typeId]?.iconWeaponName?.let { namedTurrets[typeId to it] }
+        ?: units[typeId]
 
     companion object {
         internal val DESKTOP_MINIMAP_AREA = MapArea(752.0, 464.0, 184.0, 160.0)
@@ -302,6 +303,38 @@ class SandboxGraphics private constructor(private val resources: SandboxRenderRe
             }
             definition.beamImagePath?.let { beamImages.getValue(it).texture.setWrap(Texture.TextureWrap.ClampToEdge, Texture.TextureWrap.Repeat) }
             definition.afterburnTrailImagePath?.let { trailImages.getOrPut(it) { TextureRegion(texture(it)) } }
+        }
+        buildCompositeUnitIcons()
+    }
+
+    private fun buildCompositeUnitIcons() {
+        val rawCache = mutableMapOf<Pair<Path, Int>, CompositeUnitIconBuilder.RgbaBuffer?>()
+        val loader: (Path, Int) -> CompositeUnitIconBuilder.RgbaBuffer? = { path, totalFrames ->
+            rawCache.getOrPut(path to totalFrames) {
+                val pm = Pixmap(Gdx.files.absolute(path.toString()))
+                try {
+                    val frames = totalFrames.coerceAtLeast(1)
+                    val frameW = if (pm.width % frames == 0) pm.width / frames else pm.width
+                    CompositeUnitIconBuilder.RgbaBuffer.fromPixmap(pm, 0, 0, frameW, pm.height)
+                } finally {
+                    pm.dispose()
+                }
+            }
+        }
+        val localPlayerRgb = resources.playerColorRgb("p1")
+        for ((id, definition) in resources.units) {
+            val layers = CompositeUnitIconBuilder.planLayers(definition, loader)
+            val composed = CompositeUnitIconBuilder.compose(layers, localPlayerRgb) ?: continue
+            val pixmap = CompositeUnitIconBuilder.toPixmap(composed)
+            val tex = try {
+                Texture(pixmap).also {
+                    it.setFilter(Texture.TextureFilter.Linear, Texture.TextureFilter.Linear)
+                    owned.add(it)
+                }
+            } finally {
+                pixmap.dispose()
+            }
+            compositeUnitIcons[id] = TextureRegion(tex)
         }
     }
 
@@ -1135,7 +1168,7 @@ class SandboxGraphics private constructor(private val resources: SandboxRenderRe
         playerColorShader = null
         minimapPixmap = null; minimapTexture = null; minimapVisibilityState = null; minimapGroundSnapshot = null
         owned.clear(); tiles.clear(); tileAverageColors.clear(); loadedTerrainTextureCount = 0
-        units.clear(); turrets.clear(); namedTurrets.clear(); corpses.clear(); backs.clear()
+        units.clear(); compositeUnitIcons.clear(); turrets.clear(); namedTurrets.clear(); corpses.clear(); backs.clear()
         legs.clear(); feet.clear(); impacts.clear()
         failure?.let { throw it }
     }

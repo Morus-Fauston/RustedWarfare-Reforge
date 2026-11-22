@@ -1,3 +1,10 @@
+v0.5.66 (2026-11-22 19:51)
+  新增: 新增离线 CPU 复合多图层单位图标合成器 CompositeUnitIconBuilder 并接入 SandboxGraphics 缓存（按 BACK -> BODY frame 0 -> ARM1/ARM2 -> TURRET/NAMED_TURRET 挂点偏移 -> ROTOR 叠合、复用 MatchPlayerColors 纯绿着色、按非透明外接包围盒自动裁切居中并保留 iconWeaponName 模块特例，随 owned 统一释放），全 HUD 五处（动作键/选中卡/多选类型标签/队列格/货舱乘员）统一显示完整复合单位图标
+  调整: 重构 HudSidebarProjection.buildSlots 工厂与建造者施工队列为 Run-Length 连续段折叠（相邻同 typeId 合并为一格、队首保留进度条、超 5 段时第 5 格 +N 显示溢出真实总件数）；在 InGameHudOverlay 为 count >= 2 的队列格右上角绘制红底白字等宽计数角标（count == 1 不显），并绑定左/右键点击命中区与动作 ID queue-slot:{idx} 接通 cancelProduction / cancelUpgrade 及施工队列 amber 提示
+  技术: 新增 CompositeIconAndQueueCollapseTest 并同步更新 UiHudSkeletonAndEventsTest，受影响 client 单测与 :pc:installDist 全绿 / 完成 Big Island 1920x1080 Windows 实窗采集（建造者多图层工厂/采矿器/炮塔图标、海厂战舰图标、混排队列 [Builder x4][Tank x2][Builder x1] 与点击取消后 [Builder x3][Tank x1] 实时扣减对照）/ Hydrogen 5 张实窗目视审查与全新上下文 Neon 独立代码整审均 0 必修 APPROVE（并采纳 2 项 P2 即时提示同步与边界单测加固）
+
+====
+
 v0.5.65 (2026-11-22 19:27)
   新增: 引入跨平台（桌面 OpenGL / Android GLES 2.0/3.0）纯绿通道对局玩家着色 Shader 与固定 8 色对局玩家色板 MatchPlayerColors（P1 绿 #2ECC40 至 P8 粉 #EC4899，中立灰 #9AA3A8），统一驱动战场彩色单位部件着色、小地图单位点与敌方/中立选中卡左侧 4px 色条，并在退局时安全释放显存着色器
   调整: 彻底删除战场未选中单位的常驻外圈，选中态改为单层干净选圈（己方/盟友取对局玩家色、敌方 FOE 红 #E0564A、多选主选外侧叠加 1.5px 柔白细环）；血条/护盾条/建造条/点防御条/能量条统一改为按需显示（受伤/非满值或选中时显示，满血未选中隐藏）；补齐随包公开占位单位贴图（21 张活体贴图并同步 manifest.json 哈希）与 phase-seven-sandbox 97 张活体单位贴图的纯绿可染色区（严格跳过残骸/阴影/护盾/槽位覆层）

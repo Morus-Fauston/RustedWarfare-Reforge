@@ -1,4 +1,24 @@
 # Changelog
+## v0.5.66 (2026-11-22 19:51)
+
+### 新增
+
+- **离线 CPU 复合多图层单位图标缓存（`CompositeUnitIconBuilder.kt`、`SandboxGraphics.kt`、`SandboxRenderResources.kt`）**：
+  - 在 `SandboxGraphics` 加载期按 `BACK -> BODY(frame 0) -> ARM1/ARM2 -> TURRET/可见 NAMED_TURRET（按挂点偏移）-> ROTOR` 离线 CPU 合成单张正方形复合图标，复用 `MatchPlayerColors.applyPureGreenTint` 着色并按非透明外接包围盒自动裁切留白；保留 `iconWeaponName` 模块单层特例，中间 `Pixmap` 全由 `try/finally` 释放、合成 `Texture` 纳入 `owned` 于退局完整回收。
+  - 右侧 HUD 动作键、选中卡、多选类型芯片、队列格与运输货舱五处统一读取复合图标，彻底修复工厂缺地板、采矿器缺底座与坦克/炮塔/重型战舰缺炮塔的问题。
+
+### 调整
+
+- **工厂/施工队列 Run-Length 连续段折叠、红底白字角标与点击取消闭环（`HudSidebarModel.kt`、`InGameHudOverlay.kt`、`BootstrapScreen.kt`、`UiStrings.kt`）**：
+  - `HudSidebarProjection.buildSlots()` 按相邻同 `typeId` 合并连续段（保留穿插顺序与队首进度填充，超过 5 段时第 5 格 `+N` 统计溢出真实排队总件数）。
+  - 在 `InGameHudOverlay.drawQueueSection()` 为 `count >= 2` 的槽位右上角绘制高对比度红底白字等宽计数角标（`count == 1` 隐藏），并绑定左/右键点击命中区与动作 ID `queue-slot:{idx}`；点击工厂队列格调 `cancelProduction(typeId)`、升级队列格调 `cancelUpgrade(actionKey)`、施工队列格即时弹出左上 amber 提示。
+
+### 技术
+
+- **测试与双审收据（`UI-P002-004`）**：新增 `CompositeIconAndQueueCollapseTest`（含多图层叠合与纯绿着色、`iconWeaponName` 特例、空/透明/超大裁切安全、RLE 穿插保序与溢出真实件数统计及中英文 5 格命中边界校验），同步更新 `UiHudSkeletonAndEventsTest`，联合 `UiHudBuildingStockpileStatesTest`、`UiHudMultiSpiderTransportTest`、`UiHudActionListAndIconsTest`、`MatchPlayerColorsTest` 及 `:pc:installDist` 全绿；完成 Big Island 1920×1080 Windows 实窗采集；Hydrogen 5 张实窗目视审查与全新上下文 Neon 独立非作者代码整审均 0 必修 `APPROVE`（并顺手采纳 2 项 P2 加固项后复测全绿）。
+
+---
+
 ## v0.5.65 (2026-11-22 19:27)
 
 ### 新增

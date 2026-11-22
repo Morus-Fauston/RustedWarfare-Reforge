@@ -742,6 +742,29 @@ class BootstrapScreen(
                         updateHud()
                     }
                 }
+                override fun onCancelQueueSlot(kind: HudQueueKind, slot: HudQueueSlot, slotIndex: Int) {
+                    val active = session ?: return
+                    val typeId = slot.typeId ?: return
+                    when (kind) {
+                        HudQueueKind.PRODUCTION -> {
+                            active.cancelProduction(typeId)
+                            lastHudState = null
+                            updateHud()
+                        }
+                        HudQueueKind.UPGRADE -> {
+                            val key = slot.upgradeActionKey
+                            if (key != null) {
+                                active.cancelUpgrade(key)
+                                lastHudState = null
+                                updateHud()
+                            }
+                        }
+                        HudQueueKind.BUILD -> {
+                            hudEvents.pushWarning(UiStrings.get("unsupported.cancelBuildQueue"))
+                            hudOverlay.syncEventStream(hudEvents)
+                        }
+                    }
+                }
             },
         ).also(stage::addActor)
         minimapActor = Actor().apply {
