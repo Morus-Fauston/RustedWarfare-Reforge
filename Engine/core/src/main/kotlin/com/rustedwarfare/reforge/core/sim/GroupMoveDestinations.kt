@@ -1,6 +1,7 @@
 package com.rustedwarfare.reforge.core.sim
 
 import com.rustedwarfare.reforge.core.content.MovementCollisionShape
+import com.rustedwarfare.reforge.core.content.MovementType
 import com.rustedwarfare.reforge.core.content.MapDefinition
 import java.util.PriorityQueue
 import kotlin.math.ceil
@@ -14,6 +15,7 @@ class GroupMoveRequest internal constructor(
     internal val click: Position,
     internal val members: Set<String>,
     internal val sharedLanding: Boolean = false,
+    internal val maxRadiusByMovement: Map<MovementType, Double> = emptyMap(),
 ) {
     internal val trafficOrder = if (sharedLanding) members.sorted() else emptyList()
 

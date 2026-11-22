@@ -1,5 +1,18 @@
 # Changelog
 
+## v0.5.54 (2026-11-22 12:46)
+
+### 架构改进
+
+- **双适配器接缝与按需分块共享流场深模块（`NavigationGuidance` / `ChunkedFlowFieldAdapter`）**：建立 `NavigationGuidance` 双适配器接口（`WaypointRouteAdapter` 与 `ChunkedFlowFieldAdapter`），在步内 P1 预算下按 `16×16` 分块增量构建同通行层规模群移共享流场（随 `StepState.fork` 深拷贝安全回滚、按 `ownerId` 与 `planningTerrainFor` 严格迷雾隔离）；落地净宽档位与 `GroupMoveRequest.maxRadiusByMovement` 预计算、小车在大车宽道上叠加轻量让道代价（宽窄并存时优先窄门、唯一路时照常通行），以及 1 格针眼门识别与带滞回软拥堵分流（按步初冻结 `WorldSpatialIndex.frozenLayerUnits` 确定性统计、局域分块刷新且保留既有方向场）。
+- **局域脏块增量重算、高频改点主干复用与 O(1) 群移快启**：新增建筑或迷雾探出新墙时仅标脏受影响分块及下游阻塞代价带，在 `applyDirtyChunkReset` 中清理过期前沿堆与 `inFrontier` 并在 `expandWavefront` 中加入标准懒删除守卫防止旧低代价倒灌；高频连点立即取消未完旧建场并在地形一致时复用远端稳定主干块；共享流场覆盖单位格后即 O(1) 快启行进并取消冗余单车 A* 排队，配合 5 步最陡下降净空校验与门洞中心对齐避免墙角切角。
+- **死胡同饱和外溢结算与历史 14 混编原令修复**：`SharedLandingSites` 对受限口袋点击改为由里向外优先排满，流场群移未获直线视野时不提前抢占口外落点；在 `UnitNavigationState` 新增真实位移进度锚点并在 `UnitMovementOrchestrator.settleSaturationOverflow` 统一处理饱和外溢结算（原子取消挂起规划/修路并同步 `landingOccupancy`）；将 `OVER_CLIFF` 纳入 `sharedLanding` 且水域/不可达点击保留共享落点与 0 基准前沿归一化，查明并修复历史 14 成员混编原令 `30910`、`31060` 全部 `14/14` 到达并停稳 600 步。
+
+### 技术
+
+- **验证与审查**：新增 `ChunkedFlowFieldTest` 10 项单测（宽道让大车、局域脏块重算、中途建场落墙无倒灌、高频连点主干复用、待快启单位地形检测、同目标混编/纯小车场严格隔离、滞回拥堵分流衰减、迷雾与回滚隔离、60 车死胡同饱和外溢及 14 混编石门全员通过）及 `DiagnosticBaselineCaptureMain` 的 `rocks-mixed-100`、`culdesac-overflow-100` 诊断场景；59 项核心专项单测、历史 14 混编原令 `30910`/`31060`（均 `EXIT=0`、`14/14` 到达且 `stableAfterAll=600`、`maxWork=512`）与公开短场景批跑（6 套）全通过；8 套 2 秒停滞标红拼图及峰值放大图经 Hydrogen 强制目视复核 `APPROVE`（0 必修）；经全新上下文 Neon 非作者代码整审修复 4 项 P1 后定向复核 `APPROVE`（0 必修）。
+
+---
 ## v0.5.53 (2026-11-22 06:12)
 
 ### 架构改进

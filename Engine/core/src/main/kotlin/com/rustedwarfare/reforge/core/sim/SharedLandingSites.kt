@@ -713,7 +713,9 @@ internal class SharedLandingSites(private val map: MapDefinition, private val gr
 
     fun near(p: Position): Boolean {
         val reach = spacing * (sqrt(group.members.size.toDouble()) + 2.0)
-        return ScreenPlane.distanceSquared(p, group.click) <= reach * reach
+        val anchor = sites.firstOrNull() ?: group.click
+        return ScreenPlane.distanceSquared(p, group.click) <= reach * reach ||
+            ScreenPlane.distanceSquared(p, anchor) <= reach * reach
     }
 
     fun choose(unit: MutableUnit, terrain: PlanningTerrain, occupied: (Position) -> Boolean, centre: Position, budget: PathWorkBudget): Position? {
@@ -725,6 +727,10 @@ internal class SharedLandingSites(private val map: MapDefinition, private val gr
         val axisX = fillOrigin.x - group.click.x
         val axisY = fillOrigin.y - group.click.y
         val axisLength = maxOf(1.0, sqrt(axisX * axisX + axisY * axisY))
+        val clickCol = kotlin.math.floor(group.click.x / terrain.tileWidth).toInt().coerceIn(0, terrain.widthTiles - 1)
+        val clickRow = kotlin.math.floor(group.click.y / terrain.tileHeight).toInt().coerceIn(0, terrain.heightTiles - 1)
+        val confinedPocketClick = terrain.clearanceField().clearanceRings(clickCol, clickRow) in 1..2 &&
+            group.members.size >= ChunkedFlowFieldAdapter.MIN_GROUP_SIZE
         var allTaken = saved?.allTaken ?: true
         var best = saved?.best
         var bestDistance = saved?.score ?: Double.POSITIVE_INFINITY
@@ -734,7 +740,12 @@ internal class SharedLandingSites(private val map: MapDefinition, private val gr
                 return null
             }
             val site = sites[index]
-            val distance = if (outside) {
+            val distance = if (confinedPocketClick) {
+                // In confined pockets / cul-de-sacs, fill strictly from the deepest interior outward to the mouth
+                // rather than letting outer-lane units claim outside-mouth slots early and seal the pocket.
+                sqrt(ScreenPlane.distanceSquared(site, group.click)) * 4.0 +
+                    0.25 * sqrt(ScreenPlane.distanceSquared(entry, site))
+            } else if (outside) {
                 val lateral = kotlin.math.abs((site.x - entry.x) * axisY - (site.y - entry.y) * axisX) / axisLength
                 val depth = ((site.x - group.click.x) * axisX + (site.y - group.click.y) * axisY) / axisLength
                 lateral * (sqrt(group.members.size.toDouble()) + 1.0) - depth

@@ -245,6 +245,17 @@ internal class WorldSpatialIndex private constructor(
 
     fun frozenUnit(unitId: String): FrozenSpatialUnit? = frozenById?.get(unitId)
 
+    /** Returns all step-start frozen snapshots in [layer] in deterministic [updateKey] order. */
+    fun frozenLayerUnits(layer: SpatialLayer): List<FrozenSpatialUnit> {
+        val fBuckets = frozenBuckets ?: return emptyList()
+        val bucketMap = fBuckets[layer.ordinal]
+        if (bucketMap.isEmpty()) return emptyList()
+        val out = ArrayList<FrozenSpatialUnit>()
+        for (list in bucketMap.values) out.addAll(list)
+        out.sortWith(FROZEN_KEY_COMPARATOR)
+        return out
+    }
+
     /**
      * Queries the step-start frozen snapshot for the deterministic Top-K nearest visible neighbors
      * within [radius] (center-to-center distance <= [radius], or expanded by [includeBufferPadding]

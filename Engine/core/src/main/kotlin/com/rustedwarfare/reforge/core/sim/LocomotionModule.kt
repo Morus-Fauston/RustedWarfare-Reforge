@@ -390,7 +390,7 @@ internal object LocomotionModule {
                 val along = away.dot(desiredDir)
                 val lateral = away.dot(rightVec)
 
-                val lateralGain = if (unit.landingMember != null) 0.35 + 0.65 * corridorOpenness else corridorOpenness
+                val lateralGain = if (unit.landingMember != null) 0.08 + 0.92 * corridorOpenness else corridorOpenness
                 val flowScale = if (sameFlow) 0.55 + 0.12 * corridorOpenness else 1.0
                 val sepGain = (0.38 + 0.42 * ownWeight) * flowScale * closeness * closeness * maximumSpeed * finalApproachFade
                 val alongWeight = if (sameFlow) 0.25 else 0.55

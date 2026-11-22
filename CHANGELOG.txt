@@ -1,3 +1,9 @@
+v0.5.54 (2026-11-22 12:46)
+  架构改进: 建立双适配器接缝 NavigationGuidance 与按需分块共享流场深模块 ChunkedFlowFieldAdapter（16×16 分块、步内 P1 预算增量构建、候选步安全回滚与按玩家严格迷雾隔离）；落地大车宽道让道代价、单格针眼门与多缝隙滞回软拥堵分流、局域脏块增量重算（含前沿堆清理、懒删除与阻塞下游防倒灌）、高频连点取消旧未完建场及同地形远端主干复用、O(1) 规模群移快启与死胡同/岸线饱和外溢统一结算（settleSaturationOverflow 原子取消挂起修路并同步 landingOccupancy）；将 OVER_CLIFF 纳入 sharedLanding 并保留水域最近点共享落点，修复历史 14 混编原令 30910/31060 全部 14/14 到达稳态
+  技术: 新增 ChunkedFlowFieldTest 10 项单测及 rocks-mixed-100 / culdesac-overflow-100 诊断场景，59 项核心专项单测、历史 14 原令 30910/31060（双 14/14 稳态 600 步）与公开短场景批跑全通过；8 套同源 2 秒停滞标红拼图及峰值放大图（rocks-small-100 100/100、rocks-mixed-100 97/100 零停滞标红、culdesac-overflow-100 100/100 步 459 收敛及全部回归场景）经 Hydrogen 强制目视复核 APPROVE，全新上下文 Neon 非作者整审发现 4 项 P1 修复后定向复核 APPROVE（0 必修）
+
+====
+
 v0.5.53 (2026-11-22 06:12)
   架构改进: 扩展 LocomotionModule 分级互让权重（结合质量/面积/敏捷度映射 [0.10, 0.90]）、站定开火与已离口静候 0 责任、宽路 0 停顿斜向超车与远程射程弧自然展开（攻击目标严格迷雾可见性校验、显式 32-bit FNV-1a 确定性并列打破）；新增单行窄口门外侧方让空与重入中心对齐接入 UnitMovementOrchestrator；新增独立 AIR 层轻量二维 Boids 软分离与环落位（按真实定义半径分离、边界钳位、起降与轰炸机豁免）
   技术: 新增 MixedOvertakeAndAirSeparationTest 5 项单测及 3 个混编/窄桥/空军诊断场景，55 项专项单测与公开短场景批跑（6 套）全通过；6 套 2 秒停滞标红拼图（rocks-small-100 100/100、opposed-open-25v25 50/50、opposed-corridor-8v8 16/16、mixed-overtake-wide 11/11、narrow-bridge-yield 2/2、air-flock-rally 16/16 零红标零重叠）经 Hydrogen 目视复核 APPROVE，Carbon 非作者审阅与定向复核 APPROVE（0 必修）

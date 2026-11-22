@@ -75,6 +75,8 @@ class SimulationContext internal constructor(private val policies: ExperimentalP
     private var spatialIndex: WorldSpatialIndex
         get() = steps.current.spatialIndex
         set(value) { steps.current.spatialIndex = value }
+    internal val flowFields: ChunkedFlowFieldAdapter
+        get() = steps.current.flowFields
     private var buildingTerrain: BuildingTerrain?
         get() = steps.current.buildingTerrain
         set(value) { steps.current.buildingTerrain = value }
@@ -419,6 +421,7 @@ class SimulationContext internal constructor(private val policies: ExperimentalP
         committedObservation = null
         scheduledActions.clear()
         steps.current.movePlanning = MovePlanning()
+        steps.current.flowFields = ChunkedFlowFieldAdapter()
         actionIds.clear()
         actionResultOwners.clear()
         playerActionRevisions.clear()
@@ -436,8 +439,21 @@ class SimulationContext internal constructor(private val policies: ExperimentalP
         val members = orderedUnits().filter { it.unitId in requested && it.ownerPlayerId == actor && it.alive &&
             it.carriedBy == null && it.attachment == null && it.definition.movement.type != MovementType.NONE }
         if (members.size < 2) return null
-        val shared = members.all { it.definition.movement.type == MovementType.LAND && it.birthRemaining <= 0f }
-        return GroupMoveRequest(world, stepIndex.takeIf { hasAdvanced }, actor, click, members.mapTo(hashSetOf()) { it.unitId }, shared)
+        val shared = members.all {
+            (it.definition.movement.type == MovementType.LAND || it.definition.movement.type == MovementType.OVER_CLIFF) &&
+                it.birthRemaining <= 0f
+        }
+        val maxRadiusByMovement = LinkedHashMap<MovementType, Double>()
+        for (m in members) {
+            val mt = UnitLocomotion.movement(m).type
+            val r = m.definition.movementCollision.boundingRadius
+            val prev = maxRadiusByMovement[mt]
+            if (prev == null || r > prev) maxRadiusByMovement[mt] = r
+        }
+        return GroupMoveRequest(
+            world, stepIndex.takeIf { hasAdvanced }, actor, click,
+            members.mapTo(hashSetOf()) { it.unitId }, shared, maxRadiusByMovement,
+        )
     }
 
     private fun movePlanningInput(map: MapDefinition, actions: List<MoveAction>, group: GroupMoveRequest?,
@@ -716,14 +732,18 @@ class SimulationContext internal constructor(private val policies: ExperimentalP
         if (repair == null || repair == ManeuverRepair.KNOWLEDGE)
             unit.landingMember = unit.landingMember?.copy(branch = planned.branch)
         // Initial paths can publish before the landing pool has had its first time slice.
-        val nearSharedArea = planned.nearest && priorGroup != null && priorGroup.members.any { id ->
-            units[id]?.definition?.movementCollision?.let { it != unit.definition.movementCollision } == true
-        } &&
-            ScreenPlane.distanceSquared(slot.position, priorGroup.click) <= unit.definition.movementCollision.boundingRadius.let { it * it }
-        if (planned.nearest && !nearSharedArea) {
+        // Preserve sharedLanding membership even when the click lies in unreachable terrain (e.g. water/cliff
+        // beyond the shoreline, such as historical mixed-14 order 30910) so the group uses SharedLandingSites +
+        // ChunkedFlowFieldAdapter anchored at the nearest reachable frontier instead of piling onto one point.
+        val keepSharedLandingOnNearest = planned.nearest && priorGroup != null && priorGroup.sharedLanding &&
+            priorGroup.members.size >= 2
+        if (planned.nearest && !keepSharedLandingOnNearest) {
             unit.nearestMoveTarget = action.target
             unit.nearestMoveIsGroup = group != null || unit.landingMember != null
             unit.landingMember = null
+        } else if (keepSharedLandingOnNearest) {
+            unit.nearestMoveTarget = action.target
+            unit.nearestMoveIsGroup = true
         }
         unit.groupMoveReservation = group?.let { GroupMoveReservation(it, slot) }
         unit.nearTargetTime = 0.0
@@ -731,7 +751,7 @@ class SimulationContext internal constructor(private val policies: ExperimentalP
         unit.originAtStep = action.atStep
         unit.adoptRoute(slot.path, logicalRouteTarget(unit, slot.position), plannedKnowledgeRevision(unit), plannedBuildingRevision(unit))
         if (priorGroup != null && unit.landingMember == null) notifyLandingBody(unit) else notifyLandingRoute(unit)
-        unit.followsManeuverRoute = (planned.nearest || (member.hull as? RectangularDeparture)?.maneuver == true) && !member.hasBirthDelay
+        unit.followsManeuverRoute = ((planned.nearest && !keepSharedLandingOnNearest) || (member.hull as? RectangularDeparture)?.maneuver == true) && !member.hasBirthDelay
         pendingEvents += Event("movement-started", unit.unitId)
     }
 
@@ -1011,13 +1031,26 @@ class SimulationContext internal constructor(private val policies: ExperimentalP
                 if (surveyingBays) return@visitDriving
                 val preview = unit.landingMember!!.ingress
                 if (preview != null) {
-                    if (!pool.atEntrance(unit.position, preview)) return@visitDriving
-                    val first = pool.deepestEntering(unit, preview, budget, units::get) ?: return@visitDriving
-                    val target = first.landingMember!!.ingress!!
-                    if (!PlanningSegmentClearance.allows(planningTerrainFor(unit, map), unit.position, target,
-                            unit.definition.movementCollision.boundingRadius)) return@visitDriving
-                    if (!canAdopt(unit, listOf(target))) return@visitDriving
-                    if (first !== unit) {
+                    val distToPreviewSq = ScreenPlane.distanceSquared(unit.position, preview)
+                    val atPreviewTarget = distToPreviewSq <= 1.0
+                    if (!atPreviewTarget && !pool.atEntrance(unit.position, preview)) return@visitDriving
+                    val first = pool.deepestEntering(unit, preview, budget, units::get) ?: unit
+                    val candidateTarget = first.landingMember!!.ingress!!
+                    val terrainNow = planningTerrainFor(unit, map)
+                    val radiusNow = unit.definition.movementCollision.boundingRadius
+                    val canTakeCandidate = PlanningSegmentClearance.allows(terrainNow, unit.position, candidateTarget, radiusNow) &&
+                        canAdopt(unit, listOf(candidateTarget))
+                    val target = if (canTakeCandidate) {
+                        candidateTarget
+                    } else if (atPreviewTarget &&
+                        PlanningSegmentClearance.allows(terrainNow, unit.position, preview, radiusNow) &&
+                        canAdopt(unit, listOf(preview))
+                    ) {
+                        preview
+                    } else {
+                        return@visitDriving
+                    }
+                    if (first !== unit && target == candidateTarget) {
                         val terrain = planningTerrainFor(first, map)
                         if (!PlanningSegmentClearance.allows(terrain, first.position, preview,
                                 first.definition.movementCollision.boundingRadius)) return@visitDriving
@@ -1029,6 +1062,16 @@ class SimulationContext internal constructor(private val policies: ExperimentalP
                     return@visitDriving
                 }
                 val terrain = planningTerrainFor(unit, map)
+                // Flow-field groups behind a wall or outside a cul-de-sac pocket mouth must keep following the
+                // shared flow field into the interior before claiming landing bays — prevents prematurely claiming
+                // outside bays that seal the pocket mouth before the interior fills.
+                if (trafficSeparationEnabled && group.members.size >= ChunkedFlowFieldAdapter.MIN_GROUP_SIZE &&
+                    unit.nearestMoveTarget == null &&
+                    steps.current.flowFields.hasValidGuidanceFor(unit, terrain) &&
+                    !PlanningSegmentClearance.allows(terrain, unit.position, group.click, routeRadius(unit))
+                ) {
+                    return@visitDriving
+                }
                 val target = pool.choose(unit, terrain, ::occupied, centre, budget)
                 if (target == null) return@visitDriving
                 val path = pool.approach(unit, target, planningTerrainFor(unit, map))
@@ -1689,7 +1732,30 @@ class SimulationContext internal constructor(private val policies: ExperimentalP
                     val admissions = steps.current.landingAdmissions
                     admissions[group] = admissions[group].orEmpty() + unit.unitId
                     steps.current.movePlanning.enqueue(action, null, selectionSize = group.members.size)
-                } else steps.current.movePlanning.enqueue(action, group, selectionSize = group?.members?.size ?: 1)
+                } else {
+                    steps.current.movePlanning.enqueue(action, group, selectionSize = group?.members?.size ?: 1)
+                }
+                if (group != null && group.members.size >= ChunkedFlowFieldAdapter.MIN_GROUP_SIZE &&
+                    unit.definition.movementCollision !is MovementCollisionShape.Rectangle
+                ) {
+                    val mType = UnitLocomotion.movement(unit).type
+                    if (mType != MovementType.AIR && mType != MovementType.NONE) {
+                        val maxGroupR = maxOf(
+                            unit.definition.movementCollision.boundingRadius,
+                            group.maxRadiusByMovement[mType] ?: unit.definition.movementCollision.boundingRadius,
+                        )
+                        val terrain = planningTerrainFor(unit, currentScenario.map, mType)
+                        steps.current.flowFields.ensureFieldForGroup(
+                            ownerId = unit.ownerPlayerId,
+                            movementType = mType,
+                            unitRadius = unit.definition.movementCollision.boundingRadius,
+                            maxGroupRadius = maxGroupR,
+                            terrain = terrain,
+                            goalWorld = group.click,
+                            stepIndex = stepIndex,
+                        )
+                    }
+                }
                 ActionResult.Accepted(action.actionId)
             }
         }
@@ -2188,6 +2254,49 @@ class SimulationContext internal constructor(private val policies: ExperimentalP
             }
             prepareRouteSuccessors(currentScenario.map, step.stepIndex, candidate.routeContinuationSamples)
             spatialIndex.beginStep()
+            if (trafficSeparationEnabled && candidate.state.flowFields.activeFieldCount() > 0) {
+                val p1Budget = maxOf(1024, stepBudgetLimit)
+                candidate.state.flowFields.advanceP1Budget(
+                    units = orderedUnits(),
+                    spatialIndex = spatialIndex,
+                    terrainLookup = { u, mt -> planningTerrainFor(u, currentScenario.map, mt) },
+                    stepIndex = step.stepIndex,
+                    maxExpansions = p1Budget,
+                )
+                // Shared flow-field O(1) fast-start (ENG-P016-008):
+                // Once the chunked flow field covers a pending sharedLanding unit's live cell (and the group
+                // click is on legal terrain rather than an off-shore nearest-click), immediately publish
+                // flow-guided motion and cancel its redundant per-unit A* job so 100-unit groups start
+                // smoothly within ~5-15 ticks instead of queuing for 200+ ticks of individual A* searches.
+                for (u in orderedUnits()) {
+                    if (!u.alive || u.carriedBy != null || u.attachment != null || u.moveTarget != null) continue
+                    val lm = u.landingMember ?: continue
+                    if (lm.parked || lm.claimed != null || lm.group.members.size < ChunkedFlowFieldAdapter.MIN_GROUP_SIZE) continue
+                    val headTask = u.tasks.firstOrNull() ?: continue
+                    if (headTask.kind != UnitTaskKind.MOVE || headTask.target != lm.group.click) continue
+                    if (!candidate.state.movePlanning.pending(u.unitId)) continue
+                    val uTerrain = planningTerrainFor(u, currentScenario.map)
+                    val gCol = MapBounds.cell(lm.group.click.x, currentScenario.map.tileWidth, currentScenario.map.widthTiles)
+                    val gRow = MapBounds.cell(lm.group.click.y, currentScenario.map.tileHeight, currentScenario.map.heightTiles)
+                    if (uTerrain.isBlocked(gCol, gRow)) continue
+                    if (!candidate.state.flowFields.hasValidGuidanceFor(u, uTerrain)) continue
+                    candidate.state.movePlanning.cancel(u.unitId)
+                    u.moveTarget = lm.group.click
+                    u.nearTargetTime = 0.0
+                    u.originMoveId = headTask.actionId
+                    u.originAtStep = headTask.atStep
+                    u.adoptRoute(
+                        listOf(lm.group.click),
+                        logicalRouteTarget(u, lm.group.click),
+                        plannedKnowledgeRevision(u),
+                        plannedBuildingRevision(u),
+                    )
+                    u.followsManeuverRoute = false
+                    notifyLandingRoute(u)
+                    candidate.state.landingOccupancy.update(u)
+                    pendingEvents += Event("movement-started", u.unitId)
+                }
+            }
             if (trafficSeparationEnabled) {
                 val visits = TrafficSeparation.Visits()
                 candidate.state.separationVisits = visits
@@ -2527,6 +2636,7 @@ class SimulationContext internal constructor(private val policies: ExperimentalP
         latestObservation = null
         scheduledActions.clear()
         steps.current.movePlanning = MovePlanning()
+        steps.current.flowFields = ChunkedFlowFieldAdapter()
         actionIds.clear()
         nextScenario.automaticVision?.let { rules ->
             try {
@@ -4179,6 +4289,7 @@ class SimulationContext internal constructor(private val policies: ExperimentalP
         override val trafficSeparationEnabled: Boolean get() = this@SimulationContext.trafficSeparationEnabled
         override val units: Map<String, MutableUnit> get() = this@SimulationContext.units
         override val spatialIndex: WorldSpatialIndex get() = this@SimulationContext.spatialIndex
+        override val flowFields: ChunkedFlowFieldAdapter get() = this@SimulationContext.flowFields
         override val buildingTerrain: BuildingTerrain? get() = this@SimulationContext.buildingTerrain
         override val pendingEvents: MutableList<Event> get() = this@SimulationContext.pendingEvents
 
