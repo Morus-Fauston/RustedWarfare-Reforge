@@ -1,3 +1,10 @@
+v0.5.65 (2026-11-22 19:27)
+  新增: 引入跨平台（桌面 OpenGL / Android GLES 2.0/3.0）纯绿通道对局玩家着色 Shader 与固定 8 色对局玩家色板 MatchPlayerColors（P1 绿 #2ECC40 至 P8 粉 #EC4899，中立灰 #9AA3A8），统一驱动战场彩色单位部件着色、小地图单位点与敌方/中立选中卡左侧 4px 色条，并在退局时安全释放显存着色器
+  调整: 彻底删除战场未选中单位的常驻外圈，选中态改为单层干净选圈（己方/盟友取对局玩家色、敌方 FOE 红 #E0564A、多选主选外侧叠加 1.5px 柔白细环）；血条/护盾条/建造条/点防御条/能量条统一改为按需显示（受伤/非满值或选中时显示，满血未选中隐藏）；补齐随包公开占位单位贴图（21 张活体贴图并同步 manifest.json 哈希）与 phase-seven-sandbox 97 张活体单位贴图的纯绿可染色区（严格跳过残骸/阴影/护盾/槽位覆层）
+  技术: 新增 MatchPlayerColorsTest 覆盖 8 色板与中立回退、纯绿着色数学校验、GLES 源码兼容与按需血条/状态条可见性，联合受影响 client/pc 单测、:pc:installDist 与 :android:assembleDebug 全绿 / 完成原版 3 玩家与公开占位 2 玩家 1920x1080 Windows 双线实窗采集 / Hydrogen 7 张实窗视觉审查 0 必修 APPROVE，全新上下文 Neon 代码整审定位 2 张非活体贴图误染（gunboat-wreck.png、spider/slot-ui.png）复原并优化零分配 uniform 上传后定向复核 0 必修 APPROVE
+
+====
+
 v0.5.64 (2026-11-22 18:44)
   新增: 零扰动 phase-six-a-sandbox 前提下新建现行综合试玩包 SimulationTest/public/inputs/phase-seven-sandbox/json/package（heavyBattleship 升级为 102x20 旋转矩形，纳入 24x13 旋转矩形 gunboat 并接入 seaFactory/seaFactoryT2 生产、ActionPresentation 显示名与 TmxTilesetSupport 别名映射，打包至 pc installDist 并设为 --map 对战地图直开默认推荐内容包）
   调整: 重构 F3 CollisionBoxView 与 HudDebugOverlay 为参考图低噪风格——默认 F3+B 全图仅绘黑边暖黄(#F2C96B)硬碰撞轮廓与前端外部短箭头（不穿心遮挡贴图，停滞 >=2s 切亮红 #FF2929），青色外接包围圆/缓冲带/速度与指引矢量默认仅选中单位显示，新增 F3+D（触控图层行 [D]，默认关）按需全图展开，F3+R 未选中路线压暗至 0.35 alpha，同步更新 F3 左栏图层行与三色图例

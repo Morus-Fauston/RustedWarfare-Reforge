@@ -606,7 +606,7 @@ internal class InGameHudOverlay(
     ) {
         val leftPad = if (card.isEnemyOrNeutral) 14f else UiTokens.SIDEBAR_PAD_H
         if (card.isEnemyOrNeutral) {
-            val stripeColor = UiTokens.FOE
+            val stripeColor = card.ownerStripeRgb?.let { MatchPlayerColors.rgbToColor(it) } ?: UiTokens.FOE
             fillRect(batch, white, rect.x + 1f, rect.y, 4f, rect.height, stripeColor, alpha)
         }
 

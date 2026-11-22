@@ -242,7 +242,7 @@ object HudSidebarProjection {
             subtitleIsWarning = subWarn,
             subtitleIsIncome = subIncome,
             isEnemyOrNeutral = !isOwn,
-            ownerStripeRgb = if (!isOwn) 0xE0564A else null,
+            ownerStripeRgb = if (!isOwn) session.renderResources.playerColorRgb(primary.ownerPlayerId) else null,
             statBars = bars,
         )
 

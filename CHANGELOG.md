@@ -1,4 +1,25 @@
 # Changelog
+## v0.5.65 (2026-11-22 19:27)
+
+### 新增
+
+- **纯绿通道对局玩家着色 Shader 与 8 色对局玩家色板（`MatchPlayerColors.kt`、`SandboxGraphics.kt`、`SandboxRenderResources.kt`）**：
+  - 按原版 `pureGreenTeamColor.frag` 原理编写兼容桌面 OpenGL 与 Android GLES 2.0/3.0 的片元着色器（无 `#version` 桌面限定语句，含 `#ifdef GL_ES` 精度限定），仅对单位彩色活体部件（`BODY`/`BACK`/`TURRET`/`NAMED_TURRET`/`LEG`/`FOOT`/`ROTOR`/`WING`/`ARM`）启用，跳过 `SHADOW`、`DEAD` 残骸、`SHIELD`、`SLOT_OVERLAY`、`BEAM`、`AFTERBURN_TRAIL` 与地块贴图；着色器按位直传 uniform 零帧内临时对象分配、`try/finally` 恢复 `batch.shader` 并在 `SandboxGraphics.close()` 释放。
+  - 定义固定 8 色对局玩家色板（P1 绿 `#2ECC40`、P2 红 `#E0463E`、P3 蓝 `#3B82F6`、P4 黄 `#EAB308`、P5 青 `#06B6D4`、P6 紫 `#A855F7`、P7 橙 `#F97316`、P8 粉 `#EC4899`，中立灰 `#9AA3A8`），统一同步至战场着色、小地图单位点及敌方/中立选中卡左侧 4px 色条（`HudSidebarModel.kt`、`InGameHudOverlay.kt`）。
+
+### 调整
+
+- **删常驻外圈、单层选中圈与按需状态条（`SandboxGraphics.kt`）**：
+  - 彻底移除战场未选中单位的常驻外圈；选中态仅绘单层细圈（己方/盟友取对局玩家色、敌方取 `#E0564A`、中立灰），多选主选单位外侧额外轻度叠加 1.5px 柔白细环。
+  - 血条、护盾条、建造进度条、点防御与能量条统一按需显示：仅在单位受伤/非满值/未完工或处于选中态时绘制，满血未选中隐藏。
+- **公开占位单位贴图补绿**：为随包公开占位 21 张活体单位贴图刷入标准纯绿通道涂装区并刷新 `Engine/client/src/main/resources/visuals/placeholder/manifest.json` 字节数与 SHA-256，同步为 `phase-seven-sandbox` 97 张活体单位贴图补齐纯绿可染色区（零触碰残骸/阴影/护盾/槽位覆层）。
+
+### 技术
+
+- **测试、构建与双审收据（`UI-P002-003`）**：新增 `MatchPlayerColorsTest`，联合 `UiHudSkeletonAndEventsTest`、`KnowledgeSandboxSessionTest`、`PhaseSevenPackAndDebugDenoiseTest`、`ResourcePackPreparationTest`、`VisualAssetPlaceholderTest`、`VisualAssetPreparationTest`、`:pc:installDist` 与 `:android:assembleDebug` 全绿；完成原版素材（3 玩家）与公开占位素材（2 玩家）1920×1080 Windows 双线实窗采集；Hydrogen 7 张实窗目视审查 0 必修 `APPROVE`，全新上下文 Neon 独立非作者代码整审发现并复原 2 张误刷非活体贴图（`gunboat-wreck.png` 与 `spider/slot-ui.png`）且采纳零分配 uniform 上传优化后定向复核 0 必修 `APPROVE`。
+
+---
+
 ## v0.5.64 (2026-11-22 18:44)
 
 ### 新增
