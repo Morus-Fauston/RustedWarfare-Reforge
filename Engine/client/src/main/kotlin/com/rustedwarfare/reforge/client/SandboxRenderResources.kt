@@ -17,7 +17,7 @@ import kotlin.math.sin
 
 data class WeaponAppearance(val imagePath: Path?, val imageScale: Double,
     val invisible: Boolean = false, val offsetX: Double = 0.0, val offsetY: Double = 0.0,
-    val logicalSize: ImageLogicalSize? = null)
+    val logicalSize: ImageLogicalSize? = null, val mountX: Double = 0.0, val mountY: Double = 0.0)
 internal data class TurretDrawing(val weaponName: String?, val imagePath: Path, val imageScale: Double,
     val pivot: Position, val heading: Double, val logicalSize: ImageLogicalSize? = null) {
     fun drawSize(pixelWidth: Int, pixelHeight: Int) = ImageDrawSize(
@@ -132,6 +132,7 @@ class SandboxRenderResources private constructor(
     val tileSets: List<VisualTileAtlas>, val units: Map<String, UnitAppearance>,
     private val playerTeams: Map<String, String?>,
     val visualLayers: List<MapVisualLayer> = emptyList(),
+    val playerOrder: List<String> = playerTeams.keys.toList(),
 ) {
     fun withVisuals(visuals: PreparedVisualAssets): SandboxRenderResources {
         visuals.verify()
@@ -158,13 +159,13 @@ class SandboxRenderResources private constructor(
         }
         val mappedTiles = if (useScenarioTerrain) tileSets else resolveTiles(visuals, originalTilesetRoot)
         return SandboxRenderResources(widthTiles, heightTiles, tileWidth, tileHeight,
-            Collections.unmodifiableList(mappedTiles), Collections.unmodifiableMap(mappedUnits), playerTeams, visualLayers)
+            Collections.unmodifiableList(mappedTiles), Collections.unmodifiableMap(mappedUnits), playerTeams, visualLayers, playerOrder)
     }
 
     /** Resolves terrain tilesets through ADR-013 four-tier priority even when PreparedVisualAssets is absent. */
     internal fun resolveTileAtlases(visuals: PreparedVisualAssets? = null, originalTilesetRoot: Path? = null): SandboxRenderResources {
         return SandboxRenderResources(widthTiles, heightTiles, tileWidth, tileHeight,
-            Collections.unmodifiableList(resolveTiles(visuals, originalTilesetRoot)), units, playerTeams, visualLayers)
+            Collections.unmodifiableList(resolveTiles(visuals, originalTilesetRoot)), units, playerTeams, visualLayers, playerOrder)
     }
 
     private fun resolveTiles(visuals: PreparedVisualAssets?, originalTilesetRoot: Path?): List<VisualTileAtlas> = tileSets.map { atlas ->
@@ -209,6 +210,27 @@ class SandboxRenderResources private constructor(
             else -> Color(1f, 0f, 0f, 1f)
         }
     }
+
+    /** 8 色对局玩家色（中立灰 #9AA3A8），用于战场着色、小地图与敌方卡片色条。 */
+    fun playerColorRgb(ownerPlayerId: String): Int =
+        MatchPlayerColors.rgbForPlayer(ownerPlayerId, playerOrder)
+
+    fun playerColor(ownerPlayerId: String, alpha: Float = 1f): Color =
+        MatchPlayerColors.rgbToColor(playerColorRgb(ownerPlayerId), alpha)
+
+    /** 战场选中单位的单层选中圈配色：己方与盟友取对局玩家色，敌方统一 FOE 红 #E0564A，中立取中立灰。 */
+    fun selectionRingColor(viewerPlayerId: String, ownerPlayerId: String): Color {
+        if (MatchPlayerColors.isNeutralPlayer(ownerPlayerId)) {
+            return MatchPlayerColors.rgbToColor(MatchPlayerColors.NEUTRAL_RGB)
+        }
+        val viewerTeam = playerTeams[viewerPlayerId]
+        val friendly = ownerPlayerId == viewerPlayerId || (viewerTeam != null && viewerTeam == playerTeams[ownerPlayerId])
+        return if (friendly) {
+            playerColor(ownerPlayerId)
+        } else {
+            MatchPlayerColors.rgbToColor(MatchPlayerColors.FOE_SELECTION_RGB)
+        }
+    }
     companion object {
         fun from(scenario: Scenario): SandboxRenderResources = SandboxRenderResources(
             scenario.map.widthTiles, scenario.map.heightTiles, scenario.map.tileWidth, scenario.map.tileHeight,
@@ -224,7 +246,7 @@ class SandboxRenderResources private constructor(
                     unit.combat?.recoil, unit.combat?.shootDelay ?: 0.0,
                     economicBuilding = unit.income != null && unit.construction != null,
                     weaponImages = Collections.unmodifiableMap(drawingOrder
-                        .associate { it.name to WeaponAppearance(it.imagePath, it.imageScale, it.invisible, it.imageOffsetX, it.imageOffsetY) }),
+                        .associate { it.name to WeaponAppearance(it.imagePath, it.imageScale, it.invisible, it.imageOffsetX, it.imageOffsetY, mountX = it.mount.localX, mountY = it.mount.localY) }),
                     legImagePath = images.leg, footImagePath = images.foot,
                     rotorImagePath = images.rotor, mechKind = unit.mech?.kind, shadowImagePath = images.shadow,
                     shieldImagePath = images.shield, shieldRadius = unit.radius,
@@ -251,6 +273,7 @@ class SandboxRenderResources private constructor(
                         else -> null
                     })
             }), Collections.unmodifiableMap(scenario.players.associate { it.playerId to it.teamId }),
-            Collections.unmodifiableList(scenario.map.visualLayers))
+            Collections.unmodifiableList(scenario.map.visualLayers),
+            Collections.unmodifiableList(scenario.players.map { it.playerId }))
     }
 }

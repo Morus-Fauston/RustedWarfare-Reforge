@@ -70,6 +70,9 @@ distributions {
             from(rootProject.projectDir.parentFile.resolve("SimulationTest/public/inputs/phase-six-a-sandbox")) {
                 into("test-scenarios/inputs/phase-six-a-sandbox")
             }
+            from(rootProject.projectDir.parentFile.resolve("SimulationTest/public/inputs/phase-seven-sandbox")) {
+                into("test-scenarios/inputs/phase-seven-sandbox")
+            }
             from(rootProject.projectDir.parentFile.resolve("SimulationTest/public/contracts")) {
                 include("phase-five-*.json")
                 include("phase-six-a-*.json")

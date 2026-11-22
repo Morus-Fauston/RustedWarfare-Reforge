@@ -36,8 +36,8 @@ class UiHudDebugLayerAndConsoleTest {
         val mutated = open.toggleBoxes().toggleRoutes().toggleGrid()
         val reset = mutated.reset()
         assertEquals(HudDebugLayerState(), reset)
-        assertEquals("layers [B] boxes ON · [R] routes ON · [G] grid off", HudDebugProjection.buildLayersLine(open))
-        assertEquals("layers [B] boxes off · [R] routes off · [G] grid ON", HudDebugProjection.buildLayersLine(mutated))
+        assertEquals("layers [B] boxes ON · [R] routes ON · [D] details off · [G] grid off", HudDebugProjection.buildLayersLine(open))
+        assertEquals("layers [B] boxes off · [R] routes off · [D] details off · [G] grid ON", HudDebugProjection.buildLayersLine(mutated))
         assertTrue(HudDebugFrameMetrics.resolveVersionLabel().isNotBlank())
     }
 
@@ -116,7 +116,7 @@ class UiHudDebugLayerAndConsoleTest {
             assertTrue(wideSnap.leftLines[3].contains("map river_crossing") && wideSnap.leftLines[3].contains("fog on"))
             assertTrue(wideSnap.leftLines[4].startsWith("camera "))
             assertTrue(wideSnap.leftLines[5].startsWith("cursor world 120, 140 · tile "))
-            assertTrue(wideSnap.leftLines[7].contains("[B] boxes ON · [R] routes ON · [G] grid off"))
+            assertTrue(wideSnap.leftLines[7].contains("[B] boxes ON · [R] routes ON · [D] details off · [G] grid off"))
             assertEquals("LEGEND", wideSnap.leftLines[8])
 
             // Strict fog privacy: visible count equals observation count, NEVER authoritative count, and hidden enemy ID never appears
@@ -265,3 +265,4 @@ class UiHudDebugLayerAndConsoleTest {
         assertTrue(rect4.height > rect1.height + 40f, "4-line feedback must expand console panel height cleanly")
     }
 }
+

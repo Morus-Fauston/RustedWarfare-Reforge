@@ -1,3 +1,43 @@
+v0.5.67 (2026-11-22 21:41)
+  修复: 同步 PathPerfBatch 与 PathPerfBatchTest 的非直达寻路 candidatesChecked 校验为 in 1L..maxCandidates（适配 v0.5.50 O(1) 惰性净空场并保持直达 == 0L，与并行 ENG-P016 同位一致），修复 PR #16 Public mechanism and short tests 在 group-2 的历史断言失败
+  技术: CI group-2 全部 29 个 SimulationTest 工具链测试类（:test --rerun-tasks）全绿通过，workspace_layout.py 返回 ok: true
+
+====
+
+v0.5.66 (2026-11-22 19:51)
+  新增: 新增离线 CPU 复合多图层单位图标合成器 CompositeUnitIconBuilder 并接入 SandboxGraphics 缓存（按 BACK -> BODY frame 0 -> ARM1/ARM2 -> TURRET/NAMED_TURRET 挂点偏移 -> ROTOR 叠合、复用 MatchPlayerColors 纯绿着色、按非透明外接包围盒自动裁切居中并保留 iconWeaponName 模块特例，随 owned 统一释放），全 HUD 五处（动作键/选中卡/多选类型标签/队列格/货舱乘员）统一显示完整复合单位图标
+  调整: 重构 HudSidebarProjection.buildSlots 工厂与建造者施工队列为 Run-Length 连续段折叠（相邻同 typeId 合并为一格、队首保留进度条、超 5 段时第 5 格 +N 显示溢出真实总件数）；在 InGameHudOverlay 为 count >= 2 的队列格右上角绘制红底白字等宽计数角标（count == 1 不显），并绑定左/右键点击命中区与动作 ID queue-slot:{idx} 接通 cancelProduction / cancelUpgrade 及施工队列 amber 提示
+  技术: 新增 CompositeIconAndQueueCollapseTest 并同步更新 UiHudSkeletonAndEventsTest，受影响 client 单测与 :pc:installDist 全绿 / 完成 Big Island 1920x1080 Windows 实窗采集（建造者多图层工厂/采矿器/炮塔图标、海厂战舰图标、混排队列 [Builder x4][Tank x2][Builder x1] 与点击取消后 [Builder x3][Tank x1] 实时扣减对照）/ Hydrogen 5 张实窗目视审查与全新上下文 Neon 独立代码整审均 0 必修 APPROVE（并采纳 2 项 P2 即时提示同步与边界单测加固）
+
+====
+
+v0.5.65 (2026-11-22 19:27)
+  新增: 引入跨平台（桌面 OpenGL / Android GLES 2.0/3.0）纯绿通道对局玩家着色 Shader 与固定 8 色对局玩家色板 MatchPlayerColors（P1 绿 #2ECC40 至 P8 粉 #EC4899，中立灰 #9AA3A8），统一驱动战场彩色单位部件着色、小地图单位点与敌方/中立选中卡左侧 4px 色条，并在退局时安全释放显存着色器
+  调整: 彻底删除战场未选中单位的常驻外圈，选中态改为单层干净选圈（己方/盟友取对局玩家色、敌方 FOE 红 #E0564A、多选主选外侧叠加 1.5px 柔白细环）；血条/护盾条/建造条/点防御条/能量条统一改为按需显示（受伤/非满值或选中时显示，满血未选中隐藏）；补齐随包公开占位单位贴图（21 张活体贴图并同步 manifest.json 哈希）与 phase-seven-sandbox 97 张活体单位贴图的纯绿可染色区（严格跳过残骸/阴影/护盾/槽位覆层）
+  技术: 新增 MatchPlayerColorsTest 覆盖 8 色板与中立回退、纯绿着色数学校验、GLES 源码兼容与按需血条/状态条可见性，联合受影响 client/pc 单测、:pc:installDist 与 :android:assembleDebug 全绿 / 完成原版 3 玩家与公开占位 2 玩家 1920x1080 Windows 双线实窗采集 / Hydrogen 7 张实窗视觉审查 0 必修 APPROVE，全新上下文 Neon 代码整审定位 2 张非活体贴图误染（gunboat-wreck.png、spider/slot-ui.png）复原并优化零分配 uniform 上传后定向复核 0 必修 APPROVE
+
+====
+
+v0.5.64 (2026-11-22 18:44)
+  新增: 零扰动 phase-six-a-sandbox 前提下新建现行综合试玩包 SimulationTest/public/inputs/phase-seven-sandbox/json/package（heavyBattleship 升级为 102x20 旋转矩形，纳入 24x13 旋转矩形 gunboat 并接入 seaFactory/seaFactoryT2 生产、ActionPresentation 显示名与 TmxTilesetSupport 别名映射，打包至 pc installDist 并设为 --map 对战地图直开默认推荐内容包）
+  调整: 重构 F3 CollisionBoxView 与 HudDebugOverlay 为参考图低噪风格——默认 F3+B 全图仅绘黑边暖黄(#F2C96B)硬碰撞轮廓与前端外部短箭头（不穿心遮挡贴图，停滞 >=2s 切亮红 #FF2929），青色外接包围圆/缓冲带/速度与指引矢量默认仅选中单位显示，新增 F3+D（触控图层行 [D]，默认关）按需全图展开，F3+R 未选中路线压暗至 0.35 alpha，同步更新 F3 左栏图层行与三色图例
+  技术: 新增 PhaseSevenPackAndDebugDenoiseTest 并同步 UiHudDebugLayerAndConsoleTest 与 WindowsLaunchOptionsTest，受影响 client/pc 单测与 :pc:installDist 全绿 / 完成 Big Island 1920x1080 Windows 实窗采集（默认 F3 态、选中战舰详情、F3+D 全图展开、停滞 >=2s 亮红高亮与 seaFactoryT2 炮艇生产菜单）/ 全新上下文 Neon 独立代码审阅 0 必修 APPROVE（并采纳 2 条 P2 异常恢复与多角度单测加固），Hydrogen 实窗目视审查经 F3+D 截帧时序复核后 0 必修 APPROVE
+
+====
+
+v0.5.63 (2026-11-22 17:46)
+  修复: 修复 SandboxSession.previewConstruction 仅读 Ground 单层 GID 导致原版地图 Items 层 res_pool 被误判为平地及水桥/岩石/PathingOverride 未合并的问题，在严格校验 frame.terrain[index].known（零迷雾泄露）前提下复用 MapDefinition.isResourcePool 与 isFoundationBlocked 与核心建筑裁决对齐
+  调整: 重绘公开占位图集 base_terrain 为 3x3(60x60) 柔和岩边多格矿池（中心格 id=24/GID 25 标 res_pool，外圈 8 格透明渐变过渡），并同步更新内置示范图 river_crossing.tmx 与 volcanic_archipelago.tmx（含 units_markers firstgid 21->31 偏移与火山岛中央矿池边缘补沙地）
+  技术: 新增 MultilayerConstructionPreviewTest 覆盖 Items 矿池/水桥/岩石/PathingOverride/海工厂水域与迷雾零泄露边界，联合 TmxDynamicAtlasAndSkirmishTest/NavalPlacementTest/EconomyConstructionTest/FactoryConstructionTest 等受影响客户端单测全绿 / 完成 Big Island（原版素材）矿池采矿器绿框预览建造与水域海工厂建造潜艇下水及 river_crossing/volcanic_archipelago（公开占位）3x3 矿池 1920x1080 Windows 实窗采集 / Hydrogen 9 张实窗目视审查与全新上下文 Neon 独立非作者整审均 0 必修 APPROVE
+
+====
+
+v0.5.62 (2026-11-22 17:12)
+  修复: 补齐 Pathfinding.considerNearestPrimitive 二分后 if (!legal(point)) return 合法性校验，修复 PR #15 公开短测 FactoryExitTest 2 项失败 / 在全部独立契约零改动前提下，同步 bomber-{ini,json,hjson}-production-chain（select-air 269,234）、build-economy-chain（move-worker 110,95）与 maintenance-defense-chain（screen-z01 218,75 与炮塔 350,190）场景输入以适配 v0.5.31 正常到达当步停驱语义
+  技术: FactoryExitTest(6/6) 及相关核心回归全绿 / 11 项 Python 平台单测全绿 / 6 套公开短场景批跑全绿 / bomber 三格式与 build-economy、maintenance-defense 长测全通过 / 全新上下文 Neon 独立非作者整审 0 必修 APPROVE，Pathfinding.kt 单行修复与并行 ENG-P016 同位一致零语义冲突
+
+====
+
 v0.5.61 (2026-11-22 14:30)
   调整: 修订大屏 HUD 为连续非线性自适应缩放（UiScale.computeBaseScale：短边 <=640 维持 max(0.5, r) 线性，短边 >640 采用 max(r^0.55, 0.50*r)，逻辑短边上限 1280 且 16:9 侧栏占比地板 10.2%，4K 侧栏由 20.4% 收紧至约 11.8%；桌面纯像素短边不读 EDID/PPI，触控共用基础曲线并保留 8mm 下限）
   修复: 修复开发模式桌面端默认开启沙盒部署权限并支持 /、小键盘 / 与中文输入法 、 在常规及暂停态唤出沙盒指令台（同时吞掉紧随的重复 keyTyped 字符防误写入输入框）/ 修复 HudSandboxConsole 多行反馈（如 /help）高度自适应排版，消除文字与输入框/脚注穿透重叠

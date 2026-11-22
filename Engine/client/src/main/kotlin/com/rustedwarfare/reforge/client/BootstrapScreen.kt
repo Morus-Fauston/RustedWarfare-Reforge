@@ -742,6 +742,29 @@ class BootstrapScreen(
                         updateHud()
                     }
                 }
+                override fun onCancelQueueSlot(kind: HudQueueKind, slot: HudQueueSlot, slotIndex: Int) {
+                    val active = session ?: return
+                    val typeId = slot.typeId ?: return
+                    when (kind) {
+                        HudQueueKind.PRODUCTION -> {
+                            active.cancelProduction(typeId)
+                            lastHudState = null
+                            updateHud()
+                        }
+                        HudQueueKind.UPGRADE -> {
+                            val key = slot.upgradeActionKey
+                            if (key != null) {
+                                active.cancelUpgrade(key)
+                                lastHudState = null
+                                updateHud()
+                            }
+                        }
+                        HudQueueKind.BUILD -> {
+                            hudEvents.pushWarning(UiStrings.get("unsupported.cancelBuildQueue"))
+                            hudOverlay.syncEventStream(hudEvents)
+                        }
+                    }
+                }
             },
         ).also(stage::addActor)
         minimapActor = Actor().apply {
@@ -893,6 +916,7 @@ class BootstrapScreen(
             fallbackFontProvider = { fallbackFont ?: skin.getFont("default") },
             onToggleBoxes = { toggleDebugSubLayer("boxes") },
             onToggleRoutes = { toggleDebugSubLayer("routes") },
+            onToggleDetails = { toggleDebugSubLayer("details") },
             onToggleGrid = { toggleDebugSubLayer("grid") },
         ).also(stage::addActor)
         battleActions = BattleActionList(skin, stage, { session }, { graphics?.unitIcon(it) }, { owner, row, cancel ->
@@ -1030,6 +1054,7 @@ class BootstrapScreen(
                         when (keycode) {
                             Input.Keys.B -> { f3ComboUsed = true; toggleDebugSubLayer("boxes"); return true }
                             Input.Keys.R -> { f3ComboUsed = true; toggleDebugSubLayer("routes"); return true }
+                            Input.Keys.D -> { f3ComboUsed = true; toggleDebugSubLayer("details"); return true }
                             Input.Keys.G -> { f3ComboUsed = true; toggleDebugSubLayer("grid"); return true }
                         }
                     }
@@ -1683,8 +1708,10 @@ class BootstrapScreen(
                         shapes,
                         current,
                         graphics.projection,
+                        selectedIds = current.selectedIds,
                         showBoxes = debugLayerState.showBoxes,
                         showRoutes = debugLayerState.showRoutes,
+                        showDetails = debugLayerState.showDetails,
                         showGrid = debugLayerState.showGrid,
                     )
                 }
@@ -1879,6 +1906,7 @@ class BootstrapScreen(
                 "enabled" to debugLayerState.enabled,
                 "boxes" to debugLayerState.showBoxes,
                 "routes" to debugLayerState.showRoutes,
+                "details" to debugLayerState.showDetails,
                 "grid" to debugLayerState.showGrid,
                 "generation" to generation,
                 "stepIndex" to current.observation.stepIndex,
@@ -1893,6 +1921,7 @@ class BootstrapScreen(
         debugLayerState = when (layer) {
             "boxes" -> debugLayerState.toggleBoxes()
             "routes" -> debugLayerState.toggleRoutes()
+            "details" -> debugLayerState.toggleDetails()
             "grid" -> debugLayerState.toggleGrid()
             else -> debugLayerState
         }
@@ -1903,6 +1932,7 @@ class BootstrapScreen(
                 "layer" to layer,
                 "boxes" to debugLayerState.showBoxes,
                 "routes" to debugLayerState.showRoutes,
+                "details" to debugLayerState.showDetails,
                 "grid" to debugLayerState.showGrid,
                 "generation" to generation,
                 "stepIndex" to current.observation.stepIndex,

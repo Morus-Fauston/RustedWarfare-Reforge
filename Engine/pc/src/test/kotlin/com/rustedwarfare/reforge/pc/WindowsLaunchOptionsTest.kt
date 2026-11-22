@@ -133,6 +133,8 @@ class WindowsLaunchOptionsTest {
         try {
             val parsed = WindowsLaunchOptions.parse(arrayOf("--map", "maps/river_crossing.tmx"), repository)
             assertEquals(repository.resolve("maps/river_crossing.tmx").toAbsolutePath().normalize(), parsed.skirmishMap)
+            assertTrue(parsed.inputs.toString().replace('\\', '/').endsWith("phase-seven-sandbox/json/package"),
+                "Skirmish map launch without --inputs should default to phase-seven-sandbox/json/package, got: ${parsed.inputs}")
             assertFailsWith<IllegalArgumentException> {
                 WindowsLaunchOptions.parse(arrayOf("--map", "   "), repository)
             }
@@ -144,3 +146,4 @@ class WindowsLaunchOptionsTest {
         }
     }
 }
+

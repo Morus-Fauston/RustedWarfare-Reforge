@@ -1,4 +1,109 @@
 # Changelog
+## v0.5.67 (2026-11-22 21:41)
+
+### 修复
+
+- **PR #16 `group-2` 工具链机制测试历史基线断言同步（`PathPerfBatch.kt`、`PathPerfBatchTest.kt`）**：
+  - `v0.5.50`（`93ee5bce`）引入 O(1) 惰性 `TerrainClearanceField` 废除全图净空扫描后，`PathPerfBatch` 校验器与 `PathPerfBatchTest` 仍硬编码要求 `candidatesChecked == 768`（全图 32×24 格），导致 `Public mechanism and short tests` 在 `group-0`/`group-1` 全绿后于 `group-2` 失败。
+  - 将非直达寻路的 `candidatesChecked` 校验改为与并行 `ENG-P016` 同位一致的 `in 1L..maxCandidates`（直达仍严格校验 `== 0L`），并同步 `PathPerfBatchTest` 对应 2 处断言。
+
+### 技术
+
+- **验证收据**：复跑 CI `group-2` 全部 29 个 `SimulationTest` 工具链测试类（`:test --rerun-tasks`，249/249 项）全绿通过；改动与并行 `ENG-P016` 完全同位一致、零语义冲突。
+
+---
+
+## v0.5.66 (2026-11-22 19:51)
+
+### 新增
+
+- **离线 CPU 复合多图层单位图标缓存（`CompositeUnitIconBuilder.kt`、`SandboxGraphics.kt`、`SandboxRenderResources.kt`）**：
+  - 在 `SandboxGraphics` 加载期按 `BACK -> BODY(frame 0) -> ARM1/ARM2 -> TURRET/可见 NAMED_TURRET（按挂点偏移）-> ROTOR` 离线 CPU 合成单张正方形复合图标，复用 `MatchPlayerColors.applyPureGreenTint` 着色并按非透明外接包围盒自动裁切留白；保留 `iconWeaponName` 模块单层特例，中间 `Pixmap` 全由 `try/finally` 释放、合成 `Texture` 纳入 `owned` 于退局完整回收。
+  - 右侧 HUD 动作键、选中卡、多选类型芯片、队列格与运输货舱五处统一读取复合图标，彻底修复工厂缺地板、采矿器缺底座与坦克/炮塔/重型战舰缺炮塔的问题。
+
+### 调整
+
+- **工厂/施工队列 Run-Length 连续段折叠、红底白字角标与点击取消闭环（`HudSidebarModel.kt`、`InGameHudOverlay.kt`、`BootstrapScreen.kt`、`UiStrings.kt`）**：
+  - `HudSidebarProjection.buildSlots()` 按相邻同 `typeId` 合并连续段（保留穿插顺序与队首进度填充，超过 5 段时第 5 格 `+N` 统计溢出真实排队总件数）。
+  - 在 `InGameHudOverlay.drawQueueSection()` 为 `count >= 2` 的槽位右上角绘制高对比度红底白字等宽计数角标（`count == 1` 隐藏），并绑定左/右键点击命中区与动作 ID `queue-slot:{idx}`；点击工厂队列格调 `cancelProduction(typeId)`、升级队列格调 `cancelUpgrade(actionKey)`、施工队列格即时弹出左上 amber 提示。
+
+### 技术
+
+- **测试与双审收据（`UI-P002-004`）**：新增 `CompositeIconAndQueueCollapseTest`（含多图层叠合与纯绿着色、`iconWeaponName` 特例、空/透明/超大裁切安全、RLE 穿插保序与溢出真实件数统计及中英文 5 格命中边界校验），同步更新 `UiHudSkeletonAndEventsTest`，联合 `UiHudBuildingStockpileStatesTest`、`UiHudMultiSpiderTransportTest`、`UiHudActionListAndIconsTest`、`MatchPlayerColorsTest` 及 `:pc:installDist` 全绿；完成 Big Island 1920×1080 Windows 实窗采集；Hydrogen 5 张实窗目视审查与全新上下文 Neon 独立非作者代码整审均 0 必修 `APPROVE`（并顺手采纳 2 项 P2 加固项后复测全绿）。
+
+---
+
+## v0.5.65 (2026-11-22 19:27)
+
+### 新增
+
+- **纯绿通道对局玩家着色 Shader 与 8 色对局玩家色板（`MatchPlayerColors.kt`、`SandboxGraphics.kt`、`SandboxRenderResources.kt`）**：
+  - 按原版 `pureGreenTeamColor.frag` 原理编写兼容桌面 OpenGL 与 Android GLES 2.0/3.0 的片元着色器（无 `#version` 桌面限定语句，含 `#ifdef GL_ES` 精度限定），仅对单位彩色活体部件（`BODY`/`BACK`/`TURRET`/`NAMED_TURRET`/`LEG`/`FOOT`/`ROTOR`/`WING`/`ARM`）启用，跳过 `SHADOW`、`DEAD` 残骸、`SHIELD`、`SLOT_OVERLAY`、`BEAM`、`AFTERBURN_TRAIL` 与地块贴图；着色器按位直传 uniform 零帧内临时对象分配、`try/finally` 恢复 `batch.shader` 并在 `SandboxGraphics.close()` 释放。
+  - 定义固定 8 色对局玩家色板（P1 绿 `#2ECC40`、P2 红 `#E0463E`、P3 蓝 `#3B82F6`、P4 黄 `#EAB308`、P5 青 `#06B6D4`、P6 紫 `#A855F7`、P7 橙 `#F97316`、P8 粉 `#EC4899`，中立灰 `#9AA3A8`），统一同步至战场着色、小地图单位点及敌方/中立选中卡左侧 4px 色条（`HudSidebarModel.kt`、`InGameHudOverlay.kt`）。
+
+### 调整
+
+- **删常驻外圈、单层选中圈与按需状态条（`SandboxGraphics.kt`）**：
+  - 彻底移除战场未选中单位的常驻外圈；选中态仅绘单层细圈（己方/盟友取对局玩家色、敌方取 `#E0564A`、中立灰），多选主选单位外侧额外轻度叠加 1.5px 柔白细环。
+  - 血条、护盾条、建造进度条、点防御与能量条统一按需显示：仅在单位受伤/非满值/未完工或处于选中态时绘制，满血未选中隐藏。
+- **公开占位单位贴图补绿**：为随包公开占位 21 张活体单位贴图刷入标准纯绿通道涂装区并刷新 `Engine/client/src/main/resources/visuals/placeholder/manifest.json` 字节数与 SHA-256，同步为 `phase-seven-sandbox` 97 张活体单位贴图补齐纯绿可染色区（零触碰残骸/阴影/护盾/槽位覆层）。
+
+### 技术
+
+- **测试、构建与双审收据（`UI-P002-003`）**：新增 `MatchPlayerColorsTest`，联合 `UiHudSkeletonAndEventsTest`、`KnowledgeSandboxSessionTest`、`PhaseSevenPackAndDebugDenoiseTest`、`ResourcePackPreparationTest`、`VisualAssetPlaceholderTest`、`VisualAssetPreparationTest`、`:pc:installDist` 与 `:android:assembleDebug` 全绿；完成原版素材（3 玩家）与公开占位素材（2 玩家）1920×1080 Windows 双线实窗采集；Hydrogen 7 张实窗目视审查 0 必修 `APPROVE`，全新上下文 Neon 独立非作者代码整审发现并复原 2 张误刷非活体贴图（`gunboat-wreck.png` 与 `spider/slot-ui.png`）且采纳零分配 uniform 上传优化后定向复核 0 必修 `APPROVE`。
+
+---
+
+## v0.5.64 (2026-11-22 18:44)
+
+### 新增
+
+- **现行七期综合试玩内容包（`phase-seven-sandbox`）**：在不触碰 `SimulationTest/public/inputs/phase-six-a-sandbox` 及任何历史 SHA-256 锁定场景的前提下，新建 `SimulationTest/public/inputs/phase-seven-sandbox/json/package`（`id: phase-seven.json`），完整继承六期 A 陆/海/空/机甲/蜘蛛/核弹/经济单位体系，将 `heavyBattleship` 升级为 `102×20` 旋转矩形碰撞箱、纳入 `24×13` 旋转矩形 `gunboat` 并接入 `seaFactory` / `seaFactoryT2` 生产名单、`ActionPresentation` 显示名及 `TmxTilesetSupport` 原版地图别名映射；同步打包进 `:pc:installDist` 并设为 `--map` 对战地图直开的默认推荐内容包入口（不破坏显式 `--inputs` 传参）。
+
+### 调整
+
+- **F3 碰撞箱视图参考图减噪与 `F3+D` 细化开关（`CollisionBoxView.kt`、`HudDebugOverlay.kt`、`BootstrapScreen.kt`）**：
+  - `F3+B`（默认开）：全图可见单位统一采用黑边暖黄（`#F2C96B`）粗实线硬轮廓 + 碰撞箱前端外部短箭头（沿朝向置于硬轮廓外侧，不从中心穿线遮挡贴图）；停滞 `>= 2s` 切换亮红（`#FF2929`），`ShapeRenderer` 与 `GL_BLEND` 状态切换由 `try/finally` 守卫。
+  - 次级细节收敛与 `F3+D`（默认关）：浅青包围圆（`coarse r`）、接触缓冲带、速度与指引矢量默认仅对选中单位绘制；新增 `F3+D`（PC 组合键与触控图层行 `[D]` 命中区 `debug-sublayer-details`）按需全图展开；`F3+R` 未选中路线以 `0.35` alpha 半透明降噪。
+  - 同步更新 F3 左栏图层行（`layers [B] boxes ... · [R] routes ... · [D] details ... · [G] grid ...`）与三色图例行（暖黄 `hard shape / heading`、亮红 `stalled ≥2s`、浅青 `selected / [D] details & routes`）。
+
+### 技术
+
+- **测试与双审收据（`UI-P002-002`）**：新增 `PhaseSevenPackAndDebugDenoiseTest`（含 `phase-seven-sandbox` 加载、矩形舰船参数、海厂生产、`F3+D` 状态机及多角度/圆形外置箭头与降噪计划校验），同步更新 `UiHudDebugLayerAndConsoleTest` 与 `WindowsLaunchOptionsTest`，连同 `CollisionBoxViewTest`、`TmxDynamicAtlasAndSkirmishTest`、`PhaseSixASandboxTest` 及 `:pc:installDist` 全部通过；完成 Big Island（原版素材 + 默认 `--map` 启用 `phase-seven-sandbox`）1920×1080 Windows 实窗采集；全新上下文 Neon 独立非作者整审 0 必修 `APPROVE`（顺手采纳 `try/finally` 与多角度测试 P2 加固），Hydrogen 实窗视觉审查经 `F3+D` 截帧时序定向复核后 0 必修 `APPROVE`。
+
+---
+
+## v0.5.63 (2026-11-22 17:46)
+
+### 修复
+
+- **多图层建造放置预览与严格迷雾隔离（`SandboxSession.kt`）**：`previewConstruction()` 此前仅读取 `Ground` 单层 GID，导致原版遭遇战地图上位于 `Items` 层的 `res_pool` 被误判为平地无法预览放置采矿器，且遗漏了水桥、岩石树木与 `PathingOverride` 覆写。现改为在逐格先校验玩家已知视野（`frame.terrain[index].known`，未探索格一律 `UNEXPLORED` 且绝不读取真实地图属性）前提下，复用 `MapDefinition.isResourcePool(centerCol, centerRow)` 与 `MapDefinition.isFoundationBlocked(col, row, definition.foundationMovementType)`，使客户端预览与核心 `BuildingWork` / `BuildingTerrain` 裁决严格一致。
+
+### 调整
+
+- **公开占位 3×3（60×60）多格矿池重绘与内置示范图同步**：扩展 `Engine/client/src/main/resources/visuals/placeholder/tilesets/base_terrain.png`（`200×60`）与 `base_terrain.tsx`（`tilecount=30`），在第三行新增九宫格风格统一矿池（中心格 `id=24` / GID `25` 标注 `res_pool`，外圈 8 格带透明渐变岩边无缝衔接草地/泥地/沙地）；同步更新 `river_crossing.tmx` 与 `volcanic_archipelago.tmx` 各 8 处矿池为 3×3 组、`units_markers.tsx` `firstgid` 偏移 `21 -> 31`，并将 `volcanic_archipelago` 中央岛两处矿池边缘紧邻浅水格补为沙地以确保自然过渡。
+
+### 技术
+
+- **测试与双线实窗复核（`UI-P002-001`）**：新增 `MultilayerConstructionPreviewTest` 覆盖 `Items` 矿池采矿器 `CLEAR` 与实建、普通建筑落矿池/岩石 `BLOCKED`、`Items` 水桥 `CLEAR`、`PathingOverride` 覆写、`seaFactory` 浅水/深水 `CLEAR` 与陆地 `BLOCKED`、`MEMORY` 迷雾零泄露及两张内置示范图 3×3 矿池结构，联合 `TmxDynamicAtlasAndSkirmishTest`、`NavalPlacementTest`、`EconomyConstructionTest`、`FactoryConstructionTest` 等受影响客户端单测全绿；完成 Windows 1920×1080 实窗双线采集（`Big Island` 原版素材包矿池采矿器绿框预览建造、水域陆厂红框拦截、海工厂绿框预览建造与潜艇下水；`river_crossing` 与 `volcanic_archipelago` 公开占位素材 3×3 矿池及采矿器居中建造）；Hydrogen 9 张实窗目视审查与全新上下文 Neon 独立非作者代码与契约整审均 0 必修 `APPROVE`。
+
+---
+
+## v0.5.62 (2026-11-22 17:12)
+
+### 修复
+
+- **原始前沿最近落点合法性校验补齐（`Pathfinding.kt`）**：`considerNearestPrimitive` 在 48 次二分逼近后补齐 `if (!legal(point)) return`（对齐 `considerNearest` 既有逻辑），避免起点本身不满足 `legal` 约束时将非法点误选为最近落点，修复 PR #15 公开短测中 `FactoryExitTest` 2 项失败（`escape_planning_and_collision_release_all_known_buildings_without_giving_the_outer_car_that_mode` 与 `being_inside_a_hidden_truth_building_does_not_select_the_owners_escape_planning_mode`）。
+- **公开长测场景适配到点即时停驱语义**：对齐 `v0.5.31`（`20a1b097`）确立的“正常到达当步速度清零”规则，在保持全部独立验收契约（`contracts/`）零改动的前提下，同步修正 3 组长测场景输入坐标：
+  - `bomber-{ini,json,hjson}-production-chain.json` 与 `bomber_scenarios.py`：`select-air` 点选坐标由 `(269, 270)` 更新为 `(269, 234)`（对齐轰炸机停驱降落点 `(269.08, 233.62)`）；
+  - `build-economy-chain.json` 与 `generate_economy_scenarios.py`：`move-worker` 目标由 `(110, 90)` 调至 `(110, 95)`，确保建造者在步 `1701` 就位即建工厂；
+  - `maintenance-defense-chain.json`：调整 `screen-z01`（`(218, 75)`）与 `face-defense`/`turret`（`(350, 190)`），恢复攻防射程关系使炮塔完整竣工并清剿全部 12 辆敌方坦克。
+
+### 技术
+
+- **前置 CI 修复全量验证（`UI-P002-000a`）**：`FactoryExitTest`（6/6）、`TerrainClearanceAndPrimitiveKernelTest`、`NormalMoveCompletionTest`、`BomberFlightTest` 及 11 项 Python 平台工具单测全绿；6 套公开短场景批跑（`public_batch.py --kind short`：`content-movement-knowledge`、`production-combat`、`build-economy`、`maintenance-defense`、`platform-basics`、`content-three-formats`）全绿；长测 `bomber-{ini,json,hjson}-production-chain`、`build-economy-chain`、`maintenance-defense-chain` 全部退出码 0 通过；全新上下文 Neon 非作者代码与契约整审 0 必修 `APPROVE`，且 `Pathfinding.kt` 单行修复与并行 `ENG-P016` 分支保持同位一致零语义冲突。
+
+---
 
 ## v0.5.61 (2026-11-22 14:30)
 

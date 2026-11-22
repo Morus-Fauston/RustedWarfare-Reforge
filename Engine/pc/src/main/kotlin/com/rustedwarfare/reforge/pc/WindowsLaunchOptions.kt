@@ -96,8 +96,12 @@ data class WindowsLaunchOptions(
             val explicitInputs = options["--inputs"]
             val skirmishMap = options["--map"]?.let { value -> require(value.isNotBlank()) { "--map requires a .tmx path" }; resolve(value) }
             val seed = defaultScenarioSeed.toAbsolutePath().normalize()
+            val defaultInputs = if (skirmishMap != null)
+                seed.parent.resolve("../inputs/phase-seven-sandbox/json/package").normalize()
+            else
+                seed.parent.resolve("../inputs/phase-six-a-sandbox/json").normalize()
             return WindowsLaunchOptions(mode,
-                explicitInputs?.let(::resolve) ?: seed.parent.resolve("../inputs/phase-six-a-sandbox/json").normalize(),
+                explicitInputs?.let(::resolve) ?: defaultInputs,
                 resolve(options["--evidence"] ?: "Engine/pc/build/sandbox-runs/$runId"),
                 runId, when {
                     explicitInputs != null -> "RustedWarfare-Reforge | P002 Windows sandbox"

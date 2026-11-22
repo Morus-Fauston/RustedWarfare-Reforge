@@ -52,6 +52,7 @@ interface InGameHudCallbacks {
     fun onMenuSettings()
     fun onSelectPrimaryType(typeId: String) {}
     fun onToggleDebug() {}
+    fun onCancelQueueSlot(kind: HudQueueKind, slot: HudQueueSlot, slotIndex: Int) {}
 }
 
 /**
@@ -123,6 +124,18 @@ internal class InGameHudOverlay(
             snapshot?.typeChips?.chips?.getOrNull(idx)?.let { chip -> callbacks.onSelectPrimaryType(chip.typeId) }
         })
     }
+    private val queueSlotActors = List(5) { idx ->
+        HitActor(
+            onClick = {
+                val queue = snapshot?.queueSection ?: return@HitActor
+                val slot = queue.slots.getOrNull(idx) ?: return@HitActor
+                if (slot.typeId != null) {
+                    callbacks.onCancelQueueSlot(queue.kind, slot, idx)
+                }
+            },
+            acceptRightClick = true,
+        )
+    }
 
     private val sidebarBlocker = Actor().apply {
         addListener(object : InputListener() {
@@ -151,6 +164,7 @@ internal class InGameHudOverlay(
         addActor(btnMenuSettings)
         addActor(btnPauseResume)
         typeChipActors.forEach(::addActor)
+        queueSlotActors.forEach(::addActor)
     }
 
     private fun bodyFont(): BitmapFont = fontsProvider()?.body ?: fallbackFontProvider()
@@ -254,6 +268,24 @@ internal class InGameHudOverlay(
             typeChipActors.forEach { it.disable() }
         }
 
+        // Position queue slot hit actors (UI-P002 §5.2: click to cancel 1 item in production/upgrade queue)
+        val queueSection = hudSnapshot.queueSection
+        val queueRect = layout.queueRect
+        if (queueSection != null && queueRect != null && !hudSnapshot.menuOpen && !hudSnapshot.simPaused) {
+            val slotRects = computeQueueSlotRects(queueRect, lang)
+            queueSlotActors.forEachIndexed { idx, actor ->
+                val slot = queueSection.slots.getOrNull(idx)
+                val r = slotRects.getOrNull(idx)
+                if (slot != null && slot.typeId != null && r != null) {
+                    actor.setActiveBounds(r.x, r.y, r.width, r.height)
+                } else {
+                    actor.disable()
+                }
+            }
+        } else {
+            queueSlotActors.forEach { it.disable() }
+        }
+
         val modalOpen = hudSnapshot.menuOpen || hudSnapshot.simPaused
         scrimActor.setBounds(0f, 0f, stageW, stageH)
         scrimActor.touchable = if (modalOpen) Touchable.enabled else Touchable.disabled
@@ -295,6 +327,7 @@ internal class InGameHudOverlay(
         btnMenuResume.disable(); btnMenuRestart.disable(); btnMenuBack.disable(); btnMenuSettings.disable()
         btnPauseResume.disable()
         typeChipActors.forEach { it.disable() }
+        queueSlotActors.forEach { it.disable() }
     }
 
     /** True if [stageX],[stageY] should be consumed by HUD chrome instead of passing to battlefield. */
@@ -341,6 +374,14 @@ internal class InGameHudOverlay(
                 val actor = typeChipActors.getOrNull(idx) ?: return@forEachIndexed
                 if (actor.touchable == Touchable.enabled) {
                     list += DrawnAction("primary-chip:${chip.typeId}", actor, "${chip.displayName} ${chip.count}", enabled = true)
+                }
+            }
+            snap.queueSection?.slots?.forEachIndexed { idx, slot ->
+                val actor = queueSlotActors.getOrNull(idx) ?: return@forEachIndexed
+                val typeId = slot.typeId
+                if (typeId != null && actor.touchable == Touchable.enabled) {
+                    val label = if (slot.count >= 2) "$typeId ×${slot.count}" else typeId
+                    list += DrawnAction("queue-slot:$idx", actor, label, enabled = true)
                 }
             }
         }
@@ -606,7 +647,7 @@ internal class InGameHudOverlay(
     ) {
         val leftPad = if (card.isEnemyOrNeutral) 14f else UiTokens.SIDEBAR_PAD_H
         if (card.isEnemyOrNeutral) {
-            val stripeColor = UiTokens.FOE
+            val stripeColor = card.ownerStripeRgb?.let { MatchPlayerColors.rgbToColor(it) } ?: UiTokens.FOE
             fillRect(batch, white, rect.x + 1f, rect.y, 4f, rect.height, stripeColor, alpha)
         }
 
@@ -718,40 +759,60 @@ internal class InGameHudOverlay(
         val centerY = rect.y + rect.height * 0.5f
         drawTextLeft(batch, smallFont(), UiStrings.get(queue.labelKey, lang), rect.x + padH, centerY, UiTokens.DIM, alpha)
 
-        val labelColW = if (lang == UiLanguage.EN) 44f else 30f
-        val slotSize = if (lang == UiLanguage.EN) 22f else QUEUE_SLOT_SIZE
-        val slotGap = if (lang == UiLanguage.EN) 3f else 4f
-        val slotY = centerY - slotSize * 0.5f
-        var sx = rect.x + padH + labelColW + slotGap
-
-        for (slot in queue.slots) {
+        val slotRects = computeQueueSlotRects(rect, lang)
+        queue.slots.forEachIndexed { idx, slot ->
+            val sr = slotRects.getOrNull(idx) ?: return@forEachIndexed
+            val sx = sr.x
+            val slotY = sr.y
+            val slotSize = sr.width
             val occupied = slot.typeId != null || slot.overflowCount > 0
             if (occupied) {
-                fillRect(batch, white, sx, slotY, slotSize, slotSize, UiTokens.WELL, alpha)
+                val hovered = slot.typeId != null && queueSlotActors.getOrNull(idx)?.hovered == true
+                fillRect(batch, white, sx, slotY, slotSize, slotSize, if (hovered) MENU_ROW_HOVER else UiTokens.WELL, alpha)
                 slot.progress?.let { p ->
                     val fillH = ((slotSize - 2f) * p.coerceIn(0f, 1f))
                     if (fillH > 0.5f) {
                         fillRect(batch, white, sx + 1f, slotY + 1f, slotSize - 2f, fillH, QUEUE_PROGRESS_RUST, alpha)
                     }
                 }
-                strokeRect(batch, white, sx, slotY, slotSize, slotSize, UiTokens.LINE, alpha)
+                val borderColor = when {
+                    hovered -> UiTokens.FOE
+                    slot.progress != null -> UiTokens.RUST
+                    else -> UiTokens.LINE
+                }
+                strokeRect(batch, white, sx, slotY, slotSize, slotSize, borderColor, alpha)
                 if (slot.overflowCount > 0) {
-                    drawTextCenter(batch, captionMonoFont(), "+${slot.overflowCount}", sx + slotSize * 0.5f, centerY, UiTokens.TEXT, alpha)
+                    drawTextCenter(
+                        batch, captionMonoFont(), "+${slot.overflowCount}",
+                        sx + slotSize * 0.5f, slotY + slotSize * 0.5f, UiTokens.DIM, alpha,
+                    )
                 } else if (slot.typeId != null) {
                     val region = unitIconProvider(slot.typeId)
                     if (region != null) {
-                        val maxI = 18f
+                        val maxI = slotSize - 4f
                         val asp = region.regionWidth.toFloat() / region.regionHeight.coerceAtLeast(1).toFloat()
                         val dw = if (asp >= 1f) maxI else maxI * asp
                         val dh = if (asp >= 1f) maxI / asp else maxI
                         batch.setColor(1f, 1f, 1f, alpha)
                         batch.draw(region, sx + (slotSize - dw) * 0.5f, slotY + (slotSize - dh) * 0.5f, dw, dh)
                     }
+                    // Top-right red-background white-text count badge when count >= 2 (UI-P002 §5.2)
+                    if (slot.count >= 2) {
+                        val badgeText = slot.count.toString()
+                        val badgeFont = captionMonoFont()
+                        glyphLayout.setText(badgeFont, badgeText)
+                        val padX = 2f
+                        val badgeW = (glyphLayout.width + padX * 2f).coerceAtLeast(9f).coerceAtMost(slotSize - 2f)
+                        val badgeH = (glyphLayout.height + 2.5f).coerceAtLeast(9.5f).coerceAtMost(11.5f)
+                        val bx = sx + slotSize - badgeW
+                        val by = slotY + slotSize - badgeH
+                        fillRect(batch, white, bx, by, badgeW, badgeH, QUEUE_COUNT_BADGE_RED, alpha)
+                        drawTextCenter(batch, badgeFont, badgeText, bx + badgeW * 0.5f, by + badgeH * 0.5f + 0.5f, Color.WHITE, alpha)
+                    }
                 }
             } else {
                 drawDashedRect(batch, white, sx, slotY, slotSize, slotSize, UiTokens.LINE, alpha * 0.65f)
             }
-            sx += slotSize + slotGap
         }
 
         queue.progressPercent?.let { pct ->
@@ -1010,20 +1071,26 @@ internal class InGameHudOverlay(
         font.setColor(1f, 1f, 1f, 1f)
     }
 
-    private class HitActor(private val onClick: () -> Unit) : Actor() {
+    private class HitActor(
+        private val onClick: () -> Unit,
+        private val acceptRightClick: Boolean = false,
+    ) : Actor() {
         var hovered: Boolean = false
             private set
 
         init {
             touchable = Touchable.disabled
             addListener(object : InputListener() {
+                private fun acceptedButton(button: Int): Boolean =
+                    button == Input.Buttons.LEFT || (acceptRightClick && button == Input.Buttons.RIGHT)
+
                 override fun touchDown(event: InputEvent, x: Float, y: Float, pointer: Int, button: Int): Boolean {
-                    if (pointer != 0 || button != Input.Buttons.LEFT) return false
+                    if (pointer != 0 || !acceptedButton(button)) return false
                     return true
                 }
 
                 override fun touchUp(event: InputEvent, x: Float, y: Float, pointer: Int, button: Int) {
-                    if (pointer == 0 && button == Input.Buttons.LEFT && x >= 0f && y >= 0f && x <= width && y <= height) {
+                    if (pointer == 0 && acceptedButton(button) && x >= 0f && y >= 0f && x <= width && y <= height) {
                         onClick()
                     }
                 }
@@ -1077,6 +1144,23 @@ internal class InGameHudOverlay(
         private val MENU_BORDER: Color = UiTokens.hex(0x727B81, 1f)
         private val MENU_ROW_HOVER: Color = UiTokens.hex(0x41494E, 1f)
         private val QUEUE_PROGRESS_RUST: Color = Color(UiTokens.RUST.r, UiTokens.RUST.g, UiTokens.RUST.b, 0.55f)
+        private val QUEUE_COUNT_BADGE_RED: Color = UiTokens.hex(0xC92A2A, 0.96f)
+
+        /** Deterministic slot bounds for queue rendering and click-to-cancel hit testing (UI-P002 §5.2). */
+        fun computeQueueSlotRects(rect: Rectangle, lang: UiLanguage, slotCount: Int = 5): List<Rectangle> {
+            val padH = UiTokens.SIDEBAR_PAD_H
+            val centerY = rect.y + rect.height * 0.5f
+            val labelColW = if (lang == UiLanguage.EN) 44f else 30f
+            val slotSize = if (lang == UiLanguage.EN) 22f else QUEUE_SLOT_SIZE
+            val slotGap = if (lang == UiLanguage.EN) 3f else 4f
+            val slotY = centerY - slotSize * 0.5f
+            var sx = rect.x + padH + labelColW + slotGap
+            return List(slotCount) {
+                val r = Rectangle(sx, slotY, slotSize, slotSize)
+                sx += slotSize + slotGap
+                r
+            }
+        }
 
         /** Pure deterministic layout calculation for unit tests and runtime rendering. */
         fun computeLayout(
