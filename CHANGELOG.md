@@ -1,4 +1,20 @@
 # Changelog
+## v0.5.63 (2026-11-22 17:46)
+
+### 修复
+
+- **多图层建造放置预览与严格迷雾隔离（`SandboxSession.kt`）**：`previewConstruction()` 此前仅读取 `Ground` 单层 GID，导致原版遭遇战地图上位于 `Items` 层的 `res_pool` 被误判为平地无法预览放置采矿器，且遗漏了水桥、岩石树木与 `PathingOverride` 覆写。现改为在逐格先校验玩家已知视野（`frame.terrain[index].known`，未探索格一律 `UNEXPLORED` 且绝不读取真实地图属性）前提下，复用 `MapDefinition.isResourcePool(centerCol, centerRow)` 与 `MapDefinition.isFoundationBlocked(col, row, definition.foundationMovementType)`，使客户端预览与核心 `BuildingWork` / `BuildingTerrain` 裁决严格一致。
+
+### 调整
+
+- **公开占位 3×3（60×60）多格矿池重绘与内置示范图同步**：扩展 `Engine/client/src/main/resources/visuals/placeholder/tilesets/base_terrain.png`（`200×60`）与 `base_terrain.tsx`（`tilecount=30`），在第三行新增九宫格风格统一矿池（中心格 `id=24` / GID `25` 标注 `res_pool`，外圈 8 格带透明渐变岩边无缝衔接草地/泥地/沙地）；同步更新 `river_crossing.tmx` 与 `volcanic_archipelago.tmx` 各 8 处矿池为 3×3 组、`units_markers.tsx` `firstgid` 偏移 `21 -> 31`，并将 `volcanic_archipelago` 中央岛两处矿池边缘紧邻浅水格补为沙地以确保自然过渡。
+
+### 技术
+
+- **测试与双线实窗复核（`UI-P002-001`）**：新增 `MultilayerConstructionPreviewTest` 覆盖 `Items` 矿池采矿器 `CLEAR` 与实建、普通建筑落矿池/岩石 `BLOCKED`、`Items` 水桥 `CLEAR`、`PathingOverride` 覆写、`seaFactory` 浅水/深水 `CLEAR` 与陆地 `BLOCKED`、`MEMORY` 迷雾零泄露及两张内置示范图 3×3 矿池结构，联合 `TmxDynamicAtlasAndSkirmishTest`、`NavalPlacementTest`、`EconomyConstructionTest`、`FactoryConstructionTest` 等受影响客户端单测全绿；完成 Windows 1920×1080 实窗双线采集（`Big Island` 原版素材包矿池采矿器绿框预览建造、水域陆厂红框拦截、海工厂绿框预览建造与潜艇下水；`river_crossing` 与 `volcanic_archipelago` 公开占位素材 3×3 矿池及采矿器居中建造）；Hydrogen 9 张实窗目视审查与全新上下文 Neon 独立非作者代码与契约整审均 0 必修 `APPROVE`。
+
+---
+
 ## v0.5.62 (2026-11-22 17:12)
 
 ### 修复

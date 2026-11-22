@@ -1,3 +1,10 @@
+v0.5.63 (2026-11-22 17:46)
+  修复: 修复 SandboxSession.previewConstruction 仅读 Ground 单层 GID 导致原版地图 Items 层 res_pool 被误判为平地及水桥/岩石/PathingOverride 未合并的问题，在严格校验 frame.terrain[index].known（零迷雾泄露）前提下复用 MapDefinition.isResourcePool 与 isFoundationBlocked 与核心建筑裁决对齐
+  调整: 重绘公开占位图集 base_terrain 为 3x3(60x60) 柔和岩边多格矿池（中心格 id=24/GID 25 标 res_pool，外圈 8 格透明渐变过渡），并同步更新内置示范图 river_crossing.tmx 与 volcanic_archipelago.tmx（含 units_markers firstgid 21->31 偏移与火山岛中央矿池边缘补沙地）
+  技术: 新增 MultilayerConstructionPreviewTest 覆盖 Items 矿池/水桥/岩石/PathingOverride/海工厂水域与迷雾零泄露边界，联合 TmxDynamicAtlasAndSkirmishTest/NavalPlacementTest/EconomyConstructionTest/FactoryConstructionTest 等受影响客户端单测全绿 / 完成 Big Island（原版素材）矿池采矿器绿框预览建造与水域海工厂建造潜艇下水及 river_crossing/volcanic_archipelago（公开占位）3x3 矿池 1920x1080 Windows 实窗采集 / Hydrogen 9 张实窗目视审查与全新上下文 Neon 独立非作者整审均 0 必修 APPROVE
+
+====
+
 v0.5.62 (2026-11-22 17:12)
   修复: 补齐 Pathfinding.considerNearestPrimitive 二分后 if (!legal(point)) return 合法性校验，修复 PR #15 公开短测 FactoryExitTest 2 项失败 / 在全部独立契约零改动前提下，同步 bomber-{ini,json,hjson}-production-chain（select-air 269,234）、build-economy-chain（move-worker 110,95）与 maintenance-defense-chain（screen-z01 218,75 与炮塔 350,190）场景输入以适配 v0.5.31 正常到达当步停驱语义
   技术: FactoryExitTest(6/6) 及相关核心回归全绿 / 11 项 Python 平台单测全绿 / 6 套公开短场景批跑全绿 / bomber 三格式与 build-economy、maintenance-defense 长测全通过 / 全新上下文 Neon 独立非作者整审 0 必修 APPROVE，Pathfinding.kt 单行修复与并行 ENG-P016 同位一致零语义冲突

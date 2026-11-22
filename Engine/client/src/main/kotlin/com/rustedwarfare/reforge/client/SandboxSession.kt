@@ -425,16 +425,26 @@ class SandboxSession(scenario: Scenario, private val evidence: ClientEvidence = 
         var blocked = candidate.isEmpty() || !ConstructionPlacement.contains(map.widthTiles, map.heightTiles,
             map.tileWidth, map.tileHeight, position, definition.radius)
         var unknown = false
+        if (building.requiresResourcePool) {
+            val centerCol = if (position.x == map.widthTiles.toDouble() * map.tileWidth) map.widthTiles - 1
+                else kotlin.math.floor(position.x / map.tileWidth).toInt()
+            val centerRow = if (position.y == map.heightTiles.toDouble() * map.tileHeight) map.heightTiles - 1
+                else kotlin.math.floor(position.y / map.tileHeight).toInt()
+            if (centerCol !in 0 until map.widthTiles || centerRow !in 0 until map.heightTiles) {
+                blocked = true
+            } else {
+                val centerCell = frame.terrain[centerRow * map.widthTiles + centerCol]
+                if (!centerCell.known) unknown = true
+                else if (!map.isResourcePool(centerCol, centerRow)) blocked = true
+            }
+        }
         for ((col, row) in candidate) {
             if (col !in 0 until map.widthTiles || row !in 0 until map.heightTiles) { blocked = true; continue }
-            val gid = frame.terrain[row * map.widthTiles + col].gid
-            if (gid == null) { unknown = true; continue }
-            val tileset = map.tileSets.lastOrNull { it.firstGid <= gid } ?: continue
-            val tile = gid - tileset.firstGid
-            if (building.requiresResourcePool) {
-                if (tile !in tileset.resourcePoolTileIds) blocked = true
-            } else if (tile in tileset.resourcePoolTileIds || definition.foundationMovementType != MovementType.AIR &&
-                GroundRules.blocked(map.tileSets, gid, definition.foundationMovementType)) blocked = true
+            val cell = frame.terrain[row * map.widthTiles + col]
+            if (!cell.known) { unknown = true; continue }
+            if (!building.requiresResourcePool && map.isFoundationBlocked(col, row, definition.foundationMovementType)) {
+                blocked = true
+            }
         }
         if (observation.units.any { unit -> unit.alive && scenario.unitDefinitions.getValue(unit.typeId).building?.let {
                 cells(unit.position, it).any { cell -> cell in candidate }
